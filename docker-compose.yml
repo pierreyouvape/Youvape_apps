@@ -16,6 +16,19 @@ services:
     networks:
       - youvape_network
 
+  backend:
+    build: ./backend
+    container_name: youvape_backend
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env
+    depends_on:
+      - postgres
+    networks:
+      - youvape_network
+
 volumes:
   postgres_data:
 
