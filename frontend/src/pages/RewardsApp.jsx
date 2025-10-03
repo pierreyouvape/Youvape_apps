@@ -1,9 +1,14 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useContext } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { AuthContext } from '../context/AuthContext';
 import axios from 'axios';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
 const RewardsApp = () => {
+  const { token, logout } = useContext(AuthContext);
+  const navigate = useNavigate();
+
   const [activeTab, setActiveTab] = useState('config');
 
   // Configuration state
@@ -19,6 +24,11 @@ const RewardsApp = () => {
   const [testLoading, setTestLoading] = useState(false);
   const [processLoading, setProcessLoading] = useState(false);
   const [testResult, setTestResult] = useState(null);
+
+  // Manual reward state
+  const [manualReviewId, setManualReviewId] = useState('');
+  const [manualLoading, setManualLoading] = useState(false);
+  const [manualResult, setManualResult] = useState(null);
 
   // History state
   const [history, setHistory] = useState([]);
@@ -45,7 +55,6 @@ const RewardsApp = () => {
 
   const loadConfig = async () => {
     try {
-      const token = localStorage.getItem('token');
       const response = await axios.get(`${API_URL}/api/rewards/config`, {
         headers: { Authorization: `Bearer ${token}` }
       });
@@ -67,7 +76,6 @@ const RewardsApp = () => {
       setConfigLoading(true);
       setTestResult(null);
 
-      const token = localStorage.getItem('token');
       const response = await axios.post(`${API_URL}/api/rewards/config`, config, {
         headers: { Authorization: `Bearer ${token}` }
       });
@@ -87,7 +95,6 @@ const RewardsApp = () => {
       setTestLoading(true);
       setTestResult(null);
 
-      const token = localStorage.getItem('token');
       const response = await axios.post(`${API_URL}/api/rewards/test-connection`, {}, {
         headers: { Authorization: `Bearer ${token}` }
       });
@@ -112,7 +119,6 @@ const RewardsApp = () => {
     try {
       setProcessLoading(true);
 
-      const token = localStorage.getItem('token');
       const response = await axios.post(`${API_URL}/api/rewards/process`, {}, {
         headers: { Authorization: `Bearer ${token}` }
       });
@@ -130,9 +136,41 @@ const RewardsApp = () => {
     }
   };
 
+  const handleManualReward = async () => {
+    if (!manualReviewId.trim()) {
+      alert('Veuillez entrer un ID d\'avis');
+      return;
+    }
+
+    try {
+      setManualLoading(true);
+      setManualResult(null);
+
+      const response = await axios.post(`${API_URL}/api/rewards/manual`, {
+        review_id: manualReviewId
+      }, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+
+      setManualResult({ success: true, message: response.data.message });
+      setManualReviewId('');
+
+      if (activeTab === 'history') {
+        await loadHistory();
+      }
+    } catch (error) {
+      console.error('Erreur lors de la récompense manuelle:', error);
+      setManualResult({
+        success: false,
+        message: error.response?.data?.error || 'Erreur lors de la récompense'
+      });
+    } finally {
+      setManualLoading(false);
+    }
+  };
+
   const handleToggleEnabled = async () => {
     try {
-      const token = localStorage.getItem('token');
       const response = await axios.post(`${API_URL}/api/rewards/toggle`,
         { enabled: !config.enabled },
         { headers: { Authorization: `Bearer ${token}` } }
@@ -150,7 +188,6 @@ const RewardsApp = () => {
     try {
       setHistoryLoading(true);
 
-      const token = localStorage.getItem('token');
       const url = historyDateFilter
         ? `${API_URL}/api/rewards/history?date=${historyDateFilter}`
         : `${API_URL}/api/rewards/history`;
@@ -172,7 +209,6 @@ const RewardsApp = () => {
     try {
       setLogsLoading(true);
 
-      const token = localStorage.getItem('token');
       const url = logsDateFilter
         ? `${API_URL}/api/rewards/history?date=${logsDateFilter}`
         : `${API_URL}/api/rewards/history`;
@@ -191,7 +227,6 @@ const RewardsApp = () => {
 
   const handleExportHistory = async () => {
     try {
-      const token = localStorage.getItem('token');
       const url = historyDateFilter
         ? `${API_URL}/api/rewards/history/export?date=${historyDateFilter}`
         : `${API_URL}/api/rewards/history/export`;
@@ -215,23 +250,29 @@ const RewardsApp = () => {
     }
   };
 
+  const handleLogout = () => {
+    logout();
+    navigate('/login');
+  };
+
   const renderConfigTab = () => (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h2 className="text-2xl font-bold text-gray-800">Configuration WPLoyalty</h2>
-        <button
-          onClick={handleToggleEnabled}
-          className={`px-4 py-2 rounded font-semibold ${
-            config.enabled
-              ? 'bg-green-600 hover:bg-green-700 text-white'
-              : 'bg-gray-400 hover:bg-gray-500 text-white'
-          }`}
-        >
-          {config.enabled ? '✓ Activé' : '✗ Désactivé'}
-        </button>
-      </div>
+      <div className="bg-white rounded-lg shadow-md p-6">
+        <div className="flex items-center justify-between mb-6">
+          <h2 className="text-xl font-bold text-gray-800">Configuration WPLoyalty</h2>
+          <button
+            onClick={handleToggleEnabled}
+            className={`px-4 py-2 rounded-lg font-semibold transition ${
+              config.enabled
+                ? 'bg-green-600 hover:bg-green-700 text-white'
+                : 'bg-gray-400 hover:bg-gray-500 text-white'
+            }`}
+          >
+            {config.enabled ? '✓ Activé' : '✗ Désactivé'}
+          </button>
+        </div>
 
-      <div className="bg-white rounded-lg shadow p-6 space-y-4">
+        <div className="space-y-4">
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">
             URL WooCommerce
@@ -241,7 +282,7 @@ const RewardsApp = () => {
             value={config.woocommerce_url}
             onChange={(e) => handleConfigChange('woocommerce_url', e.target.value)}
             placeholder="https://votre-site.com"
-            className="w-full px-4 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
           />
         </div>
 
@@ -254,7 +295,7 @@ const RewardsApp = () => {
             value={config.consumer_key}
             onChange={(e) => handleConfigChange('consumer_key', e.target.value)}
             placeholder="ck_..."
-            className="w-full px-4 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
           />
         </div>
 
@@ -267,7 +308,7 @@ const RewardsApp = () => {
             value={config.consumer_secret}
             onChange={(e) => handleConfigChange('consumer_secret', e.target.value)}
             placeholder="cs_..."
-            className="w-full px-4 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
           />
         </div>
 
@@ -281,7 +322,7 @@ const RewardsApp = () => {
               value={config.points_site}
               onChange={(e) => handleConfigChange('points_site', parseInt(e.target.value) || 0)}
               min="0"
-              className="w-full px-4 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             />
           </div>
 
@@ -294,16 +335,16 @@ const RewardsApp = () => {
               value={config.points_product}
               onChange={(e) => handleConfigChange('points_product', parseInt(e.target.value) || 0)}
               min="0"
-              className="w-full px-4 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             />
           </div>
         </div>
 
-        <div className="flex space-x-4 pt-4">
+        <div className="flex gap-3 pt-4">
           <button
             onClick={handleSaveConfig}
             disabled={configLoading}
-            className="flex-1 bg-blue-600 text-white px-6 py-3 rounded font-semibold hover:bg-blue-700 disabled:bg-gray-400"
+            className="flex-1 bg-blue-600 text-white px-6 py-3 rounded-lg font-semibold hover:bg-blue-700 disabled:bg-gray-400 transition"
           >
             {configLoading ? 'Sauvegarde...' : 'Sauvegarder'}
           </button>
@@ -311,7 +352,7 @@ const RewardsApp = () => {
           <button
             onClick={handleTestConnection}
             disabled={testLoading}
-            className="flex-1 bg-green-600 text-white px-6 py-3 rounded font-semibold hover:bg-green-700 disabled:bg-gray-400"
+            className="flex-1 bg-green-600 text-white px-6 py-3 rounded-lg font-semibold hover:bg-green-700 disabled:bg-gray-400 transition"
           >
             {testLoading ? 'Test en cours...' : 'Tester la connexion'}
           </button>
@@ -319,15 +360,42 @@ const RewardsApp = () => {
           <button
             onClick={handleProcessRewards}
             disabled={processLoading}
-            className="flex-1 bg-purple-600 text-white px-6 py-3 rounded font-semibold hover:bg-purple-700 disabled:bg-gray-400"
+            className="flex-1 bg-purple-600 text-white px-6 py-3 rounded-lg font-semibold hover:bg-purple-700 disabled:bg-gray-400 transition"
           >
             {processLoading ? 'Traitement...' : 'Lancer manuellement'}
           </button>
         </div>
 
         {testResult && (
-          <div className={`p-4 rounded ${testResult.success ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+          <div className={`p-4 rounded-lg ${testResult.success ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
             <p className="font-semibold">{testResult.success ? '✓' : '✗'} {testResult.message}</p>
+          </div>
+        )}
+      </div>
+      </div>
+
+      {/* Manual Reward Section */}
+      <div className="bg-white rounded-lg shadow-md p-6">
+        <h3 className="text-lg font-bold text-gray-800 mb-4">Récompenser un avis spécifique</h3>
+        <div className="flex gap-3">
+          <input
+            type="text"
+            value={manualReviewId}
+            onChange={(e) => setManualReviewId(e.target.value)}
+            placeholder="Entrez l'ID de l'avis"
+            className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          />
+          <button
+            onClick={handleManualReward}
+            disabled={manualLoading}
+            className="bg-orange-600 text-white px-6 py-2 rounded-lg font-semibold hover:bg-orange-700 disabled:bg-gray-400 transition"
+          >
+            {manualLoading ? 'Traitement...' : 'Récompenser'}
+          </button>
+        </div>
+        {manualResult && (
+          <div className={`mt-4 p-4 rounded-lg ${manualResult.success ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+            <p className="font-semibold">{manualResult.success ? '✓' : '✗'} {manualResult.message}</p>
           </div>
         )}
       </div>
@@ -344,18 +412,18 @@ const RewardsApp = () => {
 
   const renderHistoryTab = () => (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h2 className="text-2xl font-bold text-gray-800">Avis récompensés</h2>
-        <div className="flex space-x-4">
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <h2 className="text-xl font-bold text-gray-800">Avis récompensés</h2>
+        <div className="flex gap-3">
           <input
             type="date"
             value={historyDateFilter}
             onChange={(e) => setHistoryDateFilter(e.target.value)}
-            className="px-4 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
+            className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
           />
           <button
             onClick={handleExportHistory}
-            className="bg-green-600 text-white px-4 py-2 rounded font-semibold hover:bg-green-700"
+            className="bg-green-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-green-700 transition"
           >
             📥 Exporter CSV
           </button>
@@ -363,20 +431,20 @@ const RewardsApp = () => {
       </div>
 
       {stats && (
-        <div className="grid grid-cols-4 gap-4">
-          <div className="bg-white rounded-lg shadow p-4">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div className="bg-white rounded-lg shadow-md p-4">
             <p className="text-sm text-gray-600">Total récompenses</p>
             <p className="text-2xl font-bold text-gray-800">{stats.total_rewards}</p>
           </div>
-          <div className="bg-white rounded-lg shadow p-4">
+          <div className="bg-white rounded-lg shadow-md p-4">
             <p className="text-sm text-gray-600">Total points</p>
             <p className="text-2xl font-bold text-blue-600">{stats.total_points}</p>
           </div>
-          <div className="bg-white rounded-lg shadow p-4">
+          <div className="bg-white rounded-lg shadow-md p-4">
             <p className="text-sm text-gray-600">Réussies</p>
             <p className="text-2xl font-bold text-green-600">{stats.successful_rewards}</p>
           </div>
-          <div className="bg-white rounded-lg shadow p-4">
+          <div className="bg-white rounded-lg shadow-md p-4">
             <p className="text-sm text-gray-600">Échouées</p>
             <p className="text-2xl font-bold text-red-600">{stats.failed_rewards}</p>
           </div>
@@ -386,23 +454,23 @@ const RewardsApp = () => {
       {historyLoading ? (
         <div className="text-center py-8">Chargement...</div>
       ) : (
-        <div className="bg-white rounded-lg shadow overflow-hidden">
+        <div className="bg-white rounded-lg shadow-md overflow-hidden">
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
                 <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Review ID</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Email</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Points</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Statut API</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Erreur</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Review ID</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Email</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Points</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Statut API</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Erreur</th>
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
                 {history.map((entry) => (
-                  <tr key={entry.id} className="hover:bg-gray-50">
+                  <tr key={entry.id} className="hover:bg-gray-50 transition">
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                       {new Date(entry.created_at).toLocaleString('fr-FR')}
                     </td>
@@ -451,36 +519,36 @@ const RewardsApp = () => {
 
   const renderLogsTab = () => (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h2 className="text-2xl font-bold text-gray-800">Logs des récompenses</h2>
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <h2 className="text-xl font-bold text-gray-800">Logs des récompenses</h2>
         <input
           type="date"
           value={logsDateFilter}
           onChange={(e) => setLogsDateFilter(e.target.value)}
-          className="px-4 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
+          className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
         />
       </div>
 
       {logsLoading ? (
         <div className="text-center py-8">Chargement...</div>
       ) : (
-        <div className="bg-white rounded-lg shadow overflow-hidden">
+        <div className="bg-white rounded-lg shadow-md overflow-hidden">
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
                 <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Review ID</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Email</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Points</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Détails</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Review ID</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Email</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Points</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Détails</th>
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
                 {logs.map((log) => (
-                  <tr key={log.id} className="hover:bg-gray-50">
+                  <tr key={log.id} className="hover:bg-gray-50 transition">
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                       {new Date(log.created_at).toLocaleString('fr-FR')}
                     </td>
@@ -533,40 +601,57 @@ const RewardsApp = () => {
 
   return (
     <div className="min-h-screen bg-gray-100">
-      <div className="max-w-7xl mx-auto p-6">
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-800">🎁 Récompense Avis</h1>
-          <p className="text-gray-600 mt-2">Système automatique de récompenses fidélité via WPLoyalty</p>
+      {/* Header */}
+      <div className="bg-white shadow-sm border-b">
+        <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
+          <div className="flex items-center space-x-4">
+            <button
+              onClick={() => navigate('/home')}
+              className="text-gray-600 hover:text-gray-800 font-semibold transition"
+            >
+              ← Retour
+            </button>
+            <h1 className="text-2xl font-bold text-gray-800">🎁 Récompense Avis</h1>
+          </div>
+          <button
+            onClick={handleLogout}
+            className="px-4 py-2 bg-red-600 text-white rounded-lg font-semibold hover:bg-red-700 transition"
+          >
+            Déconnexion
+          </button>
         </div>
+      </div>
 
-        <div className="bg-white rounded-lg shadow mb-6">
+      <div className="max-w-7xl mx-auto p-6">
+        {/* Tabs */}
+        <div className="bg-white rounded-lg shadow-md mb-6">
           <div className="flex border-b">
             <button
               onClick={() => setActiveTab('config')}
-              className={`flex-1 px-6 py-3 font-semibold ${
+              className={`flex-1 px-6 py-4 font-semibold transition ${
                 activeTab === 'config'
                   ? 'border-b-2 border-blue-600 text-blue-600'
-                  : 'text-gray-600 hover:text-gray-800'
+                  : 'text-gray-600 hover:text-gray-800 hover:bg-gray-50'
               }`}
             >
-              ⚙️ Paramètres
+              ⚙️ Configuration
             </button>
             <button
               onClick={() => setActiveTab('history')}
-              className={`flex-1 px-6 py-3 font-semibold ${
+              className={`flex-1 px-6 py-4 font-semibold transition ${
                 activeTab === 'history'
                   ? 'border-b-2 border-blue-600 text-blue-600'
-                  : 'text-gray-600 hover:text-gray-800'
+                  : 'text-gray-600 hover:text-gray-800 hover:bg-gray-50'
               }`}
             >
               🎁 Avis récompensés
             </button>
             <button
               onClick={() => setActiveTab('logs')}
-              className={`flex-1 px-6 py-3 font-semibold ${
+              className={`flex-1 px-6 py-4 font-semibold transition ${
                 activeTab === 'logs'
                   ? 'border-b-2 border-blue-600 text-blue-600'
-                  : 'text-gray-600 hover:text-gray-800'
+                  : 'text-gray-600 hover:text-gray-800 hover:bg-gray-50'
               }`}
             >
               📋 Logs
@@ -574,6 +659,7 @@ const RewardsApp = () => {
           </div>
         </div>
 
+        {/* Tab Content */}
         {activeTab === 'config' && renderConfigTab()}
         {activeTab === 'history' && renderHistoryTab()}
         {activeTab === 'logs' && renderLogsTab()}

@@ -23,4 +23,7 @@ router.get('/history/export', rewardsController.exportHistory);
 // Activer/Désactiver le système
 router.post('/toggle', rewardsController.toggleEnabled);
 
+// Récompenser manuellement un avis spécifique
+router.post('/manual', rewardsController.rewardManual);
+
 module.exports = router;

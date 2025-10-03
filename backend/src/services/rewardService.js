@@ -187,6 +187,83 @@ const rewardService = {
         details: error.response?.data
       };
     }
+  },
+
+  // Récompenser manuellement un avis spécifique par son ID
+  rewardManual: async (review_id) => {
+    try {
+      // Récupérer la configuration
+      const config = await rewardsConfigModel.get();
+
+      if (!config) {
+        return { success: false, error: 'Aucune configuration trouvée' };
+      }
+
+      if (!config.enabled) {
+        return { success: false, error: 'Système de récompenses désactivé' };
+      }
+
+      // Récupérer l'avis
+      const query = 'SELECT * FROM reviews WHERE review_id = $1';
+      const result = await pool.query(query, [review_id]);
+
+      if (result.rows.length === 0) {
+        return { success: false, error: 'Avis non trouvé' };
+      }
+
+      const review = result.rows[0];
+
+      // Vérifier que l'avis est publié
+      if (review.review_status !== 1) {
+        return { success: false, error: 'L\'avis n\'est pas publié (review_status doit être 1)' };
+      }
+
+      // Vérifier qu'il y a un email
+      if (!review.customer_email) {
+        return { success: false, error: 'Aucun email associé à cet avis' };
+      }
+
+      // Vérifier qu'il n'a pas déjà été récompensé
+      if (review.rewarded) {
+        return { success: false, error: 'Cet avis a déjà été récompensé' };
+      }
+
+      // Double check avec l'historique
+      const alreadyRewarded = await rewardsHistoryModel.exists(review.review_id);
+      if (alreadyRewarded) {
+        return { success: false, error: 'Cet avis est déjà dans l\'historique des récompenses' };
+      }
+
+      // Déterminer le nombre de points
+      const points = review.review_type === 'site' ? config.points_site : config.points_product;
+
+      // Récompenser
+      const rewardResult = await rewardService.rewardCustomer(
+        config,
+        review.customer_email,
+        points,
+        review
+      );
+
+      if (rewardResult.success) {
+        return {
+          success: true,
+          message: `Avis ${review_id} récompensé avec succès (${points} points attribués à ${review.customer_email})`
+        };
+      } else {
+        return {
+          success: false,
+          error: `Échec de la récompense: ${rewardResult.error}`
+        };
+      }
+
+    } catch (error) {
+      console.error('Erreur dans rewardManual:', error);
+      return {
+        success: false,
+        error: error.message
+      };
+    }
   }
 };
 

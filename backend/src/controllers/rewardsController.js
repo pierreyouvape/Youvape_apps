@@ -195,6 +195,35 @@ const rewardsController = {
       console.error('Erreur lors du changement de statut:', error);
       res.status(500).json({ error: 'Erreur serveur' });
     }
+  },
+
+  // Récompenser manuellement un avis spécifique
+  rewardManual: async (req, res) => {
+    try {
+      const { review_id } = req.body;
+
+      if (!review_id) {
+        return res.status(400).json({ error: 'L\'ID de l\'avis est requis' });
+      }
+
+      const result = await rewardService.rewardManual(review_id);
+
+      if (result.success) {
+        res.json({
+          success: true,
+          message: result.message
+        });
+      } else {
+        res.status(400).json({
+          success: false,
+          error: result.error
+        });
+      }
+
+    } catch (error) {
+      console.error('Erreur lors de la récompense manuelle:', error);
+      res.status(500).json({ error: 'Erreur serveur' });
+    }
   }
 };
 
