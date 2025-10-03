@@ -6,7 +6,7 @@ import axios from 'axios';
 const RewardsApp = () => {
   const { token, logout } = useContext(AuthContext);
   const navigate = useNavigate();
-  const API_URL = import.meta.env.VITE_API_URL?.replace('/auth', '') || 'http://localhost:3000/api';
+  const API_BASE_URL = import.meta.env.VITE_API_URL?.replace('/auth', '') || 'http://localhost:3000/api';
 
   const [activeTab, setActiveTab] = useState('config');
 
@@ -54,7 +54,7 @@ const RewardsApp = () => {
 
   const loadConfig = async () => {
     try {
-      const response = await axios.get(`${API_URL}/api/rewards/config`, {
+      const response = await axios.get(`${API_BASE_URL}/rewards/config`, {
         headers: { Authorization: `Bearer ${token}` }
       });
 
@@ -75,7 +75,7 @@ const RewardsApp = () => {
       setConfigLoading(true);
       setTestResult(null);
 
-      const response = await axios.post(`${API_URL}/api/rewards/config`, config, {
+      const response = await axios.post(`${API_BASE_URL}/rewards/config`, config, {
         headers: { Authorization: `Bearer ${token}` }
       });
 
@@ -94,7 +94,7 @@ const RewardsApp = () => {
       setTestLoading(true);
       setTestResult(null);
 
-      const response = await axios.post(`${API_URL}/api/rewards/test-connection`, {}, {
+      const response = await axios.post(`${API_BASE_URL}/rewards/test-connection`, {}, {
         headers: { Authorization: `Bearer ${token}` }
       });
 
@@ -118,7 +118,7 @@ const RewardsApp = () => {
     try {
       setProcessLoading(true);
 
-      const response = await axios.post(`${API_URL}/api/rewards/process`, {}, {
+      const response = await axios.post(`${API_BASE_URL}/rewards/process`, {}, {
         headers: { Authorization: `Bearer ${token}` }
       });
 
@@ -145,7 +145,7 @@ const RewardsApp = () => {
       setManualLoading(true);
       setManualResult(null);
 
-      const response = await axios.post(`${API_URL}/api/rewards/manual`, {
+      const response = await axios.post(`${API_BASE_URL}/rewards/manual`, {
         review_id: manualReviewId
       }, {
         headers: { Authorization: `Bearer ${token}` }
@@ -170,7 +170,7 @@ const RewardsApp = () => {
 
   const handleToggleEnabled = async () => {
     try {
-      const response = await axios.post(`${API_URL}/api/rewards/toggle`,
+      const response = await axios.post(`${API_BASE_URL}/rewards/toggle`,
         { enabled: !config.enabled },
         { headers: { Authorization: `Bearer ${token}` } }
       );
@@ -188,8 +188,8 @@ const RewardsApp = () => {
       setHistoryLoading(true);
 
       const url = historyDateFilter
-        ? `${API_URL}/api/rewards/history?date=${historyDateFilter}`
-        : `${API_URL}/api/rewards/history`;
+        ? `${API_BASE_URL}/rewards/history?date=${historyDateFilter}`
+        : `${API_BASE_URL}/rewards/history`;
 
       const response = await axios.get(url, {
         headers: { Authorization: `Bearer ${token}` }
@@ -209,8 +209,8 @@ const RewardsApp = () => {
       setLogsLoading(true);
 
       const url = logsDateFilter
-        ? `${API_URL}/api/rewards/history?date=${logsDateFilter}`
-        : `${API_URL}/api/rewards/history`;
+        ? `${API_BASE_URL}/rewards/history?date=${logsDateFilter}`
+        : `${API_BASE_URL}/rewards/history`;
 
       const response = await axios.get(url, {
         headers: { Authorization: `Bearer ${token}` }
@@ -227,8 +227,8 @@ const RewardsApp = () => {
   const handleExportHistory = async () => {
     try {
       const url = historyDateFilter
-        ? `${API_URL}/api/rewards/history/export?date=${historyDateFilter}`
-        : `${API_URL}/api/rewards/history/export`;
+        ? `${API_BASE_URL}/rewards/history/export?date=${historyDateFilter}`
+        : `${API_BASE_URL}/rewards/history/export`;
 
       const response = await axios.get(url, {
         headers: { Authorization: `Bearer ${token}` },
