@@ -57,6 +57,13 @@ const reviewsModel = {
     const query = 'SELECT * FROM reviews WHERE id = $1';
     const result = await pool.query(query, [id]);
     return result.rows[0];
+  },
+
+  // Vider tous les avis
+  deleteAll: async () => {
+    const query = 'TRUNCATE TABLE reviews CASCADE';
+    await pool.query(query);
+    return { success: true };
   }
 };
 

@@ -199,6 +199,24 @@ const ReviewsApp = () => {
     return '⭐'.repeat(Math.min(rating, 5));
   };
 
+  const handleDeleteAllReviews = async () => {
+    if (!window.confirm('⚠️ Êtes-vous sûr de vouloir supprimer TOUS les avis ? Cette action est irréversible.')) {
+      return;
+    }
+
+    try {
+      await axios.delete(`${API_BASE_URL}/reviews/stored`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+
+      alert('✅ Tous les avis ont été supprimés');
+      fetchStoredReviews();
+    } catch (err) {
+      alert('❌ Erreur lors de la suppression des avis');
+      console.error(err);
+    }
+  };
+
   const handleLogout = () => {
     logout();
     navigate('/login');
@@ -394,12 +412,20 @@ const ReviewsApp = () => {
         <div style={{ backgroundColor: '#f5f5f5', padding: '20px', borderRadius: '8px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
             <h2>Avis récupérés ({reviews.length})</h2>
-            <button
-              onClick={fetchStoredReviews}
-              style={{ padding: '8px 16px', backgroundColor: '#007bff', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
-            >
-              🔄 Actualiser
-            </button>
+            <div>
+              <button
+                onClick={fetchStoredReviews}
+                style={{ padding: '8px 16px', backgroundColor: '#007bff', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', marginRight: '10px' }}
+              >
+                🔄 Actualiser
+              </button>
+              <button
+                onClick={handleDeleteAllReviews}
+                style={{ padding: '8px 16px', backgroundColor: '#dc3545', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
+              >
+                🗑️ Vider tous les avis
+              </button>
+            </div>
           </div>
 
           {reviewsLoading ? (

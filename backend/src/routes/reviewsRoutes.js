@@ -16,6 +16,9 @@ router.get('/config', reviewsController.getConfig);
 // Route pour récupérer les avis stockés
 router.get('/stored', reviewsController.getStoredReviews);
 
+// Route pour vider tous les avis
+router.delete('/stored', reviewsController.deleteAllReviews);
+
 // Route pour mettre à jour le statut récompensé
 router.patch('/:id/reward', reviewsController.updateRewardStatus);
 

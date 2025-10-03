@@ -237,6 +237,22 @@ const reviewsController = {
     }
   },
 
+  // Vider tous les avis
+  deleteAllReviews: async (req, res) => {
+    try {
+      await reviewsModel.deleteAll();
+
+      res.json({
+        success: true,
+        message: 'Tous les avis ont été supprimés'
+      });
+
+    } catch (error) {
+      console.error('Erreur lors de la suppression des avis:', error);
+      res.status(500).json({ error: 'Erreur serveur' });
+    }
+  },
+
   // Récupérer tous les logs
   getLogs: async (req, res) => {
     try {
