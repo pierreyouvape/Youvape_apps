@@ -58,14 +58,31 @@ const fetchReviewsAuto = async () => {
       if (responseData && responseData.reviews && Array.isArray(responseData.reviews)) {
         for (const review of responseData.reviews) {
           try {
+            // Déterminer le type d'avis
+            const isProductReview = review.product && review.product !== 'no';
+            const reviewType = isProductReview ? 'product' : 'site';
+
+            // Construire le nom complet du client
+            const firstName = review.reviewer_name || '';
+            const lastName = review.reviewer_lastname || '';
+            const fullName = `${firstName} ${lastName}`.trim() || null;
+
+            // Convertir la date au format ISO pour PostgreSQL
+            let reviewDate = null;
+            if (review.date_time) {
+              // Format reçu: "2025-10-01 11:26:51"
+              reviewDate = review.date_time.replace(' ', 'T');
+            }
+
             const inserted = await reviewsModel.create({
               review_id: review.id || `${Date.now()}-${Math.random()}`,
-              review_type: review.type || review_type,
-              rating: review.rating || review.note || 0,
-              comment: review.comment || review.message || null,
-              customer_name: review.customer_name || review.author || null,
-              product_id: review.product_id || product_id || null,
-              review_date: review.date || review.created_at || null
+              review_type: reviewType,
+              rating: parseInt(review.review_rating) || 0,
+              comment: review.review_text || null,
+              customer_name: fullName,
+              customer_email: review.reviewer_email || null,
+              product_id: isProductReview ? review.product : null,
+              review_date: reviewDate
             });
             if (inserted) {
               insertedCount++;

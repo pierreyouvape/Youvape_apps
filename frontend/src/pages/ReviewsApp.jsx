@@ -413,6 +413,7 @@ const ReviewsApp = () => {
                   <tr style={{ backgroundColor: '#007bff', color: 'white' }}>
                     <th style={{ padding: '10px', textAlign: 'left', border: '1px solid #ddd' }}>Date</th>
                     <th style={{ padding: '10px', textAlign: 'left', border: '1px solid #ddd' }}>Client</th>
+                    <th style={{ padding: '10px', textAlign: 'left', border: '1px solid #ddd' }}>Email</th>
                     <th style={{ padding: '10px', textAlign: 'left', border: '1px solid #ddd' }}>Note</th>
                     <th style={{ padding: '10px', textAlign: 'left', border: '1px solid #ddd' }}>Type</th>
                     <th style={{ padding: '10px', textAlign: 'left', border: '1px solid #ddd' }}>Commentaire</th>
@@ -427,6 +428,9 @@ const ReviewsApp = () => {
                       </td>
                       <td style={{ padding: '8px', border: '1px solid #ddd' }}>
                         {review.customer_name || 'Anonyme'}
+                      </td>
+                      <td style={{ padding: '8px', border: '1px solid #ddd' }}>
+                        {review.customer_email || '-'}
                       </td>
                       <td style={{ padding: '8px', border: '1px solid #ddd' }}>
                         {renderStars(review.rating)}

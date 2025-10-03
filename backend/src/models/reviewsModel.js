@@ -3,11 +3,11 @@ const pool = require('../config/database');
 const reviewsModel = {
   // Insérer un avis (ignoré si review_id existe déjà)
   create: async (reviewData) => {
-    const { review_id, review_type, rating, comment, customer_name, product_id, review_date } = reviewData;
+    const { review_id, review_type, rating, comment, customer_name, customer_email, product_id, review_date } = reviewData;
 
     const query = `
-      INSERT INTO reviews (review_id, review_type, rating, comment, customer_name, product_id, review_date)
-      VALUES ($1, $2, $3, $4, $5, $6, $7)
+      INSERT INTO reviews (review_id, review_type, rating, comment, customer_name, customer_email, product_id, review_date)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
       ON CONFLICT (review_id) DO NOTHING
       RETURNING *
     `;
@@ -18,6 +18,7 @@ const reviewsModel = {
       rating,
       comment || null,
       customer_name || null,
+      customer_email || null,
       product_id || null,
       review_date || null
     ];
