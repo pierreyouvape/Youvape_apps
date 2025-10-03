@@ -253,6 +253,43 @@ const reviewsController = {
     }
   },
 
+  // Créer un avis manuellement (pour les tests)
+  createManualReview: async (req, res) => {
+    try {
+      const { review_type, rating, comment, customer_name, customer_email, product_id, review_status } = req.body;
+
+      // Validation
+      if (!review_type || !rating || !customer_name) {
+        return res.status(400).json({ error: 'review_type, rating et customer_name sont requis' });
+      }
+
+      // Générer un ID unique
+      const review_id = `manual_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+      const inserted = await reviewsModel.create({
+        review_id,
+        review_type,
+        rating: parseInt(rating),
+        comment: comment || null,
+        customer_name,
+        customer_email: customer_email || null,
+        product_id: product_id || null,
+        review_date: new Date().toISOString(),
+        review_status: parseInt(review_status) || 0
+      });
+
+      res.json({
+        success: true,
+        message: 'Avis créé avec succès',
+        review: inserted
+      });
+
+    } catch (error) {
+      console.error('Erreur lors de la création manuelle de l\'avis:', error);
+      res.status(500).json({ error: 'Erreur serveur' });
+    }
+  },
+
   // Récupérer tous les logs
   getLogs: async (req, res) => {
     try {

@@ -19,6 +19,9 @@ router.get('/stored', reviewsController.getStoredReviews);
 // Route pour vider tous les avis
 router.delete('/stored', reviewsController.deleteAllReviews);
 
+// Route pour créer un avis manuellement
+router.post('/manual', reviewsController.createManualReview);
+
 // Route pour mettre à jour le statut récompensé
 router.patch('/:id/reward', reviewsController.updateRewardStatus);
 

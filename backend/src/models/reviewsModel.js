@@ -37,11 +37,11 @@ const reviewsModel = {
     return result.rows[0];
   },
 
-  // Récupérer tous les avis triés par date décroissante
+  // Récupérer tous les avis triés par date de l'avis (les plus récents en haut)
   getAll: async () => {
     const query = `
       SELECT * FROM reviews
-      ORDER BY created_at DESC
+      ORDER BY review_date DESC NULLS LAST, created_at DESC
     `;
 
     const result = await pool.query(query);

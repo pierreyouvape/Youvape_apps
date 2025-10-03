@@ -32,6 +32,19 @@ const ReviewsApp = () => {
   const [reviewsLoading, setReviewsLoading] = useState(false);
   const [expandedReview, setExpandedReview] = useState(null);
 
+  // Formulaire de création manuelle d'avis
+  const [manualReview, setManualReview] = useState({
+    review_type: 'site',
+    rating: 5,
+    comment: '',
+    customer_name: '',
+    customer_email: '',
+    product_id: '',
+    review_status: 1
+  });
+  const [manualLoading, setManualLoading] = useState(false);
+  const [manualMessage, setManualMessage] = useState('');
+
   // Logs
   const [logs, setLogs] = useState([]);
   const [selectedDate, setSelectedDate] = useState('');
@@ -197,6 +210,49 @@ const ReviewsApp = () => {
 
   const renderStars = (rating) => {
     return '⭐'.repeat(Math.min(rating, 5));
+  };
+
+  const handleManualReviewChange = (e) => {
+    const { name, value } = e.target;
+    setManualReview(prev => ({
+      ...prev,
+      [name]: value
+    }));
+  };
+
+  const handleCreateManualReview = async (e) => {
+    e.preventDefault();
+    setManualLoading(true);
+    setManualMessage('');
+
+    try {
+      const response = await axios.post(
+        `${API_BASE_URL}/reviews/manual`,
+        manualReview,
+        {
+          headers: { 'Authorization': `Bearer ${token}` }
+        }
+      );
+
+      if (response.data.success) {
+        setManualMessage('✅ Avis créé avec succès');
+        // Réinitialiser le formulaire
+        setManualReview({
+          review_type: 'site',
+          rating: 5,
+          comment: '',
+          customer_name: '',
+          customer_email: '',
+          product_id: '',
+          review_status: 1
+        });
+        setTimeout(() => setManualMessage(''), 3000);
+      }
+    } catch (err) {
+      setManualMessage('❌ ' + (err.response?.data?.error || 'Erreur lors de la création'));
+    } finally {
+      setManualLoading(false);
+    }
   };
 
   const handleDeleteAllReviews = async () => {
@@ -368,7 +424,7 @@ const ReviewsApp = () => {
           </div>
 
           {/* Test API */}
-          <div style={{ backgroundColor: '#f5f5f5', padding: '20px', borderRadius: '8px' }}>
+          <div style={{ backgroundColor: '#f5f5f5', padding: '20px', borderRadius: '8px', marginBottom: '30px' }}>
             <h2>Tester l'API maintenant</h2>
             <p>Teste l'API avec les paramètres ci-dessus et récupère les avis immédiatement.</p>
             <button
@@ -404,6 +460,123 @@ const ReviewsApp = () => {
                 )}
               </div>
             )}
+          </div>
+
+          {/* Création manuelle d'avis */}
+          <div style={{ backgroundColor: '#f5f5f5', padding: '20px', borderRadius: '8px' }}>
+            <h2>Créer un avis manuellement (Test)</h2>
+            <form onSubmit={handleCreateManualReview}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px' }}>
+                <div>
+                  <label style={{ display: 'block', marginBottom: '5px' }}>Type d'avis *</label>
+                  <select
+                    name="review_type"
+                    value={manualReview.review_type}
+                    onChange={handleManualReviewChange}
+                    required
+                    style={{ width: '100%', padding: '8px', borderRadius: '4px', border: '1px solid #ccc' }}
+                  >
+                    <option value="site">Site</option>
+                    <option value="product">Produit</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', marginBottom: '5px' }}>Note (1-5) *</label>
+                  <input
+                    type="number"
+                    name="rating"
+                    value={manualReview.rating}
+                    onChange={handleManualReviewChange}
+                    min="1"
+                    max="5"
+                    required
+                    style={{ width: '100%', padding: '8px', borderRadius: '4px', border: '1px solid #ccc' }}
+                  />
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', marginBottom: '5px' }}>Nom du client *</label>
+                  <input
+                    type="text"
+                    name="customer_name"
+                    value={manualReview.customer_name}
+                    onChange={handleManualReviewChange}
+                    required
+                    style={{ width: '100%', padding: '8px', borderRadius: '4px', border: '1px solid #ccc' }}
+                  />
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', marginBottom: '5px' }}>Email du client</label>
+                  <input
+                    type="email"
+                    name="customer_email"
+                    value={manualReview.customer_email}
+                    onChange={handleManualReviewChange}
+                    style={{ width: '100%', padding: '8px', borderRadius: '4px', border: '1px solid #ccc' }}
+                  />
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', marginBottom: '5px' }}>Product ID (si type produit)</label>
+                  <input
+                    type="text"
+                    name="product_id"
+                    value={manualReview.product_id}
+                    onChange={handleManualReviewChange}
+                    style={{ width: '100%', padding: '8px', borderRadius: '4px', border: '1px solid #ccc' }}
+                  />
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', marginBottom: '5px' }}>Statut publication *</label>
+                  <select
+                    name="review_status"
+                    value={manualReview.review_status}
+                    onChange={handleManualReviewChange}
+                    required
+                    style={{ width: '100%', padding: '8px', borderRadius: '4px', border: '1px solid #ccc' }}
+                  >
+                    <option value="1">Publié</option>
+                    <option value="0">Non publié</option>
+                  </select>
+                </div>
+              </div>
+
+              <div style={{ marginTop: '15px' }}>
+                <label style={{ display: 'block', marginBottom: '5px' }}>Commentaire</label>
+                <textarea
+                  name="comment"
+                  value={manualReview.comment}
+                  onChange={handleManualReviewChange}
+                  rows="4"
+                  style={{ width: '100%', padding: '8px', borderRadius: '4px', border: '1px solid #ccc' }}
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={manualLoading}
+                style={{
+                  padding: '10px 30px',
+                  backgroundColor: '#17a2b8',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: manualLoading ? 'not-allowed' : 'pointer',
+                  marginTop: '15px'
+                }}
+              >
+                {manualLoading ? 'Création...' : 'Créer l\'avis'}
+              </button>
+
+              {manualMessage && (
+                <span style={{ marginLeft: '10px', color: manualMessage.startsWith('✅') ? 'green' : 'red' }}>
+                  {manualMessage}
+                </span>
+              )}
+            </form>
           </div>
         </div>
       )}
