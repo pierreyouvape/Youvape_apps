@@ -15,37 +15,109 @@ const Home = () => {
     navigate('/reviews');
   };
 
-  return (
-    <div style={{ maxWidth: '600px', margin: '50px auto', padding: '20px' }}>
-      <h1>Bienvenue sur Youvape Apps</h1>
-      <p>Connecté en tant que : <strong>{user?.email}</strong></p>
+  const handleGoToRewards = () => {
+    navigate('/rewards');
+  };
 
-      <div style={{ marginTop: '30px' }}>
-        <h2>Applications disponibles</h2>
-        <div
-          onClick={handleGoToReviews}
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: '10px',
-            padding: '15px 25px',
-            backgroundColor: '#007bff',
-            color: 'white',
-            borderRadius: '8px',
-            cursor: 'pointer',
-            marginTop: '15px',
-            fontSize: '16px',
-            border: 'none'
-          }}
-        >
-          <span style={{ fontSize: '24px' }}>📱</span>
-          <span>Avis Garantis</span>
+  return (
+    <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
+      {/* Header */}
+      <div style={{
+        backgroundColor: '#135E84',
+        padding: '20px 0',
+        display: 'flex',
+        justifyContent: 'center',
+        alignItems: 'center'
+      }}>
+        <img
+          src="/images/logo.svg"
+          alt="YouVape"
+          style={{ height: '60px' }}
+        />
+      </div>
+
+      {/* Main Content */}
+      <div style={{ flex: 1, maxWidth: '800px', margin: '50px auto', padding: '20px', width: '100%' }}>
+        <h1 style={{ textAlign: 'center', color: '#135E84' }}>Bienvenue sur YouVape Apps</h1>
+        <p style={{ textAlign: 'center' }}>Connecté en tant que : <strong>{user?.email}</strong></p>
+
+        <div style={{ marginTop: '50px' }}>
+          <h2 style={{ textAlign: 'center', color: '#333' }}>Applications disponibles</h2>
+          <div style={{ display: 'flex', gap: '20px', marginTop: '30px', justifyContent: 'center', flexWrap: 'wrap' }}>
+            <div
+              onClick={handleGoToReviews}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '10px',
+                padding: '20px 30px',
+                backgroundColor: '#007bff',
+                color: 'white',
+                borderRadius: '8px',
+                cursor: 'pointer',
+                fontSize: '18px',
+                border: 'none',
+                boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
+                transition: 'transform 0.2s',
+              }}
+              onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.05)'}
+              onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
+            >
+              <span style={{ fontSize: '28px' }}>📱</span>
+              <span>Avis Garantis</span>
+            </div>
+            <div
+              onClick={handleGoToRewards}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '10px',
+                padding: '20px 30px',
+                backgroundColor: '#8b5cf6',
+                color: 'white',
+                borderRadius: '8px',
+                cursor: 'pointer',
+                fontSize: '18px',
+                border: 'none',
+                boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
+                transition: 'transform 0.2s',
+              }}
+              onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.05)'}
+              onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
+            >
+              <span style={{ fontSize: '28px' }}>🎁</span>
+              <span>Récompense Avis</span>
+            </div>
+          </div>
+        </div>
+
+        <div style={{ textAlign: 'center', marginTop: '50px' }}>
+          <button
+            onClick={handleLogout}
+            style={{
+              padding: '12px 30px',
+              backgroundColor: '#dc3545',
+              color: 'white',
+              border: 'none',
+              borderRadius: '6px',
+              fontSize: '16px',
+              cursor: 'pointer'
+            }}
+          >
+            Se déconnecter
+          </button>
         </div>
       </div>
 
-      <button onClick={handleLogout} style={{ padding: '10px 20px', marginTop: '30px' }}>
-        Se déconnecter
-      </button>
+      {/* Footer */}
+      <div style={{
+        backgroundColor: '#135E84',
+        padding: '20px 0',
+        textAlign: 'center',
+        color: 'white'
+      }}>
+        <p style={{ margin: 0 }}>© 2024 YouVape - Tous droits réservés</p>
+      </div>
     </div>
   );
 };
