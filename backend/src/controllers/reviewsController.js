@@ -1,5 +1,7 @@
 const axios = require('axios');
 const reviewsLog = require('../models/reviewsLog');
+const reviewsModel = require('../models/reviewsModel');
+const appConfigModel = require('../models/appConfigModel');
 
 const reviewsController = {
   // Récupérer les avis depuis l'API Société des Avis Garantis
@@ -35,6 +37,7 @@ const reviewsController = {
       let responseStatus = null;
       let responseData = null;
       let errorMessage = null;
+      let insertedCount = 0;
 
       try {
         // Appel à l'API externe
@@ -45,6 +48,29 @@ const reviewsController = {
 
         responseStatus = apiResponse.status;
         responseData = apiResponse.data;
+
+        // Parser et insérer les avis dans la base de données
+        if (responseData && responseData.reviews && Array.isArray(responseData.reviews)) {
+          for (const review of responseData.reviews) {
+            try {
+              const inserted = await reviewsModel.create({
+                review_id: review.id || `${Date.now()}-${Math.random()}`,
+                review_type: review.type || review_type,
+                rating: review.rating || review.note || 0,
+                comment: review.comment || review.message || null,
+                customer_name: review.customer_name || review.author || null,
+                product_id: review.product_id || product_id || null,
+                review_date: review.date || review.created_at || null
+              });
+              if (inserted) {
+                insertedCount++;
+              }
+            } catch (insertError) {
+              // Ignorer les doublons (contrainte UNIQUE sur review_id)
+              console.log(`Avis déjà existant: ${review.id}`);
+            }
+          }
+        }
 
         // Enregistrer le log
         await reviewsLog.create({
@@ -63,7 +89,8 @@ const reviewsController = {
           success: true,
           status: responseStatus,
           data: responseData,
-          reviewsCount: responseData?.reviews?.length || 0
+          reviewsCount: responseData?.reviews?.length || 0,
+          insertedCount: insertedCount
         });
 
       } catch (apiError) {
@@ -94,6 +121,101 @@ const reviewsController = {
 
     } catch (error) {
       console.error('Erreur lors de la récupération des avis:', error);
+      res.status(500).json({ error: 'Erreur serveur' });
+    }
+  },
+
+  // Sauvegarder la configuration
+  saveConfig: async (req, res) => {
+    try {
+      const { api_key, review_type, limit, product_id, interval } = req.body;
+
+      // Validation
+      if (!api_key || !review_type || !limit || !interval) {
+        return res.status(400).json({ error: 'Tous les champs sont requis (sauf product_id)' });
+      }
+
+      // Sauvegarder chaque paramètre
+      await appConfigModel.upsert('api_key', api_key);
+      await appConfigModel.upsert('review_type', review_type);
+      await appConfigModel.upsert('limit', limit.toString());
+      await appConfigModel.upsert('product_id', product_id || '');
+      await appConfigModel.upsert('interval', interval);
+
+      res.json({
+        success: true,
+        message: 'Configuration sauvegardée avec succès'
+      });
+
+    } catch (error) {
+      console.error('Erreur lors de la sauvegarde de la configuration:', error);
+      res.status(500).json({ error: 'Erreur serveur' });
+    }
+  },
+
+  // Récupérer la configuration
+  getConfig: async (req, res) => {
+    try {
+      const configs = await appConfigModel.getAll();
+
+      // Convertir en objet clé-valeur
+      const configObject = {};
+      configs.forEach(config => {
+        configObject[config.config_key] = config.config_value;
+      });
+
+      res.json({
+        success: true,
+        config: configObject
+      });
+
+    } catch (error) {
+      console.error('Erreur lors de la récupération de la configuration:', error);
+      res.status(500).json({ error: 'Erreur serveur' });
+    }
+  },
+
+  // Récupérer les avis stockés
+  getStoredReviews: async (req, res) => {
+    try {
+      const reviews = await reviewsModel.getAll();
+
+      res.json({
+        success: true,
+        count: reviews.length,
+        reviews
+      });
+
+    } catch (error) {
+      console.error('Erreur lors de la récupération des avis stockés:', error);
+      res.status(500).json({ error: 'Erreur serveur' });
+    }
+  },
+
+  // Mettre à jour le statut récompensé
+  updateRewardStatus: async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { rewarded } = req.body;
+
+      if (typeof rewarded !== 'boolean') {
+        return res.status(400).json({ error: 'Le champ rewarded doit être un booléen' });
+      }
+
+      const updated = await reviewsModel.updateRewardStatus(id, rewarded);
+
+      if (!updated) {
+        return res.status(404).json({ error: 'Avis non trouvé' });
+      }
+
+      res.json({
+        success: true,
+        message: 'Statut mis à jour',
+        review: updated
+      });
+
+    } catch (error) {
+      console.error('Erreur lors de la mise à jour du statut:', error);
       res.status(500).json({ error: 'Erreur serveur' });
     }
   },

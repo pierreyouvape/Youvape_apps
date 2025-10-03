@@ -4,6 +4,7 @@ require('dotenv').config({ path: '../.env' });
 
 const authRoutes = require('./routes/auth');
 const reviewsRoutes = require('./routes/reviewsRoutes');
+const { setupCron } = require('./services/cronService');
 
 const app = express();
 const PORT = process.env.BACKEND_PORT || 3000;
@@ -21,6 +22,9 @@ app.use('/api/auth', authRoutes);
 app.use('/api/reviews', reviewsRoutes);
 
 // Start server
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
   console.log(`✓ Backend server running on port ${PORT}`);
+
+  // Initialiser le cron pour la récupération automatique des avis
+  await setupCron();
 });
