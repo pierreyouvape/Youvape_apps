@@ -29,6 +29,17 @@ services:
     networks:
       - youvape_network
 
+  frontend:
+    build: ./frontend
+    container_name: youvape_frontend
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    networks:
+      - youvape_network
+
 volumes:
   postgres_data:
 
