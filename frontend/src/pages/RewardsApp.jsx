@@ -3,11 +3,10 @@ import { useNavigate } from 'react-router-dom';
 import { AuthContext } from '../context/AuthContext';
 import axios from 'axios';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
-
 const RewardsApp = () => {
   const { token, logout } = useContext(AuthContext);
   const navigate = useNavigate();
+  const API_URL = import.meta.env.VITE_API_URL?.replace('/auth', '') || 'http://localhost:3000/api';
 
   const [activeTab, setActiveTab] = useState('config');
 
