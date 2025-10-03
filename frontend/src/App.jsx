@@ -3,6 +3,7 @@ import { AuthProvider } from './context/AuthContext';
 import Login from './components/Login';
 import Register from './components/Register';
 import Home from './pages/Home';
+import ReviewsApp from './pages/ReviewsApp';
 import PrivateRoute from './components/PrivateRoute';
 
 function App() {
@@ -13,13 +14,21 @@ function App() {
           <Route path="/" element={<Navigate to="/login" />} />
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
-          <Route 
-            path="/home" 
+          <Route
+            path="/home"
             element={
               <PrivateRoute>
                 <Home />
               </PrivateRoute>
-            } 
+            }
+          />
+          <Route
+            path="/reviews"
+            element={
+              <PrivateRoute>
+                <ReviewsApp />
+              </PrivateRoute>
+            }
           />
         </Routes>
       </BrowserRouter>
