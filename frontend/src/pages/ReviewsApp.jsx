@@ -443,7 +443,8 @@ const ReviewsApp = () => {
                     <th style={{ padding: '10px', textAlign: 'left', border: '1px solid #ddd' }}>Note</th>
                     <th style={{ padding: '10px', textAlign: 'left', border: '1px solid #ddd' }}>Type</th>
                     <th style={{ padding: '10px', textAlign: 'left', border: '1px solid #ddd' }}>Commentaire</th>
-                    <th style={{ padding: '10px', textAlign: 'left', border: '1px solid #ddd' }}>Statut</th>
+                    <th style={{ padding: '10px', textAlign: 'left', border: '1px solid #ddd' }}>Publication</th>
+                    <th style={{ padding: '10px', textAlign: 'left', border: '1px solid #ddd' }}>Récompense</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -490,6 +491,18 @@ const ReviewsApp = () => {
                             </div>
                           )
                         ) : '-'}
+                      </td>
+                      <td style={{ padding: '8px', border: '1px solid #ddd' }}>
+                        <span style={{
+                          padding: '4px 12px',
+                          borderRadius: '12px',
+                          backgroundColor: review.review_status === 1 ? '#d4edda' : '#f8d7da',
+                          color: review.review_status === 1 ? '#155724' : '#721c24',
+                          fontSize: '12px',
+                          fontWeight: 'bold'
+                        }}>
+                          {review.review_status === 1 ? '✓ Publié' : '✗ Non publié'}
+                        </span>
                       </td>
                       <td style={{ padding: '8px', border: '1px solid #ddd' }}>
                         <span style={{

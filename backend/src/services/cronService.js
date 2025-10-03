@@ -82,13 +82,14 @@ const fetchReviewsAuto = async () => {
               customer_name: fullName,
               customer_email: review.reviewer_email || null,
               product_id: isProductReview ? review.product : null,
-              review_date: reviewDate
+              review_date: reviewDate,
+              review_status: parseInt(review.review_status) || 0
             });
             if (inserted) {
               insertedCount++;
             }
           } catch (insertError) {
-            // Ignorer les doublons
+            console.log(`Erreur lors de l'insertion de l'avis ${review.id}:`, insertError.message);
           }
         }
       }
