@@ -57,7 +57,7 @@ const Login = () => {
         <div style={{ marginBottom: '15px' }}>
           <input
             type="password"
-            placeholder="Mot de passe (6 caractères)"
+            placeholder="Mot de passe "
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             style={{ width: '100%', padding: '10px' }}
