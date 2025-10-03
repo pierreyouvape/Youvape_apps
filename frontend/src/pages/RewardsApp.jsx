@@ -36,7 +36,7 @@ const RewardsApp = () => {
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyDateFilter, setHistoryDateFilter] = useState('');
 
-  // Logs state (same as history but for logs tab)
+  // Logs state
   const [logs, setLogs] = useState([]);
   const [logsLoading, setLogsLoading] = useState(false);
   const [logsDateFilter, setLogsDateFilter] = useState('');
@@ -255,154 +255,276 @@ const RewardsApp = () => {
     navigate('/login');
   };
 
+  const handleBackHome = () => {
+    navigate('/home');
+  };
+
+  // Styles
+  const tabStyle = (tabName) => ({
+    padding: '15px 30px',
+    cursor: 'pointer',
+    borderBottom: activeTab === tabName ? '3px solid #007bff' : '3px solid transparent',
+    color: activeTab === tabName ? '#007bff' : '#666',
+    fontWeight: activeTab === tabName ? 'bold' : 'normal',
+    transition: 'all 0.3s ease'
+  });
+
   const renderConfigTab = () => (
-    <div className="space-y-6">
-      <div className="bg-white rounded-lg shadow-md p-6">
-        <div className="flex items-center justify-between mb-6">
-          <h2 className="text-xl font-bold text-gray-800">Configuration WPLoyalty</h2>
+    <div>
+      {/* Configuration Card */}
+      <div style={{ backgroundColor: 'white', padding: '30px', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)', marginBottom: '30px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px' }}>
+          <h2 style={{ fontSize: '24px', fontWeight: 'bold', margin: 0 }}>Configuration WPLoyalty</h2>
           <button
             onClick={handleToggleEnabled}
-            className={`px-4 py-2 rounded-lg font-semibold transition ${
-              config.enabled
-                ? 'bg-green-600 hover:bg-green-700 text-white'
-                : 'bg-gray-400 hover:bg-gray-500 text-white'
-            }`}
+            style={{
+              padding: '10px 20px',
+              borderRadius: '8px',
+              border: 'none',
+              cursor: 'pointer',
+              fontWeight: 'bold',
+              backgroundColor: config.enabled ? '#28a745' : '#6c757d',
+              color: 'white',
+              transition: 'background-color 0.3s ease'
+            }}
           >
             {config.enabled ? '✓ Activé' : '✗ Désactivé'}
           </button>
         </div>
 
-        <div className="space-y-4">
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            URL WooCommerce
-          </label>
-          <input
-            type="text"
-            value={config.woocommerce_url}
-            onChange={(e) => handleConfigChange('woocommerce_url', e.target.value)}
-            placeholder="https://votre-site.com"
-            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-          />
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            Consumer Key
-          </label>
-          <input
-            type="text"
-            value={config.consumer_key}
-            onChange={(e) => handleConfigChange('consumer_key', e.target.value)}
-            placeholder="ck_..."
-            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-          />
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            Consumer Secret
-          </label>
-          <input
-            type="password"
-            value={config.consumer_secret}
-            onChange={(e) => handleConfigChange('consumer_secret', e.target.value)}
-            placeholder="cs_..."
-            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-          />
-        </div>
-
-        <div className="grid grid-cols-2 gap-4">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Points pour avis site
+            <label style={{ display: 'block', marginBottom: '8px', fontWeight: '500', fontSize: '14px' }}>
+              URL WooCommerce
             </label>
             <input
-              type="number"
-              value={config.points_site}
-              onChange={(e) => handleConfigChange('points_site', parseInt(e.target.value) || 0)}
-              min="0"
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              type="text"
+              value={config.woocommerce_url}
+              onChange={(e) => handleConfigChange('woocommerce_url', e.target.value)}
+              placeholder="https://votre-site.com"
+              style={{
+                width: '100%',
+                padding: '12px',
+                border: '1px solid #ddd',
+                borderRadius: '6px',
+                fontSize: '16px',
+                boxSizing: 'border-box'
+              }}
             />
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Points pour avis produit
+            <label style={{ display: 'block', marginBottom: '8px', fontWeight: '500', fontSize: '14px' }}>
+              Consumer Key
             </label>
             <input
-              type="number"
-              value={config.points_product}
-              onChange={(e) => handleConfigChange('points_product', parseInt(e.target.value) || 0)}
-              min="0"
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              type="text"
+              value={config.consumer_key}
+              onChange={(e) => handleConfigChange('consumer_key', e.target.value)}
+              placeholder="ck_..."
+              style={{
+                width: '100%',
+                padding: '12px',
+                border: '1px solid #ddd',
+                borderRadius: '6px',
+                fontSize: '16px',
+                boxSizing: 'border-box'
+              }}
             />
           </div>
-        </div>
 
-        <div className="flex gap-3 pt-4">
-          <button
-            onClick={handleSaveConfig}
-            disabled={configLoading}
-            className="flex-1 bg-blue-600 text-white px-6 py-3 rounded-lg font-semibold hover:bg-blue-700 disabled:bg-gray-400 transition"
-          >
-            {configLoading ? 'Sauvegarde...' : 'Sauvegarder'}
-          </button>
-
-          <button
-            onClick={handleTestConnection}
-            disabled={testLoading}
-            className="flex-1 bg-green-600 text-white px-6 py-3 rounded-lg font-semibold hover:bg-green-700 disabled:bg-gray-400 transition"
-          >
-            {testLoading ? 'Test en cours...' : 'Tester la connexion'}
-          </button>
-
-          <button
-            onClick={handleProcessRewards}
-            disabled={processLoading}
-            className="flex-1 bg-purple-600 text-white px-6 py-3 rounded-lg font-semibold hover:bg-purple-700 disabled:bg-gray-400 transition"
-          >
-            {processLoading ? 'Traitement...' : 'Lancer manuellement'}
-          </button>
-        </div>
-
-        {testResult && (
-          <div className={`p-4 rounded-lg ${testResult.success ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
-            <p className="font-semibold">{testResult.success ? '✓' : '✗'} {testResult.message}</p>
+          <div>
+            <label style={{ display: 'block', marginBottom: '8px', fontWeight: '500', fontSize: '14px' }}>
+              Consumer Secret
+            </label>
+            <input
+              type="password"
+              value={config.consumer_secret}
+              onChange={(e) => handleConfigChange('consumer_secret', e.target.value)}
+              placeholder="cs_..."
+              style={{
+                width: '100%',
+                padding: '12px',
+                border: '1px solid #ddd',
+                borderRadius: '6px',
+                fontSize: '16px',
+                boxSizing: 'border-box'
+              }}
+            />
           </div>
-        )}
-      </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+            <div>
+              <label style={{ display: 'block', marginBottom: '8px', fontWeight: '500', fontSize: '14px' }}>
+                Points pour avis site
+              </label>
+              <input
+                type="number"
+                value={config.points_site}
+                onChange={(e) => handleConfigChange('points_site', parseInt(e.target.value) || 0)}
+                min="0"
+                style={{
+                  width: '100%',
+                  padding: '12px',
+                  border: '1px solid #ddd',
+                  borderRadius: '6px',
+                  fontSize: '16px',
+                  boxSizing: 'border-box'
+                }}
+              />
+            </div>
+
+            <div>
+              <label style={{ display: 'block', marginBottom: '8px', fontWeight: '500', fontSize: '14px' }}>
+                Points pour avis produit
+              </label>
+              <input
+                type="number"
+                value={config.points_product}
+                onChange={(e) => handleConfigChange('points_product', parseInt(e.target.value) || 0)}
+                min="0"
+                style={{
+                  width: '100%',
+                  padding: '12px',
+                  border: '1px solid #ddd',
+                  borderRadius: '6px',
+                  fontSize: '16px',
+                  boxSizing: 'border-box'
+                }}
+              />
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', gap: '15px', paddingTop: '15px' }}>
+            <button
+              onClick={handleSaveConfig}
+              disabled={configLoading}
+              style={{
+                flex: 1,
+                padding: '15px',
+                backgroundColor: configLoading ? '#ccc' : '#007bff',
+                color: 'white',
+                border: 'none',
+                borderRadius: '6px',
+                fontSize: '16px',
+                fontWeight: 'bold',
+                cursor: configLoading ? 'not-allowed' : 'pointer',
+                transition: 'background-color 0.3s ease'
+              }}
+            >
+              {configLoading ? 'Sauvegarde...' : 'Sauvegarder'}
+            </button>
+
+            <button
+              onClick={handleTestConnection}
+              disabled={testLoading}
+              style={{
+                flex: 1,
+                padding: '15px',
+                backgroundColor: testLoading ? '#ccc' : '#28a745',
+                color: 'white',
+                border: 'none',
+                borderRadius: '6px',
+                fontSize: '16px',
+                fontWeight: 'bold',
+                cursor: testLoading ? 'not-allowed' : 'pointer',
+                transition: 'background-color 0.3s ease'
+              }}
+            >
+              {testLoading ? 'Test en cours...' : 'Tester la connexion'}
+            </button>
+
+            <button
+              onClick={handleProcessRewards}
+              disabled={processLoading}
+              style={{
+                flex: 1,
+                padding: '15px',
+                backgroundColor: processLoading ? '#ccc' : '#6f42c1',
+                color: 'white',
+                border: 'none',
+                borderRadius: '6px',
+                fontSize: '16px',
+                fontWeight: 'bold',
+                cursor: processLoading ? 'not-allowed' : 'pointer',
+                transition: 'background-color 0.3s ease'
+              }}
+            >
+              {processLoading ? 'Traitement...' : 'Lancer manuellement'}
+            </button>
+          </div>
+
+          {testResult && (
+            <div style={{
+              padding: '15px',
+              borderRadius: '6px',
+              backgroundColor: testResult.success ? '#d4edda' : '#f8d7da',
+              color: testResult.success ? '#155724' : '#721c24',
+              border: `1px solid ${testResult.success ? '#c3e6cb' : '#f5c6cb'}`
+            }}>
+              <p style={{ margin: 0, fontWeight: 'bold' }}>
+                {testResult.success ? '✓' : '✗'} {testResult.message}
+              </p>
+            </div>
+          )}
+        </div>
       </div>
 
-      {/* Manual Reward Section */}
-      <div className="bg-white rounded-lg shadow-md p-6">
-        <h3 className="text-lg font-bold text-gray-800 mb-4">Récompenser un avis spécifique</h3>
-        <div className="flex gap-3">
+      {/* Manual Reward Card */}
+      <div style={{ backgroundColor: 'white', padding: '30px', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)', marginBottom: '30px' }}>
+        <h3 style={{ fontSize: '18px', fontWeight: 'bold', marginBottom: '20px' }}>Récompenser un avis spécifique</h3>
+        <div style={{ display: 'flex', gap: '15px' }}>
           <input
             type="text"
             value={manualReviewId}
             onChange={(e) => setManualReviewId(e.target.value)}
             placeholder="Entrez l'ID de l'avis"
-            className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            style={{
+              flex: 1,
+              padding: '12px',
+              border: '1px solid #ddd',
+              borderRadius: '6px',
+              fontSize: '16px'
+            }}
           />
           <button
             onClick={handleManualReward}
             disabled={manualLoading}
-            className="bg-orange-600 text-white px-6 py-2 rounded-lg font-semibold hover:bg-orange-700 disabled:bg-gray-400 transition"
+            style={{
+              padding: '12px 30px',
+              backgroundColor: manualLoading ? '#ccc' : '#fd7e14',
+              color: 'white',
+              border: 'none',
+              borderRadius: '6px',
+              fontSize: '16px',
+              fontWeight: 'bold',
+              cursor: manualLoading ? 'not-allowed' : 'pointer',
+              transition: 'background-color 0.3s ease'
+            }}
           >
             {manualLoading ? 'Traitement...' : 'Récompenser'}
           </button>
         </div>
         {manualResult && (
-          <div className={`mt-4 p-4 rounded-lg ${manualResult.success ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
-            <p className="font-semibold">{manualResult.success ? '✓' : '✗'} {manualResult.message}</p>
+          <div style={{
+            marginTop: '15px',
+            padding: '15px',
+            borderRadius: '6px',
+            backgroundColor: manualResult.success ? '#d4edda' : '#f8d7da',
+            color: manualResult.success ? '#155724' : '#721c24',
+            border: `1px solid ${manualResult.success ? '#c3e6cb' : '#f5c6cb'}`
+          }}>
+            <p style={{ margin: 0, fontWeight: 'bold' }}>
+              {manualResult.success ? '✓' : '✗'} {manualResult.message}
+            </p>
           </div>
         )}
       </div>
 
-      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-        <h3 className="font-semibold text-blue-900 mb-2">ℹ️ Information</h3>
-        <p className="text-sm text-blue-800">
+      {/* Info Card */}
+      <div style={{ backgroundColor: '#d1ecf1', padding: '20px', borderRadius: '8px', border: '1px solid #bee5eb' }}>
+        <h3 style={{ fontSize: '16px', fontWeight: 'bold', color: '#0c5460', marginBottom: '10px' }}>ℹ️ Information</h3>
+        <p style={{ margin: 0, fontSize: '14px', color: '#0c5460' }}>
           Le système vérifie automatiquement les nouveaux avis publiés toutes les 5 minutes et attribue les points fidélité correspondants.
           Seuls les avis avec <strong>review_status = 1</strong> (publié) et possédant un email client sont récompensés.
         </p>
@@ -411,19 +533,34 @@ const RewardsApp = () => {
   );
 
   const renderHistoryTab = () => (
-    <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <h2 className="text-xl font-bold text-gray-800">Avis récompensés</h2>
-        <div className="flex gap-3">
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px', flexWrap: 'wrap', gap: '15px' }}>
+        <h2 style={{ fontSize: '24px', fontWeight: 'bold', margin: 0 }}>Avis récompensés</h2>
+        <div style={{ display: 'flex', gap: '15px' }}>
           <input
             type="date"
             value={historyDateFilter}
             onChange={(e) => setHistoryDateFilter(e.target.value)}
-            className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+            style={{
+              padding: '10px 15px',
+              border: '1px solid #ddd',
+              borderRadius: '6px',
+              fontSize: '16px'
+            }}
           />
           <button
             onClick={handleExportHistory}
-            className="bg-green-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-green-700 transition"
+            style={{
+              padding: '10px 20px',
+              backgroundColor: '#28a745',
+              color: 'white',
+              border: 'none',
+              borderRadius: '6px',
+              fontSize: '16px',
+              fontWeight: 'bold',
+              cursor: 'pointer',
+              transition: 'background-color 0.3s ease'
+            }}
           >
             📥 Exporter CSV
           </button>
@@ -431,75 +568,79 @@ const RewardsApp = () => {
       </div>
 
       {stats && (
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <div className="bg-white rounded-lg shadow-md p-4">
-            <p className="text-sm text-gray-600">Total récompenses</p>
-            <p className="text-2xl font-bold text-gray-800">{stats.total_rewards}</p>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '20px', marginBottom: '30px' }}>
+          <div style={{ backgroundColor: 'white', padding: '20px', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
+            <p style={{ fontSize: '14px', color: '#6c757d', margin: '0 0 10px 0' }}>Total récompenses</p>
+            <p style={{ fontSize: '28px', fontWeight: 'bold', color: '#333', margin: 0 }}>{stats.total_rewards}</p>
           </div>
-          <div className="bg-white rounded-lg shadow-md p-4">
-            <p className="text-sm text-gray-600">Total points</p>
-            <p className="text-2xl font-bold text-blue-600">{stats.total_points}</p>
+          <div style={{ backgroundColor: 'white', padding: '20px', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
+            <p style={{ fontSize: '14px', color: '#6c757d', margin: '0 0 10px 0' }}>Total points</p>
+            <p style={{ fontSize: '28px', fontWeight: 'bold', color: '#007bff', margin: 0 }}>{stats.total_points}</p>
           </div>
-          <div className="bg-white rounded-lg shadow-md p-4">
-            <p className="text-sm text-gray-600">Réussies</p>
-            <p className="text-2xl font-bold text-green-600">{stats.successful_rewards}</p>
+          <div style={{ backgroundColor: 'white', padding: '20px', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
+            <p style={{ fontSize: '14px', color: '#6c757d', margin: '0 0 10px 0' }}>Réussies</p>
+            <p style={{ fontSize: '28px', fontWeight: 'bold', color: '#28a745', margin: 0 }}>{stats.successful_rewards}</p>
           </div>
-          <div className="bg-white rounded-lg shadow-md p-4">
-            <p className="text-sm text-gray-600">Échouées</p>
-            <p className="text-2xl font-bold text-red-600">{stats.failed_rewards}</p>
+          <div style={{ backgroundColor: 'white', padding: '20px', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
+            <p style={{ fontSize: '14px', color: '#6c757d', margin: '0 0 10px 0' }}>Échouées</p>
+            <p style={{ fontSize: '28px', fontWeight: 'bold', color: '#dc3545', margin: 0 }}>{stats.failed_rewards}</p>
           </div>
         </div>
       )}
 
       {historyLoading ? (
-        <div className="text-center py-8">Chargement...</div>
+        <div style={{ textAlign: 'center', padding: '50px', backgroundColor: 'white', borderRadius: '8px' }}>Chargement...</div>
       ) : (
-        <div className="bg-white rounded-lg shadow-md overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Review ID</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Email</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Points</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Statut API</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Erreur</th>
+        <div style={{ backgroundColor: 'white', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)', overflow: 'hidden' }}>
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead>
+                <tr style={{ backgroundColor: '#f8f9fa' }}>
+                  <th style={{ padding: '15px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: '#6c757d', textTransform: 'uppercase' }}>Date</th>
+                  <th style={{ padding: '15px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: '#6c757d', textTransform: 'uppercase' }}>Review ID</th>
+                  <th style={{ padding: '15px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: '#6c757d', textTransform: 'uppercase' }}>Email</th>
+                  <th style={{ padding: '15px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: '#6c757d', textTransform: 'uppercase' }}>Points</th>
+                  <th style={{ padding: '15px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: '#6c757d', textTransform: 'uppercase' }}>Type</th>
+                  <th style={{ padding: '15px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: '#6c757d', textTransform: 'uppercase' }}>Statut API</th>
+                  <th style={{ padding: '15px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: '#6c757d', textTransform: 'uppercase' }}>Erreur</th>
                 </tr>
               </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {history.map((entry) => (
-                  <tr key={entry.id} className="hover:bg-gray-50 transition">
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {new Date(entry.created_at).toLocaleString('fr-FR')}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{entry.review_id}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{entry.customer_email}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-semibold text-blue-600">
-                      {entry.points_awarded}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm">
-                      <span className={`px-2 py-1 rounded text-xs font-semibold ${
-                        entry.review_type === 'site' ? 'bg-purple-100 text-purple-800' : 'bg-blue-100 text-blue-800'
-                      }`}>
+              <tbody>
+                {history.map((entry, index) => (
+                  <tr key={entry.id} style={{ borderTop: '1px solid #dee2e6' }}>
+                    <td style={{ padding: '15px', fontSize: '14px' }}>{new Date(entry.created_at).toLocaleString('fr-FR')}</td>
+                    <td style={{ padding: '15px', fontSize: '14px' }}>{entry.review_id}</td>
+                    <td style={{ padding: '15px', fontSize: '14px' }}>{entry.customer_email}</td>
+                    <td style={{ padding: '15px', fontSize: '14px', fontWeight: 'bold', color: '#007bff' }}>{entry.points_awarded}</td>
+                    <td style={{ padding: '15px', fontSize: '14px' }}>
+                      <span style={{
+                        padding: '4px 12px',
+                        borderRadius: '12px',
+                        fontSize: '12px',
+                        fontWeight: 'bold',
+                        backgroundColor: entry.review_type === 'site' ? '#e7d4f7' : '#cfe2ff',
+                        color: entry.review_type === 'site' ? '#6f42c1' : '#0d6efd'
+                      }}>
                         {entry.review_type}
                       </span>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm">
+                    <td style={{ padding: '15px', fontSize: '14px' }}>
                       {entry.api_status ? (
-                        <span className={`px-2 py-1 rounded text-xs font-semibold ${
-                          entry.api_status >= 200 && entry.api_status < 300
-                            ? 'bg-green-100 text-green-800'
-                            : 'bg-red-100 text-red-800'
-                        }`}>
+                        <span style={{
+                          padding: '4px 12px',
+                          borderRadius: '12px',
+                          fontSize: '12px',
+                          fontWeight: 'bold',
+                          backgroundColor: entry.api_status >= 200 && entry.api_status < 300 ? '#d1e7dd' : '#f8d7da',
+                          color: entry.api_status >= 200 && entry.api_status < 300 ? '#0f5132' : '#842029'
+                        }}>
                           {entry.api_status}
                         </span>
                       ) : (
-                        <span className="text-gray-400">-</span>
+                        <span style={{ color: '#6c757d' }}>-</span>
                       )}
                     </td>
-                    <td className="px-6 py-4 text-sm text-red-600">
+                    <td style={{ padding: '15px', fontSize: '14px', color: '#dc3545' }}>
                       {entry.error_message || '-'}
                     </td>
                   </tr>
@@ -508,7 +649,7 @@ const RewardsApp = () => {
             </table>
           </div>
           {history.length === 0 && (
-            <div className="text-center py-8 text-gray-500">
+            <div style={{ textAlign: 'center', padding: '50px', color: '#6c757d' }}>
               Aucun avis récompensé pour le moment
             </div>
           )}
@@ -518,70 +659,90 @@ const RewardsApp = () => {
   );
 
   const renderLogsTab = () => (
-    <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <h2 className="text-xl font-bold text-gray-800">Logs des récompenses</h2>
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px', flexWrap: 'wrap', gap: '15px' }}>
+        <h2 style={{ fontSize: '24px', fontWeight: 'bold', margin: 0 }}>Logs des récompenses</h2>
         <input
           type="date"
           value={logsDateFilter}
           onChange={(e) => setLogsDateFilter(e.target.value)}
-          className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+          style={{
+            padding: '10px 15px',
+            border: '1px solid #ddd',
+            borderRadius: '6px',
+            fontSize: '16px'
+          }}
         />
       </div>
 
       {logsLoading ? (
-        <div className="text-center py-8">Chargement...</div>
+        <div style={{ textAlign: 'center', padding: '50px', backgroundColor: 'white', borderRadius: '8px' }}>Chargement...</div>
       ) : (
-        <div className="bg-white rounded-lg shadow-md overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Review ID</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Email</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Points</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Détails</th>
+        <div style={{ backgroundColor: 'white', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)', overflow: 'hidden' }}>
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead>
+                <tr style={{ backgroundColor: '#f8f9fa' }}>
+                  <th style={{ padding: '15px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: '#6c757d', textTransform: 'uppercase' }}>Date</th>
+                  <th style={{ padding: '15px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: '#6c757d', textTransform: 'uppercase' }}>Review ID</th>
+                  <th style={{ padding: '15px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: '#6c757d', textTransform: 'uppercase' }}>Email</th>
+                  <th style={{ padding: '15px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: '#6c757d', textTransform: 'uppercase' }}>Points</th>
+                  <th style={{ padding: '15px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: '#6c757d', textTransform: 'uppercase' }}>Type</th>
+                  <th style={{ padding: '15px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: '#6c757d', textTransform: 'uppercase' }}>Status</th>
+                  <th style={{ padding: '15px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: '#6c757d', textTransform: 'uppercase' }}>Détails</th>
                 </tr>
               </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
+              <tbody>
                 {logs.map((log) => (
-                  <tr key={log.id} className="hover:bg-gray-50 transition">
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {new Date(log.created_at).toLocaleString('fr-FR')}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{log.review_id}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{log.customer_email}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-semibold text-blue-600">
-                      {log.points_awarded}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm">
-                      <span className={`px-2 py-1 rounded text-xs font-semibold ${
-                        log.review_type === 'site' ? 'bg-purple-100 text-purple-800' : 'bg-blue-100 text-blue-800'
-                      }`}>
+                  <tr key={log.id} style={{ borderTop: '1px solid #dee2e6' }}>
+                    <td style={{ padding: '15px', fontSize: '14px' }}>{new Date(log.created_at).toLocaleString('fr-FR')}</td>
+                    <td style={{ padding: '15px', fontSize: '14px' }}>{log.review_id}</td>
+                    <td style={{ padding: '15px', fontSize: '14px' }}>{log.customer_email}</td>
+                    <td style={{ padding: '15px', fontSize: '14px', fontWeight: 'bold', color: '#007bff' }}>{log.points_awarded}</td>
+                    <td style={{ padding: '15px', fontSize: '14px' }}>
+                      <span style={{
+                        padding: '4px 12px',
+                        borderRadius: '12px',
+                        fontSize: '12px',
+                        fontWeight: 'bold',
+                        backgroundColor: log.review_type === 'site' ? '#e7d4f7' : '#cfe2ff',
+                        color: log.review_type === 'site' ? '#6f42c1' : '#0d6efd'
+                      }}>
                         {log.review_type}
                       </span>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm">
+                    <td style={{ padding: '15px', fontSize: '14px' }}>
                       {log.error_message ? (
-                        <span className="px-2 py-1 rounded text-xs font-semibold bg-red-100 text-red-800">
+                        <span style={{
+                          padding: '4px 12px',
+                          borderRadius: '12px',
+                          fontSize: '12px',
+                          fontWeight: 'bold',
+                          backgroundColor: '#f8d7da',
+                          color: '#842029'
+                        }}>
                           ✗ Échec
                         </span>
                       ) : (
-                        <span className="px-2 py-1 rounded text-xs font-semibold bg-green-100 text-green-800">
+                        <span style={{
+                          padding: '4px 12px',
+                          borderRadius: '12px',
+                          fontSize: '12px',
+                          fontWeight: 'bold',
+                          backgroundColor: '#d1e7dd',
+                          color: '#0f5132'
+                        }}>
                           ✓ Succès
                         </span>
                       )}
                     </td>
-                    <td className="px-6 py-4 text-sm">
+                    <td style={{ padding: '15px', fontSize: '14px' }}>
                       {log.error_message ? (
-                        <span className="text-red-600">{log.error_message}</span>
+                        <span style={{ color: '#dc3545' }}>{log.error_message}</span>
                       ) : log.api_response ? (
-                        <span className="text-gray-600">{JSON.stringify(log.api_response).substring(0, 100)}...</span>
+                        <span style={{ color: '#6c757d' }}>{JSON.stringify(log.api_response).substring(0, 100)}...</span>
                       ) : (
-                        <span className="text-gray-400">-</span>
+                        <span style={{ color: '#6c757d' }}>-</span>
                       )}
                     </td>
                   </tr>
@@ -590,7 +751,7 @@ const RewardsApp = () => {
             </table>
           </div>
           {logs.length === 0 && (
-            <div className="text-center py-8 text-gray-500">
+            <div style={{ textAlign: 'center', padding: '50px', color: '#6c757d' }}>
               Aucun log disponible
             </div>
           )}
@@ -600,70 +761,37 @@ const RewardsApp = () => {
   );
 
   return (
-    <div className="min-h-screen bg-gray-100">
+    <div style={{ maxWidth: '1200px', margin: '30px auto', padding: '20px' }}>
       {/* Header */}
-      <div className="bg-white shadow-sm border-b">
-        <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
-          <div className="flex items-center space-x-4">
-            <button
-              onClick={() => navigate('/home')}
-              className="text-gray-600 hover:text-gray-800 font-semibold transition"
-            >
-              ← Retour
-            </button>
-            <h1 className="text-2xl font-bold text-gray-800">🎁 Récompense Avis</h1>
-          </div>
-          <button
-            onClick={handleLogout}
-            className="px-4 py-2 bg-red-600 text-white rounded-lg font-semibold hover:bg-red-700 transition"
-          >
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px' }}>
+        <h1>🎁 Application Récompense Avis</h1>
+        <div>
+          <button onClick={handleBackHome} style={{ padding: '10px 20px', marginRight: '10px', cursor: 'pointer' }}>
+            Retour
+          </button>
+          <button onClick={handleLogout} style={{ padding: '10px 20px', cursor: 'pointer' }}>
             Déconnexion
           </button>
         </div>
       </div>
 
-      <div className="max-w-7xl mx-auto p-6">
-        {/* Tabs */}
-        <div className="bg-white rounded-lg shadow-md mb-6">
-          <div className="flex border-b">
-            <button
-              onClick={() => setActiveTab('config')}
-              className={`flex-1 px-6 py-4 font-semibold transition ${
-                activeTab === 'config'
-                  ? 'border-b-2 border-blue-600 text-blue-600'
-                  : 'text-gray-600 hover:text-gray-800 hover:bg-gray-50'
-              }`}
-            >
-              ⚙️ Configuration
-            </button>
-            <button
-              onClick={() => setActiveTab('history')}
-              className={`flex-1 px-6 py-4 font-semibold transition ${
-                activeTab === 'history'
-                  ? 'border-b-2 border-blue-600 text-blue-600'
-                  : 'text-gray-600 hover:text-gray-800 hover:bg-gray-50'
-              }`}
-            >
-              🎁 Avis récompensés
-            </button>
-            <button
-              onClick={() => setActiveTab('logs')}
-              className={`flex-1 px-6 py-4 font-semibold transition ${
-                activeTab === 'logs'
-                  ? 'border-b-2 border-blue-600 text-blue-600'
-                  : 'text-gray-600 hover:text-gray-800 hover:bg-gray-50'
-              }`}
-            >
-              📋 Logs
-            </button>
-          </div>
+      {/* Tabs */}
+      <div style={{ display: 'flex', borderBottom: '2px solid #ddd', marginBottom: '20px' }}>
+        <div onClick={() => setActiveTab('config')} style={tabStyle('config')}>
+          ⚙️ Configuration
         </div>
-
-        {/* Tab Content */}
-        {activeTab === 'config' && renderConfigTab()}
-        {activeTab === 'history' && renderHistoryTab()}
-        {activeTab === 'logs' && renderLogsTab()}
+        <div onClick={() => setActiveTab('history')} style={tabStyle('history')}>
+          🎁 Avis récompensés
+        </div>
+        <div onClick={() => setActiveTab('logs')} style={tabStyle('logs')}>
+          📋 Logs
+        </div>
       </div>
+
+      {/* Tab Content */}
+      {activeTab === 'config' && renderConfigTab()}
+      {activeTab === 'history' && renderHistoryTab()}
+      {activeTab === 'logs' && renderLogsTab()}
     </div>
   );
 };
