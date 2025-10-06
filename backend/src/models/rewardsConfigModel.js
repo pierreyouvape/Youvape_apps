@@ -3,7 +3,7 @@ const pool = require('../config/database');
 const rewardsConfigModel = {
   // Créer ou mettre à jour la configuration
   upsert: async (configData) => {
-    const { woocommerce_url, consumer_key, consumer_secret, points_site, points_product, enabled } = configData;
+    const { woocommerce_url, consumer_key, consumer_secret, points_site, points_product, enabled, htaccess_user, htaccess_password } = configData;
 
     // Vérifier s'il y a déjà une config
     const existing = await pool.query('SELECT * FROM rewards_config LIMIT 1');
@@ -18,8 +18,10 @@ const rewardsConfigModel = {
             points_site = $4,
             points_product = $5,
             enabled = $6,
+            htaccess_user = $7,
+            htaccess_password = $8,
             updated_at = CURRENT_TIMESTAMP
-        WHERE id = $7
+        WHERE id = $9
         RETURNING *
       `;
 
@@ -30,6 +32,8 @@ const rewardsConfigModel = {
         points_site,
         points_product,
         enabled !== undefined ? enabled : true,
+        htaccess_user || null,
+        htaccess_password || null,
         existing.rows[0].id
       ];
 
@@ -38,8 +42,8 @@ const rewardsConfigModel = {
     } else {
       // INSERT
       const query = `
-        INSERT INTO rewards_config (woocommerce_url, consumer_key, consumer_secret, points_site, points_product, enabled)
-        VALUES ($1, $2, $3, $4, $5, $6)
+        INSERT INTO rewards_config (woocommerce_url, consumer_key, consumer_secret, points_site, points_product, enabled, htaccess_user, htaccess_password)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
         RETURNING *
       `;
 
@@ -49,7 +53,9 @@ const rewardsConfigModel = {
         consumer_secret,
         points_site,
         points_product,
-        enabled !== undefined ? enabled : true
+        enabled !== undefined ? enabled : true,
+        htaccess_user || null,
+        htaccess_password || null
       ];
 
       const result = await pool.query(query, values);
