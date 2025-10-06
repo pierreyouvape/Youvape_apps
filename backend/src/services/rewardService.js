@@ -85,13 +85,11 @@ const rewardService = {
   // Fonction pour récompenser un client via l'API WPLoyalty
   rewardCustomer: async (config, email, points, review) => {
     try {
-      // Construire l'URL de l'API
-      const apiUrl = `${config.woocommerce_url.replace(/\/$/, '')}/wp-json/wc/v3/wployalty/customers/points/add`;
+      // Construire l'URL de l'API avec les credentials WooCommerce en query params
+      const baseUrl = config.woocommerce_url.replace(/\/$/, '');
+      const apiUrl = `${baseUrl}/wp-json/wc/v3/wployalty/customers/points/add`;
 
-      // Créer les credentials en Base64 pour Basic Auth
-      const credentials = Buffer.from(`${config.consumer_key}:${config.consumer_secret}`).toString('base64');
-
-      // Appel API
+      // Appel API avec authentification WooCommerce (consumer_key et consumer_secret en params)
       const response = await axios.post(
         apiUrl,
         {
@@ -99,8 +97,11 @@ const rewardService = {
           points: points
         },
         {
+          params: {
+            consumer_key: config.consumer_key,
+            consumer_secret: config.consumer_secret
+          },
           headers: {
-            'Authorization': `Basic ${credentials}`,
             'Content-Type': 'application/json'
           },
           timeout: 15000
@@ -131,16 +132,9 @@ const rewardService = {
       };
 
     } catch (error) {
-      // Enregistrer l'échec dans l'historique
-      await rewardsHistoryModel.create({
-        review_id: review.review_id,
-        customer_email: email,
-        points_awarded: points,
-        review_type: review.review_type,
-        api_response: error.response?.data || null,
-        api_status: error.response?.status || null,
-        error_message: error.message
-      });
+      // Ne pas enregistrer dans l'historique en cas d'échec
+      // L'historique ne doit contenir que les récompenses réussies
+      console.error('Erreur lors de la récompense:', error.message);
 
       return {
         success: false,
@@ -153,38 +147,50 @@ const rewardService = {
   // Tester la connexion à l'API WPLoyalty
   testConnection: async (config) => {
     try {
-      const apiUrl = `${config.woocommerce_url.replace(/\/$/, '')}/wp-json/wc/v3/wployalty/customers/points/add`;
-      const credentials = Buffer.from(`${config.consumer_key}:${config.consumer_secret}`).toString('base64');
+      const baseUrl = config.woocommerce_url.replace(/\/$/, '');
+      const apiUrl = `${baseUrl}/wp-json/wc/v3/wployalty/customers/points/add`;
 
-      // Test avec un email fictif (l'API devrait répondre même si l'email n'existe pas)
+      // Test avec un email fictif - l'API devrait répondre avec succès
+      // (créera un nouveau client si l'email n'existe pas, selon la doc)
       const response = await axios.post(
         apiUrl,
         {
-          user_email: 'test@example.com',
+          user_email: 'test-wployalty@example.com',
           points: 1
         },
         {
+          params: {
+            consumer_key: config.consumer_key,
+            consumer_secret: config.consumer_secret
+          },
           headers: {
-            'Authorization': `Basic ${credentials}`,
             'Content-Type': 'application/json'
           },
-          timeout: 15000,
-          validateStatus: () => true // Accepter toutes les réponses pour le test
+          timeout: 15000
         }
       );
 
+      // Si on arrive ici, l'API a répondu avec succès (2xx)
       return {
-        success: response.status < 500,
+        success: true,
         status: response.status,
-        message: response.status < 500 ? 'Connexion API réussie' : 'Erreur serveur',
+        message: 'Connexion API réussie ! Un point de test a été ajouté au client test-wployalty@example.com',
         data: response.data
       };
 
     } catch (error) {
+      // L'API a renvoyé une erreur
+      const status = error.response?.status;
+      const errorData = error.response?.data;
+
       return {
         success: false,
-        error: error.message,
-        details: error.response?.data
+        status: status,
+        error: status === 401 ? 'Authentification échouée - Vérifiez vos credentials' :
+               status === 404 ? 'Route API introuvable - Vérifiez l\'URL et que WPLoyalty PRO est installé' :
+               status === 400 ? 'Paramètres invalides' :
+               error.message,
+        details: errorData
       };
     }
   },
