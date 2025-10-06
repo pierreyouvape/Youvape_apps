@@ -610,7 +610,8 @@ const ReviewsApp = () => {
               <table style={{ width: '100%', borderCollapse: 'collapse', backgroundColor: 'white' }}>
                 <thead>
                   <tr style={{ backgroundColor: '#007bff', color: 'white' }}>
-                    <th style={{ padding: '10px', textAlign: 'left', border: '1px solid #ddd' }}>ID</th>
+                    <th style={{ padding: '10px', textAlign: 'left', border: '1px solid #ddd' }}>ID YouVape</th>
+                    <th style={{ padding: '10px', textAlign: 'left', border: '1px solid #ddd' }}>ID Avis Garantis</th>
                     <th style={{ padding: '10px', textAlign: 'left', border: '1px solid #ddd' }}>Date</th>
                     <th style={{ padding: '10px', textAlign: 'left', border: '1px solid #ddd' }}>Client</th>
                     <th style={{ padding: '10px', textAlign: 'left', border: '1px solid #ddd' }}>Email</th>
@@ -626,6 +627,9 @@ const ReviewsApp = () => {
                     <tr key={review.id}>
                       <td style={{ padding: '8px', border: '1px solid #ddd' }}>
                         {review.id}
+                      </td>
+                      <td style={{ padding: '8px', border: '1px solid #ddd' }}>
+                        {review.review_id}
                       </td>
                       <td style={{ padding: '8px', border: '1px solid #ddd' }}>
                         {review.review_date ? new Date(review.review_date).toLocaleDateString('fr-FR') : 'N/A'}
