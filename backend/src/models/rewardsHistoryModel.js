@@ -17,7 +17,7 @@ const rewardsHistoryModel = {
       customer_email,
       points_awarded,
       review_type,
-      api_response || null,
+      api_response ? JSON.stringify(api_response) : null,
       api_status || null,
       error_message || null
     ];

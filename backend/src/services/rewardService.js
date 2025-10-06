@@ -199,9 +199,8 @@ const rewardService = {
         return { success: false, error: 'Aucune configuration trouvée' };
       }
 
-      if (!config.enabled) {
-        return { success: false, error: 'Système de récompenses désactivé' };
-      }
+      // Note: La vérification config.enabled est volontairement ignorée pour la récompense manuelle
+      // L'admin doit pouvoir récompenser manuellement même si le système automatique est désactivé
 
       // Récupérer l'avis
       const query = 'SELECT * FROM reviews WHERE review_id = $1';
