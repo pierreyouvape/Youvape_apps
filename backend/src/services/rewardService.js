@@ -89,23 +89,34 @@ const rewardService = {
       const baseUrl = config.woocommerce_url.replace(/\/$/, '');
       const apiUrl = `${baseUrl}/wp-json/wc/v3/wployalty/customers/points/add`;
 
-      // Appel API avec authentification WooCommerce (consumer_key et consumer_secret en params)
+      // Préparer les options de la requête
+      const requestOptions = {
+        params: {
+          consumer_key: config.consumer_key,
+          consumer_secret: config.consumer_secret
+        },
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        timeout: 15000
+      };
+
+      // Ajouter l'authentification htaccess si présente
+      if (config.htaccess_user && config.htaccess_password) {
+        requestOptions.auth = {
+          username: config.htaccess_user,
+          password: config.htaccess_password
+        };
+      }
+
+      // Appel API
       const response = await axios.post(
         apiUrl,
         {
           user_email: email,
           points: points
         },
-        {
-          params: {
-            consumer_key: config.consumer_key,
-            consumer_secret: config.consumer_secret
-          },
-          headers: {
-            'Content-Type': 'application/json'
-          },
-          timeout: 15000
-        }
+        requestOptions
       );
 
       // Enregistrer dans l'historique
@@ -150,6 +161,26 @@ const rewardService = {
       const baseUrl = config.woocommerce_url.replace(/\/$/, '');
       const apiUrl = `${baseUrl}/wp-json/wc/v3/wployalty/customers/points/add`;
 
+      // Préparer les options de la requête
+      const requestOptions = {
+        params: {
+          consumer_key: config.consumer_key,
+          consumer_secret: config.consumer_secret
+        },
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        timeout: 15000
+      };
+
+      // Ajouter l'authentification htaccess si présente
+      if (config.htaccess_user && config.htaccess_password) {
+        requestOptions.auth = {
+          username: config.htaccess_user,
+          password: config.htaccess_password
+        };
+      }
+
       // Test avec un email fictif - l'API devrait répondre avec succès
       // (créera un nouveau client si l'email n'existe pas, selon la doc)
       const response = await axios.post(
@@ -158,16 +189,7 @@ const rewardService = {
           user_email: 'test-wployalty@example.com',
           points: 1
         },
-        {
-          params: {
-            consumer_key: config.consumer_key,
-            consumer_secret: config.consumer_secret
-          },
-          headers: {
-            'Content-Type': 'application/json'
-          },
-          timeout: 15000
-        }
+        requestOptions
       );
 
       // Si on arrive ici, l'API a répondu avec succès (2xx)
