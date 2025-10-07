@@ -215,8 +215,9 @@ const rewardService = {
       // L'admin doit pouvoir récompenser manuellement même si le système automatique est désactivé
 
       // Récupérer l'avis (cherche par review_id ou par id si c'est un nombre)
-      const query = 'SELECT * FROM reviews WHERE review_id = $1 OR id = $1';
-      const result = await pool.query(query, [review_id]);
+      const query = 'SELECT * FROM reviews WHERE review_id = $1 OR (id = $2 AND $2 IS NOT NULL)';
+      const numericId = !isNaN(review_id) ? parseInt(review_id) : null;
+      const result = await pool.query(query, [review_id, numericId]);
 
       if (result.rows.length === 0) {
         return { success: false, error: 'Avis non trouvé' };
