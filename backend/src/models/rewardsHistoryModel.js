@@ -60,10 +60,10 @@ const rewardsHistoryModel = {
   getStats: async () => {
     const query = `
       SELECT
-        COUNT(*) as total_rewards,
-        SUM(points_awarded) as total_points,
-        COUNT(CASE WHEN api_status >= 200 AND api_status < 300 THEN 1 END) as successful_rewards,
-        COUNT(CASE WHEN api_status IS NULL OR api_status >= 400 THEN 1 END) as failed_rewards
+        COUNT(DISTINCT review_id) as total_reviews,
+        SUM(CASE WHEN rewarded = true THEN points_awarded ELSE 0 END) as total_points,
+        COUNT(DISTINCT CASE WHEN rewarded = true THEN review_id END) as successful_rewards,
+        COUNT(DISTINCT review_id) - COUNT(DISTINCT CASE WHEN rewarded = true THEN review_id END) as failed_rewards
       FROM rewards_history
     `;
 

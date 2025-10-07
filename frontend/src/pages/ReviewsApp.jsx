@@ -295,7 +295,7 @@ const ReviewsApp = () => {
   });
 
   return (
-    <div style={{ maxWidth: '1200px', margin: '30px auto', padding: '20px' }}>
+    <div style={{ maxWidth: '1600px', margin: '30px auto', padding: '20px' }}>
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px' }}>
         <h1>Application Avis Garantis</h1>
@@ -685,14 +685,15 @@ const ReviewsApp = () => {
                           {review.review_status === 1 ? '✓ Publié' : '✗ Non publié'}
                         </span>
                       </td>
-                      <td style={{ padding: '8px', border: '1px solid #ddd' }}>
+                      <td style={{ padding: '8px', border: '1px solid #ddd', minWidth: '140px' }}>
                         <span style={{
-                          padding: '4px 12px',
+                          padding: '6px 16px',
                           borderRadius: '12px',
                           backgroundColor: review.rewarded ? '#d4edda' : '#e9ecef',
                           color: review.rewarded ? '#155724' : '#6c757d',
-                          fontSize: '12px',
-                          fontWeight: 'bold'
+                          fontSize: '13px',
+                          fontWeight: 'bold',
+                          display: 'inline-block'
                         }}>
                           {review.rewarded ? '✓ Récompensé' : 'En attente'}
                         </span>

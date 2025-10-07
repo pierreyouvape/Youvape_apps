@@ -569,12 +569,12 @@ const RewardsApp = () => {
       {stats && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '20px', marginBottom: '30px' }}>
           <div style={{ backgroundColor: 'white', padding: '20px', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
-            <p style={{ fontSize: '14px', color: '#6c757d', margin: '0 0 10px 0' }}>Total récompenses</p>
-            <p style={{ fontSize: '28px', fontWeight: 'bold', color: '#333', margin: 0 }}>{stats.total_rewards}</p>
+            <p style={{ fontSize: '14px', color: '#6c757d', margin: '0 0 10px 0' }}>Total avis</p>
+            <p style={{ fontSize: '28px', fontWeight: 'bold', color: '#333', margin: 0 }}>{stats.total_reviews}</p>
           </div>
           <div style={{ backgroundColor: 'white', padding: '20px', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
-            <p style={{ fontSize: '14px', color: '#6c757d', margin: '0 0 10px 0' }}>Total points</p>
-            <p style={{ fontSize: '28px', fontWeight: 'bold', color: '#007bff', margin: 0 }}>{stats.total_points}</p>
+            <p style={{ fontSize: '14px', color: '#6c757d', margin: '0 0 10px 0' }}>Total points (réussis)</p>
+            <p style={{ fontSize: '28px', fontWeight: 'bold', color: '#007bff', margin: 0 }}>{stats.total_points || 0}</p>
           </div>
           <div style={{ backgroundColor: 'white', padding: '20px', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
             <p style={{ fontSize: '14px', color: '#6c757d', margin: '0 0 10px 0' }}>Réussies</p>
