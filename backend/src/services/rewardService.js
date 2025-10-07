@@ -119,7 +119,8 @@ const rewardService = {
         review_type: review.review_type,
         api_response: response.data,
         api_status: response.status,
-        error_message: null
+        error_message: null,
+        rewarded: true
       });
 
       // Mettre à jour la table reviews
@@ -135,9 +136,19 @@ const rewardService = {
       };
 
     } catch (error) {
-      // Ne pas enregistrer dans l'historique en cas d'échec
-      // L'historique ne doit contenir que les récompenses réussies
+      // Enregistrer aussi les échecs dans l'historique pour traçabilité
       console.error('Erreur lors de la récompense:', error.message);
+
+      await rewardsHistoryModel.create({
+        review_id: review.review_id,
+        customer_email: email,
+        points_awarded: points,
+        review_type: review.review_type,
+        api_response: error.response?.data || null,
+        api_status: error.response?.status || null,
+        error_message: error.message,
+        rewarded: false
+      });
 
       return {
         success: false,

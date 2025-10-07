@@ -3,12 +3,11 @@ const pool = require('../config/database');
 const rewardsHistoryModel = {
   // Créer une entrée dans l'historique
   create: async (historyData) => {
-    const { review_id, customer_email, points_awarded, review_type, api_response, api_status, error_message } = historyData;
+    const { review_id, customer_email, points_awarded, review_type, api_response, api_status, error_message, rewarded } = historyData;
 
     const query = `
-      INSERT INTO rewards_history (review_id, customer_email, points_awarded, review_type, api_response, api_status, error_message)
-      VALUES ($1, $2, $3, $4, $5, $6, $7)
-      ON CONFLICT (review_id) DO NOTHING
+      INSERT INTO rewards_history (review_id, customer_email, points_awarded, review_type, api_response, api_status, error_message, rewarded)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
       RETURNING *
     `;
 
@@ -19,16 +18,17 @@ const rewardsHistoryModel = {
       review_type,
       api_response ? JSON.stringify(api_response) : null,
       api_status || null,
-      error_message || null
+      error_message || null,
+      rewarded || false
     ];
 
     const result = await pool.query(query, values);
     return result.rows[0];
   },
 
-  // Vérifier si un avis a déjà été récompensé
+  // Vérifier si un avis a déjà été récompensé avec succès
   exists: async (review_id) => {
-    const query = 'SELECT * FROM rewards_history WHERE review_id = $1';
+    const query = 'SELECT * FROM rewards_history WHERE review_id = $1 AND rewarded = true';
     const result = await pool.query(query, [review_id]);
     return result.rows.length > 0;
   },
