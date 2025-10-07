@@ -628,7 +628,7 @@ const ReviewsApp = () => {
                       <td style={{ padding: '8px', border: '1px solid #ddd' }}>
                         {review.id}
                       </td>
-                      <td style={{ padding: '8px', border: '1px solid #ddd' }}>
+                      <td style={{ padding: '8px', border: '1px solid #ddd', maxWidth: '120px', wordWrap: 'break-word', overflowWrap: 'break-word' }}>
                         {review.review_id}
                       </td>
                       <td style={{ padding: '8px', border: '1px solid #ddd' }}>

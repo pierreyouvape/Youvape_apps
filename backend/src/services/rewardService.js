@@ -214,8 +214,8 @@ const rewardService = {
       // Note: La vérification config.enabled est volontairement ignorée pour la récompense manuelle
       // L'admin doit pouvoir récompenser manuellement même si le système automatique est désactivé
 
-      // Récupérer l'avis
-      const query = 'SELECT * FROM reviews WHERE review_id = $1';
+      // Récupérer l'avis (cherche par review_id ou par id si c'est un nombre)
+      const query = 'SELECT * FROM reviews WHERE review_id = $1 OR id = $1';
       const result = await pool.query(query, [review_id]);
 
       if (result.rows.length === 0) {
