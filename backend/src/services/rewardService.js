@@ -101,14 +101,6 @@ const rewardService = {
         timeout: 15000
       };
 
-      // Ajouter l'authentification htaccess si présente
-      if (config.htaccess_user && config.htaccess_password) {
-        requestOptions.auth = {
-          username: config.htaccess_user,
-          password: config.htaccess_password
-        };
-      }
-
       // Appel API
       const response = await axios.post(
         apiUrl,
@@ -172,14 +164,6 @@ const rewardService = {
         },
         timeout: 15000
       };
-
-      // Ajouter l'authentification htaccess si présente
-      if (config.htaccess_user && config.htaccess_password) {
-        requestOptions.auth = {
-          username: config.htaccess_user,
-          password: config.htaccess_password
-        };
-      }
 
       // Test avec un email fictif - l'API devrait répondre avec succès
       // (créera un nouveau client si l'email n'existe pas, selon la doc)

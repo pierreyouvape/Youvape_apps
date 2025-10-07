@@ -17,9 +17,7 @@ const RewardsApp = () => {
     consumer_secret: '',
     points_site: 50,
     points_product: 100,
-    enabled: true,
-    htaccess_user: '',
-    htaccess_password: ''
+    enabled: true
   });
   const [configLoading, setConfigLoading] = useState(false);
   const [testLoading, setTestLoading] = useState(false);
@@ -352,48 +350,6 @@ const RewardsApp = () => {
                 boxSizing: 'border-box'
               }}
             />
-          </div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
-            <div>
-              <label style={{ display: 'block', marginBottom: '8px', fontWeight: '500', fontSize: '14px' }}>
-                Utilisateur .htaccess (optionnel)
-              </label>
-              <input
-                type="text"
-                value={config.htaccess_user}
-                onChange={(e) => handleConfigChange('htaccess_user', e.target.value)}
-                placeholder="Si le site est protégé"
-                style={{
-                  width: '100%',
-                  padding: '12px',
-                  border: '1px solid #ddd',
-                  borderRadius: '6px',
-                  fontSize: '16px',
-                  boxSizing: 'border-box'
-                }}
-              />
-            </div>
-
-            <div>
-              <label style={{ display: 'block', marginBottom: '8px', fontWeight: '500', fontSize: '14px' }}>
-                Mot de passe .htaccess (optionnel)
-              </label>
-              <input
-                type="password"
-                value={config.htaccess_password}
-                onChange={(e) => handleConfigChange('htaccess_password', e.target.value)}
-                placeholder="Si le site est protégé"
-                style={{
-                  width: '100%',
-                  padding: '12px',
-                  border: '1px solid #ddd',
-                  borderRadius: '6px',
-                  fontSize: '16px',
-                  boxSizing: 'border-box'
-                }}
-              />
-            </div>
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
