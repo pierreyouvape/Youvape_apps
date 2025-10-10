@@ -19,6 +19,10 @@ const Home = () => {
     navigate('/rewards');
   };
 
+  const handleGoToEmails = () => {
+    navigate('/emails');
+  };
+
   return (
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
       {/* Header */}
@@ -87,6 +91,28 @@ const Home = () => {
             >
               <span style={{ fontSize: '28px' }}>🎁</span>
               <span>Récompense Avis</span>
+            </div>
+            <div
+              onClick={handleGoToEmails}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '10px',
+                padding: '20px 30px',
+                backgroundColor: '#28a745',
+                color: 'white',
+                borderRadius: '8px',
+                cursor: 'pointer',
+                fontSize: '18px',
+                border: 'none',
+                boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
+                transition: 'transform 0.2s',
+              }}
+              onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.05)'}
+              onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
+            >
+              <span style={{ fontSize: '28px' }}>📧</span>
+              <span>Envoi d'Emails</span>
             </div>
           </div>
         </div>

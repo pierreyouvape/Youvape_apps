@@ -78,7 +78,8 @@ const reviewsController = {
                 customer_email: review.reviewer_email || null,
                 product_id: isProductReview ? review.product : null,
                 review_date: reviewDate,
-                review_status: parseInt(review.review_status) || 0
+                review_status: parseInt(review.review_status) || 0,
+                order_id: review.order || null
               });
               if (inserted) {
                 insertedCount++;

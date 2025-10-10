@@ -3,11 +3,11 @@ const pool = require('../config/database');
 const reviewsModel = {
   // Insérer ou mettre à jour un avis
   create: async (reviewData) => {
-    const { review_id, review_type, rating, comment, customer_name, customer_email, product_id, review_date, review_status } = reviewData;
+    const { review_id, review_type, rating, comment, customer_name, customer_email, product_id, review_date, review_status, order_id } = reviewData;
 
     const query = `
-      INSERT INTO reviews (review_id, review_type, rating, comment, customer_name, customer_email, product_id, review_date, review_status)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      INSERT INTO reviews (review_id, review_type, rating, comment, customer_name, customer_email, product_id, review_date, review_status, order_id)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
       ON CONFLICT (review_id)
       DO UPDATE SET
         review_status = EXCLUDED.review_status,
@@ -17,6 +17,7 @@ const reviewsModel = {
         customer_email = EXCLUDED.customer_email,
         product_id = EXCLUDED.product_id,
         review_date = EXCLUDED.review_date,
+        order_id = EXCLUDED.order_id,
         updated_at = CURRENT_TIMESTAMP
       RETURNING *
     `;
@@ -30,7 +31,8 @@ const reviewsModel = {
       customer_email || null,
       product_id || null,
       review_date || null,
-      review_status || 0
+      review_status || 0,
+      order_id || null
     ];
 
     const result = await pool.query(query, values);

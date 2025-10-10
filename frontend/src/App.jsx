@@ -5,6 +5,7 @@ import Register from './components/Register';
 import Home from './pages/Home';
 import ReviewsApp from './pages/ReviewsApp';
 import RewardsApp from './pages/RewardsApp';
+import EmailApp from './pages/EmailApp';
 import PrivateRoute from './components/PrivateRoute';
 
 function App() {
@@ -36,6 +37,14 @@ function App() {
             element={
               <PrivateRoute>
                 <RewardsApp />
+              </PrivateRoute>
+            }
+          />
+          <Route
+            path="/emails"
+            element={
+              <PrivateRoute>
+                <EmailApp />
               </PrivateRoute>
             }
           />
