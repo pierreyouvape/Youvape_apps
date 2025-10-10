@@ -41,7 +41,8 @@ const ReviewsApp = () => {
     customer_name: '',
     customer_email: '',
     product_id: '',
-    review_status: 1
+    review_status: 1,
+    order_id: ''
   });
   const [manualLoading, setManualLoading] = useState(false);
   const [manualMessage, setManualMessage] = useState('');
@@ -268,7 +269,8 @@ const ReviewsApp = () => {
           customer_name: '',
           customer_email: '',
           product_id: '',
-          review_status: 1
+          review_status: 1,
+          order_id: ''
         });
         setTimeout(() => setManualMessage(''), 3000);
       }
@@ -583,6 +585,18 @@ const ReviewsApp = () => {
                     <option value="1">Publié</option>
                     <option value="0">Non publié</option>
                   </select>
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', marginBottom: '5px' }}>Order ID (optionnel)</label>
+                  <input
+                    type="text"
+                    name="order_id"
+                    value={manualReview.order_id}
+                    onChange={handleManualReviewChange}
+                    placeholder="Ex: 12345"
+                    style={{ width: '100%', padding: '8px', borderRadius: '4px', border: '1px solid #ccc' }}
+                  />
                 </div>
               </div>
 

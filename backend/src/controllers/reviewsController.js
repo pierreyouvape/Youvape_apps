@@ -285,7 +285,7 @@ const reviewsController = {
   // Créer un avis manuellement (pour les tests)
   createManualReview: async (req, res) => {
     try {
-      const { review_type, rating, comment, customer_name, customer_email, product_id, review_status } = req.body;
+      const { review_type, rating, comment, customer_name, customer_email, product_id, review_status, order_id } = req.body;
 
       // Validation
       if (!review_type || !rating || !customer_name) {
@@ -304,7 +304,8 @@ const reviewsController = {
         customer_email: customer_email || null,
         product_id: product_id || null,
         review_date: new Date().toISOString(),
-        review_status: parseInt(review_status) || 0
+        review_status: parseInt(review_status) || 0,
+        order_id: order_id || null
       });
 
       res.json({
