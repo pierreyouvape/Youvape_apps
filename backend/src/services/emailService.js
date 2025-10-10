@@ -24,7 +24,7 @@ const emailService = {
 
       // Récupérer les commandes éligibles (avis récompensés dont la commande n'a pas encore reçu d'email)
       const query = `
-        SELECT DISTINCT r.order_id, r.customer_email, COUNT(*) as reviews_count
+        SELECT r.order_id, r.customer_email, COUNT(*) as reviews_count, MIN(r.rewarded_at) as first_rewarded
         FROM reviews r
         WHERE r.rewarded = true
           AND r.order_id IS NOT NULL
