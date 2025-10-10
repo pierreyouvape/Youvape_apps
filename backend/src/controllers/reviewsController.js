@@ -182,6 +182,11 @@ const reviewsController = {
         configObject[config.config_key] = config.config_value;
       });
 
+      // Ajouter cron_enabled par défaut si absent
+      if (!configObject.cron_enabled) {
+        configObject.cron_enabled = 'true';
+      }
+
       res.json({
         success: true,
         config: configObject
@@ -189,6 +194,29 @@ const reviewsController = {
 
     } catch (error) {
       console.error('Erreur lors de la récupération de la configuration:', error);
+      res.status(500).json({ error: 'Erreur serveur' });
+    }
+  },
+
+  // Activer/désactiver le cron automatique
+  toggleCron: async (req, res) => {
+    try {
+      const { enabled } = req.body;
+
+      if (typeof enabled !== 'boolean') {
+        return res.status(400).json({ error: 'Le champ enabled doit être un booléen' });
+      }
+
+      await appConfigModel.upsert('cron_enabled', enabled.toString());
+
+      res.json({
+        success: true,
+        message: enabled ? 'Récupération automatique activée' : 'Récupération automatique désactivée',
+        cron_enabled: enabled
+      });
+
+    } catch (error) {
+      console.error('Erreur lors du changement de statut du cron:', error);
       res.status(500).json({ error: 'Erreur serveur' });
     }
   },

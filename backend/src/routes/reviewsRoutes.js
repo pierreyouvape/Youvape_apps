@@ -12,6 +12,7 @@ router.post('/fetch', reviewsController.fetchReviews);
 // Routes de configuration
 router.post('/config', reviewsController.saveConfig);
 router.get('/config', reviewsController.getConfig);
+router.post('/toggle-cron', reviewsController.toggleCron);
 
 // Route pour récupérer les avis stockés
 router.get('/stored', reviewsController.getStoredReviews);

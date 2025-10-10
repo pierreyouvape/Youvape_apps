@@ -17,7 +17,8 @@ const ReviewsApp = () => {
     review_type: 'site',
     limit: 100,
     product_id: '',
-    interval: 'once_daily'
+    interval: 'once_daily',
+    cron_enabled: 'true'
   });
   const [configSaving, setConfigSaving] = useState(false);
   const [configMessage, setConfigMessage] = useState('');
@@ -76,7 +77,8 @@ const ReviewsApp = () => {
           review_type: response.data.config.review_type || 'site',
           limit: parseInt(response.data.config.limit) || 100,
           product_id: response.data.config.product_id || '',
-          interval: response.data.config.interval || 'once_daily'
+          interval: response.data.config.interval || 'once_daily',
+          cron_enabled: response.data.config.cron_enabled || 'true'
         });
       }
     } catch (err) {
@@ -208,6 +210,28 @@ const ReviewsApp = () => {
     }
   };
 
+  const handleToggleCron = async () => {
+    try {
+      const newEnabled = config.cron_enabled === 'true' ? false : true;
+
+      const response = await axios.post(
+        `${API_BASE_URL}/reviews/toggle-cron`,
+        { enabled: newEnabled },
+        {
+          headers: { 'Authorization': `Bearer ${token}` }
+        }
+      );
+
+      if (response.data.success) {
+        setConfig(prev => ({ ...prev, cron_enabled: newEnabled.toString() }));
+        alert(response.data.message);
+      }
+    } catch (err) {
+      alert('Erreur lors du changement de statut');
+      console.error(err);
+    }
+  };
+
   const renderStars = (rating) => {
     return '⭐'.repeat(Math.min(rating, 5));
   };
@@ -327,7 +351,25 @@ const ReviewsApp = () => {
         <div>
           {/* Formulaire de configuration */}
           <div style={{ backgroundColor: '#f5f5f5', padding: '20px', borderRadius: '8px', marginBottom: '30px' }}>
-            <h2>Configuration</h2>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+              <h2 style={{ margin: 0 }}>Configuration</h2>
+              <button
+                type="button"
+                onClick={handleToggleCron}
+                style={{
+                  padding: '10px 20px',
+                  borderRadius: '8px',
+                  border: 'none',
+                  cursor: 'pointer',
+                  fontWeight: 'bold',
+                  backgroundColor: config.cron_enabled === 'true' ? '#28a745' : '#6c757d',
+                  color: 'white',
+                  transition: 'background-color 0.3s ease'
+                }}
+              >
+                {config.cron_enabled === 'true' ? '✓ Récupération auto activée' : '✗ Récupération auto désactivée'}
+              </button>
+            </div>
             <form onSubmit={handleSaveConfig}>
               <div style={{ marginBottom: '15px' }}>
                 <label style={{ display: 'block', marginBottom: '5px' }}>API Key *</label>

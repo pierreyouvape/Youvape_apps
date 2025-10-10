@@ -11,6 +11,13 @@ const fetchReviewsAuto = async () => {
   try {
     console.log('🔄 Récupération automatique des avis...');
 
+    // Vérifier si le cron est activé
+    const cronEnabledConfig = await appConfigModel.get('cron_enabled');
+    if (cronEnabledConfig && cronEnabledConfig.config_value === 'false') {
+      console.log('⏸️ Récupération automatique désactivée');
+      return;
+    }
+
     // Récupérer la configuration
     const apiKeyConfig = await appConfigModel.get('api_key');
     const reviewTypeConfig = await appConfigModel.get('review_type');
@@ -83,7 +90,8 @@ const fetchReviewsAuto = async () => {
               customer_email: review.reviewer_email || null,
               product_id: isProductReview ? review.product : null,
               review_date: reviewDate,
-              review_status: parseInt(review.review_status) || 0
+              review_status: parseInt(review.review_status) || 0,
+              order_id: review.order || null
             });
             if (inserted) {
               insertedCount++;
