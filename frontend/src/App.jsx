@@ -6,6 +6,7 @@ import Home from './pages/Home';
 import ReviewsApp from './pages/ReviewsApp';
 import RewardsApp from './pages/RewardsApp';
 import EmailApp from './pages/EmailApp';
+import SettingsApp from './pages/SettingsApp';
 import PrivateRoute from './components/PrivateRoute';
 
 function App() {
@@ -45,6 +46,14 @@ function App() {
             element={
               <PrivateRoute>
                 <EmailApp />
+              </PrivateRoute>
+            }
+          />
+          <Route
+            path="/settings"
+            element={
+              <PrivateRoute>
+                <SettingsApp />
               </PrivateRoute>
             }
           />
