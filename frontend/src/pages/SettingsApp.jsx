@@ -157,7 +157,7 @@ const SettingsApp = () => {
     <div className="settings-container">
       <div className="settings-header">
         <h1>Paramètres - Gestion des utilisateurs</h1>
-        <button onClick={() => navigate('/')} className="btn-back">
+        <button onClick={() => navigate('/home')} className="btn-back">
           ← Retour
         </button>
       </div>
