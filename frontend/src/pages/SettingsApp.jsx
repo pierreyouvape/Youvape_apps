@@ -180,10 +180,10 @@ const SettingsApp = () => {
               <th></th>
               <th></th>
               {APPS.map(app => (
-                <th key={app.key} colSpan="2" className="sub-header">
-                  <span>Lecture</span>
-                  <span>Écriture</span>
-                </th>
+                <>
+                  <th key={`${app.key}-read`} className="sub-header">Lecture</th>
+                  <th key={`${app.key}-write`} className="sub-header">Écriture</th>
+                </>
               ))}
               <th></th>
             </tr>
@@ -206,20 +206,24 @@ const SettingsApp = () => {
                     />
                   </td>
                   {APPS.map(app => (
-                    <td key={app.key} colSpan="2" className="permissions-cell">
-                      <input
-                        type="checkbox"
-                        checked={user.permissions[app.key]?.read || false}
-                        onChange={(e) => handlePermissionChange(user.id, app.key, 'read', e.target.checked)}
-                        disabled={isSuperAdmin}
-                      />
-                      <input
-                        type="checkbox"
-                        checked={user.permissions[app.key]?.write || false}
-                        onChange={(e) => handlePermissionChange(user.id, app.key, 'write', e.target.checked)}
-                        disabled={isSuperAdmin}
-                      />
-                    </td>
+                    <>
+                      <td key={`${app.key}-read`} className="permissions-cell">
+                        <input
+                          type="checkbox"
+                          checked={user.permissions[app.key]?.read || false}
+                          onChange={(e) => handlePermissionChange(user.id, app.key, 'read', e.target.checked)}
+                          disabled={isSuperAdmin}
+                        />
+                      </td>
+                      <td key={`${app.key}-write`} className="permissions-cell">
+                        <input
+                          type="checkbox"
+                          checked={user.permissions[app.key]?.write || false}
+                          onChange={(e) => handlePermissionChange(user.id, app.key, 'write', e.target.checked)}
+                          disabled={isSuperAdmin}
+                        />
+                      </td>
+                    </>
                   ))}
                   <td className="actions-cell">
                     <button

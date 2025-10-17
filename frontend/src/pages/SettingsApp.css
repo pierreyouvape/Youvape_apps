@@ -84,9 +84,7 @@
   font-weight: 500;
   color: #6c757d;
   padding: 0.5rem;
-  display: flex;
-  gap: 2rem;
-  justify-content: center;
+  text-align: center;
 }
 
 .users-table td {
