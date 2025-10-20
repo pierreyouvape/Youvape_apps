@@ -18,7 +18,8 @@ const ReviewsApp = () => {
     limit: 100,
     product_id: '',
     interval: 'once_daily',
-    cron_enabled: 'true'
+    cron_enabled: 'true',
+    cutoff_date: ''
   });
   const [configSaving, setConfigSaving] = useState(false);
   const [configMessage, setConfigMessage] = useState('');
@@ -79,7 +80,8 @@ const ReviewsApp = () => {
           limit: parseInt(response.data.config.limit) || 100,
           product_id: response.data.config.product_id || '',
           interval: response.data.config.interval || 'once_daily',
-          cron_enabled: response.data.config.cron_enabled || 'true'
+          cron_enabled: response.data.config.cron_enabled || 'true',
+          cutoff_date: response.data.config.cutoff_date || ''
         });
       }
     } catch (err) {
@@ -441,6 +443,23 @@ const ReviewsApp = () => {
                   <option value="10_times">10 fois/jour (toutes les 2h24)</option>
                   <option value="12_times">12 fois/jour (toutes les 2h)</option>
                 </select>
+              </div>
+
+              <div style={{ marginBottom: '15px', backgroundColor: '#fff3cd', padding: '15px', borderRadius: '4px', border: '1px solid #ffc107' }}>
+                <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>
+                  📅 Date de coupure (optionnel)
+                </label>
+                <p style={{ fontSize: '13px', color: '#856404', marginBottom: '10px' }}>
+                  Les avis antérieurs à cette date ne seront <strong>pas</strong> récupérés ni traités.
+                  Laissez vide pour récupérer tous les avis.
+                </p>
+                <input
+                  type="date"
+                  name="cutoff_date"
+                  value={config.cutoff_date}
+                  onChange={handleConfigChange}
+                  style={{ width: '100%', padding: '8px', borderRadius: '4px', border: '1px solid #ccc' }}
+                />
               </div>
 
               <button

@@ -22,6 +22,10 @@ const reviewsController = {
         return res.status(400).json({ error: 'limit doit être entre 1 et 1000' });
       }
 
+      // Récupérer la date de coupure si configurée
+      const cutoffDateConfig = await appConfigModel.get('cutoff_date');
+      const cutoffDate = cutoffDateConfig?.config_value || null;
+
       // Préparer les paramètres de la requête
       const params = {
         api_key,
@@ -53,6 +57,24 @@ const reviewsController = {
         if (responseData && responseData.reviews && Array.isArray(responseData.reviews)) {
           for (const review of responseData.reviews) {
             try {
+              // Convertir la date au format ISO pour PostgreSQL
+              let reviewDate = null;
+              if (review.date_time) {
+                // Format reçu: "2025-10-01 11:26:51"
+                reviewDate = review.date_time.replace(' ', 'T');
+              }
+
+              // Filtrer par date de coupure si configurée
+              if (cutoffDate && reviewDate) {
+                const reviewTimestamp = new Date(reviewDate).getTime();
+                const cutoffTimestamp = new Date(cutoffDate).getTime();
+
+                if (reviewTimestamp < cutoffTimestamp) {
+                  console.log(`⏭️ Avis ${review.id} ignoré (antérieur à ${cutoffDate})`);
+                  continue; // Passer à l'avis suivant
+                }
+              }
+
               // Déterminer le type d'avis
               const isProductReview = review.product && review.product !== 'no';
               const reviewType = isProductReview ? 'product' : 'site';
@@ -61,13 +83,6 @@ const reviewsController = {
               const firstName = review.reviewer_name || '';
               const lastName = review.reviewer_lastname || '';
               const fullName = `${firstName} ${lastName}`.trim() || null;
-
-              // Convertir la date au format ISO pour PostgreSQL
-              let reviewDate = null;
-              if (review.date_time) {
-                // Format reçu: "2025-10-01 11:26:51"
-                reviewDate = review.date_time.replace(' ', 'T');
-              }
 
               const inserted = await reviewsModel.create({
                 review_id: review.id || `${Date.now()}-${Math.random()}`,
@@ -146,11 +161,11 @@ const reviewsController = {
   // Sauvegarder la configuration
   saveConfig: async (req, res) => {
     try {
-      const { api_key, review_type, limit, product_id, interval } = req.body;
+      const { api_key, review_type, limit, product_id, interval, cutoff_date } = req.body;
 
       // Validation
       if (!api_key || !review_type || !limit || !interval) {
-        return res.status(400).json({ error: 'Tous les champs sont requis (sauf product_id)' });
+        return res.status(400).json({ error: 'Tous les champs sont requis (sauf product_id et cutoff_date)' });
       }
 
       // Sauvegarder chaque paramètre
@@ -159,6 +174,7 @@ const reviewsController = {
       await appConfigModel.upsert('limit', limit.toString());
       await appConfigModel.upsert('product_id', product_id || '');
       await appConfigModel.upsert('interval', interval);
+      await appConfigModel.upsert('cutoff_date', cutoff_date || '');
 
       res.json({
         success: true,

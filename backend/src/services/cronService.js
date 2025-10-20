@@ -23,6 +23,7 @@ const fetchReviewsAuto = async () => {
     const reviewTypeConfig = await appConfigModel.get('review_type');
     const limitConfig = await appConfigModel.get('limit');
     const productIdConfig = await appConfigModel.get('product_id');
+    const cutoffDateConfig = await appConfigModel.get('cutoff_date');
 
     if (!apiKeyConfig || !reviewTypeConfig || !limitConfig) {
       console.log('⚠️ Configuration incomplète, récupération automatique annulée');
@@ -33,6 +34,7 @@ const fetchReviewsAuto = async () => {
     const review_type = reviewTypeConfig.config_value;
     const limit = parseInt(limitConfig.config_value);
     const product_id = productIdConfig?.config_value || null;
+    const cutoffDate = cutoffDateConfig?.config_value || null;
 
     // Préparer les paramètres de la requête
     const params = {
@@ -65,6 +67,24 @@ const fetchReviewsAuto = async () => {
       if (responseData && responseData.reviews && Array.isArray(responseData.reviews)) {
         for (const review of responseData.reviews) {
           try {
+            // Convertir la date au format ISO pour PostgreSQL
+            let reviewDate = null;
+            if (review.date_time) {
+              // Format reçu: "2025-10-01 11:26:51"
+              reviewDate = review.date_time.replace(' ', 'T');
+            }
+
+            // Filtrer par date de coupure si configurée
+            if (cutoffDate && reviewDate) {
+              const reviewTimestamp = new Date(reviewDate).getTime();
+              const cutoffTimestamp = new Date(cutoffDate).getTime();
+
+              if (reviewTimestamp < cutoffTimestamp) {
+                console.log(`⏭️ Avis ${review.id} ignoré (antérieur à ${cutoffDate})`);
+                continue; // Passer à l'avis suivant
+              }
+            }
+
             // Déterminer le type d'avis
             const isProductReview = review.product && review.product !== 'no';
             const reviewType = isProductReview ? 'product' : 'site';
@@ -73,13 +93,6 @@ const fetchReviewsAuto = async () => {
             const firstName = review.reviewer_name || '';
             const lastName = review.reviewer_lastname || '';
             const fullName = `${firstName} ${lastName}`.trim() || null;
-
-            // Convertir la date au format ISO pour PostgreSQL
-            let reviewDate = null;
-            if (review.date_time) {
-              // Format reçu: "2025-10-01 11:26:51"
-              reviewDate = review.date_time.replace(' ', 'T');
-            }
 
             const inserted = await reviewsModel.create({
               review_id: review.id || `${Date.now()}-${Math.random()}`,
