@@ -6,6 +6,7 @@ const productsController = require('../controllers/productsController');
 router.get('/', productsController.getAll);
 router.get('/search', productsController.search);
 router.get('/categories/list', productsController.getCategories);
+router.get('/stock-summary', productsController.getStockSummary);
 router.get('/category/:category', productsController.getByCategory);
 
 // Détails produit

@@ -102,6 +102,20 @@ exports.getCategories = async (req, res) => {
 };
 
 /**
+ * Récupère les statistiques de stock
+ * GET /api/products/stock-summary
+ */
+exports.getStockSummary = async (req, res) => {
+  try {
+    const summary = await productModel.getStockSummary();
+    res.json({ success: true, data: summary });
+  } catch (error) {
+    console.error('Error getting stock summary:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+/**
  * Récupère l'historique des ventes d'un produit
  * GET /api/products/:id/sales-history
  */

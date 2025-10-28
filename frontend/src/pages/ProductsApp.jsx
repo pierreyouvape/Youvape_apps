@@ -7,79 +7,46 @@ const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
 const ProductsApp = () => {
   const navigate = useNavigate();
   const [products, setProducts] = useState([]);
-  const [categories, setCategories] = useState([]);
+  const [stockSummary, setStockSummary] = useState({ in_stock: 0, out_of_stock: 0, low_stock: 0 });
   const [loading, setLoading] = useState(true);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState('');
-  const [error, setError] = useState('');
+  const [filters, setFilters] = useState({
+    search: '',
+    category: '',
+    stockStatus: ''
+  });
 
   useEffect(() => {
-    fetchCategories();
-    fetchProducts();
+    fetchData();
   }, []);
 
-  const fetchCategories = async () => {
-    try {
-      const response = await axios.get(`${API_URL}/products/categories/list`);
-      if (response.data.success) {
-        setCategories(response.data.data);
-      }
-    } catch (err) {
-      console.error('Error fetching categories:', err);
-    }
-  };
-
-  const fetchProducts = async () => {
+  const fetchData = async () => {
     setLoading(true);
-    setError('');
-
     try {
-      const response = await axios.get(`${API_URL}/products`, {
-        params: { limit: 100 }
-      });
+      const [productsRes, stockRes] = await Promise.all([
+        axios.get(`${API_URL}/products`, { params: { limit: 1000 } }),
+        axios.get(`${API_URL}/products/stock-summary`)
+      ]);
 
-      if (response.data.success) {
-        setProducts(response.data.data);
-      }
+      if (productsRes.data.success) setProducts(productsRes.data.data);
+      if (stockRes.data.success) setStockSummary(stockRes.data.data);
     } catch (err) {
-      console.error('Error fetching products:', err);
-      setError('Erreur lors du chargement des produits');
+      console.error('Error fetching data:', err);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleSearch = async () => {
-    if (!searchTerm.trim() && !selectedCategory) {
-      fetchProducts();
-      return;
+  const filteredProducts = products.filter(product => {
+    if (filters.search && !product.name?.toLowerCase().includes(filters.search.toLowerCase())
+        && !product.sku?.toLowerCase().includes(filters.search.toLowerCase())) {
+      return false;
     }
-
-    setLoading(true);
-    setError('');
-
-    try {
-      let response;
-      if (selectedCategory) {
-        response = await axios.get(`${API_URL}/products/category/${selectedCategory}`, {
-          params: { limit: 100 }
-        });
-      } else {
-        response = await axios.get(`${API_URL}/products/search`, {
-          params: { q: searchTerm, limit: 100 }
-        });
-      }
-
-      if (response.data.success) {
-        setProducts(response.data.data);
-      }
-    } catch (err) {
-      console.error('Error searching products:', err);
-      setError('Erreur lors de la recherche');
-    } finally {
-      setLoading(false);
-    }
-  };
+    if (filters.category && product.category !== filters.category) return false;
+    if (filters.stockStatus === 'instock' && (product.stock_status !== 'instock' || product.stock_quantity <= 0)) return false;
+    if (filters.stockStatus === 'outofstock' && product.stock_status !== 'outofstock' && product.stock_quantity > 0) return false;
+    if (filters.stockStatus === 'low' && (product.stock_quantity > 10 || product.stock_quantity <= 0)) return false;
+    return true;
+  });
 
   const formatCurrency = (value) => {
     return new Intl.NumberFormat('fr-FR', {
@@ -91,6 +58,8 @@ const ProductsApp = () => {
   const formatNumber = (value) => {
     return new Intl.NumberFormat('fr-FR').format(value);
   };
+
+  const uniqueCategories = [...new Set(products.map(p => p.category).filter(Boolean))].sort();
 
   return (
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', backgroundColor: '#f5f5f5' }}>
@@ -127,101 +96,130 @@ const ProductsApp = () => {
       </div>
 
       {/* Main Content */}
-      <div style={{ flex: 1, maxWidth: '1400px', margin: '30px auto', padding: '0 20px', width: '100%' }}>
-        {/* Title & Search */}
-        <div style={{ marginBottom: '30px' }}>
-          <h1 style={{ color: '#135E84', margin: '0 0 20px 0' }}>📦 Produits</h1>
+      <div style={{ flex: 1, maxWidth: '1600px', margin: '30px auto', padding: '0 20px', width: '100%' }}>
+        <h1 style={{ color: '#135E84', margin: '0 0 30px 0' }}>📦 Produits</h1>
 
-          <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-            <input
-              type="text"
-              placeholder="Rechercher par nom, SKU..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              onKeyPress={(e) => e.key === 'Enter' && handleSearch()}
-              style={{
-                padding: '10px 15px',
-                fontSize: '14px',
-                border: '1px solid #ccc',
-                borderRadius: '6px',
-                width: '300px',
-                outline: 'none'
-              }}
-            />
-            <select
-              value={selectedCategory}
-              onChange={(e) => {
-                setSelectedCategory(e.target.value);
-                setSearchTerm('');
-              }}
-              style={{
-                padding: '10px 15px',
-                fontSize: '14px',
-                border: '1px solid #ccc',
-                borderRadius: '6px',
-                outline: 'none',
-                cursor: 'pointer'
-              }}
-            >
-              <option value="">Toutes les catégories</option>
-              {categories.map((cat) => (
-                <option key={cat} value={cat}>
-                  {cat}
-                </option>
-              ))}
-            </select>
-            <button
-              onClick={handleSearch}
-              style={{
-                padding: '10px 20px',
-                backgroundColor: '#135E84',
-                color: 'white',
-                border: 'none',
-                borderRadius: '6px',
-                fontSize: '14px',
-                cursor: 'pointer',
-                fontWeight: '600'
-              }}
-            >
-              🔍 Rechercher
-            </button>
-            <button
-              onClick={() => {
-                setSearchTerm('');
-                setSelectedCategory('');
-                fetchProducts();
-              }}
-              style={{
-                padding: '10px 20px',
-                backgroundColor: '#6c757d',
-                color: 'white',
-                border: 'none',
-                borderRadius: '6px',
-                fontSize: '14px',
-                cursor: 'pointer',
-                fontWeight: '600'
-              }}
-            >
-              🔄 Réinitialiser
-            </button>
+        {/* Stock Summary Cards */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '15px', marginBottom: '30px' }}>
+          <div
+            onClick={() => setFilters({ ...filters, stockStatus: filters.stockStatus === 'instock' ? '' : 'instock' })}
+            style={{
+              backgroundColor: '#fff',
+              padding: '20px',
+              borderRadius: '12px',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
+              cursor: 'pointer',
+              border: filters.stockStatus === 'instock' ? '2px solid #28a745' : '2px solid transparent',
+              transition: 'all 0.2s'
+            }}
+          >
+            <div style={{ fontSize: '12px', color: '#666', marginBottom: '5px', textTransform: 'uppercase' }}>
+              En stock
+            </div>
+            <div style={{ fontSize: '28px', fontWeight: '700', color: '#28a745' }}>
+              {stockSummary.in_stock || 0}
+            </div>
+            <div style={{ fontSize: '13px', color: '#999', marginTop: '5px' }}>
+              Produits disponibles
+            </div>
+          </div>
+
+          <div
+            onClick={() => setFilters({ ...filters, stockStatus: filters.stockStatus === 'outofstock' ? '' : 'outofstock' })}
+            style={{
+              backgroundColor: '#fff',
+              padding: '20px',
+              borderRadius: '12px',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
+              cursor: 'pointer',
+              border: filters.stockStatus === 'outofstock' ? '2px solid #dc3545' : '2px solid transparent',
+              transition: 'all 0.2s'
+            }}
+          >
+            <div style={{ fontSize: '12px', color: '#666', marginBottom: '5px', textTransform: 'uppercase' }}>
+              En rupture
+            </div>
+            <div style={{ fontSize: '28px', fontWeight: '700', color: '#dc3545' }}>
+              {stockSummary.out_of_stock || 0}
+            </div>
+            <div style={{ fontSize: '13px', color: '#999', marginTop: '5px' }}>
+              Produits indisponibles
+            </div>
+          </div>
+
+          <div
+            onClick={() => setFilters({ ...filters, stockStatus: filters.stockStatus === 'low' ? '' : 'low' })}
+            style={{
+              backgroundColor: '#fff',
+              padding: '20px',
+              borderRadius: '12px',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
+              cursor: 'pointer',
+              border: filters.stockStatus === 'low' ? '2px solid #ffc107' : '2px solid transparent',
+              transition: 'all 0.2s'
+            }}
+          >
+            <div style={{ fontSize: '12px', color: '#666', marginBottom: '5px', textTransform: 'uppercase' }}>
+              Stock bas
+            </div>
+            <div style={{ fontSize: '28px', fontWeight: '700', color: '#ffc107' }}>
+              {stockSummary.low_stock || 0}
+            </div>
+            <div style={{ fontSize: '13px', color: '#999', marginTop: '5px' }}>
+              Moins de 10 unités
+            </div>
           </div>
         </div>
 
-        {/* Error message */}
-        {error && (
-          <div
+        {/* Filters */}
+        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginBottom: '20px' }}>
+          <input
+            type="text"
+            placeholder="🔍 Rechercher par nom, SKU..."
+            value={filters.search}
+            onChange={(e) => setFilters({ ...filters, search: e.target.value })}
             style={{
-              padding: '15px',
-              marginBottom: '20px',
-              backgroundColor: '#f8d7da',
-              border: '1px solid #f5c6cb',
+              padding: '10px 15px',
+              fontSize: '14px',
+              border: '1px solid #ccc',
               borderRadius: '6px',
-              color: '#721c24'
+              width: '300px',
+              outline: 'none'
+            }}
+          />
+          <select
+            value={filters.category}
+            onChange={(e) => setFilters({ ...filters, category: e.target.value })}
+            style={{
+              padding: '10px 15px',
+              fontSize: '14px',
+              border: '1px solid #ccc',
+              borderRadius: '6px',
+              outline: 'none',
+              cursor: 'pointer'
             }}
           >
-            {error}
-          </div>
-        )}
+            <option value="">Toutes les catégories</option>
+            {uniqueCategories.map((cat) => (
+              <option key={cat} value={cat}>{cat}</option>
+            ))}
+          </select>
+          <button
+            onClick={() => setFilters({ search: '', category: '', stockStatus: '' })}
+            style={{
+              padding: '10px 20px',
+              backgroundColor: '#6c757d',
+              color: 'white',
+              border: 'none',
+              borderRadius: '6px',
+              fontSize: '14px',
+              cursor: 'pointer',
+              fontWeight: '600'
+            }}
+          >
+            🔄 Réinitialiser
+          </button>
+        </div>
 
         {/* Loading */}
         {loading && (
@@ -232,16 +230,16 @@ const ProductsApp = () => {
         )}
 
         {/* Products Table */}
-        {!loading && products.length > 0 && (
+        {!loading && filteredProducts.length > 0 && (
           <div
             style={{
               backgroundColor: '#fff',
               borderRadius: '12px',
               boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
-              overflow: 'hidden'
+              overflow: 'auto'
             }}
           >
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '1000px' }}>
               <thead>
                 <tr style={{ backgroundColor: '#f8f9fa', borderBottom: '2px solid #e0e0e0' }}>
                   <th style={{ textAlign: 'left', padding: '15px', fontSize: '14px', fontWeight: '600', color: '#333' }}>
@@ -257,9 +255,9 @@ const ProductsApp = () => {
                     Coût
                   </th>
                   <th style={{ textAlign: 'right', padding: '15px', fontSize: '14px', fontWeight: '600', color: '#333' }}>
-                    Marge unit.
+                    Marge unitaire
                   </th>
-                  <th style={{ textAlign: 'right', padding: '15px', fontSize: '14px', fontWeight: '600', color: '#333' }}>
+                  <th style={{ textAlign: 'center', padding: '15px', fontSize: '14px', fontWeight: '600', color: '#333' }}>
                     Stock
                   </th>
                   <th style={{ textAlign: 'right', padding: '15px', fontSize: '14px', fontWeight: '600', color: '#333' }}>
@@ -271,70 +269,71 @@ const ProductsApp = () => {
                 </tr>
               </thead>
               <tbody>
-                {products.map((product) => (
-                  <tr
-                    key={product.product_id}
-                    style={{
-                      borderBottom: '1px solid #f0f0f0',
-                      transition: 'background-color 0.2s'
-                    }}
-                    onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#f8f9fa')}
-                    onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
-                  >
-                    <td style={{ padding: '15px' }}>
-                      <div style={{ fontWeight: '600', fontSize: '14px', color: '#333' }}>{product.name}</div>
-                      <div style={{ fontSize: '12px', color: '#999', marginTop: '2px' }}>{product.sku}</div>
-                    </td>
-                    <td style={{ padding: '15px', fontSize: '14px', color: '#666' }}>{product.category || '-'}</td>
-                    <td style={{ textAlign: 'right', padding: '15px', fontSize: '14px', fontWeight: '600' }}>
-                      {formatCurrency(product.price)}
-                    </td>
-                    <td style={{ textAlign: 'right', padding: '15px', fontSize: '14px' }}>
-                      {formatCurrency(product.effective_cost_price || 0)}
-                    </td>
-                    <td
+                {filteredProducts.map((product) => {
+                  const margin = parseFloat(product.unit_margin) || 0;
+                  const marginColor = margin >= 0 ? '#28a745' : '#dc3545';
+
+                  return (
+                    <tr
+                      key={product.product_id}
                       style={{
-                        textAlign: 'right',
-                        padding: '15px',
-                        fontSize: '14px',
-                        fontWeight: '600',
-                        color: product.unit_margin > 0 ? '#28a745' : '#dc3545'
+                        borderBottom: '1px solid #f0f0f0',
+                        transition: 'background-color 0.2s'
                       }}
+                      onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#f8f9fa')}
+                      onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
                     >
-                      {formatCurrency(product.unit_margin || 0)}
-                    </td>
-                    <td style={{ textAlign: 'right', padding: '15px', fontSize: '14px' }}>
-                      {formatNumber(product.stock_quantity || 0)}
-                    </td>
-                    <td style={{ textAlign: 'right', padding: '15px', fontSize: '14px', fontWeight: '600', color: '#135E84' }}>
-                      {formatCurrency(product.total_revenue || 0)}
-                    </td>
-                    <td style={{ textAlign: 'center', padding: '15px' }}>
-                      <button
-                        onClick={() => navigate(`/products/${product.product_id}`)}
-                        style={{
-                          padding: '6px 12px',
-                          backgroundColor: '#135E84',
-                          color: 'white',
-                          border: 'none',
-                          borderRadius: '4px',
-                          fontSize: '12px',
-                          cursor: 'pointer',
-                          fontWeight: '600'
-                        }}
-                      >
-                        Voir détails
-                      </button>
-                    </td>
-                  </tr>
-                ))}
+                      <td style={{ padding: '15px' }}>
+                        <div style={{ fontWeight: '600', fontSize: '14px', color: '#333' }}>{product.name}</div>
+                        <div style={{ fontSize: '12px', color: '#999', marginTop: '2px' }}>
+                          SKU: {product.sku || '-'}
+                        </div>
+                      </td>
+                      <td style={{ padding: '15px', fontSize: '14px', color: '#666' }}>
+                        {product.category || '-'}
+                      </td>
+                      <td style={{ textAlign: 'right', padding: '15px', fontSize: '14px', fontWeight: '600' }}>
+                        {formatCurrency(product.price)}
+                      </td>
+                      <td style={{ textAlign: 'right', padding: '15px', fontSize: '14px', color: '#666' }}>
+                        {formatCurrency(product.effective_cost_price || 0)}
+                      </td>
+                      <td style={{ textAlign: 'right', padding: '15px', fontSize: '14px', fontWeight: '600', color: marginColor }}>
+                        {formatCurrency(margin)}
+                      </td>
+                      <td style={{ textAlign: 'center', padding: '15px', fontSize: '14px', fontWeight: '600' }}>
+                        {product.stock_quantity !== null ? formatNumber(product.stock_quantity) : '-'}
+                      </td>
+                      <td style={{ textAlign: 'right', padding: '15px', fontSize: '14px', fontWeight: '600', color: '#135E84' }}>
+                        {formatCurrency(product.total_revenue || 0)}
+                      </td>
+                      <td style={{ textAlign: 'center', padding: '15px' }}>
+                        <button
+                          onClick={() => navigate(`/products/${product.product_id}`)}
+                          style={{
+                            padding: '6px 12px',
+                            backgroundColor: '#135E84',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '4px',
+                            fontSize: '12px',
+                            cursor: 'pointer',
+                            fontWeight: '600'
+                          }}
+                        >
+                          Voir détails
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
         )}
 
         {/* No results */}
-        {!loading && products.length === 0 && (
+        {!loading && filteredProducts.length === 0 && (
           <div
             style={{
               textAlign: 'center',
@@ -346,6 +345,13 @@ const ProductsApp = () => {
           >
             <div style={{ fontSize: '48px', marginBottom: '20px' }}>🔍</div>
             <div style={{ fontSize: '18px', color: '#666' }}>Aucun produit trouvé</div>
+          </div>
+        )}
+
+        {/* Results count */}
+        {!loading && filteredProducts.length > 0 && (
+          <div style={{ marginTop: '20px', textAlign: 'center', color: '#666', fontSize: '14px' }}>
+            {filteredProducts.length} produit(s) affiché(s) sur {products.length} au total
           </div>
         )}
       </div>

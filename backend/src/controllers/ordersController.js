@@ -138,6 +138,20 @@ exports.getStatuses = async (req, res) => {
 };
 
 /**
+ * Récupère les statistiques par statut
+ * GET /api/orders/stats/by-status
+ */
+exports.getStatsByStatus = async (req, res) => {
+  try {
+    const stats = await orderModel.getStatsByStatus();
+    res.json({ success: true, data: stats });
+  } catch (error) {
+    console.error('Error getting stats by status:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+/**
  * Récupère tous les pays existants
  * GET /api/orders/countries/list
  */

@@ -8,8 +8,10 @@ const CustomersApp = () => {
   const navigate = useNavigate();
   const [customers, setCustomers] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [error, setError] = useState('');
+  const [filters, setFilters] = useState({
+    search: '',
+    country: ''
+  });
 
   useEffect(() => {
     fetchCustomers();
@@ -17,11 +19,9 @@ const CustomersApp = () => {
 
   const fetchCustomers = async () => {
     setLoading(true);
-    setError('');
-
     try {
       const response = await axios.get(`${API_URL}/customers`, {
-        params: { limit: 100 }
+        params: { limit: 1000 }
       });
 
       if (response.data.success) {
@@ -29,36 +29,20 @@ const CustomersApp = () => {
       }
     } catch (err) {
       console.error('Error fetching customers:', err);
-      setError('Erreur lors du chargement des clients');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleSearch = async () => {
-    if (!searchTerm.trim()) {
-      fetchCustomers();
-      return;
+  const filteredCustomers = customers.filter(customer => {
+    if (filters.search && !customer.first_name?.toLowerCase().includes(filters.search.toLowerCase())
+        && !customer.last_name?.toLowerCase().includes(filters.search.toLowerCase())
+        && !customer.email?.toLowerCase().includes(filters.search.toLowerCase())) {
+      return false;
     }
-
-    setLoading(true);
-    setError('');
-
-    try {
-      const response = await axios.get(`${API_URL}/customers/search`, {
-        params: { q: searchTerm, limit: 100 }
-      });
-
-      if (response.data.success) {
-        setCustomers(response.data.data);
-      }
-    } catch (err) {
-      console.error('Error searching customers:', err);
-      setError('Erreur lors de la recherche');
-    } finally {
-      setLoading(false);
-    }
-  };
+    if (filters.country && customer.shipping_country !== filters.country) return false;
+    return true;
+  });
 
   const formatCurrency = (value) => {
     return new Intl.NumberFormat('fr-FR', {
@@ -75,6 +59,8 @@ const CustomersApp = () => {
     if (!dateString) return '-';
     return new Date(dateString).toLocaleDateString('fr-FR');
   };
+
+  const uniqueCountries = [...new Set(customers.map(c => c.shipping_country).filter(Boolean))].sort();
 
   return (
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', backgroundColor: '#f5f5f5' }}>
@@ -111,84 +97,58 @@ const CustomersApp = () => {
       </div>
 
       {/* Main Content */}
-      <div style={{ flex: 1, maxWidth: '1400px', margin: '30px auto', padding: '0 20px', width: '100%' }}>
-        {/* Title & Search */}
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            marginBottom: '30px',
-            flexWrap: 'wrap',
-            gap: '15px'
-          }}
-        >
-          <h1 style={{ color: '#135E84', margin: 0 }}>👥 Clients</h1>
+      <div style={{ flex: 1, maxWidth: '1600px', margin: '30px auto', padding: '0 20px', width: '100%' }}>
+        <h1 style={{ color: '#135E84', margin: '0 0 30px 0' }}>👥 Clients</h1>
 
-          <div style={{ display: 'flex', gap: '10px' }}>
-            <input
-              type="text"
-              placeholder="Rechercher par nom, email..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              onKeyPress={(e) => e.key === 'Enter' && handleSearch()}
-              style={{
-                padding: '10px 15px',
-                fontSize: '14px',
-                border: '1px solid #ccc',
-                borderRadius: '6px',
-                width: '300px',
-                outline: 'none'
-              }}
-            />
-            <button
-              onClick={handleSearch}
-              style={{
-                padding: '10px 20px',
-                backgroundColor: '#135E84',
-                color: 'white',
-                border: 'none',
-                borderRadius: '6px',
-                fontSize: '14px',
-                cursor: 'pointer',
-                fontWeight: '600'
-              }}
-            >
-              🔍 Rechercher
-            </button>
-            <button
-              onClick={fetchCustomers}
-              style={{
-                padding: '10px 20px',
-                backgroundColor: '#6c757d',
-                color: 'white',
-                border: 'none',
-                borderRadius: '6px',
-                fontSize: '14px',
-                cursor: 'pointer',
-                fontWeight: '600'
-              }}
-            >
-              🔄 Réinitialiser
-            </button>
-          </div>
-        </div>
-
-        {/* Error message */}
-        {error && (
-          <div
+        {/* Filters */}
+        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginBottom: '20px' }}>
+          <input
+            type="text"
+            placeholder="🔍 Rechercher par nom, email..."
+            value={filters.search}
+            onChange={(e) => setFilters({ ...filters, search: e.target.value })}
             style={{
-              padding: '15px',
-              marginBottom: '20px',
-              backgroundColor: '#f8d7da',
-              border: '1px solid #f5c6cb',
+              padding: '10px 15px',
+              fontSize: '14px',
+              border: '1px solid #ccc',
               borderRadius: '6px',
-              color: '#721c24'
+              width: '300px',
+              outline: 'none'
+            }}
+          />
+          <select
+            value={filters.country}
+            onChange={(e) => setFilters({ ...filters, country: e.target.value })}
+            style={{
+              padding: '10px 15px',
+              fontSize: '14px',
+              border: '1px solid #ccc',
+              borderRadius: '6px',
+              outline: 'none',
+              cursor: 'pointer'
             }}
           >
-            {error}
-          </div>
-        )}
+            <option value="">Tous les pays</option>
+            {uniqueCountries.map((country) => (
+              <option key={country} value={country}>{country}</option>
+            ))}
+          </select>
+          <button
+            onClick={() => setFilters({ search: '', country: '' })}
+            style={{
+              padding: '10px 20px',
+              backgroundColor: '#6c757d',
+              color: 'white',
+              border: 'none',
+              borderRadius: '6px',
+              fontSize: '14px',
+              cursor: 'pointer',
+              fontWeight: '600'
+            }}
+          >
+            🔄 Réinitialiser
+          </button>
+        </div>
 
         {/* Loading */}
         {loading && (
@@ -199,29 +159,32 @@ const CustomersApp = () => {
         )}
 
         {/* Customers Table */}
-        {!loading && customers.length > 0 && (
+        {!loading && filteredCustomers.length > 0 && (
           <div
             style={{
               backgroundColor: '#fff',
               borderRadius: '12px',
               boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
-              overflow: 'hidden'
+              overflow: 'auto'
             }}
           >
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '1000px' }}>
               <thead>
                 <tr style={{ backgroundColor: '#f8f9fa', borderBottom: '2px solid #e0e0e0' }}>
                   <th style={{ textAlign: 'left', padding: '15px', fontSize: '14px', fontWeight: '600', color: '#333' }}>
-                    Client
+                    Nom
                   </th>
                   <th style={{ textAlign: 'left', padding: '15px', fontSize: '14px', fontWeight: '600', color: '#333' }}>
                     Email
                   </th>
-                  <th style={{ textAlign: 'right', padding: '15px', fontSize: '14px', fontWeight: '600', color: '#333' }}>
+                  <th style={{ textAlign: 'center', padding: '15px', fontSize: '14px', fontWeight: '600', color: '#333' }}>
                     Commandes
                   </th>
                   <th style={{ textAlign: 'right', padding: '15px', fontSize: '14px', fontWeight: '600', color: '#333' }}>
                     Total dépensé
+                  </th>
+                  <th style={{ textAlign: 'center', padding: '15px', fontSize: '14px', fontWeight: '600', color: '#333' }}>
+                    Pays
                   </th>
                   <th style={{ textAlign: 'center', padding: '15px', fontSize: '14px', fontWeight: '600', color: '#333' }}>
                     Dernière commande
@@ -232,7 +195,7 @@ const CustomersApp = () => {
                 </tr>
               </thead>
               <tbody>
-                {customers.map((customer) => (
+                {filteredCustomers.map((customer) => (
                   <tr
                     key={customer.customer_id}
                     style={{
@@ -246,19 +209,21 @@ const CustomersApp = () => {
                       <div style={{ fontWeight: '600', fontSize: '14px', color: '#333' }}>
                         {customer.first_name} {customer.last_name}
                       </div>
-                      <div style={{ fontSize: '12px', color: '#999', marginTop: '2px' }}>
-                        ID: {customer.customer_id}
-                      </div>
                     </td>
-                    <td style={{ padding: '15px', fontSize: '14px', color: '#666' }}>{customer.email}</td>
-                    <td style={{ textAlign: 'right', padding: '15px', fontSize: '14px', fontWeight: '600' }}>
-                      {formatNumber(customer.actual_order_count || customer.order_count || 0)}
+                    <td style={{ padding: '15px', fontSize: '14px', color: '#666' }}>
+                      {customer.email}
+                    </td>
+                    <td style={{ textAlign: 'center', padding: '15px', fontSize: '14px', fontWeight: '600', color: '#135E84' }}>
+                      {formatNumber(customer.actual_order_count || customer.orders_count || 0)}
                     </td>
                     <td style={{ textAlign: 'right', padding: '15px', fontSize: '14px', fontWeight: '600', color: '#28a745' }}>
                       {formatCurrency(customer.actual_total_spent || customer.total_spent || 0)}
                     </td>
-                    <td style={{ textAlign: 'center', padding: '15px', fontSize: '14px', color: '#666' }}>
-                      {formatDate(customer.last_order_date)}
+                    <td style={{ textAlign: 'center', padding: '15px', fontSize: '14px', fontWeight: '600' }}>
+                      {customer.shipping_country || '-'}
+                    </td>
+                    <td style={{ textAlign: 'center', padding: '15px', fontSize: '13px', color: '#666' }}>
+                      {formatDate(customer.date_last_order)}
                     </td>
                     <td style={{ textAlign: 'center', padding: '15px' }}>
                       <button
@@ -285,7 +250,7 @@ const CustomersApp = () => {
         )}
 
         {/* No results */}
-        {!loading && customers.length === 0 && (
+        {!loading && filteredCustomers.length === 0 && (
           <div
             style={{
               textAlign: 'center',
@@ -297,6 +262,13 @@ const CustomersApp = () => {
           >
             <div style={{ fontSize: '48px', marginBottom: '20px' }}>🔍</div>
             <div style={{ fontSize: '18px', color: '#666' }}>Aucun client trouvé</div>
+          </div>
+        )}
+
+        {/* Results count */}
+        {!loading && filteredCustomers.length > 0 && (
+          <div style={{ marginTop: '20px', textAlign: 'center', color: '#666', fontSize: '14px' }}>
+            {filteredCustomers.length} client(s) affiché(s) sur {customers.length} au total
           </div>
         )}
       </div>

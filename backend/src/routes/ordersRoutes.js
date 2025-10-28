@@ -7,6 +7,7 @@ router.get('/', ordersController.getAll);
 router.get('/search', ordersController.search);
 router.post('/advanced-search', ordersController.advancedSearch);
 router.get('/statuses/list', ordersController.getStatuses);
+router.get('/stats/by-status', ordersController.getStatsByStatus);
 router.get('/countries/list', ordersController.getCountries);
 router.get('/status/:status', ordersController.getByStatus);
 router.get('/country/:country', ordersController.getByCountry);

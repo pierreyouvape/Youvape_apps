@@ -222,6 +222,23 @@ class OrderModel {
   }
 
   /**
+   * Récupère les statistiques par statut
+   */
+  async getStatsByStatus() {
+    const query = `
+      SELECT
+        status,
+        COUNT(*) as count,
+        COALESCE(SUM(total), 0) as total_amount
+      FROM orders
+      GROUP BY status
+      ORDER BY count DESC
+    `;
+    const result = await pool.query(query);
+    return result.rows;
+  }
+
+  /**
    * Met à jour le coût réel de livraison d'une commande
    */
   async updateShippingCost(orderId, shippingCostReal) {

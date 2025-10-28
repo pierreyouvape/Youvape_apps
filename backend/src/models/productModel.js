@@ -210,6 +210,21 @@ class ProductModel {
   }
 
   /**
+   * Récupère le récapitulatif du stock
+   */
+  async getStockSummary() {
+    const query = `
+      SELECT
+        COUNT(*) FILTER (WHERE stock_status = 'instock' AND COALESCE(stock_quantity, 0) > 0) as in_stock,
+        COUNT(*) FILTER (WHERE stock_status = 'outofstock' OR COALESCE(stock_quantity, 0) = 0) as out_of_stock,
+        COUNT(*) FILTER (WHERE stock_status = 'instock' AND COALESCE(stock_quantity, 0) > 0 AND COALESCE(stock_quantity, 0) <= 10) as low_stock
+      FROM products
+    `;
+    const result = await pool.query(query);
+    return result.rows[0];
+  }
+
+  /**
    * Crée un nouveau produit
    */
   async create(productData) {
