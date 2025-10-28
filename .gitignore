@@ -19,3 +19,4 @@ out/
 *.sql
 *.db
 postgres-data/
+data_example/
