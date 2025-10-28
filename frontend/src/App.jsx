@@ -7,6 +7,7 @@ import ReviewsApp from './pages/ReviewsApp';
 import RewardsApp from './pages/RewardsApp';
 import EmailApp from './pages/EmailApp';
 import SettingsApp from './pages/SettingsApp';
+import StatsApp from './pages/StatsApp';
 import PrivateRoute from './components/PrivateRoute';
 
 function App() {
@@ -54,6 +55,14 @@ function App() {
             element={
               <PrivateRoute>
                 <SettingsApp />
+              </PrivateRoute>
+            }
+          />
+          <Route
+            path="/stats"
+            element={
+              <PrivateRoute>
+                <StatsApp />
               </PrivateRoute>
             }
           />

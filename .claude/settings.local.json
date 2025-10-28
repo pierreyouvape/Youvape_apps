@@ -1,7 +1,12 @@
 {
   "permissions": {
     "allow": [
-      "Bash(find:*)"
+      "Bash(find:*)",
+      "Bash(test:*)",
+      "Bash(mkdir:*)",
+      "Bash(zip:*)",
+      "Bash(unzip:*)",
+      "Bash(php -l:*)"
     ],
     "deny": [],
     "ask": []

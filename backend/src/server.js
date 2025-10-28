@@ -7,6 +7,7 @@ const reviewsRoutes = require('./routes/reviewsRoutes');
 const rewardsRoutes = require('./routes/rewardsRoutes');
 const emailRoutes = require('./routes/emailRoutes');
 const usersRoutes = require('./routes/usersRoutes');
+const syncRoutes = require('./routes/syncRoutes');
 const { setupCron } = require('./services/cronService');
 const rewardService = require('./services/rewardService');
 const emailService = require('./services/emailService');
@@ -28,6 +29,7 @@ app.use('/api/reviews', reviewsRoutes);
 app.use('/api/rewards', rewardsRoutes);
 app.use('/api/emails', emailRoutes);
 app.use('/api/users', usersRoutes);
+app.use('/api/sync', syncRoutes);
 
 // Start server
 app.listen(PORT, async () => {
