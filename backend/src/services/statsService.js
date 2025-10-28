@@ -9,7 +9,8 @@ class StatsService {
     const whereConditions = this._buildWhereConditions(filters);
     const { whereClause, params } = whereConditions;
 
-    const query = `
+    // Requête principale pour les stats des commandes
+    const orderQuery = `
       SELECT
         COUNT(DISTINCT o.order_id) as total_orders,
         COUNT(DISTINCT o.customer_id) as unique_customers,
@@ -17,33 +18,36 @@ class StatsService {
         COALESCE(AVG(o.total), 0) as avg_order_value,
         COALESCE(SUM(o.discount_total), 0) as total_discounts,
         COALESCE(SUM(o.shipping_total), 0) as total_shipping_charged,
-        COALESCE(SUM(o.shipping_cost_real), 0) as total_shipping_real_cost,
-        COALESCE(SUM(o.tax_total), 0) as total_tax,
-        -- Calcul du coût total des produits vendus
-        COALESCE(
-          (SELECT SUM(oi.quantity * COALESCE(oi.cost_price, 0))
-           FROM order_items oi
-           WHERE oi.order_id IN (
-             SELECT order_id FROM orders ${whereClause}
-           )), 0
-        ) as total_products_cost
+        COALESCE(SUM(COALESCE(o.shipping_cost_real, 0)), 0) as total_shipping_real_cost,
+        COALESCE(SUM(o.tax_total), 0) as total_tax
       FROM orders o
       ${whereClause}
     `;
 
-    const result = await pool.query(query, params);
-    const kpis = result.rows[0];
+    const orderResult = await pool.query(orderQuery, params);
+    const kpis = orderResult.rows[0];
+
+    // Requête séparée pour le coût des produits
+    const costQuery = `
+      SELECT COALESCE(SUM(oi.quantity * COALESCE(oi.cost_price, 0)), 0) as total_products_cost
+      FROM order_items oi
+      INNER JOIN orders o ON o.order_id = oi.order_id
+      ${whereClause}
+    `;
+
+    const costResult = await pool.query(costQuery, params);
+    kpis.total_products_cost = costResult.rows[0].total_products_cost;
 
     // Calcul de la marge brute
-    const totalRevenue = parseFloat(kpis.total_revenue);
-    const totalProductsCost = parseFloat(kpis.total_products_cost);
-    const totalShippingCost = parseFloat(kpis.total_shipping_real_cost) || parseFloat(kpis.total_shipping_charged);
+    const totalRevenue = parseFloat(kpis.total_revenue) || 0;
+    const totalProductsCost = parseFloat(kpis.total_products_cost) || 0;
+    const totalShippingCost = parseFloat(kpis.total_shipping_real_cost) || parseFloat(kpis.total_shipping_charged) || 0;
 
     kpis.gross_margin = totalRevenue - totalProductsCost - totalShippingCost;
     kpis.gross_margin_percent = totalRevenue > 0 ? (kpis.gross_margin / totalRevenue * 100) : 0;
 
     // Manque à gagner (remises)
-    kpis.missed_revenue = parseFloat(kpis.total_discounts);
+    kpis.missed_revenue = parseFloat(kpis.total_discounts) || 0;
 
     return kpis;
   }

@@ -12,7 +12,8 @@
       "Bash(curl -s http://54.37.156.233:3000/api/sync/stats)",
       "Bash(git add:*)",
       "Bash(git commit:*)",
-      "Bash(git push:*)"
+      "Bash(git push:*)",
+      "Bash(docker compose logs:*)"
     ],
     "deny": [],
     "ask": []
