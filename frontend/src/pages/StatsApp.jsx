@@ -1,109 +1,106 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
+import KPICard from '../components/stats/KPICard';
+import PeriodFilter from '../components/filters/PeriodFilter';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
 
 const StatsApp = () => {
   const navigate = useNavigate();
-  const [stats, setStats] = useState({ customers: 0, products: 0, orders: 0 });
-  const [loading, setLoading] = useState(false);
-  const [message, setMessage] = useState('');
+  const [period, setPeriod] = useState('30d');
+  const [loading, setLoading] = useState(true);
+  const [dashboardData, setDashboardData] = useState(null);
+  const [topProducts, setTopProducts] = useState([]);
+  const [topCustomers, setTopCustomers] = useState([]);
+  const [statsByCountry, setStatsByCountry] = useState([]);
+  const [topCoupons, setTopCoupons] = useState([]);
+  const [error, setError] = useState('');
 
-  // Charger les statistiques au montage du composant
   useEffect(() => {
-    fetchStats();
-  }, []);
+    fetchAllStats();
+  }, [period]);
 
-  const fetchStats = async () => {
-    try {
-      const response = await axios.get(`${API_URL}/sync/stats`);
-      if (response.data.success) {
-        setStats(response.data.stats);
-      }
-    } catch (error) {
-      console.error('Error fetching stats:', error);
-    }
-  };
-
-  const handleDownload = async (type) => {
+  const fetchAllStats = async () => {
     setLoading(true);
-    setMessage('');
+    setError('');
 
     try {
-      const response = await axios.get(`${API_URL}/sync/logs/${type}`, {
-        responseType: 'blob'
+      // Fetch dashboard KPIs
+      const dashboardRes = await axios.get(`${API_URL}/stats/dashboard`, {
+        params: { period, status: 'completed' }
       });
 
-      // Créer un lien de téléchargement
-      const url = window.URL.createObjectURL(new Blob([response.data]));
-      const link = document.createElement('a');
-      link.href = url;
-      link.setAttribute('download', `${type}_logs_${Date.now()}.json`);
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      window.URL.revokeObjectURL(url);
+      // Fetch top products
+      const productsRes = await axios.get(`${API_URL}/stats/top-products`, {
+        params: { period, status: 'completed', limit: 5, sortBy: 'revenue' }
+      });
 
-      setMessage(`✓ Logs ${type} téléchargés avec succès !`);
-      setTimeout(() => setMessage(''), 3000);
-    } catch (error) {
-      if (error.response?.status === 404) {
-        setMessage(`⚠️ Aucune donnée disponible pour ${type}`);
-      } else {
-        setMessage(`❌ Erreur lors du téléchargement: ${error.message}`);
-      }
-      setTimeout(() => setMessage(''), 5000);
+      // Fetch top customers
+      const customersRes = await axios.get(`${API_URL}/stats/top-customers`, {
+        params: { period, status: 'completed', limit: 5 }
+      });
+
+      // Fetch stats by country
+      const countryRes = await axios.get(`${API_URL}/stats/by-country`, {
+        params: { period, status: 'completed' }
+      });
+
+      // Fetch top coupons
+      const couponsRes = await axios.get(`${API_URL}/stats/top-coupons`, {
+        params: { period, status: 'completed', limit: 5 }
+      });
+
+      setDashboardData(dashboardRes.data.data);
+      setTopProducts(productsRes.data.data);
+      setTopCustomers(customersRes.data.data);
+      setStatsByCountry(countryRes.data.data);
+      setTopCoupons(couponsRes.data.data);
+    } catch (err) {
+      console.error('Error fetching stats:', err);
+      setError('Erreur lors du chargement des statistiques');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleClearLogs = async () => {
-    if (!window.confirm('Êtes-vous sûr de vouloir supprimer tous les logs ?')) {
-      return;
-    }
-
-    setLoading(true);
-    setMessage('');
-
-    try {
-      const response = await axios.delete(`${API_URL}/sync/logs`);
-      if (response.data.success) {
-        setMessage('✓ Tous les logs ont été supprimés');
-        setStats({ customers: 0, products: 0, orders: 0 });
-        setTimeout(() => setMessage(''), 3000);
-      }
-    } catch (error) {
-      setMessage(`❌ Erreur: ${error.message}`);
-      setTimeout(() => setMessage(''), 5000);
-    } finally {
-      setLoading(false);
-    }
+  const formatCurrency = (value) => {
+    return new Intl.NumberFormat('fr-FR', {
+      style: 'currency',
+      currency: 'EUR'
+    }).format(value);
   };
 
-  const handleRefresh = () => {
-    fetchStats();
-    setMessage('✓ Statistiques rafraîchies');
-    setTimeout(() => setMessage(''), 2000);
+  const formatNumber = (value) => {
+    return new Intl.NumberFormat('fr-FR').format(value);
   };
+
+  if (loading && !dashboardData) {
+    return (
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{ textAlign: 'center' }}>
+          <div style={{ fontSize: '48px', marginBottom: '20px' }}>⏳</div>
+          <div style={{ fontSize: '18px', color: '#666' }}>Chargement des statistiques...</div>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
+    <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', backgroundColor: '#f5f5f5' }}>
       {/* Header */}
-      <div style={{
-        backgroundColor: '#135E84',
-        padding: '20px 0',
-        display: 'flex',
-        justifyContent: 'center',
-        alignItems: 'center',
-        position: 'relative'
-      }}>
-        <img
-          src="/images/logo.svg"
-          alt="YouVape"
-          style={{ height: '60px' }}
-        />
+      <div
+        style={{
+          backgroundColor: '#135E84',
+          padding: '20px 0',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          position: 'relative',
+          boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+        }}
+      >
+        <img src="/images/logo.svg" alt="YouVape" style={{ height: '60px' }} />
         <button
           onClick={() => navigate('/home')}
           style={{
@@ -124,260 +121,258 @@ const StatsApp = () => {
       </div>
 
       {/* Main Content */}
-      <div style={{ flex: 1, maxWidth: '1000px', margin: '50px auto', padding: '20px', width: '100%' }}>
-        <div style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          marginBottom: '30px'
-        }}>
-          <h1 style={{ color: '#135E84', margin: 0 }}>📊 Statistiques WooCommerce</h1>
-          <button
-            onClick={handleRefresh}
-            style={{
-              padding: '10px 20px',
-              backgroundColor: '#28a745',
-              color: 'white',
-              border: 'none',
-              borderRadius: '6px',
-              fontSize: '14px',
-              cursor: 'pointer',
-              fontWeight: '600'
-            }}
-          >
-            🔄 Rafraîchir
-          </button>
+      <div style={{ flex: 1, maxWidth: '1400px', margin: '30px auto', padding: '0 20px', width: '100%' }}>
+        {/* Title & Filters */}
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            marginBottom: '30px',
+            flexWrap: 'wrap',
+            gap: '15px'
+          }}
+        >
+          <h1 style={{ color: '#135E84', margin: 0 }}>📊 Dashboard WooCommerce</h1>
+          <PeriodFilter onChange={setPeriod} defaultPeriod={period} />
         </div>
 
-        {/* Message de feedback */}
-        {message && (
-          <div style={{
-            padding: '15px',
-            marginBottom: '20px',
-            backgroundColor: message.includes('❌') ? '#f8d7da' : '#d4edda',
-            border: `1px solid ${message.includes('❌') ? '#f5c6cb' : '#c3e6cb'}`,
-            borderRadius: '6px',
-            color: message.includes('❌') ? '#721c24' : '#155724',
-            textAlign: 'center',
-            fontWeight: '500'
-          }}>
-            {message}
+        {/* Error message */}
+        {error && (
+          <div
+            style={{
+              padding: '15px',
+              marginBottom: '20px',
+              backgroundColor: '#f8d7da',
+              border: '1px solid #f5c6cb',
+              borderRadius: '6px',
+              color: '#721c24'
+            }}
+          >
+            {error}
           </div>
         )}
 
-        {/* Statistiques */}
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))',
-          gap: '20px',
-          marginBottom: '40px'
-        }}>
-          <div style={{
-            padding: '25px',
-            backgroundColor: '#f8f9fa',
-            borderRadius: '12px',
-            border: '2px solid #dee2e6',
-            textAlign: 'center'
-          }}>
-            <div style={{ fontSize: '48px', marginBottom: '10px' }}>👥</div>
-            <div style={{ fontSize: '32px', fontWeight: 'bold', color: '#007bff', marginBottom: '5px' }}>
-              {stats.customers}
-            </div>
-            <div style={{ fontSize: '14px', color: '#6c757d', textTransform: 'uppercase', letterSpacing: '1px' }}>
-              Clients
-            </div>
-          </div>
-
-          <div style={{
-            padding: '25px',
-            backgroundColor: '#f8f9fa',
-            borderRadius: '12px',
-            border: '2px solid #dee2e6',
-            textAlign: 'center'
-          }}>
-            <div style={{ fontSize: '48px', marginBottom: '10px' }}>📦</div>
-            <div style={{ fontSize: '32px', fontWeight: 'bold', color: '#28a745', marginBottom: '5px' }}>
-              {stats.products}
-            </div>
-            <div style={{ fontSize: '14px', color: '#6c757d', textTransform: 'uppercase', letterSpacing: '1px' }}>
-              Produits
-            </div>
-          </div>
-
-          <div style={{
-            padding: '25px',
-            backgroundColor: '#f8f9fa',
-            borderRadius: '12px',
-            border: '2px solid #dee2e6',
-            textAlign: 'center'
-          }}>
-            <div style={{ fontSize: '48px', marginBottom: '10px' }}>🛒</div>
-            <div style={{ fontSize: '32px', fontWeight: 'bold', color: '#8b5cf6', marginBottom: '5px' }}>
-              {stats.orders}
-            </div>
-            <div style={{ fontSize: '14px', color: '#6c757d', textTransform: 'uppercase', letterSpacing: '1px' }}>
-              Commandes
-            </div>
-          </div>
-        </div>
-
-        {/* Instructions */}
-        <div style={{
-          padding: '20px',
-          backgroundColor: '#e7f3ff',
-          border: '1px solid #b3d9ff',
-          borderRadius: '8px',
-          marginBottom: '30px'
-        }}>
-          <h3 style={{ margin: '0 0 10px 0', color: '#004085' }}>ℹ️ Instructions</h3>
-          <ol style={{ margin: 0, paddingLeft: '20px', color: '#004085' }}>
-            <li>Depuis votre WordPress, allez dans <strong>WooCommerce → YouVape Sync</strong></li>
-            <li>Dans l'onglet <strong>"Test"</strong>, envoyez un échantillon (ex: 5-5-5)</li>
-            <li>Les données apparaîtront ici et vous pourrez télécharger les logs JSON</li>
-            <li>Analysez les fichiers JSON pour préparer le schéma de base de données</li>
-          </ol>
-        </div>
-
-        {/* Téléchargements */}
-        <div style={{
-          padding: '30px',
-          backgroundColor: 'white',
-          border: '1px solid #dee2e6',
-          borderRadius: '12px',
-          boxShadow: '0 2px 4px rgba(0,0,0,0.05)'
-        }}>
-          <h2 style={{ marginTop: 0, color: '#333' }}>📥 Télécharger les logs</h2>
-
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '15px', marginBottom: '30px' }}>
-            <button
-              onClick={() => handleDownload('customers')}
-              disabled={loading || stats.customers === 0}
-              style={{
-                padding: '15px 25px',
-                backgroundColor: stats.customers === 0 ? '#e9ecef' : '#007bff',
-                color: stats.customers === 0 ? '#6c757d' : 'white',
-                border: 'none',
-                borderRadius: '8px',
-                fontSize: '16px',
-                cursor: stats.customers === 0 ? 'not-allowed' : 'pointer',
-                fontWeight: '600',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                transition: 'transform 0.2s'
-              }}
-              onMouseEnter={(e) => {
-                if (stats.customers > 0) e.currentTarget.style.transform = 'scale(1.02)';
-              }}
-              onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
-            >
-              <span>👥 Télécharger logs Clients</span>
-              <span style={{
-                padding: '4px 12px',
-                backgroundColor: 'rgba(255,255,255,0.2)',
-                borderRadius: '12px',
-                fontSize: '14px'
-              }}>
-                {stats.customers} items
-              </span>
-            </button>
-
-            <button
-              onClick={() => handleDownload('products')}
-              disabled={loading || stats.products === 0}
-              style={{
-                padding: '15px 25px',
-                backgroundColor: stats.products === 0 ? '#e9ecef' : '#28a745',
-                color: stats.products === 0 ? '#6c757d' : 'white',
-                border: 'none',
-                borderRadius: '8px',
-                fontSize: '16px',
-                cursor: stats.products === 0 ? 'not-allowed' : 'pointer',
-                fontWeight: '600',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                transition: 'transform 0.2s'
-              }}
-              onMouseEnter={(e) => {
-                if (stats.products > 0) e.currentTarget.style.transform = 'scale(1.02)';
-              }}
-              onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
-            >
-              <span>📦 Télécharger logs Produits</span>
-              <span style={{
-                padding: '4px 12px',
-                backgroundColor: 'rgba(255,255,255,0.2)',
-                borderRadius: '12px',
-                fontSize: '14px'
-              }}>
-                {stats.products} items
-              </span>
-            </button>
-
-            <button
-              onClick={() => handleDownload('orders')}
-              disabled={loading || stats.orders === 0}
-              style={{
-                padding: '15px 25px',
-                backgroundColor: stats.orders === 0 ? '#e9ecef' : '#8b5cf6',
-                color: stats.orders === 0 ? '#6c757d' : 'white',
-                border: 'none',
-                borderRadius: '8px',
-                fontSize: '16px',
-                cursor: stats.orders === 0 ? 'not-allowed' : 'pointer',
-                fontWeight: '600',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                transition: 'transform 0.2s'
-              }}
-              onMouseEnter={(e) => {
-                if (stats.orders > 0) e.currentTarget.style.transform = 'scale(1.02)';
-              }}
-              onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
-            >
-              <span>🛒 Télécharger logs Commandes</span>
-              <span style={{
-                padding: '4px 12px',
-                backgroundColor: 'rgba(255,255,255,0.2)',
-                borderRadius: '12px',
-                fontSize: '14px'
-              }}>
-                {stats.orders} items
-              </span>
-            </button>
-          </div>
-
-          <hr style={{ border: 'none', borderTop: '1px solid #dee2e6', margin: '20px 0' }} />
-
-          <button
-            onClick={handleClearLogs}
-            disabled={loading || (stats.customers === 0 && stats.products === 0 && stats.orders === 0)}
+        {/* KPI Cards */}
+        {dashboardData && (
+          <div
             style={{
-              padding: '12px 25px',
-              backgroundColor: '#dc3545',
-              color: 'white',
-              border: 'none',
-              borderRadius: '6px',
-              fontSize: '14px',
-              cursor: loading ? 'not-allowed' : 'pointer',
-              fontWeight: '600',
-              opacity: loading || (stats.customers === 0 && stats.products === 0 && stats.orders === 0) ? 0.5 : 1
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))',
+              gap: '20px',
+              marginBottom: '40px'
             }}
           >
-            🗑️ Supprimer tous les logs
-          </button>
+            <KPICard
+              title="Chiffre d'affaires"
+              value={formatCurrency(dashboardData.total_revenue)}
+              icon="💰"
+              color="#28a745"
+              subtitle={`${formatNumber(dashboardData.total_orders)} commandes`}
+            />
+            <KPICard
+              title="Marge brute"
+              value={formatCurrency(dashboardData.gross_margin)}
+              icon="📈"
+              color="#007bff"
+              subtitle={`${parseFloat(dashboardData.gross_margin_percent).toFixed(1)}% de marge`}
+            />
+            <KPICard
+              title="Panier moyen"
+              value={formatCurrency(dashboardData.avg_order_value)}
+              icon="🛒"
+              color="#8b5cf6"
+            />
+            <KPICard
+              title="Clients uniques"
+              value={formatNumber(dashboardData.unique_customers)}
+              icon="👥"
+              color="#ff6b6b"
+            />
+            <KPICard
+              title="Manque à gagner"
+              value={formatCurrency(dashboardData.missed_revenue)}
+              icon="🎟️"
+              color="#fd7e14"
+              subtitle="Total remises"
+            />
+          </div>
+        )}
+
+        {/* Grid Layout for Tables */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(500px, 1fr))', gap: '20px' }}>
+          {/* Top Products */}
+          <div
+            style={{
+              padding: '25px',
+              backgroundColor: '#fff',
+              borderRadius: '12px',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.05)'
+            }}
+          >
+            <h2 style={{ marginTop: 0, marginBottom: '20px', color: '#333', fontSize: '20px' }}>
+              🏆 Top 5 Produits (CA)
+            </h2>
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead>
+                <tr style={{ borderBottom: '2px solid #e0e0e0' }}>
+                  <th style={{ textAlign: 'left', padding: '10px 5px', fontSize: '13px', color: '#666' }}>
+                    Produit
+                  </th>
+                  <th style={{ textAlign: 'right', padding: '10px 5px', fontSize: '13px', color: '#666' }}>CA</th>
+                  <th style={{ textAlign: 'right', padding: '10px 5px', fontSize: '13px', color: '#666' }}>Qté</th>
+                </tr>
+              </thead>
+              <tbody>
+                {topProducts.map((product, index) => (
+                  <tr key={product.product_id} style={{ borderBottom: '1px solid #f0f0f0' }}>
+                    <td style={{ padding: '12px 5px', fontSize: '14px' }}>
+                      <div style={{ fontWeight: '600' }}>{product.name}</div>
+                      <div style={{ fontSize: '12px', color: '#999' }}>{product.sku}</div>
+                    </td>
+                    <td style={{ textAlign: 'right', padding: '12px 5px', fontSize: '14px', fontWeight: '600' }}>
+                      {formatCurrency(product.total_revenue)}
+                    </td>
+                    <td style={{ textAlign: 'right', padding: '12px 5px', fontSize: '14px' }}>
+                      {formatNumber(product.total_quantity)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Top Customers */}
+          <div
+            style={{
+              padding: '25px',
+              backgroundColor: '#fff',
+              borderRadius: '12px',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.05)'
+            }}
+          >
+            <h2 style={{ marginTop: 0, marginBottom: '20px', color: '#333', fontSize: '20px' }}>
+              👑 Top 5 Clients
+            </h2>
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead>
+                <tr style={{ borderBottom: '2px solid #e0e0e0' }}>
+                  <th style={{ textAlign: 'left', padding: '10px 5px', fontSize: '13px', color: '#666' }}>
+                    Client
+                  </th>
+                  <th style={{ textAlign: 'right', padding: '10px 5px', fontSize: '13px', color: '#666' }}>
+                    Total dépensé
+                  </th>
+                  <th style={{ textAlign: 'right', padding: '10px 5px', fontSize: '13px', color: '#666' }}>Cmd</th>
+                </tr>
+              </thead>
+              <tbody>
+                {topCustomers.map((customer) => (
+                  <tr key={customer.customer_id} style={{ borderBottom: '1px solid #f0f0f0' }}>
+                    <td style={{ padding: '12px 5px', fontSize: '14px' }}>
+                      <div style={{ fontWeight: '600' }}>
+                        {customer.first_name} {customer.last_name}
+                      </div>
+                      <div style={{ fontSize: '12px', color: '#999' }}>{customer.email}</div>
+                    </td>
+                    <td style={{ textAlign: 'right', padding: '12px 5px', fontSize: '14px', fontWeight: '600' }}>
+                      {formatCurrency(customer.total_spent)}
+                    </td>
+                    <td style={{ textAlign: 'right', padding: '12px 5px', fontSize: '14px' }}>
+                      {formatNumber(customer.orders_count)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Stats by Country */}
+          <div
+            style={{
+              padding: '25px',
+              backgroundColor: '#fff',
+              borderRadius: '12px',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.05)'
+            }}
+          >
+            <h2 style={{ marginTop: 0, marginBottom: '20px', color: '#333', fontSize: '20px' }}>🌍 Par Pays</h2>
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead>
+                <tr style={{ borderBottom: '2px solid #e0e0e0' }}>
+                  <th style={{ textAlign: 'left', padding: '10px 5px', fontSize: '13px', color: '#666' }}>Pays</th>
+                  <th style={{ textAlign: 'right', padding: '10px 5px', fontSize: '13px', color: '#666' }}>CA</th>
+                  <th style={{ textAlign: 'right', padding: '10px 5px', fontSize: '13px', color: '#666' }}>Cmd</th>
+                </tr>
+              </thead>
+              <tbody>
+                {statsByCountry.slice(0, 5).map((country) => (
+                  <tr key={country.country} style={{ borderBottom: '1px solid #f0f0f0' }}>
+                    <td style={{ padding: '12px 5px', fontSize: '14px', fontWeight: '600' }}>{country.country}</td>
+                    <td style={{ textAlign: 'right', padding: '12px 5px', fontSize: '14px', fontWeight: '600' }}>
+                      {formatCurrency(country.revenue)}
+                    </td>
+                    <td style={{ textAlign: 'right', padding: '12px 5px', fontSize: '14px' }}>
+                      {formatNumber(country.orders_count)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Top Coupons */}
+          <div
+            style={{
+              padding: '25px',
+              backgroundColor: '#fff',
+              borderRadius: '12px',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.05)'
+            }}
+          >
+            <h2 style={{ marginTop: 0, marginBottom: '20px', color: '#333', fontSize: '20px' }}>
+              🎟️ Top 5 Coupons
+            </h2>
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead>
+                <tr style={{ borderBottom: '2px solid #e0e0e0' }}>
+                  <th style={{ textAlign: 'left', padding: '10px 5px', fontSize: '13px', color: '#666' }}>Code</th>
+                  <th style={{ textAlign: 'right', padding: '10px 5px', fontSize: '13px', color: '#666' }}>
+                    Utilisation
+                  </th>
+                  <th style={{ textAlign: 'right', padding: '10px 5px', fontSize: '13px', color: '#666' }}>
+                    Remise totale
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {topCoupons.map((coupon) => (
+                  <tr key={coupon.code} style={{ borderBottom: '1px solid #f0f0f0' }}>
+                    <td style={{ padding: '12px 5px', fontSize: '14px', fontWeight: '600' }}>{coupon.code}</td>
+                    <td style={{ textAlign: 'right', padding: '12px 5px', fontSize: '14px' }}>
+                      {formatNumber(coupon.usage_count)}
+                    </td>
+                    <td style={{ textAlign: 'right', padding: '12px 5px', fontSize: '14px', fontWeight: '600' }}>
+                      {formatCurrency(coupon.total_discount)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
 
       {/* Footer */}
-      <div style={{
-        backgroundColor: '#135E84',
-        padding: '20px 0',
-        textAlign: 'center',
-        color: 'white'
-      }}>
+      <div
+        style={{
+          backgroundColor: '#135E84',
+          padding: '20px 0',
+          textAlign: 'center',
+          color: 'white',
+          marginTop: '50px'
+        }}
+      >
         <p style={{ margin: 0 }}>© 2024 YouVape - Tous droits réservés</p>
       </div>
     </div>

@@ -8,6 +8,12 @@ import RewardsApp from './pages/RewardsApp';
 import EmailApp from './pages/EmailApp';
 import SettingsApp from './pages/SettingsApp';
 import StatsApp from './pages/StatsApp';
+import CustomersApp from './pages/CustomersApp';
+import CustomerDetail from './pages/CustomerDetail';
+import ProductsApp from './pages/ProductsApp';
+import ProductDetail from './pages/ProductDetail';
+import OrdersApp from './pages/OrdersApp';
+import OrderDetail from './pages/OrderDetail';
 import PrivateRoute from './components/PrivateRoute';
 
 function App() {
@@ -63,6 +69,54 @@ function App() {
             element={
               <PrivateRoute>
                 <StatsApp />
+              </PrivateRoute>
+            }
+          />
+          <Route
+            path="/customers"
+            element={
+              <PrivateRoute>
+                <CustomersApp />
+              </PrivateRoute>
+            }
+          />
+          <Route
+            path="/customers/:id"
+            element={
+              <PrivateRoute>
+                <CustomerDetail />
+              </PrivateRoute>
+            }
+          />
+          <Route
+            path="/products"
+            element={
+              <PrivateRoute>
+                <ProductsApp />
+              </PrivateRoute>
+            }
+          />
+          <Route
+            path="/products/:id"
+            element={
+              <PrivateRoute>
+                <ProductDetail />
+              </PrivateRoute>
+            }
+          />
+          <Route
+            path="/orders"
+            element={
+              <PrivateRoute>
+                <OrdersApp />
+              </PrivateRoute>
+            }
+          />
+          <Route
+            path="/orders/:id"
+            element={
+              <PrivateRoute>
+                <OrderDetail />
               </PrivateRoute>
             }
           />
