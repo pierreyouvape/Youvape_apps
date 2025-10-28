@@ -24,6 +24,8 @@ services:
       - "3000:3000"
     env_file:
       - .env
+    volumes:
+      - backend_logs:/usr/src/app/logs
     depends_on:
       - postgres
     networks:
@@ -42,6 +44,7 @@ services:
 
 volumes:
   postgres_data:
+  backend_logs:
 
 networks:
   youvape_network:
