@@ -29,7 +29,8 @@ app.use('/api/reviews', reviewsRoutes);
 app.use('/api/rewards', rewardsRoutes);
 app.use('/api/emails', emailRoutes);
 app.use('/api/users', usersRoutes);
-app.use('/api/sync', syncRoutes);
+app.use('/api/sync', syncRoutes); // Frontend stats app
+app.use('/api/woo-sync', syncRoutes); // WooCommerce module
 
 // Start server
 app.listen(PORT, async () => {

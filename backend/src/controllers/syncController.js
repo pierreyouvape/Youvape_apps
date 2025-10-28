@@ -14,12 +14,15 @@ if (!fs.existsSync(LOGS_DIR)) {
  */
 const receiveCustomers = async (req, res) => {
   try {
-    const { data, sync_type, timestamp } = req.body;
+    // Support à la fois 'data' (test) et 'batch' (WooCommerce module)
+    const data = req.body.data || req.body.batch;
+    const sync_type = req.body.sync_type || req.body.action;
+    const timestamp = req.body.timestamp;
 
     if (!data || !Array.isArray(data)) {
       return res.status(400).json({
         success: false,
-        error: 'Invalid data format. Expected array.'
+        error: 'Invalid data format. Expected array in "data" or "batch" field.'
       });
     }
 
@@ -69,12 +72,15 @@ const receiveCustomers = async (req, res) => {
  */
 const receiveProducts = async (req, res) => {
   try {
-    const { data, sync_type, timestamp } = req.body;
+    // Support à la fois 'data' (test) et 'batch' (WooCommerce module)
+    const data = req.body.data || req.body.batch;
+    const sync_type = req.body.sync_type || req.body.action;
+    const timestamp = req.body.timestamp;
 
     if (!data || !Array.isArray(data)) {
       return res.status(400).json({
         success: false,
-        error: 'Invalid data format. Expected array.'
+        error: 'Invalid data format. Expected array in "data" or "batch" field.'
       });
     }
 
@@ -122,12 +128,15 @@ const receiveProducts = async (req, res) => {
  */
 const receiveOrders = async (req, res) => {
   try {
-    const { data, sync_type, timestamp } = req.body;
+    // Support à la fois 'data' (test) et 'batch' (WooCommerce module)
+    const data = req.body.data || req.body.batch;
+    const sync_type = req.body.sync_type || req.body.action;
+    const timestamp = req.body.timestamp;
 
     if (!data || !Array.isArray(data)) {
       return res.status(400).json({
         success: false,
-        error: 'Invalid data format. Expected array.'
+        error: 'Invalid data format. Expected array in "data" or "batch" field.'
       });
     }
 
@@ -269,11 +278,24 @@ const clearLogs = async (req, res) => {
   }
 };
 
+/**
+ * Endpoint de test de connexion (ping)
+ * GET /api/sync/ping
+ */
+const ping = async (req, res) => {
+  res.json({
+    success: true,
+    message: 'API is reachable',
+    timestamp: new Date().toISOString()
+  });
+};
+
 module.exports = {
   receiveCustomers,
   receiveProducts,
   receiveOrders,
   downloadLogs,
   getStats,
-  clearLogs
+  clearLogs,
+  ping
 };

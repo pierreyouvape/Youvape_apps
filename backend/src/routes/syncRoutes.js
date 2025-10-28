@@ -2,6 +2,9 @@ const express = require('express');
 const router = express.Router();
 const syncController = require('../controllers/syncController');
 
+// Endpoint de test de connexion
+router.get('/ping', syncController.ping);
+
 // Endpoints de réception des données WooCommerce
 router.post('/customers', syncController.receiveCustomers);
 router.post('/products', syncController.receiveProducts);
