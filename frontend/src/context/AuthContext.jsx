@@ -11,8 +11,8 @@ export const AuthProvider = ({ children }) => {
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
   const [loading, setLoading] = useState(true);
 
-  const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api/auth';
-  const BASE_API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:3000/api/auth').replace('/auth', '');
+  const BASE_API_URL = import.meta.env.VITE_API_URL || 'http://54.37.156.233:3000/api';
+  const API_URL = `${BASE_API_URL}/auth`;
 
   // Charger les permissions de l'utilisateur
   const loadPermissions = async (authToken) => {
