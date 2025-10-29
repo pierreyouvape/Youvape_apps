@@ -13,7 +13,6 @@ class StatsService {
     const orderQuery = `
       SELECT
         COUNT(DISTINCT o.order_id) as total_orders,
-        COUNT(DISTINCT o.customer_id) as unique_customers,
         COALESCE(SUM(o.total), 0) as total_revenue,
         COALESCE(AVG(o.total), 0) as avg_order_value,
         COALESCE(SUM(o.discount_total), 0) as total_discounts,
@@ -26,6 +25,11 @@ class StatsService {
 
     const orderResult = await pool.query(orderQuery, params);
     const kpis = orderResult.rows[0];
+
+    // Requête séparée pour compter TOUS les clients (depuis la table customers, pas orders)
+    const customerQuery = `SELECT COUNT(*) as unique_customers FROM customers`;
+    const customerResult = await pool.query(customerQuery);
+    kpis.unique_customers = parseInt(customerResult.rows[0].unique_customers);
 
     // Requête séparée pour le coût des produits
     const costQuery = `

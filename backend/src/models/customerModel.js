@@ -118,45 +118,55 @@ class CustomerModel {
 
   /**
    * Récupère les statistiques avancées d'un client
+   * Retourne toujours un objet avec des valeurs par défaut même si pas de commandes
    */
   async getStats(customerId) {
     const query = `
+      SELECT
+        COUNT(DISTINCT o.order_id)::int as total_orders,
+        COALESCE(SUM(CASE WHEN o.status = 'completed' THEN o.total ELSE 0 END), 0) as total_spent,
+        COALESCE(AVG(CASE WHEN o.status = 'completed' THEN o.total ELSE NULL END), 0) as avg_order_value,
+        COALESCE(SUM(CASE WHEN o.status = 'completed' THEN o.total_cost ELSE 0 END), 0) as total_cost,
+        COALESCE(SUM(CASE WHEN o.status = 'completed' THEN COALESCE(o.shipping_cost_real, o.shipping_total, 0) ELSE 0 END), 0) as total_shipping_cost,
+        MIN(o.date_created) as first_order_date,
+        MAX(o.date_created) as last_order_date,
+        COUNT(DISTINCT oi.product_id)::int as unique_products_bought
+      FROM customers c
+      LEFT JOIN orders o ON o.customer_id = c.customer_id
+      LEFT JOIN order_items oi ON oi.order_id = o.order_id
+      WHERE c.customer_id = $1
+    `;
+
+    const result = await pool.query(query, [customerId]);
+    const stats = result.rows[0];
+
+    // Calcul du délai moyen entre commandes (uniquement si 2+ commandes completed)
+    const avgDaysQuery = `
       WITH order_dates AS (
         SELECT
           date_created,
           LAG(date_created) OVER (ORDER BY date_created) as prev_order_date
         FROM orders
         WHERE customer_id = $1 AND status = 'completed'
-      ),
-      order_stats AS (
-        SELECT
-          COUNT(DISTINCT o.order_id) as total_orders,
-          COALESCE(SUM(CASE WHEN o.status = 'completed' THEN o.total ELSE 0 END), 0) as total_spent,
-          COALESCE(AVG(CASE WHEN o.status = 'completed' THEN o.total ELSE NULL END), 0) as avg_order_value,
-          COALESCE(SUM(CASE WHEN o.status = 'completed' THEN o.total_cost ELSE 0 END), 0) as total_cost,
-          COALESCE(SUM(CASE WHEN o.status = 'completed' THEN COALESCE(o.shipping_cost_real, o.shipping_total, 0) ELSE 0 END), 0) as total_shipping_cost,
-          MIN(o.date_created) as first_order_date,
-          MAX(o.date_created) as last_order_date,
-          COUNT(DISTINCT oi.product_id) as unique_products_bought
-        FROM orders o
-        LEFT JOIN order_items oi ON oi.order_id = o.order_id
-        WHERE o.customer_id = $1
+        ORDER BY date_created
       )
-      SELECT
-        os.*,
-        COALESCE(AVG(EXTRACT(EPOCH FROM (od.date_created - od.prev_order_date)) / 86400), 0) as avg_days_between_orders,
-        (os.total_spent - os.total_cost - os.total_shipping_cost) as total_profit,
-        CASE
-          WHEN os.total_spent > 0 THEN ((os.total_spent - os.total_cost - os.total_shipping_cost) / os.total_spent * 100)
-          ELSE 0
-        END as margin_percent
-      FROM order_stats os
-      CROSS JOIN order_dates od
-      GROUP BY os.total_orders, os.total_spent, os.avg_order_value, os.total_cost, os.total_shipping_cost,
-               os.first_order_date, os.last_order_date, os.unique_products_bought
+      SELECT COALESCE(AVG(EXTRACT(EPOCH FROM (date_created - prev_order_date)) / 86400), 0) as avg_days
+      FROM order_dates
+      WHERE prev_order_date IS NOT NULL
     `;
-    const result = await pool.query(query, [customerId]);
-    return result.rows[0];
+
+    const avgDaysResult = await pool.query(avgDaysQuery, [customerId]);
+    stats.avg_days_between_orders = parseFloat(avgDaysResult.rows[0]?.avg_days || 0);
+
+    // Calcul profit et marge
+    const totalSpent = parseFloat(stats.total_spent) || 0;
+    const totalCost = parseFloat(stats.total_cost) || 0;
+    const totalShippingCost = parseFloat(stats.total_shipping_cost) || 0;
+
+    stats.total_profit = totalSpent - totalCost - totalShippingCost;
+    stats.margin_percent = totalSpent > 0 ? ((stats.total_profit / totalSpent) * 100) : 0;
+
+    return stats;
   }
 
   /**
