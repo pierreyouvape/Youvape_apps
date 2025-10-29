@@ -20,3 +20,4 @@ out/
 *.db
 postgres-data/
 data_example/
+metorik/

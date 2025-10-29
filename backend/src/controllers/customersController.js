@@ -136,3 +136,19 @@ exports.getStats = async (req, res) => {
     res.status(500).json({ success: false, error: error.message });
   }
 };
+
+/**
+ * Récupère les coupons utilisés par un client
+ * GET /api/customers/:id/coupons
+ */
+exports.getCoupons = async (req, res) => {
+  try {
+    const customerId = parseInt(req.params.id);
+    const coupons = await customerModel.getCoupons(customerId);
+
+    res.json({ success: true, data: coupons });
+  } catch (error) {
+    console.error('Error getting customer coupons:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
