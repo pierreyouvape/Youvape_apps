@@ -213,7 +213,7 @@ const ProductDetail = () => {
         {/* Stats text */}
         {kpis && (
           <div style={{ backgroundColor: '#fff', padding: '20px', borderRadius: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)', marginBottom: '30px', fontSize: '14px', color: '#666', textAlign: 'center' }}>
-            From <strong>{formatNumber(kpis.net_orders || 0)} net orders</strong>. On average, customers order <strong>{(kpis.avg_quantity_per_order || 0).toFixed(1)}</strong> of this product per order.
+            From <strong>{formatNumber(kpis.net_orders || 0)} net orders</strong>. On average, customers order <strong>{parseFloat(kpis.avg_quantity_per_order || 0).toFixed(1)}</strong> of this product per order.
           </div>
         )}
 
