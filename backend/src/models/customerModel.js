@@ -126,7 +126,6 @@ class CustomerModel {
         COUNT(DISTINCT o.order_id)::int as total_orders,
         COALESCE(SUM(CASE WHEN o.status = 'completed' THEN o.total ELSE 0 END), 0) as total_spent,
         COALESCE(AVG(CASE WHEN o.status = 'completed' THEN o.total ELSE NULL END), 0) as avg_order_value,
-        COALESCE(SUM(CASE WHEN o.status = 'completed' THEN o.total_cost ELSE 0 END), 0) as total_cost,
         COALESCE(SUM(CASE WHEN o.status = 'completed' THEN COALESCE(o.shipping_cost_real, o.shipping_total, 0) ELSE 0 END), 0) as total_shipping_cost,
         MIN(o.date_created) as first_order_date,
         MAX(o.date_created) as last_order_date,
@@ -139,6 +138,17 @@ class CustomerModel {
 
     const result = await pool.query(query, [customerId]);
     const stats = result.rows[0];
+
+    // Calcul du coût total des produits achetés (depuis order_items)
+    const costQuery = `
+      SELECT COALESCE(SUM(oi.quantity * COALESCE(oi.cost_price, 0)), 0) as total_cost
+      FROM order_items oi
+      INNER JOIN orders o ON o.order_id = oi.order_id
+      WHERE o.customer_id = $1 AND o.status = 'completed'
+    `;
+
+    const costResult = await pool.query(costQuery, [customerId]);
+    stats.total_cost = parseFloat(costResult.rows[0]?.total_cost || 0);
 
     // Calcul du délai moyen entre commandes (uniquement si 2+ commandes completed)
     const avgDaysQuery = `
