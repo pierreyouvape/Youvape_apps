@@ -593,10 +593,11 @@ class Youvape_Sync_Batch_Processor {
 
     /**
      * Envoie un échantillon de test vers l'API
+     * NOUVELLE VERSION: Appelle l'API backend pour générer des données de test avec système d'offset
      *
-     * @param int $customers_count Nombre de clients à envoyer
-     * @param int $products_count Nombre de produits à envoyer
-     * @param int $orders_count Nombre de commandes à envoyer
+     * @param int $customers_count Nombre de clients à générer
+     * @param int $products_count Nombre de produits à générer
+     * @param int $orders_count Nombre de commandes à générer
      * @return array Résultat de l'envoi
      */
     public function send_test_sample($customers_count = 5, $products_count = 5, $orders_count = 5) {
@@ -610,81 +611,53 @@ class Youvape_Sync_Batch_Processor {
             );
         }
 
-        $results = array(
-            'customers' => null,
-            'products' => null,
-            'orders' => null,
-            'data_sent' => array(),
+        // Appel à la nouvelle API de génération de données de test
+        $api_url = rtrim($settings['api_url'], '/') . '/test/generate';
+
+        $body = array(
+            'customers' => intval($customers_count),
+            'products' => intval($products_count),
+            'orders' => intval($orders_count)
         );
 
-        // Envoie les clients si activés
-        if (isset($settings['enable_customers']) && $settings['enable_customers'] && $customers_count > 0) {
-            $customers = $this->fetch_customers(0, $customers_count);
-            $results['data_sent']['customers'] = $customers;
-            $response = $this->api_client->send_customers($customers, 'test_sample');
-            $results['customers'] = $response;
+        $response = wp_remote_post($api_url, array(
+            'timeout' => 60,
+            'headers' => array('Content-Type' => 'application/json'),
+            'body' => json_encode($body),
+        ));
+
+        if (is_wp_error($response)) {
+            return array(
+                'success' => false,
+                'error' => $response->get_error_message(),
+            );
         }
 
-        // Envoie les produits si activés
-        if (isset($settings['enable_products']) && $settings['enable_products'] && $products_count > 0) {
-            $products = $this->fetch_products(0, $products_count);
-            $results['data_sent']['products'] = $products;
-            $response = $this->api_client->send_products($products, 'test_sample');
-            $results['products'] = $response;
+        $body_response = wp_remote_retrieve_body($response);
+        $data = json_decode($body_response, true);
+
+        if (!$data) {
+            return array(
+                'success' => false,
+                'error' => __('Réponse invalide de l\'API.', 'youvape-sync'),
+            );
         }
 
-        // Envoie les commandes si activées
-        if (isset($settings['enable_orders']) && $settings['enable_orders'] && $orders_count > 0) {
-            $orders = $this->fetch_orders(0, $orders_count);
-            $results['data_sent']['orders'] = $orders;
-            $response = $this->api_client->send_orders($orders, 'test_sample');
-            $results['orders'] = $response;
-        }
-
-        // Vérifie si au moins un envoi a réussi
-        $has_success = false;
-        $errors = array();
-
-        if ($results['customers']) {
-            if ($results['customers']['success']) {
-                $has_success = true;
-            } else {
-                $errors[] = 'Clients: ' . $results['customers']['error'];
-            }
-        }
-
-        if ($results['products']) {
-            if ($results['products']['success']) {
-                $has_success = true;
-            } else {
-                $errors[] = 'Produits: ' . $results['products']['error'];
-            }
-        }
-
-        if ($results['orders']) {
-            if ($results['orders']['success']) {
-                $has_success = true;
-            } else {
-                $errors[] = 'Commandes: ' . $results['orders']['error'];
-            }
-        }
-
-        if ($has_success) {
+        if (isset($data['success']) && $data['success']) {
             return array(
                 'success' => true,
-                'message' => __('Échantillon de test envoyé avec succès.', 'youvape-sync'),
-                'results' => $results,
-                'counts' => array(
-                    'customers' => count($results['data_sent']['customers'] ?? array()),
-                    'products' => count($results['data_sent']['products'] ?? array()),
-                    'orders' => count($results['data_sent']['orders'] ?? array()),
-                ),
+                'message' => $data['message'] ?? __('Données de test générées avec succès.', 'youvape-sync'),
+                'counts' => $data['counts'] ?? array(),
+                'offsets' => $data['offsets'] ?? array(),
+                'import_results' => $data['import_results'] ?? array(),
+                'results' => array(
+                    'data_sent' => array(), // Pas de données envoyées dans ce cas, tout est géré côté backend
+                )
             );
         } else {
             return array(
                 'success' => false,
-                'error' => implode(' | ', $errors),
-                'results' => $results,
+                'error' => $data['error'] ?? __('Erreur lors de la génération des données de test.', 'youvape-sync'),
             );
         }
     }

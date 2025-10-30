@@ -15,7 +15,9 @@
       "Bash(git push:*)",
       "Bash(docker compose logs:*)",
       "Bash(curl -s http://54.37.156.233:3000/api/orders/stats/by-status)",
-      "Bash(curl -s http://54.37.156.233:3000/api/products/stock-summary)"
+      "Bash(curl -s http://54.37.156.233:3000/api/products/stock-summary)",
+      "Bash(psql:*)",
+      "Bash(docker compose exec postgres psql:*)"
     ],
     "deny": [],
     "ask": []
