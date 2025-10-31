@@ -3,7 +3,7 @@
  * Plugin Name: Youvape Sync
  * Plugin URI: https://youvape.com
  * Description: Synchronise les données WooCommerce (clients, produits, commandes) vers l'API Node.js externe. Import historique par lots + synchro temps réel.
- * Version: 1.0.3
+ * Version: 1.2.0
  * Author: Youvape
  * Author URI: https://youvape.com
  * Text Domain: youvape-sync
@@ -22,7 +22,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Constantes du plugin
-define('YOUVAPE_SYNC_VERSION', '1.0.3');
+define('YOUVAPE_SYNC_VERSION', '1.2.0');
 define('YOUVAPE_SYNC_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('YOUVAPE_SYNC_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('YOUVAPE_SYNC_PLUGIN_BASENAME', plugin_basename(__FILE__));

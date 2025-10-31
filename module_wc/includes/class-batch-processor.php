@@ -243,6 +243,25 @@ class Youvape_Sync_Batch_Processor {
         foreach ($customers as $user) {
             $customer = new WC_Customer($user->ID);
 
+            // NOUVEAU v1.2.0 : Récupère TOUTES les métadonnées utilisateur
+            $meta_data = array();
+            $all_meta = get_user_meta($user->ID);
+            if (!empty($all_meta)) {
+                foreach ($all_meta as $meta_key => $meta_value) {
+                    // Skip les meta internes WP (commencent par _) et WC (préfixe wc_)
+                    if (substr($meta_key, 0, 1) !== '_' && substr($meta_key, 0, 3) !== 'wc_') {
+                        $meta_data[$meta_key] = maybe_unserialize($meta_value[0]);
+                    }
+                }
+            }
+
+            // NOUVEAU v1.2.0 : Récupère les rôles utilisateur
+            $user_data = get_userdata($user->ID);
+            $roles = $user_data ? $user_data->roles : array();
+
+            // NOUVEAU v1.2.0 : Dates supplémentaires
+            $date_modified = $customer->get_date_modified();
+
             $formatted[] = array(
                 'customer_id' => $customer->get_id(),
                 'email' => $customer->get_email(),
@@ -250,9 +269,13 @@ class Youvape_Sync_Batch_Processor {
                 'last_name' => $customer->get_last_name(),
                 'phone' => $customer->get_billing_phone(),
                 'username' => $customer->get_username(),
+                'display_name' => $user->display_name, // NOUVEAU
+                'roles' => $roles, // NOUVEAU
                 'date_created' => $customer->get_date_created() ? $customer->get_date_created()->date('c') : null,
+                'date_modified' => $date_modified ? $date_modified->date('c') : null, // NOUVEAU
                 'total_spent' => (float) wc_format_decimal($customer->get_total_spent(), 2),
                 'order_count' => $customer->get_order_count(),
+                'is_paying_customer' => $customer->get_is_paying_customer(), // NOUVEAU
                 'billing_address' => array(
                     'first_name' => $customer->get_billing_first_name(),
                     'last_name' => $customer->get_billing_last_name(),
@@ -278,6 +301,7 @@ class Youvape_Sync_Batch_Processor {
                     'country' => $customer->get_shipping_country(),
                 ),
                 'avatar_url' => get_avatar_url($customer->get_email()),
+                'meta_data' => $meta_data, // NOUVEAU - Tous les champs custom
             );
         }
 
@@ -339,10 +363,75 @@ class Youvape_Sync_Batch_Processor {
                 }
             }
 
+            // NOUVEAU v1.2.0 : Récupère TOUS les attributs (marque, fabricant, couleur, etc.)
+            $attributes_data = array();
+            $product_attributes = $product->get_attributes();
+            if (!empty($product_attributes)) {
+                foreach ($product_attributes as $attribute) {
+                    if (is_object($attribute)) {
+                        $attr_name = $attribute->get_name();
+                        $attr_options = $attribute->get_options();
+
+                        // Si c'est une taxonomie
+                        if ($attribute->is_taxonomy()) {
+                            $terms = array();
+                            foreach ($attr_options as $term_id) {
+                                $term = get_term($term_id);
+                                if ($term && !is_wp_error($term)) {
+                                    $terms[] = $term->name;
+                                }
+                            }
+                            $attributes_data[$attr_name] = $terms;
+                        } else {
+                            // Attribut custom (non-taxonomie)
+                            $attributes_data[$attr_name] = $attr_options;
+                        }
+                    }
+                }
+            }
+
+            // NOUVEAU v1.2.0 : Récupère TOUS les tags
+            $tag_ids = $product->get_tag_ids();
+            $tags = array();
+            if (!empty($tag_ids)) {
+                foreach ($tag_ids as $tag_id) {
+                    $tag = get_term($tag_id, 'product_tag');
+                    if ($tag && !is_wp_error($tag)) {
+                        $tags[] = array(
+                            'id' => $tag->term_id,
+                            'name' => $tag->name,
+                            'slug' => $tag->slug,
+                        );
+                    }
+                }
+            }
+
+            // NOUVEAU v1.2.0 : Récupère TOUTES les métadonnées
+            $meta_data = array();
+            $all_meta = get_post_meta($product->get_id());
+            if (!empty($all_meta)) {
+                foreach ($all_meta as $meta_key => $meta_value) {
+                    // Skip les meta internes WP (commencent par _)
+                    if (substr($meta_key, 0, 1) !== '_') {
+                        $meta_data[$meta_key] = maybe_unserialize($meta_value[0]);
+                    }
+                }
+            }
+
+            // NOUVEAU v1.2.0 : Informations physiques
+            $dimensions = array(
+                'length' => $product->get_length(),
+                'width' => $product->get_width(),
+                'height' => $product->get_height(),
+                'weight' => $product->get_weight(),
+            );
+
             $formatted[] = array(
                 'product_id' => $product->get_id(),
                 'sku' => $product->get_sku(),
                 'name' => $product->get_name(),
+                'description' => $product->get_description(), // NOUVEAU
+                'short_description' => $product->get_short_description(), // NOUVEAU
                 'price' => (float) wc_format_decimal($product->get_price(), 2),
                 'regular_price' => (float) wc_format_decimal($product->get_regular_price(), 2),
                 'sale_price' => $product->get_sale_price() ? (float) wc_format_decimal($product->get_sale_price(), 2) : null,
@@ -351,10 +440,18 @@ class Youvape_Sync_Batch_Processor {
                 'stock_status' => $product->get_stock_status(),
                 'category' => $category_name,
                 'categories' => $categories,
+                'tags' => $tags, // NOUVEAU
+                'attributes' => $attributes_data, // NOUVEAU - Marque, fabricant, couleur, etc.
+                'dimensions' => $dimensions, // NOUVEAU
+                'meta_data' => $meta_data, // NOUVEAU - Tous les champs custom
+                'type' => $product->get_type(), // NOUVEAU - simple, variable, grouped, etc.
+                'status' => $product->get_status(), // NOUVEAU - publish, draft, etc.
+                'featured' => $product->get_featured(), // NOUVEAU
                 'date_created' => $product->get_date_created() ? $product->get_date_created()->date('c') : null,
                 'date_modified' => $product->get_date_modified() ? $product->get_date_modified()->date('c') : null,
                 'total_sales' => $product->get_total_sales(),
                 'image_url' => wp_get_attachment_url($product->get_image_id()),
+                'gallery_images' => array_filter(array_map('wp_get_attachment_url', $product->get_gallery_image_ids())), // NOUVEAU
             );
         }
 
@@ -401,8 +498,22 @@ class Youvape_Sync_Batch_Processor {
                     }
                 }
 
+                // NOUVEAU v1.2.0 : Récupère les métadonnées de l'item
+                $item_meta = array();
+                $item_meta_data = $item->get_meta_data();
+                if (!empty($item_meta_data)) {
+                    foreach ($item_meta_data as $meta) {
+                        $key = $meta->key;
+                        // Skip les meta internes
+                        if (substr($key, 0, 1) !== '_') {
+                            $item_meta[$key] = $meta->value;
+                        }
+                    }
+                }
+
                 $line_items[] = array(
                     'product_id' => $item->get_product_id(),
+                    'variation_id' => $item->get_variation_id(), // NOUVEAU
                     'product_name' => $item->get_name(),
                     'sku' => $product ? $product->get_sku() : '',
                     'quantity' => $item->get_quantity(),
@@ -412,6 +523,7 @@ class Youvape_Sync_Batch_Processor {
                     'total' => (float) wc_format_decimal($item->get_total(), 2),
                     'discount' => (float) wc_format_decimal($item->get_subtotal() - $item->get_total(), 2),
                     'tax' => (float) wc_format_decimal($item->get_total_tax(), 2),
+                    'meta_data' => $item_meta, // NOUVEAU
                 );
             }
 
@@ -434,14 +546,58 @@ class Youvape_Sync_Batch_Processor {
             // Méthode de livraison
             $shipping_method = '';
             $shipping_method_title = '';
+            $shipping_lines = array();
             foreach ($order->get_shipping_methods() as $shipping) {
                 $shipping_method = $shipping->get_method_id();
                 $shipping_method_title = $shipping->get_method_title();
+
+                // NOUVEAU v1.2.0 : Détails complets de la livraison
+                $shipping_lines[] = array(
+                    'method_id' => $shipping->get_method_id(),
+                    'method_title' => $shipping->get_method_title(),
+                    'total' => (float) wc_format_decimal($shipping->get_total(), 2),
+                    'total_tax' => (float) wc_format_decimal($shipping->get_total_tax(), 2),
+                );
                 break;
+            }
+
+            // NOUVEAU v1.2.0 : Récupère les fees
+            $fee_lines = array();
+            foreach ($order->get_fees() as $fee) {
+                $fee_lines[] = array(
+                    'name' => $fee->get_name(),
+                    'total' => (float) wc_format_decimal($fee->get_total(), 2),
+                    'total_tax' => (float) wc_format_decimal($fee->get_total_tax(), 2),
+                );
+            }
+
+            // NOUVEAU v1.2.0 : Récupère les taxes
+            $tax_lines = array();
+            foreach ($order->get_taxes() as $tax) {
+                $tax_lines[] = array(
+                    'rate_id' => $tax->get_rate_id(),
+                    'label' => $tax->get_label(),
+                    'compound' => $tax->get_compound(),
+                    'tax_total' => (float) wc_format_decimal($tax->get_tax_total(), 2),
+                    'shipping_tax_total' => (float) wc_format_decimal($tax->get_shipping_tax_total(), 2),
+                );
+            }
+
+            // NOUVEAU v1.2.0 : Récupère TOUTES les métadonnées de la commande
+            $meta_data = array();
+            $all_meta = get_post_meta($order->get_id());
+            if (!empty($all_meta)) {
+                foreach ($all_meta as $meta_key => $meta_value) {
+                    // Skip les meta internes WC (commencent par _)
+                    if (substr($meta_key, 0, 1) !== '_') {
+                        $meta_data[$meta_key] = maybe_unserialize($meta_value[0]);
+                    }
+                }
             }
 
             $formatted[] = array(
                 'order_id' => $order->get_id(),
+                'order_key' => $order->get_order_key(), // NOUVEAU
                 'order_number' => $order->get_order_number(),
                 'status' => $order->get_status(),
                 'total' => (float) wc_format_decimal($order->get_total(), 2),
@@ -449,13 +605,20 @@ class Youvape_Sync_Batch_Processor {
                 'shipping_total' => (float) wc_format_decimal($order->get_shipping_total(), 2),
                 'discount_total' => (float) wc_format_decimal($order->get_discount_total(), 2),
                 'tax_total' => (float) wc_format_decimal($order->get_total_tax(), 2),
+                'cart_tax' => (float) wc_format_decimal($order->get_cart_tax(), 2), // NOUVEAU
+                'shipping_tax' => (float) wc_format_decimal($order->get_shipping_tax(), 2), // NOUVEAU
                 'payment_method' => $order->get_payment_method(),
                 'payment_method_title' => $order->get_payment_method_title(),
+                'transaction_id' => $order->get_transaction_id(), // NOUVEAU
                 'currency' => $order->get_currency(),
+                'prices_include_tax' => $order->get_prices_include_tax(), // NOUVEAU
                 'date_created' => $order->get_date_created() ? $order->get_date_created()->date('c') : null,
                 'date_completed' => $order->get_date_completed() ? $order->get_date_completed()->date('c') : null,
+                'date_paid' => $order->get_date_paid() ? $order->get_date_paid()->date('c') : null, // NOUVEAU
                 'date_modified' => $order->get_date_modified() ? $order->get_date_modified()->date('c') : null,
                 'customer_id' => $order->get_customer_id(),
+                'customer_ip_address' => $order->get_customer_ip_address(), // NOUVEAU
+                'customer_user_agent' => $order->get_customer_user_agent(), // NOUVEAU
                 'shipping_method' => $shipping_method,
                 'shipping_method_title' => $shipping_method_title,
                 'shipping_country' => $order->get_shipping_country(),
@@ -464,6 +627,10 @@ class Youvape_Sync_Batch_Processor {
                 'customer_note' => $order->get_customer_note(),
                 'line_items' => $line_items,
                 'coupon_lines' => $coupon_lines,
+                'shipping_lines' => $shipping_lines, // NOUVEAU
+                'fee_lines' => $fee_lines, // NOUVEAU
+                'tax_lines' => $tax_lines, // NOUVEAU
+                'meta_data' => $meta_data, // NOUVEAU - Tous les champs custom
             );
         }
 
@@ -612,7 +779,10 @@ class Youvape_Sync_Batch_Processor {
         }
 
         // Appel à la nouvelle API de génération de données de test
-        $api_url = rtrim($settings['api_url'], '/') . '/test/generate';
+        // Normalise l'URL : retire /api à la fin si présent, puis ajoute /api/test/generate
+        $base_url = rtrim($settings['api_url'], '/');
+        $base_url = preg_replace('#/api$#', '', $base_url); // Retire /api à la fin
+        $api_url = $base_url . '/api/test/generate';
 
         $body = array(
             'customers' => intval($customers_count),

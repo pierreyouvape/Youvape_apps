@@ -57,10 +57,10 @@ const receiveCustomers = async (req, res) => {
     for (const customer of data) {
       const query = `
         INSERT INTO customers (
-          customer_id, email, first_name, last_name, phone, username,
-          date_created, total_spent, order_count,
-          billing_address, shipping_address, updated_at
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW())
+          customer_id, email, first_name, last_name, phone, username, display_name,
+          roles, date_created, date_modified, total_spent, order_count, is_paying_customer,
+          billing_address, shipping_address, avatar_url, meta_data, updated_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, NOW())
         ON CONFLICT (customer_id)
         DO UPDATE SET
           email = EXCLUDED.email,
@@ -68,11 +68,17 @@ const receiveCustomers = async (req, res) => {
           last_name = EXCLUDED.last_name,
           phone = EXCLUDED.phone,
           username = EXCLUDED.username,
+          display_name = EXCLUDED.display_name,
+          roles = EXCLUDED.roles,
           date_created = EXCLUDED.date_created,
+          date_modified = EXCLUDED.date_modified,
           total_spent = EXCLUDED.total_spent,
           order_count = EXCLUDED.order_count,
+          is_paying_customer = EXCLUDED.is_paying_customer,
           billing_address = EXCLUDED.billing_address,
           shipping_address = EXCLUDED.shipping_address,
+          avatar_url = EXCLUDED.avatar_url,
+          meta_data = EXCLUDED.meta_data,
           updated_at = NOW()
         RETURNING (xmax = 0) AS inserted
       `;
@@ -84,11 +90,17 @@ const receiveCustomers = async (req, res) => {
         customer.last_name || null,
         customer.phone || null,
         customer.username || null,
+        customer.display_name || null, // NOUVEAU
+        JSON.stringify(customer.roles || []), // NOUVEAU
         customer.date_created || null,
+        customer.date_modified || null, // NOUVEAU
         customer.total_spent || 0,
         customer.order_count || 0,
+        customer.is_paying_customer || false, // NOUVEAU
         JSON.stringify(customer.billing_address || {}),
-        JSON.stringify(customer.shipping_address || {})
+        JSON.stringify(customer.shipping_address || {}),
+        customer.avatar_url || null,
+        JSON.stringify(customer.meta_data || {}) // NOUVEAU
       ];
 
       const result = await pool.query(query, values);
@@ -164,14 +176,17 @@ const receiveProducts = async (req, res) => {
     for (const product of data) {
       const query = `
         INSERT INTO products (
-          product_id, sku, name, price, regular_price, sale_price, cost_price,
-          stock_quantity, stock_status, category, categories,
-          date_created, date_modified, total_sales, image_url, updated_at
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, NOW())
+          product_id, sku, name, description, short_description, price, regular_price, sale_price, cost_price,
+          stock_quantity, stock_status, category, categories, tags, attributes, dimensions,
+          meta_data, type, status, featured, date_created, date_modified, total_sales,
+          image_url, gallery_images, updated_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, NOW())
         ON CONFLICT (product_id)
         DO UPDATE SET
           sku = EXCLUDED.sku,
           name = EXCLUDED.name,
+          description = EXCLUDED.description,
+          short_description = EXCLUDED.short_description,
           price = EXCLUDED.price,
           regular_price = EXCLUDED.regular_price,
           sale_price = EXCLUDED.sale_price,
@@ -180,10 +195,18 @@ const receiveProducts = async (req, res) => {
           stock_status = EXCLUDED.stock_status,
           category = EXCLUDED.category,
           categories = EXCLUDED.categories,
+          tags = EXCLUDED.tags,
+          attributes = EXCLUDED.attributes,
+          dimensions = EXCLUDED.dimensions,
+          meta_data = EXCLUDED.meta_data,
+          type = EXCLUDED.type,
+          status = EXCLUDED.status,
+          featured = EXCLUDED.featured,
           date_created = EXCLUDED.date_created,
           date_modified = EXCLUDED.date_modified,
           total_sales = EXCLUDED.total_sales,
           image_url = EXCLUDED.image_url,
+          gallery_images = EXCLUDED.gallery_images,
           updated_at = NOW()
         RETURNING (xmax = 0) AS inserted
       `;
@@ -192,6 +215,8 @@ const receiveProducts = async (req, res) => {
         product.product_id,
         product.sku || null,
         product.name,
+        product.description || null, // NOUVEAU
+        product.short_description || null, // NOUVEAU
         product.price || 0,
         product.regular_price || null,
         product.sale_price || null,
@@ -200,10 +225,18 @@ const receiveProducts = async (req, res) => {
         product.stock_status || 'instock',
         product.category || null,
         JSON.stringify(product.categories || []),
+        JSON.stringify(product.tags || []), // NOUVEAU
+        JSON.stringify(product.attributes || {}), // NOUVEAU
+        JSON.stringify(product.dimensions || {}), // NOUVEAU
+        JSON.stringify(product.meta_data || {}), // NOUVEAU
+        product.type || 'simple', // NOUVEAU
+        product.status || 'publish', // NOUVEAU
+        product.featured || false, // NOUVEAU
         product.date_created || null,
         product.date_modified || null,
         product.total_sales || 0,
-        product.image_url || null
+        product.image_url || null,
+        JSON.stringify(product.gallery_images || []) // NOUVEAU
       ];
 
       const result = await pool.query(query, values);
@@ -287,15 +320,18 @@ const receiveOrders = async (req, res) => {
         // Insert/Update order
         const orderQuery = `
           INSERT INTO orders (
-            order_id, order_number, status, total, subtotal,
-            shipping_total, discount_total, tax_total,
-            payment_method, payment_method_title, currency,
-            date_created, date_completed, date_modified,
-            customer_id, shipping_method, shipping_method_title, shipping_country,
-            billing_address, shipping_address, customer_note, updated_at
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, NOW())
+            order_id, order_key, order_number, status, total, subtotal,
+            shipping_total, discount_total, tax_total, cart_tax, shipping_tax,
+            payment_method, payment_method_title, transaction_id, currency, prices_include_tax,
+            date_created, date_completed, date_paid, date_modified,
+            customer_id, customer_ip_address, customer_user_agent,
+            shipping_method, shipping_method_title, shipping_country,
+            billing_address, shipping_address, customer_note,
+            shipping_lines, fee_lines, tax_lines, meta_data, updated_at
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, NOW())
           ON CONFLICT (order_id)
           DO UPDATE SET
+            order_key = EXCLUDED.order_key,
             order_number = EXCLUDED.order_number,
             status = EXCLUDED.status,
             total = EXCLUDED.total,
@@ -303,25 +339,37 @@ const receiveOrders = async (req, res) => {
             shipping_total = EXCLUDED.shipping_total,
             discount_total = EXCLUDED.discount_total,
             tax_total = EXCLUDED.tax_total,
+            cart_tax = EXCLUDED.cart_tax,
+            shipping_tax = EXCLUDED.shipping_tax,
             payment_method = EXCLUDED.payment_method,
             payment_method_title = EXCLUDED.payment_method_title,
+            transaction_id = EXCLUDED.transaction_id,
             currency = EXCLUDED.currency,
+            prices_include_tax = EXCLUDED.prices_include_tax,
             date_created = EXCLUDED.date_created,
             date_completed = EXCLUDED.date_completed,
+            date_paid = EXCLUDED.date_paid,
             date_modified = EXCLUDED.date_modified,
             customer_id = EXCLUDED.customer_id,
+            customer_ip_address = EXCLUDED.customer_ip_address,
+            customer_user_agent = EXCLUDED.customer_user_agent,
             shipping_method = EXCLUDED.shipping_method,
             shipping_method_title = EXCLUDED.shipping_method_title,
             shipping_country = EXCLUDED.shipping_country,
             billing_address = EXCLUDED.billing_address,
             shipping_address = EXCLUDED.shipping_address,
             customer_note = EXCLUDED.customer_note,
+            shipping_lines = EXCLUDED.shipping_lines,
+            fee_lines = EXCLUDED.fee_lines,
+            tax_lines = EXCLUDED.tax_lines,
+            meta_data = EXCLUDED.meta_data,
             updated_at = NOW()
           RETURNING (xmax = 0) AS inserted
         `;
 
         const orderValues = [
           order.order_id,
+          order.order_key || null, // NOUVEAU
           order.order_number,
           order.status || 'pending',
           order.total || 0,
@@ -329,19 +377,30 @@ const receiveOrders = async (req, res) => {
           order.shipping_total || 0,
           order.discount_total || 0,
           order.tax_total || 0,
+          order.cart_tax || 0, // NOUVEAU
+          order.shipping_tax || 0, // NOUVEAU
           order.payment_method || null,
           order.payment_method_title || null,
+          order.transaction_id || null, // NOUVEAU
           order.currency || 'EUR',
+          order.prices_include_tax || false, // NOUVEAU
           order.date_created || null,
           order.date_completed || null,
+          order.date_paid || null, // NOUVEAU
           order.date_modified || null,
           order.customer_id || null,
+          order.customer_ip_address || null, // NOUVEAU
+          order.customer_user_agent || null, // NOUVEAU
           order.shipping_method || null,
           order.shipping_method_title || null,
           order.shipping_country || null,
           JSON.stringify(order.billing_address || {}),
           JSON.stringify(order.shipping_address || {}),
-          order.customer_note || null
+          order.customer_note || null,
+          JSON.stringify(order.shipping_lines || []), // NOUVEAU
+          JSON.stringify(order.fee_lines || []), // NOUVEAU
+          JSON.stringify(order.tax_lines || []), // NOUVEAU
+          JSON.stringify(order.meta_data || {}) // NOUVEAU
         ];
 
         const orderResult = await client.query(orderQuery, orderValues);
@@ -359,14 +418,15 @@ const receiveOrders = async (req, res) => {
           for (const item of order.line_items) {
             const itemQuery = `
               INSERT INTO order_items (
-                order_id, product_id, product_name, sku, quantity,
-                price, regular_price, subtotal, total, discount, cost_price, tax
-              ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+                order_id, product_id, variation_id, product_name, sku, quantity,
+                price, regular_price, subtotal, total, discount, cost_price, tax, meta_data
+              ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
             `;
 
             const itemValues = [
               order.order_id,
               item.product_id || null,
+              item.variation_id || null, // NOUVEAU
               item.product_name || '',
               item.sku || null,
               item.quantity || 0,
@@ -376,7 +436,8 @@ const receiveOrders = async (req, res) => {
               item.total || 0,
               item.discount || 0,
               item.cost_price || null,
-              item.tax || 0
+              item.tax || 0,
+              JSON.stringify(item.meta_data || {}) // NOUVEAU
             ];
 
             await client.query(itemQuery, itemValues);
