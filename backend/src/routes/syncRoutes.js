@@ -15,4 +15,9 @@ router.get('/logs/:type', syncController.downloadLogs);
 router.get('/stats', syncController.getStats);
 router.delete('/logs', syncController.clearLogs);
 
+// Endpoints pour gérer les offsets de test manuels
+router.get('/test-offsets', syncController.getTestOffsets);
+router.post('/test-offsets', syncController.updateTestOffsets);
+router.delete('/test-offsets', syncController.resetTestOffsets);
+
 module.exports = router;

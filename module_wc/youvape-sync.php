@@ -3,7 +3,7 @@
  * Plugin Name: Youvape Sync
  * Plugin URI: https://youvape.com
  * Description: Synchronise les données WooCommerce (clients, produits, commandes) vers l'API Node.js externe. Import historique par lots + synchro temps réel.
- * Version: 1.2.0
+ * Version: 1.1.3
  * Author: Youvape
  * Author URI: https://youvape.com
  * Text Domain: youvape-sync
@@ -22,7 +22,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Constantes du plugin
-define('YOUVAPE_SYNC_VERSION', '1.2.0');
+define('YOUVAPE_SYNC_VERSION', '1.1.3');
 define('YOUVAPE_SYNC_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('YOUVAPE_SYNC_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('YOUVAPE_SYNC_PLUGIN_BASENAME', plugin_basename(__FILE__));
@@ -100,6 +100,7 @@ class Youvape_Sync {
         add_action('wp_ajax_youvape_sync_get_status', array($this, 'ajax_get_status'));
         add_action('wp_ajax_youvape_sync_stop_batch', array($this, 'ajax_stop_batch'));
         add_action('wp_ajax_youvape_sync_send_test_sample', array($this, 'ajax_send_test_sample'));
+        add_action('wp_ajax_youvape_sync_reset_test_offsets', array($this, 'ajax_reset_test_offsets'));
 
         // Export des logs
         add_action('admin_post_youvape_sync_export_logs', array($this, 'export_logs'));
@@ -295,6 +296,25 @@ class Youvape_Sync {
         $orders_count = isset($_POST['orders_count']) ? intval($_POST['orders_count']) : 5;
 
         $result = $this->batch_processor->send_test_sample($customers_count, $products_count, $orders_count);
+
+        if ($result['success']) {
+            wp_send_json_success($result);
+        } else {
+            wp_send_json_error($result);
+        }
+    }
+
+    /**
+     * AJAX: Réinitialise les offsets de test
+     */
+    public function ajax_reset_test_offsets() {
+        check_ajax_referer('youvape_sync_nonce', 'nonce');
+
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(array('message' => __('Permissions insuffisantes.', 'youvape-sync')));
+        }
+
+        $result = $this->batch_processor->reset_test_offsets();
 
         if ($result['success']) {
             wp_send_json_success($result);

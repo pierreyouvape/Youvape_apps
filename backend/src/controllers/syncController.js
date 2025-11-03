@@ -609,6 +609,107 @@ const ping = async (req, res) => {
   });
 };
 
+/**
+ * Récupère les offsets de test manuels
+ * GET /api/sync/test-offsets
+ */
+const getTestOffsets = async (req, res) => {
+  try {
+    const query = `
+      SELECT config_key, config_value FROM app_config
+      WHERE config_key IN ('wc_test_customers_offset', 'wc_test_products_offset', 'wc_test_orders_offset')
+    `;
+    const result = await pool.query(query);
+
+    const offsets = {
+      customers: 0,
+      products: 0,
+      orders: 0
+    };
+
+    result.rows.forEach(row => {
+      if (row.config_key === 'wc_test_customers_offset') {
+        offsets.customers = parseInt(row.config_value) || 0;
+      } else if (row.config_key === 'wc_test_products_offset') {
+        offsets.products = parseInt(row.config_value) || 0;
+      } else if (row.config_key === 'wc_test_orders_offset') {
+        offsets.orders = parseInt(row.config_value) || 0;
+      }
+    });
+
+    res.json({ success: true, offsets });
+  } catch (error) {
+    console.error('Error getting test offsets:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+/**
+ * Met à jour les offsets de test manuels
+ * POST /api/sync/test-offsets
+ * Body: { customers: 25, products: 50, orders: 100 }
+ */
+const updateTestOffsets = async (req, res) => {
+  try {
+    const { customers, products, orders } = req.body;
+
+    if (customers !== undefined) {
+      await pool.query(`
+        INSERT INTO app_config (config_key, config_value, updated_at)
+        VALUES ('wc_test_customers_offset', $1, NOW())
+        ON CONFLICT (config_key)
+        DO UPDATE SET config_value = EXCLUDED.config_value, updated_at = NOW()
+      `, [customers.toString()]);
+    }
+
+    if (products !== undefined) {
+      await pool.query(`
+        INSERT INTO app_config (config_key, config_value, updated_at)
+        VALUES ('wc_test_products_offset', $1, NOW())
+        ON CONFLICT (config_key)
+        DO UPDATE SET config_value = EXCLUDED.config_value, updated_at = NOW()
+      `, [products.toString()]);
+    }
+
+    if (orders !== undefined) {
+      await pool.query(`
+        INSERT INTO app_config (config_key, config_value, updated_at)
+        VALUES ('wc_test_orders_offset', $1, NOW())
+        ON CONFLICT (config_key)
+        DO UPDATE SET config_value = EXCLUDED.config_value, updated_at = NOW()
+      `, [orders.toString()]);
+    }
+
+    console.log(`✓ Test offsets updated: customers=${customers}, products=${products}, orders=${orders}`);
+
+    res.json({ success: true, message: 'Offsets updated' });
+  } catch (error) {
+    console.error('Error updating test offsets:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+/**
+ * Reset les offsets de test à 0
+ * DELETE /api/sync/test-offsets
+ */
+const resetTestOffsets = async (req, res) => {
+  try {
+    await pool.query(`
+      UPDATE app_config
+      SET config_value = '0', updated_at = NOW()
+      WHERE config_key IN ('wc_test_customers_offset', 'wc_test_products_offset', 'wc_test_orders_offset')
+    `);
+
+    console.log('✓ Test offsets reset to 0');
+
+    res.json({ success: true, message: 'Offsets reset to 0' });
+  } catch (error) {
+    console.error('Error resetting test offsets:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
 module.exports = {
   receiveCustomers,
   receiveProducts,
@@ -616,5 +717,8 @@ module.exports = {
   downloadLogs,
   getStats,
   clearLogs,
-  ping
+  ping,
+  getTestOffsets,
+  updateTestOffsets,
+  resetTestOffsets
 };

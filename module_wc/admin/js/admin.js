@@ -122,6 +122,55 @@
             });
         });
 
+        // Reset des offsets de test
+        $('#reset-test-offsets').on('click', function() {
+            if (!confirm('Êtes-vous sûr de vouloir réinitialiser les offsets de test ?\n\nCela permettra de renvoyer les mêmes échantillons depuis le début.')) {
+                return;
+            }
+
+            const $btn = $(this);
+            const originalText = $btn.text();
+
+            $btn.prop('disabled', true).html('Réinitialisation... <span class="youvape-sync-spinner"></span>');
+
+            $.ajax({
+                url: youvapeSyncAdmin.ajax_url,
+                type: 'POST',
+                data: {
+                    action: 'youvape_sync_reset_test_offsets',
+                    nonce: youvapeSyncAdmin.nonce
+                },
+                success: function(response) {
+                    if (response.success) {
+                        $('#test-sample-result').html(
+                            '<div class="notice notice-success"><p>' +
+                            '<span class="status-icon success">✓</span>' +
+                            (response.data.message || 'Offsets de test réinitialisés à 0.') +
+                            '</p></div>'
+                        );
+                    } else {
+                        $('#test-sample-result').html(
+                            '<div class="notice notice-error"><p>' +
+                            '<span class="status-icon error">✕</span>' +
+                            (response.data.error || 'Échec de la réinitialisation.') +
+                            '</p></div>'
+                        );
+                    }
+                },
+                error: function() {
+                    $('#test-sample-result').html(
+                        '<div class="notice notice-error"><p>' +
+                        '<span class="status-icon error">✕</span>' +
+                        'Erreur réseau.' +
+                        '</p></div>'
+                    );
+                },
+                complete: function() {
+                    $btn.prop('disabled', false).text(originalText);
+                }
+            });
+        });
+
         // Test d'échantillon
         $('#send-test-sample').on('click', function() {
             const $btn = $(this);

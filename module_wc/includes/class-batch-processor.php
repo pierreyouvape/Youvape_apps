@@ -760,11 +760,11 @@ class Youvape_Sync_Batch_Processor {
 
     /**
      * Envoie un échantillon de test vers l'API
-     * NOUVELLE VERSION: Appelle l'API backend pour générer des données de test avec système d'offset
+     * Envoie de VRAIES données WooCommerce avec système d'offset
      *
-     * @param int $customers_count Nombre de clients à générer
-     * @param int $products_count Nombre de produits à générer
-     * @param int $orders_count Nombre de commandes à générer
+     * @param int $customers_count Nombre de clients à envoyer
+     * @param int $products_count Nombre de produits à envoyer
+     * @param int $orders_count Nombre de commandes à envoyer
      * @return array Résultat de l'envoi
      */
     public function send_test_sample($customers_count = 5, $products_count = 5, $orders_count = 5) {
@@ -778,22 +778,156 @@ class Youvape_Sync_Batch_Processor {
             );
         }
 
-        // Appel à la nouvelle API de génération de données de test
-        // Normalise l'URL : retire /api à la fin si présent, puis ajoute /api/test/generate
+        // Récupère les offsets actuels depuis l'API
         $base_url = rtrim($settings['api_url'], '/');
-        $base_url = preg_replace('#/api$#', '', $base_url); // Retire /api à la fin
-        $api_url = $base_url . '/api/test/generate';
+        $base_url = preg_replace('#/api$#', '', $base_url);
+        $offsets_url = $base_url . '/api/sync/test-offsets';
 
-        $body = array(
-            'customers' => intval($customers_count),
-            'products' => intval($products_count),
-            'orders' => intval($orders_count)
+        $offsets_response = wp_remote_get($offsets_url, array('timeout' => 10));
+
+        $offsets = array('customers' => 0, 'products' => 0, 'orders' => 0);
+
+        if (!is_wp_error($offsets_response)) {
+            $offsets_body = wp_remote_retrieve_body($offsets_response);
+            $offsets_data = json_decode($offsets_body, true);
+            if ($offsets_data && isset($offsets_data['offsets'])) {
+                $offsets = $offsets_data['offsets'];
+            }
+        }
+
+        $results = array(
+            'customers' => null,
+            'products' => null,
+            'orders' => null,
+            'data_sent' => array(),
+            'offsets_used' => $offsets,
         );
 
-        $response = wp_remote_post($api_url, array(
-            'timeout' => 60,
-            'headers' => array('Content-Type' => 'application/json'),
-            'body' => json_encode($body),
+        // Envoie les VRAIS clients de WooCommerce si activés
+        if (isset($settings['enable_customers']) && $settings['enable_customers'] && $customers_count > 0) {
+            $customers = $this->fetch_customers($offsets['customers'], $customers_count);
+            $results['data_sent']['customers'] = $customers;
+            $response = $this->api_client->send_customers($customers, 'test_sample');
+            $results['customers'] = $response;
+
+            // Met à jour l'offset si l'envoi a réussi
+            if ($response && $response['success']) {
+                $new_offset = $offsets['customers'] + count($customers);
+                wp_remote_post($offsets_url, array(
+                    'timeout' => 10,
+                    'headers' => array('Content-Type' => 'application/json'),
+                    'body' => json_encode(array('customers' => $new_offset)),
+                ));
+            }
+        }
+
+        // Envoie les VRAIS produits de WooCommerce si activés
+        if (isset($settings['enable_products']) && $settings['enable_products'] && $products_count > 0) {
+            $products = $this->fetch_products($offsets['products'], $products_count);
+            $results['data_sent']['products'] = $products;
+            $response = $this->api_client->send_products($products, 'test_sample');
+            $results['products'] = $response;
+
+            // Met à jour l'offset si l'envoi a réussi
+            if ($response && $response['success']) {
+                $new_offset = $offsets['products'] + count($products);
+                wp_remote_post($offsets_url, array(
+                    'timeout' => 10,
+                    'headers' => array('Content-Type' => 'application/json'),
+                    'body' => json_encode(array('products' => $new_offset)),
+                ));
+            }
+        }
+
+        // Envoie les VRAIES commandes de WooCommerce si activées
+        if (isset($settings['enable_orders']) && $settings['enable_orders'] && $orders_count > 0) {
+            $orders = $this->fetch_orders($offsets['orders'], $orders_count);
+            $results['data_sent']['orders'] = $orders;
+            $response = $this->api_client->send_orders($orders, 'test_sample');
+            $results['orders'] = $response;
+
+            // Met à jour l'offset si l'envoi a réussi
+            if ($response && $response['success']) {
+                $new_offset = $offsets['orders'] + count($orders);
+                wp_remote_post($offsets_url, array(
+                    'timeout' => 10,
+                    'headers' => array('Content-Type' => 'application/json'),
+                    'body' => json_encode(array('orders' => $new_offset)),
+                ));
+            }
+        }
+
+        // Vérifie si au moins un envoi a réussi
+        $has_success = false;
+        $errors = array();
+
+        if ($results['customers']) {
+            if ($results['customers']['success']) {
+                $has_success = true;
+            } else {
+                $errors[] = 'Clients: ' . $results['customers']['error'];
+            }
+        }
+
+        if ($results['products']) {
+            if ($results['products']['success']) {
+                $has_success = true;
+            } else {
+                $errors[] = 'Produits: ' . $results['products']['error'];
+            }
+        }
+
+        if ($results['orders']) {
+            if ($results['orders']['success']) {
+                $has_success = true;
+            } else {
+                $errors[] = 'Commandes: ' . $results['orders']['error'];
+            }
+        }
+
+        if ($has_success) {
+            return array(
+                'success' => true,
+                'message' => __('Échantillon de test envoyé avec succès.', 'youvape-sync'),
+                'results' => $results,
+                'counts' => array(
+                    'customers' => count($results['data_sent']['customers'] ?? array()),
+                    'products' => count($results['data_sent']['products'] ?? array()),
+                    'orders' => count($results['data_sent']['orders'] ?? array()),
+                ),
+                'offsets_used' => $offsets,
+            );
+        } else {
+            return array(
+                'success' => false,
+                'error' => implode(' | ', $errors),
+                'results' => $results,
+            );
+        }
+    }
+
+    /**
+     * Reset les offsets de test manuels
+     *
+     * @return array Résultat
+     */
+    public function reset_test_offsets() {
+        $settings = get_option('youvape_sync_settings', array());
+
+        if (!$this->api_client->is_configured()) {
+            return array(
+                'success' => false,
+                'error' => __('L\'API n\'est pas configurée.', 'youvape-sync'),
+            );
+        }
+
+        $base_url = rtrim($settings['api_url'], '/');
+        $base_url = preg_replace('#/api$#', '', $base_url);
+        $offsets_url = $base_url . '/api/sync/test-offsets';
+
+        $response = wp_remote_request($offsets_url, array(
+            'method' => 'DELETE',
+            'timeout' => 10,
         ));
 
         if (is_wp_error($response)) {
@@ -803,32 +937,9 @@ class Youvape_Sync_Batch_Processor {
             );
         }
 
-        $body_response = wp_remote_retrieve_body($response);
-        $data = json_decode($body_response, true);
-
-        if (!$data) {
-            return array(
-                'success' => false,
-                'error' => __('Réponse invalide de l\'API.', 'youvape-sync'),
-            );
-        }
-
-        if (isset($data['success']) && $data['success']) {
-            return array(
-                'success' => true,
-                'message' => $data['message'] ?? __('Données de test générées avec succès.', 'youvape-sync'),
-                'counts' => $data['counts'] ?? array(),
-                'offsets' => $data['offsets'] ?? array(),
-                'import_results' => $data['import_results'] ?? array(),
-                'results' => array(
-                    'data_sent' => array(), // Pas de données envoyées dans ce cas, tout est géré côté backend
-                )
-            );
-        } else {
-            return array(
-                'success' => false,
-                'error' => $data['error'] ?? __('Erreur lors de la génération des données de test.', 'youvape-sync'),
-            );
-        }
+        return array(
+            'success' => true,
+            'message' => __('Offsets de test réinitialisés à 0.', 'youvape-sync'),
+        );
     }
 }

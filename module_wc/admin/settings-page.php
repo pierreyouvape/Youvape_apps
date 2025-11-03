@@ -223,6 +223,9 @@ $order_count = (int) $order_count;
                     <button type="button" id="send-test-sample" class="button button-secondary button-large">
                         <?php esc_html_e('Envoyer l\'échantillon test', 'youvape-sync'); ?>
                     </button>
+                    <button type="button" id="reset-test-offsets" class="button button-link-delete" style="margin-left: 20px;">
+                        <?php esc_html_e('Réinitialiser les offsets de test', 'youvape-sync'); ?>
+                    </button>
                 </p>
 
                 <div id="test-sample-result" style="margin-top: 20px;"></div>

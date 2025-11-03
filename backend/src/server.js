@@ -12,7 +12,6 @@ const statsRoutes = require('./routes/statsRoutes');
 const customersRoutes = require('./routes/customersRoutes');
 const productsRoutes = require('./routes/productsRoutes');
 const ordersRoutes = require('./routes/ordersRoutes');
-const testDataRoutes = require('./routes/testDataRoutes');
 const { setupCron } = require('./services/cronService');
 const rewardService = require('./services/rewardService');
 const emailService = require('./services/emailService');
@@ -40,7 +39,6 @@ app.use('/api/stats', statsRoutes); // Stats & KPIs
 app.use('/api/customers', customersRoutes); // Customers
 app.use('/api/products', productsRoutes); // Products
 app.use('/api/orders', ordersRoutes); // Orders
-app.use('/api/test', testDataRoutes); // Test data generation
 
 // Start server
 app.listen(PORT, async () => {
