@@ -345,7 +345,6 @@ class Youvape_Sync_Event_Listener {
                     'postcode' => $customer->get_shipping_postcode(),
                     'country' => $customer->get_shipping_country(),
                 ),
-                'avatar_url' => get_avatar_url($customer->get_email()),
             );
         } catch (Exception $e) {
             error_log('Youvape Sync: Erreur format customer #' . $customer_id . ' - ' . $e->getMessage());

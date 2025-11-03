@@ -59,8 +59,8 @@ const receiveCustomers = async (req, res) => {
         INSERT INTO customers (
           customer_id, email, first_name, last_name, phone, username, display_name,
           roles, date_created, date_modified, total_spent, order_count, is_paying_customer,
-          billing_address, shipping_address, avatar_url, meta_data, updated_at
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, NOW())
+          billing_address, shipping_address, meta_data, updated_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, NOW())
         ON CONFLICT (customer_id)
         DO UPDATE SET
           email = EXCLUDED.email,
@@ -77,7 +77,6 @@ const receiveCustomers = async (req, res) => {
           is_paying_customer = EXCLUDED.is_paying_customer,
           billing_address = EXCLUDED.billing_address,
           shipping_address = EXCLUDED.shipping_address,
-          avatar_url = EXCLUDED.avatar_url,
           meta_data = EXCLUDED.meta_data,
           updated_at = NOW()
         RETURNING (xmax = 0) AS inserted
@@ -90,17 +89,16 @@ const receiveCustomers = async (req, res) => {
         customer.last_name || null,
         customer.phone || null,
         customer.username || null,
-        customer.display_name || null, // NOUVEAU
-        JSON.stringify(customer.roles || []), // NOUVEAU
+        customer.display_name || null,
+        JSON.stringify(customer.roles || []),
         customer.date_created || null,
-        customer.date_modified || null, // NOUVEAU
+        customer.date_modified || null,
         customer.total_spent || 0,
         customer.order_count || 0,
-        customer.is_paying_customer || false, // NOUVEAU
+        customer.is_paying_customer || false,
         JSON.stringify(customer.billing_address || {}),
         JSON.stringify(customer.shipping_address || {}),
-        customer.avatar_url || null,
-        JSON.stringify(customer.meta_data || {}) // NOUVEAU
+        JSON.stringify(customer.meta_data || {})
       ];
 
       const result = await pool.query(query, values);

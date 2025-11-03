@@ -300,7 +300,6 @@ class Youvape_Sync_Batch_Processor {
                     'postcode' => $customer->get_shipping_postcode(),
                     'country' => $customer->get_shipping_country(),
                 ),
-                'avatar_url' => get_avatar_url($customer->get_email()),
                 'meta_data' => $meta_data, // NOUVEAU - Tous les champs custom
             );
         }
