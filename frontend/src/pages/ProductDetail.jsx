@@ -265,6 +265,113 @@ const ProductDetail = () => {
           </div>
         )}
 
+        {/* Product Metadata & Attributes */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(500px, 1fr))', gap: '20px', marginBottom: '30px' }}>
+          {/* Attributes */}
+          {product.attributes && Object.keys(product.attributes).length > 0 && (
+            <div style={{ backgroundColor: '#fff', padding: '25px', borderRadius: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
+              <h2 style={{ marginTop: 0, color: '#333', fontSize: '18px' }}>🔧 Attributs techniques</h2>
+              <div>
+                {Object.entries(product.attributes).map(([key, values]) => (
+                  <div key={key} style={{ padding: '12px', borderBottom: '1px solid #f0f0f0', display: 'flex', justifyContent: 'space-between' }}>
+                    <div style={{ color: '#666', fontSize: '14px' }}>{key.replace('pa_', '').replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}</div>
+                    <div style={{ fontWeight: '600', fontSize: '14px' }}>{Array.isArray(values) ? values.join(', ') : values}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Metadata */}
+          {product.meta_data && (
+            <div style={{ backgroundColor: '#fff', padding: '25px', borderRadius: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
+              <h2 style={{ marginTop: 0, color: '#333', fontSize: '18px' }}>📋 Informations produit</h2>
+              <div>
+                {product.meta_data.total_sales && (
+                  <div style={{ padding: '12px', borderBottom: '1px solid #f0f0f0', display: 'flex', justifyContent: 'space-between' }}>
+                    <div style={{ color: '#666', fontSize: '14px' }}>Ventes totales (WooCommerce)</div>
+                    <div style={{ fontWeight: '600', fontSize: '14px', color: '#135E84' }}>{formatNumber(product.meta_data.total_sales)}</div>
+                  </div>
+                )}
+                {product.meta_data.doofinder_discount_percentage && (
+                  <div style={{ padding: '12px', borderBottom: '1px solid #f0f0f0', display: 'flex', justifyContent: 'space-between' }}>
+                    <div style={{ color: '#666', fontSize: '14px' }}>Réduction</div>
+                    <div style={{ fontWeight: '600', fontSize: '14px', color: '#dc3545' }}>{product.meta_data.doofinder_discount_percentage}%</div>
+                  </div>
+                )}
+                {product.meta_data.cwg_total_subscribers && (
+                  <div style={{ padding: '12px', borderBottom: '1px solid #f0f0f0', display: 'flex', justifyContent: 'space-between' }}>
+                    <div style={{ color: '#666', fontSize: '14px' }}>Abonnés</div>
+                    <div style={{ fontWeight: '600', fontSize: '14px' }}>{product.meta_data.cwg_total_subscribers}</div>
+                  </div>
+                )}
+                {product.meta_data.product_with_nicotine !== undefined && (
+                  <div style={{ padding: '12px', borderBottom: '1px solid #f0f0f0', display: 'flex', justifyContent: 'space-between' }}>
+                    <div style={{ color: '#666', fontSize: '14px' }}>Contient de la nicotine</div>
+                    <div style={{ fontWeight: '600', fontSize: '14px', color: product.meta_data.product_with_nicotine === '1' ? '#dc3545' : '#28a745' }}>
+                      {product.meta_data.product_with_nicotine === '1' ? 'Oui' : 'Non'}
+                    </div>
+                  </div>
+                )}
+                {product.dimensions && product.dimensions.weight && (
+                  <div style={{ padding: '12px', borderBottom: '1px solid #f0f0f0', display: 'flex', justifyContent: 'space-between' }}>
+                    <div style={{ color: '#666', fontSize: '14px' }}>Poids</div>
+                    <div style={{ fontWeight: '600', fontSize: '14px' }}>{product.dimensions.weight} kg</div>
+                  </div>
+                )}
+                {product.type && (
+                  <div style={{ padding: '12px', borderBottom: '1px solid #f0f0f0', display: 'flex', justifyContent: 'space-between' }}>
+                    <div style={{ color: '#666', fontSize: '14px' }}>Type</div>
+                    <div style={{ fontWeight: '600', fontSize: '14px' }}>{product.type}</div>
+                  </div>
+                )}
+                {product.status && (
+                  <div style={{ padding: '12px', borderBottom: '1px solid #f0f0f0', display: 'flex', justifyContent: 'space-between' }}>
+                    <div style={{ color: '#666', fontSize: '14px' }}>Statut</div>
+                    <div style={{ fontWeight: '600', fontSize: '14px', color: product.status === 'publish' ? '#28a745' : '#ffc107' }}>{product.status}</div>
+                  </div>
+                )}
+                {product.featured !== undefined && (
+                  <div style={{ padding: '12px', borderBottom: '1px solid #f0f0f0', display: 'flex', justifyContent: 'space-between' }}>
+                    <div style={{ color: '#666', fontSize: '14px' }}>Produit vedette</div>
+                    <div style={{ fontWeight: '600', fontSize: '14px' }}>{product.featured ? '⭐ Oui' : 'Non'}</div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Product Tip */}
+        {product.meta_data && product.meta_data.product_tip && (
+          <div style={{ backgroundColor: '#fff3cd', padding: '20px', borderRadius: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)', marginBottom: '30px', borderLeft: '4px solid #ffc107' }}>
+            <h3 style={{ marginTop: 0, color: '#856404', fontSize: '16px' }}>💡 Conseil produit</h3>
+            <p style={{ margin: 0, color: '#856404', fontSize: '14px' }}>{product.meta_data.product_tip}</p>
+          </div>
+        )}
+
+        {/* Short Description */}
+        {product.short_description && (
+          <div style={{ backgroundColor: '#fff', padding: '25px', borderRadius: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)', marginBottom: '30px' }}>
+            <h2 style={{ marginTop: 0, color: '#333', fontSize: '18px' }}>📝 Description</h2>
+            <div style={{ fontSize: '14px', color: '#666', lineHeight: '1.6' }} dangerouslySetInnerHTML={{ __html: product.short_description }} />
+          </div>
+        )}
+
+        {/* Tags */}
+        {product.tags && product.tags.length > 0 && (
+          <div style={{ backgroundColor: '#fff', padding: '25px', borderRadius: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)', marginBottom: '30px' }}>
+            <h2 style={{ marginTop: 0, color: '#333', fontSize: '18px' }}>🏷️ Tags</h2>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px' }}>
+              {product.tags.map((tag) => (
+                <span key={tag.id} style={{ padding: '6px 12px', backgroundColor: '#f0f0f0', borderRadius: '20px', fontSize: '13px', color: '#666' }}>
+                  {tag.name}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(500px, 1fr))', gap: '20px', marginBottom: '30px' }}>
           {/* Top Customers */}
           {topCustomers.length > 0 && (

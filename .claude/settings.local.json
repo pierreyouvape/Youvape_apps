@@ -18,7 +18,13 @@
       "Bash(curl -s http://54.37.156.233:3000/api/products/stock-summary)",
       "Bash(psql:*)",
       "Bash(docker compose exec postgres psql:*)",
-      "Read(///**)"
+      "Read(///**)",
+      "Bash(curl -s \"http://54.37.156.233:3000/api/stats/dashboard?period=30d&status=completed\")",
+      "Bash(curl -s \"http://54.37.156.233:3000/api/customers?limit=5\")",
+      "Bash(curl -s \"http://54.37.156.233:3000/api/orders?limit=3\")",
+      "Bash(python3:*)",
+      "Bash(curl -s \"http://54.37.156.233:3000/api/products?limit=3\")",
+      "Bash(curl -s \"http://54.37.156.233:3000/api/products?limit=1\")"
     ],
     "deny": [],
     "ask": []
