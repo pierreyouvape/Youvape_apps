@@ -51,6 +51,22 @@ exports.getVariantStats = async (req, res) => {
 };
 
 /**
+ * Récupère les stats pour toutes les variantes d'une famille
+ * GET /api/products/:id/stats/all-variants
+ */
+exports.getAllVariantsStats = async (req, res) => {
+  try {
+    const productId = parseInt(req.params.id);
+    const stats = await productStatsService.getAllVariantsStats(productId);
+
+    res.json({ success: true, data: stats });
+  } catch (error) {
+    console.error('Error getting all variants stats:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+/**
  * Récupère l'évolution des ventes
  * GET /api/products/:id/stats/evolution?groupBy=day&includeVariants=true
  */

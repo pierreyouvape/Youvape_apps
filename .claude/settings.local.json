@@ -24,7 +24,11 @@
       "Bash(curl -s \"http://54.37.156.233:3000/api/orders?limit=3\")",
       "Bash(python3:*)",
       "Bash(curl -s \"http://54.37.156.233:3000/api/products?limit=3\")",
-      "Bash(curl -s \"http://54.37.156.233:3000/api/products?limit=1\")"
+      "Bash(curl -s \"http://54.37.156.233:3000/api/products?limit=1\")",
+      "Bash(curl -s \"http://54.37.156.233:3000/api/products/6518/family\")",
+      "Bash(curl -s \"http://54.37.156.233:3000/api/products/6518/stats/variant\")",
+      "Bash(curl -s \"http://54.37.156.233:3000/api/products?limit=100\")",
+      "Bash(curl -s \"http://54.37.156.233:3000/api/products?limit=200\")"
     ],
     "deny": [],
     "ask": []

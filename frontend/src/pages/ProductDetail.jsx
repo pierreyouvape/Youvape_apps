@@ -12,6 +12,7 @@ const ProductDetail = () => {
   const [product, setProduct] = useState(null);
   const [family, setFamily] = useState(null);
   const [kpis, setKpis] = useState(null);
+  const [variantsStats, setVariantsStats] = useState([]);
   const [frequentlyBought, setFrequentlyBought] = useState([]);
   const [salesByCountry, setSalesByCountry] = useState([]);
   const [topCustomers, setTopCustomers] = useState([]);
@@ -31,6 +32,7 @@ const ProductDetail = () => {
         productRes,
         familyRes,
         kpisRes,
+        variantsStatsRes,
         boughtWithRes,
         countryRes,
         customersRes,
@@ -39,6 +41,7 @@ const ProductDetail = () => {
         axios.get(`${API_URL}/products/${id}`),
         axios.get(`${API_URL}/products/${id}/family`),
         axios.get(`${API_URL}/products/${id}/stats/kpis`),
+        axios.get(`${API_URL}/products/${id}/stats/all-variants`),
         axios.get(`${API_URL}/products/${id}/stats/frequently-bought-with`, { params: { limit: 10 } }),
         axios.get(`${API_URL}/products/${id}/stats/by-country`),
         axios.get(`${API_URL}/products/${id}/stats/top-customers`, { params: { limit: 10 } }),
@@ -48,6 +51,7 @@ const ProductDetail = () => {
       setProduct(productRes.data.data);
       setFamily(familyRes.data.data);
       setKpis(kpisRes.data.data);
+      setVariantsStats(variantsStatsRes.data.data);
       setFrequentlyBought(boughtWithRes.data.data);
       setSalesByCountry(countryRes.data.data);
       setTopCustomers(customersRes.data.data);
@@ -163,26 +167,36 @@ const ProductDetail = () => {
         </div>
 
         {/* Variations */}
-        {hasVariants && (
+        {variantsStats.length > 0 && (
           <div style={{ backgroundColor: '#fff', padding: '25px', borderRadius: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)', marginBottom: '30px' }}>
-            <h2 style={{ marginTop: 0, color: '#333', fontSize: '18px' }}>📦 Variations ({family.variants.length})</h2>
+            <h2 style={{ marginTop: 0, color: '#333', fontSize: '18px' }}>📦 Variations ({variantsStats.length})</h2>
             <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '1200px' }}>
                 <thead>
                   <tr style={{ backgroundColor: '#f8f9fa', borderBottom: '2px solid #e0e0e0' }}>
                     <th style={{ textAlign: 'left', padding: '12px', fontSize: '14px', fontWeight: '600' }}>Variante</th>
                     <th style={{ textAlign: 'center', padding: '12px', fontSize: '14px', fontWeight: '600' }}>SKU</th>
                     <th style={{ textAlign: 'right', padding: '12px', fontSize: '14px', fontWeight: '600' }}>Prix</th>
                     <th style={{ textAlign: 'center', padding: '12px', fontSize: '14px', fontWeight: '600' }}>Stock</th>
+                    <th style={{ textAlign: 'center', padding: '12px', fontSize: '14px', fontWeight: '600' }}>Net Sold</th>
+                    <th style={{ textAlign: 'right', padding: '12px', fontSize: '14px', fontWeight: '600' }}>Net Revenue</th>
+                    <th style={{ textAlign: 'center', padding: '12px', fontSize: '14px', fontWeight: '600' }}>Net Orders</th>
+                    <th style={{ textAlign: 'right', padding: '12px', fontSize: '14px', fontWeight: '600' }}>Profit</th>
+                    <th style={{ textAlign: 'right', padding: '12px', fontSize: '14px', fontWeight: '600' }}>Margin</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {family.variants.map((variant) => (
+                  {variantsStats.map((variant) => (
                     <tr key={variant.product_id} style={{ borderBottom: '1px solid #f0f0f0' }}>
                       <td style={{ padding: '12px' }}>{variant.name}</td>
                       <td style={{ textAlign: 'center', padding: '12px', fontSize: '13px', color: '#666' }}>{variant.sku}</td>
                       <td style={{ textAlign: 'right', padding: '12px', fontWeight: '600' }}>{formatCurrency(variant.price)}</td>
                       <td style={{ textAlign: 'center', padding: '12px', fontWeight: '600', color: variant.stock_quantity > 0 ? '#28a745' : '#dc3545' }}>{formatNumber(variant.stock_quantity || 0)}</td>
+                      <td style={{ textAlign: 'center', padding: '12px', fontWeight: '600', color: '#135E84' }}>{formatNumber(variant.net_sold || 0)}</td>
+                      <td style={{ textAlign: 'right', padding: '12px', fontWeight: '600', color: '#28a745' }}>{formatCurrency(variant.net_revenue || 0)}</td>
+                      <td style={{ textAlign: 'center', padding: '12px', fontWeight: '600' }}>{formatNumber(variant.net_orders || 0)}</td>
+                      <td style={{ textAlign: 'right', padding: '12px', fontWeight: '600', color: '#007bff' }}>{formatCurrency(variant.profit || 0)}</td>
+                      <td style={{ textAlign: 'right', padding: '12px', fontWeight: '600', color: '#ff6b6b' }}>{parseFloat(variant.margin_percent || 0).toFixed(1)}%</td>
                     </tr>
                   ))}
                 </tbody>

@@ -20,6 +20,7 @@ router.get('/:id/related', productsController.getRelatedProducts);
 router.get('/:id/family', productStatsController.getFamily);
 router.get('/:id/stats/kpis', productStatsController.getKPIs);
 router.get('/:id/stats/variant', productStatsController.getVariantStats);
+router.get('/:id/stats/all-variants', productStatsController.getAllVariantsStats);
 router.get('/:id/stats/evolution', productStatsController.getSalesEvolution);
 router.get('/:id/stats/frequently-bought-with', productStatsController.getFrequentlyBoughtWith);
 router.get('/:id/stats/by-country', productStatsController.getSalesByCountry);

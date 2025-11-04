@@ -98,6 +98,56 @@ class ProductStatsService {
   }
 
   /**
+   * Stats pour toutes les variantes d'une famille de produits
+   */
+  async getAllVariantsStats(productId) {
+    const family = await this.getProductFamily(productId);
+
+    if (!family.variants || family.variants.length === 0) {
+      return [];
+    }
+
+    const variantIds = family.variants.map(v => v.product_id);
+
+    const query = `
+      SELECT
+        p.product_id,
+        p.name,
+        p.sku,
+        p.price,
+        COALESCE(p.cost_price_custom, p.cost_price) as cost_price,
+        p.stock_quantity,
+        p.stock_status,
+        COALESCE(SUM(oi.quantity), 0)::int as net_sold,
+        COALESCE(SUM(oi.total), 0) as net_revenue,
+        COUNT(DISTINCT oi.order_id)::int as net_orders,
+        COALESCE(SUM(oi.quantity * COALESCE(oi.cost_price, 0)), 0) as total_cost
+      FROM products p
+      LEFT JOIN order_items oi ON oi.product_id = p.product_id
+      LEFT JOIN orders o ON o.order_id = oi.order_id AND o.status = 'completed'
+      WHERE p.product_id = ANY($1)
+      GROUP BY p.product_id
+      ORDER BY p.sku ASC
+    `;
+
+    const result = await pool.query(query, [variantIds]);
+
+    // Ajouter les calculs de profit et marge pour chaque variante
+    return result.rows.map(variant => {
+      const netRevenue = parseFloat(variant.net_revenue) || 0;
+      const totalCost = parseFloat(variant.total_cost) || 0;
+      const profit = netRevenue - totalCost;
+      const marginPercent = netRevenue > 0 ? ((profit / netRevenue) * 100) : 0;
+
+      return {
+        ...variant,
+        profit: profit.toFixed(2),
+        margin_percent: marginPercent.toFixed(2)
+      };
+    });
+  }
+
+  /**
    * Évolution des ventes dans le temps
    */
   async getSalesEvolution(productId, includeVariants = true, groupBy = 'day') {
