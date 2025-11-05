@@ -170,6 +170,8 @@ const receiveProducts = async (req, res) => {
     // Insert/Update dans PostgreSQL
     let inserted = 0;
     let updated = 0;
+    let variationsInserted = 0;
+    let variationsUpdated = 0;
 
     for (const product of data) {
       const query = `
@@ -177,8 +179,8 @@ const receiveProducts = async (req, res) => {
           product_id, sku, name, description, short_description, price, regular_price, sale_price, cost_price,
           stock_quantity, stock_status, category, categories, tags, attributes, dimensions,
           meta_data, type, status, featured, date_created, date_modified, total_sales,
-          image_url, gallery_images, updated_at
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, NOW())
+          image_url, gallery_images, parent_id, updated_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, NOW())
         ON CONFLICT (product_id)
         DO UPDATE SET
           sku = EXCLUDED.sku,
@@ -205,6 +207,7 @@ const receiveProducts = async (req, res) => {
           total_sales = EXCLUDED.total_sales,
           image_url = EXCLUDED.image_url,
           gallery_images = EXCLUDED.gallery_images,
+          parent_id = EXCLUDED.parent_id,
           updated_at = NOW()
         RETURNING (xmax = 0) AS inserted
       `;
@@ -213,8 +216,8 @@ const receiveProducts = async (req, res) => {
         product.product_id,
         product.sku || null,
         product.name,
-        product.description || null, // NOUVEAU
-        product.short_description || null, // NOUVEAU
+        product.description || null,
+        product.short_description || null,
         product.price || 0,
         product.regular_price || null,
         product.sale_price || null,
@@ -223,18 +226,19 @@ const receiveProducts = async (req, res) => {
         product.stock_status || 'instock',
         product.category || null,
         JSON.stringify(product.categories || []),
-        JSON.stringify(product.tags || []), // NOUVEAU
-        JSON.stringify(product.attributes || {}), // NOUVEAU
-        JSON.stringify(product.dimensions || {}), // NOUVEAU
-        JSON.stringify(product.meta_data || {}), // NOUVEAU
-        product.type || 'simple', // NOUVEAU
-        product.status || 'publish', // NOUVEAU
-        product.featured || false, // NOUVEAU
+        JSON.stringify(product.tags || []),
+        JSON.stringify(product.attributes || {}),
+        JSON.stringify(product.dimensions || {}),
+        JSON.stringify(product.meta_data || {}),
+        product.type || 'simple',
+        product.status || 'publish',
+        product.featured || false,
         product.date_created || null,
         product.date_modified || null,
         product.total_sales || 0,
         product.image_url || null,
-        JSON.stringify(product.gallery_images || []) // NOUVEAU
+        JSON.stringify(product.gallery_images || []),
+        null // parent_id est NULL pour les produits parents
       ];
 
       const result = await pool.query(query, values);
@@ -243,9 +247,80 @@ const receiveProducts = async (req, res) => {
       } else {
         updated++;
       }
+
+      // Traite les variations si présentes
+      if (product.variations && Array.isArray(product.variations) && product.variations.length > 0) {
+        for (const variation of product.variations) {
+          const variationQuery = `
+            INSERT INTO products (
+              product_id, sku, name, description, short_description, price, regular_price, sale_price, cost_price,
+              stock_quantity, stock_status, category, categories, tags, attributes, dimensions,
+              meta_data, type, status, featured, date_created, date_modified, total_sales,
+              image_url, gallery_images, parent_id, updated_at
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, NOW())
+            ON CONFLICT (product_id)
+            DO UPDATE SET
+              sku = EXCLUDED.sku,
+              name = EXCLUDED.name,
+              description = EXCLUDED.description,
+              short_description = EXCLUDED.short_description,
+              price = EXCLUDED.price,
+              regular_price = EXCLUDED.regular_price,
+              sale_price = EXCLUDED.sale_price,
+              cost_price = EXCLUDED.cost_price,
+              stock_quantity = EXCLUDED.stock_quantity,
+              stock_status = EXCLUDED.stock_status,
+              attributes = EXCLUDED.attributes,
+              image_url = EXCLUDED.image_url,
+              parent_id = EXCLUDED.parent_id,
+              date_modified = EXCLUDED.date_modified,
+              updated_at = NOW()
+            RETURNING (xmax = 0) AS inserted
+          `;
+
+          const variationValues = [
+            variation.variation_id,
+            variation.sku || null,
+            variation.name,
+            variation.description || null,
+            null, // short_description
+            variation.price || 0,
+            variation.regular_price || null,
+            variation.sale_price || null,
+            variation.cost_price || null,
+            variation.stock_quantity || null,
+            variation.stock_status || 'instock',
+            product.category || null, // Hérite de la catégorie du parent
+            JSON.stringify(product.categories || []), // Hérite des catégories du parent
+            JSON.stringify([]), // tags vides pour variations
+            JSON.stringify(variation.attributes || {}),
+            JSON.stringify({ weight: variation.weight || null }), // dimensions simplifiées
+            JSON.stringify({}), // meta_data vide
+            'variation', // type
+            'publish', // status
+            false, // featured
+            variation.date_created || null,
+            variation.date_modified || null,
+            0, // total_sales (géré au niveau parent)
+            variation.image_url || null,
+            JSON.stringify([]), // gallery_images vide
+            product.product_id // parent_id = ID du produit parent
+          ];
+
+          const variationResult = await pool.query(variationQuery, variationValues);
+          if (variationResult.rows[0].inserted) {
+            variationsInserted++;
+          } else {
+            variationsUpdated++;
+          }
+        }
+      }
     }
 
     console.log(`✓ Products: ${data.length} received, ${inserted} inserted, ${updated} updated (${sync_type})`);
+    if (variationsInserted > 0 || variationsUpdated > 0) {
+      console.log(`✓ Variations: ${variationsInserted} inserted, ${variationsUpdated} updated`);
+    }
 
     res.json({
       success: true,

@@ -451,10 +451,81 @@ class Youvape_Sync_Batch_Processor {
                 'total_sales' => $product->get_total_sales(),
                 'image_url' => wp_get_attachment_url($product->get_image_id()),
                 'gallery_images' => array_filter(array_map('wp_get_attachment_url', $product->get_gallery_image_ids())), // NOUVEAU
+                'variations' => $this->get_product_variations($product), // NOUVEAU - Variations pour produits variables
             );
         }
 
         return $formatted;
+    }
+
+    /**
+     * Récupère les variations d'un produit variable
+     *
+     * @param WC_Product $product Produit parent
+     * @return array Variations formatées
+     */
+    private function get_product_variations($product) {
+        // Si ce n'est pas un produit variable, retourne un tableau vide
+        if ($product->get_type() !== 'variable') {
+            return array();
+        }
+
+        $variations = array();
+        $variation_ids = $product->get_children();
+
+        foreach ($variation_ids as $variation_id) {
+            $variation = wc_get_product($variation_id);
+
+            if (!$variation) {
+                continue;
+            }
+
+            // Récupère le coût d'achat de la variation
+            $variation_cost_price = $variation->get_meta('_cost_price');
+            if (empty($variation_cost_price)) {
+                $variation_cost_price = $variation->get_meta('_alg_wc_cog_cost');
+            }
+            if (empty($variation_cost_price)) {
+                $variation_cost_price = $variation->get_meta('_wc_cog_cost');
+            }
+
+            // Récupère les attributs de la variation (couleur, taille, etc.)
+            $variation_attributes = array();
+            $attributes = $variation->get_attributes();
+            if (!empty($attributes)) {
+                foreach ($attributes as $attr_name => $attr_value) {
+                    // Nettoie le nom de l'attribut (enlève "attribute_")
+                    $clean_name = str_replace('attribute_', '', $attr_name);
+                    $variation_attributes[$clean_name] = $attr_value;
+                }
+            }
+
+            // Récupère l'image de la variation (sinon utilise celle du parent)
+            $variation_image_id = $variation->get_image_id();
+            $variation_image_url = $variation_image_id
+                ? wp_get_attachment_url($variation_image_id)
+                : wp_get_attachment_url($product->get_image_id());
+
+            $variations[] = array(
+                'variation_id' => $variation->get_id(),
+                'sku' => $variation->get_sku(),
+                'name' => $variation->get_name(),
+                'description' => $variation->get_description(),
+                'price' => (float) wc_format_decimal($variation->get_price(), 2),
+                'regular_price' => (float) wc_format_decimal($variation->get_regular_price(), 2),
+                'sale_price' => $variation->get_sale_price() ? (float) wc_format_decimal($variation->get_sale_price(), 2) : null,
+                'cost_price' => $variation_cost_price ? (float) wc_format_decimal($variation_cost_price, 2) : null,
+                'stock_quantity' => $variation->get_stock_quantity(),
+                'stock_status' => $variation->get_stock_status(),
+                'attributes' => $variation_attributes,
+                'weight' => $variation->get_weight(),
+                'image_url' => $variation_image_url,
+                'date_created' => $variation->get_date_created() ? $variation->get_date_created()->date('c') : null,
+                'date_modified' => $variation->get_date_modified() ? $variation->get_date_modified()->date('c') : null,
+            );
+        }
+
+        return $variations;
     }
 
     /**

@@ -3,7 +3,7 @@ const pool = require('../config/database');
 class ProductStatsService {
   /**
    * Récupère la famille de produits (parent + variantes)
-   * Si SKU contient un tiret, extrait le parent et trouve toutes les variantes
+   * Utilise le champ parent_id pour identifier les variations
    */
   async getProductFamily(productId) {
     // Récupérer le produit demandé
@@ -11,30 +11,36 @@ class ProductStatsService {
     const productResult = await pool.query(productQuery, [productId]);
 
     if (productResult.rows.length === 0) {
-      return { parent: null, variants: [] };
+      return { parent: null, variants: [], allProducts: [] };
     }
 
     const product = productResult.rows[0];
+    let parent = product;
+    let parentId = productId;
 
-    // Extraire le parent SKU
-    let parentSku = product.sku;
-    if (product.sku && product.sku.includes('-')) {
-      parentSku = product.sku.split('-')[0];
+    // Si le produit est une variation, récupérer le parent
+    if (product.parent_id) {
+      const parentQuery = `SELECT * FROM products WHERE product_id = $1`;
+      const parentResult = await pool.query(parentQuery, [product.parent_id]);
+      if (parentResult.rows.length > 0) {
+        parent = parentResult.rows[0];
+        parentId = product.parent_id;
+      }
     }
 
-    // Récupérer tous les produits de la famille
-    const familyQuery = `
+    // Récupérer toutes les variantes du parent
+    const variantsQuery = `
       SELECT * FROM products
-      WHERE sku = $1 OR sku LIKE $1 || '-%'
-      ORDER BY sku ASC
+      WHERE parent_id = $1
+      ORDER BY product_id ASC
     `;
-    const familyResult = await pool.query(familyQuery, [parentSku]);
+    const variantsResult = await pool.query(variantsQuery, [parentId]);
+    const variants = variantsResult.rows;
 
-    // Identifier le parent (SKU sans tiret) et les variantes
-    const parent = familyResult.rows.find(p => p.sku === parentSku) || familyResult.rows[0];
-    const variants = familyResult.rows.filter(p => p.sku !== parentSku);
+    // allProducts = parent + variantes
+    const allProducts = [parent, ...variants];
 
-    return { parent, variants, allProducts: familyResult.rows };
+    return { parent, variants, allProducts };
   }
 
   /**
