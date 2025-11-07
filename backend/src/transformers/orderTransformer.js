@@ -22,7 +22,9 @@ function transformOrder(rawData) {
 
   return {
     wp_order_id: parseInt(post.ID),
-    wp_customer_id: getMeta('_customer_user') ? parseInt(getMeta('_customer_user')) : null,
+    wp_customer_id: getMeta('_customer_user') && parseInt(getMeta('_customer_user')) > 0
+      ? parseInt(getMeta('_customer_user'))
+      : null,
     guid: post.guid,
     post_date: post.post_date,
     post_status: post.post_status,
