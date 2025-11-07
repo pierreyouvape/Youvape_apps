@@ -1,6 +1,9 @@
 const fs = require('fs');
 const path = require('path');
 const pool = require('../config/database');
+const { transformCustomer, insertCustomer } = require('../transformers/customerTransformer');
+const { transformOrder, transformOrderItems, insertOrder } = require('../transformers/orderTransformer');
+const { insertProductWithVariations } = require('../transformers/productTransformer');
 
 const LOGS_DIR = path.join(__dirname, '../../logs');
 
@@ -783,6 +786,231 @@ const resetTestOffsets = async (req, res) => {
   }
 };
 
+/**
+ * NOUVEAU: Reçoit un test avec 1 item de chaque type (Phase 0 module v2)
+ * POST /api/sync/test
+ * Body: { customer: {type, wp_id, user, meta}, product: {type, wp_id, product_type, post, meta, variations}, order: {type, wp_id, post, meta, items} }
+ */
+const receiveTest = async (req, res) => {
+  try {
+    const { customer, product, order } = req.body;
+
+    console.log('📋 [TEST PHASE 0] Received RAW test data');
+
+    const results = {
+      success: true,
+      timestamp: new Date().toISOString(),
+      customer: null,
+      product: null,
+      order: null,
+      errors: []
+    };
+
+    // Test Customer
+    if (customer && customer.type === 'customer') {
+      try {
+        console.log(`  → Customer: WP ID ${customer.wp_id}, Email: ${customer.user?.user_email}`);
+
+        // Transform and insert customer
+        const customerData = transformCustomer({
+          user: customer.user,
+          meta: customer.meta
+        });
+
+        const insertResult = await insertCustomer(pool, customerData);
+
+        results.customer = {
+          wp_user_id: insertResult.wp_user_id,
+          db_id: insertResult.id,
+          email: customerData.email,
+          inserted: insertResult.inserted,
+          message: insertResult.inserted ? 'Customer inserted successfully' : 'Customer updated successfully'
+        };
+
+        console.log(`    ✓ Customer ${insertResult.inserted ? 'inserted' : 'updated'}: DB ID ${insertResult.id}`);
+      } catch (error) {
+        console.error(`    ✗ Customer error: ${error.message}`);
+        results.errors.push(`Customer: ${error.message}`);
+        results.customer = { error: error.message };
+      }
+    }
+
+    // Test Product
+    if (product && product.type === 'product') {
+      try {
+        console.log(`  → Product: WP ID ${product.wp_id}, Type: ${product.product_type}, Title: ${product.post?.post_title}`);
+
+        // Insert product with variations if any
+        const insertResult = await insertProductWithVariations(pool, {
+          product_type: product.product_type,
+          post: product.post,
+          meta: product.meta,
+          variations: product.variations || []
+        });
+
+        results.product = {
+          wp_product_id: insertResult.parent.wp_product_id,
+          db_id: insertResult.parent.id,
+          product_type: product.product_type,
+          inserted: insertResult.parent.inserted,
+          variations_count: insertResult.total_variations,
+          variations: insertResult.variations,
+          message: `Product ${insertResult.parent.inserted ? 'inserted' : 'updated'} with ${insertResult.total_variations} variation(s)`
+        };
+
+        console.log(`    ✓ Product ${insertResult.parent.inserted ? 'inserted' : 'updated'}: DB ID ${insertResult.parent.id}`);
+        if (insertResult.total_variations > 0) {
+          console.log(`    ✓ ${insertResult.total_variations} variation(s) processed`);
+        }
+      } catch (error) {
+        console.error(`    ✗ Product error: ${error.message}`);
+        results.errors.push(`Product: ${error.message}`);
+        results.product = { error: error.message };
+      }
+    }
+
+    // Test Order
+    if (order && order.type === 'order') {
+      try {
+        console.log(`  → Order: WP ID ${order.wp_id}, Status: ${order.post?.post_status}, Items: ${order.items?.length || 0}`);
+
+        // Transform order
+        const orderData = transformOrder({
+          post: order.post,
+          meta: order.meta
+        });
+
+        // Transform order items
+        const itemsData = transformOrderItems(order.items || [], orderData.wp_order_id);
+
+        // Insert order with items
+        const insertResult = await insertOrder(pool, orderData, itemsData);
+
+        results.order = {
+          wp_order_id: insertResult.wp_order_id,
+          db_id: insertResult.id,
+          inserted: insertResult.inserted,
+          items_count: insertResult.items_inserted,
+          message: `Order ${insertResult.inserted ? 'inserted' : 'updated'} with ${insertResult.items_inserted} item(s)`
+        };
+
+        console.log(`    ✓ Order ${insertResult.inserted ? 'inserted' : 'updated'}: DB ID ${insertResult.id}`);
+        console.log(`    ✓ ${insertResult.items_inserted} item(s) inserted`);
+      } catch (error) {
+        console.error(`    ✗ Order error: ${error.message}`);
+        results.errors.push(`Order: ${error.message}`);
+        results.order = { error: error.message };
+      }
+    }
+
+    console.log(`✅ Test completed. Success: ${results.errors.length === 0}, Errors: ${results.errors.length}`);
+
+    res.json(results);
+
+  } catch (error) {
+    console.error('❌ Error in test endpoint:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+    });
+  }
+};
+
+/**
+ * NOUVEAU: Reçoit un batch bulk pour sync v2 (Phase 1)
+ * POST /api/sync/bulk
+ * Body: { type: 'customers'|'products'|'orders', batch: [...], offset: 0, total: 1000 }
+ */
+const receiveBulk = async (req, res) => {
+  try {
+    const { type, batch, offset, total } = req.body;
+
+    if (!type || !['customers', 'products', 'orders'].includes(type)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid or missing type. Must be: customers, products, or orders'
+      });
+    }
+
+    if (!batch || !Array.isArray(batch)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid batch format. Expected array.'
+      });
+    }
+
+    console.log(`📦 [BULK SYNC] Receiving ${type}: ${batch.length} items (offset: ${offset}/${total})`);
+
+    // Route vers le bon handler selon le type
+    let inserted = 0;
+    let updated = 0;
+    let errors = [];
+
+    const client = await pool.connect();
+
+    try {
+      await client.query('BEGIN');
+
+      if (type === 'customers') {
+        for (const item of batch) {
+          try {
+            // TODO: Adapter la structure customers pour le nouveau format v2
+            // Pour l'instant, retourne un message d'attente
+            console.log(`  → Customer WP ID ${item.wp_user_id}`);
+          } catch (error) {
+            errors.push({ item_id: item.wp_user_id, error: error.message });
+          }
+        }
+      } else if (type === 'products') {
+        for (const item of batch) {
+          try {
+            // TODO: Adapter la structure products pour le nouveau format v2
+            console.log(`  → Product WP ID ${item.wp_product_id}`);
+          } catch (error) {
+            errors.push({ item_id: item.wp_product_id, error: error.message });
+          }
+        }
+      } else if (type === 'orders') {
+        for (const item of batch) {
+          try {
+            // TODO: Adapter la structure orders pour le nouveau format v2
+            console.log(`  → Order WP ID ${item.wp_order_id}`);
+          } catch (error) {
+            errors.push({ item_id: item.wp_order_id, error: error.message });
+          }
+        }
+      }
+
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+
+    console.log(`✅ Bulk sync completed: ${inserted} inserted, ${updated} updated, ${errors.length} errors`);
+
+    res.json({
+      success: true,
+      type,
+      batch_size: batch.length,
+      inserted,
+      updated,
+      errors,
+      message: 'Bulk endpoint ready. DB insertion will be implemented after table creation.'
+    });
+
+  } catch (error) {
+    console.error('❌ Error in bulk endpoint:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+};
+
 module.exports = {
   receiveCustomers,
   receiveProducts,
@@ -793,5 +1021,7 @@ module.exports = {
   ping,
   getTestOffsets,
   updateTestOffsets,
-  resetTestOffsets
+  resetTestOffsets,
+  receiveTest,
+  receiveBulk
 };

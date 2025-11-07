@@ -1,0 +1,218 @@
+/**
+ * Youvape Sync v2 - Admin Styles
+ */
+
+.youvape-sync-v2-admin h1 {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.youvape-sync-v2-admin h1 .dashicons {
+    font-size: 32px;
+    width: 32px;
+    height: 32px;
+}
+
+.youvape-sync-v2-admin .card {
+    max-width: 100%;
+    margin-top: 20px;
+    padding: 20px;
+}
+
+.youvape-sync-v2-admin .card h2 {
+    margin-top: 0;
+    border-bottom: 1px solid #ddd;
+    padding-bottom: 10px;
+}
+
+/* Test Section */
+.youvape-sync-test-section button {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.youvape-sync-test-section .dashicons {
+    width: 20px;
+    height: 20px;
+    font-size: 20px;
+}
+
+#youvape-test-results {
+    background: #f9f9f9;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    padding: 20px;
+}
+
+.youvape-test-loading {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 14px;
+    color: #666;
+}
+
+.youvape-test-item {
+    background: white;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    padding: 15px;
+    margin-bottom: 15px;
+}
+
+.youvape-test-item h3 {
+    margin-top: 0;
+    color: #0073aa;
+}
+
+.youvape-test-item details {
+    margin-top: 10px;
+}
+
+.youvape-test-item summary {
+    cursor: pointer;
+    font-weight: 600;
+    padding: 8px;
+    background: #f0f0f0;
+    border-radius: 3px;
+    margin-bottom: 5px;
+}
+
+.youvape-test-item summary:hover {
+    background: #e0e0e0;
+}
+
+.youvape-test-item pre {
+    background: #282c34;
+    color: #abb2bf;
+    padding: 15px;
+    border-radius: 4px;
+    overflow-x: auto;
+    font-size: 12px;
+    line-height: 1.5;
+    margin-top: 10px;
+}
+
+.youvape-test-item .notice.inline {
+    display: inline-block;
+    padding: 8px 12px;
+    margin: 10px 0;
+}
+
+/* Progress Bar */
+.youvape-progress-bar {
+    width: 100%;
+    height: 24px;
+    background: #f0f0f0;
+    border-radius: 4px;
+    overflow: hidden;
+    position: relative;
+}
+
+.youvape-progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #0073aa, #00a0d2);
+    transition: width 0.3s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+/* Status Section */
+.youvape-sync-status-section table th,
+.youvape-sync-status-section table td {
+    padding: 12px;
+}
+
+.youvape-sync-status-section button {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.youvape-sync-status-section .dashicons {
+    width: 18px;
+    height: 18px;
+    font-size: 18px;
+}
+
+/* Logs Section */
+.youvape-sync-logs-section table {
+    margin-top: 15px;
+}
+
+.log-level-badge {
+    display: inline-block;
+    padding: 3px 8px;
+    border-radius: 3px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.log-level-info .log-level-badge {
+    background: #d4edff;
+    color: #0073aa;
+}
+
+.log-level-warning .log-level-badge {
+    background: #fff8e5;
+    color: #f0b429;
+}
+
+.log-level-error .log-level-badge {
+    background: #ffd8d8;
+    color: #d63638;
+}
+
+.log-level-success .log-level-badge {
+    background: #d5f5e3;
+    color: #00a32a;
+}
+
+/* Settings Page */
+.youvape-sync-v2-settings .card {
+    max-width: 800px;
+}
+
+.youvape-sync-v2-settings .form-table th {
+    width: 250px;
+}
+
+.youvape-sync-v2-settings .form-table input[type="url"],
+.youvape-sync-v2-settings .form-table input[type="text"] {
+    width: 100%;
+}
+
+.youvape-sync-v2-settings .form-table input[type="number"] {
+    width: 100px;
+}
+
+.youvape-sync-v2-settings .form-table input[type="time"] {
+    width: 150px;
+}
+
+/* Notices */
+.youvape-sync-notices {
+    margin-top: 20px;
+}
+
+/* Responsive */
+@media (max-width: 782px) {
+    .youvape-sync-v2-admin h1 {
+        font-size: 24px;
+    }
+
+    .youvape-sync-v2-admin .card {
+        padding: 15px;
+    }
+
+    .youvape-test-item pre {
+        font-size: 10px;
+    }
+}

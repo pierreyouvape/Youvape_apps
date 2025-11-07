@@ -20,4 +20,8 @@ router.get('/test-offsets', syncController.getTestOffsets);
 router.post('/test-offsets', syncController.updateTestOffsets);
 router.delete('/test-offsets', syncController.resetTestOffsets);
 
+// NOUVEAUX ENDPOINTS POUR MODULE V2
+router.post('/test', syncController.receiveTest);
+router.post('/bulk', syncController.receiveBulk);
+
 module.exports = router;
