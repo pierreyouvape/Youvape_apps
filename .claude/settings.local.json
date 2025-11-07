@@ -30,7 +30,10 @@
       "Bash(curl -s \"http://54.37.156.233:3000/api/products?limit=100\")",
       "Bash(curl -s \"http://54.37.156.233:3000/api/products?limit=200\")",
       "Bash(curl -s \"http://54.37.156.233:3000/api/products/15185\")",
-      "Bash(curl -s \"http://54.37.156.233:3000/api/products/15185/family\")"
+      "Bash(curl -s \"http://54.37.156.233:3000/api/products/15185/family\")",
+      "Bash(rm:*)",
+      "Bash(tree:*)",
+      "Bash(docker compose:*)"
     ],
     "deny": [],
     "ask": []

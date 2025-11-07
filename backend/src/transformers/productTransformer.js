@@ -59,7 +59,7 @@ function transformProduct(rawData) {
     baseProduct.product_excerpt_custom = getMeta('product_excerpt_custom');
     baseProduct.yoast_indexnow_last_ping = getMeta('_yoast_indexnow_last_ping');
     baseProduct.faq_title = getMeta('faq_title');
-    baseProduct.accodion_list = tryParseJson(getMeta('accodion_list'));
+    baseProduct.accodion_list = getMeta('accodion_list') ? parseInt(getMeta('accodion_list')) : null;
     baseProduct.product_tip = getMeta('product_tip');
   }
 
@@ -228,7 +228,7 @@ async function insertProduct(pool, productData) {
     JSON.stringify(productData.product_attributes),
     JSON.stringify(productData.wc_productdata_options),
     productData.wc_cog_cost,
-    productData.product_join_stories,
+    JSON.stringify(productData.product_join_stories),
     productData.thumbnail_id,
     productData.regular_price,
     productData.price,
@@ -242,7 +242,7 @@ async function insertProduct(pool, productData) {
     productData.product_excerpt_custom || null,
     productData.yoast_indexnow_last_ping || null,
     productData.faq_title || null,
-    JSON.stringify(productData.accodion_list),
+    productData.accodion_list,
     productData.product_tip || null,
     productData.variation_description || null,
     productData.manage_stock || false,
