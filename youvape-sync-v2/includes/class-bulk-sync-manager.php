@@ -24,91 +24,10 @@ class Bulk_Sync_Manager {
      * @return array Result with stats
      */
     public static function process_batch($type) {
-        global $wpdb;
-
         $settings = get_option('youvape_sync_v2_settings', []);
         $batch_size = isset($settings['batch_size']) ? intval($settings['batch_size']) : 500;
 
-        // Get queue state
-        $queue_state = get_option('youvape_sync_v2_queue_state', [
-            'customers_offset' => 0,
-            'products_offset' => 0,
-            'orders_offset' => 0,
-            'customers_total' => 0,
-            'products_total' => 0,
-            'orders_total' => 0,
-            'customers_synced' => 0,
-            'products_synced' => 0,
-            'orders_synced' => 0,
-            'status' => 'idle' // idle, running, paused, completed
-        ]);
-
-        if ($queue_state['status'] === 'paused') {
-            Plugin::log('Bulk sync is paused. Skipping batch.');
-            return ['success' => false, 'message' => 'Sync is paused'];
-        }
-
-        $offset = isset($queue_state[$type . '_offset']) ? intval($queue_state[$type . '_offset']) : 0;
-        $total = isset($queue_state[$type . '_total']) ? intval($queue_state[$type . '_total']) : 0;
-
-        Plugin::log("Processing {$type} batch: offset={$offset}, batch_size={$batch_size}");
-
-        // Fetch data based on type
-        $batch_data = [];
-
-        switch ($type) {
-            case 'customers':
-                $batch_data = self::fetch_customers_batch($offset, $batch_size);
-                break;
-
-            case 'products':
-                $batch_data = self::fetch_products_batch($offset, $batch_size);
-                break;
-
-            case 'orders':
-                $batch_data = self::fetch_orders_batch($offset, $batch_size);
-                break;
-
-            default:
-                return ['success' => false, 'error' => 'Invalid type'];
-        }
-
-        if (empty($batch_data)) {
-            Plugin::log("{$type} batch is empty. Sync completed for this type.");
-
-            // Mark this type as completed
-            $queue_state[$type . '_offset'] = 0;
-            update_option('youvape_sync_v2_queue_state', $queue_state);
-
-            return [
-                'success' => true,
-                'message' => "{$type} sync completed",
-                'count' => 0
-            ];
-        }
-
-        // Send to VPS
-        $vps_result = self::send_batch_to_vps($type, $batch_data, $offset, $total);
-
-        if (!$vps_result['success']) {
-            Plugin::log("VPS sync failed for {$type}: " . $vps_result['error']);
-            return $vps_result;
-        }
-
-        // Update offset
-        $queue_state[$type . '_offset'] = $offset + count($batch_data);
-        $queue_state[$type . '_synced'] = ($queue_state[$type . '_synced'] ?? 0) + count($batch_data);
-        update_option('youvape_sync_v2_queue_state', $queue_state);
-
-        Plugin::log("{$type} batch synced: " . count($batch_data) . " items");
-
-        return [
-            'success' => true,
-            'count' => count($batch_data),
-            'offset' => $queue_state[$type . '_offset'],
-            'total' => $total,
-            'vps_response' => $vps_result
-        ];
+        return self::process_batch_with_custom_size($type, $batch_size);
     }
 
     /**

@@ -66,12 +66,14 @@ function transformOrder(rawData) {
     attribution_utm_medium: getMeta('_wc_order_attribution_utm_medium'),
     attribution_session_entry: getMeta('_wc_order_attribution_session_entry'),
     attribution_session_start_time: getMeta('_wc_order_attribution_session_start_time'),
-    attribution_session_pages: getMeta('_wc_order_attribution_session_pages')
-      ? parseInt(getMeta('_wc_order_attribution_session_pages'))
-      : null,
-    attribution_session_count: getMeta('_wc_order_attribution_session_count')
-      ? parseInt(getMeta('_wc_order_attribution_session_count'))
-      : null,
+    attribution_session_pages: (() => {
+      const val = parseInt(getMeta('_wc_order_attribution_session_pages'));
+      return !isNaN(val) ? val : null;
+    })(),
+    attribution_session_count: (() => {
+      const val = parseInt(getMeta('_wc_order_attribution_session_count'));
+      return !isNaN(val) ? val : null;
+    })(),
     attribution_user_agent: getMeta('_wc_order_attribution_user_agent'),
     attribution_device_type: getMeta('_wc_order_attribution_device_type'),
     mondial_relay_pickup_info: getMeta('_wms_mondial_relay_pickup_info')
@@ -82,7 +84,10 @@ function transformOrder(rawData) {
     mollie_order_id: getMeta('_mollie_order_id'),
     mollie_payment_mode: getMeta('_mollie_payment_mode'),
     mollie_customer_id: getMeta('_mollie_customer_id'),
-    date_paid: getMeta('_date_paid') ? parseInt(getMeta('_date_paid')) : null,
+    date_paid: (() => {
+      const val = parseInt(getMeta('_date_paid'));
+      return !isNaN(val) ? val : null;
+    })(),
     paid_date: getMeta('_paid_date'),
     mollie_payment_instructions: getMeta('_mollie_payment_instructions'),
     mollie_paid_and_processed: getMeta('_mollie_paid_and_processed') === '1'
