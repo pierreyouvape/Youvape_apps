@@ -165,6 +165,60 @@ class Plugin {
                 return current_user_can('manage_options');
             }
         ]);
+
+        // Bulk Sync: Start
+        register_rest_route('youvape-sync/v1', '/bulk/start', [
+            'methods' => 'POST',
+            'callback' => [$this, 'rest_bulk_start'],
+            'permission_callback' => function() {
+                return current_user_can('manage_options');
+            }
+        ]);
+
+        // Bulk Sync: Pause
+        register_rest_route('youvape-sync/v1', '/bulk/pause', [
+            'methods' => 'POST',
+            'callback' => [$this, 'rest_bulk_pause'],
+            'permission_callback' => function() {
+                return current_user_can('manage_options');
+            }
+        ]);
+
+        // Bulk Sync: Resume
+        register_rest_route('youvape-sync/v1', '/bulk/resume', [
+            'methods' => 'POST',
+            'callback' => [$this, 'rest_bulk_resume'],
+            'permission_callback' => function() {
+                return current_user_can('manage_options');
+            }
+        ]);
+
+        // Bulk Sync: Reset
+        register_rest_route('youvape-sync/v1', '/bulk/reset', [
+            'methods' => 'POST',
+            'callback' => [$this, 'rest_bulk_reset'],
+            'permission_callback' => function() {
+                return current_user_can('manage_options');
+            }
+        ]);
+
+        // Bulk Sync: Process batch (manual trigger)
+        register_rest_route('youvape-sync/v1', '/bulk/process', [
+            'methods' => 'POST',
+            'callback' => [$this, 'rest_bulk_process'],
+            'permission_callback' => function() {
+                return current_user_can('manage_options');
+            }
+        ]);
+
+        // Bulk Sync: Process multiple batches manually
+        register_rest_route('youvape-sync/v1', '/bulk/process-manual', [
+            'methods' => 'POST',
+            'callback' => [$this, 'rest_bulk_process_manual'],
+            'permission_callback' => function() {
+                return current_user_can('manage_options');
+            }
+        ]);
     }
 
     /**
@@ -227,6 +281,109 @@ class Plugin {
             'success' => false,
             'message' => 'Force sync not yet implemented (Phase 1)'
         ];
+    }
+
+    /**
+     * REST: Bulk Sync - Start
+     */
+    public function rest_bulk_start($request) {
+        if (!class_exists('Youvape_Sync_V2\\Bulk_Sync_Manager')) {
+            require_once YOUVAPE_SYNC_V2_PATH . 'includes/class-bulk-sync-manager.php';
+        }
+
+        $state = \Youvape_Sync_V2\Bulk_Sync_Manager::start_full_sync();
+
+        return [
+            'success' => true,
+            'message' => 'Bulk sync started',
+            'state' => $state
+        ];
+    }
+
+    /**
+     * REST: Bulk Sync - Pause
+     */
+    public function rest_bulk_pause($request) {
+        if (!class_exists('Youvape_Sync_V2\\Bulk_Sync_Manager')) {
+            require_once YOUVAPE_SYNC_V2_PATH . 'includes/class-bulk-sync-manager.php';
+        }
+
+        \Youvape_Sync_V2\Bulk_Sync_Manager::pause_sync();
+
+        return [
+            'success' => true,
+            'message' => 'Bulk sync paused'
+        ];
+    }
+
+    /**
+     * REST: Bulk Sync - Resume
+     */
+    public function rest_bulk_resume($request) {
+        if (!class_exists('Youvape_Sync_V2\\Bulk_Sync_Manager')) {
+            require_once YOUVAPE_SYNC_V2_PATH . 'includes/class-bulk-sync-manager.php';
+        }
+
+        \Youvape_Sync_V2\Bulk_Sync_Manager::resume_sync();
+
+        return [
+            'success' => true,
+            'message' => 'Bulk sync resumed'
+        ];
+    }
+
+    /**
+     * REST: Bulk Sync - Reset
+     */
+    public function rest_bulk_reset($request) {
+        if (!class_exists('Youvape_Sync_V2\\Bulk_Sync_Manager')) {
+            require_once YOUVAPE_SYNC_V2_PATH . 'includes/class-bulk-sync-manager.php';
+        }
+
+        \Youvape_Sync_V2\Bulk_Sync_Manager::reset_sync();
+
+        return [
+            'success' => true,
+            'message' => 'Bulk sync reset'
+        ];
+    }
+
+    /**
+     * REST: Bulk Sync - Process batch manually
+     */
+    public function rest_bulk_process($request) {
+        if (!class_exists('Youvape_Sync_V2\\Bulk_Sync_Manager')) {
+            require_once YOUVAPE_SYNC_V2_PATH . 'includes/class-bulk-sync-manager.php';
+        }
+
+        $type = $request->get_param('type'); // 'customers', 'products', 'orders'
+
+        if (!in_array($type, ['customers', 'products', 'orders'])) {
+            return [
+                'success' => false,
+                'error' => 'Invalid type. Must be: customers, products, or orders'
+            ];
+        }
+
+        $result = \Youvape_Sync_V2\Bulk_Sync_Manager::process_batch($type);
+
+        return $result;
+    }
+
+    /**
+     * REST: Bulk Sync - Process multiple batches manually
+     */
+    public function rest_bulk_process_manual($request) {
+        if (!class_exists('Youvape_Sync_V2\\Bulk_Sync_Manager')) {
+            require_once YOUVAPE_SYNC_V2_PATH . 'includes/class-bulk-sync-manager.php';
+        }
+
+        $num_batches = $request->get_param('num_batches') ?: 10;
+        $batch_size = $request->get_param('batch_size') ?: 100;
+
+        $result = \Youvape_Sync_V2\Bulk_Sync_Manager::process_multiple_batches($num_batches, $batch_size);
+
+        return $result;
     }
 
     /**

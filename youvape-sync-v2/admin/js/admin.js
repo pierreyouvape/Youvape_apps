@@ -16,6 +16,13 @@
             $('#youvape-run-test').on('click', this.runTest.bind(this));
             $('#youvape-refresh-status').on('click', this.loadStatus.bind(this));
             $('#youvape-force-sync').on('click', this.forceSync.bind(this));
+
+            // Bulk Sync controls
+            $('#youvape-bulk-start').on('click', this.bulkStart.bind(this));
+            $('#youvape-bulk-pause').on('click', this.bulkPause.bind(this));
+            $('#youvape-bulk-resume').on('click', this.bulkResume.bind(this));
+            $('#youvape-bulk-reset').on('click', this.bulkReset.bind(this));
+            $('#youvape-bulk-process-manual').on('click', this.bulkProcessManual.bind(this));
         },
 
         /**
@@ -177,8 +184,10 @@
             // Update last run
             $('#youvape-last-run').text(queueState.last_run || 'Never');
 
-            // Update progress (placeholder for Phase 1)
-            // For now, just show 0% since we haven't synced anything yet
+            // Update bulk sync UI
+            if (queueState && Object.keys(queueState).length > 0) {
+                this.updateBulkUI(queueState);
+            }
         },
 
         /**
@@ -239,6 +248,247 @@
             e.preventDefault();
 
             alert('Force sync will be available in Phase 1');
+        },
+
+        /**
+         * Bulk Sync: Start
+         */
+        bulkStart: function(e) {
+            e.preventDefault();
+
+            if (!confirm('Start full historical sync? This will import all customers, products, and orders.')) {
+                return;
+            }
+
+            const $button = $(e.currentTarget);
+            $button.prop('disabled', true).text('Starting...');
+
+            $.ajax({
+                url: youvapeSyncV2.restUrl + 'bulk/start',
+                method: 'POST',
+                beforeSend: function(xhr) {
+                    xhr.setRequestHeader('X-WP-Nonce', youvapeSyncV2.nonce);
+                },
+                success: function(response) {
+                    $button.prop('disabled', false).text('Start Full Sync');
+
+                    if (response.success) {
+                        alert('Bulk sync started! Processing will continue in background.');
+                        YouvapeSync.loadStatus();
+                        YouvapeSync.updateBulkUI(response.state);
+                    } else {
+                        alert('Error: ' + (response.message || 'Unknown error'));
+                    }
+                },
+                error: function(xhr) {
+                    $button.prop('disabled', false).text('Start Full Sync');
+                    alert('Error starting sync: ' + xhr.responseText);
+                }
+            });
+        },
+
+        /**
+         * Bulk Sync: Pause
+         */
+        bulkPause: function(e) {
+            e.preventDefault();
+
+            $.ajax({
+                url: youvapeSyncV2.restUrl + 'bulk/pause',
+                method: 'POST',
+                beforeSend: function(xhr) {
+                    xhr.setRequestHeader('X-WP-Nonce', youvapeSyncV2.nonce);
+                },
+                success: function(response) {
+                    if (response.success) {
+                        alert('Bulk sync paused');
+                        YouvapeSync.loadStatus();
+                    }
+                },
+                error: function(xhr) {
+                    alert('Error pausing sync: ' + xhr.responseText);
+                }
+            });
+        },
+
+        /**
+         * Bulk Sync: Resume
+         */
+        bulkResume: function(e) {
+            e.preventDefault();
+
+            $.ajax({
+                url: youvapeSyncV2.restUrl + 'bulk/resume',
+                method: 'POST',
+                beforeSend: function(xhr) {
+                    xhr.setRequestHeader('X-WP-Nonce', youvapeSyncV2.nonce);
+                },
+                success: function(response) {
+                    if (response.success) {
+                        alert('Bulk sync resumed');
+                        YouvapeSync.loadStatus();
+                    }
+                },
+                error: function(xhr) {
+                    alert('Error resuming sync: ' + xhr.responseText);
+                }
+            });
+        },
+
+        /**
+         * Bulk Sync: Reset
+         */
+        bulkReset: function(e) {
+            e.preventDefault();
+
+            if (!confirm('Reset bulk sync? This will clear all progress and start from scratch.')) {
+                return;
+            }
+
+            $.ajax({
+                url: youvapeSyncV2.restUrl + 'bulk/reset',
+                method: 'POST',
+                beforeSend: function(xhr) {
+                    xhr.setRequestHeader('X-WP-Nonce', youvapeSyncV2.nonce);
+                },
+                success: function(response) {
+                    if (response.success) {
+                        alert('Bulk sync reset');
+                        YouvapeSync.loadStatus();
+                    }
+                },
+                error: function(xhr) {
+                    alert('Error resetting sync: ' + xhr.responseText);
+                }
+            });
+        },
+
+        /**
+         * Bulk Sync: Process Manual
+         */
+        bulkProcessManual: function(e) {
+            e.preventDefault();
+
+            const numBatches = parseInt($('#youvape-manual-num-batches').val()) || 10;
+            const batchSize = parseInt($('#youvape-manual-batch-size').val()) || 100;
+
+            if (!confirm('Process ' + numBatches + ' batches of ' + batchSize + ' items each?\n\nThis will process approximately ' + (numBatches * batchSize * 3) + ' total items (customers + products + orders).')) {
+                return;
+            }
+
+            const $button = $(e.currentTarget);
+            const $progress = $('#youvape-manual-progress');
+            const $status = $('#youvape-manual-status');
+
+            $button.prop('disabled', true);
+            $progress.show();
+            $status.text('Starting...');
+
+            $.ajax({
+                url: youvapeSyncV2.restUrl + 'bulk/process-manual',
+                method: 'POST',
+                data: {
+                    num_batches: numBatches,
+                    batch_size: batchSize
+                },
+                beforeSend: function(xhr) {
+                    xhr.setRequestHeader('X-WP-Nonce', youvapeSyncV2.nonce);
+                },
+                success: function(response) {
+                    $button.prop('disabled', false);
+
+                    if (response.success) {
+                        const total = response.total_processed || 0;
+                        const results = response.results || {};
+
+                        let message = 'Processed ' + total + ' items total:\n';
+                        if (results.customers) {
+                            message += '- Customers: ' + results.customers.items_processed + ' items in ' + results.customers.batches_processed + ' batches\n';
+                        }
+                        if (results.products) {
+                            message += '- Products: ' + results.products.items_processed + ' items in ' + results.products.batches_processed + ' batches\n';
+                        }
+                        if (results.orders) {
+                            message += '- Orders: ' + results.orders.items_processed + ' items in ' + results.orders.batches_processed + ' batches';
+                        }
+
+                        $status.html('<strong style="color: green;">Success!</strong> ' + message.replace(/\n/g, '<br>'));
+
+                        // Reload status to update progress bars
+                        setTimeout(function() {
+                            YouvapeSync.loadStatus();
+                            $progress.hide();
+                        }, 3000);
+                    } else {
+                        $status.html('<strong style="color: red;">Error:</strong> ' + (response.error || 'Unknown error'));
+                    }
+                },
+                error: function(xhr) {
+                    $button.prop('disabled', false);
+                    $status.html('<strong style="color: red;">Error:</strong> ' + xhr.responseText);
+                }
+            });
+        },
+
+        /**
+         * Update Bulk UI based on state
+         */
+        updateBulkUI: function(state) {
+            const status = state.status || 'idle';
+
+            // Update status badge
+            $('#youvape-bulk-status-text').html('<span class="youvape-status-badge status-' + status + '">' + status.charAt(0).toUpperCase() + status.slice(1) + '</span>');
+
+            // Show/hide buttons
+            if (status === 'running') {
+                $('#youvape-bulk-start').hide();
+                $('#youvape-bulk-pause').show();
+                $('#youvape-bulk-resume').hide();
+            } else if (status === 'paused') {
+                $('#youvape-bulk-start').hide();
+                $('#youvape-bulk-pause').hide();
+                $('#youvape-bulk-resume').show();
+            } else {
+                $('#youvape-bulk-start').show();
+                $('#youvape-bulk-pause').hide();
+                $('#youvape-bulk-resume').hide();
+            }
+
+            // Show started time
+            if (state.started_at) {
+                $('#youvape-bulk-started-at').show();
+                $('#youvape-bulk-started-time').text(state.started_at);
+            }
+
+            // Update progress bars
+            this.updateBulkProgress(state);
+        },
+
+        /**
+         * Update Bulk Progress Bars
+         */
+        updateBulkProgress: function(state) {
+            const types = ['customers', 'products', 'orders'];
+            let html = '';
+
+            types.forEach(function(type) {
+                const total = state[type + '_total'] || 0;
+                const synced = state[type + '_synced'] || 0;
+                const offset = state[type + '_offset'] || 0;
+                const percent = total > 0 ? Math.round((synced / total) * 100) : 0;
+
+                html += '<div class="youvape-bulk-progress-item" style="margin-bottom: 15px;">';
+                html += '<div style="display: flex; justify-content: space-between; margin-bottom: 5px;">';
+                html += '<strong>' + type.charAt(0).toUpperCase() + type.slice(1) + '</strong>';
+                html += '<span>' + synced.toLocaleString() + ' / ' + total.toLocaleString() + ' (' + percent + '%)</span>';
+                html += '</div>';
+                html += '<div class="youvape-progress-bar" style="background: #e0e0e0; height: 25px; border-radius: 3px; overflow: hidden;">';
+                html += '<div class="youvape-progress-fill" style="background: #2271b1; height: 100%; width: ' + percent + '%; transition: width 0.3s;"></div>';
+                html += '</div>';
+                html += '</div>';
+            });
+
+            $('#youvape-bulk-progress').html(html);
         }
     };
 

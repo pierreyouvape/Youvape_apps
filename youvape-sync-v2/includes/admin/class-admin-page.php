@@ -78,6 +78,83 @@ class Admin_Page {
                 </div>
             </div>
 
+            <!-- Phase 1: Bulk Sync -->
+            <div class="card youvape-sync-bulk-section">
+                <h2><?php _e('Phase 1: Bulk Sync (Historical Import)', 'youvape-sync-v2'); ?></h2>
+                <p><?php _e('Import all historical data from WooCommerce to VPS database.', 'youvape-sync-v2'); ?></p>
+
+                <div id="youvape-bulk-controls" style="margin: 20px 0;">
+                    <button type="button" class="button button-primary button-hero" id="youvape-bulk-start">
+                        <span class="dashicons dashicons-controls-play"></span>
+                        <?php _e('Start Full Sync', 'youvape-sync-v2'); ?>
+                    </button>
+
+                    <button type="button" class="button button-secondary" id="youvape-bulk-pause" style="display:none;">
+                        <span class="dashicons dashicons-controls-pause"></span>
+                        <?php _e('Pause', 'youvape-sync-v2'); ?>
+                    </button>
+
+                    <button type="button" class="button button-secondary" id="youvape-bulk-resume" style="display:none;">
+                        <span class="dashicons dashicons-controls-play"></span>
+                        <?php _e('Resume', 'youvape-sync-v2'); ?>
+                    </button>
+
+                    <button type="button" class="button button-secondary" id="youvape-bulk-reset">
+                        <span class="dashicons dashicons-image-rotate"></span>
+                        <?php _e('Reset', 'youvape-sync-v2'); ?>
+                    </button>
+                </div>
+
+                <div class="youvape-manual-controls" style="margin: 20px 0; padding: 15px; background: #f0f0f1; border-left: 4px solid #2271b1;">
+                    <h3 style="margin-top: 0;"><?php _e('Manual Processing', 'youvape-sync-v2'); ?></h3>
+                    <p><?php _e('If automatic cron is not working, use manual processing to sync batches.', 'youvape-sync-v2'); ?></p>
+
+                    <div style="display: flex; gap: 10px; align-items: center;">
+                        <button type="button" class="button button-primary" id="youvape-bulk-process-manual">
+                            <span class="dashicons dashicons-controls-play"></span>
+                            <?php _e('Process 10 Batches', 'youvape-sync-v2'); ?>
+                        </button>
+
+                        <label style="margin: 0;">
+                            <?php _e('Batch size:', 'youvape-sync-v2'); ?>
+                            <input type="number" id="youvape-manual-batch-size" value="100" min="10" max="1000" step="10" style="width: 80px;" />
+                        </label>
+
+                        <label style="margin: 0;">
+                            <?php _e('Number of batches:', 'youvape-sync-v2'); ?>
+                            <input type="number" id="youvape-manual-num-batches" value="10" min="1" max="100" step="1" style="width: 80px;" />
+                        </label>
+                    </div>
+
+                    <div id="youvape-manual-progress" style="margin-top: 10px; display: none;">
+                        <div class="notice notice-info inline">
+                            <p><strong><?php _e('Processing...', 'youvape-sync-v2'); ?></strong> <span id="youvape-manual-status"></span></p>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="youvape-bulk-status" style="margin: 20px 0;">
+                    <p>
+                        <strong><?php _e('Status:', 'youvape-sync-v2'); ?></strong>
+                        <span id="youvape-bulk-status-text">
+                            <?php
+                            $status = isset($queue_state['status']) ? $queue_state['status'] : 'idle';
+                            echo '<span class="youvape-status-badge status-' . esc_attr($status) . '">' . esc_html(ucfirst($status)) . '</span>';
+                            ?>
+                        </span>
+                    </p>
+
+                    <p id="youvape-bulk-started-at" style="display:none;">
+                        <strong><?php _e('Started at:', 'youvape-sync-v2'); ?></strong>
+                        <span id="youvape-bulk-started-time"></span>
+                    </p>
+                </div>
+
+                <div id="youvape-bulk-progress">
+                    <!-- Progress bars will be inserted here by JS -->
+                </div>
+            </div>
+
             <!-- Current Status -->
             <div class="card youvape-sync-status-section">
                 <h2><?php _e('Sync Status', 'youvape-sync-v2'); ?></h2>

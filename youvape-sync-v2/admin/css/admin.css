@@ -197,6 +197,58 @@
     width: 150px;
 }
 
+/* Bulk Sync Section */
+.youvape-sync-bulk-section .button-hero {
+    font-size: 16px;
+    height: auto;
+    padding: 12px 24px;
+}
+
+.youvape-sync-bulk-section button .dashicons {
+    width: 20px;
+    height: 20px;
+    font-size: 20px;
+}
+
+.youvape-status-badge {
+    display: inline-block;
+    padding: 4px 12px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.youvape-status-badge.status-idle {
+    background: #f0f0f0;
+    color: #666;
+}
+
+.youvape-status-badge.status-running {
+    background: #d5f5e3;
+    color: #00a32a;
+    animation: pulse 2s infinite;
+}
+
+.youvape-status-badge.status-paused {
+    background: #fff8e5;
+    color: #f0b429;
+}
+
+.youvape-status-badge.status-completed {
+    background: #d4edff;
+    color: #0073aa;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.7; }
+}
+
+.youvape-bulk-progress-item {
+    margin-bottom: 15px;
+}
+
 /* Notices */
 .youvape-sync-notices {
     margin-top: 20px;

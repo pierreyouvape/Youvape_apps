@@ -947,47 +947,80 @@ const receiveBulk = async (req, res) => {
     let updated = 0;
     let errors = [];
 
-    const client = await pool.connect();
-
+    // Process each item with transformers
     try {
-      await client.query('BEGIN');
-
       if (type === 'customers') {
         for (const item of batch) {
           try {
-            // TODO: Adapter la structure customers pour le nouveau format v2
-            // Pour l'instant, retourne un message d'attente
-            console.log(`  → Customer WP ID ${item.wp_user_id}`);
+            const customerData = transformCustomer({
+              user: item.user,
+              meta: item.meta
+            });
+
+            const result = await insertCustomer(pool, customerData);
+
+            if (result.inserted) {
+              inserted++;
+            } else {
+              updated++;
+            }
+
+            console.log(`  ✓ Customer ${result.wp_user_id} ${result.inserted ? 'inserted' : 'updated'}`);
           } catch (error) {
-            errors.push({ item_id: item.wp_user_id, error: error.message });
+            console.error(`  ✗ Customer ${item.wp_id} error: ${error.message}`);
+            errors.push({ item_id: item.wp_id, error: error.message });
           }
         }
       } else if (type === 'products') {
         for (const item of batch) {
           try {
-            // TODO: Adapter la structure products pour le nouveau format v2
-            console.log(`  → Product WP ID ${item.wp_product_id}`);
+            const result = await insertProductWithVariations(pool, {
+              product_type: item.product_type,
+              post: item.post,
+              meta: item.meta,
+              variations: item.variations || []
+            });
+
+            if (result.parent.inserted) {
+              inserted++;
+            } else {
+              updated++;
+            }
+
+            console.log(`  ✓ Product ${result.parent.wp_product_id} ${result.parent.inserted ? 'inserted' : 'updated'} with ${result.total_variations} variation(s)`);
           } catch (error) {
-            errors.push({ item_id: item.wp_product_id, error: error.message });
+            console.error(`  ✗ Product ${item.wp_id} error: ${error.message}`);
+            errors.push({ item_id: item.wp_id, error: error.message });
           }
         }
       } else if (type === 'orders') {
         for (const item of batch) {
           try {
-            // TODO: Adapter la structure orders pour le nouveau format v2
-            console.log(`  → Order WP ID ${item.wp_order_id}`);
+            const orderData = transformOrder({
+              post: item.post,
+              meta: item.meta
+            });
+
+            const itemsData = transformOrderItems(item.items || [], orderData.wp_order_id);
+
+            const result = await insertOrder(pool, orderData, itemsData);
+
+            if (result.inserted) {
+              inserted++;
+            } else {
+              updated++;
+            }
+
+            console.log(`  ✓ Order ${result.wp_order_id} ${result.inserted ? 'inserted' : 'updated'} with ${result.items_inserted} item(s)`);
           } catch (error) {
-            errors.push({ item_id: item.wp_order_id, error: error.message });
+            console.error(`  ✗ Order ${item.wp_id} error: ${error.message}`);
+            errors.push({ item_id: item.wp_id, error: error.message });
           }
         }
       }
-
-      await client.query('COMMIT');
     } catch (error) {
-      await client.query('ROLLBACK');
+      console.error(`❌ Bulk sync error: ${error.message}`);
       throw error;
-    } finally {
-      client.release();
     }
 
     console.log(`✅ Bulk sync completed: ${inserted} inserted, ${updated} updated, ${errors.length} errors`);
