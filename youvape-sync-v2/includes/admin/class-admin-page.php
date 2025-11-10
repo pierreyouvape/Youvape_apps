@@ -108,11 +108,20 @@ class Admin_Page {
                 <div class="youvape-manual-controls" style="margin: 20px 0; padding: 15px; background: #f0f0f1; border-left: 4px solid #2271b1;">
                     <h3 style="margin-top: 0;"><?php _e('Manual Processing', 'youvape-sync-v2'); ?></h3>
                     <p><?php _e('If automatic cron is not working, use manual processing to sync batches.', 'youvape-sync-v2'); ?></p>
+                    <p style="background: #fff3cd; padding: 10px; border-left: 3px solid #ffc107;">
+                        <strong><?php _e('⚠️ Important:', 'youvape-sync-v2'); ?></strong>
+                        <?php _e('Process DATA (customers + products) FIRST, then ORDERS after.', 'youvape-sync-v2'); ?>
+                    </p>
 
-                    <div style="display: flex; gap: 10px; align-items: center;">
-                        <button type="button" class="button button-primary" id="youvape-bulk-process-manual">
-                            <span class="dashicons dashicons-controls-play"></span>
-                            <?php _e('Process 10 Batches', 'youvape-sync-v2'); ?>
+                    <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+                        <button type="button" class="button button-primary" id="youvape-bulk-process-data">
+                            <span class="dashicons dashicons-groups"></span>
+                            <?php _e('Process DATA (Customers + Products)', 'youvape-sync-v2'); ?>
+                        </button>
+
+                        <button type="button" class="button button-primary" id="youvape-bulk-process-orders" style="background: #0073aa;">
+                            <span class="dashicons dashicons-cart"></span>
+                            <?php _e('Process ORDERS', 'youvape-sync-v2'); ?>
                         </button>
 
                         <label style="margin: 0;">

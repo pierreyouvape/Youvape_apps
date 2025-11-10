@@ -8,10 +8,10 @@ class ProductModel {
     const query = `
       SELECT
         p.*,
-        COALESCE(p.cost_price_custom, p.cost_price) as effective_cost_price,
-        (p.price - COALESCE(p.cost_price_custom, p.cost_price)) as unit_margin,
-        (SELECT COUNT(*) FROM order_items WHERE product_id = p.product_id) as times_sold,
-        (SELECT COALESCE(SUM(total), 0) FROM order_items WHERE product_id = p.product_id) as total_revenue
+        p.wc_cog_cost as cost_price,
+        (p.price - COALESCE(p.wc_cog_cost, 0)) as unit_margin,
+        (SELECT COUNT(*) FROM order_items WHERE product_id = p.wp_product_id) as times_sold,
+        (SELECT COALESCE(SUM(line_total), 0) FROM order_items WHERE product_id = p.wp_product_id) as total_revenue
       FROM products p
       ORDER BY total_revenue DESC
       LIMIT $1 OFFSET $2
@@ -31,19 +31,19 @@ class ProductModel {
   /**
    * Récupère un produit par ID
    */
-  async getById(productId) {
+  async getById(wpProductId) {
     const query = `
       SELECT
         p.*,
-        COALESCE(p.cost_price_custom, p.cost_price) as effective_cost_price,
-        (p.price - COALESCE(p.cost_price_custom, p.cost_price)) as unit_margin,
-        (SELECT COALESCE(SUM(quantity), 0) FROM order_items WHERE product_id = p.product_id) as total_quantity_sold,
-        (SELECT COALESCE(SUM(total), 0) FROM order_items WHERE product_id = p.product_id) as total_revenue,
-        (SELECT COUNT(DISTINCT order_id) FROM order_items WHERE product_id = p.product_id) as orders_count
+        p.wc_cog_cost as cost_price,
+        (p.price - COALESCE(p.wc_cog_cost, 0)) as unit_margin,
+        (SELECT COALESCE(SUM(qty), 0) FROM order_items WHERE product_id = p.wp_product_id) as total_quantity_sold,
+        (SELECT COALESCE(SUM(line_total), 0) FROM order_items WHERE product_id = p.wp_product_id) as total_revenue,
+        (SELECT COUNT(DISTINCT wp_order_id) FROM order_items WHERE product_id = p.wp_product_id) as orders_count
       FROM products p
-      WHERE p.product_id = $1
+      WHERE p.wp_product_id = $1
     `;
-    const result = await pool.query(query, [productId]);
+    const result = await pool.query(query, [wpProductId]);
     return result.rows[0];
   }
 
@@ -57,18 +57,18 @@ class ProductModel {
   }
 
   /**
-   * Recherche de produits (nom, SKU, catégorie)
+   * Recherche de produits (nom, SKU)
    */
   async search(searchTerm, limit = 50, offset = 0) {
     const query = `
       SELECT
         p.*,
-        COALESCE(p.cost_price_custom, p.cost_price) as effective_cost_price,
-        (p.price - COALESCE(p.cost_price_custom, p.cost_price)) as unit_margin,
-        (SELECT COALESCE(SUM(total), 0) FROM order_items WHERE product_id = p.product_id) as total_revenue
+        p.wc_cog_cost as cost_price,
+        (p.price - COALESCE(p.wc_cog_cost, 0)) as unit_margin,
+        (SELECT COALESCE(SUM(line_total), 0) FROM order_items WHERE product_id = p.wp_product_id) as total_revenue
       FROM products p
       WHERE
-        LOWER(p.name || ' ' || COALESCE(p.sku, '') || ' ' || COALESCE(p.category, '')) LIKE $1
+        LOWER(p.post_title || ' ' || COALESCE(p.sku, '')) LIKE $1
       ORDER BY total_revenue DESC
       LIMIT $2 OFFSET $3
     `;
@@ -77,151 +77,110 @@ class ProductModel {
   }
 
   /**
-   * Filtre produits par catégorie
+   * Récupère l'historique des ventes d'un produit
    */
-  async getByCategory(category, limit = 50, offset = 0) {
+  async getSalesHistory(wpProductId, limit = 50) {
+    const query = `
+      SELECT
+        o.wp_order_id,
+        o.post_date as order_date,
+        o.post_status as order_status,
+        oi.qty as quantity,
+        oi.line_total as total,
+        oi.item_cost as cost_price
+      FROM order_items oi
+      JOIN orders o ON o.wp_order_id = oi.wp_order_id
+      WHERE oi.product_id = $1
+      ORDER BY o.post_date DESC
+      LIMIT $2
+    `;
+    const result = await pool.query(query, [wpProductId, limit]);
+    return result.rows;
+  }
+
+  /**
+   * Récupère les statistiques d'un produit
+   */
+  async getStats(wpProductId) {
+    const query = `
+      SELECT
+        COUNT(DISTINCT oi.wp_order_id)::int as total_orders,
+        COALESCE(SUM(oi.qty), 0) as total_quantity_sold,
+        COALESCE(SUM(oi.line_total), 0) as total_revenue,
+        COALESCE(AVG(oi.line_total / NULLIF(oi.qty, 0)), 0) as avg_price_per_unit,
+        MIN(o.post_date) as first_sale_date,
+        MAX(o.post_date) as last_sale_date
+      FROM products p
+      LEFT JOIN order_items oi ON oi.product_id = p.wp_product_id
+      LEFT JOIN orders o ON o.wp_order_id = oi.wp_order_id AND o.post_status = 'wc-completed'
+      WHERE p.wp_product_id = $1
+    `;
+
+    const result = await pool.query(query, [wpProductId]);
+    const stats = result.rows[0];
+
+    // Calcul du coût total
+    const costQuery = `
+      SELECT COALESCE(SUM(oi.qty * COALESCE(oi.item_cost, 0)), 0) as total_cost
+      FROM order_items oi
+      INNER JOIN orders o ON o.wp_order_id = oi.wp_order_id
+      WHERE oi.product_id = $1 AND o.post_status = 'wc-completed'
+    `;
+
+    const costResult = await pool.query(costQuery, [wpProductId]);
+    stats.total_cost = parseFloat(costResult.rows[0]?.total_cost || 0);
+
+    // Calcul profit et marge
+    const totalRevenue = parseFloat(stats.total_revenue) || 0;
+    const totalCost = parseFloat(stats.total_cost) || 0;
+
+    stats.total_profit = totalRevenue - totalCost;
+    stats.margin_percent = totalRevenue > 0 ? ((stats.total_profit / totalRevenue) * 100) : 0;
+
+    return stats;
+  }
+
+  /**
+   * Récupère les clients qui ont acheté ce produit
+   */
+  async getCustomers(wpProductId, limit = 50) {
+    const query = `
+      SELECT
+        c.wp_user_id,
+        c.email,
+        c.first_name,
+        c.last_name,
+        COUNT(DISTINCT oi.wp_order_id) as orders_count,
+        SUM(oi.qty) as total_quantity,
+        SUM(oi.line_total) as total_spent
+      FROM order_items oi
+      JOIN orders o ON o.wp_order_id = oi.wp_order_id
+      JOIN customers c ON c.wp_user_id = o.wp_customer_id
+      WHERE oi.product_id = $1 AND o.post_status = 'wc-completed'
+      GROUP BY c.wp_user_id, c.email, c.first_name, c.last_name
+      ORDER BY total_quantity DESC
+      LIMIT $2
+    `;
+    const result = await pool.query(query, [wpProductId, limit]);
+    return result.rows;
+  }
+
+  /**
+   * Récupère les variations d'un produit parent
+   */
+  async getVariations(wpParentId) {
     const query = `
       SELECT
         p.*,
-        COALESCE(p.cost_price_custom, p.cost_price) as effective_cost_price,
-        (p.price - COALESCE(p.cost_price_custom, p.cost_price)) as unit_margin
+        p.wc_cog_cost as cost_price,
+        (SELECT COALESCE(SUM(qty), 0) FROM order_items WHERE product_id = p.wp_product_id) as total_quantity_sold,
+        (SELECT COALESCE(SUM(line_total), 0) FROM order_items WHERE product_id = p.wp_product_id) as total_revenue
       FROM products p
-      WHERE p.category = $1
-      ORDER BY p.name ASC
-      LIMIT $2 OFFSET $3
+      WHERE p.wp_parent_id = $1 AND p.product_type = 'variation'
+      ORDER BY p.post_title ASC
     `;
-    const result = await pool.query(query, [category, limit, offset]);
+    const result = await pool.query(query, [wpParentId]);
     return result.rows;
-  }
-
-  /**
-   * Récupère l'historique des ventes d'un produit
-   */
-  async getSalesHistory(productId, limit = 50) {
-    const query = `
-      SELECT
-        o.order_id,
-        o.order_number,
-        o.date_created,
-        o.status,
-        oi.quantity,
-        oi.price,
-        oi.total,
-        c.customer_id,
-        c.first_name,
-        c.last_name,
-        c.email
-      FROM order_items oi
-      JOIN orders o ON o.order_id = oi.order_id
-      LEFT JOIN customers c ON c.customer_id = o.customer_id
-      WHERE oi.product_id = $1
-      ORDER BY o.date_created DESC
-      LIMIT $2
-    `;
-    const result = await pool.query(query, [productId, limit]);
-    return result.rows;
-  }
-
-  /**
-   * Récupère les clients ayant acheté un produit
-   */
-  async getCustomers(productId, limit = 50) {
-    const query = `
-      SELECT
-        c.customer_id,
-        c.first_name,
-        c.last_name,
-        c.email,
-        COUNT(DISTINCT o.order_id) as order_count,
-        SUM(oi.quantity) as total_quantity,
-        SUM(oi.total) as total_spent
-      FROM customers c
-      JOIN orders o ON o.customer_id = c.customer_id
-      JOIN order_items oi ON oi.order_id = o.order_id
-      WHERE oi.product_id = $1
-      GROUP BY c.customer_id
-      ORDER BY total_spent DESC
-      LIMIT $2
-    `;
-    const result = await pool.query(query, [productId, limit]);
-    return result.rows;
-  }
-
-  /**
-   * Récupère les produits liés (achetés ensemble)
-   */
-  async getRelatedProducts(productId, limit = 10) {
-    const query = `
-      SELECT
-        p.product_id,
-        p.name,
-        p.sku,
-        p.image_url,
-        p.price,
-        COUNT(DISTINCT oi.order_id) as times_bought_together,
-        COUNT(DISTINCT o.customer_id) as customers_count
-      FROM products p
-      JOIN order_items oi ON oi.product_id = p.product_id
-      JOIN orders o ON o.order_id = oi.order_id
-      WHERE o.customer_id IN (
-        SELECT DISTINCT o2.customer_id
-        FROM orders o2
-        JOIN order_items oi2 ON oi2.order_id = o2.order_id
-        WHERE oi2.product_id = $1
-      )
-      AND p.product_id != $1
-      GROUP BY p.product_id
-      ORDER BY times_bought_together DESC
-      LIMIT $2
-    `;
-    const result = await pool.query(query, [productId, limit]);
-    return result.rows;
-  }
-
-  /**
-   * Met à jour le coût personnalisé d'un produit
-   */
-  async updateCostPrice(productId, costPriceCustom) {
-    const query = `
-      UPDATE products
-      SET
-        cost_price_custom = $1,
-        cost_price_updated_at = NOW(),
-        updated_at = NOW()
-      WHERE product_id = $2
-      RETURNING *
-    `;
-    const result = await pool.query(query, [costPriceCustom, productId]);
-    return result.rows[0];
-  }
-
-  /**
-   * Récupère toutes les catégories distinctes
-   */
-  async getCategories() {
-    const query = `
-      SELECT DISTINCT category
-      FROM products
-      WHERE category IS NOT NULL
-      ORDER BY category ASC
-    `;
-    const result = await pool.query(query);
-    return result.rows.map(row => row.category);
-  }
-
-  /**
-   * Récupère le récapitulatif du stock
-   */
-  async getStockSummary() {
-    const query = `
-      SELECT
-        COUNT(*) FILTER (WHERE stock_status = 'instock' AND COALESCE(stock_quantity, 0) > 0) as in_stock,
-        COUNT(*) FILTER (WHERE stock_status = 'outofstock' OR COALESCE(stock_quantity, 0) = 0) as out_of_stock,
-        COUNT(*) FILTER (WHERE stock_status = 'instock' AND COALESCE(stock_quantity, 0) > 0 AND COALESCE(stock_quantity, 0) <= 10) as low_stock
-      FROM products
-    `;
-    const result = await pool.query(query);
-    return result.rows[0];
   }
 
   /**
@@ -230,28 +189,23 @@ class ProductModel {
   async create(productData) {
     const query = `
       INSERT INTO products (
-        product_id, sku, name, price, regular_price, sale_price, cost_price,
-        stock_quantity, stock_status, category, categories,
-        date_created, date_modified, total_sales, image_url
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+        wp_product_id, wp_parent_id, product_type, post_title, sku,
+        price, regular_price, wc_cog_cost, stock, stock_status, post_status
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
       RETURNING *
     `;
     const values = [
-      productData.product_id,
+      productData.wp_product_id,
+      productData.wp_parent_id || null,
+      productData.product_type || 'simple',
+      productData.post_title,
       productData.sku || null,
-      productData.name,
-      productData.price || 0,
+      productData.price || null,
       productData.regular_price || null,
-      productData.sale_price || null,
-      productData.cost_price || null,
-      productData.stock_quantity || null,
-      productData.stock_status || 'instock',
-      productData.category || null,
-      JSON.stringify(productData.categories || []),
-      productData.date_created || null,
-      productData.date_modified || null,
-      productData.total_sales || 0,
-      productData.image_url || null
+      productData.wc_cog_cost || null,
+      productData.stock || null,
+      productData.stock_status || null,
+      productData.post_status || 'publish'
     ];
     const result = await pool.query(query, values);
     return result.rows[0];
@@ -260,34 +214,32 @@ class ProductModel {
   /**
    * Met à jour un produit
    */
-  async update(productId, productData) {
+  async update(wpProductId, productData) {
     const query = `
       UPDATE products
       SET
-        name = $1,
-        price = $2,
-        regular_price = $3,
-        sale_price = $4,
-        cost_price = $5,
-        stock_quantity = $6,
+        post_title = $1,
+        sku = $2,
+        price = $3,
+        regular_price = $4,
+        wc_cog_cost = $5,
+        stock = $6,
         stock_status = $7,
-        category = $8,
-        categories = $9,
+        post_status = $8,
         updated_at = NOW()
-      WHERE product_id = $10
+      WHERE wp_product_id = $9
       RETURNING *
     `;
     const values = [
-      productData.name,
-      productData.price || 0,
+      productData.post_title,
+      productData.sku || null,
+      productData.price || null,
       productData.regular_price || null,
-      productData.sale_price || null,
-      productData.cost_price || null,
-      productData.stock_quantity || null,
-      productData.stock_status || 'instock',
-      productData.category || null,
-      JSON.stringify(productData.categories || []),
-      productId
+      productData.wc_cog_cost || null,
+      productData.stock || null,
+      productData.stock_status || null,
+      productData.post_status || 'publish',
+      wpProductId
     ];
     const result = await pool.query(query, values);
     return result.rows[0];
@@ -296,9 +248,9 @@ class ProductModel {
   /**
    * Supprime un produit
    */
-  async delete(productId) {
-    const query = 'DELETE FROM products WHERE product_id = $1 RETURNING *';
-    const result = await pool.query(query, [productId]);
+  async delete(wpProductId) {
+    const query = 'DELETE FROM products WHERE wp_product_id = $1 RETURNING *';
+    const result = await pool.query(query, [wpProductId]);
     return result.rows[0];
   }
 }

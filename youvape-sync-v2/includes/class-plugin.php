@@ -219,6 +219,24 @@ class Plugin {
                 return current_user_can('manage_options');
             }
         ]);
+
+        // Bulk Sync: Process DATA batches (customers + products)
+        register_rest_route('youvape-sync/v1', '/bulk/process-data', [
+            'methods' => 'POST',
+            'callback' => [$this, 'rest_bulk_process_data'],
+            'permission_callback' => function() {
+                return current_user_can('manage_options');
+            }
+        ]);
+
+        // Bulk Sync: Process ORDERS batches
+        register_rest_route('youvape-sync/v1', '/bulk/process-orders', [
+            'methods' => 'POST',
+            'callback' => [$this, 'rest_bulk_process_orders'],
+            'permission_callback' => function() {
+                return current_user_can('manage_options');
+            }
+        ]);
     }
 
     /**
@@ -371,7 +389,7 @@ class Plugin {
     }
 
     /**
-     * REST: Bulk Sync - Process multiple batches manually
+     * REST: Bulk Sync - Process multiple batches manually (ALL TYPES - DEPRECATED)
      */
     public function rest_bulk_process_manual($request) {
         if (!class_exists('Youvape_Sync_V2\\Bulk_Sync_Manager')) {
@@ -382,6 +400,38 @@ class Plugin {
         $batch_size = $request->get_param('batch_size') ?: 100;
 
         $result = \Youvape_Sync_V2\Bulk_Sync_Manager::process_multiple_batches($num_batches, $batch_size);
+
+        return $result;
+    }
+
+    /**
+     * REST: Bulk Sync - Process DATA batches (customers + products)
+     */
+    public function rest_bulk_process_data($request) {
+        if (!class_exists('Youvape_Sync_V2\\Bulk_Sync_Manager')) {
+            require_once YOUVAPE_SYNC_V2_PATH . 'includes/class-bulk-sync-manager.php';
+        }
+
+        $num_batches = $request->get_param('num_batches') ?: 10;
+        $batch_size = $request->get_param('batch_size') ?: 100;
+
+        $result = \Youvape_Sync_V2\Bulk_Sync_Manager::process_data_batches($num_batches, $batch_size);
+
+        return $result;
+    }
+
+    /**
+     * REST: Bulk Sync - Process ORDERS batches
+     */
+    public function rest_bulk_process_orders($request) {
+        if (!class_exists('Youvape_Sync_V2\\Bulk_Sync_Manager')) {
+            require_once YOUVAPE_SYNC_V2_PATH . 'includes/class-bulk-sync-manager.php';
+        }
+
+        $num_batches = $request->get_param('num_batches') ?: 10;
+        $batch_size = $request->get_param('batch_size') ?: 100;
+
+        $result = \Youvape_Sync_V2\Bulk_Sync_Manager::process_orders_batches($num_batches, $batch_size);
 
         return $result;
     }

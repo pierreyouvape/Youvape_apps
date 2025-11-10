@@ -23,6 +23,8 @@
             $('#youvape-bulk-resume').on('click', this.bulkResume.bind(this));
             $('#youvape-bulk-reset').on('click', this.bulkReset.bind(this));
             $('#youvape-bulk-process-manual').on('click', this.bulkProcessManual.bind(this));
+            $('#youvape-bulk-process-data').on('click', this.bulkProcessData.bind(this));
+            $('#youvape-bulk-process-orders').on('click', this.bulkProcessOrders.bind(this));
         },
 
         /**
@@ -364,7 +366,129 @@
         },
 
         /**
-         * Bulk Sync: Process Manual
+         * Bulk Sync: Process DATA (customers + products)
+         */
+        bulkProcessData: function(e) {
+            e.preventDefault();
+
+            const numBatches = parseInt($('#youvape-manual-num-batches').val()) || 10;
+            const batchSize = parseInt($('#youvape-manual-batch-size').val()) || 100;
+
+            if (!confirm('Process ' + numBatches + ' batches of ' + batchSize + ' items each?\n\nThis will process CUSTOMERS and PRODUCTS only.\nTotal: ~' + (numBatches * batchSize * 2) + ' items.')) {
+                return;
+            }
+
+            const $button = $(e.currentTarget);
+            const $progress = $('#youvape-manual-progress');
+            const $status = $('#youvape-manual-status');
+
+            $button.prop('disabled', true);
+            $progress.show();
+            $status.text('Processing customers and products...');
+
+            $.ajax({
+                url: youvapeSyncV2.restUrl + 'bulk/process-data',
+                method: 'POST',
+                data: {
+                    num_batches: numBatches,
+                    batch_size: batchSize
+                },
+                beforeSend: function(xhr) {
+                    xhr.setRequestHeader('X-WP-Nonce', youvapeSyncV2.nonce);
+                },
+                success: function(response) {
+                    $button.prop('disabled', false);
+
+                    if (response.success) {
+                        const total = response.total_processed || 0;
+                        const results = response.results || {};
+
+                        let message = 'Processed ' + total + ' items total:\n';
+                        if (results.customers) {
+                            message += '- Customers: ' + results.customers.items_processed + ' items in ' + results.customers.batches_processed + ' batches\n';
+                        }
+                        if (results.products) {
+                            message += '- Products: ' + results.products.items_processed + ' items in ' + results.products.batches_processed + ' batches';
+                        }
+
+                        $status.html('<strong style="color: green;">Success!</strong> ' + message.replace(/\n/g, '<br>'));
+
+                        // Reload status to update progress bars
+                        setTimeout(function() {
+                            YouvapeSync.loadStatus();
+                            $progress.hide();
+                        }, 3000);
+                    } else {
+                        $status.html('<strong style="color: red;">Error:</strong> ' + (response.error || 'Unknown error'));
+                    }
+                },
+                error: function(xhr) {
+                    $button.prop('disabled', false);
+                    $status.html('<strong style="color: red;">Error:</strong> ' + xhr.responseText);
+                }
+            });
+        },
+
+        /**
+         * Bulk Sync: Process ORDERS
+         */
+        bulkProcessOrders: function(e) {
+            e.preventDefault();
+
+            const numBatches = parseInt($('#youvape-manual-num-batches').val()) || 10;
+            const batchSize = parseInt($('#youvape-manual-batch-size').val()) || 100;
+
+            if (!confirm('Process ' + numBatches + ' batches of ' + batchSize + ' items each?\n\nThis will process ORDERS only.\nTotal: ~' + (numBatches * batchSize) + ' items.\n\n⚠️ Make sure you have processed CUSTOMERS and PRODUCTS first!')) {
+                return;
+            }
+
+            const $button = $(e.currentTarget);
+            const $progress = $('#youvape-manual-progress');
+            const $status = $('#youvape-manual-status');
+
+            $button.prop('disabled', true);
+            $progress.show();
+            $status.text('Processing orders...');
+
+            $.ajax({
+                url: youvapeSyncV2.restUrl + 'bulk/process-orders',
+                method: 'POST',
+                data: {
+                    num_batches: numBatches,
+                    batch_size: batchSize
+                },
+                beforeSend: function(xhr) {
+                    xhr.setRequestHeader('X-WP-Nonce', youvapeSyncV2.nonce);
+                },
+                success: function(response) {
+                    $button.prop('disabled', false);
+
+                    if (response.success) {
+                        const total = response.total_processed || 0;
+                        const results = response.results || {};
+
+                        let message = 'Processed ' + total + ' orders in ' + (results.orders ? results.orders.batches_processed : 0) + ' batches';
+
+                        $status.html('<strong style="color: green;">Success!</strong> ' + message);
+
+                        // Reload status to update progress bars
+                        setTimeout(function() {
+                            YouvapeSync.loadStatus();
+                            $progress.hide();
+                        }, 3000);
+                    } else {
+                        $status.html('<strong style="color: red;">Error:</strong> ' + (response.error || 'Unknown error'));
+                    }
+                },
+                error: function(xhr) {
+                    $button.prop('disabled', false);
+                    $status.html('<strong style="color: red;">Error:</strong> ' + xhr.responseText);
+                }
+            });
+        },
+
+        /**
+         * Bulk Sync: Process Manual (DEPRECATED - ALL TYPES)
          */
         bulkProcessManual: function(e) {
             e.preventDefault();

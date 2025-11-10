@@ -8,11 +8,11 @@ class CustomerModel {
     const query = `
       SELECT
         c.*,
-        (SELECT COUNT(*) FROM orders WHERE customer_id = c.customer_id) as actual_order_count,
-        (SELECT COALESCE(SUM(total), 0) FROM orders WHERE customer_id = c.customer_id AND status = 'completed') as actual_total_spent,
-        (SELECT MAX(date_created) FROM orders WHERE customer_id = c.customer_id) as last_order_date
+        (SELECT COUNT(*) FROM orders WHERE wp_customer_id = c.wp_user_id) as order_count,
+        (SELECT COALESCE(SUM(order_total), 0) FROM orders WHERE wp_customer_id = c.wp_user_id AND post_status = 'wc-completed') as total_spent,
+        (SELECT MAX(post_date) FROM orders WHERE wp_customer_id = c.wp_user_id) as last_order_date
       FROM customers c
-      ORDER BY actual_total_spent DESC
+      ORDER BY total_spent DESC
       LIMIT $1 OFFSET $2
     `;
     const result = await pool.query(query, [limit, offset]);
@@ -30,18 +30,18 @@ class CustomerModel {
   /**
    * Récupère un client par ID
    */
-  async getById(customerId) {
+  async getById(wpUserId) {
     const query = `
       SELECT
         c.*,
-        (SELECT COUNT(*) FROM orders WHERE customer_id = c.customer_id) as actual_order_count,
-        (SELECT COALESCE(SUM(total), 0) FROM orders WHERE customer_id = c.customer_id AND status = 'completed') as actual_total_spent,
-        (SELECT MAX(date_created) FROM orders WHERE customer_id = c.customer_id) as last_order_date,
-        (SELECT MIN(date_created) FROM orders WHERE customer_id = c.customer_id) as first_order_date
+        (SELECT COUNT(*) FROM orders WHERE wp_customer_id = c.wp_user_id) as order_count,
+        (SELECT COALESCE(SUM(order_total), 0) FROM orders WHERE wp_customer_id = c.wp_user_id AND post_status = 'wc-completed') as total_spent,
+        (SELECT MAX(post_date) FROM orders WHERE wp_customer_id = c.wp_user_id) as last_order_date,
+        (SELECT MIN(post_date) FROM orders WHERE wp_customer_id = c.wp_user_id) as first_order_date
       FROM customers c
-      WHERE c.customer_id = $1
+      WHERE c.wp_user_id = $1
     `;
-    const result = await pool.query(query, [customerId]);
+    const result = await pool.query(query, [wpUserId]);
     return result.rows[0];
   }
 
@@ -61,12 +61,12 @@ class CustomerModel {
     const query = `
       SELECT
         c.*,
-        (SELECT COUNT(*) FROM orders WHERE customer_id = c.customer_id) as actual_order_count,
-        (SELECT COALESCE(SUM(total), 0) FROM orders WHERE customer_id = c.customer_id AND status = 'completed') as actual_total_spent
+        (SELECT COUNT(*) FROM orders WHERE wp_customer_id = c.wp_user_id) as order_count,
+        (SELECT COALESCE(SUM(order_total), 0) FROM orders WHERE wp_customer_id = c.wp_user_id AND post_status = 'wc-completed') as total_spent
       FROM customers c
       WHERE
         LOWER(c.first_name || ' ' || c.last_name || ' ' || c.email) LIKE $1
-      ORDER BY actual_total_spent DESC
+      ORDER BY total_spent DESC
       LIMIT $2 OFFSET $3
     `;
     const result = await pool.query(query, [`%${searchTerm.toLowerCase()}%`, limit, offset]);
@@ -76,96 +76,94 @@ class CustomerModel {
   /**
    * Récupère l'historique des commandes d'un client
    */
-  async getOrders(customerId, limit = 50) {
+  async getOrders(wpUserId, limit = 50) {
     const query = `
       SELECT
         o.*,
-        (SELECT COUNT(*) FROM order_items WHERE order_id = o.order_id) as items_count
+        (SELECT COUNT(*) FROM order_items WHERE wp_order_id = o.wp_order_id) as items_count
       FROM orders o
-      WHERE o.customer_id = $1
-      ORDER BY o.date_created DESC
+      WHERE o.wp_customer_id = $1
+      ORDER BY o.post_date DESC
       LIMIT $2
     `;
-    const result = await pool.query(query, [customerId, limit]);
+    const result = await pool.query(query, [wpUserId, limit]);
     return result.rows;
   }
 
   /**
    * Récupère les produits favoris d'un client (top produits achetés)
    */
-  async getFavoriteProducts(customerId, limit = 10) {
+  async getFavoriteProducts(wpUserId, limit = 10) {
     const query = `
       SELECT
-        p.product_id,
-        p.name,
+        p.wp_product_id,
+        p.post_title as name,
         p.sku,
-        p.image_url,
-        p.price,
-        SUM(oi.quantity) as total_quantity,
-        SUM(oi.total) as total_spent,
-        COUNT(DISTINCT oi.order_id) as order_count
+        p.regular_price as price,
+        SUM(oi.qty) as total_quantity,
+        SUM(oi.line_total) as total_spent,
+        COUNT(DISTINCT oi.wp_order_id) as order_count
       FROM products p
-      JOIN order_items oi ON oi.product_id = p.product_id
-      JOIN orders o ON o.order_id = oi.order_id
-      WHERE o.customer_id = $1
-      GROUP BY p.product_id
+      JOIN order_items oi ON oi.product_id = p.wp_product_id
+      JOIN orders o ON o.wp_order_id = oi.wp_order_id
+      WHERE o.wp_customer_id = $1 AND o.post_status = 'wc-completed'
+      GROUP BY p.wp_product_id, p.post_title, p.sku, p.regular_price
       ORDER BY total_quantity DESC
       LIMIT $2
     `;
-    const result = await pool.query(query, [customerId, limit]);
+    const result = await pool.query(query, [wpUserId, limit]);
     return result.rows;
   }
 
   /**
    * Récupère les statistiques avancées d'un client
-   * Retourne toujours un objet avec des valeurs par défaut même si pas de commandes
    */
-  async getStats(customerId) {
+  async getStats(wpUserId) {
     const query = `
       SELECT
-        COUNT(DISTINCT o.order_id)::int as total_orders,
-        COALESCE(SUM(CASE WHEN o.status = 'completed' THEN o.total ELSE 0 END), 0) as total_spent,
-        COALESCE(AVG(CASE WHEN o.status = 'completed' THEN o.total ELSE NULL END), 0) as avg_order_value,
-        COALESCE(SUM(CASE WHEN o.status = 'completed' THEN COALESCE(o.shipping_cost_real, o.shipping_total, 0) ELSE 0 END), 0) as total_shipping_cost,
-        MIN(o.date_created) as first_order_date,
-        MAX(o.date_created) as last_order_date,
+        COUNT(DISTINCT o.wp_order_id)::int as total_orders,
+        COALESCE(SUM(CASE WHEN o.post_status = 'wc-completed' THEN o.order_total ELSE 0 END), 0) as total_spent,
+        COALESCE(AVG(CASE WHEN o.post_status = 'wc-completed' THEN o.order_total ELSE NULL END), 0) as avg_order_value,
+        COALESCE(SUM(CASE WHEN o.post_status = 'wc-completed' THEN o.order_shipping ELSE 0 END), 0) as total_shipping_cost,
+        MIN(o.post_date) as first_order_date,
+        MAX(o.post_date) as last_order_date,
         COUNT(DISTINCT oi.product_id)::int as unique_products_bought
       FROM customers c
-      LEFT JOIN orders o ON o.customer_id = c.customer_id
-      LEFT JOIN order_items oi ON oi.order_id = o.order_id
-      WHERE c.customer_id = $1
+      LEFT JOIN orders o ON o.wp_customer_id = c.wp_user_id
+      LEFT JOIN order_items oi ON oi.wp_order_id = o.wp_order_id
+      WHERE c.wp_user_id = $1
     `;
 
-    const result = await pool.query(query, [customerId]);
+    const result = await pool.query(query, [wpUserId]);
     const stats = result.rows[0];
 
-    // Calcul du coût total des produits achetés (depuis order_items)
+    // Calcul du coût total des produits achetés
     const costQuery = `
-      SELECT COALESCE(SUM(oi.quantity * COALESCE(oi.cost_price, 0)), 0) as total_cost
+      SELECT COALESCE(SUM(oi.qty * COALESCE(oi.item_cost, 0)), 0) as total_cost
       FROM order_items oi
-      INNER JOIN orders o ON o.order_id = oi.order_id
-      WHERE o.customer_id = $1 AND o.status = 'completed'
+      INNER JOIN orders o ON o.wp_order_id = oi.wp_order_id
+      WHERE o.wp_customer_id = $1 AND o.post_status = 'wc-completed'
     `;
 
-    const costResult = await pool.query(costQuery, [customerId]);
+    const costResult = await pool.query(costQuery, [wpUserId]);
     stats.total_cost = parseFloat(costResult.rows[0]?.total_cost || 0);
 
-    // Calcul du délai moyen entre commandes (uniquement si 2+ commandes completed)
+    // Calcul du délai moyen entre commandes
     const avgDaysQuery = `
       WITH order_dates AS (
         SELECT
-          date_created,
-          LAG(date_created) OVER (ORDER BY date_created) as prev_order_date
+          post_date,
+          LAG(post_date) OVER (ORDER BY post_date) as prev_order_date
         FROM orders
-        WHERE customer_id = $1 AND status = 'completed'
-        ORDER BY date_created
+        WHERE wp_customer_id = $1 AND post_status = 'wc-completed'
+        ORDER BY post_date
       )
-      SELECT COALESCE(AVG(EXTRACT(EPOCH FROM (date_created - prev_order_date)) / 86400), 0) as avg_days
+      SELECT COALESCE(AVG(EXTRACT(EPOCH FROM (post_date - prev_order_date)) / 86400), 0) as avg_days
       FROM order_dates
       WHERE prev_order_date IS NOT NULL
     `;
 
-    const avgDaysResult = await pool.query(avgDaysQuery, [customerId]);
+    const avgDaysResult = await pool.query(avgDaysQuery, [wpUserId]);
     stats.avg_days_between_orders = parseFloat(avgDaysResult.rows[0]?.avg_days || 0);
 
     // Calcul profit et marge
@@ -180,48 +178,27 @@ class CustomerModel {
   }
 
   /**
-   * Récupère les coupons utilisés par un client
-   */
-  async getCoupons(customerId) {
-    const query = `
-      SELECT
-        oc.code,
-        COUNT(*) as usage_count,
-        SUM(oc.discount) as total_discount
-      FROM order_coupons oc
-      JOIN orders o ON o.order_id = oc.order_id
-      WHERE o.customer_id = $1
-      GROUP BY oc.code
-      ORDER BY usage_count DESC
-    `;
-    const result = await pool.query(query, [customerId]);
-    return result.rows;
-  }
-
-  /**
    * Crée un nouveau client
    */
   async create(customerData) {
     const query = `
       INSERT INTO customers (
-        customer_id, email, first_name, last_name, phone, username,
-        date_created, total_spent, order_count,
-        billing_address, shipping_address
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+        wp_user_id, email, first_name, last_name, user_registered,
+        session_start_time, session_pages, session_count, device_type, date_of_birth
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
       RETURNING *
     `;
     const values = [
-      customerData.customer_id,
+      customerData.wp_user_id,
       customerData.email,
       customerData.first_name || null,
       customerData.last_name || null,
-      customerData.phone || null,
-      customerData.username || null,
-      customerData.date_created || null,
-      customerData.total_spent || 0,
-      customerData.order_count || 0,
-      JSON.stringify(customerData.billing_address || {}),
-      JSON.stringify(customerData.shipping_address || {})
+      customerData.user_registered || null,
+      customerData.session_start_time || null,
+      customerData.session_pages || null,
+      customerData.session_count || null,
+      customerData.device_type || null,
+      customerData.date_of_birth || null
     ];
     const result = await pool.query(query, values);
     return result.rows[0];
@@ -230,34 +207,32 @@ class CustomerModel {
   /**
    * Met à jour un client
    */
-  async update(customerId, customerData) {
+  async update(wpUserId, customerData) {
     const query = `
       UPDATE customers
       SET
         email = $1,
         first_name = $2,
         last_name = $3,
-        phone = $4,
-        username = $5,
-        total_spent = $6,
-        order_count = $7,
-        billing_address = $8,
-        shipping_address = $9,
+        session_start_time = $4,
+        session_pages = $5,
+        session_count = $6,
+        device_type = $7,
+        date_of_birth = $8,
         updated_at = NOW()
-      WHERE customer_id = $10
+      WHERE wp_user_id = $9
       RETURNING *
     `;
     const values = [
       customerData.email,
       customerData.first_name || null,
       customerData.last_name || null,
-      customerData.phone || null,
-      customerData.username || null,
-      customerData.total_spent || 0,
-      customerData.order_count || 0,
-      JSON.stringify(customerData.billing_address || {}),
-      JSON.stringify(customerData.shipping_address || {}),
-      customerId
+      customerData.session_start_time || null,
+      customerData.session_pages || null,
+      customerData.session_count || null,
+      customerData.device_type || null,
+      customerData.date_of_birth || null,
+      wpUserId
     ];
     const result = await pool.query(query, values);
     return result.rows[0];
@@ -266,9 +241,9 @@ class CustomerModel {
   /**
    * Supprime un client
    */
-  async delete(customerId) {
-    const query = 'DELETE FROM customers WHERE customer_id = $1 RETURNING *';
-    const result = await pool.query(query, [customerId]);
+  async delete(wpUserId) {
+    const query = 'DELETE FROM customers WHERE wp_user_id = $1 RETURNING *';
+    const result = await pool.query(query, [wpUserId]);
     return result.rows[0];
   }
 }

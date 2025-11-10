@@ -350,7 +350,137 @@ class Bulk_Sync_Manager {
     }
 
     /**
-     * Process multiple batches manually (AJAX trigger)
+     * Process multiple batches manually - DATA ONLY (customers + products)
+     *
+     * @param int $num_batches Number of batches to process per type
+     * @param int $batch_size Size of each batch
+     * @return array Results with stats
+     */
+    public static function process_data_batches($num_batches = 10, $batch_size = 100) {
+        $queue_state = get_option('youvape_sync_v2_queue_state', []);
+        $status = isset($queue_state['status']) ? $queue_state['status'] : 'idle';
+
+        if ($status !== 'running') {
+            return [
+                'success' => false,
+                'error' => 'Sync is not running. Please start the sync first.'
+            ];
+        }
+
+        $types = ['customers', 'products']; // Only customers and products
+        $results = [];
+        $total_processed = 0;
+
+        Plugin::log("Manual DATA batch processing started: {$num_batches} batches × {$batch_size} items (customers + products only)");
+
+        foreach ($types as $type) {
+            $results[$type] = [
+                'batches_processed' => 0,
+                'items_processed' => 0,
+                'errors' => []
+            ];
+
+            for ($i = 0; $i < $num_batches; $i++) {
+                // Refresh queue state
+                $queue_state = get_option('youvape_sync_v2_queue_state', []);
+                $offset = isset($queue_state[$type . '_offset']) ? intval($queue_state[$type . '_offset']) : 0;
+                $total = isset($queue_state[$type . '_total']) ? intval($queue_state[$type . '_total']) : 0;
+
+                // Check if this type is completed
+                if ($total > 0 && $offset >= $total) {
+                    break;
+                }
+
+                // Process one batch with custom size
+                $batch_result = self::process_batch_with_custom_size($type, $batch_size);
+
+                if ($batch_result['success']) {
+                    $results[$type]['batches_processed']++;
+                    $results[$type]['items_processed'] += $batch_result['count'];
+                    $total_processed += $batch_result['count'];
+                } else {
+                    $results[$type]['errors'][] = $batch_result['error'] ?? 'Unknown error';
+                    break; // Stop processing this type on error
+                }
+            }
+        }
+
+        Plugin::log("Manual DATA batch processing completed: {$total_processed} items processed");
+
+        return [
+            'success' => true,
+            'total_processed' => $total_processed,
+            'results' => $results,
+            'queue_state' => get_option('youvape_sync_v2_queue_state', [])
+        ];
+    }
+
+    /**
+     * Process multiple batches manually - ORDERS ONLY
+     *
+     * @param int $num_batches Number of batches to process
+     * @param int $batch_size Size of each batch
+     * @return array Results with stats
+     */
+    public static function process_orders_batches($num_batches = 10, $batch_size = 100) {
+        $queue_state = get_option('youvape_sync_v2_queue_state', []);
+        $status = isset($queue_state['status']) ? $queue_state['status'] : 'idle';
+
+        if ($status !== 'running') {
+            return [
+                'success' => false,
+                'error' => 'Sync is not running. Please start the sync first.'
+            ];
+        }
+
+        $results = [
+            'orders' => [
+                'batches_processed' => 0,
+                'items_processed' => 0,
+                'errors' => []
+            ]
+        ];
+        $total_processed = 0;
+
+        Plugin::log("Manual ORDERS batch processing started: {$num_batches} batches × {$batch_size} items");
+
+        for ($i = 0; $i < $num_batches; $i++) {
+            // Refresh queue state
+            $queue_state = get_option('youvape_sync_v2_queue_state', []);
+            $offset = isset($queue_state['orders_offset']) ? intval($queue_state['orders_offset']) : 0;
+            $total = isset($queue_state['orders_total']) ? intval($queue_state['orders_total']) : 0;
+
+            // Check if completed
+            if ($total > 0 && $offset >= $total) {
+                break;
+            }
+
+            // Process one batch with custom size
+            $batch_result = self::process_batch_with_custom_size('orders', $batch_size);
+
+            if ($batch_result['success']) {
+                $results['orders']['batches_processed']++;
+                $results['orders']['items_processed'] += $batch_result['count'];
+                $total_processed += $batch_result['count'];
+            } else {
+                $results['orders']['errors'][] = $batch_result['error'] ?? 'Unknown error';
+                break; // Stop on error
+            }
+        }
+
+        Plugin::log("Manual ORDERS batch processing completed: {$total_processed} items processed");
+
+        return [
+            'success' => true,
+            'total_processed' => $total_processed,
+            'results' => $results,
+            'queue_state' => get_option('youvape_sync_v2_queue_state', [])
+        ];
+    }
+
+    /**
+     * Process multiple batches manually (AJAX trigger) - ALL TYPES
+     * DEPRECATED: Use process_data_batches() or process_orders_batches() instead
      *
      * @param int $num_batches Number of batches to process per type
      * @param int $batch_size Size of each batch
