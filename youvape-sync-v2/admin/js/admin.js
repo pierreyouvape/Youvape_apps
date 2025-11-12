@@ -186,6 +186,20 @@
             // Update last run
             $('#youvape-last-run').text(queueState.last_run || 'Never');
 
+            // Update Sync Status counters and progress bars
+            const types = ['customers', 'products', 'orders'];
+            types.forEach(function(type) {
+                const synced = queueState[type + '_synced'] || 0;
+                const total = queueState[type + '_total'] || 0;
+                const percent = total > 0 ? Math.round((synced / total) * 100) : 0;
+
+                // Update synced count
+                $('.youvape-synced-count[data-type="' + type + '"]').text(synced.toLocaleString());
+
+                // Update progress bar
+                $('.youvape-progress-fill[data-type="' + type + '"]').css('width', percent + '%');
+            });
+
             // Update bulk sync UI
             if (queueState && Object.keys(queueState).length > 0) {
                 this.updateBulkUI(queueState);

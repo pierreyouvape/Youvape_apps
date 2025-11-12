@@ -109,7 +109,9 @@ class Bulk_Sync_Manager {
                 $meta[$m->meta_key] = $m->meta_value;
             }
 
-            $product_type = isset($meta['_product_type']) ? $meta['_product_type'] : 'simple';
+            // Get product type from taxonomy (not meta!)
+            $terms = wp_get_object_terms($product->ID, 'product_type', ['fields' => 'names']);
+            $product_type = (!empty($terms) && !is_wp_error($terms)) ? $terms[0] : 'simple';
 
             // If variable, fetch variations
             $variations = [];

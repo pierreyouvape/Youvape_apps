@@ -20,13 +20,21 @@ function transformCustomer(rawData) {
     return meta && meta[key] !== undefined ? meta[key] : defaultValue;
   };
 
+  // Helper to validate timestamp (empty string = null)
+  const validateTimestamp = (value) => {
+    if (!value || value === '' || value === '0000-00-00 00:00:00') {
+      return null;
+    }
+    return value;
+  };
+
   return {
     wp_user_id: parseInt(user.ID),
     email: user.user_email,
-    user_registered: user.user_registered || null,
+    user_registered: validateTimestamp(user.user_registered),
     first_name: getMeta('first_name'),
     last_name: getMeta('last_name'),
-    session_start_time: getMeta('_wc_order_attribution_session_start_time'),
+    session_start_time: validateTimestamp(getMeta('_wc_order_attribution_session_start_time')),
     session_pages: getMeta('_wc_order_attribution_session_pages')
       ? parseInt(getMeta('_wc_order_attribution_session_pages'))
       : null,
@@ -34,7 +42,7 @@ function transformCustomer(rawData) {
       ? parseInt(getMeta('_wc_order_attribution_session_count'))
       : null,
     device_type: getMeta('_wc_order_attribution_device_type'),
-    date_of_birth: getMeta('wlr_dob') || null
+    date_of_birth: validateTimestamp(getMeta('wlr_dob'))
   };
 }
 

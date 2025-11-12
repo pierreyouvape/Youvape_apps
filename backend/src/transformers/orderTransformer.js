@@ -20,15 +20,23 @@ function transformOrder(rawData) {
     return meta && meta[key] !== undefined ? meta[key] : defaultValue;
   };
 
+  // Helper to validate timestamp (empty string = null)
+  const validateTimestamp = (value) => {
+    if (!value || value === '' || value === '0000-00-00 00:00:00') {
+      return null;
+    }
+    return value;
+  };
+
   return {
     wp_order_id: parseInt(post.ID),
     wp_customer_id: getMeta('_customer_user') && parseInt(getMeta('_customer_user')) > 0
       ? parseInt(getMeta('_customer_user'))
       : null,
     guid: post.guid,
-    post_date: post.post_date,
+    post_date: validateTimestamp(post.post_date),
     post_status: post.post_status,
-    post_modified: post.post_modified,
+    post_modified: validateTimestamp(post.post_modified),
     payment_method_title: getMeta('_payment_method_title'),
     created_via: getMeta('_created_via'),
     billing_first_name: getMeta('_billing_first_name'),
@@ -65,7 +73,7 @@ function transformOrder(rawData) {
     attribution_utm_source: getMeta('_wc_order_attribution_utm_source'),
     attribution_utm_medium: getMeta('_wc_order_attribution_utm_medium'),
     attribution_session_entry: getMeta('_wc_order_attribution_session_entry'),
-    attribution_session_start_time: getMeta('_wc_order_attribution_session_start_time'),
+    attribution_session_start_time: validateTimestamp(getMeta('_wc_order_attribution_session_start_time')),
     attribution_session_pages: (() => {
       const val = parseInt(getMeta('_wc_order_attribution_session_pages'));
       return !isNaN(val) ? val : null;
@@ -88,7 +96,7 @@ function transformOrder(rawData) {
       const val = parseInt(getMeta('_date_paid'));
       return !isNaN(val) ? val : null;
     })(),
-    paid_date: getMeta('_paid_date'),
+    paid_date: validateTimestamp(getMeta('_paid_date')),
     mollie_payment_instructions: getMeta('_mollie_payment_instructions'),
     mollie_paid_and_processed: getMeta('_mollie_paid_and_processed') === '1'
   };
@@ -128,9 +136,18 @@ function transformOrderItems(items, wpOrderId) {
       order_item_id: parseInt(item.order_item_id),
       order_item_name: item.order_item_name,
       order_item_type: item.order_item_type,
-      product_id: getMeta('_product_id') ? parseInt(getMeta('_product_id')) : null,
-      variation_id: getMeta('_variation_id') ? parseInt(getMeta('_variation_id')) : null,
-      qty: getMeta('_qty') ? parseInt(getMeta('_qty')) : null,
+      product_id: (() => {
+        const val = parseInt(getMeta('_product_id'));
+        return !isNaN(val) ? val : null;
+      })(),
+      variation_id: (() => {
+        const val = parseInt(getMeta('_variation_id'));
+        return !isNaN(val) ? val : null;
+      })(),
+      qty: (() => {
+        const val = parseInt(getMeta('_qty'));
+        return !isNaN(val) ? val : null;
+      })(),
       tax_class: getMeta('_tax_class'),
       line_subtotal: getMeta('_line_subtotal') ? parseFloat(getMeta('_line_subtotal')) : null,
       line_subtotal_tax: getMeta('_line_subtotal_tax') ? parseFloat(getMeta('_line_subtotal_tax')) : null,

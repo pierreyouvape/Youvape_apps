@@ -21,13 +21,21 @@ function transformProduct(rawData) {
     return meta && meta[key] !== undefined ? meta[key] : defaultValue;
   };
 
+  // Helper to validate timestamp (empty string = null)
+  const validateTimestamp = (value) => {
+    if (!value || value === '' || value === '0000-00-00 00:00:00') {
+      return null;
+    }
+    return value;
+  };
+
   // Base product fields (common to all types)
   const baseProduct = {
     wp_product_id: parseInt(post.ID),
     product_type: product_type || 'simple', // 'simple', 'variable', 'variation'
     wp_parent_id: post.post_parent ? parseInt(post.post_parent) : null,
     post_author: post.post_author ? parseInt(post.post_author) : null,
-    post_date: post.post_date || null,
+    post_date: validateTimestamp(post.post_date),
     post_title: post.post_title || null,
     post_status: post.post_status || null,
     guid: post.guid || null,
@@ -83,6 +91,14 @@ function transformVariation(rawVariation, parentWpId) {
     return meta && meta[key] !== undefined ? meta[key] : defaultValue;
   };
 
+  // Helper to validate timestamp (empty string = null)
+  const validateTimestamp = (value) => {
+    if (!value || value === '' || value === '0000-00-00 00:00:00') {
+      return null;
+    }
+    return value;
+  };
+
   // Extract all attribute_pa_* fields for product_attributes JSONB
   const productAttributes = {};
   if (meta) {
@@ -97,11 +113,11 @@ function transformVariation(rawVariation, parentWpId) {
     wp_product_id: parseInt(post.ID),
     product_type: 'variation',
     wp_parent_id: parentWpId,
-    post_date: post.post_date || null,
+    post_date: validateTimestamp(post.post_date),
     post_title: post.post_title || null,
     post_excerpt: post.post_excerpt || null,
     post_status: post.post_status || null,
-    post_modified: post.post_modified || null,
+    post_modified: validateTimestamp(post.post_modified),
     guid: post.guid || null,
     variation_description: getMeta('_variation_description'),
     total_sales: getMeta('total_sales') ? parseInt(getMeta('total_sales')) : 0,
