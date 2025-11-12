@@ -974,6 +974,9 @@ const receiveBulk = async (req, res) => {
       } else if (type === 'products') {
         for (const item of batch) {
           try {
+            // DIAGNOSTIC: Log variations received from WordPress
+            const variationsReceived = (item.variations || []).length;
+
             const result = await insertProductWithVariations(pool, {
               product_type: item.product_type,
               post: item.post,
@@ -987,7 +990,8 @@ const receiveBulk = async (req, res) => {
               updated++;
             }
 
-            console.log(`  ✓ Product ${result.parent.wp_product_id} ${result.parent.inserted ? 'inserted' : 'updated'} with ${result.total_variations} variation(s)`);
+            // Enhanced log showing variations received vs inserted
+            console.log(`  ✓ Product ${result.parent.wp_product_id} ${result.parent.inserted ? 'inserted' : 'updated'} - Type: ${item.product_type}, Received: ${variationsReceived} variation(s), Inserted: ${result.total_variations} variation(s)`);
           } catch (error) {
             console.error(`  ✗ Product ${item.wp_id} error: ${error.message}`);
             errors.push({ item_id: item.wp_id, error: error.message });

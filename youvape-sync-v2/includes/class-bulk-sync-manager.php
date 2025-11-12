@@ -140,6 +140,12 @@ class Bulk_Sync_Manager {
                 }
             }
 
+            // DIAGNOSTIC LOG for variations
+            $var_count = count($variations);
+            if ($product_type === 'variable') {
+                Plugin::log("Product {$product->ID} ({$product_type}): {$var_count} variation(s) fetched", 'info');
+            }
+
             $batch[] = [
                 'type' => 'product',
                 'wp_id' => $product->ID,
@@ -357,6 +363,7 @@ class Bulk_Sync_Manager {
      * @return array Results with stats
      */
     public static function process_data_batches($num_batches = 10, $batch_size = 100) {
+        global $wpdb;
         $queue_state = get_option('youvape_sync_v2_queue_state', []);
         $status = isset($queue_state['status']) ? $queue_state['status'] : 'idle';
 
@@ -365,6 +372,13 @@ class Bulk_Sync_Manager {
                 'success' => false,
                 'error' => 'Sync is not running. Please start the sync first.'
             ];
+        }
+
+        // Ensure totals are calculated if missing (needed for progress bars)
+        if (!isset($queue_state['customers_total']) || !isset($queue_state['products_total'])) {
+            $queue_state['customers_total'] = intval($wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->users}"));
+            $queue_state['products_total'] = intval($wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->posts} WHERE post_type = 'product' AND post_status IN ('publish', 'draft', 'private')"));
+            update_option('youvape_sync_v2_queue_state', $queue_state);
         }
 
         $types = ['customers', 'products']; // Only customers and products
@@ -423,6 +437,7 @@ class Bulk_Sync_Manager {
      * @return array Results with stats
      */
     public static function process_orders_batches($num_batches = 10, $batch_size = 100) {
+        global $wpdb;
         $queue_state = get_option('youvape_sync_v2_queue_state', []);
         $status = isset($queue_state['status']) ? $queue_state['status'] : 'idle';
 
@@ -431,6 +446,12 @@ class Bulk_Sync_Manager {
                 'success' => false,
                 'error' => 'Sync is not running. Please start the sync first.'
             ];
+        }
+
+        // Ensure totals are calculated if missing (needed for progress bars)
+        if (!isset($queue_state['orders_total'])) {
+            $queue_state['orders_total'] = intval($wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->posts} WHERE post_type = 'shop_order'"));
+            update_option('youvape_sync_v2_queue_state', $queue_state);
         }
 
         $results = [
