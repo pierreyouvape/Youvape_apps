@@ -57,7 +57,7 @@ const StatsApp = () => {
     setLoading(true);
     try {
       const [ordersRes, statsRes] = await Promise.all([
-        axios.get(`${API_URL}/orders`, { params: { limit: 100000 } }),
+        axios.get(`${API_URL}/orders`, { params: { limit: 100 } }),
         axios.get(`${API_URL}/orders/stats/by-status`)
       ]);
       if (ordersRes.data.success) setOrders(ordersRes.data.data);
@@ -73,7 +73,7 @@ const StatsApp = () => {
     setLoading(true);
     try {
       const [productsRes, stockRes] = await Promise.all([
-        axios.get(`${API_URL}/products`, { params: { limit: 100000 } }),
+        axios.get(`${API_URL}/products`, { params: { limit: 100 } }),
         axios.get(`${API_URL}/products/stock-summary`)
       ]);
       if (productsRes.data.success) setProducts(productsRes.data.data);
@@ -88,7 +88,7 @@ const StatsApp = () => {
   const fetchCustomers = async () => {
     setLoading(true);
     try {
-      const res = await axios.get(`${API_URL}/customers`, { params: { limit: 100000 } });
+      const res = await axios.get(`${API_URL}/customers`, { params: { limit: 100 } });
       if (res.data.success) setCustomers(res.data.data);
     } catch (err) {
       console.error('Error fetching customers:', err);
@@ -280,7 +280,7 @@ const StatsApp = () => {
                   </thead>
                   <tbody>
                     {filteredOrders.map(order => (
-                      <tr key={order.order_id} style={{ borderBottom: '1px solid #f0f0f0' }}>
+                      <tr key={order.wp_order_id} style={{ borderBottom: '1px solid #f0f0f0' }}>
                         <td style={{ padding: '15px' }}>
                           <div style={{ fontWeight: '600' }}>#{order.order_number}</div>
                           <div style={{ fontSize: '12px', color: '#999' }}>{order.items_count} article(s)</div>
@@ -289,11 +289,11 @@ const StatsApp = () => {
                           <div style={{ fontWeight: '600' }}>{order.first_name} {order.last_name}</div>
                           <div style={{ fontSize: '12px', color: '#999' }}>{order.email}</div>
                         </td>
-                        <td style={{ textAlign: 'center', padding: '15px' }}>{getStatusBadge(order.status)}</td>
-                        <td style={{ textAlign: 'right', padding: '15px', fontWeight: '600', color: '#28a745' }}>{formatCurrency(order.total)}</td>
-                        <td style={{ textAlign: 'center', padding: '15px', fontSize: '13px', color: '#666' }}>{formatDate(order.date_created)}</td>
+                        <td style={{ textAlign: 'center', padding: '15px' }}>{getStatusBadge(order.post_status)}</td>
+                        <td style={{ textAlign: 'right', padding: '15px', fontWeight: '600', color: '#28a745' }}>{formatCurrency(order.order_total)}</td>
+                        <td style={{ textAlign: 'center', padding: '15px', fontSize: '13px', color: '#666' }}>{formatDate(order.post_date)}</td>
                         <td style={{ textAlign: 'center', padding: '15px' }}>
-                          <button onClick={() => navigate(`/orders/${order.order_id}`)} style={{ padding: '6px 12px', backgroundColor: '#135E84', color: 'white', border: 'none', borderRadius: '4px', fontSize: '12px', cursor: 'pointer', fontWeight: '600' }}>Détails</button>
+                          <button onClick={() => navigate(`/orders/${order.wp_order_id}`)} style={{ padding: '6px 12px', backgroundColor: '#135E84', color: 'white', border: 'none', borderRadius: '4px', fontSize: '12px', cursor: 'pointer', fontWeight: '600' }}>Détails</button>
                         </td>
                       </tr>
                     ))}
@@ -346,7 +346,7 @@ const StatsApp = () => {
                     {filteredProducts.map(product => {
                       const margin = parseFloat(product.unit_margin) || 0;
                       return (
-                        <tr key={product.product_id} style={{ borderBottom: '1px solid #f0f0f0' }}>
+                        <tr key={product.wp_product_id} style={{ borderBottom: '1px solid #f0f0f0' }}>
                           <td style={{ padding: '15px' }}>
                             <div style={{ fontWeight: '600' }}>{product.post_title}</div>
                             <div style={{ fontSize: '12px', color: '#999' }}>SKU: {product.sku || '-'}</div>
@@ -356,7 +356,7 @@ const StatsApp = () => {
                           <td style={{ textAlign: 'center', padding: '15px', fontWeight: '600' }}>{product.stock !== null ? formatNumber(product.stock) : '-'}</td>
                           <td style={{ textAlign: 'right', padding: '15px', fontWeight: '600', color: '#135E84' }}>{formatCurrency(product.total_revenue || 0)}</td>
                           <td style={{ textAlign: 'center', padding: '15px' }}>
-                            <button onClick={() => navigate(`/products/${product.product_id}`)} style={{ padding: '6px 12px', backgroundColor: '#135E84', color: 'white', border: 'none', borderRadius: '4px', fontSize: '12px', cursor: 'pointer', fontWeight: '600' }}>Détails</button>
+                            <button onClick={() => navigate(`/products/${product.wp_product_id}`)} style={{ padding: '6px 12px', backgroundColor: '#135E84', color: 'white', border: 'none', borderRadius: '4px', fontSize: '12px', cursor: 'pointer', fontWeight: '600' }}>Détails</button>
                           </td>
                         </tr>
                       );
@@ -395,13 +395,13 @@ const StatsApp = () => {
                   </thead>
                   <tbody>
                     {filteredCustomers.map(customer => (
-                      <tr key={customer.customer_id} style={{ borderBottom: '1px solid #f0f0f0' }}>
+                      <tr key={customer.wp_user_id} style={{ borderBottom: '1px solid #f0f0f0' }}>
                         <td style={{ padding: '15px', fontWeight: '600' }}>{customer.first_name} {customer.last_name}</td>
                         <td style={{ padding: '15px', color: '#666' }}>{customer.email}</td>
                         <td style={{ textAlign: 'center', padding: '15px', fontWeight: '600', color: '#135E84' }}>{formatNumber(customer.actual_order_count || customer.orders_count || 0)}</td>
                         <td style={{ textAlign: 'right', padding: '15px', fontWeight: '600', color: '#28a745' }}>{formatCurrency(customer.actual_total_spent || customer.total_spent || 0)}</td>
                         <td style={{ textAlign: 'center', padding: '15px' }}>
-                          <button onClick={() => navigate(`/customers/${customer.customer_id}`)} style={{ padding: '6px 12px', backgroundColor: '#135E84', color: 'white', border: 'none', borderRadius: '4px', fontSize: '12px', cursor: 'pointer', fontWeight: '600' }}>Détails</button>
+                          <button onClick={() => navigate(`/customers/${customer.wp_user_id}`)} style={{ padding: '6px 12px', backgroundColor: '#135E84', color: 'white', border: 'none', borderRadius: '4px', fontSize: '12px', cursor: 'pointer', fontWeight: '600' }}>Détails</button>
                         </td>
                       </tr>
                     ))}

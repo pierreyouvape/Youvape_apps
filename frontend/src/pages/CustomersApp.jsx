@@ -17,11 +17,23 @@ const CustomersApp = () => {
     fetchCustomers();
   }, []);
 
+  useEffect(() => {
+    const delaySearch = setTimeout(() => {
+      if (filters.search) {
+        searchCustomers();
+      } else {
+        fetchCustomers();
+      }
+    }, 500); // Debounce de 500ms
+
+    return () => clearTimeout(delaySearch);
+  }, [filters.search]);
+
   const fetchCustomers = async () => {
     setLoading(true);
     try {
       const response = await axios.get(`${API_URL}/customers`, {
-        params: { limit: 100000 }
+        params: { limit: 100 }
       });
 
       if (response.data.success) {
@@ -34,12 +46,24 @@ const CustomersApp = () => {
     }
   };
 
-  const filteredCustomers = customers.filter(customer => {
-    if (filters.search && !customer.first_name?.toLowerCase().includes(filters.search.toLowerCase())
-        && !customer.last_name?.toLowerCase().includes(filters.search.toLowerCase())
-        && !customer.email?.toLowerCase().includes(filters.search.toLowerCase())) {
-      return false;
+  const searchCustomers = async () => {
+    setLoading(true);
+    try {
+      const response = await axios.get(`${API_URL}/customers/search`, {
+        params: { q: filters.search, limit: 100 }
+      });
+
+      if (response.data.success) {
+        setCustomers(response.data.data);
+      }
+    } catch (err) {
+      console.error('Error searching customers:', err);
+    } finally {
+      setLoading(false);
     }
+  };
+
+  const filteredCustomers = customers.filter(customer => {
     if (filters.country && customer.shipping_country !== filters.country) return false;
     return true;
   });
@@ -227,7 +251,7 @@ const CustomersApp = () => {
                     </td>
                     <td style={{ textAlign: 'center', padding: '15px' }}>
                       <button
-                        onClick={() => navigate(`/customers/${customer.customer_id}`)}
+                        onClick={() => navigate(`/customers/${customer.wp_user_id}`)}
                         style={{
                           padding: '6px 12px',
                           backgroundColor: '#135E84',

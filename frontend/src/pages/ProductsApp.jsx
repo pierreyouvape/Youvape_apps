@@ -19,16 +19,25 @@ const ProductsApp = () => {
     fetchData();
   }, []);
 
+  useEffect(() => {
+    const delaySearch = setTimeout(() => {
+      if (filters.search) {
+        searchProducts();
+      } else {
+        fetchProducts();
+      }
+    }, 500);
+
+    return () => clearTimeout(delaySearch);
+  }, [filters.search]);
+
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [productsRes, stockRes] = await Promise.all([
-        axios.get(`${API_URL}/products`, { params: { limit: 100000 } }),
-        axios.get(`${API_URL}/products/stock-summary`)
-      ]);
-
-      if (productsRes.data.success) setProducts(productsRes.data.data);
+      const stockRes = await axios.get(`${API_URL}/products/stock-summary`);
       if (stockRes.data.success) setStockSummary(stockRes.data.data);
+
+      await fetchProducts();
     } catch (err) {
       console.error('Error fetching data:', err);
     } finally {
@@ -36,11 +45,33 @@ const ProductsApp = () => {
     }
   };
 
-  const filteredProducts = products.filter(product => {
-    if (filters.search && !product.post_title?.toLowerCase().includes(filters.search.toLowerCase())
-        && !product.sku?.toLowerCase().includes(filters.search.toLowerCase())) {
-      return false;
+  const fetchProducts = async () => {
+    try {
+      const productsRes = await axios.get(`${API_URL}/products`, { params: { limit: 100 } });
+      if (productsRes.data.success) setProducts(productsRes.data.data);
+    } catch (err) {
+      console.error('Error fetching products:', err);
     }
+  };
+
+  const searchProducts = async () => {
+    setLoading(true);
+    try {
+      const response = await axios.get(`${API_URL}/products/search`, {
+        params: { q: filters.search, limit: 100 }
+      });
+
+      if (response.data.success) {
+        setProducts(response.data.data);
+      }
+    } catch (err) {
+      console.error('Error searching products:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const filteredProducts = products.filter(product => {
     if (filters.category && product.category !== filters.category) return false;
     if (filters.stockStatus === 'instock' && (product.stock_status !== 'instock' || product.stock <= 0)) return false;
     if (filters.stockStatus === 'outofstock' && product.stock_status !== 'outofstock' && product.stock > 0) return false;
@@ -309,7 +340,7 @@ const ProductsApp = () => {
                       </td>
                       <td style={{ textAlign: 'center', padding: '15px' }}>
                         <button
-                          onClick={() => navigate(`/products/${product.product_id}`)}
+                          onClick={() => navigate(`/products/${product.wp_product_id}`)}
                           style={{
                             padding: '6px 12px',
                             backgroundColor: '#135E84',

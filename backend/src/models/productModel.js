@@ -90,7 +90,7 @@ class ProductModel {
         oi.item_cost as cost_price
       FROM order_items oi
       JOIN orders o ON o.wp_order_id = oi.wp_order_id
-      WHERE oi.product_id = $1
+      WHERE oi.wp_product_id = $1
       ORDER BY o.post_date DESC
       LIMIT $2
     `;
@@ -111,7 +111,7 @@ class ProductModel {
         MIN(o.post_date) as first_sale_date,
         MAX(o.post_date) as last_sale_date
       FROM products p
-      LEFT JOIN order_items oi ON oi.product_id = p.wp_product_id
+      LEFT JOIN order_items oi ON oi.wp_product_id = p.wp_product_id
       LEFT JOIN orders o ON o.wp_order_id = oi.wp_order_id AND o.post_status = 'wc-completed'
       WHERE p.wp_product_id = $1
     `;
@@ -124,7 +124,7 @@ class ProductModel {
       SELECT COALESCE(SUM(oi.qty * COALESCE(oi.item_cost, 0)), 0) as total_cost
       FROM order_items oi
       INNER JOIN orders o ON o.wp_order_id = oi.wp_order_id
-      WHERE oi.product_id = $1 AND o.post_status = 'wc-completed'
+      WHERE oi.wp_product_id = $1 AND o.post_status = 'wc-completed'
     `;
 
     const costResult = await pool.query(costQuery, [wpProductId]);
@@ -156,7 +156,7 @@ class ProductModel {
       FROM order_items oi
       JOIN orders o ON o.wp_order_id = oi.wp_order_id
       JOIN customers c ON c.wp_user_id = o.wp_customer_id
-      WHERE oi.product_id = $1 AND o.post_status = 'wc-completed'
+      WHERE oi.wp_product_id = $1 AND o.post_status = 'wc-completed'
       GROUP BY c.wp_user_id, c.email, c.first_name, c.last_name
       ORDER BY total_quantity DESC
       LIMIT $2
@@ -173,8 +173,8 @@ class ProductModel {
       SELECT
         p.*,
         p.wc_cog_cost as cost_price,
-        (SELECT COALESCE(SUM(qty), 0) FROM order_items WHERE product_id = p.wp_product_id) as total_quantity_sold,
-        (SELECT COALESCE(SUM(line_total), 0) FROM order_items WHERE product_id = p.wp_product_id) as total_revenue
+        (SELECT COALESCE(SUM(qty), 0) FROM order_items WHERE wp_product_id = p.wp_product_id) as total_quantity_sold,
+        (SELECT COALESCE(SUM(line_total), 0) FROM order_items WHERE wp_product_id = p.wp_product_id) as total_revenue
       FROM products p
       WHERE p.wp_parent_id = $1 AND p.product_type = 'variation'
       ORDER BY p.post_title ASC
@@ -295,8 +295,8 @@ class ProductModel {
         p.*,
         p.wc_cog_cost as cost_price,
         (p.price - COALESCE(p.wc_cog_cost, 0)) as unit_margin,
-        (SELECT COALESCE(SUM(qty), 0) FROM order_items WHERE product_id = p.wp_product_id) as total_quantity_sold,
-        (SELECT COALESCE(SUM(line_total), 0) FROM order_items WHERE product_id = p.wp_product_id) as total_revenue
+        (SELECT COALESCE(SUM(qty), 0) FROM order_items WHERE wp_product_id = p.wp_product_id) as total_quantity_sold,
+        (SELECT COALESCE(SUM(line_total), 0) FROM order_items WHERE wp_product_id = p.wp_product_id) as total_revenue
       FROM products p
       WHERE p.wp_product_id = $1 OR p.wp_parent_id = $1
       ORDER BY p.product_type DESC, p.post_title ASC
@@ -322,7 +322,7 @@ class ProductModel {
         COALESCE(SUM(oi.line_total), 0) as total_revenue,
         COALESCE(SUM(oi.qty * oi.item_cost), 0) as total_cost
       FROM products p
-      LEFT JOIN order_items oi ON oi.product_id = p.wp_product_id
+      LEFT JOIN order_items oi ON oi.wp_product_id = p.wp_product_id
       WHERE p.wp_parent_id = $1 AND p.product_type = 'variation'
       GROUP BY p.wp_product_id, p.post_title, p.product_attributes, p.stock, p.stock_status, p.price, p.wc_cog_cost
       ORDER BY total_sold DESC

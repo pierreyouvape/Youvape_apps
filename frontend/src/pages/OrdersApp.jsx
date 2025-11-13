@@ -20,16 +20,25 @@ const OrdersApp = () => {
     fetchData();
   }, []);
 
+  useEffect(() => {
+    const delaySearch = setTimeout(() => {
+      if (filters.search) {
+        searchOrders();
+      } else {
+        fetchOrders();
+      }
+    }, 500);
+
+    return () => clearTimeout(delaySearch);
+  }, [filters.search]);
+
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [ordersRes, statsRes] = await Promise.all([
-        axios.get(`${API_URL}/orders`, { params: { limit: 100000 } }),
-        axios.get(`${API_URL}/orders/stats/by-status`)
-      ]);
-
-      if (ordersRes.data.success) setOrders(ordersRes.data.data);
+      const statsRes = await axios.get(`${API_URL}/orders/stats/by-status`);
       if (statsRes.data.success) setStatusStats(statsRes.data.data);
+
+      await fetchOrders();
     } catch (err) {
       console.error('Error fetching data:', err);
     } finally {
@@ -37,12 +46,34 @@ const OrdersApp = () => {
     }
   };
 
-  const filteredOrders = orders.filter(order => {
-    if (filters.search && !order.order_number?.toLowerCase().includes(filters.search.toLowerCase())
-        && !order.email?.toLowerCase().includes(filters.search.toLowerCase())) {
-      return false;
+  const fetchOrders = async () => {
+    try {
+      const ordersRes = await axios.get(`${API_URL}/orders`, { params: { limit: 100 } });
+      if (ordersRes.data.success) setOrders(ordersRes.data.data);
+    } catch (err) {
+      console.error('Error fetching orders:', err);
     }
-    if (filters.status && order.status !== filters.status) return false;
+  };
+
+  const searchOrders = async () => {
+    setLoading(true);
+    try {
+      const response = await axios.get(`${API_URL}/orders/search`, {
+        params: { q: filters.search, limit: 100 }
+      });
+
+      if (response.data.success) {
+        setOrders(response.data.data);
+      }
+    } catch (err) {
+      console.error('Error searching orders:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const filteredOrders = orders.filter(order => {
+    if (filters.status && order.post_status !== filters.status) return false;
     if (filters.country && order.shipping_country !== filters.country) return false;
     if (filters.paymentMethod && order.payment_method !== filters.paymentMethod) return false;
     return true;
@@ -319,7 +350,7 @@ const OrdersApp = () => {
                     </td>
                     <td style={{ textAlign: 'center', padding: '15px' }}>
                       <button
-                        onClick={() => navigate(`/orders/${order.order_id}`)}
+                        onClick={() => navigate(`/orders/${order.wp_order_id}`)}
                         style={{
                           padding: '6px 12px',
                           backgroundColor: '#135E84',

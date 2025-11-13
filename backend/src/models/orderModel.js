@@ -64,7 +64,7 @@ class OrderModel {
           oi.*,
           p.post_title as product_name
         FROM order_items oi
-        LEFT JOIN products p ON p.wp_product_id = oi.product_id
+        LEFT JOIN products p ON p.wp_product_id = oi.wp_product_id
         WHERE oi.wp_order_id = $1
         ORDER BY oi.id
       `;
@@ -251,7 +251,7 @@ class OrderModel {
         oi.*,
         p.post_title as product_name
       FROM order_items oi
-      LEFT JOIN products p ON p.wp_product_id = oi.product_id
+      LEFT JOIN products p ON p.wp_product_id = oi.wp_product_id
       WHERE oi.wp_order_id = $1
       ORDER BY oi.id
     `;

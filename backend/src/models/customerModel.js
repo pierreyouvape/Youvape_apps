@@ -104,7 +104,7 @@ class CustomerModel {
         SUM(oi.line_total) as total_spent,
         COUNT(DISTINCT oi.wp_order_id) as order_count
       FROM products p
-      JOIN order_items oi ON oi.product_id = p.wp_product_id
+      JOIN order_items oi ON oi.wp_product_id = p.wp_product_id
       JOIN orders o ON o.wp_order_id = oi.wp_order_id
       WHERE o.wp_customer_id = $1 AND o.post_status = 'wc-completed'
       GROUP BY p.wp_product_id, p.post_title, p.sku, p.regular_price
@@ -127,7 +127,7 @@ class CustomerModel {
         COALESCE(SUM(CASE WHEN o.post_status = 'wc-completed' THEN o.order_shipping ELSE 0 END), 0) as total_shipping_cost,
         MIN(o.post_date) as first_order_date,
         MAX(o.post_date) as last_order_date,
-        COUNT(DISTINCT oi.product_id)::int as unique_products_bought
+        COUNT(DISTINCT oi.wp_product_id)::int as unique_products_bought
       FROM customers c
       LEFT JOIN orders o ON o.wp_customer_id = c.wp_user_id
       LEFT JOIN order_items oi ON oi.wp_order_id = o.wp_order_id

@@ -7,7 +7,7 @@ class ProductStatsService {
    */
   async getProductFamily(productId) {
     // Récupérer le produit demandé
-    const productQuery = `SELECT * FROM products WHERE product_id = $1`;
+    const productQuery = `SELECT * FROM products WHERE wp_product_id = $1`;
     const productResult = await pool.query(productQuery, [productId]);
 
     if (productResult.rows.length === 0) {
@@ -20,7 +20,7 @@ class ProductStatsService {
 
     // Si le produit est une variation, récupérer le parent
     if (product.parent_id) {
-      const parentQuery = `SELECT * FROM products WHERE product_id = $1`;
+      const parentQuery = `SELECT * FROM products WHERE wp_product_id = $1`;
       const parentResult = await pool.query(parentQuery, [product.parent_id]);
       if (parentResult.rows.length > 0) {
         parent = parentResult.rows[0];
@@ -32,7 +32,7 @@ class ProductStatsService {
     const variantsQuery = `
       SELECT * FROM products
       WHERE parent_id = $1
-      ORDER BY product_id ASC
+      ORDER BY wp_product_id ASC
     `;
     const variantsResult = await pool.query(variantsQuery, [parentId]);
     const variants = variantsResult.rows;
@@ -49,19 +49,19 @@ class ProductStatsService {
   async getProductKPIs(productId, includeVariants = true) {
     const family = await this.getProductFamily(productId);
     const productIds = includeVariants
-      ? family.allProducts.map(p => p.product_id)
+      ? family.allProducts.map(p => p.wp_product_id)
       : [productId];
 
     const query = `
       SELECT
-        SUM(oi.quantity)::int as net_sold,
-        COALESCE(SUM(oi.total), 0) as net_revenue,
-        COUNT(DISTINCT oi.order_id)::int as net_orders,
-        COALESCE(SUM(oi.quantity * COALESCE(oi.cost_price, 0)), 0) as total_cost,
-        COALESCE(AVG(oi.quantity), 0) as avg_quantity_per_order
+        SUM(oi.qty)::int as net_sold,
+        COALESCE(SUM(oi.line_total), 0) as net_revenue,
+        COUNT(DISTINCT oi.wp_order_id)::int as net_orders,
+        COALESCE(SUM(oi.qty * COALESCE(oi.item_cost, 0)), 0) as total_cost,
+        COALESCE(AVG(oi.qty), 0) as avg_quantity_per_order
       FROM order_items oi
-      INNER JOIN orders o ON o.order_id = oi.order_id
-      WHERE oi.product_id = ANY($1) AND o.status = 'completed'
+      INNER JOIN orders o ON o.wp_order_id = oi.wp_order_id
+      WHERE oi.wp_product_id = ANY($1) AND o.post_status = 'wc-completed'
     `;
 
     const result = await pool.query(query, [productIds]);
@@ -83,20 +83,20 @@ class ProductStatsService {
   async getVariantStats(productId) {
     const query = `
       SELECT
-        p.product_id,
-        p.name,
+        p.wp_product_id,
+        p.post_title,
         p.sku,
         p.price,
-        p.stock_quantity,
+        p.stock,
         p.stock_status,
-        SUM(oi.quantity)::int as net_sold,
-        COALESCE(SUM(oi.total), 0) as net_revenue,
-        COUNT(DISTINCT oi.order_id)::int as net_orders
+        SUM(oi.qty)::int as net_sold,
+        COALESCE(SUM(oi.line_total), 0) as net_revenue,
+        COUNT(DISTINCT oi.wp_order_id)::int as net_orders
       FROM products p
-      LEFT JOIN order_items oi ON oi.product_id = p.product_id
-      LEFT JOIN orders o ON o.order_id = oi.order_id AND o.status = 'completed'
-      WHERE p.product_id = $1
-      GROUP BY p.product_id
+      LEFT JOIN order_items oi ON oi.wp_product_id = p.wp_product_id
+      LEFT JOIN orders o ON o.wp_order_id = oi.wp_order_id AND o.post_status = 'wc-completed'
+      WHERE p.wp_product_id = $1
+      GROUP BY p.wp_product_id
     `;
 
     const result = await pool.query(query, [productId]);
@@ -113,26 +113,26 @@ class ProductStatsService {
       return [];
     }
 
-    const variantIds = family.variants.map(v => v.product_id);
+    const variantIds = family.variants.map(v => v.wp_product_id);
 
     const query = `
       SELECT
-        p.product_id,
-        p.name,
+        p.wp_product_id,
+        p.post_title,
         p.sku,
         p.price,
         COALESCE(p.cost_price_custom, p.cost_price) as cost_price,
-        p.stock_quantity,
+        p.stock,
         p.stock_status,
-        COALESCE(SUM(oi.quantity), 0)::int as net_sold,
-        COALESCE(SUM(oi.total), 0) as net_revenue,
-        COUNT(DISTINCT oi.order_id)::int as net_orders,
-        COALESCE(SUM(oi.quantity * COALESCE(oi.cost_price, 0)), 0) as total_cost
+        COALESCE(SUM(oi.qty), 0)::int as net_sold,
+        COALESCE(SUM(oi.line_total), 0) as net_revenue,
+        COUNT(DISTINCT oi.wp_order_id)::int as net_orders,
+        COALESCE(SUM(oi.qty * COALESCE(oi.item_cost, 0)), 0) as total_cost
       FROM products p
-      LEFT JOIN order_items oi ON oi.product_id = p.product_id
-      LEFT JOIN orders o ON o.order_id = oi.order_id AND o.status = 'completed'
-      WHERE p.product_id = ANY($1)
-      GROUP BY p.product_id
+      LEFT JOIN order_items oi ON oi.wp_product_id = p.wp_product_id
+      LEFT JOIN orders o ON o.wp_order_id = oi.wp_order_id AND o.post_status = 'wc-completed'
+      WHERE p.wp_product_id = ANY($1)
+      GROUP BY p.wp_product_id
       ORDER BY p.sku ASC
     `;
 
@@ -159,35 +159,35 @@ class ProductStatsService {
   async getSalesEvolution(productId, includeVariants = true, groupBy = 'day') {
     const family = await this.getProductFamily(productId);
     const productIds = includeVariants
-      ? family.allProducts.map(p => p.product_id)
+      ? family.allProducts.map(p => p.wp_product_id)
       : [productId];
 
     let dateFormat;
     switch (groupBy) {
       case 'hour':
-        dateFormat = "TO_CHAR(o.date_created, 'YYYY-MM-DD HH24:00')";
+        dateFormat = "TO_CHAR(o.post_date, 'YYYY-MM-DD HH24:00')";
         break;
       case 'day':
-        dateFormat = "DATE(o.date_created)";
+        dateFormat = "DATE(o.post_date)";
         break;
       case 'week':
-        dateFormat = "DATE_TRUNC('week', o.date_created)";
+        dateFormat = "DATE_TRUNC('week', o.post_date)";
         break;
       case 'month':
-        dateFormat = "DATE_TRUNC('month', o.date_created)";
+        dateFormat = "DATE_TRUNC('month', o.post_date)";
         break;
       default:
-        dateFormat = "DATE(o.date_created)";
+        dateFormat = "DATE(o.post_date)";
     }
 
     const query = `
       SELECT
         ${dateFormat} as period,
-        SUM(oi.quantity)::int as quantity_sold,
-        COALESCE(SUM(oi.total), 0) as revenue
+        SUM(oi.qty)::int as quantity_sold,
+        COALESCE(SUM(oi.line_total), 0) as revenue
       FROM order_items oi
-      INNER JOIN orders o ON o.order_id = oi.order_id
-      WHERE oi.product_id = ANY($1) AND o.status = 'completed'
+      INNER JOIN orders o ON o.wp_order_id = oi.wp_order_id
+      WHERE oi.wp_product_id = ANY($1) AND o.post_status = 'wc-completed'
       GROUP BY period
       ORDER BY period ASC
     `;
@@ -202,20 +202,20 @@ class ProductStatsService {
   async getFrequentlyBoughtWith(productId, limit = 10) {
     const query = `
       SELECT
-        p.product_id,
-        p.name,
+        p.wp_product_id,
+        p.post_title,
         p.sku,
         p.image_url,
         p.price,
         COUNT(*)::int as times_bought_together
       FROM order_items oi1
-      INNER JOIN order_items oi2 ON oi1.order_id = oi2.order_id
-      INNER JOIN products p ON p.product_id = oi2.product_id
-      INNER JOIN orders o ON o.order_id = oi1.order_id
-      WHERE oi1.product_id = $1
-        AND oi2.product_id != $1
-        AND o.status = 'completed'
-      GROUP BY p.product_id
+      INNER JOIN order_items oi2 ON oi1.wp_order_id = oi2.wp_order_id
+      INNER JOIN products p ON p.wp_product_id = oi2.wp_product_id
+      INNER JOIN orders o ON o.wp_order_id = oi1.wp_order_id
+      WHERE oi1.wp_product_id = $1
+        AND oi2.wp_product_id != $1
+        AND o.post_status = 'wc-completed'
+      GROUP BY p.wp_product_id
       ORDER BY times_bought_together DESC
       LIMIT $2
     `;
@@ -230,21 +230,21 @@ class ProductStatsService {
   async getSalesByCountry(productId, includeVariants = true) {
     const family = await this.getProductFamily(productId);
     const productIds = includeVariants
-      ? family.allProducts.map(p => p.product_id)
+      ? family.allProducts.map(p => p.wp_product_id)
       : [productId];
 
     const query = `
       SELECT
         o.shipping_country,
-        SUM(oi.quantity)::int as net_sold,
-        COALESCE(SUM(oi.total), 0) as net_revenue,
-        COUNT(DISTINCT o.order_id)::int as net_orders,
-        COALESCE(SUM(oi.quantity * COALESCE(oi.cost_price, 0)), 0) as cost,
-        COALESCE(SUM(oi.total), 0) - COALESCE(SUM(oi.quantity * COALESCE(oi.cost_price, 0)), 0) as profit
+        SUM(oi.qty)::int as net_sold,
+        COALESCE(SUM(oi.line_total), 0) as net_revenue,
+        COUNT(DISTINCT o.wp_order_id)::int as net_orders,
+        COALESCE(SUM(oi.qty * COALESCE(oi.item_cost, 0)), 0) as cost,
+        COALESCE(SUM(oi.line_total), 0) - COALESCE(SUM(oi.qty * COALESCE(oi.item_cost, 0)), 0) as profit
       FROM order_items oi
-      INNER JOIN orders o ON o.order_id = oi.order_id
-      WHERE oi.product_id = ANY($1)
-        AND o.status = 'completed'
+      INNER JOIN orders o ON o.wp_order_id = oi.wp_order_id
+      WHERE oi.wp_product_id = ANY($1)
+        AND o.post_status = 'wc-completed'
         AND o.shipping_country IS NOT NULL
       GROUP BY o.shipping_country
       ORDER BY net_revenue DESC
@@ -260,23 +260,23 @@ class ProductStatsService {
   async getTopCustomers(productId, includeVariants = true, limit = 10) {
     const family = await this.getProductFamily(productId);
     const productIds = includeVariants
-      ? family.allProducts.map(p => p.product_id)
+      ? family.allProducts.map(p => p.wp_product_id)
       : [productId];
 
     const query = `
       SELECT
-        c.customer_id,
+        c.wp_user_id,
         c.first_name,
         c.last_name,
         c.email,
-        SUM(oi.quantity)::int as quantity_bought,
-        COALESCE(SUM(oi.total), 0) as total_spent,
-        COUNT(DISTINCT oi.order_id)::int as order_count
+        SUM(oi.qty)::int as quantity_bought,
+        COALESCE(SUM(oi.line_total), 0) as total_spent,
+        COUNT(DISTINCT oi.wp_order_id)::int as order_count
       FROM order_items oi
-      INNER JOIN orders o ON o.order_id = oi.order_id
-      INNER JOIN customers c ON c.customer_id = o.customer_id
-      WHERE oi.product_id = ANY($1) AND o.status = 'completed'
-      GROUP BY c.customer_id
+      INNER JOIN orders o ON o.wp_order_id = oi.wp_order_id
+      INNER JOIN customers c ON c.wp_user_id = o.wp_customer_id
+      WHERE oi.wp_product_id = ANY($1) AND o.post_status = 'wc-completed'
+      GROUP BY c.wp_user_id
       ORDER BY quantity_bought DESC
       LIMIT $2
     `;
@@ -291,26 +291,26 @@ class ProductStatsService {
   async getRecentOrders(productId, includeVariants = true, limit = 20) {
     const family = await this.getProductFamily(productId);
     const productIds = includeVariants
-      ? family.allProducts.map(p => p.product_id)
+      ? family.allProducts.map(p => p.wp_product_id)
       : [productId];
 
     const query = `
       SELECT DISTINCT
-        o.order_id,
+        o.wp_order_id,
         o.order_number,
-        o.date_created,
-        o.total,
-        o.status,
-        c.customer_id,
+        o.post_date,
+        o.order_total,
+        o.post_status,
+        c.wp_user_id,
         c.first_name,
         c.last_name,
         c.email,
         o.shipping_country
       FROM orders o
-      INNER JOIN order_items oi ON oi.order_id = o.order_id
-      LEFT JOIN customers c ON c.customer_id = o.customer_id
-      WHERE oi.product_id = ANY($1)
-      ORDER BY o.date_created DESC
+      INNER JOIN order_items oi ON oi.wp_order_id = o.wp_order_id
+      LEFT JOIN customers c ON c.wp_user_id = o.wp_customer_id
+      WHERE oi.wp_product_id = ANY($1)
+      ORDER BY o.post_date DESC
       LIMIT $2
     `;
 
@@ -324,18 +324,18 @@ class ProductStatsService {
   async getSalesByDayOfWeek(productId, includeVariants = true) {
     const family = await this.getProductFamily(productId);
     const productIds = includeVariants
-      ? family.allProducts.map(p => p.product_id)
+      ? family.allProducts.map(p => p.wp_product_id)
       : [productId];
 
     const query = `
       SELECT
-        EXTRACT(DOW FROM o.date_created)::int as day_of_week,
-        TO_CHAR(o.date_created, 'Day') as day_name,
-        SUM(oi.quantity)::int as quantity_sold,
-        COALESCE(SUM(oi.total), 0) as revenue
+        EXTRACT(DOW FROM o.post_date)::int as day_of_week,
+        TO_CHAR(o.post_date, 'Day') as day_name,
+        SUM(oi.qty)::int as quantity_sold,
+        COALESCE(SUM(oi.line_total), 0) as revenue
       FROM order_items oi
-      INNER JOIN orders o ON o.order_id = oi.order_id
-      WHERE oi.product_id = ANY($1) AND o.status = 'completed'
+      INNER JOIN orders o ON o.wp_order_id = oi.wp_order_id
+      WHERE oi.wp_product_id = ANY($1) AND o.post_status = 'wc-completed'
       GROUP BY day_of_week, day_name
       ORDER BY day_of_week
     `;
@@ -350,17 +350,17 @@ class ProductStatsService {
   async getSalesByHour(productId, includeVariants = true) {
     const family = await this.getProductFamily(productId);
     const productIds = includeVariants
-      ? family.allProducts.map(p => p.product_id)
+      ? family.allProducts.map(p => p.wp_product_id)
       : [productId];
 
     const query = `
       SELECT
-        EXTRACT(HOUR FROM o.date_created)::int as hour,
-        SUM(oi.quantity)::int as quantity_sold,
-        COALESCE(SUM(oi.total), 0) as revenue
+        EXTRACT(HOUR FROM o.post_date)::int as hour,
+        SUM(oi.qty)::int as quantity_sold,
+        COALESCE(SUM(oi.line_total), 0) as revenue
       FROM order_items oi
-      INNER JOIN orders o ON o.order_id = oi.order_id
-      WHERE oi.product_id = ANY($1) AND o.status = 'completed'
+      INNER JOIN orders o ON o.wp_order_id = oi.wp_order_id
+      WHERE oi.wp_product_id = ANY($1) AND o.post_status = 'wc-completed'
       GROUP BY hour
       ORDER BY hour
     `;
