@@ -12,13 +12,13 @@ class StatsService {
     // Requête principale pour les stats des commandes
     const orderQuery = `
       SELECT
-        COUNT(DISTINCT o.order_id) as total_orders,
-        COALESCE(SUM(o.total), 0) as total_revenue,
-        COALESCE(AVG(o.total), 0) as avg_order_value,
-        COALESCE(SUM(o.discount_total), 0) as total_discounts,
-        COALESCE(SUM(o.shipping_total), 0) as total_shipping_charged,
-        COALESCE(SUM(COALESCE(o.shipping_cost_real, 0)), 0) as total_shipping_real_cost,
-        COALESCE(SUM(o.tax_total), 0) as total_tax
+        COUNT(DISTINCT o.wp_order_id) as total_orders,
+        COALESCE(SUM(o.order_total), 0) as total_revenue,
+        COALESCE(AVG(o.order_total), 0) as avg_order_value,
+        COALESCE(SUM(o.cart_discount), 0) as total_discounts,
+        COALESCE(SUM(o.order_shipping), 0) as total_shipping_charged,
+        COALESCE(SUM(o.order_shipping), 0) as total_shipping_real_cost,
+        COALESCE(SUM(o.order_tax), 0) as total_tax
       FROM orders o
       ${whereClause}
     `;
@@ -33,9 +33,9 @@ class StatsService {
 
     // Requête séparée pour le coût des produits
     const costQuery = `
-      SELECT COALESCE(SUM(oi.quantity * COALESCE(oi.cost_price, 0)), 0) as total_products_cost
+      SELECT COALESCE(SUM(oi.qty * COALESCE(oi.item_cost, 0)), 0) as total_products_cost
       FROM order_items oi
-      INNER JOIN orders o ON o.order_id = oi.order_id
+      INNER JOIN orders o ON o.wp_order_id = oi.wp_order_id
       ${whereClause}
     `;
 
@@ -66,30 +66,30 @@ class StatsService {
     let dateFormat;
     switch (groupBy) {
       case 'hour':
-        dateFormat = "TO_CHAR(date_created, 'YYYY-MM-DD HH24:00')";
+        dateFormat = "TO_CHAR(post_date, 'YYYY-MM-DD HH24:00')";
         break;
       case 'day':
-        dateFormat = "DATE(date_created)";
+        dateFormat = "DATE(post_date)";
         break;
       case 'week':
-        dateFormat = "DATE_TRUNC('week', date_created)";
+        dateFormat = "DATE_TRUNC('week', post_date)";
         break;
       case 'month':
-        dateFormat = "DATE_TRUNC('month', date_created)";
+        dateFormat = "DATE_TRUNC('month', post_date)";
         break;
       case 'year':
-        dateFormat = "DATE_TRUNC('year', date_created)";
+        dateFormat = "DATE_TRUNC('year', post_date)";
         break;
       default:
-        dateFormat = "DATE(date_created)";
+        dateFormat = "DATE(post_date)";
     }
 
     const query = `
       SELECT
         ${dateFormat} as period,
-        COUNT(DISTINCT order_id) as orders_count,
-        COALESCE(SUM(total), 0) as revenue,
-        COALESCE(AVG(total), 0) as avg_order_value
+        COUNT(DISTINCT wp_order_id) as orders_count,
+        COALESCE(SUM(order_total), 0) as revenue,
+        COALESCE(AVG(order_total), 0) as avg_order_value
       FROM orders
       ${whereClause}
       GROUP BY period
@@ -111,22 +111,21 @@ class StatsService {
 
     const query = `
       SELECT
-        p.product_id,
-        p.name,
+        p.wp_product_id as product_id,
+        p.post_title as name,
         p.sku,
-        p.image_url,
-        p.category,
+        p.product_type as category,
         p.price,
-        COALESCE(p.cost_price_custom, p.cost_price) as cost_price,
-        SUM(oi.quantity) as total_quantity,
-        COALESCE(SUM(oi.total), 0) as total_revenue,
-        COALESCE(SUM(oi.quantity * COALESCE(oi.cost_price, 0)), 0) as total_cost,
-        COUNT(DISTINCT oi.order_id) as orders_count
+        p.wc_cog_cost as cost_price,
+        SUM(oi.qty) as total_quantity,
+        COALESCE(SUM(oi.line_total), 0) as total_revenue,
+        COALESCE(SUM(oi.qty * COALESCE(oi.item_cost, 0)), 0) as total_cost,
+        COUNT(DISTINCT oi.wp_order_id) as orders_count
       FROM products p
-      JOIN order_items oi ON oi.product_id = p.product_id
-      JOIN orders o ON o.order_id = oi.order_id
+      JOIN order_items oi ON oi.product_id = p.wp_product_id
+      JOIN orders o ON o.wp_order_id = oi.wp_order_id
       ${whereClause}
-      GROUP BY p.product_id
+      GROUP BY p.wp_product_id, p.post_title, p.sku, p.product_type, p.price, p.wc_cog_cost
       ORDER BY ${sortColumn} DESC
       LIMIT $${params.length + 1}
     `;
@@ -152,18 +151,18 @@ class StatsService {
 
     const query = `
       SELECT
-        c.customer_id,
+        c.wp_user_id as customer_id,
         c.first_name,
         c.last_name,
         c.email,
-        COUNT(DISTINCT o.order_id) as orders_count,
-        COALESCE(SUM(o.total), 0) as total_spent,
-        COALESCE(AVG(o.total), 0) as avg_order_value,
-        MAX(o.date_created) as last_order_date
+        COUNT(DISTINCT o.wp_order_id) as orders_count,
+        COALESCE(SUM(o.order_total), 0) as total_spent,
+        COALESCE(AVG(o.order_total), 0) as avg_order_value,
+        MAX(o.post_date) as last_order_date
       FROM customers c
-      JOIN orders o ON o.customer_id = c.customer_id
+      JOIN orders o ON o.wp_customer_id = c.wp_user_id
       ${whereClause}
-      GROUP BY c.customer_id
+      GROUP BY c.wp_user_id, c.first_name, c.last_name, c.email
       ORDER BY total_spent DESC
       LIMIT $${params.length + 1}
     `;
@@ -182,11 +181,11 @@ class StatsService {
     const query = `
       SELECT
         o.shipping_country as country,
-        COUNT(DISTINCT o.order_id) as orders_count,
-        COALESCE(SUM(o.total), 0) as revenue,
-        COALESCE(AVG(o.total), 0) as avg_order_value,
-        COALESCE(SUM(o.shipping_total), 0) as shipping_charged,
-        COALESCE(SUM(o.shipping_cost_real), 0) as shipping_real_cost
+        COUNT(DISTINCT o.wp_order_id) as orders_count,
+        COALESCE(SUM(o.order_total), 0) as revenue,
+        COALESCE(AVG(o.order_total), 0) as avg_order_value,
+        COALESCE(SUM(o.order_shipping), 0) as shipping_charged,
+        COALESCE(SUM(o.order_shipping), 0) as shipping_real_cost
       FROM orders o
       ${whereClause}
       GROUP BY o.shipping_country
@@ -207,15 +206,15 @@ class StatsService {
     const query = `
       SELECT
         o.shipping_method,
-        o.shipping_method_title,
-        COUNT(DISTINCT o.order_id) as orders_count,
-        COALESCE(SUM(o.total), 0) as revenue,
-        COALESCE(SUM(o.shipping_total), 0) as shipping_charged,
-        COALESCE(SUM(o.shipping_cost_real), 0) as shipping_real_cost,
-        COALESCE(SUM(o.shipping_total - COALESCE(o.shipping_cost_real, o.shipping_total)), 0) as shipping_margin
+        o.shipping_lines as shipping_method_title,
+        COUNT(DISTINCT o.wp_order_id) as orders_count,
+        COALESCE(SUM(o.order_total), 0) as revenue,
+        COALESCE(SUM(o.order_shipping), 0) as shipping_charged,
+        COALESCE(SUM(o.order_shipping), 0) as shipping_real_cost,
+        0 as shipping_margin
       FROM orders o
       ${whereClause}
-      GROUP BY o.shipping_method, o.shipping_method_title
+      GROUP BY o.shipping_method, o.shipping_lines
       ORDER BY orders_count DESC
     `;
 
@@ -234,9 +233,9 @@ class StatsService {
       SELECT
         o.payment_method,
         o.payment_method_title,
-        COUNT(DISTINCT o.order_id) as orders_count,
-        COALESCE(SUM(o.total), 0) as revenue,
-        COALESCE(AVG(o.total), 0) as avg_order_value
+        COUNT(DISTINCT o.wp_order_id) as orders_count,
+        COALESCE(SUM(o.order_total), 0) as revenue,
+        COALESCE(AVG(o.order_total), 0) as avg_order_value
       FROM orders o
       ${whereClause}
       GROUP BY o.payment_method, o.payment_method_title
@@ -256,16 +255,16 @@ class StatsService {
 
     const query = `
       SELECT
-        p.category,
-        COUNT(DISTINCT p.product_id) as products_count,
-        SUM(oi.quantity) as total_quantity_sold,
-        COALESCE(SUM(oi.total), 0) as revenue,
-        COALESCE(SUM(oi.quantity * COALESCE(oi.cost_price, 0)), 0) as total_cost
+        p.product_type as category,
+        COUNT(DISTINCT p.wp_product_id) as products_count,
+        SUM(oi.qty) as total_quantity_sold,
+        COALESCE(SUM(oi.line_total), 0) as revenue,
+        COALESCE(SUM(oi.qty * COALESCE(oi.item_cost, 0)), 0) as total_cost
       FROM products p
-      JOIN order_items oi ON oi.product_id = p.product_id
-      JOIN orders o ON o.order_id = oi.order_id
+      JOIN order_items oi ON oi.product_id = p.wp_product_id
+      JOIN orders o ON o.wp_order_id = oi.wp_order_id
       ${whereClause}
-      GROUP BY p.category
+      GROUP BY p.product_type
       ORDER BY revenue DESC
     `;
 
@@ -291,10 +290,10 @@ class StatsService {
       SELECT
         oc.code,
         oc.discount_type,
-        COUNT(DISTINCT oc.order_id) as usage_count,
+        COUNT(DISTINCT oc.wp_order_id) as usage_count,
         COALESCE(SUM(oc.discount), 0) as total_discount
       FROM order_coupons oc
-      JOIN orders o ON o.order_id = oc.order_id
+      JOIN orders o ON o.wp_order_id = oc.wp_order_id
       ${whereClause}
       GROUP BY oc.code, oc.discount_type
       ORDER BY total_discount DESC
@@ -314,12 +313,12 @@ class StatsService {
 
     const query = `
       SELECT
-        o.status,
-        COUNT(DISTINCT o.order_id) as orders_count,
-        COALESCE(SUM(o.total), 0) as revenue
+        o.post_status as status,
+        COUNT(DISTINCT o.wp_order_id) as orders_count,
+        COALESCE(SUM(o.order_total), 0) as revenue
       FROM orders o
       ${whereClause}
-      GROUP BY o.status
+      GROUP BY o.post_status
       ORDER BY orders_count DESC
     `;
 
@@ -363,25 +362,25 @@ class StatsService {
         const value = parseInt(periodMatch[1]);
         const unit = periodMatch[2];
         const unitMap = { h: 'hours', d: 'days', w: 'weeks', m: 'months', y: 'years' };
-        conditions.push(`o.date_created >= NOW() - INTERVAL '${value} ${unitMap[unit]}'`);
+        conditions.push(`o.post_date >= NOW() - INTERVAL '${value} ${unitMap[unit]}'`);
       }
     }
 
     // Filtre par dates custom
     if (filters.startDate) {
-      conditions.push(`o.date_created >= $${paramIndex}`);
+      conditions.push(`o.post_date >= $${paramIndex}`);
       params.push(filters.startDate);
       paramIndex++;
     }
     if (filters.endDate) {
-      conditions.push(`o.date_created <= $${paramIndex}`);
+      conditions.push(`o.post_date <= $${paramIndex}`);
       params.push(filters.endDate);
       paramIndex++;
     }
 
     // Filtre par statut
     if (filters.status) {
-      conditions.push(`o.status = $${paramIndex}`);
+      conditions.push(`o.post_status = $${paramIndex}`);
       params.push(filters.status);
       paramIndex++;
     }

@@ -255,6 +255,22 @@ class ProductModel {
   }
 
   /**
+   * Récupère le résumé des stocks
+   */
+  async getStockSummary() {
+    const query = `
+      SELECT
+        COUNT(*) FILTER (WHERE stock_status = 'instock') as in_stock,
+        COUNT(*) FILTER (WHERE stock_status = 'outofstock') as out_of_stock,
+        COUNT(*) FILTER (WHERE stock IS NOT NULL AND CAST(stock AS INTEGER) > 0 AND CAST(stock AS INTEGER) <= 10) as low_stock
+      FROM products
+      WHERE post_status = 'publish'
+    `;
+    const result = await pool.query(query);
+    return result.rows[0];
+  }
+
+  /**
    * Récupère la famille de produits (parent + toutes ses variations)
    */
   async getFamily(wpProductId) {
