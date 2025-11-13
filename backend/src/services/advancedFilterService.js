@@ -15,9 +15,9 @@ class AdvancedFilterService {
   async searchCustomers(filters = {}) {
     let query = `
       SELECT DISTINCT c.*,
-        (SELECT COUNT(*) FROM orders WHERE customer_id = c.customer_id AND status = 'completed') as order_count,
-        (SELECT COALESCE(SUM(total), 0) FROM orders WHERE customer_id = c.customer_id AND status = 'completed') as total_spent,
-        (SELECT MAX(date_created) FROM orders WHERE customer_id = c.customer_id) as last_order_date
+        (SELECT COUNT(*) FROM orders WHERE wp_customer_id = c.wp_user_id AND post_status = 'wc-completed') as order_count,
+        (SELECT COALESCE(SUM(order_total), 0) FROM orders WHERE wp_customer_id = c.wp_user_id AND post_status = 'wc-completed') as total_spent,
+        (SELECT MAX(post_date) FROM orders WHERE wp_customer_id = c.wp_user_id) as last_order_date
       FROM customers c
       WHERE 1=1
     `;
@@ -31,10 +31,10 @@ class AdvancedFilterService {
         query += `
           AND EXISTS (
             SELECT 1 FROM orders o
-            JOIN order_items oi ON oi.order_id = o.order_id
-            WHERE o.customer_id = c.customer_id
+            JOIN order_items oi ON oi.wp_order_id = o.wp_order_id
+            WHERE o.wp_customer_id = c.wp_user_id
               AND oi.product_id = $${paramIndex}
-              AND o.status = 'completed'
+              AND o.post_status = 'wc-completed'
           )
         `;
         params.push(productId);
@@ -47,10 +47,10 @@ class AdvancedFilterService {
       query += `
         AND EXISTS (
           SELECT 1 FROM orders o
-          JOIN order_items oi ON oi.order_id = o.order_id
-          WHERE o.customer_id = c.customer_id
+          JOIN order_items oi ON oi.wp_order_id = o.wp_order_id
+          WHERE o.wp_customer_id = c.wp_user_id
             AND oi.product_id = ANY($${paramIndex}::bigint[])
-            AND o.status = 'completed'
+            AND o.post_status = 'wc-completed'
         )
       `;
       params.push(filters.products.product_ids);
@@ -63,8 +63,8 @@ class AdvancedFilterService {
         query += `
           AND NOT EXISTS (
             SELECT 1 FROM orders o
-            JOIN order_items oi ON oi.order_id = o.order_id
-            WHERE o.customer_id = c.customer_id
+            JOIN order_items oi ON oi.wp_order_id = o.wp_order_id
+            WHERE o.wp_customer_id = c.wp_user_id
               AND oi.product_id = $${paramIndex}
           )
         `;
@@ -76,12 +76,12 @@ class AdvancedFilterService {
     // Filtre : Plage de dates (inscription client)
     if (filters.date_range) {
       if (filters.date_range.from) {
-        query += ` AND c.date_created >= $${paramIndex}`;
+        query += ` AND c.user_registered >= $${paramIndex}`;
         params.push(filters.date_range.from);
         paramIndex++;
       }
       if (filters.date_range.to) {
-        query += ` AND c.date_created <= $${paramIndex}`;
+        query += ` AND c.user_registered <= $${paramIndex}`;
         params.push(filters.date_range.to);
         paramIndex++;
       }
@@ -91,14 +91,14 @@ class AdvancedFilterService {
     if (filters.total_spent) {
       if (filters.total_spent.min) {
         query += `
-          AND (SELECT COALESCE(SUM(total), 0) FROM orders WHERE customer_id = c.customer_id AND status = 'completed') >= $${paramIndex}
+          AND (SELECT COALESCE(SUM(order_total), 0) FROM orders WHERE wp_customer_id = c.wp_user_id AND post_status = 'wc-completed') >= $${paramIndex}
         `;
         params.push(filters.total_spent.min);
         paramIndex++;
       }
       if (filters.total_spent.max) {
         query += `
-          AND (SELECT COALESCE(SUM(total), 0) FROM orders WHERE customer_id = c.customer_id AND status = 'completed') <= $${paramIndex}
+          AND (SELECT COALESCE(SUM(order_total), 0) FROM orders WHERE wp_customer_id = c.wp_user_id AND post_status = 'wc-completed') <= $${paramIndex}
         `;
         params.push(filters.total_spent.max);
         paramIndex++;
@@ -109,14 +109,14 @@ class AdvancedFilterService {
     if (filters.order_count) {
       if (filters.order_count.min) {
         query += `
-          AND (SELECT COUNT(*) FROM orders WHERE customer_id = c.customer_id AND status = 'completed') >= $${paramIndex}
+          AND (SELECT COUNT(*) FROM orders WHERE wp_customer_id = c.wp_user_id AND post_status = 'wc-completed') >= $${paramIndex}
         `;
         params.push(filters.order_count.min);
         paramIndex++;
       }
       if (filters.order_count.max) {
         query += `
-          AND (SELECT COUNT(*) FROM orders WHERE customer_id = c.customer_id AND status = 'completed') <= $${paramIndex}
+          AND (SELECT COUNT(*) FROM orders WHERE wp_customer_id = c.wp_user_id AND post_status = 'wc-completed') <= $${paramIndex}
         `;
         params.push(filters.order_count.max);
         paramIndex++;
@@ -162,11 +162,11 @@ class AdvancedFilterService {
     let query = `
       SELECT o.*,
         c.first_name, c.last_name, c.email,
-        (SELECT COUNT(*) FROM order_items WHERE order_id = o.order_id) as items_count,
-        (SELECT COALESCE(SUM(oi.quantity * COALESCE(oi.cost_price, 0)), 0)
-         FROM order_items oi WHERE oi.order_id = o.order_id) as total_cost
+        (SELECT COUNT(*) FROM order_items WHERE wp_order_id = o.wp_order_id) as items_count,
+        (SELECT COALESCE(SUM(oi.qty * COALESCE(oi.item_cost, 0)), 0)
+         FROM order_items oi WHERE oi.wp_order_id = o.wp_order_id) as total_cost
       FROM orders o
-      LEFT JOIN customers c ON c.customer_id = o.customer_id
+      LEFT JOIN customers c ON c.wp_user_id = o.wp_customer_id
       WHERE 1=1
     `;
 
@@ -179,7 +179,7 @@ class AdvancedFilterService {
         query += `
           AND EXISTS (
             SELECT 1 FROM order_items
-            WHERE order_id = o.order_id AND product_id = $${paramIndex}
+            WHERE wp_order_id = o.wp_order_id AND product_id = $${paramIndex}
           )
         `;
         params.push(productId);
@@ -192,7 +192,7 @@ class AdvancedFilterService {
       query += `
         AND EXISTS (
           SELECT 1 FROM order_items
-          WHERE order_id = o.order_id
+          WHERE wp_order_id = o.wp_order_id
             AND product_id = ANY($${paramIndex}::bigint[])
         )
       `;
@@ -206,7 +206,7 @@ class AdvancedFilterService {
         query += `
           AND NOT EXISTS (
             SELECT 1 FROM order_items
-            WHERE order_id = o.order_id AND product_id = $${paramIndex}
+            WHERE wp_order_id = o.wp_order_id AND product_id = $${paramIndex}
           )
         `;
         params.push(productId);
@@ -216,7 +216,7 @@ class AdvancedFilterService {
 
     // Filtre : Statut
     if (filters.status) {
-      query += ` AND o.status = $${paramIndex}`;
+      query += ` AND o.post_status = $${paramIndex}`;
       params.push(filters.status);
       paramIndex++;
     }
@@ -238,12 +238,12 @@ class AdvancedFilterService {
     // Filtre : Montant total
     if (filters.total) {
       if (filters.total.min) {
-        query += ` AND o.total >= $${paramIndex}`;
+        query += ` AND o.order_total >= $${paramIndex}`;
         params.push(filters.total.min);
         paramIndex++;
       }
       if (filters.total.max) {
-        query += ` AND o.total <= $${paramIndex}`;
+        query += ` AND o.order_total <= $${paramIndex}`;
         params.push(filters.total.max);
         paramIndex++;
       }
@@ -252,12 +252,12 @@ class AdvancedFilterService {
     // Filtre : Plage de dates
     if (filters.date_range) {
       if (filters.date_range.from) {
-        query += ` AND o.date_created >= $${paramIndex}`;
+        query += ` AND o.post_date >= $${paramIndex}`;
         params.push(filters.date_range.from);
         paramIndex++;
       }
       if (filters.date_range.to) {
-        query += ` AND o.date_created <= $${paramIndex}`;
+        query += ` AND o.post_date <= $${paramIndex}`;
         params.push(filters.date_range.to);
         paramIndex++;
       }
@@ -267,7 +267,7 @@ class AdvancedFilterService {
     const limit = filters.limit || 50;
     const offset = filters.offset || 0;
 
-    query += ` ORDER BY o.date_created DESC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
+    query += ` ORDER BY o.post_date DESC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
     params.push(limit, offset);
 
     const result = await pool.query(query, params);
@@ -281,29 +281,28 @@ class AdvancedFilterService {
   async getRelatedProducts(productId, limit = 10) {
     const query = `
       SELECT
-        p.product_id,
-        p.name,
+        p.wp_product_id as product_id,
+        p.post_title as name,
         p.sku,
-        p.image_url,
         p.price,
-        COALESCE(p.cost_price_custom, p.cost_price) as cost_price,
-        COUNT(DISTINCT oi.order_id) as times_bought_together,
-        COUNT(DISTINCT o.customer_id) as customers_count,
-        SUM(oi.quantity) as total_quantity_sold
+        p.wc_cog_cost as cost_price,
+        COUNT(DISTINCT oi.wp_order_id) as times_bought_together,
+        COUNT(DISTINCT o.wp_customer_id) as customers_count,
+        SUM(oi.qty) as total_quantity_sold
       FROM products p
-      JOIN order_items oi ON oi.product_id = p.product_id
-      JOIN orders o ON o.order_id = oi.order_id
-      WHERE o.customer_id IN (
+      JOIN order_items oi ON oi.product_id = p.wp_product_id
+      JOIN orders o ON o.wp_order_id = oi.wp_order_id
+      WHERE o.wp_customer_id IN (
         -- Clients ayant acheté le produit X
-        SELECT DISTINCT o2.customer_id
+        SELECT DISTINCT o2.wp_customer_id
         FROM orders o2
-        JOIN order_items oi2 ON oi2.order_id = o2.order_id
+        JOIN order_items oi2 ON oi2.wp_order_id = o2.wp_order_id
         WHERE oi2.product_id = $1
-          AND o2.status = 'completed'
+          AND o2.post_status = 'wc-completed'
       )
-      AND p.product_id != $1  -- Exclure le produit lui-même
-      AND o.status = 'completed'
-      GROUP BY p.product_id
+      AND p.wp_product_id != $1  -- Exclure le produit lui-même
+      AND o.post_status = 'wc-completed'
+      GROUP BY p.wp_product_id, p.post_title, p.sku, p.price, p.wc_cog_cost
       ORDER BY times_bought_together DESC, customers_count DESC
       LIMIT $2
     `;
@@ -321,7 +320,7 @@ class AdvancedFilterService {
     let paramIndex = 1;
 
     if (entityType === 'customers') {
-      query = 'SELECT COUNT(DISTINCT c.customer_id) as total FROM customers c WHERE 1=1';
+      query = 'SELECT COUNT(DISTINCT c.wp_user_id) as total FROM customers c WHERE 1=1';
 
       // Répéter les mêmes filtres que searchCustomers (simplifié)
       if (filters.search) {
@@ -335,10 +334,10 @@ class AdvancedFilterService {
         paramIndex++;
       }
     } else if (entityType === 'orders') {
-      query = 'SELECT COUNT(DISTINCT o.order_id) as total FROM orders o WHERE 1=1';
+      query = 'SELECT COUNT(DISTINCT o.wp_order_id) as total FROM orders o WHERE 1=1';
 
       if (filters.status) {
-        query += ` AND o.status = $${paramIndex}`;
+        query += ` AND o.post_status = $${paramIndex}`;
         params.push(filters.status);
         paramIndex++;
       }
@@ -354,31 +353,31 @@ class AdvancedFilterService {
   async getCustomersBuyingXandYbutNotZ(productX, productY, productZ, limit = 50) {
     const query = `
       SELECT DISTINCT c.*,
-        (SELECT COUNT(*) FROM orders WHERE customer_id = c.customer_id AND status = 'completed') as order_count,
-        (SELECT COALESCE(SUM(total), 0) FROM orders WHERE customer_id = c.customer_id AND status = 'completed') as total_spent
+        (SELECT COUNT(*) FROM orders WHERE wp_customer_id = c.wp_user_id AND post_status = 'wc-completed') as order_count,
+        (SELECT COALESCE(SUM(order_total), 0) FROM orders WHERE wp_customer_id = c.wp_user_id AND post_status = 'wc-completed') as total_spent
       FROM customers c
       WHERE
         -- A acheté X
         EXISTS (
           SELECT 1 FROM orders o
-          JOIN order_items oi ON oi.order_id = o.order_id
-          WHERE o.customer_id = c.customer_id
+          JOIN order_items oi ON oi.wp_order_id = o.wp_order_id
+          WHERE o.wp_customer_id = c.wp_user_id
             AND oi.product_id = $1
-            AND o.status = 'completed'
+            AND o.post_status = 'wc-completed'
         )
         -- ET a acheté Y
         AND EXISTS (
           SELECT 1 FROM orders o
-          JOIN order_items oi ON oi.order_id = o.order_id
-          WHERE o.customer_id = c.customer_id
+          JOIN order_items oi ON oi.wp_order_id = o.wp_order_id
+          WHERE o.wp_customer_id = c.wp_user_id
             AND oi.product_id = $2
-            AND o.status = 'completed'
+            AND o.post_status = 'wc-completed'
         )
         -- MAIS N'A PAS acheté Z
         AND NOT EXISTS (
           SELECT 1 FROM orders o
-          JOIN order_items oi ON oi.order_id = o.order_id
-          WHERE o.customer_id = c.customer_id
+          JOIN order_items oi ON oi.wp_order_id = o.wp_order_id
+          WHERE o.wp_customer_id = c.wp_user_id
             AND oi.product_id = $3
         )
       ORDER BY total_spent DESC
