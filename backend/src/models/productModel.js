@@ -10,7 +10,7 @@ class ProductModel {
         p.*,
         p.wc_cog_cost as cost_price,
         (p.price - COALESCE(p.wc_cog_cost, 0)) as unit_margin,
-        (SELECT COUNT(*) FROM order_items WHERE product_id = p.wp_product_id) as times_sold,
+        (SELECT COUNT(DISTINCT wp_order_id) FROM order_items WHERE product_id = p.wp_product_id) as times_sold,
         (SELECT COALESCE(SUM(line_total), 0) FROM order_items WHERE product_id = p.wp_product_id) as total_revenue
       FROM products p
       ORDER BY total_revenue DESC
@@ -252,6 +252,67 @@ class ProductModel {
     const query = 'DELETE FROM products WHERE wp_product_id = $1 RETURNING *';
     const result = await pool.query(query, [wpProductId]);
     return result.rows[0];
+  }
+
+  /**
+   * Récupère la famille de produits (parent + toutes ses variations)
+   */
+  async getFamily(wpProductId) {
+    // D'abord déterminer si c'est un parent ou une variation
+    const productQuery = `
+      SELECT wp_product_id, wp_parent_id, product_type
+      FROM products
+      WHERE wp_product_id = $1
+    `;
+    const productResult = await pool.query(productQuery, [wpProductId]);
+
+    if (productResult.rows.length === 0) {
+      return null;
+    }
+
+    const product = productResult.rows[0];
+    const parentId = product.wp_parent_id || product.wp_product_id;
+
+    // Récupère le parent et toutes les variations
+    const familyQuery = `
+      SELECT
+        p.*,
+        p.wc_cog_cost as cost_price,
+        (p.price - COALESCE(p.wc_cog_cost, 0)) as unit_margin,
+        (SELECT COALESCE(SUM(qty), 0) FROM order_items WHERE product_id = p.wp_product_id) as total_quantity_sold,
+        (SELECT COALESCE(SUM(line_total), 0) FROM order_items WHERE product_id = p.wp_product_id) as total_revenue
+      FROM products p
+      WHERE p.wp_product_id = $1 OR p.wp_parent_id = $1
+      ORDER BY p.product_type DESC, p.post_title ASC
+    `;
+    const result = await pool.query(familyQuery, [parentId]);
+    return result.rows;
+  }
+
+  /**
+   * Récupère les statistiques de variations d'un produit
+   */
+  async getVariantStats(wpProductId) {
+    const query = `
+      SELECT
+        p.wp_product_id,
+        p.post_title,
+        p.product_attributes,
+        p.stock,
+        p.stock_status,
+        p.price,
+        p.wc_cog_cost as cost_price,
+        COALESCE(SUM(oi.qty), 0) as total_sold,
+        COALESCE(SUM(oi.line_total), 0) as total_revenue,
+        COALESCE(SUM(oi.qty * oi.item_cost), 0) as total_cost
+      FROM products p
+      LEFT JOIN order_items oi ON oi.product_id = p.wp_product_id
+      WHERE p.wp_parent_id = $1 AND p.product_type = 'variation'
+      GROUP BY p.wp_product_id, p.post_title, p.product_attributes, p.stock, p.stock_status, p.price, p.wc_cog_cost
+      ORDER BY total_sold DESC
+    `;
+    const result = await pool.query(query, [wpProductId]);
+    return result.rows;
   }
 }
 

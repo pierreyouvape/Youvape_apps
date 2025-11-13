@@ -11,12 +11,12 @@ class OrderModel {
         c.first_name,
         c.last_name,
         c.email,
-        (SELECT COUNT(*) FROM order_items WHERE order_id = o.order_id) as items_count,
-        (SELECT COALESCE(SUM(oi.quantity * COALESCE(oi.cost_price, 0)), 0)
-         FROM order_items oi WHERE oi.order_id = o.order_id) as total_cost
+        (SELECT COUNT(*) FROM order_items WHERE wp_order_id = o.wp_order_id) as items_count,
+        (SELECT COALESCE(SUM(oi.qty * COALESCE(oi.item_cost, 0)), 0)
+         FROM order_items oi WHERE oi.wp_order_id = o.wp_order_id) as total_cost
       FROM orders o
-      LEFT JOIN customers c ON c.customer_id = o.customer_id
-      ORDER BY o.date_created DESC
+      LEFT JOIN customers c ON c.wp_user_id = o.wp_customer_id
+      ORDER BY o.post_date DESC
       LIMIT $1 OFFSET $2
     `;
     const result = await pool.query(query, [limit, offset]);
@@ -44,12 +44,11 @@ class OrderModel {
           c.first_name,
           c.last_name,
           c.email,
-          c.phone,
-          (SELECT COALESCE(SUM(oi.quantity * COALESCE(oi.cost_price, 0)), 0)
-           FROM order_items oi WHERE oi.order_id = o.order_id) as total_cost
+          (SELECT COALESCE(SUM(oi.qty * COALESCE(oi.item_cost, 0)), 0)
+           FROM order_items oi WHERE oi.wp_order_id = o.wp_order_id) as total_cost
         FROM orders o
-        LEFT JOIN customers c ON c.customer_id = o.customer_id
-        WHERE o.order_id = $1
+        LEFT JOIN customers c ON c.wp_user_id = o.wp_customer_id
+        WHERE o.wp_order_id = $1
       `;
       const orderResult = await client.query(orderQuery, [orderId]);
 
@@ -63,25 +62,14 @@ class OrderModel {
       const itemsQuery = `
         SELECT
           oi.*,
-          p.name as product_name,
-          p.image_url,
-          p.category
+          p.post_title as product_name
         FROM order_items oi
-        LEFT JOIN products p ON p.product_id = oi.product_id
-        WHERE oi.order_id = $1
+        LEFT JOIN products p ON p.wp_product_id = oi.product_id
+        WHERE oi.wp_order_id = $1
         ORDER BY oi.id
       `;
       const itemsResult = await client.query(itemsQuery, [orderId]);
       order.line_items = itemsResult.rows;
-
-      // Récupère les coupons de la commande
-      const couponsQuery = `
-        SELECT * FROM order_coupons
-        WHERE order_id = $1
-        ORDER BY id
-      `;
-      const couponsResult = await client.query(couponsQuery, [orderId]);
-      order.coupons = couponsResult.rows;
 
       return order;
     } finally {
@@ -96,10 +84,10 @@ class OrderModel {
     const query = `
       SELECT
         o.*,
-        (SELECT COUNT(*) FROM order_items WHERE order_id = o.order_id) as items_count
+        (SELECT COUNT(*) FROM order_items WHERE wp_order_id = o.wp_order_id) as items_count
       FROM orders o
-      WHERE o.customer_id = $1
-      ORDER BY o.date_created DESC
+      WHERE o.wp_customer_id = $1
+      ORDER BY o.post_date DESC
       LIMIT $2
     `;
     const result = await pool.query(query, [customerId, limit]);
@@ -116,14 +104,14 @@ class OrderModel {
         c.first_name,
         c.last_name,
         c.email,
-        (SELECT COUNT(*) FROM order_items WHERE order_id = o.order_id) as items_count
+        (SELECT COUNT(*) FROM order_items WHERE wp_order_id = o.wp_order_id) as items_count
       FROM orders o
-      LEFT JOIN customers c ON c.customer_id = o.customer_id
+      LEFT JOIN customers c ON c.wp_user_id = o.wp_customer_id
       WHERE
-        o.order_number LIKE $1
+        CAST(o.wp_order_id AS TEXT) LIKE $1
         OR LOWER(c.email) LIKE $1
         OR LOWER(c.first_name || ' ' || c.last_name) LIKE $1
-      ORDER BY o.date_created DESC
+      ORDER BY o.post_date DESC
       LIMIT $2 OFFSET $3
     `;
     const result = await pool.query(query, [`%${searchTerm.toLowerCase()}%`, limit, offset]);
@@ -140,11 +128,11 @@ class OrderModel {
         c.first_name,
         c.last_name,
         c.email,
-        (SELECT COUNT(*) FROM order_items WHERE order_id = o.order_id) as items_count
+        (SELECT COUNT(*) FROM order_items WHERE wp_order_id = o.wp_order_id) as items_count
       FROM orders o
-      LEFT JOIN customers c ON c.customer_id = o.customer_id
-      WHERE o.status = $1
-      ORDER BY o.date_created DESC
+      LEFT JOIN customers c ON c.wp_user_id = o.wp_customer_id
+      WHERE o.post_status = $1
+      ORDER BY o.post_date DESC
       LIMIT $2 OFFSET $3
     `;
     const result = await pool.query(query, [status, limit, offset]);
@@ -161,11 +149,11 @@ class OrderModel {
         c.first_name,
         c.last_name,
         c.email,
-        (SELECT COUNT(*) FROM order_items WHERE order_id = o.order_id) as items_count
+        (SELECT COUNT(*) FROM order_items WHERE wp_order_id = o.wp_order_id) as items_count
       FROM orders o
-      LEFT JOIN customers c ON c.customer_id = o.customer_id
+      LEFT JOIN customers c ON c.wp_user_id = o.wp_customer_id
       WHERE o.shipping_country = $1
-      ORDER BY o.date_created DESC
+      ORDER BY o.post_date DESC
       LIMIT $2 OFFSET $3
     `;
     const result = await pool.query(query, [country, limit, offset]);
@@ -182,11 +170,11 @@ class OrderModel {
         c.first_name,
         c.last_name,
         c.email,
-        (SELECT COUNT(*) FROM order_items WHERE order_id = o.order_id) as items_count
+        (SELECT COUNT(*) FROM order_items WHERE wp_order_id = o.wp_order_id) as items_count
       FROM orders o
-      LEFT JOIN customers c ON c.customer_id = o.customer_id
-      WHERE o.date_created BETWEEN $1 AND $2
-      ORDER BY o.date_created DESC
+      LEFT JOIN customers c ON c.wp_user_id = o.wp_customer_id
+      WHERE o.post_date BETWEEN $1 AND $2
+      ORDER BY o.post_date DESC
       LIMIT $3 OFFSET $4
     `;
     const result = await pool.query(query, [startDate, endDate, limit, offset]);
@@ -198,13 +186,13 @@ class OrderModel {
    */
   async getStatuses() {
     const query = `
-      SELECT DISTINCT status
+      SELECT DISTINCT post_status
       FROM orders
-      WHERE status IS NOT NULL
-      ORDER BY status ASC
+      WHERE post_status IS NOT NULL
+      ORDER BY post_status ASC
     `;
     const result = await pool.query(query);
-    return result.rows.map(row => row.status);
+    return result.rows.map(row => row.post_status);
   }
 
   /**
@@ -227,11 +215,11 @@ class OrderModel {
   async getStatsByStatus() {
     const query = `
       SELECT
-        status,
+        post_status as status,
         COUNT(*) as count,
-        COALESCE(SUM(total), 0) as total_amount
+        COALESCE(SUM(order_total), 0) as total_amount
       FROM orders
-      GROUP BY status
+      GROUP BY post_status
       ORDER BY count DESC
     `;
     const result = await pool.query(query);
@@ -245,9 +233,9 @@ class OrderModel {
     const query = `
       UPDATE orders
       SET
-        shipping_cost_real = $1,
+        order_shipping = $1,
         updated_at = NOW()
-      WHERE order_id = $2
+      WHERE wp_order_id = $2
       RETURNING *
     `;
     const result = await pool.query(query, [shippingCostReal, orderId]);
@@ -261,12 +249,10 @@ class OrderModel {
     const query = `
       SELECT
         oi.*,
-        p.name as product_name,
-        p.image_url,
-        p.category
+        p.post_title as product_name
       FROM order_items oi
-      LEFT JOIN products p ON p.product_id = oi.product_id
-      WHERE oi.order_id = $1
+      LEFT JOIN products p ON p.wp_product_id = oi.product_id
+      WHERE oi.wp_order_id = $1
       ORDER BY oi.id
     `;
     const result = await pool.query(query, [orderId]);
@@ -279,10 +265,10 @@ class OrderModel {
   async getCoupons(orderId) {
     const query = `
       SELECT * FROM order_coupons
-      WHERE order_id = $1
+      WHERE wp_order_id = $1
       ORDER BY id
     `;
-    const result = await pool.query(query);
+    const result = await pool.query(query, [orderId]);
     return result.rows;
   }
 

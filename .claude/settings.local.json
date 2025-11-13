@@ -33,7 +33,13 @@
       "Bash(curl -s \"http://54.37.156.233:3000/api/products/15185/family\")",
       "Bash(rm:*)",
       "Bash(tree:*)",
-      "Bash(docker compose:*)"
+      "Bash(docker compose:*)",
+      "Bash(curl -s \"http://54.37.156.233:3000/api/products?limit=10\")",
+      "Bash(curl -s \"http://54.37.156.233:3000/api/orders?limit=10\")",
+      "Bash(curl -s \"http://54.37.156.233:3000/api/customers?limit=10\")",
+      "Bash(curl -s \"http://54.37.156.233:3000/api/orders?limit=1\")",
+      "Bash(curl -s \"http://54.37.156.233:3000/api/products/stats/stock-summary\")",
+      "Bash(pm2 restart:*)"
     ],
     "deny": [],
     "ask": []
