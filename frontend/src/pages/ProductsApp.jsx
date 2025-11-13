@@ -23,7 +23,7 @@ const ProductsApp = () => {
     setLoading(true);
     try {
       const [productsRes, stockRes] = await Promise.all([
-        axios.get(`${API_URL}/products`, { params: { limit: 1000 } }),
+        axios.get(`${API_URL}/products`, { params: { limit: 100000 } }),
         axios.get(`${API_URL}/products/stock-summary`)
       ]);
 
@@ -37,14 +37,14 @@ const ProductsApp = () => {
   };
 
   const filteredProducts = products.filter(product => {
-    if (filters.search && !product.name?.toLowerCase().includes(filters.search.toLowerCase())
+    if (filters.search && !product.post_title?.toLowerCase().includes(filters.search.toLowerCase())
         && !product.sku?.toLowerCase().includes(filters.search.toLowerCase())) {
       return false;
     }
     if (filters.category && product.category !== filters.category) return false;
-    if (filters.stockStatus === 'instock' && (product.stock_status !== 'instock' || product.stock_quantity <= 0)) return false;
-    if (filters.stockStatus === 'outofstock' && product.stock_status !== 'outofstock' && product.stock_quantity > 0) return false;
-    if (filters.stockStatus === 'low' && (product.stock_quantity > 10 || product.stock_quantity <= 0)) return false;
+    if (filters.stockStatus === 'instock' && (product.stock_status !== 'instock' || product.stock <= 0)) return false;
+    if (filters.stockStatus === 'outofstock' && product.stock_status !== 'outofstock' && product.stock > 0) return false;
+    if (filters.stockStatus === 'low' && (product.stock > 10 || product.stock <= 0)) return false;
     return true;
   });
 
@@ -284,13 +284,13 @@ const ProductsApp = () => {
                       onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
                     >
                       <td style={{ padding: '15px' }}>
-                        <div style={{ fontWeight: '600', fontSize: '14px', color: '#333' }}>{product.name}</div>
+                        <div style={{ fontWeight: '600', fontSize: '14px', color: '#333' }}>{product.post_title}</div>
                         <div style={{ fontSize: '12px', color: '#999', marginTop: '2px' }}>
                           SKU: {product.sku || '-'}
                         </div>
                       </td>
                       <td style={{ padding: '15px', fontSize: '14px', color: '#666' }}>
-                        {product.category || '-'}
+                        {product.product_type || '-'}
                       </td>
                       <td style={{ textAlign: 'right', padding: '15px', fontSize: '14px', fontWeight: '600' }}>
                         {formatCurrency(product.price)}
@@ -302,7 +302,7 @@ const ProductsApp = () => {
                         {formatCurrency(margin)}
                       </td>
                       <td style={{ textAlign: 'center', padding: '15px', fontSize: '14px', fontWeight: '600' }}>
-                        {product.stock_quantity !== null ? formatNumber(product.stock_quantity) : '-'}
+                        {product.stock !== null ? formatNumber(product.stock) : '-'}
                       </td>
                       <td style={{ textAlign: 'right', padding: '15px', fontSize: '14px', fontWeight: '600', color: '#135E84' }}>
                         {formatCurrency(product.total_revenue || 0)}

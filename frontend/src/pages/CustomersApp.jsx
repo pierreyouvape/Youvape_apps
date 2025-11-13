@@ -21,7 +21,7 @@ const CustomersApp = () => {
     setLoading(true);
     try {
       const response = await axios.get(`${API_URL}/customers`, {
-        params: { limit: 1000 }
+        params: { limit: 100000 }
       });
 
       if (response.data.success) {

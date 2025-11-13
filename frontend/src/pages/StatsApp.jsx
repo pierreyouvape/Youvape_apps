@@ -57,7 +57,7 @@ const StatsApp = () => {
     setLoading(true);
     try {
       const [ordersRes, statsRes] = await Promise.all([
-        axios.get(`${API_URL}/orders`, { params: { limit: 1000 } }),
+        axios.get(`${API_URL}/orders`, { params: { limit: 100000 } }),
         axios.get(`${API_URL}/orders/stats/by-status`)
       ]);
       if (ordersRes.data.success) setOrders(ordersRes.data.data);
@@ -73,7 +73,7 @@ const StatsApp = () => {
     setLoading(true);
     try {
       const [productsRes, stockRes] = await Promise.all([
-        axios.get(`${API_URL}/products`, { params: { limit: 1000 } }),
+        axios.get(`${API_URL}/products`, { params: { limit: 100000 } }),
         axios.get(`${API_URL}/products/stock-summary`)
       ]);
       if (productsRes.data.success) setProducts(productsRes.data.data);
@@ -88,7 +88,7 @@ const StatsApp = () => {
   const fetchCustomers = async () => {
     setLoading(true);
     try {
-      const res = await axios.get(`${API_URL}/customers`, { params: { limit: 1000 } });
+      const res = await axios.get(`${API_URL}/customers`, { params: { limit: 100000 } });
       if (res.data.success) setCustomers(res.data.data);
     } catch (err) {
       console.error('Error fetching customers:', err);
@@ -139,11 +139,11 @@ const StatsApp = () => {
   });
 
   const filteredProducts = products.filter(product => {
-    if (productFilters.search && !product.name?.toLowerCase().includes(productFilters.search.toLowerCase()) && !product.sku?.toLowerCase().includes(productFilters.search.toLowerCase())) return false;
+    if (productFilters.search && !product.post_title?.toLowerCase().includes(productFilters.search.toLowerCase()) && !product.sku?.toLowerCase().includes(productFilters.search.toLowerCase())) return false;
     if (productFilters.category && product.category !== productFilters.category) return false;
-    if (productFilters.stockStatus === 'instock' && (product.stock_status !== 'instock' || product.stock_quantity <= 0)) return false;
-    if (productFilters.stockStatus === 'outofstock' && product.stock_status !== 'outofstock' && product.stock_quantity > 0) return false;
-    if (productFilters.stockStatus === 'low' && (product.stock_quantity > 10 || product.stock_quantity <= 0)) return false;
+    if (productFilters.stockStatus === 'instock' && (product.stock_status !== 'instock' || product.stock <= 0)) return false;
+    if (productFilters.stockStatus === 'outofstock' && product.stock_status !== 'outofstock' && product.stock > 0) return false;
+    if (productFilters.stockStatus === 'low' && (product.stock > 10 || product.stock <= 0)) return false;
     return true;
   });
 
@@ -348,12 +348,12 @@ const StatsApp = () => {
                       return (
                         <tr key={product.product_id} style={{ borderBottom: '1px solid #f0f0f0' }}>
                           <td style={{ padding: '15px' }}>
-                            <div style={{ fontWeight: '600' }}>{product.name}</div>
+                            <div style={{ fontWeight: '600' }}>{product.post_title}</div>
                             <div style={{ fontSize: '12px', color: '#999' }}>SKU: {product.sku || '-'}</div>
                           </td>
                           <td style={{ textAlign: 'right', padding: '15px', fontWeight: '600' }}>{formatCurrency(product.price)}</td>
                           <td style={{ textAlign: 'right', padding: '15px', fontWeight: '600', color: margin >= 0 ? '#28a745' : '#dc3545' }}>{formatCurrency(margin)}</td>
-                          <td style={{ textAlign: 'center', padding: '15px', fontWeight: '600' }}>{product.stock_quantity !== null ? formatNumber(product.stock_quantity) : '-'}</td>
+                          <td style={{ textAlign: 'center', padding: '15px', fontWeight: '600' }}>{product.stock !== null ? formatNumber(product.stock) : '-'}</td>
                           <td style={{ textAlign: 'right', padding: '15px', fontWeight: '600', color: '#135E84' }}>{formatCurrency(product.total_revenue || 0)}</td>
                           <td style={{ textAlign: 'center', padding: '15px' }}>
                             <button onClick={() => navigate(`/products/${product.product_id}`)} style={{ padding: '6px 12px', backgroundColor: '#135E84', color: 'white', border: 'none', borderRadius: '4px', fontSize: '12px', cursor: 'pointer', fontWeight: '600' }}>Détails</button>

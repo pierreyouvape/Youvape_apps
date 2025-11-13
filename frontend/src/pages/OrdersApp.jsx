@@ -24,7 +24,7 @@ const OrdersApp = () => {
     setLoading(true);
     try {
       const [ordersRes, statsRes] = await Promise.all([
-        axios.get(`${API_URL}/orders`, { params: { limit: 1000 } }),
+        axios.get(`${API_URL}/orders`, { params: { limit: 100000 } }),
         axios.get(`${API_URL}/orders/stats/by-status`)
       ]);
 
