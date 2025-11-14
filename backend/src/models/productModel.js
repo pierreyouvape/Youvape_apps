@@ -10,10 +10,18 @@ class ProductModel {
         p.*,
         p.wc_cog_cost as cost_price,
         (p.price - COALESCE(p.wc_cog_cost, 0)) as unit_margin,
-        (SELECT COUNT(DISTINCT wp_order_id) FROM order_items WHERE product_id = p.wp_product_id) as times_sold,
-        (SELECT COALESCE(SUM(line_total), 0) FROM order_items WHERE product_id = p.wp_product_id) as total_revenue
+        COALESCE(oi_stats.times_sold, 0) as times_sold,
+        COALESCE(oi_stats.total_revenue, 0) as total_revenue
       FROM products p
-      ORDER BY total_revenue DESC
+      LEFT JOIN (
+        SELECT
+          product_id,
+          COUNT(DISTINCT wp_order_id) as times_sold,
+          SUM(line_total) as total_revenue
+        FROM order_items
+        GROUP BY product_id
+      ) oi_stats ON oi_stats.product_id = p.wp_product_id
+      ORDER BY total_revenue DESC NULLS LAST
       LIMIT $1 OFFSET $2
     `;
     const result = await pool.query(query, [limit, offset]);
@@ -65,11 +73,18 @@ class ProductModel {
         p.*,
         p.wc_cog_cost as cost_price,
         (p.price - COALESCE(p.wc_cog_cost, 0)) as unit_margin,
-        (SELECT COALESCE(SUM(line_total), 0) FROM order_items WHERE product_id = p.wp_product_id) as total_revenue
+        COALESCE(oi_stats.total_revenue, 0) as total_revenue
       FROM products p
+      LEFT JOIN (
+        SELECT
+          product_id,
+          SUM(line_total) as total_revenue
+        FROM order_items
+        GROUP BY product_id
+      ) oi_stats ON oi_stats.product_id = p.wp_product_id
       WHERE
         LOWER(p.post_title || ' ' || COALESCE(p.sku, '')) LIKE $1
-      ORDER BY total_revenue DESC
+      ORDER BY total_revenue DESC NULLS LAST
       LIMIT $2 OFFSET $3
     `;
     const result = await pool.query(query, [`%${searchTerm.toLowerCase()}%`, limit, offset]);

@@ -117,9 +117,9 @@ const OrderDetail = () => {
     );
   }
 
-  const totalCost = parseFloat(order.total_cost || 0);
-  const shippingCost = parseFloat(order.shipping_cost_real || order.shipping_total || 0);
-  const margin = parseFloat(order.total) - totalCost - shippingCost;
+  const totalCost = parseFloat(order.order_total_cost || order.total_cost || 0);
+  const shippingCost = parseFloat(order.shipping_cost_real || order.order_shipping || 0);
+  const margin = parseFloat(order.order_total) - totalCost - shippingCost;
 
   return (
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', backgroundColor: '#f5f5f5' }}>
@@ -353,7 +353,7 @@ const OrderDetail = () => {
               }}
             >
               <span style={{ fontWeight: '600' }}>Total :</span>
-              <span style={{ fontWeight: '700', color: '#28a745' }}>{formatCurrency(order.total)}</span>
+              <span style={{ fontWeight: '700', color: '#28a745' }}>{formatCurrency(order.order_total)}</span>
             </div>
 
             {/* Margin Calculation */}

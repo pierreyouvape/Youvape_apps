@@ -335,12 +335,12 @@ const OrdersApp = () => {
                       </div>
                       <div style={{ fontSize: '12px', color: '#999' }}>{order.email}</div>
                     </td>
-                    <td style={{ textAlign: 'center', padding: '15px' }}>{getStatusBadge(order.status)}</td>
+                    <td style={{ textAlign: 'center', padding: '15px' }}>{getStatusBadge(order.post_status)}</td>
                     <td style={{ textAlign: 'right', padding: '15px', fontSize: '14px', fontWeight: '600', color: '#28a745' }}>
-                      {formatCurrency(order.total)}
+                      {formatCurrency(order.order_total)}
                     </td>
                     <td style={{ textAlign: 'center', padding: '15px', fontSize: '13px', color: '#666' }}>
-                      {formatDate(order.date_created)}
+                      {formatDate(order.post_date)}
                     </td>
                     <td style={{ textAlign: 'center', padding: '15px', fontSize: '14px', fontWeight: '600' }}>
                       {order.shipping_country || '-'}

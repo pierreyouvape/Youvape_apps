@@ -166,12 +166,12 @@ const CustomerDetail = () => {
             {orders.length > 0 ? (
               <div>
                 {orders.slice(0, 5).map((order) => (
-                  <div key={order.order_id} onClick={() => navigate(`/orders/${order.order_id}`)} style={{ padding: '12px', borderBottom: '1px solid #f0f0f0', cursor: 'pointer', transition: 'background 0.2s' }} onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f8f9fa'} onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}>
+                  <div key={order.wp_order_id} onClick={() => navigate(`/orders/${order.wp_order_id}`)} style={{ padding: '12px', borderBottom: '1px solid #f0f0f0', cursor: 'pointer', transition: 'background 0.2s' }} onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f8f9fa'} onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px' }}>
                       <span style={{ fontWeight: '600' }}>#{order.order_number}</span>
-                      <span style={{ color: '#28a745', fontWeight: '600' }}>{formatCurrency(order.total)}</span>
+                      <span style={{ color: '#28a745', fontWeight: '600' }}>{formatCurrency(order.order_total)}</span>
                     </div>
-                    <div style={{ fontSize: '12px', color: '#999' }}>{formatDate(order.date_created)} • {order.status}</div>
+                    <div style={{ fontSize: '12px', color: '#999' }}>{formatDate(order.post_date)} • {order.post_status}</div>
                   </div>
                 ))}
               </div>

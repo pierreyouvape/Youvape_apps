@@ -41,7 +41,9 @@
       "Bash(curl -s \"http://54.37.156.233:3000/api/products/stats/stock-summary\")",
       "Bash(pm2 restart:*)",
       "Bash(curl -s \"http://54.37.156.233:3000/api/customers/7013\")",
-      "Bash(curl -s \"http://54.37.156.233:3000/api/customers/search?q=florent\")"
+      "Bash(curl -s \"http://54.37.156.233:3000/api/customers/search?q=florent\")",
+      "Bash(curl -s \"http://54.37.156.233:3000/api/orders/1156701\")",
+      "Bash(time curl:*)"
     ],
     "deny": [],
     "ask": []

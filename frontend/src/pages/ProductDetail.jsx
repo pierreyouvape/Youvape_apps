@@ -418,14 +418,14 @@ const ProductDetail = () => {
             <div style={{ backgroundColor: '#fff', padding: '25px', borderRadius: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
               <h2 style={{ marginTop: 0, color: '#333', fontSize: '18px' }}>📋 Recent Orders</h2>
               {recentOrders.slice(0, 5).map((order) => (
-                <div key={order.order_id} onClick={() => navigate(`/orders/${order.order_id}`)} style={{ padding: '12px', borderBottom: '1px solid #f0f0f0', cursor: 'pointer', display: 'flex', justifyContent: 'space-between' }} onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f8f9fa'} onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}>
+                <div key={order.wp_order_id} onClick={() => navigate(`/orders/${order.wp_order_id}`)} style={{ padding: '12px', borderBottom: '1px solid #f0f0f0', cursor: 'pointer', display: 'flex', justifyContent: 'space-between' }} onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f8f9fa'} onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}>
                   <div>
                     <div style={{ fontWeight: '600' }}>#{order.order_number}</div>
                     <div style={{ fontSize: '12px', color: '#999' }}>{order.first_name} {order.last_name} • {order.shipping_country}</div>
                   </div>
                   <div style={{ textAlign: 'right' }}>
-                    <div style={{ fontWeight: '600', color: '#28a745' }}>{formatCurrency(order.total)}</div>
-                    <div style={{ fontSize: '12px', color: '#999' }}>{formatDate(order.date_created)}</div>
+                    <div style={{ fontWeight: '600', color: '#28a745' }}>{formatCurrency(order.order_total)}</div>
+                    <div style={{ fontSize: '12px', color: '#999' }}>{formatDate(order.post_date)}</div>
                   </div>
                 </div>
               ))}
