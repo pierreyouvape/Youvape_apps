@@ -9,8 +9,8 @@ const OrdersApp = () => {
   const [orders, setOrders] = useState([]);
   const [statusStats, setStatusStats] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [searchTerm, setSearchTerm] = useState('');
   const [filters, setFilters] = useState({
-    search: '',
     status: '',
     country: '',
     paymentMethod: ''
@@ -20,17 +20,18 @@ const OrdersApp = () => {
     fetchData();
   }, []);
 
+  // Recherche API avec debounce après 500ms
   useEffect(() => {
     const delaySearch = setTimeout(() => {
-      if (filters.search) {
-        searchOrders();
+      if (searchTerm.trim()) {
+        searchOrders(searchTerm);
       } else {
         fetchOrders();
       }
     }, 500);
 
     return () => clearTimeout(delaySearch);
-  }, [filters.search]);
+  }, [searchTerm]);
 
   const fetchData = async () => {
     setLoading(true);
@@ -55,11 +56,11 @@ const OrdersApp = () => {
     }
   };
 
-  const searchOrders = async () => {
+  const searchOrders = async (query) => {
     setLoading(true);
     try {
       const response = await axios.get(`${API_URL}/orders/search`, {
-        params: { q: filters.search, limit: 100 }
+        params: { q: query, limit: 100 }
       });
 
       if (response.data.success) {
@@ -72,7 +73,20 @@ const OrdersApp = () => {
     }
   };
 
+  // Filtrage hybride : instantané côté client + filtres supplémentaires
   const filteredOrders = orders.filter(order => {
+    // Filtrage instantané sur search (tant que l'API n'a pas répondu)
+    if (searchTerm.trim()) {
+      const searchLower = searchTerm.toLowerCase();
+      const matchesSearch =
+        order.order_number?.toString().toLowerCase().includes(searchLower) ||
+        order.first_name?.toLowerCase().includes(searchLower) ||
+        order.last_name?.toLowerCase().includes(searchLower) ||
+        order.email?.toLowerCase().includes(searchLower);
+      if (!matchesSearch) return false;
+    }
+
+    // Filtres supplémentaires
     if (filters.status && order.post_status !== filters.status) return false;
     if (filters.country && order.shipping_country !== filters.country) return false;
     if (filters.paymentMethod && order.payment_method !== filters.paymentMethod) return false;
@@ -203,8 +217,8 @@ const OrdersApp = () => {
           <input
             type="text"
             placeholder="🔍 Rechercher par n° ou email..."
-            value={filters.search}
-            onChange={(e) => setFilters({ ...filters, search: e.target.value })}
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
             style={{
               padding: '10px 15px',
               fontSize: '14px',
@@ -249,7 +263,10 @@ const OrdersApp = () => {
             ))}
           </select>
           <button
-            onClick={() => setFilters({ search: '', status: '', country: '', paymentMethod: '' })}
+            onClick={() => {
+              setSearchTerm('');
+              setFilters({ status: '', country: '', paymentMethod: '' });
+            }}
             style={{
               padding: '10px 20px',
               backgroundColor: '#6c757d',

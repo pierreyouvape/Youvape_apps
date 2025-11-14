@@ -8,8 +8,8 @@ const CustomersApp = () => {
   const navigate = useNavigate();
   const [customers, setCustomers] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [searchTerm, setSearchTerm] = useState('');
   const [filters, setFilters] = useState({
-    search: '',
     country: ''
   });
 
@@ -17,17 +17,18 @@ const CustomersApp = () => {
     fetchCustomers();
   }, []);
 
+  // Recherche API avec debounce après 500ms
   useEffect(() => {
     const delaySearch = setTimeout(() => {
-      if (filters.search) {
-        searchCustomers();
+      if (searchTerm.trim()) {
+        searchCustomers(searchTerm);
       } else {
         fetchCustomers();
       }
-    }, 500); // Debounce de 500ms
+    }, 500);
 
     return () => clearTimeout(delaySearch);
-  }, [filters.search]);
+  }, [searchTerm]);
 
   const fetchCustomers = async () => {
     setLoading(true);
@@ -46,11 +47,11 @@ const CustomersApp = () => {
     }
   };
 
-  const searchCustomers = async () => {
+  const searchCustomers = async (query) => {
     setLoading(true);
     try {
       const response = await axios.get(`${API_URL}/customers/search`, {
-        params: { q: filters.search, limit: 100 }
+        params: { q: query, limit: 100 }
       });
 
       if (response.data.success) {
@@ -63,8 +64,21 @@ const CustomersApp = () => {
     }
   };
 
+  // Filtrage hybride : instantané côté client + filtres supplémentaires
   const filteredCustomers = customers.filter(customer => {
+    // Filtrage instantané sur search (tant que l'API n'a pas répondu)
+    if (searchTerm.trim()) {
+      const searchLower = searchTerm.toLowerCase();
+      const matchesSearch =
+        customer.first_name?.toLowerCase().includes(searchLower) ||
+        customer.last_name?.toLowerCase().includes(searchLower) ||
+        customer.email?.toLowerCase().includes(searchLower);
+      if (!matchesSearch) return false;
+    }
+
+    // Filtrage sur country
     if (filters.country && customer.shipping_country !== filters.country) return false;
+
     return true;
   });
 
