@@ -23,23 +23,31 @@ const CustomerDetail = () => {
   const fetchCustomerData = async () => {
     setLoading(true);
     try {
-      const [customerRes, ordersRes, favoritesRes, statsRes, couponsRes, notesRes] = await Promise.all([
-        axios.get(`${API_URL}/customers/${id}`),
-        axios.get(`${API_URL}/customers/${id}/orders`, { params: { limit: 20 } }),
-        axios.get(`${API_URL}/customers/${id}/favorite-products`, { params: { limit: 10 } }),
-        axios.get(`${API_URL}/customers/${id}/stats`),
-        axios.get(`${API_URL}/customers/${id}/coupons`),
-        axios.get(`${API_URL}/customers/${id}/notes`)
-      ]);
-
+      // Requêtes critiques - doivent réussir
+      const customerRes = await axios.get(`${API_URL}/customers/${id}`);
       setCustomer(customerRes.data.data);
-      setOrders(ordersRes.data.data);
-      setFavoriteProducts(favoritesRes.data.data);
-      setStats(statsRes.data.data);
-      setCoupons(couponsRes.data.data);
-      setNotes(notesRes.data.data);
+
+      // Requêtes optionnelles - peuvent échouer sans bloquer l'affichage
+      try {
+        const [ordersRes, favoritesRes, statsRes, couponsRes, notesRes] = await Promise.all([
+          axios.get(`${API_URL}/customers/${id}/orders`, { params: { limit: 20 } }).catch(() => ({ data: { data: [] } })),
+          axios.get(`${API_URL}/customers/${id}/favorite-products`, { params: { limit: 10 } }).catch(() => ({ data: { data: [] } })),
+          axios.get(`${API_URL}/customers/${id}/stats`).catch(() => ({ data: { data: null } })),
+          axios.get(`${API_URL}/customers/${id}/coupons`).catch(() => ({ data: { data: [] } })),
+          axios.get(`${API_URL}/customers/${id}/notes`).catch(() => ({ data: { data: [] } }))
+        ]);
+
+        setOrders(ordersRes.data.data || []);
+        setFavoriteProducts(favoritesRes.data.data || []);
+        setStats(statsRes.data.data);
+        setCoupons(couponsRes.data.data || []);
+        setNotes(notesRes.data.data || []);
+      } catch (err) {
+        console.error('Error fetching optional customer data:', err);
+      }
     } catch (err) {
-      console.error('Error fetching customer data:', err);
+      console.error('Error fetching customer:', err);
+      setCustomer(null);
     } finally {
       setLoading(false);
     }

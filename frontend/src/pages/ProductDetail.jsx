@@ -28,37 +28,44 @@ const ProductDetail = () => {
   const fetchProductData = async () => {
     setLoading(true);
     try {
-      const [
-        productRes,
-        familyRes,
-        kpisRes,
-        variantsStatsRes,
-        boughtWithRes,
-        countryRes,
-        customersRes,
-        ordersRes
-      ] = await Promise.all([
-        axios.get(`${API_URL}/products/${id}`),
-        axios.get(`${API_URL}/products/${id}/family`),
-        axios.get(`${API_URL}/products/${id}/stats/kpis`),
-        axios.get(`${API_URL}/products/${id}/stats/all-variants`),
-        axios.get(`${API_URL}/products/${id}/stats/frequently-bought-with`, { params: { limit: 10 } }),
-        axios.get(`${API_URL}/products/${id}/stats/by-country`),
-        axios.get(`${API_URL}/products/${id}/stats/top-customers`, { params: { limit: 10 } }),
-        axios.get(`${API_URL}/products/${id}/stats/recent-orders`, { params: { limit: 20 } })
-      ]);
-
+      // Requête critique - doit réussir
+      const productRes = await axios.get(`${API_URL}/products/${id}`);
       setProduct(productRes.data.data);
-      setFamily(familyRes.data.data);
-      setKpis(kpisRes.data.data);
-      setVariantsStats(variantsStatsRes.data.data);
-      setFrequentlyBought(boughtWithRes.data.data);
-      setSalesByCountry(countryRes.data.data);
-      setTopCustomers(customersRes.data.data);
-      setRecentOrders(ordersRes.data.data);
       setNewCost(productRes.data.data.cost_price_custom || productRes.data.data.cost_price || '');
+
+      // Requêtes optionnelles - peuvent échouer sans bloquer l'affichage
+      try {
+        const [
+          familyRes,
+          kpisRes,
+          variantsStatsRes,
+          boughtWithRes,
+          countryRes,
+          customersRes,
+          ordersRes
+        ] = await Promise.all([
+          axios.get(`${API_URL}/products/${id}/family`).catch(() => ({ data: { data: null } })),
+          axios.get(`${API_URL}/products/${id}/stats/kpis`).catch(() => ({ data: { data: null } })),
+          axios.get(`${API_URL}/products/${id}/stats/all-variants`).catch(() => ({ data: { data: [] } })),
+          axios.get(`${API_URL}/products/${id}/stats/frequently-bought-with`, { params: { limit: 10 } }).catch(() => ({ data: { data: [] } })),
+          axios.get(`${API_URL}/products/${id}/stats/by-country`).catch(() => ({ data: { data: [] } })),
+          axios.get(`${API_URL}/products/${id}/stats/top-customers`, { params: { limit: 10 } }).catch(() => ({ data: { data: [] } })),
+          axios.get(`${API_URL}/products/${id}/stats/recent-orders`, { params: { limit: 20 } }).catch(() => ({ data: { data: [] } }))
+        ]);
+
+        setFamily(familyRes.data.data);
+        setKpis(kpisRes.data.data);
+        setVariantsStats(variantsStatsRes.data.data || []);
+        setFrequentlyBought(boughtWithRes.data.data || []);
+        setSalesByCountry(countryRes.data.data || []);
+        setTopCustomers(customersRes.data.data || []);
+        setRecentOrders(ordersRes.data.data || []);
+      } catch (err) {
+        console.error('Error fetching optional product data:', err);
+      }
     } catch (err) {
-      console.error('Error fetching product data:', err);
+      console.error('Error fetching product:', err);
+      setProduct(null);
     } finally {
       setLoading(false);
     }

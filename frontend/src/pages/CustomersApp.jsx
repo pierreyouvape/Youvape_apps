@@ -221,7 +221,7 @@ const CustomersApp = () => {
               <tbody>
                 {filteredCustomers.map((customer) => (
                   <tr
-                    key={customer.customer_id}
+                    key={customer.wp_user_id}
                     style={{
                       borderBottom: '1px solid #f0f0f0',
                       transition: 'background-color 0.2s'
