@@ -17,19 +17,6 @@ const CustomersApp = () => {
     fetchCustomers();
   }, []);
 
-  // Recherche API avec debounce après 500ms
-  useEffect(() => {
-    const delaySearch = setTimeout(() => {
-      if (searchTerm.trim()) {
-        searchCustomers(searchTerm);
-      } else {
-        fetchCustomers();
-      }
-    }, 500);
-
-    return () => clearTimeout(delaySearch);
-  }, [searchTerm]);
-
   const fetchCustomers = async () => {
     setLoading(true);
     try {
@@ -47,38 +34,31 @@ const CustomersApp = () => {
     }
   };
 
-  const searchCustomers = async (query) => {
-    setLoading(true);
-    try {
-      const response = await axios.get(`${API_URL}/customers/search`, {
-        params: { q: query, limit: 100 }
-      });
+  const handleSearch = async (e) => {
+    if (e.key === 'Enter') {
+      if (searchTerm.trim()) {
+        setLoading(true);
+        try {
+          const response = await axios.get(`${API_URL}/customers/search`, {
+            params: { q: searchTerm, limit: 100 }
+          });
 
-      if (response.data.success) {
-        setCustomers(response.data.data);
+          if (response.data.success) {
+            setCustomers(response.data.data);
+          }
+        } catch (err) {
+          console.error('Error searching customers:', err);
+        } finally {
+          setLoading(false);
+        }
+      } else {
+        fetchCustomers();
       }
-    } catch (err) {
-      console.error('Error searching customers:', err);
-    } finally {
-      setLoading(false);
     }
   };
 
-  // Filtrage hybride : instantané côté client + filtres supplémentaires
   const filteredCustomers = customers.filter(customer => {
-    // Filtrage instantané sur search (tant que l'API n'a pas répondu)
-    if (searchTerm.trim()) {
-      const searchLower = searchTerm.toLowerCase();
-      const matchesSearch =
-        customer.first_name?.toLowerCase().includes(searchLower) ||
-        customer.last_name?.toLowerCase().includes(searchLower) ||
-        customer.email?.toLowerCase().includes(searchLower);
-      if (!matchesSearch) return false;
-    }
-
-    // Filtrage sur country
     if (filters.country && customer.shipping_country !== filters.country) return false;
-
     return true;
   });
 
@@ -142,9 +122,10 @@ const CustomersApp = () => {
         <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginBottom: '20px' }}>
           <input
             type="text"
-            placeholder="🔍 Rechercher par nom, email..."
-            value={filters.search}
-            onChange={(e) => setFilters({ ...filters, search: e.target.value })}
+            placeholder="🔍 Rechercher par nom, email... (Appuyez sur Entrée)"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            onKeyDown={handleSearch}
             style={{
               padding: '10px 15px',
               fontSize: '14px',
@@ -172,7 +153,11 @@ const CustomersApp = () => {
             ))}
           </select>
           <button
-            onClick={() => setFilters({ search: '', country: '' })}
+            onClick={() => {
+              setSearchTerm('');
+              setFilters({ country: '' });
+              fetchCustomers();
+            }}
             style={{
               padding: '10px 20px',
               backgroundColor: '#6c757d',

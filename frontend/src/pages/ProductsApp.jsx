@@ -19,19 +19,6 @@ const ProductsApp = () => {
     fetchData();
   }, []);
 
-  // Recherche API avec debounce après 500ms
-  useEffect(() => {
-    const delaySearch = setTimeout(() => {
-      if (searchTerm.trim()) {
-        searchProducts(searchTerm);
-      } else {
-        fetchProducts();
-      }
-    }, 500);
-
-    return () => clearTimeout(delaySearch);
-  }, [searchTerm]);
-
   const fetchData = async () => {
     setLoading(true);
     try {
@@ -55,35 +42,30 @@ const ProductsApp = () => {
     }
   };
 
-  const searchProducts = async (query) => {
-    setLoading(true);
-    try {
-      const response = await axios.get(`${API_URL}/products/search`, {
-        params: { q: query, limit: 100 }
-      });
+  const handleSearch = async (e) => {
+    if (e.key === 'Enter') {
+      if (searchTerm.trim()) {
+        setLoading(true);
+        try {
+          const response = await axios.get(`${API_URL}/products/search`, {
+            params: { q: searchTerm, limit: 100 }
+          });
 
-      if (response.data.success) {
-        setProducts(response.data.data);
+          if (response.data.success) {
+            setProducts(response.data.data);
+          }
+        } catch (err) {
+          console.error('Error searching products:', err);
+        } finally {
+          setLoading(false);
+        }
+      } else {
+        fetchProducts();
       }
-    } catch (err) {
-      console.error('Error searching products:', err);
-    } finally {
-      setLoading(false);
     }
   };
 
-  // Filtrage hybride : instantané côté client + filtres supplémentaires
   const filteredProducts = products.filter(product => {
-    // Filtrage instantané sur search (tant que l'API n'a pas répondu)
-    if (searchTerm.trim()) {
-      const searchLower = searchTerm.toLowerCase();
-      const matchesSearch =
-        product.post_title?.toLowerCase().includes(searchLower) ||
-        product.sku?.toLowerCase().includes(searchLower);
-      if (!matchesSearch) return false;
-    }
-
-    // Filtres supplémentaires
     if (filters.category && product.category !== filters.category) return false;
     if (filters.stockStatus === 'instock' && (product.stock_status !== 'instock' || product.stock <= 0)) return false;
     if (filters.stockStatus === 'outofstock' && product.stock_status !== 'outofstock' && product.stock > 0) return false;
@@ -218,9 +200,10 @@ const ProductsApp = () => {
         <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginBottom: '20px' }}>
           <input
             type="text"
-            placeholder="🔍 Rechercher par nom, SKU..."
+            placeholder="🔍 Rechercher par nom, SKU... (Appuyez sur Entrée)"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
+            onKeyDown={handleSearch}
             style={{
               padding: '10px 15px',
               fontSize: '14px',
@@ -251,6 +234,7 @@ const ProductsApp = () => {
             onClick={() => {
               setSearchTerm('');
               setFilters({ category: '', stockStatus: '' });
+              fetchProducts();
             }}
             style={{
               padding: '10px 20px',

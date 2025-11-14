@@ -20,19 +20,6 @@ const OrdersApp = () => {
     fetchData();
   }, []);
 
-  // Recherche API avec debounce après 500ms
-  useEffect(() => {
-    const delaySearch = setTimeout(() => {
-      if (searchTerm.trim()) {
-        searchOrders(searchTerm);
-      } else {
-        fetchOrders();
-      }
-    }, 500);
-
-    return () => clearTimeout(delaySearch);
-  }, [searchTerm]);
-
   const fetchData = async () => {
     setLoading(true);
     try {
@@ -56,37 +43,30 @@ const OrdersApp = () => {
     }
   };
 
-  const searchOrders = async (query) => {
-    setLoading(true);
-    try {
-      const response = await axios.get(`${API_URL}/orders/search`, {
-        params: { q: query, limit: 100 }
-      });
+  const handleSearch = async (e) => {
+    if (e.key === 'Enter') {
+      if (searchTerm.trim()) {
+        setLoading(true);
+        try {
+          const response = await axios.get(`${API_URL}/orders/search`, {
+            params: { q: searchTerm, limit: 100 }
+          });
 
-      if (response.data.success) {
-        setOrders(response.data.data);
+          if (response.data.success) {
+            setOrders(response.data.data);
+          }
+        } catch (err) {
+          console.error('Error searching orders:', err);
+        } finally {
+          setLoading(false);
+        }
+      } else {
+        fetchOrders();
       }
-    } catch (err) {
-      console.error('Error searching orders:', err);
-    } finally {
-      setLoading(false);
     }
   };
 
-  // Filtrage hybride : instantané côté client + filtres supplémentaires
   const filteredOrders = orders.filter(order => {
-    // Filtrage instantané sur search (tant que l'API n'a pas répondu)
-    if (searchTerm.trim()) {
-      const searchLower = searchTerm.toLowerCase();
-      const matchesSearch =
-        order.order_number?.toString().toLowerCase().includes(searchLower) ||
-        order.first_name?.toLowerCase().includes(searchLower) ||
-        order.last_name?.toLowerCase().includes(searchLower) ||
-        order.email?.toLowerCase().includes(searchLower);
-      if (!matchesSearch) return false;
-    }
-
-    // Filtres supplémentaires
     if (filters.status && order.post_status !== filters.status) return false;
     if (filters.country && order.shipping_country !== filters.country) return false;
     if (filters.paymentMethod && order.payment_method !== filters.paymentMethod) return false;
@@ -216,9 +196,10 @@ const OrdersApp = () => {
         <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginBottom: '20px' }}>
           <input
             type="text"
-            placeholder="🔍 Rechercher par n° ou email..."
+            placeholder="🔍 Rechercher par n° ou email... (Appuyez sur Entrée)"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
+            onKeyDown={handleSearch}
             style={{
               padding: '10px 15px',
               fontSize: '14px',
@@ -266,6 +247,7 @@ const OrdersApp = () => {
             onClick={() => {
               setSearchTerm('');
               setFilters({ status: '', country: '', paymentMethod: '' });
+              fetchOrders();
             }}
             style={{
               padding: '10px 20px',
