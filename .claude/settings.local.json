@@ -44,7 +44,10 @@
       "Bash(curl -s \"http://54.37.156.233:3000/api/customers/search?q=florent\")",
       "Bash(curl -s \"http://54.37.156.233:3000/api/orders/1156701\")",
       "Bash(time curl:*)",
-      "Bash(curl -s \"http://54.37.156.233:3000/api/customers/search?q=test&limit=10\")"
+      "Bash(curl -s \"http://54.37.156.233:3000/api/customers/search?q=test&limit=10\")",
+      "Bash(ssh:*)",
+      "Bash(curl -s http://54.37.156.233/)",
+      "Bash(curl -s http://54.37.156.233/assets/index-C6bRBncA.js)"
     ],
     "deny": [],
     "ask": []
