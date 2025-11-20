@@ -246,6 +246,120 @@ class CustomerModel {
     const result = await pool.query(query, [wpUserId]);
     return result.rows[0];
   }
+
+  /**
+   * Récupère tous les clients pour l'onglet Stats avec pagination
+   * Exclut les commandes failed, cancelled, refunded
+   */
+  async getAllForStats(limit = 50, offset = 0, searchTerm = '', countryFilter = '') {
+    let whereClause = '';
+    let params = [];
+    let paramIndex = 1;
+
+    // Ajout du filtre de recherche
+    if (searchTerm) {
+      whereClause += ` WHERE LOWER(c.first_name || ' ' || c.last_name || ' ' || c.email) LIKE $${paramIndex}`;
+      params.push(`%${searchTerm.toLowerCase()}%`);
+      paramIndex++;
+    }
+
+    // Ajout du filtre pays
+    if (countryFilter) {
+      whereClause += searchTerm ? ' AND' : ' WHERE';
+      whereClause += ` EXISTS (
+        SELECT 1 FROM orders o
+        WHERE o.wp_customer_id = c.wp_user_id
+        AND o.billing_country = $${paramIndex}
+      )`;
+      params.push(countryFilter);
+      paramIndex++;
+    }
+
+    // Ajout limit et offset à la fin
+    const limitParam = paramIndex;
+    const offsetParam = paramIndex + 1;
+    params.push(limit, offset);
+
+    const query = `
+      SELECT
+        c.wp_user_id as id,
+        c.first_name,
+        c.last_name,
+        c.email,
+        (
+          SELECT COUNT(*)
+          FROM orders
+          WHERE wp_customer_id = c.wp_user_id
+          AND post_status NOT IN ('wc-failed', 'wc-cancelled', 'wc-refunded')
+        ) as order_count,
+        (
+          SELECT COALESCE(SUM(order_total), 0)
+          FROM orders
+          WHERE wp_customer_id = c.wp_user_id
+          AND post_status NOT IN ('wc-failed', 'wc-cancelled', 'wc-refunded')
+        ) as total_spent,
+        (
+          SELECT billing_country
+          FROM orders
+          WHERE wp_customer_id = c.wp_user_id
+          ORDER BY post_date DESC
+          LIMIT 1
+        ) as country
+      FROM customers c
+      ${whereClause}
+      ORDER BY total_spent DESC
+      LIMIT $${limitParam} OFFSET $${offsetParam}
+    `;
+
+    const result = await pool.query(query, params);
+    return result.rows;
+  }
+
+  /**
+   * Compte le nombre total de clients pour l'onglet Stats avec filtres
+   */
+  async countForStats(searchTerm = '', countryFilter = '') {
+    let whereClause = '';
+    let params = [];
+    let paramIndex = 1;
+
+    // Ajout du filtre de recherche
+    if (searchTerm) {
+      whereClause += ` WHERE LOWER(c.first_name || ' ' || c.last_name || ' ' || c.email) LIKE $${paramIndex}`;
+      params.push(`%${searchTerm.toLowerCase()}%`);
+      paramIndex++;
+    }
+
+    // Ajout du filtre pays
+    if (countryFilter) {
+      whereClause += searchTerm ? ' AND' : ' WHERE';
+      whereClause += ` EXISTS (
+        SELECT 1 FROM orders o
+        WHERE o.wp_customer_id = c.wp_user_id
+        AND o.billing_country = $${paramIndex}
+      )`;
+      params.push(countryFilter);
+      paramIndex++;
+    }
+
+    const query = `SELECT COUNT(*) as total FROM customers c ${whereClause}`;
+    const result = await pool.query(query, params);
+    return parseInt(result.rows[0].total);
+  }
+
+  /**
+   * Récupère la liste des pays uniques des clients
+   */
+  async getCountries() {
+    const query = `
+      SELECT DISTINCT billing_country as country
+      FROM orders
+      WHERE billing_country IS NOT NULL AND billing_country != ''
+      ORDER BY billing_country
+    `;
+    const result = await pool.query(query);
+    return result.rows.map(row => row.country);
+  }
 }
 
 module.exports = new CustomerModel();

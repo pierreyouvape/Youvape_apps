@@ -7,6 +7,8 @@ const customerNotesController = require('../controllers/customerNotesController'
 router.get('/', customersController.getAll);
 router.get('/search', customersController.search);
 router.post('/advanced-search', customersController.advancedSearch);
+router.get('/stats-list', customersController.getStatsListing);
+router.get('/countries', customersController.getCountries);
 
 // Détails client
 router.get('/:id', customersController.getById);

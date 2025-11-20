@@ -152,3 +152,47 @@ exports.getCoupons = async (req, res) => {
     res.status(500).json({ success: false, error: error.message });
   }
 };
+
+/**
+ * Récupère tous les clients pour l'onglet Stats avec pagination et filtres
+ * GET /api/customers/stats-list?limit=50&offset=0&search=&country=
+ */
+exports.getStatsListing = async (req, res) => {
+  try {
+    const limit = parseInt(req.query.limit) || 50;
+    const offset = parseInt(req.query.offset) || 0;
+    const searchTerm = req.query.search || '';
+    const countryFilter = req.query.country || '';
+
+    const customers = await customerModel.getAllForStats(limit, offset, searchTerm, countryFilter);
+    const total = await customerModel.countForStats(searchTerm, countryFilter);
+
+    res.json({
+      success: true,
+      data: customers,
+      pagination: {
+        total,
+        limit,
+        offset,
+        hasMore: offset + limit < total
+      }
+    });
+  } catch (error) {
+    console.error('Error getting customers stats listing:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+/**
+ * Récupère la liste des pays des clients
+ * GET /api/customers/countries
+ */
+exports.getCountries = async (req, res) => {
+  try {
+    const countries = await customerModel.getCountries();
+    res.json({ success: true, data: countries });
+  } catch (error) {
+    console.error('Error getting countries:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
