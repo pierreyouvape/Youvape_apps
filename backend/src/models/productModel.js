@@ -409,7 +409,7 @@ class ProductModel {
           SUM(oi.qty * COALESCE(oi.item_cost, 0)) as cost_ht
         FROM order_items oi
         INNER JOIN orders o ON o.wp_order_id = oi.wp_order_id
-        WHERE (oi.product_id::text = p.wp_product_id OR oi.product_id::text IN (
+        WHERE (CAST(oi.product_id AS TEXT) = p.wp_product_id OR CAST(oi.product_id AS TEXT) IN (
           SELECT wp_product_id FROM products WHERE wp_parent_id = p.wp_product_id
         ))
         AND o.post_status NOT IN ('wc-failed', 'wc-cancelled')
@@ -470,7 +470,7 @@ class ProductModel {
           SUM(oi.qty * COALESCE(oi.item_cost, 0)) as cost_ht
         FROM order_items oi
         INNER JOIN orders o ON o.wp_order_id = oi.wp_order_id
-        WHERE oi.product_id::text = p.wp_product_id
+        WHERE CAST(oi.product_id AS TEXT) = p.wp_product_id
         AND o.post_status NOT IN ('wc-failed', 'wc-cancelled')
       ) stats ON true
       WHERE p.wp_parent_id = $1 AND p.product_type = 'variation'
