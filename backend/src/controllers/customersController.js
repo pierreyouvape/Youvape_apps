@@ -196,3 +196,49 @@ exports.getCountries = async (req, res) => {
     res.status(500).json({ success: false, error: error.message });
   }
 };
+
+/**
+ * Récupère les détails complets d'un client pour la page détail
+ * GET /api/customers/:id/detail
+ */
+exports.getDetail = async (req, res) => {
+  try {
+    const customerId = parseInt(req.params.id);
+    const customer = await customerModel.getDetailById(customerId);
+
+    if (!customer) {
+      return res.status(404).json({ success: false, error: 'Customer not found' });
+    }
+
+    const stats = await customerModel.getStatsForDetail(customerId, customer.email);
+    const orders = await customerModel.getOrdersWithReviews(customerId);
+
+    res.json({
+      success: true,
+      data: {
+        customer,
+        stats,
+        orders
+      }
+    });
+  } catch (error) {
+    console.error('Error getting customer detail:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+/**
+ * Récupère les détails d'une commande (items + shipping)
+ * GET /api/customers/orders/:orderId/details
+ */
+exports.getOrderDetails = async (req, res) => {
+  try {
+    const orderId = parseInt(req.params.orderId);
+    const details = await customerModel.getOrderDetails(orderId);
+
+    res.json({ success: true, data: details });
+  } catch (error) {
+    console.error('Error getting order details:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};

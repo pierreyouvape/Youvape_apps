@@ -10,8 +10,12 @@ router.post('/advanced-search', customersController.advancedSearch);
 router.get('/stats-list', customersController.getStatsListing);
 router.get('/countries', customersController.getCountries);
 
+// Détails commande (doit être avant /:id pour éviter conflit)
+router.get('/orders/:orderId/details', customersController.getOrderDetails);
+
 // Détails client
 router.get('/:id', customersController.getById);
+router.get('/:id/detail', customersController.getDetail);
 router.get('/:id/orders', customersController.getOrders);
 router.get('/:id/favorite-products', customersController.getFavoriteProducts);
 router.get('/:id/stats', customersController.getStats);

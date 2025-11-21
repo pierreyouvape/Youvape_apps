@@ -360,6 +360,198 @@ class CustomerModel {
     const result = await pool.query(query);
     return result.rows.map(row => row.country);
   }
+
+  /**
+   * Récupère les infos détaillées d'un client pour la page détail
+   */
+  async getDetailById(wpUserId) {
+    const query = `
+      SELECT
+        c.*,
+        (
+          SELECT json_build_object(
+            'first_name', o.billing_first_name,
+            'last_name', o.billing_last_name,
+            'address_1', o.billing_address_1,
+            'address_2', o.billing_address_2,
+            'city', o.billing_city,
+            'postcode', o.billing_postcode,
+            'country', o.billing_country,
+            'phone', o.billing_phone
+          )
+          FROM orders o
+          WHERE o.wp_customer_id = c.wp_user_id
+          ORDER BY o.post_date DESC
+          LIMIT 1
+        ) as billing_address,
+        (
+          SELECT json_build_object(
+            'first_name', o.shipping_first_name,
+            'last_name', o.shipping_last_name,
+            'address_1', o.shipping_address_1,
+            'city', o.shipping_city,
+            'postcode', o.shipping_postcode,
+            'country', o.shipping_country,
+            'phone', o.shipping_phone
+          )
+          FROM orders o
+          WHERE o.wp_customer_id = c.wp_user_id
+          ORDER BY o.post_date DESC
+          LIMIT 1
+        ) as shipping_address
+      FROM customers c
+      WHERE c.wp_user_id = $1
+    `;
+    const result = await pool.query(query, [wpUserId]);
+    return result.rows[0];
+  }
+
+  /**
+   * Récupère les stats pour la page détail client
+   * - Nombre commandes: exclut failed/cancelled
+   * - Total dépensé: exclut failed/cancelled/refunded
+   */
+  async getStatsForDetail(wpUserId, customerEmail) {
+    // Nombre de commandes (exclut failed et cancelled uniquement)
+    const orderCountQuery = `
+      SELECT COUNT(*)::int as order_count
+      FROM orders
+      WHERE wp_customer_id = $1
+      AND post_status NOT IN ('wc-failed', 'wc-cancelled')
+    `;
+    const orderCountResult = await pool.query(orderCountQuery, [wpUserId]);
+    const orderCount = parseInt(orderCountResult.rows[0]?.order_count || 0);
+
+    // Total dépensé et commande moyenne (exclut failed, cancelled ET refunded)
+    const spentQuery = `
+      SELECT
+        COALESCE(SUM(order_total), 0) as total_spent,
+        COALESCE(AVG(order_total), 0) as avg_order
+      FROM orders
+      WHERE wp_customer_id = $1
+      AND post_status NOT IN ('wc-failed', 'wc-cancelled', 'wc-refunded')
+    `;
+    const spentResult = await pool.query(spentQuery, [wpUserId]);
+    const totalSpent = parseFloat(spentResult.rows[0]?.total_spent || 0);
+    const avgOrder = parseFloat(spentResult.rows[0]?.avg_order || 0);
+
+    // Nombre de produits différents achetés
+    const uniqueProductsQuery = `
+      SELECT COUNT(DISTINCT oi.wp_product_id)::int as unique_products
+      FROM order_items oi
+      INNER JOIN orders o ON o.wp_order_id = oi.wp_order_id
+      WHERE o.wp_customer_id = $1
+      AND o.post_status NOT IN ('wc-failed', 'wc-cancelled')
+    `;
+    const uniqueProductsResult = await pool.query(uniqueProductsQuery, [wpUserId]);
+    const uniqueProducts = parseInt(uniqueProductsResult.rows[0]?.unique_products || 0);
+
+    // Coût total (exclut failed, cancelled, refunded)
+    const costQuery = `
+      SELECT COALESCE(SUM(oi.qty * COALESCE(oi.item_cost, 0)), 0) as total_cost
+      FROM order_items oi
+      INNER JOIN orders o ON o.wp_order_id = oi.wp_order_id
+      WHERE o.wp_customer_id = $1
+      AND o.post_status NOT IN ('wc-failed', 'wc-cancelled', 'wc-refunded')
+    `;
+    const costResult = await pool.query(costQuery, [wpUserId]);
+    const totalCost = parseFloat(costResult.rows[0]?.total_cost || 0);
+
+    // Calcul bénéfice et marge
+    const profit = totalSpent - totalCost;
+    const margin = totalSpent > 0 ? ((profit / totalSpent) * 100) : 0;
+
+    // Nombre d'avis laissés (via email client)
+    const reviewsQuery = `
+      SELECT COUNT(*)::int as reviews_count
+      FROM reviews
+      WHERE customer_email = $1
+    `;
+    const reviewsResult = await pool.query(reviewsQuery, [customerEmail]);
+    const reviewsCount = parseInt(reviewsResult.rows[0]?.reviews_count || 0);
+
+    return {
+      order_count: orderCount,
+      total_spent: totalSpent,
+      avg_order: avgOrder,
+      unique_products: uniqueProducts,
+      total_cost: totalCost,
+      profit: profit,
+      margin: margin,
+      reviews_count: reviewsCount
+    };
+  }
+
+  /**
+   * Récupère les commandes d'un client avec indicateur avis
+   */
+  async getOrdersWithReviews(wpUserId) {
+    const query = `
+      SELECT
+        o.wp_order_id,
+        o.post_date,
+        o.post_status,
+        o.order_total,
+        o.payment_method_title,
+        (SELECT COUNT(*) FROM order_items WHERE wp_order_id = o.wp_order_id) as items_count,
+        (SELECT COUNT(*) > 0 FROM reviews WHERE order_id = o.wp_order_id::text) as has_review
+      FROM orders o
+      WHERE o.wp_customer_id = $1
+      ORDER BY o.post_date DESC
+    `;
+    const result = await pool.query(query, [wpUserId]);
+    return result.rows;
+  }
+
+  /**
+   * Récupère les détails d'une commande (items + shipping)
+   */
+  async getOrderDetails(wpOrderId) {
+    // Items de la commande
+    const itemsQuery = `
+      SELECT
+        oi.*,
+        p.post_title as product_name,
+        p.sku
+      FROM order_items oi
+      LEFT JOIN products p ON p.wp_product_id = oi.wp_product_id
+      WHERE oi.wp_order_id = $1
+      AND oi.order_item_type = 'line_item'
+    `;
+    const itemsResult = await pool.query(itemsQuery, [wpOrderId]);
+
+    // Infos de la commande (shipping method)
+    const orderQuery = `
+      SELECT
+        payment_method_title,
+        order_shipping,
+        shipping_company,
+        shipping_first_name,
+        shipping_last_name,
+        shipping_address_1,
+        shipping_city,
+        shipping_postcode,
+        shipping_country
+      FROM orders
+      WHERE wp_order_id = $1
+    `;
+    const orderResult = await pool.query(orderQuery, [wpOrderId]);
+
+    // Méthode d'expédition (depuis order_items type shipping)
+    const shippingQuery = `
+      SELECT order_item_name
+      FROM order_items
+      WHERE wp_order_id = $1 AND order_item_type = 'shipping'
+      LIMIT 1
+    `;
+    const shippingResult = await pool.query(shippingQuery, [wpOrderId]);
+
+    return {
+      items: itemsResult.rows,
+      order: orderResult.rows[0],
+      shipping_method: shippingResult.rows[0]?.order_item_name || null
+    };
+  }
 }
 
 module.exports = new CustomerModel();

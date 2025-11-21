@@ -1,10 +1,12 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { getCountryLabel } from '../../utils/countries';
 
 const API_BASE_URL = 'http://54.37.156.233:3000/api';
 
 const CustomersStatsTab = () => {
+  const navigate = useNavigate();
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(false);
   const [pagination, setPagination] = useState({
@@ -211,7 +213,13 @@ const CustomersStatsTab = () => {
               </thead>
               <tbody>
                 {data.map((customer) => (
-                  <tr key={customer.id} style={{ borderTop: '1px solid #dee2e6' }}>
+                  <tr
+                    key={customer.id}
+                    onClick={() => navigate(`/customers/${customer.id}`)}
+                    style={{ borderTop: '1px solid #dee2e6', cursor: 'pointer', transition: 'background-color 0.2s' }}
+                    onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f8f9fa'}
+                    onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'white'}
+                  >
                     <td style={{ padding: '15px', fontSize: '14px', fontWeight: 'bold', color: '#007bff' }}>{customer.id}</td>
                     <td style={{ padding: '15px', fontSize: '14px' }}>
                       {`${customer.first_name || ''} ${customer.last_name || ''}`.trim() || 'N/A'}
