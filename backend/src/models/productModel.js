@@ -399,7 +399,7 @@ class ProductModel {
           THEN ((COALESCE(stats.ca_ht, 0) - COALESCE(stats.cost_ht, 0)) / COALESCE(stats.ca_ht, 0) * 100)
           ELSE 0
         END as margin_percent,
-        (SELECT COUNT(*) FROM products WHERE wp_parent_id = p.wp_product_id::text) as variations_count
+        (SELECT COUNT(*) FROM products WHERE wp_parent_id = p.wp_product_id) as variations_count
       FROM products p
       LEFT JOIN LATERAL (
         SELECT
@@ -409,8 +409,8 @@ class ProductModel {
           SUM(oi.qty * COALESCE(oi.item_cost, 0)) as cost_ht
         FROM order_items oi
         INNER JOIN orders o ON o.wp_order_id = oi.wp_order_id
-        WHERE (oi.product_id = p.wp_product_id::bigint OR oi.product_id IN (
-          SELECT wp_product_id::bigint FROM products WHERE wp_parent_id = p.wp_product_id::text
+        WHERE (oi.product_id::text = p.wp_product_id OR oi.product_id::text IN (
+          SELECT wp_product_id FROM products WHERE wp_parent_id = p.wp_product_id
         ))
         AND o.post_status NOT IN ('wc-failed', 'wc-cancelled')
       ) stats ON true
@@ -470,7 +470,7 @@ class ProductModel {
           SUM(oi.qty * COALESCE(oi.item_cost, 0)) as cost_ht
         FROM order_items oi
         INNER JOIN orders o ON o.wp_order_id = oi.wp_order_id
-        WHERE oi.product_id = p.wp_product_id::bigint
+        WHERE oi.product_id::text = p.wp_product_id
         AND o.post_status NOT IN ('wc-failed', 'wc-cancelled')
       ) stats ON true
       WHERE p.wp_parent_id = $1 AND p.product_type = 'variation'
