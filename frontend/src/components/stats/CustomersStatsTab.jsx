@@ -12,8 +12,6 @@ const CustomersStatsTab = () => {
     pageSize: 50,
   });
   const [totalCount, setTotalCount] = useState(0);
-  const [totalSpent, setTotalSpent] = useState(0);
-  const [avgOrders, setAvgOrders] = useState(0);
   const [searchTerm, setSearchTerm] = useState('');
   const [countryFilter, setCountryFilter] = useState('');
   const [countries, setCountries] = useState([]);
@@ -51,15 +49,6 @@ const CustomersStatsTab = () => {
         if (response.data.success) {
           setData(response.data.data);
           setTotalCount(response.data.pagination.total);
-
-          // Calcul des statistiques
-          const total = response.data.data.reduce((sum, customer) => sum + parseFloat(customer.total_spent || 0), 0);
-          const avgOrderCount = response.data.data.length > 0
-            ? response.data.data.reduce((sum, customer) => sum + parseInt(customer.order_count || 0), 0) / response.data.data.length
-            : 0;
-
-          setTotalSpent(total);
-          setAvgOrders(avgOrderCount);
         }
       } catch (error) {
         console.error('Error fetching customers:', error);
@@ -195,19 +184,11 @@ const CustomersStatsTab = () => {
         </button>
       </div>
 
-      {/* Cards de statistiques */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '20px', marginBottom: '30px' }}>
-        <div style={{ backgroundColor: 'white', padding: '20px', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
+      {/* Card de statistique */}
+      <div style={{ marginBottom: '30px' }}>
+        <div style={{ backgroundColor: 'white', padding: '20px', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)', display: 'inline-block' }}>
           <p style={{ fontSize: '14px', color: '#6c757d', margin: '0 0 10px 0' }}>Total clients</p>
           <p style={{ fontSize: '28px', fontWeight: 'bold', color: '#333', margin: 0 }}>{totalCount}</p>
-        </div>
-        <div style={{ backgroundColor: 'white', padding: '20px', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
-          <p style={{ fontSize: '14px', color: '#6c757d', margin: '0 0 10px 0' }}>Total dépensé (page)</p>
-          <p style={{ fontSize: '28px', fontWeight: 'bold', color: '#007bff', margin: 0 }}>{totalSpent.toFixed(2)} €</p>
-        </div>
-        <div style={{ backgroundColor: 'white', padding: '20px', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
-          <p style={{ fontSize: '14px', color: '#6c757d', margin: '0 0 10px 0' }}>Moy. commandes (page)</p>
-          <p style={{ fontSize: '28px', fontWeight: 'bold', color: '#28a745', margin: 0 }}>{avgOrders.toFixed(1)}</p>
         </div>
       </div>
 
