@@ -49,7 +49,9 @@
       "Bash(curl -s http://54.37.156.233/)",
       "Bash(curl -s http://54.37.156.233/assets/index-C6bRBncA.js)",
       "Bash(npm install:*)",
-      "Bash(curl -s \"http://54.37.156.233:3000/api/customers/stats-list?limit=5\")"
+      "Bash(curl -s \"http://54.37.156.233:3000/api/customers/stats-list?limit=5\")",
+      "Bash(curl -s \"http://54.37.156.233:3000/api/customers/stats-list?limit=1\")",
+      "Bash(curl -s \"http://54.37.156.233:3000/api/customers/7013/detail\")"
     ],
     "deny": [],
     "ask": []

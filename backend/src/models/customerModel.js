@@ -437,7 +437,7 @@ class CustomerModel {
 
     // Nombre de produits différents achetés
     const uniqueProductsQuery = `
-      SELECT COUNT(DISTINCT oi.wp_product_id)::int as unique_products
+      SELECT COUNT(DISTINCT oi.product_id)::int as unique_products
       FROM order_items oi
       INNER JOIN orders o ON o.wp_order_id = oi.wp_order_id
       WHERE o.wp_customer_id = $1
@@ -514,7 +514,7 @@ class CustomerModel {
         p.post_title as product_name,
         p.sku
       FROM order_items oi
-      LEFT JOIN products p ON p.wp_product_id = oi.wp_product_id
+      LEFT JOIN products p ON p.wp_product_id = oi.product_id
       WHERE oi.wp_order_id = $1
       AND oi.order_item_type = 'line_item'
     `;
