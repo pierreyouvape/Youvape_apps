@@ -202,3 +202,50 @@ exports.updateCostPrice = async (req, res) => {
     res.status(500).json({ success: false, error: error.message });
   }
 };
+
+/**
+ * Récupère les produits pour l'onglet Stats avec pagination et tri
+ * GET /api/products/stats-list?limit=50&offset=0&search=&sortBy=qty_sold&sortOrder=DESC
+ */
+exports.getStatsListing = async (req, res) => {
+  try {
+    const limit = parseInt(req.query.limit) || 50;
+    const offset = parseInt(req.query.offset) || 0;
+    const searchTerm = req.query.search || '';
+    const sortBy = req.query.sortBy || 'qty_sold';
+    const sortOrder = req.query.sortOrder || 'DESC';
+
+    const products = await productModel.getAllForStats(limit, offset, searchTerm, sortBy, sortOrder);
+    const total = await productModel.countForStats(searchTerm);
+
+    res.json({
+      success: true,
+      data: products,
+      pagination: {
+        total,
+        limit,
+        offset,
+        hasMore: offset + limit < total
+      }
+    });
+  } catch (error) {
+    console.error('Error getting products stats listing:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+/**
+ * Récupère les variations d'un produit pour l'onglet Stats
+ * GET /api/products/:id/variations-stats
+ */
+exports.getVariationsStats = async (req, res) => {
+  try {
+    const productId = req.params.id;
+    const variations = await productModel.getVariationsForStats(productId);
+
+    res.json({ success: true, data: variations });
+  } catch (error) {
+    console.error('Error getting product variations stats:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};

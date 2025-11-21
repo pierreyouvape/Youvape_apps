@@ -9,6 +9,7 @@ router.get('/search', productsController.search);
 router.get('/categories/list', productsController.getCategories);
 router.get('/stock-summary', productsController.getStockSummary);
 router.get('/category/:category', productsController.getByCategory);
+router.get('/stats-list', productsController.getStatsListing);
 
 // Détails produit
 router.get('/:id', productsController.getById);
@@ -28,6 +29,7 @@ router.get('/:id/stats/top-customers', productStatsController.getTopCustomers);
 router.get('/:id/stats/recent-orders', productStatsController.getRecentOrders);
 router.get('/:id/stats/by-day-of-week', productStatsController.getSalesByDayOfWeek);
 router.get('/:id/stats/by-hour', productStatsController.getSalesByHour);
+router.get('/:id/variations-stats', productsController.getVariationsStats);
 
 // Édition
 router.put('/:id/cost', productsController.updateCostPrice);

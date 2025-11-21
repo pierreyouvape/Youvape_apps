@@ -345,6 +345,140 @@ class ProductModel {
     const result = await pool.query(query, [wpProductId]);
     return result.rows;
   }
+
+  /**
+   * Récupère les produits pour l'onglet Stats avec pagination
+   * Produits parents uniquement (simple + variable) avec stats agrégées
+   * Exclut les commandes failed et cancelled
+   */
+  async getAllForStats(limit = 50, offset = 0, searchTerm = '', sortBy = 'qty_sold', sortOrder = 'DESC') {
+    let whereClause = "WHERE p.product_type IN ('simple', 'variable') AND p.post_status = 'publish'";
+    let params = [];
+    let paramIndex = 1;
+
+    if (searchTerm) {
+      whereClause += ` AND LOWER(p.post_title || ' ' || COALESCE(p.sku, '')) LIKE $${paramIndex}`;
+      params.push(`%${searchTerm.toLowerCase()}%`);
+      paramIndex++;
+    }
+
+    // Colonnes triables
+    const sortColumns = {
+      'name': 'p.post_title',
+      'sku': 'p.sku',
+      'stock': 'stock',
+      'qty_sold': 'qty_sold',
+      'ca_ttc': 'ca_ttc',
+      'ca_ht': 'ca_ht',
+      'cost_ht': 'cost_ht',
+      'margin_ht': 'margin_ht',
+      'margin_percent': 'margin_percent'
+    };
+    const orderColumn = sortColumns[sortBy] || 'qty_sold';
+    const order = sortOrder.toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
+
+    params.push(limit, offset);
+    const limitParam = paramIndex;
+    const offsetParam = paramIndex + 1;
+
+    const query = `
+      SELECT
+        p.wp_product_id,
+        p.post_title,
+        p.sku,
+        p.product_type,
+        COALESCE(p.stock::int, 0) as stock,
+        p.stock_status,
+        -- Stats agrégées (produit + ses variations)
+        COALESCE(stats.qty_sold, 0)::int as qty_sold,
+        COALESCE(stats.ca_ttc, 0) as ca_ttc,
+        COALESCE(stats.ca_ht, 0) as ca_ht,
+        COALESCE(stats.cost_ht, 0) as cost_ht,
+        COALESCE(stats.ca_ht, 0) - COALESCE(stats.cost_ht, 0) as margin_ht,
+        CASE WHEN COALESCE(stats.ca_ht, 0) > 0
+          THEN ((COALESCE(stats.ca_ht, 0) - COALESCE(stats.cost_ht, 0)) / COALESCE(stats.ca_ht, 0) * 100)
+          ELSE 0
+        END as margin_percent,
+        (SELECT COUNT(*) FROM products WHERE wp_parent_id = p.wp_product_id::text) as variations_count
+      FROM products p
+      LEFT JOIN LATERAL (
+        SELECT
+          SUM(oi.qty) as qty_sold,
+          SUM(oi.line_total) as ca_ttc,
+          SUM(oi.line_subtotal) as ca_ht,
+          SUM(oi.qty * COALESCE(oi.item_cost, 0)) as cost_ht
+        FROM order_items oi
+        INNER JOIN orders o ON o.wp_order_id = oi.wp_order_id
+        WHERE (oi.product_id = p.wp_product_id::bigint OR oi.product_id IN (
+          SELECT wp_product_id::bigint FROM products WHERE wp_parent_id = p.wp_product_id::text
+        ))
+        AND o.post_status NOT IN ('wc-failed', 'wc-cancelled')
+      ) stats ON true
+      ${whereClause}
+      ORDER BY ${orderColumn} ${order} NULLS LAST
+      LIMIT $${limitParam} OFFSET $${offsetParam}
+    `;
+
+    const result = await pool.query(query, params);
+    return result.rows;
+  }
+
+  /**
+   * Compte les produits pour l'onglet Stats
+   */
+  async countForStats(searchTerm = '') {
+    let whereClause = "WHERE product_type IN ('simple', 'variable') AND post_status = 'publish'";
+    let params = [];
+
+    if (searchTerm) {
+      whereClause += ` AND LOWER(post_title || ' ' || COALESCE(sku, '')) LIKE $1`;
+      params.push(`%${searchTerm.toLowerCase()}%`);
+    }
+
+    const query = `SELECT COUNT(*)::int as total FROM products ${whereClause}`;
+    const result = await pool.query(query, params);
+    return parseInt(result.rows[0].total);
+  }
+
+  /**
+   * Récupère les variations d'un produit avec leurs stats
+   */
+  async getVariationsForStats(wpParentId) {
+    const query = `
+      SELECT
+        p.wp_product_id,
+        p.post_title,
+        p.sku,
+        COALESCE(p.stock::int, 0) as stock,
+        p.stock_status,
+        p.product_attributes,
+        COALESCE(stats.qty_sold, 0)::int as qty_sold,
+        COALESCE(stats.ca_ttc, 0) as ca_ttc,
+        COALESCE(stats.ca_ht, 0) as ca_ht,
+        COALESCE(stats.cost_ht, 0) as cost_ht,
+        COALESCE(stats.ca_ht, 0) - COALESCE(stats.cost_ht, 0) as margin_ht,
+        CASE WHEN COALESCE(stats.ca_ht, 0) > 0
+          THEN ((COALESCE(stats.ca_ht, 0) - COALESCE(stats.cost_ht, 0)) / COALESCE(stats.ca_ht, 0) * 100)
+          ELSE 0
+        END as margin_percent
+      FROM products p
+      LEFT JOIN LATERAL (
+        SELECT
+          SUM(oi.qty) as qty_sold,
+          SUM(oi.line_total) as ca_ttc,
+          SUM(oi.line_subtotal) as ca_ht,
+          SUM(oi.qty * COALESCE(oi.item_cost, 0)) as cost_ht
+        FROM order_items oi
+        INNER JOIN orders o ON o.wp_order_id = oi.wp_order_id
+        WHERE oi.product_id = p.wp_product_id::bigint
+        AND o.post_status NOT IN ('wc-failed', 'wc-cancelled')
+      ) stats ON true
+      WHERE p.wp_parent_id = $1 AND p.product_type = 'variation'
+      ORDER BY qty_sold DESC NULLS LAST
+    `;
+    const result = await pool.query(query, [wpParentId]);
+    return result.rows;
+  }
 }
 
 module.exports = new ProductModel();

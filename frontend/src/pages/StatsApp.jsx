@@ -2,6 +2,7 @@ import { useState, useContext } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AuthContext } from '../context/AuthContext';
 import CustomersStatsTab from '../components/stats/CustomersStatsTab';
+import ProductsStatsTab from '../components/stats/ProductsStatsTab';
 
 const StatsApp = () => {
   const [activeTab, setActiveTab] = useState('clients');
@@ -10,7 +11,7 @@ const StatsApp = () => {
 
   const tabs = [
     { id: 'clients', label: 'Clients', component: CustomersStatsTab },
-    // Vous pouvez ajouter d'autres onglets ici
+    { id: 'products', label: 'Produits', component: ProductsStatsTab },
   ];
 
   const ActiveTabComponent = tabs.find((tab) => tab.id === activeTab)?.component;
