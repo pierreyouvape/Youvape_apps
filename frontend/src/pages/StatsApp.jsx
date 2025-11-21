@@ -1,8 +1,12 @@
-import { useState } from 'react';
+import { useState, useContext } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { AuthContext } from '../context/AuthContext';
 import CustomersStatsTab from '../components/stats/CustomersStatsTab';
 
 const StatsApp = () => {
   const [activeTab, setActiveTab] = useState('clients');
+  const { logout } = useContext(AuthContext);
+  const navigate = useNavigate();
 
   const tabs = [
     { id: 'clients', label: 'Clients', component: CustomersStatsTab },
@@ -11,34 +15,102 @@ const StatsApp = () => {
 
   const ActiveTabComponent = tabs.find((tab) => tab.id === activeTab)?.component;
 
-  return (
-    <div className="min-h-screen bg-gray-50 p-6">
-      <h1 className="text-3xl font-bold text-gray-800 mb-6">Statistiques</h1>
+  const handleLogout = () => {
+    logout();
+    navigate('/login');
+  };
 
-      {/* Onglets */}
-      <div className="mb-6 border-b border-gray-200">
-        <nav className="-mb-px flex space-x-8">
-          {tabs.map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={`
-                whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm
-                ${
-                  activeTab === tab.id
-                    ? 'border-blue-500 text-blue-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                }
-              `}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </nav>
+  const handleBackHome = () => {
+    navigate('/home');
+  };
+
+  const tabStyle = (tabId) => ({
+    padding: '15px 30px',
+    cursor: 'pointer',
+    borderBottom: activeTab === tabId ? '3px solid #007bff' : '3px solid transparent',
+    color: activeTab === tabId ? '#007bff' : '#666',
+    fontWeight: activeTab === tabId ? 'bold' : 'normal',
+    transition: 'all 0.3s ease'
+  });
+
+  return (
+    <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
+      {/* Header */}
+      <div style={{
+        backgroundColor: '#135E84',
+        padding: '20px 0',
+        display: 'flex',
+        justifyContent: 'center',
+        alignItems: 'center',
+        position: 'relative'
+      }}>
+        <img
+          src="/images/logo.svg"
+          alt="YouVape"
+          style={{ height: '60px' }}
+        />
+        <div style={{ position: 'absolute', right: '20px', display: 'flex', gap: '10px' }}>
+          <button
+            onClick={handleBackHome}
+            style={{
+              padding: '10px 20px',
+              backgroundColor: '#fff',
+              color: '#135E84',
+              border: 'none',
+              borderRadius: '6px',
+              fontSize: '14px',
+              cursor: 'pointer',
+              fontWeight: '600'
+            }}
+          >
+            Retour
+          </button>
+          <button
+            onClick={handleLogout}
+            style={{
+              padding: '10px 20px',
+              backgroundColor: '#dc3545',
+              color: 'white',
+              border: 'none',
+              borderRadius: '6px',
+              fontSize: '14px',
+              cursor: 'pointer',
+              fontWeight: '600'
+            }}
+          >
+            Déconnexion
+          </button>
+        </div>
       </div>
 
-      {/* Contenu de l'onglet actif */}
-      <div>{ActiveTabComponent && <ActiveTabComponent />}</div>
+      {/* Main Content */}
+      <div style={{ flex: 1, maxWidth: '1400px', margin: '30px auto', padding: '20px', width: '100%' }}>
+        {/* Onglets */}
+        <div style={{ display: 'flex', borderBottom: '2px solid #ddd', marginBottom: '20px' }}>
+          {tabs.map((tab) => (
+            <div
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              style={tabStyle(tab.id)}
+            >
+              {tab.label}
+            </div>
+          ))}
+        </div>
+
+        {/* Contenu de l'onglet actif */}
+        <div>{ActiveTabComponent && <ActiveTabComponent />}</div>
+      </div>
+
+      {/* Footer */}
+      <div style={{
+        backgroundColor: '#135E84',
+        padding: '20px 0',
+        textAlign: 'center',
+        color: 'white'
+      }}>
+        <p style={{ margin: 0 }}>© 2024 YouVape - Tous droits réservés</p>
+      </div>
     </div>
   );
 };

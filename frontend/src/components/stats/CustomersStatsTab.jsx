@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
+import { getCountryLabel } from '../../utils/countries';
 
 const API_BASE_URL = 'http://54.37.156.233:3000/api';
 
@@ -142,18 +143,18 @@ const CustomersStatsTab = () => {
     <div>
       {/* Header avec filtres */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px', flexWrap: 'wrap', gap: '15px' }}>
-        <h2 style={{ fontSize: '24px', fontWeight: 'bold', margin: 0 }}>Liste des clients</h2>
-        <div style={{ display: 'flex', gap: '15px' }}>
+        <div style={{ display: 'flex', gap: '15px', flex: 1 }}>
           <input
             type="text"
             value={searchTerm}
             onChange={handleSearchChange}
-            placeholder="Rechercher..."
+            placeholder="Rechercher par nom, prénom, email..."
             style={{
               padding: '10px 15px',
               border: '1px solid #ddd',
               borderRadius: '6px',
               fontSize: '16px',
+              flex: 1,
               minWidth: '250px'
             }}
           />
@@ -165,33 +166,33 @@ const CustomersStatsTab = () => {
               border: '1px solid #ddd',
               borderRadius: '6px',
               fontSize: '16px',
-              minWidth: '150px'
+              minWidth: '200px'
             }}
           >
             <option value="">Tous les pays</option>
             {countries.map((country) => (
               <option key={country} value={country}>
-                {country}
+                {getCountryLabel(country)}
               </option>
             ))}
           </select>
-          <button
-            onClick={handleExport}
-            style={{
-              padding: '10px 20px',
-              backgroundColor: '#28a745',
-              color: 'white',
-              border: 'none',
-              borderRadius: '6px',
-              fontSize: '16px',
-              fontWeight: 'bold',
-              cursor: 'pointer',
-              transition: 'background-color 0.3s ease'
-            }}
-          >
-            📥 Exporter CSV
-          </button>
         </div>
+        <button
+          onClick={handleExport}
+          style={{
+            padding: '10px 20px',
+            backgroundColor: '#28a745',
+            color: 'white',
+            border: 'none',
+            borderRadius: '6px',
+            fontSize: '16px',
+            fontWeight: 'bold',
+            cursor: 'pointer',
+            transition: 'background-color 0.3s ease'
+          }}
+        >
+          📥 Exporter CSV
+        </button>
       </div>
 
       {/* Cards de statistiques */}
@@ -250,7 +251,9 @@ const CustomersStatsTab = () => {
                     <td style={{ padding: '15px', fontSize: '14px', fontWeight: 'bold' }}>
                       {parseFloat(customer.total_spent || 0).toFixed(2)} €
                     </td>
-                    <td style={{ padding: '15px', fontSize: '14px' }}>{customer.country || 'N/A'}</td>
+                    <td style={{ padding: '15px', fontSize: '14px' }}>
+                      {customer.country ? getCountryLabel(customer.country) : 'N/A'}
+                    </td>
                   </tr>
                 ))}
               </tbody>
