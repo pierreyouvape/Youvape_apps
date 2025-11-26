@@ -382,6 +382,29 @@ class ProductModel {
     const offsetParam = paramIndex + 1;
 
     const query = `
+      WITH product_family AS (
+        -- Créer une relation produit parent -> tous ses IDs (lui-même + variations)
+        SELECT
+          p.wp_product_id as parent_id,
+          COALESCE(v.wp_product_id, p.wp_product_id) as product_id
+        FROM products p
+        LEFT JOIN products v ON v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation'
+        WHERE p.product_type IN ('simple', 'variable') AND p.post_status = 'publish'
+      ),
+      product_stats AS (
+        -- Agréger les stats par produit parent
+        SELECT
+          pf.parent_id,
+          SUM(oi.qty)::int as qty_sold,
+          SUM(oi.line_total) as ca_ttc,
+          SUM(oi.line_subtotal) as ca_ht,
+          SUM(oi.qty * COALESCE(oi.item_cost, 0)) as cost_ht
+        FROM product_family pf
+        LEFT JOIN order_items oi ON oi.product_id = pf.product_id
+        LEFT JOIN orders o ON o.wp_order_id = oi.wp_order_id
+          AND o.post_status NOT IN ('wc-failed', 'wc-cancelled')
+        GROUP BY pf.parent_id
+      )
       SELECT
         p.wp_product_id,
         p.post_title,
@@ -389,31 +412,18 @@ class ProductModel {
         p.product_type,
         COALESCE(p.stock::int, 0) as stock,
         p.stock_status,
-        -- Stats agrégées (produit + ses variations)
-        COALESCE(stats.qty_sold, 0)::int as qty_sold,
-        COALESCE(stats.ca_ttc, 0) as ca_ttc,
-        COALESCE(stats.ca_ht, 0) as ca_ht,
-        COALESCE(stats.cost_ht, 0) as cost_ht,
-        COALESCE(stats.ca_ht, 0) - COALESCE(stats.cost_ht, 0) as margin_ht,
-        CASE WHEN COALESCE(stats.ca_ht, 0) > 0
-          THEN ((COALESCE(stats.ca_ht, 0) - COALESCE(stats.cost_ht, 0)) / COALESCE(stats.ca_ht, 0) * 100)
+        COALESCE(ps.qty_sold, 0) as qty_sold,
+        COALESCE(ps.ca_ttc, 0) as ca_ttc,
+        COALESCE(ps.ca_ht, 0) as ca_ht,
+        COALESCE(ps.cost_ht, 0) as cost_ht,
+        COALESCE(ps.ca_ht, 0) - COALESCE(ps.cost_ht, 0) as margin_ht,
+        CASE WHEN COALESCE(ps.ca_ht, 0) > 0
+          THEN ((COALESCE(ps.ca_ht, 0) - COALESCE(ps.cost_ht, 0)) / COALESCE(ps.ca_ht, 0) * 100)
           ELSE 0
         END as margin_percent,
         (SELECT COUNT(*) FROM products WHERE wp_parent_id = p.wp_product_id) as variations_count
       FROM products p
-      LEFT JOIN LATERAL (
-        SELECT
-          SUM(oi.qty) as qty_sold,
-          SUM(oi.line_total) as ca_ttc,
-          SUM(oi.line_subtotal) as ca_ht,
-          SUM(oi.qty * COALESCE(oi.item_cost, 0)) as cost_ht
-        FROM order_items oi
-        INNER JOIN orders o ON o.wp_order_id = oi.wp_order_id
-        WHERE (oi.product_id = p.wp_product_id OR oi.product_id IN (
-          SELECT wp_product_id FROM products WHERE wp_parent_id = p.wp_product_id
-        ))
-        AND o.post_status NOT IN ('wc-failed', 'wc-cancelled')
-      ) stats ON true
+      LEFT JOIN product_stats ps ON ps.parent_id = p.wp_product_id
       ${whereClause}
       ORDER BY ${orderColumn} ${order} NULLS LAST
       LIMIT $${limitParam} OFFSET $${offsetParam}
