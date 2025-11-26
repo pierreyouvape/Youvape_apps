@@ -352,7 +352,7 @@ class ProductModel {
    * Exclut les commandes failed et cancelled
    */
   async getAllForStats(limit = 50, offset = 0, searchTerm = '', sortBy = 'qty_sold', sortOrder = 'DESC') {
-    let whereClause = "WHERE p.product_type IN ('simple', 'variable') AND p.post_status = 'publish'";
+    let whereClause = "WHERE p.product_type IN ('simple', 'variable', 'woosb') AND p.post_status = 'publish'";
     let params = [];
     let paramIndex = 1;
 
@@ -389,10 +389,28 @@ class ProductModel {
           COALESCE(v.wp_product_id, p.wp_product_id) as product_id
         FROM products p
         LEFT JOIN products v ON v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation'
-        WHERE p.product_type IN ('simple', 'variable') AND p.post_status = 'publish'
+        WHERE p.product_type IN ('simple', 'variable', 'woosb') AND p.post_status = 'publish'
+      ),
+      bundle_sub_items AS (
+        -- Identifier les lignes de commande qui sont des sous-produits de bundles
+        -- Ce sont les produits vendus à 0€ qui apparaissent dans le woosb_ids d'un bundle dans la même commande
+        SELECT DISTINCT
+          oi.id as order_item_id
+        FROM order_items oi
+        INNER JOIN order_items oi_bundle ON oi.wp_order_id = oi_bundle.wp_order_id
+        INNER JOIN products p_bundle ON p_bundle.wp_product_id = oi_bundle.product_id
+        WHERE
+          p_bundle.product_type = 'woosb'
+          AND p_bundle.woosb_ids IS NOT NULL
+          AND oi.line_total = 0
+          AND oi.product_id::text = ANY(
+            SELECT jsonb_array_elements_text(
+              jsonb_path_query_array(p_bundle.woosb_ids, '$[*].id')
+            )
+          )
       ),
       product_stats AS (
-        -- Agréger les stats par produit parent
+        -- Agréger les stats par produit parent, en excluant les bundle sub-items
         SELECT
           pf.parent_id,
           SUM(oi.qty)::int as qty_sold,
@@ -403,6 +421,7 @@ class ProductModel {
         LEFT JOIN order_items oi ON oi.product_id = pf.product_id
         LEFT JOIN orders o ON o.wp_order_id = oi.wp_order_id
           AND o.post_status NOT IN ('wc-failed', 'wc-cancelled')
+        WHERE oi.id IS NULL OR oi.id NOT IN (SELECT order_item_id FROM bundle_sub_items)
         GROUP BY pf.parent_id
       )
       SELECT
@@ -437,7 +456,7 @@ class ProductModel {
    * Compte les produits pour l'onglet Stats
    */
   async countForStats(searchTerm = '') {
-    let whereClause = "WHERE product_type IN ('simple', 'variable') AND post_status = 'publish'";
+    let whereClause = "WHERE product_type IN ('simple', 'variable', 'woosb') AND post_status = 'publish'";
     let params = [];
 
     if (searchTerm) {
@@ -455,6 +474,23 @@ class ProductModel {
    */
   async getVariationsForStats(wpParentId) {
     const query = `
+      WITH bundle_sub_items AS (
+        -- Identifier les lignes de commande qui sont des sous-produits de bundles
+        SELECT DISTINCT
+          oi.id as order_item_id
+        FROM order_items oi
+        INNER JOIN order_items oi_bundle ON oi.wp_order_id = oi_bundle.wp_order_id
+        INNER JOIN products p_bundle ON p_bundle.wp_product_id = oi_bundle.product_id
+        WHERE
+          p_bundle.product_type = 'woosb'
+          AND p_bundle.woosb_ids IS NOT NULL
+          AND oi.line_total = 0
+          AND oi.product_id::text = ANY(
+            SELECT jsonb_array_elements_text(
+              jsonb_path_query_array(p_bundle.woosb_ids, '$[*].id')
+            )
+          )
+      )
       SELECT
         p.wp_product_id,
         p.post_title,
@@ -482,6 +518,7 @@ class ProductModel {
         INNER JOIN orders o ON o.wp_order_id = oi.wp_order_id
         WHERE oi.product_id = p.wp_product_id
         AND o.post_status NOT IN ('wc-failed', 'wc-cancelled')
+        AND (oi.id NOT IN (SELECT order_item_id FROM bundle_sub_items))
       ) stats ON true
       WHERE p.wp_parent_id = $1 AND p.product_type = 'variation'
       ORDER BY qty_sold DESC NULLS LAST

@@ -71,6 +71,11 @@ function transformProduct(rawData) {
     baseProduct.product_tip = getMeta('product_tip');
   }
 
+  // Additional fields for BUNDLE products (woosb type)
+  if (product_type === 'woosb') {
+    baseProduct.woosb_ids = tryParseJson(getMeta('woosb_ids'));
+  }
+
   return baseProduct;
 }
 
@@ -174,12 +179,13 @@ async function insertProduct(pool, productData) {
       product_with_nicotine, product_excerpt_custom, yoast_indexnow_last_ping,
       faq_title, accodion_list, product_tip,
       variation_description, manage_stock, global_unique_id,
+      woosb_ids,
       updated_at
     ) VALUES (
       $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
       $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
       $21, $22, $23, $24, $25, $26, $27, $28, $29, $30,
-      $31, $32, $33, $34, $35, $36, $37, $38, NOW()
+      $31, $32, $33, $34, $35, $36, $37, $38, $39, NOW()
     )
     ON CONFLICT (wp_product_id)
     DO UPDATE SET
@@ -220,6 +226,7 @@ async function insertProduct(pool, productData) {
       variation_description = EXCLUDED.variation_description,
       manage_stock = EXCLUDED.manage_stock,
       global_unique_id = EXCLUDED.global_unique_id,
+      woosb_ids = EXCLUDED.woosb_ids,
       updated_at = NOW()
     RETURNING id, (xmax = 0) AS inserted
   `;
@@ -262,7 +269,8 @@ async function insertProduct(pool, productData) {
     productData.product_tip || null,
     productData.variation_description || null,
     productData.manage_stock || false,
-    productData.global_unique_id || null
+    productData.global_unique_id || null,
+    JSON.stringify(productData.woosb_ids || null)
   ];
 
   const result = await pool.query(query, values);

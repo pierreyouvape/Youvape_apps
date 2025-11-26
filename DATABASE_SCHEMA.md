@@ -49,7 +49,7 @@ Documentation complète des tables, champs et mapping WooCommerce → PostgreSQL
 |---------|------|-------------|-------------|
 | `id` | SERIAL | PRIMARY KEY | ID interne PostgreSQL |
 | `wp_product_id` | BIGINT | UNIQUE, NOT NULL | ID produit WordPress |
-| `product_type` | VARCHAR(50) | NOT NULL | Type: 'simple', 'variable', 'variation' |
+| `product_type` | VARCHAR(50) | NOT NULL | Type: 'simple', 'variable', 'variation', 'woosb' |
 | `wp_parent_id` | BIGINT | NULL, FK → products.wp_product_id | ID parent pour variations |
 | `post_author` | BIGINT | NULL | ID auteur WordPress |
 | `post_date` | TIMESTAMP | NULL | Date de création |
@@ -86,6 +86,7 @@ Documentation complète des tables, champs et mapping WooCommerce → PostgreSQL
 | `variation_description` | TEXT | NULL | Description variation |
 | `manage_stock` | BOOLEAN | DEFAULT FALSE | Gestion stock variation |
 | `global_unique_id` | VARCHAR(255) | NULL | ID unique global |
+| `woosb_ids` | JSONB | NULL | IDs produits bundlés (woosb type) |
 | `created_at` | TIMESTAMP | DEFAULT NOW() | Date de création en DB |
 | `updated_at` | TIMESTAMP | DEFAULT NOW() | Date de mise à jour |
 
@@ -145,9 +146,17 @@ Documentation complète des tables, champs et mapping WooCommerce → PostgreSQL
 | `global_unique_id` | `wp_postmeta._global_unique_id` | |
 | `product_attributes` | Tous les `wp_postmeta.attribute_pa_*` | Compilés en JSONB |
 
-**Relation parent/variations:**
+**Champs spécifiques bundles (woosb):**
+
+| Champ PostgreSQL | Source WordPress | Notes |
+|------------------|------------------|-------|
+| `woosb_ids` | `wp_postmeta.woosb_ids` | JSONB - Array des IDs produits inclus dans le bundle |
+
+**Relations produits:**
+- Produit simple: `post_type = 'product'`, `product_type = 'simple'`, `wp_parent_id = NULL`
 - Produit variable: `post_type = 'product'`, `product_type = 'variable'`, `wp_parent_id = NULL`
 - Variations: `post_type = 'product_variation'`, `product_type = 'variation'`, `wp_parent_id = ID du parent`
+- Bundle: `post_type = 'product'`, `product_type = 'woosb'`, `wp_parent_id = NULL`, `woosb_ids` contient les IDs des produits bundlés
 
 ---
 
