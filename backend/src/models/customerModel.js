@@ -470,6 +470,16 @@ class CustomerModel {
     const reviewsResult = await pool.query(reviewsQuery, [customerEmail]);
     const reviewsCount = parseInt(reviewsResult.rows[0]?.reviews_count || 0);
 
+    // Date de première commande
+    const firstOrderQuery = `
+      SELECT MIN(post_date) as first_order_date
+      FROM orders
+      WHERE wp_customer_id = $1
+      AND post_status NOT IN ('wc-failed', 'wc-cancelled')
+    `;
+    const firstOrderResult = await pool.query(firstOrderQuery, [wpUserId]);
+    const firstOrderDate = firstOrderResult.rows[0]?.first_order_date || null;
+
     return {
       order_count: orderCount,
       total_spent: totalSpent,
@@ -478,7 +488,8 @@ class CustomerModel {
       total_cost: totalCost,
       profit: profit,
       margin: margin,
-      reviews_count: reviewsCount
+      reviews_count: reviewsCount,
+      first_order_date: firstOrderDate
     };
   }
 
@@ -551,6 +562,25 @@ class CustomerModel {
       order: orderResult.rows[0],
       shipping_method: shippingResult.rows[0]?.order_item_name || null
     };
+  }
+
+  /**
+   * Récupère le nombre de commandes par mois pour un client
+   * Depuis sa première commande jusqu'à maintenant
+   */
+  async getOrdersByMonth(wpUserId) {
+    const query = `
+      SELECT
+        TO_CHAR(post_date, 'YYYY-MM') as month,
+        COUNT(*)::int as order_count
+      FROM orders
+      WHERE wp_customer_id = $1
+      AND post_status NOT IN ('wc-failed', 'wc-cancelled')
+      GROUP BY TO_CHAR(post_date, 'YYYY-MM')
+      ORDER BY month ASC
+    `;
+    const result = await pool.query(query, [wpUserId]);
+    return result.rows;
   }
 }
 

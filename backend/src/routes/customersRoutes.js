@@ -17,6 +17,7 @@ router.get('/orders/:orderId/details', customersController.getOrderDetails);
 router.get('/:id', customersController.getById);
 router.get('/:id/detail', customersController.getDetail);
 router.get('/:id/orders', customersController.getOrders);
+router.get('/:id/orders-by-month', customersController.getOrdersByMonth);
 router.get('/:id/favorite-products', customersController.getFavoriteProducts);
 router.get('/:id/stats', customersController.getStats);
 router.get('/:id/coupons', customersController.getCoupons);

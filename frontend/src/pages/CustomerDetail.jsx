@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { AuthContext } from '../context/AuthContext';
 import axios from 'axios';
 import { getCountryLabel } from '../utils/countries';
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
 const API_BASE_URL = 'http://54.37.156.233:3000/api';
 
@@ -14,12 +15,14 @@ const CustomerDetail = () => {
   const [customer, setCustomer] = useState(null);
   const [stats, setStats] = useState(null);
   const [orders, setOrders] = useState([]);
+  const [ordersByMonth, setOrdersByMonth] = useState([]);
   const [loading, setLoading] = useState(true);
   const [expandedOrderId, setExpandedOrderId] = useState(null);
   const [orderDetails, setOrderDetails] = useState({});
 
   useEffect(() => {
     fetchCustomerDetail();
+    fetchOrdersByMonth();
   }, [id]);
 
   const fetchCustomerDetail = async () => {
@@ -36,6 +39,48 @@ const CustomerDetail = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+  const fetchOrdersByMonth = async () => {
+    try {
+      const response = await axios.get(`${API_BASE_URL}/customers/${id}/orders-by-month`);
+      if (response.data.success) {
+        // Transform data for chart: YYYY-MM → "Jan 2024"
+        const chartData = response.data.data.map(item => ({
+          month: formatMonthLabel(item.month),
+          orders: item.order_count
+        }));
+        setOrdersByMonth(chartData);
+      }
+    } catch (error) {
+      console.error('Error fetching orders by month:', error);
+    }
+  };
+
+  const formatMonthLabel = (monthString) => {
+    // monthString format: "2024-01"
+    const [year, month] = monthString.split('-');
+    const months = ['Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Juin', 'Juil', 'Aoû', 'Sep', 'Oct', 'Nov', 'Déc'];
+    return `${months[parseInt(month) - 1]} ${year}`;
+  };
+
+  const calculateCustomerSince = (firstOrderDate) => {
+    if (!firstOrderDate) return 'N/A';
+
+    const first = new Date(firstOrderDate);
+    const now = new Date();
+
+    const diffTime = Math.abs(now - first);
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    const diffMonths = Math.floor(diffDays / 30);
+    const diffYears = Math.floor(diffMonths / 12);
+    const remainingMonths = diffMonths % 12;
+
+    if (diffDays === 0) return "Aujourd'hui";
+    if (diffMonths < 1) return "Moins d'un mois";
+    if (diffYears === 0) return `${diffMonths} mois`;
+    if (remainingMonths === 0) return diffYears === 1 ? "1 an" : `${diffYears} ans`;
+    return `${diffYears} an${diffYears > 1 ? 's' : ''} et ${remainingMonths} mois`;
   };
 
   const fetchOrderDetails = async (orderId) => {
@@ -259,7 +304,7 @@ const CustomerDetail = () => {
           {/* Right: Stats */}
           <div style={{ backgroundColor: 'white', padding: '25px', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
             <h3 style={{ fontSize: '18px', fontWeight: 'bold', marginBottom: '20px', color: '#333' }}>Statistiques</h3>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '20px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px' }}>
               <div>
                 <p style={{ fontSize: '12px', color: '#6c757d', marginBottom: '5px' }}>Total dépensé</p>
                 <p style={{ fontSize: '24px', fontWeight: 'bold', color: '#007bff' }}>{formatPrice(stats?.total_spent)}</p>
@@ -292,9 +337,43 @@ const CustomerDetail = () => {
                 <p style={{ fontSize: '12px', color: '#6c757d', marginBottom: '5px' }}>Avis laissés</p>
                 <p style={{ fontSize: '24px', fontWeight: 'bold', color: '#ffc107' }}>{stats?.reviews_count || 0}</p>
               </div>
+              <div>
+                <p style={{ fontSize: '12px', color: '#6c757d', marginBottom: '5px' }}>Client depuis</p>
+                <p style={{ fontSize: '24px', fontWeight: 'bold', color: '#135E84' }}>{calculateCustomerSince(stats?.first_order_date)}</p>
+              </div>
             </div>
           </div>
         </div>
+
+        {/* Chart: Orders by month */}
+        {ordersByMonth.length > 0 && (
+          <div style={{ backgroundColor: 'white', padding: '25px', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)', marginBottom: '20px' }}>
+            <h3 style={{ fontSize: '18px', fontWeight: 'bold', marginBottom: '20px', color: '#333' }}>Commandes par mois</h3>
+            <ResponsiveContainer width="100%" height={300}>
+              <AreaChart data={ordersByMonth}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis
+                  dataKey="month"
+                  tick={{ fontSize: 12 }}
+                  angle={-45}
+                  textAnchor="end"
+                  height={80}
+                />
+                <YAxis tick={{ fontSize: 12 }} />
+                <Tooltip />
+                <Area
+                  type="monotone"
+                  dataKey="orders"
+                  stroke="#135E84"
+                  fill="#135E84"
+                  fillOpacity={0.6}
+                  name="Commandes"
+                />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+        )}
+
 
         {/* Orders List */}
         <div style={{ backgroundColor: 'white', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)', overflow: 'hidden' }}>

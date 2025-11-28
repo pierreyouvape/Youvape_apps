@@ -242,3 +242,19 @@ exports.getOrderDetails = async (req, res) => {
     res.status(500).json({ success: false, error: error.message });
   }
 };
+
+/**
+ * Récupère le nombre de commandes par mois pour un client
+ * GET /api/customers/:id/orders-by-month
+ */
+exports.getOrdersByMonth = async (req, res) => {
+  try {
+    const customerId = parseInt(req.params.id);
+    const ordersByMonth = await customerModel.getOrdersByMonth(customerId);
+
+    res.json({ success: true, data: ordersByMonth });
+  } catch (error) {
+    console.error('Error getting orders by month:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
