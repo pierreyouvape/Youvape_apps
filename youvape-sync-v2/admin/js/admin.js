@@ -24,6 +24,8 @@
             $('#youvape-bulk-reset').on('click', this.bulkReset.bind(this));
             $('#youvape-bulk-process-manual').on('click', this.bulkProcessManual.bind(this));
             $('#youvape-bulk-process-data').on('click', this.bulkProcessData.bind(this));
+            $('#youvape-bulk-process-customers').on('click', this.bulkProcessCustomers.bind(this));
+            $('#youvape-bulk-process-products').on('click', this.bulkProcessProducts.bind(this));
             $('#youvape-bulk-process-orders').on('click', this.bulkProcessOrders.bind(this));
         },
 
@@ -426,6 +428,122 @@
                         }
 
                         $status.html('<strong style="color: green;">Success!</strong> ' + message.replace(/\n/g, '<br>'));
+
+                        // Reload status to update progress bars
+                        setTimeout(function() {
+                            YouvapeSync.loadStatus();
+                            $progress.hide();
+                        }, 3000);
+                    } else {
+                        $status.html('<strong style="color: red;">Error:</strong> ' + (response.error || 'Unknown error'));
+                    }
+                },
+                error: function(xhr) {
+                    $button.prop('disabled', false);
+                    $status.html('<strong style="color: red;">Error:</strong> ' + xhr.responseText);
+                }
+            });
+        },
+
+        /**
+         * Bulk Sync: Process CUSTOMERS only
+         */
+        bulkProcessCustomers: function(e) {
+            e.preventDefault();
+
+            const numBatches = parseInt($('#youvape-manual-num-batches').val()) || 10;
+            const batchSize = parseInt($('#youvape-manual-batch-size').val()) || 100;
+
+            if (!confirm('Process ' + numBatches + ' batches of ' + batchSize + ' items each?\n\nThis will process CUSTOMERS only.\nTotal: ~' + (numBatches * batchSize) + ' items.')) {
+                return;
+            }
+
+            const $button = $(e.currentTarget);
+            const $progress = $('#youvape-manual-progress');
+            const $status = $('#youvape-manual-status');
+
+            $button.prop('disabled', true);
+            $progress.show();
+            $status.text('Processing customers...');
+
+            $.ajax({
+                url: youvapeSyncV2.restUrl + 'bulk/process-customers',
+                method: 'POST',
+                data: {
+                    num_batches: numBatches,
+                    batch_size: batchSize
+                },
+                beforeSend: function(xhr) {
+                    xhr.setRequestHeader('X-WP-Nonce', youvapeSyncV2.nonce);
+                },
+                success: function(response) {
+                    $button.prop('disabled', false);
+
+                    if (response.success) {
+                        const total = response.total_processed || 0;
+                        const results = response.results || {};
+
+                        let message = 'Processed ' + total + ' customers in ' + (results.customers ? results.customers.batches_processed : 0) + ' batches';
+
+                        $status.html('<strong style="color: green;">Success!</strong> ' + message);
+
+                        // Reload status to update progress bars
+                        setTimeout(function() {
+                            YouvapeSync.loadStatus();
+                            $progress.hide();
+                        }, 3000);
+                    } else {
+                        $status.html('<strong style="color: red;">Error:</strong> ' + (response.error || 'Unknown error'));
+                    }
+                },
+                error: function(xhr) {
+                    $button.prop('disabled', false);
+                    $status.html('<strong style="color: red;">Error:</strong> ' + xhr.responseText);
+                }
+            });
+        },
+
+        /**
+         * Bulk Sync: Process PRODUCTS only
+         */
+        bulkProcessProducts: function(e) {
+            e.preventDefault();
+
+            const numBatches = parseInt($('#youvape-manual-num-batches').val()) || 10;
+            const batchSize = parseInt($('#youvape-manual-batch-size').val()) || 100;
+
+            if (!confirm('Process ' + numBatches + ' batches of ' + batchSize + ' items each?\n\nThis will process PRODUCTS only.\nTotal: ~' + (numBatches * batchSize) + ' items.')) {
+                return;
+            }
+
+            const $button = $(e.currentTarget);
+            const $progress = $('#youvape-manual-progress');
+            const $status = $('#youvape-manual-status');
+
+            $button.prop('disabled', true);
+            $progress.show();
+            $status.text('Processing products...');
+
+            $.ajax({
+                url: youvapeSyncV2.restUrl + 'bulk/process-products',
+                method: 'POST',
+                data: {
+                    num_batches: numBatches,
+                    batch_size: batchSize
+                },
+                beforeSend: function(xhr) {
+                    xhr.setRequestHeader('X-WP-Nonce', youvapeSyncV2.nonce);
+                },
+                success: function(response) {
+                    $button.prop('disabled', false);
+
+                    if (response.success) {
+                        const total = response.total_processed || 0;
+                        const results = response.results || {};
+
+                        let message = 'Processed ' + total + ' products in ' + (results.products ? results.products.batches_processed : 0) + ' batches';
+
+                        $status.html('<strong style="color: green;">Success!</strong> ' + message);
 
                         // Reload status to update progress bars
                         setTimeout(function() {

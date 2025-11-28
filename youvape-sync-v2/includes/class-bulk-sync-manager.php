@@ -432,6 +432,146 @@ class Bulk_Sync_Manager {
     }
 
     /**
+     * Process multiple batches manually - CUSTOMERS ONLY
+     *
+     * @param int $num_batches Number of batches to process
+     * @param int $batch_size Size of each batch
+     * @return array Results with stats
+     */
+    public static function process_customers_batches($num_batches = 10, $batch_size = 100) {
+        global $wpdb;
+        $queue_state = get_option('youvape_sync_v2_queue_state', []);
+        $status = isset($queue_state['status']) ? $queue_state['status'] : 'idle';
+
+        if ($status !== 'running') {
+            return [
+                'success' => false,
+                'error' => 'Sync is not running. Please start the sync first.'
+            ];
+        }
+
+        // Ensure totals are calculated if missing (needed for progress bars)
+        if (!isset($queue_state['customers_total'])) {
+            $queue_state['customers_total'] = intval($wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->users}"));
+            update_option('youvape_sync_v2_queue_state', $queue_state);
+        }
+
+        $results = [
+            'customers' => [
+                'batches_processed' => 0,
+                'items_processed' => 0,
+                'errors' => []
+            ]
+        ];
+        $total_processed = 0;
+
+        Plugin::log("Manual CUSTOMERS batch processing started: {$num_batches} batches × {$batch_size} items");
+
+        for ($i = 0; $i < $num_batches; $i++) {
+            // Refresh queue state
+            $queue_state = get_option('youvape_sync_v2_queue_state', []);
+            $offset = isset($queue_state['customers_offset']) ? intval($queue_state['customers_offset']) : 0;
+            $total = isset($queue_state['customers_total']) ? intval($queue_state['customers_total']) : 0;
+
+            // Check if completed
+            if ($total > 0 && $offset >= $total) {
+                break;
+            }
+
+            // Process one batch with custom size
+            $batch_result = self::process_batch_with_custom_size('customers', $batch_size);
+
+            if ($batch_result['success']) {
+                $results['customers']['batches_processed']++;
+                $results['customers']['items_processed'] += $batch_result['count'];
+                $total_processed += $batch_result['count'];
+            } else {
+                $results['customers']['errors'][] = $batch_result['error'] ?? 'Unknown error';
+                break; // Stop on error
+            }
+        }
+
+        Plugin::log("Manual CUSTOMERS batch processing completed: {$total_processed} items processed");
+
+        return [
+            'success' => true,
+            'total_processed' => $total_processed,
+            'results' => $results,
+            'queue_state' => get_option('youvape_sync_v2_queue_state', [])
+        ];
+    }
+
+    /**
+     * Process multiple batches manually - PRODUCTS ONLY
+     *
+     * @param int $num_batches Number of batches to process
+     * @param int $batch_size Size of each batch
+     * @return array Results with stats
+     */
+    public static function process_products_batches($num_batches = 10, $batch_size = 100) {
+        global $wpdb;
+        $queue_state = get_option('youvape_sync_v2_queue_state', []);
+        $status = isset($queue_state['status']) ? $queue_state['status'] : 'idle';
+
+        if ($status !== 'running') {
+            return [
+                'success' => false,
+                'error' => 'Sync is not running. Please start the sync first.'
+            ];
+        }
+
+        // Ensure totals are calculated if missing (needed for progress bars)
+        if (!isset($queue_state['products_total'])) {
+            $queue_state['products_total'] = intval($wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->posts} WHERE post_type = 'product' AND post_status IN ('publish', 'draft', 'private')"));
+            update_option('youvape_sync_v2_queue_state', $queue_state);
+        }
+
+        $results = [
+            'products' => [
+                'batches_processed' => 0,
+                'items_processed' => 0,
+                'errors' => []
+            ]
+        ];
+        $total_processed = 0;
+
+        Plugin::log("Manual PRODUCTS batch processing started: {$num_batches} batches × {$batch_size} items");
+
+        for ($i = 0; $i < $num_batches; $i++) {
+            // Refresh queue state
+            $queue_state = get_option('youvape_sync_v2_queue_state', []);
+            $offset = isset($queue_state['products_offset']) ? intval($queue_state['products_offset']) : 0;
+            $total = isset($queue_state['products_total']) ? intval($queue_state['products_total']) : 0;
+
+            // Check if completed
+            if ($total > 0 && $offset >= $total) {
+                break;
+            }
+
+            // Process one batch with custom size
+            $batch_result = self::process_batch_with_custom_size('products', $batch_size);
+
+            if ($batch_result['success']) {
+                $results['products']['batches_processed']++;
+                $results['products']['items_processed'] += $batch_result['count'];
+                $total_processed += $batch_result['count'];
+            } else {
+                $results['products']['errors'][] = $batch_result['error'] ?? 'Unknown error';
+                break; // Stop on error
+            }
+        }
+
+        Plugin::log("Manual PRODUCTS batch processing completed: {$total_processed} items processed");
+
+        return [
+            'success' => true,
+            'total_processed' => $total_processed,
+            'results' => $results,
+            'queue_state' => get_option('youvape_sync_v2_queue_state', [])
+        ];
+    }
+
+    /**
      * Process multiple batches manually - ORDERS ONLY
      *
      * @param int $num_batches Number of batches to process

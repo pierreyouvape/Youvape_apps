@@ -237,6 +237,24 @@ class Plugin {
                 return current_user_can('manage_options');
             }
         ]);
+
+        // Bulk Sync: Process CUSTOMERS batches only
+        register_rest_route('youvape-sync/v1', '/bulk/process-customers', [
+            'methods' => 'POST',
+            'callback' => [$this, 'rest_bulk_process_customers'],
+            'permission_callback' => function() {
+                return current_user_can('manage_options');
+            }
+        ]);
+
+        // Bulk Sync: Process PRODUCTS batches only
+        register_rest_route('youvape-sync/v1', '/bulk/process-products', [
+            'methods' => 'POST',
+            'callback' => [$this, 'rest_bulk_process_products'],
+            'permission_callback' => function() {
+                return current_user_can('manage_options');
+            }
+        ]);
     }
 
     /**
@@ -432,6 +450,38 @@ class Plugin {
         $batch_size = $request->get_param('batch_size') ?: 100;
 
         $result = \Youvape_Sync_V2\Bulk_Sync_Manager::process_orders_batches($num_batches, $batch_size);
+
+        return $result;
+    }
+
+    /**
+     * REST: Bulk Sync - Process CUSTOMERS batches only
+     */
+    public function rest_bulk_process_customers($request) {
+        if (!class_exists('Youvape_Sync_V2\\Bulk_Sync_Manager')) {
+            require_once YOUVAPE_SYNC_V2_PATH . 'includes/class-bulk-sync-manager.php';
+        }
+
+        $num_batches = $request->get_param('num_batches') ?: 10;
+        $batch_size = $request->get_param('batch_size') ?: 100;
+
+        $result = \Youvape_Sync_V2\Bulk_Sync_Manager::process_customers_batches($num_batches, $batch_size);
+
+        return $result;
+    }
+
+    /**
+     * REST: Bulk Sync - Process PRODUCTS batches only
+     */
+    public function rest_bulk_process_products($request) {
+        if (!class_exists('Youvape_Sync_V2\\Bulk_Sync_Manager')) {
+            require_once YOUVAPE_SYNC_V2_PATH . 'includes/class-bulk-sync-manager.php';
+        }
+
+        $num_batches = $request->get_param('num_batches') ?: 10;
+        $batch_size = $request->get_param('batch_size') ?: 100;
+
+        $result = \Youvape_Sync_V2\Bulk_Sync_Manager::process_products_batches($num_batches, $batch_size);
 
         return $result;
     }

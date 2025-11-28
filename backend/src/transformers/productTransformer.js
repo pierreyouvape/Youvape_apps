@@ -73,7 +73,7 @@ function transformProduct(rawData) {
 
   // Additional fields for BUNDLE products (woosb type)
   if (product_type === 'woosb') {
-    baseProduct.woosb_ids = tryParseJson(getMeta('woosb_ids'));
+    baseProduct.woosb_ids = parseWoosbIds(getMeta('woosb_ids'));
   }
 
   return baseProduct;
@@ -158,6 +158,63 @@ function tryParseJson(value) {
     // If it's PHP serialized, return as-is string (VPS can handle later if needed)
     return value;
   }
+}
+
+/**
+ * Parse woosb_ids from PHP serialized format to clean JSON array
+ * Input: PHP serialized like 'a:3:{s:4:"83hb";a:5:{s:2:"id";s:6:"687674";...}...}'
+ * Output: JSON array like [{"id": "687674", "qty": "1"}, ...]
+ */
+function parseWoosbIds(value) {
+  if (!value || value === '') return null;
+
+  // Already an array
+  if (Array.isArray(value)) return value;
+
+  // Already an object, convert to array
+  if (typeof value === 'object') {
+    return Object.values(value).map(item => ({
+      id: item.id || null,
+      qty: item.qty || "1"
+    }));
+  }
+
+  // Parse PHP serialized format
+  if (typeof value === 'string' && value.startsWith('a:')) {
+    const items = [];
+
+    // Extract all id values: s:2:"id";s:X:"VALUE"
+    const idRegex = /s:2:"id";s:\d+:"(\d+)"/g;
+    const qtyRegex = /s:3:"qty";s:\d+:"(\d+)"/g;
+
+    const ids = Array.from(value.matchAll(idRegex)).map(m => m[1]);
+    const qtys = Array.from(value.matchAll(qtyRegex)).map(m => m[1]);
+
+    for (let i = 0; i < ids.length; i++) {
+      items.push({
+        id: ids[i],
+        qty: qtys[i] || "1"
+      });
+    }
+
+    return items.length > 0 ? items : null;
+  }
+
+  // Try JSON parse as fallback
+  try {
+    const parsed = JSON.parse(value);
+    if (Array.isArray(parsed)) return parsed;
+    if (typeof parsed === 'object') {
+      return Object.values(parsed).map(item => ({
+        id: item.id || null,
+        qty: item.qty || "1"
+      }));
+    }
+  } catch (e) {
+    // Ignore
+  }
+
+  return null;
 }
 
 /**
