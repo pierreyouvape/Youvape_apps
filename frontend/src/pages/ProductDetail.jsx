@@ -42,8 +42,11 @@ const ProductDetail = () => {
     try {
       // Requête critique - doit réussir
       const productRes = await axios.get(`${API_URL}/products/${id}`);
-      setProduct(productRes.data.data);
-      setNewCost(productRes.data.data.cost_price_custom || productRes.data.data.cost_price || '');
+      const productData = productRes.data.data;
+      // Ajouter le champ effective_cost_price calculé
+      productData.effective_cost_price = productData.cost_price_custom || productData.cost_price || productData.wc_cog_cost || 0;
+      setProduct(productData);
+      setNewCost(productData.cost_price_custom || productData.cost_price || productData.wc_cog_cost || '');
 
       // Requêtes optionnelles - peuvent échouer sans bloquer l'affichage
       try {
@@ -179,10 +182,10 @@ const ProductDetail = () => {
         {/* Product Info Header */}
         <div style={{ backgroundColor: '#fff', padding: '30px', borderRadius: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)', marginBottom: '30px', display: 'grid', gridTemplateColumns: '150px 1fr', gap: '30px' }}>
           <div>
-            {product.image_url && <img src={product.image_url} alt={product.name} style={{ width: '100%', borderRadius: '8px', border: '1px solid #e0e0e0' }} />}
+            {product.image_url && <img src={product.image_url} alt={product.post_title} style={{ width: '100%', borderRadius: '8px', border: '1px solid #e0e0e0' }} />}
           </div>
           <div>
-            <h1 style={{ margin: '0 0 10px 0', color: '#135E84' }}>{product.name}</h1>
+            <h1 style={{ margin: '0 0 10px 0', color: '#135E84' }}>{product.post_title}</h1>
             <div style={{ fontSize: '14px', color: '#666', marginBottom: '15px' }}>SKU: {product.sku || '-'}</div>
             <div style={{ display: 'flex', gap: '20px', marginBottom: '15px' }}>
               <div>
@@ -206,7 +209,7 @@ const ProductDetail = () => {
               </div>
               <div>
                 <div style={{ fontSize: '12px', color: '#666' }}>Stock</div>
-                <div style={{ fontSize: '24px', fontWeight: '700', color: product.stock_quantity > 0 ? '#28a745' : '#dc3545' }}>{formatNumber(product.stock_quantity || 0)}</div>
+                <div style={{ fontSize: '24px', fontWeight: '700', color: (product.stock || 0) > 0 ? '#28a745' : '#dc3545' }}>{formatNumber(product.stock || 0)}</div>
               </div>
             </div>
             {product.category && <div style={{ fontSize: '14px', color: '#666' }}>Catégorie: {product.category}</div>}
