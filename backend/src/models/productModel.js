@@ -429,7 +429,7 @@ class ProductModel {
             ELSE oi.qty * COALESCE(oi.item_cost, 0)
           END) as cost_ht
         FROM product_family pf
-        LEFT JOIN order_items oi ON oi.product_id = pf.product_id
+        LEFT JOIN order_items oi ON (oi.product_id = pf.product_id OR oi.variation_id = pf.product_id)
         LEFT JOIN orders o ON o.wp_order_id = oi.wp_order_id
           AND o.post_status NOT IN ('wc-failed', 'wc-cancelled')
         GROUP BY pf.parent_id
@@ -439,7 +439,14 @@ class ProductModel {
         p.post_title,
         p.sku,
         p.product_type,
-        COALESCE(p.stock::int, 0) as stock,
+        CASE
+          WHEN p.product_type = 'variable' THEN (
+            SELECT COALESCE(SUM(v.stock::int), 0)
+            FROM products v
+            WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation'
+          )
+          ELSE COALESCE(p.stock::int, 0)
+        END as stock,
         p.stock_status,
         COALESCE(ps.qty_sold, 0) as qty_sold,
         COALESCE(ps.ca_ttc, 0) as ca_ttc,
@@ -535,7 +542,7 @@ class ProductModel {
           END) as cost_ht
         FROM order_items oi
         INNER JOIN orders o ON o.wp_order_id = oi.wp_order_id
-        WHERE oi.product_id = p.wp_product_id
+        WHERE (oi.product_id = p.wp_product_id OR oi.variation_id = p.wp_product_id)
         AND o.post_status NOT IN ('wc-failed', 'wc-cancelled')
       ) stats ON true
       WHERE p.wp_parent_id = $1 AND p.product_type = 'variation'
