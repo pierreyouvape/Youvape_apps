@@ -410,18 +410,28 @@ class ProductModel {
           )
       ),
       product_stats AS (
-        -- Agréger les stats par produit parent, en excluant les bundle sub-items
+        -- Agréger les stats par produit parent
+        -- Quantité : TOUT compter (bundle + ventes individuelles)
+        -- Financier : UNIQUEMENT les ventes réelles (exclure bundle sub-items)
         SELECT
           pf.parent_id,
           SUM(oi.qty)::int as qty_sold,
-          SUM(oi.line_total) as ca_ttc,
-          SUM(oi.line_subtotal) as ca_ht,
-          SUM(oi.qty * COALESCE(oi.item_cost, 0)) as cost_ht
+          SUM(CASE
+            WHEN oi.id IN (SELECT order_item_id FROM bundle_sub_items) THEN 0
+            ELSE oi.line_total
+          END) as ca_ttc,
+          SUM(CASE
+            WHEN oi.id IN (SELECT order_item_id FROM bundle_sub_items) THEN 0
+            ELSE oi.line_subtotal
+          END) as ca_ht,
+          SUM(CASE
+            WHEN oi.id IN (SELECT order_item_id FROM bundle_sub_items) THEN 0
+            ELSE oi.qty * COALESCE(oi.item_cost, 0)
+          END) as cost_ht
         FROM product_family pf
         LEFT JOIN order_items oi ON oi.product_id = pf.product_id
         LEFT JOIN orders o ON o.wp_order_id = oi.wp_order_id
           AND o.post_status NOT IN ('wc-failed', 'wc-cancelled')
-        WHERE oi.id IS NULL OR oi.id NOT IN (SELECT order_item_id FROM bundle_sub_items)
         GROUP BY pf.parent_id
       )
       SELECT
@@ -511,14 +521,22 @@ class ProductModel {
       LEFT JOIN LATERAL (
         SELECT
           SUM(oi.qty) as qty_sold,
-          SUM(oi.line_total) as ca_ttc,
-          SUM(oi.line_subtotal) as ca_ht,
-          SUM(oi.qty * COALESCE(oi.item_cost, 0)) as cost_ht
+          SUM(CASE
+            WHEN oi.id IN (SELECT order_item_id FROM bundle_sub_items) THEN 0
+            ELSE oi.line_total
+          END) as ca_ttc,
+          SUM(CASE
+            WHEN oi.id IN (SELECT order_item_id FROM bundle_sub_items) THEN 0
+            ELSE oi.line_subtotal
+          END) as ca_ht,
+          SUM(CASE
+            WHEN oi.id IN (SELECT order_item_id FROM bundle_sub_items) THEN 0
+            ELSE oi.qty * COALESCE(oi.item_cost, 0)
+          END) as cost_ht
         FROM order_items oi
         INNER JOIN orders o ON o.wp_order_id = oi.wp_order_id
         WHERE oi.product_id = p.wp_product_id
         AND o.post_status NOT IN ('wc-failed', 'wc-cancelled')
-        AND (oi.id NOT IN (SELECT order_item_id FROM bundle_sub_items))
       ) stats ON true
       WHERE p.wp_parent_id = $1 AND p.product_type = 'variation'
       ORDER BY qty_sold DESC NULLS LAST
