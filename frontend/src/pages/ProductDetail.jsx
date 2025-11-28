@@ -1,6 +1,10 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import axios from 'axios';
+import SalesTimelineChart from '../components/charts/SalesTimelineChart';
+import SalesByDayOfWeekChart from '../components/charts/SalesByDayOfWeekChart';
+import SalesByHourChart from '../components/charts/SalesByHourChart';
+import SalesByCountryPieChart from '../components/charts/SalesByCountryPieChart';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
 
@@ -13,6 +17,9 @@ const ProductDetail = () => {
   const [family, setFamily] = useState(null);
   const [kpis, setKpis] = useState(null);
   const [variantsStats, setVariantsStats] = useState([]);
+  const [salesEvolution, setSalesEvolution] = useState([]);
+  const [salesByDayOfWeek, setSalesByDayOfWeek] = useState([]);
+  const [salesByHour, setSalesByHour] = useState([]);
   const [frequentlyBought, setFrequentlyBought] = useState([]);
   const [salesByCountry, setSalesByCountry] = useState([]);
   const [topCustomers, setTopCustomers] = useState([]);
@@ -20,10 +27,15 @@ const ProductDetail = () => {
   const [loading, setLoading] = useState(true);
   const [editingCost, setEditingCost] = useState(false);
   const [newCost, setNewCost] = useState('');
+  const [evolutionGroupBy, setEvolutionGroupBy] = useState('day');
 
   useEffect(() => {
     if (id) fetchProductData();
   }, [id]);
+
+  useEffect(() => {
+    if (id) fetchSalesEvolution();
+  }, [id, evolutionGroupBy]);
 
   const fetchProductData = async () => {
     setLoading(true);
@@ -39,6 +51,8 @@ const ProductDetail = () => {
           familyRes,
           kpisRes,
           variantsStatsRes,
+          dayOfWeekRes,
+          hourRes,
           boughtWithRes,
           countryRes,
           customersRes,
@@ -47,6 +61,8 @@ const ProductDetail = () => {
           axios.get(`${API_URL}/products/${id}/family`).catch(() => ({ data: { data: null } })),
           axios.get(`${API_URL}/products/${id}/stats/kpis`).catch(() => ({ data: { data: null } })),
           axios.get(`${API_URL}/products/${id}/stats/all-variants`).catch(() => ({ data: { data: [] } })),
+          axios.get(`${API_URL}/products/${id}/stats/by-day-of-week`).catch(() => ({ data: { data: [] } })),
+          axios.get(`${API_URL}/products/${id}/stats/by-hour`).catch(() => ({ data: { data: [] } })),
           axios.get(`${API_URL}/products/${id}/stats/frequently-bought-with`, { params: { limit: 10 } }).catch(() => ({ data: { data: [] } })),
           axios.get(`${API_URL}/products/${id}/stats/by-country`).catch(() => ({ data: { data: [] } })),
           axios.get(`${API_URL}/products/${id}/stats/top-customers`, { params: { limit: 10 } }).catch(() => ({ data: { data: [] } })),
@@ -56,6 +72,8 @@ const ProductDetail = () => {
         setFamily(familyRes.data.data);
         setKpis(kpisRes.data.data);
         setVariantsStats(variantsStatsRes.data.data || []);
+        setSalesByDayOfWeek(dayOfWeekRes.data.data || []);
+        setSalesByHour(hourRes.data.data || []);
         setFrequentlyBought(boughtWithRes.data.data || []);
         setSalesByCountry(countryRes.data.data || []);
         setTopCustomers(customersRes.data.data || []);
@@ -68,6 +86,28 @@ const ProductDetail = () => {
       setProduct(null);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchSalesEvolution = async () => {
+    try {
+      const response = await axios.get(`${API_URL}/products/${id}/stats/evolution`, {
+        params: { groupBy: evolutionGroupBy }
+      });
+      if (response.data.success) {
+        // Ajouter le profit calculé
+        const dataWithProfit = response.data.data.map(item => {
+          const revenue = parseFloat(item.revenue) || 0;
+          const cost = (parseInt(item.quantity_sold) || 0) * (parseFloat(product?.effective_cost_price) || 0);
+          return {
+            ...item,
+            profit: revenue - cost
+          };
+        });
+        setSalesEvolution(dataWithProfit);
+      }
+    } catch (err) {
+      console.error('Error fetching sales evolution:', err);
     }
   };
 
@@ -173,45 +213,6 @@ const ProductDetail = () => {
           </div>
         </div>
 
-        {/* Variations */}
-        {variantsStats.length > 0 && (
-          <div style={{ backgroundColor: '#fff', padding: '25px', borderRadius: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)', marginBottom: '30px' }}>
-            <h2 style={{ marginTop: 0, color: '#333', fontSize: '18px' }}>📦 Variations ({variantsStats.length})</h2>
-            <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '1200px' }}>
-                <thead>
-                  <tr style={{ backgroundColor: '#f8f9fa', borderBottom: '2px solid #e0e0e0' }}>
-                    <th style={{ textAlign: 'left', padding: '12px', fontSize: '14px', fontWeight: '600' }}>Variante</th>
-                    <th style={{ textAlign: 'center', padding: '12px', fontSize: '14px', fontWeight: '600' }}>SKU</th>
-                    <th style={{ textAlign: 'right', padding: '12px', fontSize: '14px', fontWeight: '600' }}>Prix</th>
-                    <th style={{ textAlign: 'center', padding: '12px', fontSize: '14px', fontWeight: '600' }}>Stock</th>
-                    <th style={{ textAlign: 'center', padding: '12px', fontSize: '14px', fontWeight: '600' }}>Net Sold</th>
-                    <th style={{ textAlign: 'right', padding: '12px', fontSize: '14px', fontWeight: '600' }}>Net Revenue</th>
-                    <th style={{ textAlign: 'center', padding: '12px', fontSize: '14px', fontWeight: '600' }}>Net Orders</th>
-                    <th style={{ textAlign: 'right', padding: '12px', fontSize: '14px', fontWeight: '600' }}>Profit</th>
-                    <th style={{ textAlign: 'right', padding: '12px', fontSize: '14px', fontWeight: '600' }}>Margin</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {variantsStats.map((variant) => (
-                    <tr key={variant.product_id} style={{ borderBottom: '1px solid #f0f0f0' }}>
-                      <td style={{ padding: '12px' }}>{variant.name}</td>
-                      <td style={{ textAlign: 'center', padding: '12px', fontSize: '13px', color: '#666' }}>{variant.sku}</td>
-                      <td style={{ textAlign: 'right', padding: '12px', fontWeight: '600' }}>{formatCurrency(variant.price)}</td>
-                      <td style={{ textAlign: 'center', padding: '12px', fontWeight: '600', color: variant.stock_quantity > 0 ? '#28a745' : '#dc3545' }}>{formatNumber(variant.stock_quantity || 0)}</td>
-                      <td style={{ textAlign: 'center', padding: '12px', fontWeight: '600', color: '#135E84' }}>{formatNumber(variant.net_sold || 0)}</td>
-                      <td style={{ textAlign: 'right', padding: '12px', fontWeight: '600', color: '#28a745' }}>{formatCurrency(variant.net_revenue || 0)}</td>
-                      <td style={{ textAlign: 'center', padding: '12px', fontWeight: '600' }}>{formatNumber(variant.net_orders || 0)}</td>
-                      <td style={{ textAlign: 'right', padding: '12px', fontWeight: '600', color: '#007bff' }}>{formatCurrency(variant.profit || 0)}</td>
-                      <td style={{ textAlign: 'right', padding: '12px', fontWeight: '600', color: '#ff6b6b' }}>{parseFloat(variant.margin_percent || 0).toFixed(1)}%</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
-
         {/* KPIs */}
         {kpis && (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '15px', marginBottom: '30px' }}>
@@ -238,50 +239,141 @@ const ProductDetail = () => {
           </div>
         )}
 
+        {/* Sales Timeline Chart */}
+        {salesEvolution.length > 0 && (
+          <div style={{ backgroundColor: '#fff', padding: '25px', borderRadius: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)', marginBottom: '30px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+              <h2 style={{ margin: 0, color: '#333', fontSize: '18px' }}>📈 Évolution des ventes</h2>
+              <div style={{ display: 'flex', gap: '10px' }}>
+                {['day', 'week', 'month'].map(period => (
+                  <button
+                    key={period}
+                    onClick={() => setEvolutionGroupBy(period)}
+                    style={{
+                      padding: '8px 16px',
+                      backgroundColor: evolutionGroupBy === period ? '#135E84' : '#f0f0f0',
+                      color: evolutionGroupBy === period ? 'white' : '#666',
+                      border: 'none',
+                      borderRadius: '6px',
+                      fontSize: '13px',
+                      cursor: 'pointer',
+                      fontWeight: '600'
+                    }}
+                  >
+                    {period === 'day' ? 'Jour' : period === 'week' ? 'Semaine' : 'Mois'}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <SalesTimelineChart data={salesEvolution} height={400} />
+          </div>
+        )}
+
+        {/* Variations */}
+        {variantsStats.length > 0 && (
+          <div style={{ backgroundColor: '#fff', padding: '25px', borderRadius: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)', marginBottom: '30px' }}>
+            <h2 style={{ marginTop: 0, color: '#333', fontSize: '18px' }}>📦 Variations ({variantsStats.length})</h2>
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '1200px' }}>
+                <thead>
+                  <tr style={{ backgroundColor: '#f8f9fa', borderBottom: '2px solid #e0e0e0' }}>
+                    <th style={{ textAlign: 'left', padding: '12px', fontSize: '14px', fontWeight: '600' }}>Variante</th>
+                    <th style={{ textAlign: 'center', padding: '12px', fontSize: '14px', fontWeight: '600' }}>SKU</th>
+                    <th style={{ textAlign: 'right', padding: '12px', fontSize: '14px', fontWeight: '600' }}>Prix</th>
+                    <th style={{ textAlign: 'center', padding: '12px', fontSize: '14px', fontWeight: '600' }}>Stock</th>
+                    <th style={{ textAlign: 'center', padding: '12px', fontSize: '14px', fontWeight: '600' }}>Net Sold</th>
+                    <th style={{ textAlign: 'right', padding: '12px', fontSize: '14px', fontWeight: '600' }}>Net Revenue</th>
+                    <th style={{ textAlign: 'center', padding: '12px', fontSize: '14px', fontWeight: '600' }}>Net Orders</th>
+                    <th style={{ textAlign: 'right', padding: '12px', fontSize: '14px', fontWeight: '600' }}>Profit</th>
+                    <th style={{ textAlign: 'right', padding: '12px', fontSize: '14px', fontWeight: '600' }}>Margin</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {variantsStats.map((variant) => (
+                    <tr key={variant.wp_product_id} style={{ borderBottom: '1px solid #f0f0f0' }}>
+                      <td style={{ padding: '12px' }}>{variant.post_title}</td>
+                      <td style={{ textAlign: 'center', padding: '12px', fontSize: '13px', color: '#666' }}>{variant.sku}</td>
+                      <td style={{ textAlign: 'right', padding: '12px', fontWeight: '600' }}>{formatCurrency(variant.price)}</td>
+                      <td style={{ textAlign: 'center', padding: '12px', fontWeight: '600', color: variant.stock > 0 ? '#28a745' : '#dc3545' }}>{formatNumber(variant.stock || 0)}</td>
+                      <td style={{ textAlign: 'center', padding: '12px', fontWeight: '600', color: '#135E84' }}>{formatNumber(variant.net_sold || 0)}</td>
+                      <td style={{ textAlign: 'right', padding: '12px', fontWeight: '600', color: '#28a745' }}>{formatCurrency(variant.net_revenue || 0)}</td>
+                      <td style={{ textAlign: 'center', padding: '12px', fontWeight: '600' }}>{formatNumber(variant.net_orders || 0)}</td>
+                      <td style={{ textAlign: 'right', padding: '12px', fontWeight: '600', color: '#007bff' }}>{formatCurrency(variant.profit || 0)}</td>
+                      <td style={{ textAlign: 'right', padding: '12px', fontWeight: '600', color: '#ff6b6b' }}>{parseFloat(variant.margin_percent || 0).toFixed(1)}%</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* Sales by Day & Hour */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(500px, 1fr))', gap: '20px', marginBottom: '30px' }}>
+          {/* Sales by Day of Week */}
+          {salesByDayOfWeek.length > 0 && (
+            <div style={{ backgroundColor: '#fff', padding: '25px', borderRadius: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
+              <h2 style={{ marginTop: 0, color: '#333', fontSize: '18px' }}>📅 Ventes par jour de la semaine</h2>
+              <SalesByDayOfWeekChart data={salesByDayOfWeek} height={350} />
+            </div>
+          )}
+
+          {/* Sales by Hour */}
+          {salesByHour.length > 0 && (
+            <div style={{ backgroundColor: '#fff', padding: '25px', borderRadius: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
+              <h2 style={{ marginTop: 0, color: '#333', fontSize: '18px' }}>🕐 Ventes par heure</h2>
+              <SalesByHourChart data={salesByHour} height={300} />
+            </div>
+          )}
+        </div>
+
+        {/* Sales by Country */}
+        {salesByCountry.length > 0 && (
+          <div style={{ backgroundColor: '#fff', padding: '25px', borderRadius: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)', marginBottom: '30px' }}>
+            <h2 style={{ marginTop: 0, color: '#333', fontSize: '18px' }}>🌍 Sales by Country</h2>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '30px' }}>
+              {/* Pie Chart */}
+              <div>
+                <SalesByCountryPieChart data={salesByCountry} height={350} />
+              </div>
+              {/* Table */}
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr style={{ backgroundColor: '#f8f9fa', borderBottom: '2px solid #e0e0e0' }}>
+                      <th style={{ textAlign: 'left', padding: '12px', fontSize: '14px', fontWeight: '600' }}>Country</th>
+                      <th style={{ textAlign: 'center', padding: '12px', fontSize: '14px', fontWeight: '600' }}>Sold</th>
+                      <th style={{ textAlign: 'right', padding: '12px', fontSize: '14px', fontWeight: '600' }}>Revenue</th>
+                      <th style={{ textAlign: 'right', padding: '12px', fontSize: '14px', fontWeight: '600' }}>Profit</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {salesByCountry.slice(0, 8).map((country) => (
+                      <tr key={country.shipping_country} style={{ borderBottom: '1px solid #f0f0f0' }}>
+                        <td style={{ padding: '12px', fontWeight: '600' }}>{country.shipping_country}</td>
+                        <td style={{ textAlign: 'center', padding: '12px' }}>{formatNumber(country.net_sold)}</td>
+                        <td style={{ textAlign: 'right', padding: '12px', color: '#28a745', fontWeight: '600' }}>{formatCurrency(country.net_revenue)}</td>
+                        <td style={{ textAlign: 'right', padding: '12px', color: '#007bff', fontWeight: '600' }}>{formatCurrency(country.profit)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Frequently Bought With */}
         {frequentlyBought.length > 0 && (
           <div style={{ backgroundColor: '#fff', padding: '25px', borderRadius: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)', marginBottom: '30px' }}>
             <h2 style={{ marginTop: 0, color: '#333', fontSize: '18px' }}>🛍️ Frequently bought with</h2>
             <div>
               {frequentlyBought.slice(0, 5).map((item) => (
-                <div key={item.product_id} onClick={() => navigate(`/products/${item.product_id}`)} style={{ padding: '12px', borderBottom: '1px solid #f0f0f0', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }} onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f8f9fa'} onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}>
-                  <div style={{ fontWeight: '600' }}>{item.name}</div>
+                <div key={item.wp_product_id} onClick={() => navigate(`/products/${item.wp_product_id}`)} style={{ padding: '12px', borderBottom: '1px solid #f0f0f0', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }} onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f8f9fa'} onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}>
+                  <div style={{ fontWeight: '600' }}>{item.post_title}</div>
                   <div style={{ fontSize: '13px', color: '#999' }}>{item.times_bought_together} times</div>
                 </div>
               ))}
-            </div>
-          </div>
-        )}
-
-        {/* Sales by Country */}
-        {salesByCountry.length > 0 && (
-          <div style={{ backgroundColor: '#fff', padding: '25px', borderRadius: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)', marginBottom: '30px' }}>
-            <h2 style={{ marginTop: 0, color: '#333', fontSize: '18px' }}>🌍 Sales by Country</h2>
-            <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                <thead>
-                  <tr style={{ backgroundColor: '#f8f9fa', borderBottom: '2px solid #e0e0e0' }}>
-                    <th style={{ textAlign: 'left', padding: '12px', fontSize: '14px', fontWeight: '600' }}>Country</th>
-                    <th style={{ textAlign: 'center', padding: '12px', fontSize: '14px', fontWeight: '600' }}>Net Sold</th>
-                    <th style={{ textAlign: 'right', padding: '12px', fontSize: '14px', fontWeight: '600' }}>Net Revenue</th>
-                    <th style={{ textAlign: 'center', padding: '12px', fontSize: '14px', fontWeight: '600' }}>Net Orders</th>
-                    <th style={{ textAlign: 'right', padding: '12px', fontSize: '14px', fontWeight: '600' }}>Cost</th>
-                    <th style={{ textAlign: 'right', padding: '12px', fontSize: '14px', fontWeight: '600' }}>Profit</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {salesByCountry.map((country) => (
-                    <tr key={country.shipping_country} style={{ borderBottom: '1px solid #f0f0f0' }}>
-                      <td style={{ padding: '12px', fontWeight: '600' }}>{country.shipping_country}</td>
-                      <td style={{ textAlign: 'center', padding: '12px' }}>{formatNumber(country.net_sold)}</td>
-                      <td style={{ textAlign: 'right', padding: '12px', color: '#28a745', fontWeight: '600' }}>{formatCurrency(country.net_revenue)}</td>
-                      <td style={{ textAlign: 'center', padding: '12px' }}>{formatNumber(country.net_orders)}</td>
-                      <td style={{ textAlign: 'right', padding: '12px', color: '#fd7e14' }}>{formatCurrency(country.cost)}</td>
-                      <td style={{ textAlign: 'right', padding: '12px', color: '#007bff', fontWeight: '600' }}>{formatCurrency(country.profit)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
             </div>
           </div>
         )}
@@ -399,7 +491,7 @@ const ProductDetail = () => {
             <div style={{ backgroundColor: '#fff', padding: '25px', borderRadius: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
               <h2 style={{ marginTop: 0, color: '#333', fontSize: '18px' }}>👥 Top Customers</h2>
               {topCustomers.slice(0, 5).map((customer) => (
-                <div key={customer.customer_id} onClick={() => navigate(`/customers/${customer.customer_id}`)} style={{ padding: '12px', borderBottom: '1px solid #f0f0f0', cursor: 'pointer', display: 'flex', justifyContent: 'space-between' }} onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f8f9fa'} onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}>
+                <div key={customer.wp_user_id} onClick={() => navigate(`/customers/${customer.wp_user_id}`)} style={{ padding: '12px', borderBottom: '1px solid #f0f0f0', cursor: 'pointer', display: 'flex', justifyContent: 'space-between' }} onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f8f9fa'} onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}>
                   <div>
                     <div style={{ fontWeight: '600' }}>{customer.first_name} {customer.last_name}</div>
                     <div style={{ fontSize: '12px', color: '#999' }}>{customer.email}</div>

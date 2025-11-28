@@ -3,7 +3,7 @@ const pool = require('../config/database');
 class ProductStatsService {
   /**
    * Récupère la famille de produits (parent + variantes)
-   * Utilise le champ parent_id pour identifier les variations
+   * Utilise le champ wp_parent_id pour identifier les variations
    */
   async getProductFamily(productId) {
     // Récupérer le produit demandé
@@ -19,19 +19,19 @@ class ProductStatsService {
     let parentId = productId;
 
     // Si le produit est une variation, récupérer le parent
-    if (product.parent_id) {
+    if (product.wp_parent_id) {
       const parentQuery = `SELECT * FROM products WHERE wp_product_id = $1`;
-      const parentResult = await pool.query(parentQuery, [product.parent_id]);
+      const parentResult = await pool.query(parentQuery, [product.wp_parent_id]);
       if (parentResult.rows.length > 0) {
         parent = parentResult.rows[0];
-        parentId = product.parent_id;
+        parentId = product.wp_parent_id;
       }
     }
 
     // Récupérer toutes les variantes du parent
     const variantsQuery = `
       SELECT * FROM products
-      WHERE parent_id = $1
+      WHERE wp_parent_id = $1
       ORDER BY wp_product_id ASC
     `;
     const variantsResult = await pool.query(variantsQuery, [parentId]);
