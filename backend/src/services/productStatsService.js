@@ -297,7 +297,7 @@ class ProductStatsService {
     const query = `
       SELECT DISTINCT
         o.wp_order_id,
-        o.order_number,
+        o.wp_order_id as order_number,
         o.post_date,
         o.order_total,
         o.post_status,
