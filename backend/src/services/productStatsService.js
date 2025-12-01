@@ -215,7 +215,7 @@ class ProductStatsService {
       WHERE oi1.product_id = $1
         AND oi2.product_id != $1
         AND o.post_status = 'wc-completed'
-      GROUP BY p.wp_product_id
+      GROUP BY p.wp_product_id, p.post_title, p.sku, p.image_url, p.price
       ORDER BY times_bought_together DESC
       LIMIT $2
     `;
@@ -276,7 +276,7 @@ class ProductStatsService {
       INNER JOIN orders o ON o.wp_order_id = oi.wp_order_id
       INNER JOIN customers c ON c.wp_user_id = o.wp_customer_id
       WHERE oi.product_id = ANY($1) AND o.post_status = 'wc-completed'
-      GROUP BY c.wp_user_id
+      GROUP BY c.wp_user_id, c.first_name, c.last_name, c.email
       ORDER BY quantity_bought DESC
       LIMIT $2
     `;
