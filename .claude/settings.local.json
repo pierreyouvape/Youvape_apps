@@ -55,7 +55,10 @@
       "Bash(curl -s \"http://54.37.156.233:3000/api/products/stats-list?limit=1\")",
       "Bash(curl -s \"http://54.37.156.233:3000/api/products/stats-list?limit=1&sortBy=name\")",
       "Bash(curl -s \"http://54.37.156.233:3000/api/products/6518/stats/kpis\")",
-      "Bash(curl -s \"http://54.37.156.233:3000/api/products/6518\")"
+      "Bash(curl -s \"http://54.37.156.233:3000/api/products/6518\")",
+      "Bash(docker exec:*)",
+      "Bash(curl -s \"http://54.37.156.233/products/443625\")",
+      "Bash(curl -s \"http://54.37.156.233/assets/index-Q8JkiD0M.js\")"
     ],
     "deny": [],
     "ask": []
