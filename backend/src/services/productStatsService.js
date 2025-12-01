@@ -61,7 +61,7 @@ class ProductStatsService {
         COALESCE(AVG(oi.qty), 0) as avg_quantity_per_order
       FROM order_items oi
       INNER JOIN orders o ON o.wp_order_id = oi.wp_order_id
-      WHERE oi.wp_product_id = ANY($1) AND o.post_status = 'wc-completed'
+      WHERE oi.product_id = ANY($1) AND o.post_status = 'wc-completed'
     `;
 
     const result = await pool.query(query, [productIds]);
@@ -93,7 +93,7 @@ class ProductStatsService {
         COALESCE(SUM(oi.line_total), 0) as net_revenue,
         COUNT(DISTINCT oi.wp_order_id)::int as net_orders
       FROM products p
-      LEFT JOIN order_items oi ON oi.wp_product_id = p.wp_product_id
+      LEFT JOIN order_items oi ON oi.product_id = p.wp_product_id
       LEFT JOIN orders o ON o.wp_order_id = oi.wp_order_id AND o.post_status = 'wc-completed'
       WHERE p.wp_product_id = $1
       GROUP BY p.wp_product_id
@@ -129,7 +129,7 @@ class ProductStatsService {
         COUNT(DISTINCT oi.wp_order_id)::int as net_orders,
         COALESCE(SUM(oi.qty * COALESCE(oi.item_cost, 0)), 0) as total_cost
       FROM products p
-      LEFT JOIN order_items oi ON oi.wp_product_id = p.wp_product_id
+      LEFT JOIN order_items oi ON oi.product_id = p.wp_product_id
       LEFT JOIN orders o ON o.wp_order_id = oi.wp_order_id AND o.post_status = 'wc-completed'
       WHERE p.wp_product_id = ANY($1)
       GROUP BY p.wp_product_id
@@ -187,7 +187,7 @@ class ProductStatsService {
         COALESCE(SUM(oi.line_total), 0) as revenue
       FROM order_items oi
       INNER JOIN orders o ON o.wp_order_id = oi.wp_order_id
-      WHERE oi.wp_product_id = ANY($1) AND o.post_status = 'wc-completed'
+      WHERE oi.product_id = ANY($1) AND o.post_status = 'wc-completed'
       GROUP BY period
       ORDER BY period ASC
     `;
@@ -210,10 +210,10 @@ class ProductStatsService {
         COUNT(*)::int as times_bought_together
       FROM order_items oi1
       INNER JOIN order_items oi2 ON oi1.wp_order_id = oi2.wp_order_id
-      INNER JOIN products p ON p.wp_product_id = oi2.wp_product_id
+      INNER JOIN products p ON p.wp_product_id = oi2.product_id
       INNER JOIN orders o ON o.wp_order_id = oi1.wp_order_id
-      WHERE oi1.wp_product_id = $1
-        AND oi2.wp_product_id != $1
+      WHERE oi1.product_id = $1
+        AND oi2.product_id != $1
         AND o.post_status = 'wc-completed'
       GROUP BY p.wp_product_id
       ORDER BY times_bought_together DESC
@@ -243,7 +243,7 @@ class ProductStatsService {
         COALESCE(SUM(oi.line_total), 0) - COALESCE(SUM(oi.qty * COALESCE(oi.item_cost, 0)), 0) as profit
       FROM order_items oi
       INNER JOIN orders o ON o.wp_order_id = oi.wp_order_id
-      WHERE oi.wp_product_id = ANY($1)
+      WHERE oi.product_id = ANY($1)
         AND o.post_status = 'wc-completed'
         AND o.shipping_country IS NOT NULL
       GROUP BY o.shipping_country
@@ -275,7 +275,7 @@ class ProductStatsService {
       FROM order_items oi
       INNER JOIN orders o ON o.wp_order_id = oi.wp_order_id
       INNER JOIN customers c ON c.wp_user_id = o.wp_customer_id
-      WHERE oi.wp_product_id = ANY($1) AND o.post_status = 'wc-completed'
+      WHERE oi.product_id = ANY($1) AND o.post_status = 'wc-completed'
       GROUP BY c.wp_user_id
       ORDER BY quantity_bought DESC
       LIMIT $2
@@ -309,7 +309,7 @@ class ProductStatsService {
       FROM orders o
       INNER JOIN order_items oi ON oi.wp_order_id = o.wp_order_id
       LEFT JOIN customers c ON c.wp_user_id = o.wp_customer_id
-      WHERE oi.wp_product_id = ANY($1)
+      WHERE oi.product_id = ANY($1)
       ORDER BY o.post_date DESC
       LIMIT $2
     `;
@@ -335,7 +335,7 @@ class ProductStatsService {
         COALESCE(SUM(oi.line_total), 0) as revenue
       FROM order_items oi
       INNER JOIN orders o ON o.wp_order_id = oi.wp_order_id
-      WHERE oi.wp_product_id = ANY($1) AND o.post_status = 'wc-completed'
+      WHERE oi.product_id = ANY($1) AND o.post_status = 'wc-completed'
       GROUP BY day_of_week, day_name
       ORDER BY day_of_week
     `;
@@ -360,7 +360,7 @@ class ProductStatsService {
         COALESCE(SUM(oi.line_total), 0) as revenue
       FROM order_items oi
       INNER JOIN orders o ON o.wp_order_id = oi.wp_order_id
-      WHERE oi.wp_product_id = ANY($1) AND o.post_status = 'wc-completed'
+      WHERE oi.product_id = ANY($1) AND o.post_status = 'wc-completed'
       GROUP BY hour
       ORDER BY hour
     `;
