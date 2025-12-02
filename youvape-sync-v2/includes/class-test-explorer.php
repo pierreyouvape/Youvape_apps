@@ -175,12 +175,19 @@ class Test_Explorer {
             }
         }
 
+        // Get image URL from thumbnail_id
+        $image_url = null;
+        if (isset($product_meta['_thumbnail_id']) && !empty($product_meta['_thumbnail_id'])) {
+            $image_url = wp_get_attachment_url($product_meta['_thumbnail_id']);
+        }
+
         return [
             'type' => 'product',
             'wp_id' => $product->ID,
             'product_type' => $product_type,
             'post' => $product,
             'meta' => $product_meta,
+            'image_url' => $image_url,
             'variations' => $variations
         ];
     }

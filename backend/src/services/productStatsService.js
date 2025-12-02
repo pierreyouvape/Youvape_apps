@@ -205,6 +205,7 @@ class ProductStatsService {
         p.wp_product_id,
         p.post_title,
         p.sku,
+        p.image_url,
         p.price,
         COUNT(*)::int as times_bought_together
       FROM order_items oi1
@@ -214,7 +215,7 @@ class ProductStatsService {
       WHERE oi1.product_id = $1
         AND oi2.product_id != $1
         AND o.post_status = 'wc-completed'
-      GROUP BY p.wp_product_id, p.post_title, p.sku, p.price
+      GROUP BY p.wp_product_id, p.post_title, p.sku, p.image_url, p.price
       ORDER BY times_bought_together DESC
       LIMIT $2
     `;

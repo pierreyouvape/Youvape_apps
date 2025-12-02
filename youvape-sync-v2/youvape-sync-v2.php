@@ -3,7 +3,7 @@
  * Plugin Name: Youvape Sync v2
  * Plugin URI: https://youvape.fr
  * Description: Module de synchronisation massive WooCommerce vers VPS Youvape - Refonte complète
- * Version: 2.2.0
+ * Version: 2.3.0
  * Author: Youvape
  * Author URI: https://youvape.fr
  * Text Domain: youvape-sync-v2
@@ -16,7 +16,7 @@
 defined('ABSPATH') || exit;
 
 // Define plugin constants
-define('YOUVAPE_SYNC_V2_VERSION', '2.2.0');
+define('YOUVAPE_SYNC_V2_VERSION', '2.3.0');
 define('YOUVAPE_SYNC_V2_FILE', __FILE__);
 define('YOUVAPE_SYNC_V2_PATH', plugin_dir_path(__FILE__));
 define('YOUVAPE_SYNC_V2_URL', plugin_dir_url(__FILE__));

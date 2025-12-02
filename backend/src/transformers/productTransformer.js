@@ -50,6 +50,7 @@ function transformProduct(rawData) {
     wc_cog_cost: getMeta('_wc_cog_cost') ? parseFloat(getMeta('_wc_cog_cost')) : null,
     product_join_stories: getMeta('product_join_stories'),
     thumbnail_id: getMeta('_thumbnail_id') ? parseInt(getMeta('_thumbnail_id')) : null,
+    image_url: rawData.image_url || null,
     regular_price: getMeta('_regular_price') ? parseFloat(getMeta('_regular_price')) : null,
     price: getMeta('_price') ? parseFloat(getMeta('_price')) : null
   };
@@ -230,7 +231,7 @@ async function insertProduct(pool, productData) {
       post_title, post_excerpt, post_status, post_modified, guid,
       sku, total_sales, sold_individually, weight, stock, stock_status,
       product_attributes, wc_productdata_options, wc_cog_cost, product_join_stories,
-      thumbnail_id, regular_price, price,
+      thumbnail_id, image_url, regular_price, price,
       product_version, woovr_show_image, woovr_show_price, woovr_show_description,
       yoast_wpseo_linkdex, yoast_wpseo_estimated_reading_time_minutes,
       product_with_nicotine, product_excerpt_custom, yoast_indexnow_last_ping,
@@ -242,7 +243,7 @@ async function insertProduct(pool, productData) {
       $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
       $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
       $21, $22, $23, $24, $25, $26, $27, $28, $29, $30,
-      $31, $32, $33, $34, $35, $36, $37, $38, $39, NOW()
+      $31, $32, $33, $34, $35, $36, $37, $38, $39, $40, NOW()
     )
     ON CONFLICT (wp_product_id)
     DO UPDATE SET
@@ -266,6 +267,7 @@ async function insertProduct(pool, productData) {
       wc_cog_cost = EXCLUDED.wc_cog_cost,
       product_join_stories = EXCLUDED.product_join_stories,
       thumbnail_id = EXCLUDED.thumbnail_id,
+      image_url = EXCLUDED.image_url,
       regular_price = EXCLUDED.regular_price,
       price = EXCLUDED.price,
       product_version = EXCLUDED.product_version,
@@ -310,6 +312,7 @@ async function insertProduct(pool, productData) {
     productData.wc_cog_cost,
     JSON.stringify(productData.product_join_stories),
     productData.thumbnail_id,
+    productData.image_url,
     productData.regular_price,
     productData.price,
     productData.product_version || null,

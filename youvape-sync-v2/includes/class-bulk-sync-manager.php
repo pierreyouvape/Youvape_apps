@@ -142,6 +142,12 @@ class Bulk_Sync_Manager {
                 }
             }
 
+            // Get image URL from thumbnail_id
+            $image_url = null;
+            if (isset($meta['_thumbnail_id']) && !empty($meta['_thumbnail_id'])) {
+                $image_url = wp_get_attachment_url($meta['_thumbnail_id']);
+            }
+
             // DIAGNOSTIC LOG for variations
             $var_count = count($variations);
             if ($product_type === 'variable') {
@@ -154,6 +160,7 @@ class Bulk_Sync_Manager {
                 'product_type' => $product_type,
                 'post' => $product,
                 'meta' => $meta,
+                'image_url' => $image_url,
                 'variations' => $variations
             ];
         }
