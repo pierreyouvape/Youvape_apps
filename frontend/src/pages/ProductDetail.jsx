@@ -36,7 +36,20 @@ const ProductDetail = () => {
   });
 
   useEffect(() => {
-    if (id) fetchProductData();
+    if (id) {
+      fetchProductData();
+      // Charger les données des 30 derniers jours par défaut
+      const today = new Date();
+      const thirtyDaysAgo = new Date(today);
+      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 29);
+      const defaultParams = {
+        start: thirtyDaysAgo.toISOString().split('T')[0],
+        end: today.toISOString().split('T')[0],
+        groupBy: 'day'
+      };
+      setPeriodParams(defaultParams);
+      fetchSalesEvolution(defaultParams);
+    }
   }, [id]);
 
   const fetchProductData = async () => {
@@ -289,23 +302,29 @@ const ProductDetail = () => {
           </div>
         )}
 
-        {/* Filtres de période */}
-        <PeriodFilter
-          onPeriodChange={handlePeriodChange}
-          onComparisonChange={handleComparisonChange}
-        />
-
         {/* Graphique d'évolution des ventes */}
-        {salesEvolution.length > 0 && (
-          <div style={{ backgroundColor: '#fff', padding: '25px', borderRadius: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)', marginBottom: '30px' }}>
-            <h2 style={{ margin: '0 0 20px 0', color: '#333', fontSize: '18px' }}>📈 Évolution des ventes</h2>
+        <div style={{ backgroundColor: '#fff', padding: '25px', borderRadius: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)', marginBottom: '30px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '20px', gap: '20px' }}>
+            <h2 style={{ margin: 0, color: '#333', fontSize: '18px' }}>📈 Évolution des ventes</h2>
+            <div style={{ flex: 1, display: 'flex', justifyContent: 'flex-end' }}>
+              <PeriodFilter
+                onPeriodChange={handlePeriodChange}
+                onComparisonChange={handleComparisonChange}
+              />
+            </div>
+          </div>
+          {salesEvolution.length > 0 ? (
             <AdvancedSalesChart
               data={salesEvolution}
               comparisonData={comparisonEvolution}
               height={450}
             />
-          </div>
-        )}
+          ) : (
+            <div style={{ textAlign: 'center', padding: '40px', color: '#999' }}>
+              Aucune donnée disponible pour cette période
+            </div>
+          )}
+        </div>
 
         {/* Variations */}
         {variantsStats.length > 0 && (
