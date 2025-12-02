@@ -45,6 +45,7 @@ class ProductStatsService {
 
   /**
    * KPIs globaux pour un produit (avec ou sans variantes)
+   * Utilise la logique bundle pour exclure les sous-produits de bundles des calculs financiers
    */
   async getProductKPIs(productId, includeVariants = true) {
     const family = await this.getProductFamily(productId);
@@ -53,11 +54,34 @@ class ProductStatsService {
       : [productId];
 
     const query = `
+      WITH bundle_sub_items AS (
+        -- Identifier les lignes de commande qui sont des sous-produits de bundles
+        SELECT DISTINCT
+          oi.id as order_item_id
+        FROM order_items oi
+        INNER JOIN order_items oi_bundle ON oi.wp_order_id = oi_bundle.wp_order_id
+        INNER JOIN products p_bundle ON p_bundle.wp_product_id = oi_bundle.product_id
+        WHERE
+          p_bundle.product_type = 'woosb'
+          AND p_bundle.woosb_ids IS NOT NULL
+          AND oi.line_total = 0
+          AND oi.product_id::text = ANY(
+            SELECT jsonb_array_elements_text(
+              jsonb_path_query_array(p_bundle.woosb_ids, '$[*].id')
+            )
+          )
+      )
       SELECT
         SUM(oi.qty)::int as net_sold,
-        COALESCE(SUM(oi.line_total), 0) as net_revenue,
+        COALESCE(SUM(CASE
+          WHEN oi.id IN (SELECT order_item_id FROM bundle_sub_items) THEN 0
+          ELSE oi.line_total
+        END), 0) as net_revenue,
         COUNT(DISTINCT oi.wp_order_id)::int as net_orders,
-        COALESCE(SUM(oi.qty * COALESCE(oi.item_cost, 0)), 0) as total_cost,
+        COALESCE(SUM(CASE
+          WHEN oi.id IN (SELECT order_item_id FROM bundle_sub_items) THEN 0
+          ELSE oi.qty * COALESCE(oi.item_cost, 0)
+        END), 0) as total_cost,
         COALESCE(AVG(oi.qty), 0) as avg_quantity_per_order
       FROM order_items oi
       INNER JOIN orders o ON o.wp_order_id = oi.wp_order_id
@@ -105,6 +129,7 @@ class ProductStatsService {
 
   /**
    * Stats pour toutes les variantes d'une famille de produits
+   * Utilise la logique bundle pour exclure les sous-produits de bundles des calculs financiers
    */
   async getAllVariantsStats(productId) {
     const family = await this.getProductFamily(productId);
@@ -116,6 +141,23 @@ class ProductStatsService {
     const variantIds = family.variants.map(v => v.wp_product_id);
 
     const query = `
+      WITH bundle_sub_items AS (
+        -- Identifier les lignes de commande qui sont des sous-produits de bundles
+        SELECT DISTINCT
+          oi.id as order_item_id
+        FROM order_items oi
+        INNER JOIN order_items oi_bundle ON oi.wp_order_id = oi_bundle.wp_order_id
+        INNER JOIN products p_bundle ON p_bundle.wp_product_id = oi_bundle.product_id
+        WHERE
+          p_bundle.product_type = 'woosb'
+          AND p_bundle.woosb_ids IS NOT NULL
+          AND oi.line_total = 0
+          AND oi.product_id::text = ANY(
+            SELECT jsonb_array_elements_text(
+              jsonb_path_query_array(p_bundle.woosb_ids, '$[*].id')
+            )
+          )
+      )
       SELECT
         p.wp_product_id,
         p.post_title,
@@ -125,9 +167,15 @@ class ProductStatsService {
         p.stock,
         p.stock_status,
         COALESCE(SUM(oi.qty), 0)::int as net_sold,
-        COALESCE(SUM(oi.line_total), 0) as net_revenue,
+        COALESCE(SUM(CASE
+          WHEN oi.id IN (SELECT order_item_id FROM bundle_sub_items) THEN 0
+          ELSE oi.line_total
+        END), 0) as net_revenue,
         COUNT(DISTINCT oi.wp_order_id)::int as net_orders,
-        COALESCE(SUM(oi.qty * COALESCE(oi.item_cost, 0)), 0) as total_cost
+        COALESCE(SUM(CASE
+          WHEN oi.id IN (SELECT order_item_id FROM bundle_sub_items) THEN 0
+          ELSE oi.qty * COALESCE(oi.item_cost, 0)
+        END), 0) as total_cost
       FROM products p
       LEFT JOIN order_items oi ON oi.product_id = p.wp_product_id
       LEFT JOIN orders o ON o.wp_order_id = oi.wp_order_id AND o.post_status = 'wc-completed'
@@ -155,8 +203,9 @@ class ProductStatsService {
 
   /**
    * Évolution des ventes dans le temps
+   * Supporte le filtrage par date
    */
-  async getSalesEvolution(productId, includeVariants = true, groupBy = 'day') {
+  async getSalesEvolution(productId, includeVariants = true, groupBy = 'day', startDate = null, endDate = null) {
     const family = await this.getProductFamily(productId);
     const productIds = includeVariants
       ? family.allProducts.map(p => p.wp_product_id)
@@ -180,6 +229,23 @@ class ProductStatsService {
         dateFormat = "DATE(o.post_date)";
     }
 
+    // Construire la clause WHERE avec filtres de dates
+    let whereClause = 'oi.product_id = ANY($1) AND o.post_status = $2';
+    const params = [productIds, 'wc-completed'];
+    let paramIndex = 3;
+
+    if (startDate) {
+      whereClause += ` AND o.post_date >= $${paramIndex}`;
+      params.push(startDate);
+      paramIndex++;
+    }
+
+    if (endDate) {
+      whereClause += ` AND o.post_date <= $${paramIndex}`;
+      params.push(endDate);
+      paramIndex++;
+    }
+
     const query = `
       SELECT
         ${dateFormat} as period,
@@ -187,12 +253,12 @@ class ProductStatsService {
         COALESCE(SUM(oi.line_total), 0) as revenue
       FROM order_items oi
       INNER JOIN orders o ON o.wp_order_id = oi.wp_order_id
-      WHERE oi.product_id = ANY($1) AND o.post_status = 'wc-completed'
+      WHERE ${whereClause}
       GROUP BY period
       ORDER BY period ASC
     `;
 
-    const result = await pool.query(query, [productIds]);
+    const result = await pool.query(query, params);
     return result.rows;
   }
 

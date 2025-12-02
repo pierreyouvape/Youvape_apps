@@ -68,15 +68,23 @@ exports.getAllVariantsStats = async (req, res) => {
 
 /**
  * Récupère l'évolution des ventes
- * GET /api/products/:id/stats/evolution?groupBy=day&includeVariants=true
+ * GET /api/products/:id/stats/evolution?groupBy=day&includeVariants=true&startDate=2024-01-01&endDate=2024-12-31
  */
 exports.getSalesEvolution = async (req, res) => {
   try {
     const productId = parseInt(req.params.id);
     const includeVariants = req.query.includeVariants !== 'false';
     const groupBy = req.query.groupBy || 'day';
+    const startDate = req.query.startDate || null;
+    const endDate = req.query.endDate || null;
 
-    const evolution = await productStatsService.getSalesEvolution(productId, includeVariants, groupBy);
+    const evolution = await productStatsService.getSalesEvolution(
+      productId,
+      includeVariants,
+      groupBy,
+      startDate,
+      endDate
+    );
 
     res.json({ success: true, data: evolution });
   } catch (error) {

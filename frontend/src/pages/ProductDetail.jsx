@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import axios from 'axios';
-import SalesTimelineChart from '../components/charts/SalesTimelineChart';
+import AdvancedSalesChart from '../components/charts/AdvancedSalesChart';
 import SalesByDayOfWeekChart from '../components/charts/SalesByDayOfWeekChart';
 import SalesByHourChart from '../components/charts/SalesByHourChart';
 import SalesByCountryPieChart from '../components/charts/SalesByCountryPieChart';
+import PeriodFilter from '../components/PeriodFilter';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
 
@@ -18,6 +19,7 @@ const ProductDetail = () => {
   const [kpis, setKpis] = useState(null);
   const [variantsStats, setVariantsStats] = useState([]);
   const [salesEvolution, setSalesEvolution] = useState([]);
+  const [comparisonEvolution, setComparisonEvolution] = useState(null);
   const [salesByDayOfWeek, setSalesByDayOfWeek] = useState([]);
   const [salesByHour, setSalesByHour] = useState([]);
   const [frequentlyBought, setFrequentlyBought] = useState([]);
@@ -27,15 +29,15 @@ const ProductDetail = () => {
   const [loading, setLoading] = useState(true);
   const [editingCost, setEditingCost] = useState(false);
   const [newCost, setNewCost] = useState('');
-  const [evolutionGroupBy, setEvolutionGroupBy] = useState('day');
+  const [periodParams, setPeriodParams] = useState({
+    start: null,
+    end: null,
+    groupBy: 'day'
+  });
 
   useEffect(() => {
     if (id) fetchProductData();
   }, [id]);
-
-  useEffect(() => {
-    if (id) fetchSalesEvolution();
-  }, [id, evolutionGroupBy]);
 
   const fetchProductData = async () => {
     setLoading(true);
@@ -92,10 +94,14 @@ const ProductDetail = () => {
     }
   };
 
-  const fetchSalesEvolution = async () => {
+  const fetchSalesEvolution = async (params) => {
     try {
       const response = await axios.get(`${API_URL}/products/${id}/stats/evolution`, {
-        params: { groupBy: evolutionGroupBy }
+        params: {
+          groupBy: params.groupBy,
+          startDate: params.start,
+          endDate: params.end
+        }
       });
       if (response.data.success) {
         // Ajouter le profit calculé
@@ -111,7 +117,48 @@ const ProductDetail = () => {
       }
     } catch (err) {
       console.error('Error fetching sales evolution:', err);
+      setSalesEvolution([]);
     }
+  };
+
+  const fetchComparisonEvolution = async (params) => {
+    if (!params) {
+      setComparisonEvolution(null);
+      return;
+    }
+
+    try {
+      const response = await axios.get(`${API_URL}/products/${id}/stats/evolution`, {
+        params: {
+          groupBy: periodParams.groupBy,
+          startDate: params.start,
+          endDate: params.end
+        }
+      });
+      if (response.data.success) {
+        const dataWithProfit = response.data.data.map(item => {
+          const revenue = parseFloat(item.revenue) || 0;
+          const cost = (parseInt(item.quantity_sold) || 0) * (parseFloat(product?.effective_cost_price) || 0);
+          return {
+            ...item,
+            profit: revenue - cost
+          };
+        });
+        setComparisonEvolution(dataWithProfit);
+      }
+    } catch (err) {
+      console.error('Error fetching comparison evolution:', err);
+      setComparisonEvolution(null);
+    }
+  };
+
+  const handlePeriodChange = (params) => {
+    setPeriodParams(params);
+    fetchSalesEvolution(params);
+  };
+
+  const handleComparisonChange = (params) => {
+    fetchComparisonEvolution(params);
   };
 
   const handleSaveCost = async () => {
@@ -220,12 +267,12 @@ const ProductDetail = () => {
         {kpis && (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '15px', marginBottom: '30px' }}>
             {[
-              { label: 'Net Sold', value: formatNumber(kpis.net_sold || 0), color: '#135E84' },
-              { label: 'Net Revenue', value: formatCurrency(kpis.net_revenue || 0), color: '#28a745' },
-              { label: 'Net Orders', value: formatNumber(kpis.net_orders || 0), color: '#8b5cf6' },
-              { label: 'Cost', value: formatCurrency(kpis.total_cost || 0), color: '#fd7e14' },
+              { label: 'Quantité vendue', value: formatNumber(kpis.net_sold || 0), color: '#135E84' },
+              { label: 'Chiffre d\'affaires', value: formatCurrency(kpis.net_revenue || 0), color: '#28a745' },
+              { label: 'Nombre de commandes', value: formatNumber(kpis.net_orders || 0), color: '#8b5cf6' },
+              { label: 'Coût', value: formatCurrency(kpis.total_cost || 0), color: '#fd7e14' },
               { label: 'Profit', value: formatCurrency(kpis.profit || 0), color: '#007bff' },
-              { label: 'Margin', value: `${(kpis.margin_percent || 0).toFixed(1)}%`, color: '#ff6b6b' }
+              { label: 'Marge', value: `${(kpis.margin_percent || 0).toFixed(1)}%`, color: '#ff6b6b' }
             ].map((kpi, i) => (
               <div key={i} style={{ backgroundColor: '#fff', padding: '20px', borderRadius: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
                 <div style={{ fontSize: '12px', color: '#666', marginBottom: '5px', textTransform: 'uppercase' }}>{kpi.label}</div>
@@ -238,37 +285,25 @@ const ProductDetail = () => {
         {/* Stats text */}
         {kpis && (
           <div style={{ backgroundColor: '#fff', padding: '20px', borderRadius: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)', marginBottom: '30px', fontSize: '14px', color: '#666', textAlign: 'center' }}>
-            From <strong>{formatNumber(kpis.net_orders || 0)} net orders</strong>. On average, customers order <strong>{parseFloat(kpis.avg_quantity_per_order || 0).toFixed(1)}</strong> of this product per order.
+            À partir de <strong>{formatNumber(kpis.net_orders || 0)} commandes</strong>. En moyenne, les clients commandent <strong>{parseFloat(kpis.avg_quantity_per_order || 0).toFixed(1)}</strong> unités de ce produit par commande.
           </div>
         )}
 
-        {/* Sales Timeline Chart */}
+        {/* Filtres de période */}
+        <PeriodFilter
+          onPeriodChange={handlePeriodChange}
+          onComparisonChange={handleComparisonChange}
+        />
+
+        {/* Graphique d'évolution des ventes */}
         {salesEvolution.length > 0 && (
           <div style={{ backgroundColor: '#fff', padding: '25px', borderRadius: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)', marginBottom: '30px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-              <h2 style={{ margin: 0, color: '#333', fontSize: '18px' }}>📈 Évolution des ventes</h2>
-              <div style={{ display: 'flex', gap: '10px' }}>
-                {['day', 'week', 'month'].map(period => (
-                  <button
-                    key={period}
-                    onClick={() => setEvolutionGroupBy(period)}
-                    style={{
-                      padding: '8px 16px',
-                      backgroundColor: evolutionGroupBy === period ? '#135E84' : '#f0f0f0',
-                      color: evolutionGroupBy === period ? 'white' : '#666',
-                      border: 'none',
-                      borderRadius: '6px',
-                      fontSize: '13px',
-                      cursor: 'pointer',
-                      fontWeight: '600'
-                    }}
-                  >
-                    {period === 'day' ? 'Jour' : period === 'week' ? 'Semaine' : 'Mois'}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <SalesTimelineChart data={salesEvolution} height={400} />
+            <h2 style={{ margin: '0 0 20px 0', color: '#333', fontSize: '18px' }}>📈 Évolution des ventes</h2>
+            <AdvancedSalesChart
+              data={salesEvolution}
+              comparisonData={comparisonEvolution}
+              height={450}
+            />
           </div>
         )}
 
@@ -284,11 +319,11 @@ const ProductDetail = () => {
                     <th style={{ textAlign: 'center', padding: '12px', fontSize: '14px', fontWeight: '600' }}>SKU</th>
                     <th style={{ textAlign: 'right', padding: '12px', fontSize: '14px', fontWeight: '600' }}>Prix</th>
                     <th style={{ textAlign: 'center', padding: '12px', fontSize: '14px', fontWeight: '600' }}>Stock</th>
-                    <th style={{ textAlign: 'center', padding: '12px', fontSize: '14px', fontWeight: '600' }}>Net Sold</th>
-                    <th style={{ textAlign: 'right', padding: '12px', fontSize: '14px', fontWeight: '600' }}>Net Revenue</th>
-                    <th style={{ textAlign: 'center', padding: '12px', fontSize: '14px', fontWeight: '600' }}>Net Orders</th>
+                    <th style={{ textAlign: 'center', padding: '12px', fontSize: '14px', fontWeight: '600' }}>Qté vendue</th>
+                    <th style={{ textAlign: 'right', padding: '12px', fontSize: '14px', fontWeight: '600' }}>Chiffre d'affaires</th>
+                    <th style={{ textAlign: 'center', padding: '12px', fontSize: '14px', fontWeight: '600' }}>Commandes</th>
                     <th style={{ textAlign: 'right', padding: '12px', fontSize: '14px', fontWeight: '600' }}>Profit</th>
-                    <th style={{ textAlign: 'right', padding: '12px', fontSize: '14px', fontWeight: '600' }}>Margin</th>
+                    <th style={{ textAlign: 'right', padding: '12px', fontSize: '14px', fontWeight: '600' }}>Marge</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -333,7 +368,7 @@ const ProductDetail = () => {
         {/* Sales by Country */}
         {salesByCountry.length > 0 && (
           <div style={{ backgroundColor: '#fff', padding: '25px', borderRadius: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)', marginBottom: '30px' }}>
-            <h2 style={{ marginTop: 0, color: '#333', fontSize: '18px' }}>🌍 Sales by Country</h2>
+            <h2 style={{ marginTop: 0, color: '#333', fontSize: '18px' }}>🌍 Ventes par pays</h2>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '30px' }}>
               {/* Pie Chart */}
               <div>
@@ -344,9 +379,9 @@ const ProductDetail = () => {
                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                   <thead>
                     <tr style={{ backgroundColor: '#f8f9fa', borderBottom: '2px solid #e0e0e0' }}>
-                      <th style={{ textAlign: 'left', padding: '12px', fontSize: '14px', fontWeight: '600' }}>Country</th>
-                      <th style={{ textAlign: 'center', padding: '12px', fontSize: '14px', fontWeight: '600' }}>Sold</th>
-                      <th style={{ textAlign: 'right', padding: '12px', fontSize: '14px', fontWeight: '600' }}>Revenue</th>
+                      <th style={{ textAlign: 'left', padding: '12px', fontSize: '14px', fontWeight: '600' }}>Pays</th>
+                      <th style={{ textAlign: 'center', padding: '12px', fontSize: '14px', fontWeight: '600' }}>Qté vendue</th>
+                      <th style={{ textAlign: 'right', padding: '12px', fontSize: '14px', fontWeight: '600' }}>CA</th>
                       <th style={{ textAlign: 'right', padding: '12px', fontSize: '14px', fontWeight: '600' }}>Profit</th>
                     </tr>
                   </thead>
@@ -369,12 +404,12 @@ const ProductDetail = () => {
         {/* Frequently Bought With */}
         {frequentlyBought.length > 0 && (
           <div style={{ backgroundColor: '#fff', padding: '25px', borderRadius: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)', marginBottom: '30px' }}>
-            <h2 style={{ marginTop: 0, color: '#333', fontSize: '18px' }}>🛍️ Frequently bought with</h2>
+            <h2 style={{ marginTop: 0, color: '#333', fontSize: '18px' }}>🛍️ Fréquemment acheté avec</h2>
             <div>
               {frequentlyBought.slice(0, 5).map((item) => (
                 <div key={item.wp_product_id} onClick={() => navigate(`/products/${item.wp_product_id}`)} style={{ padding: '12px', borderBottom: '1px solid #f0f0f0', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }} onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f8f9fa'} onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}>
                   <div style={{ fontWeight: '600' }}>{item.post_title}</div>
-                  <div style={{ fontSize: '13px', color: '#999' }}>{item.times_bought_together} times</div>
+                  <div style={{ fontSize: '13px', color: '#999' }}>{item.times_bought_together} fois</div>
                 </div>
               ))}
             </div>
@@ -492,7 +527,7 @@ const ProductDetail = () => {
           {/* Top Customers */}
           {topCustomers.length > 0 && (
             <div style={{ backgroundColor: '#fff', padding: '25px', borderRadius: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
-              <h2 style={{ marginTop: 0, color: '#333', fontSize: '18px' }}>👥 Top Customers</h2>
+              <h2 style={{ marginTop: 0, color: '#333', fontSize: '18px' }}>👥 Meilleurs clients</h2>
               {topCustomers.slice(0, 5).map((customer) => (
                 <div key={customer.wp_user_id} onClick={() => navigate(`/customers/${customer.wp_user_id}`)} style={{ padding: '12px', borderBottom: '1px solid #f0f0f0', cursor: 'pointer', display: 'flex', justifyContent: 'space-between' }} onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f8f9fa'} onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}>
                   <div>
@@ -500,7 +535,7 @@ const ProductDetail = () => {
                     <div style={{ fontSize: '12px', color: '#999' }}>{customer.email}</div>
                   </div>
                   <div style={{ textAlign: 'right' }}>
-                    <div style={{ fontWeight: '600', color: '#135E84' }}>{formatNumber(customer.quantity_bought)} units</div>
+                    <div style={{ fontWeight: '600', color: '#135E84' }}>{formatNumber(customer.quantity_bought)} unités</div>
                     <div style={{ fontSize: '12px', color: '#999' }}>{formatCurrency(customer.total_spent)}</div>
                   </div>
                 </div>
@@ -511,7 +546,7 @@ const ProductDetail = () => {
           {/* Recent Orders */}
           {recentOrders.length > 0 && (
             <div style={{ backgroundColor: '#fff', padding: '25px', borderRadius: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
-              <h2 style={{ marginTop: 0, color: '#333', fontSize: '18px' }}>📋 Recent Orders</h2>
+              <h2 style={{ marginTop: 0, color: '#333', fontSize: '18px' }}>📋 Commandes récentes</h2>
               {recentOrders.slice(0, 5).map((order) => (
                 <div key={order.wp_order_id} onClick={() => navigate(`/orders/${order.wp_order_id}`)} style={{ padding: '12px', borderBottom: '1px solid #f0f0f0', cursor: 'pointer', display: 'flex', justifyContent: 'space-between' }} onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f8f9fa'} onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}>
                   <div>
