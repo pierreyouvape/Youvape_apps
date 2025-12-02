@@ -845,6 +845,7 @@ const receiveTest = async (req, res) => {
           product_type: product.product_type,
           post: product.post,
           meta: product.meta,
+          image_url: product.image_url,
           variations: product.variations || []
         });
 
@@ -981,6 +982,7 @@ const receiveBulk = async (req, res) => {
               product_type: item.product_type,
               post: item.post,
               meta: item.meta,
+              image_url: item.image_url,
               variations: item.variations || []
             });
 
