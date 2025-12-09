@@ -204,6 +204,7 @@ class ProductStatsService {
   /**
    * Évolution des ventes dans le temps
    * Supporte le filtrage par date
+   * Utilise la logique bundle pour exclure les sous-produits de bundles des calculs financiers
    */
   async getSalesEvolution(productId, includeVariants = true, groupBy = 'day', startDate = null, endDate = null) {
     const family = await this.getProductFamily(productId);
@@ -247,10 +248,34 @@ class ProductStatsService {
     }
 
     const query = `
+      WITH bundle_sub_items AS (
+        -- Identifier les lignes de commande qui sont des sous-produits de bundles
+        SELECT DISTINCT
+          oi.id as order_item_id
+        FROM order_items oi
+        INNER JOIN order_items oi_bundle ON oi.wp_order_id = oi_bundle.wp_order_id
+        INNER JOIN products p_bundle ON p_bundle.wp_product_id = oi_bundle.product_id
+        WHERE
+          p_bundle.product_type = 'woosb'
+          AND p_bundle.woosb_ids IS NOT NULL
+          AND oi.line_total = 0
+          AND oi.product_id::text = ANY(
+            SELECT jsonb_array_elements_text(
+              jsonb_path_query_array(p_bundle.woosb_ids, '$[*].id')
+            )
+          )
+      )
       SELECT
         ${dateFormat} as period,
         SUM(oi.qty)::int as quantity_sold,
-        COALESCE(SUM(oi.line_total), 0) as revenue
+        COALESCE(SUM(CASE
+          WHEN oi.id IN (SELECT order_item_id FROM bundle_sub_items) THEN 0
+          ELSE oi.line_total
+        END), 0) as revenue,
+        COALESCE(SUM(CASE
+          WHEN oi.id IN (SELECT order_item_id FROM bundle_sub_items) THEN 0
+          ELSE oi.qty * COALESCE(oi.item_cost, 0)
+        END), 0) as cost
       FROM order_items oi
       INNER JOIN orders o ON o.wp_order_id = oi.wp_order_id
       WHERE ${whereClause}
@@ -259,7 +284,12 @@ class ProductStatsService {
     `;
 
     const result = await pool.query(query, params);
-    return result.rows;
+
+    // Calculer le profit pour chaque période
+    return result.rows.map(row => ({
+      ...row,
+      profit: (parseFloat(row.revenue) || 0) - (parseFloat(row.cost) || 0)
+    }));
   }
 
   /**

@@ -117,16 +117,8 @@ const ProductDetail = () => {
         }
       });
       if (response.data.success) {
-        // Ajouter le profit calculé
-        const dataWithProfit = response.data.data.map(item => {
-          const revenue = parseFloat(item.revenue) || 0;
-          const cost = (parseInt(item.quantity_sold) || 0) * (parseFloat(product?.effective_cost_price) || 0);
-          return {
-            ...item,
-            profit: revenue - cost
-          };
-        });
-        setSalesEvolution(dataWithProfit);
+        // Le profit est maintenant calculé côté backend avec la logique bundle
+        setSalesEvolution(response.data.data);
       }
     } catch (err) {
       console.error('Error fetching sales evolution:', err);
@@ -149,15 +141,8 @@ const ProductDetail = () => {
         }
       });
       if (response.data.success) {
-        const dataWithProfit = response.data.data.map(item => {
-          const revenue = parseFloat(item.revenue) || 0;
-          const cost = (parseInt(item.quantity_sold) || 0) * (parseFloat(product?.effective_cost_price) || 0);
-          return {
-            ...item,
-            profit: revenue - cost
-          };
-        });
-        setComparisonEvolution(dataWithProfit);
+        // Le profit est maintenant calculé côté backend avec la logique bundle
+        setComparisonEvolution(response.data.data);
       }
     } catch (err) {
       console.error('Error fetching comparison evolution:', err);

@@ -121,12 +121,14 @@ const AdvancedSalesChart = ({
 
       {/* Graphique */}
       <ResponsiveContainer width="100%" height={height}>
-        <ComposedChart data={chartData} margin={{ top: 10, right: 40, left: 20, bottom: 0 }}>
+        <ComposedChart data={chartData} margin={{ top: 10, right: 40, left: 20, bottom: 60 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="#e0e0e0" />
           <XAxis
             dataKey="period"
-            tick={{ fontSize: 12 }}
+            tick={{ fontSize: 10, angle: -45, textAnchor: 'end', dy: 5 }}
             tickFormatter={formatDate}
+            interval={0}
+            height={80}
           />
 
           {/* Axe Y gauche pour les montants (€) */}
