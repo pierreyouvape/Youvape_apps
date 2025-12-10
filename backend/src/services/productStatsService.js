@@ -163,7 +163,7 @@ class ProductStatsService {
         p.post_title,
         p.sku,
         p.price,
-        COALESCE(p.cost_price_custom, p.cost_price) as cost_price,
+        p.cost_price,
         p.stock,
         p.stock_status,
         COALESCE(SUM(oi.qty), 0)::int as net_sold,
