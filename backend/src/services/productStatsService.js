@@ -203,14 +203,27 @@ class ProductStatsService {
 
   /**
    * Évolution des ventes dans le temps
-   * Supporte le filtrage par date
+   * Supporte le filtrage par date et par variante spécifique
    * Utilise la logique bundle pour exclure les sous-produits de bundles des calculs financiers
+   * @param {number} productId - ID du produit parent
+   * @param {boolean} includeVariants - Inclure toutes les variantes
+   * @param {string} groupBy - Groupement (day, week, month)
+   * @param {string|null} startDate - Date de début (null = depuis la création)
+   * @param {string|null} endDate - Date de fin (null = jusqu'à aujourd'hui)
+   * @param {number|null} variantId - ID d'une variante spécifique (null = toutes)
    */
-  async getSalesEvolution(productId, includeVariants = true, groupBy = 'day', startDate = null, endDate = null) {
-    const family = await this.getProductFamily(productId);
-    const productIds = includeVariants
-      ? family.allProducts.map(p => p.wp_product_id)
-      : [productId];
+  async getSalesEvolution(productId, includeVariants = true, groupBy = 'day', startDate = null, endDate = null, variantId = null) {
+    let productIds;
+
+    if (variantId) {
+      // Si une variante spécifique est demandée, n'utiliser que celle-ci
+      productIds = [variantId];
+    } else {
+      const family = await this.getProductFamily(productId);
+      productIds = includeVariants
+        ? family.allProducts.map(p => p.wp_product_id)
+        : [productId];
+    }
 
     let dateFormat;
     switch (groupBy) {
@@ -290,6 +303,59 @@ class ProductStatsService {
       ...row,
       profit: (parseFloat(row.revenue) || 0) - (parseFloat(row.cost) || 0)
     }));
+  }
+
+  /**
+   * Stats des variantes pour une période donnée (pour le panneau de sélection)
+   * @param {number} productId - ID du produit parent
+   * @param {string|null} startDate - Date de début (null = depuis la création)
+   * @param {string|null} endDate - Date de fin (null = jusqu'à aujourd'hui)
+   */
+  async getVariantsStatsByPeriod(productId, startDate = null, endDate = null) {
+    const family = await this.getProductFamily(productId);
+
+    if (!family.variants || family.variants.length === 0) {
+      return [];
+    }
+
+    const variantIds = family.variants.map(v => v.wp_product_id);
+
+    // Construire la clause WHERE avec filtres de dates
+    let whereClause = 'p.wp_product_id = ANY($1) AND o.post_status = $2';
+    const params = [variantIds, 'wc-completed'];
+    let paramIndex = 3;
+
+    if (startDate) {
+      whereClause += ` AND o.post_date >= $${paramIndex}`;
+      params.push(startDate);
+      paramIndex++;
+    }
+
+    if (endDate) {
+      whereClause += ` AND o.post_date <= $${paramIndex}`;
+      params.push(endDate);
+      paramIndex++;
+    }
+
+    const query = `
+      SELECT
+        p.wp_product_id,
+        p.post_title,
+        p.sku,
+        p.stock,
+        COALESCE(SUM(oi.qty), 0)::int as quantity_sold
+      FROM products p
+      LEFT JOIN order_items oi ON oi.product_id = p.wp_product_id
+      LEFT JOIN orders o ON o.wp_order_id = oi.wp_order_id AND o.post_status = 'wc-completed'
+        ${startDate ? `AND o.post_date >= '${startDate}'` : ''}
+        ${endDate ? `AND o.post_date <= '${endDate}'` : ''}
+      WHERE p.wp_product_id = ANY($1)
+      GROUP BY p.wp_product_id
+      ORDER BY quantity_sold DESC, p.sku ASC
+    `;
+
+    const result = await pool.query(query, [variantIds]);
+    return result.rows;
   }
 
   /**

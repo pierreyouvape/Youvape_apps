@@ -68,7 +68,7 @@ exports.getAllVariantsStats = async (req, res) => {
 
 /**
  * Récupère l'évolution des ventes
- * GET /api/products/:id/stats/evolution?groupBy=day&includeVariants=true&startDate=2024-01-01&endDate=2024-12-31
+ * GET /api/products/:id/stats/evolution?groupBy=day&includeVariants=true&startDate=2024-01-01&endDate=2024-12-31&variantId=123
  */
 exports.getSalesEvolution = async (req, res) => {
   try {
@@ -77,18 +77,43 @@ exports.getSalesEvolution = async (req, res) => {
     const groupBy = req.query.groupBy || 'day';
     const startDate = req.query.startDate || null;
     const endDate = req.query.endDate || null;
+    const variantId = req.query.variantId ? parseInt(req.query.variantId) : null;
 
     const evolution = await productStatsService.getSalesEvolution(
       productId,
       includeVariants,
       groupBy,
       startDate,
-      endDate
+      endDate,
+      variantId
     );
 
     res.json({ success: true, data: evolution });
   } catch (error) {
     console.error('Error getting sales evolution:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+/**
+ * Récupère les stats des variantes pour une période donnée
+ * GET /api/products/:id/stats/variants-by-period?startDate=2024-01-01&endDate=2024-12-31
+ */
+exports.getVariantsStatsByPeriod = async (req, res) => {
+  try {
+    const productId = parseInt(req.params.id);
+    const startDate = req.query.startDate || null;
+    const endDate = req.query.endDate || null;
+
+    const stats = await productStatsService.getVariantsStatsByPeriod(
+      productId,
+      startDate,
+      endDate
+    );
+
+    res.json({ success: true, data: stats });
+  } catch (error) {
+    console.error('Error getting variants stats by period:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 };

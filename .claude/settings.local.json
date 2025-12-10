@@ -59,7 +59,11 @@
       "Bash(docker exec:*)",
       "Bash(curl -s \"http://54.37.156.233/products/443625\")",
       "Bash(curl -s \"http://54.37.156.233/assets/index-Q8JkiD0M.js\")",
-      "Bash(curl -s \"http://54.37.156.233:3000/api/products/11152\")"
+      "Bash(curl -s \"http://54.37.156.233:3000/api/products/11152\")",
+      "Bash(xxd:*)",
+      "Bash(while read f)",
+      "Bash(do echo \"Found: $f\")",
+      "Bash(done)"
     ],
     "deny": [],
     "ask": []

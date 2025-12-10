@@ -4,8 +4,8 @@ import { useState } from 'react';
  * Composant de filtre de période compact
  * Version condensée pour s'intégrer en haut à droite du graphique
  */
-const PeriodFilter = ({ onPeriodChange, onComparisonChange }) => {
-  const [selectedPeriod, setSelectedPeriod] = useState('30d');
+const PeriodFilter = ({ onPeriodChange, onComparisonChange, defaultPeriod = 'all' }) => {
+  const [selectedPeriod, setSelectedPeriod] = useState(defaultPeriod);
   const [customStartDate, setCustomStartDate] = useState('');
   const [customEndDate, setCustomEndDate] = useState('');
   const [enableComparison, setEnableComparison] = useState(false);
@@ -21,6 +21,11 @@ const PeriodFilter = ({ onPeriodChange, onComparisonChange }) => {
     let start, end;
 
     switch (period) {
+      case 'all':
+        // Pas de dates = depuis la création (toutes les données)
+        start = null;
+        end = null;
+        break;
       case '7d':
         start = new Date(today);
         start.setDate(start.getDate() - 6);
@@ -46,9 +51,9 @@ const PeriodFilter = ({ onPeriodChange, onComparisonChange }) => {
         }
         break;
       default:
-        start = new Date(today);
-        start.setDate(start.getDate() - 29);
-        end = today;
+        // Par défaut = toutes les données
+        start = null;
+        end = null;
     }
 
     return { start, end };
@@ -91,13 +96,10 @@ const PeriodFilter = ({ onPeriodChange, onComparisonChange }) => {
   const applyFilters = (period = selectedPeriod, group = groupBy) => {
     const { start, end } = calculateDates(period);
 
-    if (!start || !end) {
-      return;
-    }
-
+    // Pour 'all', on envoie null pour les dates
     onPeriodChange({
-      start: formatDateForInput(start),
-      end: formatDateForInput(end),
+      start: start ? formatDateForInput(start) : null,
+      end: end ? formatDateForInput(end) : null,
       groupBy: group
     });
 
@@ -125,6 +127,7 @@ const PeriodFilter = ({ onPeriodChange, onComparisonChange }) => {
     <div style={{ display: 'flex', alignItems: 'center', gap: '15px', flexWrap: 'wrap' }}>
       {/* Période rapide */}
       {[
+        { value: 'all', label: 'Tout' },
         { value: '7d', label: '7j' },
         { value: '30d', label: '30j' },
         { value: 'current_month', label: 'Mois en cours' },

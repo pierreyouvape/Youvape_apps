@@ -34,21 +34,21 @@ const ProductDetail = () => {
     end: null,
     groupBy: 'day'
   });
+  const [selectedVariantId, setSelectedVariantId] = useState(null);
+  const [variantsPeriodStats, setVariantsPeriodStats] = useState([]);
 
   useEffect(() => {
     if (id) {
       fetchProductData();
-      // Charger les données des 30 derniers jours par défaut
-      const today = new Date();
-      const thirtyDaysAgo = new Date(today);
-      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 29);
+      // Par défaut : "Tout" (depuis la création) - pas de dates
       const defaultParams = {
-        start: thirtyDaysAgo.toISOString().split('T')[0],
-        end: today.toISOString().split('T')[0],
+        start: null,
+        end: null,
         groupBy: 'day'
       };
       setPeriodParams(defaultParams);
       fetchSalesEvolution(defaultParams);
+      fetchVariantsPeriodStats(defaultParams);
     }
   }, [id]);
 
@@ -107,22 +107,43 @@ const ProductDetail = () => {
     }
   };
 
-  const fetchSalesEvolution = async (params) => {
+  const fetchSalesEvolution = async (params, variantId = null) => {
     try {
+      const queryParams = {
+        groupBy: params.groupBy
+      };
+      // Ajouter les dates seulement si elles sont définies
+      if (params.start) queryParams.startDate = params.start;
+      if (params.end) queryParams.endDate = params.end;
+      if (variantId) queryParams.variantId = variantId;
+
       const response = await axios.get(`${API_URL}/products/${id}/stats/evolution`, {
-        params: {
-          groupBy: params.groupBy,
-          startDate: params.start,
-          endDate: params.end
-        }
+        params: queryParams
       });
       if (response.data.success) {
-        // Le profit est maintenant calculé côté backend avec la logique bundle
         setSalesEvolution(response.data.data);
       }
     } catch (err) {
       console.error('Error fetching sales evolution:', err);
       setSalesEvolution([]);
+    }
+  };
+
+  const fetchVariantsPeriodStats = async (params) => {
+    try {
+      const queryParams = {};
+      if (params.start) queryParams.startDate = params.start;
+      if (params.end) queryParams.endDate = params.end;
+
+      const response = await axios.get(`${API_URL}/products/${id}/stats/variants-by-period`, {
+        params: queryParams
+      });
+      if (response.data.success) {
+        setVariantsPeriodStats(response.data.data);
+      }
+    } catch (err) {
+      console.error('Error fetching variants period stats:', err);
+      setVariantsPeriodStats([]);
     }
   };
 
@@ -152,11 +173,17 @@ const ProductDetail = () => {
 
   const handlePeriodChange = (params) => {
     setPeriodParams(params);
-    fetchSalesEvolution(params);
+    fetchSalesEvolution(params, selectedVariantId);
+    fetchVariantsPeriodStats(params);
   };
 
   const handleComparisonChange = (params) => {
     fetchComparisonEvolution(params);
+  };
+
+  const handleVariantSelect = (variantId) => {
+    setSelectedVariantId(variantId);
+    fetchSalesEvolution(periodParams, variantId);
   };
 
   const handleSaveCost = async () => {
@@ -295,20 +322,94 @@ const ProductDetail = () => {
               <PeriodFilter
                 onPeriodChange={handlePeriodChange}
                 onComparisonChange={handleComparisonChange}
+                defaultPeriod="all"
               />
             </div>
           </div>
-          {salesEvolution.length > 0 ? (
-            <AdvancedSalesChart
-              data={salesEvolution}
-              comparisonData={comparisonEvolution}
-              height={450}
-            />
-          ) : (
-            <div style={{ textAlign: 'center', padding: '40px', color: '#999' }}>
-              Aucune donnée disponible pour cette période
+
+          <div style={{ display: 'grid', gridTemplateColumns: variantsPeriodStats.length > 0 ? '250px 1fr' : '1fr', gap: '20px' }}>
+            {/* Panneau des variations à gauche */}
+            {variantsPeriodStats.length > 0 && (
+              <div style={{ borderRight: '1px solid #e0e0e0', paddingRight: '20px' }}>
+                <div style={{ fontSize: '13px', fontWeight: '600', color: '#666', marginBottom: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span>Variations ({variantsPeriodStats.length})</span>
+                </div>
+
+                {/* Option "Toutes" */}
+                <div
+                  onClick={() => handleVariantSelect(null)}
+                  style={{
+                    padding: '10px 12px',
+                    marginBottom: '4px',
+                    borderRadius: '6px',
+                    cursor: 'pointer',
+                    backgroundColor: selectedVariantId === null ? '#135E84' : '#f8f9fa',
+                    color: selectedVariantId === null ? 'white' : '#333',
+                    transition: 'all 0.2s'
+                  }}
+                >
+                  <div style={{ fontWeight: '600', fontSize: '13px' }}>Toutes les variations</div>
+                  <div style={{ fontSize: '11px', marginTop: '2px', opacity: 0.8 }}>
+                    {variantsPeriodStats.reduce((sum, v) => sum + (v.quantity_sold || 0), 0)} vendues
+                  </div>
+                </div>
+
+                {/* Liste des variations */}
+                <div style={{ maxHeight: '350px', overflowY: 'auto' }}>
+                  {variantsPeriodStats.map((variant) => (
+                    <div
+                      key={variant.wp_product_id}
+                      onClick={() => handleVariantSelect(variant.wp_product_id)}
+                      style={{
+                        padding: '10px 12px',
+                        marginBottom: '4px',
+                        borderRadius: '6px',
+                        cursor: 'pointer',
+                        backgroundColor: selectedVariantId === variant.wp_product_id ? '#135E84' : 'transparent',
+                        color: selectedVariantId === variant.wp_product_id ? 'white' : '#333',
+                        transition: 'all 0.2s'
+                      }}
+                      onMouseEnter={(e) => {
+                        if (selectedVariantId !== variant.wp_product_id) {
+                          e.currentTarget.style.backgroundColor = '#f0f0f0';
+                        }
+                      }}
+                      onMouseLeave={(e) => {
+                        if (selectedVariantId !== variant.wp_product_id) {
+                          e.currentTarget.style.backgroundColor = 'transparent';
+                        }
+                      }}
+                    >
+                      <div style={{ fontWeight: '500', fontSize: '13px', marginBottom: '4px' }}>
+                        {variant.post_title?.replace(product?.post_title + ' - ', '').replace(product?.post_title + ' – ', '') || variant.sku}
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', opacity: 0.8 }}>
+                        <span>{variant.quantity_sold || 0} vendues</span>
+                        <span style={{ color: selectedVariantId === variant.wp_product_id ? 'white' : (variant.stock > 0 ? '#28a745' : '#dc3545') }}>
+                          Stock: {variant.stock || 0}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Graphique */}
+            <div>
+              {salesEvolution.length > 0 ? (
+                <AdvancedSalesChart
+                  data={salesEvolution}
+                  comparisonData={comparisonEvolution}
+                  height={450}
+                />
+              ) : (
+                <div style={{ textAlign: 'center', padding: '40px', color: '#999' }}>
+                  Aucune donnée disponible pour cette période
+                </div>
+              )}
             </div>
-          )}
+          </div>
         </div>
 
         {/* Variations */}
