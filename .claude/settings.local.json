@@ -63,7 +63,8 @@
       "Bash(xxd:*)",
       "Bash(while read f)",
       "Bash(do echo \"Found: $f\")",
-      "Bash(done)"
+      "Bash(done)",
+      "Bash(curl:*)"
     ],
     "deny": [],
     "ask": []

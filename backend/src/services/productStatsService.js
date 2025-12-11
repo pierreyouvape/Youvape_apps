@@ -177,7 +177,7 @@ class ProductStatsService {
           ELSE oi.qty * COALESCE(oi.item_cost, 0)
         END), 0) as total_cost
       FROM products p
-      LEFT JOIN order_items oi ON oi.product_id = p.wp_product_id
+      LEFT JOIN order_items oi ON oi.variation_id = p.wp_product_id
       LEFT JOIN orders o ON o.wp_order_id = oi.wp_order_id AND o.post_status = 'wc-completed'
       WHERE p.wp_product_id = ANY($1)
       GROUP BY p.wp_product_id, p.post_title, p.sku, p.price, p.wc_cog_cost, p.stock, p.stock_status
@@ -214,10 +214,12 @@ class ProductStatsService {
    */
   async getSalesEvolution(productId, includeVariants = true, groupBy = 'day', startDate = null, endDate = null, variantId = null) {
     let productIds;
+    let useVariationId = false;
 
     if (variantId) {
-      // Si une variante spécifique est demandée, n'utiliser que celle-ci
+      // Si une variante spécifique est demandée, utiliser variation_id
       productIds = [variantId];
+      useVariationId = true;
     } else {
       const family = await this.getProductFamily(productId);
       productIds = includeVariants
@@ -244,7 +246,12 @@ class ProductStatsService {
     }
 
     // Construire la clause WHERE avec filtres de dates
-    let whereClause = 'oi.product_id = ANY($1) AND o.post_status = $2';
+    // Pour les variations, on utilise variation_id car dans WooCommerce:
+    // - order_items.product_id = ID du produit parent
+    // - order_items.variation_id = ID de la variation
+    let whereClause = useVariationId
+      ? 'oi.variation_id = ANY($1) AND o.post_status = $2'
+      : '(oi.product_id = ANY($1) OR oi.variation_id = ANY($1)) AND o.post_status = $2';
     const params = [productIds, 'wc-completed'];
     let paramIndex = 3;
 
@@ -337,18 +344,24 @@ class ProductStatsService {
       paramIndex++;
     }
 
+    // Pour les variations, on utilise variation_id car dans WooCommerce:
+    // - order_items.product_id = ID du produit parent
+    // - order_items.variation_id = ID de la variation
     const query = `
       SELECT
         p.wp_product_id,
         p.post_title,
         p.sku,
         p.stock,
-        COALESCE(SUM(CASE WHEN o.post_status = 'wc-completed' THEN oi.qty ELSE 0 END), 0)::int as quantity_sold
+        COALESCE(SUM(
+          CASE WHEN o.post_status = 'wc-completed'
+            ${startDate ? `AND o.post_date >= '${startDate}'` : ''}
+            ${endDate ? `AND o.post_date <= '${endDate}'` : ''}
+          THEN oi.qty ELSE 0 END
+        ), 0)::int as quantity_sold
       FROM products p
-      LEFT JOIN order_items oi ON oi.product_id = p.wp_product_id
+      LEFT JOIN order_items oi ON oi.variation_id = p.wp_product_id
       LEFT JOIN orders o ON o.wp_order_id = oi.wp_order_id
-        ${startDate ? `AND o.post_date >= '${startDate}'` : ''}
-        ${endDate ? `AND o.post_date <= '${endDate}'` : ''}
       WHERE p.wp_product_id = ANY($1)
       GROUP BY p.wp_product_id, p.post_title, p.sku, p.stock
       ORDER BY quantity_sold DESC, p.sku ASC
