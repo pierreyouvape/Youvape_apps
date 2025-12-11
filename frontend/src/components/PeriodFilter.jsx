@@ -151,10 +151,10 @@ const PeriodFilter = ({ onPeriodChange, onComparisonChange, defaultPeriod = 'all
         </button>
       ))}
 
-      {/* Séparateur */}
-      <div style={{ height: '20px', width: '1px', backgroundColor: '#ddd' }}></div>
+      {/* Séparateur vertical */}
+      <div style={{ height: '24px', width: '1px', backgroundColor: '#ddd', margin: '0 5px' }}></div>
 
-      {/* Grouper par */}
+      {/* Grouper par - avec label visible */}
       {['day', 'week', 'month'].map(group => (
         <button
           key={group}
