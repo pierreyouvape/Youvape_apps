@@ -213,18 +213,29 @@ class ProductStatsService {
    * @param {number|null} variantId - ID d'une variante spécifique (null = toutes)
    */
   async getSalesEvolution(productId, includeVariants = true, groupBy = 'day', startDate = null, endDate = null, variantId = null) {
-    let productIds;
-    let useVariationId = false;
+    const family = await this.getProductFamily(productId);
+    const hasVariants = family.variants && family.variants.length > 0;
+
+    let whereClause;
+    let params;
+    let paramIndex;
 
     if (variantId) {
-      // Si une variante spécifique est demandée, utiliser variation_id
-      productIds = [variantId];
-      useVariationId = true;
+      // Variante spécifique demandée
+      whereClause = 'oi.variation_id = $1 AND o.post_status = $2';
+      params = [variantId, 'wc-completed'];
+      paramIndex = 3;
+    } else if (hasVariants && includeVariants) {
+      // Produit variable avec variantes - chercher par variation_id
+      const variantIds = family.variants.map(v => v.wp_product_id);
+      whereClause = 'oi.variation_id = ANY($1) AND o.post_status = $2';
+      params = [variantIds, 'wc-completed'];
+      paramIndex = 3;
     } else {
-      const family = await this.getProductFamily(productId);
-      productIds = includeVariants
-        ? family.allProducts.map(p => p.wp_product_id)
-        : [productId];
+      // Produit simple ou sans variantes - chercher par product_id
+      whereClause = 'oi.product_id = $1 AND o.post_status = $2';
+      params = [productId, 'wc-completed'];
+      paramIndex = 3;
     }
 
     let dateFormat;
@@ -244,16 +255,6 @@ class ProductStatsService {
       default:
         dateFormat = "DATE(o.post_date)";
     }
-
-    // Construire la clause WHERE avec filtres de dates
-    // Pour les variations, on utilise variation_id car dans WooCommerce:
-    // - order_items.product_id = ID du produit parent
-    // - order_items.variation_id = ID de la variation
-    let whereClause = useVariationId
-      ? 'oi.variation_id = ANY($1) AND o.post_status = $2'
-      : '(oi.product_id = ANY($1) OR oi.variation_id = ANY($1)) AND o.post_status = $2';
-    const params = [productIds, 'wc-completed'];
-    let paramIndex = 3;
 
     if (startDate) {
       whereClause += ` AND o.post_date >= $${paramIndex}`;
