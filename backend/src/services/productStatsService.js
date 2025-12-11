@@ -327,19 +327,19 @@ class ProductStatsService {
 
     const variantIds = family.variants.map(v => v.wp_product_id);
 
-    // Construire la clause WHERE avec filtres de dates
-    let whereClause = 'p.wp_product_id = ANY($1) AND o.post_status = $2';
-    const params = [variantIds, 'wc-completed'];
-    let paramIndex = 3;
+    // Construire les conditions de dates pour le JOIN
+    let dateConditions = '';
+    const params = [variantIds];
+    let paramIndex = 2;
 
     if (startDate) {
-      whereClause += ` AND o.post_date >= $${paramIndex}`;
+      dateConditions += ` AND o.post_date >= $${paramIndex}`;
       params.push(startDate);
       paramIndex++;
     }
 
     if (endDate) {
-      whereClause += ` AND o.post_date <= $${paramIndex}`;
+      dateConditions += ` AND o.post_date <= $${paramIndex}`;
       params.push(endDate);
       paramIndex++;
     }
@@ -353,21 +353,18 @@ class ProductStatsService {
         p.post_title,
         p.sku,
         p.stock,
-        COALESCE(SUM(
-          CASE WHEN o.post_status = 'wc-completed'
-            ${startDate ? `AND o.post_date >= '${startDate}'` : ''}
-            ${endDate ? `AND o.post_date <= '${endDate}'` : ''}
-          THEN oi.qty ELSE 0 END
-        ), 0)::int as quantity_sold
+        COALESCE(SUM(oi.qty), 0)::int as quantity_sold
       FROM products p
       LEFT JOIN order_items oi ON oi.variation_id = p.wp_product_id
       LEFT JOIN orders o ON o.wp_order_id = oi.wp_order_id
+        AND o.post_status = 'wc-completed'
+        ${dateConditions}
       WHERE p.wp_product_id = ANY($1)
       GROUP BY p.wp_product_id, p.post_title, p.sku, p.stock
       ORDER BY quantity_sold DESC, p.sku ASC
     `;
 
-    const result = await pool.query(query, [variantIds]);
+    const result = await pool.query(query, params);
     return result.rows;
   }
 
