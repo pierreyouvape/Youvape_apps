@@ -343,10 +343,10 @@ class ProductStatsService {
         p.post_title,
         p.sku,
         p.stock,
-        COALESCE(SUM(oi.qty), 0)::int as quantity_sold
+        COALESCE(SUM(CASE WHEN o.post_status = 'wc-completed' THEN oi.qty ELSE 0 END), 0)::int as quantity_sold
       FROM products p
       LEFT JOIN order_items oi ON oi.product_id = p.wp_product_id
-      LEFT JOIN orders o ON o.wp_order_id = oi.wp_order_id AND o.post_status = 'wc-completed'
+      LEFT JOIN orders o ON o.wp_order_id = oi.wp_order_id
         ${startDate ? `AND o.post_date >= '${startDate}'` : ''}
         ${endDate ? `AND o.post_date <= '${endDate}'` : ''}
       WHERE p.wp_product_id = ANY($1)
