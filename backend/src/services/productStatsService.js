@@ -163,7 +163,7 @@ class ProductStatsService {
         p.post_title,
         p.sku,
         p.price,
-        p.cost_price,
+        p.wc_cog_cost as cost_price,
         p.stock,
         p.stock_status,
         COALESCE(SUM(oi.qty), 0)::int as net_sold,
@@ -180,7 +180,7 @@ class ProductStatsService {
       LEFT JOIN order_items oi ON oi.product_id = p.wp_product_id
       LEFT JOIN orders o ON o.wp_order_id = oi.wp_order_id AND o.post_status = 'wc-completed'
       WHERE p.wp_product_id = ANY($1)
-      GROUP BY p.wp_product_id
+      GROUP BY p.wp_product_id, p.post_title, p.sku, p.price, p.wc_cog_cost, p.stock, p.stock_status
       ORDER BY p.sku ASC
     `;
 
@@ -350,7 +350,7 @@ class ProductStatsService {
         ${startDate ? `AND o.post_date >= '${startDate}'` : ''}
         ${endDate ? `AND o.post_date <= '${endDate}'` : ''}
       WHERE p.wp_product_id = ANY($1)
-      GROUP BY p.wp_product_id
+      GROUP BY p.wp_product_id, p.post_title, p.sku, p.stock
       ORDER BY quantity_sold DESC, p.sku ASC
     `;
 
