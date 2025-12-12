@@ -397,7 +397,7 @@ class ProductStatsService {
         ${dateConditions}
       WHERE p.wp_product_id = ANY($1)
       GROUP BY p.wp_product_id, p.post_title, p.sku, p.stock
-      ORDER BY quantity_sold DESC, p.sku ASC
+      ORDER BY p.sku ASC
     `;
 
     const result = await pool.query(query, params);
