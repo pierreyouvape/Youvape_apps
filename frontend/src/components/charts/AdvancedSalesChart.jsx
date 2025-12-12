@@ -31,10 +31,44 @@ const AdvancedSalesChart = ({
     return new Intl.NumberFormat('fr-FR').format(value);
   };
 
+  // Déterminer si les données couvrent plusieurs années
+  const hasMultipleYears = data.length > 1 && (() => {
+    const years = new Set(data.map(d => new Date(d.period).getFullYear()));
+    return years.size > 1;
+  })();
+
+  // Déterminer si c'est un groupement par mois (dates au 1er du mois)
+  const isMonthlyGrouping = data.length > 1 && data.every(d => {
+    const date = new Date(d.period);
+    return date.getDate() === 1;
+  });
+
   const formatDate = (dateString) => {
     if (!dateString) return '';
     const date = new Date(dateString);
+
+    // Si groupement par mois, afficher mois + année
+    if (isMonthlyGrouping) {
+      return date.toLocaleDateString('fr-FR', { month: 'short', year: '2-digit' });
+    }
+
+    // Si plusieurs années, inclure l'année
+    if (hasMultipleYears) {
+      return date.toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: '2-digit' });
+    }
+
+    // Par défaut : jour + mois
     return date.toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' });
+  };
+
+  const formatTooltipDate = (dateString) => {
+    if (!dateString) return '';
+    const date = new Date(dateString);
+    // Toujours afficher le format complet dans le tooltip
+    if (isMonthlyGrouping) {
+      return date.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
+    }
+    return date.toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' });
   };
 
   const CustomTooltip = ({ active, payload, label }) => {
@@ -48,7 +82,7 @@ const AdvancedSalesChart = ({
           boxShadow: '0 4px 12px rgba(0,0,0,0.15)'
         }}>
           <p style={{ margin: '0 0 10px 0', fontWeight: '600', color: '#333', fontSize: '14px' }}>
-            {formatDate(label)}
+            {formatTooltipDate(label)}
           </p>
           {payload.map((entry, index) => (
             <p key={index} style={{ margin: '4px 0', fontSize: '13px', color: entry.color, display: 'flex', justifyContent: 'space-between', gap: '16px' }}>
