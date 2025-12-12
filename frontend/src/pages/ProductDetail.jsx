@@ -175,6 +175,24 @@ const ProductDetail = () => {
     setPeriodParams(params);
     fetchSalesEvolution(params, selectedVariantId);
     fetchVariantsPeriodStats(params);
+    fetchVariantsStats(params);
+  };
+
+  const fetchVariantsStats = async (params) => {
+    try {
+      const queryParams = {};
+      if (params.start) queryParams.startDate = params.start;
+      if (params.end) queryParams.endDate = params.end;
+
+      const response = await axios.get(`${API_URL}/products/${id}/stats/all-variants`, {
+        params: queryParams
+      });
+      if (response.data.success) {
+        setVariantsStats(response.data.data || []);
+      }
+    } catch (err) {
+      console.error('Error fetching variants stats:', err);
+    }
   };
 
   const handleComparisonChange = (params) => {

@@ -52,12 +52,15 @@ exports.getVariantStats = async (req, res) => {
 
 /**
  * Récupère les stats pour toutes les variantes d'une famille
- * GET /api/products/:id/stats/all-variants
+ * GET /api/products/:id/stats/all-variants?startDate=2024-01-01&endDate=2024-12-31
  */
 exports.getAllVariantsStats = async (req, res) => {
   try {
     const productId = parseInt(req.params.id);
-    const stats = await productStatsService.getAllVariantsStats(productId);
+    const startDate = req.query.startDate || null;
+    const endDate = req.query.endDate || null;
+
+    const stats = await productStatsService.getAllVariantsStats(productId, startDate, endDate);
 
     res.json({ success: true, data: stats });
   } catch (error) {

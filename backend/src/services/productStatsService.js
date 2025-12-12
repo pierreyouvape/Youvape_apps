@@ -133,8 +133,11 @@ class ProductStatsService {
   /**
    * Stats pour toutes les variantes d'une famille de produits
    * Utilise la logique bundle pour exclure les sous-produits de bundles des calculs financiers
+   * @param {number} productId - ID du produit parent
+   * @param {string|null} startDate - Date de début (null = depuis la création)
+   * @param {string|null} endDate - Date de fin (null = jusqu'à aujourd'hui)
    */
-  async getAllVariantsStats(productId) {
+  async getAllVariantsStats(productId, startDate = null, endDate = null) {
     const family = await this.getProductFamily(productId);
 
     if (!family.variants || family.variants.length === 0) {
@@ -142,6 +145,23 @@ class ProductStatsService {
     }
 
     const variantIds = family.variants.map(v => v.wp_product_id);
+
+    // Construire les conditions de dates
+    let dateConditions = '';
+    const params = [variantIds, VALID_ORDER_STATUSES];
+    let paramIndex = 3;
+
+    if (startDate) {
+      dateConditions += ` AND o.post_date >= $${paramIndex}`;
+      params.push(startDate);
+      paramIndex++;
+    }
+
+    if (endDate) {
+      dateConditions += ` AND o.post_date <= $${paramIndex}`;
+      params.push(endDate);
+      paramIndex++;
+    }
 
     const query = `
       WITH bundle_sub_items AS (
@@ -181,13 +201,15 @@ class ProductStatsService {
         END), 0) as total_cost
       FROM products p
       LEFT JOIN order_items oi ON oi.variation_id = p.wp_product_id
-      LEFT JOIN orders o ON o.wp_order_id = oi.wp_order_id AND o.post_status = ANY($2)
+      LEFT JOIN orders o ON o.wp_order_id = oi.wp_order_id
+        AND o.post_status = ANY($2)
+        ${dateConditions}
       WHERE p.wp_product_id = ANY($1)
       GROUP BY p.wp_product_id, p.post_title, p.sku, p.price, p.wc_cog_cost, p.stock, p.stock_status
       ORDER BY p.sku ASC
     `;
 
-    const result = await pool.query(query, [variantIds, VALID_ORDER_STATUSES]);
+    const result = await pool.query(query, params);
 
     // Ajouter les calculs de profit et marge pour chaque variante
     return result.rows.map(variant => {
