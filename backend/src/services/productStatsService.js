@@ -1,5 +1,8 @@
 const pool = require('../config/database');
 
+// Statuts de commande considérés comme "ventes valides"
+const VALID_ORDER_STATUSES = ['wc-completed', 'wc-delivered'];
+
 class ProductStatsService {
   /**
    * Récupère la famille de produits (parent + variantes)
@@ -85,10 +88,10 @@ class ProductStatsService {
         COALESCE(AVG(oi.qty), 0) as avg_quantity_per_order
       FROM order_items oi
       INNER JOIN orders o ON o.wp_order_id = oi.wp_order_id
-      WHERE oi.product_id = ANY($1) AND o.post_status = 'wc-completed'
+      WHERE oi.product_id = ANY($1) AND o.post_status = ANY($2)
     `;
 
-    const result = await pool.query(query, [productIds]);
+    const result = await pool.query(query, [productIds, VALID_ORDER_STATUSES]);
     const kpis = result.rows[0];
 
     // Calculs
@@ -118,12 +121,12 @@ class ProductStatsService {
         COUNT(DISTINCT oi.wp_order_id)::int as net_orders
       FROM products p
       LEFT JOIN order_items oi ON oi.product_id = p.wp_product_id
-      LEFT JOIN orders o ON o.wp_order_id = oi.wp_order_id AND o.post_status = 'wc-completed'
+      LEFT JOIN orders o ON o.wp_order_id = oi.wp_order_id AND o.post_status = ANY($2)
       WHERE p.wp_product_id = $1
       GROUP BY p.wp_product_id
     `;
 
-    const result = await pool.query(query, [productId]);
+    const result = await pool.query(query, [productId, VALID_ORDER_STATUSES]);
     return result.rows[0];
   }
 
@@ -178,13 +181,13 @@ class ProductStatsService {
         END), 0) as total_cost
       FROM products p
       LEFT JOIN order_items oi ON oi.variation_id = p.wp_product_id
-      LEFT JOIN orders o ON o.wp_order_id = oi.wp_order_id AND o.post_status = 'wc-completed'
+      LEFT JOIN orders o ON o.wp_order_id = oi.wp_order_id AND o.post_status = ANY($2)
       WHERE p.wp_product_id = ANY($1)
       GROUP BY p.wp_product_id, p.post_title, p.sku, p.price, p.wc_cog_cost, p.stock, p.stock_status
       ORDER BY p.sku ASC
     `;
 
-    const result = await pool.query(query, [variantIds]);
+    const result = await pool.query(query, [variantIds, VALID_ORDER_STATUSES]);
 
     // Ajouter les calculs de profit et marge pour chaque variante
     return result.rows.map(variant => {
@@ -222,19 +225,19 @@ class ProductStatsService {
 
     if (variantId) {
       // Variante spécifique demandée
-      whereClause = 'oi.variation_id = $1 AND o.post_status = $2';
-      params = [variantId, 'wc-completed'];
+      whereClause = 'oi.variation_id = $1 AND o.post_status = ANY($2)';
+      params = [variantId, VALID_ORDER_STATUSES];
       paramIndex = 3;
     } else if (hasVariants && includeVariants) {
       // Produit variable avec variantes - chercher par variation_id
       const variantIds = family.variants.map(v => v.wp_product_id);
-      whereClause = 'oi.variation_id = ANY($1) AND o.post_status = $2';
-      params = [variantIds, 'wc-completed'];
+      whereClause = 'oi.variation_id = ANY($1) AND o.post_status = ANY($2)';
+      params = [variantIds, VALID_ORDER_STATUSES];
       paramIndex = 3;
     } else {
       // Produit simple ou sans variantes - chercher par product_id
-      whereClause = 'oi.product_id = $1 AND o.post_status = $2';
-      params = [productId, 'wc-completed'];
+      whereClause = 'oi.product_id = $1 AND o.post_status = ANY($2)';
+      params = [productId, VALID_ORDER_STATUSES];
       paramIndex = 3;
     }
 
@@ -345,6 +348,11 @@ class ProductStatsService {
       paramIndex++;
     }
 
+    // Ajouter le paramètre pour les statuts valides
+    const statusParamIndex = paramIndex;
+    params.push(VALID_ORDER_STATUSES);
+    paramIndex++;
+
     // Pour les variations, on utilise variation_id car dans WooCommerce:
     // - order_items.product_id = ID du produit parent
     // - order_items.variation_id = ID de la variation
@@ -358,7 +366,7 @@ class ProductStatsService {
       FROM products p
       LEFT JOIN order_items oi ON oi.variation_id = p.wp_product_id
       LEFT JOIN orders o ON o.wp_order_id = oi.wp_order_id
-        AND o.post_status = 'wc-completed'
+        AND o.post_status = ANY($${statusParamIndex})
         ${dateConditions}
       WHERE p.wp_product_id = ANY($1)
       GROUP BY p.wp_product_id, p.post_title, p.sku, p.stock
@@ -387,13 +395,13 @@ class ProductStatsService {
       INNER JOIN orders o ON o.wp_order_id = oi1.wp_order_id
       WHERE oi1.product_id = $1
         AND oi2.product_id != $1
-        AND o.post_status = 'wc-completed'
+        AND o.post_status = ANY($3)
       GROUP BY p.wp_product_id, p.post_title, p.sku, p.image_url, p.price
       ORDER BY times_bought_together DESC
       LIMIT $2
     `;
 
-    const result = await pool.query(query, [productId, limit]);
+    const result = await pool.query(query, [productId, limit, VALID_ORDER_STATUSES]);
     return result.rows;
   }
 
@@ -417,13 +425,13 @@ class ProductStatsService {
       FROM order_items oi
       INNER JOIN orders o ON o.wp_order_id = oi.wp_order_id
       WHERE oi.product_id = ANY($1)
-        AND o.post_status = 'wc-completed'
+        AND o.post_status = ANY($2)
         AND o.shipping_country IS NOT NULL
       GROUP BY o.shipping_country
       ORDER BY net_revenue DESC
     `;
 
-    const result = await pool.query(query, [productIds]);
+    const result = await pool.query(query, [productIds, VALID_ORDER_STATUSES]);
     return result.rows;
   }
 
@@ -448,13 +456,13 @@ class ProductStatsService {
       FROM order_items oi
       INNER JOIN orders o ON o.wp_order_id = oi.wp_order_id
       INNER JOIN customers c ON c.wp_user_id = o.wp_customer_id
-      WHERE oi.product_id = ANY($1) AND o.post_status = 'wc-completed'
+      WHERE oi.product_id = ANY($1) AND o.post_status = ANY($3)
       GROUP BY c.wp_user_id, c.first_name, c.last_name, c.email
       ORDER BY quantity_bought DESC
       LIMIT $2
     `;
 
-    const result = await pool.query(query, [productIds, limit]);
+    const result = await pool.query(query, [productIds, limit, VALID_ORDER_STATUSES]);
     return result.rows;
   }
 
@@ -508,12 +516,12 @@ class ProductStatsService {
         COALESCE(SUM(oi.line_total), 0) as revenue
       FROM order_items oi
       INNER JOIN orders o ON o.wp_order_id = oi.wp_order_id
-      WHERE oi.product_id = ANY($1) AND o.post_status = 'wc-completed'
+      WHERE oi.product_id = ANY($1) AND o.post_status = ANY($2)
       GROUP BY day_of_week, day_name
       ORDER BY day_of_week
     `;
 
-    const result = await pool.query(query, [productIds]);
+    const result = await pool.query(query, [productIds, VALID_ORDER_STATUSES]);
     return result.rows;
   }
 
@@ -533,12 +541,12 @@ class ProductStatsService {
         COALESCE(SUM(oi.line_total), 0) as revenue
       FROM order_items oi
       INNER JOIN orders o ON o.wp_order_id = oi.wp_order_id
-      WHERE oi.product_id = ANY($1) AND o.post_status = 'wc-completed'
+      WHERE oi.product_id = ANY($1) AND o.post_status = ANY($2)
       GROUP BY hour
       ORDER BY hour
     `;
 
-    const result = await pool.query(query, [productIds]);
+    const result = await pool.query(query, [productIds, VALID_ORDER_STATUSES]);
     return result.rows;
   }
 }
