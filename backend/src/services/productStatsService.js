@@ -307,6 +307,10 @@ class ProductStatsService {
       ORDER BY period ASC
     `;
 
+    console.log('getSalesEvolution - whereClause:', whereClause);
+    console.log('getSalesEvolution - params:', JSON.stringify(params));
+    console.log('getSalesEvolution - hasVariants:', hasVariants, 'variantIds count:', hasVariants ? family.variants.length : 0);
+
     const result = await pool.query(query, params);
 
     // Calculer le profit pour chaque période
