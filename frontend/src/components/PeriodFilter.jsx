@@ -15,6 +15,10 @@ const PeriodFilter = ({ onPeriodChange, onComparisonChange, defaultPeriod = 'all
   const [groupBy, setGroupBy] = useState('day');
   const [showAdvanced, setShowAdvanced] = useState(false);
 
+  // Conserver les dates calculées actuellement appliquées
+  const [currentStartDate, setCurrentStartDate] = useState(null);
+  const [currentEndDate, setCurrentEndDate] = useState(null);
+
   const calculateDates = (period) => {
     const now = new Date();
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -90,16 +94,29 @@ const PeriodFilter = ({ onPeriodChange, onComparisonChange, defaultPeriod = 'all
 
   const handleGroupByClick = (group) => {
     setGroupBy(group);
-    applyFilters(selectedPeriod, group);
+    // Ne pas recalculer les dates, juste changer le groupBy avec les dates actuelles
+    onPeriodChange({
+      start: currentStartDate,
+      end: currentEndDate,
+      groupBy: group
+    });
   };
 
   const applyFilters = (period = selectedPeriod, group = groupBy) => {
     const { start, end } = calculateDates(period);
 
+    // Formater les dates
+    const formattedStart = start ? formatDateForInput(start) : null;
+    const formattedEnd = end ? formatDateForInput(end) : null;
+
+    // Sauvegarder les dates actuelles pour le changement de groupBy
+    setCurrentStartDate(formattedStart);
+    setCurrentEndDate(formattedEnd);
+
     // Pour 'all', on envoie null pour les dates
     onPeriodChange({
-      start: start ? formatDateForInput(start) : null,
-      end: end ? formatDateForInput(end) : null,
+      start: formattedStart,
+      end: formattedEnd,
       groupBy: group
     });
 
