@@ -146,7 +146,7 @@ class ProductStatsService {
 
     const variantIds = family.variants.map(v => v.wp_product_id);
 
-    // Construire les conditions de dates
+    // Construire les conditions de dates pour la sous-requête
     let dateConditions = '';
     const params = [variantIds, VALID_ORDER_STATUSES];
     let paramIndex = 3;
@@ -180,6 +180,14 @@ class ProductStatsService {
               jsonb_path_query_array(p_bundle.woosb_ids, '$[*].id')
             )
           )
+      ),
+      filtered_order_items AS (
+        -- Pré-filtrer les order_items avec les dates et statuts
+        SELECT oi.*
+        FROM order_items oi
+        INNER JOIN orders o ON o.wp_order_id = oi.wp_order_id
+        WHERE o.post_status = ANY($2)
+          ${dateConditions}
       )
       SELECT
         p.wp_product_id,
@@ -189,21 +197,18 @@ class ProductStatsService {
         p.wc_cog_cost as cost_price,
         p.stock,
         p.stock_status,
-        COALESCE(SUM(oi.qty), 0)::int as net_sold,
+        COALESCE(SUM(foi.qty), 0)::int as net_sold,
         COALESCE(SUM(CASE
-          WHEN oi.id IN (SELECT order_item_id FROM bundle_sub_items) THEN 0
-          ELSE oi.line_total
+          WHEN foi.id IN (SELECT order_item_id FROM bundle_sub_items) THEN 0
+          ELSE foi.line_total
         END), 0) as net_revenue,
-        COUNT(DISTINCT oi.wp_order_id)::int as net_orders,
+        COUNT(DISTINCT foi.wp_order_id)::int as net_orders,
         COALESCE(SUM(CASE
-          WHEN oi.id IN (SELECT order_item_id FROM bundle_sub_items) THEN 0
-          ELSE oi.qty * COALESCE(oi.item_cost, 0)
+          WHEN foi.id IN (SELECT order_item_id FROM bundle_sub_items) THEN 0
+          ELSE foi.qty * COALESCE(foi.item_cost, 0)
         END), 0) as total_cost
       FROM products p
-      LEFT JOIN order_items oi ON oi.variation_id = p.wp_product_id
-      LEFT JOIN orders o ON o.wp_order_id = oi.wp_order_id
-        AND o.post_status = ANY($2)
-        ${dateConditions}
+      LEFT JOIN filtered_order_items foi ON foi.variation_id = p.wp_product_id
       WHERE p.wp_product_id = ANY($1)
       GROUP BY p.wp_product_id, p.post_title, p.sku, p.price, p.wc_cog_cost, p.stock, p.stock_status
       ORDER BY p.sku ASC
