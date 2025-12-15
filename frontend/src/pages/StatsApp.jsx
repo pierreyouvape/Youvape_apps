@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { AuthContext } from '../context/AuthContext';
 import CustomersStatsTab from '../components/stats/CustomersStatsTab';
 import ProductsStatsTab from '../components/stats/ProductsStatsTab';
+import BrandsStatsTab from '../components/stats/BrandsStatsTab';
 
 const StatsApp = () => {
   const [activeTab, setActiveTab] = useState('clients');
@@ -12,6 +13,7 @@ const StatsApp = () => {
   const tabs = [
     { id: 'clients', label: 'Clients', component: CustomersStatsTab },
     { id: 'products', label: 'Produits', component: ProductsStatsTab },
+    { id: 'brands', label: 'Marques', component: BrandsStatsTab },
   ];
 
   const ActiveTabComponent = tabs.find((tab) => tab.id === activeTab)?.component;
