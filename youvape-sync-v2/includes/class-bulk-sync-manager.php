@@ -113,6 +113,29 @@ class Bulk_Sync_Manager {
             $terms = wp_get_object_terms($product->ID, 'product_type', ['fields' => 'names']);
             $product_type = (!empty($terms) && !is_wp_error($terms)) ? $terms[0] : 'simple';
 
+            // Get brand from taxonomy (pwb-brand)
+            $brand_name = null;
+            $sub_brand_name = null;
+            $brand_terms = wp_get_object_terms($product->ID, 'pwb-brand', ['orderby' => 'parent', 'order' => 'ASC']);
+            if (!empty($brand_terms) && !is_wp_error($brand_terms)) {
+                foreach ($brand_terms as $term) {
+                    if ($term->parent == 0) {
+                        // C'est une marque parente
+                        $brand_name = $term->name;
+                    } else {
+                        // C'est une sous-marque
+                        $sub_brand_name = $term->name;
+                        // Si on n'a pas encore la marque parente, la récupérer
+                        if ($brand_name === null) {
+                            $parent_term = get_term($term->parent, 'pwb-brand');
+                            if ($parent_term && !is_wp_error($parent_term)) {
+                                $brand_name = $parent_term->name;
+                            }
+                        }
+                    }
+                }
+            }
+
             // If variable, fetch variations
             $variations = [];
             if ($product_type === 'variable') {
@@ -161,6 +184,8 @@ class Bulk_Sync_Manager {
                 'post' => $product,
                 'meta' => $meta,
                 'image_url' => $image_url,
+                'brand' => $brand_name,
+                'sub_brand' => $sub_brand_name,
                 'variations' => $variations
             ];
         }

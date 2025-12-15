@@ -14,7 +14,7 @@ function transformProduct(rawData) {
     throw new Error('Invalid product data: missing post object');
   }
 
-  const { post, meta, product_type } = rawData;
+  const { post, meta, product_type, brand, sub_brand } = rawData;
 
   // Helper to get meta value
   const getMeta = (key, defaultValue = null) => {
@@ -52,7 +52,9 @@ function transformProduct(rawData) {
     thumbnail_id: getMeta('_thumbnail_id') ? parseInt(getMeta('_thumbnail_id')) : null,
     image_url: rawData.image_url || null,
     regular_price: getMeta('_regular_price') ? parseFloat(getMeta('_regular_price')) : null,
-    price: getMeta('_price') ? parseFloat(getMeta('_price')) : null
+    price: getMeta('_price') ? parseFloat(getMeta('_price')) : null,
+    brand: brand || null,
+    sub_brand: sub_brand || null
   };
 
   // Additional fields for VARIABLE products
@@ -237,13 +239,13 @@ async function insertProduct(pool, productData) {
       product_with_nicotine, product_excerpt_custom, yoast_indexnow_last_ping,
       faq_title, accodion_list, product_tip,
       variation_description, manage_stock, global_unique_id,
-      woosb_ids,
+      woosb_ids, brand, sub_brand,
       updated_at
     ) VALUES (
       $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
       $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
       $21, $22, $23, $24, $25, $26, $27, $28, $29, $30,
-      $31, $32, $33, $34, $35, $36, $37, $38, $39, $40, NOW()
+      $31, $32, $33, $34, $35, $36, $37, $38, $39, $40, $41, $42, NOW()
     )
     ON CONFLICT (wp_product_id)
     DO UPDATE SET
@@ -286,6 +288,8 @@ async function insertProduct(pool, productData) {
       manage_stock = EXCLUDED.manage_stock,
       global_unique_id = EXCLUDED.global_unique_id,
       woosb_ids = EXCLUDED.woosb_ids,
+      brand = EXCLUDED.brand,
+      sub_brand = EXCLUDED.sub_brand,
       updated_at = NOW()
     RETURNING id, (xmax = 0) AS inserted
   `;
@@ -330,7 +334,9 @@ async function insertProduct(pool, productData) {
     productData.variation_description || null,
     productData.manage_stock || false,
     productData.global_unique_id || null,
-    JSON.stringify(productData.woosb_ids || null)
+    JSON.stringify(productData.woosb_ids || null),
+    productData.brand || null,
+    productData.sub_brand || null
   ];
 
   const result = await pool.query(query, values);

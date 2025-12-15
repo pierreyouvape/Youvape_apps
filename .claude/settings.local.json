@@ -64,7 +64,8 @@
       "Bash(while read f)",
       "Bash(do echo \"Found: $f\")",
       "Bash(done)",
-      "Bash(curl:*)"
+      "Bash(curl:*)",
+      "Bash(ls:*)"
     ],
     "deny": [],
     "ask": []

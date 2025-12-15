@@ -276,6 +276,12 @@ const ProductDetail = () => {
           </div>
           <div>
             <h1 style={{ margin: '0 0 10px 0', color: '#135E84' }}>{product.post_title}</h1>
+            {(product.brand || product.sub_brand) && (
+              <div style={{ fontSize: '14px', color: '#888', marginBottom: '8px' }}>
+                {product.brand && <span style={{ fontWeight: '600' }}>{product.brand}</span>}
+                {product.sub_brand && <span> › {product.sub_brand}</span>}
+              </div>
+            )}
             <div style={{ fontSize: '14px', color: '#666', marginBottom: '15px' }}>SKU: {product.sku || '-'}</div>
             <div style={{ display: 'flex', gap: '20px', marginBottom: '15px' }}>
               <div>
