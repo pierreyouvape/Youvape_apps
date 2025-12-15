@@ -14,6 +14,8 @@ import ProductsApp from './pages/ProductsApp';
 import ProductDetail from './pages/ProductDetail';
 import OrdersApp from './pages/OrdersApp';
 import OrderDetail from './pages/OrderDetail';
+import BrandDetail from './pages/BrandDetail';
+import SubBrandDetail from './pages/SubBrandDetail';
 import PrivateRoute from './components/PrivateRoute';
 
 function App() {
@@ -117,6 +119,22 @@ function App() {
             element={
               <PrivateRoute>
                 <OrderDetail />
+              </PrivateRoute>
+            }
+          />
+          <Route
+            path="/brands/:brandName"
+            element={
+              <PrivateRoute>
+                <BrandDetail />
+              </PrivateRoute>
+            }
+          />
+          <Route
+            path="/sub-brands/:subBrandName"
+            element={
+              <PrivateRoute>
+                <SubBrandDetail />
               </PrivateRoute>
             }
           />

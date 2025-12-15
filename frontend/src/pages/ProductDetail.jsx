@@ -278,8 +278,25 @@ const ProductDetail = () => {
             <h1 style={{ margin: '0 0 10px 0', color: '#135E84' }}>{product.post_title}</h1>
             {(product.brand || product.sub_brand) && (
               <div style={{ fontSize: '14px', color: '#888', marginBottom: '8px' }}>
-                {product.brand && <span style={{ fontWeight: '600' }}>{product.brand}</span>}
-                {product.sub_brand && <span> › {product.sub_brand}</span>}
+                {product.brand && (
+                  <span
+                    onClick={() => navigate(`/brands/${encodeURIComponent(product.brand)}`)}
+                    style={{ fontWeight: '600', cursor: 'pointer', color: '#135E84', textDecoration: 'underline' }}
+                  >
+                    {product.brand}
+                  </span>
+                )}
+                {product.sub_brand && (
+                  <>
+                    <span style={{ color: '#888' }}> / </span>
+                    <span
+                      onClick={() => navigate(`/sub-brands/${encodeURIComponent(product.sub_brand)}`)}
+                      style={{ cursor: 'pointer', color: '#135E84', textDecoration: 'underline' }}
+                    >
+                      {product.sub_brand}
+                    </span>
+                  </>
+                )}
               </div>
             )}
             <div style={{ fontSize: '14px', color: '#666', marginBottom: '15px' }}>SKU: {product.sku || '-'}</div>
