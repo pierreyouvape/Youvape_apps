@@ -12,6 +12,7 @@ const BrandsStatsTab = () => {
   const [subBrands, setSubBrands] = useState({});
   const [sortBy, setSortBy] = useState('ca_ttc');
   const [sortOrder, setSortOrder] = useState('DESC');
+  const [searchTerm, setSearchTerm] = useState('');
 
   useEffect(() => {
     fetchBrands();
@@ -77,7 +78,14 @@ const BrandsStatsTab = () => {
     }
   };
 
-  const sortedBrands = [...brands].sort((a, b) => {
+  // Filtrer par recherche
+  const filteredBrands = brands.filter(b => {
+    if (!searchTerm) return true;
+    const search = searchTerm.toLowerCase();
+    return b.brand?.toLowerCase().includes(search);
+  });
+
+  const sortedBrands = [...filteredBrands].sort((a, b) => {
     let aVal = a[sortBy];
     let bVal = b[sortBy];
 
@@ -144,8 +152,8 @@ const BrandsStatsTab = () => {
     transition: 'background-color 0.2s'
   });
 
-  // Calcul des totaux
-  const totals = brands.reduce((acc, b) => ({
+  // Calcul des totaux (sur les marques filtrées)
+  const totals = filteredBrands.reduce((acc, b) => ({
     product_count: acc.product_count + (b.product_count || 0),
     sub_brand_count: acc.sub_brand_count + (b.sub_brand_count || 0),
     qty_sold: acc.qty_sold + (b.qty_sold || 0),
@@ -155,10 +163,24 @@ const BrandsStatsTab = () => {
 
   return (
     <div>
-      {/* Header avec bouton export */}
+      {/* Header avec recherche et bouton export */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px', flexWrap: 'wrap', gap: '15px' }}>
-        <div style={{ fontSize: '14px', color: '#6c757d' }}>
-          {brands.length} marques au total
+        <div style={{ display: 'flex', gap: '15px', flex: 1 }}>
+          <input
+            type="text"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            placeholder="Rechercher une marque..."
+            style={{
+              padding: '10px 15px',
+              border: '1px solid #ddd',
+              borderRadius: '6px',
+              fontSize: '16px',
+              flex: 1,
+              minWidth: '250px',
+              maxWidth: '400px'
+            }}
+          />
         </div>
         <button
           onClick={handleExport}
@@ -181,7 +203,7 @@ const BrandsStatsTab = () => {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '15px', marginBottom: '30px' }}>
         <div style={{ backgroundColor: 'white', padding: '20px', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
           <p style={{ fontSize: '14px', color: '#6c757d', margin: '0 0 10px 0' }}>Marques</p>
-          <p style={{ fontSize: '28px', fontWeight: 'bold', color: '#135E84', margin: 0 }}>{brands.length}</p>
+          <p style={{ fontSize: '28px', fontWeight: 'bold', color: '#135E84', margin: 0 }}>{filteredBrands.length}{searchTerm && ` / ${brands.length}`}</p>
         </div>
         <div style={{ backgroundColor: 'white', padding: '20px', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
           <p style={{ fontSize: '14px', color: '#6c757d', margin: '0 0 10px 0' }}>Sous-marques</p>
