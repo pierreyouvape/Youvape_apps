@@ -983,6 +983,8 @@ const receiveBulk = async (req, res) => {
               post: item.post,
               meta: item.meta,
               image_url: item.image_url,
+              brand: item.brand,
+              sub_brand: item.sub_brand,
               variations: item.variations || []
             });
 
