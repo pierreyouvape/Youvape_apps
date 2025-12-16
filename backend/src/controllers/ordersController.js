@@ -208,27 +208,157 @@ exports.getCategories = async (req, res) => {
  */
 exports.filterOrders = async (req, res) => {
   try {
-    const filters = {
-      search: req.query.search || '',
-      country: req.query.country || null,
-      status: req.query.status ? req.query.status.split(',') : null,
-      minAmount: req.query.minAmount || null,
-      maxAmount: req.query.maxAmount || null,
-      dateFrom: req.query.dateFrom || null,
-      dateTo: req.query.dateTo || null,
-      shippingMethod: req.query.shippingMethod || null,
-      category: req.query.category || null,
-      productId: req.query.productId || null,
-      limit: parseInt(req.query.limit) || 100,
-      offset: parseInt(req.query.offset) || 0
-    };
+    const pool = require('../config/database');
 
-    const result = await orderModel.advancedSearch(filters);
+    const conditions = [];
+    const params = [];
+    let paramIndex = 1;
+
+    // Recherche texte (numéro commande, nom, prénom, email)
+    if (req.query.search) {
+      conditions.push(`(
+        CAST(o.wp_order_id AS TEXT) ILIKE $${paramIndex}
+        OR o.billing_first_name ILIKE $${paramIndex}
+        OR o.billing_last_name ILIKE $${paramIndex}
+        OR o.billing_email ILIKE $${paramIndex}
+        OR CONCAT(o.billing_first_name, ' ', o.billing_last_name) ILIKE $${paramIndex}
+      )`);
+      params.push(`%${req.query.search}%`);
+      paramIndex++;
+    }
+
+    // Filtre par pays
+    if (req.query.country) {
+      conditions.push(`o.billing_country = $${paramIndex}`);
+      params.push(req.query.country);
+      paramIndex++;
+    }
+
+    // Filtre par statut (peut être un tableau séparé par virgules)
+    if (req.query.status) {
+      const statuses = req.query.status.split(',');
+      conditions.push(`o.post_status = ANY($${paramIndex})`);
+      params.push(statuses);
+      paramIndex++;
+    }
+
+    // Filtre par montant minimum
+    if (req.query.minAmount) {
+      conditions.push(`o.order_total >= $${paramIndex}`);
+      params.push(parseFloat(req.query.minAmount));
+      paramIndex++;
+    }
+
+    // Filtre par montant maximum
+    if (req.query.maxAmount) {
+      conditions.push(`o.order_total <= $${paramIndex}`);
+      params.push(parseFloat(req.query.maxAmount));
+      paramIndex++;
+    }
+
+    // Filtre par date de début
+    if (req.query.dateFrom) {
+      conditions.push(`o.post_date >= $${paramIndex}`);
+      params.push(req.query.dateFrom);
+      paramIndex++;
+    }
+
+    // Filtre par date de fin
+    if (req.query.dateTo) {
+      conditions.push(`o.post_date <= $${paramIndex}::date + interval '1 day'`);
+      params.push(req.query.dateTo);
+      paramIndex++;
+    }
+
+    // Filtre par transporteur
+    if (req.query.shippingMethod) {
+      conditions.push(`EXISTS (
+        SELECT 1 FROM order_items oi_ship
+        WHERE oi_ship.wp_order_id = o.wp_order_id
+        AND oi_ship.order_item_type = 'shipping'
+        AND oi_ship.order_item_name = $${paramIndex}
+      )`);
+      params.push(req.query.shippingMethod);
+      paramIndex++;
+    }
+
+    // Filtre par catégorie de produit
+    if (req.query.category) {
+      conditions.push(`EXISTS (
+        SELECT 1 FROM order_items oi_cat
+        JOIN products p_cat ON (CAST(p_cat.wp_product_id AS TEXT) = oi_cat.product_id OR CAST(p_cat.wp_product_id AS TEXT) = oi_cat.variation_id)
+        WHERE oi_cat.wp_order_id = o.wp_order_id
+        AND oi_cat.order_item_type = 'line_item'
+        AND (p_cat.category = $${paramIndex} OR p_cat.sub_category = $${paramIndex})
+      )`);
+      params.push(req.query.category);
+      paramIndex++;
+    }
+
+    // Filtre par produit spécifique
+    if (req.query.productId) {
+      conditions.push(`EXISTS (
+        SELECT 1 FROM order_items oi_prod
+        WHERE oi_prod.wp_order_id = o.wp_order_id
+        AND oi_prod.order_item_type = 'line_item'
+        AND (oi_prod.product_id = $${paramIndex} OR oi_prod.variation_id = $${paramIndex})
+      )`);
+      params.push(req.query.productId);
+      paramIndex++;
+    }
+
+    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+    const limit = parseInt(req.query.limit) || 100;
+    const offset = parseInt(req.query.offset) || 0;
+
+    // Compter le total
+    const countQuery = `SELECT COUNT(*) as total FROM orders o ${whereClause}`;
+    const countResult = await pool.query(countQuery, params);
+    const total = parseInt(countResult.rows[0].total);
+
+    // Récupérer les commandes
+    const query = `
+      SELECT
+        o.wp_order_id,
+        o.post_date,
+        o.post_status,
+        o.billing_first_name,
+        o.billing_last_name,
+        o.billing_email,
+        o.billing_phone,
+        o.billing_country,
+        o.billing_address_1,
+        o.billing_city,
+        o.billing_postcode,
+        o.shipping_first_name,
+        o.shipping_last_name,
+        o.shipping_country,
+        o.shipping_address_1,
+        o.shipping_city,
+        o.shipping_postcode,
+        o.order_total,
+        o.order_shipping,
+        o.payment_method_title,
+        (SELECT oi_s.order_item_name FROM order_items oi_s WHERE oi_s.wp_order_id = o.wp_order_id AND oi_s.order_item_type = 'shipping' LIMIT 1) as shipping_method,
+        (SELECT COUNT(*) FROM order_items oi_c WHERE oi_c.wp_order_id = o.wp_order_id AND oi_c.order_item_type = 'line_item') as items_count
+      FROM orders o
+      ${whereClause}
+      ORDER BY o.post_date DESC
+      LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
+    `;
+    params.push(limit, offset);
+
+    const result = await pool.query(query, params);
 
     res.json({
       success: true,
-      data: result.orders,
-      pagination: result.pagination
+      data: result.rows,
+      pagination: {
+        total,
+        limit,
+        offset,
+        hasMore: offset + limit < total
+      }
     });
   } catch (error) {
     console.error('Error filtering orders:', error);
