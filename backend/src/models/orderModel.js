@@ -200,13 +200,224 @@ class OrderModel {
    */
   async getCountries() {
     const query = `
-      SELECT DISTINCT shipping_country
+      SELECT DISTINCT billing_country as country, COUNT(*) as count
       FROM orders
-      WHERE shipping_country IS NOT NULL
-      ORDER BY shipping_country ASC
+      WHERE billing_country IS NOT NULL AND billing_country != ''
+      GROUP BY billing_country
+      ORDER BY count DESC
     `;
     const result = await pool.query(query);
-    return result.rows.map(row => row.shipping_country);
+    return result.rows;
+  }
+
+  /**
+   * Récupère tous les transporteurs existants
+   */
+  async getShippingMethods() {
+    const query = `
+      SELECT DISTINCT order_item_name as shipping_method, COUNT(*) as count
+      FROM order_items
+      WHERE order_item_type = 'shipping' AND order_item_name IS NOT NULL
+      GROUP BY order_item_name
+      ORDER BY count DESC
+    `;
+    const result = await pool.query(query);
+    return result.rows;
+  }
+
+  /**
+   * Recherche avancée avec tous les filtres
+   */
+  async advancedSearch(filters) {
+    const conditions = [];
+    const params = [];
+    let paramIndex = 1;
+
+    // Recherche texte (numéro commande, nom, prénom, email)
+    if (filters.search) {
+      conditions.push(`(
+        CAST(o.wp_order_id AS TEXT) ILIKE $${paramIndex}
+        OR o.billing_first_name ILIKE $${paramIndex}
+        OR o.billing_last_name ILIKE $${paramIndex}
+        OR o.billing_email ILIKE $${paramIndex}
+        OR CONCAT(o.billing_first_name, ' ', o.billing_last_name) ILIKE $${paramIndex}
+      )`);
+      params.push(`%${filters.search}%`);
+      paramIndex++;
+    }
+
+    // Filtre par pays
+    if (filters.country) {
+      conditions.push(`o.billing_country = $${paramIndex}`);
+      params.push(filters.country);
+      paramIndex++;
+    }
+
+    // Filtre par statut (peut être un tableau)
+    if (filters.status) {
+      if (Array.isArray(filters.status)) {
+        conditions.push(`o.post_status = ANY($${paramIndex})`);
+        params.push(filters.status);
+      } else {
+        conditions.push(`o.post_status = $${paramIndex}`);
+        params.push(filters.status);
+      }
+      paramIndex++;
+    }
+
+    // Filtre par montant minimum
+    if (filters.minAmount !== undefined && filters.minAmount !== '') {
+      conditions.push(`o.order_total >= $${paramIndex}`);
+      params.push(parseFloat(filters.minAmount));
+      paramIndex++;
+    }
+
+    // Filtre par montant maximum
+    if (filters.maxAmount !== undefined && filters.maxAmount !== '') {
+      conditions.push(`o.order_total <= $${paramIndex}`);
+      params.push(parseFloat(filters.maxAmount));
+      paramIndex++;
+    }
+
+    // Filtre par date de début
+    if (filters.dateFrom) {
+      conditions.push(`o.post_date >= $${paramIndex}`);
+      params.push(filters.dateFrom);
+      paramIndex++;
+    }
+
+    // Filtre par date de fin
+    if (filters.dateTo) {
+      conditions.push(`o.post_date <= $${paramIndex}::date + interval '1 day'`);
+      params.push(filters.dateTo);
+      paramIndex++;
+    }
+
+    // Filtre par transporteur
+    if (filters.shippingMethod) {
+      conditions.push(`EXISTS (
+        SELECT 1 FROM order_items oi_ship
+        WHERE oi_ship.wp_order_id = o.wp_order_id
+        AND oi_ship.order_item_type = 'shipping'
+        AND oi_ship.order_item_name = $${paramIndex}
+      )`);
+      params.push(filters.shippingMethod);
+      paramIndex++;
+    }
+
+    // Filtre par catégorie de produit
+    if (filters.category) {
+      conditions.push(`EXISTS (
+        SELECT 1 FROM order_items oi_cat
+        JOIN products p_cat ON (p_cat.wp_product_id = oi_cat.product_id OR p_cat.wp_product_id = oi_cat.variation_id)
+        WHERE oi_cat.wp_order_id = o.wp_order_id
+        AND oi_cat.order_item_type = 'line_item'
+        AND (p_cat.category = $${paramIndex} OR p_cat.sub_category = $${paramIndex})
+      )`);
+      params.push(filters.category);
+      paramIndex++;
+    }
+
+    // Filtre par produit spécifique
+    if (filters.productId) {
+      conditions.push(`EXISTS (
+        SELECT 1 FROM order_items oi_prod
+        WHERE oi_prod.wp_order_id = o.wp_order_id
+        AND oi_prod.order_item_type = 'line_item'
+        AND (oi_prod.product_id = $${paramIndex} OR oi_prod.variation_id = $${paramIndex})
+      )`);
+      params.push(parseInt(filters.productId));
+      paramIndex++;
+    }
+
+    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+
+    const limit = parseInt(filters.limit) || 100;
+    const offset = parseInt(filters.offset) || 0;
+
+    // Compter le total
+    const countQuery = `
+      SELECT COUNT(DISTINCT o.wp_order_id) as total
+      FROM orders o
+      ${whereClause}
+    `;
+    const countResult = await pool.query(countQuery, params);
+    const total = parseInt(countResult.rows[0].total);
+
+    // Récupérer les commandes
+    const query = `
+      SELECT DISTINCT
+        o.wp_order_id,
+        o.post_date,
+        o.post_status,
+        o.billing_first_name,
+        o.billing_last_name,
+        o.billing_email,
+        o.billing_phone,
+        o.billing_country,
+        o.billing_address_1,
+        o.billing_city,
+        o.billing_postcode,
+        o.shipping_first_name,
+        o.shipping_last_name,
+        o.shipping_country,
+        o.shipping_address_1,
+        o.shipping_city,
+        o.shipping_postcode,
+        o.order_total,
+        o.order_shipping,
+        o.payment_method_title,
+        (SELECT oi_s.order_item_name FROM order_items oi_s WHERE oi_s.wp_order_id = o.wp_order_id AND oi_s.order_item_type = 'shipping' LIMIT 1) as shipping_method,
+        (SELECT COUNT(*) FROM order_items oi_c WHERE oi_c.wp_order_id = o.wp_order_id AND oi_c.order_item_type = 'line_item') as items_count
+      FROM orders o
+      ${whereClause}
+      ORDER BY o.post_date DESC
+      LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
+    `;
+    params.push(limit, offset);
+
+    const result = await pool.query(query, params);
+
+    return {
+      orders: result.rows,
+      pagination: {
+        total,
+        limit,
+        offset,
+        hasMore: offset + limit < total
+      }
+    };
+  }
+
+  /**
+   * Récupère les détails complets d'une commande pour l'affichage dépliable
+   */
+  async getOrderDetails(orderId) {
+    // Récupérer les items produits
+    const itemsQuery = `
+      SELECT
+        oi.order_item_name,
+        oi.product_id,
+        oi.variation_id,
+        oi.qty,
+        oi.line_total,
+        oi.line_subtotal,
+        oi.item_cost,
+        p.post_title as product_title,
+        p.sku,
+        p.image_url,
+        p.brand,
+        p.category
+      FROM order_items oi
+      LEFT JOIN products p ON (p.wp_product_id = oi.product_id OR p.wp_product_id = oi.variation_id)
+      WHERE oi.wp_order_id = $1 AND oi.order_item_type = 'line_item'
+      ORDER BY oi.id
+    `;
+    const itemsResult = await pool.query(itemsQuery, [orderId]);
+
+    return {
+      items: itemsResult.rows
+    };
   }
 
   /**

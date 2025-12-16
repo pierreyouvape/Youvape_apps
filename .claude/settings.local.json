@@ -65,7 +65,9 @@
       "Bash(do echo \"Found: $f\")",
       "Bash(done)",
       "Bash(curl:*)",
-      "Bash(ls:*)"
+      "Bash(ls:*)",
+      "Bash(npm run build:*)",
+      "Bash(scp:*)"
     ],
     "deny": [],
     "ask": []

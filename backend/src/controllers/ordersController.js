@@ -166,6 +166,92 @@ exports.getCountries = async (req, res) => {
 };
 
 /**
+ * Récupère tous les transporteurs existants
+ * GET /api/orders/shipping-methods/list
+ */
+exports.getShippingMethods = async (req, res) => {
+  try {
+    const methods = await orderModel.getShippingMethods();
+    res.json({ success: true, data: methods });
+  } catch (error) {
+    console.error('Error getting shipping methods:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+/**
+ * Récupère toutes les catégories pour le filtre commandes
+ * GET /api/orders/categories/list
+ */
+exports.getCategories = async (req, res) => {
+  try {
+    const pool = require('../config/database');
+    const query = `
+      SELECT DISTINCT category, COUNT(DISTINCT wp_product_id) as product_count
+      FROM products
+      WHERE category IS NOT NULL AND category != ''
+      AND product_type IN ('simple', 'variable', 'woosb')
+      GROUP BY category
+      ORDER BY category
+    `;
+    const result = await pool.query(query);
+    res.json({ success: true, data: result.rows });
+  } catch (error) {
+    console.error('Error getting categories:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+/**
+ * Recherche avancée avec tous les filtres combinés
+ * GET /api/orders/filter
+ */
+exports.filterOrders = async (req, res) => {
+  try {
+    const filters = {
+      search: req.query.search || '',
+      country: req.query.country || null,
+      status: req.query.status ? req.query.status.split(',') : null,
+      minAmount: req.query.minAmount || null,
+      maxAmount: req.query.maxAmount || null,
+      dateFrom: req.query.dateFrom || null,
+      dateTo: req.query.dateTo || null,
+      shippingMethod: req.query.shippingMethod || null,
+      category: req.query.category || null,
+      productId: req.query.productId || null,
+      limit: parseInt(req.query.limit) || 100,
+      offset: parseInt(req.query.offset) || 0
+    };
+
+    const result = await orderModel.advancedSearch(filters);
+
+    res.json({
+      success: true,
+      data: result.orders,
+      pagination: result.pagination
+    });
+  } catch (error) {
+    console.error('Error filtering orders:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+/**
+ * Récupère les détails d'une commande pour l'affichage dépliable
+ * GET /api/orders/:id/details
+ */
+exports.getOrderDetails = async (req, res) => {
+  try {
+    const orderId = parseInt(req.params.id);
+    const details = await orderModel.getOrderDetails(orderId);
+    res.json({ success: true, data: details });
+  } catch (error) {
+    console.error('Error getting order details:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+/**
  * Met à jour le coût réel de livraison
  * PUT /api/orders/:id/shipping-cost
  * Body: { shipping_cost_real: 8.50 }

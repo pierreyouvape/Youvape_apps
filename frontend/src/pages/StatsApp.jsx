@@ -5,6 +5,7 @@ import CustomersStatsTab from '../components/stats/CustomersStatsTab';
 import ProductsStatsTab from '../components/stats/ProductsStatsTab';
 import BrandsStatsTab from '../components/stats/BrandsStatsTab';
 import CategoriesStatsTab from '../components/stats/CategoriesStatsTab';
+import OrdersStatsTab from '../components/stats/OrdersStatsTab';
 
 const StatsApp = () => {
   const [activeTab, setActiveTab] = useState('clients');
@@ -16,6 +17,7 @@ const StatsApp = () => {
     { id: 'products', label: 'Produits', component: ProductsStatsTab },
     { id: 'brands', label: 'Marques', component: BrandsStatsTab },
     { id: 'categories', label: 'Categories', component: CategoriesStatsTab },
+    { id: 'orders', label: 'Commandes', component: OrdersStatsTab },
   ];
 
   const ActiveTabComponent = tabs.find((tab) => tab.id === activeTab)?.component;
