@@ -136,6 +136,29 @@ class Bulk_Sync_Manager {
                 }
             }
 
+            // Get category from taxonomy (product_cat)
+            $category_name = null;
+            $sub_category_name = null;
+            $category_terms = wp_get_object_terms($product->ID, 'product_cat', ['orderby' => 'parent', 'order' => 'ASC']);
+            if (!empty($category_terms) && !is_wp_error($category_terms)) {
+                foreach ($category_terms as $term) {
+                    if ($term->parent == 0) {
+                        // C'est une catégorie parente
+                        $category_name = $term->name;
+                    } else {
+                        // C'est une sous-catégorie
+                        $sub_category_name = $term->name;
+                        // Si on n'a pas encore la catégorie parente, la récupérer
+                        if ($category_name === null) {
+                            $parent_term = get_term($term->parent, 'product_cat');
+                            if ($parent_term && !is_wp_error($parent_term)) {
+                                $category_name = $parent_term->name;
+                            }
+                        }
+                    }
+                }
+            }
+
             // If variable, fetch variations
             $variations = [];
             if ($product_type === 'variable') {
@@ -186,6 +209,8 @@ class Bulk_Sync_Manager {
                 'image_url' => $image_url,
                 'brand' => $brand_name,
                 'sub_brand' => $sub_brand_name,
+                'category' => $category_name,
+                'sub_category' => $sub_category_name,
                 'variations' => $variations
             ];
         }

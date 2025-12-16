@@ -985,6 +985,8 @@ const receiveBulk = async (req, res) => {
               image_url: item.image_url,
               brand: item.brand,
               sub_brand: item.sub_brand,
+              category: item.category,
+              sub_category: item.sub_category,
               variations: item.variations || []
             });
 

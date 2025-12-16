@@ -325,7 +325,30 @@ const ProductDetail = () => {
                 <div style={{ fontSize: '24px', fontWeight: '700', color: (product.stock || 0) > 0 ? '#28a745' : '#dc3545' }}>{formatNumber(product.stock || 0)}</div>
               </div>
             </div>
-            {product.category && <div style={{ fontSize: '14px', color: '#666' }}>Catégorie: {product.category}</div>}
+            {(product.category || product.sub_category) && (
+              <div style={{ fontSize: '14px', color: '#666' }}>
+                Categorie:{' '}
+                {product.category && (
+                  <span
+                    onClick={() => navigate(`/categories/${encodeURIComponent(product.category)}`)}
+                    style={{ fontWeight: '600', cursor: 'pointer', color: '#135E84', textDecoration: 'underline' }}
+                  >
+                    {product.category}
+                  </span>
+                )}
+                {product.sub_category && (
+                  <>
+                    <span style={{ color: '#888' }}> / </span>
+                    <span
+                      onClick={() => navigate(`/sub-categories/${encodeURIComponent(product.sub_category)}`)}
+                      style={{ cursor: 'pointer', color: '#135E84', textDecoration: 'underline' }}
+                    >
+                      {product.sub_category}
+                    </span>
+                  </>
+                )}
+              </div>
+            )}
           </div>
         </div>
 

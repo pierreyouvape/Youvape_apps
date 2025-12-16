@@ -16,6 +16,8 @@ import OrdersApp from './pages/OrdersApp';
 import OrderDetail from './pages/OrderDetail';
 import BrandDetail from './pages/BrandDetail';
 import SubBrandDetail from './pages/SubBrandDetail';
+import CategoryDetail from './pages/CategoryDetail';
+import SubCategoryDetail from './pages/SubCategoryDetail';
 import PrivateRoute from './components/PrivateRoute';
 
 function App() {
@@ -135,6 +137,22 @@ function App() {
             element={
               <PrivateRoute>
                 <SubBrandDetail />
+              </PrivateRoute>
+            }
+          />
+          <Route
+            path="/categories/:categoryName"
+            element={
+              <PrivateRoute>
+                <CategoryDetail />
+              </PrivateRoute>
+            }
+          />
+          <Route
+            path="/sub-categories/:subCategoryName"
+            element={
+              <PrivateRoute>
+                <SubCategoryDetail />
               </PrivateRoute>
             }
           />
