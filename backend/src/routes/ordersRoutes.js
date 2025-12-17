@@ -18,6 +18,7 @@ router.get('/country/:country', ordersController.getByCountry);
 // Détails commande
 router.get('/:id', ordersController.getById);
 router.get('/:id/details', ordersController.getOrderDetails);
+router.get('/:id/reviews', ordersController.getOrderReviews);
 
 // Édition
 router.put('/:id/shipping-cost', ordersController.updateShippingCost);

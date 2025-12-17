@@ -373,6 +373,7 @@ const OrdersStatsTab = () => {
                   <th style={{ padding: '12px', textAlign: 'center', fontSize: '12px', fontWeight: '600', color: '#6c757d', textTransform: 'uppercase' }}>Statut</th>
                   <th style={{ padding: '12px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: '#6c757d', textTransform: 'uppercase' }}>Transporteur</th>
                   <th style={{ padding: '12px', textAlign: 'center', fontSize: '12px', fontWeight: '600', color: '#6c757d', textTransform: 'uppercase' }}>Articles</th>
+                  <th style={{ padding: '12px', textAlign: 'center', fontSize: '12px', fontWeight: '600', color: '#6c757d', textTransform: 'uppercase' }}>Avis</th>
                 </tr>
               </thead>
               <tbody>
@@ -426,12 +427,15 @@ const OrdersStatsTab = () => {
                         </td>
                         <td style={{ padding: '12px', fontSize: '13px' }}>{order.shipping_method || '-'}</td>
                         <td style={{ padding: '12px', fontSize: '14px', textAlign: 'center' }}>{order.items_count}</td>
+                        <td style={{ padding: '12px', fontSize: '14px', textAlign: 'center' }}>
+                          {order.has_review && <span title="Avis laisse">⭐</span>}
+                        </td>
                       </tr>
 
                       {/* Ligne depliable */}
                       {isExpanded && (
                         <tr key={`${order.wp_order_id}-details`}>
-                          <td colSpan={8} style={{ padding: '0', backgroundColor: '#f8f9fa' }}>
+                          <td colSpan={9} style={{ padding: '0', backgroundColor: '#f8f9fa' }}>
                             <div style={{ padding: '20px', borderTop: '1px solid #e9ecef' }}>
                               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '20px', marginBottom: '20px' }}>
                                 {/* Infos client */}

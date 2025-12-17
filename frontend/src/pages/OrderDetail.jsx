@@ -49,12 +49,14 @@ const OrderDetail = () => {
   const navigate = useNavigate();
   const { id } = useParams();
   const [order, setOrder] = useState(null);
+  const [reviews, setReviews] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
   useEffect(() => {
     if (id) {
       fetchOrder();
+      fetchReviews();
     }
   }, [id]);
 
@@ -72,6 +74,17 @@ const OrderDetail = () => {
       setError('Erreur lors du chargement de la commande');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchReviews = async () => {
+    try {
+      const response = await axios.get(`${API_URL}/orders/${id}/reviews`);
+      if (response.data.success) {
+        setReviews(response.data.data);
+      }
+    } catch (err) {
+      console.error('Error fetching reviews:', err);
     }
   };
 
@@ -524,6 +537,102 @@ const OrderDetail = () => {
                   <div style={{ fontWeight: '600' }}>{order.attribution_session_pages}</div>
                 </div>
               )}
+            </div>
+          </div>
+        )}
+
+        {/* Avis clients */}
+        {reviews.length > 0 && (
+          <div
+            style={{
+              backgroundColor: '#fff',
+              padding: '25px',
+              borderRadius: '12px',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
+              marginTop: '30px'
+            }}
+          >
+            <h2 style={{ marginTop: 0, marginBottom: '20px', color: '#333', fontSize: '18px' }}>
+              Avis laisses sur cette commande ({reviews.length})
+            </h2>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+              {reviews.map((review, index) => (
+                <div
+                  key={index}
+                  style={{
+                    padding: '15px',
+                    backgroundColor: '#f8f9fa',
+                    borderRadius: '8px',
+                    border: '1px solid #e0e0e0'
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: '15px' }}>
+                    {review.product_image && (
+                      <img
+                        src={review.product_image}
+                        alt=""
+                        style={{ width: '60px', height: '60px', objectFit: 'cover', borderRadius: '6px' }}
+                      />
+                    )}
+                    <div style={{ flex: 1 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
+                        <div>
+                          <div
+                            style={{ fontWeight: '600', color: '#007bff', cursor: 'pointer', fontSize: '14px' }}
+                            onClick={() => navigate(`/products/${review.product_id}`)}
+                          >
+                            {review.product_name || 'Produit'}
+                          </div>
+                          <div style={{ fontSize: '12px', color: '#666', marginTop: '2px' }}>
+                            {review.customer_name} - {formatDate(review.review_date)}
+                          </div>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                          {[1, 2, 3, 4, 5].map((star) => (
+                            <span
+                              key={star}
+                              style={{
+                                color: star <= review.rating ? '#ffc107' : '#e0e0e0',
+                                fontSize: '16px'
+                              }}
+                            >
+                              ★
+                            </span>
+                          ))}
+                          <span style={{ marginLeft: '5px', fontSize: '13px', fontWeight: '600' }}>
+                            {review.rating}/5
+                          </span>
+                        </div>
+                      </div>
+                      {review.comment && (
+                        <div style={{ fontSize: '13px', color: '#333', lineHeight: '1.5', marginTop: '8px' }}>
+                          "{review.comment}"
+                        </div>
+                      )}
+                      <div style={{ marginTop: '8px', display: 'flex', gap: '10px', fontSize: '11px' }}>
+                        <span style={{
+                          padding: '3px 8px',
+                          borderRadius: '4px',
+                          backgroundColor: review.review_type === 'site' ? '#d4edda' : '#d1ecf1',
+                          color: review.review_type === 'site' ? '#155724' : '#0c5460'
+                        }}>
+                          {review.review_type === 'site' ? 'Avis site' : 'Avis Google'}
+                        </span>
+                        {review.rewarded && (
+                          <span style={{
+                            padding: '3px 8px',
+                            borderRadius: '4px',
+                            backgroundColor: '#fff3cd',
+                            color: '#856404'
+                          }}>
+                            Recompense
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
         )}

@@ -340,7 +340,8 @@ exports.filterOrders = async (req, res) => {
         o.order_shipping,
         o.payment_method_title,
         (SELECT oi_s.order_item_name FROM order_items oi_s WHERE oi_s.wp_order_id = o.wp_order_id AND oi_s.order_item_type = 'shipping' LIMIT 1) as shipping_method,
-        (SELECT COUNT(*) FROM order_items oi_c WHERE oi_c.wp_order_id = o.wp_order_id AND oi_c.order_item_type = 'line_item') as items_count
+        (SELECT COUNT(*) FROM order_items oi_c WHERE oi_c.wp_order_id = o.wp_order_id AND oi_c.order_item_type = 'line_item') as items_count,
+        (SELECT COUNT(*) > 0 FROM reviews WHERE order_id = o.wp_order_id::text) as has_review
       FROM orders o
       ${whereClause}
       ORDER BY o.post_date DESC
@@ -377,6 +378,34 @@ exports.getOrderDetails = async (req, res) => {
     res.json({ success: true, data: details });
   } catch (error) {
     console.error('Error getting order details:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+/**
+ * Récupère les avis associés à une commande
+ * GET /api/orders/:id/reviews
+ */
+exports.getOrderReviews = async (req, res) => {
+  try {
+    const pool = require('../config/database');
+    const orderId = req.params.id;
+
+    const query = `
+      SELECT
+        r.*,
+        p.post_title as product_name,
+        p.image_url as product_image
+      FROM reviews r
+      LEFT JOIN products p ON p.wp_product_id::text = r.product_id
+      WHERE r.order_id = $1
+      ORDER BY r.review_date DESC
+    `;
+    const result = await pool.query(query, [orderId]);
+
+    res.json({ success: true, data: result.rows });
+  } catch (error) {
+    console.error('Error getting order reviews:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 };
