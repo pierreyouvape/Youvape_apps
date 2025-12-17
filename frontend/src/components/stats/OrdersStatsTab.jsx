@@ -397,7 +397,12 @@ const OrdersStatsTab = () => {
                         <td style={{ padding: '12px', fontSize: '14px' }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                             <span style={{ color: '#6c757d', fontSize: '12px' }}>{isExpanded ? '▼' : '▶'}</span>
-                            <span style={{ fontWeight: 'bold', color: '#007bff' }}>#{order.wp_order_id}</span>
+                            <span
+                              style={{ fontWeight: 'bold', color: '#007bff', cursor: 'pointer' }}
+                              onClick={(e) => { e.stopPropagation(); navigate(`/orders/${order.wp_order_id}`); }}
+                            >
+                              #{order.wp_order_id}
+                            </span>
                           </div>
                         </td>
                         <td style={{ padding: '12px', fontSize: '13px', color: '#666' }}>{formatDate(order.post_date)}</td>
