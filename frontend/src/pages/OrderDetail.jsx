@@ -616,7 +616,7 @@ const OrderDetail = () => {
                           backgroundColor: review.review_type === 'site' ? '#d4edda' : '#d1ecf1',
                           color: review.review_type === 'site' ? '#155724' : '#0c5460'
                         }}>
-                          {review.review_type === 'site' ? 'Avis site' : 'Avis Google'}
+                          {review.review_type === 'site' ? 'Avis site' : 'Avis produit'}
                         </span>
                         {review.rewarded && (
                           <span style={{
