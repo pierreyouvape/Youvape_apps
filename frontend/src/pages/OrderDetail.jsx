@@ -2,7 +2,48 @@ import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import axios from 'axios';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
+const API_URL = import.meta.env.VITE_API_URL || 'http://54.37.156.233:3000/api';
+
+// Mapping des codes pays vers noms
+const COUNTRY_NAMES = {
+  FR: 'France', BE: 'Belgique', CH: 'Suisse', DE: 'Allemagne', ES: 'Espagne',
+  IT: 'Italie', NL: 'Pays-Bas', PT: 'Portugal', GB: 'Royaume-Uni', LU: 'Luxembourg',
+  AT: 'Autriche', IE: 'Irlande', PL: 'Pologne', CZ: 'Tchequie', DK: 'Danemark',
+  SE: 'Suede', NO: 'Norvege', FI: 'Finlande', GR: 'Grece', HU: 'Hongrie',
+  RO: 'Roumanie', BG: 'Bulgarie', HR: 'Croatie', SK: 'Slovaquie', SI: 'Slovenie',
+  EE: 'Estonie', LV: 'Lettonie', LT: 'Lituanie', MT: 'Malte', CY: 'Chypre',
+  US: 'Etats-Unis', CA: 'Canada', AU: 'Australie', JP: 'Japon', CN: 'Chine',
+  GP: 'Guadeloupe', MQ: 'Martinique', GF: 'Guyane', RE: 'Reunion', YT: 'Mayotte',
+  NC: 'Nouvelle-Caledonie', PF: 'Polynesie', MC: 'Monaco', MA: 'Maroc', TN: 'Tunisie',
+  DZ: 'Algerie', SN: 'Senegal', CI: "Cote d'Ivoire"
+};
+
+// Mapping des statuts
+const STATUS_LABELS = {
+  'wc-completed': 'Terminee',
+  'wc-delivered': 'Livree',
+  'wc-processing': 'En cours',
+  'wc-on-hold': 'En attente',
+  'wc-pending': 'En attente paiement',
+  'wc-cancelled': 'Annulee',
+  'wc-refunded': 'Remboursee',
+  'wc-failed': 'Echouee',
+  'wc-being-delivered': 'En livraison',
+  'trash': 'Corbeille'
+};
+
+const STATUS_COLORS = {
+  'wc-completed': { bg: '#d4edda', color: '#155724' },
+  'wc-delivered': { bg: '#d4edda', color: '#155724' },
+  'wc-processing': { bg: '#fff3cd', color: '#856404' },
+  'wc-on-hold': { bg: '#ffeeba', color: '#856404' },
+  'wc-pending': { bg: '#f8d7da', color: '#721c24' },
+  'wc-cancelled': { bg: '#f8d7da', color: '#721c24' },
+  'wc-refunded': { bg: '#e2e3e5', color: '#383d41' },
+  'wc-failed': { bg: '#f8d7da', color: '#721c24' },
+  'wc-being-delivered': { bg: '#d1ecf1', color: '#0c5460' },
+  'trash': { bg: '#e2e3e5', color: '#383d41' }
+};
 
 const OrderDetail = () => {
   const navigate = useNavigate();
@@ -23,7 +64,6 @@ const OrderDetail = () => {
 
     try {
       const response = await axios.get(`${API_URL}/orders/${id}`);
-
       if (response.data.success) {
         setOrder(response.data.data);
       }
@@ -39,7 +79,7 @@ const OrderDetail = () => {
     return new Intl.NumberFormat('fr-FR', {
       style: 'currency',
       currency: 'EUR'
-    }).format(value);
+    }).format(parseFloat(value) || 0);
   };
 
   const formatDate = (dateString) => {
@@ -54,18 +94,7 @@ const OrderDetail = () => {
   };
 
   const getStatusBadge = (status) => {
-    const statusColors = {
-      completed: { bg: '#d4edda', color: '#155724' },
-      processing: { bg: '#d1ecf1', color: '#0c5460' },
-      'on-hold': { bg: '#fff3cd', color: '#856404' },
-      pending: { bg: '#f8d7da', color: '#721c24' },
-      cancelled: { bg: '#f8d7da', color: '#721c24' },
-      refunded: { bg: '#e2e3e5', color: '#383d41' },
-      failed: { bg: '#f8d7da', color: '#721c24' }
-    };
-
-    const style = statusColors[status] || { bg: '#e2e3e5', color: '#383d41' };
-
+    const style = STATUS_COLORS[status] || { bg: '#e2e3e5', color: '#383d41' };
     return (
       <span
         style={{
@@ -77,7 +106,7 @@ const OrderDetail = () => {
           color: style.color
         }}
       >
-        {status}
+        {STATUS_LABELS[status] || status}
       </span>
     );
   };
@@ -86,7 +115,7 @@ const OrderDetail = () => {
     return (
       <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         <div style={{ textAlign: 'center' }}>
-          <div style={{ fontSize: '48px', marginBottom: '20px' }}>⏳</div>
+          <div style={{ fontSize: '48px', marginBottom: '20px' }}>...</div>
           <div style={{ fontSize: '18px', color: '#666' }}>Chargement...</div>
         </div>
       </div>
@@ -97,10 +126,10 @@ const OrderDetail = () => {
     return (
       <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         <div style={{ textAlign: 'center' }}>
-          <div style={{ fontSize: '48px', marginBottom: '20px' }}>❌</div>
+          <div style={{ fontSize: '48px', marginBottom: '20px' }}>X</div>
           <div style={{ fontSize: '18px', color: '#666', marginBottom: '20px' }}>{error || 'Commande introuvable'}</div>
           <button
-            onClick={() => navigate('/orders')}
+            onClick={() => navigate(-1)}
             style={{
               padding: '10px 20px',
               backgroundColor: '#135E84',
@@ -110,16 +139,25 @@ const OrderDetail = () => {
               cursor: 'pointer'
             }}
           >
-            ← Retour à la liste
+            Retour
           </button>
         </div>
       </div>
     );
   }
 
-  const totalCost = parseFloat(order.order_total_cost || order.total_cost || 0);
-  const shippingCost = parseFloat(order.shipping_cost_real || order.order_shipping || 0);
-  const margin = parseFloat(order.order_total) - totalCost - shippingCost;
+  // Calculs des totaux
+  const orderTotal = parseFloat(order.order_total) || 0;
+  const orderShipping = parseFloat(order.order_shipping) || 0;
+  const orderTax = parseFloat(order.order_tax) || 0;
+  const cartDiscount = parseFloat(order.cart_discount) || 0;
+  const totalCost = parseFloat(order.order_total_cost || order.total_cost) || 0;
+  const subtotal = orderTotal - orderTax + cartDiscount;
+  const margin = orderTotal - totalCost - orderShipping;
+
+  // Filtrer les line_items pour n'avoir que les produits (pas shipping, fees, etc.)
+  const productItems = (order.line_items || []).filter(item => item.order_item_type === 'line_item');
+  const shippingItem = (order.line_items || []).find(item => item.order_item_type === 'shipping');
 
   return (
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', backgroundColor: '#f5f5f5' }}>
@@ -137,7 +175,7 @@ const OrderDetail = () => {
       >
         <img src="/images/logo.svg" alt="YouVape" style={{ height: '60px' }} />
         <button
-          onClick={() => navigate('/orders')}
+          onClick={() => navigate(-1)}
           style={{
             position: 'absolute',
             left: '20px',
@@ -151,7 +189,7 @@ const OrderDetail = () => {
             fontWeight: '600'
           }}
         >
-          ← Retour
+          Retour
         </button>
       </div>
 
@@ -168,29 +206,36 @@ const OrderDetail = () => {
           }}
         >
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-            <h1 style={{ margin: 0, color: '#135E84' }}>Commande #{order.order_number}</h1>
-            {getStatusBadge(order.status)}
+            <h1 style={{ margin: 0, color: '#135E84' }}>Commande #{order.wp_order_id}</h1>
+            {getStatusBadge(order.post_status)}
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '20px' }}>
             <div>
-              <div style={{ fontSize: '12px', color: '#999', marginBottom: '5px' }}>Date de création</div>
-              <div style={{ fontSize: '14px', fontWeight: '600' }}>{formatDate(order.date_created)}</div>
+              <div style={{ fontSize: '12px', color: '#999', marginBottom: '5px' }}>Date de commande</div>
+              <div style={{ fontSize: '14px', fontWeight: '600' }}>{formatDate(order.post_date)}</div>
             </div>
-            {order.date_completed && (
+            {order.paid_date && (
               <div>
-                <div style={{ fontSize: '12px', color: '#999', marginBottom: '5px' }}>Date de complétion</div>
-                <div style={{ fontSize: '14px', fontWeight: '600' }}>{formatDate(order.date_completed)}</div>
+                <div style={{ fontSize: '12px', color: '#999', marginBottom: '5px' }}>Date de paiement</div>
+                <div style={{ fontSize: '14px', fontWeight: '600' }}>{formatDate(order.paid_date)}</div>
               </div>
             )}
             <div>
-              <div style={{ fontSize: '12px', color: '#999', marginBottom: '5px' }}>Méthode de paiement</div>
-              <div style={{ fontSize: '14px', fontWeight: '600' }}>{order.payment_method_title || order.payment_method}</div>
+              <div style={{ fontSize: '12px', color: '#999', marginBottom: '5px' }}>Methode de paiement</div>
+              <div style={{ fontSize: '14px', fontWeight: '600' }}>{order.payment_method_title || '-'}</div>
+            </div>
+            <div>
+              <div style={{ fontSize: '12px', color: '#999', marginBottom: '5px' }}>Source</div>
+              <div style={{ fontSize: '14px', fontWeight: '600' }}>
+                {order.attribution_utm_source || order.attribution_source_type || 'Direct'}
+                {order.attribution_utm_medium && ` / ${order.attribution_utm_medium}`}
+              </div>
             </div>
           </div>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '30px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '20px', marginBottom: '30px' }}>
           {/* Customer Info */}
           <div
             style={{
@@ -200,26 +245,26 @@ const OrderDetail = () => {
               boxShadow: '0 2px 8px rgba(0,0,0,0.05)'
             }}
           >
-            <h2 style={{ marginTop: 0, marginBottom: '20px', color: '#333', fontSize: '18px' }}>👤 Client</h2>
+            <h2 style={{ marginTop: 0, marginBottom: '20px', color: '#333', fontSize: '18px' }}>Client</h2>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
               <div>
                 <div style={{ fontSize: '16px', fontWeight: '600', color: '#333' }}>
-                  {order.first_name} {order.last_name}
+                  {order.billing_first_name} {order.billing_last_name}
                 </div>
               </div>
               <div>
                 <div style={{ fontSize: '12px', color: '#999' }}>Email</div>
-                <div style={{ fontSize: '14px' }}>{order.email}</div>
+                <div style={{ fontSize: '14px' }}>{order.billing_email}</div>
               </div>
-              {order.phone && (
+              {order.billing_phone && (
                 <div>
-                  <div style={{ fontSize: '12px', color: '#999' }}>Téléphone</div>
-                  <div style={{ fontSize: '14px' }}>{order.phone}</div>
+                  <div style={{ fontSize: '12px', color: '#999' }}>Telephone</div>
+                  <div style={{ fontSize: '14px' }}>{order.billing_phone}</div>
                 </div>
               )}
-              {order.customer_id && (
+              {order.wp_customer_id && (
                 <button
-                  onClick={() => navigate(`/customers/${order.customer_id}`)}
+                  onClick={() => navigate(`/customers/${order.wp_customer_id}`)}
                   style={{
                     marginTop: '10px',
                     padding: '8px 15px',
@@ -233,13 +278,13 @@ const OrderDetail = () => {
                     alignSelf: 'flex-start'
                   }}
                 >
-                  Voir fiche client →
+                  Voir fiche client
                 </button>
               )}
             </div>
           </div>
 
-          {/* Shipping Info */}
+          {/* Billing Address */}
           <div
             style={{
               backgroundColor: '#fff',
@@ -248,24 +293,36 @@ const OrderDetail = () => {
               boxShadow: '0 2px 8px rgba(0,0,0,0.05)'
             }}
           >
-            <h2 style={{ marginTop: 0, marginBottom: '20px', color: '#333', fontSize: '18px' }}>📦 Livraison</h2>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-              <div>
-                <div style={{ fontSize: '12px', color: '#999' }}>Méthode</div>
-                <div style={{ fontSize: '14px', fontWeight: '600' }}>{order.shipping_method_title || '-'}</div>
-              </div>
-              <div>
-                <div style={{ fontSize: '12px', color: '#999' }}>Pays</div>
-                <div style={{ fontSize: '14px', fontWeight: '600' }}>{order.shipping_country || '-'}</div>
-              </div>
-              {order.shipping_address && typeof order.shipping_address === 'object' && (
-                <div>
-                  <div style={{ fontSize: '12px', color: '#999' }}>Adresse</div>
-                  <div style={{ fontSize: '14px' }}>
-                    {order.shipping_address.address_1}<br />
-                    {order.shipping_address.address_2 && <>{order.shipping_address.address_2}<br /></>}
-                    {order.shipping_address.postcode} {order.shipping_address.city}
-                  </div>
+            <h2 style={{ marginTop: 0, marginBottom: '20px', color: '#333', fontSize: '18px' }}>Adresse de facturation</h2>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', fontSize: '14px', lineHeight: '1.5' }}>
+              <div style={{ fontWeight: '600' }}>{order.billing_first_name} {order.billing_last_name}</div>
+              <div>{order.billing_address_1}</div>
+              {order.billing_address_2 && <div>{order.billing_address_2}</div>}
+              <div>{order.billing_postcode} {order.billing_city}</div>
+              <div style={{ fontWeight: '600' }}>{COUNTRY_NAMES[order.billing_country] || order.billing_country}</div>
+            </div>
+          </div>
+
+          {/* Shipping Address */}
+          <div
+            style={{
+              backgroundColor: '#fff',
+              padding: '25px',
+              borderRadius: '12px',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.05)'
+            }}
+          >
+            <h2 style={{ marginTop: 0, marginBottom: '20px', color: '#333', fontSize: '18px' }}>Adresse de livraison</h2>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', fontSize: '14px', lineHeight: '1.5' }}>
+              <div style={{ fontWeight: '600' }}>{order.shipping_first_name} {order.shipping_last_name}</div>
+              {order.shipping_company && <div>{order.shipping_company}</div>}
+              <div>{order.shipping_address_1}</div>
+              <div>{order.shipping_postcode} {order.shipping_city}</div>
+              <div style={{ fontWeight: '600' }}>{COUNTRY_NAMES[order.shipping_country] || order.shipping_country}</div>
+              {shippingItem && (
+                <div style={{ marginTop: '10px', padding: '8px 12px', backgroundColor: '#f8f9fa', borderRadius: '6px' }}>
+                  <span style={{ fontSize: '12px', color: '#666' }}>Transporteur: </span>
+                  <span style={{ fontWeight: '600' }}>{shippingItem.order_item_name}</span>
                 </div>
               )}
             </div>
@@ -282,36 +339,57 @@ const OrderDetail = () => {
             marginBottom: '30px'
           }}
         >
-          <h2 style={{ marginTop: 0, marginBottom: '20px', color: '#333', fontSize: '18px' }}>🛍️ Articles</h2>
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead>
-              <tr style={{ borderBottom: '2px solid #e0e0e0' }}>
-                <th style={{ textAlign: 'left', padding: '10px 5px', fontSize: '13px', color: '#666' }}>Produit</th>
-                <th style={{ textAlign: 'right', padding: '10px 5px', fontSize: '13px', color: '#666' }}>Prix unit.</th>
-                <th style={{ textAlign: 'center', padding: '10px 5px', fontSize: '13px', color: '#666' }}>Qté</th>
-                <th style={{ textAlign: 'right', padding: '10px 5px', fontSize: '13px', color: '#666' }}>Total</th>
-              </tr>
-            </thead>
-            <tbody>
-              {order.line_items && order.line_items.map((item, index) => (
-                <tr key={index} style={{ borderBottom: '1px solid #f0f0f0' }}>
-                  <td style={{ padding: '12px 5px' }}>
-                    <div style={{ fontWeight: '600', fontSize: '14px' }}>{item.product_name}</div>
-                    {item.sku && <div style={{ fontSize: '12px', color: '#999' }}>{item.sku}</div>}
-                  </td>
-                  <td style={{ textAlign: 'right', padding: '12px 5px', fontSize: '14px' }}>
-                    {formatCurrency(item.price)}
-                  </td>
-                  <td style={{ textAlign: 'center', padding: '12px 5px', fontSize: '14px', fontWeight: '600' }}>
-                    {item.quantity}
-                  </td>
-                  <td style={{ textAlign: 'right', padding: '12px 5px', fontSize: '14px', fontWeight: '600' }}>
-                    {formatCurrency(item.total)}
-                  </td>
+          <h2 style={{ marginTop: 0, marginBottom: '20px', color: '#333', fontSize: '18px' }}>Articles ({productItems.length})</h2>
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead>
+                <tr style={{ borderBottom: '2px solid #e0e0e0' }}>
+                  <th style={{ textAlign: 'left', padding: '12px 8px', fontSize: '12px', color: '#666', textTransform: 'uppercase' }}>Produit</th>
+                  <th style={{ textAlign: 'left', padding: '12px 8px', fontSize: '12px', color: '#666', textTransform: 'uppercase' }}>SKU</th>
+                  <th style={{ textAlign: 'right', padding: '12px 8px', fontSize: '12px', color: '#666', textTransform: 'uppercase' }}>Prix unit.</th>
+                  <th style={{ textAlign: 'center', padding: '12px 8px', fontSize: '12px', color: '#666', textTransform: 'uppercase' }}>Qte</th>
+                  <th style={{ textAlign: 'right', padding: '12px 8px', fontSize: '12px', color: '#666', textTransform: 'uppercase' }}>Cout</th>
+                  <th style={{ textAlign: 'right', padding: '12px 8px', fontSize: '12px', color: '#666', textTransform: 'uppercase' }}>Total</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {productItems.map((item, index) => {
+                  const lineTotal = parseFloat(item.line_total) || 0;
+                  const qty = parseInt(item.qty) || 1;
+                  const unitPrice = lineTotal / qty;
+                  const itemCost = parseFloat(item.item_cost) || 0;
+
+                  return (
+                    <tr key={index} style={{ borderBottom: '1px solid #f0f0f0' }}>
+                      <td style={{ padding: '12px 8px' }}>
+                        <div
+                          style={{ fontWeight: '600', fontSize: '14px', color: '#007bff', cursor: 'pointer' }}
+                          onClick={() => navigate(`/products/${item.variation_id || item.product_id}`)}
+                        >
+                          {item.order_item_name || item.product_name}
+                        </div>
+                      </td>
+                      <td style={{ padding: '12px 8px', fontSize: '13px', color: '#666' }}>
+                        {item.product_id}{item.variation_id && item.variation_id !== '0' && ` / ${item.variation_id}`}
+                      </td>
+                      <td style={{ textAlign: 'right', padding: '12px 8px', fontSize: '14px' }}>
+                        {formatCurrency(unitPrice)}
+                      </td>
+                      <td style={{ textAlign: 'center', padding: '12px 8px', fontSize: '14px', fontWeight: '600' }}>
+                        {qty}
+                      </td>
+                      <td style={{ textAlign: 'right', padding: '12px 8px', fontSize: '13px', color: '#666' }}>
+                        {itemCost > 0 ? formatCurrency(itemCost * qty) : '-'}
+                      </td>
+                      <td style={{ textAlign: 'right', padding: '12px 8px', fontSize: '14px', fontWeight: '600' }}>
+                        {formatCurrency(lineTotal)}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         </div>
 
         {/* Totals */}
@@ -323,25 +401,25 @@ const OrderDetail = () => {
             boxShadow: '0 2px 8px rgba(0,0,0,0.05)'
           }}
         >
-          <h2 style={{ marginTop: 0, marginBottom: '20px', color: '#333', fontSize: '18px' }}>💰 Totaux</h2>
+          <h2 style={{ marginTop: 0, marginBottom: '20px', color: '#333', fontSize: '18px' }}>Totaux</h2>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', maxWidth: '400px', marginLeft: 'auto' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px' }}>
-              <span style={{ color: '#666' }}>Sous-total :</span>
-              <span style={{ fontWeight: '600' }}>{formatCurrency(order.subtotal)}</span>
+              <span style={{ color: '#666' }}>Sous-total HT :</span>
+              <span style={{ fontWeight: '600' }}>{formatCurrency(subtotal)}</span>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px' }}>
               <span style={{ color: '#666' }}>Livraison :</span>
-              <span style={{ fontWeight: '600' }}>{formatCurrency(order.shipping_total)}</span>
+              <span style={{ fontWeight: '600' }}>{formatCurrency(orderShipping)}</span>
             </div>
-            {order.discount_total > 0 && (
+            {cartDiscount > 0 && (
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px' }}>
                 <span style={{ color: '#dc3545' }}>Remise :</span>
-                <span style={{ fontWeight: '600', color: '#dc3545' }}>-{formatCurrency(order.discount_total)}</span>
+                <span style={{ fontWeight: '600', color: '#dc3545' }}>-{formatCurrency(cartDiscount)}</span>
               </div>
             )}
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px' }}>
               <span style={{ color: '#666' }}>TVA :</span>
-              <span style={{ fontWeight: '600' }}>{formatCurrency(order.tax_total)}</span>
+              <span style={{ fontWeight: '600' }}>{formatCurrency(orderTax)}</span>
             </div>
             <div
               style={{
@@ -352,8 +430,8 @@ const OrderDetail = () => {
                 borderTop: '2px solid #e0e0e0'
               }}
             >
-              <span style={{ fontWeight: '600' }}>Total :</span>
-              <span style={{ fontWeight: '700', color: '#28a745' }}>{formatCurrency(order.order_total)}</span>
+              <span style={{ fontWeight: '600' }}>Total TTC :</span>
+              <span style={{ fontWeight: '700', color: '#28a745' }}>{formatCurrency(orderTotal)}</span>
             </div>
 
             {/* Margin Calculation */}
@@ -367,16 +445,16 @@ const OrderDetail = () => {
               }}
             >
               <div style={{ fontSize: '13px', fontWeight: '600', marginBottom: '10px', color: '#333' }}>
-                📊 Analyse de marge
+                Analyse de marge
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '13px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span style={{ color: '#666' }}>Coût produits :</span>
+                  <span style={{ color: '#666' }}>Cout produits :</span>
                   <span style={{ fontWeight: '600' }}>{formatCurrency(totalCost)}</span>
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span style={{ color: '#666' }}>Coût livraison :</span>
-                  <span style={{ fontWeight: '600' }}>{formatCurrency(shippingCost)}</span>
+                  <span style={{ color: '#666' }}>Cout livraison :</span>
+                  <span style={{ fontWeight: '600' }}>{formatCurrency(orderShipping)}</span>
                 </div>
                 <div
                   style={{
@@ -390,10 +468,65 @@ const OrderDetail = () => {
                   <span>Marge brute :</span>
                   <span style={{ color: margin > 0 ? '#28a745' : '#dc3545' }}>{formatCurrency(margin)}</span>
                 </div>
+                {orderTotal > 0 && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
+                    <span style={{ color: '#666' }}>Taux de marge :</span>
+                    <span style={{ fontWeight: '600', color: margin > 0 ? '#28a745' : '#dc3545' }}>
+                      {((margin / orderTotal) * 100).toFixed(1)}%
+                    </span>
+                  </div>
+                )}
               </div>
             </div>
           </div>
         </div>
+
+        {/* Attribution info */}
+        {(order.attribution_utm_source || order.attribution_referrer) && (
+          <div
+            style={{
+              backgroundColor: '#fff',
+              padding: '25px',
+              borderRadius: '12px',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
+              marginTop: '30px'
+            }}
+          >
+            <h2 style={{ marginTop: 0, marginBottom: '20px', color: '#333', fontSize: '18px' }}>Attribution</h2>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '15px', fontSize: '13px' }}>
+              {order.attribution_source_type && (
+                <div>
+                  <div style={{ color: '#999', marginBottom: '4px' }}>Type de source</div>
+                  <div style={{ fontWeight: '600' }}>{order.attribution_source_type}</div>
+                </div>
+              )}
+              {order.attribution_utm_source && (
+                <div>
+                  <div style={{ color: '#999', marginBottom: '4px' }}>Source UTM</div>
+                  <div style={{ fontWeight: '600' }}>{order.attribution_utm_source}</div>
+                </div>
+              )}
+              {order.attribution_utm_medium && (
+                <div>
+                  <div style={{ color: '#999', marginBottom: '4px' }}>Medium UTM</div>
+                  <div style={{ fontWeight: '600' }}>{order.attribution_utm_medium}</div>
+                </div>
+              )}
+              {order.attribution_device_type && (
+                <div>
+                  <div style={{ color: '#999', marginBottom: '4px' }}>Appareil</div>
+                  <div style={{ fontWeight: '600' }}>{order.attribution_device_type}</div>
+                </div>
+              )}
+              {order.attribution_session_pages && (
+                <div>
+                  <div style={{ color: '#999', marginBottom: '4px' }}>Pages visitees</div>
+                  <div style={{ fontWeight: '600' }}>{order.attribution_session_pages}</div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Footer */}
@@ -406,7 +539,7 @@ const OrderDetail = () => {
           marginTop: '50px'
         }}
       >
-        <p style={{ margin: 0 }}>© 2024 YouVape - Tous droits réservés</p>
+        <p style={{ margin: 0 }}>YouVape - Tous droits reserves</p>
       </div>
     </div>
   );
