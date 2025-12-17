@@ -221,6 +221,7 @@ const ProductsStatsTab = () => {
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
                 <tr>
+                  <th style={{ ...headerStyle('name'), width: '50px', cursor: 'default' }}></th>
                   <th style={headerStyle('name')} onClick={() => handleSort('name')}>Nom{getSortIcon('name')}</th>
                   <th style={headerStyle('sku')} onClick={() => handleSort('sku')}>SKU{getSortIcon('sku')}</th>
                   <th style={headerStyle('stock')} onClick={() => handleSort('stock')}>Stock{getSortIcon('stock')}</th>
@@ -252,6 +253,17 @@ const ProductsStatsTab = () => {
                         onMouseEnter={(e) => { if (hasVariations) e.currentTarget.style.backgroundColor = '#f8f9fa'; }}
                         onMouseLeave={(e) => { if (!isExpanded) e.currentTarget.style.backgroundColor = 'white'; }}
                       >
+                        <td style={{ padding: '8px 10px', width: '50px' }}>
+                          {product.image_url ? (
+                            <img
+                              src={product.image_url}
+                              alt=""
+                              style={{ width: '40px', height: '40px', objectFit: 'cover', borderRadius: '4px' }}
+                            />
+                          ) : (
+                            <div style={{ width: '40px', height: '40px', backgroundColor: '#f0f0f0', borderRadius: '4px' }} />
+                          )}
+                        </td>
                         <td style={{ padding: '15px', fontSize: '14px' }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                             {hasVariations && (
@@ -289,7 +301,8 @@ const ProductsStatsTab = () => {
                       </tr>
                       {isExpanded && productVariations.length > 0 && productVariations.map((variation) => (
                         <tr key={variation.wp_product_id} style={{ backgroundColor: '#f8f9fa', borderTop: '1px solid #e9ecef' }}>
-                          <td style={{ padding: '10px 15px 10px 45px', fontSize: '13px', color: '#6c757d' }}>
+                          <td style={{ padding: '8px 10px', width: '50px' }}></td>
+                          <td style={{ padding: '10px 15px 10px 15px', fontSize: '13px', color: '#6c757d' }}>
                             ↳ {variation.post_title}
                           </td>
                           <td style={{ padding: '10px 15px', fontSize: '13px', color: '#6c757d' }}>{variation.sku || '-'}</td>
@@ -317,7 +330,7 @@ const ProductsStatsTab = () => {
                       ))}
                       {isExpanded && productVariations.length === 0 && (
                         <tr key={`${product.wp_product_id}-loading`} style={{ backgroundColor: '#f8f9fa' }}>
-                          <td colSpan={9} style={{ padding: '15px 45px', fontSize: '13px', color: '#6c757d' }}>
+                          <td colSpan={10} style={{ padding: '15px 45px', fontSize: '13px', color: '#6c757d' }}>
                             Chargement des variations...
                           </td>
                         </tr>

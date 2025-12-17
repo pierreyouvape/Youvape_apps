@@ -439,6 +439,7 @@ class ProductModel {
         p.post_title,
         p.sku,
         p.product_type,
+        p.image_url,
         CASE
           WHEN p.product_type = 'variable' THEN (
             SELECT COALESCE(SUM(v.stock::int), 0)
