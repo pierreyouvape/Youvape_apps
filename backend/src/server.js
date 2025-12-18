@@ -14,6 +14,7 @@ const productsRoutes = require('./routes/productsRoutes');
 const ordersRoutes = require('./routes/ordersRoutes');
 const brandsRoutes = require('./routes/brandsRoutes');
 const categoriesRoutes = require('./routes/categoriesRoutes');
+const analysisRoutes = require('./routes/analysisRoutes');
 const { setupCron } = require('./services/cronService');
 const rewardService = require('./services/rewardService');
 const emailService = require('./services/emailService');
@@ -44,6 +45,7 @@ app.use('/api/products', productsRoutes); // Products
 app.use('/api/orders', ordersRoutes); // Orders
 app.use('/api/brands', brandsRoutes); // Brands & Sub-brands
 app.use('/api/categories', categoriesRoutes); // Categories & Sub-categories
+app.use('/api/analysis', analysisRoutes); // Analysis & Segmentation
 
 // Start server
 app.listen(PORT, async () => {
