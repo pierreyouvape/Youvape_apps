@@ -113,115 +113,131 @@ exports.getFilters = async (req, res) => {
 };
 
 /**
+ * Construit une sous-requête pour filtrer les commandes selon les critères
+ */
+function buildFilteredOrdersCTE(filters) {
+  const {
+    dateFrom,
+    dateTo,
+    categories,
+    subCategories,
+    countries,
+    shippingMethods,
+    paymentMethods,
+    statuses
+  } = filters;
+
+  let conditions = [];
+  let params = [];
+  let paramIndex = 1;
+
+  // Statuts (par défaut: completed et delivered)
+  if (statuses && statuses.length > 0) {
+    conditions.push(`o.post_status = ANY($${paramIndex})`);
+    params.push(statuses);
+    paramIndex++;
+  } else {
+    conditions.push(`o.post_status IN ('wc-completed', 'wc-delivered')`);
+  }
+
+  // Période
+  if (dateFrom) {
+    conditions.push(`o.post_date >= $${paramIndex}`);
+    params.push(dateFrom);
+    paramIndex++;
+  }
+  if (dateTo) {
+    conditions.push(`o.post_date <= $${paramIndex}`);
+    params.push(dateTo + ' 23:59:59');
+    paramIndex++;
+  }
+
+  // Pays
+  if (countries && countries.length > 0) {
+    conditions.push(`o.shipping_country = ANY($${paramIndex})`);
+    params.push(countries);
+    paramIndex++;
+  }
+
+  // Méthodes de paiement
+  if (paymentMethods && paymentMethods.length > 0) {
+    conditions.push(`o.payment_method_title = ANY($${paramIndex})`);
+    params.push(paymentMethods);
+    paramIndex++;
+  }
+
+  // Méthodes de livraison
+  if (shippingMethods && shippingMethods.length > 0) {
+    conditions.push(`EXISTS (
+      SELECT 1 FROM order_items oi_ship
+      WHERE oi_ship.wp_order_id = o.wp_order_id
+        AND oi_ship.order_item_type = 'shipping'
+        AND oi_ship.order_item_name = ANY($${paramIndex})
+    )`);
+    params.push(shippingMethods);
+    paramIndex++;
+  }
+
+  // Catégories/sous-catégories
+  if ((categories && categories.length > 0) || (subCategories && subCategories.length > 0)) {
+    let catConditions = [];
+
+    if (categories && categories.length > 0) {
+      catConditions.push(`p_filter.category = ANY($${paramIndex})`);
+      params.push(categories);
+      paramIndex++;
+    }
+    if (subCategories && subCategories.length > 0) {
+      catConditions.push(`p_filter.sub_category = ANY($${paramIndex})`);
+      params.push(subCategories);
+      paramIndex++;
+    }
+
+    conditions.push(`EXISTS (
+      SELECT 1 FROM order_items oi_filter
+      INNER JOIN products p_filter ON (
+        p_filter.wp_product_id = oi_filter.product_id
+        OR p_filter.wp_product_id = oi_filter.variation_id
+        OR p_filter.wp_product_id = (
+          SELECT wp_parent_id FROM products WHERE wp_product_id = oi_filter.variation_id
+        )
+      )
+      WHERE oi_filter.wp_order_id = o.wp_order_id
+        AND oi_filter.order_item_type = 'line_item'
+        AND (${catConditions.join(' OR ')})
+    )`);
+  }
+
+  const whereClause = conditions.length > 0 ? 'WHERE ' + conditions.join(' AND ') : '';
+
+  return { whereClause, params, paramIndex };
+}
+
+/**
  * Calcule les statistiques selon les filtres
  * POST /api/analysis/stats
  */
 exports.getStats = async (req, res) => {
   try {
-    const {
-      dateFrom,
-      dateTo,
-      categories,
-      subCategories,
-      countries,
-      shippingMethods,
-      paymentMethods,
-      statuses
-    } = req.body;
-
-    // Construction des conditions WHERE
-    let conditions = [];
-    let params = [];
-    let paramIndex = 1;
-
-    // Période
-    if (dateFrom) {
-      conditions.push(`o.post_date >= $${paramIndex}`);
-      params.push(dateFrom);
-      paramIndex++;
-    }
-    if (dateTo) {
-      conditions.push(`o.post_date <= $${paramIndex}`);
-      params.push(dateTo + ' 23:59:59');
-      paramIndex++;
-    }
-
-    // Statuts (par défaut: completed et delivered)
-    if (statuses && statuses.length > 0) {
-      conditions.push(`o.post_status = ANY($${paramIndex})`);
-      params.push(statuses);
-      paramIndex++;
-    } else {
-      conditions.push(`o.post_status IN ('wc-completed', 'wc-delivered')`);
-    }
-
-    // Pays
-    if (countries && countries.length > 0) {
-      conditions.push(`o.shipping_country = ANY($${paramIndex})`);
-      params.push(countries);
-      paramIndex++;
-    }
-
-    // Méthodes de paiement
-    if (paymentMethods && paymentMethods.length > 0) {
-      conditions.push(`o.payment_method_title = ANY($${paramIndex})`);
-      params.push(paymentMethods);
-      paramIndex++;
-    }
-
-    // Méthodes de livraison (via order_items)
-    let shippingJoin = '';
-    if (shippingMethods && shippingMethods.length > 0) {
-      shippingJoin = `
-        INNER JOIN order_items oi_ship ON oi_ship.wp_order_id = o.wp_order_id
-          AND oi_ship.order_item_type = 'shipping'
-          AND oi_ship.order_item_name = ANY($${paramIndex})
-      `;
-      params.push(shippingMethods);
-      paramIndex++;
-    }
-
-    // Catégories/sous-catégories (via order_items et products)
-    let categoryJoin = '';
-    let categoryConditions = [];
-    if ((categories && categories.length > 0) || (subCategories && subCategories.length > 0)) {
-      categoryJoin = `
-        INNER JOIN order_items oi_cat ON oi_cat.wp_order_id = o.wp_order_id AND oi_cat.order_item_type = 'line_item'
-        INNER JOIN products p_cat ON (p_cat.wp_product_id = oi_cat.product_id OR p_cat.wp_product_id = oi_cat.variation_id)
-      `;
-
-      if (categories && categories.length > 0) {
-        categoryConditions.push(`p_cat.category = ANY($${paramIndex})`);
-        params.push(categories);
-        paramIndex++;
-      }
-      if (subCategories && subCategories.length > 0) {
-        categoryConditions.push(`p_cat.sub_category = ANY($${paramIndex})`);
-        params.push(subCategories);
-        paramIndex++;
-      }
-    }
-
-    const whereClause = conditions.length > 0 ? 'WHERE ' + conditions.join(' AND ') : '';
-    const categoryWhereClause = categoryConditions.length > 0 ? ' AND (' + categoryConditions.join(' OR ') + ')' : '';
+    const filters = req.body;
+    const { whereClause, params } = buildFilteredOrdersCTE(filters);
 
     // Requête principale pour les métriques globales
     const statsQuery = `
       SELECT
         COUNT(DISTINCT o.wp_order_id)::int as orders_count,
-        COALESCE(SUM(o.order_total), 0)::numeric as ca_ttc,
-        COALESCE(SUM(o.order_total - o.order_tax - o.order_shipping_tax), 0)::numeric as ca_ht,
-        COALESCE(SUM(o.order_total_cost), 0)::numeric as cost_ht,
-        COALESCE(AVG(o.order_total), 0)::numeric as avg_basket
+        COALESCE(SUM(DISTINCT o.order_total), 0)::numeric as ca_ttc,
+        COALESCE(SUM(DISTINCT o.order_total) - SUM(DISTINCT o.order_tax) - SUM(DISTINCT COALESCE(o.order_shipping_tax, 0)), 0)::numeric as ca_ht,
+        COALESCE(SUM(DISTINCT o.order_total_cost), 0)::numeric as cost_ht
       FROM orders o
-      ${shippingJoin}
-      ${categoryJoin}
       ${whereClause}
-      ${categoryWhereClause}
     `;
 
     const statsResult = await pool.query(statsQuery, params);
     const stats = statsResult.rows[0];
+
+    // Panier moyen calculé séparément pour éviter problèmes avec DISTINCT
+    const avgBasket = stats.orders_count > 0 ? parseFloat(stats.ca_ttc) / stats.orders_count : 0;
 
     // Calcul marge
     const margin_ht = parseFloat(stats.ca_ht) - parseFloat(stats.cost_ht);
@@ -230,15 +246,13 @@ exports.getStats = async (req, res) => {
     // Répartition par transporteur
     const shippingBreakdownQuery = `
       SELECT
-        oi.order_item_name as name,
+        oi_ship.order_item_name as name,
         COUNT(DISTINCT o.wp_order_id)::int as count,
-        COALESCE(SUM(o.order_total), 0)::numeric as ca_ttc
+        COALESCE(SUM(DISTINCT o.order_total), 0)::numeric as ca_ttc
       FROM orders o
-      INNER JOIN order_items oi ON oi.wp_order_id = o.wp_order_id AND oi.order_item_type = 'shipping'
-      ${categoryJoin ? categoryJoin.replace('oi_cat', 'oi_cat2').replace('p_cat', 'p_cat2') : ''}
+      INNER JOIN order_items oi_ship ON oi_ship.wp_order_id = o.wp_order_id AND oi_ship.order_item_type = 'shipping'
       ${whereClause}
-      ${categoryWhereClause ? categoryWhereClause.replace('p_cat', 'p_cat2') : ''}
-      GROUP BY oi.order_item_name
+      GROUP BY oi_ship.order_item_name
       ORDER BY count DESC
       LIMIT 10
     `;
@@ -254,22 +268,24 @@ exports.getStats = async (req, res) => {
           WHEN 'CH' THEN 'Suisse'
           WHEN 'LU' THEN 'Luxembourg'
           WHEN 'DE' THEN 'Allemagne'
+          WHEN 'IT' THEN 'Italie'
+          WHEN 'NL' THEN 'Pays-Bas'
+          WHEN 'ES' THEN 'Espagne'
+          WHEN 'DK' THEN 'Danemark'
+          WHEN 'AT' THEN 'Autriche'
           ELSE o.shipping_country
         END as name,
         COUNT(DISTINCT o.wp_order_id)::int as count,
-        COALESCE(SUM(o.order_total), 0)::numeric as ca_ttc
+        COALESCE(SUM(DISTINCT o.order_total), 0)::numeric as ca_ttc
       FROM orders o
-      ${shippingJoin}
-      ${categoryJoin}
       ${whereClause}
-      ${categoryWhereClause}
       GROUP BY o.shipping_country
       ORDER BY count DESC
       LIMIT 10
     `;
     const countryBreakdown = await pool.query(countryBreakdownQuery, params);
 
-    // Répartition par catégorie
+    // Répartition par catégorie (toutes les catégories des commandes filtrées)
     const categoryBreakdownQuery = `
       SELECT
         p.category as name,
@@ -278,7 +294,6 @@ exports.getStats = async (req, res) => {
       FROM orders o
       INNER JOIN order_items oi ON oi.wp_order_id = o.wp_order_id AND oi.order_item_type = 'line_item'
       INNER JOIN products p ON (p.wp_product_id = oi.product_id OR p.wp_product_id = oi.variation_id)
-      ${shippingJoin}
       ${whereClause}
       AND p.category IS NOT NULL
       GROUP BY p.category
@@ -287,17 +302,14 @@ exports.getStats = async (req, res) => {
     `;
     const categoryBreakdown = await pool.query(categoryBreakdownQuery, params);
 
-    // Evolution dans le temps (par jour ou mois selon la période)
+    // Evolution dans le temps
     const timeBreakdownQuery = `
       SELECT
         DATE_TRUNC('day', o.post_date)::date as date,
         COUNT(DISTINCT o.wp_order_id)::int as count,
-        COALESCE(SUM(o.order_total), 0)::numeric as ca_ttc
+        COALESCE(SUM(DISTINCT o.order_total), 0)::numeric as ca_ttc
       FROM orders o
-      ${shippingJoin}
-      ${categoryJoin}
       ${whereClause}
-      ${categoryWhereClause}
       GROUP BY DATE_TRUNC('day', o.post_date)
       ORDER BY date ASC
     `;
@@ -313,7 +325,7 @@ exports.getStats = async (req, res) => {
           cost_ht: parseFloat(stats.cost_ht).toFixed(2),
           margin_ht: margin_ht.toFixed(2),
           margin_percent: margin_percent.toFixed(1),
-          avg_basket: parseFloat(stats.avg_basket).toFixed(2)
+          avg_basket: avgBasket.toFixed(2)
         },
         breakdowns: {
           byShipping: shippingBreakdown.rows,
