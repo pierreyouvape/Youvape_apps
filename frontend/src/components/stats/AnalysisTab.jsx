@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
+import { jsPDF } from 'jspdf';
+import 'jspdf-autotable';
 import {
   PieChart, Pie, Cell, BarChart, Bar, LineChart, Line,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
@@ -105,6 +107,180 @@ const AnalysisTab = () => {
     return parseInt(value || 0).toLocaleString('fr-FR');
   };
 
+  const exportToPDF = () => {
+    if (!stats) return;
+
+    const doc = new jsPDF();
+    const pageWidth = doc.internal.pageSize.getWidth();
+    let yPosition = 20;
+
+    // Titre
+    doc.setFontSize(20);
+    doc.setTextColor(19, 94, 132); // Couleur YouVape
+    doc.text('Rapport d\'Analyse YouVape', pageWidth / 2, yPosition, { align: 'center' });
+    yPosition += 10;
+
+    // Date du rapport
+    doc.setFontSize(10);
+    doc.setTextColor(100);
+    doc.text(`Généré le ${new Date().toLocaleDateString('fr-FR')} à ${new Date().toLocaleTimeString('fr-FR')}`, pageWidth / 2, yPosition, { align: 'center' });
+    yPosition += 15;
+
+    // Filtres appliqués
+    doc.setFontSize(12);
+    doc.setTextColor(0);
+    doc.text('Filtres appliqués:', 14, yPosition);
+    yPosition += 7;
+    doc.setFontSize(9);
+    doc.setTextColor(80);
+
+    const appliedFilters = [];
+    if (selectedFilters.dateFrom || selectedFilters.dateTo) {
+      appliedFilters.push(`Période: ${selectedFilters.dateFrom || 'début'} - ${selectedFilters.dateTo || 'aujourd\'hui'}`);
+    }
+    if (selectedFilters.categories.length > 0) {
+      appliedFilters.push(`Catégories: ${selectedFilters.categories.join(', ')}`);
+    }
+    if (selectedFilters.subCategories.length > 0) {
+      appliedFilters.push(`Sous-catégories: ${selectedFilters.subCategories.join(', ')}`);
+    }
+    if (selectedFilters.countries.length > 0) {
+      const countryNames = selectedFilters.countries.map(c => {
+        const found = filters?.countries?.find(f => f.value === c);
+        return found ? found.label : c;
+      });
+      appliedFilters.push(`Pays: ${countryNames.join(', ')}`);
+    }
+    if (selectedFilters.shippingMethods.length > 0) {
+      appliedFilters.push(`Transporteurs: ${selectedFilters.shippingMethods.join(', ')}`);
+    }
+    if (appliedFilters.length === 0) {
+      appliedFilters.push('Aucun filtre (toutes les commandes)');
+    }
+
+    appliedFilters.forEach(filter => {
+      const lines = doc.splitTextToSize(filter, pageWidth - 28);
+      lines.forEach(line => {
+        doc.text(`• ${line}`, 18, yPosition);
+        yPosition += 5;
+      });
+    });
+    yPosition += 10;
+
+    // KPIs
+    doc.setFontSize(14);
+    doc.setTextColor(0);
+    doc.text('Indicateurs clés', 14, yPosition);
+    yPosition += 8;
+
+    doc.autoTable({
+      startY: yPosition,
+      head: [['Indicateur', 'Valeur']],
+      body: [
+        ['Nombre de commandes', formatNumber(stats.metrics.orders_count)],
+        ['CA TTC', formatPrice(stats.metrics.ca_ttc)],
+        ['CA HT', formatPrice(stats.metrics.ca_ht)],
+        ['Panier moyen', formatPrice(stats.metrics.avg_basket)],
+        ['Marge HT', `${formatPrice(stats.metrics.margin_ht)} (${stats.metrics.margin_percent}%)`],
+        ['Coût HT', formatPrice(stats.metrics.cost_ht)],
+      ],
+      theme: 'striped',
+      headStyles: { fillColor: [19, 94, 132] },
+      margin: { left: 14, right: 14 },
+    });
+
+    yPosition = doc.lastAutoTable.finalY + 15;
+
+    // Répartition par transporteur
+    if (stats.breakdowns.byShipping.length > 0) {
+      doc.setFontSize(14);
+      doc.text('Répartition par transporteur', 14, yPosition);
+      yPosition += 8;
+
+      doc.autoTable({
+        startY: yPosition,
+        head: [['Transporteur', 'Commandes', 'CA TTC']],
+        body: stats.breakdowns.byShipping.map(item => [
+          item.name,
+          formatNumber(item.count),
+          formatPrice(item.ca_ttc)
+        ]),
+        theme: 'striped',
+        headStyles: { fillColor: [19, 94, 132] },
+        margin: { left: 14, right: 14 },
+      });
+
+      yPosition = doc.lastAutoTable.finalY + 15;
+    }
+
+    // Nouvelle page si nécessaire
+    if (yPosition > 250) {
+      doc.addPage();
+      yPosition = 20;
+    }
+
+    // Répartition par pays
+    if (stats.breakdowns.byCountry.length > 0) {
+      doc.setFontSize(14);
+      doc.text('Répartition par pays', 14, yPosition);
+      yPosition += 8;
+
+      doc.autoTable({
+        startY: yPosition,
+        head: [['Pays', 'Commandes', 'CA TTC']],
+        body: stats.breakdowns.byCountry.map(item => [
+          item.name || item.code,
+          formatNumber(item.count),
+          formatPrice(item.ca_ttc)
+        ]),
+        theme: 'striped',
+        headStyles: { fillColor: [19, 94, 132] },
+        margin: { left: 14, right: 14 },
+      });
+
+      yPosition = doc.lastAutoTable.finalY + 15;
+    }
+
+    // Nouvelle page si nécessaire
+    if (yPosition > 250) {
+      doc.addPage();
+      yPosition = 20;
+    }
+
+    // Répartition par catégorie
+    if (stats.breakdowns.byCategory.length > 0) {
+      doc.setFontSize(14);
+      doc.text('CA par catégorie', 14, yPosition);
+      yPosition += 8;
+
+      doc.autoTable({
+        startY: yPosition,
+        head: [['Catégorie', 'Commandes', 'CA TTC']],
+        body: stats.breakdowns.byCategory.map(item => [
+          item.name,
+          formatNumber(item.orders_count),
+          formatPrice(item.ca_ttc)
+        ]),
+        theme: 'striped',
+        headStyles: { fillColor: [19, 94, 132] },
+        margin: { left: 14, right: 14 },
+      });
+    }
+
+    // Pied de page sur toutes les pages
+    const pageCount = doc.internal.getNumberOfPages();
+    for (let i = 1; i <= pageCount; i++) {
+      doc.setPage(i);
+      doc.setFontSize(8);
+      doc.setTextColor(150);
+      doc.text(`YouVape - Rapport d'analyse - Page ${i}/${pageCount}`, pageWidth / 2, doc.internal.pageSize.getHeight() - 10, { align: 'center' });
+    }
+
+    // Télécharger le PDF
+    const fileName = `analyse_youvape_${new Date().toISOString().split('T')[0]}.pdf`;
+    doc.save(fileName);
+  };
+
   // Style pour les filtres multi-select
   const MultiSelect = ({ label, options, selected, filterName, maxHeight = '150px' }) => (
     <div style={{ marginBottom: '15px' }}>
@@ -182,20 +358,40 @@ const AnalysisTab = () => {
       }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
           <h3 style={{ margin: 0, fontSize: '18px', color: '#333' }}>Filtres</h3>
-          <button
-            onClick={clearFilters}
-            style={{
-              padding: '8px 15px',
-              backgroundColor: '#6c757d',
-              color: 'white',
-              border: 'none',
-              borderRadius: '4px',
-              cursor: 'pointer',
-              fontSize: '13px'
-            }}
-          >
-            Réinitialiser
-          </button>
+          <div style={{ display: 'flex', gap: '10px' }}>
+            <button
+              onClick={exportToPDF}
+              disabled={!stats}
+              style={{
+                padding: '8px 15px',
+                backgroundColor: stats ? '#dc3545' : '#ccc',
+                color: 'white',
+                border: 'none',
+                borderRadius: '4px',
+                cursor: stats ? 'pointer' : 'not-allowed',
+                fontSize: '13px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '5px'
+              }}
+            >
+              Export PDF
+            </button>
+            <button
+              onClick={clearFilters}
+              style={{
+                padding: '8px 15px',
+                backgroundColor: '#6c757d',
+                color: 'white',
+                border: 'none',
+                borderRadius: '4px',
+                cursor: 'pointer',
+                fontSize: '13px'
+              }}
+            >
+              Réinitialiser
+            </button>
+          </div>
         </div>
 
         {/* Période */}
