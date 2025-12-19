@@ -16,6 +16,7 @@ const AnalysisTab = () => {
   const [loading, setLoading] = useState(false);
   const [loadingFilters, setLoadingFilters] = useState(true);
   const [stats, setStats] = useState(null);
+  const [compareStats, setCompareStats] = useState(null);
 
   // Filtres sélectionnés
   const [selectedFilters, setSelectedFilters] = useState({
@@ -29,6 +30,12 @@ const AnalysisTab = () => {
     statuses: ['wc-completed', 'wc-delivered']
   });
 
+  // Période de comparaison
+  const [comparePeriod, setComparePeriod] = useState({
+    dateFrom: '',
+    dateTo: ''
+  });
+
   // Charger les filtres disponibles au montage
   useEffect(() => {
     fetchFilters();
@@ -40,6 +47,15 @@ const AnalysisTab = () => {
       fetchStats();
     }
   }, [selectedFilters]);
+
+  // Charger les stats de comparaison au changement de période de comparaison
+  useEffect(() => {
+    if (filters && comparePeriod.dateFrom && comparePeriod.dateTo) {
+      fetchCompareStats();
+    } else {
+      setCompareStats(null);
+    }
+  }, [comparePeriod, selectedFilters]);
 
   const fetchFilters = async () => {
     try {
@@ -65,6 +81,22 @@ const AnalysisTab = () => {
       console.error('Error fetching stats:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchCompareStats = async () => {
+    try {
+      const compareFilters = {
+        ...selectedFilters,
+        dateFrom: comparePeriod.dateFrom,
+        dateTo: comparePeriod.dateTo
+      };
+      const response = await axios.post(`${API_BASE_URL}/analysis/stats`, compareFilters);
+      if (response.data.success) {
+        setCompareStats(response.data.data);
+      }
+    } catch (error) {
+      console.error('Error fetching compare stats:', error);
     }
   };
 
@@ -97,6 +129,27 @@ const AnalysisTab = () => {
       paymentMethods: [],
       statuses: ['wc-completed', 'wc-delivered']
     });
+    setComparePeriod({ dateFrom: '', dateTo: '' });
+  };
+
+  const handleComparePeriodChange = (field, value) => {
+    setComparePeriod(prev => ({ ...prev, [field]: value }));
+  };
+
+  // Calcul de la variation en pourcentage
+  const calcVariation = (current, previous) => {
+    const curr = parseFloat(current) || 0;
+    const prev = parseFloat(previous) || 0;
+    if (prev === 0) return curr > 0 ? 100 : 0;
+    return ((curr - prev) / prev * 100).toFixed(1);
+  };
+
+  // Formatage de la variation avec couleur
+  const formatVariation = (variation) => {
+    const v = parseFloat(variation);
+    if (v > 0) return { text: `+${v}%`, color: '#28a745' };
+    if (v < 0) return { text: `${v}%`, color: '#dc3545' };
+    return { text: '0%', color: '#6c757d' };
   };
 
   const formatPrice = (value) => {
@@ -136,7 +189,10 @@ const AnalysisTab = () => {
 
     const appliedFilters = [];
     if (selectedFilters.dateFrom || selectedFilters.dateTo) {
-      appliedFilters.push(`Période: ${selectedFilters.dateFrom || 'début'} - ${selectedFilters.dateTo || 'aujourd\'hui'}`);
+      appliedFilters.push(`Période analysée: ${selectedFilters.dateFrom || 'début'} - ${selectedFilters.dateTo || 'aujourd\'hui'}`);
+    }
+    if (comparePeriod.dateFrom && comparePeriod.dateTo) {
+      appliedFilters.push(`Période de comparaison: ${comparePeriod.dateFrom} - ${comparePeriod.dateTo}`);
     }
     if (selectedFilters.categories.length > 0) {
       appliedFilters.push(`Catégories: ${selectedFilters.categories.join(', ')}`);
@@ -173,17 +229,28 @@ const AnalysisTab = () => {
     doc.text('Indicateurs clés', 14, yPosition);
     yPosition += 8;
 
+    // Préparer les données des KPIs avec ou sans comparaison
+    const kpiHeaders = compareStats ? [['Indicateur', 'Valeur', 'Variation']] : [['Indicateur', 'Valeur']];
+    const kpiBody = compareStats ? [
+      ['Nombre de commandes', formatNumber(stats.metrics.orders_count), `${formatVariation(calcVariation(stats.metrics.orders_count, compareStats.metrics.orders_count)).text}`],
+      ['CA TTC', formatPrice(stats.metrics.ca_ttc), `${formatVariation(calcVariation(stats.metrics.ca_ttc, compareStats.metrics.ca_ttc)).text}`],
+      ['CA HT', formatPrice(stats.metrics.ca_ht), `${formatVariation(calcVariation(stats.metrics.ca_ht, compareStats.metrics.ca_ht)).text}`],
+      ['Panier moyen', formatPrice(stats.metrics.avg_basket), `${formatVariation(calcVariation(stats.metrics.avg_basket, compareStats.metrics.avg_basket)).text}`],
+      ['Marge HT', `${formatPrice(stats.metrics.margin_ht)} (${stats.metrics.margin_percent}%)`, `${formatVariation(calcVariation(stats.metrics.margin_ht, compareStats.metrics.margin_ht)).text}`],
+      ['Coût HT', formatPrice(stats.metrics.cost_ht), `${formatVariation(calcVariation(stats.metrics.cost_ht, compareStats.metrics.cost_ht)).text}`],
+    ] : [
+      ['Nombre de commandes', formatNumber(stats.metrics.orders_count)],
+      ['CA TTC', formatPrice(stats.metrics.ca_ttc)],
+      ['CA HT', formatPrice(stats.metrics.ca_ht)],
+      ['Panier moyen', formatPrice(stats.metrics.avg_basket)],
+      ['Marge HT', `${formatPrice(stats.metrics.margin_ht)} (${stats.metrics.margin_percent}%)`],
+      ['Coût HT', formatPrice(stats.metrics.cost_ht)],
+    ];
+
     doc.autoTable({
       startY: yPosition,
-      head: [['Indicateur', 'Valeur']],
-      body: [
-        ['Nombre de commandes', formatNumber(stats.metrics.orders_count)],
-        ['CA TTC', formatPrice(stats.metrics.ca_ttc)],
-        ['CA HT', formatPrice(stats.metrics.ca_ht)],
-        ['Panier moyen', formatPrice(stats.metrics.avg_basket)],
-        ['Marge HT', `${formatPrice(stats.metrics.margin_ht)} (${stats.metrics.margin_percent}%)`],
-        ['Coût HT', formatPrice(stats.metrics.cost_ht)],
-      ],
+      head: kpiHeaders,
+      body: kpiBody,
       theme: 'striped',
       headStyles: { fillColor: [19, 94, 132] },
       margin: { left: 14, right: 14 },
@@ -322,8 +389,8 @@ const AnalysisTab = () => {
     </div>
   );
 
-  // Carte KPI
-  const KpiCard = ({ label, value, color = '#333', subValue = null }) => (
+  // Carte KPI avec comparaison
+  const KpiCard = ({ label, value, color = '#333', subValue = null, variation = null }) => (
     <div style={{
       backgroundColor: 'white',
       padding: '20px',
@@ -333,7 +400,21 @@ const AnalysisTab = () => {
       minWidth: '150px'
     }}>
       <p style={{ fontSize: '13px', color: '#6c757d', margin: '0 0 8px 0', textTransform: 'uppercase' }}>{label}</p>
-      <p style={{ fontSize: '24px', fontWeight: 'bold', color: color, margin: 0 }}>{value}</p>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: '10px' }}>
+        <p style={{ fontSize: '24px', fontWeight: 'bold', color: color, margin: 0 }}>{value}</p>
+        {variation !== null && (
+          <span style={{
+            fontSize: '14px',
+            fontWeight: '600',
+            color: formatVariation(variation).color,
+            backgroundColor: `${formatVariation(variation).color}15`,
+            padding: '2px 8px',
+            borderRadius: '4px'
+          }}>
+            {formatVariation(variation).text}
+          </span>
+        )}
+      </div>
       {subValue && <p style={{ fontSize: '12px', color: '#999', margin: '5px 0 0 0' }}>{subValue}</p>}
     </div>
   );
@@ -394,25 +475,59 @@ const AnalysisTab = () => {
           </div>
         </div>
 
-        {/* Période */}
-        <div style={{ display: 'flex', gap: '15px', marginBottom: '20px', flexWrap: 'wrap' }}>
-          <div style={{ flex: '1', minWidth: '200px' }}>
-            <label style={{ display: 'block', marginBottom: '5px', fontWeight: '600', fontSize: '13px' }}>Date début</label>
-            <input
-              type="date"
-              value={selectedFilters.dateFrom}
-              onChange={(e) => handleFilterChange('dateFrom', e.target.value)}
-              style={{ width: '100%', padding: '10px', border: '1px solid #ddd', borderRadius: '6px', fontSize: '14px' }}
-            />
+        {/* Périodes */}
+        <div style={{ display: 'flex', gap: '30px', marginBottom: '20px', flexWrap: 'wrap' }}>
+          {/* Période principale */}
+          <div style={{ flex: '1', minWidth: '300px' }}>
+            <p style={{ margin: '0 0 10px 0', fontWeight: '600', fontSize: '14px', color: '#333' }}>Période analysée</p>
+            <div style={{ display: 'flex', gap: '15px' }}>
+              <div style={{ flex: '1' }}>
+                <label style={{ display: 'block', marginBottom: '5px', fontWeight: '500', fontSize: '12px', color: '#666' }}>Début</label>
+                <input
+                  type="date"
+                  value={selectedFilters.dateFrom}
+                  onChange={(e) => handleFilterChange('dateFrom', e.target.value)}
+                  style={{ width: '100%', padding: '10px', border: '1px solid #ddd', borderRadius: '6px', fontSize: '14px' }}
+                />
+              </div>
+              <div style={{ flex: '1' }}>
+                <label style={{ display: 'block', marginBottom: '5px', fontWeight: '500', fontSize: '12px', color: '#666' }}>Fin</label>
+                <input
+                  type="date"
+                  value={selectedFilters.dateTo}
+                  onChange={(e) => handleFilterChange('dateTo', e.target.value)}
+                  style={{ width: '100%', padding: '10px', border: '1px solid #ddd', borderRadius: '6px', fontSize: '14px' }}
+                />
+              </div>
+            </div>
           </div>
-          <div style={{ flex: '1', minWidth: '200px' }}>
-            <label style={{ display: 'block', marginBottom: '5px', fontWeight: '600', fontSize: '13px' }}>Date fin</label>
-            <input
-              type="date"
-              value={selectedFilters.dateTo}
-              onChange={(e) => handleFilterChange('dateTo', e.target.value)}
-              style={{ width: '100%', padding: '10px', border: '1px solid #ddd', borderRadius: '6px', fontSize: '14px' }}
-            />
+
+          {/* Période de comparaison */}
+          <div style={{ flex: '1', minWidth: '300px' }}>
+            <p style={{ margin: '0 0 10px 0', fontWeight: '600', fontSize: '14px', color: '#666' }}>
+              Comparer avec (optionnel)
+              {compareStats && <span style={{ color: '#007bff', fontWeight: 'normal', marginLeft: '10px' }}>Comparaison active</span>}
+            </p>
+            <div style={{ display: 'flex', gap: '15px' }}>
+              <div style={{ flex: '1' }}>
+                <label style={{ display: 'block', marginBottom: '5px', fontWeight: '500', fontSize: '12px', color: '#666' }}>Début</label>
+                <input
+                  type="date"
+                  value={comparePeriod.dateFrom}
+                  onChange={(e) => handleComparePeriodChange('dateFrom', e.target.value)}
+                  style={{ width: '100%', padding: '10px', border: '1px solid #ddd', borderRadius: '6px', fontSize: '14px', backgroundColor: comparePeriod.dateFrom ? '#f0f7ff' : '#fff' }}
+                />
+              </div>
+              <div style={{ flex: '1' }}>
+                <label style={{ display: 'block', marginBottom: '5px', fontWeight: '500', fontSize: '12px', color: '#666' }}>Fin</label>
+                <input
+                  type="date"
+                  value={comparePeriod.dateTo}
+                  onChange={(e) => handleComparePeriodChange('dateTo', e.target.value)}
+                  style={{ width: '100%', padding: '10px', border: '1px solid #ddd', borderRadius: '6px', fontSize: '14px', backgroundColor: comparePeriod.dateTo ? '#f0f7ff' : '#fff' }}
+                />
+              </div>
+            </div>
           </div>
         </div>
 
@@ -466,17 +581,42 @@ const AnalysisTab = () => {
         <>
           {/* KPIs */}
           <div style={{ display: 'flex', gap: '15px', marginBottom: '20px', flexWrap: 'wrap' }}>
-            <KpiCard label="Commandes" value={formatNumber(stats.metrics.orders_count)} color="#007bff" />
-            <KpiCard label="CA TTC" value={formatPrice(stats.metrics.ca_ttc)} color="#28a745" />
-            <KpiCard label="CA HT" value={formatPrice(stats.metrics.ca_ht)} />
-            <KpiCard label="Panier moyen" value={formatPrice(stats.metrics.avg_basket)} color="#17a2b8" />
+            <KpiCard
+              label="Commandes"
+              value={formatNumber(stats.metrics.orders_count)}
+              color="#007bff"
+              variation={compareStats ? calcVariation(stats.metrics.orders_count, compareStats.metrics.orders_count) : null}
+            />
+            <KpiCard
+              label="CA TTC"
+              value={formatPrice(stats.metrics.ca_ttc)}
+              color="#28a745"
+              variation={compareStats ? calcVariation(stats.metrics.ca_ttc, compareStats.metrics.ca_ttc) : null}
+            />
+            <KpiCard
+              label="CA HT"
+              value={formatPrice(stats.metrics.ca_ht)}
+              variation={compareStats ? calcVariation(stats.metrics.ca_ht, compareStats.metrics.ca_ht) : null}
+            />
+            <KpiCard
+              label="Panier moyen"
+              value={formatPrice(stats.metrics.avg_basket)}
+              color="#17a2b8"
+              variation={compareStats ? calcVariation(stats.metrics.avg_basket, compareStats.metrics.avg_basket) : null}
+            />
             <KpiCard
               label="Marge HT"
               value={formatPrice(stats.metrics.margin_ht)}
               color="#28a745"
               subValue={`${stats.metrics.margin_percent}%`}
+              variation={compareStats ? calcVariation(stats.metrics.margin_ht, compareStats.metrics.margin_ht) : null}
             />
-            <KpiCard label="Coût HT" value={formatPrice(stats.metrics.cost_ht)} color="#dc3545" />
+            <KpiCard
+              label="Coût HT"
+              value={formatPrice(stats.metrics.cost_ht)}
+              color="#dc3545"
+              variation={compareStats ? calcVariation(stats.metrics.cost_ht, compareStats.metrics.cost_ht) : null}
+            />
           </div>
 
           {/* Graphiques */}
