@@ -7,7 +7,7 @@ const pool = require('../config/database');
 exports.getFilters = async (req, res) => {
   try {
     // Récupérer toutes les valeurs en parallèle
-    const [categories, subCategories, countries, shippingMethods, paymentMethods, statuses] = await Promise.all([
+    const [categories, subCategories, countries, shippingMethods, paymentMethods, statuses, coupons] = await Promise.all([
       // Catégories produits
       pool.query(`
         SELECT DISTINCT category as value, category as label, COUNT(*)::int as count
@@ -92,6 +92,16 @@ exports.getFilters = async (req, res) => {
         WHERE post_status IS NOT NULL
         GROUP BY post_status
         ORDER BY count DESC
+      `),
+
+      // Coupons de réduction
+      pool.query(`
+        SELECT DISTINCT LOWER(order_item_name) as value, order_item_name as label, COUNT(*)::int as count
+        FROM order_items
+        WHERE order_item_type = 'coupon' AND order_item_name IS NOT NULL AND order_item_name != ''
+        GROUP BY LOWER(order_item_name), order_item_name
+        ORDER BY count DESC
+        LIMIT 50
       `)
     ]);
 
@@ -103,7 +113,8 @@ exports.getFilters = async (req, res) => {
         countries: countries.rows,
         shippingMethods: shippingMethods.rows,
         paymentMethods: paymentMethods.rows,
-        statuses: statuses.rows
+        statuses: statuses.rows,
+        coupons: coupons.rows
       }
     });
   } catch (error) {
@@ -124,7 +135,8 @@ function buildFilteredOrdersCTE(filters) {
     countries,
     shippingMethods,
     paymentMethods,
-    statuses
+    statuses,
+    coupons
   } = filters;
 
   let conditions = [];
@@ -206,6 +218,18 @@ function buildFilteredOrdersCTE(filters) {
         AND oi_filter.order_item_type = 'line_item'
         AND (${catConditions.join(' OR ')})
     )`);
+  }
+
+  // Coupons
+  if (coupons && coupons.length > 0) {
+    conditions.push(`EXISTS (
+      SELECT 1 FROM order_items oi_coupon
+      WHERE oi_coupon.wp_order_id = o.wp_order_id
+        AND oi_coupon.order_item_type = 'coupon'
+        AND LOWER(oi_coupon.order_item_name) = ANY($${paramIndex})
+    )`);
+    params.push(coupons.map(c => c.toLowerCase()));
+    paramIndex++;
   }
 
   const whereClause = conditions.length > 0 ? 'WHERE ' + conditions.join(' AND ') : '';
@@ -315,6 +339,35 @@ exports.getStats = async (req, res) => {
     `;
     const timeBreakdown = await pool.query(timeBreakdownQuery, params);
 
+    // Répartition par coupon
+    const couponBreakdownQuery = `
+      SELECT
+        oi_coupon.order_item_name as name,
+        COUNT(DISTINCT o.wp_order_id)::int as count,
+        COALESCE(SUM(DISTINCT o.order_total), 0)::numeric as ca_ttc
+      FROM orders o
+      INNER JOIN order_items oi_coupon ON oi_coupon.wp_order_id = o.wp_order_id AND oi_coupon.order_item_type = 'coupon'
+      ${whereClause}
+      GROUP BY oi_coupon.order_item_name
+      ORDER BY count DESC
+      LIMIT 15
+    `;
+    const couponBreakdown = await pool.query(couponBreakdownQuery, params);
+
+    // Calcul des commandes avec et sans coupon
+    const withCouponQuery = `
+      SELECT COUNT(DISTINCT o.wp_order_id)::int as count
+      FROM orders o
+      ${whereClause}
+      AND EXISTS (
+        SELECT 1 FROM order_items oi_c
+        WHERE oi_c.wp_order_id = o.wp_order_id AND oi_c.order_item_type = 'coupon'
+      )
+    `;
+    const withCouponResult = await pool.query(withCouponQuery, params);
+    const ordersWithCoupon = withCouponResult.rows[0]?.count || 0;
+    const ordersWithoutCoupon = parseInt(stats.orders_count) - ordersWithCoupon;
+
     res.json({
       success: true,
       data: {
@@ -325,13 +378,16 @@ exports.getStats = async (req, res) => {
           cost_ht: parseFloat(stats.cost_ht).toFixed(2),
           margin_ht: margin_ht.toFixed(2),
           margin_percent: margin_percent.toFixed(1),
-          avg_basket: avgBasket.toFixed(2)
+          avg_basket: avgBasket.toFixed(2),
+          orders_with_coupon: ordersWithCoupon,
+          orders_without_coupon: ordersWithoutCoupon
         },
         breakdowns: {
           byShipping: shippingBreakdown.rows,
           byCountry: countryBreakdown.rows,
           byCategory: categoryBreakdown.rows,
-          byTime: timeBreakdown.rows
+          byTime: timeBreakdown.rows,
+          byCoupon: couponBreakdown.rows
         }
       }
     });

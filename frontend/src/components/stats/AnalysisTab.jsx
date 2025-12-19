@@ -27,7 +27,8 @@ const AnalysisTab = () => {
     countries: [],
     shippingMethods: [],
     paymentMethods: [],
-    statuses: ['wc-completed', 'wc-delivered']
+    statuses: ['wc-completed', 'wc-delivered'],
+    coupons: []
   });
 
   // Période de comparaison
@@ -127,7 +128,8 @@ const AnalysisTab = () => {
       countries: [],
       shippingMethods: [],
       paymentMethods: [],
-      statuses: ['wc-completed', 'wc-delivered']
+      statuses: ['wc-completed', 'wc-delivered'],
+      coupons: []
     });
     setComparePeriod({ dateFrom: '', dateTo: '' });
   };
@@ -209,6 +211,9 @@ const AnalysisTab = () => {
     }
     if (selectedFilters.shippingMethods.length > 0) {
       appliedFilters.push(`Transporteurs: ${selectedFilters.shippingMethods.join(', ')}`);
+    }
+    if (selectedFilters.coupons.length > 0) {
+      appliedFilters.push(`Coupons: ${selectedFilters.coupons.join(', ')}`);
     }
     if (appliedFilters.length === 0) {
       appliedFilters.push('Aucun filtre (toutes les commandes)');
@@ -330,6 +335,33 @@ const AnalysisTab = () => {
         ]),
         theme: 'striped',
         headStyles: { fillColor: [19, 94, 132] },
+        margin: { left: 14, right: 14 },
+      });
+      yPosition = doc.lastAutoTable.finalY + 15;
+    }
+
+    // Nouvelle page si nécessaire
+    if (yPosition > 250) {
+      doc.addPage();
+      yPosition = 20;
+    }
+
+    // Top coupons
+    if (stats.breakdowns.byCoupon && stats.breakdowns.byCoupon.length > 0) {
+      doc.setFontSize(14);
+      doc.text('Top coupons de réduction', 14, yPosition);
+      yPosition += 8;
+
+      doc.autoTable({
+        startY: yPosition,
+        head: [['Coupon', 'Commandes', 'CA TTC']],
+        body: stats.breakdowns.byCoupon.map(item => [
+          item.name,
+          formatNumber(item.count),
+          formatPrice(item.ca_ttc)
+        ]),
+        theme: 'striped',
+        headStyles: { fillColor: [255, 115, 0] },
         margin: { left: 14, right: 14 },
       });
     }
@@ -569,6 +601,13 @@ const AnalysisTab = () => {
             selected={selectedFilters.statuses}
             filterName="statuses"
           />
+          <MultiSelect
+            label="Coupons de réduction"
+            options={filters?.coupons}
+            selected={selectedFilters.coupons}
+            filterName="coupons"
+            maxHeight="200px"
+          />
         </div>
       </div>
 
@@ -616,6 +655,13 @@ const AnalysisTab = () => {
               value={formatPrice(stats.metrics.cost_ht)}
               color="#dc3545"
               variation={compareStats ? calcVariation(stats.metrics.cost_ht, compareStats.metrics.cost_ht) : null}
+            />
+            <KpiCard
+              label="Avec coupon"
+              value={formatNumber(stats.metrics.orders_with_coupon)}
+              color="#ff7300"
+              subValue={`${((stats.metrics.orders_with_coupon / stats.metrics.orders_count) * 100).toFixed(1)}% des commandes`}
+              variation={compareStats ? calcVariation(stats.metrics.orders_with_coupon, compareStats.metrics.orders_with_coupon) : null}
             />
           </div>
 
@@ -677,6 +723,28 @@ const AnalysisTab = () => {
               )}
             </div>
           </div>
+
+          {/* Top coupons */}
+          {stats.breakdowns.byCoupon && stats.breakdowns.byCoupon.length > 0 && (
+            <div style={{ backgroundColor: 'white', padding: '20px', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)', marginBottom: '20px' }}>
+              <h4 style={{ margin: '0 0 15px 0', fontSize: '16px', color: '#333' }}>Top coupons de réduction</h4>
+              <ResponsiveContainer width="100%" height={350}>
+                <BarChart data={stats.breakdowns.byCoupon} layout="vertical" margin={{ left: 100 }}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis type="number" />
+                  <YAxis type="category" dataKey="name" width={90} tick={{ fontSize: 11 }} />
+                  <Tooltip
+                    formatter={(value, name) => {
+                      if (name === 'count') return [formatNumber(value), 'Commandes'];
+                      return [formatPrice(value), 'CA TTC'];
+                    }}
+                  />
+                  <Legend />
+                  <Bar dataKey="count" fill="#ff7300" name="Commandes" />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          )}
 
           {/* Top catégories */}
           <div style={{ backgroundColor: 'white', padding: '20px', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)', marginBottom: '20px' }}>
