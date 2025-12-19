@@ -171,6 +171,7 @@ const OrderDetail = () => {
   // Filtrer les line_items pour n'avoir que les produits (pas shipping, fees, etc.)
   const productItems = (order.line_items || []).filter(item => item.order_item_type === 'line_item');
   const shippingItem = (order.line_items || []).find(item => item.order_item_type === 'shipping');
+  const couponItems = (order.line_items || []).filter(item => item.order_item_type === 'coupon');
 
   return (
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', backgroundColor: '#f5f5f5' }}>
@@ -424,6 +425,18 @@ const OrderDetail = () => {
               <span style={{ color: '#666' }}>Livraison :</span>
               <span style={{ fontWeight: '600' }}>{formatCurrency(orderShipping)}</span>
             </div>
+            {couponItems.length > 0 && (
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px', alignItems: 'flex-start' }}>
+                <span style={{ color: '#ff7300' }}>Coupon{couponItems.length > 1 ? 's' : ''} :</span>
+                <div style={{ textAlign: 'right' }}>
+                  {couponItems.map((coupon, idx) => (
+                    <div key={idx} style={{ fontWeight: '600', color: '#ff7300' }}>
+                      {coupon.order_item_name}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
             {cartDiscount > 0 && (
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px' }}>
                 <span style={{ color: '#dc3545' }}>Remise :</span>

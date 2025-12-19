@@ -94,14 +94,45 @@ exports.getFilters = async (req, res) => {
         ORDER BY count DESC
       `),
 
-      // Coupons de réduction
+      // Coupons de réduction (sépare les coupons promo des coupons fidélité)
       pool.query(`
-        SELECT DISTINCT LOWER(order_item_name) as value, order_item_name as label, COUNT(*)::int as count
-        FROM order_items
-        WHERE order_item_type = 'coupon' AND order_item_name IS NOT NULL AND order_item_name != ''
-        GROUP BY LOWER(order_item_name), order_item_name
-        ORDER BY count DESC
-        LIMIT 50
+        WITH coupon_stats AS (
+          SELECT
+            order_item_name,
+            CASE
+              WHEN order_item_name LIKE 'yvp-%' THEN 'loyalty'
+              WHEN order_item_name LIKE 'yv\\_%' THEN 'loyalty'
+              ELSE 'promo'
+            END as coupon_type,
+            COUNT(*)::int as count
+          FROM order_items
+          WHERE order_item_type = 'coupon' AND order_item_name IS NOT NULL AND order_item_name != ''
+          GROUP BY order_item_name
+        ),
+        loyalty_total AS (
+          SELECT SUM(count)::int as total FROM coupon_stats WHERE coupon_type = 'loyalty'
+        ),
+        promo_coupons AS (
+          SELECT order_item_name as value, order_item_name as label, count
+          FROM coupon_stats
+          WHERE coupon_type = 'promo'
+          ORDER BY count DESC
+          LIMIT 50
+        )
+        SELECT * FROM (
+          SELECT '__LOYALTY__' as value, 'Coupons fidélité (yvp-*)' as label, COALESCE((SELECT total FROM loyalty_total), 0) as count
+          UNION ALL
+          SELECT '__ANY_COUPON__' as value, 'Toute commande avec coupon' as label, (SELECT COUNT(*) FROM order_items WHERE order_item_type = 'coupon')::int as count
+          UNION ALL
+          SELECT value, label, count FROM promo_coupons
+        ) combined
+        ORDER BY
+          CASE value
+            WHEN '__ANY_COUPON__' THEN 1
+            WHEN '__LOYALTY__' THEN 2
+            ELSE 3
+          END,
+          count DESC
       `)
     ]);
 
@@ -222,14 +253,51 @@ function buildFilteredOrdersCTE(filters) {
 
   // Coupons
   if (coupons && coupons.length > 0) {
-    conditions.push(`EXISTS (
-      SELECT 1 FROM order_items oi_coupon
-      WHERE oi_coupon.wp_order_id = o.wp_order_id
-        AND oi_coupon.order_item_type = 'coupon'
-        AND LOWER(oi_coupon.order_item_name) = ANY($${paramIndex})
-    )`);
-    params.push(coupons.map(c => c.toLowerCase()));
-    paramIndex++;
+    // Gérer les valeurs spéciales
+    const hasAnyCoupon = coupons.includes('__ANY_COUPON__');
+    const hasLoyalty = coupons.includes('__LOYALTY__');
+    const regularCoupons = coupons.filter(c => !c.startsWith('__'));
+
+    if (hasAnyCoupon) {
+      // Toute commande avec au moins un coupon
+      conditions.push(`EXISTS (
+        SELECT 1 FROM order_items oi_coupon
+        WHERE oi_coupon.wp_order_id = o.wp_order_id
+          AND oi_coupon.order_item_type = 'coupon'
+      )`);
+    } else if (hasLoyalty && regularCoupons.length === 0) {
+      // Seulement coupons fidélité
+      conditions.push(`EXISTS (
+        SELECT 1 FROM order_items oi_coupon
+        WHERE oi_coupon.wp_order_id = o.wp_order_id
+          AND oi_coupon.order_item_type = 'coupon'
+          AND (oi_coupon.order_item_name LIKE 'yvp-%' OR oi_coupon.order_item_name LIKE 'yv\\_%')
+      )`);
+    } else if (hasLoyalty && regularCoupons.length > 0) {
+      // Coupons fidélité OU coupons spécifiques
+      conditions.push(`EXISTS (
+        SELECT 1 FROM order_items oi_coupon
+        WHERE oi_coupon.wp_order_id = o.wp_order_id
+          AND oi_coupon.order_item_type = 'coupon'
+          AND (
+            oi_coupon.order_item_name LIKE 'yvp-%'
+            OR oi_coupon.order_item_name LIKE 'yv\\_%'
+            OR LOWER(oi_coupon.order_item_name) = ANY($${paramIndex})
+          )
+      )`);
+      params.push(regularCoupons.map(c => c.toLowerCase()));
+      paramIndex++;
+    } else if (regularCoupons.length > 0) {
+      // Seulement coupons spécifiques
+      conditions.push(`EXISTS (
+        SELECT 1 FROM order_items oi_coupon
+        WHERE oi_coupon.wp_order_id = o.wp_order_id
+          AND oi_coupon.order_item_type = 'coupon'
+          AND LOWER(oi_coupon.order_item_name) = ANY($${paramIndex})
+      )`);
+      params.push(regularCoupons.map(c => c.toLowerCase()));
+      paramIndex++;
+    }
   }
 
   const whereClause = conditions.length > 0 ? 'WHERE ' + conditions.join(' AND ') : '';
