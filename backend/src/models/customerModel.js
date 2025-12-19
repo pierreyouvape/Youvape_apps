@@ -504,8 +504,9 @@ class CustomerModel {
         o.post_status,
         o.order_total,
         o.payment_method_title,
-        (SELECT COUNT(*) FROM order_items WHERE wp_order_id = o.wp_order_id) as items_count,
-        (SELECT COUNT(*) > 0 FROM reviews WHERE order_id = o.wp_order_id::text) as has_review
+        (SELECT COUNT(*) FROM order_items WHERE wp_order_id = o.wp_order_id AND order_item_type = 'line_item') as items_count,
+        (SELECT COUNT(*) > 0 FROM reviews WHERE order_id = o.wp_order_id::text) as has_review,
+        (SELECT STRING_AGG(order_item_name, ', ') FROM order_items WHERE wp_order_id = o.wp_order_id AND order_item_type = 'coupon') as coupons
       FROM orders o
       WHERE o.wp_customer_id = $1
       ORDER BY o.post_date DESC

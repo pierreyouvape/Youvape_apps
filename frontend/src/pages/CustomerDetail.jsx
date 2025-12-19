@@ -389,6 +389,7 @@ const CustomerDetail = () => {
                   <th style={{ padding: '15px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: '#6c757d', textTransform: 'uppercase' }}>Statut</th>
                   <th style={{ padding: '15px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: '#6c757d', textTransform: 'uppercase' }}>Total</th>
                   <th style={{ padding: '15px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: '#6c757d', textTransform: 'uppercase' }}>Articles</th>
+                  <th style={{ padding: '15px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: '#6c757d', textTransform: 'uppercase' }}>Coupon</th>
                   <th style={{ padding: '15px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: '#6c757d', textTransform: 'uppercase' }}>Avis</th>
                 </tr>
               </thead>
@@ -429,12 +430,26 @@ const CustomerDetail = () => {
                         <td style={{ padding: '15px', fontSize: '14px', fontWeight: 'bold' }}>{formatPrice(order.order_total)}</td>
                         <td style={{ padding: '15px', fontSize: '14px' }}>{order.items_count} article{order.items_count > 1 ? 's' : ''}</td>
                         <td style={{ padding: '15px', fontSize: '14px' }}>
+                          {order.coupons ? (
+                            <span style={{
+                              padding: '4px 8px',
+                              borderRadius: '4px',
+                              fontSize: '11px',
+                              fontWeight: '600',
+                              backgroundColor: '#ff730020',
+                              color: '#ff7300'
+                            }}>
+                              {order.coupons}
+                            </span>
+                          ) : '-'}
+                        </td>
+                        <td style={{ padding: '15px', fontSize: '14px' }}>
                           {order.has_review && <span style={{ fontSize: '18px' }}>⭐</span>}
                         </td>
                       </tr>
                       {isExpanded && (
                         <tr key={`${order.wp_order_id}-details`}>
-                          <td colSpan={6} style={{ padding: '0', backgroundColor: '#f8f9fa' }}>
+                          <td colSpan={7} style={{ padding: '0', backgroundColor: '#f8f9fa' }}>
                             <div style={{ padding: '20px 30px' }}>
                               {!details ? (
                                 <p style={{ color: '#6c757d' }}>Chargement...</p>
