@@ -315,14 +315,18 @@ exports.getStats = async (req, res) => {
     const { whereClause, params } = buildFilteredOrdersCTE(filters);
 
     // Requête principale pour les métriques globales
+    // On utilise une sous-requête pour éviter les doublons causés par les jointures
     const statsQuery = `
       SELECT
-        COUNT(DISTINCT o.wp_order_id)::int as orders_count,
-        COALESCE(SUM(DISTINCT o.order_total), 0)::numeric as ca_ttc,
-        COALESCE(SUM(DISTINCT o.order_total) - SUM(DISTINCT o.order_tax) - SUM(DISTINCT COALESCE(o.order_shipping_tax, 0)), 0)::numeric as ca_ht,
-        COALESCE(SUM(DISTINCT o.order_total_cost), 0)::numeric as cost_ht
-      FROM orders o
-      ${whereClause}
+        COUNT(*)::int as orders_count,
+        COALESCE(SUM(order_total), 0)::numeric as ca_ttc,
+        COALESCE(SUM(order_total) - SUM(order_tax) - SUM(COALESCE(order_shipping_tax, 0)), 0)::numeric as ca_ht,
+        COALESCE(SUM(order_total_cost), 0)::numeric as cost_ht
+      FROM (
+        SELECT DISTINCT o.wp_order_id, o.order_total, o.order_tax, o.order_shipping_tax, o.order_total_cost
+        FROM orders o
+        ${whereClause}
+      ) unique_orders
     `;
 
     const statsResult = await pool.query(statsQuery, params);
@@ -338,13 +342,16 @@ exports.getStats = async (req, res) => {
     // Répartition par transporteur
     const shippingBreakdownQuery = `
       SELECT
-        oi_ship.order_item_name as name,
-        COUNT(DISTINCT o.wp_order_id)::int as count,
-        COALESCE(SUM(DISTINCT o.order_total), 0)::numeric as ca_ttc
-      FROM orders o
-      INNER JOIN order_items oi_ship ON oi_ship.wp_order_id = o.wp_order_id AND oi_ship.order_item_type = 'shipping'
-      ${whereClause}
-      GROUP BY oi_ship.order_item_name
+        name,
+        COUNT(*)::int as count,
+        COALESCE(SUM(order_total), 0)::numeric as ca_ttc
+      FROM (
+        SELECT DISTINCT o.wp_order_id, o.order_total, oi_ship.order_item_name as name
+        FROM orders o
+        INNER JOIN order_items oi_ship ON oi_ship.wp_order_id = o.wp_order_id AND oi_ship.order_item_type = 'shipping'
+        ${whereClause}
+      ) unique_orders
+      GROUP BY name
       ORDER BY count DESC
       LIMIT 10
     `;
@@ -353,8 +360,8 @@ exports.getStats = async (req, res) => {
     // Répartition par pays
     const countryBreakdownQuery = `
       SELECT
-        o.shipping_country as code,
-        CASE o.shipping_country
+        code,
+        CASE code
           WHEN 'FR' THEN 'France'
           WHEN 'BE' THEN 'Belgique'
           WHEN 'CH' THEN 'Suisse'
@@ -365,13 +372,16 @@ exports.getStats = async (req, res) => {
           WHEN 'ES' THEN 'Espagne'
           WHEN 'DK' THEN 'Danemark'
           WHEN 'AT' THEN 'Autriche'
-          ELSE o.shipping_country
+          ELSE code
         END as name,
-        COUNT(DISTINCT o.wp_order_id)::int as count,
-        COALESCE(SUM(DISTINCT o.order_total), 0)::numeric as ca_ttc
-      FROM orders o
-      ${whereClause}
-      GROUP BY o.shipping_country
+        COUNT(*)::int as count,
+        COALESCE(SUM(order_total), 0)::numeric as ca_ttc
+      FROM (
+        SELECT DISTINCT o.wp_order_id, o.order_total, o.shipping_country as code
+        FROM orders o
+        ${whereClause}
+      ) unique_orders
+      GROUP BY code
       ORDER BY count DESC
       LIMIT 10
     `;
@@ -397,12 +407,15 @@ exports.getStats = async (req, res) => {
     // Evolution dans le temps
     const timeBreakdownQuery = `
       SELECT
-        DATE_TRUNC('day', o.post_date)::date as date,
-        COUNT(DISTINCT o.wp_order_id)::int as count,
-        COALESCE(SUM(DISTINCT o.order_total), 0)::numeric as ca_ttc
-      FROM orders o
-      ${whereClause}
-      GROUP BY DATE_TRUNC('day', o.post_date)
+        date,
+        COUNT(*)::int as count,
+        COALESCE(SUM(order_total), 0)::numeric as ca_ttc
+      FROM (
+        SELECT DISTINCT o.wp_order_id, o.order_total, DATE_TRUNC('day', o.post_date)::date as date
+        FROM orders o
+        ${whereClause}
+      ) unique_orders
+      GROUP BY date
       ORDER BY date ASC
     `;
     const timeBreakdown = await pool.query(timeBreakdownQuery, params);
@@ -410,13 +423,16 @@ exports.getStats = async (req, res) => {
     // Répartition par coupon
     const couponBreakdownQuery = `
       SELECT
-        oi_coupon.order_item_name as name,
-        COUNT(DISTINCT o.wp_order_id)::int as count,
-        COALESCE(SUM(DISTINCT o.order_total), 0)::numeric as ca_ttc
-      FROM orders o
-      INNER JOIN order_items oi_coupon ON oi_coupon.wp_order_id = o.wp_order_id AND oi_coupon.order_item_type = 'coupon'
-      ${whereClause}
-      GROUP BY oi_coupon.order_item_name
+        name,
+        COUNT(*)::int as count,
+        COALESCE(SUM(order_total), 0)::numeric as ca_ttc
+      FROM (
+        SELECT DISTINCT o.wp_order_id, o.order_total, oi_coupon.order_item_name as name
+        FROM orders o
+        INNER JOIN order_items oi_coupon ON oi_coupon.wp_order_id = o.wp_order_id AND oi_coupon.order_item_type = 'coupon'
+        ${whereClause}
+      ) unique_orders
+      GROUP BY name
       ORDER BY count DESC
       LIMIT 15
     `;
