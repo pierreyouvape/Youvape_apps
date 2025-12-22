@@ -90,12 +90,13 @@ const ReportsTab = () => {
       {/* Sidebar gauche */}
       <div style={{
         width: '220px',
-        backgroundColor: '#1a1a2e',
+        backgroundColor: '#f8f9fa',
         borderRadius: '8px',
         padding: '15px 0',
-        flexShrink: 0
+        flexShrink: 0,
+        border: '1px solid #e9ecef'
       }}>
-        <div style={{ padding: '10px 20px', color: '#888', fontSize: '11px', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '1px' }}>
+        <div style={{ padding: '10px 20px', color: '#666', fontSize: '11px', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '1px' }}>
           Rapports
         </div>
         {REPORT_SECTIONS.map(section => (
@@ -108,16 +109,16 @@ const ReportsTab = () => {
               alignItems: 'center',
               gap: '10px',
               cursor: section.disabled ? 'not-allowed' : 'pointer',
-              backgroundColor: activeSection === section.id ? '#2d2d44' : 'transparent',
+              backgroundColor: activeSection === section.id ? '#e3f2fd' : 'transparent',
               borderLeft: activeSection === section.id ? '3px solid #007bff' : '3px solid transparent',
-              color: section.disabled ? '#555' : (activeSection === section.id ? '#fff' : '#aaa'),
+              color: section.disabled ? '#aaa' : (activeSection === section.id ? '#007bff' : '#333'),
               fontSize: '14px',
               transition: 'all 0.2s'
             }}
           >
             <span>{section.icon}</span>
             <span>{section.label}</span>
-            {section.disabled && <span style={{ fontSize: '10px', color: '#666' }}>(bientôt)</span>}
+            {section.disabled && <span style={{ fontSize: '10px', color: '#999' }}>(bientôt)</span>}
           </div>
         ))}
       </div>
@@ -160,31 +161,32 @@ const ReportsTab = () => {
                   {/* Graphique */}
                   <div style={{
                     flex: 1,
-                    backgroundColor: '#1a1a2e',
+                    backgroundColor: '#fff',
                     borderRadius: '8px',
-                    padding: '20px'
+                    padding: '20px',
+                    border: '1px solid #e9ecef'
                   }}>
                     <ResponsiveContainer width="100%" height={300}>
                       <AreaChart data={chartData}>
                         <defs>
                           <linearGradient id="colorCa" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="5%" stopColor="#6366f1" stopOpacity={0.8}/>
-                            <stop offset="95%" stopColor="#6366f1" stopOpacity={0.1}/>
+                            <stop offset="5%" stopColor="#007bff" stopOpacity={0.8}/>
+                            <stop offset="95%" stopColor="#007bff" stopOpacity={0.1}/>
                           </linearGradient>
                         </defs>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#333" />
+                        <CartesianGrid strokeDasharray="3 3" stroke="#e9ecef" />
                         <XAxis dataKey="date" stroke="#666" fontSize={11} />
                         <YAxis stroke="#666" fontSize={11} tickFormatter={(v) => `${(v/1000).toFixed(0)}k`} />
                         <Tooltip
-                          contentStyle={{ backgroundColor: '#2d2d44', border: 'none', borderRadius: '8px' }}
-                          labelStyle={{ color: '#fff' }}
-                          formatter={(value) => [formatPrice(value), 'CA Brut']}
+                          contentStyle={{ backgroundColor: '#fff', border: '1px solid #ddd', borderRadius: '8px' }}
+                          labelStyle={{ color: '#333' }}
+                          formatter={(value) => [formatPrice(value), 'CA TTC']}
                           labelFormatter={(label, payload) => payload[0]?.payload?.fullDate || label}
                         />
                         <Area
                           type="monotone"
                           dataKey="ca"
-                          stroke="#6366f1"
+                          stroke="#007bff"
                           strokeWidth={2}
                           fillOpacity={1}
                           fill="url(#colorCa)"
@@ -196,48 +198,45 @@ const ReportsTab = () => {
                   {/* KPIs */}
                   <div style={{
                     width: '280px',
-                    backgroundColor: '#1a1a2e',
+                    backgroundColor: '#fff',
                     borderRadius: '8px',
-                    padding: '20px'
+                    padding: '20px',
+                    border: '1px solid #e9ecef'
                   }}>
-                    <h3 style={{ color: '#888', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '20px' }}>
+                    <h3 style={{ color: '#666', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '20px' }}>
                       Sur la période
                     </h3>
 
                     <div style={{ marginBottom: '20px' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px' }}>
-                        <span style={{ color: '#aaa', fontSize: '13px' }}>CA Net</span>
-                        <span style={{ color: '#fff', fontSize: '18px', fontWeight: '700' }}>{formatPrice(data.kpis.net_revenue)}</span>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px' }}>
+                        <span style={{ color: '#666', fontSize: '13px' }}>CA TTC</span>
+                        <span style={{ color: '#333', fontSize: '18px', fontWeight: '700' }}>{formatPrice(data.kpis.ca_ttc)}</span>
                       </div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px' }}>
-                        <span style={{ color: '#aaa', fontSize: '13px' }}>CA Brut</span>
-                        <span style={{ color: '#10b981', fontSize: '14px', fontWeight: '600' }}>{formatPrice(data.kpis.gross_sales)}</span>
-                      </div>
-                    </div>
-
-                    <div style={{ borderTop: '1px solid #333', paddingTop: '15px', marginBottom: '15px' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
-                        <span style={{ color: '#888', fontSize: '12px' }}>Remboursements</span>
-                        <span style={{ color: '#ef4444', fontSize: '13px' }}>({formatPrice(data.kpis.refunds)})</span>
-                      </div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
-                        <span style={{ color: '#888', fontSize: '12px' }}>Taxes</span>
-                        <span style={{ color: '#ef4444', fontSize: '13px' }}>({formatPrice(data.kpis.taxes)})</span>
-                      </div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
-                        <span style={{ color: '#888', fontSize: '12px' }}>Livraison</span>
-                        <span style={{ color: '#ef4444', fontSize: '13px' }}>({formatPrice(data.kpis.shipping)})</span>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px' }}>
+                        <span style={{ color: '#666', fontSize: '13px' }}>CA HT</span>
+                        <span style={{ color: '#28a745', fontSize: '16px', fontWeight: '600' }}>{formatPrice(data.kpis.ca_ht)}</span>
                       </div>
                     </div>
 
-                    <div style={{ borderTop: '1px solid #333', paddingTop: '15px' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
-                        <span style={{ color: '#aaa', fontSize: '13px' }}>Commandes</span>
-                        <span style={{ color: '#fff', fontSize: '16px', fontWeight: '600' }}>{data.kpis.orders_count.toLocaleString('fr-FR')}</span>
+                    <div style={{ borderTop: '1px solid #e9ecef', paddingTop: '15px', marginBottom: '15px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px' }}>
+                        <span style={{ color: '#666', fontSize: '13px' }}>Total Remboursements</span>
+                        <span style={{ color: '#dc3545', fontSize: '14px' }}>{formatPrice(data.kpis.refunds)}</span>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px' }}>
+                        <span style={{ color: '#666', fontSize: '13px' }}>Total TVA</span>
+                        <span style={{ color: '#666', fontSize: '14px' }}>{formatPrice(data.kpis.taxes)}</span>
+                      </div>
+                    </div>
+
+                    <div style={{ borderTop: '1px solid #e9ecef', paddingTop: '15px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px' }}>
+                        <span style={{ color: '#666', fontSize: '13px' }}>Nombre de commandes</span>
+                        <span style={{ color: '#333', fontSize: '16px', fontWeight: '600' }}>{data.kpis.orders_count.toLocaleString('fr-FR')}</span>
                       </div>
                       <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                        <span style={{ color: '#aaa', fontSize: '13px' }}>Panier moyen net</span>
-                        <span style={{ color: '#fff', fontSize: '14px', fontWeight: '600' }}>{formatPrice(data.kpis.avg_order_net)}</span>
+                        <span style={{ color: '#666', fontSize: '13px' }}>Panier moyen</span>
+                        <span style={{ color: '#333', fontSize: '14px', fontWeight: '600' }}>{formatPrice(data.kpis.avg_order)}</span>
                       </div>
                     </div>
                   </div>
@@ -245,51 +244,43 @@ const ReportsTab = () => {
 
                 {/* Tableau détaillé jour par jour */}
                 <div style={{
-                  backgroundColor: '#1a1a2e',
+                  backgroundColor: '#fff',
                   borderRadius: '8px',
-                  overflow: 'hidden'
+                  overflow: 'hidden',
+                  border: '1px solid #e9ecef'
                 }}>
-                  <div style={{ padding: '15px 20px', borderBottom: '1px solid #333' }}>
-                    <h3 style={{ margin: 0, color: '#fff', fontSize: '16px' }}>Détail par jour</h3>
+                  <div style={{ padding: '15px 20px', borderBottom: '1px solid #e9ecef' }}>
+                    <h3 style={{ margin: 0, color: '#333', fontSize: '16px' }}>Détail par jour</h3>
                   </div>
                   <div style={{ overflowX: 'auto' }}>
                     <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                       <thead>
-                        <tr style={{ backgroundColor: '#2d2d44' }}>
-                          <th style={{ padding: '12px 15px', textAlign: 'left', color: '#888', fontSize: '11px', fontWeight: '600', textTransform: 'uppercase' }}>Date</th>
-                          <th style={{ padding: '12px 15px', textAlign: 'right', color: '#888', fontSize: '11px', fontWeight: '600', textTransform: 'uppercase' }}>Commandes</th>
-                          <th style={{ padding: '12px 15px', textAlign: 'right', color: '#888', fontSize: '11px', fontWeight: '600', textTransform: 'uppercase' }}>CA Brut</th>
-                          <th style={{ padding: '12px 15px', textAlign: 'right', color: '#888', fontSize: '11px', fontWeight: '600', textTransform: 'uppercase' }}>Taxes</th>
-                          <th style={{ padding: '12px 15px', textAlign: 'right', color: '#888', fontSize: '11px', fontWeight: '600', textTransform: 'uppercase' }}>Livraison</th>
-                          <th style={{ padding: '12px 15px', textAlign: 'right', color: '#888', fontSize: '11px', fontWeight: '600', textTransform: 'uppercase' }}>Frais</th>
-                          <th style={{ padding: '12px 15px', textAlign: 'right', color: '#888', fontSize: '11px', fontWeight: '600', textTransform: 'uppercase' }}>Remboursements</th>
-                          <th style={{ padding: '12px 15px', textAlign: 'right', color: '#888', fontSize: '11px', fontWeight: '600', textTransform: 'uppercase' }}>Net</th>
+                        <tr style={{ backgroundColor: '#f8f9fa' }}>
+                          <th style={{ padding: '12px 15px', textAlign: 'left', color: '#666', fontSize: '11px', fontWeight: '600', textTransform: 'uppercase' }}>Date</th>
+                          <th style={{ padding: '12px 15px', textAlign: 'right', color: '#666', fontSize: '11px', fontWeight: '600', textTransform: 'uppercase' }}>Commandes</th>
+                          <th style={{ padding: '12px 15px', textAlign: 'right', color: '#666', fontSize: '11px', fontWeight: '600', textTransform: 'uppercase' }}>CA TTC</th>
+                          <th style={{ padding: '12px 15px', textAlign: 'right', color: '#666', fontSize: '11px', fontWeight: '600', textTransform: 'uppercase' }}>TVA</th>
+                          <th style={{ padding: '12px 15px', textAlign: 'right', color: '#666', fontSize: '11px', fontWeight: '600', textTransform: 'uppercase' }}>CA HT</th>
                         </tr>
                       </thead>
                       <tbody>
                         {data.breakdown.map((row, idx) => (
-                          <tr key={idx} style={{ borderBottom: '1px solid #2d2d44' }}>
-                            <td style={{ padding: '12px 15px', color: '#fff', fontSize: '13px' }}>{formatFullDate(row.date)}</td>
-                            <td style={{ padding: '12px 15px', textAlign: 'right', color: '#6366f1', fontSize: '13px', fontWeight: '600' }}>{row.orders_count}</td>
-                            <td style={{ padding: '12px 15px', textAlign: 'right', color: '#10b981', fontSize: '13px' }}>{formatPrice(row.gross_sales)}</td>
-                            <td style={{ padding: '12px 15px', textAlign: 'right', color: '#ef4444', fontSize: '13px' }}>({formatPrice(row.taxes)})</td>
-                            <td style={{ padding: '12px 15px', textAlign: 'right', color: '#ef4444', fontSize: '13px' }}>({formatPrice(row.shipping)})</td>
-                            <td style={{ padding: '12px 15px', textAlign: 'right', color: '#888', fontSize: '13px' }}>{formatPrice(row.fees)}</td>
-                            <td style={{ padding: '12px 15px', textAlign: 'right', color: '#888', fontSize: '13px' }}>{formatPrice(row.refunds)}</td>
-                            <td style={{ padding: '12px 15px', textAlign: 'right', color: '#fff', fontSize: '13px', fontWeight: '600' }}>{formatPrice(row.net)}</td>
+                          <tr key={idx} style={{ borderBottom: '1px solid #e9ecef' }}>
+                            <td style={{ padding: '12px 15px', color: '#333', fontSize: '13px' }}>{formatFullDate(row.date)}</td>
+                            <td style={{ padding: '12px 15px', textAlign: 'right', color: '#007bff', fontSize: '13px', fontWeight: '600' }}>{row.orders_count}</td>
+                            <td style={{ padding: '12px 15px', textAlign: 'right', color: '#333', fontSize: '13px' }}>{formatPrice(row.gross_sales)}</td>
+                            <td style={{ padding: '12px 15px', textAlign: 'right', color: '#666', fontSize: '13px' }}>{formatPrice(row.taxes)}</td>
+                            <td style={{ padding: '12px 15px', textAlign: 'right', color: '#28a745', fontSize: '13px', fontWeight: '600' }}>{formatPrice(parseFloat(row.gross_sales) - parseFloat(row.taxes))}</td>
                           </tr>
                         ))}
                         {/* Ligne des totaux */}
                         {totals && (
-                          <tr style={{ backgroundColor: '#2d2d44', fontWeight: '700' }}>
-                            <td style={{ padding: '15px', color: '#fff', fontSize: '14px' }}>Totaux</td>
-                            <td style={{ padding: '15px', textAlign: 'right', color: '#6366f1', fontSize: '14px' }}>{totals.orders.toLocaleString('fr-FR')}</td>
-                            <td style={{ padding: '15px', textAlign: 'right', color: '#10b981', fontSize: '14px' }}>{formatPrice(totals.gross)}</td>
-                            <td style={{ padding: '15px', textAlign: 'right', color: '#ef4444', fontSize: '14px' }}>({formatPrice(totals.taxes)})</td>
-                            <td style={{ padding: '15px', textAlign: 'right', color: '#ef4444', fontSize: '14px' }}>({formatPrice(totals.shipping)})</td>
-                            <td style={{ padding: '15px', textAlign: 'right', color: '#888', fontSize: '14px' }}>{formatPrice(totals.fees)}</td>
-                            <td style={{ padding: '15px', textAlign: 'right', color: '#888', fontSize: '14px' }}>{formatPrice(totals.refunds)}</td>
-                            <td style={{ padding: '15px', textAlign: 'right', color: '#fff', fontSize: '14px' }}>{formatPrice(totals.net)}</td>
+                          <tr style={{ backgroundColor: '#f8f9fa', fontWeight: '700' }}>
+                            <td style={{ padding: '15px', color: '#333', fontSize: '14px' }}>Totaux</td>
+                            <td style={{ padding: '15px', textAlign: 'right', color: '#007bff', fontSize: '14px' }}>{totals.orders.toLocaleString('fr-FR')}</td>
+                            <td style={{ padding: '15px', textAlign: 'right', color: '#333', fontSize: '14px' }}>{formatPrice(totals.gross)}</td>
+                            <td style={{ padding: '15px', textAlign: 'right', color: '#666', fontSize: '14px' }}>{formatPrice(totals.taxes)}</td>
+                            <td style={{ padding: '15px', textAlign: 'right', color: '#28a745', fontSize: '14px' }}>{formatPrice(totals.gross - totals.taxes)}</td>
                           </tr>
                         )}
                       </tbody>

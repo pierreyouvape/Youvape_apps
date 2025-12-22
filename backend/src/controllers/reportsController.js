@@ -13,13 +13,13 @@ exports.getRevenueReport = async (req, res) => {
     let params = [];
     let paramIndex = 1;
 
-    // Statuts (par défaut: completed et delivered)
+    // Statuts: exclure cancelled, refunded, failed (comme dans Analyse)
     if (statuses && statuses.length > 0) {
       conditions.push(`o.post_status = ANY($${paramIndex})`);
       params.push(statuses);
       paramIndex++;
     } else {
-      conditions.push(`o.post_status IN ('wc-completed', 'wc-delivered')`);
+      conditions.push(`o.post_status NOT IN ('wc-cancelled', 'wc-refunded', 'wc-failed')`);
     }
 
     // Période
@@ -105,18 +105,20 @@ exports.getRevenueReport = async (req, res) => {
       };
     });
 
+    // CA HT = CA TTC - TVA
+    const caHT = grossSales - taxes;
+    const avgOrderGross = kpis.orders_count > 0 ? grossSales / kpis.orders_count : 0;
+
     res.json({
       success: true,
       data: {
         kpis: {
           orders_count: kpis.orders_count,
-          gross_sales: grossSales.toFixed(2),
-          net_revenue: netRevenue.toFixed(2),
+          ca_ttc: grossSales.toFixed(2),
+          ca_ht: caHT.toFixed(2),
           taxes: taxes.toFixed(2),
-          shipping: shipping.toFixed(2),
           refunds: refunds.toFixed(2),
-          fees: fees.toFixed(2),
-          avg_order_net: avgOrderNet.toFixed(2)
+          avg_order: avgOrderGross.toFixed(2)
         },
         breakdown
       }
