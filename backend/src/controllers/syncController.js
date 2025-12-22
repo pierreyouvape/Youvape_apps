@@ -4,6 +4,7 @@ const pool = require('../config/database');
 const { transformCustomer, insertCustomer } = require('../transformers/customerTransformer');
 const { transformOrder, transformOrderItems, insertOrder } = require('../transformers/orderTransformer');
 const { insertProductWithVariations } = require('../transformers/productTransformer');
+const { transformRefund, insertRefund } = require('../transformers/refundTransformer');
 
 const LOGS_DIR = path.join(__dirname, '../../logs');
 
@@ -927,10 +928,10 @@ const receiveBulk = async (req, res) => {
   try {
     const { type, batch, offset, total } = req.body;
 
-    if (!type || !['customers', 'products', 'orders'].includes(type)) {
+    if (!type || !['customers', 'products', 'orders', 'refunds'].includes(type)) {
       return res.status(400).json({
         success: false,
-        error: 'Invalid or missing type. Must be: customers, products, or orders'
+        error: 'Invalid or missing type. Must be: customers, products, orders, or refunds'
       });
     }
 
@@ -1024,6 +1025,28 @@ const receiveBulk = async (req, res) => {
             console.log(`  ✓ Order ${result.wp_order_id} ${result.inserted ? 'inserted' : 'updated'} with ${result.items_inserted} item(s)`);
           } catch (error) {
             console.error(`  ✗ Order ${item.wp_id} error: ${error.message}`);
+            errors.push({ item_id: item.wp_id, error: error.message });
+          }
+        }
+      } else if (type === 'refunds') {
+        for (const item of batch) {
+          try {
+            const refundData = transformRefund({
+              post: item.post,
+              meta: item.meta
+            });
+
+            const result = await insertRefund(pool, refundData);
+
+            if (result.inserted) {
+              inserted++;
+            } else {
+              updated++;
+            }
+
+            console.log(`  ✓ Refund ${result.wp_refund_id} ${result.inserted ? 'inserted' : 'updated'} (Order: ${refundData.wp_order_id}, Amount: ${refundData.refund_amount}€)`);
+          } catch (error) {
+            console.error(`  ✗ Refund ${item.wp_id} error: ${error.message}`);
             errors.push({ item_id: item.wp_id, error: error.message });
           }
         }

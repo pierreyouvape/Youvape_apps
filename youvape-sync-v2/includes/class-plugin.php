@@ -255,6 +255,15 @@ class Plugin {
                 return current_user_can('manage_options');
             }
         ]);
+
+        // Bulk Sync: Process REFUNDS batches only
+        register_rest_route('youvape-sync/v1', '/bulk/process-refunds', [
+            'methods' => 'POST',
+            'callback' => [$this, 'rest_bulk_process_refunds'],
+            'permission_callback' => function() {
+                return current_user_can('manage_options');
+            }
+        ]);
     }
 
     /**
@@ -269,6 +278,7 @@ class Plugin {
         $total_customers = $wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->users}");
         $total_products = $wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->posts} WHERE post_type = 'product' AND post_status = 'publish'");
         $total_orders = $wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->posts} WHERE post_type = 'shop_order'");
+        $total_refunds = $wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->posts} WHERE post_type = 'shop_order_refund'");
 
         return [
             'success' => true,
@@ -277,7 +287,8 @@ class Plugin {
                 'totals' => [
                     'customers' => (int) $total_customers,
                     'products' => (int) $total_products,
-                    'orders' => (int) $total_orders
+                    'orders' => (int) $total_orders,
+                    'refunds' => (int) $total_refunds
                 ]
             ]
         ];
@@ -482,6 +493,22 @@ class Plugin {
         $batch_size = $request->get_param('batch_size') ?: 100;
 
         $result = \Youvape_Sync_V2\Bulk_Sync_Manager::process_products_batches($num_batches, $batch_size);
+
+        return $result;
+    }
+
+    /**
+     * REST: Bulk Sync - Process REFUNDS batches only
+     */
+    public function rest_bulk_process_refunds($request) {
+        if (!class_exists('Youvape_Sync_V2\\Bulk_Sync_Manager')) {
+            require_once YOUVAPE_SYNC_V2_PATH . 'includes/class-bulk-sync-manager.php';
+        }
+
+        $num_batches = $request->get_param('num_batches') ?: 10;
+        $batch_size = $request->get_param('batch_size') ?: 100;
+
+        $result = \Youvape_Sync_V2\Bulk_Sync_Manager::process_refunds_batches($num_batches, $batch_size);
 
         return $result;
     }

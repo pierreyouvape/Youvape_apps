@@ -55,32 +55,28 @@ exports.getRevenueReport = async (req, res) => {
     const kpisResult = await pool.query(kpisQuery, params);
     const kpis = kpisResult.rows[0];
 
-    // 1b. Calculer les remboursements (total des commandes avec statut refunded sur la période)
+    // 1b. Calculer les remboursements depuis la table refunds
+    // On utilise la table refunds qui contient tous les remboursements (partiels et totaux)
     let refundsConditions = [];
     let refundsParams = [];
     let refundsParamIndex = 1;
 
-    refundsConditions.push(`o.post_status = 'wc-refunded'`);
-
     if (dateFrom) {
-      refundsConditions.push(`o.post_date >= $${refundsParamIndex}`);
+      refundsConditions.push(`r.refund_date >= $${refundsParamIndex}`);
       refundsParams.push(dateFrom);
       refundsParamIndex++;
     }
     if (dateTo) {
-      refundsConditions.push(`o.post_date <= $${refundsParamIndex}`);
+      refundsConditions.push(`r.refund_date <= $${refundsParamIndex}`);
       refundsParams.push(dateTo + ' 23:59:59');
       refundsParamIndex++;
     }
 
-    const refundsWhereClause = 'WHERE ' + refundsConditions.join(' AND ');
+    const refundsWhereClause = refundsConditions.length > 0 ? 'WHERE ' + refundsConditions.join(' AND ') : '';
     const refundsQuery = `
-      SELECT COALESCE(SUM(order_total), 0)::numeric as total_refunds
-      FROM (
-        SELECT DISTINCT o.wp_order_id, o.order_total
-        FROM orders o
-        ${refundsWhereClause}
-      ) unique_orders
+      SELECT COALESCE(SUM(refund_amount), 0)::numeric as total_refunds
+      FROM refunds r
+      ${refundsWhereClause}
     `;
     const refundsResult = await pool.query(refundsQuery, refundsParams);
     const totalRefunds = parseFloat(refundsResult.rows[0].total_refunds) || 0;

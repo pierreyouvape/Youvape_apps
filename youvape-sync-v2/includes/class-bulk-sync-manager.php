@@ -292,6 +292,51 @@ class Bulk_Sync_Manager {
     }
 
     /**
+     * Fetch refunds batch with RAW SQL
+     */
+    private static function fetch_refunds_batch($offset, $limit) {
+        global $wpdb;
+
+        // Fetch refunds (post_type = 'shop_order_refund')
+        $refunds = $wpdb->get_results($wpdb->prepare(
+            "SELECT * FROM {$wpdb->posts}
+            WHERE post_type = 'shop_order_refund'
+            ORDER BY ID ASC
+            LIMIT %d OFFSET %d",
+            $limit,
+            $offset
+        ));
+
+        if (empty($refunds)) {
+            return [];
+        }
+
+        $batch = [];
+
+        foreach ($refunds as $refund) {
+            // Fetch refund meta
+            $meta_results = $wpdb->get_results($wpdb->prepare(
+                "SELECT meta_key, meta_value FROM {$wpdb->postmeta} WHERE post_id = %d",
+                $refund->ID
+            ));
+
+            $meta = [];
+            foreach ($meta_results as $m) {
+                $meta[$m->meta_key] = $m->meta_value;
+            }
+
+            $batch[] = [
+                'type' => 'refund',
+                'wp_id' => $refund->ID,
+                'post' => $refund,
+                'meta' => $meta
+            ];
+        }
+
+        return $batch;
+    }
+
+    /**
      * Send batch to VPS
      */
     private static function send_batch_to_vps($type, $batch, $offset, $total) {
@@ -352,24 +397,28 @@ class Bulk_Sync_Manager {
         $customers_total = $wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->users}");
         $products_total = $wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->posts} WHERE post_type = 'product' AND post_status IN ('publish', 'draft', 'private')");
         $orders_total = $wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->posts} WHERE post_type = 'shop_order'");
+        $refunds_total = $wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->posts} WHERE post_type = 'shop_order_refund'");
 
         $queue_state = [
             'customers_offset' => 0,
             'products_offset' => 0,
             'orders_offset' => 0,
+            'refunds_offset' => 0,
             'customers_total' => intval($customers_total),
             'products_total' => intval($products_total),
             'orders_total' => intval($orders_total),
+            'refunds_total' => intval($refunds_total),
             'customers_synced' => 0,
             'products_synced' => 0,
             'orders_synced' => 0,
+            'refunds_synced' => 0,
             'status' => 'running',
             'started_at' => current_time('mysql')
         ];
 
         update_option('youvape_sync_v2_queue_state', $queue_state);
 
-        Plugin::log("Full sync started: {$customers_total} customers, {$products_total} products, {$orders_total} orders");
+        Plugin::log("Full sync started: {$customers_total} customers, {$products_total} products, {$orders_total} orders, {$refunds_total} refunds");
 
         return $queue_state;
     }
@@ -699,6 +748,76 @@ class Bulk_Sync_Manager {
     }
 
     /**
+     * Process multiple batches manually - REFUNDS ONLY
+     *
+     * @param int $num_batches Number of batches to process
+     * @param int $batch_size Size of each batch
+     * @return array Results with stats
+     */
+    public static function process_refunds_batches($num_batches = 10, $batch_size = 100) {
+        global $wpdb;
+        $queue_state = get_option('youvape_sync_v2_queue_state', []);
+        $status = isset($queue_state['status']) ? $queue_state['status'] : 'idle';
+
+        if ($status !== 'running') {
+            return [
+                'success' => false,
+                'error' => 'Sync is not running. Please start the sync first.'
+            ];
+        }
+
+        // Ensure totals are calculated if missing (needed for progress bars)
+        if (!isset($queue_state['refunds_total'])) {
+            $queue_state['refunds_total'] = intval($wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->posts} WHERE post_type = 'shop_order_refund'"));
+            update_option('youvape_sync_v2_queue_state', $queue_state);
+        }
+
+        $results = [
+            'refunds' => [
+                'batches_processed' => 0,
+                'items_processed' => 0,
+                'errors' => []
+            ]
+        ];
+        $total_processed = 0;
+
+        Plugin::log("Manual REFUNDS batch processing started: {$num_batches} batches × {$batch_size} items");
+
+        for ($i = 0; $i < $num_batches; $i++) {
+            // Refresh queue state
+            $queue_state = get_option('youvape_sync_v2_queue_state', []);
+            $offset = isset($queue_state['refunds_offset']) ? intval($queue_state['refunds_offset']) : 0;
+            $total = isset($queue_state['refunds_total']) ? intval($queue_state['refunds_total']) : 0;
+
+            // Check if completed
+            if ($total > 0 && $offset >= $total) {
+                break;
+            }
+
+            // Process one batch with custom size
+            $batch_result = self::process_batch_with_custom_size('refunds', $batch_size);
+
+            if ($batch_result['success']) {
+                $results['refunds']['batches_processed']++;
+                $results['refunds']['items_processed'] += $batch_result['count'];
+                $total_processed += $batch_result['count'];
+            } else {
+                $results['refunds']['errors'][] = $batch_result['error'] ?? 'Unknown error';
+                break; // Stop on error
+            }
+        }
+
+        Plugin::log("Manual REFUNDS batch processing completed: {$total_processed} items processed");
+
+        return [
+            'success' => true,
+            'total_processed' => $total_processed,
+            'results' => $results,
+            'queue_state' => get_option('youvape_sync_v2_queue_state', [])
+        ];
+    }
+
+    /**
      * Process multiple batches manually (AJAX trigger) - ALL TYPES
      * DEPRECATED: Use process_data_batches() or process_orders_batches() instead
      *
@@ -797,6 +916,10 @@ class Bulk_Sync_Manager {
 
             case 'orders':
                 $batch_data = self::fetch_orders_batch($offset, $batch_size);
+                break;
+
+            case 'refunds':
+                $batch_data = self::fetch_refunds_batch($offset, $batch_size);
                 break;
 
             default:
