@@ -67,7 +67,8 @@
       "Bash(curl:*)",
       "Bash(ls:*)",
       "Bash(npm run build:*)",
-      "Bash(scp:*)"
+      "Bash(scp:*)",
+      "Bash(ssh-add:*)"
     ],
     "deny": [],
     "ask": []

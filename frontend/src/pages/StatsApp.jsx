@@ -1,6 +1,7 @@
 import { useState, useContext } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AuthContext } from '../context/AuthContext';
+import ReportsTab from '../components/stats/ReportsTab';
 import CustomersStatsTab from '../components/stats/CustomersStatsTab';
 import ProductsStatsTab from '../components/stats/ProductsStatsTab';
 import BrandsStatsTab from '../components/stats/BrandsStatsTab';
@@ -9,11 +10,12 @@ import OrdersStatsTab from '../components/stats/OrdersStatsTab';
 import AnalysisTab from '../components/stats/AnalysisTab';
 
 const StatsApp = () => {
-  const [activeTab, setActiveTab] = useState('clients');
+  const [activeTab, setActiveTab] = useState('reports');
   const { logout } = useContext(AuthContext);
   const navigate = useNavigate();
 
   const tabs = [
+    { id: 'reports', label: 'Rapports', component: ReportsTab },
     { id: 'clients', label: 'Clients', component: CustomersStatsTab },
     { id: 'products', label: 'Produits', component: ProductsStatsTab },
     { id: 'brands', label: 'Marques', component: BrandsStatsTab },
