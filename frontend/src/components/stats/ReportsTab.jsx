@@ -235,8 +235,8 @@ const ReportsTab = () => {
                         <span style={{ color: '#333', fontSize: '16px', fontWeight: '600' }}>{data.kpis.orders_count.toLocaleString('fr-FR')}</span>
                       </div>
                       <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                        <span style={{ color: '#666', fontSize: '13px' }}>Panier moyen</span>
-                        <span style={{ color: '#333', fontSize: '14px', fontWeight: '600' }}>{formatPrice(data.kpis.avg_order)}</span>
+                        <span style={{ color: '#666', fontSize: '13px' }}>Panier moyen HT</span>
+                        <span style={{ color: '#333', fontSize: '14px', fontWeight: '600' }}>{formatPrice(data.kpis.avg_order_ht)}</span>
                       </div>
                     </div>
                   </div>

@@ -13,13 +13,13 @@ exports.getRevenueReport = async (req, res) => {
     let params = [];
     let paramIndex = 1;
 
-    // Statuts: exclure cancelled, refunded, failed (comme dans Analyse)
+    // Statuts: exclure cancelled, refunded, failed, on-hold, pending (commandes non payées)
     if (statuses && statuses.length > 0) {
       conditions.push(`o.post_status = ANY($${paramIndex})`);
       params.push(statuses);
       paramIndex++;
     } else {
-      conditions.push(`o.post_status NOT IN ('wc-cancelled', 'wc-refunded', 'wc-failed')`);
+      conditions.push(`o.post_status NOT IN ('wc-cancelled', 'wc-refunded', 'wc-failed', 'wc-on-hold', 'wc-pending')`);
     }
 
     // Période
@@ -55,14 +55,41 @@ exports.getRevenueReport = async (req, res) => {
     const kpisResult = await pool.query(kpisQuery, params);
     const kpis = kpisResult.rows[0];
 
-    // Calculer le CA net
+    // 1b. Calculer les remboursements (total des commandes avec statut refunded sur la période)
+    let refundsConditions = [];
+    let refundsParams = [];
+    let refundsParamIndex = 1;
+
+    refundsConditions.push(`o.post_status = 'wc-refunded'`);
+
+    if (dateFrom) {
+      refundsConditions.push(`o.post_date >= $${refundsParamIndex}`);
+      refundsParams.push(dateFrom);
+      refundsParamIndex++;
+    }
+    if (dateTo) {
+      refundsConditions.push(`o.post_date <= $${refundsParamIndex}`);
+      refundsParams.push(dateTo + ' 23:59:59');
+      refundsParamIndex++;
+    }
+
+    const refundsWhereClause = 'WHERE ' + refundsConditions.join(' AND ');
+    const refundsQuery = `
+      SELECT COALESCE(SUM(order_total), 0)::numeric as total_refunds
+      FROM (
+        SELECT DISTINCT o.wp_order_id, o.order_total
+        FROM orders o
+        ${refundsWhereClause}
+      ) unique_orders
+    `;
+    const refundsResult = await pool.query(refundsQuery, refundsParams);
+    const totalRefunds = parseFloat(refundsResult.rows[0].total_refunds) || 0;
+
+    // Calculer le CA
     const grossSales = parseFloat(kpis.gross_sales) || 0;
     const taxes = parseFloat(kpis.taxes) || 0;
     const shipping = parseFloat(kpis.shipping) || 0;
-    const refunds = parseFloat(kpis.refunds) || 0;
     const fees = parseFloat(kpis.fees) || 0;
-    const netRevenue = grossSales - taxes - shipping - refunds - fees;
-    const avgOrderNet = kpis.orders_count > 0 ? netRevenue / kpis.orders_count : 0;
 
     // 2. Breakdown jour par jour
     const breakdownQuery = `
@@ -107,7 +134,8 @@ exports.getRevenueReport = async (req, res) => {
 
     // CA HT = CA TTC - TVA
     const caHT = grossSales - taxes;
-    const avgOrderGross = kpis.orders_count > 0 ? grossSales / kpis.orders_count : 0;
+    // Panier moyen HT = CA HT / Nb commandes
+    const avgOrderHT = kpis.orders_count > 0 ? caHT / kpis.orders_count : 0;
 
     res.json({
       success: true,
@@ -117,8 +145,8 @@ exports.getRevenueReport = async (req, res) => {
           ca_ttc: grossSales.toFixed(2),
           ca_ht: caHT.toFixed(2),
           taxes: taxes.toFixed(2),
-          refunds: refunds.toFixed(2),
-          avg_order: avgOrderGross.toFixed(2)
+          refunds: totalRefunds.toFixed(2),
+          avg_order_ht: avgOrderHT.toFixed(2)
         },
         breakdown
       }
