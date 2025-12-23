@@ -55,9 +55,11 @@ exports.getRevenueReport = async (req, res) => {
     const kpisResult = await pool.query(kpisQuery, params);
     const kpis = kpisResult.rows[0];
 
-    // 1b. Calculer les remboursements depuis la table refunds
-    // On utilise la table refunds qui contient tous les remboursements (partiels et totaux)
-    let refundsConditions = [];
+    // 1b. Calculer les remboursements partiels depuis la table refunds
+    // On ne compte que les remboursements sur les commandes NON refunded (car les refunded sont déjà exclues du CA)
+    let refundsConditions = [
+      `o.post_status NOT IN ('wc-refunded', 'wc-cancelled', 'wc-failed')`
+    ];
     let refundsParams = [];
     let refundsParamIndex = 1;
 
@@ -72,10 +74,11 @@ exports.getRevenueReport = async (req, res) => {
       refundsParamIndex++;
     }
 
-    const refundsWhereClause = refundsConditions.length > 0 ? 'WHERE ' + refundsConditions.join(' AND ') : '';
+    const refundsWhereClause = 'WHERE ' + refundsConditions.join(' AND ');
     const refundsQuery = `
-      SELECT COALESCE(SUM(refund_amount), 0)::numeric as total_refunds
+      SELECT COALESCE(SUM(r.refund_amount), 0)::numeric as total_refunds
       FROM refunds r
+      JOIN orders o ON r.wp_order_id = o.wp_order_id
       ${refundsWhereClause}
     `;
     const refundsResult = await pool.query(refundsQuery, refundsParams);
@@ -128,19 +131,24 @@ exports.getRevenueReport = async (req, res) => {
       };
     });
 
-    // CA HT = CA TTC - TVA
-    const caHT = grossSales - taxes;
-    // Panier moyen HT = CA HT / Nb commandes
-    const avgOrderHT = kpis.orders_count > 0 ? caHT / kpis.orders_count : 0;
+    // CA TTC net = CA TTC brut - remboursements partiels
+    const caTTCNet = grossSales - totalRefunds;
+    // CA HT net = CA TTC net - TVA (proportionnelle)
+    // On calcule le ratio TVA/TTC pour l'appliquer aux remboursements
+    const taxRatio = grossSales > 0 ? taxes / grossSales : 0;
+    const refundsTax = totalRefunds * taxRatio;
+    const caHTNet = caTTCNet - (taxes - refundsTax);
+    // Panier moyen HT = CA HT net / Nb commandes
+    const avgOrderHT = kpis.orders_count > 0 ? caHTNet / kpis.orders_count : 0;
 
     res.json({
       success: true,
       data: {
         kpis: {
           orders_count: kpis.orders_count,
-          ca_ttc: grossSales.toFixed(2),
-          ca_ht: caHT.toFixed(2),
-          taxes: taxes.toFixed(2),
+          ca_ttc: caTTCNet.toFixed(2),
+          ca_ht: caHTNet.toFixed(2),
+          taxes: (taxes - refundsTax).toFixed(2),
           refunds: totalRefunds.toFixed(2),
           avg_order_ht: avgOrderHT.toFixed(2)
         },
