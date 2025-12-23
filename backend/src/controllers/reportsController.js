@@ -55,8 +55,7 @@ exports.getRevenueReport = async (req, res) => {
     const kpisResult = await pool.query(kpisQuery, params);
     const kpis = kpisResult.rows[0];
 
-    // 1b. Calculer les remboursements partiels (à déduire du CA)
-    // On ne compte que les remboursements sur les commandes NON refunded (car les refunded sont déjà exclues du CA)
+    // 1b. Remboursements PARTIELS (à déduire du CA - commandes non-refunded)
     let partialRefundsConditions = [
       `o.post_status NOT IN ('wc-refunded', 'wc-cancelled', 'wc-failed')`
     ];
@@ -74,17 +73,16 @@ exports.getRevenueReport = async (req, res) => {
       partialRefundsParamIndex++;
     }
 
-    const partialRefundsWhereClause = 'WHERE ' + partialRefundsConditions.join(' AND ');
     const partialRefundsQuery = `
       SELECT COALESCE(SUM(r.refund_amount), 0)::numeric as total_refunds
       FROM refunds r
       JOIN orders o ON r.wp_order_id = o.wp_order_id
-      ${partialRefundsWhereClause}
+      WHERE ${partialRefundsConditions.join(' AND ')}
     `;
     const partialRefundsResult = await pool.query(partialRefundsQuery, partialRefundsParams);
     const partialRefunds = parseFloat(partialRefundsResult.rows[0].total_refunds) || 0;
 
-    // 1c. Calculer le TOTAL des remboursements (partiels + complets) pour le KPI
+    // 1c. TOUS les remboursements (pour le KPI)
     let allRefundsConditions = [];
     let allRefundsParams = [];
     let allRefundsParamIndex = 1;
