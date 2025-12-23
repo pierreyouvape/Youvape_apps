@@ -55,34 +55,59 @@ exports.getRevenueReport = async (req, res) => {
     const kpisResult = await pool.query(kpisQuery, params);
     const kpis = kpisResult.rows[0];
 
-    // 1b. Calculer les remboursements partiels depuis la table refunds
+    // 1b. Calculer les remboursements partiels (à déduire du CA)
     // On ne compte que les remboursements sur les commandes NON refunded (car les refunded sont déjà exclues du CA)
-    let refundsConditions = [
+    let partialRefundsConditions = [
       `o.post_status NOT IN ('wc-refunded', 'wc-cancelled', 'wc-failed')`
     ];
-    let refundsParams = [];
-    let refundsParamIndex = 1;
+    let partialRefundsParams = [];
+    let partialRefundsParamIndex = 1;
 
     if (dateFrom) {
-      refundsConditions.push(`r.refund_date >= $${refundsParamIndex}`);
-      refundsParams.push(dateFrom);
-      refundsParamIndex++;
+      partialRefundsConditions.push(`r.refund_date >= $${partialRefundsParamIndex}`);
+      partialRefundsParams.push(dateFrom);
+      partialRefundsParamIndex++;
     }
     if (dateTo) {
-      refundsConditions.push(`r.refund_date <= $${refundsParamIndex}`);
-      refundsParams.push(dateTo + ' 23:59:59');
-      refundsParamIndex++;
+      partialRefundsConditions.push(`r.refund_date <= $${partialRefundsParamIndex}`);
+      partialRefundsParams.push(dateTo + ' 23:59:59');
+      partialRefundsParamIndex++;
     }
 
-    const refundsWhereClause = 'WHERE ' + refundsConditions.join(' AND ');
-    const refundsQuery = `
+    const partialRefundsWhereClause = 'WHERE ' + partialRefundsConditions.join(' AND ');
+    const partialRefundsQuery = `
       SELECT COALESCE(SUM(r.refund_amount), 0)::numeric as total_refunds
       FROM refunds r
       JOIN orders o ON r.wp_order_id = o.wp_order_id
-      ${refundsWhereClause}
+      ${partialRefundsWhereClause}
     `;
-    const refundsResult = await pool.query(refundsQuery, refundsParams);
-    const totalRefunds = parseFloat(refundsResult.rows[0].total_refunds) || 0;
+    const partialRefundsResult = await pool.query(partialRefundsQuery, partialRefundsParams);
+    const partialRefunds = parseFloat(partialRefundsResult.rows[0].total_refunds) || 0;
+
+    // 1c. Calculer le TOTAL des remboursements (partiels + complets) pour le KPI
+    let allRefundsConditions = [];
+    let allRefundsParams = [];
+    let allRefundsParamIndex = 1;
+
+    if (dateFrom) {
+      allRefundsConditions.push(`r.refund_date >= $${allRefundsParamIndex}`);
+      allRefundsParams.push(dateFrom);
+      allRefundsParamIndex++;
+    }
+    if (dateTo) {
+      allRefundsConditions.push(`r.refund_date <= $${allRefundsParamIndex}`);
+      allRefundsParams.push(dateTo + ' 23:59:59');
+      allRefundsParamIndex++;
+    }
+
+    const allRefundsWhereClause = allRefundsConditions.length > 0 ? 'WHERE ' + allRefundsConditions.join(' AND ') : '';
+    const allRefundsQuery = `
+      SELECT COALESCE(SUM(r.refund_amount), 0)::numeric as total_refunds
+      FROM refunds r
+      ${allRefundsWhereClause}
+    `;
+    const allRefundsResult = await pool.query(allRefundsQuery, allRefundsParams);
+    const totalRefunds = parseFloat(allRefundsResult.rows[0].total_refunds) || 0;
 
     // Calculer le CA
     const grossSales = parseFloat(kpis.gross_sales) || 0;
@@ -131,13 +156,13 @@ exports.getRevenueReport = async (req, res) => {
       };
     });
 
-    // CA TTC net = CA TTC brut - remboursements partiels
-    const caTTCNet = grossSales - totalRefunds;
+    // CA TTC net = CA TTC brut - remboursements partiels (les complets sont déjà exclus via statut wc-refunded)
+    const caTTCNet = grossSales - partialRefunds;
     // CA HT net = CA TTC net - TVA (proportionnelle)
-    // On calcule le ratio TVA/TTC pour l'appliquer aux remboursements
+    // On calcule le ratio TVA/TTC pour l'appliquer aux remboursements partiels
     const taxRatio = grossSales > 0 ? taxes / grossSales : 0;
-    const refundsTax = totalRefunds * taxRatio;
-    const caHTNet = caTTCNet - (taxes - refundsTax);
+    const partialRefundsTax = partialRefunds * taxRatio;
+    const caHTNet = caTTCNet - (taxes - partialRefundsTax);
     // Panier moyen HT = CA HT net / Nb commandes
     const avgOrderHT = kpis.orders_count > 0 ? caHTNet / kpis.orders_count : 0;
 
@@ -148,7 +173,7 @@ exports.getRevenueReport = async (req, res) => {
           orders_count: kpis.orders_count,
           ca_ttc: caTTCNet.toFixed(2),
           ca_ht: caHTNet.toFixed(2),
-          taxes: (taxes - refundsTax).toFixed(2),
+          taxes: (taxes - partialRefundsTax).toFixed(2),
           refunds: totalRefunds.toFixed(2),
           avg_order_ht: avgOrderHT.toFixed(2)
         },
