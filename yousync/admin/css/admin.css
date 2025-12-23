@@ -1,0 +1,247 @@
+/**
+ * YouSync Admin Styles
+ */
+
+.yousync-admin {
+    max-width: 1200px;
+}
+
+.yousync-admin h1 {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.yousync-admin h1 .dashicons {
+    font-size: 30px;
+    width: 30px;
+    height: 30px;
+}
+
+/* Cards */
+.yousync-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 20px;
+    margin: 20px 0;
+}
+
+.yousync-card {
+    background: #fff;
+    border: 1px solid #c3c4c7;
+    border-radius: 4px;
+    padding: 20px;
+    text-align: center;
+}
+
+.yousync-card h3 {
+    margin: 0 0 10px 0;
+    color: #1d2327;
+    font-size: 14px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.yousync-card .yousync-big-number {
+    font-size: 36px;
+    font-weight: 600;
+    margin: 10px 0;
+    color: #2271b1;
+}
+
+.yousync-card .yousync-subtitle {
+    color: #646970;
+    margin: 0;
+    font-size: 12px;
+}
+
+.yousync-card.status-on {
+    border-left: 4px solid #00a32a;
+}
+
+.yousync-card.status-on .yousync-big-number {
+    color: #00a32a;
+}
+
+.yousync-card.status-off {
+    border-left: 4px solid #d63638;
+}
+
+.yousync-card.status-off .yousync-big-number {
+    color: #d63638;
+}
+
+.yousync-card .success {
+    color: #00a32a;
+    font-weight: 600;
+}
+
+.yousync-card .error {
+    color: #d63638;
+    font-weight: 600;
+}
+
+/* Sections */
+.yousync-section {
+    background: #fff;
+    border: 1px solid #c3c4c7;
+    border-radius: 4px;
+    padding: 20px;
+    margin: 20px 0;
+}
+
+.yousync-section h2 {
+    margin-top: 0;
+    padding-bottom: 10px;
+    border-bottom: 1px solid #c3c4c7;
+}
+
+/* Actions */
+.yousync-actions {
+    margin-top: 15px;
+    display: flex;
+    gap: 10px;
+}
+
+.yousync-actions .button .dashicons {
+    vertical-align: middle;
+    margin-right: 3px;
+}
+
+/* Logs */
+.yousync-logs-container {
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+.yousync-logs-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+    gap: 15px;
+}
+
+.yousync-logs-actions {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+}
+
+.yousync-logs-content {
+    background: #fff;
+    border: 1px solid #c3c4c7;
+    border-radius: 4px;
+    padding: 0;
+}
+
+.yousync-logs-content table {
+    border: none;
+}
+
+/* Log levels */
+.log-level {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 3px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.log-level-info {
+    background: #e7f5ff;
+    color: #2271b1;
+}
+
+.log-level-success {
+    background: #d4edda;
+    color: #00a32a;
+}
+
+.log-level-warning {
+    background: #fff3cd;
+    color: #996800;
+}
+
+.log-level-error {
+    background: #f8d7da;
+    color: #d63638;
+}
+
+tr.log-error {
+    background-color: #fff5f5 !important;
+}
+
+tr.log-warning {
+    background-color: #fffbeb !important;
+}
+
+tr.log-success {
+    background-color: #f0fff4 !important;
+}
+
+/* Settings form */
+#yousync-settings-form .form-table th {
+    width: 200px;
+}
+
+#yousync-settings-status {
+    margin-left: 10px;
+    font-weight: 500;
+}
+
+#yousync-settings-status.success {
+    color: #00a32a;
+}
+
+#yousync-settings-status.error {
+    color: #d63638;
+}
+
+/* Loading state */
+.yousync-loading {
+    opacity: 0.6;
+    pointer-events: none;
+}
+
+.yousync-spinner {
+    display: inline-block;
+    width: 16px;
+    height: 16px;
+    border: 2px solid #ccc;
+    border-top-color: #2271b1;
+    border-radius: 50%;
+    animation: yousync-spin 0.8s linear infinite;
+    vertical-align: middle;
+    margin-right: 5px;
+}
+
+@keyframes yousync-spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+/* Responsive */
+@media screen and (max-width: 782px) {
+    .yousync-cards {
+        grid-template-columns: 1fr 1fr;
+    }
+
+    .yousync-logs-header {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .yousync-actions {
+        flex-wrap: wrap;
+    }
+}
+
+@media screen and (max-width: 480px) {
+    .yousync-cards {
+        grid-template-columns: 1fr;
+    }
+}

@@ -16,6 +16,7 @@ const brandsRoutes = require('./routes/brandsRoutes');
 const categoriesRoutes = require('./routes/categoriesRoutes');
 const analysisRoutes = require('./routes/analysisRoutes');
 const reportsRoutes = require('./routes/reportsRoutes');
+const webhookRoutes = require('./routes/webhookRoutes');
 const { setupCron } = require('./services/cronService');
 const rewardService = require('./services/rewardService');
 const emailService = require('./services/emailService');
@@ -48,6 +49,7 @@ app.use('/api/brands', brandsRoutes); // Brands & Sub-brands
 app.use('/api/categories', categoriesRoutes); // Categories & Sub-categories
 app.use('/api/analysis', analysisRoutes); // Analysis & Segmentation
 app.use('/api/reports', reportsRoutes); // Reports
+app.use('/api/webhook', webhookRoutes); // YouSync real-time webhooks
 
 // Start server
 app.listen(PORT, async () => {

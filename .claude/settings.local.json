@@ -68,7 +68,8 @@
       "Bash(ls:*)",
       "Bash(npm run build:*)",
       "Bash(scp:*)",
-      "Bash(ssh-add:*)"
+      "Bash(ssh-add:*)",
+      "Bash(openssl rand:*)"
     ],
     "deny": [],
     "ask": []

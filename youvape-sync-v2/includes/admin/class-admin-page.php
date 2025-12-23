@@ -129,6 +129,11 @@ class Admin_Page {
                             <?php _e('Process ORDERS', 'youvape-sync-v2'); ?>
                         </button>
 
+                        <button type="button" class="button button-primary" id="youvape-bulk-process-refunds" style="background: #8b5cf6;">
+                            <span class="dashicons dashicons-money-alt"></span>
+                            <?php _e('Process REFUNDS', 'youvape-sync-v2'); ?>
+                        </button>
+
                         <label style="margin: 0;">
                             <?php _e('Batch size:', 'youvape-sync-v2'); ?>
                             <input type="number" id="youvape-manual-batch-size" value="100" min="10" max="1000" step="10" style="width: 80px;" />
