@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
+import CopyButton from '../components/CopyButton';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
 
@@ -239,7 +240,10 @@ const CategoryDetail = () => {
                             <tr key={product.wp_product_id} style={{ borderBottom: '1px solid #f0f0f0' }}>
                               <td style={{ padding: '12px 15px' }}>
                                 <div style={{ fontWeight: '600', fontSize: '14px', color: '#333' }}>{product.post_title}</div>
-                                <div style={{ fontSize: '12px', color: '#999' }}>SKU: {product.sku || '-'}</div>
+                                <div style={{ fontSize: '12px', color: '#999' }}>
+                                  SKU: {product.sku || '-'}
+                                  {product.sku && <CopyButton text={product.sku} size={11} />}
+                                </div>
                               </td>
                               <td style={{ textAlign: 'right', padding: '12px 15px', fontSize: '14px' }}>{formatNumber(product.stock)}</td>
                               <td style={{ textAlign: 'right', padding: '12px 15px', fontSize: '14px', fontWeight: '600' }}>{formatNumber(product.qty_sold)}</td>
@@ -297,7 +301,10 @@ const CategoryDetail = () => {
                     <tr key={product.wp_product_id} style={{ borderBottom: '1px solid #f0f0f0' }}>
                       <td style={{ padding: '12px 15px' }}>
                         <div style={{ fontWeight: '600', fontSize: '14px', color: '#333' }}>{product.post_title}</div>
-                        <div style={{ fontSize: '12px', color: '#999' }}>SKU: {product.sku || '-'}</div>
+                        <div style={{ fontSize: '12px', color: '#999' }}>
+                          SKU: {product.sku || '-'}
+                          {product.sku && <CopyButton text={product.sku} size={11} />}
+                        </div>
                       </td>
                       <td style={{ textAlign: 'right', padding: '12px 15px', fontSize: '14px' }}>{formatNumber(product.stock)}</td>
                       <td style={{ textAlign: 'right', padding: '12px 15px', fontSize: '14px', fontWeight: '600' }}>{formatNumber(product.qty_sold)}</td>

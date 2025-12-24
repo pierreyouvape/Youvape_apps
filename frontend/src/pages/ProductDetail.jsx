@@ -6,6 +6,7 @@ import SalesByDayOfWeekChart from '../components/charts/SalesByDayOfWeekChart';
 import SalesByHourChart from '../components/charts/SalesByHourChart';
 import SalesByCountryPieChart from '../components/charts/SalesByCountryPieChart';
 import PeriodFilter from '../components/PeriodFilter';
+import CopyButton from '../components/CopyButton';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
 
@@ -299,7 +300,10 @@ const ProductDetail = () => {
                 )}
               </div>
             )}
-            <div style={{ fontSize: '14px', color: '#666', marginBottom: '15px' }}>SKU: {product.sku || '-'}</div>
+            <div style={{ fontSize: '14px', color: '#666', marginBottom: '15px' }}>
+              SKU: {product.sku || '-'}
+              {product.sku && <CopyButton text={product.sku} />}
+            </div>
             <div style={{ display: 'flex', gap: '20px', marginBottom: '15px' }}>
               <div>
                 <div style={{ fontSize: '12px', color: '#666' }}>Prix de vente</div>
@@ -499,7 +503,10 @@ const ProductDetail = () => {
                   {variantsStats.map((variant) => (
                     <tr key={variant.wp_product_id} style={{ borderBottom: '1px solid #f0f0f0' }}>
                       <td style={{ padding: '12px' }}>{variant.post_title}</td>
-                      <td style={{ textAlign: 'center', padding: '12px', fontSize: '13px', color: '#666' }}>{variant.sku}</td>
+                      <td style={{ textAlign: 'center', padding: '12px', fontSize: '13px', color: '#666' }}>
+                        {variant.sku}
+                        {variant.sku && <CopyButton text={variant.sku} size={12} />}
+                      </td>
                       <td style={{ textAlign: 'right', padding: '12px', fontWeight: '600' }}>{formatCurrency(variant.price)}</td>
                       <td style={{ textAlign: 'center', padding: '12px', fontWeight: '600', color: variant.stock > 0 ? '#28a745' : '#dc3545' }}>{formatNumber(variant.stock || 0)}</td>
                       <td style={{ textAlign: 'center', padding: '12px', fontWeight: '600', color: '#135E84' }}>{formatNumber(variant.net_sold || 0)}</td>

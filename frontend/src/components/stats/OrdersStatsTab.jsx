@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
+import CopyButton from '../CopyButton';
 
 const API_BASE_URL = 'http://54.37.156.233:3000/api';
 
@@ -531,7 +532,10 @@ const OrdersStatsTab = () => {
                                               </div>
                                             </div>
                                           </td>
-                                          <td style={{ padding: '10px', fontSize: '12px', color: '#666' }}>{item.sku || '-'}</td>
+                                          <td style={{ padding: '10px', fontSize: '12px', color: '#666' }}>
+                                            {item.sku || '-'}
+                                            {item.sku && <CopyButton text={item.sku} size={11} />}
+                                          </td>
                                           <td style={{ padding: '10px', fontSize: '13px', textAlign: 'right', fontWeight: '600' }}>{item.qty}</td>
                                           <td style={{ padding: '10px', fontSize: '13px', textAlign: 'right' }}>{formatPrice(item.line_subtotal / item.qty)}</td>
                                           <td style={{ padding: '10px', fontSize: '13px', textAlign: 'right', fontWeight: '600', color: '#28a745' }}>{formatPrice(item.line_total)}</td>

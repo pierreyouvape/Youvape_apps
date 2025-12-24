@@ -4,6 +4,7 @@ import { AuthContext } from '../context/AuthContext';
 import axios from 'axios';
 import { getCountryLabel } from '../utils/countries';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import CopyButton from '../components/CopyButton';
 
 const API_BASE_URL = 'http://54.37.156.233:3000/api';
 
@@ -472,7 +473,10 @@ const CustomerDetail = () => {
                                         {details.items.map((item, idx) => (
                                           <tr key={idx} style={{ borderTop: '1px solid #dee2e6' }}>
                                             <td style={{ padding: '10px', fontSize: '13px' }}>{item.product_name || item.order_item_name}</td>
-                                            <td style={{ padding: '10px', fontSize: '13px', color: '#6c757d' }}>{item.sku || '-'}</td>
+                                            <td style={{ padding: '10px', fontSize: '13px', color: '#6c757d' }}>
+                                              {item.sku || '-'}
+                                              {item.sku && <CopyButton text={item.sku} size={11} />}
+                                            </td>
                                             <td style={{ padding: '10px', fontSize: '13px', textAlign: 'center' }}>{item.qty}</td>
                                             <td style={{ padding: '10px', fontSize: '13px', textAlign: 'right' }}>{formatPrice(item.line_total / item.qty)}</td>
                                             <td style={{ padding: '10px', fontSize: '13px', textAlign: 'right', fontWeight: 'bold' }}>{formatPrice(item.line_total)}</td>

@@ -1,0 +1,125 @@
+EXPLICATION DES CALCULS DU RAPPORT CHIFFRE D'AFFAIRES
+======================================================
+
+Date: 24 décembre 2024
+Exemple: Janvier 2024
+
+================================================================================
+1. DONNÉES DE BASE
+================================================================================
+
+Commandes par statut (janvier 2024):
+- wc-delivered : 2318 commandes = 125 016,09 €
+- wc-completed :   96 commandes =   4 641,95 €
+- wc-refunded  :   10 commandes =     428,21 €
+- wc-failed    :  297 commandes =  13 820,13 €
+- wc-cancelled :  102 commandes =   7 157,27 €
+
+================================================================================
+2. CALCUL DU CA (ACTUEL)
+================================================================================
+
+CA TTC BRUT = delivered + completed (on exclut refunded, failed, cancelled)
+           = 125 016,09 + 4 641,95
+           = 129 658,04 €
+
+REMBOURSEMENTS PARTIELS = remboursements sur commandes delivered/completed
+                        = 171,38 € (10 remboursements)
+
+CA TTC NET = CA TTC BRUT - REMBOURSEMENTS PARTIELS
+           = 129 658,04 - 171,38
+           = 129 486,66 €
+
+CA HT NET = CA TTC NET - TVA (proportionnelle)
+          = 108 897,96 €
+
+================================================================================
+3. KPI REMBOURSEMENTS (ACTUEL)
+================================================================================
+
+TOTAL REMBOURSEMENTS = tous les remboursements avec date de remboursement en janvier
+                     = 670,99 € (23 remboursements)
+
+Détail:
+- Sur commandes refunded : 499,61 € (13 remboursements)
+- Sur commandes delivered/completed : 171,38 € (10 remboursements)
+
+================================================================================
+4. PROBLÈME IDENTIFIÉ
+================================================================================
+
+Le KPI remboursements (670,99 €) ne correspond pas au CA car:
+
+a) On filtre les COMMANDES par date de COMMANDE (janvier 2024)
+b) On filtre les REMBOURSEMENTS par date de REMBOURSEMENT (janvier 2024)
+
+Conséquence:
+- Des remboursements de janvier concernent des commandes de 2023
+  (commandes passées en 2023, remboursées en janvier 2024)
+
+- Des commandes de janvier ont été remboursées après janvier
+  (4 commandes refunded de janvier remboursées en février/mars)
+
+Exemple concret:
+- Commande 961581 : passée le 04/01/2024, remboursée le 29/03/2024 (85,05 €)
+  → La commande est exclue du CA (statut wc-refunded)
+  → Mais le remboursement n'apparaît pas dans le KPI de janvier
+
+- Commande 912935 : passée le 08/10/2023, remboursée le 05/01/2024 (62,90 €)
+  → La commande n'est pas dans le CA de janvier (commande de 2023)
+  → Mais le remboursement apparaît dans le KPI de janvier
+
+================================================================================
+5. COMPARAISON AVEC METORIK
+================================================================================
+
+Metorik affiche: CA TTC = 130 086 €
+
+Calcul Metorik: delivered + completed + refunded
+              = 125 016,09 + 4 641,95 + 428,21
+              = 130 086,25 €
+
+Metorik inclut les commandes refunded dans le CA brut, puis déduit les remboursements.
+
+Notre approche: On exclut les commandes refunded du CA, et on déduit seulement
+les remboursements partiels.
+
+================================================================================
+6. OPTIONS POSSIBLES
+================================================================================
+
+OPTION A - Filtrer les remboursements par DATE DE COMMANDE (recommandé)
+-----------------------------------------------------------------------------
+- Remboursements = somme des remboursements sur les commandes de la période
+- Avantage: Cohérence entre CA et remboursements
+- Résultat attendu pour janvier:
+  * Remboursements sur commandes de janvier = ~292,99 €
+  * CA + Remboursements serait cohérent
+
+OPTION B - Faire comme Metorik
+-----------------------------------------------------------------------------
+- CA brut = delivered + completed + refunded = 130 086 €
+- Déduire TOUS les remboursements de la période
+- CA net = CA brut - remboursements
+
+OPTION C - Garder l'approche actuelle
+-----------------------------------------------------------------------------
+- CA = delivered + completed - remboursements partiels
+- KPI remboursements = tous les remboursements (date de remboursement)
+- Accepter l'incohérence CA + remboursements ≠ CA brut Metorik
+
+================================================================================
+7. RÉCAPITULATIF CHIFFRES JANVIER 2024
+================================================================================
+
+                          NOTRE APP          METORIK
+CA TTC affiché            129 486,66 €       130 086 €
+Remboursements affichés       670,99 €           671 €
+CA HT                     108 897,96 €       107 912 €
+TVA                        20 588,70 €        21 503 €
+Nb commandes                    2414           (?)
+
+Différence CA: 130 086 - 129 486,66 = 599,34 €
+Explication: 428,21 € (commandes refunded exclues) + 171,38 € (partiels déduits)
+
+================================================================================

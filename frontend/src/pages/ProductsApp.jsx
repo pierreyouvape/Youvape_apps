@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
+import CopyButton from '../components/CopyButton';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
 
@@ -317,6 +318,7 @@ const ProductsApp = () => {
                         <div style={{ fontWeight: '600', fontSize: '14px', color: '#333' }}>{product.post_title}</div>
                         <div style={{ fontSize: '12px', color: '#999', marginTop: '2px' }}>
                           SKU: {product.sku || '-'}
+                          {product.sku && <CopyButton text={product.sku} size={11} />}
                         </div>
                       </td>
                       <td style={{ padding: '15px', fontSize: '14px', color: '#666' }}>

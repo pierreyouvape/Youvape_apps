@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
+import CopyButton from '../CopyButton';
 
 const API_BASE_URL = 'http://54.37.156.233:3000/api';
 
@@ -277,7 +278,10 @@ const ProductsStatsTab = () => {
                             </span>
                           </div>
                         </td>
-                        <td style={{ padding: '15px', fontSize: '14px', color: '#6c757d' }}>{product.sku || '-'}</td>
+                        <td style={{ padding: '15px', fontSize: '14px', color: '#6c757d' }}>
+                          {product.sku || '-'}
+                          {product.sku && <CopyButton text={product.sku} size={12} />}
+                        </td>
                         <td style={{ padding: '15px', fontSize: '14px' }}>
                           <span style={{
                             padding: '4px 10px',
@@ -305,7 +309,10 @@ const ProductsStatsTab = () => {
                           <td style={{ padding: '10px 15px 10px 15px', fontSize: '13px', color: '#6c757d' }}>
                             ↳ {variation.post_title}
                           </td>
-                          <td style={{ padding: '10px 15px', fontSize: '13px', color: '#6c757d' }}>{variation.sku || '-'}</td>
+                          <td style={{ padding: '10px 15px', fontSize: '13px', color: '#6c757d' }}>
+                            {variation.sku || '-'}
+                            {variation.sku && <CopyButton text={variation.sku} size={11} />}
+                          </td>
                           <td style={{ padding: '10px 15px', fontSize: '13px' }}>
                             <span style={{
                               padding: '3px 8px',

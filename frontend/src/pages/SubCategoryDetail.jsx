@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
+import CopyButton from '../components/CopyButton';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
 
@@ -180,7 +181,10 @@ const SubCategoryDetail = () => {
                         )}
                         <div>
                           <div style={{ fontWeight: '600', fontSize: '14px', color: '#333' }}>{product.post_title}</div>
-                          <div style={{ fontSize: '12px', color: '#999' }}>SKU: {product.sku || '-'}</div>
+                          <div style={{ fontSize: '12px', color: '#999' }}>
+                            SKU: {product.sku || '-'}
+                            {product.sku && <CopyButton text={product.sku} size={11} />}
+                          </div>
                         </div>
                       </div>
                     </td>
