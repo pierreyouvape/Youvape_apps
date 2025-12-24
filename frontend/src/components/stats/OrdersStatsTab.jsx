@@ -534,8 +534,22 @@ const OrdersStatsTab = () => {
                                             </div>
                                           </td>
                                           <td style={{ padding: '10px', fontSize: '12px', color: '#666' }}>
-                                            {item.sku || '-'}
-                                            {item.sku && <CopyButton text={item.sku} size={11} />}
+                                            {item.sku ? (
+                                              <>
+                                                <a
+                                                  href={`https://www.youvape.fr/wp-admin/post.php?post=${item.variation_id || item.product_id}&action=edit`}
+                                                  target="_blank"
+                                                  rel="noopener noreferrer"
+                                                  onClick={(e) => e.stopPropagation()}
+                                                  style={{ color: '#135E84', textDecoration: 'none' }}
+                                                  onMouseEnter={(e) => e.target.style.textDecoration = 'underline'}
+                                                  onMouseLeave={(e) => e.target.style.textDecoration = 'none'}
+                                                >
+                                                  {item.sku}
+                                                </a>
+                                                <CopyButton text={item.sku} size={11} />
+                                              </>
+                                            ) : '-'}
                                           </td>
                                           <td style={{ padding: '10px', fontSize: '13px', textAlign: 'right', fontWeight: '600' }}>{item.qty}</td>
                                           <td style={{ padding: '10px', fontSize: '13px', textAlign: 'right' }}>{formatPrice(item.line_subtotal / item.qty)}</td>

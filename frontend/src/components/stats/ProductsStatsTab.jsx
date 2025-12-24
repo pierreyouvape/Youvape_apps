@@ -279,8 +279,22 @@ const ProductsStatsTab = () => {
                           </div>
                         </td>
                         <td style={{ padding: '15px', fontSize: '14px', color: '#6c757d' }}>
-                          {product.sku || '-'}
-                          {product.sku && <CopyButton text={product.sku} size={12} />}
+                          {product.sku ? (
+                            <>
+                              <a
+                                href={`https://www.youvape.fr/wp-admin/post.php?post=${product.wp_product_id}&action=edit`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                onClick={(e) => e.stopPropagation()}
+                                style={{ color: '#135E84', textDecoration: 'none' }}
+                                onMouseEnter={(e) => e.target.style.textDecoration = 'underline'}
+                                onMouseLeave={(e) => e.target.style.textDecoration = 'none'}
+                              >
+                                {product.sku}
+                              </a>
+                              <CopyButton text={product.sku} size={12} />
+                            </>
+                          ) : '-'}
                         </td>
                         <td style={{ padding: '15px', fontSize: '14px' }}>
                           <span style={{
@@ -310,8 +324,21 @@ const ProductsStatsTab = () => {
                             ↳ {variation.post_title}
                           </td>
                           <td style={{ padding: '10px 15px', fontSize: '13px', color: '#6c757d' }}>
-                            {variation.sku || '-'}
-                            {variation.sku && <CopyButton text={variation.sku} size={11} />}
+                            {variation.sku ? (
+                              <>
+                                <a
+                                  href={`https://www.youvape.fr/wp-admin/post.php?post=${variation.wp_product_id}&action=edit`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  style={{ color: '#135E84', textDecoration: 'none' }}
+                                  onMouseEnter={(e) => e.target.style.textDecoration = 'underline'}
+                                  onMouseLeave={(e) => e.target.style.textDecoration = 'none'}
+                                >
+                                  {variation.sku}
+                                </a>
+                                <CopyButton text={variation.sku} size={11} />
+                              </>
+                            ) : '-'}
                           </td>
                           <td style={{ padding: '10px 15px', fontSize: '13px' }}>
                             <span style={{
