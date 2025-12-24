@@ -317,8 +317,22 @@ const ProductsApp = () => {
                       <td style={{ padding: '15px' }}>
                         <div style={{ fontWeight: '600', fontSize: '14px', color: '#333' }}>{product.post_title}</div>
                         <div style={{ fontSize: '12px', color: '#999', marginTop: '2px' }}>
-                          SKU: {product.sku || '-'}
-                          {product.sku && <CopyButton text={product.sku} size={11} />}
+                          SKU:{' '}
+                          {product.sku ? (
+                            <>
+                              <a
+                                href={`https://www.youvape.fr/wp-admin/post.php?post=${product.wp_product_id}&action=edit`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                style={{ color: '#135E84', textDecoration: 'none' }}
+                                onMouseEnter={(e) => e.target.style.textDecoration = 'underline'}
+                                onMouseLeave={(e) => e.target.style.textDecoration = 'none'}
+                              >
+                                {product.sku}
+                              </a>
+                              <CopyButton text={product.sku} size={11} />
+                            </>
+                          ) : '-'}
                         </div>
                       </td>
                       <td style={{ padding: '15px', fontSize: '14px', color: '#666' }}>

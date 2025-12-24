@@ -301,8 +301,22 @@ const ProductDetail = () => {
               </div>
             )}
             <div style={{ fontSize: '14px', color: '#666', marginBottom: '15px' }}>
-              SKU: {product.sku || '-'}
-              {product.sku && <CopyButton text={product.sku} />}
+              SKU:{' '}
+              {product.sku ? (
+                <>
+                  <a
+                    href={`https://www.youvape.fr/wp-admin/post.php?post=${id}&action=edit`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{ color: '#135E84', textDecoration: 'none' }}
+                    onMouseEnter={(e) => e.target.style.textDecoration = 'underline'}
+                    onMouseLeave={(e) => e.target.style.textDecoration = 'none'}
+                  >
+                    {product.sku}
+                  </a>
+                  <CopyButton text={product.sku} />
+                </>
+              ) : '-'}
             </div>
             <div style={{ display: 'flex', gap: '20px', marginBottom: '15px' }}>
               <div>
