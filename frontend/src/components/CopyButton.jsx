@@ -9,12 +9,44 @@ const CopyButton = ({ text, size = 14, style = {} }) => {
 
   const handleCopy = async (e) => {
     e.stopPropagation(); // Éviter la propagation du clic
+    e.preventDefault();
+
     try {
-      await navigator.clipboard.writeText(text);
+      // Méthode moderne
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        // Fallback pour HTTP ou navigateurs anciens
+        const textArea = document.createElement('textarea');
+        textArea.value = text;
+        textArea.style.position = 'fixed';
+        textArea.style.left = '-9999px';
+        textArea.style.top = '-9999px';
+        document.body.appendChild(textArea);
+        textArea.focus();
+        textArea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textArea);
+      }
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch (err) {
       console.error('Erreur lors de la copie:', err);
+      // Fallback ultime
+      try {
+        const textArea = document.createElement('textarea');
+        textArea.value = text;
+        textArea.style.position = 'fixed';
+        textArea.style.left = '-9999px';
+        document.body.appendChild(textArea);
+        textArea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textArea);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      } catch (e) {
+        console.error('Fallback copie échoué:', e);
+      }
     }
   };
 
