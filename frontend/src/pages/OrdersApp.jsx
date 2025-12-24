@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
+import CopyButton from '../components/CopyButton';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
 
@@ -323,7 +324,10 @@ const OrdersApp = () => {
                     onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
                   >
                     <td style={{ padding: '15px' }}>
-                      <div style={{ fontWeight: '600', fontSize: '14px', color: '#333' }}>#{order.order_number}</div>
+                      <div style={{ fontWeight: '600', fontSize: '14px', color: '#333', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        #{order.order_number}
+                        <CopyButton text={String(order.order_number)} size={12} />
+                      </div>
                       <div style={{ fontSize: '12px', color: '#999', marginTop: '2px' }}>
                         {order.items_count} article(s)
                       </div>

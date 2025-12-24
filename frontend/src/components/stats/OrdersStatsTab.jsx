@@ -407,6 +407,7 @@ const OrdersStatsTab = () => {
                             >
                               #{order.wp_order_id}
                             </span>
+                            <CopyButton text={String(order.wp_order_id)} size={12} />
                           </div>
                         </td>
                         <td style={{ padding: '12px', fontSize: '13px', color: '#666' }}>{formatDate(order.post_date)}</td>

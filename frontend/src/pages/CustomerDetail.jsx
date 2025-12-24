@@ -414,6 +414,7 @@ const CustomerDetail = () => {
                           >
                             #{order.wp_order_id}
                           </span>
+                          <CopyButton text={String(order.wp_order_id)} size={12} />
                         </td>
                         <td style={{ padding: '15px', fontSize: '14px' }}>{formatDate(order.post_date)}</td>
                         <td style={{ padding: '15px', fontSize: '14px' }}>

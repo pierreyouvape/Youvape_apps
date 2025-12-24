@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import axios from 'axios';
+import CopyButton from '../components/CopyButton';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://54.37.156.233:3000/api';
 
@@ -220,7 +221,10 @@ const OrderDetail = () => {
           }}
         >
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-            <h1 style={{ margin: 0, color: '#135E84' }}>Commande #{order.wp_order_id}</h1>
+            <h1 style={{ margin: 0, color: '#135E84', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              Commande #{order.wp_order_id}
+              <CopyButton text={String(order.wp_order_id)} size={16} />
+            </h1>
             {getStatusBadge(order.post_status)}
           </div>
 
