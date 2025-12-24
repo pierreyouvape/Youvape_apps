@@ -1,5 +1,5 @@
-import { useState, useContext } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useContext, useEffect } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
 import { AuthContext } from '../context/AuthContext';
 import ReportsTab from '../components/stats/ReportsTab';
 import CustomersStatsTab from '../components/stats/CustomersStatsTab';
@@ -10,9 +10,9 @@ import OrdersStatsTab from '../components/stats/OrdersStatsTab';
 import AnalysisTab from '../components/stats/AnalysisTab';
 
 const StatsApp = () => {
-  const [activeTab, setActiveTab] = useState('reports');
   const { logout } = useContext(AuthContext);
   const navigate = useNavigate();
+  const { tab } = useParams();
 
   const tabs = [
     { id: 'reports', label: 'Rapports', component: ReportsTab },
@@ -24,7 +24,21 @@ const StatsApp = () => {
     { id: 'analysis', label: 'Analyse', component: AnalysisTab },
   ];
 
-  const ActiveTabComponent = tabs.find((tab) => tab.id === activeTab)?.component;
+  // Onglet actif basé sur l'URL, défaut = reports
+  const activeTab = tabs.find((t) => t.id === tab)?.id || 'reports';
+
+  // Rediriger vers /stats/reports si on est sur /stats sans onglet
+  useEffect(() => {
+    if (!tab) {
+      navigate('/stats/reports', { replace: true });
+    }
+  }, [tab, navigate]);
+
+  const handleTabChange = (tabId) => {
+    navigate(`/stats/${tabId}`);
+  };
+
+  const ActiveTabComponent = tabs.find((t) => t.id === activeTab)?.component;
 
   const handleLogout = () => {
     logout();
@@ -98,13 +112,13 @@ const StatsApp = () => {
       <div style={{ flex: 1, maxWidth: '1400px', margin: '30px auto', padding: '20px', width: '100%' }}>
         {/* Onglets */}
         <div style={{ display: 'flex', borderBottom: '2px solid #ddd', marginBottom: '20px' }}>
-          {tabs.map((tab) => (
+          {tabs.map((t) => (
             <div
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              style={tabStyle(tab.id)}
+              key={t.id}
+              onClick={() => handleTabChange(t.id)}
+              style={tabStyle(t.id)}
             >
-              {tab.label}
+              {t.label}
             </div>
           ))}
         </div>

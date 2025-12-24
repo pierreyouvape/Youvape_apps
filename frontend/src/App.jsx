@@ -77,6 +77,14 @@ function App() {
             }
           />
           <Route
+            path="/stats/:tab"
+            element={
+              <PrivateRoute>
+                <StatsApp />
+              </PrivateRoute>
+            }
+          />
+          <Route
             path="/customers"
             element={
               <PrivateRoute>
