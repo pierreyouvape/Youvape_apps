@@ -17,9 +17,11 @@ const categoriesRoutes = require('./routes/categoriesRoutes');
 const analysisRoutes = require('./routes/analysisRoutes');
 const reportsRoutes = require('./routes/reportsRoutes');
 const webhookRoutes = require('./routes/webhookRoutes');
+const settingsRoutes = require('./routes/settingsRoutes');
 const { setupCron } = require('./services/cronService');
 const rewardService = require('./services/rewardService');
 const emailService = require('./services/emailService');
+const wcSyncService = require('./services/wcSyncService');
 
 const app = express();
 const PORT = process.env.BACKEND_PORT || 3000;
@@ -50,6 +52,7 @@ app.use('/api/categories', categoriesRoutes); // Categories & Sub-categories
 app.use('/api/analysis', analysisRoutes); // Analysis & Segmentation
 app.use('/api/reports', reportsRoutes); // Reports
 app.use('/api/webhook', webhookRoutes); // YouSync real-time webhooks
+app.use('/api/settings', settingsRoutes); // App settings
 
 // Start server
 app.listen(PORT, async () => {
@@ -79,4 +82,9 @@ app.listen(PORT, async () => {
   setTimeout(async () => {
     await emailService.processEmails();
   }, 45000);
+
+  // Démarrer le service de sync WooCommerce
+  setTimeout(async () => {
+    await wcSyncService.start();
+  }, 5000);
 });

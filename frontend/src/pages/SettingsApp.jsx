@@ -11,6 +11,8 @@ const SettingsApp = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [successMessage, setSuccessMessage] = useState(null);
+  const [wcSyncInterval, setWcSyncInterval] = useState('');
+  const [savingSync, setSavingSync] = useState(false);
 
   const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:3000/api/auth').replace('/auth', '');
 
@@ -28,7 +30,39 @@ const SettingsApp = () => {
     }
 
     loadUsers();
+    loadSettings();
   }, [isAdmin, isSuperAdmin, navigate]);
+
+  const loadSettings = async () => {
+    try {
+      const response = await axios.get(`${API_URL}/settings`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (response.data.success) {
+        setWcSyncInterval(response.data.settings.wc_sync_interval || '0');
+      }
+    } catch (err) {
+      console.error('Erreur lors du chargement des paramètres:', err);
+    }
+  };
+
+  const saveWcSyncInterval = async () => {
+    setSavingSync(true);
+    try {
+      await axios.put(
+        `${API_URL}/settings/wc_sync_interval`,
+        { value: wcSyncInterval },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      setSuccessMessage('Intervalle de sync WC mis à jour');
+      setTimeout(() => setSuccessMessage(null), 3000);
+    } catch (err) {
+      setError('Erreur lors de la sauvegarde');
+      setTimeout(() => setError(null), 5000);
+    } finally {
+      setSavingSync(false);
+    }
+  };
 
   const loadUsers = async () => {
     try {
@@ -252,6 +286,39 @@ const SettingsApp = () => {
       {users.length === 0 && (
         <div className="no-users">Aucun utilisateur trouvé</div>
       )}
+
+      {/* Sync WooCommerce Settings */}
+      <div className="sync-settings" style={{ marginTop: '30px', padding: '20px', backgroundColor: '#f8f9fa', borderRadius: '8px' }}>
+        <h2 style={{ marginBottom: '15px', fontSize: '18px', color: '#333' }}>Synchronisation WooCommerce</h2>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+          <label style={{ fontWeight: '500' }}>Sync WC toutes les</label>
+          <input
+            type="number"
+            min="0"
+            value={wcSyncInterval}
+            onChange={(e) => setWcSyncInterval(e.target.value)}
+            style={{
+              width: '80px',
+              padding: '8px 12px',
+              fontSize: '14px',
+              border: '1px solid #ccc',
+              borderRadius: '4px'
+            }}
+          />
+          <span>secondes</span>
+          <button
+            onClick={saveWcSyncInterval}
+            disabled={savingSync}
+            className="btn btn-save"
+            style={{ marginLeft: '10px' }}
+          >
+            {savingSync ? 'Sauvegarde...' : 'Sauvegarder'}
+          </button>
+        </div>
+        <p style={{ marginTop: '10px', fontSize: '12px', color: '#666' }}>
+          0 = désactivé. Le backend poll WordPress à cet intervalle pour récupérer les modifications.
+        </p>
+      </div>
     </div>
   );
 };

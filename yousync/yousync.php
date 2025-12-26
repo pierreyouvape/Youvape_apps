@@ -3,7 +3,7 @@
  * Plugin Name: YouSync
  * Plugin URI: https://youvape.fr
  * Description: Synchronisation temps réel WooCommerce vers VPS Youvape
- * Version: 1.0.0
+ * Version: 1.1.0
  * Author: Youvape
  * Author URI: https://youvape.fr
  * Text Domain: yousync
@@ -16,7 +16,7 @@
 defined('ABSPATH') || exit;
 
 // Define plugin constants
-define('YOUSYNC_VERSION', '1.0.0');
+define('YOUSYNC_VERSION', '1.1.0');
 define('YOUSYNC_FILE', __FILE__);
 define('YOUSYNC_PATH', plugin_dir_path(__FILE__));
 define('YOUSYNC_URL', plugin_dir_url(__FILE__));
@@ -157,4 +157,98 @@ register_deactivation_hook(__FILE__, function() {
 // Daily cleanup of old logs
 add_action('wp_scheduled_delete', function() {
     \YouSync\Logger::cleanup_old_logs(30);
+});
+
+// REST API endpoints for VPS polling
+add_action('rest_api_init', function() {
+    // GET /wp-json/yousync/v1/queue - Récupérer la queue avec les données complètes
+    register_rest_route('yousync/v1', '/queue', [
+        'methods' => 'GET',
+        'callback' => function($request) {
+            // Vérifier le token
+            $token = $request->get_header('X-YouSync-Token');
+            $settings = get_option('yousync_settings', []);
+
+            if (empty($settings['api_token']) || $token !== $settings['api_token']) {
+                return new \WP_REST_Response(['success' => false, 'error' => 'Unauthorized'], 401);
+            }
+
+            // Récupérer la queue
+            $queue = \YouSync\Queue_Manager::get_queue();
+
+            if (empty($queue)) {
+                return new \WP_REST_Response(['success' => true, 'events' => []], 200);
+            }
+
+            // Enrichir chaque événement avec les données complètes
+            $events = [];
+            $batch_size = isset($settings['batch_size']) ? intval($settings['batch_size']) : 50;
+            $count = 0;
+
+            foreach ($queue as $event) {
+                if ($count >= $batch_size) break;
+
+                $data = null;
+                switch ($event['type']) {
+                    case 'order':
+                        $data = \YouSync\Data_Fetcher::get_order($event['wp_id']);
+                        break;
+                    case 'product':
+                        $data = \YouSync\Data_Fetcher::get_product($event['wp_id']);
+                        break;
+                    case 'customer':
+                        $data = \YouSync\Data_Fetcher::get_customer($event['wp_id']);
+                        break;
+                    case 'refund':
+                        $data = \YouSync\Data_Fetcher::get_refund($event['wp_id']);
+                        break;
+                }
+
+                if ($data !== null) {
+                    $events[] = [
+                        'type' => $event['type'],
+                        'action' => $event['action'],
+                        'wp_id' => $event['wp_id'],
+                        'data' => $data,
+                        'created_at' => $event['created_at']
+                    ];
+                    $count++;
+                }
+            }
+
+            \YouSync\Logger::log('info', sprintf('Queue fetched by VPS: %d events', count($events)));
+
+            return new \WP_REST_Response(['success' => true, 'events' => $events], 200);
+        },
+        'permission_callback' => '__return_true'
+    ]);
+
+    // POST /wp-json/yousync/v1/queue/ack - Acquitter les événements traités
+    register_rest_route('yousync/v1', '/queue/ack', [
+        'methods' => 'POST',
+        'callback' => function($request) {
+            // Vérifier le token
+            $token = $request->get_header('X-YouSync-Token');
+            $settings = get_option('yousync_settings', []);
+
+            if (empty($settings['api_token']) || $token !== $settings['api_token']) {
+                return new \WP_REST_Response(['success' => false, 'error' => 'Unauthorized'], 401);
+            }
+
+            $body = $request->get_json_params();
+            $events_to_remove = isset($body['events']) ? $body['events'] : [];
+
+            if (empty($events_to_remove)) {
+                return new \WP_REST_Response(['success' => true, 'removed' => 0], 200);
+            }
+
+            // Supprimer les événements de la queue
+            \YouSync\Queue_Manager::remove_events($events_to_remove);
+
+            \YouSync\Logger::log('info', sprintf('Queue ack by VPS: %d events removed', count($events_to_remove)));
+
+            return new \WP_REST_Response(['success' => true, 'removed' => count($events_to_remove)], 200);
+        },
+        'permission_callback' => '__return_true'
+    ]);
 });
