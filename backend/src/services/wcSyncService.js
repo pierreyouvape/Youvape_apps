@@ -4,8 +4,12 @@
  */
 
 const axios = require('axios');
+const https = require('https');
 const appConfigModel = require('../models/appConfigModel');
 const pool = require('../config/database');
+
+// Agent HTTPS qui ignore les certificats auto-signés (pour communication interne Docker)
+const httpsAgent = new https.Agent({ rejectUnauthorized: false });
 
 let syncInterval = null;
 let isProcessing = false;
@@ -91,7 +95,8 @@ const wcSyncService = {
           'X-YouSync-Token': wpToken,
           'Host': 'vps.youvape.fr'
         },
-        timeout: 30000
+        timeout: 30000,
+        httpsAgent
       });
 
       if (!response.data.success || !response.data.events || response.data.events.length === 0) {
@@ -126,7 +131,8 @@ const wcSyncService = {
               'Host': 'vps.youvape.fr',
               'Content-Type': 'application/json'
             },
-            timeout: 10000
+            timeout: 10000,
+            httpsAgent
           });
           console.log(`🔄 WC Sync: ${processedIds.length} événement(s) acquitté(s)`);
         } catch (err) {
