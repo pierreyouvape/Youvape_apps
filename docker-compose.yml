@@ -32,6 +32,7 @@ services:
       - postgres
     networks:
       - youvape_network
+      - youvape-site_default
 
   frontend:
     build: ./frontend
@@ -51,3 +52,5 @@ volumes:
 networks:
   youvape_network:
     driver: bridge
+  youvape-site_default:
+    external: true
