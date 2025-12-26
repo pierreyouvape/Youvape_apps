@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const appConfigModel = require('../models/appConfigModel');
 const authMiddleware = require('../middleware/authMiddleware');
+const wcSyncService = require('../services/wcSyncService');
 
 // GET /api/settings - Récupérer tous les paramètres
 router.get('/', authMiddleware, async (req, res) => {
@@ -47,6 +48,12 @@ router.put('/:key', authMiddleware, async (req, res) => {
     }
 
     const config = await appConfigModel.upsert(req.params.key, String(value));
+
+    // Si l'intervalle de sync WC change, redémarrer le service
+    if (req.params.key === 'wc_sync_interval') {
+      await wcSyncService.restart();
+      console.log(`🔄 WC Sync Service: Intervalle mis à jour (${value}s)`);
+    }
 
     res.json({ success: true, config });
   } catch (error) {

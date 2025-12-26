@@ -86,9 +86,13 @@ const wcSyncService = {
       const wpToken = wpTokenConfig.config_value;
 
       // Appeler l'endpoint WP pour récupérer la queue
+      // Basic Auth pour htaccess préprod
+      const basicAuth = Buffer.from('youvape-vps:11d52EQe97j5spie').toString('base64');
+
       const response = await axios.get(`${wpUrl}/wp-json/yousync/v1/queue`, {
         headers: {
-          'X-YouSync-Token': wpToken
+          'X-YouSync-Token': wpToken,
+          'Authorization': `Basic ${basicAuth}`
         },
         timeout: 30000
       });
@@ -122,6 +126,7 @@ const wcSyncService = {
           }, {
             headers: {
               'X-YouSync-Token': wpToken,
+              'Authorization': `Basic ${basicAuth}`,
               'Content-Type': 'application/json'
             },
             timeout: 10000
