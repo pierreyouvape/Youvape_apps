@@ -24,6 +24,8 @@ services:
       - "3000:3000"
     env_file:
       - .env
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - backend_logs:/usr/src/app/logs
     depends_on:
