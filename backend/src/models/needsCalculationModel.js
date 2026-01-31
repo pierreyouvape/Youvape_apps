@@ -142,19 +142,22 @@ const needsCalculationModel = {
    * Récupérer les besoins pour tous les produits (avec filtres)
    */
   getAllProductsNeeds: async (filters = {}) => {
-    // Récupérer les paramètres du fournisseur si spécifié
+    // Les paramètres passés par l'utilisateur ont la priorité
+    // Sinon on utilise ceux du fournisseur si spécifié, sinon les défauts
     let analysisPeriodMonths = filters.analysis_period_months || 1;
     let coverageMonths = filters.coverage_months || 1;
 
-    if (filters.supplier_id) {
+    // Si un fournisseur est sélectionné et qu'on n'a pas de paramètres explicites,
+    // utiliser les paramètres du fournisseur
+    if (filters.supplier_id && !filters.analysis_period_months && !filters.coverage_months) {
       const supplierQuery = `
         SELECT analysis_period_months, coverage_months
         FROM suppliers WHERE id = $1
       `;
       const supplierResult = await pool.query(supplierQuery, [filters.supplier_id]);
       if (supplierResult.rows[0]) {
-        analysisPeriodMonths = supplierResult.rows[0].analysis_period_months;
-        coverageMonths = parseFloat(supplierResult.rows[0].coverage_months);
+        analysisPeriodMonths = supplierResult.rows[0].analysis_period_months || 1;
+        coverageMonths = parseFloat(supplierResult.rows[0].coverage_months) || 1;
       }
     }
 

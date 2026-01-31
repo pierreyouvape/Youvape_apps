@@ -2,7 +2,11 @@ const express = require('express');
 const router = express.Router();
 const suppliersController = require('../controllers/suppliersController');
 const purchasesController = require('../controllers/purchasesController');
+const authMiddleware = require('../middleware/authMiddleware');
 const { checkPermission } = require('../middleware/permissionMiddleware');
+
+// Toutes les routes sont protégées par le middleware JWT
+router.use(authMiddleware);
 
 // Middleware pour vérifier les permissions
 const checkPurchasesRead = checkPermission('purchases', 'read');

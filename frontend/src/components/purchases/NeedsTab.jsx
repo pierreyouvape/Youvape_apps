@@ -13,6 +13,8 @@ const NeedsTab = ({ token }) => {
   const [supplierId, setSupplierId] = useState('');
   const [zeroStock, setZeroStock] = useState(false);
   const [search, setSearch] = useState('');
+  const [coverageMonths, setCoverageMonths] = useState(1);
+  const [analysisPeriod, setAnalysisPeriod] = useState(1);
 
   // Pagination
   const [page, setPage] = useState(1);
@@ -52,6 +54,8 @@ const NeedsTab = ({ token }) => {
       if (supplierId) params.append('supplier_id', supplierId);
       if (zeroStock) params.append('zero_stock', 'true');
       if (search) params.append('search', search);
+      if (coverageMonths) params.append('coverage_months', coverageMonths.toString());
+      if (analysisPeriod) params.append('analysis_period', analysisPeriod.toString());
 
       const response = await axios.get(`${API_URL}/purchases/needs?${params}`, {
         headers: { Authorization: `Bearer ${token}` }
@@ -66,7 +70,7 @@ const NeedsTab = ({ token }) => {
     } finally {
       setLoading(false);
     }
-  }, [token, page, supplierId, zeroStock, search]);
+  }, [token, page, supplierId, zeroStock, search, coverageMonths, analysisPeriod]);
 
   useEffect(() => {
     loadNeeds();
@@ -231,6 +235,34 @@ const NeedsTab = ({ token }) => {
           </div>
 
           <div className="filter-group">
+            <label>Période d'analyse</label>
+            <select
+              value={analysisPeriod}
+              onChange={(e) => { setAnalysisPeriod(parseFloat(e.target.value)); setPage(1); }}
+            >
+              <option value="0.5">15 jours</option>
+              <option value="1">1 mois</option>
+              <option value="2">2 mois</option>
+              <option value="3">3 mois</option>
+              <option value="6">6 mois</option>
+            </select>
+          </div>
+
+          <div className="filter-group">
+            <label>Couverture cible</label>
+            <select
+              value={coverageMonths}
+              onChange={(e) => { setCoverageMonths(parseFloat(e.target.value)); setPage(1); }}
+            >
+              <option value="0.5">15 jours</option>
+              <option value="1">1 mois</option>
+              <option value="1.5">1.5 mois</option>
+              <option value="2">2 mois</option>
+              <option value="3">3 mois</option>
+            </select>
+          </div>
+
+          <div className="filter-group">
             <label>&nbsp;</label>
             <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
               <input
@@ -238,11 +270,12 @@ const NeedsTab = ({ token }) => {
                 checked={zeroStock}
                 onChange={(e) => { setZeroStock(e.target.checked); setPage(1); }}
               />
-              Stock nul/négatif uniquement
+              Stock nul/négatif
             </label>
           </div>
+        </div>
 
-          <div style={{ marginLeft: 'auto', display: 'flex', gap: '10px' }}>
+        <div className="filters-bar" style={{ marginTop: '10px' }}>
             <button className="btn btn-secondary btn-sm" onClick={fillTheoreticalProposals}>
               📥 Théorique
             </button>
