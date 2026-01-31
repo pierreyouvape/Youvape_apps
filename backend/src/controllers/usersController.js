@@ -34,7 +34,9 @@ const usersController = {
           permissions: {
             reviews: { read: true, write: true },
             rewards: { read: true, write: true },
-            emails: { read: true, write: true }
+            emails: { read: true, write: true },
+            stats: { read: true, write: true },
+            purchases: { read: true, write: true }
           }
         });
       }

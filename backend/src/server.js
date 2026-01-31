@@ -18,6 +18,10 @@ const analysisRoutes = require('./routes/analysisRoutes');
 const reportsRoutes = require('./routes/reportsRoutes');
 const webhookRoutes = require('./routes/webhookRoutes');
 const settingsRoutes = require('./routes/settingsRoutes');
+const shippingRoutes = require('./routes/shippingRoutes');
+const paymentRoutes = require('./routes/paymentRoutes');
+const tariffRoutes = require('./routes/tariffRoutes');
+const purchasesRoutes = require('./routes/purchasesRoutes');
 const { setupCron } = require('./services/cronService');
 const rewardService = require('./services/rewardService');
 const emailService = require('./services/emailService');
@@ -53,6 +57,10 @@ app.use('/api/analysis', analysisRoutes); // Analysis & Segmentation
 app.use('/api/reports', reportsRoutes); // Reports
 app.use('/api/webhook', webhookRoutes); // YouSync real-time webhooks
 app.use('/api/settings', settingsRoutes); // App settings
+app.use('/api/shipping', shippingRoutes); // Shipping costs management
+app.use('/api/payment', paymentRoutes); // Payment methods configuration
+app.use('/api/tariffs', tariffRoutes); // Tariff zones and rates
+app.use('/api/purchases', purchasesRoutes); // Purchase management
 
 // Start server
 app.listen(PORT, async () => {

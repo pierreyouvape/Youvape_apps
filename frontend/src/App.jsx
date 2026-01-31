@@ -8,6 +8,7 @@ import RewardsApp from './pages/RewardsApp';
 import EmailApp from './pages/EmailApp';
 import SettingsApp from './pages/SettingsApp';
 import StatsApp from './pages/StatsApp';
+import PurchasesApp from './pages/PurchasesApp';
 import CustomersApp from './pages/CustomersApp';
 import CustomerDetail from './pages/CustomerDetail';
 import ProductsApp from './pages/ProductsApp';
@@ -18,6 +19,7 @@ import BrandDetail from './pages/BrandDetail';
 import SubBrandDetail from './pages/SubBrandDetail';
 import CategoryDetail from './pages/CategoryDetail';
 import SubCategoryDetail from './pages/SubCategoryDetail';
+import ShippingSettings from './pages/ShippingSettings';
 import PrivateRoute from './components/PrivateRoute';
 
 function App() {
@@ -81,6 +83,22 @@ function App() {
             element={
               <PrivateRoute>
                 <StatsApp />
+              </PrivateRoute>
+            }
+          />
+          <Route
+            path="/stats/shipping-settings"
+            element={
+              <PrivateRoute>
+                <ShippingSettings />
+              </PrivateRoute>
+            }
+          />
+          <Route
+            path="/purchases"
+            element={
+              <PrivateRoute>
+                <PurchasesApp />
               </PrivateRoute>
             }
           />

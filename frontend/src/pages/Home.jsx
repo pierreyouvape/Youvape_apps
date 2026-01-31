@@ -31,6 +31,10 @@ const Home = () => {
     navigate('/stats');
   };
 
+  const handleGoToPurchases = () => {
+    navigate('/purchases');
+  };
+
   // Vérifier si l'utilisateur a accès à une app
   const hasAccess = (appName) => {
     if (!permissions) return false;
@@ -178,28 +182,54 @@ const Home = () => {
                   <span>Envoi d'Emails</span>
                 </div>
               )}
-              <div
-                onClick={handleGoToStats}
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '10px',
-                  padding: '20px 30px',
-                  backgroundColor: '#ff6b6b',
-                  color: 'white',
-                  borderRadius: '8px',
-                  cursor: 'pointer',
-                  fontSize: '18px',
-                  border: 'none',
-                  boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
-                  transition: 'transform 0.2s',
-                }}
-                onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.05)'}
-                onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
-              >
-                <span style={{ fontSize: '28px' }}>📊</span>
-                <span>Statistiques WooCommerce</span>
-              </div>
+              {hasAccess('stats') && (
+                <div
+                  onClick={handleGoToStats}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '10px',
+                    padding: '20px 30px',
+                    backgroundColor: '#ff6b6b',
+                    color: 'white',
+                    borderRadius: '8px',
+                    cursor: 'pointer',
+                    fontSize: '18px',
+                    border: 'none',
+                    boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
+                    transition: 'transform 0.2s',
+                  }}
+                  onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.05)'}
+                  onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
+                >
+                  <span style={{ fontSize: '28px' }}>📊</span>
+                  <span>Statistiques WooCommerce</span>
+                </div>
+              )}
+              {hasAccess('purchases') && (
+                <div
+                  onClick={handleGoToPurchases}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '10px',
+                    padding: '20px 30px',
+                    backgroundColor: '#f59e0b',
+                    color: 'white',
+                    borderRadius: '8px',
+                    cursor: 'pointer',
+                    fontSize: '18px',
+                    border: 'none',
+                    boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
+                    transition: 'transform 0.2s',
+                  }}
+                  onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.05)'}
+                  onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
+                >
+                  <span style={{ fontSize: '28px' }}>🛒</span>
+                  <span>Gestion d'achat</span>
+                </div>
+              )}
             </div>
           )}
         </div>
