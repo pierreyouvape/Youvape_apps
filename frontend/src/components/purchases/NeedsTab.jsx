@@ -275,17 +275,16 @@ const NeedsTab = ({ token }) => {
           </div>
         </div>
 
-        <div className="filters-bar" style={{ marginTop: '10px' }}>
-            <button className="btn btn-secondary btn-sm" onClick={fillTheoreticalProposals}>
-              📥 Théorique
-            </button>
-            <button className="btn btn-secondary btn-sm" onClick={fillSupposedProposals}>
-              📥 Supposé
-            </button>
-            <button className="btn btn-secondary btn-sm" onClick={clearSelection}>
-              🗑️ Vider
-            </button>
-          </div>
+        <div className="filters-bar" style={{ marginTop: '10px', justifyContent: 'flex-end' }}>
+          <button className="btn btn-secondary btn-sm" onClick={fillTheoreticalProposals}>
+            📥 Théorique
+          </button>
+          <button className="btn btn-secondary btn-sm" onClick={fillSupposedProposals}>
+            📥 Supposé
+          </button>
+          <button className="btn btn-secondary btn-sm" onClick={clearSelection}>
+            🗑️ Vider
+          </button>
         </div>
 
         {/* Selection summary */}
