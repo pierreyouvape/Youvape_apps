@@ -215,6 +215,19 @@ const needsCalculationModel = {
       paramIndex++;
     }
 
+    // Filtre avec ventes uniquement
+    if (filters.with_sales_only) {
+      productsQuery += `
+        AND EXISTS (
+          SELECT 1 FROM order_items oi
+          JOIN orders o ON oi.wp_order_id = o.wp_order_id
+          WHERE oi.product_id = p.id
+            AND o.post_date >= NOW() - INTERVAL '${analysisPeriodMonths} months'
+            AND o.post_status IN ('wc-completed', 'wc-processing', 'wc-delivered')
+        )
+      `;
+    }
+
     productsQuery += ' ORDER BY p.post_title';
 
     // Pagination
@@ -311,6 +324,20 @@ const needsCalculationModel = {
       query += ` AND (p.post_title ILIKE $${paramIndex} OR p.sku ILIKE $${paramIndex})`;
       values.push(`%${filters.search}%`);
       paramIndex++;
+    }
+
+    // Filtre avec ventes uniquement
+    if (filters.with_sales_only) {
+      const analysisPeriodMonths = filters.analysis_period_months || 1;
+      query += `
+        AND EXISTS (
+          SELECT 1 FROM order_items oi
+          JOIN orders o ON oi.wp_order_id = o.wp_order_id
+          WHERE oi.product_id = p.id
+            AND o.post_date >= NOW() - INTERVAL '${analysisPeriodMonths} months'
+            AND o.post_status IN ('wc-completed', 'wc-processing', 'wc-delivered')
+        )
+      `;
     }
 
     const result = await pool.query(query, values);

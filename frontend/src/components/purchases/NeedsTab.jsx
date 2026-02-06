@@ -3,18 +3,83 @@ import axios from 'axios';
 
 const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:3000/api/auth').replace('/auth', '');
 
+// Clé localStorage pour persister les filtres
+const STORAGE_KEY = 'purchases_needs_filters';
+
+// Options de période d'analyse prédéfinies
+const ANALYSIS_PERIOD_OPTIONS = [
+  { value: 0.25, label: '7 jours' },
+  { value: 0.5, label: '15 jours' },
+  { value: 1, label: '1 mois' },
+  { value: 2, label: '2 mois' },
+  { value: 3, label: '3 mois' },
+  { value: 4, label: '4 mois' },
+  { value: 5, label: '5 mois' },
+  { value: 6, label: '6 mois' },
+  { value: 9, label: '9 mois' },
+  { value: 12, label: '12 mois' },
+  { value: 'custom', label: 'Plage personnalisée' }
+];
+
+// Options de couverture cible prédéfinies
+const COVERAGE_OPTIONS = [
+  { value: 0.25, label: '7 jours' },
+  { value: 0.5, label: '15 jours' },
+  { value: 1, label: '1 mois' },
+  { value: 1.5, label: '1.5 mois' },
+  { value: 2, label: '2 mois' },
+  { value: 3, label: '3 mois' },
+  { value: 4, label: '4 mois' },
+  { value: 6, label: '6 mois' }
+];
+
+// Charger les filtres depuis localStorage
+const loadSavedFilters = () => {
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (saved) {
+      return JSON.parse(saved);
+    }
+  } catch (e) {
+    console.error('Erreur chargement filtres:', e);
+  }
+  return null;
+};
+
+// Sauvegarder les filtres dans localStorage
+const saveFilters = (filters) => {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(filters));
+  } catch (e) {
+    console.error('Erreur sauvegarde filtres:', e);
+  }
+};
+
 const NeedsTab = ({ token }) => {
   const [products, setProducts] = useState([]);
   const [suppliers, setSuppliers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  // Filters
-  const [supplierId, setSupplierId] = useState('');
-  const [zeroStock, setZeroStock] = useState(false);
+  // Charger les filtres sauvegardés
+  const savedFilters = loadSavedFilters();
+
+  // Filters avec valeurs par défaut ou sauvegardées
+  const [supplierId, setSupplierId] = useState(savedFilters?.supplierId || '');
+  const [zeroStock, setZeroStock] = useState(savedFilters?.zeroStock || false);
   const [search, setSearch] = useState('');
-  const [coverageMonths, setCoverageMonths] = useState(1);
-  const [analysisPeriod, setAnalysisPeriod] = useState(1);
+
+  // Période d'analyse
+  const [analysisPeriodType, setAnalysisPeriodType] = useState(savedFilters?.analysisPeriodType || 'preset');
+  const [analysisPeriod, setAnalysisPeriod] = useState(savedFilters?.analysisPeriod || 1);
+  const [analysisStartDate, setAnalysisStartDate] = useState(savedFilters?.analysisStartDate || '');
+  const [analysisEndDate, setAnalysisEndDate] = useState(savedFilters?.analysisEndDate || '');
+
+  // Couverture cible
+  const [coverageMonths, setCoverageMonths] = useState(savedFilters?.coverageMonths || 1);
+
+  // Filtre "avec ventes uniquement"
+  const [withSalesOnly, setWithSalesOnly] = useState(savedFilters?.withSalesOnly !== false);
 
   // Pagination
   const [page, setPage] = useState(1);
@@ -25,6 +90,20 @@ const NeedsTab = ({ token }) => {
   // Order creation
   const [selectedProducts, setSelectedProducts] = useState({});
   const [creatingOrder, setCreatingOrder] = useState(false);
+
+  // Sauvegarder les filtres quand ils changent
+  useEffect(() => {
+    saveFilters({
+      supplierId,
+      zeroStock,
+      analysisPeriodType,
+      analysisPeriod,
+      analysisStartDate,
+      analysisEndDate,
+      coverageMonths,
+      withSalesOnly
+    });
+  }, [supplierId, zeroStock, analysisPeriodType, analysisPeriod, analysisStartDate, analysisEndDate, coverageMonths, withSalesOnly]);
 
   // Load suppliers for filter
   useEffect(() => {
@@ -41,6 +120,17 @@ const NeedsTab = ({ token }) => {
     loadSuppliers();
   }, [token]);
 
+  // Calculer la période d'analyse effective
+  const getEffectiveAnalysisPeriod = useCallback(() => {
+    if (analysisPeriodType === 'custom' && analysisStartDate && analysisEndDate) {
+      const start = new Date(analysisStartDate);
+      const end = new Date(analysisEndDate);
+      const diffDays = Math.ceil((end - start) / (1000 * 60 * 60 * 24));
+      return diffDays / 30; // Convertir en mois
+    }
+    return analysisPeriod;
+  }, [analysisPeriodType, analysisPeriod, analysisStartDate, analysisEndDate]);
+
   // Load products with needs
   const loadNeeds = useCallback(async () => {
     setLoading(true);
@@ -54,8 +144,19 @@ const NeedsTab = ({ token }) => {
       if (supplierId) params.append('supplier_id', supplierId);
       if (zeroStock) params.append('zero_stock', 'true');
       if (search) params.append('search', search);
-      if (coverageMonths) params.append('coverage_months', coverageMonths.toString());
-      if (analysisPeriod) params.append('analysis_period', analysisPeriod.toString());
+      if (withSalesOnly) params.append('with_sales_only', 'true');
+
+      // Période d'analyse
+      const effectivePeriod = getEffectiveAnalysisPeriod();
+      params.append('analysis_period', effectivePeriod.toString());
+
+      // Dates personnalisées si applicable
+      if (analysisPeriodType === 'custom' && analysisStartDate && analysisEndDate) {
+        params.append('analysis_start_date', analysisStartDate);
+        params.append('analysis_end_date', analysisEndDate);
+      }
+
+      params.append('coverage_months', coverageMonths.toString());
 
       const response = await axios.get(`${API_URL}/purchases/needs?${params}`, {
         headers: { Authorization: `Bearer ${token}` }
@@ -70,7 +171,7 @@ const NeedsTab = ({ token }) => {
     } finally {
       setLoading(false);
     }
-  }, [token, page, supplierId, zeroStock, search, coverageMonths, analysisPeriod]);
+  }, [token, page, supplierId, zeroStock, search, coverageMonths, getEffectiveAnalysisPeriod, analysisPeriodType, analysisStartDate, analysisEndDate, withSalesOnly]);
 
   useEffect(() => {
     loadNeeds();
@@ -84,6 +185,23 @@ const NeedsTab = ({ token }) => {
     setSearchTimeout(setTimeout(() => {
       setPage(1);
     }, 500));
+  };
+
+  // Handle analysis period change
+  const handleAnalysisPeriodChange = (value) => {
+    if (value === 'custom') {
+      setAnalysisPeriodType('custom');
+      // Initialiser les dates par défaut (dernier mois)
+      const end = new Date();
+      const start = new Date();
+      start.setMonth(start.getMonth() - 1);
+      setAnalysisEndDate(end.toISOString().split('T')[0]);
+      setAnalysisStartDate(start.toISOString().split('T')[0]);
+    } else {
+      setAnalysisPeriodType('preset');
+      setAnalysisPeriod(parseFloat(value));
+    }
+    setPage(1);
   };
 
   // Handle quantity change for order
@@ -206,6 +324,9 @@ const NeedsTab = ({ token }) => {
   const selectedCount = Object.keys(selectedProducts).length;
   const selectedTotal = Object.values(selectedProducts).reduce((a, b) => a + b, 0);
 
+  // Valeur affichée dans le select de période
+  const analysisPeriodSelectValue = analysisPeriodType === 'custom' ? 'custom' : analysisPeriod;
+
   return (
     <div className="needs-tab">
       {/* Filters */}
@@ -237,14 +358,12 @@ const NeedsTab = ({ token }) => {
           <div className="filter-group">
             <label>Période d'analyse</label>
             <select
-              value={analysisPeriod}
-              onChange={(e) => { setAnalysisPeriod(parseFloat(e.target.value)); setPage(1); }}
+              value={analysisPeriodSelectValue}
+              onChange={(e) => handleAnalysisPeriodChange(e.target.value)}
             >
-              <option value="0.5">15 jours</option>
-              <option value="1">1 mois</option>
-              <option value="2">2 mois</option>
-              <option value="3">3 mois</option>
-              <option value="6">6 mois</option>
+              {ANALYSIS_PERIOD_OPTIONS.map(opt => (
+                <option key={opt.value} value={opt.value}>{opt.label}</option>
+              ))}
             </select>
           </div>
 
@@ -254,16 +373,53 @@ const NeedsTab = ({ token }) => {
               value={coverageMonths}
               onChange={(e) => { setCoverageMonths(parseFloat(e.target.value)); setPage(1); }}
             >
-              <option value="0.5">15 jours</option>
-              <option value="1">1 mois</option>
-              <option value="1.5">1.5 mois</option>
-              <option value="2">2 mois</option>
-              <option value="3">3 mois</option>
+              {COVERAGE_OPTIONS.map(opt => (
+                <option key={opt.value} value={opt.value}>{opt.label}</option>
+              ))}
             </select>
+          </div>
+        </div>
+
+        {/* Plage personnalisée */}
+        {analysisPeriodType === 'custom' && (
+          <div className="filters-bar" style={{ marginTop: '10px' }}>
+            <div className="filter-group">
+              <label>Date début</label>
+              <input
+                type="date"
+                value={analysisStartDate}
+                onChange={(e) => { setAnalysisStartDate(e.target.value); setPage(1); }}
+              />
+            </div>
+            <div className="filter-group">
+              <label>Date fin</label>
+              <input
+                type="date"
+                value={analysisEndDate}
+                onChange={(e) => { setAnalysisEndDate(e.target.value); setPage(1); }}
+              />
+            </div>
+            <div className="filter-group" style={{ alignSelf: 'flex-end' }}>
+              <span style={{ fontSize: '13px', color: '#666' }}>
+                ≈ {Math.round(getEffectiveAnalysisPeriod() * 10) / 10} mois
+              </span>
+            </div>
+          </div>
+        )}
+
+        <div className="filters-bar" style={{ marginTop: '10px' }}>
+          <div className="filter-group">
+            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+              <input
+                type="checkbox"
+                checked={withSalesOnly}
+                onChange={(e) => { setWithSalesOnly(e.target.checked); setPage(1); }}
+              />
+              Avec ventes uniquement
+            </label>
           </div>
 
           <div className="filter-group">
-            <label>&nbsp;</label>
             <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
               <input
                 type="checkbox"
@@ -273,18 +429,18 @@ const NeedsTab = ({ token }) => {
               Stock nul/négatif
             </label>
           </div>
-        </div>
 
-        <div className="filters-bar" style={{ marginTop: '10px', justifyContent: 'flex-end' }}>
-          <button className="btn btn-secondary btn-sm" onClick={fillTheoreticalProposals}>
-            📥 Théorique
-          </button>
-          <button className="btn btn-secondary btn-sm" onClick={fillSupposedProposals}>
-            📥 Supposé
-          </button>
-          <button className="btn btn-secondary btn-sm" onClick={clearSelection}>
-            🗑️ Vider
-          </button>
+          <div style={{ marginLeft: 'auto', display: 'flex', gap: '10px' }}>
+            <button className="btn btn-secondary btn-sm" onClick={fillTheoreticalProposals}>
+              📥 Théorique
+            </button>
+            <button className="btn btn-secondary btn-sm" onClick={fillSupposedProposals}>
+              📥 Supposé
+            </button>
+            <button className="btn btn-secondary btn-sm" onClick={clearSelection}>
+              🗑️ Vider
+            </button>
+          </div>
         </div>
 
         {/* Selection summary */}
@@ -293,7 +449,7 @@ const NeedsTab = ({ token }) => {
             background: '#fef3c7',
             padding: '10px 15px',
             borderRadius: '6px',
-            marginBottom: '15px',
+            marginTop: '15px',
             display: 'flex',
             justifyContent: 'space-between',
             alignItems: 'center'
@@ -329,6 +485,11 @@ const NeedsTab = ({ token }) => {
           <div className="empty-state">
             <div className="empty-state-icon">📦</div>
             <p>Aucun produit trouvé</p>
+            {withSalesOnly && (
+              <p style={{ fontSize: '13px', color: '#666' }}>
+                Essayez de décocher "Avec ventes uniquement" pour voir tous les produits
+              </p>
+            )}
           </div>
         ) : (
           <>

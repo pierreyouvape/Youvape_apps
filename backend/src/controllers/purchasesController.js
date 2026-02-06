@@ -11,9 +11,12 @@ const purchasesController = {
       const filters = {
         supplier_id: req.query.supplier_id ? parseInt(req.query.supplier_id) : null,
         zero_stock: req.query.zero_stock === 'true',
+        with_sales_only: req.query.with_sales_only === 'true',
         search: req.query.search || null,
         analysis_period_months: req.query.analysis_period ? parseFloat(req.query.analysis_period) : (req.query.analysis_period_months ? parseFloat(req.query.analysis_period_months) : 1),
         coverage_months: req.query.coverage_months ? parseFloat(req.query.coverage_months) : 1,
+        analysis_start_date: req.query.analysis_start_date || null,
+        analysis_end_date: req.query.analysis_end_date || null,
         limit: req.query.limit ? parseInt(req.query.limit) : 50,
         offset: req.query.offset ? parseInt(req.query.offset) : 0
       };
