@@ -148,8 +148,10 @@ const ShippingSettings = () => {
           { id: 1, code: 'mollie_cc', name: 'Mollie - Carte Bancaire', monthly_fee: 0, fixed_fee: 0.25, percent_fee: 1.28 },
           { id: 2, code: 'mollie_bancontact', name: 'Mollie - Bancontact', monthly_fee: 0, fixed_fee: 0.25, percent_fee: 0.96 },
           { id: 3, code: 'paypal', name: 'PayPal', monthly_fee: 0, fixed_fee: 0.35, percent_fee: 3.55 },
-          { id: 4, code: 'alma', name: 'Alma (Paiement en plusieurs fois)', monthly_fee: 0, fixed_fee: 0, percent_fee: 2.00 },
-          { id: 5, code: 'virement', name: 'Virement Bancaire', monthly_fee: 0, fixed_fee: 0, percent_fee: 0 }
+          { id: 4, code: 'alma_3x_be', name: 'Alma 3x Belgique', monthly_fee: 0, fixed_fee: 0, percent_fee: 2.50 },
+          { id: 5, code: 'alma_3x_fr', name: 'Alma 3x France', monthly_fee: 0, fixed_fee: 0, percent_fee: 1.90 },
+          { id: 6, code: 'alma_4x_fr', name: 'Alma 4x France', monthly_fee: 0, fixed_fee: 0, percent_fee: 2.90 },
+          { id: 7, code: 'virement', name: 'Virement Bancaire', monthly_fee: 0, fixed_fee: 0, percent_fee: 0 }
         ]);
       }
     } catch (err) {
