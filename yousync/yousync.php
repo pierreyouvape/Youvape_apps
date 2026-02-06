@@ -3,7 +3,7 @@
  * Plugin Name: YouSync
  * Plugin URI: https://youvape.fr
  * Description: Synchronisation temps réel WooCommerce vers VPS Youvape
- * Version: 1.1.0
+ * Version: 1.2.0
  * Author: Youvape
  * Author URI: https://youvape.fr
  * Text Domain: yousync
@@ -16,7 +16,7 @@
 defined('ABSPATH') || exit;
 
 // Define plugin constants
-define('YOUSYNC_VERSION', '1.1.0');
+define('YOUSYNC_VERSION', '1.2.0');
 define('YOUSYNC_FILE', __FILE__);
 define('YOUSYNC_PATH', plugin_dir_path(__FILE__));
 define('YOUSYNC_URL', plugin_dir_url(__FILE__));
@@ -244,6 +244,13 @@ add_action('rest_api_init', function() {
 
             // Supprimer les événements de la queue
             \YouSync\Queue_Manager::remove_events($events_to_remove);
+
+            // Mettre à jour le timestamp de dernière sync
+            update_option('yousync_last_sync', [
+                'time' => current_time('mysql'),
+                'success' => true,
+                'events_count' => count($events_to_remove)
+            ]);
 
             \YouSync\Logger::log('info', sprintf('Queue ack by VPS: %d events removed', count($events_to_remove)));
 

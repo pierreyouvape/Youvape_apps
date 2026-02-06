@@ -42,13 +42,22 @@ class Data_Fetcher {
 
         // Get shipping
         $shipping_items = [];
+        $shipping_method = null;
         foreach ($order->get_items('shipping') as $item) {
             $shipping_items[] = [
                 'method_id' => $item->get_method_id(),
                 'method_title' => $item->get_method_title(),
                 'total' => floatval($item->get_total())
             ];
+            // Récupérer la première méthode de livraison
+            if ($shipping_method === null) {
+                $shipping_method = $item->get_method_title();
+            }
         }
+
+        // Get BMS shipping data (carrier and tracking)
+        $shipping_carrier = $order->get_meta('bms_carrier');
+        $tracking_number = $order->get_meta('bms_tracking_number');
 
         // Get coupons
         $coupons = [];
@@ -93,6 +102,9 @@ class Data_Fetcher {
             'date_paid' => $order->get_date_paid() ? $order->get_date_paid()->format('Y-m-d H:i:s') : null,
             'items' => $items,
             'shipping' => $shipping_items,
+            'shipping_method' => $shipping_method,
+            'shipping_carrier' => $shipping_carrier ?: null,
+            'tracking_number' => $tracking_number ?: null,
             'coupons' => $coupons
         ];
     }

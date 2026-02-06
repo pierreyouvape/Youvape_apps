@@ -388,11 +388,12 @@ exports.getStats = async (req, res) => {
     const countryBreakdown = await pool.query(countryBreakdownQuery, params);
 
     // Répartition par catégorie (toutes les catégories des commandes filtrées)
+    // WooCommerce: line_total = HT, line_tax = TVA, donc TTC = line_total + line_tax
     const categoryBreakdownQuery = `
       SELECT
         p.category as name,
         COUNT(DISTINCT o.wp_order_id)::int as orders_count,
-        COALESCE(SUM(oi.line_total), 0)::numeric as ca_ttc
+        (COALESCE(SUM(oi.line_total), 0) + COALESCE(SUM(oi.line_tax), 0))::numeric as ca_ttc
       FROM orders o
       INNER JOIN order_items oi ON oi.wp_order_id = o.wp_order_id AND oi.order_item_type = 'line_item'
       INNER JOIN products p ON (p.wp_product_id = oi.product_id OR p.wp_product_id = oi.variation_id)

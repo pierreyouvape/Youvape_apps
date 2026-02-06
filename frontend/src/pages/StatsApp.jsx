@@ -76,6 +76,21 @@ const StatsApp = () => {
         />
         <div style={{ position: 'absolute', right: '20px', display: 'flex', gap: '10px' }}>
           <button
+            onClick={() => navigate('/stats/shipping-settings')}
+            style={{
+              padding: '10px 20px',
+              backgroundColor: '#ffc107',
+              color: '#000',
+              border: 'none',
+              borderRadius: '6px',
+              fontSize: '14px',
+              cursor: 'pointer',
+              fontWeight: '600'
+            }}
+          >
+            ⚙️ Paramètres
+          </button>
+          <button
             onClick={handleBackHome}
             style={{
               padding: '10px 20px',

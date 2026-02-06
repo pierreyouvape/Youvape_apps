@@ -1,0 +1,252 @@
+{
+  "test_date": "2026-01-30T11:00:00Z",
+  "duration_minutes": 45,
+  "test_type": "ACTIVE - avec données simulées",
+  "summary": {
+    "total_checks": 15,
+    "checks_passed": 12,
+    "checks_failed": 0,
+    "warnings": 3,
+    "critical_issues": [],
+    "warnings_list": [
+      "Queue inactive depuis le 26 décembre 2025 (>1 mois)",
+      "Logs montrent des événements dupliqués (faux positifs - déduplication fonctionne)",
+      "Divergence de 13.4% entre les commandes WP et PG (historique non synchronisé)"
+    ],
+    "info": [
+      "Plugin YouSync actif et fonctionnel",
+      "Service wcSync opérationnel (polling toutes les 60s)",
+      "Intégrité des données excellente"
+    ]
+  },
+  "initial_snapshot": {
+    "wordpress_stats": {
+      "orders": 146474,
+      "products": 2737,
+      "product_variations": 4615,
+      "users": 53593,
+      "total_products_with_variations": 7352
+    },
+    "postgresql_stats": {
+      "orders": 126892,
+      "products": 7348,
+      "customers": 51929,
+      "order_items": 650822,
+      "refunds": 983
+    }
+  },
+  "divergence_analysis": {
+    "orders": {
+      "wp_count": 146474,
+      "pg_count": 126892,
+      "difference": 19582,
+      "percentage": "13.4%",
+      "status": "WARNING",
+      "explanation": "Commandes anciennes non synchronisées (import initial partiel probable)"
+    },
+    "products": {
+      "wp_count": 7352,
+      "pg_count": 7348,
+      "difference": 4,
+      "percentage": "0.05%",
+      "status": "OK"
+    },
+    "customers": {
+      "wp_count": 53593,
+      "pg_count": 51929,
+      "difference": 1664,
+      "percentage": "3.1%",
+      "status": "OK"
+    }
+  },
+  "queue_status": {
+    "events_count": 0,
+    "last_modified": "2025-12-26T16:45:37Z",
+    "days_since_activity": 35,
+    "status": "STALE"
+  },
+  "integrity_checks": {
+    "queue_integrity": {
+      "status": "PASS",
+      "details": "Queue vide mais format valide"
+    },
+    "wordpress_pg_consistency": {
+      "status": "PASS",
+      "details": "Échantillons de 10 produits et 5 commandes parfaitement identiques"
+    },
+    "metadata_consistency": {
+      "status": "PASS",
+      "details": "SKU, prix, stock, statuts tous cohérents"
+    },
+    "data_anomalies": {
+      "future_dates": 0,
+      "null_wp_ids": 0,
+      "negative_prices": 0,
+      "negative_stock": 1,
+      "negative_totals": 0,
+      "orphan_items": 0,
+      "orders_without_items": 1,
+      "details": "1 produit avec stock négatif (cohérent avec WP), 1 commande annulée sans items (normal)"
+    }
+  },
+  "hook_behavior_analysis": {
+    "duplicates_in_logs": {
+      "status": "FALSE_POSITIVE",
+      "details": "Les logs montrent plusieurs 'Event queued' pour le même ID, mais la déduplication dans Queue_Manager::add() fonctionne correctement. Le log s'affiche avant la logique de merge, créant une impression de doublons.",
+      "evidence": [
+        "order #1181043: 4 logs à 12:07:53-54 (1 seul event en queue)",
+        "product #11152: 3 logs à 17:41:15 (1 seul event en queue)"
+      ],
+      "recommendation": "Modifier le log pour distinguer 'Event queued' vs 'Event updated'"
+    },
+    "ghost_events": {
+      "status": "PASS",
+      "details": "Pas d'événements fantômes détectés"
+    },
+    "cross_entity_contamination": {
+      "status": "PASS",
+      "details": "Pas de contamination détectée"
+    }
+  },
+  "wc_sync_service_status": {
+    "service_running": true,
+    "interval_seconds": 60,
+    "wp_url_configured": "https://youvape-site-traefik-1",
+    "wp_url_accessible": true,
+    "token_valid": true,
+    "polling_functional": true,
+    "last_known_activity": "2025-12-26T17:45:37Z",
+    "reason_no_recent_activity": "Queue WordPress vide - pas de nouvelles modifications depuis le 26/12/2025"
+  },
+  "issues_found": [
+    {
+      "id": 1,
+      "severity": "warning",
+      "type": "inactivité",
+      "description": "La queue YouSync n'a pas eu d'activité depuis le 26 décembre 2025 (35 jours)",
+      "evidence": {
+        "queue_last_modified": "2025-12-26T16:45:37Z",
+        "last_log_entry": "[17:45:37] Queue ack by VPS: 1 events removed"
+      },
+      "impact": "Les modifications faites sur WordPress depuis cette date ne sont pas synchronisées vers PostgreSQL",
+      "recommendation": "Vérifier si des commandes/produits ont été modifiés sur WP depuis le 26/12 et si oui, investiguer pourquoi les hooks ne déclenchent pas"
+    },
+    {
+      "id": 2,
+      "severity": "info",
+      "type": "log_misleading",
+      "description": "Les logs affichent 'Event queued' même lors d'une mise à jour (déduplication)",
+      "evidence": {
+        "code_location": "class-queue-manager.php::add()",
+        "log_line": "Logger::log('info', sprintf('Event queued: %s %s #%d', ...))"
+      },
+      "impact": "Peut créer de la confusion lors du debugging",
+      "recommendation": "Changer le log en 'Event queued/updated: %s %s #%d' selon $found"
+    },
+    {
+      "id": 3,
+      "severity": "info",
+      "type": "divergence_historique",
+      "description": "19,582 commandes présentes dans WordPress mais absentes de PostgreSQL",
+      "evidence": {
+        "wp_orders": 146474,
+        "pg_orders": 126892
+      },
+      "impact": "Les statistiques basées sur PostgreSQL ne reflètent pas 100% des commandes",
+      "recommendation": "Lancer un import historique si les anciennes commandes sont nécessaires pour les analyses"
+    }
+  ],
+  "performance_metrics": {
+    "queue_growth_rate": "0 events/day (inactive)",
+    "average_poll_time_ms": "< 100ms (queue vide)",
+    "wp_endpoint_response_time_ms": "~50ms",
+    "service_uptime": "OK (running since container start)"
+  },
+  "security_checks": {
+    "token_exposed_in_logs": false,
+    "htaccess_protection": true,
+    "endpoint_requires_token": true
+  },
+  "yousync_configuration": {
+    "enabled": true,
+    "api_url": "http://54.37.156.233:3000/api/webhook/sync",
+    "cron_interval": 1,
+    "batch_size": 50,
+    "retry_hours": 24,
+    "sync_orders": true,
+    "sync_products": true,
+    "sync_customers": true,
+    "sync_refunds": true
+  },
+  "recommendations": [
+    {
+      "priority": "HIGH",
+      "action": "Investiguer pourquoi aucun événement n'est généré depuis le 26/12/2025",
+      "details": "Vérifier les logs WordPress, les hooks WooCommerce, et si des modifications ont été faites sur le site"
+    },
+    {
+      "priority": "MEDIUM",
+      "action": "Améliorer le logging pour distinguer 'queued' vs 'updated'",
+      "details": "Modifier Queue_Manager::add() pour logger différemment selon $found"
+    },
+    {
+      "priority": "LOW",
+      "action": "Ajouter un log périodique de heartbeat dans wcSyncService",
+      "details": "Afficher '🔄 WC Sync: polling OK (0 events)' toutes les 10 minutes pour confirmer que le service tourne"
+    }
+  ],
+  "conclusion": "Le système YouSync est techniquement fonctionnel et l'intégrité des données est excellente. Le problème principal est l'inactivité de la queue depuis le 26 décembre 2025, ce qui suggère soit une absence de modifications sur WordPress, soit un problème avec les hooks WooCommerce qui ne déclenchent plus les événements.",
+
+  "active_tests": {
+    "test_date": "2026-01-30T11:08:00Z",
+    "tests_performed": [
+      {
+        "test": "Création commande",
+        "order_id": 1181082,
+        "customer": "pierre.merle.723@gmail.com",
+        "result": "SUCCESS",
+        "events_logged": 5,
+        "events_in_queue": 1,
+        "sync_time_seconds": 41,
+        "notes": "5 logs (1 create + 4 update) mais 1 seul événement en queue grâce à la déduplication"
+      },
+      {
+        "test": "Changement statut commande",
+        "order_id": 1181082,
+        "status_change": "pending → processing",
+        "result": "SUCCESS",
+        "events_generated": 2,
+        "notes": "1 événement order + 1 événement product (stock décrémenté automatiquement)"
+      },
+      {
+        "test": "Modification stock produit",
+        "product_id": 1173258,
+        "stock_change": "19 → 999 → 19",
+        "result": "SUCCESS",
+        "sync_verified": true,
+        "notes": "Stock synchronisé correctement, mais updated_at non mis à jour dans PostgreSQL"
+      }
+    ],
+    "summary": {
+      "all_tests_passed": true,
+      "sync_working": true,
+      "deduplication_working": true,
+      "average_sync_time_seconds": 40
+    },
+    "bugs_found": [
+      {
+        "severity": "minor",
+        "description": "Le champ updated_at des produits n'est pas mis à jour lors du sync",
+        "impact": "Impossible de savoir quand un produit a été synchronisé pour la dernière fois",
+        "location": "wcSyncService.js::processProduct()"
+      },
+      {
+        "severity": "info",
+        "description": "Logs multiples pour une seule action (5 logs pour 1 création de commande)",
+        "impact": "Confusion lors du debugging, mais pas d'impact fonctionnel",
+        "location": "class-queue-manager.php::add()"
+      }
+    ],
+    "confirmation": "Le système YouSync fonctionne correctement. L'inactivité précédente (depuis le 26/12/2025) était due à l'absence de modifications sur le site préproduction, pas à un bug."
+  }
+}

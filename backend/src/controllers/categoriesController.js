@@ -29,11 +29,12 @@ exports.getAll = async (req, res) => {
         LEFT JOIN products v ON v.wp_parent_id = cp.wp_product_id AND v.product_type = 'variation'
       ),
       category_stats AS (
+        -- WooCommerce: line_total = HT, line_tax = TVA, donc TTC = line_total + line_tax
         SELECT
           pf.category,
           SUM(oi.qty)::int as qty_sold,
-          COALESCE(SUM(oi.line_total), 0) as ca_ttc,
-          COALESCE(SUM(oi.line_subtotal), 0) as ca_ht,
+          COALESCE(SUM(oi.line_total), 0) + COALESCE(SUM(oi.line_tax), 0) as ca_ttc,
+          COALESCE(SUM(oi.line_total), 0) as ca_ht,
           COALESCE(SUM(oi.qty * COALESCE(oi.item_cost, 0)), 0) as cost_ht
         FROM product_family pf
         LEFT JOIN order_items oi ON (oi.product_id = pf.product_id OR oi.variation_id = pf.product_id)
@@ -101,11 +102,12 @@ exports.getAllSubCategories = async (req, res) => {
         LEFT JOIN products v ON v.wp_parent_id = scp.wp_product_id AND v.product_type = 'variation'
       ),
       sub_category_stats AS (
+        -- WooCommerce: line_total = HT, line_tax = TVA, donc TTC = line_total + line_tax
         SELECT
           pf.sub_category,
           SUM(oi.qty)::int as qty_sold,
-          COALESCE(SUM(oi.line_total), 0) as ca_ttc,
-          COALESCE(SUM(oi.line_subtotal), 0) as ca_ht,
+          COALESCE(SUM(oi.line_total), 0) + COALESCE(SUM(oi.line_tax), 0) as ca_ttc,
+          COALESCE(SUM(oi.line_total), 0) as ca_ht,
           COALESCE(SUM(oi.qty * COALESCE(oi.item_cost, 0)), 0) as cost_ht
         FROM product_family pf
         LEFT JOIN order_items oi ON (oi.product_id = pf.product_id OR oi.variation_id = pf.product_id)
@@ -175,11 +177,12 @@ exports.getByName = async (req, res) => {
         LEFT JOIN products v ON v.wp_parent_id = scp.wp_product_id AND v.product_type = 'variation'
       ),
       sub_category_stats AS (
+        -- WooCommerce: line_total = HT, line_tax = TVA, donc TTC = line_total + line_tax
         SELECT
           pf.sub_category,
           SUM(oi.qty)::int as qty_sold,
-          COALESCE(SUM(oi.line_total), 0) as ca_ttc,
-          COALESCE(SUM(oi.line_subtotal), 0) as ca_ht,
+          COALESCE(SUM(oi.line_total), 0) + COALESCE(SUM(oi.line_tax), 0) as ca_ttc,
+          COALESCE(SUM(oi.line_total), 0) as ca_ht,
           COALESCE(SUM(oi.qty * COALESCE(oi.item_cost, 0)), 0) as cost_ht
         FROM product_family pf
         LEFT JOIN order_items oi ON (oi.product_id = pf.product_id OR oi.variation_id = pf.product_id)
@@ -232,11 +235,12 @@ exports.getByName = async (req, res) => {
         LEFT JOIN products v ON v.wp_parent_id = cp.wp_product_id AND v.product_type = 'variation'
       ),
       product_stats AS (
+        -- WooCommerce: line_total = HT, line_tax = TVA, donc TTC = line_total + line_tax
         SELECT
           pf.parent_id,
           SUM(oi.qty)::int as qty_sold,
-          COALESCE(SUM(oi.line_total), 0) as ca_ttc,
-          COALESCE(SUM(oi.line_subtotal), 0) as ca_ht,
+          COALESCE(SUM(oi.line_total), 0) + COALESCE(SUM(oi.line_tax), 0) as ca_ttc,
+          COALESCE(SUM(oi.line_total), 0) as ca_ht,
           COALESCE(SUM(oi.qty * COALESCE(oi.item_cost, 0)), 0) as cost_ht
         FROM product_family pf
         LEFT JOIN order_items oi ON (oi.product_id = pf.product_id OR oi.variation_id = pf.product_id)
@@ -294,12 +298,13 @@ exports.getByName = async (req, res) => {
         FROM category_products cp
         LEFT JOIN products v ON v.wp_parent_id = cp.wp_product_id AND v.product_type = 'variation'
       )
+      -- WooCommerce: line_total = HT, line_tax = TVA, donc TTC = line_total + line_tax
       SELECT
         COUNT(DISTINCT cp.wp_product_id)::int as product_count,
         (SELECT COUNT(DISTINCT sub_category) FROM products WHERE category = $1 AND sub_category IS NOT NULL)::int as sub_category_count,
         COALESCE(SUM(oi.qty), 0)::int as qty_sold,
-        COALESCE(SUM(oi.line_total), 0) as ca_ttc,
-        COALESCE(SUM(oi.line_subtotal), 0) as ca_ht,
+        COALESCE(SUM(oi.line_total), 0) + COALESCE(SUM(oi.line_tax), 0) as ca_ttc,
+        COALESCE(SUM(oi.line_total), 0) as ca_ht,
         COALESCE(SUM(oi.qty * COALESCE(oi.item_cost, 0)), 0) as cost_ht
       FROM category_products cp
       LEFT JOIN product_family pf ON pf.parent_id = cp.wp_product_id
@@ -383,11 +388,12 @@ exports.getSubCategoryByName = async (req, res) => {
         LEFT JOIN products v ON v.wp_parent_id = scp.wp_product_id AND v.product_type = 'variation'
       ),
       product_stats AS (
+        -- WooCommerce: line_total = HT, line_tax = TVA, donc TTC = line_total + line_tax
         SELECT
           pf.parent_id,
           SUM(oi.qty)::int as qty_sold,
-          COALESCE(SUM(oi.line_total), 0) as ca_ttc,
-          COALESCE(SUM(oi.line_subtotal), 0) as ca_ht,
+          COALESCE(SUM(oi.line_total), 0) + COALESCE(SUM(oi.line_tax), 0) as ca_ttc,
+          COALESCE(SUM(oi.line_total), 0) as ca_ht,
           COALESCE(SUM(oi.qty * COALESCE(oi.item_cost, 0)), 0) as cost_ht
         FROM product_family pf
         LEFT JOIN order_items oi ON (oi.product_id = pf.product_id OR oi.variation_id = pf.product_id)
@@ -445,11 +451,12 @@ exports.getSubCategoryByName = async (req, res) => {
         FROM sub_category_products scp
         LEFT JOIN products v ON v.wp_parent_id = scp.wp_product_id AND v.product_type = 'variation'
       )
+      -- WooCommerce: line_total = HT, line_tax = TVA, donc TTC = line_total + line_tax
       SELECT
         COUNT(DISTINCT scp.wp_product_id)::int as product_count,
         COALESCE(SUM(oi.qty), 0)::int as qty_sold,
-        COALESCE(SUM(oi.line_total), 0) as ca_ttc,
-        COALESCE(SUM(oi.line_subtotal), 0) as ca_ht,
+        COALESCE(SUM(oi.line_total), 0) + COALESCE(SUM(oi.line_tax), 0) as ca_ttc,
+        COALESCE(SUM(oi.line_total), 0) as ca_ht,
         COALESCE(SUM(oi.qty * COALESCE(oi.item_cost, 0)), 0) as cost_ht
       FROM sub_category_products scp
       LEFT JOIN product_family pf ON pf.parent_id = scp.wp_product_id

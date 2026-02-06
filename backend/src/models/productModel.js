@@ -413,16 +413,17 @@ class ProductModel {
         -- Agréger les stats par produit parent
         -- Quantité : TOUT compter (bundle + ventes individuelles)
         -- Financier : UNIQUEMENT les ventes réelles (exclure bundle sub-items)
+        -- WooCommerce: line_total = HT, line_tax = TVA, donc TTC = line_total + line_tax
         SELECT
           pf.parent_id,
           SUM(oi.qty)::int as qty_sold,
           SUM(CASE
             WHEN oi.id IN (SELECT order_item_id FROM bundle_sub_items) THEN 0
-            ELSE oi.line_total
+            ELSE COALESCE(oi.line_total, 0) + COALESCE(oi.line_tax, 0)
           END) as ca_ttc,
           SUM(CASE
             WHEN oi.id IN (SELECT order_item_id FROM bundle_sub_items) THEN 0
-            ELSE oi.line_subtotal
+            ELSE COALESCE(oi.line_total, 0)
           END) as ca_ht,
           SUM(CASE
             WHEN oi.id IN (SELECT order_item_id FROM bundle_sub_items) THEN 0
@@ -527,15 +528,16 @@ class ProductModel {
         END as margin_percent
       FROM products p
       LEFT JOIN LATERAL (
+        -- WooCommerce: line_total = HT, line_tax = TVA, donc TTC = line_total + line_tax
         SELECT
           SUM(oi.qty) as qty_sold,
           SUM(CASE
             WHEN oi.id IN (SELECT order_item_id FROM bundle_sub_items) THEN 0
-            ELSE oi.line_total
+            ELSE COALESCE(oi.line_total, 0) + COALESCE(oi.line_tax, 0)
           END) as ca_ttc,
           SUM(CASE
             WHEN oi.id IN (SELECT order_item_id FROM bundle_sub_items) THEN 0
-            ELSE oi.line_subtotal
+            ELSE COALESCE(oi.line_total, 0)
           END) as ca_ht,
           SUM(CASE
             WHEN oi.id IN (SELECT order_item_id FROM bundle_sub_items) THEN 0
