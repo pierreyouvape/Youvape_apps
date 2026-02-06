@@ -20,4 +20,8 @@ out/
 *.db
 postgres-data/
 data_example/
-metorik/screenshots/
+
+# Dossiers locaux à ignorer
+BMS/
+metorik/
+screenshots/
