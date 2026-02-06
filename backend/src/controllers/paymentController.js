@@ -23,9 +23,12 @@ exports.getMethods = async (req, res) => {
 exports.getMethod = async (req, res) => {
   try {
     const { id } = req.params;
+    const isNumericId = !isNaN(parseInt(id)) && String(parseInt(id)) === id;
+    const whereClause = isNumericId ? 'id = $1' : 'code = $1';
+
     const result = await pool.query(
-      'SELECT * FROM payment_methods WHERE id = $1 OR code = $1',
-      [id]
+      `SELECT * FROM payment_methods WHERE ${whereClause}`,
+      [isNumericId ? parseInt(id) : id]
     );
 
     if (result.rows.length === 0) {
@@ -48,6 +51,10 @@ exports.updateMethod = async (req, res) => {
     const { id } = req.params;
     const { monthly_fee, fixed_fee, percent_fee, wc_payment_method } = req.body;
 
+    // Déterminer si c'est un ID numérique ou un code string
+    const isNumericId = !isNaN(parseInt(id)) && String(parseInt(id)) === id;
+    const whereClause = isNumericId ? 'id = $5' : 'code = $5';
+
     const result = await pool.query(
       `UPDATE payment_methods
        SET monthly_fee = COALESCE($1, monthly_fee),
@@ -55,9 +62,9 @@ exports.updateMethod = async (req, res) => {
            percent_fee = COALESCE($3, percent_fee),
            wc_payment_method = COALESCE($4, wc_payment_method),
            updated_at = CURRENT_TIMESTAMP
-       WHERE id = $5 OR code = $5
+       WHERE ${whereClause}
        RETURNING *`,
-      [monthly_fee, fixed_fee, percent_fee, wc_payment_method, id]
+      [monthly_fee, fixed_fee, percent_fee, wc_payment_method, isNumericId ? parseInt(id) : id]
     );
 
     if (result.rows.length === 0) {
@@ -107,10 +114,12 @@ exports.createMethod = async (req, res) => {
 exports.deleteMethod = async (req, res) => {
   try {
     const { id } = req.params;
+    const isNumericId = !isNaN(parseInt(id)) && String(parseInt(id)) === id;
+    const whereClause = isNumericId ? 'id = $1' : 'code = $1';
 
     await pool.query(
-      'UPDATE payment_methods SET is_active = false, updated_at = CURRENT_TIMESTAMP WHERE id = $1 OR code = $1',
-      [id]
+      `UPDATE payment_methods SET is_active = false, updated_at = CURRENT_TIMESTAMP WHERE ${whereClause}`,
+      [isNumericId ? parseInt(id) : id]
     );
 
     res.json({ success: true, message: 'Méthode désactivée' });
