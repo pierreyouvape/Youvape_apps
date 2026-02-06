@@ -91,6 +91,10 @@ const NeedsTab = ({ token }) => {
   const [selectedProducts, setSelectedProducts] = useState({});
   const [creatingOrder, setCreatingOrder] = useState(false);
 
+  // Tri des colonnes
+  const [sortColumn, setSortColumn] = useState(null);
+  const [sortDirection, setSortDirection] = useState('asc'); // 'asc' ou 'desc'
+
   // Sauvegarder les filtres quand ils changent
   useEffect(() => {
     saveFilters({
@@ -321,6 +325,51 @@ const NeedsTab = ({ token }) => {
     return <span className="stock-ok">{stock}</span>;
   };
 
+  // Gestion du tri des colonnes
+  const handleSort = (column) => {
+    if (sortColumn === column) {
+      // Inverser la direction si même colonne
+      setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
+    } else {
+      // Nouvelle colonne, commencer par ascendant
+      setSortColumn(column);
+      setSortDirection('asc');
+    }
+  };
+
+  // Trier les produits
+  const sortedProducts = [...products].sort((a, b) => {
+    if (!sortColumn) return 0;
+
+    const aVal = a[sortColumn] ?? 0;
+    const bVal = b[sortColumn] ?? 0;
+
+    if (sortDirection === 'asc') {
+      return aVal - bVal;
+    } else {
+      return bVal - aVal;
+    }
+  });
+
+  // Composant pour en-tête triable
+  const SortableHeader = ({ column, label, className }) => (
+    <th
+      className={`${className || ''} sortable-header`}
+      onClick={() => handleSort(column)}
+      style={{ cursor: 'pointer', userSelect: 'none' }}
+    >
+      {label}
+      {sortColumn === column && (
+        <span style={{ marginLeft: '4px' }}>
+          {sortDirection === 'asc' ? '▲' : '▼'}
+        </span>
+      )}
+      {sortColumn !== column && (
+        <span style={{ marginLeft: '4px', opacity: 0.3 }}>▼</span>
+      )}
+    </th>
+  );
+
   const selectedCount = Object.keys(selectedProducts).length;
   const selectedTotal = Object.values(selectedProducts).reduce((a, b) => a + b, 0);
 
@@ -498,19 +547,19 @@ const NeedsTab = ({ token }) => {
                 <tr>
                   <th>Produit</th>
                   <th>SKU</th>
-                  <th className="text-right">Stock</th>
+                  <SortableHeader column="stock" label="Stock" className="text-right" />
                   <th className="text-right">Arrivage</th>
-                  <th className="text-right">Ventes/mois</th>
+                  <SortableHeader column="avg_monthly_sales" label="Ventes/mois" className="text-right" />
                   <th className="text-center">Tendance</th>
-                  <th className="text-right">Besoin théo.</th>
-                  <th className="text-right">Besoin supp.</th>
-                  <th className="text-right">Prop. théo.</th>
-                  <th className="text-right">Prop. supp.</th>
+                  <SortableHeader column="effective_theoretical_need" label="Besoin théo." className="text-right" />
+                  <SortableHeader column="effective_supposed_need" label="Besoin supp." className="text-right" />
+                  <SortableHeader column="theoretical_proposal" label="Prop. théo." className="text-right" />
+                  <SortableHeader column="supposed_proposal" label="Prop. supp." className="text-right" />
                   <th className="text-right">À commander</th>
                 </tr>
               </thead>
               <tbody>
-                {products.map(product => (
+                {sortedProducts.map(product => (
                   <tr key={product.id}>
                     <td>
                       <div style={{ maxWidth: '250px' }}>
