@@ -42,15 +42,15 @@ const ShippingSettings = () => {
   const [collapsedMappingZones, setCollapsedMappingZones] = useState({});
 
   const toggleMethod = (methodKey) => {
-    setCollapsedMethods(prev => ({ ...prev, [methodKey]: !prev[methodKey] }));
+    setCollapsedMethods(prev => ({ ...prev, [methodKey]: prev[methodKey] === false ? true : false }));
   };
 
   const toggleZone = (zoneId) => {
-    setCollapsedZones(prev => ({ ...prev, [zoneId]: !prev[zoneId] }));
+    setCollapsedZones(prev => ({ ...prev, [zoneId]: prev[zoneId] === false ? true : false }));
   };
 
   const toggleMappingZone = (zoneName) => {
-    setCollapsedMappingZones(prev => ({ ...prev, [zoneName]: !prev[zoneName] }));
+    setCollapsedMappingZones(prev => ({ ...prev, [zoneName]: prev[zoneName] === false ? true : false }));
   };
 
   // Data Paiement
@@ -453,7 +453,7 @@ const ShippingSettings = () => {
         {currentCarrier && Object.entries(currentCarrier.methods).map(([methodCode, methodName]) => {
           const key = `${activeCarrier}_${methodCode}`;
           const zones = carrierZones[key] || [];
-          const isMethodCollapsed = collapsedMethods[key];
+          const isMethodCollapsed = collapsedMethods[key] !== false; // Replié par défaut
 
           // Load zones if not loaded
           if (!carrierZones[key]) {
@@ -513,7 +513,7 @@ const ShippingSettings = () => {
                       onDeleteRate={deleteRate}
                       onUpdateFuelSurcharge={updateFuelSurcharge}
                       onBulkImport={bulkImportRates}
-                      isCollapsed={collapsedZones[zone.id]}
+                      isCollapsed={collapsedZones[zone.id] !== false}
                       onToggle={() => toggleZone(zone.id)}
                     />
                   ))}
@@ -651,7 +651,7 @@ const ShippingSettings = () => {
         ) : (
           sortedZones.map(zoneName => {
             const mappings = mappingsByZone[zoneName];
-            const isZoneCollapsed = collapsedMappingZones[zoneName];
+            const isZoneCollapsed = collapsedMappingZones[zoneName] !== false; // Replié par défaut
             return (
               <div key={zoneName} style={{ marginBottom: '15px', border: '1px solid #ddd', borderRadius: '8px', overflow: 'hidden' }}>
                 <div
