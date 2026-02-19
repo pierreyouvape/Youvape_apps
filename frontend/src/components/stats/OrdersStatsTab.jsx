@@ -493,11 +493,11 @@ const OrdersStatsTab = () => {
                                   <div style={{ fontSize: '13px', lineHeight: '1.6' }}>
                                     <div>Paiement: {order.payment_method_title || '-'}</div>
                                     <div>Frais de port: {formatPrice(order.order_shipping)}</div>
-                                    <div>Transporteur: {order.shipping_carrier || order.shipping_method || '-'}</div>
-                                    {order.tracking_number && (
+                                    <div>Transporteur: {details?.shipping_carrier || order.shipping_method || '-'}</div>
+                                    {details?.tracking_number && (
                                       <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                        Suivi: <span style={{ fontWeight: '600' }}>{order.tracking_number}</span>
-                                        <CopyButton text={order.tracking_number} size={12} />
+                                        Suivi: <span style={{ fontWeight: '600' }}>{details.tracking_number}</span>
+                                        <CopyButton text={details.tracking_number} size={12} />
                                       </div>
                                     )}
                                   </div>
