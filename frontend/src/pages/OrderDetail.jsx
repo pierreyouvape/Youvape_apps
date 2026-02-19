@@ -250,10 +250,10 @@ const OrderDetail = () => {
                 {order.attribution_utm_medium && ` / ${order.attribution_utm_medium}`}
               </div>
             </div>
-            {order.shipping_carrier && (
+            {(order.shipping_carrier || order.shipping_method) && (
               <div>
                 <div style={{ fontSize: '12px', color: '#999', marginBottom: '5px' }}>Transporteur</div>
-                <div style={{ fontSize: '14px', fontWeight: '600' }}>{order.shipping_carrier}</div>
+                <div style={{ fontSize: '14px', fontWeight: '600' }}>{order.shipping_carrier || order.shipping_method}</div>
               </div>
             )}
             {order.tracking_number && (
