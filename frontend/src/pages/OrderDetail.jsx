@@ -250,6 +250,21 @@ const OrderDetail = () => {
                 {order.attribution_utm_medium && ` / ${order.attribution_utm_medium}`}
               </div>
             </div>
+            {order.shipping_carrier && (
+              <div>
+                <div style={{ fontSize: '12px', color: '#999', marginBottom: '5px' }}>Transporteur</div>
+                <div style={{ fontSize: '14px', fontWeight: '600' }}>{order.shipping_carrier}</div>
+              </div>
+            )}
+            {order.tracking_number && (
+              <div>
+                <div style={{ fontSize: '12px', color: '#999', marginBottom: '5px' }}>Suivi</div>
+                <div style={{ fontSize: '14px', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  {order.tracking_number}
+                  <CopyButton text={order.tracking_number} size={14} />
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
