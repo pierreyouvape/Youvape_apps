@@ -92,8 +92,7 @@ const wcSyncService = {
       // Appeler l'endpoint WP pour récupérer la queue
       const response = await axios.get(`${wpUrl}/wp-json/yousync/v1/queue`, {
         headers: {
-          'X-YouSync-Token': wpToken,
-          'Host': 'vps.youvape.fr'
+          'X-YouSync-Token': wpToken
         },
         timeout: 30000,
         httpsAgent
@@ -128,7 +127,6 @@ const wcSyncService = {
           }, {
             headers: {
               'X-YouSync-Token': wpToken,
-              'Host': 'vps.youvape.fr',
               'Content-Type': 'application/json'
             },
             timeout: 10000,
