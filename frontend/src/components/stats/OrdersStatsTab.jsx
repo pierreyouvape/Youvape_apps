@@ -21,7 +21,7 @@ const COUNTRY_NAMES = {
 
 // Mapping des statuts
 const STATUS_LABELS = {
-  'wc-completed': 'Terminee',
+  'wc-completed': 'Expediee',
   'wc-delivered': 'Livree',
   'wc-processing': 'En cours',
   'wc-on-hold': 'En attente',
@@ -34,7 +34,7 @@ const STATUS_LABELS = {
 };
 
 const STATUS_COLORS = {
-  'wc-completed': '#28a745',
+  'wc-completed': '#135E84',
   'wc-delivered': '#28a745',
   'wc-processing': '#ffc107',
   'wc-on-hold': '#fd7e14',
@@ -344,9 +344,9 @@ const OrdersStatsTab = () => {
           </button>
           <button
             onClick={handleExport}
-            style={{ padding: '10px 25px', backgroundColor: '#28a745', color: 'white', border: 'none', borderRadius: '6px', fontSize: '14px', fontWeight: 'bold', cursor: 'pointer', marginLeft: 'auto' }}
+            style={{ padding: '6px 12px', backgroundColor: '#6c757d', color: 'white', border: 'none', borderRadius: '4px', fontSize: '12px', cursor: 'pointer', marginLeft: 'auto' }}
           >
-            Exporter CSV
+            CSV
           </button>
         </div>
       </div>

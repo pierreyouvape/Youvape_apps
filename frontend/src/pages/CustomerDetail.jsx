@@ -141,14 +141,14 @@ const CustomerDetail = () => {
 
   const getStatusLabel = (status) => {
     const statusMap = {
-      'wc-completed': { label: 'Terminée', color: '#28a745' },
+      'wc-completed': { label: 'Expédiée', color: '#135E84' },
       'wc-processing': { label: 'En cours', color: '#007bff' },
       'wc-on-hold': { label: 'En attente', color: '#ffc107' },
       'wc-pending': { label: 'En attente paiement', color: '#ffc107' },
       'wc-cancelled': { label: 'Annulée', color: '#dc3545' },
       'wc-refunded': { label: 'Remboursée', color: '#6c757d' },
       'wc-failed': { label: 'Échouée', color: '#dc3545' },
-      'wc-shipped': { label: 'Expédiée', color: '#17a2b8' },
+      'wc-shipped': { label: 'Expédiée', color: '#135E84' },
       'wc-delivered': { label: 'Livrée', color: '#28a745' },
     };
     const statusInfo = statusMap[status] || { label: status, color: '#6c757d' };

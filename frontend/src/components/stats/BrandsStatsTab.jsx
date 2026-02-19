@@ -185,17 +185,16 @@ const BrandsStatsTab = () => {
         <button
           onClick={handleExport}
           style={{
-            padding: '10px 20px',
-            backgroundColor: '#28a745',
+            padding: '6px 12px',
+            backgroundColor: '#6c757d',
             color: 'white',
             border: 'none',
-            borderRadius: '6px',
-            fontSize: '16px',
-            fontWeight: 'bold',
+            borderRadius: '4px',
+            fontSize: '12px',
             cursor: 'pointer'
           }}
         >
-          Exporter CSV
+          CSV
         </button>
       </div>
 

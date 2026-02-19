@@ -21,7 +21,7 @@ const COUNTRY_NAMES = {
 
 // Mapping des statuts
 const STATUS_LABELS = {
-  'wc-completed': 'Terminee',
+  'wc-completed': 'Expediee',
   'wc-delivered': 'Livree',
   'wc-processing': 'En cours',
   'wc-on-hold': 'En attente',
@@ -34,7 +34,7 @@ const STATUS_LABELS = {
 };
 
 const STATUS_COLORS = {
-  'wc-completed': { bg: '#d4edda', color: '#155724' },
+  'wc-completed': { bg: '#d4e9f1', color: '#135E84' },
   'wc-delivered': { bg: '#d4edda', color: '#155724' },
   'wc-processing': { bg: '#fff3cd', color: '#856404' },
   'wc-on-hold': { bg: '#ffeeba', color: '#856404' },
