@@ -98,7 +98,8 @@
       "Bash(frontend/src/pages/PurchasesApp.jsx )",
       "Bash(frontend/src/pages/PurchasesApp.css )",
       "Bash(frontend/src/pages/Home.jsx )",
-      "Bash(frontend/src/pages/SettingsApp.jsx)"
+      "Bash(frontend/src/pages/SettingsApp.jsx)",
+      "Bash(cp:*)"
     ],
     "deny": [],
     "ask": []
