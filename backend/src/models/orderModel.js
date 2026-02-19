@@ -394,6 +394,14 @@ class OrderModel {
    * Récupère les détails complets d'une commande pour l'affichage dépliable
    */
   async getOrderDetails(orderId) {
+    // Récupérer les infos de la commande (shipping_carrier, tracking_number)
+    const orderQuery = `
+      SELECT shipping_carrier, tracking_number
+      FROM orders
+      WHERE wp_order_id = $1
+    `;
+    const orderResult = await pool.query(orderQuery, [orderId]);
+
     // Récupérer les items produits
     const itemsQuery = `
       SELECT
@@ -416,7 +424,11 @@ class OrderModel {
     `;
     const itemsResult = await pool.query(itemsQuery, [orderId]);
 
+    const orderData = orderResult.rows[0] || {};
+
     return {
+      shipping_carrier: orderData.shipping_carrier,
+      tracking_number: orderData.tracking_number,
       items: itemsResult.rows
     };
   }
