@@ -339,7 +339,9 @@ exports.filterOrders = async (req, res) => {
         o.order_total,
         o.order_shipping,
         o.payment_method_title,
-        (SELECT oi_s.order_item_name FROM order_items oi_s WHERE oi_s.wp_order_id = o.wp_order_id AND oi_s.order_item_type = 'shipping' LIMIT 1) as shipping_method,
+        o.shipping_method,
+        o.shipping_carrier,
+        o.tracking_number,
         (SELECT COUNT(*) FROM order_items oi_c WHERE oi_c.wp_order_id = o.wp_order_id AND oi_c.order_item_type = 'line_item') as items_count,
         (SELECT COUNT(*) > 0 FROM reviews WHERE order_id = o.wp_order_id::text) as has_review,
         (SELECT STRING_AGG(oi_cp.order_item_name, ', ') FROM order_items oi_cp WHERE oi_cp.wp_order_id = o.wp_order_id AND oi_cp.order_item_type = 'coupon') as coupons
