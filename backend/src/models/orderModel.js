@@ -403,6 +403,7 @@ class OrderModel {
     const orderResult = await pool.query(orderQuery, [orderId]);
 
     // Récupérer les items produits
+    // Prioriser le variant s'il existe, sinon le parent. Récupérer l'image du variant ou du parent.
     const itemsQuery = `
       SELECT
         oi.order_item_name,
@@ -412,13 +413,14 @@ class OrderModel {
         oi.line_total,
         oi.line_subtotal,
         oi.item_cost,
-        p.post_title as product_title,
-        p.sku,
-        p.image_url,
-        p.brand,
-        p.category
+        COALESCE(pv.post_title, pp.post_title) as product_title,
+        COALESCE(pv.sku, pp.sku) as sku,
+        COALESCE(pv.image_url, pp.image_url) as image_url,
+        COALESCE(pv.brand, pp.brand) as brand,
+        COALESCE(pv.category, pp.category) as category
       FROM order_items oi
-      LEFT JOIN products p ON (p.wp_product_id = oi.product_id OR p.wp_product_id = oi.variation_id)
+      LEFT JOIN products pv ON pv.wp_product_id = NULLIF(oi.variation_id, 0)
+      LEFT JOIN products pp ON pp.wp_product_id = oi.product_id
       WHERE oi.wp_order_id = $1 AND oi.order_item_type = 'line_item'
       ORDER BY oi.id
     `;
