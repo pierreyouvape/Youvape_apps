@@ -1,5 +1,6 @@
 /**
  * Webhook Controller - Gère les webhooks temps réel depuis YouSync
+ * Adapté au schéma BDD existant (wp_order_id, wp_product_id, wp_user_id, etc.)
  */
 
 const pool = require('../config/database');
@@ -35,15 +36,6 @@ const verifyToken = (req, res, next) => {
 /**
  * Reçoit les événements de sync depuis YouSync
  * POST /api/webhook/sync
- *
- * Body: {
- *   token: "xxx",
- *   events: [
- *     { type: "order", action: "create|update|delete", wp_id: 123, data: {...} }
- *   ],
- *   timestamp: "2024-12-23T10:30:00Z",
- *   source: "yousync"
- * }
  */
 const receiveSync = async (req, res) => {
   try {
@@ -124,13 +116,13 @@ const receiveSync = async (req, res) => {
 
 /* ============================================
  * ORDER HANDLERS
+ * Schéma: wp_order_id, wp_customer_id, post_status, post_date, post_modified, etc.
  * ============================================ */
 
 async function processOrderEvent(action, wp_id, data, results) {
   if (action === 'delete') {
-    // Soft delete or mark as deleted
     await pool.query(
-      'UPDATE orders SET status = $1, updated_at = NOW() WHERE order_id = $2',
+      'UPDATE orders SET post_status = $1, updated_at = NOW() WHERE wp_order_id = $2',
       ['deleted', wp_id]
     );
     results.details.orders.deleted++;
@@ -138,14 +130,15 @@ async function processOrderEvent(action, wp_id, data, results) {
     return;
   }
 
+  // Light update - just status change
   if (action === 'update' && data.status && Object.keys(data).length <= 3) {
-    // Light update - just status change
+    const status = data.status.startsWith('wc-') ? data.status : `wc-${data.status}`;
     await pool.query(
-      'UPDATE orders SET status = $1, date_modified = $2, updated_at = NOW() WHERE order_id = $3',
-      [data.status, data.date_modified || new Date(), wp_id]
+      'UPDATE orders SET post_status = $1, post_modified = $2, updated_at = NOW() WHERE wp_order_id = $3',
+      [status, data.date_modified || new Date(), wp_id]
     );
     results.details.orders.updated++;
-    console.log(`  ✓ Order #${wp_id} status updated to ${data.status}`);
+    console.log(`  ✓ Order #${wp_id} status updated to ${status}`);
     return;
   }
 
@@ -154,81 +147,79 @@ async function processOrderEvent(action, wp_id, data, results) {
   try {
     await client.query('BEGIN');
 
+    const status = (data.status || 'pending').startsWith('wc-') ? data.status : `wc-${data.status || 'pending'}`;
+
     const orderQuery = `
       INSERT INTO orders (
-        order_id, order_number, status, total, subtotal,
-        shipping_total, discount_total, tax_total,
-        payment_method, payment_method_title, currency,
-        date_created, date_completed, date_paid, date_modified,
-        customer_id, billing_address, shipping_address, customer_note,
+        wp_order_id, wp_customer_id, post_status, post_date, post_modified,
+        payment_method_title, created_via,
+        billing_first_name, billing_last_name, billing_address_1, billing_address_2,
+        billing_city, billing_postcode, billing_country, billing_email, billing_phone,
+        shipping_first_name, shipping_last_name, shipping_address_1,
+        shipping_city, shipping_postcode, shipping_country, shipping_phone, shipping_company,
+        cart_discount, order_shipping, order_tax, order_total,
         updated_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, NOW())
-      ON CONFLICT (order_id)
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, NOW())
+      ON CONFLICT (wp_order_id)
       DO UPDATE SET
-        order_number = EXCLUDED.order_number,
-        status = EXCLUDED.status,
-        total = EXCLUDED.total,
-        subtotal = EXCLUDED.subtotal,
-        shipping_total = EXCLUDED.shipping_total,
-        discount_total = EXCLUDED.discount_total,
-        tax_total = EXCLUDED.tax_total,
-        payment_method = EXCLUDED.payment_method,
+        wp_customer_id = EXCLUDED.wp_customer_id,
+        post_status = EXCLUDED.post_status,
+        post_modified = EXCLUDED.post_modified,
         payment_method_title = EXCLUDED.payment_method_title,
-        currency = EXCLUDED.currency,
-        date_completed = EXCLUDED.date_completed,
-        date_paid = EXCLUDED.date_paid,
-        date_modified = EXCLUDED.date_modified,
-        customer_id = EXCLUDED.customer_id,
-        billing_address = EXCLUDED.billing_address,
-        shipping_address = EXCLUDED.shipping_address,
-        customer_note = EXCLUDED.customer_note,
+        billing_first_name = EXCLUDED.billing_first_name,
+        billing_last_name = EXCLUDED.billing_last_name,
+        billing_address_1 = EXCLUDED.billing_address_1,
+        billing_address_2 = EXCLUDED.billing_address_2,
+        billing_city = EXCLUDED.billing_city,
+        billing_postcode = EXCLUDED.billing_postcode,
+        billing_country = EXCLUDED.billing_country,
+        billing_email = EXCLUDED.billing_email,
+        billing_phone = EXCLUDED.billing_phone,
+        shipping_first_name = EXCLUDED.shipping_first_name,
+        shipping_last_name = EXCLUDED.shipping_last_name,
+        shipping_address_1 = EXCLUDED.shipping_address_1,
+        shipping_city = EXCLUDED.shipping_city,
+        shipping_postcode = EXCLUDED.shipping_postcode,
+        shipping_country = EXCLUDED.shipping_country,
+        shipping_phone = EXCLUDED.shipping_phone,
+        shipping_company = EXCLUDED.shipping_company,
+        cart_discount = EXCLUDED.cart_discount,
+        order_shipping = EXCLUDED.order_shipping,
+        order_tax = EXCLUDED.order_tax,
+        order_total = EXCLUDED.order_total,
         updated_at = NOW()
       RETURNING (xmax = 0) AS inserted
     `;
 
-    const billingAddress = {
-      first_name: data.billing_first_name,
-      last_name: data.billing_last_name,
-      company: data.billing_company,
-      address_1: data.billing_address_1,
-      address_2: data.billing_address_2,
-      city: data.billing_city,
-      postcode: data.billing_postcode,
-      country: data.billing_country,
-      phone: data.billing_phone,
-      email: data.customer_email
-    };
-
-    const shippingAddress = {
-      first_name: data.shipping_first_name,
-      last_name: data.shipping_last_name,
-      address_1: data.shipping_address_1,
-      address_2: data.shipping_address_2,
-      city: data.shipping_city,
-      postcode: data.shipping_postcode,
-      country: data.shipping_country
-    };
-
     const values = [
-      data.wp_order_id || wp_id,
-      data.order_number || wp_id.toString(),
-      data.status || 'pending',
-      data.total || 0,
-      data.subtotal || 0,
-      data.shipping_total || 0,
-      data.discount_total || 0,
-      data.total_tax || 0,
-      data.payment_method || null,
-      data.payment_method_title || null,
-      data.currency || 'EUR',
-      data.date_created || null,
-      data.date_completed || null,
-      data.date_paid || null,
-      data.date_modified || new Date(),
+      wp_id,
       data.customer_id || null,
-      JSON.stringify(billingAddress),
-      JSON.stringify(shippingAddress),
-      data.customer_note || null
+      status,
+      data.date_created || null,
+      data.date_modified || new Date(),
+      data.payment_method_title || null,
+      data.created_via || null,
+      data.billing_first_name || null,
+      data.billing_last_name || null,
+      data.billing_address_1 || null,
+      data.billing_address_2 || null,
+      data.billing_city || null,
+      data.billing_postcode || null,
+      data.billing_country || null,
+      data.billing_email || data.customer_email || null,
+      data.billing_phone || null,
+      data.shipping_first_name || null,
+      data.shipping_last_name || null,
+      data.shipping_address_1 || null,
+      data.shipping_city || null,
+      data.shipping_postcode || null,
+      data.shipping_country || null,
+      data.shipping_phone || null,
+      data.shipping_company || null,
+      data.discount_total || 0,
+      data.shipping_total || 0,
+      data.total_tax || 0,
+      data.total || 0
     ];
 
     const result = await client.query(orderQuery, values);
@@ -238,26 +229,27 @@ async function processOrderEvent(action, wp_id, data, results) {
     if (data.items && Array.isArray(data.items)) {
       // Delete existing items for updates
       if (!isInsert) {
-        await client.query('DELETE FROM order_items WHERE order_id = $1', [wp_id]);
+        await client.query('DELETE FROM order_items WHERE wp_order_id = $1', [wp_id]);
       }
 
       for (const item of data.items) {
         await client.query(`
           INSERT INTO order_items (
-            order_id, product_id, variation_id, product_name, sku,
-            quantity, price, subtotal, total, tax
+            wp_order_id, order_item_id, order_item_name, order_item_type,
+            product_id, variation_id, qty,
+            line_subtotal, line_total, line_tax
           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
         `, [
           wp_id,
+          item.id || item.order_item_id || 0,
+          item.name || '',
+          item.type || 'line_item',
           item.product_id || null,
           item.variation_id || null,
-          item.name || '',
-          item.sku || null,
           item.quantity || 0,
-          item.total / (item.quantity || 1),
           item.subtotal || 0,
           item.total || 0,
-          item.tax || 0
+          item.tax || item.total_tax || 0
         ]);
       }
     }
@@ -282,23 +274,24 @@ async function processOrderEvent(action, wp_id, data, results) {
 
 /* ============================================
  * PRODUCT HANDLERS
+ * Schéma: wp_product_id, wp_parent_id, post_title, post_status, stock, stock_status, etc.
  * ============================================ */
 
 async function processProductEvent(action, wp_id, data, results) {
   if (action === 'delete') {
     await pool.query(
-      'UPDATE products SET status = $1, updated_at = NOW() WHERE product_id = $2',
-      ['deleted', wp_id]
+      'UPDATE products SET post_status = $1, updated_at = NOW() WHERE wp_product_id = $2',
+      ['trash', wp_id]
     );
     results.details.products.deleted++;
     console.log(`  ✓ Product #${wp_id} marked as deleted`);
     return;
   }
 
+  // Light update - just stock change
   if (action === 'update' && data.stock_quantity !== undefined && Object.keys(data).length <= 3) {
-    // Light update - just stock change
     await pool.query(
-      'UPDATE products SET stock_quantity = $1, stock_status = $2, date_modified = NOW(), updated_at = NOW() WHERE product_id = $3',
+      'UPDATE products SET stock = $1, stock_status = $2, post_modified = NOW(), updated_at = NOW() WHERE wp_product_id = $3',
       [data.stock_quantity, data.stock_status || 'instock', wp_id]
     );
     results.details.products.updated++;
@@ -309,54 +302,42 @@ async function processProductEvent(action, wp_id, data, results) {
   // Full create/update
   const query = `
     INSERT INTO products (
-      product_id, parent_id, sku, name, description, short_description,
-      price, regular_price, sale_price, stock_quantity, stock_status,
-      type, status, category, sub_category, brand, sub_brand,
-      image_url, date_created, date_modified, updated_at
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, NOW())
-    ON CONFLICT (product_id)
+      wp_product_id, wp_parent_id, sku, post_title, post_excerpt,
+      price, regular_price, stock, stock_status,
+      product_type, post_status, weight,
+      post_date, post_modified, updated_at
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, NOW())
+    ON CONFLICT (wp_product_id)
     DO UPDATE SET
-      parent_id = EXCLUDED.parent_id,
+      wp_parent_id = EXCLUDED.wp_parent_id,
       sku = EXCLUDED.sku,
-      name = EXCLUDED.name,
-      description = EXCLUDED.description,
-      short_description = EXCLUDED.short_description,
+      post_title = EXCLUDED.post_title,
+      post_excerpt = EXCLUDED.post_excerpt,
       price = EXCLUDED.price,
       regular_price = EXCLUDED.regular_price,
-      sale_price = EXCLUDED.sale_price,
-      stock_quantity = EXCLUDED.stock_quantity,
+      stock = EXCLUDED.stock,
       stock_status = EXCLUDED.stock_status,
-      type = EXCLUDED.type,
-      status = EXCLUDED.status,
-      category = EXCLUDED.category,
-      sub_category = EXCLUDED.sub_category,
-      brand = EXCLUDED.brand,
-      sub_brand = EXCLUDED.sub_brand,
-      image_url = EXCLUDED.image_url,
-      date_modified = EXCLUDED.date_modified,
+      product_type = EXCLUDED.product_type,
+      post_status = EXCLUDED.post_status,
+      weight = EXCLUDED.weight,
+      post_modified = EXCLUDED.post_modified,
       updated_at = NOW()
     RETURNING (xmax = 0) AS inserted
   `;
 
   const values = [
-    data.wp_product_id || wp_id,
+    wp_id,
     data.parent_id || null,
     data.sku || null,
     data.name || '',
-    data.description || null,
-    data.short_description || null,
+    data.short_description || data.description || null,
     data.price || 0,
     data.regular_price || null,
-    data.sale_price || null,
     data.stock_quantity || null,
     data.stock_status || 'instock',
     data.type || 'simple',
     data.status || 'publish',
-    data.category || null,
-    data.sub_category || null,
-    data.brand || null,
-    data.sub_brand || null,
-    data.image_url || null,
+    data.weight || null,
     data.date_created || null,
     data.date_modified || new Date()
   ];
@@ -374,76 +355,34 @@ async function processProductEvent(action, wp_id, data, results) {
 
 /* ============================================
  * CUSTOMER HANDLERS
+ * Schéma: wp_user_id, email, first_name, last_name, user_registered, etc.
  * ============================================ */
 
 async function processCustomerEvent(action, wp_id, data, results) {
   if (action === 'delete') {
-    // Soft delete - on ne supprime pas vraiment les clients
     console.log(`  ⚠️ Customer #${wp_id} delete ignored (soft delete not implemented)`);
     return;
   }
 
   const query = `
     INSERT INTO customers (
-      customer_id, email, first_name, last_name, phone, username, display_name,
-      billing_address, shipping_address, date_created, date_modified,
-      total_spent, order_count, updated_at
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, NOW())
-    ON CONFLICT (customer_id)
+      wp_user_id, email, first_name, last_name, user_registered, updated_at
+    ) VALUES ($1, $2, $3, $4, $5, NOW())
+    ON CONFLICT (wp_user_id)
     DO UPDATE SET
       email = EXCLUDED.email,
       first_name = EXCLUDED.first_name,
       last_name = EXCLUDED.last_name,
-      phone = EXCLUDED.phone,
-      username = EXCLUDED.username,
-      display_name = EXCLUDED.display_name,
-      billing_address = EXCLUDED.billing_address,
-      shipping_address = EXCLUDED.shipping_address,
-      date_modified = EXCLUDED.date_modified,
-      total_spent = EXCLUDED.total_spent,
-      order_count = EXCLUDED.order_count,
       updated_at = NOW()
     RETURNING (xmax = 0) AS inserted
   `;
 
-  const billingAddress = {
-    first_name: data.billing_first_name,
-    last_name: data.billing_last_name,
-    company: data.billing_company,
-    address_1: data.billing_address_1,
-    address_2: data.billing_address_2,
-    city: data.billing_city,
-    postcode: data.billing_postcode,
-    country: data.billing_country,
-    phone: data.billing_phone,
-    email: data.billing_email
-  };
-
-  const shippingAddress = {
-    first_name: data.shipping_first_name,
-    last_name: data.shipping_last_name,
-    company: data.shipping_company,
-    address_1: data.shipping_address_1,
-    address_2: data.shipping_address_2,
-    city: data.shipping_city,
-    postcode: data.shipping_postcode,
-    country: data.shipping_country
-  };
-
   const values = [
-    data.wp_customer_id || wp_id,
+    wp_id,
     data.email || '',
     data.first_name || null,
     data.last_name || null,
-    billingAddress.phone || null,
-    data.username || null,
-    data.display_name || null,
-    JSON.stringify(billingAddress),
-    JSON.stringify(shippingAddress),
-    data.date_created || null,
-    data.date_modified || new Date(),
-    data.total_spent || 0,
-    data.orders_count || 0
+    data.date_created || null
   ];
 
   const result = await pool.query(query, values);
@@ -462,6 +401,19 @@ async function processCustomerEvent(action, wp_id, data, results) {
  * ============================================ */
 
 async function processRefundEvent(action, wp_id, data, results) {
+  // Vérifier si la table refunds existe
+  const tableExists = await pool.query(`
+    SELECT EXISTS (
+      SELECT FROM information_schema.tables
+      WHERE table_name = 'refunds'
+    )
+  `);
+
+  if (!tableExists.rows[0].exists) {
+    console.log(`  ⚠️ Refund #${wp_id} ignored (refunds table does not exist)`);
+    return;
+  }
+
   if (action === 'delete') {
     await pool.query('DELETE FROM refunds WHERE wp_refund_id = $1', [wp_id]);
     results.details.refunds.deleted++;
@@ -484,11 +436,11 @@ async function processRefundEvent(action, wp_id, data, results) {
   `;
 
   const values = [
-    data.wp_refund_id || wp_id,
-    data.wp_order_id,
-    data.refund_amount || 0,
-    data.refund_reason || null,
-    data.refund_date || new Date(),
+    wp_id,
+    data.wp_order_id || data.order_id,
+    data.refund_amount || data.amount || 0,
+    data.refund_reason || data.reason || null,
+    data.refund_date || data.date_created || new Date(),
     data.refunded_by || null
   ];
 
