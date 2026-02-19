@@ -18,7 +18,7 @@ const PurchasesApp = () => {
   ];
 
   const handleGoHome = () => {
-    navigate('/');
+    navigate('/home');
   };
 
   return (
