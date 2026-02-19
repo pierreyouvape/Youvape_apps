@@ -58,13 +58,15 @@ class OrderModel {
 
       const order = orderResult.rows[0];
 
-      // Récupère les items de la commande
+      // Récupère les items de la commande (prioriser variant, fallback sur parent)
       const itemsQuery = `
         SELECT
           oi.*,
-          p.post_title as product_name
+          COALESCE(pv.post_title, pp.post_title) as product_name,
+          COALESCE(pv.image_url, pp.image_url) as image_url
         FROM order_items oi
-        LEFT JOIN products p ON p.wp_product_id = oi.product_id
+        LEFT JOIN products pv ON pv.wp_product_id = NULLIF(oi.variation_id, 0)
+        LEFT JOIN products pp ON pp.wp_product_id = oi.product_id
         WHERE oi.wp_order_id = $1
         ORDER BY oi.id
       `;

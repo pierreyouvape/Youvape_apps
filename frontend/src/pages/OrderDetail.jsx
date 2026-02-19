@@ -395,11 +395,16 @@ const OrderDetail = () => {
                   return (
                     <tr key={index} style={{ borderBottom: '1px solid #f0f0f0' }}>
                       <td style={{ padding: '12px 8px' }}>
-                        <div
-                          style={{ fontWeight: '600', fontSize: '14px', color: '#007bff', cursor: 'pointer' }}
-                          onClick={() => navigate(`/products/${item.variation_id || item.product_id}`)}
-                        >
-                          {item.order_item_name || item.product_name}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                          {item.image_url && (
+                            <img src={item.image_url} alt="" style={{ width: '40px', height: '40px', objectFit: 'cover', borderRadius: '4px' }} />
+                          )}
+                          <div
+                            style={{ fontWeight: '600', fontSize: '14px', color: '#007bff', cursor: 'pointer' }}
+                            onClick={() => navigate(`/products/${item.variation_id || item.product_id}`)}
+                          >
+                            {item.order_item_name || item.product_name}
+                          </div>
                         </div>
                       </td>
                       <td style={{ padding: '12px 8px', fontSize: '13px', color: '#666' }}>
