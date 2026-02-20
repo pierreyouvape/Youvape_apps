@@ -10,6 +10,7 @@ const SuppliersTab = ({ token }) => {
   const [editingSupplier, setEditingSupplier] = useState(null);
   const [showImportModal, setShowImportModal] = useState(false);
   const [importData, setImportData] = useState('');
+  const [syncing, setSyncing] = useState(false);
 
   // Form state
   const [form, setForm] = useState({
@@ -173,12 +174,48 @@ const SuppliersTab = ({ token }) => {
     }
   };
 
+  // Sync from BMS
+  const handleSyncBMS = async () => {
+    if (!confirm('Synchroniser les fournisseurs depuis BMS ?\n\nCela va importer/mettre à jour les fournisseurs depuis BoostMyShop.')) {
+      return;
+    }
+
+    setSyncing(true);
+    try {
+      const response = await axios.post(`${API_URL}/purchases/suppliers/sync-bms`, {}, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+
+      const result = response.data.data;
+      alert(`Synchronisation terminée !\n\n✓ ${result.created} fournisseur(s) créé(s)\n✓ ${result.updated} fournisseur(s) mis à jour\n\nTotal: ${result.total} fournisseurs BMS`);
+      loadSuppliers();
+    } catch (err) {
+      console.error('Erreur sync BMS:', err);
+      alert(err.response?.data?.error || 'Erreur lors de la synchronisation BMS');
+    } finally {
+      setSyncing(false);
+    }
+  };
+
   return (
     <div className="suppliers-tab">
       <div className="purchases-card">
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
           <h2 style={{ margin: 0 }}>Fournisseurs ({suppliers.length})</h2>
           <div style={{ display: 'flex', gap: '10px' }}>
+            <button
+              className="btn"
+              onClick={handleSyncBMS}
+              disabled={syncing}
+              style={{
+                background: '#6366f1',
+                color: 'white',
+                border: 'none',
+                opacity: syncing ? 0.7 : 1
+              }}
+            >
+              {syncing ? '⏳ Sync...' : '🔄 Sync BMS'}
+            </button>
             <button className="btn btn-secondary" onClick={() => setShowImportModal(true)}>
               📥 Import CSV
             </button>

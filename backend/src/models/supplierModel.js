@@ -1,4 +1,5 @@
 const pool = require('../config/database');
+const bmsApiModel = require('./bmsApiModel');
 
 const supplierModel = {
   // Récupérer tous les fournisseurs
@@ -252,6 +253,116 @@ const supplierModel = {
     } finally {
       client.release();
     }
+  },
+
+  // ==================== SYNC BMS ====================
+
+  /**
+   * Synchroniser les fournisseurs depuis BMS
+   * - Insère les nouveaux fournisseurs (basé sur bms_id)
+   * - Met à jour les existants
+   */
+  syncFromBMS: async () => {
+    const bmsSuppliers = await bmsApiModel.getSuppliers();
+    const client = await pool.connect();
+
+    try {
+      await client.query('BEGIN');
+
+      let created = 0;
+      let updated = 0;
+      const results = [];
+
+      for (const bms of bmsSuppliers) {
+        // Construire l'adresse complète
+        const address = [bms.street1, bms.street2].filter(Boolean).join('\n');
+
+        const query = `
+          INSERT INTO suppliers (
+            bms_id, name, code, email, phone, address,
+            postcode, city, country_code,
+            minimum_order, carriage_free_amount, currency,
+            account_number, lead_time_days, is_active, bms_synced_at
+          )
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, CURRENT_TIMESTAMP)
+          ON CONFLICT (bms_id) DO UPDATE SET
+            name = EXCLUDED.name,
+            code = EXCLUDED.code,
+            email = EXCLUDED.email,
+            phone = EXCLUDED.phone,
+            address = EXCLUDED.address,
+            postcode = EXCLUDED.postcode,
+            city = EXCLUDED.city,
+            country_code = EXCLUDED.country_code,
+            minimum_order = EXCLUDED.minimum_order,
+            carriage_free_amount = EXCLUDED.carriage_free_amount,
+            currency = EXCLUDED.currency,
+            account_number = EXCLUDED.account_number,
+            lead_time_days = EXCLUDED.lead_time_days,
+            is_active = EXCLUDED.is_active,
+            bms_synced_at = CURRENT_TIMESTAMP,
+            updated_at = CURRENT_TIMESTAMP
+          RETURNING *, (xmax = 0) AS inserted
+        `;
+
+        const values = [
+          bms.id,                                    // bms_id
+          bms.name,                                  // name
+          bms.code || null,                          // code
+          bms.email ? bms.email.trim() : null,       // email
+          bms.telephone || null,                     // phone
+          address || null,                           // address
+          bms.postcode || null,                      // postcode
+          bms.city || null,                          // city
+          bms.country_code || null,                  // country_code
+          parseFloat(bms.minimum_of_order) || 0,     // minimum_order
+          parseFloat(bms.carriage_free_amount) || 0, // carriage_free_amount
+          bms.currency || 'EUR',                     // currency
+          bms.account_number || null,                // account_number
+          bms.shipping_delay || 1,                   // lead_time_days
+          bms.is_active === 1                        // is_active
+        ];
+
+        const result = await client.query(query, values);
+        const row = result.rows[0];
+
+        if (row.inserted) {
+          created++;
+        } else {
+          updated++;
+        }
+
+        results.push({
+          id: row.id,
+          bms_id: row.bms_id,
+          name: row.name,
+          action: row.inserted ? 'created' : 'updated'
+        });
+      }
+
+      await client.query('COMMIT');
+
+      return {
+        total: bmsSuppliers.length,
+        created,
+        updated,
+        suppliers: results
+      };
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  },
+
+  /**
+   * Récupérer un fournisseur par son bms_id
+   */
+  getByBmsId: async (bmsId) => {
+    const query = 'SELECT * FROM suppliers WHERE bms_id = $1';
+    const result = await pool.query(query, [bmsId]);
+    return result.rows[0];
   }
 };
 

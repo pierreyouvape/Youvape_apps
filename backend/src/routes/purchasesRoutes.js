@@ -41,6 +41,9 @@ router.delete('/suppliers/:id/products/:productId', checkPurchasesWrite, supplie
 // Import CSV de fournisseurs
 router.post('/suppliers/import', checkPurchasesWrite, suppliersController.importSuppliers);
 
+// Sync fournisseurs depuis BMS
+router.post('/suppliers/sync-bms', checkPurchasesWrite, suppliersController.syncFromBMS);
+
 // ==================== PRODUITS / FOURNISSEURS ====================
 
 // Fournisseurs d'un produit

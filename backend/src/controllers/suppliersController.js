@@ -175,6 +175,28 @@ const suppliersController = {
       console.error('Erreur importSuppliers:', error);
       res.status(500).json({ success: false, error: 'Erreur serveur' });
     }
+  },
+
+  // POST /api/purchases/suppliers/sync-bms
+  syncFromBMS: async (req, res) => {
+    try {
+      console.log('Début sync fournisseurs BMS...');
+      const result = await supplierModel.syncFromBMS();
+      console.log(`Sync BMS terminée: ${result.created} créés, ${result.updated} mis à jour`);
+
+      res.json({
+        success: true,
+        message: `Synchronisation terminée: ${result.created} créé(s), ${result.updated} mis à jour`,
+        data: result
+      });
+    } catch (error) {
+      console.error('Erreur syncFromBMS:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Erreur lors de la synchronisation BMS',
+        details: error.message
+      });
+    }
   }
 };
 
