@@ -1,6 +1,6 @@
 import { useContext } from 'react';
 import { AuthContext } from '../context/AuthContext';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 
 const Home = () => {
   const { user, logout, permissions, isAdmin, isSuperAdmin } = useContext(AuthContext);
@@ -9,30 +9,6 @@ const Home = () => {
   const handleLogout = () => {
     logout();
     navigate('/login');
-  };
-
-  const handleGoToReviews = () => {
-    navigate('/reviews');
-  };
-
-  const handleGoToRewards = () => {
-    navigate('/rewards');
-  };
-
-  const handleGoToEmails = () => {
-    navigate('/emails');
-  };
-
-  const handleGoToSettings = () => {
-    navigate('/settings');
-  };
-
-  const handleGoToStats = () => {
-    navigate('/stats');
-  };
-
-  const handleGoToPurchases = () => {
-    navigate('/purchases');
   };
 
   // Vérifier si l'utilisateur a accès à une app
@@ -63,8 +39,8 @@ const Home = () => {
           style={{ height: '60px' }}
         />
         {(isAdmin || isSuperAdmin) && (
-          <button
-            onClick={handleGoToSettings}
+          <Link
+            to="/settings"
             style={{
               position: 'absolute',
               right: '20px',
@@ -78,12 +54,13 @@ const Home = () => {
               display: 'flex',
               alignItems: 'center',
               gap: '8px',
-              fontWeight: '600'
+              fontWeight: '600',
+              textDecoration: 'none'
             }}
           >
             <span>⚙️</span>
             <span>Paramètres</span>
-          </button>
+          </Link>
         )}
       </div>
 
@@ -111,8 +88,8 @@ const Home = () => {
           ) : (
             <div style={{ display: 'flex', gap: '20px', marginTop: '30px', justifyContent: 'center', flexWrap: 'wrap' }}>
               {hasAccess('reviews') && (
-                <div
-                  onClick={handleGoToReviews}
+                <Link
+                  to="/reviews"
                   style={{
                     display: 'inline-flex',
                     alignItems: 'center',
@@ -126,17 +103,18 @@ const Home = () => {
                     border: 'none',
                     boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
                     transition: 'transform 0.2s',
+                    textDecoration: 'none',
                   }}
                   onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.05)'}
                   onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
                 >
                   <span style={{ fontSize: '28px' }}>📱</span>
                   <span>Avis Garantis</span>
-                </div>
+                </Link>
               )}
               {hasAccess('rewards') && (
-                <div
-                  onClick={handleGoToRewards}
+                <Link
+                  to="/rewards"
                   style={{
                     display: 'inline-flex',
                     alignItems: 'center',
@@ -150,17 +128,18 @@ const Home = () => {
                     border: 'none',
                     boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
                     transition: 'transform 0.2s',
+                    textDecoration: 'none',
                   }}
                   onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.05)'}
                   onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
                 >
                   <span style={{ fontSize: '28px' }}>🎁</span>
                   <span>Récompense Avis</span>
-                </div>
+                </Link>
               )}
               {hasAccess('emails') && (
-                <div
-                  onClick={handleGoToEmails}
+                <Link
+                  to="/emails"
                   style={{
                     display: 'inline-flex',
                     alignItems: 'center',
@@ -174,17 +153,18 @@ const Home = () => {
                     border: 'none',
                     boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
                     transition: 'transform 0.2s',
+                    textDecoration: 'none',
                   }}
                   onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.05)'}
                   onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
                 >
                   <span style={{ fontSize: '28px' }}>📧</span>
                   <span>Envoi d'Emails</span>
-                </div>
+                </Link>
               )}
               {hasAccess('stats') && (
-                <div
-                  onClick={handleGoToStats}
+                <Link
+                  to="/stats"
                   style={{
                     display: 'inline-flex',
                     alignItems: 'center',
@@ -198,17 +178,18 @@ const Home = () => {
                     border: 'none',
                     boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
                     transition: 'transform 0.2s',
+                    textDecoration: 'none',
                   }}
                   onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.05)'}
                   onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
                 >
                   <span style={{ fontSize: '28px' }}>📊</span>
                   <span>Statistiques WooCommerce</span>
-                </div>
+                </Link>
               )}
               {hasAccess('purchases') && (
-                <div
-                  onClick={handleGoToPurchases}
+                <Link
+                  to="/purchases"
                   style={{
                     display: 'inline-flex',
                     alignItems: 'center',
@@ -222,13 +203,14 @@ const Home = () => {
                     border: 'none',
                     boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
                     transition: 'transform 0.2s',
+                    textDecoration: 'none',
                   }}
                   onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.05)'}
                   onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
                 >
                   <span style={{ fontSize: '28px' }}>🛒</span>
                   <span>Gestion d'achat</span>
-                </div>
+                </Link>
               )}
             </div>
           )}
