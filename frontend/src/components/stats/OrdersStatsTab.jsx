@@ -408,6 +408,23 @@ const OrdersStatsTab = () => {
                               #{order.wp_order_id}
                             </span>
                             <CopyButton text={String(order.wp_order_id)} size={12} />
+                            <a
+                              href={`https://www.youvape.fr/wp-admin/post.php?post=${order.wp_order_id}&action=edit`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              onClick={(e) => e.stopPropagation()}
+                              style={{
+                                padding: '2px 6px',
+                                backgroundColor: '#96588a',
+                                color: 'white',
+                                borderRadius: '3px',
+                                fontSize: '10px',
+                                fontWeight: 'bold',
+                                textDecoration: 'none'
+                              }}
+                            >
+                              WC
+                            </a>
                           </div>
                         </td>
                         <td style={{ padding: '12px', fontSize: '13px', color: '#666' }}>{formatDate(order.post_date)}</td>
