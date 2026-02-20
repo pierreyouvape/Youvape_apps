@@ -1,8 +1,67 @@
 const purchaseOrderModel = require('../models/purchaseOrderModel');
 const needsCalculationModel = require('../models/needsCalculationModel');
 const productAlertModel = require('../models/productAlertModel');
+const pool = require('../config/database');
 
 const purchasesController = {
+  // ==================== RECHERCHE PRODUITS (POUR COMMANDES) ====================
+
+  // GET /api/purchases/products/search
+  // Recherche de produits pour les commandes fournisseurs
+  // Retourne uniquement les variants si le produit a des variants
+  searchProducts: async (req, res) => {
+    try {
+      const searchTerm = req.query.q || '';
+      const limit = parseInt(req.query.limit) || 30;
+
+      if (searchTerm.length < 2) {
+        return res.json({ success: true, data: [] });
+      }
+
+      // Requête qui retourne uniquement les produits commandables :
+      // - Si un produit est 'simple' → le retourner
+      // - Si un produit est 'variable' → NE PAS le retourner (on veut ses variants)
+      // - Si un produit est 'variation' → le retourner
+      const query = `
+        SELECT
+          p.wp_product_id as id,
+          p.post_title,
+          p.sku,
+          p.stock,
+          p.wc_cog_cost as cost_price,
+          p.product_type,
+          p.wp_parent_id,
+          parent.post_title as parent_title
+        FROM products p
+        LEFT JOIN products parent ON parent.wp_product_id = p.wp_parent_id
+        WHERE
+          p.product_type IN ('simple', 'variation')
+          AND p.post_status = 'publish'
+          AND (
+            LOWER(p.post_title) LIKE $1
+            OR LOWER(p.sku) LIKE $1
+            OR LOWER(parent.post_title) LIKE $1
+          )
+        ORDER BY
+          CASE WHEN LOWER(p.sku) = $2 THEN 0
+               WHEN LOWER(p.sku) LIKE $1 THEN 1
+               ELSE 2
+          END,
+          p.post_title
+        LIMIT $3
+      `;
+
+      const searchPattern = `%${searchTerm.toLowerCase()}%`;
+      const exactTerm = searchTerm.toLowerCase();
+
+      const result = await pool.query(query, [searchPattern, exactTerm, limit]);
+
+      res.json({ success: true, data: result.rows });
+    } catch (error) {
+      console.error('Erreur searchProducts:', error);
+      res.status(500).json({ success: false, error: 'Erreur serveur' });
+    }
+  },
   // ==================== BESOINS ====================
 
   // GET /api/purchases/needs

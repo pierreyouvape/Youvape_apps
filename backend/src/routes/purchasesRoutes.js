@@ -44,6 +44,11 @@ router.post('/suppliers/import', checkPurchasesWrite, suppliersController.import
 // Sync fournisseurs depuis BMS
 router.post('/suppliers/sync-bms', checkPurchasesWrite, suppliersController.syncFromBMS);
 
+// ==================== RECHERCHE PRODUITS (POUR COMMANDES) ====================
+
+// Recherche de produits pour création de commandes (retourne variants seulement si le produit a des variants)
+router.get('/products/search', checkPurchasesRead, purchasesController.searchProducts);
+
 // ==================== PRODUITS / FOURNISSEURS ====================
 
 // Fournisseurs d'un produit

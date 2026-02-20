@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 
 const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:3000/api/auth').replace('/auth', '');
 
 const OrdersTab = ({ token }) => {
+  const navigate = useNavigate();
   const [orders, setOrders] = useState([]);
   const [suppliers, setSuppliers] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -13,16 +15,6 @@ const OrdersTab = ({ token }) => {
   // Filters
   const [filterSupplier, setFilterSupplier] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
-
-  // Create order modal
-  const [showCreateModal, setShowCreateModal] = useState(false);
-  const [createSupplierId, setCreateSupplierId] = useState('');
-  const [productSearch, setProductSearch] = useState('');
-  const [searchResults, setSearchResults] = useState([]);
-  const [searchLoading, setSearchLoading] = useState(false);
-  const [orderItems, setOrderItems] = useState([]);
-  const [creatingOrder, setCreatingOrder] = useState(false);
-  const [searchTimeout, setSearchTimeout] = useState(null);
 
   const statusLabels = {
     draft: 'Brouillon',
@@ -167,113 +159,6 @@ const OrdersTab = ({ token }) => {
     });
   };
 
-  // Search products for create modal
-  const handleProductSearch = (value) => {
-    setProductSearch(value);
-    if (searchTimeout) clearTimeout(searchTimeout);
-
-    if (value.length < 2) {
-      setSearchResults([]);
-      return;
-    }
-
-    setSearchTimeout(setTimeout(async () => {
-      setSearchLoading(true);
-      try {
-        const response = await axios.get(`${API_URL}/products/search?q=${encodeURIComponent(value)}&limit=20`, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-        // Filter out products already in orderItems
-        const existingIds = orderItems.map(item => item.product_id);
-        const filtered = (response.data.data || []).filter(p => !existingIds.includes(p.id));
-        setSearchResults(filtered);
-      } catch (err) {
-        console.error('Erreur recherche produits:', err);
-      } finally {
-        setSearchLoading(false);
-      }
-    }, 300));
-  };
-
-  // Add product to order
-  const addProductToOrder = (product) => {
-    setOrderItems(prev => [...prev, {
-      product_id: product.id,
-      product_name: product.post_title,
-      sku: product.sku,
-      stock: product.stock,
-      qty_ordered: 1,
-      unit_price: product.cost_price || null
-    }]);
-    setProductSearch('');
-    setSearchResults([]);
-  };
-
-  // Remove product from order
-  const removeProductFromOrder = (productId) => {
-    setOrderItems(prev => prev.filter(item => item.product_id !== productId));
-  };
-
-  // Update quantity
-  const updateItemQty = (productId, qty) => {
-    setOrderItems(prev => prev.map(item =>
-      item.product_id === productId ? { ...item, qty_ordered: Math.max(1, qty) } : item
-    ));
-  };
-
-  // Create order from modal
-  const handleCreateOrder = async (sendToBMS = false) => {
-    if (!createSupplierId) {
-      alert('Veuillez sélectionner un fournisseur');
-      return;
-    }
-    if (orderItems.length === 0) {
-      alert('Veuillez ajouter au moins un produit');
-      return;
-    }
-
-    setCreatingOrder(true);
-    try {
-      const items = orderItems.map(item => ({
-        product_id: item.product_id,
-        product_name: item.product_name,
-        qty_ordered: item.qty_ordered,
-        stock_before: item.stock || 0,
-        supplier_sku: item.supplier_sku || null,
-        unit_price: item.unit_price || null
-      }));
-
-      const response = await axios.post(`${API_URL}/purchases/orders`, {
-        supplier_id: parseInt(createSupplierId),
-        items,
-        send_to_bms: sendToBMS
-      }, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-
-      alert(`Commande ${response.data.data?.order_number || ''} créée avec ${items.length} article(s)${sendToBMS ? ' et envoyée à BMS' : ''}`);
-      setShowCreateModal(false);
-      setCreateSupplierId('');
-      setOrderItems([]);
-      setProductSearch('');
-      loadOrders();
-    } catch (err) {
-      console.error('Erreur création commande:', err);
-      alert(err.response?.data?.error || 'Erreur lors de la création de la commande');
-    } finally {
-      setCreatingOrder(false);
-    }
-  };
-
-  // Open create modal
-  const openCreateModal = () => {
-    setCreateSupplierId('');
-    setOrderItems([]);
-    setProductSearch('');
-    setSearchResults([]);
-    setShowCreateModal(true);
-  };
-
   return (
     <div className="orders-tab">
       <div className="purchases-card">
@@ -314,7 +199,7 @@ const OrdersTab = ({ token }) => {
           </button>
           <button
             className="btn btn-primary"
-            onClick={openCreateModal}
+            onClick={() => navigate('/purchases/create-order')}
           >
             + Créer une commande
           </button>
@@ -328,7 +213,7 @@ const OrdersTab = ({ token }) => {
           <div className="empty-state">
             <div className="empty-state-icon">📦</div>
             <p>Aucune commande</p>
-            <button className="btn btn-primary" onClick={openCreateModal}>
+            <button className="btn btn-primary" onClick={() => navigate('/purchases/create-order')}>
               + Créer une commande
             </button>
           </div>
@@ -392,168 +277,6 @@ const OrdersTab = ({ token }) => {
           </table>
         )}
       </div>
-
-      {/* Create Order Modal */}
-      {showCreateModal && (
-        <div className="modal-overlay" onClick={() => setShowCreateModal(false)}>
-          <div className="modal-content" style={{ maxWidth: '800px' }} onClick={e => e.stopPropagation()}>
-            <div className="modal-header">
-              <h3>Créer une commande</h3>
-              <button className="modal-close" onClick={() => setShowCreateModal(false)}>×</button>
-            </div>
-            <div className="modal-body">
-              {/* Supplier selection */}
-              <div className="form-group" style={{ marginBottom: '20px' }}>
-                <label style={{ fontWeight: 600 }}>Fournisseur *</label>
-                <select
-                  value={createSupplierId}
-                  onChange={e => setCreateSupplierId(e.target.value)}
-                  style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #ddd' }}
-                >
-                  <option value="">-- Sélectionner un fournisseur --</option>
-                  {suppliers.map(s => (
-                    <option key={s.id} value={s.id}>{s.name}</option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Product search */}
-              <div className="form-group" style={{ marginBottom: '20px', position: 'relative' }}>
-                <label style={{ fontWeight: 600 }}>Ajouter des produits</label>
-                <input
-                  type="text"
-                  placeholder="Rechercher par nom ou SKU..."
-                  value={productSearch}
-                  onChange={e => handleProductSearch(e.target.value)}
-                  style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #ddd' }}
-                />
-                {searchLoading && (
-                  <div style={{ position: 'absolute', right: '10px', top: '35px', color: '#666' }}>...</div>
-                )}
-                {/* Search results dropdown */}
-                {searchResults.length > 0 && (
-                  <div style={{
-                    position: 'absolute',
-                    top: '100%',
-                    left: 0,
-                    right: 0,
-                    background: 'white',
-                    border: '1px solid #ddd',
-                    borderRadius: '0 0 6px 6px',
-                    maxHeight: '250px',
-                    overflowY: 'auto',
-                    zIndex: 1000,
-                    boxShadow: '0 4px 6px rgba(0,0,0,0.1)'
-                  }}>
-                    {searchResults.map(product => (
-                      <div
-                        key={product.id}
-                        onClick={() => addProductToOrder(product)}
-                        style={{
-                          padding: '10px 15px',
-                          cursor: 'pointer',
-                          borderBottom: '1px solid #eee',
-                          display: 'flex',
-                          justifyContent: 'space-between',
-                          alignItems: 'center'
-                        }}
-                        onMouseEnter={e => e.currentTarget.style.background = '#f5f5f5'}
-                        onMouseLeave={e => e.currentTarget.style.background = 'white'}
-                      >
-                        <div>
-                          <div style={{ fontWeight: 500 }}>{product.post_title}</div>
-                          <div style={{ fontSize: '12px', color: '#666' }}>
-                            SKU: {product.sku || '-'} | Stock: {product.stock ?? 'N/A'}
-                          </div>
-                        </div>
-                        <span style={{ color: '#10b981', fontSize: '18px' }}>+</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              {/* Order items */}
-              <div style={{ marginTop: '20px' }}>
-                <h4 style={{ marginBottom: '10px' }}>Articles ({orderItems.length})</h4>
-                {orderItems.length === 0 ? (
-                  <div style={{ padding: '30px', textAlign: 'center', background: '#f9fafb', borderRadius: '6px', color: '#666' }}>
-                    Aucun produit ajouté
-                  </div>
-                ) : (
-                  <table className="purchases-table">
-                    <thead>
-                      <tr>
-                        <th>Produit</th>
-                        <th>SKU</th>
-                        <th className="text-center">Stock</th>
-                        <th className="text-center" style={{ width: '100px' }}>Quantité</th>
-                        <th style={{ width: '50px' }}></th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {orderItems.map(item => (
-                        <tr key={item.product_id}>
-                          <td style={{ maxWidth: '250px' }}>{item.product_name}</td>
-                          <td><code>{item.sku || '-'}</code></td>
-                          <td className="text-center">{item.stock ?? '-'}</td>
-                          <td className="text-center">
-                            <input
-                              type="number"
-                              className="qty-input"
-                              min="1"
-                              value={item.qty_ordered}
-                              onChange={e => updateItemQty(item.product_id, parseInt(e.target.value) || 1)}
-                              style={{ width: '70px' }}
-                            />
-                          </td>
-                          <td>
-                            <button
-                              className="btn btn-danger btn-sm"
-                              onClick={() => removeProductFromOrder(item.product_id)}
-                              title="Retirer"
-                            >
-                              ×
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                )}
-              </div>
-
-              {/* Summary */}
-              {orderItems.length > 0 && (
-                <div style={{ marginTop: '15px', padding: '10px 15px', background: '#fef3c7', borderRadius: '6px' }}>
-                  <strong>{orderItems.length}</strong> produit(s) -
-                  <strong> {orderItems.reduce((sum, item) => sum + item.qty_ordered, 0)}</strong> unités au total
-                </div>
-              )}
-            </div>
-            <div className="modal-footer">
-              <button className="btn btn-secondary" onClick={() => setShowCreateModal(false)}>
-                Annuler
-              </button>
-              <button
-                className="btn btn-primary"
-                onClick={() => handleCreateOrder(false)}
-                disabled={creatingOrder || !createSupplierId || orderItems.length === 0}
-              >
-                {creatingOrder ? 'Création...' : '💾 Sauvegarder (Brouillon)'}
-              </button>
-              <button
-                className="btn"
-                onClick={() => handleCreateOrder(true)}
-                disabled={creatingOrder || !createSupplierId || orderItems.length === 0}
-                style={{ background: '#6366f1', color: 'white', border: 'none' }}
-              >
-                {creatingOrder ? 'Création...' : '🚀 Créer dans BMS'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Detail Modal */}
       {showDetailModal && selectedOrder && (

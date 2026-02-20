@@ -9,6 +9,7 @@ import EmailApp from './pages/EmailApp';
 import SettingsApp from './pages/SettingsApp';
 import StatsApp from './pages/StatsApp';
 import PurchasesApp from './pages/PurchasesApp';
+import CreateOrderPage from './pages/CreateOrderPage';
 import CustomersApp from './pages/CustomersApp';
 import CustomerDetail from './pages/CustomerDetail';
 import ProductsApp from './pages/ProductsApp';
@@ -99,6 +100,14 @@ function App() {
             element={
               <PrivateRoute>
                 <PurchasesApp />
+              </PrivateRoute>
+            }
+          />
+          <Route
+            path="/purchases/create-order"
+            element={
+              <PrivateRoute>
+                <CreateOrderPage />
               </PrivateRoute>
             }
           />
