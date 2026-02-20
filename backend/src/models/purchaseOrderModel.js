@@ -1,4 +1,8 @@
 const pool = require('../config/database');
+const bmsApiModel = require('./bmsApiModel');
+
+// Warehouse ID principal BMS (Entrepot)
+const BMS_WAREHOUSE_ID = 270;
 
 const purchaseOrderModel = {
   // Générer un numéro de commande
@@ -102,7 +106,7 @@ const purchaseOrderModel = {
       // Générer le numéro de commande
       const orderNumber = await purchaseOrderModel.generateOrderNumber();
 
-      // Créer la commande
+      // Créer la commande localement
       const orderQuery = `
         INSERT INTO purchase_orders (
           order_number, supplier_id, status, notes, created_by, order_date
@@ -120,13 +124,23 @@ const purchaseOrderModel = {
       ]);
       const order = orderResult.rows[0];
 
-      // Ajouter les lignes
+      // Récupérer les SKUs des produits pour les items
+      const itemsWithSku = [];
       let totalItems = 0;
       let totalQty = 0;
       let totalAmount = 0;
 
       if (data.items && data.items.length > 0) {
         for (const item of data.items) {
+          // Récupérer le SKU du produit
+          const productResult = await client.query(
+            'SELECT sku, wc_cog_cost FROM products WHERE wp_product_id = $1',
+            [item.product_id]
+          );
+          const product = productResult.rows[0];
+          const sku = product?.sku || null;
+          const unitPrice = item.unit_price || product?.wc_cog_cost || 0;
+
           const itemQuery = `
             INSERT INTO purchase_order_items (
               purchase_order_id, product_id, supplier_sku, product_name,
@@ -135,22 +149,28 @@ const purchaseOrderModel = {
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
             RETURNING *
           `;
-          await client.query(itemQuery, [
+          const insertedItem = await client.query(itemQuery, [
             order.id,
             item.product_id,
-            item.supplier_sku || null,
+            item.supplier_sku || sku || null,
             item.product_name,
             item.qty_ordered,
-            item.unit_price || null,
+            unitPrice || null,
             item.stock_before || null,
             item.theoretical_need || null,
             item.supposed_need || null
           ]);
 
+          itemsWithSku.push({
+            ...insertedItem.rows[0],
+            sku: sku,
+            unit_price: unitPrice
+          });
+
           totalItems++;
           totalQty += item.qty_ordered;
-          if (item.unit_price) {
-            totalAmount += item.qty_ordered * item.unit_price;
+          if (unitPrice) {
+            totalAmount += item.qty_ordered * unitPrice;
           }
         }
 
@@ -162,6 +182,23 @@ const purchaseOrderModel = {
         `, [order.id, totalItems, totalQty, totalAmount]);
       }
 
+      // Si send_to_bms est true, créer la commande dans BMS
+      if (data.send_to_bms) {
+        const bmsResult = await purchaseOrderModel.createInBMS(
+          client,
+          order,
+          data.supplier_id,
+          itemsWithSku
+        );
+
+        if (bmsResult.bms_po_id) {
+          await client.query(
+            'UPDATE purchase_orders SET bms_po_id = $2, status = $3 WHERE id = $1',
+            [order.id, bmsResult.bms_po_id, 'sent']
+          );
+        }
+      }
+
       await client.query('COMMIT');
 
       return purchaseOrderModel.getById(order.id);
@@ -171,6 +208,53 @@ const purchaseOrderModel = {
     } finally {
       client.release();
     }
+  },
+
+  // Créer la commande dans BMS
+  createInBMS: async (client, order, supplierId, items) => {
+    // Récupérer le bms_id du fournisseur
+    const supplierResult = await client.query(
+      'SELECT bms_id, name FROM suppliers WHERE id = $1',
+      [supplierId]
+    );
+    const supplier = supplierResult.rows[0];
+
+    if (!supplier?.bms_id) {
+      throw new Error(`Le fournisseur n'a pas d'ID BMS associé. Synchronisez les fournisseurs depuis BMS d'abord.`);
+    }
+
+    // Préparer les items pour BMS (seuls les produits avec SKU)
+    const bmsItems = items
+      .filter(item => item.sku)
+      .map(item => ({
+        sku: item.sku,
+        qty: item.qty_ordered,
+        price: parseFloat(item.unit_price) || 0,
+        name: item.product_name
+      }));
+
+    if (bmsItems.length === 0) {
+      throw new Error('Aucun produit avec SKU valide pour créer la commande BMS');
+    }
+
+    // Créer la commande dans BMS
+    const bmsOrderData = {
+      reference: order.order_number,
+      status: 'draft',
+      supplier_id: supplier.bms_id,
+      warehouse_id: BMS_WAREHOUSE_ID,
+      items: bmsItems
+    };
+
+    console.log('Creating BMS order:', JSON.stringify(bmsOrderData, null, 2));
+
+    const bmsResponse = await bmsApiModel.createPurchaseOrder(bmsOrderData);
+    console.log('BMS response:', JSON.stringify(bmsResponse, null, 2));
+
+    return {
+      bms_po_id: bmsResponse.id || null,
+      bms_reference: bmsResponse.reference || null
+    };
   },
 
   // Mettre à jour le statut d'une commande
