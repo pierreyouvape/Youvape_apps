@@ -53,8 +53,9 @@ const needsCalculationModel = {
     // 4. Calculer la moyenne mensuelle
     const avgMonthlySales = analysisPeriodMonths > 0 ? salesInPeriod / analysisPeriodMonths : 0;
 
-    // 5. Calculer le coefficient de tendance (régression linéaire sur 12 mois)
-    const trendCoefficient = needsCalculationModel.calculateTrendCoefficient(monthlySales);
+    // 5. Calculer le coefficient de tendance (régression linéaire si R² >= 0.7, sinon moyenne mobile pondérée)
+    const trendResult = needsCalculationModel.calculateTrendCoefficient(monthlySales);
+    const trendCoefficient = trendResult.coefficient;
 
     // 6. Calculer les besoins
     const fifteenDaysSales = avgMonthlySales / 2; // 15 jours = demi-mois
@@ -79,6 +80,8 @@ const needsCalculationModel = {
       avg_monthly_sales: Math.round(avgMonthlySales * 100) / 100,
       max_order_qty_12m: maxOrderQty,
       trend_coefficient: Math.round(trendCoefficient * 100) / 100,
+      trend_r_squared: trendResult.rSquared,
+      trend_method: trendResult.method,
       theoretical_need: Math.ceil(theoreticalNeed),
       supposed_need: Math.ceil(supposedNeed),
       trend_direction: trendCoefficient > 1.1 ? 'up' : trendCoefficient < 0.9 ? 'down' : 'stable'
@@ -86,55 +89,131 @@ const needsCalculationModel = {
   },
 
   /**
-   * Calculer le coefficient de tendance par régression linéaire
-   * Retourne un coefficient :
-   *   > 1 = croissance
-   *   < 1 = décroissance
-   *   = 1 = stable
+   * Calculer le coefficient de tendance
+   * Utilise la régression linéaire si R² >= 0.7 (tendance fiable)
+   * Sinon utilise une moyenne mobile pondérée (mois récents pèsent plus)
+   *
+   * Retourne un objet :
+   *   coefficient: > 1 = croissance, < 1 = décroissance, = 1 = stable
+   *   rSquared: coefficient de détermination (null si moyenne mobile)
+   *   method: 'linear_regression' ou 'weighted_moving_average'
    */
   calculateTrendCoefficient: (monthlySales) => {
     if (!monthlySales || monthlySales.length < 2) {
-      return 1; // Pas assez de données, coefficient neutre
+      return { coefficient: 1, rSquared: null, method: 'insufficient_data' };
     }
 
     const n = monthlySales.length;
     const sales = monthlySales.map(m => parseInt(m.total_qty) || 0);
 
-    // Régression linéaire : y = ax + b
-    // x = index du mois (0, 1, 2, ...)
-    // y = ventes du mois
+    // Calculer la régression linéaire et le R²
+    const regressionResult = needsCalculationModel.calculateLinearRegression(sales);
 
-    let sumX = 0, sumY = 0, sumXY = 0, sumX2 = 0;
+    // Si R² >= 0.7, utiliser la régression linéaire
+    if (regressionResult.rSquared >= 0.7) {
+      return {
+        coefficient: regressionResult.coefficient,
+        rSquared: Math.round(regressionResult.rSquared * 100) / 100,
+        method: 'linear_regression'
+      };
+    }
+
+    // Sinon, utiliser la moyenne mobile pondérée
+    const wmaCoefficient = needsCalculationModel.calculateWeightedMovingAverage(sales);
+    return {
+      coefficient: wmaCoefficient,
+      rSquared: Math.round(regressionResult.rSquared * 100) / 100,
+      method: 'weighted_moving_average'
+    };
+  },
+
+  /**
+   * Régression linéaire avec calcul du R²
+   */
+  calculateLinearRegression: (sales) => {
+    const n = sales.length;
+
+    let sumX = 0, sumY = 0, sumXY = 0, sumX2 = 0, sumY2 = 0;
 
     for (let i = 0; i < n; i++) {
       sumX += i;
       sumY += sales[i];
       sumXY += i * sales[i];
       sumX2 += i * i;
+      sumY2 += sales[i] * sales[i];
     }
 
     const avgX = sumX / n;
     const avgY = sumY / n;
 
-    // Pente de la régression
+    // Pente et ordonnée à l'origine
     const denominator = sumX2 - n * avgX * avgX;
     if (denominator === 0 || avgY === 0) {
-      return 1; // Éviter division par zéro
+      return { coefficient: 1, rSquared: 0 };
     }
 
     const slope = (sumXY - n * avgX * avgY) / denominator;
+    const intercept = avgY - slope * avgX;
 
-    // Coefficient = (valeur projetée au mois suivant) / (moyenne actuelle)
-    // Valeur projetée = avgY + slope * (n - avgX)
-    const projectedValue = avgY + slope * (n - avgX);
-
-    if (avgY === 0) {
-      return projectedValue > 0 ? 2 : 1; // Si pas de ventes avant mais projection positive
+    // Calcul du R² (coefficient de détermination)
+    // R² = 1 - (SS_res / SS_tot)
+    // SS_res = somme des carrés des résidus
+    // SS_tot = somme des carrés totaux
+    let ssRes = 0, ssTot = 0;
+    for (let i = 0; i < n; i++) {
+      const predicted = slope * i + intercept;
+      ssRes += Math.pow(sales[i] - predicted, 2);
+      ssTot += Math.pow(sales[i] - avgY, 2);
     }
 
-    const coefficient = projectedValue / avgY;
+    const rSquared = ssTot === 0 ? 0 : 1 - (ssRes / ssTot);
 
-    // Limiter le coefficient entre 0.1 et 5 pour éviter les valeurs aberrantes
+    // Coefficient de tendance = valeur projetée / moyenne
+    const projectedValue = avgY + slope * (n - avgX);
+    let coefficient = avgY === 0 ? (projectedValue > 0 ? 2 : 1) : projectedValue / avgY;
+
+    // Limiter entre 0.1 et 5
+    coefficient = Math.max(0.1, Math.min(5, coefficient));
+
+    return { coefficient, rSquared: Math.max(0, rSquared) };
+  },
+
+  /**
+   * Moyenne mobile pondérée (les mois récents pèsent plus)
+   * Poids : mois le plus récent = n, avant-dernier = n-1, etc.
+   * Compare la moyenne pondérée récente vs ancienne
+   */
+  calculateWeightedMovingAverage: (sales) => {
+    const n = sales.length;
+
+    if (n < 2) return 1;
+
+    // Calculer la moyenne pondérée totale
+    // Poids croissants : 1, 2, 3, ..., n (plus récent = plus de poids)
+    let weightedSum = 0;
+    let totalWeight = 0;
+
+    for (let i = 0; i < n; i++) {
+      const weight = i + 1; // Poids croissant
+      weightedSum += sales[i] * weight;
+      totalWeight += weight;
+    }
+
+    const weightedAvg = weightedSum / totalWeight;
+
+    // Moyenne simple (non pondérée)
+    const simpleAvg = sales.reduce((a, b) => a + b, 0) / n;
+
+    if (simpleAvg === 0) {
+      return weightedAvg > 0 ? 1.5 : 1;
+    }
+
+    // Coefficient = moyenne pondérée / moyenne simple
+    // Si pondérée > simple = tendance haussière (récent plus fort)
+    // Si pondérée < simple = tendance baissière (récent plus faible)
+    let coefficient = weightedAvg / simpleAvg;
+
+    // Limiter entre 0.1 et 5
     return Math.max(0.1, Math.min(5, coefficient));
   },
 
