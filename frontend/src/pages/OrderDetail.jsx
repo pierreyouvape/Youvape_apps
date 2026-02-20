@@ -224,6 +224,22 @@ const OrderDetail = () => {
             <h1 style={{ margin: 0, color: '#135E84', display: 'flex', alignItems: 'center', gap: '8px' }}>
               Commande #{order.wp_order_id}
               <CopyButton text={String(order.wp_order_id)} size={16} />
+              <a
+                href={`https://www.youvape.fr/wp-admin/post.php?post=${order.wp_order_id}&action=edit`}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{
+                  padding: '4px 10px',
+                  backgroundColor: '#96588a',
+                  color: 'white',
+                  borderRadius: '4px',
+                  fontSize: '12px',
+                  fontWeight: 'bold',
+                  textDecoration: 'none'
+                }}
+              >
+                WC
+              </a>
             </h1>
             {getStatusBadge(order.post_status)}
           </div>
