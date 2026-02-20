@@ -61,63 +61,21 @@ const StatsApp = () => {
   return (
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
       {/* Header */}
-      <div style={{
-        backgroundColor: '#135E84',
-        padding: '20px 0',
-        display: 'flex',
-        justifyContent: 'center',
-        alignItems: 'center',
-        position: 'relative'
-      }}>
-        <img
-          src="/images/logo.svg"
-          alt="YouVape"
-          style={{ height: '60px' }}
-        />
-        <div style={{ position: 'absolute', right: '20px', display: 'flex', gap: '10px' }}>
+      <div style={{ backgroundColor: '#ff6b6b', color: 'white', padding: '15px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
+          <button onClick={handleBackHome} style={{ background: 'rgba(255,255,255,0.2)', border: 'none', color: 'white', padding: '8px 16px', borderRadius: '6px', cursor: 'pointer', fontSize: '14px' }}>
+            ← Accueil
+          </button>
+          <h1 style={{ margin: 0, fontSize: '1.5rem', fontWeight: 600 }}>📊 Statistiques WooCommerce</h1>
+        </div>
+        <div style={{ display: 'flex', gap: '10px' }}>
           <button
             onClick={() => navigate('/stats/shipping-settings')}
-            style={{
-              padding: '10px 20px',
-              backgroundColor: '#ffc107',
-              color: '#000',
-              border: 'none',
-              borderRadius: '6px',
-              fontSize: '14px',
-              cursor: 'pointer',
-              fontWeight: '600'
-            }}
+            style={{ background: 'rgba(255,255,255,0.2)', border: 'none', color: 'white', padding: '8px 16px', borderRadius: '6px', cursor: 'pointer', fontSize: '14px' }}
           >
             ⚙️ Paramètres
           </button>
-          <button
-            onClick={handleBackHome}
-            style={{
-              padding: '10px 20px',
-              backgroundColor: '#fff',
-              color: '#135E84',
-              border: 'none',
-              borderRadius: '6px',
-              fontSize: '14px',
-              cursor: 'pointer',
-              fontWeight: '600'
-            }}
-          >
-            Retour
-          </button>
-          <button
-            onClick={handleLogout}
-            style={{
-              padding: '10px 20px',
-              backgroundColor: '#dc3545',
-              color: 'white',
-              border: 'none',
-              borderRadius: '6px',
-              fontSize: '14px',
-              cursor: 'pointer',
-              fontWeight: '600'
-            }}
-          >
+          <button onClick={handleLogout} style={{ background: 'rgba(255,255,255,0.2)', border: 'none', color: 'white', padding: '8px 16px', borderRadius: '6px', cursor: 'pointer', fontSize: '14px' }}>
             Déconnexion
           </button>
         </div>
@@ -144,7 +102,7 @@ const StatsApp = () => {
 
       {/* Footer */}
       <div style={{
-        backgroundColor: '#135E84',
+        backgroundColor: '#ff6b6b',
         padding: '20px 0',
         textAlign: 'center',
         color: 'white'

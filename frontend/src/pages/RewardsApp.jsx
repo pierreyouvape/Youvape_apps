@@ -758,19 +758,21 @@ const RewardsApp = () => {
   );
 
   return (
-    <div style={{ maxWidth: '1200px', margin: '30px auto', padding: '20px' }}>
+    <div style={{ minHeight: '100vh', backgroundColor: '#f5f5f5' }}>
       {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px' }}>
-        <h1>🎁 Application Récompense Avis</h1>
-        <div>
-          <button onClick={handleBackHome} style={{ padding: '10px 20px', marginRight: '10px', cursor: 'pointer' }}>
-            Retour
+      <div style={{ backgroundColor: '#8b5cf6', color: 'white', padding: '15px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
+          <button onClick={handleBackHome} style={{ background: 'rgba(255,255,255,0.2)', border: 'none', color: 'white', padding: '8px 16px', borderRadius: '6px', cursor: 'pointer', fontSize: '14px' }}>
+            ← Accueil
           </button>
-          <button onClick={handleLogout} style={{ padding: '10px 20px', cursor: 'pointer' }}>
-            Déconnexion
-          </button>
+          <h1 style={{ margin: 0, fontSize: '1.5rem', fontWeight: 600 }}>🎁 Récompense Avis</h1>
         </div>
+        <button onClick={handleLogout} style={{ background: 'rgba(255,255,255,0.2)', border: 'none', color: 'white', padding: '8px 16px', borderRadius: '6px', cursor: 'pointer', fontSize: '14px' }}>
+          Déconnexion
+        </button>
       </div>
+
+      <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '0 20px 20px' }}>
 
       {/* Tabs */}
       <div style={{ display: 'flex', borderBottom: '2px solid #ddd', marginBottom: '20px' }}>
@@ -789,6 +791,7 @@ const RewardsApp = () => {
       {activeTab === 'config' && renderConfigTab()}
       {activeTab === 'history' && renderHistoryTab()}
       {activeTab === 'logs' && renderLogsTab()}
+      </div>
     </div>
   );
 };
