@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
+import { formatDate } from '../utils/dateUtils';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
 
@@ -73,10 +74,6 @@ const CustomersApp = () => {
     return new Intl.NumberFormat('fr-FR').format(value);
   };
 
-  const formatDate = (dateString) => {
-    if (!dateString) return '-';
-    return new Date(dateString).toLocaleDateString('fr-FR');
-  };
 
   const uniqueCountries = [...new Set(customers.map(c => c.shipping_country).filter(Boolean))].sort();
 

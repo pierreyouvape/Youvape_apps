@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import CopyButton from '../CopyButton';
+import { formatDate } from '../../utils/dateUtils';
 
 const API_BASE_URL = 'http://54.37.156.233:3000/api';
 
@@ -173,16 +174,6 @@ const OrdersStatsTab = () => {
   };
 
   const formatPrice = (price) => parseFloat(price || 0).toFixed(2) + ' €';
-  const formatDate = (date) => {
-    if (!date) return '-';
-    return new Date(date).toLocaleDateString('fr-FR', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
-  };
 
   const handleExport = () => {
     const csv = [

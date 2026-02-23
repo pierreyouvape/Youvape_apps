@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import axios from 'axios';
 import AdvancedSalesChart from '../components/charts/AdvancedSalesChart';
+import { formatDate as formatDateUtil } from '../utils/dateUtils';
 import SalesByDayOfWeekChart from '../components/charts/SalesByDayOfWeekChart';
 import SalesByHourChart from '../components/charts/SalesByHourChart';
 import SalesByCountryPieChart from '../components/charts/SalesByCountryPieChart';
@@ -226,10 +227,7 @@ const ProductDetail = () => {
 
   const formatCurrency = (value) => new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR' }).format(value);
   const formatNumber = (value) => new Intl.NumberFormat('fr-FR').format(value);
-  const formatDate = (dateString) => {
-    if (!dateString) return '-';
-    return new Date(dateString).toLocaleDateString('fr-FR', { year: 'numeric', month: 'short', day: 'numeric' });
-  };
+  const formatDate = (dateString) => formatDateUtil(dateString, { time: false });
 
   if (loading) {
     return (

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import axios from 'axios';
 import CopyButton from '../components/CopyButton';
+import { formatDate } from '../utils/dateUtils';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://54.37.156.233:3000/api';
 
@@ -96,16 +97,6 @@ const OrderDetail = () => {
     }).format(parseFloat(value) || 0);
   };
 
-  const formatDate = (dateString) => {
-    if (!dateString) return '-';
-    return new Date(dateString).toLocaleDateString('fr-FR', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
-  };
 
   const getStatusBadge = (status) => {
     const style = STATUS_COLORS[status] || { bg: '#e2e3e5', color: '#383d41' };
