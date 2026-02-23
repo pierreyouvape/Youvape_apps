@@ -1,5 +1,10 @@
-const { Pool } = require('pg');
+const { Pool, types } = require('pg');
 require('dotenv').config({ path: '../../.env' });
+
+// Les TIMESTAMP sans timezone (OID 1114) sont stockés en UTC dans notre BDD.
+// Par défaut le driver pg les retourne comme string sans 'Z', ce qui fait que
+// le navigateur les interprète en heure locale. On force l'ajout du 'Z'.
+types.setTypeParser(1114, (val) => val ? val.replace(' ', 'T') + 'Z' : null);
 
 const pool = new Pool({
   user: process.env.DB_USER,
