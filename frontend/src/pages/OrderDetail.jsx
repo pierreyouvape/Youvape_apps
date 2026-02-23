@@ -54,6 +54,8 @@ const OrderDetail = () => {
   const [reviews, setReviews] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [reimporting, setReimporting] = useState(false);
+  const [reimportMsg, setReimportMsg] = useState('');
 
   useEffect(() => {
     if (id) {
@@ -97,6 +99,21 @@ const OrderDetail = () => {
     }).format(parseFloat(value) || 0);
   };
 
+
+  const handleReimport = async () => {
+    setReimporting(true);
+    setReimportMsg('');
+    try {
+      await axios.post(`${API_URL}/orders/${id}/reimport`);
+      setReimportMsg('Commande réimportée !');
+      fetchOrder();
+    } catch (err) {
+      setReimportMsg(err.response?.data?.error || 'Erreur lors de la réimportation');
+    } finally {
+      setReimporting(false);
+      setTimeout(() => setReimportMsg(''), 4000);
+    }
+  };
 
   const getStatusBadge = (status) => {
     const style = STATUS_COLORS[status] || { bg: '#e2e3e5', color: '#383d41' };
@@ -231,6 +248,27 @@ const OrderDetail = () => {
               >
                 WC
               </a>
+              <button
+                onClick={handleReimport}
+                disabled={reimporting}
+                style={{
+                  padding: '4px 10px',
+                  backgroundColor: reimporting ? '#ccc' : '#135E84',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '4px',
+                  fontSize: '12px',
+                  fontWeight: 'bold',
+                  cursor: reimporting ? 'not-allowed' : 'pointer'
+                }}
+              >
+                {reimporting ? '...' : 'Réimporter'}
+              </button>
+              {reimportMsg && (
+                <span style={{ fontSize: '12px', color: reimportMsg.includes('Erreur') ? '#dc3545' : '#28a745', fontWeight: '500' }}>
+                  {reimportMsg}
+                </span>
+              )}
             </h1>
             {getStatusBadge(order.post_status)}
           </div>

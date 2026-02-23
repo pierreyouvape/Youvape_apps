@@ -22,5 +22,6 @@ router.get('/:id/reviews', ordersController.getOrderReviews);
 
 // Édition
 router.put('/:id/shipping-cost', ordersController.updateShippingCost);
+router.post('/:id/reimport', ordersController.reimport);
 
 module.exports = router;
