@@ -4,6 +4,7 @@
  */
 
 const pool = require('../config/database');
+const { convertWCDate } = require('../utils/dateUtils');
 
 // Token d'authentification (à configurer dans .env)
 const YOUSYNC_TOKEN = process.env.YOUSYNC_TOKEN || '';
@@ -135,7 +136,7 @@ async function processOrderEvent(action, wp_id, data, results) {
     const status = data.status.startsWith('wc-') ? data.status : `wc-${data.status}`;
     await pool.query(
       'UPDATE orders SET post_status = $1, post_modified = $2, updated_at = NOW() WHERE wp_order_id = $3',
-      [status, data.date_modified || new Date(), wp_id]
+      [status, convertWCDate(data.date_modified) || new Date(), wp_id]
     );
     results.details.orders.updated++;
     console.log(`  ✓ Order #${wp_id} status updated to ${status}`);
@@ -195,8 +196,8 @@ async function processOrderEvent(action, wp_id, data, results) {
       wp_id,
       data.customer_id || null,
       status,
-      data.date_created || null,
-      data.date_modified || new Date(),
+      convertWCDate(data.date_created),
+      convertWCDate(data.date_modified) || new Date(),
       data.payment_method_title || null,
       data.created_via || null,
       data.billing_first_name || null,
@@ -338,8 +339,8 @@ async function processProductEvent(action, wp_id, data, results) {
     data.type || 'simple',
     data.status || 'publish',
     data.weight || null,
-    data.date_created || null,
-    data.date_modified || new Date()
+    convertWCDate(data.date_created),
+    convertWCDate(data.date_modified) || new Date()
   ];
 
   const result = await pool.query(query, values);
@@ -382,7 +383,7 @@ async function processCustomerEvent(action, wp_id, data, results) {
     data.email || '',
     data.first_name || null,
     data.last_name || null,
-    data.date_created || null
+    convertWCDate(data.date_created)
   ];
 
   const result = await pool.query(query, values);
@@ -440,7 +441,7 @@ async function processRefundEvent(action, wp_id, data, results) {
     data.wp_order_id || data.order_id,
     data.refund_amount || data.amount || 0,
     data.refund_reason || data.reason || null,
-    data.refund_date || data.date_created || new Date(),
+    convertWCDate(data.refund_date) || convertWCDate(data.date_created) || new Date(),
     data.refunded_by || null
   ];
 

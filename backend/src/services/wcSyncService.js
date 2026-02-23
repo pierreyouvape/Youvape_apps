@@ -7,6 +7,7 @@ const axios = require('axios');
 const https = require('https');
 const appConfigModel = require('../models/appConfigModel');
 const pool = require('../config/database');
+const { convertWCDate } = require('../utils/dateUtils');
 
 // Agent HTTPS qui ignore les certificats auto-signés (pour communication interne Docker)
 const httpsAgent = new https.Agent({ rejectUnauthorized: false });
@@ -197,7 +198,7 @@ const wcSyncService = {
       data.email,
       data.first_name,
       data.last_name,
-      data.date_created
+      convertWCDate(data.date_created)
     ]);
 
     console.log(`🔄 WC Sync: Customer #${wpId} ${action === 'create' ? 'créé' : 'mis à jour'}`);
@@ -234,7 +235,7 @@ const wcSyncService = {
     `, [
       data.wp_product_id, data.parent_id || null, data.type, data.name,
       data.sku, data.status, data.stock_status, data.stock_quantity,
-      data.price, data.regular_price, data.date_created, data.date_modified
+      data.price, data.regular_price, convertWCDate(data.date_created), convertWCDate(data.date_modified)
     ]);
 
     console.log(`🔄 WC Sync: Product #${wpId} ${action === 'create' ? 'créé' : 'mis à jour'}`);
@@ -284,7 +285,7 @@ const wcSyncService = {
       data.shipping_first_name, data.shipping_last_name, data.shipping_address_1,
       data.shipping_city, data.shipping_postcode, data.shipping_country,
       data.shipping_method || null, data.shipping_carrier || null, data.tracking_number || null,
-      data.date_created, data.date_modified
+      convertWCDate(data.date_created), convertWCDate(data.date_modified)
     ]);
 
     // Delete old items and insert new ones
@@ -329,7 +330,7 @@ const wcSyncService = {
         updated_at = NOW()
     `, [
       data.wp_refund_id, data.wp_order_id, data.refund_amount,
-      data.refund_reason, data.refund_date
+      data.refund_reason, convertWCDate(data.refund_date)
     ]);
 
     console.log(`🔄 WC Sync: Refund #${wpId} ${action === 'create' ? 'créé' : 'mis à jour'}`);
