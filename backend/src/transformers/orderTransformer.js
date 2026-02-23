@@ -3,8 +3,6 @@
  * Transforms RAW WordPress order data into clean DB format
  */
 
-const { convertWCDate } = require('../utils/dateUtils');
-
 /**
  * Transform RAW order data from WordPress
  * @param {Object} rawData - RAW data from WordPress (post + meta + items)
@@ -22,15 +20,23 @@ function transformOrder(rawData) {
     return meta && meta[key] !== undefined ? meta[key] : defaultValue;
   };
 
+  // Helper to validate timestamp (empty string = null)
+  const validateTimestamp = (value) => {
+    if (!value || value === '' || value === '0000-00-00 00:00:00') {
+      return null;
+    }
+    return value;
+  };
+
   return {
     wp_order_id: parseInt(post.ID),
     wp_customer_id: getMeta('_customer_user') && parseInt(getMeta('_customer_user')) > 0
       ? parseInt(getMeta('_customer_user'))
       : null,
     guid: post.guid,
-    post_date: convertWCDate(post.post_date),
+    post_date: validateTimestamp(post.post_date),
     post_status: post.post_status,
-    post_modified: convertWCDate(post.post_modified),
+    post_modified: validateTimestamp(post.post_modified),
     payment_method_title: getMeta('_payment_method_title'),
     created_via: getMeta('_created_via'),
     billing_first_name: getMeta('_billing_first_name'),
@@ -67,7 +73,7 @@ function transformOrder(rawData) {
     attribution_utm_source: getMeta('_wc_order_attribution_utm_source'),
     attribution_utm_medium: getMeta('_wc_order_attribution_utm_medium'),
     attribution_session_entry: getMeta('_wc_order_attribution_session_entry'),
-    attribution_session_start_time: convertWCDate(getMeta('_wc_order_attribution_session_start_time')),
+    attribution_session_start_time: validateTimestamp(getMeta('_wc_order_attribution_session_start_time')),
     attribution_session_pages: (() => {
       const val = parseInt(getMeta('_wc_order_attribution_session_pages'));
       return !isNaN(val) ? val : null;
@@ -90,7 +96,7 @@ function transformOrder(rawData) {
       const val = parseInt(getMeta('_date_paid'));
       return !isNaN(val) ? val : null;
     })(),
-    paid_date: convertWCDate(getMeta('_paid_date')),
+    paid_date: validateTimestamp(getMeta('_paid_date')),
     mollie_payment_instructions: getMeta('_mollie_payment_instructions'),
     mollie_paid_and_processed: getMeta('_mollie_paid_and_processed') === '1'
   };

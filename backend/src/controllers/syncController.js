@@ -5,7 +5,6 @@ const { transformCustomer, insertCustomer } = require('../transformers/customerT
 const { transformOrder, transformOrderItems, insertOrder } = require('../transformers/orderTransformer');
 const { insertProductWithVariations } = require('../transformers/productTransformer');
 const { transformRefund, insertRefund } = require('../transformers/refundTransformer');
-const { convertWCDate } = require('../utils/dateUtils');
 
 const LOGS_DIR = path.join(__dirname, '../../logs');
 
@@ -96,8 +95,8 @@ const receiveCustomers = async (req, res) => {
         customer.username || null,
         customer.display_name || null,
         JSON.stringify(customer.roles || []),
-        convertWCDate(customer.date_created),
-        convertWCDate(customer.date_modified),
+        customer.date_created || null,
+        customer.date_modified || null,
         customer.total_spent || 0,
         customer.order_count || 0,
         customer.is_paying_customer || false,
@@ -238,8 +237,8 @@ const receiveProducts = async (req, res) => {
         product.type || 'simple',
         product.status || 'publish',
         product.featured || false,
-        convertWCDate(product.date_created),
-        convertWCDate(product.date_modified),
+        product.date_created || null,
+        product.date_modified || null,
         product.total_sales || 0,
         product.image_url || null,
         JSON.stringify(product.gallery_images || []),
@@ -304,8 +303,8 @@ const receiveProducts = async (req, res) => {
             'variation', // type
             'publish', // status
             false, // featured
-            convertWCDate(variation.date_created),
-            convertWCDate(variation.date_modified),
+            variation.date_created || null,
+            variation.date_modified || null,
             0, // total_sales (géré au niveau parent)
             variation.image_url || null,
             JSON.stringify([]), // gallery_images vide
@@ -462,10 +461,10 @@ const receiveOrders = async (req, res) => {
           order.transaction_id || null, // NOUVEAU
           order.currency || 'EUR',
           order.prices_include_tax || false, // NOUVEAU
-          convertWCDate(order.date_created),
-          convertWCDate(order.date_completed),
-          convertWCDate(order.date_paid),
-          convertWCDate(order.date_modified),
+          order.date_created || null,
+          order.date_completed || null,
+          order.date_paid || null,
+          order.date_modified || null,
           order.customer_id || null,
           order.customer_ip_address || null, // NOUVEAU
           order.customer_user_agent || null, // NOUVEAU
