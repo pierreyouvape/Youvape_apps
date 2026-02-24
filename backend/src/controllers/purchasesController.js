@@ -64,39 +64,15 @@ const purchasesController = {
   },
   // ==================== BESOINS ====================
 
-  // GET /api/purchases/needs
-  getProductsNeeds: async (req, res) => {
+  // GET /api/purchases/needs/raw
+  // Retourne toutes les données brutes pour calcul frontend (pas de pagination)
+  getProductsNeedsRaw: async (req, res) => {
     try {
-      const filters = {
-        supplier_id: req.query.supplier_id ? parseInt(req.query.supplier_id) : null,
-        zero_stock: req.query.zero_stock === 'true' ? true : req.query.zero_stock === 'false' ? false : null,
-        with_sales_only: req.query.with_sales_only === 'true' ? true : req.query.with_sales_only === 'false' ? false : null,
-        search: req.query.search || null,
-        analysis_period_months: req.query.analysis_period ? parseFloat(req.query.analysis_period) : (req.query.analysis_period_months ? parseFloat(req.query.analysis_period_months) : 1),
-        coverage_months: req.query.coverage_months ? parseFloat(req.query.coverage_months) : 1,
-        analysis_start_date: req.query.analysis_start_date || null,
-        analysis_end_date: req.query.analysis_end_date || null,
-        limit: req.query.limit ? parseInt(req.query.limit) : 50,
-        offset: req.query.offset ? parseInt(req.query.offset) : 0
-      };
-
-      const [products, total] = await Promise.all([
-        needsCalculationModel.getAllProductsNeeds(filters),
-        needsCalculationModel.countProducts(filters)
-      ]);
-
-      res.json({
-        success: true,
-        data: products,
-        pagination: {
-          total,
-          limit: filters.limit,
-          offset: filters.offset,
-          pages: Math.ceil(total / filters.limit)
-        }
-      });
+      const supplierId = req.query.supplier_id ? parseInt(req.query.supplier_id) : null;
+      const products = await needsCalculationModel.getAllProductsRaw(supplierId);
+      res.json({ success: true, data: products });
     } catch (error) {
-      console.error('Erreur getProductsNeeds:', error);
+      console.error('Erreur getProductsNeedsRaw:', error);
       res.status(500).json({ success: false, error: 'Erreur serveur' });
     }
   },

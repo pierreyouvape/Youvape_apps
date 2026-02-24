@@ -59,8 +59,8 @@ router.put('/products/:productId/primary-supplier', checkPurchasesWrite, supplie
 
 // ==================== BESOINS ====================
 
-// Liste des besoins (tous les produits avec calculs)
-router.get('/needs', checkPurchasesRead, purchasesController.getProductsNeeds);
+// Toutes les données brutes en bulk (pour calcul frontend)
+router.get('/needs/raw', checkPurchasesRead, purchasesController.getProductsNeedsRaw);
 
 // Besoin d'un produit spécifique
 router.get('/needs/:productId', checkPurchasesRead, purchasesController.getProductNeed);
