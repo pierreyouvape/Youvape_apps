@@ -66,10 +66,16 @@ const purchasesController = {
 
   // GET /api/purchases/needs/raw
   // Retourne toutes les données brutes pour calcul frontend (pas de pagination)
+  // Query params: supplier_id, start_date (YYYY-MM-DD), end_date (YYYY-MM-DD)
   getProductsNeedsRaw: async (req, res) => {
     try {
       const supplierId = req.query.supplier_id ? parseInt(req.query.supplier_id) : null;
-      const products = await needsCalculationModel.getAllProductsRaw(supplierId);
+      const options = {};
+      if (req.query.start_date && req.query.end_date) {
+        options.startDate = req.query.start_date;
+        options.endDate = req.query.end_date;
+      }
+      const products = await needsCalculationModel.getAllProductsRaw(supplierId, options);
       res.json({ success: true, data: products });
     } catch (error) {
       console.error('Erreur getProductsNeedsRaw:', error);

@@ -109,21 +109,25 @@ const calculateTrendCoefficient = (monthlySales) => {
 
 /**
  * Calcule les besoins d'un produit à partir de ses données brutes.
- * analysisPeriodMonths : durée en mois pour la période d'analyse (toujours en mois)
+ * analysisPeriodMonths : durée en mois pour la période d'analyse
  * coverageMonths : durée de couverture cible
- *
- * Note : monthly_sales couvre les 12 derniers mois max (limité par le backend).
- * On filtre toujours par fenêtre glissante depuis aujourd'hui, que la période
- * soit preset ou custom (dans les deux cas on a une durée en mois).
+ * isCustomPeriod : true si plage personnalisée (le backend a déjà filtré les données)
+ *                  false si preset (le backend renvoie 12 mois, on filtre ici)
  */
-const computeProductNeeds = (product, analysisPeriodMonths, coverageMonths) => {
+const computeProductNeeds = (product, analysisPeriodMonths, coverageMonths, isCustomPeriod) => {
   const { monthly_sales = [], max_order_qty_12m = 0, stock = 0, incoming_qty = 0 } = product;
 
-  // Filtrer les ventes sur la période d'analyse (fenêtre glissante depuis aujourd'hui)
-  const cutoffDate = new Date();
-  cutoffDate.setMonth(cutoffDate.getMonth() - Math.ceil(analysisPeriodMonths));
-  const filteredMonthlySales = monthly_sales.filter(m => new Date(m.month) >= cutoffDate);
-  const salesInPeriod = filteredMonthlySales.reduce((sum, m) => sum + (parseInt(m.total_qty) || 0), 0);
+  let salesData;
+  if (isCustomPeriod) {
+    // Le backend a déjà renvoyé exactement les ventes sur la plage demandée
+    salesData = monthly_sales;
+  } else {
+    // Preset : le backend renvoie 12 mois, on filtre selon la période choisie
+    const cutoffDate = new Date();
+    cutoffDate.setMonth(cutoffDate.getMonth() - Math.ceil(analysisPeriodMonths));
+    salesData = monthly_sales.filter(m => new Date(m.month) >= cutoffDate);
+  }
+  const salesInPeriod = salesData.reduce((sum, m) => sum + (parseInt(m.total_qty) || 0), 0);
 
   const effectivePeriod = analysisPeriodMonths > 0 ? analysisPeriodMonths : 1;
   const avgMonthlySales = salesInPeriod / effectivePeriod;
@@ -261,6 +265,10 @@ const NeedsTab = ({ token }) => {
     try {
       const params = new URLSearchParams();
       if (supplierId) params.append('supplier_id', supplierId);
+      if (analysisPeriodType === 'custom' && analysisStartDate && analysisEndDate) {
+        params.append('start_date', analysisStartDate);
+        params.append('end_date', analysisEndDate);
+      }
 
       const response = await axios.get(`${API_URL}/purchases/needs/raw?${params}`, {
         headers: { Authorization: `Bearer ${token}` }
@@ -273,7 +281,7 @@ const NeedsTab = ({ token }) => {
     } finally {
       setLoading(false);
     }
-  }, [token, supplierId]);
+  }, [token, supplierId, analysisPeriodType, analysisStartDate, analysisEndDate]);
 
   useEffect(() => {
     loadRawData();
@@ -290,13 +298,15 @@ const NeedsTab = ({ token }) => {
     return analysisPeriod;
   }, [analysisPeriodType, analysisPeriod, analysisStartDate, analysisEndDate]);
 
+  const isCustomPeriod = analysisPeriodType === 'custom';
+
   // Calcul des besoins sur tous les produits (recalculé quand les paramètres changent)
   const computedProducts = useMemo(() => {
     return allProducts.map(p => {
-      const needs = computeProductNeeds(p, effectivePeriodMonths, coverageMonths);
+      const needs = computeProductNeeds(p, effectivePeriodMonths, coverageMonths, isCustomPeriod);
       return { ...p, ...needs };
     });
-  }, [allProducts, effectivePeriodMonths, coverageMonths]);
+  }, [allProducts, effectivePeriodMonths, coverageMonths, isCustomPeriod]);
 
   // Filtrage local
   const filteredProducts = useMemo(() => {

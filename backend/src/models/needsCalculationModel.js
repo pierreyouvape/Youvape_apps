@@ -3,14 +3,15 @@ const pool = require('../config/database');
 const needsCalculationModel = {
   /**
    * Retourne tous les produits publiés avec leurs données brutes pour calcul frontend :
-   * - Ventes par mois sur les 12 derniers mois (une seule requête groupée)
-   * - Ventes totales sur la période d'analyse (une seule requête groupée)
+   * - Ventes par mois sur la période demandée (une seule requête groupée)
+   * - Max qty par commande sur la période (une seule requête groupée)
    * - Arrivages en cours (une seule requête groupée)
    * - Données produit + fournisseur + alert_threshold
    *
+   * options.startDate / options.endDate : plage de dates (défaut: 12 derniers mois)
    * Le calcul de besoin/proposition est fait côté frontend.
    */
-  getAllProductsRaw: async (supplierIdFilter = null) => {
+  getAllProductsRaw: async (supplierIdFilter = null, options = {}) => {
     // 1. Produits de base
     let productsQuery = `
       SELECT
@@ -62,7 +63,19 @@ const needsCalculationModel = {
     const productIds = products.map(p => p.id);
     const placeholders = productIds.map((_, i) => `$${i + 1}`).join(',');
 
-    // 2. Ventes par mois sur les 12 derniers mois (une seule requête)
+    // Plage de dates pour les ventes
+    const { startDate, endDate } = options;
+    let dateFilter;
+    let dateParams;
+    if (startDate && endDate) {
+      dateFilter = `AND o.post_date >= $${productIds.length + 1} AND o.post_date < $${productIds.length + 2} + INTERVAL '1 day'`;
+      dateParams = [...productIds, startDate, endDate];
+    } else {
+      dateFilter = `AND o.post_date >= NOW() - INTERVAL '12 months'`;
+      dateParams = productIds;
+    }
+
+    // 2. Ventes par mois sur la période demandée (une seule requête)
     const monthlySalesResult = await pool.query(`
       SELECT
         oi.product_id,
@@ -71,13 +84,13 @@ const needsCalculationModel = {
       FROM order_items oi
       JOIN orders o ON oi.wp_order_id = o.wp_order_id
       WHERE oi.product_id IN (${placeholders})
-        AND o.post_date >= NOW() - INTERVAL '12 months'
+        ${dateFilter}
         AND o.post_status IN ('wc-completed', 'wc-processing', 'wc-delivered')
       GROUP BY oi.product_id, DATE_TRUNC('month', o.post_date)
       ORDER BY oi.product_id, month
-    `, productIds);
+    `, dateParams);
 
-    // 3. Max qty par commande sur 12 mois (pour le calcul de sécurité)
+    // 3. Max qty par commande sur la période (pour le calcul de sécurité)
     const maxOrderResult = await pool.query(`
       SELECT
         oi.product_id,
@@ -85,10 +98,10 @@ const needsCalculationModel = {
       FROM order_items oi
       JOIN orders o ON oi.wp_order_id = o.wp_order_id
       WHERE oi.product_id IN (${placeholders})
-        AND o.post_date >= NOW() - INTERVAL '12 months'
+        ${dateFilter}
         AND o.post_status IN ('wc-completed', 'wc-processing', 'wc-delivered')
       GROUP BY oi.product_id
-    `, productIds);
+    `, dateParams);
 
     // 4. Arrivages en cours (une seule requête)
     const incomingResult = await pool.query(`
