@@ -109,34 +109,21 @@ const calculateTrendCoefficient = (monthlySales) => {
 
 /**
  * Calcule les besoins d'un produit à partir de ses données brutes.
- * analysisPeriodMonths : durée en mois pour la période d'analyse
- * analysisStartDate / analysisEndDate : si custom, filtrer les monthly_sales (format YYYY-MM-DD)
+ * analysisPeriodMonths : durée en mois pour la période d'analyse (toujours en mois)
  * coverageMonths : durée de couverture cible
+ *
+ * Note : monthly_sales couvre les 12 derniers mois max (limité par le backend).
+ * On filtre toujours par fenêtre glissante depuis aujourd'hui, que la période
+ * soit preset ou custom (dans les deux cas on a une durée en mois).
  */
-const computeProductNeeds = (product, analysisPeriodMonths, coverageMonths, analysisStartDate, analysisEndDate, isCustomPeriod) => {
+const computeProductNeeds = (product, analysisPeriodMonths, coverageMonths) => {
   const { monthly_sales = [], max_order_qty_12m = 0, stock = 0, incoming_qty = 0 } = product;
 
-  // Filtrer les ventes sur la période d'analyse
-  let salesInPeriod = 0;
-  let filteredMonthlySales;
-
-  if (isCustomPeriod && analysisStartDate && analysisEndDate) {
-    // Période personnalisée : filtrer par plage de dates
-    const start = new Date(analysisStartDate);
-    const end = new Date(analysisEndDate);
-    filteredMonthlySales = monthly_sales.filter(m => {
-      const monthDate = new Date(m.month);
-      return monthDate >= start && monthDate <= end;
-    });
-    salesInPeriod = filteredMonthlySales.reduce((sum, m) => sum + (parseInt(m.total_qty) || 0), 0);
-  } else {
-    // Période preset : prendre les N derniers mois
-    // monthly_sales contient les 12 derniers mois, triés par date
-    const cutoffDate = new Date();
-    cutoffDate.setMonth(cutoffDate.getMonth() - Math.ceil(analysisPeriodMonths));
-    filteredMonthlySales = monthly_sales.filter(m => new Date(m.month) >= cutoffDate);
-    salesInPeriod = filteredMonthlySales.reduce((sum, m) => sum + (parseInt(m.total_qty) || 0), 0);
-  }
+  // Filtrer les ventes sur la période d'analyse (fenêtre glissante depuis aujourd'hui)
+  const cutoffDate = new Date();
+  cutoffDate.setMonth(cutoffDate.getMonth() - Math.ceil(analysisPeriodMonths));
+  const filteredMonthlySales = monthly_sales.filter(m => new Date(m.month) >= cutoffDate);
+  const salesInPeriod = filteredMonthlySales.reduce((sum, m) => sum + (parseInt(m.total_qty) || 0), 0);
 
   const effectivePeriod = analysisPeriodMonths > 0 ? analysisPeriodMonths : 1;
   const avgMonthlySales = salesInPeriod / effectivePeriod;
@@ -303,22 +290,13 @@ const NeedsTab = ({ token }) => {
     return analysisPeriod;
   }, [analysisPeriodType, analysisPeriod, analysisStartDate, analysisEndDate]);
 
-  const isCustomPeriod = analysisPeriodType === 'custom';
-
   // Calcul des besoins sur tous les produits (recalculé quand les paramètres changent)
   const computedProducts = useMemo(() => {
     return allProducts.map(p => {
-      const needs = computeProductNeeds(
-        p,
-        effectivePeriodMonths,
-        coverageMonths,
-        analysisStartDate,
-        analysisEndDate,
-        isCustomPeriod
-      );
+      const needs = computeProductNeeds(p, effectivePeriodMonths, coverageMonths);
       return { ...p, ...needs };
     });
-  }, [allProducts, effectivePeriodMonths, coverageMonths, analysisStartDate, analysisEndDate, isCustomPeriod]);
+  }, [allProducts, effectivePeriodMonths, coverageMonths]);
 
   // Filtrage local
   const filteredProducts = useMemo(() => {
@@ -524,16 +502,6 @@ const NeedsTab = ({ token }) => {
           </div>
 
           <div className="filter-group">
-            <label>Recherche</label>
-            <input
-              type="text"
-              placeholder="Nom ou SKU..."
-              value={search}
-              onChange={(e) => handleSearchChange(e.target.value)}
-            />
-          </div>
-
-          <div className="filter-group">
             <label>Période d'analyse</label>
             <select value={analysisPeriodSelectValue} onChange={(e) => handleAnalysisPeriodChange(e.target.value)}>
               {ANALYSIS_PERIOD_OPTIONS.map(opt => (
@@ -578,7 +546,7 @@ const NeedsTab = ({ token }) => {
           </div>
         </div>
 
-        {/* Ligne secondaire : filtres 3 états + boutons */}
+        {/* Ligne secondaire : filtres 3 états + recherche + boutons */}
         <div className="filters-bar" style={{ marginTop: '10px', marginBottom: 0 }}>
           <TriStateCheckbox
             value={withSalesOnly}
@@ -589,6 +557,20 @@ const NeedsTab = ({ token }) => {
             value={zeroStockState}
             onChange={setZeroStockState}
             label="Stock nul/négatif"
+          />
+
+          <input
+            type="text"
+            placeholder="Rechercher produit ou SKU..."
+            value={search}
+            onChange={(e) => handleSearchChange(e.target.value)}
+            style={{
+              padding: '6px 12px',
+              border: '1px solid #ddd',
+              borderRadius: '6px',
+              fontSize: '13px',
+              width: '220px'
+            }}
           />
 
           <div style={{ marginLeft: 'auto', display: 'flex', gap: '10px', alignItems: 'center' }}>
