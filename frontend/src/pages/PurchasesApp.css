@@ -493,6 +493,74 @@
   color: #dc2626;
 }
 
+/* TriState checkbox */
+.tristate-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 12px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  background: white;
+  cursor: pointer;
+  font-size: 13px;
+  color: #555;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+
+.tristate-btn:hover {
+  border-color: #aaa;
+  background: #f9f9f9;
+}
+
+.tristate-box {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border: 1.5px solid #ccc;
+  border-radius: 3px;
+  font-size: 11px;
+  font-weight: 700;
+  flex-shrink: 0;
+  background: white;
+}
+
+.tristate-all .tristate-box {
+  border-color: #ccc;
+  color: transparent;
+}
+
+.tristate-yes {
+  border-color: #22c55e;
+  background: #f0fdf4;
+  color: #166534;
+}
+
+.tristate-yes .tristate-box {
+  border-color: #22c55e;
+  background: #22c55e;
+  color: white;
+}
+
+.tristate-no {
+  border-color: #ef4444;
+  background: #fef2f2;
+  color: #991b1b;
+}
+
+.tristate-no .tristate-box {
+  border-color: #ef4444;
+  background: #ef4444;
+  color: white;
+}
+
+.tristate-label {
+  user-select: none;
+}
+
 /* Responsive */
 @media (max-width: 768px) {
   .filters-bar {

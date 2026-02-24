@@ -3,10 +3,8 @@ import axios from 'axios';
 
 const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:3000/api/auth').replace('/auth', '');
 
-// Clé localStorage pour persister les filtres
 const STORAGE_KEY = 'purchases_needs_filters';
 
-// Options de période d'analyse prédéfinies
 const ANALYSIS_PERIOD_OPTIONS = [
   { value: 0.25, label: '7 jours' },
   { value: 0.5, label: '15 jours' },
@@ -21,7 +19,6 @@ const ANALYSIS_PERIOD_OPTIONS = [
   { value: 'custom', label: 'Plage personnalisée' }
 ];
 
-// Options de couverture cible prédéfinies
 const COVERAGE_OPTIONS = [
   { value: 0.25, label: '7 jours' },
   { value: 0.5, label: '15 jours' },
@@ -33,26 +30,42 @@ const COVERAGE_OPTIONS = [
   { value: 6, label: '6 mois' }
 ];
 
-// Charger les filtres depuis localStorage
 const loadSavedFilters = () => {
   try {
     const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved) {
-      return JSON.parse(saved);
-    }
-  } catch (e) {
-    console.error('Erreur chargement filtres:', e);
-  }
+    if (saved) return JSON.parse(saved);
+  } catch (e) {}
   return null;
 };
 
-// Sauvegarder les filtres dans localStorage
 const saveFilters = (filters) => {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(filters));
-  } catch (e) {
-    console.error('Erreur sauvegarde filtres:', e);
-  }
+  } catch (e) {}
+};
+
+// Cycle 3 états : null → true → false → null
+const cycleTriState = (current) => {
+  if (current === null) return true;
+  if (current === true) return false;
+  return null;
+};
+
+// Rendu du bouton 3 états
+const TriStateCheckbox = ({ value, onChange, label }) => {
+  const icon = value === true ? '✓' : value === false ? '✕' : '';
+  const cls = value === true ? 'tristate-yes' : value === false ? 'tristate-no' : 'tristate-all';
+  return (
+    <button
+      type="button"
+      className={`tristate-btn ${cls}`}
+      onClick={() => onChange(cycleTriState(value))}
+      title={value === null ? 'Tout afficher' : value === true ? 'Oui seulement' : 'Non seulement'}
+    >
+      <span className="tristate-box">{icon}</span>
+      <span className="tristate-label">{label}</span>
+    </button>
+  );
 };
 
 const NeedsTab = ({ token }) => {
@@ -61,12 +74,9 @@ const NeedsTab = ({ token }) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  // Charger les filtres sauvegardés
   const savedFilters = loadSavedFilters();
 
-  // Filters avec valeurs par défaut ou sauvegardées
   const [supplierId, setSupplierId] = useState(savedFilters?.supplierId || '');
-  const [zeroStock, setZeroStock] = useState(savedFilters?.zeroStock || false);
   const [search, setSearch] = useState('');
 
   // Période d'analyse
@@ -78,8 +88,9 @@ const NeedsTab = ({ token }) => {
   // Couverture cible
   const [coverageMonths, setCoverageMonths] = useState(savedFilters?.coverageMonths || 1);
 
-  // Filtre "avec ventes uniquement"
-  const [withSalesOnly, setWithSalesOnly] = useState(savedFilters?.withSalesOnly !== false);
+  // Filtres 3 états : null = tout, true = oui seulement, false = non seulement
+  const [withSalesOnly, setWithSalesOnly] = useState(savedFilters?.withSalesOnly ?? null);
+  const [zeroStockState, setZeroStockState] = useState(savedFilters?.zeroStockState ?? null);
 
   // Pagination
   const [page, setPage] = useState(1);
@@ -93,23 +104,23 @@ const NeedsTab = ({ token }) => {
 
   // Tri des colonnes
   const [sortColumn, setSortColumn] = useState(null);
-  const [sortDirection, setSortDirection] = useState('asc'); // 'asc' ou 'desc'
+  const [sortDirection, setSortDirection] = useState('asc');
 
   // Sauvegarder les filtres quand ils changent
   useEffect(() => {
     saveFilters({
       supplierId,
-      zeroStock,
       analysisPeriodType,
       analysisPeriod,
       analysisStartDate,
       analysisEndDate,
       coverageMonths,
-      withSalesOnly
+      withSalesOnly,
+      zeroStockState
     });
-  }, [supplierId, zeroStock, analysisPeriodType, analysisPeriod, analysisStartDate, analysisEndDate, coverageMonths, withSalesOnly]);
+  }, [supplierId, analysisPeriodType, analysisPeriod, analysisStartDate, analysisEndDate, coverageMonths, withSalesOnly, zeroStockState]);
 
-  // Load suppliers for filter
+  // Load suppliers
   useEffect(() => {
     const loadSuppliers = async () => {
       try {
@@ -124,18 +135,16 @@ const NeedsTab = ({ token }) => {
     loadSuppliers();
   }, [token]);
 
-  // Calculer la période d'analyse effective
   const getEffectiveAnalysisPeriod = useCallback(() => {
     if (analysisPeriodType === 'custom' && analysisStartDate && analysisEndDate) {
       const start = new Date(analysisStartDate);
       const end = new Date(analysisEndDate);
       const diffDays = Math.ceil((end - start) / (1000 * 60 * 60 * 24));
-      return diffDays / 30; // Convertir en mois
+      return diffDays / 30;
     }
     return analysisPeriod;
   }, [analysisPeriodType, analysisPeriod, analysisStartDate, analysisEndDate]);
 
-  // Load products with needs
   const loadNeeds = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -146,15 +155,17 @@ const NeedsTab = ({ token }) => {
       });
 
       if (supplierId) params.append('supplier_id', supplierId);
-      if (zeroStock) params.append('zero_stock', 'true');
       if (search) params.append('search', search);
-      if (withSalesOnly) params.append('with_sales_only', 'true');
 
-      // Période d'analyse
+      // Filtres 3 états
+      if (withSalesOnly === true) params.append('with_sales_only', 'true');
+      if (withSalesOnly === false) params.append('with_sales_only', 'false');
+      if (zeroStockState === true) params.append('zero_stock', 'true');
+      if (zeroStockState === false) params.append('zero_stock', 'false');
+
       const effectivePeriod = getEffectiveAnalysisPeriod();
       params.append('analysis_period', effectivePeriod.toString());
 
-      // Dates personnalisées si applicable
       if (analysisPeriodType === 'custom' && analysisStartDate && analysisEndDate) {
         params.append('analysis_start_date', analysisStartDate);
         params.append('analysis_end_date', analysisEndDate);
@@ -175,27 +186,22 @@ const NeedsTab = ({ token }) => {
     } finally {
       setLoading(false);
     }
-  }, [token, page, supplierId, zeroStock, search, coverageMonths, getEffectiveAnalysisPeriod, analysisPeriodType, analysisStartDate, analysisEndDate, withSalesOnly]);
+  }, [token, page, supplierId, search, coverageMonths, getEffectiveAnalysisPeriod, analysisPeriodType, analysisStartDate, analysisEndDate, withSalesOnly, zeroStockState]);
 
   useEffect(() => {
     loadNeeds();
   }, [loadNeeds]);
 
-  // Handle search with debounce
   const [searchTimeout, setSearchTimeout] = useState(null);
   const handleSearchChange = (value) => {
     setSearch(value);
     if (searchTimeout) clearTimeout(searchTimeout);
-    setSearchTimeout(setTimeout(() => {
-      setPage(1);
-    }, 500));
+    setSearchTimeout(setTimeout(() => setPage(1), 500));
   };
 
-  // Handle analysis period change
   const handleAnalysisPeriodChange = (value) => {
     if (value === 'custom') {
       setAnalysisPeriodType('custom');
-      // Initialiser les dates par défaut (dernier mois)
       const end = new Date();
       const start = new Date();
       start.setMonth(start.getMonth() - 1);
@@ -208,61 +214,36 @@ const NeedsTab = ({ token }) => {
     setPage(1);
   };
 
-  // Handle quantity change for order
   const handleQtyChange = (productId, qty) => {
     if (qty > 0) {
-      setSelectedProducts(prev => ({
-        ...prev,
-        [productId]: qty
-      }));
+      setSelectedProducts(prev => ({ ...prev, [productId]: qty }));
     } else {
       setSelectedProducts(prev => {
-        const newSelected = { ...prev };
-        delete newSelected[productId];
-        return newSelected;
+        const next = { ...prev };
+        delete next[productId];
+        return next;
       });
     }
   };
 
-  // Auto-fill with theoretical proposal
   const fillTheoreticalProposals = () => {
-    const newSelected = {};
-    products.forEach(p => {
-      if (p.theoretical_proposal > 0) {
-        newSelected[p.id] = p.theoretical_proposal;
-      }
-    });
-    setSelectedProducts(newSelected);
+    const next = {};
+    products.forEach(p => { if (p.theoretical_proposal > 0) next[p.id] = p.theoretical_proposal; });
+    setSelectedProducts(next);
   };
 
-  // Auto-fill with supposed proposal
   const fillSupposedProposals = () => {
-    const newSelected = {};
-    products.forEach(p => {
-      if (p.supposed_proposal > 0) {
-        newSelected[p.id] = p.supposed_proposal;
-      }
-    });
-    setSelectedProducts(newSelected);
+    const next = {};
+    products.forEach(p => { if (p.supposed_proposal > 0) next[p.id] = p.supposed_proposal; });
+    setSelectedProducts(next);
   };
 
-  // Clear selection
-  const clearSelection = () => {
-    setSelectedProducts({});
-  };
+  const clearSelection = () => setSelectedProducts({});
 
-  // Create order from selection
   const createOrder = async () => {
     const selectedCount = Object.keys(selectedProducts).length;
-    if (selectedCount === 0) {
-      alert('Aucun produit sélectionné');
-      return;
-    }
-
-    if (!supplierId) {
-      alert('Veuillez sélectionner un fournisseur');
-      return;
-    }
+    if (selectedCount === 0) { alert('Aucun produit sélectionné'); return; }
+    if (!supplierId) { alert('Veuillez sélectionner un fournisseur'); return; }
 
     setCreatingOrder(true);
     try {
@@ -283,9 +264,7 @@ const NeedsTab = ({ token }) => {
       await axios.post(`${API_URL}/purchases/orders`, {
         supplier_id: parseInt(supplierId),
         items
-      }, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      }, { headers: { Authorization: `Bearer ${token}` } });
 
       alert(`Commande créée avec ${items.length} article(s)`);
       setSelectedProducts({});
@@ -298,60 +277,36 @@ const NeedsTab = ({ token }) => {
     }
   };
 
-  // Render trend indicator
   const renderTrend = (direction, coefficient) => {
-    if (direction === 'up') {
-      return <span className="trend-up">↗ ×{coefficient}</span>;
-    } else if (direction === 'down') {
-      return <span className="trend-down">↘ ×{coefficient}</span>;
-    }
+    if (direction === 'up') return <span className="trend-up">↗ ×{coefficient}</span>;
+    if (direction === 'down') return <span className="trend-down">↘ ×{coefficient}</span>;
     return <span className="trend-stable">→</span>;
   };
 
-  // Render stock with color
   const renderStock = (stock) => {
-    if (stock === null || stock === undefined) {
-      return <span className="stock-zero">N/A</span>;
-    }
-    if (stock <= 0) {
-      return <span className="stock-zero">{stock}</span>;
-    }
-    if (stock < 5) {
-      return <span className="stock-critical">{stock}</span>;
-    }
-    if (stock < 20) {
-      return <span className="stock-low">{stock}</span>;
-    }
+    if (stock === null || stock === undefined) return <span className="stock-zero">N/A</span>;
+    if (stock <= 0) return <span className="stock-zero">{stock}</span>;
+    if (stock < 5) return <span className="stock-critical">{stock}</span>;
+    if (stock < 20) return <span className="stock-low">{stock}</span>;
     return <span className="stock-ok">{stock}</span>;
   };
 
-  // Gestion du tri des colonnes
   const handleSort = (column) => {
     if (sortColumn === column) {
-      // Inverser la direction si même colonne
       setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
     } else {
-      // Nouvelle colonne, commencer par ascendant
       setSortColumn(column);
       setSortDirection('asc');
     }
   };
 
-  // Trier les produits
   const sortedProducts = [...products].sort((a, b) => {
     if (!sortColumn) return 0;
-
     const aVal = a[sortColumn] ?? 0;
     const bVal = b[sortColumn] ?? 0;
-
-    if (sortDirection === 'asc') {
-      return aVal - bVal;
-    } else {
-      return bVal - aVal;
-    }
+    return sortDirection === 'asc' ? aVal - bVal : bVal - aVal;
   });
 
-  // Composant pour en-tête triable
   const SortableHeader = ({ column, label, className }) => (
     <th
       className={`${className || ''} sortable-header`}
@@ -359,38 +314,27 @@ const NeedsTab = ({ token }) => {
       style={{ cursor: 'pointer', userSelect: 'none' }}
     >
       {label}
-      {sortColumn === column && (
-        <span style={{ marginLeft: '4px' }}>
-          {sortDirection === 'asc' ? '▲' : '▼'}
-        </span>
-      )}
-      {sortColumn !== column && (
-        <span style={{ marginLeft: '4px', opacity: 0.3 }}>▼</span>
-      )}
+      <span style={{ marginLeft: '4px', opacity: sortColumn === column ? 1 : 0.3 }}>
+        {sortColumn === column ? (sortDirection === 'asc' ? '▲' : '▼') : '▼'}
+      </span>
     </th>
   );
 
   const selectedCount = Object.keys(selectedProducts).length;
   const selectedTotal = Object.values(selectedProducts).reduce((a, b) => a + b, 0);
-
-  // Valeur affichée dans le select de période
   const analysisPeriodSelectValue = analysisPeriodType === 'custom' ? 'custom' : analysisPeriod;
 
   return (
     <div className="needs-tab">
-      {/* Filters */}
       <div className="purchases-card">
+
+        {/* Ligne de filtres principale */}
         <div className="filters-bar">
           <div className="filter-group">
             <label>Fournisseur</label>
-            <select
-              value={supplierId}
-              onChange={(e) => { setSupplierId(e.target.value); setPage(1); }}
-            >
+            <select value={supplierId} onChange={(e) => { setSupplierId(e.target.value); setPage(1); }}>
               <option value="">Tous les fournisseurs</option>
-              {suppliers.map(s => (
-                <option key={s.id} value={s.id}>{s.name}</option>
-              ))}
+              {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
           </div>
 
@@ -406,78 +350,61 @@ const NeedsTab = ({ token }) => {
 
           <div className="filter-group">
             <label>Période d'analyse</label>
-            <select
-              value={analysisPeriodSelectValue}
-              onChange={(e) => handleAnalysisPeriodChange(e.target.value)}
-            >
+            <select value={analysisPeriodSelectValue} onChange={(e) => handleAnalysisPeriodChange(e.target.value)}>
               {ANALYSIS_PERIOD_OPTIONS.map(opt => (
                 <option key={opt.value} value={opt.value}>{opt.label}</option>
               ))}
             </select>
           </div>
 
+          {/* Dates personnalisées — inline si custom */}
+          {analysisPeriodType === 'custom' && (
+            <>
+              <div className="filter-group">
+                <label>Date début</label>
+                <input
+                  type="date"
+                  value={analysisStartDate}
+                  onChange={(e) => { setAnalysisStartDate(e.target.value); setPage(1); }}
+                />
+              </div>
+              <div className="filter-group">
+                <label>Date fin</label>
+                <input
+                  type="date"
+                  value={analysisEndDate}
+                  onChange={(e) => { setAnalysisEndDate(e.target.value); setPage(1); }}
+                />
+              </div>
+              <div className="filter-group" style={{ justifyContent: 'flex-end' }}>
+                <label>&nbsp;</label>
+                <span style={{ fontSize: '13px', color: '#888', padding: '8px 0' }}>
+                  ≈ {Math.round(getEffectiveAnalysisPeriod() * 10) / 10} mois
+                </span>
+              </div>
+            </>
+          )}
+
           <div className="filter-group">
             <label>Couverture cible</label>
-            <select
-              value={coverageMonths}
-              onChange={(e) => { setCoverageMonths(parseFloat(e.target.value)); setPage(1); }}
-            >
-              {COVERAGE_OPTIONS.map(opt => (
-                <option key={opt.value} value={opt.value}>{opt.label}</option>
-              ))}
+            <select value={coverageMonths} onChange={(e) => { setCoverageMonths(parseFloat(e.target.value)); setPage(1); }}>
+              {COVERAGE_OPTIONS.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
             </select>
           </div>
         </div>
 
-        {/* Plage personnalisée */}
-        {analysisPeriodType === 'custom' && (
-          <div className="filters-bar" style={{ marginTop: '10px' }}>
-            <div className="filter-group">
-              <label>Date début</label>
-              <input
-                type="date"
-                value={analysisStartDate}
-                onChange={(e) => { setAnalysisStartDate(e.target.value); setPage(1); }}
-              />
-            </div>
-            <div className="filter-group">
-              <label>Date fin</label>
-              <input
-                type="date"
-                value={analysisEndDate}
-                onChange={(e) => { setAnalysisEndDate(e.target.value); setPage(1); }}
-              />
-            </div>
-            <div className="filter-group" style={{ alignSelf: 'flex-end' }}>
-              <span style={{ fontSize: '13px', color: '#666' }}>
-                ≈ {Math.round(getEffectiveAnalysisPeriod() * 10) / 10} mois
-              </span>
-            </div>
-          </div>
-        )}
-
-        <div className="filters-bar" style={{ marginTop: '10px' }}>
-          <div className="filter-group">
-            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
-              <input
-                type="checkbox"
-                checked={withSalesOnly}
-                onChange={(e) => { setWithSalesOnly(e.target.checked); setPage(1); }}
-              />
-              Avec ventes uniquement
-            </label>
-          </div>
-
-          <div className="filter-group">
-            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
-              <input
-                type="checkbox"
-                checked={zeroStock}
-                onChange={(e) => { setZeroStock(e.target.checked); setPage(1); }}
-              />
-              Stock nul/négatif
-            </label>
-          </div>
+        {/* Ligne secondaire : filtres 3 états + boutons */}
+        <div className="filters-bar" style={{ marginTop: '10px', marginBottom: 0 }}>
+          <TriStateCheckbox
+            value={withSalesOnly}
+            onChange={(v) => { setWithSalesOnly(v); setPage(1); }}
+            label="Avec ventes"
+          />
+          <TriStateCheckbox
+            value={zeroStockState}
+            onChange={(v) => { setZeroStockState(v); setPage(1); }}
+            label="Stock nul/négatif"
+          />
 
           <div style={{ marginLeft: 'auto', display: 'flex', gap: '10px' }}>
             <button className="btn btn-secondary btn-sm" onClick={fillTheoreticalProposals}>
@@ -492,7 +419,7 @@ const NeedsTab = ({ token }) => {
           </div>
         </div>
 
-        {/* Selection summary */}
+        {/* Résumé sélection */}
         {selectedCount > 0 && (
           <div style={{
             background: '#fef3c7',
@@ -504,7 +431,7 @@ const NeedsTab = ({ token }) => {
             alignItems: 'center'
           }}>
             <span>
-              <strong>{selectedCount}</strong> produit(s) sélectionné(s) -
+              <strong>{selectedCount}</strong> produit(s) sélectionné(s) —
               <strong> {selectedTotal}</strong> unités au total
             </span>
             <button
@@ -534,11 +461,6 @@ const NeedsTab = ({ token }) => {
           <div className="empty-state">
             <div className="empty-state-icon">📦</div>
             <p>Aucun produit trouvé</p>
-            {withSalesOnly && (
-              <p style={{ fontSize: '13px', color: '#666' }}>
-                Essayez de décocher "Avec ventes uniquement" pour voir tous les produits
-              </p>
-            )}
           </div>
         ) : (
           <>
@@ -563,19 +485,13 @@ const NeedsTab = ({ token }) => {
                   <tr key={product.id}>
                     <td>
                       <div style={{ maxWidth: '250px' }}>
-                        <div style={{ fontWeight: 500, marginBottom: '2px' }}>
-                          {product.post_title}
-                        </div>
+                        <div style={{ fontWeight: 500, marginBottom: '2px' }}>{product.post_title}</div>
                         {product.supplier_name && (
-                          <small style={{ color: '#666' }}>
-                            🏭 {product.supplier_name}
-                          </small>
+                          <small style={{ color: '#666' }}>🏭 {product.supplier_name}</small>
                         )}
                       </div>
                     </td>
-                    <td>
-                      <code style={{ fontSize: '12px' }}>{product.sku || '-'}</code>
-                    </td>
+                    <td><code style={{ fontSize: '12px' }}>{product.sku || '-'}</code></td>
                     <td className="text-right">{renderStock(product.stock)}</td>
                     <td className="text-right">
                       {product.incoming_qty > 0 ? (
@@ -590,16 +506,12 @@ const NeedsTab = ({ token }) => {
                     <td className="text-right">{product.effective_supposed_need || 0}</td>
                     <td className="text-right">
                       {product.theoretical_proposal > 0 ? (
-                        <span style={{ color: '#f59e0b', fontWeight: 600 }}>
-                          {product.theoretical_proposal}
-                        </span>
+                        <span style={{ color: '#f59e0b', fontWeight: 600 }}>{product.theoretical_proposal}</span>
                       ) : '-'}
                     </td>
                     <td className="text-right">
                       {product.supposed_proposal > 0 ? (
-                        <span style={{ color: '#8b5cf6', fontWeight: 600 }}>
-                          {product.supposed_proposal}
-                        </span>
+                        <span style={{ color: '#8b5cf6', fontWeight: 600 }}>{product.supposed_proposal}</span>
                       ) : '-'}
                     </td>
                     <td className="text-right">
@@ -617,21 +529,12 @@ const NeedsTab = ({ token }) => {
               </tbody>
             </table>
 
-            {/* Pagination */}
             <div className="pagination">
-              <button
-                onClick={() => setPage(p => Math.max(1, p - 1))}
-                disabled={page === 1}
-              >
+              <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}>
                 ← Précédent
               </button>
-              <span className="pagination-info">
-                Page {page} / {totalPages} ({total} produits)
-              </span>
-              <button
-                onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-                disabled={page === totalPages}
-              >
+              <span className="pagination-info">Page {page} / {totalPages} ({total} produits)</span>
+              <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}>
                 Suivant →
               </button>
             </div>

@@ -282,9 +282,11 @@ const needsCalculationModel = {
       values.push(filters.supplier_id);
     }
 
-    // Filtre stock nul ou négatif
-    if (filters.zero_stock) {
+    // Filtre stock nul ou négatif (3 états)
+    if (filters.zero_stock === true) {
       productsQuery += ` AND (p.stock IS NULL OR p.stock <= 0)`;
+    } else if (filters.zero_stock === false) {
+      productsQuery += ` AND (p.stock IS NOT NULL AND p.stock > 0)`;
     }
 
     // Filtre par recherche
@@ -294,10 +296,20 @@ const needsCalculationModel = {
       paramIndex++;
     }
 
-    // Filtre avec ventes uniquement
-    if (filters.with_sales_only) {
+    // Filtre avec ventes (3 états)
+    if (filters.with_sales_only === true) {
       productsQuery += `
         AND EXISTS (
+          SELECT 1 FROM order_items oi
+          JOIN orders o ON oi.wp_order_id = o.wp_order_id
+          WHERE oi.product_id = p.id
+            AND o.post_date >= NOW() - INTERVAL '${analysisPeriodMonths} months'
+            AND o.post_status IN ('wc-completed', 'wc-processing', 'wc-delivered')
+        )
+      `;
+    } else if (filters.with_sales_only === false) {
+      productsQuery += `
+        AND NOT EXISTS (
           SELECT 1 FROM order_items oi
           JOIN orders o ON oi.wp_order_id = o.wp_order_id
           WHERE oi.product_id = p.id
@@ -395,8 +407,10 @@ const needsCalculationModel = {
       values.push(filters.supplier_id);
     }
 
-    if (filters.zero_stock) {
+    if (filters.zero_stock === true) {
       query += ` AND (p.stock IS NULL OR p.stock <= 0)`;
+    } else if (filters.zero_stock === false) {
+      query += ` AND (p.stock IS NOT NULL AND p.stock > 0)`;
     }
 
     if (filters.search) {
@@ -405,11 +419,11 @@ const needsCalculationModel = {
       paramIndex++;
     }
 
-    // Filtre avec ventes uniquement
-    if (filters.with_sales_only) {
+    // Filtre avec ventes (3 états)
+    if (filters.with_sales_only === true || filters.with_sales_only === false) {
       const analysisPeriodMonths = filters.analysis_period_months || 1;
-      query += `
-        AND EXISTS (
+      const existsClause = `
+        EXISTS (
           SELECT 1 FROM order_items oi
           JOIN orders o ON oi.wp_order_id = o.wp_order_id
           WHERE oi.product_id = p.id
@@ -417,6 +431,7 @@ const needsCalculationModel = {
             AND o.post_status IN ('wc-completed', 'wc-processing', 'wc-delivered')
         )
       `;
+      query += filters.with_sales_only === true ? ` AND ${existsClause}` : ` AND NOT ${existsClause}`;
     }
 
     const result = await pool.query(query, values);

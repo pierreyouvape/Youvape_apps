@@ -69,8 +69,8 @@ const purchasesController = {
     try {
       const filters = {
         supplier_id: req.query.supplier_id ? parseInt(req.query.supplier_id) : null,
-        zero_stock: req.query.zero_stock === 'true',
-        with_sales_only: req.query.with_sales_only === 'true',
+        zero_stock: req.query.zero_stock === 'true' ? true : req.query.zero_stock === 'false' ? false : null,
+        with_sales_only: req.query.with_sales_only === 'true' ? true : req.query.with_sales_only === 'false' ? false : null,
         search: req.query.search || null,
         analysis_period_months: req.query.analysis_period ? parseFloat(req.query.analysis_period) : (req.query.analysis_period_months ? parseFloat(req.query.analysis_period_months) : 1),
         coverage_months: req.query.coverage_months ? parseFloat(req.query.coverage_months) : 1,
