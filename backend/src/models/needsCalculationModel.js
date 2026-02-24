@@ -68,7 +68,7 @@ const needsCalculationModel = {
     let dateFilter;
     let dateParams;
     if (startDate && endDate) {
-      dateFilter = `AND o.post_date >= $${productIds.length + 1} AND o.post_date < $${productIds.length + 2} + INTERVAL '1 day'`;
+      dateFilter = `AND o.post_date >= $${productIds.length + 1}::date AND o.post_date < $${productIds.length + 2}::date + INTERVAL '1 day'`;
       dateParams = [...productIds, startDate, endDate];
     } else {
       dateFilter = `AND o.post_date >= NOW() - INTERVAL '12 months'`;
