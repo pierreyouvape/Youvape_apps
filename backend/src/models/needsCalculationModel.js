@@ -60,22 +60,25 @@ const needsCalculationModel = {
 
     if (products.length === 0) return [];
 
-    const productIds = products.map(p => p.id);
-    const placeholders = productIds.map((_, i) => `$${i + 1}`).join(',');
-
     // Plage de dates pour les ventes
     const { startDate, endDate } = options;
     let dateFilter;
     let dateParams;
     if (startDate && endDate) {
-      dateFilter = `AND o.post_date >= $${productIds.length + 1}::date AND o.post_date < $${productIds.length + 2}::date + INTERVAL '1 day'`;
-      dateParams = [...productIds, startDate, endDate];
+      dateFilter = `AND o.post_date >= $1::date AND o.post_date < $2::date + INTERVAL '1 day'`;
+      dateParams = [startDate, endDate];
     } else {
       dateFilter = `AND o.post_date >= NOW() - INTERVAL '12 months'`;
-      dateParams = productIds;
+      dateParams = [];
     }
 
-    // 2. Ventes par mois sur la période demandée (une seule requête)
+    // Filtre fournisseur pour les requêtes ventes/arrivages
+    const supplierJoin = supplierIdFilter
+      ? `JOIN product_suppliers ps_f ON oi.product_id = ps_f.product_id AND ps_f.supplier_id = $${dateParams.length + 1}`
+      : '';
+    const supplierParams = supplierIdFilter ? [...dateParams, supplierIdFilter] : dateParams;
+
+    // 2. Ventes par mois sur la période demandée (sous-requête au lieu de IN (...) massif)
     const monthlySalesResult = await pool.query(`
       SELECT
         oi.product_id,
@@ -83,37 +86,50 @@ const needsCalculationModel = {
         SUM(oi.qty) as total_qty
       FROM order_items oi
       JOIN orders o ON oi.wp_order_id = o.wp_order_id
-      WHERE oi.product_id IN (${placeholders})
+      JOIN products p ON oi.product_id = p.id
+        AND p.post_status = 'publish'
+        AND p.product_type IN ('simple', 'variation')
+      ${supplierJoin}
+      WHERE o.post_status IN ('wc-completed', 'wc-processing', 'wc-delivered')
         ${dateFilter}
-        AND o.post_status IN ('wc-completed', 'wc-processing', 'wc-delivered')
       GROUP BY oi.product_id, DATE_TRUNC('month', o.post_date)
       ORDER BY oi.product_id, month
-    `, dateParams);
+    `, supplierParams);
 
-    // 3. Max qty par commande sur la période (pour le calcul de sécurité)
+    // 3. Max qty par commande sur la période
     const maxOrderResult = await pool.query(`
       SELECT
         oi.product_id,
         MAX(oi.qty) as max_order_qty
       FROM order_items oi
       JOIN orders o ON oi.wp_order_id = o.wp_order_id
-      WHERE oi.product_id IN (${placeholders})
+      JOIN products p ON oi.product_id = p.id
+        AND p.post_status = 'publish'
+        AND p.product_type IN ('simple', 'variation')
+      ${supplierJoin}
+      WHERE o.post_status IN ('wc-completed', 'wc-processing', 'wc-delivered')
         ${dateFilter}
-        AND o.post_status IN ('wc-completed', 'wc-processing', 'wc-delivered')
       GROUP BY oi.product_id
-    `, dateParams);
+    `, supplierParams);
 
-    // 4. Arrivages en cours (une seule requête)
+    // 4. Arrivages en cours
+    const incomingParams = supplierIdFilter ? [supplierIdFilter] : [];
+    const incomingSupplierJoin = supplierIdFilter
+      ? `JOIN product_suppliers ps_f2 ON poi.product_id = ps_f2.product_id AND ps_f2.supplier_id = $1`
+      : '';
     const incomingResult = await pool.query(`
       SELECT
         poi.product_id,
         COALESCE(SUM(poi.qty_ordered - poi.qty_received), 0) as incoming_qty
       FROM purchase_order_items poi
       JOIN purchase_orders po ON poi.purchase_order_id = po.id
-      WHERE poi.product_id IN (${placeholders})
-        AND po.status IN ('sent', 'confirmed', 'shipped', 'partial')
+      JOIN products p ON poi.product_id = p.id
+        AND p.post_status = 'publish'
+        AND p.product_type IN ('simple', 'variation')
+      ${incomingSupplierJoin}
+      WHERE po.status IN ('sent', 'confirmed', 'shipped', 'partial')
       GROUP BY poi.product_id
-    `, productIds);
+    `, incomingParams);
 
     // Indexer par product_id
     const monthlySalesMap = new Map(); // product_id → [{month, total_qty}]
