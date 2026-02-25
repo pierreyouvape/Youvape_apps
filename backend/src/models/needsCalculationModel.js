@@ -51,35 +51,67 @@ const needsCalculationModel = {
     if (products.length === 0) return [];
 
     // 2. Ventes par mois — tout l'historique, pas de filtre de dates
+    // order_items.variation_id est prioritaire sur product_id pour les variations
+    // On sépare en deux branches UNION pour que les index soient utilisés
     const monthlySalesResult = await pool.query(`
       SELECT
-        oi.product_id,
-        DATE_TRUNC('month', o.post_date) as month,
-        SUM(oi.qty) as total_qty
-      FROM order_items oi
-      JOIN orders o ON oi.wp_order_id = o.wp_order_id
-      JOIN products p ON oi.product_id = p.id
-        AND p.post_status = 'publish'
-        AND (p.product_type = 'simple' OR (p.product_type = 'variation'
-          AND EXISTS (SELECT 1 FROM products pp WHERE pp.wp_product_id = p.wp_parent_id AND pp.post_status = 'publish')))
-      WHERE o.post_status IN ('wc-completed', 'wc-processing', 'wc-delivered')
-      GROUP BY oi.product_id, DATE_TRUNC('month', o.post_date)
-      ORDER BY oi.product_id, month
+        p_id AS product_id,
+        DATE_TRUNC('month', post_date) as month,
+        SUM(qty) as total_qty
+      FROM (
+        -- Variations : on joint sur variation_id
+        SELECT p.id AS p_id, o.post_date, oi.qty
+        FROM order_items oi
+        JOIN orders o ON oi.wp_order_id = o.wp_order_id
+        JOIN products p ON oi.variation_id = p.wp_product_id
+        WHERE oi.variation_id IS NOT NULL AND oi.variation_id != 0
+          AND o.post_status IN ('wc-completed', 'wc-processing', 'wc-delivered')
+          AND p.post_status = 'publish'
+          AND p.product_type = 'variation'
+          AND EXISTS (SELECT 1 FROM products pp WHERE pp.wp_product_id = p.wp_parent_id AND pp.post_status = 'publish')
+        UNION ALL
+        -- Simples (et variables sans variation_id) : on joint sur product_id
+        SELECT p.id AS p_id, o.post_date, oi.qty
+        FROM order_items oi
+        JOIN orders o ON oi.wp_order_id = o.wp_order_id
+        JOIN products p ON oi.product_id = p.wp_product_id
+        WHERE (oi.variation_id IS NULL OR oi.variation_id = 0)
+          AND o.post_status IN ('wc-completed', 'wc-processing', 'wc-delivered')
+          AND p.post_status = 'publish'
+          AND p.product_type = 'simple'
+      ) sub
+      GROUP BY p_id, DATE_TRUNC('month', post_date)
+      ORDER BY p_id, month
     `);
 
     // 3. Max qty par commande — tout l'historique
     const maxOrderResult = await pool.query(`
       SELECT
-        oi.product_id,
-        MAX(oi.qty) as max_order_qty
-      FROM order_items oi
-      JOIN orders o ON oi.wp_order_id = o.wp_order_id
-      JOIN products p ON oi.product_id = p.id
-        AND p.post_status = 'publish'
-        AND (p.product_type = 'simple' OR (p.product_type = 'variation'
-          AND EXISTS (SELECT 1 FROM products pp WHERE pp.wp_product_id = p.wp_parent_id AND pp.post_status = 'publish')))
-      WHERE o.post_status IN ('wc-completed', 'wc-processing', 'wc-delivered')
-      GROUP BY oi.product_id
+        p_id AS product_id,
+        MAX(qty) as max_order_qty
+      FROM (
+        -- Variations
+        SELECT p.id AS p_id, oi.qty
+        FROM order_items oi
+        JOIN orders o ON oi.wp_order_id = o.wp_order_id
+        JOIN products p ON oi.variation_id = p.wp_product_id
+        WHERE oi.variation_id IS NOT NULL AND oi.variation_id != 0
+          AND o.post_status IN ('wc-completed', 'wc-processing', 'wc-delivered')
+          AND p.post_status = 'publish'
+          AND p.product_type = 'variation'
+          AND EXISTS (SELECT 1 FROM products pp WHERE pp.wp_product_id = p.wp_parent_id AND pp.post_status = 'publish')
+        UNION ALL
+        -- Simples
+        SELECT p.id AS p_id, oi.qty
+        FROM order_items oi
+        JOIN orders o ON oi.wp_order_id = o.wp_order_id
+        JOIN products p ON oi.product_id = p.wp_product_id
+        WHERE (oi.variation_id IS NULL OR oi.variation_id = 0)
+          AND o.post_status IN ('wc-completed', 'wc-processing', 'wc-delivered')
+          AND p.post_status = 'publish'
+          AND p.product_type = 'simple'
+      ) sub
+      GROUP BY p_id
     `);
 
     // 4. Arrivages en cours
@@ -97,11 +129,12 @@ const needsCalculationModel = {
       GROUP BY poi.product_id
     `);
 
-    // Indexer par product_id
+    // Indexer par product_id (parseInt pour éviter le mismatch string/int entre les queries)
     const monthlySalesMap = new Map(); // product_id → [{month, total_qty}]
     for (const row of monthlySalesResult.rows) {
-      if (!monthlySalesMap.has(row.product_id)) monthlySalesMap.set(row.product_id, []);
-      monthlySalesMap.get(row.product_id).push({
+      const pid = parseInt(row.product_id);
+      if (!monthlySalesMap.has(pid)) monthlySalesMap.set(pid, []);
+      monthlySalesMap.get(pid).push({
         month: row.month,
         total_qty: parseInt(row.total_qty) || 0
       });
@@ -109,12 +142,12 @@ const needsCalculationModel = {
 
     const maxOrderMap = new Map(); // product_id → max_order_qty
     for (const row of maxOrderResult.rows) {
-      maxOrderMap.set(row.product_id, parseInt(row.max_order_qty) || 0);
+      maxOrderMap.set(parseInt(row.product_id), parseInt(row.max_order_qty) || 0);
     }
 
     const incomingMap = new Map(); // product_id → incoming_qty
     for (const row of incomingResult.rows) {
-      incomingMap.set(row.product_id, parseInt(row.incoming_qty) || 0);
+      incomingMap.set(parseInt(row.product_id), parseInt(row.incoming_qty) || 0);
     }
 
     // Assembler la réponse

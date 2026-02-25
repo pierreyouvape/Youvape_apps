@@ -119,18 +119,26 @@ const computeProductNeeds = (product, analysisPeriodMonths, coverageMonths, isCu
 
   let salesData;
   if (isCustomPeriod && analysisStartDate && analysisEndDate) {
-    // Plage fixe : filtrer par dates
-    const start = new Date(analysisStartDate);
-    const end = new Date(analysisEndDate);
+    // Plage fixe : filtrer par dates (inclut les mois dont le début est dans la plage)
+    const start = new Date(analysisStartDate + 'T00:00:00');
+    const end = new Date(analysisEndDate + 'T00:00:00');
     salesData = monthly_sales.filter(m => {
       const d = new Date(m.month);
       return d >= start && d <= end;
     });
   } else {
-    // Fenêtre glissante depuis aujourd'hui
-    const cutoffDate = new Date();
-    cutoffDate.setMonth(cutoffDate.getMonth() - Math.ceil(analysisPeriodMonths));
-    salesData = monthly_sales.filter(m => new Date(m.month) >= cutoffDate);
+    // N derniers mois calendaires COMPLETS — exclure le mois en cours (toujours incomplet)
+    // Ex: on est le 25 fév 2026, période 12 mois → du 1er fév 2025 au 31 jan 2026
+    const now = new Date();
+    // Premier jour du mois en cours → c'est la borne de fin exclusive
+    const endExclusive = new Date(now.getFullYear(), now.getMonth(), 1);
+    // Premier jour du mois de début = endExclusive - N mois
+    const startInclusive = new Date(endExclusive);
+    startInclusive.setMonth(startInclusive.getMonth() - Math.ceil(analysisPeriodMonths));
+    salesData = monthly_sales.filter(m => {
+      const d = new Date(m.month);
+      return d >= startInclusive && d < endExclusive;
+    });
   }
   const salesInPeriod = salesData.reduce((sum, m) => sum + (parseInt(m.total_qty) || 0), 0);
   const max_order_qty = parseInt(product.max_order_qty_12m) || 0;
@@ -138,8 +146,8 @@ const computeProductNeeds = (product, analysisPeriodMonths, coverageMonths, isCu
   const effectivePeriod = analysisPeriodMonths > 0 ? analysisPeriodMonths : 1;
   const avgMonthlySales = salesInPeriod / effectivePeriod;
 
-  // Tendance sur les 12 derniers mois (on garde toutes les données pour la regression)
-  const trendResult = calculateTrendCoefficient(monthly_sales);
+  // Tendance calculée sur la période d'analyse sélectionnée
+  const trendResult = calculateTrendCoefficient(salesData);
   const trendCoefficient = trendResult.coefficient;
 
   const fifteenDaysSales = avgMonthlySales / 2;
@@ -310,10 +318,13 @@ const NeedsTab = ({ token }) => {
     });
   }, [allProducts, effectivePeriodMonths, coverageMonths, isCustomPeriod, analysisStartDate, analysisEndDate]);
 
+  // Normalise une chaîne pour la recherche : minuscules, sans ponctuation, espaces simplifiés
+  const normalize = (str) => (str || '').toLowerCase().replace(/[-_.,;:!?()[\]]/g, ' ').replace(/\s+/g, ' ').trim();
+
   // Filtrage local — tout en JS sur le cache
   const filteredProducts = useMemo(() => {
-    const searchLower = search.trim().toLowerCase();
-    const hasSearch = searchLower.length >= 2;
+    const searchNorm = normalize(search);
+    const hasSearch = searchNorm.length >= 2;
 
     return computedProducts.filter(p => {
       // Filtre fournisseur
@@ -322,8 +333,8 @@ const NeedsTab = ({ token }) => {
       // Si recherche active, on affiche tous les correspondants (bypass filtre propositions)
       if (hasSearch) {
         return (
-          (p.post_title || '').toLowerCase().includes(searchLower) ||
-          (p.sku || '').toLowerCase().includes(searchLower)
+          normalize(p.post_title).includes(searchNorm) ||
+          (p.sku || '').toLowerCase().includes(searchNorm)
         );
       }
 
