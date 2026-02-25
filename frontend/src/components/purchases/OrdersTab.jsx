@@ -262,9 +262,10 @@ const OrdersTab = ({ token }) => {
             >
               <option value="active">Actives (hors reçues)</option>
               <option value="">Toutes</option>
-              {Object.entries(statusLabels).map(([key, label]) => (
-                <option key={key} value={key}>{label}</option>
-              ))}
+              <option value="draft">Brouillon</option>
+              <option value="confirmed">Attendu</option>
+              <option value="partial">Partielle</option>
+              <option value="received">Reçue</option>
             </select>
           </div>
 
