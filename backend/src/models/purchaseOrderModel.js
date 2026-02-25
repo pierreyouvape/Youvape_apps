@@ -485,7 +485,7 @@ const purchaseOrderModel = {
         const totalAmount = parseFloat(bmsOrder.grandtotal) || 0;
 
         const orderResult = await client.query(orderQuery, [
-          `BMS-${bmsReference}`,          // order_number
+          `BMS-${bmsOrder.id}`,             // order_number (basé sur l'id BMS, toujours unique)
           supplierId,                       // supplier_id
           status,                           // status
           bmsOrder.id,                      // bms_po_id
