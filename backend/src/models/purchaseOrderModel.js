@@ -94,7 +94,7 @@ const purchaseOrderModel = {
         p.post_title as current_product_name,
         p.stock as current_stock
       FROM purchase_order_items poi
-      JOIN products p ON poi.product_id = p.id
+      LEFT JOIN products p ON poi.product_id = p.id
       WHERE poi.purchase_order_id = $1
       ORDER BY poi.id
     `;
@@ -468,12 +468,16 @@ const purchaseOrderModel = {
         const bmsReference = String(bmsOrder.reference);
         const items = bmsOrder.items || [];
 
-        // Pour complete : calculer le statut depuis les items réels (qty × qty_pack)
+        // Calculer les totaux réels (qty × qty_pack) pour déterminer le statut
+        const totalOrdered = items.reduce((s, i) => s + (parseInt(i.qty) || 0) * (parseInt(i.qty_pack) || 1), 0);
+        const totalReceived = items.reduce((s, i) => s + (parseInt(i.qty_received) || 0) * (parseInt(i.qty_pack) || 1), 0);
+
         let status;
         if (bmsOrder.status === 'complete') {
-          const totalOrdered = items.reduce((s, i) => s + (parseInt(i.qty) || 0) * (parseInt(i.qty_pack) || 1), 0);
-          const totalReceived = items.reduce((s, i) => s + (parseInt(i.qty_received) || 0) * (parseInt(i.qty_pack) || 1), 0);
           status = totalReceived >= totalOrdered ? 'received' : 'partial';
+        } else if (bmsOrder.status === 'expected') {
+          // Attendu sans aucune réception → confirmed, avec réception partielle → partial
+          status = totalReceived > 0 ? 'partial' : 'confirmed';
         } else {
           status = statusMap[bmsOrder.status] || 'sent';
         }
