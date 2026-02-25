@@ -192,7 +192,7 @@ const OrdersTab = ({ token }) => {
     parseInt(order.total_qty_received) < parseInt(order.total_qty_ordered);
 
   const hasMissingProductsDetail = (order) => {
-    if (!order?.items || !['received', 'partial'].includes(order.status)) return false;
+    if (!order?.items) return false;
     return order.items.some(item => (item.qty_received || 0) < (item.qty_ordered || 0));
   };
 
