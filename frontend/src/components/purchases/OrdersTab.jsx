@@ -272,8 +272,8 @@ const OrdersTab = ({ token }) => {
                 <th className="text-center">Quantité</th>
                 <th className="text-right">Montant</th>
                 <th className="text-center">Statut</th>
-                <th>Date création</th>
-                <th>Date envoi</th>
+                <th>Date commande</th>
+                <th>Date livraison prévue</th>
                 <th>Actions</th>
               </tr>
             </thead>
@@ -282,7 +282,7 @@ const OrdersTab = ({ token }) => {
                 <tr key={order.id}>
                   <td>
                     <strong style={{ color: '#f59e0b', cursor: 'pointer' }} onClick={() => openDetail(order.id)}>
-                      {order.order_number}
+                      {order.bms_reference || order.order_number}
                     </strong>
                   </td>
                   <td>{order.supplier_name}</td>
@@ -296,8 +296,8 @@ const OrdersTab = ({ token }) => {
                       {statusLabels[order.status]}
                     </span>
                   </td>
-                  <td>{formatDate(order.created_at)}</td>
                   <td>{formatDate(order.order_date)}</td>
+                  <td>{formatDate(order.expected_date)}</td>
                   <td>
                     <div style={{ display: 'flex', gap: '5px' }}>
                       <button
@@ -328,7 +328,7 @@ const OrdersTab = ({ token }) => {
         <div className="modal-overlay" onClick={() => setShowDetailModal(false)}>
           <div className="modal-content" style={{ maxWidth: '900px' }} onClick={e => e.stopPropagation()}>
             <div className="modal-header">
-              <h3>Commande {selectedOrder.order_number}</h3>
+              <h3>Commande {selectedOrder.bms_reference || selectedOrder.order_number}</h3>
               <button className="modal-close" onClick={() => setShowDetailModal(false)}>×</button>
             </div>
             <div className="modal-body">
@@ -347,8 +347,8 @@ const OrdersTab = ({ token }) => {
                   </div>
                 </div>
                 <div>
-                  <strong>Créée le</strong>
-                  <div>{formatDate(selectedOrder.created_at)}</div>
+                  <strong>Date commande</strong>
+                  <div>{formatDate(selectedOrder.order_date)}</div>
                 </div>
               </div>
 

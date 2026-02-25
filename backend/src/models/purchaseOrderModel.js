@@ -471,15 +471,16 @@ const purchaseOrderModel = {
           INSERT INTO purchase_orders (
             order_number, supplier_id, status,
             bms_po_id, bms_reference,
-            order_date, expected_date,
+            order_date, expected_date, received_date,
             total_items, total_qty, total_amount,
             notes
           )
-          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
           ON CONFLICT (bms_po_id) DO UPDATE SET
             status = EXCLUDED.status,
             bms_reference = EXCLUDED.bms_reference,
             expected_date = EXCLUDED.expected_date,
+            received_date = EXCLUDED.received_date,
             total_items = EXCLUDED.total_items,
             total_qty = EXCLUDED.total_qty,
             total_amount = EXCLUDED.total_amount,
@@ -491,14 +492,18 @@ const purchaseOrderModel = {
         const totalQty = items.reduce((s, i) => s + (parseInt(i.qty) || 0), 0);
         const totalAmount = parseFloat(bmsOrder.grandtotal) || 0;
 
+        // Pour les commandes complètes, updated_at BMS est la meilleure approximation de la date de réception
+        const receivedDate = (bmsOrder.status === 'complete' && bmsOrder.updated_at) ? bmsOrder.updated_at : null;
+
         const orderResult = await client.query(orderQuery, [
           `BMS-${bmsOrder.id}`,             // order_number (basé sur l'id BMS, toujours unique)
           supplierId,                       // supplier_id
           status,                           // status
           bmsOrder.id,                      // bms_po_id
           bmsReference,                     // bms_reference
-          bmsOrder.created_at || null,      // order_date
+          bmsOrder.created_at || null,      // order_date (date de création de la commande)
           bmsOrder.eta || null,             // expected_date
+          receivedDate,                     // received_date (updated_at BMS si complete)
           items.length,                     // total_items
           totalQty,                         // total_qty
           totalAmount,                      // total_amount
