@@ -38,8 +38,12 @@ const needsCalculationModel = {
         SELECT supplier_id FROM product_suppliers WHERE product_id = p.id LIMIT 1
       ) ps_any ON ps_primary.id IS NULL
       LEFT JOIN suppliers s_any ON ps_any.supplier_id = s_any.id
+      LEFT JOIN products p_parent ON p.wp_parent_id = p_parent.wp_product_id
       WHERE p.post_status = 'publish'
-        AND p.product_type IN ('simple', 'variation')
+        AND (
+          p.product_type = 'simple'
+          OR (p.product_type = 'variation' AND p_parent.post_status = 'publish')
+        )
     `;
 
     const values = [];
@@ -88,7 +92,8 @@ const needsCalculationModel = {
       JOIN orders o ON oi.wp_order_id = o.wp_order_id
       JOIN products p ON oi.product_id = p.id
         AND p.post_status = 'publish'
-        AND p.product_type IN ('simple', 'variation')
+        AND (p.product_type = 'simple' OR (p.product_type = 'variation'
+          AND EXISTS (SELECT 1 FROM products pp WHERE pp.wp_product_id = p.wp_parent_id AND pp.post_status = 'publish')))
       ${supplierJoin}
       WHERE o.post_status IN ('wc-completed', 'wc-processing', 'wc-delivered')
         ${dateFilter}
@@ -105,7 +110,8 @@ const needsCalculationModel = {
       JOIN orders o ON oi.wp_order_id = o.wp_order_id
       JOIN products p ON oi.product_id = p.id
         AND p.post_status = 'publish'
-        AND p.product_type IN ('simple', 'variation')
+        AND (p.product_type = 'simple' OR (p.product_type = 'variation'
+          AND EXISTS (SELECT 1 FROM products pp WHERE pp.wp_product_id = p.wp_parent_id AND pp.post_status = 'publish')))
       ${supplierJoin}
       WHERE o.post_status IN ('wc-completed', 'wc-processing', 'wc-delivered')
         ${dateFilter}
@@ -125,7 +131,8 @@ const needsCalculationModel = {
       JOIN purchase_orders po ON poi.purchase_order_id = po.id
       JOIN products p ON poi.product_id = p.id
         AND p.post_status = 'publish'
-        AND p.product_type IN ('simple', 'variation')
+        AND (p.product_type = 'simple' OR (p.product_type = 'variation'
+          AND EXISTS (SELECT 1 FROM products pp WHERE pp.wp_product_id = p.wp_parent_id AND pp.post_status = 'publish')))
       ${incomingSupplierJoin}
       WHERE po.status IN ('sent', 'confirmed', 'shipped', 'partial')
       GROUP BY poi.product_id
