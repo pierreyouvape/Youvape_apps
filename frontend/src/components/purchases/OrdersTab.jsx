@@ -22,24 +22,18 @@ const OrdersTab = ({ token }) => {
   const [lastSync, setLastSync] = useState(null);
   const [syncResult, setSyncResult] = useState(null);
 
-  // BMS sync réceptions
-  const [syncingReceptions, setSyncingReceptions] = useState(false);
-  const [lastReceptionSync, setLastReceptionSync] = useState(null);
-  const [syncReceptionResult, setSyncReceptionResult] = useState(null);
-
   useEffect(() => {
     axios.get(`${API_URL}/purchases/orders/bms-sync-info`, {
       headers: { Authorization: `Bearer ${token}` }
     }).then(r => {
       setLastSync(r.data.data?.last_sync_at);
-      setLastReceptionSync(r.data.data?.last_reception_sync_at);
     }).catch(() => {});
   }, [token]);
 
   const statusLabels = {
     draft: 'Brouillon',
     sent: 'Envoyée',
-    confirmed: 'Confirmée',
+    confirmed: 'Attendu',
     shipped: 'Expédiée',
     partial: 'Partielle',
     received: 'Reçue',
@@ -156,27 +150,6 @@ const OrdersTab = ({ token }) => {
     }
   };
 
-  // Sync réceptions BMS
-  const syncReceptions = async () => {
-    if (!confirm(`Synchroniser les réceptions BMS depuis le ${lastReceptionSync ? new Date(lastReceptionSync).toLocaleString('fr-FR') : 'début'} ?`)) return;
-    setSyncingReceptions(true);
-    setSyncReceptionResult(null);
-    try {
-      const response = await axios.post(`${API_URL}/purchases/orders/sync-receptions`, {}, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      const result = response.data.data;
-      setSyncReceptionResult(result);
-      setLastReceptionSync(new Date().toISOString());
-      loadOrders();
-    } catch (err) {
-      console.error('Erreur sync réceptions BMS:', err);
-      alert(err.response?.data?.error || 'Erreur lors de la synchronisation des réceptions');
-    } finally {
-      setSyncingReceptions(false);
-    }
-  };
-
   // Sync BMS orders
   const syncBMS = async () => {
     if (!confirm(`Synchroniser les commandes BMS depuis le ${lastSync ? new Date(lastSync).toLocaleString('fr-FR') : 'début'} ?`)) return;
@@ -211,6 +184,16 @@ const OrdersTab = ({ token }) => {
     } catch (err) {
       console.error('Erreur mise à jour réception:', err);
     }
+  };
+
+  // Badge produit manquant : qty_received < qty_ordered
+  const hasMissingProducts = (order) =>
+    parseInt(order.total_qty_received) < parseInt(order.total_qty_ordered);
+
+  // Même calcul pour le détail (depuis les items)
+  const hasMissingProductsDetail = (order) => {
+    if (!order?.items) return false;
+    return order.items.some(item => (item.qty_received || 0) < (item.qty_ordered || 0));
   };
 
 
@@ -262,14 +245,6 @@ const OrdersTab = ({ token }) => {
             {syncing ? 'Synchronisation...' : '⬇ Sync commandes BMS'}
           </button>
           <button
-            className="btn btn-secondary"
-            onClick={syncReceptions}
-            disabled={syncingReceptions}
-            title={lastReceptionSync ? `Dernier import réceptions : ${new Date(lastReceptionSync).toLocaleString('fr-FR')}` : 'Aucun import réceptions précédent'}
-          >
-            {syncingReceptions ? 'Synchronisation...' : '📦 Sync réceptions BMS'}
-          </button>
-          <button
             className="btn btn-primary"
             onClick={() => navigate('/purchases/create-order')}
           >
@@ -282,15 +257,6 @@ const OrdersTab = ({ token }) => {
             Sync commandes — {syncResult.created} créée(s), {syncResult.updated} mise(s) à jour, {syncResult.skipped} ignorée(s) (fournisseur inconnu)
             <button
               onClick={() => setSyncResult(null)}
-              style={{ marginLeft: '12px', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 'bold' }}
-            >✕</button>
-          </div>
-        )}
-        {syncReceptionResult && (
-          <div className="alert alert-success" style={{ marginBottom: '16px' }}>
-            Sync réceptions — {syncReceptionResult.processed} réception(s) traitée(s), {syncReceptionResult.updatedOrders} commande(s) mise(s) à jour, {syncReceptionResult.skipped} ignorée(s)
-            <button
-              onClick={() => setSyncReceptionResult(null)}
               style={{ marginLeft: '12px', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 'bold' }}
             >✕</button>
           </div>
@@ -341,6 +307,14 @@ const OrdersTab = ({ token }) => {
                     <span className={`status-badge status-${order.status}`}>
                       {statusLabels[order.status]}
                     </span>
+                    {hasMissingProducts(order) && (
+                      <span
+                        className="badge-missing"
+                        title={`Reçu : ${order.total_qty_received} / ${order.total_qty_ordered}`}
+                      >
+                        ⚠ Manquant
+                      </span>
+                    )}
                   </td>
                   <td>{formatDate(order.order_date)}</td>
                   <td>{formatDate(order.received_date)}</td>
@@ -386,10 +360,13 @@ const OrdersTab = ({ token }) => {
                 </div>
                 <div>
                   <strong>Statut</strong>
-                  <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <span className={`status-badge status-${selectedOrder.status}`}>
                       {statusLabels[selectedOrder.status]}
                     </span>
+                    {hasMissingProductsDetail(selectedOrder) && (
+                      <span className="badge-missing">⚠ Produit(s) manquant(s)</span>
+                    )}
                   </div>
                 </div>
                 <div>
@@ -447,31 +424,41 @@ const OrdersTab = ({ token }) => {
                   </tr>
                 </thead>
                 <tbody>
-                  {selectedOrder.items?.map(item => (
-                    <tr key={item.id}>
-                      <td style={{ maxWidth: '300px' }}>{item.product_name}</td>
-                      <td><code>{item.supplier_sku || item.product_sku || '-'}</code></td>
-                      <td className="text-right">{item.qty_ordered}</td>
-                      <td className="text-right">
-                        {['shipped', 'partial'].includes(selectedOrder.status) ? (
-                          <input
-                            type="number"
-                            className="qty-input"
-                            min="0"
-                            max={item.qty_ordered}
-                            value={item.qty_received}
-                            onChange={e => updateReceivedQty(selectedOrder.id, item.id, parseInt(e.target.value) || 0)}
-                          />
-                        ) : (
-                          item.qty_received
-                        )}
-                      </td>
-                      <td className="text-right">
-                        {item.unit_price ? `${parseFloat(item.unit_price).toFixed(2)} €` : '-'}
-                      </td>
-                      <td>{item.stock_before ?? '-'}</td>
-                    </tr>
-                  ))}
+                  {selectedOrder.items?.map(item => {
+                    const missing = (item.qty_received || 0) < (item.qty_ordered || 0);
+                    return (
+                      <tr key={item.id} style={missing ? { background: '#fff7ed' } : {}}>
+                        <td style={{ maxWidth: '300px' }}>
+                          {item.product_name}
+                          {missing && (
+                            <span className="badge-missing" style={{ marginLeft: '6px' }}>
+                              ⚠ {item.qty_ordered - item.qty_received} manquant(s)
+                            </span>
+                          )}
+                        </td>
+                        <td><code>{item.supplier_sku || item.product_sku || '-'}</code></td>
+                        <td className="text-right">{item.qty_ordered}</td>
+                        <td className="text-right">
+                          {['shipped', 'partial'].includes(selectedOrder.status) ? (
+                            <input
+                              type="number"
+                              className="qty-input"
+                              min="0"
+                              max={item.qty_ordered}
+                              value={item.qty_received}
+                              onChange={e => updateReceivedQty(selectedOrder.id, item.id, parseInt(e.target.value) || 0)}
+                            />
+                          ) : (
+                            item.qty_received
+                          )}
+                        </td>
+                        <td className="text-right">
+                          {item.unit_price ? `${parseFloat(item.unit_price).toFixed(2)} €` : '-'}
+                        </td>
+                        <td>{item.stock_before ?? '-'}</td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
 

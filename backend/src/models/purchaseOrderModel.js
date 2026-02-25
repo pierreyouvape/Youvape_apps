@@ -18,10 +18,13 @@ const purchaseOrderModel = {
         po.*,
         s.name as supplier_name,
         s.code as supplier_code,
-        u.email as created_by_email
+        u.email as created_by_email,
+        COALESCE(SUM(poi.qty_ordered), 0) as total_qty_ordered,
+        COALESCE(SUM(poi.qty_received), 0) as total_qty_received
       FROM purchase_orders po
       JOIN suppliers s ON po.supplier_id = s.id
       LEFT JOIN users u ON po.created_by = u.id
+      LEFT JOIN purchase_order_items poi ON poi.purchase_order_id = po.id
       WHERE 1=1
     `;
     const values = [];
@@ -53,7 +56,7 @@ const purchaseOrderModel = {
       values.push(filters.to_date);
     }
 
-    query += ' ORDER BY po.created_at DESC';
+    query += ' GROUP BY po.id, s.name, s.code, u.email ORDER BY po.created_at DESC';
 
     if (filters.limit) {
       query += ` LIMIT $${paramIndex++}`;
@@ -449,8 +452,7 @@ const purchaseOrderModel = {
       const statusMap = {
         draft: 'draft',
         confirmed: 'confirmed',
-        expected: 'confirmed', // En attente de réception
-        complete: 'received',
+        expected: 'confirmed', // Attendu = en attente de réception
         cancelled: 'cancelled',
         partial: 'partial',
         shipped: 'shipped'
@@ -463,8 +465,18 @@ const purchaseOrderModel = {
           continue; // Fournisseur BMS inconnu localement
         }
 
-        const status = statusMap[bmsOrder.status] || 'sent';
         const bmsReference = String(bmsOrder.reference);
+        const items = bmsOrder.items || [];
+
+        // Pour complete : calculer le statut depuis les items réels (qty_received vs qty_ordered)
+        let status;
+        if (bmsOrder.status === 'complete') {
+          const totalOrdered = items.reduce((s, i) => s + (parseInt(i.qty) || 0), 0);
+          const totalReceived = items.reduce((s, i) => s + (parseInt(i.qty_received) || 0), 0);
+          status = totalReceived >= totalOrdered ? 'received' : 'partial';
+        } else {
+          status = statusMap[bmsOrder.status] || 'sent';
+        }
 
         // Upsert de la commande
         const orderQuery = `
@@ -487,8 +499,6 @@ const purchaseOrderModel = {
             updated_at = CURRENT_TIMESTAMP
           RETURNING id, (xmax = 0) AS inserted
         `;
-
-        const items = bmsOrder.items || [];
         const totalQty = items.reduce((s, i) => s + (parseInt(i.qty) || 0), 0);
         const totalAmount = parseFloat(bmsOrder.grandtotal) || 0;
 
