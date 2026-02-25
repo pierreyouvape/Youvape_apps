@@ -103,7 +103,13 @@ const bmsApiModel = {
       allOrders = allOrders.concat(data.data || []);
     }
 
-    return allOrders;
+    // Déduplication par id (l'API remplit la dernière page avec des doublons)
+    const seen = new Set();
+    return allOrders.filter(o => {
+      if (seen.has(o.id)) return false;
+      seen.add(o.id);
+      return true;
+    });
   },
 
   /**
