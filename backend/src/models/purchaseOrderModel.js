@@ -443,6 +443,7 @@ const purchaseOrderModel = {
       const statusMap = {
         draft: 'draft',
         confirmed: 'confirmed',
+        expected: 'confirmed', // En attente de réception
         complete: 'received',
         cancelled: 'cancelled',
         partial: 'partial',
