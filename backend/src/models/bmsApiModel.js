@@ -74,11 +74,23 @@ const bmsApiModel = {
   // ==================== FOURNISSEURS ====================
 
   /**
-   * Récupérer tous les fournisseurs depuis BMS
+   * Récupérer tous les fournisseurs depuis BMS (toutes les pages)
    */
   getSuppliers: async () => {
-    const data = await bmsApiModel.apiCall('/supplier/suppliers');
-    return data.data || [];
+    const limit = 100;
+    let offset = 0;
+    let allSuppliers = [];
+
+    const firstPage = await bmsApiModel.apiCall(`/supplier/suppliers?offset=0&limit=${limit}`);
+    const total = firstPage.meta?.total || 0;
+    allSuppliers = firstPage.data || [];
+
+    for (offset = limit; offset < total; offset += limit) {
+      const data = await bmsApiModel.apiCall(`/supplier/suppliers?offset=${offset}&limit=${limit}`);
+      allSuppliers = allSuppliers.concat(data.data || []);
+    }
+
+    return allSuppliers;
   },
 
   // ==================== BONS DE COMMANDE ====================

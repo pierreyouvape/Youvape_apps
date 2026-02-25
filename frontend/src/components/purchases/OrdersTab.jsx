@@ -15,7 +15,7 @@ const OrdersTab = ({ token }) => {
 
   // Filters
   const [filterSupplier, setFilterSupplier] = useState('');
-  const [filterStatus, setFilterStatus] = useState('');
+  const [filterStatus, setFilterStatus] = useState('active');
 
   // BMS sync
   const [syncing, setSyncing] = useState(false);
@@ -59,7 +59,11 @@ const OrdersTab = ({ token }) => {
     try {
       const params = new URLSearchParams();
       if (filterSupplier) params.append('supplier_id', filterSupplier);
-      if (filterStatus) params.append('status', filterStatus);
+      if (filterStatus === 'active') {
+        params.append('exclude_status', 'received,cancelled');
+      } else if (filterStatus) {
+        params.append('status', filterStatus);
+      }
 
       const response = await axios.get(`${API_URL}/purchases/orders?${params}`, {
         headers: { Authorization: `Bearer ${token}` }
@@ -205,7 +209,8 @@ const OrdersTab = ({ token }) => {
               value={filterStatus}
               onChange={e => setFilterStatus(e.target.value)}
             >
-              <option value="">Tous</option>
+              <option value="active">Actives (hors reçues)</option>
+              <option value="">Toutes</option>
               {Object.entries(statusLabels).map(([key, label]) => (
                 <option key={key} value={key}>{label}</option>
               ))}

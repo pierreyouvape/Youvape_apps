@@ -37,6 +37,12 @@ const purchaseOrderModel = {
       values.push(filters.status);
     }
 
+    if (filters.exclude_status && filters.exclude_status.length > 0) {
+      const placeholders = filters.exclude_status.map(() => `$${paramIndex++}`).join(', ');
+      query += ` AND po.status NOT IN (${placeholders})`;
+      values.push(...filters.exclude_status);
+    }
+
     if (filters.from_date) {
       query += ` AND po.created_at >= $${paramIndex++}`;
       values.push(filters.from_date);
