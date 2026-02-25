@@ -186,15 +186,54 @@ const OrdersTab = ({ token }) => {
     }
   };
 
-  // Badge produit manquant : qty_received < qty_ordered
+  // Badge produit manquant : uniquement pour received/partial
   const hasMissingProducts = (order) =>
+    ['received', 'partial'].includes(order.status) &&
     parseInt(order.total_qty_received) < parseInt(order.total_qty_ordered);
 
-  // Même calcul pour le détail (depuis les items)
   const hasMissingProductsDetail = (order) => {
-    if (!order?.items) return false;
+    if (!order?.items || !['received', 'partial'].includes(order.status)) return false;
     return order.items.some(item => (item.qty_received || 0) < (item.qty_ordered || 0));
   };
+
+  // Tri des colonnes
+  const [sortKey, setSortKey] = useState('order_date');
+  const [sortDir, setSortDir] = useState('desc');
+
+  const handleSort = (key) => {
+    if (sortKey === key) {
+      setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortKey(key);
+      setSortDir('asc');
+    }
+  };
+
+  const sortedOrders = [...orders].sort((a, b) => {
+    let va = a[sortKey];
+    let vb = b[sortKey];
+    // Numériques
+    if (['total_items', 'total_qty', 'total_amount', 'total_qty_ordered', 'total_qty_received'].includes(sortKey)) {
+      va = parseFloat(va) || 0;
+      vb = parseFloat(vb) || 0;
+    } else {
+      va = (va || '').toString().toLowerCase();
+      vb = (vb || '').toString().toLowerCase();
+    }
+    if (va < vb) return sortDir === 'asc' ? -1 : 1;
+    if (va > vb) return sortDir === 'asc' ? 1 : -1;
+    return 0;
+  });
+
+  const SortTh = ({ col, label, className }) => (
+    <th
+      className={className}
+      onClick={() => handleSort(col)}
+      style={{ cursor: 'pointer', userSelect: 'none', whiteSpace: 'nowrap' }}
+    >
+      {label} {sortKey === col ? (sortDir === 'asc' ? '▲' : '▼') : '↕'}
+    </th>
+  );
 
 
   return (
@@ -278,19 +317,19 @@ const OrdersTab = ({ token }) => {
           <table className="purchases-table">
             <thead>
               <tr>
-                <th>N° Commande</th>
-                <th>Fournisseur</th>
-                <th className="text-center">Articles</th>
-                <th className="text-center">Quantité</th>
-                <th className="text-right">Montant</th>
-                <th className="text-center">Statut</th>
-                <th>Date commande</th>
-                <th>Date réception</th>
+                <SortTh col="bms_reference" label="N° Commande" />
+                <SortTh col="supplier_name" label="Fournisseur" />
+                <SortTh col="total_items" label="Articles" className="text-center" />
+                <SortTh col="total_qty" label="Quantité" className="text-center" />
+                <SortTh col="total_amount" label="Montant" className="text-right" />
+                <SortTh col="status" label="Statut" className="text-center" />
+                <SortTh col="order_date" label="Date commande" />
+                <SortTh col="received_date" label="Date réception" />
                 <th>Actions</th>
               </tr>
             </thead>
             <tbody>
-              {orders.map(order => (
+              {sortedOrders.map(order => (
                 <tr key={order.id}>
                   <td>
                     <strong style={{ color: '#f59e0b', cursor: 'pointer' }} onClick={() => openDetail(order.id)}>
