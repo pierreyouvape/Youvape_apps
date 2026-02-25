@@ -387,6 +387,207 @@ const purchaseOrderModel = {
     `;
     const result = await pool.query(query, [productId]);
     return parseInt(result.rows[0].incoming_qty) || 0;
+  },
+
+  // ==================== SYNC BMS ====================
+
+  /**
+   * Synchroniser les commandes fournisseur depuis BMS
+   * - Filtre incremental par created_at >= last_sync_at
+   * - Déduplication par bms_po_id (ON CONFLICT)
+   * - Met à jour product_suppliers (prix achat + fournisseur) depuis les items
+   */
+  syncFromBMS: async () => {
+    // 1. Lire la date du dernier import
+    const configResult = await pool.query(
+      "SELECT config_value FROM app_config WHERE config_key = 'bms_last_po_sync_at'"
+    );
+    const lastSyncAt = configResult.rows[0]?.config_value || '2000-01-01T00:00:00.000Z';
+
+    // 2. Récupérer toutes les commandes BMS
+    const allOrders = await bmsApiModel.getPurchaseOrders();
+
+    // Filtrer : commandes créées >= dernière sync (comparaison ISO string)
+    const orders = allOrders.filter(o => {
+      if (!o.created_at) return true;
+      // BMS renvoie "2025-10-15T12:24:35.000000+02:00" — on compare direct
+      return new Date(o.created_at) >= new Date(lastSyncAt);
+    });
+
+    if (orders.length === 0) {
+      return { total: 0, created: 0, updated: 0, skipped: 0, orders: [] };
+    }
+
+    // 3. Charger le mapping bms_id → supplier local (en une seule requête)
+    const suppliersResult = await pool.query(
+      'SELECT id, bms_id FROM suppliers WHERE bms_id IS NOT NULL'
+    );
+    const supplierByBmsId = new Map(suppliersResult.rows.map(s => [s.bms_id, s.id]));
+
+    // 4. Charger le mapping sku → product.id local (en une seule requête)
+    const productsResult = await pool.query(
+      "SELECT id, sku FROM products WHERE sku IS NOT NULL AND sku != '' AND post_status = 'publish'"
+    );
+    const productBySku = new Map(productsResult.rows.map(p => [p.sku, p.id]));
+
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      let created = 0;
+      let updated = 0;
+      let skipped = 0;
+      const results = [];
+
+      // Mapping statut BMS → statut local
+      const statusMap = {
+        draft: 'draft',
+        confirmed: 'confirmed',
+        complete: 'received',
+        cancelled: 'cancelled',
+        partial: 'partial',
+        shipped: 'shipped'
+      };
+
+      for (const bmsOrder of orders) {
+        const supplierId = supplierByBmsId.get(bmsOrder.supplier_id);
+        if (!supplierId) {
+          skipped++;
+          continue; // Fournisseur BMS inconnu localement
+        }
+
+        const status = statusMap[bmsOrder.status] || 'sent';
+        const bmsReference = String(bmsOrder.reference);
+
+        // Upsert de la commande
+        const orderQuery = `
+          INSERT INTO purchase_orders (
+            order_number, supplier_id, status,
+            bms_po_id, bms_reference,
+            order_date, expected_date,
+            total_items, total_qty, total_amount,
+            notes
+          )
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+          ON CONFLICT (bms_po_id) DO UPDATE SET
+            status = EXCLUDED.status,
+            bms_reference = EXCLUDED.bms_reference,
+            expected_date = EXCLUDED.expected_date,
+            total_items = EXCLUDED.total_items,
+            total_qty = EXCLUDED.total_qty,
+            total_amount = EXCLUDED.total_amount,
+            updated_at = CURRENT_TIMESTAMP
+          RETURNING id, (xmax = 0) AS inserted
+        `;
+
+        const items = bmsOrder.items || [];
+        const totalQty = items.reduce((s, i) => s + (parseInt(i.qty) || 0), 0);
+        const totalAmount = parseFloat(bmsOrder.grandtotal) || 0;
+
+        const orderResult = await client.query(orderQuery, [
+          `BMS-${bmsReference}`,          // order_number
+          supplierId,                       // supplier_id
+          status,                           // status
+          bmsOrder.id,                      // bms_po_id
+          bmsReference,                     // bms_reference
+          bmsOrder.created_at || null,      // order_date
+          bmsOrder.eta || null,             // expected_date
+          items.length,                     // total_items
+          totalQty,                         // total_qty
+          totalAmount,                      // total_amount
+          bmsOrder.private_comments || null // notes
+        ]);
+
+        const { id: poId, inserted } = orderResult.rows[0];
+
+        if (inserted) {
+          created++;
+        } else {
+          updated++;
+          // Supprimer les anciens items pour les remplacer
+          await client.query('DELETE FROM purchase_order_items WHERE purchase_order_id = $1', [poId]);
+        }
+
+        // Insérer les items
+        for (const item of items) {
+          const productId = productBySku.get(item.sku);
+          if (!productId) continue; // SKU inconnu, on ignore
+
+          const unitPrice = parseFloat(item.price) || null;
+          const qtyOrdered = parseInt(item.qty) || 0;
+          const qtyReceived = parseInt(item.qty_received) || 0;
+
+          await client.query(`
+            INSERT INTO purchase_order_items (
+              purchase_order_id, product_id, supplier_sku,
+              product_name, qty_ordered, qty_received, unit_price
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7)
+          `, [
+            poId,
+            productId,
+            item.supplier_sku || null,
+            item.name || null,
+            qtyOrdered,
+            qtyReceived,
+            unitPrice
+          ]);
+
+          // Mettre à jour product_suppliers : prix achat + supplier_sku
+          if (unitPrice !== null) {
+            await client.query(`
+              INSERT INTO product_suppliers (supplier_id, product_id, supplier_sku, supplier_price, min_order_qty)
+              VALUES ($1, $2, $3, $4, 1)
+              ON CONFLICT (product_id, supplier_id) DO UPDATE SET
+                supplier_price = EXCLUDED.supplier_price,
+                supplier_sku = COALESCE(EXCLUDED.supplier_sku, product_suppliers.supplier_sku),
+                updated_at = CURRENT_TIMESTAMP
+            `, [supplierId, productId, item.supplier_sku || null, unitPrice]);
+          }
+        }
+
+        results.push({
+          id: poId,
+          bms_po_id: bmsOrder.id,
+          reference: bmsReference,
+          supplier: bmsOrder.supplier_name,
+          action: inserted ? 'created' : 'updated'
+        });
+      }
+
+      // 5. Mettre à jour la date du dernier import (maintenant)
+      await client.query(`
+        INSERT INTO app_config (config_key, config_value)
+        VALUES ('bms_last_po_sync_at', $1)
+        ON CONFLICT (config_key) DO UPDATE SET config_value = $1, updated_at = CURRENT_TIMESTAMP
+      `, [new Date().toISOString()]);
+
+      await client.query('COMMIT');
+
+      return {
+        total: orders.length,
+        created,
+        updated,
+        skipped,
+        orders: results
+      };
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  },
+
+  /**
+   * Récupérer la date du dernier import BMS
+   */
+  getLastBmsSyncAt: async () => {
+    const result = await pool.query(
+      "SELECT config_value FROM app_config WHERE config_key = 'bms_last_po_sync_at'"
+    );
+    const val = result.rows[0]?.config_value;
+    return val === '2000-01-01T00:00:00.000Z' ? null : val;
   }
 };
 

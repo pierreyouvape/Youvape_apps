@@ -273,6 +273,41 @@ const purchasesController = {
     }
   },
 
+  // ==================== SYNC BMS ====================
+
+  // POST /api/purchases/orders/sync-bms
+  syncOrdersFromBMS: async (req, res) => {
+    try {
+      console.log('Début sync commandes BMS...');
+      const result = await purchaseOrderModel.syncFromBMS();
+      console.log(`Sync BMS terminée: ${result.created} créées, ${result.updated} mises à jour, ${result.skipped} ignorées`);
+
+      res.json({
+        success: true,
+        message: `Synchronisation terminée: ${result.created} créée(s), ${result.updated} mise(s) à jour, ${result.skipped} ignorée(s)`,
+        data: result
+      });
+    } catch (error) {
+      console.error('Erreur syncOrdersFromBMS:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Erreur lors de la synchronisation BMS',
+        details: error.message
+      });
+    }
+  },
+
+  // GET /api/purchases/orders/bms-sync-info
+  getBmsSyncInfo: async (req, res) => {
+    try {
+      const lastSync = await purchaseOrderModel.getLastBmsSyncAt();
+      res.json({ success: true, data: { last_sync_at: lastSync } });
+    } catch (error) {
+      console.error('Erreur getBmsSyncInfo:', error);
+      res.status(500).json({ success: false, error: 'Erreur serveur' });
+    }
+  },
+
   // ==================== EXPORT CSV ====================
 
   // GET /api/purchases/orders/:id/export

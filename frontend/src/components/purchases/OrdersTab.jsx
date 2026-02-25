@@ -17,6 +17,17 @@ const OrdersTab = ({ token }) => {
   const [filterSupplier, setFilterSupplier] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
 
+  // BMS sync
+  const [syncing, setSyncing] = useState(false);
+  const [lastSync, setLastSync] = useState(null);
+  const [syncResult, setSyncResult] = useState(null);
+
+  useEffect(() => {
+    axios.get(`${API_URL}/purchases/orders/bms-sync-info`, {
+      headers: { Authorization: `Bearer ${token}` }
+    }).then(r => setLastSync(r.data.data?.last_sync_at)).catch(() => {});
+  }, [token]);
+
   const statusLabels = {
     draft: 'Brouillon',
     sent: 'Envoyée',
@@ -133,6 +144,27 @@ const OrdersTab = ({ token }) => {
     }
   };
 
+  // Sync BMS orders
+  const syncBMS = async () => {
+    if (!confirm(`Synchroniser les commandes BMS depuis le ${lastSync ? new Date(lastSync).toLocaleString('fr-FR') : 'début'} ?`)) return;
+    setSyncing(true);
+    setSyncResult(null);
+    try {
+      const response = await axios.post(`${API_URL}/purchases/orders/sync-bms`, {}, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const result = response.data.data;
+      setSyncResult(result);
+      setLastSync(new Date().toISOString());
+      loadOrders();
+    } catch (err) {
+      console.error('Erreur sync BMS:', err);
+      alert(err.response?.data?.error || 'Erreur lors de la synchronisation BMS');
+    } finally {
+      setSyncing(false);
+    }
+  };
+
   // Update received qty
   const updateReceivedQty = async (orderId, itemId, qty) => {
     try {
@@ -188,12 +220,30 @@ const OrdersTab = ({ token }) => {
             🔄 Actualiser
           </button>
           <button
+            className="btn btn-secondary"
+            onClick={syncBMS}
+            disabled={syncing}
+            title={lastSync ? `Dernier import : ${new Date(lastSync).toLocaleString('fr-FR')}` : 'Aucun import précédent'}
+          >
+            {syncing ? 'Synchronisation...' : '⬇ Synchroniser BMS'}
+          </button>
+          <button
             className="btn btn-primary"
             onClick={() => navigate('/purchases/create-order')}
           >
             + Créer une commande
           </button>
         </div>
+
+        {syncResult && (
+          <div className="alert alert-success" style={{ marginBottom: '16px' }}>
+            Synchronisation terminée — {syncResult.created} créée(s), {syncResult.updated} mise(s) à jour, {syncResult.skipped} ignorée(s) (fournisseur inconnu)
+            <button
+              onClick={() => setSyncResult(null)}
+              style={{ marginLeft: '12px', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 'bold' }}
+            >✕</button>
+          </div>
+        )}
 
         {loading ? (
           <div className="loading">
