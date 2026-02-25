@@ -302,10 +302,33 @@ const purchasesController = {
   getBmsSyncInfo: async (req, res) => {
     try {
       const lastSync = await purchaseOrderModel.getLastBmsSyncAt();
-      res.json({ success: true, data: { last_sync_at: lastSync } });
+      const lastReceptionSync = await purchaseOrderModel.getLastBmsReceptionSyncAt();
+      res.json({ success: true, data: { last_sync_at: lastSync, last_reception_sync_at: lastReceptionSync } });
     } catch (error) {
       console.error('Erreur getBmsSyncInfo:', error);
       res.status(500).json({ success: false, error: 'Erreur serveur' });
+    }
+  },
+
+  // POST /api/purchases/orders/sync-receptions
+  syncReceptionsFromBMS: async (req, res) => {
+    try {
+      console.log('Début sync réceptions BMS...');
+      const result = await purchaseOrderModel.syncReceptionsFromBMS();
+      console.log(`Sync réceptions terminée: ${result.processed} traitées, ${result.updatedOrders} commandes mises à jour, ${result.skipped} ignorées`);
+
+      res.json({
+        success: true,
+        message: `Synchronisation terminée: ${result.processed} réception(s) traitée(s), ${result.updatedOrders} commande(s) mise(s) à jour`,
+        data: result
+      });
+    } catch (error) {
+      console.error('Erreur syncReceptionsFromBMS:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Erreur lors de la synchronisation des réceptions BMS',
+        details: error.message
+      });
     }
   },
 

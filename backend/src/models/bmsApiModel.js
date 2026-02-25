@@ -126,11 +126,23 @@ const bmsApiModel = {
   // ==================== RECEPTIONS ====================
 
   /**
-   * Récupérer les réceptions depuis BMS
+   * Récupérer les réceptions depuis BMS (toutes les pages)
    */
   getReceptions: async () => {
-    const data = await bmsApiModel.apiCall('/supplier/receptions');
-    return data.data || [];
+    const limit = 100;
+    let offset = 0;
+    let allReceptions = [];
+
+    const firstPage = await bmsApiModel.apiCall(`/supplier/receptions?offset=0&limit=${limit}`);
+    const total = firstPage.meta?.total || 0;
+    allReceptions = firstPage.data || [];
+
+    for (offset = limit; offset < total; offset += limit) {
+      const data = await bmsApiModel.apiCall(`/supplier/receptions?offset=${offset}&limit=${limit}`);
+      allReceptions = allReceptions.concat(data.data || []);
+    }
+
+    return allReceptions;
   },
 
   /**

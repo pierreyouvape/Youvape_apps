@@ -600,6 +600,150 @@ const purchaseOrderModel = {
     );
     const val = result.rows[0]?.config_value;
     return val === '2000-01-01T00:00:00.000Z' ? null : val;
+  },
+
+  /**
+   * Récupérer la date du dernier import réceptions BMS
+   */
+  getLastBmsReceptionSyncAt: async () => {
+    const result = await pool.query(
+      "SELECT config_value FROM app_config WHERE config_key = 'bms_last_reception_sync_at'"
+    );
+    const val = result.rows[0]?.config_value;
+    return val === '2000-01-01T00:00:00.000Z' ? null : val;
+  },
+
+  /**
+   * Synchroniser les réceptions depuis BMS
+   * Pour chaque réception BMS :
+   * - Retrouve la commande locale via bms_reference
+   * - Met à jour qty_received sur chaque ligne via SKU
+   * - Met à jour received_date et status (received/partial)
+   */
+  syncReceptionsFromBMS: async () => {
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      // 1. Récupérer la date du dernier import réceptions
+      const configResult = await client.query(
+        "SELECT config_value FROM app_config WHERE config_key = 'bms_last_reception_sync_at'"
+      );
+      const lastSyncAt = configResult.rows[0]?.config_value || '2000-01-01T00:00:00.000Z';
+
+      // 2. Récupérer toutes les réceptions BMS
+      const allReceptions = await bmsApiModel.getReceptions();
+
+      // 3. Filtrer par date (incrémental)
+      const receptions = allReceptions.filter(r =>
+        !r.created_at || new Date(r.created_at) >= new Date(lastSyncAt)
+      );
+
+      // 4. Charger toutes les commandes locales avec leur bms_reference (non-ambigus uniquement)
+      // On exclut les bms_reference qui apparaissent plusieurs fois
+      const poResult = await client.query(`
+        SELECT id, bms_reference, status
+        FROM purchase_orders
+        WHERE bms_reference IS NOT NULL
+          AND bms_po_id IS NOT NULL
+          AND bms_reference IN (
+            SELECT bms_reference FROM purchase_orders GROUP BY bms_reference HAVING COUNT(*) = 1
+          )
+      `);
+      const orderByRef = new Map(poResult.rows.map(r => [r.bms_reference, r]));
+
+      // 5. Charger les produits (sku → product_id) pour les lignes de commande
+      const productsResult = await client.query(
+        'SELECT wp_product_id as id, sku FROM products WHERE sku IS NOT NULL AND sku != \'\''
+      );
+      const productBySku = new Map(productsResult.rows.map(r => [r.sku, r.id]));
+
+      let processed = 0;
+      let skipped = 0;
+      let updatedOrders = 0;
+
+      for (const reception of receptions) {
+        const bmsRef = reception.purchase_order;
+        const order = orderByRef.get(bmsRef);
+
+        if (!order) {
+          skipped++;
+          continue; // Commande inconnue ou référence ambiguë
+        }
+
+        const orderId = order.id;
+        const receptionDate = reception.created_at || null;
+        const items = reception.items || [];
+
+        // Mettre à jour qty_received pour chaque ligne de réception
+        for (const rItem of items) {
+          const productId = productBySku.get(rItem.sku);
+          if (!productId) continue;
+
+          // Additionner les quantités reçues (une commande peut avoir plusieurs réceptions partielles)
+          await client.query(`
+            UPDATE purchase_order_items
+            SET qty_received = LEAST(qty_ordered, qty_received + $1)
+            WHERE purchase_order_id = $2 AND product_id = $3
+          `, [parseInt(rItem.qty) || 0, orderId, productId]);
+        }
+
+        // Recalculer le statut de la commande
+        const itemsResult = await client.query(`
+          SELECT
+            SUM(qty_ordered) as total_ordered,
+            SUM(qty_received) as total_received
+          FROM purchase_order_items
+          WHERE purchase_order_id = $1
+        `, [orderId]);
+
+        const totalOrdered = parseInt(itemsResult.rows[0]?.total_ordered) || 0;
+        const totalReceived = parseInt(itemsResult.rows[0]?.total_received) || 0;
+
+        let newStatus = order.status;
+        if (totalReceived >= totalOrdered && totalOrdered > 0) {
+          newStatus = 'received';
+        } else if (totalReceived > 0) {
+          newStatus = 'partial';
+        }
+
+        // Mettre à jour le statut et la date de réception
+        if (newStatus !== order.status || receptionDate) {
+          await client.query(`
+            UPDATE purchase_orders
+            SET
+              status = $1,
+              received_date = COALESCE(received_date, $2),
+              updated_at = CURRENT_TIMESTAMP
+            WHERE id = $3
+          `, [newStatus, receptionDate, orderId]);
+          updatedOrders++;
+        }
+
+        processed++;
+      }
+
+      // 6. Mettre à jour la date du dernier import réceptions
+      await client.query(`
+        INSERT INTO app_config (config_key, config_value)
+        VALUES ('bms_last_reception_sync_at', $1)
+        ON CONFLICT (config_key) DO UPDATE SET config_value = $1, updated_at = CURRENT_TIMESTAMP
+      `, [new Date().toISOString()]);
+
+      await client.query('COMMIT');
+
+      return {
+        total: receptions.length,
+        processed,
+        skipped,
+        updatedOrders
+      };
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 };
 

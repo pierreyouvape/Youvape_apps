@@ -80,6 +80,7 @@ router.delete('/alerts/:productId', checkPurchasesWrite, purchasesController.del
 
 // Sync commandes depuis BMS (AVANT /:id pour éviter le conflit de route)
 router.post('/orders/sync-bms', checkPurchasesWrite, purchasesController.syncOrdersFromBMS);
+router.post('/orders/sync-receptions', checkPurchasesWrite, purchasesController.syncReceptionsFromBMS);
 router.get('/orders/bms-sync-info', checkPurchasesRead, purchasesController.getBmsSyncInfo);
 
 // Liste des commandes

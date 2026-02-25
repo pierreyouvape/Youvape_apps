@@ -17,15 +17,23 @@ const OrdersTab = ({ token }) => {
   const [filterSupplier, setFilterSupplier] = useState('');
   const [filterStatus, setFilterStatus] = useState('active');
 
-  // BMS sync
+  // BMS sync commandes
   const [syncing, setSyncing] = useState(false);
   const [lastSync, setLastSync] = useState(null);
   const [syncResult, setSyncResult] = useState(null);
 
+  // BMS sync réceptions
+  const [syncingReceptions, setSyncingReceptions] = useState(false);
+  const [lastReceptionSync, setLastReceptionSync] = useState(null);
+  const [syncReceptionResult, setSyncReceptionResult] = useState(null);
+
   useEffect(() => {
     axios.get(`${API_URL}/purchases/orders/bms-sync-info`, {
       headers: { Authorization: `Bearer ${token}` }
-    }).then(r => setLastSync(r.data.data?.last_sync_at)).catch(() => {});
+    }).then(r => {
+      setLastSync(r.data.data?.last_sync_at);
+      setLastReceptionSync(r.data.data?.last_reception_sync_at);
+    }).catch(() => {});
   }, [token]);
 
   const statusLabels = {
@@ -148,6 +156,27 @@ const OrdersTab = ({ token }) => {
     }
   };
 
+  // Sync réceptions BMS
+  const syncReceptions = async () => {
+    if (!confirm(`Synchroniser les réceptions BMS depuis le ${lastReceptionSync ? new Date(lastReceptionSync).toLocaleString('fr-FR') : 'début'} ?`)) return;
+    setSyncingReceptions(true);
+    setSyncReceptionResult(null);
+    try {
+      const response = await axios.post(`${API_URL}/purchases/orders/sync-receptions`, {}, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const result = response.data.data;
+      setSyncReceptionResult(result);
+      setLastReceptionSync(new Date().toISOString());
+      loadOrders();
+    } catch (err) {
+      console.error('Erreur sync réceptions BMS:', err);
+      alert(err.response?.data?.error || 'Erreur lors de la synchronisation des réceptions');
+    } finally {
+      setSyncingReceptions(false);
+    }
+  };
+
   // Sync BMS orders
   const syncBMS = async () => {
     if (!confirm(`Synchroniser les commandes BMS depuis le ${lastSync ? new Date(lastSync).toLocaleString('fr-FR') : 'début'} ?`)) return;
@@ -230,7 +259,15 @@ const OrdersTab = ({ token }) => {
             disabled={syncing}
             title={lastSync ? `Dernier import : ${new Date(lastSync).toLocaleString('fr-FR')}` : 'Aucun import précédent'}
           >
-            {syncing ? 'Synchronisation...' : '⬇ Synchroniser BMS'}
+            {syncing ? 'Synchronisation...' : '⬇ Sync commandes BMS'}
+          </button>
+          <button
+            className="btn btn-secondary"
+            onClick={syncReceptions}
+            disabled={syncingReceptions}
+            title={lastReceptionSync ? `Dernier import réceptions : ${new Date(lastReceptionSync).toLocaleString('fr-FR')}` : 'Aucun import réceptions précédent'}
+          >
+            {syncingReceptions ? 'Synchronisation...' : '📦 Sync réceptions BMS'}
           </button>
           <button
             className="btn btn-primary"
@@ -242,9 +279,18 @@ const OrdersTab = ({ token }) => {
 
         {syncResult && (
           <div className="alert alert-success" style={{ marginBottom: '16px' }}>
-            Synchronisation terminée — {syncResult.created} créée(s), {syncResult.updated} mise(s) à jour, {syncResult.skipped} ignorée(s) (fournisseur inconnu)
+            Sync commandes — {syncResult.created} créée(s), {syncResult.updated} mise(s) à jour, {syncResult.skipped} ignorée(s) (fournisseur inconnu)
             <button
               onClick={() => setSyncResult(null)}
+              style={{ marginLeft: '12px', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 'bold' }}
+            >✕</button>
+          </div>
+        )}
+        {syncReceptionResult && (
+          <div className="alert alert-success" style={{ marginBottom: '16px' }}>
+            Sync réceptions — {syncReceptionResult.processed} réception(s) traitée(s), {syncReceptionResult.updatedOrders} commande(s) mise(s) à jour, {syncReceptionResult.skipped} ignorée(s)
+            <button
+              onClick={() => setSyncReceptionResult(null)}
               style={{ marginLeft: '12px', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 'bold' }}
             >✕</button>
           </div>
