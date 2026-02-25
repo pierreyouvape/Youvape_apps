@@ -273,7 +273,7 @@ const OrdersTab = ({ token }) => {
                 <th className="text-right">Montant</th>
                 <th className="text-center">Statut</th>
                 <th>Date commande</th>
-                <th>Date livraison prévue</th>
+                <th>Date réception</th>
                 <th>Actions</th>
               </tr>
             </thead>
@@ -297,7 +297,7 @@ const OrdersTab = ({ token }) => {
                     </span>
                   </td>
                   <td>{formatDate(order.order_date)}</td>
-                  <td>{formatDate(order.expected_date)}</td>
+                  <td>{formatDate(order.received_date)}</td>
                   <td>
                     <div style={{ display: 'flex', gap: '5px' }}>
                       <button
