@@ -84,11 +84,24 @@ const bmsApiModel = {
   // ==================== BONS DE COMMANDE ====================
 
   /**
-   * Récupérer les bons de commande depuis BMS
+   * Récupérer les bons de commande depuis BMS (toutes les pages)
    */
   getPurchaseOrders: async () => {
-    const data = await bmsApiModel.apiCall('/supplier/purchase-orders');
-    return data.data || [];
+    const limit = 100;
+    let page = 1;
+    let allOrders = [];
+
+    while (true) {
+      const data = await bmsApiModel.apiCall(`/supplier/purchase-orders?page=${page}&limit=${limit}`);
+      const orders = data.data || [];
+      allOrders = allOrders.concat(orders);
+
+      const total = data.meta?.total || orders.length;
+      if (allOrders.length >= total || orders.length < limit) break;
+      page++;
+    }
+
+    return allOrders;
   },
 
   /**
