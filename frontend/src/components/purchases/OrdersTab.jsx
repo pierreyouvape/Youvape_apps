@@ -231,7 +231,7 @@ const OrdersTab = ({ token }) => {
       onClick={() => handleSort(col)}
       style={{ cursor: 'pointer', userSelect: 'none', whiteSpace: 'nowrap' }}
     >
-      {label} {sortKey === col ? (sortDir === 'asc' ? '▲' : '▼') : '↕'}
+      {label} {sortDir === 'asc' && sortKey === col ? '▲' : '▼'}
     </th>
   );
 

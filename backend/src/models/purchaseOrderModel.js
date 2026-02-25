@@ -468,11 +468,11 @@ const purchaseOrderModel = {
         const bmsReference = String(bmsOrder.reference);
         const items = bmsOrder.items || [];
 
-        // Pour complete : calculer le statut depuis les items réels (qty_received vs qty_ordered)
+        // Pour complete : calculer le statut depuis les items réels (qty × qty_pack)
         let status;
         if (bmsOrder.status === 'complete') {
-          const totalOrdered = items.reduce((s, i) => s + (parseInt(i.qty) || 0), 0);
-          const totalReceived = items.reduce((s, i) => s + (parseInt(i.qty_received) || 0), 0);
+          const totalOrdered = items.reduce((s, i) => s + (parseInt(i.qty) || 0) * (parseInt(i.qty_pack) || 1), 0);
+          const totalReceived = items.reduce((s, i) => s + (parseInt(i.qty_received) || 0) * (parseInt(i.qty_pack) || 1), 0);
           status = totalReceived >= totalOrdered ? 'received' : 'partial';
         } else {
           status = statusMap[bmsOrder.status] || 'sent';
@@ -532,12 +532,11 @@ const purchaseOrderModel = {
 
         // Insérer les items
         for (const item of items) {
-          const productId = productBySku.get(item.sku);
-          if (!productId) continue; // SKU inconnu, on ignore
-
+          const productId = productBySku.get(item.sku) || null; // NULL si SKU inconnu, on garde quand même la ligne
           const unitPrice = parseFloat(item.price) || null;
-          const qtyOrdered = parseInt(item.qty) || 0;
-          const qtyReceived = parseInt(item.qty_received) || 0;
+          const qtyPack = parseInt(item.qty_pack) || 1;
+          const qtyOrdered = (parseInt(item.qty) || 0) * qtyPack;
+          const qtyReceived = (parseInt(item.qty_received) || 0) * qtyPack;
 
           await client.query(`
             INSERT INTO purchase_order_items (
@@ -548,15 +547,15 @@ const purchaseOrderModel = {
           `, [
             poId,
             productId,
-            item.supplier_sku || null,
+            item.supplier_sku || item.sku || null,
             item.name || null,
             qtyOrdered,
             qtyReceived,
             unitPrice
           ]);
 
-          // Mettre à jour product_suppliers : prix achat + supplier_sku
-          if (unitPrice !== null) {
+          // Mettre à jour product_suppliers uniquement si produit connu
+          if (productId !== null && unitPrice !== null) {
             await client.query(`
               INSERT INTO product_suppliers (supplier_id, product_id, supplier_sku, supplier_price, min_order_qty)
               VALUES ($1, $2, $3, $4, 1)
