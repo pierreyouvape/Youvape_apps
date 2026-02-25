@@ -85,31 +85,23 @@ const bmsApiModel = {
 
   /**
    * Récupérer les bons de commande depuis BMS (toutes les pages)
-   * L'API retourne toujours 100 entrées même sur la dernière page (boucle),
-   * donc on se base uniquement sur meta.total pour stopper.
+   * La pagination BMS utilise offset+limit (pas page+limit).
    */
   getPurchaseOrders: async () => {
     const limit = 100;
-    let page = 1;
+    let offset = 0;
     let allOrders = [];
 
-    const firstPage = await bmsApiModel.apiCall(`/supplier/purchase-orders?page=1&limit=${limit}`);
+    const firstPage = await bmsApiModel.apiCall(`/supplier/purchase-orders?offset=0&limit=${limit}`);
     const total = firstPage.meta?.total || 0;
     allOrders = firstPage.data || [];
 
-    const totalPages = Math.ceil(total / limit);
-    for (page = 2; page <= totalPages; page++) {
-      const data = await bmsApiModel.apiCall(`/supplier/purchase-orders?page=${page}&limit=${limit}`);
+    for (offset = limit; offset < total; offset += limit) {
+      const data = await bmsApiModel.apiCall(`/supplier/purchase-orders?offset=${offset}&limit=${limit}`);
       allOrders = allOrders.concat(data.data || []);
     }
 
-    // Déduplication par id (l'API remplit la dernière page avec des doublons)
-    const seen = new Set();
-    return allOrders.filter(o => {
-      if (seen.has(o.id)) return false;
-      seen.add(o.id);
-      return true;
-    });
+    return allOrders;
   },
 
   /**
