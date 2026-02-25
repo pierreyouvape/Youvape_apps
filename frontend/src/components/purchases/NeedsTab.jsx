@@ -109,25 +109,31 @@ const calculateTrendCoefficient = (monthlySales) => {
 
 /**
  * Calcule les besoins d'un produit à partir de ses données brutes.
- * analysisPeriodMonths : durée en mois pour la période d'analyse
- * coverageMonths : durée de couverture cible
- * isCustomPeriod : true si plage personnalisée (le backend a déjà filtré les données)
- *                  false si preset (le backend renvoie 12 mois, on filtre ici)
+ * Le backend renvoie tout l'historique — on filtre ici selon la période choisie.
+ *
+ * Preset : fenêtre glissante depuis aujourd'hui (analysisPeriodMonths mois)
+ * Custom : plage fixe entre analysisStartDate et analysisEndDate
  */
-const computeProductNeeds = (product, analysisPeriodMonths, coverageMonths, isCustomPeriod) => {
-  const { monthly_sales = [], max_order_qty_12m = 0, stock = 0, incoming_qty = 0 } = product;
+const computeProductNeeds = (product, analysisPeriodMonths, coverageMonths, isCustomPeriod, analysisStartDate, analysisEndDate) => {
+  const { monthly_sales = [], stock = 0, incoming_qty = 0 } = product;
 
   let salesData;
-  if (isCustomPeriod) {
-    // Le backend a déjà renvoyé exactement les ventes sur la plage demandée
-    salesData = monthly_sales;
+  if (isCustomPeriod && analysisStartDate && analysisEndDate) {
+    // Plage fixe : filtrer par dates
+    const start = new Date(analysisStartDate);
+    const end = new Date(analysisEndDate);
+    salesData = monthly_sales.filter(m => {
+      const d = new Date(m.month);
+      return d >= start && d <= end;
+    });
   } else {
-    // Preset : le backend renvoie 12 mois, on filtre selon la période choisie
+    // Fenêtre glissante depuis aujourd'hui
     const cutoffDate = new Date();
     cutoffDate.setMonth(cutoffDate.getMonth() - Math.ceil(analysisPeriodMonths));
     salesData = monthly_sales.filter(m => new Date(m.month) >= cutoffDate);
   }
   const salesInPeriod = salesData.reduce((sum, m) => sum + (parseInt(m.total_qty) || 0), 0);
+  const max_order_qty = parseInt(product.max_order_qty_12m) || 0;
 
   const effectivePeriod = analysisPeriodMonths > 0 ? analysisPeriodMonths : 1;
   const avgMonthlySales = salesInPeriod / effectivePeriod;
@@ -141,11 +147,11 @@ const computeProductNeeds = (product, analysisPeriodMonths, coverageMonths, isCu
   const fifteenDaysProjected = projectedMonthlySales / 2;
 
   const theoreticalCoverage = avgMonthlySales * coverageMonths;
-  const theoreticalSafety = max_order_qty_12m + fifteenDaysSales;
+  const theoreticalSafety = max_order_qty + fifteenDaysSales;
   const theoreticalNeed = Math.max(theoreticalCoverage, theoreticalSafety);
 
   const supposedCoverage = projectedMonthlySales * coverageMonths;
-  const supposedSafety = max_order_qty_12m + fifteenDaysProjected;
+  const supposedSafety = max_order_qty + fifteenDaysProjected;
   const supposedNeed = Math.max(supposedCoverage, supposedSafety);
 
   const effectiveStock = stock + incoming_qty;
@@ -259,29 +265,22 @@ const NeedsTab = ({ token }) => {
   }, [token]);
 
   // Charger toutes les données brutes (une fois par changement de fournisseur)
+  // Chargement unique au montage — tout l'historique, pas de filtre
   const loadRawData = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const params = new URLSearchParams();
-      if (supplierId) params.append('supplier_id', supplierId);
-      if (analysisPeriodType === 'custom' && analysisStartDate && analysisEndDate) {
-        params.append('start_date', analysisStartDate);
-        params.append('end_date', analysisEndDate);
-      }
-
-      const response = await axios.get(`${API_URL}/purchases/needs/raw?${params}`, {
+      const response = await axios.get(`${API_URL}/purchases/needs/raw`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       setAllProducts(response.data.data || []);
-      setPage(1);
     } catch (err) {
       console.error('Erreur chargement données brutes:', err);
       setError('Erreur lors du chargement des données');
     } finally {
       setLoading(false);
     }
-  }, [token, supplierId, analysisPeriodType, analysisStartDate, analysisEndDate]);
+  }, [token]);
 
   useEffect(() => {
     loadRawData();
@@ -300,20 +299,26 @@ const NeedsTab = ({ token }) => {
 
   const isCustomPeriod = analysisPeriodType === 'custom';
 
-  // Calcul des besoins sur tous les produits (recalculé quand les paramètres changent)
+  // Calcul des besoins sur tous les produits (recalculé quand les paramètres changent, jamais sur rechargement)
   const computedProducts = useMemo(() => {
     return allProducts.map(p => {
-      const needs = computeProductNeeds(p, effectivePeriodMonths, coverageMonths, isCustomPeriod);
+      const needs = computeProductNeeds(
+        p, effectivePeriodMonths, coverageMonths,
+        isCustomPeriod, analysisStartDate, analysisEndDate
+      );
       return { ...p, ...needs };
     });
-  }, [allProducts, effectivePeriodMonths, coverageMonths, isCustomPeriod]);
+  }, [allProducts, effectivePeriodMonths, coverageMonths, isCustomPeriod, analysisStartDate, analysisEndDate]);
 
-  // Filtrage local
+  // Filtrage local — tout en JS sur le cache
   const filteredProducts = useMemo(() => {
     const searchLower = search.trim().toLowerCase();
     const hasSearch = searchLower.length >= 2;
 
     return computedProducts.filter(p => {
+      // Filtre fournisseur
+      if (supplierId && String(p.supplier_id) !== String(supplierId)) return false;
+
       // Si recherche active, on affiche tous les correspondants (bypass filtre propositions)
       if (hasSearch) {
         return (
@@ -331,11 +336,11 @@ const NeedsTab = ({ token }) => {
       if (zeroStockState === false && p.stock <= 0) return false;
 
       // Par défaut : n'afficher que les produits avec une proposition
-      if (!hasSearch && p.theoretical_proposal <= 0 && p.supposed_proposal <= 0) return false;
+      if (p.theoretical_proposal <= 0 && p.supposed_proposal <= 0) return false;
 
       return true;
     });
-  }, [computedProducts, search, withSalesOnly, zeroStockState]);
+  }, [computedProducts, search, supplierId, withSalesOnly, zeroStockState]);
 
   // Tri local
   const sortedProducts = useMemo(() => {
@@ -363,7 +368,7 @@ const NeedsTab = ({ token }) => {
   // Reset page quand les filtres changent (mais pas la sélection)
   useEffect(() => {
     setPage(1);
-  }, [supplierId, withSalesOnly, zeroStockState, effectivePeriodMonths, coverageMonths]);
+  }, [supplierId, withSalesOnly, zeroStockState, effectivePeriodMonths, coverageMonths, analysisStartDate, analysisEndDate]);
 
   const handleSearchChange = (value) => {
     setSearch(value);

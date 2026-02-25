@@ -3,17 +3,17 @@ const pool = require('../config/database');
 const needsCalculationModel = {
   /**
    * Retourne tous les produits publiés avec leurs données brutes pour calcul frontend :
-   * - Ventes par mois sur la période demandée (une seule requête groupée)
-   * - Max qty par commande sur la période (une seule requête groupée)
-   * - Arrivages en cours (une seule requête groupée)
+   * - Ventes par mois sur tout l'historique (filtre de dates géré en frontend)
+   * - Max qty par commande sur tout l'historique
+   * - Arrivages en cours
    * - Données produit + fournisseur + alert_threshold
    *
-   * options.startDate / options.endDate : plage de dates (défaut: 12 derniers mois)
-   * Le calcul de besoin/proposition est fait côté frontend.
+   * Aucun filtre de dates ici — tout le tri/filtrage se fait côté frontend sur le cache.
+   * Rechargement uniquement au montage ou sur event de modification de stock.
    */
-  getAllProductsRaw: async (supplierIdFilter = null, options = {}) => {
-    // 1. Produits de base
-    let productsQuery = `
+  getAllProductsRaw: async () => {
+    // 1. Tous les produits actifs (simple publish + variation dont le parent est publish)
+    const productsResult = await pool.query(`
       SELECT
         p.id,
         p.wp_product_id,
@@ -44,45 +44,13 @@ const needsCalculationModel = {
           p.product_type = 'simple'
           OR (p.product_type = 'variation' AND p_parent.post_status = 'publish')
         )
-    `;
+      ORDER BY p.post_title
+    `);
 
-    const values = [];
-    if (supplierIdFilter) {
-      productsQuery += `
-        AND EXISTS (
-          SELECT 1 FROM product_suppliers ps
-          WHERE ps.product_id = p.id AND ps.supplier_id = $1
-        )
-      `;
-      values.push(supplierIdFilter);
-    }
-
-    productsQuery += ' ORDER BY p.post_title';
-
-    const productsResult = await pool.query(productsQuery, values);
     const products = productsResult.rows;
-
     if (products.length === 0) return [];
 
-    // Plage de dates pour les ventes
-    const { startDate, endDate } = options;
-    let dateFilter;
-    let dateParams;
-    if (startDate && endDate) {
-      dateFilter = `AND o.post_date >= $1::date AND o.post_date < $2::date + INTERVAL '1 day'`;
-      dateParams = [startDate, endDate];
-    } else {
-      dateFilter = `AND o.post_date >= NOW() - INTERVAL '12 months'`;
-      dateParams = [];
-    }
-
-    // Filtre fournisseur pour les requêtes ventes/arrivages
-    const supplierJoin = supplierIdFilter
-      ? `JOIN product_suppliers ps_f ON oi.product_id = ps_f.product_id AND ps_f.supplier_id = $${dateParams.length + 1}`
-      : '';
-    const supplierParams = supplierIdFilter ? [...dateParams, supplierIdFilter] : dateParams;
-
-    // 2. Ventes par mois sur la période demandée (sous-requête au lieu de IN (...) massif)
+    // 2. Ventes par mois — tout l'historique, pas de filtre de dates
     const monthlySalesResult = await pool.query(`
       SELECT
         oi.product_id,
@@ -94,14 +62,12 @@ const needsCalculationModel = {
         AND p.post_status = 'publish'
         AND (p.product_type = 'simple' OR (p.product_type = 'variation'
           AND EXISTS (SELECT 1 FROM products pp WHERE pp.wp_product_id = p.wp_parent_id AND pp.post_status = 'publish')))
-      ${supplierJoin}
       WHERE o.post_status IN ('wc-completed', 'wc-processing', 'wc-delivered')
-        ${dateFilter}
       GROUP BY oi.product_id, DATE_TRUNC('month', o.post_date)
       ORDER BY oi.product_id, month
-    `, supplierParams);
+    `);
 
-    // 3. Max qty par commande sur la période
+    // 3. Max qty par commande — tout l'historique
     const maxOrderResult = await pool.query(`
       SELECT
         oi.product_id,
@@ -112,17 +78,11 @@ const needsCalculationModel = {
         AND p.post_status = 'publish'
         AND (p.product_type = 'simple' OR (p.product_type = 'variation'
           AND EXISTS (SELECT 1 FROM products pp WHERE pp.wp_product_id = p.wp_parent_id AND pp.post_status = 'publish')))
-      ${supplierJoin}
       WHERE o.post_status IN ('wc-completed', 'wc-processing', 'wc-delivered')
-        ${dateFilter}
       GROUP BY oi.product_id
-    `, supplierParams);
+    `);
 
     // 4. Arrivages en cours
-    const incomingParams = supplierIdFilter ? [supplierIdFilter] : [];
-    const incomingSupplierJoin = supplierIdFilter
-      ? `JOIN product_suppliers ps_f2 ON poi.product_id = ps_f2.product_id AND ps_f2.supplier_id = $1`
-      : '';
     const incomingResult = await pool.query(`
       SELECT
         poi.product_id,
@@ -133,10 +93,9 @@ const needsCalculationModel = {
         AND p.post_status = 'publish'
         AND (p.product_type = 'simple' OR (p.product_type = 'variation'
           AND EXISTS (SELECT 1 FROM products pp WHERE pp.wp_product_id = p.wp_parent_id AND pp.post_status = 'publish')))
-      ${incomingSupplierJoin}
       WHERE po.status IN ('sent', 'confirmed', 'shipped', 'partial')
       GROUP BY poi.product_id
-    `, incomingParams);
+    `);
 
     // Indexer par product_id
     const monthlySalesMap = new Map(); // product_id → [{month, total_qty}]
