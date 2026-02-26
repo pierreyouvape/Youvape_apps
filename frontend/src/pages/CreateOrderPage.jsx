@@ -217,7 +217,7 @@ const CreateOrderPage = () => {
                       <div style={{ fontWeight: 500, marginBottom: '4px' }}>{product.post_title}</div>
                       <div style={{ fontSize: '13px', color: '#666', display: 'flex', gap: '15px' }}>
                         <span>SKU: <code>{product.sku || '-'}</code></span>
-                        <span>Stock: <strong style={{ color: product.stock <= 0 ? '#ef4444' : product.stock < 10 ? '#f59e0b' : '#10b981' }}>{product.stock ?? 'N/A'}</strong></span>
+                        <span>Stock: <strong style={{ color: product.stock <= 0 ? '#ef4444' : 'inherit' }}>{product.stock ?? 'N/A'}</strong></span>
                       </div>
                     </div>
                     <span style={{ color: '#10b981', fontSize: '24px', fontWeight: 'bold', marginLeft: '15px' }}>+</span>
@@ -262,7 +262,7 @@ const CreateOrderPage = () => {
                     <td style={{ padding: '12px 10px' }}>{item.product_name}</td>
                     <td style={{ padding: '12px 10px' }}><code style={{ fontSize: '13px' }}>{item.sku || '-'}</code></td>
                     <td style={{ padding: '12px 10px', textAlign: 'center' }}>
-                      <span style={{ color: item.stock <= 0 ? '#ef4444' : item.stock < 10 ? '#f59e0b' : '#10b981', fontWeight: 500 }}>
+                      <span style={{ color: item.stock <= 0 ? '#ef4444' : 'inherit', fontWeight: 500 }}>
                         {item.stock ?? '-'}
                       </span>
                     </td>
