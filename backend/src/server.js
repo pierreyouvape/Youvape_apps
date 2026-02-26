@@ -22,7 +22,7 @@ const shippingRoutes = require('./routes/shippingRoutes');
 const paymentRoutes = require('./routes/paymentRoutes');
 const tariffRoutes = require('./routes/tariffRoutes');
 const purchasesRoutes = require('./routes/purchasesRoutes');
-const { setupCron } = require('./services/cronService');
+const { setupCron, setupBmsCron } = require('./services/cronService');
 const rewardService = require('./services/rewardService');
 const emailService = require('./services/emailService');
 const wcSyncService = require('./services/wcSyncService');
@@ -68,6 +68,9 @@ app.listen(PORT, async () => {
 
   // Initialiser le cron pour la récupération automatique des avis
   await setupCron();
+
+  // Initialiser le cron BMS (sync commandes toutes les 30 min, 9h-19h, lun-ven)
+  setupBmsCron();
 
   // Lancer le processus de récompense toutes les 5 minutes
   console.log('🎁 Démarrage du système de récompenses automatique (toutes les 5 min)');

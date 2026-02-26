@@ -218,8 +218,39 @@ const restartCron = async () => {
   await setupCron();
 };
 
+// ==================== BMS PURCHASE ORDERS SYNC ====================
+
+const purchaseOrderModel = require('../models/purchaseOrderModel');
+
+let bmsCronJob = null;
+
+const syncBmsOrders = async () => {
+  try {
+    console.log('🔄 Sync automatique commandes BMS...');
+    const result = await purchaseOrderModel.syncFromBMS();
+    console.log(`✅ BMS sync: ${result.created} créée(s), ${result.updated} mise(s) à jour, ${result.skipped} ignorée(s)`);
+  } catch (error) {
+    console.error('❌ Erreur sync BMS auto:', error.message);
+  }
+};
+
+const setupBmsCron = () => {
+  if (bmsCronJob) {
+    bmsCronJob.stop();
+    bmsCronJob = null;
+  }
+
+  // Toutes les 30 min de 9h à 19h, lundi-vendredi
+  bmsCronJob = cron.schedule('*/30 9-19 * * 1-5', syncBmsOrders, {
+    timezone: 'Europe/Paris'
+  });
+
+  console.log('✅ Cron BMS configuré: toutes les 30 min, 9h-19h, lun-ven');
+};
+
 module.exports = {
   setupCron,
   restartCron,
-  fetchReviewsAuto
+  fetchReviewsAuto,
+  setupBmsCron
 };
