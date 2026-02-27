@@ -416,11 +416,12 @@ const purchaseOrderModel = {
     // 2. Récupérer toutes les commandes BMS
     const allOrders = await bmsApiModel.getPurchaseOrders();
 
-    // Filtrer : commandes créées >= dernière sync (comparaison ISO string)
+    // Filtrer : commandes créées OU mises à jour >= dernière sync
+    const lastSyncDate = new Date(lastSyncAt);
     const orders = allOrders.filter(o => {
-      if (!o.created_at) return true;
-      // BMS renvoie "2025-10-15T12:24:35.000000+02:00" — on compare direct
-      return new Date(o.created_at) >= new Date(lastSyncAt);
+      const created = o.created_at ? new Date(o.created_at) : null;
+      const updated = o.updated_at ? new Date(o.updated_at) : null;
+      return (created && created >= lastSyncDate) || (updated && updated >= lastSyncDate);
     });
 
     if (orders.length === 0) {
