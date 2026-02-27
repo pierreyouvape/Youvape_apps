@@ -334,7 +334,7 @@ const NeedsTab = ({ token }) => {
       if (hasSearch) {
         return (
           normalize(p.post_title).includes(searchNorm) ||
-          (p.sku || '').toLowerCase().includes(searchNorm)
+          normalize(p.sku).includes(searchNorm)
         );
       }
 
