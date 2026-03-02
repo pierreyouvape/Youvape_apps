@@ -36,7 +36,8 @@ const usersController = {
             rewards: { read: true, write: true },
             emails: { read: true, write: true },
             stats: { read: true, write: true },
-            purchases: { read: true, write: true }
+            purchases: { read: true, write: true },
+            catalog: { read: true, write: true }
           }
         });
       }

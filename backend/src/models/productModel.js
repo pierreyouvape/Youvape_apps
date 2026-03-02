@@ -587,7 +587,7 @@ class ProductModel {
         COALESCE(p.stock, 0) as stock,
         p.stock_status,
         p.regular_price,
-        p.image_url,
+        COALESCE(p.image_url, p_parent.image_url) as image_url,
         p.product_type,
         p.post_date
       FROM products p
@@ -646,11 +646,12 @@ class ProductModel {
         p.stock_status,
         p.regular_price,
         p.wc_cog_cost as cost_price,
-        p.image_url,
+        COALESCE(p.image_url, p_parent.image_url) as image_url,
         p.product_type,
         p.wp_parent_id,
         p.post_date
       FROM products p
+      LEFT JOIN products p_parent ON p.wp_parent_id = p_parent.wp_product_id
       WHERE p.id = $1
     `, [productId]);
 

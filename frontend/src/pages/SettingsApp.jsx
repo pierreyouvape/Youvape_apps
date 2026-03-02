@@ -21,7 +21,8 @@ const SettingsApp = () => {
     { key: 'rewards', label: 'Récompense Avis' },
     { key: 'emails', label: 'Envoi d\'Emails' },
     { key: 'stats', label: 'Statistiques WooCommerce' },
-    { key: 'purchases', label: 'Gestion d\'achat' }
+    { key: 'purchases', label: 'Gestion d\'achat' },
+    { key: 'catalog', label: 'Produits' }
   ];
 
   useEffect(() => {
