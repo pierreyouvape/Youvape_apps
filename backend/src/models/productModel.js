@@ -702,6 +702,27 @@ class ProductModel {
     );
     return result.rows[0];
   }
+
+  async importBarcodes(rows) {
+    const results = { inserted: 0, skipped: 0, errors: [] };
+    for (const row of rows) {
+      try {
+        const product = await pool.query('SELECT id FROM products WHERE sku = $1', [row.sku]);
+        if (!product.rows[0]) {
+          results.errors.push({ sku: row.sku, barcode: row.barcode, reason: 'SKU introuvable' });
+          continue;
+        }
+        await pool.query(
+          'INSERT INTO product_barcodes (product_id, barcode, type) VALUES ($1, $2, $3) ON CONFLICT (product_id, barcode) DO NOTHING',
+          [product.rows[0].id, row.barcode, 'unit']
+        );
+        results.inserted++;
+      } catch (err) {
+        results.errors.push({ sku: row.sku, barcode: row.barcode, reason: err.message });
+      }
+    }
+    return results;
+  }
 }
 
 module.exports = new ProductModel();

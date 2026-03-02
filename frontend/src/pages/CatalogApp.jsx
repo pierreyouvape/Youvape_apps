@@ -12,6 +12,12 @@ const CatalogApp = () => {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [pagination, setPagination] = useState({ total: 0, limit: 50, offset: 0, hasMore: false });
+  const [csvModal, setCsvModal] = useState(false);
+  const [csvHeaders, setCsvHeaders] = useState([]);
+  const [csvRows, setCsvRows] = useState([]);
+  const [csvMapping, setCsvMapping] = useState({ sku: '', barcode: '' });
+  const [csvImporting, setCsvImporting] = useState(false);
+  const [csvResult, setCsvResult] = useState(null);
 
   const headers = { Authorization: `Bearer ${token}` };
 
@@ -53,6 +59,49 @@ const CatalogApp = () => {
 
   const totalPages = Math.ceil(pagination.total / pagination.limit);
   const currentPage = Math.floor(pagination.offset / pagination.limit) + 1;
+
+  const handleCsvFile = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      const text = evt.target.result;
+      const sep = text.includes(';') ? ';' : ',';
+      const lines = text.split(/\r?\n/).filter(l => l.trim());
+      if (lines.length < 2) return alert('Le fichier doit contenir au moins un entête et une ligne de données');
+      const headers = lines[0].split(sep).map(h => h.trim().replace(/^"|"$/g, ''));
+      const rows = lines.slice(1).map(line => {
+        const vals = line.split(sep).map(v => v.trim().replace(/^"|"$/g, ''));
+        const obj = {};
+        headers.forEach((h, i) => { obj[h] = vals[i] || ''; });
+        return obj;
+      });
+      setCsvHeaders(headers);
+      setCsvRows(rows);
+      setCsvMapping({ sku: '', barcode: '' });
+      setCsvResult(null);
+      setCsvModal(true);
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  };
+
+  const handleCsvImport = async () => {
+    if (!csvMapping.sku || !csvMapping.barcode) return alert('Veuillez mapper les colonnes SKU et Code-barre');
+    setCsvImporting(true);
+    try {
+      const rows = csvRows
+        .map(r => ({ sku: r[csvMapping.sku]?.trim(), barcode: r[csvMapping.barcode]?.trim() }))
+        .filter(r => r.sku && r.barcode);
+      const res = await axios.post(`${API_URL}/products/barcodes/import`, { rows }, { headers });
+      if (res.data.success) setCsvResult(res.data.data);
+    } catch (err) {
+      console.error('CSV import error:', err);
+      alert('Erreur lors de l\'import');
+    } finally {
+      setCsvImporting(false);
+    }
+  };
 
   return (
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
@@ -109,6 +158,13 @@ const CatalogApp = () => {
           <span style={{ marginLeft: '12px', color: '#6b7280', fontSize: '14px' }}>
             {pagination.total} produit{pagination.total > 1 ? 's' : ''}
           </span>
+          <label style={{
+            marginLeft: '16px', padding: '8px 16px', backgroundColor: '#059669', color: '#fff',
+            borderRadius: '6px', fontSize: '13px', fontWeight: '600', cursor: 'pointer', display: 'inline-block'
+          }}>
+            Importer EAN (CSV)
+            <input type="file" accept=".csv,.txt" onChange={handleCsvFile} style={{ display: 'none' }} />
+          </label>
         </div>
 
         {/* Table */}
@@ -219,6 +275,108 @@ const CatalogApp = () => {
           </>
         )}
       </div>
+
+      {/* Modal Import CSV */}
+      {csvModal && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000
+        }} onClick={() => setCsvModal(false)}>
+          <div style={{
+            backgroundColor: '#fff', borderRadius: '8px', padding: '24px', maxWidth: '550px', width: '90%', maxHeight: '80vh', overflow: 'auto'
+          }} onClick={e => e.stopPropagation()}>
+            <h3 style={{ margin: '0 0 16px', color: '#059669' }}>Import codes-barres unitaires</h3>
+
+            <p style={{ fontSize: '13px', color: '#6b7280', margin: '0 0 16px' }}>
+              {csvRows.length} ligne{csvRows.length > 1 ? 's' : ''} détectée{csvRows.length > 1 ? 's' : ''} — Mappez les colonnes :
+            </p>
+
+            <div style={{ display: 'flex', gap: '16px', marginBottom: '16px' }}>
+              <div style={{ flex: 1 }}>
+                <label style={{ fontSize: '13px', fontWeight: '600', display: 'block', marginBottom: '4px' }}>Colonne SKU</label>
+                <select
+                  value={csvMapping.sku}
+                  onChange={e => setCsvMapping(prev => ({ ...prev, sku: e.target.value }))}
+                  style={{ width: '100%', padding: '8px', border: '1px solid #d1d5db', borderRadius: '4px', fontSize: '13px' }}
+                >
+                  <option value="">-- Sélectionner --</option>
+                  {csvHeaders.map(h => <option key={h} value={h}>{h}</option>)}
+                </select>
+              </div>
+              <div style={{ flex: 1 }}>
+                <label style={{ fontSize: '13px', fontWeight: '600', display: 'block', marginBottom: '4px' }}>Colonne Code-barre</label>
+                <select
+                  value={csvMapping.barcode}
+                  onChange={e => setCsvMapping(prev => ({ ...prev, barcode: e.target.value }))}
+                  style={{ width: '100%', padding: '8px', border: '1px solid #d1d5db', borderRadius: '4px', fontSize: '13px' }}
+                >
+                  <option value="">-- Sélectionner --</option>
+                  {csvHeaders.map(h => <option key={h} value={h}>{h}</option>)}
+                </select>
+              </div>
+            </div>
+
+            {/* Aperçu */}
+            {csvMapping.sku && csvMapping.barcode && !csvResult && (
+              <div style={{ marginBottom: '16px' }}>
+                <p style={{ fontSize: '12px', color: '#6b7280', marginBottom: '6px' }}>Aperçu (5 premières lignes) :</p>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+                  <thead>
+                    <tr style={{ backgroundColor: '#f3f4f6' }}>
+                      <th style={{ padding: '6px 8px', textAlign: 'left', borderBottom: '1px solid #e5e7eb' }}>SKU</th>
+                      <th style={{ padding: '6px 8px', textAlign: 'left', borderBottom: '1px solid #e5e7eb' }}>Code-barre</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {csvRows.slice(0, 5).map((r, i) => (
+                      <tr key={i}>
+                        <td style={{ padding: '4px 8px', borderBottom: '1px solid #f3f4f6', fontFamily: 'monospace' }}>{r[csvMapping.sku]}</td>
+                        <td style={{ padding: '4px 8px', borderBottom: '1px solid #f3f4f6', fontFamily: 'monospace' }}>{r[csvMapping.barcode]}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {/* Résultat */}
+            {csvResult && (
+              <div style={{ marginBottom: '16px', padding: '12px', backgroundColor: '#f0fdf4', borderRadius: '6px', fontSize: '13px' }}>
+                <p style={{ margin: '0 0 4px', fontWeight: '600', color: '#059669' }}>Import terminé</p>
+                <p style={{ margin: '0' }}>{csvResult.inserted} code{csvResult.inserted > 1 ? 's' : ''}-barre{csvResult.inserted > 1 ? 's' : ''} importé{csvResult.inserted > 1 ? 's' : ''}, {csvResult.skipped} ignoré{csvResult.skipped > 1 ? 's' : ''} (doublons)</p>
+                {csvResult.errors.length > 0 && (
+                  <div style={{ marginTop: '8px' }}>
+                    <p style={{ margin: '0 0 4px', color: '#dc2626', fontWeight: '600' }}>{csvResult.errors.length} erreur{csvResult.errors.length > 1 ? 's' : ''} :</p>
+                    <div style={{ maxHeight: '120px', overflow: 'auto', fontSize: '12px' }}>
+                      {csvResult.errors.map((e, i) => (
+                        <div key={i} style={{ color: '#dc2626' }}>SKU "{e.sku}" → {e.reason}</div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+              <button
+                onClick={() => setCsvModal(false)}
+                style={{ padding: '8px 16px', border: '1px solid #d1d5db', borderRadius: '6px', backgroundColor: '#fff', fontSize: '13px', cursor: 'pointer' }}
+              >Fermer</button>
+              {!csvResult && (
+                <button
+                  onClick={handleCsvImport}
+                  disabled={!csvMapping.sku || !csvMapping.barcode || csvImporting}
+                  style={{
+                    padding: '8px 16px', border: 'none', borderRadius: '6px', fontSize: '13px', fontWeight: '600', cursor: 'pointer',
+                    backgroundColor: csvMapping.sku && csvMapping.barcode && !csvImporting ? '#059669' : '#d1d5db',
+                    color: '#fff'
+                  }}
+                >{csvImporting ? 'Import en cours...' : 'Importer'}</button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Footer */}
       <div style={{

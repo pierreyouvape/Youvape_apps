@@ -353,3 +353,23 @@ exports.deleteProductBarcode = async (req, res) => {
     res.status(500).json({ success: false, error: error.message });
   }
 };
+
+/**
+ * Import CSV de codes-barres unitaires
+ * POST /api/products/barcodes/import
+ */
+exports.importBarcodes = async (req, res) => {
+  try {
+    const { rows } = req.body;
+
+    if (!Array.isArray(rows) || rows.length === 0) {
+      return res.status(400).json({ success: false, error: 'rows requis (tableau de {sku, barcode})' });
+    }
+
+    const results = await productModel.importBarcodes(rows);
+    res.json({ success: true, data: results });
+  } catch (error) {
+    console.error('Error importing barcodes:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
