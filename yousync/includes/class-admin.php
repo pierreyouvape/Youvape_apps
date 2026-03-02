@@ -155,13 +155,22 @@ class Admin {
                 </div>
 
                 <div class="yousync-card">
-                    <h3>API Status</h3>
-                    <p class="yousync-big-number" id="yousync-api-status">-</p>
-                    <p class="yousync-subtitle">
-                        <button type="button" class="button button-small" id="yousync-test-connection">
-                            Test Connection
-                        </button>
-                    </p>
+                    <h3>Sync Mode</h3>
+                    <?php if (!empty($settings['api_url'])): ?>
+                        <p class="yousync-big-number" id="yousync-api-status">-</p>
+                        <p class="yousync-subtitle">
+                            Mode <strong>Push</strong>
+                            <br>
+                            <button type="button" class="button button-small" id="yousync-test-connection" style="margin-top:6px;">
+                                Test Connection
+                            </button>
+                        </p>
+                    <?php else: ?>
+                        <p class="yousync-big-number" style="color:#2563eb;">Pull</p>
+                        <p class="yousync-subtitle">
+                            Le VPS interroge la queue
+                        </p>
+                    <?php endif; ?>
                 </div>
             </div>
 
@@ -269,8 +278,14 @@ class Admin {
                         <td>
                             <input type="url" name="api_url" class="regular-text"
                                 value="<?php echo esc_attr($settings['api_url'] ?? ''); ?>"
-                                placeholder="http://54.37.156.233:3000/api/webhook/sync">
-                            <p class="description">The webhook endpoint on your VPS.</p>
+                                placeholder="">
+                            <p class="description" style="margin-top:8px;">
+                                <strong>Mode Push</strong> : remplir l'URL pour que le module envoie les données au VPS automatiquement.<br>
+                                <strong>Mode Pull</strong> : laisser vide, le VPS viendra interroger la queue lui-même.
+                            </p>
+                            <p class="description" style="margin-top:6px;">
+                                URL du webhook : <code>http://54.37.156.233:3000/api/webhook/sync</code>
+                            </p>
                         </td>
                     </tr>
 
