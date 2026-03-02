@@ -159,8 +159,8 @@ const CatalogApp = () => {
             {pagination.total} produit{pagination.total > 1 ? 's' : ''}
           </span>
           <label style={{
-            marginLeft: '16px', padding: '8px 16px', backgroundColor: '#059669', color: '#fff',
-            borderRadius: '6px', fontSize: '13px', fontWeight: '600', cursor: 'pointer', display: 'inline-block'
+            marginLeft: '16px', padding: '8px 16px', backgroundColor: '#fff', color: '#374151',
+            border: '1px solid #059669', borderRadius: '6px', fontSize: '13px', fontWeight: '600', cursor: 'pointer', display: 'inline-block'
           }}>
             Importer EAN (CSV)
             <input type="file" accept=".csv,.txt" onChange={handleCsvFile} style={{ display: 'none' }} />
@@ -360,16 +360,16 @@ const CatalogApp = () => {
             <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
               <button
                 onClick={() => setCsvModal(false)}
-                style={{ padding: '8px 16px', border: '1px solid #d1d5db', borderRadius: '6px', backgroundColor: '#fff', fontSize: '13px', cursor: 'pointer' }}
+                style={{ padding: '8px 16px', border: '1px solid #d1d5db', borderRadius: '6px', backgroundColor: '#fff', color: '#374151', fontSize: '13px', cursor: 'pointer' }}
               >Fermer</button>
               {!csvResult && (
                 <button
                   onClick={handleCsvImport}
                   disabled={!csvMapping.sku || !csvMapping.barcode || csvImporting}
                   style={{
-                    padding: '8px 16px', border: 'none', borderRadius: '6px', fontSize: '13px', fontWeight: '600', cursor: 'pointer',
-                    backgroundColor: csvMapping.sku && csvMapping.barcode && !csvImporting ? '#059669' : '#d1d5db',
-                    color: '#fff'
+                    padding: '8px 16px', border: '1px solid #d1d5db', borderRadius: '6px', fontSize: '13px', fontWeight: '600', cursor: 'pointer',
+                    backgroundColor: csvMapping.sku && csvMapping.barcode && !csvImporting ? '#059669' : '#fff',
+                    color: csvMapping.sku && csvMapping.barcode && !csvImporting ? '#fff' : '#9ca3af'
                   }}
                 >{csvImporting ? 'Import en cours...' : 'Importer'}</button>
               )}
