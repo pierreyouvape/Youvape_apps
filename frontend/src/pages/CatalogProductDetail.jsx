@@ -207,7 +207,7 @@ const CatalogProductDetail = () => {
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', backgroundColor: '#f9fafb' }}>
       {/* Header */}
       <div style={{
-        backgroundColor: '#135E84',
+        backgroundColor: '#059669',
         padding: '20px 0',
         display: 'flex',
         justifyContent: 'center',
@@ -219,7 +219,7 @@ const CatalogProductDetail = () => {
           onClick={() => navigate('/catalog')}
           style={{
             position: 'absolute', left: '20px', padding: '10px 20px',
-            backgroundColor: '#fff', color: '#135E84', border: 'none',
+            backgroundColor: '#fff', color: '#059669', border: 'none',
             borderRadius: '6px', fontSize: '14px', cursor: 'pointer', fontWeight: '600'
           }}
         >
@@ -408,16 +408,17 @@ const CatalogProductDetail = () => {
 
                   {/* Actions */}
                   <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-                    {editingSupplier[supplier.id] && (
-                      <button
-                        onClick={() => handleSaveSupplier(supplier.id)}
-                        disabled={saving}
-                        style={{
-                          padding: '6px 12px', backgroundColor: '#059669', color: '#fff',
-                          border: 'none', borderRadius: '4px', fontSize: '12px', cursor: 'pointer'
-                        }}
-                      >Sauvegarder</button>
-                    )}
+                    <button
+                      onClick={() => handleSaveSupplier(supplier.id)}
+                      disabled={saving || !editingSupplier[supplier.id]}
+                      style={{
+                        padding: '6px 12px',
+                        backgroundColor: editingSupplier[supplier.id] ? '#059669' : '#d1d5db',
+                        color: '#fff',
+                        border: 'none', borderRadius: '4px', fontSize: '12px',
+                        cursor: editingSupplier[supplier.id] ? 'pointer' : 'not-allowed'
+                      }}
+                    >Sauvegarder</button>
                     {!supplier.is_primary && (
                       <button
                         onClick={() => handleSetPrimary(supplier.id)}
@@ -521,7 +522,7 @@ const CatalogProductDetail = () => {
 
       {/* Footer */}
       <div style={{
-        backgroundColor: '#135E84',
+        backgroundColor: '#059669',
         padding: '20px 0',
         textAlign: 'center',
         color: 'white',

@@ -58,7 +58,7 @@ const CatalogApp = () => {
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
       {/* Header */}
       <div style={{
-        backgroundColor: '#135E84',
+        backgroundColor: '#059669',
         padding: '20px 0',
         display: 'flex',
         justifyContent: 'center',
@@ -73,7 +73,7 @@ const CatalogApp = () => {
             left: '20px',
             padding: '10px 20px',
             backgroundColor: '#fff',
-            color: '#135E84',
+            color: '#059669',
             border: 'none',
             borderRadius: '6px',
             fontSize: '14px',
@@ -87,7 +87,7 @@ const CatalogApp = () => {
 
       {/* Main Content */}
       <div style={{ flex: 1, maxWidth: '1200px', margin: '30px auto', padding: '0 20px', width: '100%' }}>
-        <h1 style={{ color: '#135E84', marginBottom: '20px' }}>Catalogue Produits</h1>
+        <h1 style={{ color: '#059669', marginBottom: '20px' }}>Catalogue Produits</h1>
 
         {/* Search */}
         <div style={{ marginBottom: '20px' }}>
@@ -222,7 +222,7 @@ const CatalogApp = () => {
 
       {/* Footer */}
       <div style={{
-        backgroundColor: '#135E84',
+        backgroundColor: '#059669',
         padding: '20px 0',
         textAlign: 'center',
         color: 'white'
