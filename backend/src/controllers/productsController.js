@@ -293,3 +293,62 @@ exports.getVariationsStats = async (req, res) => {
     res.status(500).json({ success: false, error: error.message });
   }
 };
+
+/**
+ * Récupère les codes-barres d'un produit
+ * GET /api/products/:id/barcodes
+ */
+exports.getProductBarcodes = async (req, res) => {
+  try {
+    const productId = parseInt(req.params.id);
+    const barcodes = await productModel.getBarcodes(productId);
+    res.json({ success: true, data: barcodes });
+  } catch (error) {
+    console.error('Error getting barcodes:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+/**
+ * Ajoute un code-barre à un produit
+ * POST /api/products/:id/barcodes
+ */
+exports.addProductBarcode = async (req, res) => {
+  try {
+    const productId = parseInt(req.params.id);
+    const { barcode, type } = req.body;
+
+    if (!barcode || !type || !['unit', 'pack'].includes(type)) {
+      return res.status(400).json({ success: false, error: 'barcode et type (unit/pack) requis' });
+    }
+
+    const result = await productModel.addBarcode(productId, barcode.trim(), type);
+    res.json({ success: true, data: result });
+  } catch (error) {
+    if (error.code === '23505') {
+      return res.status(409).json({ success: false, error: 'Ce code-barre existe déjà pour ce produit' });
+    }
+    console.error('Error adding barcode:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+/**
+ * Supprime un code-barre
+ * DELETE /api/products/:id/barcodes/:barcodeId
+ */
+exports.deleteProductBarcode = async (req, res) => {
+  try {
+    const barcodeId = parseInt(req.params.barcodeId);
+    const result = await productModel.deleteBarcode(barcodeId);
+
+    if (!result) {
+      return res.status(404).json({ success: false, error: 'Code-barre non trouvé' });
+    }
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error deleting barcode:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};

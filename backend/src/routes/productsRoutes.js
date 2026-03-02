@@ -34,6 +34,11 @@ router.get('/:id/stats/by-day-of-week', productStatsController.getSalesByDayOfWe
 router.get('/:id/stats/by-hour', productStatsController.getSalesByHour);
 router.get('/:id/variations-stats', productsController.getVariationsStats);
 
+// Codes-barres
+router.get('/:id/barcodes', productsController.getProductBarcodes);
+router.post('/:id/barcodes', productsController.addProductBarcode);
+router.delete('/:id/barcodes/:barcodeId', productsController.deleteProductBarcode);
+
 // Édition
 router.put('/:id/cost', productsController.updateCostPrice);
 

@@ -25,6 +25,8 @@ const CatalogProductDetail = () => {
   const [addingSupplier, setAddingSupplier] = useState(false);
   const [newSupplierId, setNewSupplierId] = useState('');
   const [saving, setSaving] = useState(false);
+  const [barcodes, setBarcodes] = useState([]);
+  const [newBarcode, setNewBarcode] = useState({ unit: '', pack: '' });
 
   useEffect(() => {
     if (id) fetchAll();
@@ -41,6 +43,7 @@ const CatalogProductDetail = () => {
       if (productRes.data.success) {
         const prod = productRes.data.data;
         setProduct(prod);
+        setBarcodes(prod.barcodes || []);
         // Needs uses wp_product_id (order_items.product_id = wp_product_id)
         try {
           const needsRes = await axios.get(`${API_URL}/purchases/needs/${prod.wp_product_id}`, { headers });
@@ -154,6 +157,34 @@ const CatalogProductDetail = () => {
       return editingSupplier[supplier.id][field];
     }
     return supplier[field] ?? '';
+  };
+
+  const handleAddBarcode = async (type) => {
+    const value = newBarcode[type]?.trim();
+    if (!value) return;
+    try {
+      const res = await axios.post(`${API_URL}/products/${id}/barcodes`, { barcode: value, type }, { headers });
+      if (res.data.success) {
+        setBarcodes(prev => [...prev, res.data.data]);
+        setNewBarcode(prev => ({ ...prev, [type]: '' }));
+      }
+    } catch (err) {
+      if (err.response?.status === 409) {
+        alert('Ce code-barre existe deja pour ce produit');
+      } else {
+        console.error('Error adding barcode:', err);
+        alert('Erreur lors de l\'ajout');
+      }
+    }
+  };
+
+  const handleDeleteBarcode = async (barcodeId) => {
+    try {
+      await axios.delete(`${API_URL}/products/${id}/barcodes/${barcodeId}`, { headers });
+      setBarcodes(prev => prev.filter(b => b.id !== barcodeId));
+    } catch (err) {
+      console.error('Error deleting barcode:', err);
+    }
   };
 
   const formatDate = (dateStr) => {
@@ -271,7 +302,98 @@ const CatalogProductDetail = () => {
 
         {/* Tab: General */}
         {activeTab === 'general' && (
-          <div style={cardStyle}>
+          <div>
+            {/* Codes-barres */}
+            <div style={{ ...cardStyle, marginBottom: '16px' }}>
+              <div style={{ display: 'flex', gap: '40px', flexWrap: 'wrap' }}>
+                {/* Codes-barres unité */}
+                <div style={{ flex: 1, minWidth: '250px' }}>
+                  <h4 style={{ margin: '0 0 10px', fontSize: '14px', color: '#374151' }}>Codes-barres unite</h4>
+                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '8px' }}>
+                    {barcodes.filter(b => b.type === 'unit').map(b => (
+                      <span key={b.id} style={{
+                        display: 'inline-flex', alignItems: 'center', gap: '6px',
+                        padding: '4px 10px', backgroundColor: '#f3f4f6', borderRadius: '4px',
+                        fontSize: '13px', fontFamily: 'monospace', color: '#111827'
+                      }}>
+                        {b.barcode}
+                        <button onClick={() => handleDeleteBarcode(b.id)} style={{
+                          background: 'none', border: 'none', cursor: 'pointer', color: '#9ca3af',
+                          fontSize: '14px', padding: '0 2px', lineHeight: 1
+                        }} title="Supprimer">&times;</button>
+                      </span>
+                    ))}
+                    {barcodes.filter(b => b.type === 'unit').length === 0 && (
+                      <span style={{ fontSize: '13px', color: '#9ca3af' }}>Aucun</span>
+                    )}
+                  </div>
+                  <div style={{ display: 'flex', gap: '6px' }}>
+                    <input
+                      type="text"
+                      value={newBarcode.unit}
+                      onChange={(e) => setNewBarcode(prev => ({ ...prev, unit: e.target.value }))}
+                      onKeyDown={(e) => e.key === 'Enter' && handleAddBarcode('unit')}
+                      placeholder="Ajouter un EAN..."
+                      style={{ padding: '6px 10px', border: '1px solid #d1d5db', borderRadius: '4px', fontSize: '13px', flex: 1 }}
+                    />
+                    <button
+                      onClick={() => handleAddBarcode('unit')}
+                      disabled={!newBarcode.unit?.trim()}
+                      style={{
+                        padding: '6px 12px', backgroundColor: newBarcode.unit?.trim() ? '#059669' : '#d1d5db',
+                        color: '#fff', border: 'none', borderRadius: '4px', fontSize: '12px',
+                        cursor: newBarcode.unit?.trim() ? 'pointer' : 'not-allowed'
+                      }}
+                    >+ Ajouter</button>
+                  </div>
+                </div>
+
+                {/* Codes-barres pack */}
+                <div style={{ flex: 1, minWidth: '250px' }}>
+                  <h4 style={{ margin: '0 0 10px', fontSize: '14px', color: '#374151' }}>Codes-barres pack</h4>
+                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '8px' }}>
+                    {barcodes.filter(b => b.type === 'pack').map(b => (
+                      <span key={b.id} style={{
+                        display: 'inline-flex', alignItems: 'center', gap: '6px',
+                        padding: '4px 10px', backgroundColor: '#fef3c7', borderRadius: '4px',
+                        fontSize: '13px', fontFamily: 'monospace', color: '#92400e'
+                      }}>
+                        {b.barcode}
+                        <button onClick={() => handleDeleteBarcode(b.id)} style={{
+                          background: 'none', border: 'none', cursor: 'pointer', color: '#b45309',
+                          fontSize: '14px', padding: '0 2px', lineHeight: 1
+                        }} title="Supprimer">&times;</button>
+                      </span>
+                    ))}
+                    {barcodes.filter(b => b.type === 'pack').length === 0 && (
+                      <span style={{ fontSize: '13px', color: '#9ca3af' }}>Aucun</span>
+                    )}
+                  </div>
+                  <div style={{ display: 'flex', gap: '6px' }}>
+                    <input
+                      type="text"
+                      value={newBarcode.pack}
+                      onChange={(e) => setNewBarcode(prev => ({ ...prev, pack: e.target.value }))}
+                      onKeyDown={(e) => e.key === 'Enter' && handleAddBarcode('pack')}
+                      placeholder="Ajouter un EAN pack..."
+                      style={{ padding: '6px 10px', border: '1px solid #d1d5db', borderRadius: '4px', fontSize: '13px', flex: 1 }}
+                    />
+                    <button
+                      onClick={() => handleAddBarcode('pack')}
+                      disabled={!newBarcode.pack?.trim()}
+                      style={{
+                        padding: '6px 12px', backgroundColor: newBarcode.pack?.trim() ? '#f59e0b' : '#d1d5db',
+                        color: '#fff', border: 'none', borderRadius: '4px', fontSize: '12px',
+                        cursor: newBarcode.pack?.trim() ? 'pointer' : 'not-allowed'
+                      }}
+                    >+ Ajouter</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Stock / Arrivages / Besoins */}
+            <div style={cardStyle}>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
                 <tr style={{ borderBottom: '2px solid #e5e7eb' }}>
@@ -308,6 +430,7 @@ const CatalogProductDetail = () => {
                 Max commande : <strong>{needs.max_order_qty_12m}</strong>
               </div>
             )}
+            </div>
           </div>
         )}
 

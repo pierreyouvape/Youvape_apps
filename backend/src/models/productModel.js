@@ -669,7 +669,38 @@ class ProductModel {
 
     product.incoming_qty = parseInt(incomingResult.rows[0].incoming_qty) || 0;
 
+    // Codes-barres
+    const barcodesResult = await pool.query(
+      'SELECT id, barcode, type FROM product_barcodes WHERE product_id = $1 ORDER BY type, id',
+      [productId]
+    );
+    product.barcodes = barcodesResult.rows;
+
     return product;
+  }
+
+  async getBarcodes(productId) {
+    const result = await pool.query(
+      'SELECT id, barcode, type, created_at FROM product_barcodes WHERE product_id = $1 ORDER BY type, id',
+      [productId]
+    );
+    return result.rows;
+  }
+
+  async addBarcode(productId, barcode, type) {
+    const result = await pool.query(
+      'INSERT INTO product_barcodes (product_id, barcode, type) VALUES ($1, $2, $3) RETURNING *',
+      [productId, barcode, type]
+    );
+    return result.rows[0];
+  }
+
+  async deleteBarcode(barcodeId) {
+    const result = await pool.query(
+      'DELETE FROM product_barcodes WHERE id = $1 RETURNING id',
+      [barcodeId]
+    );
+    return result.rows[0];
   }
 }
 
