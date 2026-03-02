@@ -27,6 +27,7 @@ const CatalogProductDetail = () => {
   const [saving, setSaving] = useState(false);
   const [barcodes, setBarcodes] = useState([]);
   const [newBarcode, setNewBarcode] = useState({ unit: '', pack: '' });
+  const [newPackQty, setNewPackQty] = useState('');
 
   useEffect(() => {
     if (id) fetchAll();
@@ -163,10 +164,13 @@ const CatalogProductDetail = () => {
     const value = newBarcode[type]?.trim();
     if (!value) return;
     try {
-      const res = await axios.post(`${API_URL}/products/${id}/barcodes`, { barcode: value, type }, { headers });
+      const body = { barcode: value, type };
+      if (type === 'pack' && newPackQty) body.quantity = parseInt(newPackQty);
+      const res = await axios.post(`${API_URL}/products/${id}/barcodes`, body, { headers });
       if (res.data.success) {
         setBarcodes(prev => [...prev, res.data.data]);
         setNewBarcode(prev => ({ ...prev, [type]: '' }));
+        if (type === 'pack') setNewPackQty('');
       }
     } catch (err) {
       if (err.response?.status === 409) {
@@ -358,7 +362,7 @@ const CatalogProductDetail = () => {
                         padding: '4px 10px', backgroundColor: '#fef3c7', borderRadius: '4px',
                         fontSize: '13px', fontFamily: 'monospace', color: '#92400e'
                       }}>
-                        {b.barcode}
+                        {b.barcode}{b.quantity ? ` (x${b.quantity})` : ''}
                         <button onClick={() => handleDeleteBarcode(b.id)} style={{
                           background: 'none', border: 'none', cursor: 'pointer', color: '#b45309',
                           fontSize: '14px', padding: '0 2px', lineHeight: 1
@@ -375,8 +379,17 @@ const CatalogProductDetail = () => {
                       value={newBarcode.pack}
                       onChange={(e) => setNewBarcode(prev => ({ ...prev, pack: e.target.value }))}
                       onKeyDown={(e) => e.key === 'Enter' && handleAddBarcode('pack')}
-                      placeholder="Ajouter un EAN pack..."
+                      placeholder="EAN pack..."
                       style={{ padding: '6px 10px', border: '1px solid #d1d5db', borderRadius: '4px', fontSize: '13px', flex: 1 }}
+                    />
+                    <input
+                      type="number"
+                      value={newPackQty}
+                      onChange={(e) => setNewPackQty(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && handleAddBarcode('pack')}
+                      placeholder="Qté"
+                      min="1"
+                      style={{ padding: '6px 10px', border: '1px solid #d1d5db', borderRadius: '4px', fontSize: '13px', width: '70px' }}
                     />
                     <button
                       onClick={() => handleAddBarcode('pack')}

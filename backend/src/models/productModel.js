@@ -671,7 +671,7 @@ class ProductModel {
 
     // Codes-barres
     const barcodesResult = await pool.query(
-      'SELECT id, barcode, type FROM product_barcodes WHERE product_id = $1 ORDER BY type, id',
+      'SELECT id, barcode, type, quantity FROM product_barcodes WHERE product_id = $1 ORDER BY type, id',
       [productId]
     );
     product.barcodes = barcodesResult.rows;
@@ -681,16 +681,16 @@ class ProductModel {
 
   async getBarcodes(productId) {
     const result = await pool.query(
-      'SELECT id, barcode, type, created_at FROM product_barcodes WHERE product_id = $1 ORDER BY type, id',
+      'SELECT id, barcode, type, quantity, created_at FROM product_barcodes WHERE product_id = $1 ORDER BY type, id',
       [productId]
     );
     return result.rows;
   }
 
-  async addBarcode(productId, barcode, type) {
+  async addBarcode(productId, barcode, type, quantity = null) {
     const result = await pool.query(
-      'INSERT INTO product_barcodes (product_id, barcode, type) VALUES ($1, $2, $3) RETURNING *',
-      [productId, barcode, type]
+      'INSERT INTO product_barcodes (product_id, barcode, type, quantity) VALUES ($1, $2, $3, $4) RETURNING *',
+      [productId, barcode, type, quantity]
     );
     return result.rows[0];
   }

@@ -316,13 +316,14 @@ exports.getProductBarcodes = async (req, res) => {
 exports.addProductBarcode = async (req, res) => {
   try {
     const productId = parseInt(req.params.id);
-    const { barcode, type } = req.body;
+    const { barcode, type, quantity } = req.body;
 
     if (!barcode || !type || !['unit', 'pack'].includes(type)) {
       return res.status(400).json({ success: false, error: 'barcode et type (unit/pack) requis' });
     }
 
-    const result = await productModel.addBarcode(productId, barcode.trim(), type);
+    const qty = type === 'pack' && quantity ? parseInt(quantity) : null;
+    const result = await productModel.addBarcode(productId, barcode.trim(), type, qty);
     res.json({ success: true, data: result });
   } catch (error) {
     if (error.code === '23505') {
