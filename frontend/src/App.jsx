@@ -21,6 +21,8 @@ import SubBrandDetail from './pages/SubBrandDetail';
 import CategoryDetail from './pages/CategoryDetail';
 import SubCategoryDetail from './pages/SubCategoryDetail';
 import ShippingSettings from './pages/ShippingSettings';
+import CatalogApp from './pages/CatalogApp';
+import CatalogProductDetail from './pages/CatalogProductDetail';
 import PrivateRoute from './components/PrivateRoute';
 
 function App() {
@@ -108,6 +110,22 @@ function App() {
             element={
               <PrivateRoute>
                 <CreateOrderPage />
+              </PrivateRoute>
+            }
+          />
+          <Route
+            path="/catalog"
+            element={
+              <PrivateRoute>
+                <CatalogApp />
+              </PrivateRoute>
+            }
+          />
+          <Route
+            path="/catalog/:id"
+            element={
+              <PrivateRoute>
+                <CatalogProductDetail />
               </PrivateRoute>
             }
           />

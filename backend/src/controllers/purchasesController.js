@@ -332,6 +332,40 @@ const purchasesController = {
     }
   },
 
+  // ==================== PRODUIT / FOURNISSEUR ====================
+
+  // PUT /api/purchases/suppliers/:supplierId/products/:productId
+  updateProductSupplier: async (req, res) => {
+    try {
+      const supplierId = parseInt(req.params.supplierId);
+      const productId = parseInt(req.params.productId);
+      const supplierModel = require('../models/supplierModel');
+
+      const result = await supplierModel.updateProductSupplier(supplierId, productId, req.body);
+      if (!result) {
+        return res.status(404).json({ success: false, error: 'Association produit/fournisseur non trouvée' });
+      }
+      res.json({ success: true, data: result });
+    } catch (error) {
+      console.error('Erreur updateProductSupplier:', error);
+      res.status(500).json({ success: false, error: 'Erreur serveur' });
+    }
+  },
+
+  // GET /api/purchases/products/:productId/suppliers/:supplierId/history
+  getProductSupplierHistory: async (req, res) => {
+    try {
+      const productId = parseInt(req.params.productId);
+      const supplierId = parseInt(req.params.supplierId);
+
+      const history = await purchaseOrderModel.getByProductAndSupplier(productId, supplierId);
+      res.json({ success: true, data: history });
+    } catch (error) {
+      console.error('Erreur getProductSupplierHistory:', error);
+      res.status(500).json({ success: false, error: 'Erreur serveur' });
+    }
+  },
+
   // ==================== EXPORT CSV ====================
 
   // GET /api/purchases/orders/:id/export

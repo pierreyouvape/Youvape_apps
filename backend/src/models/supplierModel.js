@@ -130,7 +130,8 @@ const supplierModel = {
         ps.is_primary,
         ps.supplier_sku,
         ps.supplier_price,
-        ps.min_order_qty
+        ps.min_order_qty,
+        ps.pack_qty
       FROM products p
       JOIN product_suppliers ps ON p.id = ps.product_id
       WHERE ps.supplier_id = $1
@@ -144,14 +145,15 @@ const supplierModel = {
   addProduct: async (supplierId, productId, data = {}) => {
     const query = `
       INSERT INTO product_suppliers (
-        supplier_id, product_id, is_primary, supplier_sku, supplier_price, min_order_qty
+        supplier_id, product_id, is_primary, supplier_sku, supplier_price, min_order_qty, pack_qty
       )
-      VALUES ($1, $2, $3, $4, $5, $6)
+      VALUES ($1, $2, $3, $4, $5, $6, $7)
       ON CONFLICT (product_id, supplier_id) DO UPDATE SET
         is_primary = EXCLUDED.is_primary,
         supplier_sku = EXCLUDED.supplier_sku,
         supplier_price = EXCLUDED.supplier_price,
         min_order_qty = EXCLUDED.min_order_qty,
+        pack_qty = EXCLUDED.pack_qty,
         updated_at = CURRENT_TIMESTAMP
       RETURNING *
     `;
@@ -161,8 +163,49 @@ const supplierModel = {
       data.is_primary || false,
       data.supplier_sku || null,
       data.supplier_price || null,
-      data.min_order_qty || 1
+      data.min_order_qty || 1,
+      data.pack_qty || 1
     ];
+    const result = await pool.query(query, values);
+    return result.rows[0];
+  },
+
+  // Mettre à jour les données d'un produit chez un fournisseur
+  updateProductSupplier: async (supplierId, productId, data) => {
+    const fields = [];
+    const values = [supplierId, productId];
+    let paramIndex = 3;
+
+    if (data.supplier_sku !== undefined) {
+      fields.push(`supplier_sku = $${paramIndex++}`);
+      values.push(data.supplier_sku);
+    }
+    if (data.supplier_price !== undefined) {
+      fields.push(`supplier_price = $${paramIndex++}`);
+      values.push(data.supplier_price);
+    }
+    if (data.pack_qty !== undefined) {
+      fields.push(`pack_qty = $${paramIndex++}`);
+      values.push(data.pack_qty);
+    }
+    if (data.min_order_qty !== undefined) {
+      fields.push(`min_order_qty = $${paramIndex++}`);
+      values.push(data.min_order_qty);
+    }
+    if (data.is_primary !== undefined) {
+      fields.push(`is_primary = $${paramIndex++}`);
+      values.push(data.is_primary);
+    }
+
+    if (fields.length === 0) return null;
+
+    fields.push('updated_at = CURRENT_TIMESTAMP');
+
+    const query = `
+      UPDATE product_suppliers SET ${fields.join(', ')}
+      WHERE supplier_id = $1 AND product_id = $2
+      RETURNING *
+    `;
     const result = await pool.query(query, values);
     return result.rows[0];
   },
@@ -204,7 +247,8 @@ const supplierModel = {
         ps.is_primary,
         ps.supplier_sku,
         ps.supplier_price,
-        ps.min_order_qty
+        ps.min_order_qty,
+        ps.pack_qty
       FROM suppliers s
       JOIN product_suppliers ps ON s.id = ps.supplier_id
       WHERE ps.product_id = $1 AND s.is_active = true

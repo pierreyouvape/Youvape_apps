@@ -57,6 +57,12 @@ router.get('/products/:productId/suppliers', checkPurchasesRead, suppliersContro
 // Définir le fournisseur principal d'un produit
 router.put('/products/:productId/primary-supplier', checkPurchasesWrite, suppliersController.setPrimarySupplier);
 
+// Mettre à jour les données d'un produit chez un fournisseur
+router.put('/suppliers/:supplierId/products/:productId', checkPurchasesWrite, purchasesController.updateProductSupplier);
+
+// Historique commandes d'un produit chez un fournisseur
+router.get('/products/:productId/suppliers/:supplierId/history', checkPurchasesRead, purchasesController.getProductSupplierHistory);
+
 // ==================== BESOINS ====================
 
 // Toutes les données brutes en bulk (pour calcul frontend)

@@ -235,6 +235,50 @@ exports.getStatsListing = async (req, res) => {
 };
 
 /**
+ * Récupère les produits pour le catalogue (paramétrage)
+ * GET /api/products/catalog
+ */
+exports.getCatalogList = async (req, res) => {
+  try {
+    const limit = parseInt(req.query.limit) || 50;
+    const offset = parseInt(req.query.offset) || 0;
+    const search = req.query.search || '';
+
+    const products = await productModel.getAllForCatalog(limit, offset, search);
+    const total = await productModel.countForCatalog(search);
+
+    res.json({
+      success: true,
+      data: products,
+      pagination: { total, limit, offset, hasMore: offset + limit < total }
+    });
+  } catch (error) {
+    console.error('Error getting catalog list:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+/**
+ * Récupère les données d'un produit pour la fiche catalogue
+ * GET /api/products/:id/catalog
+ */
+exports.getCatalogDetail = async (req, res) => {
+  try {
+    const productId = parseInt(req.params.id);
+    const product = await productModel.getForCatalogDetail(productId);
+
+    if (!product) {
+      return res.status(404).json({ success: false, error: 'Produit non trouvé' });
+    }
+
+    res.json({ success: true, data: product });
+  } catch (error) {
+    console.error('Error getting catalog detail:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+/**
  * Récupère les variations d'un produit pour l'onglet Stats
  * GET /api/products/:id/variations-stats
  */

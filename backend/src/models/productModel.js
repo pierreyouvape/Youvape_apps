@@ -554,6 +554,122 @@ class ProductModel {
     const result = await pool.query(query, [wpParentId]);
     return result.rows;
   }
+  /**
+   * Récupère les produits pour le catalogue (paramétrage)
+   * Produits simples publiés + variations dont le parent est publish
+   * Tri par date de création DESC
+   */
+  async getAllForCatalog(limit = 50, offset = 0, search = '') {
+    let whereClause = `
+      WHERE p.post_status = 'publish'
+        AND (
+          p.product_type = 'simple'
+          OR (p.product_type = 'variation' AND p_parent.post_status = 'publish')
+        )
+    `;
+    const params = [];
+    let paramIndex = 1;
+
+    if (search) {
+      whereClause += ` AND LOWER(p.post_title || ' ' || COALESCE(p.sku, '')) LIKE $${paramIndex}`;
+      params.push(`%${search.toLowerCase().replace(/[-_.,;:!?()\[\]]/g, ' ')}%`);
+      paramIndex++;
+    }
+
+    params.push(limit, offset);
+
+    const query = `
+      SELECT
+        p.id,
+        p.wp_product_id,
+        p.post_title,
+        p.sku,
+        COALESCE(p.stock, 0) as stock,
+        p.stock_status,
+        p.regular_price,
+        p.image_url,
+        p.product_type,
+        p.post_date
+      FROM products p
+      LEFT JOIN products p_parent ON p.wp_parent_id = p_parent.wp_product_id
+      ${whereClause}
+      ORDER BY p.post_date DESC
+      LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
+    `;
+
+    const result = await pool.query(query, params);
+    return result.rows;
+  }
+
+  /**
+   * Compte les produits pour le catalogue
+   */
+  async countForCatalog(search = '') {
+    let whereClause = `
+      WHERE p.post_status = 'publish'
+        AND (
+          p.product_type = 'simple'
+          OR (p.product_type = 'variation' AND p_parent.post_status = 'publish')
+        )
+    `;
+    const params = [];
+
+    if (search) {
+      whereClause += ` AND LOWER(p.post_title || ' ' || COALESCE(p.sku, '')) LIKE $1`;
+      params.push(`%${search.toLowerCase().replace(/[-_.,;:!?()\[\]]/g, ' ')}%`);
+    }
+
+    const query = `
+      SELECT COUNT(*)::int as total
+      FROM products p
+      LEFT JOIN products p_parent ON p.wp_parent_id = p_parent.wp_product_id
+      ${whereClause}
+    `;
+
+    const result = await pool.query(query, params);
+    return parseInt(result.rows[0].total);
+  }
+
+  /**
+   * Récupère les données d'un produit pour la fiche catalogue
+   * Inclut stock, arrivages en cours, et données pour le calcul des besoins
+   */
+  async getForCatalogDetail(productId) {
+    // Données produit
+    const productResult = await pool.query(`
+      SELECT
+        p.id,
+        p.wp_product_id,
+        p.post_title,
+        p.sku,
+        COALESCE(p.stock, 0) as stock,
+        p.stock_status,
+        p.regular_price,
+        p.wc_cog_cost as cost_price,
+        p.image_url,
+        p.product_type,
+        p.wp_parent_id,
+        p.post_date
+      FROM products p
+      WHERE p.id = $1
+    `, [productId]);
+
+    if (productResult.rows.length === 0) return null;
+    const product = productResult.rows[0];
+
+    // Arrivages en cours
+    const incomingResult = await pool.query(`
+      SELECT COALESCE(SUM(poi.qty_ordered - poi.qty_received), 0) as incoming_qty
+      FROM purchase_order_items poi
+      JOIN purchase_orders po ON poi.purchase_order_id = po.id
+      WHERE poi.product_id = $1
+        AND po.status IN ('sent', 'confirmed', 'shipped', 'partial')
+    `, [productId]);
+
+    product.incoming_qty = parseInt(incomingResult.rows[0].incoming_qty) || 0;
+
+    return product;
+  }
 }
 
 module.exports = new ProductModel();

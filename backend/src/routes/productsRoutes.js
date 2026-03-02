@@ -10,9 +10,11 @@ router.get('/categories/list', productsController.getCategories);
 router.get('/stock-summary', productsController.getStockSummary);
 router.get('/category/:category', productsController.getByCategory);
 router.get('/stats-list', productsController.getStatsListing);
+router.get('/catalog', productsController.getCatalogList);
 
 // Détails produit
 router.get('/:id', productsController.getById);
+router.get('/:id/catalog', productsController.getCatalogDetail);
 router.get('/:id/sales-history', productsController.getSalesHistory);
 router.get('/:id/customers', productsController.getCustomers);
 router.get('/:id/related', productsController.getRelatedProducts);

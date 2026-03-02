@@ -758,6 +758,28 @@ const purchaseOrderModel = {
     } finally {
       client.release();
     }
+  },
+
+  // Historique des commandes pour un produit chez un fournisseur
+  getByProductAndSupplier: async (productId, supplierId) => {
+    const query = `
+      SELECT
+        po.id as order_id,
+        po.order_number,
+        po.bms_reference,
+        po.order_date,
+        po.status,
+        poi.qty_ordered,
+        poi.qty_received,
+        poi.unit_price
+      FROM purchase_order_items poi
+      JOIN purchase_orders po ON poi.purchase_order_id = po.id
+      WHERE poi.product_id = $1
+        AND po.supplier_id = $2
+      ORDER BY po.order_date DESC NULLS LAST, po.created_at DESC
+    `;
+    const result = await pool.query(query, [productId, supplierId]);
+    return result.rows;
   }
 };
 
