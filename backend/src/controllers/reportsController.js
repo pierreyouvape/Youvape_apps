@@ -642,8 +642,8 @@ exports.getOrdersReport = async (req, res) => {
     let params = [];
     let paramIndex = 1;
 
-    // Toutes les commandes sauf failed
-    conditions.push(`o.post_status NOT IN ('wc-failed', 'wc-trash')`);
+    // Mêmes filtres que le rapport CA
+    conditions.push(`o.post_status NOT IN ('wc-cancelled', 'wc-refunded', 'wc-failed', 'wc-on-hold', 'wc-pending')`);
 
     if (dateFrom) {
       conditions.push(`o.post_date >= $${paramIndex}`);
