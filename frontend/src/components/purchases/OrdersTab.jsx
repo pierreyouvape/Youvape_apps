@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { formatDate } from '../../utils/dateUtils';
+import { formatPrice } from '../../utils/formatNumber';
 
 const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:3000/api/auth').replace('/auth', '');
 
@@ -341,7 +342,7 @@ const OrdersTab = ({ token }) => {
                   <td className="text-center">{order.total_items}</td>
                   <td className="text-center">{order.total_qty}</td>
                   <td className="text-right">
-                    {order.total_amount > 0 ? `${parseFloat(order.total_amount).toFixed(2)} €` : '-'}
+                    {order.total_amount > 0 ? `${formatPrice(order.total_amount)} €` : '-'}
                   </td>
                   <td className="text-center">
                     <span className={`status-badge status-${order.status}`}>
@@ -493,7 +494,7 @@ const OrdersTab = ({ token }) => {
                           )}
                         </td>
                         <td className="text-right">
-                          {item.unit_price ? `${parseFloat(item.unit_price).toFixed(2)} €` : '-'}
+                          {item.unit_price ? `${formatPrice(item.unit_price)} €` : '-'}
                         </td>
                         <td>{item.stock_before ?? '-'}</td>
                       </tr>

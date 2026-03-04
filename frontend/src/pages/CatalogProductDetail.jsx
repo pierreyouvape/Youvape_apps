@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { AuthContext } from '../context/AuthContext';
 import axios from 'axios';
 import CopyButton from '../components/CopyButton';
+import { formatPrice } from '../utils/formatNumber';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
 const WC_ADMIN_URL = 'https://youvape.com/wp-admin/post.php';
@@ -602,7 +603,7 @@ const CatalogProductDetail = () => {
                               .map((h, i) => (
                                 <div key={i} style={{ textAlign: 'center', fontSize: '11px', color: '#6b7280' }}>
                                   <div style={{ fontWeight: '600', color: '#111827', fontSize: '13px' }}>
-                                    {parseFloat(h.unit_price).toFixed(2)} EUR
+                                    {formatPrice(h.unit_price)} EUR
                                   </div>
                                   <div>{formatDate(h.order_date)}</div>
                                 </div>
@@ -631,7 +632,7 @@ const CatalogProductDetail = () => {
                                 <td style={{ padding: '8px 10px', textAlign: 'right' }}>{h.qty_ordered}</td>
                                 <td style={{ padding: '8px 10px', textAlign: 'right' }}>{h.qty_received}</td>
                                 <td style={{ padding: '8px 10px', textAlign: 'right' }}>
-                                  {h.unit_price ? `${parseFloat(h.unit_price).toFixed(2)} EUR` : '-'}
+                                  {h.unit_price ? `${formatPrice(h.unit_price)} EUR` : '-'}
                                 </td>
                                 <td style={{ padding: '8px 10px' }}>
                                   <span style={{

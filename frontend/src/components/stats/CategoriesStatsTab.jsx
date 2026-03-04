@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
+import { formatPriceEur } from '../../utils/formatNumber';
 
 const API_BASE_URL = 'http://54.37.156.233:3000/api';
 
@@ -130,7 +131,7 @@ const CategoriesStatsTab = () => {
     link.remove();
   };
 
-  const formatPrice = (price) => parseFloat(price || 0).toFixed(2) + ' €';
+  const formatPrice = (price) => formatPriceEur(price);
   const formatPercent = (percent) => parseFloat(percent || 0).toFixed(1) + '%';
   const formatNumber = (num) => new Intl.NumberFormat('fr-FR').format(num || 0);
 

@@ -2,6 +2,7 @@ import { useState, useEffect, useContext } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AuthContext } from '../context/AuthContext';
 import axios from 'axios';
+import { formatPrice } from '../utils/formatNumber';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
 
@@ -228,7 +229,7 @@ const CatalogApp = () => {
                         {parseInt(p.stock) || 0}
                       </td>
                       <td style={{ padding: '8px 12px', textAlign: 'right' }}>
-                        {p.regular_price ? `${parseFloat(p.regular_price).toFixed(2)} \u20AC` : '-'}
+                        {p.regular_price ? `${formatPrice(p.regular_price)} \u20AC` : '-'}
                       </td>
                     </tr>
                   ))}

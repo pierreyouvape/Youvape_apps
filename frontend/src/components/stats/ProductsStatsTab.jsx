@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import CopyButton from '../CopyButton';
+import { formatPriceEur } from '../../utils/formatNumber';
 
 const API_BASE_URL = 'http://54.37.156.233:3000/api';
 
@@ -147,7 +148,7 @@ const ProductsStatsTab = () => {
   const canNextPage = pagination.pageIndex < Math.ceil(totalCount / pagination.pageSize) - 1;
   const pageCount = Math.ceil(totalCount / pagination.pageSize);
 
-  const formatPrice = (price) => parseFloat(price || 0).toFixed(2) + ' €';
+  const formatPrice = (price) => formatPriceEur(price);
   const formatPercent = (percent) => parseFloat(percent || 0).toFixed(1) + '%';
 
   const getSortIcon = (column) => {

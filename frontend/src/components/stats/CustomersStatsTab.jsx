@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { getCountryLabel } from '../../utils/countries';
+import { formatPriceEur, formatPrice } from '../../utils/formatNumber';
 
 const API_BASE_URL = 'http://54.37.156.233:3000/api';
 
@@ -236,7 +237,7 @@ const CustomersStatsTab = () => {
                       </span>
                     </td>
                     <td style={{ padding: '15px', fontSize: '14px', fontWeight: 'bold' }}>
-                      {parseFloat(customer.total_spent || 0).toFixed(2)} €
+                      {formatPriceEur(customer.total_spent)}
                     </td>
                     <td style={{ padding: '15px', fontSize: '14px' }}>
                       {customer.country ? getCountryLabel(customer.country) : 'N/A'}

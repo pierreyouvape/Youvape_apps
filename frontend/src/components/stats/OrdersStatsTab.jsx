@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import CopyButton from '../CopyButton';
 import { formatDate } from '../../utils/dateUtils';
+import { formatPriceEur } from '../../utils/formatNumber';
 
 const API_BASE_URL = 'http://54.37.156.233:3000/api';
 
@@ -173,7 +174,7 @@ const OrdersStatsTab = () => {
     }
   };
 
-  const formatPrice = (price) => parseFloat(price || 0).toFixed(2) + ' €';
+  const formatPrice = (price) => formatPriceEur(price);
 
   const handleExport = () => {
     const csv = [

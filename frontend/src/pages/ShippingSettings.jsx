@@ -2,6 +2,7 @@ import { useState, useEffect, useContext } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AuthContext } from '../context/AuthContext';
 import axios from 'axios';
+import { formatPrice } from '../utils/formatNumber';
 
 const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:3000/api').replace('/auth', '');
 
@@ -728,7 +729,7 @@ const ShippingSettings = () => {
             <p>Total commandes: <strong>{calculationResult.summary.total_orders}</strong></p>
             <p>Commandes matchées: <strong>{calculationResult.summary.orders_matched}</strong></p>
             <p>Commandes non matchées: <strong>{calculationResult.summary.orders_unmatched}</strong></p>
-            <p>Total frais calculés: <strong>{calculationResult.summary.total_calculated.toFixed(2)} € HT</strong></p>
+            <p>Total frais calculés: <strong>{formatPrice(calculationResult.summary.total_calculated)} € HT</strong></p>
           </div>
         </div>
       )}
@@ -1034,7 +1035,7 @@ const FuelSurchargeZone = ({ zone, carrier, methodCode, onAddRate, onDeleteZone,
                 <tr key={i}>
                   <td style={tdStyle}>{r.weight_from}</td>
                   <td style={tdStyle}>{r.weight_to}</td>
-                  <td style={tdStyle}>{r.price_ht.toFixed(2)}</td>
+                  <td style={tdStyle}>{formatPrice(r.price_ht)}</td>
                 </tr>
               ))}
             </tbody>

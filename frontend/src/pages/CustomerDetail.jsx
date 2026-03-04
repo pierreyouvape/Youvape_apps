@@ -6,6 +6,7 @@ import { getCountryLabel } from '../utils/countries';
 import { formatDate } from '../utils/dateUtils';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import CopyButton from '../components/CopyButton';
+import { formatPriceEur } from '../utils/formatNumber';
 
 const API_BASE_URL = 'http://54.37.156.233:3000/api';
 
@@ -126,9 +127,7 @@ const CustomerDetail = () => {
   };
 
 
-  const formatPrice = (price) => {
-    return parseFloat(price || 0).toFixed(2) + ' €';
-  };
+  const formatPrice = (price) => formatPriceEur(price);
 
   const getStatusLabel = (status) => {
     const statusMap = {
