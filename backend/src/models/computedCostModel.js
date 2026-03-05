@@ -40,10 +40,10 @@ const computedCostModel = {
     const lotsByProduct = {};
     for (const lot of lotsResult.rows) {
       if (!lotsByProduct[lot.product_id]) lotsByProduct[lot.product_id] = [];
-      lotsByProduct[lot.product_id].push({
-        qty: parseInt(lot.qty_received),
-        price: parseFloat(lot.unit_price)
-      });
+      const qty = parseInt(lot.qty_received);
+      const price = parseFloat(lot.unit_price);
+      if (!qty || qty <= 0 || isNaN(price) || price <= 0) continue;
+      lotsByProduct[lot.product_id].push({ qty, price });
     }
 
     // 3. Calcul FIFO pour chaque produit
@@ -75,6 +75,7 @@ const computedCostModel = {
         computedCost = lots[lots.length - 1].price;
       }
 
+      if (isNaN(computedCost) || computedCost <= 0) continue;
       ids.push(parseInt(productId));
       costs.push(Math.round(computedCost * 100) / 100);
     }
