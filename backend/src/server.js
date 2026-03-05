@@ -81,7 +81,7 @@ app.listen(PORT, async () => {
       const computedCostModel = require('./models/computedCostModel');
       await computedCostModel.recalculateAll();
     } catch (e) {
-      console.error('Erreur recalcul initial PMP FIFO:', e.message);
+      console.error('Erreur recalcul initial PMP FIFO:', e.message, e.stack);
     }
   }, 60000);
 

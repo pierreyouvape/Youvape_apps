@@ -16,6 +16,7 @@ const computedCostModel = {
       WHERE poi.qty_received > 0
         AND po.status NOT IN ('draft', 'cancelled')
         AND poi.unit_price IS NOT NULL
+        AND poi.unit_price > 0
       ORDER BY poi.product_id, lot_date ASC, poi.id ASC
     `);
 
@@ -75,9 +76,11 @@ const computedCostModel = {
         computedCost = lots[lots.length - 1].price;
       }
 
-      if (isNaN(computedCost) || computedCost <= 0) continue;
-      ids.push(parseInt(productId));
-      costs.push(Math.round(computedCost * 100) / 100);
+      const pid = parseInt(productId);
+      const cost = Math.round(computedCost * 100) / 100;
+      if (isNaN(pid) || isNaN(cost) || cost <= 0) continue;
+      ids.push(pid);
+      costs.push(cost);
     }
 
     // 4. Batch UPDATE
