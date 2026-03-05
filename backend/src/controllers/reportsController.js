@@ -376,11 +376,12 @@ exports.getProfitReport = async (req, res) => {
     const kpisResult = await pool.query(kpisQuery, params);
     const kpis = kpisResult.rows[0];
 
-    // Calculer les coûts produits depuis order_items si order_total_cost est vide
+    // Calculer les coûts produits (PMP FIFO)
     const productCostQuery = `
-      SELECT COALESCE(SUM(oi.item_total_cost), 0)::numeric as product_cost
+      SELECT COALESCE(SUM(oi.qty * COALESCE(p.computed_cost, p.wc_cog_cost, 0)), 0)::numeric as product_cost
       FROM order_items oi
       JOIN orders o ON oi.wp_order_id = o.wp_order_id
+      LEFT JOIN products p ON p.wp_product_id = oi.product_id
       ${whereClause}
     `;
     const productCostResult = await pool.query(productCostQuery, params);

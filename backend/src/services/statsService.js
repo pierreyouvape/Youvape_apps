@@ -31,11 +31,12 @@ class StatsService {
     const customerResult = await pool.query(customerQuery);
     kpis.unique_customers = parseInt(customerResult.rows[0].unique_customers);
 
-    // Requête séparée pour le coût des produits
+    // Requête séparée pour le coût des produits (PMP FIFO)
     const costQuery = `
-      SELECT COALESCE(SUM(oi.qty * COALESCE(oi.item_cost, 0)), 0) as total_products_cost
+      SELECT COALESCE(SUM(oi.qty * COALESCE(p.computed_cost, p.wc_cog_cost, 0)), 0) as total_products_cost
       FROM order_items oi
       INNER JOIN orders o ON o.wp_order_id = oi.wp_order_id
+      LEFT JOIN products p ON p.wp_product_id = oi.product_id
       ${whereClause}
     `;
 
@@ -116,16 +117,16 @@ class StatsService {
         p.sku,
         p.product_type as category,
         p.price,
-        p.wc_cog_cost as cost_price,
+        COALESCE(p.computed_cost, p.wc_cog_cost) as cost_price,
         SUM(oi.qty) as total_quantity,
         COALESCE(SUM(oi.line_total), 0) as total_revenue,
-        COALESCE(SUM(oi.qty * COALESCE(oi.item_cost, 0)), 0) as total_cost,
+        COALESCE(SUM(oi.qty * COALESCE(p.computed_cost, p.wc_cog_cost, 0)), 0) as total_cost,
         COUNT(DISTINCT oi.wp_order_id) as orders_count
       FROM products p
       JOIN order_items oi ON oi.product_id = p.wp_product_id
       JOIN orders o ON o.wp_order_id = oi.wp_order_id
       ${whereClause}
-      GROUP BY p.wp_product_id, p.post_title, p.sku, p.product_type, p.price, p.wc_cog_cost
+      GROUP BY p.wp_product_id, p.post_title, p.sku, p.product_type, p.price, p.wc_cog_cost, p.computed_cost
       ORDER BY ${sortColumn} DESC
       LIMIT $${params.length + 1}
     `;
@@ -259,7 +260,7 @@ class StatsService {
         COUNT(DISTINCT p.wp_product_id) as products_count,
         SUM(oi.qty) as total_quantity_sold,
         COALESCE(SUM(oi.line_total), 0) as revenue,
-        COALESCE(SUM(oi.qty * COALESCE(oi.item_cost, 0)), 0) as total_cost
+        COALESCE(SUM(oi.qty * COALESCE(p.computed_cost, p.wc_cog_cost, 0)), 0) as total_cost
       FROM products p
       JOIN order_items oi ON oi.product_id = p.wp_product_id
       JOIN orders o ON o.wp_order_id = oi.wp_order_id

@@ -12,8 +12,8 @@ class OrderModel {
         c.last_name,
         c.email,
         (SELECT COUNT(*) FROM order_items WHERE wp_order_id = o.wp_order_id) as items_count,
-        (SELECT COALESCE(SUM(oi.qty * COALESCE(oi.item_cost, 0)), 0)
-         FROM order_items oi WHERE oi.wp_order_id = o.wp_order_id) as total_cost
+        (SELECT COALESCE(SUM(oi.qty * COALESCE(p.computed_cost, p.wc_cog_cost, 0)), 0)
+         FROM order_items oi LEFT JOIN products p ON p.wp_product_id = oi.product_id WHERE oi.wp_order_id = o.wp_order_id) as total_cost
       FROM orders o
       LEFT JOIN customers c ON c.wp_user_id = o.wp_customer_id
       ORDER BY o.post_date DESC
@@ -44,8 +44,8 @@ class OrderModel {
           c.first_name,
           c.last_name,
           c.email,
-          (SELECT COALESCE(SUM(oi.qty * COALESCE(oi.item_cost, 0)), 0)
-           FROM order_items oi WHERE oi.wp_order_id = o.wp_order_id) as total_cost
+          (SELECT COALESCE(SUM(oi.qty * COALESCE(p.computed_cost, p.wc_cog_cost, 0)), 0)
+           FROM order_items oi LEFT JOIN products p ON p.wp_product_id = COALESCE(NULLIF(oi.variation_id, 0), oi.product_id) WHERE oi.wp_order_id = o.wp_order_id) as total_cost
         FROM orders o
         LEFT JOIN customers c ON c.wp_user_id = o.wp_customer_id
         WHERE o.wp_order_id = $1

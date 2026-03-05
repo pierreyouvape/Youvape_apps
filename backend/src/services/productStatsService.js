@@ -83,11 +83,12 @@ class ProductStatsService {
         COUNT(DISTINCT oi.wp_order_id)::int as net_orders,
         COALESCE(SUM(CASE
           WHEN oi.id IN (SELECT order_item_id FROM bundle_sub_items) THEN 0
-          ELSE oi.qty * COALESCE(oi.item_cost, 0)
+          ELSE oi.qty * COALESCE(p_cost.computed_cost, p_cost.wc_cog_cost, 0)
         END), 0) as total_cost,
         COALESCE(AVG(oi.qty), 0) as avg_quantity_per_order
       FROM order_items oi
       INNER JOIN orders o ON o.wp_order_id = oi.wp_order_id
+      LEFT JOIN products p_cost ON p_cost.wp_product_id = oi.product_id
       WHERE oi.product_id = ANY($1) AND o.post_status = ANY($2)
     `;
 
@@ -194,7 +195,7 @@ class ProductStatsService {
         p.post_title,
         p.sku,
         p.price,
-        p.wc_cog_cost as cost_price,
+        COALESCE(p.computed_cost, p.wc_cog_cost) as cost_price,
         p.stock,
         p.stock_status,
         COALESCE(SUM(foi.qty), 0)::int as net_sold,
@@ -205,12 +206,12 @@ class ProductStatsService {
         COUNT(DISTINCT foi.wp_order_id)::int as net_orders,
         COALESCE(SUM(CASE
           WHEN foi.id IN (SELECT order_item_id FROM bundle_sub_items) THEN 0
-          ELSE foi.qty * COALESCE(foi.item_cost, 0)
+          ELSE foi.qty * COALESCE(p.computed_cost, p.wc_cog_cost, 0)
         END), 0) as total_cost
       FROM products p
       LEFT JOIN filtered_order_items foi ON foi.variation_id = p.wp_product_id
       WHERE p.wp_product_id = ANY($1)
-      GROUP BY p.wp_product_id, p.post_title, p.sku, p.price, p.wc_cog_cost, p.stock, p.stock_status
+      GROUP BY p.wp_product_id, p.post_title, p.sku, p.price, p.wc_cog_cost, p.computed_cost, p.stock, p.stock_status
       ORDER BY p.sku ASC
     `;
 
@@ -325,10 +326,11 @@ class ProductStatsService {
         END), 0) as revenue,
         COALESCE(SUM(CASE
           WHEN oi.id IN (SELECT order_item_id FROM bundle_sub_items) THEN 0
-          ELSE oi.qty * COALESCE(oi.item_cost, 0)
+          ELSE oi.qty * COALESCE(p_cost.computed_cost, p_cost.wc_cog_cost, 0)
         END), 0) as cost
       FROM order_items oi
       INNER JOIN orders o ON o.wp_order_id = oi.wp_order_id
+      LEFT JOIN products p_cost ON p_cost.wp_product_id = oi.product_id
       WHERE ${whereClause}
       GROUP BY period
       ORDER BY period ASC
@@ -447,10 +449,11 @@ class ProductStatsService {
         SUM(oi.qty)::int as net_sold,
         COALESCE(SUM(oi.line_total), 0) as net_revenue,
         COUNT(DISTINCT o.wp_order_id)::int as net_orders,
-        COALESCE(SUM(oi.qty * COALESCE(oi.item_cost, 0)), 0) as cost,
-        COALESCE(SUM(oi.line_total), 0) - COALESCE(SUM(oi.qty * COALESCE(oi.item_cost, 0)), 0) as profit
+        COALESCE(SUM(oi.qty * COALESCE(p_cost.computed_cost, p_cost.wc_cog_cost, 0)), 0) as cost,
+        COALESCE(SUM(oi.line_total), 0) - COALESCE(SUM(oi.qty * COALESCE(p_cost.computed_cost, p_cost.wc_cog_cost, 0)), 0) as profit
       FROM order_items oi
       INNER JOIN orders o ON o.wp_order_id = oi.wp_order_id
+      LEFT JOIN products p_cost ON p_cost.wp_product_id = oi.product_id
       WHERE oi.product_id = ANY($1)
         AND o.post_status = ANY($2)
         AND o.shipping_country IS NOT NULL

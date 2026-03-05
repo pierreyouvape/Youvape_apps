@@ -22,7 +22,7 @@ const needsCalculationModel = {
         COALESCE(p.stock, 0) as stock,
         p.stock_status,
         p.regular_price,
-        p.wc_cog_cost as cost_price,
+        COALESCE(p.computed_cost, p.wc_cog_cost) as cost_price,
         pa.alert_threshold,
         COALESCE(ps_primary.supplier_id, ps_any.supplier_id) as supplier_id,
         COALESCE(s_primary.name, s_any.name) as supplier_name,

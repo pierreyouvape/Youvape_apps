@@ -248,9 +248,40 @@ const setupBmsCron = () => {
   console.log('✅ Cron BMS configuré: toutes les 30 min, 9h-19h, lun-ven');
 };
 
+// ==================== COMPUTED COST (PMP FIFO) ====================
+
+const computedCostModel = require('../models/computedCostModel');
+
+let computedCostCronJob = null;
+
+const recalculateComputedCost = async () => {
+  try {
+    console.log('Recalcul PMP FIFO (computed_cost)...');
+    const result = await computedCostModel.recalculateAll();
+    console.log(`PMP FIFO: ${result.updatedCount} produits mis a jour en ${result.elapsed}ms`);
+  } catch (error) {
+    console.error('Erreur recalcul PMP FIFO:', error.message);
+  }
+};
+
+const setupComputedCostCron = () => {
+  if (computedCostCronJob) {
+    computedCostCronJob.stop();
+    computedCostCronJob = null;
+  }
+
+  // Toutes les 30 min (decale de 5 min apres BMS sync), 9h-19h, lun-ven
+  computedCostCronJob = cron.schedule('5,35 9-19 * * 1-5', recalculateComputedCost, {
+    timezone: 'Europe/Paris'
+  });
+
+  console.log('Cron PMP FIFO configure: toutes les 30 min (offset 5min), 9h-19h, lun-ven');
+};
+
 module.exports = {
   setupCron,
   restartCron,
   fetchReviewsAuto,
-  setupBmsCron
+  setupBmsCron,
+  setupComputedCostCron
 };

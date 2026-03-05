@@ -163,8 +163,8 @@ class AdvancedFilterService {
       SELECT o.*,
         c.first_name, c.last_name, c.email,
         (SELECT COUNT(*) FROM order_items WHERE wp_order_id = o.wp_order_id) as items_count,
-        (SELECT COALESCE(SUM(oi.qty * COALESCE(oi.item_cost, 0)), 0)
-         FROM order_items oi WHERE oi.wp_order_id = o.wp_order_id) as total_cost
+        (SELECT COALESCE(SUM(oi.qty * COALESCE(p.computed_cost, p.wc_cog_cost, 0)), 0)
+         FROM order_items oi LEFT JOIN products p ON p.wp_product_id = oi.product_id WHERE oi.wp_order_id = o.wp_order_id) as total_cost
       FROM orders o
       LEFT JOIN customers c ON c.wp_user_id = o.wp_customer_id
       WHERE 1=1
@@ -285,7 +285,7 @@ class AdvancedFilterService {
         p.post_title as name,
         p.sku,
         p.price,
-        p.wc_cog_cost as cost_price,
+        COALESCE(p.computed_cost, p.wc_cog_cost) as cost_price,
         COUNT(DISTINCT oi.wp_order_id) as times_bought_together,
         COUNT(DISTINCT o.wp_customer_id) as customers_count,
         SUM(oi.qty) as total_quantity_sold

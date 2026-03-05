@@ -8,8 +8,8 @@ class ProductModel {
     const query = `
       SELECT
         p.*,
-        p.wc_cog_cost as cost_price,
-        (p.price - COALESCE(p.wc_cog_cost, 0)) as unit_margin,
+        COALESCE(p.computed_cost, p.wc_cog_cost) as cost_price,
+        (p.price - COALESCE(p.computed_cost, p.wc_cog_cost, 0)) as unit_margin,
         COALESCE(oi_stats.times_sold, 0) as times_sold,
         COALESCE(oi_stats.total_revenue, 0) as total_revenue
       FROM products p
@@ -43,8 +43,8 @@ class ProductModel {
     const query = `
       SELECT
         p.*,
-        p.wc_cog_cost as cost_price,
-        (p.price - COALESCE(p.wc_cog_cost, 0)) as unit_margin,
+        COALESCE(p.computed_cost, p.wc_cog_cost) as cost_price,
+        (p.price - COALESCE(p.computed_cost, p.wc_cog_cost, 0)) as unit_margin,
         (SELECT COALESCE(SUM(qty), 0) FROM order_items WHERE product_id = p.wp_product_id) as total_quantity_sold,
         (SELECT COALESCE(SUM(line_total), 0) FROM order_items WHERE product_id = p.wp_product_id) as total_revenue,
         (SELECT COUNT(DISTINCT wp_order_id) FROM order_items WHERE product_id = p.wp_product_id) as orders_count
@@ -71,8 +71,8 @@ class ProductModel {
     const query = `
       SELECT
         p.*,
-        p.wc_cog_cost as cost_price,
-        (p.price - COALESCE(p.wc_cog_cost, 0)) as unit_margin,
+        COALESCE(p.computed_cost, p.wc_cog_cost) as cost_price,
+        (p.price - COALESCE(p.computed_cost, p.wc_cog_cost, 0)) as unit_margin,
         COALESCE(oi_stats.total_revenue, 0) as total_revenue
       FROM products p
       LEFT JOIN (
@@ -102,9 +102,10 @@ class ProductModel {
         o.post_status as order_status,
         oi.qty as quantity,
         oi.line_total as total,
-        oi.item_cost as cost_price
+        COALESCE(p_cost.computed_cost, p_cost.wc_cog_cost, oi.item_cost) as cost_price
       FROM order_items oi
       JOIN orders o ON o.wp_order_id = oi.wp_order_id
+      LEFT JOIN products p_cost ON p_cost.wp_product_id = oi.product_id
       WHERE oi.wp_product_id = $1
       ORDER BY o.post_date DESC
       LIMIT $2
@@ -136,9 +137,10 @@ class ProductModel {
 
     // Calcul du coût total
     const costQuery = `
-      SELECT COALESCE(SUM(oi.qty * COALESCE(oi.item_cost, 0)), 0) as total_cost
+      SELECT COALESCE(SUM(oi.qty * COALESCE(p_cost.computed_cost, p_cost.wc_cog_cost, 0)), 0) as total_cost
       FROM order_items oi
       INNER JOIN orders o ON o.wp_order_id = oi.wp_order_id
+      LEFT JOIN products p_cost ON p_cost.wp_product_id = oi.product_id
       WHERE oi.wp_product_id = $1 AND o.post_status = 'wc-completed'
     `;
 
@@ -187,7 +189,7 @@ class ProductModel {
     const query = `
       SELECT
         p.*,
-        p.wc_cog_cost as cost_price,
+        COALESCE(p.computed_cost, p.wc_cog_cost) as cost_price,
         (SELECT COALESCE(SUM(qty), 0) FROM order_items WHERE wp_product_id = p.wp_product_id) as total_quantity_sold,
         (SELECT COALESCE(SUM(line_total), 0) FROM order_items WHERE wp_product_id = p.wp_product_id) as total_revenue
       FROM products p
@@ -308,8 +310,8 @@ class ProductModel {
     const familyQuery = `
       SELECT
         p.*,
-        p.wc_cog_cost as cost_price,
-        (p.price - COALESCE(p.wc_cog_cost, 0)) as unit_margin,
+        COALESCE(p.computed_cost, p.wc_cog_cost) as cost_price,
+        (p.price - COALESCE(p.computed_cost, p.wc_cog_cost, 0)) as unit_margin,
         (SELECT COALESCE(SUM(qty), 0) FROM order_items WHERE wp_product_id = p.wp_product_id) as total_quantity_sold,
         (SELECT COALESCE(SUM(line_total), 0) FROM order_items WHERE wp_product_id = p.wp_product_id) as total_revenue
       FROM products p
@@ -332,14 +334,14 @@ class ProductModel {
         p.stock,
         p.stock_status,
         p.price,
-        p.wc_cog_cost as cost_price,
+        COALESCE(p.computed_cost, p.wc_cog_cost) as cost_price,
         COALESCE(SUM(oi.qty), 0) as total_sold,
         COALESCE(SUM(oi.line_total), 0) as total_revenue,
-        COALESCE(SUM(oi.qty * oi.item_cost), 0) as total_cost
+        COALESCE(SUM(oi.qty * COALESCE(p.computed_cost, p.wc_cog_cost, 0)), 0) as total_cost
       FROM products p
       LEFT JOIN order_items oi ON oi.wp_product_id = p.wp_product_id
       WHERE p.wp_parent_id = $1 AND p.product_type = 'variation'
-      GROUP BY p.wp_product_id, p.post_title, p.product_attributes, p.stock, p.stock_status, p.price, p.wc_cog_cost
+      GROUP BY p.wp_product_id, p.post_title, p.product_attributes, p.stock, p.stock_status, p.price, p.wc_cog_cost, p.computed_cost
       ORDER BY total_sold DESC
     `;
     const result = await pool.query(query, [wpProductId]);
@@ -427,12 +429,13 @@ class ProductModel {
           END) as ca_ht,
           SUM(CASE
             WHEN oi.id IN (SELECT order_item_id FROM bundle_sub_items) THEN 0
-            ELSE oi.qty * COALESCE(oi.item_cost, 0)
+            ELSE oi.qty * COALESCE(p_cost.computed_cost, p_cost.wc_cog_cost, 0)
           END) as cost_ht
         FROM product_family pf
         LEFT JOIN order_items oi ON (oi.product_id = pf.product_id OR oi.variation_id = pf.product_id)
         LEFT JOIN orders o ON o.wp_order_id = oi.wp_order_id
           AND o.post_status NOT IN ('wc-failed', 'wc-cancelled')
+        LEFT JOIN products p_cost ON p_cost.wp_product_id = oi.product_id
         GROUP BY pf.parent_id
       )
       SELECT
@@ -541,10 +544,11 @@ class ProductModel {
           END) as ca_ht,
           SUM(CASE
             WHEN oi.id IN (SELECT order_item_id FROM bundle_sub_items) THEN 0
-            ELSE oi.qty * COALESCE(oi.item_cost, 0)
+            ELSE oi.qty * COALESCE(p_cost2.computed_cost, p_cost2.wc_cog_cost, 0)
           END) as cost_ht
         FROM order_items oi
         INNER JOIN orders o ON o.wp_order_id = oi.wp_order_id
+        LEFT JOIN products p_cost2 ON p_cost2.wp_product_id = oi.product_id
         WHERE (oi.product_id = p.wp_product_id OR oi.variation_id = p.wp_product_id)
         AND o.post_status NOT IN ('wc-failed', 'wc-cancelled')
       ) stats ON true
@@ -645,7 +649,7 @@ class ProductModel {
         COALESCE(p.stock, 0) as stock,
         p.stock_status,
         p.regular_price,
-        p.wc_cog_cost as cost_price,
+        COALESCE(p.computed_cost, p.wc_cog_cost) as cost_price,
         COALESCE(p.image_url, p_parent.image_url) as image_url,
         p.product_type,
         p.wp_parent_id,

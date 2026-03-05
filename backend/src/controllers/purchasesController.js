@@ -28,7 +28,7 @@ const purchasesController = {
           p.post_title,
           p.sku,
           p.stock,
-          p.wc_cog_cost as cost_price,
+          COALESCE(p.computed_cost, p.wc_cog_cost) as cost_price,
           p.product_type,
           p.wp_parent_id,
           parent.post_title as parent_title

@@ -35,11 +35,12 @@ exports.getAll = async (req, res) => {
           SUM(oi.qty)::int as qty_sold,
           COALESCE(SUM(oi.line_total), 0) + COALESCE(SUM(oi.line_tax), 0) as ca_ttc,
           COALESCE(SUM(oi.line_total), 0) as ca_ht,
-          COALESCE(SUM(oi.qty * COALESCE(oi.item_cost, 0)), 0) as cost_ht
+          COALESCE(SUM(oi.qty * COALESCE(p_cost.computed_cost, p_cost.wc_cog_cost, 0)), 0) as cost_ht
         FROM product_family pf
         LEFT JOIN order_items oi ON (oi.product_id = pf.product_id OR oi.variation_id = pf.product_id)
         LEFT JOIN orders o ON o.wp_order_id = oi.wp_order_id
           AND o.post_status = ANY($1)
+        LEFT JOIN products p_cost ON p_cost.wp_product_id = COALESCE(NULLIF(oi.variation_id, 0), oi.product_id)
         GROUP BY pf.brand
       )
       SELECT
@@ -108,11 +109,12 @@ exports.getAllSubBrands = async (req, res) => {
           SUM(oi.qty)::int as qty_sold,
           COALESCE(SUM(oi.line_total), 0) + COALESCE(SUM(oi.line_tax), 0) as ca_ttc,
           COALESCE(SUM(oi.line_total), 0) as ca_ht,
-          COALESCE(SUM(oi.qty * COALESCE(oi.item_cost, 0)), 0) as cost_ht
+          COALESCE(SUM(oi.qty * COALESCE(p_cost.computed_cost, p_cost.wc_cog_cost, 0)), 0) as cost_ht
         FROM product_family pf
         LEFT JOIN order_items oi ON (oi.product_id = pf.product_id OR oi.variation_id = pf.product_id)
         LEFT JOIN orders o ON o.wp_order_id = oi.wp_order_id
           AND o.post_status = ANY($1)
+        LEFT JOIN products p_cost ON p_cost.wp_product_id = COALESCE(NULLIF(oi.variation_id, 0), oi.product_id)
         GROUP BY pf.sub_brand
       )
       SELECT
@@ -183,11 +185,12 @@ exports.getByName = async (req, res) => {
           SUM(oi.qty)::int as qty_sold,
           COALESCE(SUM(oi.line_total), 0) + COALESCE(SUM(oi.line_tax), 0) as ca_ttc,
           COALESCE(SUM(oi.line_total), 0) as ca_ht,
-          COALESCE(SUM(oi.qty * COALESCE(oi.item_cost, 0)), 0) as cost_ht
+          COALESCE(SUM(oi.qty * COALESCE(p_cost.computed_cost, p_cost.wc_cog_cost, 0)), 0) as cost_ht
         FROM product_family pf
         LEFT JOIN order_items oi ON (oi.product_id = pf.product_id OR oi.variation_id = pf.product_id)
         LEFT JOIN orders o ON o.wp_order_id = oi.wp_order_id
           AND o.post_status = ANY($2)
+        LEFT JOIN products p_cost ON p_cost.wp_product_id = COALESCE(NULLIF(oi.variation_id, 0), oi.product_id)
         GROUP BY pf.sub_brand
       )
       SELECT
@@ -241,11 +244,12 @@ exports.getByName = async (req, res) => {
           SUM(oi.qty)::int as qty_sold,
           COALESCE(SUM(oi.line_total), 0) + COALESCE(SUM(oi.line_tax), 0) as ca_ttc,
           COALESCE(SUM(oi.line_total), 0) as ca_ht,
-          COALESCE(SUM(oi.qty * COALESCE(oi.item_cost, 0)), 0) as cost_ht
+          COALESCE(SUM(oi.qty * COALESCE(p_cost.computed_cost, p_cost.wc_cog_cost, 0)), 0) as cost_ht
         FROM product_family pf
         LEFT JOIN order_items oi ON (oi.product_id = pf.product_id OR oi.variation_id = pf.product_id)
         LEFT JOIN orders o ON o.wp_order_id = oi.wp_order_id
           AND o.post_status = ANY($2)
+        LEFT JOIN products p_cost ON p_cost.wp_product_id = COALESCE(NULLIF(oi.variation_id, 0), oi.product_id)
         GROUP BY pf.parent_id
       )
       SELECT
@@ -305,12 +309,13 @@ exports.getByName = async (req, res) => {
         COALESCE(SUM(oi.qty), 0)::int as qty_sold,
         COALESCE(SUM(oi.line_total), 0) + COALESCE(SUM(oi.line_tax), 0) as ca_ttc,
         COALESCE(SUM(oi.line_total), 0) as ca_ht,
-        COALESCE(SUM(oi.qty * COALESCE(oi.item_cost, 0)), 0) as cost_ht
+        COALESCE(SUM(oi.qty * COALESCE(p_cost.computed_cost, p_cost.wc_cog_cost, 0)), 0) as cost_ht
       FROM brand_products bp
       LEFT JOIN product_family pf ON pf.parent_id = bp.wp_product_id
       LEFT JOIN order_items oi ON (oi.product_id = pf.product_id OR oi.variation_id = pf.product_id)
       LEFT JOIN orders o ON o.wp_order_id = oi.wp_order_id
         AND o.post_status = ANY($2)
+      LEFT JOIN products p_cost ON p_cost.wp_product_id = COALESCE(NULLIF(oi.variation_id, 0), oi.product_id)
     `;
 
     const globalStatsResult = await pool.query(globalStatsQuery, [brandName, VALID_ORDER_STATUSES]);
@@ -394,11 +399,12 @@ exports.getSubBrandByName = async (req, res) => {
           SUM(oi.qty)::int as qty_sold,
           COALESCE(SUM(oi.line_total), 0) + COALESCE(SUM(oi.line_tax), 0) as ca_ttc,
           COALESCE(SUM(oi.line_total), 0) as ca_ht,
-          COALESCE(SUM(oi.qty * COALESCE(oi.item_cost, 0)), 0) as cost_ht
+          COALESCE(SUM(oi.qty * COALESCE(p_cost.computed_cost, p_cost.wc_cog_cost, 0)), 0) as cost_ht
         FROM product_family pf
         LEFT JOIN order_items oi ON (oi.product_id = pf.product_id OR oi.variation_id = pf.product_id)
         LEFT JOIN orders o ON o.wp_order_id = oi.wp_order_id
           AND o.post_status = ANY($2)
+        LEFT JOIN products p_cost ON p_cost.wp_product_id = COALESCE(NULLIF(oi.variation_id, 0), oi.product_id)
         GROUP BY pf.parent_id
       )
       SELECT
@@ -457,12 +463,13 @@ exports.getSubBrandByName = async (req, res) => {
         COALESCE(SUM(oi.qty), 0)::int as qty_sold,
         COALESCE(SUM(oi.line_total), 0) + COALESCE(SUM(oi.line_tax), 0) as ca_ttc,
         COALESCE(SUM(oi.line_total), 0) as ca_ht,
-        COALESCE(SUM(oi.qty * COALESCE(oi.item_cost, 0)), 0) as cost_ht
+        COALESCE(SUM(oi.qty * COALESCE(p_cost.computed_cost, p_cost.wc_cog_cost, 0)), 0) as cost_ht
       FROM sub_brand_products sbp
       LEFT JOIN product_family pf ON pf.parent_id = sbp.wp_product_id
       LEFT JOIN order_items oi ON (oi.product_id = pf.product_id OR oi.variation_id = pf.product_id)
       LEFT JOIN orders o ON o.wp_order_id = oi.wp_order_id
         AND o.post_status = ANY($2)
+      LEFT JOIN products p_cost ON p_cost.wp_product_id = COALESCE(NULLIF(oi.variation_id, 0), oi.product_id)
     `;
 
     const globalStatsResult = await pool.query(globalStatsQuery, [subBrandName, VALID_ORDER_STATUSES]);
