@@ -23,6 +23,7 @@ import SubCategoryDetail from './pages/SubCategoryDetail';
 import ShippingSettings from './pages/ShippingSettings';
 import CatalogApp from './pages/CatalogApp';
 import CatalogProductDetail from './pages/CatalogProductDetail';
+import PackingApp from './pages/PackingApp';
 import PrivateRoute from './components/PrivateRoute';
 
 function App() {
@@ -198,6 +199,14 @@ function App() {
             element={
               <PrivateRoute>
                 <CategoryDetail />
+              </PrivateRoute>
+            }
+          />
+          <Route
+            path="/packing"
+            element={
+              <PrivateRoute>
+                <PackingApp />
               </PrivateRoute>
             }
           />

@@ -22,7 +22,8 @@ const SettingsApp = () => {
     { key: 'emails', label: 'Envoi d\'Emails' },
     { key: 'stats', label: 'Statistiques WooCommerce' },
     { key: 'purchases', label: 'Gestion d\'achat' },
-    { key: 'catalog', label: 'Produits' }
+    { key: 'catalog', label: 'Produits' },
+    { key: 'packing', label: 'Packing', accessOnly: true }
   ];
 
   useEffect(() => {
@@ -217,10 +218,14 @@ const SettingsApp = () => {
               <th></th>
               <th></th>
               {APPS.map(app => (
-                <>
-                  <th key={`${app.key}-read`} className="sub-header">Lecture</th>
-                  <th key={`${app.key}-write`} className="sub-header">Écriture</th>
-                </>
+                app.accessOnly ? (
+                  <th key={`${app.key}-access`} className="sub-header" colSpan="2">Accès</th>
+                ) : (
+                  <>
+                    <th key={`${app.key}-read`} className="sub-header">Lecture</th>
+                    <th key={`${app.key}-write`} className="sub-header">Écriture</th>
+                  </>
+                )
               ))}
               <th></th>
             </tr>
@@ -243,24 +248,44 @@ const SettingsApp = () => {
                     />
                   </td>
                   {APPS.map(app => (
-                    <>
-                      <td key={`${app.key}-read`} className="permissions-cell">
+                    app.accessOnly ? (
+                      <td key={`${app.key}-access`} className="permissions-cell" colSpan="2" style={{ textAlign: 'center' }}>
                         <input
                           type="checkbox"
                           checked={user.permissions[app.key]?.read || false}
-                          onChange={(e) => handlePermissionChange(user.id, app.key, 'read', e.target.checked)}
+                          onChange={(e) => {
+                            const val = e.target.checked;
+                            setUsers(prev => prev.map(u => u.id === user.id ? {
+                              ...u,
+                              permissions: {
+                                ...u.permissions,
+                                [app.key]: { read: val, write: val }
+                              }
+                            } : u));
+                          }}
                           disabled={isSuperAdmin}
                         />
                       </td>
-                      <td key={`${app.key}-write`} className="permissions-cell">
-                        <input
-                          type="checkbox"
-                          checked={user.permissions[app.key]?.write || false}
-                          onChange={(e) => handlePermissionChange(user.id, app.key, 'write', e.target.checked)}
-                          disabled={isSuperAdmin}
-                        />
-                      </td>
-                    </>
+                    ) : (
+                      <>
+                        <td key={`${app.key}-read`} className="permissions-cell">
+                          <input
+                            type="checkbox"
+                            checked={user.permissions[app.key]?.read || false}
+                            onChange={(e) => handlePermissionChange(user.id, app.key, 'read', e.target.checked)}
+                            disabled={isSuperAdmin}
+                          />
+                        </td>
+                        <td key={`${app.key}-write`} className="permissions-cell">
+                          <input
+                            type="checkbox"
+                            checked={user.permissions[app.key]?.write || false}
+                            onChange={(e) => handlePermissionChange(user.id, app.key, 'write', e.target.checked)}
+                            disabled={isSuperAdmin}
+                          />
+                        </td>
+                      </>
+                    )
                   ))}
                   <td className="actions-cell">
                     <button

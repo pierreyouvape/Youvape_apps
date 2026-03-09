@@ -212,6 +212,31 @@ const Home = () => {
                   <span>Gestion d'achat</span>
                 </Link>
               )}
+              {hasAccess('packing') && (
+                <Link
+                  to="/packing"
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '10px',
+                    padding: '20px 30px',
+                    backgroundColor: '#6366f1',
+                    color: 'white',
+                    borderRadius: '8px',
+                    cursor: 'pointer',
+                    fontSize: '18px',
+                    border: 'none',
+                    boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
+                    transition: 'transform 0.2s',
+                    textDecoration: 'none',
+                  }}
+                  onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.05)'}
+                  onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
+                >
+                  <span style={{ fontSize: '28px' }}>📋</span>
+                  <span>Packing</span>
+                </Link>
+              )}
               {hasAccess('catalog') && (
                 <Link
                   to="/catalog"
