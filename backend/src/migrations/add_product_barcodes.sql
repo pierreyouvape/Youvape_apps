@@ -6,6 +6,7 @@ CREATE TABLE IF NOT EXISTS product_barcodes (
     product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
     barcode VARCHAR(50) NOT NULL,
     type VARCHAR(10) NOT NULL CHECK (type IN ('unit', 'pack')),
+    quantity INTEGER DEFAULT NULL,
     created_at TIMESTAMP DEFAULT NOW(),
     UNIQUE(product_id, barcode)
 );
