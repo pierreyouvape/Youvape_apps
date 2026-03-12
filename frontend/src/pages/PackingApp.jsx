@@ -67,11 +67,13 @@ const PackingApp = () => {
   const itemsRef = useRef([]);
   const loadingRef = useRef(false);
   const scanBufferRef = useRef('');
+  const isCompleteRef = useRef(false);
 
   useEffect(() => { orderRef.current = order; }, [order]);
   useEffect(() => { itemsRef.current = items; }, [items]);
   useEffect(() => { loadingRef.current = loading; }, [loading]);
   useEffect(() => { scanBufferRef.current = scanBuffer; }, [scanBuffer]);
+  useEffect(() => { isCompleteRef.current = isComplete; }, [isComplete]);
 
   // Télécharger le PDF depuis base64
   const downloadPdf = useCallback((base64, orderNumber) => {
@@ -243,7 +245,9 @@ const PackingApp = () => {
 
         if (!value) return;
 
-        if (!orderRef.current) {
+        if (!orderRef.current || isCompleteRef.current) {
+          // Pas de commande ou commande terminée → charger une nouvelle commande
+          handleReset();
           loadOrder(value);
         } else {
           handleScan(value);
@@ -267,7 +271,7 @@ const PackingApp = () => {
       window.removeEventListener('keydown', handleKeyDown);
       clearTimeout(timeout);
     };
-  }, [loadOrder, handleScan]);
+  }, [loadOrder, handleScan, handleReset]);
 
   // Submit du champ manuel
   const handleManualSubmit = (e) => {
@@ -283,7 +287,7 @@ const PackingApp = () => {
   };
 
   // Réinitialiser
-  const handleReset = () => {
+  const handleReset = useCallback(() => {
     setOrder(null);
     setItems([]);
     setError(null);
@@ -293,9 +297,9 @@ const PackingApp = () => {
     setLabelData(null);
     setLabelError(null);
     setLabelLoading(false);
-  };
+  }, []);
 
-  // Incrémenter manuellement
+  // Incrémenter manuellement (+1)
   const handleManualIncrement = (index) => {
     setItems(prev => {
       const updated = [...prev];
@@ -310,13 +314,41 @@ const PackingApp = () => {
     });
   };
 
-  // Décrémenter manuellement
+  // Incrémenter tout (++)
+  const handleManualIncrementAll = (index) => {
+    setItems(prev => {
+      const updated = [...prev];
+      const item = { ...updated[index] };
+      if (item.scanned < item.qty) {
+        item.scanned = item.qty;
+        updated[index] = item;
+        playSound('ok');
+        setMessage(`${item.name} - ${item.scanned}/${item.qty}`);
+      }
+      return updated;
+    });
+  };
+
+  // Décrémenter manuellement (-1)
   const handleManualDecrement = (index) => {
     setItems(prev => {
       const updated = [...prev];
       const item = { ...updated[index] };
       if (item.scanned > 0) {
         item.scanned -= 1;
+        updated[index] = item;
+      }
+      return updated;
+    });
+  };
+
+  // Décrémenter tout (--)
+  const handleManualDecrementAll = (index) => {
+    setItems(prev => {
+      const updated = [...prev];
+      const item = { ...updated[index] };
+      if (item.scanned > 0) {
+        item.scanned = 0;
         updated[index] = item;
       }
       return updated;
@@ -506,6 +538,9 @@ const PackingApp = () => {
                   <p style={{ margin: '5px 0 0', color: '#666', fontSize: '14px' }}>
                     {order.total} EUR
                   </p>
+                  <p style={{ margin: '3px 0 0', color: '#999', fontSize: '13px' }}>
+                    {(items.reduce((sum, item) => sum + (item.weight || 0) * item.qty, 0) * 1000).toFixed(0)}g
+                  </p>
                 </div>
               </div>
             </div>
@@ -571,7 +606,7 @@ const PackingApp = () => {
                     <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: '14px', color: '#666' }}>Article</th>
                     <th style={{ padding: '12px 16px', textAlign: 'center', fontSize: '14px', color: '#666', width: '80px' }}>SKU</th>
                     <th style={{ padding: '12px 16px', textAlign: 'center', fontSize: '14px', color: '#666', width: '120px' }}>Progression</th>
-                    <th style={{ padding: '12px 16px', textAlign: 'center', fontSize: '14px', color: '#666', width: '100px' }}>Manuel</th>
+                    <th style={{ padding: '12px 16px', textAlign: 'center', fontSize: '14px', color: '#666', width: '180px' }}>Manuel</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -599,16 +634,34 @@ const PackingApp = () => {
                         </span>
                       </td>
                       <td style={{ padding: '14px 16px', textAlign: 'center' }}>
-                        <div style={{ display: 'flex', justifyContent: 'center', gap: '6px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'center', gap: '4px' }}>
+                          <button
+                            onClick={() => handleManualDecrementAll(index)}
+                            disabled={item.scanned === 0}
+                            style={{
+                              width: '36px',
+                              height: '32px',
+                              borderRadius: '6px',
+                              border: 'none',
+                              backgroundColor: item.scanned === 0 ? '#e9ecef' : '#f8d7da',
+                              color: item.scanned === 0 ? '#adb5bd' : 'white',
+                              cursor: item.scanned === 0 ? 'default' : 'pointer',
+                              fontSize: '13px',
+                              fontWeight: '700'
+                            }}
+                          >
+                            --
+                          </button>
                           <button
                             onClick={() => handleManualDecrement(index)}
                             disabled={item.scanned === 0}
                             style={{
-                              width: '32px',
+                              width: '36px',
                               height: '32px',
                               borderRadius: '6px',
-                              border: '1px solid #ccc',
-                              backgroundColor: item.scanned === 0 ? '#e9ecef' : 'white',
+                              border: 'none',
+                              backgroundColor: item.scanned === 0 ? '#e9ecef' : '#f8d7da',
+                              color: item.scanned === 0 ? '#adb5bd' : 'white',
                               cursor: item.scanned === 0 ? 'default' : 'pointer',
                               fontSize: '16px',
                               fontWeight: '700'
@@ -620,17 +673,35 @@ const PackingApp = () => {
                             onClick={() => handleManualIncrement(index)}
                             disabled={item.scanned >= item.qty}
                             style={{
-                              width: '32px',
+                              width: '36px',
                               height: '32px',
                               borderRadius: '6px',
-                              border: '1px solid #ccc',
-                              backgroundColor: item.scanned >= item.qty ? '#e9ecef' : 'white',
+                              border: 'none',
+                              backgroundColor: item.scanned >= item.qty ? '#e9ecef' : '#f8d7da',
+                              color: item.scanned >= item.qty ? '#adb5bd' : 'white',
                               cursor: item.scanned >= item.qty ? 'default' : 'pointer',
                               fontSize: '16px',
                               fontWeight: '700'
                             }}
                           >
                             +
+                          </button>
+                          <button
+                            onClick={() => handleManualIncrementAll(index)}
+                            disabled={item.scanned >= item.qty}
+                            style={{
+                              width: '36px',
+                              height: '32px',
+                              borderRadius: '6px',
+                              border: 'none',
+                              backgroundColor: item.scanned >= item.qty ? '#e9ecef' : '#f8d7da',
+                              color: item.scanned >= item.qty ? '#adb5bd' : 'white',
+                              cursor: item.scanned >= item.qty ? 'default' : 'pointer',
+                              fontSize: '16px',
+                              fontWeight: '700'
+                            }}
+                          >
+                            ++
                           </button>
                         </div>
                       </td>

@@ -42,7 +42,8 @@ const searchOrder = async (req, res) => {
         oi.qty,
         p.sku,
         p.post_title,
-        p.image_url
+        p.image_url,
+        p.weight
       FROM order_items oi
       LEFT JOIN products p ON p.wp_product_id = COALESCE(NULLIF(oi.variation_id, 0), oi.product_id)
       WHERE oi.wp_order_id = $1
@@ -67,6 +68,7 @@ const searchOrder = async (req, res) => {
         name: item.order_item_name || item.post_title,
         sku: item.sku,
         qty: item.qty,
+        weight: item.weight ? parseFloat(item.weight) : null,
         image_url: item.image_url,
         product_id: item.product_id,
         variation_id: item.variation_id,
