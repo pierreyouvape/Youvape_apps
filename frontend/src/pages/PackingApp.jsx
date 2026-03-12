@@ -605,8 +605,7 @@ const PackingApp = () => {
                   <tr style={{ backgroundColor: '#f8f9fa' }}>
                     <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: '14px', color: '#666' }}>Article</th>
                     <th style={{ padding: '12px 16px', textAlign: 'center', fontSize: '14px', color: '#666', width: '80px' }}>SKU</th>
-                    <th style={{ padding: '12px 16px', textAlign: 'center', fontSize: '14px', color: '#666', width: '120px' }}>Progression</th>
-                    <th style={{ padding: '12px 16px', textAlign: 'center', fontSize: '14px', color: '#666', width: '180px' }}>Manuel</th>
+                    <th style={{ padding: '12px 16px', textAlign: 'center', fontSize: '14px', color: '#666', width: '260px' }}>Quantite</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -625,16 +624,7 @@ const PackingApp = () => {
                         {item.sku || '-'}
                       </td>
                       <td style={{ padding: '14px 16px', textAlign: 'center' }}>
-                        <span style={{
-                          fontSize: '18px',
-                          fontWeight: '700',
-                          color: item.scanned >= item.qty ? '#155724' : item.scanned > 0 ? '#856404' : '#721c24'
-                        }}>
-                          {item.scanned}/{item.qty}
-                        </span>
-                      </td>
-                      <td style={{ padding: '14px 16px', textAlign: 'center' }}>
-                        <div style={{ display: 'flex', justifyContent: 'center', gap: '4px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '4px' }}>
                           <button
                             onClick={() => handleManualDecrementAll(index)}
                             disabled={item.scanned === 0}
@@ -643,8 +633,8 @@ const PackingApp = () => {
                               height: '32px',
                               borderRadius: '6px',
                               border: 'none',
-                              backgroundColor: item.scanned === 0 ? '#e9ecef' : '#f8d7da',
-                              color: item.scanned === 0 ? '#adb5bd' : 'white',
+                              backgroundColor: '#dee2e6',
+                              color: item.scanned === 0 ? '#adb5bd' : '#dc3545',
                               cursor: item.scanned === 0 ? 'default' : 'pointer',
                               fontSize: '13px',
                               fontWeight: '700'
@@ -660,8 +650,8 @@ const PackingApp = () => {
                               height: '32px',
                               borderRadius: '6px',
                               border: 'none',
-                              backgroundColor: item.scanned === 0 ? '#e9ecef' : '#f8d7da',
-                              color: item.scanned === 0 ? '#adb5bd' : 'white',
+                              backgroundColor: '#dee2e6',
+                              color: item.scanned === 0 ? '#adb5bd' : '#dc3545',
                               cursor: item.scanned === 0 ? 'default' : 'pointer',
                               fontSize: '16px',
                               fontWeight: '700'
@@ -669,6 +659,15 @@ const PackingApp = () => {
                           >
                             -
                           </button>
+                          <span style={{
+                            fontSize: '18px',
+                            fontWeight: '700',
+                            minWidth: '50px',
+                            textAlign: 'center',
+                            color: item.scanned >= item.qty ? '#155724' : item.scanned > 0 ? '#856404' : '#721c24'
+                          }}>
+                            {item.scanned}/{item.qty}
+                          </span>
                           <button
                             onClick={() => handleManualIncrement(index)}
                             disabled={item.scanned >= item.qty}
@@ -677,8 +676,8 @@ const PackingApp = () => {
                               height: '32px',
                               borderRadius: '6px',
                               border: 'none',
-                              backgroundColor: item.scanned >= item.qty ? '#e9ecef' : '#f8d7da',
-                              color: item.scanned >= item.qty ? '#adb5bd' : 'white',
+                              backgroundColor: '#dee2e6',
+                              color: item.scanned >= item.qty ? '#adb5bd' : '#28a745',
                               cursor: item.scanned >= item.qty ? 'default' : 'pointer',
                               fontSize: '16px',
                               fontWeight: '700'
@@ -694,8 +693,8 @@ const PackingApp = () => {
                               height: '32px',
                               borderRadius: '6px',
                               border: 'none',
-                              backgroundColor: item.scanned >= item.qty ? '#e9ecef' : '#f8d7da',
-                              color: item.scanned >= item.qty ? '#adb5bd' : 'white',
+                              backgroundColor: '#dee2e6',
+                              color: item.scanned >= item.qty ? '#adb5bd' : '#28a745',
                               cursor: item.scanned >= item.qty ? 'default' : 'pointer',
                               fontSize: '16px',
                               fontWeight: '700'
