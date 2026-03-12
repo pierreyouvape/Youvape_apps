@@ -228,6 +228,19 @@ const PackingApp = () => {
     }
   }, [token]);
 
+  // Réinitialiser
+  const handleReset = useCallback(() => {
+    setOrder(null);
+    setItems([]);
+    setError(null);
+    setMessage(null);
+    setIsComplete(false);
+    setManualInput('');
+    setLabelData(null);
+    setLabelError(null);
+    setLabelLoading(false);
+  }, []);
+
   // Listener clavier global — capture les scans sans champ de saisie
   useEffect(() => {
     let buffer = '';
@@ -285,19 +298,6 @@ const PackingApp = () => {
       handleScan(value);
     }
   };
-
-  // Réinitialiser
-  const handleReset = useCallback(() => {
-    setOrder(null);
-    setItems([]);
-    setError(null);
-    setMessage(null);
-    setIsComplete(false);
-    setManualInput('');
-    setLabelData(null);
-    setLabelError(null);
-    setLabelLoading(false);
-  }, []);
 
   // Incrémenter manuellement (+1)
   const handleManualIncrement = (index) => {
