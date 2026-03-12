@@ -1,5 +1,6 @@
 const pool = require('../config/database');
 const https = require('https');
+const zlib = require('zlib');
 
 // Cache token en mémoire
 let tokenCache = { token: null, expiresAt: 0 };
@@ -44,7 +45,7 @@ const getToken = async () => {
   return data.access_token;
 };
 
-// Helper HTTP request (node natif, pas de dépendance)
+// Helper HTTP request avec support gzip
 const httpRequest = (url, options) => {
   return new Promise((resolve, reject) => {
     const urlObj = new URL(url);
@@ -56,27 +57,65 @@ const httpRequest = (url, options) => {
       headers: options.headers || {}
     };
 
+    console.log(`[LaPoste HTTP] ${reqOptions.method} ${url}`);
+
     const req = https.request(reqOptions, (res) => {
-      let body = '';
-      res.on('data', chunk => body += chunk);
+      const encoding = res.headers['content-encoding'];
+      console.log(`[LaPoste HTTP] Status: ${res.statusCode}, Content-Encoding: ${encoding || 'none'}, Content-Type: ${res.headers['content-type'] || 'unknown'}`);
+
+      const chunks = [];
+      res.on('data', chunk => chunks.push(chunk));
       res.on('end', () => {
-        try {
-          const parsed = JSON.parse(body);
-          if (res.statusCode >= 400) {
-            const err = new Error(`HTTP ${res.statusCode}: ${JSON.stringify(parsed)}`);
-            err.statusCode = res.statusCode;
-            err.body = parsed;
-            reject(err);
-          } else {
-            resolve(parsed);
+        let buffer = Buffer.concat(chunks);
+
+        const processBody = (bodyBuffer) => {
+          const bodyStr = bodyBuffer.toString('utf8');
+          try {
+            const parsed = JSON.parse(bodyStr);
+            if (res.statusCode >= 400) {
+              console.error(`[LaPoste HTTP] Erreur ${res.statusCode}:`, JSON.stringify(parsed).substring(0, 500));
+              const err = new Error(`HTTP ${res.statusCode}: ${JSON.stringify(parsed)}`);
+              err.statusCode = res.statusCode;
+              err.body = parsed;
+              reject(err);
+            } else {
+              console.log(`[LaPoste HTTP] Réponse OK, taille: ${bodyStr.length} chars`);
+              resolve(parsed);
+            }
+          } catch (e) {
+            console.error(`[LaPoste HTTP] Parse JSON échoué, taille buffer: ${bodyBuffer.length}, début: ${bodyStr.substring(0, 100)}`);
+            reject(new Error(`Réponse non-JSON (HTTP ${res.statusCode}): ${bodyStr.substring(0, 200)}`));
           }
-        } catch (e) {
-          reject(new Error(`Réponse non-JSON (HTTP ${res.statusCode}): ${body.substring(0, 500)}`));
+        };
+
+        if (encoding === 'gzip') {
+          zlib.gunzip(buffer, (err, decoded) => {
+            if (err) {
+              console.error('[LaPoste HTTP] Erreur décompression gzip:', err.message);
+              reject(new Error('Erreur décompression gzip'));
+            } else {
+              processBody(decoded);
+            }
+          });
+        } else if (encoding === 'deflate') {
+          zlib.inflate(buffer, (err, decoded) => {
+            if (err) {
+              console.error('[LaPoste HTTP] Erreur décompression deflate:', err.message);
+              reject(new Error('Erreur décompression deflate'));
+            } else {
+              processBody(decoded);
+            }
+          });
+        } else {
+          processBody(buffer);
         }
       });
     });
 
-    req.on('error', reject);
+    req.on('error', (err) => {
+      console.error('[LaPoste HTTP] Erreur réseau:', err.message);
+      reject(err);
+    });
     req.setTimeout(30000, () => {
       req.destroy();
       reject(new Error('Timeout La Poste API'));
@@ -185,7 +224,9 @@ const generateLabel = async (req, res) => {
     };
 
     const jsonBody = JSON.stringify(payload);
-    console.log('[LaPoste] Appel API pour commande', orderNumber);
+    console.log('[LaPoste] Appel API pour commande', orderNumber, '— destinataire:',
+      `${order.shipping_first_name} ${order.shipping_last_name}`,
+      order.shipping_postcode, order.shipping_city);
 
     const data = await httpRequest(`${apiUrl}/orders`, {
       method: 'POST',
