@@ -192,8 +192,7 @@ const generateLabel = async (req, res) => {
       headers: {
         'Authorization': `Bearer ${token}`,
         'Content-Type': 'application/json',
-        'Accept': 'application/json',
-        'Accept-Encoding': 'gzip'
+        'Accept': 'application/json'
       },
       body: jsonBody
     });
