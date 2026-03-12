@@ -58,6 +58,9 @@ const PackingApp = () => {
   const [isComplete, setIsComplete] = useState(false);
   const [scanBuffer, setScanBuffer] = useState('');
   const [manualInput, setManualInput] = useState('');
+  const [labelLoading, setLabelLoading] = useState(false);
+  const [labelData, setLabelData] = useState(null); // { pdfBase64, trackingId, orderNumber }
+  const [labelError, setLabelError] = useState(null);
 
   // Refs pour accéder aux valeurs courantes dans le listener clavier
   const orderRef = useRef(null);
@@ -70,18 +73,62 @@ const PackingApp = () => {
   useEffect(() => { loadingRef.current = loading; }, [loading]);
   useEffect(() => { scanBufferRef.current = scanBuffer; }, [scanBuffer]);
 
-  // Vérifier si tout est scanné
+  // Télécharger le PDF depuis base64
+  const downloadPdf = useCallback((base64, orderNumber) => {
+    const byteCharacters = atob(base64);
+    const byteNumbers = new Array(byteCharacters.length);
+    for (let i = 0; i < byteCharacters.length; i++) {
+      byteNumbers[i] = byteCharacters.charCodeAt(i);
+    }
+    const byteArray = new Uint8Array(byteNumbers);
+    const blob = new Blob([byteArray], { type: 'application/pdf' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `LS-${orderNumber}.pdf`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }, []);
+
+  // Générer l'étiquette La Poste
+  const generateLabel = useCallback(async (orderNumber) => {
+    setLabelLoading(true);
+    setLabelError(null);
+    try {
+      const res = await axios.post(`${API_URL}/laposte/label/${orderNumber}`, {}, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const data = res.data;
+      setLabelData({ pdfBase64: data.pdfBase64, trackingId: data.trackingId, orderNumber: data.orderNumber });
+      downloadPdf(data.pdfBase64, orderNumber);
+      setMessage(`Etiquette generee — suivi : ${data.trackingId}`);
+    } catch (err) {
+      const detail = err.response?.data?.details || err.response?.data?.error || 'Erreur generation etiquette';
+      setLabelError(typeof detail === 'string' ? detail : JSON.stringify(detail));
+      playSound('error');
+    } finally {
+      setLabelLoading(false);
+    }
+  }, [token, downloadPdf]);
+
+  // Vérifier si tout est scanné → appel auto étiquette
   useEffect(() => {
     if (items.length > 0 && items.every(item => item.scanned >= item.qty)) {
       if (!isComplete) {
         setIsComplete(true);
         playSound('complete');
-        setMessage('Commande complete !');
+        setMessage('Commande complete ! Generation etiquette...');
+        // Appel auto La Poste
+        if (orderRef.current) {
+          generateLabel(orderRef.current.wp_order_id);
+        }
       }
     } else {
       setIsComplete(false);
     }
-  }, [items]);
+  }, [items, isComplete, generateLabel]);
 
   // Charger une commande
   const loadOrder = useCallback(async (number) => {
@@ -243,6 +290,9 @@ const PackingApp = () => {
     setMessage(null);
     setIsComplete(false);
     setManualInput('');
+    setLabelData(null);
+    setLabelError(null);
+    setLabelLoading(false);
   };
 
   // Incrémenter manuellement
@@ -601,9 +651,49 @@ const PackingApp = () => {
                 textAlign: 'center'
               }}>
                 <h2 style={{ color: '#155724', margin: '0 0 10px' }}>Commande prete !</h2>
-                <p style={{ color: '#155724', margin: '0 0 20px', fontSize: '15px' }}>
-                  Tous les articles ont ete scannes. Generation d'etiquette a venir.
-                </p>
+
+                {labelLoading && (
+                  <p style={{ color: '#155724', margin: '0 0 15px', fontSize: '15px' }}>
+                    Generation de l'etiquette en cours...
+                  </p>
+                )}
+
+                {labelError && (
+                  <div style={{
+                    backgroundColor: '#f8d7da',
+                    color: '#721c24',
+                    padding: '10px 16px',
+                    borderRadius: '8px',
+                    margin: '0 0 15px',
+                    fontSize: '14px'
+                  }}>
+                    Erreur etiquette : {labelError}
+                  </div>
+                )}
+
+                {labelData && (
+                  <div style={{ margin: '0 0 15px' }}>
+                    <p style={{ color: '#155724', margin: '0 0 10px', fontSize: '15px' }}>
+                      N° suivi : <strong>{labelData.trackingId}</strong>
+                    </p>
+                    <button
+                      onClick={() => downloadPdf(labelData.pdfBase64, labelData.orderNumber)}
+                      style={{
+                        padding: '10px 24px',
+                        backgroundColor: '#28a745',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '8px',
+                        fontSize: '14px',
+                        cursor: 'pointer',
+                        marginRight: '10px'
+                      }}
+                    >
+                      Re-telecharger l'etiquette
+                    </button>
+                  </div>
+                )}
+
                 <button
                   onClick={handleReset}
                   style={{

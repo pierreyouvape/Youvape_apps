@@ -23,6 +23,7 @@ const paymentRoutes = require('./routes/paymentRoutes');
 const tariffRoutes = require('./routes/tariffRoutes');
 const purchasesRoutes = require('./routes/purchasesRoutes');
 const packingRoutes = require('./routes/packingRoutes');
+const laposteRoutes = require('./routes/laposteRoutes');
 const { setupCron, setupBmsCron, setupComputedCostCron } = require('./services/cronService');
 const rewardService = require('./services/rewardService');
 const emailService = require('./services/emailService');
@@ -63,6 +64,7 @@ app.use('/api/payment', paymentRoutes); // Payment methods configuration
 app.use('/api/tariffs', tariffRoutes); // Tariff zones and rates
 app.use('/api/purchases', purchasesRoutes); // Purchase management
 app.use('/api/packing', packingRoutes); // Packing / preparation colis
+app.use('/api/laposte', laposteRoutes); // La Poste - étiquettes Lettre Suivie
 
 // Start server
 app.listen(PORT, async () => {
