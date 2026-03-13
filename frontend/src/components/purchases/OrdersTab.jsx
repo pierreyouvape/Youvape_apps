@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { formatDate } from '../../utils/dateUtils';
-import { formatPrice } from '../../utils/formatNumber';
+import { formatPrice, formatInt } from '../../utils/formatNumber';
 
 const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:3000/api/auth').replace('/auth', '');
 
@@ -339,8 +339,8 @@ const OrdersTab = ({ token }) => {
                     </strong>
                   </td>
                   <td>{order.supplier_name}</td>
-                  <td className="text-center">{order.total_items}</td>
-                  <td className="text-center">{order.total_qty}</td>
+                  <td className="text-center">{formatInt(order.total_items)}</td>
+                  <td className="text-center">{formatInt(order.total_qty)}</td>
                   <td className="text-right">
                     {order.total_amount > 0 ? `${formatPrice(order.total_amount)} €` : '-'}
                   </td>
@@ -478,7 +478,7 @@ const OrdersTab = ({ token }) => {
                           )}
                         </td>
                         <td><code>{item.supplier_sku || item.product_sku || '-'}</code></td>
-                        <td className="text-right">{item.qty_ordered}</td>
+                        <td className="text-right">{formatInt(item.qty_ordered)}</td>
                         <td className="text-right">
                           {['shipped', 'partial'].includes(selectedOrder.status) ? (
                             <input

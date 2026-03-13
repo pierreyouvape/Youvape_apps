@@ -347,7 +347,7 @@ const ReportsTab = () => {
                   {data.breakdown.map((row, idx) => (
                     <tr key={idx} style={{ borderBottom: '1px solid #e9ecef' }}>
                       <td style={{ padding: '12px 15px', color: '#333', fontSize: '13px' }}>{formatFullDate(row.date)}</td>
-                      <td style={{ padding: '12px 15px', textAlign: 'right', color: '#007bff', fontSize: '13px', fontWeight: '600' }}>{row.orders_count}</td>
+                      <td style={{ padding: '12px 15px', textAlign: 'right', color: '#007bff', fontSize: '13px', fontWeight: '600' }}>{(row.orders_count || 0).toLocaleString('fr-FR')}</td>
                       <td style={{ padding: '12px 15px', textAlign: 'right', color: '#333', fontSize: '13px' }}>{formatPrice(row.gross_sales)}</td>
                       <td style={{ padding: '12px 15px', textAlign: 'right', color: '#666', fontSize: '13px' }}>{formatPrice(row.taxes)}</td>
                       <td style={{ padding: '12px 15px', textAlign: 'right', color: '#28a745', fontSize: '13px', fontWeight: '600' }}>{formatPrice(parseFloat(row.gross_sales) - parseFloat(row.taxes))}</td>
@@ -546,7 +546,7 @@ const ReportsTab = () => {
                   {profitData.breakdown.map((row, idx) => (
                     <tr key={idx} style={{ borderBottom: '1px solid #e9ecef' }}>
                       <td style={{ padding: '12px 15px', color: '#333', fontSize: '13px' }}>{formatFullDate(row.date)}</td>
-                      <td style={{ padding: '12px 15px', textAlign: 'right', color: '#007bff', fontSize: '13px', fontWeight: '600' }}>{row.orders_count}</td>
+                      <td style={{ padding: '12px 15px', textAlign: 'right', color: '#007bff', fontSize: '13px', fontWeight: '600' }}>{(row.orders_count || 0).toLocaleString('fr-FR')}</td>
                       <td style={{ padding: '12px 15px', textAlign: 'right', color: '#333', fontSize: '13px' }}>{formatPrice(row.gross_sales)}</td>
                       <td style={{ padding: '12px 15px', textAlign: 'right', color: '#666', fontSize: '13px' }}>{formatPrice(row.taxes)}</td>
                       <td style={{ padding: '12px 15px', textAlign: 'right', color: '#dc3545', fontSize: '13px' }}>{formatPrice(row.refunds)}</td>
@@ -1405,7 +1405,7 @@ const ReportsTab = () => {
                       {byCountryData.countryDetails.topShipping.map((item, idx) => (
                         <tr key={idx} style={{ borderBottom: '1px solid #f0f0f0' }}>
                           <td style={{ padding: '10px 15px', color: '#333', fontSize: '12px' }}>{item.shipping_method}</td>
-                          <td style={{ padding: '10px 15px', textAlign: 'right', color: '#007bff', fontSize: '12px', fontWeight: '600' }}>{item.orders_count}</td>
+                          <td style={{ padding: '10px 15px', textAlign: 'right', color: '#007bff', fontSize: '12px', fontWeight: '600' }}>{(item.orders_count || 0).toLocaleString('fr-FR')}</td>
                           <td style={{ padding: '10px 15px', textAlign: 'right', color: '#6f42c1', fontSize: '12px' }}>{item.percentage}%</td>
                         </tr>
                       ))}
@@ -1430,7 +1430,7 @@ const ReportsTab = () => {
                       {byCountryData.countryDetails.topPayment.map((item, idx) => (
                         <tr key={idx} style={{ borderBottom: '1px solid #f0f0f0' }}>
                           <td style={{ padding: '10px 15px', color: '#333', fontSize: '12px' }}>{item.payment_method}</td>
-                          <td style={{ padding: '10px 15px', textAlign: 'right', color: '#007bff', fontSize: '12px', fontWeight: '600' }}>{item.orders_count}</td>
+                          <td style={{ padding: '10px 15px', textAlign: 'right', color: '#007bff', fontSize: '12px', fontWeight: '600' }}>{(item.orders_count || 0).toLocaleString('fr-FR')}</td>
                           <td style={{ padding: '10px 15px', textAlign: 'right', color: '#6f42c1', fontSize: '12px' }}>{item.percentage}%</td>
                         </tr>
                       ))}

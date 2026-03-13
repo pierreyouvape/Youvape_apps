@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import CopyButton from '../CopyButton';
 import { formatDate } from '../../utils/dateUtils';
-import { formatPriceEur } from '../../utils/formatNumber';
+import { formatPriceEur, formatInt } from '../../utils/formatNumber';
 
 const API_BASE_URL = 'http://54.37.156.233:3000/api';
 
@@ -439,7 +439,7 @@ const OrdersStatsTab = () => {
                           </span>
                         </td>
                         <td style={{ padding: '12px', fontSize: '13px' }}>{order.shipping_method || '-'}</td>
-                        <td style={{ padding: '12px', fontSize: '14px', textAlign: 'center' }}>{order.items_count}</td>
+                        <td style={{ padding: '12px', fontSize: '14px', textAlign: 'center' }}>{formatInt(order.items_count)}</td>
                         <td style={{ padding: '12px', fontSize: '14px', textAlign: 'center' }}>
                           {order.has_review && <span title="Avis laisse">⭐</span>}
                         </td>

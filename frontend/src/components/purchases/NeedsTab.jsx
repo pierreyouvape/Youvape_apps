@@ -200,6 +200,11 @@ const computeProductNeeds = (product, periodDays, coverageMonths, isCustomPeriod
   };
 };
 
+// ==================== FORMATAGE ====================
+
+const fmtInt = (v) => (parseInt(v) || 0).toLocaleString('fr-FR');
+const fmtNum = (v) => (parseFloat(v) || 0).toLocaleString('fr-FR', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+
 // ==================== COMPOSANTS UI ====================
 
 const cycleTriState = (current) => {
@@ -658,8 +663,8 @@ const NeedsTab = ({ token }) => {
             alignItems: 'center'
           }}>
             <span>
-              <strong>{selectedCount}</strong> produit(s) sélectionné(s) —
-              <strong> {selectedTotal}</strong> unités au total
+              <strong>{fmtInt(selectedCount)}</strong> produit(s) sélectionné(s) —
+              <strong> {fmtInt(selectedTotal)}</strong> unités au total
             </span>
             <button
               className="btn btn-primary"
@@ -735,24 +740,24 @@ const NeedsTab = ({ token }) => {
                     <td className="text-right">{renderStock(product.stock)}</td>
                     <td className="text-right">
                       {product.incoming_qty > 0 ? (
-                        <span style={{ color: '#3b82f6' }}>+{product.incoming_qty}</span>
+                        <span style={{ color: '#3b82f6' }}>+{fmtInt(product.incoming_qty)}</span>
                       ) : '-'}
                     </td>
-                    <td className="text-right">{product.sales_in_period || 0}</td>
-                    <td className="text-right">{product.avg_monthly_sales || 0}</td>
+                    <td className="text-right">{fmtInt(product.sales_in_period)}</td>
+                    <td className="text-right">{fmtNum(product.avg_monthly_sales)}</td>
                     <td className="text-center">
                       {renderTrend(product.trend_direction, product.trend_coefficient)}
                     </td>
-                    <td className="text-right">{product.theoretical_need || 0}</td>
-                    <td className="text-right">{product.supposed_need || 0}</td>
+                    <td className="text-right">{fmtInt(product.theoretical_need)}</td>
+                    <td className="text-right">{fmtInt(product.supposed_need)}</td>
                     <td className="text-right">
                       {product.theoretical_proposal > 0 ? (
-                        <span style={{ color: '#f59e0b', fontWeight: 600 }}>{product.theoretical_proposal}</span>
+                        <span style={{ color: '#f59e0b', fontWeight: 600 }}>{fmtInt(product.theoretical_proposal)}</span>
                       ) : '-'}
                     </td>
                     <td className="text-right">
                       {product.supposed_proposal > 0 ? (
-                        <span style={{ color: '#8b5cf6', fontWeight: 600 }}>{product.supposed_proposal}</span>
+                        <span style={{ color: '#8b5cf6', fontWeight: 600 }}>{fmtInt(product.supposed_proposal)}</span>
                       ) : '-'}
                     </td>
                     <td className="text-right">

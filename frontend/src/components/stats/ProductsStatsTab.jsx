@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import CopyButton from '../CopyButton';
-import { formatPriceEur } from '../../utils/formatNumber';
+import { formatPriceEur, formatInt } from '../../utils/formatNumber';
 
 const API_BASE_URL = 'http://54.37.156.233:3000/api';
 
@@ -323,7 +323,7 @@ const ProductsStatsTab = () => {
       <div style={{ marginBottom: '30px' }}>
         <div style={{ backgroundColor: 'white', padding: '20px', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)', display: 'inline-block' }}>
           <p style={{ fontSize: '14px', color: '#6c757d', margin: '0 0 10px 0' }}>Total produits</p>
-          <p style={{ fontSize: '28px', fontWeight: 'bold', color: '#333', margin: 0 }}>{totalCount}</p>
+          <p style={{ fontSize: '28px', fontWeight: 'bold', color: '#333', margin: 0 }}>{formatInt(totalCount)}</p>
         </div>
       </div>
 
@@ -422,7 +422,7 @@ const ProductsStatsTab = () => {
                             {product.stock}
                           </span>
                         </td>
-                        <td style={{ padding: '15px', fontSize: '14px', fontWeight: 'bold' }}>{product.qty_sold}</td>
+                        <td style={{ padding: '15px', fontSize: '14px', fontWeight: 'bold' }}>{formatInt(product.qty_sold)}</td>
                         <td style={{ padding: '15px', fontSize: '14px' }}>{formatPrice(product.ca_ttc)}</td>
                         <td style={{ padding: '15px', fontSize: '14px' }}>{formatPrice(product.ca_ht)}</td>
                         <td style={{ padding: '15px', fontSize: '14px', color: '#dc3545' }}>{formatPrice(product.cost_ht)}</td>
@@ -466,7 +466,7 @@ const ProductsStatsTab = () => {
                               {variation.stock}
                             </span>
                           </td>
-                          <td style={{ padding: '10px 15px', fontSize: '13px' }}>{variation.qty_sold}</td>
+                          <td style={{ padding: '10px 15px', fontSize: '13px' }}>{formatInt(variation.qty_sold)}</td>
                           <td style={{ padding: '10px 15px', fontSize: '13px' }}>{formatPrice(variation.ca_ttc)}</td>
                           <td style={{ padding: '10px 15px', fontSize: '13px' }}>{formatPrice(variation.ca_ht)}</td>
                           <td style={{ padding: '10px 15px', fontSize: '13px', color: '#dc3545' }}>{formatPrice(variation.cost_ht)}</td>

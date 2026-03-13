@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { getCountryLabel } from '../../utils/countries';
-import { formatPriceEur, formatPrice } from '../../utils/formatNumber';
+import { formatPriceEur, formatPrice, formatInt } from '../../utils/formatNumber';
 
 const API_BASE_URL = 'http://54.37.156.233:3000/api';
 
@@ -189,7 +189,7 @@ const CustomersStatsTab = () => {
       <div style={{ marginBottom: '30px' }}>
         <div style={{ backgroundColor: 'white', padding: '20px', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)', display: 'inline-block' }}>
           <p style={{ fontSize: '14px', color: '#6c757d', margin: '0 0 10px 0' }}>Total clients</p>
-          <p style={{ fontSize: '28px', fontWeight: 'bold', color: '#333', margin: 0 }}>{totalCount}</p>
+          <p style={{ fontSize: '28px', fontWeight: 'bold', color: '#333', margin: 0 }}>{formatInt(totalCount)}</p>
         </div>
       </div>
 
