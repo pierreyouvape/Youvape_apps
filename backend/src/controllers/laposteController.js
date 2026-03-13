@@ -2,6 +2,8 @@ const pool = require('../config/database');
 const https = require('https');
 const zlib = require('zlib');
 const { PDFDocument, StandardFonts } = require('pdf-lib');
+const bmsApiModel = require('../models/bmsApiModel');
+const { sendAlert } = require('../services/alertService');
 
 // Cache token en mémoire
 let tokenCache = { token: null, expiresAt: 0 };
@@ -277,6 +279,25 @@ const generateLabel = async (req, res) => {
       `INSERT INTO laposte_labels (order_number, tracking_id, laposte_order_id) VALUES ($1, $2, $3)`,
       [orderNumber, trackingId, orderId]
     );
+
+    // Confirmer l'expédition dans BMS (non bloquant)
+    if (trackingId) {
+      try {
+        await bmsApiModel.apiCall(`/sales/order/${orderNumber}/ship?ref=true`, 'POST', {
+          tracking: {
+            title: 'La poste - Courrier suivi (port payé)',
+            tracking_number: trackingId
+          }
+        });
+        console.log('[BMS] Expédition confirmée pour commande', orderNumber, 'tracking:', trackingId);
+      } catch (bmsError) {
+        console.error('[BMS] Erreur confirmation expédition commande', orderNumber, ':', bmsError.message);
+        sendAlert(
+          `Echec confirmation BMS - Commande ${orderNumber}`,
+          `La commande ${orderNumber} a bien recu son etiquette La Poste (tracking: ${trackingId}) mais la confirmation d'expedition dans BMS a echoue.\n\nErreur: ${bmsError.message}\n\nAction requise: confirmer manuellement l'expedition dans BMS.`
+        );
+      }
+    }
 
     res.json({
       success: true,

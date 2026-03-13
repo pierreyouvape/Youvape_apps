@@ -573,8 +573,11 @@ const PackingApp = () => {
                   <h3 style={{ margin: '0 0 15px', color: '#333' }}>
                     Annuler l'etiquette #{cancelConfirm.order_number} ?
                   </h3>
-                  <p style={{ color: '#666', margin: '0 0 25px', fontSize: '14px' }}>
+                  <p style={{ color: '#666', margin: '0 0 15px', fontSize: '14px' }}>
                     Etes-vous sur de vouloir annuler cette etiquette ? Cette action est definitive.
+                  </p>
+                  <p style={{ color: '#dc3545', margin: '0 0 25px', fontSize: '13px', fontWeight: 'bold' }}>
+                    Attention : il faut aussi annuler l'expedition manuellement dans BMS.
                   </p>
                   <div style={{ display: 'flex', gap: '10px', justifyContent: 'center' }}>
                     <button
