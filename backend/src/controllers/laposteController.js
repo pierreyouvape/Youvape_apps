@@ -272,6 +272,12 @@ const generateLabel = async (req, res) => {
 
     console.log('[LaPoste] Étiquette générée — orderId:', orderId, 'tracking:', trackingId);
 
+    // Sauvegarder en BDD
+    await pool.query(
+      `INSERT INTO laposte_labels (order_number, tracking_id, laposte_order_id) VALUES ($1, $2, $3)`,
+      [orderNumber, trackingId, orderId]
+    );
+
     res.json({
       success: true,
       orderId,
@@ -295,6 +301,100 @@ const generateLabel = async (req, res) => {
   }
 };
 
+// Lister les étiquettes
+const listLabels = async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT id, order_number, tracking_id, laposte_order_id, status, created_at, cancelled_at
+       FROM laposte_labels
+       ORDER BY created_at DESC
+       LIMIT 100`
+    );
+
+    const now = new Date();
+    const labels = result.rows.map(label => {
+      const createdAt = new Date(label.created_at);
+      const daysDiff = (now - createdAt) / (1000 * 60 * 60 * 24);
+      const sameMonth = createdAt.getMonth() === now.getMonth() && createdAt.getFullYear() === now.getFullYear();
+      const cancellable = label.status === 'active' && daysDiff <= 7 && sameMonth;
+
+      return { ...label, cancellable };
+    });
+
+    res.json(labels);
+  } catch (error) {
+    console.error('[LaPoste] Erreur listLabels:', error.message);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+};
+
+// Annuler une étiquette
+const cancelLabel = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // Récupérer l'étiquette
+    const labelResult = await pool.query(
+      'SELECT * FROM laposte_labels WHERE id = $1', [id]
+    );
+
+    if (labelResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Étiquette introuvable' });
+    }
+
+    const label = labelResult.rows[0];
+
+    if (label.status !== 'active') {
+      return res.status(400).json({ error: 'Étiquette déjà annulée' });
+    }
+
+    // Vérifier les conditions d'annulation
+    const now = new Date();
+    const createdAt = new Date(label.created_at);
+    const daysDiff = (now - createdAt) / (1000 * 60 * 60 * 24);
+    const sameMonth = createdAt.getMonth() === now.getMonth() && createdAt.getFullYear() === now.getFullYear();
+
+    if (daysDiff > 7 || !sameMonth) {
+      return res.status(400).json({ error: 'Délai d\'annulation dépassé (7 jours max, même mois)' });
+    }
+
+    // Appeler l'API La Poste pour annuler
+    const apiUrl = await getConfig('laposte_api_url');
+    const token = await getToken();
+
+    const cancelPayload = JSON.stringify({ orderId: label.laposte_order_id });
+
+    const data = await httpRequest(`${apiUrl}/orders/cancel`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+      },
+      body: cancelPayload
+    });
+
+    console.log('[LaPoste] Annulation demandée pour orderId:', label.laposte_order_id, 'résultat:', JSON.stringify(data).substring(0, 300));
+
+    // Mettre à jour en BDD
+    await pool.query(
+      `UPDATE laposte_labels SET status = 'cancelled', cancelled_at = NOW() WHERE id = $1`,
+      [id]
+    );
+
+    res.json({ success: true, cancelResult: data });
+
+  } catch (error) {
+    console.error('[LaPoste] Erreur cancelLabel:', error.message);
+    res.status(error.statusCode || 500).json({
+      error: 'Erreur annulation étiquette',
+      details: error.body || error.message
+    });
+  }
+};
+
 module.exports = {
-  generateLabel
+  generateLabel,
+  listLabels,
+  cancelLabel
 };

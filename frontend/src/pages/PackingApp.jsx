@@ -61,6 +61,11 @@ const PackingApp = () => {
   const [labelLoading, setLabelLoading] = useState(false);
   const [labelData, setLabelData] = useState(null); // { pdfBase64, trackingId, orderNumber }
   const [labelError, setLabelError] = useState(null);
+  const [showLabels, setShowLabels] = useState(false);
+  const [labelsList, setLabelsList] = useState([]);
+  const [labelsLoading, setLabelsLoading] = useState(false);
+  const [cancelConfirm, setCancelConfirm] = useState(null); // label id to confirm cancel
+  const [cancelLoading, setCancelLoading] = useState(false);
 
   // Refs pour accéder aux valeurs courantes dans le listener clavier
   const orderRef = useRef(null);
@@ -228,6 +233,38 @@ const PackingApp = () => {
     }
   }, [token]);
 
+  // Charger la liste des étiquettes
+  const loadLabels = useCallback(async () => {
+    setLabelsLoading(true);
+    try {
+      const res = await axios.get(`${API_URL}/laposte/labels`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setLabelsList(res.data);
+    } catch (err) {
+      console.error('Erreur chargement étiquettes:', err);
+    } finally {
+      setLabelsLoading(false);
+    }
+  }, [token]);
+
+  // Annuler une étiquette
+  const handleCancelLabel = useCallback(async (id) => {
+    setCancelLoading(true);
+    try {
+      await axios.post(`${API_URL}/laposte/labels/${id}/cancel`, {}, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setCancelConfirm(null);
+      loadLabels();
+    } catch (err) {
+      const detail = err.response?.data?.error || 'Erreur annulation';
+      alert(detail);
+    } finally {
+      setCancelLoading(false);
+    }
+  }, [token, loadLabels]);
+
   // Réinitialiser
   const handleReset = useCallback(() => {
     setOrder(null);
@@ -389,8 +426,22 @@ const PackingApp = () => {
             Retour
           </button>
           <h1 style={{ margin: 0, fontSize: '22px' }}>Packing</h1>
+          <button
+            onClick={() => { setShowLabels(true); loadLabels(); }}
+            style={{
+              background: 'rgba(255,255,255,0.2)',
+              border: 'none',
+              color: 'white',
+              padding: '8px 16px',
+              borderRadius: '6px',
+              cursor: 'pointer',
+              fontSize: '14px'
+            }}
+          >
+            Etiquettes
+          </button>
         </div>
-        {order && (
+        {order && !showLabels && (
           <button
             onClick={handleReset}
             style={{
@@ -411,6 +462,158 @@ const PackingApp = () => {
       {/* Content */}
       <div style={{ flex: 1, maxWidth: '900px', margin: '0 auto', padding: '20px', width: '100%' }}>
 
+        {showLabels ? (
+          <>
+            {/* Vue liste étiquettes */}
+            <div style={{
+              backgroundColor: 'white',
+              borderRadius: '12px',
+              padding: '20px',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+                <h2 style={{ margin: 0, color: '#333' }}>Etiquettes generees</h2>
+                <button
+                  onClick={() => setShowLabels(false)}
+                  style={{
+                    padding: '8px 16px',
+                    backgroundColor: '#6366f1',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '6px',
+                    cursor: 'pointer',
+                    fontSize: '14px'
+                  }}
+                >
+                  Retour packing
+                </button>
+              </div>
+
+              {labelsLoading ? (
+                <p style={{ textAlign: 'center', color: '#666' }}>Chargement...</p>
+              ) : labelsList.length === 0 ? (
+                <p style={{ textAlign: 'center', color: '#999' }}>Aucune etiquette</p>
+              ) : (
+                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr style={{ backgroundColor: '#f8f9fa' }}>
+                      <th style={{ padding: '10px 12px', textAlign: 'left', fontSize: '13px', color: '#666' }}>Commande</th>
+                      <th style={{ padding: '10px 12px', textAlign: 'left', fontSize: '13px', color: '#666' }}>N° suivi</th>
+                      <th style={{ padding: '10px 12px', textAlign: 'center', fontSize: '13px', color: '#666' }}>Date</th>
+                      <th style={{ padding: '10px 12px', textAlign: 'center', fontSize: '13px', color: '#666', width: '120px' }}>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {labelsList.map(label => (
+                      <tr
+                        key={label.id}
+                        style={{
+                          backgroundColor: label.status === 'cancelled' ? '#f8d7da' : 'white',
+                          borderBottom: '1px solid #eee'
+                        }}
+                      >
+                        <td style={{ padding: '10px 12px', fontSize: '14px', fontWeight: '500' }}>
+                          #{label.order_number}
+                        </td>
+                        <td style={{ padding: '10px 12px', fontSize: '13px', color: '#666' }}>
+                          {label.tracking_id}
+                        </td>
+                        <td style={{ padding: '10px 12px', textAlign: 'center', fontSize: '13px', color: '#666' }}>
+                          {new Date(label.created_at).toLocaleDateString('fr-FR')}
+                        </td>
+                        <td style={{ padding: '10px 12px', textAlign: 'center' }}>
+                          {label.status === 'cancelled' ? (
+                            <span style={{ color: '#dc3545', fontSize: '13px', fontWeight: '600' }}>Annulee</span>
+                          ) : (
+                            <button
+                              onClick={() => setCancelConfirm(label)}
+                              disabled={!label.cancellable}
+                              style={{
+                                padding: '5px 12px',
+                                backgroundColor: label.cancellable ? '#dc3545' : '#e9ecef',
+                                color: label.cancellable ? 'white' : '#adb5bd',
+                                border: 'none',
+                                borderRadius: '5px',
+                                cursor: label.cancellable ? 'pointer' : 'default',
+                                fontSize: '12px',
+                                fontWeight: '600'
+                              }}
+                            >
+                              Annuler
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+
+            {/* Popup confirmation annulation */}
+            {cancelConfirm && (
+              <div style={{
+                position: 'fixed',
+                top: 0, left: 0, right: 0, bottom: 0,
+                backgroundColor: 'rgba(0,0,0,0.5)',
+                display: 'flex',
+                justifyContent: 'center',
+                alignItems: 'center',
+                zIndex: 1000
+              }}>
+                <div style={{
+                  backgroundColor: 'white',
+                  borderRadius: '12px',
+                  padding: '30px',
+                  maxWidth: '450px',
+                  width: '90%',
+                  textAlign: 'center',
+                  boxShadow: '0 4px 20px rgba(0,0,0,0.3)'
+                }}>
+                  <h3 style={{ margin: '0 0 15px', color: '#333' }}>
+                    Annuler l'etiquette #{cancelConfirm.order_number} ?
+                  </h3>
+                  <p style={{ color: '#666', margin: '0 0 25px', fontSize: '14px' }}>
+                    Etes-vous sur de vouloir annuler cette etiquette ? Cette action est definitive.
+                  </p>
+                  <div style={{ display: 'flex', gap: '10px', justifyContent: 'center' }}>
+                    <button
+                      onClick={() => setCancelConfirm(null)}
+                      disabled={cancelLoading}
+                      style={{
+                        padding: '10px 20px',
+                        backgroundColor: '#6c757d',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '6px',
+                        cursor: 'pointer',
+                        fontSize: '14px'
+                      }}
+                    >
+                      Non, revenir en arriere
+                    </button>
+                    <button
+                      onClick={() => handleCancelLabel(cancelConfirm.id)}
+                      disabled={cancelLoading}
+                      style={{
+                        padding: '10px 20px',
+                        backgroundColor: '#dc3545',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '6px',
+                        cursor: cancelLoading ? 'default' : 'pointer',
+                        fontSize: '14px'
+                      }}
+                    >
+                      {cancelLoading ? 'Annulation...' : "Oui, annuler l'etiquette"}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </>
+        ) : (
+        <>
         {/* Attente de scan — pas de commande */}
         {!order && !loading && (
           <div style={{
@@ -781,6 +984,8 @@ const PackingApp = () => {
               </div>
             )}
           </>
+        )}
+        </>
         )}
       </div>
     </div>
