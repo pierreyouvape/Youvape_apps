@@ -1,10 +1,56 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import CopyButton from '../CopyButton';
 import { formatPriceEur } from '../../utils/formatNumber';
 
 const API_BASE_URL = 'http://54.37.156.233:3000/api';
+
+const PERIOD_OPTIONS = [
+  { value: '7d', label: '7 derniers jours' },
+  { value: '15d', label: '15 derniers jours' },
+  { value: '30d', label: '30 derniers jours' },
+  { value: '60d', label: '60 derniers jours' },
+  { value: '1m', label: 'Le mois dernier' },
+  { value: '3m', label: 'Les 3 derniers mois' },
+  { value: '6m', label: 'Les 6 derniers mois' },
+  { value: 'custom', label: 'Période personnalisée' }
+];
+
+const computeDateRange = (period, customStart, customEnd) => {
+  if (period === 'custom') {
+    return {
+      dateFrom: customStart || null,
+      dateTo: customEnd ? customEnd + 'T23:59:59' : null
+    };
+  }
+
+  const now = new Date();
+
+  if (period.endsWith('d')) {
+    const days = parseInt(period);
+    const endExclusive = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const start = new Date(endExclusive);
+    start.setDate(start.getDate() - days);
+    return {
+      dateFrom: start.toISOString().slice(0, 10),
+      dateTo: endExclusive.toISOString().slice(0, 10)
+    };
+  }
+
+  if (period.endsWith('m')) {
+    const months = parseInt(period);
+    const endExclusive = new Date(now.getFullYear(), now.getMonth(), 1);
+    const start = new Date(endExclusive);
+    start.setMonth(start.getMonth() - months);
+    return {
+      dateFrom: start.toISOString().slice(0, 10),
+      dateTo: endExclusive.toISOString().slice(0, 10)
+    };
+  }
+
+  return { dateFrom: null, dateTo: null };
+};
 
 const ProductsStatsTab = () => {
   const navigate = useNavigate();
@@ -21,11 +67,14 @@ const ProductsStatsTab = () => {
   const [expandedProductId, setExpandedProductId] = useState(null);
   const [variations, setVariations] = useState({});
 
-  useEffect(() => {
-    fetchProducts();
-  }, [pagination.pageIndex, pagination.pageSize, searchTerm, sortBy, sortOrder]);
+  // Période
+  const [period, setPeriod] = useState('30d');
+  const [customStart, setCustomStart] = useState('');
+  const [customEnd, setCustomEnd] = useState('');
 
-  const fetchProducts = async () => {
+  const dateRange = useMemo(() => computeDateRange(period, customStart, customEnd), [period, customStart, customEnd]);
+
+  const fetchProducts = useCallback(async () => {
     setLoading(true);
     try {
       const offset = pagination.pageIndex * pagination.pageSize;
@@ -36,6 +85,8 @@ const ProductsStatsTab = () => {
           search: searchTerm,
           sortBy: sortBy,
           sortOrder: sortOrder,
+          dateFrom: dateRange.dateFrom,
+          dateTo: dateRange.dateTo,
         },
       });
 
@@ -48,13 +99,28 @@ const ProductsStatsTab = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [pagination.pageIndex, pagination.pageSize, searchTerm, sortBy, sortOrder, dateRange.dateFrom, dateRange.dateTo]);
+
+  useEffect(() => {
+    fetchProducts();
+  }, [fetchProducts]);
+
+  // Reset variations cache quand la période change
+  useEffect(() => {
+    setVariations({});
+    setExpandedProductId(null);
+  }, [dateRange.dateFrom, dateRange.dateTo]);
 
   const fetchVariations = async (productId) => {
     if (variations[productId]) return;
 
     try {
-      const response = await axios.get(`${API_BASE_URL}/products/${productId}/variations-stats`);
+      const response = await axios.get(`${API_BASE_URL}/products/${productId}/variations-stats`, {
+        params: {
+          dateFrom: dateRange.dateFrom,
+          dateTo: dateRange.dateTo,
+        }
+      });
       if (response.data.success) {
         setVariations(prev => ({ ...prev, [productId]: response.data.data }));
       }
@@ -94,10 +160,29 @@ const ProductsStatsTab = () => {
     setPagination((prev) => ({ ...prev, pageIndex: 0 }));
   };
 
+  const handlePeriodChange = (value) => {
+    setPeriod(value);
+    setPagination((prev) => ({ ...prev, pageIndex: 0 }));
+    if (value === 'custom' && !customEnd) {
+      const end = new Date();
+      const start = new Date();
+      start.setMonth(start.getMonth() - 1);
+      setCustomEnd(end.toISOString().split('T')[0]);
+      setCustomStart(start.toISOString().split('T')[0]);
+    }
+  };
+
   const handleExport = async () => {
     try {
       const response = await axios.get(`${API_BASE_URL}/products/stats-list`, {
-        params: { limit: 10000, search: searchTerm, sortBy, sortOrder }
+        params: {
+          limit: 10000,
+          search: searchTerm,
+          sortBy,
+          sortOrder,
+          dateFrom: dateRange.dateFrom,
+          dateTo: dateRange.dateTo,
+        }
       });
 
       if (response.data.success) {
@@ -173,7 +258,7 @@ const ProductsStatsTab = () => {
     <div>
       {/* Header avec filtres */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px', flexWrap: 'wrap', gap: '15px' }}>
-        <div style={{ display: 'flex', gap: '15px', flex: 1 }}>
+        <div style={{ display: 'flex', gap: '15px', alignItems: 'center', flexWrap: 'wrap', flex: 1 }}>
           <input
             type="text"
             value={searchTerm}
@@ -183,11 +268,40 @@ const ProductsStatsTab = () => {
               padding: '10px 15px',
               border: '1px solid #ddd',
               borderRadius: '6px',
-              fontSize: '16px',
+              fontSize: '14px',
+              minWidth: '220px',
               flex: 1,
-              minWidth: '250px'
+              maxWidth: '350px'
             }}
           />
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <label style={{ fontSize: '13px', color: '#6c757d', whiteSpace: 'nowrap' }}>Période :</label>
+            <select
+              value={period}
+              onChange={(e) => handlePeriodChange(e.target.value)}
+              style={{ padding: '10px 12px', border: '1px solid #ddd', borderRadius: '6px', fontSize: '14px' }}
+            >
+              {PERIOD_OPTIONS.map(opt => (
+                <option key={opt.value} value={opt.value}>{opt.label}</option>
+              ))}
+            </select>
+          </div>
+          {period === 'custom' && (
+            <>
+              <input
+                type="date"
+                value={customStart}
+                onChange={(e) => { setCustomStart(e.target.value); setPagination(p => ({ ...p, pageIndex: 0 })); }}
+                style={{ padding: '10px 12px', border: '1px solid #ddd', borderRadius: '6px', fontSize: '14px' }}
+              />
+              <input
+                type="date"
+                value={customEnd}
+                onChange={(e) => { setCustomEnd(e.target.value); setPagination(p => ({ ...p, pageIndex: 0 })); }}
+                style={{ padding: '10px 12px', border: '1px solid #ddd', borderRadius: '6px', fontSize: '14px' }}
+              />
+            </>
+          )}
         </div>
         <button
           onClick={handleExport}

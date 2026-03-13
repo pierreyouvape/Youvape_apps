@@ -353,7 +353,7 @@ class ProductModel {
    * Produits parents uniquement (simple + variable) avec stats agrégées
    * Exclut les commandes failed et cancelled
    */
-  async getAllForStats(limit = 50, offset = 0, searchTerm = '', sortBy = 'qty_sold', sortOrder = 'DESC') {
+  async getAllForStats(limit = 50, offset = 0, searchTerm = '', sortBy = 'qty_sold', sortOrder = 'DESC', dateFrom = null, dateTo = null) {
     let whereClause = "WHERE p.product_type IN ('simple', 'variable', 'woosb') AND p.post_status = 'publish'";
     let params = [];
     let paramIndex = 1;
@@ -361,6 +361,19 @@ class ProductModel {
     if (searchTerm) {
       whereClause += ` AND LOWER(p.post_title || ' ' || COALESCE(p.sku, '')) LIKE $${paramIndex}`;
       params.push(`%${searchTerm.toLowerCase()}%`);
+      paramIndex++;
+    }
+
+    // Filtre de dates pour les commandes
+    let dateFilter = '';
+    if (dateFrom) {
+      dateFilter += ` AND o.post_date >= $${paramIndex}`;
+      params.push(dateFrom);
+      paramIndex++;
+    }
+    if (dateTo) {
+      dateFilter += ` AND o.post_date < $${paramIndex}`;
+      params.push(dateTo);
       paramIndex++;
     }
 
@@ -435,6 +448,7 @@ class ProductModel {
         LEFT JOIN order_items oi ON (oi.product_id = pf.product_id OR oi.variation_id = pf.product_id)
         LEFT JOIN orders o ON o.wp_order_id = oi.wp_order_id
           AND o.post_status NOT IN ('wc-failed', 'wc-cancelled')
+          ${dateFilter}
         LEFT JOIN products p_cost ON p_cost.wp_product_id = oi.product_id
         GROUP BY pf.parent_id
       )
@@ -494,7 +508,22 @@ class ProductModel {
   /**
    * Récupère les variations d'un produit avec leurs stats
    */
-  async getVariationsForStats(wpParentId) {
+  async getVariationsForStats(wpParentId, dateFrom = null, dateTo = null) {
+    let params = [wpParentId];
+    let dateFilter = '';
+    let paramIndex = 2;
+
+    if (dateFrom) {
+      dateFilter += ` AND o.post_date >= $${paramIndex}`;
+      params.push(dateFrom);
+      paramIndex++;
+    }
+    if (dateTo) {
+      dateFilter += ` AND o.post_date < $${paramIndex}`;
+      params.push(dateTo);
+      paramIndex++;
+    }
+
     const query = `
       WITH bundle_sub_items AS (
         -- Identifier les lignes de commande qui sont des sous-produits de bundles
@@ -551,11 +580,12 @@ class ProductModel {
         LEFT JOIN products p_cost2 ON p_cost2.wp_product_id = oi.product_id
         WHERE (oi.product_id = p.wp_product_id OR oi.variation_id = p.wp_product_id)
         AND o.post_status NOT IN ('wc-failed', 'wc-cancelled')
+        ${dateFilter}
       ) stats ON true
       WHERE p.wp_parent_id = $1 AND p.product_type = 'variation'
       ORDER BY qty_sold DESC NULLS LAST
     `;
-    const result = await pool.query(query, [wpParentId]);
+    const result = await pool.query(query, params);
     return result.rows;
   }
   /**

@@ -214,8 +214,10 @@ exports.getStatsListing = async (req, res) => {
     const searchTerm = req.query.search || '';
     const sortBy = req.query.sortBy || 'qty_sold';
     const sortOrder = req.query.sortOrder || 'DESC';
+    const dateFrom = req.query.dateFrom || null;
+    const dateTo = req.query.dateTo || null;
 
-    const products = await productModel.getAllForStats(limit, offset, searchTerm, sortBy, sortOrder);
+    const products = await productModel.getAllForStats(limit, offset, searchTerm, sortBy, sortOrder, dateFrom, dateTo);
     const total = await productModel.countForStats(searchTerm);
 
     res.json({
@@ -285,7 +287,9 @@ exports.getCatalogDetail = async (req, res) => {
 exports.getVariationsStats = async (req, res) => {
   try {
     const productId = req.params.id;
-    const variations = await productModel.getVariationsForStats(productId);
+    const dateFrom = req.query.dateFrom || null;
+    const dateTo = req.query.dateTo || null;
+    const variations = await productModel.getVariationsForStats(productId, dateFrom, dateTo);
 
     res.json({ success: true, data: variations });
   } catch (error) {
