@@ -1,6 +1,7 @@
 const pool = require('../config/database');
 const https = require('https');
 const zlib = require('zlib');
+const { PDFDocument, StandardFonts } = require('pdf-lib');
 
 // Cache token en mémoire
 let tokenCache = { token: null, expiresAt: 0 };
@@ -128,6 +129,24 @@ const httpRequest = (url, options) => {
   });
 };
 
+// Ajouter le numéro de commande sur le PDF en bas à gauche
+const addOrderNumberToPdf = async (pdfBase64, orderNumber) => {
+  const pdfBytes = Buffer.from(pdfBase64, 'base64');
+  const pdfDoc = await PDFDocument.load(pdfBytes);
+  const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+  const page = pdfDoc.getPages()[0];
+
+  page.drawText(`#${orderNumber}`, {
+    x: 10,
+    y: 10,
+    size: 9,
+    font
+  });
+
+  const modifiedBytes = await pdfDoc.save();
+  return Buffer.from(modifiedBytes).toString('base64');
+};
+
 // Générer une étiquette Lettre Suivie
 const generateLabel = async (req, res) => {
   try {
@@ -178,7 +197,7 @@ const generateLabel = async (req, res) => {
     // Construire le payload
     const payload = {
       order: {
-        custPurchaseOrderNumber: `WC-${orderNumber}`,
+        custPurchaseOrderNumber: orderNumber,
         invoicing: {
           contractNumber,
           custAccNumber,
@@ -199,7 +218,7 @@ const generateLabel = async (req, res) => {
               email: senderEmail || 'contact@youvape.fr',
               phone: senderPhone || '0499782453',
               address: {
-                name1: senderName || 'SARL EMC',
+                name1: senderName || 'SAS EMC',
                 add4: senderAddress || '580 avenue de l aube rouge',
                 zipcode: senderZipcode || '34170',
                 town: senderTown || 'Castelnau le lez',
@@ -248,13 +267,16 @@ const generateLabel = async (req, res) => {
       return res.status(500).json({ error: 'Pas de PDF dans la réponse La Poste' });
     }
 
+    // Ajouter le numéro de commande sur le PDF (bas gauche)
+    const modifiedPdf = await addOrderNumberToPdf(visualOutput, orderNumber);
+
     console.log('[LaPoste] Étiquette générée — orderId:', orderId, 'tracking:', trackingId);
 
     res.json({
       success: true,
       orderId,
       trackingId,
-      pdfBase64: visualOutput,
+      pdfBase64: modifiedPdf,
       orderNumber
     });
 
