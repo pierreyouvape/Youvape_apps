@@ -50,13 +50,13 @@ const needsCalculationModel = {
     const products = productsResult.rows;
     if (products.length === 0) return [];
 
-    // 2. Ventes par mois — tout l'historique, pas de filtre de dates
+    // 2. Ventes par jour — tout l'historique, pas de filtre de dates
     // order_items.variation_id est prioritaire sur product_id pour les variations
     // On sépare en deux branches UNION pour que les index soient utilisés
-    const monthlySalesResult = await pool.query(`
+    const dailySalesResult = await pool.query(`
       SELECT
         p_id AS product_id,
-        DATE_TRUNC('month', post_date) as month,
+        post_date::date as sale_date,
         SUM(qty) as total_qty
       FROM (
         -- Variations : on joint sur variation_id
@@ -80,8 +80,8 @@ const needsCalculationModel = {
           AND p.post_status = 'publish'
           AND p.product_type = 'simple'
       ) sub
-      GROUP BY p_id, DATE_TRUNC('month', post_date)
-      ORDER BY p_id, month
+      GROUP BY p_id, post_date::date
+      ORDER BY p_id, sale_date
     `);
 
     // 3. Max qty par commande — tout l'historique
@@ -130,12 +130,12 @@ const needsCalculationModel = {
     `);
 
     // Indexer par product_id (parseInt pour éviter le mismatch string/int entre les queries)
-    const monthlySalesMap = new Map(); // product_id → [{month, total_qty}]
-    for (const row of monthlySalesResult.rows) {
+    const dailySalesMap = new Map(); // product_id → [{date, total_qty}]
+    for (const row of dailySalesResult.rows) {
       const pid = parseInt(row.product_id);
-      if (!monthlySalesMap.has(pid)) monthlySalesMap.set(pid, []);
-      monthlySalesMap.get(pid).push({
-        month: row.month,
+      if (!dailySalesMap.has(pid)) dailySalesMap.set(pid, []);
+      dailySalesMap.get(pid).push({
+        date: row.sale_date,
         total_qty: parseInt(row.total_qty) || 0
       });
     }
@@ -169,7 +169,7 @@ const needsCalculationModel = {
       supplier_price: p.supplier_price,
       incoming_qty: incomingMap.get(p.id) || 0,
       max_order_qty_12m: maxOrderMap.get(p.id) || 0,
-      monthly_sales: monthlySalesMap.get(p.id) || [] // [{month, total_qty}]
+      daily_sales: dailySalesMap.get(p.id) || [] // [{date, total_qty}]
     }));
   },
 

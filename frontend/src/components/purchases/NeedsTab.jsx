@@ -6,17 +6,14 @@ const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:3000/api/auth
 const STORAGE_KEY = 'purchases_needs_filters';
 
 const ANALYSIS_PERIOD_OPTIONS = [
-  { value: 0.25, label: '7 jours' },
-  { value: 0.5, label: '15 jours' },
-  { value: 1, label: '1 mois' },
-  { value: 2, label: '2 mois' },
-  { value: 3, label: '3 mois' },
-  { value: 4, label: '4 mois' },
-  { value: 5, label: '5 mois' },
-  { value: 6, label: '6 mois' },
-  { value: 9, label: '9 mois' },
-  { value: 12, label: '12 mois' },
-  { value: 'custom', label: 'Plage personnalisée' }
+  { value: 7, unit: 'days', label: '7 derniers jours' },
+  { value: 15, unit: 'days', label: '15 derniers jours' },
+  { value: 30, unit: 'days', label: '30 derniers jours' },
+  { value: 60, unit: 'days', label: '60 derniers jours' },
+  { value: 1, unit: 'months', label: 'Le mois dernier' },
+  { value: 3, unit: 'months', label: 'Les 3 derniers mois' },
+  { value: 6, unit: 'months', label: 'Les 6 derniers mois' },
+  { value: 'custom', unit: null, label: 'Période personnalisée' }
 ];
 
 const COVERAGE_OPTIONS = [
@@ -109,45 +106,70 @@ const calculateTrendCoefficient = (monthlySales) => {
 
 /**
  * Calcule les besoins d'un produit à partir de ses données brutes.
- * Le backend renvoie tout l'historique — on filtre ici selon la période choisie.
+ * Le backend renvoie les ventes par jour (daily_sales) — on filtre ici selon la période choisie.
  *
- * Preset : fenêtre glissante depuis aujourd'hui (analysisPeriodMonths mois)
+ * Preset : fenêtre glissante des N derniers jours (exclut aujourd'hui)
+ *          ou N derniers mois calendaires complets
  * Custom : plage fixe entre analysisStartDate et analysisEndDate
  */
-const computeProductNeeds = (product, analysisPeriodMonths, coverageMonths, isCustomPeriod, analysisStartDate, analysisEndDate) => {
-  const { monthly_sales = [], stock = 0, incoming_qty = 0 } = product;
+const computeProductNeeds = (product, periodDays, coverageMonths, isCustomPeriod, analysisStartDate, analysisEndDate, periodUnit) => {
+  const { daily_sales = [], stock = 0, incoming_qty = 0 } = product;
 
   let salesData;
+  let actualDays = periodDays;
+
   if (isCustomPeriod && analysisStartDate && analysisEndDate) {
-    // Plage fixe : filtrer par dates (inclut les mois dont le début est dans la plage)
     const start = new Date(analysisStartDate + 'T00:00:00');
-    const end = new Date(analysisEndDate + 'T00:00:00');
-    salesData = monthly_sales.filter(m => {
-      const d = new Date(m.month);
+    const end = new Date(analysisEndDate + 'T23:59:59');
+    salesData = daily_sales.filter(m => {
+      const d = new Date(m.date);
       return d >= start && d <= end;
     });
-  } else {
-    // N derniers mois calendaires COMPLETS — exclure le mois en cours (toujours incomplet)
-    // Ex: on est le 25 fév 2026, période 12 mois → du 1er fév 2025 au 31 jan 2026
+    actualDays = Math.max(Math.ceil((end - start) / (1000 * 60 * 60 * 24)), 1);
+  } else if (periodUnit === 'months') {
+    // N derniers mois calendaires COMPLETS — exclure le mois en cours
     const now = new Date();
-    // Premier jour du mois en cours → c'est la borne de fin exclusive
     const endExclusive = new Date(now.getFullYear(), now.getMonth(), 1);
-    // Premier jour du mois de début = endExclusive - N mois
     const startInclusive = new Date(endExclusive);
-    startInclusive.setMonth(startInclusive.getMonth() - Math.ceil(analysisPeriodMonths));
-    salesData = monthly_sales.filter(m => {
-      const d = new Date(m.month);
+    startInclusive.setMonth(startInclusive.getMonth() - Math.round(periodDays / 30));
+    salesData = daily_sales.filter(m => {
+      const d = new Date(m.date);
       return d >= startInclusive && d < endExclusive;
     });
+    actualDays = Math.max(Math.ceil((endExclusive - startInclusive) / (1000 * 60 * 60 * 24)), 1);
+  } else {
+    // N derniers jours — exclure aujourd'hui (jour incomplet)
+    const now = new Date();
+    const endExclusive = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const startInclusive = new Date(endExclusive);
+    startInclusive.setDate(startInclusive.getDate() - periodDays);
+    salesData = daily_sales.filter(m => {
+      const d = new Date(m.date);
+      return d >= startInclusive && d < endExclusive;
+    });
+    actualDays = periodDays;
   }
+
   const salesInPeriod = salesData.reduce((sum, m) => sum + (parseInt(m.total_qty) || 0), 0);
   const max_order_qty = parseInt(product.max_order_qty_12m) || 0;
 
-  const effectivePeriod = analysisPeriodMonths > 0 ? analysisPeriodMonths : 1;
-  const avgMonthlySales = salesInPeriod / effectivePeriod;
+  // Convertir en moyenne mensuelle (30 jours = 1 mois)
+  const periodInMonths = actualDays / 30;
+  const avgMonthlySales = periodInMonths > 0 ? salesInPeriod / periodInMonths : 0;
 
-  // Tendance calculée sur la période d'analyse sélectionnée
-  const trendResult = calculateTrendCoefficient(salesData);
+  // Tendance : agréger par semaine pour avoir des points exploitables
+  const weeklyMap = new Map();
+  for (const d of salesData) {
+    const date = new Date(d.date);
+    // Clé = lundi de la semaine (ISO)
+    const dayOfWeek = (date.getDay() + 6) % 7;
+    const monday = new Date(date);
+    monday.setDate(date.getDate() - dayOfWeek);
+    const key = monday.toISOString().slice(0, 10);
+    weeklyMap.set(key, (weeklyMap.get(key) || 0) + (parseInt(d.total_qty) || 0));
+  }
+  const weeklySales = [...weeklyMap.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([, qty]) => ({ total_qty: qty }));
+  const trendResult = calculateTrendCoefficient(weeklySales);
   const trendCoefficient = trendResult.coefficient;
 
   const fifteenDaysSales = avgMonthlySales / 2;
@@ -167,6 +189,7 @@ const computeProductNeeds = (product, analysisPeriodMonths, coverageMonths, isCu
   const supposedProposal = Math.max(0, Math.ceil(supposedNeed) - effectiveStock);
 
   return {
+    sales_in_period: salesInPeriod,
     avg_monthly_sales: Math.round(avgMonthlySales * 100) / 100,
     trend_coefficient: Math.round(trendCoefficient * 100) / 100,
     trend_direction: trendCoefficient > 1.1 ? 'up' : trendCoefficient < 0.9 ? 'down' : 'stable',
@@ -217,7 +240,8 @@ const NeedsTab = ({ token }) => {
 
   // Période d'analyse
   const [analysisPeriodType, setAnalysisPeriodType] = useState(savedFilters?.analysisPeriodType || 'preset');
-  const [analysisPeriod, setAnalysisPeriod] = useState(savedFilters?.analysisPeriod || 1);
+  const [analysisPeriod, setAnalysisPeriod] = useState(savedFilters?.analysisPeriod || 30);
+  const [analysisPeriodUnit, setAnalysisPeriodUnit] = useState(savedFilters?.analysisPeriodUnit || 'days');
   const [analysisStartDate, setAnalysisStartDate] = useState(savedFilters?.analysisStartDate || '');
   const [analysisEndDate, setAnalysisEndDate] = useState(savedFilters?.analysisEndDate || '');
 
@@ -249,13 +273,14 @@ const NeedsTab = ({ token }) => {
       supplierId,
       analysisPeriodType,
       analysisPeriod,
+      analysisPeriodUnit,
       analysisStartDate,
       analysisEndDate,
       coverageMonths,
       withSalesOnly,
       zeroStockState
     });
-  }, [supplierId, analysisPeriodType, analysisPeriod, analysisStartDate, analysisEndDate, coverageMonths, withSalesOnly, zeroStockState]);
+  }, [supplierId, analysisPeriodType, analysisPeriod, analysisPeriodUnit, analysisStartDate, analysisEndDate, coverageMonths, withSalesOnly, zeroStockState]);
 
   // Charger les fournisseurs
   useEffect(() => {
@@ -294,16 +319,18 @@ const NeedsTab = ({ token }) => {
     loadRawData();
   }, [loadRawData]);
 
-  // Période d'analyse effective en mois
-  const effectivePeriodMonths = useMemo(() => {
+  // Période d'analyse effective en jours
+  const effectivePeriodDays = useMemo(() => {
     if (analysisPeriodType === 'custom' && analysisStartDate && analysisEndDate) {
       const start = new Date(analysisStartDate);
       const end = new Date(analysisEndDate);
-      const diffDays = Math.ceil((end - start) / (1000 * 60 * 60 * 24));
-      return Math.max(diffDays / 30, 0.03); // min ~1 jour
+      return Math.max(Math.ceil((end - start) / (1000 * 60 * 60 * 24)), 1);
     }
-    return analysisPeriod;
-  }, [analysisPeriodType, analysisPeriod, analysisStartDate, analysisEndDate]);
+    if (analysisPeriodUnit === 'months') {
+      return Math.round(analysisPeriod * 30);
+    }
+    return analysisPeriod; // déjà en jours
+  }, [analysisPeriodType, analysisPeriod, analysisPeriodUnit, analysisStartDate, analysisEndDate]);
 
   const isCustomPeriod = analysisPeriodType === 'custom';
 
@@ -311,12 +338,12 @@ const NeedsTab = ({ token }) => {
   const computedProducts = useMemo(() => {
     return allProducts.map(p => {
       const needs = computeProductNeeds(
-        p, effectivePeriodMonths, coverageMonths,
-        isCustomPeriod, analysisStartDate, analysisEndDate
+        p, effectivePeriodDays, coverageMonths,
+        isCustomPeriod, analysisStartDate, analysisEndDate, analysisPeriodUnit
       );
       return { ...p, ...needs };
     });
-  }, [allProducts, effectivePeriodMonths, coverageMonths, isCustomPeriod, analysisStartDate, analysisEndDate]);
+  }, [allProducts, effectivePeriodDays, coverageMonths, isCustomPeriod, analysisStartDate, analysisEndDate, analysisPeriodUnit]);
 
   // Normalise une chaîne pour la recherche : minuscules, sans ponctuation, espaces simplifiés
   const normalize = (str) => (str || '').toLowerCase().replace(/[-_.,;:!?()[\]]/g, ' ').replace(/\s+/g, ' ').trim();
@@ -379,7 +406,7 @@ const NeedsTab = ({ token }) => {
   // Reset page quand les filtres changent (mais pas la sélection)
   useEffect(() => {
     setPage(1);
-  }, [supplierId, withSalesOnly, zeroStockState, effectivePeriodMonths, coverageMonths, analysisStartDate, analysisEndDate]);
+  }, [supplierId, withSalesOnly, zeroStockState, effectivePeriodDays, coverageMonths, analysisStartDate, analysisEndDate]);
 
   const handleSearchChange = (value) => {
     setSearch(value);
@@ -399,7 +426,9 @@ const NeedsTab = ({ token }) => {
       }
     } else {
       setAnalysisPeriodType('preset');
+      const option = ANALYSIS_PERIOD_OPTIONS.find(o => String(o.value) === value);
       setAnalysisPeriod(parseFloat(value));
+      setAnalysisPeriodUnit(option?.unit || 'days');
     }
   };
 
@@ -558,7 +587,7 @@ const NeedsTab = ({ token }) => {
               <div className="filter-group" style={{ justifyContent: 'flex-end' }}>
                 <label>&nbsp;</label>
                 <span style={{ fontSize: '13px', color: '#888', padding: '8px 0' }}>
-                  ≈ {Math.round(effectivePeriodMonths * 10) / 10} mois
+                  ≈ {effectivePeriodDays} jours
                 </span>
               </div>
             </>
@@ -681,6 +710,7 @@ const NeedsTab = ({ token }) => {
                   <th>SKU</th>
                   <SortableHeader column="stock" label="Stock" className="text-right" />
                   <th className="text-right">Arrivage</th>
+                  <SortableHeader column="sales_in_period" label="Ventes période" className="text-right" />
                   <SortableHeader column="avg_monthly_sales" label="Ventes/mois" className="text-right" />
                   <th className="text-center">Tendance</th>
                   <SortableHeader column="theoretical_need" label="Besoin théo." className="text-right" />
@@ -708,6 +738,7 @@ const NeedsTab = ({ token }) => {
                         <span style={{ color: '#3b82f6' }}>+{product.incoming_qty}</span>
                       ) : '-'}
                     </td>
+                    <td className="text-right">{product.sales_in_period || 0}</td>
                     <td className="text-right">{product.avg_monthly_sales || 0}</td>
                     <td className="text-center">
                       {renderTrend(product.trend_direction, product.trend_coefficient)}
