@@ -445,8 +445,8 @@ class ProductModel {
             ELSE oi.qty * COALESCE(p_cost.computed_cost, p_cost.wc_cog_cost, 0)
           END) as cost_ht
         FROM product_family pf
-        LEFT JOIN order_items oi ON (oi.product_id = pf.product_id OR oi.variation_id = pf.product_id)
-        LEFT JOIN orders o ON o.wp_order_id = oi.wp_order_id
+        INNER JOIN order_items oi ON (oi.product_id = pf.product_id OR oi.variation_id = pf.product_id)
+        INNER JOIN orders o ON o.wp_order_id = oi.wp_order_id
           AND o.post_status NOT IN ('wc-failed', 'wc-cancelled')
           ${dateFilter}
         LEFT JOIN products p_cost ON p_cost.wp_product_id = oi.product_id
