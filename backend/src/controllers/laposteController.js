@@ -293,8 +293,8 @@ const generateLabel = async (req, res) => {
       } catch (bmsError) {
         console.error('[BMS] Erreur confirmation expédition commande', orderNumber, ':', bmsError.message);
         sendAlert(
-          `Echec confirmation BMS - Commande ${orderNumber}`,
-          `La commande ${orderNumber} a bien recu son etiquette La Poste (tracking: ${trackingId}) mais la confirmation d'expedition dans BMS a echoue.\n\nErreur: ${bmsError.message}\n\nAction requise: confirmer manuellement l'expedition dans BMS.`
+          `BUG VPS : commande N°${orderNumber} non confirmee en expedition BMS`,
+          `Bonjour,\n\nL'expedition de la commande N°${orderNumber} avec le numero de suivi : ${trackingId} n'a pas pu etre confirmee a BMS pour la raison suivante :\n\n${bmsError.message}\n\nPensez a corriger cela.`
         );
       }
     }
