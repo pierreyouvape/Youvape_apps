@@ -46,6 +46,7 @@ const needsCalculationModel = {
       LEFT JOIN suppliers s_any ON ps_any.supplier_id = s_any.id
       LEFT JOIN products p_parent ON p.wp_parent_id = p_parent.wp_product_id
       WHERE p.post_status = 'publish'
+        AND COALESCE(p.exclude_from_reorder, false) = false
         AND (
           p.product_type = 'simple'
           OR (p.product_type = 'variation' AND p_parent.post_status = 'publish')

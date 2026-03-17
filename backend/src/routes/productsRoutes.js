@@ -42,5 +42,6 @@ router.delete('/:id/barcodes/:barcodeId', productsController.deleteProductBarcod
 
 // Édition
 router.put('/:id/cost', productsController.updateCostPrice);
+router.patch('/:id/exclude-reorder', productsController.toggleExcludeReorder);
 
 module.exports = router;

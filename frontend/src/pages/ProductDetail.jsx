@@ -269,7 +269,7 @@ const ProductDetail = () => {
       {/* Main Content */}
       <div style={{ flex: 1, maxWidth: '1600px', margin: '30px auto', padding: '0 20px', width: '100%' }}>
         {/* Product Info Header */}
-        <div style={{ backgroundColor: '#fff', padding: '30px', borderRadius: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)', marginBottom: '30px', display: 'grid', gridTemplateColumns: '150px 1fr', gap: '30px' }}>
+        <div style={{ backgroundColor: '#fff', padding: '30px', borderRadius: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)', marginBottom: '30px', display: 'grid', gridTemplateColumns: '150px 1fr auto', gap: '30px' }}>
           <div>
             {product.image_url && <img src={product.image_url} alt={product.post_title} style={{ width: '100%', borderRadius: '8px', border: '1px solid #e0e0e0' }} />}
           </div>
@@ -365,6 +365,32 @@ const ProductDetail = () => {
                 )}
               </div>
             )}
+          </div>
+          <div style={{ display: 'flex', alignItems: 'flex-start' }}>
+            <button
+              onClick={async () => {
+                try {
+                  const res = await axios.patch(`${API_URL}/products/${id}/exclude-reorder`);
+                  setProduct(prev => ({ ...prev, exclude_from_reorder: res.data.data.exclude_from_reorder }));
+                } catch (err) {
+                  console.error('Error toggling exclude_from_reorder:', err);
+                }
+              }}
+              style={{
+                padding: '8px 16px',
+                border: '1px solid',
+                borderColor: product.exclude_from_reorder ? '#dc3545' : '#28a745',
+                backgroundColor: product.exclude_from_reorder ? '#fff5f5' : '#f0fff4',
+                color: product.exclude_from_reorder ? '#dc3545' : '#28a745',
+                borderRadius: '6px',
+                cursor: 'pointer',
+                fontSize: '13px',
+                fontWeight: '600',
+                whiteSpace: 'nowrap'
+              }}
+            >
+              {product.exclude_from_reorder ? 'Exclu du reassort' : 'Propose au reassort'}
+            </button>
           </div>
         </div>
 

@@ -1,5 +1,6 @@
 const productModel = require('../models/productModel');
 const advancedFilterService = require('../services/advancedFilterService');
+const pool = require('../config/database');
 
 /**
  * Récupère tous les produits
@@ -199,6 +200,27 @@ exports.updateCostPrice = async (req, res) => {
     });
   } catch (error) {
     console.error('Error updating cost price:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+/**
+ * Toggle exclude_from_reorder
+ * PATCH /api/products/:id/exclude-reorder
+ */
+exports.toggleExcludeReorder = async (req, res) => {
+  try {
+    const productId = parseInt(req.params.id);
+    const result = await pool.query(
+      `UPDATE products SET exclude_from_reorder = NOT COALESCE(exclude_from_reorder, false) WHERE wp_product_id = $1 RETURNING wp_product_id, exclude_from_reorder`,
+      [productId]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ success: false, error: 'Product not found' });
+    }
+    res.json({ success: true, data: result.rows[0] });
+  } catch (error) {
+    console.error('Error toggling exclude_from_reorder:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 };
