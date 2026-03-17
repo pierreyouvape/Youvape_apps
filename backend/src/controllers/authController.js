@@ -6,11 +6,11 @@ const authController = {
   // Inscription
   register: async (req, res) => {
     try {
-      const { email, password } = req.body;
+      const { email, password, name } = req.body;
 
       // Validation
-      if (!email || !password) {
-        return res.status(400).json({ error: 'Email et mot de passe requis' });
+      if (!email || !password || !name) {
+        return res.status(400).json({ error: 'Nom, email et mot de passe requis' });
       }
 
       if (password.length < 6) {
@@ -28,8 +28,8 @@ const authController = {
 
       // Insérer l'utilisateur
       const result = await pool.query(
-        'INSERT INTO users (email, password) VALUES ($1, $2) RETURNING id, email, created_at',
-        [email, hashedPassword]
+        'INSERT INTO users (email, password, name) VALUES ($1, $2, $3) RETURNING id, email, name, created_at',
+        [email, hashedPassword, name]
       );
 
       res.status(201).json({
@@ -71,7 +71,7 @@ const authController = {
 
       // Générer le token JWT
       const token = jwt.sign(
-        { id: user.id, email: user.email },
+        { id: user.id, email: user.email, name: user.name },
         process.env.JWT_SECRET,
         { expiresIn: '24h' }
       );
@@ -81,7 +81,8 @@ const authController = {
         token,
         user: {
           id: user.id,
-          email: user.email
+          email: user.email,
+          name: user.name
         }
       });
 

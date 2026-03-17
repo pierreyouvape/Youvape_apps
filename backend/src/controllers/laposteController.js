@@ -276,8 +276,8 @@ const generateLabel = async (req, res) => {
 
     // Sauvegarder en BDD
     await pool.query(
-      `INSERT INTO laposte_labels (order_number, tracking_id, laposte_order_id) VALUES ($1, $2, $3)`,
-      [orderNumber, trackingId, orderId]
+      `INSERT INTO laposte_labels (order_number, tracking_id, laposte_order_id, packed_by) VALUES ($1, $2, $3, $4)`,
+      [orderNumber, trackingId, orderId, req.user?.id || null]
     );
 
     // Confirmer l'expédition dans BMS (non bloquant)
@@ -326,9 +326,11 @@ const generateLabel = async (req, res) => {
 const listLabels = async (req, res) => {
   try {
     const result = await pool.query(
-      `SELECT id, order_number, tracking_id, laposte_order_id, status, created_at, cancelled_at
-       FROM laposte_labels
-       ORDER BY created_at DESC
+      `SELECT l.id, l.order_number, l.tracking_id, l.laposte_order_id, l.status, l.created_at, l.cancelled_at,
+              u.name AS packer_name
+       FROM laposte_labels l
+       LEFT JOIN users u ON u.id = l.packed_by
+       ORDER BY l.created_at DESC
        LIMIT 100`
     );
 

@@ -47,7 +47,7 @@ const playSound = (type) => {
 };
 
 const PackingApp = () => {
-  const { token } = useContext(AuthContext);
+  const { token, user, logout } = useContext(AuthContext);
   const navigate = useNavigate();
 
   const [order, setOrder] = useState(null);
@@ -408,9 +408,10 @@ const PackingApp = () => {
         display: 'flex',
         justifyContent: 'space-between',
         alignItems: 'center',
-        color: 'white'
+        color: 'white',
+        position: 'relative'
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '15px', zIndex: 1 }}>
           <button
             onClick={() => navigate('/home')}
             style={{
@@ -441,9 +442,34 @@ const PackingApp = () => {
             Etiquettes
           </button>
         </div>
-        {order && !showLabels && (
+        <span style={{
+          position: 'absolute',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          fontSize: '24px',
+          fontWeight: '700'
+        }}>
+          {user?.name || user?.email || ''}
+        </span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', zIndex: 1 }}>
+          {order && !showLabels && (
+            <button
+              onClick={handleReset}
+              style={{
+                background: 'rgba(255,255,255,0.2)',
+                border: 'none',
+                color: 'white',
+                padding: '8px 16px',
+                borderRadius: '6px',
+                cursor: 'pointer',
+                fontSize: '14px'
+              }}
+            >
+              Nouvelle commande
+            </button>
+          )}
           <button
-            onClick={handleReset}
+            onClick={() => { logout(); navigate('/login'); }}
             style={{
               background: 'rgba(255,255,255,0.2)',
               border: 'none',
@@ -454,9 +480,9 @@ const PackingApp = () => {
               fontSize: '14px'
             }}
           >
-            Nouvelle commande
+            Changer de preparateur
           </button>
-        )}
+        </div>
       </div>
 
       {/* Content */}
@@ -500,6 +526,7 @@ const PackingApp = () => {
                       <th style={{ padding: '10px 12px', textAlign: 'left', fontSize: '13px', color: '#666' }}>Commande</th>
                       <th style={{ padding: '10px 12px', textAlign: 'left', fontSize: '13px', color: '#666' }}>N° suivi</th>
                       <th style={{ padding: '10px 12px', textAlign: 'center', fontSize: '13px', color: '#666' }}>Date</th>
+                      <th style={{ padding: '10px 12px', textAlign: 'left', fontSize: '13px', color: '#666' }}>Packer</th>
                       <th style={{ padding: '10px 12px', textAlign: 'center', fontSize: '13px', color: '#666', width: '120px' }}>Action</th>
                     </tr>
                   </thead>
@@ -520,6 +547,9 @@ const PackingApp = () => {
                         </td>
                         <td style={{ padding: '10px 12px', textAlign: 'center', fontSize: '13px', color: '#666' }}>
                           {new Date(label.created_at).toLocaleDateString('fr-FR')}
+                        </td>
+                        <td style={{ padding: '10px 12px', fontSize: '13px', color: '#666' }}>
+                          {label.packer_name || '-'}
                         </td>
                         <td style={{ padding: '10px 12px', textAlign: 'center' }}>
                           {label.status === 'cancelled' ? (

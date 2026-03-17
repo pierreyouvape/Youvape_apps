@@ -29,7 +29,12 @@ const needsCalculationModel = {
         COALESCE(s_primary.analysis_period_months, s_any.analysis_period_months, 1) as supplier_analysis_period,
         COALESCE(s_primary.coverage_months, s_any.coverage_months, 1) as supplier_coverage_months,
         ps_primary.supplier_sku,
-        ps_primary.supplier_price
+        ps_primary.supplier_price,
+        p.image_url,
+        p.wp_parent_id,
+        p.product_type,
+        p_parent.post_title as parent_title,
+        p_parent.image_url as parent_image_url
       FROM products p
       LEFT JOIN product_alerts pa ON p.id = pa.product_id
       LEFT JOIN product_suppliers ps_primary ON p.id = ps_primary.product_id AND ps_primary.is_primary = true
@@ -169,7 +174,11 @@ const needsCalculationModel = {
       supplier_price: p.supplier_price,
       incoming_qty: incomingMap.get(p.id) || 0,
       max_order_qty_12m: maxOrderMap.get(p.id) || 0,
-      daily_sales: dailySalesMap.get(p.id) || [] // [{date, total_qty}]
+      daily_sales: dailySalesMap.get(p.id) || [], // [{date, total_qty}]
+      image_url: p.image_url || p.parent_image_url || null,
+      wp_parent_id: p.wp_parent_id || null,
+      product_type: p.product_type,
+      parent_title: p.parent_title || null
     }));
   },
 

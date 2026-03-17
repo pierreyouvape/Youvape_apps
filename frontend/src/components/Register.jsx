@@ -3,6 +3,7 @@ import { AuthContext } from '../context/AuthContext';
 import { useNavigate, Link } from 'react-router-dom';
 
 const Register = () => {
+  const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -19,6 +20,11 @@ const Register = () => {
     e.preventDefault();
     setError('');
 
+    if (!name.trim()) {
+      setError('Le prénom est requis');
+      return;
+    }
+
     if (!validateEmail(email)) {
       setError('Email invalide');
       return;
@@ -31,7 +37,7 @@ const Register = () => {
 
     setLoading(true);
     try {
-      await register(email, password);
+      await register(email, password, name);
       navigate('/login');
     } catch (err) {
       setError(err.response?.data?.error || 'Erreur lors de l\'inscription');
@@ -69,6 +75,22 @@ const Register = () => {
         }}>
           <h2 style={{ textAlign: 'center', color: '#135E84', marginBottom: '30px' }}>Inscription</h2>
           <form onSubmit={handleSubmit}>
+            <div style={{ marginBottom: '15px' }}>
+              <input
+                type="text"
+                placeholder="Prénom"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                style={{
+                  width: '100%',
+                  padding: '12px',
+                  border: '1px solid #ddd',
+                  borderRadius: '4px',
+                  fontSize: '16px'
+                }}
+                required
+              />
+            </div>
             <div style={{ marginBottom: '15px' }}>
               <input
                 type="email"
