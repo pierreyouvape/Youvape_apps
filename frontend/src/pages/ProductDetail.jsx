@@ -371,7 +371,12 @@ const ProductDetail = () => {
               onClick={async () => {
                 try {
                   const res = await axios.patch(`${API_URL}/products/${id}/exclude-reorder`);
-                  setProduct(prev => ({ ...prev, exclude_from_reorder: res.data.data.exclude_from_reorder }));
+                  const newVal = res.data.data.exclude_from_reorder;
+                  setProduct(prev => ({ ...prev, exclude_from_reorder: newVal }));
+                  // Si parent variable, mettre a jour toutes les variations aussi
+                  if (res.data.data.product_type === 'variable') {
+                    setVariantsPeriodStats(prev => prev.map(v => ({ ...v, exclude_from_reorder: newVal })));
+                  }
                 } catch (err) {
                   console.error('Error toggling exclude_from_reorder:', err);
                 }

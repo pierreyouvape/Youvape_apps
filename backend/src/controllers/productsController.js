@@ -211,14 +211,23 @@ exports.updateCostPrice = async (req, res) => {
 exports.toggleExcludeReorder = async (req, res) => {
   try {
     const productId = parseInt(req.params.id);
+    // Toggle le produit lui-meme
     const result = await pool.query(
-      `UPDATE products SET exclude_from_reorder = NOT COALESCE(exclude_from_reorder, false) WHERE wp_product_id = $1 RETURNING wp_product_id, exclude_from_reorder`,
+      `UPDATE products SET exclude_from_reorder = NOT COALESCE(exclude_from_reorder, false) WHERE wp_product_id = $1 RETURNING wp_product_id, exclude_from_reorder, product_type`,
       [productId]
     );
     if (result.rows.length === 0) {
       return res.status(404).json({ success: false, error: 'Product not found' });
     }
-    res.json({ success: true, data: result.rows[0] });
+    const product = result.rows[0];
+    // Si c'est un variable (parent), toggle aussi toutes ses variations
+    if (product.product_type === 'variable') {
+      await pool.query(
+        `UPDATE products SET exclude_from_reorder = $1 WHERE wp_parent_id = $2`,
+        [product.exclude_from_reorder, productId]
+      );
+    }
+    res.json({ success: true, data: product });
   } catch (error) {
     console.error('Error toggling exclude_from_reorder:', error);
     res.status(500).json({ success: false, error: error.message });
