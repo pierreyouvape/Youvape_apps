@@ -773,6 +773,7 @@ const NeedsTab = ({ token }) => {
                 <tr>
                   <th style={{ width: '40px' }}></th>
                   <th>Produit</th>
+                  <th style={{ width: '30px' }}></th>
                   <th>SKU</th>
                   <SortableHeader column="stock" label="Stock" className="text-right" />
                   <th className="text-right">Arrivage</th>
@@ -794,7 +795,7 @@ const NeedsTab = ({ token }) => {
                         <img src={row.image_url} alt="" style={{ width: '32px', height: '32px', objectFit: 'cover', borderRadius: '4px' }} />
                       ) : <div style={{ width: '32px', height: '32px', backgroundColor: '#e2e8f0', borderRadius: '4px' }} />}
                     </td>
-                    <td colSpan={2}>{row.parent_title}</td>
+                    <td colSpan={3}>{row.parent_title}</td>
                     <td className="text-right">{fmtInt(row.totalStock)}</td>
                     <td colSpan={8}></td>
                   </tr>
@@ -808,7 +809,7 @@ const NeedsTab = ({ token }) => {
                       )}
                     </td>
                     <td>
-                      <div style={{ maxWidth: '250px', paddingLeft: row._isVariation ? '20px' : 0 }}>
+                      <div style={{ maxWidth: '250px', paddingLeft: row._isVariation ? '30px' : 0 }}>
                         <div style={{ fontWeight: 500, marginBottom: '2px' }}>
                           {row._isVariation ? row.post_title.replace(row.parent_title + ' - ', '').replace(row.parent_title, '') || row.post_title : row.post_title}
                         </div>
@@ -816,6 +817,23 @@ const NeedsTab = ({ token }) => {
                           <small style={{ color: '#666' }}>{row.supplier_name}</small>
                         )}
                       </div>
+                    </td>
+                    <td>
+                      {row.sku && (
+                        <a
+                          href={row._isVariation && row.parent_sku
+                            ? `https://app.metorik.com/products/${row.parent_sku}?variation=${row.sku}`
+                            : `https://app.metorik.com/products/${row.sku}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          title="Voir sur Metorik"
+                          style={{ display: 'inline-flex', opacity: 0.7 }}
+                          onMouseOver={e => e.currentTarget.style.opacity = 1}
+                          onMouseOut={e => e.currentTarget.style.opacity = 0.7}
+                        >
+                          <img src="https://metorik.com/img/brand/logo-icon.png" alt="Metorik" style={{ width: '18px', height: '18px' }} />
+                        </a>
+                      )}
                     </td>
                     <td><code style={{ fontSize: '12px' }}>{row.sku || '-'}</code></td>
                     <td className="text-right">{fmtInt(row.stock)}</td>

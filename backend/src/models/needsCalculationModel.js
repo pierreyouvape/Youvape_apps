@@ -34,7 +34,8 @@ const needsCalculationModel = {
         p.wp_parent_id,
         p.product_type,
         p_parent.post_title as parent_title,
-        p_parent.image_url as parent_image_url
+        p_parent.image_url as parent_image_url,
+        p_parent.sku as parent_sku
       FROM products p
       LEFT JOIN product_alerts pa ON p.id = pa.product_id
       LEFT JOIN product_suppliers ps_primary ON p.id = ps_primary.product_id AND ps_primary.is_primary = true
@@ -178,7 +179,8 @@ const needsCalculationModel = {
       image_url: p.image_url || p.parent_image_url || null,
       wp_parent_id: p.wp_parent_id || null,
       product_type: p.product_type,
-      parent_title: p.parent_title || null
+      parent_title: p.parent_title || null,
+      parent_sku: p.parent_sku || null
     }));
   },
 
