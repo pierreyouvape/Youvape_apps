@@ -838,11 +838,9 @@ const NeedsTab = ({ token }) => {
                       </div>
                     </td>
                     <td>
-                      {row.sku && (
+                      {!row._isVariation && row.sku && (
                         <a
-                          href={row._isVariation && row.sku?.includes('-')
-                            ? `https://app.metorik.com/products/${row.sku.split('-')[0]}?variation=${row.sku.split('-')[1]}`
-                            : `https://app.metorik.com/products/${row.sku}`}
+                          href={`https://app.metorik.com/products/${row.sku}`}
                           target="_blank"
                           rel="noopener noreferrer"
                           title="Voir sur Metorik"
