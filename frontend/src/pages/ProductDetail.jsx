@@ -486,8 +486,29 @@ const ProductDetail = () => {
                         }
                       }}
                     >
-                      <div style={{ fontWeight: '500', fontSize: '13px', marginBottom: '4px' }}>
-                        {variant.post_title?.replace(product?.post_title + ' - ', '').replace(product?.post_title + ' – ', '') || variant.sku}
+                      <div style={{ fontWeight: '500', fontSize: '13px', marginBottom: '4px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span>{variant.post_title?.replace(product?.post_title + ' - ', '').replace(product?.post_title + ' – ', '') || variant.sku}</span>
+                        <span
+                          title={variant.exclude_from_reorder ? 'Exclu du reassort (cliquer pour inclure)' : 'Propose au reassort (cliquer pour exclure)'}
+                          onClick={async (e) => {
+                            e.stopPropagation();
+                            try {
+                              const res = await axios.patch(`${API_URL}/products/${variant.wp_product_id}/exclude-reorder`);
+                              setVariantsPeriodStats(prev => prev.map(v =>
+                                v.wp_product_id === variant.wp_product_id
+                                  ? { ...v, exclude_from_reorder: res.data.data.exclude_from_reorder }
+                                  : v
+                              ));
+                            } catch (err) {
+                              console.error('Error toggling variant exclude:', err);
+                            }
+                          }}
+                          style={{
+                            width: '10px', height: '10px', borderRadius: '50%',
+                            backgroundColor: variant.exclude_from_reorder ? '#dc3545' : '#28a745',
+                            cursor: 'pointer', flexShrink: 0, marginLeft: '8px'
+                          }}
+                        />
                       </div>
                       <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', opacity: 0.8 }}>
                         <span>{variant.quantity_sold || 0} vendues</span>

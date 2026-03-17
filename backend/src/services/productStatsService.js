@@ -391,6 +391,7 @@ class ProductStatsService {
         p.post_title,
         p.sku,
         p.stock,
+        p.exclude_from_reorder,
         COALESCE(SUM(oi.qty), 0)::int as quantity_sold
       FROM products p
       LEFT JOIN order_items oi ON oi.variation_id = p.wp_product_id
@@ -398,7 +399,7 @@ class ProductStatsService {
         AND o.post_status = ANY($${statusParamIndex})
         ${dateConditions}
       WHERE p.wp_product_id = ANY($1)
-      GROUP BY p.wp_product_id, p.post_title, p.sku, p.stock
+      GROUP BY p.wp_product_id, p.post_title, p.sku, p.stock, p.exclude_from_reorder
       ORDER BY p.sku ASC
     `;
 
