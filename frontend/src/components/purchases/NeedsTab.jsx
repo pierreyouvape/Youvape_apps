@@ -385,28 +385,91 @@ const NeedsTab = ({ token }) => {
     });
   }, [computedProducts, search, supplierId, withSalesOnly, zeroStockState]);
 
-  // Tri local
-  const sortedProducts = useMemo(() => {
-    if (!sortColumn) return filteredProducts;
-    return [...filteredProducts].sort((a, b) => {
-      const aVal = a[sortColumn] ?? 0;
-      const bVal = b[sortColumn] ?? 0;
+  // Regrouper par parent : variations sous leur parent, simples seuls
+  const groupedProducts = useMemo(() => {
+    const groups = new Map(); // wp_parent_id → { parent info, children[] }
+    const standalone = []; // produits simples
+
+    for (const p of filteredProducts) {
+      if (p.product_type === 'variation' && p.wp_parent_id) {
+        if (!groups.has(p.wp_parent_id)) {
+          groups.set(p.wp_parent_id, {
+            parent_id: p.wp_parent_id,
+            parent_title: p.parent_title || p.post_title.replace(/ - [^-]+$/, ''),
+            image_url: p.image_url,
+            children: []
+          });
+        }
+        groups.get(p.wp_parent_id).children.push(p);
+      } else {
+        standalone.push({ parent_id: null, children: [p] });
+      }
+    }
+
+    return [...groups.values(), ...standalone];
+  }, [filteredProducts]);
+
+  // Tri par groupe : position du groupe basee sur max (desc) ou min (asc) des enfants
+  const sortedGroups = useMemo(() => {
+    if (!sortColumn) return groupedProducts;
+    return [...groupedProducts].sort((a, b) => {
+      const getGroupVal = (group) => {
+        const vals = group.children.map(c => c[sortColumn] ?? 0);
+        if (typeof vals[0] === 'string') {
+          return sortDirection === 'asc'
+            ? vals.sort((x, y) => x.localeCompare(y))[0]
+            : vals.sort((x, y) => y.localeCompare(x))[0];
+        }
+        return sortDirection === 'asc' ? Math.min(...vals) : Math.max(...vals);
+      };
+      const aVal = getGroupVal(a);
+      const bVal = getGroupVal(b);
       if (typeof aVal === 'string') {
-        return sortDirection === 'asc'
-          ? aVal.localeCompare(bVal)
-          : bVal.localeCompare(aVal);
+        return sortDirection === 'asc' ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
       }
       return sortDirection === 'asc' ? aVal - bVal : bVal - aVal;
     });
-  }, [filteredProducts, sortColumn, sortDirection]);
+  }, [groupedProducts, sortColumn, sortDirection]);
+
+  // Aplatir les groupes en lignes pour la pagination
+  const flatRows = useMemo(() => {
+    const rows = [];
+    for (const group of sortedGroups) {
+      if (group.parent_id && group.children.length > 0) {
+        // Ligne parent
+        const totalStock = group.children.reduce((s, c) => s + (c.stock || 0), 0);
+        rows.push({
+          _isParent: true,
+          parent_title: group.parent_title,
+          image_url: group.image_url,
+          totalStock
+        });
+        // Trier les enfants dans le groupe aussi
+        const sortedChildren = [...group.children].sort((a, b) => {
+          const aVal = a[sortColumn] ?? 0;
+          const bVal = b[sortColumn] ?? 0;
+          if (typeof aVal === 'string') {
+            return sortDirection === 'asc' ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
+          }
+          return sortDirection === 'asc' ? aVal - bVal : bVal - aVal;
+        });
+        for (const child of sortedChildren) {
+          rows.push({ ...child, _isParent: false, _isVariation: true });
+        }
+      } else {
+        rows.push({ ...group.children[0], _isParent: false, _isVariation: false });
+      }
+    }
+    return rows;
+  }, [sortedGroups, sortColumn, sortDirection]);
 
   // Pagination locale
-  const totalFiltered = sortedProducts.length;
-  const totalPages = Math.max(1, Math.ceil(totalFiltered / PAGE_SIZE));
+  const totalFiltered = filteredProducts.length;
+  const totalPages = Math.max(1, Math.ceil(flatRows.length / PAGE_SIZE));
   const pagedProducts = useMemo(() => {
     const start = (page - 1) * PAGE_SIZE;
-    return sortedProducts.slice(start, start + PAGE_SIZE);
-  }, [sortedProducts, page]);
+    return flatRows.slice(start, start + PAGE_SIZE);
+  }, [flatRows, page]);
 
   // Reset page quand les filtres changent (mais pas la sélection)
   useEffect(() => {
@@ -514,11 +577,8 @@ const NeedsTab = ({ token }) => {
   };
 
   const renderStock = (stock) => {
-    if (stock === null || stock === undefined) return <span className="stock-zero">N/A</span>;
-    if (stock <= 0) return <span className="stock-zero">{stock}</span>;
-    if (stock < 5) return <span className="stock-critical">{stock}</span>;
-    if (stock < 20) return <span className="stock-low">{stock}</span>;
-    return <span className="stock-ok">{stock}</span>;
+    if (stock === null || stock === undefined) return 'N/A';
+    return fmtInt(stock);
   };
 
   const handleSort = (column) => {
@@ -711,6 +771,7 @@ const NeedsTab = ({ token }) => {
             <table className="purchases-table">
               <thead>
                 <tr>
+                  <th style={{ width: '40px' }}></th>
                   <th>Produit</th>
                   <th>SKU</th>
                   <SortableHeader column="stock" label="Stock" className="text-right" />
@@ -726,47 +787,61 @@ const NeedsTab = ({ token }) => {
                 </tr>
               </thead>
               <tbody>
-                {pagedProducts.map(product => (
-                  <tr key={product.id}>
+                {pagedProducts.map((row, idx) => row._isParent ? (
+                  <tr key={`parent-${row.parent_title}-${idx}`} style={{ backgroundColor: '#f1f5f9', fontWeight: 600 }}>
                     <td>
-                      <div style={{ maxWidth: '250px' }}>
-                        <div style={{ fontWeight: 500, marginBottom: '2px' }}>{product.post_title}</div>
-                        {product.supplier_name && (
-                          <small style={{ color: '#666' }}>🏭 {product.supplier_name}</small>
+                      {row.image_url ? (
+                        <img src={row.image_url} alt="" style={{ width: '32px', height: '32px', objectFit: 'cover', borderRadius: '4px' }} />
+                      ) : <div style={{ width: '32px', height: '32px', backgroundColor: '#e2e8f0', borderRadius: '4px' }} />}
+                    </td>
+                    <td colSpan={2}>{row.parent_title}</td>
+                    <td className="text-right">{fmtInt(row.totalStock)}</td>
+                    <td colSpan={8}></td>
+                  </tr>
+                ) : (
+                  <tr key={row.id}>
+                    <td>
+                      {row.image_url ? (
+                        <img src={row.image_url} alt="" style={{ width: '32px', height: '32px', objectFit: 'cover', borderRadius: '4px' }} />
+                      ) : (
+                        <div style={{ width: '32px', height: '32px', backgroundColor: '#e2e8f0', borderRadius: '4px' }} />
+                      )}
+                    </td>
+                    <td>
+                      <div style={{ maxWidth: '250px', paddingLeft: row._isVariation ? '20px' : 0 }}>
+                        <div style={{ fontWeight: 500, marginBottom: '2px' }}>
+                          {row._isVariation ? row.post_title.replace(row.parent_title + ' - ', '').replace(row.parent_title, '') || row.post_title : row.post_title}
+                        </div>
+                        {row.supplier_name && (
+                          <small style={{ color: '#666' }}>{row.supplier_name}</small>
                         )}
                       </div>
                     </td>
-                    <td><code style={{ fontSize: '12px' }}>{product.sku || '-'}</code></td>
-                    <td className="text-right">{renderStock(product.stock)}</td>
+                    <td><code style={{ fontSize: '12px' }}>{row.sku || '-'}</code></td>
+                    <td className="text-right">{fmtInt(row.stock)}</td>
                     <td className="text-right">
-                      {product.incoming_qty > 0 ? (
-                        <span style={{ color: '#3b82f6' }}>+{fmtInt(product.incoming_qty)}</span>
-                      ) : '-'}
+                      {row.incoming_qty > 0 ? fmtInt(row.incoming_qty) : '-'}
                     </td>
-                    <td className="text-right">{fmtInt(product.sales_in_period)}</td>
-                    <td className="text-right">{fmtNum(product.avg_monthly_sales)}</td>
+                    <td className="text-right">{fmtInt(row.sales_in_period)}</td>
+                    <td className="text-right">{fmtNum(row.avg_monthly_sales)}</td>
                     <td className="text-center">
-                      {renderTrend(product.trend_direction, product.trend_coefficient)}
+                      {renderTrend(row.trend_direction, row.trend_coefficient)}
                     </td>
-                    <td className="text-right">{fmtInt(product.theoretical_need)}</td>
-                    <td className="text-right">{fmtInt(product.supposed_need)}</td>
+                    <td className="text-right">{fmtInt(row.theoretical_need)}</td>
+                    <td className="text-right">{fmtInt(row.supposed_need)}</td>
                     <td className="text-right">
-                      {product.theoretical_proposal > 0 ? (
-                        <span style={{ color: '#f59e0b', fontWeight: 600 }}>{fmtInt(product.theoretical_proposal)}</span>
-                      ) : '-'}
+                      {row.theoretical_proposal > 0 ? fmtInt(row.theoretical_proposal) : '-'}
                     </td>
                     <td className="text-right">
-                      {product.supposed_proposal > 0 ? (
-                        <span style={{ color: '#8b5cf6', fontWeight: 600 }}>{fmtInt(product.supposed_proposal)}</span>
-                      ) : '-'}
+                      {row.supposed_proposal > 0 ? fmtInt(row.supposed_proposal) : '-'}
                     </td>
                     <td className="text-right">
                       <input
                         type="number"
                         className="qty-input"
                         min="0"
-                        value={selectedProducts[product.id] || ''}
-                        onChange={(e) => handleQtyChange(product.id, parseInt(e.target.value) || 0)}
+                        value={selectedProducts[row.id] || ''}
+                        onChange={(e) => handleQtyChange(row.id, parseInt(e.target.value) || 0)}
                         placeholder="0"
                       />
                     </td>
