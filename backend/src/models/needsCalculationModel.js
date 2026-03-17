@@ -49,7 +49,8 @@ const needsCalculationModel = {
         AND COALESCE(p.exclude_from_reorder, false) = false
         AND (
           p.product_type = 'simple'
-          OR (p.product_type = 'variation' AND p_parent.post_status = 'publish')
+          OR (p.product_type = 'variation' AND p_parent.post_status = 'publish'
+              AND COALESCE(p_parent.exclude_from_reorder, false) = false)
         )
       ORDER BY p.post_title
     `);
