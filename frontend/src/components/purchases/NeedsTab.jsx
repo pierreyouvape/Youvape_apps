@@ -438,11 +438,14 @@ const NeedsTab = ({ token }) => {
       if (group.parent_id && group.children.length > 0) {
         // Ligne parent
         const totalStock = group.children.reduce((s, c) => s + (c.stock || 0), 0);
+        const firstChildSku = group.children[0]?.sku || '';
+        const parentSku = firstChildSku.includes('-') ? firstChildSku.split('-')[0] : null;
         rows.push({
           _isParent: true,
           parent_title: group.parent_title,
           image_url: group.image_url,
-          totalStock
+          totalStock,
+          parentSku
         });
         // Trier les enfants dans le groupe aussi
         const sortedChildren = [...group.children].sort((a, b) => {
@@ -795,7 +798,23 @@ const NeedsTab = ({ token }) => {
                         <img src={row.image_url} alt="" style={{ width: '32px', height: '32px', objectFit: 'cover', borderRadius: '4px' }} />
                       ) : <div style={{ width: '32px', height: '32px', backgroundColor: '#e2e8f0', borderRadius: '4px' }} />}
                     </td>
-                    <td colSpan={3}>{row.parent_title}</td>
+                    <td>{row.parent_title}</td>
+                    <td>
+                      {row.parentSku && (
+                        <a
+                          href={`https://app.metorik.com/products/${row.parentSku}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          title="Voir sur Metorik"
+                          style={{ display: 'inline-flex', opacity: 0.7 }}
+                          onMouseOver={e => e.currentTarget.style.opacity = 1}
+                          onMouseOut={e => e.currentTarget.style.opacity = 0.7}
+                        >
+                          <img src="https://metorik.com/img/brand/logo-icon.png" alt="Metorik" style={{ width: '18px', height: '18px' }} />
+                        </a>
+                      )}
+                    </td>
+                    <td></td>
                     <td className="text-right">{fmtInt(row.totalStock)}</td>
                     <td colSpan={8}></td>
                   </tr>
@@ -821,8 +840,8 @@ const NeedsTab = ({ token }) => {
                     <td>
                       {row.sku && (
                         <a
-                          href={row._isVariation && row.parent_sku
-                            ? `https://app.metorik.com/products/${row.parent_sku}?variation=${row.sku}`
+                          href={row._isVariation && row.sku?.includes('-')
+                            ? `https://app.metorik.com/products/${row.sku.split('-')[0]}?variation=${row.sku.split('-')[1]}`
                             : `https://app.metorik.com/products/${row.sku}`}
                           target="_blank"
                           rel="noopener noreferrer"
