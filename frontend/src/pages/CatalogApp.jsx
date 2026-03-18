@@ -341,11 +341,11 @@ const CatalogApp = () => {
                         onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
                       >
                         <td style={cellStyle}>
-                          {!row._isVariation && row.image_url ? (
+                          {row.image_url ? (
                             <img src={row.image_url} alt="" style={{ width: '32px', height: '32px', objectFit: 'cover', borderRadius: '4px' }} />
-                          ) : !row._isVariation ? (
+                          ) : (
                             <div style={{ width: '32px', height: '32px', backgroundColor: '#e5e7eb', borderRadius: '4px' }} />
-                          ) : null}
+                          )}
                         </td>
                         <td style={{ ...cellStyle, paddingLeft: row._isVariation ? '40px' : '10px' }}>
                           <span style={{ fontWeight: row._isVariation ? '400' : '500', color: '#111827' }}>
