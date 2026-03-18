@@ -77,6 +77,11 @@ class Hooks_Manager {
      * ============================================ */
 
     /**
+     * Track newly created orders to avoid LIGHT overwrite
+     */
+    private static $created_orders = [];
+
+    /**
      * New order created - FULL
      */
     public static function on_new_order($order_id, $order = null) {
@@ -84,6 +89,8 @@ class Hooks_Manager {
             $order = wc_get_order($order_id);
         }
         if (!$order) return;
+
+        self::$created_orders[$order_id] = true;
 
         $data = Data_Fetcher::get_order($order_id);
         if ($data) {
@@ -93,8 +100,13 @@ class Hooks_Manager {
 
     /**
      * Order status changed - LIGHT (explicit hook)
+     * Skip if order was just created in this request (FULL already queued)
      */
     public static function on_order_status_changed($order_id, $old_status, $new_status, $order) {
+        if (isset(self::$created_orders[$order_id])) {
+            return;
+        }
+
         // Only send the status change, not full data
         Queue_Manager::add('order', 'update', $order_id, [
             'status' => $new_status,

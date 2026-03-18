@@ -133,10 +133,15 @@ async function processOrderEvent(action, wp_id, data, results) {
   // Light update - just status change
   if (action === 'update' && data.status && Object.keys(data).length <= 3) {
     const status = data.status.startsWith('wc-') ? data.status : `wc-${data.status}`;
-    await pool.query(
-      'UPDATE orders SET post_status = $1, post_modified = $2, updated_at = NOW() WHERE wp_order_id = $3',
+    const updateResult = await pool.query(
+      'UPDATE orders SET post_status = $1, post_modified = $2, updated_at = NOW() WHERE wp_order_id = $3 RETURNING wp_order_id',
       [status, data.date_modified || new Date(), wp_id]
     );
+    if (updateResult.rowCount === 0) {
+      // Order doesn't exist yet - skip, the polling will pick it up as FULL
+      console.log(`  ⚠️ Order #${wp_id} not found for light update, skipping light update`);
+      return;
+    }
     results.details.orders.updated++;
     console.log(`  ✓ Order #${wp_id} status updated to ${status}`);
     return;
@@ -290,10 +295,14 @@ async function processProductEvent(action, wp_id, data, results) {
 
   // Light update - just stock change
   if (action === 'update' && data.stock_quantity !== undefined && Object.keys(data).length <= 3) {
-    await pool.query(
-      'UPDATE products SET stock = $1, stock_status = $2, post_modified = NOW(), updated_at = NOW() WHERE wp_product_id = $3',
+    const stockResult = await pool.query(
+      'UPDATE products SET stock = $1, stock_status = $2, post_modified = NOW(), updated_at = NOW() WHERE wp_product_id = $3 RETURNING wp_product_id',
       [data.stock_quantity, data.stock_status || 'instock', wp_id]
     );
+    if (stockResult.rowCount === 0) {
+      console.log(`  ⚠️ Product #${wp_id} not found for light update, skipping light update`);
+      return;
+    }
     results.details.products.updated++;
     console.log(`  ✓ Product #${wp_id} stock updated to ${data.stock_quantity}`);
     return;
@@ -304,9 +313,9 @@ async function processProductEvent(action, wp_id, data, results) {
     INSERT INTO products (
       wp_product_id, wp_parent_id, sku, post_title, post_excerpt,
       price, regular_price, stock, stock_status,
-      product_type, post_status, weight,
+      product_type, post_status, weight, image_url,
       post_date, post_modified, updated_at
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, NOW())
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, NOW())
     ON CONFLICT (wp_product_id)
     DO UPDATE SET
       wp_parent_id = EXCLUDED.wp_parent_id,
@@ -320,6 +329,7 @@ async function processProductEvent(action, wp_id, data, results) {
       product_type = EXCLUDED.product_type,
       post_status = EXCLUDED.post_status,
       weight = EXCLUDED.weight,
+      image_url = EXCLUDED.image_url,
       post_modified = EXCLUDED.post_modified,
       updated_at = NOW()
     RETURNING (xmax = 0) AS inserted
@@ -338,6 +348,7 @@ async function processProductEvent(action, wp_id, data, results) {
     data.type || 'simple',
     data.status || 'publish',
     data.weight || null,
+    data.image_url || null,
     data.date_created || null,
     data.date_modified || new Date()
   ];
@@ -350,6 +361,15 @@ async function processProductEvent(action, wp_id, data, results) {
   } else {
     results.details.products.updated++;
     console.log(`  ✓ Product #${wp_id} updated`);
+  }
+
+  // Traiter les variations si presentes (donnees completes depuis YouSync v1.3.1)
+  if (data.variations && Array.isArray(data.variations) && data.variations.length > 0) {
+    for (const variation of data.variations) {
+      if (variation.wp_product_id) {
+        await processProductEvent(action, variation.wp_product_id, variation, results);
+      }
+    }
   }
 }
 

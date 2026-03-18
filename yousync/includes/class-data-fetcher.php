@@ -146,7 +146,9 @@ class Data_Fetcher {
             'tax_class' => $product->get_tax_class(),
             'date_created' => $product->get_date_created() ? $product->get_date_created()->format('Y-m-d H:i:s') : null,
             'date_modified' => $product->get_date_modified() ? $product->get_date_modified()->format('Y-m-d H:i:s') : null,
-            'image_url' => wp_get_attachment_url($product->get_image_id()) ?: null,
+            'image_url' => wp_get_attachment_url($product->get_image_id()) ?: (
+                $product->get_parent_id() ? wp_get_attachment_url(get_post_thumbnail_id($product->get_parent_id())) ?: null : null
+            ),
             'permalink' => get_permalink($product->get_id())
         ];
 
@@ -183,9 +185,16 @@ class Data_Fetcher {
             $data['attributes'] = $product->get_variation_attributes();
         }
 
-        // Get children for variable products
+        // Get children for variable products (full data including image_url)
         if ($product->is_type('variable')) {
-            $data['variations'] = $product->get_children();
+            $children_ids = $product->get_children();
+            $data['variations'] = [];
+            foreach ($children_ids as $child_id) {
+                $child_data = self::get_product($child_id);
+                if ($child_data) {
+                    $data['variations'][] = $child_data;
+                }
+            }
         }
 
         return $data;

@@ -217,8 +217,8 @@ const wcSyncService = {
     await pool.query(`
       INSERT INTO products (
         wp_product_id, wp_parent_id, product_type, post_title, sku, post_status,
-        stock_status, stock, price, regular_price, post_date, post_modified
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+        stock_status, stock, price, regular_price, image_url, weight, post_date, post_modified
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
       ON CONFLICT (wp_product_id)
       DO UPDATE SET
         wp_parent_id = EXCLUDED.wp_parent_id,
@@ -230,12 +230,24 @@ const wcSyncService = {
         stock = EXCLUDED.stock,
         price = EXCLUDED.price,
         regular_price = EXCLUDED.regular_price,
+        image_url = EXCLUDED.image_url,
+        weight = EXCLUDED.weight,
         post_modified = EXCLUDED.post_modified
     `, [
       data.wp_product_id, data.parent_id || null, data.type, data.name,
       data.sku, data.status, data.stock_status, data.stock_quantity,
-      data.price, data.regular_price, data.date_created, data.date_modified
+      data.price, data.regular_price, data.image_url || null, data.weight || null,
+      data.date_created, data.date_modified
     ]);
+
+    // Traiter les variations si presentes (donnees completes depuis v1.3.1)
+    if (data.variations && Array.isArray(data.variations) && data.variations.length > 0) {
+      for (const variation of data.variations) {
+        if (variation.wp_product_id) {
+          await wcSyncService.processProduct(action, variation.wp_product_id, variation);
+        }
+      }
+    }
 
     console.log(`🔄 WC Sync: Product #${wpId} ${action === 'create' ? 'créé' : 'mis à jour'}`);
   },

@@ -138,6 +138,7 @@ function transformVariation(rawVariation, parentWpId) {
     sku: getMeta('_sku'),
     regular_price: getMeta('_regular_price') ? parseFloat(getMeta('_regular_price')) : null,
     thumbnail_id: getMeta('_thumbnail_id') ? parseInt(getMeta('_thumbnail_id')) : null,
+    image_url: rawVariation.image_url || null,
     price: getMeta('_price') ? parseFloat(getMeta('_price')) : null,
     wc_cog_cost: getMeta('_wc_cog_cost') ? parseFloat(getMeta('_wc_cog_cost')) : null,
     global_unique_id: getMeta('_global_unique_id')
