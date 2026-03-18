@@ -320,7 +320,7 @@ const CatalogApp = () => {
                           <td style={cellRight}></td>
                           <td style={cellRight}></td>
                           <td style={{ ...cellRight, fontWeight: 600, ...numStyle(row.stock) }}>{fmtInt(row.stock)}</td>
-                          <td style={{ ...cellRight, fontWeight: 600, ...numStyle(row.incoming_qty) }}>{fmtInt(row.incoming_qty)}</td>
+                          <td style={{ ...cellRight, fontWeight: 600 }}>{fmtInt(row.incoming_qty)}</td>
                           <td style={{ ...cellRight, fontWeight: 600, ...numStyle(row.sales_30d) }}>{fmtInt(row.sales_30d)}</td>
                         </tr>
                       );
@@ -358,7 +358,7 @@ const CatalogApp = () => {
                         <td style={{ ...cellRight, ...(margin !== null ? numStyle(margin) : {}) }}>{margin !== null ? fmtPct(margin) : '-'}</td>
                         <td style={cellRight}>{fmtWeight(row.weight)}</td>
                         <td style={{ ...cellRight, fontWeight: '600', ...numStyle(row.stock) }}>{fmtInt(row.stock)}</td>
-                        <td style={{ ...cellRight, ...numStyle(row.incoming_qty) }}>{fmtInt(row.incoming_qty)}</td>
+                        <td style={cellRight}>{fmtInt(row.incoming_qty)}</td>
                         <td style={{ ...cellRight, ...numStyle(row.sales_30d) }}>{fmtInt(row.sales_30d)}</td>
                       </tr>
                     );
