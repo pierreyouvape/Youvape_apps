@@ -695,7 +695,7 @@ class ProductModel {
         FROM order_items oi
         JOIN orders o ON oi.wp_order_id = o.wp_order_id
         WHERE o.post_status IN ('wc-completed', 'wc-processing', 'wc-expediee')
-          AND o.date_created >= NOW() - INTERVAL '30 days'
+          AND o.post_date >= NOW() - INTERVAL '30 days'
           AND (oi.product_id = ANY($1) OR oi.variation_id = ANY($1))
         GROUP BY wp_id
       `, [allWpIds]);
