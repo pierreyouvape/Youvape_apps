@@ -442,6 +442,7 @@ const NeedsTab = ({ token }) => {
         const parentSku = firstChildSku.includes('-') ? firstChildSku.split('-')[0] : null;
         rows.push({
           _isParent: true,
+          wp_product_id: group.parent_id,
           parent_title: group.parent_title,
           image_url: group.image_url,
           totalStock,
@@ -798,7 +799,7 @@ const NeedsTab = ({ token }) => {
                         <img src={row.image_url} alt="" style={{ width: '32px', height: '32px', objectFit: 'cover', borderRadius: '4px' }} />
                       ) : <div style={{ width: '32px', height: '32px', backgroundColor: '#e2e8f0', borderRadius: '4px' }} />}
                     </td>
-                    <td>{row.parent_title}</td>
+                    <td><a href={`/products/${row.wp_product_id}`} target="_blank" rel="noopener noreferrer" style={{ color: 'inherit', textDecoration: 'none' }} onMouseEnter={e => e.target.style.textDecoration = 'underline'} onMouseLeave={e => e.target.style.textDecoration = 'none'}>{row.parent_title}</a></td>
                     <td>
                       {row.parentSku && (
                         <a
@@ -830,7 +831,9 @@ const NeedsTab = ({ token }) => {
                     <td>
                       <div style={{ maxWidth: '250px', paddingLeft: row._isVariation ? '30px' : 0 }}>
                         <div style={{ fontWeight: 500, marginBottom: '2px' }}>
-                          {row._isVariation ? row.post_title.replace(row.parent_title + ' - ', '').replace(row.parent_title, '') || row.post_title : row.post_title}
+                          <a href={`/products/${row.wp_product_id}`} target="_blank" rel="noopener noreferrer" style={{ color: 'inherit', textDecoration: 'none' }} onMouseEnter={e => e.target.style.textDecoration = 'underline'} onMouseLeave={e => e.target.style.textDecoration = 'none'}>
+                            {row._isVariation ? row.post_title.replace(row.parent_title + ' - ', '').replace(row.parent_title, '') || row.post_title : row.post_title}
+                          </a>
                         </div>
                         {row.supplier_name && (
                           <small style={{ color: '#666' }}>{row.supplier_name}</small>
