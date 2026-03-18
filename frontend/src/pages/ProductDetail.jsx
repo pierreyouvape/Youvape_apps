@@ -632,16 +632,16 @@ const ProductDetail = () => {
             {kpis && (
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '15px', marginBottom: '30px' }}>
                 {[
-                  { label: 'Quantite vendue', value: formatNumber(kpis.net_sold || 0), color: '#135E84' },
-                  { label: 'Chiffre d\'affaires', value: formatCurrency(kpis.net_revenue || 0), color: '#28a745' },
-                  { label: 'Nombre de commandes', value: formatNumber(kpis.net_orders || 0), color: '#8b5cf6' },
-                  { label: 'Cout', value: formatCurrency(kpis.total_cost || 0), color: '#fd7e14' },
-                  { label: 'Profit', value: formatCurrency(kpis.profit || 0), color: '#007bff' },
-                  { label: 'Marge', value: `${(kpis.margin_percent || 0).toFixed(1)}%`, color: '#ff6b6b' }
+                  { label: 'Quantite vendue', value: formatNumber(kpis.net_sold || 0) },
+                  { label: 'Chiffre d\'affaires', value: formatCurrency(kpis.net_revenue || 0) },
+                  { label: 'Nombre de commandes', value: formatNumber(kpis.net_orders || 0) },
+                  { label: 'Cout', value: formatCurrency(kpis.total_cost || 0) },
+                  { label: 'Profit', value: formatCurrency(kpis.profit || 0) },
+                  { label: 'Marge', value: `${(kpis.margin_percent || 0).toFixed(1)}%` }
                 ].map((kpi, i) => (
                   <div key={i} style={{ ...cardStyle, padding: '20px', marginBottom: 0 }}>
                     <div style={{ fontSize: '12px', color: '#666', marginBottom: '5px', textTransform: 'uppercase' }}>{kpi.label}</div>
-                    <div style={{ fontSize: '24px', fontWeight: '700', color: kpi.color }}>{kpi.value}</div>
+                    <div style={{ fontSize: '24px', fontWeight: '700', color: '#111827' }}>{kpi.value}</div>
                   </div>
                 ))}
               </div>
@@ -690,7 +690,7 @@ const ProductDetail = () => {
                           </div>
                           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', opacity: 0.8 }}>
                             <span>{variant.quantity_sold || 0} vendues</span>
-                            <span style={{ color: selectedVariantId === variant.wp_product_id ? 'white' : (variant.stock > 0 ? '#28a745' : '#dc3545') }}>Stock: {variant.stock || 0}</span>
+                            <span style={{ color: selectedVariantId === variant.wp_product_id ? 'white' : '#111827' }}>Stock: {variant.stock || 0}</span>
                           </div>
                         </div>
                       ))}
@@ -732,12 +732,12 @@ const ProductDetail = () => {
                           <td style={{ padding: '12px' }}>{variant.post_title}</td>
                           <td style={{ textAlign: 'center', padding: '12px', fontSize: '13px', color: '#666' }}>{variant.sku}{variant.sku && <CopyButton text={variant.sku} size={12} />}</td>
                           <td style={{ textAlign: 'right', padding: '12px', fontWeight: '600' }}>{formatCurrency(variant.price)}</td>
-                          <td style={{ textAlign: 'center', padding: '12px', fontWeight: '600', color: variant.stock > 0 ? '#28a745' : '#dc3545' }}>{formatNumber(variant.stock || 0)}</td>
-                          <td style={{ textAlign: 'center', padding: '12px', fontWeight: '600', color: '#135E84' }}>{formatNumber(variant.net_sold || 0)}</td>
-                          <td style={{ textAlign: 'right', padding: '12px', fontWeight: '600', color: '#28a745' }}>{formatCurrency(variant.net_revenue || 0)}</td>
+                          <td style={{ textAlign: 'center', padding: '12px', fontWeight: '600' }}>{formatNumber(variant.stock || 0)}</td>
+                          <td style={{ textAlign: 'center', padding: '12px', fontWeight: '600' }}>{formatNumber(variant.net_sold || 0)}</td>
+                          <td style={{ textAlign: 'right', padding: '12px', fontWeight: '600' }}>{formatCurrency(variant.net_revenue || 0)}</td>
                           <td style={{ textAlign: 'center', padding: '12px', fontWeight: '600' }}>{formatNumber(variant.net_orders || 0)}</td>
-                          <td style={{ textAlign: 'right', padding: '12px', fontWeight: '600', color: '#007bff' }}>{formatCurrency(variant.profit || 0)}</td>
-                          <td style={{ textAlign: 'right', padding: '12px', fontWeight: '600', color: '#ff6b6b' }}>{parseFloat(variant.margin_percent || 0).toFixed(1)}%</td>
+                          <td style={{ textAlign: 'right', padding: '12px', fontWeight: '600' }}>{formatCurrency(variant.profit || 0)}</td>
+                          <td style={{ textAlign: 'right', padding: '12px', fontWeight: '600' }}>{parseFloat(variant.margin_percent || 0).toFixed(1)}%</td>
                         </tr>
                       ))}
                     </tbody>
@@ -783,8 +783,8 @@ const ProductDetail = () => {
                           <tr key={country.shipping_country} style={{ borderBottom: '1px solid #f0f0f0' }}>
                             <td style={{ padding: '12px', fontWeight: '600' }}>{country.shipping_country}</td>
                             <td style={{ textAlign: 'center', padding: '12px' }}>{formatNumber(country.net_sold)}</td>
-                            <td style={{ textAlign: 'right', padding: '12px', color: '#28a745', fontWeight: '600' }}>{formatCurrency(country.net_revenue)}</td>
-                            <td style={{ textAlign: 'right', padding: '12px', color: '#007bff', fontWeight: '600' }}>{formatCurrency(country.profit)}</td>
+                            <td style={{ textAlign: 'right', padding: '12px', fontWeight: '600' }}>{formatCurrency(country.net_revenue)}</td>
+                            <td style={{ textAlign: 'right', padding: '12px', fontWeight: '600' }}>{formatCurrency(country.profit)}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -826,7 +826,7 @@ const ProductDetail = () => {
                   {product.meta_data.total_sales && (
                     <div style={{ padding: '12px', borderBottom: '1px solid #f0f0f0', display: 'flex', justifyContent: 'space-between' }}>
                       <div style={{ color: '#666' }}>Ventes totales (WooCommerce)</div>
-                      <div style={{ fontWeight: '600', color: '#135E84' }}>{formatNumber(product.meta_data.total_sales)}</div>
+                      <div style={{ fontWeight: '600' }}>{formatNumber(product.meta_data.total_sales)}</div>
                     </div>
                   )}
                   {product.dimensions && product.dimensions.weight && (
@@ -871,7 +871,7 @@ const ProductDetail = () => {
                         <div style={{ fontSize: '12px', color: '#999' }}>{customer.email}</div>
                       </div>
                       <div style={{ textAlign: 'right' }}>
-                        <div style={{ fontWeight: '600', color: '#135E84' }}>{formatNumber(customer.quantity_bought)} unites</div>
+                        <div style={{ fontWeight: '600' }}>{formatNumber(customer.quantity_bought)} unites</div>
                         <div style={{ fontSize: '12px', color: '#999' }}>{formatCurrency(customer.total_spent)}</div>
                       </div>
                     </div>
@@ -888,7 +888,7 @@ const ProductDetail = () => {
                         <div style={{ fontSize: '12px', color: '#999' }}>{order.first_name} {order.last_name} - {order.shipping_country}</div>
                       </div>
                       <div style={{ textAlign: 'right' }}>
-                        <div style={{ fontWeight: '600', color: '#28a745' }}>{formatCurrency(order.order_total)}</div>
+                        <div style={{ fontWeight: '600' }}>{formatCurrency(order.order_total)}</div>
                         <div style={{ fontSize: '12px', color: '#999' }}>{formatDate(order.post_date)}</div>
                       </div>
                     </div>
