@@ -596,16 +596,20 @@ class ProductModel {
   async getAllForCatalog(limit = 50, offset = 0, search = '') {
     let whereClause = `
       WHERE p.post_status = 'publish'
-        AND (
-          p.product_type = 'simple'
-          OR (p.product_type = 'variation' AND p_parent.post_status = 'publish')
-        )
+        AND p.product_type IN ('simple', 'variable')
     `;
     const params = [];
     let paramIndex = 1;
 
     if (search) {
-      whereClause += ` AND LOWER(p.post_title || ' ' || COALESCE(p.sku, '')) LIKE $${paramIndex}`;
+      whereClause += ` AND (
+        LOWER(p.post_title || ' ' || COALESCE(p.sku, '')) LIKE $${paramIndex}
+        OR EXISTS (
+          SELECT 1 FROM products v
+          WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation'
+            AND LOWER(v.post_title || ' ' || COALESCE(v.sku, '')) LIKE $${paramIndex}
+        )
+      )`;
       params.push(`%${search.toLowerCase().replace(/[-_.,;:!?()\[\]]/g, ' ')}%`);
       paramIndex++;
     }
@@ -621,11 +625,11 @@ class ProductModel {
         COALESCE(p.stock, 0) as stock,
         p.stock_status,
         p.regular_price,
-        COALESCE(p.image_url, p_parent.image_url) as image_url,
+        p.image_url,
         p.product_type,
-        p.post_date
+        p.post_date,
+        (SELECT COUNT(*) FROM products v WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation') as variations_count
       FROM products p
-      LEFT JOIN products p_parent ON p.wp_parent_id = p_parent.wp_product_id
       ${whereClause}
       ORDER BY p.post_date DESC
       LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
@@ -641,22 +645,25 @@ class ProductModel {
   async countForCatalog(search = '') {
     let whereClause = `
       WHERE p.post_status = 'publish'
-        AND (
-          p.product_type = 'simple'
-          OR (p.product_type = 'variation' AND p_parent.post_status = 'publish')
-        )
+        AND p.product_type IN ('simple', 'variable')
     `;
     const params = [];
 
     if (search) {
-      whereClause += ` AND LOWER(p.post_title || ' ' || COALESCE(p.sku, '')) LIKE $1`;
+      whereClause += ` AND (
+        LOWER(p.post_title || ' ' || COALESCE(p.sku, '')) LIKE $1
+        OR EXISTS (
+          SELECT 1 FROM products v
+          WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation'
+            AND LOWER(v.post_title || ' ' || COALESCE(v.sku, '')) LIKE $1
+        )
+      )`;
       params.push(`%${search.toLowerCase().replace(/[-_.,;:!?()\[\]]/g, ' ')}%`);
     }
 
     const query = `
       SELECT COUNT(*)::int as total
       FROM products p
-      LEFT JOIN products p_parent ON p.wp_parent_id = p_parent.wp_product_id
       ${whereClause}
     `;
 

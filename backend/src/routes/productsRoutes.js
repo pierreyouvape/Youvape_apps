@@ -16,6 +16,7 @@ router.post('/barcodes/import', productsController.importBarcodes);
 // Détails produit
 router.get('/:id', productsController.getById);
 router.get('/:id/catalog', productsController.getCatalogDetail);
+router.get('/:id/catalog-variations', productsController.getCatalogVariations);
 router.get('/:id/sales-history', productsController.getSalesHistory);
 router.get('/:id/customers', productsController.getCustomers);
 router.get('/:id/related', productsController.getRelatedProducts);
@@ -34,9 +35,11 @@ router.get('/:id/stats/recent-orders', productStatsController.getRecentOrders);
 router.get('/:id/stats/by-day-of-week', productStatsController.getSalesByDayOfWeek);
 router.get('/:id/stats/by-hour', productStatsController.getSalesByHour);
 router.get('/:id/variations-stats', productsController.getVariationsStats);
+router.get('/:id/variations-needs', productsController.getVariationsNeeds);
 
 // Codes-barres
 router.get('/:id/barcodes', productsController.getProductBarcodes);
+router.get('/:id/variations-barcodes', productsController.getVariationsBarcodes);
 router.post('/:id/barcodes/fetch-bms', productsController.fetchBmsBarcode);
 router.post('/:id/barcodes', productsController.addProductBarcode);
 router.delete('/:id/barcodes/:barcodeId', productsController.deleteProductBarcode);

@@ -1,6 +1,7 @@
 const productModel = require('../models/productModel');
 const advancedFilterService = require('../services/advancedFilterService');
 const bmsApiModel = require('../models/bmsApiModel');
+const needsCalculationModel = require('../models/needsCalculationModel');
 const pool = require('../config/database');
 
 /**
@@ -293,6 +294,28 @@ exports.getCatalogList = async (req, res) => {
 };
 
 /**
+ * Recupere les variations d'un produit parent pour le catalogue
+ * GET /api/products/:id/catalog-variations
+ */
+exports.getCatalogVariations = async (req, res) => {
+  try {
+    const wpProductId = parseInt(req.params.id);
+    const result = await pool.query(`
+      SELECT p.id, p.wp_product_id, p.post_title, p.sku,
+        COALESCE(p.stock, 0) as stock, p.regular_price,
+        COALESCE(p.image_url, (SELECT image_url FROM products WHERE wp_product_id = $1)) as image_url
+      FROM products p
+      WHERE p.wp_parent_id = $1 AND p.product_type = 'variation'
+      ORDER BY p.post_title ASC
+    `, [wpProductId]);
+    res.json({ success: true, data: result.rows });
+  } catch (error) {
+    console.error('Error getting catalog variations:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+/**
  * Récupère les données d'un produit pour la fiche catalogue
  * GET /api/products/:id/catalog
  */
@@ -336,11 +359,89 @@ exports.getVariationsStats = async (req, res) => {
  */
 exports.getProductBarcodes = async (req, res) => {
   try {
-    const productId = parseInt(req.params.id);
-    const barcodes = await productModel.getBarcodes(productId);
+    const wpProductId = parseInt(req.params.id);
+    const product = await pool.query('SELECT id FROM products WHERE wp_product_id = $1', [wpProductId]);
+    if (!product.rows[0]) return res.status(404).json({ success: false, error: 'Produit introuvable' });
+    const barcodes = await productModel.getBarcodes(product.rows[0].id);
     res.json({ success: true, data: barcodes });
   } catch (error) {
     console.error('Error getting barcodes:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+/**
+ * Recupere les variations d'un produit parent avec leurs codes-barres
+ * GET /api/products/:id/variations-barcodes
+ */
+exports.getVariationsBarcodes = async (req, res) => {
+  try {
+    const wpProductId = parseInt(req.params.id);
+    const variations = await pool.query(`
+      SELECT p.id, p.wp_product_id, p.post_title, p.sku, COALESCE(p.stock, 0) as stock
+      FROM products p
+      WHERE p.wp_parent_id = $1 AND p.product_type = 'variation'
+      ORDER BY p.post_title ASC
+    `, [wpProductId]);
+
+    const result = [];
+    for (const v of variations.rows) {
+      const barcodes = await productModel.getBarcodes(v.id);
+      result.push({ ...v, barcodes });
+    }
+
+    res.json({ success: true, data: result });
+  } catch (error) {
+    console.error('Error getting variations barcodes:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+/**
+ * Recupere les besoins par variation pour un produit parent
+ * GET /api/products/:id/variations-needs
+ */
+exports.getVariationsNeeds = async (req, res) => {
+  try {
+    const wpProductId = parseInt(req.params.id);
+    const variations = await pool.query(`
+      SELECT p.id, p.wp_product_id, p.post_title, p.sku, COALESCE(p.stock, 0)::int as stock
+      FROM products p
+      WHERE p.wp_parent_id = $1 AND p.product_type = 'variation'
+      ORDER BY p.post_title ASC
+    `, [wpProductId]);
+
+    // Arrivages en cours par variation (internal id)
+    const varIds = variations.rows.map(v => v.id);
+    let incomingMap = new Map();
+    if (varIds.length > 0) {
+      const incomingResult = await pool.query(`
+        SELECT poi.product_id, COALESCE(SUM(poi.qty_ordered - poi.qty_received), 0)::int as incoming_qty
+        FROM purchase_order_items poi
+        JOIN purchase_orders po ON poi.purchase_order_id = po.id
+        WHERE po.status IN ('sent', 'confirmed', 'shipped', 'partial')
+          AND poi.product_id = ANY($1)
+        GROUP BY poi.product_id
+      `, [varIds]);
+      for (const row of incomingResult.rows) {
+        incomingMap.set(parseInt(row.product_id), parseInt(row.incoming_qty) || 0);
+      }
+    }
+
+    // Calculer les besoins par variation
+    const result = [];
+    for (const v of variations.rows) {
+      const needs = await needsCalculationModel.calculateProductNeeds(v.wp_product_id, 1, 1);
+      result.push({
+        ...v,
+        incoming_qty: incomingMap.get(v.id) || 0,
+        ...needs
+      });
+    }
+
+    res.json({ success: true, data: result });
+  } catch (error) {
+    console.error('Error getting variations needs:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 };
@@ -351,15 +452,18 @@ exports.getProductBarcodes = async (req, res) => {
  */
 exports.addProductBarcode = async (req, res) => {
   try {
-    const productId = parseInt(req.params.id);
+    const wpProductId = parseInt(req.params.id);
     const { barcode, type, quantity } = req.body;
 
     if (!barcode || !type || !['unit', 'pack'].includes(type)) {
       return res.status(400).json({ success: false, error: 'barcode et type (unit/pack) requis' });
     }
 
+    const product = await pool.query('SELECT id FROM products WHERE wp_product_id = $1', [wpProductId]);
+    if (!product.rows[0]) return res.status(404).json({ success: false, error: 'Produit introuvable' });
+
     const qty = type === 'pack' && quantity ? parseInt(quantity) : null;
-    const result = await productModel.addBarcode(productId, barcode.trim(), type, qty);
+    const result = await productModel.addBarcode(product.rows[0].id, barcode.trim(), type, qty);
     res.json({ success: true, data: result });
   } catch (error) {
     if (error.code === '23505') {

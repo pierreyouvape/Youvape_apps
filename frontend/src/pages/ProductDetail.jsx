@@ -46,12 +46,16 @@ const ProductDetail = () => {
   // Needs tab
   const [needs, setNeeds] = useState(null);
   const [needsLoaded, setNeedsLoaded] = useState(false);
+  const [variationsNeeds, setVariationsNeeds] = useState([]);
 
   // Barcodes tab
   const [barcodes, setBarcodes] = useState([]);
   const [barcodesLoaded, setBarcodesLoaded] = useState(false);
   const [newBarcode, setNewBarcode] = useState({ unit: '', pack: '' });
   const [newPackQty, setNewPackQty] = useState('');
+  const [variationsBarcodes, setVariationsBarcodes] = useState([]);
+  const [newVarBarcode, setNewVarBarcode] = useState({});
+  const [newVarPackQty, setNewVarPackQty] = useState({});
 
   // Suppliers tab
   const [suppliers, setSuppliers] = useState([]);
@@ -84,6 +88,13 @@ const ProductDetail = () => {
     try {
       const productRes = await axios.get(`${API_URL}/products/${id}`);
       const productData = productRes.data.data;
+
+      // Redirect variation to parent
+      if (productData.product_type === 'variation' && productData.wp_parent_id) {
+        navigate(`/products/${productData.wp_parent_id}`, { replace: true });
+        return;
+      }
+
       productData.effective_cost_price = productData.cost_price_custom || productData.cost_price || productData.wc_cog_cost || 0;
       setProduct(productData);
       setNewCost(productData.cost_price_custom || productData.cost_price || productData.wc_cog_cost || '');
@@ -173,8 +184,13 @@ const ProductDetail = () => {
   const fetchNeeds = async () => {
     if (needsLoaded || !product) return;
     try {
-      const res = await axios.get(`${API_URL}/purchases/needs/${product.wp_product_id}`, { headers });
-      if (res.data?.data) setNeeds(res.data.data);
+      if (product.product_type === 'variable') {
+        const res = await axios.get(`${API_URL}/products/${id}/variations-needs`, { headers });
+        if (res.data.success) setVariationsNeeds(res.data.data || []);
+      } else {
+        const res = await axios.get(`${API_URL}/purchases/needs/${product.wp_product_id}`, { headers });
+        if (res.data?.data) setNeeds(res.data.data);
+      }
     } catch (e) {}
     setNeedsLoaded(true);
   };
@@ -183,8 +199,13 @@ const ProductDetail = () => {
   const fetchBarcodes = async () => {
     if (barcodesLoaded) return;
     try {
-      const res = await axios.get(`${API_URL}/products/${id}/barcodes`, { headers });
-      if (res.data.success) setBarcodes(res.data.data || []);
+      if (product?.product_type === 'variable') {
+        const res = await axios.get(`${API_URL}/products/${id}/variations-barcodes`, { headers });
+        if (res.data.success) setVariationsBarcodes(res.data.data || []);
+      } else {
+        const res = await axios.get(`${API_URL}/products/${id}/barcodes`, { headers });
+        if (res.data.success) setBarcodes(res.data.data || []);
+      }
     } catch (e) {}
     setBarcodesLoaded(true);
   };
@@ -276,6 +297,53 @@ const ProductDetail = () => {
       await axios.delete(`${API_URL}/products/${id}/barcodes/${barcodeId}`, { headers });
       setBarcodes(prev => prev.filter(b => b.id !== barcodeId));
     } catch (err) {}
+  };
+
+  // Variation barcode handlers
+  const handleAddVarBarcode = async (varWpId, type) => {
+    const key = `${varWpId}_${type}`;
+    const value = newVarBarcode[key]?.trim();
+    if (!value) return;
+    try {
+      const body = { barcode: value, type };
+      if (type === 'pack' && newVarPackQty[varWpId]) body.quantity = parseInt(newVarPackQty[varWpId]);
+      const res = await axios.post(`${API_URL}/products/${varWpId}/barcodes`, body, { headers });
+      if (res.data.success) {
+        setVariationsBarcodes(prev => prev.map(v =>
+          v.wp_product_id === varWpId ? { ...v, barcodes: [...v.barcodes, res.data.data] } : v
+        ));
+        setNewVarBarcode(prev => ({ ...prev, [key]: '' }));
+        if (type === 'pack') setNewVarPackQty(prev => ({ ...prev, [varWpId]: '' }));
+      }
+    } catch (err) {
+      if (err.response?.status === 409) alert('Ce code-barre existe deja pour ce produit');
+      else alert('Erreur lors de l\'ajout');
+    }
+  };
+
+  const handleDeleteVarBarcode = async (varWpId, barcodeId) => {
+    try {
+      await axios.delete(`${API_URL}/products/${varWpId}/barcodes/${barcodeId}`, { headers });
+      setVariationsBarcodes(prev => prev.map(v =>
+        v.wp_product_id === varWpId ? { ...v, barcodes: v.barcodes.filter(b => b.id !== barcodeId) } : v
+      ));
+    } catch (err) {}
+  };
+
+  const handleFetchVarBms = async (varWpId) => {
+    try {
+      const res = await axios.post(`${API_URL}/products/${varWpId}/barcodes/fetch-bms`, {}, { headers });
+      if (res.data.data) {
+        setVariationsBarcodes(prev => prev.map(v =>
+          v.wp_product_id === varWpId ? { ...v, barcodes: [...v.barcodes, res.data.data] } : v
+        ));
+        alert(res.data.message);
+      } else {
+        alert(res.data.message || 'Aucun code-barre trouve dans BMS');
+      }
+    } catch (err) {
+      alert('Erreur lors de la recuperation BMS');
+    }
   };
 
   // Suppliers handlers
@@ -834,41 +902,92 @@ const ProductDetail = () => {
         {/* ==================== TAB: NEEDS ==================== */}
         {activeTab === 'needs' && (
           <div style={cardStyle}>
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <thead>
-                <tr style={{ borderBottom: '2px solid #e5e7eb' }}>
-                  <th style={{ padding: '10px 16px', textAlign: 'center', color: '#6b7280', fontSize: '13px', fontWeight: '600' }}>Stock</th>
-                  <th style={{ padding: '10px 16px', textAlign: 'center', color: '#6b7280', fontSize: '13px', fontWeight: '600' }}>Arrivages prevus</th>
-                  <th style={{ padding: '10px 16px', textAlign: 'center', color: '#6b7280', fontSize: '13px', fontWeight: '600' }}>Besoin theorique</th>
-                  <th style={{ padding: '10px 16px', textAlign: 'center', color: '#6b7280', fontSize: '13px', fontWeight: '600' }}>Besoin suppose</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td style={{ padding: '16px', textAlign: 'center', fontSize: '24px', fontWeight: '700', color: parseInt(product.stock) <= 0 ? '#ef4444' : '#111827' }}>
-                    {parseInt(product.stock) || 0}
-                  </td>
-                  <td style={{ padding: '16px', textAlign: 'center', fontSize: '24px', fontWeight: '700', color: needs?.incoming_qty > 0 ? '#059669' : '#6b7280' }}>
-                    {needs?.incoming_qty || 0}
-                  </td>
-                  <td style={{ padding: '16px', textAlign: 'center', fontSize: '24px', fontWeight: '700', color: '#111827' }}>
-                    {needs?.theoretical_need ?? '-'}
-                  </td>
-                  <td style={{ padding: '16px', textAlign: 'center', fontSize: '24px', fontWeight: '700', color: '#111827' }}>
-                    {needs?.supposed_need ?? '-'}
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-            {needs && (
-              <div style={{ marginTop: '16px', padding: '12px 16px', backgroundColor: '#f3f4f6', borderRadius: '6px', fontSize: '13px', color: '#6b7280' }}>
-                Ventes moyennes/mois : <strong>{needs.avg_monthly_sales}</strong> |
-                Tendance : <strong>{needs.trend_coefficient}x</strong> ({needs.trend_direction === 'up' ? 'hausse' : needs.trend_direction === 'down' ? 'baisse' : 'stable'}) |
-                Max commande : <strong>{needs.max_order_qty_12m}</strong>
+            {product.product_type === 'variable' ? (
+              /* === VARIABLE: needs per variation === */
+              <div>
+                {variationsNeeds.length === 0 && needsLoaded && (
+                  <div style={{ textAlign: 'center', padding: '20px', color: '#6b7280' }}>Aucune variation trouvee</div>
+                )}
+                {variationsNeeds.length > 0 && (
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+                    <thead>
+                      <tr style={{ borderBottom: '2px solid #e5e7eb' }}>
+                        <th style={{ padding: '10px 12px', textAlign: 'left', color: '#6b7280', fontWeight: '600' }}>Variation</th>
+                        <th style={{ padding: '10px 8px', textAlign: 'center', color: '#6b7280', fontWeight: '600' }}>Stock</th>
+                        <th style={{ padding: '10px 8px', textAlign: 'center', color: '#6b7280', fontWeight: '600' }}>Arrivages</th>
+                        <th style={{ padding: '10px 8px', textAlign: 'center', color: '#6b7280', fontWeight: '600' }}>Ventes/mois</th>
+                        <th style={{ padding: '10px 8px', textAlign: 'center', color: '#6b7280', fontWeight: '600' }}>Tendance</th>
+                        <th style={{ padding: '10px 8px', textAlign: 'center', color: '#6b7280', fontWeight: '600' }}>Besoin theo.</th>
+                        <th style={{ padding: '10px 8px', textAlign: 'center', color: '#6b7280', fontWeight: '600' }}>Besoin sup.</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {variationsNeeds.map(v => (
+                        <tr key={v.wp_product_id} style={{ borderBottom: '1px solid #f3f4f6' }}>
+                          <td style={{ padding: '10px 12px' }}>
+                            <div style={{ fontWeight: '500' }}>{v.post_title}</div>
+                            <div style={{ fontSize: '11px', color: '#9ca3af', fontFamily: 'monospace' }}>{v.sku}</div>
+                          </td>
+                          <td style={{ padding: '10px 8px', textAlign: 'center', fontWeight: '600', color: parseInt(v.stock) <= 0 ? '#ef4444' : '#111827' }}>
+                            {parseInt(v.stock) || 0}
+                          </td>
+                          <td style={{ padding: '10px 8px', textAlign: 'center', fontWeight: '600', color: v.incoming_qty > 0 ? '#059669' : '#6b7280' }}>
+                            {v.incoming_qty || 0}
+                          </td>
+                          <td style={{ padding: '10px 8px', textAlign: 'center' }}>{v.avg_monthly_sales}</td>
+                          <td style={{ padding: '10px 8px', textAlign: 'center' }}>
+                            <span style={{ color: v.trend_direction === 'up' ? '#059669' : v.trend_direction === 'down' ? '#ef4444' : '#6b7280' }}>
+                              {v.trend_coefficient}x {v.trend_direction === 'up' ? '↑' : v.trend_direction === 'down' ? '↓' : '→'}
+                            </span>
+                          </td>
+                          <td style={{ padding: '10px 8px', textAlign: 'center', fontWeight: '600' }}>{v.theoretical_need}</td>
+                          <td style={{ padding: '10px 8px', textAlign: 'center', fontWeight: '600' }}>{v.supposed_need}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
               </div>
-            )}
-            {!needs && needsLoaded && (
-              <div style={{ textAlign: 'center', padding: '20px', color: '#6b7280' }}>Aucune donnee de besoin disponible</div>
+            ) : (
+              /* === SIMPLE: existing needs layout === */
+              <div>
+                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr style={{ borderBottom: '2px solid #e5e7eb' }}>
+                      <th style={{ padding: '10px 16px', textAlign: 'center', color: '#6b7280', fontSize: '13px', fontWeight: '600' }}>Stock</th>
+                      <th style={{ padding: '10px 16px', textAlign: 'center', color: '#6b7280', fontSize: '13px', fontWeight: '600' }}>Arrivages prevus</th>
+                      <th style={{ padding: '10px 16px', textAlign: 'center', color: '#6b7280', fontSize: '13px', fontWeight: '600' }}>Besoin theorique</th>
+                      <th style={{ padding: '10px 16px', textAlign: 'center', color: '#6b7280', fontSize: '13px', fontWeight: '600' }}>Besoin suppose</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td style={{ padding: '16px', textAlign: 'center', fontSize: '24px', fontWeight: '700', color: parseInt(product.stock) <= 0 ? '#ef4444' : '#111827' }}>
+                        {parseInt(product.stock) || 0}
+                      </td>
+                      <td style={{ padding: '16px', textAlign: 'center', fontSize: '24px', fontWeight: '700', color: needs?.incoming_qty > 0 ? '#059669' : '#6b7280' }}>
+                        {needs?.incoming_qty || 0}
+                      </td>
+                      <td style={{ padding: '16px', textAlign: 'center', fontSize: '24px', fontWeight: '700', color: '#111827' }}>
+                        {needs?.theoretical_need ?? '-'}
+                      </td>
+                      <td style={{ padding: '16px', textAlign: 'center', fontSize: '24px', fontWeight: '700', color: '#111827' }}>
+                        {needs?.supposed_need ?? '-'}
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+                {needs && (
+                  <div style={{ marginTop: '16px', padding: '12px 16px', backgroundColor: '#f3f4f6', borderRadius: '6px', fontSize: '13px', color: '#6b7280' }}>
+                    Ventes moyennes/mois : <strong>{needs.avg_monthly_sales}</strong> |
+                    Tendance : <strong>{needs.trend_coefficient}x</strong> ({needs.trend_direction === 'up' ? 'hausse' : needs.trend_direction === 'down' ? 'baisse' : 'stable'}) |
+                    Max commande : <strong>{needs.max_order_qty_12m}</strong>
+                  </div>
+                )}
+                {!needs && needsLoaded && (
+                  <div style={{ textAlign: 'center', padding: '20px', color: '#6b7280' }}>Aucune donnee de besoin disponible</div>
+                )}
+              </div>
             )}
           </div>
         )}
@@ -876,64 +995,128 @@ const ProductDetail = () => {
         {/* ==================== TAB: BARCODES ==================== */}
         {activeTab === 'barcodes' && (
           <div style={cardStyle}>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '16px' }}>
-              <button
-                onClick={async () => {
-                  try {
-                    const res = await axios.post(`${API_URL}/products/${id}/barcodes/fetch-bms`, {}, { headers });
-                    if (res.data.data) {
-                      setBarcodes(prev => [...prev, res.data.data]);
-                      alert(res.data.message);
-                    } else {
-                      alert(res.data.message || 'Aucun code-barre trouve dans BMS');
-                    }
-                  } catch (err) {
-                    alert('Erreur lors de la recuperation BMS');
-                  }
-                }}
-                style={{ padding: '6px 14px', backgroundColor: '#f59e0b', color: '#fff', border: 'none', borderRadius: '4px', fontSize: '12px', cursor: 'pointer', fontWeight: '600' }}
-              >
-                Recuperer code-barre BMS
-              </button>
-            </div>
-            <div style={{ display: 'flex', gap: '40px', flexWrap: 'wrap' }}>
-              {/* Unit barcodes */}
-              <div style={{ flex: 1, minWidth: '250px' }}>
-                <h4 style={{ margin: '0 0 10px', fontSize: '14px', color: '#374151' }}>Codes-barres unite</h4>
-                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '8px' }}>
-                  {barcodes.filter(b => b.type === 'unit').map(b => (
-                    <span key={b.id} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '4px 10px', backgroundColor: '#f3f4f6', borderRadius: '4px', fontSize: '13px', fontFamily: 'monospace', color: '#111827' }}>
-                      {b.barcode}
-                      <button onClick={() => handleDeleteBarcode(b.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9ca3af', fontSize: '14px', padding: '0 2px', lineHeight: 1 }} title="Supprimer">&times;</button>
-                    </span>
-                  ))}
-                  {barcodes.filter(b => b.type === 'unit').length === 0 && <span style={{ fontSize: '13px', color: '#9ca3af' }}>Aucun</span>}
+            {product.product_type === 'variable' ? (
+              /* === VARIABLE: barcodes per variation === */
+              <div>
+                {variationsBarcodes.length === 0 && barcodesLoaded && (
+                  <div style={{ textAlign: 'center', padding: '20px', color: '#6b7280' }}>Aucune variation trouvee</div>
+                )}
+                {variationsBarcodes.map(v => {
+                  const unitBarcodes = v.barcodes.filter(b => b.type === 'unit');
+                  const packBarcodes = v.barcodes.filter(b => b.type === 'pack');
+                  return (
+                    <div key={v.wp_product_id} style={{ padding: '16px', borderBottom: '1px solid #e5e7eb' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                        <div>
+                          <span style={{ fontWeight: '600', fontSize: '14px', color: '#111827' }}>{v.post_title}</span>
+                          <span style={{ marginLeft: '10px', fontSize: '12px', color: '#6b7280', fontFamily: 'monospace' }}>{v.sku}</span>
+                        </div>
+                        <button
+                          onClick={() => handleFetchVarBms(v.wp_product_id)}
+                          style={{ padding: '4px 10px', backgroundColor: '#f59e0b', color: '#fff', border: 'none', borderRadius: '4px', fontSize: '11px', cursor: 'pointer', fontWeight: '600' }}
+                        >BMS</button>
+                      </div>
+                      <div style={{ display: 'flex', gap: '30px', flexWrap: 'wrap' }}>
+                        {/* Unit */}
+                        <div style={{ flex: 1, minWidth: '200px' }}>
+                          <div style={{ fontSize: '12px', color: '#6b7280', marginBottom: '4px', fontWeight: '600' }}>Unite</div>
+                          <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '6px' }}>
+                            {unitBarcodes.map(b => (
+                              <span key={b.id} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '3px 8px', backgroundColor: '#f3f4f6', borderRadius: '4px', fontSize: '12px', fontFamily: 'monospace' }}>
+                                {b.barcode}
+                                <button onClick={() => handleDeleteVarBarcode(v.wp_product_id, b.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9ca3af', fontSize: '13px', padding: '0 1px', lineHeight: 1 }}>&times;</button>
+                              </span>
+                            ))}
+                            {unitBarcodes.length === 0 && <span style={{ fontSize: '12px', color: '#d1d5db' }}>-</span>}
+                          </div>
+                          <div style={{ display: 'flex', gap: '4px' }}>
+                            <input type="text" value={newVarBarcode[`${v.wp_product_id}_unit`] || ''} onChange={(e) => setNewVarBarcode(prev => ({ ...prev, [`${v.wp_product_id}_unit`]: e.target.value }))} onKeyDown={(e) => e.key === 'Enter' && handleAddVarBarcode(v.wp_product_id, 'unit')} placeholder="EAN..." style={{ padding: '4px 8px', border: '1px solid #d1d5db', borderRadius: '4px', fontSize: '12px', flex: 1 }} />
+                            <button onClick={() => handleAddVarBarcode(v.wp_product_id, 'unit')} disabled={!newVarBarcode[`${v.wp_product_id}_unit`]?.trim()} style={{ padding: '4px 8px', backgroundColor: newVarBarcode[`${v.wp_product_id}_unit`]?.trim() ? '#135E84' : '#d1d5db', color: '#fff', border: 'none', borderRadius: '4px', fontSize: '11px', cursor: newVarBarcode[`${v.wp_product_id}_unit`]?.trim() ? 'pointer' : 'not-allowed' }}>+</button>
+                          </div>
+                        </div>
+                        {/* Pack */}
+                        <div style={{ flex: 1, minWidth: '200px' }}>
+                          <div style={{ fontSize: '12px', color: '#6b7280', marginBottom: '4px', fontWeight: '600' }}>Pack</div>
+                          <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '6px' }}>
+                            {packBarcodes.map(b => (
+                              <span key={b.id} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '3px 8px', backgroundColor: '#fef3c7', borderRadius: '4px', fontSize: '12px', fontFamily: 'monospace', color: '#92400e' }}>
+                                {b.barcode}{b.quantity ? ` (x${b.quantity})` : ''}
+                                <button onClick={() => handleDeleteVarBarcode(v.wp_product_id, b.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#b45309', fontSize: '13px', padding: '0 1px', lineHeight: 1 }}>&times;</button>
+                              </span>
+                            ))}
+                            {packBarcodes.length === 0 && <span style={{ fontSize: '12px', color: '#d1d5db' }}>-</span>}
+                          </div>
+                          <div style={{ display: 'flex', gap: '4px' }}>
+                            <input type="text" value={newVarBarcode[`${v.wp_product_id}_pack`] || ''} onChange={(e) => setNewVarBarcode(prev => ({ ...prev, [`${v.wp_product_id}_pack`]: e.target.value }))} onKeyDown={(e) => e.key === 'Enter' && handleAddVarBarcode(v.wp_product_id, 'pack')} placeholder="EAN pack..." style={{ padding: '4px 8px', border: '1px solid #d1d5db', borderRadius: '4px', fontSize: '12px', flex: 1 }} />
+                            <input type="number" value={newVarPackQty[v.wp_product_id] || ''} onChange={(e) => setNewVarPackQty(prev => ({ ...prev, [v.wp_product_id]: e.target.value }))} placeholder="Qte" min="1" style={{ padding: '4px 8px', border: '1px solid #d1d5db', borderRadius: '4px', fontSize: '12px', width: '55px' }} />
+                            <button onClick={() => handleAddVarBarcode(v.wp_product_id, 'pack')} disabled={!newVarBarcode[`${v.wp_product_id}_pack`]?.trim()} style={{ padding: '4px 8px', backgroundColor: newVarBarcode[`${v.wp_product_id}_pack`]?.trim() ? '#f59e0b' : '#d1d5db', color: '#fff', border: 'none', borderRadius: '4px', fontSize: '11px', cursor: newVarBarcode[`${v.wp_product_id}_pack`]?.trim() ? 'pointer' : 'not-allowed' }}>+</button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              /* === SIMPLE: existing barcode layout === */
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '16px' }}>
+                  <button
+                    onClick={async () => {
+                      try {
+                        const res = await axios.post(`${API_URL}/products/${id}/barcodes/fetch-bms`, {}, { headers });
+                        if (res.data.data) {
+                          setBarcodes(prev => [...prev, res.data.data]);
+                          alert(res.data.message);
+                        } else {
+                          alert(res.data.message || 'Aucun code-barre trouve dans BMS');
+                        }
+                      } catch (err) {
+                        alert('Erreur lors de la recuperation BMS');
+                      }
+                    }}
+                    style={{ padding: '6px 14px', backgroundColor: '#f59e0b', color: '#fff', border: 'none', borderRadius: '4px', fontSize: '12px', cursor: 'pointer', fontWeight: '600' }}
+                  >
+                    Recuperer code-barre BMS
+                  </button>
                 </div>
-                <div style={{ display: 'flex', gap: '6px' }}>
-                  <input type="text" value={newBarcode.unit} onChange={(e) => setNewBarcode(prev => ({ ...prev, unit: e.target.value }))} onKeyDown={(e) => e.key === 'Enter' && handleAddBarcode('unit')} placeholder="Ajouter un EAN..." style={{ padding: '6px 10px', border: '1px solid #d1d5db', borderRadius: '4px', fontSize: '13px', flex: 1 }} />
-                  <button onClick={() => handleAddBarcode('unit')} disabled={!newBarcode.unit?.trim()} style={{ padding: '6px 12px', backgroundColor: newBarcode.unit?.trim() ? '#135E84' : '#d1d5db', color: '#fff', border: 'none', borderRadius: '4px', fontSize: '12px', cursor: newBarcode.unit?.trim() ? 'pointer' : 'not-allowed' }}>+ Ajouter</button>
+                <div style={{ display: 'flex', gap: '40px', flexWrap: 'wrap' }}>
+                  <div style={{ flex: 1, minWidth: '250px' }}>
+                    <h4 style={{ margin: '0 0 10px', fontSize: '14px', color: '#374151' }}>Codes-barres unite</h4>
+                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '8px' }}>
+                      {barcodes.filter(b => b.type === 'unit').map(b => (
+                        <span key={b.id} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '4px 10px', backgroundColor: '#f3f4f6', borderRadius: '4px', fontSize: '13px', fontFamily: 'monospace', color: '#111827' }}>
+                          {b.barcode}
+                          <button onClick={() => handleDeleteBarcode(b.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9ca3af', fontSize: '14px', padding: '0 2px', lineHeight: 1 }} title="Supprimer">&times;</button>
+                        </span>
+                      ))}
+                      {barcodes.filter(b => b.type === 'unit').length === 0 && <span style={{ fontSize: '13px', color: '#9ca3af' }}>Aucun</span>}
+                    </div>
+                    <div style={{ display: 'flex', gap: '6px' }}>
+                      <input type="text" value={newBarcode.unit} onChange={(e) => setNewBarcode(prev => ({ ...prev, unit: e.target.value }))} onKeyDown={(e) => e.key === 'Enter' && handleAddBarcode('unit')} placeholder="Ajouter un EAN..." style={{ padding: '6px 10px', border: '1px solid #d1d5db', borderRadius: '4px', fontSize: '13px', flex: 1 }} />
+                      <button onClick={() => handleAddBarcode('unit')} disabled={!newBarcode.unit?.trim()} style={{ padding: '6px 12px', backgroundColor: newBarcode.unit?.trim() ? '#135E84' : '#d1d5db', color: '#fff', border: 'none', borderRadius: '4px', fontSize: '12px', cursor: newBarcode.unit?.trim() ? 'pointer' : 'not-allowed' }}>+ Ajouter</button>
+                    </div>
+                  </div>
+                  <div style={{ flex: 1, minWidth: '250px' }}>
+                    <h4 style={{ margin: '0 0 10px', fontSize: '14px', color: '#374151' }}>Codes-barres pack</h4>
+                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '8px' }}>
+                      {barcodes.filter(b => b.type === 'pack').map(b => (
+                        <span key={b.id} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '4px 10px', backgroundColor: '#fef3c7', borderRadius: '4px', fontSize: '13px', fontFamily: 'monospace', color: '#92400e' }}>
+                          {b.barcode}{b.quantity ? ` (x${b.quantity})` : ''}
+                          <button onClick={() => handleDeleteBarcode(b.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#b45309', fontSize: '14px', padding: '0 2px', lineHeight: 1 }} title="Supprimer">&times;</button>
+                        </span>
+                      ))}
+                      {barcodes.filter(b => b.type === 'pack').length === 0 && <span style={{ fontSize: '13px', color: '#9ca3af' }}>Aucun</span>}
+                    </div>
+                    <div style={{ display: 'flex', gap: '6px' }}>
+                      <input type="text" value={newBarcode.pack} onChange={(e) => setNewBarcode(prev => ({ ...prev, pack: e.target.value }))} onKeyDown={(e) => e.key === 'Enter' && handleAddBarcode('pack')} placeholder="EAN pack..." style={{ padding: '6px 10px', border: '1px solid #d1d5db', borderRadius: '4px', fontSize: '13px', flex: 1 }} />
+                      <input type="number" value={newPackQty} onChange={(e) => setNewPackQty(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleAddBarcode('pack')} placeholder="Qte" min="1" style={{ padding: '6px 10px', border: '1px solid #d1d5db', borderRadius: '4px', fontSize: '13px', width: '70px' }} />
+                      <button onClick={() => handleAddBarcode('pack')} disabled={!newBarcode.pack?.trim()} style={{ padding: '6px 12px', backgroundColor: newBarcode.pack?.trim() ? '#f59e0b' : '#d1d5db', color: '#fff', border: 'none', borderRadius: '4px', fontSize: '12px', cursor: newBarcode.pack?.trim() ? 'pointer' : 'not-allowed' }}>+ Ajouter</button>
+                    </div>
+                  </div>
                 </div>
               </div>
-
-              {/* Pack barcodes */}
-              <div style={{ flex: 1, minWidth: '250px' }}>
-                <h4 style={{ margin: '0 0 10px', fontSize: '14px', color: '#374151' }}>Codes-barres pack</h4>
-                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '8px' }}>
-                  {barcodes.filter(b => b.type === 'pack').map(b => (
-                    <span key={b.id} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '4px 10px', backgroundColor: '#fef3c7', borderRadius: '4px', fontSize: '13px', fontFamily: 'monospace', color: '#92400e' }}>
-                      {b.barcode}{b.quantity ? ` (x${b.quantity})` : ''}
-                      <button onClick={() => handleDeleteBarcode(b.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#b45309', fontSize: '14px', padding: '0 2px', lineHeight: 1 }} title="Supprimer">&times;</button>
-                    </span>
-                  ))}
-                  {barcodes.filter(b => b.type === 'pack').length === 0 && <span style={{ fontSize: '13px', color: '#9ca3af' }}>Aucun</span>}
-                </div>
-                <div style={{ display: 'flex', gap: '6px' }}>
-                  <input type="text" value={newBarcode.pack} onChange={(e) => setNewBarcode(prev => ({ ...prev, pack: e.target.value }))} onKeyDown={(e) => e.key === 'Enter' && handleAddBarcode('pack')} placeholder="EAN pack..." style={{ padding: '6px 10px', border: '1px solid #d1d5db', borderRadius: '4px', fontSize: '13px', flex: 1 }} />
-                  <input type="number" value={newPackQty} onChange={(e) => setNewPackQty(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleAddBarcode('pack')} placeholder="Qte" min="1" style={{ padding: '6px 10px', border: '1px solid #d1d5db', borderRadius: '4px', fontSize: '13px', width: '70px' }} />
-                  <button onClick={() => handleAddBarcode('pack')} disabled={!newBarcode.pack?.trim()} style={{ padding: '6px 12px', backgroundColor: newBarcode.pack?.trim() ? '#f59e0b' : '#d1d5db', color: '#fff', border: 'none', borderRadius: '4px', fontSize: '12px', cursor: newBarcode.pack?.trim() ? 'pointer' : 'not-allowed' }}>+ Ajouter</button>
-                </div>
-              </div>
-            </div>
+            )}
           </div>
         )}
 
