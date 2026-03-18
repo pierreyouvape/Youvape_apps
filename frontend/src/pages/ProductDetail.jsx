@@ -546,7 +546,7 @@ const ProductDetail = () => {
             <div style={{ display: 'flex', gap: '20px', marginBottom: '15px' }}>
               <div>
                 <div style={{ fontSize: '12px', color: '#666' }}>Prix de vente</div>
-                <div style={{ fontSize: '24px', fontWeight: '700', color: '#28a745' }}>{formatCurrency(product.price)}</div>
+                <div style={{ fontSize: '24px', fontWeight: '700', color: '#111827' }}>{formatCurrency(product.price)}</div>
               </div>
               <div>
                 <div style={{ fontSize: '12px', color: '#666' }}>Cout</div>
@@ -558,14 +558,14 @@ const ProductDetail = () => {
                   </div>
                 ) : (
                   <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-                    <div style={{ fontSize: '24px', fontWeight: '700', color: '#fd7e14' }}>{formatCurrency(product.effective_cost_price || 0)}</div>
+                    <div style={{ fontSize: '24px', fontWeight: '700', color: '#111827' }}>{formatCurrency(product.effective_cost_price || 0)}</div>
                     <button onClick={() => setEditingCost(true)} style={{ padding: '5px 10px', backgroundColor: '#135E84', color: 'white', border: 'none', borderRadius: '4px', fontSize: '12px', cursor: 'pointer' }}>Modifier</button>
                   </div>
                 )}
               </div>
               <div>
                 <div style={{ fontSize: '12px', color: '#666' }}>Stock</div>
-                <div style={{ fontSize: '24px', fontWeight: '700', color: (product.stock || 0) > 0 ? '#28a745' : '#dc3545' }}>{formatNumber(product.stock || 0)}</div>
+                <div style={{ fontSize: '24px', fontWeight: '700', color: '#111827' }}>{formatNumber(product.stock || 0)}</div>
               </div>
             </div>
             {(product.category || product.sub_category) && (

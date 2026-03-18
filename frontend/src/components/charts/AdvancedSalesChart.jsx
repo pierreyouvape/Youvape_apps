@@ -131,7 +131,7 @@ const AdvancedSalesChart = ({
             onChange={(e) => setShowQuantity(e.target.checked)}
             style={{ cursor: 'pointer', width: '16px', height: '16px' }}
           />
-          <span style={{ color: showQuantity ? '#28a745' : '#999' }}>Quantité vendue</span>
+          <span style={{ color: showQuantity ? '#111827' : '#999' }}>Quantité vendue</span>
         </label>
         <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '13px' }}>
           <input
@@ -140,7 +140,7 @@ const AdvancedSalesChart = ({
             onChange={(e) => setShowRevenue(e.target.checked)}
             style={{ cursor: 'pointer', width: '16px', height: '16px' }}
           />
-          <span style={{ color: showRevenue ? '#135E84' : '#999' }}>Chiffre d'affaires</span>
+          <span style={{ color: showRevenue ? '#111827' : '#999' }}>Chiffre d'affaires</span>
         </label>
         <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '13px' }}>
           <input
@@ -149,7 +149,7 @@ const AdvancedSalesChart = ({
             onChange={(e) => setShowProfit(e.target.checked)}
             style={{ cursor: 'pointer', width: '16px', height: '16px' }}
           />
-          <span style={{ color: showProfit ? '#007bff' : '#999' }}>Profit</span>
+          <span style={{ color: showProfit ? '#111827' : '#999' }}>Profit</span>
         </label>
       </div>
 
