@@ -278,10 +278,42 @@ const setupComputedCostCron = () => {
   console.log('Cron PMP FIFO configure: toutes les 30 min (offset 5min), 9h-19h, lun-ven');
 };
 
+// ==================== BMS BARCODES SYNC ====================
+
+const productsController = require('../controllers/productsController');
+
+let bmsBarcodeCronJob = null;
+
+const syncBmsBarcodes = async () => {
+  try {
+    const result = await productsController.syncBarcodesFromBMS();
+    if (result.synced > 0) {
+      console.log(`BMS Barcodes: ${result.synced}/${result.total} codes-barres importes`);
+    }
+  } catch (error) {
+    console.error('Erreur sync BMS barcodes:', error.message);
+  }
+};
+
+const setupBmsBarcodeCron = () => {
+  if (bmsBarcodeCronJob) {
+    bmsBarcodeCronJob.stop();
+    bmsBarcodeCronJob = null;
+  }
+
+  // Toutes les heures a :15, 9h-19h, lun-ven
+  bmsBarcodeCronJob = cron.schedule('15 9-19 * * 1-5', syncBmsBarcodes, {
+    timezone: 'Europe/Paris'
+  });
+
+  console.log('Cron BMS Barcodes configure: toutes les heures a :15, 9h-19h, lun-ven');
+};
+
 module.exports = {
   setupCron,
   restartCron,
   fetchReviewsAuto,
   setupBmsCron,
-  setupComputedCostCron
+  setupComputedCostCron,
+  setupBmsBarcodeCron
 };

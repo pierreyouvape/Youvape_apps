@@ -169,6 +169,29 @@ const bmsApiModel = {
     return data.data || [];
   },
 
+  // ==================== CATALOGUE PRODUITS ====================
+
+  /**
+   * Récupérer tous les produits du catalogue BMS (toutes les pages)
+   * Retourne les infos produit dont le champ barcode
+   */
+  getCatalogProducts: async () => {
+    const limit = 100;
+    let offset = 0;
+    let allProducts = [];
+
+    const firstPage = await bmsApiModel.apiCall(`/catalog-product/products?offset=0&limit=${limit}`);
+    const total = firstPage.meta?.total || 0;
+    allProducts = firstPage.data || [];
+
+    for (offset = limit; offset < total; offset += limit) {
+      const data = await bmsApiModel.apiCall(`/catalog-product/products?offset=${offset}&limit=${limit}`);
+      allProducts = allProducts.concat(data.data || []);
+    }
+
+    return allProducts;
+  },
+
   // ==================== ENTREPOTS ====================
 
   /**

@@ -876,6 +876,26 @@ const ProductDetail = () => {
         {/* ==================== TAB: BARCODES ==================== */}
         {activeTab === 'barcodes' && (
           <div style={cardStyle}>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '16px' }}>
+              <button
+                onClick={async () => {
+                  try {
+                    const res = await axios.post(`${API_URL}/products/${id}/barcodes/fetch-bms`, {}, { headers });
+                    if (res.data.data) {
+                      setBarcodes(prev => [...prev, res.data.data]);
+                      alert(res.data.message);
+                    } else {
+                      alert(res.data.message || 'Aucun code-barre trouve dans BMS');
+                    }
+                  } catch (err) {
+                    alert('Erreur lors de la recuperation BMS');
+                  }
+                }}
+                style={{ padding: '6px 14px', backgroundColor: '#f59e0b', color: '#fff', border: 'none', borderRadius: '4px', fontSize: '12px', cursor: 'pointer', fontWeight: '600' }}
+              >
+                Recuperer code-barre BMS
+              </button>
+            </div>
             <div style={{ display: 'flex', gap: '40px', flexWrap: 'wrap' }}>
               {/* Unit barcodes */}
               <div style={{ flex: 1, minWidth: '250px' }}>

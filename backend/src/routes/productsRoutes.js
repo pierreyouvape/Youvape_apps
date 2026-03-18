@@ -38,6 +38,7 @@ router.get('/:id/variations-stats', productsController.getVariationsStats);
 // Codes-barres
 router.get('/:id/barcodes', productsController.getProductBarcodes);
 router.post('/:id/barcodes', productsController.addProductBarcode);
+router.post('/:id/barcodes/fetch-bms', productsController.fetchBmsBarcode);
 router.delete('/:id/barcodes/:barcodeId', productsController.deleteProductBarcode);
 
 // Édition

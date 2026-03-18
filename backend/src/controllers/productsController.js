@@ -1,5 +1,6 @@
 const productModel = require('../models/productModel');
 const advancedFilterService = require('../services/advancedFilterService');
+const bmsApiModel = require('../models/bmsApiModel');
 const pool = require('../config/database');
 
 /**
@@ -393,6 +394,100 @@ exports.deleteProductBarcode = async (req, res) => {
  * Import CSV de codes-barres unitaires
  * POST /api/products/barcodes/import
  */
+/**
+ * Récupère le code-barre BMS pour un produit donné
+ * POST /api/products/:id/barcodes/fetch-bms
+ */
+exports.fetchBmsBarcode = async (req, res) => {
+  try {
+    const productId = parseInt(req.params.id);
+    const product = await pool.query('SELECT id, sku FROM products WHERE wp_product_id = $1', [productId]);
+    if (!product.rows[0]?.sku) {
+      return res.status(404).json({ success: false, error: 'Produit ou SKU introuvable' });
+    }
+
+    const { id: internalId, sku } = product.rows[0];
+
+    // Chercher dans le cache BMS ou fetcher
+    const bmsProducts = await bmsApiModel.getCatalogProducts();
+    const bmsProduct = bmsProducts.find(p => p.sku === sku);
+
+    if (!bmsProduct || !bmsProduct.barcode) {
+      return res.json({ success: true, data: null, message: 'Aucun code-barre trouve dans BMS pour ce SKU' });
+    }
+
+    // Inserer si pas deja present
+    const result = await pool.query(
+      'INSERT INTO product_barcodes (product_id, barcode, type) VALUES ($1, $2, $3) ON CONFLICT (product_id, barcode) DO NOTHING RETURNING *',
+      [internalId, bmsProduct.barcode, 'unit']
+    );
+
+    if (result.rows[0]) {
+      res.json({ success: true, data: result.rows[0], message: 'Code-barre importe depuis BMS' });
+    } else {
+      res.json({ success: true, data: null, message: 'Ce code-barre existe deja' });
+    }
+  } catch (error) {
+    console.error('Error fetching BMS barcode:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+/**
+ * Sync tous les codes-barres depuis BMS pour les produits qui n'en ont pas
+ * Appelé par le cron
+ */
+exports.syncBarcodesFromBMS = async () => {
+  console.log('[BMS Barcode Sync] Debut...');
+  try {
+    // Produits sans code-barre unite
+    const productsWithout = await pool.query(`
+      SELECT p.id, p.sku
+      FROM products p
+      WHERE p.sku IS NOT NULL AND p.sku != ''
+        AND NOT EXISTS (
+          SELECT 1 FROM product_barcodes pb WHERE pb.product_id = p.id AND pb.type = 'unit'
+        )
+    `);
+
+    if (productsWithout.rows.length === 0) {
+      console.log('[BMS Barcode Sync] Tous les produits ont deja un code-barre');
+      return { synced: 0, total: 0 };
+    }
+
+    console.log(`[BMS Barcode Sync] ${productsWithout.rows.length} produits sans code-barre`);
+
+    // Fetch tous les produits BMS
+    const bmsProducts = await bmsApiModel.getCatalogProducts();
+    const bmsMap = new Map();
+    for (const bp of bmsProducts) {
+      if (bp.sku && bp.barcode) {
+        bmsMap.set(bp.sku, bp.barcode);
+      }
+    }
+
+    console.log(`[BMS Barcode Sync] ${bmsMap.size} produits BMS avec code-barre`);
+
+    let synced = 0;
+    for (const product of productsWithout.rows) {
+      const barcode = bmsMap.get(product.sku);
+      if (barcode) {
+        await pool.query(
+          'INSERT INTO product_barcodes (product_id, barcode, type) VALUES ($1, $2, $3) ON CONFLICT (product_id, barcode) DO NOTHING',
+          [product.id, barcode, 'unit']
+        );
+        synced++;
+      }
+    }
+
+    console.log(`[BMS Barcode Sync] ${synced} codes-barres importes`);
+    return { synced, total: productsWithout.rows.length };
+  } catch (error) {
+    console.error('[BMS Barcode Sync] Erreur:', error.message);
+    throw error;
+  }
+};
+
 exports.importBarcodes = async (req, res) => {
   try {
     const { rows } = req.body;
