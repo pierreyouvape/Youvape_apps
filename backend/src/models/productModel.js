@@ -693,7 +693,7 @@ class ProductModel {
           CASE WHEN oi.variation_id > 0 THEN oi.variation_id ELSE oi.product_id END as wp_id,
           COALESCE(SUM(oi.qty), 0)::int as sales_30d
         FROM order_items oi
-        JOIN orders o ON oi.order_id = o.wp_order_id
+        JOIN orders o ON oi.wp_order_id = o.wp_order_id
         WHERE o.post_status IN ('wc-completed', 'wc-processing', 'wc-expediee')
           AND o.date_created >= NOW() - INTERVAL '30 days'
           AND (oi.product_id = ANY($1) OR oi.variation_id = ANY($1))
