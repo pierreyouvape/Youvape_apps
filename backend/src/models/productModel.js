@@ -616,27 +616,105 @@ class ProductModel {
 
     params.push(limit, offset);
 
-    const query = `
+    // 1) Parents/simples paginés
+    const parentsQuery = `
       SELECT
         p.id,
         p.wp_product_id,
         p.post_title,
         p.sku,
-        COALESCE(p.stock, 0) as stock,
-        p.stock_status,
-        p.regular_price,
+        COALESCE(p.stock, 0)::int as stock,
+        p.price,
+        COALESCE(p.computed_cost, p.wc_cog_cost) as cost_price,
+        p.weight,
         p.image_url,
         p.product_type,
-        p.post_date,
-        (SELECT COUNT(*) FROM products v WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation') as variations_count
+        p.post_date
       FROM products p
       ${whereClause}
       ORDER BY p.post_date DESC
       LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
     `;
+    const parentsResult = await pool.query(parentsQuery, params);
+    const parents = parentsResult.rows;
 
-    const result = await pool.query(query, params);
-    return result.rows;
+    // 2) Récupérer les wp_product_id des parents variable
+    const variableIds = parents
+      .filter(p => p.product_type === 'variable')
+      .map(p => p.wp_product_id);
+
+    let variations = [];
+    if (variableIds.length > 0) {
+      const variationsQuery = `
+        SELECT
+          v.id,
+          v.wp_product_id,
+          v.wp_parent_id,
+          v.post_title,
+          v.sku,
+          COALESCE(v.stock, 0)::int as stock,
+          v.price,
+          COALESCE(v.computed_cost, v.wc_cog_cost) as cost_price,
+          v.weight,
+          COALESCE(v.image_url, p_parent.image_url) as image_url,
+          v.product_type
+        FROM products v
+        LEFT JOIN products p_parent ON v.wp_parent_id = p_parent.wp_product_id
+        WHERE v.wp_parent_id = ANY($1) AND v.product_type = 'variation'
+        ORDER BY v.post_title ASC
+      `;
+      const variationsResult = await pool.query(variationsQuery, [variableIds]);
+      variations = variationsResult.rows;
+    }
+
+    // 3) Arrivages en cours (par product internal id)
+    const allIds = [...parents.map(p => p.id), ...variations.map(v => v.id)];
+    let incomingMap = new Map();
+    if (allIds.length > 0) {
+      const incomingResult = await pool.query(`
+        SELECT poi.product_id, COALESCE(SUM(poi.qty_ordered - poi.qty_received), 0)::int as incoming_qty
+        FROM purchase_order_items poi
+        JOIN purchase_orders po ON poi.purchase_order_id = po.id
+        WHERE po.status IN ('sent', 'confirmed', 'shipped', 'partial')
+          AND poi.product_id = ANY($1)
+        GROUP BY poi.product_id
+      `, [allIds]);
+      for (const row of incomingResult.rows) {
+        incomingMap.set(parseInt(row.product_id), parseInt(row.incoming_qty) || 0);
+      }
+    }
+
+    // 4) Ventes 30 derniers jours (par wp_product_id)
+    const allWpIds = [...parents.map(p => p.wp_product_id), ...variations.map(v => v.wp_product_id)];
+    let salesMap = new Map();
+    if (allWpIds.length > 0) {
+      const salesResult = await pool.query(`
+        SELECT
+          CASE WHEN oi.variation_id > 0 THEN oi.variation_id ELSE oi.product_id END as wp_id,
+          COALESCE(SUM(oi.qty), 0)::int as sales_30d
+        FROM order_items oi
+        JOIN orders o ON oi.order_id = o.wp_order_id
+        WHERE o.post_status IN ('wc-completed', 'wc-processing', 'wc-expediee')
+          AND o.date_created >= NOW() - INTERVAL '30 days'
+          AND (oi.product_id = ANY($1) OR oi.variation_id = ANY($1))
+        GROUP BY wp_id
+      `, [allWpIds]);
+      for (const row of salesResult.rows) {
+        salesMap.set(parseInt(row.wp_id), parseInt(row.sales_30d) || 0);
+      }
+    }
+
+    // 5) Enrichir les données
+    const enrichProduct = (p) => ({
+      ...p,
+      incoming_qty: incomingMap.get(p.id) || 0,
+      sales_30d: salesMap.get(p.wp_product_id) || 0
+    });
+
+    return {
+      parents: parents.map(enrichProduct),
+      variations: variations.map(enrichProduct)
+    };
   }
 
   /**

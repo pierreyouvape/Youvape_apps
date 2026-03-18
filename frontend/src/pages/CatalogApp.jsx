@@ -1,4 +1,4 @@
-import { useState, useEffect, useContext } from 'react';
+import { useState, useEffect, useContext, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AuthContext } from '../context/AuthContext';
 import axios from 'axios';
@@ -6,21 +6,48 @@ import { formatPrice } from '../utils/formatNumber';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
 
+const fmtPrice = (v) => {
+  const n = parseFloat(v);
+  if (!n && n !== 0) return '-';
+  return n.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+};
+
+const fmtPct = (v) => {
+  const n = parseFloat(v);
+  if (isNaN(n)) return '-';
+  return n.toLocaleString('fr-FR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + '%';
+};
+
+const fmtWeight = (v) => {
+  const n = parseFloat(v);
+  if (!n) return '-';
+  return n.toLocaleString('fr-FR', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+};
+
+const fmtInt = (v) => parseInt(v) || 0;
+
+// Style pour les chiffres : 0 en rouge, le reste en noir
+const numStyle = (v) => {
+  const n = parseFloat(v) || 0;
+  return { color: n === 0 ? '#ef4444' : '#111827' };
+};
+
 const CatalogApp = () => {
   const { token } = useContext(AuthContext);
   const navigate = useNavigate();
-  const [products, setProducts] = useState([]);
+  const [parents, setParents] = useState([]);
+  const [variations, setVariations] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [pagination, setPagination] = useState({ total: 0, limit: 50, offset: 0, hasMore: false });
+
+  // CSV import state
   const [csvModal, setCsvModal] = useState(false);
   const [csvHeaders, setCsvHeaders] = useState([]);
   const [csvRows, setCsvRows] = useState([]);
   const [csvMapping, setCsvMapping] = useState({ sku: '', barcode: '' });
   const [csvImporting, setCsvImporting] = useState(false);
   const [csvResult, setCsvResult] = useState(null);
-  const [expanded, setExpanded] = useState({});
-  const [variations, setVariations] = useState({});
 
   const headers = { Authorization: `Bearer ${token}` };
 
@@ -32,7 +59,8 @@ const CatalogApp = () => {
         headers
       });
       if (res.data.success) {
-        setProducts(res.data.data);
+        setParents(res.data.data.parents);
+        setVariations(res.data.data.variations);
         setPagination(res.data.pagination);
       }
     } catch (err) {
@@ -59,27 +87,67 @@ const CatalogApp = () => {
     fetchProducts(newOffset);
   };
 
-  const toggleExpand = async (wpProductId) => {
-    if (expanded[wpProductId]) {
-      setExpanded(prev => ({ ...prev, [wpProductId]: false }));
-      return;
+  // Grouper les produits : variations sous leur parent, simples seuls
+  const flatRows = useMemo(() => {
+    const rows = [];
+    const variationsByParent = new Map();
+
+    for (const v of variations) {
+      if (!variationsByParent.has(v.wp_parent_id)) {
+        variationsByParent.set(v.wp_parent_id, []);
+      }
+      variationsByParent.get(v.wp_parent_id).push(v);
     }
-    setExpanded(prev => ({ ...prev, [wpProductId]: true }));
-    if (!variations[wpProductId]) {
-      try {
-        const res = await axios.get(`${API_URL}/products/${wpProductId}/catalog-variations`, { headers });
-        if (res.data.success) {
-          setVariations(prev => ({ ...prev, [wpProductId]: res.data.data }));
+
+    for (const p of parents) {
+      if (p.product_type === 'variable') {
+        const children = variationsByParent.get(p.wp_product_id) || [];
+        const totalStock = children.reduce((s, c) => s + (parseInt(c.stock) || 0), 0);
+        const totalIncoming = children.reduce((s, c) => s + (parseInt(c.incoming_qty) || 0), 0);
+        const totalSales = children.reduce((s, c) => s + (parseInt(c.sales_30d) || 0), 0);
+
+        // Parent header row
+        rows.push({
+          _isParent: true,
+          wp_product_id: p.wp_product_id,
+          post_title: p.post_title,
+          image_url: p.image_url,
+          sku: null,
+          price: null,
+          cost_price: null,
+          weight: null,
+          stock: totalStock,
+          incoming_qty: totalIncoming,
+          sales_30d: totalSales
+        });
+
+        // Variation rows
+        for (const child of children) {
+          rows.push({
+            ...child,
+            _isParent: false,
+            _isVariation: true,
+            // Strip parent title from variation name
+            _displayName: child.post_title.replace(p.post_title + ' - ', '').replace(p.post_title, '') || child.post_title
+          });
         }
-      } catch (err) {
-        console.error('Error fetching variations:', err);
+      } else {
+        // Simple product
+        rows.push({
+          ...p,
+          _isParent: false,
+          _isVariation: false,
+          _displayName: p.post_title
+        });
       }
     }
-  };
+    return rows;
+  }, [parents, variations]);
 
   const totalPages = Math.ceil(pagination.total / pagination.limit);
   const currentPage = Math.floor(pagination.offset / pagination.limit) + 1;
 
+  // CSV handling
   const handleCsvFile = (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -88,7 +156,7 @@ const CatalogApp = () => {
       const text = evt.target.result;
       const sep = text.includes(';') ? ';' : ',';
       const lines = text.split(/\r?\n/).filter(l => l.trim());
-      if (lines.length < 2) return alert('Le fichier doit contenir au moins un entête et une ligne de données');
+      if (lines.length < 2) return alert('Le fichier doit contenir au moins un entete et une ligne de donnees');
       const hdrs = lines[0].split(sep).map(h => h.trim().replace(/^"|"$/g, ''));
       const rows = lines.slice(1).map(line => {
         const vals = line.split(sep).map(v => v.trim().replace(/^"|"$/g, ''));
@@ -117,75 +185,24 @@ const CatalogApp = () => {
       if (res.data.success) setCsvResult(res.data.data);
     } catch (err) {
       console.error('CSV import error:', err);
-      alert('Erreur lors de l\'import');
+      alert("Erreur lors de l'import");
     } finally {
       setCsvImporting(false);
     }
   };
 
-  const renderProductRow = (p, isVariation = false) => (
-    <tr
-      key={p.id}
-      onClick={() => navigate(`/products/${p.wp_product_id}`)}
-      style={{
-        borderBottom: '1px solid #e5e7eb',
-        cursor: 'pointer',
-        backgroundColor: isVariation ? '#fafbfc' : 'transparent',
-        transition: 'background-color 0.15s'
-      }}
-      onMouseEnter={(e) => e.currentTarget.style.backgroundColor = isVariation ? '#f3f4f6' : '#f9fafb'}
-      onMouseLeave={(e) => e.currentTarget.style.backgroundColor = isVariation ? '#fafbfc' : 'transparent'}
-    >
-      <td style={{ padding: '8px 12px' }}>
-        {!isVariation && p.product_type === 'variable' ? (
-          <button
-            onClick={(e) => { e.stopPropagation(); toggleExpand(p.wp_product_id); }}
-            style={{
-              width: '28px', height: '28px', border: '1px solid #d1d5db', borderRadius: '4px',
-              backgroundColor: '#fff', cursor: 'pointer', fontSize: '14px', display: 'flex',
-              alignItems: 'center', justifyContent: 'center', color: '#6b7280'
-            }}
-          >
-            {expanded[p.wp_product_id] ? '−' : '+'}
-          </button>
-        ) : isVariation ? (
-          <div style={{ width: '28px', display: 'flex', justifyContent: 'center', color: '#d1d5db' }}>└</div>
-        ) : (
-          p.image_url ? (
-            <img src={p.image_url} alt="" style={{ width: '28px', height: '28px', objectFit: 'cover', borderRadius: '4px' }} />
-          ) : (
-            <div style={{ width: '28px', height: '28px', backgroundColor: '#e5e7eb', borderRadius: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#9ca3af', fontSize: '12px' }}>?</div>
-          )
-        )}
-      </td>
-      <td style={{ padding: '8px 12px' }}>
-        {!isVariation && p.image_url && p.product_type === 'variable' && (
-          <img src={p.image_url} alt="" style={{ width: '24px', height: '24px', objectFit: 'cover', borderRadius: '3px', marginRight: '8px', verticalAlign: 'middle' }} />
-        )}
-        <span style={{ fontWeight: isVariation ? '400' : '500', color: isVariation ? '#6b7280' : '#111827', fontSize: isVariation ? '13px' : '14px' }}>
-          {p.post_title}
-        </span>
-        {!isVariation && p.product_type === 'variable' && parseInt(p.variations_count) > 0 && (
-          <span style={{ marginLeft: '8px', fontSize: '11px', color: '#9ca3af', fontWeight: '400' }}>
-            ({p.variations_count} var.)
-          </span>
-        )}
-      </td>
-      <td style={{ padding: '8px 12px', color: '#6b7280', fontFamily: 'monospace', fontSize: isVariation ? '12px' : '14px' }}>{p.sku || '-'}</td>
-      <td style={{
-        padding: '8px 12px',
-        textAlign: 'right',
-        fontWeight: '600',
-        color: parseInt(p.stock) <= 0 ? '#ef4444' : 'inherit',
-        fontSize: isVariation ? '13px' : '14px'
-      }}>
-        {parseInt(p.stock) || 0}
-      </td>
-      <td style={{ padding: '8px 12px', textAlign: 'right', fontSize: isVariation ? '13px' : '14px' }}>
-        {p.regular_price ? `${formatPrice(p.regular_price)} \u20AC` : '-'}
-      </td>
-    </tr>
-  );
+  // Calcul marge %
+  const calcMargin = (price, costPrice) => {
+    const p = parseFloat(price);
+    const c = parseFloat(costPrice);
+    if (!p || !c) return null;
+    return ((p - c) / p) * 100;
+  };
+
+  const cellStyle = { padding: '6px 10px', fontSize: '13px' };
+  const cellRight = { ...cellStyle, textAlign: 'right', fontFamily: 'monospace' };
+  const headerStyle = { padding: '8px 10px', textAlign: 'left', fontSize: '13px', fontWeight: '600' };
+  const headerRight = { ...headerStyle, textAlign: 'right' };
 
   return (
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
@@ -219,10 +236,10 @@ const CatalogApp = () => {
       </div>
 
       {/* Main Content */}
-      <div style={{ flex: 1, maxWidth: '1200px', margin: '30px auto', padding: '0 20px', width: '100%' }}>
+      <div style={{ flex: 1, maxWidth: '1400px', margin: '30px auto', padding: '0 20px', width: '100%' }}>
         <h1 style={{ color: '#059669', marginBottom: '20px' }}>Catalogue Produits</h1>
 
-        {/* Search */}
+        {/* Search + CSV */}
         <div style={{ marginBottom: '20px' }}>
           <input
             type="text"
@@ -257,31 +274,94 @@ const CatalogApp = () => {
         ) : (
           <>
             <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
                 <thead>
                   <tr style={{ backgroundColor: '#f3f4f6', borderBottom: '2px solid #e5e7eb' }}>
-                    <th style={{ padding: '10px 12px', textAlign: 'left', width: '50px' }}></th>
-                    <th style={{ padding: '10px 12px', textAlign: 'left' }}>Produit</th>
-                    <th style={{ padding: '10px 12px', textAlign: 'left' }}>SKU</th>
-                    <th style={{ padding: '10px 12px', textAlign: 'right' }}>Stock</th>
-                    <th style={{ padding: '10px 12px', textAlign: 'right' }}>Prix</th>
+                    <th style={{ ...headerStyle, width: '40px' }}></th>
+                    <th style={headerStyle}>Nom</th>
+                    <th style={headerStyle}>SKU</th>
+                    <th style={headerRight}>Prix TTC</th>
+                    <th style={headerRight}>Cout HT</th>
+                    <th style={headerRight}>Marge %</th>
+                    <th style={headerRight}>Poids</th>
+                    <th style={headerRight}>Stock</th>
+                    <th style={headerRight}>Arrivages</th>
+                    <th style={headerRight}>Ventes 30j</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {products.flatMap(p => {
-                    const rows = [renderProductRow(p)];
-                    if (p.product_type === 'variable' && expanded[p.wp_product_id]) {
-                      if (variations[p.wp_product_id]) {
-                        variations[p.wp_product_id].forEach(v => rows.push(renderProductRow(v, true)));
-                      } else {
-                        rows.push(
-                          <tr key={`loading-${p.id}`}>
-                            <td colSpan={5} style={{ padding: '8px 12px 8px 52px', color: '#9ca3af', fontSize: '13px' }}>Chargement...</td>
-                          </tr>
-                        );
-                      }
+                  {flatRows.map((row, idx) => {
+                    if (row._isParent) {
+                      // Parent header row (like NeedsTab)
+                      return (
+                        <tr key={`parent-${row.wp_product_id}`} style={{ backgroundColor: '#f1f5f9', fontWeight: 600 }}>
+                          <td style={cellStyle}>
+                            {row.image_url ? (
+                              <img src={row.image_url} alt="" style={{ width: '32px', height: '32px', objectFit: 'cover', borderRadius: '4px' }} />
+                            ) : (
+                              <div style={{ width: '32px', height: '32px', backgroundColor: '#e2e8f0', borderRadius: '4px' }} />
+                            )}
+                          </td>
+                          <td style={cellStyle}>
+                            <a
+                              href={`/products/${row.wp_product_id}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              style={{ color: 'inherit', textDecoration: 'none' }}
+                              onMouseEnter={e => e.target.style.textDecoration = 'underline'}
+                              onMouseLeave={e => e.target.style.textDecoration = 'none'}
+                            >
+                              {row.post_title}
+                            </a>
+                          </td>
+                          <td style={cellStyle}></td>
+                          <td style={cellRight}></td>
+                          <td style={cellRight}></td>
+                          <td style={cellRight}></td>
+                          <td style={cellRight}></td>
+                          <td style={{ ...cellRight, fontWeight: 600, ...numStyle(row.stock) }}>{fmtInt(row.stock)}</td>
+                          <td style={{ ...cellRight, fontWeight: 600, ...numStyle(row.incoming_qty) }}>{fmtInt(row.incoming_qty)}</td>
+                          <td style={{ ...cellRight, fontWeight: 600, ...numStyle(row.sales_30d) }}>{fmtInt(row.sales_30d)}</td>
+                        </tr>
+                      );
                     }
-                    return rows;
+
+                    const margin = calcMargin(row.price, row.cost_price);
+
+                    return (
+                      <tr
+                        key={row.id}
+                        onClick={() => navigate(`/products/${row.wp_product_id}`)}
+                        style={{
+                          borderBottom: '1px solid #e5e7eb',
+                          cursor: 'pointer',
+                          transition: 'background-color 0.15s'
+                        }}
+                        onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f9fafb'}
+                        onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                      >
+                        <td style={cellStyle}>
+                          {!row._isVariation && row.image_url ? (
+                            <img src={row.image_url} alt="" style={{ width: '32px', height: '32px', objectFit: 'cover', borderRadius: '4px' }} />
+                          ) : !row._isVariation ? (
+                            <div style={{ width: '32px', height: '32px', backgroundColor: '#e5e7eb', borderRadius: '4px' }} />
+                          ) : null}
+                        </td>
+                        <td style={{ ...cellStyle, paddingLeft: row._isVariation ? '40px' : '10px' }}>
+                          <span style={{ fontWeight: row._isVariation ? '400' : '500', color: '#111827' }}>
+                            {row._displayName}
+                          </span>
+                        </td>
+                        <td style={{ ...cellStyle, color: '#6b7280', fontFamily: 'monospace', fontSize: '12px' }}>{row.sku || '-'}</td>
+                        <td style={{ ...cellRight, ...numStyle(row.price) }}>{fmtPrice(row.price)}</td>
+                        <td style={{ ...cellRight, ...numStyle(row.cost_price) }}>{fmtPrice(row.cost_price)}</td>
+                        <td style={{ ...cellRight, ...(margin !== null ? numStyle(margin) : {}) }}>{margin !== null ? fmtPct(margin) : '-'}</td>
+                        <td style={cellRight}>{fmtWeight(row.weight)}</td>
+                        <td style={{ ...cellRight, fontWeight: '600', ...numStyle(row.stock) }}>{fmtInt(row.stock)}</td>
+                        <td style={{ ...cellRight, ...numStyle(row.incoming_qty) }}>{fmtInt(row.incoming_qty)}</td>
+                        <td style={{ ...cellRight, ...numStyle(row.sales_30d) }}>{fmtInt(row.sales_30d)}</td>
+                      </tr>
+                    );
                   })}
                 </tbody>
               </table>
@@ -400,7 +480,7 @@ const CatalogApp = () => {
                     <p style={{ margin: '0 0 4px', color: '#dc2626', fontWeight: '600' }}>{csvResult.errors.length} erreur{csvResult.errors.length > 1 ? 's' : ''} :</p>
                     <div style={{ maxHeight: '120px', overflow: 'auto', fontSize: '12px' }}>
                       {csvResult.errors.map((e, i) => (
-                        <div key={i} style={{ color: '#dc2626' }}>SKU "{e.sku}" → {e.reason}</div>
+                        <div key={i} style={{ color: '#dc2626' }}>SKU "{e.sku}" : {e.reason}</div>
                       ))}
                     </div>
                   </div>

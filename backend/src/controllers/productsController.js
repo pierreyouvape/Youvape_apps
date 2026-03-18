@@ -279,12 +279,12 @@ exports.getCatalogList = async (req, res) => {
     const offset = parseInt(req.query.offset) || 0;
     const search = req.query.search || '';
 
-    const products = await productModel.getAllForCatalog(limit, offset, search);
+    const { parents, variations } = await productModel.getAllForCatalog(limit, offset, search);
     const total = await productModel.countForCatalog(search);
 
     res.json({
       success: true,
-      data: products,
+      data: { parents, variations },
       pagination: { total, limit, offset, hasMore: offset + limit < total }
     });
   } catch (error) {
