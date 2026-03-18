@@ -188,7 +188,7 @@ const CatalogApp = () => {
                   {products.map(p => (
                     <tr
                       key={p.id}
-                      onClick={() => navigate(`/catalog/${p.id}`)}
+                      onClick={() => navigate(`/products/${p.id}`)}
                       style={{
                         borderBottom: '1px solid #e5e7eb',
                         cursor: 'pointer',
