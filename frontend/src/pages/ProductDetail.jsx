@@ -68,15 +68,18 @@ const ProductDetail = () => {
 
   useEffect(() => {
     if (id) {
-      fetchProductData();
-      const defaultParams = { start: null, end: null, groupBy: 'day' };
+      const now = new Date();
+      const startOfMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
+      const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+      const defaultParams = { start: startOfMonth, end: today, groupBy: 'day' };
       setPeriodParams(defaultParams);
+      fetchProductData(defaultParams);
       fetchSalesEvolution(defaultParams);
       fetchVariantsPeriodStats(defaultParams);
     }
   }, [id]);
 
-  const fetchProductData = async () => {
+  const fetchProductData = async (dateParams = null) => {
     setLoading(true);
     try {
       const productRes = await axios.get(`${API_URL}/products/${id}`);
@@ -85,9 +88,13 @@ const ProductDetail = () => {
       setProduct(productData);
       setNewCost(productData.cost_price_custom || productData.cost_price || productData.wc_cog_cost || '');
 
+      const kpiParams = {};
+      if (dateParams?.start) kpiParams.startDate = dateParams.start;
+      if (dateParams?.end) kpiParams.endDate = dateParams.end;
+
       try {
         const [kpisRes, variantsStatsRes, dayOfWeekRes, hourRes, boughtWithRes, countryRes, customersRes, ordersRes] = await Promise.all([
-          axios.get(`${API_URL}/products/${id}/stats/kpis`).catch(() => ({ data: { data: null } })),
+          axios.get(`${API_URL}/products/${id}/stats/kpis`, { params: kpiParams }).catch(() => ({ data: { data: null } })),
           axios.get(`${API_URL}/products/${id}/stats/all-variants`).catch(() => ({ data: { data: [] } })),
           axios.get(`${API_URL}/products/${id}/stats/by-day-of-week`).catch(() => ({ data: { data: [] } })),
           axios.get(`${API_URL}/products/${id}/stats/by-hour`).catch(() => ({ data: { data: [] } })),
@@ -550,7 +557,7 @@ const ProductDetail = () => {
           <div>
             {/* Period Filter */}
             <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '20px' }}>
-              <PeriodFilter onPeriodChange={handlePeriodChange} onComparisonChange={handleComparisonChange} defaultPeriod="all" />
+              <PeriodFilter onPeriodChange={handlePeriodChange} onComparisonChange={handleComparisonChange} defaultPeriod="current_month" />
             </div>
 
             {/* KPIs */}
