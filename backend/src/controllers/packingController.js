@@ -42,10 +42,11 @@ const searchOrder = async (req, res) => {
         oi.qty,
         p.sku,
         p.post_title,
-        p.image_url,
+        COALESCE(p.image_url, p_parent.image_url) as image_url,
         p.weight
       FROM order_items oi
       LEFT JOIN products p ON p.wp_product_id = COALESCE(NULLIF(oi.variation_id, 0), oi.product_id)
+      LEFT JOIN products p_parent ON p.wp_parent_id = p_parent.wp_product_id
       WHERE oi.wp_order_id = $1
       AND oi.order_item_type = 'line_item'
       ORDER BY oi.id

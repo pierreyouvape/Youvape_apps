@@ -66,6 +66,7 @@ const PackingApp = () => {
   const [labelsLoading, setLabelsLoading] = useState(false);
   const [cancelConfirm, setCancelConfirm] = useState(null); // label id to confirm cancel
   const [cancelLoading, setCancelLoading] = useState(false);
+  const [hoveredImage, setHoveredImage] = useState(null); // { url, x, y }
 
   // Refs pour accéder aux valeurs courantes dans le listener clavier
   const orderRef = useRef(null);
@@ -839,6 +840,7 @@ const PackingApp = () => {
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead>
                   <tr style={{ backgroundColor: '#f8f9fa' }}>
+                    <th style={{ padding: '12px 8px', width: '50px' }}></th>
                     <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: '14px', color: '#666' }}>Article</th>
                     <th style={{ padding: '12px 16px', textAlign: 'center', fontSize: '14px', color: '#666', width: '80px' }}>SKU</th>
                     <th style={{ padding: '12px 16px', textAlign: 'center', fontSize: '14px', color: '#666', width: '260px' }}>Quantite</th>
@@ -853,6 +855,22 @@ const PackingApp = () => {
                         transition: 'background-color 0.3s ease'
                       }}
                     >
+                      <td style={{ padding: '6px 8px', textAlign: 'center' }}>
+                        {item.image_url ? (
+                          <img
+                            src={item.image_url}
+                            alt=""
+                            style={{ width: '40px', height: '40px', objectFit: 'cover', borderRadius: '4px', cursor: 'pointer' }}
+                            onMouseEnter={(e) => {
+                              const rect = e.target.getBoundingClientRect();
+                              setHoveredImage({ url: item.image_url, x: rect.right + 10, y: rect.top });
+                            }}
+                            onMouseLeave={() => setHoveredImage(null)}
+                          />
+                        ) : (
+                          <div style={{ width: '40px', height: '40px', backgroundColor: '#e5e7eb', borderRadius: '4px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', color: '#9ca3af', fontSize: '14px' }}>?</div>
+                        )}
+                      </td>
                       <td style={{ padding: '14px 16px', fontSize: '15px', fontWeight: '500' }}>
                         {item.name}
                       </td>
@@ -1021,6 +1039,23 @@ const PackingApp = () => {
         </>
         )}
       </div>
+
+      {/* Image zoom tooltip */}
+      {hoveredImage && (
+        <div style={{
+          position: 'fixed',
+          left: hoveredImage.x,
+          top: hoveredImage.y,
+          zIndex: 9999,
+          pointerEvents: 'none',
+          boxShadow: '0 4px 20px rgba(0,0,0,0.3)',
+          borderRadius: '8px',
+          overflow: 'hidden',
+          backgroundColor: '#fff'
+        }}>
+          <img src={hoveredImage.url} alt="" style={{ width: '300px', height: '300px', objectFit: 'cover', display: 'block' }} />
+        </div>
+      )}
     </div>
   );
 };
