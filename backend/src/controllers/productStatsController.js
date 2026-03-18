@@ -24,8 +24,10 @@ exports.getKPIs = async (req, res) => {
   try {
     const productId = parseInt(req.params.id);
     const includeVariants = req.query.includeVariants !== 'false';
+    const startDate = req.query.startDate || null;
+    const endDate = req.query.endDate || null;
 
-    const kpis = await productStatsService.getProductKPIs(productId, includeVariants);
+    const kpis = await productStatsService.getProductKPIs(productId, includeVariants, startDate, endDate);
 
     res.json({ success: true, data: kpis });
   } catch (error) {

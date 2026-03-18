@@ -50,11 +50,22 @@ class ProductStatsService {
    * KPIs globaux pour un produit (avec ou sans variantes)
    * Utilise la logique bundle pour exclure les sous-produits de bundles des calculs financiers
    */
-  async getProductKPIs(productId, includeVariants = true) {
+  async getProductKPIs(productId, includeVariants = true, startDate = null, endDate = null) {
     const family = await this.getProductFamily(productId);
     const productIds = includeVariants
       ? family.allProducts.map(p => p.wp_product_id)
       : [productId];
+
+    const params = [productIds, VALID_ORDER_STATUSES];
+    let dateFilter = '';
+    if (startDate) {
+      params.push(startDate);
+      dateFilter += ` AND o.post_date >= $${params.length}`;
+    }
+    if (endDate) {
+      params.push(endDate);
+      dateFilter += ` AND o.post_date <= $${params.length}`;
+    }
 
     const query = `
       WITH bundle_sub_items AS (
@@ -89,10 +100,10 @@ class ProductStatsService {
       FROM order_items oi
       INNER JOIN orders o ON o.wp_order_id = oi.wp_order_id
       LEFT JOIN products p_cost ON p_cost.wp_product_id = oi.product_id
-      WHERE oi.product_id = ANY($1) AND o.post_status = ANY($2)
+      WHERE oi.product_id = ANY($1) AND o.post_status = ANY($2)${dateFilter}
     `;
 
-    const result = await pool.query(query, [productIds, VALID_ORDER_STATUSES]);
+    const result = await pool.query(query, params);
     const kpis = result.rows[0];
 
     // Calculs

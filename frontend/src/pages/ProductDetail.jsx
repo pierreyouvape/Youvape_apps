@@ -208,8 +208,19 @@ const ProductDetail = () => {
 
   // ==================== HANDLERS ====================
 
+  const fetchKpis = async (params) => {
+    try {
+      const queryParams = {};
+      if (params.start) queryParams.startDate = params.start;
+      if (params.end) queryParams.endDate = params.end;
+      const res = await axios.get(`${API_URL}/products/${id}/stats/kpis`, { params: queryParams });
+      if (res.data.success) setKpis(res.data.data);
+    } catch (err) {}
+  };
+
   const handlePeriodChange = (params) => {
     setPeriodParams(params);
+    fetchKpis(params);
     fetchSalesEvolution(params, selectedVariantId);
     fetchVariantsPeriodStats(params);
     fetchVariantsStats(params);
@@ -537,6 +548,11 @@ const ProductDetail = () => {
         {/* ==================== TAB: STATS ==================== */}
         {activeTab === 'stats' && (
           <div>
+            {/* Period Filter */}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '20px' }}>
+              <PeriodFilter onPeriodChange={handlePeriodChange} onComparisonChange={handleComparisonChange} defaultPeriod="all" />
+            </div>
+
             {/* KPIs */}
             {kpis && (
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '15px', marginBottom: '30px' }}>
@@ -565,12 +581,7 @@ const ProductDetail = () => {
 
             {/* Sales Evolution Chart */}
             <div style={cardStyle}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '20px', gap: '20px' }}>
-                <h2 style={{ margin: 0, color: '#333', fontSize: '18px' }}>Evolution des ventes</h2>
-                <div style={{ flex: 1, display: 'flex', justifyContent: 'flex-end' }}>
-                  <PeriodFilter onPeriodChange={handlePeriodChange} onComparisonChange={handleComparisonChange} defaultPeriod="all" />
-                </div>
-              </div>
+              <h2 style={{ margin: '0 0 20px 0', color: '#333', fontSize: '18px' }}>Evolution des ventes</h2>
               <div style={{ display: 'grid', gridTemplateColumns: variantsPeriodStats.length > 0 ? '250px 1fr' : '1fr', gap: '20px' }}>
                 {variantsPeriodStats.length > 0 && (
                   <div style={{ borderRight: '1px solid #e0e0e0', paddingRight: '20px' }}>
