@@ -141,22 +141,40 @@ const PeriodFilter = ({ onPeriodChange, onComparisonChange, defaultPeriod = 'all
   };
 
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: '15px', flexWrap: 'wrap' }}>
-      {/* Période rapide */}
-      {[
-        { value: 'all', label: 'Tout' },
-        { value: '7d', label: '7j' },
-        { value: '30d', label: '30j' },
-        { value: 'current_month', label: 'Mois en cours' },
-        { value: 'last_month', label: 'Mois dernier' }
-      ].map(period => (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '10px' }}>
+      {/* Gauche : Période */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <span style={{ fontSize: '12px', fontWeight: '600', color: '#6b7280', whiteSpace: 'nowrap' }}>Periode :</span>
+        {[
+          { value: 'all', label: 'Tout' },
+          { value: '7d', label: '7 derniers jours' },
+          { value: '30d', label: '30 derniers jours' },
+          { value: 'current_month', label: 'Mois en cours' },
+          { value: 'last_month', label: 'Mois dernier' }
+        ].map(period => (
+          <button
+            key={period.value}
+            onClick={() => handlePeriodClick(period.value)}
+            style={{
+              padding: '6px 12px',
+              backgroundColor: selectedPeriod === period.value ? '#135E84' : '#f0f0f0',
+              color: selectedPeriod === period.value ? 'white' : '#666',
+              border: 'none',
+              borderRadius: '6px',
+              fontSize: '12px',
+              cursor: 'pointer',
+              fontWeight: '500'
+            }}
+          >
+            {period.label}
+          </button>
+        ))}
         <button
-          key={period.value}
-          onClick={() => handlePeriodClick(period.value)}
+          onClick={() => setShowAdvanced(!showAdvanced)}
           style={{
             padding: '6px 12px',
-            backgroundColor: selectedPeriod === period.value ? '#135E84' : '#f0f0f0',
-            color: selectedPeriod === period.value ? 'white' : '#666',
+            backgroundColor: showAdvanced ? '#fd7e14' : '#f0f0f0',
+            color: showAdvanced ? 'white' : '#666',
             border: 'none',
             borderRadius: '6px',
             fontSize: '12px',
@@ -164,50 +182,32 @@ const PeriodFilter = ({ onPeriodChange, onComparisonChange, defaultPeriod = 'all
             fontWeight: '500'
           }}
         >
-          {period.label}
+          {showAdvanced ? 'Fermer' : 'Personnalise...'}
         </button>
-      ))}
+      </div>
 
-      {/* Séparateur vertical */}
-      <div style={{ height: '24px', width: '1px', backgroundColor: '#ddd', margin: '0 5px' }}></div>
-
-      {/* Grouper par - avec label visible */}
-      {['day', 'week', 'month'].map(group => (
-        <button
-          key={group}
-          onClick={() => handleGroupByClick(group)}
-          style={{
-            padding: '6px 12px',
-            backgroundColor: groupBy === group ? '#135E84' : '#f0f0f0',
-            color: groupBy === group ? 'white' : '#666',
-            border: 'none',
-            borderRadius: '6px',
-            fontSize: '12px',
-            cursor: 'pointer',
-            fontWeight: '500'
-          }}
-        >
-          {group === 'day' ? 'Jour' : group === 'week' ? 'Semaine' : 'Mois'}
-        </button>
-      ))}
-
-      {/* Bouton options avancées */}
-      <button
-        onClick={() => setShowAdvanced(!showAdvanced)}
-        style={{
-          padding: '6px 12px',
-          backgroundColor: showAdvanced ? '#fd7e14' : '#f0f0f0',
-          color: showAdvanced ? 'white' : '#666',
-          border: 'none',
-          borderRadius: '6px',
-          fontSize: '12px',
-          cursor: 'pointer',
-          fontWeight: '500',
-          marginLeft: 'auto'
-        }}
-      >
-        {showAdvanced ? '✕ Fermer' : '⚙️ Options'}
-      </button>
+      {/* Droite : Afficher par */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <span style={{ fontSize: '12px', fontWeight: '600', color: '#6b7280', whiteSpace: 'nowrap' }}>Afficher par :</span>
+        {['day', 'week', 'month'].map(group => (
+          <button
+            key={group}
+            onClick={() => handleGroupByClick(group)}
+            style={{
+              padding: '6px 12px',
+              backgroundColor: groupBy === group ? '#135E84' : '#f0f0f0',
+              color: groupBy === group ? 'white' : '#666',
+              border: 'none',
+              borderRadius: '6px',
+              fontSize: '12px',
+              cursor: 'pointer',
+              fontWeight: '500'
+            }}
+          >
+            {group === 'day' ? 'Jour' : group === 'week' ? 'Semaine' : 'Mois'}
+          </button>
+        ))}
+      </div>
 
       {/* Panel avancé */}
       {showAdvanced && (

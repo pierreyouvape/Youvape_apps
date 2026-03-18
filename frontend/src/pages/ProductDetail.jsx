@@ -624,7 +624,7 @@ const ProductDetail = () => {
         {activeTab === 'stats' && (
           <div>
             {/* Period Filter */}
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '20px' }}>
+            <div style={{ marginBottom: '20px' }}>
               <PeriodFilter onPeriodChange={handlePeriodChange} onComparisonChange={handleComparisonChange} defaultPeriod="current_month" />
             </div>
 
