@@ -435,10 +435,16 @@ const purchaseOrderModel = {
     const supplierByBmsId = new Map(suppliersResult.rows.map(s => [s.bms_id, s.id]));
 
     // 4. Charger le mapping sku → product.id local (en une seule requête)
-    const productsResult = await pool.query(
-      "SELECT id, sku FROM products WHERE sku IS NOT NULL AND sku != '' AND post_status = 'publish'"
-    );
+    // Charger les produits avec résolution vers le parent pour product_suppliers
+    const productsResult = await pool.query(`
+      SELECT p.id, p.sku, p.product_type, p.wp_parent_id,
+        CASE WHEN p.product_type = 'variation' THEN parent.id ELSE p.id END as parent_id
+      FROM products p
+      LEFT JOIN products parent ON p.wp_parent_id = parent.wp_product_id AND parent.product_type = 'variable'
+      WHERE p.sku IS NOT NULL AND p.sku != '' AND p.post_status = 'publish'
+    `);
     const productBySku = new Map(productsResult.rows.map(p => [p.sku, p.id]));
+    const productParentBySku = new Map(productsResult.rows.map(p => [p.sku, p.parent_id || p.id]));
 
     const client = await pool.connect();
     try {
@@ -559,8 +565,9 @@ const purchaseOrderModel = {
             unitPrice
           ]);
 
-          // Mettre à jour product_suppliers uniquement si produit connu
-          if (productId !== null && unitPrice !== null) {
+          // Mettre à jour product_suppliers — toujours sur le parent (pas la variation)
+          const parentProductId = item.sku ? productParentBySku.get(item.sku) : null;
+          if (parentProductId !== null && parentProductId !== undefined && unitPrice !== null) {
             await client.query(`
               INSERT INTO product_suppliers (supplier_id, product_id, supplier_sku, supplier_price, min_order_qty)
               VALUES ($1, $2, $3, $4, 1)
@@ -568,7 +575,7 @@ const purchaseOrderModel = {
                 supplier_price = EXCLUDED.supplier_price,
                 supplier_sku = COALESCE(EXCLUDED.supplier_sku, product_suppliers.supplier_sku),
                 updated_at = CURRENT_TIMESTAMP
-            `, [supplierId, productId, item.supplier_sku || null, unitPrice]);
+            `, [supplierId, parentProductId, item.supplier_sku || null, unitPrice]);
           }
         }
 

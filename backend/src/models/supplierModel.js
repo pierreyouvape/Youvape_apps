@@ -1,6 +1,24 @@
 const pool = require('../config/database');
 const bmsApiModel = require('./bmsApiModel');
 
+/**
+ * Résout un productId (id interne OU wp_product_id) vers l'id interne du parent.
+ * Les fournisseurs sont gérés au niveau parent/simple, jamais variation.
+ * Cherche d'abord par id interne, puis par wp_product_id.
+ */
+const resolveToParentId = async (productId) => {
+  const result = await pool.query(`
+    SELECT p.id, p.product_type, p.wp_parent_id,
+      CASE WHEN p.product_type = 'variation' THEN parent.id ELSE p.id END as resolved_id
+    FROM products p
+    LEFT JOIN products parent ON p.wp_parent_id = parent.wp_product_id AND parent.product_type = 'variable'
+    WHERE p.id = $1 OR p.wp_product_id = $1
+    LIMIT 1
+  `, [productId]);
+  if (result.rows.length === 0) return productId;
+  return result.rows[0].resolved_id || productId;
+};
+
 const supplierModel = {
   // Récupérer tous les fournisseurs
   getAll: async (includeInactive = false) => {
@@ -141,8 +159,9 @@ const supplierModel = {
     return result.rows;
   },
 
-  // Associer un produit à un fournisseur
+  // Associer un produit à un fournisseur (résout vers le parent si variation)
   addProduct: async (supplierId, productId, data = {}) => {
+    const resolvedId = await resolveToParentId(productId);
     const query = `
       INSERT INTO product_suppliers (
         supplier_id, product_id, is_primary, supplier_sku, supplier_price, min_order_qty, pack_qty
@@ -159,7 +178,7 @@ const supplierModel = {
     `;
     const values = [
       supplierId,
-      productId,
+      resolvedId,
       data.is_primary || false,
       data.supplier_sku || null,
       data.supplier_price || null,
@@ -170,10 +189,11 @@ const supplierModel = {
     return result.rows[0];
   },
 
-  // Mettre à jour les données d'un produit chez un fournisseur
+  // Mettre à jour les données d'un produit chez un fournisseur (résout vers le parent si variation)
   updateProductSupplier: async (supplierId, productId, data) => {
+    const resolvedId = await resolveToParentId(productId);
     const fields = [];
-    const values = [supplierId, productId];
+    const values = [supplierId, resolvedId];
     let paramIndex = 3;
 
     if (data.supplier_sku !== undefined) {
@@ -210,24 +230,26 @@ const supplierModel = {
     return result.rows[0];
   },
 
-  // Retirer un produit d'un fournisseur
+  // Retirer un produit d'un fournisseur (résout vers le parent si variation)
   removeProduct: async (supplierId, productId) => {
+    const resolvedId = await resolveToParentId(productId);
     const query = `
       DELETE FROM product_suppliers
       WHERE supplier_id = $1 AND product_id = $2
       RETURNING *
     `;
-    const result = await pool.query(query, [supplierId, productId]);
+    const result = await pool.query(query, [supplierId, resolvedId]);
     return result.rows[0];
   },
 
-  // Définir le fournisseur principal d'un produit
+  // Définir le fournisseur principal d'un produit (résout vers le parent si variation)
   setPrimarySupplier: async (productId, supplierId) => {
+    const resolvedId = await resolveToParentId(productId);
     // D'abord retirer le statut principal des autres fournisseurs
     await pool.query(`
       UPDATE product_suppliers SET is_primary = false
       WHERE product_id = $1 AND supplier_id != $2
-    `, [productId, supplierId]);
+    `, [resolvedId, supplierId]);
 
     // Puis définir le nouveau principal
     const query = `
@@ -235,12 +257,13 @@ const supplierModel = {
       WHERE product_id = $1 AND supplier_id = $2
       RETURNING *
     `;
-    const result = await pool.query(query, [productId, supplierId]);
+    const result = await pool.query(query, [resolvedId, supplierId]);
     return result.rows[0];
   },
 
-  // Récupérer les fournisseurs d'un produit
+  // Récupérer les fournisseurs d'un produit (résout vers le parent si variation)
   getSuppliersByProduct: async (productId) => {
+    const resolvedId = await resolveToParentId(productId);
     const query = `
       SELECT
         s.*,
@@ -254,7 +277,7 @@ const supplierModel = {
       WHERE ps.product_id = $1 AND s.is_active = true
       ORDER BY ps.is_primary DESC, s.name
     `;
-    const result = await pool.query(query, [productId]);
+    const result = await pool.query(query, [resolvedId]);
     return result.rows;
   },
 

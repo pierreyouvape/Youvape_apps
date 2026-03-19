@@ -38,13 +38,18 @@ const needsCalculationModel = {
         p_parent.sku as parent_sku
       FROM products p
       LEFT JOIN product_alerts pa ON p.id = pa.product_id
-      LEFT JOIN product_suppliers ps_primary ON p.id = ps_primary.product_id AND ps_primary.is_primary = true
+      LEFT JOIN products p_parent ON p.wp_parent_id = p_parent.wp_product_id
+      -- Fournisseurs : chercher sur le produit lui-même OU sur son parent (les variations héritent du parent)
+      LEFT JOIN product_suppliers ps_primary
+        ON ps_primary.product_id = CASE WHEN p.product_type = 'variation' THEN p_parent.id ELSE p.id END
+        AND ps_primary.is_primary = true
       LEFT JOIN suppliers s_primary ON ps_primary.supplier_id = s_primary.id
       LEFT JOIN LATERAL (
-        SELECT supplier_id FROM product_suppliers WHERE product_id = p.id LIMIT 1
+        SELECT supplier_id FROM product_suppliers
+        WHERE product_id = CASE WHEN p.product_type = 'variation' THEN p_parent.id ELSE p.id END
+        LIMIT 1
       ) ps_any ON ps_primary.id IS NULL
       LEFT JOIN suppliers s_any ON ps_any.supplier_id = s_any.id
-      LEFT JOIN products p_parent ON p.wp_parent_id = p_parent.wp_product_id
       WHERE p.post_status = 'publish'
         AND COALESCE(p.exclude_from_reorder, false) = false
         AND (
