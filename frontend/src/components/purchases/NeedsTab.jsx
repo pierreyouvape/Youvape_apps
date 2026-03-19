@@ -259,7 +259,7 @@ const NeedsTab = ({ token }) => {
 
   // Pagination locale
   const [page, setPage] = useState(1);
-  const PAGE_SIZE = 50;
+  const [pageSize, setPageSize] = useState(50);
 
   // Tri local
   const [sortColumn, setSortColumn] = useState('theoretical_proposal');
@@ -469,16 +469,17 @@ const NeedsTab = ({ token }) => {
 
   // Pagination locale
   const totalFiltered = filteredProducts.length;
-  const totalPages = Math.max(1, Math.ceil(flatRows.length / PAGE_SIZE));
+  const totalPages = pageSize === 0 ? 1 : Math.max(1, Math.ceil(flatRows.length / pageSize));
   const pagedProducts = useMemo(() => {
-    const start = (page - 1) * PAGE_SIZE;
-    return flatRows.slice(start, start + PAGE_SIZE);
-  }, [flatRows, page]);
+    if (pageSize === 0) return flatRows; // "Tout"
+    const start = (page - 1) * pageSize;
+    return flatRows.slice(start, start + pageSize);
+  }, [flatRows, page, pageSize]);
 
   // Reset page quand les filtres changent (mais pas la sélection)
   useEffect(() => {
     setPage(1);
-  }, [supplierId, withSalesOnly, zeroStockState, effectivePeriodDays, coverageMonths, analysisStartDate, analysisEndDate]);
+  }, [supplierId, withSalesOnly, zeroStockState, effectivePeriodDays, coverageMonths, analysisStartDate, analysisEndDate, pageSize]);
 
   const handleSearchChange = (value) => {
     setSearch(value);
@@ -612,8 +613,8 @@ const NeedsTab = ({ token }) => {
   const analysisPeriodSelectValue = analysisPeriodType === 'custom' ? 'custom' : analysisPeriod;
 
   return (
-    <div className="needs-tab">
-      <div className="purchases-card">
+    <div className="needs-tab" style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 120px)' }}>
+      <div className="purchases-card" style={{ flexShrink: 0 }}>
 
         {/* Ligne de filtres principale */}
         <div className="filters-bar">
@@ -698,6 +699,16 @@ const NeedsTab = ({ token }) => {
           />
 
           <div style={{ marginLeft: 'auto', display: 'flex', gap: '10px', alignItems: 'center' }}>
+            <select
+              value={pageSize}
+              onChange={(e) => { setPageSize(parseInt(e.target.value)); setPage(1); }}
+              style={{ padding: '5px 8px', border: '1px solid #ddd', borderRadius: '6px', fontSize: '13px' }}
+            >
+              <option value={50}>50</option>
+              <option value={100}>100</option>
+              <option value={200}>200</option>
+              <option value={0}>Tout</option>
+            </select>
             {allProducts.length > 0 && (
               <span style={{ fontSize: '13px', color: '#888' }}>
                 {totalFiltered} / {allProducts.length} produits
@@ -743,7 +754,7 @@ const NeedsTab = ({ token }) => {
       </div>
 
       {/* Table */}
-      <div className="purchases-card">
+      <div className="purchases-card" style={{ flex: 1, overflow: 'auto', minHeight: 0 }}>
         {loading ? (
           <div className="loading">
             <div className="loading-spinner"></div>
@@ -888,7 +899,7 @@ const NeedsTab = ({ token }) => {
               </tbody>
             </table>
 
-            {totalPages > 1 && (
+            {pageSize > 0 && totalPages > 1 && (
               <div className="pagination">
                 <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}>
                   ← Précédent

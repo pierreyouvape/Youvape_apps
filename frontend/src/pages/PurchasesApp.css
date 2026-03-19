@@ -151,6 +151,9 @@
   color: #333;
   border-bottom: 2px solid #e0e0e0;
   white-space: nowrap;
+  position: sticky;
+  top: 0;
+  z-index: 5;
 }
 
 .purchases-table td {
@@ -297,8 +300,10 @@
   padding: 8px 16px;
   border: 1px solid #ddd;
   background: white;
+  color: #333;
   border-radius: 6px;
   cursor: pointer;
+  font-size: 14px;
   transition: all 0.2s;
 }
 
