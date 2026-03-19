@@ -184,7 +184,7 @@ const generateLabel = async (req, res) => {
     const packagingResult = await pool.query(
       "SELECT config_value FROM shipping_settings WHERE config_key = 'packaging_weight'"
     );
-    const packagingWeight = packagingResult.rows[0] ? parseFloat(packagingResult.rows[0].config_value) : 50;
+    const packagingWeight = packagingResult.rows[0] ? parseFloat(packagingResult.rows[0].config_value) : 11;
     const totalGrams = Math.round(parseFloat(weightResult.rows[0].total_kg) * 1000) + packagingWeight;
 
     // Tranches La Poste : 20g, 50g, 100g, 250g (si > 250g on envoie 250g quand même)
