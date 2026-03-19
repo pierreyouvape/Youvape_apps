@@ -20,18 +20,21 @@ const SalesByCountryPieChart = ({ data, height = 350 }) => {
   ];
 
   // Préparer les données pour le pie chart (top 5 pays + "Autres")
-  let chartData = [...data].sort((a, b) => parseFloat(b.net_revenue) - parseFloat(a.net_revenue));
+  // Convertir net_revenue en nombre (PostgreSQL renvoie des strings pour numeric)
+  let chartData = [...data]
+    .map(d => ({ ...d, net_revenue: parseFloat(d.net_revenue) || 0 }))
+    .sort((a, b) => b.net_revenue - a.net_revenue);
 
   if (chartData.length > 5) {
     const top5 = chartData.slice(0, 5);
     const others = chartData.slice(5);
-    const othersTotal = others.reduce((sum, item) => sum + parseFloat(item.net_revenue), 0);
+    const othersTotal = others.reduce((sum, item) => sum + item.net_revenue, 0);
 
     chartData = [
       ...top5,
       {
         shipping_country: 'Autres',
-        net_revenue: othersTotal.toFixed(2),
+        net_revenue: othersTotal,
         net_sold: others.reduce((sum, item) => sum + parseInt(item.net_sold), 0),
         net_orders: others.reduce((sum, item) => sum + parseInt(item.net_orders), 0)
       }
