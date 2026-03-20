@@ -315,15 +315,15 @@ exports.getStats = async (req, res) => {
     const { whereClause, params } = buildFilteredOrdersCTE(filters);
 
     // Requête principale pour les métriques globales
-    // On utilise une sous-requête pour éviter les doublons causés par les jointures
     const statsQuery = `
       SELECT
         COUNT(*)::int as orders_count,
         COALESCE(SUM(order_total), 0)::numeric as ca_ttc,
         COALESCE(SUM(order_total) - SUM(order_tax) - SUM(COALESCE(order_shipping_tax, 0)), 0)::numeric as ca_ht,
-        COALESCE(SUM(order_total_cost), 0)::numeric as cost_ht
+        COALESCE(SUM(cart_discount), 0)::numeric as total_discount,
+        SUM(CASE WHEN cart_discount > 0 THEN 1 ELSE 0 END)::int as orders_with_coupon
       FROM (
-        SELECT DISTINCT o.wp_order_id, o.order_total, o.order_tax, o.order_shipping_tax, o.order_total_cost
+        SELECT DISTINCT o.wp_order_id, o.order_total, o.order_tax, o.order_shipping_tax, o.cart_discount
         FROM orders o
         ${whereClause}
       ) unique_orders
@@ -332,23 +332,49 @@ exports.getStats = async (req, res) => {
     const statsResult = await pool.query(statsQuery, params);
     const stats = statsResult.rows[0];
 
+    // Coût HT : calculé depuis order_items × coût unitaire (computed_cost FIFO prioritaire, sinon wc_cog_cost)
+    const costQuery = `
+      SELECT COALESCE(SUM(oi.qty * COALESCE(p.computed_cost, p.wc_cog_cost, 0)), 0)::numeric as cost_ht
+      FROM order_items oi
+      INNER JOIN (
+        SELECT DISTINCT o.wp_order_id
+        FROM orders o
+        ${whereClause}
+      ) filtered ON filtered.wp_order_id = oi.wp_order_id
+      LEFT JOIN products p ON p.wp_product_id = COALESCE(NULLIF(oi.variation_id, 0), oi.product_id)
+      WHERE oi.order_item_type = 'line_item'
+    `;
+    const costResult = await pool.query(costQuery, params);
+    const costHt = parseFloat(costResult.rows[0].cost_ht);
+
+    // Coût expédition réel (shipping_cost_calculated)
+    const shippingCostQuery = `
+      SELECT COALESCE(SUM(shipping_cost_calculated), 0)::numeric as shipping_cost
+      FROM (
+        SELECT DISTINCT o.wp_order_id, o.shipping_cost_calculated
+        FROM orders o
+        ${whereClause}
+      ) unique_orders
+    `;
+    const shippingCostResult = await pool.query(shippingCostQuery, params);
+    const shippingCost = parseFloat(shippingCostResult.rows[0].shipping_cost);
+
     // Panier moyen calculé séparément pour éviter problèmes avec DISTINCT
     const avgBasket = stats.orders_count > 0 ? parseFloat(stats.ca_ttc) / stats.orders_count : 0;
 
-    // Calcul marge
-    const margin_ht = parseFloat(stats.ca_ht) - parseFloat(stats.cost_ht);
+    // Calcul marge (CA HT - cout produits - cout expedition reel)
+    const margin_ht = parseFloat(stats.ca_ht) - costHt - shippingCost;
     const margin_percent = parseFloat(stats.ca_ht) > 0 ? (margin_ht / parseFloat(stats.ca_ht)) * 100 : 0;
 
-    // Répartition par transporteur
+    // Répartition par transporteur (utilise orders.shipping_method au lieu de order_items shipping)
     const shippingBreakdownQuery = `
       SELECT
         name,
         COUNT(*)::int as count,
         COALESCE(SUM(order_total), 0)::numeric as ca_ttc
       FROM (
-        SELECT DISTINCT o.wp_order_id, o.order_total, oi_ship.order_item_name as name
+        SELECT DISTINCT o.wp_order_id, o.order_total, COALESCE(NULLIF(o.shipping_method, ''), 'Inconnu') as name
         FROM orders o
-        INNER JOIN order_items oi_ship ON oi_ship.wp_order_id = o.wp_order_id AND oi_ship.order_item_type = 'shipping'
         ${whereClause}
       ) unique_orders
       GROUP BY name
@@ -439,18 +465,7 @@ exports.getStats = async (req, res) => {
     `;
     const couponBreakdown = await pool.query(couponBreakdownQuery, params);
 
-    // Calcul des commandes avec et sans coupon
-    const withCouponQuery = `
-      SELECT COUNT(DISTINCT o.wp_order_id)::int as count
-      FROM orders o
-      ${whereClause}
-      AND EXISTS (
-        SELECT 1 FROM order_items oi_c
-        WHERE oi_c.wp_order_id = o.wp_order_id AND oi_c.order_item_type = 'coupon'
-      )
-    `;
-    const withCouponResult = await pool.query(withCouponQuery, params);
-    const ordersWithCoupon = withCouponResult.rows[0]?.count || 0;
+    const ordersWithCoupon = parseInt(stats.orders_with_coupon) || 0;
     const ordersWithoutCoupon = parseInt(stats.orders_count) - ordersWithCoupon;
 
     res.json({
@@ -460,7 +475,8 @@ exports.getStats = async (req, res) => {
           orders_count: parseInt(stats.orders_count),
           ca_ttc: parseFloat(stats.ca_ttc).toFixed(2),
           ca_ht: parseFloat(stats.ca_ht).toFixed(2),
-          cost_ht: parseFloat(stats.cost_ht).toFixed(2),
+          cost_ht: costHt.toFixed(2),
+          shipping_cost: shippingCost.toFixed(2),
           margin_ht: margin_ht.toFixed(2),
           margin_percent: margin_percent.toFixed(1),
           avg_basket: avgBasket.toFixed(2),

@@ -175,7 +175,8 @@ const OrderDetail = () => {
   const cartDiscount = parseFloat(order.cart_discount) || 0;
   const totalCost = parseFloat(order.order_total_cost || order.total_cost) || 0;
   const subtotal = orderTotal - orderTax + cartDiscount;
-  const margin = orderTotal - totalCost - orderShipping;
+  const shippingCostCalculated = order.shipping_cost_calculated != null ? parseFloat(order.shipping_cost_calculated) : null;
+  const margin = shippingCostCalculated != null ? orderTotal - totalCost - shippingCostCalculated : null;
 
   // Filtrer les line_items pour n'avoir que les produits (pas shipping, fees, etc.)
   const productItems = (order.line_items || []).filter(item => item.order_item_type === 'line_item');
@@ -549,7 +550,7 @@ const OrderDetail = () => {
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                   <span style={{ color: '#666' }}>Cout livraison :</span>
-                  <span style={{ fontWeight: '600' }}>{formatCurrency(orderShipping)}</span>
+                  <span style={{ fontWeight: '600' }}>{shippingCostCalculated != null ? formatCurrency(shippingCostCalculated) : '-'}</span>
                 </div>
                 <div
                   style={{
@@ -561,9 +562,11 @@ const OrderDetail = () => {
                   }}
                 >
                   <span>Marge brute :</span>
-                  <span style={{ color: margin > 0 ? '#28a745' : '#dc3545' }}>{formatCurrency(margin)}</span>
+                  <span style={{ color: margin != null ? (margin > 0 ? '#28a745' : '#dc3545') : '#666' }}>
+                    {margin != null ? formatCurrency(margin) : '-'}
+                  </span>
                 </div>
-                {orderTotal > 0 && (
+                {margin != null && orderTotal > 0 && (
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
                     <span style={{ color: '#666' }}>Taux de marge :</span>
                     <span style={{ fontWeight: '600', color: margin > 0 ? '#28a745' : '#dc3545' }}>

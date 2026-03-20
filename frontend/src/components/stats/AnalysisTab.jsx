@@ -242,14 +242,16 @@ const AnalysisTab = () => {
       ['CA HT', formatPrice(stats.metrics.ca_ht), `${formatVariation(calcVariation(stats.metrics.ca_ht, compareStats.metrics.ca_ht)).text}`],
       ['Panier moyen', formatPrice(stats.metrics.avg_basket), `${formatVariation(calcVariation(stats.metrics.avg_basket, compareStats.metrics.avg_basket)).text}`],
       ['Marge HT', `${formatPrice(stats.metrics.margin_ht)} (${stats.metrics.margin_percent}%)`, `${formatVariation(calcVariation(stats.metrics.margin_ht, compareStats.metrics.margin_ht)).text}`],
-      ['Coût HT', formatPrice(stats.metrics.cost_ht), `${formatVariation(calcVariation(stats.metrics.cost_ht, compareStats.metrics.cost_ht)).text}`],
+      ['Coût produits HT', formatPrice(stats.metrics.cost_ht), `${formatVariation(calcVariation(stats.metrics.cost_ht, compareStats.metrics.cost_ht)).text}`],
+      ['Coût expédition', formatPrice(stats.metrics.shipping_cost), `${formatVariation(calcVariation(stats.metrics.shipping_cost, compareStats.metrics.shipping_cost)).text}`],
     ] : [
       ['Nombre de commandes', formatNumber(stats.metrics.orders_count)],
       ['CA TTC', formatPrice(stats.metrics.ca_ttc)],
       ['CA HT', formatPrice(stats.metrics.ca_ht)],
       ['Panier moyen', formatPrice(stats.metrics.avg_basket)],
       ['Marge HT', `${formatPrice(stats.metrics.margin_ht)} (${stats.metrics.margin_percent}%)`],
-      ['Coût HT', formatPrice(stats.metrics.cost_ht)],
+      ['Coût produits HT', formatPrice(stats.metrics.cost_ht)],
+      ['Coût expédition', formatPrice(stats.metrics.shipping_cost)],
     ];
 
     doc.autoTable({
@@ -623,13 +625,11 @@ const AnalysisTab = () => {
             <KpiCard
               label="Commandes"
               value={formatNumber(stats.metrics.orders_count)}
-              color="#007bff"
               variation={compareStats ? calcVariation(stats.metrics.orders_count, compareStats.metrics.orders_count) : null}
             />
             <KpiCard
               label="CA TTC"
               value={formatPrice(stats.metrics.ca_ttc)}
-              color="#28a745"
               variation={compareStats ? calcVariation(stats.metrics.ca_ttc, compareStats.metrics.ca_ttc) : null}
             />
             <KpiCard
@@ -640,26 +640,27 @@ const AnalysisTab = () => {
             <KpiCard
               label="Panier moyen"
               value={formatPrice(stats.metrics.avg_basket)}
-              color="#17a2b8"
               variation={compareStats ? calcVariation(stats.metrics.avg_basket, compareStats.metrics.avg_basket) : null}
             />
             <KpiCard
               label="Marge HT"
               value={formatPrice(stats.metrics.margin_ht)}
-              color="#28a745"
               subValue={`${stats.metrics.margin_percent}%`}
               variation={compareStats ? calcVariation(stats.metrics.margin_ht, compareStats.metrics.margin_ht) : null}
             />
             <KpiCard
-              label="Coût HT"
+              label="Coût produits HT"
               value={formatPrice(stats.metrics.cost_ht)}
-              color="#dc3545"
               variation={compareStats ? calcVariation(stats.metrics.cost_ht, compareStats.metrics.cost_ht) : null}
+            />
+            <KpiCard
+              label="Coût expédition"
+              value={formatPrice(stats.metrics.shipping_cost)}
+              variation={compareStats ? calcVariation(stats.metrics.shipping_cost, compareStats.metrics.shipping_cost) : null}
             />
             <KpiCard
               label="Avec coupon"
               value={formatNumber(stats.metrics.orders_with_coupon)}
-              color="#ff7300"
               subValue={`${((stats.metrics.orders_with_coupon / stats.metrics.orders_count) * 100).toFixed(1)}% des commandes`}
               variation={compareStats ? calcVariation(stats.metrics.orders_with_coupon, compareStats.metrics.orders_with_coupon) : null}
             />
@@ -670,27 +671,44 @@ const AnalysisTab = () => {
             {/* Répartition par transporteur */}
             <div style={{ backgroundColor: 'white', padding: '20px', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
               <h4 style={{ margin: '0 0 15px 0', fontSize: '16px', color: '#333' }}>Répartition par transporteur</h4>
-              {stats.breakdowns.byShipping.length > 0 ? (
-                <ResponsiveContainer width="100%" height={300}>
-                  <PieChart>
-                    <Pie
-                      data={stats.breakdowns.byShipping}
-                      dataKey="count"
-                      nameKey="name"
-                      cx="50%"
-                      cy="50%"
-                      outerRadius={100}
-                      label={({ name, percent }) => `${name.substring(0, 15)}${name.length > 15 ? '...' : ''} (${(percent * 100).toFixed(0)}%)`}
-                      labelLine={false}
-                    >
+              {stats.breakdowns.byShipping.length > 0 ? (() => {
+                const total = stats.breakdowns.byShipping.reduce((s, e) => s + parseInt(e.count), 0);
+                return (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+                    <div style={{ flex: '0 0 200px' }}>
+                      <ResponsiveContainer width={200} height={200}>
+                        <PieChart>
+                          <Pie
+                            data={stats.breakdowns.byShipping}
+                            dataKey="count"
+                            nameKey="name"
+                            cx="50%"
+                            cy="50%"
+                            outerRadius={90}
+                            label={false}
+                            labelLine={false}
+                          >
+                            {stats.breakdowns.byShipping.map((entry, index) => (
+                              <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                            ))}
+                          </Pie>
+                          <Tooltip formatter={(value, name) => [`${formatNumber(value)} (${((value / total) * 100).toFixed(1)}%)`, name]} />
+                        </PieChart>
+                      </ResponsiveContainer>
+                    </div>
+                    <div style={{ flex: 1, fontSize: '13px' }}>
                       {stats.breakdowns.byShipping.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                        <div key={index} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '4px 0', borderBottom: '1px solid #f0f0f0' }}>
+                          <span style={{ width: '10px', height: '10px', borderRadius: '2px', backgroundColor: COLORS[index % COLORS.length], flexShrink: 0 }} />
+                          <span style={{ flex: 1, color: '#333', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{entry.name}</span>
+                          <span style={{ fontWeight: 600, color: '#333', whiteSpace: 'nowrap' }}>{((entry.count / total) * 100).toFixed(1)}%</span>
+                          <span style={{ color: '#999', whiteSpace: 'nowrap', minWidth: '40px', textAlign: 'right' }}>{formatNumber(entry.count)}</span>
+                        </div>
                       ))}
-                    </Pie>
-                    <Tooltip formatter={(value) => formatNumber(value)} />
-                  </PieChart>
-                </ResponsiveContainer>
-              ) : (
+                    </div>
+                  </div>
+                );
+              })() : (
                 <p style={{ textAlign: 'center', color: '#999' }}>Aucune donnée</p>
               )}
             </div>
@@ -698,30 +716,79 @@ const AnalysisTab = () => {
             {/* Répartition par pays */}
             <div style={{ backgroundColor: 'white', padding: '20px', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
               <h4 style={{ margin: '0 0 15px 0', fontSize: '16px', color: '#333' }}>Répartition par pays</h4>
-              {stats.breakdowns.byCountry.length > 0 ? (
-                <ResponsiveContainer width="100%" height={300}>
-                  <PieChart>
-                    <Pie
-                      data={stats.breakdowns.byCountry}
-                      dataKey="count"
-                      nameKey="name"
-                      cx="50%"
-                      cy="50%"
-                      outerRadius={100}
-                      label={({ name, percent }) => `${name} (${(percent * 100).toFixed(0)}%)`}
-                      labelLine={false}
-                    >
+              {stats.breakdowns.byCountry.length > 0 ? (() => {
+                const total = stats.breakdowns.byCountry.reduce((s, e) => s + parseInt(e.count), 0);
+                return (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+                    <div style={{ flex: '0 0 200px' }}>
+                      <ResponsiveContainer width={200} height={200}>
+                        <PieChart>
+                          <Pie
+                            data={stats.breakdowns.byCountry}
+                            dataKey="count"
+                            nameKey="name"
+                            cx="50%"
+                            cy="50%"
+                            outerRadius={90}
+                            label={false}
+                            labelLine={false}
+                          >
+                            {stats.breakdowns.byCountry.map((entry, index) => (
+                              <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                            ))}
+                          </Pie>
+                          <Tooltip formatter={(value, name) => [`${formatNumber(value)} (${((value / total) * 100).toFixed(1)}%)`, name]} />
+                        </PieChart>
+                      </ResponsiveContainer>
+                    </div>
+                    <div style={{ flex: 1, fontSize: '13px' }}>
                       {stats.breakdowns.byCountry.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                        <div key={index} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '4px 0', borderBottom: '1px solid #f0f0f0' }}>
+                          <span style={{ width: '10px', height: '10px', borderRadius: '2px', backgroundColor: COLORS[index % COLORS.length], flexShrink: 0 }} />
+                          <span style={{ flex: 1, color: '#333' }}>{entry.name}</span>
+                          <span style={{ fontWeight: 600, color: '#333', whiteSpace: 'nowrap' }}>{((entry.count / total) * 100).toFixed(1)}%</span>
+                          <span style={{ color: '#999', whiteSpace: 'nowrap', minWidth: '40px', textAlign: 'right' }}>{formatNumber(entry.count)}</span>
+                        </div>
                       ))}
-                    </Pie>
-                    <Tooltip formatter={(value) => formatNumber(value)} />
-                  </PieChart>
-                </ResponsiveContainer>
-              ) : (
+                    </div>
+                  </div>
+                );
+              })() : (
                 <p style={{ textAlign: 'center', color: '#999' }}>Aucune donnée</p>
               )}
             </div>
+          </div>
+
+          {/* Histogrammes transporteurs et pays */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))', gap: '20px', marginBottom: '20px' }}>
+            {stats.breakdowns.byShipping.length > 0 && (
+              <div style={{ backgroundColor: 'white', padding: '20px', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
+                <h4 style={{ margin: '0 0 15px 0', fontSize: '16px', color: '#333' }}>Commandes par transporteur</h4>
+                <ResponsiveContainer width="100%" height={Math.max(250, stats.breakdowns.byShipping.length * 35)}>
+                  <BarChart data={stats.breakdowns.byShipping} layout="vertical" margin={{ left: 10 }}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis type="number" />
+                    <YAxis type="category" dataKey="name" width={180} tick={{ fontSize: 11 }} />
+                    <Tooltip formatter={(value) => [formatNumber(value), 'Commandes']} />
+                    <Bar dataKey="count" fill="#007bff" radius={[0, 4, 4, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+            {stats.breakdowns.byCountry.length > 0 && (
+              <div style={{ backgroundColor: 'white', padding: '20px', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
+                <h4 style={{ margin: '0 0 15px 0', fontSize: '16px', color: '#333' }}>Commandes par pays</h4>
+                <ResponsiveContainer width="100%" height={Math.max(250, stats.breakdowns.byCountry.length * 35)}>
+                  <BarChart data={stats.breakdowns.byCountry} layout="vertical" margin={{ left: 10 }}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis type="number" />
+                    <YAxis type="category" dataKey="name" width={120} tick={{ fontSize: 11 }} />
+                    <Tooltip formatter={(value) => [formatNumber(value), 'Commandes']} />
+                    <Bar dataKey="count" fill="#28a745" radius={[0, 4, 4, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            )}
           </div>
 
           {/* Top coupons */}
@@ -768,23 +835,40 @@ const AnalysisTab = () => {
           <div style={{ backgroundColor: 'white', padding: '20px', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
             <h4 style={{ margin: '0 0 15px 0', fontSize: '16px', color: '#333' }}>Evolution du CA</h4>
             {stats.breakdowns.byTime.length > 0 ? (
-              <ResponsiveContainer width="100%" height={300}>
-                <LineChart data={stats.breakdowns.byTime}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis
-                    dataKey="date"
-                    tickFormatter={(d) => new Date(d).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' })}
-                    tick={{ fontSize: 11 }}
-                  />
-                  <YAxis tickFormatter={(v) => `${(v/1000).toFixed(0)}k€`} />
-                  <Tooltip
-                    labelFormatter={(d) => new Date(d).toLocaleDateString('fr-FR')}
-                    formatter={(value) => [formatPrice(value), 'CA TTC']}
-                  />
-                  <Legend />
-                  <Line type="monotone" dataKey="ca_ttc" stroke="#28a745" name="CA TTC" strokeWidth={2} dot={false} />
-                </LineChart>
-              </ResponsiveContainer>
+              <>
+                <ResponsiveContainer width="100%" height={250}>
+                  <LineChart data={stats.breakdowns.byTime}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis
+                      dataKey="date"
+                      tickFormatter={(d) => new Date(d).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' })}
+                      tick={{ fontSize: 11 }}
+                    />
+                    <YAxis tickFormatter={(v) => `${(v/1000).toFixed(0)}k€`} />
+                    <Tooltip
+                      labelFormatter={(d) => new Date(d).toLocaleDateString('fr-FR')}
+                      formatter={(value) => [formatPrice(value), 'CA TTC']}
+                    />
+                    <Line type="monotone" dataKey="ca_ttc" stroke="#28a745" name="CA TTC" strokeWidth={2} dot={false} />
+                  </LineChart>
+                </ResponsiveContainer>
+                <ResponsiveContainer width="100%" height={200}>
+                  <BarChart data={stats.breakdowns.byTime}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis
+                      dataKey="date"
+                      tickFormatter={(d) => new Date(d).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' })}
+                      tick={{ fontSize: 11 }}
+                    />
+                    <YAxis tickFormatter={(v) => `${(v/1000).toFixed(0)}k€`} />
+                    <Tooltip
+                      labelFormatter={(d) => new Date(d).toLocaleDateString('fr-FR')}
+                      formatter={(value) => [formatPrice(value), 'CA TTC']}
+                    />
+                    <Bar dataKey="ca_ttc" fill="#007bff" name="CA TTC" radius={[2, 2, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </>
             ) : (
               <p style={{ textAlign: 'center', color: '#999' }}>Sélectionnez une période pour voir l&apos;évolution</p>
             )}
