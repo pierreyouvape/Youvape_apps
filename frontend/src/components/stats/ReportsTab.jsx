@@ -434,7 +434,7 @@ const ReportsTab = () => {
                     contentStyle={{ backgroundColor: '#fff', border: '1px solid #ddd', borderRadius: '8px' }}
                     labelStyle={{ color: '#333' }}
                     formatter={(value, name) => {
-                      const labels = { netRevenue: 'Net Revenue', cost: 'Coûts', profit: 'Profit' };
+                      const labels = { netRevenue: 'CA HT', cost: 'Coûts HT', profit: 'Profit HT' };
                       return [formatPrice(value), labels[name] || name];
                     }}
                     labelFormatter={(label, payload) => payload[0]?.payload?.fullDate || label}
@@ -464,23 +464,23 @@ const ReportsTab = () => {
                   <span style={{ color: '#333', fontSize: '16px', fontWeight: '700' }}>{profitData.kpis.orders_count.toLocaleString('fr-FR')}</span>
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px' }}>
-                  <span style={{ color: '#666', fontSize: '13px' }}>Net Revenue</span>
+                  <span style={{ color: '#666', fontSize: '13px' }}>CA HT</span>
                   <span style={{ color: '#007bff', fontSize: '16px', fontWeight: '700' }}>{formatPrice(profitData.kpis.net_revenue)}</span>
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px' }}>
-                  <span style={{ color: '#666', fontSize: '13px' }}>Total Cost</span>
+                  <span style={{ color: '#666', fontSize: '13px' }}>Cout total HT</span>
                   <span style={{ color: '#dc3545', fontSize: '16px', fontWeight: '700' }}>{formatPrice(profitData.kpis.total_cost)}</span>
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px' }}>
-                  <span style={{ color: '#666', fontSize: '13px' }}>Profit</span>
+                  <span style={{ color: '#666', fontSize: '13px' }}>Profit HT</span>
                   <span style={{ color: '#28a745', fontSize: '18px', fontWeight: '700' }}>{formatPrice(profitData.kpis.profit)}</span>
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px' }}>
-                  <span style={{ color: '#666', fontSize: '13px' }}>Profit Margin</span>
+                  <span style={{ color: '#666', fontSize: '13px' }}>Marge HT</span>
                   <span style={{ color: '#333', fontSize: '14px', fontWeight: '600' }}>{parseFloat(profitData.kpis.margin).toFixed(1)}%</span>
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span style={{ color: '#666', fontSize: '13px' }}>Avg Profit</span>
+                  <span style={{ color: '#666', fontSize: '13px' }}>Profit moyen HT</span>
                   <span style={{ color: '#333', fontSize: '14px', fontWeight: '600' }}>{formatPrice(profitData.kpis.avg_profit)}</span>
                 </div>
               </div>
@@ -533,12 +533,12 @@ const ReportsTab = () => {
                   <tr>
                     <th style={{ padding: '12px 15px', textAlign: 'left', color: '#666', fontSize: '11px', fontWeight: '600', textTransform: 'uppercase' }}>Date</th>
                     <th style={{ padding: '12px 15px', textAlign: 'right', color: '#666', fontSize: '11px', fontWeight: '600', textTransform: 'uppercase' }}>Orders</th>
-                    <th style={{ padding: '12px 15px', textAlign: 'right', color: '#666', fontSize: '11px', fontWeight: '600', textTransform: 'uppercase' }}>Gross Sales</th>
+                    <th style={{ padding: '12px 15px', textAlign: 'right', color: '#666', fontSize: '11px', fontWeight: '600', textTransform: 'uppercase' }}>CA TTC</th>
                     <th style={{ padding: '12px 15px', textAlign: 'right', color: '#666', fontSize: '11px', fontWeight: '600', textTransform: 'uppercase' }}>Taxes</th>
-                    <th style={{ padding: '12px 15px', textAlign: 'right', color: '#666', fontSize: '11px', fontWeight: '600', textTransform: 'uppercase' }}>Refunds</th>
-                    <th style={{ padding: '12px 15px', textAlign: 'right', color: '#666', fontSize: '11px', fontWeight: '600', textTransform: 'uppercase' }}>Net Revenue</th>
-                    <th style={{ padding: '12px 15px', textAlign: 'right', color: '#666', fontSize: '11px', fontWeight: '600', textTransform: 'uppercase' }}>Cost</th>
-                    <th style={{ padding: '12px 15px', textAlign: 'right', color: '#666', fontSize: '11px', fontWeight: '600', textTransform: 'uppercase' }}>Profit</th>
+                    <th style={{ padding: '12px 15px', textAlign: 'right', color: '#666', fontSize: '11px', fontWeight: '600', textTransform: 'uppercase' }}>Remb.</th>
+                    <th style={{ padding: '12px 15px', textAlign: 'right', color: '#666', fontSize: '11px', fontWeight: '600', textTransform: 'uppercase' }}>CA HT</th>
+                    <th style={{ padding: '12px 15px', textAlign: 'right', color: '#666', fontSize: '11px', fontWeight: '600', textTransform: 'uppercase' }}>Cout HT</th>
+                    <th style={{ padding: '12px 15px', textAlign: 'right', color: '#666', fontSize: '11px', fontWeight: '600', textTransform: 'uppercase' }}>Profit HT</th>
                     <th style={{ padding: '12px 15px', textAlign: 'right', color: '#666', fontSize: '11px', fontWeight: '600', textTransform: 'uppercase' }}>Margin</th>
                   </tr>
                 </thead>
@@ -750,7 +750,7 @@ const ReportsTab = () => {
               <div style={{ color: '#6f42c1', fontSize: '18px', fontWeight: '700' }}>{ordersData.kpis.daily_items}</div>
             </div>
             <div style={{ backgroundColor: '#fff', borderRadius: '8px', padding: '15px', border: '1px solid #e9ecef' }}>
-              <div style={{ color: '#666', fontSize: '12px', marginBottom: '5px' }}>Panier moyen</div>
+              <div style={{ color: '#666', fontSize: '12px', marginBottom: '5px' }}>Panier moyen TTC</div>
               <div style={{ color: '#333', fontSize: '18px', fontWeight: '700' }}>{formatPrice(ordersData.kpis.avg_order_gross)}</div>
             </div>
           </div>
@@ -980,13 +980,13 @@ const ReportsTab = () => {
           {/* Panier moyen et articles moyens par jour */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '30px' }}>
             <div style={{ backgroundColor: '#fff', borderRadius: '8px', padding: '20px', border: '1px solid #e9ecef' }}>
-              <h3 style={{ margin: '0 0 15px', color: '#333', fontSize: '16px' }}>Panier moyen par jour</h3>
+              <h3 style={{ margin: '0 0 15px', color: '#333', fontSize: '16px' }}>Panier moyen TTC par jour</h3>
               <ResponsiveContainer width="100%" height={200}>
                 <LineChart data={avgOrderChartData}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#e9ecef" />
                   <XAxis dataKey="date" stroke="#666" fontSize={11} />
                   <YAxis stroke="#666" fontSize={11} />
-                  <Tooltip formatter={(v) => [formatPrice(v), 'Panier moyen']} labelFormatter={(label, payload) => payload[0]?.payload?.fullDate || label} />
+                  <Tooltip formatter={(v) => [formatPrice(v), 'Panier moyen TTC']} labelFormatter={(label, payload) => payload[0]?.payload?.fullDate || label} />
                   <Line type="monotone" dataKey="avgGross" stroke="#007bff" strokeWidth={2} dot={{ fill: '#007bff', r: 2 }} />
                 </LineChart>
               </ResponsiveContainer>
@@ -1288,9 +1288,9 @@ const ReportsTab = () => {
                 <tr style={{ backgroundColor: '#f8f9fa' }}>
                   <th style={{ padding: '12px 15px', textAlign: 'left', color: '#666', fontSize: '11px', fontWeight: '600', textTransform: 'uppercase' }}>Pays</th>
                   <th style={{ padding: '12px 15px', textAlign: 'right', color: '#666', fontSize: '11px', fontWeight: '600', textTransform: 'uppercase' }}>Commandes</th>
-                  <th style={{ padding: '12px 15px', textAlign: 'right', color: '#666', fontSize: '11px', fontWeight: '600', textTransform: 'uppercase' }}>CA Brut</th>
-                  <th style={{ padding: '12px 15px', textAlign: 'right', color: '#666', fontSize: '11px', fontWeight: '600', textTransform: 'uppercase' }}>CA Net</th>
-                  <th style={{ padding: '12px 15px', textAlign: 'right', color: '#666', fontSize: '11px', fontWeight: '600', textTransform: 'uppercase' }}>Panier moy.</th>
+                  <th style={{ padding: '12px 15px', textAlign: 'right', color: '#666', fontSize: '11px', fontWeight: '600', textTransform: 'uppercase' }}>CA TTC</th>
+                  <th style={{ padding: '12px 15px', textAlign: 'right', color: '#666', fontSize: '11px', fontWeight: '600', textTransform: 'uppercase' }}>CA net TTC</th>
+                  <th style={{ padding: '12px 15px', textAlign: 'right', color: '#666', fontSize: '11px', fontWeight: '600', textTransform: 'uppercase' }}>Panier moy. TTC</th>
                   <th style={{ padding: '12px 15px', textAlign: 'right', color: '#666', fontSize: '11px', fontWeight: '600', textTransform: 'uppercase' }}>Clients</th>
                   <th style={{ padding: '12px 15px', textAlign: 'right', color: '#666', fontSize: '11px', fontWeight: '600', textTransform: 'uppercase' }}>Remb.</th>
                   <th style={{ padding: '12px 15px', textAlign: 'right', color: '#666', fontSize: '11px', fontWeight: '600', textTransform: 'uppercase' }}>Montant remb.</th>

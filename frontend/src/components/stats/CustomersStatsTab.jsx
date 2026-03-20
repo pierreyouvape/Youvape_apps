@@ -84,7 +84,7 @@ const CustomersStatsTab = () => {
       if (response.data.success) {
         const customers = response.data.data;
         const csv = [
-          ['ID', 'Prénom', 'Nom', 'Email', 'Commandes', 'Total dépensé', 'Pays'],
+          ['ID', 'Prénom', 'Nom', 'Email', 'Commandes', 'Total dépensé TTC', 'Pays'],
           ...customers.map(c => [
             c.id,
             c.first_name || '',
@@ -206,7 +206,7 @@ const CustomersStatsTab = () => {
                   <th style={{ padding: '15px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: '#6c757d', textTransform: 'uppercase' }}>Nom Prénom</th>
                   <th style={{ padding: '15px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: '#6c757d', textTransform: 'uppercase' }}>Email</th>
                   <th style={{ padding: '15px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: '#6c757d', textTransform: 'uppercase' }}>Commandes</th>
-                  <th style={{ padding: '15px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: '#6c757d', textTransform: 'uppercase' }}>Total dépensé</th>
+                  <th style={{ padding: '15px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: '#6c757d', textTransform: 'uppercase' }}>Total dépensé TTC</th>
                   <th style={{ padding: '15px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: '#6c757d', textTransform: 'uppercase' }}>Pays</th>
                 </tr>
               </thead>

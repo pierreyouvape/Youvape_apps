@@ -140,7 +140,7 @@ const AdvancedSalesChart = ({
             onChange={(e) => setShowRevenue(e.target.checked)}
             style={{ cursor: 'pointer', width: '16px', height: '16px' }}
           />
-          <span style={{ color: showRevenue ? '#111827' : '#999' }}>Chiffre d'affaires</span>
+          <span style={{ color: showRevenue ? '#111827' : '#999' }}>CA HT</span>
         </label>
         <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '13px' }}>
           <input
@@ -149,7 +149,7 @@ const AdvancedSalesChart = ({
             onChange={(e) => setShowProfit(e.target.checked)}
             style={{ cursor: 'pointer', width: '16px', height: '16px' }}
           />
-          <span style={{ color: showProfit ? '#111827' : '#999' }}>Profit</span>
+          <span style={{ color: showProfit ? '#111827' : '#999' }}>Profit HT</span>
         </label>
       </div>
 
@@ -209,7 +209,7 @@ const AdvancedSalesChart = ({
                 fillOpacity={0.2}
                 stroke="#135E84"
                 strokeWidth={2}
-                name="CA"
+                name="CA HT"
               />
               {comparisonData && (
                 <Area
@@ -221,7 +221,7 @@ const AdvancedSalesChart = ({
                   stroke="#fd7e14"
                   strokeWidth={2}
                   strokeDasharray="5 5"
-                  name="CA (comparaison)"
+                  name="CA HT (comparaison)"
                 />
               )}
             </>
@@ -259,7 +259,7 @@ const AdvancedSalesChart = ({
                 stroke="#007bff"
                 strokeWidth={3}
                 dot={{ r: 4, fill: '#007bff' }}
-                name="Profit"
+                name="Profit HT"
               />
               {comparisonData && (
                 <Line
@@ -270,7 +270,7 @@ const AdvancedSalesChart = ({
                   strokeWidth={2}
                   strokeDasharray="5 5"
                   dot={{ r: 3, fill: '#dc3545' }}
-                  name="Profit (comparaison)"
+                  name="Profit HT (comparaison)"
                 />
               )}
             </>

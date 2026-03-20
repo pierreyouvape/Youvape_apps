@@ -425,10 +425,10 @@ const OrderDetail = () => {
                 <tr style={{ borderBottom: '2px solid #e0e0e0' }}>
                   <th style={{ textAlign: 'left', padding: '12px 8px', fontSize: '12px', color: '#666', textTransform: 'uppercase' }}>Produit</th>
                   <th style={{ textAlign: 'left', padding: '12px 8px', fontSize: '12px', color: '#666', textTransform: 'uppercase' }}>SKU</th>
-                  <th style={{ textAlign: 'right', padding: '12px 8px', fontSize: '12px', color: '#666', textTransform: 'uppercase' }}>Prix unit.</th>
+                  <th style={{ textAlign: 'right', padding: '12px 8px', fontSize: '12px', color: '#666', textTransform: 'uppercase' }}>Prix unit. HT</th>
                   <th style={{ textAlign: 'center', padding: '12px 8px', fontSize: '12px', color: '#666', textTransform: 'uppercase' }}>Qte</th>
-                  <th style={{ textAlign: 'right', padding: '12px 8px', fontSize: '12px', color: '#666', textTransform: 'uppercase' }}>Cout</th>
-                  <th style={{ textAlign: 'right', padding: '12px 8px', fontSize: '12px', color: '#666', textTransform: 'uppercase' }}>Total</th>
+                  <th style={{ textAlign: 'right', padding: '12px 8px', fontSize: '12px', color: '#666', textTransform: 'uppercase' }}>Cout HT</th>
+                  <th style={{ textAlign: 'right', padding: '12px 8px', fontSize: '12px', color: '#666', textTransform: 'uppercase' }}>Total HT</th>
                 </tr>
               </thead>
               <tbody>
@@ -492,7 +492,7 @@ const OrderDetail = () => {
               <span style={{ fontWeight: '600' }}>{formatCurrency(subtotal)}</span>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px' }}>
-              <span style={{ color: '#666' }}>Livraison :</span>
+              <span style={{ color: '#666' }}>Livraison HT :</span>
               <span style={{ fontWeight: '600' }}>{formatCurrency(orderShipping)}</span>
             </div>
             {couponItems.length > 0 && (
@@ -509,7 +509,7 @@ const OrderDetail = () => {
             )}
             {cartDiscount > 0 && (
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px' }}>
-                <span style={{ color: '#dc3545' }}>Remise :</span>
+                <span style={{ color: '#dc3545' }}>Remise HT :</span>
                 <span style={{ fontWeight: '600', color: '#dc3545' }}>-{formatCurrency(cartDiscount)}</span>
               </div>
             )}
@@ -545,11 +545,11 @@ const OrderDetail = () => {
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '13px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span style={{ color: '#666' }}>Cout produits :</span>
+                  <span style={{ color: '#666' }}>Cout produits HT :</span>
                   <span style={{ fontWeight: '600' }}>{formatCurrency(totalCost)}</span>
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span style={{ color: '#666' }}>Cout livraison :</span>
+                  <span style={{ color: '#666' }}>Cout livraison HT :</span>
                   <span style={{ fontWeight: '600' }}>{shippingCostCalculated != null ? formatCurrency(shippingCostCalculated) : '-'}</span>
                 </div>
                 <div

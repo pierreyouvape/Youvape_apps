@@ -363,7 +363,7 @@ const OrdersStatsTab = () => {
                   <th style={{ padding: '12px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: '#6c757d', textTransform: 'uppercase' }}>Date</th>
                   <th style={{ padding: '12px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: '#6c757d', textTransform: 'uppercase' }}>Client</th>
                   <th style={{ padding: '12px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: '#6c757d', textTransform: 'uppercase' }}>Pays</th>
-                  <th style={{ padding: '12px', textAlign: 'right', fontSize: '12px', fontWeight: '600', color: '#6c757d', textTransform: 'uppercase' }}>Montant</th>
+                  <th style={{ padding: '12px', textAlign: 'right', fontSize: '12px', fontWeight: '600', color: '#6c757d', textTransform: 'uppercase' }}>Montant TTC</th>
                   <th style={{ padding: '12px', textAlign: 'center', fontSize: '12px', fontWeight: '600', color: '#6c757d', textTransform: 'uppercase' }}>Statut</th>
                   <th style={{ padding: '12px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: '#6c757d', textTransform: 'uppercase' }}>Transporteur</th>
                   <th style={{ padding: '12px', textAlign: 'center', fontSize: '12px', fontWeight: '600', color: '#6c757d', textTransform: 'uppercase' }}>Articles</th>
@@ -525,8 +525,8 @@ const OrdersStatsTab = () => {
                                         <th style={{ padding: '10px', textAlign: 'left', fontSize: '12px', fontWeight: '600' }}>Produit</th>
                                         <th style={{ padding: '10px', textAlign: 'left', fontSize: '12px', fontWeight: '600' }}>SKU</th>
                                         <th style={{ padding: '10px', textAlign: 'right', fontSize: '12px', fontWeight: '600' }}>Qte</th>
-                                        <th style={{ padding: '10px', textAlign: 'right', fontSize: '12px', fontWeight: '600' }}>Prix unit.</th>
-                                        <th style={{ padding: '10px', textAlign: 'right', fontSize: '12px', fontWeight: '600' }}>Total</th>
+                                        <th style={{ padding: '10px', textAlign: 'right', fontSize: '12px', fontWeight: '600' }}>Prix unit. HT</th>
+                                        <th style={{ padding: '10px', textAlign: 'right', fontSize: '12px', fontWeight: '600' }}>Total HT</th>
                                       </tr>
                                     </thead>
                                     <tbody>

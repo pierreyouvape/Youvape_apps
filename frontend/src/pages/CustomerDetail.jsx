@@ -297,11 +297,11 @@ const CustomerDetail = () => {
             <h3 style={{ fontSize: '18px', fontWeight: 'bold', marginBottom: '20px', color: '#333' }}>Statistiques</h3>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px' }}>
               <div>
-                <p style={{ fontSize: '12px', color: '#6c757d', marginBottom: '5px' }}>Total dépensé</p>
+                <p style={{ fontSize: '12px', color: '#6c757d', marginBottom: '5px' }}>Total dépensé TTC</p>
                 <p style={{ fontSize: '24px', fontWeight: 'bold', color: '#007bff' }}>{formatPrice(stats?.total_spent)}</p>
               </div>
               <div>
-                <p style={{ fontSize: '12px', color: '#6c757d', marginBottom: '5px' }}>Commande moyenne</p>
+                <p style={{ fontSize: '12px', color: '#6c757d', marginBottom: '5px' }}>Commande moyenne TTC</p>
                 <p style={{ fontSize: '24px', fontWeight: 'bold', color: '#333' }}>{formatPrice(stats?.avg_order)}</p>
               </div>
               <div>
@@ -313,7 +313,7 @@ const CustomerDetail = () => {
                 <p style={{ fontSize: '24px', fontWeight: 'bold', color: '#333' }}>{stats?.unique_products || 0}</p>
               </div>
               <div>
-                <p style={{ fontSize: '12px', color: '#6c757d', marginBottom: '5px' }}>Coût</p>
+                <p style={{ fontSize: '12px', color: '#6c757d', marginBottom: '5px' }}>Coût HT</p>
                 <p style={{ fontSize: '24px', fontWeight: 'bold', color: '#dc3545' }}>{formatPrice(stats?.total_cost)}</p>
               </div>
               <div>
@@ -378,7 +378,7 @@ const CustomerDetail = () => {
                   <th style={{ padding: '15px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: '#6c757d', textTransform: 'uppercase' }}>Commande</th>
                   <th style={{ padding: '15px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: '#6c757d', textTransform: 'uppercase' }}>Date</th>
                   <th style={{ padding: '15px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: '#6c757d', textTransform: 'uppercase' }}>Statut</th>
-                  <th style={{ padding: '15px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: '#6c757d', textTransform: 'uppercase' }}>Total</th>
+                  <th style={{ padding: '15px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: '#6c757d', textTransform: 'uppercase' }}>Total TTC</th>
                   <th style={{ padding: '15px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: '#6c757d', textTransform: 'uppercase' }}>Articles</th>
                   <th style={{ padding: '15px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: '#6c757d', textTransform: 'uppercase' }}>Coupon</th>
                   <th style={{ padding: '15px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: '#6c757d', textTransform: 'uppercase' }}>Avis</th>
@@ -456,8 +456,8 @@ const CustomerDetail = () => {
                                           <th style={{ padding: '10px', textAlign: 'left', fontSize: '12px', color: '#6c757d' }}>Produit</th>
                                           <th style={{ padding: '10px', textAlign: 'left', fontSize: '12px', color: '#6c757d' }}>SKU</th>
                                           <th style={{ padding: '10px', textAlign: 'center', fontSize: '12px', color: '#6c757d' }}>Qté</th>
-                                          <th style={{ padding: '10px', textAlign: 'right', fontSize: '12px', color: '#6c757d' }}>Prix unitaire</th>
-                                          <th style={{ padding: '10px', textAlign: 'right', fontSize: '12px', color: '#6c757d' }}>Total</th>
+                                          <th style={{ padding: '10px', textAlign: 'right', fontSize: '12px', color: '#6c757d' }}>Prix unit. HT</th>
+                                          <th style={{ padding: '10px', textAlign: 'right', fontSize: '12px', color: '#6c757d' }}>Total HT</th>
                                         </tr>
                                       </thead>
                                       <tbody>
@@ -486,7 +486,7 @@ const CustomerDetail = () => {
                                       </p>
                                       {details.order && (
                                         <p style={{ fontSize: '13px', margin: '0' }}>
-                                          <strong>Frais :</strong> {formatPrice(details.order.order_shipping)}
+                                          <strong>Frais HT :</strong> {formatPrice(details.order.order_shipping)}
                                         </p>
                                       )}
                                     </div>

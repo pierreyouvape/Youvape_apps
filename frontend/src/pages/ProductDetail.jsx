@@ -633,11 +633,11 @@ const ProductDetail = () => {
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '15px', marginBottom: '30px' }}>
                 {[
                   { label: 'Quantite vendue', value: formatNumber(kpis.net_sold || 0) },
-                  { label: 'Chiffre d\'affaires', value: formatCurrency(kpis.net_revenue || 0) },
+                  { label: 'CA HT', value: formatCurrency(kpis.net_revenue || 0) },
                   { label: 'Nombre de commandes', value: formatNumber(kpis.net_orders || 0) },
-                  { label: 'Cout', value: formatCurrency(kpis.total_cost || 0) },
-                  { label: 'Profit', value: formatCurrency(kpis.profit || 0) },
-                  { label: 'Marge', value: `${(kpis.margin_percent || 0).toFixed(1)}%` }
+                  { label: 'Cout HT', value: formatCurrency(kpis.total_cost || 0) },
+                  { label: 'Profit HT', value: formatCurrency(kpis.profit || 0) },
+                  { label: 'Marge HT', value: `${(kpis.margin_percent || 0).toFixed(1)}%` }
                 ].map((kpi, i) => (
                   <div key={i} style={{ ...cardStyle, padding: '20px', marginBottom: 0 }}>
                     <div style={{ fontSize: '12px', color: '#666', marginBottom: '5px', textTransform: 'uppercase' }}>{kpi.label}</div>
@@ -717,13 +717,13 @@ const ProductDetail = () => {
                       <tr style={{ backgroundColor: '#f8f9fa', borderBottom: '2px solid #e0e0e0' }}>
                         <th style={{ textAlign: 'left', padding: '12px', fontSize: '14px', fontWeight: '600' }}>Variante</th>
                         <th style={{ textAlign: 'center', padding: '12px', fontSize: '14px', fontWeight: '600' }}>SKU</th>
-                        <th style={{ textAlign: 'right', padding: '12px', fontSize: '14px', fontWeight: '600' }}>Prix</th>
+                        <th style={{ textAlign: 'right', padding: '12px', fontSize: '14px', fontWeight: '600' }}>Prix TTC</th>
                         <th style={{ textAlign: 'center', padding: '12px', fontSize: '14px', fontWeight: '600' }}>Stock</th>
                         <th style={{ textAlign: 'center', padding: '12px', fontSize: '14px', fontWeight: '600' }}>Qte vendue</th>
-                        <th style={{ textAlign: 'right', padding: '12px', fontSize: '14px', fontWeight: '600' }}>Chiffre d'affaires</th>
+                        <th style={{ textAlign: 'right', padding: '12px', fontSize: '14px', fontWeight: '600' }}>CA HT</th>
                         <th style={{ textAlign: 'center', padding: '12px', fontSize: '14px', fontWeight: '600' }}>Commandes</th>
-                        <th style={{ textAlign: 'right', padding: '12px', fontSize: '14px', fontWeight: '600' }}>Profit</th>
-                        <th style={{ textAlign: 'right', padding: '12px', fontSize: '14px', fontWeight: '600' }}>Marge</th>
+                        <th style={{ textAlign: 'right', padding: '12px', fontSize: '14px', fontWeight: '600' }}>Profit HT</th>
+                        <th style={{ textAlign: 'right', padding: '12px', fontSize: '14px', fontWeight: '600' }}>Marge HT</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -774,8 +774,8 @@ const ProductDetail = () => {
                         <tr style={{ backgroundColor: '#f8f9fa', borderBottom: '2px solid #e0e0e0' }}>
                           <th style={{ textAlign: 'left', padding: '12px' }}>Pays</th>
                           <th style={{ textAlign: 'center', padding: '12px' }}>Qte vendue</th>
-                          <th style={{ textAlign: 'right', padding: '12px' }}>CA</th>
-                          <th style={{ textAlign: 'right', padding: '12px' }}>Profit</th>
+                          <th style={{ textAlign: 'right', padding: '12px' }}>CA HT</th>
+                          <th style={{ textAlign: 'right', padding: '12px' }}>Profit HT</th>
                         </tr>
                       </thead>
                       <tbody>

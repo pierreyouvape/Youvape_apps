@@ -240,18 +240,18 @@ const AnalysisTab = () => {
       ['Nombre de commandes', formatNumber(stats.metrics.orders_count), `${formatVariation(calcVariation(stats.metrics.orders_count, compareStats.metrics.orders_count)).text}`],
       ['CA TTC', formatPrice(stats.metrics.ca_ttc), `${formatVariation(calcVariation(stats.metrics.ca_ttc, compareStats.metrics.ca_ttc)).text}`],
       ['CA HT', formatPrice(stats.metrics.ca_ht), `${formatVariation(calcVariation(stats.metrics.ca_ht, compareStats.metrics.ca_ht)).text}`],
-      ['Panier moyen', formatPrice(stats.metrics.avg_basket), `${formatVariation(calcVariation(stats.metrics.avg_basket, compareStats.metrics.avg_basket)).text}`],
+      ['Panier moyen TTC', formatPrice(stats.metrics.avg_basket), `${formatVariation(calcVariation(stats.metrics.avg_basket, compareStats.metrics.avg_basket)).text}`],
       ['Marge HT', `${formatPrice(stats.metrics.margin_ht)} (${stats.metrics.margin_percent}%)`, `${formatVariation(calcVariation(stats.metrics.margin_ht, compareStats.metrics.margin_ht)).text}`],
       ['Coût produits HT', formatPrice(stats.metrics.cost_ht), `${formatVariation(calcVariation(stats.metrics.cost_ht, compareStats.metrics.cost_ht)).text}`],
-      ['Coût expédition', formatPrice(stats.metrics.shipping_cost), `${formatVariation(calcVariation(stats.metrics.shipping_cost, compareStats.metrics.shipping_cost)).text}`],
+      ['Coût expédition HT', formatPrice(stats.metrics.shipping_cost), `${formatVariation(calcVariation(stats.metrics.shipping_cost, compareStats.metrics.shipping_cost)).text}`],
     ] : [
       ['Nombre de commandes', formatNumber(stats.metrics.orders_count)],
       ['CA TTC', formatPrice(stats.metrics.ca_ttc)],
       ['CA HT', formatPrice(stats.metrics.ca_ht)],
-      ['Panier moyen', formatPrice(stats.metrics.avg_basket)],
+      ['Panier moyen TTC', formatPrice(stats.metrics.avg_basket)],
       ['Marge HT', `${formatPrice(stats.metrics.margin_ht)} (${stats.metrics.margin_percent}%)`],
       ['Coût produits HT', formatPrice(stats.metrics.cost_ht)],
-      ['Coût expédition', formatPrice(stats.metrics.shipping_cost)],
+      ['Coût expédition HT', formatPrice(stats.metrics.shipping_cost)],
     ];
 
     doc.autoTable({
@@ -638,7 +638,7 @@ const AnalysisTab = () => {
               variation={compareStats ? calcVariation(stats.metrics.ca_ht, compareStats.metrics.ca_ht) : null}
             />
             <KpiCard
-              label="Panier moyen"
+              label="Panier moyen TTC"
               value={formatPrice(stats.metrics.avg_basket)}
               variation={compareStats ? calcVariation(stats.metrics.avg_basket, compareStats.metrics.avg_basket) : null}
             />
@@ -654,7 +654,7 @@ const AnalysisTab = () => {
               variation={compareStats ? calcVariation(stats.metrics.cost_ht, compareStats.metrics.cost_ht) : null}
             />
             <KpiCard
-              label="Coût expédition"
+              label="Coût expédition HT"
               value={formatPrice(stats.metrics.shipping_cost)}
               variation={compareStats ? calcVariation(stats.metrics.shipping_cost, compareStats.metrics.shipping_cost) : null}
             />
