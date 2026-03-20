@@ -431,6 +431,10 @@ const ShippingSettings = () => {
 
     return (
       <div style={{ padding: '20px' }}>
+        <p style={{ color: '#666', fontSize: '13px', marginBottom: '15px' }}>
+          La Poste Lettre Suivie : exonere de TVA (service postal universel), prix HT = prix TTC.
+          Les autres transporteurs sont soumis a la TVA standard.
+        </p>
         {/* Carrier tabs */}
         <div style={{ display: 'flex', gap: '10px', marginBottom: '20px', flexWrap: 'wrap' }}>
           {carrierTabs.map(tab => (
@@ -729,7 +733,7 @@ const ShippingSettings = () => {
             <p>Total commandes: <strong>{calculationResult.summary.total_orders}</strong></p>
             <p>Commandes matchées: <strong>{calculationResult.summary.orders_matched}</strong></p>
             <p>Commandes non matchées: <strong>{calculationResult.summary.orders_unmatched}</strong></p>
-            <p>Total frais calculés: <strong>{formatPrice(calculationResult.summary.total_calculated)} € HT</strong></p>
+            <p>Total frais calculés: <strong>{formatPrice(calculationResult.summary.total_calculated)} €</strong></p>
           </div>
         </div>
       )}
@@ -1027,7 +1031,7 @@ const FuelSurchargeZone = ({ zone, carrier, methodCode, onAddRate, onDeleteZone,
               <tr style={{ backgroundColor: '#e9ecef' }}>
                 <th style={thStyle}>De (g)</th>
                 <th style={thStyle}>Jusqu'à (g)</th>
-                <th style={thStyle}>Prix HT (€)</th>
+                <th style={thStyle}>Prix (€)</th>
               </tr>
             </thead>
             <tbody>
@@ -1051,7 +1055,7 @@ const FuelSurchargeZone = ({ zone, carrier, methodCode, onAddRate, onDeleteZone,
                 <tr style={{ backgroundColor: '#e9ecef' }}>
                   <th style={thStyle}>De (g)</th>
                   <th style={thStyle}>Jusqu'à (g)</th>
-                  <th style={thStyle}>Prix HT (€)</th>
+                  <th style={thStyle}>Prix (€)</th>
                   <th style={{ ...thStyle, width: '150px' }}>Actions</th>
                 </tr>
               </thead>

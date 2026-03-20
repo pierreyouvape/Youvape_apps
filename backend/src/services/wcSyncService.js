@@ -7,12 +7,17 @@ const axios = require('axios');
 const https = require('https');
 const appConfigModel = require('../models/appConfigModel');
 const pool = require('../config/database');
+const { sendAlert } = require('./alertService');
 
 // Agent HTTPS qui ignore les certificats auto-signés (pour communication interne Docker)
 const httpsAgent = new https.Agent({ rejectUnauthorized: false });
 
 let syncInterval = null;
 let isProcessing = false;
+
+// Anti-spam alertes
+let pollFailureAlerted = false;
+const failedEventKeys = new Set(); // "type:wp_id" deja alertes
 
 const wcSyncService = {
   /**
@@ -105,6 +110,9 @@ const wcSyncService = {
       const events = response.data.events;
       console.log(`🔄 WC Sync: ${events.length} événement(s) à traiter`);
 
+      // Poll reussi — reset flag
+      pollFailureAlerted = false;
+
       const processedIds = [];
 
       for (const event of events) {
@@ -114,8 +122,18 @@ const wcSyncService = {
             type: event.type,
             wp_id: event.wp_id
           });
+          // Event traite avec succes — retirer du set anti-spam
+          failedEventKeys.delete(`${event.type}:${event.wp_id}`);
         } catch (err) {
           console.error(`🔄 WC Sync Error: ${event.type} #${event.wp_id}:`, err.message);
+          const eventKey = `${event.type}:${event.wp_id}`;
+          if (!failedEventKeys.has(eventKey)) {
+            failedEventKeys.add(eventKey);
+            sendAlert(
+              `YouSync: echec traitement ${event.type} #${event.wp_id}`,
+              `Le traitement de l'evenement ${event.type} #${event.wp_id} (action: ${event.action}) a echoue.\n\nErreur: ${err.message}\n\nCet event sera re-tente au prochain poll mais continuera d'echouer tant que le probleme n'est pas corrige.`
+            );
+          }
         }
       }
 
@@ -135,12 +153,23 @@ const wcSyncService = {
           console.log(`🔄 WC Sync: ${processedIds.length} événement(s) acquitté(s)`);
         } catch (err) {
           console.error('🔄 WC Sync: Erreur acquittement:', err.message);
+          sendAlert(
+            `YouSync: echec acquittement events`,
+            `L'acquittement de ${processedIds.length} evenement(s) aupres de WordPress a echoue.\n\nErreur: ${err.message}\n\nCes events seront re-envoyes par WP au prochain poll (doublons possibles).`
+          );
         }
       }
 
     } catch (err) {
       if (err.code !== 'ECONNREFUSED' && err.code !== 'ETIMEDOUT') {
         console.error('🔄 WC Sync Poll Error:', err.message);
+      }
+      if (!pollFailureAlerted) {
+        pollFailureAlerted = true;
+        sendAlert(
+          `YouSync: polling en panne`,
+          `Le polling YouSync n'arrive plus a contacter WordPress.\n\nErreur: ${err.message}\nCode: ${err.code || 'N/A'}\n\nLes commandes, produits et clients ne sont plus synchronises. Verifiez que le site WP est accessible et que le plugin YouSync est actif.`
+        );
       }
     } finally {
       isProcessing = false;

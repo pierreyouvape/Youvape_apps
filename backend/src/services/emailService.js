@@ -2,6 +2,10 @@ const axios = require('axios');
 const pool = require('../config/database');
 const emailConfigModel = require('../models/emailConfigModel');
 const emailSentTrackingModel = require('../models/emailSentTrackingModel');
+const { sendAlert } = require('./alertService');
+
+// Anti-spam: alerte une seule fois tant que l'API Probance est down
+let emailApiAlerted = false;
 
 const emailService = {
   // Fonction principale pour traiter les emails à envoyer
@@ -69,11 +73,21 @@ const emailService = {
 
         if (emailResult.success) {
           sent++;
+          emailApiAlerted = false; // API OK — reset flag
           console.log(`✅ Email envoyé avec succès pour la commande ${order.order_id} (${order.reviews_count} avis récompensés)`);
         } else {
           errors++;
           console.log(`❌ Échec de l'envoi pour la commande ${order.order_id}: ${emailResult.error}`);
         }
+      }
+
+      // Alerter si des erreurs (une seule fois tant que l'API est down)
+      if (errors > 0 && !emailApiAlerted) {
+        emailApiAlerted = true;
+        sendAlert(
+          `Emails Probance: ${errors} echec(s) sur ${processed} commandes`,
+          `Le processus d'envoi d'emails automatique a rencontre des erreurs.\n\n${errors} email(s) n'ont pas pu etre envoyes sur ${processed} traites.\n\nVerifiez que l'API Probance est accessible et que le token est valide.`
+        );
       }
 
       console.log(`📧 Processus terminé: ${processed} traités, ${sent} envoyés, ${errors} erreurs`);
@@ -82,6 +96,10 @@ const emailService = {
 
     } catch (error) {
       console.error('❌ Erreur dans processEmails:', error);
+      sendAlert(
+        `Emails Probance: erreur fatale`,
+        `Erreur inattendue dans le processus d'envoi d'emails automatique.\n\nErreur: ${error.message}`
+      );
       return { processed: 0, sent: 0, errors: 1, error: error.message };
     }
   },

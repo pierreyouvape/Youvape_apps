@@ -3,6 +3,7 @@ const appConfigModel = require('../models/appConfigModel');
 const reviewsLog = require('../models/reviewsLog');
 const reviewsModel = require('../models/reviewsModel');
 const axios = require('axios');
+const { sendAlert } = require('./alertService');
 
 let currentCronJob = null;
 
@@ -147,10 +148,18 @@ const fetchReviewsAuto = async () => {
       });
 
       console.error('❌ Erreur lors de la récupération automatique:', errorMessage);
+      sendAlert(
+        `Cron Reviews: echec API avis`,
+        `La recuperation automatique des avis a echoue.\n\nStatus: ${responseStatus}\nErreur: ${errorMessage}`
+      );
     }
 
   } catch (error) {
     console.error('❌ Erreur dans fetchReviewsAuto:', error);
+    sendAlert(
+      `Cron Reviews: erreur fatale`,
+      `Erreur inattendue dans fetchReviewsAuto.\n\nErreur: ${error.message}`
+    );
   }
 };
 
@@ -231,6 +240,10 @@ const syncBmsOrders = async () => {
     console.log(`✅ BMS sync: ${result.created} créée(s), ${result.updated} mise(s) à jour, ${result.skipped} ignorée(s)`);
   } catch (error) {
     console.error('❌ Erreur sync BMS auto:', error.message);
+    sendAlert(
+      `Cron BMS: echec sync commandes`,
+      `La synchronisation automatique des commandes BMS a echoue.\n\nErreur: ${error.message}`
+    );
   }
 };
 
@@ -261,6 +274,10 @@ const recalculateComputedCost = async () => {
     console.log(`PMP FIFO: ${result.updatedCount} produits mis a jour en ${result.elapsed}ms`);
   } catch (error) {
     console.error('Erreur recalcul PMP FIFO:', error.message);
+    sendAlert(
+      `Cron PMP FIFO: echec recalcul`,
+      `Le recalcul automatique du PMP FIFO (computed_cost) a echoue.\n\nErreur: ${error.message}`
+    );
   }
 };
 
@@ -292,6 +309,10 @@ const syncBmsBarcodes = async () => {
     }
   } catch (error) {
     console.error('Erreur sync BMS barcodes:', error.message);
+    sendAlert(
+      `Cron BMS Barcodes: echec sync`,
+      `La synchronisation automatique des codes-barres BMS a echoue.\n\nErreur: ${error.message}`
+    );
   }
 };
 

@@ -2,6 +2,10 @@ const axios = require('axios');
 const pool = require('../config/database');
 const rewardsConfigModel = require('../models/rewardsConfigModel');
 const rewardsHistoryModel = require('../models/rewardsHistoryModel');
+const { sendAlert } = require('./alertService');
+
+// Anti-spam: alerte une seule fois tant que l'API WPLoyalty est down
+let rewardApiAlerted = false;
 
 const rewardService = {
   // Fonction principale pour récompenser les avis éligibles
@@ -65,11 +69,21 @@ const rewardService = {
 
         if (rewardResult.success) {
           rewarded++;
+          rewardApiAlerted = false; // API OK — reset flag
           console.log(`✅ Avis ${review.review_id} récompensé avec succès (${points} points)`);
         } else {
           errors++;
           console.log(`❌ Échec de la récompense pour ${review.review_id}: ${rewardResult.error}`);
         }
+      }
+
+      // Alerter si des erreurs (une seule fois tant que l'API est down)
+      if (errors > 0 && !rewardApiAlerted) {
+        rewardApiAlerted = true;
+        sendAlert(
+          `Recompenses: ${errors} echec(s) sur ${processed} avis`,
+          `Le processus de recompense automatique a rencontre des erreurs.\n\n${errors} avis n'ont pas pu etre recompenses sur ${processed} traites.\n\nVerifiez que l'API WPLoyalty est accessible et que les credentials sont valides.`
+        );
       }
 
       console.log(`🎁 Processus terminé: ${processed} traités, ${rewarded} récompensés, ${errors} erreurs`);
@@ -78,6 +92,10 @@ const rewardService = {
 
     } catch (error) {
       console.error('❌ Erreur dans processRewards:', error);
+      sendAlert(
+        `Recompenses: erreur fatale`,
+        `Erreur inattendue dans le processus de recompense automatique.\n\nErreur: ${error.message}`
+      );
       return { processed: 0, rewarded: 0, errors: 1, error: error.message };
     }
   },
