@@ -359,11 +359,23 @@ exports.getStats = async (req, res) => {
     const shippingCostResult = await pool.query(shippingCostQuery, params);
     const shippingCost = parseFloat(shippingCostResult.rows[0].shipping_cost);
 
+    // Cout paiement (payment_cost_calculated)
+    const paymentCostQuery = `
+      SELECT COALESCE(SUM(payment_cost_calculated), 0)::numeric as payment_cost
+      FROM (
+        SELECT DISTINCT o.wp_order_id, o.payment_cost_calculated
+        FROM orders o
+        ${whereClause}
+      ) unique_orders
+    `;
+    const paymentCostResult = await pool.query(paymentCostQuery, params);
+    const paymentCost = parseFloat(paymentCostResult.rows[0].payment_cost);
+
     // Panier moyen calculé séparément pour éviter problèmes avec DISTINCT
     const avgBasket = stats.orders_count > 0 ? parseFloat(stats.ca_ttc) / stats.orders_count : 0;
 
-    // Calcul marge (CA HT - cout produits - cout expedition reel)
-    const margin_ht = parseFloat(stats.ca_ht) - costHt - shippingCost;
+    // Calcul marge (CA HT - cout produits - cout expedition - cout paiement)
+    const margin_ht = parseFloat(stats.ca_ht) - costHt - shippingCost - paymentCost;
     const margin_percent = parseFloat(stats.ca_ht) > 0 ? (margin_ht / parseFloat(stats.ca_ht)) * 100 : 0;
 
     // Répartition par transporteur (utilise orders.shipping_method au lieu de order_items shipping)
@@ -477,6 +489,7 @@ exports.getStats = async (req, res) => {
           ca_ht: parseFloat(stats.ca_ht).toFixed(2),
           cost_ht: costHt.toFixed(2),
           shipping_cost: shippingCost.toFixed(2),
+          payment_cost: paymentCost.toFixed(2),
           margin_ht: margin_ht.toFixed(2),
           margin_percent: margin_percent.toFixed(1),
           avg_basket: avgBasket.toFixed(2),

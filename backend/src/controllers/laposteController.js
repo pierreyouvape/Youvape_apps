@@ -172,24 +172,8 @@ const generateLabel = async (req, res) => {
 
     const order = orderResult.rows[0];
 
-    // Calculer le poids réel : somme(poids produit × qty) + poids emballage
-    // Poids produits en kg dans la BDD → convertir en grammes
-    const weightResult = await pool.query(`
-      SELECT COALESCE(SUM(oi.qty * COALESCE(p.weight, parent.weight, 0)), 0) as total_kg
-      FROM order_items oi
-      LEFT JOIN products p ON p.wp_product_id = COALESCE(NULLIF(oi.variation_id, 0), oi.product_id)
-      LEFT JOIN products parent ON p.wp_parent_id = parent.wp_product_id
-      WHERE oi.wp_order_id = $1
-    `, [orderNumber]);
-    const packagingResult = await pool.query(
-      "SELECT config_value FROM shipping_settings WHERE config_key = 'packaging_weight'"
-    );
-    const packagingWeight = packagingResult.rows[0] ? parseFloat(packagingResult.rows[0].config_value) : 11;
-    const totalGrams = Math.round(parseFloat(weightResult.rows[0].total_kg) * 1000) + packagingWeight;
-
-    // Tranches La Poste : 20g, 50g, 100g, 250g (si > 250g on envoie 250g quand même)
-    const TRANCHES = [20, 50, 100, 250];
-    const weight = TRANCHES.find(t => totalGrams <= t) || 250;
+    // Poids fixe 20g pour toutes les étiquettes
+    const weight = 20;
 
     // Récupérer les configs
     const [apiUrl, contractNumber, custAccNumber, custInvoice, senderEmail, senderPhone, senderName, senderAddress, senderZipcode, senderTown] = await Promise.all([

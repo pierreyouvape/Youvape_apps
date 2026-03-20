@@ -1,4 +1,5 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import { useEffect } from 'react';
 import { AuthProvider } from './context/AuthContext';
 import Login from './components/Login';
 import Register from './components/Register';
@@ -25,10 +26,42 @@ import CatalogApp from './pages/CatalogApp';
 import PackingApp from './pages/PackingApp';
 import PrivateRoute from './components/PrivateRoute';
 
+const PAGE_TITLES = {
+  '/home': 'Accueil',
+  '/reviews': 'Avis',
+  '/rewards': 'Rewards',
+  '/emails': 'Emails',
+  '/settings': 'Parametres',
+  '/stats': 'Statistiques',
+  '/purchases': 'Achats',
+  '/catalog': 'Catalogue',
+  '/customers': 'Clients',
+  '/products': 'Produits',
+  '/orders': 'Commandes',
+  '/packing': 'Packing',
+  '/brands': 'Marque',
+  '/sub-brands': 'Sous-marque',
+  '/categories': 'Categorie',
+  '/sub-categories': 'Sous-categorie',
+  '/login': 'Connexion',
+  '/register': 'Inscription',
+};
+
+function PageTitle() {
+  const { pathname } = useLocation();
+  useEffect(() => {
+    const base = '/' + pathname.split('/')[1];
+    const suffix = PAGE_TITLES[base] || '';
+    document.title = suffix ? `YouVape Apps - ${suffix}` : 'YouVape Apps';
+  }, [pathname]);
+  return null;
+}
+
 function App() {
   return (
     <AuthProvider>
       <BrowserRouter>
+        <PageTitle />
         <Routes>
           <Route path="/" element={<Navigate to="/login" />} />
           <Route path="/login" element={<Login />} />

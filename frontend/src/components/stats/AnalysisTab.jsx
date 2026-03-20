@@ -244,6 +244,7 @@ const AnalysisTab = () => {
       ['Marge HT', `${formatPrice(stats.metrics.margin_ht)} (${stats.metrics.margin_percent}%)`, `${formatVariation(calcVariation(stats.metrics.margin_ht, compareStats.metrics.margin_ht)).text}`],
       ['Coût produits HT', formatPrice(stats.metrics.cost_ht), `${formatVariation(calcVariation(stats.metrics.cost_ht, compareStats.metrics.cost_ht)).text}`],
       ['Coût expédition HT', formatPrice(stats.metrics.shipping_cost), `${formatVariation(calcVariation(stats.metrics.shipping_cost, compareStats.metrics.shipping_cost)).text}`],
+      ['Coût paiement', formatPrice(stats.metrics.payment_cost), `${formatVariation(calcVariation(stats.metrics.payment_cost, compareStats.metrics.payment_cost)).text}`],
     ] : [
       ['Nombre de commandes', formatNumber(stats.metrics.orders_count)],
       ['CA TTC', formatPrice(stats.metrics.ca_ttc)],
@@ -252,6 +253,7 @@ const AnalysisTab = () => {
       ['Marge HT', `${formatPrice(stats.metrics.margin_ht)} (${stats.metrics.margin_percent}%)`],
       ['Coût produits HT', formatPrice(stats.metrics.cost_ht)],
       ['Coût expédition HT', formatPrice(stats.metrics.shipping_cost)],
+      ['Coût paiement', formatPrice(stats.metrics.payment_cost)],
     ];
 
     doc.autoTable({
@@ -657,6 +659,11 @@ const AnalysisTab = () => {
               label="Coût expédition HT"
               value={formatPrice(stats.metrics.shipping_cost)}
               variation={compareStats ? calcVariation(stats.metrics.shipping_cost, compareStats.metrics.shipping_cost) : null}
+            />
+            <KpiCard
+              label="Coût paiement"
+              value={formatPrice(stats.metrics.payment_cost)}
+              variation={compareStats ? calcVariation(stats.metrics.payment_cost, compareStats.metrics.payment_cost) : null}
             />
             <KpiCard
               label="Avec coupon"

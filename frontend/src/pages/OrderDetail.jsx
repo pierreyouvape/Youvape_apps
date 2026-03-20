@@ -176,7 +176,9 @@ const OrderDetail = () => {
   const totalCost = parseFloat(order.order_total_cost || order.total_cost) || 0;
   const subtotal = orderTotal - orderTax + cartDiscount;
   const shippingCostCalculated = order.shipping_cost_calculated != null ? parseFloat(order.shipping_cost_calculated) : null;
-  const margin = shippingCostCalculated != null ? orderTotal - totalCost - shippingCostCalculated : null;
+  const paymentCostCalculated = order.payment_cost_calculated != null ? parseFloat(order.payment_cost_calculated) : null;
+  const hasAllCosts = shippingCostCalculated != null && paymentCostCalculated != null;
+  const margin = hasAllCosts ? orderTotal - totalCost - shippingCostCalculated - paymentCostCalculated : null;
 
   // Filtrer les line_items pour n'avoir que les produits (pas shipping, fees, etc.)
   const productItems = (order.line_items || []).filter(item => item.order_item_type === 'line_item');
@@ -551,6 +553,10 @@ const OrderDetail = () => {
                 <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                   <span style={{ color: '#666' }}>Cout livraison HT :</span>
                   <span style={{ fontWeight: '600' }}>{shippingCostCalculated != null ? formatCurrency(shippingCostCalculated) : '-'}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span style={{ color: '#666' }}>Cout paiement :</span>
+                  <span style={{ fontWeight: '600' }}>{paymentCostCalculated != null ? formatCurrency(paymentCostCalculated) : '-'}</span>
                 </div>
                 <div
                   style={{

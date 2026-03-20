@@ -57,11 +57,17 @@ const ShippingSettings = () => {
   // Data Paiement
   const [paymentMethods, setPaymentMethods] = useState([]);
 
-  // Date range for applying
+  // Date range for applying (transporteur)
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [calculationResult, setCalculationResult] = useState(null);
   const [calculating, setCalculating] = useState(false);
+
+  // Date range for applying (paiement)
+  const [paymentDateFrom, setPaymentDateFrom] = useState('');
+  const [paymentDateTo, setPaymentDateTo] = useState('');
+  const [paymentCalcResult, setPaymentCalcResult] = useState(null);
+  const [paymentCalculating, setPaymentCalculating] = useState(false);
 
   const parentTabs = [
     { id: 'transporteur', label: 'Transporteur' },
@@ -76,7 +82,8 @@ const ShippingSettings = () => {
   ];
 
   const paiementSubTabs = [
-    { id: 'frais', label: 'Frais par méthode' }
+    { id: 'frais', label: 'Frais par méthode' },
+    { id: 'apply_payment', label: 'Appliquer' }
   ];
 
   useEffect(() => {
@@ -369,6 +376,48 @@ const ShippingSettings = () => {
       setMessage({ type: 'error', text: 'Erreur lors de l\'application' });
     } finally {
       setCalculating(false);
+    }
+  };
+
+  const calculatePaymentCosts = async () => {
+    if (!paymentDateFrom || !paymentDateTo) {
+      setMessage({ type: 'error', text: 'Veuillez sélectionner une plage de dates' });
+      return;
+    }
+    try {
+      setPaymentCalculating(true);
+      const res = await axios.post(`${API_URL}/payment/calculate`, { date_from: paymentDateFrom, date_to: paymentDateTo }, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.data.success) {
+        setPaymentCalcResult(res.data);
+      }
+    } catch (err) {
+      setMessage({ type: 'error', text: 'Erreur lors du calcul' });
+    } finally {
+      setPaymentCalculating(false);
+    }
+  };
+
+  const applyPaymentCosts = async () => {
+    if (!paymentDateFrom || !paymentDateTo) {
+      setMessage({ type: 'error', text: 'Veuillez sélectionner une plage de dates' });
+      return;
+    }
+    if (!confirm(`Appliquer les frais de paiement calculés aux commandes du ${paymentDateFrom} au ${paymentDateTo} ?`)) return;
+    try {
+      setPaymentCalculating(true);
+      const res = await axios.post(`${API_URL}/payment/apply`, { date_from: paymentDateFrom, date_to: paymentDateTo }, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.data.success) {
+        setMessage({ type: 'success', text: res.data.message });
+        setPaymentCalcResult(null);
+      }
+    } catch (err) {
+      setMessage({ type: 'error', text: 'Erreur lors de l\'application' });
+    } finally {
+      setPaymentCalculating(false);
     }
   };
 
@@ -771,6 +820,67 @@ const ShippingSettings = () => {
     </div>
   );
 
+  const renderPaymentApplyTab = () => (
+    <div style={{ padding: '20px' }}>
+      <h3>Appliquer les frais de paiement aux commandes</h3>
+      <p style={{ color: '#666', marginBottom: '20px' }}>
+        Calcule pour chaque commande : frais fixe + (pourcentage x montant TTC de la commande).
+      </p>
+      <div style={{ marginTop: '20px', display: 'flex', alignItems: 'center', gap: '15px', flexWrap: 'wrap' }}>
+        <label>Plage de dates:</label>
+        <input type="date" value={paymentDateFrom} onChange={(e) => setPaymentDateFrom(e.target.value)} style={inputStyle} />
+        <span>au</span>
+        <input type="date" value={paymentDateTo} onChange={(e) => setPaymentDateTo(e.target.value)} style={inputStyle} />
+        <button onClick={calculatePaymentCosts} disabled={paymentCalculating} style={btnPrimary}>
+          {paymentCalculating ? 'Calcul...' : 'Calculer'}
+        </button>
+        <button onClick={applyPaymentCosts} disabled={paymentCalculating} style={btnSuccess}>
+          Appliquer
+        </button>
+      </div>
+
+      {paymentCalcResult && (
+        <div style={{ marginTop: '30px' }}>
+          <div style={{ padding: '15px', backgroundColor: '#e9ecef', borderRadius: '8px', marginBottom: '20px' }}>
+            <h4 style={{ margin: '0 0 10px 0' }}>Résumé</h4>
+            <p>Total commandes: <strong>{paymentCalcResult.summary.total_orders}</strong></p>
+            <p>Commandes matchées: <strong>{paymentCalcResult.summary.orders_matched}</strong></p>
+            <p>Commandes non matchées: <strong>{paymentCalcResult.summary.orders_unmatched}</strong></p>
+            <p>Total frais calculés: <strong>{formatPrice(paymentCalcResult.summary.total_calculated)} €</strong></p>
+          </div>
+
+          {paymentCalcResult.summary.unmatched_methods && Object.keys(paymentCalcResult.summary.unmatched_methods).length > 0 && (
+            <div style={{ padding: '15px', backgroundColor: '#fff3cd', borderRadius: '8px', border: '1px solid #ffc107' }}>
+              <h4 style={{ margin: '0 0 10px 0' }}>Méthodes non reconnues</h4>
+              <p style={{ color: '#856404', fontSize: '13px', marginBottom: '10px' }}>
+                Ces méthodes de paiement ne correspondent à aucune configuration. Ajoutez-les dans l'onglet "Frais par méthode".
+              </p>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+                <thead>
+                  <tr style={{ backgroundColor: '#e9ecef' }}>
+                    <th style={thStyle}>Méthode de paiement</th>
+                    <th style={{ ...thStyle, width: '100px' }}>Commandes</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {Object.entries(paymentCalcResult.summary.unmatched_methods)
+                    .sort((a, b) => b[1] - a[1])
+                    .map(([method, count]) => (
+                      <tr key={method}>
+                        <td style={tdStyle}>{method}</td>
+                        <td style={{ ...tdStyle, textAlign: 'center' }}>{count}</td>
+                      </tr>
+                    ))
+                  }
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+
   if (loading) {
     return <div style={{ minHeight: '100vh', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>Chargement...</div>;
   }
@@ -836,6 +946,7 @@ const ShippingSettings = () => {
           {activeParentTab === 'paiement' && (
             <>
               {activeSubTab === 'frais' && renderPaymentFraisTab()}
+              {activeSubTab === 'apply_payment' && renderPaymentApplyTab()}
             </>
           )}
         </div>

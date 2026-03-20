@@ -17,4 +17,10 @@ router.put('/methods/:id', paymentController.updateMethod);
 // DELETE /api/payment/methods/:id - Supprimer une méthode
 router.delete('/methods/:id', paymentController.deleteMethod);
 
+// POST /api/payment/calculate - Calculer les frais de paiement
+router.post('/calculate', paymentController.calculatePaymentCosts);
+
+// POST /api/payment/apply - Appliquer les frais de paiement
+router.post('/apply', paymentController.applyPaymentCosts);
+
 module.exports = router;

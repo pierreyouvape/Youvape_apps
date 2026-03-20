@@ -569,13 +569,14 @@ const purchaseOrderModel = {
           const parentProductId = item.sku ? productParentBySku.get(item.sku) : null;
           if (parentProductId !== null && parentProductId !== undefined && unitPrice !== null) {
             await client.query(`
-              INSERT INTO product_suppliers (supplier_id, product_id, supplier_sku, supplier_price, min_order_qty)
-              VALUES ($1, $2, $3, $4, 1)
+              INSERT INTO product_suppliers (supplier_id, product_id, supplier_sku, supplier_price, min_order_qty, pack_qty)
+              VALUES ($1, $2, $3, $4, 1, $5)
               ON CONFLICT (product_id, supplier_id) DO UPDATE SET
                 supplier_price = EXCLUDED.supplier_price,
                 supplier_sku = COALESCE(EXCLUDED.supplier_sku, product_suppliers.supplier_sku),
+                pack_qty = EXCLUDED.pack_qty,
                 updated_at = CURRENT_TIMESTAMP
-            `, [supplierId, parentProductId, item.supplier_sku || null, unitPrice]);
+            `, [supplierId, parentProductId, item.supplier_sku || null, unitPrice, qtyPack]);
           }
         }
 

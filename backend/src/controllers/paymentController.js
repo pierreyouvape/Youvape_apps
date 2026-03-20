@@ -128,3 +128,151 @@ exports.deleteMethod = async (req, res) => {
     res.status(500).json({ success: false, error: error.message });
   }
 };
+
+/**
+ * Matcher une commande avec une methode de paiement configuree
+ * Match bidirectionnel : payment_method_title contient wc_payment_method ou l'inverse
+ */
+const matchPaymentMethod = (paymentMethodTitle, methods) => {
+  if (!paymentMethodTitle) return null;
+  const title = paymentMethodTitle.toLowerCase().trim();
+
+  // Match exact d'abord
+  let match = methods.find(m => m.wc_payment_method && m.wc_payment_method.toLowerCase().trim() === title);
+  if (match) return match;
+
+  // Match : le titre de la commande contient le wc_payment_method
+  match = methods.find(m => m.wc_payment_method && title.includes(m.wc_payment_method.toLowerCase().trim()));
+  if (match) return match;
+
+  // Match inverse : le wc_payment_method contient le titre de la commande
+  match = methods.find(m => m.wc_payment_method && m.wc_payment_method.toLowerCase().trim().includes(title));
+  if (match) return match;
+
+  return null;
+};
+
+/**
+ * POST /api/payment/calculate
+ * Calculer les frais de paiement pour une plage de dates (previsualisation)
+ */
+exports.calculatePaymentCosts = async (req, res) => {
+  try {
+    const { date_from, date_to } = req.body;
+
+    if (!date_from || !date_to) {
+      return res.status(400).json({ success: false, error: 'date_from et date_to requis' });
+    }
+
+    // Charger les methodes de paiement
+    const methodsResult = await pool.query(
+      'SELECT * FROM payment_methods WHERE is_active = true'
+    );
+    const methods = methodsResult.rows;
+
+    // Charger les commandes
+    const ordersResult = await pool.query(`
+      SELECT wp_order_id, payment_method_title, order_total, payment_cost_calculated
+      FROM orders
+      WHERE post_date >= $1 AND post_date < $2
+        AND post_status IN ('wc-completed', 'wc-processing', 'wc-shipped')
+    `, [date_from, date_to]);
+
+    let totalCalculated = 0;
+    let ordersMatched = 0;
+    let ordersUnmatched = 0;
+    const unmatchedMethods = {};
+
+    for (const order of ordersResult.rows) {
+      const method = matchPaymentMethod(order.payment_method_title, methods);
+
+      if (!method) {
+        ordersUnmatched++;
+        const key = order.payment_method_title || '(vide)';
+        unmatchedMethods[key] = (unmatchedMethods[key] || 0) + 1;
+        continue;
+      }
+
+      const fixedFee = parseFloat(method.fixed_fee) || 0;
+      const percentFee = parseFloat(method.percent_fee) || 0;
+      const orderTotal = parseFloat(order.order_total) || 0;
+      const cost = fixedFee + (percentFee / 100) * orderTotal;
+
+      ordersMatched++;
+      totalCalculated += cost;
+    }
+
+    res.json({
+      success: true,
+      summary: {
+        total_orders: ordersResult.rows.length,
+        orders_matched: ordersMatched,
+        orders_unmatched: ordersUnmatched,
+        total_calculated: Math.round(totalCalculated * 100) / 100,
+        unmatched_methods: unmatchedMethods
+      }
+    });
+  } catch (error) {
+    console.error('Error calculating payment costs:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+/**
+ * POST /api/payment/apply
+ * Appliquer les frais de paiement calcules aux commandes
+ */
+exports.applyPaymentCosts = async (req, res) => {
+  try {
+    const { date_from, date_to } = req.body;
+
+    if (!date_from || !date_to) {
+      return res.status(400).json({ success: false, error: 'date_from et date_to requis' });
+    }
+
+    const methodsResult = await pool.query(
+      'SELECT * FROM payment_methods WHERE is_active = true'
+    );
+    const methods = methodsResult.rows;
+
+    const ordersResult = await pool.query(`
+      SELECT wp_order_id, payment_method_title, order_total
+      FROM orders
+      WHERE post_date >= $1 AND post_date < $2
+        AND post_status IN ('wc-completed', 'wc-processing', 'wc-shipped')
+    `, [date_from, date_to]);
+
+    let updated = 0;
+    let skipped = 0;
+
+    for (const order of ordersResult.rows) {
+      const method = matchPaymentMethod(order.payment_method_title, methods);
+
+      if (!method) {
+        skipped++;
+        continue;
+      }
+
+      const fixedFee = parseFloat(method.fixed_fee) || 0;
+      const percentFee = parseFloat(method.percent_fee) || 0;
+      const orderTotal = parseFloat(order.order_total) || 0;
+      const cost = Math.round((fixedFee + (percentFee / 100) * orderTotal) * 100) / 100;
+
+      await pool.query(
+        'UPDATE orders SET payment_cost_calculated = $1, updated_at = NOW() WHERE wp_order_id = $2',
+        [cost, order.wp_order_id]
+      );
+      updated++;
+    }
+
+    res.json({
+      success: true,
+      message: `${updated} commandes mises a jour, ${skipped} ignorees`,
+      updated,
+      skipped
+    });
+  } catch (error) {
+    console.error('Error applying payment costs:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
