@@ -357,6 +357,7 @@ async function processOrderEvent(action, wp_id, data, results) {
           JSON.stringify({ rate_code: item.rate_code, rate_id: item.rate_id, compound: item.compound })
         ]);
       }
+    }
 
     await client.query('COMMIT');
 
