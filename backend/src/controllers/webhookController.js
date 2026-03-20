@@ -267,7 +267,7 @@ async function processOrderEvent(action, wp_id, data, results) {
       attr.user_agent || null, attr.device_type || null,
       pm.transaction_id || null, pm.mollie_payment_id || null, pm.mollie_order_id || null,
       pm.mollie_payment_mode || null, pm.mollie_customer_id || null,
-      data.date_paid || null, data.date_paid || null,
+      null, data.date_paid || null,
       pm.mollie_payment_instructions || null, pm.mollie_paid_and_processed || false
     ];
 
