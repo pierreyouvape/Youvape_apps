@@ -241,6 +241,7 @@ const NeedsTab = ({ token }) => {
   const savedFilters = loadSavedFilters();
 
   const [supplierId, setSupplierId] = useState(savedFilters?.supplierId || '');
+  const [brandFilter, setBrandFilter] = useState(savedFilters?.brandFilter || '');
   const [search, setSearch] = useState('');
 
   // Période d'analyse
@@ -276,6 +277,7 @@ const NeedsTab = ({ token }) => {
   useEffect(() => {
     saveFilters({
       supplierId,
+      brandFilter,
       analysisPeriodType,
       analysisPeriod,
       analysisPeriodUnit,
@@ -285,7 +287,7 @@ const NeedsTab = ({ token }) => {
       withSalesOnly,
       zeroStockState
     });
-  }, [supplierId, analysisPeriodType, analysisPeriod, analysisPeriodUnit, analysisStartDate, analysisEndDate, coverageMonths, withSalesOnly, zeroStockState]);
+  }, [supplierId, brandFilter, analysisPeriodType, analysisPeriod, analysisPeriodUnit, analysisStartDate, analysisEndDate, coverageMonths, withSalesOnly, zeroStockState]);
 
   // Charger les fournisseurs
   useEffect(() => {
@@ -350,6 +352,13 @@ const NeedsTab = ({ token }) => {
     });
   }, [allProducts, effectivePeriodDays, coverageMonths, isCustomPeriod, analysisStartDate, analysisEndDate, analysisPeriodUnit]);
 
+  // Marques distinctes extraites des produits chargés
+  const brands = useMemo(() => {
+    const set = new Set();
+    allProducts.forEach(p => p.brand && set.add(p.brand));
+    return [...set].sort((a, b) => a.localeCompare(b, 'fr'));
+  }, [allProducts]);
+
   // Normalise une chaîne pour la recherche : minuscules, sans ponctuation, espaces simplifiés
   const normalize = (str) => (str || '').toLowerCase().replace(/[-_.,;:!?()[\]]/g, ' ').replace(/\s+/g, ' ').trim();
 
@@ -361,6 +370,8 @@ const NeedsTab = ({ token }) => {
     return computedProducts.filter(p => {
       // Filtre fournisseur
       if (supplierId && String(p.supplier_id) !== String(supplierId)) return false;
+      // Filtre marque
+      if (brandFilter && p.brand !== brandFilter) return false;
 
       // Si recherche active, on affiche tous les correspondants (bypass filtre propositions)
       if (hasSearch) {
@@ -383,7 +394,7 @@ const NeedsTab = ({ token }) => {
 
       return true;
     });
-  }, [computedProducts, search, supplierId, withSalesOnly, zeroStockState]);
+  }, [computedProducts, search, supplierId, brandFilter, withSalesOnly, zeroStockState]);
 
   // Regrouper par parent : variations sous leur parent, simples seuls
   const groupedProducts = useMemo(() => {
@@ -468,7 +479,7 @@ const NeedsTab = ({ token }) => {
   }, [sortedGroups, sortColumn, sortDirection]);
 
   // Pagination locale
-  const totalFiltered = filteredProducts.length;
+  const totalFiltered = flatRows.length;
   const totalPages = pageSize === 0 ? 1 : Math.max(1, Math.ceil(flatRows.length / pageSize));
   const pagedProducts = useMemo(() => {
     if (pageSize === 0) return flatRows; // "Tout"
@@ -479,7 +490,7 @@ const NeedsTab = ({ token }) => {
   // Reset page quand les filtres changent (mais pas la sélection)
   useEffect(() => {
     setPage(1);
-  }, [supplierId, withSalesOnly, zeroStockState, effectivePeriodDays, coverageMonths, analysisStartDate, analysisEndDate, pageSize]);
+  }, [supplierId, brandFilter, withSalesOnly, zeroStockState, effectivePeriodDays, coverageMonths, analysisStartDate, analysisEndDate, pageSize]);
 
   const handleSearchChange = (value) => {
     setSearch(value);
@@ -623,6 +634,14 @@ const NeedsTab = ({ token }) => {
             <select value={supplierId} onChange={(e) => setSupplierId(e.target.value)}>
               <option value="">Tous les fournisseurs</option>
               {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+            </select>
+          </div>
+
+          <div className="filter-group">
+            <label>Marque</label>
+            <select value={brandFilter} onChange={(e) => setBrandFilter(e.target.value)}>
+              <option value="">Toutes les marques</option>
+              {brands.map(b => <option key={b} value={b}>{b}</option>)}
             </select>
           </div>
 
@@ -904,7 +923,7 @@ const NeedsTab = ({ token }) => {
                 <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}>
                   ← Précédent
                 </button>
-                <span className="pagination-info">Page {page} / {totalPages} ({totalFiltered} produits)</span>
+                <span className="pagination-info">Page {page} / {totalPages} ({filteredProducts.length} produits, {totalFiltered} lignes)</span>
                 <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}>
                   Suivant →
                 </button>

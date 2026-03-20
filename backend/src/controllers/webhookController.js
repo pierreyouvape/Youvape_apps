@@ -154,6 +154,8 @@ async function processOrderEvent(action, wp_id, data, results) {
 
     const status = (data.status || 'pending').startsWith('wc-') ? data.status : `wc-${data.status || 'pending'}`;
 
+    const attr = data.attribution || {};
+    const pm = data.payment_meta || {};
     const orderQuery = `
       INSERT INTO orders (
         wp_order_id, wp_customer_id, post_status, post_date, post_modified,
@@ -163,8 +165,18 @@ async function processOrderEvent(action, wp_id, data, results) {
         shipping_first_name, shipping_last_name, shipping_address_1,
         shipping_city, shipping_postcode, shipping_country, shipping_phone, shipping_company,
         cart_discount, order_shipping, order_tax, order_total,
+        attribution_source_type, attribution_referrer,
+        attribution_utm_source, attribution_utm_medium, attribution_utm_campaign,
+        attribution_utm_content, attribution_utm_term,
+        attribution_session_entry, attribution_session_start_time,
+        attribution_session_pages, attribution_session_count,
+        attribution_user_agent, attribution_device_type,
+        transaction_id, mollie_payment_id, mollie_order_id,
+        mollie_payment_mode, mollie_customer_id,
+        date_paid, paid_date,
+        mollie_payment_instructions, mollie_paid_and_processed,
         updated_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, NOW())
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37,$38,$39,$40,$41,$42,$43,$44,$45,$46,$47,$48,$49,$50,NOW())
       ON CONFLICT (wp_order_id)
       DO UPDATE SET
         wp_customer_id = EXCLUDED.wp_customer_id,
@@ -192,6 +204,28 @@ async function processOrderEvent(action, wp_id, data, results) {
         order_shipping = EXCLUDED.order_shipping,
         order_tax = EXCLUDED.order_tax,
         order_total = EXCLUDED.order_total,
+        attribution_source_type = COALESCE(EXCLUDED.attribution_source_type, orders.attribution_source_type),
+        attribution_referrer = COALESCE(EXCLUDED.attribution_referrer, orders.attribution_referrer),
+        attribution_utm_source = COALESCE(EXCLUDED.attribution_utm_source, orders.attribution_utm_source),
+        attribution_utm_medium = COALESCE(EXCLUDED.attribution_utm_medium, orders.attribution_utm_medium),
+        attribution_utm_campaign = COALESCE(EXCLUDED.attribution_utm_campaign, orders.attribution_utm_campaign),
+        attribution_utm_content = COALESCE(EXCLUDED.attribution_utm_content, orders.attribution_utm_content),
+        attribution_utm_term = COALESCE(EXCLUDED.attribution_utm_term, orders.attribution_utm_term),
+        attribution_session_entry = COALESCE(EXCLUDED.attribution_session_entry, orders.attribution_session_entry),
+        attribution_session_start_time = COALESCE(EXCLUDED.attribution_session_start_time, orders.attribution_session_start_time),
+        attribution_session_pages = COALESCE(EXCLUDED.attribution_session_pages, orders.attribution_session_pages),
+        attribution_session_count = COALESCE(EXCLUDED.attribution_session_count, orders.attribution_session_count),
+        attribution_user_agent = COALESCE(EXCLUDED.attribution_user_agent, orders.attribution_user_agent),
+        attribution_device_type = COALESCE(EXCLUDED.attribution_device_type, orders.attribution_device_type),
+        transaction_id = COALESCE(EXCLUDED.transaction_id, orders.transaction_id),
+        mollie_payment_id = COALESCE(EXCLUDED.mollie_payment_id, orders.mollie_payment_id),
+        mollie_order_id = COALESCE(EXCLUDED.mollie_order_id, orders.mollie_order_id),
+        mollie_payment_mode = COALESCE(EXCLUDED.mollie_payment_mode, orders.mollie_payment_mode),
+        mollie_customer_id = COALESCE(EXCLUDED.mollie_customer_id, orders.mollie_customer_id),
+        date_paid = COALESCE(EXCLUDED.date_paid, orders.date_paid),
+        paid_date = COALESCE(EXCLUDED.paid_date, orders.paid_date),
+        mollie_payment_instructions = COALESCE(EXCLUDED.mollie_payment_instructions, orders.mollie_payment_instructions),
+        mollie_paid_and_processed = COALESCE(EXCLUDED.mollie_paid_and_processed, orders.mollie_paid_and_processed),
         updated_at = NOW()
       RETURNING (xmax = 0) AS inserted
     `;
@@ -224,7 +258,17 @@ async function processOrderEvent(action, wp_id, data, results) {
       data.discount_total || 0,
       data.shipping_total || 0,
       data.total_tax || 0,
-      data.total || 0
+      data.total || 0,
+      attr.source_type || null, attr.referrer || null,
+      attr.utm_source || null, attr.utm_medium || null, attr.utm_campaign || null,
+      attr.utm_content || null, attr.utm_term || null,
+      attr.session_entry || null, attr.session_start_time || null,
+      attr.session_pages || null, attr.session_count || null,
+      attr.user_agent || null, attr.device_type || null,
+      pm.transaction_id || null, pm.mollie_payment_id || null, pm.mollie_order_id || null,
+      pm.mollie_payment_mode || null, pm.mollie_customer_id || null,
+      data.date_paid || null, data.date_paid || null,
+      pm.mollie_payment_instructions || null, pm.mollie_paid_and_processed || false
     ];
 
     const result = await client.query(orderQuery, values);
@@ -237,16 +281,19 @@ async function processOrderEvent(action, wp_id, data, results) {
         await client.query('DELETE FROM order_items WHERE wp_order_id = $1', [wp_id]);
       }
 
+      // Line items (19 colonnes)
       for (const item of data.items) {
         await client.query(`
           INSERT INTO order_items (
             wp_order_id, order_item_id, order_item_name, order_item_type,
             product_id, variation_id, qty,
-            line_subtotal, line_total, line_tax
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+            line_subtotal, line_total, line_tax,
+            tax_class, line_subtotal_tax, line_tax_data, product_attributes,
+            advanced_discount, wdr_discounts, item_cost, item_total_cost, reduced_stock
+          ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
         `, [
           wp_id,
-          item.id || item.order_item_id || 0,
+          item.id || item.item_id || item.order_item_id || 0,
           item.name || '',
           item.type || 'line_item',
           item.product_id || null,
@@ -254,10 +301,62 @@ async function processOrderEvent(action, wp_id, data, results) {
           item.quantity || 0,
           item.subtotal || 0,
           item.total || 0,
-          item.tax || item.total_tax || 0
+          item.tax || item.total_tax || 0,
+          item.tax_class || null, item.line_subtotal_tax || 0,
+          item.line_tax_data ? JSON.stringify(item.line_tax_data) : null,
+          item.product_attributes ? JSON.stringify(item.product_attributes) : null,
+          item.advanced_discount ? JSON.stringify(item.advanced_discount) : null,
+          item.wdr_discounts ? JSON.stringify(item.wdr_discounts) : null,
+          item.item_cost || null, item.item_total_cost || null,
+          item.reduced_stock || false
         ]);
       }
     }
+
+    // Coupon items
+    if (data.coupon_items && Array.isArray(data.coupon_items)) {
+      for (const item of data.coupon_items) {
+        await client.query(`
+          INSERT INTO order_items (
+            wp_order_id, order_item_id, order_item_name, order_item_type,
+            line_total, line_tax
+          ) VALUES ($1, $2, $3, $4, $5, $6)
+        `, [
+          wp_id, item.item_id || 0, item.name, 'coupon',
+          item.discount_amount || 0, item.discount_tax || 0
+        ]);
+      }
+    }
+
+    // Fee items
+    if (data.fee_items && Array.isArray(data.fee_items)) {
+      for (const item of data.fee_items) {
+        await client.query(`
+          INSERT INTO order_items (
+            wp_order_id, order_item_id, order_item_name, order_item_type,
+            line_total, line_tax, tax_class
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+        `, [
+          wp_id, item.item_id || 0, item.name, 'fee',
+          item.total || 0, item.total_tax || 0, item.tax_class || null
+        ]);
+      }
+    }
+
+    // Tax items
+    if (data.tax_items && Array.isArray(data.tax_items)) {
+      for (const item of data.tax_items) {
+        await client.query(`
+          INSERT INTO order_items (
+            wp_order_id, order_item_id, order_item_name, order_item_type,
+            line_total, line_tax, line_tax_data
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+        `, [
+          wp_id, item.item_id || 0, item.label || item.rate_code, 'tax',
+          item.tax_amount || 0, item.shipping_tax_amount || 0,
+          JSON.stringify({ rate_code: item.rate_code, rate_id: item.rate_id, compound: item.compound })
+        ]);
+      }
 
     await client.query('COMMIT');
 

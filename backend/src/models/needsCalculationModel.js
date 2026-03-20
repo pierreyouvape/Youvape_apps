@@ -35,7 +35,11 @@ const needsCalculationModel = {
         p.product_type,
         p_parent.post_title as parent_title,
         p_parent.image_url as parent_image_url,
-        p_parent.sku as parent_sku
+        p_parent.sku as parent_sku,
+        COALESCE(
+          CASE WHEN p.product_type = 'variation' THEN p_parent.brand ELSE p.brand END,
+          NULL
+        ) as brand
       FROM products p
       LEFT JOIN product_alerts pa ON p.id = pa.product_id
       LEFT JOIN products p_parent ON p.wp_parent_id = p_parent.wp_product_id
@@ -186,7 +190,8 @@ const needsCalculationModel = {
       wp_parent_id: p.wp_parent_id || null,
       product_type: p.product_type,
       parent_title: p.parent_title || null,
-      parent_sku: p.parent_sku || null
+      parent_sku: p.parent_sku || null,
+      brand: p.brand || null
     }));
   },
 

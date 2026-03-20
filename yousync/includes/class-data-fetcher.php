@@ -24,11 +24,12 @@ class Data_Fetcher {
         // Get customer
         $customer_id = $order->get_customer_id();
 
-        // Get order items
+        // Get order items (line_item)
         $items = [];
         foreach ($order->get_items() as $item) {
             $product = $item->get_product();
             $items[] = [
+                'item_id' => $item->get_id(),
                 'product_id' => $item->get_product_id(),
                 'variation_id' => $item->get_variation_id(),
                 'name' => $item->get_name(),
@@ -36,7 +37,16 @@ class Data_Fetcher {
                 'subtotal' => floatval($item->get_subtotal()),
                 'total' => floatval($item->get_total()),
                 'tax' => floatval($item->get_total_tax()),
-                'sku' => $product ? $product->get_sku() : null
+                'sku' => $product ? $product->get_sku() : null,
+                'tax_class' => $item->get_tax_class(),
+                'line_subtotal_tax' => floatval(wc_get_order_item_meta($item->get_id(), '_line_subtotal_tax', true)) ?: 0,
+                'line_tax_data' => wc_get_order_item_meta($item->get_id(), '_line_tax_data', true) ?: null,
+                'product_attributes' => ($product && $product->is_type('variation')) ? $product->get_variation_attributes() : null,
+                'advanced_discount' => wc_get_order_item_meta($item->get_id(), '_advanced_woo_discount_item_total_discount', true) ?: null,
+                'wdr_discounts' => wc_get_order_item_meta($item->get_id(), '_wdr_discounts', true) ?: null,
+                'item_cost' => floatval(wc_get_order_item_meta($item->get_id(), '_wc_cog_item_cost', true)) ?: null,
+                'item_total_cost' => floatval(wc_get_order_item_meta($item->get_id(), '_wc_cog_item_total_cost', true)) ?: null,
+                'reduced_stock' => (bool) wc_get_order_item_meta($item->get_id(), '_reduced_stock', true),
             ];
         }
 
@@ -59,11 +69,76 @@ class Data_Fetcher {
         $shipping_carrier = $order->get_meta('bms_carrier');
         $tracking_number = $order->get_meta('bms_tracking_number');
 
-        // Get coupons
+        // Get coupons (codes for backward compat + detailed items)
         $coupons = [];
         foreach ($order->get_coupon_codes() as $code) {
             $coupons[] = $code;
         }
+
+        $coupon_items = [];
+        foreach ($order->get_items('coupon') as $item) {
+            $coupon_items[] = [
+                'item_id'         => $item->get_id(),
+                'name'            => $item->get_name(),
+                'discount_amount' => floatval($item->get_discount()),
+                'discount_tax'    => floatval($item->get_discount_tax()),
+            ];
+        }
+
+        // Get fee items
+        $fee_items = [];
+        foreach ($order->get_items('fee') as $item) {
+            $fee_items[] = [
+                'item_id'    => $item->get_id(),
+                'name'       => $item->get_name(),
+                'total'      => floatval($item->get_total()),
+                'total_tax'  => floatval($item->get_total_tax()),
+                'tax_class'  => $item->get_tax_class(),
+                'tax_status' => $item->get_tax_status(),
+            ];
+        }
+
+        // Get tax items
+        $tax_items = [];
+        foreach ($order->get_items('tax') as $item) {
+            $tax_items[] = [
+                'item_id'             => $item->get_id(),
+                'rate_code'           => $item->get_rate_code(),
+                'rate_id'             => $item->get_rate_id(),
+                'label'               => $item->get_label(),
+                'compound'            => $item->get_compound(),
+                'tax_amount'          => floatval($item->get_tax_total()),
+                'shipping_tax_amount' => floatval($item->get_shipping_tax_total()),
+            ];
+        }
+
+        // Get attribution marketing data
+        $attribution = [
+            'source_type'        => $order->get_meta('_wc_order_attribution_source_type') ?: null,
+            'referrer'           => $order->get_meta('_wc_order_attribution_referrer') ?: null,
+            'utm_source'         => $order->get_meta('_wc_order_attribution_utm_source') ?: null,
+            'utm_medium'         => $order->get_meta('_wc_order_attribution_utm_medium') ?: null,
+            'utm_campaign'       => $order->get_meta('_wc_order_attribution_utm_campaign') ?: null,
+            'utm_content'        => $order->get_meta('_wc_order_attribution_utm_content') ?: null,
+            'utm_term'           => $order->get_meta('_wc_order_attribution_utm_term') ?: null,
+            'device_type'        => $order->get_meta('_wc_order_attribution_device_type') ?: null,
+            'user_agent'         => $order->get_meta('_wc_order_attribution_user_agent') ?: null,
+            'session_entry'      => $order->get_meta('_wc_order_attribution_session_entry') ?: null,
+            'session_start_time' => $order->get_meta('_wc_order_attribution_session_start_time') ?: null,
+            'session_pages'      => intval($order->get_meta('_wc_order_attribution_session_pages')) ?: null,
+            'session_count'      => intval($order->get_meta('_wc_order_attribution_session_count')) ?: null,
+        ];
+
+        // Get payment metadata (Mollie + generic)
+        $payment_meta = [
+            'transaction_id'              => $order->get_transaction_id() ?: null,
+            'mollie_payment_id'           => $order->get_meta('_mollie_payment_id') ?: null,
+            'mollie_order_id'             => $order->get_meta('_mollie_order_id') ?: null,
+            'mollie_payment_mode'         => $order->get_meta('_mollie_payment_mode') ?: null,
+            'mollie_customer_id'          => $order->get_meta('_mollie_customer_id') ?: null,
+            'mollie_payment_instructions' => $order->get_meta('_mollie_payment_instructions') ?: null,
+            'mollie_paid_and_processed'   => (bool) $order->get_meta('_mollie_paid_and_processed'),
+        ];
 
         return [
             'wp_order_id' => $order->get_id(),
@@ -105,7 +180,12 @@ class Data_Fetcher {
             'shipping_method' => $shipping_method,
             'shipping_carrier' => $shipping_carrier ?: null,
             'tracking_number' => $tracking_number ?: null,
-            'coupons' => $coupons
+            'coupons' => $coupons,
+            'coupon_items' => $coupon_items,
+            'fee_items' => $fee_items,
+            'tax_items' => $tax_items,
+            'attribution' => $attribution,
+            'payment_meta' => $payment_meta
         ];
     }
 
