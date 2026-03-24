@@ -243,6 +243,21 @@ const wcSyncService = {
       return;
     }
 
+    // Light update — stock change only (pas de name/type = event LIGHT depuis on_stock_changed)
+    if (data.stock_quantity !== undefined && !data.name && !data.type) {
+      const stockResult = await pool.query(
+        'UPDATE products SET stock = $1, stock_status = $2, post_modified = NOW(), updated_at = NOW() WHERE wp_product_id = $3 RETURNING wp_product_id',
+        [data.stock_quantity, data.stock_status || 'instock', wpId]
+      );
+      if (stockResult.rowCount === 0) {
+        console.log(`  ⚠️ Product #${wpId} not found for stock update, skipping`);
+        return;
+      }
+      console.log(`🔄 WC Sync: Product #${wpId} stock updated to ${data.stock_quantity} (${data.stock_status || 'instock'})`);
+      return;
+    }
+
+    // Full create/update
     await pool.query(`
       INSERT INTO products (
         wp_product_id, wp_parent_id, product_type, post_title, sku, post_status,
