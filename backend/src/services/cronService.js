@@ -295,6 +295,57 @@ const setupComputedCostCron = () => {
   console.log('Cron PMP FIFO configure: toutes les 30 min (offset 5min), 9h-19h, lun-ven');
 };
 
+// ==================== STOCK RESYNC (ONE-SHOT) ====================
+
+const { runStockResync } = require('./stockResyncService');
+
+let stockResyncCronJob = null;
+
+/**
+ * Verifie toutes les minutes si c'est l'heure de lancer le re-sync stocks.
+ * Se desactive automatiquement apres execution.
+ */
+const checkStockResync = async () => {
+  try {
+    const config = await appConfigModel.get('stock_resync_scheduled_at');
+    if (!config || !config.config_value) return;
+
+    const scheduledAt = new Date(config.config_value);
+    const now = new Date();
+
+    if (now >= scheduledAt) {
+      console.log('[StockResync] Heure atteinte, lancement du re-sync...');
+
+      // Arreter le check pour ne pas relancer
+      if (stockResyncCronJob) {
+        stockResyncCronJob.stop();
+        stockResyncCronJob = null;
+      }
+
+      // Lancer en async (ne pas bloquer le cron)
+      runStockResync().catch(err => {
+        console.error('[StockResync] Erreur non catchee:', err.message);
+      });
+    }
+  } catch (error) {
+    console.error('[StockResync] Erreur check:', error.message);
+  }
+};
+
+const setupStockResyncCron = () => {
+  if (stockResyncCronJob) {
+    stockResyncCronJob.stop();
+    stockResyncCronJob = null;
+  }
+
+  // Check toutes les minutes
+  stockResyncCronJob = cron.schedule('* * * * *', checkStockResync, {
+    timezone: 'Europe/Paris'
+  });
+
+  console.log('Cron StockResync configure: check toutes les minutes');
+};
+
 // ==================== BMS BARCODES SYNC ====================
 
 const productsController = require('../controllers/productsController');
@@ -336,5 +387,6 @@ module.exports = {
   fetchReviewsAuto,
   setupBmsCron,
   setupComputedCostCron,
-  setupBmsBarcodeCron
+  setupBmsBarcodeCron,
+  setupStockResyncCron
 };

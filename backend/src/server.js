@@ -24,7 +24,7 @@ const tariffRoutes = require('./routes/tariffRoutes');
 const purchasesRoutes = require('./routes/purchasesRoutes');
 const packingRoutes = require('./routes/packingRoutes');
 const laposteRoutes = require('./routes/laposteRoutes');
-const { setupCron, setupBmsCron, setupComputedCostCron, setupBmsBarcodeCron } = require('./services/cronService');
+const { setupCron, setupBmsCron, setupComputedCostCron, setupBmsBarcodeCron, setupStockResyncCron } = require('./services/cronService');
 const rewardService = require('./services/rewardService');
 const emailService = require('./services/emailService');
 const wcSyncService = require('./services/wcSyncService');
@@ -81,6 +81,9 @@ app.listen(PORT, async () => {
 
   // Initialiser le cron BMS Barcodes (sync codes-barres toutes les heures)
   setupBmsBarcodeCron();
+
+  // Initialiser le check re-sync stocks (one-shot programme)
+  setupStockResyncCron();
 
   // Recalcul initial PMP FIFO au demarrage (apres 60s)
   setTimeout(async () => {
