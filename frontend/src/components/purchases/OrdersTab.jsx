@@ -286,6 +286,12 @@ const OrdersTab = ({ token }) => {
             {syncing ? 'Synchronisation...' : '⬇ Sync commandes BMS'}
           </button>
           <button
+            className="btn btn-secondary"
+            onClick={() => navigate('/purchases/import-pdf')}
+          >
+            Import PDF
+          </button>
+          <button
             className="btn btn-primary"
             onClick={() => navigate('/purchases/create-order')}
           >

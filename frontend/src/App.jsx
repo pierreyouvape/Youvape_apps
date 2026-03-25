@@ -11,6 +11,7 @@ import SettingsApp from './pages/SettingsApp';
 import StatsApp from './pages/StatsApp';
 import PurchasesApp from './pages/PurchasesApp';
 import CreateOrderPage from './pages/CreateOrderPage';
+import ImportPdfPage from './pages/ImportPdfPage';
 import CustomersApp from './pages/CustomersApp';
 import CustomerDetail from './pages/CustomerDetail';
 import ProductsApp from './pages/ProductsApp';
@@ -143,6 +144,14 @@ function App() {
             element={
               <PrivateRoute>
                 <CreateOrderPage />
+              </PrivateRoute>
+            }
+          />
+          <Route
+            path="/purchases/import-pdf"
+            element={
+              <PrivateRoute>
+                <ImportPdfPage />
               </PrivateRoute>
             }
           />

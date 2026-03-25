@@ -1,6 +1,7 @@
 const purchaseOrderModel = require('../models/purchaseOrderModel');
 const needsCalculationModel = require('../models/needsCalculationModel');
 const productAlertModel = require('../models/productAlertModel');
+const pdfImportModel = require('../models/pdfImportModel');
 const pool = require('../config/database');
 
 const purchasesController = {
@@ -439,6 +440,33 @@ const purchasesController = {
     ]);
 
     return [headers.join(';'), ...rows.map(row => row.join(';'))].join('\n');
+  },
+
+  // ==================== IMPORT PDF ====================
+
+  // POST /api/purchases/orders/parse-pdf
+  parsePdf: async (req, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ success: false, error: 'Fichier PDF requis' });
+      }
+      const supplierId = parseInt(req.body.supplier_id);
+      if (!supplierId) {
+        return res.status(400).json({ success: false, error: 'supplier_id requis' });
+      }
+
+      const result = await pdfImportModel.parsePdf(req.file.buffer, supplierId);
+      res.json({ success: true, data: result });
+    } catch (error) {
+      console.error('Erreur parsePdf:', error);
+      res.status(500).json({ success: false, error: error.message || 'Erreur lors du parsing du PDF' });
+    }
+  },
+
+  // GET /api/purchases/parsers
+  getAvailableParsers: async (req, res) => {
+    const parserRegistry = require('../parsers');
+    res.json({ success: true, data: parserRegistry.availableParsers() });
   }
 };
 

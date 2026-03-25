@@ -112,8 +112,8 @@ const purchaseOrderModel = {
     try {
       await client.query('BEGIN');
 
-      // Générer le numéro de commande
-      const orderNumber = await purchaseOrderModel.generateOrderNumber();
+      // Utiliser le numéro fourni (import PDF) ou en générer un
+      const orderNumber = data.order_number || await purchaseOrderModel.generateOrderNumber();
 
       // Créer la commande localement
       const orderQuery = `
@@ -148,7 +148,11 @@ const purchaseOrderModel = {
           );
           const product = productResult.rows[0];
           const sku = product?.sku || null;
-          const unitPrice = item.unit_price || product?.wc_cog_cost || 0;
+          // Si unit_price est fourni (meme 0), l'utiliser. Sinon fallback sur wc_cog_cost.
+          // 'unit_price' in item permet de distinguer "non fourni" de "explicitement null" (import PDF sans prix)
+          const unitPrice = ('unit_price' in item && item.unit_price !== undefined)
+            ? item.unit_price
+            : (product?.wc_cog_cost || 0);
 
           const itemQuery = `
             INSERT INTO purchase_order_items (
@@ -189,6 +193,30 @@ const purchaseOrderModel = {
           SET total_items = $2, total_qty = $3, total_amount = $4
           WHERE id = $1
         `, [order.id, totalItems, totalQty, totalAmount]);
+      }
+
+      // Enregistrer les nouvelles associations supplier_sku (import PDF, matching manuel)
+      if (data.new_supplier_skus && data.new_supplier_skus.length > 0) {
+        for (const entry of data.new_supplier_skus) {
+          // Resoudre variation -> parent (meme logique que resolveToParentId dans supplierModel)
+          const resolveResult = await client.query(`
+            SELECT CASE WHEN p.product_type = 'variation' THEN parent.id ELSE p.id END as resolved_id
+            FROM products p
+            LEFT JOIN products parent ON p.wp_parent_id = parent.wp_product_id AND parent.product_type = 'variable'
+            WHERE p.id = $1 OR p.wp_product_id = $1
+            LIMIT 1
+          `, [entry.product_id]);
+          const resolvedId = resolveResult.rows[0]?.resolved_id || entry.product_id;
+
+          // Upsert : ne met a jour QUE le supplier_sku, sans ecraser prix/pack_qty existants
+          await client.query(`
+            INSERT INTO product_suppliers (supplier_id, product_id, supplier_sku)
+            VALUES ($1, $2, $3)
+            ON CONFLICT (product_id, supplier_id) DO UPDATE SET
+              supplier_sku = EXCLUDED.supplier_sku,
+              updated_at = CURRENT_TIMESTAMP
+          `, [data.supplier_id, resolvedId, entry.supplier_sku]);
+        }
       }
 
       // Si send_to_bms est true, créer la commande dans BMS

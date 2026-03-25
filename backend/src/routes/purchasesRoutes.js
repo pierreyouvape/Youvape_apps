@@ -1,9 +1,12 @@
 const express = require('express');
 const router = express.Router();
+const multer = require('multer');
 const suppliersController = require('../controllers/suppliersController');
 const purchasesController = require('../controllers/purchasesController');
 const authMiddleware = require('../middleware/authMiddleware');
 const { checkPermission } = require('../middleware/permissionMiddleware');
+
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
 
 // Toutes les routes sont protégées par le middleware JWT
 router.use(authMiddleware);
@@ -83,6 +86,10 @@ router.put('/alerts/:productId', checkPurchasesWrite, purchasesController.setAle
 router.delete('/alerts/:productId', checkPurchasesWrite, purchasesController.deleteAlert);
 
 // ==================== COMMANDES ====================
+
+// Import PDF fournisseur (AVANT /:id pour éviter le conflit de route)
+router.post('/orders/parse-pdf', checkPurchasesWrite, upload.single('pdf'), purchasesController.parsePdf);
+router.get('/parsers', checkPurchasesRead, purchasesController.getAvailableParsers);
 
 // Sync commandes depuis BMS (AVANT /:id pour éviter le conflit de route)
 router.post('/orders/sync-bms', checkPurchasesWrite, purchasesController.syncOrdersFromBMS);
