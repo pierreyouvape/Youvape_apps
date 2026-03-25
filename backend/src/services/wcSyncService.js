@@ -110,8 +110,14 @@ const wcSyncService = {
       const events = response.data.events;
       console.log(`🔄 WC Sync: ${events.length} événement(s) à traiter`);
 
-      // Poll reussi — reset flag
-      pollFailureAlerted = false;
+      // Poll reussi — notifier le retour a la normale si on etait en panne
+      if (pollFailureAlerted) {
+        pollFailureAlerted = false;
+        sendAlert(
+          'YouSync: polling retabli',
+          `Le polling YouSync fonctionne de nouveau.\n\nLe service a repris la synchronisation normalement.`
+        );
+      }
 
       const processedIds = [];
 
