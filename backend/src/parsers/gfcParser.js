@@ -21,8 +21,11 @@ module.exports = {
     // "GFC34676-63077 Silver Nic Salt 10ml - Eminence by Xo Havana - Nicotine :\n20mg 3760366394003 10 2.20 22.00"
     const items = [];
 
-    // Trouver les blocs GFC... jusqu'au prochain GFC... ou "Base HT"
-    const blockRegex = /GFC\d[\s\S]*?(?=GFC\d|\bBase HT\b)/g;
+    // Trouver les blocs GFC... jusqu'au prochain GFC... ou fin de section
+    // "GFC Provap" = footer de page (ne commence pas par "GFC" + chiffre)
+    // "Base HT" = debut des totaux
+    // "Sous-total HT" = sous-total de page (multi-pages)
+    const blockRegex = /GFC\d[\s\S]*?(?=GFC\d|\bBase HT\b|\bSous-total HT\b)/g;
     const blocks = text.match(blockRegex) || [];
 
     for (const block of blocks) {
