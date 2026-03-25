@@ -224,9 +224,23 @@ const ImportPdfPage = () => {
                 style={{ width: '100%', maxWidth: '400px', padding: '12px', borderRadius: '6px', border: '1px solid #ddd', fontSize: '15px' }}
               >
                 <option value="">-- Sélectionner un fournisseur --</option>
-                {suppliers.filter(s => s.is_active).map(s => (
-                  <option key={s.id} value={s.id}>{s.name} {availableParsers.includes(s.code) ? '' : '(pas de parseur)'}</option>
-                ))}
+                {(() => {
+                  const active = suppliers.filter(s => s.is_active);
+                  const withParser = active.filter(s => availableParsers.includes(s.code));
+                  const withoutParser = active.filter(s => !availableParsers.includes(s.code));
+                  return (
+                    <>
+                      {withParser.length > 0 && <option disabled>── Avec parseur ──</option>}
+                      {withParser.map(s => (
+                        <option key={s.id} value={s.id}>{s.name}</option>
+                      ))}
+                      {withoutParser.length > 0 && <option disabled>── Sans parseur ──</option>}
+                      {withoutParser.map(s => (
+                        <option key={s.id} value={s.id}>{s.name}</option>
+                      ))}
+                    </>
+                  );
+                })()}
               </select>
               {supplierId && !hasParser && (
                 <div style={{ marginTop: '10px', color: '#dc2626', fontSize: '14px' }}>
