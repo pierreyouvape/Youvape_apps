@@ -1,8 +1,10 @@
 const lcaParser = require('./lcaParser');
+const joshnoaParser = require('./joshnoaParser');
 
 // Map supplier.code -> parser module
 const parsers = {
   'LCA': lcaParser,
+  'Joshnoa': joshnoaParser,
 };
 
 module.exports = {

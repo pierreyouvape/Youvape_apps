@@ -71,6 +71,11 @@ const pdfImportModel = {
     const enrichedItems = parsed.items.map(item => {
       const match = matchMap.get(item.supplier_sku);
       const packQty = match ? (parseInt(match.pack_qty) || 1) : 1;
+
+      // Prix : priorite au prix du PDF (unit_price_net) si disponible, sinon supplier_price BDD
+      const pdfPrice = item.unit_price_net != null ? item.unit_price_net : null;
+      const dbPrice = match ? parseFloat(match.supplier_price) || null : null;
+
       return {
         supplier_sku: item.supplier_sku,
         designation: item.designation,
@@ -83,8 +88,9 @@ const pdfImportModel = {
         product_sku: match ? match.product_sku : null,
         current_stock: match ? parseInt(match.stock) : null,
         // Prix
-        supplier_price: match ? parseFloat(match.supplier_price) || null : null,
-        unit_price: match ? parseFloat(match.supplier_price) || null : null,
+        pdf_price: pdfPrice,
+        supplier_price: dbPrice,
+        unit_price: pdfPrice ?? dbPrice,
         // Pack
         pack_qty: packQty,
         qty_ordered: item.qty_ordered * packQty,
