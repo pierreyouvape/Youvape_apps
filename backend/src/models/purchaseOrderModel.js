@@ -143,8 +143,12 @@ const purchaseOrderModel = {
         for (const item of data.items) {
           // Récupérer le produit interne (product_id peut être wp_product_id ou id interne)
           const productResult = await client.query(
-            'SELECT id, sku, wc_cog_cost FROM products WHERE wp_product_id = $1 OR id = $1',
-            [item.product_id]
+            `SELECT p.id, p.sku, p.wc_cog_cost, ps.pack_qty
+             FROM products p
+             LEFT JOIN product_suppliers ps ON ps.product_id = p.id AND ps.supplier_id = $2
+             WHERE p.wp_product_id = $1 OR p.id = $1
+             LIMIT 1`,
+            [item.product_id, data.supplier_id]
           );
           const product = productResult.rows[0];
           if (!product) {
@@ -152,6 +156,7 @@ const purchaseOrderModel = {
           }
           const internalProductId = product.id;
           const sku = product.sku || null;
+          const packQty = parseInt(product.pack_qty) || 1;
           // Si unit_price est fourni (meme 0), l'utiliser. Sinon fallback sur wc_cog_cost.
           // 'unit_price' in item permet de distinguer "non fourni" de "explicitement null" (import PDF sans prix)
           const unitPrice = ('unit_price' in item && item.unit_price !== undefined)
@@ -181,7 +186,8 @@ const purchaseOrderModel = {
           itemsWithSku.push({
             ...insertedItem.rows[0],
             sku: sku,
-            unit_price: unitPrice
+            unit_price: unitPrice,
+            pack_qty: packQty
           });
 
           totalItems++;
@@ -263,14 +269,20 @@ const purchaseOrderModel = {
     }
 
     // Préparer les items pour BMS (seuls les produits avec SKU)
+    // BMS raisonne en packs : qty = nombre de packs, price = prix du pack
     const bmsItems = items
       .filter(item => item.sku)
-      .map(item => ({
-        sku: item.sku,
-        qty: item.qty_ordered,
-        price: parseFloat(item.unit_price) || 0,
-        name: item.product_name
-      }));
+      .map(item => {
+        const packQty = parseInt(item.pack_qty) || 1;
+        const unitPrice = parseFloat(item.unit_price) || 0;
+        const qtyOrdered = parseInt(item.qty_ordered) || 0;
+        return {
+          sku: item.sku,
+          qty: packQty > 1 ? Math.round(qtyOrdered / packQty) : qtyOrdered,
+          price: unitPrice * packQty,
+          name: item.product_name
+        };
+      });
 
     if (bmsItems.length === 0) {
       throw new Error('Aucun produit avec SKU valide pour créer la commande BMS');
@@ -279,7 +291,7 @@ const purchaseOrderModel = {
     // Créer la commande dans BMS
     const bmsOrderData = {
       reference: order.order_number,
-      status: 'draft',
+      status: 'expected',
       supplier_id: supplier.bms_id,
       warehouse_id: BMS_WAREHOUSE_ID,
       items: bmsItems

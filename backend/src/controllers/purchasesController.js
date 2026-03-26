@@ -475,13 +475,14 @@ const purchasesController = {
         return res.status(400).json({ success: false, error: `Commande déjà envoyée à BMS (PO #${order.bms_po_id})` });
       }
 
-      // Préparer les items avec SKU pour BMS
+      // Préparer les items avec SKU et pack_qty pour BMS
       const itemsResult = await pool.query(`
-        SELECT poi.*, p.sku
+        SELECT poi.*, p.sku, COALESCE(ps.pack_qty, 1) as pack_qty
         FROM purchase_order_items poi
         JOIN products p ON poi.product_id = p.id
+        LEFT JOIN product_suppliers ps ON ps.product_id = p.id AND ps.supplier_id = $2
         WHERE poi.purchase_order_id = $1
-      `, [orderId]);
+      `, [orderId, order.supplier_id]);
 
       const itemsWithSku = itemsResult.rows.map(row => ({
         ...row,
