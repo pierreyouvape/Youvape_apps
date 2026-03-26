@@ -7,18 +7,21 @@ const BMS_API_URL = 'https://fr3.myfulfillment.boostmyshop.com/api';
 const BMS_USERNAME = process.env.BMS_USERNAME || 'pierre.youvape@gmail.com';
 const BMS_PASSWORD = process.env.BMS_PASSWORD || 'pedrito723@';
 
-let cachedToken = null;
-let tokenExpiry = null;
+// Cache de tokens par email (clé = email, valeur = { token, expiry })
+const tokenCache = new Map();
 
 const bmsApiModel = {
   /**
-   * Obtenir un token d'authentification BMS
-   * Le token est mis en cache pour éviter les appels répétés
+   * Obtenir un token BMS pour un utilisateur donné (ou les credentials par défaut)
    */
-  getToken: async () => {
-    // Vérifier si on a un token valide en cache (expire après 1h par sécurité)
-    if (cachedToken && tokenExpiry && Date.now() < tokenExpiry) {
-      return cachedToken;
+  getToken: async (email = null, password = null) => {
+    const username = email || BMS_USERNAME;
+    const pwd = password || BMS_PASSWORD;
+    const cacheKey = username;
+
+    const cached = tokenCache.get(cacheKey);
+    if (cached && Date.now() < cached.expiry) {
+      return cached.token;
     }
 
     const response = await fetch(`${BMS_API_URL}/auth/token`, {
@@ -27,8 +30,8 @@ const bmsApiModel = {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        username: BMS_USERNAME,
-        password: BMS_PASSWORD
+        username: username,
+        password: pwd
       })
     });
 
@@ -37,17 +40,47 @@ const bmsApiModel = {
     }
 
     const data = await response.json();
-    cachedToken = data.token;
-    tokenExpiry = Date.now() + (60 * 60 * 1000); // 1 heure
+    tokenCache.set(cacheKey, {
+      token: data.token,
+      expiry: Date.now() + (60 * 60 * 1000) // 1 heure
+    });
 
-    return cachedToken;
+    return data.token;
   },
 
   /**
-   * Faire un appel API authentifié à BMS
+   * Faire un appel API authentifié à BMS (credentials par défaut)
    */
   apiCall: async (endpoint, method = 'GET', body = null) => {
     const token = await bmsApiModel.getToken();
+
+    const options = {
+      method,
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      }
+    };
+
+    if (body && method !== 'GET') {
+      options.body = JSON.stringify(body);
+    }
+
+    const response = await fetch(`${BMS_API_URL}${endpoint}`, options);
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`BMS API error: ${response.status} - ${errorText}`);
+    }
+
+    return response.json();
+  },
+
+  /**
+   * Faire un appel API authentifié à BMS avec des credentials spécifiques
+   */
+  apiCallAs: async (email, password, endpoint, method = 'GET', body = null) => {
+    const token = await bmsApiModel.getToken(email, password);
 
     const options = {
       method,
@@ -119,7 +152,10 @@ const bmsApiModel = {
   /**
    * Créer un bon de commande dans BMS
    */
-  createPurchaseOrder: async (orderData) => {
+  createPurchaseOrder: async (orderData, bmsCredentials = null) => {
+    if (bmsCredentials) {
+      return bmsApiModel.apiCallAs(bmsCredentials.email, bmsCredentials.password, '/supplier/purchase-orders', 'POST', orderData);
+    }
     return bmsApiModel.apiCall('/supplier/purchase-orders', 'POST', orderData);
   },
 

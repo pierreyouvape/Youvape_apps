@@ -229,11 +229,20 @@ const purchaseOrderModel = {
 
       // Si send_to_bms est true, créer la commande dans BMS
       if (data.send_to_bms) {
+        // Récupérer les credentials BMS de l'utilisateur connecté (si configurés)
+        const userCreds = await client.query(
+          'SELECT bms_email, bms_password FROM users WHERE id = $1', [userId]
+        );
+        const bmsCreds = userCreds.rows[0]?.bms_email
+          ? { email: userCreds.rows[0].bms_email, password: userCreds.rows[0].bms_password }
+          : null;
+
         const bmsResult = await purchaseOrderModel.createInBMS(
           client,
           order,
           data.supplier_id,
-          itemsWithSku
+          itemsWithSku,
+          bmsCreds
         );
 
         if (bmsResult.bms_po_id) {
@@ -256,7 +265,7 @@ const purchaseOrderModel = {
   },
 
   // Créer la commande dans BMS
-  createInBMS: async (client, order, supplierId, items) => {
+  createInBMS: async (client, order, supplierId, items, bmsCredentials = null) => {
     // Récupérer le bms_id du fournisseur
     const supplierResult = await client.query(
       'SELECT bms_id, name FROM suppliers WHERE id = $1',
@@ -294,7 +303,7 @@ const purchaseOrderModel = {
 
     console.log('Creating BMS order:', JSON.stringify(bmsOrderData, null, 2));
 
-    const bmsResponse = await bmsApiModel.createPurchaseOrder(bmsOrderData);
+    const bmsResponse = await bmsApiModel.createPurchaseOrder(bmsOrderData, bmsCredentials);
     console.log('BMS response:', JSON.stringify(bmsResponse, null, 2));
 
     return {

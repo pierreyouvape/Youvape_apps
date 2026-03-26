@@ -489,6 +489,14 @@ const purchasesController = {
         sku: row.sku || null
       }));
 
+      // Récupérer les credentials BMS de l'utilisateur connecté (si configurés)
+      const userCreds = await pool.query(
+        'SELECT bms_email, bms_password FROM users WHERE id = $1', [req.user.id]
+      );
+      const bmsCreds = userCreds.rows[0]?.bms_email
+        ? { email: userCreds.rows[0].bms_email, password: userCreds.rows[0].bms_password }
+        : null;
+
       const client = await pool.connect();
       try {
         await client.query('BEGIN');
@@ -497,7 +505,8 @@ const purchasesController = {
           client,
           order,
           order.supplier_id,
-          itemsWithSku
+          itemsWithSku,
+          bmsCreds
         );
 
         if (bmsResult.bms_po_id) {
