@@ -73,7 +73,10 @@ const pdfImportModel = {
       const packQty = parsed.skipPackQty ? 1 : (match ? (parseInt(match.pack_qty) || 1) : 1);
 
       // Prix : priorite au prix du PDF (unit_price_net) si disponible, sinon supplier_price BDD
-      const pdfPrice = item.unit_price_net != null ? item.unit_price_net : null;
+      // Le prix PDF est souvent un prix PACK (Revolute, JoshNoa) → diviser par pack_qty pour le prix unitaire
+      // Exception : skipPackQty (Curieux) → pack_qty forcé à 1, pas de division
+      const rawPdfPrice = item.unit_price_net != null ? item.unit_price_net : null;
+      const pdfPrice = (rawPdfPrice != null && packQty > 1) ? rawPdfPrice / packQty : rawPdfPrice;
       const dbPrice = match ? parseFloat(match.supplier_price) || null : null;
 
       return {
@@ -88,7 +91,7 @@ const pdfImportModel = {
         product_sku: match ? match.product_sku : null,
         current_stock: match ? parseInt(match.stock) : null,
         // Prix
-        pdf_price: pdfPrice,
+        pdf_price: rawPdfPrice,
         supplier_price: dbPrice,
         unit_price: pdfPrice ?? dbPrice,
         // Pack
