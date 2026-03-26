@@ -278,15 +278,19 @@ const purchaseOrderModel = {
     }
 
     // Préparer les items pour BMS (seuls les produits avec SKU)
-    // BMS gère ses propres pack_qty : on envoie qty en unités et prix unitaire, BMS convertit
+    // BMS divise qty par son pack_qty mais ne touche pas au prix
+    // → on envoie qty en unités, price en prix PACK (unit_price * pack_qty)
     const bmsItems = items
       .filter(item => item.sku)
-      .map(item => ({
-        sku: item.sku,
-        qty: parseInt(item.qty_ordered) || 0,
-        price: parseFloat(item.unit_price) || 0,
-        name: item.product_name
-      }));
+      .map(item => {
+        const packQty = parseInt(item.pack_qty) || 1;
+        return {
+          sku: item.sku,
+          qty: parseInt(item.qty_ordered) || 0,
+          price: (parseFloat(item.unit_price) || 0) * packQty,
+          name: item.product_name
+        };
+      });
 
     if (bmsItems.length === 0) {
       throw new Error('Aucun produit avec SKU valide pour créer la commande BMS');
