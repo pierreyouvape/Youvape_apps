@@ -288,7 +288,8 @@ const purchaseOrderModel = {
           sku: item.sku,
           qty: parseInt(item.qty_ordered) || 0,
           price: (parseFloat(item.unit_price) || 0) * packQty,
-          name: item.product_name
+          name: item.product_name,
+          supplier_sku: item.supplier_sku || null
         };
       });
 
