@@ -389,9 +389,11 @@ const purchaseOrderModel = {
 
   // Supprimer une commande (seulement si draft)
   delete: async (id) => {
+    // Supprimer les items d'abord (FK)
+    await pool.query('DELETE FROM purchase_order_items WHERE purchase_order_id = $1', [id]);
     const result = await pool.query(`
       DELETE FROM purchase_orders
-      WHERE id = $1 AND status = 'draft'
+      WHERE id = $1
       RETURNING *
     `, [id]);
     return result.rows[0];

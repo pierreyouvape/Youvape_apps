@@ -114,9 +114,9 @@ const OrdersTab = ({ token }) => {
     }
   };
 
-  // Delete draft order
+  // Delete order
   const deleteOrder = async (orderId) => {
-    if (!confirm('Êtes-vous sûr de vouloir supprimer ce brouillon ?')) return;
+    if (!confirm('Supprimer cette commande ?\n\nAttention : elle ne sera supprimée que de l\'app, pas de BMS.')) return;
 
     try {
       await axios.delete(`${API_URL}/purchases/orders/${orderId}`, {
@@ -446,14 +446,9 @@ const OrdersTab = ({ token }) => {
               <div style={{ marginBottom: '20px', padding: '10px', background: '#f8f9fa', borderRadius: '6px' }}>
                 <strong style={{ marginRight: '15px' }}>Changer le statut :</strong>
                 {selectedOrder.status === 'draft' && (
-                  <>
-                    <button className="btn btn-sm btn-primary" onClick={() => updateStatus(selectedOrder.id, 'sent')}>
-                      📤 Marquer envoyée
-                    </button>
-                    <button className="btn btn-sm btn-danger" style={{ marginLeft: '10px' }} onClick={() => deleteOrder(selectedOrder.id)}>
-                      🗑️ Supprimer
-                    </button>
-                  </>
+                  <button className="btn btn-sm btn-primary" onClick={() => updateStatus(selectedOrder.id, 'sent')}>
+                    📤 Marquer envoyée
+                  </button>
                 )}
                 {selectedOrder.status === 'sent' && (
                   <>
@@ -536,20 +531,25 @@ const OrdersTab = ({ token }) => {
                 </div>
               )}
             </div>
-            <div className="modal-footer">
-              <button className="btn btn-secondary" onClick={() => exportOrder(selectedOrder.id, 'supplier')}>
-                📄 Export fournisseur
+            <div className="modal-footer" style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <button className="btn btn-danger" onClick={() => deleteOrder(selectedOrder.id)} style={{ background: '#dc2626', color: 'white', border: 'none', borderRadius: '6px', padding: '8px 16px', cursor: 'pointer' }}>
+                Supprimer
               </button>
-              {!selectedOrder.bms_po_id ? (
-                <button className="btn btn-secondary" onClick={() => sendToBms(selectedOrder.id)} disabled={sendingBms}>
-                  {sendingBms ? 'Envoi...' : '📤 Envoyer à BMS'}
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button className="btn btn-secondary" onClick={() => exportOrder(selectedOrder.id, 'supplier')}>
+                  📄 Export fournisseur
                 </button>
-              ) : (
-                <span style={{ color: '#10b981', fontSize: '13px', padding: '8px' }}>BMS #{selectedOrder.bms_po_id}</span>
-              )}
-              <button className="btn btn-primary" onClick={() => setShowDetailModal(false)}>
-                Fermer
-              </button>
+                {!selectedOrder.bms_po_id ? (
+                  <button className="btn btn-secondary" onClick={() => sendToBms(selectedOrder.id)} disabled={sendingBms}>
+                    {sendingBms ? 'Envoi...' : '📤 Envoyer à BMS'}
+                  </button>
+                ) : (
+                  <span style={{ color: '#10b981', fontSize: '13px', padding: '8px' }}>BMS #{selectedOrder.bms_po_id}</span>
+                )}
+                <button className="btn btn-primary" onClick={() => setShowDetailModal(false)}>
+                  Fermer
+                </button>
+              </div>
             </div>
           </div>
         </div>

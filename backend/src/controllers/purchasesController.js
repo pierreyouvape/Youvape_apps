@@ -265,7 +265,7 @@ const purchasesController = {
       if (!order) {
         return res.status(400).json({
           success: false,
-          error: 'Commande non trouvée ou impossible à supprimer (seuls les brouillons peuvent être supprimés)'
+          error: 'Commande non trouvée'
         });
       }
       res.json({ success: true, message: 'Commande supprimée' });
