@@ -114,6 +114,9 @@ router.put('/orders/:id/items/:itemId/received', checkPurchasesWrite, purchasesC
 // Supprimer une commande (brouillon uniquement)
 router.delete('/orders/:id', checkPurchasesWrite, purchasesController.deleteOrder);
 
+// Envoyer une commande à BMS
+router.post('/orders/:id/send-bms', checkPurchasesWrite, purchasesController.sendToBms);
+
 // Export CSV d'une commande
 router.get('/orders/:id/export', checkPurchasesRead, purchasesController.exportOrder);
 

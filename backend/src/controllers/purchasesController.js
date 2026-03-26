@@ -463,6 +463,64 @@ const purchasesController = {
     }
   },
 
+  // POST /api/purchases/orders/:id/send-bms
+  sendToBms: async (req, res) => {
+    try {
+      const orderId = parseInt(req.params.id);
+      const order = await purchaseOrderModel.getById(orderId);
+      if (!order) {
+        return res.status(404).json({ success: false, error: 'Commande non trouvée' });
+      }
+      if (order.bms_po_id) {
+        return res.status(400).json({ success: false, error: `Commande déjà envoyée à BMS (PO #${order.bms_po_id})` });
+      }
+
+      // Préparer les items avec SKU pour BMS
+      const itemsResult = await pool.query(`
+        SELECT poi.*, p.sku
+        FROM purchase_order_items poi
+        JOIN products p ON poi.product_id = p.id
+        WHERE poi.purchase_order_id = $1
+      `, [orderId]);
+
+      const itemsWithSku = itemsResult.rows.map(row => ({
+        ...row,
+        sku: row.sku || null
+      }));
+
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+
+        const bmsResult = await purchaseOrderModel.createInBMS(
+          client,
+          order,
+          order.supplier_id,
+          itemsWithSku
+        );
+
+        if (bmsResult.bms_po_id) {
+          await client.query(
+            'UPDATE purchase_orders SET bms_po_id = $2, status = $3 WHERE id = $1',
+            [orderId, bmsResult.bms_po_id, 'sent']
+          );
+        }
+
+        await client.query('COMMIT');
+        const updated = await purchaseOrderModel.getById(orderId);
+        res.json({ success: true, data: updated });
+      } catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+      } finally {
+        client.release();
+      }
+    } catch (error) {
+      console.error('Erreur sendToBms:', error);
+      res.status(500).json({ success: false, error: error.message || 'Erreur envoi BMS' });
+    }
+  },
+
   // GET /api/purchases/parsers
   getAvailableParsers: async (req, res) => {
     const parserRegistry = require('../parsers');

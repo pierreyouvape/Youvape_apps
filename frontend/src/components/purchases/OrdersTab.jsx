@@ -130,6 +130,26 @@ const OrdersTab = ({ token }) => {
     }
   };
 
+  // Envoyer a BMS
+  const [sendingBms, setSendingBms] = useState(false);
+  const sendToBms = async (orderId) => {
+    if (!confirm('Envoyer cette commande à BMS ?')) return;
+    setSendingBms(true);
+    try {
+      const response = await axios.post(`${API_URL}/purchases/orders/${orderId}/send-bms`, {}, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      alert('Commande envoyée à BMS avec succès');
+      setSelectedOrder(response.data.data);
+      loadOrders();
+    } catch (err) {
+      console.error('Erreur envoi BMS:', err);
+      alert(err.response?.data?.error || 'Erreur lors de l\'envoi à BMS');
+    } finally {
+      setSendingBms(false);
+    }
+  };
+
   // Export CSV
   const exportOrder = async (orderId, format) => {
     try {
@@ -520,9 +540,13 @@ const OrdersTab = ({ token }) => {
               <button className="btn btn-secondary" onClick={() => exportOrder(selectedOrder.id, 'supplier')}>
                 📄 Export fournisseur
               </button>
-              <button className="btn btn-secondary" onClick={() => exportOrder(selectedOrder.id, 'warehouse')}>
-                📦 Export warehouse
-              </button>
+              {!selectedOrder.bms_po_id ? (
+                <button className="btn btn-secondary" onClick={() => sendToBms(selectedOrder.id)} disabled={sendingBms}>
+                  {sendingBms ? 'Envoi...' : '📤 Envoyer à BMS'}
+                </button>
+              ) : (
+                <span style={{ color: '#10b981', fontSize: '13px', padding: '8px' }}>BMS #{selectedOrder.bms_po_id}</span>
+              )}
               <button className="btn btn-primary" onClick={() => setShowDetailModal(false)}>
                 Fermer
               </button>
