@@ -192,6 +192,8 @@ const ImportPdfPage = () => {
   // ==================== RENDU ====================
 
   const totalQty = matchedItems.reduce((sum, i) => sum + i.qty_ordered, 0);
+  const totalHt = matchedItems.reduce((sum, i) => sum + (i.unit_price ? i.qty_ordered * i.unit_price : 0), 0);
+  const totalTtc = totalHt * 1.2;
 
   return (
     <div style={{ minHeight: '100vh', backgroundColor: '#f5f5f5' }}>
@@ -358,6 +360,7 @@ const ImportPdfPage = () => {
                     <th style={{ textAlign: 'center', padding: '10px', fontWeight: 600, width: '55px' }}>Pack</th>
                     <th style={{ textAlign: 'center', padding: '10px', fontWeight: 600, width: '100px' }}>Qte finale</th>
                     <th style={{ textAlign: 'center', padding: '10px', fontWeight: 600, width: '110px' }}>Prix unit.</th>
+                    <th style={{ textAlign: 'right', padding: '10px', fontWeight: 600, width: '100px' }}>Total HT</th>
                     <th style={{ width: '40px' }}></th>
                   </tr>
                 </thead>
@@ -479,6 +482,13 @@ const ImportPdfPage = () => {
                         ) : '-'}
                       </td>
 
+                      {/* Total HT ligne */}
+                      <td style={{ padding: '10px', textAlign: 'right', fontSize: '13px', fontWeight: 500 }}>
+                        {item.matched && item.unit_price
+                          ? (item.qty_ordered * item.unit_price).toFixed(2) + ' €'
+                          : '-'}
+                      </td>
+
                       {/* Supprimer */}
                       <td style={{ padding: '10px', textAlign: 'center' }}>
                         <button
@@ -493,6 +503,18 @@ const ImportPdfPage = () => {
                   ))}
                 </tbody>
               </table>
+            </div>
+
+            {/* Totaux */}
+            <div style={{ background: 'white', borderRadius: '8px', padding: '15px 20px', marginBottom: '20px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)', display: 'flex', justifyContent: 'flex-end', gap: '30px', fontSize: '15px' }}>
+              <div>
+                <span style={{ color: '#666' }}>Total HT : </span>
+                <span style={{ fontWeight: 600 }}>{totalHt.toFixed(2)} €</span>
+              </div>
+              <div>
+                <span style={{ color: '#666' }}>Total TTC (20%) : </span>
+                <span style={{ fontWeight: 600 }}>{totalTtc.toFixed(2)} €</span>
+              </div>
             </div>
 
             {/* Actions */}
