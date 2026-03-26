@@ -2,21 +2,17 @@ const pool = require('../config/database');
 const bmsApiModel = require('./bmsApiModel');
 
 /**
- * Résout un productId (id interne OU wp_product_id) vers l'id interne du parent.
- * Les fournisseurs sont gérés au niveau parent/simple, jamais variation.
- * Cherche d'abord par id interne, puis par wp_product_id.
+ * Résout un productId (id interne OU wp_product_id) vers l'id interne.
+ * Ne résout plus vers le parent — les fournisseurs sont gérés par variation/simple.
  */
-const resolveToParentId = async (productId) => {
+const resolveProductId = async (productId) => {
   const result = await pool.query(`
-    SELECT p.id, p.product_type, p.wp_parent_id,
-      CASE WHEN p.product_type = 'variation' THEN parent.id ELSE p.id END as resolved_id
-    FROM products p
-    LEFT JOIN products parent ON p.wp_parent_id = parent.wp_product_id AND parent.product_type = 'variable'
+    SELECT p.id FROM products p
     WHERE p.id = $1 OR p.wp_product_id = $1
     LIMIT 1
   `, [productId]);
   if (result.rows.length === 0) return productId;
-  return result.rows[0].resolved_id || productId;
+  return result.rows[0].id;
 };
 
 const supplierModel = {
@@ -159,9 +155,9 @@ const supplierModel = {
     return result.rows;
   },
 
-  // Associer un produit à un fournisseur (résout vers le parent si variation)
+  // Associer un produit à un fournisseur (résout wp_product_id vers id interne)
   addProduct: async (supplierId, productId, data = {}) => {
-    const resolvedId = await resolveToParentId(productId);
+    const resolvedId = await resolveProductId(productId);
     const query = `
       INSERT INTO product_suppliers (
         supplier_id, product_id, is_primary, supplier_sku, supplier_price, min_order_qty, pack_qty
@@ -189,9 +185,9 @@ const supplierModel = {
     return result.rows[0];
   },
 
-  // Mettre à jour les données d'un produit chez un fournisseur (résout vers le parent si variation)
+  // Mettre à jour les données d'un produit chez un fournisseur (résout wp_product_id vers id interne)
   updateProductSupplier: async (supplierId, productId, data) => {
-    const resolvedId = await resolveToParentId(productId);
+    const resolvedId = await resolveProductId(productId);
     const fields = [];
     const values = [supplierId, resolvedId];
     let paramIndex = 3;
@@ -230,9 +226,9 @@ const supplierModel = {
     return result.rows[0];
   },
 
-  // Retirer un produit d'un fournisseur (résout vers le parent si variation)
+  // Retirer un produit d'un fournisseur (résout wp_product_id vers id interne)
   removeProduct: async (supplierId, productId) => {
-    const resolvedId = await resolveToParentId(productId);
+    const resolvedId = await resolveProductId(productId);
     const query = `
       DELETE FROM product_suppliers
       WHERE supplier_id = $1 AND product_id = $2
@@ -242,9 +238,9 @@ const supplierModel = {
     return result.rows[0];
   },
 
-  // Définir le fournisseur principal d'un produit (résout vers le parent si variation)
+  // Définir le fournisseur principal d'un produit (résout wp_product_id vers id interne)
   setPrimarySupplier: async (productId, supplierId) => {
-    const resolvedId = await resolveToParentId(productId);
+    const resolvedId = await resolveProductId(productId);
     // D'abord retirer le statut principal des autres fournisseurs
     await pool.query(`
       UPDATE product_suppliers SET is_primary = false
@@ -261,9 +257,9 @@ const supplierModel = {
     return result.rows[0];
   },
 
-  // Récupérer les fournisseurs d'un produit (résout vers le parent si variation)
+  // Récupérer les fournisseurs d'un produit (résout wp_product_id vers id interne)
   getSuppliersByProduct: async (productId) => {
-    const resolvedId = await resolveToParentId(productId);
+    const resolvedId = await resolveProductId(productId);
     const query = `
       SELECT
         s.*,

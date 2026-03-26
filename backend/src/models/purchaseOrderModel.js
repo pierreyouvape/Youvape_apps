@@ -200,17 +200,15 @@ const purchaseOrderModel = {
       }
 
       // Enregistrer les nouvelles associations supplier_sku (import PDF, matching manuel)
+      // Stocké sur le produit exact (variation ou simple), pas le parent
       if (data.new_supplier_skus && data.new_supplier_skus.length > 0) {
         for (const entry of data.new_supplier_skus) {
-          // Resoudre variation -> parent (meme logique que resolveToParentId dans supplierModel)
-          const resolveResult = await client.query(`
-            SELECT CASE WHEN p.product_type = 'variation' THEN parent.id ELSE p.id END as resolved_id
-            FROM products p
-            LEFT JOIN products parent ON p.wp_parent_id = parent.wp_product_id AND parent.product_type = 'variable'
-            WHERE p.id = $1 OR p.wp_product_id = $1
-            LIMIT 1
-          `, [entry.product_id]);
-          const resolvedId = resolveResult.rows[0]?.resolved_id || entry.product_id;
+          // Résoudre wp_product_id vers id interne (sans remonter au parent)
+          const resolveResult = await client.query(
+            'SELECT id FROM products WHERE id = $1 OR wp_product_id = $1 LIMIT 1',
+            [entry.product_id]
+          );
+          const productId = resolveResult.rows[0]?.id || entry.product_id;
 
           // Upsert : ne met a jour QUE le supplier_sku, sans ecraser prix/pack_qty existants
           await client.query(`
@@ -219,7 +217,7 @@ const purchaseOrderModel = {
             ON CONFLICT (product_id, supplier_id) DO UPDATE SET
               supplier_sku = EXCLUDED.supplier_sku,
               updated_at = CURRENT_TIMESTAMP
-          `, [data.supplier_id, resolvedId, entry.supplier_sku]);
+          `, [data.supplier_id, productId, entry.supplier_sku]);
         }
       }
 
@@ -467,16 +465,12 @@ const purchaseOrderModel = {
     const supplierByBmsId = new Map(suppliersResult.rows.map(s => [s.bms_id, s.id]));
 
     // 4. Charger le mapping sku → product.id local (en une seule requête)
-    // Charger les produits avec résolution vers le parent pour product_suppliers
     const productsResult = await pool.query(`
-      SELECT p.id, p.sku, p.product_type, p.wp_parent_id,
-        CASE WHEN p.product_type = 'variation' THEN parent.id ELSE p.id END as parent_id
+      SELECT p.id, p.sku, p.product_type
       FROM products p
-      LEFT JOIN products parent ON p.wp_parent_id = parent.wp_product_id AND parent.product_type = 'variable'
       WHERE p.sku IS NOT NULL AND p.sku != '' AND p.post_status = 'publish'
     `);
     const productBySku = new Map(productsResult.rows.map(p => [p.sku, p.id]));
-    const productParentBySku = new Map(productsResult.rows.map(p => [p.sku, p.parent_id || p.id]));
 
     const client = await pool.connect();
     try {
@@ -597,9 +591,9 @@ const purchaseOrderModel = {
             unitPrice
           ]);
 
-          // Mettre à jour product_suppliers — toujours sur le parent (pas la variation)
-          const parentProductId = item.sku ? productParentBySku.get(item.sku) : null;
-          if (parentProductId !== null && parentProductId !== undefined && unitPrice !== null) {
+          // Mettre à jour product_suppliers — sur le produit exact (variation ou simple)
+          const productIdForSupplier = item.sku ? productBySku.get(item.sku) : null;
+          if (productIdForSupplier !== null && productIdForSupplier !== undefined && unitPrice !== null) {
             await client.query(`
               INSERT INTO product_suppliers (supplier_id, product_id, supplier_sku, supplier_price, min_order_qty, pack_qty)
               VALUES ($1, $2, $3, $4, 1, $5)
@@ -608,7 +602,7 @@ const purchaseOrderModel = {
                 supplier_sku = COALESCE(EXCLUDED.supplier_sku, product_suppliers.supplier_sku),
                 pack_qty = EXCLUDED.pack_qty,
                 updated_at = CURRENT_TIMESTAMP
-            `, [supplierId, parentProductId, item.supplier_sku || null, unitPrice, qtyPack]);
+            `, [supplierId, productIdForSupplier, item.supplier_sku || null, unitPrice, qtyPack]);
           }
         }
 
