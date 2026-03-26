@@ -169,6 +169,7 @@ const ImportPdfPage = () => {
           supplier_sku: item.supplier_sku,
           qty_ordered: item.qty_ordered,
           unit_price: item.unit_price,
+          stock_before: item.current_stock,
         })),
         new_supplier_skus: newSupplierSkus,
         send_to_bms: sendToBms,

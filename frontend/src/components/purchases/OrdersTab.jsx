@@ -482,6 +482,7 @@ const OrdersTab = ({ token }) => {
                     <th className="text-right">Commandé</th>
                     <th className="text-right">Reçu</th>
                     <th className="text-right">Prix unit.</th>
+                    <th className="text-right">Total HT</th>
                     <th>Stock avant</th>
                   </tr>
                 </thead>
@@ -517,12 +518,35 @@ const OrdersTab = ({ token }) => {
                         <td className="text-right">
                           {item.unit_price ? `${formatPrice(item.unit_price)} €` : '-'}
                         </td>
+                        <td className="text-right">
+                          {item.unit_price && item.qty_ordered
+                            ? `${formatPrice(item.qty_ordered * item.unit_price)} €`
+                            : '-'}
+                        </td>
                         <td>{item.stock_before ?? '-'}</td>
                       </tr>
                     );
                   })}
                 </tbody>
               </table>
+
+              {/* Totaux */}
+              {(() => {
+                const totalHt = (selectedOrder.items || []).reduce((sum, i) =>
+                  sum + (i.unit_price ? i.qty_ordered * i.unit_price : 0), 0);
+                return totalHt > 0 ? (
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '30px', marginTop: '12px', fontSize: '14px' }}>
+                    <div>
+                      <span style={{ color: '#666' }}>Total HT : </span>
+                      <strong>{formatPrice(totalHt)} €</strong>
+                    </div>
+                    <div>
+                      <span style={{ color: '#666' }}>Total TTC (20%) : </span>
+                      <strong>{formatPrice(totalHt * 1.2)} €</strong>
+                    </div>
+                  </div>
+                ) : null;
+              })()}
 
               {/* Notes */}
               {selectedOrder.notes && (
