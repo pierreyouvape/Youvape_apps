@@ -34,11 +34,6 @@ const pdfImportModel = {
     const pdfData = await pdfParser.getText();
     const text = pdfData.text;
 
-    // DEBUG: log du texte brut extrait du PDF
-    console.log('=== PDF RAW TEXT ===');
-    console.log(text);
-    console.log('=== END PDF RAW TEXT ===');
-
     // 4. Parser avec le parseur du fournisseur
     const parsed = parser.parse(text);
 

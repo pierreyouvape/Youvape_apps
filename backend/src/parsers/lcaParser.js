@@ -19,11 +19,19 @@ module.exports = {
     // Certaines designations aussi :
     // "#REF18884-\n65140\nShishasip 35K - JNR - Saveur : Mango\nPineapple 20 \t20 \t0"
 
+    // Nettoyer les footers Gmail (impression PDF depuis Gmail)
+    // Format : "26/03/2026 12:14 \tLCA / Votre commande..." + URL + pagination + "-- X of Y --"
+    const cleanedText = text
+      .replace(/\d{2}\/\d{2}\/\d{4}\s+\d{2}:\d{2}\s+LCA \/ Votre commande[^\n]*\n/g, '')
+      .replace(/https:\/\/mail\.google\.com[^\n]*\n/g, '')
+      .replace(/--\s*\d+\s+of\s+\d+\s*--/g, '')
+      .replace(/\d+\/\d+\n/g, '');
+
     // Strategie : rejoindre les lignes cassees puis parser
     // 1. Trouver tous les blocs commencant par #REF jusqu'au prochain #REF ou "LCA DISTRIBUTION"
     const items = [];
     const blockRegex = /#REF[\s\S]*?(?=#REF|LCA DISTRIBUTION|$)/g;
-    const blocks = text.match(blockRegex) || [];
+    const blocks = cleanedText.match(blockRegex) || [];
 
     for (const block of blocks) {
       // Nettoyer le bloc : remplacer les retours a la ligne par des espaces
