@@ -70,7 +70,7 @@ const pdfImportModel = {
     // 6. Enrichir chaque ligne avec les infos de matching
     const enrichedItems = parsed.items.map(item => {
       const match = matchMap.get(item.supplier_sku);
-      const packQty = match ? (parseInt(match.pack_qty) || 1) : 1;
+      const packQty = parsed.skipPackQty ? 1 : (match ? (parseInt(match.pack_qty) || 1) : 1);
 
       // Prix : priorite au prix du PDF (unit_price_net) si disponible, sinon supplier_price BDD
       const pdfPrice = item.unit_price_net != null ? item.unit_price_net : null;

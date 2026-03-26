@@ -21,7 +21,7 @@ module.exports = {
     const startIdx = startMatch ? startMatch.index + startMatch[0].length : -1;
     const endIdx = text.indexOf('Détail des taxes');
 
-    if (startIdx < 0 || endIdx < 0) return { orderNumber, orderDate, items, hasPrice: true };
+    if (startIdx < 0 || endIdx < 0) return { orderNumber, orderDate, items, hasPrice: true, skipPackQty: true };
 
     let productZone = text.substring(startIdx, endIdx);
 
@@ -128,6 +128,6 @@ module.exports = {
       }
     }
 
-    return { orderNumber, orderDate, items, hasPrice: true };
+    return { orderNumber, orderDate, items, hasPrice: true, skipPackQty: true };
   }
 };
