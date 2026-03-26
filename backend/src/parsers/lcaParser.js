@@ -22,7 +22,7 @@ module.exports = {
     // Strategie : rejoindre les lignes cassees puis parser
     // 1. Trouver tous les blocs commencant par #REF jusqu'au prochain #REF ou "LCA DISTRIBUTION"
     const items = [];
-    const blockRegex = /#REF[\s\S]*?(?=#REF|LCA DISTRIBUTION)/g;
+    const blockRegex = /#REF[\s\S]*?(?=#REF|LCA DISTRIBUTION|$)/g;
     const blocks = text.match(blockRegex) || [];
 
     for (const block of blocks) {
