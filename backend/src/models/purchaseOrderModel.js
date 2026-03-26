@@ -141,13 +141,17 @@ const purchaseOrderModel = {
 
       if (data.items && data.items.length > 0) {
         for (const item of data.items) {
-          // Récupérer le SKU du produit
+          // Récupérer le produit interne (product_id peut être wp_product_id ou id interne)
           const productResult = await client.query(
-            'SELECT sku, wc_cog_cost FROM products WHERE wp_product_id = $1',
+            'SELECT id, sku, wc_cog_cost FROM products WHERE wp_product_id = $1 OR id = $1',
             [item.product_id]
           );
           const product = productResult.rows[0];
-          const sku = product?.sku || null;
+          if (!product) {
+            throw new Error(`Produit introuvable pour product_id=${item.product_id}`);
+          }
+          const internalProductId = product.id;
+          const sku = product.sku || null;
           // Si unit_price est fourni (meme 0), l'utiliser. Sinon fallback sur wc_cog_cost.
           // 'unit_price' in item permet de distinguer "non fourni" de "explicitement null" (import PDF sans prix)
           const unitPrice = ('unit_price' in item && item.unit_price !== undefined)
@@ -164,7 +168,7 @@ const purchaseOrderModel = {
           `;
           const insertedItem = await client.query(itemQuery, [
             order.id,
-            item.product_id,
+            internalProductId,
             item.supplier_sku || sku || null,
             item.product_name,
             item.qty_ordered,
