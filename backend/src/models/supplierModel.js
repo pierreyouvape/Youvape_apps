@@ -258,8 +258,40 @@ const supplierModel = {
   },
 
   // Récupérer les fournisseurs d'un produit (résout wp_product_id vers id interne)
+  // Si le produit est un parent (variable), remonte les fournisseurs distincts de ses variations
   getSuppliersByProduct: async (productId) => {
     const resolvedId = await resolveProductId(productId);
+
+    // Vérifier si c'est un produit variable (parent)
+    const typeResult = await pool.query(
+      `SELECT product_type, wp_product_id FROM products WHERE id = $1`,
+      [resolvedId]
+    );
+    const product = typeResult.rows[0];
+
+    if (product && product.product_type === 'variable') {
+      // Remonter les fournisseurs distincts des variations enfants
+      // is_primary = true si au moins une variation l'a en primary
+      const query = `
+        SELECT DISTINCT ON (s.id)
+          s.*,
+          bool_or(ps.is_primary) OVER (PARTITION BY s.id) as is_primary,
+          ps.supplier_sku,
+          ps.supplier_price,
+          ps.min_order_qty,
+          ps.pack_qty
+        FROM suppliers s
+        JOIN product_suppliers ps ON s.id = ps.supplier_id
+        JOIN products child ON child.id = ps.product_id
+        WHERE child.wp_parent_id = $1 AND s.is_active = true
+        ORDER BY s.id, ps.is_primary DESC
+      `;
+      const result = await pool.query(query, [product.wp_product_id]);
+      // Re-trier : primary d'abord, puis par nom
+      return result.rows.sort((a, b) => (b.is_primary ? 1 : 0) - (a.is_primary ? 1 : 0) || a.name.localeCompare(b.name));
+    }
+
+    // Produit simple ou variation : comportement normal
     const query = `
       SELECT
         s.*,

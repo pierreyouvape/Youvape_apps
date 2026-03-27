@@ -367,9 +367,23 @@ const NeedsTab = ({ token }) => {
     const searchNorm = normalize(search);
     const hasSearch = searchNorm.length >= 2;
 
+    // Pour le filtre fournisseur : collecter les wp_parent_id dont au moins une variation a ce fournisseur
+    // Ainsi toutes les variations d'un même parent sont affichées si l'une d'elles correspond
+    const parentIdsWithSupplier = supplierId
+      ? new Set(
+          computedProducts
+            .filter(p => p.wp_parent_id && String(p.supplier_id) === String(supplierId))
+            .map(p => p.wp_parent_id)
+        )
+      : null;
+
     return computedProducts.filter(p => {
       // Filtre fournisseur
-      if (supplierId && String(p.supplier_id) !== String(supplierId)) return false;
+      if (supplierId) {
+        const matchesDirect = String(p.supplier_id) === String(supplierId);
+        const matchesViaParent = p.wp_parent_id && parentIdsWithSupplier.has(p.wp_parent_id);
+        if (!matchesDirect && !matchesViaParent) return false;
+      }
       // Filtre marque
       if (brandFilter && p.brand !== brandFilter) return false;
 
