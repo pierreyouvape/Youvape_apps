@@ -142,8 +142,27 @@ const ImportPdfPage = () => {
     ));
   };
 
+  const handleUpdateDiscount = (idx, value) => {
+    const d = value === '' ? 0 : Math.min(100, Math.max(0, parseFloat(value) || 0));
+    setItems(prev => prev.map((item, i) => i === idx ? { ...item, discount: d } : item));
+  };
+
   const handleRemoveItem = (idx) => {
     setItems(prev => prev.filter((_, i) => i !== idx));
+  };
+
+  const handleRematch = (idx) => {
+    setItems(prev => prev.map((item, i) =>
+      i === idx ? { ...item, matched: false, product_id: null, product_name: null, product_sku: null, current_stock: null } : item
+    ));
+    setSearchingIdx(idx);
+    setSearchTerm('');
+    setSearchResults([]);
+  };
+
+  const effectivePrice = (item) => {
+    if (!item.unit_price) return null;
+    return item.unit_price * (1 - (item.discount || 0) / 100);
   };
 
   // ==================== ETAPE 3 : CREATION ====================
@@ -168,7 +187,7 @@ const ImportPdfPage = () => {
           product_name: item.product_name,
           supplier_sku: item.supplier_sku,
           qty_ordered: item.qty_ordered,
-          unit_price: item.unit_price,
+          unit_price: effectivePrice(item),
           stock_before: item.current_stock,
         })),
         new_supplier_skus: newSupplierSkus,
@@ -193,7 +212,7 @@ const ImportPdfPage = () => {
   // ==================== RENDU ====================
 
   const totalQty = matchedItems.reduce((sum, i) => sum + i.qty_ordered, 0);
-  const totalHt = matchedItems.reduce((sum, i) => sum + (i.unit_price ? i.qty_ordered * i.unit_price : 0), 0);
+  const totalHt = matchedItems.reduce((sum, i) => { const p = effectivePrice(i); return sum + (p ? i.qty_ordered * p : 0); }, 0);
   const totalTtc = totalHt * 1.2;
 
   return (
@@ -361,6 +380,7 @@ const ImportPdfPage = () => {
                     <th style={{ textAlign: 'center', padding: '10px', fontWeight: 600, width: '55px' }}>Pack</th>
                     <th style={{ textAlign: 'center', padding: '10px', fontWeight: 600, width: '100px' }}>Qte finale</th>
                     <th style={{ textAlign: 'center', padding: '10px', fontWeight: 600, width: '110px' }}>Prix unit.</th>
+                    <th style={{ textAlign: 'center', padding: '10px', fontWeight: 600, width: '75px' }}>Remise %</th>
                     <th style={{ textAlign: 'right', padding: '10px', fontWeight: 600, width: '100px' }}>Total HT</th>
                     <th style={{ width: '40px' }}></th>
                   </tr>
@@ -394,6 +414,10 @@ const ImportPdfPage = () => {
                             {item.product_sku && (
                               <div style={{ fontSize: '12px', color: '#888' }}>SKU: {item.product_sku}</div>
                             )}
+                            <button
+                              onClick={() => handleRematch(idx)}
+                              style={{ marginTop: '4px', fontSize: '11px', color: '#6b7280', background: 'none', border: 'none', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}
+                            >modifier</button>
                           </div>
                         ) : (
                           <div style={{ position: 'relative' }}>
@@ -483,10 +507,26 @@ const ImportPdfPage = () => {
                         ) : '-'}
                       </td>
 
+                      {/* Remise % */}
+                      <td style={{ padding: '10px', textAlign: 'center' }}>
+                        {item.matched ? (
+                          <input
+                            type="number"
+                            step="0.1"
+                            min="0"
+                            max="100"
+                            value={item.discount || ''}
+                            onChange={e => handleUpdateDiscount(idx, e.target.value)}
+                            placeholder="0"
+                            style={{ width: '60px', padding: '6px', borderRadius: '4px', border: '1px solid #ddd', textAlign: 'center', fontSize: '13px' }}
+                          />
+                        ) : '-'}
+                      </td>
+
                       {/* Total HT ligne */}
                       <td style={{ padding: '10px', textAlign: 'right', fontSize: '13px', fontWeight: 500 }}>
-                        {item.matched && item.unit_price
-                          ? (item.qty_ordered * item.unit_price).toFixed(2) + ' €'
+                        {item.matched && effectivePrice(item)
+                          ? (item.qty_ordered * effectivePrice(item)).toFixed(2) + ' €'
                           : '-'}
                       </td>
 
