@@ -1,0 +1,8 @@
+CREATE TABLE IF NOT EXISTS user_column_preferences (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  page VARCHAR(50) NOT NULL,
+  hidden_columns JSONB NOT NULL DEFAULT '[]',
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(user_id, page)
+);

@@ -231,12 +231,28 @@ const TriStateCheckbox = ({ value, onChange, label }) => {
 
 // ==================== COMPOSANT PRINCIPAL ====================
 
+const NEEDS_COLUMNS = [
+  { key: 'stock',               label: 'Stock' },
+  { key: 'arrivage',            label: 'Arrivage' },
+  { key: 'sales_in_period',     label: 'Ventes période' },
+  { key: 'avg_monthly_sales',   label: 'Ventes/mois' },
+  { key: 'tendance',            label: 'Tendance' },
+  { key: 'theoretical_need',    label: 'Besoin théo.' },
+  { key: 'supposed_need',       label: 'Besoin supp.' },
+  { key: 'theoretical_proposal',label: 'Prop. théo.' },
+  { key: 'supposed_proposal',   label: 'Prop. supp.' },
+];
+
 const NeedsTab = ({ token }) => {
   // Cache des données brutes (chargé une fois par fournisseur)
   const [allProducts, setAllProducts] = useState([]);
   const [suppliers, setSuppliers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+
+  // Préférences colonnes
+  const [hiddenColumns, setHiddenColumns] = useState([]);
+  const [showColumnPanel, setShowColumnPanel] = useState(false);
 
   const savedFilters = loadSavedFilters();
 
@@ -288,6 +304,41 @@ const NeedsTab = ({ token }) => {
       zeroStockState
     });
   }, [supplierId, brandFilter, analysisPeriodType, analysisPeriod, analysisPeriodUnit, analysisStartDate, analysisEndDate, coverageMonths, withSalesOnly, zeroStockState]);
+
+  // Charger les préférences de colonnes
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const res = await axios.get(`${API_URL}/preferences/needs`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        if (res.data.success) setHiddenColumns(res.data.hiddenColumns || []);
+      } catch (err) {
+        console.error('Erreur chargement préférences colonnes:', err);
+      }
+    };
+    load();
+  }, [token]);
+
+  const saveHiddenColumns = async (cols) => {
+    try {
+      await axios.put(`${API_URL}/preferences/needs`, { hiddenColumns: cols }, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+    } catch (err) {
+      console.error('Erreur sauvegarde préférences colonnes:', err);
+    }
+  };
+
+  const toggleColumn = (key) => {
+    const next = hiddenColumns.includes(key)
+      ? hiddenColumns.filter(k => k !== key)
+      : [...hiddenColumns, key];
+    setHiddenColumns(next);
+    saveHiddenColumns(next);
+  };
+
+  const isVisible = (key) => !hiddenColumns.includes(key);
 
   // Charger les fournisseurs
   useEffect(() => {
@@ -758,6 +809,37 @@ const NeedsTab = ({ token }) => {
             <button className="btn btn-secondary btn-sm" onClick={clearSelection}>
               🗑️ Vider
             </button>
+            <div style={{ position: 'relative' }}>
+              <button
+                className="btn btn-secondary btn-sm"
+                onClick={() => setShowColumnPanel(p => !p)}
+                style={{ whiteSpace: 'nowrap' }}
+              >
+                ⚙ Colonnes
+              </button>
+              {showColumnPanel && (
+                <div style={{
+                  position: 'absolute', right: 0, top: '110%', zIndex: 100,
+                  backgroundColor: '#fff', border: '1px solid #d1d5db',
+                  borderRadius: '8px', padding: '14px 16px', minWidth: '200px',
+                  boxShadow: '0 4px 12px rgba(0,0,0,0.12)'
+                }}>
+                  <div style={{ fontWeight: 600, fontSize: '13px', marginBottom: '10px', color: '#374151' }}>
+                    Colonnes visibles
+                  </div>
+                  {NEEDS_COLUMNS.map(col => (
+                    <label key={col.key} style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px', cursor: 'pointer', fontSize: '13px' }}>
+                      <input
+                        type="checkbox"
+                        checked={isVisible(col.key)}
+                        onChange={() => toggleColumn(col.key)}
+                      />
+                      {col.label}
+                    </label>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
@@ -825,15 +907,15 @@ const NeedsTab = ({ token }) => {
                   <th>Produit</th>
                   <th style={{ width: '30px' }}></th>
                   <th>SKU</th>
-                  <SortableHeader column="stock" label="Stock" className="text-right" />
-                  <th className="text-right">Arrivage</th>
-                  <SortableHeader column="sales_in_period" label="Ventes période" className="text-right" />
-                  <SortableHeader column="avg_monthly_sales" label="Ventes/mois" className="text-right" />
-                  <th className="text-center">Tendance</th>
-                  <SortableHeader column="theoretical_need" label="Besoin théo." className="text-right" />
-                  <SortableHeader column="supposed_need" label="Besoin supp." className="text-right" />
-                  <SortableHeader column="theoretical_proposal" label="Prop. théo." className="text-right" />
-                  <SortableHeader column="supposed_proposal" label="Prop. supp." className="text-right" />
+                  {isVisible('stock') && <SortableHeader column="stock" label="Stock" className="text-right" />}
+                  {isVisible('arrivage') && <th className="text-right">Arrivage</th>}
+                  {isVisible('sales_in_period') && <SortableHeader column="sales_in_period" label="Ventes période" className="text-right" />}
+                  {isVisible('avg_monthly_sales') && <SortableHeader column="avg_monthly_sales" label="Ventes/mois" className="text-right" />}
+                  {isVisible('tendance') && <th className="text-center">Tendance</th>}
+                  {isVisible('theoretical_need') && <SortableHeader column="theoretical_need" label="Besoin théo." className="text-right" />}
+                  {isVisible('supposed_need') && <SortableHeader column="supposed_need" label="Besoin supp." className="text-right" />}
+                  {isVisible('theoretical_proposal') && <SortableHeader column="theoretical_proposal" label="Prop. théo." className="text-right" />}
+                  {isVisible('supposed_proposal') && <SortableHeader column="supposed_proposal" label="Prop. supp." className="text-right" />}
                   <th className="text-right">À commander</th>
                 </tr>
               </thead>
@@ -862,8 +944,8 @@ const NeedsTab = ({ token }) => {
                       )}
                     </td>
                     <td></td>
-                    <td className="text-right">{fmtInt(row.totalStock)}</td>
-                    <td colSpan={8}></td>
+                    {isVisible('stock') && <td className="text-right">{fmtInt(row.totalStock)}</td>}
+                    {(() => { const span = ['arrivage','sales_in_period','avg_monthly_sales','tendance','theoretical_need','supposed_need','theoretical_proposal','supposed_proposal'].filter(k => isVisible(k)).length; return span > 0 ? <td colSpan={span}></td> : null; })()}
                   </tr>
                 ) : (
                   <tr key={row.id} style={{ backgroundColor: row._isVariation ? (varIdx % 2 === 1 ? '#dbeafe' : '#eff6ff') : (simpleIdx % 2 === 1 ? '#ffffff' : '#f3f4f6') }}>
@@ -902,23 +984,15 @@ const NeedsTab = ({ token }) => {
                       )}
                     </td>
                     <td><code style={{ fontSize: '12px' }}>{row.sku || '-'}</code></td>
-                    <td className="text-right">{fmtInt(row.stock)}</td>
-                    <td className="text-right">
-                      {row.incoming_qty > 0 ? fmtInt(row.incoming_qty) : '-'}
-                    </td>
-                    <td className="text-right">{fmtInt(row.sales_in_period)}</td>
-                    <td className="text-right">{fmtNum(row.avg_monthly_sales)}</td>
-                    <td className="text-center">
-                      {renderTrend(row.trend_direction, row.trend_coefficient)}
-                    </td>
-                    <td className="text-right">{fmtInt(row.theoretical_need)}</td>
-                    <td className="text-right">{fmtInt(row.supposed_need)}</td>
-                    <td className="text-right">
-                      {row.theoretical_proposal > 0 ? fmtInt(row.theoretical_proposal) : '-'}
-                    </td>
-                    <td className="text-right">
-                      {row.supposed_proposal > 0 ? fmtInt(row.supposed_proposal) : '-'}
-                    </td>
+                    {isVisible('stock') && <td className="text-right">{fmtInt(row.stock)}</td>}
+                    {isVisible('arrivage') && <td className="text-right">{row.incoming_qty > 0 ? fmtInt(row.incoming_qty) : '-'}</td>}
+                    {isVisible('sales_in_period') && <td className="text-right">{fmtInt(row.sales_in_period)}</td>}
+                    {isVisible('avg_monthly_sales') && <td className="text-right">{fmtNum(row.avg_monthly_sales)}</td>}
+                    {isVisible('tendance') && <td className="text-center">{renderTrend(row.trend_direction, row.trend_coefficient)}</td>}
+                    {isVisible('theoretical_need') && <td className="text-right">{fmtInt(row.theoretical_need)}</td>}
+                    {isVisible('supposed_need') && <td className="text-right">{fmtInt(row.supposed_need)}</td>}
+                    {isVisible('theoretical_proposal') && <td className="text-right">{row.theoretical_proposal > 0 ? fmtInt(row.theoretical_proposal) : '-'}</td>}
+                    {isVisible('supposed_proposal') && <td className="text-right">{row.supposed_proposal > 0 ? fmtInt(row.supposed_proposal) : '-'}</td>}
                     <td className="text-right">
                       <input
                         type="number"

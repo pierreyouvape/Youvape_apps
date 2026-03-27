@@ -32,6 +32,16 @@ const numStyle = (v) => {
   return { color: n === 0 ? '#ef4444' : '#111827' };
 };
 
+const CATALOG_COLUMNS = [
+  { key: 'price',       label: 'Prix TTC' },
+  { key: 'cost_price',  label: 'Coût HT' },
+  { key: 'margin',      label: 'Marge %' },
+  { key: 'weight',      label: 'Poids' },
+  { key: 'stock',       label: 'Stock' },
+  { key: 'incoming_qty',label: 'Arrivages' },
+  { key: 'sales_30d',   label: 'Ventes 30j' },
+];
+
 const CatalogApp = () => {
   const { token } = useContext(AuthContext);
   const navigate = useNavigate();
@@ -40,6 +50,10 @@ const CatalogApp = () => {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [pagination, setPagination] = useState({ total: 0, limit: 50, offset: 0, hasMore: false });
+
+  // Préférences colonnes
+  const [hiddenColumns, setHiddenColumns] = useState([]);
+  const [showColumnPanel, setShowColumnPanel] = useState(false);
 
   // CSV import state
   const [csvModal, setCsvModal] = useState(false);
@@ -73,6 +87,40 @@ const CatalogApp = () => {
   useEffect(() => {
     fetchProducts(0, '');
   }, []);
+
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const res = await axios.get(`${API_URL}/preferences/catalog`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        if (res.data.success) setHiddenColumns(res.data.hiddenColumns || []);
+      } catch (err) {
+        console.error('Erreur chargement préférences colonnes catalog:', err);
+      }
+    };
+    if (token) load();
+  }, [token]);
+
+  const saveHiddenColumns = async (cols) => {
+    try {
+      await axios.put(`${API_URL}/preferences/catalog`, { hiddenColumns: cols }, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+    } catch (err) {
+      console.error('Erreur sauvegarde préférences colonnes catalog:', err);
+    }
+  };
+
+  const toggleColumn = (key) => {
+    const next = hiddenColumns.includes(key)
+      ? hiddenColumns.filter(k => k !== key)
+      : [...hiddenColumns, key];
+    setHiddenColumns(next);
+    saveHiddenColumns(next);
+  };
+
+  const isVisible = (key) => !hiddenColumns.includes(key);
 
   const handleSearch = (e) => {
     const value = e.target.value;
@@ -266,6 +314,40 @@ const CatalogApp = () => {
             Importer EAN (CSV)
             <input type="file" accept=".csv,.txt" onChange={handleCsvFile} style={{ display: 'none' }} />
           </label>
+          <div style={{ position: 'relative', marginLeft: '12px', display: 'inline-block' }}>
+            <button
+              onClick={() => setShowColumnPanel(p => !p)}
+              style={{
+                padding: '8px 16px', backgroundColor: '#fff', color: '#374151',
+                border: '1px solid #d1d5db', borderRadius: '6px', fontSize: '13px',
+                fontWeight: '600', cursor: 'pointer'
+              }}
+            >
+              ⚙ Colonnes
+            </button>
+            {showColumnPanel && (
+              <div style={{
+                position: 'absolute', left: 0, top: '110%', zIndex: 100,
+                backgroundColor: '#fff', border: '1px solid #d1d5db',
+                borderRadius: '8px', padding: '14px 16px', minWidth: '180px',
+                boxShadow: '0 4px 12px rgba(0,0,0,0.12)'
+              }}>
+                <div style={{ fontWeight: 600, fontSize: '13px', marginBottom: '10px', color: '#374151' }}>
+                  Colonnes visibles
+                </div>
+                {CATALOG_COLUMNS.map(col => (
+                  <label key={col.key} style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px', cursor: 'pointer', fontSize: '13px' }}>
+                    <input
+                      type="checkbox"
+                      checked={isVisible(col.key)}
+                      onChange={() => toggleColumn(col.key)}
+                    />
+                    {col.label}
+                  </label>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Table */}
@@ -280,13 +362,13 @@ const CatalogApp = () => {
                     <th style={{ ...headerStyle, width: '40px' }}></th>
                     <th style={headerStyle}>Nom</th>
                     <th style={headerStyle}>SKU</th>
-                    <th style={headerRight}>Prix TTC</th>
-                    <th style={headerRight}>Cout HT</th>
-                    <th style={headerRight}>Marge %</th>
-                    <th style={headerRight}>Poids</th>
-                    <th style={headerRight}>Stock</th>
-                    <th style={headerRight}>Arrivages</th>
-                    <th style={headerRight}>Ventes 30j</th>
+                    {isVisible('price') && <th style={headerRight}>Prix TTC</th>}
+                    {isVisible('cost_price') && <th style={headerRight}>Coût HT</th>}
+                    {isVisible('margin') && <th style={headerRight}>Marge %</th>}
+                    {isVisible('weight') && <th style={headerRight}>Poids</th>}
+                    {isVisible('stock') && <th style={headerRight}>Stock</th>}
+                    {isVisible('incoming_qty') && <th style={headerRight}>Arrivages</th>}
+                    {isVisible('sales_30d') && <th style={headerRight}>Ventes 30j</th>}
                   </tr>
                 </thead>
                 <tbody>
@@ -318,13 +400,13 @@ const CatalogApp = () => {
                             </a>
                           </td>
                           <td style={cellStyle}></td>
-                          <td style={cellRight}></td>
-                          <td style={cellRight}></td>
-                          <td style={cellRight}></td>
-                          <td style={cellRight}></td>
-                          <td style={{ ...cellRight, fontWeight: 600, ...numStyle(row.stock) }}>{fmtInt(row.stock)}</td>
-                          <td style={{ ...cellRight, fontWeight: 600 }}>{fmtInt(row.incoming_qty)}</td>
-                          <td style={{ ...cellRight, fontWeight: 600, ...numStyle(row.sales_30d) }}>{fmtInt(row.sales_30d)}</td>
+                          {isVisible('price') && <td style={cellRight}></td>}
+                          {isVisible('cost_price') && <td style={cellRight}></td>}
+                          {isVisible('margin') && <td style={cellRight}></td>}
+                          {isVisible('weight') && <td style={cellRight}></td>}
+                          {isVisible('stock') && <td style={{ ...cellRight, fontWeight: 600, ...numStyle(row.stock) }}>{fmtInt(row.stock)}</td>}
+                          {isVisible('incoming_qty') && <td style={{ ...cellRight, fontWeight: 600 }}>{fmtInt(row.incoming_qty)}</td>}
+                          {isVisible('sales_30d') && <td style={{ ...cellRight, fontWeight: 600, ...numStyle(row.sales_30d) }}>{fmtInt(row.sales_30d)}</td>}
                         </tr>
                       );
                     }
@@ -360,13 +442,13 @@ const CatalogApp = () => {
                           </span>
                         </td>
                         <td style={{ ...cellStyle, color: '#6b7280', fontFamily: 'monospace', fontSize: '12px' }}>{row.sku || '-'}</td>
-                        <td style={{ ...cellRight, ...numStyle(row.price) }}>{fmtPrice(row.price)}</td>
-                        <td style={{ ...cellRight, ...numStyle(row.cost_price) }}>{fmtPrice(row.cost_price)}</td>
-                        <td style={{ ...cellRight, ...(margin !== null ? numStyle(margin) : {}) }}>{margin !== null ? fmtPct(margin) : '-'}</td>
-                        <td style={cellRight}>{fmtWeight(row.weight)}</td>
-                        <td style={{ ...cellRight, fontWeight: '600', ...numStyle(row.stock) }}>{fmtInt(row.stock)}</td>
-                        <td style={cellRight}>{fmtInt(row.incoming_qty)}</td>
-                        <td style={{ ...cellRight, ...numStyle(row.sales_30d) }}>{fmtInt(row.sales_30d)}</td>
+                        {isVisible('price') && <td style={{ ...cellRight, ...numStyle(row.price) }}>{fmtPrice(row.price)}</td>}
+                        {isVisible('cost_price') && <td style={{ ...cellRight, ...numStyle(row.cost_price) }}>{fmtPrice(row.cost_price)}</td>}
+                        {isVisible('margin') && <td style={{ ...cellRight, ...(margin !== null ? numStyle(margin) : {}) }}>{margin !== null ? fmtPct(margin) : '-'}</td>}
+                        {isVisible('weight') && <td style={cellRight}>{fmtWeight(row.weight)}</td>}
+                        {isVisible('stock') && <td style={{ ...cellRight, fontWeight: '600', ...numStyle(row.stock) }}>{fmtInt(row.stock)}</td>}
+                        {isVisible('incoming_qty') && <td style={cellRight}>{fmtInt(row.incoming_qty)}</td>}
+                        {isVisible('sales_30d') && <td style={{ ...cellRight, ...numStyle(row.sales_30d) }}>{fmtInt(row.sales_30d)}</td>}
                       </tr>
                     );
                   }); })()}
