@@ -199,9 +199,9 @@ const CatalogApp = () => {
     return ((p - c) / p) * 100;
   };
 
-  const cellStyle = { padding: '6px 10px', fontSize: '13px' };
+  const cellStyle = { padding: '10px 12px', fontSize: '13px' };
   const cellRight = { ...cellStyle, textAlign: 'right', fontFamily: 'monospace' };
-  const headerStyle = { padding: '8px 10px', textAlign: 'left', fontSize: '13px', fontWeight: '600' };
+  const headerStyle = { padding: '10px 12px', textAlign: 'left', fontSize: '13px', fontWeight: '600' };
   const headerRight = { ...headerStyle, textAlign: 'right' };
 
   return (
@@ -300,9 +300,9 @@ const CatalogApp = () => {
                         <tr key={`parent-${row.wp_product_id}`} style={{ backgroundColor: '#135E84', color: '#ffffff', fontWeight: 600 }}>
                           <td style={cellStyle}>
                             {row.image_url ? (
-                              <img src={row.image_url} alt="" style={{ width: '32px', height: '32px', objectFit: 'cover', borderRadius: '4px' }} />
+                              <img src={row.image_url} alt="" style={{ width: '40px', height: '40px', objectFit: 'cover', borderRadius: '4px' }} />
                             ) : (
-                              <div style={{ width: '32px', height: '32px', backgroundColor: '#1e6fa0', borderRadius: '4px' }} />
+                              <div style={{ width: '40px', height: '40px', backgroundColor: '#1e6fa0', borderRadius: '4px' }} />
                             )}
                           </td>
                           <td style={cellStyle}>
@@ -349,9 +349,9 @@ const CatalogApp = () => {
                       >
                         <td style={cellStyle}>
                           {row.image_url ? (
-                            <img src={row.image_url} alt="" style={{ width: '32px', height: '32px', objectFit: 'cover', borderRadius: '4px' }} />
+                            <img src={row.image_url} alt="" style={{ width: '40px', height: '40px', objectFit: 'cover', borderRadius: '4px' }} />
                           ) : (
-                            <div style={{ width: '32px', height: '32px', backgroundColor: '#e5e7eb', borderRadius: '4px' }} />
+                            <div style={{ width: '40px', height: '40px', backgroundColor: '#e5e7eb', borderRadius: '4px' }} />
                           )}
                         </td>
                         <td style={{ ...cellStyle, paddingLeft: row._isVariation ? '40px' : '10px' }}>

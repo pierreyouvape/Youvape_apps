@@ -842,8 +842,8 @@ const NeedsTab = ({ token }) => {
                   <tr key={`parent-${row.parent_title}-${idx}`} style={{ backgroundColor: '#135E84', color: '#ffffff', fontWeight: 600 }}>
                     <td>
                       {row.image_url ? (
-                        <img src={row.image_url} alt="" style={{ width: '32px', height: '32px', objectFit: 'cover', borderRadius: '4px' }} />
-                      ) : <div style={{ width: '32px', height: '32px', backgroundColor: '#1e6fa0', borderRadius: '4px' }} />}
+                        <img src={row.image_url} alt="" style={{ width: '40px', height: '40px', objectFit: 'cover', borderRadius: '4px' }} />
+                      ) : <div style={{ width: '40px', height: '40px', backgroundColor: '#1e6fa0', borderRadius: '4px' }} />}
                     </td>
                     <td><a href={`/products/${row.wp_product_id}`} target="_blank" rel="noopener noreferrer" style={{ color: 'inherit', textDecoration: 'none' }} onMouseEnter={e => e.target.style.textDecoration = 'underline'} onMouseLeave={e => e.target.style.textDecoration = 'none'}>{row.parent_title}</a></td>
                     <td>
@@ -869,9 +869,9 @@ const NeedsTab = ({ token }) => {
                   <tr key={row.id} style={{ backgroundColor: row._isVariation ? (varIdx % 2 === 1 ? '#dbeafe' : '#eff6ff') : (simpleIdx % 2 === 1 ? '#ffffff' : '#f3f4f6') }}>
                     <td>
                       {row.image_url ? (
-                        <img src={row.image_url} alt="" style={{ width: '32px', height: '32px', objectFit: 'cover', borderRadius: '4px' }} />
+                        <img src={row.image_url} alt="" style={{ width: '40px', height: '40px', objectFit: 'cover', borderRadius: '4px' }} />
                       ) : (
-                        <div style={{ width: '32px', height: '32px', backgroundColor: '#e2e8f0', borderRadius: '4px' }} />
+                        <div style={{ width: '40px', height: '40px', backgroundColor: '#e2e8f0', borderRadius: '4px' }} />
                       )}
                     </td>
                     <td>
