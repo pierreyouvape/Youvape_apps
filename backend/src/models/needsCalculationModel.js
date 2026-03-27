@@ -197,7 +197,8 @@ const needsCalculationModel = {
       parent_title: p.parent_title || null,
       parent_sku: p.parent_sku || null,
       brand: p.brand || null,
-      sub_brand: p.sub_brand || null
+      sub_brand: p.sub_brand || null,
+      weight: p.weight ? parseFloat(p.weight) : null
     }));
   },
 
