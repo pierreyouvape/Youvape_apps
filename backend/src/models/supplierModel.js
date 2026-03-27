@@ -215,14 +215,28 @@ const supplierModel = {
 
     if (fields.length === 0) return null;
 
-    fields.push('updated_at = CURRENT_TIMESTAMP');
-
+    // Upsert : crée la ligne si elle n'existe pas encore (variation sans fournisseur assigné)
     const query = `
-      UPDATE product_suppliers SET ${fields.join(', ')}
-      WHERE supplier_id = $1 AND product_id = $2
+      INSERT INTO product_suppliers (
+        supplier_id, product_id, supplier_sku, supplier_price, pack_qty, min_order_qty, is_primary
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+      ON CONFLICT (product_id, supplier_id) DO UPDATE SET
+        supplier_sku = COALESCE(EXCLUDED.supplier_sku, product_suppliers.supplier_sku),
+        supplier_price = COALESCE(EXCLUDED.supplier_price, product_suppliers.supplier_price),
+        pack_qty = COALESCE(EXCLUDED.pack_qty, product_suppliers.pack_qty),
+        min_order_qty = COALESCE(EXCLUDED.min_order_qty, product_suppliers.min_order_qty),
+        is_primary = COALESCE(EXCLUDED.is_primary, product_suppliers.is_primary),
+        updated_at = CURRENT_TIMESTAMP
       RETURNING *
     `;
-    const result = await pool.query(query, values);
+    const result = await pool.query(query, [
+      supplierId, resolvedId,
+      data.supplier_sku !== undefined ? data.supplier_sku : null,
+      data.supplier_price !== undefined ? data.supplier_price : null,
+      data.pack_qty !== undefined ? data.pack_qty : null,
+      data.min_order_qty !== undefined ? data.min_order_qty : null,
+      data.is_primary !== undefined ? data.is_primary : null
+    ]);
     return result.rows[0];
   },
 
@@ -270,10 +284,11 @@ const supplierModel = {
     const product = typeResult.rows[0];
 
     if (product && product.product_type === 'variable') {
-      // Récupérer toutes les lignes variation×fournisseur avec le nom de la variation
+      // CROSS JOIN fournisseurs×variations : toutes les variations apparaissent pour chaque fournisseur
+      // même si elles n'ont pas encore de ligne dans product_suppliers
       const query = `
         SELECT
-          s.id as supplier_id, s.name as supplier_name, s.is_active,
+          s.id as supplier_id, s.name as supplier_name,
           bool_or(ps.is_primary) OVER (PARTITION BY s.id) as is_primary,
           child.id as variation_id,
           child.wp_product_id as variation_wp_id,
@@ -284,9 +299,16 @@ const supplierModel = {
           ps.min_order_qty,
           ps.pack_qty
         FROM suppliers s
-        JOIN product_suppliers ps ON s.id = ps.supplier_id
-        JOIN products child ON child.id = ps.product_id
+        -- Fournisseurs présents sur au moins une variation de ce parent
+        JOIN product_suppliers ps_any ON ps_any.supplier_id = s.id
+        JOIN products var_any ON var_any.id = ps_any.product_id AND var_any.wp_parent_id = $1
+        -- Toutes les variations du parent
+        CROSS JOIN products child
+        -- Données de ce fournisseur pour cette variation spécifique (peut être NULL)
+        LEFT JOIN product_suppliers ps ON ps.supplier_id = s.id AND ps.product_id = child.id
         WHERE child.wp_parent_id = $1 AND s.is_active = true
+        GROUP BY s.id, s.name, child.id, child.wp_product_id, child.post_title, child.sku,
+                 ps.supplier_sku, ps.supplier_price, ps.min_order_qty, ps.pack_qty, ps.is_primary
         ORDER BY s.name, child.post_title
       `;
       const result = await pool.query(query, [product.wp_product_id]);
