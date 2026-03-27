@@ -264,18 +264,21 @@ const supplierModel = {
 
     // Vérifier si c'est un produit variable (parent)
     const typeResult = await pool.query(
-      `SELECT product_type, wp_product_id FROM products WHERE id = $1`,
+      `SELECT product_type, wp_product_id, post_title FROM products WHERE id = $1`,
       [resolvedId]
     );
     const product = typeResult.rows[0];
 
     if (product && product.product_type === 'variable') {
-      // Remonter les fournisseurs distincts des variations enfants
-      // is_primary = true si au moins une variation l'a en primary
+      // Récupérer toutes les lignes variation×fournisseur avec le nom de la variation
       const query = `
-        SELECT DISTINCT ON (s.id)
-          s.*,
+        SELECT
+          s.id as supplier_id, s.name as supplier_name, s.is_active,
           bool_or(ps.is_primary) OVER (PARTITION BY s.id) as is_primary,
+          child.id as variation_id,
+          child.wp_product_id as variation_wp_id,
+          child.post_title as variation_title,
+          child.sku as variation_sku,
           ps.supplier_sku,
           ps.supplier_price,
           ps.min_order_qty,
@@ -284,11 +287,37 @@ const supplierModel = {
         JOIN product_suppliers ps ON s.id = ps.supplier_id
         JOIN products child ON child.id = ps.product_id
         WHERE child.wp_parent_id = $1 AND s.is_active = true
-        ORDER BY s.id, ps.is_primary DESC
+        ORDER BY s.name, child.post_title
       `;
       const result = await pool.query(query, [product.wp_product_id]);
-      // Re-trier : primary d'abord, puis par nom
-      return result.rows.sort((a, b) => (b.is_primary ? 1 : 0) - (a.is_primary ? 1 : 0) || a.name.localeCompare(b.name));
+
+      // Regrouper par fournisseur : { id, name, is_primary, variations: [...] }
+      const suppliersMap = new Map();
+      for (const row of result.rows) {
+        if (!suppliersMap.has(row.supplier_id)) {
+          suppliersMap.set(row.supplier_id, {
+            id: row.supplier_id,
+            name: row.supplier_name,
+            is_primary: row.is_primary,
+            is_variable_parent: true,
+            variations: []
+          });
+        }
+        const parentTitle = product.post_title || '';
+        const varLabel = row.variation_title.replace(parentTitle + ' - ', '').replace(parentTitle, '') || row.variation_title;
+        suppliersMap.get(row.supplier_id).variations.push({
+          variation_id: row.variation_id,
+          variation_wp_id: row.variation_wp_id,
+          variation_label: varLabel,
+          variation_sku: row.variation_sku,
+          supplier_sku: row.supplier_sku,
+          supplier_price: row.supplier_price,
+          min_order_qty: row.min_order_qty,
+          pack_qty: row.pack_qty
+        });
+      }
+
+      return [...suppliersMap.values()].sort((a, b) => (b.is_primary ? 1 : 0) - (a.is_primary ? 1 : 0) || a.name.localeCompare(b.name));
     }
 
     // Produit simple ou variation : comportement normal

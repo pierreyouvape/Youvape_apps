@@ -1151,22 +1151,27 @@ const ProductDetail = () => {
                       {supplier.is_primary && <span style={{ marginLeft: '8px', padding: '2px 8px', backgroundColor: '#dbeafe', color: '#1d4ed8', borderRadius: '4px', fontSize: '11px', fontWeight: '600' }}>Principal</span>}
                     </div>
                   </div>
-                  <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flex: 1, flexWrap: 'wrap' }}>
-                    <label style={{ fontSize: '12px', color: '#6b7280' }}>
-                      Ref fournisseur
-                      <input type="text" value={getEditValue(supplier, 'supplier_sku')} onChange={(e) => handleEditChange(supplier.id, 'supplier_sku', e.target.value)} style={{ display: 'block', padding: '6px 10px', border: '1px solid #d1d5db', borderRadius: '4px', fontSize: '13px', width: '130px', marginTop: '2px' }} />
-                    </label>
-                    <label style={{ fontSize: '12px', color: '#6b7280' }}>
-                      Pack qty
-                      <input type="number" min="1" value={getEditValue(supplier, 'pack_qty')} onChange={(e) => handleEditChange(supplier.id, 'pack_qty', parseInt(e.target.value) || 1)} style={{ display: 'block', padding: '6px 10px', border: '1px solid #d1d5db', borderRadius: '4px', fontSize: '13px', width: '80px', marginTop: '2px' }} />
-                    </label>
-                    <label style={{ fontSize: '12px', color: '#6b7280' }}>
-                      Prix HT
-                      <input type="number" step="0.01" min="0" value={getEditValue(supplier, 'supplier_price')} onChange={(e) => handleEditChange(supplier.id, 'supplier_price', e.target.value)} style={{ display: 'block', padding: '6px 10px', border: '1px solid #d1d5db', borderRadius: '4px', fontSize: '13px', width: '100px', marginTop: '2px' }} />
-                    </label>
-                  </div>
-                  <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-                    <button onClick={() => handleSaveSupplier(supplier.id)} disabled={saving || !editingSupplier[supplier.id]} style={{ padding: '6px 12px', backgroundColor: editingSupplier[supplier.id] ? '#135E84' : '#d1d5db', color: '#fff', border: 'none', borderRadius: '4px', fontSize: '12px', cursor: editingSupplier[supplier.id] ? 'pointer' : 'not-allowed' }}>Sauvegarder</button>
+                  {/* Produit simple ou variation : champs uniques */}
+                  {!supplier.is_variable_parent && (
+                    <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flex: 1, flexWrap: 'wrap' }}>
+                      <label style={{ fontSize: '12px', color: '#6b7280' }}>
+                        Ref fournisseur
+                        <input type="text" value={getEditValue(supplier, 'supplier_sku')} onChange={(e) => handleEditChange(supplier.id, 'supplier_sku', e.target.value)} style={{ display: 'block', padding: '6px 10px', border: '1px solid #d1d5db', borderRadius: '4px', fontSize: '13px', width: '130px', marginTop: '2px' }} />
+                      </label>
+                      <label style={{ fontSize: '12px', color: '#6b7280' }}>
+                        Pack qty
+                        <input type="number" min="1" value={getEditValue(supplier, 'pack_qty')} onChange={(e) => handleEditChange(supplier.id, 'pack_qty', parseInt(e.target.value) || 1)} style={{ display: 'block', padding: '6px 10px', border: '1px solid #d1d5db', borderRadius: '4px', fontSize: '13px', width: '80px', marginTop: '2px' }} />
+                      </label>
+                      <label style={{ fontSize: '12px', color: '#6b7280' }}>
+                        Prix HT
+                        <input type="number" step="0.01" min="0" value={getEditValue(supplier, 'supplier_price')} onChange={(e) => handleEditChange(supplier.id, 'supplier_price', e.target.value)} style={{ display: 'block', padding: '6px 10px', border: '1px solid #d1d5db', borderRadius: '4px', fontSize: '13px', width: '100px', marginTop: '2px' }} />
+                      </label>
+                    </div>
+                  )}
+                  <div style={{ display: 'flex', gap: '6px', alignItems: 'center', marginLeft: supplier.is_variable_parent ? 'auto' : undefined }}>
+                    {!supplier.is_variable_parent && (
+                      <button onClick={() => handleSaveSupplier(supplier.id)} disabled={saving || !editingSupplier[supplier.id]} style={{ padding: '6px 12px', backgroundColor: editingSupplier[supplier.id] ? '#135E84' : '#d1d5db', color: '#fff', border: 'none', borderRadius: '4px', fontSize: '12px', cursor: editingSupplier[supplier.id] ? 'pointer' : 'not-allowed' }}>Sauvegarder</button>
+                    )}
                     {!supplier.is_primary && (
                       <button onClick={() => handleSetPrimary(supplier.id)} title="Definir comme principal" style={{ padding: '6px 12px', backgroundColor: '#3b82f6', color: '#fff', border: 'none', borderRadius: '4px', fontSize: '12px', cursor: 'pointer' }}>Principal</button>
                     )}
@@ -1174,6 +1179,67 @@ const ProductDetail = () => {
                     <button onClick={() => handleRemoveSupplier(supplier.id, supplier.name)} style={{ padding: '6px 12px', backgroundColor: '#fee2e2', color: '#dc2626', border: 'none', borderRadius: '4px', fontSize: '12px', cursor: 'pointer' }}>Retirer</button>
                   </div>
                 </div>
+                {/* Parent variable : tableau des variations */}
+                {supplier.is_variable_parent && supplier.variations && (
+                  <div style={{ borderTop: '1px solid #e5e7eb', padding: '0 20px 16px' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+                      <thead>
+                        <tr style={{ borderBottom: '1px solid #e5e7eb' }}>
+                          <th style={{ padding: '8px 8px 8px 0', textAlign: 'left', color: '#6b7280', fontWeight: 500 }}>Variation</th>
+                          <th style={{ padding: '8px', textAlign: 'left', color: '#6b7280', fontWeight: 500 }}>Ref fournisseur</th>
+                          <th style={{ padding: '8px', textAlign: 'left', color: '#6b7280', fontWeight: 500 }}>Pack qty</th>
+                          <th style={{ padding: '8px', textAlign: 'left', color: '#6b7280', fontWeight: 500 }}>Prix HT</th>
+                          <th style={{ padding: '8px', textAlign: 'left', color: '#6b7280', fontWeight: 500 }}></th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {supplier.variations.map(v => {
+                          const vKey = `${supplier.id}_${v.variation_id}`;
+                          const edited = editingSupplier[vKey] || {};
+                          const isDirty = !!editingSupplier[vKey];
+                          return (
+                            <tr key={v.variation_id} style={{ borderBottom: '1px solid #f3f4f6' }}>
+                              <td style={{ padding: '8px 8px 8px 0', color: '#374151' }}>{v.variation_label}</td>
+                              <td style={{ padding: '4px 8px' }}>
+                                <input type="text" value={edited.supplier_sku !== undefined ? edited.supplier_sku : (v.supplier_sku || '')}
+                                  onChange={(e) => handleEditChange(vKey, 'supplier_sku', e.target.value)}
+                                  style={{ padding: '4px 8px', border: '1px solid #d1d5db', borderRadius: '4px', fontSize: '12px', width: '130px' }} />
+                              </td>
+                              <td style={{ padding: '4px 8px' }}>
+                                <input type="number" min="1" value={edited.pack_qty !== undefined ? edited.pack_qty : (v.pack_qty || 1)}
+                                  onChange={(e) => handleEditChange(vKey, 'pack_qty', parseInt(e.target.value) || 1)}
+                                  style={{ padding: '4px 8px', border: '1px solid #d1d5db', borderRadius: '4px', fontSize: '12px', width: '70px' }} />
+                              </td>
+                              <td style={{ padding: '4px 8px' }}>
+                                <input type="number" step="0.01" min="0" value={edited.supplier_price !== undefined ? edited.supplier_price : (v.supplier_price || '')}
+                                  onChange={(e) => handleEditChange(vKey, 'supplier_price', e.target.value)}
+                                  style={{ padding: '4px 8px', border: '1px solid #d1d5db', borderRadius: '4px', fontSize: '12px', width: '90px' }} />
+                              </td>
+                              <td style={{ padding: '4px 8px' }}>
+                                <button
+                                  onClick={async () => {
+                                    if (!isDirty) return;
+                                    setSaving(true);
+                                    try {
+                                      await axios.put(`${API_URL}/purchases/suppliers/${supplier.id}/products/${v.variation_id}`, edited, { headers });
+                                      handleEditChange(vKey, '_clear', true);
+                                      setEditingSupplier(prev => { const n = { ...prev }; delete n[vKey]; return n; });
+                                      const res = await axios.get(`${API_URL}/purchases/products/${id}/suppliers`, { headers });
+                                      if (res.data.success) setSuppliers(res.data.data);
+                                    } catch (err) { alert('Erreur lors de la sauvegarde'); }
+                                    finally { setSaving(false); }
+                                  }}
+                                  disabled={saving || !isDirty}
+                                  style={{ padding: '4px 10px', backgroundColor: isDirty ? '#135E84' : '#d1d5db', color: '#fff', border: 'none', borderRadius: '4px', fontSize: '12px', cursor: isDirty ? 'pointer' : 'not-allowed' }}
+                                >Sauvegarder</button>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
 
                 {expandedSupplier === supplier.id && (
                   <div style={{ borderTop: '1px solid #e5e7eb', padding: '16px 20px', backgroundColor: '#f9fafb' }}>
