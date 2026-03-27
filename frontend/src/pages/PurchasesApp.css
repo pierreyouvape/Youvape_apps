@@ -163,7 +163,7 @@
 }
 
 .purchases-table tr:hover {
-  background: #fef9e7;
+  background: #fef9e7 !important;
 }
 
 .purchases-table .text-right {

@@ -290,16 +290,19 @@ const CatalogApp = () => {
                   </tr>
                 </thead>
                 <tbody>
-                  {flatRows.map((row, idx) => {
+                  {(() => { let varIdx = 0; let simpleIdx = 0; return flatRows.map((row, idx) => {
+                    if (row._isParent) { varIdx = 0; }
+                    else if (row._isVariation) { varIdx++; }
+                    else { simpleIdx++; }
                     if (row._isParent) {
-                      // Parent header row (like NeedsTab)
+                      // Parent header row
                       return (
-                        <tr key={`parent-${row.wp_product_id}`} style={{ backgroundColor: '#f1f5f9', fontWeight: 600 }}>
+                        <tr key={`parent-${row.wp_product_id}`} style={{ backgroundColor: '#135E84', color: '#ffffff', fontWeight: 600 }}>
                           <td style={cellStyle}>
                             {row.image_url ? (
                               <img src={row.image_url} alt="" style={{ width: '32px', height: '32px', objectFit: 'cover', borderRadius: '4px' }} />
                             ) : (
-                              <div style={{ width: '32px', height: '32px', backgroundColor: '#e2e8f0', borderRadius: '4px' }} />
+                              <div style={{ width: '32px', height: '32px', backgroundColor: '#1e6fa0', borderRadius: '4px' }} />
                             )}
                           </td>
                           <td style={cellStyle}>
@@ -307,7 +310,7 @@ const CatalogApp = () => {
                               href={`/products/${row.wp_product_id}`}
                               target="_blank"
                               rel="noopener noreferrer"
-                              style={{ color: 'inherit', textDecoration: 'none' }}
+                              style={{ color: '#ffffff', textDecoration: 'none' }}
                               onMouseEnter={e => e.target.style.textDecoration = 'underline'}
                               onMouseLeave={e => e.target.style.textDecoration = 'none'}
                             >
@@ -328,6 +331,9 @@ const CatalogApp = () => {
 
                     const margin = calcMargin(row.price, row.cost_price);
 
+                    const varBg = row._isVariation
+                      ? (varIdx % 2 === 1 ? '#dbeafe' : '#eff6ff')
+                      : (simpleIdx % 2 === 1 ? '#ffffff' : '#f3f4f6');
                     return (
                       <tr
                         key={row.id}
@@ -335,10 +341,11 @@ const CatalogApp = () => {
                         style={{
                           borderBottom: '1px solid #e5e7eb',
                           cursor: 'pointer',
-                          transition: 'background-color 0.15s'
+                          transition: 'background-color 0.15s',
+                          backgroundColor: varBg
                         }}
                         onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f9fafb'}
-                        onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                        onMouseLeave={(e) => e.currentTarget.style.backgroundColor = varBg}
                       >
                         <td style={cellStyle}>
                           {row.image_url ? (
@@ -362,7 +369,7 @@ const CatalogApp = () => {
                         <td style={{ ...cellRight, ...numStyle(row.sales_30d) }}>{fmtInt(row.sales_30d)}</td>
                       </tr>
                     );
-                  })}
+                  }); })()}
                 </tbody>
               </table>
             </div>

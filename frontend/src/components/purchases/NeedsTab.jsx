@@ -838,12 +838,12 @@ const NeedsTab = ({ token }) => {
                 </tr>
               </thead>
               <tbody>
-                {pagedProducts.map((row, idx) => row._isParent ? (
-                  <tr key={`parent-${row.parent_title}-${idx}`} style={{ backgroundColor: '#f1f5f9', fontWeight: 600 }}>
+                {(() => { let varIdx = 0; let simpleIdx = 0; return pagedProducts.map((row, idx) => { if (row._isParent) { varIdx = 0; } else if (row._isVariation) { varIdx++; } else { simpleIdx++; } return row._isParent ? (
+                  <tr key={`parent-${row.parent_title}-${idx}`} style={{ backgroundColor: '#135E84', color: '#ffffff', fontWeight: 600 }}>
                     <td>
                       {row.image_url ? (
                         <img src={row.image_url} alt="" style={{ width: '32px', height: '32px', objectFit: 'cover', borderRadius: '4px' }} />
-                      ) : <div style={{ width: '32px', height: '32px', backgroundColor: '#e2e8f0', borderRadius: '4px' }} />}
+                      ) : <div style={{ width: '32px', height: '32px', backgroundColor: '#1e6fa0', borderRadius: '4px' }} />}
                     </td>
                     <td><a href={`/products/${row.wp_product_id}`} target="_blank" rel="noopener noreferrer" style={{ color: 'inherit', textDecoration: 'none' }} onMouseEnter={e => e.target.style.textDecoration = 'underline'} onMouseLeave={e => e.target.style.textDecoration = 'none'}>{row.parent_title}</a></td>
                     <td>
@@ -866,7 +866,7 @@ const NeedsTab = ({ token }) => {
                     <td colSpan={8}></td>
                   </tr>
                 ) : (
-                  <tr key={row.id}>
+                  <tr key={row.id} style={{ backgroundColor: row._isVariation ? (varIdx % 2 === 1 ? '#dbeafe' : '#eff6ff') : (simpleIdx % 2 === 1 ? '#ffffff' : '#f3f4f6') }}>
                     <td>
                       {row.image_url ? (
                         <img src={row.image_url} alt="" style={{ width: '32px', height: '32px', objectFit: 'cover', borderRadius: '4px' }} />
@@ -930,7 +930,7 @@ const NeedsTab = ({ token }) => {
                       />
                     </td>
                   </tr>
-                ))}
+                ); }); })()}
               </tbody>
             </table>
 
