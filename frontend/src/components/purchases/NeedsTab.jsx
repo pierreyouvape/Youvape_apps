@@ -755,6 +755,39 @@ const NeedsTab = ({ token }) => {
               {COVERAGE_OPTIONS.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
             </select>
           </div>
+
+          <div className="filter-group" style={{ marginLeft: 'auto', position: 'relative' }}>
+            <label>&nbsp;</label>
+            <button
+              className="btn btn-secondary btn-sm"
+              onClick={() => setShowColumnPanel(p => !p)}
+              style={{ whiteSpace: 'nowrap' }}
+            >
+              ⚙ Colonnes
+            </button>
+            {showColumnPanel && (
+              <div style={{
+                position: 'absolute', right: 0, top: '110%', zIndex: 100,
+                backgroundColor: '#fff', border: '1px solid #d1d5db',
+                borderRadius: '8px', padding: '14px 16px', minWidth: '200px',
+                boxShadow: '0 4px 12px rgba(0,0,0,0.12)'
+              }}>
+                <div style={{ fontWeight: 600, fontSize: '13px', marginBottom: '10px', color: '#374151' }}>
+                  Colonnes visibles
+                </div>
+                {NEEDS_COLUMNS.map(col => (
+                  <label key={col.key} style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px', cursor: 'pointer', fontSize: '13px' }}>
+                    <input
+                      type="checkbox"
+                      checked={isVisible(col.key)}
+                      onChange={() => toggleColumn(col.key)}
+                    />
+                    {col.label}
+                  </label>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Ligne secondaire : filtres 3 états + recherche + boutons */}
@@ -809,37 +842,6 @@ const NeedsTab = ({ token }) => {
             <button className="btn btn-secondary btn-sm" onClick={clearSelection}>
               🗑️ Vider
             </button>
-            <div style={{ position: 'relative' }}>
-              <button
-                className="btn btn-secondary btn-sm"
-                onClick={() => setShowColumnPanel(p => !p)}
-                style={{ whiteSpace: 'nowrap' }}
-              >
-                ⚙ Colonnes
-              </button>
-              {showColumnPanel && (
-                <div style={{
-                  position: 'absolute', right: 0, top: '110%', zIndex: 100,
-                  backgroundColor: '#fff', border: '1px solid #d1d5db',
-                  borderRadius: '8px', padding: '14px 16px', minWidth: '200px',
-                  boxShadow: '0 4px 12px rgba(0,0,0,0.12)'
-                }}>
-                  <div style={{ fontWeight: 600, fontSize: '13px', marginBottom: '10px', color: '#374151' }}>
-                    Colonnes visibles
-                  </div>
-                  {NEEDS_COLUMNS.map(col => (
-                    <label key={col.key} style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px', cursor: 'pointer', fontSize: '13px' }}>
-                      <input
-                        type="checkbox"
-                        checked={isVisible(col.key)}
-                        onChange={() => toggleColumn(col.key)}
-                      />
-                      {col.label}
-                    </label>
-                  ))}
-                </div>
-              )}
-            </div>
           </div>
         </div>
 
