@@ -285,17 +285,15 @@ const purchaseOrderModel = {
     }
 
     // Préparer les items pour BMS (seuls les produits avec SKU)
-    // BMS divise qty par son pack_qty mais ne touche pas au prix
-    // → on envoie qty en unités, price en prix PACK (unit_price * pack_qty)
+    // unit_price en BDD = prix du PACK → on l'envoie directement à BMS
     const bmsItems = items
       .filter(item => item.sku)
       .map(item => {
-        const packQty = parseInt(item.pack_qty) || 1;
         const discountPercent = parseFloat(item.discount_percent) || 0;
         const bmsItem = {
           sku: item.sku,
           qty: parseInt(item.qty_ordered) || 0,
-          price: (parseFloat(item.unit_price) || 0) * packQty,
+          price: parseFloat(item.unit_price) || 0,
           name: item.product_name,
           supplier_sku: item.supplier_sku || null
         };
