@@ -377,7 +377,9 @@ const NeedsTab = ({ token }) => {
       if (hasSearch) {
         return (
           normalize(p.post_title).includes(searchNorm) ||
-          normalize(p.sku).includes(searchNorm)
+          normalize(p.sku).includes(searchNorm) ||
+          normalize(p.brand).includes(searchNorm) ||
+          normalize(p.sub_brand).includes(searchNorm)
         );
       }
 
