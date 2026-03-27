@@ -163,12 +163,16 @@ const purchaseOrderModel = {
             ? item.unit_price
             : (product?.wc_cog_cost || 0);
 
+          const discountPercent = ('discount_percent' in item && item.discount_percent !== undefined)
+            ? parseFloat(item.discount_percent) || 0
+            : 0;
+
           const itemQuery = `
             INSERT INTO purchase_order_items (
               purchase_order_id, product_id, supplier_sku, product_name,
-              qty_ordered, unit_price, stock_before, theoretical_need, supposed_need
+              qty_ordered, unit_price, discount_percent, stock_before, theoretical_need, supposed_need
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
             RETURNING *
           `;
           const insertedItem = await client.query(itemQuery, [
@@ -178,6 +182,7 @@ const purchaseOrderModel = {
             item.product_name,
             item.qty_ordered,
             unitPrice || null,
+            discountPercent,
             item.stock_before || null,
             item.theoretical_need || null,
             item.supposed_need || null
@@ -187,13 +192,15 @@ const purchaseOrderModel = {
             ...insertedItem.rows[0],
             sku: sku,
             unit_price: unitPrice,
+            discount_percent: discountPercent,
             pack_qty: packQty
           });
 
           totalItems++;
           totalQty += item.qty_ordered;
           if (unitPrice) {
-            totalAmount += item.qty_ordered * unitPrice;
+            const netPrice = unitPrice * (1 - discountPercent / 100);
+            totalAmount += item.qty_ordered * netPrice;
           }
         }
 
@@ -284,13 +291,18 @@ const purchaseOrderModel = {
       .filter(item => item.sku)
       .map(item => {
         const packQty = parseInt(item.pack_qty) || 1;
-        return {
+        const discountPercent = parseFloat(item.discount_percent) || 0;
+        const bmsItem = {
           sku: item.sku,
           qty: parseInt(item.qty_ordered) || 0,
           price: (parseFloat(item.unit_price) || 0) * packQty,
           name: item.product_name,
           supplier_sku: item.supplier_sku || null
         };
+        if (discountPercent > 0) {
+          bmsItem.discount_percent = discountPercent;
+        }
+        return bmsItem;
       });
 
     if (bmsItems.length === 0) {
