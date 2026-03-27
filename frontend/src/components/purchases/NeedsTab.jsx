@@ -232,6 +232,7 @@ const TriStateCheckbox = ({ value, onChange, label }) => {
 // ==================== COMPOSANT PRINCIPAL ====================
 
 const NEEDS_COLUMNS = [
+  { key: 'weight',              label: 'Poids' },
   { key: 'stock',               label: 'Stock' },
   { key: 'arrivage',            label: 'Arrivage' },
   { key: 'sales_in_period',     label: 'Ventes période' },
@@ -909,6 +910,7 @@ const NeedsTab = ({ token }) => {
                   <th>Produit</th>
                   <th style={{ width: '30px' }}></th>
                   <th>SKU</th>
+                  {isVisible('weight') && <th className="text-right">Poids</th>}
                   {isVisible('stock') && <SortableHeader column="stock" label="Stock" className="text-right" />}
                   {isVisible('arrivage') && <th className="text-right">Arrivage</th>}
                   {isVisible('sales_in_period') && <SortableHeader column="sales_in_period" label="Ventes période" className="text-right" />}
@@ -946,6 +948,7 @@ const NeedsTab = ({ token }) => {
                       )}
                     </td>
                     <td></td>
+                    {isVisible('weight') && <td></td>}
                     {isVisible('stock') && <td className="text-right">{fmtInt(row.totalStock)}</td>}
                     {(() => { const span = ['arrivage','sales_in_period','avg_monthly_sales','tendance','theoretical_need','supposed_need','theoretical_proposal','supposed_proposal'].filter(k => isVisible(k)).length; return span > 0 ? <td colSpan={span}></td> : null; })()}
                   </tr>
@@ -986,6 +989,7 @@ const NeedsTab = ({ token }) => {
                       )}
                     </td>
                     <td><code style={{ fontSize: '12px' }}>{row.sku || '-'}</code></td>
+                    {isVisible('weight') && <td className="text-right" style={{ color: '#6b7280' }}>{row.weight ? parseFloat(row.weight).toLocaleString('fr-FR', { minimumFractionDigits: 0, maximumFractionDigits: 3 }) : '-'}</td>}
                     {isVisible('stock') && <td className="text-right">{fmtInt(row.stock)}</td>}
                     {isVisible('arrivage') && <td className="text-right">{row.incoming_qty > 0 ? fmtInt(row.incoming_qty) : '-'}</td>}
                     {isVisible('sales_in_period') && <td className="text-right">{fmtInt(row.sales_in_period)}</td>}

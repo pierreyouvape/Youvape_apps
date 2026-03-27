@@ -31,6 +31,7 @@ const needsCalculationModel = {
         ps_primary.supplier_sku,
         ps_primary.supplier_price,
         p.image_url,
+        p.weight,
         p.wp_parent_id,
         p.product_type,
         p_parent.post_title as parent_title,
