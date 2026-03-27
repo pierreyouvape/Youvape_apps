@@ -86,7 +86,7 @@ function parseConfirmation(text) {
     }
   }
 
-  return { orderNumber, orderDate, items, hasPrice: false };
+  return { orderNumber, orderDate, items, hasPrice: false, skipPackQty: true };
 }
 
 /**
@@ -129,7 +129,7 @@ function parsePreparation(text) {
     }
   }
 
-  return { orderNumber, orderDate, items, hasPrice: false };
+  return { orderNumber, orderDate, items, hasPrice: false, skipPackQty: true };
 }
 
 /**
