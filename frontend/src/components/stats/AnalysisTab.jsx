@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useContext } from 'react';
 import axios from 'axios';
 import { jsPDF } from 'jspdf';
 import 'jspdf-autotable';
@@ -6,12 +6,16 @@ import {
   PieChart, Pie, Cell, BarChart, Bar, LineChart, Line,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
 } from 'recharts';
+import { AuthContext } from '../../context/AuthContext';
+import { useColumnPreferences } from '../../hooks/useColumnPreferences';
 
 const API_BASE_URL = 'http://54.37.156.233:3000/api';
 
 const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8', '#82ca9d', '#ffc658', '#ff7300', '#a4de6c', '#d0ed57'];
 
 const AnalysisTab = () => {
+  const { token } = useContext(AuthContext);
+  const { compact, toggleCompact } = useColumnPreferences('analysis', token);
   const [filters, setFilters] = useState(null);
   const [loading, setLoading] = useState(false);
   const [loadingFilters, setLoadingFilters] = useState(true);
@@ -464,7 +468,7 @@ const AnalysisTab = () => {
   }
 
   return (
-    <div>
+    <div style={compact ? { maxWidth: '1400px', margin: '0 auto' } : {}}>
       {/* Filtres */}
       <div style={{
         backgroundColor: 'white',
@@ -475,7 +479,7 @@ const AnalysisTab = () => {
       }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
           <h3 style={{ margin: 0, fontSize: '18px', color: '#333' }}>Filtres</h3>
-          <div style={{ display: 'flex', gap: '10px' }}>
+          <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
             <button
               onClick={exportToPDF}
               disabled={!stats}
@@ -507,6 +511,20 @@ const AnalysisTab = () => {
               }}
             >
               Réinitialiser
+            </button>
+            <button
+              onClick={toggleCompact}
+              style={{
+                padding: '8px 14px',
+                backgroundColor: compact ? '#135E84' : '#fff',
+                color: compact ? '#fff' : '#374151',
+                border: '1px solid #d1d5db',
+                borderRadius: '6px',
+                fontSize: '13px',
+                cursor: 'pointer'
+              }}
+            >
+              ⚙ Compact
             </button>
           </div>
         </div>
