@@ -490,7 +490,7 @@ const ProductDetail = () => {
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', backgroundColor: '#f5f5f5' }}>
       {/* Header */}
       <div style={{ backgroundColor: '#135E84', padding: '20px 0', display: 'flex', justifyContent: 'center', alignItems: 'center', position: 'relative', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
-        <img src="/images/logo.jpg" alt="YouVape" style={{ height: '60px' }} />
+        <CloudLogo />
         <button onClick={() => navigate(-1)} style={{ position: 'absolute', left: '20px', padding: '10px 20px', backgroundColor: '#fff', color: '#135E84', border: 'none', borderRadius: '6px', fontSize: '14px', cursor: 'pointer', fontWeight: '600' }}>
           Retour
         </button>

@@ -891,7 +891,7 @@ const ShippingSettings = () => {
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
       {/* Header */}
       <div style={{ backgroundColor: '#135E84', padding: '20px 0', display: 'flex', justifyContent: 'center', alignItems: 'center', position: 'relative' }}>
-        <img src="/images/logo.jpg" alt="YouVape" style={{ height: '60px' }} />
+        <CloudLogo />
         <div style={{ position: 'absolute', right: '20px' }}>
           <button onClick={() => navigate('/stats/reports')} style={btnWhite}>Retour aux stats</button>
         </div>

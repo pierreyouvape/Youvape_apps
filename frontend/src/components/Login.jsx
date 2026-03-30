@@ -1,3 +1,4 @@
+import CloudLogo from './CloudLogo';
 import { useState, useContext } from 'react';
 import { AuthContext } from '../context/AuthContext';
 import { useNavigate, Link } from 'react-router-dom';
@@ -51,11 +52,7 @@ const Login = () => {
         justifyContent: 'center',
         alignItems: 'center'
       }}>
-        <img
-          src="/images/logo.jpg"
-          alt="YouVape"
-          style={{ height: '60px' }}
-        />
+        <CloudLogo />
       </div>
 
       {/* Main Content */}

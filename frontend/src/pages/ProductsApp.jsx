@@ -101,7 +101,7 @@ const ProductsApp = () => {
           boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
         }}
       >
-        <img src="/images/logo.jpg" alt="YouVape" style={{ height: '60px' }} />
+        <CloudLogo />
         <button
           onClick={() => navigate('/home')}
           style={{

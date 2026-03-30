@@ -1,3 +1,4 @@
+import CloudLogo from '../components/CloudLogo';
 import { useContext } from 'react';
 import { AuthContext } from '../context/AuthContext';
 import { useNavigate, Link } from 'react-router-dom';
@@ -33,11 +34,7 @@ const Home = () => {
         alignItems: 'center',
         position: 'relative'
       }}>
-        <img
-          src="/images/logo.jpg"
-          alt="YouVape"
-          style={{ height: '60px' }}
-        />
+        <CloudLogo />
         {(isAdmin || isSuperAdmin) && (
           <Link
             to="/settings"

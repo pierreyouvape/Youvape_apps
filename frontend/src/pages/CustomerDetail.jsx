@@ -155,7 +155,7 @@ const CustomerDetail = () => {
           justifyContent: 'center',
           alignItems: 'center'
         }}>
-          <img src="/images/logo.jpg" alt="YouVape" style={{ height: '60px' }} />
+          <CloudLogo />
         </div>
         <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <p>Chargement...</p>
@@ -174,7 +174,7 @@ const CustomerDetail = () => {
           justifyContent: 'center',
           alignItems: 'center'
         }}>
-          <img src="/images/logo.jpg" alt="YouVape" style={{ height: '60px' }} />
+          <CloudLogo />
         </div>
         <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <p>Client non trouvé</p>
@@ -194,7 +194,7 @@ const CustomerDetail = () => {
         alignItems: 'center',
         position: 'relative'
       }}>
-        <img src="/images/logo.jpg" alt="YouVape" style={{ height: '60px' }} />
+        <CloudLogo />
         <div style={{ position: 'absolute', right: '20px', display: 'flex', gap: '10px' }}>
           <button
             onClick={handleBackToList}
