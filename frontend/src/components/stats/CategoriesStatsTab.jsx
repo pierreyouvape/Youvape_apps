@@ -98,8 +98,10 @@ const CategoriesStatsTab = () => {
   // Filtrer par recherche
   const filteredCategories = categories.filter(c => {
     if (!searchTerm) return true;
-    const search = searchTerm.toLowerCase();
-    return c.category?.toLowerCase().includes(search);
+    const normalize = s => (s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+    const words = normalize(searchTerm).split(/\s+/).filter(Boolean);
+    const haystack = normalize(c.category);
+    return words.every(w => haystack.includes(w));
   });
 
   const sortedCategories = [...filteredCategories].sort((a, b) => {

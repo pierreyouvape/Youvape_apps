@@ -98,8 +98,10 @@ const BrandsStatsTab = () => {
   // Filtrer par recherche
   const filteredBrands = brands.filter(b => {
     if (!searchTerm) return true;
-    const search = searchTerm.toLowerCase();
-    return b.brand?.toLowerCase().includes(search);
+    const normalize = s => (s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+    const words = normalize(searchTerm).split(/\s+/).filter(Boolean);
+    const haystack = normalize(b.brand);
+    return words.every(w => haystack.includes(w));
   });
 
   const sortedBrands = [...filteredBrands].sort((a, b) => {

@@ -424,13 +424,19 @@ const NeedsTab = ({ token, onCompactChange }) => {
     return [...set].sort((a, b) => a.localeCompare(b, 'fr'));
   }, [allProducts]);
 
-  // Normalise une chaîne pour la recherche : minuscules, sans ponctuation, espaces simplifiés
-  const normalize = (str) => (str || '').toLowerCase().replace(/[-_.,;:!?()[\]]/g, ' ').replace(/\s+/g, ' ').trim();
+  // Normalise une chaîne pour la recherche : minuscules, sans ponctuation, sans accents, espaces simplifiés
+  const normalize = (str) => (str || '')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[-_.,;:!?()[\]]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 
   // Filtrage local — tout en JS sur le cache
   const filteredProducts = useMemo(() => {
     const searchNorm = normalize(search);
-    const hasSearch = searchNorm.length >= 2;
+    const searchWords = searchNorm.length >= 2 ? searchNorm.split(' ').filter(Boolean) : [];
+    const hasSearch = searchWords.length > 0;
 
     // Pour le filtre fournisseur : collecter les wp_parent_id dont au moins une variation a ce fournisseur
     // Ainsi toutes les variations d'un même parent sont affichées si l'une d'elles correspond
@@ -454,12 +460,8 @@ const NeedsTab = ({ token, onCompactChange }) => {
 
       // Si recherche active, on affiche tous les correspondants (bypass filtre propositions)
       if (hasSearch) {
-        return (
-          normalize(p.post_title).includes(searchNorm) ||
-          normalize(p.sku).includes(searchNorm) ||
-          normalize(p.brand).includes(searchNorm) ||
-          normalize(p.sub_brand).includes(searchNorm)
-        );
+        const haystack = normalize(`${p.post_title} ${p.sku} ${p.brand} ${p.sub_brand}`);
+        return searchWords.every(w => haystack.includes(w));
       }
 
       // Filtre "avec ventes"
