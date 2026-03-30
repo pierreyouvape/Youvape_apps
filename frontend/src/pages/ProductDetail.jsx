@@ -1,3 +1,4 @@
+import CloudLogo from '../components/CloudLogo';
 import { useState, useEffect, useContext } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { AuthContext } from '../context/AuthContext';
