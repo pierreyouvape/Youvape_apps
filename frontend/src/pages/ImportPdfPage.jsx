@@ -119,7 +119,8 @@ const ImportPdfPage = () => {
         product_sku: product.sku,
         current_stock: product.stock,
         supplier_price: product.cost_price || null,
-        unit_price: product.cost_price || null,
+        // Conserver le prix PDF s'il existe, sinon utiliser le prix BDD
+        unit_price: item.unit_price ?? product.cost_price ?? null,
       };
     }));
 
@@ -487,51 +488,45 @@ const ImportPdfPage = () => {
 
                       {/* Qte finale (editable) */}
                       <td style={{ padding: '10px', textAlign: 'center' }}>
-                        {item.matched ? (
-                          <input
-                            type="number"
-                            min="1"
-                            value={item.qty_ordered}
-                            onChange={e => handleUpdateQty(idx, e.target.value)}
-                            style={{ width: '70px', padding: '6px', borderRadius: '4px', border: '1px solid #ddd', textAlign: 'center', fontSize: '13px' }}
-                          />
-                        ) : '-'}
+                        <input
+                          type="number"
+                          min="1"
+                          value={item.qty_ordered}
+                          onChange={e => handleUpdateQty(idx, e.target.value)}
+                          style={{ width: '70px', padding: '6px', borderRadius: '4px', border: '1px solid #ddd', textAlign: 'center', fontSize: '13px' }}
+                        />
                       </td>
 
                       {/* Prix unitaire (editable) */}
                       <td style={{ padding: '10px', textAlign: 'center' }}>
-                        {item.matched ? (
-                          <input
-                            type="number"
-                            step="0.01"
-                            min="0"
-                            value={item.unit_price ?? ''}
-                            onChange={e => handleUpdatePrice(idx, e.target.value)}
-                            placeholder="—"
-                            style={{ width: '85px', padding: '6px', borderRadius: '4px', border: '1px solid #ddd', textAlign: 'center', fontSize: '13px' }}
-                          />
-                        ) : '-'}
+                        <input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          value={item.unit_price ?? ''}
+                          onChange={e => handleUpdatePrice(idx, e.target.value)}
+                          placeholder="—"
+                          style={{ width: '85px', padding: '6px', borderRadius: '4px', border: '1px solid #ddd', textAlign: 'center', fontSize: '13px' }}
+                        />
                       </td>
 
                       {/* Remise % */}
                       <td style={{ padding: '10px', textAlign: 'center' }}>
-                        {item.matched ? (
-                          <input
-                            type="number"
-                            step="0.1"
-                            min="0"
-                            max="100"
-                            value={item.discount || ''}
-                            onChange={e => handleUpdateDiscount(idx, e.target.value)}
-                            placeholder="0"
-                            style={{ width: '60px', padding: '6px', borderRadius: '4px', border: '1px solid #ddd', textAlign: 'center', fontSize: '13px' }}
-                          />
-                        ) : '-'}
+                        <input
+                          type="number"
+                          step="0.1"
+                          min="0"
+                          max="100"
+                          value={item.discount || ''}
+                          onChange={e => handleUpdateDiscount(idx, e.target.value)}
+                          placeholder="0"
+                          style={{ width: '60px', padding: '6px', borderRadius: '4px', border: '1px solid #ddd', textAlign: 'center', fontSize: '13px' }}
+                        />
                       </td>
 
                       {/* Total HT ligne */}
                       <td style={{ padding: '10px', textAlign: 'right', fontSize: '13px', fontWeight: 500 }}>
-                        {item.matched && effectivePrice(item)
+                        {effectivePrice(item)
                           ? (item.qty_ordered * effectivePrice(item)).toFixed(2) + ' €'
                           : '-'}
                       </td>
