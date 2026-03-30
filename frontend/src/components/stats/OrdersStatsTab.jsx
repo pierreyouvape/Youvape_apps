@@ -1,9 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useContext } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import CopyButton from '../CopyButton';
 import { formatDate } from '../../utils/dateUtils';
 import { formatPriceEur, formatInt } from '../../utils/formatNumber';
+import { AuthContext } from '../../context/AuthContext';
 
 const API_BASE_URL = 'http://54.37.156.233:3000/api';
 
@@ -48,8 +49,21 @@ const STATUS_COLORS = {
   'trash': '#6c757d'
 };
 
+const ORDERS_COLUMNS = [
+  { key: 'date',        label: 'Date' },
+  { key: 'client',      label: 'Client' },
+  { key: 'pays',        label: 'Pays' },
+  { key: 'montant',     label: 'Montant TTC' },
+  { key: 'statut',      label: 'Statut' },
+  { key: 'transporteur',label: 'Transporteur' },
+  { key: 'articles',    label: 'Articles' },
+  { key: 'avis',        label: 'Avis' },
+  { key: 'coupon',      label: 'Coupon' },
+];
+
 const OrdersStatsTab = () => {
   const navigate = useNavigate();
+  const { token } = useContext(AuthContext);
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(false);
   const [pagination, setPagination] = useState({ total: 0, limit: 100, offset: 0, hasMore: false });
@@ -75,10 +89,60 @@ const OrdersStatsTab = () => {
   const [expandedOrderId, setExpandedOrderId] = useState(null);
   const [orderDetails, setOrderDetails] = useState({});
 
+  // Préférences colonnes
+  const [hiddenColumns, setHiddenColumns] = useState([]);
+  const [compact, setCompact] = useState(false);
+  const [showColumnPanel, setShowColumnPanel] = useState(false);
+
   useEffect(() => {
     fetchFilterOptions();
     fetchOrders();
   }, []);
+
+  useEffect(() => {
+    if (!token) return;
+    const load = async () => {
+      try {
+        const res = await axios.get(`${API_BASE_URL}/preferences/orders`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        if (res.data.success) {
+          setHiddenColumns(res.data.hiddenColumns || []);
+          setCompact(res.data.compact || false);
+        }
+      } catch (err) {
+        console.error('Erreur chargement préférences colonnes orders:', err);
+      }
+    };
+    load();
+  }, [token]);
+
+  const savePreferences = async (cols, cmp) => {
+    if (!token) return;
+    try {
+      await axios.put(`${API_BASE_URL}/preferences/orders`, { hiddenColumns: cols, compact: cmp }, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+    } catch (err) {
+      console.error('Erreur sauvegarde préférences colonnes orders:', err);
+    }
+  };
+
+  const toggleColumn = (key) => {
+    const next = hiddenColumns.includes(key)
+      ? hiddenColumns.filter(k => k !== key)
+      : [...hiddenColumns, key];
+    setHiddenColumns(next);
+    savePreferences(next, compact);
+  };
+
+  const toggleCompact = () => {
+    const next = !compact;
+    setCompact(next);
+    savePreferences(hiddenColumns, next);
+  };
+
+  const isVisible = (key) => !hiddenColumns.includes(key);
 
   const fetchFilterOptions = async () => {
     try {
@@ -203,8 +267,11 @@ const OrdersStatsTab = () => {
     link.remove();
   };
 
+  // Compte les colonnes visibles pour le colSpan de la ligne dépliée (N° fixe + colonnes optionnelles visibles)
+  const visibleColCount = 1 + ORDERS_COLUMNS.filter(c => isVisible(c.key)).length;
+
   return (
-    <div>
+    <div style={compact ? { maxWidth: '1400px', margin: '0 auto' } : {}}>
       {/* Filtres */}
       <div style={{ backgroundColor: 'white', padding: '20px', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)', marginBottom: '20px' }}>
         {/* Ligne 1: Recherche */}
@@ -321,7 +388,7 @@ const OrdersStatsTab = () => {
         </div>
 
         {/* Boutons */}
-        <div style={{ display: 'flex', gap: '10px' }}>
+        <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
           <button
             onClick={handleSearch}
             style={{ padding: '10px 25px', backgroundColor: '#135E84', color: 'white', border: 'none', borderRadius: '6px', fontSize: '14px', fontWeight: 'bold', cursor: 'pointer' }}
@@ -336,10 +403,51 @@ const OrdersStatsTab = () => {
           </button>
           <button
             onClick={handleExport}
-            style={{ padding: '6px 12px', backgroundColor: '#6c757d', color: 'white', border: 'none', borderRadius: '4px', fontSize: '12px', cursor: 'pointer', marginLeft: 'auto' }}
+            style={{ padding: '6px 12px', backgroundColor: '#6c757d', color: 'white', border: 'none', borderRadius: '4px', fontSize: '12px', cursor: 'pointer' }}
           >
             CSV
           </button>
+          {/* Bouton Colonnes */}
+          <div style={{ marginLeft: 'auto', position: 'relative' }}>
+            <button
+              onClick={() => setShowColumnPanel(v => !v)}
+              style={{ padding: '8px 14px', backgroundColor: showColumnPanel ? '#135E84' : '#fff', color: showColumnPanel ? '#fff' : '#374151', border: '1px solid #d1d5db', borderRadius: '6px', fontSize: '13px', cursor: 'pointer' }}
+            >
+              ⚙ Colonnes
+            </button>
+            {showColumnPanel && (
+              <div style={{
+                position: 'absolute', right: 0, top: '110%', zIndex: 100,
+                backgroundColor: '#fff', border: '1px solid #d1d5db',
+                borderRadius: '8px', padding: '14px 16px', minWidth: '200px',
+                boxShadow: '0 4px 12px rgba(0,0,0,0.12)'
+              }}>
+                <div style={{ fontWeight: 600, fontSize: '13px', marginBottom: '10px', color: '#374151' }}>
+                  Colonnes visibles
+                </div>
+                {ORDERS_COLUMNS.map(col => (
+                  <label key={col.key} style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px', cursor: 'pointer', fontSize: '13px' }}>
+                    <input
+                      type="checkbox"
+                      checked={isVisible(col.key)}
+                      onChange={() => toggleColumn(col.key)}
+                    />
+                    {col.label}
+                  </label>
+                ))}
+                <div style={{ borderTop: '1px solid #e5e7eb', marginTop: '10px', paddingTop: '10px' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '13px' }}>
+                    <input
+                      type="checkbox"
+                      checked={compact}
+                      onChange={toggleCompact}
+                    />
+                    Vue compacte
+                  </label>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -360,15 +468,15 @@ const OrdersStatsTab = () => {
               <thead>
                 <tr style={{ backgroundColor: '#f8f9fa' }}>
                   <th style={{ padding: '12px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: '#6c757d', textTransform: 'uppercase' }}>N°</th>
-                  <th style={{ padding: '12px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: '#6c757d', textTransform: 'uppercase' }}>Date</th>
-                  <th style={{ padding: '12px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: '#6c757d', textTransform: 'uppercase' }}>Client</th>
-                  <th style={{ padding: '12px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: '#6c757d', textTransform: 'uppercase' }}>Pays</th>
-                  <th style={{ padding: '12px', textAlign: 'right', fontSize: '12px', fontWeight: '600', color: '#6c757d', textTransform: 'uppercase' }}>Montant TTC</th>
-                  <th style={{ padding: '12px', textAlign: 'center', fontSize: '12px', fontWeight: '600', color: '#6c757d', textTransform: 'uppercase' }}>Statut</th>
-                  <th style={{ padding: '12px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: '#6c757d', textTransform: 'uppercase' }}>Transporteur</th>
-                  <th style={{ padding: '12px', textAlign: 'center', fontSize: '12px', fontWeight: '600', color: '#6c757d', textTransform: 'uppercase' }}>Articles</th>
-                  <th style={{ padding: '12px', textAlign: 'center', fontSize: '12px', fontWeight: '600', color: '#6c757d', textTransform: 'uppercase' }}>Avis</th>
-                  <th style={{ padding: '12px', textAlign: 'center', fontSize: '12px', fontWeight: '600', color: '#6c757d', textTransform: 'uppercase' }}>Coupon</th>
+                  {isVisible('date') && <th style={{ padding: '12px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: '#6c757d', textTransform: 'uppercase' }}>Date</th>}
+                  {isVisible('client') && <th style={{ padding: '12px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: '#6c757d', textTransform: 'uppercase' }}>Client</th>}
+                  {isVisible('pays') && <th style={{ padding: '12px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: '#6c757d', textTransform: 'uppercase' }}>Pays</th>}
+                  {isVisible('montant') && <th style={{ padding: '12px', textAlign: 'right', fontSize: '12px', fontWeight: '600', color: '#6c757d', textTransform: 'uppercase' }}>Montant TTC</th>}
+                  {isVisible('statut') && <th style={{ padding: '12px', textAlign: 'center', fontSize: '12px', fontWeight: '600', color: '#6c757d', textTransform: 'uppercase' }}>Statut</th>}
+                  {isVisible('transporteur') && <th style={{ padding: '12px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: '#6c757d', textTransform: 'uppercase' }}>Transporteur</th>}
+                  {isVisible('articles') && <th style={{ padding: '12px', textAlign: 'center', fontSize: '12px', fontWeight: '600', color: '#6c757d', textTransform: 'uppercase' }}>Articles</th>}
+                  {isVisible('avis') && <th style={{ padding: '12px', textAlign: 'center', fontSize: '12px', fontWeight: '600', color: '#6c757d', textTransform: 'uppercase' }}>Avis</th>}
+                  {isVisible('coupon') && <th style={{ padding: '12px', textAlign: 'center', fontSize: '12px', fontWeight: '600', color: '#6c757d', textTransform: 'uppercase' }}>Coupon</th>}
                 </tr>
               </thead>
               <tbody>
@@ -419,50 +527,58 @@ const OrdersStatsTab = () => {
                             </a>
                           </div>
                         </td>
-                        <td style={{ padding: '12px', fontSize: '13px', color: '#666' }}>{formatDate(order.post_date)}</td>
-                        <td style={{ padding: '12px', fontSize: '14px' }}>
-                          <div>{order.billing_first_name} {order.billing_last_name}</div>
-                          <div style={{ fontSize: '12px', color: '#999' }}>{order.billing_email}</div>
-                        </td>
-                        <td style={{ padding: '12px', fontSize: '14px' }}>{COUNTRY_NAMES[order.billing_country] || order.billing_country}</td>
-                        <td style={{ padding: '12px', fontSize: '14px', textAlign: 'right', fontWeight: 'bold', color: '#28a745' }}>{formatPrice(order.order_total)}</td>
-                        <td style={{ padding: '12px', textAlign: 'center' }}>
-                          <span style={{
-                            padding: '4px 10px',
-                            borderRadius: '4px',
-                            fontSize: '11px',
-                            fontWeight: '600',
-                            backgroundColor: STATUS_COLORS[order.post_status] || '#6c757d',
-                            color: 'white'
-                          }}>
-                            {STATUS_LABELS[order.post_status] || order.post_status}
-                          </span>
-                        </td>
-                        <td style={{ padding: '12px', fontSize: '13px' }}>{order.shipping_method || '-'}</td>
-                        <td style={{ padding: '12px', fontSize: '14px', textAlign: 'center' }}>{formatInt(order.items_count)}</td>
-                        <td style={{ padding: '12px', fontSize: '14px', textAlign: 'center' }}>
-                          {order.has_review && <span title="Avis laisse">⭐</span>}
-                        </td>
-                        <td style={{ padding: '12px', fontSize: '14px', textAlign: 'center' }}>
-                          {order.coupons ? (
+                        {isVisible('date') && <td style={{ padding: '12px', fontSize: '13px', color: '#666' }}>{formatDate(order.post_date)}</td>}
+                        {isVisible('client') && (
+                          <td style={{ padding: '12px', fontSize: '14px' }}>
+                            <div>{order.billing_first_name} {order.billing_last_name}</div>
+                            <div style={{ fontSize: '12px', color: '#999' }}>{order.billing_email}</div>
+                          </td>
+                        )}
+                        {isVisible('pays') && <td style={{ padding: '12px', fontSize: '14px' }}>{COUNTRY_NAMES[order.billing_country] || order.billing_country}</td>}
+                        {isVisible('montant') && <td style={{ padding: '12px', fontSize: '14px', textAlign: 'right', fontWeight: 'bold', color: '#28a745' }}>{formatPrice(order.order_total)}</td>}
+                        {isVisible('statut') && (
+                          <td style={{ padding: '12px', textAlign: 'center' }}>
                             <span style={{
-                              padding: '4px 8px',
+                              padding: '4px 10px',
                               borderRadius: '4px',
                               fontSize: '11px',
                               fontWeight: '600',
-                              backgroundColor: '#ff730020',
-                              color: '#ff7300'
+                              backgroundColor: STATUS_COLORS[order.post_status] || '#6c757d',
+                              color: 'white'
                             }}>
-                              {order.coupons}
+                              {STATUS_LABELS[order.post_status] || order.post_status}
                             </span>
-                          ) : '-'}
-                        </td>
+                          </td>
+                        )}
+                        {isVisible('transporteur') && <td style={{ padding: '12px', fontSize: '13px' }}>{order.shipping_method || '-'}</td>}
+                        {isVisible('articles') && <td style={{ padding: '12px', fontSize: '14px', textAlign: 'center' }}>{formatInt(order.items_count)}</td>}
+                        {isVisible('avis') && (
+                          <td style={{ padding: '12px', fontSize: '14px', textAlign: 'center' }}>
+                            {order.has_review && <span title="Avis laisse">⭐</span>}
+                          </td>
+                        )}
+                        {isVisible('coupon') && (
+                          <td style={{ padding: '12px', fontSize: '14px', textAlign: 'center' }}>
+                            {order.coupons ? (
+                              <span style={{
+                                padding: '4px 8px',
+                                borderRadius: '4px',
+                                fontSize: '11px',
+                                fontWeight: '600',
+                                backgroundColor: '#ff730020',
+                                color: '#ff7300'
+                              }}>
+                                {order.coupons}
+                              </span>
+                            ) : '-'}
+                          </td>
+                        )}
                       </tr>
 
                       {/* Ligne depliable */}
                       {isExpanded && (
                         <tr key={`${order.wp_order_id}-details`}>
-                          <td colSpan={10} style={{ padding: '0', backgroundColor: '#f8f9fa' }}>
+                          <td colSpan={visibleColCount} style={{ padding: '0', backgroundColor: '#f8f9fa' }}>
                             <div style={{ padding: '20px', borderTop: '1px solid #e9ecef' }}>
                               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '20px', marginBottom: '20px' }}>
                                 {/* Infos client */}

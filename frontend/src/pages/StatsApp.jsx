@@ -82,7 +82,7 @@ const StatsApp = () => {
       </div>
 
       {/* Main Content */}
-      <div style={{ flex: 1, maxWidth: '1400px', margin: '30px auto', padding: '20px', width: '100%' }}>
+      <div style={{ flex: 1, padding: '20px 60px', width: '100%' }}>
         {/* Onglets */}
         <div style={{ display: 'flex', borderBottom: '2px solid #ddd', marginBottom: '20px' }}>
           {tabs.map((t) => (
