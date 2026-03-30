@@ -3,6 +3,7 @@ const needsCalculationModel = require('../models/needsCalculationModel');
 const productAlertModel = require('../models/productAlertModel');
 const pdfImportModel = require('../models/pdfImportModel');
 const pool = require('../config/database');
+const { buildSearchCondition } = require('../utils/searchUtils');
 
 const purchasesController = {
   // ==================== RECHERCHE PRODUITS (POUR COMMANDES) ====================
@@ -23,6 +24,12 @@ const purchasesController = {
       // - Si un produit est 'simple' → le retourner
       // - Si un produit est 'variable' → NE PAS le retourner (on veut ses variants)
       // - Si un produit est 'variation' → le retourner
+      const { clause, params: searchParams, nextIndex } = buildSearchCondition(
+        searchTerm,
+        ['p.post_title', 'p.sku', 'parent.post_title'],
+        1
+      );
+
       const query = `
         SELECT
           p.wp_product_id as id,
@@ -38,24 +45,16 @@ const purchasesController = {
         WHERE
           p.product_type IN ('simple', 'variation')
           AND p.post_status = 'publish'
-          AND (
-            LOWER(p.post_title) LIKE $1
-            OR LOWER(p.sku) LIKE $1
-            OR LOWER(parent.post_title) LIKE $1
-          )
+          AND ${clause}
         ORDER BY
-          CASE WHEN LOWER(p.sku) = $2 THEN 0
-               WHEN LOWER(p.sku) LIKE $1 THEN 1
-               ELSE 2
+          CASE WHEN LOWER(p.sku) = $${nextIndex} THEN 0
+               ELSE 1
           END,
           p.post_title
-        LIMIT $3
+        LIMIT $${nextIndex + 1}
       `;
 
-      const searchPattern = `%${searchTerm.toLowerCase()}%`;
-      const exactTerm = searchTerm.toLowerCase();
-
-      const result = await pool.query(query, [searchPattern, exactTerm, limit]);
+      const result = await pool.query(query, [...searchParams, searchTerm.toLowerCase(), limit]);
 
       res.json({ success: true, data: result.rows });
     } catch (error) {

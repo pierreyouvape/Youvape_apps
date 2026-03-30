@@ -1,4 +1,5 @@
 const pool = require('../config/database');
+const { buildSearchCondition } = require('../utils/searchUtils');
 
 class ProductModel {
   /**
@@ -68,6 +69,7 @@ class ProductModel {
    * Recherche de produits (nom, SKU)
    */
   async search(searchTerm, limit = 50, offset = 0) {
+    const { clause, params: searchParams, nextIndex } = buildSearchCondition(searchTerm, ['p.post_title', 'p.sku'], 1);
     const query = `
       SELECT
         p.*,
@@ -82,12 +84,11 @@ class ProductModel {
         FROM order_items
         GROUP BY product_id
       ) oi_stats ON oi_stats.product_id = p.wp_product_id
-      WHERE
-        LOWER(p.post_title || ' ' || COALESCE(p.sku, '')) LIKE $1
+      WHERE ${clause}
       ORDER BY total_revenue DESC NULLS LAST
-      LIMIT $2 OFFSET $3
+      LIMIT $${nextIndex} OFFSET $${nextIndex + 1}
     `;
-    const result = await pool.query(query, [`%${searchTerm.toLowerCase()}%`, limit, offset]);
+    const result = await pool.query(query, [...searchParams, limit, offset]);
     return result.rows;
   }
 
@@ -359,9 +360,10 @@ class ProductModel {
     let paramIndex = 1;
 
     if (searchTerm) {
-      whereClause += ` AND LOWER(p.post_title || ' ' || COALESCE(p.sku, '')) LIKE $${paramIndex}`;
-      params.push(`%${searchTerm.toLowerCase()}%`);
-      paramIndex++;
+      const { clause, params: searchParams, nextIndex } = buildSearchCondition(searchTerm, ['p.post_title', 'p.sku'], paramIndex);
+      whereClause += ` AND ${clause}`;
+      params.push(...searchParams);
+      paramIndex = nextIndex;
     }
 
     // Filtre de dates pour les commandes
@@ -496,8 +498,9 @@ class ProductModel {
     let params = [];
 
     if (searchTerm) {
-      whereClause += ` AND LOWER(post_title || ' ' || COALESCE(sku, '')) LIKE $1`;
-      params.push(`%${searchTerm.toLowerCase()}%`);
+      const { clause, params: searchParams } = buildSearchCondition(searchTerm, ['post_title', 'sku'], 1);
+      whereClause += ` AND ${clause}`;
+      params.push(...searchParams);
     }
 
     const query = `SELECT COUNT(*)::int as total FROM products ${whereClause}`;
@@ -602,16 +605,21 @@ class ProductModel {
     let paramIndex = 1;
 
     if (search) {
-      whereClause += ` AND (
-        LOWER(p.post_title || ' ' || COALESCE(p.sku, '')) LIKE $${paramIndex}
-        OR EXISTS (
-          SELECT 1 FROM products v
-          WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation'
-            AND LOWER(v.post_title || ' ' || COALESCE(v.sku, '')) LIKE $${paramIndex}
-        )
-      )`;
-      params.push(`%${search.toLowerCase().replace(/[-_.,;:!?()\[\]]/g, ' ')}%`);
-      paramIndex++;
+      const words = search.trim().split(/\s+/).filter(Boolean);
+      const wordClauses = words.map((_, i) => {
+        const p = paramIndex + i;
+        return `(
+          unaccent(p.post_title || ' ' || COALESCE(p.sku, '')) ILIKE unaccent($${p})
+          OR EXISTS (
+            SELECT 1 FROM products v
+            WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation'
+              AND unaccent(v.post_title || ' ' || COALESCE(v.sku, '')) ILIKE unaccent($${p})
+          )
+        )`;
+      });
+      whereClause += ' AND ' + wordClauses.join(' AND ');
+      words.forEach(w => params.push(`%${w}%`));
+      paramIndex += words.length;
     }
 
     params.push(limit, offset);
@@ -728,15 +736,21 @@ class ProductModel {
     const params = [];
 
     if (search) {
-      whereClause += ` AND (
-        LOWER(p.post_title || ' ' || COALESCE(p.sku, '')) LIKE $1
-        OR EXISTS (
-          SELECT 1 FROM products v
-          WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation'
-            AND LOWER(v.post_title || ' ' || COALESCE(v.sku, '')) LIKE $1
-        )
-      )`;
-      params.push(`%${search.toLowerCase().replace(/[-_.,;:!?()\[\]]/g, ' ')}%`);
+      const words = search.trim().split(/\s+/).filter(Boolean);
+      let idx = 1;
+      const wordClauses = words.map((_, i) => {
+        const p = idx + i;
+        return `(
+          unaccent(p.post_title || ' ' || COALESCE(p.sku, '')) ILIKE unaccent($${p})
+          OR EXISTS (
+            SELECT 1 FROM products v
+            WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation'
+              AND unaccent(v.post_title || ' ' || COALESCE(v.sku, '')) ILIKE unaccent($${p})
+          )
+        )`;
+      });
+      whereClause += ' AND ' + wordClauses.join(' AND ');
+      words.forEach(w => params.push(`%${w}%`));
     }
 
     const query = `

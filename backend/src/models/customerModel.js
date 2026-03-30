@@ -1,4 +1,5 @@
 const pool = require('../config/database');
+const { buildSearchCondition } = require('../utils/searchUtils');
 
 class CustomerModel {
   /**
@@ -58,18 +59,22 @@ class CustomerModel {
    * Recherche de clients (nom, prénom, email)
    */
   async search(searchTerm, limit = 50, offset = 0) {
+    const { clause, params: searchParams, nextIndex } = buildSearchCondition(
+      searchTerm,
+      ['c.first_name', 'c.last_name', 'c.email'],
+      1
+    );
     const query = `
       SELECT
         c.*,
         (SELECT COUNT(*) FROM orders WHERE wp_customer_id = c.wp_user_id) as order_count,
         (SELECT COALESCE(SUM(order_total), 0) FROM orders WHERE wp_customer_id = c.wp_user_id AND post_status = 'wc-completed') as total_spent
       FROM customers c
-      WHERE
-        LOWER(c.first_name || ' ' || c.last_name || ' ' || c.email) LIKE $1
+      WHERE ${clause}
       ORDER BY total_spent DESC
-      LIMIT $2 OFFSET $3
+      LIMIT $${nextIndex} OFFSET $${nextIndex + 1}
     `;
-    const result = await pool.query(query, [`%${searchTerm.toLowerCase()}%`, limit, offset]);
+    const result = await pool.query(query, [...searchParams, limit, offset]);
     return result.rows;
   }
 
@@ -259,9 +264,14 @@ class CustomerModel {
 
     // Ajout du filtre de recherche
     if (searchTerm) {
-      whereClause += ` WHERE LOWER(c.first_name || ' ' || c.last_name || ' ' || c.email) LIKE $${paramIndex}`;
-      params.push(`%${searchTerm.toLowerCase()}%`);
-      paramIndex++;
+      const { clause, params: searchParams, nextIndex } = buildSearchCondition(
+        searchTerm,
+        ['c.first_name', 'c.last_name', 'c.email'],
+        paramIndex
+      );
+      whereClause += ` WHERE ${clause}`;
+      params.push(...searchParams);
+      paramIndex = nextIndex;
     }
 
     // Ajout du filtre pays
@@ -326,9 +336,14 @@ class CustomerModel {
 
     // Ajout du filtre de recherche
     if (searchTerm) {
-      whereClause += ` WHERE LOWER(c.first_name || ' ' || c.last_name || ' ' || c.email) LIKE $${paramIndex}`;
-      params.push(`%${searchTerm.toLowerCase()}%`);
-      paramIndex++;
+      const { clause, params: searchParams, nextIndex } = buildSearchCondition(
+        searchTerm,
+        ['c.first_name', 'c.last_name', 'c.email'],
+        paramIndex
+      );
+      whereClause += ` WHERE ${clause}`;
+      params.push(...searchParams);
+      paramIndex = nextIndex;
     }
 
     // Ajout du filtre pays

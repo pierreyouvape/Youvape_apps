@@ -1,4 +1,5 @@
 const pool = require('../config/database');
+const { buildSearchCondition } = require('../utils/searchUtils');
 
 class OrderModel {
   /**
@@ -100,6 +101,11 @@ class OrderModel {
    * Recherche de commandes (numéro, email client)
    */
   async search(searchTerm, limit = 50, offset = 0) {
+    const { clause, params: searchParams, nextIndex } = buildSearchCondition(
+      searchTerm,
+      ['c.first_name', 'c.last_name', 'c.email'],
+      2
+    );
     const query = `
       SELECT
         o.*,
@@ -110,13 +116,12 @@ class OrderModel {
       FROM orders o
       LEFT JOIN customers c ON c.wp_user_id = o.wp_customer_id
       WHERE
-        CAST(o.wp_order_id AS TEXT) LIKE $1
-        OR LOWER(c.email) LIKE $1
-        OR LOWER(c.first_name || ' ' || c.last_name) LIKE $1
+        CAST(o.wp_order_id AS TEXT) ILIKE $1
+        OR ${clause}
       ORDER BY o.post_date DESC
-      LIMIT $2 OFFSET $3
+      LIMIT $${nextIndex} OFFSET $${nextIndex + 1}
     `;
-    const result = await pool.query(query, [`%${searchTerm.toLowerCase()}%`, limit, offset]);
+    const result = await pool.query(query, [`%${searchTerm}%`, ...searchParams, limit, offset]);
     return result.rows;
   }
 
@@ -237,15 +242,17 @@ class OrderModel {
 
     // Recherche texte (numéro commande, nom, prénom, email)
     if (filters.search) {
+      const { clause, params: searchParams, nextIndex: ni } = buildSearchCondition(
+        filters.search,
+        ['o.billing_first_name', 'o.billing_last_name', 'o.billing_email'],
+        paramIndex + 1
+      );
       conditions.push(`(
         CAST(o.wp_order_id AS TEXT) ILIKE $${paramIndex}
-        OR o.billing_first_name ILIKE $${paramIndex}
-        OR o.billing_last_name ILIKE $${paramIndex}
-        OR o.billing_email ILIKE $${paramIndex}
-        OR CONCAT(o.billing_first_name, ' ', o.billing_last_name) ILIKE $${paramIndex}
+        OR ${clause}
       )`);
-      params.push(`%${filters.search}%`);
-      paramIndex++;
+      params.push(`%${filters.search}%`, ...searchParams);
+      paramIndex = ni;
     }
 
     // Filtre par pays
