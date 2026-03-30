@@ -20,7 +20,8 @@ module.exports = {
     const items = [];
 
     // Split par header de colonnes (chaque page en a un)
-    const sections = text.split(/Référence\s+Désignation\s+Quantité\s+PU HT\s+Montant HT/);
+    // Deux variantes : avec ou sans colonne "Rist. %"
+    const sections = text.split(/Référence\s+Désignation\s+Quantité\s+PU HT(?:\s+Rist\.\s*%)?\s+Montant HT/);
 
     for (let s = 1; s < sections.length; s++) {
       const section = sections[s];
@@ -41,7 +42,8 @@ module.exports = {
       // Etape 1 : identifier les indices des lignes de prix
       const priceLineIndices = [];
       for (let i = 0; i < filteredLines.length; i++) {
-        if (/\d+\s+\d+\.\d{2}\s+\d+\.\d{2}\s*$/.test(filteredLines[i])) {
+        // Avec ou sans colonne remise : "qty puHT montantHT" ou "qty puHT rist% montantHT"
+        if (/\d+\s+\d+\.\d{2}(?:\s+\d+\.\d{2})?\s+\d+\.\d{2}\s*$/.test(filteredLines[i])) {
           priceLineIndices.push(i);
         }
       }
@@ -99,7 +101,8 @@ module.exports = {
 
         // Extraire les prix (dernier match dans le bloc texte)
         let lastPriceMatch = null;
-        const priceRegex = /(\d+)\s+(\d+\.\d{2})\s+(\d+\.\d{2})/g;
+        // Avec remise optionnelle : qty puHT [rist%] montantHT
+        const priceRegex = /(\d+)\s+(\d+\.\d{2})(?:\s+(\d+\.\d{2}))?\s+(\d+\.\d{2})/g;
         let m;
         while ((m = priceRegex.exec(blockText)) !== null) {
           lastPriceMatch = m;
@@ -108,10 +111,13 @@ module.exports = {
 
         const qty = parseInt(lastPriceMatch[1]);
         const puHt = parseFloat(lastPriceMatch[2]);
-        const montantHt = parseFloat(lastPriceMatch[3]);
+        // lastPriceMatch[3] = remise % (optionnel), lastPriceMatch[4] = montantHT
+        const montantHt = parseFloat(lastPriceMatch[4]);
 
-        // Verifier coherence qte * pu ~= montant
-        if (Math.abs(qty * puHt - montantHt) > 0.02) continue;
+        // Verifier coherence qte * pu * (1 - rist/100) ~= montant
+        const rist = lastPriceMatch[3] ? parseFloat(lastPriceMatch[3]) : 0;
+        const expectedMontant = qty * puHt * (1 - rist / 100);
+        if (Math.abs(expectedMontant - montantHt) > 0.02) continue;
 
         // Texte avant et apres les prix
         const priceStart = lastPriceMatch.index;
@@ -130,7 +136,8 @@ module.exports = {
             supplier_sku: supplierSku,
             designation: designation.trim(),
             qty_ordered: qty,
-            unit_price_net: puHt,
+            unit_price_net: puHt,       // prix brut HT (avant remise)
+            discount_percent: rist,     // remise en % (0 si pas de remise)
             total_ht: montantHt,
           });
         }

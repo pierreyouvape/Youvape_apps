@@ -66,7 +66,12 @@ const ImportPdfPage = () => {
 
       const data = response.data.data;
       setParsedData(data);
-      setItems(data.items.map(item => ({ ...item })));
+      setItems(data.items.map(item => ({
+        ...item,
+        // Afficher le prix brut dans le champ éditable, remise pré-remplie depuis le PDF
+        unit_price: item.pdf_price ?? item.unit_price,
+        discount: item.discount_percent || 0,
+      })));
       setNewSupplierSkus([]);
     } catch (err) {
       setParseError(err.response?.data?.error || 'Erreur lors du parsing du PDF');
@@ -187,7 +192,7 @@ const ImportPdfPage = () => {
           product_name: item.product_name,
           supplier_sku: item.supplier_sku,
           qty_ordered: item.qty_ordered,
-          unit_price: item.unit_price,
+          unit_price: effectivePrice(item),  // prix net (brut × remise) → stocké en BDD
           discount_percent: item.discount || 0,
           stock_before: item.current_stock,
         })),

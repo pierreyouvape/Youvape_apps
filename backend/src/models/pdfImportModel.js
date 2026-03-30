@@ -72,11 +72,14 @@ const pdfImportModel = {
       const match = matchMap.get(item.supplier_sku);
       const packQty = parsed.skipPackQty ? 1 : (match ? (parseInt(match.pack_qty) || 1) : 1);
 
-      // Prix : priorite au prix du PDF (unit_price_net) si disponible, sinon supplier_price BDD
-      // Le prix PDF est souvent un prix PACK (Revolute, JoshNoa) → diviser par pack_qty pour le prix unitaire
+      // Prix brut du PDF (avant remise éventuelle)
+      // Pour Revolute/JoshNoa le prix PDF est un prix pack → diviser par pack_qty
       // Exception : skipPackQty (Curieux) → pack_qty forcé à 1, pas de division
-      const rawPdfPrice = item.unit_price_net != null ? item.unit_price_net : null;
-      const pdfPrice = (rawPdfPrice != null && packQty > 1) ? rawPdfPrice / packQty : rawPdfPrice;
+      const rawPdfGross = item.unit_price_net != null ? item.unit_price_net : null;
+      const pdfGross = (rawPdfGross != null && packQty > 1) ? rawPdfGross / packQty : rawPdfGross;
+      const discountPercent = item.discount_percent || 0;
+      // Prix net = brut * (1 - remise/100)
+      const pdfNet = pdfGross != null ? pdfGross * (1 - discountPercent / 100) : null;
       const dbPrice = match ? parseFloat(match.supplier_price) || null : null;
 
       return {
@@ -91,9 +94,11 @@ const pdfImportModel = {
         product_sku: match ? match.product_sku : null,
         current_stock: match ? parseInt(match.stock) : null,
         // Prix
-        pdf_price: rawPdfPrice,
+        pdf_price: pdfGross,           // prix brut HT (affiché dans "Prix unit.")
+        pdf_price_net: pdfNet,         // prix net après remise (pour calcul unit_price)
+        discount_percent: discountPercent,
         supplier_price: dbPrice,
-        unit_price: pdfPrice ?? dbPrice,
+        unit_price: pdfNet ?? dbPrice, // ce qui sera stocké en BDD (net)
         // Pack
         pack_qty: packQty,
         qty_ordered: item.qty_ordered * packQty,
