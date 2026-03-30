@@ -1,13 +1,25 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useContext } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { getCountryLabel } from '../../utils/countries';
 import { formatPriceEur, formatPrice, formatInt } from '../../utils/formatNumber';
+import { AuthContext } from '../../context/AuthContext';
+import { useColumnPreferences } from '../../hooks/useColumnPreferences';
+import ColumnPanel from '../ColumnPanel';
 
 const API_BASE_URL = 'http://54.37.156.233:3000/api';
 
+const CUSTOMERS_COLUMNS = [
+  { key: 'email',         label: 'Email' },
+  { key: 'commandes',     label: 'Commandes' },
+  { key: 'total_depense', label: 'Total dépensé' },
+  { key: 'pays',          label: 'Pays' },
+];
+
 const CustomersStatsTab = () => {
   const navigate = useNavigate();
+  const { token } = useContext(AuthContext);
+  const { isVisible, compact, showColumnPanel, setShowColumnPanel, toggleColumn, toggleCompact } = useColumnPreferences('customers', token);
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(false);
   const [pagination, setPagination] = useState({
@@ -132,7 +144,7 @@ const CustomersStatsTab = () => {
   const pageCount = Math.ceil(totalCount / pagination.pageSize);
 
   return (
-    <div>
+    <div style={compact ? { maxWidth: '1400px', margin: '0 auto' } : {}}>
       {/* Header avec filtres */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px', flexWrap: 'wrap', gap: '15px' }}>
         <div style={{ display: 'flex', gap: '15px', flex: 1 }}>
@@ -169,20 +181,31 @@ const CustomersStatsTab = () => {
             ))}
           </select>
         </div>
-        <button
-          onClick={handleExport}
-          style={{
-            padding: '6px 12px',
-            backgroundColor: '#6c757d',
-            color: 'white',
-            border: 'none',
-            borderRadius: '4px',
-            fontSize: '12px',
-            cursor: 'pointer'
-          }}
-        >
-          CSV
-        </button>
+        <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+          <button
+            onClick={handleExport}
+            style={{
+              padding: '6px 12px',
+              backgroundColor: '#6c757d',
+              color: 'white',
+              border: 'none',
+              borderRadius: '4px',
+              fontSize: '12px',
+              cursor: 'pointer'
+            }}
+          >
+            CSV
+          </button>
+          <ColumnPanel
+            columns={CUSTOMERS_COLUMNS}
+            isVisible={isVisible}
+            toggleColumn={toggleColumn}
+            compact={compact}
+            toggleCompact={toggleCompact}
+            show={showColumnPanel}
+            setShow={setShowColumnPanel}
+          />
+        </div>
       </div>
 
       {/* Card de statistique */}
@@ -204,10 +227,10 @@ const CustomersStatsTab = () => {
                 <tr style={{ backgroundColor: '#f8f9fa' }}>
                   <th style={{ padding: '15px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: '#6c757d', textTransform: 'uppercase' }}>ID</th>
                   <th style={{ padding: '15px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: '#6c757d', textTransform: 'uppercase' }}>Nom Prénom</th>
-                  <th style={{ padding: '15px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: '#6c757d', textTransform: 'uppercase' }}>Email</th>
-                  <th style={{ padding: '15px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: '#6c757d', textTransform: 'uppercase' }}>Commandes</th>
-                  <th style={{ padding: '15px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: '#6c757d', textTransform: 'uppercase' }}>Total dépensé TTC</th>
-                  <th style={{ padding: '15px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: '#6c757d', textTransform: 'uppercase' }}>Pays</th>
+                  {isVisible('email') && <th style={{ padding: '15px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: '#6c757d', textTransform: 'uppercase' }}>Email</th>}
+                  {isVisible('commandes') && <th style={{ padding: '15px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: '#6c757d', textTransform: 'uppercase' }}>Commandes</th>}
+                  {isVisible('total_depense') && <th style={{ padding: '15px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: '#6c757d', textTransform: 'uppercase' }}>Total dépensé TTC</th>}
+                  {isVisible('pays') && <th style={{ padding: '15px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: '#6c757d', textTransform: 'uppercase' }}>Pays</th>}
                 </tr>
               </thead>
               <tbody>
@@ -223,25 +246,31 @@ const CustomersStatsTab = () => {
                     <td style={{ padding: '15px', fontSize: '14px' }}>
                       {`${customer.first_name || ''} ${customer.last_name || ''}`.trim() || 'N/A'}
                     </td>
-                    <td style={{ padding: '15px', fontSize: '14px' }}>{customer.email || 'N/A'}</td>
-                    <td style={{ padding: '15px', fontSize: '14px' }}>
-                      <span style={{
-                        padding: '4px 12px',
-                        borderRadius: '12px',
-                        fontSize: '12px',
-                        fontWeight: 'bold',
-                        backgroundColor: '#d1e7dd',
-                        color: '#0f5132'
-                      }}>
-                        {customer.order_count || 0} commandes
-                      </span>
-                    </td>
-                    <td style={{ padding: '15px', fontSize: '14px', fontWeight: 'bold' }}>
-                      {formatPriceEur(customer.total_spent)}
-                    </td>
-                    <td style={{ padding: '15px', fontSize: '14px' }}>
-                      {customer.country ? getCountryLabel(customer.country) : 'N/A'}
-                    </td>
+                    {isVisible('email') && <td style={{ padding: '15px', fontSize: '14px' }}>{customer.email || 'N/A'}</td>}
+                    {isVisible('commandes') && (
+                      <td style={{ padding: '15px', fontSize: '14px' }}>
+                        <span style={{
+                          padding: '4px 12px',
+                          borderRadius: '12px',
+                          fontSize: '12px',
+                          fontWeight: 'bold',
+                          backgroundColor: '#d1e7dd',
+                          color: '#0f5132'
+                        }}>
+                          {customer.order_count || 0} commandes
+                        </span>
+                      </td>
+                    )}
+                    {isVisible('total_depense') && (
+                      <td style={{ padding: '15px', fontSize: '14px', fontWeight: 'bold' }}>
+                        {formatPriceEur(customer.total_spent)}
+                      </td>
+                    )}
+                    {isVisible('pays') && (
+                      <td style={{ padding: '15px', fontSize: '14px' }}>
+                        {customer.country ? getCountryLabel(customer.country) : 'N/A'}
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>

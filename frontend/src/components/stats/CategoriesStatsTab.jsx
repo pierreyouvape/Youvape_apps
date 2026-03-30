@@ -1,11 +1,27 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useContext } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { formatPriceEur } from '../../utils/formatNumber';
+import { AuthContext } from '../../context/AuthContext';
+import { useColumnPreferences } from '../../hooks/useColumnPreferences';
+import ColumnPanel from '../ColumnPanel';
 
 const API_BASE_URL = 'http://54.37.156.233:3000/api';
 
+const CATEGORIES_COLUMNS = [
+  { key: 'product_count',      label: 'Produits' },
+  { key: 'sub_category_count', label: 'Sous-cat.' },
+  { key: 'qty_sold',           label: 'Qte Vendue' },
+  { key: 'ca_ttc',             label: 'CA TTC' },
+  { key: 'ca_ht',              label: 'CA HT' },
+  { key: 'cost_ht',            label: 'Cout HT' },
+  { key: 'margin_ht',          label: 'Marge HT' },
+  { key: 'margin_percent',     label: '% Marge' },
+];
+
 const CategoriesStatsTab = () => {
+  const { token } = useContext(AuthContext);
+  const { isVisible, compact, showColumnPanel, setShowColumnPanel, toggleColumn, toggleCompact } = useColumnPreferences('categories', token);
   const navigate = useNavigate();
   const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -163,7 +179,7 @@ const CategoriesStatsTab = () => {
   }), { product_count: 0, sub_category_count: 0, qty_sold: 0, ca_ttc: 0, margin_ht: 0 });
 
   return (
-    <div>
+    <div style={compact ? { maxWidth: '1400px', margin: '0 auto' } : {}}>
       {/* Header avec recherche et bouton export */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px', flexWrap: 'wrap', gap: '15px' }}>
         <div style={{ display: 'flex', gap: '15px', flex: 1 }}>
@@ -183,20 +199,31 @@ const CategoriesStatsTab = () => {
             }}
           />
         </div>
-        <button
-          onClick={handleExport}
-          style={{
-            padding: '6px 12px',
-            backgroundColor: '#6c757d',
-            color: 'white',
-            border: 'none',
-            borderRadius: '4px',
-            fontSize: '12px',
-            cursor: 'pointer'
-          }}
-        >
-          CSV
-        </button>
+        <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+          <button
+            onClick={handleExport}
+            style={{
+              padding: '6px 12px',
+              backgroundColor: '#6c757d',
+              color: 'white',
+              border: 'none',
+              borderRadius: '4px',
+              fontSize: '12px',
+              cursor: 'pointer'
+            }}
+          >
+            CSV
+          </button>
+          <ColumnPanel
+            columns={CATEGORIES_COLUMNS}
+            isVisible={isVisible}
+            toggleColumn={toggleColumn}
+            compact={compact}
+            toggleCompact={toggleCompact}
+            show={showColumnPanel}
+            setShow={setShowColumnPanel}
+          />
+        </div>
       </div>
 
       {/* Cards de statistiques */}
@@ -233,14 +260,14 @@ const CategoriesStatsTab = () => {
               <thead>
                 <tr>
                   <th style={headerStyle('category')} onClick={() => handleSort('category')}>Categorie{getSortIcon('category')}</th>
-                  <th style={headerStyle('product_count')} onClick={() => handleSort('product_count')}>Produits{getSortIcon('product_count')}</th>
-                  <th style={headerStyle('sub_category_count')} onClick={() => handleSort('sub_category_count')}>Sous-cat.{getSortIcon('sub_category_count')}</th>
-                  <th style={headerStyle('qty_sold')} onClick={() => handleSort('qty_sold')}>Qte Vendue{getSortIcon('qty_sold')}</th>
-                  <th style={headerStyle('ca_ttc')} onClick={() => handleSort('ca_ttc')}>CA TTC{getSortIcon('ca_ttc')}</th>
-                  <th style={headerStyle('ca_ht')} onClick={() => handleSort('ca_ht')}>CA HT{getSortIcon('ca_ht')}</th>
-                  <th style={headerStyle('cost_ht')} onClick={() => handleSort('cost_ht')}>Cout HT{getSortIcon('cost_ht')}</th>
-                  <th style={headerStyle('margin_ht')} onClick={() => handleSort('margin_ht')}>Marge HT{getSortIcon('margin_ht')}</th>
-                  <th style={headerStyle('margin_percent')} onClick={() => handleSort('margin_percent')}>% Marge{getSortIcon('margin_percent')}</th>
+                  {isVisible('product_count') && <th style={headerStyle('product_count')} onClick={() => handleSort('product_count')}>Produits{getSortIcon('product_count')}</th>}
+                  {isVisible('sub_category_count') && <th style={headerStyle('sub_category_count')} onClick={() => handleSort('sub_category_count')}>Sous-cat.{getSortIcon('sub_category_count')}</th>}
+                  {isVisible('qty_sold') && <th style={headerStyle('qty_sold')} onClick={() => handleSort('qty_sold')}>Qte Vendue{getSortIcon('qty_sold')}</th>}
+                  {isVisible('ca_ttc') && <th style={headerStyle('ca_ttc')} onClick={() => handleSort('ca_ttc')}>CA TTC{getSortIcon('ca_ttc')}</th>}
+                  {isVisible('ca_ht') && <th style={headerStyle('ca_ht')} onClick={() => handleSort('ca_ht')}>CA HT{getSortIcon('ca_ht')}</th>}
+                  {isVisible('cost_ht') && <th style={headerStyle('cost_ht')} onClick={() => handleSort('cost_ht')}>Cout HT{getSortIcon('cost_ht')}</th>}
+                  {isVisible('margin_ht') && <th style={headerStyle('margin_ht')} onClick={() => handleSort('margin_ht')}>Marge HT{getSortIcon('margin_ht')}</th>}
+                  {isVisible('margin_percent') && <th style={headerStyle('margin_percent')} onClick={() => handleSort('margin_percent')}>% Marge{getSortIcon('margin_percent')}</th>}
                 </tr>
               </thead>
               <tbody>
@@ -276,16 +303,14 @@ const CategoriesStatsTab = () => {
                             </span>
                           </div>
                         </td>
-                        <td style={{ padding: '15px', fontSize: '14px' }}>{formatNumber(category.product_count)}</td>
-                        <td style={{ padding: '15px', fontSize: '14px' }}>{category.sub_category_count}</td>
-                        <td style={{ padding: '15px', fontSize: '14px', fontWeight: 'bold' }}>{formatNumber(category.qty_sold)}</td>
-                        <td style={{ padding: '15px', fontSize: '14px' }}>{formatPrice(category.ca_ttc)}</td>
-                        <td style={{ padding: '15px', fontSize: '14px' }}>{formatPrice(category.ca_ht)}</td>
-                        <td style={{ padding: '15px', fontSize: '14px', color: '#dc3545' }}>{formatPrice(category.cost_ht)}</td>
-                        <td style={{ padding: '15px', fontSize: '14px', fontWeight: 'bold', color: category.margin_ht >= 0 ? '#28a745' : '#dc3545' }}>{formatPrice(category.margin_ht)}</td>
-                        <td style={{ padding: '15px', fontSize: '14px', fontWeight: 'bold', color: category.margin_percent >= 30 ? '#28a745' : category.margin_percent >= 15 ? '#ffc107' : '#dc3545' }}>
-                          {formatPercent(category.margin_percent)}
-                        </td>
+                        {isVisible('product_count') && <td style={{ padding: '15px', fontSize: '14px' }}>{formatNumber(category.product_count)}</td>}
+                        {isVisible('sub_category_count') && <td style={{ padding: '15px', fontSize: '14px' }}>{category.sub_category_count}</td>}
+                        {isVisible('qty_sold') && <td style={{ padding: '15px', fontSize: '14px', fontWeight: 'bold' }}>{formatNumber(category.qty_sold)}</td>}
+                        {isVisible('ca_ttc') && <td style={{ padding: '15px', fontSize: '14px' }}>{formatPrice(category.ca_ttc)}</td>}
+                        {isVisible('ca_ht') && <td style={{ padding: '15px', fontSize: '14px' }}>{formatPrice(category.ca_ht)}</td>}
+                        {isVisible('cost_ht') && <td style={{ padding: '15px', fontSize: '14px', color: '#dc3545' }}>{formatPrice(category.cost_ht)}</td>}
+                        {isVisible('margin_ht') && <td style={{ padding: '15px', fontSize: '14px', fontWeight: 'bold', color: category.margin_ht >= 0 ? '#28a745' : '#dc3545' }}>{formatPrice(category.margin_ht)}</td>}
+                        {isVisible('margin_percent') && <td style={{ padding: '15px', fontSize: '14px', fontWeight: 'bold', color: category.margin_percent >= 30 ? '#28a745' : category.margin_percent >= 15 ? '#ffc107' : '#dc3545' }}>{formatPercent(category.margin_percent)}</td>}
                       </tr>
                       {isExpanded && categorySubCategories.length > 0 && categorySubCategories.map((sc) => (
                         <tr key={sc.sub_category} style={{ backgroundColor: '#f8f9fa', borderTop: '1px solid #e9ecef' }}>
@@ -297,21 +322,19 @@ const CategoriesStatsTab = () => {
                               ↳ {sc.sub_category}
                             </span>
                           </td>
-                          <td style={{ padding: '10px 15px', fontSize: '13px', color: '#6c757d' }}>{formatNumber(sc.product_count)}</td>
-                          <td style={{ padding: '10px 15px', fontSize: '13px', color: '#6c757d' }}>-</td>
-                          <td style={{ padding: '10px 15px', fontSize: '13px' }}>{formatNumber(sc.qty_sold)}</td>
-                          <td style={{ padding: '10px 15px', fontSize: '13px' }}>{formatPrice(sc.ca_ttc)}</td>
-                          <td style={{ padding: '10px 15px', fontSize: '13px' }}>{formatPrice(sc.ca_ht)}</td>
-                          <td style={{ padding: '10px 15px', fontSize: '13px', color: '#dc3545' }}>{formatPrice(sc.cost_ht)}</td>
-                          <td style={{ padding: '10px 15px', fontSize: '13px', color: sc.margin_ht >= 0 ? '#28a745' : '#dc3545' }}>{formatPrice(sc.margin_ht)}</td>
-                          <td style={{ padding: '10px 15px', fontSize: '13px', color: sc.margin_percent >= 30 ? '#28a745' : sc.margin_percent >= 15 ? '#ffc107' : '#dc3545' }}>
-                            {formatPercent(sc.margin_percent)}
-                          </td>
+                          {isVisible('product_count') && <td style={{ padding: '10px 15px', fontSize: '13px', color: '#6c757d' }}>{formatNumber(sc.product_count)}</td>}
+                          {isVisible('sub_category_count') && <td style={{ padding: '10px 15px', fontSize: '13px', color: '#6c757d' }}>-</td>}
+                          {isVisible('qty_sold') && <td style={{ padding: '10px 15px', fontSize: '13px' }}>{formatNumber(sc.qty_sold)}</td>}
+                          {isVisible('ca_ttc') && <td style={{ padding: '10px 15px', fontSize: '13px' }}>{formatPrice(sc.ca_ttc)}</td>}
+                          {isVisible('ca_ht') && <td style={{ padding: '10px 15px', fontSize: '13px' }}>{formatPrice(sc.ca_ht)}</td>}
+                          {isVisible('cost_ht') && <td style={{ padding: '10px 15px', fontSize: '13px', color: '#dc3545' }}>{formatPrice(sc.cost_ht)}</td>}
+                          {isVisible('margin_ht') && <td style={{ padding: '10px 15px', fontSize: '13px', color: sc.margin_ht >= 0 ? '#28a745' : '#dc3545' }}>{formatPrice(sc.margin_ht)}</td>}
+                          {isVisible('margin_percent') && <td style={{ padding: '10px 15px', fontSize: '13px', color: sc.margin_percent >= 30 ? '#28a745' : sc.margin_percent >= 15 ? '#ffc107' : '#dc3545' }}>{formatPercent(sc.margin_percent)}</td>}
                         </tr>
                       ))}
                       {isExpanded && categorySubCategories.length === 0 && (
                         <tr key={`${category.category}-loading`} style={{ backgroundColor: '#f8f9fa' }}>
-                          <td colSpan={9} style={{ padding: '15px 45px', fontSize: '13px', color: '#6c757d' }}>
+                          <td colSpan={1 + CATEGORIES_COLUMNS.filter(c => isVisible(c.key)).length} style={{ padding: '15px 45px', fontSize: '13px', color: '#6c757d' }}>
                             Chargement des sous-categories...
                           </td>
                         </tr>

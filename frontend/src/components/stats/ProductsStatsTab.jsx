@@ -1,10 +1,24 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useContext } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import CopyButton from '../CopyButton';
 import { formatPriceEur, formatInt } from '../../utils/formatNumber';
+import { AuthContext } from '../../context/AuthContext';
+import { useColumnPreferences } from '../../hooks/useColumnPreferences';
+import ColumnPanel from '../ColumnPanel';
 
 const API_BASE_URL = 'http://54.37.156.233:3000/api';
+
+const PRODUCTS_COLUMNS = [
+  { key: 'sku',           label: 'SKU' },
+  { key: 'stock',         label: 'Stock' },
+  { key: 'qty_sold',      label: 'Vendu' },
+  { key: 'ca_ttc',        label: 'CA TTC' },
+  { key: 'ca_ht',         label: 'CA HT' },
+  { key: 'cost_ht',       label: 'Cout HT' },
+  { key: 'margin_ht',     label: 'Marge HT' },
+  { key: 'margin_percent',label: '% Marge' },
+];
 
 const PERIOD_OPTIONS = [
   { value: '7d', label: '7 derniers jours' },
@@ -54,6 +68,8 @@ const computeDateRange = (period, customStart, customEnd) => {
 
 const ProductsStatsTab = () => {
   const navigate = useNavigate();
+  const { token } = useContext(AuthContext);
+  const { isVisible, compact, showColumnPanel, setShowColumnPanel, toggleColumn, toggleCompact } = useColumnPreferences('products_stats', token);
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(false);
   const [pagination, setPagination] = useState({
@@ -255,7 +271,7 @@ const ProductsStatsTab = () => {
   });
 
   return (
-    <div>
+    <div style={compact ? { maxWidth: '1400px', margin: '0 auto' } : {}}>
       {/* Header avec filtres */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px', flexWrap: 'wrap', gap: '15px' }}>
         <div style={{ display: 'flex', gap: '15px', alignItems: 'center', flexWrap: 'wrap', flex: 1 }}>
@@ -303,20 +319,31 @@ const ProductsStatsTab = () => {
             </>
           )}
         </div>
-        <button
-          onClick={handleExport}
-          style={{
-            padding: '6px 12px',
-            backgroundColor: '#6c757d',
-            color: 'white',
-            border: 'none',
-            borderRadius: '4px',
-            fontSize: '12px',
-            cursor: 'pointer'
-          }}
-        >
-          CSV
-        </button>
+        <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+          <button
+            onClick={handleExport}
+            style={{
+              padding: '6px 12px',
+              backgroundColor: '#6c757d',
+              color: 'white',
+              border: 'none',
+              borderRadius: '4px',
+              fontSize: '12px',
+              cursor: 'pointer'
+            }}
+          >
+            CSV
+          </button>
+          <ColumnPanel
+            columns={PRODUCTS_COLUMNS}
+            isVisible={isVisible}
+            toggleColumn={toggleColumn}
+            compact={compact}
+            toggleCompact={toggleCompact}
+            show={showColumnPanel}
+            setShow={setShowColumnPanel}
+          />
+        </div>
       </div>
 
       {/* Card de statistique */}
@@ -338,14 +365,14 @@ const ProductsStatsTab = () => {
                 <tr>
                   <th style={{ ...headerStyle('name'), width: '50px', cursor: 'default' }}></th>
                   <th style={headerStyle('name')} onClick={() => handleSort('name')}>Nom{getSortIcon('name')}</th>
-                  <th style={headerStyle('sku')} onClick={() => handleSort('sku')}>SKU{getSortIcon('sku')}</th>
-                  <th style={headerStyle('stock')} onClick={() => handleSort('stock')}>Stock{getSortIcon('stock')}</th>
-                  <th style={headerStyle('qty_sold')} onClick={() => handleSort('qty_sold')}>Vendu{getSortIcon('qty_sold')}</th>
-                  <th style={headerStyle('ca_ttc')} onClick={() => handleSort('ca_ttc')}>CA TTC{getSortIcon('ca_ttc')}</th>
-                  <th style={headerStyle('ca_ht')} onClick={() => handleSort('ca_ht')}>CA HT{getSortIcon('ca_ht')}</th>
-                  <th style={headerStyle('cost_ht')} onClick={() => handleSort('cost_ht')}>Coût HT{getSortIcon('cost_ht')}</th>
-                  <th style={headerStyle('margin_ht')} onClick={() => handleSort('margin_ht')}>Marge HT{getSortIcon('margin_ht')}</th>
-                  <th style={headerStyle('margin_percent')} onClick={() => handleSort('margin_percent')}>% Marge{getSortIcon('margin_percent')}</th>
+                  {isVisible('sku') && <th style={headerStyle('sku')} onClick={() => handleSort('sku')}>SKU{getSortIcon('sku')}</th>}
+                  {isVisible('stock') && <th style={headerStyle('stock')} onClick={() => handleSort('stock')}>Stock{getSortIcon('stock')}</th>}
+                  {isVisible('qty_sold') && <th style={headerStyle('qty_sold')} onClick={() => handleSort('qty_sold')}>Vendu{getSortIcon('qty_sold')}</th>}
+                  {isVisible('ca_ttc') && <th style={headerStyle('ca_ttc')} onClick={() => handleSort('ca_ttc')}>CA TTC{getSortIcon('ca_ttc')}</th>}
+                  {isVisible('ca_ht') && <th style={headerStyle('ca_ht')} onClick={() => handleSort('ca_ht')}>CA HT{getSortIcon('ca_ht')}</th>}
+                  {isVisible('cost_ht') && <th style={headerStyle('cost_ht')} onClick={() => handleSort('cost_ht')}>Coût HT{getSortIcon('cost_ht')}</th>}
+                  {isVisible('margin_ht') && <th style={headerStyle('margin_ht')} onClick={() => handleSort('margin_ht')}>Marge HT{getSortIcon('margin_ht')}</th>}
+                  {isVisible('margin_percent') && <th style={headerStyle('margin_percent')} onClick={() => handleSort('margin_percent')}>% Marge{getSortIcon('margin_percent')}</th>}
                 </tr>
               </thead>
               <tbody>
@@ -392,44 +419,46 @@ const ProductsStatsTab = () => {
                             </span>
                           </div>
                         </td>
-                        <td style={{ padding: '15px', fontSize: '14px', color: '#6c757d' }}>
-                          {product.sku ? (
-                            <>
-                              <a
-                                href={`https://www.youvape.fr/wp-admin/post.php?post=${product.wp_product_id}&action=edit`}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                onClick={(e) => e.stopPropagation()}
-                                style={{ color: '#135E84', textDecoration: 'none' }}
-                                onMouseEnter={(e) => e.target.style.textDecoration = 'underline'}
-                                onMouseLeave={(e) => e.target.style.textDecoration = 'none'}
-                              >
-                                {product.sku}
-                              </a>
-                              <CopyButton text={product.sku} size={12} />
-                            </>
-                          ) : '-'}
-                        </td>
-                        <td style={{ padding: '15px', fontSize: '14px' }}>
-                          <span style={{
-                            padding: '4px 10px',
-                            borderRadius: '12px',
-                            fontSize: '12px',
-                            fontWeight: 'bold',
-                            backgroundColor: product.stock > 10 ? '#d1e7dd' : product.stock > 0 ? '#fff3cd' : '#f8d7da',
-                            color: product.stock > 10 ? '#0f5132' : product.stock > 0 ? '#856404' : '#721c24'
-                          }}>
-                            {product.stock}
-                          </span>
-                        </td>
-                        <td style={{ padding: '15px', fontSize: '14px', fontWeight: 'bold' }}>{formatInt(product.qty_sold)}</td>
-                        <td style={{ padding: '15px', fontSize: '14px' }}>{formatPrice(product.ca_ttc)}</td>
-                        <td style={{ padding: '15px', fontSize: '14px' }}>{formatPrice(product.ca_ht)}</td>
-                        <td style={{ padding: '15px', fontSize: '14px', color: '#dc3545' }}>{formatPrice(product.cost_ht)}</td>
-                        <td style={{ padding: '15px', fontSize: '14px', fontWeight: 'bold', color: '#28a745' }}>{formatPrice(product.margin_ht)}</td>
-                        <td style={{ padding: '15px', fontSize: '14px', fontWeight: 'bold', color: product.margin_percent >= 30 ? '#28a745' : product.margin_percent >= 15 ? '#ffc107' : '#dc3545' }}>
-                          {formatPercent(product.margin_percent)}
-                        </td>
+                        {isVisible('sku') && (
+                          <td style={{ padding: '15px', fontSize: '14px', color: '#6c757d' }}>
+                            {product.sku ? (
+                              <>
+                                <a
+                                  href={`https://www.youvape.fr/wp-admin/post.php?post=${product.wp_product_id}&action=edit`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  onClick={(e) => e.stopPropagation()}
+                                  style={{ color: '#135E84', textDecoration: 'none' }}
+                                  onMouseEnter={(e) => e.target.style.textDecoration = 'underline'}
+                                  onMouseLeave={(e) => e.target.style.textDecoration = 'none'}
+                                >
+                                  {product.sku}
+                                </a>
+                                <CopyButton text={product.sku} size={12} />
+                              </>
+                            ) : '-'}
+                          </td>
+                        )}
+                        {isVisible('stock') && (
+                          <td style={{ padding: '15px', fontSize: '14px' }}>
+                            <span style={{
+                              padding: '4px 10px',
+                              borderRadius: '12px',
+                              fontSize: '12px',
+                              fontWeight: 'bold',
+                              backgroundColor: product.stock > 10 ? '#d1e7dd' : product.stock > 0 ? '#fff3cd' : '#f8d7da',
+                              color: product.stock > 10 ? '#0f5132' : product.stock > 0 ? '#856404' : '#721c24'
+                            }}>
+                              {product.stock}
+                            </span>
+                          </td>
+                        )}
+                        {isVisible('qty_sold') && <td style={{ padding: '15px', fontSize: '14px', fontWeight: 'bold' }}>{formatInt(product.qty_sold)}</td>}
+                        {isVisible('ca_ttc') && <td style={{ padding: '15px', fontSize: '14px' }}>{formatPrice(product.ca_ttc)}</td>}
+                        {isVisible('ca_ht') && <td style={{ padding: '15px', fontSize: '14px' }}>{formatPrice(product.ca_ht)}</td>}
+                        {isVisible('cost_ht') && <td style={{ padding: '15px', fontSize: '14px', color: '#dc3545' }}>{formatPrice(product.cost_ht)}</td>}
+                        {isVisible('margin_ht') && <td style={{ padding: '15px', fontSize: '14px', fontWeight: 'bold', color: '#28a745' }}>{formatPrice(product.margin_ht)}</td>}
+                        {isVisible('margin_percent') && <td style={{ padding: '15px', fontSize: '14px', fontWeight: 'bold', color: product.margin_percent >= 30 ? '#28a745' : product.margin_percent >= 15 ? '#ffc107' : '#dc3545' }}>{formatPercent(product.margin_percent)}</td>}
                       </tr>
                       {isExpanded && productVariations.length > 0 && productVariations.map((variation) => (
                         <tr key={variation.wp_product_id} style={{ backgroundColor: '#f8f9fa', borderTop: '1px solid #e9ecef' }}>
@@ -437,48 +466,50 @@ const ProductsStatsTab = () => {
                           <td style={{ padding: '10px 15px 10px 15px', fontSize: '13px', color: '#6c757d' }}>
                             ↳ {variation.post_title}
                           </td>
-                          <td style={{ padding: '10px 15px', fontSize: '13px', color: '#6c757d' }}>
-                            {variation.sku ? (
-                              <>
-                                <a
-                                  href={`https://www.youvape.fr/wp-admin/post.php?post=${variation.wp_product_id}&action=edit`}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  style={{ color: '#135E84', textDecoration: 'none' }}
-                                  onMouseEnter={(e) => e.target.style.textDecoration = 'underline'}
-                                  onMouseLeave={(e) => e.target.style.textDecoration = 'none'}
-                                >
-                                  {variation.sku}
-                                </a>
-                                <CopyButton text={variation.sku} size={11} />
-                              </>
-                            ) : '-'}
-                          </td>
-                          <td style={{ padding: '10px 15px', fontSize: '13px' }}>
-                            <span style={{
-                              padding: '3px 8px',
-                              borderRadius: '10px',
-                              fontSize: '11px',
-                              fontWeight: 'bold',
-                              backgroundColor: variation.stock > 10 ? '#d1e7dd' : variation.stock > 0 ? '#fff3cd' : '#f8d7da',
-                              color: variation.stock > 10 ? '#0f5132' : variation.stock > 0 ? '#856404' : '#721c24'
-                            }}>
-                              {variation.stock}
-                            </span>
-                          </td>
-                          <td style={{ padding: '10px 15px', fontSize: '13px' }}>{formatInt(variation.qty_sold)}</td>
-                          <td style={{ padding: '10px 15px', fontSize: '13px' }}>{formatPrice(variation.ca_ttc)}</td>
-                          <td style={{ padding: '10px 15px', fontSize: '13px' }}>{formatPrice(variation.ca_ht)}</td>
-                          <td style={{ padding: '10px 15px', fontSize: '13px', color: '#dc3545' }}>{formatPrice(variation.cost_ht)}</td>
-                          <td style={{ padding: '10px 15px', fontSize: '13px', color: '#28a745' }}>{formatPrice(variation.margin_ht)}</td>
-                          <td style={{ padding: '10px 15px', fontSize: '13px', color: variation.margin_percent >= 30 ? '#28a745' : variation.margin_percent >= 15 ? '#ffc107' : '#dc3545' }}>
-                            {formatPercent(variation.margin_percent)}
-                          </td>
+                          {isVisible('sku') && (
+                            <td style={{ padding: '10px 15px', fontSize: '13px', color: '#6c757d' }}>
+                              {variation.sku ? (
+                                <>
+                                  <a
+                                    href={`https://www.youvape.fr/wp-admin/post.php?post=${variation.wp_product_id}&action=edit`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    style={{ color: '#135E84', textDecoration: 'none' }}
+                                    onMouseEnter={(e) => e.target.style.textDecoration = 'underline'}
+                                    onMouseLeave={(e) => e.target.style.textDecoration = 'none'}
+                                  >
+                                    {variation.sku}
+                                  </a>
+                                  <CopyButton text={variation.sku} size={11} />
+                                </>
+                              ) : '-'}
+                            </td>
+                          )}
+                          {isVisible('stock') && (
+                            <td style={{ padding: '10px 15px', fontSize: '13px' }}>
+                              <span style={{
+                                padding: '3px 8px',
+                                borderRadius: '10px',
+                                fontSize: '11px',
+                                fontWeight: 'bold',
+                                backgroundColor: variation.stock > 10 ? '#d1e7dd' : variation.stock > 0 ? '#fff3cd' : '#f8d7da',
+                                color: variation.stock > 10 ? '#0f5132' : variation.stock > 0 ? '#856404' : '#721c24'
+                              }}>
+                                {variation.stock}
+                              </span>
+                            </td>
+                          )}
+                          {isVisible('qty_sold') && <td style={{ padding: '10px 15px', fontSize: '13px' }}>{formatInt(variation.qty_sold)}</td>}
+                          {isVisible('ca_ttc') && <td style={{ padding: '10px 15px', fontSize: '13px' }}>{formatPrice(variation.ca_ttc)}</td>}
+                          {isVisible('ca_ht') && <td style={{ padding: '10px 15px', fontSize: '13px' }}>{formatPrice(variation.ca_ht)}</td>}
+                          {isVisible('cost_ht') && <td style={{ padding: '10px 15px', fontSize: '13px', color: '#dc3545' }}>{formatPrice(variation.cost_ht)}</td>}
+                          {isVisible('margin_ht') && <td style={{ padding: '10px 15px', fontSize: '13px', color: '#28a745' }}>{formatPrice(variation.margin_ht)}</td>}
+                          {isVisible('margin_percent') && <td style={{ padding: '10px 15px', fontSize: '13px', color: variation.margin_percent >= 30 ? '#28a745' : variation.margin_percent >= 15 ? '#ffc107' : '#dc3545' }}>{formatPercent(variation.margin_percent)}</td>}
                         </tr>
                       ))}
                       {isExpanded && productVariations.length === 0 && (
                         <tr key={`${product.wp_product_id}-loading`} style={{ backgroundColor: '#f8f9fa' }}>
-                          <td colSpan={10} style={{ padding: '15px 45px', fontSize: '13px', color: '#6c757d' }}>
+                          <td colSpan={2 + PRODUCTS_COLUMNS.filter(c => isVisible(c.key)).length} style={{ padding: '15px 45px', fontSize: '13px', color: '#6c757d' }}>
                             Chargement des variations...
                           </td>
                         </tr>
