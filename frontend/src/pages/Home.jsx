@@ -34,7 +34,7 @@ const Home = () => {
         position: 'relative'
       }}>
         <img
-          src="/images/logo.svg"
+          src="/images/logo.jpg"
           alt="YouVape"
           style={{ height: '60px' }}
         />

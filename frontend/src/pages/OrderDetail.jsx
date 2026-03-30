@@ -199,7 +199,7 @@ const OrderDetail = () => {
           boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
         }}
       >
-        <img src="/images/logo.svg" alt="YouVape" style={{ height: '60px' }} />
+        <img src="/images/logo.jpg" alt="YouVape" style={{ height: '60px' }} />
         <button
           onClick={() => navigate(-1)}
           style={{

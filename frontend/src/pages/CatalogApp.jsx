@@ -273,7 +273,7 @@ const CatalogApp = () => {
         alignItems: 'center',
         position: 'relative'
       }}>
-        <img src="/images/logo.svg" alt="YouVape" style={{ height: '60px' }} />
+        <img src="/images/logo.jpg" alt="YouVape" style={{ height: '60px' }} />
         <button
           onClick={() => navigate('/home')}
           style={{
