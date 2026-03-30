@@ -70,10 +70,11 @@ const authController = {
       }
 
       // Générer le token JWT
+      const { rememberMe } = req.body;
       const token = jwt.sign(
         { id: user.id, email: user.email, name: user.name },
         process.env.JWT_SECRET,
-        { expiresIn: '24h' }
+        { expiresIn: rememberMe ? '30d' : '24h' }
       );
 
       res.json({
