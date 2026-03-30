@@ -284,7 +284,7 @@ const CatalogApp = () => {
       </div>
 
       {/* Main Content */}
-      <div style={{ flex: 1, maxWidth: '1400px', margin: '30px auto', padding: '0 20px', width: '100%' }}>
+      <div style={{ flex: 1, margin: '30px 0', padding: '0 60px', width: '100%' }}>
         <h1 style={{ color: '#059669', marginBottom: '20px' }}>Catalogue Produits</h1>
 
         {/* Search + CSV */}
