@@ -53,6 +53,7 @@ const CatalogApp = () => {
 
   // Préférences colonnes
   const [hiddenColumns, setHiddenColumns] = useState([]);
+  const [compact, setCompact] = useState(false);
   const [showColumnPanel, setShowColumnPanel] = useState(false);
 
   // CSV import state
@@ -94,7 +95,10 @@ const CatalogApp = () => {
         const res = await axios.get(`${API_URL}/preferences/catalog`, {
           headers: { Authorization: `Bearer ${token}` }
         });
-        if (res.data.success) setHiddenColumns(res.data.hiddenColumns || []);
+        if (res.data.success) {
+          setHiddenColumns(res.data.hiddenColumns || []);
+          setCompact(res.data.compact || false);
+        }
       } catch (err) {
         console.error('Erreur chargement préférences colonnes catalog:', err);
       }
@@ -102,9 +106,9 @@ const CatalogApp = () => {
     if (token) load();
   }, [token]);
 
-  const saveHiddenColumns = async (cols) => {
+  const savePreferences = async (cols, cmp) => {
     try {
-      await axios.put(`${API_URL}/preferences/catalog`, { hiddenColumns: cols }, {
+      await axios.put(`${API_URL}/preferences/catalog`, { hiddenColumns: cols, compact: cmp }, {
         headers: { Authorization: `Bearer ${token}` }
       });
     } catch (err) {
@@ -117,7 +121,13 @@ const CatalogApp = () => {
       ? hiddenColumns.filter(k => k !== key)
       : [...hiddenColumns, key];
     setHiddenColumns(next);
-    saveHiddenColumns(next);
+    savePreferences(next, compact);
+  };
+
+  const toggleCompact = () => {
+    const next = !compact;
+    setCompact(next);
+    savePreferences(hiddenColumns, next);
   };
 
   const isVisible = (key) => !hiddenColumns.includes(key);
@@ -284,7 +294,7 @@ const CatalogApp = () => {
       </div>
 
       {/* Main Content */}
-      <div style={{ flex: 1, margin: '30px 0', padding: '0 60px', width: '100%' }}>
+      <div style={compact ? { flex: 1, maxWidth: '1400px', margin: '30px auto', padding: '0 20px', width: '100%' } : { flex: 1, margin: '30px 0', padding: '0 60px', width: '100%' }}>
         <h1 style={{ color: '#059669', marginBottom: '20px' }}>Catalogue Produits</h1>
 
         {/* Search + CSV */}
@@ -345,6 +355,16 @@ const CatalogApp = () => {
                     {col.label}
                   </label>
                 ))}
+                <div style={{ borderTop: '1px solid #e5e7eb', marginTop: '10px', paddingTop: '10px' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '13px' }}>
+                    <input
+                      type="checkbox"
+                      checked={compact}
+                      onChange={toggleCompact}
+                    />
+                    Vue compacte
+                  </label>
+                </div>
               </div>
             )}
           </div>
