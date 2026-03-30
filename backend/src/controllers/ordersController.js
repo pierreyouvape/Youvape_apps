@@ -1,6 +1,7 @@
 const orderModel = require('../models/orderModel');
 const advancedFilterService = require('../services/advancedFilterService');
 const pool = require('../config/database');
+const { buildSearchCondition } = require('../utils/searchUtils');
 const axios = require('axios');
 const https = require('https');
 const httpsAgent = new https.Agent({ rejectUnauthorized: false });
@@ -220,15 +221,17 @@ exports.filterOrders = async (req, res) => {
 
     // Recherche texte (numéro commande, nom, prénom, email)
     if (req.query.search) {
+      const { clause, params: searchParams, nextIndex: ni } = buildSearchCondition(
+        req.query.search,
+        ['o.billing_first_name', 'o.billing_last_name', 'o.billing_email'],
+        paramIndex + 1
+      );
       conditions.push(`(
         CAST(o.wp_order_id AS TEXT) ILIKE $${paramIndex}
-        OR o.billing_first_name ILIKE $${paramIndex}
-        OR o.billing_last_name ILIKE $${paramIndex}
-        OR o.billing_email ILIKE $${paramIndex}
-        OR CONCAT(o.billing_first_name, ' ', o.billing_last_name) ILIKE $${paramIndex}
+        OR ${clause}
       )`);
-      params.push(`%${req.query.search}%`);
-      paramIndex++;
+      params.push(`%${req.query.search}%`, ...searchParams);
+      paramIndex = ni;
     }
 
     // Filtre par pays
