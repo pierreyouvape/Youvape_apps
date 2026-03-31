@@ -247,19 +247,21 @@ const supplierModel = {
 
     // Vérifier si c'est un produit variable (parent)
     const typeResult = await pool.query(
-      `SELECT product_type FROM products WHERE id = $1`,
+      `SELECT product_type, wp_product_id FROM products WHERE id = $1`,
       [resolvedId]
     );
-    const isVariable = typeResult.rows[0]?.product_type === 'variable';
+    const product = typeResult.rows[0];
+    const isVariable = product?.product_type === 'variable';
 
     if (isVariable) {
+      // wp_parent_id stocke le wp_product_id du parent (pas l'id interne)
       const result = await pool.query(`
         DELETE FROM product_suppliers
         WHERE supplier_id = $1 AND product_id IN (
           SELECT id FROM products WHERE wp_parent_id = $2
         )
         RETURNING *
-      `, [supplierId, resolvedId]);
+      `, [supplierId, product.wp_product_id]);
       return result.rows[0];
     }
 
