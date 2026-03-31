@@ -605,8 +605,10 @@ const purchaseOrderModel = {
         // Insérer les items
         for (const item of items) {
           const productId = productBySku.get(item.sku) || null; // NULL si SKU inconnu, on garde quand même la ligne
-          const unitPrice = parseFloat(item.price) || null;
+          const pricepack = parseFloat(item.price) || null;
           const qtyPack = parseInt(item.qty_pack) || 1;
+          // unit_price = prix unitaire (prix pack / qty_pack)
+          const unitPrice = (pricepack != null && qtyPack > 1) ? pricepack / qtyPack : pricepack;
           const qtyOrdered = (parseInt(item.qty) || 0) * qtyPack;
           const qtyReceived = (parseInt(item.qty_received) || 0) * qtyPack;
 
