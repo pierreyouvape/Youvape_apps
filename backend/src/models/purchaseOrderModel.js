@@ -533,13 +533,6 @@ const purchaseOrderModel = {
           continue; // Fournisseur BMS inconnu localement
         }
 
-        // TEMP: ignorer les commandes >= 2026-03-25 (prix erronés côté BMS, correction en cours)
-        const orderDateStr = bmsOrder.order_date || bmsOrder.created_at || '';
-        if (orderDateStr && orderDateStr >= '2026-03-25') {
-          skipped++;
-          continue;
-        }
-
         const bmsReference = String(bmsOrder.reference);
         const items = bmsOrder.items || [];
 
