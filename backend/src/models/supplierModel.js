@@ -256,7 +256,7 @@ const supplierModel = {
       const result = await pool.query(`
         DELETE FROM product_suppliers
         WHERE supplier_id = $1 AND product_id IN (
-          SELECT id FROM products WHERE parent_id = $2
+          SELECT id FROM products WHERE wp_parent_id = $2
         )
         RETURNING *
       `, [supplierId, resolvedId]);
