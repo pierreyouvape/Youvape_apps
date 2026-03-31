@@ -241,14 +241,33 @@ const supplierModel = {
   },
 
   // Retirer un produit d'un fournisseur (résout wp_product_id vers id interne)
+  // Si le produit est un parent variable, supprime toutes les variations pour ce fournisseur
   removeProduct: async (supplierId, productId) => {
     const resolvedId = await resolveProductId(productId);
-    const query = `
+
+    // Vérifier si c'est un produit variable (parent)
+    const typeResult = await pool.query(
+      `SELECT product_type FROM products WHERE id = $1`,
+      [resolvedId]
+    );
+    const isVariable = typeResult.rows[0]?.product_type === 'variable';
+
+    if (isVariable) {
+      const result = await pool.query(`
+        DELETE FROM product_suppliers
+        WHERE supplier_id = $1 AND product_id IN (
+          SELECT id FROM products WHERE parent_id = $2
+        )
+        RETURNING *
+      `, [supplierId, resolvedId]);
+      return result.rows[0];
+    }
+
+    const result = await pool.query(`
       DELETE FROM product_suppliers
       WHERE supplier_id = $1 AND product_id = $2
       RETURNING *
-    `;
-    const result = await pool.query(query, [supplierId, resolvedId]);
+    `, [supplierId, resolvedId]);
     return result.rows[0];
   },
 
