@@ -950,7 +950,7 @@ const NeedsTab = ({ token, onCompactChange }) => {
               </thead>
               <tbody>
                 {(() => { let varIdx = 0; let simpleIdx = 0; return pagedProducts.map((row, idx) => { if (row._isParent) { varIdx = 0; } else if (row._isVariation) { varIdx++; } else { simpleIdx++; } return row._isParent ? (
-                  <tr key={`parent-${row.parent_title}-${idx}`} style={{ backgroundColor: '#135E84', color: '#ffffff', fontWeight: 600 }}>
+                  <tr key={`parent-${row.parent_title}-${idx}`} className="row-parent" style={{ backgroundColor: '#135E84', color: '#ffffff', fontWeight: 600 }}>
                     <td>
                       {row.image_url ? (
                         <img src={row.image_url} alt="" style={{ width: '40px', height: '40px', objectFit: 'cover', borderRadius: '4px' }} />

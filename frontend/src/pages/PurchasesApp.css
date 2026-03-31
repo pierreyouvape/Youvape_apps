@@ -164,6 +164,10 @@
   background: #fef9e7 !important;
 }
 
+.purchases-table tr.row-parent:hover {
+  background: #1a7ab8 !important;
+}
+
 .purchases-table .text-right {
   text-align: right;
 }
