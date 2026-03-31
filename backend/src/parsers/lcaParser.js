@@ -1,14 +1,19 @@
 /**
  * Parseur PDF pour LCA Distribution
- * Gere 2 formats :
+ * Gere 3 formats :
+ * - "Confirmation" : mail "Confirmation de votre commande" (refs apres "Référence:", 1 qte + prix total)
  * - "Preparation" : mail "Votre commande est en cours de preparation" (refs en debut de ligne, 3 colonnes qte)
- * - "Confirmation" : mail "Confirmation de votre commande" (refs apres "Référence:", 1 qte + prix)
+ * - "SiteWeb" : page commande site LCA (tableau Nom|Référence|Prix|Qté avec Commandé/Expédié)
  * Pas de prix exploite — uniquement refs, designations, quantites
  */
 
 module.exports = {
   parse: (text) => {
-    // Detecter le format
+    // Detecter le format SiteWeb : header de tableau "Nom du produit" + "Référence" + "Qté"
+    if (text.includes('Nom du produit') && text.includes('Commandé')) {
+      return parseSiteWeb(text);
+    }
+    // Detecter le format Confirmation (mail Gmail)
     const isConfirmation = text.includes('Référence: #REF') || text.includes('Référence : #REF');
     return isConfirmation ? parseConfirmation(text) : parsePreparation(text);
   }
@@ -127,6 +132,79 @@ function parsePreparation(text) {
         backorder: parseInt(itemMatch[5]),
       });
     }
+  }
+
+  return { orderNumber, orderDate, items, hasPrice: false };
+}
+
+/**
+ * Format "Site Web LCA" — page commande depuis le compte client LCA
+ * Structure : tableau avec colonnes Nom du produit | Référence | Prix | Qté | Sous-total
+ * Qté : "Commandé10\nExpédié10" — on prend uniquement Commandé
+ * Une ligne = un article, tableau répété sur chaque page avec totaux en bas
+ */
+function parseSiteWeb(text) {
+  // Numéro de commande : "Commande #325592"
+  const orderMatch = text.match(/Commande\s+#(\d+)/);
+  const orderNumber = orderMatch ? orderMatch[1] : null;
+
+  // Date : "Date de commande : 30 mars 2026"
+  const moisMap = {
+    'janvier': '01', 'février': '02', 'mars': '03', 'avril': '04',
+    'mai': '05', 'juin': '06', 'juillet': '07', 'août': '08',
+    'septembre': '09', 'octobre': '10', 'novembre': '11', 'décembre': '12'
+  };
+  const dateMatch = text.match(/Date de commande\s*:\s*(\d{1,2})\s+(\w+)\s+(\d{4})/i);
+  let orderDate = null;
+  if (dateMatch) {
+    const day = dateMatch[1].padStart(2, '0');
+    const month = moisMap[dateMatch[2].toLowerCase()] || '01';
+    orderDate = `${dateMatch[3]}-${month}-${day}`;
+  }
+
+  const items = [];
+
+  // Nettoyer : retirer les headers de tableau, les totaux répétés, les URLs et timestamps
+  const cleaned = text
+    .replace(/\d{2}\/\d{2}\/\d{4}\s+\d{2}:\d{2}/g, '')
+    .replace(/https?:\/\/[^\n]*/g, '')
+    .replace(/\d+\/\d+\n/g, '')
+    .replace(/Nom du produit\s+Référence\s+Prix\s+Qté\s+Sous-total/g, '')
+    .replace(/Sous-total[\s\S]*?Montant global[^\n]*\n?/g, '')
+    .replace(/Expédié\d+/g, '')           // retirer les lignes "Expédié10"
+    .replace(/Pièces jointes[\s\S]*?(?=\n#REF|\nCommandé)/g, ''); // retirer les pièces jointes
+
+  // Extraire toutes les refs avec leur position
+  const refRegex = /#REF(\d+-\d+)/g;
+  let match;
+  const refs = [];
+  while ((match = refRegex.exec(cleaned)) !== null) {
+    refs.push({ ref: match[1], fullRef: `#REF${match[1]}`, index: match.index, endIndex: match.index + match[0].length });
+  }
+
+  for (let i = 0; i < refs.length; i++) {
+    const ref = refs[i];
+    const nextStart = i + 1 < refs.length ? refs[i + 1].index : cleaned.length;
+    const afterRef = cleaned.substring(ref.endIndex, nextStart);
+
+    // Qté : "Commandé(\d+)" dans le bloc après la ref
+    const qtyMatch = afterRef.match(/Commandé(\d+)/);
+    const qty = qtyMatch ? parseInt(qtyMatch[1]) : null;
+    if (!qty) continue;
+
+    // Désignation : lignes avant la ref (depuis la fin du bloc précédent)
+    const prevEnd = i > 0 ? refs[i - 1].endIndex : 0;
+    const beforeRef = cleaned.substring(prevEnd, ref.index);
+    const beforeLines = beforeRef.split('\n')
+      .map(l => l.trim())
+      .filter(l => l && !l.match(/^\d+,\d+\s*€/) && !l.match(/^Commandé/) && l !== 'Expédié');
+    const designation = beforeLines.length > 0 ? beforeLines[beforeLines.length - 1] : '';
+
+    items.push({
+      supplier_sku: ref.fullRef,
+      designation: designation.trim(),
+      qty_ordered: qty,
+    });
   }
 
   return { orderNumber, orderDate, items, hasPrice: false };
