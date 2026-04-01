@@ -530,6 +530,70 @@ const supplierModel = {
     const query = 'SELECT * FROM suppliers WHERE bms_id = $1';
     const result = await pool.query(query, [bmsId]);
     return result.rows[0];
+  },
+
+  /**
+   * Synchroniser les associations produits-fournisseurs depuis BMS.
+   * Pour chaque fournisseur local avec un bms_id, récupère ses produits BMS
+   * et upsert dans product_suppliers (matching par SKU).
+   * Ne supprime pas les associations manuelles existantes.
+   */
+  syncProductSuppliersFromBMS: async () => {
+    // 1. Fournisseurs locaux avec bms_id
+    const suppliersResult = await pool.query(
+      'SELECT id, name, bms_id FROM suppliers WHERE bms_id IS NOT NULL AND is_active = true'
+    );
+    const localSuppliers = suppliersResult.rows;
+
+    // 2. Mapping sku → product.id local (publish uniquement)
+    const productsResult = await pool.query(`
+      SELECT id, sku FROM products
+      WHERE sku IS NOT NULL AND sku != '' AND post_status = 'publish'
+    `);
+    const productBySku = new Map(productsResult.rows.map(p => [p.sku, p.id]));
+
+    let linked = 0;
+    let skipped = 0;
+    let skuNotFound = 0;
+    const details = [];
+
+    for (const supplier of localSuppliers) {
+      let bmsProducts;
+      try {
+        bmsProducts = await bmsApiModel.getSupplierProducts(supplier.bms_id);
+      } catch (err) {
+        console.warn(`Impossible de récupérer les produits BMS pour ${supplier.name} (bms_id=${supplier.bms_id}): ${err.message}`);
+        skipped++;
+        continue;
+      }
+
+      for (const item of bmsProducts) {
+        const productId = productBySku.get(item.sku);
+        if (!productId) {
+          skuNotFound++;
+          continue;
+        }
+
+        const price = item.price ? parseFloat(item.price) : null;
+        const packQty = parseInt(item.pack_qty) || 1;
+        const isPrimary = item.primary === 1 || item.primary === true;
+
+        await pool.query(`
+          INSERT INTO product_suppliers (supplier_id, product_id, supplier_price, pack_qty, is_primary)
+          VALUES ($1, $2, $3, $4, $5)
+          ON CONFLICT (product_id, supplier_id) DO UPDATE SET
+            supplier_price = COALESCE(EXCLUDED.supplier_price, product_suppliers.supplier_price),
+            pack_qty = EXCLUDED.pack_qty,
+            is_primary = CASE WHEN EXCLUDED.is_primary THEN true ELSE product_suppliers.is_primary END,
+            updated_at = CURRENT_TIMESTAMP
+        `, [supplier.id, productId, price, packQty, isPrimary]);
+
+        linked++;
+        details.push({ supplier: supplier.name, sku: item.sku, productId });
+      }
+    }
+
+    return { linked, skipped, skuNotFound, suppliersProcessed: localSuppliers.length };
   }
 };
 

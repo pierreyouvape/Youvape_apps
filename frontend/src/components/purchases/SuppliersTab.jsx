@@ -11,6 +11,7 @@ const SuppliersTab = ({ token }) => {
   const [showImportModal, setShowImportModal] = useState(false);
   const [importData, setImportData] = useState('');
   const [syncing, setSyncing] = useState(false);
+  const [syncingProducts, setSyncingProducts] = useState(false);
 
   // Form state
   const [form, setForm] = useState({
@@ -197,12 +198,46 @@ const SuppliersTab = ({ token }) => {
     }
   };
 
+  const handleSyncProductSuppliers = async () => {
+    if (!confirm('Synchroniser les associations produits-fournisseurs depuis BMS ?\n\nCela va lier tous les produits à leurs fournisseurs BMS (sans écraser les associations manuelles).')) {
+      return;
+    }
+
+    setSyncingProducts(true);
+    try {
+      const response = await axios.post(`${API_URL}/purchases/suppliers/sync-product-suppliers`, {}, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+
+      const result = response.data.data;
+      alert(`Synchronisation terminée !\n\n✓ ${result.linked} association(s) créées/mises à jour\n✗ ${result.skuNotFound} SKU non trouvés\n\n${result.suppliersProcessed} fournisseurs traités`);
+    } catch (err) {
+      console.error('Erreur sync produits-fournisseurs:', err);
+      alert(err.response?.data?.error || 'Erreur lors de la synchronisation');
+    } finally {
+      setSyncingProducts(false);
+    }
+  };
+
   return (
     <div className="suppliers-tab">
       <div className="purchases-card">
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
           <h2 style={{ margin: 0 }}>Fournisseurs ({suppliers.length})</h2>
           <div style={{ display: 'flex', gap: '10px' }}>
+            <button
+              className="btn"
+              onClick={handleSyncProductSuppliers}
+              disabled={syncingProducts}
+              style={{
+                background: '#0ea5e9',
+                color: 'white',
+                border: 'none',
+                opacity: syncingProducts ? 0.7 : 1
+              }}
+            >
+              {syncingProducts ? 'Sync...' : 'Sync produits BMS'}
+            </button>
             <button
               className="btn"
               onClick={handleSyncBMS}
@@ -214,7 +249,7 @@ const SuppliersTab = ({ token }) => {
                 opacity: syncing ? 0.7 : 1
               }}
             >
-              {syncing ? '⏳ Sync...' : '🔄 Sync BMS'}
+              {syncing ? 'Sync...' : 'Sync BMS'}
             </button>
             <button className="btn btn-secondary" onClick={() => setShowImportModal(true)}>
               📥 Import CSV
