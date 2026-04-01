@@ -975,7 +975,7 @@ const NeedsTab = ({ token, onCompactChange }) => {
                     <td></td>
                     {isVisible('weight') && <td></td>}
                     {isVisible('stock') && <td className="text-right">{fmtInt(row.totalStock)}</td>}
-                    {(() => { const span = ['arrivage','sales_in_period','avg_monthly_sales','tendance','theoretical_need','supposed_need','theoretical_proposal','supposed_proposal'].filter(k => isVisible(k)).length; return span > 0 ? <td colSpan={span}></td> : null; })()}
+                    {(() => { const span = ['arrivage','sales_in_period','avg_monthly_sales','tendance','theoretical_need','supposed_need','theoretical_proposal','supposed_proposal'].filter(k => isVisible(k)).length + 1; return <td colSpan={span}></td>; })()}
                   </tr>
                 ) : (
                   <tr key={row.id} style={{ backgroundColor: row._isVariation ? (varIdx % 2 === 1 ? '#dbeafe' : '#eff6ff') : (simpleIdx % 2 === 1 ? '#ffffff' : '#f3f4f6') }}>
