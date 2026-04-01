@@ -67,6 +67,7 @@ const PackingApp = () => {
   const [cancelConfirm, setCancelConfirm] = useState(null); // label id to confirm cancel
   const [cancelLoading, setCancelLoading] = useState(false);
   const [hoveredImage, setHoveredImage] = useState(null); // { url, x, y }
+  const [wrongShippingOrder, setWrongShippingOrder] = useState(null); // order_number si mauvaise méthode
 
   // Refs pour accéder aux valeurs courantes dans le listener clavier
   const orderRef = useRef(null);
@@ -151,7 +152,14 @@ const PackingApp = () => {
         headers: { Authorization: `Bearer ${token}` }
       });
 
-      setOrder(res.data.order);
+      const loadedOrder = res.data.order;
+      if (loadedOrder.shipping_method !== 'La poste - Courrier suivi (port payé)') {
+        setWrongShippingOrder(loadedOrder.wp_order_id);
+        playSound('error');
+        return;
+      }
+
+      setOrder(loadedOrder);
       setItems(res.data.items.map(item => ({
         ...item,
         scanned: 0
@@ -277,6 +285,7 @@ const PackingApp = () => {
     setLabelData(null);
     setLabelError(null);
     setLabelLoading(false);
+    setWrongShippingOrder(null);
   }, []);
 
   // Listener clavier global — capture les scans sans champ de saisie
@@ -1039,6 +1048,51 @@ const PackingApp = () => {
         </>
         )}
       </div>
+
+      {/* Pop-up mauvaise méthode d'expédition */}
+      {wrongShippingOrder && (
+        <div style={{
+          position: 'fixed',
+          top: 0, left: 0, right: 0, bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.5)',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          zIndex: 1000
+        }}>
+          <div style={{
+            backgroundColor: 'white',
+            borderRadius: '12px',
+            padding: '40px',
+            maxWidth: '450px',
+            width: '90%',
+            textAlign: 'center',
+            boxShadow: '0 4px 20px rgba(0,0,0,0.3)'
+          }}>
+            <h3 style={{ margin: '0 0 15px', color: '#dc3545', fontSize: '20px' }}>
+              Cette commande n'est pas une lettre suivie
+            </h3>
+            <p style={{ color: '#666', margin: '0 0 25px', fontSize: '15px' }}>
+              Commande #{wrongShippingOrder}
+            </p>
+            <button
+              onClick={handleReset}
+              style={{
+                padding: '12px 30px',
+                backgroundColor: '#6366f1',
+                color: 'white',
+                border: 'none',
+                borderRadius: '8px',
+                cursor: 'pointer',
+                fontSize: '16px',
+                fontWeight: '600'
+              }}
+            >
+              Scanner une autre commande
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Image zoom tooltip */}
       {hoveredImage && (
