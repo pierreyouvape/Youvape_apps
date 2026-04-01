@@ -192,17 +192,36 @@ const bmsApiModel = {
   // ==================== PRODUITS FOURNISSEUR ====================
 
   /**
-   * Récupérer les produits d'un fournisseur BMS
+   * Récupérer les produits d'un fournisseur BMS (toutes les pages)
+   * Si sku est fourni, retourne directement (pas de pagination nécessaire).
    */
   getSupplierProducts: async (supplierId = null, sku = null) => {
-    let endpoint = '/supplier/products';
-    const params = [];
-    if (supplierId) params.push(`supplier_id=${supplierId}`);
-    if (sku) params.push(`sku=${sku}`);
-    if (params.length > 0) endpoint += '?' + params.join('&');
+    const baseParams = [];
+    if (supplierId) baseParams.push(`supplier_id=${supplierId}`);
+    if (sku) baseParams.push(`sku=${sku}`);
 
-    const data = await bmsApiModel.apiCall(endpoint);
-    return data.data || [];
+    // Avec un SKU précis, pas besoin de paginer
+    if (sku) {
+      const endpoint = '/supplier/products?' + baseParams.join('&');
+      const data = await bmsApiModel.apiCall(endpoint);
+      return data.data || [];
+    }
+
+    // Sans SKU : pagination complète
+    const limit = 100;
+    let offset = 0;
+    let allProducts = [];
+
+    const firstPage = await bmsApiModel.apiCall(`/supplier/products?${baseParams.join('&')}&offset=0&limit=${limit}`);
+    const total = firstPage.meta?.total || 0;
+    allProducts = firstPage.data || [];
+
+    for (offset = limit; offset < total; offset += limit) {
+      const data = await bmsApiModel.apiCall(`/supplier/products?${baseParams.join('&')}&offset=${offset}&limit=${limit}`);
+      allProducts = allProducts.concat(data.data || []);
+    }
+
+    return allProducts;
   },
 
   // ==================== CATALOGUE PRODUITS ====================
