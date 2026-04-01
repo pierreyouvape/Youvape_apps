@@ -98,7 +98,8 @@ const pdfImportModel = {
         pdf_price_net: pdfNet,         // prix net après remise (pour calcul unit_price)
         discount_percent: discountPercent,
         supplier_price: dbPrice,
-        unit_price: pdfNet ?? dbPrice, // ce qui sera stocké en BDD (net)
+        // Prix retenu : PDF si meilleur (ou si pas de prix BDD), sinon prix BDD
+        unit_price: (pdfNet != null && (dbPrice == null || pdfNet < dbPrice)) ? pdfNet : dbPrice,
         // Pack
         pack_qty: packQty,
         qty_ordered: item.qty_ordered * packQty,
