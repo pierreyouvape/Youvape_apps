@@ -609,11 +609,11 @@ class ProductModel {
       const wordClauses = words.map((_, i) => {
         const p = paramIndex + i;
         return `(
-          unaccent(p.post_title || ' ' || COALESCE(p.sku, '')) ILIKE unaccent($${p})
+          unaccent(p.post_title || ' ' || COALESCE(p.sku, '') || ' ' || COALESCE(p.brand, '') || ' ' || COALESCE(p.sub_brand, '')) ILIKE unaccent($${p})
           OR EXISTS (
             SELECT 1 FROM products v
             WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation'
-              AND unaccent(v.post_title || ' ' || COALESCE(v.sku, '')) ILIKE unaccent($${p})
+              AND unaccent(v.post_title || ' ' || COALESCE(v.sku, '') || ' ' || COALESCE(v.brand, '') || ' ' || COALESCE(v.sub_brand, '')) ILIKE unaccent($${p})
           )
         )`;
       });
@@ -741,11 +741,11 @@ class ProductModel {
       const wordClauses = words.map((_, i) => {
         const p = idx + i;
         return `(
-          unaccent(p.post_title || ' ' || COALESCE(p.sku, '')) ILIKE unaccent($${p})
+          unaccent(p.post_title || ' ' || COALESCE(p.sku, '') || ' ' || COALESCE(p.brand, '') || ' ' || COALESCE(p.sub_brand, '')) ILIKE unaccent($${p})
           OR EXISTS (
             SELECT 1 FROM products v
             WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation'
-              AND unaccent(v.post_title || ' ' || COALESCE(v.sku, '')) ILIKE unaccent($${p})
+              AND unaccent(v.post_title || ' ' || COALESCE(v.sku, '') || ' ' || COALESCE(v.brand, '') || ' ' || COALESCE(v.sub_brand, '')) ILIKE unaccent($${p})
           )
         )`;
       });
