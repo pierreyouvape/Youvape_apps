@@ -440,10 +440,12 @@ const NeedsTab = ({ token, onCompactChange }) => {
 
     // Pour le filtre fournisseur : collecter les wp_parent_id dont au moins une variation a ce fournisseur
     // Ainsi toutes les variations d'un même parent sont affichées si l'une d'elles correspond
+    const isRealParentId = (id) => id && id !== '0' && id !== 0;
+
     const parentIdsWithSupplier = supplierId
       ? new Set(
           computedProducts
-            .filter(p => p.wp_parent_id && String(p.supplier_id) === String(supplierId))
+            .filter(p => isRealParentId(p.wp_parent_id) && String(p.supplier_id) === String(supplierId))
             .map(p => p.wp_parent_id)
         )
       : null;
@@ -452,7 +454,7 @@ const NeedsTab = ({ token, onCompactChange }) => {
       // Filtre fournisseur
       if (supplierId) {
         const matchesDirect = String(p.supplier_id) === String(supplierId);
-        const matchesViaParent = p.wp_parent_id && parentIdsWithSupplier.has(p.wp_parent_id);
+        const matchesViaParent = isRealParentId(p.wp_parent_id) && parentIdsWithSupplier.has(p.wp_parent_id);
         if (!matchesDirect && !matchesViaParent) return false;
       }
       // Filtre marque
