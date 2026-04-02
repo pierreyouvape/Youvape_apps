@@ -153,7 +153,7 @@ const PackingApp = () => {
       });
 
       const loadedOrder = res.data.order;
-      if (loadedOrder.shipping_method !== 'La poste - Courrier suivi (port payé)') {
+      if (loadedOrder.shipping_method !== 'Lettre Suivie') {
         setWrongShippingOrder(loadedOrder.wp_order_id);
         playSound('error');
         return;
