@@ -80,7 +80,10 @@ const pdfImportModel = {
       const discountPercent = item.discount_percent || 0;
       // Prix net = brut * (1 - remise/100)
       const pdfNet = pdfGross != null ? pdfGross * (1 - discountPercent / 100) : null;
-      const dbPrice = match ? parseFloat(match.supplier_price) || null : null;
+      // dbPrice : supplier_price BMS = prix pack → diviser par pack_qty réel pour avoir le prix unitaire
+      const dbPackQty = match ? (parseInt(match.pack_qty) || 1) : 1;
+      const rawDbPrice = match ? parseFloat(match.supplier_price) || null : null;
+      const dbPrice = (rawDbPrice != null && dbPackQty > 1) ? rawDbPrice / dbPackQty : rawDbPrice;
 
       return {
         supplier_sku: item.supplier_sku,
