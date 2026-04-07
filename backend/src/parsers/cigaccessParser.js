@@ -20,16 +20,82 @@
 
 module.exports = {
   parse: (text) => {
-    // Detecter le format : PROFORMA ou FACTURE
-    const isProforma = text.includes('#PROFORMA');
-
-    if (isProforma) {
-      return parseProforma(text);
-    } else {
-      return parseFacture(text);
+    if (text.includes('Commande n°') && text.includes('Référence:')) {
+      return parseConfirmation(text);
     }
+    if (text.includes('#PROFORMA')) {
+      return parseProforma(text);
+    }
+    return parseFacture(text);
   }
 };
+
+/**
+ * Format "Confirmation de commande" (site web cig-access-pro.com)
+ * Structure : tableau Produit | Quantité | Prix unitaire | Prix total
+ * Chaque item : designation (1-2 lignes) + "Référence: XXXXXX" + QTE PRIX_UNIT€ PRIX_TOTAL€
+ * Prix HT, quantités unitaires
+ */
+function parseConfirmation(text) {
+  // Numero de commande : "Commande n°IEBHLRTQR du 07/04/2026"
+  const orderMatch = text.match(/Commande n°([A-Z0-9]+)\s+du\s+(\d{2})\/(\d{2})\/(\d{4})/);
+  const orderNumber = orderMatch ? orderMatch[1] : null;
+  const orderDate = orderMatch ? `${orderMatch[4]}-${orderMatch[3]}-${orderMatch[2]}` : null;
+
+  const items = [];
+
+  // Nettoyer footers/headers de pages
+  const cleaned = text
+    .replace(/\d{2}\/\d{2}\/\d{4}\s+\d{2}:\d{2}[^\n]*/g, '')
+    .replace(/https?:\/\/[^\n]*/g, '')
+    .replace(/Sous-total[\s\S]*?(?=\n\S)/g, '\n')
+    .replace(/Frais de livraison[^\n]*/g, '')
+    .replace(/^Total\s+[\d,]+\s*€/gm, '');
+
+  // Trouver tous les blocs "Référence: XXXXXX"
+  const refRegex = /Référence:\s*(\d+)/g;
+  let match;
+  const refMatches = [];
+  while ((match = refRegex.exec(cleaned)) !== null) {
+    refMatches.push({ sku: match[1], index: match.index, endIndex: match.index + match[0].length });
+  }
+
+  for (let i = 0; i < refMatches.length; i++) {
+    const ref = refMatches[i];
+    const nextRefStart = i + 1 < refMatches.length ? refMatches[i + 1].index : cleaned.length;
+
+    // Texte avant la ref = designation (quelques lignes)
+    const prevStart = i > 0 ? refMatches[i - 1].endIndex : 0;
+    const beforeRef = cleaned.substring(prevStart, ref.index);
+
+    // Designation : dernières lignes non vides avant la ref
+    const beforeLines = beforeRef.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+    // Ignorer les lignes de header (Produit, Quantité, Prix unitaire, Prix total)
+    const headerWords = ['Produit', 'Quantité', 'Prix', 'unitaire', 'total'];
+    const desigLines = beforeLines.filter(l => !headerWords.some(w => l === w));
+    const designation = desigLines.slice(-2).join(' ').trim();
+
+    // Texte après la ref jusqu'à la prochaine ref
+    const afterRef = cleaned.substring(ref.endIndex, nextRefStart);
+
+    // Chercher QTE PRIX_UNIT€ PRIX_TOTAL€
+    const numMatch = afterRef.match(/(\d+)\s+([\d,]+)\s*€\s+([\d,]+)\s*€/);
+    if (!numMatch) continue;
+
+    const parseNum = (str) => parseFloat(str.replace(',', '.'));
+    const qty = parseInt(numMatch[1]);
+    const unitPrice = parseNum(numMatch[2]);
+
+    items.push({
+      supplier_sku: ref.sku,
+      designation,
+      qty_ordered: qty,
+      unit_price_net: unitPrice,
+    });
+  }
+
+  return { orderNumber, orderDate, items, hasPrice: true, skipPackQty: true };
+}
 
 /**
  * Format FACTURE (#FA...)
