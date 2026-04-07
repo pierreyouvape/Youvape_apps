@@ -10,7 +10,6 @@ const PurchasesApp = () => {
   const { token } = useContext(AuthContext);
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('needs');
-  const [needsCompact, setNeedsCompact] = useState(false);
 
   const tabs = [
     { id: 'needs', label: 'Besoins', icon: '📊' },
@@ -49,8 +48,8 @@ const PurchasesApp = () => {
       </nav>
 
       {/* Content */}
-      <main className="purchases-content" style={needsCompact && activeTab === 'needs' ? { maxWidth: '1400px', margin: '0 auto', padding: '20px' } : {}}>
-        {activeTab === 'needs' && <NeedsTab token={token} onCompactChange={setNeedsCompact} />}
+      <main className="purchases-content">
+        {activeTab === 'needs' && <NeedsTab token={token} />}
         {activeTab === 'suppliers' && <SuppliersTab token={token} />}
         {activeTab === 'orders' && <OrdersTab token={token} />}
       </main>
