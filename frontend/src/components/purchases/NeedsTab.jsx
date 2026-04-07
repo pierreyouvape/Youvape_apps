@@ -880,7 +880,7 @@ const NeedsTab = ({ token }) => {
       </div>
 
       {/* Table */}
-      <div className="purchases-card" style={{ flex: 1, overflow: 'auto', minHeight: 0, padding: 0 }}>
+      <div className="purchases-card" style={{ flex: 1, overflow: 'auto', minHeight: 0, padding: 0, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
         {loading ? (
           <div className="loading">
             <div className="loading-spinner"></div>
