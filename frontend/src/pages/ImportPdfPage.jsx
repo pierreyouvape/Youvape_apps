@@ -591,7 +591,7 @@ const ImportPdfPage = () => {
 
             {/* Totaux */}
             <div style={{ background: 'white', borderRadius: '8px', padding: '15px 20px', marginBottom: '20px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)', display: 'flex', justifyContent: 'flex-end', gap: '30px', fontSize: '15px' }}>
-              {totalRemises < 0 && (
+              {discountItems.length > 0 && (
                 <>
                   <div>
                     <span style={{ color: '#666' }}>Total HT brut : </span>
