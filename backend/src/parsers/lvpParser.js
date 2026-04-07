@@ -1,14 +1,91 @@
 /**
  * Parseur PDF pour LVP Distribution
- * Format : facture OpenSi multi-pages avec prix HT
- * Colonnes : Reference | Designation | Quantite | PU HT | Montant HT
- * Les refs sont libres (avec espaces possibles), les designations debordent sur 2-3 lignes
- * Les chiffres (qte, pu ht, montant ht) sont toujours en fin de ligne du bloc
- * Multi-pages : chaque page repete le header + "Sous-total HT XXXX" (report sans deux-points)
+ * Gere 2 formats :
+ * - "Facture" : facture OpenSi multi-pages avec colonnes Référence | Désignation | Quantité | PU HT | Montant HT
+ * - "Confirmation" : confirmation de commande site web lvp-distribution.fr
+ *   Colonnes : Produit | Quantité | Prix unitaire HT | Prix total HT | TVA | Prix total TTC
+ *   Chaque item : désignation (1-2 lignes) + "Référence: REF" + QTE PRIX_HT€ TOTAL_HT€ TVA€ TTC€
+ *   Remise globale : "Remise XX,XX €" en bas du tableau
  */
 
 module.exports = {
   parse: (text) => {
+    if (text.includes('Commande n°') && text.includes('Référence:')) {
+      return parseConfirmation(text);
+    }
+    return parseFacture(text);
+  }
+};
+
+/**
+ * Format "Confirmation de commande" (site web lvp-distribution.fr)
+ */
+function parseConfirmation(text) {
+  // Numero de commande : "Commande n°265057 du 06/04/2026"
+  const orderMatch = text.match(/Commande n°(\d+)\s+du\s+(\d{2})\/(\d{2})\/(\d{4})/);
+  const orderNumber = orderMatch ? orderMatch[1] : null;
+  const orderDate = orderMatch ? `${orderMatch[4]}-${orderMatch[3]}-${orderMatch[2]}` : null;
+
+  // Remise globale : "Remise 75,27 €"
+  const discountMatch = text.match(/Remise\s+([\d,]+)\s*€/);
+  const globalDiscount = discountMatch ? parseFloat(discountMatch[1].replace(',', '.')) : 0;
+
+  const items = [];
+
+  // Nettoyer footers/headers de pages
+  const cleaned = text
+    .replace(/\d{2}\/\d{2}\/\d{4}\s+\d{2}:\d{2}[^\n]*/g, '')
+    .replace(/https?:\/\/[^\n]*/g, '')
+    .replace(/Sous-total[\s\S]*?(?=\n\S)/g, '\n')
+    .replace(/Remise[^\n]*/g, '')
+    .replace(/Frais de livraison[^\n]*/g, '')
+    .replace(/Taxes[^\n]*/g, '')
+    .replace(/^Total\b[^\n]*/gm, '');
+
+  // Trouver tous les blocs "Référence: XXX" — refs peuvent contenir espaces et tirets
+  const refRegex = /Référence:\s*([^\n]+)/g;
+  let match;
+  const refMatches = [];
+  while ((match = refRegex.exec(cleaned)) !== null) {
+    const sku = match[1].trim();
+    refMatches.push({ sku, index: match.index, endIndex: match.index + match[0].length });
+  }
+
+  for (let i = 0; i < refMatches.length; i++) {
+    const ref = refMatches[i];
+    const nextRefStart = i + 1 < refMatches.length ? refMatches[i + 1].index : cleaned.length;
+
+    // Désignation : lignes entre la fin de la ref précédente et la ref courante
+    const prevStart = i > 0 ? refMatches[i - 1].endIndex : 0;
+    const beforeRef = cleaned.substring(prevStart, ref.index);
+    const headerWords = ['Produit', 'Quantité', 'Prix', 'unitaire', 'total', 'HT', 'TVA', 'TTC'];
+    const beforeLines = beforeRef.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+    const desigLines = beforeLines.filter(l => !headerWords.some(w => l === w));
+    const designation = desigLines.slice(-2).join(' ').trim();
+
+    // Texte après la ref : QTE PRIX_HT€ TOTAL_HT€ TVA€ TTC€
+    const afterRef = cleaned.substring(ref.endIndex, nextRefStart);
+    const numMatch = afterRef.match(/(\d+)\s+([\d,]+)\s*€\s+([\d,]+)\s*€/);
+    if (!numMatch) continue;
+
+    const qty = parseInt(numMatch[1]);
+    const unitPrice = parseFloat(numMatch[2].replace(',', '.'));
+
+    items.push({
+      supplier_sku: ref.sku,
+      designation,
+      qty_ordered: qty,
+      unit_price_net: unitPrice,
+    });
+  }
+
+  return { orderNumber, orderDate, items, hasPrice: true, skipPackQty: true, globalDiscount };
+}
+
+/**
+ * Format "Facture" OpenSi
+ */
+function parseFacture(text) {
     // Extraire le numero de commande : "Réf. Commande : 263387"
     const orderMatch = text.match(/Réf\.\s*Commande\s*:\s*(\S+)/);
     const orderNumber = orderMatch ? orderMatch[1] : null;
@@ -145,8 +222,7 @@ module.exports = {
     }
 
     return { orderNumber, orderDate, items, hasPrice: true };
-  }
-};
+}
 
 /**
  * Determine si une ligne est un "trailing" (fin de designation du bloc precedent)

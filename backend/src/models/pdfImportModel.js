@@ -127,6 +127,7 @@ const pdfImportModel = {
       order_number: parsed.orderNumber,
       order_date: parsed.orderDate,
       has_price: parsed.hasPrice || false,
+      global_discount: parsed.globalDiscount || 0,
       duplicate_warning: duplicateWarning,
       items: enrichedItems,
       total_items: enrichedItems.length,

@@ -29,6 +29,9 @@ const ImportPdfPage = () => {
   const [searchLoading, setSearchLoading] = useState(false);
   const searchTimeoutRef = useRef(null);
 
+  // Remise globale (en €)
+  const [globalDiscount, setGlobalDiscount] = useState(0);
+
   // Etape 3 : Creation
   const [creating, setCreating] = useState(false);
 
@@ -66,6 +69,7 @@ const ImportPdfPage = () => {
 
       const data = response.data.data;
       setParsedData(data);
+      setGlobalDiscount(data.global_discount || 0);
       setItems(data.items.map(item => ({
         ...item,
         // Afficher le prix brut dans le champ éditable, remise pré-remplie depuis le PDF
@@ -188,6 +192,7 @@ const ImportPdfPage = () => {
         order_number: parsedData.order_number || undefined,
         order_date: parsedData.order_date || undefined,
         status: 'confirmed',
+        global_discount: parseFloat(globalDiscount) || 0,
         items: matchedItems.map(item => ({
           product_id: item.product_id,
           product_name: item.product_name,
@@ -219,7 +224,8 @@ const ImportPdfPage = () => {
   // ==================== RENDU ====================
 
   const totalQty = matchedItems.reduce((sum, i) => sum + i.qty_ordered, 0);
-  const totalHt = matchedItems.reduce((sum, i) => { const p = effectivePrice(i); return sum + (p ? i.qty_ordered * p : 0); }, 0);
+  const totalHtBrut = matchedItems.reduce((sum, i) => { const p = effectivePrice(i); return sum + (p ? i.qty_ordered * p : 0); }, 0);
+  const totalHt = totalHtBrut - (parseFloat(globalDiscount) || 0);
   const totalTtc = totalHt * 1.2;
 
   return (
@@ -371,6 +377,21 @@ const ImportPdfPage = () => {
                   Ce document ne contient pas de prix. Les prix sont pré-remplis depuis la base fournisseur (modifiables).
                 </div>
               )}
+
+              {/* Remise globale */}
+              <div style={{ marginTop: '12px', display: 'flex', alignItems: 'center', gap: '10px', fontSize: '14px' }}>
+                <span style={{ color: '#374151', fontWeight: 500 }}>Remise globale :</span>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={globalDiscount || ''}
+                  onChange={e => setGlobalDiscount(e.target.value)}
+                  placeholder="0"
+                  style={{ width: '90px', padding: '5px 8px', borderRadius: '4px', border: '1px solid #d1d5db', fontSize: '14px', textAlign: 'right' }}
+                />
+                <span style={{ color: '#374151' }}>€</span>
+              </div>
             </div>
 
             {/* Tableau des lignes */}
@@ -549,6 +570,18 @@ const ImportPdfPage = () => {
 
             {/* Totaux */}
             <div style={{ background: 'white', borderRadius: '8px', padding: '15px 20px', marginBottom: '20px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)', display: 'flex', justifyContent: 'flex-end', gap: '30px', fontSize: '15px' }}>
+              {parseFloat(globalDiscount) > 0 && (
+                <>
+                  <div>
+                    <span style={{ color: '#666' }}>Total HT brut : </span>
+                    <span style={{ fontWeight: 600 }}>{totalHtBrut.toFixed(2)} €</span>
+                  </div>
+                  <div>
+                    <span style={{ color: '#666' }}>Remise : </span>
+                    <span style={{ fontWeight: 600, color: '#dc2626' }}>-{parseFloat(globalDiscount).toFixed(2)} €</span>
+                  </div>
+                </>
+              )}
               <div>
                 <span style={{ color: '#666' }}>Total HT : </span>
                 <span style={{ fontWeight: 600 }}>{totalHt.toFixed(2)} €</span>

@@ -118,9 +118,9 @@ const purchaseOrderModel = {
       // Créer la commande localement
       const orderQuery = `
         INSERT INTO purchase_orders (
-          order_number, supplier_id, status, notes, created_by, order_date
+          order_number, supplier_id, status, notes, created_by, order_date, global_discount
         )
-        VALUES ($1, $2, $3, $4, $5, $6)
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
         RETURNING *
       `;
       const orderResult = await client.query(orderQuery, [
@@ -129,7 +129,8 @@ const purchaseOrderModel = {
         data.status || 'draft',
         data.notes || null,
         userId,
-        data.order_date || null
+        data.order_date || null,
+        parseFloat(data.global_discount) || 0
       ]);
       const order = orderResult.rows[0];
 

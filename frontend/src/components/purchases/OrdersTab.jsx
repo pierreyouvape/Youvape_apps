@@ -532,10 +532,24 @@ const OrdersTab = ({ token }) => {
 
               {/* Totaux */}
               {(() => {
-                const totalHt = (selectedOrder.items || []).reduce((sum, i) =>
+                const totalHtBrut = (selectedOrder.items || []).reduce((sum, i) =>
                   sum + (i.unit_price ? i.qty_ordered * i.unit_price : 0), 0);
-                return totalHt > 0 ? (
+                const globalDiscount = parseFloat(selectedOrder.global_discount) || 0;
+                const totalHt = totalHtBrut - globalDiscount;
+                return totalHtBrut > 0 ? (
                   <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '30px', marginTop: '12px', fontSize: '14px' }}>
+                    {globalDiscount > 0 && (
+                      <>
+                        <div>
+                          <span style={{ color: '#666' }}>Total HT brut : </span>
+                          <strong>{formatPrice(totalHtBrut)} €</strong>
+                        </div>
+                        <div>
+                          <span style={{ color: '#666' }}>Remise globale : </span>
+                          <strong style={{ color: '#dc2626' }}>-{formatPrice(globalDiscount)} €</strong>
+                        </div>
+                      </>
+                    )}
                     <div>
                       <span style={{ color: '#666' }}>Total HT : </span>
                       <strong>{formatPrice(totalHt)} €</strong>
