@@ -880,7 +880,7 @@ const NeedsTab = ({ token }) => {
       </div>
 
       {/* Table */}
-      <div className="purchases-card" style={{ flex: 1, overflow: 'auto', minHeight: 0, padding: 0, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+      <div className="purchases-card" style={{ flex: 1, overflow: 'auto', minHeight: 0, padding: 0 }}>
         {loading ? (
           <div className="loading">
             <div className="loading-spinner"></div>
@@ -909,7 +909,6 @@ const NeedsTab = ({ token }) => {
           </div>
         ) : (
           <>
-            <div className="purchases-table-wrapper">
             <table className="purchases-table">
               <thead>
                 <tr>
@@ -1020,7 +1019,6 @@ const NeedsTab = ({ token }) => {
                 ); }); })()}
               </tbody>
             </table>
-            </div>
 
             {pageSize > 0 && totalPages > 1 && (
               <div className="pagination">

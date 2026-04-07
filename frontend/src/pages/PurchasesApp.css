@@ -135,14 +135,8 @@
 }
 
 /* Table styles */
-.purchases-table-wrapper {
-  width: 100%;
-  display: flex;
-  justify-content: center;
-}
-
 .purchases-table {
-  width: auto;
+  width: 100%;
   border-collapse: collapse;
   font-size: 14px;
 }
