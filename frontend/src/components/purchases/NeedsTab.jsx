@@ -244,7 +244,7 @@ const NEEDS_COLUMNS = [
   { key: 'supposed_proposal',   label: 'Prop. supp.' },
 ];
 
-const NeedsTab = ({ token }) => {
+const NeedsTab = ({ token, onCompactChange }) => {
   // Cache des données brutes (chargé une fois par fournisseur)
   const [allProducts, setAllProducts] = useState([]);
   const [suppliers, setSuppliers] = useState([]);
@@ -253,6 +253,7 @@ const NeedsTab = ({ token }) => {
 
   // Préférences colonnes
   const [hiddenColumns, setHiddenColumns] = useState([]);
+  const [compact, setCompact] = useState(false);
   const [showColumnPanel, setShowColumnPanel] = useState(false);
 
   const savedFilters = loadSavedFilters();
@@ -315,6 +316,9 @@ const NeedsTab = ({ token }) => {
         });
         if (res.data.success) {
           setHiddenColumns(res.data.hiddenColumns || []);
+          const c = res.data.compact || false;
+          setCompact(c);
+          if (onCompactChange) onCompactChange(c);
         }
       } catch (err) {
         console.error('Erreur chargement préférences colonnes:', err);
@@ -323,9 +327,9 @@ const NeedsTab = ({ token }) => {
     load();
   }, [token]);
 
-  const savePreferences = async (cols) => {
+  const savePreferences = async (cols, cmp) => {
     try {
-      await axios.put(`${API_URL}/preferences/needs`, { hiddenColumns: cols, compact: false }, {
+      await axios.put(`${API_URL}/preferences/needs`, { hiddenColumns: cols, compact: cmp }, {
         headers: { Authorization: `Bearer ${token}` }
       });
     } catch (err) {
@@ -338,7 +342,14 @@ const NeedsTab = ({ token }) => {
       ? hiddenColumns.filter(k => k !== key)
       : [...hiddenColumns, key];
     setHiddenColumns(next);
-    savePreferences(next);
+    savePreferences(next, compact);
+  };
+
+  const toggleCompact = () => {
+    const next = !compact;
+    setCompact(next);
+    if (onCompactChange) onCompactChange(next);
+    savePreferences(hiddenColumns, next);
   };
 
   const isVisible = (key) => !hiddenColumns.includes(key);
@@ -792,6 +803,16 @@ const NeedsTab = ({ token }) => {
                     {col.label}
                   </label>
                 ))}
+                <div style={{ borderTop: '1px solid #e5e7eb', marginTop: '10px', paddingTop: '10px' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '13px' }}>
+                    <input
+                      type="checkbox"
+                      checked={compact}
+                      onChange={toggleCompact}
+                    />
+                    Vue compacte
+                  </label>
+                </div>
               </div>
             )}
           </div>
