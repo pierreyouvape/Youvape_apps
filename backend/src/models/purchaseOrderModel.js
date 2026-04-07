@@ -118,9 +118,9 @@ const purchaseOrderModel = {
       // Créer la commande localement
       const orderQuery = `
         INSERT INTO purchase_orders (
-          order_number, supplier_id, status, notes, created_by, order_date, global_discount
+          order_number, supplier_id, status, notes, created_by, order_date
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7)
+        VALUES ($1, $2, $3, $4, $5, $6)
         RETURNING *
       `;
       const orderResult = await client.query(orderQuery, [
@@ -130,7 +130,6 @@ const purchaseOrderModel = {
         data.notes || null,
         userId,
         data.order_date || null,
-        parseFloat(data.global_discount) || 0
       ]);
       const order = orderResult.rows[0];
 
@@ -142,6 +141,28 @@ const purchaseOrderModel = {
 
       if (data.items && data.items.length > 0) {
         for (const item of data.items) {
+          // Ligne remise (item_type = 'discount') : pas de product_id, insertion directe
+          if (item.item_type === 'discount') {
+            const discountQuery = `
+              INSERT INTO purchase_order_items (
+                purchase_order_id, item_type, product_name, unit_price, qty_ordered
+              )
+              VALUES ($1, 'discount', $2, $3, 1)
+              RETURNING *
+            `;
+            const insertedDiscount = await client.query(discountQuery, [
+              order.id,
+              item.product_name,
+              item.unit_price,
+            ]);
+            itemsWithSku.push(insertedDiscount.rows[0]);
+            // Les remises comptent dans totalAmount (unit_price déjà négatif)
+            if (item.unit_price) {
+              totalAmount += parseFloat(item.unit_price);
+            }
+            continue;
+          }
+
           // Récupérer le produit interne (product_id peut être wp_product_id ou id interne)
           const productResult = await client.query(
             `SELECT p.id, p.sku, p.wc_cog_cost, ps.pack_qty

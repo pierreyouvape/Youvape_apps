@@ -29,9 +29,6 @@ const ImportPdfPage = () => {
   const [searchLoading, setSearchLoading] = useState(false);
   const searchTimeoutRef = useRef(null);
 
-  // Remise globale (en €)
-  const [globalDiscount, setGlobalDiscount] = useState(0);
-
   // Etape 3 : Creation
   const [creating, setCreating] = useState(false);
 
@@ -69,11 +66,10 @@ const ImportPdfPage = () => {
 
       const data = response.data.data;
       setParsedData(data);
-      setGlobalDiscount(data.global_discount || 0);
       setItems(data.items.map(item => ({
         ...item,
-        // Afficher le prix brut dans le champ éditable, remise pré-remplie depuis le PDF
-        unit_price: item.pdf_price ?? item.unit_price,
+        // Pour les lignes produit : afficher le prix brut dans le champ éditable
+        unit_price: item.item_type === 'discount' ? item.unit_price : (item.pdf_price ?? item.unit_price),
         discount: item.discount_percent || 0,
       })));
       setNewSupplierSkus([]);
@@ -171,13 +167,16 @@ const ImportPdfPage = () => {
   };
 
   const effectivePrice = (item) => {
+    if (item.item_type === 'discount') return item.unit_price;  // déjà négatif
     if (!item.unit_price) return null;
     return item.unit_price * (1 - (item.discount || 0) / 100);
   };
 
   // ==================== ETAPE 3 : CREATION ====================
 
-  const matchedItems = items.filter(i => i.matched && i.product_id);
+  const productItems = items.filter(i => i.item_type !== 'discount');
+  const discountItems = items.filter(i => i.item_type === 'discount');
+  const matchedItems = productItems.filter(i => i.matched && i.product_id);
 
   const handleCreateOrder = async (sendToBms = false) => {
     if (matchedItems.length === 0) {
@@ -192,16 +191,22 @@ const ImportPdfPage = () => {
         order_number: parsedData.order_number || undefined,
         order_date: parsedData.order_date || undefined,
         status: 'confirmed',
-        global_discount: parseFloat(globalDiscount) || 0,
-        items: matchedItems.map(item => ({
-          product_id: item.product_id,
-          product_name: item.product_name,
-          supplier_sku: item.supplier_sku,
-          qty_ordered: item.qty_ordered,
-          unit_price: effectivePrice(item),  // prix net (brut × remise) → stocké en BDD
-          discount_percent: item.discount || 0,
-          stock_before: item.current_stock,
-        })),
+        items: [
+          ...matchedItems.map(item => ({
+            product_id: item.product_id,
+            product_name: item.product_name,
+            supplier_sku: item.supplier_sku,
+            qty_ordered: item.qty_ordered,
+            unit_price: effectivePrice(item),  // prix net (brut × remise) → stocké en BDD
+            discount_percent: item.discount || 0,
+            stock_before: item.current_stock,
+          })),
+          ...discountItems.map(item => ({
+            item_type: 'discount',
+            product_name: item.product_name,
+            unit_price: item.unit_price,
+          })),
+        ],
         new_supplier_skus: newSupplierSkus,
         send_to_bms: sendToBms,
       };
@@ -224,8 +229,9 @@ const ImportPdfPage = () => {
   // ==================== RENDU ====================
 
   const totalQty = matchedItems.reduce((sum, i) => sum + i.qty_ordered, 0);
-  const totalHtBrut = matchedItems.reduce((sum, i) => { const p = effectivePrice(i); return sum + (p ? i.qty_ordered * p : 0); }, 0);
-  const totalHt = totalHtBrut - (parseFloat(globalDiscount) || 0);
+  const totalHtProduits = matchedItems.reduce((sum, i) => { const p = effectivePrice(i); return sum + (p ? i.qty_ordered * p : 0); }, 0);
+  const totalRemises = discountItems.reduce((sum, i) => sum + (i.unit_price || 0), 0);
+  const totalHt = totalHtProduits + totalRemises;  // totalRemises est négatif
   const totalTtc = totalHt * 1.2;
 
   return (
@@ -377,21 +383,6 @@ const ImportPdfPage = () => {
                   Ce document ne contient pas de prix. Les prix sont pré-remplis depuis la base fournisseur (modifiables).
                 </div>
               )}
-
-              {/* Remise globale */}
-              <div style={{ marginTop: '12px', display: 'flex', alignItems: 'center', gap: '10px', fontSize: '14px' }}>
-                <span style={{ color: '#374151', fontWeight: 500 }}>Remise globale :</span>
-                <input
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  value={globalDiscount || ''}
-                  onChange={e => setGlobalDiscount(e.target.value)}
-                  placeholder="0"
-                  style={{ width: '90px', padding: '5px 8px', borderRadius: '4px', border: '1px solid #d1d5db', fontSize: '14px', textAlign: 'right' }}
-                />
-                <span style={{ color: '#374151' }}>€</span>
-              </div>
             </div>
 
             {/* Tableau des lignes */}
@@ -414,171 +405,201 @@ const ImportPdfPage = () => {
                   </tr>
                 </thead>
                 <tbody>
-                  {items.map((item, idx) => (
-                    <tr key={idx} style={{ borderBottom: '1px solid #e5e7eb', background: item.matched ? 'white' : '#fffbeb' }}>
-                      {/* Statut */}
-                      <td style={{ padding: '10px', textAlign: 'center' }}>
-                        <span style={{
-                          display: 'inline-block', width: '10px', height: '10px', borderRadius: '50%',
-                          background: item.matched ? '#10b981' : '#f59e0b'
-                        }} />
-                      </td>
-
-                      {/* Ref fournisseur */}
-                      <td style={{ padding: '10px', fontSize: '13px' }}>
-                        <code>{item.supplier_sku}</code>
-                      </td>
-
-                      {/* Designation PDF */}
-                      <td style={{ padding: '10px', fontSize: '13px', color: '#666' }}>
-                        {item.designation}
-                      </td>
-
-                      {/* Notre produit */}
-                      <td style={{ padding: '10px', position: 'relative' }}>
-                        {item.matched ? (
-                          <div>
-                            <div style={{ fontSize: '13px', fontWeight: 500 }}>{item.product_name}</div>
-                            {item.product_sku && (
-                              <div style={{ fontSize: '12px', color: '#888' }}>SKU: {item.product_sku}</div>
-                            )}
+                  {items.map((item, idx) => {
+                    if (item.item_type === 'discount') {
+                      return (
+                        <tr key={idx} style={{ borderBottom: '1px solid #e5e7eb', background: '#e5e7eb' }}>
+                          <td style={{ padding: '10px', textAlign: 'center' }}>
+                            <span style={{ display: 'inline-block', width: '10px', height: '10px', borderRadius: '50%', background: '#9ca3af' }} />
+                          </td>
+                          <td colSpan={2} style={{ padding: '10px', fontSize: '13px', color: '#6b7280', fontStyle: 'italic' }}>
+                            —
+                          </td>
+                          <td colSpan={6} style={{ padding: '10px', fontSize: '13px', fontStyle: 'italic', color: '#374151' }}>
+                            {item.product_name}
+                          </td>
+                          <td style={{ padding: '10px', textAlign: 'right', fontSize: '13px', fontWeight: 600, color: '#dc2626' }}>
+                            {item.unit_price != null ? item.unit_price.toFixed(2) + ' €' : '-'}
+                          </td>
+                          <td style={{ padding: '10px', textAlign: 'center' }}>
                             <button
-                              onClick={() => handleRematch(idx)}
-                              style={{ marginTop: '4px', fontSize: '11px', color: '#6b7280', background: 'none', border: 'none', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}
-                            >modifier</button>
-                          </div>
-                        ) : (
-                          <div style={{ position: 'relative' }}>
-                            <input
-                              type="text"
-                              placeholder="Rechercher..."
-                              value={searchingIdx === idx ? searchTerm : ''}
-                              onFocus={() => { setSearchingIdx(idx); setSearchTerm(''); setSearchResults([]); }}
-                              onChange={e => handleSearchProduct(e.target.value, idx)}
-                              style={{ width: '100%', padding: '6px 8px', borderRadius: '4px', border: '1px solid #f59e0b', fontSize: '13px', background: '#fffbeb' }}
-                            />
-                            {searchingIdx === idx && searchResults.length > 0 && (
-                              <div style={{
-                                position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 1000,
-                                background: 'white', border: '1px solid #ddd', borderRadius: '0 0 6px 6px',
-                                maxHeight: '250px', overflowY: 'auto', boxShadow: '0 4px 12px rgba(0,0,0,0.15)'
-                              }}>
-                                {searchResults.map(product => (
-                                  <div
-                                    key={product.id}
-                                    onClick={() => handleMatchProduct(idx, product)}
-                                    style={{ padding: '8px 10px', cursor: 'pointer', borderBottom: '1px solid #eee', fontSize: '13px' }}
-                                    onMouseEnter={e => e.currentTarget.style.background = '#f5f5f5'}
-                                    onMouseLeave={e => e.currentTarget.style.background = 'white'}
-                                  >
-                                    <div style={{ fontWeight: 500 }}>{product.post_title}</div>
-                                    <div style={{ color: '#888', fontSize: '12px' }}>
-                                      SKU: {product.sku || '-'} | Stock: {product.stock ?? '-'}
+                              onClick={() => handleRemoveItem(idx)}
+                              style={{ background: '#fee2e2', color: '#dc2626', border: 'none', borderRadius: '4px', padding: '4px 8px', cursor: 'pointer', fontSize: '14px' }}
+                              title="Retirer cette ligne"
+                            >
+                              ×
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    }
+
+                    return (
+                      <tr key={idx} style={{ borderBottom: '1px solid #e5e7eb', background: item.matched ? 'white' : '#fffbeb' }}>
+                        {/* Statut */}
+                        <td style={{ padding: '10px', textAlign: 'center' }}>
+                          <span style={{
+                            display: 'inline-block', width: '10px', height: '10px', borderRadius: '50%',
+                            background: item.matched ? '#10b981' : '#f59e0b'
+                          }} />
+                        </td>
+
+                        {/* Ref fournisseur */}
+                        <td style={{ padding: '10px', fontSize: '13px' }}>
+                          <code>{item.supplier_sku}</code>
+                        </td>
+
+                        {/* Designation PDF */}
+                        <td style={{ padding: '10px', fontSize: '13px', color: '#666' }}>
+                          {item.designation}
+                        </td>
+
+                        {/* Notre produit */}
+                        <td style={{ padding: '10px', position: 'relative' }}>
+                          {item.matched ? (
+                            <div>
+                              <div style={{ fontSize: '13px', fontWeight: 500 }}>{item.product_name}</div>
+                              {item.product_sku && (
+                                <div style={{ fontSize: '12px', color: '#888' }}>SKU: {item.product_sku}</div>
+                              )}
+                              <button
+                                onClick={() => handleRematch(idx)}
+                                style={{ marginTop: '4px', fontSize: '11px', color: '#6b7280', background: 'none', border: 'none', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}
+                              >modifier</button>
+                            </div>
+                          ) : (
+                            <div style={{ position: 'relative' }}>
+                              <input
+                                type="text"
+                                placeholder="Rechercher..."
+                                value={searchingIdx === idx ? searchTerm : ''}
+                                onFocus={() => { setSearchingIdx(idx); setSearchTerm(''); setSearchResults([]); }}
+                                onChange={e => handleSearchProduct(e.target.value, idx)}
+                                style={{ width: '100%', padding: '6px 8px', borderRadius: '4px', border: '1px solid #f59e0b', fontSize: '13px', background: '#fffbeb' }}
+                              />
+                              {searchingIdx === idx && searchResults.length > 0 && (
+                                <div style={{
+                                  position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 1000,
+                                  background: 'white', border: '1px solid #ddd', borderRadius: '0 0 6px 6px',
+                                  maxHeight: '250px', overflowY: 'auto', boxShadow: '0 4px 12px rgba(0,0,0,0.15)'
+                                }}>
+                                  {searchResults.map(product => (
+                                    <div
+                                      key={product.id}
+                                      onClick={() => handleMatchProduct(idx, product)}
+                                      style={{ padding: '8px 10px', cursor: 'pointer', borderBottom: '1px solid #eee', fontSize: '13px' }}
+                                      onMouseEnter={e => e.currentTarget.style.background = '#f5f5f5'}
+                                      onMouseLeave={e => e.currentTarget.style.background = 'white'}
+                                    >
+                                      <div style={{ fontWeight: 500 }}>{product.post_title}</div>
+                                      <div style={{ color: '#888', fontSize: '12px' }}>
+                                        SKU: {product.sku || '-'} | Stock: {product.stock ?? '-'}
+                                      </div>
                                     </div>
-                                  </div>
-                                ))}
-                              </div>
-                            )}
-                            {searchingIdx === idx && searchLoading && (
-                              <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, background: 'white', padding: '8px 10px', fontSize: '13px', color: '#888', border: '1px solid #ddd' }}>
-                                Recherche...
-                              </div>
-                            )}
-                          </div>
-                        )}
-                      </td>
+                                  ))}
+                                </div>
+                              )}
+                              {searchingIdx === idx && searchLoading && (
+                                <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, background: 'white', padding: '8px 10px', fontSize: '13px', color: '#888', border: '1px solid #ddd' }}>
+                                  Recherche...
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </td>
 
-                      {/* Stock */}
-                      <td style={{ padding: '10px', textAlign: 'center', fontSize: '13px' }}>
-                        {item.matched ? (
-                          <span style={{ color: item.current_stock <= 0 ? '#dc2626' : 'inherit', fontWeight: 500 }}>
-                            {item.current_stock ?? '-'}
-                          </span>
-                        ) : '-'}
-                      </td>
+                        {/* Stock */}
+                        <td style={{ padding: '10px', textAlign: 'center', fontSize: '13px' }}>
+                          {item.matched ? (
+                            <span style={{ color: item.current_stock <= 0 ? '#dc2626' : 'inherit', fontWeight: 500 }}>
+                              {item.current_stock ?? '-'}
+                            </span>
+                          ) : '-'}
+                        </td>
 
-                      {/* Qte PDF */}
-                      <td style={{ padding: '10px', textAlign: 'center', fontSize: '13px', color: '#666' }}>
-                        {item.qty_from_pdf}
-                      </td>
+                        {/* Qte PDF */}
+                        <td style={{ padding: '10px', textAlign: 'center', fontSize: '13px', color: '#666' }}>
+                          {item.qty_from_pdf}
+                        </td>
 
-                      {/* Pack */}
-                      <td style={{ padding: '10px', textAlign: 'center', fontSize: '13px', color: '#888' }}>
-                        {item.pack_qty > 1 ? `x${item.pack_qty}` : '-'}
-                      </td>
+                        {/* Pack */}
+                        <td style={{ padding: '10px', textAlign: 'center', fontSize: '13px', color: '#888' }}>
+                          {item.pack_qty > 1 ? `x${item.pack_qty}` : '-'}
+                        </td>
 
-                      {/* Qte finale (editable) */}
-                      <td style={{ padding: '10px', textAlign: 'center' }}>
-                        <input
-                          type="number"
-                          min="1"
-                          value={item.qty_ordered}
-                          onChange={e => handleUpdateQty(idx, e.target.value)}
-                          style={{ width: '70px', padding: '6px', borderRadius: '4px', border: '1px solid #ddd', textAlign: 'center', fontSize: '13px' }}
-                        />
-                      </td>
+                        {/* Qte finale (editable) */}
+                        <td style={{ padding: '10px', textAlign: 'center' }}>
+                          <input
+                            type="number"
+                            min="1"
+                            value={item.qty_ordered}
+                            onChange={e => handleUpdateQty(idx, e.target.value)}
+                            style={{ width: '70px', padding: '6px', borderRadius: '4px', border: '1px solid #ddd', textAlign: 'center', fontSize: '13px' }}
+                          />
+                        </td>
 
-                      {/* Prix unitaire (editable) */}
-                      <td style={{ padding: '10px', textAlign: 'center' }}>
-                        <input
-                          type="number"
-                          step="0.01"
-                          min="0"
-                          value={item.unit_price ?? ''}
-                          onChange={e => handleUpdatePrice(idx, e.target.value)}
-                          placeholder="—"
-                          style={{ width: '85px', padding: '6px', borderRadius: '4px', border: '1px solid #ddd', textAlign: 'center', fontSize: '13px' }}
-                        />
-                      </td>
+                        {/* Prix unitaire (editable) */}
+                        <td style={{ padding: '10px', textAlign: 'center' }}>
+                          <input
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            value={item.unit_price ?? ''}
+                            onChange={e => handleUpdatePrice(idx, e.target.value)}
+                            placeholder="—"
+                            style={{ width: '85px', padding: '6px', borderRadius: '4px', border: '1px solid #ddd', textAlign: 'center', fontSize: '13px' }}
+                          />
+                        </td>
 
-                      {/* Remise % */}
-                      <td style={{ padding: '10px', textAlign: 'center' }}>
-                        <input
-                          type="number"
-                          step="0.1"
-                          min="0"
-                          max="100"
-                          value={item.discount || ''}
-                          onChange={e => handleUpdateDiscount(idx, e.target.value)}
-                          placeholder="0"
-                          style={{ width: '60px', padding: '6px', borderRadius: '4px', border: '1px solid #ddd', textAlign: 'center', fontSize: '13px' }}
-                        />
-                      </td>
+                        {/* Remise % */}
+                        <td style={{ padding: '10px', textAlign: 'center' }}>
+                          <input
+                            type="number"
+                            step="0.1"
+                            min="0"
+                            max="100"
+                            value={item.discount || ''}
+                            onChange={e => handleUpdateDiscount(idx, e.target.value)}
+                            placeholder="0"
+                            style={{ width: '60px', padding: '6px', borderRadius: '4px', border: '1px solid #ddd', textAlign: 'center', fontSize: '13px' }}
+                          />
+                        </td>
 
-                      {/* Total HT ligne */}
-                      <td style={{ padding: '10px', textAlign: 'right', fontSize: '13px', fontWeight: 500 }}>
-                        {effectivePrice(item)
-                          ? (item.qty_ordered * effectivePrice(item)).toFixed(2) + ' €'
-                          : '-'}
-                      </td>
+                        {/* Total HT ligne */}
+                        <td style={{ padding: '10px', textAlign: 'right', fontSize: '13px', fontWeight: 500 }}>
+                          {effectivePrice(item)
+                            ? (item.qty_ordered * effectivePrice(item)).toFixed(2) + ' €'
+                            : '-'}
+                        </td>
 
-                      {/* Supprimer */}
-                      <td style={{ padding: '10px', textAlign: 'center' }}>
-                        <button
-                          onClick={() => handleRemoveItem(idx)}
-                          style={{ background: '#fee2e2', color: '#dc2626', border: 'none', borderRadius: '4px', padding: '4px 8px', cursor: 'pointer', fontSize: '14px' }}
-                          title="Retirer cette ligne"
-                        >
-                          ×
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
+                        {/* Supprimer */}
+                        <td style={{ padding: '10px', textAlign: 'center' }}>
+                          <button
+                            onClick={() => handleRemoveItem(idx)}
+                            style={{ background: '#fee2e2', color: '#dc2626', border: 'none', borderRadius: '4px', padding: '4px 8px', cursor: 'pointer', fontSize: '14px' }}
+                            title="Retirer cette ligne"
+                          >
+                            ×
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
 
             {/* Totaux */}
             <div style={{ background: 'white', borderRadius: '8px', padding: '15px 20px', marginBottom: '20px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)', display: 'flex', justifyContent: 'flex-end', gap: '30px', fontSize: '15px' }}>
-              {parseFloat(globalDiscount) > 0 && (
+              {totalRemises < 0 && (
                 <>
                   <div>
                     <span style={{ color: '#666' }}>Total HT brut : </span>
-                    <span style={{ fontWeight: 600 }}>{totalHtBrut.toFixed(2)} €</span>
+                    <span style={{ fontWeight: 600 }}>{totalHtProduits.toFixed(2)} €</span>
                   </div>
                   <div>
-                    <span style={{ color: '#666' }}>Remise : </span>
-                    <span style={{ fontWeight: 600, color: '#dc2626' }}>-{parseFloat(globalDiscount).toFixed(2)} €</span>
+                    <span style={{ color: '#666' }}>Total remises : </span>
+                    <span style={{ fontWeight: 600, color: '#dc2626' }}>{totalRemises.toFixed(2)} €</span>
                   </div>
                 </>
               )}
@@ -596,9 +617,9 @@ const ImportPdfPage = () => {
             <div style={{ background: 'white', borderRadius: '8px', padding: '20px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
               <div style={{ color: '#666', fontSize: '14px' }}>
                 {matchedItems.length} article(s) prêt(s) — {totalQty} unité(s)
-                {items.filter(i => !i.matched).length > 0 && (
+                {productItems.filter(i => !i.matched).length > 0 && (
                   <span style={{ color: '#f59e0b', marginLeft: '10px' }}>
-                    ({items.filter(i => !i.matched).length} ligne(s) non matchée(s) seront ignorées)
+                    ({productItems.filter(i => !i.matched).length} ligne(s) non matchée(s) seront ignorées)
                   </span>
                 )}
               </div>

@@ -121,15 +121,30 @@ const pdfImportModel = {
       }
     }
 
+    // Lignes remise (item_type = 'discount') : pas de matching, pas de pack_qty
+    const discountLines = (parsed.discountItems || []).map(d => ({
+      item_type: 'discount',
+      supplier_sku: null,
+      designation: null,
+      product_name: d.product_name,
+      qty_from_pdf: 1,
+      qty_ordered: 1,
+      matched: true,
+      unit_price: d.unit_price,  // déjà négatif
+      pdf_price: d.unit_price,
+      pack_qty: 1,
+    }));
+
+    const allItems = [...enrichedItems, ...discountLines];
+
     return {
       supplier_id: supplierId,
       supplier_name: supplier.name,
       order_number: parsed.orderNumber,
       order_date: parsed.orderDate,
       has_price: parsed.hasPrice || false,
-      global_discount: parsed.globalDiscount || 0,
       duplicate_warning: duplicateWarning,
-      items: enrichedItems,
+      items: allItems,
       total_items: enrichedItems.length,
       matched_count: enrichedItems.filter(i => i.matched).length,
       unmatched_count: enrichedItems.filter(i => !i.matched).length,

@@ -98,7 +98,11 @@ function parseConfirmation(text) {
     });
   }
 
-  return { orderNumber, orderDate, items, hasPrice: true, skipPackQty: true, globalDiscount };
+  const discountItems = globalDiscount > 0
+    ? [{ item_type: 'discount', product_name: 'Remise', unit_price: -globalDiscount, qty_ordered: 1 }]
+    : [];
+
+  return { orderNumber, orderDate, items, discountItems, hasPrice: true, skipPackQty: true };
 }
 
 /**

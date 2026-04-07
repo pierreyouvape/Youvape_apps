@@ -488,6 +488,20 @@ const OrdersTab = ({ token }) => {
                 </thead>
                 <tbody>
                   {selectedOrder.items?.map(item => {
+                    if (item.item_type === 'discount') {
+                      return (
+                        <tr key={item.id} style={{ background: '#f3f4f6' }}>
+                          <td style={{ maxWidth: '300px', fontStyle: 'italic', color: '#6b7280' }} colSpan={4}>
+                            {item.product_name}
+                          </td>
+                          <td className="text-right">—</td>
+                          <td className="text-right" style={{ color: '#dc2626', fontWeight: 600 }}>
+                            {item.unit_price != null ? `${formatPrice(item.unit_price)} €` : '-'}
+                          </td>
+                          <td>—</td>
+                        </tr>
+                      );
+                    }
                     const missing = (item.qty_received || 0) < (item.qty_ordered || 0);
                     return (
                       <tr key={item.id} style={missing ? { background: '#fff7ed' } : {}}>
@@ -532,21 +546,24 @@ const OrdersTab = ({ token }) => {
 
               {/* Totaux */}
               {(() => {
-                const totalHtBrut = (selectedOrder.items || []).reduce((sum, i) =>
+                const allItems = selectedOrder.items || [];
+                const productItems = allItems.filter(i => i.item_type !== 'discount');
+                const discountItems = allItems.filter(i => i.item_type === 'discount');
+                const totalHtProduits = productItems.reduce((sum, i) =>
                   sum + (i.unit_price ? i.qty_ordered * i.unit_price : 0), 0);
-                const globalDiscount = parseFloat(selectedOrder.global_discount) || 0;
-                const totalHt = totalHtBrut - globalDiscount;
-                return totalHtBrut > 0 ? (
+                const totalRemises = discountItems.reduce((sum, i) => sum + (parseFloat(i.unit_price) || 0), 0);
+                const totalHt = totalHtProduits + totalRemises;
+                return totalHtProduits > 0 ? (
                   <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '30px', marginTop: '12px', fontSize: '14px' }}>
-                    {globalDiscount > 0 && (
+                    {totalRemises < 0 && (
                       <>
                         <div>
                           <span style={{ color: '#666' }}>Total HT brut : </span>
-                          <strong>{formatPrice(totalHtBrut)} €</strong>
+                          <strong>{formatPrice(totalHtProduits)} €</strong>
                         </div>
                         <div>
-                          <span style={{ color: '#666' }}>Remise globale : </span>
-                          <strong style={{ color: '#dc2626' }}>-{formatPrice(globalDiscount)} €</strong>
+                          <span style={{ color: '#666' }}>Total remises : </span>
+                          <strong style={{ color: '#dc2626' }}>{formatPrice(totalRemises)} €</strong>
                         </div>
                       </>
                     )}
