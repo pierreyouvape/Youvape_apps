@@ -68,7 +68,7 @@ module.exports = {
       // "60,00 1,35 0,00 TVA 20% 81,00 €" ou "5,00 4,50 0,00 TVA 20% 22,50 €"
       // Attention : les nombres peuvent utiliser virgule ou point
       const numbersMatch = blockText.match(
-        /([\d.,]+)\s+([\d.,]+)\s+([\d.,]+)\s+TVA\s+\d+%\s+([\d.,]+)\s*€\s*$/
+        /([\d.,]+)\s+([\d.,]+)\s+(?:([\d.,]+)\s+)?TVA\s+\d+%\s+([\d.,]+)\s*€\s*$/
       );
       if (!numbersMatch) continue;
 
