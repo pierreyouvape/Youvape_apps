@@ -42,13 +42,26 @@ function parseConfirmation(text) {
     .replace(/Taxes[^\n]*/g, '')
     .replace(/^Total\b[^\n]*/gm, '');
 
-  // Trouver tous les blocs "Référence: XXX" — refs peuvent contenir espaces et tirets
+  // Trouver tous les blocs "Référence: XXX [chiffres sur la même ligne ou ligne suivante]"
+  // La ref s'arrête avant le premier nombre suivi d'un tab ou espace+€
+  // Ex: "Référence: FR10-SUBZ-EX00-01 36 \t2,49 €" → sku=FR10-SUBZ-EX00-01, qty=36, prix=2,49
+  // Ex: "Référence: PP-CSWCEG-0\n5 \t2,95 €" → sku=PP-CSWCEG-0, chiffres sur la ligne suivante
   const refRegex = /Référence:\s*([^\n]+)/g;
   let match;
   const refMatches = [];
   while ((match = refRegex.exec(cleaned)) !== null) {
-    const sku = match[1].trim();
-    refMatches.push({ sku, index: match.index, endIndex: match.index + match[0].length });
+    const fullLine = match[1].trim();
+    // Extraire la ref (tout avant le premier groupe "entier + prix €")
+    const numInLine = fullLine.match(/^([\w\s.-]+?)\s+(\d+)\s+([\d,]+)\s*€/);
+    if (numInLine) {
+      const sku = numInLine[1].trim();
+      const qty = parseInt(numInLine[2]);
+      const unitPrice = parseFloat(numInLine[3].replace(',', '.'));
+      refMatches.push({ sku, qty, unitPrice, index: match.index, endIndex: match.index + match[0].length, inlineData: true });
+    } else {
+      // Ref seule sur la ligne, chiffres sur la ligne suivante
+      refMatches.push({ sku: fullLine, qty: null, unitPrice: null, index: match.index, endIndex: match.index + match[0].length, inlineData: false });
+    }
   }
 
   for (let i = 0; i < refMatches.length; i++) {
@@ -56,20 +69,26 @@ function parseConfirmation(text) {
     const nextRefStart = i + 1 < refMatches.length ? refMatches[i + 1].index : cleaned.length;
 
     // Désignation : lignes entre la fin de la ref précédente et la ref courante
-    const prevStart = i > 0 ? refMatches[i - 1].endIndex : 0;
-    const beforeRef = cleaned.substring(prevStart, ref.index);
+    const prevEnd = i > 0 ? refMatches[i - 1].endIndex : 0;
+    const beforeRef = cleaned.substring(prevEnd, ref.index);
     const headerWords = ['Produit', 'Quantité', 'Prix', 'unitaire', 'total', 'HT', 'TVA', 'TTC'];
     const beforeLines = beforeRef.split('\n').map(l => l.trim()).filter(l => l.length > 0);
     const desigLines = beforeLines.filter(l => !headerWords.some(w => l === w));
     const designation = desigLines.slice(-2).join(' ').trim();
 
-    // Texte après la ref : QTE PRIX_HT€ TOTAL_HT€ TVA€ TTC€
-    const afterRef = cleaned.substring(ref.endIndex, nextRefStart);
-    const numMatch = afterRef.match(/(\d+)\s+([\d,]+)\s*€\s+([\d,]+)\s*€/);
-    if (!numMatch) continue;
+    let qty = ref.qty;
+    let unitPrice = ref.unitPrice;
 
-    const qty = parseInt(numMatch[1]);
-    const unitPrice = parseFloat(numMatch[2].replace(',', '.'));
+    if (!ref.inlineData) {
+      // Chiffres sur la ligne suivante : QTE PRIX_HT€
+      const afterRef = cleaned.substring(ref.endIndex, nextRefStart);
+      const numMatch = afterRef.match(/(\d+)\s+([\d,]+)\s*€/);
+      if (!numMatch) continue;
+      qty = parseInt(numMatch[1]);
+      unitPrice = parseFloat(numMatch[2].replace(',', '.'));
+    }
+
+    if (!qty) continue;
 
     items.push({
       supplier_sku: ref.sku,
