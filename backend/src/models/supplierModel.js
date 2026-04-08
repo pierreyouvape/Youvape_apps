@@ -9,6 +9,7 @@ const resolveProductId = async (productId) => {
   const result = await pool.query(`
     SELECT p.id FROM products p
     WHERE p.id = $1 OR p.wp_product_id = $1
+    ORDER BY CASE WHEN p.id = $1 THEN 0 ELSE 1 END
     LIMIT 1
   `, [productId]);
   if (result.rows.length === 0) return productId;
