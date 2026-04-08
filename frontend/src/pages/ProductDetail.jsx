@@ -1222,7 +1222,7 @@ const ProductDetail = () => {
                                     if (!isDirty) return;
                                     setSaving(true);
                                     try {
-                                      await axios.put(`${API_URL}/purchases/suppliers/${supplier.id}/products/${v.variation_id}`, edited, { headers });
+                                      await axios.put(`${API_URL}/purchases/suppliers/${supplier.id}/products/${v.variation_wp_id}`, edited, { headers });
                                       handleEditChange(vKey, '_clear', true);
                                       setEditingSupplier(prev => { const n = { ...prev }; delete n[vKey]; return n; });
                                       const res = await axios.get(`${API_URL}/purchases/products/${id}/suppliers`, { headers });
