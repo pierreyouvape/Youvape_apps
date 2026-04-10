@@ -32,17 +32,27 @@ function parseConfirmation(text) {
   const orderMatch = text.match(/commande\s+#(\d+)/i);
   const orderNumber = orderMatch ? orderMatch[1] : null;
 
-  // Date : "Passée le 26 mars 2026" -> "2026-03-26"
+  // Date : "Passée le 26 mars 2026" ou "Passée le 10 avr. 2026" -> "2026-03-26"
   const moisMap = {
-    'janvier': '01', 'février': '02', 'mars': '03', 'avril': '04',
-    'mai': '05', 'juin': '06', 'juillet': '07', 'août': '08',
-    'septembre': '09', 'octobre': '10', 'novembre': '11', 'décembre': '12'
+    'janvier': '01', 'janv': '01',
+    'février': '02', 'févr': '02',
+    'mars': '03',
+    'avril': '04', 'avr': '04',
+    'mai': '05',
+    'juin': '06',
+    'juillet': '07', 'juil': '07',
+    'août': '08',
+    'septembre': '09', 'sept': '09',
+    'octobre': '10', 'oct': '10',
+    'novembre': '11', 'nov': '11',
+    'décembre': '12', 'déc': '12',
   };
-  const dateMatch = text.match(/Pass[ée]+e le (\d{1,2})\s+(\w+)\s+(\d{4})/i);
+  const dateMatch = text.match(/Pass[ée]+e le (\d{1,2})\s+(\w+\.?)\s+(\d{4})/i);
   let orderDate = null;
   if (dateMatch) {
     const day = dateMatch[1].padStart(2, '0');
-    const month = moisMap[dateMatch[2].toLowerCase()] || '01';
+    const moisKey = dateMatch[2].toLowerCase().replace(/\.$/, '');
+    const month = moisMap[moisKey] || '01';
     orderDate = `${dateMatch[3]}-${month}-${day}`;
   }
 
@@ -51,7 +61,7 @@ function parseConfirmation(text) {
 
   // Extraire toutes les refs avec leur position dans le texte
   const items = [];
-  const refRegex = /Référence\s*:\s*#(REF\d+-\d+)/g;
+  const refRegex = /Référence\s*:\s*#(REF\d+(?:-\d+)?)/g;
   let match;
   const refs = [];
   while ((match = refRegex.exec(cleanedText)) !== null) {
@@ -77,9 +87,18 @@ function parseConfirmation(text) {
     );
     const designation = beforeLines.length > 0 ? beforeLines[beforeLines.length - 1] : '';
 
-    // Quantite : chercher un nombre seul ou "nombre \t prix €" apres la ref
+    // Quantite : chercher "nombre \t prix €" apres la ref
     // Format : "160 \t451,20 €" ou juste "50 \t141,00 €"
-    const qtyMatch = afterRef.match(/(\d+)\s+\t?\s*[\d\s,]+€/);
+    let qtyMatch = afterRef.match(/(\d+)\s+\t?\s*[\d\s,]+€/);
+    // Fallback : qty avant la ref (cas saut de page — qty+prix sur page N, Référence: sur page N+1)
+    // On prend le dernier match "QTE \t PRIX €" avant les totaux (Sous-total, Montant global, etc.)
+    if (!qtyMatch) {
+      const beforeTotals = beforeRef.replace(/\n(Sous-total|Frais|Taxe|Montant|Articles)[^\n]*/g, '\n');
+      const allQtyMatches = [...beforeTotals.matchAll(/(\d+)\s+\t\s*[\d\s,]+€/g)];
+      if (allQtyMatches.length > 0) {
+        qtyMatch = allQtyMatches[allQtyMatches.length - 1];
+      }
+    }
     const qty = qtyMatch ? parseInt(qtyMatch[1]) : null;
 
     if (qty !== null) {
