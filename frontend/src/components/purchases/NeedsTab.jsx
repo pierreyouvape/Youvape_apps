@@ -442,10 +442,19 @@ const NeedsTab = ({ token, onCompactChange }) => {
     // Ainsi toutes les variations d'un même parent sont affichées si l'une d'elles correspond
     const isRealParentId = (id) => id && id !== '0' && id !== 0;
 
+    // Vérifie si un produit est associé au fournisseur sélectionné
+    // Utilise supplier_ids (tableau complet) si disponible, sinon supplier_id seul
+    const productMatchesSupplier = (p, sid) => {
+      if (Array.isArray(p.supplier_ids) && p.supplier_ids.length > 0) {
+        return p.supplier_ids.map(String).includes(String(sid));
+      }
+      return String(p.supplier_id) === String(sid);
+    };
+
     const parentIdsWithSupplier = supplierId
       ? new Set(
           computedProducts
-            .filter(p => isRealParentId(p.wp_parent_id) && String(p.supplier_id) === String(supplierId))
+            .filter(p => isRealParentId(p.wp_parent_id) && productMatchesSupplier(p, supplierId))
             .map(p => p.wp_parent_id)
         )
       : null;
@@ -453,7 +462,7 @@ const NeedsTab = ({ token, onCompactChange }) => {
     return computedProducts.filter(p => {
       // Filtre fournisseur
       if (supplierId) {
-        const matchesDirect = String(p.supplier_id) === String(supplierId);
+        const matchesDirect = productMatchesSupplier(p, supplierId);
         const matchesViaParent = isRealParentId(p.wp_parent_id) && parentIdsWithSupplier.has(p.wp_parent_id);
         if (!matchesDirect && !matchesViaParent) return false;
       }

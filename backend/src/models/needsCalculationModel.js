@@ -30,6 +30,10 @@ const needsCalculationModel = {
         COALESCE(s_primary.coverage_months, s_any.coverage_months, 1) as supplier_coverage_months,
         ps_primary.supplier_sku,
         ps_primary.supplier_price,
+        COALESCE(
+          (SELECT array_agg(supplier_id) FROM product_suppliers WHERE product_id = p.id),
+          ARRAY[]::int[]
+        ) as supplier_ids,
         p.image_url,
         p.weight,
         p.wp_parent_id,

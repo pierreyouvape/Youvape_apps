@@ -389,7 +389,9 @@ const ProductDetail = () => {
       await axios.put(`${API_URL}/purchases/products/${id}/primary-supplier`, { supplier_id: supplierId }, { headers });
       const res = await axios.get(`${API_URL}/purchases/products/${id}/suppliers`, { headers });
       if (res.data.success) setSuppliers(res.data.data);
-    } catch (err) {}
+    } catch (err) {
+      alert(err.response?.data?.error || 'Erreur lors de la définition du fournisseur principal');
+    }
   };
 
   const handleAddSupplier = async () => {
