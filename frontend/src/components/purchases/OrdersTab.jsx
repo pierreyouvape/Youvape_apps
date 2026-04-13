@@ -22,6 +22,12 @@ const OrdersTab = ({ token }) => {
   const [searchResults, setSearchResults] = useState([]);
   const [searchLoading, setSearchLoading] = useState(false);
   const [searchTimeout, setSearchTimeout] = useState(null);
+  // Rematch inline d'un item existant
+  const [rematchItemId, setRematchItemId] = useState(null); // id ou ref unique de l'item en cours de rematch
+  const [rematchSearch, setRematchSearch] = useState('');
+  const [rematchResults, setRematchResults] = useState([]);
+  const [rematchLoading, setRematchLoading] = useState(false);
+  const [rematchTimeout, setRematchTimeout] = useState(null);
 
   // Filters
   const [filterSupplier, setFilterSupplier] = useState('');
@@ -208,7 +214,7 @@ const OrdersTab = ({ token }) => {
       order_date: selectedOrder.order_date ? selectedOrder.order_date.slice(0, 10) : '',
       expected_date: selectedOrder.expected_date ? selectedOrder.expected_date.slice(0, 10) : '',
       notes: selectedOrder.notes || '',
-      items: (selectedOrder.items || []).map(item => ({ ...item, _delete: false }))
+      items: (selectedOrder.items || []).map((item, idx) => ({ ...item, _delete: false, _tmpId: item.id || `tmp-${idx}` }))
     });
     setEditMode(true);
     setProductSearch('');
@@ -281,15 +287,58 @@ const OrdersTab = ({ token }) => {
       items: [...prev.items, {
         product_id: product.id,
         product_name: product.post_title,
+        product_sku: product.sku || null,
+        product_type: product.product_type || null,
         supplier_sku: product.sku || null,
         qty_ordered: 1,
         unit_price: product.cost_price || null,
         qty_received: 0,
-        _delete: false
+        _delete: false,
+        _tmpId: `new-${Date.now()}`
       }]
     }));
     setProductSearch('');
     setSearchResults([]);
+  };
+
+  const handleRematchSearch = (value) => {
+    setRematchSearch(value);
+    if (rematchTimeout) clearTimeout(rematchTimeout);
+    if (value.length < 2) { setRematchResults([]); return; }
+    setRematchTimeout(setTimeout(async () => {
+      setRematchLoading(true);
+      try {
+        const response = await axios.get(`${API_URL}/purchases/products/search?q=${encodeURIComponent(value)}&limit=20`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        setRematchResults(response.data.data || []);
+      } catch (err) {
+        console.error('Erreur rematch search:', err);
+      } finally {
+        setRematchLoading(false);
+      }
+    }, 300));
+  };
+
+  const applyRematch = (product) => {
+    setEditData(prev => ({
+      ...prev,
+      items: prev.items.map(i => {
+        const key = i.id || i._tmpId;
+        if (key !== rematchItemId) return i;
+        return {
+          ...i,
+          product_id: product.id,
+          product_name: product.post_title,
+          product_sku: product.sku || null,
+          product_type: product.product_type || null,
+          current_stock: product.stock ?? null,
+        };
+      })
+    }));
+    setRematchItemId(null);
+    setRematchSearch('');
+    setRematchResults([]);
   };
 
   // Update received qty
@@ -754,9 +803,52 @@ const OrdersTab = ({ token }) => {
                       </tr>
                     </thead>
                     <tbody>
-                      {editData.items.filter(item => !item._delete).map((item, idx) => (
-                        <tr key={item.id || `new-${idx}`}>
-                          <td style={{ maxWidth: '280px' }}>{item.product_name}</td>
+                      {editData.items.filter(item => !item._delete).map((item, idx) => {
+                        const itemKey = item.id || item._tmpId;
+                        const isVariable = item.product_type === 'variable';
+                        const isRematching = rematchItemId === itemKey;
+                        return (
+                        <tr key={itemKey} style={{ background: isVariable && !isRematching ? '#fffbeb' : undefined }}>
+                          <td style={{ maxWidth: '300px', position: 'relative' }}>
+                            {isRematching ? (
+                              <div style={{ position: 'relative' }}>
+                                <input
+                                  type="text"
+                                  placeholder="Rechercher un produit..."
+                                  value={rematchSearch}
+                                  autoFocus
+                                  onChange={e => handleRematchSearch(e.target.value)}
+                                  style={{ width: '100%', padding: '5px 8px', border: '1px solid #f59e0b', borderRadius: '4px', fontSize: '13px' }}
+                                />
+                                {rematchLoading && (
+                                  <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, background: 'white', padding: '6px 10px', fontSize: '12px', color: '#888', border: '1px solid #ddd' }}>Recherche...</div>
+                                )}
+                                {rematchResults.length > 0 && (
+                                  <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 200, background: 'white', border: '1px solid #ddd', borderRadius: '0 0 6px 6px', maxHeight: '220px', overflowY: 'auto', boxShadow: '0 4px 12px rgba(0,0,0,0.15)' }}>
+                                    {rematchResults.map(product => (
+                                      <div
+                                        key={product.id}
+                                        onClick={() => applyRematch(product)}
+                                        style={{ padding: '7px 10px', cursor: 'pointer', borderBottom: '1px solid #eee', fontSize: '13px' }}
+                                        onMouseEnter={e => e.currentTarget.style.background = '#f5f5f5'}
+                                        onMouseLeave={e => e.currentTarget.style.background = 'white'}
+                                      >
+                                        <div style={{ fontWeight: 500 }}>{product.post_title}</div>
+                                        <div style={{ color: '#888', fontSize: '12px' }}>SKU: {product.sku || '-'} | Stock: {product.stock ?? '-'}</div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                                <button onClick={() => { setRematchItemId(null); setRematchSearch(''); setRematchResults([]); }} style={{ marginTop: '4px', fontSize: '11px', color: '#6b7280', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>annuler</button>
+                              </div>
+                            ) : (
+                              <div>
+                                <div style={{ fontSize: '13px' }}>{item.product_name}</div>
+                                {item.product_sku && <div style={{ fontSize: '11px', color: isVariable ? '#f59e0b' : '#999' }}>SKU: {item.product_sku}{isVariable ? ' ⚠ variable' : ''}</div>}
+                                <button onClick={() => { setRematchItemId(itemKey); setRematchSearch(''); setRematchResults([]); }} style={{ fontSize: '11px', color: '#6b7280', background: 'none', border: 'none', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}>modifier produit</button>
+                              </div>
+                            )}
+                          </td>
                           <td>
                             <input
                               type="text"
@@ -764,7 +856,7 @@ const OrdersTab = ({ token }) => {
                               onChange={e => setEditData(prev => ({
                                 ...prev,
                                 items: prev.items.map(i =>
-                                  (i.id ? i.id === item.id : i === item)
+                                  (i._tmpId ? i._tmpId === item._tmpId : i === item)
                                     ? { ...i, supplier_sku: e.target.value }
                                     : i
                                 )
@@ -780,7 +872,7 @@ const OrdersTab = ({ token }) => {
                               onChange={e => setEditData(prev => ({
                                 ...prev,
                                 items: prev.items.map(i =>
-                                  (i.id ? i.id === item.id : i === item)
+                                  (i._tmpId ? i._tmpId === item._tmpId : i === item)
                                     ? { ...i, qty_ordered: parseInt(e.target.value) || 1 }
                                     : i
                                 )
@@ -797,7 +889,7 @@ const OrdersTab = ({ token }) => {
                               onChange={e => setEditData(prev => ({
                                 ...prev,
                                 items: prev.items.map(i =>
-                                  (i.id ? i.id === item.id : i === item)
+                                  (i._tmpId ? i._tmpId === item._tmpId : i === item)
                                     ? { ...i, unit_price: e.target.value === '' ? null : e.target.value }
                                     : i
                                 )
@@ -810,7 +902,7 @@ const OrdersTab = ({ token }) => {
                               onClick={() => setEditData(prev => ({
                                 ...prev,
                                 items: prev.items.map(i =>
-                                  (i.id ? i.id === item.id : i === item)
+                                  (i._tmpId ? i._tmpId === item._tmpId : i === item)
                                     ? { ...i, _delete: true }
                                     : i
                                 )
@@ -822,7 +914,8 @@ const OrdersTab = ({ token }) => {
                             </button>
                           </td>
                         </tr>
-                      ))}
+                        );
+                      })}
                     </tbody>
                   </table>
 

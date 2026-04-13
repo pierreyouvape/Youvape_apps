@@ -92,7 +92,8 @@ const purchaseOrderModel = {
         poi.*,
         p.sku as product_sku,
         p.post_title as current_product_name,
-        p.stock as current_stock
+        p.stock as current_stock,
+        p.product_type as product_type
       FROM purchase_order_items poi
       LEFT JOIN products p ON poi.product_id = p.id
       WHERE poi.purchase_order_id = $1
