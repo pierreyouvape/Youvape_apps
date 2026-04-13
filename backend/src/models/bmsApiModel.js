@@ -3,20 +3,38 @@
  * Documentation: https://fr3.myfulfillment.boostmyshop.com/swagger/
  */
 
+const pool = require('../config/database');
 const BMS_API_URL = 'https://fr3.myfulfillment.boostmyshop.com/api';
-const BMS_USERNAME = process.env.BMS_USERNAME || 'pierre.youvape@gmail.com';
-const BMS_PASSWORD = process.env.BMS_PASSWORD || 'pedrito723@';
+const SUPER_ADMIN_EMAIL = 'youvape34@gmail.com';
 
 // Cache de tokens par email (clé = email, valeur = { token, expiry })
 const tokenCache = new Map();
 
+// Récupère les credentials BMS du super admin depuis la DB
+const getDefaultCredentials = async () => {
+  const result = await pool.query(
+    'SELECT bms_email, bms_password FROM users WHERE email = $1',
+    [SUPER_ADMIN_EMAIL]
+  );
+  const row = result.rows[0];
+  if (!row?.bms_email || !row?.bms_password) {
+    throw new Error('Credentials BMS du super admin non configurés. Allez dans Paramètres → Mon compte.');
+  }
+  return { email: row.bms_email, password: row.bms_password };
+};
+
 const bmsApiModel = {
   /**
-   * Obtenir un token BMS pour un utilisateur donné (ou les credentials par défaut)
+   * Obtenir un token BMS pour un utilisateur donné (ou les credentials par défaut depuis la DB)
    */
   getToken: async (email = null, password = null) => {
-    const username = email || BMS_USERNAME;
-    const pwd = password || BMS_PASSWORD;
+    let username = email;
+    let pwd = password;
+    if (!username || !pwd) {
+      const creds = await getDefaultCredentials();
+      username = creds.email;
+      pwd = creds.password;
+    }
     const cacheKey = username;
 
     const cached = tokenCache.get(cacheKey);
