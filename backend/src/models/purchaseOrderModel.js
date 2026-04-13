@@ -317,7 +317,7 @@ const purchaseOrderModel = {
         const bmsItem = {
           sku: item.sku,
           qty: parseInt(item.qty_ordered) || 0,
-          price: (parseFloat(item.unit_price) || 0) * packQty,
+          price: Math.round(((parseFloat(item.unit_price) || 0) * packQty) * 100) / 100,
           name: item.product_name,
           supplier_sku: item.supplier_sku || null
         };
