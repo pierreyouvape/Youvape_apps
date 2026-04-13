@@ -489,12 +489,14 @@ const purchasesController = {
       }
 
       // Préparer les items avec SKU et pack_qty pour BMS
+      // Exclure les produits variables (SKU parent) - BMS ne connaît que les variations
       const itemsResult = await pool.query(`
-        SELECT poi.*, p.sku, COALESCE(ps.pack_qty, 1) as pack_qty
+        SELECT poi.*, p.sku, p.product_type, COALESCE(ps.pack_qty, 1) as pack_qty
         FROM purchase_order_items poi
         JOIN products p ON poi.product_id = p.id
         LEFT JOIN product_suppliers ps ON ps.product_id = p.id AND ps.supplier_id = $2
         WHERE poi.purchase_order_id = $1
+          AND (p.product_type IS NULL OR p.product_type != 'variable')
       `, [orderId, order.supplier_id]);
 
       const itemsWithSku = itemsResult.rows.map(row => ({
