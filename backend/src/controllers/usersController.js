@@ -1,5 +1,6 @@
 const pool = require('../config/database');
 const userPermissionsModel = require('../models/userPermissionsModel');
+const bmsApiModel = require('../models/bmsApiModel');
 
 const SUPER_ADMIN_EMAIL = 'youvape34@gmail.com';
 
@@ -136,6 +137,7 @@ const usersController = {
         'UPDATE users SET bms_email = $1, bms_password = $2, updated_at = NOW() WHERE id = $3',
         [email, bms_password, userId]
       );
+      bmsApiModel.invalidateTokenCache(email);
       res.json({ success: true, message: 'Mot de passe BMS mis à jour' });
     } catch (error) {
       console.error('Erreur mise à jour BMS password:', error);

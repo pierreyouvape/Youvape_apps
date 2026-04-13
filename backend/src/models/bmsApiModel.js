@@ -67,6 +67,17 @@ const bmsApiModel = {
   },
 
   /**
+   * Invalider le cache de token pour un email donné (ou le super admin par défaut)
+   */
+  invalidateTokenCache: (email = null) => {
+    if (email) {
+      tokenCache.delete(email);
+    } else {
+      tokenCache.delete(SUPER_ADMIN_EMAIL);
+    }
+  },
+
+  /**
    * Faire un appel API authentifié à BMS (credentials par défaut)
    */
   apiCall: async (endpoint, method = 'GET', body = null) => {
