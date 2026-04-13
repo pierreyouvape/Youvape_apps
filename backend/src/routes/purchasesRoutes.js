@@ -108,6 +108,9 @@ router.get('/orders/:id', checkPurchasesRead, purchasesController.getOrderById);
 // Créer une commande
 router.post('/orders', checkPurchasesWrite, purchasesController.createOrder);
 
+// Modifier une commande (champs + lignes)
+router.put('/orders/:id', checkPurchasesWrite, purchasesController.updateOrder);
+
 // Modifier le statut d'une commande
 router.put('/orders/:id/status', checkPurchasesWrite, purchasesController.updateOrderStatus);
 

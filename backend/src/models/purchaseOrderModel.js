@@ -351,6 +351,110 @@ const purchaseOrderModel = {
     };
   },
 
+  // Mettre à jour une commande (fournisseur, notes, date, lignes)
+  update: async (id, data) => {
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      // Mettre à jour les champs de la commande
+      const fields = [];
+      const values = [id];
+      let paramIndex = 2;
+
+      if (data.supplier_id !== undefined) {
+        fields.push(`supplier_id = $${paramIndex++}`);
+        values.push(data.supplier_id);
+      }
+      if (data.notes !== undefined) {
+        fields.push(`notes = $${paramIndex++}`);
+        values.push(data.notes);
+      }
+      if (data.order_date !== undefined) {
+        fields.push(`order_date = $${paramIndex++}`);
+        values.push(data.order_date);
+      }
+      if (data.expected_date !== undefined) {
+        fields.push(`expected_date = $${paramIndex++}`);
+        values.push(data.expected_date);
+      }
+
+      if (fields.length > 0) {
+        fields.push(`updated_at = CURRENT_TIMESTAMP`);
+        await client.query(
+          `UPDATE purchase_orders SET ${fields.join(', ')} WHERE id = $1`,
+          values
+        );
+      }
+
+      // Mettre à jour les lignes existantes
+      if (data.items) {
+        for (const item of data.items) {
+          if (item._delete) {
+            await client.query(
+              'DELETE FROM purchase_order_items WHERE id = $1 AND purchase_order_id = $2',
+              [item.id, id]
+            );
+          } else if (item.id) {
+            // Mise à jour d'une ligne existante
+            await client.query(`
+              UPDATE purchase_order_items
+              SET qty_ordered = $1, unit_price = $2, updated_at = CURRENT_TIMESTAMP
+              WHERE id = $3 AND purchase_order_id = $4
+            `, [item.qty_ordered, item.unit_price ?? null, item.id, id]);
+          } else {
+            // Nouvelle ligne
+            const productResult = await client.query(
+              `SELECT p.id, p.sku FROM products p WHERE p.wp_product_id = $1 OR p.id = $1 LIMIT 1`,
+              [item.product_id]
+            );
+            const product = productResult.rows[0];
+            if (!product) continue;
+
+            await client.query(`
+              INSERT INTO purchase_order_items (
+                purchase_order_id, product_id, supplier_sku, product_name,
+                qty_ordered, unit_price, qty_received
+              ) VALUES ($1, $2, $3, $4, $5, $6, 0)
+            `, [
+              id,
+              product.id,
+              item.supplier_sku || product.sku || null,
+              item.product_name,
+              item.qty_ordered,
+              item.unit_price ?? null
+            ]);
+          }
+        }
+
+        // Recalculer les totaux
+        const totalsResult = await client.query(`
+          SELECT
+            COUNT(*) FILTER (WHERE item_type IS DISTINCT FROM 'discount') as total_items,
+            COALESCE(SUM(qty_ordered) FILTER (WHERE item_type IS DISTINCT FROM 'discount'), 0) as total_qty,
+            COALESCE(SUM(qty_ordered * COALESCE(unit_price, 0)), 0) as total_amount
+          FROM purchase_order_items
+          WHERE purchase_order_id = $1
+        `, [id]);
+
+        const t = totalsResult.rows[0];
+        await client.query(`
+          UPDATE purchase_orders
+          SET total_items = $2, total_qty = $3, total_amount = $4, updated_at = CURRENT_TIMESTAMP
+          WHERE id = $1
+        `, [id, t.total_items, t.total_qty, t.total_amount]);
+      }
+
+      await client.query('COMMIT');
+      return purchaseOrderModel.getById(id);
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  },
+
   // Mettre à jour le statut d'une commande
   updateStatus: async (id, status, additionalData = {}) => {
     let query = `

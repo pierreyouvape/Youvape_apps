@@ -14,6 +14,15 @@ const OrdersTab = ({ token }) => {
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [showDetailModal, setShowDetailModal] = useState(false);
 
+  // Mode édition
+  const [editMode, setEditMode] = useState(false);
+  const [editData, setEditData] = useState(null);
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [productSearch, setProductSearch] = useState('');
+  const [searchResults, setSearchResults] = useState([]);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [searchTimeout, setSearchTimeout] = useState(null);
+
   // Filters
   const [filterSupplier, setFilterSupplier] = useState('');
   const [filterStatus, setFilterStatus] = useState('active');
@@ -190,6 +199,97 @@ const OrdersTab = ({ token }) => {
     } finally {
       setSyncing(false);
     }
+  };
+
+  // ---- Mode édition ----
+  const enterEditMode = () => {
+    setEditData({
+      supplier_id: selectedOrder.supplier_id,
+      order_date: selectedOrder.order_date ? selectedOrder.order_date.slice(0, 10) : '',
+      expected_date: selectedOrder.expected_date ? selectedOrder.expected_date.slice(0, 10) : '',
+      notes: selectedOrder.notes || '',
+      items: (selectedOrder.items || []).map(item => ({ ...item, _delete: false }))
+    });
+    setEditMode(true);
+    setProductSearch('');
+    setSearchResults([]);
+  };
+
+  const cancelEditMode = () => {
+    setEditMode(false);
+    setEditData(null);
+    setProductSearch('');
+    setSearchResults([]);
+  };
+
+  const saveEdit = async () => {
+    setSavingEdit(true);
+    try {
+      const payload = {
+        supplier_id: parseInt(editData.supplier_id),
+        order_date: editData.order_date || null,
+        expected_date: editData.expected_date || null,
+        notes: editData.notes || null,
+        items: editData.items.map(item => ({
+          id: item.id || undefined,
+          product_id: item.product_id,
+          product_name: item.product_name,
+          supplier_sku: item.supplier_sku || null,
+          qty_ordered: parseInt(item.qty_ordered) || 1,
+          unit_price: item.unit_price !== '' && item.unit_price !== null ? parseFloat(item.unit_price) : null,
+          _delete: item._delete || false
+        }))
+      };
+      const response = await axios.put(`${API_URL}/purchases/orders/${selectedOrder.id}`, payload, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setSelectedOrder(response.data.data);
+      setEditMode(false);
+      setEditData(null);
+      loadOrders();
+    } catch (err) {
+      console.error('Erreur sauvegarde:', err);
+      alert(err.response?.data?.error || 'Erreur lors de la sauvegarde');
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
+  const handleProductSearch = (value) => {
+    setProductSearch(value);
+    if (searchTimeout) clearTimeout(searchTimeout);
+    if (value.length < 2) { setSearchResults([]); return; }
+    setSearchTimeout(setTimeout(async () => {
+      setSearchLoading(true);
+      try {
+        const existingIds = editData.items.filter(i => !i._delete && !i.id).map(i => i.product_id);
+        const response = await axios.get(`${API_URL}/purchases/products/search?q=${encodeURIComponent(value)}&limit=20`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        setSearchResults((response.data.data || []).filter(p => !existingIds.includes(p.id)));
+      } catch (err) {
+        console.error('Erreur recherche:', err);
+      } finally {
+        setSearchLoading(false);
+      }
+    }, 300));
+  };
+
+  const addProductToEdit = (product) => {
+    setEditData(prev => ({
+      ...prev,
+      items: [...prev.items, {
+        product_id: product.id,
+        product_name: product.post_title,
+        supplier_sku: product.sku || null,
+        qty_ordered: 1,
+        unit_price: product.cost_price || null,
+        qty_received: 0,
+        _delete: false
+      }]
+    }));
+    setProductSearch('');
+    setSearchResults([]);
   };
 
   // Update received qty
@@ -412,199 +512,395 @@ const OrdersTab = ({ token }) => {
 
       {/* Detail Modal */}
       {showDetailModal && selectedOrder && (
-        <div className="modal-overlay" onClick={() => setShowDetailModal(false)}>
+        <div className="modal-overlay" onClick={() => { if (!editMode) setShowDetailModal(false); }}>
           <div className="modal-content" style={{ maxWidth: '900px' }} onClick={e => e.stopPropagation()}>
             <div className="modal-header">
-              <h3>Commande {selectedOrder.bms_reference || selectedOrder.order_number}</h3>
-              <button className="modal-close" onClick={() => setShowDetailModal(false)}>×</button>
+              <h3>
+                Commande {selectedOrder.bms_reference || selectedOrder.order_number}
+                {editMode && <span style={{ marginLeft: '10px', fontSize: '14px', color: '#f59e0b', fontWeight: 400 }}>— Mode édition</span>}
+              </h3>
+              <button className="modal-close" onClick={() => { cancelEditMode(); setShowDetailModal(false); }}>×</button>
             </div>
             <div className="modal-body">
-              {/* Order info */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '20px', marginBottom: '20px' }}>
-                <div>
-                  <strong>Fournisseur</strong>
-                  <div>{selectedOrder.supplier_name}</div>
-                </div>
-                <div>
-                  <strong>Statut</strong>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span className={`status-badge status-${selectedOrder.status}`}>
-                      {statusLabels[selectedOrder.status]}
-                    </span>
-                    {hasMissingProductsDetail(selectedOrder) && (
-                      <span className="badge-missing">⚠ Produit(s) manquant(s)</span>
-                    )}
+
+              {/* ===== MODE LECTURE ===== */}
+              {!editMode && (
+                <>
+                  {/* Order info */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '20px', marginBottom: '20px' }}>
+                    <div>
+                      <strong>Fournisseur</strong>
+                      <div>{selectedOrder.supplier_name}</div>
+                    </div>
+                    <div>
+                      <strong>Statut</strong>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span className={`status-badge status-${selectedOrder.status}`}>
+                          {statusLabels[selectedOrder.status]}
+                        </span>
+                        {hasMissingProductsDetail(selectedOrder) && (
+                          <span className="badge-missing">⚠ Produit(s) manquant(s)</span>
+                        )}
+                      </div>
+                    </div>
+                    <div>
+                      <strong>Date commande</strong>
+                      <div>{formatDate(selectedOrder.order_date)}</div>
+                    </div>
                   </div>
-                </div>
-                <div>
-                  <strong>Date commande</strong>
-                  <div>{formatDate(selectedOrder.order_date)}</div>
-                </div>
-              </div>
 
-              {/* Status actions */}
-              <div style={{ marginBottom: '20px', padding: '10px', background: '#f8f9fa', borderRadius: '6px' }}>
-                <strong style={{ marginRight: '15px' }}>Changer le statut :</strong>
-                {selectedOrder.status === 'draft' && (
-                  <button className="btn btn-sm btn-primary" onClick={() => updateStatus(selectedOrder.id, 'sent')}>
-                    📤 Marquer envoyée
-                  </button>
-                )}
-                {selectedOrder.status === 'sent' && (
-                  <>
-                    <button className="btn btn-sm btn-success" onClick={() => updateStatus(selectedOrder.id, 'confirmed')}>
-                      ✓ Confirmée
-                    </button>
-                    <button className="btn btn-sm btn-secondary" style={{ marginLeft: '10px' }} onClick={() => updateStatus(selectedOrder.id, 'cancelled')}>
-                      ✗ Annuler
-                    </button>
-                  </>
-                )}
-                {selectedOrder.status === 'confirmed' && (
-                  <button className="btn btn-sm btn-primary" onClick={() => updateStatus(selectedOrder.id, 'shipped')}>
-                    🚚 Expédiée
-                  </button>
-                )}
-                {(selectedOrder.status === 'shipped' || selectedOrder.status === 'partial') && (
-                  <button className="btn btn-sm btn-success" onClick={() => updateStatus(selectedOrder.id, 'received')}>
-                    ✓ Tout reçu
-                  </button>
-                )}
-              </div>
-
-              {/* Items */}
-              <h4 style={{ marginBottom: '10px' }}>Articles ({selectedOrder.items?.length || 0})</h4>
-              <table className="purchases-table">
-                <thead>
-                  <tr>
-                    <th>Produit</th>
-                    <th>Réf.</th>
-                    <th className="text-right">Commandé</th>
-                    <th className="text-right">Reçu</th>
-                    <th className="text-right">Prix unit.</th>
-                    <th className="text-right">Total HT</th>
-                    <th>Stock avant</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {selectedOrder.items?.map(item => {
-                    if (item.item_type === 'discount') {
-                      return (
-                        <tr key={item.id} style={{ background: '#f3f4f6' }}>
-                          <td style={{ maxWidth: '300px', fontStyle: 'italic', color: '#6b7280' }} colSpan={4}>
-                            {item.product_name}
-                          </td>
-                          <td className="text-right">—</td>
-                          <td className="text-right" style={{ color: '#dc2626', fontWeight: 600 }}>
-                            {item.unit_price != null ? `${formatPrice(item.unit_price)} €` : '-'}
-                          </td>
-                          <td>—</td>
-                        </tr>
-                      );
-                    }
-                    const missing = (item.qty_received || 0) < (item.qty_ordered || 0);
-                    return (
-                      <tr key={item.id} style={missing ? { background: '#fff7ed' } : {}}>
-                        <td style={{ maxWidth: '300px' }}>
-                          {item.product_name}
-                          {missing && (
-                            <span className="badge-missing" style={{ marginLeft: '6px' }}>
-                              ⚠ {item.qty_ordered - item.qty_received} manquant(s)
-                            </span>
-                          )}
-                        </td>
-                        <td><code>{item.supplier_sku || item.product_sku || '-'}</code></td>
-                        <td className="text-right">{formatInt(item.qty_ordered)}</td>
-                        <td className="text-right">
-                          {['shipped', 'partial'].includes(selectedOrder.status) ? (
-                            <input
-                              type="number"
-                              className="qty-input"
-                              min="0"
-                              max={item.qty_ordered}
-                              value={item.qty_received}
-                              onChange={e => updateReceivedQty(selectedOrder.id, item.id, parseInt(e.target.value) || 0)}
-                            />
-                          ) : (
-                            item.qty_received
-                          )}
-                        </td>
-                        <td className="text-right">
-                          {item.unit_price ? `${formatPrice(item.unit_price)} €` : '-'}
-                        </td>
-                        <td className="text-right">
-                          {item.unit_price && item.qty_ordered
-                            ? `${formatPrice(item.qty_ordered * item.unit_price)} €`
-                            : '-'}
-                        </td>
-                        <td>{item.stock_before ?? '-'}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-
-              {/* Totaux */}
-              {(() => {
-                const allItems = selectedOrder.items || [];
-                const productItems = allItems.filter(i => i.item_type !== 'discount');
-                const discountItems = allItems.filter(i => i.item_type === 'discount');
-                const totalHtProduits = productItems.reduce((sum, i) =>
-                  sum + (i.unit_price ? i.qty_ordered * i.unit_price : 0), 0);
-                const totalRemises = discountItems.reduce((sum, i) => sum + (parseFloat(i.unit_price) || 0), 0);
-                const totalHt = totalHtProduits + totalRemises;
-                return totalHtProduits > 0 ? (
-                  <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '30px', marginTop: '12px', fontSize: '14px' }}>
-                    {totalRemises < 0 && (
+                  {/* Status actions */}
+                  <div style={{ marginBottom: '20px', padding: '10px', background: '#f8f9fa', borderRadius: '6px' }}>
+                    <strong style={{ marginRight: '15px' }}>Changer le statut :</strong>
+                    {selectedOrder.status === 'draft' && (
+                      <button className="btn btn-sm btn-primary" onClick={() => updateStatus(selectedOrder.id, 'sent')}>
+                        📤 Marquer envoyée
+                      </button>
+                    )}
+                    {selectedOrder.status === 'sent' && (
                       <>
-                        <div>
-                          <span style={{ color: '#666' }}>Total HT brut : </span>
-                          <strong>{formatPrice(totalHtProduits)} €</strong>
-                        </div>
-                        <div>
-                          <span style={{ color: '#666' }}>Total remises : </span>
-                          <strong style={{ color: '#dc2626' }}>{formatPrice(totalRemises)} €</strong>
-                        </div>
+                        <button className="btn btn-sm btn-success" onClick={() => updateStatus(selectedOrder.id, 'confirmed')}>
+                          ✓ Confirmée
+                        </button>
+                        <button className="btn btn-sm btn-secondary" style={{ marginLeft: '10px' }} onClick={() => updateStatus(selectedOrder.id, 'cancelled')}>
+                          ✗ Annuler
+                        </button>
                       </>
                     )}
+                    {selectedOrder.status === 'confirmed' && (
+                      <button className="btn btn-sm btn-primary" onClick={() => updateStatus(selectedOrder.id, 'shipped')}>
+                        🚚 Expédiée
+                      </button>
+                    )}
+                    {(selectedOrder.status === 'shipped' || selectedOrder.status === 'partial') && (
+                      <button className="btn btn-sm btn-success" onClick={() => updateStatus(selectedOrder.id, 'received')}>
+                        ✓ Tout reçu
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Items */}
+                  <h4 style={{ marginBottom: '10px' }}>Articles ({selectedOrder.items?.length || 0})</h4>
+                  <table className="purchases-table">
+                    <thead>
+                      <tr>
+                        <th>Produit</th>
+                        <th>Réf.</th>
+                        <th className="text-right">Commandé</th>
+                        <th className="text-right">Reçu</th>
+                        <th className="text-right">Prix unit.</th>
+                        <th className="text-right">Total HT</th>
+                        <th>Stock avant</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {selectedOrder.items?.map(item => {
+                        if (item.item_type === 'discount') {
+                          return (
+                            <tr key={item.id} style={{ background: '#f3f4f6' }}>
+                              <td style={{ maxWidth: '300px', fontStyle: 'italic', color: '#6b7280' }} colSpan={4}>
+                                {item.product_name}
+                              </td>
+                              <td className="text-right">—</td>
+                              <td className="text-right" style={{ color: '#dc2626', fontWeight: 600 }}>
+                                {item.unit_price != null ? `${formatPrice(item.unit_price)} €` : '-'}
+                              </td>
+                              <td>—</td>
+                            </tr>
+                          );
+                        }
+                        const missing = (item.qty_received || 0) < (item.qty_ordered || 0);
+                        return (
+                          <tr key={item.id} style={missing ? { background: '#fff7ed' } : {}}>
+                            <td style={{ maxWidth: '300px' }}>
+                              {item.product_name}
+                              {missing && (
+                                <span className="badge-missing" style={{ marginLeft: '6px' }}>
+                                  ⚠ {item.qty_ordered - item.qty_received} manquant(s)
+                                </span>
+                              )}
+                            </td>
+                            <td><code>{item.supplier_sku || item.product_sku || '-'}</code></td>
+                            <td className="text-right">{formatInt(item.qty_ordered)}</td>
+                            <td className="text-right">
+                              {['shipped', 'partial'].includes(selectedOrder.status) ? (
+                                <input
+                                  type="number"
+                                  className="qty-input"
+                                  min="0"
+                                  max={item.qty_ordered}
+                                  value={item.qty_received}
+                                  onChange={e => updateReceivedQty(selectedOrder.id, item.id, parseInt(e.target.value) || 0)}
+                                />
+                              ) : (
+                                item.qty_received
+                              )}
+                            </td>
+                            <td className="text-right">
+                              {item.unit_price ? `${formatPrice(item.unit_price)} €` : '-'}
+                            </td>
+                            <td className="text-right">
+                              {item.unit_price && item.qty_ordered
+                                ? `${formatPrice(item.qty_ordered * item.unit_price)} €`
+                                : '-'}
+                            </td>
+                            <td>{item.stock_before ?? '-'}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+
+                  {/* Totaux */}
+                  {(() => {
+                    const allItems = selectedOrder.items || [];
+                    const productItems = allItems.filter(i => i.item_type !== 'discount');
+                    const discountItems = allItems.filter(i => i.item_type === 'discount');
+                    const totalHtProduits = productItems.reduce((sum, i) =>
+                      sum + (i.unit_price ? i.qty_ordered * i.unit_price : 0), 0);
+                    const totalRemises = discountItems.reduce((sum, i) => sum + (parseFloat(i.unit_price) || 0), 0);
+                    const totalHt = totalHtProduits + totalRemises;
+                    return totalHtProduits > 0 ? (
+                      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '30px', marginTop: '12px', fontSize: '14px' }}>
+                        {totalRemises < 0 && (
+                          <>
+                            <div>
+                              <span style={{ color: '#666' }}>Total HT brut : </span>
+                              <strong>{formatPrice(totalHtProduits)} €</strong>
+                            </div>
+                            <div>
+                              <span style={{ color: '#666' }}>Total remises : </span>
+                              <strong style={{ color: '#dc2626' }}>{formatPrice(totalRemises)} €</strong>
+                            </div>
+                          </>
+                        )}
+                        <div>
+                          <span style={{ color: '#666' }}>Total HT : </span>
+                          <strong>{formatPrice(totalHt)} €</strong>
+                        </div>
+                        <div>
+                          <span style={{ color: '#666' }}>Total TTC (20%) : </span>
+                          <strong>{formatPrice(totalHt * 1.2)} €</strong>
+                        </div>
+                      </div>
+                    ) : null;
+                  })()}
+
+                  {/* Notes */}
+                  {selectedOrder.notes && (
+                    <div style={{ marginTop: '20px', padding: '10px', background: '#fef3c7', borderRadius: '6px' }}>
+                      <strong>Notes :</strong> {selectedOrder.notes}
+                    </div>
+                  )}
+                </>
+              )}
+
+              {/* ===== MODE ÉDITION ===== */}
+              {editMode && editData && (
+                <>
+                  {/* Champs généraux */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px', marginBottom: '20px' }}>
                     <div>
-                      <span style={{ color: '#666' }}>Total HT : </span>
-                      <strong>{formatPrice(totalHt)} €</strong>
+                      <label style={{ display: 'block', fontWeight: 500, marginBottom: '4px' }}>Fournisseur</label>
+                      <select
+                        value={editData.supplier_id}
+                        onChange={e => setEditData(prev => ({ ...prev, supplier_id: e.target.value }))}
+                        style={{ width: '100%', padding: '7px 10px', border: '1px solid #ccc', borderRadius: '4px' }}
+                      >
+                        {suppliers.map(s => (
+                          <option key={s.id} value={s.id}>{s.name}</option>
+                        ))}
+                      </select>
                     </div>
                     <div>
-                      <span style={{ color: '#666' }}>Total TTC (20%) : </span>
-                      <strong>{formatPrice(totalHt * 1.2)} €</strong>
+                      <label style={{ display: 'block', fontWeight: 500, marginBottom: '4px' }}>Date commande</label>
+                      <input
+                        type="date"
+                        value={editData.order_date}
+                        onChange={e => setEditData(prev => ({ ...prev, order_date: e.target.value }))}
+                        style={{ width: '100%', padding: '7px 10px', border: '1px solid #ccc', borderRadius: '4px' }}
+                      />
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', fontWeight: 500, marginBottom: '4px' }}>Date livraison prévue</label>
+                      <input
+                        type="date"
+                        value={editData.expected_date}
+                        onChange={e => setEditData(prev => ({ ...prev, expected_date: e.target.value }))}
+                        style={{ width: '100%', padding: '7px 10px', border: '1px solid #ccc', borderRadius: '4px' }}
+                      />
                     </div>
                   </div>
-                ) : null;
-              })()}
+                  <div style={{ marginBottom: '20px' }}>
+                    <label style={{ display: 'block', fontWeight: 500, marginBottom: '4px' }}>Notes</label>
+                    <textarea
+                      value={editData.notes}
+                      onChange={e => setEditData(prev => ({ ...prev, notes: e.target.value }))}
+                      rows={2}
+                      style={{ width: '100%', padding: '7px 10px', border: '1px solid #ccc', borderRadius: '4px', resize: 'vertical' }}
+                    />
+                  </div>
 
-              {/* Notes */}
-              {selectedOrder.notes && (
-                <div style={{ marginTop: '20px', padding: '10px', background: '#fef3c7', borderRadius: '6px' }}>
-                  <strong>Notes :</strong> {selectedOrder.notes}
-                </div>
+                  {/* Tableau des lignes éditable */}
+                  <h4 style={{ marginBottom: '8px' }}>Articles</h4>
+                  <table className="purchases-table" style={{ marginBottom: '12px' }}>
+                    <thead>
+                      <tr>
+                        <th>Produit</th>
+                        <th>Réf. fourn.</th>
+                        <th className="text-right">Qté commandée</th>
+                        <th className="text-right">Prix unit. (€)</th>
+                        <th></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {editData.items.filter(item => !item._delete).map((item, idx) => (
+                        <tr key={item.id || `new-${idx}`}>
+                          <td style={{ maxWidth: '280px' }}>{item.product_name}</td>
+                          <td>
+                            <input
+                              type="text"
+                              value={item.supplier_sku || ''}
+                              onChange={e => setEditData(prev => ({
+                                ...prev,
+                                items: prev.items.map(i =>
+                                  (i.id ? i.id === item.id : i === item)
+                                    ? { ...i, supplier_sku: e.target.value }
+                                    : i
+                                )
+                              }))}
+                              style={{ width: '90px', padding: '4px 6px', border: '1px solid #ccc', borderRadius: '4px', fontSize: '13px' }}
+                            />
+                          </td>
+                          <td className="text-right">
+                            <input
+                              type="number"
+                              min="1"
+                              value={item.qty_ordered}
+                              onChange={e => setEditData(prev => ({
+                                ...prev,
+                                items: prev.items.map(i =>
+                                  (i.id ? i.id === item.id : i === item)
+                                    ? { ...i, qty_ordered: parseInt(e.target.value) || 1 }
+                                    : i
+                                )
+                              }))}
+                              style={{ width: '70px', padding: '4px 6px', border: '1px solid #ccc', borderRadius: '4px', textAlign: 'right' }}
+                            />
+                          </td>
+                          <td className="text-right">
+                            <input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              value={item.unit_price ?? ''}
+                              onChange={e => setEditData(prev => ({
+                                ...prev,
+                                items: prev.items.map(i =>
+                                  (i.id ? i.id === item.id : i === item)
+                                    ? { ...i, unit_price: e.target.value === '' ? null : e.target.value }
+                                    : i
+                                )
+                              }))}
+                              style={{ width: '80px', padding: '4px 6px', border: '1px solid #ccc', borderRadius: '4px', textAlign: 'right' }}
+                            />
+                          </td>
+                          <td>
+                            <button
+                              onClick={() => setEditData(prev => ({
+                                ...prev,
+                                items: prev.items.map(i =>
+                                  (i.id ? i.id === item.id : i === item)
+                                    ? { ...i, _delete: true }
+                                    : i
+                                )
+                              }))}
+                              style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#dc2626', fontSize: '16px', padding: '0 4px' }}
+                              title="Supprimer la ligne"
+                            >
+                              ✕
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+
+                  {/* Recherche pour ajouter une ligne */}
+                  <div style={{ position: 'relative', marginBottom: '8px' }}>
+                    <input
+                      type="text"
+                      placeholder="Ajouter un produit..."
+                      value={productSearch}
+                      onChange={e => handleProductSearch(e.target.value)}
+                      style={{ width: '100%', padding: '8px 12px', border: '1px solid #ccc', borderRadius: '4px' }}
+                    />
+                    {searchLoading && (
+                      <div style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', color: '#999', fontSize: '12px' }}>
+                        Recherche...
+                      </div>
+                    )}
+                    {searchResults.length > 0 && (
+                      <div style={{
+                        position: 'absolute', top: '100%', left: 0, right: 0, background: 'white',
+                        border: '1px solid #ccc', borderRadius: '4px', boxShadow: '0 4px 8px rgba(0,0,0,0.1)',
+                        zIndex: 100, maxHeight: '200px', overflowY: 'auto'
+                      }}>
+                        {searchResults.map(p => (
+                          <div
+                            key={p.id}
+                            onClick={() => addProductToEdit(p)}
+                            style={{ padding: '8px 12px', cursor: 'pointer', borderBottom: '1px solid #f0f0f0', fontSize: '13px' }}
+                            onMouseEnter={e => e.currentTarget.style.background = '#f9fafb'}
+                            onMouseLeave={e => e.currentTarget.style.background = 'white'}
+                          >
+                            <strong>{p.post_title}</strong>
+                            {p.sku && <span style={{ color: '#666', marginLeft: '8px' }}>{p.sku}</span>}
+                            {p.stock != null && <span style={{ color: '#999', marginLeft: '8px' }}>Stock : {p.stock}</span>}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </>
               )}
+
             </div>
             <div className="modal-footer" style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <button className="btn btn-danger" onClick={() => deleteOrder(selectedOrder.id)} style={{ background: '#dc2626', color: 'white', border: 'none', borderRadius: '6px', padding: '8px 16px', cursor: 'pointer' }}>
-                Supprimer
-              </button>
-              <div style={{ display: 'flex', gap: '8px' }}>
-                <button className="btn btn-secondary" onClick={() => exportOrder(selectedOrder.id, 'supplier')}>
-                  📄 Export fournisseur
-                </button>
-                {!selectedOrder.bms_po_id ? (
-                  <button className="btn btn-secondary" onClick={() => sendToBms(selectedOrder.id)} disabled={sendingBms}>
-                    {sendingBms ? 'Envoi...' : '📤 Envoyer à BMS'}
+              {!editMode ? (
+                <>
+                  <button className="btn btn-danger" onClick={() => deleteOrder(selectedOrder.id)} style={{ background: '#dc2626', color: 'white', border: 'none', borderRadius: '6px', padding: '8px 16px', cursor: 'pointer' }}>
+                    Supprimer
                   </button>
-                ) : (
-                  <span style={{ color: '#10b981', fontSize: '13px', padding: '8px' }}>BMS #{selectedOrder.bms_po_id}</span>
-                )}
-                <button className="btn btn-primary" onClick={() => setShowDetailModal(false)}>
-                  Fermer
-                </button>
-              </div>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <button className="btn btn-secondary" onClick={() => exportOrder(selectedOrder.id, 'supplier')}>
+                      📄 Export fournisseur
+                    </button>
+                    {!selectedOrder.bms_po_id ? (
+                      <button className="btn btn-secondary" onClick={() => sendToBms(selectedOrder.id)} disabled={sendingBms}>
+                        {sendingBms ? 'Envoi...' : '📤 Envoyer à BMS'}
+                      </button>
+                    ) : (
+                      <span style={{ color: '#10b981', fontSize: '13px', padding: '8px' }}>BMS #{selectedOrder.bms_po_id}</span>
+                    )}
+                    <button className="btn btn-secondary" onClick={enterEditMode}>
+                      ✏️ Modifier
+                    </button>
+                    <button className="btn btn-primary" onClick={() => setShowDetailModal(false)}>
+                      Fermer
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <button className="btn btn-secondary" onClick={cancelEditMode}>
+                    Annuler
+                  </button>
+                  <button className="btn btn-primary" onClick={saveEdit} disabled={savingEdit}>
+                    {savingEdit ? 'Sauvegarde...' : '💾 Sauvegarder'}
+                  </button>
+                </>
+              )}
             </div>
           </div>
         </div>

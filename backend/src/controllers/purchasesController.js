@@ -201,6 +201,20 @@ const purchasesController = {
     }
   },
 
+  // PUT /api/purchases/orders/:id
+  updateOrder: async (req, res) => {
+    try {
+      const order = await purchaseOrderModel.update(req.params.id, req.body);
+      if (!order) {
+        return res.status(404).json({ success: false, error: 'Commande non trouvée' });
+      }
+      res.json({ success: true, data: order });
+    } catch (error) {
+      console.error('Erreur updateOrder:', error);
+      res.status(500).json({ success: false, error: error.message || 'Erreur serveur' });
+    }
+  },
+
   // PUT /api/purchases/orders/:id/status
   updateOrderStatus: async (req, res) => {
     try {
