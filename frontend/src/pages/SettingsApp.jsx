@@ -266,7 +266,7 @@ const SettingsApp = () => {
                 </button>
               </div>
               <p className="field-hint">
-                Ce mot de passe est utilisé pour l'authentification à l'API BMS.
+                Ce mot de passe est utilisé pour l'authentification à l'API BMS (avec votre email de connexion).
               </p>
             </div>
           </div>

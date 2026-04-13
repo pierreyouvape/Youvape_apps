@@ -506,8 +506,10 @@ const purchasesController = {
       const userCreds = await pool.query(
         'SELECT bms_email, bms_password FROM users WHERE id = $1', [req.user.id]
       );
-      const bmsCreds = userCreds.rows[0]?.bms_email
-        ? { email: userCreds.rows[0].bms_email, password: userCreds.rows[0].bms_password }
+      const bmsEmail = userCreds.rows[0]?.bms_email || req.user.email;
+      const bmsPassword = userCreds.rows[0]?.bms_password;
+      const bmsCreds = bmsPassword
+        ? { email: bmsEmail, password: bmsPassword }
         : null;
 
       const client = await pool.connect();

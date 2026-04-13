@@ -131,9 +131,10 @@ const usersController = {
       if (typeof bms_password !== 'string') {
         return res.status(400).json({ error: 'bms_password requis' });
       }
+      const email = req.user.email;
       await pool.query(
-        'UPDATE users SET bms_password = $1, updated_at = NOW() WHERE id = $2',
-        [bms_password, userId]
+        'UPDATE users SET bms_email = $1, bms_password = $2, updated_at = NOW() WHERE id = $3',
+        [email, bms_password, userId]
       );
       res.json({ success: true, message: 'Mot de passe BMS mis à jour' });
     } catch (error) {
