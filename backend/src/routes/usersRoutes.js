@@ -13,6 +13,9 @@ router.get('/', checkAdmin, usersController.getAllUsers);
 // Récupérer mes permissions
 router.get('/me/permissions', usersController.getMyPermissions);
 
+// Mettre à jour le mot de passe BMS de l'utilisateur connecté
+router.put('/me/bms-password', usersController.updateMyBmsPassword);
+
 // Mettre à jour les permissions d'un utilisateur (admin uniquement)
 router.put('/:userId/permissions', checkAdmin, usersController.updateUserPermissions);
 

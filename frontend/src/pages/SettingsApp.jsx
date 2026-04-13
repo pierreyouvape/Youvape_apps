@@ -7,12 +7,24 @@ import './SettingsApp.css';
 const SettingsApp = () => {
   const { token, isAdmin, isSuperAdmin } = useContext(AuthContext);
   const navigate = useNavigate();
+
+  const [activeTab, setActiveTab] = useState('account');
+
+  // Onglet Mon compte
+  const [bmsPassword, setBmsPassword] = useState('');
+  const [savingBmsPassword, setSavingBmsPassword] = useState(false);
+
+  // Onglet Gestion utilisateurs
   const [users, setUsers] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [successMessage, setSuccessMessage] = useState(null);
+  const [loadingUsers, setLoadingUsers] = useState(false);
+
+  // Onglet WooCommerce
   const [wcSyncInterval, setWcSyncInterval] = useState('');
   const [savingSync, setSavingSync] = useState(false);
+
+  // Messages globaux
+  const [error, setError] = useState(null);
+  const [successMessage, setSuccessMessage] = useState(null);
 
   const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:3000/api/auth').replace('/auth', '');
 
@@ -26,16 +38,27 @@ const SettingsApp = () => {
     { key: 'packing', label: 'Packing', accessOnly: true }
   ];
 
-  useEffect(() => {
-    // Vérifier que l'utilisateur est admin
-    if (!isAdmin && !isSuperAdmin) {
-      navigate('/');
-      return;
-    }
+  const tabs = [
+    { id: 'account', label: 'Mon compte' },
+    ...(isAdmin || isSuperAdmin ? [
+      { id: 'users', label: 'Gestion utilisateurs' },
+      { id: 'woocommerce', label: 'Paramètres WooCommerce' }
+    ] : [])
+  ];
 
-    loadUsers();
-    loadSettings();
-  }, [isAdmin, isSuperAdmin, navigate]);
+  // Chargement lazy : utilisateurs
+  useEffect(() => {
+    if (activeTab === 'users' && (isAdmin || isSuperAdmin) && users.length === 0) {
+      loadUsers();
+    }
+  }, [activeTab]);
+
+  // Chargement lazy : settings WC
+  useEffect(() => {
+    if (activeTab === 'woocommerce' && (isAdmin || isSuperAdmin) && wcSyncInterval === '') {
+      loadSettings();
+    }
+  }, [activeTab]);
 
   const loadSettings = async () => {
     try {
@@ -68,14 +91,32 @@ const SettingsApp = () => {
     }
   };
 
+  const saveBmsPassword = async () => {
+    setSavingBmsPassword(true);
+    try {
+      await axios.put(
+        `${API_URL}/users/me/bms-password`,
+        { bms_password: bmsPassword },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      setSuccessMessage('Mot de passe BMS mis à jour');
+      setBmsPassword('');
+      setTimeout(() => setSuccessMessage(null), 3000);
+    } catch (err) {
+      setError('Erreur lors de la sauvegarde');
+      setTimeout(() => setError(null), 5000);
+    } finally {
+      setSavingBmsPassword(false);
+    }
+  };
+
   const loadUsers = async () => {
     try {
-      setLoading(true);
+      setLoadingUsers(true);
       const response = await axios.get(`${API_URL}/users`, {
         headers: { Authorization: `Bearer ${token}` }
       });
 
-      // Transformer les permissions du format array vers object
       const usersWithPerms = response.data.users.map(user => {
         const perms = {};
         user.permissions.forEach(p => {
@@ -85,17 +126,13 @@ const SettingsApp = () => {
           };
         });
 
-        // Remplir les apps manquantes avec des droits false
         APPS.forEach(app => {
           if (!perms[app.key]) {
             perms[app.key] = { read: false, write: false };
           }
         });
 
-        return {
-          ...user,
-          permissions: perms
-        };
+        return { ...user, permissions: perms };
       });
 
       setUsers(usersWithPerms);
@@ -104,7 +141,7 @@ const SettingsApp = () => {
       console.error('Erreur lors du chargement des utilisateurs:', err);
       setError('Erreur lors du chargement des utilisateurs');
     } finally {
-      setLoading(false);
+      setLoadingUsers(false);
     }
   };
 
@@ -145,9 +182,7 @@ const SettingsApp = () => {
           permissions: user.permissions,
           is_admin: user.is_admin
         },
-        {
-          headers: { Authorization: `Bearer ${token}` }
-        }
+        { headers: { Authorization: `Bearer ${token}` } }
       );
 
       setSuccessMessage('Permissions mises à jour avec succès');
@@ -183,169 +218,210 @@ const SettingsApp = () => {
     return email === 'youvape34@gmail.com';
   };
 
-  if (loading) {
-    return (
-      <div className="settings-container">
-        <div className="loading">Chargement...</div>
-      </div>
-    );
-  }
-
   return (
-    <div className="settings-container">
-      <div className="settings-header">
-        <h1>Paramètres - Gestion des utilisateurs</h1>
-        <button onClick={() => navigate('/home')} className="btn-back">
-          ← Retour
+    <div className="settings-app">
+      <header className="settings-header-bar">
+        <button className="settings-back-button" onClick={() => navigate('/home')}>
+          ← Accueil
         </button>
-      </div>
+        <h1>Paramètres</h1>
+      </header>
 
-      {error && <div className="alert alert-error">{error}</div>}
-      {successMessage && <div className="alert alert-success">{successMessage}</div>}
-
-      <div className="users-table-container">
-        <table className="users-table">
-          <thead>
-            <tr>
-              <th>Email</th>
-              <th>Admin</th>
-              {APPS.map(app => (
-                <th key={app.key} colSpan="2">{app.label}</th>
-              ))}
-              <th>Actions</th>
-            </tr>
-            <tr>
-              <th></th>
-              <th></th>
-              {APPS.map(app => (
-                app.accessOnly ? (
-                  <th key={`${app.key}-access`} className="sub-header" colSpan="2">Accès</th>
-                ) : (
-                  <>
-                    <th key={`${app.key}-read`} className="sub-header">Lecture</th>
-                    <th key={`${app.key}-write`} className="sub-header">Écriture</th>
-                  </>
-                )
-              ))}
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            {users.map(user => {
-              const isSuperAdmin = isSuperAdminUser(user.email);
-              return (
-                <tr key={user.id} className={isSuperAdmin ? 'super-admin-row' : ''}>
-                  <td>
-                    {user.email}
-                    {isSuperAdmin && <span className="badge-super-admin">Super Admin</span>}
-                  </td>
-                  <td>
-                    <input
-                      type="checkbox"
-                      checked={user.is_admin}
-                      onChange={(e) => handleAdminChange(user.id, e.target.checked)}
-                      disabled={isSuperAdmin}
-                    />
-                  </td>
-                  {APPS.map(app => (
-                    app.accessOnly ? (
-                      <td key={`${app.key}-access`} className="permissions-cell" colSpan="2" style={{ textAlign: 'center' }}>
-                        <input
-                          type="checkbox"
-                          checked={user.permissions[app.key]?.read || false}
-                          onChange={(e) => {
-                            const val = e.target.checked;
-                            setUsers(prev => prev.map(u => u.id === user.id ? {
-                              ...u,
-                              permissions: {
-                                ...u.permissions,
-                                [app.key]: { read: val, write: val }
-                              }
-                            } : u));
-                          }}
-                          disabled={isSuperAdmin}
-                        />
-                      </td>
-                    ) : (
-                      <>
-                        <td key={`${app.key}-read`} className="permissions-cell">
-                          <input
-                            type="checkbox"
-                            checked={user.permissions[app.key]?.read || false}
-                            onChange={(e) => handlePermissionChange(user.id, app.key, 'read', e.target.checked)}
-                            disabled={isSuperAdmin}
-                          />
-                        </td>
-                        <td key={`${app.key}-write`} className="permissions-cell">
-                          <input
-                            type="checkbox"
-                            checked={user.permissions[app.key]?.write || false}
-                            onChange={(e) => handlePermissionChange(user.id, app.key, 'write', e.target.checked)}
-                            disabled={isSuperAdmin}
-                          />
-                        </td>
-                      </>
-                    )
-                  ))}
-                  <td className="actions-cell">
-                    <button
-                      onClick={() => saveUserPermissions(user.id)}
-                      className="btn btn-save"
-                      disabled={isSuperAdmin}
-                    >
-                      Sauvegarder
-                    </button>
-                    {!isSuperAdmin && (
-                      <button
-                        onClick={() => deleteUser(user.id, user.email)}
-                        className="btn btn-delete"
-                      >
-                        Supprimer
-                      </button>
-                    )}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-
-      {users.length === 0 && (
-        <div className="no-users">Aucun utilisateur trouvé</div>
-      )}
-
-      {/* Sync WooCommerce Settings */}
-      <div className="sync-settings" style={{ marginTop: '30px', padding: '20px', backgroundColor: '#f8f9fa', borderRadius: '8px' }}>
-        <h2 style={{ marginBottom: '15px', fontSize: '18px', color: '#333' }}>Synchronisation WooCommerce</h2>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
-          <label style={{ fontWeight: '500' }}>Sync WC toutes les</label>
-          <input
-            type="number"
-            min="0"
-            value={wcSyncInterval}
-            onChange={(e) => setWcSyncInterval(e.target.value)}
-            style={{
-              width: '80px',
-              padding: '8px 12px',
-              fontSize: '14px',
-              border: '1px solid #ccc',
-              borderRadius: '4px'
-            }}
-          />
-          <span>secondes</span>
+      <nav className="settings-tabs">
+        {tabs.map(tab => (
           <button
-            onClick={saveWcSyncInterval}
-            disabled={savingSync}
-            className="btn btn-save"
-            style={{ marginLeft: '10px' }}
+            key={tab.id}
+            className={`tab-button ${activeTab === tab.id ? 'active' : ''}`}
+            onClick={() => setActiveTab(tab.id)}
           >
-            {savingSync ? 'Sauvegarde...' : 'Sauvegarder'}
+            {tab.label}
           </button>
-        </div>
-        <p style={{ marginTop: '10px', fontSize: '12px', color: '#666' }}>
-          0 = désactivé. Le backend poll WordPress à cet intervalle pour récupérer les modifications.
-        </p>
+        ))}
+      </nav>
+
+      <div className="settings-content">
+        {error && <div className="alert alert-error">{error}</div>}
+        {successMessage && <div className="alert alert-success">{successMessage}</div>}
+
+        {/* Onglet Mon compte */}
+        {activeTab === 'account' && (
+          <div className="settings-section">
+            <h2>Mon compte</h2>
+            <div className="account-field">
+              <label>Mot de passe BMS</label>
+              <div className="account-field-row">
+                <input
+                  type="password"
+                  value={bmsPassword}
+                  onChange={(e) => setBmsPassword(e.target.value)}
+                  placeholder="Nouveau mot de passe BMS"
+                  className="settings-input"
+                />
+                <button
+                  onClick={saveBmsPassword}
+                  disabled={savingBmsPassword || !bmsPassword}
+                  className="btn btn-save"
+                >
+                  {savingBmsPassword ? 'Mise à jour...' : 'Mettre à jour'}
+                </button>
+              </div>
+              <p className="field-hint">
+                Ce mot de passe est utilisé pour l'authentification à l'API BMS.
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* Onglet Gestion utilisateurs */}
+        {activeTab === 'users' && (isAdmin || isSuperAdmin) && (
+          <div className="settings-section">
+            <h2>Gestion des utilisateurs</h2>
+            {loadingUsers ? (
+              <div className="loading">Chargement...</div>
+            ) : (
+              <>
+                <div className="users-table-container">
+                  <table className="users-table">
+                    <thead>
+                      <tr>
+                        <th>Email</th>
+                        <th>Admin</th>
+                        {APPS.map(app => (
+                          <th key={app.key} colSpan="2">{app.label}</th>
+                        ))}
+                        <th>Actions</th>
+                      </tr>
+                      <tr>
+                        <th></th>
+                        <th></th>
+                        {APPS.map(app => (
+                          app.accessOnly ? (
+                            <th key={`${app.key}-access`} className="sub-header" colSpan="2">Accès</th>
+                          ) : (
+                            <>
+                              <th key={`${app.key}-read`} className="sub-header">Lecture</th>
+                              <th key={`${app.key}-write`} className="sub-header">Écriture</th>
+                            </>
+                          )
+                        ))}
+                        <th></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {users.map(user => {
+                        const isSuperAdm = isSuperAdminUser(user.email);
+                        return (
+                          <tr key={user.id} className={isSuperAdm ? 'super-admin-row' : ''}>
+                            <td>
+                              {user.email}
+                              {isSuperAdm && <span className="badge-super-admin">Super Admin</span>}
+                            </td>
+                            <td>
+                              <input
+                                type="checkbox"
+                                checked={user.is_admin}
+                                onChange={(e) => handleAdminChange(user.id, e.target.checked)}
+                                disabled={isSuperAdm}
+                              />
+                            </td>
+                            {APPS.map(app => (
+                              app.accessOnly ? (
+                                <td key={`${app.key}-access`} className="permissions-cell" colSpan="2" style={{ textAlign: 'center' }}>
+                                  <input
+                                    type="checkbox"
+                                    checked={user.permissions[app.key]?.read || false}
+                                    onChange={(e) => {
+                                      const val = e.target.checked;
+                                      setUsers(prev => prev.map(u => u.id === user.id ? {
+                                        ...u,
+                                        permissions: {
+                                          ...u.permissions,
+                                          [app.key]: { read: val, write: val }
+                                        }
+                                      } : u));
+                                    }}
+                                    disabled={isSuperAdm}
+                                  />
+                                </td>
+                              ) : (
+                                <>
+                                  <td key={`${app.key}-read`} className="permissions-cell">
+                                    <input
+                                      type="checkbox"
+                                      checked={user.permissions[app.key]?.read || false}
+                                      onChange={(e) => handlePermissionChange(user.id, app.key, 'read', e.target.checked)}
+                                      disabled={isSuperAdm}
+                                    />
+                                  </td>
+                                  <td key={`${app.key}-write`} className="permissions-cell">
+                                    <input
+                                      type="checkbox"
+                                      checked={user.permissions[app.key]?.write || false}
+                                      onChange={(e) => handlePermissionChange(user.id, app.key, 'write', e.target.checked)}
+                                      disabled={isSuperAdm}
+                                    />
+                                  </td>
+                                </>
+                              )
+                            ))}
+                            <td className="actions-cell">
+                              <button
+                                onClick={() => saveUserPermissions(user.id)}
+                                className="btn btn-save"
+                                disabled={isSuperAdm}
+                              >
+                                Sauvegarder
+                              </button>
+                              {!isSuperAdm && (
+                                <button
+                                  onClick={() => deleteUser(user.id, user.email)}
+                                  className="btn btn-delete"
+                                >
+                                  Supprimer
+                                </button>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+                {users.length === 0 && (
+                  <div className="no-users">Aucun utilisateur trouvé</div>
+                )}
+              </>
+            )}
+          </div>
+        )}
+
+        {/* Onglet Paramètres WooCommerce */}
+        {activeTab === 'woocommerce' && (isAdmin || isSuperAdmin) && (
+          <div className="settings-section">
+            <h2>Synchronisation WooCommerce</h2>
+            <div className="wc-sync-row">
+              <label style={{ fontWeight: '500' }}>Sync WC toutes les</label>
+              <input
+                type="number"
+                min="0"
+                value={wcSyncInterval}
+                onChange={(e) => setWcSyncInterval(e.target.value)}
+                className="settings-input settings-input-short"
+              />
+              <span>secondes</span>
+              <button
+                onClick={saveWcSyncInterval}
+                disabled={savingSync}
+                className="btn btn-save"
+              >
+                {savingSync ? 'Sauvegarde...' : 'Sauvegarder'}
+              </button>
+            </div>
+            <p className="field-hint">
+              0 = désactivé. Le backend poll WordPress à cet intervalle pour récupérer les modifications.
+            </p>
+          </div>
+        )}
       </div>
     </div>
   );
