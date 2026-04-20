@@ -168,8 +168,11 @@ const ImportPdfPage = () => {
 
   const effectivePrice = (item) => {
     if (item.item_type === 'discount') return item.unit_price;  // déjà négatif
-    if (!item.unit_price) return null;
-    return item.unit_price * (1 - (item.discount || 0) / 100);
+    if (!item.unit_price) return item.supplier_price ?? null;
+    const pdfNet = item.unit_price * (1 - (item.discount || 0) / 100);
+    // Retenir le moins cher entre prix PDF net et prix BDD
+    if (item.supplier_price != null && item.supplier_price < pdfNet) return item.supplier_price;
+    return pdfNet;
   };
 
   // ==================== ETAPE 3 : CREATION ====================
