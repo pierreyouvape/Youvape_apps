@@ -398,7 +398,8 @@ const ImportPdfPage = () => {
                     <th style={{ textAlign: 'center', padding: '10px', fontWeight: 600, width: '70px' }}>Qte PDF</th>
                     <th style={{ textAlign: 'center', padding: '10px', fontWeight: 600, width: '55px' }}>Pack</th>
                     <th style={{ textAlign: 'center', padding: '10px', fontWeight: 600, width: '100px' }}>Qte finale</th>
-                    <th style={{ textAlign: 'center', padding: '10px', fontWeight: 600, width: '110px' }}>Prix unit.</th>
+                    <th style={{ textAlign: 'center', padding: '10px', fontWeight: 600, width: '110px' }}>Prix PDF</th>
+                    <th style={{ textAlign: 'center', padding: '10px', fontWeight: 600, width: '90px' }}>Prix BDD</th>
                     <th style={{ textAlign: 'center', padding: '10px', fontWeight: 600, width: '75px' }}>Remise %</th>
                     <th style={{ textAlign: 'right', padding: '10px', fontWeight: 600, width: '100px' }}>Total HT</th>
                     <th style={{ width: '40px' }}></th>
@@ -415,7 +416,7 @@ const ImportPdfPage = () => {
                           <td colSpan={2} style={{ padding: '10px', fontSize: '13px', color: '#6b7280', fontStyle: 'italic' }}>
                             —
                           </td>
-                          <td colSpan={6} style={{ padding: '10px', fontSize: '13px', fontStyle: 'italic', color: '#374151' }}>
+                          <td colSpan={7} style={{ padding: '10px', fontSize: '13px', fontStyle: 'italic', color: '#374151' }}>
                             {item.product_name}
                           </td>
                           <td style={{ padding: '10px', textAlign: 'right', fontSize: '13px', fontWeight: 600, color: '#dc2626' }}>
@@ -538,7 +539,7 @@ const ImportPdfPage = () => {
                           />
                         </td>
 
-                        {/* Prix unitaire (editable) */}
+                        {/* Prix PDF (editable) */}
                         <td style={{ padding: '10px', textAlign: 'center' }}>
                           <input
                             type="number"
@@ -549,6 +550,11 @@ const ImportPdfPage = () => {
                             placeholder="—"
                             style={{ width: '85px', padding: '6px', borderRadius: '4px', border: '1px solid #ddd', textAlign: 'center', fontSize: '13px' }}
                           />
+                        </td>
+
+                        {/* Prix BDD (lecture seule) */}
+                        <td style={{ padding: '10px', textAlign: 'center', fontSize: '13px', color: '#6b7280' }}>
+                          {item.supplier_price != null ? item.supplier_price.toFixed(2) + ' €' : '—'}
                         </td>
 
                         {/* Remise % */}
