@@ -268,7 +268,14 @@ function parseFacture(text) {
       }
     }
 
-    return { orderNumber, orderDate, items, hasPrice: true };
+    // Remise globale : "Remise : 122.86 €"
+    const discountMatch = text.match(/Remise\s*:\s*([\d.,]+)\s*€/);
+    const globalDiscount = discountMatch ? parseFloat(discountMatch[1].replace(',', '.')) : 0;
+    const discountItems = globalDiscount > 0
+      ? [{ item_type: 'discount', product_name: 'Remise', unit_price: -globalDiscount, qty_ordered: 1 }]
+      : [];
+
+    return { orderNumber, orderDate, items, discountItems, hasPrice: true };
 }
 
 /**
