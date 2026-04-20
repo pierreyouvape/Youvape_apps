@@ -28,8 +28,8 @@ function parseDevis(text) {
   const parseNum = (s) => parseFloat(s.replace(',', '.'));
 
   // Scan global : [REF] designation\nQTE\nUnité(s)\nPU TVA XX% TOTAL €
-  // Insensible aux sauts de page
-  const pattern = /\[([A-Z0-9-]+)\]([\s\S]*?)([\d,]+)\s*\nUnité\(s\)\s*([\d,]+)\s+TVA\s+\d+%\s+([\d,.]+)\s*€/g;
+  // Le groupe désignation s'arrête dès qu'il rencontre "[" (début du prochain item)
+  const pattern = /\[([A-Z0-9-]+)\]([^\[]*?)([\d,]+)\s*\nUnité\(s\)\s*([\d,]+)\s+TVA\s+\d+%\s+([\d,.]+)\s*€/g;
 
   let m;
   while ((m = pattern.exec(text)) !== null) {
