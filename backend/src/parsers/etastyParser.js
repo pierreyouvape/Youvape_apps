@@ -15,70 +15,31 @@ module.exports = {
 
     const items = [];
 
-    // Zone produit : apres "Quantité Total HT" (header colonnes), avant "Détail des taxes"
-    const startMatch = text.match(/Quantité\s+Total HT/);
-    const startIdx = startMatch ? startMatch.index + startMatch[0].length : -1;
-    const endIdx = text.indexOf('Détail des taxes');
+    // Scan global : chaque bloc REF Designation TAUX% PRIX_UNIT€ QTE TOTAL€
+    // Insensible aux sauts de page, les headers/footers intercales sont ignores
+    // La ref est un token alphanum majuscules en debut de bloc (ex: SWDCO03000, BASIK05000)
+    const pricePattern = /([A-Z0-9][\w]+)([\s\S]*?)(\d+)\s*%\s+([\d,]+)\s*€\s+(\d+)\s+([\d,]+)\s*€/g;
 
-    if (startIdx < 0 || endIdx < 0) return { orderNumber, orderDate, items, hasPrice: true };
-
-    const productZone = text.substring(startIdx, endIdx);
-    const lines = productZone.split('\n').map(l => l.trim()).filter(l => l.length > 0);
-
-    // Pattern de ligne de prix : "20 % 4,40 € 10 44,00 €"
-    const priceLineRegex = /\d+\s*%\s+[\d,]+\s*€\s+\d+\s+[\d,]+\s*€\s*$/;
-
-    // Trouver les indices des lignes de prix
-    const priceLineIndices = [];
-    for (let i = 0; i < lines.length; i++) {
-      if (priceLineRegex.test(lines[i])) {
-        priceLineIndices.push(i);
-      }
-    }
-
-    // Construire les blocs
-    let blockStart = 0;
-    for (const priceIdx of priceLineIndices) {
-      const blockLines = lines.slice(blockStart, priceIdx + 1);
-      blockStart = priceIdx + 1;
-
-      const blockText = blockLines.join(' ').replace(/\s+/g, ' ').trim();
-
-      // Extraire les prix : TAUX% PRIX_UNIT€ QTE TOTAL€
-      const numbersMatch = blockText.match(
-        /(\d+)\s*%\s+([\d,]+)\s*€\s+(\d+)\s+([\d,]+)\s*€\s*$/
-      );
-      if (!numbersMatch) continue;
-
+    let m;
+    while ((m = pricePattern.exec(text)) !== null) {
       const parseDecimal = (str) => parseFloat(str.replace(',', '.'));
 
-      const prixUnit = parseDecimal(numbersMatch[2]);
-      const qty = parseInt(numbersMatch[3]);
-      const totalHt = parseDecimal(numbersMatch[4]);
+      const supplierSku = m[1];
+      const designation = m[2].replace(/\s+/g, ' ').trim();
+      const prixUnit = parseDecimal(m[4]);
+      const qty = parseInt(m[5]);
+      const totalHt = parseDecimal(m[6]);
 
-      // Texte avant les prix = ref + designation
-      const textBefore = blockText.substring(0, blockText.indexOf(numbersMatch[0])).trim();
-      if (!textBefore) continue;
+      // Verification coherence : qty * prix ~= total (evite les faux positifs)
+      if (Math.abs(qty * prixUnit - totalHt) > 0.05) continue;
 
-      // La ref est au debut : lettres majuscules + chiffres (ex: SWDCO03000, BASIK05000)
-      const refMatch = textBefore.match(/^([A-Z0-9][\w]+)\s+(.+)$/);
-      let supplierSku = '';
-      let designation = textBefore;
-
-      if (refMatch) {
-        supplierSku = refMatch[1];
-        designation = refMatch[2];
-      }
-
-      if (supplierSku) {
-        items.push({
-          supplier_sku: supplierSku,
-          designation: designation.trim(),
-          qty_ordered: qty,
-          unit_price_net: prixUnit,
-          total_ht: totalHt,
-        });
-      }
+      items.push({
+        supplier_sku: supplierSku,
+        designation: designation,
+        qty_ordered: qty,
+        unit_price_net: prixUnit,
+        total_ht: totalHt,
+      });
     }
 
     return { orderNumber, orderDate, items, hasPrice: true };
