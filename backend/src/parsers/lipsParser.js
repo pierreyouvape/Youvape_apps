@@ -27,12 +27,16 @@ function parseDevis(text) {
   const items = [];
   const parseNum = (s) => parseFloat(s.replace(',', '.'));
 
-  // Scan global : [REF] designation\nQTE\nUnité(s)\nPU TVA XX% TOTAL €
-  // Le groupe désignation s'arrête dès qu'il rencontre "[" (début du prochain item)
-  const pattern = /\[([A-Z0-9-]+)\]([^\[]*?)([\d,]+)\s*\nUnité\(s\)\s*([\d,]+)\s+TVA\s+\d+%\s+([\d,.]+)\s*€/g;
+  // Les pages 1-2 sont un résumé sans prix — couper au header du tableau de prix
+  // "Description Quantité Prix unitaire Taxes Montant" marque le début des vraies lignes
+  const priceSectionStart = text.indexOf('Description Quantité Prix unitaire Taxes Montant');
+  const priceText = priceSectionStart >= 0 ? text.substring(priceSectionStart) : text;
+
+  // Scan global : [REF] designation ... QTE\nUnité(s) PU TVA XX% TOTAL €
+  const pattern = /\[([A-Z0-9-]+)\](.*?)([\d,]+)\s*\nUnité\(s\)\s*([\d,]+)\s+TVA\s+\d+%\s+([\d,.]+)\s*€/gs;
 
   let m;
-  while ((m = pattern.exec(text)) !== null) {
+  while ((m = pattern.exec(priceText)) !== null) {
     const supplierSku = m[1];
 
     // Ignorer livraison/expédition
