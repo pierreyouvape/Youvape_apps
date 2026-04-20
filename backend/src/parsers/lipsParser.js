@@ -34,9 +34,8 @@ function parseDevis(text) {
   const lastNLBracket = textBefore.lastIndexOf('\n[');
   const priceText = lastNLBracket >= 0 ? text.substring(lastNLBracket + 1) : text;
 
-  // Format réel : [REF] designation\nQTE\nUnité(s)\n9,5000TVA 20%38,00 €
-  // Prix et TVA sont collés (pas d'espace)
-  const pattern = /\[([A-Z0-9-]+)\](.*?)([\d,]+)\nUnité\(s\)\n([\d,]+)TVA\s*\d+%\s*([\d,.]+)\s*€/gs;
+  // Format réel : [REF] designation\nQTE\nUnité(s)\n9,5000 TVA 20% \t38,00 €
+  const pattern = /\[([A-Z0-9-]+)\](.*?)([\d,]+)\nUnité\(s\)\n([\d,]+)\s+TVA\s+\d+%\s*([\d,.]+)\s*€/gs;
 
   let m;
   while ((m = pattern.exec(priceText)) !== null) {
