@@ -29,7 +29,8 @@ function parseDevis(text) {
 
   // Les pages 1-2 sont un résumé sans prix — couper au header du tableau de prix
   // "Description Quantité Prix unitaire Taxes Montant" marque le début des vraies lignes
-  const priceSectionStart = text.indexOf('Description Quantité Prix unitaire Taxes Montant');
+  // Le header apparaît 2 fois (résumé + tableau réel) — prendre le dernier
+  const priceSectionStart = text.lastIndexOf('Description Quantité Prix unitaire Taxes Montant');
   const priceText = priceSectionStart >= 0 ? text.substring(priceSectionStart) : text;
 
   // Scan global : [REF] designation ... QTE\nUnité(s) PU TVA XX% TOTAL €
