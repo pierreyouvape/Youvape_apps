@@ -143,8 +143,8 @@ function parseFacture(text) {
     const items = [];
 
     // Split par header de colonnes (chaque page en a un)
-    // Deux variantes : avec ou sans colonne "Rist. %"
-    const sections = text.split(/Référence\s+Désignation\s+Quantité\s+PU HT(?:\s+Rist\.\s*%)?\s+Montant HT/);
+    // Variantes : avec/sans "Code TVA", avec/sans "Rist. %"
+    const sections = text.split(/Référence\s+Désignation\s+(?:Code\s+TVA\s+)?Quantité\s+PU HT(?:\s+Rist\.\s*%)?\s+Montant HT/);
 
     for (let s = 1; s < sections.length; s++) {
       const section = sections[s];
@@ -165,7 +165,7 @@ function parseFacture(text) {
       // Etape 1 : identifier les indices des lignes de prix
       const priceLineIndices = [];
       for (let i = 0; i < filteredLines.length; i++) {
-        // Avec ou sans colonne remise : "qty puHT montantHT" ou "qty puHT rist% montantHT"
+        // Variantes : "qty puHT montantHT", "qty puHT rist% montantHT", "codeTVA qty puHT montantHT"
         if (/\d+\s+\d+\.\d{2}(?:\s+\d+\.\d{2})?\s+\d+\.\d{2}\s*$/.test(filteredLines[i])) {
           priceLineIndices.push(i);
         }
@@ -223,31 +223,32 @@ function parseFacture(text) {
         const blockText = blockLines.join(' ').replace(/\s+/g, ' ').trim();
 
         // Extraire les prix (dernier match dans le bloc texte)
-        let lastPriceMatch = null;
-        // Avec remise optionnelle : qty puHT [rist%] montantHT
-        const priceRegex = /(\d+)\s+(\d+\.\d{2})(?:\s+(\d+\.\d{2}))?\s+(\d+\.\d{2})/g;
+        // Variantes : "qty puHT montantHT", "qty puHT rist% montantHT", "codeTVA qty puHT montantHT"
+        let qty = null, puHt = null, montantHt = null, rist = 0;
+        let matched = false;
+
+        // Chercher tous les groupes de nombres entier + XX.XX + XX.XX en fin de bloc
+        // On teste les combinaisons possibles en prenant le dernier match valide
+        const numRegex = /(?:(\d+)\s+)?(\d+)\s+(\d+\.\d{2})(?:\s+(\d+\.\d{2}))?\s+(\d+\.\d{2})/g;
         let m;
-        while ((m = priceRegex.exec(blockText)) !== null) {
-          lastPriceMatch = m;
+        while ((m = numRegex.exec(blockText)) !== null) {
+          // m[1] = codeTVA optionnel, m[2] = qty, m[3] = puHT, m[4] = rist optionnel, m[5] = montantHT
+          const q = parseInt(m[2]);
+          const pu = parseFloat(m[3]);
+          const r = m[4] ? parseFloat(m[4]) : 0;
+          const mt = parseFloat(m[5]);
+          if (Math.abs(q * pu * (1 - r / 100) - mt) <= 0.02 && q > 0) {
+            qty = q; puHt = pu; rist = r; montantHt = mt;
+            matched = true;
+          }
         }
-        if (!lastPriceMatch) continue;
+        if (!matched) continue;
 
-        const qty = parseInt(lastPriceMatch[1]);
-        const puHt = parseFloat(lastPriceMatch[2]);
-        // lastPriceMatch[3] = remise % (optionnel), lastPriceMatch[4] = montantHT
-        const montantHt = parseFloat(lastPriceMatch[4]);
-
-        // Verifier coherence qte * pu * (1 - rist/100) ~= montant
-        const rist = lastPriceMatch[3] ? parseFloat(lastPriceMatch[3]) : 0;
-        const expectedMontant = qty * puHt * (1 - rist / 100);
-        if (Math.abs(expectedMontant - montantHt) > 0.02) continue;
-
-        // Texte avant et apres les prix
-        const priceStart = lastPriceMatch.index;
-        const priceEnd = priceStart + lastPriceMatch[0].length;
-        const textBeforePrices = blockText.substring(0, priceStart).trim();
-        const textAfterPrices = blockText.substring(priceEnd).trim();
-        const fullText = textAfterPrices ? textBeforePrices + ' ' + textAfterPrices : textBeforePrices;
+        // Texte = bloc sans les nombres de fin (codeTVA? qty puHT rist? montantHT)
+        const numSuffix = blockText.match(/(?:\d+\s+)?\d+\s+\d+\.\d{2}(?:\s+\d+\.\d{2})?\s+\d+\.\d{2}\s*$/);
+        const fullText = numSuffix
+          ? blockText.substring(0, blockText.lastIndexOf(numSuffix[0])).trim()
+          : blockText;
 
         if (!fullText) continue;
 
