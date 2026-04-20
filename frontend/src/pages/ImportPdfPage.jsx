@@ -118,7 +118,7 @@ const ImportPdfPage = () => {
         product_name: product.post_title,
         product_sku: product.sku,
         current_stock: product.stock,
-        supplier_price: product.cost_price || null,
+        supplier_price: product.cost_price != null ? parseFloat(product.cost_price) : null,
         // Conserver le prix PDF s'il existe, sinon utiliser le prix BDD
         unit_price: item.unit_price ?? product.cost_price ?? null,
       };
