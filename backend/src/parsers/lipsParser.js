@@ -27,14 +27,16 @@ function parseDevis(text) {
   const items = [];
   const parseNum = (s) => parseFloat(s.replace(',', '.'));
 
-  // Les pages 1-2 sont un résumé sans prix — couper au header du tableau de prix
-  // "Description Quantité Prix unitaire Taxes Montant" marque le début des vraies lignes
-  // Le header apparaît 2 fois (résumé + tableau réel) — prendre le dernier
-  const priceSectionStart = text.lastIndexOf('Description Quantité Prix unitaire Taxes Montant');
-  const priceText = priceSectionStart >= 0 ? text.substring(priceSectionStart) : text;
+  // Pages 1-2 : résumé avec "Unité •", pages 3+ : tableau avec "Unité(s)"
+  // Couper au premier "Unité(s)" puis remonter au début de ligne \n[
+  const firstUnite = text.indexOf('Unité(s)');
+  const textBefore = firstUnite >= 0 ? text.substring(0, firstUnite) : '';
+  const lastNLBracket = textBefore.lastIndexOf('\n[');
+  const priceText = lastNLBracket >= 0 ? text.substring(lastNLBracket + 1) : text;
 
-  // Scan global : [REF] designation ... QTE\nUnité(s) PU TVA XX% TOTAL €
-  const pattern = /\[([A-Z0-9-]+)\](.*?)([\d,]+)\s*\nUnité\(s\)\s*([\d,]+)\s+TVA\s+\d+%\s+([\d,.]+)\s*€/gs;
+  // Format réel : [REF] designation\nQTE\nUnité(s)\n9,5000TVA 20%38,00 €
+  // Prix et TVA sont collés (pas d'espace)
+  const pattern = /\[([A-Z0-9-]+)\](.*?)([\d,]+)\nUnité\(s\)\n([\d,]+)TVA\s*\d+%\s*([\d,.]+)\s*€/gs;
 
   let m;
   while ((m = pattern.exec(priceText)) !== null) {
