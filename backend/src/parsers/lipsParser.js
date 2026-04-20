@@ -1,14 +1,66 @@
 /**
  * Parseur PDF pour LIPS - French Liquide (Laboratoire LIPS France)
- * Format : Facture Pro Forma multi-pages
- * Colonnes : Référence | Nom | Quantité | Prix unitaire | Prix | TVA
- * Structure : sections ("E-liquides Premiums", "E-liquides Sels de nicotine")
- * Chaque item : ref (parfois coupée sur 2 lignes), nom (1-2 lignes), puis QTE PU TOTAL TVA% TVA_MONTANT
- * Prix HT, quantités unitaires
+ * Deux formats :
+ * - "Devis" : Odoo, refs entre crochets [PACK-...], qty "4,000 Unité(s)", prix "9,5000 TVA 20% 38,00 €"
+ * - "Facture Pro Forma" : ancien format SARL EMC, refs type E2S-MOON-GOLDSUCKER-60-03
  */
 
 module.exports = {
   parse: (text) => {
+    if (text.includes('Devis #')) return parseDevis(text);
+    return parseProForma(text);
+  }
+};
+
+/**
+ * Format Devis Odoo
+ */
+function parseDevis(text) {
+  // Numero : "Devis # S00220"
+  const orderMatch = text.match(/Devis\s*#\s*(\S+)/);
+  const orderNumber = orderMatch ? orderMatch[1] : null;
+
+  // Date : "14/04/2026"
+  const dateMatch = text.match(/Date du devis\s*\n\s*(\d{2})\/(\d{2})\/(\d{4})/);
+  const orderDate = dateMatch ? `${dateMatch[3]}-${dateMatch[2]}-${dateMatch[1]}` : null;
+
+  const items = [];
+  const parseNum = (s) => parseFloat(s.replace(',', '.'));
+
+  // Scan global : [REF] designation\nQTE\nUnité(s)\nPU TVA XX% TOTAL €
+  // Insensible aux sauts de page
+  const pattern = /\[([A-Z0-9-]+)\]([\s\S]*?)([\d,]+)\s*\nUnité\(s\)\s*([\d,]+)\s+TVA\s+\d+%\s+([\d,.]+)\s*€/g;
+
+  let m;
+  while ((m = pattern.exec(text)) !== null) {
+    const supplierSku = m[1];
+
+    // Ignorer livraison/expédition
+    if (/livraison|exp[eé]dition/i.test(m[2])) continue;
+    // Ignorer items à 0
+    const prixUnit = parseNum(m[4]);
+    if (prixUnit === 0) continue;
+
+    const designation = m[2].replace(/\s+/g, ' ').trim();
+    const qty = Math.round(parseNum(m[3]));
+    const totalHt = parseNum(m[5]);
+
+    items.push({
+      supplier_sku: supplierSku,
+      designation,
+      qty_ordered: qty,
+      unit_price_net: prixUnit,
+      total_ht: totalHt,
+    });
+  }
+
+  return { orderNumber, orderDate, items, hasPrice: true, skipPackQty: true };
+}
+
+/**
+ * Format Facture Pro Forma (ancien format SARL EMC)
+ */
+function parseProForma(text) {
     // Numero de commande : "Commande N°H2026-0005-2444"
     const orderMatch = text.match(/Commande\s+N°([\w-]+)/);
     const orderNumber = orderMatch ? orderMatch[1] : null;
@@ -117,6 +169,5 @@ module.exports = {
       });
     }
 
-    return { orderNumber, orderDate, items, hasPrice: true, skipPackQty: true };
-  }
-};
+  return { orderNumber, orderDate, items, hasPrice: true, skipPackQty: true };
+}
