@@ -94,9 +94,9 @@ function parseConfirmation(text) {
 
     if (!ref.inlineData) {
       if (isNewFormat) {
-        // Nouveau format : les données sont AVANT la ref (désignation + prix sur la même ligne, ref en dessous)
-        // On cherche dans beforeRef
-        const numMatch = beforeRef.match(newFormatNumRegex);
+        // Nouveau format : les données sont APRÈS la ref (sur la ligne suivante ou après)
+        const afterRef = cleaned.substring(ref.endIndex, nextRefStart);
+        const numMatch = afterRef.match(newFormatNumRegex);
         if (!numMatch) continue;
         // groups: 1=remise%, 2=prixHT, 3=qté, 4=totalHT
         qty = parseInt(numMatch[3]);
