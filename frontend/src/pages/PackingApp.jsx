@@ -114,8 +114,14 @@ const PackingApp = () => {
       downloadPdf(data.pdfBase64, orderNumber);
       setMessage(`Etiquette generee — suivi : ${data.trackingId}`);
     } catch (err) {
-      const detail = err.response?.data?.details || err.response?.data?.error || 'Erreur generation etiquette';
-      setLabelError(typeof detail === 'string' ? detail : JSON.stringify(detail));
+      if (err.response?.status === 409) {
+        const data = err.response.data;
+        setLabelData(null);
+        setLabelError(`Etiquette deja generee pour cette commande — suivi : ${data.trackingId}`);
+      } else {
+        const detail = err.response?.data?.details || err.response?.data?.error || 'Erreur generation etiquette';
+        setLabelError(typeof detail === 'string' ? detail : JSON.stringify(detail));
+      }
       playSound('error');
     } finally {
       setLabelLoading(false);

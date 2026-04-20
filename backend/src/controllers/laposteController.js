@@ -172,6 +172,21 @@ const generateLabel = async (req, res) => {
 
     const order = orderResult.rows[0];
 
+    // Vérifier qu'il n'existe pas déjà une étiquette active pour cette commande
+    const existingLabel = await pool.query(
+      `SELECT id, tracking_id, created_at FROM laposte_labels WHERE order_number = $1 AND status = 'active' LIMIT 1`,
+      [orderNumber]
+    );
+    if (existingLabel.rows.length > 0) {
+      const existing = existingLabel.rows[0];
+      return res.status(409).json({
+        error: 'Une étiquette active existe déjà pour cette commande',
+        trackingId: existing.tracking_id,
+        labelId: existing.id,
+        createdAt: existing.created_at
+      });
+    }
+
     // Poids fixe 20g pour toutes les étiquettes
     const weight = 20;
 
