@@ -187,6 +187,7 @@ const needsCalculationModel = {
       cost_price: p.cost_price,
       alert_threshold: parseInt(p.alert_threshold) || 0,
       supplier_id: p.supplier_id,
+      supplier_ids: p.supplier_ids || [],
       supplier_name: p.supplier_name,
       supplier_analysis_period: parseFloat(p.supplier_analysis_period) || 1,
       supplier_coverage_months: parseFloat(p.supplier_coverage_months) || 1,
