@@ -159,7 +159,7 @@ const generateLabel = async (req, res) => {
       SELECT
         wp_order_id,
         shipping_first_name, shipping_last_name, shipping_company,
-        shipping_address_1,
+        shipping_address_1, shipping_address_2,
         shipping_city, shipping_postcode, shipping_country,
         shipping_phone, billing_email, order_total
       FROM orders
@@ -248,6 +248,7 @@ const generateLabel = async (req, res) => {
               address: {
                 name1: `${order.shipping_first_name || ''} ${order.shipping_last_name || ''}`.trim(),
                 ...(order.shipping_company && { add2: order.shipping_company }),
+                ...(order.shipping_address_2 && { add3: order.shipping_address_2 }),
                 add4: order.shipping_address_1 || '',
                 zipcode: order.shipping_postcode || '',
                 town: order.shipping_city || '',

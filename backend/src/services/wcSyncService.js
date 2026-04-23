@@ -330,7 +330,7 @@ const wcSyncService = {
         order_shipping, cart_discount, payment_method_title,
         billing_first_name, billing_last_name, billing_address_1, billing_address_2,
         billing_city, billing_postcode, billing_country, billing_email, billing_phone,
-        shipping_first_name, shipping_last_name, shipping_address_1,
+        shipping_first_name, shipping_last_name, shipping_address_1, shipping_address_2,
         shipping_city, shipping_postcode, shipping_country,
         shipping_method, shipping_carrier, tracking_number,
         post_date, post_modified,
@@ -344,7 +344,7 @@ const wcSyncService = {
         mollie_payment_mode, mollie_customer_id,
         date_paid, paid_date,
         mollie_payment_instructions, mollie_paid_and_processed
-      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37,$38,$39,$40,$41,$42,$43,$44,$45,$46,$47,$48,$49,$50)
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37,$38,$39,$40,$41,$42,$43,$44,$45,$46,$47,$48,$49,$50,$51)
       ON CONFLICT (wp_order_id)
       DO UPDATE SET
         post_status = EXCLUDED.post_status,
@@ -384,7 +384,7 @@ const wcSyncService = {
       data.billing_first_name, data.billing_last_name, data.billing_address_1,
       data.billing_address_2, data.billing_city, data.billing_postcode,
       data.billing_country, data.customer_email, data.billing_phone,
-      data.shipping_first_name, data.shipping_last_name, data.shipping_address_1,
+      data.shipping_first_name, data.shipping_last_name, data.shipping_address_1, data.shipping_address_2 || null,
       data.shipping_city, data.shipping_postcode, data.shipping_country,
       data.shipping_method || null, data.shipping_carrier || null, data.tracking_number || null,
       data.date_created, data.date_modified,
