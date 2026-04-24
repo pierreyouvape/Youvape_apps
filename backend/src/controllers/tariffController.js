@@ -254,15 +254,24 @@ const deleteRate = async (req, res) => {
 };
 
 /**
- * Récupérer le mapping pays -> zone
+ * Récupérer le mapping pays -> zone (filtré par carrier)
  */
 const getCountryMapping = async (req, res) => {
   try {
+    const { carrier } = req.query;
+    const params = [];
+    let where = '';
+    if (carrier) {
+      params.push(carrier);
+      where = 'WHERE carrier = $1';
+    }
+
     const result = await pool.query(`
-      SELECT id, country_code, zone_name, is_postal_prefix
+      SELECT id, country_code, zone_name, is_postal_prefix, carrier
       FROM shipping_country_mapping
+      ${where}
       ORDER BY country_code
-    `);
+    `, params);
 
     res.json({ success: true, mappings: result.rows });
   } catch (error) {
@@ -272,18 +281,28 @@ const getCountryMapping = async (req, res) => {
 };
 
 /**
- * Récupérer toutes les zones uniques (pour le dropdown)
+ * Récupérer toutes les zones uniques d'un carrier (pour le dropdown)
  */
 const getAllZoneNames = async (req, res) => {
   try {
+    const { carrier } = req.query;
+    const params = [];
+    let where1 = '';
+    let where2 = '';
+    if (carrier) {
+      params.push(carrier);
+      where1 = 'WHERE carrier = $1';
+      where2 = 'WHERE carrier = $1';
+    }
+
     const result = await pool.query(`
       SELECT DISTINCT zone_name FROM (
-        SELECT zone_name FROM shipping_tariff_zones
+        SELECT zone_name FROM shipping_tariff_zones ${where1}
         UNION
-        SELECT zone_name FROM shipping_country_mapping
+        SELECT zone_name FROM shipping_country_mapping ${where2}
       ) all_zones
       ORDER BY zone_name
-    `);
+    `, params);
 
     res.json({ success: true, zones: result.rows.map(r => r.zone_name) });
   } catch (error) {
@@ -297,12 +316,16 @@ const getAllZoneNames = async (req, res) => {
  */
 const upsertCountryMapping = async (req, res) => {
   try {
-    const { country_code, zone_name, is_postal_prefix } = req.body;
+    const { country_code, zone_name, is_postal_prefix, carrier } = req.body;
 
-    // Vérifier si le pays/préfixe existe déjà
+    if (!carrier) {
+      return res.status(400).json({ success: false, error: 'carrier requis' });
+    }
+
+    // Vérifier si le pays/préfixe existe déjà pour ce carrier
     const existing = await pool.query(
-      'SELECT id, zone_name FROM shipping_country_mapping WHERE country_code = $1',
-      [country_code]
+      'SELECT id, zone_name FROM shipping_country_mapping WHERE country_code = $1 AND carrier = $2',
+      [country_code, carrier]
     );
 
     let message = 'Mapping ajouté';
@@ -311,12 +334,12 @@ const upsertCountryMapping = async (req, res) => {
     }
 
     const result = await pool.query(`
-      INSERT INTO shipping_country_mapping (country_code, zone_name, is_postal_prefix)
-      VALUES ($1, $2, $3)
-      ON CONFLICT (country_code)
+      INSERT INTO shipping_country_mapping (country_code, zone_name, is_postal_prefix, carrier)
+      VALUES ($1, $2, $3, $4)
+      ON CONFLICT (country_code, carrier)
       DO UPDATE SET zone_name = $2, is_postal_prefix = $3
       RETURNING id
-    `, [country_code, zone_name, is_postal_prefix || false]);
+    `, [country_code, zone_name, is_postal_prefix || false, carrier]);
 
     res.json({ success: true, id: result.rows[0].id, message, moved: existing.rows.length > 0 });
   } catch (error) {

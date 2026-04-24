@@ -286,6 +286,78 @@ const deleteRate = async (req, res) => {
   }
 };
 
+// Mapping shipping_method WooCommerce -> { carrier, method }
+const METHOD_MAPPING = [
+  { pattern: /chronopost.*relais/i,   carrier: 'chronopost',    method: 'relais' },
+  { pattern: /chronopost.*domicile/i, carrier: 'chronopost',    method: 'domicile' },
+  { pattern: /chronopost.*express/i,  carrier: 'chronopost',    method: 'domicile' },
+  { pattern: /2shop/i,                carrier: 'chronopost',    method: '2shop' },
+  { pattern: /colissimo.*relais/i,    carrier: 'colissimo',     method: 'point_relais' },
+  { pattern: /colissimo.*signature/i, carrier: 'colissimo',     method: 'domicile_avec_signature' },
+  { pattern: /colissimo/i,            carrier: 'colissimo',     method: 'domicile_sans_signature' },
+  { pattern: /bpost.*relais/i,        carrier: 'colissimo',     method: 'point_relais' },
+  { pattern: /bpost/i,                carrier: 'colissimo',     method: 'domicile_sans_signature' },
+  { pattern: /lettre suivie/i,        carrier: 'laposte',       method: 'lettre_suivie' },
+  { pattern: /mondial relay/i,        carrier: 'mondial_relay', method: 'point_relais' },
+];
+
+function resolveCarrierMethod(shippingMethod) {
+  if (!shippingMethod) return null;
+  for (const m of METHOD_MAPPING) {
+    if (m.pattern.test(shippingMethod)) {
+      return { carrier: m.carrier, method: m.method };
+    }
+  }
+  return null;
+}
+
+async function computeOrderCost(pool, order, packagingWeight) {
+  const weight = parseFloat(order.total_weight);
+  const resolved = resolveCarrierMethod(order.shipping_method);
+
+  if (!resolved) {
+    return { error: 'Méthode non reconnue' };
+  }
+
+  const { carrier, method } = resolved;
+
+  // Trouver la zone du pays pour ce carrier
+  const countryCode = order.shipping_country || 'FR';
+  const zoneResult = await pool.query(`
+    SELECT zone_name FROM shipping_country_mapping
+    WHERE carrier = $1 AND (country_code = $2 OR (is_postal_prefix = true AND $2 LIKE country_code || '%'))
+    ORDER BY is_postal_prefix DESC
+    LIMIT 1
+  `, [carrier, countryCode]);
+
+  if (zoneResult.rows.length === 0) {
+    return { error: `Zone non trouvée pour ${countryCode} (${carrier})` };
+  }
+
+  const zoneName = zoneResult.rows[0].zone_name;
+
+  // Trouver le tarif dans shipping_tariff_zones/rates
+  const rateResult = await pool.query(`
+    SELECT str.price_ht, stz.fuel_surcharge
+    FROM shipping_tariff_zones stz
+    JOIN shipping_tariff_rates str ON str.zone_id = stz.id
+    WHERE stz.carrier = $1 AND stz.method = $2 AND stz.zone_name = $3
+      AND str.weight_from <= $4 AND str.weight_to >= $4
+    ORDER BY str.weight_from DESC
+    LIMIT 1
+  `, [carrier, method, zoneName, weight]);
+
+  if (rateResult.rows.length === 0) {
+    return { error: `Tarif non trouvé (${carrier}/${method}/${zoneName} ${weight}g)` };
+  }
+
+  const basePrice = parseFloat(rateResult.rows[0].price_ht);
+  const fuelSurcharge = parseFloat(rateResult.rows[0].fuel_surcharge) || 0;
+  const calculatedCost = Math.round(basePrice * (1 + fuelSurcharge / 100) * 100) / 100;
+
+  return { carrier, method, zone: zoneName, base_price: basePrice, fuel_surcharge: fuelSurcharge, calculated_cost: calculatedCost };
+}
+
 /**
  * Calculer les frais de port pour une plage de dates (prévisualisation)
  */
@@ -293,97 +365,62 @@ const calculateShippingCosts = async (req, res) => {
   try {
     const { date_from, date_to } = req.body;
 
-    // Récupérer le poids de l'emballage
     const settingsResult = await pool.query(
       "SELECT config_value FROM shipping_settings WHERE config_key = 'packaging_weight'"
     );
     const packagingWeight = settingsResult.rows[0] ? parseFloat(settingsResult.rows[0].config_value) : 0;
 
-    // Récupérer les commandes avec leurs items et poids
     const ordersResult = await pool.query(`
       SELECT
         o.wp_order_id,
         o.shipping_method,
+        o.shipping_country,
         o.shipping_cost_calculated,
-        COALESCE(
-          SUM(
-            oi.qty * COALESCE(p.weight, parent.weight, 0)
-          ), 0
-        ) + $3 as total_weight
+        COALESCE(SUM(oi.qty * COALESCE(p.weight, parent.weight, 0)), 0) + $3 as total_weight
       FROM orders o
       LEFT JOIN order_items oi ON o.wp_order_id = oi.wp_order_id
       LEFT JOIN products p ON (oi.product_id = p.wp_product_id OR oi.variation_id = p.wp_product_id)
       LEFT JOIN products parent ON p.wp_parent_id = parent.wp_product_id
       WHERE o.post_date >= $1 AND o.post_date < $2
         AND o.post_status IN ('wc-completed', 'wc-processing', 'wc-shipped')
-      GROUP BY o.wp_order_id, o.shipping_method, o.shipping_cost_calculated
+        AND o.shipping_method <> ''
+      GROUP BY o.wp_order_id, o.shipping_method, o.shipping_country, o.shipping_cost_calculated
     `, [date_from, date_to, packagingWeight]);
 
-    // Pour chaque commande, trouver le tarif correspondant
     const results = [];
     let totalCalculated = 0;
     let ordersMatched = 0;
     let ordersUnmatched = 0;
 
     for (const order of ordersResult.rows) {
-      // Trouver la méthode correspondante
-      const methodResult = await pool.query(`
-        SELECT sm.id as method_id, sc.fuel_surcharge
-        FROM shipping_methods sm
-        JOIN shipping_carriers sc ON sm.carrier_id = sc.id
-        WHERE sm.wc_method_title = $1 AND sm.active = true AND sc.active = true
-      `, [order.shipping_method]);
+      const computed = await computeOrderCost(pool, order, packagingWeight);
 
-      if (methodResult.rows.length === 0) {
+      if (computed.error) {
         ordersUnmatched++;
         results.push({
           wp_order_id: order.wp_order_id,
           shipping_method: order.shipping_method,
+          shipping_country: order.shipping_country,
           weight: parseFloat(order.total_weight),
           calculated_cost: null,
-          error: 'Méthode non trouvée'
+          error: computed.error
         });
-        continue;
-      }
-
-      const { method_id, fuel_surcharge } = methodResult.rows[0];
-
-      // Trouver la tranche de poids
-      const rateResult = await pool.query(`
-        SELECT price_ht
-        FROM shipping_rates
-        WHERE method_id = $1 AND weight_from <= $2 AND weight_to >= $2
-        ORDER BY weight_from DESC
-        LIMIT 1
-      `, [method_id, order.total_weight]);
-
-      if (rateResult.rows.length === 0) {
-        ordersUnmatched++;
+      } else {
+        ordersMatched++;
+        totalCalculated += computed.calculated_cost;
         results.push({
           wp_order_id: order.wp_order_id,
           shipping_method: order.shipping_method,
+          shipping_country: order.shipping_country,
           weight: parseFloat(order.total_weight),
-          calculated_cost: null,
-          error: 'Tranche de poids non trouvée'
+          carrier: computed.carrier,
+          zone: computed.zone,
+          base_price: computed.base_price,
+          fuel_surcharge: computed.fuel_surcharge,
+          calculated_cost: computed.calculated_cost,
+          current_cost: order.shipping_cost_calculated ? parseFloat(order.shipping_cost_calculated) : null
         });
-        continue;
       }
-
-      const basePrice = parseFloat(rateResult.rows[0].price_ht);
-      const calculatedCost = basePrice * parseFloat(fuel_surcharge);
-
-      ordersMatched++;
-      totalCalculated += calculatedCost;
-
-      results.push({
-        wp_order_id: order.wp_order_id,
-        shipping_method: order.shipping_method,
-        weight: parseFloat(order.total_weight),
-        base_price: basePrice,
-        fuel_surcharge: parseFloat(fuel_surcharge),
-        calculated_cost: Math.round(calculatedCost * 100) / 100,
-        current_cost: order.shipping_cost_calculated ? parseFloat(order.shipping_cost_calculated) : null
-      });
     }
 
     res.json({
@@ -409,7 +446,6 @@ const applyShippingCosts = async (req, res) => {
   try {
     const { date_from, date_to } = req.body;
 
-    // Même logique que calculate mais avec UPDATE
     const settingsResult = await pool.query(
       "SELECT config_value FROM shipping_settings WHERE config_key = 'packaging_weight'"
     );
@@ -419,59 +455,34 @@ const applyShippingCosts = async (req, res) => {
       SELECT
         o.wp_order_id,
         o.shipping_method,
-        COALESCE(
-          SUM(
-            oi.qty * COALESCE(p.weight, parent.weight, 0)
-          ), 0
-        ) + $3 as total_weight
+        o.shipping_country,
+        COALESCE(SUM(oi.qty * COALESCE(p.weight, parent.weight, 0)), 0) + $3 as total_weight
       FROM orders o
       LEFT JOIN order_items oi ON o.wp_order_id = oi.wp_order_id
       LEFT JOIN products p ON (oi.product_id = p.wp_product_id OR oi.variation_id = p.wp_product_id)
       LEFT JOIN products parent ON p.wp_parent_id = parent.wp_product_id
       WHERE o.post_date >= $1 AND o.post_date < $2
         AND o.post_status IN ('wc-completed', 'wc-processing', 'wc-shipped')
-      GROUP BY o.wp_order_id, o.shipping_method
+        AND o.shipping_method <> ''
+      GROUP BY o.wp_order_id, o.shipping_method, o.shipping_country
     `, [date_from, date_to, packagingWeight]);
 
     let updated = 0;
     let skipped = 0;
 
     for (const order of ordersResult.rows) {
-      const methodResult = await pool.query(`
-        SELECT sm.id as method_id, sc.fuel_surcharge
-        FROM shipping_methods sm
-        JOIN shipping_carriers sc ON sm.carrier_id = sc.id
-        WHERE sm.wc_method_title = $1 AND sm.active = true AND sc.active = true
-      `, [order.shipping_method]);
+      const computed = await computeOrderCost(pool, order, packagingWeight);
 
-      if (methodResult.rows.length === 0) {
+      if (computed.error) {
         skipped++;
         continue;
       }
-
-      const { method_id, fuel_surcharge } = methodResult.rows[0];
-
-      const rateResult = await pool.query(`
-        SELECT price_ht
-        FROM shipping_rates
-        WHERE method_id = $1 AND weight_from <= $2 AND weight_to >= $2
-        ORDER BY weight_from DESC
-        LIMIT 1
-      `, [method_id, order.total_weight]);
-
-      if (rateResult.rows.length === 0) {
-        skipped++;
-        continue;
-      }
-
-      const basePrice = parseFloat(rateResult.rows[0].price_ht);
-      const calculatedCost = Math.round(basePrice * parseFloat(fuel_surcharge) * 100) / 100;
 
       await pool.query(`
         UPDATE orders
         SET shipping_cost_calculated = $1, updated_at = NOW()
         WHERE wp_order_id = $2
-      `, [calculatedCost, order.wp_order_id]);
+      `, [computed.calculated_cost, order.wp_order_id]);
 
       updated++;
     }

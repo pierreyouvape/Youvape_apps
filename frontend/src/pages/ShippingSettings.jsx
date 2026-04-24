@@ -43,6 +43,9 @@ const ShippingSettings = () => {
   const [collapsedZones, setCollapsedZones] = useState({});
   const [collapsedMappingZones, setCollapsedMappingZones] = useState({});
 
+  // Carrier actif pour le mapping pays/zones
+  const [activeMappingCarrier, setActiveMappingCarrier] = useState('chronopost');
+
   const toggleMethod = (methodKey) => {
     setCollapsedMethods(prev => ({ ...prev, [methodKey]: prev[methodKey] === false ? true : false }));
   };
@@ -278,7 +281,8 @@ const ShippingSettings = () => {
       const res = await axios.post(`${API_URL}/tariffs/country-mapping`, {
         country_code: newCountryCode,
         zone_name: newCountryZone,
-        is_postal_prefix: newCountryIsPostal
+        is_postal_prefix: newCountryIsPostal,
+        carrier: activeMappingCarrier
       }, {
         headers: { Authorization: `Bearer ${token}` }
       });
@@ -590,15 +594,29 @@ const ShippingSettings = () => {
   const renderZonesPaysTab = () => {
     const sortedCountries = Object.entries(countriesList).sort((a, b) => a[1].localeCompare(b[1]));
 
-    // Grouper les mappings par zone
+    // Filtrer les mappings par carrier actif
+    const filteredMappings = countryMappings.filter(m => m.carrier === activeMappingCarrier);
+
+    // Filtrer les zones disponibles pour ce carrier
+    const carrierZoneNames = allZoneNames.filter(z => {
+      // On garde les zones qui existent dans shipping_tariff_zones pour ce carrier
+      // On les déduit depuis les mappings existants + zones tariff
+      return true; // On affiche toutes les zones, le backend filtre déjà
+    });
+
+    // Grouper les mappings filtrés par zone
     const mappingsByZone = {};
-    countryMappings.forEach(mapping => {
+    filteredMappings.forEach(mapping => {
       const zone = mapping.zone_name;
       if (!mappingsByZone[zone]) mappingsByZone[zone] = [];
       mappingsByZone[zone].push(mapping);
     });
-    // Trier les zones alphabétiquement
     const sortedZones = Object.keys(mappingsByZone).sort();
+
+    // Zones tarifaires disponibles pour ce carrier (depuis carriersConfig)
+    const carrierZonesForDropdown = Object.keys(carriersConfig).includes(activeMappingCarrier)
+      ? allZoneNames
+      : allZoneNames;
 
     return (
       <div style={{ padding: '20px' }}>
@@ -606,6 +624,29 @@ const ShippingSettings = () => {
         <p style={{ color: '#666', marginBottom: '20px' }}>
           Associez chaque pays (ou préfixe de code postal) à une zone tarifaire. Les pays sont regroupés par zone.
         </p>
+
+        {/* Sélecteur de transporteur */}
+        <div style={{ marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <span style={{ fontWeight: '500' }}>Transporteur :</span>
+          {Object.entries(carriersConfig).map(([code, cfg]) => (
+            <button
+              key={code}
+              onClick={() => setActiveMappingCarrier(code)}
+              style={{
+                padding: '6px 14px',
+                borderRadius: '20px',
+                border: '1px solid #135E84',
+                backgroundColor: activeMappingCarrier === code ? '#135E84' : 'white',
+                color: activeMappingCarrier === code ? 'white' : '#135E84',
+                cursor: 'pointer',
+                fontSize: '13px',
+                fontWeight: activeMappingCarrier === code ? '600' : '400'
+              }}
+            >
+              {cfg.name}
+            </button>
+          ))}
+        </div>
 
         {/* Create new zone */}
         <div style={{ display: 'flex', gap: '10px', marginBottom: '15px', alignItems: 'center', padding: '12px 15px', backgroundColor: '#e8f4f8', borderRadius: '8px', border: '1px dashed #135E84' }}>
@@ -682,9 +723,18 @@ const ShippingSettings = () => {
             style={{ width: '200px', padding: '8px', border: '1px solid #ccc', borderRadius: '4px' }}
           >
             <option value="">-- Sélectionner une zone --</option>
-            {allZoneNames.map(z => (
-              <option key={z} value={z}>{z}</option>
-            ))}
+            {allZoneNames
+              .filter(z => {
+                // Afficher les zones qui existent dans les tarifs du carrier actif
+                const key = `${activeMappingCarrier}_`;
+                return Object.entries(carrierZones)
+                  .filter(([k]) => k.startsWith(key))
+                  .some(([, zones]) => zones.some(zone => zone.name === z));
+              })
+              .map(z => (
+                <option key={z} value={z}>{z}</option>
+              ))
+            }
           </select>
           <label style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
             <input
@@ -704,7 +754,7 @@ const ShippingSettings = () => {
 
         {/* Zones avec leurs pays */}
         {sortedZones.length === 0 ? (
-          <p style={{ color: '#999', textAlign: 'center', padding: '40px' }}>Aucun mapping configuré</p>
+          <p style={{ color: '#999', textAlign: 'center', padding: '40px' }}>Aucun mapping configuré pour ce transporteur</p>
         ) : (
           sortedZones.map(zoneName => {
             const mappings = mappingsByZone[zoneName];
