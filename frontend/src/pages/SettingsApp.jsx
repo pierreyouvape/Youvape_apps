@@ -35,7 +35,8 @@ const SettingsApp = () => {
     { key: 'stats', label: 'Statistiques WooCommerce' },
     { key: 'purchases', label: 'Gestion d\'achat' },
     { key: 'catalog', label: 'Produits' },
-    { key: 'packing', label: 'Packing', accessOnly: true }
+    { key: 'packing', label: 'Packing', accessOnly: true },
+    { key: 'financier', label: 'Dashboard Financier', accessOnly: true }
   ];
 
   const tabs = [
