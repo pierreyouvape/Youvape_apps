@@ -8,6 +8,7 @@ const ACTIVE_STATUSES = [
 
 /**
  * Construit les conditions WHERE et les paramètres pour une plage de dates.
+ * Filtre sur COALESCE(paid_date, post_date) — date de paiement, fallback création.
  * Retourne { conditions, params, nextIndex }
  */
 function buildDateConditions(dateFrom, dateTo, startIndex = 1, alias = 'o') {
@@ -18,11 +19,11 @@ function buildDateConditions(dateFrom, dateTo, startIndex = 1, alias = 'o') {
   let idx = startIndex + 1;
 
   if (dateFrom) {
-    conditions.push(`${alias}.post_date >= $${idx++}`);
+    conditions.push(`COALESCE(${alias}.paid_date, ${alias}.post_date) >= $${idx++}`);
     params.push(dateFrom);
   }
   if (dateTo) {
-    conditions.push(`${alias}.post_date <= $${idx++}`);
+    conditions.push(`COALESCE(${alias}.paid_date, ${alias}.post_date) <= $${idx++}`);
     params.push(dateTo + ' 23:59:59');
   }
 
@@ -130,10 +131,10 @@ exports.getDashboard = async (req, res) => {
     }
 
     const truncMap = {
-      hour:  "date_trunc('hour', o.post_date)",
-      day:   "date_trunc('day', o.post_date)",
-      week:  "date_trunc('week', o.post_date)",
-      month: "date_trunc('month', o.post_date)",
+      hour:  "date_trunc('hour', COALESCE(o.paid_date, o.post_date))",
+      day:   "date_trunc('day', COALESCE(o.paid_date, o.post_date))",
+      week:  "date_trunc('week', COALESCE(o.paid_date, o.post_date))",
+      month: "date_trunc('month', COALESCE(o.paid_date, o.post_date))",
     };
     const truncExpr = truncMap[gran] || truncMap.day;
 
