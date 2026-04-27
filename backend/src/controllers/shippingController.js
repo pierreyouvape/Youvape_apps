@@ -342,7 +342,7 @@ async function computeOrderCost(pool, order, packagingWeight) {
 
   // Trouver le tarif dans shipping_tariff_zones/rates
   const rateResult = await pool.query(`
-    SELECT str.price_ht, stz.fuel_surcharge
+    SELECT str.price_ht, stz.fuel_surcharge, COALESCE(stz.discount_percent, 0) AS discount_percent
     FROM shipping_tariff_zones stz
     JOIN shipping_tariff_rates str ON str.zone_id = stz.id
     WHERE stz.carrier = $1 AND stz.method = $2 AND stz.zone_name = $3
@@ -357,9 +357,10 @@ async function computeOrderCost(pool, order, packagingWeight) {
 
   const basePrice = parseFloat(rateResult.rows[0].price_ht);
   const fuelSurcharge = parseFloat(rateResult.rows[0].fuel_surcharge) || 0;
-  const calculatedCost = Math.round(basePrice * (1 + fuelSurcharge / 100) * 100) / 100;
+  const discount = parseFloat(rateResult.rows[0].discount_percent) || 0;
+  const calculatedCost = Math.round(basePrice * (1 - discount / 100) * (1 + fuelSurcharge / 100) * 100) / 100;
 
-  return { carrier, method, zone: zoneName, base_price: basePrice, fuel_surcharge: fuelSurcharge, calculated_cost: calculatedCost };
+  return { carrier, method, zone: zoneName, base_price: basePrice, discount_percent: discount, fuel_surcharge: fuelSurcharge, calculated_cost: calculatedCost };
 }
 
 /**

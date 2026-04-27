@@ -312,13 +312,16 @@ const ShippingSettings = () => {
     }
   };
 
-  const updateFuelSurcharge = async (zoneId, fuelSurcharge, carrier, method) => {
+  const updateFuelSurcharge = async (zoneId, fuelSurcharge, carrier, method, discountPercent) => {
     try {
-      await axios.put(`${API_URL}/tariffs/zones/${zoneId}/fuel-surcharge`, { fuel_surcharge: fuelSurcharge }, {
+      await axios.put(`${API_URL}/tariffs/zones/${zoneId}/fuel-surcharge`, {
+        fuel_surcharge: fuelSurcharge,
+        discount_percent: discountPercent
+      }, {
         headers: { Authorization: `Bearer ${token}` }
       });
       loadCarrierZones(carrier, method);
-      setMessage({ type: 'success', text: 'Surcharge carburant sauvegardée' });
+      setMessage({ type: 'success', text: 'Paramètres de zone sauvegardés' });
       setTimeout(() => setMessage(null), 3000);
     } catch (err) {
       setMessage({ type: 'error', text: 'Erreur lors de la sauvegarde' });
@@ -1304,6 +1307,7 @@ const parseCSV = (csvText) => {
 // Zone component with fuel surcharge + rates + CSV import
 const FuelSurchargeZone = ({ zone, carrier, methodCode, onAddRate, onDeleteZone, onUpdateRate, onDeleteRate, onUpdateFuelSurcharge, onBulkImport, isCollapsed, onToggle }) => {
   const [fuelSurcharge, setFuelSurcharge] = useState(zone.fuel_surcharge || 0);
+  const [discountPercent, setDiscountPercent] = useState(zone.discount_percent || 0);
   const [csvPreview, setCsvPreview] = useState(null);
   const [csvErrors, setCsvErrors] = useState([]);
 
@@ -1349,7 +1353,18 @@ const FuelSurchargeZone = ({ zone, carrier, methodCode, onAddRate, onDeleteZone,
             style={{ width: '60px', padding: '3px', border: '1px solid #ccc', borderRadius: '3px', fontSize: '12px' }}
           />
           <span style={{ fontSize: '12px', color: '#555' }}>%</span>
-          <button onClick={() => onUpdateFuelSurcharge(zone.id, fuelSurcharge, carrier, methodCode)} style={{ ...btnSmallSuccess, padding: '3px 6px', fontSize: '11px' }}>OK</button>
+          <span style={{ fontSize: '12px', color: '#555', marginLeft: '8px' }}>Remise:</span>
+          <input
+            type="number"
+            step="0.1"
+            min="0"
+            max="100"
+            value={discountPercent}
+            onChange={(e) => setDiscountPercent(parseFloat(e.target.value) || 0)}
+            style={{ width: '60px', padding: '3px', border: '1px solid #ccc', borderRadius: '3px', fontSize: '12px' }}
+          />
+          <span style={{ fontSize: '12px', color: '#555' }}>%</span>
+          <button onClick={() => onUpdateFuelSurcharge(zone.id, fuelSurcharge, carrier, methodCode, discountPercent)} style={{ ...btnSmallSuccess, padding: '3px 6px', fontSize: '11px' }}>OK</button>
           <button onClick={() => onDeleteZone(zone.id, carrier, methodCode)} style={{ ...btnSmallDanger, padding: '3px 6px', fontSize: '11px' }}>Suppr.</button>
         </div>
       </div>

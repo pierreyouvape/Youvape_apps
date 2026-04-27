@@ -123,7 +123,7 @@ const getZones = async (req, res) => {
     const { carrier, method } = req.params;
 
     const zonesResult = await pool.query(`
-      SELECT id, zone_name, zone_order, COALESCE(fuel_surcharge, 0) as fuel_surcharge
+      SELECT id, zone_name, zone_order, COALESCE(fuel_surcharge, 0) as fuel_surcharge, COALESCE(discount_percent, 0) as discount_percent
       FROM shipping_tariff_zones
       WHERE carrier = $1 AND method = $2
       ORDER BY zone_order, zone_name
@@ -143,6 +143,7 @@ const getZones = async (req, res) => {
         name: zone.zone_name,
         order: zone.zone_order,
         fuel_surcharge: parseFloat(zone.fuel_surcharge),
+        discount_percent: parseFloat(zone.discount_percent),
         rates: ratesResult.rows.map(r => ({
           id: r.id,
           weight_from: parseFloat(r.weight_from),
@@ -405,17 +406,22 @@ const bulkImportRates = async (req, res) => {
 const updateZoneFuelSurcharge = async (req, res) => {
   try {
     const { id } = req.params;
-    const { fuel_surcharge } = req.body;
+    const { fuel_surcharge, discount_percent } = req.body;
 
     await pool.query(`
       UPDATE shipping_tariff_zones
-      SET fuel_surcharge = $1
-      WHERE id = $2
-    `, [fuel_surcharge || 0, id]);
+      SET fuel_surcharge = COALESCE($1, fuel_surcharge),
+          discount_percent = COALESCE($2, discount_percent)
+      WHERE id = $3
+    `, [
+      fuel_surcharge !== undefined ? (fuel_surcharge || 0) : null,
+      discount_percent !== undefined ? (discount_percent || 0) : null,
+      id
+    ]);
 
-    res.json({ success: true, message: 'Surcharge carburant mise à jour' });
+    res.json({ success: true, message: 'Paramètres de zone mis à jour' });
   } catch (error) {
-    console.error('Error updating fuel surcharge:', error);
+    console.error('Error updating zone params:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 };
