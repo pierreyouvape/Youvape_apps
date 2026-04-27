@@ -135,21 +135,38 @@ exports.deleteMethod = async (req, res) => {
  */
 exports.getWcTitles = async (req, res) => {
   try {
-    const result = await pool.query(`
-      SELECT
-        COALESCE(o.payment_method_title, '') AS wc_title,
-        COUNT(*) AS order_count,
-        pmm.id AS mapping_id,
-        pmm.payment_method_id,
-        pm.name AS method_name
-      FROM orders o
-      LEFT JOIN payment_method_mappings pmm ON pmm.wc_title = COALESCE(o.payment_method_title, '')
-      LEFT JOIN payment_methods pm ON pm.id = pmm.payment_method_id
-      WHERE o.post_status IN ('wc-completed', 'wc-processing', 'wc-shipped')
-      GROUP BY o.payment_method_title, pmm.id, pmm.payment_method_id, pm.name
+    // Comptes par titre WC
+    const countsResult = await pool.query(`
+      SELECT COALESCE(payment_method_title, '') AS wc_title, COUNT(*) AS order_count
+      FROM orders
+      WHERE post_status IN ('wc-completed', 'wc-processing', 'wc-shipped')
+      GROUP BY payment_method_title
       ORDER BY COUNT(*) DESC
     `);
-    res.json({ success: true, titles: result.rows });
+
+    // Tous les mappings existants
+    const mappingsResult = await pool.query(`
+      SELECT pmm.id, pmm.wc_title, pmm.country_code, pmm.payment_method_id, pm.name AS method_name
+      FROM payment_method_mappings pmm
+      JOIN payment_methods pm ON pm.id = pmm.payment_method_id
+      WHERE pm.is_active = true
+      ORDER BY pmm.wc_title, pmm.country_code NULLS LAST
+    `);
+
+    // Indexer les mappings par wc_title
+    const mappingsByTitle = {};
+    for (const m of mappingsResult.rows) {
+      if (!mappingsByTitle[m.wc_title]) mappingsByTitle[m.wc_title] = [];
+      mappingsByTitle[m.wc_title].push(m);
+    }
+
+    const titles = countsResult.rows.map(row => ({
+      wc_title: row.wc_title,
+      order_count: parseInt(row.order_count),
+      mappings: mappingsByTitle[row.wc_title] || []
+    }));
+
+    res.json({ success: true, titles });
   } catch (error) {
     console.error('Error getting wc titles:', error);
     res.status(500).json({ success: false, error: error.message });
@@ -162,16 +179,16 @@ exports.getWcTitles = async (req, res) => {
  */
 exports.addMapping = async (req, res) => {
   try {
-    const { wc_title, payment_method_id } = req.body;
+    const { wc_title, payment_method_id, country_code } = req.body;
     if (!wc_title || !payment_method_id) {
       return res.status(400).json({ success: false, error: 'wc_title et payment_method_id requis' });
     }
     const result = await pool.query(
-      `INSERT INTO payment_method_mappings (payment_method_id, wc_title)
-       VALUES ($1, $2)
-       ON CONFLICT (wc_title) DO UPDATE SET payment_method_id = EXCLUDED.payment_method_id
+      `INSERT INTO payment_method_mappings (payment_method_id, wc_title, country_code)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (wc_title, country_code) DO UPDATE SET payment_method_id = EXCLUDED.payment_method_id
        RETURNING *`,
-      [payment_method_id, wc_title]
+      [payment_method_id, wc_title, country_code || null]
     );
     res.json({ success: true, mapping: result.rows[0] });
   } catch (error) {
@@ -197,12 +214,20 @@ exports.deleteMapping = async (req, res) => {
 
 /**
  * Matcher une commande avec une methode de paiement via payment_method_mappings
+ * Priorité : correspondance exacte (wc_title + country_code) > fallback (wc_title sans country_code)
  */
-const matchPaymentMethod = (paymentMethodTitle, mappings) => {
+const matchPaymentMethod = (paymentMethodTitle, shippingCountry, mappings) => {
   if (!paymentMethodTitle) return null;
   const title = paymentMethodTitle.trim();
-  const mapping = mappings.find(m => m.wc_title === title);
-  return mapping || null;
+  const country = (shippingCountry || '').trim();
+
+  // 1. Match exact titre + pays
+  const exactMatch = mappings.find(m => m.wc_title === title && m.country_code === country);
+  if (exactMatch) return exactMatch;
+
+  // 2. Fallback : titre sans country_code (tous pays)
+  const fallback = mappings.find(m => m.wc_title === title && !m.country_code);
+  return fallback || null;
 };
 
 /**
@@ -229,7 +254,7 @@ exports.calculatePaymentCosts = async (req, res) => {
 
     // Charger les commandes
     const ordersResult = await pool.query(`
-      SELECT wp_order_id, payment_method_title, order_total, payment_cost_calculated
+      SELECT wp_order_id, payment_method_title, order_total, payment_cost_calculated, shipping_country
       FROM orders
       WHERE post_date >= $1 AND post_date < $2
         AND post_status IN ('wc-completed', 'wc-processing', 'wc-shipped')
@@ -241,7 +266,7 @@ exports.calculatePaymentCosts = async (req, res) => {
     const unmatchedMethods = {};
 
     for (const order of ordersResult.rows) {
-      const mapping = matchPaymentMethod(order.payment_method_title, mappings);
+      const mapping = matchPaymentMethod(order.payment_method_title, order.shipping_country, mappings);
 
       if (!mapping) {
         ordersUnmatched++;
@@ -297,7 +322,7 @@ exports.applyPaymentCosts = async (req, res) => {
     const mappings = mappingsResult.rows;
 
     const ordersResult = await pool.query(`
-      SELECT wp_order_id, payment_method_title, order_total
+      SELECT wp_order_id, payment_method_title, order_total, shipping_country
       FROM orders
       WHERE post_date >= $1 AND post_date < $2
         AND post_status IN ('wc-completed', 'wc-processing', 'wc-shipped')
@@ -307,7 +332,7 @@ exports.applyPaymentCosts = async (req, res) => {
     let skipped = 0;
 
     for (const order of ordersResult.rows) {
-      const mapping = matchPaymentMethod(order.payment_method_title, mappings);
+      const mapping = matchPaymentMethod(order.payment_method_title, order.shipping_country, mappings);
 
       if (!mapping) {
         skipped++;

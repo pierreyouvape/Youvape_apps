@@ -460,26 +460,43 @@ const ShippingSettings = () => {
     }
   };
 
-  const setWcTitleMapping = async (wcTitle, paymentMethodId) => {
+  const reloadWcTitles = async () => {
+    const res = await axios.get(`${API_URL}/payment/wc-titles`, { headers: { Authorization: `Bearer ${token}` } });
+    if (res.data.success) setWcTitles(res.data.titles);
+  };
+
+  const setWcTitleMapping = async (wcTitle, countryCode, paymentMethodId) => {
     try {
       if (!paymentMethodId) {
-        // Supprimer le mapping existant
-        const existing = wcTitles.find(t => t.wc_title === wcTitle);
-        if (existing?.mapping_id) {
-          await axios.delete(`${API_URL}/payment/mappings/${existing.mapping_id}`, {
+        // Supprimer le mapping pour ce (wc_title, country_code)
+        const titleObj = wcTitles.find(t => t.wc_title === wcTitle);
+        const mapping = titleObj?.mappings?.find(m => (m.country_code || '') === (countryCode || ''));
+        if (mapping?.id) {
+          await axios.delete(`${API_URL}/payment/mappings/${mapping.id}`, {
             headers: { Authorization: `Bearer ${token}` }
           });
         }
       } else {
-        await axios.post(`${API_URL}/payment/mappings`, { wc_title: wcTitle, payment_method_id: paymentMethodId }, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
+        await axios.post(`${API_URL}/payment/mappings`, {
+          wc_title: wcTitle,
+          country_code: countryCode || null,
+          payment_method_id: paymentMethodId
+        }, { headers: { Authorization: `Bearer ${token}` } });
       }
-      // Recharger les titres WC
-      const res = await axios.get(`${API_URL}/payment/wc-titles`, { headers: { Authorization: `Bearer ${token}` } });
-      if (res.data.success) setWcTitles(res.data.titles);
+      await reloadWcTitles();
     } catch (err) {
       setMessage({ type: 'error', text: 'Erreur lors de la mise à jour du mapping' });
+    }
+  };
+
+  const deleteWcTitleMapping = async (mappingId) => {
+    try {
+      await axios.delete(`${API_URL}/payment/mappings/${mappingId}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      await reloadWcTitles();
+    } catch (err) {
+      setMessage({ type: 'error', text: 'Erreur lors de la suppression' });
     }
   };
 
@@ -1020,38 +1037,86 @@ const ShippingSettings = () => {
     <div style={{ padding: '20px' }}>
       <h3>Correspondances méthodes de paiement</h3>
       <p style={{ color: '#666', marginBottom: '20px' }}>
-        Associez chaque libellé WooCommerce à une méthode de paiement configurée. Un même libellé peut n'être associé qu'à une seule méthode.
+        Associez chaque libellé WooCommerce à une méthode de paiement. Vous pouvez créer plusieurs règles par libellé en précisant un pays (prioritaire sur la règle sans pays).
       </p>
       <table style={{ width: '100%', borderCollapse: 'collapse' }}>
         <thead>
           <tr style={{ backgroundColor: '#e9ecef' }}>
             <th style={thStyle}>Libellé WooCommerce</th>
-            <th style={{ ...thStyle, width: '100px', textAlign: 'center' }}>Commandes</th>
-            <th style={{ ...thStyle, width: '260px' }}>Méthode associée</th>
+            <th style={{ ...thStyle, width: '80px', textAlign: 'center' }}>Cmdes</th>
+            <th style={{ ...thStyle, width: '60px', textAlign: 'center' }}>Pays</th>
+            <th style={{ ...thStyle, width: '220px' }}>Méthode</th>
+            <th style={{ ...thStyle, width: '80px', textAlign: 'center' }}>Actions</th>
           </tr>
         </thead>
         <tbody>
-          {wcTitles.map((t, i) => (
-            <tr key={i} style={{ backgroundColor: i % 2 === 0 ? 'white' : '#f8f9fa' }}>
-              <td style={tdStyle}>
-                <span style={{ display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%', backgroundColor: t.payment_method_id ? '#28a745' : '#dc3545', marginRight: '8px' }} />
-                {t.wc_title || <em style={{ color: '#999' }}>(vide)</em>}
-              </td>
-              <td style={{ ...tdStyle, textAlign: 'center', color: '#666' }}>{t.order_count}</td>
-              <td style={tdStyle}>
-                <select
-                  value={t.payment_method_id || ''}
-                  onChange={e => setWcTitleMapping(t.wc_title, e.target.value ? parseInt(e.target.value) : null)}
-                  style={{ ...inputStyle, width: '100%', padding: '4px 6px' }}
-                >
-                  <option value="">— Aucune —</option>
-                  {paymentMethods.map(m => (
-                    <option key={m.id} value={m.id}>{m.name}</option>
-                  ))}
-                </select>
-              </td>
-            </tr>
-          ))}
+          {wcTitles.map((t, i) => {
+            const bgBase = i % 2 === 0 ? 'white' : '#f8f9fa';
+            const isMapped = t.mappings && t.mappings.length > 0;
+            // Ligne principale : le titre + le mapping "tous pays" (sans country_code)
+            const fallbackMapping = t.mappings?.find(m => !m.country_code) || null;
+            // Mappings par pays spécifiques
+            const countryMappings = t.mappings?.filter(m => m.country_code) || [];
+
+            return (
+              <React.Fragment key={i}>
+                {/* Ligne principale : libellé + mapping fallback */}
+                <tr style={{ backgroundColor: bgBase }}>
+                  <td style={{ ...tdStyle, verticalAlign: 'middle' }} rowSpan={1 + countryMappings.length}>
+                    <span style={{ display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%', backgroundColor: isMapped ? '#28a745' : '#dc3545', marginRight: '8px', flexShrink: 0 }} />
+                    {t.wc_title || <em style={{ color: '#999' }}>(vide)</em>}
+                  </td>
+                  <td style={{ ...tdStyle, textAlign: 'center', color: '#666', verticalAlign: 'middle' }} rowSpan={1 + countryMappings.length}>
+                    {t.order_count}
+                  </td>
+                  <td style={{ ...tdStyle, textAlign: 'center', color: '#999', fontSize: '12px' }}>tous</td>
+                  <td style={tdStyle}>
+                    <select
+                      value={fallbackMapping?.payment_method_id || ''}
+                      onChange={e => setWcTitleMapping(t.wc_title, null, e.target.value ? parseInt(e.target.value) : null)}
+                      style={{ ...inputStyle, width: '100%', padding: '4px 6px' }}
+                    >
+                      <option value="">— Aucune —</option>
+                      {paymentMethods.map(m => (
+                        <option key={m.id} value={m.id}>{m.name}</option>
+                      ))}
+                    </select>
+                  </td>
+                  <td style={{ ...tdStyle, textAlign: 'center' }}>
+                    <button
+                      title="Ajouter règle par pays"
+                      style={{ ...btnSmallPrimary, fontSize: '11px', padding: '3px 7px' }}
+                      onClick={() => {
+                        const country = prompt('Code pays (ex: BE, FR, DE)');
+                        if (country) setWcTitleMapping(t.wc_title, country.toUpperCase(), paymentMethods[0]?.id);
+                      }}
+                    >+ pays</button>
+                  </td>
+                </tr>
+                {/* Lignes pour chaque mapping par pays spécifique */}
+                {countryMappings.map((cm, j) => (
+                  <tr key={`${i}-${j}`} style={{ backgroundColor: bgBase }}>
+                    <td style={{ ...tdStyle, textAlign: 'center', fontWeight: '600', color: '#135E84', fontSize: '13px' }}>{cm.country_code}</td>
+                    <td style={tdStyle}>
+                      <select
+                        value={cm.payment_method_id || ''}
+                        onChange={e => setWcTitleMapping(t.wc_title, cm.country_code, e.target.value ? parseInt(e.target.value) : null)}
+                        style={{ ...inputStyle, width: '100%', padding: '4px 6px' }}
+                      >
+                        <option value="">— Aucune —</option>
+                        {paymentMethods.map(m => (
+                          <option key={m.id} value={m.id}>{m.name}</option>
+                        ))}
+                      </select>
+                    </td>
+                    <td style={{ ...tdStyle, textAlign: 'center' }}>
+                      <button onClick={() => deleteWcTitleMapping(cm.id)} style={btnSmallDanger} title="Supprimer cette règle">✕</button>
+                    </td>
+                  </tr>
+                ))}
+              </React.Fragment>
+            );
+          })}
         </tbody>
       </table>
     </div>
