@@ -287,24 +287,43 @@ const deleteRate = async (req, res) => {
 };
 
 // Mapping shipping_method WooCommerce -> { carrier, method }
+// null = pas de frais de port à calculer (retrait magasin, méthode inconnue bénigne)
 const METHOD_MAPPING = [
-  { pattern: /chronopost.*relais/i,   carrier: 'chronopost',    method: 'relais' },
-  { pattern: /chronopost.*domicile/i, carrier: 'chronopost',    method: 'domicile' },
-  { pattern: /chronopost.*express/i,  carrier: 'chronopost',    method: 'domicile' },
-  { pattern: /2shop/i,                carrier: 'chronopost',    method: '2shop' },
-  { pattern: /colissimo.*relais/i,    carrier: 'colissimo',     method: 'point_relais' },
-  { pattern: /colissimo.*signature/i, carrier: 'colissimo',     method: 'domicile_avec_signature' },
-  { pattern: /colissimo/i,            carrier: 'colissimo',     method: 'domicile_sans_signature' },
-  { pattern: /bpost.*relais/i,        carrier: 'colissimo',     method: 'point_relais' },
-  { pattern: /bpost/i,                carrier: 'colissimo',     method: 'domicile_sans_signature' },
-  { pattern: /lettre suivie/i,        carrier: 'laposte',       method: 'lettre_suivie' },
-  { pattern: /mondial relay/i,        carrier: 'mondial_relay', method: 'point_relais' },
+  // Chronopost
+  { pattern: /chronopost.*relais/i,             carrier: 'chronopost',    method: 'relais' },
+  { pattern: /chronopost.*domicile/i,           carrier: 'chronopost',    method: 'domicile' },
+  { pattern: /chronopost.*express/i,            carrier: 'chronopost',    method: 'domicile' },
+  { pattern: /2shop/i,                          carrier: 'chronopost',    method: '2shop' },
+  // Colissimo
+  { pattern: /colissimo.*relais/i,              carrier: 'colissimo',     method: 'point_relais' },
+  { pattern: /colissimo.*signature/i,           carrier: 'colissimo',     method: 'domicile_avec_signature' },
+  { pattern: /colissimo/i,                      carrier: 'colissimo',     method: 'domicile_sans_signature' },
+  // Bpost → traité comme Colissimo (même réseau La Poste)
+  { pattern: /bpost.*relais/i,                  carrier: 'colissimo',     method: 'point_relais' },
+  { pattern: /bpost/i,                          carrier: 'colissimo',     method: 'domicile_sans_signature' },
+  // Swiss Post → Colissimo international
+  { pattern: /swiss post/i,                     carrier: 'colissimo',     method: 'domicile_sans_signature' },
+  // Deutsche Post → Colissimo international
+  { pattern: /deutsche post.*signature/i,       carrier: 'colissimo',     method: 'domicile_avec_signature' },
+  { pattern: /deutsche post/i,                  carrier: 'colissimo',     method: 'domicile_sans_signature' },
+  // SDA Poste Italiane → Colissimo international
+  { pattern: /sda.*signature/i,                 carrier: 'colissimo',     method: 'domicile_avec_signature' },
+  { pattern: /sda/i,                            carrier: 'colissimo',     method: 'domicile_sans_signature' },
+  // La Poste
+  { pattern: /lettre suivie/i,                  carrier: 'laposte',       method: 'lettre_suivie' },
+  // Mondial Relay
+  { pattern: /mondial relay/i,                  carrier: 'mondial_relay', method: 'point_relais' },
+  // Retrait magasin → pas de frais transport
+  { pattern: /retrait magasin/i,                carrier: null,            method: null },
+  // "Shipping" générique → pas de frais transport
+  { pattern: /^shipping$/i,                     carrier: null,            method: null },
 ];
 
 function resolveCarrierMethod(shippingMethod) {
   if (!shippingMethod) return null;
   for (const m of METHOD_MAPPING) {
     if (m.pattern.test(shippingMethod)) {
+      if (m.carrier === null) return { carrier: null, method: null, skip: true };
       return { carrier: m.carrier, method: m.method };
     }
   }
@@ -317,6 +336,10 @@ async function computeOrderCost(pool, order, packagingWeight) {
 
   if (!resolved) {
     return { error: 'Méthode non reconnue' };
+  }
+
+  if (resolved.skip) {
+    return { skip: true };
   }
 
   const { carrier, method } = resolved;
@@ -400,7 +423,22 @@ const calculateShippingCosts = async (req, res) => {
     for (const order of ordersResult.rows) {
       const computed = await computeOrderCost(pool, order, packagingWeight);
 
-      if (computed.error) {
+      if (computed.skip) {
+        // Retrait magasin ou méthode sans frais → coût = 0, pas une erreur
+        ordersMatched++;
+        results.push({
+          wp_order_id: order.wp_order_id,
+          shipping_method: order.shipping_method,
+          shipping_country: order.shipping_country,
+          weight: parseFloat(order.total_weight),
+          carrier: 'N/A',
+          zone: 'N/A',
+          base_price: 0,
+          fuel_surcharge: 0,
+          calculated_cost: 0,
+          current_cost: order.shipping_cost_calculated ? parseFloat(order.shipping_cost_calculated) : null
+        });
+      } else if (computed.error) {
         ordersUnmatched++;
         results.push({
           wp_order_id: order.wp_order_id,
@@ -483,11 +521,14 @@ const applyShippingCosts = async (req, res) => {
         continue;
       }
 
+      // skip = retrait magasin ou méthode sans frais → coût = 0
+      const cost = computed.skip ? 0 : computed.calculated_cost;
+
       await pool.query(`
         UPDATE orders
         SET shipping_cost_calculated = $1, updated_at = NOW()
         WHERE wp_order_id = $2
-      `, [computed.calculated_cost, order.wp_order_id]);
+      `, [cost, order.wp_order_id]);
 
       updated++;
     }
