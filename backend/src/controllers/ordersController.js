@@ -605,6 +605,15 @@ exports.reimport = async (req, res) => {
       client.release();
     }
 
+    // Appliquer les frais de paiement
+    const { applyPaymentCostToOrder } = require('./paymentController');
+    await applyPaymentCostToOrder(
+      wpOrderId,
+      wcOrder.payment_method_title || null,
+      wcOrder.shipping?.country || null,
+      parseFloat(wcOrder.total) || 0
+    );
+
     console.log(`✓ Order #${wpOrderId} reimported from WooCommerce`);
     res.json({ success: true, message: `Commande #${wpOrderId} réimportée avec succès` });
 
