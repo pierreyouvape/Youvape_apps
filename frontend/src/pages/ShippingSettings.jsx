@@ -1,5 +1,5 @@
 import CloudLogo from '../components/CloudLogo';
-import { useState, useEffect, useContext } from 'react';
+import { useState, useEffect, useContext, Fragment } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AuthContext } from '../context/AuthContext';
 import axios from 'axios';
@@ -1059,7 +1059,7 @@ const ShippingSettings = () => {
             const countryMappings = t.mappings?.filter(m => m.country_code) || [];
 
             return (
-              <React.Fragment key={i}>
+              <Fragment key={i}>
                 {/* Ligne principale : libellé + mapping fallback */}
                 <tr style={{ backgroundColor: bgBase }}>
                   <td style={{ ...tdStyle, verticalAlign: 'middle' }} rowSpan={1 + countryMappings.length}>
@@ -1114,7 +1114,7 @@ const ShippingSettings = () => {
                     </td>
                   </tr>
                 ))}
-              </React.Fragment>
+              </Fragment>
             );
           })}
         </tbody>
