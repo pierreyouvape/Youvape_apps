@@ -135,11 +135,11 @@ exports.deleteMethod = async (req, res) => {
  */
 exports.getWcTitles = async (req, res) => {
   try {
-    // Comptes par titre WC
+    // Comptes par titre WC — tous statuts pour liste exhaustive
     const countsResult = await pool.query(`
       SELECT COALESCE(payment_method_title, '') AS wc_title, COUNT(*) AS order_count
       FROM orders
-      WHERE post_status IN ('wc-completed', 'wc-processing', 'wc-shipped')
+      WHERE payment_method_title IS NOT NULL AND payment_method_title <> ''
       GROUP BY payment_method_title
       ORDER BY COUNT(*) DESC
     `);
