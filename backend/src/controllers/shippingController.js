@@ -382,7 +382,7 @@ const calculateShippingCosts = async (req, res) => {
       LEFT JOIN products p ON (oi.product_id = p.wp_product_id OR oi.variation_id = p.wp_product_id)
       LEFT JOIN products parent ON p.wp_parent_id = parent.wp_product_id
       WHERE o.post_date >= $1 AND o.post_date < $2
-        AND o.post_status IN ('wc-completed', 'wc-processing', 'wc-shipped')
+        AND o.post_status IN ('wc-completed', 'wc-processing', 'wc-shipped', 'wc-delivered', 'wc-being-delivered', 'wc-awaiting-delivery')
         AND o.shipping_method <> ''
       GROUP BY o.wp_order_id, o.shipping_method, o.shipping_country, o.shipping_cost_calculated
     `, [date_from, date_to, packagingWeight]);
@@ -462,7 +462,7 @@ const applyShippingCosts = async (req, res) => {
       LEFT JOIN products p ON (oi.product_id = p.wp_product_id OR oi.variation_id = p.wp_product_id)
       LEFT JOIN products parent ON p.wp_parent_id = parent.wp_product_id
       WHERE o.post_date >= $1 AND o.post_date < $2
-        AND o.post_status IN ('wc-completed', 'wc-processing', 'wc-shipped')
+        AND o.post_status IN ('wc-completed', 'wc-processing', 'wc-shipped', 'wc-delivered', 'wc-being-delivered', 'wc-awaiting-delivery')
         AND o.shipping_method <> ''
       GROUP BY o.wp_order_id, o.shipping_method, o.shipping_country
     `, [date_from, date_to, packagingWeight]);
