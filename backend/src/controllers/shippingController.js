@@ -325,10 +325,14 @@ async function computeOrderCost(pool, order, packagingWeight) {
   const countryCode = order.shipping_country || 'FR';
   const zoneResult = await pool.query(`
     SELECT zone_name FROM shipping_country_mapping
-    WHERE carrier = $1 AND (country_code = $2 OR (is_postal_prefix = true AND $2 LIKE country_code || '%'))
-    ORDER BY is_postal_prefix DESC
+    WHERE carrier = $1
+      AND (method = $3 OR method IS NULL)
+      AND (country_code = $2 OR (is_postal_prefix = true AND $2 LIKE country_code || '%'))
+    ORDER BY
+      CASE WHEN method = $3 THEN 0 ELSE 1 END,
+      is_postal_prefix DESC
     LIMIT 1
-  `, [carrier, countryCode]);
+  `, [carrier, countryCode, method]);
 
   if (zoneResult.rows.length === 0) {
     return { error: `Zone non trouvée pour ${countryCode} (${carrier})` };
