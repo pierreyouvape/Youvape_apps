@@ -474,6 +474,10 @@ const wcSyncService = {
       }
     }
 
+    // Appliquer automatiquement les frais de paiement
+    const { applyPaymentCostToOrder } = require('../controllers/paymentController');
+    await applyPaymentCostToOrder(wpId, data.payment_method_title, data.shipping_country, data.total);
+
     console.log(`🔄 WC Sync: Order #${wpId} ${action === 'create' ? 'créé' : 'mis à jour'} (${data.items?.length || 0} line, ${data.coupon_items?.length || 0} coupon, ${data.fee_items?.length || 0} fee, ${data.tax_items?.length || 0} tax items)`);
   },
 

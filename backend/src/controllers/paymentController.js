@@ -231,6 +231,50 @@ const matchPaymentMethod = (paymentMethodTitle, shippingCountry, mappings) => {
 };
 
 /**
+ * Charger tous les mappings actifs (utilisé par wcSyncService)
+ */
+let _mappingsCache = null;
+let _mappingsCacheAt = 0;
+const loadMappings = async () => {
+  // Cache 5 minutes pour ne pas requêter à chaque commande
+  if (_mappingsCache && Date.now() - _mappingsCacheAt < 5 * 60 * 1000) return _mappingsCache;
+  const result = await pool.query(`
+    SELECT pmm.id, pmm.wc_title, pmm.country_code, pmm.payment_method_id,
+           pm.fixed_fee, pm.percent_fee, pm.name
+    FROM payment_method_mappings pmm
+    JOIN payment_methods pm ON pm.id = pmm.payment_method_id
+    WHERE pm.is_active = true
+  `);
+  _mappingsCache = result.rows;
+  _mappingsCacheAt = Date.now();
+  return _mappingsCache;
+};
+
+/**
+ * Calculer et appliquer le frais de paiement pour une seule commande
+ * Appelé automatiquement lors du sync WC
+ */
+exports.applyPaymentCostToOrder = async (wpOrderId, paymentMethodTitle, shippingCountry, orderTotal) => {
+  try {
+    const mappings = await loadMappings();
+    const mapping = matchPaymentMethod(paymentMethodTitle, shippingCountry, mappings);
+    if (!mapping) return;
+
+    const fixedFee = parseFloat(mapping.fixed_fee) || 0;
+    const percentFee = parseFloat(mapping.percent_fee) || 0;
+    const total = parseFloat(orderTotal) || 0;
+    const cost = Math.round((fixedFee + (percentFee / 100) * total) * 100) / 100;
+
+    await pool.query(
+      'UPDATE orders SET payment_cost_calculated = $1 WHERE wp_order_id = $2',
+      [cost, wpOrderId]
+    );
+  } catch (err) {
+    console.error(`Erreur calcul frais paiement commande #${wpOrderId}:`, err.message);
+  }
+};
+
+/**
  * POST /api/payment/calculate
  * Calculer les frais de paiement pour une plage de dates (previsualisation)
  */
@@ -257,7 +301,7 @@ exports.calculatePaymentCosts = async (req, res) => {
       SELECT wp_order_id, payment_method_title, order_total, payment_cost_calculated, shipping_country
       FROM orders
       WHERE post_date >= $1 AND post_date < $2
-        AND post_status IN ('wc-completed', 'wc-processing', 'wc-shipped')
+        AND post_status IN ('wc-completed', 'wc-processing', 'wc-shipped', 'wc-pending')
     `, [date_from, date_to]);
 
     let totalCalculated = 0;
@@ -325,7 +369,7 @@ exports.applyPaymentCosts = async (req, res) => {
       SELECT wp_order_id, payment_method_title, order_total, shipping_country
       FROM orders
       WHERE post_date >= $1 AND post_date < $2
-        AND post_status IN ('wc-completed', 'wc-processing', 'wc-shipped')
+        AND post_status IN ('wc-completed', 'wc-processing', 'wc-shipped', 'wc-pending')
     `, [date_from, date_to]);
 
     let updated = 0;
