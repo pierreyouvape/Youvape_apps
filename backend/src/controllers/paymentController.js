@@ -190,6 +190,7 @@ exports.addMapping = async (req, res) => {
        RETURNING *`,
       [payment_method_id, wc_title, country_code || null]
     );
+    _mappingsCache = null; // Invalider le cache
     res.json({ success: true, mapping: result.rows[0] });
   } catch (error) {
     console.error('Error adding mapping:', error);
@@ -205,6 +206,7 @@ exports.deleteMapping = async (req, res) => {
   try {
     const { id } = req.params;
     await pool.query('DELETE FROM payment_method_mappings WHERE id = $1', [id]);
+    _mappingsCache = null; // Invalider le cache
     res.json({ success: true });
   } catch (error) {
     console.error('Error deleting mapping:', error);
