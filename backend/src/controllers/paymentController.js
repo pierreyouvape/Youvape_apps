@@ -130,26 +130,79 @@ exports.deleteMethod = async (req, res) => {
 };
 
 /**
- * Matcher une commande avec une methode de paiement configuree
- * Match bidirectionnel : payment_method_title contient wc_payment_method ou l'inverse
+ * GET /api/payment/wc-titles
+ * Liste des payment_method_title distincts en BDD avec mapping actuel
  */
-const matchPaymentMethod = (paymentMethodTitle, methods) => {
+exports.getWcTitles = async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT
+        COALESCE(o.payment_method_title, '') AS wc_title,
+        COUNT(*) AS order_count,
+        pmm.id AS mapping_id,
+        pmm.payment_method_id,
+        pm.name AS method_name
+      FROM orders o
+      LEFT JOIN payment_method_mappings pmm ON pmm.wc_title = COALESCE(o.payment_method_title, '')
+      LEFT JOIN payment_methods pm ON pm.id = pmm.payment_method_id
+      WHERE o.post_status IN ('wc-completed', 'wc-processing', 'wc-shipped')
+      GROUP BY o.payment_method_title, pmm.id, pmm.payment_method_id, pm.name
+      ORDER BY COUNT(*) DESC
+    `);
+    res.json({ success: true, titles: result.rows });
+  } catch (error) {
+    console.error('Error getting wc titles:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+/**
+ * POST /api/payment/mappings
+ * Associer un wc_title à une méthode de paiement
+ */
+exports.addMapping = async (req, res) => {
+  try {
+    const { wc_title, payment_method_id } = req.body;
+    if (!wc_title || !payment_method_id) {
+      return res.status(400).json({ success: false, error: 'wc_title et payment_method_id requis' });
+    }
+    const result = await pool.query(
+      `INSERT INTO payment_method_mappings (payment_method_id, wc_title)
+       VALUES ($1, $2)
+       ON CONFLICT (wc_title) DO UPDATE SET payment_method_id = EXCLUDED.payment_method_id
+       RETURNING *`,
+      [payment_method_id, wc_title]
+    );
+    res.json({ success: true, mapping: result.rows[0] });
+  } catch (error) {
+    console.error('Error adding mapping:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+/**
+ * DELETE /api/payment/mappings/:id
+ * Supprimer un mapping
+ */
+exports.deleteMapping = async (req, res) => {
+  try {
+    const { id } = req.params;
+    await pool.query('DELETE FROM payment_method_mappings WHERE id = $1', [id]);
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error deleting mapping:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+/**
+ * Matcher une commande avec une methode de paiement via payment_method_mappings
+ */
+const matchPaymentMethod = (paymentMethodTitle, mappings) => {
   if (!paymentMethodTitle) return null;
-  const title = paymentMethodTitle.toLowerCase().trim();
-
-  // Match exact d'abord
-  let match = methods.find(m => m.wc_payment_method && m.wc_payment_method.toLowerCase().trim() === title);
-  if (match) return match;
-
-  // Match : le titre de la commande contient le wc_payment_method
-  match = methods.find(m => m.wc_payment_method && title.includes(m.wc_payment_method.toLowerCase().trim()));
-  if (match) return match;
-
-  // Match inverse : le wc_payment_method contient le titre de la commande
-  match = methods.find(m => m.wc_payment_method && m.wc_payment_method.toLowerCase().trim().includes(title));
-  if (match) return match;
-
-  return null;
+  const title = paymentMethodTitle.trim();
+  const mapping = mappings.find(m => m.wc_title === title);
+  return mapping || null;
 };
 
 /**
@@ -164,11 +217,15 @@ exports.calculatePaymentCosts = async (req, res) => {
       return res.status(400).json({ success: false, error: 'date_from et date_to requis' });
     }
 
-    // Charger les methodes de paiement
-    const methodsResult = await pool.query(
-      'SELECT * FROM payment_methods WHERE is_active = true'
-    );
-    const methods = methodsResult.rows;
+    // Charger les mappings avec les frais des méthodes associées
+    const mappingsResult = await pool.query(`
+      SELECT pmm.id, pmm.wc_title, pmm.payment_method_id,
+             pm.fixed_fee, pm.percent_fee, pm.monthly_fee, pm.name
+      FROM payment_method_mappings pmm
+      JOIN payment_methods pm ON pm.id = pmm.payment_method_id
+      WHERE pm.is_active = true
+    `);
+    const mappings = mappingsResult.rows;
 
     // Charger les commandes
     const ordersResult = await pool.query(`
@@ -184,17 +241,17 @@ exports.calculatePaymentCosts = async (req, res) => {
     const unmatchedMethods = {};
 
     for (const order of ordersResult.rows) {
-      const method = matchPaymentMethod(order.payment_method_title, methods);
+      const mapping = matchPaymentMethod(order.payment_method_title, mappings);
 
-      if (!method) {
+      if (!mapping) {
         ordersUnmatched++;
         const key = order.payment_method_title || '(vide)';
         unmatchedMethods[key] = (unmatchedMethods[key] || 0) + 1;
         continue;
       }
 
-      const fixedFee = parseFloat(method.fixed_fee) || 0;
-      const percentFee = parseFloat(method.percent_fee) || 0;
+      const fixedFee = parseFloat(mapping.fixed_fee) || 0;
+      const percentFee = parseFloat(mapping.percent_fee) || 0;
       const orderTotal = parseFloat(order.order_total) || 0;
       const cost = fixedFee + (percentFee / 100) * orderTotal;
 
@@ -230,10 +287,14 @@ exports.applyPaymentCosts = async (req, res) => {
       return res.status(400).json({ success: false, error: 'date_from et date_to requis' });
     }
 
-    const methodsResult = await pool.query(
-      'SELECT * FROM payment_methods WHERE is_active = true'
-    );
-    const methods = methodsResult.rows;
+    const mappingsResult = await pool.query(`
+      SELECT pmm.id, pmm.wc_title, pmm.payment_method_id,
+             pm.fixed_fee, pm.percent_fee, pm.monthly_fee, pm.name
+      FROM payment_method_mappings pmm
+      JOIN payment_methods pm ON pm.id = pmm.payment_method_id
+      WHERE pm.is_active = true
+    `);
+    const mappings = mappingsResult.rows;
 
     const ordersResult = await pool.query(`
       SELECT wp_order_id, payment_method_title, order_total
@@ -246,15 +307,15 @@ exports.applyPaymentCosts = async (req, res) => {
     let skipped = 0;
 
     for (const order of ordersResult.rows) {
-      const method = matchPaymentMethod(order.payment_method_title, methods);
+      const mapping = matchPaymentMethod(order.payment_method_title, mappings);
 
-      if (!method) {
+      if (!mapping) {
         skipped++;
         continue;
       }
 
-      const fixedFee = parseFloat(method.fixed_fee) || 0;
-      const percentFee = parseFloat(method.percent_fee) || 0;
+      const fixedFee = parseFloat(mapping.fixed_fee) || 0;
+      const percentFee = parseFloat(mapping.percent_fee) || 0;
       const orderTotal = parseFloat(order.order_total) || 0;
       const cost = Math.round((fixedFee + (percentFee / 100) * orderTotal) * 100) / 100;
 

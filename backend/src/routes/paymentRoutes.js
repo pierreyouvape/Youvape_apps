@@ -17,6 +17,15 @@ router.put('/methods/:id', paymentController.updateMethod);
 // DELETE /api/payment/methods/:id - Supprimer une méthode
 router.delete('/methods/:id', paymentController.deleteMethod);
 
+// GET /api/payment/wc-titles - Titres WC distincts avec mapping actuel
+router.get('/wc-titles', paymentController.getWcTitles);
+
+// POST /api/payment/mappings - Ajouter un mapping wc_title -> méthode
+router.post('/mappings', paymentController.addMapping);
+
+// DELETE /api/payment/mappings/:id - Supprimer un mapping
+router.delete('/mappings/:id', paymentController.deleteMapping);
+
 // POST /api/payment/calculate - Calculer les frais de paiement
 router.post('/calculate', paymentController.calculatePaymentCosts);
 

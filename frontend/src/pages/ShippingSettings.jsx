@@ -60,6 +60,9 @@ const ShippingSettings = () => {
 
   // Data Paiement
   const [paymentMethods, setPaymentMethods] = useState([]);
+  const [wcTitles, setWcTitles] = useState([]);
+  const [showAddMethod, setShowAddMethod] = useState(false);
+  const [newMethod, setNewMethod] = useState({ code: '', name: '', fixed_fee: 0, percent_fee: 0 });
 
   // Date range for applying (transporteur)
   const [dateFrom, setDateFrom] = useState('');
@@ -87,6 +90,7 @@ const ShippingSettings = () => {
 
   const paiementSubTabs = [
     { id: 'frais', label: 'Frais par méthode' },
+    { id: 'correspondances', label: 'Correspondances' },
     { id: 'apply_payment', label: 'Appliquer' }
   ];
 
@@ -154,6 +158,12 @@ const ShippingSettings = () => {
         });
         if (paymentRes.data.success && paymentRes.data.methods.length > 0) {
           setPaymentMethods(paymentRes.data.methods);
+        }
+        const wcTitlesRes = await axios.get(`${API_URL}/payment/wc-titles`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        if (wcTitlesRes.data.success) {
+          setWcTitles(wcTitlesRes.data.titles);
         }
       } catch (e) {
         setPaymentMethods([
@@ -423,6 +433,53 @@ const ShippingSettings = () => {
       setMessage({ type: 'error', text: 'Erreur lors de l\'application' });
     } finally {
       setPaymentCalculating(false);
+    }
+  };
+
+  const addPaymentMethod = async () => {
+    if (!newMethod.code || !newMethod.name) {
+      setMessage({ type: 'error', text: 'Code et nom requis' });
+      return;
+    }
+    try {
+      setSaving(true);
+      const res = await axios.post(`${API_URL}/payment/methods`, newMethod, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.data.success) {
+        setPaymentMethods([...paymentMethods, res.data.method]);
+        setNewMethod({ code: '', name: '', fixed_fee: 0, percent_fee: 0 });
+        setShowAddMethod(false);
+        setMessage({ type: 'success', text: 'Méthode ajoutée' });
+        setTimeout(() => setMessage(null), 3000);
+      }
+    } catch (err) {
+      setMessage({ type: 'error', text: err.response?.data?.error || 'Erreur lors de la création' });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const setWcTitleMapping = async (wcTitle, paymentMethodId) => {
+    try {
+      if (!paymentMethodId) {
+        // Supprimer le mapping existant
+        const existing = wcTitles.find(t => t.wc_title === wcTitle);
+        if (existing?.mapping_id) {
+          await axios.delete(`${API_URL}/payment/mappings/${existing.mapping_id}`, {
+            headers: { Authorization: `Bearer ${token}` }
+          });
+        }
+      } else {
+        await axios.post(`${API_URL}/payment/mappings`, { wc_title: wcTitle, payment_method_id: paymentMethodId }, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+      }
+      // Recharger les titres WC
+      const res = await axios.get(`${API_URL}/payment/wc-titles`, { headers: { Authorization: `Bearer ${token}` } });
+      if (res.data.success) setWcTitles(res.data.titles);
+    } catch (err) {
+      setMessage({ type: 'error', text: 'Erreur lors de la mise à jour du mapping' });
     }
   };
 
@@ -842,10 +899,37 @@ const ShippingSettings = () => {
 
   const renderPaymentFraisTab = () => (
     <div style={{ padding: '20px' }}>
-      <h3>Frais par méthode de paiement</h3>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+        <h3 style={{ margin: 0 }}>Frais par méthode de paiement</h3>
+        <button onClick={() => setShowAddMethod(!showAddMethod)} style={btnPrimary}>
+          {showAddMethod ? 'Annuler' : '+ Ajouter une méthode'}
+        </button>
+      </div>
       <p style={{ color: '#666', marginBottom: '20px' }}>
         Configurez les frais prélevés par chaque méthode de paiement (fixe + pourcentage).
       </p>
+
+      {showAddMethod && (
+        <div style={{ padding: '15px', backgroundColor: '#f8f9fa', border: '1px solid #dee2e6', borderRadius: '8px', marginBottom: '20px', display: 'flex', gap: '10px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+            <label style={{ fontSize: '12px', color: '#666' }}>Code interne</label>
+            <input value={newMethod.code} onChange={e => setNewMethod({ ...newMethod, code: e.target.value })} placeholder="ex: stripe_cc" style={{ ...inputStyle, width: '140px' }} />
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+            <label style={{ fontSize: '12px', color: '#666' }}>Nom affiché</label>
+            <input value={newMethod.name} onChange={e => setNewMethod({ ...newMethod, name: e.target.value })} placeholder="ex: Stripe - Carte" style={{ ...inputStyle, width: '180px' }} />
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+            <label style={{ fontSize: '12px', color: '#666' }}>Frais fixe (€)</label>
+            <input type="number" step="0.01" value={newMethod.fixed_fee} onChange={e => setNewMethod({ ...newMethod, fixed_fee: parseFloat(e.target.value) || 0 })} style={{ ...inputStyle, width: '90px' }} />
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+            <label style={{ fontSize: '12px', color: '#666' }}>Pourcentage (%)</label>
+            <input type="number" step="0.01" value={newMethod.percent_fee} onChange={e => setNewMethod({ ...newMethod, percent_fee: parseFloat(e.target.value) || 0 })} style={{ ...inputStyle, width: '90px' }} />
+          </div>
+          <button onClick={addPaymentMethod} disabled={saving} style={btnSuccess}>Créer</button>
+        </div>
+      )}
 
       <table style={{ width: '100%', borderCollapse: 'collapse' }}>
         <thead>
@@ -932,6 +1016,47 @@ const ShippingSettings = () => {
     </div>
   );
 
+  const renderCorrespondancesTab = () => (
+    <div style={{ padding: '20px' }}>
+      <h3>Correspondances méthodes de paiement</h3>
+      <p style={{ color: '#666', marginBottom: '20px' }}>
+        Associez chaque libellé WooCommerce à une méthode de paiement configurée. Un même libellé peut n'être associé qu'à une seule méthode.
+      </p>
+      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+        <thead>
+          <tr style={{ backgroundColor: '#e9ecef' }}>
+            <th style={thStyle}>Libellé WooCommerce</th>
+            <th style={{ ...thStyle, width: '100px', textAlign: 'center' }}>Commandes</th>
+            <th style={{ ...thStyle, width: '260px' }}>Méthode associée</th>
+          </tr>
+        </thead>
+        <tbody>
+          {wcTitles.map((t, i) => (
+            <tr key={i} style={{ backgroundColor: i % 2 === 0 ? 'white' : '#f8f9fa' }}>
+              <td style={tdStyle}>
+                <span style={{ display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%', backgroundColor: t.payment_method_id ? '#28a745' : '#dc3545', marginRight: '8px' }} />
+                {t.wc_title || <em style={{ color: '#999' }}>(vide)</em>}
+              </td>
+              <td style={{ ...tdStyle, textAlign: 'center', color: '#666' }}>{t.order_count}</td>
+              <td style={tdStyle}>
+                <select
+                  value={t.payment_method_id || ''}
+                  onChange={e => setWcTitleMapping(t.wc_title, e.target.value ? parseInt(e.target.value) : null)}
+                  style={{ ...inputStyle, width: '100%', padding: '4px 6px' }}
+                >
+                  <option value="">— Aucune —</option>
+                  {paymentMethods.map(m => (
+                    <option key={m.id} value={m.id}>{m.name}</option>
+                  ))}
+                </select>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+
   if (loading) {
     return <div style={{ minHeight: '100vh', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>Chargement...</div>;
   }
@@ -997,6 +1122,7 @@ const ShippingSettings = () => {
           {activeParentTab === 'paiement' && (
             <>
               {activeSubTab === 'frais' && renderPaymentFraisTab()}
+              {activeSubTab === 'correspondances' && renderCorrespondancesTab()}
               {activeSubTab === 'apply_payment' && renderPaymentApplyTab()}
             </>
           )}
