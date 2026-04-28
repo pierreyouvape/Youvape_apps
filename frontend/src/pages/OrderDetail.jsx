@@ -399,6 +399,7 @@ const OrderDetail = () => {
               <div style={{ fontWeight: '600' }}>{order.shipping_first_name} {order.shipping_last_name}</div>
               {order.shipping_company && <div>{order.shipping_company}</div>}
               <div>{order.shipping_address_1}</div>
+              {order.shipping_address_2 && <div>{order.shipping_address_2}</div>}
               <div>{order.shipping_postcode} {order.shipping_city}</div>
               <div style={{ fontWeight: '600' }}>{COUNTRY_NAMES[order.shipping_country] || order.shipping_country}</div>
               {shippingItem && (
