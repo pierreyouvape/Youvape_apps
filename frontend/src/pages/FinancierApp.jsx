@@ -101,11 +101,11 @@ function KpiCard({ label, value, unit, color, sparkData }) {
 function MainChart({ series }) {
   const svgRef = useRef(null);
   const [hover, setHover] = useState(null);
-  const W = 800, H = 240, PL = 60, PR = 16, PT = 16, PB = 40;
+  const W = 800, H = 120, PL = 60, PR = 16, PT = 16, PB = 40;
   const cW = W - PL - PR, cH = H - PT - PB;
 
   if (!series || series.length === 0) return (
-    <div style={{ height: 240, display: 'flex', alignItems: 'center', justifyContent: 'center', color: C.grisM }}>
+    <div style={{ height: 120, display: 'flex', alignItems: 'center', justifyContent: 'center', color: C.grisM }}>
       Aucune donnée
     </div>
   );
@@ -360,6 +360,8 @@ export default function FinancierApp() {
     { label: 'Marge', value: fmtPct(data.kpis.marge_ht), color: C.violet, sparkData: null },
     { label: 'Nb Commandes', value: fmt(data.kpis.orders_count), color: C.bleu, sparkData: data.series.map(s => s.orders_count) },
     { label: 'Panier moyen HT', value: fmtEur(data.kpis.panier_moyen_ht), color: C.orange, sparkData: null },
+    { label: 'Commandes remboursées', value: fmt(data.kpis.refunds_count), color: C.rouge, sparkData: null },
+    { label: 'Remboursements TTC', value: fmtEur(data.kpis.remboursements_ttc), color: C.rouge, sparkData: null },
   ] : [];
 
   const gridCols = windowW >= 900 ? 3 : windowW >= 560 ? 2 : 1;

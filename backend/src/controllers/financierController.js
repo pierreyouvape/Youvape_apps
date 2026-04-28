@@ -96,12 +96,15 @@ exports.getDashboard = async (req, res) => {
     }
 
     const refundsResult = await pool.query(`
-      SELECT COALESCE(SUM(r.refund_amount), 0)::numeric AS remboursements_ttc
+      SELECT
+        COALESCE(SUM(r.refund_amount), 0)::numeric AS remboursements_ttc,
+        COUNT(DISTINCT r.wp_order_id)::int          AS refunds_count
       FROM refunds r
       ${refundsConds.length ? 'WHERE ' + refundsConds.join(' AND ') : ''}
     `, refundsParams);
 
     const remboursementsTTC = parseFloat(refundsResult.rows[0].remboursements_ttc) || 0;
+    const refundsCount      = refundsResult.rows[0].refunds_count || 0;
 
     // ─── 4. CALCULS DÉRIVÉS ─────────────────────────────────────────────────
     // TVA ajustée des remboursements (proportionnelle)
@@ -209,6 +212,7 @@ exports.getDashboard = async (req, res) => {
         ca_ht_net:          round2(caHTNet),
         tva:                round2(tvaAjustee),
         remboursements_ttc: round2(remboursementsTTC),
+        refunds_count:      refundsCount,
         frais_port_client:  round2(fraisPortClient),
         frais_port_reel:    round2(fraisPortReel),
         frais_paiement:     round2(fraisPaiement),
