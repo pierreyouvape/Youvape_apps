@@ -325,8 +325,8 @@ export default function FinancierApp() {
     return () => window.removeEventListener('resize', onResize);
   }, []);
 
-  const fetchData = useCallback(async (p, cFrom, cTo) => {
-    setLoading(true);
+  const fetchData = useCallback(async (p, cFrom, cTo, silent = false) => {
+    if (!silent) setLoading(true);
     setError(null);
     try {
       let range = p === 'custom' ? { dateFrom: cFrom, dateTo: cTo } : getDateRange(p);
@@ -341,12 +341,19 @@ export default function FinancierApp() {
     } catch (err) {
       setError(err.response?.data?.error || err.message);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, [token]);
 
   useEffect(() => {
     fetchData(period, customFrom, customTo);
+  }, [period, fetchData]);
+
+  // Refresh automatique toutes les 60s sur les périodes dynamiques
+  useEffect(() => {
+    if (period === 'custom') return;
+    const id = setInterval(() => fetchData(period, '', '', true), 60000);
+    return () => clearInterval(id);
   }, [period, fetchData]);
 
   const handleApplyCustom = () => {
