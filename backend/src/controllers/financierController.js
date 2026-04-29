@@ -176,24 +176,53 @@ exports.getDashboard = async (req, res) => {
       ORDER BY ${truncExpr}
     `, params);
 
+    // Normalise un timestamp PG (avec ou sans offset) en clé ISO UTC stable
+    const normKey = (dt) => {
+      if (!dt) return '';
+      if (typeof dt === 'string') return new Date(dt).toISOString();
+      return dt.toISOString();
+    };
+
     // Fusionner les deux résultats par period
     const coutByPeriod = {};
     for (const row of seriesCoutResult.rows) {
-      coutByPeriod[row.period.toISOString()] = parseFloat(row.cout_produits) || 0;
+      coutByPeriod[normKey(row.period)] = parseFloat(row.cout_produits) || 0;
     }
 
-    const series = seriesOrdersResult.rows.map(row => {
-      const rowCATTCBrut    = parseFloat(row.ca_ttc_brut)    || 0;
-      const rowTVA          = parseFloat(row.tva)             || 0;
-      const rowFPReel       = parseFloat(row.frais_port_reel) || 0;
-      const rowFPaiement    = parseFloat(row.frais_paiement)  || 0;
-      const rowCoutProduits = coutByPeriod[row.period.toISOString()] || 0;
-      // Pas de remboursements par période — on utilise la TVA brute
+    const dataByPeriod = {};
+    for (const row of seriesOrdersResult.rows) {
+      dataByPeriod[normKey(row.period)] = row;
+    }
+
+    // Pour granularité quarter : générer tous les créneaux 00:00→23:45 de la journée
+    // afin que l'axe X couvre toujours 24h même si peu de commandes.
+    // On normalise les clés en string ISO via toISOString() côté DB rows,
+    // et on génère les slots avec le même format (Date locale → toISOString).
+    let periodSlots = null;
+    if (gran === 'quarter' && dateFrom) {
+      periodSlots = [];
+      const pad = (n) => String(n).padStart(2, '0');
+      for (let h = 0; h < 24; h++) {
+        for (let m = 0; m < 60; m += 15) {
+          // Construire en tant que date UTC pour avoir un ISO stable
+          const [y, mo, d] = dateFrom.split('-').map(Number);
+          const dt = new Date(Date.UTC(y, mo - 1, d, h, m, 0));
+          periodSlots.push(dt.toISOString());
+        }
+      }
+    }
+
+    const buildPoint = (periodISO, row) => {
+      const rowCATTCBrut    = row ? parseFloat(row.ca_ttc_brut)    || 0 : 0;
+      const rowTVA          = row ? parseFloat(row.tva)             || 0 : 0;
+      const rowFPReel       = row ? parseFloat(row.frais_port_reel) || 0 : 0;
+      const rowFPaiement    = row ? parseFloat(row.frais_paiement)  || 0 : 0;
+      const rowCoutProduits = coutByPeriod[periodISO] || coutByPeriod[normKey(periodISO)] || 0;
       const rowCAHT   = rowCATTCBrut - rowTVA;
       const rowProfit = rowCAHT - rowFPReel - rowCoutProduits - rowFPaiement;
       return {
-        period:          row.period,
-        orders_count:    row.orders_count,
+        period:          periodISO,
+        orders_count:    row ? row.orders_count : 0,
         ca_ttc_brut:     round2(rowCATTCBrut),
         ca_ht:           round2(rowCAHT),
         profit_ht:       round2(rowProfit),
@@ -201,7 +230,11 @@ exports.getDashboard = async (req, res) => {
         frais_port_reel: round2(rowFPReel),
         frais_paiement:  round2(rowFPaiement),
       };
-    });
+    };
+
+    const series = periodSlots
+      ? periodSlots.map(iso => buildPoint(iso, dataByPeriod[iso] || null))
+      : seriesOrdersResult.rows.map(row => buildPoint(normKey(row.period), row));
 
     // ─── 6. RÉPONSE ─────────────────────────────────────────────────────────
     res.json({
