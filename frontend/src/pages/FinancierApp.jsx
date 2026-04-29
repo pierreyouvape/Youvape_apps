@@ -98,7 +98,7 @@ function KpiCard({ label, value, unit, color, sparkData }) {
 }
 
 /* ─── MAIN CHART ─────────────────────────────────────────── */
-function MainChart({ series }) {
+function MainChart({ series, granularity }) {
   const svgRef = useRef(null);
   const [hover, setHover] = useState(null);
   const W = 800, H = 120, PL = 60, PR = 16, PT = 16, PB = 40;
@@ -133,6 +133,8 @@ function MainChart({ series }) {
   const formatPeriodLabel = (p) => {
     if (!p) return '';
     const d = new Date(p);
+    if (granularity === 'hour') return d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+    if (granularity === 'month') return d.toLocaleDateString('fr-FR', { month: 'short', year: '2-digit' });
     return d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' });
   };
 
@@ -479,7 +481,7 @@ export default function FinancierApp() {
                     </div>
                   </div>
                 </div>
-                <MainChart series={data.series} />
+                <MainChart series={data.series} granularity={data.granularity} />
               </div>
 
               {/* Bas de page : breakdown + récap */}
