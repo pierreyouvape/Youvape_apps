@@ -126,7 +126,8 @@ exports.getDashboard = async (req, res) => {
         const from = new Date(dateFrom || '2020-01-01');
         const to   = new Date((dateTo || new Date().toISOString().slice(0, 10)) + 'T23:59:59');
         const diffDays = (to - from) / (1000 * 60 * 60 * 24);
-        if (diffDays <= 1)        gran = 'hour';
+        if (diffDays === 0)       gran = 'quarter';
+        else if (diffDays <= 1)   gran = 'hour';
         else if (diffDays <= 35)  gran = 'day';
         else if (diffDays <= 120) gran = 'week';
         else                      gran = 'month';
@@ -134,10 +135,11 @@ exports.getDashboard = async (req, res) => {
     }
 
     const truncMap = {
-      hour:  "date_trunc('hour', COALESCE(o.paid_date, o.post_date))",
-      day:   "date_trunc('day', COALESCE(o.paid_date, o.post_date))",
-      week:  "date_trunc('week', COALESCE(o.paid_date, o.post_date))",
-      month: "date_trunc('month', COALESCE(o.paid_date, o.post_date))",
+      quarter: "date_trunc('hour', COALESCE(o.paid_date, o.post_date)) + (floor(extract(minute FROM COALESCE(o.paid_date, o.post_date)) / 15) * interval '15 minutes')",
+      hour:    "date_trunc('hour', COALESCE(o.paid_date, o.post_date))",
+      day:     "date_trunc('day', COALESCE(o.paid_date, o.post_date))",
+      week:    "date_trunc('week', COALESCE(o.paid_date, o.post_date))",
+      month:   "date_trunc('month', COALESCE(o.paid_date, o.post_date))",
     };
     const truncExpr = truncMap[gran] || truncMap.day;
 

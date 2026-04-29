@@ -137,7 +137,7 @@ function MainChart({ series, granularity }) {
     const s = typeof p === 'string' ? p : p.toISOString();
     const [datePart, timePart] = s.split('T');
     const [year, month, day] = datePart.split('-').map(Number);
-    if (granularity === 'hour') {
+    if (granularity === 'quarter' || granularity === 'hour') {
       const [h, m] = (timePart || '00:00').split(':');
       return `${h}:${m}`;
     }
