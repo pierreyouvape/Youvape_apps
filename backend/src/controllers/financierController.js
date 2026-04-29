@@ -126,7 +126,7 @@ exports.getDashboard = async (req, res) => {
         const from = new Date(dateFrom || '2020-01-01');
         const to   = new Date((dateTo || new Date().toISOString().slice(0, 10)) + 'T23:59:59');
         const diffDays = (to - from) / (1000 * 60 * 60 * 24);
-        if (diffDays === 0)       gran = 'quarter';
+        if (dateFrom === dateTo)   gran = 'quarter';
         else if (diffDays <= 1)   gran = 'hour';
         else if (diffDays <= 35)  gran = 'day';
         else if (diffDays <= 120) gran = 'week';
