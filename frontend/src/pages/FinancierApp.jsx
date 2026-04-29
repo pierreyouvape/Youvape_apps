@@ -317,7 +317,7 @@ const PERIODS = [
 
 /* ─── MAIN APP ───────────────────────────────────────────── */
 export default function FinancierApp() {
-  const { token } = useContext(AuthContext);
+  const { token, logout } = useContext(AuthContext);
   const [period, setPeriod] = useState('month');
   const [customFrom, setCustomFrom] = useState('');
   const [customTo, setCustomTo] = useState('');
@@ -352,11 +352,12 @@ export default function FinancierApp() {
       );
       setData(res.data);
     } catch (err) {
+      if (err.response?.status === 401) { logout(); return; }
       setError(err.response?.data?.error || err.message);
     } finally {
       if (!silent) setLoading(false);
     }
-  }, [token]);
+  }, [token, logout]);
 
   useEffect(() => {
     fetchData(period, customFrom, customTo);
