@@ -132,9 +132,20 @@ function MainChart({ series, granularity }) {
 
   const formatPeriodLabel = (p) => {
     if (!p) return '';
-    const d = new Date(p);
-    if (granularity === 'hour') return d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
-    if (granularity === 'month') return d.toLocaleDateString('fr-FR', { month: 'short', year: '2-digit' });
+    // Les dates BDD sont en heure Paris stockée telle quelle — on lit les composantes
+    // ISO directement pour éviter toute reinterprétation UTC→local par le navigateur
+    const s = typeof p === 'string' ? p : p.toISOString();
+    const [datePart, timePart] = s.split('T');
+    const [year, month, day] = datePart.split('-').map(Number);
+    if (granularity === 'hour') {
+      const [h, m] = (timePart || '00:00').split(':');
+      return `${h}:${m}`;
+    }
+    if (granularity === 'month') {
+      const d = new Date(year, month - 1, day);
+      return d.toLocaleDateString('fr-FR', { month: 'short', year: '2-digit' });
+    }
+    const d = new Date(year, month - 1, day);
     return d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' });
   };
 
