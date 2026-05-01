@@ -36,6 +36,10 @@ function getDateRange(period) {
     const first = new Date(now.getFullYear(), now.getMonth(), 1);
     return { dateFrom: fmt(first), dateTo: fmt(now) };
   }
+  if (period === 'year') {
+    const first = new Date(now.getFullYear(), 0, 1);
+    return { dateFrom: fmt(first), dateTo: fmt(now) };
+  }
   return null;
 }
 
@@ -312,6 +316,7 @@ const PERIODS = [
   { key: 'today', label: "Aujourd'hui" },
   { key: 'week', label: 'Cette semaine' },
   { key: 'month', label: 'Ce mois' },
+  { key: 'year', label: 'Cette année' },
   { key: 'custom', label: 'Personnalisé' },
 ];
 
