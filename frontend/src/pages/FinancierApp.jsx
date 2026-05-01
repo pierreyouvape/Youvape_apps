@@ -105,11 +105,11 @@ function KpiCard({ label, value, unit, color, sparkData }) {
 function MainChart({ series, granularity }) {
   const svgRef = useRef(null);
   const [hover, setHover] = useState(null);
-  const W = 800, H = 120, PL = 60, PR = 16, PT = 16, PB = 40;
+  const W = 1600, H = 240, PL = 72, PR = 16, PT = 16, PB = 40;
   const cW = W - PL - PR, cH = H - PT - PB;
 
   if (!series || series.length === 0) return (
-    <div style={{ height: 120, display: 'flex', alignItems: 'center', justifyContent: 'center', color: C.grisM }}>
+    <div style={{ height: 80, display: 'flex', alignItems: 'center', justifyContent: 'center', color: C.grisM }}>
       Aucune donnée
     </div>
   );
