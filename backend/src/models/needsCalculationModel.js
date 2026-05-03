@@ -91,6 +91,7 @@ const needsCalculationModel = {
         JOIN products p ON oi.variation_id = p.wp_product_id
         WHERE oi.variation_id IS NOT NULL AND oi.variation_id != 0
           AND o.post_status IN ('wc-completed', 'wc-processing', 'wc-delivered')
+          AND COALESCE(o.shipping_country, '') != 'BE'
           AND p.post_status = 'publish'
           AND p.product_type = 'variation'
           AND EXISTS (SELECT 1 FROM products pp WHERE pp.wp_product_id = p.wp_parent_id AND pp.post_status = 'publish')
@@ -102,6 +103,7 @@ const needsCalculationModel = {
         JOIN products p ON oi.product_id = p.wp_product_id
         WHERE (oi.variation_id IS NULL OR oi.variation_id = 0)
           AND o.post_status IN ('wc-completed', 'wc-processing', 'wc-delivered')
+          AND COALESCE(o.shipping_country, '') != 'BE'
           AND p.post_status = 'publish'
           AND p.product_type = 'simple'
       ) sub
@@ -122,6 +124,7 @@ const needsCalculationModel = {
         JOIN products p ON oi.variation_id = p.wp_product_id
         WHERE oi.variation_id IS NOT NULL AND oi.variation_id != 0
           AND o.post_status IN ('wc-completed', 'wc-processing', 'wc-delivered')
+          AND COALESCE(o.shipping_country, '') != 'BE'
           AND p.post_status = 'publish'
           AND p.product_type = 'variation'
           AND EXISTS (SELECT 1 FROM products pp WHERE pp.wp_product_id = p.wp_parent_id AND pp.post_status = 'publish')
@@ -133,6 +136,7 @@ const needsCalculationModel = {
         JOIN products p ON oi.product_id = p.wp_product_id
         WHERE (oi.variation_id IS NULL OR oi.variation_id = 0)
           AND o.post_status IN ('wc-completed', 'wc-processing', 'wc-delivered')
+          AND COALESCE(o.shipping_country, '') != 'BE'
           AND p.post_status = 'publish'
           AND p.product_type = 'simple'
       ) sub
