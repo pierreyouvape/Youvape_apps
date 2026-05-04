@@ -755,19 +755,6 @@ const purchaseOrderModel = {
             unitPrice
           ]);
 
-          // Mettre à jour product_suppliers — sur le produit exact (variation ou simple)
-          const productIdForSupplier = item.sku ? productBySku.get(item.sku) : null;
-          if (productIdForSupplier !== null && productIdForSupplier !== undefined && unitPrice !== null) {
-            await client.query(`
-              INSERT INTO product_suppliers (supplier_id, product_id, supplier_sku, supplier_price, min_order_qty, pack_qty)
-              VALUES ($1, $2, $3, $4, 1, $5)
-              ON CONFLICT (product_id, supplier_id) DO UPDATE SET
-                supplier_price = EXCLUDED.supplier_price,
-                supplier_sku = COALESCE(EXCLUDED.supplier_sku, product_suppliers.supplier_sku),
-                pack_qty = EXCLUDED.pack_qty,
-                updated_at = CURRENT_TIMESTAMP
-            `, [supplierId, productIdForSupplier, item.supplier_sku || null, unitPrice, qtyPack]);
-          }
         }
 
         results.push({
