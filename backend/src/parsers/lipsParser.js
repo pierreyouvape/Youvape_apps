@@ -8,6 +8,7 @@
 module.exports = {
   parse: (text) => {
     if (text.includes('Devis #')) return parseDevis(text);
+    if (text.includes('Commande #')) return parseCommande(text);
     return parseProForma(text);
   }
 };
@@ -56,6 +57,56 @@ function parseDevis(text) {
       designation,
       qty_ordered: qty,
       unit_price_net: prixUnit,
+      total_ht: totalHt,
+    });
+  }
+
+  return { orderNumber, orderDate, items, hasPrice: true, skipPackQty: true };
+}
+
+/**
+ * Format Commande Odoo (Commande # S00xxx)
+ * Ligne : [REF] designation\nqty\nUnité(s)\nprixBrut remise% TVA% total €
+ */
+function parseCommande(text) {
+  const orderMatch = text.match(/Commande\s*#\s*(\S+)/);
+  const orderNumber = orderMatch ? orderMatch[1] : null;
+
+  const dateMatch = text.match(/Date de la commande\s*\n\s*(\d{2})\/(\d{2})\/(\d{4})/);
+  const orderDate = dateMatch ? `${dateMatch[3]}-${dateMatch[2]}-${dateMatch[1]}` : null;
+
+  const items = [];
+  const parseNum = (s) => parseFloat(s.replace(',', '.'));
+
+  // Couper la partie récapitulatif (avant les lignes Unité(s) du tableau)
+  const firstUnite = text.indexOf('Unité(s)');
+  const textBefore = firstUnite >= 0 ? text.substring(0, firstUnite) : '';
+  const lastNLBracket = textBefore.lastIndexOf('\n[');
+  const priceText = lastNLBracket >= 0 ? text.substring(lastNLBracket + 1) : text;
+
+  // [REF] designation\nqty\nUnité(s)\nprixBrut remise% TVA% total €
+  const pattern = /\[([A-Z0-9-]+)\](.*?)([\d,]+)\nUnité\(s\)\n([\d,]+)\s+([\d,]+)\s+TVA\s+\d+%\s*([\d,.]+)\s*€/gs;
+
+  let m;
+  while ((m = pattern.exec(priceText)) !== null) {
+    const supplierSku = m[1];
+    const designation = m[2].replace(/\s+/g, ' ').trim();
+
+    if (/livraison|exp[eé]dition/i.test(designation)) continue;
+
+    const prixBrut = parseNum(m[4]);
+    if (prixBrut === 0) continue;
+
+    const remisePct = parseNum(m[5]);
+    const totalHt = parseNum(m[6]);
+    const qty = Math.round(parseNum(m[3]));
+    const unitPriceNet = prixBrut * (1 - remisePct / 100);
+
+    items.push({
+      supplier_sku: supplierSku,
+      designation,
+      qty_ordered: qty,
+      unit_price_net: Math.round(unitPriceNet * 10000) / 10000,
       total_ht: totalHt,
     });
   }
