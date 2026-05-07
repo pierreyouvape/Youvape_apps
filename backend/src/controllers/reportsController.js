@@ -37,20 +37,31 @@ exports.getRevenueReport = async (req, res) => {
     const whereClause = conditions.length > 0 ? 'WHERE ' + conditions.join(' AND ') : '';
 
     // 1. KPIs globaux de la période
+    // TVA réelle = line_item.line_tax + tax_item.line_tax (order_shipping_tax toujours NULL)
     const kpisQuery = `
-      SELECT
-        COUNT(*)::int as orders_count,
-        COALESCE(SUM(order_total), 0)::numeric as gross_sales,
-        COALESCE(SUM(order_tax), 0)::numeric as taxes,
-        COALESCE(SUM(order_shipping), 0)::numeric as shipping,
-        COALESCE(SUM(cart_discount), 0)::numeric as discounts,
-        0::numeric as refunds,
-        0::numeric as fees
-      FROM (
-        SELECT DISTINCT o.wp_order_id, o.order_total, o.order_tax, o.order_shipping, o.cart_discount
+      WITH filtered_orders AS (
+        SELECT DISTINCT o.wp_order_id, o.order_total, o.order_shipping, o.cart_discount
         FROM orders o
         ${whereClause}
-      ) unique_orders
+      ),
+      tva_reelle AS (
+        SELECT oi.wp_order_id,
+          SUM(CASE WHEN oi.order_item_type = 'line_item' THEN oi.line_tax ELSE 0 END)
+          + SUM(CASE WHEN oi.order_item_type = 'tax'      THEN oi.line_tax ELSE 0 END) AS tva
+        FROM order_items oi
+        WHERE oi.wp_order_id IN (SELECT wp_order_id FROM filtered_orders)
+        GROUP BY oi.wp_order_id
+      )
+      SELECT
+        COUNT(fo.wp_order_id)::int as orders_count,
+        COALESCE(SUM(fo.order_total), 0)::numeric as gross_sales,
+        COALESCE(SUM(t.tva), 0)::numeric as taxes,
+        COALESCE(SUM(fo.order_shipping), 0)::numeric as shipping,
+        COALESCE(SUM(fo.cart_discount), 0)::numeric as discounts,
+        0::numeric as refunds,
+        0::numeric as fees
+      FROM filtered_orders fo
+      LEFT JOIN tva_reelle t ON t.wp_order_id = fo.wp_order_id
     `;
     const kpisResult = await pool.query(kpisQuery, params);
     const kpis = kpisResult.rows[0];
@@ -115,21 +126,31 @@ exports.getRevenueReport = async (req, res) => {
 
     // 2. Breakdown jour par jour
     const breakdownQuery = `
-      SELECT
-        date,
-        COUNT(*)::int as orders_count,
-        COALESCE(SUM(order_total), 0)::numeric as gross_sales,
-        COALESCE(SUM(order_tax), 0)::numeric as taxes,
-        COALESCE(SUM(order_shipping), 0)::numeric as shipping,
-        0::numeric as fees,
-        0::numeric as refunds
-      FROM (
-        SELECT DISTINCT o.wp_order_id, o.order_total, o.order_tax, o.order_shipping, DATE_TRUNC('day', o.post_date)::date as date
+      WITH filtered_orders AS (
+        SELECT DISTINCT o.wp_order_id, o.order_total, o.order_shipping, DATE_TRUNC('day', o.post_date)::date as date
         FROM orders o
         ${whereClause}
-      ) unique_orders
-      GROUP BY date
-      ORDER BY date ASC
+      ),
+      tva_reelle AS (
+        SELECT oi.wp_order_id,
+          SUM(CASE WHEN oi.order_item_type = 'line_item' THEN oi.line_tax ELSE 0 END)
+          + SUM(CASE WHEN oi.order_item_type = 'tax'      THEN oi.line_tax ELSE 0 END) AS tva
+        FROM order_items oi
+        WHERE oi.wp_order_id IN (SELECT wp_order_id FROM filtered_orders)
+        GROUP BY oi.wp_order_id
+      )
+      SELECT
+        fo.date,
+        COUNT(fo.wp_order_id)::int as orders_count,
+        COALESCE(SUM(fo.order_total), 0)::numeric as gross_sales,
+        COALESCE(SUM(t.tva), 0)::numeric as taxes,
+        COALESCE(SUM(fo.order_shipping), 0)::numeric as shipping,
+        0::numeric as fees,
+        0::numeric as refunds
+      FROM filtered_orders fo
+      LEFT JOIN tva_reelle t ON t.wp_order_id = fo.wp_order_id
+      GROUP BY fo.date
+      ORDER BY fo.date ASC
     `;
     const breakdownResult = await pool.query(breakdownQuery, params);
 
@@ -219,19 +240,29 @@ exports.getByCountryReport = async (req, res) => {
     const countryField = groupBy === 'shipping_country' ? 'o.shipping_country' : 'o.billing_country';
 
     const query = `
-      SELECT
-        country_code,
-        COUNT(*)::int as orders_count,
-        COALESCE(SUM(order_total), 0)::numeric as gross_sales,
-        COALESCE(SUM(order_tax), 0)::numeric as taxes,
-        COALESCE(SUM(order_shipping), 0)::numeric as shipping
-      FROM (
-        SELECT DISTINCT o.wp_order_id, o.order_total, o.order_tax, o.order_shipping, ${countryField} as country_code
+      WITH filtered_orders AS (
+        SELECT DISTINCT o.wp_order_id, o.order_total, o.order_shipping, ${countryField} as country_code
         FROM orders o
         ${whereClause}
-      ) unique_orders
-      WHERE country_code IS NOT NULL AND country_code != ''
-      GROUP BY country_code
+      ),
+      tva_reelle AS (
+        SELECT oi.wp_order_id,
+          SUM(CASE WHEN oi.order_item_type = 'line_item' THEN oi.line_tax ELSE 0 END)
+          + SUM(CASE WHEN oi.order_item_type = 'tax'      THEN oi.line_tax ELSE 0 END) AS tva
+        FROM order_items oi
+        WHERE oi.wp_order_id IN (SELECT wp_order_id FROM filtered_orders)
+        GROUP BY oi.wp_order_id
+      )
+      SELECT
+        fo.country_code,
+        COUNT(fo.wp_order_id)::int as orders_count,
+        COALESCE(SUM(fo.order_total), 0)::numeric as gross_sales,
+        COALESCE(SUM(t.tva), 0)::numeric as taxes,
+        COALESCE(SUM(fo.order_shipping), 0)::numeric as shipping
+      FROM filtered_orders fo
+      LEFT JOIN tva_reelle t ON t.wp_order_id = fo.wp_order_id
+      WHERE fo.country_code IS NOT NULL AND fo.country_code != ''
+      GROUP BY fo.country_code
       ORDER BY orders_count DESC
     `;
 
@@ -362,15 +393,25 @@ exports.getProfitReport = async (req, res) => {
     const whereClause = 'WHERE ' + conditions.join(' AND ');
 
     // KPIs globaux avec coûts
+    // TVA réelle via order_items (order_shipping_tax toujours NULL)
     const kpisQuery = `
+      WITH tva_reelle AS (
+        SELECT oi.wp_order_id,
+          SUM(CASE WHEN oi.order_item_type = 'line_item' THEN oi.line_tax ELSE 0 END)
+          + SUM(CASE WHEN oi.order_item_type = 'tax'      THEN oi.line_tax ELSE 0 END) AS tva
+        FROM order_items oi
+        WHERE oi.wp_order_id IN (SELECT wp_order_id FROM orders o ${whereClause})
+        GROUP BY oi.wp_order_id
+      )
       SELECT
         COUNT(DISTINCT o.wp_order_id)::int as orders_count,
         COALESCE(SUM(o.order_total), 0)::numeric as gross_sales,
-        COALESCE(SUM(o.order_tax), 0)::numeric as taxes,
+        COALESCE(SUM(t.tva), 0)::numeric as taxes,
         COALESCE(SUM(o.order_shipping), 0)::numeric as shipping_charged,
         COALESCE(SUM(o.shipping_cost_calculated), 0)::numeric as shipping_cost,
         COALESCE(SUM(o.order_total_cost), 0)::numeric as core_cost
       FROM orders o
+      LEFT JOIN tva_reelle t ON t.wp_order_id = o.wp_order_id
       ${whereClause}
     `;
     const kpisResult = await pool.query(kpisQuery, params);

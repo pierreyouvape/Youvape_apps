@@ -44,16 +44,26 @@ exports.getDashboard = async (req, res) => {
     const where = 'WHERE ' + conditions.join(' AND ');
 
     // ─── 1. KPIs GLOBAUX — agrégats order-level ────────────────────────────
-    // SUM sur orders uniquement (pas de JOIN items) pour éviter le fan-out
+    // TVA réelle = line_item.line_tax (TVA produits) + tax_item.line_tax (TVA livraison)
+    // order_shipping_tax est toujours NULL en BDD, il faut passer par order_items
     const orderKpisResult = await pool.query(`
+      WITH tva_reelle AS (
+        SELECT oi.wp_order_id,
+          SUM(CASE WHEN oi.order_item_type = 'line_item' THEN oi.line_tax ELSE 0 END)
+          + SUM(CASE WHEN oi.order_item_type = 'tax'      THEN oi.line_tax ELSE 0 END) AS tva
+        FROM order_items oi
+        WHERE oi.wp_order_id IN (SELECT wp_order_id FROM orders o ${where})
+        GROUP BY oi.wp_order_id
+      )
       SELECT
         COUNT(o.wp_order_id)::int                                          AS orders_count,
         COALESCE(SUM(o.order_total), 0)::numeric                          AS ca_ttc_brut,
-        COALESCE(SUM(o.order_tax), 0)::numeric                            AS tva,
+        COALESCE(SUM(t.tva), 0)::numeric                                  AS tva,
         COALESCE(SUM(o.order_shipping), 0)::numeric                       AS frais_port_client,
         COALESCE(SUM(o.shipping_cost_calculated), 0)::numeric             AS frais_port_reel,
         COALESCE(SUM(o.payment_cost_calculated), 0)::numeric              AS frais_paiement
       FROM orders o
+      LEFT JOIN tva_reelle t ON t.wp_order_id = o.wp_order_id
       ${where}
     `, params);
 
@@ -144,15 +154,25 @@ exports.getDashboard = async (req, res) => {
     const truncExpr = truncMap[gran] || truncMap.day;
 
     // Séries : order-level (pas de fan-out)
+    // TVA via order_items (order_shipping_tax toujours NULL en BDD)
     const seriesOrdersResult = await pool.query(`
+      WITH tva_reelle AS (
+        SELECT oi.wp_order_id,
+          SUM(CASE WHEN oi.order_item_type = 'line_item' THEN oi.line_tax ELSE 0 END)
+          + SUM(CASE WHEN oi.order_item_type = 'tax'      THEN oi.line_tax ELSE 0 END) AS tva
+        FROM order_items oi
+        WHERE oi.wp_order_id IN (SELECT wp_order_id FROM orders o ${where})
+        GROUP BY oi.wp_order_id
+      )
       SELECT
         ${truncExpr}                                                           AS period,
         COUNT(o.wp_order_id)::int                                              AS orders_count,
         COALESCE(SUM(o.order_total), 0)::numeric                               AS ca_ttc_brut,
-        COALESCE(SUM(o.order_tax), 0)::numeric                                 AS tva,
+        COALESCE(SUM(t.tva), 0)::numeric                                       AS tva,
         COALESCE(SUM(o.shipping_cost_calculated), 0)::numeric                  AS frais_port_reel,
         COALESCE(SUM(o.payment_cost_calculated), 0)::numeric                   AS frais_paiement
       FROM orders o
+      LEFT JOIN tva_reelle t ON t.wp_order_id = o.wp_order_id
       ${where}
       GROUP BY ${truncExpr}
       ORDER BY ${truncExpr}

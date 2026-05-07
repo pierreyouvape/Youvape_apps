@@ -180,7 +180,7 @@ function buildFilteredOrdersCTE(filters) {
     params.push(statuses);
     paramIndex++;
   } else {
-    conditions.push(`o.post_status IN ('wc-completed', 'wc-delivered')`);
+    conditions.push(`o.post_status IN ('wc-completed', 'wc-delivered', 'wc-processing', 'wc-awaiting-delivery')`);
   }
 
   // Période
@@ -315,18 +315,37 @@ exports.getStats = async (req, res) => {
     const { whereClause, params } = buildFilteredOrdersCTE(filters);
 
     // Requête principale pour les métriques globales
+    // TVA réelle = line_item.line_tax + tax_item.line_tax (order_shipping_tax toujours NULL)
+    // CA HT = CA TTC - TVA - remboursements
     const statsQuery = `
-      SELECT
-        COUNT(*)::int as orders_count,
-        COALESCE(SUM(order_total), 0)::numeric as ca_ttc,
-        COALESCE(SUM(order_total) - SUM(order_tax) - SUM(COALESCE(order_shipping_tax, 0)), 0)::numeric as ca_ht,
-        COALESCE(SUM(cart_discount), 0)::numeric as total_discount,
-        SUM(CASE WHEN cart_discount > 0 THEN 1 ELSE 0 END)::int as orders_with_coupon
-      FROM (
-        SELECT DISTINCT o.wp_order_id, o.order_total, o.order_tax, o.order_shipping_tax, o.cart_discount
+      WITH filtered_orders AS (
+        SELECT DISTINCT o.wp_order_id, o.order_total, o.cart_discount
         FROM orders o
         ${whereClause}
-      ) unique_orders
+      ),
+      tva_reelle AS (
+        SELECT oi.wp_order_id,
+          SUM(CASE WHEN oi.order_item_type = 'line_item' THEN oi.line_tax ELSE 0 END)
+          + SUM(CASE WHEN oi.order_item_type = 'tax'      THEN oi.line_tax ELSE 0 END) AS tva
+        FROM order_items oi
+        WHERE oi.wp_order_id IN (SELECT wp_order_id FROM filtered_orders)
+        GROUP BY oi.wp_order_id
+      ),
+      remboursements AS (
+        SELECT r.wp_order_id, COALESCE(SUM(r.refund_amount), 0) AS total_refund
+        FROM refunds r
+        WHERE r.wp_order_id IN (SELECT wp_order_id FROM filtered_orders)
+        GROUP BY r.wp_order_id
+      )
+      SELECT
+        COUNT(fo.wp_order_id)::int as orders_count,
+        COALESCE(SUM(fo.order_total), 0)::numeric as ca_ttc,
+        COALESCE(SUM(fo.order_total) - SUM(COALESCE(t.tva, 0)) - SUM(COALESCE(r.total_refund, 0)), 0)::numeric as ca_ht,
+        COALESCE(SUM(fo.cart_discount), 0)::numeric as total_discount,
+        SUM(CASE WHEN fo.cart_discount > 0 THEN 1 ELSE 0 END)::int as orders_with_coupon
+      FROM filtered_orders fo
+      LEFT JOIN tva_reelle t ON t.wp_order_id = fo.wp_order_id
+      LEFT JOIN remboursements r ON r.wp_order_id = fo.wp_order_id
     `;
 
     const statsResult = await pool.query(statsQuery, params);
