@@ -253,12 +253,12 @@ const setupBmsCron = () => {
     bmsCronJob = null;
   }
 
-  // Toutes les 30 min de 9h à 19h, lundi-vendredi
-  bmsCronJob = cron.schedule('*/30 9-19 * * 1-5', syncBmsOrders, {
+  // Toutes les 30 min de 9h30 à 19h30, lundi-vendredi (9h00 evite car BMS indisponible)
+  bmsCronJob = cron.schedule('30 9-19 * * 1-5', syncBmsOrders, {
     timezone: 'Europe/Paris'
   });
 
-  console.log('✅ Cron BMS configuré: toutes les 30 min, 9h-19h, lun-ven');
+  console.log('✅ Cron BMS configuré: toutes les heures à :30, 9h30-19h30, lun-ven');
 };
 
 // ==================== COMPUTED COST (PMP FIFO) ====================
