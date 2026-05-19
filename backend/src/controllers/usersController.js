@@ -145,6 +145,48 @@ const usersController = {
     }
   },
 
+  // Récupérer les préférences d'affichage de l'utilisateur connecté
+  getMyPreferences: async (req, res) => {
+    const userId = req.user.id;
+    try {
+      const result = await pool.query(
+        'SELECT hidden_columns FROM user_column_preferences WHERE user_id = $1 AND page = $2',
+        [userId, 'home']
+      );
+      const raw = result.rows[0]?.hidden_columns ?? null;
+      res.json({ success: true, home: raw && typeof raw === 'object' ? raw : null });
+    } catch (error) {
+      console.error('getMyPreferences error:', error);
+      res.status(500).json({ error: 'Erreur serveur' });
+    }
+  },
+
+  // Mettre à jour les préférences d'affichage de l'utilisateur connecté
+  updateMyPreferences: async (req, res) => {
+    const userId = req.user.id;
+    const { home } = req.body;
+    if (!home || typeof home !== 'object') {
+      return res.status(400).json({ error: 'Corps invalide : { home: {...} } attendu' });
+    }
+    const allowed = ['appOrder', 'tileSize', 'gridCols', 'theme', 'accentColor'];
+    const sanitized = Object.fromEntries(
+      Object.entries(home).filter(([k]) => allowed.includes(k))
+    );
+    try {
+      await pool.query(
+        `INSERT INTO user_column_preferences (user_id, page, hidden_columns, updated_at)
+         VALUES ($1, 'home', $2, NOW())
+         ON CONFLICT (user_id, page)
+         DO UPDATE SET hidden_columns = $2, updated_at = NOW()`,
+        [userId, JSON.stringify(sanitized)]
+      );
+      res.json({ success: true });
+    } catch (error) {
+      console.error('updateMyPreferences error:', error);
+      res.status(500).json({ error: 'Erreur serveur' });
+    }
+  },
+
   // Supprimer un utilisateur
   deleteUser: async (req, res) => {
     try {

@@ -1,296 +1,664 @@
-import CloudLogo from '../components/CloudLogo';
-import { useContext } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo, useContext } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import { AuthContext } from '../context/AuthContext';
-import { useNavigate, Link } from 'react-router-dom';
+import { APPS, SettingsIcon, LogoutIcon, GripIcon } from '../components/AppIcons';
 
+/* ─── COULEURS ──────────────────────────────────────────── */
+const C = {
+  orange: '#E28F00',
+  saphir: '#135E84',
+  saphirF: '#003A56',
+  grisTL: '#F2F6F8',
+  grisCL: '#E2E2E2',
+  grisM: '#8A99A4',
+  grisF: '#626E85',
+  grisTF: '#2a2e38',
+  blanc: '#FFFFFF',
+};
+
+/* ─── PRÉFÉRENCES ───────────────────────────────────────── */
+const PREFS_KEY = 'yv.home.prefs.v1';
+const DEFAULT_PREFS = {
+  appOrder: APPS.map(a => a.key),
+  tileSize: 'comfortable',
+  gridCols: 4,
+};
+
+function loadPrefs() {
+  try {
+    const raw = localStorage.getItem(PREFS_KEY);
+    if (!raw) return { ...DEFAULT_PREFS };
+    return { ...DEFAULT_PREFS, ...JSON.parse(raw) };
+  } catch {
+    return { ...DEFAULT_PREFS };
+  }
+}
+
+function savePrefs(prefs) {
+  try { localStorage.setItem(PREFS_KEY, JSON.stringify(prefs)); } catch {}
+}
+
+const BASE_API = (import.meta.env.VITE_API_URL || 'http://localhost:3000/api/auth').replace('/auth', '');
+
+async function fetchPrefsFromServer(token) {
+  if (!token) return null;
+  try {
+    const res = await fetch(`${BASE_API}/users/me/preferences`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data.home ?? null;
+  } catch {
+    return null;
+  }
+}
+
+async function syncPrefsToServer(prefs, token) {
+  if (!token) return;
+  try {
+    await fetch(`${BASE_API}/users/me/preferences`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ home: prefs }),
+    });
+  } catch {}
+}
+
+function usePrefs(token) {
+  const [prefs, setPrefs] = useState(() => loadPrefs());
+  const debounceRef = useRef(null);
+
+  // Charger les prefs depuis le serveur au mount, merge si plus récent
+  useEffect(() => {
+    if (!token) return;
+    fetchPrefsFromServer(token).then(serverPrefs => {
+      if (serverPrefs) {
+        setPrefs(prev => {
+          const merged = { ...prev, ...serverPrefs };
+          savePrefs(merged);
+          return merged;
+        });
+      }
+    });
+  }, [token]);
+
+  const update = useCallback((patch) => {
+    setPrefs(prev => {
+      const next = typeof patch === 'function' ? patch(prev) : { ...prev, ...patch };
+      savePrefs(next);
+      clearTimeout(debounceRef.current);
+      debounceRef.current = setTimeout(() => syncPrefsToServer(next, token), 600);
+      return next;
+    });
+  }, [token]);
+
+  return [prefs, update];
+}
+
+/* ─── UTILITAIRE ────────────────────────────────────────── */
+function shade(hex, amt) {
+  const h = hex.replace('#', '');
+  const r = parseInt(h.slice(0, 2), 16);
+  const g = parseInt(h.slice(2, 4), 16);
+  const b = parseInt(h.slice(4, 6), 16);
+  const adj = c => Math.max(0, Math.min(255, Math.round(c + 255 * amt)));
+  const toHex = c => adj(c).toString(16).padStart(2, '0');
+  return '#' + toHex(r) + toHex(g) + toHex(b);
+}
+
+/* ─── APP TILE (style macOS Launchpad) ──────────────────── */
+const SIZE_MAP = {
+  compact:     { tile: 96,  icon: 38, label: 12, radius: 18 },
+  comfortable: { tile: 124, icon: 50, label: 13, radius: 22 },
+  large:       { tile: 156, icon: 62, label: 14, radius: 28 },
+};
+
+function AppTile({ app, size, isDragging, isDragOver, onDragStart, onDragOver, onDrop, onDragEnd }) {
+  const s = SIZE_MAP[size] || SIZE_MAP.comfortable;
+  const { Icon, color, path, label, key } = app;
+
+  return (
+    <Link
+      to={path}
+      draggable
+      onDragStart={e => onDragStart(e, key)}
+      onDragOver={e => onDragOver(e, key)}
+      onDrop={e => onDrop(e, key)}
+      onDragEnd={onDragEnd}
+      className={`app-tile${isDragging ? ' dragging' : ''}${isDragOver ? ' drag-over' : ''}`}
+      style={{
+        width: s.tile,
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        gap: 10,
+        textDecoration: 'none',
+        cursor: isDragging ? 'grabbing' : 'grab',
+        userSelect: 'none',
+      }}
+      title={`Glisser pour réorganiser · ${label}`}
+    >
+      <div style={{
+        width: s.tile,
+        height: s.tile,
+        borderRadius: s.radius,
+        background: `linear-gradient(155deg, ${color} 0%, ${shade(color, -0.18)} 100%)`,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        boxShadow: `0 8px 22px ${color}38, 0 1px 0 rgba(255,255,255,0.35) inset, 0 -1px 0 rgba(0,0,0,0.18) inset`,
+        position: 'relative',
+        overflow: 'hidden',
+      }}>
+        <div style={{
+          position: 'absolute',
+          top: 0, left: 0, right: 0,
+          height: '50%',
+          background: 'linear-gradient(180deg, rgba(255,255,255,0.18) 0%, rgba(255,255,255,0) 100%)',
+          pointerEvents: 'none',
+        }} />
+        <Icon size={s.icon} color="#fff" />
+      </div>
+      <div style={{
+        fontSize: s.label,
+        fontWeight: 600,
+        color: C.grisTF,
+        textAlign: 'center',
+        maxWidth: s.tile,
+        lineHeight: 1.25,
+      }}>
+        {label}
+      </div>
+    </Link>
+  );
+}
+
+/* ─── SIDEBAR ───────────────────────────────────────────── */
+function Sidebar({ user, orderedApps, accessibleKeys, dragKey, dragOverKey, onDragStart, onDragOver, onDrop, onDragEnd, onLogout }) {
+  const initial = user?.email?.[0]?.toUpperCase() ?? '?';
+
+  return (
+    <aside style={{
+      width: 260,
+      minWidth: 260,
+      flexShrink: 0,
+      background: C.saphirF,
+      height: '100vh',
+      position: 'sticky',
+      top: 0,
+      display: 'flex',
+      flexDirection: 'column',
+      borderRight: '1px solid rgba(255,255,255,0.06)',
+    }}>
+      {/* Logo */}
+      <div style={{
+        padding: '22px 22px 18px',
+        borderBottom: '1px solid rgba(255,255,255,0.07)',
+        display: 'flex',
+        alignItems: 'center',
+      }}>
+        <img src="/images/logo.jpg" alt="YouVape" style={{ height: 42, maxWidth: 180, objectFit: 'contain' }} />
+      </div>
+
+      {/* Spacer — pousse les apps vers le bas */}
+      <div style={{ flex: 1, minHeight: 0 }} />
+
+      {/* Liste des apps */}
+      <div style={{ overflowY: 'auto', padding: '14px 12px', maxHeight: '55vh' }}>
+        <div style={{
+          fontSize: 10,
+          fontWeight: 800,
+          letterSpacing: '0.12em',
+          color: 'rgba(255,255,255,0.4)',
+          textTransform: 'uppercase',
+          padding: '4px 10px 10px',
+        }}>
+          Applications
+        </div>
+
+        {orderedApps.filter(a => accessibleKeys.includes(a.key)).map(app => {
+          const { Icon, color, path, label, key } = app;
+          const isDrag = dragKey === key;
+          const isOver = dragOverKey === key && dragKey !== key;
+          return (
+            <Link
+              key={key}
+              to={path}
+              draggable
+              onDragStart={e => onDragStart(e, key)}
+              onDragOver={e => onDragOver(e, key)}
+              onDrop={e => onDrop(e, key)}
+              onDragEnd={onDragEnd}
+              className={`sb-app-row${isDrag ? ' dragging' : ''}${isOver ? ' drag-over' : ''}`}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 11,
+                padding: '9px 10px',
+                borderRadius: 8,
+                marginBottom: 1,
+                color: 'rgba(255,255,255,0.72)',
+                fontSize: 13.5,
+                fontWeight: 500,
+                textDecoration: 'none',
+                cursor: isDrag ? 'grabbing' : 'grab',
+                userSelect: 'none',
+              }}
+            >
+              <span style={{
+                width: 26,
+                height: 26,
+                borderRadius: 7,
+                flexShrink: 0,
+                background: color,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                boxShadow: '0 1px 0 rgba(255,255,255,0.25) inset',
+              }}>
+                <Icon size={16} color="#fff" />
+              </span>
+              <span style={{
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                flex: 1,
+                minWidth: 0,
+              }}>
+                {label}
+              </span>
+            </Link>
+          );
+        })}
+      </div>
+
+      {/* Compte */}
+      <div style={{
+        padding: '12px 12px 6px',
+        borderTop: '1px solid rgba(255,255,255,0.07)',
+      }}>
+        <div style={{
+          fontSize: 10,
+          fontWeight: 800,
+          letterSpacing: '0.12em',
+          color: 'rgba(255,255,255,0.4)',
+          textTransform: 'uppercase',
+          padding: '4px 10px 8px',
+        }}>
+          Compte
+        </div>
+
+        <Link
+          to="/settings"
+          className="sb-app-row"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 11,
+            padding: '9px 10px',
+            borderRadius: 8,
+            marginBottom: 1,
+            color: 'rgba(255,255,255,0.78)',
+            fontSize: 13.5,
+            fontWeight: 500,
+            textDecoration: 'none',
+            cursor: 'pointer',
+          }}
+        >
+          <span style={{
+            width: 26,
+            height: 26,
+            borderRadius: 7,
+            flexShrink: 0,
+            background: 'rgba(255,255,255,0.08)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}>
+            <SettingsIcon size={15} color="rgba(255,255,255,0.85)" />
+          </span>
+          <span>Paramètres</span>
+        </Link>
+
+        <button
+          onClick={onLogout}
+          className="sb-app-row"
+          style={{
+            width: '100%',
+            textAlign: 'left',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 11,
+            padding: '9px 10px',
+            borderRadius: 8,
+            marginBottom: 6,
+            color: 'rgba(255,255,255,0.78)',
+            fontSize: 13.5,
+            fontWeight: 500,
+            background: 'transparent',
+            border: 'none',
+            cursor: 'pointer',
+            fontFamily: 'inherit',
+          }}
+        >
+          <span style={{
+            width: 26,
+            height: 26,
+            borderRadius: 7,
+            flexShrink: 0,
+            background: 'rgba(222,32,32,0.18)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}>
+            <LogoutIcon size={15} color="#ff8a8a" />
+          </span>
+          <span>Se déconnecter</span>
+        </button>
+      </div>
+
+      {/* Footer utilisateur */}
+      <div style={{
+        padding: '14px 16px',
+        borderTop: '1px solid rgba(255,255,255,0.07)',
+        display: 'flex',
+        alignItems: 'center',
+        gap: 11,
+      }}>
+        <div style={{
+          width: 36,
+          height: 36,
+          borderRadius: '50%',
+          flexShrink: 0,
+          background: `linear-gradient(135deg, ${C.orange} 0%, ${shade(C.orange, -0.2)} 100%)`,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          fontSize: 14,
+          fontWeight: 800,
+          color: C.blanc,
+          boxShadow: '0 1px 2px rgba(0,0,0,0.25)',
+        }}>
+          {initial}
+        </div>
+        <div style={{ minWidth: 0, flex: 1 }}>
+          <div style={{
+            fontSize: 12.5,
+            fontWeight: 700,
+            color: C.blanc,
+            whiteSpace: 'nowrap',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+          }}>
+            {user?.email?.split('@')[0] ?? ''}
+          </div>
+          <div style={{
+            fontSize: 10.5,
+            color: 'rgba(255,255,255,0.5)',
+            whiteSpace: 'nowrap',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+          }}>
+            {user?.email ?? ''}
+          </div>
+        </div>
+      </div>
+    </aside>
+  );
+}
+
+/* ─── HOME PAGE ─────────────────────────────────────────── */
 const Home = () => {
-  const { user, logout, permissions, isAdmin, isSuperAdmin } = useContext(AuthContext);
+  const { user, token, logout, permissions } = useContext(AuthContext);
   const navigate = useNavigate();
+  const [prefs, updatePrefs] = usePrefs(token);
+
+  const accessibleKeys = useMemo(() => {
+    if (!permissions) return [];
+    return Object.entries(permissions)
+      .filter(([, p]) => p?.read === true)
+      .map(([k]) => k);
+  }, [permissions]);
+
+  /* Ordre courant des apps */
+  const orderedApps = useMemo(() => {
+    const byKey = APPS.reduce((m, a) => { m[a.key] = a; return m; }, {});
+    const ordered = [];
+    const seen = new Set();
+    prefs.appOrder.forEach(k => {
+      if (byKey[k]) { ordered.push(byKey[k]); seen.add(k); }
+    });
+    APPS.forEach(a => { if (!seen.has(a.key)) ordered.push(a); });
+    return ordered;
+  }, [prefs.appOrder]);
+
+  const accessibleApps = orderedApps.filter(a => accessibleKeys.includes(a.key));
+
+  /* Drag & drop */
+  const [dragKey, setDragKey] = useState(null);
+  const [dragOverKey, setDragOverKey] = useState(null);
+
+  const onDragStart = (e, key) => {
+    setDragKey(key);
+    try { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', key); } catch {}
+  };
+  const onDragOver = (e, key) => {
+    e.preventDefault();
+    if (dragOverKey !== key) setDragOverKey(key);
+    try { e.dataTransfer.dropEffect = 'move'; } catch {}
+  };
+  const onDrop = (e, targetKey) => {
+    e.preventDefault();
+    if (!dragKey || dragKey === targetKey) { setDragKey(null); setDragOverKey(null); return; }
+    const newOrder = [...prefs.appOrder];
+    const fromIdx = newOrder.indexOf(dragKey);
+    const toIdx = newOrder.indexOf(targetKey);
+    if (fromIdx === -1 || toIdx === -1) { setDragKey(null); setDragOverKey(null); return; }
+    newOrder.splice(fromIdx, 1);
+    newOrder.splice(toIdx, 0, dragKey);
+    updatePrefs({ appOrder: newOrder });
+    setDragKey(null);
+    setDragOverKey(null);
+  };
+  const onDragEnd = () => { setDragKey(null); setDragOverKey(null); };
 
   const handleLogout = () => {
     logout();
     navigate('/login');
   };
 
-  // Vérifier si l'utilisateur a accès à une app
-  const hasAccess = (appName) => {
-    if (!permissions) return false;
-    return permissions[appName]?.read === true;
-  };
-
-  // Compter le nombre d'apps accessibles
-  const accessibleAppsCount = permissions
-    ? Object.values(permissions).filter(perm => perm.read === true).length
-    : 0;
+  /* Colonnes selon la taille */
+  const colTemplate = {
+    compact:     'repeat(auto-fill, minmax(120px, 1fr))',
+    comfortable: `repeat(${prefs.gridCols}, minmax(140px, 1fr))`,
+    large:       `repeat(${Math.max(2, prefs.gridCols - 1)}, minmax(180px, 1fr))`,
+  }[prefs.tileSize] || `repeat(${prefs.gridCols}, minmax(140px, 1fr))`;
 
   return (
-    <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
-      {/* Header */}
-      <div style={{
-        backgroundColor: '#135E84',
-        padding: '20px 0',
-        display: 'flex',
-        justifyContent: 'center',
-        alignItems: 'center',
-        position: 'relative'
-      }}>
-        <CloudLogo />
-        {(isAdmin || isSuperAdmin) && (
-          <Link
-            to="/settings"
-            style={{
-              position: 'absolute',
-              right: '20px',
-              padding: '10px 20px',
-              backgroundColor: '#fff',
-              color: '#135E84',
-              border: 'none',
-              borderRadius: '6px',
-              fontSize: '14px',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-              fontWeight: '600',
-              textDecoration: 'none'
-            }}
-          >
-            <span>⚙️</span>
-            <span>Paramètres</span>
-          </Link>
-        )}
-      </div>
+    <>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Lato:wght@400;500;600;700;800;900&family=Tilt+Warp&display=swap');
+        .app-tile {
+          transition: transform 0.18s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.18s, opacity 0.15s;
+        }
+        .app-tile:hover { transform: translateY(-3px) scale(1.03); }
+        .app-tile:active { cursor: grabbing; }
+        .app-tile.dragging { opacity: 0.4; transform: scale(0.98); }
+        .app-tile.drag-over { transform: scale(1.06); }
+        .sb-app-row { transition: background 0.15s, color 0.15s; }
+        .sb-app-row:hover { background: rgba(255,255,255,0.08) !important; color: rgba(255,255,255,0.95) !important; }
+        .sb-app-row.dragging { opacity: 0.4; }
+        .sb-app-row.drag-over { background: rgba(255,255,255,0.14) !important; box-shadow: inset 2px 0 0 #E28F00; }
+        .main-scroll::-webkit-scrollbar { width: 8px; }
+        .main-scroll::-webkit-scrollbar-track { background: transparent; }
+        .main-scroll::-webkit-scrollbar-thumb { background: #E2E2E2; border-radius: 4px; }
+      `}</style>
 
-      {/* Main Content */}
-      <div style={{ flex: 1, maxWidth: '800px', margin: '50px auto', padding: '20px', width: '100%' }}>
-        <h1 style={{ textAlign: 'center', color: '#135E84' }}>Bienvenue sur YouVape Apps</h1>
-        <p style={{ textAlign: 'center' }}>Connecté en tant que : <strong>{user?.email}</strong></p>
+      <div style={{ display: 'flex', minHeight: '100vh', background: C.grisTL, fontFamily: "'Lato', sans-serif" }}>
+        <Sidebar
+          user={user}
+          orderedApps={orderedApps}
+          accessibleKeys={accessibleKeys}
+          dragKey={dragKey}
+          dragOverKey={dragOverKey}
+          onDragStart={onDragStart}
+          onDragOver={onDragOver}
+          onDrop={onDrop}
+          onDragEnd={onDragEnd}
+          onLogout={handleLogout}
+        />
 
-        <div style={{ marginTop: '50px' }}>
-          <h2 style={{ textAlign: 'center', color: '#333' }}>Applications disponibles</h2>
+        <main
+          className="main-scroll"
+          style={{
+            flex: 1,
+            minWidth: 0,
+            overflowY: 'auto',
+            height: '100vh',
+            display: 'flex',
+            flexDirection: 'column',
+          }}
+        >
+          {/* Barre du haut — fil d'Ariane (slot réservé au menu interne de chaque app) */}
+          <div style={{
+            height: 56,
+            flexShrink: 0,
+            background: C.blanc,
+            borderBottom: `1px solid ${C.grisCL}`,
+            padding: '0 32px',
+            display: 'flex',
+            alignItems: 'center',
+            position: 'sticky',
+            top: 0,
+            zIndex: 10,
+          }}>
+            <div style={{ fontSize: 12.5, fontWeight: 700, color: C.grisTF }}>
+              Accueil
+            </div>
+          </div>
 
-          {accessibleAppsCount === 0 ? (
-            <div style={{
-              marginTop: '30px',
-              padding: '30px',
-              backgroundColor: '#f8f9fa',
-              borderRadius: '8px',
-              textAlign: 'center',
-              color: '#6c757d'
-            }}>
-              <p style={{ fontSize: '18px', margin: 0 }}>
-                Aucune application accessible. Contactez un administrateur pour obtenir des droits d'accès.
+          {/* Hero */}
+          <section style={{
+            padding: '48px 48px 28px',
+            borderBottom: `1px solid ${C.grisCL}`,
+            background: C.blanc,
+          }}>
+            <div style={{ maxWidth: 1100, margin: '0 auto' }}>
+              <h1 style={{
+                fontFamily: "'Tilt Warp', cursive",
+                fontSize: 'clamp(28px, 3.4vw, 40px)',
+                fontWeight: 900,
+                color: C.saphir,
+                letterSpacing: '-0.5px',
+                marginBottom: 6,
+                margin: '0 0 6px',
+              }}>
+                Bienvenue sur YouVape Apps
+              </h1>
+              <p style={{ fontSize: 14, color: C.grisF, fontWeight: 500, margin: 0 }}>
+                Connecté en tant que <strong style={{ color: C.grisTF }}>{user?.email}</strong>
               </p>
             </div>
-          ) : (
-            <div style={{ display: 'flex', gap: '20px', marginTop: '30px', justifyContent: 'center', flexWrap: 'wrap' }}>
-              {hasAccess('reviews') && (
-                <Link
-                  to="/reviews"
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '10px',
-                    padding: '20px 30px',
-                    backgroundColor: '#007bff',
-                    color: 'white',
-                    borderRadius: '8px',
-                    cursor: 'pointer',
-                    fontSize: '18px',
-                    border: 'none',
-                    boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
-                    transition: 'transform 0.2s',
-                    textDecoration: 'none',
-                  }}
-                  onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.05)'}
-                  onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
-                >
-                  <span style={{ fontSize: '28px' }}>📱</span>
-                  <span>Avis Garantis</span>
-                </Link>
-              )}
-              {hasAccess('rewards') && (
-                <Link
-                  to="/rewards"
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '10px',
-                    padding: '20px 30px',
-                    backgroundColor: '#8b5cf6',
-                    color: 'white',
-                    borderRadius: '8px',
-                    cursor: 'pointer',
-                    fontSize: '18px',
-                    border: 'none',
-                    boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
-                    transition: 'transform 0.2s',
-                    textDecoration: 'none',
-                  }}
-                  onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.05)'}
-                  onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
-                >
-                  <span style={{ fontSize: '28px' }}>🎁</span>
-                  <span>Récompense Avis</span>
-                </Link>
-              )}
-              {hasAccess('emails') && (
-                <Link
-                  to="/emails"
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '10px',
-                    padding: '20px 30px',
-                    backgroundColor: '#28a745',
-                    color: 'white',
-                    borderRadius: '8px',
-                    cursor: 'pointer',
-                    fontSize: '18px',
-                    border: 'none',
-                    boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
-                    transition: 'transform 0.2s',
-                    textDecoration: 'none',
-                  }}
-                  onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.05)'}
-                  onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
-                >
-                  <span style={{ fontSize: '28px' }}>📧</span>
-                  <span>Envoi d'Emails</span>
-                </Link>
-              )}
-              {hasAccess('stats') && (
-                <Link
-                  to="/stats"
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '10px',
-                    padding: '20px 30px',
-                    backgroundColor: '#ff6b6b',
-                    color: 'white',
-                    borderRadius: '8px',
-                    cursor: 'pointer',
-                    fontSize: '18px',
-                    border: 'none',
-                    boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
-                    transition: 'transform 0.2s',
-                    textDecoration: 'none',
-                  }}
-                  onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.05)'}
-                  onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
-                >
-                  <span style={{ fontSize: '28px' }}>📊</span>
-                  <span>Statistiques WooCommerce</span>
-                </Link>
-              )}
-              {hasAccess('purchases') && (
-                <Link
-                  to="/purchases"
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '10px',
-                    padding: '20px 30px',
-                    backgroundColor: '#f59e0b',
-                    color: 'white',
-                    borderRadius: '8px',
-                    cursor: 'pointer',
-                    fontSize: '18px',
-                    border: 'none',
-                    boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
-                    transition: 'transform 0.2s',
-                    textDecoration: 'none',
-                  }}
-                  onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.05)'}
-                  onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
-                >
-                  <span style={{ fontSize: '28px' }}>🛒</span>
-                  <span>Gestion d'achat</span>
-                </Link>
-              )}
-              {hasAccess('packing') && (
-                <Link
-                  to="/packing"
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '10px',
-                    padding: '20px 30px',
-                    backgroundColor: '#6366f1',
-                    color: 'white',
-                    borderRadius: '8px',
-                    cursor: 'pointer',
-                    fontSize: '18px',
-                    border: 'none',
-                    boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
-                    transition: 'transform 0.2s',
-                    textDecoration: 'none',
-                  }}
-                  onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.05)'}
-                  onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
-                >
-                  <span style={{ fontSize: '28px' }}>📋</span>
-                  <span>Packing</span>
-                </Link>
-              )}
-              {hasAccess('catalog') && (
-                <Link
-                  to="/catalog"
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '10px',
-                    padding: '20px 30px',
-                    backgroundColor: '#059669',
-                    color: 'white',
-                    borderRadius: '8px',
-                    cursor: 'pointer',
-                    fontSize: '18px',
-                    border: 'none',
-                    boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
-                    transition: 'transform 0.2s',
-                    textDecoration: 'none',
-                  }}
-                  onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.05)'}
-                  onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
-                >
-                  <span style={{ fontSize: '28px' }}>📦</span>
-                  <span>Produits</span>
-                </Link>
+          </section>
+
+          {/* Grille des apps */}
+          <section style={{ flex: 1, padding: '36px 48px 48px' }}>
+            <div style={{ maxWidth: 1100, margin: '0 auto' }}>
+              <div style={{
+                display: 'flex',
+                alignItems: 'baseline',
+                justifyContent: 'space-between',
+                marginBottom: 22,
+                gap: 16,
+                flexWrap: 'wrap',
+              }}>
+                <div>
+                  <h2 style={{
+                    fontSize: 18,
+                    fontWeight: 800,
+                    color: C.grisTF,
+                    marginBottom: 3,
+                    fontFamily: "'Tilt Warp', cursive",
+                    margin: '0 0 3px',
+                  }}>
+                    Applications disponibles
+                  </h2>
+                  <p style={{ fontSize: 12.5, color: C.grisM, fontWeight: 500, margin: 0 }}>
+                    Glissez-déposez les icônes pour personnaliser l'ordre — votre disposition est sauvegardée automatiquement.
+                  </p>
+                </div>
+                <div style={{
+                  fontSize: 11,
+                  color: C.grisM,
+                  fontWeight: 600,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  padding: '6px 10px',
+                  background: C.grisTL,
+                  borderRadius: 99,
+                  flexShrink: 0,
+                }}>
+                  <GripIcon size={12} color={C.grisM} />
+                  {accessibleApps.length} app{accessibleApps.length > 1 ? 's' : ''}
+                </div>
+              </div>
+
+              {accessibleApps.length === 0 ? (
+                <div style={{
+                  padding: '48px 24px',
+                  textAlign: 'center',
+                  background: C.blanc,
+                  borderRadius: 14,
+                  border: `1px dashed ${C.grisCL}`,
+                  color: C.grisF,
+                }}>
+                  <p style={{ fontSize: 15, margin: 0 }}>
+                    Aucune application accessible. Contactez un administrateur pour obtenir des droits d'accès.
+                  </p>
+                </div>
+              ) : (
+                <div style={{
+                  display: 'grid',
+                  gridTemplateColumns: colTemplate,
+                  gap: prefs.tileSize === 'compact' ? 18 : prefs.tileSize === 'large' ? 32 : 26,
+                  justifyItems: 'center',
+                  alignItems: 'start',
+                }}>
+                  {accessibleApps.map(app => (
+                    <AppTile
+                      key={app.key}
+                      app={app}
+                      size={prefs.tileSize}
+                      isDragging={dragKey === app.key}
+                      isDragOver={dragOverKey === app.key && dragKey !== app.key}
+                      onDragStart={onDragStart}
+                      onDragOver={onDragOver}
+                      onDrop={onDrop}
+                      onDragEnd={onDragEnd}
+                    />
+                  ))}
+                </div>
               )}
             </div>
-          )}
-        </div>
+          </section>
 
-        <div style={{ textAlign: 'center', marginTop: '50px' }}>
-          <button
-            onClick={handleLogout}
-            style={{
-              padding: '12px 30px',
-              backgroundColor: '#dc3545',
-              color: 'white',
-              border: 'none',
-              borderRadius: '6px',
-              fontSize: '16px',
-              cursor: 'pointer'
-            }}
-          >
-            Se déconnecter
-          </button>
-        </div>
+          <footer style={{
+            padding: '18px 48px',
+            borderTop: `1px solid ${C.grisCL}`,
+            textAlign: 'center',
+            color: C.grisM,
+            fontSize: 12,
+          }}>
+            © 2026 YouVape — Tous droits réservés
+          </footer>
+        </main>
       </div>
-
-      {/* Footer */}
-      <div style={{
-        backgroundColor: '#135E84',
-        padding: '20px 0',
-        textAlign: 'center',
-        color: 'white'
-      }}>
-        <p style={{ margin: 0 }}>© 2024 YouVape - Tous droits réservés</p>
-      </div>
-    </div>
+    </>
   );
 };
 

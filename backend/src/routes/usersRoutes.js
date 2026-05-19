@@ -16,6 +16,10 @@ router.get('/me/permissions', usersController.getMyPermissions);
 // Mettre à jour le mot de passe BMS de l'utilisateur connecté
 router.put('/me/bms-password', usersController.updateMyBmsPassword);
 
+// Préférences d'affichage de l'utilisateur connecté (Home, ordre apps, taille tuiles…)
+router.get('/me/preferences', usersController.getMyPreferences);
+router.put('/me/preferences', usersController.updateMyPreferences);
+
 // Mettre à jour les permissions d'un utilisateur (admin uniquement)
 router.put('/:userId/permissions', checkAdmin, usersController.updateUserPermissions);
 
