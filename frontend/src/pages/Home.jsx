@@ -567,38 +567,19 @@ const Home = () => {
             flexDirection: 'column',
           }}
         >
-          {/* Barre du haut — fil d'Ariane (slot réservé au menu interne de chaque app) */}
-          <div style={{
-            height: 56,
-            flexShrink: 0,
-            background: C.blanc,
-            borderBottom: `1px solid ${C.grisCL}`,
-            padding: '0 32px',
-            display: 'flex',
-            alignItems: 'center',
-            position: 'sticky',
-            top: 0,
-            zIndex: 10,
-          }}>
-            <div style={{ fontSize: 12.5, fontWeight: 700, color: C.grisTF }}>
-              Accueil
-            </div>
-          </div>
-
           {/* Hero */}
           <section style={{
             padding: '48px 48px 28px',
             borderBottom: `1px solid ${C.grisCL}`,
             background: C.blanc,
           }}>
-            <div style={{ maxWidth: 1100, margin: '0 auto' }}>
+            <div style={{ maxWidth: 1100, margin: '0 auto', textAlign: 'center' }}>
               <h1 style={{
                 fontFamily: "'Tilt Warp', cursive",
                 fontSize: 'clamp(28px, 3.4vw, 40px)',
                 fontWeight: 900,
                 color: C.saphir,
                 letterSpacing: '-0.5px',
-                marginBottom: 6,
                 margin: '0 0 6px',
               }}>
                 Bienvenue sur YouVape Apps
