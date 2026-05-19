@@ -110,6 +110,70 @@ function shade(hex, amt) {
   return '#' + toHex(r) + toHex(g) + toHex(b);
 }
 
+/* ─── DRAG SORT (pointer events — fonctionne sur les <a>) ── */
+function useDragSort(order, onReorder) {
+  const dragKey = useRef(null);
+  const [draggingKey, setDraggingKey] = useState(null);
+  const [overKey, setOverKey] = useState(null);
+  // px de mouvement minimum pour déclencher le drag (évite drag accidentel au clic)
+  const startPos = useRef(null);
+  const THRESHOLD = 6;
+
+  const onPointerDown = useCallback((e, key) => {
+    if (e.button !== 0) return;
+    startPos.current = { x: e.clientX, y: e.clientY };
+    dragKey.current = key;
+  }, []);
+
+  const onPointerEnter = useCallback((key) => {
+    if (!draggingKey) return;
+    setOverKey(key);
+  }, [draggingKey]);
+
+  const onPointerUp = useCallback((e, key) => {
+    if (!draggingKey) {
+      dragKey.current = null;
+      startPos.current = null;
+      return;
+    }
+    e.preventDefault();
+    const from = dragKey.current;
+    const to = key;
+    if (from && to && from !== to) {
+      const newOrder = [...order];
+      const fi = newOrder.indexOf(from);
+      const ti = newOrder.indexOf(to);
+      if (fi !== -1 && ti !== -1) {
+        newOrder.splice(fi, 1);
+        newOrder.splice(ti, 0, from);
+        onReorder(newOrder);
+      }
+    }
+    dragKey.current = null;
+    startPos.current = null;
+    setDraggingKey(null);
+    setOverKey(null);
+  }, [draggingKey, order, onReorder]);
+
+  const onPointerMove = useCallback((e) => {
+    if (!dragKey.current || draggingKey) return;
+    const dx = e.clientX - (startPos.current?.x ?? e.clientX);
+    const dy = e.clientY - (startPos.current?.y ?? e.clientY);
+    if (Math.sqrt(dx * dx + dy * dy) > THRESHOLD) {
+      setDraggingKey(dragKey.current);
+    }
+  }, [draggingKey]);
+
+  const onPointerCancel = useCallback(() => {
+    dragKey.current = null;
+    startPos.current = null;
+    setDraggingKey(null);
+    setOverKey(null);
+  }, []);
+
+  return { draggingKey, overKey, onPointerDown, onPointerEnter, onPointerUp, onPointerMove, onPointerCancel };
+}
+
 /* ─── APP TILE (style macOS Launchpad) ──────────────────── */
 const SIZE_MAP = {
   compact:     { tile: 96,  icon: 38, label: 12, radius: 18 },
@@ -117,30 +181,28 @@ const SIZE_MAP = {
   large:       { tile: 156, icon: 62, label: 14, radius: 28 },
 };
 
-function AppTile({ app, size, isDragging, isDragOver, onDragStart, onDragOver, onDrop, onDragEnd }) {
+function AppTile({ app, size, isDragging, isDragOver, onPointerDown, onPointerEnter, onPointerUp, navigate }) {
   const s = SIZE_MAP[size] || SIZE_MAP.comfortable;
   const { Icon, color, path, label, key } = app;
 
   return (
-    <Link
-      to={path}
-      draggable
-      onDragStart={e => onDragStart(e, key)}
-      onDragOver={e => onDragOver(e, key)}
-      onDrop={e => onDrop(e, key)}
-      onDragEnd={onDragEnd}
+    <div
       className={`app-tile${isDragging ? ' dragging' : ''}${isDragOver ? ' drag-over' : ''}`}
+      onPointerDown={e => onPointerDown(e, key)}
+      onPointerEnter={() => onPointerEnter(key)}
+      onPointerUp={e => onPointerUp(e, key)}
+      onClick={() => { if (!isDragging) navigate(path); }}
       style={{
         width: s.tile,
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
         gap: 10,
-        textDecoration: 'none',
         cursor: isDragging ? 'grabbing' : 'grab',
         userSelect: 'none',
+        touchAction: 'none',
       }}
-      title={`Glisser pour réorganiser · ${label}`}
+      title={label}
     >
       <div style={{
         width: s.tile,
@@ -173,12 +235,12 @@ function AppTile({ app, size, isDragging, isDragOver, onDragStart, onDragOver, o
       }}>
         {label}
       </div>
-    </Link>
+    </div>
   );
 }
 
 /* ─── SIDEBAR ───────────────────────────────────────────── */
-function Sidebar({ user, orderedApps, accessibleKeys, dragKey, dragOverKey, onDragStart, onDragOver, onDrop, onDragEnd, onLogout }) {
+function Sidebar({ user, orderedApps, accessibleKeys, draggingKey, overKey, onPointerDown, onPointerEnter, onPointerUp, onLogout, navigate }) {
   const initial = user?.email?.[0]?.toUpperCase() ?? '?';
 
   return (
@@ -222,17 +284,15 @@ function Sidebar({ user, orderedApps, accessibleKeys, dragKey, dragOverKey, onDr
 
         {orderedApps.filter(a => accessibleKeys.includes(a.key)).map(app => {
           const { Icon, color, path, label, key } = app;
-          const isDrag = dragKey === key;
-          const isOver = dragOverKey === key && dragKey !== key;
+          const isDrag = draggingKey === key;
+          const isOver = overKey === key && draggingKey !== key;
           return (
-            <Link
+            <div
               key={key}
-              to={path}
-              draggable
-              onDragStart={e => onDragStart(e, key)}
-              onDragOver={e => onDragOver(e, key)}
-              onDrop={e => onDrop(e, key)}
-              onDragEnd={onDragEnd}
+              onPointerDown={e => onPointerDown(e, key)}
+              onPointerEnter={() => onPointerEnter(key)}
+              onPointerUp={e => onPointerUp(e, key)}
+              onClick={() => { if (!draggingKey) navigate(path); }}
               className={`sb-app-row${isDrag ? ' dragging' : ''}${isOver ? ' drag-over' : ''}`}
               style={{
                 display: 'flex',
@@ -244,9 +304,9 @@ function Sidebar({ user, orderedApps, accessibleKeys, dragKey, dragOverKey, onDr
                 color: 'rgba(255,255,255,0.72)',
                 fontSize: 13.5,
                 fontWeight: 500,
-                textDecoration: 'none',
                 cursor: isDrag ? 'grabbing' : 'grab',
                 userSelect: 'none',
+                touchAction: 'none',
               }}
             >
               <span style={{
@@ -271,7 +331,7 @@ function Sidebar({ user, orderedApps, accessibleKeys, dragKey, dragOverKey, onDr
               }}>
                 {label}
               </span>
-            </Link>
+            </div>
           );
         })}
       </div>
@@ -438,33 +498,12 @@ const Home = () => {
 
   const accessibleApps = orderedApps.filter(a => accessibleKeys.includes(a.key));
 
-  /* Drag & drop */
-  const [dragKey, setDragKey] = useState(null);
-  const [dragOverKey, setDragOverKey] = useState(null);
-
-  const onDragStart = (e, key) => {
-    setDragKey(key);
-    try { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', key); } catch {}
-  };
-  const onDragOver = (e, key) => {
-    e.preventDefault();
-    if (dragOverKey !== key) setDragOverKey(key);
-    try { e.dataTransfer.dropEffect = 'move'; } catch {}
-  };
-  const onDrop = (e, targetKey) => {
-    e.preventDefault();
-    if (!dragKey || dragKey === targetKey) { setDragKey(null); setDragOverKey(null); return; }
-    const newOrder = [...prefs.appOrder];
-    const fromIdx = newOrder.indexOf(dragKey);
-    const toIdx = newOrder.indexOf(targetKey);
-    if (fromIdx === -1 || toIdx === -1) { setDragKey(null); setDragOverKey(null); return; }
-    newOrder.splice(fromIdx, 1);
-    newOrder.splice(toIdx, 0, dragKey);
+  /* Drag & drop via pointer events */
+  const handleReorder = useCallback((newOrder) => {
     updatePrefs({ appOrder: newOrder });
-    setDragKey(null);
-    setDragOverKey(null);
-  };
-  const onDragEnd = () => { setDragKey(null); setDragOverKey(null); };
+  }, [updatePrefs]);
+
+  const { draggingKey, overKey, onPointerDown, onPointerEnter, onPointerUp, onPointerMove, onPointerCancel } = useDragSort(prefs.appOrder, handleReorder);
 
   const handleLogout = () => {
     logout();
@@ -498,18 +537,23 @@ const Home = () => {
         .main-scroll::-webkit-scrollbar-thumb { background: #E2E2E2; border-radius: 4px; }
       `}</style>
 
-      <div style={{ display: 'flex', minHeight: '100vh', background: C.grisTL, fontFamily: "'Lato', sans-serif" }}>
+      <div
+        style={{ display: 'flex', minHeight: '100vh', background: C.grisTL, fontFamily: "'Lato', sans-serif" }}
+        onPointerMove={onPointerMove}
+        onPointerUp={e => onPointerUp(e, overKey)}
+        onPointerCancel={onPointerCancel}
+      >
         <Sidebar
           user={user}
           orderedApps={orderedApps}
           accessibleKeys={accessibleKeys}
-          dragKey={dragKey}
-          dragOverKey={dragOverKey}
-          onDragStart={onDragStart}
-          onDragOver={onDragOver}
-          onDrop={onDrop}
-          onDragEnd={onDragEnd}
+          draggingKey={draggingKey}
+          overKey={overKey}
+          onPointerDown={onPointerDown}
+          onPointerEnter={onPointerEnter}
+          onPointerUp={onPointerUp}
           onLogout={handleLogout}
+          navigate={navigate}
         />
 
         <main
@@ -634,12 +678,12 @@ const Home = () => {
                       key={app.key}
                       app={app}
                       size={prefs.tileSize}
-                      isDragging={dragKey === app.key}
-                      isDragOver={dragOverKey === app.key && dragKey !== app.key}
-                      onDragStart={onDragStart}
-                      onDragOver={onDragOver}
-                      onDrop={onDrop}
-                      onDragEnd={onDragEnd}
+                      isDragging={draggingKey === app.key}
+                      isDragOver={overKey === app.key && draggingKey !== app.key}
+                      onPointerDown={onPointerDown}
+                      onPointerEnter={onPointerEnter}
+                      onPointerUp={onPointerUp}
+                      navigate={navigate}
                     />
                   ))}
                 </div>
