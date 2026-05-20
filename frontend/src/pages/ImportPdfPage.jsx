@@ -620,23 +620,23 @@ const ImportPdfPage = () => {
                   marginBottom: 18, overflow: 'hidden',
                 }}>
                   <div style={{ overflowX: 'auto' }}>
-                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13.5, color: C.grisTF, minWidth: 980 }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13.5, color: C.grisTF, minWidth: 1300 }}>
                       <thead>
                         <tr>
-                          <Th label="" width={28} />
-                          <Th label="Image" width={60} align="center" />
-                          <Th label="Ref fournisseur" width={150} />
-                          <Th label="Désignation PDF" />
-                          <Th label="Notre produit" />
-                          <Th label="Stock" align="center" width={70} />
-                          <Th label="Qte PDF" align="center" width={70} />
-                          <Th label="Pack" align="center" width={55} />
-                          <Th label="Qte finale" align="center" width={90} />
-                          <Th label="Prix PDF" align="right" width={100} />
+                          <Th label="" width={24} />
+                          <Th label="Image" width={64} align="center" />
+                          <Th label="Ref fournisseur" width={155} />
+                          <Th label="Désignation PDF" width={180} />
+                          <Th label="Notre produit" width={200} />
+                          <Th label="Stock" align="center" width={60} />
+                          <Th label="Qte PDF" align="center" width={68} />
+                          <Th label="Pack" align="center" width={52} />
+                          <Th label="Qte finale" align="center" width={88} />
+                          <Th label="Prix PDF" align="right" width={110} />
                           <Th label="Prix BDD" align="right" width={90} />
-                          <Th label="Remise %" align="center" width={80} />
+                          <Th label="Remise %" align="center" width={88} />
                           <Th label="Total HT" align="right" width={100} />
-                          <Th label="" width={44} />
+                          <Th label="" width={40} />
                         </tr>
                       </thead>
                       <tbody>
@@ -734,11 +734,11 @@ const ImportPdfPage = () => {
                               <td style={{ ...cell, textAlign: 'center', color: C.grisM }}>{item.pack_qty > 1 ? `×${item.pack_qty}` : '—'}</td>
                               {/* Qte finale */}
                               <td style={{ ...cell, textAlign: 'center' }}>
-                                <NumInput value={item.qty_ordered} onChange={v => handleUpdateQty(idx, v)} width={56} />
+                                <NumInput value={item.qty_ordered} onChange={v => handleUpdateQty(idx, v)} width={60} />
                               </td>
                               {/* Prix PDF */}
                               <td style={{ ...cell, textAlign: 'right' }}>
-                                <NumInput value={item.unit_price} step="0.01" onChange={v => handleUpdatePrice(idx, v)} width={68} suffix="€" placeholder="—" />
+                                <NumInput value={item.unit_price} step="0.01" onChange={v => handleUpdatePrice(idx, v)} width={72} suffix="€" placeholder="—" />
                               </td>
                               {/* Prix BDD */}
                               <td style={{ ...cell, textAlign: 'right', color: C.grisF, fontVariantNumeric: 'tabular-nums' }}>
@@ -746,7 +746,7 @@ const ImportPdfPage = () => {
                               </td>
                               {/* Remise % */}
                               <td style={{ ...cell, textAlign: 'center' }}>
-                                <NumInput value={item.discount || ''} step="0.1" onChange={v => handleUpdateDiscount(idx, v)} width={52} suffix="%" placeholder="0" />
+                                <NumInput value={item.discount || ''} step="0.1" onChange={v => handleUpdateDiscount(idx, v)} width={58} suffix="%" placeholder="0" />
                               </td>
                               {/* Total HT */}
                               <td style={{ ...cell, textAlign: 'right', fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>
