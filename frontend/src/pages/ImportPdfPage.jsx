@@ -617,25 +617,25 @@ const ImportPdfPage = () => {
                   background: C.blanc, borderRadius: 12,
                   border: `1px solid ${C.grisCL}`,
                   boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
-                  marginBottom: 18, overflow: 'hidden',
+                  marginBottom: 18,
                 }}>
-                  <div style={{ overflowX: 'auto' }}>
-                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13.5, color: C.grisTF, minWidth: 1300 }}>
+                  <div style={{ overflowX: 'auto', borderRadius: 12 }}>
+                    <table style={{ borderCollapse: 'collapse', fontSize: 13.5, color: C.grisTF, width: 'max-content', minWidth: '100%' }}>
                       <thead>
                         <tr>
                           <Th label="" width={24} />
                           <Th label="Image" width={64} align="center" />
-                          <Th label="Ref fournisseur" width={155} />
+                          <Th label="Ref fournisseur" width={160} />
                           <Th label="Désignation PDF" width={180} />
-                          <Th label="Notre produit" width={200} />
+                          <Th label="Notre produit" width={210} />
                           <Th label="Stock" align="center" width={60} />
-                          <Th label="Qte PDF" align="center" width={68} />
+                          <Th label="Qte PDF" align="center" width={70} />
                           <Th label="Pack" align="center" width={52} />
-                          <Th label="Qte finale" align="center" width={88} />
+                          <Th label="Qte finale" align="center" width={90} />
                           <Th label="Prix PDF" align="right" width={110} />
-                          <Th label="Prix BDD" align="right" width={90} />
-                          <Th label="Remise %" align="center" width={88} />
-                          <Th label="Total HT" align="right" width={100} />
+                          <Th label="Prix BDD" align="right" width={95} />
+                          <Th label="Remise %" align="center" width={90} />
+                          <Th label="Total HT" align="right" width={105} />
                           <Th label="" width={40} />
                         </tr>
                       </thead>
