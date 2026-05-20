@@ -389,57 +389,8 @@ export default function FinancierApp() {
 
   const gridCols = windowW >= 900 ? 3 : windowW >= 560 ? 2 : 1;
 
-  /* Menu interne : sélecteur de période dans la sidebar */
-  const appMenu = (
-    <div>
-      <div style={{
-        fontSize: 10, fontWeight: 800, letterSpacing: '0.12em',
-        color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase',
-        padding: '4px 10px 10px',
-      }}>
-        Rapport
-      </div>
-      <div style={{ padding: '0 4px', display: 'flex', flexDirection: 'column', gap: 2 }}>
-        {PERIODS.map(p => {
-          const active = period === p.key;
-          return (
-            <button key={p.key} onClick={() => setPeriod(p.key)} style={{
-              textAlign: 'left',
-              display: 'flex', alignItems: 'center',
-              background: active ? 'rgba(255,255,255,0.10)' : 'transparent',
-              color: active ? '#fff' : 'rgba(255,255,255,0.72)',
-              border: 'none',
-              borderLeft: active ? '3px solid #E28F00' : '3px solid transparent',
-              borderRadius: 8,
-              padding: active ? '8px 12px 8px 9px' : '8px 12px',
-              fontSize: 13, fontWeight: active ? 700 : 500,
-              cursor: 'pointer', fontFamily: 'Lato, sans-serif',
-              transition: 'background 0.15s, color 0.15s',
-              width: '100%',
-            }}
-            onMouseEnter={e => { if (!active) { e.currentTarget.style.background = 'rgba(255,255,255,0.06)'; e.currentTarget.style.color = 'rgba(255,255,255,0.92)'; }}}
-            onMouseLeave={e => { if (!active) { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'rgba(255,255,255,0.72)'; }}}
-            >{p.label}</button>
-          );
-        })}
-      </div>
-      {period === 'custom' && (
-        <div style={{ padding: '10px 4px 0', display: 'flex', flexDirection: 'column', gap: 6 }}>
-          <input type="date" value={customFrom} onChange={e => setCustomFrom(e.target.value)}
-            style={{ border: '1px solid rgba(255,255,255,0.15)', borderRadius: 7, padding: '6px 8px', fontSize: 12, fontFamily: 'Lato', color: '#fff', background: 'rgba(255,255,255,0.08)', width: '100%' }} />
-          <input type="date" value={customTo} onChange={e => setCustomTo(e.target.value)}
-            style={{ border: '1px solid rgba(255,255,255,0.15)', borderRadius: 7, padding: '6px 8px', fontSize: 12, fontFamily: 'Lato', color: '#fff', background: 'rgba(255,255,255,0.08)', width: '100%' }} />
-          <button onClick={handleApplyCustom}
-            style={{ background: '#E28F00', color: '#fff', border: 'none', borderRadius: 7, padding: '7px 0', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'Lato', width: '100%' }}>
-            Appliquer
-          </button>
-        </div>
-      )}
-    </div>
-  );
-
   return (
-    <AppShell appMenu={appMenu} currentPath="/financier">
+    <AppShell currentPath="/financier">
       <style>{`
         @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.5} }
       `}</style>
@@ -474,6 +425,36 @@ export default function FinancierApp() {
 
         {/* Main */}
         <main style={{ padding: 24, flex: 1 }}>
+
+          {/* Sélecteur de période */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 20, flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', background: C.blanc, borderRadius: 10, border: `1px solid ${C.grisCL}`, padding: 3, gap: 2 }}>
+              {PERIODS.map(p => (
+                <button key={p.key} onClick={() => setPeriod(p.key)} style={{
+                  background: period === p.key ? C.orange : 'transparent',
+                  color: period === p.key ? C.blanc : C.grisF,
+                  border: 'none', borderRadius: 8,
+                  padding: '6px 14px', fontSize: 13,
+                  fontWeight: period === p.key ? 700 : 500,
+                  cursor: 'pointer', transition: 'all 0.18s', fontFamily: 'Lato, sans-serif',
+                  whiteSpace: 'nowrap',
+                }}>{p.label}</button>
+              ))}
+            </div>
+            {period === 'custom' && (
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                <input type="date" value={customFrom} onChange={e => setCustomFrom(e.target.value)}
+                  style={{ border: `1px solid ${C.grisCL}`, borderRadius: 8, padding: '7px 10px', fontSize: 13, fontFamily: 'Lato', color: C.grisTF, background: C.blanc }} />
+                <span style={{ color: C.grisM, fontSize: 13 }}>→</span>
+                <input type="date" value={customTo} onChange={e => setCustomTo(e.target.value)}
+                  style={{ border: `1px solid ${C.grisCL}`, borderRadius: 8, padding: '7px 10px', fontSize: 13, fontFamily: 'Lato', color: C.grisTF, background: C.blanc }} />
+                <button onClick={handleApplyCustom}
+                  style={{ background: C.saphir, color: C.blanc, border: 'none', borderRadius: 8, padding: '7px 14px', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'Lato' }}>
+                  Appliquer
+                </button>
+              </div>
+            )}
+          </div>
 
           {/* Erreur */}
           {error && (
