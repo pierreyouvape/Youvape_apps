@@ -39,6 +39,7 @@ const purchasesController = {
           COALESCE(p.computed_cost, p.wc_cog_cost) as cost_price,
           p.product_type,
           p.wp_parent_id,
+          p.image_url,
           parent.post_title as parent_title
         FROM products p
         LEFT JOIN products parent ON parent.wp_product_id = p.wp_parent_id

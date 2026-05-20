@@ -233,6 +233,7 @@ const ImportPdfPage = () => {
         product_name: product.post_title,
         product_sku: product.sku,
         current_stock: product.stock,
+        image_url: product.image_url || null,
         supplier_price: product.cost_price != null ? parseFloat(product.cost_price) : null,
         unit_price: item.unit_price ?? product.cost_price ?? null,
       };
@@ -623,6 +624,7 @@ const ImportPdfPage = () => {
                       <thead>
                         <tr>
                           <Th label="" width={28} />
+                          <Th label="Image" width={60} align="center" />
                           <Th label="Ref fournisseur" width={150} />
                           <Th label="Désignation PDF" />
                           <Th label="Notre produit" />
@@ -647,6 +649,7 @@ const ImportPdfPage = () => {
                                 <td style={cell}>
                                   <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: C.grisM }} />
                                 </td>
+                                <td style={{ ...cell, textAlign: 'center' }} />
                                 <td colSpan={2} style={{ ...cell, color: C.grisM, fontStyle: 'italic' }}>—</td>
                                 <td colSpan={7} style={{ ...cell, fontStyle: 'italic', color: C.grisTF }}>{item.product_name}</td>
                                 <td style={{ ...cell, textAlign: 'right', fontWeight: 600, color: C.rouge }}>
@@ -665,6 +668,18 @@ const ImportPdfPage = () => {
                             <tr key={idx} style={{ background: item.matched ? C.blanc : '#FFFBEB' }}>
                               <td style={{ ...cell, textAlign: 'center' }}>
                                 <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: item.matched ? '#2A8049' : C.orange }} />
+                              </td>
+                              <td style={{ ...cell, textAlign: 'center' }}>
+                                {item.matched && item.image_url ? (
+                                  <img
+                                    src={item.image_url}
+                                    alt={item.product_name}
+                                    style={{ width: 44, height: 44, objectFit: 'contain', borderRadius: 6, border: `1px solid ${C.grisCL}`, background: C.grisTL }}
+                                    onError={e => { e.currentTarget.style.display = 'none'; }}
+                                  />
+                                ) : (
+                                  <div style={{ width: 44, height: 44, borderRadius: 6, background: C.grisTL, border: `1px solid ${C.grisCL}`, margin: '0 auto' }} />
+                                )}
                               </td>
                               <td style={{ ...cell, fontWeight: 700, fontSize: 13, fontFamily: 'monospace' }}>{item.supplier_sku}</td>
                               <td style={{ ...cell, color: C.grisF, lineHeight: 1.4 }}>{item.designation}</td>

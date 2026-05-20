@@ -54,7 +54,8 @@ const pdfImportModel = {
         p.post_title,
         p.sku as product_sku,
         p.stock,
-        p.product_type
+        p.product_type,
+        p.image_url
       FROM product_suppliers ps
       JOIN products p ON ps.product_id = p.id
       WHERE ps.supplier_id = $1
@@ -96,6 +97,7 @@ const pdfImportModel = {
         product_name: match ? match.post_title : null,
         product_sku: match ? match.product_sku : null,
         current_stock: match ? parseInt(match.stock) : null,
+        image_url: match ? match.image_url : null,
         // Prix
         pdf_price: pdfGross,           // prix brut HT (affiché dans "Prix unit.")
         pdf_price_net: pdfNet,         // prix net après remise (pour calcul unit_price)
