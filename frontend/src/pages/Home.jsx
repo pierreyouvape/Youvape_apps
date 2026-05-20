@@ -155,7 +155,10 @@ const Home = () => {
   const accessibleApps = orderedApps.filter(a => accessibleKeys.includes(a.key));
 
   const handleReorder = useCallback((newOrder) => updatePrefs({ appOrder: newOrder }), [updatePrefs]);
-  const { draggingKey, overKey, onPointerDown, onPointerEnter, onPointerUp, onPointerMove, onPointerCancel } = useDragSort(prefs.appOrder, handleReorder);
+  // On passe l'ordre affiché réel (pas prefs.appOrder) pour que les nouvelles apps
+  // absentes du localStorage soient quand même déplaçables
+  const displayedOrder = useMemo(() => orderedApps.map(a => a.key), [orderedApps]);
+  const { draggingKey, overKey, onPointerDown, onPointerEnter, onPointerUp, onPointerMove, onPointerCancel } = useDragSort(displayedOrder, handleReorder);
 
   const colTemplate = {
     compact:     'repeat(auto-fill, minmax(120px, 1fr))',
