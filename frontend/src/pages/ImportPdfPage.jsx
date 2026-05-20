@@ -374,7 +374,7 @@ const ImportPdfPage = () => {
         </header>
 
         <div style={{ padding: '28px', flex: 1 }}>
-          <div style={{ maxWidth: parsedData ? 1200 : 760, margin: '0 auto' }}>
+          <div style={{ maxWidth: parsedData ? 'none' : 760, margin: parsedData ? 0 : '0 auto' }}>
 
             {/* ==================== ETAPE 1 : UPLOAD ==================== */}
             {!parsedData && (
@@ -620,7 +620,7 @@ const ImportPdfPage = () => {
                   marginBottom: 18,
                 }}>
                   <div style={{ overflowX: 'auto', borderRadius: 12 }}>
-                    <table style={{ borderCollapse: 'collapse', fontSize: 13.5, color: C.grisTF, width: 'max-content', minWidth: '100%' }}>
+                    <table style={{ borderCollapse: 'collapse', fontSize: 13.5, color: C.grisTF, width: '100%' }}>
                       <thead>
                         <tr>
                           <Th label="" width={24} />
