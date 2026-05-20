@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef, useCallback, useContext } from 'react';
 import { AuthContext } from '../context/AuthContext';
 import axios from 'axios';
+import AppShell from '../components/AppShell';
+import { Stats as RapportIcon } from '../components/AppIcons';
 
 const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:3000/api/auth').replace('/auth', '');
 
@@ -326,7 +328,6 @@ export default function FinancierApp() {
   const [period, setPeriod] = useState('month');
   const [customFrom, setCustomFrom] = useState('');
   const [customTo, setCustomTo] = useState('');
-  const [sidebarOpen, setSidebarOpen] = useState(true);
   const [windowW, setWindowW] = useState(window.innerWidth);
 
   const [data, setData] = useState(null);
@@ -334,12 +335,8 @@ export default function FinancierApp() {
   const [error, setError] = useState(null);
 
   useEffect(() => {
-    const onResize = () => {
-      setWindowW(window.innerWidth);
-      if (window.innerWidth < 768) setSidebarOpen(false);
-    };
+    const onResize = () => setWindowW(window.innerWidth);
     window.addEventListener('resize', onResize);
-    if (window.innerWidth < 768) setSidebarOpen(false);
     return () => window.removeEventListener('resize', onResize);
   }, []);
 
@@ -392,27 +389,83 @@ export default function FinancierApp() {
 
   const gridCols = windowW >= 900 ? 3 : windowW >= 560 ? 2 : 1;
 
+  /* Menu interne : sélecteur de période dans la sidebar */
+  const appMenu = (
+    <div>
+      <div style={{
+        fontSize: 10, fontWeight: 800, letterSpacing: '0.12em',
+        color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase',
+        padding: '4px 10px 10px',
+      }}>
+        Rapport
+      </div>
+      <div style={{ padding: '0 4px', display: 'flex', flexDirection: 'column', gap: 2 }}>
+        {PERIODS.map(p => {
+          const active = period === p.key;
+          return (
+            <button key={p.key} onClick={() => setPeriod(p.key)} style={{
+              textAlign: 'left',
+              display: 'flex', alignItems: 'center',
+              background: active ? 'rgba(255,255,255,0.10)' : 'transparent',
+              color: active ? '#fff' : 'rgba(255,255,255,0.72)',
+              border: 'none',
+              borderLeft: active ? '3px solid #E28F00' : '3px solid transparent',
+              borderRadius: 8,
+              padding: active ? '8px 12px 8px 9px' : '8px 12px',
+              fontSize: 13, fontWeight: active ? 700 : 500,
+              cursor: 'pointer', fontFamily: 'Lato, sans-serif',
+              transition: 'background 0.15s, color 0.15s',
+              width: '100%',
+            }}
+            onMouseEnter={e => { if (!active) { e.currentTarget.style.background = 'rgba(255,255,255,0.06)'; e.currentTarget.style.color = 'rgba(255,255,255,0.92)'; }}}
+            onMouseLeave={e => { if (!active) { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'rgba(255,255,255,0.72)'; }}}
+            >{p.label}</button>
+          );
+        })}
+      </div>
+      {period === 'custom' && (
+        <div style={{ padding: '10px 4px 0', display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <input type="date" value={customFrom} onChange={e => setCustomFrom(e.target.value)}
+            style={{ border: '1px solid rgba(255,255,255,0.15)', borderRadius: 7, padding: '6px 8px', fontSize: 12, fontFamily: 'Lato', color: '#fff', background: 'rgba(255,255,255,0.08)', width: '100%' }} />
+          <input type="date" value={customTo} onChange={e => setCustomTo(e.target.value)}
+            style={{ border: '1px solid rgba(255,255,255,0.15)', borderRadius: 7, padding: '6px 8px', fontSize: 12, fontFamily: 'Lato', color: '#fff', background: 'rgba(255,255,255,0.08)', width: '100%' }} />
+          <button onClick={handleApplyCustom}
+            style={{ background: '#E28F00', color: '#fff', border: 'none', borderRadius: 7, padding: '7px 0', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'Lato', width: '100%' }}>
+            Appliquer
+          </button>
+        </div>
+      )}
+    </div>
+  );
+
   return (
-    <div style={{ display: 'flex', height: '100%', minHeight: '100vh', background: C.grisTL, fontFamily: 'Lato, sans-serif', color: C.grisTF }}>
-      <Sidebar open={sidebarOpen} />
+    <AppShell appMenu={appMenu} currentPath="/financier">
+      <style>{`
+        @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.5} }
+      `}</style>
 
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, overflow: 'auto' }}>
+      <main className="main-scroll" style={{ flex: 1, minWidth: 0, overflowY: 'auto', height: '100vh', display: 'flex', flexDirection: 'column', fontFamily: 'Lato, sans-serif', color: C.grisTF }}>
 
-        {/* Header */}
+        {/* Top bar */}
         <header style={{
           background: C.blanc, borderBottom: `1px solid ${C.grisCL}`,
           padding: '0 24px', height: 58, display: 'flex', alignItems: 'center',
           justifyContent: 'space-between', position: 'sticky', top: 0, zIndex: 30, gap: 12,
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <button
-              onClick={() => setSidebarOpen(o => !o)}
-              style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '6px 8px', borderRadius: 8, color: C.gris, fontSize: 18, lineHeight: 1, display: 'flex', alignItems: 'center' }}
-            >☰</button>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <YouvapeLogo size={34} />
-              <span style={{ color: C.grisM, fontWeight: 500, fontSize: 13 }}>/ Dashboard</span>
+            <div style={{
+              width: 30, height: 30, borderRadius: 8, flexShrink: 0,
+              background: 'linear-gradient(155deg, #135E84 0%, #003A56 100%)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              boxShadow: '0 4px 12px rgba(19,94,132,0.35)',
+            }}>
+              <RapportIcon size={18} color="#fff" />
             </div>
+            <span style={{ fontSize: 16, fontWeight: 800, color: C.grisTF, fontFamily: "'Tilt Warp', cursive" }}>Rapport</span>
+            <span style={{ color: C.grisCL }}>/</span>
+            <span style={{ fontSize: 13, color: C.grisF, fontWeight: 600 }}>
+              {PERIODS.find(p => p.key === period)?.label}
+            </span>
           </div>
           <div style={{ fontSize: 12, color: C.grisM, fontWeight: 500 }}>
             {new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
@@ -421,41 +474,6 @@ export default function FinancierApp() {
 
         {/* Main */}
         <main style={{ padding: 24, flex: 1 }}>
-
-          {/* Sélecteur de période */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 20, flexWrap: 'wrap' }}>
-            <div style={{ display: 'flex', background: C.blanc, borderRadius: 10, border: `1px solid ${C.grisCL}`, padding: 3, gap: 2 }}>
-              {PERIODS.map(p => (
-                <button
-                  key={p.key}
-                  onClick={() => setPeriod(p.key)}
-                  style={{
-                    background: period === p.key ? C.orange : 'transparent',
-                    color: period === p.key ? C.blanc : C.grisF,
-                    border: 'none', borderRadius: 8,
-                    padding: '6px 14px', fontSize: 13,
-                    fontWeight: period === p.key ? 700 : 500,
-                    cursor: 'pointer', transition: 'all 0.18s', fontFamily: 'Lato, sans-serif',
-                    whiteSpace: 'nowrap',
-                  }}
-                >{p.label}</button>
-              ))}
-            </div>
-
-            {period === 'custom' && (
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                <input type="date" value={customFrom} onChange={e => setCustomFrom(e.target.value)}
-                  style={{ border: `1px solid ${C.grisCL}`, borderRadius: 8, padding: '7px 10px', fontSize: 13, fontFamily: 'Lato', color: C.grisTF, background: C.blanc }} />
-                <span style={{ color: C.grisM, fontSize: 13 }}>→</span>
-                <input type="date" value={customTo} onChange={e => setCustomTo(e.target.value)}
-                  style={{ border: `1px solid ${C.grisCL}`, borderRadius: 8, padding: '7px 10px', fontSize: 13, fontFamily: 'Lato', color: C.grisTF, background: C.blanc }} />
-                <button onClick={handleApplyCustom}
-                  style={{ background: C.saphir, color: C.blanc, border: 'none', borderRadius: 8, padding: '7px 14px', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'Lato' }}>
-                  Appliquer
-                </button>
-              </div>
-            )}
-          </div>
 
           {/* Erreur */}
           {error && (
@@ -555,15 +573,7 @@ export default function FinancierApp() {
             </>
           )}
         </main>
-      </div>
-
-      <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Lato:wght@400;700;900&display=swap');
-        @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.5} }
-        ::-webkit-scrollbar { width: 6px; height: 6px; }
-        ::-webkit-scrollbar-track { background: transparent; }
-        ::-webkit-scrollbar-thumb { background: ${C.grisCL}; border-radius: 3px; }
-      `}</style>
-    </div>
+      </main>
+    </AppShell>
   );
 }

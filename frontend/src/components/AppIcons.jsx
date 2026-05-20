@@ -117,4 +117,5 @@ export const APPS = [
   { key: 'purchases', path: '/purchases', label: "Gestion d'achat",          Icon: Purchases, color: '#F59E0B' },
   { key: 'packing',   path: '/packing',   label: 'Packing',                  Icon: Packing,   color: '#6366F1' },
   { key: 'catalog',   path: '/catalog',   label: 'Produits',                 Icon: Catalog,   color: '#059669' },
+  { key: 'financier', path: '/financier', label: 'Rapport',                  Icon: Stats,     color: '#135E84' },
 ];

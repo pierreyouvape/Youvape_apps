@@ -36,7 +36,7 @@ const SettingsApp = () => {
     { key: 'purchases', label: 'Gestion d\'achat' },
     { key: 'catalog', label: 'Produits' },
     { key: 'packing', label: 'Packing', accessOnly: true },
-    { key: 'financier', label: 'Dashboard Financier', accessOnly: true }
+    { key: 'financier', label: 'Rapport', accessOnly: true }
   ];
 
   const tabs = [
