@@ -87,14 +87,13 @@ function parseConfirmation(text) {
     );
     const designation = beforeLines.length > 0 ? beforeLines[beforeLines.length - 1] : '';
 
-    // Quantite : chercher "nombre \t prix €" apres la ref
-    // Format : "160 \t451,20 €" ou juste "50 \t141,00 €"
-    let qtyMatch = afterRef.match(/(\d+)\s+\t?\s*[\d\s,]+€/);
+    // Quantite : chercher "QTE PRIX€" avec prix obligatoirement décimal (ex: "5 44,50 €")
+    // Le prix doit contenir une virgule ou un point pour éviter de capturer des chiffres dans les noms de saveurs
+    let qtyMatch = afterRef.match(/(\d+)\s+\t?\s*[\d\s]*[\d,]\d{2}\s*€/);
     // Fallback : qty avant la ref (cas saut de page — qty+prix sur page N, Référence: sur page N+1)
-    // On prend le dernier match "QTE \t PRIX €" avant les totaux (Sous-total, Montant global, etc.)
     if (!qtyMatch) {
       const beforeTotals = beforeRef.replace(/\n(Sous-total|Frais|Taxe|Montant|Articles)[^\n]*/g, '\n');
-      const allQtyMatches = [...beforeTotals.matchAll(/(\d+)\s+\t\s*[\d\s,]+€/g)];
+      const allQtyMatches = [...beforeTotals.matchAll(/(\d+)\s+\t\s*[\d\s]*[\d,]\d{2}\s*€/g)];
       if (allQtyMatches.length > 0) {
         qtyMatch = allQtyMatches[allQtyMatches.length - 1];
       }
