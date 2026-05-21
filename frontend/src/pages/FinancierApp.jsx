@@ -42,6 +42,30 @@ function getDateRange(period) {
     const first = new Date(now.getFullYear(), 0, 1);
     return { dateFrom: fmt(first), dateTo: fmt(now) };
   }
+  if (period === 'yesterday') {
+    const d = new Date(now); d.setDate(d.getDate() - 1);
+    return { dateFrom: fmt(d), dateTo: fmt(d) };
+  }
+  if (period === 'last_week') {
+    const day = now.getDay() || 7;
+    const mon = new Date(now); mon.setDate(now.getDate() - day - 6);
+    const sun = new Date(mon); sun.setDate(mon.getDate() + 6);
+    return { dateFrom: fmt(mon), dateTo: fmt(sun) };
+  }
+  if (period === 'last_month') {
+    const first = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const last  = new Date(now.getFullYear(), now.getMonth(), 0);
+    return { dateFrom: fmt(first), dateTo: fmt(last) };
+  }
+  if (period === 'last_year') {
+    const y = now.getFullYear() - 1;
+    return { dateFrom: `${y}-01-01`, dateTo: `${y}-12-31` };
+  }
+  if (period === 'last_7')   { const d = new Date(now); d.setDate(d.getDate() - 6);  return { dateFrom: fmt(d), dateTo: fmt(now) }; }
+  if (period === 'last_30')  { const d = new Date(now); d.setDate(d.getDate() - 29); return { dateFrom: fmt(d), dateTo: fmt(now) }; }
+  if (period === 'last_60')  { const d = new Date(now); d.setDate(d.getDate() - 59); return { dateFrom: fmt(d), dateTo: fmt(now) }; }
+  if (period === 'last_90')  { const d = new Date(now); d.setDate(d.getDate() - 89); return { dateFrom: fmt(d), dateTo: fmt(now) }; }
+  if (period === 'last_365') { const d = new Date(now); d.setDate(d.getDate() - 364); return { dateFrom: fmt(d), dateTo: fmt(now) }; }
   return null;
 }
 
@@ -322,13 +346,30 @@ const PERIODS = [
   { key: 'custom', label: 'Personnalisé' },
 ];
 
+const CUSTOM_PRESETS = [
+  { key: 'yesterday',   label: 'Hier' },
+  { key: 'last_week',   label: 'Semaine dernière' },
+  { key: 'last_month',  label: 'Mois dernier' },
+  { key: 'last_year',   label: 'Année dernière' },
+  { key: 'last_7',      label: '7 derniers jours' },
+  { key: 'last_30',     label: '30 derniers jours' },
+  { key: 'last_60',     label: '60 derniers jours' },
+  { key: 'last_90',     label: '90 derniers jours' },
+  { key: 'last_365',    label: '365 derniers jours' },
+  { key: 'date_range',  label: 'Dates personnalisées…' },
+];
+
 /* ─── MAIN APP ───────────────────────────────────────────── */
 export default function FinancierApp() {
   const { token, logout } = useContext(AuthContext);
   const [period, setPeriod] = useState('month');
   const [customFrom, setCustomFrom] = useState('');
   const [customTo, setCustomTo] = useState('');
+  const [customPreset, setCustomPreset] = useState('');
+  const [showDropdown, setShowDropdown] = useState(false);
+  const [showDatePickers, setShowDatePickers] = useState(false);
   const [windowW, setWindowW] = useState(window.innerWidth);
+  const dropdownRef = useRef(null);
 
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -338,6 +379,14 @@ export default function FinancierApp() {
     const onResize = () => setWindowW(window.innerWidth);
     window.addEventListener('resize', onResize);
     return () => window.removeEventListener('resize', onResize);
+  }, []);
+
+  useEffect(() => {
+    const onClickOutside = (e) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target)) setShowDropdown(false);
+    };
+    document.addEventListener('mousedown', onClickOutside);
+    return () => document.removeEventListener('mousedown', onClickOutside);
   }, []);
 
   const fetchData = useCallback(async (p, cFrom, cTo, silent = false) => {
@@ -365,16 +414,36 @@ export default function FinancierApp() {
     fetchData(period, customFrom, customTo);
   }, [period, fetchData]);
 
-  // Refresh automatique toutes les 60s sur les périodes dynamiques
+  // Refresh automatique toutes les 60s sur les périodes dynamiques (pas date_range ni presets fixes)
+  const activePeriod = customPreset || period;
   useEffect(() => {
-    if (period === 'custom') return;
-    const id = setInterval(() => fetchData(period, '', '', true), 60000);
+    const staticPresets = ['yesterday', 'last_week', 'last_month', 'last_year'];
+    if (activePeriod === 'custom' || staticPresets.includes(activePeriod)) return;
+    const id = setInterval(() => {
+      if (customPreset) fetchData(customPreset, '', '', true);
+      else fetchData(period, '', '', true);
+    }, 60000);
     return () => clearInterval(id);
-  }, [period, fetchData]);
+  }, [activePeriod, period, customPreset, fetchData]);
 
   const handleApplyCustom = () => {
     if (customFrom && customTo) fetchData('custom', customFrom, customTo);
   };
+
+  const handlePresetSelect = (key) => {
+    setShowDropdown(false);
+    if (key === 'date_range') {
+      setShowDatePickers(true);
+      return;
+    }
+    setShowDatePickers(false);
+    setCustomPreset(key);
+    fetchData(key, '', '');
+  };
+
+  const customLabel = customPreset
+    ? (CUSTOM_PRESETS.find(p => p.key === customPreset)?.label || 'Personnalisé')
+    : 'Personnalisé';
 
   const kpis = data ? [
     { label: 'CA TTC Brut', value: fmtEur(data.kpis.ca_ttc_brut), color: C.orange, sparkData: data.series.map(s => s.ca_ttc_brut) },
@@ -415,7 +484,9 @@ export default function FinancierApp() {
             <span style={{ fontSize: 16, fontWeight: 800, color: C.grisTF, fontFamily: "'Tilt Warp', cursive" }}>Rapport</span>
             <span style={{ color: C.grisCL }}>/</span>
             <span style={{ fontSize: 13, color: C.grisF, fontWeight: 600 }}>
-              {PERIODS.find(p => p.key === period)?.label}
+              {customPreset
+                ? CUSTOM_PRESETS.find(p => p.key === customPreset)?.label
+                : PERIODS.find(p => p.key === period)?.label}
             </span>
           </div>
           <div style={{ fontSize: 12, color: C.grisM, fontWeight: 500 }}>
@@ -429,19 +500,72 @@ export default function FinancierApp() {
           {/* Sélecteur de période */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 20, flexWrap: 'wrap' }}>
             <div style={{ display: 'flex', background: C.blanc, borderRadius: 10, border: `1px solid ${C.grisCL}`, padding: 3, gap: 2 }}>
-              {PERIODS.map(p => (
-                <button key={p.key} onClick={() => setPeriod(p.key)} style={{
-                  background: period === p.key ? C.orange : 'transparent',
-                  color: period === p.key ? C.blanc : C.grisF,
-                  border: 'none', borderRadius: 8,
-                  padding: '6px 14px', fontSize: 13,
-                  fontWeight: period === p.key ? 700 : 500,
-                  cursor: 'pointer', transition: 'all 0.18s', fontFamily: 'Lato, sans-serif',
-                  whiteSpace: 'nowrap',
-                }}>{p.label}</button>
-              ))}
+              {PERIODS.map(p => {
+                const isActive = p.key === 'custom'
+                  ? period === 'custom' || (period !== 'today' && period !== 'week' && period !== 'month' && period !== 'year')
+                  : period === p.key;
+                return (
+                  <div key={p.key} style={{ position: 'relative' }} ref={p.key === 'custom' ? dropdownRef : null}>
+                    <button
+                      onClick={() => {
+                        if (p.key === 'custom') {
+                          setShowDropdown(v => !v);
+                        } else {
+                          setPeriod(p.key);
+                          setCustomPreset('');
+                          setShowDropdown(false);
+                          setShowDatePickers(false);
+                        }
+                      }}
+                      style={{
+                        background: isActive ? C.orange : 'transparent',
+                        color: isActive ? C.blanc : C.grisF,
+                        border: 'none', borderRadius: 8,
+                        padding: '6px 14px', fontSize: 13,
+                        fontWeight: isActive ? 700 : 500,
+                        cursor: 'pointer', transition: 'all 0.18s', fontFamily: 'Lato, sans-serif',
+                        whiteSpace: 'nowrap',
+                        display: 'flex', alignItems: 'center', gap: 5,
+                      }}
+                    >
+                      {p.key === 'custom' ? customLabel : p.label}
+                      {p.key === 'custom' && <span style={{ fontSize: 10, opacity: 0.8 }}>▾</span>}
+                    </button>
+
+                    {p.key === 'custom' && showDropdown && (
+                      <div style={{
+                        position: 'absolute', top: 'calc(100% + 6px)', left: 0, zIndex: 100,
+                        background: C.blanc, borderRadius: 12, border: `1px solid ${C.grisCL}`,
+                        boxShadow: '0 8px 24px rgba(0,0,0,0.12)', minWidth: 200, overflow: 'hidden',
+                      }}>
+                        {CUSTOM_PRESETS.map((preset, idx) => (
+                          <button
+                            key={preset.key}
+                            onClick={() => handlePresetSelect(preset.key)}
+                            style={{
+                              display: 'block', width: '100%', textAlign: 'left',
+                              padding: '9px 16px', fontSize: 13, fontFamily: 'Lato, sans-serif',
+                              background: customPreset === preset.key ? `${C.orange}15` : 'transparent',
+                              color: customPreset === preset.key ? C.orange : C.grisF,
+                              fontWeight: customPreset === preset.key ? 700 : 500,
+                              border: 'none', cursor: 'pointer',
+                              borderTop: idx === CUSTOM_PRESETS.length - 1 ? `1px solid ${C.grisCL}` : 'none',
+                              transition: 'background 0.12s',
+                            }}
+                            onMouseEnter={e => e.currentTarget.style.background = `${C.orange}10`}
+                            onMouseLeave={e => e.currentTarget.style.background = customPreset === preset.key ? `${C.orange}15` : 'transparent'}
+                          >
+                            {preset.label}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
-            {period === 'custom' && (
+
+            {showDatePickers && (
               <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                 <input type="date" value={customFrom} onChange={e => setCustomFrom(e.target.value)}
                   style={{ border: `1px solid ${C.grisCL}`, borderRadius: 8, padding: '7px 10px', fontSize: 13, fontFamily: 'Lato', color: C.grisTF, background: C.blanc }} />
