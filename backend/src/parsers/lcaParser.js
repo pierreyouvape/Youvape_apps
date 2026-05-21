@@ -89,6 +89,9 @@ function parseConfirmation(text) {
 
     // Quantite : chercher "QTE PRIX€" avec prix obligatoirement décimal (ex: "5 44,50 €")
     // Le prix doit contenir une virgule ou un point pour éviter de capturer des chiffres dans les noms de saveurs
+    if (ref.ref.includes('64031') || ref.ref.includes('64032')) {
+      console.log(`[LCA DEBUG] ref=${ref.ref}\nafterRef=>>>${afterRef}<<<\nbeforeRef=>>>${beforeRef}<<<`);
+    }
     let qtyMatch = afterRef.match(/(\d+)\s+\t?\s*[\d\s]*[\d,]\d{2}\s*€/);
     // Fallback : qty avant la ref (cas saut de page — qty+prix sur page N, Référence: sur page N+1)
     if (!qtyMatch) {
