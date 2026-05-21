@@ -17,4 +17,7 @@ router.get('/labels', checkPackingRead, laposteController.listLabels);
 // Annuler une étiquette
 router.post('/labels/:id/cancel', checkPackingRead, laposteController.cancelLabel);
 
+// Récupérer le PDF d'une étiquette existante
+router.get('/labels/:id/pdf', checkPackingRead, laposteController.getLabelPdf);
+
 module.exports = router;

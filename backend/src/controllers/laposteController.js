@@ -290,10 +290,10 @@ const generateLabel = async (req, res) => {
 
     console.log('[LaPoste] Étiquette générée — orderId:', orderId, 'tracking:', trackingId);
 
-    // Sauvegarder en BDD
+    // Sauvegarder en BDD (avec le PDF pour réimpression ultérieure)
     await pool.query(
-      `INSERT INTO laposte_labels (order_number, tracking_id, laposte_order_id, packed_by) VALUES ($1, $2, $3, $4)`,
-      [orderNumber, trackingId, orderId, req.user?.id || null]
+      `INSERT INTO laposte_labels (order_number, tracking_id, laposte_order_id, packed_by, pdf_data) VALUES ($1, $2, $3, $4, $5)`,
+      [orderNumber, trackingId, orderId, req.user?.id || null, modifiedPdf]
     );
 
     // Confirmer l'expédition dans BMS (non bloquant)
@@ -432,8 +432,35 @@ const cancelLabel = async (req, res) => {
   }
 };
 
+// Récupérer le PDF d'une étiquette existante
+const getLabelPdf = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const result = await pool.query(
+      'SELECT pdf_data, order_number FROM laposte_labels WHERE id = $1',
+      [id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Étiquette introuvable' });
+    }
+
+    const { pdf_data, order_number } = result.rows[0];
+
+    if (!pdf_data) {
+      return res.status(404).json({ error: 'PDF non disponible pour cette étiquette' });
+    }
+
+    res.json({ pdfBase64: pdf_data, orderNumber: order_number });
+  } catch (error) {
+    console.error('[LaPoste] Erreur getLabelPdf:', error.message);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+};
+
 module.exports = {
   generateLabel,
   listLabels,
-  cancelLabel
+  cancelLabel,
+  getLabelPdf
 };

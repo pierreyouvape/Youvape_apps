@@ -66,6 +66,7 @@ const PackingApp = () => {
   const [labelsLoading, setLabelsLoading] = useState(false);
   const [cancelConfirm, setCancelConfirm] = useState(null); // label id to confirm cancel
   const [cancelLoading, setCancelLoading] = useState(false);
+  const [reprintLoading, setReprintLoading] = useState(null); // label id en cours
   const [hoveredImage, setHoveredImage] = useState(null); // { url, x, y }
   const [wrongShippingOrder, setWrongShippingOrder] = useState(null); // order_number si mauvaise méthode
 
@@ -279,6 +280,20 @@ const PackingApp = () => {
       setCancelLoading(false);
     }
   }, [token, loadLabels]);
+
+  const reprintLabel = useCallback(async (label) => {
+    setReprintLoading(label.id);
+    try {
+      const res = await axios.get(`${API_URL}/laposte/labels/${label.id}/pdf`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      downloadPdf(res.data.pdfBase64, res.data.orderNumber);
+    } catch (err) {
+      alert(err.response?.data?.error || 'Erreur récupération PDF');
+    } finally {
+      setReprintLoading(null);
+    }
+  }, [token, downloadPdf]);
 
   // Réinitialiser
   const handleReset = useCallback(() => {
@@ -543,7 +558,7 @@ const PackingApp = () => {
                       <th style={{ padding: '10px 12px', textAlign: 'left', fontSize: '13px', color: '#666' }}>N° suivi</th>
                       <th style={{ padding: '10px 12px', textAlign: 'center', fontSize: '13px', color: '#666' }}>Date</th>
                       <th style={{ padding: '10px 12px', textAlign: 'left', fontSize: '13px', color: '#666' }}>Packer</th>
-                      <th style={{ padding: '10px 12px', textAlign: 'center', fontSize: '13px', color: '#666', width: '120px' }}>Action</th>
+                      <th style={{ padding: '10px 12px', textAlign: 'center', fontSize: '13px', color: '#666', width: '180px' }}>Actions</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -571,22 +586,41 @@ const PackingApp = () => {
                           {label.status === 'cancelled' ? (
                             <span style={{ color: '#dc3545', fontSize: '13px', fontWeight: '600' }}>Annulee</span>
                           ) : (
-                            <button
-                              onClick={() => setCancelConfirm(label)}
-                              disabled={!label.cancellable}
-                              style={{
-                                padding: '5px 12px',
-                                backgroundColor: label.cancellable ? '#dc3545' : '#e9ecef',
-                                color: label.cancellable ? 'white' : '#adb5bd',
-                                border: 'none',
-                                borderRadius: '5px',
-                                cursor: label.cancellable ? 'pointer' : 'default',
-                                fontSize: '12px',
-                                fontWeight: '600'
-                              }}
-                            >
-                              Annuler
-                            </button>
+                            <div style={{ display: 'flex', gap: '6px', justifyContent: 'center' }}>
+                              <button
+                                onClick={() => reprintLabel(label)}
+                                disabled={reprintLoading === label.id}
+                                style={{
+                                  padding: '5px 10px',
+                                  backgroundColor: '#0d6efd',
+                                  color: 'white',
+                                  border: 'none',
+                                  borderRadius: '5px',
+                                  cursor: reprintLoading === label.id ? 'default' : 'pointer',
+                                  fontSize: '12px',
+                                  fontWeight: '600',
+                                  opacity: reprintLoading === label.id ? 0.6 : 1
+                                }}
+                              >
+                                {reprintLoading === label.id ? '...' : 'Imprimer'}
+                              </button>
+                              <button
+                                onClick={() => setCancelConfirm(label)}
+                                disabled={!label.cancellable}
+                                style={{
+                                  padding: '5px 10px',
+                                  backgroundColor: label.cancellable ? '#dc3545' : '#e9ecef',
+                                  color: label.cancellable ? 'white' : '#adb5bd',
+                                  border: 'none',
+                                  borderRadius: '5px',
+                                  cursor: label.cancellable ? 'pointer' : 'default',
+                                  fontSize: '12px',
+                                  fontWeight: '600'
+                                }}
+                              >
+                                Annuler
+                              </button>
+                            </div>
                           )}
                         </td>
                       </tr>
