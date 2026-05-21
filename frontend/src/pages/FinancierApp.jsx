@@ -411,20 +411,26 @@ export default function FinancierApp() {
   }, [token, logout]);
 
   useEffect(() => {
-    fetchData(period, customFrom, customTo);
-  }, [period, fetchData]);
+    // Si period=custom sans dates ni preset, ne pas fetcher (évite requête sans filtre)
+    if (period === 'custom' && !customPreset && (!customFrom || !customTo)) return;
+    if (period === 'custom' && customPreset) fetchData(customPreset, '', '');
+    else fetchData(period, customFrom, customTo);
+  }, [period, fetchData]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Refresh automatique toutes les 60s sur les périodes dynamiques (pas date_range ni presets fixes)
   const activePeriod = customPreset || period;
   useEffect(() => {
     const staticPresets = ['yesterday', 'last_week', 'last_month', 'last_year'];
-    if (activePeriod === 'custom' || staticPresets.includes(activePeriod)) return;
+    // Pas de refresh si plage fixe ou si custom sans preset ni dates
+    if (staticPresets.includes(activePeriod)) return;
+    if (activePeriod === 'custom' && !customPreset && (!customFrom || !customTo)) return;
     const id = setInterval(() => {
       if (customPreset) fetchData(customPreset, '', '', true);
-      else fetchData(period, '', '', true);
+      else if (period !== 'custom') fetchData(period, '', '', true);
+      else if (customFrom && customTo) fetchData('custom', customFrom, customTo, true);
     }, 60000);
     return () => clearInterval(id);
-  }, [activePeriod, period, customPreset, fetchData]);
+  }, [activePeriod, period, customPreset, customFrom, customTo, fetchData]);
 
   const handleApplyCustom = () => {
     if (customFrom && customTo) fetchData('custom', customFrom, customTo);
