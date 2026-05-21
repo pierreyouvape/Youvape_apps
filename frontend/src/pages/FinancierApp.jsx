@@ -433,9 +433,11 @@ export default function FinancierApp() {
   const handlePresetSelect = (key) => {
     setShowDropdown(false);
     if (key === 'date_range') {
+      setPeriod('custom');
       setShowDatePickers(true);
       return;
     }
+    setPeriod('custom');
     setShowDatePickers(false);
     setCustomPreset(key);
     fetchData(key, '', '');
