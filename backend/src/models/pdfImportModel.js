@@ -2,6 +2,40 @@ const { PDFParse } = require('pdf-parse');
 const pool = require('../config/database');
 const parserRegistry = require('../parsers');
 
+/**
+ * Nettoie le texte brut extrait d'un PDF avant parsing :
+ * - Normalise les caractères spéciaux (espaces insécables, tirets typographiques)
+ * - Supprime les caractères de contrôle parasites
+ * - Recollage des mots coupés en fin de ligne par un tiret
+ * En cas d'échec, retourne le texte original sans modification.
+ */
+function cleanPdfText(text) {
+  try {
+    let cleaned = text;
+
+    // Espaces insécables et autres variantes → espace normal
+    cleaned = cleaned.replace(/[           ﻿]/g, ' ');
+
+    // Tirets typographiques → tiret standard
+    cleaned = cleaned.replace(/[‐‑‒–—―]/g, '-');
+
+    // Caractères de contrôle parasites (hors \n et \t)
+    cleaned = cleaned.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '');
+
+    // Recollage des mots coupés en fin de ligne par un tiret
+    // Ex : "GOLD-\nSUCKER" → "GOLD-SUCKER"
+    // Seulement si les deux côtés sont alphanumériques (évite de coller des tirets de liste)
+    cleaned = cleaned.replace(/([A-Za-z0-9])-\n([A-Za-z0-9])/g, '$1-$2');
+
+    // Espaces multiples → espace simple (hors sauts de ligne)
+    cleaned = cleaned.replace(/[^\S\n]+/g, ' ');
+
+    return cleaned;
+  } catch {
+    return text;
+  }
+}
+
 const pdfImportModel = {
   /**
    * Parse un PDF fournisseur et matche les lignes avec les produits en BDD
@@ -32,10 +66,19 @@ const pdfImportModel = {
     const pdfParser = new PDFParse(uint8);
     await pdfParser.load();
     const pdfData = await pdfParser.getText();
-    const text = pdfData.text;
+    const rawText = pdfData.text;
+    const text = cleanPdfText(rawText);
 
-    // 4. Parser avec le parseur du fournisseur
-    const parsed = parser.parse(text);
+    // 4. Parser avec le parseur du fournisseur (fallback sur rawText si aucun item trouvé)
+    let parsed = parser.parse(text);
+    let parseMode = 'clean';
+    if (!parsed.items || parsed.items.length === 0) {
+      console.warn(`[pdfImport] cleanPdfText a donné 0 items pour ${supplier.name}, fallback sur rawText`);
+      parsed = parser.parse(rawText);
+      parseMode = 'legacy';
+    } else {
+      console.log(`[pdfImport] ${supplier.name} : ${parsed.items.length} items trouvés (texte nettoyé)`);
+    }
 
     if (!parsed.items || parsed.items.length === 0) {
       throw new Error('Aucune ligne produit trouvée dans le PDF');
@@ -145,6 +188,7 @@ const pdfImportModel = {
       order_number: parsed.orderNumber,
       order_date: parsed.orderDate,
       has_price: parsed.hasPrice || false,
+      parse_mode: parseMode,
       duplicate_warning: duplicateWarning,
       items: allItems,
       total_items: enrichedItems.length,

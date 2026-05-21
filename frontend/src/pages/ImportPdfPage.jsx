@@ -610,6 +610,10 @@ const ImportPdfPage = () => {
                       Ce document ne contient pas de prix. Les prix sont pré-remplis depuis la base fournisseur (modifiables).
                     </div>
                   )}
+
+                  <div style={{ marginTop: 14, padding: '10px 14px', background: parsedData.parse_mode === 'clean' ? '#F0FDF4' : '#FFF4E0', borderRadius: 8, border: `1px solid ${parsedData.parse_mode === 'clean' ? '#86EFAC' : '#F5D78E'}`, fontSize: 13, color: parsedData.parse_mode === 'clean' ? '#166534' : '#92400e', display: 'flex', alignItems: 'center', gap: 10 }}>
+                    {parsedData.parse_mode === 'clean' ? '✓ Parsé avec le cleaner' : '⚠️ Parsé de façon classique (cleaner inactif)'}
+                  </div>
                 </Card>
 
                 {/* Table des lignes */}
