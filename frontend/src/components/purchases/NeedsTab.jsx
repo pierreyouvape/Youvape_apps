@@ -30,7 +30,14 @@ const COVERAGE_OPTIONS = [
 const loadSavedFilters = () => {
   try {
     const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved) return JSON.parse(saved);
+    if (saved) {
+      const filters = JSON.parse(saved);
+      // Migration : 30j → 31j pour aligner sur ATUM
+      if (filters.analysisPeriod === 30 && filters.analysisPeriodUnit === 'days') {
+        filters.analysisPeriod = 31;
+      }
+      return filters;
+    }
   } catch (e) {}
   return null;
 };
