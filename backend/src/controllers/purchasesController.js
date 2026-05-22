@@ -60,7 +60,7 @@ const purchasesController = {
       res.json({ success: true, data: result.rows });
     } catch (error) {
       console.error('Erreur searchProducts:', error);
-      res.status(500).json({ success: false, error: 'Erreur serveur' });
+      res.status(500).json({ success: false, error: error.message || 'Erreur serveur' });
     }
   },
   // ==================== BESOINS ====================
@@ -73,7 +73,7 @@ const purchasesController = {
       res.json({ success: true, data: products });
     } catch (error) {
       console.error('Erreur getProductsNeedsRaw:', error);
-      res.status(500).json({ success: false, error: 'Erreur serveur' });
+      res.status(500).json({ success: false, error: error.message || 'Erreur serveur' });
     }
   },
 
@@ -93,7 +93,7 @@ const purchasesController = {
       res.json({ success: true, data: needs });
     } catch (error) {
       console.error('Erreur getProductNeed:', error);
-      res.status(500).json({ success: false, error: 'Erreur serveur' });
+      res.status(500).json({ success: false, error: error.message || 'Erreur serveur' });
     }
   },
 
@@ -106,7 +106,7 @@ const purchasesController = {
       res.json({ success: true, data: alerts });
     } catch (error) {
       console.error('Erreur getAlerts:', error);
-      res.status(500).json({ success: false, error: 'Erreur serveur' });
+      res.status(500).json({ success: false, error: error.message || 'Erreur serveur' });
     }
   },
 
@@ -127,7 +127,7 @@ const purchasesController = {
       res.json({ success: true, data: alert });
     } catch (error) {
       console.error('Erreur setAlert:', error);
-      res.status(500).json({ success: false, error: 'Erreur serveur' });
+      res.status(500).json({ success: false, error: error.message || 'Erreur serveur' });
     }
   },
 
@@ -141,7 +141,7 @@ const purchasesController = {
       res.json({ success: true, message: 'Alerte supprimée' });
     } catch (error) {
       console.error('Erreur deleteAlert:', error);
-      res.status(500).json({ success: false, error: 'Erreur serveur' });
+      res.status(500).json({ success: false, error: error.message || 'Erreur serveur' });
     }
   },
 
@@ -163,7 +163,7 @@ const purchasesController = {
       res.json({ success: true, data: orders });
     } catch (error) {
       console.error('Erreur getOrders:', error);
-      res.status(500).json({ success: false, error: 'Erreur serveur' });
+      res.status(500).json({ success: false, error: error.message || 'Erreur serveur' });
     }
   },
 
@@ -177,7 +177,7 @@ const purchasesController = {
       res.json({ success: true, data: order });
     } catch (error) {
       console.error('Erreur getOrderById:', error);
-      res.status(500).json({ success: false, error: 'Erreur serveur' });
+      res.status(500).json({ success: false, error: error.message || 'Erreur serveur' });
     }
   },
 
@@ -198,7 +198,7 @@ const purchasesController = {
       res.status(201).json({ success: true, data: order });
     } catch (error) {
       console.error('Erreur createOrder:', error);
-      res.status(500).json({ success: false, error: 'Erreur serveur' });
+      res.status(500).json({ success: false, error: error.message || 'Erreur serveur' });
     }
   },
 
@@ -246,7 +246,7 @@ const purchasesController = {
       res.json({ success: true, data: order });
     } catch (error) {
       console.error('Erreur updateOrderStatus:', error);
-      res.status(500).json({ success: false, error: 'Erreur serveur' });
+      res.status(500).json({ success: false, error: error.message || 'Erreur serveur' });
     }
   },
 
@@ -268,7 +268,7 @@ const purchasesController = {
       res.json({ success: true, data: order });
     } catch (error) {
       console.error('Erreur updateItemReceived:', error);
-      res.status(500).json({ success: false, error: 'Erreur serveur' });
+      res.status(500).json({ success: false, error: error.message || 'Erreur serveur' });
     }
   },
 
@@ -285,7 +285,7 @@ const purchasesController = {
       res.json({ success: true, message: 'Commande supprimée' });
     } catch (error) {
       console.error('Erreur deleteOrder:', error);
-      res.status(500).json({ success: false, error: 'Erreur serveur' });
+      res.status(500).json({ success: false, error: error.message || 'Erreur serveur' });
     }
   },
 
@@ -321,7 +321,7 @@ const purchasesController = {
       res.json({ success: true, data: { last_sync_at: lastSync, last_reception_sync_at: lastReceptionSync } });
     } catch (error) {
       console.error('Erreur getBmsSyncInfo:', error);
-      res.status(500).json({ success: false, error: 'Erreur serveur' });
+      res.status(500).json({ success: false, error: error.message || 'Erreur serveur' });
     }
   },
 
@@ -363,7 +363,7 @@ const purchasesController = {
       res.json({ success: true, data: result });
     } catch (error) {
       console.error('Erreur updateProductSupplier:', error);
-      res.status(500).json({ success: false, error: 'Erreur serveur' });
+      res.status(500).json({ success: false, error: error.message || 'Erreur serveur' });
     }
   },
 
@@ -377,7 +377,7 @@ const purchasesController = {
       res.json({ success: true, data: history });
     } catch (error) {
       console.error('Erreur getProductSupplierHistory:', error);
-      res.status(500).json({ success: false, error: 'Erreur serveur' });
+      res.status(500).json({ success: false, error: error.message || 'Erreur serveur' });
     }
   },
 
@@ -411,7 +411,7 @@ const purchasesController = {
       res.send('\uFEFF' + csvContent); // BOM pour Excel
     } catch (error) {
       console.error('Erreur exportOrder:', error);
-      res.status(500).json({ success: false, error: 'Erreur serveur' });
+      res.status(500).json({ success: false, error: error.message || 'Erreur serveur' });
     }
   },
 
@@ -436,7 +436,7 @@ const purchasesController = {
       '',
       `Total articles: ${order.total_items}`,
       `Total quantité: ${order.total_qty}`,
-      order.total_amount > 0 ? `Total montant: ${order.total_amount.toFixed(2)} €` : ''
+      order.total_amount > 0 ? `Total montant: ${parseFloat(order.total_amount).toFixed(2)} €` : ''
     ];
 
     return csv.join('\n');

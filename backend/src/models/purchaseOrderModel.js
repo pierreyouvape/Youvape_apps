@@ -332,6 +332,15 @@ const purchaseOrderModel = {
       throw new Error('Aucun produit avec SKU valide pour créer la commande BMS');
     }
 
+    // Bloquer si des articles n'ont pas de prix
+    const itemsSansPrix = bmsItems.filter(i => !i.price || i.price === 0);
+    if (itemsSansPrix.length > 0) {
+      const refs = itemsSansPrix.map(i => i.supplier_sku || i.sku).join(', ');
+      throw new Error(
+        `${itemsSansPrix.length} article(s) sans prix unitaire : ${refs}. Renseignez leurs prix dans la commande avant d'envoyer à BMS.`
+      );
+    }
+
     // Créer la commande dans BMS
     const bmsOrderData = {
       reference: order.order_number,

@@ -182,7 +182,15 @@ const OrdersTab = ({ token }) => {
       link.remove();
     } catch (err) {
       console.error('Erreur export:', err);
-      alert('Erreur lors de l\'export');
+      let message = 'Erreur lors de l\'export';
+      try {
+        if (err.response?.data instanceof Blob) {
+          const text = await err.response.data.text();
+          const json = JSON.parse(text);
+          message = json.error || message;
+        }
+      } catch {}
+      alert(message);
     }
   };
 
