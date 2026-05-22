@@ -28,6 +28,7 @@ const needsCalculationModel = {
         COALESCE(s_primary.name, s_any.name) as supplier_name,
         COALESCE(s_primary.analysis_period_months, s_any.analysis_period_months, 1) as supplier_analysis_period,
         COALESCE(s_primary.coverage_months, s_any.coverage_months, 1) as supplier_coverage_months,
+        COALESCE(s_primary.lead_time_days, s_any.lead_time_days, 2) as supplier_lead_time_days,
         ps_primary.supplier_sku,
         ps_primary.supplier_price,
         COALESCE(
@@ -191,6 +192,7 @@ const needsCalculationModel = {
       supplier_name: p.supplier_name,
       supplier_analysis_period: parseFloat(p.supplier_analysis_period) || 1,
       supplier_coverage_months: parseFloat(p.supplier_coverage_months) || 1,
+      supplier_lead_time_days: parseInt(p.supplier_lead_time_days) || 2,
       supplier_sku: p.supplier_sku,
       supplier_price: p.supplier_price,
       incoming_qty: incomingMap.get(p.id) || 0,

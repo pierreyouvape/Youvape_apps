@@ -155,7 +155,7 @@ const computeProductNeeds = (product, periodDays, coverageMonths, isCustomPeriod
 
   // Convertir en moyenne mensuelle (30 jours = 1 mois)
   const periodInMonths = actualDays / 30;
-  const avgMonthlySales = periodInMonths > 0 ? salesInPeriod / periodInMonths : 0;
+  const avgMonthlySales = dailyRate * 30; // moyenne mensuelle pour affichage
 
   // Tendance : agréger par semaine pour avoir des points exploitables
   const weeklyMap = new Map();
@@ -172,27 +172,35 @@ const computeProductNeeds = (product, periodDays, coverageMonths, isCustomPeriod
   const trendResult = calculateTrendCoefficient(weeklySales);
   const trendCoefficient = trendResult.coefficient;
 
-  const fifteenDaysSales = avgMonthlySales / 2;
-  const projectedMonthlySales = avgMonthlySales * trendCoefficient;
-  const fifteenDaysProjected = projectedMonthlySales / 2;
-
-  const theoreticalCoverage = avgMonthlySales * coverageMonths;
-  const theoreticalSafety = max_order_qty + fifteenDaysSales;
-  const theoreticalNeed = Math.max(theoreticalCoverage, theoreticalSafety);
-
-  const supposedCoverage = projectedMonthlySales * coverageMonths;
-  const supposedSafety = max_order_qty + fifteenDaysProjected;
-  const supposedNeed = Math.max(supposedCoverage, supposedSafety);
-
+  // Formule ATUM : besoin basé sur le rythme journalier vs couverture cible
+  const leadTimeDays = product.supplier_lead_time_days || 2;
+  const dailyRate = actualDays > 0 ? salesInPeriod / actualDays : 0;
   const effectiveStock = stock + incoming_qty;
-  const theoreticalProposal = Math.max(0, Math.ceil(theoreticalNeed) - effectiveStock);
-  const supposedProposal = Math.max(0, Math.ceil(supposedNeed) - effectiveStock);
+
+  // Jours de stock restants au rythme actuel
+  const stockWillLast = dailyRate > 0 ? effectiveStock / dailyRate : Infinity;
+
+  // Cible = délai livraison + couverture souhaitée
+  const targetDays = leadTimeDays + (coverageMonths * 30);
+
+  // Stock cible à atteindre
+  const theoreticalNeed = dailyRate > 0 ? dailyRate * targetDays : 0;
+  const theoreticalProposal = dailyRate > 0 ? Math.max(0, Math.ceil(theoreticalNeed) - effectiveStock) : 0;
+
+  // Supposé : avec tendance projetée
+  const projectedDailyRate = dailyRate * trendCoefficient;
+  const supposedNeed = projectedDailyRate > 0 ? projectedDailyRate * targetDays : 0;
+  const supposedProposal = projectedDailyRate > 0 ? Math.max(0, Math.ceil(supposedNeed) - effectiveStock) : 0;
+
+
 
   return {
     sales_in_period: salesInPeriod,
     avg_monthly_sales: Math.round(avgMonthlySales * 100) / 100,
     trend_coefficient: Math.round(trendCoefficient * 100) / 100,
     trend_direction: trendCoefficient > 1.1 ? 'up' : trendCoefficient < 0.9 ? 'down' : 'stable',
+    daily_rate: Math.round(dailyRate * 1000) / 1000,
+    stock_will_last: dailyRate > 0 ? Math.round(stockWillLast) : null,
     theoretical_need: Math.ceil(theoreticalNeed),
     supposed_need: Math.ceil(supposedNeed),
     theoretical_proposal: theoreticalProposal,
@@ -238,6 +246,7 @@ const NEEDS_COLUMNS = [
   { key: 'sales_in_period',     label: 'Ventes période' },
   { key: 'avg_monthly_sales',   label: 'Ventes/mois' },
   { key: 'tendance',            label: 'Tendance' },
+  { key: 'stock_will_last',     label: 'Stock j.' },
   { key: 'theoretical_need',    label: 'Besoin théo.' },
   { key: 'supposed_need',       label: 'Besoin supp.' },
   { key: 'theoretical_proposal',label: 'Prop. théo.' },
