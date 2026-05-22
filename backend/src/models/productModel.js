@@ -129,7 +129,7 @@ class ProductModel {
         MAX(o.post_date) as last_sale_date
       FROM products p
       LEFT JOIN order_items oi ON oi.wp_product_id = p.wp_product_id
-      LEFT JOIN orders o ON o.wp_order_id = oi.wp_order_id AND o.post_status = 'wc-completed'
+      LEFT JOIN orders o ON o.wp_order_id = oi.wp_order_id AND o.post_status = ANY(ARRAY['wc-completed', 'wc-delivered', 'wc-processing', 'wc-awaiting-delivery', 'wc-shipped', 'wc-being-delivered'])
       WHERE p.wp_product_id = $1
     `;
 
@@ -142,7 +142,7 @@ class ProductModel {
       FROM order_items oi
       INNER JOIN orders o ON o.wp_order_id = oi.wp_order_id
       LEFT JOIN products p_cost ON p_cost.wp_product_id = oi.product_id
-      WHERE oi.wp_product_id = $1 AND o.post_status = 'wc-completed'
+      WHERE oi.wp_product_id = $1 AND o.post_status = ANY(ARRAY['wc-completed', 'wc-delivered', 'wc-processing', 'wc-awaiting-delivery', 'wc-shipped', 'wc-being-delivered'])
     `;
 
     const costResult = await pool.query(costQuery, [wpProductId]);
@@ -174,7 +174,7 @@ class ProductModel {
       FROM order_items oi
       JOIN orders o ON o.wp_order_id = oi.wp_order_id
       JOIN customers c ON c.wp_user_id = o.wp_customer_id
-      WHERE oi.wp_product_id = $1 AND o.post_status = 'wc-completed'
+      WHERE oi.wp_product_id = $1 AND o.post_status = ANY(ARRAY['wc-completed', 'wc-delivered', 'wc-processing', 'wc-awaiting-delivery', 'wc-shipped', 'wc-being-delivered'])
       GROUP BY c.wp_user_id, c.email, c.first_name, c.last_name
       ORDER BY total_quantity DESC
       LIMIT $2

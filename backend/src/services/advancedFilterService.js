@@ -15,8 +15,8 @@ class AdvancedFilterService {
   async searchCustomers(filters = {}) {
     let query = `
       SELECT DISTINCT c.*,
-        (SELECT COUNT(*) FROM orders WHERE wp_customer_id = c.wp_user_id AND post_status = 'wc-completed') as order_count,
-        (SELECT COALESCE(SUM(order_total), 0) FROM orders WHERE wp_customer_id = c.wp_user_id AND post_status = 'wc-completed') as total_spent,
+        (SELECT COUNT(*) FROM orders WHERE wp_customer_id = c.wp_user_id AND post_status = ANY(ARRAY['wc-completed', 'wc-delivered', 'wc-processing', 'wc-awaiting-delivery', 'wc-shipped', 'wc-being-delivered'])) as order_count,
+        (SELECT COALESCE(SUM(order_total), 0) FROM orders WHERE wp_customer_id = c.wp_user_id AND post_status = ANY(ARRAY['wc-completed', 'wc-delivered', 'wc-processing', 'wc-awaiting-delivery', 'wc-shipped', 'wc-being-delivered'])) as total_spent,
         (SELECT MAX(post_date) FROM orders WHERE wp_customer_id = c.wp_user_id) as last_order_date
       FROM customers c
       WHERE 1=1
@@ -34,7 +34,7 @@ class AdvancedFilterService {
             JOIN order_items oi ON oi.wp_order_id = o.wp_order_id
             WHERE o.wp_customer_id = c.wp_user_id
               AND oi.product_id = $${paramIndex}
-              AND o.post_status = 'wc-completed'
+              AND o.post_status = ANY(ARRAY['wc-completed', 'wc-delivered', 'wc-processing', 'wc-awaiting-delivery', 'wc-shipped', 'wc-being-delivered'])
           )
         `;
         params.push(productId);
@@ -50,7 +50,7 @@ class AdvancedFilterService {
           JOIN order_items oi ON oi.wp_order_id = o.wp_order_id
           WHERE o.wp_customer_id = c.wp_user_id
             AND oi.product_id = ANY($${paramIndex}::bigint[])
-            AND o.post_status = 'wc-completed'
+            AND o.post_status = ANY(ARRAY['wc-completed', 'wc-delivered', 'wc-processing', 'wc-awaiting-delivery', 'wc-shipped', 'wc-being-delivered'])
         )
       `;
       params.push(filters.products.product_ids);
@@ -91,14 +91,14 @@ class AdvancedFilterService {
     if (filters.total_spent) {
       if (filters.total_spent.min) {
         query += `
-          AND (SELECT COALESCE(SUM(order_total), 0) FROM orders WHERE wp_customer_id = c.wp_user_id AND post_status = 'wc-completed') >= $${paramIndex}
+          AND (SELECT COALESCE(SUM(order_total), 0) FROM orders WHERE wp_customer_id = c.wp_user_id AND post_status = ANY(ARRAY['wc-completed', 'wc-delivered', 'wc-processing', 'wc-awaiting-delivery', 'wc-shipped', 'wc-being-delivered'])) >= $${paramIndex}
         `;
         params.push(filters.total_spent.min);
         paramIndex++;
       }
       if (filters.total_spent.max) {
         query += `
-          AND (SELECT COALESCE(SUM(order_total), 0) FROM orders WHERE wp_customer_id = c.wp_user_id AND post_status = 'wc-completed') <= $${paramIndex}
+          AND (SELECT COALESCE(SUM(order_total), 0) FROM orders WHERE wp_customer_id = c.wp_user_id AND post_status = ANY(ARRAY['wc-completed', 'wc-delivered', 'wc-processing', 'wc-awaiting-delivery', 'wc-shipped', 'wc-being-delivered'])) <= $${paramIndex}
         `;
         params.push(filters.total_spent.max);
         paramIndex++;
@@ -109,14 +109,14 @@ class AdvancedFilterService {
     if (filters.order_count) {
       if (filters.order_count.min) {
         query += `
-          AND (SELECT COUNT(*) FROM orders WHERE wp_customer_id = c.wp_user_id AND post_status = 'wc-completed') >= $${paramIndex}
+          AND (SELECT COUNT(*) FROM orders WHERE wp_customer_id = c.wp_user_id AND post_status = ANY(ARRAY['wc-completed', 'wc-delivered', 'wc-processing', 'wc-awaiting-delivery', 'wc-shipped', 'wc-being-delivered'])) >= $${paramIndex}
         `;
         params.push(filters.order_count.min);
         paramIndex++;
       }
       if (filters.order_count.max) {
         query += `
-          AND (SELECT COUNT(*) FROM orders WHERE wp_customer_id = c.wp_user_id AND post_status = 'wc-completed') <= $${paramIndex}
+          AND (SELECT COUNT(*) FROM orders WHERE wp_customer_id = c.wp_user_id AND post_status = ANY(ARRAY['wc-completed', 'wc-delivered', 'wc-processing', 'wc-awaiting-delivery', 'wc-shipped', 'wc-being-delivered'])) <= $${paramIndex}
         `;
         params.push(filters.order_count.max);
         paramIndex++;
@@ -298,10 +298,10 @@ class AdvancedFilterService {
         FROM orders o2
         JOIN order_items oi2 ON oi2.wp_order_id = o2.wp_order_id
         WHERE oi2.product_id = $1
-          AND o2.post_status = 'wc-completed'
+          AND o2.post_status = ANY(ARRAY['wc-completed', 'wc-delivered', 'wc-processing', 'wc-awaiting-delivery', 'wc-shipped', 'wc-being-delivered'])
       )
       AND p.wp_product_id != $1  -- Exclure le produit lui-même
-      AND o.post_status = 'wc-completed'
+      AND o.post_status = ANY(ARRAY['wc-completed', 'wc-delivered', 'wc-processing', 'wc-awaiting-delivery', 'wc-shipped', 'wc-being-delivered'])
       GROUP BY p.wp_product_id, p.post_title, p.sku, p.price, p.wc_cog_cost
       ORDER BY times_bought_together DESC, customers_count DESC
       LIMIT $2
@@ -353,8 +353,8 @@ class AdvancedFilterService {
   async getCustomersBuyingXandYbutNotZ(productX, productY, productZ, limit = 50) {
     const query = `
       SELECT DISTINCT c.*,
-        (SELECT COUNT(*) FROM orders WHERE wp_customer_id = c.wp_user_id AND post_status = 'wc-completed') as order_count,
-        (SELECT COALESCE(SUM(order_total), 0) FROM orders WHERE wp_customer_id = c.wp_user_id AND post_status = 'wc-completed') as total_spent
+        (SELECT COUNT(*) FROM orders WHERE wp_customer_id = c.wp_user_id AND post_status = ANY(ARRAY['wc-completed', 'wc-delivered', 'wc-processing', 'wc-awaiting-delivery', 'wc-shipped', 'wc-being-delivered'])) as order_count,
+        (SELECT COALESCE(SUM(order_total), 0) FROM orders WHERE wp_customer_id = c.wp_user_id AND post_status = ANY(ARRAY['wc-completed', 'wc-delivered', 'wc-processing', 'wc-awaiting-delivery', 'wc-shipped', 'wc-being-delivered'])) as total_spent
       FROM customers c
       WHERE
         -- A acheté X
@@ -363,7 +363,7 @@ class AdvancedFilterService {
           JOIN order_items oi ON oi.wp_order_id = o.wp_order_id
           WHERE o.wp_customer_id = c.wp_user_id
             AND oi.product_id = $1
-            AND o.post_status = 'wc-completed'
+            AND o.post_status = ANY(ARRAY['wc-completed', 'wc-delivered', 'wc-processing', 'wc-awaiting-delivery', 'wc-shipped', 'wc-being-delivered'])
         )
         -- ET a acheté Y
         AND EXISTS (
@@ -371,7 +371,7 @@ class AdvancedFilterService {
           JOIN order_items oi ON oi.wp_order_id = o.wp_order_id
           WHERE o.wp_customer_id = c.wp_user_id
             AND oi.product_id = $2
-            AND o.post_status = 'wc-completed'
+            AND o.post_status = ANY(ARRAY['wc-completed', 'wc-delivered', 'wc-processing', 'wc-awaiting-delivery', 'wc-shipped', 'wc-being-delivered'])
         )
         -- MAIS N'A PAS acheté Z
         AND NOT EXISTS (

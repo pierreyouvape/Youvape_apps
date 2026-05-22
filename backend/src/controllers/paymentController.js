@@ -303,7 +303,7 @@ exports.calculatePaymentCosts = async (req, res) => {
       SELECT wp_order_id, payment_method_title, order_total, payment_cost_calculated, shipping_country
       FROM orders
       WHERE post_date >= $1 AND post_date < $2
-        AND post_status IN ('wc-completed', 'wc-processing', 'wc-shipped', 'wc-pending')
+        AND post_status IN ('wc-completed', 'wc-delivered', 'wc-processing', 'wc-awaiting-delivery', 'wc-shipped', 'wc-being-delivered')
     `, [date_from, date_to]);
 
     let totalCalculated = 0;
@@ -371,7 +371,7 @@ exports.applyPaymentCosts = async (req, res) => {
       SELECT wp_order_id, payment_method_title, order_total, shipping_country
       FROM orders
       WHERE post_date >= $1 AND post_date < $2
-        AND post_status IN ('wc-completed', 'wc-processing', 'wc-shipped', 'wc-pending')
+        AND post_status IN ('wc-completed', 'wc-delivered', 'wc-processing', 'wc-awaiting-delivery', 'wc-shipped', 'wc-being-delivered')
     `, [date_from, date_to]);
 
     let updated = 0;

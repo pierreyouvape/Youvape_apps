@@ -10,7 +10,7 @@ class CustomerModel {
       SELECT
         c.*,
         (SELECT COUNT(*) FROM orders WHERE wp_customer_id = c.wp_user_id) as order_count,
-        (SELECT COALESCE(SUM(order_total), 0) FROM orders WHERE wp_customer_id = c.wp_user_id AND post_status = 'wc-completed') as total_spent,
+        (SELECT COALESCE(SUM(order_total), 0) FROM orders WHERE wp_customer_id = c.wp_user_id AND post_status = ANY(ARRAY['wc-completed', 'wc-delivered', 'wc-processing', 'wc-awaiting-delivery', 'wc-shipped', 'wc-being-delivered'])) as total_spent,
         (SELECT MAX(post_date) FROM orders WHERE wp_customer_id = c.wp_user_id) as last_order_date
       FROM customers c
       ORDER BY total_spent DESC
@@ -36,7 +36,7 @@ class CustomerModel {
       SELECT
         c.*,
         (SELECT COUNT(*) FROM orders WHERE wp_customer_id = c.wp_user_id) as order_count,
-        (SELECT COALESCE(SUM(order_total), 0) FROM orders WHERE wp_customer_id = c.wp_user_id AND post_status = 'wc-completed') as total_spent,
+        (SELECT COALESCE(SUM(order_total), 0) FROM orders WHERE wp_customer_id = c.wp_user_id AND post_status = ANY(ARRAY['wc-completed', 'wc-delivered', 'wc-processing', 'wc-awaiting-delivery', 'wc-shipped', 'wc-being-delivered'])) as total_spent,
         (SELECT MAX(post_date) FROM orders WHERE wp_customer_id = c.wp_user_id) as last_order_date,
         (SELECT MIN(post_date) FROM orders WHERE wp_customer_id = c.wp_user_id) as first_order_date
       FROM customers c
@@ -68,7 +68,7 @@ class CustomerModel {
       SELECT
         c.*,
         (SELECT COUNT(*) FROM orders WHERE wp_customer_id = c.wp_user_id) as order_count,
-        (SELECT COALESCE(SUM(order_total), 0) FROM orders WHERE wp_customer_id = c.wp_user_id AND post_status = 'wc-completed') as total_spent
+        (SELECT COALESCE(SUM(order_total), 0) FROM orders WHERE wp_customer_id = c.wp_user_id AND post_status = ANY(ARRAY['wc-completed', 'wc-delivered', 'wc-processing', 'wc-awaiting-delivery', 'wc-shipped', 'wc-being-delivered'])) as total_spent
       FROM customers c
       WHERE ${clause}
       ORDER BY total_spent DESC
@@ -111,7 +111,7 @@ class CustomerModel {
       FROM products p
       JOIN order_items oi ON oi.wp_product_id = p.wp_product_id
       JOIN orders o ON o.wp_order_id = oi.wp_order_id
-      WHERE o.wp_customer_id = $1 AND o.post_status = 'wc-completed'
+      WHERE o.wp_customer_id = $1 AND o.post_status = ANY(ARRAY['wc-completed', 'wc-delivered', 'wc-processing', 'wc-awaiting-delivery', 'wc-shipped', 'wc-being-delivered'])
       GROUP BY p.wp_product_id, p.post_title, p.sku, p.regular_price
       ORDER BY total_quantity DESC
       LIMIT $2
@@ -127,9 +127,9 @@ class CustomerModel {
     const query = `
       SELECT
         COUNT(DISTINCT o.wp_order_id)::int as total_orders,
-        COALESCE(SUM(CASE WHEN o.post_status = 'wc-completed' THEN o.order_total ELSE 0 END), 0) as total_spent,
-        COALESCE(AVG(CASE WHEN o.post_status = 'wc-completed' THEN o.order_total ELSE NULL END), 0) as avg_order_value,
-        COALESCE(SUM(CASE WHEN o.post_status = 'wc-completed' THEN o.order_shipping ELSE 0 END), 0) as total_shipping_cost,
+        COALESCE(SUM(CASE WHEN o.post_status = ANY(ARRAY['wc-completed', 'wc-delivered', 'wc-processing', 'wc-awaiting-delivery', 'wc-shipped', 'wc-being-delivered']) THEN o.order_total ELSE 0 END), 0) as total_spent,
+        COALESCE(AVG(CASE WHEN o.post_status = ANY(ARRAY['wc-completed', 'wc-delivered', 'wc-processing', 'wc-awaiting-delivery', 'wc-shipped', 'wc-being-delivered']) THEN o.order_total ELSE NULL END), 0) as avg_order_value,
+        COALESCE(SUM(CASE WHEN o.post_status = ANY(ARRAY['wc-completed', 'wc-delivered', 'wc-processing', 'wc-awaiting-delivery', 'wc-shipped', 'wc-being-delivered']) THEN o.order_shipping ELSE 0 END), 0) as total_shipping_cost,
         MIN(o.post_date) as first_order_date,
         MAX(o.post_date) as last_order_date,
         COUNT(DISTINCT oi.wp_product_id)::int as unique_products_bought
@@ -148,7 +148,7 @@ class CustomerModel {
       FROM order_items oi
       INNER JOIN orders o ON o.wp_order_id = oi.wp_order_id
       LEFT JOIN products p_cost ON p_cost.wp_product_id = COALESCE(NULLIF(oi.variation_id, 0), oi.product_id)
-      WHERE o.wp_customer_id = $1 AND o.post_status = 'wc-completed'
+      WHERE o.wp_customer_id = $1 AND o.post_status = ANY(ARRAY['wc-completed', 'wc-delivered', 'wc-processing', 'wc-awaiting-delivery', 'wc-shipped', 'wc-being-delivered'])
     `;
 
     const costResult = await pool.query(costQuery, [wpUserId]);
@@ -161,7 +161,7 @@ class CustomerModel {
           post_date,
           LAG(post_date) OVER (ORDER BY post_date) as prev_order_date
         FROM orders
-        WHERE wp_customer_id = $1 AND post_status = 'wc-completed'
+        WHERE wp_customer_id = $1 AND post_status = ANY(ARRAY['wc-completed', 'wc-delivered', 'wc-processing', 'wc-awaiting-delivery', 'wc-shipped', 'wc-being-delivered'])
         ORDER BY post_date
       )
       SELECT COALESCE(AVG(EXTRACT(EPOCH FROM (post_date - prev_order_date)) / 86400), 0) as avg_days
