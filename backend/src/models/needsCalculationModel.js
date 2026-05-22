@@ -90,7 +90,7 @@ const needsCalculationModel = {
         JOIN orders o ON oi.wp_order_id = o.wp_order_id
         JOIN products p ON oi.variation_id = p.wp_product_id
         WHERE oi.variation_id IS NOT NULL AND oi.variation_id != 0
-          AND o.post_status IN ('wc-completed', 'wc-processing', 'wc-delivered')
+          AND o.post_status IN ('wc-completed', 'wc-processing', 'wc-delivered', 'wc-awaiting-delivery', 'wc-shipped', 'wc-being-delivered')
           AND p.post_status = 'publish'
           AND p.product_type = 'variation'
           AND EXISTS (SELECT 1 FROM products pp WHERE pp.wp_product_id = p.wp_parent_id AND pp.post_status = 'publish')
@@ -101,7 +101,7 @@ const needsCalculationModel = {
         JOIN orders o ON oi.wp_order_id = o.wp_order_id
         JOIN products p ON oi.product_id = p.wp_product_id
         WHERE (oi.variation_id IS NULL OR oi.variation_id = 0)
-          AND o.post_status IN ('wc-completed', 'wc-processing', 'wc-delivered')
+          AND o.post_status IN ('wc-completed', 'wc-processing', 'wc-delivered', 'wc-awaiting-delivery', 'wc-shipped', 'wc-being-delivered')
           AND p.post_status = 'publish'
           AND p.product_type = 'simple'
       ) sub
@@ -121,7 +121,7 @@ const needsCalculationModel = {
         JOIN orders o ON oi.wp_order_id = o.wp_order_id
         JOIN products p ON oi.variation_id = p.wp_product_id
         WHERE oi.variation_id IS NOT NULL AND oi.variation_id != 0
-          AND o.post_status IN ('wc-completed', 'wc-processing', 'wc-delivered')
+          AND o.post_status IN ('wc-completed', 'wc-processing', 'wc-delivered', 'wc-awaiting-delivery', 'wc-shipped', 'wc-being-delivered')
           AND p.post_status = 'publish'
           AND p.product_type = 'variation'
           AND EXISTS (SELECT 1 FROM products pp WHERE pp.wp_product_id = p.wp_parent_id AND pp.post_status = 'publish')
@@ -132,7 +132,7 @@ const needsCalculationModel = {
         JOIN orders o ON oi.wp_order_id = o.wp_order_id
         JOIN products p ON oi.product_id = p.wp_product_id
         WHERE (oi.variation_id IS NULL OR oi.variation_id = 0)
-          AND o.post_status IN ('wc-completed', 'wc-processing', 'wc-delivered')
+          AND o.post_status IN ('wc-completed', 'wc-processing', 'wc-delivered', 'wc-awaiting-delivery', 'wc-shipped', 'wc-being-delivered')
           AND p.post_status = 'publish'
           AND p.product_type = 'simple'
       ) sub
@@ -217,7 +217,7 @@ const needsCalculationModel = {
       JOIN orders o ON oi.wp_order_id = o.wp_order_id
       WHERE oi.product_id = $1
         AND o.post_date >= NOW() - INTERVAL '12 months'
-        AND o.post_status IN ('wc-completed', 'wc-processing', 'wc-delivered')
+        AND o.post_status IN ('wc-completed', 'wc-processing', 'wc-delivered', 'wc-awaiting-delivery', 'wc-shipped', 'wc-being-delivered')
       GROUP BY DATE_TRUNC('month', o.post_date)
       ORDER BY month
     `;
@@ -230,7 +230,7 @@ const needsCalculationModel = {
       JOIN orders o ON oi.wp_order_id = o.wp_order_id
       WHERE oi.product_id = $1
         AND o.post_date >= NOW() - INTERVAL '12 months'
-        AND o.post_status IN ('wc-completed', 'wc-processing', 'wc-delivered')
+        AND o.post_status IN ('wc-completed', 'wc-processing', 'wc-delivered', 'wc-awaiting-delivery', 'wc-shipped', 'wc-being-delivered')
     `;
     const maxOrderResult = await pool.query(maxOrderQuery, [productId]);
     const maxOrderQty = parseInt(maxOrderResult.rows[0].max_order_qty) || 0;
@@ -241,7 +241,7 @@ const needsCalculationModel = {
       JOIN orders o ON oi.wp_order_id = o.wp_order_id
       WHERE oi.product_id = $1
         AND o.post_date >= NOW() - INTERVAL '${analysisPeriodMonths} months'
-        AND o.post_status IN ('wc-completed', 'wc-processing', 'wc-delivered')
+        AND o.post_status IN ('wc-completed', 'wc-processing', 'wc-delivered', 'wc-awaiting-delivery', 'wc-shipped', 'wc-being-delivered')
     `;
     const analysisSalesResult = await pool.query(analysisSalesQuery, [productId]);
     const salesInPeriod = parseInt(analysisSalesResult.rows[0].total_qty) || 0;
