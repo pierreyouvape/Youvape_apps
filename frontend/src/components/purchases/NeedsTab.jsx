@@ -127,16 +127,15 @@ const computeProductNeeds = (product, periodDays, coverageMonths, isCustomPeriod
     });
     actualDays = Math.max(Math.ceil((end - start) / (1000 * 60 * 60 * 24)), 1);
   } else if (periodUnit === 'months') {
-    // N derniers mois calendaires COMPLETS — exclure le mois en cours
+    // N derniers mois — inclure le mois en cours (temps réel)
     const now = new Date();
-    const endExclusive = new Date(now.getFullYear(), now.getMonth(), 1);
-    const startInclusive = new Date(endExclusive);
-    startInclusive.setMonth(startInclusive.getMonth() - Math.round(periodDays / 30));
+    const tomorrow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+    const startInclusive = new Date(now.getFullYear(), now.getMonth() - Math.round(periodDays / 30), 1);
     salesData = daily_sales.filter(m => {
       const d = new Date(m.date);
-      return d >= startInclusive && d < endExclusive;
+      return d >= startInclusive && d < tomorrow;
     });
-    actualDays = Math.max(Math.ceil((endExclusive - startInclusive) / (1000 * 60 * 60 * 24)), 1);
+    actualDays = Math.max(Math.ceil((tomorrow - startInclusive) / (1000 * 60 * 60 * 24)), 1);
   } else {
     // N derniers jours — inclure aujourd'hui (les commandes du jour sont valides)
     const now = new Date();

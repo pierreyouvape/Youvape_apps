@@ -43,23 +43,22 @@ const computeDateRange = (period, customStart, customEnd) => {
 
   if (period.endsWith('d')) {
     const days = parseInt(period);
-    const endExclusive = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const start = new Date(endExclusive);
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const start = new Date(today);
     start.setDate(start.getDate() - days);
     return {
-      dateFrom: start.toISOString().slice(0, 10),
-      dateTo: endExclusive.toISOString().slice(0, 10)
+      dateFrom: localFmt(start),
+      dateTo: localFmt(today)
     };
   }
 
   if (period.endsWith('m')) {
     const months = parseInt(period);
-    const endExclusive = new Date(now.getFullYear(), now.getMonth(), 1);
-    const start = new Date(endExclusive);
-    start.setMonth(start.getMonth() - months);
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const start = new Date(now.getFullYear(), now.getMonth() - months, 1);
     return {
-      dateFrom: start.toISOString().slice(0, 10),
-      dateTo: endExclusive.toISOString().slice(0, 10)
+      dateFrom: localFmt(start),
+      dateTo: localFmt(today)
     };
   }
 
