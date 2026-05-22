@@ -222,7 +222,7 @@ exports.getByCountryReport = async (req, res) => {
       params.push(statuses);
       paramIndex++;
     } else {
-      conditions.push(`o.post_status IN ('wc-completed', 'wc-delivered')`);
+      conditions.push(`o.post_status IN ('wc-completed', 'wc-delivered', 'wc-processing', 'wc-awaiting-delivery', 'wc-shipped', 'wc-being-delivered')`);
     }
 
     if (dateFrom) {
@@ -310,7 +310,7 @@ exports.getByTaxReport = async (req, res) => {
       params.push(statuses);
       paramIndex++;
     } else {
-      conditions.push(`o.post_status IN ('wc-completed', 'wc-delivered')`);
+      conditions.push(`o.post_status IN ('wc-completed', 'wc-delivered', 'wc-processing', 'wc-awaiting-delivery', 'wc-shipped', 'wc-being-delivered')`);
     }
 
     if (dateFrom) {

@@ -1,7 +1,7 @@
 const pool = require('../config/database');
 
 // Statuts de commande considérés comme "ventes valides"
-const VALID_ORDER_STATUSES = ['wc-completed', 'wc-delivered', 'wc-being-delivered', 'wc-wms_cp_delivered', 'wc-processing'];
+const VALID_ORDER_STATUSES = ['wc-completed', 'wc-delivered', 'wc-processing', 'wc-awaiting-delivery', 'wc-shipped', 'wc-being-delivered'];
 
 class ProductStatsService {
   /**

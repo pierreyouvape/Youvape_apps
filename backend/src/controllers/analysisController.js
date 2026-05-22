@@ -180,7 +180,7 @@ function buildFilteredOrdersCTE(filters) {
     params.push(statuses);
     paramIndex++;
   } else {
-    conditions.push(`o.post_status IN ('wc-completed', 'wc-delivered', 'wc-processing', 'wc-awaiting-delivery')`);
+    conditions.push(`o.post_status IN ('wc-completed', 'wc-delivered', 'wc-processing', 'wc-awaiting-delivery', 'wc-shipped', 'wc-being-delivered')`);
   }
 
   // Période
