@@ -151,11 +151,6 @@ const computeProductNeeds = (product, periodDays, coverageMonths, isCustomPeriod
   }
 
   const salesInPeriod = salesData.reduce((sum, m) => sum + (parseInt(m.total_qty) || 0), 0);
-  const max_order_qty = parseInt(product.max_order_qty_12m) || 0;
-
-  // Convertir en moyenne mensuelle (30 jours = 1 mois)
-  const periodInMonths = actualDays / 30;
-  const avgMonthlySales = dailyRate * 30; // moyenne mensuelle pour affichage
 
   // Tendance : agréger par semaine pour avoir des points exploitables
   const weeklyMap = new Map();
@@ -175,6 +170,7 @@ const computeProductNeeds = (product, periodDays, coverageMonths, isCustomPeriod
   // Formule ATUM : besoin basé sur le rythme journalier vs couverture cible
   const leadTimeDays = product.supplier_lead_time_days || 2;
   const dailyRate = actualDays > 0 ? salesInPeriod / actualDays : 0;
+  const avgMonthlySales = dailyRate * 30;
   const effectiveStock = stock + incoming_qty;
 
   // Jours de stock restants au rythme actuel
