@@ -8,7 +8,7 @@ const STORAGE_KEY = 'purchases_needs_filters';
 const ANALYSIS_PERIOD_OPTIONS = [
   { value: 7, unit: 'days', label: '7 derniers jours' },
   { value: 15, unit: 'days', label: '15 derniers jours' },
-  { value: 30, unit: 'days', label: '30 derniers jours' },
+  { value: 31, unit: 'days', label: '31 derniers jours' },
   { value: 60, unit: 'days', label: '60 derniers jours' },
   { value: 1, unit: 'months', label: 'Le mois dernier' },
   { value: 3, unit: 'months', label: 'Les 3 derniers mois' },
@@ -267,7 +267,7 @@ const NeedsTab = ({ token, onCompactChange }) => {
 
   // Période d'analyse
   const [analysisPeriodType, setAnalysisPeriodType] = useState(savedFilters?.analysisPeriodType || 'preset');
-  const [analysisPeriod, setAnalysisPeriod] = useState(savedFilters?.analysisPeriod || 30);
+  const [analysisPeriod, setAnalysisPeriod] = useState(savedFilters?.analysisPeriod || 31);
   const [analysisPeriodUnit, setAnalysisPeriodUnit] = useState(savedFilters?.analysisPeriodUnit || 'days');
   const [analysisStartDate, setAnalysisStartDate] = useState(savedFilters?.analysisStartDate || '');
   const [analysisEndDate, setAnalysisEndDate] = useState(savedFilters?.analysisEndDate || '');
