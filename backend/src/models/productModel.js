@@ -702,7 +702,7 @@ class ProductModel {
           COALESCE(SUM(oi.qty), 0)::int as sales_30d
         FROM order_items oi
         JOIN orders o ON oi.wp_order_id = o.wp_order_id
-        WHERE o.post_status IN ('wc-completed', 'wc-processing', 'wc-expediee')
+        WHERE o.post_status IN ('wc-completed', 'wc-processing', 'wc-delivered', 'wc-awaiting-delivery', 'wc-shipped', 'wc-being-delivered')
           AND o.post_date >= NOW() - INTERVAL '30 days'
           AND (oi.product_id = ANY($1) OR oi.variation_id = ANY($1))
         GROUP BY wp_id
