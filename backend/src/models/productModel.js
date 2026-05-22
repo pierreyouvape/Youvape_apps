@@ -693,7 +693,7 @@ class ProductModel {
     }
 
     // 4) Ventes 30 derniers jours (par wp_product_id)
-    const allWpIds = [...parents.map(p => p.wp_product_id), ...variations.map(v => v.wp_product_id)];
+    const allWpIds = [...parents.map(p => parseInt(p.wp_product_id)), ...variations.map(v => parseInt(v.wp_product_id))];
     let salesMap = new Map();
     if (allWpIds.length > 0) {
       const salesResult = await pool.query(`
@@ -716,7 +716,7 @@ class ProductModel {
     const enrichProduct = (p) => ({
       ...p,
       incoming_qty: incomingMap.get(p.id) || 0,
-      sales_30d: salesMap.get(p.wp_product_id) || 0
+      sales_30d: salesMap.get(parseInt(p.wp_product_id)) || 0
     });
 
     return {
