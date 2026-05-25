@@ -255,15 +255,16 @@ const OrderDetail = () => {
   const couponItems  = (order.line_items || []).filter(i => i.order_item_type === 'coupon');
   const shippingItem = (order.line_items || []).find(i => i.order_item_type === 'shipping');
 
-  const totalWeightG = productItems.reduce((acc, item) => {
+  // Les poids sont stockés en kg dans la BDD
+  const totalWeightKg = productItems.reduce((acc, item) => {
     const w = parseFloat(item.weight);
     const q = parseInt(item.qty) || 1;
     return w > 0 ? acc + w * q : acc;
   }, 0);
-  const weightDisplay = totalWeightG > 0
-    ? totalWeightG >= 1000
-      ? `${(totalWeightG / 1000).toFixed(2).replace('.', ',')} kg`
-      : `${Math.round(totalWeightG)} g`
+  const weightDisplay = totalWeightKg > 0
+    ? totalWeightKg >= 1
+      ? `${totalWeightKg.toFixed(3).replace(/\.?0+$/, '').replace('.', ',')} kg`
+      : `${Math.round(totalWeightKg * 1000)} g`
     : null;
 
   return (
