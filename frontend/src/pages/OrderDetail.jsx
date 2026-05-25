@@ -255,6 +255,17 @@ const OrderDetail = () => {
   const couponItems  = (order.line_items || []).filter(i => i.order_item_type === 'coupon');
   const shippingItem = (order.line_items || []).find(i => i.order_item_type === 'shipping');
 
+  const totalWeightG = productItems.reduce((acc, item) => {
+    const w = parseFloat(item.weight);
+    const q = parseInt(item.qty) || 1;
+    return w > 0 ? acc + w * q : acc;
+  }, 0);
+  const weightDisplay = totalWeightG > 0
+    ? totalWeightG >= 1000
+      ? `${(totalWeightG / 1000).toFixed(2).replace('.', ',')} kg`
+      : `${Math.round(totalWeightG)} g`
+    : null;
+
   return (
     <AppShell currentPath="/orders">
       <style>{`
@@ -417,6 +428,9 @@ const OrderDetail = () => {
                   </div>
                 </div>
               )}
+              {weightDisplay && (
+                <MetaItem label="Poids total">{weightDisplay}</MetaItem>
+              )}
             </div>
           </Card>
 
@@ -434,7 +448,7 @@ const OrderDetail = () => {
                   {order.billing_phone && (
                     <>
                       <div style={{ fontSize: 11, fontWeight: 700, color: C.grisM, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 3 }}>Téléphone</div>
-                      <a href={`tel:${order.billing_phone}`} style={{ fontSize: 13.5, color: C.grisTF, textDecoration: 'none', fontWeight: 600 }}>
+                      <a href={`tel:${order.billing_phone}`} style={{ fontSize: 13.5, color: C.grisTF, textDecoration: 'none', fontWeight: 600, display: 'block', marginBottom: 0 }}>
                         {order.billing_phone}
                       </a>
                     </>
@@ -443,7 +457,7 @@ const OrderDetail = () => {
                     <button
                       onClick={() => navigate(`/customers/${order.wp_customer_id}`)}
                       style={{
-                        marginTop: 16, padding: '7px 14px',
+                        display: 'block', marginTop: 16, padding: '7px 14px',
                         background: C.saphir, color: '#fff',
                         border: 'none', borderRadius: 7, fontSize: 12.5,
                         fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
