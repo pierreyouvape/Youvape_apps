@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "git pull origin main 2>&1 || true",
+            "statusMessage": "Mise à jour du dépôt git..."
+          }
+        ]
+      }
+    ]
+  }
+}
