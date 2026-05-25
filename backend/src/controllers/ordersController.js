@@ -185,6 +185,27 @@ exports.getShippingMethods = async (req, res) => {
 };
 
 /**
+ * Récupère tous les transporteurs (shipping_carrier) distincts
+ * GET /api/orders/carriers/list
+ */
+exports.getCarriers = async (req, res) => {
+  try {
+    const pool = require('../config/database');
+    const result = await pool.query(`
+      SELECT DISTINCT shipping_carrier as carrier, COUNT(*) as count
+      FROM orders
+      WHERE shipping_carrier IS NOT NULL AND shipping_carrier != ''
+      GROUP BY shipping_carrier
+      ORDER BY count DESC
+    `);
+    res.json({ success: true, data: result.rows });
+  } catch (error) {
+    console.error('Error getting carriers:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+/**
  * Récupère toutes les catégories pour le filtre commandes
  * GET /api/orders/categories/list
  */
@@ -219,7 +240,7 @@ exports.filterOrders = async (req, res) => {
     const params = [];
     let paramIndex = 1;
 
-    // Recherche texte (numéro commande, nom, prénom, email)
+    // Recherche texte (numéro commande, nom, prénom, email, numéro de suivi)
     if (req.query.search) {
       const { clause, params: searchParams, nextIndex: ni } = buildSearchCondition(
         req.query.search,
@@ -228,6 +249,7 @@ exports.filterOrders = async (req, res) => {
       );
       conditions.push(`(
         CAST(o.wp_order_id AS TEXT) ILIKE $${paramIndex}
+        OR o.tracking_number ILIKE $${paramIndex}
         OR ${clause}
       )`);
       params.push(`%${req.query.search}%`, ...searchParams);
@@ -286,6 +308,13 @@ exports.filterOrders = async (req, res) => {
         AND oi_ship.order_item_name = $${paramIndex}
       )`);
       params.push(req.query.shippingMethod);
+      paramIndex++;
+    }
+
+    // Filtre par transporteur (shipping_carrier)
+    if (req.query.carrier) {
+      conditions.push(`o.shipping_carrier = $${paramIndex}`);
+      params.push(req.query.carrier);
       paramIndex++;
     }
 

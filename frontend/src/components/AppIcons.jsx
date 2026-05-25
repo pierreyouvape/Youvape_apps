@@ -91,6 +91,16 @@ export const LogoutIcon = (props) => (
   </Base>
 );
 
+export const OrdersSearch = (props) => (
+  <Base {...props}>
+    <rect x={3.5} y={3.5} width={17} height={17} rx={2} />
+    <path d="M7 8 H17" />
+    <path d="M7 12 H13" />
+    <circle cx={16} cy={15.5} r={2.5} />
+    <path d="M17.8 17.3 L20 19.5" />
+  </Base>
+);
+
 export const GripIcon = ({ size = 24, color = 'currentColor' }) => (
   <svg
     width={size}
@@ -117,5 +127,6 @@ export const APPS = [
   { key: 'purchases', path: '/purchases', label: "Gestion d'achat",          Icon: Purchases, color: '#F59E0B' },
   { key: 'packing',   path: '/packing',   label: 'Packing',                  Icon: Packing,   color: '#6366F1' },
   { key: 'catalog',   path: '/catalog',   label: 'Produits',                 Icon: Catalog,   color: '#059669' },
-  { key: 'financier', path: '/financier', label: 'Rapport',                  Icon: Stats,     color: '#135E84' },
+  { key: 'financier',  path: '/financier',  label: 'Rapport',                  Icon: Stats,         color: '#135E84' },
+  { key: 'commandes',  path: '/commandes',  label: 'Commandes',                Icon: OrdersSearch,  color: '#5B21B6' },
 ];

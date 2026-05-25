@@ -11,6 +11,7 @@ router.get('/statuses/list', ordersController.getStatuses);
 router.get('/stats/by-status', ordersController.getStatsByStatus);
 router.get('/countries/list', ordersController.getCountries);
 router.get('/shipping-methods/list', ordersController.getShippingMethods);
+router.get('/carriers/list', ordersController.getCarriers);
 router.get('/categories/list', ordersController.getCategories);
 router.get('/status/:status', ordersController.getByStatus);
 router.get('/country/:country', ordersController.getByCountry);

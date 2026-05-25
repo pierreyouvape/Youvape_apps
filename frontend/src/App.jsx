@@ -26,6 +26,7 @@ import ShippingSettings from './pages/ShippingSettings';
 import CatalogApp from './pages/CatalogApp';
 import PackingApp from './pages/PackingApp';
 import FinancierApp from './pages/FinancierApp';
+import OrdersSearchApp from './pages/OrdersSearchApp';
 import PrivateRoute from './components/PrivateRoute';
 
 const PAGE_TITLES = {
@@ -42,6 +43,7 @@ const PAGE_TITLES = {
   '/orders': 'Commandes',
   '/packing': 'Packing',
   '/financier': 'Financier',
+  '/commandes': 'Commandes',
   '/brands': 'Marque',
   '/sub-brands': 'Sous-marque',
   '/categories': 'Categorie',
@@ -258,6 +260,14 @@ function App() {
             element={
               <PrivateRoute>
                 <FinancierApp />
+              </PrivateRoute>
+            }
+          />
+          <Route
+            path="/commandes"
+            element={
+              <PrivateRoute>
+                <OrdersSearchApp />
               </PrivateRoute>
             }
           />
