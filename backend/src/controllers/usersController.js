@@ -41,6 +41,7 @@ const usersController = {
             catalog:   { read: true, write: true },
             packing:   { read: true, write: true },
             financier: { read: true, write: true },
+            commandes: { read: true, write: true },
           }
         });
       }
