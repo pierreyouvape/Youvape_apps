@@ -26,6 +26,7 @@ const packingRoutes = require('./routes/packingRoutes');
 const laposteRoutes = require('./routes/laposteRoutes');
 const preferencesRoutes = require('./routes/preferencesRoutes');
 const financierRoutes = require('./routes/financierRoutes');
+const savRoutes = require('./routes/savRoutes');
 const { setupCron, setupBmsCron, setupComputedCostCron, setupBmsBarcodeCron, setupStockResyncCron } = require('./services/cronService');
 const rewardService = require('./services/rewardService');
 const emailService = require('./services/emailService');
@@ -69,6 +70,7 @@ app.use('/api/packing', packingRoutes); // Packing / preparation colis
 app.use('/api/laposte', laposteRoutes); // La Poste - étiquettes Lettre Suivie
 app.use('/api/preferences', preferencesRoutes); // User column preferences
 app.use('/api/financier', financierRoutes);    // Dashboard financier
+app.use('/api/sav', savRoutes);               // Module SAV Zendesk
 
 // Start server
 app.listen(PORT, async () => {
