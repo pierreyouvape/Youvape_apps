@@ -40,31 +40,21 @@ services:
     restart: unless-stopped
     ports:
       - "80:80"
-      - "8443:8443"
-    volumes:
-      - certbot_certs:/etc/letsencrypt
-      - certbot_webroot:/var/www/certbot
     depends_on:
       - backend
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.youvape-apps.rule=Host(`apps.youvape.fr`)"
+      - "traefik.http.routers.youvape-apps.entrypoints=websecure"
+      - "traefik.http.routers.youvape-apps.tls=true"
+      - "traefik.http.services.youvape-apps.loadbalancer.server.port=80"
     networks:
       - youvape_network
-
-  certbot:
-    image: certbot/certbot
-    container_name: youvape_certbot
-    restart: unless-stopped
-    volumes:
-      - certbot_certs:/etc/letsencrypt
-      - certbot_webroot:/var/www/certbot
-    entrypoint: /bin/sh -c "trap exit TERM; while :; do certbot renew --quiet; sleep 12h & wait $${!}; done"
-    networks:
-      - youvape_network
+      - youvape-site_default
 
 volumes:
   postgres_data:
   backend_logs:
-  certbot_certs:
-  certbot_webroot:
 
 networks:
   youvape_network:
