@@ -1,0 +1,109 @@
+{
+  "name": "YouVape Agent Dashboard v8",
+  "author": {
+    "name": "Pierre",
+    "email": "pierre.youvape@gmail.com"
+  },
+  "version": "8.0.0",
+  "frameworkVersion": "2.0",
+  "location": {
+    "support": {
+      "ticket_sidebar": {
+        "url": "assets/sidebar.html",
+        "flexible": true
+      },
+      "new_ticket_sidebar": {
+        "url": "assets/sidebar.html",
+        "flexible": true
+      },
+      "user_sidebar": {
+        "url": "assets/sidebar.html",
+        "flexible": true
+      }
+    }
+  },
+  "defaultLocale": "en",
+  "private": true,
+  "marketingOnly": false,
+  "iconPath": "assets/logo.png",
+  "parameters": [
+    {
+      "name": "woocommerce_url",
+      "type": "text",
+      "required": true,
+      "secure": false,
+      "description": "URL de votre site WooCommerce"
+    },
+    {
+      "name": "woocommerce_key",
+      "type": "password",
+      "required": true,
+      "secure": false,
+      "description": "Clé API WooCommerce"
+    },
+    {
+      "name": "woocommerce_secret",
+      "type": "password",
+      "required": true,
+      "secure": false,
+      "description": "Secret API WooCommerce"
+    },
+    {
+      "name": "mondial_relay_brand_id",
+      "type": "text",
+      "required": false,
+      "secure": false,
+      "description": "Brand ID Mondial Relay"
+    },
+    {
+      "name": "mondial_relay_login",
+      "type": "text",
+      "required": false,
+      "secure": false,
+      "description": "Login API Mondial Relay"
+    },
+    {
+      "name": "mondial_relay_password",
+      "type": "password",
+      "required": false,
+      "secure": false,
+      "description": "Mot de passe API Mondial Relay"
+    },
+    {
+      "name": "okapi_api_key",
+      "type": "password",
+      "required": false,
+      "secure": false,
+      "description": "Clé API Okapi (La Poste/Colissimo/Chronopost)"
+    },
+    {
+      "name": "okapi_login",
+      "type": "text",
+      "required": false,
+      "secure": false,
+      "description": "Login Okapi"
+    },
+    {
+      "name": "vps_api_url",
+      "type": "text",
+      "required": true,
+      "secure": false,
+      "description": "URL API VPS (ex: https://apps.youvape.fr/api)"
+    },
+    {
+      "name": "vps_api_token",
+      "type": "password",
+      "required": true,
+      "secure": false,
+      "description": "Token API VPS (x-zendesk-token)"
+    }
+  ],
+  "domainWhitelist": [
+    "*.youvape.fr",
+    "apps.youvape.fr",
+    "connect-api.mondialrelay.com",
+    "api.okapi.laposte.fr",
+    "*.apps.zdusercontent.com",
+    "youvapesupport.zendesk.com"
+  ]
+}

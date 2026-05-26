@@ -1,0 +1,868 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+body {
+  font-family: Arial, sans-serif;
+  margin: 0;
+  padding: 12px;
+  background: white;
+  font-size: 13px;
+}
+
+.section {
+  margin-bottom: 18px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid #e9ebed;
+}
+.section:last-child { border-bottom: none; }
+
+.section-title {
+  font-size: 13px;
+  font-weight: bold;
+  color: #2f3941;
+  margin-bottom: 10px;
+  padding-bottom: 4px;
+  border-bottom: 2px solid #135E84;
+}
+
+.info-row {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 6px;
+  align-items: center;
+}
+.label { color: #68737d; font-weight: 500; }
+.value { color: #2f3941; font-weight: 500; text-align: right; max-width: 60%; }
+
+.alert-box {
+  border-radius: 6px;
+  padding: 10px;
+  margin-bottom: 12px;
+  text-align: center;
+  display: none;
+}
+.alert-box.duplicate {
+  background: #fff2f0;
+  border: 2px solid #d93f4c;
+  color: #d93f4c;
+}
+
+#shippingSection {
+  background: #e8f4f8;
+  border: 2px solid #135E84;
+  border-radius: 6px;
+  padding: 10px;
+  margin-bottom: 12px;
+  text-align: center;
+}
+#shippingBadge {
+  display: inline-block;
+  padding: 5px 14px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: bold;
+  color: white;
+  background: #68737d;
+  cursor: default;
+}
+#shippingBadge.clickable { cursor: pointer; }
+#shippingBadge.clickable:hover { opacity: 0.85; }
+#shippingMessage {
+  margin-top: 6px;
+  font-size: 11px;
+  color: #2f3941;
+}
+
+.sav-section {
+  background: #f8f9fa;
+  border-radius: 6px;
+  padding: 10px;
+  margin-top: 8px;
+}
+.sav-btn {
+  display: inline-block;
+  padding: 6px 14px;
+  border: none;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: bold;
+  cursor: pointer;
+  margin: 3px;
+  transition: opacity 0.2s;
+}
+.sav-btn:hover { opacity: 0.85; }
+.sav-btn.accept  { background: #135E84; color: white; }
+.sav-btn.done    { background: #27b500; color: white; }
+.sav-btn.refused { background: #d93f4c; color: white; }
+
+.sav-status-badge {
+  display: inline-block;
+  padding: 4px 12px;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: bold;
+  color: white;
+  margin-bottom: 8px;
+}
+
+.order-item {
+  background: #f8f9fa;
+  border-radius: 6px;
+  margin-bottom: 6px;
+  border: 1px solid #e9ebed;
+}
+.order-header {
+  padding: 8px 10px;
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.order-header:hover { background: #e9ecef; border-radius: 6px; }
+.order-details {
+  padding: 0 10px 10px;
+  border-top: 1px solid #e9ebed;
+  display: none;
+}
+.order-details.expanded { display: block; }
+.expand-icon { transition: transform 0.2s; font-size: 10px; }
+.expand-icon.rotated { transform: rotate(180deg); }
+
+.product-item {
+  padding: 5px 0;
+  border-bottom: 1px solid #e9ebed;
+  font-size: 12px;
+}
+.product-item:last-child { border-bottom: none; }
+.product-name { font-weight: 500; color: #2f3941; }
+.product-price { color: #135E84; font-weight: bold; }
+
+.note-input {
+  width: 100%;
+  border: 1px solid #d8dcde;
+  border-radius: 4px;
+  padding: 7px;
+  font-size: 12px;
+  resize: vertical;
+  min-height: 55px;
+  box-sizing: border-box;
+}
+.save-btn {
+  margin-top: 6px;
+  padding: 5px 12px;
+  background: #135E84;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+}
+.save-btn:hover { background: #0f4a6b; }
+
+.tracking-input, .tracking-select {
+  width: 100%;
+  border: 1px solid #d8dcde;
+  border-radius: 4px;
+  padding: 7px;
+  font-size: 12px;
+  box-sizing: border-box;
+  margin-bottom: 6px;
+}
+.track-btn {
+  padding: 5px 12px;
+  background: #135E84;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  margin-right: 6px;
+}
+.track-btn:hover { background: #0f4a6b; }
+
+.order-status-badge {
+  background: #68737d;
+  color: white;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 10px;
+  font-weight: bold;
+  margin-left: 8px;
+}
+
+.client-name {
+  font-size: 15px;
+  font-weight: bold;
+  color: #2f3941;
+  margin-bottom: 6px;
+}
+
+.loading { color: #68737d; font-style: italic; }
+a { color: #135E84; text-decoration: none; }
+a:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+
+<!-- Alerte doublon -->
+<div class="alert-box duplicate" id="alertSection">
+  ⚠️ <strong>DOUBLON DÉTECTÉ</strong>
+  <div style="font-size:11px; margin-top:4px;" id="alertMessage"></div>
+</div>
+
+<!-- Badge expédition -->
+<div id="shippingSection">
+  <div id="shippingBadge">📦 VÉRIFICATION...</div>
+  <div id="shippingMessage">Vérification du statut d'expédition...</div>
+</div>
+
+<!-- Client -->
+<div class="section">
+  <div class="section-title">👤 Client</div>
+  <div class="client-name" id="clientName">Chargement...</div>
+  <div class="info-row"><span class="label">Email</span><span class="value" id="clientEmail">—</span></div>
+  <div class="info-row"><span class="label">Tickets Zendesk</span><span class="value loading" id="ticketCount">...</span></div>
+  <div class="info-row"><span class="label">Client depuis</span><span class="value loading" id="clientSince">...</span></div>
+  <div class="info-row"><span class="label">Commandes</span><span class="value loading" id="totalOrders">...</span></div>
+  <div class="info-row"><span class="label">Total dépensé</span><span class="value loading" id="totalSpent">...</span></div>
+  <div class="info-row"><span class="label">Livraison</span><span class="value loading" id="shippingLocation">...</span></div>
+</div>
+
+<!-- Note agent -->
+<div class="section">
+  <div class="section-title">📝 Note Personnelle</div>
+  <textarea class="note-input" id="agentNote" placeholder="Note sur ce client..."></textarea>
+  <button class="save-btn" id="saveNoteBtn" onclick="saveAgentNote()">💾 Sauvegarder</button>
+</div>
+
+<!-- Commande actuelle -->
+<div class="section">
+  <div class="section-title">
+    📦 Commande Actuelle
+    <span class="order-status-badge" id="currentOrderStatusBadge" style="display:none;"></span>
+  </div>
+  <div class="info-row"><span class="label">Numéro</span><span class="value" id="orderNumber">—</span></div>
+  <div class="info-row"><span class="label">Date</span><span class="value loading" id="orderDate">...</span></div>
+  <div class="info-row"><span class="label">Montant</span><span class="value loading" id="orderTotal">...</span></div>
+  <div class="info-row"><span class="label">Statut</span><span class="value loading" id="orderStatus">...</span></div>
+  <div class="info-row"><span class="label">Expédition</span><span class="value loading" id="shippingMethod">...</span></div>
+  <div id="currentOrderDetails"></div>
+
+  <!-- SAV -->
+  <div class="sav-section" id="savSection" style="display:none;">
+    <div style="font-weight:bold; font-size:12px; margin-bottom:8px;">🛠 SAV</div>
+    <div id="savStatusDisplay"></div>
+    <div id="savButtons"></div>
+  </div>
+</div>
+
+<!-- Historique -->
+<div class="section">
+  <div class="section-title">📋 Historique Commandes</div>
+  <div id="orderHistory"><span class="loading">Chargement...</span></div>
+</div>
+
+<!-- Livraison -->
+<div class="section">
+  <div class="section-title">🚚 Suivi Livraison</div>
+  <div class="info-row"><span class="label">Transporteur</span><span class="value" id="carrier">—</span></div>
+  <div class="info-row"><span class="label">N° suivi</span><span class="value" id="trackingNumber">—</span></div>
+  <div class="info-row"><span class="label">Statut livraison</span><span class="value" id="deliveryStatus">—</span></div>
+  <div style="margin-top:10px;">
+    <div style="font-weight:bold; font-size:12px; margin-bottom:6px;">🔍 Suivi Manuel</div>
+    <input type="text" class="tracking-input" id="manualTrackingNumber" placeholder="Numéro de suivi...">
+    <select class="tracking-select" id="carrierSelect">
+      <option value="">Sélectionnez un transporteur</option>
+      <option value="mondial_relay">Mondial Relay</option>
+      <option value="colissimo">Colissimo (La Poste)</option>
+      <option value="chronopost">Chronopost</option>
+      <option value="autre">Autre transporteur</option>
+    </select>
+    <button class="track-btn" onclick="trackManualPackage()">🔍 Suivre</button>
+    <button class="track-btn" onclick="saveTrackingNumber()" style="background:#27b500;">💾 Sauvegarder</button>
+  </div>
+</div>
+
+<script src="https://static.zdassets.com/zendesk_app_framework_sdk/2.0/zaf_sdk.min.js"></script>
+<script>
+// v8.0.0 — YouVape Agent Dashboard
+
+var client = ZAFClient.init();
+client.invoke('resize', { width: '100%', height: '900px' });
+
+var currentOrderNumber = null;
+var currentUserId = null;
+var currentUserEmail = '';
+var currentWooStatus = null;
+var currentTrackingUrl = null;
+var currentSavId = null;
+var currentSavStatus = null;
+var lastOrderNumber = null;
+var lastTrackingNumber = null;
+var pollingInterval = null;
+
+var wooSettings = null;
+var mondialRelaySettings = null;
+var okapiSettings = null;
+var vpsApiUrl = 'https://apps.youvape.fr/api';
+var vpsApiToken = '';
+
+var wooStatusMap = {
+  'processing':        { color: '#135E84', label: 'EN PRÉPARATION', icon: '⏳' },
+  'on-hold':           { color: '#ff9800', label: 'EN ATTENTE',      icon: '⏳' },
+  'completed':         { color: '#135E84', label: 'EXPÉDIÉE',        icon: '📦' },
+  'cancelled':         { color: '#d93f4c', label: 'ANNULÉE',         icon: '❌' },
+  'refunded':          { color: '#68737d', label: 'REMBOURSÉE',      icon: '💰' },
+  'failed':            { color: '#d93f4c', label: 'ÉCHOUÉE',         icon: '❌' },
+  'delivered':         { color: '#27b500', label: 'LIVRÉE',          icon: '✅' },
+  'being-delivered':   { color: '#27b500', label: 'PRÉPARÉ',         icon: '📦' },
+  'awaiting-delivery': { color: '#135E84', label: 'RETRAIT BOUTIQUE', icon: '🏪' }
+};
+
+var trackingUrls = {
+  'mondial_relay': 'https://www.mondialrelay.fr/suivi-de-colis?codeMarque=LG&numeroExpedition=',
+  'colissimo':     'https://www.laposte.fr/outils/suivre-vos-envois?code=',
+  'chronopost':    'https://www.chronopost.fr/tracking-no-cms/suivi-page?listeNumerosLT=',
+  'dpd':           'https://www.dpd.fr/trace/',
+  'ups':           'https://www.ups.com/track?tracknum=',
+  'fedex':         'https://www.fedex.com/fedextrack/?tracknum='
+};
+
+var countryFlags = { 'FR':'🇫🇷','BE':'🇧🇪','CH':'🇨🇭','ES':'🇪🇸','IT':'🇮🇹','DE':'🇩🇪','GB':'🇬🇧','NL':'🇳🇱','PT':'🇵🇹','LU':'🇱🇺','MC':'🇲🇨','PL':'🇵🇱' };
+var countryNames = { 'FR':'France','BE':'Belgique','CH':'Suisse','ES':'Espagne','IT':'Italie','DE':'Allemagne','GB':'Royaume-Uni','NL':'Pays-Bas','PT':'Portugal','LU':'Luxembourg','MC':'Monaco','PL':'Pologne' };
+
+// ---- INIT ----
+
+client.metadata().then(function(metadata) {
+  var s = metadata.settings;
+  wooSettings = { url: s.woocommerce_url, key: s.woocommerce_key, secret: s.woocommerce_secret };
+  mondialRelaySettings = { brand_id: s.mondial_relay_brand_id, login: s.mondial_relay_login, password: s.mondial_relay_password };
+  okapiSettings = { api_key: s.okapi_api_key };
+  vpsApiUrl = s.vps_api_url || 'https://apps.youvape.fr/api';
+  vpsApiToken = s.vps_api_token || '';
+  loadTicketData();
+}).catch(function() { loadTicketData(); });
+
+// ---- HELPERS ----
+
+function hasOrderNumber() { return currentOrderNumber && currentOrderNumber !== '' && currentOrderNumber !== 'Non renseigné'; }
+function hasWooSettings() { return wooSettings && wooSettings.url && wooSettings.key && wooSettings.secret; }
+function isValidEmail(e) { return e && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e); }
+function wooAuth() { return btoa(wooSettings.key + ':' + wooSettings.secret); }
+function vpsHeaders() { return { 'Content-Type': 'application/json', 'x-zendesk-token': vpsApiToken }; }
+
+function detectCarrier(str) {
+  if (!str) return null;
+  var s = str.toLowerCase();
+  if (s.includes('mondial') || s.includes('relay')) return 'mondial_relay';
+  if (s.includes('chronopost') || s.includes('chrono')) return 'chronopost';
+  if (s.includes('colissimo') || s.includes('lettre') || s.includes('suivie') || s.includes('poste')) return 'colissimo';
+  if (s.includes('dpd')) return 'dpd';
+  if (s.includes('ups')) return 'ups';
+  if (s.includes('fedex')) return 'fedex';
+  return null;
+}
+
+function buildTrackingUrl(num, carrierKey) {
+  if (!num || !carrierKey || !trackingUrls[carrierKey]) return null;
+  var url = trackingUrls[carrierKey] + encodeURIComponent(num);
+  if (carrierKey === 'mondial_relay') url += '&language=FR';
+  if (carrierKey === 'chronopost') url += '&langue=fr';
+  return url;
+}
+
+function formatShippingLocation(s) {
+  if (!s) return '—';
+  var flag = countryFlags[s.country] || '🌍';
+  var country = countryNames[s.country] || s.country || '';
+  return s.city ? flag + ' ' + s.city + ', ' + country : flag + ' ' + country;
+}
+
+function renderOrderNumber(num) {
+  var el = document.getElementById('orderNumber');
+  if (num && num !== '' && num !== 'Non renseigné') {
+    el.innerHTML = '<a href="https://www.youvape.fr/wp-admin/post.php?action=edit&post=' + num + '" target="_blank">' + num + '</a>';
+  } else {
+    el.textContent = 'Non renseigné';
+  }
+}
+
+// ---- BADGE EXPÉDITION ----
+
+function setShippingBadge(text, color, message, url) {
+  var badge = document.getElementById('shippingBadge');
+  var msg = document.getElementById('shippingMessage');
+  badge.textContent = text;
+  badge.style.background = color;
+  badge.style.color = (color === '#fff491') ? '#000' : '#fff';
+  msg.textContent = message || '';
+  if (url) {
+    badge.className = 'clickable';
+    badge.onclick = function() { window.open(url, '_blank'); };
+  } else {
+    badge.className = '';
+    badge.onclick = null;
+  }
+}
+
+function setShippingBadgeFromWooStatus(status) {
+  var s = wooStatusMap[status];
+  if (s) setShippingBadge(s.icon + ' ' + s.label, s.color, 'Statut de la commande', null);
+}
+
+// ---- CHARGEMENT TICKET ----
+
+function loadTicketData() {
+  client.get([
+    'ticket.requester.email', 'ticket.requester.name', 'ticket.requester.id', 'ticket.requester.notes',
+    'ticket.customField:custom_field_18633691127698',
+    'ticket.customField:custom_field_18578492906770',
+    'ticket.customField:custom_field_22797786140050',
+    'ticket.id'
+  ]).then(function(data) {
+    currentUserId   = data['ticket.requester.id'];
+    currentUserEmail = data['ticket.requester.email'] || '';
+    document.getElementById('agentNote').value = data['ticket.requester.notes'] || '';
+
+    getClientFullInfo(currentUserId, data);
+
+    currentOrderNumber = data['ticket.customField:custom_field_18633691127698'];
+    renderOrderNumber(currentOrderNumber);
+
+    var existingTracking = data['ticket.customField:custom_field_22797786140050'];
+    if (existingTracking) {
+      document.getElementById('trackingNumber').textContent = existingTracking;
+      document.getElementById('manualTrackingNumber').value = existingTracking;
+    }
+
+    if (hasOrderNumber()) {
+      setTimeout(function() { checkForDuplicates(currentOrderNumber, data['ticket.id']); }, 800);
+      if (hasWooSettings()) setTimeout(function() { getWooCommerceOrderData(currentOrderNumber); }, 400);
+      setTimeout(function() { linkOrFetchSav(data['ticket.id']); }, 1200);
+      setTimeout(function() { fetchOrderReviews(currentOrderNumber); }, 2000);
+    } else {
+      setShippingBadge('❌ PAS DE COMMANDE', '#68737d', 'Aucune commande référencée', null);
+    }
+
+    if (hasWooSettings()) setTimeout(function() { getWooCommerceCustomerData(); }, 1800);
+    watchOrderNumberField();
+    setTimeout(initPolling, 3000);
+  }).catch(function(e) { console.error('Erreur loadTicketData:', e); });
+}
+
+// ---- CLIENT ----
+
+function getClientFullInfo(userId, ticketData) {
+  client.request({ url: '/api/v2/users/' + userId + '.json', type: 'GET' })
+  .then(function(r) {
+    var firstName = ticketData['ticket.customField:custom_field_18578492906770'] || '';
+    var fullName  = r.user.name || ticketData['ticket.requester.name'] || '—';
+    document.getElementById('clientName').textContent = firstName ? firstName + ' ' + fullName : fullName;
+    document.getElementById('clientEmail').textContent = r.user.email || currentUserEmail || '—';
+    getTotalTicketCount(userId);
+  }).catch(function() {
+    var firstName = ticketData['ticket.customField:custom_field_18578492906770'] || '';
+    var fullName  = ticketData['ticket.requester.name'] || '—';
+    document.getElementById('clientName').textContent = firstName ? firstName + ' ' + fullName : fullName;
+    document.getElementById('clientEmail').textContent = currentUserEmail || '—';
+  });
+}
+
+function getTotalTicketCount(userId) {
+  client.request({ url: '/api/v2/search.json?query=' + encodeURIComponent('requester:' + userId + ' type:ticket'), type: 'GET' })
+  .then(function(r) { document.getElementById('ticketCount').textContent = (r.count || 0) + ' ticket(s)'; })
+  .catch(function() { document.getElementById('ticketCount').textContent = '—'; });
+}
+
+// ---- WOOCOMMERCE CLIENT ----
+
+function getWooCommerceCustomerData() {
+  if (isValidEmail(currentUserEmail)) {
+    fetchCustomerByEmail(currentUserEmail);
+  } else if (hasOrderNumber()) {
+    fetch(wooSettings.url + '/wp-json/wc/v3/orders/' + currentOrderNumber, { headers: { 'Authorization': 'Basic ' + wooAuth() } })
+    .then(function(r) { return r.json(); })
+    .then(function(order) {
+      var email = order.billing && order.billing.email;
+      if (isValidEmail(email)) { currentUserEmail = email; fetchCustomerByEmail(email); }
+    }).catch(function() {});
+  }
+}
+
+function fetchCustomerByEmail(email) {
+  fetch(wooSettings.url + '/wp-json/wc/v3/customers?email=' + encodeURIComponent(email), { headers: { 'Authorization': 'Basic ' + wooAuth() } })
+  .then(function(r) { return r.json(); })
+  .then(function(customers) {
+    if (customers && customers.length > 0) getCustomerOrderHistory(customers[0].id);
+    else { document.getElementById('totalOrders').textContent = 'Client invité'; document.getElementById('totalSpent').textContent = '—'; document.getElementById('clientSince').textContent = '—'; }
+  }).catch(function() {});
+}
+
+function getCustomerOrderHistory(customerId) {
+  fetch(wooSettings.url + '/wp-json/wc/v3/orders?customer=' + customerId + '&per_page=100&orderby=date&order=asc', { headers: { 'Authorization': 'Basic ' + wooAuth() } })
+  .then(function(r) { return r.json(); })
+  .then(function(orders) {
+    if (!orders || orders.length === 0) {
+      document.getElementById('totalOrders').textContent = '0 commande';
+      document.getElementById('totalSpent').textContent = '0 €';
+      document.getElementById('clientSince').textContent = '—';
+      return;
+    }
+    var diffDays = Math.ceil((new Date() - new Date(orders[0].date_created)) / 86400000);
+    document.getElementById('clientSince').textContent = diffDays < 30 ? diffDays + ' jours' : diffDays < 365 ? Math.floor(diffDays/30) + ' mois' : Math.floor(diffDays/365) + ' an(s)';
+    var excluded = ['cancelled','failed','refunded','on-hold'];
+    var valid = orders.filter(function(o) { return !excluded.includes(o.status); });
+    document.getElementById('totalOrders').textContent = valid.length + ' commande(s)';
+    document.getElementById('totalSpent').textContent = valid.reduce(function(acc, o) { return acc + (parseFloat(o.total)||0); }, 0).toFixed(2) + ' €';
+    displayOrderHistory(orders);
+  }).catch(function() {});
+}
+
+// ---- WOOCOMMERCE COMMANDE ----
+
+function getWooCommerceOrderData(orderNumber) {
+  if (!hasWooSettings()) return;
+  fetch(wooSettings.url + '/wp-json/wc/v3/orders/' + orderNumber, { headers: { 'Authorization': 'Basic ' + wooAuth() } })
+  .then(function(r) { if (!r.ok) throw new Error(r.status); return r.json(); })
+  .then(function(order) {
+    updateOrderDetails(order);
+    displayOrderItems(order);
+    handleTracking(order);
+    if (!isValidEmail(currentUserEmail) && order.billing && order.billing.email) {
+      currentUserEmail = order.billing.email;
+      document.getElementById('clientEmail').textContent = currentUserEmail;
+      fetchCustomerByEmail(currentUserEmail);
+    }
+    if (order.shipping) document.getElementById('shippingLocation').textContent = formatShippingLocation(order.shipping);
+  }).catch(function(e) { console.error('Erreur commande WC:', e); });
+}
+
+function updateOrderDetails(order) {
+  if (order.date_created) document.getElementById('orderDate').textContent = new Date(order.date_created).toLocaleDateString('fr-FR');
+  if (order.total) document.getElementById('orderTotal').textContent = order.total + ' ' + (order.currency || '€');
+  if (order.status) {
+    currentWooStatus = order.status;
+    var clean = order.status.replace('wc-','');
+    var info = wooStatusMap[clean];
+    document.getElementById('orderStatus').textContent = info ? info.label : order.status.toUpperCase();
+    updateOrderStatusBadge(clean);
+  }
+  if (order.shipping_lines && order.shipping_lines.length > 0) document.getElementById('shippingMethod').textContent = order.shipping_lines[0].method_title || '—';
+}
+
+function updateOrderStatusBadge(clean) {
+  var badge = document.getElementById('currentOrderStatusBadge');
+  var info = wooStatusMap[clean];
+  if (info) { badge.textContent = info.label; badge.style.background = info.color; badge.style.display = 'inline-block'; }
+}
+
+function displayOrderItems(order) {
+  var container = document.getElementById('currentOrderDetails');
+  if (!container || !order.line_items) return;
+  var html = '<div class="order-item"><div class="order-header" onclick="toggleOrder(this)"><span><strong>Détail des articles</strong></span><span class="expand-icon">▼</span></div><div class="order-details">';
+  order.line_items.forEach(function(item) {
+    var ttc = (parseFloat(item.total) + parseFloat(item.total_tax)).toFixed(2);
+    html += '<div class="product-item"><div class="product-name"><a href="https://www.youvape.fr/?p=' + item.product_id + '" target="_blank">' + item.name + '</a> ×' + item.quantity + '</div><div class="product-price">' + ttc + ' ' + (order.currency||'€') + '</div></div>';
+  });
+  html += '</div></div>';
+  container.innerHTML = html;
+}
+
+function displayOrderHistory(orders) {
+  var container = document.getElementById('orderHistory');
+  if (!container) return;
+  var sorted = orders.slice().sort(function(a,b) { return new Date(b.date_created) - new Date(a.date_created); });
+  var html = '';
+  sorted.forEach(function(order) {
+    if (currentOrderNumber && order.id.toString() === currentOrderNumber.toString()) return;
+    var info = wooStatusMap[order.status.replace('wc-','')];
+    var badgeHtml = info ? '<span style="background:' + info.color + ';color:white;padding:1px 6px;border-radius:8px;font-size:10px;font-weight:bold;margin-left:6px;">' + info.label + '</span>' : '';
+    html += '<div class="order-item"><div class="order-header" onclick="toggleOrder(this)"><span><a href="https://www.youvape.fr/wp-admin/post.php?action=edit&post=' + order.id + '" target="_blank">#' + order.id + '</a> — ' + order.total + ' ' + (order.currency||'€') + badgeHtml + '</span><span class="expand-icon">▼</span></div><div class="order-details"><div style="font-size:11px;color:#68737d;margin-bottom:6px;">' + new Date(order.date_created).toLocaleDateString('fr-FR') + '</div>';
+    if (order.shipping_lines && order.shipping_lines.length > 0) html += '<div style="font-size:11px;color:#135E84;font-weight:bold;margin-bottom:6px;">🚚 ' + order.shipping_lines[0].method_title + '</div>';
+    if (order.line_items) order.line_items.forEach(function(item) {
+      var ttc = (parseFloat(item.total) + parseFloat(item.total_tax)).toFixed(2);
+      html += '<div class="product-item"><div class="product-name"><a href="https://www.youvape.fr/?p=' + item.product_id + '" target="_blank">' + item.name + '</a> ×' + item.quantity + '</div><div class="product-price">' + ttc + ' ' + (order.currency||'€') + '</div></div>';
+    });
+    html += '</div></div>';
+  });
+  container.innerHTML = html || '<div style="color:#68737d;font-style:italic;">Aucune autre commande</div>';
+}
+
+function toggleOrder(header) {
+  var d = header.nextElementSibling;
+  var i = header.querySelector('.expand-icon');
+  if (d && i) { d.classList.toggle('expanded'); i.classList.toggle('rotated'); }
+}
+
+// ---- TRACKING ----
+
+function handleTracking(order) {
+  if (!order.meta_data || order.meta_data.length === 0) { setShippingBadgeFromWooStatus((currentWooStatus||'').replace('wc-','')); return; }
+
+  var bmsTracking = null, bmsCarrier = null, bmsLink = null;
+  order.meta_data.forEach(function(m) {
+    if (m.key === 'bms_tracking_number') bmsTracking = m.value;
+    if (m.key === 'bms_carrier') bmsCarrier = m.value;
+    if (m.key === 'bms_tracking_link') bmsLink = m.value;
+  });
+
+  if (!bmsTracking) { setShippingBadgeFromWooStatus((currentWooStatus||'').replace('wc-','')); return; }
+
+  document.getElementById('trackingNumber').textContent = bmsTracking;
+  document.getElementById('manualTrackingNumber').value = bmsTracking;
+  updateZendeskTrackingField(bmsTracking);
+  if (bmsCarrier) { document.getElementById('carrier').textContent = bmsCarrier; preselectCarrier(bmsCarrier); }
+
+  var trackingUrl = null;
+  if (bmsLink) { var m2 = bmsLink.match(/href="([^"]*)"/); trackingUrl = m2 ? m2[1] : null; }
+  var carrierKey = detectCarrier(bmsCarrier);
+  if (!trackingUrl && bmsTracking && carrierKey) trackingUrl = buildTrackingUrl(bmsTracking, carrierKey);
+  currentTrackingUrl = trackingUrl;
+
+  if (carrierKey === 'mondial_relay') trackWithMondialRelay(bmsTracking, trackingUrl);
+  else if (carrierKey === 'colissimo' || carrierKey === 'chronopost') trackWithOkapi(bmsTracking, trackingUrl, bmsCarrier);
+  else setShippingBadge('📦 EXPÉDIÉE', '#135E84', 'Numéro de suivi disponible', trackingUrl);
+}
+
+function trackWithMondialRelay(num, fallbackUrl) {
+  if (!mondialRelaySettings || !mondialRelaySettings.brand_id || !mondialRelaySettings.login || !mondialRelaySettings.password) {
+    setShippingBadge('📦 EXPÉDIÉE', '#135E84', 'Mondial Relay — suivi non configuré', fallbackUrl); return;
+  }
+  setShippingBadge('🔍 VÉRIFICATION...', '#ff9800', 'Interrogation Mondial Relay...', null);
+  client.request({
+    url: 'https://connect-api.mondialrelay.com/api/Shipment/' + encodeURIComponent(num),
+    method: 'GET',
+    headers: { 'Authorization': 'Basic ' + btoa(mondialRelaySettings.login + ':' + mondialRelaySettings.password), 'X-Brand-Id': mondialRelaySettings.brand_id }
+  })
+  .then(function(data) {
+    var statusMap = { 'CREATED':'Créé','PICKED_UP':'Pris en charge','IN_TRANSIT':'En transit','DELIVERED':'Livré ✅','EXCEPTION':'Incident ⚠️','RETURNED':'Retourné' };
+    var status = data.Status || '';
+    var label  = statusMap[status] || status;
+    var color  = status === 'DELIVERED' ? '#27b500' : (status === 'EXCEPTION' || status === 'RETURNED') ? '#d93f4c' : '#fff491';
+    document.getElementById('deliveryStatus').textContent = label;
+    setShippingBadge('🚚 ' + label.toUpperCase(), color, fallbackUrl ? 'Cliquez pour suivre sur Mondial Relay' : 'Statut en temps réel', fallbackUrl);
+  })
+  .catch(function() { setShippingBadge('📦 EXPÉDIÉE', '#135E84', 'Mondial Relay — statut indisponible', fallbackUrl); });
+}
+
+function trackWithOkapi(num, fallbackUrl, carrierName) {
+  if (!okapiSettings || !okapiSettings.api_key) {
+    setShippingBadge('📦 EXPÉDIÉE', '#135E84', (carrierName||'La Poste') + ' — Okapi non configuré', fallbackUrl); return;
+  }
+  setShippingBadge('🔍 VÉRIFICATION...', '#ff9800', 'Interrogation Okapi...', null);
+  fetch('https://api.okapi.laposte.fr/suivi/v2/idships/' + encodeURIComponent(num), {
+    headers: { 'X-Okapi-Key': okapiSettings.api_key, 'Accept': 'application/json' }
+  })
+  .then(function(r) { if (!r.ok) throw new Error(r.status); return r.json(); })
+  .then(function(data) {
+    var okapiMap = { 'PC1':'Pris en charge','PC2':'En traitement','ET1':'En transit','ET2':'En distribution','LI1':'Livré ✅','LI2':'Livré en relais ✅','ND1':'Non distribuable ⚠️','RE1':'Retourné ⚠️' };
+    var url = (data.shipment && data.shipment.url) ? data.shipment.url : fallbackUrl;
+    if (data.shipment && data.shipment.event && data.shipment.event.length > 0) {
+      var evt   = data.shipment.event[0];
+      var code  = evt.code || '';
+      var label = okapiMap[code] || evt.label || code;
+      var cl    = code.toLowerCase();
+      var color = cl.startsWith('li') ? '#27b500' : (cl.startsWith('nd') || cl.startsWith('re')) ? '#d93f4c' : '#fff491';
+      document.getElementById('deliveryStatus').textContent = label;
+      setShippingBadge('🚚 ' + label.toUpperCase(), color, url ? 'Cliquez pour suivre' : 'Statut en temps réel', url);
+    } else {
+      setShippingBadge('📦 EXPÉDIÉE', '#135E84', 'Statut non disponible', url);
+    }
+  })
+  .catch(function() { setShippingBadge('📦 EXPÉDIÉE', '#135E84', (carrierName||'La Poste') + ' — statut indisponible', fallbackUrl); });
+}
+
+function trackManualPackage() {
+  var num = document.getElementById('manualTrackingNumber').value.trim();
+  var carrier = document.getElementById('carrierSelect').value;
+  if (!num) { alert('Veuillez saisir un numéro de suivi'); return; }
+  if (!carrier) { alert('Veuillez sélectionner un transporteur'); return; }
+  document.getElementById('trackingNumber').textContent = num;
+  currentTrackingUrl = buildTrackingUrl(num, carrier);
+  if (carrier === 'mondial_relay') trackWithMondialRelay(num, currentTrackingUrl);
+  else if (carrier === 'colissimo' || carrier === 'chronopost') trackWithOkapi(num, currentTrackingUrl, carrier === 'chronopost' ? 'Chronopost' : 'Colissimo');
+  else setShippingBadge('📦 EXPÉDIÉE', '#135E84', 'Transporteur externe', currentTrackingUrl);
+}
+
+function saveTrackingNumber() {
+  var num = document.getElementById('manualTrackingNumber').value.trim();
+  if (!num) { alert('Veuillez saisir un numéro de suivi'); return; }
+  updateZendeskTrackingField(num);
+}
+
+function updateZendeskTrackingField(num) {
+  client.set('ticket.customField:custom_field_22797786140050', num)
+  .then(function() {
+    var btn = document.querySelector('button[onclick="saveTrackingNumber()"]');
+    if (btn) { var o = btn.innerHTML; btn.innerHTML = '✅ Sauvegardé'; setTimeout(function() { btn.innerHTML = o; }, 2000); }
+  }).catch(function(e) { console.error('Erreur save tracking:', e); });
+}
+
+function preselectCarrier(carrier) {
+  var sel = document.getElementById('carrierSelect');
+  var key = detectCarrier(carrier);
+  sel.value = (key && trackingUrls[key]) ? key : 'autre';
+}
+
+// ---- SAV ----
+
+function linkOrFetchSav(ticketId) {
+  if (!hasOrderNumber() || !vpsApiToken) return;
+  fetch(vpsApiUrl + '/sav/zendesk/' + ticketId, { headers: vpsHeaders() })
+  .then(function(r) { return r.json(); })
+  .then(function(data) {
+    if (data.ticket) { currentSavId = data.ticket.id; currentSavStatus = data.ticket.sav_status; renderSavSection(); }
+    else createSav(ticketId);
+  })
+  .catch(function() { createSav(ticketId); });
+}
+
+function createSav(ticketId) {
+  fetch(vpsApiUrl + '/sav', {
+    method: 'POST',
+    headers: vpsHeaders(),
+    body: JSON.stringify({ order_id: currentOrderNumber, customer_email: currentUserEmail, zendesk_ticket_id: ticketId.toString(), zendesk_ticket_status: 'ouvert' })
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(data) {
+    if (data.ticket) { currentSavId = data.ticket.id; currentSavStatus = data.ticket.sav_status; renderSavSection(); }
+  })
+  .catch(function(e) { console.error('Erreur création SAV:', e); });
+}
+
+function updateSavStatus(newStatus) {
+  if (!currentSavId) return;
+  fetch(vpsApiUrl + '/sav/' + currentSavId + '/status', {
+    method: 'PUT', headers: vpsHeaders(),
+    body: JSON.stringify({ sav_status: newStatus })
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(data) { if (data.ticket) { currentSavStatus = data.ticket.sav_status; renderSavSection(); } })
+  .catch(function(e) { console.error('Erreur update SAV:', e); });
+}
+
+function renderSavSection() {
+  var section = document.getElementById('savSection');
+  var statusDisplay = document.getElementById('savStatusDisplay');
+  var buttons = document.getElementById('savButtons');
+  section.style.display = 'block';
+
+  var colors  = { 'ouvert':'#68737d','accepté':'#135E84','terminé':'#27b500','refusé':'#d93f4c' };
+  var labels  = { 'ouvert':'OUVERT','accepté':'ACCEPTÉ','terminé':'TERMINÉ','refusé':'REFUSÉ' };
+  var color   = colors[currentSavStatus] || '#68737d';
+  var label   = labels[currentSavStatus] || (currentSavStatus||'').toUpperCase();
+
+  statusDisplay.innerHTML = '<span class="sav-status-badge" style="background:' + color + ';">🛠 SAV ' + label + '</span>';
+  buttons.innerHTML = '';
+  if (currentSavStatus === 'ouvert') {
+    buttons.innerHTML = '<button class="sav-btn accept" onclick="updateSavStatus(\'accepté\')">✅ SAV Accepté</button>';
+  } else if (currentSavStatus === 'accepté') {
+    buttons.innerHTML = '<button class="sav-btn done" onclick="updateSavStatus(\'terminé\')">✅ SAV Terminé</button>' +
+                        '<button class="sav-btn refused" onclick="updateSavStatus(\'refusé\')">❌ SAV Refusé</button>';
+  }
+}
+
+// ---- AVIS (étoiles) ----
+
+function fetchOrderReviews(orderNumber) {
+  if (!vpsApiToken || !orderNumber) return;
+  fetch(vpsApiUrl + '/reviews?order_id=' + orderNumber, { headers: vpsHeaders() })
+  .then(function(r) { return r.json(); })
+  .then(function(data) {
+    if (data.reviews && data.reviews.length > 0) {
+      var avg = data.reviews.reduce(function(acc, r) { return acc + (r.rating||0); }, 0) / data.reviews.length;
+      var stars = '';
+      for (var i = 1; i <= 5; i++) stars += i <= Math.round(avg) ? '⭐' : '☆';
+      var el = document.getElementById('orderNumber');
+      el.innerHTML = el.innerHTML + ' <span title="' + data.reviews.length + ' avis · ' + avg.toFixed(1) + '/5" style="font-size:11px;">' + stars + '</span>';
+    }
+  }).catch(function() {});
+}
+
+// ---- DOUBLONS ----
+
+function checkForDuplicates(orderNumber, currentTicketId) {
+  client.request({ url: '/api/v2/search.json?query=' + encodeURIComponent('fieldvalue:' + orderNumber + ' type:ticket'), type: 'GET' })
+  .then(function(r) {
+    var dups = (r.results||[]).filter(function(t) { return t.id !== currentTicketId; });
+    if (dups.length > 0) {
+      document.getElementById('alertSection').style.display = 'block';
+      document.getElementById('alertMessage').textContent = dups.length === 1 ? 'Ticket similaire trouvé (#' + dups[0].id + ')' : dups.length + ' tickets similaires trouvés';
+    }
+  }).catch(function() {});
+}
+
+// ---- NOTE AGENT ----
+
+function saveAgentNote() {
+  var note = document.getElementById('agentNote').value.trim();
+  if (!currentUserId) return;
+  client.request({ url: '/api/v2/users/' + currentUserId + '.json', type: 'PUT', data: { user: { notes: note } } })
+  .then(function() {
+    var btn = document.getElementById('saveNoteBtn');
+    var o = btn.innerHTML; btn.innerHTML = '✅ Sauvegardé'; btn.style.background = '#27b500';
+    setTimeout(function() { btn.innerHTML = o; btn.style.background = '#135E84'; }, 2000);
+  }).catch(function() { alert('Erreur lors de la sauvegarde'); });
+}
+
+// ---- WATCH + POLLING ----
+
+function watchOrderNumberField() {
+  client.on('ticket.custom_field_18633691127698.changed', function(data) {
+    var newNum = typeof data === 'string' ? data : (data && data['ticket.customField:custom_field_18633691127698']);
+    if (newNum && newNum !== currentOrderNumber) {
+      currentOrderNumber = newNum;
+      renderOrderNumber(newNum);
+      document.getElementById('alertSection').style.display = 'none';
+      currentSavId = null; currentSavStatus = null;
+      document.getElementById('savSection').style.display = 'none';
+      if (hasWooSettings()) setTimeout(function() { getWooCommerceOrderData(newNum); }, 250);
+      client.get('ticket.id').then(function(d) {
+        checkForDuplicates(newNum, d['ticket.id']);
+        setTimeout(function() { linkOrFetchSav(d['ticket.id']); }, 500);
+        setTimeout(function() { fetchOrderReviews(newNum); }, 800);
+      });
+    }
+  });
+}
+
+function initPolling() {
+  client.get(['ticket.customField:custom_field_18633691127698','ticket.customField:custom_field_22797786140050'])
+  .then(function(data) {
+    lastOrderNumber  = data['ticket.customField:custom_field_18633691127698'];
+    lastTrackingNumber = data['ticket.customField:custom_field_22797786140050'];
+    startPolling();
+  });
+}
+
+function startPolling() {
+  if (pollingInterval) return;
+  pollingInterval = setInterval(function() {
+    client.get(['ticket.customField:custom_field_18633691127698','ticket.customField:custom_field_22797786140050'])
+    .then(function(data) {
+      var order    = data['ticket.customField:custom_field_18633691127698'];
+      var tracking = data['ticket.customField:custom_field_22797786140050'];
+      if (order !== lastOrderNumber && order) {
+        lastOrderNumber = order; currentOrderNumber = order;
+        renderOrderNumber(order);
+        if (hasWooSettings()) getWooCommerceOrderData(order);
+        client.get('ticket.id').then(function(d) { linkOrFetchSav(d['ticket.id']); });
+      }
+      if (tracking !== lastTrackingNumber && tracking) {
+        lastTrackingNumber = tracking;
+        document.getElementById('trackingNumber').textContent = tracking;
+        document.getElementById('manualTrackingNumber').value = tracking;
+      }
+    });
+  }, 5000);
+}
+
+document.addEventListener('visibilitychange', function() {
+  if (document.hidden) { clearInterval(pollingInterval); pollingInterval = null; }
+  else startPolling();
+});
+</script>
+</body>
+</html>

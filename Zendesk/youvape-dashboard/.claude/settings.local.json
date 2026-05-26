@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(grep:*)",
+      "Bash(cp:*)",
+      "Bash(paste:*)",
+      "Bash(zip:*)",
+      "Bash(zcli apps:package:*)",
+      "Bash(zcli apps:validate:*)",
+      "Bash(unzip:*)"
+    ],
+    "deny": []
+  }
+}
