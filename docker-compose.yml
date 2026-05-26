@@ -40,14 +40,29 @@ services:
     restart: unless-stopped
     ports:
       - "80:80"
+      - "8443:8443"
+    volumes:
+      - certbot_certs:/etc/letsencrypt
     depends_on:
       - backend
+    networks:
+      - youvape_network
+
+  certbot:
+    image: certbot/certbot
+    container_name: youvape_certbot
+    volumes:
+      - certbot_certs:/etc/letsencrypt
+      - certbot_webroot:/var/www/certbot
+    entrypoint: /bin/sh -c "trap exit TERM; while :; do certbot renew --quiet; sleep 12h & wait $${!}; done"
     networks:
       - youvape_network
 
 volumes:
   postgres_data:
   backend_logs:
+  certbot_certs:
+  certbot_webroot:
 
 networks:
   youvape_network:
