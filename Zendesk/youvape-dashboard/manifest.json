@@ -36,14 +36,14 @@
     },
     {
       "name": "woocommerce_key",
-      "type": "password",
+      "type": "text",
       "required": true,
       "secure": false,
       "description": "Clé API WooCommerce"
     },
     {
       "name": "woocommerce_secret",
-      "type": "password",
+      "type": "text",
       "required": true,
       "secure": false,
       "description": "Secret API WooCommerce"
@@ -64,14 +64,14 @@
     },
     {
       "name": "mondial_relay_password",
-      "type": "password",
+      "type": "text",
       "required": false,
       "secure": false,
       "description": "Mot de passe API Mondial Relay"
     },
     {
       "name": "okapi_api_key",
-      "type": "password",
+      "type": "text",
       "required": false,
       "secure": false,
       "description": "Clé API Okapi (La Poste/Colissimo/Chronopost)"
@@ -92,7 +92,7 @@
     },
     {
       "name": "vps_api_token",
-      "type": "password",
+      "type": "text",
       "required": true,
       "secure": false,
       "description": "Token API VPS (x-zendesk-token)"
