@@ -76,8 +76,8 @@ class SavModel {
          o.billing_address_1 as order_address,
          o.billing_city      as order_city,
          o.billing_postcode  as order_postcode,
-         c.total_spent       as customer_total_spent,
-         c.orders_count      as customer_orders_count
+         c.first_name        as customer_first_name,
+         c.last_name         as customer_last_name
        FROM sav_tickets t
        LEFT JOIN orders    o ON o.wp_order_id::text = t.order_id
        LEFT JOIN customers c ON c.id = t.customer_id
