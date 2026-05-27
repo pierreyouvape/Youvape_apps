@@ -1,8 +1,9 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useContext } from 'react';
 import { useNavigate } from 'react-router-dom';
 import StatusBadge from './StatusBadge';
 import { TICKETS_COLOR } from './ticketConstants';
 import { formatDate } from '../../utils/dateUtils';
+import { AuthContext } from '../../context/AuthContext';
 
 const C = {
   orange: '#E28F00', rouge: '#DE2020',
@@ -201,7 +202,7 @@ function Message({ msg, ticketId }) {
 }
 
 // ─── Composer ─────────────────────────────────────────────────────────────────
-function ReplyComposer({ ticketId, demandeur, onReplySent }) {
+function ReplyComposer({ ticketId, demandeur, agentName, onReplySent }) {
   const [body, setBody] = useState(() => localStorage.getItem(`yv.tickets.draft.${ticketId}`) || '');
   const [isPrivate, setIsPrivate] = useState(false);
   const [modeOpen, setModeOpen] = useState(false);
@@ -240,7 +241,7 @@ function ReplyComposer({ ticketId, demandeur, onReplySent }) {
     try {
       const fd = new FormData();
       fd.append('body', body);
-      fd.append('agent_name', 'SAV Youvape');
+      fd.append('agent_name', agentName || 'SAV Youvape');
       fd.append('is_private', isPrivate ? 'true' : 'false');
       files.forEach(f => fd.append('attachments', f));
       const res = await fetch(`${API}/${ticketId}/reply`, { method: 'POST', body: fd });
@@ -723,6 +724,7 @@ function ConversationPanel({ ticket, onReplySent }) {
       <ReplyComposer
         ticketId={ticket.id}
         demandeur={ticket.customer_name || ticket.customer_email}
+        agentName={user?.name || 'SAV Youvape'}
         onReplySent={onReplySent}
       />
     </section>
@@ -1055,6 +1057,7 @@ function CustomerPanel({ ticket }) {
 // ─── Composant principal ──────────────────────────────────────────────────────
 export default function TicketDetail({ ticketId }) {
   const navigate = useNavigate();
+  const { user } = useContext(AuthContext);
   const [ticket, setTicket] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
