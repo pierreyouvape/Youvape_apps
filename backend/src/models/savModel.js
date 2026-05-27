@@ -228,11 +228,12 @@ class SavModel {
   }
 
   // ─── Ajouter un message dans le JSONB messages ───────────────────────────
-  async addMessage(id, { from, body, is_agent, attachments }) {
+  async addMessage(id, { from, body, is_agent, is_private, attachments }) {
     const message = {
       from,
       body,
       is_agent: !!is_agent,
+      is_private: !!is_private,
       date: new Date().toISOString(),
       attachments: Array.isArray(attachments) ? attachments : [],
     };

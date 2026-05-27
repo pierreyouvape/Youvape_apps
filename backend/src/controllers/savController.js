@@ -193,15 +193,26 @@ const savController = {
   reply: async (req, res) => {
     try {
       const ticketId = parseInt(req.params.id);
-      const { body, agent_name } = req.body;
+      const { body, agent_name, is_private } = req.body;
 
       if (!body) return res.status(400).json({ error: 'Le message est requis' });
 
       const ticket = await savModel.getById(ticketId);
       if (!ticket) return res.status(404).json({ error: 'Ticket introuvable' });
 
-      // Envoyer l'email via Mailgun (avec PJ éventuelles)
       const from = agent_name || 'SAV Youvape';
+      const storedAttachments = saveAttachments(ticketId, req.files);
+
+      // Note privée → pas d'envoi email, juste stockage
+      if (is_private === 'true' || is_private === true) {
+        const updated = await savModel.addMessage(ticketId, {
+          from, body, is_agent: true, is_private: true,
+          attachments: storedAttachments,
+        });
+        return res.json({ success: true, ticket: updated });
+      }
+
+      // Réponse publique → envoi email via Mailgun
       const emailResult = await mailgunService.sendReply({
         to:          ticket.customer_email,
         subject:     ticket.subject,
@@ -214,14 +225,9 @@ const savController = {
         return res.status(500).json({ error: `Erreur envoi email: ${emailResult.error}` });
       }
 
-      // Persister les PJ sur disque pour réaffichage côté agent
-      const storedAttachments = saveAttachments(ticketId, req.files);
-
       // Stocker le message dans le ticket
       const updated = await savModel.addMessage(ticketId, {
-        from:        from,
-        body,
-        is_agent:    true,
+        from, body, is_agent: true, is_private: false,
         attachments: storedAttachments,
       });
 

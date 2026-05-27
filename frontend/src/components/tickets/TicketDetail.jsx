@@ -136,6 +136,8 @@ function AttachmentItem({ att, ticketId }) {
 // ─── Message Zendesk-style ────────────────────────────────────────────────────
 function Message({ msg, ticketId }) {
   const atts = msg.attachments || [];
+  const isPrivate = !!msg.is_private;
+
   return (
     <div style={{ display: 'flex', gap: 14, marginBottom: 22 }}>
       <Avatar name={msg.from} size={36} />
@@ -143,15 +145,23 @@ function Message({ msg, ticketId }) {
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4, flexWrap: 'wrap' }}>
           <strong style={{ fontSize: 14, color: C.grisTF }}>{msg.from}</strong>
           {!msg.is_agent && <Ic.Mail color={C.grisM} size={13} />}
+          {isPrivate && (
+            <span style={{
+              fontSize: 11, fontWeight: 700, color: '#92650A',
+              background: '#FFF8E1', border: '1px solid #F6C613',
+              borderRadius: 4, padding: '1px 7px',
+            }}>Note privée</span>
+          )}
           <span style={{ color: C.grisCL, fontSize: 12 }}>·</span>
           <span style={{ fontSize: 12, color: C.grisM, fontWeight: 600 }}>{formatDate(msg.date, { time: true })}</span>
         </div>
         <div style={{
-          background: C.blanc, border: `1px solid ${C.grisCL}`,
+          background: isPrivate ? '#FFFDE7' : C.blanc,
+          border: `1px solid ${isPrivate ? '#F6C613' : C.grisCL}`,
           borderRadius: 12, padding: '16px 18px',
           fontSize: 14, color: C.grisTF, lineHeight: 1.55,
           whiteSpace: 'pre-wrap', wordBreak: 'break-word',
-          boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
+          boxShadow: isPrivate ? '0 1px 4px rgba(246,198,19,0.15)' : '0 1px 3px rgba(0,0,0,0.04)',
         }}>
           {msg.body}
         </div>
@@ -168,14 +178,25 @@ function Message({ msg, ticketId }) {
 // ─── Composer ─────────────────────────────────────────────────────────────────
 function ReplyComposer({ ticketId, demandeur, onReplySent }) {
   const [body, setBody] = useState(() => localStorage.getItem(`yv.tickets.draft.${ticketId}`) || '');
+  const [isPrivate, setIsPrivate] = useState(false);
+  const [modeOpen, setModeOpen] = useState(false);
   const [files, setFiles] = useState([]);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState('');
   const fileRef = useRef();
+  const modeRef = useRef();
 
   useEffect(() => {
     localStorage.setItem(`yv.tickets.draft.${ticketId}`, body);
   }, [body, ticketId]);
+
+  // Fermer le dropdown mode si clic extérieur
+  useEffect(() => {
+    if (!modeOpen) return;
+    const handler = (e) => { if (modeRef.current && !modeRef.current.contains(e.target)) setModeOpen(false); };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [modeOpen]);
 
   const handleFileChange = (e) => {
     const selected = Array.from(e.target.files);
@@ -195,6 +216,7 @@ function ReplyComposer({ ticketId, demandeur, onReplySent }) {
       const fd = new FormData();
       fd.append('body', body);
       fd.append('agent_name', 'SAV Youvape');
+      fd.append('is_private', isPrivate ? 'true' : 'false');
       files.forEach(f => fd.append('attachments', f));
       const res = await fetch(`${API}/${ticketId}/reply`, { method: 'POST', body: fd });
       const data = await res.json();
@@ -211,41 +233,116 @@ function ReplyComposer({ ticketId, demandeur, onReplySent }) {
 
   const canSend = body.trim().length > 0 || files.length > 0;
 
+  // Couleurs selon le mode
+  const borderColor = body.length > 0
+    ? (isPrivate ? '#F6C613' : TICKETS_COLOR)
+    : C.grisCL;
+  const bgColor = isPrivate ? '#FFFDE7' : '#FCFEFF';
+  const headerBg = isPrivate ? '#FFF8E1' : C.blanc;
+
   return (
     <div style={{ background: C.blanc, borderTop: `1px solid ${C.grisCL}`, padding: '14px 28px 16px' }}>
       <div style={{
-        border: `1px solid ${body.length > 0 ? TICKETS_COLOR : C.grisCL}`,
-        borderRadius: 12, background: '#FCFEFF', transition: 'border-color 0.15s',
+        border: `1px solid ${borderColor}`,
+        borderRadius: 12, background: bgColor, transition: 'all 0.2s',
       }}>
         {/* Header composer */}
         <div style={{
-          padding: '10px 14px', borderBottom: `1px solid ${C.grisCL}`,
+          padding: '10px 14px', borderBottom: `1px solid ${isPrivate ? '#F6C61340' : C.grisCL}`,
           display: 'flex', alignItems: 'center', gap: 12, fontSize: 13, color: C.grisF, flexWrap: 'wrap',
+          background: headerBg, borderRadius: '12px 12px 0 0', transition: 'background 0.2s',
         }}>
-          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 700, color: C.grisTF }}>
-            <Ic.Back size={11} color={C.grisTF} /> Réponse publique <Ic.Chev color={C.grisM} />
-          </span>
-          <span>À</span>
-          <span style={{
-            display: 'inline-flex', alignItems: 'center', gap: 6,
-            padding: '3px 8px 3px 10px', background: C.blanc, border: `1px solid ${C.grisCL}`,
-            borderRadius: 99, fontSize: 12, fontWeight: 600, color: C.grisF,
-          }}>
-            <Avatar name={demandeur} size={16} />{demandeur}
-          </span>
+          {/* Dropdown mode */}
+          <div style={{ position: 'relative' }} ref={modeRef}>
+            <button
+              onClick={() => setModeOpen(o => !o)}
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 6,
+                fontWeight: 700, color: isPrivate ? '#92650A' : C.grisTF,
+                background: 'none', border: 'none', cursor: 'pointer',
+                fontFamily: 'Lato, sans-serif', fontSize: 13, padding: 0,
+              }}
+            >
+              <Ic.Back size={11} color={isPrivate ? '#92650A' : C.grisTF} />
+              {isPrivate ? '🔒 Note privée' : 'Réponse publique'}
+              <Ic.Chev color={C.grisM} />
+            </button>
+            {modeOpen && (
+              <div style={{
+                position: 'absolute', top: '100%', left: 0, zIndex: 100,
+                background: C.blanc, border: `1px solid ${C.grisCL}`, borderRadius: 8,
+                boxShadow: '0 4px 16px rgba(0,0,0,0.1)', marginTop: 6,
+                minWidth: 200, overflow: 'hidden',
+              }}>
+                <button
+                  onClick={() => { setIsPrivate(false); setModeOpen(false); }}
+                  style={{
+                    width: '100%', textAlign: 'left', padding: '10px 14px',
+                    background: !isPrivate ? `${TICKETS_COLOR}12` : 'transparent',
+                    border: 'none', cursor: 'pointer', fontFamily: 'Lato, sans-serif',
+                    fontSize: 13, fontWeight: !isPrivate ? 700 : 400, color: C.grisTF,
+                    display: 'flex', alignItems: 'center', gap: 8,
+                  }}
+                  onMouseEnter={e => e.currentTarget.style.background = C.grisTL}
+                  onMouseLeave={e => e.currentTarget.style.background = !isPrivate ? `${TICKETS_COLOR}12` : 'transparent'}
+                >
+                  <span style={{ fontSize: 15 }}>✉️</span>
+                  <div>
+                    <div>Réponse publique</div>
+                    <div style={{ fontSize: 11, color: C.grisM, fontWeight: 400 }}>Envoyée au client par email</div>
+                  </div>
+                </button>
+                <button
+                  onClick={() => { setIsPrivate(true); setModeOpen(false); }}
+                  style={{
+                    width: '100%', textAlign: 'left', padding: '10px 14px',
+                    background: isPrivate ? '#FFF8E1' : 'transparent',
+                    border: 'none', cursor: 'pointer', fontFamily: 'Lato, sans-serif',
+                    fontSize: 13, fontWeight: isPrivate ? 700 : 400, color: C.grisTF,
+                    display: 'flex', alignItems: 'center', gap: 8,
+                    borderTop: `1px solid ${C.grisCL}`,
+                  }}
+                  onMouseEnter={e => e.currentTarget.style.background = '#FFF8E1'}
+                  onMouseLeave={e => e.currentTarget.style.background = isPrivate ? '#FFF8E1' : 'transparent'}
+                >
+                  <span style={{ fontSize: 15 }}>🔒</span>
+                  <div>
+                    <div>Note privée</div>
+                    <div style={{ fontSize: 11, color: C.grisM, fontWeight: 400 }}>Visible uniquement par l'équipe</div>
+                  </div>
+                </button>
+              </div>
+            )}
+          </div>
+
+          {!isPrivate && (
+            <>
+              <span>À</span>
+              <span style={{
+                display: 'inline-flex', alignItems: 'center', gap: 6,
+                padding: '3px 8px 3px 10px', background: C.blanc, border: `1px solid ${C.grisCL}`,
+                borderRadius: 99, fontSize: 12, fontWeight: 600, color: C.grisF,
+              }}>
+                <Avatar name={demandeur} size={16} />{demandeur}
+              </span>
+            </>
+          )}
           <div style={{ flex: 1 }} />
-          <a href="#" onClick={e => e.preventDefault()} style={{ color: C.bleu, textDecoration: 'none', fontWeight: 700, fontSize: 12.5 }}>CC</a>
+          {!isPrivate && (
+            <a href="#" onClick={e => e.preventDefault()} style={{ color: C.bleu, textDecoration: 'none', fontWeight: 700, fontSize: 12.5 }}>CC</a>
+          )}
         </div>
 
         {/* Textarea */}
         <textarea
           value={body}
           onChange={e => setBody(e.target.value)}
-          placeholder="Tapez votre réponse…"
+          placeholder={isPrivate ? 'Ajouter une note interne…' : 'Tapez votre réponse…'}
           style={{
             width: '100%', minHeight: 80, padding: '14px 14px 10px',
             border: 'none', outline: 'none', resize: 'vertical',
-            fontFamily: 'Lato, sans-serif', fontSize: 14, color: C.grisTF, background: 'transparent',
+            fontFamily: 'Lato, sans-serif', fontSize: 14, color: C.grisTF,
+            background: 'transparent',
           }}
         />
 
