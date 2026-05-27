@@ -246,6 +246,18 @@ const savController = {
     }
   },
 
+  // ─── PATCH champs éditables (autosave 600ms debounce) ────────────────────
+  patchTicket: async (req, res) => {
+    try {
+      const ticket = await savModel.patch(parseInt(req.params.id), req.body);
+      if (!ticket) return res.status(404).json({ error: 'Ticket introuvable ou aucun champ valide' });
+      res.json({ success: true, ticket });
+    } catch (error) {
+      console.error('❌ [SAV] Erreur patch:', error);
+      res.status(500).json({ error: 'Erreur serveur' });
+    }
+  },
+
   // ─── Créer un ticket manuellement ────────────────────────────────────────
   createManual: async (req, res) => {
     try {

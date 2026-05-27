@@ -6,39 +6,116 @@ import { useTicketStatuses } from './useTicketStatuses';
 import { formatDate } from '../../utils/dateUtils';
 
 const C = {
+  orange: '#E28F00', rouge: '#DE2020',
+  vert: '#4AB866', bleu: '#0071EB',
   grisTL: '#F2F6F8', grisCL: '#E2E2E2', grisM: '#8A99A4',
   grisF: '#626E85', grisTF: '#2a2e38', blanc: '#fff',
-  orange: '#E28F00',
 };
 
 const API = '/api/sav';
 
-// ─── Icônes ───────────────────────────────────────────────────────────────────
-const Icon = ({ d, size = 16 }) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
-    <path d={d} />
-  </svg>
-);
+function shade(hex, amt) {
+  const h = hex.replace('#', '');
+  const r = parseInt(h.slice(0, 2), 16), g = parseInt(h.slice(2, 4), 16), b = parseInt(h.slice(4, 6), 16);
+  const adj = c => Math.max(0, Math.min(255, Math.round(c + 255 * amt)));
+  return '#' + adj(r).toString(16).padStart(2, '0') + adj(g).toString(16).padStart(2, '0') + adj(b).toString(16).padStart(2, '0');
+}
 
-function Avatar({ name, isAgent, size = 34 }) {
+// ─── Icônes ───────────────────────────────────────────────────────────────────
+const Ic = {
+  Back: ({ size = 14, color = 'currentColor' }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M19 12H5" /><path d="M12 19l-7-7 7-7" />
+    </svg>
+  ),
+  Mail: ({ size = 13, color = C.grisM }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="5" width="18" height="14" rx="2" /><path d="M3 7l9 6 9-6" />
+    </svg>
+  ),
+  Phone: ({ size = 13, color = C.grisM }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.37 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.33 1.85.57 2.81.7A2 2 0 0 1 22 16.92z" />
+    </svg>
+  ),
+  Chev: ({ size = 11, color = 'currentColor' }) => (
+    <svg width={size} height={size} viewBox="0 0 12 12" fill="none">
+      <path d="M2 4 L6 8 L10 4" stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  ),
+  More: ({ size = 16, color = C.grisM }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill={color}>
+      <circle cx="5" cy="12" r="1.6" /><circle cx="12" cy="12" r="1.6" /><circle cx="19" cy="12" r="1.6" />
+    </svg>
+  ),
+  History: ({ size = 14, color = C.grisF }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M3 12a9 9 0 1 0 3-6.7L3 8" /><path d="M3 3v5h5" /><path d="M12 7v5l3 2" />
+    </svg>
+  ),
+  External: ({ size = 12, color = C.bleu }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M7 17L17 7M9 7h8v8" />
+    </svg>
+  ),
+  Copy: ({ size = 12, color = C.grisM }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="9" y="9" width="13" height="13" rx="2" /><path d="M5 15V5a2 2 0 0 1 2-2h10" />
+    </svg>
+  ),
+  Pin: ({ size = 14, color = C.grisF }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 17v5" /><path d="M9 2h6l-1 7 4 4H6l4-4z" />
+    </svg>
+  ),
+  Send: ({ size = 14, color = '#fff' }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M22 2L11 13" /><path d="M22 2L15 22l-4-9-9-4 20-7z" />
+    </svg>
+  ),
+  Attach: ({ size = 14, color = C.grisF }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M21.4 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+    </svg>
+  ),
+  Truck: ({ size = 12, color = 'currentColor' }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="1" y="6" width="14" height="11" rx="1" /><path d="M15 9h4l3 4v4h-7z" /><circle cx="6" cy="19" r="2" /><circle cx="18" cy="19" r="2" />
+    </svg>
+  ),
+};
+
+function iconBtn() {
+  return {
+    width: 32, height: 32, borderRadius: 7,
+    background: 'transparent', border: 'none',
+    display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+    cursor: 'pointer', padding: 0,
+    transition: 'background 0.12s',
+  };
+}
+
+// ─── Avatar ───────────────────────────────────────────────────────────────────
+function Avatar({ name, size = 34 }) {
   const initials = (name || '?').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
   return (
     <div style={{
       width: size, height: size, borderRadius: '50%',
-      background: isAgent ? TICKETS_COLOR : C.grisM,
+      background: `linear-gradient(135deg, ${TICKETS_COLOR}, ${shade(TICKETS_COLOR, -0.25)})`,
       color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center',
-      fontSize: size * 0.35, fontWeight: 700, flexShrink: 0,
+      fontSize: Math.max(10, size * 0.38), fontWeight: 800, flexShrink: 0,
+      boxShadow: '0 1px 2px rgba(0,0,0,0.18)',
     }}>
       {initials}
     </div>
   );
 }
 
+// ─── Pièce jointe ─────────────────────────────────────────────────────────────
 function AttachmentItem({ att, ticketId }) {
   const isImage = att.mime?.startsWith('image/');
   const url = att.url || `/api/sav/attachments/${ticketId}/${att.filename}`;
   const sizeKb = att.size ? `${(att.size / 1024).toFixed(0)} Ko` : '';
-
   if (isImage) {
     return (
       <a href={url} target="_blank" rel="noopener noreferrer" style={{ display: 'inline-block', marginRight: 8, marginTop: 6 }}>
@@ -51,49 +128,37 @@ function AttachmentItem({ att, ticketId }) {
       display: 'inline-flex', alignItems: 'center', gap: 6,
       padding: '4px 10px', marginRight: 6, marginTop: 6,
       background: C.grisTL, border: `1px solid ${C.grisCL}`,
-      borderRadius: 6, fontSize: 12, color: TICKETS_COLOR,
-      textDecoration: 'none', fontWeight: 600,
+      borderRadius: 6, fontSize: 12, color: TICKETS_COLOR, textDecoration: 'none', fontWeight: 600,
     }}>
       📎 {att.original_name} {sizeKb && <span style={{ color: C.grisM, fontWeight: 400 }}>({sizeKb})</span>}
     </a>
   );
 }
 
-// ─── Bulle de message ─────────────────────────────────────────────────────────
-function MessageBubble({ msg, ticketId }) {
-  const isAgent = msg.is_agent;
+// ─── Message Zendesk-style ─────────────────────────────────────────────────────
+function Message({ msg, ticketId }) {
   const atts = msg.attachments || [];
-
   return (
-    <div style={{
-      display: 'flex', gap: 10,
-      flexDirection: isAgent ? 'row-reverse' : 'row',
-      marginBottom: 20,
-    }}>
-      <Avatar name={msg.from} isAgent={isAgent} />
-      <div style={{ maxWidth: '72%' }}>
-        <div style={{
-          display: 'flex', alignItems: 'center', gap: 8,
-          flexDirection: isAgent ? 'row-reverse' : 'row',
-          marginBottom: 4,
-        }}>
-          <span style={{ fontSize: 13, fontWeight: 700, color: C.grisTF }}>{msg.from}</span>
-          <span style={{ fontSize: 11.5, color: C.grisM }}>{formatDate(msg.date, { time: true })}</span>
+    <div style={{ display: 'flex', gap: 14, marginBottom: 22 }}>
+      <Avatar name={msg.from} size={36} />
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4, flexWrap: 'wrap' }}>
+          <strong style={{ fontSize: 14, color: C.grisTF }}>{msg.from}</strong>
+          {!msg.is_agent && <Ic.Mail color={C.grisM} size={13} />}
+          <span style={{ color: C.grisCL, fontSize: 12 }}>·</span>
+          <span style={{ fontSize: 12, color: C.grisM, fontWeight: 600 }}>{formatDate(msg.date, { time: true })}</span>
         </div>
         <div style={{
-          background: isAgent ? TICKETS_COLOR : C.blanc,
-          color: isAgent ? '#fff' : C.grisTF,
-          borderRadius: isAgent ? '16px 4px 16px 16px' : '4px 16px 16px 16px',
-          padding: '12px 16px',
-          border: isAgent ? 'none' : `1px solid ${C.grisCL}`,
-          fontSize: 13.5, lineHeight: 1.55,
+          background: C.blanc, border: `1px solid ${C.grisCL}`,
+          borderRadius: 12, padding: '16px 18px',
+          fontSize: 14, color: C.grisTF, lineHeight: 1.55,
           whiteSpace: 'pre-wrap', wordBreak: 'break-word',
-          boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
+          boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
         }}>
           {msg.body}
         </div>
         {atts.length > 0 && (
-          <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: isAgent ? 'flex-end' : 'flex-start' }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', marginTop: 4 }}>
             {atts.map((a, i) => <AttachmentItem key={i} att={a} ticketId={ticketId} />)}
           </div>
         )}
@@ -102,15 +167,15 @@ function MessageBubble({ msg, ticketId }) {
   );
 }
 
-// ─── Composer de réponse ──────────────────────────────────────────────────────
-function ReplyComposer({ ticketId, onReplySent }) {
+// ─── Composer ─────────────────────────────────────────────────────────────────
+function ReplyComposer({ ticketId, demandeur, onReplySent }) {
   const [body, setBody] = useState(() => localStorage.getItem(`yv.tickets.draft.${ticketId}`) || '');
   const [files, setFiles] = useState([]);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState('');
   const fileRef = useRef();
+  const focused = body.length > 0;
 
-  // Persister le brouillon
   useEffect(() => {
     localStorage.setItem(`yv.tickets.draft.${ticketId}`, body);
   }, [body, ticketId]);
@@ -149,223 +214,842 @@ function ReplyComposer({ ticketId, onReplySent }) {
   };
 
   return (
-    <div style={{
-      borderTop: `1px solid ${C.grisCL}`,
-      background: C.blanc, padding: 16,
-    }}>
-      {/* Textarea */}
-      <textarea
-        value={body}
-        onChange={e => setBody(e.target.value)}
-        placeholder="Écrire une réponse au client…"
-        rows={4}
-        style={{
-          width: '100%', resize: 'vertical',
-          border: `1px solid ${C.grisCL}`, borderRadius: 10,
-          padding: '10px 14px', fontSize: 13.5,
-          fontFamily: 'Lato, sans-serif', color: C.grisTF,
-          outline: 'none', lineHeight: 1.5,
-        }}
-        onFocus={e => e.target.style.borderColor = C.orange}
-        onBlur={e => e.target.style.borderColor = C.grisCL}
-      />
-
-      {/* Preview fichiers */}
-      {files.length > 0 && (
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
-          {files.map((f, i) => (
-            <div key={i} style={{
-              display: 'inline-flex', alignItems: 'center', gap: 6,
-              padding: '3px 10px', background: C.grisTL,
-              border: `1px solid ${C.grisCL}`, borderRadius: 6,
-              fontSize: 12, color: C.grisF,
-            }}>
-              📎 {f.name} <span style={{ color: C.grisM }}>({(f.size / 1024).toFixed(0)} Ko)</span>
-              <button onClick={() => removeFile(i)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.grisM, padding: 0, fontSize: 14, lineHeight: 1 }}>×</button>
-            </div>
-          ))}
+    <div style={{ background: C.blanc, borderTop: `1px solid ${C.grisCL}`, padding: '14px 28px 16px' }}>
+      {/* Composer card */}
+      <div style={{
+        border: `1px solid ${focused ? TICKETS_COLOR : C.grisCL}`,
+        borderRadius: 12,
+        background: '#FCFEFF',
+        transition: 'border-color 0.15s',
+      }}>
+        {/* Header */}
+        <div style={{
+          padding: '10px 14px',
+          borderBottom: `1px solid ${C.grisCL}`,
+          display: 'flex', alignItems: 'center', gap: 12, fontSize: 13,
+          color: C.grisF, flexWrap: 'wrap',
+        }}>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 700, color: C.grisTF }}>
+            <Ic.Back size={11} color={C.grisTF} /> Réponse publique <Ic.Chev color={C.grisM} />
+          </span>
+          <span>À</span>
+          <span style={{
+            display: 'inline-flex', alignItems: 'center', gap: 6,
+            padding: '3px 8px 3px 10px',
+            background: C.blanc, border: `1px solid ${C.grisCL}`,
+            borderRadius: 99, fontSize: 12, fontWeight: 600, color: C.grisF,
+          }}>
+            <Avatar name={demandeur} size={16} />
+            {demandeur}
+          </span>
+          <div style={{ flex: 1 }} />
+          <a href="#" onClick={e => e.preventDefault()}
+            style={{ color: C.bleu, textDecoration: 'none', fontWeight: 700, fontSize: 12.5 }}>CC</a>
         </div>
-      )}
+
+        {/* Textarea */}
+        <textarea
+          value={body}
+          onChange={e => setBody(e.target.value)}
+          placeholder="Tapez votre réponse…"
+          style={{
+            width: '100%', minHeight: 80,
+            padding: '14px 14px 10px',
+            border: 'none', outline: 'none', resize: 'vertical',
+            fontFamily: 'Lato, sans-serif', fontSize: 14, color: C.grisTF,
+            background: 'transparent',
+          }}
+        />
+
+        {/* Pièces jointes sélectionnées */}
+        {files.length > 0 && (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, padding: '0 14px 8px' }}>
+            {files.map((f, i) => (
+              <div key={i} style={{
+                display: 'inline-flex', alignItems: 'center', gap: 6,
+                padding: '3px 10px', background: C.grisTL,
+                border: `1px solid ${C.grisCL}`, borderRadius: 6,
+                fontSize: 12, color: C.grisF,
+              }}>
+                📎 {f.name} <span style={{ color: C.grisM }}>({(f.size / 1024).toFixed(0)} Ko)</span>
+                <button onClick={() => removeFile(i)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.grisM, padding: 0, fontSize: 14, lineHeight: 1 }}>×</button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Toolbar */}
+        <div style={{
+          padding: '8px 14px',
+          display: 'flex', alignItems: 'center', gap: 8,
+          borderTop: `1px solid ${C.grisCL}`,
+        }}>
+          <button style={iconBtn()} title="Texte" onClick={() => fileRef.current.click()}>
+            <Ic.Attach />
+          </button>
+          <input ref={fileRef} type="file" multiple style={{ display: 'none' }} onChange={handleFileChange} />
+          <button style={iconBtn()} title="Lien"><span style={{ fontSize: 13, color: C.grisF }}>🔗</span></button>
+          <button style={iconBtn()} title="Emoji"><span style={{ fontSize: 14 }}>😀</span></button>
+          <div style={{ flex: 1 }} />
+          <span style={{
+            width: 9, height: 9, borderRadius: '50%', background: C.vert,
+            boxShadow: '0 0 0 3px rgba(74,184,102,0.18)',
+          }} title="Disponible" />
+        </div>
+      </div>
 
       {error && <div style={{ marginTop: 8, fontSize: 12.5, color: '#B71D1D' }}>{error}</div>}
 
-      {/* Actions */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 10 }}>
-        <button
-          onClick={() => fileRef.current.click()}
-          style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.grisM, fontSize: 13, display: 'flex', alignItems: 'center', gap: 5 }}
-        >
-          📎 Joindre un fichier
-        </button>
-        <input ref={fileRef} type="file" multiple style={{ display: 'none' }} onChange={handleFileChange} />
+      {/* Footer actions */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 12, flexWrap: 'wrap' }}>
+        <button style={{
+          display: 'inline-flex', alignItems: 'center', gap: 6,
+          background: C.blanc, color: C.grisF, border: `1px solid ${C.grisCL}`,
+          borderRadius: 8, padding: '8px 12px', fontSize: 12.5, fontWeight: 700,
+          cursor: 'pointer', fontFamily: 'Lato, sans-serif',
+        }}>⚡ Appliquer une macro <Ic.Chev color={C.grisM} /></button>
+        <div style={{ flex: 1 }} />
+        <span style={{ fontSize: 12.5, color: C.grisF, fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+          Prochain ticket <Ic.Chev color={C.grisM} />
+        </span>
+        <button style={{
+          background: C.blanc, color: C.grisF, border: `1px solid ${C.grisCL}`,
+          borderRadius: 8, padding: '8px 16px', fontSize: 13, fontWeight: 700,
+          cursor: 'pointer', fontFamily: 'Lato, sans-serif',
+        }}>Ignorer</button>
         <button
           onClick={handleSend}
           disabled={sending || (!body.trim() && files.length === 0)}
           style={{
-            background: sending ? C.grisM : TICKETS_COLOR,
-            color: '#fff', border: 'none', borderRadius: 8,
-            padding: '9px 22px', fontSize: 14, fontWeight: 700,
-            cursor: sending ? 'not-allowed' : 'pointer',
-            transition: 'background 0.15s',
+            display: 'inline-flex', alignItems: 'center', gap: 7,
+            background: sending
+              ? C.grisM
+              : `linear-gradient(155deg, ${TICKETS_COLOR}, ${shade(TICKETS_COLOR, -0.2)})`,
+            color: '#fff', border: 'none',
+            borderRadius: 8, padding: '8px 18px', fontSize: 13, fontWeight: 800,
+            cursor: sending ? 'not-allowed' : 'pointer', fontFamily: 'Lato, sans-serif',
+            boxShadow: sending ? 'none' : `0 4px 12px ${TICKETS_COLOR}40, 0 1px 0 rgba(255,255,255,0.4) inset`,
+            opacity: (!body.trim() && files.length === 0 && !sending) ? 0.6 : 1,
           }}
         >
-          {sending ? 'Envoi…' : 'Envoyer →'}
+          <Ic.Send /> {sending ? 'Envoi…' : 'Envoyer →'}
         </button>
       </div>
     </div>
   );
 }
 
-// ─── Panneau droit — infos client + commande ──────────────────────────────────
-function InfoPanel({ ticket, onStatusChange, onNoteSave }) {
-  const navigate = useNavigate();
-  const { statuses } = useTicketStatuses();
-  const [notes, setNotes] = useState(ticket.notes || '');
-  const [savingNotes, setSavingNotes] = useState(false);
-  const [changingStatus, setChangingStatus] = useState(false);
+// ─── Field (composant réutilisable gauche) ────────────────────────────────────
+function Field({ label, hint, hintAction, children }) {
+  return (
+    <div style={{ marginBottom: 14 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 5 }}>
+        <label style={{ fontSize: 11.5, fontWeight: 700, color: C.grisF, letterSpacing: '0.02em', textTransform: 'uppercase' }}>
+          {label}
+        </label>
+        {hint && (
+          <a href="#" onClick={e => { e.preventDefault(); hintAction?.(); }}
+            style={{ fontSize: 11.5, color: C.bleu, fontWeight: 600, textDecoration: 'none' }}>
+            {hint}
+          </a>
+        )}
+      </div>
+      {children}
+    </div>
+  );
+}
 
-  const handleStatusChange = async (newStatus) => {
-    setChangingStatus(true);
-    try {
-      const res = await fetch(`${API}/${ticket.id}/status`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sav_status: newStatus }),
-      });
-      const data = await res.json();
-      if (data.success) onStatusChange(data.ticket);
-    } finally { setChangingStatus(false); }
+function FieldDivider() {
+  return <div style={{ height: 1, background: C.grisCL, margin: '6px 0 18px' }} />;
+}
+
+// Styles inline pour les inputs (équivalent .field-input CSS)
+const fieldInputStyle = {
+  width: '100%',
+  border: `1px solid ${C.grisCL}`,
+  background: '#fff',
+  borderRadius: 8,
+  padding: '9px 12px',
+  fontSize: 13.5,
+  fontFamily: 'Lato, sans-serif',
+  color: C.grisTF,
+  outline: 'none',
+  transition: 'border-color 0.15s, box-shadow 0.15s',
+  boxSizing: 'border-box',
+};
+
+function FieldInput({ value, onChange, placeholder, type = 'text', suffix }) {
+  const [hovered, setHovered] = useState(false);
+  const [focused, setFocused] = useState(false);
+  const active = hovered || focused;
+  return (
+    <div style={{ position: 'relative' }}>
+      <input
+        type={type}
+        value={value || ''}
+        onChange={onChange}
+        placeholder={placeholder || '—'}
+        style={{
+          ...fieldInputStyle,
+          borderColor: active ? C.orange : C.grisCL,
+          boxShadow: focused ? '0 0 0 3px rgba(226,143,0,0.16)' : 'none',
+          paddingRight: suffix ? 38 : 12,
+        }}
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
+        onFocus={() => setFocused(true)}
+        onBlur={() => setFocused(false)}
+      />
+      {suffix && (
+        <span style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', display: 'flex', alignItems: 'center' }}>
+          {suffix}
+        </span>
+      )}
+    </div>
+  );
+}
+
+function FieldSelect({ label, value, options, onChange }) {
+  const [hovered, setHovered] = useState(false);
+  return (
+    <Field label={label}>
+      <div style={{ position: 'relative' }}>
+        <select
+          value={value || ''}
+          onChange={e => onChange(e.target.value)}
+          style={{
+            ...fieldInputStyle,
+            padding: '9px 32px 9px 12px',
+            appearance: 'none', WebkitAppearance: 'none',
+            cursor: 'pointer',
+            borderColor: hovered ? C.orange : C.grisCL,
+          }}
+          onMouseEnter={() => setHovered(true)}
+          onMouseLeave={() => setHovered(false)}
+        >
+          {options.map(o => <option key={o.value ?? o} value={o.value ?? o}>{o.label ?? o}</option>)}
+        </select>
+        <span style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }}>
+          <Ic.Chev color={C.grisM} />
+        </span>
+      </div>
+    </Field>
+  );
+}
+
+// ─── Panneau GAUCHE — champs éditables ────────────────────────────────────────
+function TicketFieldsPanel({ ticket, onFieldChange }) {
+  const navigate = useNavigate();
+  const set = (k, v) => onFieldChange(k, v);
+
+  const customerName = ticket.customer_name || '';
+  const parts = customerName.trim().split(' ');
+  const prenom = parts[0] || '';
+  const nom = parts.slice(1).join(' ') || '';
+
+  const handlePrenomChange = (v) => {
+    set('customer_name', `${v} ${nom}`.trim());
+  };
+  const handleNomChange = (v) => {
+    set('customer_name', `${prenom} ${v}`.trim());
   };
 
-  const handleSaveNotes = async () => {
-    setSavingNotes(true);
+  const trackingNum = ticket.order_tracking || '';
+  const trackingUrl = trackingNum
+    ? `https://www.laposte.fr/outils/suivre-vos-envois?code=${trackingNum}`
+    : null;
+
+  return (
+    <aside style={{
+      width: 320, minWidth: 320, flexShrink: 0,
+      background: C.blanc,
+      borderRight: `1px solid ${C.grisCL}`,
+      height: '100%',
+      overflowY: 'auto',
+      padding: '20px 22px',
+    }}>
+      {/* Demandeur */}
+      <Field label="Demandeur">
+        <div style={{
+          ...fieldInputStyle,
+          display: 'flex', alignItems: 'center', gap: 9, cursor: 'default',
+        }}>
+          <Avatar name={ticket.customer_name} size={22} />
+          <span style={{ flex: 1, fontWeight: 600, fontSize: 13.5, color: C.grisTF }}>
+            {ticket.customer_name || '—'}
+          </span>
+          <Ic.Chev color={C.grisM} />
+        </div>
+      </Field>
+
+      {/* Assigné */}
+      <Field label="Assigné" hint="me l'affecter" hintAction={() => set('assigned_to', 'SAV')}>
+        <div style={{
+          ...fieldInputStyle,
+          display: 'flex', alignItems: 'center', gap: 9, cursor: 'default',
+        }}>
+          <span style={{
+            width: 22, height: 22, borderRadius: '50%',
+            background: `linear-gradient(135deg, ${TICKETS_COLOR}, ${shade(TICKETS_COLOR, -0.2)})`,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            color: '#fff', fontSize: 10, fontWeight: 800, flexShrink: 0,
+          }}>SAV</span>
+          <span style={{ flex: 1, fontWeight: 600, fontSize: 13.5, color: C.grisTF }}>
+            {ticket.assigned_to || 'Assistance'}
+          </span>
+          <Ic.Chev color={C.grisM} />
+        </div>
+      </Field>
+
+      {/* Abonnés */}
+      <Field label="Abonnés" hint="s'abonner">
+        <div style={{
+          ...fieldInputStyle,
+          minHeight: 38, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap',
+        }}>
+          <span style={{ color: C.grisM, fontSize: 12.5 }}>Aucun</span>
+        </div>
+      </Field>
+
+      <FieldDivider />
+
+      {/* Marqueurs */}
+      <Field label="Marqueurs">
+        <div style={{
+          ...fieldInputStyle,
+          minHeight: 38, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap',
+        }}>
+          {(ticket.tags || []).map(t => (
+            <span key={t} style={{
+              display: 'inline-flex', alignItems: 'center', gap: 6,
+              padding: '3px 8px 3px 10px',
+              background: C.grisTL, border: `1px solid ${C.grisCL}`,
+              borderRadius: 99, fontSize: 12, fontWeight: 600, color: C.grisF,
+            }}>
+              {t}
+              <button
+                onClick={() => set('tags', (ticket.tags || []).filter(x => x !== t))}
+                style={{ background: 'transparent', border: 'none', color: C.grisM, cursor: 'pointer', fontSize: 14, lineHeight: 1, padding: 0 }}
+              >×</button>
+            </span>
+          ))}
+          {(!ticket.tags || ticket.tags.length === 0) && (
+            <span style={{ color: C.grisM, fontSize: 12.5 }}>Aucun</span>
+          )}
+        </div>
+      </Field>
+
+      <FieldSelect
+        label="Type"
+        value={ticket.ticket_type || '—'}
+        options={['—', 'Question', 'Incident', 'Problème', 'Tâche']}
+        onChange={v => set('ticket_type', v)}
+      />
+      <FieldSelect
+        label="Priorité"
+        value={ticket.priority || '—'}
+        options={['—', 'Basse', 'Normale', 'Haute', 'Urgente']}
+        onChange={v => set('priority', v)}
+      />
+      <FieldSelect
+        label="Sujet"
+        value={ticket.subject_category || '—'}
+        options={['—', 'Livraison', 'Retour produit', 'Question produit', 'Remboursement', 'Autre']}
+        onChange={v => set('subject_category', v)}
+      />
+
+      <FieldDivider />
+
+      {/* Prénom */}
+      <Field label="Prénom">
+        <FieldInput value={prenom} onChange={e => handlePrenomChange(e.target.value)} />
+      </Field>
+
+      {/* Nom */}
+      <Field label="Nom du client">
+        <FieldInput value={nom} onChange={e => handleNomChange(e.target.value)} />
+      </Field>
+
+      {/* Email */}
+      <Field label="Email" hint="copier" hintAction={() => navigator.clipboard?.writeText(ticket.customer_email || '')}>
+        <FieldInput
+          type="email"
+          value={ticket.customer_email}
+          onChange={e => set('customer_email', e.target.value)}
+        />
+      </Field>
+
+      {/* Téléphone */}
+      <Field label="Téléphone">
+        <FieldInput
+          type="tel"
+          value={ticket.customer_phone}
+          onChange={e => set('customer_phone', e.target.value)}
+          placeholder="+33 6 …"
+        />
+      </Field>
+
+      <FieldDivider />
+
+      {/* N° commande */}
+      <Field
+        label="N° de commande"
+        hint={ticket.order_id ? 'voir' : null}
+        hintAction={() => ticket.order_id && navigate(`/commandes?order=${ticket.order_id}`)}
+      >
+        <FieldInput
+          value={ticket.order_id}
+          onChange={e => set('order_id', e.target.value)}
+          placeholder="ex. 1222924"
+          suffix={ticket.order_id ? <Ic.External color={C.bleu} /> : null}
+        />
+      </Field>
+
+      {/* N° suivi */}
+      <Field
+        label="N° de suivi"
+        hint={trackingNum ? 'suivre' : null}
+        hintAction={() => trackingUrl && window.open(trackingUrl, '_blank')}
+      >
+        <FieldInput
+          value={trackingNum}
+          onChange={e => set('order_tracking', e.target.value)}
+          placeholder="—"
+          suffix={trackingNum ? <><Ic.Truck size={11} color={TICKETS_COLOR} /></> : null}
+        />
+      </Field>
+
+      {/* Note interne */}
+      <FieldDivider />
+      <Field label="Note interne">
+        <NoteField ticketId={ticket.id} initialNotes={ticket.notes} />
+      </Field>
+    </aside>
+  );
+}
+
+// ─── Note interne avec sauvegarde ─────────────────────────────────────────────
+function NoteField({ ticketId, initialNotes }) {
+  const [notes, setNotes] = useState(initialNotes || '');
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const timerRef = useRef();
+
+  const handleSave = async () => {
+    setSaving(true);
     try {
-      await fetch(`${API}/${ticket.id}/notes`, {
+      await fetch(`${API}/${ticketId}/notes`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ notes }),
       });
-      onNoteSave(notes);
-    } finally { setSavingNotes(false); }
+      setSaved(true);
+      clearTimeout(timerRef.current);
+      timerRef.current = setTimeout(() => setSaved(false), 2000);
+    } finally { setSaving(false); }
   };
 
-  const Block = ({ title, children }) => (
-    <div style={{ borderBottom: `1px solid ${C.grisCL}`, padding: '14px 16px' }}>
-      <div style={{ fontSize: 11, fontWeight: 700, color: C.grisM, textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 10 }}>{title}</div>
-      {children}
-    </div>
+  return (
+    <>
+      <textarea
+        value={notes}
+        onChange={e => setNotes(e.target.value)}
+        placeholder="Note visible uniquement par l'équipe…"
+        rows={3}
+        style={{
+          ...fieldInputStyle,
+          resize: 'vertical',
+        }}
+        onMouseEnter={e => e.target.style.borderColor = C.orange}
+        onMouseLeave={e => { if (document.activeElement !== e.target) e.target.style.borderColor = C.grisCL; }}
+        onFocus={e => { e.target.style.borderColor = C.orange; e.target.style.boxShadow = '0 0 0 3px rgba(226,143,0,0.16)'; }}
+        onBlur={e => { e.target.style.borderColor = C.grisCL; e.target.style.boxShadow = 'none'; }}
+      />
+      <button
+        onClick={handleSave}
+        disabled={saving}
+        style={{
+          marginTop: 8, width: '100%', padding: '7px 0',
+          background: saved ? C.vert : (saving ? C.grisM : C.orange),
+          color: '#fff', border: 'none', borderRadius: 6,
+          fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'Lato, sans-serif',
+        }}
+      >
+        {saving ? 'Sauvegarde…' : saved ? '✓ Sauvegardé' : 'Sauvegarder la note'}
+      </button>
+    </>
   );
+}
 
-  const Row = ({ label, value, link }) => (
-    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 7, fontSize: 13 }}>
-      <span style={{ color: C.grisM }}>{label}</span>
-      {link ? (
-        <a href={link} target="_blank" rel="noopener noreferrer" style={{ color: TICKETS_COLOR, fontWeight: 600, textDecoration: 'none' }}>{value}</a>
-      ) : (
-        <span style={{ color: C.grisTF, fontWeight: 600, textAlign: 'right', maxWidth: 160, wordBreak: 'break-word' }}>{value || '—'}</span>
+// ─── Panneau CENTRE — conversation ────────────────────────────────────────────
+function ConversationPanel({ ticket, onReplySent }) {
+  const bottomRef = useRef();
+  const messages = ticket.messages || [];
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages.length]);
+
+  const source = ticket.source === 'gravity_form' ? 'formulaire' : 'e-mail';
+
+  return (
+    <section style={{
+      flex: 1, minWidth: 0,
+      display: 'flex', flexDirection: 'column',
+      background: C.grisTL,
+      overflow: 'hidden',
+    }}>
+      {/* En-tête du sujet */}
+      <div style={{
+        padding: '20px 28px 16px',
+        background: C.blanc,
+        borderBottom: `1px solid ${C.grisCL}`,
+        display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16,
+      }}>
+        <div>
+          <h1 style={{
+            fontSize: 19, fontWeight: 800, color: C.grisTF,
+            fontFamily: "'Tilt Warp', cursive", letterSpacing: '-0.2px', lineHeight: 1.25,
+            margin: 0,
+          }}>{ticket.subject}</h1>
+          <div style={{ fontSize: 12.5, color: C.grisM, marginTop: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
+            Via <Ic.Mail size={12} /> {source} · ouvert le{' '}
+            <strong style={{ color: C.grisF }}>{formatDate(ticket.created_at)}</strong>
+          </div>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
+          <button style={iconBtn()} title="Épingler"><Ic.Pin /></button>
+          <button style={iconBtn()} title="Historique"><Ic.History /></button>
+          <button style={iconBtn()} title="Plus"><Ic.More /></button>
+        </div>
+      </div>
+
+      {/* Fil de messages */}
+      <div style={{ flex: 1, overflowY: 'auto', padding: '20px 28px 16px' }}>
+        {/* Message initial (description) */}
+        {ticket.description && (
+          <Message
+            msg={{
+              from: ticket.customer_name || ticket.customer_email,
+              body: ticket.description,
+              is_agent: false,
+              date: ticket.created_at,
+              attachments: [],
+            }}
+            ticketId={ticket.id}
+          />
+        )}
+        {messages.map((msg, i) => (
+          <Message key={i} msg={msg} ticketId={ticket.id} />
+        ))}
+        <div ref={bottomRef} />
+      </div>
+
+      {/* Composer */}
+      <ReplyComposer
+        ticketId={ticket.id}
+        demandeur={ticket.customer_name || ticket.customer_email}
+        onReplySent={onReplySent}
+      />
+    </section>
+  );
+}
+
+// ─── OrderCard (dépliable) ────────────────────────────────────────────────────
+function OrderCard({ order, highlighted }) {
+  const navigate = useNavigate();
+  const [open, setOpen] = useState(!!highlighted);
+
+  const orderNum = order.wp_order_id || order.order_id || order.num;
+  const orderDate = order.post_date || order.order_date || order.date;
+  const orderTotal = order.order_total || order.total;
+  const orderStatus = order.post_status || order.order_status || order.status;
+  const trackingNum = order.tracking_number || order.tracking;
+  const items = order.items || [];
+
+  const trackingUrl = trackingNum
+    ? `https://www.laposte.fr/outils/suivre-vos-envois?code=${trackingNum}`
+    : null;
+
+  const statusLabel = (s) => {
+    const map = {
+      'wc-completed': 'Livrée', 'wc-processing': 'En cours',
+      'wc-shipped': 'Expédiée', 'wc-cancelled': 'Annulée',
+      'wc-refunded': 'Remboursée', 'wc-on-hold': 'En attente',
+      'wc-pending': 'En attente',
+    };
+    return map[s] || (s?.replace('wc-', '') || '—');
+  };
+  const statusColors = (s) => {
+    if (!s) return { bg: C.grisTL, color: C.grisF };
+    if (s.includes('complete') || s.includes('shipped')) return { bg: '#E5EEF6', color: '#2C5F80' };
+    if (s.includes('process')) return { bg: '#FFF1D6', color: '#8B5A00' };
+    if (s.includes('cancel') || s.includes('fail')) return { bg: '#FDEAEA', color: '#B71D1D' };
+    if (s.includes('refund')) return { bg: '#F1ECFB', color: '#5D49D6' };
+    return { bg: C.grisTL, color: C.grisF };
+  };
+  const sc = statusColors(orderStatus);
+
+  return (
+    <div style={{
+      background: C.blanc,
+      border: `1px solid ${highlighted ? TICKETS_COLOR + '60' : C.grisCL}`,
+      borderRadius: 10,
+      marginBottom: 8,
+      boxShadow: highlighted ? `0 2px 8px ${TICKETS_COLOR}20` : '0 1px 2px rgba(0,0,0,0.03)',
+      overflow: 'hidden',
+    }}>
+      {/* Header dépliable */}
+      <div
+        onClick={() => setOpen(o => !o)}
+        style={{
+          padding: '12px 14px',
+          display: 'flex', alignItems: 'center', gap: 10,
+          cursor: 'pointer',
+          background: open ? '#F6FAFC' : 'transparent',
+          transition: 'background 0.12s',
+        }}
+        onMouseEnter={e => { if (!open) e.currentTarget.style.background = '#FAFCFD'; }}
+        onMouseLeave={e => { if (!open) e.currentTarget.style.background = 'transparent'; }}
+      >
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+            <a
+              href={`/commandes?order=${orderNum}`}
+              onClick={e => { e.preventDefault(); e.stopPropagation(); navigate(`/commandes?order=${orderNum}`); }}
+              style={{ fontSize: 14, fontWeight: 800, color: TICKETS_COLOR, textDecoration: 'none' }}
+            >#{orderNum}</a>
+            <span style={{ fontSize: 11.5, color: C.grisM, fontWeight: 600 }}>{formatDate(orderDate)}</span>
+            <div style={{ flex: 1 }} />
+            <span style={{ fontSize: 13.5, fontWeight: 800, color: C.grisTF, fontVariantNumeric: 'tabular-nums' }}>
+              {orderTotal ? `${parseFloat(orderTotal).toFixed(2)} €` : '—'}
+            </span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+            <span style={{
+              display: 'inline-block', background: sc.bg, color: sc.color,
+              padding: '3px 10px', borderRadius: 6, fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap',
+            }}>{statusLabel(orderStatus)}</span>
+            {trackingNum && (
+              <button
+                onClick={e => { e.stopPropagation(); trackingUrl && window.open(trackingUrl, '_blank'); }}
+                style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 5,
+                  background: '#EAF3FB', color: C.bleu,
+                  border: '1px solid #BFDCEF', borderRadius: 6,
+                  padding: '3px 9px', fontSize: 11.5, fontWeight: 700,
+                  cursor: 'pointer', fontFamily: 'Lato, sans-serif',
+                }}
+              >
+                <Ic.Truck color={C.bleu} />
+                {trackingNum}
+                <Ic.External color={C.bleu} />
+              </button>
+            )}
+          </div>
+        </div>
+        <span style={{
+          display: 'inline-flex',
+          transition: 'transform 0.18s',
+          transform: open ? 'rotate(180deg)' : 'none',
+        }}>
+          <Ic.Chev color={C.grisM} />
+        </span>
+      </div>
+
+      {/* Contenu déplié */}
+      {open && (
+        <div style={{
+          padding: '4px 14px 14px',
+          borderTop: `1px solid ${C.grisCL}`,
+          background: '#FAFCFD',
+        }}>
+          {items.length > 0 ? items.map((it, i) => (
+            <div key={i} style={{
+              display: 'flex', alignItems: 'center', gap: 10,
+              padding: '8px 0',
+              borderBottom: i === items.length - 1 ? 'none' : `1px solid ${C.grisCL}50`,
+            }}>
+              {it.image_url ? (
+                <img src={it.image_url} alt={it.order_item_name || it.name}
+                  style={{ width: 36, height: 36, borderRadius: 7, objectFit: 'cover', border: `1px solid ${C.grisCL}`, flexShrink: 0 }} />
+              ) : (
+                <div style={{
+                  width: 36, height: 36, borderRadius: 7,
+                  background: '#F2F4F7', border: `1px solid ${C.grisCL}`,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontSize: 17, flexShrink: 0,
+                }}>🧪</div>
+              )}
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 12.5, fontWeight: 600, color: C.grisTF, lineHeight: 1.25, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {it.order_item_name || it.name}
+                </div>
+                {it.sku && (
+                  <div style={{ fontSize: 11, color: C.grisM, fontFamily: 'monospace', marginTop: 1 }}>SKU: {it.sku}</div>
+                )}
+              </div>
+              <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                <div style={{ fontSize: 12, color: C.grisF, fontWeight: 700 }}>×{it.qty}</div>
+                {it.line_total && (
+                  <div style={{ fontSize: 12, color: C.grisTF, fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>
+                    {parseFloat(it.line_total).toFixed(2)} €
+                  </div>
+                )}
+              </div>
+            </div>
+          )) : (
+            <div style={{ padding: '10px 0', fontSize: 12.5, color: C.grisM, textAlign: 'center' }}>
+              Aucun article
+            </div>
+          )}
+
+          {highlighted && (
+            <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+              <button
+                onClick={() => navigate(`/commandes?order=${orderNum}`)}
+                style={{
+                  flex: 1, textAlign: 'center', textDecoration: 'none',
+                  background: C.blanc, color: TICKETS_COLOR,
+                  border: `1px solid ${TICKETS_COLOR}40`, borderRadius: 7,
+                  padding: '7px 12px', fontSize: 12.5, fontWeight: 700,
+                  cursor: 'pointer', fontFamily: 'Lato, sans-serif',
+                }}
+              >Ouvrir la commande</button>
+            </div>
+          )}
+        </div>
       )}
     </div>
   );
+}
+
+// ─── Panneau DROIT — client + commandes ───────────────────────────────────────
+function CustomerPanel({ ticket }) {
+  const navigate = useNavigate();
+
+  const firstName = ticket.customer_first_name || (ticket.customer_name || '').split(' ')[0] || '';
+  const lastName = ticket.customer_last_name || (ticket.customer_name || '').split(' ').slice(1).join(' ') || '';
+  const email = ticket.customer_email_db || ticket.customer_email || '';
+  const since = ticket.customer_since ? formatDate(ticket.customer_since) : '—';
+  const ordersCount = ticket.customer_orders_count ?? 0;
+  const totalSpent = ticket.customer_total_spent ? parseFloat(ticket.customer_total_spent).toFixed(2) : '0.00';
+
+  const SectionLabel = ({ children, right }) => (
+    <div style={{
+      display: 'flex', alignItems: 'baseline', justifyContent: 'space-between',
+      marginBottom: 8, padding: '0 4px',
+    }}>
+      <span style={{ fontSize: 10.5, fontWeight: 800, color: C.grisM, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+        {children}
+      </span>
+      {right && <span style={{ fontSize: 11, color: C.grisM, fontWeight: 600 }}>{right}</span>}
+    </div>
+  );
+
+  const Meta = ({ label, value }) => (
+    <div>
+      <div style={{ fontSize: 10.5, color: C.grisM, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 3 }}>{label}</div>
+      <div style={{ fontSize: 13, color: C.grisTF, fontWeight: 600 }}>{value}</div>
+    </div>
+  );
+
+  // Construction de la commande concernée avec les items enrichis
+  const currentOrder = ticket.order_id ? {
+    wp_order_id: ticket.order_id,
+    post_date: ticket.order_date,
+    post_status: ticket.order_status,
+    order_total: ticket.order_total,
+    tracking_number: ticket.order_tracking,
+    items: ticket.order_items || [],
+  } : null;
+
+  const pastOrders = (ticket.customer_orders_history || []).map(o => ({
+    ...o,
+    items: [], // pas chargé par défaut
+  }));
 
   return (
     <aside style={{
-      width: 300, flexShrink: 0,
-      background: C.blanc,
+      width: 360, minWidth: 360, flexShrink: 0,
+      background: C.grisTL,
       borderLeft: `1px solid ${C.grisCL}`,
+      height: '100%',
       overflowY: 'auto',
-      display: 'flex', flexDirection: 'column',
+      padding: '20px 18px',
     }}>
-
-      {/* Statut */}
-      <Block title="Statut">
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-          {statuses.map(s => (
-            <button
-              key={s.value}
-              onClick={() => handleStatusChange(s.value)}
-              disabled={changingStatus}
-              style={{
-                padding: '5px 12px', borderRadius: 99,
-                border: `2px solid ${ticket.sav_status === s.value ? s.text_color : C.grisCL}`,
-                background: ticket.sav_status === s.value ? s.bg_color : C.blanc,
-                color: ticket.sav_status === s.value ? s.text_color : C.grisF,
-                fontSize: 12, fontWeight: 700, cursor: 'pointer',
-                transition: 'all 0.15s',
-              }}
+      {/* Fiche client */}
+      <div style={{
+        background: C.blanc, borderRadius: 12, border: `1px solid ${C.grisCL}`,
+        padding: '18px 18px 16px',
+        boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14 }}>
+          <Avatar name={`${firstName} ${lastName}`} size={48} />
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <div style={{
+              fontSize: 16, fontWeight: 800, color: C.grisTF,
+              fontFamily: "'Tilt Warp', cursive", letterSpacing: '-0.2px',
+            }}>{firstName} {lastName}</div>
+            <a
+              href={`mailto:${email}`}
+              onClick={e => e.preventDefault()}
+              style={{ fontSize: 12.5, color: C.bleu, textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 5, marginTop: 2 }}
             >
-              {s.label}
-            </button>
-          ))}
+              <Ic.Mail size={11} color={C.bleu} />
+              {email || '—'}
+            </a>
+          </div>
         </div>
-      </Block>
-
-      {/* Client */}
-      <Block title="Client">
-        <Row label="Nom" value={ticket.customer_name} />
-        <Row label="Email" value={ticket.customer_email} />
-        {ticket.customer_phone && <Row label="Tél." value={ticket.customer_phone} />}
+        <div style={{
+          display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px 14px',
+          paddingTop: 14, borderTop: `1px solid ${C.grisCL}`,
+        }}>
+          <Meta label="Client depuis" value={since} />
+          <Meta label="Pays" value="🇫🇷 France" />
+          <Meta label="Commandes validées" value={
+            <span>
+              <strong style={{ fontSize: 17, color: TICKETS_COLOR, fontWeight: 800 }}>{ordersCount}</strong>
+              {' '}<span style={{ fontSize: 11, color: C.grisM }}>total</span>
+            </span>
+          } />
+          <Meta label="CA généré" value={
+            <span>
+              <strong style={{ fontSize: 14, color: C.grisTF, fontWeight: 800 }}>{totalSpent}</strong>
+              {' '}€
+            </span>
+          } />
+        </div>
         {ticket.customer_id && (
           <button
             onClick={() => navigate(`/customers/${ticket.customer_id}`)}
-            style={{ width: '100%', marginTop: 6, padding: '6px 0', background: 'none', border: `1px solid ${C.grisCL}`, borderRadius: 6, fontSize: 12.5, color: TICKETS_COLOR, fontWeight: 600, cursor: 'pointer' }}
-          >
-            Voir fiche client →
-          </button>
+            style={{
+              marginTop: 12, width: '100%', padding: '6px 0',
+              background: 'none', border: `1px solid ${C.grisCL}`, borderRadius: 6,
+              fontSize: 12.5, color: TICKETS_COLOR, fontWeight: 600, cursor: 'pointer',
+              fontFamily: 'Lato, sans-serif',
+            }}
+          >Voir fiche client →</button>
         )}
-      </Block>
+      </div>
 
-      {/* Commande */}
-      {ticket.order_id && (
-        <Block title="Commande">
-          <Row label="N°" value={`#${ticket.order_id}`} />
-          {ticket.order_total && <Row label="Total" value={`${parseFloat(ticket.order_total).toFixed(2)} €`} />}
-          {ticket.order_status && <Row label="Statut" value={ticket.order_status.replace('wc-', '')} />}
-          {ticket.order_date && <Row label="Date" value={formatDate(ticket.order_date)} />}
-          <button
-            onClick={() => navigate(`/commandes?order=${ticket.order_id}`)}
-            style={{ width: '100%', marginTop: 6, padding: '6px 0', background: 'none', border: `1px solid ${C.grisCL}`, borderRadius: 6, fontSize: 12.5, color: TICKETS_COLOR, fontWeight: 600, cursor: 'pointer' }}
-          >
-            Voir commande →
-          </button>
-        </Block>
+      {/* Commande concernée */}
+      {currentOrder && (
+        <div style={{ marginTop: 14 }}>
+          <SectionLabel>Commande concernée</SectionLabel>
+          <OrderCard order={currentOrder} highlighted />
+        </div>
       )}
 
-      {/* Notes internes */}
-      <Block title="Note interne">
-        <textarea
-          value={notes}
-          onChange={e => setNotes(e.target.value)}
-          placeholder="Note visible uniquement par l'équipe…"
-          rows={4}
-          style={{
-            width: '100%', resize: 'vertical',
-            border: `1px solid ${C.grisCL}`, borderRadius: 8,
-            padding: '8px 10px', fontSize: 13,
-            fontFamily: 'Lato, sans-serif', color: C.grisTF,
-            outline: 'none',
-          }}
-        />
-        <button
-          onClick={handleSaveNotes}
-          disabled={savingNotes}
-          style={{
-            marginTop: 8, width: '100%', padding: '7px 0',
-            background: savingNotes ? C.grisM : C.orange,
-            color: '#fff', border: 'none', borderRadius: 6,
-            fontSize: 13, fontWeight: 700, cursor: 'pointer',
-          }}
-        >
-          {savingNotes ? 'Sauvegarde…' : 'Sauvegarder la note'}
-        </button>
-      </Block>
-
-      {/* Méta */}
-      <Block title="Informations">
-        <Row label="Ticket" value={`#${ticket.id}`} />
-        <Row label="Source" value={ticket.source === 'gravity_form' ? 'Formulaire' : 'Email'} />
-        <Row label="Créé le" value={formatDate(ticket.created_at, { time: true })} />
-        <Row label="Mis à jour" value={formatDate(ticket.updated_at, { time: true })} />
-      </Block>
+      {/* Historique commandes */}
+      {pastOrders.length > 0 && (
+        <div style={{ marginTop: 18 }}>
+          <SectionLabel right={`${pastOrders.length} commandes`}>Historique</SectionLabel>
+          {pastOrders.map(o => (
+            <OrderCard key={o.wp_order_id} order={o} />
+          ))}
+        </div>
+      )}
     </aside>
   );
 }
@@ -376,7 +1060,7 @@ export default function TicketDetail({ ticketId }) {
   const [ticket, setTicket] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const bottomRef = useRef();
+  const saveTimerRef = useRef();
 
   const fetchTicket = useCallback(async () => {
     try {
@@ -393,12 +1077,32 @@ export default function TicketDetail({ ticketId }) {
 
   useEffect(() => { fetchTicket(); }, [fetchTicket]);
 
-  // Scroll vers le bas quand les messages changent
-  useEffect(() => {
-    if (ticket?.messages?.length) {
-      bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-    }
-  }, [ticket?.messages?.length]);
+  // Mise à jour d'un champ avec debounce 600ms → PATCH /api/sav/:id
+  const handleFieldChange = useCallback((key, value) => {
+    setTicket(t => ({ ...t, [key]: value }));
+    clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(async () => {
+      try {
+        await fetch(`${API}/${ticketId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ [key]: value }),
+        });
+      } catch { /* silencieux */ }
+    }, 600);
+  }, [ticketId]);
+
+  const handleStatusChange = async (newStatus) => {
+    try {
+      const res = await fetch(`${API}/${ticketId}/status`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sav_status: newStatus }),
+      });
+      const data = await res.json();
+      if (data.success) setTicket(data.ticket);
+    } catch { /* silencieux */ }
+  };
 
   if (loading) return (
     <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: C.grisM, fontSize: 14 }}>
@@ -412,72 +1116,77 @@ export default function TicketDetail({ ticketId }) {
     </div>
   );
 
-  const messages = ticket.messages || [];
-
   return (
-    <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
+    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', height: '100%' }}>
 
-      {/* ── Centre : conversation ──────────────────────────────────── */}
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-
-        {/* Header ticket */}
-        <div style={{
-          padding: '14px 20px',
-          background: C.blanc,
-          borderBottom: `1px solid ${C.grisCL}`,
-          display: 'flex', alignItems: 'flex-start', gap: 12,
-        }}>
+      {/* ── Top bar ─────────────────────────────────────────────────────────── */}
+      <header style={{
+        background: C.blanc, borderBottom: `1px solid ${C.grisCL}`,
+        padding: '0 24px', minHeight: 58, display: 'flex', alignItems: 'center',
+        justifyContent: 'space-between', flexShrink: 0,
+        position: 'sticky', top: 0, zIndex: 30,
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14, minWidth: 0 }}>
+          {/* Bouton retour */}
           <button
             onClick={() => navigate('/tickets')}
-            style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.grisM, fontSize: 13, display: 'flex', alignItems: 'center', gap: 4, padding: 0, marginTop: 2, whiteSpace: 'nowrap', flexShrink: 0 }}
+            style={{
+              display: 'inline-flex', alignItems: 'center', gap: 7,
+              background: `linear-gradient(155deg, ${TICKETS_COLOR}, ${shade(TICKETS_COLOR, -0.2)})`,
+              color: '#fff', border: 'none', borderRadius: 8,
+              padding: '7px 13px', fontSize: 13, fontWeight: 700,
+              cursor: 'pointer', fontFamily: 'Lato, sans-serif', flexShrink: 0,
+              boxShadow: `0 2px 6px ${TICKETS_COLOR}40, 0 1px 0 rgba(255,255,255,0.35) inset`,
+            }}
           >
-            ← Tickets
+            <Ic.Back /> À traiter
           </button>
-          <div style={{ flex: 1 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-              <span style={{ fontSize: 16, fontWeight: 800, color: C.grisTF }}>{ticket.subject}</span>
-              <StatusBadge status={ticket.sav_status} />
-            </div>
-            <div style={{ fontSize: 12, color: C.grisM, marginTop: 3 }}>
-              #{ticket.id} · {ticket.customer_name} · {formatDate(ticket.created_at)}
-            </div>
-          </div>
+
+          {/* Breadcrumb */}
+          <span style={{ fontSize: 13, color: C.grisM, fontWeight: 600, whiteSpace: 'nowrap' }}>Tickets / À traiter /</span>
+          <strong style={{ fontSize: 14.5, color: C.grisTF, fontFamily: "'Tilt Warp', cursive", whiteSpace: 'nowrap' }}>
+            #{ticket.id}
+          </strong>
+          <button
+            onClick={() => navigator.clipboard?.writeText(`#${ticket.id}`)}
+            style={{ background: 'transparent', border: 'none', cursor: 'pointer', padding: 4, display: 'flex', alignItems: 'center' }}
+            title="Copier l'ID"
+          >
+            <Ic.Copy color={C.grisM} />
+          </button>
+          <StatusBadge status={ticket.sav_status} />
         </div>
 
-        {/* Messages */}
-        <div style={{ flex: 1, overflowY: 'auto', padding: '20px 24px', background: C.grisTL }}>
-          {/* Message initial (description du formulaire) */}
-          {ticket.description && messages.length === 0 && (
-            <MessageBubble
-              msg={{ from: ticket.customer_name || ticket.customer_email, body: ticket.description, is_agent: false, date: ticket.created_at, attachments: [] }}
-              ticketId={ticket.id}
-            />
-          )}
-          {ticket.description && messages.length > 0 && (
-            <MessageBubble
-              msg={{ from: ticket.customer_name || ticket.customer_email, body: ticket.description, is_agent: false, date: ticket.created_at, attachments: [] }}
-              ticketId={ticket.id}
-            />
-          )}
-          {messages.map((msg, i) => (
-            <MessageBubble key={i} msg={msg} ticketId={ticket.id} />
-          ))}
-          <div ref={bottomRef} />
+        {/* Actions droite */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+          <button
+            onClick={() => handleStatusChange('terminé')}
+            style={{
+              background: C.blanc, color: C.grisF, border: `1px solid ${C.grisCL}`,
+              borderRadius: 8, padding: '7px 13px', fontSize: 12.5, fontWeight: 700,
+              cursor: 'pointer', fontFamily: 'Lato, sans-serif',
+            }}
+          >Marquer résolu</button>
+          <button
+            style={{
+              background: C.vert, color: '#fff', border: 'none',
+              borderRadius: 8, padding: '7px 14px', fontSize: 13, fontWeight: 800,
+              cursor: 'pointer', fontFamily: 'Lato, sans-serif',
+              boxShadow: '0 2px 6px rgba(74,184,102,0.35), 0 1px 0 rgba(255,255,255,0.3) inset',
+            }}
+          >Soumettre</button>
         </div>
+      </header>
 
-        {/* Composer */}
-        <ReplyComposer
-          ticketId={ticket.id}
+      {/* ── 3 colonnes ─────────────────────────────────────────────────────── */}
+      <div style={{ flex: 1, display: 'flex', minHeight: 0, overflow: 'hidden' }}>
+        <TicketFieldsPanel ticket={ticket} onFieldChange={handleFieldChange} />
+        <ConversationPanel
+          ticket={ticket}
           onReplySent={(updatedTicket) => setTicket(updatedTicket)}
         />
+        <CustomerPanel ticket={ticket} />
       </div>
-
-      {/* ── Panneau droit ─────────────────────────────────────────── */}
-      <InfoPanel
-        ticket={ticket}
-        onStatusChange={(updated) => setTicket(updated)}
-        onNoteSave={(notes) => setTicket(t => ({ ...t, notes }))}
-      />
     </div>
   );
 }

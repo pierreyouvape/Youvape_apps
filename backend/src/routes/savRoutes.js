@@ -62,6 +62,7 @@ router.post('/',                       savController.createManual);
 router.get('/order/:order_id',         savController.getByOrderId);
 router.get('/customer/:customer_id',   savController.getByCustomerId);
 router.get('/:id',                     savController.getById);
+router.patch('/:id',                   savController.patchTicket);
 router.put('/:id/status',              savController.updateStatus);
 router.post('/:id/reply', memoryUpload.array('attachments', MAX_FILES), savController.reply);
 router.put('/:id/notes',               savController.updateNotes);

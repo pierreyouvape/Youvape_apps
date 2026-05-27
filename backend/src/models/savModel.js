@@ -101,26 +101,78 @@ class SavModel {
     return { tickets: result.rows, total };
   }
 
-  // ─── Détail d'un ticket ───────────────────────────────────────────────────
+  // ─── Détail d'un ticket avec infos client + commande ─────────────────────
   async getById(id) {
+    // Ticket + commande concernée + client
     const result = await pool.query(
       `SELECT
          t.*,
+         o.wp_order_id       as order_wp_id,
          o.post_status       as order_status,
          o.order_total       as order_total,
          o.post_date         as order_date,
-         o.billing_address_1 as order_address,
-         o.billing_city      as order_city,
-         o.billing_postcode  as order_postcode,
+         o.tracking_number   as order_tracking,
+         o.shipping_carrier  as order_carrier,
          c.first_name        as customer_first_name,
-         c.last_name         as customer_last_name
+         c.last_name         as customer_last_name,
+         c.email             as customer_email_db,
+         c.user_registered   as customer_since,
+         c.wp_user_id        as customer_wp_id
        FROM sav_tickets t
        LEFT JOIN orders    o ON o.wp_order_id::text = t.order_id
        LEFT JOIN customers c ON c.id = t.customer_id
        WHERE t.id = $1`,
       [id]
     );
-    return result.rows[0] || null;
+    const ticket = result.rows[0] || null;
+    if (!ticket) return null;
+
+    // Articles de la commande concernée
+    if (ticket.order_wp_id) {
+      const itemsRes = await pool.query(
+        `SELECT
+           oi.order_item_name, oi.qty, oi.line_total,
+           p.sku, p.image_url
+         FROM order_items oi
+         LEFT JOIN products p ON p.wp_product_id = COALESCE(oi.variation_id, oi.product_id)
+         WHERE oi.wp_order_id = $1
+           AND oi.order_item_type = 'line_item'
+         ORDER BY oi.id`,
+        [ticket.order_wp_id]
+      );
+      ticket.order_items = itemsRes.rows;
+    } else {
+      ticket.order_items = [];
+    }
+
+    // Stats client (nb commandes + CA)
+    if (ticket.customer_wp_id) {
+      const statsRes = await pool.query(
+        `SELECT COUNT(*) as orders_count, SUM(order_total) as total_spent
+         FROM orders WHERE wp_customer_id = $1 AND post_status NOT IN ('wc-cancelled','wc-failed','trash')`,
+        [ticket.customer_wp_id]
+      );
+      ticket.customer_orders_count = parseInt(statsRes.rows[0].orders_count) || 0;
+      ticket.customer_total_spent  = parseFloat(statsRes.rows[0].total_spent) || 0;
+
+      // Historique commandes (hors commande concernée)
+      const histRes = await pool.query(
+        `SELECT wp_order_id, post_date, post_status, order_total, tracking_number, shipping_carrier
+         FROM orders
+         WHERE wp_customer_id = $1
+           AND wp_order_id::text != $2
+         ORDER BY post_date DESC
+         LIMIT 6`,
+        [ticket.customer_wp_id, ticket.order_id || '0']
+      );
+      ticket.customer_orders_history = histRes.rows;
+    } else {
+      ticket.customer_orders_count   = 0;
+      ticket.customer_total_spent    = 0;
+      ticket.customer_orders_history = [];
+    }
+
+    return ticket;
   }
 
   // ─── Tickets par commande ─────────────────────────────────────────────────
@@ -180,6 +232,32 @@ class SavModel {
     const result = await pool.query(
       `UPDATE sav_tickets SET notes = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2 RETURNING *`,
       [notes, id]
+    );
+    return result.rows[0] || null;
+  }
+
+  // ─── Mettre à jour des champs libres (PATCH) ─────────────────────────────
+  async patch(id, fields) {
+    // Champs autorisés à être mis à jour par PATCH
+    const ALLOWED = [
+      'customer_name', 'customer_email', 'customer_phone', 'order_id',
+      'subject', 'assigned_to', 'ticket_type', 'priority', 'subject_category',
+      'tags', 'order_tracking',
+    ];
+    const setClauses = [];
+    const values = [];
+    let idx = 1;
+    for (const [key, value] of Object.entries(fields)) {
+      if (!ALLOWED.includes(key)) continue;
+      setClauses.push(`${key} = $${idx++}`);
+      values.push(value);
+    }
+    if (setClauses.length === 0) return null;
+    setClauses.push(`updated_at = CURRENT_TIMESTAMP`);
+    values.push(id);
+    const result = await pool.query(
+      `UPDATE sav_tickets SET ${setClauses.join(', ')} WHERE id = $${idx} RETURNING *`,
+      values
     );
     return result.rows[0] || null;
   }
