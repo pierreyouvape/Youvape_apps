@@ -158,7 +158,7 @@ class SavModel {
       ticket.customer_orders_count = parseInt(statsRes.rows[0].orders_count) || 0;
       ticket.customer_total_spent  = parseFloat(statsRes.rows[0].total_spent) || 0;
 
-      // Historique commandes (hors commande concernée)
+      // Historique commandes (hors commande concernée) avec articles
       const histRes = await pool.query(
         `SELECT wp_order_id, post_date, post_status, order_total, tracking_number, shipping_carrier
          FROM orders
@@ -168,7 +168,24 @@ class SavModel {
          LIMIT 6`,
         [ticket.customer_wp_id, ticket.order_id || '0']
       );
-      ticket.customer_orders_history = histRes.rows;
+
+      // Charger les articles pour chaque commande de l'historique
+      const histOrders = histRes.rows;
+      for (const order of histOrders) {
+        const itemsRes = await pool.query(
+          `SELECT
+             oi.order_item_name, oi.qty, oi.line_total,
+             p.sku, p.image_url
+           FROM order_items oi
+           LEFT JOIN products p ON p.wp_product_id = COALESCE(oi.variation_id, oi.product_id)
+           WHERE oi.wp_order_id = $1
+             AND oi.order_item_type = 'line_item'
+           ORDER BY oi.id`,
+          [order.wp_order_id]
+        );
+        order.items = itemsRes.rows;
+      }
+      ticket.customer_orders_history = histOrders;
     } else {
       ticket.customer_orders_count   = 0;
       ticket.customer_total_spent    = 0;
