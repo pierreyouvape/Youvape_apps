@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const savController = require('../controllers/savController');
 
+// ─── Middleware auth JWT (routes internes app) ────────────────────────────────
 const verifyZendeskToken = (req, res, next) => {
   const token = req.headers['x-zendesk-token'];
   if (!token || token !== process.env.ZENDESK_API_TOKEN) {
@@ -10,6 +11,18 @@ const verifyZendeskToken = (req, res, next) => {
   next();
 };
 
+// ─── Endpoint de capture brut — log tout le payload GF pour analyse ──────────
+router.post('/webhook-test', (req, res) => {
+  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+  console.log('📥 [WEBHOOK-TEST] Headers reçus :');
+  console.log(JSON.stringify(req.headers, null, 2));
+  console.log('📦 [WEBHOOK-TEST] Body reçu :');
+  console.log(JSON.stringify(req.body, null, 2));
+  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+  res.status(200).json({ success: true, message: 'Payload reçu et loggé' });
+});
+
+// ─── Anciennes routes Zendesk (conservées temporairement) ────────────────────
 router.get('/', verifyZendeskToken, savController.getAll);
 router.post('/', verifyZendeskToken, savController.create);
 router.get('/order/:order_id', verifyZendeskToken, savController.getByOrderId);
