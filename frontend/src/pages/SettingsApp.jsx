@@ -38,6 +38,7 @@ const SettingsApp = () => {
     { key: 'packing',    label: 'Packing',     accessOnly: true },
     { key: 'financier',  label: 'Rapport',     accessOnly: true },
     { key: 'commandes',  label: 'Commandes',   accessOnly: true },
+    { key: 'tickets',    label: 'SAV / Tickets', accessOnly: true },
   ];
 
   const tabs = [
