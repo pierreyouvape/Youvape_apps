@@ -28,6 +28,7 @@ services:
       - "host.docker.internal:host-gateway"
     volumes:
       - backend_logs:/usr/src/app/logs
+      - sav_attachments:/usr/src/app/uploads/sav
     depends_on:
       - postgres
     networks:
@@ -56,6 +57,7 @@ services:
 volumes:
   postgres_data:
   backend_logs:
+  sav_attachments:
 
 networks:
   youvape_network:

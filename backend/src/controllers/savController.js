@@ -1,6 +1,7 @@
 const savModel = require('../models/savModel');
 const mailgunService = require('../services/mailgunService');
 const pool = require('../config/database');
+const { saveAttachments, toMailgunAttachments } = require('../utils/savAttachments');
 
 const savController = {
 
@@ -101,12 +102,15 @@ const savController = {
         ? bodyPlain.split(/^On .+ wrote:/m)[0].trim()
         : '';
 
-      if (!cleanBody) return;
+      const attachments = saveAttachments(ticketId, req.files);
+
+      if (!cleanBody && attachments.length === 0) return;
 
       await savModel.addMessage(ticketId, {
-        from:     sender,
-        body:     cleanBody,
-        is_agent: false,
+        from:        sender,
+        body:        cleanBody,
+        is_agent:    false,
+        attachments,
       });
 
       // Rouvrir le ticket si terminé/refusé
@@ -196,24 +200,29 @@ const savController = {
       const ticket = await savModel.getById(ticketId);
       if (!ticket) return res.status(404).json({ error: 'Ticket introuvable' });
 
-      // Envoyer l'email via Mailgun
+      // Envoyer l'email via Mailgun (avec PJ éventuelles)
       const from = agent_name || 'SAV Youvape';
       const emailResult = await mailgunService.sendReply({
-        to:        ticket.customer_email,
-        subject:   ticket.subject,
+        to:          ticket.customer_email,
+        subject:     ticket.subject,
         ticketId,
-        bodyText:  body,
+        bodyText:    body,
+        attachments: toMailgunAttachments(req.files),
       });
 
       if (!emailResult.success) {
         return res.status(500).json({ error: `Erreur envoi email: ${emailResult.error}` });
       }
 
+      // Persister les PJ sur disque pour réaffichage côté agent
+      const storedAttachments = saveAttachments(ticketId, req.files);
+
       // Stocker le message dans le ticket
       const updated = await savModel.addMessage(ticketId, {
-        from:     from,
+        from:        from,
         body,
-        is_agent: true,
+        is_agent:    true,
+        attachments: storedAttachments,
       });
 
       res.json({ success: true, ticket: updated });

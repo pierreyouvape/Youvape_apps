@@ -119,12 +119,13 @@ class SavModel {
   }
 
   // ─── Ajouter un message dans le JSONB messages ───────────────────────────
-  async addMessage(id, { from, body, is_agent }) {
+  async addMessage(id, { from, body, is_agent, attachments }) {
     const message = {
       from,
       body,
       is_agent: !!is_agent,
       date: new Date().toISOString(),
+      attachments: Array.isArray(attachments) ? attachments : [],
     };
     const result = await pool.query(
       `UPDATE sav_tickets

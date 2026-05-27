@@ -15,7 +15,7 @@ const FROM   = process.env.MAILGUN_FROM;
 const mailgunService = {
 
   // ─── Envoyer une réponse agent au client ─────────────────────────────────
-  sendReply: async ({ to, subject, ticketId, bodyText, bodyHtml }) => {
+  sendReply: async ({ to, subject, ticketId, bodyText, bodyHtml, attachments }) => {
     try {
       // Le sujet contient le ticket ID pour matcher les réponses entrantes
       const fullSubject = subject.includes(`[SAV #${ticketId}]`)
@@ -32,6 +32,10 @@ const mailgunService = {
 
       if (bodyHtml) {
         messageData.html = bodyHtml;
+      }
+
+      if (Array.isArray(attachments) && attachments.length > 0) {
+        messageData.attachment = attachments;
       }
 
       const result = await mg.messages.create(DOMAIN, messageData);

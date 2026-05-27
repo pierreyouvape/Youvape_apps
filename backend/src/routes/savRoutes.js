@@ -1,9 +1,21 @@
 const express = require('express');
 const router = express.Router();
 const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
+const crypto = require('crypto');
 const savController = require('../controllers/savController');
 
-const upload = multer(); // multipart/form-data sans stockage fichier
+const UPLOAD_ROOT = path.join('/usr/src/app/uploads/sav');
+const MAX_FILE_SIZE = 25 * 1024 * 1024; // 25 Mo
+const MAX_FILES = 10;
+
+// Stockage temporaire en mémoire — les fichiers sont déplacés vers leur dossier
+// final dans le contrôleur, une fois le ticket validé.
+const memoryUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: MAX_FILE_SIZE, files: MAX_FILES },
+});
 
 // ─── Webhook Gravity Forms (auth par secret header) ───────────────────────────
 router.post('/webhook', savController.webhookGravityForms);
@@ -12,12 +24,31 @@ router.post('/webhook', savController.webhookGravityForms);
 const inboundParser = (req, res, next) => {
   const ct = req.headers['content-type'] || '';
   if (ct.includes('multipart/form-data')) {
-    upload.none()(req, res, next);
+    memoryUpload.any()(req, res, next);
   } else {
-    express.urlencoded({ extended: true })(req, res, next);
+    express.urlencoded({ extended: true, limit: '50mb' })(req, res, next);
   }
 };
 router.post('/inbound-email', inboundParser, savController.inboundEmail);
+
+// ─── Servir une pièce jointe d'un ticket ──────────────────────────────────────
+router.get('/attachments/:ticketId/:filename', (req, res) => {
+  const { ticketId, filename } = req.params;
+  // Whitelist stricte sur ticketId (entier) et filename (alphanumérique + . _ -)
+  if (!/^\d+$/.test(ticketId) || !/^[A-Za-z0-9._-]+$/.test(filename)) {
+    return res.status(400).json({ error: 'Paramètres invalides' });
+  }
+  const filePath = path.join(UPLOAD_ROOT, ticketId, filename);
+  // Vérifier que le chemin résolu reste bien dans UPLOAD_ROOT (parade path traversal)
+  const resolved = path.resolve(filePath);
+  if (!resolved.startsWith(path.resolve(UPLOAD_ROOT) + path.sep)) {
+    return res.status(400).json({ error: 'Chemin invalide' });
+  }
+  if (!fs.existsSync(resolved)) {
+    return res.status(404).json({ error: 'Fichier introuvable' });
+  }
+  res.sendFile(resolved);
+});
 
 // ─── Routes internes app ──────────────────────────────────────────────────────
 router.get('/',                        savController.getAll);
@@ -26,7 +57,7 @@ router.get('/order/:order_id',         savController.getByOrderId);
 router.get('/customer/:customer_id',   savController.getByCustomerId);
 router.get('/:id',                     savController.getById);
 router.put('/:id/status',              savController.updateStatus);
-router.post('/:id/reply',              savController.reply);
+router.post('/:id/reply', memoryUpload.array('attachments', MAX_FILES), savController.reply);
 router.put('/:id/notes',               savController.updateNotes);
 
 module.exports = router;
