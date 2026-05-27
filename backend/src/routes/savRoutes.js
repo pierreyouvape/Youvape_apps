@@ -12,12 +12,15 @@ const verifyZendeskToken = (req, res, next) => {
 };
 
 // ─── Endpoint de capture brut — log tout le payload GF pour analyse ──────────
-router.post('/webhook-test', (req, res) => {
+router.post('/webhook-test', express.raw({ type: '*/*' }), (req, res) => {
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
   console.log('📥 [WEBHOOK-TEST] Headers reçus :');
   console.log(JSON.stringify(req.headers, null, 2));
-  console.log('📦 [WEBHOOK-TEST] Body reçu :');
+  console.log('📦 [WEBHOOK-TEST] Body parsé (express.json) :');
   console.log(JSON.stringify(req.body, null, 2));
+  console.log('📄 [WEBHOOK-TEST] Body brut (raw) :');
+  const raw = req.body instanceof Buffer ? req.body.toString('utf8') : String(req.body);
+  console.log(raw);
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
   res.status(200).json({ success: true, message: 'Payload reçu et loggé' });
 });
