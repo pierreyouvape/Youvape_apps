@@ -1057,7 +1057,7 @@ function CustomerPanel({ ticket }) {
 // ─── Composant principal ──────────────────────────────────────────────────────
 export default function TicketDetail({ ticketId }) {
   const navigate = useNavigate();
-  const { user } = useContext(AuthContext);
+  const { user, token } = useContext(AuthContext);
   const [ticket, setTicket] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -1076,11 +1076,12 @@ export default function TicketDetail({ ticketId }) {
 
   // Charger la liste des agents (utilisateurs de l'app)
   useEffect(() => {
-    fetch('/api/users/agents')
+    if (!token) return;
+    fetch('/api/users/agents', { headers: { Authorization: `Bearer ${token}` } })
       .then(r => r.json())
       .then(d => { if (d.success && d.users) setUsers(d.users); })
       .catch(() => {});
-  }, []);
+  }, [token]);
 
   useEffect(() => { fetchTicket(); }, [fetchTicket]);
 
