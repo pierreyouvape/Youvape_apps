@@ -1,6 +1,42 @@
 const pool = require('../config/database');
 
-const VALID_STATUSES = ['ouvert', 'accepté', 'terminé', 'refusé'];
+// ─── Statuts ──────────────────────────────────────────────────────────────────
+async function getValidStatuses() {
+  const res = await pool.query(`SELECT value FROM sav_ticket_statuses ORDER BY sort_order`);
+  return res.rows.map(r => r.value);
+}
+
+class StatusModel {
+  async getAll() {
+    const res = await pool.query(`SELECT * FROM sav_ticket_statuses ORDER BY sort_order`);
+    return res.rows;
+  }
+
+  async create({ value, label, bg_color, text_color }) {
+    const res = await pool.query(
+      `INSERT INTO sav_ticket_statuses (value, label, bg_color, text_color, sort_order, updated_at)
+       VALUES ($1, $2, $3, $4, (SELECT COALESCE(MAX(sort_order),0)+1 FROM sav_ticket_statuses), NOW())
+       RETURNING *`,
+      [value, label, bg_color || '#F0F0F0', text_color || '#626E85']
+    );
+    return res.rows[0];
+  }
+
+  async update(id, { label, bg_color, text_color }) {
+    const res = await pool.query(
+      `UPDATE sav_ticket_statuses SET label=$1, bg_color=$2, text_color=$3, updated_at=NOW()
+       WHERE id=$4 RETURNING *`,
+      [label, bg_color, text_color, id]
+    );
+    return res.rows[0] || null;
+  }
+
+  async delete(id) {
+    await pool.query(`DELETE FROM sav_ticket_statuses WHERE id=$1`, [id]);
+  }
+}
+
+const statusModel = new StatusModel();
 
 class SavModel {
 
@@ -108,8 +144,9 @@ class SavModel {
 
   // ─── Mettre à jour le statut ──────────────────────────────────────────────
   async updateStatus(id, sav_status) {
-    if (!VALID_STATUSES.includes(sav_status)) {
-      throw new Error(`Statut invalide. Valeurs acceptées : ${VALID_STATUSES.join(', ')}`);
+    const valid = await getValidStatuses();
+    if (!valid.includes(sav_status)) {
+      throw new Error(`Statut invalide. Valeurs acceptées : ${valid.join(', ')}`);
     }
     const result = await pool.query(
       `UPDATE sav_tickets SET sav_status = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2 RETURNING *`,
@@ -157,4 +194,6 @@ class SavModel {
   }
 }
 
-module.exports = new SavModel();
+const savModel = new SavModel();
+savModel.statusModel = statusModel;
+module.exports = savModel;

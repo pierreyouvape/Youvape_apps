@@ -1,9 +1,10 @@
-import { TICKET_STATUSES } from './ticketConstants';
+import { useTicketStatuses } from './useTicketStatuses';
 
 export default function StatusBadge({ status, size = 'md' }) {
-  const s = TICKET_STATUSES[status] || { label: status, bg: '#F0F0F0', color: '#626E85' };
+  const { statusMap } = useTicketStatuses();
+  const s = statusMap[status] || { label: status, bg: '#F0F0F0', color: '#626E85' };
   const pad = size === 'sm' ? '2px 8px' : '4px 10px';
-  const fs   = size === 'sm' ? 11 : 12;
+  const fs  = size === 'sm' ? 11 : 12;
 
   return (
     <span style={{

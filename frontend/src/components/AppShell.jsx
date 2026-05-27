@@ -3,6 +3,11 @@ import { Link, useNavigate } from 'react-router-dom';
 import { AuthContext } from '../context/AuthContext';
 import { APPS, SettingsIcon, LogoutIcon } from './AppIcons';
 
+// Apps ayant une page de paramètres dédiée
+const APP_SETTINGS_PATHS = {
+  tickets: '/tickets/settings',
+};
+
 const C = {
   orange: '#E28F00',
   saphirF: '#003A56',
@@ -133,6 +138,61 @@ function Sidebar({ user, orderedApps, accessibleKeys, draggingKey, overKey, onPo
           </svg>
         </button>
       </div>
+
+      {/* Bloc app active : titre + bouton paramètres */}
+      {(() => {
+        const activeApp = APPS.find(a => currentPath === a.path || currentPath?.startsWith(a.path + '/'));
+        const settingsPath = activeApp ? APP_SETTINGS_PATHS[activeApp.key] : null;
+        if (!activeApp || currentPath === '/home') return null;
+        return (
+          <div style={{
+            padding: '14px 16px 12px',
+            borderBottom: '1px solid rgba(255,255,255,0.07)',
+          }}>
+            {/* Titre de l'app */}
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 9, marginBottom: settingsPath ? 10 : 0,
+            }}>
+              <span style={{
+                width: 28, height: 28, borderRadius: 8, flexShrink: 0,
+                background: activeApp.color,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                boxShadow: '0 1px 0 rgba(255,255,255,0.25) inset',
+              }}>
+                <activeApp.Icon size={17} color="#fff" />
+              </span>
+              <span style={{
+                fontSize: 14, fontWeight: 800, color: '#fff',
+                fontFamily: "'Tilt Warp', cursive",
+                whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                flex: 1,
+              }}>
+                {activeApp.label}
+              </span>
+            </div>
+            {/* Bouton paramètres de l'app */}
+            {settingsPath && (
+              <button
+                onClick={() => navigate(settingsPath)}
+                style={{
+                  width: '100%', display: 'flex', alignItems: 'center', gap: 8,
+                  padding: '7px 10px', borderRadius: 7,
+                  background: currentPath === settingsPath ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.06)',
+                  border: '1px solid rgba(255,255,255,0.10)',
+                  color: 'rgba(255,255,255,0.82)', fontSize: 12.5, fontWeight: 600,
+                  cursor: 'pointer', fontFamily: 'inherit',
+                  transition: 'background 0.15s',
+                }}
+                onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.14)'}
+                onMouseLeave={e => e.currentTarget.style.background = currentPath === settingsPath ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.06)'}
+              >
+                <SettingsIcon size={13} color="rgba(255,255,255,0.75)" />
+                Paramètres de l'app
+              </button>
+            )}
+          </div>
+        );
+      })()}
 
       {/* Menu interne de l'app (optionnel) */}
       {appMenu && (

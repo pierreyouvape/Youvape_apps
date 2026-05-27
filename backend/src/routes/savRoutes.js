@@ -50,6 +50,12 @@ router.get('/attachments/:ticketId/:filename', (req, res) => {
   res.sendFile(resolved);
 });
 
+// ─── Routes statuts ───────────────────────────────────────────────────────────
+router.get('/statuses',          savController.getStatuses);
+router.post('/statuses',         savController.createStatus);
+router.put('/statuses/:id',      savController.updateStatus_s);
+router.delete('/statuses/:id',   savController.deleteStatus);
+
 // ─── Routes internes app ──────────────────────────────────────────────────────
 router.get('/',                        savController.getAll);
 router.post('/',                       savController.createManual);

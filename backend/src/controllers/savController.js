@@ -274,6 +274,58 @@ const savController = {
       res.status(500).json({ error: 'Erreur serveur' });
     }
   },
+
+  // ─── CRUD statuts ─────────────────────────────────────────────────────────
+
+  getStatuses: async (req, res) => {
+    try {
+      const statuses = await savModel.statusModel.getAll();
+      res.json({ success: true, statuses });
+    } catch (error) {
+      console.error('❌ [SAV Statuts] getStatuses:', error);
+      res.status(500).json({ error: 'Erreur serveur' });
+    }
+  },
+
+  createStatus: async (req, res) => {
+    try {
+      const { value, label, bg_color, text_color } = req.body;
+      if (!value || !label) return res.status(400).json({ error: 'value et label requis' });
+      // Slugifier la valeur
+      const slug = value.trim().toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_éàèùâêîôûäëïöüç-]/g, '');
+      const status = await savModel.statusModel.create({ value: slug, label: label.trim(), bg_color, text_color });
+      res.status(201).json({ success: true, status });
+    } catch (error) {
+      if (error.code === '23505') return res.status(409).json({ error: 'Ce statut existe déjà' });
+      console.error('❌ [SAV Statuts] createStatus:', error);
+      res.status(500).json({ error: 'Erreur serveur' });
+    }
+  },
+
+  updateStatus_s: async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { label, bg_color, text_color } = req.body;
+      if (!label) return res.status(400).json({ error: 'label requis' });
+      const status = await savModel.statusModel.update(id, { label, bg_color, text_color });
+      if (!status) return res.status(404).json({ error: 'Statut introuvable' });
+      res.json({ success: true, status });
+    } catch (error) {
+      console.error('❌ [SAV Statuts] updateStatus_s:', error);
+      res.status(500).json({ error: 'Erreur serveur' });
+    }
+  },
+
+  deleteStatus: async (req, res) => {
+    try {
+      const { id } = req.params;
+      await savModel.statusModel.delete(id);
+      res.json({ success: true });
+    } catch (error) {
+      console.error('❌ [SAV Statuts] deleteStatus:', error);
+      res.status(500).json({ error: 'Erreur serveur' });
+    }
+  },
 };
 
 module.exports = savController;

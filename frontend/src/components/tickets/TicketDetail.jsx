@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import StatusBadge from './StatusBadge';
-import { TICKETS_COLOR, TICKET_STATUS_LIST } from './ticketConstants';
+import { TICKETS_COLOR } from './ticketConstants';
+import { useTicketStatuses } from './useTicketStatuses';
 import { formatDate } from '../../utils/dateUtils';
 
 const C = {
@@ -218,6 +219,7 @@ function ReplyComposer({ ticketId, onReplySent }) {
 // ─── Panneau droit — infos client + commande ──────────────────────────────────
 function InfoPanel({ ticket, onStatusChange, onNoteSave }) {
   const navigate = useNavigate();
+  const { statuses } = useTicketStatuses();
   const [notes, setNotes] = useState(ticket.notes || '');
   const [savingNotes, setSavingNotes] = useState(false);
   const [changingStatus, setChangingStatus] = useState(false);
@@ -277,16 +279,16 @@ function InfoPanel({ ticket, onStatusChange, onNoteSave }) {
       {/* Statut */}
       <Block title="Statut">
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-          {TICKET_STATUS_LIST.map(s => (
+          {statuses.map(s => (
             <button
               key={s.value}
               onClick={() => handleStatusChange(s.value)}
               disabled={changingStatus}
               style={{
                 padding: '5px 12px', borderRadius: 99,
-                border: `2px solid ${ticket.sav_status === s.value ? s.color : C.grisCL}`,
-                background: ticket.sav_status === s.value ? s.bg : C.blanc,
-                color: ticket.sav_status === s.value ? s.color : C.grisF,
+                border: `2px solid ${ticket.sav_status === s.value ? s.text_color : C.grisCL}`,
+                background: ticket.sav_status === s.value ? s.bg_color : C.blanc,
+                color: ticket.sav_status === s.value ? s.text_color : C.grisF,
                 fontSize: 12, fontWeight: 700, cursor: 'pointer',
                 transition: 'all 0.15s',
               }}

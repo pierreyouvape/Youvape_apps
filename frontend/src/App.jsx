@@ -29,6 +29,7 @@ import FinancierApp from './pages/FinancierApp';
 import OrdersSearchApp from './pages/OrdersSearchApp';
 import TicketsApp from './pages/TicketsApp';
 import TicketDetailPage from './pages/TicketDetailPage';
+import TicketsSettingsApp from './pages/TicketsSettingsApp';
 import PrivateRoute from './components/PrivateRoute';
 
 const PAGE_TITLES = {
@@ -279,6 +280,14 @@ function App() {
             element={
               <PrivateRoute>
                 <TicketsApp />
+              </PrivateRoute>
+            }
+          />
+          <Route
+            path="/tickets/settings"
+            element={
+              <PrivateRoute>
+                <TicketsSettingsApp />
               </PrivateRoute>
             }
           />
