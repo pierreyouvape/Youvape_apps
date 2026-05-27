@@ -117,10 +117,13 @@ class SavModel {
          c.last_name         as customer_last_name,
          c.email             as customer_email_db,
          c.user_registered   as customer_since,
-         c.wp_user_id        as customer_wp_id
+         c.wp_user_id        as customer_wp_id,
+         u.name              as assigned_to_name,
+         u.email             as assigned_to_email
        FROM sav_tickets t
        LEFT JOIN orders    o ON o.wp_order_id::text = t.order_id
        LEFT JOIN customers c ON c.id = t.customer_id
+       LEFT JOIN users     u ON u.id = t.assigned_to_id
        WHERE t.id = $1`,
       [id]
     );
@@ -241,7 +244,7 @@ class SavModel {
     // Champs autorisés à être mis à jour par PATCH
     const ALLOWED = [
       'customer_name', 'customer_email', 'customer_phone', 'order_id',
-      'subject', 'assigned_to', 'ticket_type', 'priority', 'subject_category',
+      'subject', 'assigned_to', 'assigned_to_id', 'ticket_type', 'priority', 'subject_category',
       'tags', 'order_tracking',
     ];
     const setClauses = [];

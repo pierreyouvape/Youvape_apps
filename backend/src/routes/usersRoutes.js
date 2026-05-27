@@ -7,6 +7,9 @@ const { checkAdmin } = require('../middleware/permissionMiddleware');
 // Toutes les routes nécessitent une authentification
 router.use(authMiddleware);
 
+// Liste simple des agents (tous les utilisateurs auth, pour dropdown assignation SAV)
+router.get('/agents', usersController.getAgents);
+
 // Récupérer tous les utilisateurs (admin uniquement)
 router.get('/', checkAdmin, usersController.getAllUsers);
 

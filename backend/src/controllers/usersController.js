@@ -5,6 +5,19 @@ const bmsApiModel = require('../models/bmsApiModel');
 const SUPER_ADMIN_EMAIL = 'youvape34@gmail.com';
 
 const usersController = {
+  // Liste simple des agents (pour dropdown d'assignation)
+  getAgents: async (req, res) => {
+    try {
+      const result = await pool.query(
+        `SELECT id, name, email FROM users ORDER BY name ASC`
+      );
+      res.json({ success: true, users: result.rows });
+    } catch (error) {
+      console.error('Erreur getAgents:', error);
+      res.status(500).json({ error: 'Erreur serveur' });
+    }
+  },
+
   // Récupérer tous les utilisateurs avec leurs permissions
   getAllUsers: async (req, res) => {
     try {

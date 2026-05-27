@@ -81,6 +81,7 @@ const userPermissionsModel = {
       SELECT
         u.id,
         u.email,
+        u.name,
         u.is_admin,
         u.created_at,
         COALESCE(
@@ -95,7 +96,7 @@ const userPermissionsModel = {
         ) as permissions
       FROM users u
       LEFT JOIN user_permissions up ON u.id = up.user_id
-      GROUP BY u.id, u.email, u.is_admin, u.created_at
+      GROUP BY u.id, u.email, u.name, u.is_admin, u.created_at
       ORDER BY u.created_at DESC
     `;
 
