@@ -674,6 +674,7 @@ function TicketFieldsPanel({ ticket, onFieldChange, users }) {
 
 // ─── Panneau CENTRE ───────────────────────────────────────────────────────────
 function ConversationPanel({ ticket, onReplySent }) {
+  const { user } = useContext(AuthContext);
   const bottomRef = useRef();
   const messages = ticket.messages || [];
 
