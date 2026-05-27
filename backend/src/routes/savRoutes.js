@@ -1,12 +1,15 @@
 const express = require('express');
 const router = express.Router();
+const multer = require('multer');
 const savController = require('../controllers/savController');
+
+const upload = multer(); // multipart/form-data sans stockage fichier
 
 // ─── Webhook Gravity Forms (auth par secret header) ───────────────────────────
 router.post('/webhook', savController.webhookGravityForms);
 
-// ─── Inbound email Mailgun (appelé par Mailgun, body urlencoded) ──────────────
-router.post('/inbound-email', express.urlencoded({ extended: true }), savController.inboundEmail);
+// ─── Inbound email Mailgun — multipart/form-data ──────────────────────────────
+router.post('/inbound-email', upload.none(), savController.inboundEmail);
 
 // ─── Routes internes app ──────────────────────────────────────────────────────
 router.get('/',                        savController.getAll);

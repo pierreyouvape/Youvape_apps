@@ -70,6 +70,8 @@ const savController = {
       // Toujours répondre 200 rapidement à Mailgun (sinon il retry)
       res.status(200).json({ success: true });
 
+      console.log('📨 [SAV Inbound] Payload reçu:', JSON.stringify(req.body, null, 2));
+
       const { sender, subject, 'body-plain': bodyPlain, timestamp, token, signature } = req.body;
 
       // Vérifier signature Mailgun (optionnel en sandbox)
