@@ -156,8 +156,8 @@ function Message({ msg, ticketId }) {
           <span style={{ fontSize: 12, color: C.grisM, fontWeight: 600 }}>{formatDate(msg.date, { time: true })}</span>
         </div>
         <div style={{
-          background: isPrivate ? '#FFFDE7' : C.blanc,
-          border: `1px solid ${isPrivate ? '#F6C613' : C.grisCL}`,
+          background: isPrivate ? '#FFFDE7' : msg.is_agent ? '#F0F6FF' : C.blanc,
+          border: `1px solid ${isPrivate ? '#F6C613' : msg.is_agent ? '#C8DEFF' : C.grisCL}`,
           borderRadius: 12, padding: '16px 18px',
           fontSize: 14, color: C.grisTF, lineHeight: 1.55,
           whiteSpace: 'pre-wrap', wordBreak: 'break-word',
