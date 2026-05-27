@@ -6,7 +6,7 @@ import { formatDate } from '../../utils/dateUtils';
 import { formatPriceEur, formatInt } from '../../utils/formatNumber';
 import { AuthContext } from '../../context/AuthContext';
 
-const API_BASE_URL = 'http://54.37.156.233:3000/api';
+const API_BASE_URL = '/api';
 
 // Mapping des codes pays vers noms
 const COUNTRY_NAMES = {

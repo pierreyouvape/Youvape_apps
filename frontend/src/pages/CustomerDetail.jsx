@@ -9,7 +9,7 @@ import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 import CopyButton from '../components/CopyButton';
 import { formatPriceEur } from '../utils/formatNumber';
 
-const API_BASE_URL = 'http://54.37.156.233:3000/api';
+const API_BASE_URL = '/api';
 
 const CustomerDetail = () => {
   const { id } = useParams();

@@ -7,7 +7,7 @@ import { AuthContext } from '../../context/AuthContext';
 import { useColumnPreferences } from '../../hooks/useColumnPreferences';
 import ColumnPanel from '../ColumnPanel';
 
-const API_BASE_URL = 'http://54.37.156.233:3000/api';
+const API_BASE_URL = '/api';
 
 const PRODUCTS_COLUMNS = [
   { key: 'sku',           label: 'SKU' },

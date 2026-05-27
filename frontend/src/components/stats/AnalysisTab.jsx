@@ -9,7 +9,7 @@ import {
 import { AuthContext } from '../../context/AuthContext';
 import { useColumnPreferences } from '../../hooks/useColumnPreferences';
 
-const API_BASE_URL = 'http://54.37.156.233:3000/api';
+const API_BASE_URL = '/api';
 
 const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8', '#82ca9d', '#ffc658', '#ff7300', '#a4de6c', '#d0ed57'];
 

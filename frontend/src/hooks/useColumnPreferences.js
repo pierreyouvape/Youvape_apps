@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
 
-const API_BASE_URL = 'http://54.37.156.233:3000/api';
+const API_BASE_URL = '/api';
 
 /**
  * Hook réutilisable pour les préférences de colonnes + mode compact.
