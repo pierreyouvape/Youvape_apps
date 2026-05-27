@@ -8,8 +8,16 @@ const upload = multer(); // multipart/form-data sans stockage fichier
 // ─── Webhook Gravity Forms (auth par secret header) ───────────────────────────
 router.post('/webhook', savController.webhookGravityForms);
 
-// ─── Inbound email Mailgun — multipart/form-data ──────────────────────────────
-router.post('/inbound-email', upload.none(), savController.inboundEmail);
+// ─── Inbound email Mailgun — multipart/form-data ou urlencoded ───────────────
+const inboundParser = (req, res, next) => {
+  const ct = req.headers['content-type'] || '';
+  if (ct.includes('multipart/form-data')) {
+    upload.none()(req, res, next);
+  } else {
+    express.urlencoded({ extended: true })(req, res, next);
+  }
+};
+router.post('/inbound-email', inboundParser, savController.inboundEmail);
 
 // ─── Routes internes app ──────────────────────────────────────────────────────
 router.get('/',                        savController.getAll);
