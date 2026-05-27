@@ -119,6 +119,13 @@ export const GripIcon = ({ size = 24, color = 'currentColor' }) => (
   </svg>
 );
 
+export const Tickets = (props) => (
+  <Base {...props}>
+    <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z" />
+    <path d="M8 9h8M8 13h5" />
+  </Base>
+);
+
 export const APPS = [
   { key: 'reviews',   path: '/reviews',   label: 'Avis Garantis',            Icon: Reviews,   color: '#0071EB' },
   { key: 'rewards',   path: '/rewards',   label: 'Récompense Avis',          Icon: Rewards,   color: '#8B5CF6' },
@@ -129,4 +136,5 @@ export const APPS = [
   { key: 'catalog',   path: '/catalog',   label: 'Produits',                 Icon: Catalog,   color: '#059669' },
   { key: 'financier',  path: '/financier',  label: 'Rapport',                  Icon: Stats,         color: '#135E84' },
   { key: 'commandes',  path: '/commandes',  label: 'Commandes',                Icon: OrdersSearch,  color: '#5B21B6' },
+  { key: 'tickets',    path: '/tickets',    label: 'SAV / Tickets',            Icon: Tickets,       color: '#0891B2' },
 ];
