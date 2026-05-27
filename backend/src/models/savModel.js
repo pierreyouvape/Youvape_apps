@@ -55,7 +55,7 @@ class SavModel {
          o.post_status as order_status,
          o.order_total as order_total
        FROM sav_tickets t
-       LEFT JOIN orders o ON o.wp_order_id = t.order_id
+       LEFT JOIN orders o ON o.wp_order_id::text = t.order_id
        ${where}
        ORDER BY t.created_at DESC
        LIMIT $${idx++} OFFSET $${idx++}`,
@@ -79,7 +79,7 @@ class SavModel {
          c.total_spent       as customer_total_spent,
          c.orders_count      as customer_orders_count
        FROM sav_tickets t
-       LEFT JOIN orders    o ON o.wp_order_id = t.order_id
+       LEFT JOIN orders    o ON o.wp_order_id::text = t.order_id
        LEFT JOIN customers c ON c.id = t.customer_id
        WHERE t.id = $1`,
       [id]
