@@ -44,6 +44,7 @@ services:
       - backend
     labels:
       - "traefik.enable=true"
+      - "traefik.docker.network=youvape-site_default"
       - "traefik.http.routers.youvape-apps.rule=Host(`apps.youvape.fr`)"
       - "traefik.http.routers.youvape-apps.entrypoints=websecure"
       - "traefik.http.routers.youvape-apps.tls=true"
