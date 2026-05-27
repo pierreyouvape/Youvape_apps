@@ -133,40 +133,65 @@ function AttachmentItem({ att, ticketId }) {
   );
 }
 
-// ─── Message Zendesk-style ────────────────────────────────────────────────────
+// ─── Message style messagerie ─────────────────────────────────────────────────
 function Message({ msg, ticketId }) {
   const atts = msg.attachments || [];
   const isPrivate = !!msg.is_private;
+  const isAgent = !!msg.is_agent;
+
+  // Couleurs bulle
+  let bgBubble, borderBubble, boxShadowBubble;
+  if (isPrivate) {
+    bgBubble = '#FFFDE7'; borderBubble = '#F6C613';
+    boxShadowBubble = '0 1px 4px rgba(246,198,19,0.15)';
+  } else if (isAgent) {
+    bgBubble = '#EAF2FF'; borderBubble = '#B8D4FF';
+    boxShadowBubble = '0 1px 3px rgba(0,0,0,0.06)';
+  } else {
+    bgBubble = C.blanc; borderBubble = C.grisCL;
+    boxShadowBubble = '0 1px 3px rgba(0,0,0,0.04)';
+  }
 
   return (
-    <div style={{ display: 'flex', gap: 14, marginBottom: 22 }}>
-      <Avatar name={msg.from} size={36} />
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4, flexWrap: 'wrap' }}>
-          <strong style={{ fontSize: 14, color: C.grisTF }}>{msg.from}</strong>
-          {!msg.is_agent && <Ic.Mail color={C.grisM} size={13} />}
+    <div style={{
+      display: 'flex',
+      flexDirection: isAgent ? 'row-reverse' : 'row',
+      gap: 10,
+      marginBottom: 20,
+      paddingLeft: isAgent ? 60 : 0,
+      paddingRight: isAgent ? 0 : 60,
+    }}>
+      <Avatar name={msg.from} size={34} />
+      <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', alignItems: isAgent ? 'flex-end' : 'flex-start' }}>
+        {/* Nom + badges + date */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4, flexWrap: 'wrap', flexDirection: isAgent ? 'row-reverse' : 'row' }}>
+          <strong style={{ fontSize: 13, color: C.grisF }}>{msg.from}</strong>
+          {!isAgent && <Ic.Mail color={C.grisM} size={12} />}
           {isPrivate && (
             <span style={{
-              fontSize: 11, fontWeight: 700, color: '#92650A',
+              fontSize: 10, fontWeight: 700, color: '#92650A',
               background: '#FFF8E1', border: '1px solid #F6C613',
-              borderRadius: 4, padding: '1px 7px',
+              borderRadius: 4, padding: '1px 6px',
             }}>Note privée</span>
           )}
-          <span style={{ color: C.grisCL, fontSize: 12 }}>·</span>
-          <span style={{ fontSize: 12, color: C.grisM, fontWeight: 600 }}>{formatDate(msg.date, { time: true })}</span>
+          <span style={{ fontSize: 11, color: C.grisM }}>{formatDate(msg.date, { time: true })}</span>
         </div>
+        {/* Bulle */}
         <div style={{
-          background: isPrivate ? '#FFFDE7' : msg.is_agent ? '#F0F6FF' : C.blanc,
-          border: `1px solid ${isPrivate ? '#F6C613' : msg.is_agent ? '#C8DEFF' : C.grisCL}`,
-          borderRadius: 12, padding: '16px 18px',
+          background: bgBubble,
+          border: `1px solid ${borderBubble}`,
+          borderRadius: isAgent ? '14px 4px 14px 14px' : '4px 14px 14px 14px',
+          padding: '12px 16px',
           fontSize: 14, color: C.grisTF, lineHeight: 1.55,
           whiteSpace: 'pre-wrap', wordBreak: 'break-word',
-          boxShadow: isPrivate ? '0 1px 4px rgba(246,198,19,0.15)' : '0 1px 3px rgba(0,0,0,0.04)',
+          boxShadow: boxShadowBubble,
+          maxWidth: '100%',
         }}>
           {msg.body}
         </div>
+        {/* Pièces jointes */}
         {atts.length > 0 && (
-          <div style={{ display: 'flex', flexWrap: 'wrap', marginTop: 4 }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', marginTop: 4, justifyContent: isAgent ? 'flex-end' : 'flex-start' }}>
             {atts.map((a, i) => <AttachmentItem key={i} att={a} ticketId={ticketId} />)}
           </div>
         )}
