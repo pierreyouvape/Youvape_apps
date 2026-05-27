@@ -236,13 +236,13 @@ const CustomersStatsTab = () => {
               <tbody>
                 {data.map((customer) => (
                   <tr
-                    key={customer.id}
-                    onClick={() => navigate(`/customers/${customer.id}`)}
+                    key={customer.wp_user_id || customer.id}
+                    onClick={() => navigate(`/customers/${customer.wp_user_id}`)}
                     style={{ borderTop: '1px solid #dee2e6', cursor: 'pointer', transition: 'background-color 0.2s' }}
                     onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f8f9fa'}
                     onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'white'}
                   >
-                    <td style={{ padding: '15px', fontSize: '14px', fontWeight: 'bold', color: '#007bff' }}>{customer.id}</td>
+                    <td style={{ padding: '15px', fontSize: '14px', fontWeight: 'bold', color: '#007bff' }}>{customer.wp_user_id}</td>
                     <td style={{ padding: '15px', fontSize: '14px' }}>
                       {`${customer.first_name || ''} ${customer.last_name || ''}`.trim() || 'N/A'}
                     </td>

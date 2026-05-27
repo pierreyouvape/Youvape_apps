@@ -887,10 +887,10 @@ function CustomerPanel({ ticket }) {
             </span>
           } />
         </div>
-        {ticket.customer_id && (
+        {ticket.customer_wp_id && (
           /* Lien natif = cmd+clic fonctionne */
           <a
-            href={`/customers/${ticket.customer_id}`}
+            href={`/customers/${ticket.customer_wp_id}`}
             style={{
               display: 'block', textAlign: 'center', marginTop: 12,
               padding: '6px 0', background: 'none', border: `1px solid ${C.grisCL}`,
