@@ -215,6 +215,8 @@ function ReplyComposer({ ticketId, demandeur, agentName, onReplySent }) {
   const [showEmojis, setShowEmojis] = useState(false);
   const [showLinkInput, setShowLinkInput] = useState(false);
   const [linkUrl, setLinkUrl] = useState('');
+  const [linkText, setLinkText] = useState('');
+  const [linkSelection, setLinkSelection] = useState({ start: 0, end: 0 });
   const fileRef = useRef();
   const modeRef = useRef();
   const textareaRef = useRef();
@@ -249,21 +251,34 @@ function ReplyComposer({ ticketId, demandeur, agentName, onReplySent }) {
     setTimeout(() => { ta.focus(); ta.setSelectionRange(start + emoji.length, start + emoji.length); }, 0);
   };
 
-  // Insérer un lien autour de la sélection (ou à la position curseur)
+  // Ouvrir le popup lien — capturer la sélection avant que le focus parte
+  const openLinkInput = () => {
+    const ta = textareaRef.current;
+    const start = ta ? ta.selectionStart : 0;
+    const end = ta ? ta.selectionEnd : 0;
+    const selected = body.slice(start, end);
+    setLinkSelection({ start, end });
+    setLinkText(selected);
+    setLinkUrl('');
+    setShowLinkInput(true);
+  };
+
+  // Insérer le lien à la position mémorisée
   const insertLink = () => {
     if (!linkUrl.trim()) return;
-    const ta = textareaRef.current;
     const url = linkUrl.startsWith('http') ? linkUrl : `https://${linkUrl}`;
-    const start = ta.selectionStart;
-    const end = ta.selectionEnd;
-    const selected = body.slice(start, end);
-    const linkText = selected || url;
-    const insertion = `[${linkText}](${url})`;
+    const display = linkText.trim() || url;
+    const { start, end } = linkSelection;
+    const insertion = `[${display}](${url})`;
     const newBody = body.slice(0, start) + insertion + body.slice(end);
     setBody(newBody);
     setLinkUrl('');
+    setLinkText('');
     setShowLinkInput(false);
-    setTimeout(() => { ta.focus(); ta.setSelectionRange(start + insertion.length, start + insertion.length); }, 0);
+    setTimeout(() => {
+      const ta = textareaRef.current;
+      if (ta) { ta.focus(); ta.setSelectionRange(start + insertion.length, start + insertion.length); }
+    }, 0);
   };
 
   useEffect(() => {
@@ -455,21 +470,45 @@ function ReplyComposer({ ticketId, demandeur, agentName, onReplySent }) {
             <button
               style={{ ...iconBtn(), background: showLinkInput ? C.grisTL : 'transparent' }}
               title="Insérer un lien"
-              onClick={() => setShowLinkInput(o => !o)}
+              onClick={() => showLinkInput ? setShowLinkInput(false) : openLinkInput()}
             >
               <span style={{ fontSize: 13, color: showLinkInput ? TICKETS_COLOR : C.grisF }}>🔗</span>
             </button>
             {showLinkInput && (
               <div style={{
                 position: 'absolute', bottom: '100%', left: 0, zIndex: 200,
-                background: C.blanc, border: `1px solid ${C.grisCL}`, borderRadius: 8,
-                boxShadow: '0 4px 16px rgba(0,0,0,0.12)', padding: '10px 12px',
-                marginBottom: 6, minWidth: 280,
+                background: C.blanc, border: `1px solid ${C.grisCL}`, borderRadius: 10,
+                boxShadow: '0 4px 20px rgba(0,0,0,0.12)', padding: '12px 14px',
+                marginBottom: 6, minWidth: 300,
               }}>
-                <div style={{ fontSize: 11.5, fontWeight: 700, color: C.grisF, marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                <div style={{ fontSize: 11.5, fontWeight: 800, color: C.grisF, marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                   Insérer un lien
                 </div>
-                <div style={{ display: 'flex', gap: 6 }}>
+                {/* Champ texte affiché */}
+                <div style={{ marginBottom: 8 }}>
+                  <label style={{ fontSize: 11, fontWeight: 700, color: C.grisM, textTransform: 'uppercase', letterSpacing: '0.04em', display: 'block', marginBottom: 4 }}>
+                    Texte affiché
+                  </label>
+                  <input
+                    type="text"
+                    value={linkText}
+                    onChange={e => setLinkText(e.target.value)}
+                    placeholder="ex. Suivre ma commande"
+                    onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); insertLink(); } if (e.key === 'Escape') setShowLinkInput(false); }}
+                    style={{
+                      width: '100%', padding: '7px 10px', border: `1px solid ${C.grisCL}`,
+                      borderRadius: 6, fontSize: 13, fontFamily: 'Lato, sans-serif',
+                      outline: 'none', color: C.grisTF, boxSizing: 'border-box',
+                    }}
+                    onFocus={e => e.target.style.borderColor = TICKETS_COLOR}
+                    onBlur={e => e.target.style.borderColor = C.grisCL}
+                  />
+                </div>
+                {/* Champ URL */}
+                <div style={{ marginBottom: 10 }}>
+                  <label style={{ fontSize: 11, fontWeight: 700, color: C.grisM, textTransform: 'uppercase', letterSpacing: '0.04em', display: 'block', marginBottom: 4 }}>
+                    URL
+                  </label>
                   <input
                     autoFocus
                     type="text"
@@ -478,19 +517,29 @@ function ReplyComposer({ ticketId, demandeur, agentName, onReplySent }) {
                     placeholder="https://..."
                     onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); insertLink(); } if (e.key === 'Escape') setShowLinkInput(false); }}
                     style={{
-                      flex: 1, padding: '6px 10px', border: `1px solid ${C.grisCL}`,
+                      width: '100%', padding: '7px 10px', border: `1px solid ${C.grisCL}`,
                       borderRadius: 6, fontSize: 13, fontFamily: 'Lato, sans-serif',
-                      outline: 'none', color: C.grisTF,
+                      outline: 'none', color: C.grisTF, boxSizing: 'border-box',
                     }}
                     onFocus={e => e.target.style.borderColor = TICKETS_COLOR}
                     onBlur={e => e.target.style.borderColor = C.grisCL}
                   />
+                </div>
+                <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+                  <button
+                    onClick={() => setShowLinkInput(false)}
+                    style={{
+                      padding: '7px 12px', background: 'transparent', color: C.grisF,
+                      border: `1px solid ${C.grisCL}`, borderRadius: 6, fontSize: 12.5, fontWeight: 600,
+                      cursor: 'pointer', fontFamily: 'Lato, sans-serif',
+                    }}
+                  >Annuler</button>
                   <button
                     onClick={insertLink}
                     style={{
-                      padding: '6px 12px', background: TICKETS_COLOR, color: '#fff',
+                      padding: '7px 14px', background: TICKETS_COLOR, color: '#fff',
                       border: 'none', borderRadius: 6, fontSize: 12.5, fontWeight: 700,
-                      cursor: 'pointer', fontFamily: 'Lato, sans-serif', whiteSpace: 'nowrap',
+                      cursor: 'pointer', fontFamily: 'Lato, sans-serif',
                     }}
                   >Insérer</button>
                 </div>
