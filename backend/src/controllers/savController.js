@@ -2,6 +2,7 @@ const savModel = require('../models/savModel');
 const mailgunService = require('../services/mailgunService');
 const pool = require('../config/database');
 const { saveAttachments, toMailgunAttachments } = require('../utils/savAttachments');
+const { getTrackingStatus } = require('../services/trackingService');
 
 const savController = {
 
@@ -294,6 +295,19 @@ const savController = {
   },
 
   // ─── CRUD statuts ─────────────────────────────────────────────────────────
+
+  // ─── Statut livraison transporteur ───────────────────────────────────────────
+  getTracking: async (req, res) => {
+    try {
+      const { number } = req.params;
+      const { carrier } = req.query; // shipping_carrier WooCommerce
+      const result = await getTrackingStatus(number, carrier || '');
+      res.json({ success: true, ...result });
+    } catch (error) {
+      console.error('❌ [SAV Tracking]:', error);
+      res.status(500).json({ error: 'Erreur serveur' });
+    }
+  },
 
   getStatuses: async (req, res) => {
     try {

@@ -732,15 +732,73 @@ function ConversationPanel({ ticket, onReplySent }) {
   );
 }
 
+// ─── Badge statut livraison ───────────────────────────────────────────────────
+function TrackingBadge({ trackingNum, shippingCarrier }) {
+  const [status, setStatus] = useState(null); // null = loading, false = erreur/skip
+
+  useEffect(() => {
+    if (!trackingNum) { setStatus(false); return; }
+    let cancelled = false;
+    fetch(`/api/sav/tracking/${encodeURIComponent(trackingNum)}?carrier=${encodeURIComponent(shippingCarrier || '')}`)
+      .then(r => r.json())
+      .then(d => { if (!cancelled && d.success) setStatus(d); })
+      .catch(() => { if (!cancelled) setStatus(false); });
+    return () => { cancelled = true; };
+  }, [trackingNum, shippingCarrier]);
+
+  if (!trackingNum) return null;
+
+  // Pendant le chargement
+  if (status === null) {
+    return (
+      <span style={{
+        display: 'inline-flex', alignItems: 'center', gap: 5,
+        background: '#F0F0F0', color: C.grisM, border: `1px solid ${C.grisCL}`,
+        borderRadius: 6, padding: '3px 9px', fontSize: 11.5, fontWeight: 600,
+        animation: 'pulse 1.2s ease-in-out infinite',
+      }}>
+        <Ic.Truck color={C.grisM} />Vérification…
+      </span>
+    );
+  }
+
+  // Le badge final — cliquable vers la page de suivi
+  const label      = status?.label || 'Expédié';
+  const color      = status?.color || '#135E84';
+  const url        = status?.trackingUrl;
+  const isLight    = color === '#fff491';
+  const textColor  = isLight ? '#000' : '#fff';
+
+  return (
+    <a
+      href={url || '#'}
+      target={url ? '_blank' : undefined}
+      rel="noopener noreferrer"
+      onClick={e => { e.stopPropagation(); if (!url) e.preventDefault(); }}
+      style={{
+        display: 'inline-flex', alignItems: 'center', gap: 5,
+        background: color, color: textColor,
+        borderRadius: 6, padding: '3px 10px', fontSize: 11.5, fontWeight: 700,
+        cursor: url ? 'pointer' : 'default', textDecoration: 'none', whiteSpace: 'nowrap',
+      }}
+    >
+      <Ic.Truck color={textColor} size={11} />
+      {label}
+      {url && <Ic.External color={textColor} size={10} />}
+    </a>
+  );
+}
+
 // ─── OrderCard dépliable ──────────────────────────────────────────────────────
 function OrderCard({ order, highlighted }) {
   const [open, setOpen] = useState(!!highlighted);
 
-  const orderNum = order.wp_order_id || order.order_id;
-  const orderDate = order.post_date || order.order_date;
-  const orderTotal = order.order_total;
-  const orderStatus = order.post_status || order.order_status;
-  const trackingNum = order.tracking_number;
+  const orderNum      = order.wp_order_id || order.order_id;
+  const orderDate     = order.post_date || order.order_date;
+  const orderTotal    = order.order_total;
+  const orderStatus   = order.post_status || order.order_status;
+  const trackingNum   = order.tracking_number;
+  const shippingCarrier = order.shipping_carrier || order.order_carrier || '';
   const items = order.items || [];
 
   const trackingUrl = trackingNum ? `https://www.laposte.fr/outils/suivre-vos-envois?code=${trackingNum}` : null;
@@ -805,22 +863,7 @@ function OrderCard({ order, highlighted }) {
               display: 'inline-block', background: sc.bg, color: sc.color,
               padding: '3px 10px', borderRadius: 6, fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap',
             }}>{statusLabel(orderStatus)}</span>
-            {trackingNum && (
-              <a
-                href={trackingUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                onClick={e => e.stopPropagation()}
-                style={{
-                  display: 'inline-flex', alignItems: 'center', gap: 5,
-                  background: '#EAF3FB', color: C.bleu, border: '1px solid #BFDCEF',
-                  borderRadius: 6, padding: '3px 9px', fontSize: 11.5, fontWeight: 700,
-                  cursor: 'pointer', textDecoration: 'none',
-                }}
-              >
-                <Ic.Truck color={C.bleu} />{trackingNum}<Ic.External color={C.bleu} />
-              </a>
-            )}
+            <TrackingBadge trackingNum={trackingNum} shippingCarrier={shippingCarrier} />
           </div>
         </div>
         <span style={{ display: 'inline-flex', transition: 'transform 0.18s', transform: open ? 'rotate(180deg)' : 'none' }}>

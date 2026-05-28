@@ -50,6 +50,9 @@ router.get('/attachments/:ticketId/:filename', (req, res) => {
   res.sendFile(resolved);
 });
 
+// ─── Tracking transporteur ────────────────────────────────────────────────────
+router.get('/tracking/:number', savController.getTracking);
+
 // ─── Routes statuts ───────────────────────────────────────────────────────────
 router.get('/statuses',          savController.getStatuses);
 router.post('/statuses',         savController.createStatus);
