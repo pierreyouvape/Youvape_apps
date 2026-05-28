@@ -509,7 +509,7 @@ function TicketFieldsPanel({ ticket, onFieldChange, users }) {
   const prenom = parts[0] || '';
   const nom = parts.slice(1).join(' ') || '';
 
-  const trackingNum = ticket.order_tracking || '';
+  const trackingNum = ticket.order_tracking || ticket.order_tracking_from_order || '';
   const trackingUrl = trackingNum ? `https://www.laposte.fr/outils/suivre-vos-envois?code=${trackingNum}` : null;
 
   const [assignOpen, setAssignOpen] = useState(false);

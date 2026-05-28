@@ -111,7 +111,7 @@ class SavModel {
          o.post_status       as order_status,
          o.order_total       as order_total,
          o.post_date         as order_date,
-         o.tracking_number   as order_tracking,
+         o.tracking_number   as order_tracking_from_order,
          o.shipping_carrier  as order_carrier,
          c.first_name        as customer_first_name,
          c.last_name         as customer_last_name,
