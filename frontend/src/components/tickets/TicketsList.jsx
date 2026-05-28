@@ -246,6 +246,21 @@ export default function TicketsList({ activeView, views = [], onCountsChange, on
               <strong style={{ color: C.grisTF }}>{total}</strong> ticket{total > 1 ? 's' : ''}
             </div>
           </div>
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+            <button style={{
+              display: 'inline-flex', alignItems: 'center', gap: 6,
+              background: C.vert, color: '#fff', border: 'none',
+              borderRadius: 8, padding: '7px 14px', fontSize: 13, fontWeight: 800,
+              cursor: 'pointer', fontFamily: 'Lato, sans-serif',
+              boxShadow: '0 2px 6px rgba(74,184,102,0.35), 0 1px 0 rgba(255,255,255,0.3) inset',
+              transition: 'transform 0.15s',
+            }}
+            onMouseEnter={e => e.currentTarget.style.transform = 'translateY(-1px)'}
+            onMouseLeave={e => e.currentTarget.style.transform = 'translateY(0)'}
+            >
+              <IconPlay /> Play
+            </button>
+          </div>
         </div>
       </div>
 
