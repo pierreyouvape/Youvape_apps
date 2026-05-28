@@ -134,6 +134,27 @@ function AttachmentItem({ att, ticketId }) {
   );
 }
 
+// ─── Rendu texte avec liens markdown ──────────────────────────────────────────
+function renderBody(text) {
+  if (!text) return null;
+  // Découpe sur les liens markdown [texte](url)
+  const parts = [];
+  const re = /\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g;
+  let last = 0, match;
+  while ((match = re.exec(text)) !== null) {
+    if (match.index > last) parts.push(text.slice(last, match.index));
+    parts.push(
+      <a key={match.index} href={match[2]} target="_blank" rel="noopener noreferrer"
+        style={{ color: TICKETS_COLOR, fontWeight: 600, textDecoration: 'underline', wordBreak: 'break-all' }}>
+        {match[1]}
+      </a>
+    );
+    last = match.index + match[0].length;
+  }
+  if (last < text.length) parts.push(text.slice(last));
+  return parts;
+}
+
 // ─── Message style messagerie ─────────────────────────────────────────────────
 function Message({ msg, ticketId }) {
   const atts = msg.attachments || [];
@@ -188,7 +209,7 @@ function Message({ msg, ticketId }) {
           boxShadow: boxShadowBubble,
           maxWidth: '100%',
         }}>
-          {msg.body}
+          {renderBody(msg.body)}
         </div>
         {/* Pièces jointes */}
         {atts.length > 0 && (
