@@ -123,8 +123,8 @@ export default function TicketsList({ activeView, views = [], onCountsChange, on
         limit: PAGE_SIZE,
         offset: page * PAGE_SIZE,
       });
-      // Ajouter les statuts comme tableau
-      statusesFilter.forEach(s => params.append('sav_statuses[]', s));
+      // Ajouter les statuts comme paramètres répétés (Express qs les parse en tableau)
+      statusesFilter.forEach(s => params.append('sav_statuses', s));
       const res = await fetch(`${API}?${params}`);
       const data = await res.json();
       if (data.success) { setTickets(data.tickets); setTotal(data.total); }
@@ -138,7 +138,7 @@ export default function TicketsList({ activeView, views = [], onCountsChange, on
       const results = {};
       await Promise.all(views.map(async v => {
         const p = new URLSearchParams({ limit: 1, offset: 0 });
-        (v.statuses || []).forEach(s => p.append('sav_statuses[]', s));
+        (v.statuses || []).forEach(s => p.append('sav_statuses', s));
         const res = await fetch(`${API}?${p}`);
         const data = await res.json();
         if (data.success) results[v.id] = data.total;
