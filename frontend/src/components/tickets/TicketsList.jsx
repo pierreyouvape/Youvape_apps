@@ -246,8 +246,6 @@ export default function TicketsList({ activeView, views = [], onCountsChange, on
               <strong style={{ color: C.grisTF }}>{total}</strong> ticket{total > 1 ? 's' : ''}
             </div>
           </div>
-          <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-        </div>
       </div>
 
       {/* ── Table ────────────────────────────────────────────────── */}
