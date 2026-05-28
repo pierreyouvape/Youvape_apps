@@ -702,11 +702,6 @@ function ConversationPanel({ ticket, onReplySent }) {
             <strong style={{ color: C.grisF }}>{formatDate(ticket.created_at)}</strong>
           </div>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
-          <button style={iconBtn()}><Ic.Pin /></button>
-          <button style={iconBtn()}><Ic.History /></button>
-          <button style={iconBtn()}><Ic.More /></button>
-        </div>
       </div>
 
       {/* Thread */}
@@ -1201,20 +1196,6 @@ export default function TicketDetail({ ticketId }) {
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-          <button
-            onClick={() => handleStatusChange('terminé')}
-            style={{
-              background: C.blanc, color: C.grisF, border: `1px solid ${C.grisCL}`,
-              borderRadius: 8, padding: '7px 13px', fontSize: 12.5, fontWeight: 700,
-              cursor: 'pointer', fontFamily: 'Lato, sans-serif',
-            }}
-          >Marquer résolu</button>
-          <button style={{
-            background: C.vert, color: '#fff', border: 'none',
-            borderRadius: 8, padding: '7px 14px', fontSize: 13, fontWeight: 800,
-            cursor: 'pointer', fontFamily: 'Lato, sans-serif',
-            boxShadow: '0 2px 6px rgba(74,184,102,0.35), 0 1px 0 rgba(255,255,255,0.3) inset',
-          }}>Soumettre</button>
         </div>
       </header>
 
