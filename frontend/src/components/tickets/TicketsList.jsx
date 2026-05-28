@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import StatusBadge from './StatusBadge';
-import { TICKETS_COLOR, DEFAULT_VIEWS } from './ticketConstants';
+import { TICKETS_COLOR } from './ticketConstants';
 import { formatDate } from '../../utils/dateUtils';
 
 const C = {
@@ -102,7 +102,7 @@ function Checkbox({ checked, indeterminate, onChange }) {
 }
 
 /* ─── Composant principal ─────────────────────────────────────────────────────── */
-export default function TicketsList({ activeView, onCountsChange, onRefresh, refreshTick }) {
+export default function TicketsList({ activeView, views = [], onCountsChange, onRefresh, refreshTick }) {
   const navigate = useNavigate();
   const [tickets, setTickets] = useState([]);
   const [total, setTotal] = useState(0);
@@ -111,42 +111,45 @@ export default function TicketsList({ activeView, onCountsChange, onRefresh, ref
   const [sort, setSort] = useState({ key: 'updated', dir: 'desc' });
   const [selected, setSelected] = useState(new Set());
 
-  const view = DEFAULT_VIEWS.find(v => v.id === activeView);
-  const statusFilter = view?.status ?? null;
+  // activeView est maintenant l'objet vue complet (avec .statuses tableau)
+  const statusesFilter = activeView?.statuses || []; // [] = tous
 
   /* ── Fetch tickets ── */
   const fetchTickets = useCallback(async () => {
+    if (!activeView) return;
     setLoading(true);
     try {
       const params = new URLSearchParams({
         limit: PAGE_SIZE,
         offset: page * PAGE_SIZE,
-        ...(statusFilter && { sav_status: statusFilter }),
       });
+      // Ajouter les statuts comme tableau
+      statusesFilter.forEach(s => params.append('sav_statuses[]', s));
       const res = await fetch(`${API}?${params}`);
       const data = await res.json();
       if (data.success) { setTickets(data.tickets); setTotal(data.total); }
     } finally { setLoading(false); }
-  }, [statusFilter, page, refreshTick]);
+  }, [activeView, statusesFilter.join(','), page, refreshTick]);
 
   /* ── Fetch counts pour sidebar ── */
   const fetchCounts = useCallback(async () => {
-    if (!onCountsChange) return;
+    if (!onCountsChange || views.length === 0) return;
     try {
       const results = {};
-      await Promise.all(DEFAULT_VIEWS.map(async v => {
-        const p = new URLSearchParams({ limit: 1, offset: 0, ...(v.status && { sav_status: v.status }) });
+      await Promise.all(views.map(async v => {
+        const p = new URLSearchParams({ limit: 1, offset: 0 });
+        (v.statuses || []).forEach(s => p.append('sav_statuses[]', s));
         const res = await fetch(`${API}?${p}`);
         const data = await res.json();
         if (data.success) results[v.id] = data.total;
       }));
       onCountsChange(results);
     } catch {}
-  }, [onCountsChange, refreshTick]);
+  }, [onCountsChange, views, refreshTick]);
 
   useEffect(() => { fetchTickets(); }, [fetchTickets]);
   useEffect(() => { fetchCounts(); }, [fetchCounts]);
-  useEffect(() => { setPage(0); setSelected(new Set()); }, [activeView]);
+  useEffect(() => { setPage(0); setSelected(new Set()); }, [activeView?.id]);
 
   /* ── Tri local ── */
   const sortedTickets = [...tickets].sort((a, b) => {
@@ -206,7 +209,7 @@ export default function TicketsList({ activeView, onCountsChange, onRefresh, ref
           </div>
           <span style={{ fontSize: 16, fontWeight: 800, color: C.grisTF, fontFamily: "'Tilt Warp', cursive" }}>Tickets</span>
           <span style={{ color: C.grisCL }}>/</span>
-          <span style={{ fontSize: 13, color: C.grisF, fontWeight: 600 }}>{view?.label || 'Tous'}</span>
+          <span style={{ fontSize: 13, color: C.grisF, fontWeight: 600 }}>{activeView?.label || 'Tous'}</span>
         </div>
         {/* Bouton Nouveau ticket */}
         <button
@@ -238,7 +241,7 @@ export default function TicketsList({ activeView, onCountsChange, onRefresh, ref
               fontSize: 26, fontWeight: 800, color: C.grisTF,
               fontFamily: "'Tilt Warp', cursive",
               letterSpacing: '-0.4px', margin: '0 0 4px',
-            }}>{view?.label || 'Tous les tickets'}</h1>
+            }}>{activeView?.label || 'Tous les tickets'}</h1>
             <div style={{ fontSize: 13, color: C.grisM, fontWeight: 600 }}>
               <strong style={{ color: C.grisTF }}>{total}</strong> ticket{total > 1 ? 's' : ''}
             </div>

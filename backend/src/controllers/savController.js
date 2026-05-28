@@ -1,4 +1,5 @@
 const savModel = require('../models/savModel');
+const savViewModel = require('../models/savViewModel');
 const mailgunService = require('../services/mailgunService');
 const pool = require('../config/database');
 const { saveAttachments, toMailgunAttachments } = require('../utils/savAttachments');
@@ -129,12 +130,17 @@ const savController = {
   // ─── Liste des tickets ────────────────────────────────────────────────────
   getAll: async (req, res) => {
     try {
-      const { limit = 50, offset = 0, sav_status, search } = req.query;
+      const { limit = 50, offset = 0, sav_status, sav_statuses, search } = req.query;
+      // sav_statuses peut arriver comme ?sav_statuses[]=ouvert&sav_statuses[]=accepté
+      const statusesArray = sav_statuses
+        ? (Array.isArray(sav_statuses) ? sav_statuses : [sav_statuses])
+        : null;
       const { tickets, total } = await savModel.getAll({
-        limit:      parseInt(limit),
-        offset:     parseInt(offset),
-        sav_status: sav_status || null,
-        search:     search || null,
+        limit:         parseInt(limit),
+        offset:        parseInt(offset),
+        sav_status:    sav_status || null,
+        sav_statuses:  statusesArray,
+        search:        search || null,
       });
       res.json({ success: true, tickets, total });
     } catch (error) {
@@ -305,6 +311,66 @@ const savController = {
       res.json({ success: true, ...result });
     } catch (error) {
       console.error('❌ [SAV Tracking]:', error);
+      res.status(500).json({ error: 'Erreur serveur' });
+    }
+  },
+
+  // ─── CRUD vues ────────────────────────────────────────────────────────────────
+
+  getViews: async (req, res) => {
+    try {
+      const views = await savViewModel.getAll();
+      res.json({ success: true, views });
+    } catch (e) {
+      console.error('❌ [SAV Views] getViews:', e);
+      res.status(500).json({ error: 'Erreur serveur' });
+    }
+  },
+
+  createView: async (req, res) => {
+    try {
+      const { label, statuses } = req.body;
+      if (!label) return res.status(400).json({ error: 'label requis' });
+      const view = await savViewModel.create({ label, statuses: statuses || [] });
+      res.status(201).json({ success: true, view });
+    } catch (e) {
+      console.error('❌ [SAV Views] createView:', e);
+      res.status(500).json({ error: 'Erreur serveur' });
+    }
+  },
+
+  updateView: async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { label, statuses } = req.body;
+      if (!label) return res.status(400).json({ error: 'label requis' });
+      const view = await savViewModel.update(id, { label, statuses: statuses || [] });
+      if (!view) return res.status(404).json({ error: 'Vue introuvable' });
+      res.json({ success: true, view });
+    } catch (e) {
+      console.error('❌ [SAV Views] updateView:', e);
+      res.status(500).json({ error: 'Erreur serveur' });
+    }
+  },
+
+  reorderViews: async (req, res) => {
+    try {
+      const { ids } = req.body;
+      if (!Array.isArray(ids)) return res.status(400).json({ error: 'ids[] requis' });
+      await savViewModel.reorder(ids);
+      res.json({ success: true });
+    } catch (e) {
+      console.error('❌ [SAV Views] reorderViews:', e);
+      res.status(500).json({ error: 'Erreur serveur' });
+    }
+  },
+
+  deleteView: async (req, res) => {
+    try {
+      await savViewModel.delete(req.params.id);
+      res.json({ success: true });
+    } catch (e) {
+      console.error('❌ [SAV Views] deleteView:', e);
       res.status(500).json({ error: 'Erreur serveur' });
     }
   },

@@ -53,6 +53,13 @@ router.get('/attachments/:ticketId/:filename', (req, res) => {
 // ─── Tracking transporteur ────────────────────────────────────────────────────
 router.get('/tracking/:number', savController.getTracking);
 
+// ─── Routes vues ──────────────────────────────────────────────────────────────
+router.get('/views',              savController.getViews);
+router.post('/views',             savController.createView);
+router.put('/views/reorder',      savController.reorderViews);
+router.put('/views/:id',          savController.updateView);
+router.delete('/views/:id',       savController.deleteView);
+
 // ─── Routes statuts ───────────────────────────────────────────────────────────
 router.get('/statuses',          savController.getStatuses);
 router.post('/statuses',         savController.createStatus);

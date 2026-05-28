@@ -1,17 +1,11 @@
-import { DEFAULT_VIEWS, TICKETS_COLOR } from './ticketConstants';
+import { useNavigate } from 'react-router-dom';
+import { TICKETS_COLOR } from './ticketConstants';
 
 const C = {
   grisTL: '#F2F6F8', grisCL: '#E2E2E2', grisM: '#8A99A4',
   grisF: '#626E85', grisTF: '#2a2e38', blanc: '#fff',
 };
 
-function IconPlus() {
-  return (
-    <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke={TICKETS_COLOR} strokeWidth="2.2" strokeLinecap="round">
-      <path d="M12 5v14M5 12h14"/>
-    </svg>
-  );
-}
 function IconRefresh() {
   return (
     <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke={C.grisM} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
@@ -19,15 +13,18 @@ function IconRefresh() {
     </svg>
   );
 }
-function IconExternalLink() {
+function IconSettings() {
   return (
     <svg width={11} height={11} viewBox="0 0 24 24" fill="none" stroke={TICKETS_COLOR} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M7 17L17 7M9 7h8v8"/>
+      <circle cx="12" cy="12" r="3"/>
+      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
     </svg>
   );
 }
 
-export default function ViewsSidebar({ activeView, onViewChange, counts = {}, onRefresh }) {
+export default function ViewsSidebar({ views = [], activeView, onViewChange, counts = {}, onRefresh }) {
+  const navigate = useNavigate();
+
   return (
     <aside style={{
       width: 260, minWidth: 260, flexShrink: 0,
@@ -47,40 +44,25 @@ export default function ViewsSidebar({ activeView, onViewChange, counts = {}, on
           fontFamily: "'Tilt Warp', cursive",
           letterSpacing: '-0.3px', margin: 0,
         }}>Vues</h2>
-        <div style={{ display: 'flex', gap: 4 }}>
-          <button
-            title="Créer une vue"
-            style={{
-              width: 28, height: 28, borderRadius: 6,
-              background: 'transparent', border: 'none',
-              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-              cursor: 'pointer', padding: 0, transition: 'background 0.12s',
-            }}
-            onMouseEnter={e => e.currentTarget.style.background = C.grisTL}
-            onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-          >
-            <IconPlus />
-          </button>
-          <button
-            title="Rafraîchir"
-            onClick={onRefresh}
-            style={{
-              width: 28, height: 28, borderRadius: 6,
-              background: 'transparent', border: 'none',
-              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-              cursor: 'pointer', padding: 0, transition: 'background 0.12s',
-            }}
-            onMouseEnter={e => e.currentTarget.style.background = C.grisTL}
-            onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-          >
-            <IconRefresh />
-          </button>
-        </div>
+        <button
+          title="Rafraîchir"
+          onClick={onRefresh}
+          style={{
+            width: 28, height: 28, borderRadius: 6,
+            background: 'transparent', border: 'none',
+            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+            cursor: 'pointer', padding: 0, transition: 'background 0.12s',
+          }}
+          onMouseEnter={e => e.currentTarget.style.background = C.grisTL}
+          onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+        >
+          <IconRefresh />
+        </button>
       </div>
 
       {/* Liste des vues */}
       <div style={{ flex: 1, overflowY: 'auto', padding: '8px 0' }}>
-        {DEFAULT_VIEWS.map(view => {
+        {views.map(view => {
           const active = activeView === view.id;
           const count = counts[view.id] ?? null;
           return (
@@ -123,23 +105,19 @@ export default function ViewsSidebar({ activeView, onViewChange, counts = {}, on
         })}
       </div>
 
-      {/* Footer */}
-      <div style={{
-        padding: '14px 20px',
-        borderTop: `1px solid ${C.grisCL}`,
-      }}>
-        <a
-          href="#"
-          onClick={e => e.preventDefault()}
+      {/* Footer — lien paramètres */}
+      <div style={{ padding: '14px 20px', borderTop: `1px solid ${C.grisCL}` }}>
+        <button
+          onClick={() => navigate('/tickets/settings')}
           style={{
             display: 'inline-flex', alignItems: 'center', gap: 6,
             fontSize: 12.5, color: TICKETS_COLOR, fontWeight: 700,
-            textDecoration: 'none',
+            background: 'none', border: 'none', cursor: 'pointer', padding: 0,
           }}
         >
           Gérer les vues
-          <IconExternalLink />
-        </a>
+          <IconSettings />
+        </button>
       </div>
     </aside>
   );

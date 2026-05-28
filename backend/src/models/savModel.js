@@ -53,14 +53,18 @@ class SavModel {
   }
 
   // ─── Liste avec filtres, recherche et pagination ──────────────────────────
-  async getAll({ limit = 50, offset = 0, sav_status, search } = {}) {
+  async getAll({ limit = 50, offset = 0, sav_status, sav_statuses, search } = {}) {
     const conditions = [];
     const values = [];
     let idx = 1;
 
-    if (sav_status) {
-      conditions.push(`t.sav_status = $${idx++}`);
-      values.push(sav_status);
+    // sav_statuses = tableau (vues dynamiques), sav_status = string unique (compat)
+    const statusArray = sav_statuses?.length ? sav_statuses
+      : sav_status ? [sav_status] : [];
+
+    if (statusArray.length > 0) {
+      conditions.push(`t.sav_status = ANY($${idx++}::text[])`);
+      values.push(statusArray);
     }
 
     if (search) {
