@@ -4,6 +4,7 @@ import ViewsSidebar from '../components/tickets/ViewsSidebar';
 import TicketsList from '../components/tickets/TicketsList';
 import TicketDetail from '../components/tickets/TicketDetail';
 import TicketTabsBar from '../components/tickets/TicketTabsBar';
+import { applyViewsOrder, loadViewsOrder } from '../components/tickets/viewsOrder';
 import { OpenTicketsProvider, useOpenTickets } from '../context/OpenTicketsContext';
 
 // ─── Contenu enveloppé par OpenTicketsProvider ────────────────────────────────
@@ -21,7 +22,10 @@ function TicketsAppInner() {
       .then(d => {
         if (d.success && d.views.length > 0) {
           setViews(d.views);
-          setActiveView(d.views[0].id); // première vue par défaut
+          // Sélectionner la première vue dans l'ordre custom de l'utilisateur
+          // (drag & drop persisté en localStorage)
+          const ordered = applyViewsOrder(d.views, loadViewsOrder());
+          setActiveView(ordered[0].id);
         }
       })
       .catch(() => {});

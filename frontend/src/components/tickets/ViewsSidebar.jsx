@@ -1,13 +1,12 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { TICKETS_COLOR } from './ticketConstants';
+import { loadViewsOrder, saveViewsOrder, applyViewsOrder } from './viewsOrder';
 
 const C = {
   grisTL: '#F2F6F8', grisCL: '#E2E2E2', grisM: '#8A99A4',
   grisF: '#626E85', grisTF: '#2a2e38', blanc: '#fff',
 };
-
-const STORAGE_KEY = 'yv.tickets.views.order';
 
 function IconRefresh() {
   return (
@@ -34,37 +33,20 @@ function IconGrip() {
   );
 }
 
-// Lire/écrire l'ordre local
-function loadOrder() {
-  try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || []; } catch { return []; }
-}
-function saveOrder(ids) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(ids));
-}
-
-// Appliquer l'ordre local sur les vues
-function applyOrder(views, order) {
-  if (!order.length) return views;
-  const indexed = Object.fromEntries(views.map(v => [v.id, v]));
-  const sorted = order.filter(id => indexed[id]).map(id => indexed[id]);
-  const rest = views.filter(v => !order.includes(v.id));
-  return [...sorted, ...rest];
-}
-
 export default function ViewsSidebar({ views = [], activeView, onViewChange, counts = {}, onRefresh }) {
   const navigate = useNavigate();
 
-  // Ordre local (localStorage)
-  const [localOrder, setLocalOrder] = useState(() => loadOrder());
-  const orderedViews = applyOrder(views, localOrder);
+  // Ordre local (localStorage, partagé avec TicketsApp)
+  const [localOrder, setLocalOrder] = useState(() => loadViewsOrder());
+  const orderedViews = applyViewsOrder(views, localOrder);
 
   // Sync si de nouvelles vues arrivent (pas encore dans l'ordre local)
   useEffect(() => {
     const ids = views.map(v => v.id);
-    const ordered = applyOrder(views, localOrder).map(v => v.id);
+    const ordered = applyViewsOrder(views, localOrder).map(v => v.id);
     if (JSON.stringify(ordered) !== JSON.stringify(localOrder.filter(id => ids.includes(id)))) {
       setLocalOrder(ordered);
-      saveOrder(ordered);
+      saveViewsOrder(ordered);
     }
   }, [views]);
 
@@ -101,7 +83,7 @@ export default function ViewsSidebar({ views = [], activeView, onViewChange, cou
     newOrder.splice(dropIdx, 0, moved);
     const ids = newOrder.map(v => v.id);
     setLocalOrder(ids);
-    saveOrder(ids);
+    saveViewsOrder(ids);
     setDragOver(null);
     setDragging(false);
     dragIdx.current = null;
