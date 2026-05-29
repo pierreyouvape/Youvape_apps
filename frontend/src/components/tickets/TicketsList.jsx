@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import StatusBadge from './StatusBadge';
 import { TICKETS_COLOR } from './ticketConstants';
 import { formatDate } from '../../utils/dateUtils';
+import { useOpenTickets } from '../../context/OpenTicketsContext';
 
 const C = {
   grisTL: '#F2F6F8', grisCL: '#E2E2E2', grisM: '#8A99A4',
@@ -104,6 +105,7 @@ function Checkbox({ checked, indeterminate, onChange }) {
 /* ─── Composant principal ─────────────────────────────────────────────────────── */
 export default function TicketsList({ activeView, views = [], onCountsChange, onRefresh, refreshTick }) {
   const navigate = useNavigate();
+  const { openTicket } = useOpenTickets();
   const [tickets, setTickets] = useState([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -326,7 +328,11 @@ export default function TicketsList({ activeView, views = [], onCountsChange, on
                     return (
                       <tr
                         key={t.id}
-                        onClick={() => navigate(`/tickets/${t.id}`)}
+                        onClick={e => openTicket(t, { background: e.metaKey || e.ctrlKey })}
+                        onMouseDown={e => {
+                          // Middle-click = ouvrir en arrière-plan
+                          if (e.button === 1) { e.preventDefault(); openTicket(t, { background: true }); }
+                        }}
                         style={{
                           background: isSel ? `rgba(8,145,178,0.06)` : 'transparent',
                           cursor: 'pointer', transition: 'background 0.12s',

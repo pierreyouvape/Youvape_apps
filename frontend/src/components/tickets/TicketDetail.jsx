@@ -5,6 +5,7 @@ import { useTicketStatuses } from './useTicketStatuses';
 import { TICKETS_COLOR } from './ticketConstants';
 import { formatDate } from '../../utils/dateUtils';
 import { AuthContext } from '../../context/AuthContext';
+import { useOpenTickets } from '../../context/OpenTicketsContext';
 
 const C = {
   orange: '#E28F00', rouge: '#DE2020',
@@ -1467,6 +1468,7 @@ function CustomerPanel({ ticket }) {
 export default function TicketDetail({ ticketId }) {
   const navigate = useNavigate();
   const { user, token } = useContext(AuthContext);
+  const tabsCtx = useOpenTickets(); // peut être null si rendu hors provider
   const [ticket, setTicket] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -1482,6 +1484,22 @@ export default function TicketDetail({ ticketId }) {
     } catch { setError('Erreur de chargement'); }
     finally { setLoading(false); }
   }, [ticketId]);
+
+  // Sync les méta dans la barre d'onglets quand le ticket change (titre, statut)
+  useEffect(() => {
+    if (!ticket || !tabsCtx) return;
+    tabsCtx.updateTicketMeta(ticket.id, {
+      subject: ticket.subject,
+      customer_name: ticket.customer_name,
+      sav_status: ticket.sav_status,
+    });
+  }, [ticket?.id, ticket?.subject, ticket?.customer_name, ticket?.sav_status]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Bouton retour : vers liste si dans onglets, sinon navigate
+  const handleBack = useCallback(() => {
+    if (tabsCtx) tabsCtx.setActiveTab('list');
+    else navigate('/tickets');
+  }, [tabsCtx, navigate]);
 
   // Charger la liste des agents (utilisateurs de l'app)
   useEffect(() => {
@@ -1544,7 +1562,7 @@ export default function TicketDetail({ ticketId }) {
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 14, minWidth: 0 }}>
           <button
-            onClick={() => navigate('/tickets')}
+            onClick={handleBack}
             style={{
               display: 'inline-flex', alignItems: 'center', gap: 7,
               background: `linear-gradient(155deg, ${TICKETS_COLOR}, ${shade(TICKETS_COLOR, -0.2)})`,
@@ -1552,7 +1570,7 @@ export default function TicketDetail({ ticketId }) {
               fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'Lato, sans-serif', flexShrink: 0,
               boxShadow: `0 2px 6px ${TICKETS_COLOR}40, 0 1px 0 rgba(255,255,255,0.35) inset`,
             }}
-          ><Ic.Back /> À traiter</button>
+          ><Ic.Back /> Liste</button>
 
           <span style={{ fontSize: 13, color: C.grisM, fontWeight: 600, whiteSpace: 'nowrap' }}>Tickets / À traiter /</span>
           <strong style={{ fontSize: 14.5, color: C.grisTF, fontFamily: "'Tilt Warp', cursive", whiteSpace: 'nowrap' }}>
