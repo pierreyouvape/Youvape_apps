@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useContext } from 'react';
 import { useNavigate } from 'react-router-dom';
 import StatusBadge from './StatusBadge';
+import { useTicketStatuses } from './useTicketStatuses';
 import { TICKETS_COLOR } from './ticketConstants';
 import { formatDate } from '../../utils/dateUtils';
 import { AuthContext } from '../../context/AuthContext';
@@ -160,10 +161,14 @@ function Message({ msg, ticketId }) {
   const atts = msg.attachments || [];
   const isPrivate = !!msg.is_private;
   const isAgent = !!msg.is_agent;
+  const sendFailed = !!msg.send_failed;
 
   // Couleurs bulle
   let bgBubble, borderBubble, boxShadowBubble;
-  if (isPrivate) {
+  if (sendFailed) {
+    bgBubble = '#FDEAEA'; borderBubble = '#E89A9A';
+    boxShadowBubble = '0 1px 4px rgba(183,29,29,0.12)';
+  } else if (isPrivate) {
     bgBubble = '#FFFDE7'; borderBubble = '#F6C613';
     boxShadowBubble = '0 1px 4px rgba(246,198,19,0.15)';
   } else if (isAgent) {
@@ -196,6 +201,13 @@ function Message({ msg, ticketId }) {
               borderRadius: 4, padding: '1px 6px',
             }}>Note privée</span>
           )}
+          {sendFailed && (
+            <span style={{
+              fontSize: 10, fontWeight: 700, color: '#B71D1D',
+              background: '#FFE5E5', border: '1px solid #E89A9A',
+              borderRadius: 4, padding: '1px 6px',
+            }}>⚠ Non envoyé</span>
+          )}
           <span style={{ fontSize: 11, color: C.grisM }}>{formatDate(msg.date, { time: true })}</span>
         </div>
         {/* Bulle */}
@@ -211,6 +223,14 @@ function Message({ msg, ticketId }) {
         }}>
           {renderBody(msg.body)}
         </div>
+        {sendFailed && msg.error && (
+          <div style={{
+            marginTop: 4, fontSize: 11.5, color: '#B71D1D', fontWeight: 600,
+            alignSelf: isAgent ? 'flex-end' : 'flex-start',
+          }}>
+            Ce message n'a pas été envoyé — {msg.error}
+          </div>
+        )}
         {/* Pièces jointes */}
         {atts.length > 0 && (
           <div style={{ display: 'flex', flexWrap: 'wrap', marginTop: 4, justifyContent: isAgent ? 'flex-end' : 'flex-start' }}>
@@ -226,7 +246,7 @@ function Message({ msg, ticketId }) {
 const EMOJIS = ['😊','👍','🙏','😔','✅','❌','⚠️','📦','🚚','🔄','💡','📞','✉️','🎁','⏳','💰','🔍','📋','👋','😅'];
 
 // ─── Composer ─────────────────────────────────────────────────────────────────
-function ReplyComposer({ ticketId, demandeur, agentName, onReplySent }) {
+function ReplyComposer({ ticketId, demandeur, agentName, currentStatus, onReplySent, onSendFailed, onStatusChange }) {
   const [body, setBody] = useState(() => localStorage.getItem(`yv.tickets.draft.${ticketId}`) || '');
   const [isPrivate, setIsPrivate] = useState(false);
   const [modeOpen, setModeOpen] = useState(false);
@@ -238,11 +258,26 @@ function ReplyComposer({ ticketId, demandeur, agentName, onReplySent }) {
   const [linkUrl, setLinkUrl] = useState('');
   const [linkText, setLinkText] = useState('');
   const [linkSelection, setLinkSelection] = useState({ start: 0, end: 0 });
+  const [selectedStatus, setSelectedStatus] = useState(currentStatus);
+  const [statusOpen, setStatusOpen] = useState(false);
+  const { statuses, statusMap } = useTicketStatuses();
   const fileRef = useRef();
   const modeRef = useRef();
   const textareaRef = useRef();
   const emojiRef = useRef();
   const linkRef = useRef();
+  const statusRef = useRef();
+
+  // Resynchroniser le statut sélectionné quand le ticket change
+  useEffect(() => { setSelectedStatus(currentStatus); }, [currentStatus, ticketId]);
+
+  // Fermer dropdown statut si clic extérieur
+  useEffect(() => {
+    if (!statusOpen) return;
+    const handler = (e) => { if (statusRef.current && !statusRef.current.contains(e.target)) setStatusOpen(false); };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [statusOpen]);
 
   // Fermer emoji picker si clic extérieur
   useEffect(() => {
@@ -325,9 +360,29 @@ function ReplyComposer({ ticketId, demandeur, agentName, onReplySent }) {
 
   const removeFile = (i) => setFiles(prev => prev.filter((_, idx) => idx !== i));
 
+  // Envoi : si message/PJ -> POST reply, puis si OK et statut a changé -> PUT status.
+  // Si pas de message ni PJ -> juste changer le statut (si différent).
   const handleSend = async () => {
-    if (!body.trim() && files.length === 0) return;
+    const hasContent = body.trim().length > 0 || files.length > 0;
+    const statusChanged = selectedStatus && selectedStatus !== currentStatus;
+
+    if (!hasContent && !statusChanged) return;
+
     setSending(true); setError('');
+
+    // Cas 1 : pas de message, juste un changement de statut
+    if (!hasContent && statusChanged) {
+      try {
+        await onStatusChange(selectedStatus);
+      } catch (e) {
+        setError(e.message || 'Erreur changement statut');
+      } finally {
+        setSending(false);
+      }
+      return;
+    }
+
+    // Cas 2 : envoi du message (+ éventuel changement de statut ensuite)
     try {
       const fd = new FormData();
       fd.append('body', body);
@@ -337,17 +392,41 @@ function ReplyComposer({ ticketId, demandeur, agentName, onReplySent }) {
       const res = await fetch(`${API}/${ticketId}/reply`, { method: 'POST', body: fd });
       const data = await res.json();
       if (!data.success) throw new Error(data.error || 'Erreur envoi');
+
+      // Reply OK → vider composer
       setBody(''); setFiles([]);
       localStorage.removeItem(`yv.tickets.draft.${ticketId}`);
       onReplySent(data.ticket);
+
+      // Si statut a changé → l'appliquer maintenant
+      if (statusChanged) {
+        try { await onStatusChange(selectedStatus); } catch { /* erreur silencieuse, le reply a réussi */ }
+      }
     } catch (e) {
+      // Reply échoué : on n'applique PAS le changement de statut, on remonte un message local "Non envoyé"
+      onSendFailed?.({
+        from: agentName || 'SAV Youvape',
+        body,
+        is_agent: true,
+        is_private: isPrivate,
+        date: new Date().toISOString(),
+        attachments: [],
+        send_failed: true,
+        error: e.message,
+      });
       setError(e.message);
     } finally {
       setSending(false);
     }
   };
 
-  const canSend = body.trim().length > 0 || files.length > 0;
+  const hasContent = body.trim().length > 0 || files.length > 0;
+  const statusChanged = selectedStatus && selectedStatus !== currentStatus;
+  const canSend = hasContent || statusChanged;
+  const currentStatusLabel = statusMap[selectedStatus]?.label || selectedStatus || '—';
+  const sendBtnLabel = !hasContent && statusChanged
+    ? `Marquer ${currentStatusLabel}`
+    : `Envoyer comme ${currentStatusLabel}`;
 
   // Couleurs selon le mode
   const borderColor = body.length > 0
@@ -633,20 +712,86 @@ function ReplyComposer({ ticketId, demandeur, agentName, onReplySent }) {
           borderRadius: 8, padding: '8px 16px', fontSize: 13, fontWeight: 700,
           cursor: 'pointer', fontFamily: 'Lato, sans-serif',
         }}>Ignorer</button>
-        <button
-          onClick={handleSend}
-          disabled={sending || !canSend}
-          style={{
-            display: 'inline-flex', alignItems: 'center', gap: 7,
-            background: (sending || !canSend) ? C.grisM : `linear-gradient(155deg, ${TICKETS_COLOR}, ${shade(TICKETS_COLOR, -0.2)})`,
-            color: '#fff', border: 'none', borderRadius: 8, padding: '8px 18px',
-            fontSize: 13, fontWeight: 800, cursor: (sending || !canSend) ? 'not-allowed' : 'pointer',
-            fontFamily: 'Lato, sans-serif',
-            boxShadow: (sending || !canSend) ? 'none' : `0 4px 12px ${TICKETS_COLOR}40, 0 1px 0 rgba(255,255,255,0.4) inset`,
-          }}
-        >
-          <Ic.Send /> {sending ? 'Envoi…' : 'Envoyer →'}
-        </button>
+
+        {/* ── Split-button : Envoyer comme [Statut] ▾ ─────────────────────── */}
+        <div style={{ position: 'relative', display: 'inline-flex' }} ref={statusRef}>
+          {/* Partie gauche : envoi */}
+          <button
+            onClick={handleSend}
+            disabled={sending || !canSend}
+            style={{
+              display: 'inline-flex', alignItems: 'center', gap: 7,
+              background: (sending || !canSend) ? C.grisM : `linear-gradient(155deg, ${TICKETS_COLOR}, ${shade(TICKETS_COLOR, -0.2)})`,
+              color: '#fff', border: 'none', borderRadius: '8px 0 0 8px', padding: '8px 16px',
+              fontSize: 13, fontWeight: 700, cursor: (sending || !canSend) ? 'not-allowed' : 'pointer',
+              fontFamily: 'Lato, sans-serif',
+              boxShadow: (sending || !canSend) ? 'none' : `0 4px 12px ${TICKETS_COLOR}40, 0 1px 0 rgba(255,255,255,0.4) inset`,
+              borderRight: '1px solid rgba(255,255,255,0.25)',
+            }}
+          >
+            <Ic.Send /> {sending ? 'Envoi…' : (
+              <span>
+                {hasContent ? 'Envoyer comme ' : 'Marquer '}
+                <strong style={{ fontWeight: 800 }}>{currentStatusLabel}</strong>
+              </span>
+            )}
+          </button>
+          {/* Partie droite : flèche dropdown */}
+          <button
+            onClick={() => setStatusOpen(o => !o)}
+            disabled={sending}
+            style={{
+              background: sending ? C.grisM : `linear-gradient(155deg, ${TICKETS_COLOR}, ${shade(TICKETS_COLOR, -0.2)})`,
+              color: '#fff', border: 'none', borderRadius: '0 8px 8px 0',
+              padding: '8px 10px', cursor: sending ? 'not-allowed' : 'pointer',
+              display: 'inline-flex', alignItems: 'center',
+              boxShadow: sending ? 'none' : `0 4px 12px ${TICKETS_COLOR}40, 0 1px 0 rgba(255,255,255,0.4) inset`,
+            }}
+            title="Changer le statut"
+          >
+            <span style={{ display: 'inline-flex', transform: statusOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.18s' }}>
+              <Ic.Chev color="#fff" size={12} />
+            </span>
+          </button>
+
+          {/* Dropdown statuts (ouvre vers le HAUT) */}
+          {statusOpen && (
+            <div style={{
+              position: 'absolute', bottom: '100%', right: 0, marginBottom: 6, zIndex: 200,
+              background: C.blanc, border: `1px solid ${C.grisCL}`, borderRadius: 10,
+              boxShadow: '0 -6px 24px rgba(0,0,0,0.12)', overflow: 'hidden',
+              minWidth: 280, maxHeight: 380, overflowY: 'auto',
+            }}>
+              {statuses.length === 0 && (
+                <div style={{ padding: 14, fontSize: 12.5, color: C.grisM, textAlign: 'center' }}>Aucun statut disponible</div>
+              )}
+              {statuses.map(s => {
+                const isSelected = s.value === selectedStatus;
+                return (
+                  <button
+                    key={s.value}
+                    onClick={() => { setSelectedStatus(s.value); setStatusOpen(false); }}
+                    style={{
+                      width: '100%', textAlign: 'left',
+                      padding: '10px 14px', background: isSelected ? `${TICKETS_COLOR}10` : 'transparent',
+                      border: 'none', cursor: 'pointer', fontFamily: 'Lato, sans-serif',
+                      fontSize: 13.5, color: C.grisTF, fontWeight: isSelected ? 700 : 500,
+                      display: 'flex', alignItems: 'center', gap: 10,
+                    }}
+                    onMouseEnter={e => e.currentTarget.style.background = C.grisTL}
+                    onMouseLeave={e => e.currentTarget.style.background = isSelected ? `${TICKETS_COLOR}10` : 'transparent'}
+                  >
+                    <span style={{
+                      width: 12, height: 12, borderRadius: 3, flexShrink: 0,
+                      background: s.bg_color || '#F0F0F0', border: `1px solid ${s.text_color || C.grisCL}40`,
+                    }} />
+                    {s.label}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -886,16 +1031,24 @@ function TicketFieldsPanel({ ticket, onFieldChange, users }) {
 }
 
 // ─── Panneau CENTRE ───────────────────────────────────────────────────────────
-function ConversationPanel({ ticket, onReplySent }) {
+function ConversationPanel({ ticket, onReplySent, onStatusChange }) {
   const { user } = useContext(AuthContext);
   const bottomRef = useRef();
   const messages = ticket.messages || [];
+  const [failedMessages, setFailedMessages] = useState([]); // messages locaux non envoyés
+
+  // Vider les messages échoués quand on change de ticket
+  useEffect(() => { setFailedMessages([]); }, [ticket.id]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages.length]);
+  }, [messages.length, failedMessages.length]);
 
   const source = ticket.source === 'gravity_form' ? 'formulaire' : 'e-mail';
+
+  const handleSendFailed = (msg) => {
+    setFailedMessages(prev => [...prev, msg]);
+  };
 
   return (
     <section style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', background: C.grisTL, overflow: 'hidden' }}>
@@ -926,6 +1079,7 @@ function ConversationPanel({ ticket, onReplySent }) {
           />
         )}
         {messages.map((msg, i) => <Message key={i} msg={msg} ticketId={ticket.id} />)}
+        {failedMessages.map((msg, i) => <Message key={`failed-${i}`} msg={msg} ticketId={ticket.id} />)}
         <div ref={bottomRef} />
       </div>
 
@@ -934,7 +1088,10 @@ function ConversationPanel({ ticket, onReplySent }) {
         ticketId={ticket.id}
         demandeur={ticket.customer_name || ticket.customer_email}
         agentName={user?.name || 'SAV Youvape'}
+        currentStatus={ticket.sav_status}
         onReplySent={onReplySent}
+        onSendFailed={handleSendFailed}
+        onStatusChange={onStatusChange}
       />
     </section>
   );
@@ -1352,16 +1509,17 @@ export default function TicketDetail({ ticketId }) {
     }, 600);
   }, [ticketId]);
 
-  const handleStatusChange = async (newStatus) => {
-    try {
-      const res = await fetch(`${API}/${ticketId}/status`, {
-        method: 'PUT', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sav_status: newStatus }),
-      });
-      const data = await res.json();
-      if (data.success) setTicket(data.ticket);
-    } catch { /* silencieux */ }
-  };
+  const handleStatusChange = useCallback(async (newStatus) => {
+    const res = await fetch(`${API}/${ticketId}/status`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sav_status: newStatus }),
+    });
+    const data = await res.json();
+    if (!data.success) throw new Error(data.error || 'Erreur changement statut');
+    // Conserver les champs enrichis (order_items, customer_*) qui ne reviennent pas du endpoint /status
+    setTicket(t => ({ ...t, ...data.ticket }));
+    return data.ticket;
+  }, [ticketId]);
 
   if (loading) return (
     <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: C.grisM, fontSize: 14 }}>
@@ -1415,7 +1573,11 @@ export default function TicketDetail({ ticketId }) {
       {/* ── 3 colonnes ───────────────────────────────────────────────────────── */}
       <div style={{ flex: 1, display: 'flex', minHeight: 0, overflow: 'hidden' }}>
         <TicketFieldsPanel ticket={ticket} onFieldChange={handleFieldChange} users={users} />
-        <ConversationPanel ticket={ticket} onReplySent={(updatedTicket) => setTicket(updatedTicket)} />
+        <ConversationPanel
+          ticket={ticket}
+          onReplySent={(updatedTicket) => setTicket(t => ({ ...t, ...updatedTicket }))}
+          onStatusChange={handleStatusChange}
+        />
         <CustomerPanel ticket={ticket} />
       </div>
     </div>
