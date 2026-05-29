@@ -31,7 +31,27 @@ function TicketsAppInner() {
       .catch(() => {});
   }, [refreshTick]);
 
-  const handleCountsChange = useCallback((c) => setCounts(c), []);
+  // Fetch les compteurs de tickets par vue — indépendant de l'onglet affiché,
+  // donc visibles même si l'utilisateur arrive sur un onglet ticket.
+  useEffect(() => {
+    if (views.length === 0) return;
+    let cancelled = false;
+    (async () => {
+      const results = {};
+      await Promise.all(views.map(async v => {
+        const p = new URLSearchParams({ limit: 1, offset: 0 });
+        (v.statuses || []).forEach(s => p.append('sav_statuses', s));
+        try {
+          const res = await fetch(`/api/sav?${p}`);
+          const data = await res.json();
+          if (data.success) results[v.id] = data.total;
+        } catch { /* ignore */ }
+      }));
+      if (!cancelled) setCounts(results);
+    })();
+    return () => { cancelled = true; };
+  }, [views, refreshTick]);
+
   const handleRefresh = useCallback(() => setRefreshTick(t => t + 1), []);
 
   const activeViewObj = views.find(v => v.id === activeView) || null;
@@ -69,7 +89,6 @@ function TicketsAppInner() {
               <TicketsList
                 activeView={activeViewObj}
                 views={views}
-                onCountsChange={handleCountsChange}
                 refreshTick={refreshTick}
               />
             </div>

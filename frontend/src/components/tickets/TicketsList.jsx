@@ -103,7 +103,7 @@ function Checkbox({ checked, indeterminate, onChange }) {
 }
 
 /* ─── Composant principal ─────────────────────────────────────────────────────── */
-export default function TicketsList({ activeView, views = [], onCountsChange, onRefresh, refreshTick }) {
+export default function TicketsList({ activeView, views = [], onRefresh, refreshTick }) {
   const navigate = useNavigate();
   const { openTicket } = useOpenTickets();
   const [tickets, setTickets] = useState([]);
@@ -133,24 +133,7 @@ export default function TicketsList({ activeView, views = [], onCountsChange, on
     } finally { setLoading(false); }
   }, [activeView, statusesFilter.join(','), page, refreshTick]);
 
-  /* ── Fetch counts pour sidebar ── */
-  const fetchCounts = useCallback(async () => {
-    if (!onCountsChange || views.length === 0) return;
-    try {
-      const results = {};
-      await Promise.all(views.map(async v => {
-        const p = new URLSearchParams({ limit: 1, offset: 0 });
-        (v.statuses || []).forEach(s => p.append('sav_statuses', s));
-        const res = await fetch(`${API}?${p}`);
-        const data = await res.json();
-        if (data.success) results[v.id] = data.total;
-      }));
-      onCountsChange(results);
-    } catch {}
-  }, [onCountsChange, views, refreshTick]);
-
   useEffect(() => { fetchTickets(); }, [fetchTickets]);
-  useEffect(() => { fetchCounts(); }, [fetchCounts]);
   useEffect(() => { setPage(0); setSelected(new Set()); }, [activeView?.id]);
 
   /* ── Tri local ── */
