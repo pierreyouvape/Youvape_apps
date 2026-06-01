@@ -252,6 +252,7 @@ function ReplyComposer({
   ticketId, demandeur, agentName, currentStatus,
   onReplySent, onSendFailed, onStatusChange,
   playMode = false, afterActionMode = 'next', onChangeAfterActionMode, onAdvance,
+  onApplyMacroSubject,
 }) {
   const [body, setBody] = useState(() => localStorage.getItem(`yv.tickets.draft.${ticketId}`) || '');
   const [isPrivate, setIsPrivate] = useState(false);
@@ -267,6 +268,9 @@ function ReplyComposer({
   const [selectedStatus, setSelectedStatus] = useState(currentStatus);
   const [statusOpen, setStatusOpen] = useState(false);
   const [afterOpen, setAfterOpen] = useState(false);
+  const [macros, setMacros] = useState([]);
+  const [macroOpen, setMacroOpen] = useState(false);
+  const [applyingMacro, setApplyingMacro] = useState(false);
   const { statuses, statusMap } = useTicketStatuses();
   const fileRef = useRef();
   const modeRef = useRef();
@@ -275,6 +279,59 @@ function ReplyComposer({
   const linkRef = useRef();
   const statusRef = useRef();
   const afterRef = useRef();
+  const macroRef = useRef();
+
+  // Charger les macros au montage
+  useEffect(() => {
+    fetch('/api/sav/macros')
+      .then(r => r.json())
+      .then(d => { if (d.success) setMacros(d.macros || []); })
+      .catch(() => {});
+  }, []);
+
+  // Fermer dropdown macros si clic extérieur
+  useEffect(() => {
+    if (!macroOpen) return;
+    const handler = (e) => { if (macroRef.current && !macroRef.current.contains(e.target)) setMacroOpen(false); };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [macroOpen]);
+
+  // Application d'une macro :
+  // - remplace body
+  // - applique sujet (si défini) via callback parent
+  // - présélectionne le statut (si défini)
+  // - télécharge la PJ et l'ajoute aux fichiers du composer
+  const applyMacro = async (macro) => {
+    setMacroOpen(false);
+    setApplyingMacro(true);
+    setError('');
+    try {
+      // Body : remplace
+      if (typeof macro.body === 'string') setBody(macro.body);
+      // Sujet : applique via parent si défini sur la macro
+      if (macro.subject && onApplyMacroSubject) onApplyMacroSubject(macro.subject);
+      // Statut : présélectionne
+      if (macro.sav_status) setSelectedStatus(macro.sav_status);
+      // PJ : télécharge et ajoute à files (sans écraser ce que l'agent avait déjà)
+      if (macro.attachment_url) {
+        try {
+          const res = await fetch(macro.attachment_url);
+          const blob = await res.blob();
+          const file = new File(
+            [blob],
+            macro.attachment_original_name || 'piece-jointe',
+            { type: macro.attachment_mime || blob.type || 'application/octet-stream' }
+          );
+          setFiles(prev => [...prev, file]);
+        } catch {
+          setError('Pièce jointe de la macro indisponible');
+        }
+      }
+    } finally {
+      setApplyingMacro(false);
+    }
+  };
 
   // Fermer dropdown "Prochain ticket / Rester" si clic extérieur
   useEffect(() => {
@@ -717,12 +774,68 @@ function ReplyComposer({
 
       {/* Footer */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 12, flexWrap: 'wrap' }}>
-        <button style={{
-          display: 'inline-flex', alignItems: 'center', gap: 6,
-          background: C.blanc, color: C.grisF, border: `1px solid ${C.grisCL}`,
-          borderRadius: 8, padding: '8px 12px', fontSize: 12.5, fontWeight: 700,
-          cursor: 'pointer', fontFamily: 'Lato, sans-serif',
-        }}>⚡ Appliquer une macro <Ic.Chev color={C.grisM} /></button>
+        {/* Bouton Macros + dropdown */}
+        <div style={{ position: 'relative' }} ref={macroRef}>
+          <button
+            onClick={() => setMacroOpen(o => !o)}
+            disabled={applyingMacro}
+            style={{
+              display: 'inline-flex', alignItems: 'center', gap: 6,
+              background: macroOpen ? C.grisTL : C.blanc, color: C.grisF, border: `1px solid ${C.grisCL}`,
+              borderRadius: 8, padding: '8px 12px', fontSize: 12.5, fontWeight: 700,
+              cursor: applyingMacro ? 'wait' : 'pointer', fontFamily: 'Lato, sans-serif',
+            }}
+            title={macros.length === 0 ? 'Aucune macro — créez-en dans Paramètres' : 'Appliquer une macro'}
+          >
+            ⚡ {applyingMacro ? 'Application…' : 'Appliquer une macro'} <Ic.Chev color={C.grisM} />
+          </button>
+          {macroOpen && (
+            <div style={{
+              position: 'absolute', top: '100%', left: 0, marginTop: 6, zIndex: 200,
+              background: C.blanc, border: `1px solid ${C.grisCL}`, borderRadius: 10,
+              boxShadow: '0 6px 24px rgba(0,0,0,0.12)', overflow: 'hidden',
+              minWidth: 320, maxWidth: 420, maxHeight: 380, overflowY: 'auto',
+            }}>
+              {macros.length === 0 ? (
+                <div style={{ padding: 14, fontSize: 12.5, color: C.grisM, textAlign: 'center' }}>
+                  Aucune macro disponible.<br />
+                  <span style={{ fontSize: 11.5 }}>Créez-en dans Paramètres → Macros</span>
+                </div>
+              ) : macros.map(m => {
+                const statusObj = m.sav_status ? statusMap[m.sav_status] : null;
+                return (
+                  <button
+                    key={m.id}
+                    onClick={() => applyMacro(m)}
+                    style={{
+                      width: '100%', textAlign: 'left', padding: '10px 14px',
+                      background: 'transparent', border: 'none', cursor: 'pointer',
+                      fontFamily: 'Lato, sans-serif', display: 'block',
+                      borderBottom: `1px solid ${C.grisCL}50`,
+                    }}
+                    onMouseEnter={e => e.currentTarget.style.background = C.grisTL}
+                    onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginBottom: 2 }}>
+                      <span style={{ fontSize: 13, fontWeight: 700, color: C.grisTF }}>{m.name}</span>
+                      {m.attachment_filename && (
+                        <span style={{ fontSize: 10.5, fontWeight: 700, color: C.grisM }}>📎</span>
+                      )}
+                      {statusObj && (
+                        <span style={{ fontSize: 10.5, fontWeight: 700, background: statusObj.bg, color: statusObj.color, padding: '1px 6px', borderRadius: 99 }}>
+                          → {statusObj.label}
+                        </span>
+                      )}
+                    </div>
+                    {m.description && (
+                      <div style={{ fontSize: 11.5, color: C.grisF, lineHeight: 1.3 }}>{m.description}</div>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
         <div style={{ flex: 1 }} />
 
         {/* Dropdown "Prochain ticket / Rester sur le ticket" — visible uniquement en mode Play */}
@@ -1132,7 +1245,7 @@ function TicketFieldsPanel({ ticket, onFieldChange, users }) {
 }
 
 // ─── Panneau CENTRE ───────────────────────────────────────────────────────────
-function ConversationPanel({ ticket, onReplySent, onStatusChange, playMode, afterActionMode, onChangeAfterActionMode, onAdvance }) {
+function ConversationPanel({ ticket, onReplySent, onStatusChange, playMode, afterActionMode, onChangeAfterActionMode, onAdvance, onApplyMacroSubject }) {
   const { user } = useContext(AuthContext);
   const bottomRef = useRef();
   const messages = ticket.messages || [];
@@ -1197,6 +1310,7 @@ function ConversationPanel({ ticket, onReplySent, onStatusChange, playMode, afte
         afterActionMode={afterActionMode}
         onChangeAfterActionMode={onChangeAfterActionMode}
         onAdvance={onAdvance}
+        onApplyMacroSubject={onApplyMacroSubject}
       />
     </section>
   );
@@ -1541,6 +1655,7 @@ export default function TicketDetail({ ticketId }) {
           afterActionMode={tabsCtx?.afterActionMode || 'next'}
           onChangeAfterActionMode={tabsCtx?.setAfterActionMode}
           onAdvance={tabsCtx?.advancePlay}
+          onApplyMacroSubject={(subject) => handleFieldChange('subject', subject)}
         />
         <CustomerPanel
           ticket={ticket}

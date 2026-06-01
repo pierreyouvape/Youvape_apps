@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import AppShell from '../components/AppShell';
 import { Tickets as TicketsIcon } from '../components/AppIcons';
 import { invalidateStatusCache } from '../components/tickets/useTicketStatuses';
+import MacrosSettings from '../components/tickets/MacrosSettings';
 
 const TICKETS_COLOR = '#0891B2';
 
@@ -545,6 +546,7 @@ export default function TicketsSettingsApp() {
   const tabs = [
     { key: 'statuses', label: 'Statuts des tickets' },
     { key: 'views',    label: 'Vues' },
+    { key: 'macros',   label: 'Macros' },
   ];
 
   return (
@@ -609,6 +611,9 @@ export default function TicketsSettingsApp() {
                 )}
               </>
             )}
+
+            {/* ─── Onglet Macros ─── */}
+            {activeTab === 'macros' && <MacrosSettings />}
 
             {/* ─── Onglet Vues ─── */}
             {activeTab === 'views' && (

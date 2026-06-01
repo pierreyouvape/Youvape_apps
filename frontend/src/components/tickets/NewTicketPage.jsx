@@ -153,9 +153,13 @@ export default function NewTicketPage() {
   const [statusOpen, setStatusOpen] = useState(false);
   const [assignOpen, setAssignOpen] = useState(false);
   const [modeOpen, setModeOpen] = useState(false);
+  const [macros, setMacros] = useState([]);
+  const [macroOpen, setMacroOpen] = useState(false);
+  const [applyingMacro, setApplyingMacro] = useState(false);
   const statusRef = useRef();
   const assignRef = useRef();
   const modeRef = useRef();
+  const macroRef = useRef();
   const fileRef = useRef();
 
   // Initialiser le statut par défaut au premier statut de la liste
@@ -175,6 +179,42 @@ export default function NewTicketPage() {
       .then(d => { if (d.success && d.users) setUsers(d.users); })
       .catch(() => {});
   }, [token]);
+
+  // Charger les macros
+  useEffect(() => {
+    fetch('/api/sav/macros')
+      .then(r => r.json())
+      .then(d => { if (d.success) setMacros(d.macros || []); })
+      .catch(() => {});
+  }, []);
+
+  // Application macro : remplace body, applique sujet/statut/PJ
+  const applyMacro = async (macro) => {
+    setMacroOpen(false);
+    setApplyingMacro(true);
+    setError('');
+    try {
+      if (typeof macro.body === 'string') setForm(f => ({ ...f, body: macro.body }));
+      if (macro.subject) setForm(f => ({ ...f, subject: macro.subject }));
+      if (macro.sav_status) setForm(f => ({ ...f, sav_status: macro.sav_status }));
+      if (macro.attachment_url) {
+        try {
+          const res = await fetch(macro.attachment_url);
+          const blob = await res.blob();
+          const file = new File(
+            [blob],
+            macro.attachment_original_name || 'piece-jointe',
+            { type: macro.attachment_mime || blob.type || 'application/octet-stream' }
+          );
+          setFiles(prev => [...prev, file]);
+        } catch {
+          setError('Pièce jointe de la macro indisponible');
+        }
+      }
+    } finally {
+      setApplyingMacro(false);
+    }
+  };
 
   // Charger historique commandes quand un client est sélectionné via autocomplete
   useEffect(() => {
@@ -208,6 +248,12 @@ export default function NewTicketPage() {
     document.addEventListener('mousedown', h);
     return () => document.removeEventListener('mousedown', h);
   }, [modeOpen]);
+  useEffect(() => {
+    if (!macroOpen) return;
+    const h = (e) => { if (macroRef.current && !macroRef.current.contains(e.target)) setMacroOpen(false); };
+    document.addEventListener('mousedown', h);
+    return () => document.removeEventListener('mousedown', h);
+  }, [macroOpen]);
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
@@ -599,6 +645,69 @@ export default function NewTicketPage() {
                   cursor: 'pointer', fontFamily: 'Lato, sans-serif',
                 }}
               >Annuler</button>
+
+              {/* Bouton Appliquer une macro */}
+              <div style={{ position: 'relative' }} ref={macroRef}>
+                <button
+                  onClick={() => setMacroOpen(o => !o)}
+                  disabled={applyingMacro}
+                  style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 6,
+                    background: macroOpen ? C.grisTL : C.blanc, color: C.grisF, border: `1px solid ${C.grisCL}`,
+                    borderRadius: 8, padding: '8px 12px', fontSize: 12.5, fontWeight: 700,
+                    cursor: applyingMacro ? 'wait' : 'pointer', fontFamily: 'Lato, sans-serif',
+                  }}
+                  title={macros.length === 0 ? 'Aucune macro — créez-en dans Paramètres' : 'Appliquer une macro'}
+                >
+                  ⚡ {applyingMacro ? 'Application…' : 'Appliquer une macro'} <Ic.Chev color={C.grisM} />
+                </button>
+                {macroOpen && (
+                  <div style={{
+                    position: 'absolute', bottom: '100%', left: 0, marginBottom: 6, zIndex: 200,
+                    background: C.blanc, border: `1px solid ${C.grisCL}`, borderRadius: 10,
+                    boxShadow: '0 -6px 24px rgba(0,0,0,0.12)', overflow: 'hidden',
+                    minWidth: 320, maxWidth: 420, maxHeight: 380, overflowY: 'auto',
+                  }}>
+                    {macros.length === 0 ? (
+                      <div style={{ padding: 14, fontSize: 12.5, color: C.grisM, textAlign: 'center' }}>
+                        Aucune macro disponible.<br />
+                        <span style={{ fontSize: 11.5 }}>Créez-en dans Paramètres → Macros</span>
+                      </div>
+                    ) : macros.map(m => {
+                      const statusObj = m.sav_status ? statusMap[m.sav_status] : null;
+                      return (
+                        <button
+                          key={m.id}
+                          onClick={() => applyMacro(m)}
+                          style={{
+                            width: '100%', textAlign: 'left', padding: '10px 14px',
+                            background: 'transparent', border: 'none', cursor: 'pointer',
+                            fontFamily: 'Lato, sans-serif', display: 'block',
+                            borderBottom: `1px solid ${C.grisCL}50`,
+                          }}
+                          onMouseEnter={e => e.currentTarget.style.background = C.grisTL}
+                          onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginBottom: 2 }}>
+                            <span style={{ fontSize: 13, fontWeight: 700, color: C.grisTF }}>{m.name}</span>
+                            {m.attachment_filename && (
+                              <span style={{ fontSize: 10.5, fontWeight: 700, color: C.grisM }}>📎</span>
+                            )}
+                            {statusObj && (
+                              <span style={{ fontSize: 10.5, fontWeight: 700, background: statusObj.bg, color: statusObj.color, padding: '1px 6px', borderRadius: 99 }}>
+                                → {statusObj.label}
+                              </span>
+                            )}
+                          </div>
+                          {m.description && (
+                            <div style={{ fontSize: 11.5, color: C.grisF, lineHeight: 1.3 }}>{m.description}</div>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
 
               <div style={{ flex: 1 }} />
 

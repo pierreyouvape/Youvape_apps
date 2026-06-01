@@ -5,6 +5,7 @@ const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
 const savController = require('../controllers/savController');
+const savMacroController = require('../controllers/savMacroController');
 
 const UPLOAD_ROOT = path.join('/usr/src/app/uploads/sav');
 const MAX_FILE_SIZE = 25 * 1024 * 1024; // 25 Mo
@@ -68,6 +69,13 @@ router.get('/statuses',          savController.getStatuses);
 router.post('/statuses',         savController.createStatus);
 router.put('/statuses/:id',      savController.updateStatus_s);
 router.delete('/statuses/:id',   savController.deleteStatus);
+
+// ─── Routes macros ────────────────────────────────────────────────────────────
+router.get('/macros',                   savMacroController.getAll);
+router.get('/macros/:id/attachment',    savMacroController.getAttachment);
+router.post('/macros',                  memoryUpload.array('attachment', 1), savMacroController.create);
+router.put('/macros/:id',               memoryUpload.array('attachment', 1), savMacroController.update);
+router.delete('/macros/:id',            savMacroController.delete);
 
 // ─── Routes internes app ──────────────────────────────────────────────────────
 router.get('/',                        savController.getAll);
