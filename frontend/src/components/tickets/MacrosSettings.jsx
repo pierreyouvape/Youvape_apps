@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useTicketStatuses } from './useTicketStatuses';
+import { useMacroPlaceholders } from './macroPlaceholders';
 import { TICKETS_COLOR } from './ticketConstants';
 
 const C = {
@@ -40,6 +41,98 @@ const IconX = () => (
   </svg>
 );
 
+// ─── Bouton "Insérer une balise" avec dropdown groupé par catégorie ─────────
+// Insère la balise {{key}} à la position du curseur dans l'input/textarea cible.
+function InsertPlaceholderButton({ targetRef, value, onChange, groups }) {
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef();
+
+  useEffect(() => {
+    if (!open) return;
+    const h = (e) => { if (containerRef.current && !containerRef.current.contains(e.target)) setOpen(false); };
+    document.addEventListener('mousedown', h);
+    return () => document.removeEventListener('mousedown', h);
+  }, [open]);
+
+  const insert = (key) => {
+    const token = `{{${key}}}`;
+    const el = targetRef.current;
+    if (!el) {
+      onChange(value + token);
+    } else {
+      const start = el.selectionStart ?? value.length;
+      const end   = el.selectionEnd   ?? value.length;
+      const next = value.slice(0, start) + token + value.slice(end);
+      onChange(next);
+      // Repositionner le curseur après l'insertion
+      setTimeout(() => {
+        try { el.focus(); el.setSelectionRange(start + token.length, start + token.length); }
+        catch { /* ignore */ }
+      }, 0);
+    }
+    setOpen(false);
+  };
+
+  return (
+    <div style={{ position: 'relative', display: 'inline-block' }} ref={containerRef}>
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        style={{
+          display: 'inline-flex', alignItems: 'center', gap: 5,
+          padding: '4px 9px', borderRadius: 6,
+          border: `1px solid ${C.grisCL}`, background: open ? C.grisTL : C.blanc,
+          color: TICKETS_COLOR, fontSize: 11.5, fontWeight: 700,
+          cursor: 'pointer', fontFamily: 'Lato, sans-serif',
+        }}
+        title="Insérer une balise — sera remplacée par la valeur du ticket à l'application de la macro"
+      >
+        {'{ } '} Insérer une balise ▾
+      </button>
+      {open && (
+        <div style={{
+          position: 'absolute', top: 'calc(100% + 4px)', left: 0, zIndex: 200,
+          background: C.blanc, border: `1px solid ${C.grisCL}`, borderRadius: 10,
+          boxShadow: '0 6px 24px rgba(0,0,0,0.10)', overflow: 'hidden',
+          minWidth: 280, maxHeight: 380, overflowY: 'auto',
+        }}>
+          {groups.length === 0 && (
+            <div style={{ padding: 14, fontSize: 12, color: C.grisM, textAlign: 'center' }}>Chargement…</div>
+          )}
+          {groups.map(group => (
+            <div key={group.category}>
+              <div style={{
+                padding: '7px 14px 4px', fontSize: 10.5, fontWeight: 800,
+                color: C.grisM, textTransform: 'uppercase', letterSpacing: 0.6,
+                background: '#FAFCFD',
+              }}>{group.category}</div>
+              {group.items.map(item => (
+                <button
+                  key={item.key}
+                  type="button"
+                  onClick={() => insert(item.key)}
+                  style={{
+                    width: '100%', textAlign: 'left',
+                    padding: '7px 14px',
+                    background: 'transparent', border: 'none', cursor: 'pointer',
+                    fontFamily: 'Lato, sans-serif',
+                    display: 'flex', flexDirection: 'column', gap: 1,
+                  }}
+                  onMouseEnter={e => e.currentTarget.style.background = C.grisTL}
+                  onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                >
+                  <span style={{ fontSize: 12.5, color: C.grisTF, fontWeight: 600 }}>{item.label}</span>
+                  <span style={{ fontSize: 11, color: C.grisM, fontFamily: 'monospace' }}>{`{{${item.key}}}`}</span>
+                </button>
+              ))}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Formulaire macro (création + édition) ───────────────────────────────────
 function MacroForm({ initial, statuses, onSubmit, onCancel, submitLabel = 'Enregistrer' }) {
   const [name,        setName]        = useState(initial?.name || '');
@@ -52,6 +145,9 @@ function MacroForm({ initial, statuses, onSubmit, onCancel, submitLabel = 'Enreg
   const [saving,      setSaving]      = useState(false);
   const [error,       setError]       = useState('');
   const fileRef = useRef();
+  const subjectRef = useRef();
+  const bodyRef = useRef();
+  const { groups: placeholderGroups } = useMacroPlaceholders();
 
   const existingAttachment = !removeAttachment && !file && initial?.attachment_filename
     ? {
@@ -111,8 +207,17 @@ function MacroForm({ initial, statuses, onSubmit, onCancel, submitLabel = 'Enreg
 
       {/* Sujet */}
       <div style={{ marginBottom: 14 }}>
-        <label style={{ fontSize: 11, fontWeight: 700, color: C.grisM, textTransform: 'uppercase', letterSpacing: 0.5, display: 'block', marginBottom: 5 }}>Sujet du ticket</label>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 5 }}>
+          <label style={{ fontSize: 11, fontWeight: 700, color: C.grisM, textTransform: 'uppercase', letterSpacing: 0.5 }}>Sujet du ticket</label>
+          <InsertPlaceholderButton
+            targetRef={subjectRef}
+            value={subject}
+            onChange={setSubject}
+            groups={placeholderGroups}
+          />
+        </div>
         <input
+          ref={subjectRef}
           value={subject} onChange={e => setSubject(e.target.value)}
           placeholder="Laisser vide pour ne pas modifier le sujet"
           style={inputStyle}
@@ -123,8 +228,17 @@ function MacroForm({ initial, statuses, onSubmit, onCancel, submitLabel = 'Enreg
 
       {/* Body */}
       <div style={{ marginBottom: 14 }}>
-        <label style={{ fontSize: 11, fontWeight: 700, color: C.grisM, textTransform: 'uppercase', letterSpacing: 0.5, display: 'block', marginBottom: 5 }}>Message</label>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 5 }}>
+          <label style={{ fontSize: 11, fontWeight: 700, color: C.grisM, textTransform: 'uppercase', letterSpacing: 0.5 }}>Message</label>
+          <InsertPlaceholderButton
+            targetRef={bodyRef}
+            value={body}
+            onChange={setBody}
+            groups={placeholderGroups}
+          />
+        </div>
         <textarea
+          ref={bodyRef}
           value={body} onChange={e => setBody(e.target.value)}
           placeholder="Texte qui remplacera le message en cours dans le composer…"
           rows={6}
@@ -132,6 +246,9 @@ function MacroForm({ initial, statuses, onSubmit, onCancel, submitLabel = 'Enreg
           onFocus={e => e.target.style.borderColor = TICKETS_COLOR}
           onBlur={e => e.target.style.borderColor = C.grisCL}
         />
+        <div style={{ fontSize: 11, color: C.grisM, marginTop: 4 }}>
+          Les balises <code style={{ fontFamily: 'monospace', background: C.grisTL, padding: '0 4px', borderRadius: 3 }}>{'{{...}}'}</code> seront remplacées par les valeurs du ticket à l'application.
+        </div>
       </div>
 
       {/* Statut */}

@@ -71,6 +71,7 @@ router.put('/statuses/:id',      savController.updateStatus_s);
 router.delete('/statuses/:id',   savController.deleteStatus);
 
 // ─── Routes macros ────────────────────────────────────────────────────────────
+router.get('/macros/placeholders',      savMacroController.getPlaceholders);
 router.get('/macros',                   savMacroController.getAll);
 router.get('/macros/:id/attachment',    savMacroController.getAttachment);
 router.post('/macros',                  memoryUpload.array('attachment', 1), savMacroController.create);

@@ -5,6 +5,7 @@ import { useTicketStatuses } from './useTicketStatuses';
 import { TICKETS_COLOR } from './ticketConstants';
 import CustomerAutocomplete from './CustomerAutocomplete';
 import OrderCard from './OrderCard';
+import { buildPlaceholderContext, applyPlaceholders } from './macroPlaceholders';
 
 const C = {
   orange: '#E28F00', vert: '#4AB866', bleu: '#0071EB',
@@ -189,13 +190,37 @@ export default function NewTicketPage() {
   }, []);
 
   // Application macro : remplace body, applique sujet/statut/PJ
+  // Substitution {{...}} depuis le state local (champs gauche/centre + user + commande liée)
   const applyMacro = async (macro) => {
     setMacroOpen(false);
     setApplyingMacro(true);
     setError('');
     try {
-      if (typeof macro.body === 'string') setForm(f => ({ ...f, body: macro.body }));
-      if (macro.subject) setForm(f => ({ ...f, subject: macro.subject }));
+      // Construire le contexte depuis form (state local) + user + commande liée si présente
+      const linkedOrder = form.order_id
+        ? customerOrders.find(o => String(o.wp_order_id) === String(form.order_id))
+        : null;
+      const ticketLike = {
+        id:               null,
+        subject:          form.subject || '',
+        sav_status:       form.sav_status || '',
+        order_id:         form.order_id || '',
+        order_tracking:   '',
+        first_name:       form.first_name || '',
+        last_name:        form.last_name || '',
+        customer_name:    `${form.first_name || ''} ${form.last_name || ''}`.trim(),
+        customer_email:   form.customer_email || '',
+        customer_phone:   form.customer_phone || '',
+      };
+      const ctx = buildPlaceholderContext({
+        ticket: ticketLike,
+        agent: user,
+        order: linkedOrder,
+        statusMap,
+      });
+
+      if (typeof macro.body === 'string') setForm(f => ({ ...f, body: applyPlaceholders(macro.body, ctx) }));
+      if (macro.subject) setForm(f => ({ ...f, subject: applyPlaceholders(macro.subject, ctx) }));
       if (macro.sav_status) setForm(f => ({ ...f, sav_status: macro.sav_status }));
       if (macro.attachment_url) {
         try {

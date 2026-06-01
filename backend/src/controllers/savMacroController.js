@@ -41,8 +41,60 @@ function removeAttachmentFile(macroId, filename) {
   }
 }
 
+// ─── Catalogue des balises {{...}} disponibles dans les macros ─────────────────
+// Servi à la fois pour le dropdown "Insérer une balise" du formulaire de macro
+// et comme contrat pour la substitution côté frontend (applyPlaceholders).
+//
+// Pour ajouter une balise plus tard : ajouter ici + mettre à jour la fonction
+// applyPlaceholders côté frontend (frontend/src/components/tickets/macroPlaceholders.js).
+const PLACEHOLDER_CATALOG = [
+  {
+    category: 'Ticket',
+    items: [
+      { key: 'ticket.id',             label: 'ID du ticket',          example: '#1234' },
+      { key: 'ticket.subject',        label: 'Sujet',                 example: 'Plainte sur livraison' },
+      { key: 'ticket.sav_status',     label: 'Statut',                example: 'Ouvert' },
+      { key: 'ticket.order_id',       label: 'N° de commande',        example: '1219638' },
+      { key: 'ticket.order_tracking', label: 'N° de suivi (ticket)',  example: 'LC123456789FR' },
+    ],
+  },
+  {
+    category: 'Client',
+    items: [
+      { key: 'client.name',       label: 'Nom complet',  example: 'Jean Dupont' },
+      { key: 'client.first_name', label: 'Prénom',       example: 'Jean' },
+      { key: 'client.last_name',  label: 'Nom',          example: 'Dupont' },
+      { key: 'client.email',      label: 'Email',        example: 'jean@dupont.fr' },
+      { key: 'client.phone',      label: 'Téléphone',    example: '06 12 34 56 78' },
+    ],
+  },
+  {
+    category: 'Commande',
+    items: [
+      { key: 'commande.id',           label: 'N° de commande',     example: '1219638' },
+      { key: 'commande.total',        label: 'Montant total',      example: '88.37 €' },
+      { key: 'commande.date',         label: 'Date',               example: '01/04/2026' },
+      { key: 'commande.statut',       label: 'Statut WC',          example: 'Livrée' },
+      { key: 'commande.suivi',        label: 'N° de suivi (cmde)', example: 'LC123456789FR' },
+      { key: 'commande.transporteur', label: 'Transporteur',       example: 'Colissimo' },
+    ],
+  },
+  {
+    category: 'Agent',
+    items: [
+      { key: 'agent.name',  label: 'Nom de l\'agent',  example: 'Pierre' },
+      { key: 'agent.email', label: 'Email de l\'agent', example: 'pierre@youvape.fr' },
+    ],
+  },
+];
+
 module.exports = {
   MACRO_UPLOAD_ROOT,
+
+  // ─── Catalogue des balises ───────────────────────────────────────────────
+  getPlaceholders: (req, res) => {
+    res.json({ success: true, placeholders: PLACEHOLDER_CATALOG });
+  },
 
   // ─── Liste ───────────────────────────────────────────────────────────────
   getAll: async (req, res) => {

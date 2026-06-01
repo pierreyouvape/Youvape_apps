@@ -7,6 +7,7 @@ import { formatDate } from '../../utils/dateUtils';
 import { AuthContext } from '../../context/AuthContext';
 import { useOpenTickets } from '../../context/OpenTicketsContext';
 import OrderCard from './OrderCard';
+import { buildPlaceholderContext, applyPlaceholders } from './macroPlaceholders';
 
 const C = {
   orange: '#E28F00', rouge: '#DE2020',
@@ -249,7 +250,7 @@ const EMOJIS = ['😊','👍','🙏','😔','✅','❌','⚠️','📦','🚚','
 
 // ─── Composer ─────────────────────────────────────────────────────────────────
 function ReplyComposer({
-  ticketId, demandeur, agentName, currentStatus,
+  ticketId, demandeur, agentName, agent, ticket, currentStatus,
   onReplySent, onSendFailed, onStatusChange,
   playMode = false, afterActionMode = 'next', onChangeAfterActionMode, onAdvance,
   onApplyMacroSubject,
@@ -298,19 +299,21 @@ function ReplyComposer({
   }, [macroOpen]);
 
   // Application d'une macro :
-  // - remplace body
-  // - applique sujet (si défini) via callback parent
-  // - présélectionne le statut (si défini)
+  // - body et sujet : substitue les balises {{...}} avec les valeurs du ticket
+  // - remplace body, applique sujet (si défini), présélectionne le statut
   // - télécharge la PJ et l'ajoute aux fichiers du composer
   const applyMacro = async (macro) => {
     setMacroOpen(false);
     setApplyingMacro(true);
     setError('');
     try {
-      // Body : remplace
-      if (typeof macro.body === 'string') setBody(macro.body);
-      // Sujet : applique via parent si défini sur la macro
-      if (macro.subject && onApplyMacroSubject) onApplyMacroSubject(macro.subject);
+      // Construire le contexte de substitution depuis le ticket + agent
+      const ctx = buildPlaceholderContext({ ticket, agent, statusMap });
+
+      // Body : remplace (avec balises substituées)
+      if (typeof macro.body === 'string') setBody(applyPlaceholders(macro.body, ctx));
+      // Sujet : applique via parent si défini sur la macro (avec balises substituées)
+      if (macro.subject && onApplyMacroSubject) onApplyMacroSubject(applyPlaceholders(macro.subject, ctx));
       // Statut : présélectionne
       if (macro.sav_status) setSelectedStatus(macro.sav_status);
       // PJ : télécharge et ajoute à files (sans écraser ce que l'agent avait déjà)
@@ -1302,6 +1305,8 @@ function ConversationPanel({ ticket, onReplySent, onStatusChange, playMode, afte
         ticketId={ticket.id}
         demandeur={ticket.customer_name || ticket.customer_email}
         agentName={user?.name || 'SAV Youvape'}
+        agent={user}
+        ticket={ticket}
         currentStatus={ticket.sav_status}
         onReplySent={onReplySent}
         onSendFailed={handleSendFailed}
