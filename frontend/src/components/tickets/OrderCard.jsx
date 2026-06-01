@@ -33,6 +33,25 @@ function IconChev({ size = 11, color = C.grisM }) {
   );
 }
 
+function IconLink({ size = 12, color = 'currentColor' }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+      <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.72-1.71" />
+    </svg>
+  );
+}
+
+function IconUnlink({ size = 12, color = 'currentColor' }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M18.84 12.25l1.72-1.71a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+      <path d="M5.16 11.75l-1.72 1.71a5 5 0 0 0 7.07 7.07l1.72-1.71" />
+      <line x1="2" y1="2" x2="22" y2="22" />
+    </svg>
+  );
+}
+
 // ─── Badge statut livraison (live tracking) ──────────────────────────────────
 export function TrackingBadge({ trackingNum, shippingCarrier }) {
   const [status, setStatus] = useState(null);
@@ -88,8 +107,15 @@ export function TrackingBadge({ trackingNum, shippingCarrier }) {
 }
 
 // ─── Carte commande dépliable ────────────────────────────────────────────────
-export default function OrderCard({ order, highlighted }) {
+// Props:
+//   order        : { wp_order_id, post_date, post_status, order_total, tracking_number, shipping_carrier, items }
+//   highlighted  : true = commande "concernée" (encadré coloré, dépliée par défaut)
+//   canAssign    : true = afficher un bouton "Lier" au hover (ticket sans commande)
+//   onAssign     : (wp_order_id) => void   appelé au clic sur Lier
+//   onUnassign   : () => void              appelé au clic sur Délier (visible si highlighted)
+export default function OrderCard({ order, highlighted, canAssign, onAssign, onUnassign }) {
   const [open, setOpen] = useState(!!highlighted);
+  const [hoverHeader, setHoverHeader] = useState(false);
 
   const orderNum      = order.wp_order_id || order.order_id;
   const orderDate     = order.post_date || order.order_date;
@@ -130,12 +156,12 @@ export default function OrderCard({ order, highlighted }) {
     }}>
       <div
         onClick={() => setOpen(o => !o)}
+        onMouseEnter={e => { setHoverHeader(true); if (!open) e.currentTarget.style.background = '#FAFCFD'; }}
+        onMouseLeave={e => { setHoverHeader(false); if (!open) e.currentTarget.style.background = open ? '#F6FAFC' : 'transparent'; }}
         style={{
           padding: '12px 14px', display: 'flex', alignItems: 'center', gap: 10,
           cursor: 'pointer', background: open ? '#F6FAFC' : 'transparent', transition: 'background 0.12s',
         }}
-        onMouseEnter={e => { if (!open) e.currentTarget.style.background = '#FAFCFD'; }}
-        onMouseLeave={e => { if (!open) e.currentTarget.style.background = open ? '#F6FAFC' : 'transparent'; }}
       >
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
@@ -158,6 +184,28 @@ export default function OrderCard({ order, highlighted }) {
             <TrackingBadge trackingNum={trackingNum} shippingCarrier={shippingCarrier} />
           </div>
         </div>
+
+        {/* Bouton "Lier" — visible au hover si ticket sans commande */}
+        {canAssign && onAssign && (
+          <button
+            onClick={(e) => { e.stopPropagation(); onAssign(orderNum); }}
+            style={{
+              display: 'inline-flex', alignItems: 'center', gap: 4,
+              background: hoverHeader ? TICKETS_COLOR : 'transparent',
+              color: hoverHeader ? '#fff' : TICKETS_COLOR,
+              border: `1px solid ${hoverHeader ? TICKETS_COLOR : TICKETS_COLOR + '60'}`,
+              borderRadius: 6, padding: '4px 8px', fontSize: 11.5, fontWeight: 700,
+              cursor: 'pointer', fontFamily: 'Lato, sans-serif',
+              opacity: hoverHeader ? 1 : 0.75,
+              transition: 'all 0.12s',
+              whiteSpace: 'nowrap',
+            }}
+            title="Lier cette commande au ticket"
+          >
+            <IconLink size={11} />Lier
+          </button>
+        )}
+
         <span style={{ display: 'inline-flex', transition: 'transform 0.18s', transform: open ? 'rotate(180deg)' : 'none' }}>
           <IconChev />
         </span>
@@ -199,16 +247,35 @@ export default function OrderCard({ order, highlighted }) {
           )}
 
           {highlighted && (
-            <div style={{ marginTop: 10 }}>
+            <div style={{ marginTop: 10, display: 'flex', gap: 6 }}>
               <a
                 href={orderUrl}
                 style={{
+                  flex: 1,
                   display: 'block', textAlign: 'center', textDecoration: 'none',
                   background: C.blanc, color: TICKETS_COLOR,
                   border: `1px solid ${TICKETS_COLOR}40`, borderRadius: 7,
                   padding: '7px 12px', fontSize: 12.5, fontWeight: 700,
                 }}
               >Ouvrir la commande</a>
+              {onUnassign && (
+                <button
+                  onClick={onUnassign}
+                  style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 5,
+                    background: C.blanc, color: '#B71D1D',
+                    border: `1px solid #B71D1D40`, borderRadius: 7,
+                    padding: '7px 12px', fontSize: 12.5, fontWeight: 700,
+                    cursor: 'pointer', fontFamily: 'Lato, sans-serif',
+                    whiteSpace: 'nowrap',
+                  }}
+                  onMouseEnter={e => { e.currentTarget.style.background = '#FDEAEA'; }}
+                  onMouseLeave={e => { e.currentTarget.style.background = C.blanc; }}
+                  title="Détacher cette commande du ticket"
+                >
+                  <IconUnlink size={11} />Délier
+                </button>
+              )}
             </div>
           )}
         </div>

@@ -1251,7 +1251,7 @@ function NoteField({ ticketId, initialNotes }) {
 }
 
 // ─── Panneau DROIT ────────────────────────────────────────────────────────────
-function CustomerPanel({ ticket }) {
+function CustomerPanel({ ticket, onAssignOrder, onUnassignOrder }) {
   const navigate = useNavigate();
 
   const firstName = ticket.customer_first_name || (ticket.customer_name || '').split(' ')[0] || '';
@@ -1356,7 +1356,11 @@ function CustomerPanel({ ticket }) {
       {currentOrder && (
         <div style={{ marginTop: 14 }}>
           <SectionLabel>Commande concernée</SectionLabel>
-          <OrderCard order={currentOrder} highlighted />
+          <OrderCard
+            order={currentOrder}
+            highlighted
+            onUnassign={onUnassignOrder}
+          />
         </div>
       )}
 
@@ -1365,7 +1369,12 @@ function CustomerPanel({ ticket }) {
         <div style={{ marginTop: 18 }}>
           <SectionLabel right={`${pastOrders.length} commandes`}>Historique</SectionLabel>
           {pastOrders.map(o => (
-            <OrderCard key={o.wp_order_id} order={o} />
+            <OrderCard
+              key={o.wp_order_id}
+              order={o}
+              canAssign={!ticket.order_id}
+              onAssign={onAssignOrder}
+            />
           ))}
         </div>
       )}
@@ -1448,6 +1457,30 @@ export default function TicketDetail({ ticketId }) {
     return data.ticket;
   }, [ticketId]);
 
+  // Lier/délier une commande au ticket : PATCH puis refetch pour récupérer
+  // les enrichissements (order_items, order_status, order_total, etc.)
+  const handleAssignOrder = useCallback(async (wpOrderId) => {
+    try {
+      await fetch(`${API}/${ticketId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ order_id: String(wpOrderId) }),
+      });
+      await fetchTicket();
+    } catch { /* silencieux */ }
+  }, [ticketId, fetchTicket]);
+
+  const handleUnassignOrder = useCallback(async () => {
+    try {
+      await fetch(`${API}/${ticketId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ order_id: null }),
+      });
+      await fetchTicket();
+    } catch { /* silencieux */ }
+  }, [ticketId, fetchTicket]);
+
   if (loading) return (
     <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: C.grisM, fontSize: 14 }}>
       Chargement…
@@ -1509,7 +1542,11 @@ export default function TicketDetail({ ticketId }) {
           onChangeAfterActionMode={tabsCtx?.setAfterActionMode}
           onAdvance={tabsCtx?.advancePlay}
         />
-        <CustomerPanel ticket={ticket} />
+        <CustomerPanel
+          ticket={ticket}
+          onAssignOrder={handleAssignOrder}
+          onUnassignOrder={handleUnassignOrder}
+        />
       </div>
     </div>
   );

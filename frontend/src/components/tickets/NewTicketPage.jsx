@@ -686,31 +686,66 @@ export default function NewTicketPage() {
             <>
               <CustomerPreview customer={selectedCustomer} />
 
-              {/* Historique commandes */}
-              <div style={{ marginTop: 18 }}>
-                <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 8, padding: '0 4px' }}>
-                  <span style={{ fontSize: 10.5, fontWeight: 800, color: C.grisM, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-                    Historique commandes
-                  </span>
-                  {customerOrders.length > 0 && (
-                    <span style={{ fontSize: 11, color: C.grisM, fontWeight: 600 }}>
-                      {customerOrders.length} commande{customerOrders.length > 1 ? 's' : ''}
-                    </span>
-                  )}
-                </div>
-                {loadingOrders ? (
-                  <div style={{ padding: 14, textAlign: 'center', color: C.grisM, fontSize: 12.5 }}>Chargement…</div>
-                ) : customerOrders.length === 0 ? (
-                  <div style={{
-                    background: C.blanc, borderRadius: 10, border: `1px solid ${C.grisCL}`,
-                    padding: '14px', textAlign: 'center', color: C.grisM, fontSize: 12.5,
-                  }}>
-                    Aucune commande
-                  </div>
-                ) : (
-                  customerOrders.map(o => <OrderCard key={o.wp_order_id} order={o} />)
-                )}
-              </div>
+              {/* Commande liée (si form.order_id correspond à une commande de l'historique) */}
+              {(() => {
+                const linkedOrder = form.order_id
+                  ? customerOrders.find(o => String(o.wp_order_id) === String(form.order_id))
+                  : null;
+                const historyOrders = linkedOrder
+                  ? customerOrders.filter(o => String(o.wp_order_id) !== String(form.order_id))
+                  : customerOrders;
+                return (
+                  <>
+                    {linkedOrder && (
+                      <div style={{ marginTop: 18 }}>
+                        <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 8, padding: '0 4px' }}>
+                          <span style={{ fontSize: 10.5, fontWeight: 800, color: C.grisM, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                            Commande concernée
+                          </span>
+                        </div>
+                        <OrderCard
+                          order={linkedOrder}
+                          highlighted
+                          onUnassign={() => set('order_id', '')}
+                        />
+                      </div>
+                    )}
+
+                    {/* Historique commandes */}
+                    <div style={{ marginTop: 18 }}>
+                      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 8, padding: '0 4px' }}>
+                        <span style={{ fontSize: 10.5, fontWeight: 800, color: C.grisM, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                          {linkedOrder ? 'Autres commandes' : 'Historique commandes'}
+                        </span>
+                        {historyOrders.length > 0 && (
+                          <span style={{ fontSize: 11, color: C.grisM, fontWeight: 600 }}>
+                            {historyOrders.length} commande{historyOrders.length > 1 ? 's' : ''}
+                          </span>
+                        )}
+                      </div>
+                      {loadingOrders ? (
+                        <div style={{ padding: 14, textAlign: 'center', color: C.grisM, fontSize: 12.5 }}>Chargement…</div>
+                      ) : historyOrders.length === 0 ? (
+                        <div style={{
+                          background: C.blanc, borderRadius: 10, border: `1px solid ${C.grisCL}`,
+                          padding: '14px', textAlign: 'center', color: C.grisM, fontSize: 12.5,
+                        }}>
+                          {linkedOrder ? 'Aucune autre commande' : 'Aucune commande'}
+                        </div>
+                      ) : (
+                        historyOrders.map(o => (
+                          <OrderCard
+                            key={o.wp_order_id}
+                            order={o}
+                            canAssign={!form.order_id}
+                            onAssign={(wpOrderId) => set('order_id', String(wpOrderId))}
+                          />
+                        ))
+                      )}
+                    </div>
+                  </>
+                );
+              })()}
             </>
           ) : (
             <div style={{
