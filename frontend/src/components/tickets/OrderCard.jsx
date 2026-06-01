@@ -127,20 +127,43 @@ export default function OrderCard({ order, highlighted, canAssign, onAssign, onU
 
   const statusLabel = (s) => {
     const map = {
-      'wc-completed': 'Livrée', 'wc-processing': 'En cours',
-      'wc-shipped': 'Expédiée', 'wc-cancelled': 'Annulée',
-      'wc-refunded': 'Remboursée', 'wc-on-hold': 'En attente', 'wc-pending': 'En attente',
+      'wc-completed':          'Livrée',
+      'wc-delivered':          'Livrée',
+      'wc-being-delivered':    'En livraison',
+      'wc-awaiting-delivery':  'En attente de livraison',
+      'wc-processing':         'En cours',
+      'wc-shipped':            'Expédiée',
+      'wc-cancelled':          'Annulée',
+      'wc-failed':             'Échouée',
+      'wc-refunded':           'Remboursée',
+      'wc-on-hold':            'En attente',
+      'wc-pending':            'En attente',
+      'wc-checkout-draft':     'Brouillon',
+      'wc-return-approved':    'Retour accepté',
+      'wc-return-cancelled':   'Retour annulé',
+      'trash':                 'Corbeille',
     };
     return map[s] || (s?.replace('wc-', '') || '—');
   };
 
   const statusColors = (s) => {
     if (!s) return { bg: C.grisTL, color: C.grisF };
-    if (s.includes('complete')) return { bg: '#E5F4EB', color: '#2A8049' };
+    // Livré (vert) — complete ou delivered
+    if (s.includes('complete') || s === 'wc-delivered') return { bg: '#E5F4EB', color: '#2A8049' };
+    // En cours de livraison (orange)
+    if (s.includes('being-delivered')) return { bg: '#FFF1D6', color: '#8B5A00' };
+    // En attente de livraison (jaune clair)
+    if (s.includes('awaiting-delivery')) return { bg: '#FFF8E1', color: '#92650A' };
+    // Expédiée (bleu)
     if (s.includes('shipped')) return { bg: '#E5EEF6', color: '#2C5F80' };
+    // En cours (orange clair)
     if (s.includes('process')) return { bg: '#FFF1D6', color: '#8B5A00' };
+    // Annulée / échouée (rouge)
     if (s.includes('cancel') || s.includes('fail')) return { bg: '#FDEAEA', color: '#B71D1D' };
+    // Remboursée (violet)
     if (s.includes('refund')) return { bg: '#F1ECFB', color: '#5D49D6' };
+    // Retour (violet clair)
+    if (s.includes('return')) return { bg: '#F1ECFB', color: '#5D49D6' };
     return { bg: C.grisTL, color: C.grisF };
   };
   const sc = statusColors(orderStatus);
