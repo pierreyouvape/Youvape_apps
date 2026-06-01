@@ -37,7 +37,7 @@ const OKAPI_MAP = {
 async function trackOkapi(number, carrier, trackingUrl) {
   const apiKey = process.env.OKAPI_API_KEY;
   if (!apiKey) {
-    return { label: 'Expédié', color: '#135E84', trackingUrl, live: false };
+    return { label: 'Suivi', color: '#135E84', trackingUrl, live: false };
   }
 
   try {
@@ -54,7 +54,7 @@ async function trackOkapi(number, carrier, trackingUrl) {
     const last     = events[0];
 
     if (!last) {
-      return { label: 'Expédié', color: '#135E84', trackingUrl, live: false };
+      return { label: 'Suivi', color: '#135E84', trackingUrl, live: false };
     }
 
     const code    = last.code;
@@ -65,7 +65,7 @@ async function trackOkapi(number, carrier, trackingUrl) {
     return { label, color, trackingUrl, live: true };
   } catch (err) {
     console.warn(`[Tracking Okapi] Erreur pour ${number}:`, err.message);
-    return { label: 'Expédié', color: '#135E84', trackingUrl, live: false };
+    return { label: 'Suivi', color: '#135E84', trackingUrl, live: false };
   }
 }
 
@@ -77,7 +77,7 @@ function parseMondialRelayStatus(status) {
   if (s.includes('distribu'))                         return { label: 'En distribution',  color: '#fd7e14' };
   if (s.includes('anomalie') || s.includes('retour')) return { label: 'Anomalie ⚠️',      color: '#dc3545' };
   if (s.includes('pris') || s.includes('accept'))    return { label: 'Pris en charge',    color: '#6c757d' };
-  return { label: status || 'Expédié', color: '#135E84' };
+  return { label: status || 'Suivi', color: '#135E84' };
 }
 
 // ─── Tracking Mondial Relay ───────────────────────────────────────────────────
@@ -87,7 +87,7 @@ async function trackMondialRelay(number, trackingUrl) {
   const password = process.env.MONDIAL_RELAY_PASSWORD;
 
   if (!brandId || !login || !password) {
-    return { label: 'Expédié', color: '#135E84', trackingUrl, live: false };
+    return { label: 'Suivi', color: '#135E84', trackingUrl, live: false };
   }
 
   try {
@@ -111,7 +111,7 @@ async function trackMondialRelay(number, trackingUrl) {
     return { label, color, trackingUrl, live: true };
   } catch (err) {
     console.warn(`[Tracking Mondial Relay] Erreur pour ${number}:`, err.message);
-    return { label: 'Expédié', color: '#135E84', trackingUrl, live: false };
+    return { label: 'Suivi', color: '#135E84', trackingUrl, live: false };
   }
 }
 
@@ -135,7 +135,7 @@ async function getTrackingStatus(number, shippingCarrier) {
   }
 
   // Transporteur non reconnu — juste l'URL si possible
-  return { label: 'Expédié', color: '#135E84', trackingUrl, carrier, live: false };
+  return { label: 'Suivi', color: '#135E84', trackingUrl, carrier, live: false };
 }
 
 module.exports = { getTrackingStatus, detectCarrier, buildTrackingUrl };

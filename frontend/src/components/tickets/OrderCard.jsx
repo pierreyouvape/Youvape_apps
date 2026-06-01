@@ -80,7 +80,7 @@ export function TrackingBadge({ trackingNum, shippingCarrier }) {
     );
   }
 
-  const label      = status?.label || 'Expédié';
+  const label      = status?.label || 'Suivi';
   const color      = status?.color || '#135E84';
   const url        = status?.trackingUrl;
   const isLight    = color === '#fff491';
