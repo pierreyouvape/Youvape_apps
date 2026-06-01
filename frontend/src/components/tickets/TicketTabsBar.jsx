@@ -44,12 +44,21 @@ function IconPlay({ size = 12, color = 'currentColor' }) {
   );
 }
 
+function IconPlus({ size = 12, color = 'currentColor' }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2.4" strokeLinecap="round">
+      <path d="M12 5v14M5 12h14" />
+    </svg>
+  );
+}
+
 const PLAY_GREEN = '#4AB866';
 
 export default function TicketTabsBar() {
   const {
     openTickets, activeTab, setActiveTab, closeTicket,
     isPlayActive, playTicketId, playState, stopPlay,
+    newDraftOpen, closeNewDraft,
   } = useOpenTickets();
   const { statusMap } = useTicketStatuses();
 
@@ -145,6 +154,39 @@ export default function TicketTabsBar() {
             onMouseEnter={e => { e.currentTarget.style.background = '#E2E8EC'; e.currentTarget.style.color = '#B71D1D'; }}
             onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = C.grisM; }}
             title="Arrêter le mode Play"
+          >
+            <IconClose size={11} />
+          </button>
+        </div>
+      )}
+
+      {/* Onglet "Nouveau ticket" (brouillon) — visible si le draft est ouvert */}
+      {newDraftOpen && (
+        <div
+          onClick={() => setActiveTab('new')}
+          onMouseDown={e => { if (e.button === 1) { e.preventDefault(); closeNewDraft(); } }}
+          style={{
+            ...tabBase,
+            ...(activeTab === 'new' ? tabActive : {}),
+            paddingRight: 6,
+          }}
+          onMouseEnter={e => { if (activeTab !== 'new') e.currentTarget.style.background = '#EDF2F4'; }}
+          onMouseLeave={e => { if (activeTab !== 'new') e.currentTarget.style.background = C.grisTL; }}
+          title="Nouveau ticket"
+        >
+          <IconPlus size={13} color={activeTab === 'new' ? TICKETS_COLOR : C.grisF} />
+          <span>Nouveau ticket</span>
+          <button
+            onClick={e => { e.stopPropagation(); closeNewDraft(); }}
+            style={{
+              width: 20, height: 20, borderRadius: 4,
+              background: 'transparent', border: 'none', cursor: 'pointer',
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+              color: C.grisM, padding: 0, flexShrink: 0, marginLeft: 2,
+            }}
+            onMouseEnter={e => { e.currentTarget.style.background = '#E2E8EC'; e.currentTarget.style.color = '#B71D1D'; }}
+            onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = C.grisM; }}
+            title="Annuler le brouillon"
           >
             <IconClose size={11} />
           </button>

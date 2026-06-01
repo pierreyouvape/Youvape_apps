@@ -105,7 +105,7 @@ function Checkbox({ checked, indeterminate, onChange }) {
 /* ─── Composant principal ─────────────────────────────────────────────────────── */
 export default function TicketsList({ activeView, views = [], onRefresh, refreshTick }) {
   const navigate = useNavigate();
-  const { openTicket, startPlay } = useOpenTickets();
+  const { openTicket, startPlay, openNewDraft } = useOpenTickets();
   const [tickets, setTickets] = useState([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -198,7 +198,7 @@ export default function TicketsList({ activeView, views = [], onRefresh, refresh
         </div>
         {/* Bouton Nouveau ticket */}
         <button
-          onClick={() => {}}
+          onClick={() => openNewDraft()}
           style={{
             display: 'inline-flex', alignItems: 'center', gap: 7,
             background: `linear-gradient(155deg, ${TICKETS_COLOR}, ${shade(TICKETS_COLOR, -0.18)})`,

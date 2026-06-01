@@ -4,9 +4,11 @@ const STORAGE_KEY    = 'yv.tickets.openTabs';
 const ACTIVE_KEY     = 'yv.tickets.activeTab';
 const AFTER_MODE_KEY = 'yv.tickets.afterActionMode'; // 'next' | 'stay'
 const PLAY_KEY       = 'yv.tickets.play';            // { queue, viewId, viewStatuses, refetched }
+const DRAFT_KEY      = 'yv.tickets.newDraftOpen';    // '1' = onglet brouillon ouvert
 
-// Onglet virtuel "Play"
+// Onglets virtuels
 export const PLAY_TAB = 'play';
+export const NEW_TAB  = 'new';
 
 const OpenTicketsContext = createContext(null);
 
@@ -19,14 +21,24 @@ export function OpenTicketsProvider({ children }) {
     } catch { return []; }
   });
 
-  // activeTab = 'list' | 'play' | ticketId (number)
+  // activeTab = 'list' | 'play' | 'new' | ticketId (number)
   const [activeTab, setActiveTabState] = useState(() => {
     const raw = localStorage.getItem(ACTIVE_KEY);
     if (!raw || raw === 'list') return 'list';
     if (raw === PLAY_TAB) return PLAY_TAB;
+    if (raw === NEW_TAB) return NEW_TAB;
     const n = parseInt(raw, 10);
     return Number.isNaN(n) ? 'list' : n;
   });
+
+  // Onglet brouillon "Nouveau ticket" (le brouillon lui-même est stocké en localStorage par le composant)
+  const [newDraftOpen, setNewDraftOpen] = useState(() => {
+    return localStorage.getItem(DRAFT_KEY) === '1';
+  });
+  useEffect(() => {
+    if (newDraftOpen) localStorage.setItem(DRAFT_KEY, '1');
+    else localStorage.removeItem(DRAFT_KEY);
+  }, [newDraftOpen]);
 
   // ─── Mode Play ───────────────────────────────────────────────────────────
   // playState = { queue: number[], currentId: number|null, viewId, viewStatuses, refetched: bool } | null
@@ -115,6 +127,34 @@ export function OpenTicketsProvider({ children }) {
     setOpenTickets(prev => prev.map(t => t.id === id ? { ...t, ...patch } : t));
   }, []);
 
+  // ─── Brouillon nouveau ticket ────────────────────────────────────────────
+  const openNewDraft = useCallback(() => {
+    setNewDraftOpen(true);
+    setActiveTabState(NEW_TAB);
+  }, []);
+
+  const closeNewDraft = useCallback(() => {
+    setNewDraftOpen(false);
+    // Vider le brouillon stocké côté composant aussi
+    try { localStorage.removeItem('yv.tickets.draftNew'); } catch { /* ignore */ }
+    setActiveTabState(prev => prev === NEW_TAB ? 'list' : prev);
+  }, []);
+
+  // Le brouillon a été soumis -> ouvre le ticket réel et ferme l'onglet 'new'
+  const convertDraftToTicket = useCallback((ticket) => {
+    if (!ticket || !ticket.id) return;
+    const meta = {
+      id: ticket.id,
+      subject: ticket.subject,
+      customer_name: ticket.customer_name,
+      sav_status: ticket.sav_status,
+    };
+    setOpenTickets(prev => prev.find(t => t.id === meta.id) ? prev : [...prev, meta]);
+    setNewDraftOpen(false);
+    try { localStorage.removeItem('yv.tickets.draftNew'); } catch { /* ignore */ }
+    setActiveTabState(meta.id);
+  }, []);
+
   // ─── Mode Play : démarrer ────────────────────────────────────────────────
   // queue = liste d'IDs (ordre de la vue) ; viewId/viewStatuses servent au refetch
   const startPlay = useCallback(({ queue, viewId, viewStatuses }) => {
@@ -182,6 +222,11 @@ export function OpenTicketsProvider({ children }) {
     advancePlay,
     afterActionMode,
     setAfterActionMode,
+    // Brouillon nouveau ticket
+    newDraftOpen,
+    openNewDraft,
+    closeNewDraft,
+    convertDraftToTicket,
   };
 
   return (

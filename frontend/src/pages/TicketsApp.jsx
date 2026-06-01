@@ -4,6 +4,7 @@ import ViewsSidebar from '../components/tickets/ViewsSidebar';
 import TicketsList from '../components/tickets/TicketsList';
 import TicketDetail from '../components/tickets/TicketDetail';
 import TicketTabsBar from '../components/tickets/TicketTabsBar';
+import NewTicketPage from '../components/tickets/NewTicketPage';
 import { applyViewsOrder, loadViewsOrder } from '../components/tickets/viewsOrder';
 import { OpenTicketsProvider, useOpenTickets } from '../context/OpenTicketsContext';
 
@@ -13,7 +14,7 @@ function TicketsAppInner() {
   const [activeView, setActiveView] = useState(null); // id numérique de la vue active
   const [counts, setCounts]         = useState({});
   const [refreshTick, setRefreshTick] = useState(0);
-  const { activeTab, playTicketId, isPlayActive } = useOpenTickets();
+  const { activeTab, playTicketId, isPlayActive, newDraftOpen } = useOpenTickets();
 
   // Charger les vues depuis l'API
   useEffect(() => {
@@ -93,7 +94,7 @@ function TicketsAppInner() {
               />
             </div>
 
-            {activeTab !== 'list' && activeTab !== 'play' && (
+            {activeTab !== 'list' && activeTab !== 'play' && activeTab !== 'new' && (
               <div style={{ flex: 1, minWidth: 0, display: 'flex', overflow: 'hidden' }}>
                 <TicketDetail key={activeTab} ticketId={activeTab} />
               </div>
@@ -103,6 +104,12 @@ function TicketsAppInner() {
               <div style={{ flex: 1, minWidth: 0, display: 'flex', overflow: 'hidden' }}>
                 {/* key = ticketId pour forcer le remount à chaque ticket suivant */}
                 <TicketDetail key={`play-${playTicketId}`} ticketId={playTicketId} />
+              </div>
+            )}
+
+            {activeTab === 'new' && newDraftOpen && (
+              <div style={{ flex: 1, minWidth: 0, display: 'flex', overflow: 'hidden' }}>
+                <NewTicketPage />
               </div>
             )}
           </div>

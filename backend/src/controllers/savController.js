@@ -271,29 +271,89 @@ const savController = {
     }
   },
 
-  // ─── Créer un ticket manuellement ────────────────────────────────────────
+  // ─── Créer un ticket manuellement (depuis l'app) ─────────────────────────
+  // Body requis : un 1er message (public ou note privée). Si public, envoi mail.
   createManual: async (req, res) => {
     try {
-      const { order_id, customer_name, customer_email, customer_phone, subject, description } = req.body;
-      if (!customer_email || !subject) {
-        return res.status(400).json({ error: 'Email et sujet requis' });
+      const {
+        order_id, customer_name, customer_email, customer_phone,
+        subject, body, is_private, sav_status, assigned_to_id, agent_name,
+      } = req.body;
+
+      if (!customer_email || !subject || !body || !body.trim()) {
+        return res.status(400).json({ error: 'Email, sujet et message sont requis' });
       }
 
+      // Lookup client par email (priorité à la BDD : si trouvé, on ignore le nom saisi)
       let customer_id = null;
+      let resolved_name = customer_name;
       const customerResult = await pool.query(
-        'SELECT id FROM customers WHERE email = $1 LIMIT 1',
+        'SELECT id, first_name, last_name FROM customers WHERE email = $1 LIMIT 1',
         [customer_email.toLowerCase()]
       );
       if (customerResult.rows.length > 0) {
         customer_id = customerResult.rows[0].id;
+        const c = customerResult.rows[0];
+        resolved_name = `${c.first_name || ''} ${c.last_name || ''}`.trim() || customer_name;
       }
 
+      const isPrivate = is_private === true || is_private === 'true';
+
+      // Création du ticket (description = null, le 1er message va dans messages[])
       const ticket = await savModel.create({
-        order_id, customer_id, customer_name, customer_email,
-        customer_phone, subject, description, source: 'manual',
+        order_id: order_id || null,
+        customer_id,
+        customer_name: resolved_name,
+        customer_email: customer_email.toLowerCase(),
+        customer_phone: customer_phone || null,
+        subject,
+        description: null,
+        source: 'manual',
       });
 
-      res.status(201).json({ success: true, ticket });
+      // Appliquer assigné et statut initial si fournis
+      const patchFields = {};
+      if (assigned_to_id) patchFields.assigned_to_id = assigned_to_id;
+      if (Object.keys(patchFields).length > 0) {
+        await savModel.patch(ticket.id, patchFields);
+      }
+      if (sav_status) {
+        try { await savModel.updateStatus(ticket.id, sav_status); }
+        catch (e) { console.warn('[SAV createManual] statut invalide ignoré:', sav_status, e.message); }
+      }
+
+      // Sauvegarde des éventuelles PJ
+      const storedAttachments = saveAttachments(ticket.id, req.files);
+
+      // Si réponse publique → envoi mail Mailgun
+      if (!isPrivate) {
+        const emailResult = await mailgunService.sendReply({
+          to:          customer_email.toLowerCase(),
+          subject:     subject,
+          ticketId:    ticket.id,
+          bodyText:    body,
+          attachments: toMailgunAttachments(req.files),
+        });
+        if (!emailResult.success) {
+          // On garde le ticket mais on signale l'erreur d'envoi
+          console.error('[SAV createManual] Envoi mail échoué:', emailResult.error);
+          return res.status(500).json({ error: `Ticket créé mais envoi mail échoué : ${emailResult.error}`, ticket_id: ticket.id });
+        }
+      }
+
+      // Stocker le 1er message
+      await savModel.addMessage(ticket.id, {
+        from: agent_name || 'SAV Youvape',
+        body,
+        is_agent: true,
+        is_private: isPrivate,
+        attachments: storedAttachments,
+      });
+
+      // Renvoyer le ticket complet (avec enrichissements client, etc.)
+      const fullTicket = await savModel.getById(ticket.id);
+      res.status(201).json({ success: true, ticket: fullTicket });
+
     } catch (error) {
       console.error('❌ [SAV] Erreur création manuelle:', error);
       res.status(500).json({ error: 'Erreur serveur' });

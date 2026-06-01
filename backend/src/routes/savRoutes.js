@@ -68,7 +68,7 @@ router.delete('/statuses/:id',   savController.deleteStatus);
 
 // ─── Routes internes app ──────────────────────────────────────────────────────
 router.get('/',                        savController.getAll);
-router.post('/',                       savController.createManual);
+router.post('/',                       memoryUpload.array('attachments', MAX_FILES), savController.createManual);
 router.get('/order/:order_id',         savController.getByOrderId);
 router.get('/customer/:customer_id',   savController.getByCustomerId);
 router.get('/:id',                     savController.getById);
