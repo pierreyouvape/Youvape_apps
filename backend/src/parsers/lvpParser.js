@@ -1,21 +1,101 @@
 /**
  * Parseur PDF pour LVP Distribution
- * Gere 2 formats :
+ * Gere 3 formats :
  * - "Facture" : facture OpenSi multi-pages avec colonnes Référence | Désignation | Quantité | PU HT | Montant HT
- * - "Confirmation" : confirmation de commande site web lvp-distribution.fr
+ * - "Confirmation" : confirmation de commande site web lvp-distribution.fr (ancien format)
  *   Colonnes : Produit | Quantité | Prix unitaire HT | Prix total HT | TVA | Prix total TTC
  *   Chaque item : désignation (1-2 lignes) + "Référence: REF" + QTE PRIX_HT€ TOTAL_HT€ TVA€ TTC€
- *   Remise globale : "Remise XX,XX €" en bas du tableau
+ * - "Email" : email de confirmation PrestaShop exporté en PDF (nouveau format)
+ *   En-tête : "Commande : XXXXXX passée le DD/MM/YYYY"
+ *   Colonnes : Référence | Produit | Prix unitaire | Quantité | Prix total
  */
 
 module.exports = {
   parse: (text) => {
+    // Email PrestaShop : "Commande : 272122 passée le 01/06/2026"
+    if (/Commande\s*:\s*\d+\s+pass[ée]e\s+le\s+\d{2}\/\d{2}\/\d{4}/.test(text)) {
+      return parseEmailOrder(text);
+    }
     if (text.includes('Commande n°') && text.includes('Référence:')) {
       return parseConfirmation(text);
     }
     return parseFacture(text);
   }
 };
+
+/**
+ * Format "Email de confirmation" PrestaShop exporté en PDF
+ * En-tête : "Commande : 272122 passée le 01/06/2026 10:05:05"
+ * Colonnes : Référence | Produit | Prix unitaire | Quantité | Prix total
+ * Les refs peuvent être word-wrappées avec tirets CSS dans la colonne étroite
+ */
+function parseEmailOrder(text) {
+  const orderMatch = text.match(/Commande\s*:\s*(\d+)\s+pass[ée]e\s+le\s+(\d{2})\/(\d{2})\/(\d{4})/);
+  const orderNumber = orderMatch ? orderMatch[1] : null;
+  const orderDate = orderMatch ? `${orderMatch[4]}-${orderMatch[3]}-${orderMatch[2]}` : null;
+
+  // Isoler la zone tableau (entre headers colonnes et section totaux)
+  const tableHeaderIdx = text.search(/Référence\s+Produit/);
+  const tableEndIdx = text.search(/\nProduits\s+[\d,]+\s*€|\nR[ée]ductions?\s+[\d,]+\s*€|\nRSPV/);
+
+  const rawTable = text.substring(
+    tableHeaderIdx >= 0 ? tableHeaderIdx : 0,
+    tableEndIdx > 0 ? tableEndIdx : text.length
+  );
+
+  // Supprimer la ligne de headers colonnes
+  const cleanTable = rawTable
+    .replace(/Référence\s+Produit\s+Prix\s+unitaire\s+Quantité\s+Prix\s+total[^\n]*/g, '')
+    .trim();
+
+  const items = [];
+
+  // Chaque ligne item se termine par : prixUnit€  qté  total€
+  // Validation mathématique pour éviter les faux positifs
+  const rowPattern = /([\d,]+)\s*€\s+(\d+)\s+([\d,]+)\s*€/g;
+  const validMatches = [];
+  let m;
+  while ((m = rowPattern.exec(cleanTable)) !== null) {
+    const unitPrice = parseFloat(m[1].replace(',', '.'));
+    const qty = parseInt(m[2]);
+    const total = parseFloat(m[3].replace(',', '.'));
+    // Vérifie l'équation prix×qté = total (tolérance arrondi)
+    if (qty > 0 && Math.abs(unitPrice * qty - total) < 0.05) {
+      validMatches.push({ index: m.index, end: m.index + m[0].length, unitPrice, qty });
+    }
+  }
+
+  for (let i = 0; i < validMatches.length; i++) {
+    const start = i > 0 ? validMatches[i - 1].end : 0;
+    // Texte brut avant le bloc prix/qté/total (ref + description)
+    const rowText = cleanTable.substring(start, validMatches[i].index)
+      .replace(/\n+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    if (!rowText) continue;
+
+    const { unitPrice, qty } = validMatches[i];
+    const { supplierSku, designation } = extractRefAndDesignation(rowText);
+    if (!supplierSku) continue;
+
+    items.push({
+      supplier_sku: supplierSku,
+      designation: designation.trim(),
+      qty_ordered: qty,
+      unit_price_net: unitPrice,
+    });
+  }
+
+  // Remise code promo : "RSPV20 -28,61 €"
+  const discountCodeMatch = text.match(/[A-Z][A-Z0-9]{3,}\s+-([\d,]+)\s*€/);
+  const globalDiscount = discountCodeMatch ? parseFloat(discountCodeMatch[1].replace(',', '.')) : 0;
+  const discountItems = globalDiscount > 0
+    ? [{ item_type: 'discount', product_name: 'Remise', unit_price: -globalDiscount, qty_ordered: 1 }]
+    : [];
+
+  return { orderNumber, orderDate, items, discountItems, hasPrice: true, skipPackQty: true };
+}
 
 /**
  * Format "Confirmation de commande" (site web lvp-distribution.fr)

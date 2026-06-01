@@ -294,6 +294,103 @@ exports.getCatalogList = async (req, res) => {
 };
 
 /**
+ * Exporte le catalogue complet en CSV ou XLS
+ * GET /api/products/catalog/export?format=csv|xlsx&search=...
+ */
+exports.getCatalogExport = async (req, res) => {
+  try {
+    const search = req.query.search || '';
+    const format = (req.query.format || 'csv').toLowerCase();
+
+    const { parents, variations } = await productModel.getAllForCatalog(99999, 0, search);
+
+    const variationsByParent = new Map();
+    for (const v of variations) {
+      if (!variationsByParent.has(v.wp_parent_id)) variationsByParent.set(v.wp_parent_id, []);
+      variationsByParent.get(v.wp_parent_id).push(v);
+    }
+
+    const rows = [];
+    for (const p of parents) {
+      if (p.product_type === 'variable') {
+        const children = variationsByParent.get(p.wp_product_id) || [];
+        for (const v of children) {
+          const pr = parseFloat(v.price);
+          const co = parseFloat(v.cost_price);
+          const margin = pr && co ? ((pr - co) / pr * 100).toFixed(1) : '';
+          rows.push([
+            p.post_title,
+            v.post_title.replace(p.post_title + ' - ', '').replace(p.post_title, '') || v.post_title,
+            v.sku || '',
+            'variation',
+            v.price != null ? parseFloat(v.price) : '',
+            v.cost_price != null ? parseFloat(v.cost_price) : '',
+            margin,
+            v.weight != null ? parseFloat(v.weight) : '',
+            parseInt(v.stock) || 0,
+            parseInt(v.incoming_qty) || 0,
+            parseInt(v.sales_30d) || 0,
+          ]);
+        }
+      } else {
+        const pr = parseFloat(p.price);
+        const co = parseFloat(p.cost_price);
+        const margin = pr && co ? ((pr - co) / pr * 100).toFixed(1) : '';
+        rows.push([
+          '',
+          p.post_title,
+          p.sku || '',
+          'simple',
+          p.price != null ? parseFloat(p.price) : '',
+          p.cost_price != null ? parseFloat(p.cost_price) : '',
+          margin,
+          p.weight != null ? parseFloat(p.weight) : '',
+          parseInt(p.stock) || 0,
+          parseInt(p.incoming_qty) || 0,
+          parseInt(p.sales_30d) || 0,
+        ]);
+      }
+    }
+
+    const HEADERS = ['Famille', 'Nom', 'SKU', 'Type', 'Prix TTC', 'Coût HT', 'Marge %', 'Poids', 'Stock', 'Arrivages', 'Ventes 30j'];
+
+    if (format === 'csv') {
+      const lines = [HEADERS.join(';')];
+      for (const r of rows) {
+        lines.push(r.map(v => `"${String(v ?? '').replace(/"/g, '""')}"`).join(';'));
+      }
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+      res.setHeader('Content-Disposition', 'attachment; filename="catalogue.csv"');
+      return res.send('﻿' + lines.join('\n'));
+    }
+
+    if (format === 'xlsx') {
+      const esc = (v) => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      let xml = `<?xml version="1.0" encoding="UTF-8"?><?mso-application progid="Excel.Sheet"?>
+<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">
+<Styles><Style ss:ID="h"><Font ss:Bold="1"/></Style></Styles>
+<Worksheet ss:Name="Catalogue"><Table>
+<Row>${HEADERS.map(h => `<Cell ss:StyleID="h"><Data ss:Type="String">${esc(h)}</Data></Cell>`).join('')}</Row>`;
+      for (const r of rows) {
+        xml += `<Row>${r.map(v => {
+          const isNum = v !== '' && v != null && !isNaN(v) && typeof v !== 'string';
+          return `<Cell><Data ss:Type="${isNum ? 'Number' : 'String'}">${esc(v)}</Data></Cell>`;
+        }).join('')}</Row>`;
+      }
+      xml += '</Table></Worksheet></Workbook>';
+      res.setHeader('Content-Type', 'application/vnd.ms-excel');
+      res.setHeader('Content-Disposition', 'attachment; filename="catalogue.xls"');
+      return res.send(xml);
+    }
+
+    res.status(400).json({ success: false, error: 'Format inconnu. Utilisez ?format=csv ou ?format=xlsx' });
+  } catch (error) {
+    console.error('Error exporting catalog:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+/**
  * Recupere les variations d'un produit parent pour le catalogue
  * GET /api/products/:id/catalog-variations
  */

@@ -206,6 +206,33 @@ const CatalogApp = () => {
   const totalPages = Math.ceil(pagination.total / pagination.limit);
   const currentPage = Math.floor(pagination.offset / pagination.limit) + 1;
 
+  // Export catalogue
+  const [exporting, setExporting] = useState(null);
+
+  const handleExport = async (format) => {
+    setExporting(format);
+    try {
+      const res = await axios.get(`${API_URL}/products/catalog/export`, {
+        params: { format, search: searchTerm },
+        headers,
+        responseType: 'blob'
+      });
+      const url = window.URL.createObjectURL(new Blob([res.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', format === 'xlsx' ? 'catalogue.xls' : 'catalogue.csv');
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('Export error:', err);
+      alert("Erreur lors de l'export");
+    } finally {
+      setExporting(null);
+    }
+  };
+
   // CSV handling
   const handleCsvFile = (e) => {
     const file = e.target.files[0];
@@ -325,6 +352,28 @@ const CatalogApp = () => {
             Importer EAN (CSV)
             <input type="file" accept=".csv,.txt" onChange={handleCsvFile} style={{ display: 'none' }} />
           </label>
+          <button
+            onClick={() => handleExport('csv')}
+            disabled={exporting !== null}
+            style={{
+              marginLeft: '8px', padding: '8px 16px', backgroundColor: '#fff', color: '#374151',
+              border: '1px solid #d1d5db', borderRadius: '6px', fontSize: '13px', fontWeight: '600',
+              cursor: exporting !== null ? 'wait' : 'pointer', opacity: exporting === 'csv' ? 0.6 : 1
+            }}
+          >
+            {exporting === 'csv' ? 'Export...' : 'Export CSV'}
+          </button>
+          <button
+            onClick={() => handleExport('xlsx')}
+            disabled={exporting !== null}
+            style={{
+              marginLeft: '8px', padding: '8px 16px', backgroundColor: '#fff', color: '#374151',
+              border: '1px solid #d1d5db', borderRadius: '6px', fontSize: '13px', fontWeight: '600',
+              cursor: exporting !== null ? 'wait' : 'pointer', opacity: exporting === 'xlsx' ? 0.6 : 1
+            }}
+          >
+            {exporting === 'xlsx' ? 'Export...' : 'Export XLS'}
+          </button>
           <div style={{ position: 'relative', marginLeft: '12px', display: 'inline-block' }}>
             <button
               onClick={() => setShowColumnPanel(p => !p)}
