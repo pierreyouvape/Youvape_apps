@@ -4,6 +4,7 @@ import { useOpenTickets } from '../../context/OpenTicketsContext';
 import { useTicketStatuses } from './useTicketStatuses';
 import { TICKETS_COLOR } from './ticketConstants';
 import CustomerAutocomplete from './CustomerAutocomplete';
+import OrderCard from './OrderCard';
 
 const C = {
   orange: '#E28F00', vert: '#4AB866', bleu: '#0071EB',
@@ -139,6 +140,8 @@ export default function NewTicketPage() {
   const [form, setForm] = useState(initial);
   const [users, setUsers] = useState([]);
   const [selectedCustomer, setSelectedCustomer] = useState(null);
+  const [customerOrders, setCustomerOrders] = useState([]);
+  const [loadingOrders, setLoadingOrders] = useState(false);
   const [searchValue, setSearchValue] = useState(
     initial.customer_email || `${initial.first_name || ''} ${initial.last_name || ''}`.trim()
   );
@@ -172,6 +175,19 @@ export default function NewTicketPage() {
       .then(d => { if (d.success && d.users) setUsers(d.users); })
       .catch(() => {});
   }, [token]);
+
+  // Charger historique commandes quand un client est sélectionné via autocomplete
+  useEffect(() => {
+    if (!selectedCustomer?.wp_user_id) { setCustomerOrders([]); return; }
+    let cancelled = false;
+    setLoadingOrders(true);
+    fetch(`/api/sav/customer-orders/${selectedCustomer.wp_user_id}?limit=6`)
+      .then(r => r.json())
+      .then(d => { if (!cancelled && d.success) setCustomerOrders(d.orders || []); })
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setLoadingOrders(false); });
+    return () => { cancelled = true; };
+  }, [selectedCustomer?.wp_user_id]);
 
   // Fermeture des dropdowns au clic extérieur
   useEffect(() => {
@@ -667,7 +683,35 @@ export default function NewTicketPage() {
           height: '100%', overflowY: 'auto', padding: '20px 18px',
         }}>
           {selectedCustomer ? (
-            <CustomerPreview customer={selectedCustomer} />
+            <>
+              <CustomerPreview customer={selectedCustomer} />
+
+              {/* Historique commandes */}
+              <div style={{ marginTop: 18 }}>
+                <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 8, padding: '0 4px' }}>
+                  <span style={{ fontSize: 10.5, fontWeight: 800, color: C.grisM, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                    Historique commandes
+                  </span>
+                  {customerOrders.length > 0 && (
+                    <span style={{ fontSize: 11, color: C.grisM, fontWeight: 600 }}>
+                      {customerOrders.length} commande{customerOrders.length > 1 ? 's' : ''}
+                    </span>
+                  )}
+                </div>
+                {loadingOrders ? (
+                  <div style={{ padding: 14, textAlign: 'center', color: C.grisM, fontSize: 12.5 }}>Chargement…</div>
+                ) : customerOrders.length === 0 ? (
+                  <div style={{
+                    background: C.blanc, borderRadius: 10, border: `1px solid ${C.grisCL}`,
+                    padding: '14px', textAlign: 'center', color: C.grisM, fontSize: 12.5,
+                  }}>
+                    Aucune commande
+                  </div>
+                ) : (
+                  customerOrders.map(o => <OrderCard key={o.wp_order_id} order={o} />)
+                )}
+              </div>
+            </>
           ) : (
             <div style={{
               background: C.blanc, borderRadius: 12, border: `1px solid ${C.grisCL}`,

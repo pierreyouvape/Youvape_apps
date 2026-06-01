@@ -53,6 +53,9 @@ router.get('/attachments/:ticketId/:filename', (req, res) => {
 // ─── Tracking transporteur ────────────────────────────────────────────────────
 router.get('/tracking/:number', savController.getTracking);
 
+// ─── Historique commandes d'un client (pour NewTicketPage) ───────────────────
+router.get('/customer-orders/:wp_user_id', savController.getCustomerOrders);
+
 // ─── Routes vues ──────────────────────────────────────────────────────────────
 router.get('/views',              savController.getViews);
 router.post('/views',             savController.createView);

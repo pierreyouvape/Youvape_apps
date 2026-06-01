@@ -325,21 +325,21 @@ const savController = {
       // Sauvegarde des éventuelles PJ
       const storedAttachments = saveAttachments(ticket.id, req.files);
 
-      // Si réponse publique → envoi mail Mailgun
-      if (!isPrivate) {
-        const emailResult = await mailgunService.sendReply({
-          to:          customer_email.toLowerCase(),
-          subject:     subject,
-          ticketId:    ticket.id,
-          bodyText:    body,
-          attachments: toMailgunAttachments(req.files),
-        });
-        if (!emailResult.success) {
-          // On garde le ticket mais on signale l'erreur d'envoi
-          console.error('[SAV createManual] Envoi mail échoué:', emailResult.error);
-          return res.status(500).json({ error: `Ticket créé mais envoi mail échoué : ${emailResult.error}`, ticket_id: ticket.id });
-        }
-      }
+      // TODO: réactiver l'envoi Mailgun quand la conf sera prête
+      // Si réponse publique → envoi mail Mailgun (actuellement désactivé)
+      // if (!isPrivate) {
+      //   const emailResult = await mailgunService.sendReply({
+      //     to:          customer_email.toLowerCase(),
+      //     subject:     subject,
+      //     ticketId:    ticket.id,
+      //     bodyText:    body,
+      //     attachments: toMailgunAttachments(req.files),
+      //   });
+      //   if (!emailResult.success) {
+      //     console.error('[SAV createManual] Envoi mail échoué:', emailResult.error);
+      //     return res.status(500).json({ error: `Ticket créé mais envoi mail échoué : ${emailResult.error}`, ticket_id: ticket.id });
+      //   }
+      // }
 
       // Stocker le 1er message
       await savModel.addMessage(ticket.id, {
@@ -361,6 +361,41 @@ const savController = {
   },
 
   // ─── CRUD statuts ─────────────────────────────────────────────────────────
+
+  // ─── Historique commandes d'un client (avec articles) ───────────────────────
+  // Utilisé par NewTicketPage pour afficher l'historique du client sélectionné.
+  getCustomerOrders: async (req, res) => {
+    try {
+      const wpUserId = parseInt(req.params.wp_user_id);
+      if (Number.isNaN(wpUserId)) return res.status(400).json({ error: 'wp_user_id invalide' });
+
+      const limit = parseInt(req.query.limit) || 6;
+      const ordersRes = await pool.query(
+        `SELECT wp_order_id, post_date, post_status, order_total, tracking_number, shipping_carrier
+         FROM orders WHERE wp_customer_id = $1
+         ORDER BY post_date DESC LIMIT $2`,
+        [wpUserId, limit]
+      );
+
+      const orders = ordersRes.rows;
+      for (const order of orders) {
+        const itemsRes = await pool.query(
+          `SELECT oi.order_item_name, oi.qty, oi.line_total, p.sku, p.image_url
+           FROM order_items oi
+           LEFT JOIN products p ON p.wp_product_id = COALESCE(oi.variation_id, oi.product_id)
+           WHERE oi.wp_order_id = $1 AND oi.order_item_type = 'line_item'
+           ORDER BY oi.id`,
+          [order.wp_order_id]
+        );
+        order.items = itemsRes.rows;
+      }
+
+      res.json({ success: true, orders });
+    } catch (error) {
+      console.error('❌ [SAV] Erreur getCustomerOrders:', error);
+      res.status(500).json({ error: 'Erreur serveur' });
+    }
+  },
 
   // ─── Statut livraison transporteur ───────────────────────────────────────────
   getTracking: async (req, res) => {
