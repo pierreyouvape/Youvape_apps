@@ -36,8 +36,21 @@ function IconClose({ size = 12, color = 'currentColor' }) {
   );
 }
 
+function IconPlay({ size = 12, color = 'currentColor' }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill={color} stroke="none">
+      <path d="M7 4v16l13-8z" />
+    </svg>
+  );
+}
+
+const PLAY_GREEN = '#4AB866';
+
 export default function TicketTabsBar() {
-  const { openTickets, activeTab, setActiveTab, closeTicket } = useOpenTickets();
+  const {
+    openTickets, activeTab, setActiveTab, closeTicket,
+    isPlayActive, playTicketId, playState, stopPlay,
+  } = useOpenTickets();
   const { statusMap } = useTicketStatuses();
 
   const tabBase = {
@@ -81,6 +94,62 @@ export default function TicketTabsBar() {
         <IconList size={14} color={activeTab === 'list' ? TICKETS_COLOR : C.grisF} />
         <span>Liste</span>
       </button>
+
+      {/* Onglet Play (visible uniquement quand mode Play actif) */}
+      {isPlayActive && (
+        <div
+          onClick={() => setActiveTab('play')}
+          onMouseDown={e => { if (e.button === 1) { e.preventDefault(); stopPlay(); } }}
+          style={{
+            ...tabBase,
+            ...(activeTab === 'play' ? {
+              ...tabActive,
+              boxShadow: `inset 0 3px 0 ${PLAY_GREEN}`,
+            } : {}),
+            background: activeTab === 'play' ? C.blanc : '#E8F6EE',
+            border: `1px solid ${PLAY_GREEN}60`,
+            borderBottom: 'none',
+            paddingRight: 6,
+            maxWidth: 260,
+          }}
+          onMouseEnter={e => { if (activeTab !== 'play') e.currentTarget.style.background = '#DBEFE2'; }}
+          onMouseLeave={e => { if (activeTab !== 'play') e.currentTarget.style.background = '#E8F6EE'; }}
+          title={`Mode Play — ${(playState?.queue?.length || 0) + 1} ticket(s) restant(s)`}
+        >
+          <IconPlay size={11} color={PLAY_GREEN} />
+          <span style={{ color: PLAY_GREEN, fontWeight: 800, fontSize: 12.5 }}>Play</span>
+          {playTicketId && (
+            <>
+              <span style={{ color: C.grisM, fontSize: 11 }}>·</span>
+              <span style={{ color: activeTab === 'play' ? C.grisTF : C.grisF, fontWeight: 700, fontSize: 12.5 }}>
+                #{playTicketId}
+              </span>
+            </>
+          )}
+          <span style={{
+            background: PLAY_GREEN, color: '#fff',
+            fontSize: 10.5, fontWeight: 800,
+            borderRadius: 8, padding: '1px 6px',
+            marginLeft: 2,
+          }}>
+            {(playState?.queue?.length || 0) + 1}
+          </span>
+          <button
+            onClick={e => { e.stopPropagation(); stopPlay(); }}
+            style={{
+              width: 20, height: 20, borderRadius: 4,
+              background: 'transparent', border: 'none', cursor: 'pointer',
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+              color: C.grisM, padding: 0, flexShrink: 0, marginLeft: 2,
+            }}
+            onMouseEnter={e => { e.currentTarget.style.background = '#E2E8EC'; e.currentTarget.style.color = '#B71D1D'; }}
+            onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = C.grisM; }}
+            title="Arrêter le mode Play"
+          >
+            <IconClose size={11} />
+          </button>
+        </div>
+      )}
 
       {/* Onglets tickets */}
       {openTickets.map(t => {

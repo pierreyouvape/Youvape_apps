@@ -247,7 +247,11 @@ function Message({ msg, ticketId }) {
 const EMOJIS = ['😊','👍','🙏','😔','✅','❌','⚠️','📦','🚚','🔄','💡','📞','✉️','🎁','⏳','💰','🔍','📋','👋','😅'];
 
 // ─── Composer ─────────────────────────────────────────────────────────────────
-function ReplyComposer({ ticketId, demandeur, agentName, currentStatus, onReplySent, onSendFailed, onStatusChange }) {
+function ReplyComposer({
+  ticketId, demandeur, agentName, currentStatus,
+  onReplySent, onSendFailed, onStatusChange,
+  playMode = false, afterActionMode = 'next', onChangeAfterActionMode, onAdvance,
+}) {
   const [body, setBody] = useState(() => localStorage.getItem(`yv.tickets.draft.${ticketId}`) || '');
   const [isPrivate, setIsPrivate] = useState(false);
   const [modeOpen, setModeOpen] = useState(false);
@@ -261,6 +265,7 @@ function ReplyComposer({ ticketId, demandeur, agentName, currentStatus, onReplyS
   const [linkSelection, setLinkSelection] = useState({ start: 0, end: 0 });
   const [selectedStatus, setSelectedStatus] = useState(currentStatus);
   const [statusOpen, setStatusOpen] = useState(false);
+  const [afterOpen, setAfterOpen] = useState(false);
   const { statuses, statusMap } = useTicketStatuses();
   const fileRef = useRef();
   const modeRef = useRef();
@@ -268,6 +273,15 @@ function ReplyComposer({ ticketId, demandeur, agentName, currentStatus, onReplyS
   const emojiRef = useRef();
   const linkRef = useRef();
   const statusRef = useRef();
+  const afterRef = useRef();
+
+  // Fermer dropdown "Prochain ticket / Rester" si clic extérieur
+  useEffect(() => {
+    if (!afterOpen) return;
+    const handler = (e) => { if (afterRef.current && !afterRef.current.contains(e.target)) setAfterOpen(false); };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [afterOpen]);
 
   // Resynchroniser le statut sélectionné quand le ticket change
   useEffect(() => { setSelectedStatus(currentStatus); }, [currentStatus, ticketId]);
@@ -375,6 +389,8 @@ function ReplyComposer({ ticketId, demandeur, agentName, currentStatus, onReplyS
     if (!hasContent && statusChanged) {
       try {
         await onStatusChange(selectedStatus);
+        // Mode Play + "Prochain ticket disponible" -> on avance
+        if (playMode && afterActionMode === 'next' && onAdvance) onAdvance();
       } catch (e) {
         setError(e.message || 'Erreur changement statut');
       } finally {
@@ -403,6 +419,8 @@ function ReplyComposer({ ticketId, demandeur, agentName, currentStatus, onReplyS
       if (statusChanged) {
         try { await onStatusChange(selectedStatus); } catch { /* erreur silencieuse, le reply a réussi */ }
       }
+      // Mode Play + "Prochain ticket disponible" -> on avance
+      if (playMode && afterActionMode === 'next' && onAdvance) onAdvance();
     } catch (e) {
       // Reply échoué : on n'applique PAS le changement de statut, on remonte un message local "Non envoyé"
       onSendFailed?.({
@@ -705,14 +723,95 @@ function ReplyComposer({ ticketId, demandeur, agentName, currentStatus, onReplyS
           cursor: 'pointer', fontFamily: 'Lato, sans-serif',
         }}>⚡ Appliquer une macro <Ic.Chev color={C.grisM} /></button>
         <div style={{ flex: 1 }} />
-        <span style={{ fontSize: 12.5, color: C.grisF, fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-          Prochain ticket <Ic.Chev color={C.grisM} />
-        </span>
-        <button style={{
-          background: C.blanc, color: C.grisF, border: `1px solid ${C.grisCL}`,
-          borderRadius: 8, padding: '8px 16px', fontSize: 13, fontWeight: 700,
-          cursor: 'pointer', fontFamily: 'Lato, sans-serif',
-        }}>Ignorer</button>
+
+        {/* Dropdown "Prochain ticket / Rester sur le ticket" — visible uniquement en mode Play */}
+        {playMode && (
+          <div style={{ position: 'relative' }} ref={afterRef}>
+            <button
+              onClick={() => setAfterOpen(o => !o)}
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 5,
+                background: 'transparent', border: 'none', cursor: 'pointer',
+                fontSize: 12.5, color: C.grisF, fontWeight: 700,
+                fontFamily: 'Lato, sans-serif', padding: '4px 6px',
+              }}
+              title="Comportement après envoi"
+            >
+              {afterActionMode === 'stay' ? 'Rester sur le ticket' : 'Prochain ticket'}
+              <span style={{ display: 'inline-flex', transform: afterOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.18s' }}>
+                <Ic.Chev color={C.grisM} />
+              </span>
+            </button>
+            {afterOpen && (
+              <div style={{
+                position: 'absolute', bottom: '100%', right: 0, marginBottom: 6, zIndex: 200,
+                background: C.blanc, border: `1px solid ${C.grisCL}`, borderRadius: 10,
+                boxShadow: '0 -6px 24px rgba(0,0,0,0.12)', overflow: 'hidden', minWidth: 260,
+              }}>
+                <button
+                  onClick={() => { onChangeAfterActionMode?.('next'); setAfterOpen(false); }}
+                  style={{
+                    width: '100%', textAlign: 'left', padding: '10px 14px',
+                    background: afterActionMode === 'next' ? `${TICKETS_COLOR}10` : 'transparent',
+                    border: 'none', cursor: 'pointer', fontFamily: 'Lato, sans-serif',
+                    fontSize: 13, color: C.grisTF, fontWeight: afterActionMode === 'next' ? 700 : 500,
+                    display: 'flex', alignItems: 'center', gap: 8,
+                  }}
+                  onMouseEnter={e => e.currentTarget.style.background = C.grisTL}
+                  onMouseLeave={e => e.currentTarget.style.background = afterActionMode === 'next' ? `${TICKETS_COLOR}10` : 'transparent'}
+                >
+                  <span style={{ width: 14, color: TICKETS_COLOR, fontWeight: 800 }}>
+                    {afterActionMode === 'next' ? '✓' : ''}
+                  </span>
+                  <div>
+                    <div>Prochain ticket disponible</div>
+                    <div style={{ fontSize: 11, color: C.grisM, fontWeight: 400 }}>
+                      Après envoi, passer au ticket suivant
+                    </div>
+                  </div>
+                </button>
+                <button
+                  onClick={() => { onChangeAfterActionMode?.('stay'); setAfterOpen(false); }}
+                  style={{
+                    width: '100%', textAlign: 'left', padding: '10px 14px',
+                    background: afterActionMode === 'stay' ? `${TICKETS_COLOR}10` : 'transparent',
+                    border: 'none', cursor: 'pointer', fontFamily: 'Lato, sans-serif',
+                    fontSize: 13, color: C.grisTF, fontWeight: afterActionMode === 'stay' ? 700 : 500,
+                    display: 'flex', alignItems: 'center', gap: 8,
+                    borderTop: `1px solid ${C.grisCL}`,
+                  }}
+                  onMouseEnter={e => e.currentTarget.style.background = C.grisTL}
+                  onMouseLeave={e => e.currentTarget.style.background = afterActionMode === 'stay' ? `${TICKETS_COLOR}10` : 'transparent'}
+                >
+                  <span style={{ width: 14, color: TICKETS_COLOR, fontWeight: 800 }}>
+                    {afterActionMode === 'stay' ? '✓' : ''}
+                  </span>
+                  <div>
+                    <div>Rester sur le ticket</div>
+                    <div style={{ fontSize: 11, color: C.grisM, fontWeight: 400 }}>
+                      Après envoi, ne pas changer de ticket
+                    </div>
+                  </div>
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Ignorer : visible uniquement en mode Play, skip toujours vers le suivant */}
+        {playMode && (
+          <button
+            onClick={() => onAdvance?.()}
+            style={{
+              background: C.blanc, color: C.grisF, border: `1px solid ${C.grisCL}`,
+              borderRadius: 8, padding: '8px 16px', fontSize: 13, fontWeight: 700,
+              cursor: 'pointer', fontFamily: 'Lato, sans-serif',
+            }}
+            title="Passer au ticket suivant sans envoyer ni changer le statut"
+          >
+            Ignorer
+          </button>
+        )}
 
         {/* ── Split-button : Envoyer comme [Statut] ▾ ─────────────────────── */}
         <div style={{ position: 'relative', display: 'inline-flex' }} ref={statusRef}>
@@ -1032,7 +1131,7 @@ function TicketFieldsPanel({ ticket, onFieldChange, users }) {
 }
 
 // ─── Panneau CENTRE ───────────────────────────────────────────────────────────
-function ConversationPanel({ ticket, onReplySent, onStatusChange }) {
+function ConversationPanel({ ticket, onReplySent, onStatusChange, playMode, afterActionMode, onChangeAfterActionMode, onAdvance }) {
   const { user } = useContext(AuthContext);
   const bottomRef = useRef();
   const messages = ticket.messages || [];
@@ -1093,6 +1192,10 @@ function ConversationPanel({ ticket, onReplySent, onStatusChange }) {
         onReplySent={onReplySent}
         onSendFailed={handleSendFailed}
         onStatusChange={onStatusChange}
+        playMode={playMode}
+        afterActionMode={afterActionMode}
+        onChangeAfterActionMode={onChangeAfterActionMode}
+        onAdvance={onAdvance}
       />
     </section>
   );
@@ -1595,6 +1698,10 @@ export default function TicketDetail({ ticketId }) {
           ticket={ticket}
           onReplySent={(updatedTicket) => setTicket(t => ({ ...t, ...updatedTicket }))}
           onStatusChange={handleStatusChange}
+          playMode={!!tabsCtx?.isPlayActive && tabsCtx?.playTicketId === ticket.id}
+          afterActionMode={tabsCtx?.afterActionMode || 'next'}
+          onChangeAfterActionMode={tabsCtx?.setAfterActionMode}
+          onAdvance={tabsCtx?.advancePlay}
         />
         <CustomerPanel ticket={ticket} />
       </div>

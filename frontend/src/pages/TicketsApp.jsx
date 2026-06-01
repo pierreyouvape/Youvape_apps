@@ -13,7 +13,7 @@ function TicketsAppInner() {
   const [activeView, setActiveView] = useState(null); // id numérique de la vue active
   const [counts, setCounts]         = useState({});
   const [refreshTick, setRefreshTick] = useState(0);
-  const { activeTab } = useOpenTickets();
+  const { activeTab, playTicketId, isPlayActive } = useOpenTickets();
 
   // Charger les vues depuis l'API
   useEffect(() => {
@@ -93,9 +93,16 @@ function TicketsAppInner() {
               />
             </div>
 
-            {activeTab !== 'list' && (
+            {activeTab !== 'list' && activeTab !== 'play' && (
               <div style={{ flex: 1, minWidth: 0, display: 'flex', overflow: 'hidden' }}>
                 <TicketDetail key={activeTab} ticketId={activeTab} />
+              </div>
+            )}
+
+            {activeTab === 'play' && isPlayActive && playTicketId && (
+              <div style={{ flex: 1, minWidth: 0, display: 'flex', overflow: 'hidden' }}>
+                {/* key = ticketId pour forcer le remount à chaque ticket suivant */}
+                <TicketDetail key={`play-${playTicketId}`} ticketId={playTicketId} />
               </div>
             )}
           </div>

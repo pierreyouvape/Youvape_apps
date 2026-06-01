@@ -105,7 +105,7 @@ function Checkbox({ checked, indeterminate, onChange }) {
 /* ─── Composant principal ─────────────────────────────────────────────────────── */
 export default function TicketsList({ activeView, views = [], onRefresh, refreshTick }) {
   const navigate = useNavigate();
-  const { openTicket } = useOpenTickets();
+  const { openTicket, startPlay } = useOpenTickets();
   const [tickets, setTickets] = useState([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -232,16 +232,28 @@ export default function TicketsList({ activeView, views = [], onRefresh, refresh
             </div>
           </div>
           <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-            <button style={{
-              display: 'inline-flex', alignItems: 'center', gap: 6,
-              background: C.vert, color: '#fff', border: 'none',
-              borderRadius: 8, padding: '7px 14px', fontSize: 13, fontWeight: 800,
-              cursor: 'pointer', fontFamily: 'Lato, sans-serif',
-              boxShadow: '0 2px 6px rgba(74,184,102,0.35), 0 1px 0 rgba(255,255,255,0.3) inset',
-              transition: 'transform 0.15s',
-            }}
-            onMouseEnter={e => e.currentTarget.style.transform = 'translateY(-1px)'}
-            onMouseLeave={e => e.currentTarget.style.transform = 'translateY(0)'}
+            <button
+              onClick={() => {
+                const ids = sortedTickets.map(t => t.id);
+                if (ids.length === 0) return;
+                startPlay({
+                  queue: ids,
+                  viewId: activeView?.id || null,
+                  viewStatuses: statusesFilter,
+                });
+              }}
+              disabled={sortedTickets.length === 0}
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 6,
+                background: sortedTickets.length === 0 ? C.grisM : C.vert, color: '#fff', border: 'none',
+                borderRadius: 8, padding: '7px 14px', fontSize: 13, fontWeight: 800,
+                cursor: sortedTickets.length === 0 ? 'not-allowed' : 'pointer', fontFamily: 'Lato, sans-serif',
+                boxShadow: sortedTickets.length === 0 ? 'none' : '0 2px 6px rgba(74,184,102,0.35), 0 1px 0 rgba(255,255,255,0.3) inset',
+                transition: 'transform 0.15s',
+              }}
+              onMouseEnter={e => { if (sortedTickets.length > 0) e.currentTarget.style.transform = 'translateY(-1px)'; }}
+              onMouseLeave={e => e.currentTarget.style.transform = 'translateY(0)'}
+              title={sortedTickets.length === 0 ? 'Aucun ticket à traiter' : `Lancer le mode Play (${sortedTickets.length} tickets)`}
             >
               <IconPlay /> Play
             </button>
