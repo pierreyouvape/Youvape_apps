@@ -348,9 +348,9 @@ exports.analyze = [
       const uint8 = new Uint8Array(req.file.buffer);
       const pdfParser = new PDFParse(uint8);
       await pdfParser.load();
-      const pdfText = await pdfParser.getText();
+      const pdfData = await pdfParser.getText();
       const { orders, supplements, globalCharges, invoiceNumber, invoiceDate } =
-        parseChronopostPdf(pdfText);
+        parseChronopostPdf(pdfData.text);
 
       // 2. Query BDD weights
       const numericOrderIds = orders
@@ -404,8 +404,8 @@ exports.exportExcel = [
       const uint8 = new Uint8Array(req.file.buffer);
       const pdfParser = new PDFParse(uint8);
       await pdfParser.load();
-      const pdfText = await pdfParser.getText();
-      const parsed = parseChronopostPdf(pdfText);
+      const pdfData2 = await pdfParser.getText();
+      const parsed = parseChronopostPdf(pdfData2.text);
 
       const numericOrderIds = parsed.orders
         .filter(o => o.order_id && !o.is_return)
