@@ -28,6 +28,7 @@ const preferencesRoutes = require('./routes/preferencesRoutes');
 const financierRoutes = require('./routes/financierRoutes');
 const savRoutes = require('./routes/savRoutes');
 const chronopostRoutes = require('./routes/chronopostRoutes');
+const colissimoRoutes  = require('./routes/colissimoRoutes');
 const { setupCron, setupBmsCron, setupComputedCostCron, setupBmsBarcodeCron, setupStockResyncCron, setupSavAutomationsCron } = require('./services/cronService');
 const rewardService = require('./services/rewardService');
 const emailService = require('./services/emailService');
@@ -73,6 +74,7 @@ app.use('/api/preferences', preferencesRoutes); // User column preferences
 app.use('/api/financier', financierRoutes);    // Dashboard financier
 app.use('/api/sav', savRoutes);               // Module SAV Zendesk
 app.use('/api/chronopost', chronopostRoutes); // Chronopost invoice analysis
+app.use('/api/colissimo',  colissimoRoutes);  // Colissimo invoice analysis
 
 // Start server
 app.listen(PORT, async () => {

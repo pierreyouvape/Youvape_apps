@@ -126,6 +126,15 @@ export const Tickets = (props) => (
   </Base>
 );
 
+export const Colissimo = (props) => (
+  <Base {...props}>
+    <path d="M3 9 L12 5 L21 9 V19 L12 23 L3 19 Z" />
+    <path d="M3 9 L12 13 L21 9" />
+    <path d="M12 13 V23" />
+    <path d="M7.5 7 L16.5 11" />
+  </Base>
+);
+
 export const Chronopost = (props) => (
   <Base {...props}>
     <rect x={2.5} y={7} width={19} height={13} rx={2} />
@@ -147,4 +156,5 @@ export const APPS = [
   { key: 'commandes',  path: '/commandes',  label: 'Commandes',                Icon: OrdersSearch, color: '#5B21B6' },
   { key: 'tickets',    path: '/tickets',    label: 'SAV / Tickets',            Icon: Tickets,      color: '#0891B2' },
   { key: 'chronopost', path: '/chronopost', label: 'Factures Chronopost',      Icon: Chronopost,   color: '#E67E22' },
+  { key: 'colissimo',  path: '/colissimo',  label: 'Factures Colissimo',       Icon: Colissimo,    color: '#D97706' },
 ];
