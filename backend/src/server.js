@@ -27,7 +27,7 @@ const laposteRoutes = require('./routes/laposteRoutes');
 const preferencesRoutes = require('./routes/preferencesRoutes');
 const financierRoutes = require('./routes/financierRoutes');
 const savRoutes = require('./routes/savRoutes');
-const { setupCron, setupBmsCron, setupComputedCostCron, setupBmsBarcodeCron, setupStockResyncCron } = require('./services/cronService');
+const { setupCron, setupBmsCron, setupComputedCostCron, setupBmsBarcodeCron, setupStockResyncCron, setupSavAutomationsCron } = require('./services/cronService');
 const rewardService = require('./services/rewardService');
 const emailService = require('./services/emailService');
 const wcSyncService = require('./services/wcSyncService');
@@ -90,6 +90,9 @@ app.listen(PORT, async () => {
 
   // Initialiser le check re-sync stocks (one-shot programme)
   setupStockResyncCron();
+
+  // Initialiser le cron des automatismes SAV (toutes les heures, 24/7)
+  setupSavAutomationsCron();
 
   // Recalcul initial PMP FIFO au demarrage (apres 60s)
   setTimeout(async () => {

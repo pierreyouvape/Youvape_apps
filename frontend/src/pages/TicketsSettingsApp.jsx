@@ -5,6 +5,7 @@ import { Tickets as TicketsIcon } from '../components/AppIcons';
 import { invalidateStatusCache } from '../components/tickets/useTicketStatuses';
 import MacrosSettings from '../components/tickets/MacrosSettings';
 import NotificationsSettings from '../components/tickets/NotificationsSettings';
+import AutomationsSettings from '../components/tickets/AutomationsSettings';
 
 const TICKETS_COLOR = '#0891B2';
 
@@ -549,6 +550,7 @@ export default function TicketsSettingsApp() {
     { key: 'views',         label: 'Vues' },
     { key: 'macros',        label: 'Macros' },
     { key: 'notifications', label: 'Notifications' },
+    { key: 'automations',   label: 'Automatismes' },
   ];
 
   return (
@@ -619,6 +621,9 @@ export default function TicketsSettingsApp() {
 
             {/* ─── Onglet Notifications ─── */}
             {activeTab === 'notifications' && <NotificationsSettings />}
+
+            {/* ─── Onglet Automatismes ─── */}
+            {activeTab === 'automations' && <AutomationsSettings />}
 
             {/* ─── Onglet Vues ─── */}
             {activeTab === 'views' && (

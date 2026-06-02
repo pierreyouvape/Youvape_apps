@@ -381,6 +381,38 @@ const setupBmsBarcodeCron = () => {
   console.log('Cron BMS Barcodes configure: toutes les heures a :15, 9h-19h, lun-ven');
 };
 
+// ─── Automatismes SAV ──────────────────────────────────────────────────────
+// Évalue les règles de changement de statut basées sur des conditions temporelles
+// (statut depuis X, sans réponse client depuis X, etc.)
+
+const { runAll: runAllAutomations } = require('./automationRunner');
+
+let savAutomationsCronJob = null;
+
+const runSavAutomations = async () => {
+  try {
+    const summary = await runAllAutomations();
+    const affected = summary.reduce((acc, s) => acc + (s.count || 0), 0);
+    if (affected > 0) {
+      console.log(`Cron SAV Automations: ${affected} ticket(s) modifie(s) sur ${summary.length} regle(s)`);
+    }
+  } catch (error) {
+    console.error('Erreur cron SAV automations:', error.message);
+  }
+};
+
+const setupSavAutomationsCron = () => {
+  if (savAutomationsCronJob) {
+    savAutomationsCronJob.stop();
+    savAutomationsCronJob = null;
+  }
+  // Toutes les heures pile, 24/7 (les delais sont en heures/jours)
+  savAutomationsCronJob = cron.schedule('0 * * * *', runSavAutomations, {
+    timezone: 'Europe/Paris'
+  });
+  console.log('Cron SAV Automations configure: toutes les heures (24/7, Europe/Paris)');
+};
+
 module.exports = {
   setupCron,
   restartCron,
@@ -388,5 +420,6 @@ module.exports = {
   setupBmsCron,
   setupComputedCostCron,
   setupBmsBarcodeCron,
-  setupStockResyncCron
+  setupStockResyncCron,
+  setupSavAutomationsCron,
 };

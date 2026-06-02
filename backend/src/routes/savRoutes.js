@@ -7,6 +7,7 @@ const crypto = require('crypto');
 const savController = require('../controllers/savController');
 const savMacroController = require('../controllers/savMacroController');
 const savNotificationController = require('../controllers/savNotificationController');
+const savAutomationController = require('../controllers/savAutomationController');
 const authMiddleware = require('../middleware/authMiddleware');
 
 const UPLOAD_ROOT = path.join('/usr/src/app/uploads/sav');
@@ -77,6 +78,13 @@ router.get('/notifications',            authMiddleware, savNotificationControlle
 router.post('/notifications',           authMiddleware, savNotificationController.create);
 router.patch('/notifications/:id',      authMiddleware, savNotificationController.update);
 router.delete('/notifications/:id',     authMiddleware, savNotificationController.delete);
+
+// ─── Routes automatismes (globales équipe — protégées) ──────────────────────
+router.get('/automations',              authMiddleware, savAutomationController.getAll);
+router.post('/automations',             authMiddleware, savAutomationController.create);
+router.patch('/automations/:id',        authMiddleware, savAutomationController.update);
+router.delete('/automations/:id',       authMiddleware, savAutomationController.delete);
+router.post('/automations/:id/run',     authMiddleware, savAutomationController.runNow);
 
 // ─── Routes macros ────────────────────────────────────────────────────────────
 router.get('/macros/placeholders',      savMacroController.getPlaceholders);

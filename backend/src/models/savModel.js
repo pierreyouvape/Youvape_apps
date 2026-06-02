@@ -219,13 +219,20 @@ class SavModel {
   }
 
   // ─── Mettre à jour le statut ──────────────────────────────────────────────
+  // last_status_change_at est remis à NOW() à chaque appel, même si le statut
+  // ne change pas, pour permettre à l'agent de "réinitialiser" le compteur
+  // des automatismes (ex. relancer un délai d'attente).
   async updateStatus(id, sav_status) {
     const valid = await getValidStatuses();
     if (!valid.includes(sav_status)) {
       throw new Error(`Statut invalide. Valeurs acceptées : ${valid.join(', ')}`);
     }
     const result = await pool.query(
-      `UPDATE sav_tickets SET sav_status = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2 RETURNING *`,
+      `UPDATE sav_tickets
+       SET sav_status = $1,
+           last_status_change_at = CURRENT_TIMESTAMP,
+           updated_at = CURRENT_TIMESTAMP
+       WHERE id = $2 RETURNING *`,
       [sav_status, id]
     );
     return result.rows[0] || null;
