@@ -794,9 +794,9 @@ function ReplyComposer({
           </button>
           {macroOpen && (
             <div style={{
-              position: 'absolute', top: '100%', left: 0, marginTop: 6, zIndex: 200,
+              position: 'absolute', bottom: '100%', left: 0, marginBottom: 6, zIndex: 200,
               background: C.blanc, border: `1px solid ${C.grisCL}`, borderRadius: 10,
-              boxShadow: '0 6px 24px rgba(0,0,0,0.12)', overflow: 'hidden',
+              boxShadow: '0 -6px 24px rgba(0,0,0,0.12)', overflow: 'hidden',
               minWidth: 320, maxWidth: 420, maxHeight: 380, overflowY: 'auto',
             }}>
               {macros.length === 0 ? (
