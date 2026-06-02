@@ -348,7 +348,24 @@ export default function TicketsList({ activeView, views = [], onRefresh, refresh
                         </td>
                         {/* Sujet */}
                         <td style={{ ...cell, maxWidth: 420 }}>
-                          <span style={{ display: 'block', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', fontWeight: 500 }}>
+                          {t.has_duplicate_warning && (
+                            <span
+                              title={`Doublon potentiel : ${(t.duplicate_candidates || []).length} autre(s) ticket(s) du même client (et même commande si renseignée).`}
+                              style={{
+                                display: 'inline-block', marginRight: 8,
+                                background: '#FEE2E2', color: '#B71D1D',
+                                border: '1px solid #FECACA', borderRadius: 4,
+                                padding: '1px 6px', fontSize: 10.5, fontWeight: 800,
+                                verticalAlign: 'middle', whiteSpace: 'nowrap',
+                              }}
+                            >⚠ Doublon</span>
+                          )}
+                          <span style={{
+                            display: 'inline-block',
+                            maxWidth: t.has_duplicate_warning ? 'calc(100% - 80px)' : '100%',
+                            whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                            fontWeight: 500, verticalAlign: 'middle',
+                          }}>
                             {t.subject || '—'}
                           </span>
                         </td>

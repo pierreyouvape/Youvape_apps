@@ -1458,6 +1458,7 @@ function NoteField({ ticketId, initialNotes }) {
 // ─── Panneau DROIT ────────────────────────────────────────────────────────────
 function CustomerPanel({ ticket, onAssignOrder, onUnassignOrder }) {
   const navigate = useNavigate();
+  const tabsCtx = useOpenTickets();
 
   const firstName = ticket.customer_first_name || (ticket.customer_name || '').split(' ')[0] || '';
   const lastName = ticket.customer_last_name || (ticket.customer_name || '').split(' ').slice(1).join(' ') || '';
@@ -1556,6 +1557,55 @@ function CustomerPanel({ ticket, onAssignOrder, onUnassignOrder }) {
           <NoteField ticketId={ticket.id} initialNotes={ticket.notes} />
         </div>
       </div>
+
+      {/* Bannière doublon potentiel */}
+      {ticket.has_duplicate_warning && Array.isArray(ticket.duplicate_candidates) && ticket.duplicate_candidates.length > 0 && (
+        <div style={{
+          marginTop: 14,
+          background: '#FEF2F2',
+          border: '1px solid #FECACA',
+          borderRadius: 10,
+          padding: '12px 14px',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+            <span style={{ fontSize: 16 }}>⚠</span>
+            <strong style={{ fontSize: 12.5, color: '#B71D1D', fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+              Doublon potentiel
+            </strong>
+          </div>
+          <div style={{ fontSize: 12.5, color: '#7F1D1D', marginBottom: 8, lineHeight: 1.4 }}>
+            Ce client a {ticket.duplicate_candidates.length} autre{ticket.duplicate_candidates.length > 1 ? 's' : ''} ticket{ticket.duplicate_candidates.length > 1 ? 's' : ''} récent{ticket.duplicate_candidates.length > 1 ? 's' : ''} ouvert{ticket.duplicate_candidates.length > 1 ? 's' : ''}{ticket.order_id ? ' sur la même commande' : ''}.
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+            {ticket.duplicate_candidates.map(dup => (
+              <button
+                key={dup.id}
+                onClick={() => {
+                  if (tabsCtx) tabsCtx.openTicket(dup);
+                  else navigate(`/tickets/${dup.id}`);
+                }}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 8,
+                  background: C.blanc, border: '1px solid #FECACA',
+                  borderRadius: 7, padding: '6px 10px',
+                  cursor: 'pointer', textAlign: 'left',
+                  fontFamily: 'Lato, sans-serif', width: '100%',
+                }}
+                onMouseEnter={e => e.currentTarget.style.background = '#FEF2F2'}
+                onMouseLeave={e => e.currentTarget.style.background = C.blanc}
+              >
+                <span style={{ fontSize: 12, fontWeight: 800, color: '#B71D1D' }}>#{dup.id}</span>
+                <span style={{ fontSize: 11.5, color: C.grisF, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {dup.subject || '—'}
+                </span>
+                <span style={{ fontSize: 10.5, color: C.grisM }}>
+                  {dup.created_at ? formatDate(dup.created_at) : ''}
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Commande concernée */}
       {currentOrder && (

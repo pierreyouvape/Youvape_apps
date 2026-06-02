@@ -278,7 +278,6 @@ function App() {
             }
           />
           <Route
-<<<<<<< HEAD
             path="/tickets"
             element={
               <PrivateRoute>
@@ -299,12 +298,14 @@ function App() {
             element={
               <PrivateRoute>
                 <TicketDetailPage />
-=======
+              </PrivateRoute>
+            }
+          />
+          <Route
             path="/chronopost"
             element={
               <PrivateRoute>
                 <ChronopostApp />
->>>>>>> 20a394d (feat: app Factures Chronopost — analyse PDF, comparaison poids BDD, export Excel)
               </PrivateRoute>
             }
           />

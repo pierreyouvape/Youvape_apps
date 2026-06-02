@@ -5,6 +5,7 @@ const pool = require('../config/database');
 const { saveAttachments, toMailgunAttachments } = require('../utils/savAttachments');
 const { getTrackingStatus } = require('../services/trackingService');
 const { dispatchNotifications } = require('../services/notificationDispatcher');
+const { tagDuplicates } = require('../services/duplicateDetector');
 
 const savController = {
 
@@ -64,6 +65,9 @@ const savController = {
       // Notification : nouveau message reçu (fire-and-forget)
       dispatchNotifications('new_message', ticket).catch(() => {});
 
+      // Détection de doublons (fire-and-forget)
+      tagDuplicates(ticket).catch(e => console.warn('[SAV] tagDuplicates échoué:', e.message));
+
       res.status(200).json({ success: true, ticket_id: ticket.id });
 
     } catch (error) {
@@ -91,46 +95,87 @@ const savController = {
         }
       }
 
-      // Extraire ticket ID du sujet
+      // Extraire ticket ID du sujet pour matcher à un ticket existant
       const ticketId = mailgunService.extractTicketIdFromSubject(subject);
-      if (!ticketId) {
-        console.warn(`⚠️ [SAV Inbound] Pas de ticket ID dans le sujet: "${subject}"`);
-        return;
-      }
-
-      const ticket = await savModel.findById(ticketId);
-      if (!ticket) {
-        console.warn(`⚠️ [SAV Inbound] Ticket #${ticketId} introuvable`);
-        return;
-      }
+      const matchedTicket = ticketId ? await savModel.findById(ticketId) : null;
 
       // Nettoyer le body (enlever les parties quotées des réponses email)
       const cleanBody = bodyPlain
         ? bodyPlain.split(/^On .+ wrote:/m)[0].trim()
         : '';
 
-      const attachments = saveAttachments(ticketId, req.files);
+      // ─── Cas 1 : ticket trouvé → ajouter la réponse au fil existant ─────
+      if (matchedTicket) {
+        const attachments = saveAttachments(matchedTicket.id, req.files);
+        if (!cleanBody && attachments.length === 0) return;
 
-      if (!cleanBody && attachments.length === 0) return;
+        await savModel.addMessage(matchedTicket.id, {
+          from:        sender,
+          body:        cleanBody,
+          is_agent:    false,
+          attachments,
+        });
 
-      await savModel.addMessage(ticketId, {
-        from:        sender,
-        body:        cleanBody,
-        is_agent:    false,
-        attachments,
-      });
+        // Rouvrir le ticket si terminé/refusé
+        if (['terminé', 'refusé'].includes(matchedTicket.sav_status)) {
+          await savModel.updateStatus(matchedTicket.id, 'ouvert');
+        }
 
-      // Rouvrir le ticket si terminé/refusé
-      if (['terminé', 'refusé'].includes(ticket.sav_status)) {
-        await savModel.updateStatus(ticketId, 'ouvert');
+        console.log(`📨 [SAV Inbound] Réponse client ajoutée au ticket #${matchedTicket.id}`);
+
+        dispatchNotifications('reply_received', matchedTicket, {
+          body: cleanBody, from: sender,
+        }).catch(() => {});
+        return;
       }
 
-      console.log(`📨 [SAV Inbound] Réponse client ajoutée au ticket #${ticketId}`);
+      // ─── Cas 2 : pas de match → créer un nouveau ticket ─────────────────
+      if (!cleanBody && (!req.files || req.files.length === 0)) {
+        console.warn(`⚠️ [SAV Inbound] Mail vide rejeté (sender=${sender})`);
+        return;
+      }
 
-      // Notification : réponse client reçue (fire-and-forget)
-      dispatchNotifications('reply_received', ticket, {
-        body: cleanBody, from: sender,
-      }).catch(() => {});
+      // Nettoyer "Re: " du sujet
+      const cleanSubject = (subject || '(sans sujet)')
+        .replace(/^\s*(Re\s*:\s*)+/i, '')
+        .replace(/\[SAV #\d+\]\s*/i, '')
+        .trim() || '(sans sujet)';
+
+      // Lookup client par email
+      let customer_id = null;
+      let customer_name = sender;
+      try {
+        const customerResult = await pool.query(
+          'SELECT id, first_name, last_name FROM customers WHERE email = $1 LIMIT 1',
+          [sender.toLowerCase()]
+        );
+        if (customerResult.rows.length > 0) {
+          customer_id = customerResult.rows[0].id;
+          const c = customerResult.rows[0];
+          customer_name = `${c.first_name || ''} ${c.last_name || ''}`.trim() || sender;
+        }
+      } catch (e) {
+        console.warn('[SAV Inbound] Lookup customer échoué:', e.message);
+      }
+
+      const newTicket = await savModel.create({
+        order_id:       null,
+        customer_id,
+        customer_name,
+        customer_email: sender.toLowerCase(),
+        customer_phone: null,
+        subject:        cleanSubject.substring(0, 200),
+        description:    cleanBody,
+        source:         'email',
+      });
+
+      // Sauvegarder les PJ avec le nouvel id
+      saveAttachments(newTicket.id, req.files);
+
+      console.log(`✅ [SAV Inbound] Nouveau ticket #${newTicket.id} créé depuis email "${cleanSubject}" (sender=${sender})`);
+
+      dispatchNotifications('new_message', newTicket).catch(() => {});
+      tagDuplicates(newTicket).catch(e => console.warn('[SAV Inbound] tagDuplicates échoué:', e.message));
 
     } catch (error) {
       console.error('❌ [SAV Inbound] Erreur:', error);
@@ -359,6 +404,9 @@ const savController = {
         is_private: isPrivate,
         attachments: storedAttachments,
       });
+
+      // Détection de doublons (fire-and-forget)
+      tagDuplicates(ticket).catch(e => console.warn('[SAV createManual] tagDuplicates échoué:', e.message));
 
       // Renvoyer le ticket complet (avec enrichissements client, etc.)
       const fullTicket = await savModel.getById(ticket.id);
