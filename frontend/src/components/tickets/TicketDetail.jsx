@@ -516,10 +516,15 @@ function ReplyComposer({
   const headerBg = isPrivate ? '#FFF8E1' : C.blanc;
 
   return (
-    <div style={{ background: C.blanc, borderTop: `1px solid ${C.grisCL}`, padding: '14px 28px 16px' }}>
+    <div style={{
+      background: C.blanc, borderTop: `1px solid ${C.grisCL}`,
+      padding: '14px 28px 16px',
+      display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden',
+    }}>
       <div style={{
         border: `1px solid ${borderColor}`,
         borderRadius: 12, background: bgColor, transition: 'all 0.2s',
+        display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden',
       }}>
         {/* Header composer */}
         <div style={{
@@ -608,17 +613,18 @@ function ReplyComposer({
           )}
         </div>
 
-        {/* Textarea */}
+        {/* Textarea — flex pour remplir l'espace disponible, scroll interne */}
         <textarea
           ref={textareaRef}
           value={body}
           onChange={e => setBody(e.target.value)}
           placeholder={isPrivate ? 'Ajouter une note interne…' : 'Tapez votre réponse…'}
           style={{
-            width: '100%', minHeight: 80, padding: '14px 14px 10px',
-            border: 'none', outline: 'none', resize: 'vertical',
+            width: '100%', flex: 1, minHeight: 0,
+            padding: '14px 14px 10px',
+            border: 'none', outline: 'none', resize: 'none',
             fontFamily: 'Lato, sans-serif', fontSize: 14, color: C.grisTF,
-            background: 'transparent',
+            background: 'transparent', boxSizing: 'border-box',
           }}
         />
 
@@ -776,7 +782,7 @@ function ReplyComposer({
       {error && <div style={{ marginTop: 8, fontSize: 12.5, color: '#B71D1D' }}>{error}</div>}
 
       {/* Footer */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 12, flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 12, flexWrap: 'wrap', flexShrink: 0 }}>
         {/* Bouton Macros + dropdown */}
         <div style={{ position: 'relative' }} ref={macroRef}>
           <button
@@ -1248,11 +1254,63 @@ function TicketFieldsPanel({ ticket, onFieldChange, users }) {
 }
 
 // ─── Panneau CENTRE ───────────────────────────────────────────────────────────
+const COMPOSER_HEIGHT_KEY = 'yv.tickets.composerHeight';
+const COMPOSER_MIN_HEIGHT = 180;
+const COMPOSER_DEFAULT_HEIGHT = 280;
+
 function ConversationPanel({ ticket, onReplySent, onStatusChange, playMode, afterActionMode, onChangeAfterActionMode, onAdvance, onApplyMacroSubject }) {
   const { user } = useContext(AuthContext);
   const bottomRef = useRef();
+  const sectionRef = useRef();
   const messages = ticket.messages || [];
   const [failedMessages, setFailedMessages] = useState([]); // messages locaux non envoyés
+
+  // Hauteur du composer (persistée localStorage)
+  const [composerHeight, setComposerHeight] = useState(() => {
+    const raw = parseInt(localStorage.getItem(COMPOSER_HEIGHT_KEY), 10);
+    return Number.isFinite(raw) && raw > 0 ? raw : COMPOSER_DEFAULT_HEIGHT;
+  });
+  useEffect(() => {
+    localStorage.setItem(COMPOSER_HEIGHT_KEY, String(composerHeight));
+  }, [composerHeight]);
+
+  // Drag de la poignée
+  const dragStateRef = useRef(null);
+  const [dragging, setDragging] = useState(false);
+
+  const handleDragStart = (e) => {
+    e.preventDefault();
+    const sectionHeight = sectionRef.current?.getBoundingClientRect().height || window.innerHeight;
+    dragStateRef.current = {
+      startY: e.clientY,
+      startHeight: composerHeight,
+      maxHeight: Math.max(COMPOSER_MIN_HEIGHT, sectionHeight - 120), // garde au moins 120px pour le thread
+    };
+    setDragging(true);
+  };
+
+  useEffect(() => {
+    if (!dragging) return;
+    const handleMove = (e) => {
+      const st = dragStateRef.current;
+      if (!st) return;
+      // drag vers le haut (deltaY négatif) -> composer plus grand
+      const delta = st.startY - e.clientY;
+      const next = Math.min(st.maxHeight, Math.max(COMPOSER_MIN_HEIGHT, st.startHeight + delta));
+      setComposerHeight(next);
+    };
+    const handleUp = () => { dragStateRef.current = null; setDragging(false); };
+    document.addEventListener('mousemove', handleMove);
+    document.addEventListener('mouseup', handleUp);
+    document.body.style.cursor = 'ns-resize';
+    document.body.style.userSelect = 'none';
+    return () => {
+      document.removeEventListener('mousemove', handleMove);
+      document.removeEventListener('mouseup', handleUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+  }, [dragging]);
 
   // Vider les messages échoués quand on change de ticket
   useEffect(() => { setFailedMessages([]); }, [ticket.id]);
@@ -1268,7 +1326,7 @@ function ConversationPanel({ ticket, onReplySent, onStatusChange, playMode, afte
   };
 
   return (
-    <section style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', background: C.grisTL, overflow: 'hidden' }}>
+    <section ref={sectionRef} style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', background: C.grisTL, overflow: 'hidden' }}>
       {/* En-tête sujet */}
       <div style={{
         padding: '20px 28px 16px', background: C.blanc,
@@ -1288,7 +1346,7 @@ function ConversationPanel({ ticket, onReplySent, onStatusChange, playMode, afte
       </div>
 
       {/* Thread */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: '20px 28px 16px' }}>
+      <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '20px 28px 16px' }}>
         {ticket.description && (
           <Message
             msg={{ from: ticket.customer_name || ticket.customer_email, body: ticket.description, is_agent: false, date: ticket.created_at, attachments: [] }}
@@ -1300,23 +1358,51 @@ function ConversationPanel({ ticket, onReplySent, onStatusChange, playMode, afte
         <div ref={bottomRef} />
       </div>
 
-      {/* Composer */}
-      <ReplyComposer
-        ticketId={ticket.id}
-        demandeur={ticket.customer_name || ticket.customer_email}
-        agentName={user?.name || 'SAV Youvape'}
-        agent={user}
-        ticket={ticket}
-        currentStatus={ticket.sav_status}
-        onReplySent={onReplySent}
-        onSendFailed={handleSendFailed}
-        onStatusChange={onStatusChange}
-        playMode={playMode}
-        afterActionMode={afterActionMode}
-        onChangeAfterActionMode={onChangeAfterActionMode}
-        onAdvance={onAdvance}
-        onApplyMacroSubject={onApplyMacroSubject}
-      />
+      {/* Poignée d'agrandissement (drag vers le haut = composer plus grand) */}
+      <div
+        onMouseDown={handleDragStart}
+        style={{
+          height: 7, flexShrink: 0, cursor: 'ns-resize',
+          background: dragging ? `${TICKETS_COLOR}30` : C.grisCL,
+          borderTop: `1px solid ${C.grisCL}`,
+          borderBottom: `1px solid ${C.grisCL}`,
+          position: 'relative',
+          transition: 'background 0.12s',
+        }}
+        onMouseEnter={e => { if (!dragging) e.currentTarget.style.background = `${TICKETS_COLOR}40`; }}
+        onMouseLeave={e => { if (!dragging) e.currentTarget.style.background = C.grisCL; }}
+        title="Glisser pour redimensionner le composer"
+      >
+        {/* 3 petits points pour signaler la poignée */}
+        <div style={{
+          position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
+          display: 'flex', gap: 3, pointerEvents: 'none',
+        }}>
+          <span style={{ width: 3, height: 3, borderRadius: '50%', background: C.grisM }} />
+          <span style={{ width: 3, height: 3, borderRadius: '50%', background: C.grisM }} />
+          <span style={{ width: 3, height: 3, borderRadius: '50%', background: C.grisM }} />
+        </div>
+      </div>
+
+      {/* Composer — hauteur fixe pilotée par la poignée */}
+      <div style={{ height: composerHeight, flexShrink: 0, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+        <ReplyComposer
+          ticketId={ticket.id}
+          demandeur={ticket.customer_name || ticket.customer_email}
+          agentName={user?.name || 'SAV Youvape'}
+          agent={user}
+          ticket={ticket}
+          currentStatus={ticket.sav_status}
+          onReplySent={onReplySent}
+          onSendFailed={handleSendFailed}
+          onStatusChange={onStatusChange}
+          playMode={playMode}
+          afterActionMode={afterActionMode}
+          onChangeAfterActionMode={onChangeAfterActionMode}
+          onAdvance={onAdvance}
+          onApplyMacroSubject={onApplyMacroSubject}
+        />
+      </div>
     </section>
   );
 }
