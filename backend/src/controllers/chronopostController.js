@@ -96,19 +96,18 @@ function parseChronopostPdf(text) {
         lastTracking = trackMatch[1];
         lastOrderId = orderMatch ? parseInt(orderMatch[1]) : null;
 
-        if (orderMatch) {
-          orders.push({
-            date: dateMatch?.[0] || null,
-            tracking: trackMatch[1],
-            order_id: parseInt(orderMatch[1]),
-            weight_chrono: weightNum?.val ?? null,
-            amount_ht: amountNum?.val ?? null,
-            is_return: isReturn,
-            weight_corrected: isWeightCorrected,
-            weight_bdd: null, // filled later
-            diff_g: null,     // filled later
-          });
-        }
+        // Toujours ajouter le colis — order_id sera résolu via tracking si absent
+        orders.push({
+          date: dateMatch?.[0] || null,
+          tracking: trackMatch[1],
+          order_id: orderMatch ? parseInt(orderMatch[1]) : null,
+          weight_chrono: weightNum?.val ?? null,
+          amount_ht: amountNum?.val ?? null,
+          is_return: isReturn,
+          weight_corrected: isWeightCorrected,
+          weight_bdd: null,
+          diff_g: null,
+        });
       }
       continue;
     }
@@ -480,4 +479,17 @@ exports.exportExcel = [
       res.status(500).json({ success: false, error: err.message });
     }
   },
+];
+
+// POST /api/chronopost/debug-text — retourne le texte brut extrait du PDF (debug)
+exports.debugText = [
+  upload.single('pdf'),
+  async (req, res) => {
+    if (!req.file) return res.status(400).json({ error: 'PDF requis' });
+    const uint8 = new Uint8Array(req.file.buffer);
+    const pdfParser = new PDFParse(uint8);
+    await pdfParser.load();
+    const pdfData = await pdfParser.getText();
+    res.json({ text: pdfData.text, lines: pdfData.text.split('\n').map((l,i) => `${i}: ${l}`) });
+  }
 ];
