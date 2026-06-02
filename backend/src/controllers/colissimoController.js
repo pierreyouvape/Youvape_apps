@@ -13,206 +13,208 @@ const upload = multer({
 });
 
 /* ─── PDF PARSER ─────────────────────────────────────────────── */
+/*
+ * Le PDF Colissimo extrait les colonnes de chaque tableau sur des lignes séparées.
+ * Ex:
+ *   " CA696831030FR"      ← numéro de suivi
+ *   "0,040"               ← poids kg
+ *   "8,50€"               ← port brut
+ *   "45,00%"              ← taux remise
+ *   "-3,83€"              ← remise HT
+ *   "4,67€"               ← port net
+ *   "0,54€"               ← CAE HT
+ *   "0,05€"               ← décarbonation
+ *   "0,00€"               ← SMIC HT
+ *   "5,26€"               ← total HT
+ *   "Supplément : ..."    ← libellé supplément
+ *   "0,20€"               ← montant supplément
+ * Machine à états pour reconstruire chaque colis.
+ */
 function parseColissimoPdf(text) {
   const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
 
-  const parcels   = [];   // colis individuels
-  const supplements = []; // suppléments par colis
-  const indemnizations = []; // remboursements
-  const globalSummary = {};
+  const parcels        = [];
+  const supplements    = [];
+  const indemnizations = [];
+  const globalSummary  = {};
 
-  // Tracking number patterns Colissimo
-  // 6A/6C/8Q + 11 chiffres (sans FR), CA/CB/CF + 9 chiffres + FR
   const TRACKING_RE = /\b(6[AC]\d{11}|8Q\d{11}|C[ABF]\d{9}FR)\b/;
-  const DATE_RE = /^(\d{2}\/\d{2})\s/;
+  const DATE_RE     = /\b(\d{2}\/\d{2})\b/;
 
-  // Supplements patterns
-  const SUPPL_PATTERNS = [
-    { re: /Supp\.\s*Sûreté internationale/i,      label: 'Sûreté internationale' },
-    { re: /Supp\.\s*Destination Grande-Bretagne/i, label: 'Destination Grande-Bretagne' },
-    { re: /Option\s*Partenaire\s*postal/i,         label: 'Option partenaire postal' },
-    { re: /Supp\.\s*Zone\s*éloignée/i,             label: 'Zone éloignée' },
-    { re: /Supplément\s*:\s*([^0-9€\n]+?)\s+([\d,]+)€/i, label: null }, // generic fallback
-  ];
+  // ── Metadata extraction
+  const INVOICE_RE  = /Facture\s+N°\s*(\w+)/i;
+  const PERIOD_RE   = /du\s+(\d{2}\/\d{2}\/\d{4})\s+au\s+(\d{2}\/\d{2}\/\d{4})/i;
+  const PORTBRUT_RE = /^Port Brut\s+([\d\s,]+)/i;
+  const REMISE_RE   = /^Remise\s+(-[\d\s,]+)/i;
+  const PORTNET_RE  = /^Port Net\s+([\d\s,]+)/i;
+  const CAE_RE      = /^Coefficient.*[ÉE]nergie\s+([\d\s,]+)/i;
+  const SUPPTOT_RE  = /^Suppl?ements?\s+([\d\s,]+)/i;
+  const INDEMTOT_RE = /^Indemnisations\s+(-[\d\s,]+)/i;
 
-  // Indemnization section marker
-  const INDEMN_START = /Indemnisations Pour Hors Délais/i;
-  const INDEMN_DIVERS = /Indemnisations Diverses/i;
-  const INDEMN_LINE = /(\d{2}\/\d{2})\s+(COL-\S+)\s+(\S+)\s+(Article\s+\S+\s+-\s+[^-€\n]+?)\s+([-\d,]+)€/;
+  let invoiceNumber = null, periodStart = null, periodEnd = null;
 
-  // Summary page
-  const PORTBRUT_RE  = /^Port Brut\s+([\d\s,]+)/i;
-  const REMISE_RE    = /^Remise\s+(-[\d\s,]+)/i;
-  const PORTNET_RE   = /^Port Net\s+([\d\s,]+)/i;
-  const CAE_RE       = /^Coefficient.*Énergie\s+([\d\s,]+)/i;
-  const SUPPTOT_RE   = /^Supplements\s+([\d\s,]+)/i;
-  const INDEMTOT_RE  = /^Indemnisations\s+(-[\d\s,]+)/i;
-  const INVOICE_RE   = /Facture\s+N°\s*(\w+)/i;
-  const PERIOD_RE    = /du\s+(\d{2}\/\d{2}\/\d{4})\s+au\s+(\d{2}\/\d{2}\/\d{4})/i;
-
-  let invoiceNumber = null;
-  let periodStart = null;
-  let periodEnd = null;
-  let lastTracking = null;
-  let lastParcelIdx = -1;
-  let inIndemn = false;
-  let indemnType = 'Hors Délais';
-
-  // Extract metadata
   for (const line of lines) {
-    const invM = line.match(INVOICE_RE);
-    if (invM && !invoiceNumber) invoiceNumber = invM[1];
-    const perM = line.match(PERIOD_RE);
-    if (perM && !periodStart) { periodStart = perM[1]; periodEnd = perM[2]; }
-
-    const pbM = line.match(PORTBRUT_RE);
-    if (pbM) globalSummary.portBrut = parseFloat(pbM[1].replace(/\s/g,'').replace(',','.'));
-    const rmM = line.match(REMISE_RE);
-    if (rmM) globalSummary.remise = parseFloat(rmM[1].replace(/\s/g,'').replace(',','.'));
-    const pnM = line.match(PORTNET_RE);
-    if (pnM) globalSummary.portNet = parseFloat(pnM[1].replace(/\s/g,'').replace(',','.'));
-    const caeM = line.match(CAE_RE);
-    if (caeM) globalSummary.cae = parseFloat(caeM[1].replace(/\s/g,'').replace(',','.'));
-    const spM = line.match(SUPPTOT_RE);
-    if (spM) globalSummary.supplements = parseFloat(spM[1].replace(/\s/g,'').replace(',','.'));
-    const idM = line.match(INDEMTOT_RE);
-    if (idM) globalSummary.indemnizations = parseFloat(idM[1].replace(/\s/g,'').replace(',','.'));
+    const invM = line.match(INVOICE_RE); if (invM && !invoiceNumber) invoiceNumber = invM[1];
+    const perM = line.match(PERIOD_RE);  if (perM && !periodStart) { periodStart = perM[1]; periodEnd = perM[2]; }
+    const pbM = line.match(PORTBRUT_RE); if (pbM) globalSummary.portBrut = parseFloat(pbM[1].replace(/\s/g,'').replace(',','.'));
+    const rmM = line.match(REMISE_RE);   if (rmM) globalSummary.remise   = parseFloat(rmM[1].replace(/\s/g,'').replace(',','.'));
+    const pnM = line.match(PORTNET_RE);  if (pnM) globalSummary.portNet  = parseFloat(pnM[1].replace(/\s/g,'').replace(',','.'));
+    const caeM = line.match(CAE_RE);     if (caeM) globalSummary.cae     = parseFloat(caeM[1].replace(/\s/g,'').replace(',','.'));
+    const spM = line.match(SUPPTOT_RE);  if (spM) globalSummary.supplements = parseFloat(spM[1].replace(/\s/g,'').replace(',','.'));
+    const idM = line.match(INDEMTOT_RE); if (idM) globalSummary.indemnizations = parseFloat(idM[1].replace(/\s/g,'').replace(',','.'));
   }
 
-  // Parse parcel lines + supplements + indemnizations
+  // ── Line classifiers
+  // Amount line: just a number (positive or negative) followed by € or ¤
+  const IS_AMOUNT = /^\s*(-?\d[\d\s]*[,\.]\d+)\s*[€¤]\s*$/;
+  // Pure decimal (weight): just a decimal number, no € ¤ %
+  const IS_WEIGHT = /^\s*\d+[,\.]\d+\s*$/;
+  // Percentage line
+  const IS_PCT    = /^\s*(\d+[,\.]\d+)\s*%\s*$/;
+  // Supplement label
+  const IS_SUPPL  = /Supplément\s*:/i;
+  // Indemnizations
+  const INDEMN_START  = /Indemnisations Pour Hors D[ée]lais/i;
+  const INDEMN_DIVERS = /Indemnisations Diverses/i;
+  const INDEMN_ARTICLE = /Article\s+(IN\w+|ICA)\s+-\s+(.+?)\s+([-\d,]+)[€¤]/i;
+
+  function parseAmt(s) { return parseFloat(s.replace(/\s/g,'').replace(',','.')); }
+
+  // ── State machine
+  // States: idle | weight | port_brut | tx_remise | remise_ht | port_net
+  //         | cae | decarbonation | smic | total | supp_label | supp_amount
+  let state        = 'idle';
+  let cur          = null;  // current parcel being built
+  let supplLabel   = null;  // pending supplement label
+  let lastDate     = null;  // last seen DD/MM
+  let inIndemn     = false;
+  let indemnType   = 'Hors Délais';
+
+  const FIELD_SEQ = ['weight','port_brut','tx_remise','remise_ht','port_net','cae_ht','decarbonation','smic_ht','total_ht'];
+  let fieldIdx = 0; // index in FIELD_SEQ
+
+  function commitParcel() {
+    if (cur) parcels.push(cur);
+    cur = null; state = 'idle'; fieldIdx = 0;
+  }
+
+  function startParcel(tracking, dateVal) {
+    if (cur) commitParcel();
+    cur = {
+      date: dateVal,
+      tracking,
+      weight_colissimo: null, port_brut: null, tx_remise: null, remise_ht: null,
+      port_net: null, cae_ht: null, decarbonation: null, smic_ht: null, total_ht: null,
+      order_id: null, weight_bdd: null, diff_g: null, supplements_list: [],
+    };
+    fieldIdx = 0;
+    state = 'collecting';
+  }
+
   for (const line of lines) {
-    // ── Indemnization section detection
-    if (INDEMN_START.test(line)) { inIndemn = true; indemnType = 'Hors Délais'; continue; }
+    // ── Track date context
+    const dateM = line.match(/^(\d{2}\/\d{2})\b/);
+    if (dateM) lastDate = dateM[1];
+
+    // ── Indemnization detection
+    if (INDEMN_START.test(line))  { inIndemn = true;  indemnType = 'Hors Délais'; continue; }
     if (INDEMN_DIVERS.test(line)) { indemnType = 'Diverses'; continue; }
 
-    // ── Indemnization line
     if (inIndemn) {
-      const idxLine = INDEMN_LINE.exec(line);
-      if (idxLine) {
+      const idM = line.match(INDEMN_ARTICLE);
+      if (idM) {
         indemnizations.push({
-          date: idxLine[1],
-          reference: idxLine[2],
-          tracking: idxLine[3],
-          label: idxLine[4].trim(),
-          amount: parseFloat(idxLine[5].replace(',', '.')),
+          date: lastDate, reference: null, tracking: null,
+          label: `Article ${idM[1]} - ${idM[2].trim()}`,
+          amount: parseFloat(idM[3].replace(',','.')),
           type: indemnType,
         });
-        continue;
       }
-      // Simple fallback for indemnization lines
-      const simpleId = line.match(/Article\s+(IN\w+|ICA)\s+-\s+(.+?)\s+([-\d,]+)€/i);
-      if (simpleId) {
+      // Full indemnization line format: DD/MM COL-xxx TRACKING label amount€
+      const fullIdM = line.match(/(\d{2}\/\d{2})\s+(COL-\S+)\s+(\S+)\s+(Article.+?)\s+([-\d,]+)[€¤]/i);
+      if (fullIdM) {
         indemnizations.push({
-          date: null,
-          reference: null,
-          tracking: null,
-          label: `Article ${simpleId[1]} - ${simpleId[2].trim()}`,
-          amount: parseFloat(simpleId[3].replace(',', '.')),
+          date: fullIdM[1], reference: fullIdM[2], tracking: fullIdM[3],
+          label: fullIdM[4].trim(),
+          amount: parseFloat(fullIdM[5].replace(',','.')),
           type: indemnType,
         });
       }
       continue;
     }
 
-    // ── Parcel line (has tracking number)
+    // ── New tracking number detected
     if (TRACKING_RE.test(line)) {
-      const tMatch = line.match(TRACKING_RE);
-      const dateMatch = line.match(DATE_RE);
-      const tracking = tMatch[1];
-
-      // Extract all French decimal numbers from the line
-      const allNums = [...line.matchAll(/([-]?\d+),(\d+)/g)].map(m => ({
-        val: parseFloat(`${m[1]}.${m[2]}`),
-        raw: `${m[1]},${m[2]}`,
-      }));
-
-      // Extract amounts with € (port brut, remise, port net, CAE, décarbonation, SMIC, total)
-      const euroNums = [...line.matchAll(/([-]?\d+[,\d]*)\s*€/g)].map(m =>
-        parseFloat(m[1].replace(',', '.'))
-      );
-
-      // Extract percentage
-      const pctMatch = line.match(/(\d+[,\d]*)\s*%/);
-      const txRemise = pctMatch ? parseFloat(pctMatch[1].replace(',', '.')) : null;
-
-      // Weight = first positive decimal before the first € (not a dimension like 17x14x12)
-      // Find weight: first positive decimal that's NOT part of a dimension string
-      let weight = null;
-      const lineBeforeEuro = line.split('€')[0];
-      const weightMatch = lineBeforeEuro.match(/\b(\d+),(\d{3})\b/); // 3-decimal precision = weight
-      if (weightMatch) {
-        weight = parseFloat(`${weightMatch[1]}.${weightMatch[2]}`);
-      } else {
-        // Fallback: first decimal ≤ 100 before the first €
-        const candidates = [...lineBeforeEuro.matchAll(/\b(\d+),(\d+)\b/g)];
-        for (const c of candidates) {
-          const v = parseFloat(`${c[1]}.${c[2]}`);
-          if (v < 100 && v >= 0 && !line.substring(0, line.indexOf(c[0])).match(/\dx\d/)) {
-            weight = v;
-            break;
-          }
-        }
-      }
-
-      // Map euro amounts: [portBrut, remiseHT, portNet, caeHT, decarbonation, smicHT, totalHT]
-      const portBrut       = euroNums[0] ?? null;
-      const remiseHT       = euroNums.find(v => v < 0) ?? null;
-      const positives      = euroNums.filter(v => v >= 0);
-      const portNet        = positives[1] ?? null;
-      const caeHT          = positives[2] ?? null;
-      const decarbonation  = positives[3] ?? null;
-      const smicHT         = positives[4] ?? null;
-      const totalHT        = positives[positives.length - 1] ?? null;
-
-      lastTracking = tracking;
-      lastParcelIdx = parcels.length;
-
-      parcels.push({
-        date: dateMatch?.[1] || null,
-        tracking,
-        weight_colissimo: weight,
-        port_brut: portBrut,
-        tx_remise: txRemise,
-        remise_ht: remiseHT,
-        port_net: portNet,
-        cae_ht: caeHT,
-        decarbonation,
-        total_ht: totalHT,
-        order_id: null,   // filled later
-        weight_bdd: null, // filled later
-        diff_g: null,
-        supplements_list: [],
-      });
+      const tracking = line.match(TRACKING_RE)[1];
+      const lineDate = line.match(DATE_RE)?.[1] || lastDate;
+      startParcel(tracking, lineDate);
       continue;
     }
 
-    // ── Supplement line (after a parcel line)
-    if (lastParcelIdx >= 0 && /Supplément\s*:/i.test(line)) {
-      const amtMatch = line.match(/([\d,]+)\s*€\s*$/);
-      const amount = amtMatch ? parseFloat(amtMatch[1].replace(',', '.')) : null;
+    // ── Collecting parcel values (state machine)
+    if (state === 'collecting' && cur) {
+      const field = FIELD_SEQ[fieldIdx];
+      if (!field) { state = 'done'; continue; }
 
-      // Identify label
-      let label = 'Supplément';
-      for (const { re, label: lbl } of SUPPL_PATTERNS) {
-        if (lbl && re.test(line)) { label = lbl; break; }
+      if (field === 'weight') {
+        if (IS_WEIGHT.test(line)) {
+          cur.weight_colissimo = parseFloat(line.trim().replace(',','.'));
+          fieldIdx++;
+        }
+        // Skip non-weight lines (destination, postal code, dimensions)
+      } else if (field === 'tx_remise') {
+        if (IS_PCT.test(line)) {
+          cur.tx_remise = parseFloat(line.trim().replace(/[%\s]/g,'').replace(',','.'));
+          fieldIdx++;
+        } else if (IS_AMOUNT.test(line)) {
+          // tx_remise missing, go to remise_ht
+          const v = parseAmt(line.match(IS_AMOUNT)[1]);
+          if (v < 0) { cur.remise_ht = v; fieldIdx = FIELD_SEQ.indexOf('port_net'); }
+          else       { cur.port_brut = v; fieldIdx = FIELD_SEQ.indexOf('tx_remise'); } // re-align
+        }
+      } else {
+        // Expects an amount line
+        if (IS_AMOUNT.test(line)) {
+          const v = parseAmt(line.match(IS_AMOUNT)[1]);
+          cur[field] = v;
+          fieldIdx++;
+          if (fieldIdx >= FIELD_SEQ.length) state = 'done';
+        }
+        // Skip non-amount lines
       }
-      if (label === 'Supplément') {
-        const generic = line.match(/Supplément\s*:\s*(.+?)\s+([\d,]+)€/i);
-        if (generic) label = generic[1].trim();
-      }
+      continue;
+    }
 
-      supplements.push({
-        tracking: lastTracking,
-        label,
-        amount,
-        parcel_idx: lastParcelIdx,
-      });
-
-      if (parcels[lastParcelIdx]) {
-        parcels[lastParcelIdx].supplements_list.push({ label, amount });
+    // ── Supplement label line (after parcel is done or in collecting state)
+    if ((state === 'done' || state === 'collecting') && IS_SUPPL.test(line) && cur) {
+      // Extract label - remove amount if present on same line
+      const inlineAmt = line.match(/([\d,]+)[€¤]\s*$/);
+      if (inlineAmt) {
+        // Amount is on the same line as label
+        const amount = parseFloat(inlineAmt[1].replace(',','.'));
+        let label = line.replace(/\s+[\d,]+[€¤]\s*$/, '').replace(/Supplément\s*:\s*/i,'').trim();
+        supplements.push({ tracking: cur.tracking, label, amount, parcel_idx: parcels.length });
+        cur.supplements_list.push({ label, amount });
+        supplLabel = null;
+      } else {
+        // Amount will be on the next line
+        supplLabel = line.replace(/Supplément\s*:\s*/i,'').trim();
       }
+      continue;
+    }
+
+    // ── Supplement amount on separate line
+    if (supplLabel && cur && IS_AMOUNT.test(line)) {
+      const amount = parseAmt(line.match(IS_AMOUNT)[1]);
+      supplements.push({ tracking: cur.tracking, label: supplLabel, amount, parcel_idx: parcels.length });
+      cur.supplements_list.push({ label: supplLabel, amount });
+      supplLabel = null;
+      continue;
     }
   }
+
+  // Commit last parcel
+  if (cur) commitParcel();
 
   return { parcels, supplements, indemnizations, globalSummary, invoiceNumber, periodStart, periodEnd };
 }
@@ -479,4 +481,22 @@ exports.exportExcel = [
       res.status(500).json({ success: false, error: err.message });
     }
   },
+];
+
+// POST /api/colissimo/debug-text
+exports.debugText = [
+  upload.single('pdf'),
+  async (req, res) => {
+    if (!req.file) return res.status(400).json({ error: 'PDF requis' });
+    const uint8 = new Uint8Array(req.file.buffer);
+    const pdfParser = new PDFParse(uint8);
+    await pdfParser.load();
+    const pdfData = await pdfParser.getText();
+    // Return lines containing numbers or € or supplement keywords
+    const lines = pdfData.text.split('\n')
+      .map((l, i) => `${i}: ${l}`)
+      .filter(l => /6A\d|CA\d|Supplément|€|¤|\d,\d\d/.test(l))
+      .slice(0, 60);
+    res.json({ lines, rawSample: pdfData.text.substring(2000, 3500) });
+  }
 ];
