@@ -46,15 +46,17 @@ const usersController = {
           is_super_admin: true,
           is_admin: true,
           permissions: {
-            reviews:   { read: true, write: true },
-            rewards:   { read: true, write: true },
-            emails:    { read: true, write: true },
-            stats:     { read: true, write: true },
-            purchases: { read: true, write: true },
-            catalog:   { read: true, write: true },
-            packing:   { read: true, write: true },
-            financier: { read: true, write: true },
-            commandes: { read: true, write: true },
+            reviews:     { read: true, write: true },
+            rewards:     { read: true, write: true },
+            emails:      { read: true, write: true },
+            stats:       { read: true, write: true },
+            purchases:   { read: true, write: true },
+            catalog:     { read: true, write: true },
+            packing:     { read: true, write: true },
+            financier:   { read: true, write: true },
+            commandes:   { read: true, write: true },
+            tickets:     { read: true, write: true },
+            chronopost:  { read: true, write: true },
           }
         });
       }
