@@ -1,5 +1,5 @@
 const multer = require('multer');
-const pdfParse = require('pdf-parse');
+const { PDFParse } = require('pdf-parse');
 const ExcelJS = require('exceljs');
 const pool = require('../config/database');
 
@@ -345,9 +345,12 @@ exports.analyze = [
       }
 
       // 1. Parse PDF
-      const pdfData = await pdfParse(req.file.buffer);
+      const uint8 = new Uint8Array(req.file.buffer);
+      const pdfParser = new PDFParse(uint8);
+      await pdfParser.load();
+      const pdfText = await pdfParser.getText();
       const { orders, supplements, globalCharges, invoiceNumber, invoiceDate } =
-        parseChronopostPdf(pdfData.text);
+        parseChronopostPdf(pdfText);
 
       // 2. Query BDD weights
       const numericOrderIds = orders
@@ -398,8 +401,11 @@ exports.exportExcel = [
         return res.status(400).json({ success: false, error: 'Fichier PDF requis' });
       }
 
-      const pdfData = await pdfParse(req.file.buffer);
-      const parsed = parseChronopostPdf(pdfData.text);
+      const uint8 = new Uint8Array(req.file.buffer);
+      const pdfParser = new PDFParse(uint8);
+      await pdfParser.load();
+      const pdfText = await pdfParser.getText();
+      const parsed = parseChronopostPdf(pdfText);
 
       const numericOrderIds = parsed.orders
         .filter(o => o.order_id && !o.is_return)
