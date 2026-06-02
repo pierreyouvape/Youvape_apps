@@ -6,6 +6,8 @@ const fs = require('fs');
 const crypto = require('crypto');
 const savController = require('../controllers/savController');
 const savMacroController = require('../controllers/savMacroController');
+const savNotificationController = require('../controllers/savNotificationController');
+const authMiddleware = require('../middleware/authMiddleware');
 
 const UPLOAD_ROOT = path.join('/usr/src/app/uploads/sav');
 const MAX_FILE_SIZE = 25 * 1024 * 1024; // 25 Mo
@@ -69,6 +71,12 @@ router.get('/statuses',          savController.getStatuses);
 router.post('/statuses',         savController.createStatus);
 router.put('/statuses/:id',      savController.updateStatus_s);
 router.delete('/statuses/:id',   savController.deleteStatus);
+
+// ─── Routes notifications (par utilisateur — protégées) ──────────────────────
+router.get('/notifications',            authMiddleware, savNotificationController.getMine);
+router.post('/notifications',           authMiddleware, savNotificationController.create);
+router.patch('/notifications/:id',      authMiddleware, savNotificationController.update);
+router.delete('/notifications/:id',     authMiddleware, savNotificationController.delete);
 
 // ─── Routes macros ────────────────────────────────────────────────────────────
 router.get('/macros/placeholders',      savMacroController.getPlaceholders);

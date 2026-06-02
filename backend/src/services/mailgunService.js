@@ -48,6 +48,33 @@ const mailgunService = {
     }
   },
 
+  // ─── Notification interne (notif équipe SAV, pas envoyé au client) ──────
+  // PAS de préfixe [SAV #N] dans le sujet pour ne pas être confondu avec un
+  // inbound client. Permet plusieurs destinataires en CC.
+  sendNotification: async ({ to, subject, bodyText, bodyHtml }) => {
+    try {
+      const recipients = Array.isArray(to) ? to : [to];
+      if (recipients.length === 0) return { success: false, error: 'Aucun destinataire' };
+
+      const messageData = {
+        from: FROM,
+        to: recipients,
+        subject,
+        text: bodyText,
+        'h:Reply-To': FROM,
+      };
+      if (bodyHtml) messageData.html = bodyHtml;
+
+      const result = await mg.messages.create(DOMAIN, messageData);
+      console.log(`📧 [Mailgun] Notification interne envoyée à ${recipients.join(', ')} : ${subject}`);
+      return { success: true, id: result.id };
+
+    } catch (error) {
+      console.error(`❌ [Mailgun] Erreur envoi notification : ${error.message}`);
+      return { success: false, error: error.message };
+    }
+  },
+
   // ─── Vérifier la signature d'un webhook Mailgun entrant ──────────────────
   verifyWebhookSignature: (timestamp, token, signature) => {
     try {

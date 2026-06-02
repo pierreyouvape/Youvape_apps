@@ -4,6 +4,7 @@ import AppShell from '../components/AppShell';
 import { Tickets as TicketsIcon } from '../components/AppIcons';
 import { invalidateStatusCache } from '../components/tickets/useTicketStatuses';
 import MacrosSettings from '../components/tickets/MacrosSettings';
+import NotificationsSettings from '../components/tickets/NotificationsSettings';
 
 const TICKETS_COLOR = '#0891B2';
 
@@ -544,9 +545,10 @@ export default function TicketsSettingsApp() {
   };
 
   const tabs = [
-    { key: 'statuses', label: 'Statuts des tickets' },
-    { key: 'views',    label: 'Vues' },
-    { key: 'macros',   label: 'Macros' },
+    { key: 'statuses',      label: 'Statuts des tickets' },
+    { key: 'views',         label: 'Vues' },
+    { key: 'macros',        label: 'Macros' },
+    { key: 'notifications', label: 'Notifications' },
   ];
 
   return (
@@ -614,6 +616,9 @@ export default function TicketsSettingsApp() {
 
             {/* ─── Onglet Macros ─── */}
             {activeTab === 'macros' && <MacrosSettings />}
+
+            {/* ─── Onglet Notifications ─── */}
+            {activeTab === 'notifications' && <NotificationsSettings />}
 
             {/* ─── Onglet Vues ─── */}
             {activeTab === 'views' && (

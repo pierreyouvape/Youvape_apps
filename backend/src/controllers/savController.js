@@ -4,6 +4,7 @@ const mailgunService = require('../services/mailgunService');
 const pool = require('../config/database');
 const { saveAttachments, toMailgunAttachments } = require('../utils/savAttachments');
 const { getTrackingStatus } = require('../services/trackingService');
+const { dispatchNotifications } = require('../services/notificationDispatcher');
 
 const savController = {
 
@@ -59,6 +60,10 @@ const savController = {
       });
 
       console.log(`✅ [SAV] Ticket #${ticket.id} créé pour ${customer_name} (${email})`);
+
+      // Notification : nouveau message reçu (fire-and-forget)
+      dispatchNotifications('new_message', ticket).catch(() => {});
+
       res.status(200).json({ success: true, ticket_id: ticket.id });
 
     } catch (error) {
@@ -121,6 +126,11 @@ const savController = {
       }
 
       console.log(`📨 [SAV Inbound] Réponse client ajoutée au ticket #${ticketId}`);
+
+      // Notification : réponse client reçue (fire-and-forget)
+      dispatchNotifications('reply_received', ticket, {
+        body: cleanBody, from: sender,
+      }).catch(() => {});
 
     } catch (error) {
       console.error('❌ [SAV Inbound] Erreur:', error);
