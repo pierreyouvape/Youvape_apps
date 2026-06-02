@@ -138,13 +138,13 @@ function parseColissimoPdf(text) {
       // Weight = first positive decimal before the first € (not a dimension like 17x14x12)
       // Find weight: first positive decimal that's NOT part of a dimension string
       let weight = null;
-      const lineBeforeFirst€ = line.split('€')[0];
-      const weightMatch = lineBeforeFirst€.match(/\b(\d+),(\d{3})\b/); // 3-decimal precision = weight
+      const lineBeforeEuro = line.split('€')[0];
+      const weightMatch = lineBeforeEuro.match(/\b(\d+),(\d{3})\b/); // 3-decimal precision = weight
       if (weightMatch) {
         weight = parseFloat(`${weightMatch[1]}.${weightMatch[2]}`);
       } else {
         // Fallback: first decimal ≤ 100 before the first €
-        const candidates = [...lineBeforeFirst€.matchAll(/\b(\d+),(\d+)\b/g)];
+        const candidates = [...lineBeforeEuro.matchAll(/\b(\d+),(\d+)\b/g)];
         for (const c of candidates) {
           const v = parseFloat(`${c[1]}.${c[2]}`);
           if (v < 100 && v >= 0 && !line.substring(0, line.indexOf(c[0])).match(/\dx\d/)) {
