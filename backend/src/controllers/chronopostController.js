@@ -25,8 +25,8 @@ function parseChronopostPdf(text) {
   const supplements = [];
   const globalCharges = [];
 
-  // Tracking number pattern (XS, XN, XF + digits + FR)
-  const TRACKING_RE = /\b(X[A-Z]\d{9,12}FR)\b/;
+  // Tracking number pattern : XS/XN/XF...FR (France) ou XR/XT...TS (international)
+  const TRACKING_RE = /\b(X[A-Z]\d{9,12}(?:FR|TS))\b/;
   // Date pattern DD/MM/YYYY
   const DATE_RE = /\b(\d{2}\/\d{2}\/\d{4})\b/;
   // WooCommerce order ID: 7-digit number starting with 12
@@ -41,6 +41,7 @@ function parseChronopostPdf(text) {
     { re: /Supplément manutention/i, label: 'Supplément manutention' },
     { re: /[ÉE]tiquette non conforme/i, label: 'Étiquette non conforme' },
     { re: /Supplément hors norme/i, label: 'Supplément hors norme' },
+    { re: /Supplément Zone Internationale [ÉE]loign[ée]+/i, label: 'Zone Internationale Éloignée' },
     { re: /Supplément zone éloignée/i, label: 'Zone éloignée' },
     { re: /Supplément carburant/i, label: 'Surcharge carburant' },
     { re: /Correction de poids/i, label: 'Correction de poids' },
