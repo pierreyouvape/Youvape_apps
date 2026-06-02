@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { AuthContext } from '../context/AuthContext';
 import axios from 'axios';
 import { formatPrice } from '../utils/formatNumber';
+import { LinkBox, LinkTr } from '../utils/navHelpers';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
 
@@ -302,23 +303,22 @@ const CatalogApp = () => {
         position: 'relative'
       }}>
         <CloudLogo />
-        <button
-          onClick={() => navigate('/home')}
+        <LinkBox
+          to="/home"
+          display="inline-block"
           style={{
             position: 'absolute',
             left: '20px',
             padding: '10px 20px',
             backgroundColor: '#fff',
             color: '#059669',
-            border: 'none',
             borderRadius: '6px',
             fontSize: '14px',
-            cursor: 'pointer',
             fontWeight: '600'
           }}
         >
           Retour
-        </button>
+        </LinkBox>
       </div>
 
       {/* Main Content */}
@@ -487,12 +487,11 @@ const CatalogApp = () => {
                       ? (varIdx % 2 === 1 ? '#dbeafe' : '#eff6ff')
                       : (simpleIdx % 2 === 1 ? '#ffffff' : '#f3f4f6');
                     return (
-                      <tr
+                      <LinkTr
                         key={row.id}
-                        onClick={() => navigate(`/products/${row.wp_product_id}`)}
+                        to={`/products/${row.wp_product_id}`}
                         style={{
                           borderBottom: '1px solid #e5e7eb',
-                          cursor: 'pointer',
                           transition: 'background-color 0.15s',
                           backgroundColor: varBg
                         }}
@@ -519,7 +518,7 @@ const CatalogApp = () => {
                         {isVisible('stock') && <td style={{ ...cellRight, fontWeight: '600', ...numStyle(row.stock) }}>{fmtInt(row.stock)}</td>}
                         {isVisible('incoming_qty') && <td style={cellRight}>{fmtInt(row.incoming_qty)}</td>}
                         {isVisible('sales_30d') && <td style={{ ...cellRight, ...numStyle(row.sales_30d) }}>{fmtInt(row.sales_30d)}</td>}
-                      </tr>
+                      </LinkTr>
                     );
                   }); })()}
                 </tbody>

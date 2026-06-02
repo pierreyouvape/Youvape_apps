@@ -2,6 +2,7 @@ import { useState, useEffect, useContext } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { AuthContext } from '../context/AuthContext';
+import { LinkBox } from '../utils/navHelpers';
 
 const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:3000/api/auth').replace('/auth', '');
 
@@ -135,12 +136,13 @@ const CreateOrderPage = () => {
       {/* Header */}
       <div style={{ backgroundColor: '#f59e0b', color: 'white', padding: '15px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
-          <button
-            onClick={() => navigate('/purchases?tab=orders')}
-            style={{ background: 'rgba(255,255,255,0.2)', border: 'none', color: 'white', padding: '8px 16px', borderRadius: '6px', cursor: 'pointer', fontSize: '14px' }}
+          <LinkBox
+            to="/purchases?tab=orders"
+            display="inline-block"
+            style={{ background: 'rgba(255,255,255,0.2)', color: 'white', padding: '8px 16px', borderRadius: '6px', fontSize: '14px' }}
           >
             ← Retour aux commandes
-          </button>
+          </LinkBox>
           <h1 style={{ margin: 0, fontSize: '1.5rem', fontWeight: 600 }}>Créer une commande</h1>
         </div>
       </div>
@@ -293,12 +295,13 @@ const CreateOrderPage = () => {
 
         {/* Actions */}
         <div style={{ background: 'white', borderRadius: '8px', padding: '20px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <button
-            onClick={() => navigate('/purchases?tab=orders')}
-            style={{ background: '#f3f4f6', color: '#374151', border: 'none', borderRadius: '6px', padding: '12px 24px', cursor: 'pointer', fontSize: '15px', fontWeight: 500 }}
+          <LinkBox
+            to="/purchases?tab=orders"
+            display="inline-block"
+            style={{ background: '#f3f4f6', color: '#374151', borderRadius: '6px', padding: '12px 24px', fontSize: '15px', fontWeight: 500 }}
           >
             Annuler
-          </button>
+          </LinkBox>
           <div style={{ display: 'flex', gap: '10px' }}>
             <button
               onClick={() => handleCreateOrder(false)}

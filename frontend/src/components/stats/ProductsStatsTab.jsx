@@ -6,6 +6,7 @@ import { formatPriceEur, formatInt } from '../../utils/formatNumber';
 import { AuthContext } from '../../context/AuthContext';
 import { useColumnPreferences } from '../../hooks/useColumnPreferences';
 import ColumnPanel from '../ColumnPanel';
+import { LinkBox } from '../../utils/navHelpers';
 
 const API_BASE_URL = '/api';
 
@@ -410,12 +411,14 @@ const ProductsStatsTab = () => {
                             {hasVariations && (
                               <span style={{ color: '#6c757d', fontSize: '12px' }}>{isExpanded ? '▼' : '▶'}</span>
                             )}
-                            <span
-                              onClick={(e) => handleNameClick(e, product.wp_product_id)}
-                              style={{ fontWeight: 'bold', color: '#007bff', cursor: 'pointer' }}
+                            <LinkBox
+                              to={`/products/${product.wp_product_id}`}
+                              display="inline"
+                              onClick={(e) => e.stopPropagation()}
+                              style={{ fontWeight: 'bold', color: '#007bff' }}
                             >
                               {product.post_title}
-                            </span>
+                            </LinkBox>
                           </div>
                         </td>
                         {isVisible('sku') && (

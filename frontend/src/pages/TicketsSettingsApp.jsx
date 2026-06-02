@@ -6,6 +6,7 @@ import { invalidateStatusCache } from '../components/tickets/useTicketStatuses';
 import MacrosSettings from '../components/tickets/MacrosSettings';
 import NotificationsSettings from '../components/tickets/NotificationsSettings';
 import AutomationsSettings from '../components/tickets/AutomationsSettings';
+import { LinkBox } from '../utils/navHelpers';
 
 const TICKETS_COLOR = '#0891B2';
 
@@ -569,9 +570,9 @@ export default function TicketsSettingsApp() {
             </div>
           </div>
           <div style={{ height: 20, width: 1, background: C.grisCL, marginLeft: 4 }} />
-          <button onClick={() => navigate('/tickets')} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: 7, border: `1px solid ${C.grisCL}`, background: C.grisTL, color: C.grisF, fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>
+          <LinkBox to="/tickets" display="inline-flex" style={{ alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: 7, border: `1px solid ${C.grisCL}`, background: C.grisTL, color: C.grisF, fontSize: 12.5, fontWeight: 600 }}>
             ← Retour aux tickets
-          </button>
+          </LinkBox>
         </header>
 
         {/* ── Corps ── */}

@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import CopyButton from '../components/CopyButton';
 import { formatDate } from '../utils/dateUtils';
+import { LinkBox } from '../utils/navHelpers';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
 
@@ -131,23 +132,22 @@ const OrdersApp = () => {
         }}
       >
         <CloudLogo />
-        <button
-          onClick={() => navigate('/home')}
+        <LinkBox
+          to="/home"
+          display="inline-block"
           style={{
             position: 'absolute',
             left: '20px',
             padding: '10px 20px',
             backgroundColor: '#fff',
             color: '#135E84',
-            border: 'none',
             borderRadius: '6px',
             fontSize: '14px',
-            cursor: 'pointer',
             fontWeight: '600'
           }}
         >
           ← Retour
-        </button>
+        </LinkBox>
       </div>
 
       {/* Main Content */}
@@ -344,21 +344,20 @@ const OrdersApp = () => {
                       {order.payment_method_title || order.payment_method || '-'}
                     </td>
                     <td style={{ textAlign: 'center', padding: '15px' }}>
-                      <button
-                        onClick={() => navigate(`/orders/${order.wp_order_id}`)}
+                      <LinkBox
+                        to={`/orders/${order.wp_order_id}`}
+                        display="inline-block"
                         style={{
                           padding: '6px 12px',
                           backgroundColor: '#135E84',
                           color: 'white',
-                          border: 'none',
                           borderRadius: '4px',
                           fontSize: '12px',
-                          cursor: 'pointer',
                           fontWeight: '600'
                         }}
                       >
                         Voir détails
-                      </button>
+                      </LinkBox>
                     </td>
                   </tr>
                 ))}

@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useContext, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AuthContext } from '../context/AuthContext';
+import { LinkBox } from '../utils/navHelpers';
 import axios from 'axios';
 
 const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:3000/api/auth').replace('/auth', '');
@@ -443,20 +444,19 @@ const PackingApp = () => {
         position: 'relative'
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '15px', zIndex: 1 }}>
-          <button
-            onClick={() => navigate('/home')}
+          <LinkBox
+            to="/home"
+            display="inline-block"
             style={{
               background: 'rgba(255,255,255,0.2)',
-              border: 'none',
               color: 'white',
               padding: '8px 16px',
               borderRadius: '6px',
-              cursor: 'pointer',
               fontSize: '14px'
             }}
           >
             Retour
-          </button>
+          </LinkBox>
           <h1 style={{ margin: 0, fontSize: '22px' }}>Packing</h1>
           <button
             onClick={() => { setShowLabels(true); loadLabels(); }}

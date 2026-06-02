@@ -11,6 +11,7 @@ import SalesByCountryPieChart from '../components/charts/SalesByCountryPieChart'
 import PeriodFilter from '../components/PeriodFilter';
 import CopyButton from '../components/CopyButton';
 import { formatPrice } from '../utils/formatNumber';
+import { LinkBox } from '../utils/navHelpers';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
 
@@ -516,16 +517,16 @@ const ProductDetail = () => {
             {(product.brand || product.sub_brand) && (
               <div style={{ fontSize: '14px', color: '#888', marginBottom: '8px' }}>
                 {product.brand && (
-                  <span onClick={() => navigate(`/brands/${encodeURIComponent(product.brand)}`)} style={{ fontWeight: '600', cursor: 'pointer', color: '#135E84', textDecoration: 'underline' }}>
+                  <LinkBox to={`/brands/${encodeURIComponent(product.brand)}`} display="inline" style={{ fontWeight: '600', color: '#135E84', textDecoration: 'underline' }}>
                     {product.brand}
-                  </span>
+                  </LinkBox>
                 )}
                 {product.sub_brand && (
                   <>
                     <span style={{ color: '#888' }}> / </span>
-                    <span onClick={() => navigate(`/sub-brands/${encodeURIComponent(product.sub_brand)}`)} style={{ cursor: 'pointer', color: '#135E84', textDecoration: 'underline' }}>
+                    <LinkBox to={`/sub-brands/${encodeURIComponent(product.sub_brand)}`} display="inline" style={{ color: '#135E84', textDecoration: 'underline' }}>
                       {product.sub_brand}
-                    </span>
+                    </LinkBox>
                   </>
                 )}
               </div>
@@ -575,16 +576,16 @@ const ProductDetail = () => {
               <div style={{ fontSize: '14px', color: '#666' }}>
                 Categorie:{' '}
                 {product.category && (
-                  <span onClick={() => navigate(`/categories/${encodeURIComponent(product.category)}`)} style={{ fontWeight: '600', cursor: 'pointer', color: '#135E84', textDecoration: 'underline' }}>
+                  <LinkBox to={`/categories/${encodeURIComponent(product.category)}`} display="inline" style={{ fontWeight: '600', color: '#135E84', textDecoration: 'underline' }}>
                     {product.category}
-                  </span>
+                  </LinkBox>
                 )}
                 {product.sub_category && (
                   <>
                     <span style={{ color: '#888' }}> / </span>
-                    <span onClick={() => navigate(`/sub-categories/${encodeURIComponent(product.sub_category)}`)} style={{ cursor: 'pointer', color: '#135E84', textDecoration: 'underline' }}>
+                    <LinkBox to={`/sub-categories/${encodeURIComponent(product.sub_category)}`} display="inline" style={{ color: '#135E84', textDecoration: 'underline' }}>
                       {product.sub_category}
-                    </span>
+                    </LinkBox>
                   </>
                 )}
               </div>
@@ -802,10 +803,10 @@ const ProductDetail = () => {
               <div style={cardStyle}>
                 <h2 style={{ marginTop: 0, color: '#333', fontSize: '18px' }}>Frequemment achete avec</h2>
                 {frequentlyBought.slice(0, 5).map((item) => (
-                  <div key={item.wp_product_id} onClick={() => navigate(`/products/${item.wp_product_id}`)} style={{ padding: '12px', borderBottom: '1px solid #f0f0f0', cursor: 'pointer', display: 'flex', justifyContent: 'space-between' }} onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f8f9fa'} onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}>
+                  <LinkBox key={item.wp_product_id} to={`/products/${item.wp_product_id}`} style={{ padding: '12px', borderBottom: '1px solid #f0f0f0', display: 'flex', justifyContent: 'space-between' }} onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f8f9fa'} onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}>
                     <div style={{ fontWeight: '600' }}>{item.post_title}</div>
                     <div style={{ fontSize: '13px', color: '#999' }}>{item.times_bought_together} fois</div>
-                  </div>
+                  </LinkBox>
                 ))}
               </div>
             )}
@@ -868,7 +869,7 @@ const ProductDetail = () => {
                 <div style={cardStyle}>
                   <h2 style={{ marginTop: 0, color: '#333', fontSize: '18px' }}>Meilleurs clients</h2>
                   {topCustomers.slice(0, 5).map((customer) => (
-                    <div key={customer.wp_user_id} onClick={() => navigate(`/customers/${customer.wp_user_id}`)} style={{ padding: '12px', borderBottom: '1px solid #f0f0f0', cursor: 'pointer', display: 'flex', justifyContent: 'space-between' }} onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f8f9fa'} onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}>
+                    <LinkBox key={customer.wp_user_id} to={`/customers/${customer.wp_user_id}`} style={{ padding: '12px', borderBottom: '1px solid #f0f0f0', display: 'flex', justifyContent: 'space-between' }} onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f8f9fa'} onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}>
                       <div>
                         <div style={{ fontWeight: '600' }}>{customer.first_name} {customer.last_name}</div>
                         <div style={{ fontSize: '12px', color: '#999' }}>{customer.email}</div>
@@ -877,7 +878,7 @@ const ProductDetail = () => {
                         <div style={{ fontWeight: '600' }}>{formatNumber(customer.quantity_bought)} unites</div>
                         <div style={{ fontSize: '12px', color: '#999' }}>{formatCurrency(customer.total_spent)}</div>
                       </div>
-                    </div>
+                    </LinkBox>
                   ))}
                 </div>
               )}
@@ -885,7 +886,7 @@ const ProductDetail = () => {
                 <div style={cardStyle}>
                   <h2 style={{ marginTop: 0, color: '#333', fontSize: '18px' }}>Commandes recentes</h2>
                   {recentOrders.slice(0, 5).map((order) => (
-                    <div key={order.wp_order_id} onClick={() => navigate(`/orders/${order.wp_order_id}`)} style={{ padding: '12px', borderBottom: '1px solid #f0f0f0', cursor: 'pointer', display: 'flex', justifyContent: 'space-between' }} onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f8f9fa'} onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}>
+                    <LinkBox key={order.wp_order_id} to={`/orders/${order.wp_order_id}`} style={{ padding: '12px', borderBottom: '1px solid #f0f0f0', display: 'flex', justifyContent: 'space-between' }} onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f8f9fa'} onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}>
                       <div>
                         <div style={{ fontWeight: '600', display: 'flex', alignItems: 'center', gap: '4px' }}>#{order.order_number}<CopyButton text={String(order.order_number)} size={12} /></div>
                         <div style={{ fontSize: '12px', color: '#999' }}>{order.first_name} {order.last_name} - {order.shipping_country}</div>
@@ -894,7 +895,7 @@ const ProductDetail = () => {
                         <div style={{ fontWeight: '600' }}>{formatCurrency(order.order_total)}</div>
                         <div style={{ fontSize: '12px', color: '#999' }}>{formatDate(order.post_date)}</div>
                       </div>
-                    </div>
+                    </LinkBox>
                   ))}
                 </div>
               )}

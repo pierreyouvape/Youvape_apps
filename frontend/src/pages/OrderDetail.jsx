@@ -6,6 +6,7 @@ import CopyButton from '../components/CopyButton';
 import { Stats as StatsIcon } from '../components/AppIcons';
 import { formatDate } from '../utils/dateUtils';
 import { AuthContext } from '../context/AuthContext';
+import { LinkBox } from '../utils/navHelpers';
 
 const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:3000/api/auth').replace('/auth', '');
 
@@ -455,17 +456,18 @@ const OrderDetail = () => {
                     </>
                   )}
                   {order.wp_customer_id && (
-                    <button
-                      onClick={() => navigate(`/customers/${order.wp_customer_id}`)}
+                    <LinkBox
+                      to={`/customers/${order.wp_customer_id}`}
                       style={{
-                        display: 'block', marginTop: 16, padding: '7px 14px',
+                        marginTop: 16, padding: '7px 14px',
                         background: C.saphir, color: '#fff',
-                        border: 'none', borderRadius: 7, fontSize: 12.5,
-                        fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
+                        borderRadius: 7, fontSize: 12.5,
+                        fontWeight: 700, fontFamily: 'inherit',
+                        width: 'fit-content',
                       }}
                     >
                       Voir fiche client →
-                    </button>
+                    </LinkBox>
                   )}
                 </div>
               }
@@ -532,12 +534,13 @@ const OrderDetail = () => {
                             ) : (
                               <div style={{ width: 40, height: 40, borderRadius: 8, background: C.grisTL, border: `1px solid ${C.grisCL}`, flexShrink: 0 }} />
                             )}
-                            <span
-                              style={{ color: C.bleu, fontWeight: 700, cursor: 'pointer', fontSize: 13.5 }}
-                              onClick={() => navigate(`/products/${item.variation_id || item.product_id}`)}
+                            <LinkBox
+                              to={`/products/${item.variation_id || item.product_id}`}
+                              display="inline"
+                              style={{ color: C.bleu, fontWeight: 700, fontSize: 13.5 }}
                             >
                               {item.order_item_name || item.product_name}
-                            </span>
+                            </LinkBox>
                           </div>
                         </td>
                         <td style={{ padding: '13px 14px', borderBottom: `1px solid ${C.grisTL}`, verticalAlign: 'middle', color: C.grisF, fontFamily: 'monospace', fontSize: 12.5 }}>
@@ -652,12 +655,12 @@ const OrderDetail = () => {
                       <div style={{ flex: 1 }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
                           <div>
-                            <div
-                              style={{ fontWeight: 700, color: C.bleu, cursor: 'pointer', fontSize: 14 }}
-                              onClick={() => navigate(`/products/${review.product_id}`)}
+                            <LinkBox
+                              to={`/products/${review.product_id}`}
+                              style={{ fontWeight: 700, color: C.bleu, fontSize: 14 }}
                             >
                               {review.product_name || 'Produit'}
-                            </div>
+                            </LinkBox>
                             <div style={{ fontSize: 12, color: C.grisF, marginTop: 2 }}>
                               {review.customer_name} · {formatDate(review.review_date)}
                             </div>

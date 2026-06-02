@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { AuthContext } from '../context/AuthContext';
 import axios from 'axios';
 import { formatPrice } from '../utils/formatNumber';
+import { LinkBox } from '../utils/navHelpers';
 
 const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:3000/api').replace('/auth', '');
 
@@ -1137,7 +1138,7 @@ const ShippingSettings = () => {
       <div style={{ backgroundColor: '#135E84', padding: '20px 0', display: 'flex', justifyContent: 'center', alignItems: 'center', position: 'relative' }}>
         <CloudLogo />
         <div style={{ position: 'absolute', right: '20px' }}>
-          <button onClick={() => navigate('/stats/reports')} style={btnWhite}>Retour aux stats</button>
+          <LinkBox to="/stats/reports" display="inline-block" style={btnWhite}>Retour aux stats</LinkBox>
         </div>
       </div>
 

@@ -7,6 +7,7 @@ import { OrdersSearch as OrdersIcon } from '../components/AppIcons';
 import { formatDate } from '../utils/dateUtils';
 import { formatPriceEur } from '../utils/formatNumber';
 import { AuthContext } from '../context/AuthContext';
+import { LinkBox } from '../utils/navHelpers';
 
 const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:3000/api/auth').replace('/auth', '');
 
@@ -506,12 +507,12 @@ const OrdersSearchApp = () => {
                                                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                                                   {item.image_url && <img src={item.image_url} alt="" style={{ width: 36, height: 36, objectFit: 'cover', borderRadius: 4 }} />}
                                                   <div>
-                                                    <div
-                                                      style={{ fontWeight: 600, color: C.violet, cursor: 'pointer' }}
-                                                      onClick={() => navigate(`/products/${item.product_id || item.variation_id}`)}
+                                                    <LinkBox
+                                                      to={`/products/${item.product_id || item.variation_id}`}
+                                                      style={{ fontWeight: 600, color: C.violet }}
                                                     >
                                                       {item.product_title || item.order_item_name}
-                                                    </div>
+                                                    </LinkBox>
                                                     {item.brand && <div style={{ fontSize: 11, color: C.grisM }}>{item.brand}</div>}
                                                   </div>
                                                 </div>

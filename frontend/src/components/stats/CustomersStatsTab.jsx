@@ -6,6 +6,7 @@ import { formatPriceEur, formatPrice, formatInt } from '../../utils/formatNumber
 import { AuthContext } from '../../context/AuthContext';
 import { useColumnPreferences } from '../../hooks/useColumnPreferences';
 import ColumnPanel from '../ColumnPanel';
+import { LinkTr } from '../../utils/navHelpers';
 
 const API_BASE_URL = '/api';
 
@@ -235,10 +236,10 @@ const CustomersStatsTab = () => {
               </thead>
               <tbody>
                 {data.map((customer) => (
-                  <tr
+                  <LinkTr
                     key={customer.wp_user_id || customer.id}
-                    onClick={() => navigate(`/customers/${customer.wp_user_id}`)}
-                    style={{ borderTop: '1px solid #dee2e6', cursor: 'pointer', transition: 'background-color 0.2s' }}
+                    to={`/customers/${customer.wp_user_id}`}
+                    style={{ borderTop: '1px solid #dee2e6', transition: 'background-color 0.2s' }}
                     onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f8f9fa'}
                     onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'white'}
                   >
@@ -271,7 +272,7 @@ const CustomersStatsTab = () => {
                         {customer.country ? getCountryLabel(customer.country) : 'N/A'}
                       </td>
                     )}
-                  </tr>
+                  </LinkTr>
                 ))}
               </tbody>
             </table>

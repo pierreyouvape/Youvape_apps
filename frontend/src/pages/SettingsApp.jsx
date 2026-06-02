@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { AuthContext } from '../context/AuthContext';
 import axios from 'axios';
 import './SettingsApp.css';
+import { LinkBox } from '../utils/navHelpers';
 
 const SettingsApp = () => {
   const { token, isAdmin, isSuperAdmin } = useContext(AuthContext);
@@ -224,9 +225,9 @@ const SettingsApp = () => {
   return (
     <div className="settings-app">
       <header className="settings-header-bar">
-        <button className="settings-back-button" onClick={() => navigate('/home')}>
+        <LinkBox to="/home" display="inline-block" className="settings-back-button">
           ← Accueil
-        </button>
+        </LinkBox>
         <h1>Paramètres</h1>
       </header>
 

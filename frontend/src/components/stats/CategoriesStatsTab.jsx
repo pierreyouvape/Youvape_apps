@@ -5,6 +5,7 @@ import { formatPriceEur } from '../../utils/formatNumber';
 import { AuthContext } from '../../context/AuthContext';
 import { useColumnPreferences } from '../../hooks/useColumnPreferences';
 import ColumnPanel from '../ColumnPanel';
+import { LinkBox } from '../../utils/navHelpers';
 
 const API_BASE_URL = '/api';
 
@@ -297,12 +298,14 @@ const CategoriesStatsTab = () => {
                             {hasSubCategories && (
                               <span style={{ color: '#6c757d', fontSize: '12px' }}>{isExpanded ? '▼' : '▶'}</span>
                             )}
-                            <span
-                              onClick={(e) => handleCategoryNameClick(e, category.category)}
-                              style={{ fontWeight: 'bold', color: '#007bff', cursor: 'pointer' }}
+                            <LinkBox
+                              to={`/categories/${encodeURIComponent(category.category)}`}
+                              display="inline"
+                              onClick={(e) => e.stopPropagation()}
+                              style={{ fontWeight: 'bold', color: '#007bff' }}
                             >
                               {category.category}
-                            </span>
+                            </LinkBox>
                           </div>
                         </td>
                         {isVisible('product_count') && <td style={{ padding: '15px', fontSize: '14px' }}>{formatNumber(category.product_count)}</td>}
@@ -317,12 +320,14 @@ const CategoriesStatsTab = () => {
                       {isExpanded && categorySubCategories.length > 0 && categorySubCategories.map((sc) => (
                         <tr key={sc.sub_category} style={{ backgroundColor: '#f8f9fa', borderTop: '1px solid #e9ecef' }}>
                           <td style={{ padding: '10px 15px 10px 45px', fontSize: '13px' }}>
-                            <span
-                              onClick={(e) => handleSubCategoryNameClick(e, sc.sub_category)}
-                              style={{ color: '#007bff', cursor: 'pointer' }}
+                            <LinkBox
+                              to={`/sub-categories/${encodeURIComponent(sc.sub_category)}`}
+                              display="inline"
+                              onClick={(e) => e.stopPropagation()}
+                              style={{ color: '#007bff' }}
                             >
                               ↳ {sc.sub_category}
-                            </span>
+                            </LinkBox>
                           </td>
                           {isVisible('product_count') && <td style={{ padding: '10px 15px', fontSize: '13px', color: '#6c757d' }}>{formatNumber(sc.product_count)}</td>}
                           {isVisible('sub_category_count') && <td style={{ padding: '10px 15px', fontSize: '13px', color: '#6c757d' }}>-</td>}

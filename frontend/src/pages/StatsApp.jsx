@@ -8,6 +8,7 @@ import BrandsStatsTab from '../components/stats/BrandsStatsTab';
 import CategoriesStatsTab from '../components/stats/CategoriesStatsTab';
 import OrdersStatsTab from '../components/stats/OrdersStatsTab';
 import AnalysisTab from '../components/stats/AnalysisTab';
+import { LinkBox } from '../utils/navHelpers';
 
 const StatsApp = () => {
   const { logout } = useContext(AuthContext);
@@ -69,12 +70,13 @@ const StatsApp = () => {
           <h1 style={{ margin: 0, fontSize: '1.5rem', fontWeight: 600 }}>📊 Statistiques WooCommerce</h1>
         </div>
         <div style={{ display: 'flex', gap: '10px' }}>
-          <button
-            onClick={() => navigate('/stats/shipping-settings')}
-            style={{ background: 'rgba(255,255,255,0.2)', border: 'none', color: 'white', padding: '8px 16px', borderRadius: '6px', cursor: 'pointer', fontSize: '14px' }}
+          <LinkBox
+            to="/stats/shipping-settings"
+            display="inline-block"
+            style={{ background: 'rgba(255,255,255,0.2)', color: 'white', padding: '8px 16px', borderRadius: '6px', fontSize: '14px' }}
           >
             ⚙️ Paramètres
-          </button>
+          </LinkBox>
           <button onClick={handleLogout} style={{ background: 'rgba(255,255,255,0.2)', border: 'none', color: 'white', padding: '8px 16px', borderRadius: '6px', cursor: 'pointer', fontSize: '14px' }}>
             Déconnexion
           </button>

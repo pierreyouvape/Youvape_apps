@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { formatDate } from '../../utils/dateUtils';
 import { formatPrice, formatInt } from '../../utils/formatNumber';
+import { LinkBox } from '../../utils/navHelpers';
 
 const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:3000/api/auth').replace('/auth', '');
 
@@ -462,18 +463,20 @@ const OrdersTab = ({ token }) => {
           >
             {syncing ? 'Synchronisation...' : '⬇ Sync commandes BMS'}
           </button>
-          <button
+          <LinkBox
+            to="/purchases/import-pdf"
+            display="inline-block"
             className="btn btn-secondary"
-            onClick={() => navigate('/purchases/import-pdf')}
           >
             Import PDF
-          </button>
-          <button
+          </LinkBox>
+          <LinkBox
+            to="/purchases/create-order"
+            display="inline-block"
             className="btn btn-primary"
-            onClick={() => navigate('/purchases/create-order')}
           >
             + Créer une commande
-          </button>
+          </LinkBox>
         </div>
 
         {syncResult && (
@@ -494,9 +497,9 @@ const OrdersTab = ({ token }) => {
           <div className="empty-state">
             <div className="empty-state-icon">📦</div>
             <p>Aucune commande</p>
-            <button className="btn btn-primary" onClick={() => navigate('/purchases/create-order')}>
+            <LinkBox to="/purchases/create-order" display="inline-block" className="btn btn-primary">
               + Créer une commande
-            </button>
+            </LinkBox>
           </div>
         ) : (
           <table className="purchases-table">

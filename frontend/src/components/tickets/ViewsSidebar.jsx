@@ -2,6 +2,7 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { TICKETS_COLOR } from './ticketConstants';
 import { loadViewsOrder, saveViewsOrder, applyViewsOrder } from './viewsOrder';
+import { LinkBox } from '../../utils/navHelpers';
 
 const C = {
   grisTL: '#F2F6F8', grisCL: '#E2E2E2', grisM: '#8A99A4',
@@ -218,17 +219,18 @@ export default function ViewsSidebar({ views = [], activeView, onViewChange, cou
 
       {/* Footer */}
       <div style={{ padding: '14px 20px', borderTop: `1px solid ${C.grisCL}` }}>
-        <button
-          onClick={() => navigate('/tickets/settings')}
+        <LinkBox
+          to="/tickets/settings"
+          display="inline-flex"
           style={{
-            display: 'inline-flex', alignItems: 'center', gap: 6,
+            alignItems: 'center', gap: 6,
             fontSize: 12.5, color: TICKETS_COLOR, fontWeight: 700,
-            background: 'none', border: 'none', cursor: 'pointer', padding: 0,
+            padding: 0,
           }}
         >
           Gérer les vues
           <IconSettings />
-        </button>
+        </LinkBox>
       </div>
 
       <style>{`

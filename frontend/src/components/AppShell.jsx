@@ -2,6 +2,7 @@ import { useState, useRef, useCallback, useMemo, useContext } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { AuthContext } from '../context/AuthContext';
 import { APPS, SettingsIcon, LogoutIcon } from './AppIcons';
+import { LinkBox } from '../utils/navHelpers';
 
 // Apps ayant une page de paramètres dédiée
 const APP_SETTINGS_PATHS = {
@@ -117,16 +118,17 @@ function Sidebar({ user, orderedApps, accessibleKeys, draggingKey, overKey, onPo
         gap: 10,
       }}>
         <img src="/images/logo.jpg" alt="YouVape" style={{ height: 42, maxWidth: 140, objectFit: 'contain', flexShrink: 1, minWidth: 0 }} />
-        <button
-          onClick={() => navigate('/home')}
+        <LinkBox
+          to="/home"
           title="Accueil"
+          display="flex"
           style={{
             flexShrink: 0,
             width: 32, height: 32, borderRadius: 8,
             background: currentPath === '/home' ? 'rgba(255,255,255,0.15)' : 'rgba(255,255,255,0.08)',
             border: '1px solid rgba(255,255,255,0.12)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            cursor: 'pointer', padding: 0,
+            alignItems: 'center', justifyContent: 'center',
+            padding: 0,
             transition: 'background 0.15s',
           }}
           onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.2)'}
@@ -136,7 +138,7 @@ function Sidebar({ user, orderedApps, accessibleKeys, draggingKey, overKey, onPo
             <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
             <polyline points="9 22 9 12 15 12 15 22"/>
           </svg>
-        </button>
+        </LinkBox>
       </div>
 
       {/* Bloc app active : titre + bouton paramètres */}
@@ -172,15 +174,16 @@ function Sidebar({ user, orderedApps, accessibleKeys, draggingKey, overKey, onPo
             </div>
             {/* Bouton paramètres de l'app */}
             {settingsPath && (
-              <button
-                onClick={() => navigate(settingsPath)}
+              <LinkBox
+                to={settingsPath}
+                display="flex"
                 style={{
-                  width: '100%', display: 'flex', alignItems: 'center', gap: 8,
+                  width: '100%', alignItems: 'center', gap: 8,
                   padding: '7px 10px', borderRadius: 7,
                   background: currentPath === settingsPath ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.06)',
                   border: '1px solid rgba(255,255,255,0.10)',
                   color: 'rgba(255,255,255,0.82)', fontSize: 12.5, fontWeight: 600,
-                  cursor: 'pointer', fontFamily: 'inherit',
+                  fontFamily: 'inherit', boxSizing: 'border-box',
                   transition: 'background 0.15s',
                 }}
                 onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.14)'}
@@ -188,7 +191,7 @@ function Sidebar({ user, orderedApps, accessibleKeys, draggingKey, overKey, onPo
               >
                 <SettingsIcon size={13} color="rgba(255,255,255,0.75)" />
                 Paramètres de l'app
-              </button>
+              </LinkBox>
             )}
           </div>
         );
@@ -228,7 +231,20 @@ function Sidebar({ user, orderedApps, accessibleKeys, draggingKey, overKey, onPo
               onPointerDown={e => onPointerDown(e, key)}
               onPointerEnter={() => onPointerEnter(key)}
               onPointerUp={e => onPointerUp(e, key)}
-              onClick={() => { if (!draggingKey) navigate(path); }}
+              onClick={e => {
+                if (draggingKey) return;
+                if (e.metaKey || e.ctrlKey || e.shiftKey) {
+                  window.open(path, '_blank', 'noopener');
+                  return;
+                }
+                navigate(path);
+              }}
+              onAuxClick={e => {
+                if (e.button === 1) {
+                  e.preventDefault();
+                  window.open(path, '_blank', 'noopener');
+                }
+              }}
               className={`sb-app-row${isDrag ? ' dragging' : ''}${isOver ? ' drag-over' : ''}`}
               style={{
                 display: 'flex',

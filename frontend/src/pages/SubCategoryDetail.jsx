@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import CopyButton from '../components/CopyButton';
+import { LinkBox } from '../utils/navHelpers';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
 
@@ -105,12 +106,13 @@ const SubCategoryDetail = () => {
         <div style={{ backgroundColor: '#fff', padding: '30px', borderRadius: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)', marginBottom: '30px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '15px', marginBottom: '20px' }}>
             {subCategory.category && (
-              <span
-                onClick={() => navigate(`/categories/${encodeURIComponent(subCategory.category)}`)}
-                style={{ fontSize: '14px', color: '#135E84', cursor: 'pointer', textDecoration: 'underline' }}
+              <LinkBox
+                to={`/categories/${encodeURIComponent(subCategory.category)}`}
+                display="inline"
+                style={{ fontSize: '14px', color: '#135E84', textDecoration: 'underline' }}
               >
                 {subCategory.category}
-              </span>
+              </LinkBox>
             )}
             {subCategory.category && <span style={{ color: '#999' }}>/</span>}
             <h1 style={{ margin: 0, color: '#135E84', fontSize: '28px' }}>{subCategory.sub_category}</h1>
@@ -209,21 +211,20 @@ const SubCategoryDetail = () => {
                     <td style={{ textAlign: 'right', padding: '15px', fontSize: '14px', fontWeight: '600', color: product.margin_ht >= 0 ? '#28a745' : '#dc3545' }}>{formatCurrency(product.margin_ht)}</td>
                     <td style={{ textAlign: 'right', padding: '15px', fontSize: '14px', fontWeight: '600', color: product.margin_percent >= 0 ? '#28a745' : '#dc3545' }}>{formatPercent(product.margin_percent)}</td>
                     <td style={{ textAlign: 'center', padding: '15px' }}>
-                      <button
-                        onClick={() => navigate(`/products/${product.wp_product_id}`)}
+                      <LinkBox
+                        to={`/products/${product.wp_product_id}`}
+                        display="inline-block"
                         style={{
                           padding: '8px 16px',
                           backgroundColor: '#135E84',
                           color: 'white',
-                          border: 'none',
                           borderRadius: '4px',
                           fontSize: '12px',
-                          cursor: 'pointer',
                           fontWeight: '600'
                         }}
                       >
                         Voir details
-                      </button>
+                      </LinkBox>
                     </td>
                   </tr>
                 ))}

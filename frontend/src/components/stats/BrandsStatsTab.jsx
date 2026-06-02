@@ -5,6 +5,7 @@ import { formatPriceEur } from '../../utils/formatNumber';
 import { AuthContext } from '../../context/AuthContext';
 import { useColumnPreferences } from '../../hooks/useColumnPreferences';
 import ColumnPanel from '../ColumnPanel';
+import { LinkBox } from '../../utils/navHelpers';
 
 const API_BASE_URL = '/api';
 
@@ -297,12 +298,14 @@ const BrandsStatsTab = () => {
                             {hasSubBrands && (
                               <span style={{ color: '#6c757d', fontSize: '12px' }}>{isExpanded ? '▼' : '▶'}</span>
                             )}
-                            <span
-                              onClick={(e) => handleBrandNameClick(e, brand.brand)}
-                              style={{ fontWeight: 'bold', color: '#007bff', cursor: 'pointer' }}
+                            <LinkBox
+                              to={`/brands/${encodeURIComponent(brand.brand)}`}
+                              display="inline"
+                              onClick={(e) => e.stopPropagation()}
+                              style={{ fontWeight: 'bold', color: '#007bff' }}
                             >
                               {brand.brand}
-                            </span>
+                            </LinkBox>
                           </div>
                         </td>
                         {isVisible('product_count') && <td style={{ padding: '15px', fontSize: '14px' }}>{formatNumber(brand.product_count)}</td>}
@@ -317,12 +320,14 @@ const BrandsStatsTab = () => {
                       {isExpanded && brandSubBrands.length > 0 && brandSubBrands.map((sb) => (
                         <tr key={sb.sub_brand} style={{ backgroundColor: '#f8f9fa', borderTop: '1px solid #e9ecef' }}>
                           <td style={{ padding: '10px 15px 10px 45px', fontSize: '13px' }}>
-                            <span
-                              onClick={(e) => handleSubBrandNameClick(e, sb.sub_brand)}
-                              style={{ color: '#007bff', cursor: 'pointer' }}
+                            <LinkBox
+                              to={`/sub-brands/${encodeURIComponent(sb.sub_brand)}`}
+                              display="inline"
+                              onClick={(e) => e.stopPropagation()}
+                              style={{ color: '#007bff' }}
                             >
                               ↳ {sb.sub_brand}
-                            </span>
+                            </LinkBox>
                           </td>
                           {isVisible('product_count') && <td style={{ padding: '10px 15px', fontSize: '13px', color: '#6c757d' }}>{formatNumber(sb.product_count)}</td>}
                           {isVisible('sub_brand_count') && <td style={{ padding: '10px 15px', fontSize: '13px', color: '#6c757d' }}>-</td>}
