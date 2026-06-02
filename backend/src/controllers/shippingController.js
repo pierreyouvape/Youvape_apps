@@ -407,7 +407,7 @@ const calculateShippingCosts = async (req, res) => {
         COALESCE(SUM(oi.qty * COALESCE(p.weight, parent.weight, 0)) * 1000, 0) + $3 as total_weight
       FROM orders o
       LEFT JOIN order_items oi ON o.wp_order_id = oi.wp_order_id
-      LEFT JOIN products p ON (oi.product_id = p.wp_product_id OR oi.variation_id = p.wp_product_id)
+      LEFT JOIN products p ON p.wp_product_id = COALESCE(NULLIF(oi.variation_id::int, 0), oi.product_id::int)
       LEFT JOIN products parent ON p.wp_parent_id = parent.wp_product_id
       WHERE o.post_date >= $1 AND o.post_date < $2
         AND o.post_status IN ('wc-completed', 'wc-processing', 'wc-shipped', 'wc-delivered', 'wc-being-delivered', 'wc-awaiting-delivery')
@@ -502,7 +502,7 @@ const applyShippingCosts = async (req, res) => {
         COALESCE(SUM(oi.qty * COALESCE(p.weight, parent.weight, 0)) * 1000, 0) + $3 as total_weight
       FROM orders o
       LEFT JOIN order_items oi ON o.wp_order_id = oi.wp_order_id
-      LEFT JOIN products p ON (oi.product_id = p.wp_product_id OR oi.variation_id = p.wp_product_id)
+      LEFT JOIN products p ON p.wp_product_id = COALESCE(NULLIF(oi.variation_id::int, 0), oi.product_id::int)
       LEFT JOIN products parent ON p.wp_parent_id = parent.wp_product_id
       WHERE o.post_date >= $1 AND o.post_date < $2
         AND o.post_status IN ('wc-completed', 'wc-processing', 'wc-shipped', 'wc-delivered', 'wc-being-delivered', 'wc-awaiting-delivery')
@@ -787,7 +787,7 @@ const applyShippingCostToOrder = async (wpOrderId) => {
         COALESCE(SUM(oi.qty * COALESCE(p.weight, parent.weight, 0)) * 1000, 0) + $2 AS total_weight
       FROM orders o
       LEFT JOIN order_items oi ON o.wp_order_id = oi.wp_order_id
-      LEFT JOIN products p ON (oi.product_id = p.wp_product_id OR oi.variation_id = p.wp_product_id)
+      LEFT JOIN products p ON p.wp_product_id = COALESCE(NULLIF(oi.variation_id::int, 0), oi.product_id::int)
       LEFT JOIN products parent ON p.wp_parent_id = parent.wp_product_id
       WHERE o.wp_order_id = $1
       GROUP BY o.wp_order_id, o.shipping_method, o.shipping_country, o.shipping_cost_calculated

@@ -31,6 +31,7 @@ import TicketsApp from './pages/TicketsApp';
 import TicketDetailPage from './pages/TicketDetailPage';
 import TicketsSettingsApp from './pages/TicketsSettingsApp';
 import ChronopostApp from './pages/ChronopostApp';
+import ColissimoApp from './pages/ColissimoApp';
 import PrivateRoute from './components/PrivateRoute';
 
 const PAGE_TITLES = {
@@ -50,6 +51,7 @@ const PAGE_TITLES = {
   '/commandes': 'Commandes',
   '/tickets': 'SAV',
   '/chronopost': 'Chronopost',
+  '/colissimo':  'Colissimo',
   '/brands': 'Marque',
   '/sub-brands': 'Sous-marque',
   '/categories': 'Categorie',
@@ -306,6 +308,14 @@ function App() {
             element={
               <PrivateRoute>
                 <ChronopostApp />
+              </PrivateRoute>
+            }
+          />
+          <Route
+            path="/colissimo"
+            element={
+              <PrivateRoute>
+                <ColissimoApp />
               </PrivateRoute>
             }
           />

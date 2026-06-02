@@ -126,13 +126,63 @@ export const Tickets = (props) => (
   </Base>
 );
 
-export const Chronopost = (props) => (
-  <Base {...props}>
-    <rect x={2.5} y={7} width={19} height={13} rx={2} />
-    <path d="M2.5 11 H21.5" />
-    <path d="M7 7 V4.5 C7 3.7 7.7 3 8.5 3 H15.5 C16.3 3 17 3.7 17 4.5 V7" />
-    <path d="M9 15 H12 M14 15 H15.5" />
-  </Base>
+/* ─── LOGOS MARQUE (cubes isométriques) ────────────────────── */
+export const Colissimo = ({ size = 56 }) => (
+  <svg width={size} height={size} viewBox="0 0 100 100" fill="none" style={{ display: 'block', flexShrink: 0 }}>
+    <defs>
+      <linearGradient id="col-top" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" stopColor="#FFBA4D" />
+        <stop offset="100%" stopColor="#FF8800" />
+      </linearGradient>
+      <linearGradient id="col-left" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" stopColor="#FF8800" />
+        <stop offset="100%" stopColor="#E05000" />
+      </linearGradient>
+      <linearGradient id="col-right" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" stopColor="#CC4400" />
+        <stop offset="100%" stopColor="#AA2800" />
+      </linearGradient>
+    </defs>
+    {/* Face supérieure */}
+    <polygon points="50,10 90,30 50,50 10,30" fill="url(#col-top)" />
+    {/* Face gauche */}
+    <polygon points="10,30 50,50 50,90 10,70" fill="url(#col-left)" />
+    {/* Face droite */}
+    <polygon points="90,30 90,70 50,90 50,50" fill="url(#col-right)" />
+    {/* Lignes d'ouverture (séam blanc) */}
+    <line x1="50" y1="50" x2="50" y2="18" stroke="white" strokeWidth="3.5" strokeLinecap="round" />
+    <line x1="50" y1="38" x2="15" y2="52" stroke="white" strokeWidth="3.5" strokeLinecap="round" />
+    <line x1="50" y1="38" x2="85" y2="52" stroke="white" strokeWidth="3.5" strokeLinecap="round" />
+  </svg>
+);
+
+export const Chronopost = ({ size = 56 }) => (
+  <svg width={size} height={size} viewBox="0 0 100 100" fill="none" style={{ display: 'block', flexShrink: 0 }}>
+    <defs>
+      <linearGradient id="chr-top" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" stopColor="#5ECFED" />
+        <stop offset="100%" stopColor="#1AABD4" />
+      </linearGradient>
+      <linearGradient id="chr-left" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" stopColor="#1AABD4" />
+        <stop offset="100%" stopColor="#0076A8" />
+      </linearGradient>
+      <linearGradient id="chr-right" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" stopColor="#005C8A" />
+        <stop offset="100%" stopColor="#003D5C" />
+      </linearGradient>
+    </defs>
+    {/* Face supérieure */}
+    <polygon points="50,10 90,30 50,50 10,30" fill="url(#chr-top)" />
+    {/* Face gauche */}
+    <polygon points="10,30 50,50 50,90 10,70" fill="url(#chr-left)" />
+    {/* Face droite */}
+    <polygon points="90,30 90,70 50,90 50,50" fill="url(#chr-right)" />
+    {/* Lignes d'ouverture (séam blanc) */}
+    <line x1="50" y1="50" x2="50" y2="18" stroke="white" strokeWidth="3.5" strokeLinecap="round" />
+    <line x1="50" y1="38" x2="15" y2="52" stroke="white" strokeWidth="3.5" strokeLinecap="round" />
+    <line x1="50" y1="38" x2="85" y2="52" stroke="white" strokeWidth="3.5" strokeLinecap="round" />
+  </svg>
 );
 
 export const APPS = [
@@ -146,5 +196,6 @@ export const APPS = [
   { key: 'financier',  path: '/financier',  label: 'Rapport',                  Icon: Stats,         color: '#135E84' },
   { key: 'commandes',  path: '/commandes',  label: 'Commandes',                Icon: OrdersSearch, color: '#5B21B6' },
   { key: 'tickets',    path: '/tickets',    label: 'SAV / Tickets',            Icon: Tickets,      color: '#0891B2' },
-  { key: 'chronopost', path: '/chronopost', label: 'Factures Chronopost',      Icon: Chronopost,   color: '#E67E22' },
+  { key: 'chronopost', path: '/chronopost', label: 'Factures Chronopost',      Icon: Chronopost,   color: '#0D7FA8' },
+  { key: 'colissimo',  path: '/colissimo',  label: 'Factures Colissimo',       Icon: Colissimo,    color: '#D96000' },
 ];
