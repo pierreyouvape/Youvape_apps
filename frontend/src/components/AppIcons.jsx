@@ -126,6 +126,15 @@ export const Tickets = (props) => (
   </Base>
 );
 
+export const Chronopost = (props) => (
+  <Base {...props}>
+    <rect x={2.5} y={7} width={19} height={13} rx={2} />
+    <path d="M2.5 11 H21.5" />
+    <path d="M7 7 V4.5 C7 3.7 7.7 3 8.5 3 H15.5 C16.3 3 17 3.7 17 4.5 V7" />
+    <path d="M9 15 H12 M14 15 H15.5" />
+  </Base>
+);
+
 export const APPS = [
   { key: 'reviews',   path: '/reviews',   label: 'Avis Garantis',            Icon: Reviews,   color: '#0071EB' },
   { key: 'rewards',   path: '/rewards',   label: 'Récompense Avis',          Icon: Rewards,   color: '#8B5CF6' },
@@ -135,6 +144,7 @@ export const APPS = [
   { key: 'packing',   path: '/packing',   label: 'Packing',                  Icon: Packing,   color: '#6366F1' },
   { key: 'catalog',   path: '/catalog',   label: 'Produits',                 Icon: Catalog,   color: '#059669' },
   { key: 'financier',  path: '/financier',  label: 'Rapport',                  Icon: Stats,         color: '#135E84' },
-  { key: 'commandes',  path: '/commandes',  label: 'Commandes',                Icon: OrdersSearch,  color: '#5B21B6' },
-  { key: 'tickets',    path: '/tickets',    label: 'SAV / Tickets',            Icon: Tickets,       color: '#0891B2' },
+  { key: 'commandes',  path: '/commandes',  label: 'Commandes',                Icon: OrdersSearch, color: '#5B21B6' },
+  { key: 'tickets',    path: '/tickets',    label: 'SAV / Tickets',            Icon: Tickets,      color: '#0891B2' },
+  { key: 'chronopost', path: '/chronopost', label: 'Factures Chronopost',      Icon: Chronopost,   color: '#E67E22' },
 ];
