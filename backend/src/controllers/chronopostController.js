@@ -166,6 +166,22 @@ function parseChronopostPdf(text) {
   return { orders, supplements, globalCharges, invoiceNumber, invoiceDate };
 }
 
+/* ─── TRACKING → ORDER ID LOOKUP ────────────────────────────── */
+async function resolveOrderIdsByTracking(trackingNumbers) {
+  if (!trackingNumbers.length) return {};
+  const res = await pool.query(
+    `SELECT wp_order_id::int AS order_id, tracking_number
+     FROM orders
+     WHERE tracking_number = ANY($1::text[])`,
+    [trackingNumbers]
+  );
+  const map = {};
+  for (const row of res.rows) {
+    map[row.tracking_number] = row.order_id;
+  }
+  return map;
+}
+
 /* ─── DATABASE WEIGHT LOOKUP ─────────────────────────────────── */
 async function fetchBddWeights(orderIds) {
   if (!orderIds.length) return {};
@@ -353,7 +369,21 @@ exports.analyze = [
       const { orders, supplements, globalCharges, invoiceNumber, invoiceDate } =
         parseChronopostPdf(pdfData.text);
 
-      // 2. Query BDD weights
+      // 2a. Résoudre les order_id manquants via numéro de suivi
+      const trackingsWithoutId = orders
+        .filter(o => !o.order_id && o.tracking)
+        .map(o => o.tracking);
+
+      if (trackingsWithoutId.length) {
+        const trackingMap = await resolveOrderIdsByTracking(trackingsWithoutId);
+        for (const o of orders) {
+          if (!o.order_id && o.tracking && trackingMap[o.tracking]) {
+            o.order_id = trackingMap[o.tracking];
+          }
+        }
+      }
+
+      // 2b. Query BDD weights
       const numericOrderIds = orders
         .filter(o => o.order_id && !o.is_return)
         .map(o => o.order_id);
@@ -407,6 +437,20 @@ exports.exportExcel = [
       await pdfParser.load();
       const pdfData2 = await pdfParser.getText();
       const parsed = parseChronopostPdf(pdfData2.text);
+
+      // Résoudre les order_id via tracking si absent
+      const trackingsWithoutId2 = parsed.orders
+        .filter(o => !o.order_id && o.tracking)
+        .map(o => o.tracking);
+
+      if (trackingsWithoutId2.length) {
+        const trackingMap2 = await resolveOrderIdsByTracking(trackingsWithoutId2);
+        for (const o of parsed.orders) {
+          if (!o.order_id && o.tracking && trackingMap2[o.tracking]) {
+            o.order_id = trackingMap2[o.tracking];
+          }
+        }
+      }
 
       const numericOrderIds = parsed.orders
         .filter(o => o.order_id && !o.is_return)
