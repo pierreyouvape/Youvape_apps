@@ -29,7 +29,7 @@ const DATE_TO   = toIdx   !== -1 ? args[toIdx   + 1] : '2026-02-01';
 
 // ─── Connexion MySQL (WC préprod) ──────────────────────────────────────────────
 const mysqlConfig = {
-  host: '127.0.0.1',
+  host: 'youvape-site-db-1',
   port: 3306,
   user: 'youvape-vps',
   password: 'd79Ru8FznQdK9MQ2',
@@ -269,15 +269,16 @@ async function backfillOrders(wc) {
 
   log(`  ${orders.length} commandes WC dans la période`);
 
-  // Lesquelles existent déjà ?
+  // Lesquelles existent déjà avec leurs items ?
   const wcOrderIds = orders.map(o => o.wp_order_id);
   const { rows: pgRows } = await pg.query(
-    'SELECT wp_order_id FROM orders WHERE wp_order_id = ANY($1)',
+    `SELECT wp_order_id FROM orders WHERE wp_order_id = ANY($1)
+     AND EXISTS (SELECT 1 FROM order_items oi WHERE oi.wp_order_id = orders.wp_order_id)`,
     [wcOrderIds]
   );
   const existingSet = new Set(pgRows.map(r => Number(r.wp_order_id)));
   const toInsert = orders.filter(o => !existingSet.has(Number(o.wp_order_id)));
-  log(`  ${existingSet.size} déjà en Postgres, ${toInsert.length} à importer`);
+  log(`  ${existingSet.size} déjà en Postgres avec items, ${toInsert.length} à traiter`);
 
   if (toInsert.length === 0) return;
 
@@ -371,6 +372,9 @@ async function backfillOrders(wc) {
     const postStatus = order.status.startsWith('wc-') ? order.status : 'wc-' + order.status;
 
     try {
+      // Supprimer les items existants (cas commande déjà insérée mais items ratés)
+      await pgRun('DELETE FROM order_items WHERE wp_order_id = $1', [order.wp_order_id]);
+
       await pgRun(`
         INSERT INTO orders (
           wp_order_id, wp_customer_id, post_status,
@@ -458,7 +462,7 @@ async function backfillOrders(wc) {
         meta['_wc_order_attribution_device_type']          || null,
         meta['_billing_tax']   || null,
         meta['is_vat_exempt'] === 'yes' ? true : false,
-        meta['_wdr_discounts'] ? (() => { try { return JSON.parse(meta['_wdr_discounts']); } catch { return null; } })() : null,
+        null, // wdr_discounts : format PHP serialized dans WC, non parsable en JSON
         order.created_via || null,
         order.prices_include_tax ? true : false,
       ]);
@@ -487,12 +491,12 @@ async function backfillOrders(wc) {
             parseFloat(item.line_total)        || 0,
             parseFloat(item.line_tax)          || 0,
             item.tax_class || null,
-            item.line_tax_data ? (() => { try { return JSON.parse(item.line_tax_data); } catch { return null; } })() : null,
+            null, // line_tax_data : PHP serialized dans WC, non parsable
             item.reduced_stock ? parseInt(item.reduced_stock) > 0 : false,
             item.item_cost       ? parseFloat(item.item_cost)       : null,
             item.item_total_cost ? parseFloat(item.item_total_cost) : null,
-            item.wdr_discounts   ? (() => { try { return JSON.parse(item.wdr_discounts); } catch { return null; } })() : null,
-            item.advanced_discount ? parseFloat(item.advanced_discount) : null,
+            null, // wdr_discounts : PHP serialized dans WC, non parsable
+            null, // advanced_discount : PHP serialized dans WC, non parsable
           ]);
           stats.items++;
 
