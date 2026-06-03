@@ -166,6 +166,23 @@ function Message({ msg, ticketId }) {
   const isAgent = !!msg.is_agent;
   const sendFailed = !!msg.send_failed;
 
+  // Message système (fusion de tickets, etc.) : séparateur centré discret.
+  if (msg.is_system) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '14px 0 20px' }}>
+        <div style={{ flex: 1, height: 1, background: C.grisCL }} />
+        <span style={{
+          fontSize: 11.5, fontWeight: 700, color: C.grisM,
+          background: C.grisTL, border: `1px solid ${C.grisCL}`,
+          borderRadius: 20, padding: '4px 12px', whiteSpace: 'nowrap',
+        }}>
+          🔀 {msg.body?.replace(/^—\s*|\s*—$/g, '') || 'Fusion'}
+        </span>
+        <div style={{ flex: 1, height: 1, background: C.grisCL }} />
+      </div>
+    );
+  }
+
   // Couleurs bulle
   let bgBubble, borderBubble, boxShadowBubble;
   if (sendFailed) {
@@ -1455,8 +1472,168 @@ function NoteField({ ticketId, initialNotes }) {
   );
 }
 
+// ─── Modale de fusion de tickets ──────────────────────────────────────────────
+// Façon Zendesk : on fusionne le ticket courant (source) DANS un ticket cible.
+// La cible peut être choisie parmi les doublons détectés ou par recherche libre.
+function MergeModal({ ticket, onClose, onMerged }) {
+  const candidates = Array.isArray(ticket.duplicate_candidates) ? ticket.duplicate_candidates : [];
+  const [targetId, setTargetId] = useState(candidates[0]?.id ? String(candidates[0].id) : '');
+  const [searchResults, setSearchResults] = useState([]);
+  const [query, setQuery] = useState('');
+  const [merging, setMerging] = useState(false);
+  const [error, setError] = useState('');
+  const searchTimer = useRef();
+
+  // Recherche de tickets cible par ID / email / nom / sujet (debounce 350ms)
+  useEffect(() => {
+    clearTimeout(searchTimer.current);
+    if (!query.trim()) { setSearchResults([]); return; }
+    searchTimer.current = setTimeout(async () => {
+      try {
+        const res = await fetch(`${API}?search=${encodeURIComponent(query.trim())}&limit=8`);
+        const data = await res.json();
+        if (data.success) {
+          // Exclure le ticket source et les tickets déjà fusionnés
+          setSearchResults((data.tickets || []).filter(t => t.id !== ticket.id && !t.merged_into_id));
+        }
+      } catch { /* silencieux */ }
+    }, 350);
+    return () => clearTimeout(searchTimer.current);
+  }, [query, ticket.id]);
+
+  const targetNum = parseInt(targetId);
+  const canMerge = !Number.isNaN(targetNum) && targetNum !== ticket.id && !merging;
+
+  const doMerge = async () => {
+    if (!canMerge) return;
+    setMerging(true);
+    setError('');
+    try {
+      const res = await fetch(`${API}/${ticket.id}/merge`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ target_id: targetNum }),
+      });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error || 'Erreur de fusion');
+      onMerged(data.ticket);
+    } catch (e) {
+      setError(e.message);
+      setMerging(false);
+    }
+  };
+
+  const Pick = ({ t }) => {
+    const selected = String(t.id) === String(targetId);
+    return (
+      <button
+        onClick={() => { setTargetId(String(t.id)); setError(''); }}
+        style={{
+          display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left',
+          background: selected ? '#EAF2FF' : C.blanc,
+          border: `1px solid ${selected ? C.bleu : C.grisCL}`,
+          borderRadius: 8, padding: '8px 11px', cursor: 'pointer',
+          fontFamily: 'Lato, sans-serif', marginBottom: 6,
+        }}
+      >
+        <span style={{ fontSize: 12.5, fontWeight: 800, color: selected ? C.bleu : C.grisF }}>#{t.id}</span>
+        <span style={{ fontSize: 12, color: C.grisF, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {t.subject || '—'}
+        </span>
+        {t.customer_name && (
+          <span style={{ fontSize: 11, color: C.grisM, whiteSpace: 'nowrap' }}>{t.customer_name}</span>
+        )}
+        {selected && <span style={{ fontSize: 13, color: C.bleu }}>✓</span>}
+      </button>
+    );
+  };
+
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: 'fixed', inset: 0, background: 'rgba(20,24,33,0.45)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000,
+      }}
+    >
+      <div
+        onClick={e => e.stopPropagation()}
+        style={{
+          background: C.blanc, borderRadius: 14, width: 'min(520px, 92vw)',
+          maxHeight: '86vh', overflow: 'auto', boxShadow: '0 18px 50px rgba(0,0,0,0.3)',
+          fontFamily: 'Lato, sans-serif', padding: 22,
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+          <strong style={{ fontSize: 16, color: C.grisTF, fontFamily: "'Tilt Warp', cursive" }}>
+            Fusionner le ticket #{ticket.id}
+          </strong>
+          <button
+            onClick={onClose}
+            style={{ background: 'transparent', border: 'none', cursor: 'pointer', fontSize: 20, color: C.grisM, lineHeight: 1 }}
+          >×</button>
+        </div>
+        <p style={{ fontSize: 12.5, color: C.grisF, lineHeight: 1.5, margin: '6px 0 16px' }}>
+          Les messages et pièces jointes de ce ticket seront déplacés dans le ticket cible.
+          Ce ticket sera <strong>fermé</strong> et renverra vers la cible. Action irréversible.
+        </p>
+
+        {candidates.length > 0 && (
+          <>
+            <div style={{ fontSize: 10.5, fontWeight: 800, color: C.grisM, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>
+              Doublons détectés
+            </div>
+            {candidates.map(c => <Pick key={c.id} t={c} />)}
+          </>
+        )}
+
+        <div style={{ fontSize: 10.5, fontWeight: 800, color: C.grisM, textTransform: 'uppercase', letterSpacing: '0.06em', margin: '14px 0 8px' }}>
+          Rechercher un autre ticket
+        </div>
+        <input
+          value={query}
+          onChange={e => setQuery(e.target.value)}
+          placeholder="ID, nom, email ou sujet…"
+          style={{
+            width: '100%', boxSizing: 'border-box', padding: '9px 12px',
+            border: `1px solid ${C.grisCL}`, borderRadius: 8, fontSize: 13,
+            fontFamily: 'Lato, sans-serif', marginBottom: 8, outline: 'none',
+          }}
+        />
+        {searchResults.map(t => <Pick key={t.id} t={t} />)}
+
+        {error && (
+          <div style={{ fontSize: 12.5, color: '#B71D1D', fontWeight: 600, margin: '8px 0' }}>{error}</div>
+        )}
+
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 18 }}>
+          <button
+            onClick={onClose}
+            style={{
+              background: C.grisTL, border: `1px solid ${C.grisCL}`, borderRadius: 8,
+              padding: '9px 16px', fontSize: 13, fontWeight: 700, color: C.grisF,
+              cursor: 'pointer', fontFamily: 'Lato, sans-serif',
+            }}
+          >Annuler</button>
+          <button
+            onClick={doMerge}
+            disabled={!canMerge}
+            style={{
+              background: canMerge ? C.bleu : C.grisCL, border: 'none', borderRadius: 8,
+              padding: '9px 18px', fontSize: 13, fontWeight: 800, color: '#fff',
+              cursor: canMerge ? 'pointer' : 'not-allowed', fontFamily: 'Lato, sans-serif',
+            }}
+          >
+            {merging ? 'Fusion…' : targetNum ? `Fusionner dans #${targetNum}` : 'Choisir une cible'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Panneau DROIT ────────────────────────────────────────────────────────────
-function CustomerPanel({ ticket, onAssignOrder, onUnassignOrder }) {
+function CustomerPanel({ ticket, onAssignOrder, onUnassignOrder, onMerge }) {
   const navigate = useNavigate();
   const tabsCtx = useOpenTickets();
 
@@ -1604,7 +1781,43 @@ function CustomerPanel({ ticket, onAssignOrder, onUnassignOrder }) {
               </button>
             ))}
           </div>
+          {!ticket.merged_into_id && (
+            <button
+              onClick={onMerge}
+              style={{
+                marginTop: 10, width: '100%',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7,
+                background: '#B71D1D', border: 'none', borderRadius: 8,
+                padding: '8px 12px', fontSize: 12.5, fontWeight: 800, color: '#fff',
+                cursor: 'pointer', fontFamily: 'Lato, sans-serif',
+              }}
+            >🔀 Fusionner ce ticket…</button>
+          )}
         </div>
+      )}
+
+      {/* Bandeau : ce ticket a été fusionné dans un autre */}
+      {ticket.merged_into_id && (
+        <button
+          onClick={() => {
+            const dest = { id: ticket.merged_into_id };
+            if (tabsCtx) tabsCtx.openTicket(dest);
+            else navigate(`/tickets/${ticket.merged_into_id}`);
+          }}
+          style={{
+            marginTop: 14, width: '100%', textAlign: 'left',
+            display: 'flex', alignItems: 'center', gap: 8,
+            background: '#EAF2FF', border: `1px solid ${C.bleu}`,
+            borderRadius: 10, padding: '12px 14px', cursor: 'pointer',
+            fontFamily: 'Lato, sans-serif',
+          }}
+        >
+          <span style={{ fontSize: 16 }}>🔀</span>
+          <span style={{ flex: 1, fontSize: 12.5, color: C.grisF, fontWeight: 600 }}>
+            Ce ticket a été fusionné dans le ticket <strong style={{ color: C.bleu }}>#{ticket.merged_into_id}</strong>.
+          </span>
+          <Ic.External color={C.bleu} />
+        </button>
       )}
 
       {/* Commande concernée */}
@@ -1646,6 +1859,7 @@ export default function TicketDetail({ ticketId }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [users, setUsers] = useState([]);
+  const [mergeOpen, setMergeOpen] = useState(false);
   const saveTimerRef = useRef();
 
   const fetchTicket = useCallback(async () => {
@@ -1736,6 +1950,20 @@ export default function TicketDetail({ ticketId }) {
     } catch { /* silencieux */ }
   }, [ticketId, fetchTicket]);
 
+  // Fusion réussie : le ticket courant (source) est désormais fermé.
+  // On bascule vers le ticket cible. Dans la barre d'onglets, on ferme
+  // l'onglet source et on ouvre la cible ; sinon on navigue.
+  const handleMerged = useCallback((targetTicket) => {
+    setMergeOpen(false);
+    if (!targetTicket) { fetchTicket(); return; }
+    if (tabsCtx) {
+      tabsCtx.openTicket(targetTicket);
+      tabsCtx.closeTicket?.(ticketId);
+    } else {
+      navigate(`/tickets/${targetTicket.id}`);
+    }
+  }, [tabsCtx, ticketId, navigate, fetchTicket]);
+
   if (loading) return (
     <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: C.grisM, fontSize: 14 }}>
       Chargement…
@@ -1782,6 +2010,18 @@ export default function TicketDetail({ ticketId }) {
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+          {!ticket.merged_into_id && (
+            <button
+              onClick={() => setMergeOpen(true)}
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 6,
+                background: C.grisTL, border: `1px solid ${C.grisCL}`, borderRadius: 8,
+                padding: '7px 13px', fontSize: 13, fontWeight: 700, color: C.grisF,
+                cursor: 'pointer', fontFamily: 'Lato, sans-serif',
+              }}
+              title="Fusionner ce ticket dans un autre"
+            >🔀 Fusionner</button>
+          )}
         </div>
       </header>
 
@@ -1802,8 +2042,17 @@ export default function TicketDetail({ ticketId }) {
           ticket={ticket}
           onAssignOrder={handleAssignOrder}
           onUnassignOrder={handleUnassignOrder}
+          onMerge={() => setMergeOpen(true)}
         />
       </div>
+
+      {mergeOpen && (
+        <MergeModal
+          ticket={ticket}
+          onClose={() => setMergeOpen(false)}
+          onMerged={handleMerged}
+        />
+      )}
     </div>
   );
 }

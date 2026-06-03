@@ -6,6 +6,7 @@ const { saveAttachments, toMailgunAttachments } = require('../utils/savAttachmen
 const { getTrackingStatus } = require('../services/trackingService');
 const { dispatchNotifications } = require('../services/notificationDispatcher');
 const { tagDuplicates } = require('../services/duplicateDetector');
+const { mergeTickets } = require('../services/ticketMerge');
 
 const savController = {
 
@@ -298,6 +299,34 @@ const savController = {
     } catch (error) {
       console.error('❌ [SAV] Erreur reply:', error);
       res.status(500).json({ error: 'Erreur serveur' });
+    }
+  },
+
+  // ─── Fusionner ce ticket (source) dans un ticket cible ───────────────────
+  // POST /:id/merge  body: { target_id, agent_name? }
+  // Façon Zendesk : le ticket courant (:id) est absorbé par target_id puis fermé.
+  mergeTicket: async (req, res) => {
+    try {
+      const sourceId = parseInt(req.params.id);
+      const targetId = parseInt(req.body.target_id);
+
+      if (Number.isNaN(sourceId) || Number.isNaN(targetId)) {
+        return res.status(400).json({ error: 'target_id invalide' });
+      }
+      if (sourceId === targetId) {
+        return res.status(400).json({ error: 'Impossible de fusionner un ticket avec lui-même' });
+      }
+
+      const targetTicket = await mergeTickets(sourceId, targetId, {
+        agentName: req.body.agent_name || 'SAV Youvape',
+      });
+
+      // Renvoyer la cible enrichie (order_items, infos client…)
+      const fullTarget = await savModel.getById(targetTicket.id);
+      res.json({ success: true, ticket: fullTarget });
+    } catch (error) {
+      console.error('❌ [SAV] Erreur fusion:', error);
+      res.status(400).json({ error: error.message || 'Erreur serveur' });
     }
   },
 

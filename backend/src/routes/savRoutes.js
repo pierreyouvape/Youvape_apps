@@ -103,6 +103,7 @@ router.get('/:id',                     savController.getById);
 router.patch('/:id',                   savController.patchTicket);
 router.put('/:id/status',              savController.updateStatus);
 router.post('/:id/reply', memoryUpload.array('attachments', MAX_FILES), savController.reply);
+router.post('/:id/merge',              savController.mergeTicket);
 router.put('/:id/notes',               savController.updateNotes);
 
 module.exports = router;
