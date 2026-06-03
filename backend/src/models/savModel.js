@@ -302,6 +302,24 @@ class SavModel {
     );
     return result.rows[0] || null;
   }
+
+  // ─── Suivre la chaîne de fusion jusqu'au ticket actif ────────────────────
+  // Si le ticket trouvé a été fusionné (merged_into_id), on remonte vers la
+  // cible, en boucle, jusqu'à tomber sur un ticket non fusionné. Garde-fou
+  // anti-boucle (max 10 sauts) au cas où une chaîne incohérente existerait.
+  async resolveActiveTicket(id) {
+    let ticket = await this.findById(id);
+    const seen = new Set();
+    let hops = 0;
+    while (ticket && ticket.merged_into_id && !seen.has(ticket.id) && hops < 10) {
+      seen.add(ticket.id);
+      hops += 1;
+      const next = await this.findById(ticket.merged_into_id);
+      if (!next) break; // cible supprimée (ON DELETE SET NULL) → on garde le ticket courant
+      ticket = next;
+    }
+    return ticket;
+  }
 }
 
 const savModel = new SavModel();

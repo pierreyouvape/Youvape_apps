@@ -96,9 +96,14 @@ const savController = {
         }
       }
 
-      // Extraire ticket ID du sujet pour matcher à un ticket existant
+      // Extraire ticket ID du sujet pour matcher à un ticket existant.
+      // Si le ticket a été fusionné dans un autre, on suit la chaîne jusqu'au
+      // ticket actif (sinon la réponse atterrirait dans un ticket fermé/mort).
       const ticketId = mailgunService.extractTicketIdFromSubject(subject);
-      const matchedTicket = ticketId ? await savModel.findById(ticketId) : null;
+      const matchedTicket = ticketId ? await savModel.resolveActiveTicket(ticketId) : null;
+      if (matchedTicket && ticketId && matchedTicket.id !== ticketId) {
+        console.log(`📨 [SAV Inbound] Ticket #${ticketId} fusionné → réponse redirigée vers #${matchedTicket.id}`);
+      }
 
       // Nettoyer le body (enlever les parties quotées des réponses email)
       const cleanBody = bodyPlain

@@ -1,9 +1,11 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useContext } from 'react';
 import { useNavigate } from 'react-router-dom';
 import StatusBadge from './StatusBadge';
 import { TICKETS_COLOR } from './ticketConstants';
 import { formatDate } from '../../utils/dateUtils';
 import { useOpenTickets } from '../../context/OpenTicketsContext';
+import { useTicketStatuses } from './useTicketStatuses';
+import { AuthContext } from '../../context/AuthContext';
 
 const C = {
   grisTL: '#F2F6F8', grisCL: '#E2E2E2', grisM: '#8A99A4',
@@ -13,6 +15,26 @@ const C = {
 
 const API = '/api/sav';
 const PAGE_SIZE = 50;
+
+/* Styles de la barre d'actions groupées (boutons sombres + menus popover) */
+const bulkBtnStyle = (busy) => ({
+  background: 'rgba(255,255,255,0.12)', color: '#fff',
+  border: '1px solid rgba(255,255,255,0.2)', borderRadius: 8,
+  padding: '6px 14px', fontSize: 13, fontWeight: 700,
+  cursor: busy ? 'not-allowed' : 'pointer', fontFamily: 'Lato, sans-serif',
+});
+const bulkMenuStyle = {
+  position: 'absolute', bottom: 'calc(100% + 8px)', right: 0,
+  background: '#fff', borderRadius: 10, boxShadow: '0 8px 28px rgba(0,0,0,0.25)',
+  border: '1px solid #E2E2E2', padding: 6, minWidth: 200, maxHeight: 280,
+  overflowY: 'auto', zIndex: 50,
+};
+const bulkItemStyle = {
+  display: 'block', width: '100%', textAlign: 'left',
+  background: 'transparent', border: 'none', borderRadius: 6,
+  padding: '8px 10px', fontSize: 13, color: '#2a2e38',
+  cursor: 'pointer', fontFamily: 'Lato, sans-serif',
+};
 
 function shade(hex, amt) {
   const h = hex.replace('#', '');
@@ -286,6 +308,30 @@ export default function TicketsList({ activeView, views = [], onRefresh, refresh
   const [sort, setSort] = useState({ key: 'updated', dir: 'desc' });
   const [selected, setSelected] = useState(new Set());
   const [bulkMergeOpen, setBulkMergeOpen] = useState(false);
+  const [bulkMenu, setBulkMenu] = useState(null); // 'assign' | 'status' | null
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [agents, setAgents] = useState([]);
+  const { token } = useContext(AuthContext);
+  const { statuses: allStatuses } = useTicketStatuses();
+
+  // Charger les agents pour l'assignation groupée
+  useEffect(() => {
+    if (!token) return;
+    fetch('/api/users/agents', { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => r.json())
+      .then(d => { if (d.success && d.users) setAgents(d.users); })
+      .catch(() => {});
+  }, [token]);
+
+  // Fermer les menus d'action groupée au clic extérieur / Échap
+  useEffect(() => {
+    if (!bulkMenu) return;
+    const onDoc = (e) => { if (!e.target.closest?.('[data-bulk-menu]')) setBulkMenu(null); };
+    const onEsc = (e) => { if (e.key === 'Escape') setBulkMenu(null); };
+    document.addEventListener('mousedown', onDoc);
+    document.addEventListener('keydown', onEsc);
+    return () => { document.removeEventListener('mousedown', onDoc); document.removeEventListener('keydown', onEsc); };
+  }, [bulkMenu]);
 
   // activeView est maintenant l'objet vue complet (avec .statuses tableau)
   const statusesFilter = activeView?.statuses || []; // [] = tous
@@ -325,6 +371,43 @@ export default function TicketsList({ activeView, views = [], onRefresh, refresh
   const onSort = (key) => setSort(prev => ({ key, dir: prev.key === key && prev.dir === 'desc' ? 'asc' : 'desc' }));
   const onToggle = (id) => setSelected(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
   const onToggleAll = () => setSelected(prev => prev.size === tickets.length ? new Set() : new Set(tickets.map(t => t.id)));
+
+  // Action groupée : applique une requête à chaque ticket sélectionné (séquentiel).
+  const runBulk = useCallback(async (makeRequest) => {
+    const ids = [...selected];
+    if (ids.length === 0) return;
+    setBulkBusy(true);
+    try {
+      for (const id of ids) {
+        const { url, options } = makeRequest(id);
+        await fetch(url, options).catch(() => {});
+      }
+      setSelected(new Set());
+      setBulkMenu(null);
+      fetchTickets();
+      onRefresh?.();
+    } finally {
+      setBulkBusy(false);
+    }
+  }, [selected, fetchTickets, onRefresh]);
+
+  const bulkAssign = (agentId) => runBulk(id => ({
+    url: `${API}/${id}`,
+    options: {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ assigned_to_id: agentId }),
+    },
+  }));
+
+  const bulkStatus = (statusValue) => runBulk(id => ({
+    url: `${API}/${id}/status`,
+    options: {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sav_status: statusValue }),
+    },
+  }));
 
   const totalPages = Math.ceil(total / PAGE_SIZE);
 
@@ -604,31 +687,82 @@ export default function TicketsList({ activeView, views = [], onRefresh, refresh
             <div style={{ fontSize: 14, fontWeight: 700 }}>
               {selected.size} ticket{selected.size > 1 ? 's' : ''} sélectionné{selected.size > 1 ? 's' : ''}
             </div>
-            <div style={{ display: 'flex', gap: 8 }}>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
               <button
-                onClick={() => setBulkMergeOpen(true)}
+                onClick={() => { setBulkMenu(null); setBulkMergeOpen(true); }}
+                disabled={bulkBusy}
                 title="Fusionner les tickets sélectionnés dans une seule cible"
                 style={{
                   display: 'inline-flex', alignItems: 'center', gap: 6,
                   background: 'rgba(255,255,255,0.18)', color: '#fff',
                   border: '1px solid rgba(255,255,255,0.3)', borderRadius: 8,
                   padding: '6px 14px', fontSize: 13, fontWeight: 800,
-                  cursor: 'pointer', fontFamily: 'Lato, sans-serif',
+                  cursor: bulkBusy ? 'not-allowed' : 'pointer', fontFamily: 'Lato, sans-serif',
                 }}
               >🔀 Fusionner</button>
-              {['Assigner', 'Changer statut', 'Marquer résolu'].map(label => (
-                <button key={label} style={{
-                  background: 'rgba(255,255,255,0.12)', color: '#fff',
-                  border: '1px solid rgba(255,255,255,0.2)', borderRadius: 8,
-                  padding: '6px 14px', fontSize: 13, fontWeight: 700,
-                  cursor: 'pointer', fontFamily: 'Lato, sans-serif',
-                }}>{label}</button>
-              ))}
-              <button onClick={() => setSelected(new Set())} style={{
+
+              {/* Assigner */}
+              <div data-bulk-menu style={{ position: 'relative' }}>
+                <button
+                  onClick={() => setBulkMenu(m => m === 'assign' ? null : 'assign')}
+                  disabled={bulkBusy}
+                  style={bulkBtnStyle(bulkBusy)}
+                >Assigner ▾</button>
+                {bulkMenu === 'assign' && (
+                  <div style={bulkMenuStyle}>
+                    <button onClick={() => bulkAssign(null)} style={bulkItemStyle}>
+                      <span style={{ color: C.grisM }}>Désassigner</span>
+                    </button>
+                    {agents.length === 0 && (
+                      <div style={{ ...bulkItemStyle, color: C.grisM, cursor: 'default' }}>Aucun agent</div>
+                    )}
+                    {agents.map(a => (
+                      <button key={a.id} onClick={() => bulkAssign(a.id)} style={bulkItemStyle}>
+                        {a.name || a.email}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Changer statut */}
+              <div data-bulk-menu style={{ position: 'relative' }}>
+                <button
+                  onClick={() => setBulkMenu(m => m === 'status' ? null : 'status')}
+                  disabled={bulkBusy}
+                  style={bulkBtnStyle(bulkBusy)}
+                >Changer statut ▾</button>
+                {bulkMenu === 'status' && (
+                  <div style={bulkMenuStyle}>
+                    {allStatuses.length === 0 && (
+                      <div style={{ ...bulkItemStyle, color: C.grisM, cursor: 'default' }}>Aucun statut</div>
+                    )}
+                    {allStatuses.map(s => (
+                      <button key={s.value} onClick={() => bulkStatus(s.value)} style={bulkItemStyle}>
+                        <span style={{
+                          display: 'inline-block', width: 9, height: 9, borderRadius: '50%',
+                          background: s.bg_color || C.grisCL, marginRight: 8, verticalAlign: 'middle',
+                          border: `1px solid ${s.text_color || C.grisM}`,
+                        }} />
+                        {s.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Marquer résolu (action directe → statut 'terminé') */}
+              <button
+                onClick={() => bulkStatus('terminé')}
+                disabled={bulkBusy}
+                style={bulkBtnStyle(bulkBusy)}
+              >{bulkBusy ? 'Application…' : 'Marquer résolu'}</button>
+
+              <button onClick={() => { setBulkMenu(null); setSelected(new Set()); }} disabled={bulkBusy} style={{
                 background: 'transparent', color: 'rgba(255,255,255,0.7)',
                 border: '1px solid rgba(255,255,255,0.15)', borderRadius: 8,
                 padding: '6px 14px', fontSize: 13, fontWeight: 700,
-                cursor: 'pointer', fontFamily: 'Lato, sans-serif',
+                cursor: bulkBusy ? 'not-allowed' : 'pointer', fontFamily: 'Lato, sans-serif',
               }}>Annuler</button>
             </div>
           </div>
