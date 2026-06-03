@@ -7,6 +7,7 @@ import TicketTabsBar from '../components/tickets/TicketTabsBar';
 import NewTicketPage from '../components/tickets/NewTicketPage';
 import { applyViewsOrder, loadViewsOrder } from '../components/tickets/viewsOrder';
 import { OpenTicketsProvider, useOpenTickets } from '../context/OpenTicketsContext';
+import { useAutoRefresh } from '../components/tickets/useAutoRefresh';
 
 // ─── Contenu enveloppé par OpenTicketsProvider ────────────────────────────────
 function TicketsAppInner() {
@@ -14,7 +15,17 @@ function TicketsAppInner() {
   const [activeView, setActiveView] = useState(null); // id numérique de la vue active
   const [counts, setCounts]         = useState({});
   const [refreshTick, setRefreshTick] = useState(0);
+  // Suspend l'autorefresh quand l'agent agit sur la liste (sélection / menu)
+  // ou quand il n'est pas sur l'onglet liste.
+  const [listBusy, setListBusy] = useState(false);
   const { activeTab, playTicketId, isPlayActive, newDraftOpen } = useOpenTickets();
+
+  const handleRefresh = useCallback(() => setRefreshTick(t => t + 1), []);
+
+  const autoRefresh = useAutoRefresh(handleRefresh, {
+    intervalMs: 60000,
+    paused: listBusy || activeTab !== 'list',
+  });
 
   // Charger les vues depuis l'API
   useEffect(() => {
@@ -53,8 +64,6 @@ function TicketsAppInner() {
     return () => { cancelled = true; };
   }, [views, refreshTick]);
 
-  const handleRefresh = useCallback(() => setRefreshTick(t => t + 1), []);
-
   const activeViewObj = views.find(v => v.id === activeView) || null;
 
   return (
@@ -91,6 +100,9 @@ function TicketsAppInner() {
                 activeView={activeViewObj}
                 views={views}
                 refreshTick={refreshTick}
+                onRefresh={handleRefresh}
+                autoRefresh={autoRefresh}
+                onBusyChange={setListBusy}
               />
             </div>
 

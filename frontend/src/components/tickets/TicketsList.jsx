@@ -124,6 +124,74 @@ function Checkbox({ checked, indeterminate, onChange }) {
   );
 }
 
+/* ─── Indicateur "il y a X" (se met à jour tout seul) ─────────────────────────── */
+function timeAgo(ts) {
+  const s = Math.max(0, Math.floor((Date.now() - ts) / 1000));
+  if (s < 5) return 'à l’instant';
+  if (s < 60) return `il y a ${s} s`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `il y a ${m} min`;
+  const h = Math.floor(m / 60);
+  return `il y a ${h} h`;
+}
+
+/* ─── Contrôle autorefresh : toggle ON/OFF + fraîcheur + refresh manuel ───────── */
+function AutoRefreshControl({ autoRefresh }) {
+  const { enabled, setEnabled, lastRefresh, refreshNow } = autoRefresh || {};
+  const [, force] = useState(0);
+
+  // Re-render chaque seconde pour rafraîchir le libellé "il y a X"
+  useEffect(() => {
+    const id = setInterval(() => force(n => n + 1), 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  if (!autoRefresh) return null;
+
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+      <span style={{ fontSize: 11.5, color: C.grisM, fontWeight: 600, whiteSpace: 'nowrap' }}>
+        Maj {timeAgo(lastRefresh)}
+      </span>
+      <button
+        onClick={() => refreshNow?.()}
+        title="Rafraîchir maintenant"
+        style={{
+          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+          width: 28, height: 28, borderRadius: 7, cursor: 'pointer',
+          background: C.blanc, border: `1px solid ${C.grisCL}`, color: C.grisF,
+        }}
+        onMouseEnter={e => e.currentTarget.style.background = C.grisTL}
+        onMouseLeave={e => e.currentTarget.style.background = C.blanc}
+      >
+        <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M23 4v6h-6" /><path d="M1 20v-6h6" />
+          <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+        </svg>
+      </button>
+      <button
+        onClick={() => setEnabled(v => !v)}
+        title={enabled ? 'Autorefresh activé (cliquer pour couper)' : 'Autorefresh coupé (cliquer pour activer)'}
+        style={{
+          display: 'inline-flex', alignItems: 'center', gap: 6,
+          borderRadius: 7, padding: '5px 11px', fontSize: 12, fontWeight: 700,
+          cursor: 'pointer', fontFamily: 'Lato, sans-serif',
+          background: enabled ? '#E5F4EB' : C.grisTL,
+          color: enabled ? '#2A8049' : C.grisM,
+          border: `1px solid ${enabled ? '#B6E2C6' : C.grisCL}`,
+        }}
+      >
+        <span style={{
+          width: 8, height: 8, borderRadius: '50%',
+          background: enabled ? '#2A8049' : C.grisM,
+          boxShadow: enabled ? '0 0 0 3px rgba(42,128,73,0.15)' : 'none',
+        }} />
+        {enabled ? 'Auto' : 'Manuel'}
+      </button>
+    </div>
+  );
+}
+
 /* ─── Modale de fusion groupée ─────────────────────────────────────────────────
    Tous les tickets sélectionnés sont SOURCES, fusionnés dans une seule CIBLE.
    La cible peut être l'un des sélectionnés (radio) ou un autre ticket (recherche). */
@@ -298,7 +366,7 @@ function BulkMergeModal({ sources, onClose, onDone }) {
 }
 
 /* ─── Composant principal ─────────────────────────────────────────────────────── */
-export default function TicketsList({ activeView, views = [], onRefresh, refreshTick }) {
+export default function TicketsList({ activeView, views = [], onRefresh, refreshTick, autoRefresh, onBusyChange }) {
   const navigate = useNavigate();
   const { openTicket, startPlay, openNewDraft } = useOpenTickets();
   const [tickets, setTickets] = useState([]);
@@ -322,6 +390,13 @@ export default function TicketsList({ activeView, views = [], onRefresh, refresh
       .then(d => { if (d.success && d.users) setAgents(d.users); })
       .catch(() => {});
   }, [token]);
+
+  // Signaler à l'autorefresh qu'on est "occupé" (ne pas rafraîchir sous les
+  // doigts de l'agent) : sélection en cours, menu ouvert, modale ou action.
+  useEffect(() => {
+    const busy = selected.size > 0 || !!bulkMenu || bulkMergeOpen || bulkBusy;
+    onBusyChange?.(busy);
+  }, [selected.size, bulkMenu, bulkMergeOpen, bulkBusy, onBusyChange]);
 
   // Fermer les menus d'action groupée au clic extérieur / Échap
   useEffect(() => {
@@ -489,6 +564,7 @@ export default function TicketsList({ activeView, views = [], onRefresh, refresh
             </div>
           </div>
           <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+            <AutoRefreshControl autoRefresh={autoRefresh} />
             <button
               onClick={() => {
                 const ids = sortedTickets.map(t => t.id);
