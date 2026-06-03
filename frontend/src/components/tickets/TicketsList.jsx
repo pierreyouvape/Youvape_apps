@@ -102,6 +102,179 @@ function Checkbox({ checked, indeterminate, onChange }) {
   );
 }
 
+/* ─── Modale de fusion groupée ─────────────────────────────────────────────────
+   Tous les tickets sélectionnés sont SOURCES, fusionnés dans une seule CIBLE.
+   La cible peut être l'un des sélectionnés (radio) ou un autre ticket (recherche). */
+function BulkMergeModal({ sources, onClose, onDone }) {
+  const [target, setTarget] = useState(sources[0] || null);
+  const [query, setQuery] = useState('');
+  const [searchResults, setSearchResults] = useState([]);
+  const [merging, setMerging] = useState(false);
+  const [progress, setProgress] = useState(null); // { done, total }
+  const [error, setError] = useState('');
+  const [confirmDiff, setConfirmDiff] = useState(false);
+  const searchTimer = useRef();
+
+  const sourceIds = new Set(sources.map(s => s.id));
+
+  useEffect(() => {
+    clearTimeout(searchTimer.current);
+    if (!query.trim()) { setSearchResults([]); return; }
+    searchTimer.current = setTimeout(async () => {
+      try {
+        const res = await fetch(`${API}?search=${encodeURIComponent(query.trim())}&limit=8`);
+        const data = await res.json();
+        if (data.success) setSearchResults((data.tickets || []).filter(t => !t.merged_into_id));
+      } catch { /* silencieux */ }
+    }, 350);
+    return () => clearTimeout(searchTimer.current);
+  }, [query]);
+
+  // Sources réelles = tous les sélectionnés sauf la cible (si la cible est l'un d'eux)
+  const realSources = sources.filter(s => s.id !== target?.id);
+  const canMerge = !!target && realSources.length > 0 && !merging;
+
+  // Demandeurs différents ? Compare chaque source à la cible (email sinon nom).
+  const tgtEmail = (target?.customer_email || '').trim().toLowerCase();
+  const tgtName = (target?.customer_name || '').trim().toLowerCase();
+  const hasDiffRequester = !!target && realSources.some(s => {
+    const sEmail = (s.customer_email || '').trim().toLowerCase();
+    if (sEmail && tgtEmail) return sEmail !== tgtEmail;
+    const sName = (s.customer_name || '').trim().toLowerCase();
+    if (sName && tgtName) return sName !== tgtName;
+    return false;
+  });
+
+  const doMerge = async () => {
+    if (!canMerge) return;
+    if (hasDiffRequester && !confirmDiff) { setConfirmDiff(true); return; }
+    setMerging(true);
+    setError('');
+    let done = 0;
+    setProgress({ done: 0, total: realSources.length });
+    try {
+      // Fusion séquentielle (l'ordre n'a pas d'importance, chaque source → cible)
+      for (const src of realSources) {
+        const res = await fetch(`${API}/${src.id}/merge`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ target_id: target.id }),
+        });
+        const data = await res.json();
+        if (!data.success) throw new Error(`Ticket #${src.id} : ${data.error || 'échec'}`);
+        done += 1;
+        setProgress({ done, total: realSources.length });
+      }
+      onDone(target.id);
+    } catch (e) {
+      setError(e.message);
+      setMerging(false);
+    }
+  };
+
+  const Pick = ({ t, isSource }) => {
+    const selected = t.id === target?.id;
+    return (
+      <button
+        onClick={() => { setTarget(t); setError(''); setConfirmDiff(false); }}
+        style={{
+          display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left',
+          background: selected ? '#EAF2FF' : C.blanc,
+          border: `1px solid ${selected ? '#0071EB' : C.grisCL}`,
+          borderRadius: 8, padding: '8px 11px', cursor: 'pointer',
+          fontFamily: 'Lato, sans-serif', marginBottom: 6,
+        }}
+      >
+        <span style={{
+          width: 15, height: 15, borderRadius: '50%', flexShrink: 0,
+          border: `2px solid ${selected ? '#0071EB' : C.grisM}`,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}>
+          {selected && <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#0071EB' }} />}
+        </span>
+        <span style={{ fontSize: 12.5, fontWeight: 800, color: selected ? '#0071EB' : C.grisF }}>#{t.id}</span>
+        <span style={{ fontSize: 12, color: C.grisF, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {t.subject || '—'}
+        </span>
+        {t.customer_name && (
+          <span style={{ fontSize: 11, color: C.grisM, whiteSpace: 'nowrap' }}>{t.customer_name}</span>
+        )}
+      </button>
+    );
+  };
+
+  return (
+    <div
+      onClick={onClose}
+      style={{ position: 'fixed', inset: 0, background: 'rgba(20,24,33,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}
+    >
+      <div
+        onClick={e => e.stopPropagation()}
+        style={{ background: C.blanc, borderRadius: 14, width: 'min(540px, 92vw)', maxHeight: '86vh', overflow: 'auto', boxShadow: '0 18px 50px rgba(0,0,0,0.3)', fontFamily: 'Lato, sans-serif', padding: 22 }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+          <strong style={{ fontSize: 16, color: C.grisTF, fontFamily: "'Tilt Warp', cursive" }}>
+            Fusionner {sources.length} ticket{sources.length > 1 ? 's' : ''}
+          </strong>
+          <button onClick={onClose} style={{ background: 'transparent', border: 'none', cursor: 'pointer', fontSize: 20, color: C.grisM, lineHeight: 1 }}>×</button>
+        </div>
+        <p style={{ fontSize: 12.5, color: C.grisF, lineHeight: 1.5, margin: '6px 0 16px' }}>
+          Choisissez le ticket <strong>cible</strong> (celui qu'on garde). Les autres seront
+          fusionnés dedans puis <strong>fermés</strong>. Action irréversible.
+        </p>
+
+        <div style={{ fontSize: 10.5, fontWeight: 800, color: C.grisM, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>
+          Cible parmi la sélection
+        </div>
+        {sources.map(s => <Pick key={s.id} t={s} isSource />)}
+
+        <div style={{ fontSize: 10.5, fontWeight: 800, color: C.grisM, textTransform: 'uppercase', letterSpacing: '0.06em', margin: '14px 0 8px' }}>
+          …ou un autre ticket
+        </div>
+        <input
+          value={query}
+          onChange={e => setQuery(e.target.value)}
+          placeholder="ID, nom, email ou sujet…"
+          style={{ width: '100%', boxSizing: 'border-box', padding: '9px 12px', border: `1px solid ${C.grisCL}`, borderRadius: 8, fontSize: 13, fontFamily: 'Lato, sans-serif', marginBottom: 8, outline: 'none' }}
+        />
+        {searchResults.filter(t => !sourceIds.has(t.id)).map(t => <Pick key={t.id} t={t} />)}
+
+        {error && <div style={{ fontSize: 12.5, color: '#B71D1D', fontWeight: 600, margin: '8px 0' }}>{error}</div>}
+        {progress && merging && (
+          <div style={{ fontSize: 12.5, color: C.grisF, fontWeight: 600, margin: '8px 0' }}>
+            Fusion {progress.done}/{progress.total}…
+          </div>
+        )}
+
+        {confirmDiff ? (
+          <div style={{ marginTop: 16, background: '#FFF7ED', border: '1px solid #FDBA74', borderRadius: 10, padding: '14px 16px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 6 }}>
+              <span style={{ fontSize: 16 }}>⚠</span>
+              <strong style={{ fontSize: 13, color: '#9A3412', fontWeight: 800 }}>Demandeurs différents</strong>
+            </div>
+            <div style={{ fontSize: 12.5, color: '#7C2D12', lineHeight: 1.5, marginBottom: 12 }}>
+              Vous fusionnez des tickets de <strong>demandeurs différents</strong> dans
+              {' '}<strong>{target?.customer_name || target?.customer_email || `#${target?.id}`}</strong>.
+              Êtes-vous sûr ?
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+              <button onClick={() => setConfirmDiff(false)} disabled={merging} style={{ background: C.blanc, border: `1px solid ${C.grisCL}`, borderRadius: 8, padding: '8px 16px', fontSize: 13, fontWeight: 700, color: C.grisF, cursor: 'pointer', fontFamily: 'Lato, sans-serif' }}>Non</button>
+              <button onClick={doMerge} disabled={merging} style={{ background: '#EA580C', border: 'none', borderRadius: 8, padding: '8px 16px', fontSize: 13, fontWeight: 800, color: '#fff', cursor: merging ? 'wait' : 'pointer', fontFamily: 'Lato, sans-serif' }}>{merging ? 'Fusion…' : 'Oui, fusionner'}</button>
+            </div>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 18 }}>
+            <button onClick={onClose} style={{ background: C.grisTL, border: `1px solid ${C.grisCL}`, borderRadius: 8, padding: '9px 16px', fontSize: 13, fontWeight: 700, color: C.grisF, cursor: 'pointer', fontFamily: 'Lato, sans-serif' }}>Annuler</button>
+            <button onClick={doMerge} disabled={!canMerge} style={{ background: canMerge ? '#0071EB' : C.grisCL, border: 'none', borderRadius: 8, padding: '9px 18px', fontSize: 13, fontWeight: 800, color: '#fff', cursor: canMerge ? 'pointer' : 'not-allowed', fontFamily: 'Lato, sans-serif' }}>
+              {merging ? 'Fusion…' : target ? `Fusionner ${realSources.length} dans #${target.id}` : 'Choisir une cible'}
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 /* ─── Composant principal ─────────────────────────────────────────────────────── */
 export default function TicketsList({ activeView, views = [], onRefresh, refreshTick }) {
   const navigate = useNavigate();
@@ -112,6 +285,7 @@ export default function TicketsList({ activeView, views = [], onRefresh, refresh
   const [page, setPage] = useState(0);
   const [sort, setSort] = useState({ key: 'updated', dir: 'desc' });
   const [selected, setSelected] = useState(new Set());
+  const [bulkMergeOpen, setBulkMergeOpen] = useState(false);
 
   // activeView est maintenant l'objet vue complet (avec .statuses tableau)
   const statusesFilter = activeView?.statuses || []; // [] = tous
@@ -431,6 +605,17 @@ export default function TicketsList({ activeView, views = [], onRefresh, refresh
               {selected.size} ticket{selected.size > 1 ? 's' : ''} sélectionné{selected.size > 1 ? 's' : ''}
             </div>
             <div style={{ display: 'flex', gap: 8 }}>
+              <button
+                onClick={() => setBulkMergeOpen(true)}
+                title="Fusionner les tickets sélectionnés dans une seule cible"
+                style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 6,
+                  background: 'rgba(255,255,255,0.18)', color: '#fff',
+                  border: '1px solid rgba(255,255,255,0.3)', borderRadius: 8,
+                  padding: '6px 14px', fontSize: 13, fontWeight: 800,
+                  cursor: 'pointer', fontFamily: 'Lato, sans-serif',
+                }}
+              >🔀 Fusionner</button>
               {['Assigner', 'Changer statut', 'Marquer résolu'].map(label => (
                 <button key={label} style={{
                   background: 'rgba(255,255,255,0.12)', color: '#fff',
@@ -449,6 +634,19 @@ export default function TicketsList({ activeView, views = [], onRefresh, refresh
           </div>
         )}
       </div>
+
+      {bulkMergeOpen && (
+        <BulkMergeModal
+          sources={tickets.filter(t => selected.has(t.id))}
+          onClose={() => setBulkMergeOpen(false)}
+          onDone={() => {
+            setBulkMergeOpen(false);
+            setSelected(new Set());
+            fetchTickets();
+            onRefresh?.();
+          }}
+        />
+      )}
     </main>
   );
 }
