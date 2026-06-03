@@ -1477,11 +1477,14 @@ function NoteField({ ticketId, initialNotes }) {
 // La cible peut être choisie parmi les doublons détectés ou par recherche libre.
 function MergeModal({ ticket, onClose, onMerged }) {
   const candidates = Array.isArray(ticket.duplicate_candidates) ? ticket.duplicate_candidates : [];
-  const [targetId, setTargetId] = useState(candidates[0]?.id ? String(candidates[0].id) : '');
+  // On garde l'objet ticket cible sélectionné (pas juste l'id) pour pouvoir
+  // comparer le demandeur (email/nom) à celui du ticket source.
+  const [target, setTarget] = useState(candidates[0] || null);
   const [searchResults, setSearchResults] = useState([]);
   const [query, setQuery] = useState('');
   const [merging, setMerging] = useState(false);
   const [error, setError] = useState('');
+  const [confirmDiff, setConfirmDiff] = useState(false); // alerte demandeurs différents
   const searchTimer = useRef();
 
   // Recherche de tickets cible par ID / email / nom / sujet (debounce 350ms)
@@ -1501,11 +1504,30 @@ function MergeModal({ ticket, onClose, onMerged }) {
     return () => clearTimeout(searchTimer.current);
   }, [query, ticket.id]);
 
-  const targetNum = parseInt(targetId);
+  const targetNum = target?.id ?? NaN;
   const canMerge = !Number.isNaN(targetNum) && targetNum !== ticket.id && !merging;
+
+  // Demandeurs différents ? Compare l'email si dispo des deux côtés (cas le plus
+  // fiable), sinon retombe sur le nom. Les doublons détectés n'ont pas d'email
+  // → on compare alors sur le nom.
+  const sameRequester = (() => {
+    if (!target) return true;
+    const srcEmail = (ticket.customer_email || '').trim().toLowerCase();
+    const tgtEmail = (target.customer_email || '').trim().toLowerCase();
+    if (srcEmail && tgtEmail) return srcEmail === tgtEmail;
+    const srcName = (ticket.customer_name || '').trim().toLowerCase();
+    const tgtName = (target.customer_name || '').trim().toLowerCase();
+    if (srcName && tgtName) return srcName === tgtName;
+    return true; // pas assez d'info pour affirmer une différence → pas d'alerte
+  })();
 
   const doMerge = async () => {
     if (!canMerge) return;
+    // Garde-fou : demandeurs différents → demander confirmation avant de fusionner
+    if (!sameRequester && !confirmDiff) {
+      setConfirmDiff(true);
+      return;
+    }
     setMerging(true);
     setError('');
     try {
@@ -1524,10 +1546,10 @@ function MergeModal({ ticket, onClose, onMerged }) {
   };
 
   const Pick = ({ t }) => {
-    const selected = String(t.id) === String(targetId);
+    const selected = t.id === targetNum;
     return (
       <button
-        onClick={() => { setTargetId(String(t.id)); setError(''); }}
+        onClick={() => { setTarget(t); setError(''); setConfirmDiff(false); }}
         style={{
           display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left',
           background: selected ? '#EAF2FF' : C.blanc,
@@ -1606,27 +1628,67 @@ function MergeModal({ ticket, onClose, onMerged }) {
           <div style={{ fontSize: 12.5, color: '#B71D1D', fontWeight: 600, margin: '8px 0' }}>{error}</div>
         )}
 
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 18 }}>
-          <button
-            onClick={onClose}
-            style={{
-              background: C.grisTL, border: `1px solid ${C.grisCL}`, borderRadius: 8,
-              padding: '9px 16px', fontSize: 13, fontWeight: 700, color: C.grisF,
-              cursor: 'pointer', fontFamily: 'Lato, sans-serif',
-            }}
-          >Annuler</button>
-          <button
-            onClick={doMerge}
-            disabled={!canMerge}
-            style={{
-              background: canMerge ? C.bleu : C.grisCL, border: 'none', borderRadius: 8,
-              padding: '9px 18px', fontSize: 13, fontWeight: 800, color: '#fff',
-              cursor: canMerge ? 'pointer' : 'not-allowed', fontFamily: 'Lato, sans-serif',
-            }}
-          >
-            {merging ? 'Fusion…' : targetNum ? `Fusionner dans #${targetNum}` : 'Choisir une cible'}
-          </button>
-        </div>
+        {/* Confirmation : demandeurs différents */}
+        {confirmDiff ? (
+          <div style={{
+            marginTop: 16, background: '#FFF7ED', border: '1px solid #FDBA74',
+            borderRadius: 10, padding: '14px 16px',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 6 }}>
+              <span style={{ fontSize: 16 }}>⚠</span>
+              <strong style={{ fontSize: 13, color: '#9A3412', fontWeight: 800 }}>Demandeurs différents</strong>
+            </div>
+            <div style={{ fontSize: 12.5, color: '#7C2D12', lineHeight: 1.5, marginBottom: 12 }}>
+              Vous fusionnez des tickets de <strong>demandeurs différents</strong>
+              {' '}(<strong>{ticket.customer_name || ticket.customer_email || '—'}</strong>
+              {' → '}
+              <strong>{target?.customer_name || target?.customer_email || `#${targetNum}`}</strong>).
+              Êtes-vous sûr ?
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+              <button
+                onClick={() => setConfirmDiff(false)}
+                disabled={merging}
+                style={{
+                  background: C.blanc, border: `1px solid ${C.grisCL}`, borderRadius: 8,
+                  padding: '8px 16px', fontSize: 13, fontWeight: 700, color: C.grisF,
+                  cursor: 'pointer', fontFamily: 'Lato, sans-serif',
+                }}
+              >Non</button>
+              <button
+                onClick={doMerge}
+                disabled={merging}
+                style={{
+                  background: '#EA580C', border: 'none', borderRadius: 8,
+                  padding: '8px 16px', fontSize: 13, fontWeight: 800, color: '#fff',
+                  cursor: merging ? 'wait' : 'pointer', fontFamily: 'Lato, sans-serif',
+                }}
+              >{merging ? 'Fusion…' : `Oui, fusionner dans #${targetNum}`}</button>
+            </div>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 18 }}>
+            <button
+              onClick={onClose}
+              style={{
+                background: C.grisTL, border: `1px solid ${C.grisCL}`, borderRadius: 8,
+                padding: '9px 16px', fontSize: 13, fontWeight: 700, color: C.grisF,
+                cursor: 'pointer', fontFamily: 'Lato, sans-serif',
+              }}
+            >Annuler</button>
+            <button
+              onClick={doMerge}
+              disabled={!canMerge}
+              style={{
+                background: canMerge ? C.bleu : C.grisCL, border: 'none', borderRadius: 8,
+                padding: '9px 18px', fontSize: 13, fontWeight: 800, color: '#fff',
+                cursor: canMerge ? 'pointer' : 'not-allowed', fontFamily: 'Lato, sans-serif',
+              }}
+            >
+              {merging ? 'Fusion…' : targetNum ? `Fusionner dans #${targetNum}` : 'Choisir une cible'}
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
