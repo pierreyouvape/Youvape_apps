@@ -96,7 +96,20 @@ function AppTile({ app, size, isDragging, isDragOver, onPointerDown, onPointerEn
       onPointerDown={e => onPointerDown(e, key)}
       onPointerEnter={() => onPointerEnter(key)}
       onPointerUp={e => onPointerUp(e, key)}
-      onClick={() => { if (!isDragging) navigate(path); }}
+      onClick={e => {
+        if (isDragging) return;
+        if (e.metaKey || e.ctrlKey || e.shiftKey) {
+          window.open(path, '_blank', 'noopener');
+          return;
+        }
+        navigate(path);
+      }}
+      onAuxClick={e => {
+        if (e.button === 1) {
+          e.preventDefault();
+          window.open(path, '_blank', 'noopener');
+        }
+      }}
       style={{
         width: s.tile,
         display: 'flex',

@@ -188,19 +188,20 @@ const BrandDetail = () => {
                 >
                   <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
                     <span style={{ fontSize: '18px', fontWeight: '600', color: '#135E84' }}>{subBrand.sub_brand}</span>
-                    <span
-                      onClick={(e) => { e.stopPropagation(); navigate(`/sub-brands/${encodeURIComponent(subBrand.sub_brand)}`); }}
+                    <LinkBox
+                      to={`/sub-brands/${encodeURIComponent(subBrand.sub_brand)}`}
+                      display="inline-block"
+                      onClick={(e) => e.stopPropagation()}
                       style={{
                         fontSize: '12px',
                         color: '#fff',
                         backgroundColor: '#135E84',
                         padding: '4px 10px',
                         borderRadius: '4px',
-                        cursor: 'pointer'
                       }}
                     >
                       Voir page
-                    </span>
+                    </LinkBox>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
                     <div style={{ textAlign: 'right' }}>

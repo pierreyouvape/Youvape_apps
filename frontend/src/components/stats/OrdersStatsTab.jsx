@@ -5,6 +5,7 @@ import CopyButton from '../CopyButton';
 import { formatDate } from '../../utils/dateUtils';
 import { formatPriceEur, formatInt } from '../../utils/formatNumber';
 import { AuthContext } from '../../context/AuthContext';
+import { LinkBox } from '../../utils/navHelpers';
 
 const API_BASE_URL = '/api';
 
@@ -501,12 +502,14 @@ const OrdersStatsTab = () => {
                         <td style={{ padding: '12px', fontSize: '14px' }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                             <span style={{ color: '#6c757d', fontSize: '12px' }}>{isExpanded ? '▼' : '▶'}</span>
-                            <span
-                              style={{ fontWeight: 'bold', color: '#007bff', cursor: 'pointer' }}
-                              onClick={(e) => { e.stopPropagation(); navigate(`/orders/${order.wp_order_id}`); }}
+                            <LinkBox
+                              to={`/orders/${order.wp_order_id}`}
+                              display="inline"
+                              onClick={(e) => e.stopPropagation()}
+                              style={{ fontWeight: 'bold', color: '#007bff' }}
                             >
                               #{order.wp_order_id}
-                            </span>
+                            </LinkBox>
                             <CopyButton text={String(order.wp_order_id)} size={12} />
                             <a
                               href={`https://www.youvape.fr/wp-admin/post.php?post=${order.wp_order_id}&action=edit`}
@@ -654,12 +657,13 @@ const OrdersStatsTab = () => {
                                                 <img src={item.image_url} alt="" style={{ width: '40px', height: '40px', objectFit: 'cover', borderRadius: '4px' }} />
                                               )}
                                               <div>
-                                                <div
-                                                  style={{ fontWeight: '500', color: '#007bff', cursor: 'pointer' }}
-                                                  onClick={(e) => { e.stopPropagation(); navigate(`/products/${item.product_id || item.variation_id}`); }}
+                                                <LinkBox
+                                                  to={`/products/${item.product_id || item.variation_id}`}
+                                                  onClick={(e) => e.stopPropagation()}
+                                                  style={{ fontWeight: '500', color: '#007bff' }}
                                                 >
                                                   {item.product_title || item.order_item_name}
-                                                </div>
+                                                </LinkBox>
                                                 {item.brand && <div style={{ fontSize: '11px', color: '#999' }}>{item.brand}</div>}
                                               </div>
                                             </div>
@@ -694,12 +698,14 @@ const OrdersStatsTab = () => {
 
                               {/* Bouton voir commande complete */}
                               <div style={{ marginTop: '15px', textAlign: 'right' }}>
-                                <button
-                                  onClick={(e) => { e.stopPropagation(); navigate(`/orders/${order.wp_order_id}`); }}
-                                  style={{ padding: '10px 20px', backgroundColor: '#135E84', color: 'white', border: 'none', borderRadius: '6px', fontSize: '13px', cursor: 'pointer', fontWeight: '600' }}
+                                <LinkBox
+                                  to={`/orders/${order.wp_order_id}`}
+                                  display="inline-block"
+                                  onClick={(e) => e.stopPropagation()}
+                                  style={{ padding: '10px 20px', backgroundColor: '#135E84', color: 'white', borderRadius: '6px', fontSize: '13px', fontWeight: '600' }}
                                 >
                                   Voir la commande complete
-                                </button>
+                                </LinkBox>
                               </div>
                             </div>
                           </td>

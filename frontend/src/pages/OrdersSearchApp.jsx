@@ -371,12 +371,14 @@ const OrdersSearchApp = () => {
                                 <span style={{ color: C.grisM, fontSize: 11, width: 12, display: 'inline-block', textAlign: 'center' }}>
                                   {isExpanded ? '▼' : '▶'}
                                 </span>
-                                <span
-                                  style={{ fontWeight: 700, color: C.violet, cursor: 'pointer', fontSize: 13 }}
-                                  onClick={e => { e.stopPropagation(); navigate(`/orders/${order.wp_order_id}`); }}
+                                <LinkBox
+                                  to={`/orders/${order.wp_order_id}`}
+                                  display="inline"
+                                  onClick={e => e.stopPropagation()}
+                                  style={{ fontWeight: 700, color: C.violet, fontSize: 13 }}
                                 >
                                   #{order.wp_order_id}
-                                </span>
+                                </LinkBox>
                                 <CopyButton text={String(order.wp_order_id)} size={12} />
                                 <a
                                   href={`https://www.youvape.fr/wp-admin/post.php?post=${order.wp_order_id}&action=edit`}
@@ -542,16 +544,18 @@ const OrdersSearchApp = () => {
 
                                   {/* Bouton fiche complète */}
                                   <div style={{ marginTop: 14, textAlign: 'right' }}>
-                                    <button
-                                      onClick={e => { e.stopPropagation(); navigate(`/orders/${order.wp_order_id}`); }}
+                                    <LinkBox
+                                      to={`/orders/${order.wp_order_id}`}
+                                      display="inline-block"
+                                      onClick={e => e.stopPropagation()}
                                       style={{
                                         padding: '9px 18px', background: C.violet, color: '#fff',
-                                        border: 'none', borderRadius: 7, fontSize: 13,
-                                        cursor: 'pointer', fontWeight: 700,
+                                        borderRadius: 7, fontSize: 13,
+                                        fontWeight: 700,
                                       }}
                                     >
                                       Voir la fiche complète →
-                                    </button>
+                                    </LinkBox>
                                   </div>
                                 </div>
                               </td>
