@@ -536,9 +536,9 @@ exports.saveInvoice = [
       const invoiceId = invRes.rows[0].id;
 
       if (orders?.length) {
-        const vals = orders.map((o,i) => { const b=i*8; return `($${b+1},$${b+2},$${b+3},$${b+4},$${b+5},$${b+6},$${b+7},$${b+8})`; }).join(',');
-        const params = orders.flatMap(o => [invoiceId, o.tracking||null, o.order_id||null, o.date||null, o.weight_chrono??null, o.weight_bdd??null, o.diff_g??null, o.amount_ht??null]);
-        await pool.query(`INSERT INTO carrier_invoice_parcels (invoice_id,tracking,order_id,date,weight_carrier,weight_bdd,diff_g,amount_ht) VALUES ${vals}`, params);
+        const vals = orders.map((o,i) => { const b=i*10; return `($${b+1},$${b+2},$${b+3},$${b+4},$${b+5},$${b+6},$${b+7},$${b+8},$${b+9},$${b+10})`; }).join(',');
+        const params = orders.flatMap(o => [invoiceId, o.tracking||null, o.order_id||null, o.date||null, o.weight_chrono??null, o.weight_bdd??null, o.diff_g??null, o.amount_ht??null, o.is_return||false, o.weight_corrected||false]);
+        await pool.query(`INSERT INTO carrier_invoice_parcels (invoice_id,tracking,order_id,date,weight_carrier,weight_bdd,diff_g,amount_ht,is_return,weight_corrected) VALUES ${vals}`, params);
       }
 
       if (supplements?.length) {

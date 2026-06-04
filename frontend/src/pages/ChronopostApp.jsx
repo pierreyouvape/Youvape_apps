@@ -146,7 +146,8 @@ export default function ChronopostApp() {
         diff_g:        p.diff_g,
         amount_ht:     p.amount_ht != null ? parseFloat(p.amount_ht) : null,
         is_return:     p.is_return,
-        weight_corrected: p.weight_corrected,
+        weight_corrected: p.weight_corrected || false,
+        is_return:        p.is_return || false,
       }));
       const supplements = (data.supplements || []).map(s => ({
         description:      s.description,
