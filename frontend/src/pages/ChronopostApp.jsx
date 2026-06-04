@@ -724,7 +724,14 @@ export default function ChronopostApp() {
                             borderBottom: `1px solid ${C.greyB}`,
                           }}>
                             <td style={{ padding: '9px 12px', fontWeight: 600, color: C.dark }}>
-                              {o.order_id}
+                              {o.order_id
+                                ? <a href={`/orders/${o.order_id}`} target="_blank" rel="noreferrer"
+                                    style={{ color: C.accent, textDecoration: 'none', fontWeight: 700 }}
+                                    onMouseEnter={e => e.currentTarget.style.textDecoration='underline'}
+                                    onMouseLeave={e => e.currentTarget.style.textDecoration='none'}
+                                  >{o.order_id}</a>
+                                : <span style={{ color: C.greyT }}>—</span>
+                              }
                             </td>
                             <td style={{ padding: '9px 12px', color: C.greyT }}>{o.date || '—'}</td>
                             <td style={{ padding: '9px 12px', fontFamily: 'monospace', fontSize: 12, color: C.greyT }}>
