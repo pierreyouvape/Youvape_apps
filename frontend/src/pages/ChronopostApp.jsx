@@ -361,11 +361,15 @@ export default function ChronopostApp() {
 
   function getTarif(order) {
     if (order.amount_ht == null) return null;
-    const base   = order.amount_ht;
-    const suppl  = supplByTracking[order.tracking] || 0;
-    // (base + redevance) × (1 + carburant%) + éco + frais_gestion/nb + suppléments propres
-    const withCarburant = (base + redevanceUnit) * (1 + carburantRate);
-    return withCarburant + ecoUnit + (fraisGestionTotal / nbSûreté) + suppl;
+    const base  = order.amount_ht;
+    const suppl = supplByTracking[order.tracking] || 0;
+
+    if (order.is_return) {
+      // Retours : pas de redevance/éco/gestion, carburant s'applique quand même
+      return (base + suppl) * (1 + carburantRate);
+    }
+    // Colis normal : (base + suppl + redevance) × (1 + carburant%) + éco + gestion/nbSûreté
+    return (base + suppl + redevanceUnit) * (1 + carburantRate) + ecoUnit + (fraisGestionTotal / nbSûreté);
   }
 
   const proRataPerParcel = 0; // conservé pour compatibilité affichage
@@ -662,7 +666,11 @@ export default function ChronopostApp() {
                               {fmtDiff(o.diff_g)}
                             </td>
                             <td style={{ padding: '9px 12px', fontWeight: 700, color: C.primary }}
-                              title={o.amount_ht != null ? `(${o.amount_ht.toFixed(2)}€ + ${redevanceUnit.toFixed(2)}€ rdev) × ${(1+carburantRate).toFixed(4)} + ${ecoUnit.toFixed(2)}€ éco + ${(fraisGestionTotal/nbSûreté).toFixed(3)}€ gestion${(supplByTracking[o.tracking]||0)>0?' + '+supplByTracking[o.tracking].toFixed(2)+'€ suppl':''}` : ''}
+                              title={o.amount_ht != null ? (
+                              o.is_return
+                                ? `Retour: (${o.amount_ht.toFixed(2)}€ + ${(supplByTracking[o.tracking]||0).toFixed(2)}€ suppl) × ${(1+carburantRate).toFixed(4)}`
+                                : `(${o.amount_ht.toFixed(2)}€ + ${(supplByTracking[o.tracking]||0).toFixed(2)}€ suppl + ${redevanceUnit.toFixed(2)}€ rdev) × ${(1+carburantRate).toFixed(4)} + ${ecoUnit.toFixed(2)}€ éco + ${(fraisGestionTotal/nbSûreté).toFixed(3)}€ gest`
+                            ) : ''}
                             >
                               {o.amount_ht != null ? `${getTarif(o).toFixed(2)} €` : '—'}
                             </td>
