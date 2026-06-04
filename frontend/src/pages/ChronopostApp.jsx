@@ -509,6 +509,57 @@ export default function ChronopostApp() {
               {/* ── TAB POIDS */}
               {tab === 'poids' && (
                 <div style={{ padding: 20 }}>
+                  {/* ── Récapitulatif tarifs */}
+                  {(() => {
+                    const totalTarifCalcule = orders.reduce((s, o) => s + (o.amount_ht != null ? getTarif(o) : 0), 0);
+                    const totalParcelsHT    = orders.reduce((s, o) => s + (o.amount_ht || 0), 0);
+                    const totalSupplHT      = supplements.reduce((s, x) => s + (x.amount_ht || 0), 0);
+                    const totalGlobalHT     = globalCharges.reduce((s, g) => s + (g.amount_ht || 0), 0);
+                    const totalFactureHT    = totalParcelsHT + totalSupplHT + totalGlobalHT;
+                    const ecart             = totalTarifCalcule - totalFactureHT;
+                    const ecartPct          = totalFactureHT > 0 ? (Math.abs(ecart) / totalFactureHT * 100).toFixed(2) : '—';
+                    const matchOk           = Math.abs(ecart) < 0.02;
+                    return (
+                      <div style={{
+                        marginBottom: 16, background: matchOk ? C.greenL : C.yellowL,
+                        border: `1px solid ${matchOk ? C.green : '#F59E0B'}`,
+                        borderRadius: 10, padding: '14px 18px',
+                        display: 'flex', gap: 32, flexWrap: 'wrap', alignItems: 'center',
+                      }}>
+                        <div>
+                          <div style={{ fontSize: 11, color: C.greyT, marginBottom: 2 }}>Total tarif réel calculé</div>
+                          <div style={{ fontSize: 18, fontWeight: 800, color: C.primary }}>{totalTarifCalcule.toFixed(2)} €</div>
+                          <div style={{ fontSize: 10, color: C.greyT, marginTop: 2 }}>
+                            Colis {totalParcelsHT.toFixed(2)}€ + Suppl. {totalSupplHT.toFixed(2)}€ + Pro-rata {proRataTotal.toFixed(2)}€
+                          </div>
+                        </div>
+                        <div style={{ fontSize: 20, color: C.greyT }}>vs</div>
+                        <div>
+                          <div style={{ fontSize: 11, color: C.greyT, marginBottom: 2 }}>Total facture HT</div>
+                          <div style={{ fontSize: 18, fontWeight: 800, color: C.dark }}>{totalFactureHT.toFixed(2)} €</div>
+                          <div style={{ fontSize: 10, color: C.greyT, marginTop: 2 }}>
+                            Colis {totalParcelsHT.toFixed(2)}€ + Suppl. {totalSupplHT.toFixed(2)}€ + Globaux {totalGlobalHT.toFixed(2)}€
+                          </div>
+                        </div>
+                        <div>
+                          <div style={{ fontSize: 11, color: C.greyT, marginBottom: 2 }}>Écart</div>
+                          <div style={{ fontSize: 18, fontWeight: 800, color: matchOk ? C.green : C.orange }}>
+                            {ecart >= 0 ? '+' : ''}{ecart.toFixed(2)} €
+                          </div>
+                          <div style={{ fontSize: 10, color: C.greyT, marginTop: 2 }}>
+                            {matchOk ? '✓ Correspond' : `${ecartPct}% — charges non pro-ratisées (ex: redevance sûreté)`}
+                          </div>
+                        </div>
+                        {proRataTotal > 0 && (
+                          <div style={{ fontSize: 11, color: C.greyT, borderLeft: `1px solid ${C.greyB}`, paddingLeft: 16 }}>
+                            ℹ️ Pro-rata : <strong>{proRataTotal.toFixed(2)} €</strong> / {orders.length} colis
+                            = <strong>{proRataPerParcel.toFixed(3)} €/colis</strong>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
+
                   <div style={{ display: 'flex', gap: 10, marginBottom: 16, flexWrap: 'wrap', alignItems: 'center' }}>
                     <input
                       placeholder="Rechercher commande ou suivi…"
@@ -595,59 +646,6 @@ export default function ChronopostApp() {
                       </tbody>
                     </table>
                   </div>
-                  {/* ── Récapitulatif tarifs */}
-                  {(() => {
-                    const totalTarifCalcule = orders.reduce((s, o) => s + (o.amount_ht != null ? getTarif(o) : 0), 0);
-                    const totalParcelsHT    = orders.reduce((s, o) => s + (o.amount_ht || 0), 0);
-                    const totalSupplHT      = supplements.reduce((s, x) => s + (x.amount_ht || 0), 0);
-                    const totalGlobalHT     = globalCharges.reduce((s, g) => s + (g.amount_ht || 0), 0);
-                    const totalFactureHT    = totalParcelsHT + totalSupplHT + totalGlobalHT;
-                    const ecart             = totalTarifCalcule - totalFactureHT;
-                    const ecartPct          = totalFactureHT > 0 ? (Math.abs(ecart) / totalFactureHT * 100).toFixed(2) : '—';
-                    const matchOk           = Math.abs(ecart) < 0.02;
-
-                    return (
-                      <div style={{
-                        marginTop: 16, background: matchOk ? C.greenL : C.yellowL,
-                        border: `1px solid ${matchOk ? C.green : '#F59E0B'}`,
-                        borderRadius: 10, padding: '14px 18px',
-                        display: 'flex', gap: 32, flexWrap: 'wrap', alignItems: 'center',
-                      }}>
-                        <div>
-                          <div style={{ fontSize: 11, color: C.greyT, marginBottom: 2 }}>Total tarif réel calculé</div>
-                          <div style={{ fontSize: 18, fontWeight: 800, color: C.primary }}>{totalTarifCalcule.toFixed(2)} €</div>
-                          <div style={{ fontSize: 10, color: C.greyT, marginTop: 2 }}>
-                            Colis {totalParcelsHT.toFixed(2)}€ + Suppl. {totalSupplHT.toFixed(2)}€ + Pro-rata {proRataTotal.toFixed(2)}€
-                          </div>
-                        </div>
-                        <div style={{ fontSize: 20, color: C.greyT }}>vs</div>
-                        <div>
-                          <div style={{ fontSize: 11, color: C.greyT, marginBottom: 2 }}>Total facture HT</div>
-                          <div style={{ fontSize: 18, fontWeight: 800, color: C.dark }}>{totalFactureHT.toFixed(2)} €</div>
-                          <div style={{ fontSize: 10, color: C.greyT, marginTop: 2 }}>
-                            Colis {totalParcelsHT.toFixed(2)}€ + Suppl. {totalSupplHT.toFixed(2)}€ + Globaux {totalGlobalHT.toFixed(2)}€
-                          </div>
-                        </div>
-                        <div>
-                          <div style={{ fontSize: 11, color: C.greyT, marginBottom: 2 }}>Écart</div>
-                          <div style={{ fontSize: 18, fontWeight: 800, color: matchOk ? C.green : C.orange }}>
-                            {ecart >= 0 ? '+' : ''}{ecart.toFixed(2)} €
-                          </div>
-                          <div style={{ fontSize: 10, color: C.greyT, marginTop: 2 }}>
-                            {matchOk ? '✓ Correspond' : `${ecartPct}% — charges non pro-ratisées (ex: redevance sûreté)`}
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })()}
-
-                  {proRataTotal > 0 && (
-                    <div style={{ marginTop: 8, fontSize: 12, color: C.greyT }}>
-                      ℹ️ Pro-rata : <strong>{proRataTotal.toFixed(2)} €</strong> / {orders.length} colis
-                      = <strong>{proRataPerParcel.toFixed(3)} €/colis</strong>
-                      {' '}(Frais gestion + Éco-responsable + Surcharge carburant)
-                    </div>
-                  )}
                   <div style={{ color: C.greyT, fontSize: 12, marginTop: 6 }}>
                     {filteredOrders.length} ligne(s) affichée(s) sur {orders.length}
                   </div>
