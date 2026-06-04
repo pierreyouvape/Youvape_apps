@@ -250,7 +250,8 @@ const OrderDetail = () => {
   const shippingCostCalculated = order.shipping_cost_calculated != null ? parseFloat(order.shipping_cost_calculated) : null;
   const paymentCostCalculated  = order.payment_cost_calculated  != null ? parseFloat(order.payment_cost_calculated)  : null;
   const hasAllCosts = shippingCostCalculated != null && paymentCostCalculated != null;
-  const margin = hasAllCosts ? orderTotal - totalCost - shippingCostCalculated - paymentCostCalculated : null;
+  const orderTotalHT = orderTotal - orderTax; // Total HT = TTC - TVA
+  const margin = hasAllCosts ? orderTotalHT - totalCost - shippingCostCalculated - paymentCostCalculated : null;
 
   const productItems = (order.line_items || []).filter(i => i.order_item_type === 'line_item');
   const couponItems  = (order.line_items || []).filter(i => i.order_item_type === 'coupon');
@@ -584,11 +585,11 @@ const OrderDetail = () => {
                 <MarginRow label="Coût livraison HT" value={shippingCostCalculated != null ? fmt(shippingCostCalculated) : '—'} />
                 <MarginRow label="Coût paiement"     value={paymentCostCalculated  != null ? fmt(paymentCostCalculated)  : '—'} />
                 <MarginRow label="Marge brute"        value={margin != null ? fmt(margin) : '—'} bold />
-                {margin != null && orderTotal > 0 && (
+                {margin != null && orderTotalHT > 0 && (
                   <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', fontSize: 12, color: C.grisF }}>
                     <span>Taux de marge</span>
                     <span style={{ fontWeight: 700, color: margin > 0 ? C.vert : '#dc3545', fontVariantNumeric: 'tabular-nums' }}>
-                      {((margin / orderTotal) * 100).toFixed(1)} %
+                      {((margin / orderTotalHT) * 100).toFixed(1)} %
                     </span>
                   </div>
                 )}
