@@ -318,25 +318,57 @@ export default function ChronopostApp() {
   const countOk    = orders.filter(o => o.diff_g !== null && Math.abs(o.diff_g) <= 20).length;
   const countRet   = orders.filter(o => o.is_return).length;
 
-  // ── Calcul tarif réel par colis
-  // Pro-rata = (frais gestion + éco-responsable + surcharge carburant) / nb colis
-  const proRataTotal = globalCharges
-    .filter(g => /frais de gestion|eco|carburant|redevance/i.test(g.description))
-    .reduce((s, g) => s + (g.amount_ht || 0), 0);
-  const proRataPerParcel = orders.length > 0 ? proRataTotal / orders.length : 0;
+  // ── Extraction des tarifs unitaires depuis les charges globales
+  // Formule : (base + redevance_unit) × (1 + carburant_rate) + eco_unit + frais_gestion / nb_sûreté
+  const _tarifParams = (() => {
+    let redevanceUnit = 0, nbSûreté = orders.length || 1;
+    let ecoUnit = 0, carburantRate = 0, fraisGestionTotal = 0;
 
-  // Map supplements par tracking (somme des suppléments d'un colis)
+    for (const g of globalCharges) {
+      const desc = g.description || '';
+      const detail = g.detail || '';
+      if (/redevance/i.test(desc)) {
+        // "539 colis × 0.70 EUR"
+        const m = detail.match(/(\d+)\s*colis\s*[×xX*]\s*([\d.]+)/);
+        if (m) { nbSûreté = parseInt(m[1]); redevanceUnit = parseFloat(m[2]); }
+        else redevanceUnit = (g.amount_ht || 0) / (orders.length || 1);
+      } else if (/eco/i.test(desc)) {
+        // "539 colis × 0.09 EUR"
+        const m = detail.match(/colis\s*[×xX*]\s*([\d.]+)/);
+        if (m) ecoUnit = parseFloat(m[1]);
+        else ecoUnit = (g.amount_ht || 0) / (orders.length || 1);
+      } else if (/carburant/i.test(desc)) {
+        // "23.15% sur 3038.10 EUR"
+        const m = detail.match(/([\d.]+)\s*%/);
+        if (m) carburantRate = parseFloat(m[1]) / 100;
+      } else if (/frais de gestion/i.test(desc)) {
+        fraisGestionTotal = g.amount_ht || 0;
+      }
+    }
+    return { redevanceUnit, nbSûreté, ecoUnit, carburantRate, fraisGestionTotal };
+  })();
+
+  const { redevanceUnit, nbSûreté, ecoUnit, carburantRate, fraisGestionTotal } = _tarifParams;
+  // Total pro-rata pour l'encart récap (toutes charges globales)
+  const proRataTotal = globalCharges.reduce((s, g) => s + (g.amount_ht || 0), 0);
+
+  // Map supplements par tracking
   const supplByTracking = {};
   for (const s of supplements) {
     const key = s.related_tracking || s.tracking;
-    if (key) supplByTracking[key] = (supplByTracking[key] || 0) + (s.amount_ht || s.description_amount || 0);
+    if (key) supplByTracking[key] = (supplByTracking[key] || 0) + (s.amount_ht || 0);
   }
 
   function getTarif(order) {
-    const base  = order.amount_ht || 0;
-    const suppl = supplByTracking[order.tracking] || 0;
-    return base + suppl + proRataPerParcel;
+    if (order.amount_ht == null) return null;
+    const base   = order.amount_ht;
+    const suppl  = supplByTracking[order.tracking] || 0;
+    // (base + redevance) × (1 + carburant%) + éco + frais_gestion/nb + suppléments propres
+    const withCarburant = (base + redevanceUnit) * (1 + carburantRate);
+    return withCarburant + ecoUnit + (fraisGestionTotal / nbSûreté) + suppl;
   }
+
+  const proRataPerParcel = 0; // conservé pour compatibilité affichage
 
   return (
     <AppShell currentPath="/chronopost">
@@ -551,10 +583,9 @@ export default function ChronopostApp() {
                             {matchOk ? '✓ Correspond' : `${ecartPct}% — charges non pro-ratisées`}
                           </div>
                         </div>
-                        {proRataTotal > 0 && (
+                        {carburantRate > 0 && (
                           <div style={{ fontSize: 11, color: C.greyT, borderLeft: `1px solid ${C.greyB}`, paddingLeft: 16 }}>
-                            ℹ️ Pro-rata : <strong>{proRataTotal.toFixed(2)} €</strong> / {orders.length} colis
-                            = <strong>{proRataPerParcel.toFixed(3)} €/colis</strong>
+                            ℹ️ Rdev: <strong>{redevanceUnit.toFixed(2)}€</strong> · Carburant: <strong>{(carburantRate*100).toFixed(2)}%</strong> · Éco: <strong>{ecoUnit.toFixed(2)}€</strong> · Gestion: <strong>{(fraisGestionTotal/nbSûreté).toFixed(3)}€</strong>
                           </div>
                         )}
                       </div>
@@ -631,7 +662,7 @@ export default function ChronopostApp() {
                               {fmtDiff(o.diff_g)}
                             </td>
                             <td style={{ padding: '9px 12px', fontWeight: 700, color: C.primary }}
-                              title={`Base: ${(o.amount_ht||0).toFixed(2)}€ + Suppl: ${(supplByTracking[o.tracking]||0).toFixed(2)}€ + Pro-rata: ${proRataPerParcel.toFixed(2)}€`}
+                              title={o.amount_ht != null ? `(${o.amount_ht.toFixed(2)}€ + ${redevanceUnit.toFixed(2)}€ rdev) × ${(1+carburantRate).toFixed(4)} + ${ecoUnit.toFixed(2)}€ éco + ${(fraisGestionTotal/nbSûreté).toFixed(3)}€ gestion${(supplByTracking[o.tracking]||0)>0?' + '+supplByTracking[o.tracking].toFixed(2)+'€ suppl':''}` : ''}
                             >
                               {o.amount_ht != null ? `${getTarif(o).toFixed(2)} €` : '—'}
                             </td>
