@@ -1,4 +1,4 @@
-import { useState, useRef, useContext } from 'react';
+import { useState, useRef, useContext, useEffect } from 'react';
 import axios from 'axios';
 import { AuthContext } from '../context/AuthContext';
 import AppShell from '../components/AppShell';
@@ -102,12 +102,45 @@ export default function ChronopostApp() {
   const [dragging, setDragging] = useState(false);
   const [loading, setLoading] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveState, setSaveState] = useState(null); // null | 'saved' | 'already'
   const [error, setError] = useState(null);
   const [result, setResult] = useState(null);
   const [tab, setTab] = useState('poids');
   const [searchOrder, setSearchOrder] = useState('');
   const [filterTab, setFilterTab] = useState('all'); // all | ok | ecart | return
   const [currentFile, setCurrentFile] = useState(null);
+  const [history, setHistory] = useState([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+
+  async function loadHistory() {
+    setHistoryLoading(true);
+    try {
+      const { data } = await axios.get(`${API_URL}/chronopost/history`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (data.success) setHistory(data.invoices);
+    } catch { /* silently fail */ }
+    finally { setHistoryLoading(false); }
+  }
+
+  useEffect(() => { loadHistory(); }, []);
+
+  async function handleSave() {
+    if (!result) return;
+    setSaving(true);
+    try {
+      const { data } = await axios.post(`${API_URL}/chronopost/save`, result, {
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      });
+      if (data.success) {
+        setSaveState(data.already_saved ? 'already' : 'saved');
+        if (!data.already_saved) loadHistory();
+      }
+    } catch (e) {
+      setError(e.response?.data?.error || 'Erreur lors de l\'enregistrement');
+    } finally { setSaving(false); }
+  }
 
   async function handleFile(file) {
     if (!file || file.type !== 'application/pdf') {
@@ -117,6 +150,7 @@ export default function ChronopostApp() {
     setCurrentFile(file);
     setError(null);
     setResult(null);
+    setSaveState(null);
     setLoading(true);
     try {
       const fd = new FormData();
@@ -280,19 +314,43 @@ export default function ChronopostApp() {
                   </span>
                 )}
               </div>
-              <button
-                onClick={handleExport}
-                disabled={exporting}
-                style={{
-                  background: C.primary, color: C.white,
-                  border: 'none', borderRadius: 8,
-                  padding: '9px 18px', fontWeight: 700,
-                  fontSize: 13.5, cursor: exporting ? 'wait' : 'pointer',
-                  opacity: exporting ? 0.7 : 1,
-                }}
-              >
-                {exporting ? '⏳ Export…' : '⬇️ Télécharger Excel'}
-              </button>
+              <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+                {/* Bouton Enregistrer */}
+                {saveState === 'saved' && (
+                  <span style={{ color: C.green, fontWeight: 700, fontSize: 13 }}>✓ Facture enregistrée</span>
+                )}
+                {saveState === 'already' && (
+                  <span style={{ color: C.greyT, fontSize: 13 }}>⚠ Déjà enregistrée</span>
+                )}
+                {saveState === null && (
+                  <button
+                    onClick={handleSave}
+                    disabled={saving}
+                    style={{
+                      background: C.green, color: C.white,
+                      border: 'none', borderRadius: 8,
+                      padding: '9px 18px', fontWeight: 700,
+                      fontSize: 13.5, cursor: saving ? 'wait' : 'pointer',
+                      opacity: saving ? 0.7 : 1,
+                    }}
+                  >
+                    {saving ? '⏳ Enregistrement…' : '💾 Enregistrer la facture'}
+                  </button>
+                )}
+                <button
+                  onClick={handleExport}
+                  disabled={exporting}
+                  style={{
+                    background: C.primary, color: C.white,
+                    border: 'none', borderRadius: 8,
+                    padding: '9px 18px', fontWeight: 700,
+                    fontSize: 13.5, cursor: exporting ? 'wait' : 'pointer',
+                    opacity: exporting ? 0.7 : 1,
+                  }}
+                >
+                  {exporting ? '⏳ Export…' : '⬇️ Télécharger Excel'}
+                </button>
+              </div>
             </div>
 
             {/* Stats cards */}
@@ -322,6 +380,7 @@ export default function ChronopostApp() {
                 <TabBtn label="Comparaison poids" active={tab === 'poids'} onClick={() => setTab('poids')} badge={orders.length} />
                 <TabBtn label="Suppléments colis" active={tab === 'suppléments'} onClick={() => setTab('suppléments')} badge={supplements.length} />
                 <TabBtn label="Charges globales" active={tab === 'global'} onClick={() => setTab('global')} badge={globalCharges.length} />
+                <TabBtn label="Historique" active={tab === 'historique'} onClick={() => setTab('historique')} badge={history.length} />
               </div>
 
               {/* ── TAB POIDS */}
@@ -525,8 +584,114 @@ export default function ChronopostApp() {
                   )}
                 </div>
               )}
+
+              {/* ── TAB HISTORIQUE */}
+              {tab === 'historique' && (
+                <div style={{ padding: 20 }}>
+                  <div style={{ marginBottom: 14, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <p style={{ margin: 0, color: C.greyT, fontSize: 13 }}>
+                      Factures Chronopost enregistrées — évolution des coûts transporteur.
+                    </p>
+                    <button onClick={loadHistory} style={{ background: 'none', border: `1px solid ${C.greyB}`, borderRadius: 6, padding: '5px 12px', fontSize: 12, cursor: 'pointer', color: C.greyT }}>
+                      ↻ Actualiser
+                    </button>
+                  </div>
+
+                  {historyLoading ? (
+                    <div style={{ textAlign: 'center', padding: 30, color: C.greyT }}>Chargement…</div>
+                  ) : history.length === 0 ? (
+                    <div style={{ textAlign: 'center', padding: 40, color: C.greyT }}>
+                      Aucune facture enregistrée. Analysez et sauvegardez votre première facture.
+                    </div>
+                  ) : (
+                    <div style={{ overflowX: 'auto' }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                        <thead>
+                          <tr style={{ background: C.grey }}>
+                            {['N° Facture', 'Date', 'Colis', 'Cmdés trouvées', 'Poids OK', 'Écarts', 'Total HT', 'Suppléments HT', 'Enregistrée le'].map(h => (
+                              <th key={h} style={{ padding: '10px 12px', textAlign: 'left', fontWeight: 700, color: C.dark, fontSize: 11.5, borderBottom: `2px solid ${C.greyB}`, whiteSpace: 'nowrap' }}>{h}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {history.map((inv, i) => (
+                            <tr key={inv.id} style={{ background: i % 2 === 0 ? C.white : C.grey, borderBottom: `1px solid ${C.greyB}` }}>
+                              <td style={{ padding: '9px 12px', fontWeight: 700, color: C.primary }}>{inv.invoice_number}</td>
+                              <td style={{ padding: '9px 12px', color: C.greyT }}>{inv.invoice_date || '—'}</td>
+                              <td style={{ padding: '9px 12px', textAlign: 'center' }}>{inv.total_parcels}</td>
+                              <td style={{ padding: '9px 12px', textAlign: 'center', color: C.accent }}>{inv.parcels_matched}</td>
+                              <td style={{ padding: '9px 12px', textAlign: 'center', color: C.green }}>{inv.weight_ok ?? '—'}</td>
+                              <td style={{ padding: '9px 12px', textAlign: 'center', color: inv.weight_ecart > 0 ? C.red : C.dark }}>{inv.weight_ecart ?? '—'}</td>
+                              <td style={{ padding: '9px 12px', fontWeight: 600 }}>{inv.total_ht != null ? `${parseFloat(inv.total_ht).toFixed(2)} €` : '—'}</td>
+                              <td style={{ padding: '9px 12px', color: C.orange }}>{inv.supplements_total != null ? `${parseFloat(inv.supplements_total).toFixed(2)} €` : '—'}</td>
+                              <td style={{ padding: '9px 12px', color: C.greyT, fontSize: 12 }}>
+                                {new Date(inv.created_at).toLocaleDateString('fr-FR')}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                        <tfoot>
+                          <tr style={{ borderTop: `2px solid ${C.greyB}`, background: C.grey }}>
+                            <td style={{ padding: '10px 12px', fontWeight: 700 }}>TOTAL ({history.length} factures)</td>
+                            <td colSpan={5} />
+                            <td style={{ padding: '10px 12px', fontWeight: 800, color: C.primary }}>
+                              {history.reduce((s, inv) => s + parseFloat(inv.total_ht || 0), 0).toFixed(2)} €
+                            </td>
+                            <td style={{ padding: '10px 12px', fontWeight: 700, color: C.orange }}>
+                              {history.reduce((s, inv) => s + parseFloat(inv.supplements_total || 0), 0).toFixed(2)} €
+                            </td>
+                            <td />
+                          </tr>
+                        </tfoot>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </>
+        )}
+
+        {/* Historique accessible même sans facture chargée */}
+        {!result && (
+          <div style={{ background: C.white, borderRadius: 12, border: `1px solid ${C.greyB}`, marginTop: 8 }}>
+            <div style={{ borderBottom: `1px solid ${C.greyB}`, padding: '0 16px' }}>
+              <TabBtn label="Historique des factures" active={true} onClick={() => {}} badge={history.length} />
+            </div>
+            <div style={{ padding: 20 }}>
+              {historyLoading ? (
+                <div style={{ textAlign: 'center', padding: 20, color: C.greyT }}>Chargement…</div>
+              ) : history.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: 30, color: C.greyT }}>
+                  Aucune facture enregistrée pour l'instant.
+                </div>
+              ) : (
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                    <thead>
+                      <tr style={{ background: C.grey }}>
+                        {['N° Facture', 'Date', 'Colis', 'Total HT', 'Suppléments HT', 'Enregistrée le'].map(h => (
+                          <th key={h} style={{ padding: '9px 12px', textAlign: 'left', fontWeight: 700, color: C.dark, fontSize: 11.5, borderBottom: `2px solid ${C.greyB}` }}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {history.map((inv, i) => (
+                        <tr key={inv.id} style={{ background: i % 2 === 0 ? C.white : C.grey, borderBottom: `1px solid ${C.greyB}` }}>
+                          <td style={{ padding: '8px 12px', fontWeight: 700, color: C.primary }}>{inv.invoice_number}</td>
+                          <td style={{ padding: '8px 12px', color: C.greyT }}>{inv.invoice_date || '—'}</td>
+                          <td style={{ padding: '8px 12px', textAlign: 'center' }}>{inv.total_parcels}</td>
+                          <td style={{ padding: '8px 12px', fontWeight: 600 }}>{inv.total_ht != null ? `${parseFloat(inv.total_ht).toFixed(2)} €` : '—'}</td>
+                          <td style={{ padding: '8px 12px', color: C.orange }}>{inv.supplements_total != null ? `${parseFloat(inv.supplements_total).toFixed(2)} €` : '—'}</td>
+                          <td style={{ padding: '8px 12px', color: C.greyT, fontSize: 12 }}>{new Date(inv.created_at).toLocaleDateString('fr-FR')}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </div>
         )}
       </div>
     </AppShell>

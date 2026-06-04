@@ -1,12 +1,12 @@
 const express = require('express');
 const router = express.Router();
-const chronopostController = require('../controllers/chronopostController');
+const c = require('../controllers/chronopostController');
 
-// POST /api/chronopost/analyze  — analyse le PDF et retourne le JSON
-router.post('/analyze', ...chronopostController.analyze);
-
-// POST /api/chronopost/export-excel  — génère et télécharge le fichier Excel
-router.post('/export-excel', ...chronopostController.exportExcel);
-router.post('/debug-text', ...chronopostController.debugText);
+router.post('/analyze',      ...c.analyze);
+router.post('/export-excel', ...c.exportExcel);
+router.post('/save',         c.saveInvoice);
+router.get('/history',       c.getHistory);
+router.get('/history/:id',   c.getInvoiceDetail);
+router.post('/debug-text',   ...c.debugText);
 
 module.exports = router;

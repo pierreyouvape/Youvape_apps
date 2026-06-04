@@ -481,6 +481,133 @@ exports.exportExcel = [
   },
 ];
 
+// POST /api/chronopost/save — enregistre une facture analysée en BDD
+exports.saveInvoice = async (req, res) => {
+  try {
+    const { invoiceNumber, invoiceDate, orders, supplements, globalCharges, stats } = req.body;
+
+    if (!invoiceNumber) return res.status(400).json({ success: false, error: 'invoiceNumber requis' });
+
+    // Vérifier si déjà enregistrée
+    const existing = await pool.query(
+      'SELECT id FROM carrier_invoices WHERE carrier = $1 AND invoice_number = $2',
+      ['chronopost', invoiceNumber]
+    );
+    if (existing.rows.length) {
+      return res.json({ success: true, already_saved: true, id: existing.rows[0].id });
+    }
+
+    const totalHt = (orders || []).reduce((s, o) => s + (o.amount_ht || 0), 0)
+                  + (supplements || []).reduce((s, x) => s + (x.amount_ht || 0), 0);
+    const gc = globalCharges || [];
+
+    // Insérer la facture
+    const invRes = await pool.query(`
+      INSERT INTO carrier_invoices
+        (carrier, invoice_number, invoice_date, total_parcels, parcels_matched,
+         total_ht, supplements_total, global_charges)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+      RETURNING id
+    `, [
+      'chronopost', invoiceNumber, invoiceDate || null,
+      stats?.total_orders || (orders||[]).length,
+      stats?.orders_with_bdd || (orders||[]).filter(o=>o.weight_bdd!==null).length,
+      totalHt,
+      gc.reduce((s,g) => s+(g.amount_ht||0), 0) + (supplements||[]).reduce((s,x)=>s+(x.amount_ht||0),0),
+      JSON.stringify(gc),
+    ]);
+    const invoiceId = invRes.rows[0].id;
+
+    // Insérer les colis par batch
+    if (orders?.length) {
+      const vals = orders.map((o,i) => {
+        const b = i * 8;
+        return `($${b+1},$${b+2},$${b+3},$${b+4},$${b+5},$${b+6},$${b+7},$${b+8})`;
+      }).join(',');
+      const params = orders.flatMap(o => [
+        invoiceId, o.tracking || null, o.order_id || null, o.date || null,
+        o.weight_chrono ?? null, o.weight_bdd ?? null, o.diff_g ?? null,
+        o.amount_ht ?? null,
+      ]);
+      await pool.query(
+        `INSERT INTO carrier_invoice_parcels (invoice_id,tracking,order_id,date,weight_carrier,weight_bdd,diff_g,amount_ht) VALUES ${vals}`,
+        params
+      );
+    }
+
+    // Insérer les suppléments par batch
+    if (supplements?.length) {
+      const vals = supplements.map((s,i) => {
+        const b = i * 4;
+        return `($${b+1},$${b+2},$${b+3},$${b+4})`;
+      }).join(',');
+      const params = supplements.flatMap(s => [
+        invoiceId, s.related_tracking || null,
+        s.related_order_id || null, s.description || null,
+      ]);
+      await pool.query(
+        `INSERT INTO carrier_invoice_supplements (invoice_id,tracking,order_id,description) VALUES ${vals}`,
+        params
+      );
+    }
+
+    res.json({ success: true, already_saved: false, id: invoiceId });
+  } catch (err) {
+    console.error('[Chronopost] saveInvoice error:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+};
+
+// GET /api/chronopost/history — liste des factures enregistrées
+exports.getHistory = async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT
+        ci.id, ci.invoice_number, ci.invoice_date, ci.total_parcels,
+        ci.parcels_matched, ci.total_ht, ci.supplements_total,
+        ci.created_at,
+        COUNT(DISTINCT cip.id) AS parcel_count,
+        SUM(CASE WHEN cip.diff_g IS NOT NULL AND ABS(cip.diff_g) <= 20 THEN 1 ELSE 0 END) AS weight_ok,
+        SUM(CASE WHEN cip.diff_g IS NOT NULL AND ABS(cip.diff_g) > 200 THEN 1 ELSE 0 END) AS weight_ecart
+      FROM carrier_invoices ci
+      LEFT JOIN carrier_invoice_parcels cip ON cip.invoice_id = ci.id
+      WHERE ci.carrier = 'chronopost'
+      GROUP BY ci.id
+      ORDER BY ci.created_at DESC
+      LIMIT 50
+    `);
+    res.json({ success: true, invoices: result.rows });
+  } catch (err) {
+    console.error('[Chronopost] getHistory error:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+};
+
+// GET /api/chronopost/history/:id — détail d'une facture enregistrée
+exports.getInvoiceDetail = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const inv = await pool.query('SELECT * FROM carrier_invoices WHERE id=$1 AND carrier=$2', [id,'chronopost']);
+    if (!inv.rows.length) return res.status(404).json({ success: false, error: 'Facture non trouvée' });
+
+    const parcels = await pool.query(
+      'SELECT * FROM carrier_invoice_parcels WHERE invoice_id=$1 ORDER BY id', [id]
+    );
+    const suppl = await pool.query(
+      'SELECT * FROM carrier_invoice_supplements WHERE invoice_id=$1 ORDER BY id', [id]
+    );
+
+    res.json({
+      success: true,
+      invoice: inv.rows[0],
+      parcels: parcels.rows,
+      supplements: suppl.rows,
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+};
+
 // POST /api/chronopost/debug-text — retourne le texte brut extrait du PDF (debug)
 exports.debugText = [
   upload.single('pdf'),
