@@ -542,9 +542,9 @@ exports.saveInvoice = [
       }
 
       if (supplements?.length) {
-        const vals = supplements.map((s,i) => { const b=i*4; return `($${b+1},$${b+2},$${b+3},$${b+4})`; }).join(',');
-        const params = supplements.flatMap(s => [invoiceId, s.related_tracking||null, s.related_order_id||null, s.description||null]);
-        await pool.query(`INSERT INTO carrier_invoice_supplements (invoice_id,tracking,order_id,description) VALUES ${vals}`, params);
+        const vals = supplements.map((s,i) => { const b=i*5; return `($${b+1},$${b+2},$${b+3},$${b+4},$${b+5})`; }).join(',');
+        const params = supplements.flatMap(s => [invoiceId, s.related_tracking||null, s.related_order_id||null, s.description||null, s.amount_ht??null]);
+        await pool.query(`INSERT INTO carrier_invoice_supplements (invoice_id,tracking,order_id,description,amount_ht) VALUES ${vals}`, params);
       }
 
       res.json({ success: true, already_saved: false, id: invoiceId });
