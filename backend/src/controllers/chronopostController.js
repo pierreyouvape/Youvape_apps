@@ -36,7 +36,8 @@ function parseChronopostPdf(text) {
 
   // Per-order supplement patterns
   const SUPPLEMENT_PATTERNS = [
-    { re: /Traitement Retour expéditeur/i, label: 'Retour expéditeur' },
+    { re: /Traitement Retour exp[eé]diteur/i, label: 'Retour expéditeur' },
+    { re: /Supp(?:lément)?\s+Retour\s+Exp[eé]diteur/i, label: 'Retour expéditeur international' },
     { re: /Supplément Zones? Difficiles?/i, label: 'Zone difficile d\'accès' },
     { re: /Supplément manutention/i, label: 'Supplément manutention' },
     { re: /[ÉE]tiquette non conforme/i, label: 'Étiquette non conforme' },
