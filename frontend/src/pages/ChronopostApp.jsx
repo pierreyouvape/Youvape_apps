@@ -317,6 +317,26 @@ export default function ChronopostApp() {
   const countOk    = orders.filter(o => o.diff_g !== null && Math.abs(o.diff_g) <= 20).length;
   const countRet   = orders.filter(o => o.is_return).length;
 
+  // ── Calcul tarif réel par colis
+  // Pro-rata = (frais gestion + éco-responsable + surcharge carburant) / nb colis
+  const proRataTotal = globalCharges
+    .filter(g => /frais de gestion|eco|carburant/i.test(g.description))
+    .reduce((s, g) => s + (g.amount_ht || 0), 0);
+  const proRataPerParcel = orders.length > 0 ? proRataTotal / orders.length : 0;
+
+  // Map supplements par tracking (somme des suppléments d'un colis)
+  const supplByTracking = {};
+  for (const s of supplements) {
+    const key = s.related_tracking || s.tracking;
+    if (key) supplByTracking[key] = (supplByTracking[key] || 0) + (s.amount_ht || s.description_amount || 0);
+  }
+
+  function getTarif(order) {
+    const base  = order.amount_ht || 0;
+    const suppl = supplByTracking[order.tracking] || 0;
+    return base + suppl + proRataPerParcel;
+  }
+
   return (
     <AppShell currentPath="/chronopost">
       <div style={{ maxWidth: 1280, margin: '0 auto', padding: '24px 20px' }}>
@@ -519,7 +539,7 @@ export default function ChronopostApp() {
                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                       <thead>
                         <tr style={{ background: C.grey }}>
-                          {['N° Commande', 'Date', 'N° Suivi', 'Poids BDD', 'Poids Chrono', 'Écart', 'Statut'].map(h => (
+                          {['N° Commande', 'Date', 'N° Suivi', 'Poids BDD', 'Poids Chrono', 'Écart', 'Tarif réel HT', 'Statut'].map(h => (
                             <th key={h} style={{
                               padding: '10px 12px', textAlign: 'left',
                               fontWeight: 700, color: C.dark, fontSize: 12,
@@ -558,6 +578,11 @@ export default function ChronopostApp() {
                             }}>
                               {fmtDiff(o.diff_g)}
                             </td>
+                            <td style={{ padding: '9px 12px', fontWeight: 700, color: C.primary }}
+                              title={`Base: ${(o.amount_ht||0).toFixed(2)}€ + Suppl: ${(supplByTracking[o.tracking]||0).toFixed(2)}€ + Pro-rata: ${proRataPerParcel.toFixed(2)}€`}
+                            >
+                              {o.amount_ht != null ? `${getTarif(o).toFixed(2)} €` : '—'}
+                            </td>
                             <td style={{ padding: '9px 12px' }}>
                               {o.is_return && <Badge label="Retour" color={C.orange} bg={C.orangeL} />}
                               {o.weight_corrected && <Badge label="Corrigé" color={C.accent} bg={C.accentL} />}
@@ -570,7 +595,14 @@ export default function ChronopostApp() {
                       </tbody>
                     </table>
                   </div>
-                  <div style={{ color: C.greyT, fontSize: 12, marginTop: 10 }}>
+                  {proRataTotal > 0 && (
+                    <div style={{ marginTop: 10, fontSize: 12, color: C.greyT }}>
+                      ℹ️ Pro-rata global : <strong>{proRataTotal.toFixed(2)} €</strong> réparti sur {orders.length} colis
+                      = <strong>{proRataPerParcel.toFixed(3)} €/colis</strong>
+                      {' '}(Frais gestion + Éco-responsable + Surcharge carburant)
+                    </div>
+                  )}
+                  <div style={{ color: C.greyT, fontSize: 12, marginTop: 6 }}>
                     {filteredOrders.length} ligne(s) affichée(s) sur {orders.length}
                   </div>
                 </div>
