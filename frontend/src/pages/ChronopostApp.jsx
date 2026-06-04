@@ -397,7 +397,8 @@ export default function ChronopostApp() {
   const supplByTracking = {};      // total pour affichage tooltip
   const supplBaseByTracking = {};  // dans la base carburant (retour, zone, manutention…)
   const supplFlatByTracking = {};  // hors base carburant (réacheminement)
-  const FLAT_SUPPL_RE = /réacheminement/i;
+  // Suppléments plats (hors base carburant) : pénalités administratives
+  const FLAT_SUPPL_RE = /réacheminement|[eé]tiquette\s+non\s+conforme/i;
 
   for (const s of supplements) {
     const key = s.related_tracking || s.tracking;
