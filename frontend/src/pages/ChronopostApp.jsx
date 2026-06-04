@@ -114,6 +114,7 @@ export default function ChronopostApp() {
   const [historyLoading, setHistoryLoading] = useState(false);
   const [tooltip, setTooltip] = useState(null); // {text, x, y}
   const [applying, setApplying] = useState(false);
+  const [applyProgress, setApplyProgress] = useState(0); // 0-100
   const [applyResult, setApplyResult] = useState(null); // {updated, skipped}
 
   async function loadHistory() {
@@ -230,15 +231,30 @@ export default function ChronopostApp() {
     );
     if (!confirm) return;
 
-    setApplying(true); setApplyResult(null);
+    setApplying(true); setApplyResult(null); setApplyProgress(5);
+
+    // Animation de progression pendant la requête
+    let prog = 5;
+    const timer = setInterval(() => {
+      prog = prog < 85 ? prog + Math.random() * 8 : prog + 0.5;
+      setApplyProgress(Math.min(prog, 90));
+    }, 300);
+
     try {
       const tariffs = matchedOrders.map(o => ({ order_id: o.order_id, tarif: getTarif(o) }));
       const { data } = await axios.post(`${API_URL}/chronopost/apply-tariffs`, { tariffs }, {
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        timeout: 60000,
       });
+      clearInterval(timer);
+      setApplyProgress(100);
       if (data.success) setApplyResult(data);
       else setError(data.error);
-    } catch (e) { setError(e.response?.data?.error || 'Erreur lors de la mise à jour'); }
+    } catch (e) {
+      clearInterval(timer);
+      setApplyProgress(0);
+      setError(e.response?.data?.error || 'Délai dépassé — réessaie, la requête est optimisée maintenant');
+    }
     finally { setApplying(false); }
   }
 
@@ -528,20 +544,32 @@ export default function ChronopostApp() {
                     {applyResult.skipped > 0 && ` (${applyResult.skipped} ignorées)`}
                   </span>
                 ) : (
-                  <button
-                    onClick={handleApplyTariffs}
-                    disabled={applying || !orders.filter(o=>o.order_id && o.amount_ht!=null).length}
-                    title="Remplace le Coût livraison HT de chaque commande par le tarif réel calculé"
-                    style={{
-                      background: '#7C3AED', color: C.white,
-                      border: 'none', borderRadius: 8,
-                      padding: '9px 18px', fontWeight: 700,
-                      fontSize: 13.5, cursor: applying ? 'wait' : 'pointer',
-                      opacity: applying ? 0.7 : 1,
-                    }}
-                  >
-                    {applying ? '⏳ Mise à jour…' : '🔄 Appliquer les tarifs aux commandes'}
-                  </button>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 240 }}>
+                    <button
+                      onClick={handleApplyTariffs}
+                      disabled={applying || !orders.filter(o=>o.order_id && o.amount_ht!=null).length}
+                      title="Remplace le Coût livraison HT de chaque commande par le tarif réel calculé"
+                      style={{
+                        background: '#7C3AED', color: C.white,
+                        border: 'none', borderRadius: 8,
+                        padding: '9px 18px', fontWeight: 700,
+                        fontSize: 13.5, cursor: applying ? 'wait' : 'pointer',
+                        opacity: applying ? 0.85 : 1, width: '100%',
+                      }}
+                    >
+                      {applying ? `⏳ Mise à jour… ${Math.round(applyProgress)}%` : '🔄 Appliquer les tarifs aux commandes'}
+                    </button>
+                    {applying && (
+                      <div style={{ height: 6, background: C.greyB, borderRadius: 4, overflow: 'hidden' }}>
+                        <div style={{
+                          height: '100%', borderRadius: 4,
+                          background: 'linear-gradient(90deg, #7C3AED, #A78BFA)',
+                          width: `${applyProgress}%`,
+                          transition: 'width 0.3s ease',
+                        }} />
+                      </div>
+                    )}
+                  </div>
                 )}
                 <button
                   onClick={handleExport}

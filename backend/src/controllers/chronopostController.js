@@ -556,29 +556,34 @@ exports.saveInvoice = [
 ];
 
 // DELETE /api/chronopost/history/:id — supprimer une facture enregistrée
-// POST /api/chronopost/apply-tariffs — met à jour shipping_cost_calculated pour chaque commande
+// POST /api/chronopost/apply-tariffs — met à jour shipping_cost_calculated en une seule requête batch
 exports.applyTariffs = async (req, res) => {
   try {
-    // Body: { tariffs: [{order_id, tarif}] }
     const { tariffs } = req.body;
     if (!Array.isArray(tariffs) || !tariffs.length) {
       return res.status(400).json({ success: false, error: 'tariffs[] requis' });
     }
 
-    let updated = 0;
-    let skipped = 0;
+    // Filtrer les entrées valides
+    const valid = tariffs.filter(t => t.order_id && t.tarif != null);
+    const skipped = tariffs.length - valid.length;
 
-    for (const { order_id, tarif } of tariffs) {
-      if (!order_id || tarif == null) { skipped++; continue; }
-      const result = await pool.query(
-        'UPDATE orders SET shipping_cost_calculated = $1 WHERE wp_order_id::int = $2',
-        [parseFloat(tarif.toFixed(4)), order_id]
-      );
-      if (result.rowCount > 0) updated++;
-      else skipped++;
-    }
+    if (!valid.length) return res.json({ success: true, updated: 0, skipped });
 
-    res.json({ success: true, updated, skipped });
+    // Une seule requête batch avec VALUES multiples
+    // UPDATE orders SET shipping_cost_calculated = c.tarif FROM (VALUES ...) AS c(order_id, tarif)
+    // WHERE orders.wp_order_id::int = c.order_id
+    const valueRows = valid.map((_, i) => `($${i * 2 + 1}::int, $${i * 2 + 2}::numeric)`).join(', ');
+    const params = valid.flatMap(t => [t.order_id, parseFloat(t.tarif.toFixed(4))]);
+
+    const result = await pool.query(`
+      UPDATE orders
+      SET shipping_cost_calculated = c.tarif
+      FROM (VALUES ${valueRows}) AS c(order_id, tarif)
+      WHERE orders.wp_order_id::int = c.order_id
+    `, params);
+
+    res.json({ success: true, updated: result.rowCount, skipped });
   } catch (err) {
     console.error('[Chronopost] applyTariffs error:', err);
     res.status(500).json({ success: false, error: err.message });
