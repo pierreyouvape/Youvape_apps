@@ -393,24 +393,35 @@ export default function ChronopostApp() {
   // Total pro-rata pour l'encart récap (toutes charges globales)
   const proRataTotal = globalCharges.reduce((s, g) => s + (g.amount_ht || 0), 0);
 
-  // Map supplements par tracking
-  const supplByTracking = {};
+  // Map supplements par tracking — séparation base carburant / flat (réacheminement)
+  const supplByTracking = {};      // total pour affichage tooltip
+  const supplBaseByTracking = {};  // dans la base carburant (retour, zone, manutention…)
+  const supplFlatByTracking = {};  // hors base carburant (réacheminement)
+  const FLAT_SUPPL_RE = /réacheminement/i;
+
   for (const s of supplements) {
     const key = s.related_tracking || s.tracking;
-    if (key) supplByTracking[key] = (supplByTracking[key] || 0) + (s.amount_ht || 0);
+    if (!key) continue;
+    const amt = s.amount_ht || 0;
+    const label = s.description || s.label || '';
+    supplByTracking[key] = (supplByTracking[key] || 0) + amt;
+    if (FLAT_SUPPL_RE.test(label)) {
+      supplFlatByTracking[key] = (supplFlatByTracking[key] || 0) + amt;
+    } else {
+      supplBaseByTracking[key] = (supplBaseByTracking[key] || 0) + amt;
+    }
   }
 
   function getTarif(order) {
     if (order.amount_ht == null) return null;
-    const base  = order.amount_ht;
-    const suppl = supplByTracking[order.tracking] || 0;
+    const base      = order.amount_ht;
+    const supplBase = supplBaseByTracking[order.tracking] || 0; // soumis carburant
+    const supplFlat = supplFlatByTracking[order.tracking] || 0; // hors carburant
 
     if (order.is_return) {
-      // Retours : pas de redevance/éco/gestion, carburant s'applique quand même
-      return (base + suppl) * (1 + carburantRate);
+      return (base + supplBase) * (1 + carburantRate) + supplFlat;
     }
-    // Colis normal : (base + suppl + redevance) × (1 + carburant%) + éco + gestion/nbSûreté
-    return (base + suppl + redevanceUnit) * (1 + carburantRate) + ecoUnit + (fraisGestionTotal / nbSûreté);
+    return (base + supplBase + redevanceUnit) * (1 + carburantRate) + ecoUnit + (fraisGestionTotal / nbSûreté) + supplFlat;
   }
 
   const proRataPerParcel = 0; // conservé pour compatibilité affichage
