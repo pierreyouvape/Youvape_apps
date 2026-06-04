@@ -8,6 +8,7 @@ router.post('/save',              ...c.saveInvoice);
 router.get('/history',            c.getHistory);
 router.get('/history/:id',        c.getInvoiceDetail);
 router.get('/history/:id/pdf',    c.downloadPdf);
+router.delete('/history/:id',     c.deleteInvoice);
 router.post('/debug-text',   ...c.debugText);
 
 module.exports = router;

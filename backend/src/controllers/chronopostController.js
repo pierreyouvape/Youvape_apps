@@ -555,6 +555,21 @@ exports.saveInvoice = [
   },
 ];
 
+// DELETE /api/chronopost/history/:id — supprimer une facture enregistrée
+exports.deleteInvoice = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const result = await pool.query(
+      'DELETE FROM carrier_invoices WHERE id=$1 AND carrier=$2 RETURNING invoice_number',
+      [id, 'chronopost']
+    );
+    if (!result.rows.length) return res.status(404).json({ success: false, error: 'Facture non trouvée' });
+    res.json({ success: true, deleted: result.rows[0].invoice_number });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+};
+
 // GET /api/chronopost/history/:id/pdf — télécharger le PDF d'une facture
 exports.downloadPdf = async (req, res) => {
   try {

@@ -200,6 +200,23 @@ export default function ChronopostApp() {
     } finally { setSaving(false); }
   }
 
+  async function handleDeleteInvoice(inv, e) {
+    e.stopPropagation();
+    if (!window.confirm(`Supprimer la facture ${inv.invoice_number} ?\nElle pourra être réimportée ensuite.`)) return;
+    try {
+      await axios.delete(`${API_URL}/chronopost/history/${inv.id}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      // Si la facture affichée est celle supprimée, réinitialiser
+      if (result?.invoiceNumber === inv.invoice_number) {
+        setResult(null); setSaveState(null); setCurrentFile(null);
+      }
+      loadHistory();
+    } catch (e) {
+      setError('Erreur lors de la suppression');
+    }
+  }
+
   function handleDownloadPdf(inv, e) {
     e.stopPropagation(); // ne pas déclencher le clic de ligne
     const a = document.createElement('a');
@@ -718,12 +735,9 @@ export default function ChronopostApp() {
                               <td style={{ padding: '9px 12px', color: C.greyT, fontSize: 12 }}>
                                 {new Date(inv.created_at).toLocaleDateString('fr-FR')}
                               </td>
-                              <td style={{ padding: '9px 8px', textAlign: 'center' }}>
-                                <button
-                                  onClick={e => handleDownloadPdf(inv, e)}
-                                  title="Télécharger le PDF"
-                                  style={{ background: 'none', border: `1px solid ${C.greyB}`, borderRadius: 6, padding: '4px 10px', cursor: 'pointer', fontSize: 14, color: C.greyT }}
-                                >⬇️</button>
+                              <td style={{ padding: '9px 8px', textAlign: 'center', whiteSpace: 'nowrap' }}>
+                                <button onClick={e => handleDownloadPdf(inv, e)} title="Télécharger le PDF" style={{ background: 'none', border: `1px solid ${C.greyB}`, borderRadius: 6, padding: '4px 8px', cursor: 'pointer', fontSize: 14, marginRight: 4 }}>⬇️</button>
+                                <button onClick={e => handleDeleteInvoice(inv, e)} title="Supprimer la facture" style={{ background: 'none', border: `1px solid #FECACA`, borderRadius: 6, padding: '4px 8px', cursor: 'pointer', fontSize: 14, color: C.red }}>🗑️</button>
                               </td>
                             </tr>
                           ))}
@@ -787,8 +801,9 @@ export default function ChronopostApp() {
                           <td style={{ padding: '8px 12px', fontWeight: 600 }}>{inv.total_ht != null ? `${parseFloat(inv.total_ht).toFixed(2)} €` : '—'}</td>
                           <td style={{ padding: '8px 12px', color: C.orange }}>{inv.supplements_total != null ? `${parseFloat(inv.supplements_total).toFixed(2)} €` : '—'}</td>
                           <td style={{ padding: '8px 12px', color: C.greyT, fontSize: 12 }}>{new Date(inv.created_at).toLocaleDateString('fr-FR')}</td>
-                          <td style={{ padding: '8px 8px', textAlign: 'center' }}>
-                            <button onClick={e => handleDownloadPdf(inv, e)} title="Télécharger le PDF" style={{ background: 'none', border: `1px solid ${C.greyB}`, borderRadius: 6, padding: '3px 8px', cursor: 'pointer', fontSize: 13, color: C.greyT }}>⬇️</button>
+                          <td style={{ padding: '8px 8px', textAlign: 'center', whiteSpace: 'nowrap' }}>
+                            <button onClick={e => handleDownloadPdf(inv, e)} title="Télécharger le PDF" style={{ background: 'none', border: `1px solid ${C.greyB}`, borderRadius: 6, padding: '3px 7px', cursor: 'pointer', fontSize: 13, marginRight: 4 }}>⬇️</button>
+                            <button onClick={e => handleDeleteInvoice(inv, e)} title="Supprimer" style={{ background: 'none', border: `1px solid #FECACA`, borderRadius: 6, padding: '3px 7px', cursor: 'pointer', fontSize: 13, color: C.red }}>🗑️</button>
                           </td>
                         </tr>
                       ))}
