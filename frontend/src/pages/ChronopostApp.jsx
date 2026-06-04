@@ -320,7 +320,7 @@ export default function ChronopostApp() {
   // ── Calcul tarif réel par colis
   // Pro-rata = (frais gestion + éco-responsable + surcharge carburant) / nb colis
   const proRataTotal = globalCharges
-    .filter(g => /frais de gestion|eco|carburant/i.test(g.description))
+    .filter(g => /frais de gestion|eco|carburant|redevance/i.test(g.description))
     .reduce((s, g) => s + (g.amount_ht || 0), 0);
   const proRataPerParcel = orders.length > 0 ? proRataTotal / orders.length : 0;
 
@@ -547,7 +547,7 @@ export default function ChronopostApp() {
                             {ecart >= 0 ? '+' : ''}{ecart.toFixed(2)} €
                           </div>
                           <div style={{ fontSize: 10, color: C.greyT, marginTop: 2 }}>
-                            {matchOk ? '✓ Correspond' : `${ecartPct}% — charges non pro-ratisées (ex: redevance sûreté)`}
+                            {matchOk ? '✓ Correspond' : `${ecartPct}% — charges non pro-ratisées`}
                           </div>
                         </div>
                         {proRataTotal > 0 && (
