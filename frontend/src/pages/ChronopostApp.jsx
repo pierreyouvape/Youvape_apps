@@ -112,6 +112,7 @@ export default function ChronopostApp() {
   const [currentFile, setCurrentFile] = useState(null);
   const [history, setHistory] = useState([]);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [tooltip, setTooltip] = useState(null); // {text, x, y}
 
   async function loadHistory() {
     setHistoryLoading(true);
@@ -665,12 +666,17 @@ export default function ChronopostApp() {
                             }}>
                               {fmtDiff(o.diff_g)}
                             </td>
-                            <td style={{ padding: '9px 12px', fontWeight: 700, color: C.primary }}
-                              title={o.amount_ht != null ? (
-                              o.is_return
-                                ? `Retour: (${o.amount_ht.toFixed(2)}€ + ${(supplByTracking[o.tracking]||0).toFixed(2)}€ suppl) × ${(1+carburantRate).toFixed(4)}`
-                                : `(${o.amount_ht.toFixed(2)}€ + ${(supplByTracking[o.tracking]||0).toFixed(2)}€ suppl + ${redevanceUnit.toFixed(2)}€ rdev) × ${(1+carburantRate).toFixed(4)} + ${ecoUnit.toFixed(2)}€ éco + ${(fraisGestionTotal/nbSûreté).toFixed(3)}€ gest`
-                            ) : ''}
+                            <td
+                              style={{ padding: '9px 12px', fontWeight: 700, color: C.primary, cursor: 'help', position: 'relative' }}
+                              onMouseEnter={e => {
+                                if (o.amount_ht == null) return;
+                                const txt = o.is_return
+                                  ? `Retour : (${o.amount_ht.toFixed(2)} + ${(supplByTracking[o.tracking]||0).toFixed(2)} suppl) × ${(1+carburantRate).toFixed(4)}`
+                                  : `(${o.amount_ht.toFixed(2)} + ${(supplByTracking[o.tracking]||0).toFixed(2)} suppl + ${redevanceUnit.toFixed(2)} rdev) × ${(1+carburantRate).toFixed(4)} + ${ecoUnit.toFixed(2)} éco + ${(fraisGestionTotal/nbSûreté).toFixed(3)} gest`;
+                                const r = e.currentTarget.getBoundingClientRect();
+                                setTooltip({ text: txt, x: r.left, y: r.bottom + 6 });
+                              }}
+                              onMouseLeave={() => setTooltip(null)}
                             >
                               {o.amount_ht != null ? `${getTarif(o).toFixed(2)} €` : '—'}
                             </td>
@@ -931,6 +937,20 @@ export default function ChronopostApp() {
           </div>
         )}
       </div>
+
+      {/* Tooltip flottant */}
+      {tooltip && (
+        <div style={{
+          position: 'fixed', left: tooltip.x, top: tooltip.y, zIndex: 9999,
+          background: C.dark, color: C.white, borderRadius: 8,
+          padding: '8px 12px', fontSize: 12.5, fontWeight: 500,
+          maxWidth: 420, boxShadow: '0 4px 16px rgba(0,0,0,0.2)',
+          pointerEvents: 'none', whiteSpace: 'pre-wrap',
+          fontFamily: 'monospace',
+        }}>
+          {tooltip.text}
+        </div>
+      )}
     </AppShell>
   );
 }
