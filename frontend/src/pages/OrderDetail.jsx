@@ -140,13 +140,14 @@ function TotalLine({ label, value, color, bold, separator }) {
   );
 }
 
-function MarginRow({ label, value, bold }) {
+function MarginRow({ label, value, bold, style: extraStyle }) {
   return (
     <div style={{
       display: 'flex', justifyContent: 'space-between', alignItems: 'baseline',
       padding: '7px 0',
       borderTop: bold ? `1px solid ${C.grisCL}` : 'none',
       marginTop: bold ? 6 : 0,
+      ...extraStyle,
     }}>
       <span style={{ fontSize: 12.5, fontWeight: bold ? 800 : 600, color: bold ? C.grisTF : C.grisF }}>{label}</span>
       <span style={{
@@ -584,7 +585,14 @@ const OrderDetail = () => {
                 <MarginRow label="Coût produits HT"  value={fmt(totalCost)} />
                 <MarginRow label="Coût livraison HT" value={shippingCostCalculated != null ? fmt(shippingCostCalculated) : '—'} />
                 <MarginRow label="Coût paiement"     value={paymentCostCalculated  != null ? fmt(paymentCostCalculated)  : '—'} />
-                <MarginRow label="Marge brute"        value={margin != null ? fmt(margin) : '—'} bold />
+                {hasAllCosts && (
+                  <MarginRow
+                    label="Total coût"
+                    value={fmt(totalCost + shippingCostCalculated + paymentCostCalculated)}
+                    style={{ borderTop: '1px solid #E2E8EE', paddingTop: 6, marginTop: 2 }}
+                  />
+                )}
+                <MarginRow label="Marge brute" value={margin != null ? fmt(margin) : '—'} bold />
                 {margin != null && orderTotalHT > 0 && (
                   <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', fontSize: 12, color: C.grisF }}>
                     <span>Taux de marge</span>
