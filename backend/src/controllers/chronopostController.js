@@ -556,6 +556,35 @@ exports.saveInvoice = [
 ];
 
 // DELETE /api/chronopost/history/:id — supprimer une facture enregistrée
+// POST /api/chronopost/apply-tariffs — met à jour shipping_cost_calculated pour chaque commande
+exports.applyTariffs = async (req, res) => {
+  try {
+    // Body: { tariffs: [{order_id, tarif}] }
+    const { tariffs } = req.body;
+    if (!Array.isArray(tariffs) || !tariffs.length) {
+      return res.status(400).json({ success: false, error: 'tariffs[] requis' });
+    }
+
+    let updated = 0;
+    let skipped = 0;
+
+    for (const { order_id, tarif } of tariffs) {
+      if (!order_id || tarif == null) { skipped++; continue; }
+      const result = await pool.query(
+        'UPDATE orders SET shipping_cost_calculated = $1 WHERE wp_order_id::int = $2',
+        [parseFloat(tarif.toFixed(4)), order_id]
+      );
+      if (result.rowCount > 0) updated++;
+      else skipped++;
+    }
+
+    res.json({ success: true, updated, skipped });
+  } catch (err) {
+    console.error('[Chronopost] applyTariffs error:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+};
+
 exports.deleteInvoice = async (req, res) => {
   try {
     const { id } = req.params;

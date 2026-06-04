@@ -113,6 +113,8 @@ export default function ChronopostApp() {
   const [history, setHistory] = useState([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [tooltip, setTooltip] = useState(null); // {text, x, y}
+  const [applying, setApplying] = useState(false);
+  const [applyResult, setApplyResult] = useState(null); // {updated, skipped}
 
   async function loadHistory() {
     setHistoryLoading(true);
@@ -219,6 +221,27 @@ export default function ChronopostApp() {
     }
   }
 
+  async function handleApplyTariffs() {
+    const matchedOrders = orders.filter(o => o.order_id && o.amount_ht != null);
+    if (!matchedOrders.length) { setError('Aucune commande avec un tarif calculé.'); return; }
+
+    const confirm = window.confirm(
+      `Mettre à jour le coût livraison HT pour ${matchedOrders.length} commande(s) ?\n\nCette action remplace le coût actuel par le tarif réel calculé depuis la facture.`
+    );
+    if (!confirm) return;
+
+    setApplying(true); setApplyResult(null);
+    try {
+      const tariffs = matchedOrders.map(o => ({ order_id: o.order_id, tarif: getTarif(o) }));
+      const { data } = await axios.post(`${API_URL}/chronopost/apply-tariffs`, { tariffs }, {
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      });
+      if (data.success) setApplyResult(data);
+      else setError(data.error);
+    } catch (e) { setError(e.response?.data?.error || 'Erreur lors de la mise à jour'); }
+    finally { setApplying(false); }
+  }
+
   function handleDownloadPdf(inv, e) {
     e.stopPropagation(); // ne pas déclencher le clic de ligne
     const a = document.createElement('a');
@@ -247,6 +270,7 @@ export default function ChronopostApp() {
     setError(null);
     setResult(null);
     setSaveState(null);
+    setApplyResult(null);
     setLoading(true);
     try {
       const fd = new FormData();
@@ -496,6 +520,27 @@ export default function ChronopostApp() {
                     }}
                   >
                     {saving ? '⏳ Enregistrement…' : '💾 Enregistrer la facture'}
+                  </button>
+                )}
+                {applyResult ? (
+                  <span style={{ color: C.green, fontWeight: 700, fontSize: 13 }}>
+                    ✓ {applyResult.updated} commande(s) mise(s) à jour
+                    {applyResult.skipped > 0 && ` (${applyResult.skipped} ignorées)`}
+                  </span>
+                ) : (
+                  <button
+                    onClick={handleApplyTariffs}
+                    disabled={applying || !orders.filter(o=>o.order_id && o.amount_ht!=null).length}
+                    title="Remplace le Coût livraison HT de chaque commande par le tarif réel calculé"
+                    style={{
+                      background: '#7C3AED', color: C.white,
+                      border: 'none', borderRadius: 8,
+                      padding: '9px 18px', fontWeight: 700,
+                      fontSize: 13.5, cursor: applying ? 'wait' : 'pointer',
+                      opacity: applying ? 0.7 : 1,
+                    }}
+                  >
+                    {applying ? '⏳ Mise à jour…' : '🔄 Appliquer les tarifs aux commandes'}
                   </button>
                 )}
                 <button
