@@ -126,6 +126,59 @@ export default function ChronopostApp() {
 
   useEffect(() => { loadHistory(); }, []);
 
+  // Charge une facture depuis l'historique BDD et l'affiche comme si elle venait d'être analysée
+  async function handleLoadFromHistory(inv) {
+    setLoading(true);
+    setError(null);
+    setCurrentFile(null);
+    try {
+      const { data } = await axios.get(`${API_URL}/chronopost/history/${inv.id}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!data.success) throw new Error(data.error);
+      // Reconstruire le format result depuis les données BDD
+      const orders = (data.parcels || []).map(p => ({
+        tracking: p.tracking,
+        order_id: p.order_id,
+        date: p.date,
+        weight_chrono: p.weight_carrier != null ? parseFloat(p.weight_carrier) : null,
+        weight_bdd:    p.weight_bdd    != null ? parseFloat(p.weight_bdd)    : null,
+        diff_g:        p.diff_g,
+        amount_ht:     p.amount_ht != null ? parseFloat(p.amount_ht) : null,
+        is_return:     p.is_return,
+        weight_corrected: p.weight_corrected,
+      }));
+      const supplements = (data.supplements || []).map(s => ({
+        description:      s.description,
+        amount_ht:        s.amount_ht != null ? parseFloat(s.amount_ht) : null,
+        related_order_id: s.order_id,
+        related_tracking: s.tracking,
+      }));
+      const globalCharges = data.invoice.global_charges || [];
+      const rebuilt = {
+        success: true,
+        invoiceNumber: data.invoice.invoice_number,
+        invoiceDate:   data.invoice.invoice_date,
+        orders,
+        supplements,
+        globalCharges: Array.isArray(globalCharges) ? globalCharges : [],
+        stats: {
+          total_orders:      data.invoice.total_parcels,
+          orders_with_bdd:   data.invoice.parcels_matched,
+          returns:           orders.filter(o => o.is_return).length,
+          supplements_count: supplements.length,
+          supplements_total_ht: supplements.reduce((s,x) => s+(x.amount_ht||0), 0),
+        },
+        _fromHistory: true,
+      };
+      setResult(rebuilt);
+      setSaveState('already');
+      setTab('poids');
+    } catch (e) {
+      setError(e.message);
+    } finally { setLoading(false); }
+  }
+
   async function handleSave() {
     if (!result) return;
     setSaving(true);
@@ -161,6 +214,11 @@ export default function ChronopostApp() {
       if (!data.success) throw new Error(data.error || 'Erreur analyse');
       setResult(data);
       setTab('poids');
+      // Vérifier si cette facture est déjà enregistrée
+      if (data.invoiceNumber) {
+        const alreadySaved = history.some(h => h.invoice_number === data.invoiceNumber);
+        if (alreadySaved) setSaveState('already');
+      }
     } catch (e) {
       setError(e.response?.data?.error || e.message);
     } finally {
@@ -320,7 +378,11 @@ export default function ChronopostApp() {
                   <span style={{ color: C.green, fontWeight: 700, fontSize: 13 }}>✓ Facture enregistrée</span>
                 )}
                 {saveState === 'already' && (
-                  <span style={{ color: C.greyT, fontSize: 13 }}>⚠ Déjà enregistrée</span>
+                  <span style={{
+                    background: C.yellowL, color: '#92400E',
+                    border: '1px solid #F59E0B', borderRadius: 8,
+                    padding: '6px 14px', fontSize: 13, fontWeight: 600,
+                  }}>⚠ Facture déjà enregistrée en BDD</span>
                 )}
                 {saveState === null && (
                   <button
@@ -615,8 +677,13 @@ export default function ChronopostApp() {
                         </thead>
                         <tbody>
                           {history.map((inv, i) => (
-                            <tr key={inv.id} style={{ background: i % 2 === 0 ? C.white : C.grey, borderBottom: `1px solid ${C.greyB}` }}>
-                              <td style={{ padding: '9px 12px', fontWeight: 700, color: C.primary }}>{inv.invoice_number}</td>
+                            <tr key={inv.id}
+                              onClick={() => handleLoadFromHistory(inv)}
+                              style={{ background: i % 2 === 0 ? C.white : C.grey, borderBottom: `1px solid ${C.greyB}`, cursor: 'pointer', transition: 'background .1s' }}
+                              onMouseEnter={e => e.currentTarget.style.background = C.accentL}
+                              onMouseLeave={e => e.currentTarget.style.background = i % 2 === 0 ? C.white : C.grey}
+                            >
+                              <td style={{ padding: '9px 12px', fontWeight: 700, color: C.primary }}>🔍 {inv.invoice_number}</td>
                               <td style={{ padding: '9px 12px', color: C.greyT }}>{inv.invoice_date || '—'}</td>
                               <td style={{ padding: '9px 12px', textAlign: 'center' }}>{inv.total_parcels}</td>
                               <td style={{ padding: '9px 12px', textAlign: 'center', color: C.accent }}>{inv.parcels_matched}</td>
@@ -677,8 +744,13 @@ export default function ChronopostApp() {
                     </thead>
                     <tbody>
                       {history.map((inv, i) => (
-                        <tr key={inv.id} style={{ background: i % 2 === 0 ? C.white : C.grey, borderBottom: `1px solid ${C.greyB}` }}>
-                          <td style={{ padding: '8px 12px', fontWeight: 700, color: C.primary }}>{inv.invoice_number}</td>
+                        <tr key={inv.id}
+                          onClick={() => handleLoadFromHistory(inv)}
+                          style={{ background: i % 2 === 0 ? C.white : C.grey, borderBottom: `1px solid ${C.greyB}`, cursor: 'pointer' }}
+                          onMouseEnter={e => e.currentTarget.style.background = C.accentL}
+                          onMouseLeave={e => e.currentTarget.style.background = i % 2 === 0 ? C.white : C.grey}
+                        >
+                          <td style={{ padding: '8px 12px', fontWeight: 700, color: C.primary }}>🔍 {inv.invoice_number}</td>
                           <td style={{ padding: '8px 12px', color: C.greyT }}>{inv.invoice_date || '—'}</td>
                           <td style={{ padding: '8px 12px', textAlign: 'center' }}>{inv.total_parcels}</td>
                           <td style={{ padding: '8px 12px', fontWeight: 600 }}>{inv.total_ht != null ? `${parseFloat(inv.total_ht).toFixed(2)} €` : '—'}</td>
