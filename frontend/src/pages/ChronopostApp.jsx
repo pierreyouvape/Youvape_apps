@@ -183,8 +183,13 @@ export default function ChronopostApp() {
     if (!result) return;
     setSaving(true);
     try {
-      const { data } = await axios.post(`${API_URL}/chronopost/save`, result, {
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      // Envoyer PDF + données en multipart pour pouvoir retélécharger plus tard
+      const fd = new FormData();
+      fd.append('data', JSON.stringify(result));
+      if (currentFile) fd.append('pdf', currentFile);
+
+      const { data } = await axios.post(`${API_URL}/chronopost/save`, fd, {
+        headers: { Authorization: `Bearer ${token}` },
       });
       if (data.success) {
         setSaveState(data.already_saved ? 'already' : 'saved');
@@ -193,6 +198,25 @@ export default function ChronopostApp() {
     } catch (e) {
       setError(e.response?.data?.error || 'Erreur lors de l\'enregistrement');
     } finally { setSaving(false); }
+  }
+
+  function handleDownloadPdf(inv, e) {
+    e.stopPropagation(); // ne pas déclencher le clic de ligne
+    const a = document.createElement('a');
+    a.href = `${API_URL}/chronopost/history/${inv.id}/pdf`;
+    a.download = `Chronopost_${inv.invoice_number}.pdf`;
+    // Ajouter le token dans l'URL via fetch + blob pour l'auth
+    fetch(`${API_URL}/chronopost/history/${inv.id}/pdf`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then(r => r.blob())
+      .then(blob => {
+        const url = URL.createObjectURL(blob);
+        a.href = url;
+        a.click();
+        URL.revokeObjectURL(url);
+      })
+      .catch(() => setError('PDF non disponible pour cette facture'));
   }
 
   async function handleFile(file) {
@@ -670,7 +694,7 @@ export default function ChronopostApp() {
                       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                         <thead>
                           <tr style={{ background: C.grey }}>
-                            {['N° Facture', 'Date', 'Colis', 'Cmdés trouvées', 'Poids OK', 'Écarts', 'Total HT', 'Suppléments HT', 'Enregistrée le'].map(h => (
+                            {['N° Facture', 'Date', 'Colis', 'Cmdés trouvées', 'Poids OK', 'Écarts', 'Total HT', 'Suppléments HT', 'Enregistrée le', ''].map(h => (
                               <th key={h} style={{ padding: '10px 12px', textAlign: 'left', fontWeight: 700, color: C.dark, fontSize: 11.5, borderBottom: `2px solid ${C.greyB}`, whiteSpace: 'nowrap' }}>{h}</th>
                             ))}
                           </tr>
@@ -693,6 +717,13 @@ export default function ChronopostApp() {
                               <td style={{ padding: '9px 12px', color: C.orange }}>{inv.supplements_total != null ? `${parseFloat(inv.supplements_total).toFixed(2)} €` : '—'}</td>
                               <td style={{ padding: '9px 12px', color: C.greyT, fontSize: 12 }}>
                                 {new Date(inv.created_at).toLocaleDateString('fr-FR')}
+                              </td>
+                              <td style={{ padding: '9px 8px', textAlign: 'center' }}>
+                                <button
+                                  onClick={e => handleDownloadPdf(inv, e)}
+                                  title="Télécharger le PDF"
+                                  style={{ background: 'none', border: `1px solid ${C.greyB}`, borderRadius: 6, padding: '4px 10px', cursor: 'pointer', fontSize: 14, color: C.greyT }}
+                                >⬇️</button>
                               </td>
                             </tr>
                           ))}
@@ -737,7 +768,7 @@ export default function ChronopostApp() {
                   <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                     <thead>
                       <tr style={{ background: C.grey }}>
-                        {['N° Facture', 'Date', 'Colis', 'Total HT', 'Suppléments HT', 'Enregistrée le'].map(h => (
+                        {['N° Facture', 'Date', 'Colis', 'Total HT', 'Suppléments HT', 'Enregistrée le', ''].map(h => (
                           <th key={h} style={{ padding: '9px 12px', textAlign: 'left', fontWeight: 700, color: C.dark, fontSize: 11.5, borderBottom: `2px solid ${C.greyB}` }}>{h}</th>
                         ))}
                       </tr>
@@ -756,6 +787,9 @@ export default function ChronopostApp() {
                           <td style={{ padding: '8px 12px', fontWeight: 600 }}>{inv.total_ht != null ? `${parseFloat(inv.total_ht).toFixed(2)} €` : '—'}</td>
                           <td style={{ padding: '8px 12px', color: C.orange }}>{inv.supplements_total != null ? `${parseFloat(inv.supplements_total).toFixed(2)} €` : '—'}</td>
                           <td style={{ padding: '8px 12px', color: C.greyT, fontSize: 12 }}>{new Date(inv.created_at).toLocaleDateString('fr-FR')}</td>
+                          <td style={{ padding: '8px 8px', textAlign: 'center' }}>
+                            <button onClick={e => handleDownloadPdf(inv, e)} title="Télécharger le PDF" style={{ background: 'none', border: `1px solid ${C.greyB}`, borderRadius: 6, padding: '3px 8px', cursor: 'pointer', fontSize: 13, color: C.greyT }}>⬇️</button>
+                          </td>
                         </tr>
                       ))}
                     </tbody>

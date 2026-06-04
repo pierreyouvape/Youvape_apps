@@ -4,9 +4,10 @@ const c = require('../controllers/chronopostController');
 
 router.post('/analyze',      ...c.analyze);
 router.post('/export-excel', ...c.exportExcel);
-router.post('/save',         c.saveInvoice);
-router.get('/history',       c.getHistory);
-router.get('/history/:id',   c.getInvoiceDetail);
+router.post('/save',              ...c.saveInvoice);
+router.get('/history',            c.getHistory);
+router.get('/history/:id',        c.getInvoiceDetail);
+router.get('/history/:id/pdf',    c.downloadPdf);
 router.post('/debug-text',   ...c.debugText);
 
 module.exports = router;
