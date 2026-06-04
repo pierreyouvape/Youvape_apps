@@ -635,8 +635,8 @@ export default function ChronopostApp() {
                               {o.amount_ht != null ? `${getTarif(o).toFixed(2)} €` : '—'}
                             </td>
                             <td style={{ padding: '9px 12px' }}>
-                              {o.is_return && <Badge label="Retour" color={C.orange} bg={C.orangeL} />}
-                              {o.weight_corrected && <Badge label="Corrigé" color={C.accent} bg={C.accentL} />}
+                              {o.is_return && <Badge label="Retour" color={C.red} bg={C.redL} />}
+                              {!o.is_return && o.weight_corrected && <Badge label="Corrigé" color={C.accent} bg={C.accentL} />}
                               {!o.is_return && !o.weight_corrected && o.diff_g !== null && Math.abs(o.diff_g) <= 20 && (
                                 <Badge label="OK" color={C.green} bg={C.greenL} />
                               )}
