@@ -374,10 +374,15 @@ export default function ChronopostApp() {
         if (m) { nbSûreté = parseInt(m[1]); redevanceUnit = parseFloat(m[2]); }
         else redevanceUnit = (g.amount_ht || 0) / (orders.length || 1);
       } else if (/eco/i.test(desc)) {
-        // "539 colis × 0.09 EUR"
-        const m = detail.match(/colis\s*[×xX*]\s*([\d.]+)/);
-        if (m) ecoUnit = parseFloat(m[1]);
-        else ecoUnit = (g.amount_ht || 0) / (orders.length || 1);
+        // "224 colis × 0.18 EUR" — extrait aussi le nb de colis si pas de redevance
+        const m = detail.match(/(\d+)\s*colis\s*[×xX*]\s*([\d.]+)/);
+        if (m) {
+          ecoUnit = parseFloat(m[2]);
+          // Si pas de redevance sûreté, utiliser le nb éco comme nbSûreté pour la gestion
+          if (redevanceUnit === 0) nbSûreté = parseInt(m[1]);
+        } else {
+          ecoUnit = (g.amount_ht || 0) / (orders.length || 1);
+        }
       } else if (/carburant/i.test(desc)) {
         // "23.15% sur 3038.10 EUR"
         const m = detail.match(/([\d.]+)\s*%/);
