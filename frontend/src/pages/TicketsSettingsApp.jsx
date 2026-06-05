@@ -6,6 +6,7 @@ import { invalidateStatusCache } from '../components/tickets/useTicketStatuses';
 import MacrosSettings from '../components/tickets/MacrosSettings';
 import NotificationsSettings from '../components/tickets/NotificationsSettings';
 import AutomationsSettings from '../components/tickets/AutomationsSettings';
+import ZendeskImportSettings from '../components/tickets/ZendeskImportSettings';
 import { LinkBox } from '../utils/navHelpers';
 
 const TICKETS_COLOR = '#0891B2';
@@ -552,6 +553,7 @@ export default function TicketsSettingsApp() {
     { key: 'macros',        label: 'Macros' },
     { key: 'notifications', label: 'Notifications' },
     { key: 'automations',   label: 'Automatismes' },
+    { key: 'zendesk',       label: 'Importation Zendesk' },
   ];
 
   return (
@@ -625,6 +627,9 @@ export default function TicketsSettingsApp() {
 
             {/* ─── Onglet Automatismes ─── */}
             {activeTab === 'automations' && <AutomationsSettings />}
+
+            {/* ─── Onglet Importation Zendesk ─── */}
+            {activeTab === 'zendesk' && <ZendeskImportSettings />}
 
             {/* ─── Onglet Vues ─── */}
             {activeTab === 'views' && (

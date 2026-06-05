@@ -8,6 +8,7 @@ const savController = require('../controllers/savController');
 const savMacroController = require('../controllers/savMacroController');
 const savNotificationController = require('../controllers/savNotificationController');
 const savAutomationController = require('../controllers/savAutomationController');
+const zendeskController = require('../controllers/zendeskController');
 const authMiddleware = require('../middleware/authMiddleware');
 
 const UPLOAD_ROOT = path.join('/usr/src/app/uploads/sav');
@@ -85,6 +86,15 @@ router.post('/automations',             authMiddleware, savAutomationController.
 router.patch('/automations/:id',        authMiddleware, savAutomationController.update);
 router.delete('/automations/:id',       authMiddleware, savAutomationController.delete);
 router.post('/automations/:id/run',     authMiddleware, savAutomationController.runNow);
+
+// ─── Routes import Zendesk ─────────────────────────────────────────────────────
+router.get('/zendesk/config',           zendeskController.getConfig);
+router.put('/zendesk/config',           zendeskController.saveConfig);
+router.post('/zendesk/test',            zendeskController.testConnection);
+router.get('/zendesk/preview-statuses', zendeskController.previewStatuses);
+router.get('/zendesk/status-map',       zendeskController.getStatusMap);
+router.put('/zendesk/status-map',       zendeskController.saveStatusMap);
+router.get('/zendesk/import',           zendeskController.importStream);
 
 // ─── Routes macros ────────────────────────────────────────────────────────────
 router.get('/macros/placeholders',      savMacroController.getPlaceholders);
