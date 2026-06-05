@@ -81,6 +81,41 @@ const zendeskController = {
     }
   },
 
+  // ─── Lister les champs custom Zendesk (pour le mapping) ───────────────────
+  previewFields: async (req, res) => {
+    try {
+      const cfg = await zendeskModel.getConfig();
+      const fields = await zendeskModel.listFields(cfg);
+      const map = await zendeskModel.getFieldMap();
+      res.json({ success: true, fields, map, nativeTargets: zendeskModel.NATIVE_TARGETS });
+    } catch (err) {
+      res.status(400).json({ success: false, error: err.message });
+    }
+  },
+
+  // ─── Lire / enregistrer le mapping des champs ─────────────────────────────
+  getFieldMap: async (req, res) => {
+    try {
+      const map = await zendeskModel.getFieldMap();
+      res.json({ success: true, map, nativeTargets: zendeskModel.NATIVE_TARGETS });
+    } catch (err) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  },
+
+  saveFieldMap: async (req, res) => {
+    try {
+      const { entries } = req.body; // [{ zendesk_field, zendesk_title, target_type, target }]
+      if (!Array.isArray(entries)) {
+        return res.status(400).json({ success: false, error: 'entries[] requis' });
+      }
+      await zendeskModel.saveFieldMap(entries);
+      res.json({ success: true });
+    } catch (err) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  },
+
   // ─── Import en streaming (Server-Sent Events) ─────────────────────────────
   // Le front ouvre une connexion et reçoit des événements `progress` puis `done`.
   importStream: async (req, res) => {

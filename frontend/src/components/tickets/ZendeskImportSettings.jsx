@@ -70,6 +70,15 @@ export default function ZendeskImportSettings() {
   const [savingMap, setSavingMap] = useState(false);
   const [statusMsg, setStatusMsg] = useState('');
 
+  // ── Mapping des champs ──
+  const [zFields, setZFields] = useState(null); // [{ key, id, title, example }]
+  const [nativeTargets, setNativeTargets] = useState([]); // [{ value, label }]
+  const [fieldChoice, setFieldChoice] = useState({});     // key -> choix (native value | sentinelle | '')
+  const [fieldLabels, setFieldLabels] = useState({});     // key -> label custom (si CREATE_CUSTOM)
+  const [loadingFields, setLoadingFields] = useState(false);
+  const [savingFields, setSavingFields] = useState(false);
+  const [fieldMsg, setFieldMsg] = useState('');
+
   // ── Import ──
   const [importing, setImporting] = useState(false);
   const [progress, setProgress] = useState(null); // { total, done, created, updated, errors }
@@ -184,6 +193,56 @@ export default function ZendeskImportSettings() {
 
   // Tous les statuts Zendesk ont-ils un choix ?
   const allMapped = zStatuses && zStatuses.every(s => !!mapping[s.value]);
+
+  // ── Analyser les champs custom Zendesk ──
+  const analyzeFields = useCallback(async () => {
+    setLoadingFields(true); setFieldMsg(''); setZFields(null);
+    try {
+      const res = await fetch(`${API}/preview-fields`);
+      const data = await res.json();
+      if (!data.success) { setFieldMsg(data.error || 'Erreur'); return; }
+      setZFields(data.fields);
+      setNativeTargets(data.nativeTargets || []);
+      // Pré-remplir depuis le mapping existant
+      const choice = {}, labels = {};
+      for (const f of data.fields) {
+        const conf = data.map[f.key];
+        if (!conf) { choice[f.key] = ''; continue; }
+        if (conf.target_type === 'native') choice[f.key] = conf.target;
+        else if (conf.target_type === 'ignore') choice[f.key] = '__ignore__';
+        else if (conf.target_type === 'json') { choice[f.key] = CREATE_CUSTOM; labels[f.key] = conf.target; }
+      }
+      setFieldChoice(choice);
+      setFieldLabels(labels);
+    } catch (err) {
+      setFieldMsg(err.message);
+    } finally { setLoadingFields(false); }
+  }, []);
+
+  // ── Enregistrer le mapping des champs ──
+  const saveFields = useCallback(async () => {
+    setSavingFields(true); setFieldMsg('');
+    try {
+      const entries = zFields.map(f => {
+        const c = fieldChoice[f.key] || '';
+        if (!c) return null; // non défini → on saute
+        if (c === '__ignore__') return { zendesk_field: f.key, zendesk_title: f.title, target_type: 'ignore', target: null };
+        if (c === CREATE_AS_IS) return { zendesk_field: f.key, zendesk_title: f.title, target_type: 'json', target: f.title };
+        if (c === CREATE_CUSTOM) return { zendesk_field: f.key, zendesk_title: f.title, target_type: 'json', target: (fieldLabels[f.key] || f.title) };
+        // sinon : cible native
+        return { zendesk_field: f.key, zendesk_title: f.title, target_type: 'native', target: c };
+      }).filter(Boolean);
+
+      const res = await fetch(`${API}/field-map`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ entries }),
+      });
+      const data = await res.json();
+      setFieldMsg(data.success ? '✓ Correspondance des champs enregistrée' : (data.error || 'Erreur'));
+    } catch (err) {
+      setFieldMsg(err.message);
+    } finally { setSavingFields(false); }
+  }, [zFields, fieldChoice, fieldLabels]);
 
   // ── Lancer l'import (SSE) ──
   const startImport = useCallback(() => {
@@ -310,9 +369,78 @@ export default function ZendeskImportSettings() {
         )}
       </section>
 
-      {/* ─── 3. Import ─── */}
+      {/* ─── 3. Correspondance des champs ─── */}
+      <section style={{ background: C.blanc, border: `1px solid ${C.grisCL}`, borderRadius: 10, padding: 18, marginBottom: 20 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+          <div style={{ fontSize: 13.5, fontWeight: 800, color: C.grisTF }}>3 · Correspondance des champs</div>
+          <button onClick={analyzeFields} disabled={loadingFields} style={btnGhost}>
+            {loadingFields ? 'Analyse…' : zFields ? 'Réanalyser' : 'Analyser les champs Zendesk'}
+          </button>
+        </div>
+
+        {fieldMsg && <div style={{ fontSize: 12.5, color: fieldMsg.startsWith('✓') ? '#2A8049' : '#DC2626', marginBottom: 12 }}>{fieldMsg}</div>}
+
+        {!zFields ? (
+          <div style={{ fontSize: 13, color: C.grisM, fontStyle: 'italic' }}>
+            Les champs système (sujet, message, client, statut) sont importés automatiquement. Lancez l'analyse pour mapper vos champs personnalisés Zendesk (prénom, nom, n° de commande, n° de suivi…) vers les champs de l'app. Mémorisé : à faire une fois par champ.
+          </div>
+        ) : zFields.length === 0 ? (
+          <div style={{ fontSize: 13, color: C.grisM, fontStyle: 'italic' }}>Aucun champ personnalisé détecté.</div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {zFields.map(f => {
+              const c = fieldChoice[f.key] || '';
+              return (
+                <div key={f.key} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 12px', border: `1px solid ${C.grisCL}`, borderRadius: 8, background: C.grisTL }}>
+                  <div style={{ minWidth: 180, display: 'flex', flexDirection: 'column', gap: 2 }}>
+                    <span style={{ fontSize: 13.5, fontWeight: 700, color: C.grisTF }}>{f.title}</span>
+                    <span style={{ fontSize: 11, color: C.grisM, fontFamily: 'monospace' }}>
+                      {f.key}{f.example ? ` · ex : ${f.example}` : ''}
+                    </span>
+                  </div>
+                  <span style={{ color: C.grisM }}>→</span>
+                  <select
+                    value={c}
+                    onChange={e => setFieldChoice(m => ({ ...m, [f.key]: e.target.value }))}
+                    style={{ ...inputStyle, flex: 1, cursor: 'pointer' }}
+                  >
+                    <option value="">— Choisir —</option>
+                    <optgroup label="Champs existants">
+                      {nativeTargets.map(t => (
+                        <option key={t.value} value={t.value}>{t.label}</option>
+                      ))}
+                    </optgroup>
+                    <optgroup label="Créer un champ">
+                      <option value={CREATE_AS_IS}>Créer « {f.title} » (tel quel)</option>
+                      <option value={CREATE_CUSTOM}>Créer un champ renommé…</option>
+                    </optgroup>
+                    <optgroup label="Autre">
+                      <option value="__ignore__">Ne pas importer</option>
+                    </optgroup>
+                  </select>
+                  {c === CREATE_CUSTOM && (
+                    <input
+                      value={fieldLabels[f.key] || ''}
+                      onChange={e => setFieldLabels(fl => ({ ...fl, [f.key]: e.target.value }))}
+                      placeholder="Nom du champ"
+                      style={{ ...inputStyle, width: 180 }}
+                    />
+                  )}
+                </div>
+              );
+            })}
+            <div style={{ marginTop: 4 }}>
+              <button onClick={saveFields} disabled={savingFields} style={btnPrimary(savingFields)}>
+                {savingFields ? 'Enregistrement…' : 'Enregistrer la correspondance'}
+              </button>
+            </div>
+          </div>
+        )}
+      </section>
+
+      {/* ─── 4. Import ─── */}
       <section style={{ background: C.blanc, border: `1px solid ${C.grisCL}`, borderRadius: 10, padding: 18 }}>
-        <div style={{ fontSize: 13.5, fontWeight: 800, color: C.grisTF, marginBottom: 14 }}>3 · Import des tickets</div>
+        <div style={{ fontSize: 13.5, fontWeight: 800, color: C.grisTF, marginBottom: 14 }}>4 · Import des tickets</div>
 
         <div style={{ fontSize: 12.5, color: C.grisF, marginBottom: 14, lineHeight: 1.6 }}>
           Importe tous les tickets Zendesk (sujet, messages, client, statut). Gardez cet onglet ouvert pendant l'import.

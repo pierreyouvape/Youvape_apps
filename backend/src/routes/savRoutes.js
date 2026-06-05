@@ -94,6 +94,9 @@ router.post('/zendesk/test',            zendeskController.testConnection);
 router.get('/zendesk/preview-statuses', zendeskController.previewStatuses);
 router.get('/zendesk/status-map',       zendeskController.getStatusMap);
 router.put('/zendesk/status-map',       zendeskController.saveStatusMap);
+router.get('/zendesk/preview-fields',   zendeskController.previewFields);
+router.get('/zendesk/field-map',        zendeskController.getFieldMap);
+router.put('/zendesk/field-map',        zendeskController.saveFieldMap);
 router.get('/zendesk/import',           zendeskController.importStream);
 
 // ─── Routes macros ────────────────────────────────────────────────────────────
