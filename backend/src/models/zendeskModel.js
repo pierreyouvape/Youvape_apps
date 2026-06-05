@@ -96,38 +96,30 @@ async function countTickets(cfg) {
   }
 }
 
-// ─── Lister les statuts distincts présents dans Zendesk ───────────────────────
-// Parcourt tous les tickets et collecte les valeurs distinctes de `status`
-// (+ `custom_status_id` résolu en libellé si l'API custom statuses est dispo).
+// ─── Lister les statuts Zendesk à mapper ──────────────────────────────────────
+// Source primaire : /custom_statuses.json → liste directe et instantanée de tous
+// les statuts custom (avec libellés), sans scanner les tickets. Évite tout
+// timeout sur les comptes à gros volume.
+// Fallback : si l'API custom statuses n'est pas disponible, on retombe sur les
+// 6 statuts standards Zendesk.
 async function listDistinctStatuses(cfg) {
-  // 1. Tenter de récupérer les statuts custom (libellés lisibles)
-  const customStatusLabels = {}; // id → label
   try {
     const data = await apiGet(cfg, '/custom_statuses.json');
-    for (const cs of data.custom_statuses || []) {
-      customStatusLabels[cs.id] = cs.agent_label || cs.raw_agent_label || cs.status_category;
-    }
+    const list = (data.custom_statuses || [])
+      .filter((cs) => cs.active !== false)
+      .map((cs) => ({
+        value: `custom:${cs.id}`,
+        label: cs.agent_label || cs.raw_agent_label || cs.status_category,
+        category: cs.status_category, // new/open/pending/hold/solved
+      }));
+    if (list.length > 0) return list;
   } catch {
-    // L'API custom statuses peut ne pas être activée → on retombe sur status standard
+    // API custom statuses indisponible → fallback ci-dessous
   }
-
-  const seen = new Map(); // value → { value, label, count }
-  await forEachTicketPage(cfg, (tickets) => {
-    for (const t of tickets) {
-      // Valeur de mapping : on privilégie le statut custom si présent, sinon le statut standard
-      let value, label;
-      if (t.custom_status_id && customStatusLabels[t.custom_status_id]) {
-        value = `custom:${t.custom_status_id}`;
-        label = customStatusLabels[t.custom_status_id];
-      } else {
-        value = t.status; // open, pending, hold, solved, closed, new
-        label = t.status;
-      }
-      if (!seen.has(value)) seen.set(value, { value, label, count: 0 });
-      seen.get(value).count += 1;
-    }
-  });
-  return [...seen.values()].sort((a, b) => b.count - a.count);
+  // Fallback : statuts standards Zendesk
+  return ['new', 'open', 'pending', 'hold', 'solved', 'closed'].map((s) => ({
+    value: s, label: s, category: s,
+  }));
 }
 
 // ─── Mapping des statuts (table sav_zendesk_status_map) ───────────────────────

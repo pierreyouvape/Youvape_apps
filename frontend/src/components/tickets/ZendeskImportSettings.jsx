@@ -349,7 +349,7 @@ export default function ZendeskImportSettings() {
                 <div key={zs.value} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 12px', border: `1px solid ${C.grisCL}`, borderRadius: 8, background: C.grisTL }}>
                   <div style={{ minWidth: 160, display: 'flex', flexDirection: 'column', gap: 2 }}>
                     <span style={{ fontSize: 13.5, fontWeight: 700, color: C.grisTF }}>{zs.label}</span>
-                    <span style={{ fontSize: 11, color: C.grisM, fontFamily: 'monospace' }}>{zs.value} · {zs.count} ticket{zs.count > 1 ? 's' : ''}</span>
+                    <span style={{ fontSize: 11, color: C.grisM, fontFamily: 'monospace' }}>{zs.category ? `${zs.category}` : zs.value}</span>
                   </div>
                   <span style={{ color: C.grisM }}>→</span>
                   <select
