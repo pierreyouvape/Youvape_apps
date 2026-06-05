@@ -177,7 +177,7 @@ async function getTicketComments(cfg, ticketId, usersById) {
     const author = usersById[c.author_id];
     return {
       from: author?.name || author?.email || 'Zendesk',
-      body: c.html_body || c.body || '',
+      body: c.plain_body || c.body || '',
       is_agent: author?.role === 'agent' || author?.role === 'admin',
       is_private: c.public === false,
       date: c.created_at || new Date().toISOString(),
@@ -412,7 +412,7 @@ async function importAll(cfg, onProgress) {
           const author = usersById[c.author_id];
           return {
             from: author?.name || author?.email || 'Zendesk',
-            body: c.html_body || c.body || '',
+            body: c.plain_body || c.body || '',
             is_agent: author?.role === 'agent' || author?.role === 'admin',
             is_private: c.public === false,
             date: c.created_at || new Date().toISOString(),
