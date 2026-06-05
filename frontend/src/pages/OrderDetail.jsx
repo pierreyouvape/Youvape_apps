@@ -246,7 +246,8 @@ const OrderDetail = () => {
   const orderTax      = parseFloat(order.order_tax) || 0;
   const cartDiscount  = parseFloat(order.cart_discount) || 0;
   const totalCost     = parseFloat(order.order_total_cost || order.total_cost) || 0;
-  const subtotal      = orderTotal - orderTax + cartDiscount;
+  const subtotal      = orderTotal - orderTax + cartDiscount; // articles + livraison, avant remise
+  const subtotalItems = subtotal - orderShipping;             // articles HT seuls
 
   const shippingCostCalculated = order.shipping_cost_calculated != null ? parseFloat(order.shipping_cost_calculated) : null;
   const paymentCostCalculated  = order.payment_cost_calculated  != null ? parseFloat(order.payment_cost_calculated)  : null;
@@ -605,8 +606,9 @@ const OrderDetail = () => {
 
               {/* Totaux — droite */}
               <div>
-                <TotalLine label="Sous-total HT" value={fmt(subtotal)} />
+                <TotalLine label="Sous-total articles HT" value={fmt(subtotalItems)} />
                 <TotalLine label="Livraison HT"  value={fmt(orderShipping)} />
+                <TotalLine label="Sous-total HT" value={fmt(subtotal)} />
                 {couponItems.length > 0 && (
                   <TotalLine
                     label={`Coupon${couponItems.length > 1 ? 's' : ''} (${couponItems.map(c => c.order_item_name).join(', ')})`}
@@ -617,6 +619,7 @@ const OrderDetail = () => {
                 {cartDiscount > 0 && (
                   <TotalLine label="Remise HT" value={`-${fmt(cartDiscount)}`} color={C.rouge} />
                 )}
+                <TotalLine label="Total HT" value={fmt(orderTotalHT)} />
                 <TotalLine label="TVA" value={fmt(orderTax)} />
                 <TotalLine label="Total TTC" value={fmt(orderTotal)} color={C.vert} bold separator />
               </div>
