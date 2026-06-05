@@ -92,13 +92,13 @@ export function useDragSort(order, onReorder) {
 }
 
 /* ─── SIDEBAR ──────────────────────────────────────────────── */
-function Sidebar({ user, orderedApps, accessibleKeys, draggingKey, overKey, onPointerDown, onPointerEnter, onPointerUp, onLogout, navigate, currentPath, appMenu }) {
+function Sidebar({ user, orderedApps, accessibleKeys, draggingKey, overKey, onPointerDown, onPointerEnter, onPointerUp, onLogout, navigate, currentPath, appMenu, collapsed, onToggleCollapse }) {
   const initial = user?.email?.[0]?.toUpperCase() ?? '?';
 
   return (
     <aside style={{
-      width: 260,
-      minWidth: 260,
+      width: collapsed ? 68 : 260,
+      minWidth: collapsed ? 68 : 260,
       flexShrink: 0,
       background: C.saphirF,
       height: '100vh',
@@ -107,42 +107,68 @@ function Sidebar({ user, orderedApps, accessibleKeys, draggingKey, overKey, onPo
       display: 'flex',
       flexDirection: 'column',
       borderRight: '1px solid rgba(255,255,255,0.06)',
+      transition: 'width 0.18s ease, min-width 0.18s ease',
     }}>
-      {/* Logo + bouton Accueil */}
+      {/* Logo + bouton Accueil + toggle */}
       <div style={{
-        padding: '22px 22px 18px',
+        padding: collapsed ? '18px 0 14px' : '22px 22px 18px',
         borderBottom: '1px solid rgba(255,255,255,0.07)',
         display: 'flex',
         alignItems: 'center',
-        justifyContent: 'space-between',
+        justifyContent: collapsed ? 'center' : 'space-between',
         gap: 10,
       }}>
-        <img src="/images/logo.jpg" alt="YouVape" style={{ height: 42, maxWidth: 140, objectFit: 'contain', flexShrink: 1, minWidth: 0 }} />
-        <LinkBox
-          to="/home"
-          title="Accueil"
-          display="flex"
+        {!collapsed && (
+          <img src="/images/logo.jpg" alt="YouVape" style={{ height: 42, maxWidth: 140, objectFit: 'contain', flexShrink: 1, minWidth: 0 }} />
+        )}
+        {!collapsed && (
+          <LinkBox
+            to="/home"
+            title="Accueil"
+            display="flex"
+            style={{
+              flexShrink: 0,
+              width: 32, height: 32, borderRadius: 8,
+              background: currentPath === '/home' ? 'rgba(255,255,255,0.15)' : 'rgba(255,255,255,0.08)',
+              border: '1px solid rgba(255,255,255,0.12)',
+              alignItems: 'center', justifyContent: 'center',
+              padding: 0,
+              transition: 'background 0.15s',
+            }}
+            onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.2)'}
+            onMouseLeave={e => e.currentTarget.style.background = currentPath === '/home' ? 'rgba(255,255,255,0.15)' : 'rgba(255,255,255,0.08)'}
+          >
+            <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.85)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+              <polyline points="9 22 9 12 15 12 15 22"/>
+            </svg>
+          </LinkBox>
+        )}
+        <button
+          onClick={onToggleCollapse}
+          title={collapsed ? 'Déplier le menu' : 'Replier le menu'}
+          aria-label={collapsed ? 'Déplier le menu' : 'Replier le menu'}
           style={{
             flexShrink: 0,
             width: 32, height: 32, borderRadius: 8,
-            background: currentPath === '/home' ? 'rgba(255,255,255,0.15)' : 'rgba(255,255,255,0.08)',
+            background: 'rgba(255,255,255,0.08)',
             border: '1px solid rgba(255,255,255,0.12)',
-            alignItems: 'center', justifyContent: 'center',
-            padding: 0,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            padding: 0, cursor: 'pointer',
             transition: 'background 0.15s',
           }}
           onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.2)'}
-          onMouseLeave={e => e.currentTarget.style.background = currentPath === '/home' ? 'rgba(255,255,255,0.15)' : 'rgba(255,255,255,0.08)'}
+          onMouseLeave={e => e.currentTarget.style.background = 'rgba(255,255,255,0.08)'}
         >
-          <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.85)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
-            <polyline points="9 22 9 12 15 12 15 22"/>
+          <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.85)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+            style={{ transform: collapsed ? 'rotate(180deg)' : 'none', transition: 'transform 0.18s' }}>
+            <polyline points="15 18 9 12 15 6"/>
           </svg>
-        </LinkBox>
+        </button>
       </div>
 
       {/* Bloc app active : titre + bouton paramètres */}
-      {(() => {
+      {!collapsed && (() => {
         const activeApp = APPS.find(a => currentPath === a.path || currentPath?.startsWith(a.path + '/'));
         const settingsPath = activeApp ? APP_SETTINGS_PATHS[activeApp.key] : null;
         if (!activeApp || currentPath === '/home') return null;
@@ -198,7 +224,7 @@ function Sidebar({ user, orderedApps, accessibleKeys, draggingKey, overKey, onPo
       })()}
 
       {/* Menu interne de l'app (optionnel) */}
-      {appMenu && (
+      {!collapsed && appMenu && (
         <div style={{ padding: '14px 12px', borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
           {appMenu}
         </div>
@@ -208,17 +234,19 @@ function Sidebar({ user, orderedApps, accessibleKeys, draggingKey, overKey, onPo
       <div style={{ flex: 1, minHeight: 0 }} />
 
       {/* Liste des apps */}
-      <div style={{ overflowY: 'auto', padding: '14px 12px', maxHeight: '55vh' }}>
-        <div style={{
-          fontSize: 10,
-          fontWeight: 800,
-          letterSpacing: '0.12em',
-          color: 'rgba(255,255,255,0.4)',
-          textTransform: 'uppercase',
-          padding: '4px 10px 10px',
-        }}>
-          Applications
-        </div>
+      <div style={{ overflowY: 'auto', padding: collapsed ? '14px 0' : '14px 12px', maxHeight: '55vh' }}>
+        {!collapsed && (
+          <div style={{
+            fontSize: 10,
+            fontWeight: 800,
+            letterSpacing: '0.12em',
+            color: 'rgba(255,255,255,0.4)',
+            textTransform: 'uppercase',
+            padding: '4px 10px 10px',
+          }}>
+            Applications
+          </div>
+        )}
 
         {orderedApps.filter(a => accessibleKeys.includes(a.key)).map(app => {
           const { Icon, color, path, label, key } = app;
@@ -245,12 +273,14 @@ function Sidebar({ user, orderedApps, accessibleKeys, draggingKey, overKey, onPo
                   window.open(path, '_blank', 'noopener');
                 }
               }}
+              title={collapsed ? label : undefined}
               className={`sb-app-row${isDrag ? ' dragging' : ''}${isOver ? ' drag-over' : ''}`}
               style={{
                 display: 'flex',
                 alignItems: 'center',
+                justifyContent: collapsed ? 'center' : 'flex-start',
                 gap: 11,
-                padding: '9px 10px',
+                padding: collapsed ? '9px 0' : '9px 10px',
                 borderRadius: 8,
                 marginBottom: 1,
                 background: isActive ? 'rgba(255,255,255,0.10)' : 'transparent',
@@ -275,41 +305,47 @@ function Sidebar({ user, orderedApps, accessibleKeys, draggingKey, overKey, onPo
               }}>
                 <Icon size={16} color="#fff" />
               </span>
-              <span style={{
-                whiteSpace: 'nowrap',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                flex: 1,
-                minWidth: 0,
-              }}>
-                {label}
-              </span>
+              {!collapsed && (
+                <span style={{
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  flex: 1,
+                  minWidth: 0,
+                }}>
+                  {label}
+                </span>
+              )}
             </div>
           );
         })}
       </div>
 
       {/* Compte */}
-      <div style={{ padding: '12px 12px 6px', borderTop: '1px solid rgba(255,255,255,0.07)' }}>
-        <div style={{
-          fontSize: 10,
-          fontWeight: 800,
-          letterSpacing: '0.12em',
-          color: 'rgba(255,255,255,0.4)',
-          textTransform: 'uppercase',
-          padding: '4px 10px 8px',
-        }}>
-          Compte
-        </div>
+      <div style={{ padding: collapsed ? '12px 0 6px' : '12px 12px 6px', borderTop: '1px solid rgba(255,255,255,0.07)' }}>
+        {!collapsed && (
+          <div style={{
+            fontSize: 10,
+            fontWeight: 800,
+            letterSpacing: '0.12em',
+            color: 'rgba(255,255,255,0.4)',
+            textTransform: 'uppercase',
+            padding: '4px 10px 8px',
+          }}>
+            Compte
+          </div>
+        )}
 
         <Link
           to="/settings"
           className="sb-app-row"
+          title={collapsed ? 'Paramètres' : undefined}
           style={{
             display: 'flex',
             alignItems: 'center',
+            justifyContent: collapsed ? 'center' : 'flex-start',
             gap: 11,
-            padding: '9px 10px',
+            padding: collapsed ? '9px 0' : '9px 10px',
             borderRadius: 8,
             marginBottom: 1,
             color: 'rgba(255,255,255,0.78)',
@@ -326,19 +362,21 @@ function Sidebar({ user, orderedApps, accessibleKeys, draggingKey, overKey, onPo
           }}>
             <SettingsIcon size={15} color="rgba(255,255,255,0.85)" />
           </span>
-          <span>Paramètres</span>
+          {!collapsed && <span>Paramètres</span>}
         </Link>
 
         <button
           onClick={onLogout}
           className="sb-app-row"
+          title={collapsed ? 'Se déconnecter' : undefined}
           style={{
             width: '100%',
             textAlign: 'left',
             display: 'flex',
             alignItems: 'center',
+            justifyContent: collapsed ? 'center' : 'flex-start',
             gap: 11,
-            padding: '9px 10px',
+            padding: collapsed ? '9px 0' : '9px 10px',
             borderRadius: 8,
             marginBottom: 6,
             color: 'rgba(255,255,255,0.78)',
@@ -357,41 +395,47 @@ function Sidebar({ user, orderedApps, accessibleKeys, draggingKey, overKey, onPo
           }}>
             <LogoutIcon size={15} color="#ff8a8a" />
           </span>
-          <span>Se déconnecter</span>
+          {!collapsed && <span>Se déconnecter</span>}
         </button>
       </div>
 
       {/* Footer user */}
       <div style={{
-        padding: '14px 16px',
+        padding: collapsed ? '14px 0' : '14px 16px',
         borderTop: '1px solid rgba(255,255,255,0.07)',
         display: 'flex',
         alignItems: 'center',
+        justifyContent: collapsed ? 'center' : 'flex-start',
         gap: 11,
       }}>
-        <div style={{
-          width: 36, height: 36, borderRadius: '50%', flexShrink: 0,
-          background: `linear-gradient(135deg, ${C.orange} 0%, ${shade(C.orange, -0.2)} 100%)`,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontSize: 14, fontWeight: 800, color: C.blanc,
-          boxShadow: '0 1px 2px rgba(0,0,0,0.25)',
-        }}>
+        <div
+          title={collapsed ? (user?.email ?? '') : undefined}
+          style={{
+            width: 36, height: 36, borderRadius: '50%', flexShrink: 0,
+            background: `linear-gradient(135deg, ${C.orange} 0%, ${shade(C.orange, -0.2)} 100%)`,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: 14, fontWeight: 800, color: C.blanc,
+            boxShadow: '0 1px 2px rgba(0,0,0,0.25)',
+          }}
+        >
           {initial}
         </div>
-        <div style={{ minWidth: 0, flex: 1 }}>
-          <div style={{
-            fontSize: 12.5, fontWeight: 700, color: C.blanc,
-            whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-          }}>
-            {user?.email?.split('@')[0] ?? ''}
+        {!collapsed && (
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <div style={{
+              fontSize: 12.5, fontWeight: 700, color: C.blanc,
+              whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+            }}>
+              {user?.email?.split('@')[0] ?? ''}
+            </div>
+            <div style={{
+              fontSize: 10.5, color: 'rgba(255,255,255,0.5)',
+              whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+            }}>
+              {user?.email ?? ''}
+            </div>
           </div>
-          <div style={{
-            fontSize: 10.5, color: 'rgba(255,255,255,0.5)',
-            whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-          }}>
-            {user?.email ?? ''}
-          </div>
-        </div>
+        )}
       </div>
     </aside>
   );
@@ -399,7 +443,7 @@ function Sidebar({ user, orderedApps, accessibleKeys, draggingKey, overKey, onPo
 
 /* ─── PREFS (localStorage + API) ─────────────────────────── */
 const PREFS_KEY = 'yv.home.prefs.v1';
-const DEFAULT_PREFS = { appOrder: APPS.map(a => a.key), tileSize: 'comfortable', gridCols: 4 };
+const DEFAULT_PREFS = { appOrder: APPS.map(a => a.key), tileSize: 'comfortable', gridCols: 4, sidebarCollapsed: false };
 const BASE_API = (import.meta.env.VITE_API_URL || 'http://localhost:3000/api/auth').replace('/auth', '');
 
 function loadPrefs() {
@@ -460,6 +504,9 @@ export default function AppShell({ appMenu, currentPath, children }) {
 
   const handleLogout = () => { logout(); navigate('/login'); };
 
+  const collapsed = prefs.sidebarCollapsed === true;
+  const toggleCollapse = useCallback(() => updatePrefs({ sidebarCollapsed: !collapsed }), [updatePrefs, collapsed]);
+
   return (
     <>
       <style>{`
@@ -491,6 +538,8 @@ export default function AppShell({ appMenu, currentPath, children }) {
           navigate={navigate}
           currentPath={currentPath}
           appMenu={appMenu}
+          collapsed={collapsed}
+          onToggleCollapse={toggleCollapse}
         />
         {children}
       </div>
