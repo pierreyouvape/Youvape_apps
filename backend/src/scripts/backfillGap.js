@@ -299,7 +299,7 @@ async function backfillOrders(wc) {
         '_wc_order_attribution_session_start_time', '_wc_order_attribution_session_pages',
         '_wc_order_attribution_session_count', '_wc_order_attribution_user_agent',
         '_wc_order_attribution_device_type',
-        'sendcloud_tracking_number', '_wc_shipping_method',
+        'sendcloud_tracking_number', 'bms_tracking_number', '_wc_shipping_method',
         '_billing_tax', 'is_vat_exempt', '_wdr_discounts'
       )
   `, orderIds);
@@ -367,7 +367,7 @@ async function backfillOrders(wc) {
     // Déduire shipping_method depuis l'item shipping
     const shippingItem = items.find(i => i.order_item_type === 'shipping');
     const shippingMethod = shippingItem ? shippingItem.order_item_name : (meta['_wc_shipping_method'] || null);
-    const trackingNumber = meta['sendcloud_tracking_number'] || null;
+    const trackingNumber = meta['sendcloud_tracking_number'] || meta['bms_tracking_number'] || null;
 
     const postStatus = order.status.startsWith('wc-') ? order.status : 'wc-' + order.status;
 
