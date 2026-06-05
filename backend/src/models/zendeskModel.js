@@ -49,14 +49,40 @@ function baseUrl(subdomain) {
 }
 
 // ─── Appel API générique ──────────────────────────────────────────────────────
-async function apiGet(cfg, pathOrUrl) {
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// Petit throttle global : on espace les appels pour rester sous le quota Zendesk.
+// Zendesk limite le débit par minute (variable selon le plan). On sérialise les
+// appels avec un délai minimal entre deux requêtes.
+let _lastCallAt = 0;
+const MIN_GAP_MS = 120; // ~8 req/s max → marge confortable sous la plupart des quotas
+
+async function apiGet(cfg, pathOrUrl, attempt = 0) {
   const url = pathOrUrl.startsWith('http') ? pathOrUrl : `${baseUrl(cfg.subdomain)}${pathOrUrl}`;
+
+  // Espacement minimal entre appels
+  const since = Date.now() - _lastCallAt;
+  if (since < MIN_GAP_MS) await sleep(MIN_GAP_MS - since);
+  _lastCallAt = Date.now();
+
   const res = await fetch(url, {
     headers: {
       Authorization: authHeader(cfg),
       'Content-Type': 'application/json',
     },
   });
+
+  // 429 : on respecte le Retry-After renvoyé par Zendesk, puis on réessaie.
+  if (res.status === 429) {
+    if (attempt >= 8) {
+      throw new Error('Zendesk API 429 — quota dépassé, abandon après plusieurs tentatives');
+    }
+    const retryAfter = parseInt(res.headers.get('retry-after') || '', 10);
+    const waitMs = (Number.isFinite(retryAfter) ? retryAfter : Math.min(2 ** attempt, 30)) * 1000;
+    await sleep(waitMs);
+    return apiGet(cfg, pathOrUrl, attempt + 1);
+  }
+
   if (!res.ok) {
     const text = await res.text().catch(() => '');
     throw new Error(`Zendesk API ${res.status} ${res.statusText} — ${text.slice(0, 300)}`);
