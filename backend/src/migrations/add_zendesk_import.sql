@@ -15,9 +15,11 @@
 ALTER TABLE sav_tickets
   ADD COLUMN IF NOT EXISTS zendesk_id BIGINT;
 
+-- Index unique NON partiel : requis pour ON CONFLICT (zendesk_id) lors de
+-- l'upsert. Postgres autorise plusieurs NULL dans un index unique standard, donc
+-- les tickets non-Zendesk (zendesk_id NULL) ne posent pas de problème.
 CREATE UNIQUE INDEX IF NOT EXISTS idx_sav_tickets_zendesk_id
-  ON sav_tickets(zendesk_id)
-  WHERE zendesk_id IS NOT NULL;
+  ON sav_tickets(zendesk_id);
 
 CREATE TABLE IF NOT EXISTS sav_zendesk_status_map (
   id            SERIAL PRIMARY KEY,
