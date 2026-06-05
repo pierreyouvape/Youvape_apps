@@ -608,7 +608,9 @@ const OrderDetail = () => {
               <div>
                 <TotalLine label="Sous-total articles HT" value={fmt(subtotalItems)} />
                 <TotalLine label="Livraison HT"  value={fmt(orderShipping)} />
-                <TotalLine label="Sous-total HT" value={fmt(subtotal)} />
+                {cartDiscount > 0 && (
+                  <TotalLine label="Sous-total HT" value={fmt(subtotal)} />
+                )}
                 {couponItems.length > 0 && (
                   <TotalLine
                     label={`Coupon${couponItems.length > 1 ? 's' : ''} (${couponItems.map(c => c.order_item_name).join(', ')})`}
