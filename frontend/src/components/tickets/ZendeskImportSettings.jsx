@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { TICKETS_COLOR } from './ticketConstants';
-import { useTicketStatuses, invalidateStatusCache } from './useTicketStatuses';
+import { invalidateStatusCache } from './useTicketStatuses';
 
 const C = {
   grisTL: '#F2F6F8', grisCL: '#E2E2E2', grisM: '#8A99A4',
@@ -51,7 +51,18 @@ const btnGhost = {
 
 // ═══════════════════════════════════════════════════════════════════════════════
 export default function ZendeskImportSettings() {
-  const { statuses } = useTicketStatuses();
+  // Liste des statuts app — chargée localement et rechargée après création,
+  // pour que les <option> reflètent immédiatement les statuts qu'on vient de créer
+  // (le hook useTicketStatuses sert un cache qui ne se rafraîchit pas ici).
+  const [statuses, setStatuses] = useState([]);
+  const reloadStatuses = useCallback(async () => {
+    try {
+      const res = await fetch('/api/sav/statuses');
+      const data = await res.json();
+      if (data.success) setStatuses(data.statuses);
+    } catch { /* ignore */ }
+  }, []);
+  useEffect(() => { reloadStatuses(); }, [reloadStatuses]);
 
   // ── Connexion ──
   const [subdomain, setSubdomain] = useState('');
@@ -154,6 +165,8 @@ export default function ZendeskImportSettings() {
     setSavingMap(true); setStatusMsg('');
     try {
       const entries = [];
+      const resolvedChoices = {}; // zendesk_value -> value réel du statut app
+      let createdAny = false;
       for (const zs of zStatuses) {
         let choice = mapping[zs.value];
         if (!choice) continue; // non mappé → on saute
@@ -170,8 +183,9 @@ export default function ZendeskImportSettings() {
           const crData = await cr.json();
           // value final : celui retourné, ou celui calculé si déjà existant
           choice = crData.success ? crData.status.value : value;
-          invalidateStatusCache();
+          createdAny = true;
         }
+        resolvedChoices[zs.value] = choice;
         entries.push({ zendesk_value: zs.value, app_status: choice });
       }
       const res = await fetch(`${API}/status-map`, {
@@ -181,15 +195,21 @@ export default function ZendeskImportSettings() {
       const data = await res.json();
       if (data.success) {
         setStatusMsg('✓ Mapping enregistré');
-        // Recharger pour refléter les nouveaux statuts dans les selects
-        await analyzeStatuses();
+        // Mettre à jour les choix « créés » → value réel, SANS réanalyser
+        // (réanalyser réinitialiserait toutes les sélections). On recharge juste
+        // la liste des statuts pour que les nouveaux apparaissent dans les <select>.
+        if (createdAny) {
+          invalidateStatusCache();
+          await reloadStatuses();
+          setMapping(m => ({ ...m, ...resolvedChoices }));
+        }
       } else {
         setStatusMsg(data.error || 'Erreur enregistrement');
       }
     } catch (err) {
       setStatusMsg(err.message);
     } finally { setSavingMap(false); }
-  }, [zStatuses, mapping, customLabels, analyzeStatuses]);
+  }, [zStatuses, mapping, customLabels, reloadStatuses]);
 
   // Tous les statuts Zendesk ont-ils un choix ?
   const allMapped = zStatuses && zStatuses.every(s => !!mapping[s.value]);
