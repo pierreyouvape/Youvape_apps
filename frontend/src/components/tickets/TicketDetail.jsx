@@ -8,6 +8,8 @@ import { AuthContext } from '../../context/AuthContext';
 import { useOpenTickets } from '../../context/OpenTicketsContext';
 import OrderCard from './OrderCard';
 import { buildPlaceholderContext, applyPlaceholders } from './macroPlaceholders';
+import RichEditor from './RichEditor';
+import { markdownTextToHtml, isHtml, sanitizeHtml } from './richText';
 
 const C = {
   orange: '#E28F00', rouge: '#DE2020',
@@ -139,7 +141,9 @@ function AttachmentItem({ att, ticketId }) {
 }
 
 // ─── Rendu texte avec liens markdown ──────────────────────────────────────────
-function renderBody(text) {
+// Rendu d'un body au format markdown-like (ancien format : [texte](url) + sauts
+// de ligne bruts). Conservé en fallback pour les messages d'avant l'éditeur riche.
+function renderMarkdownBody(text) {
   if (!text) return null;
   // Découpe sur les liens markdown [texte](url)
   const parts = [];
@@ -230,19 +234,29 @@ function Message({ msg, ticketId }) {
           )}
           <span style={{ fontSize: 11, color: C.grisM }}>{formatDate(msg.date, { time: true })}</span>
         </div>
-        {/* Bulle */}
-        <div style={{
-          background: bgBubble,
-          border: `1px solid ${borderBubble}`,
-          borderRadius: isAgent ? '14px 4px 14px 14px' : '4px 14px 14px 14px',
-          padding: '12px 16px',
-          fontSize: 14, color: C.grisTF, lineHeight: 1.55,
-          whiteSpace: 'pre-wrap', wordBreak: 'break-word',
-          boxShadow: boxShadowBubble,
-          maxWidth: '100%',
-        }}>
-          {renderBody(msg.body)}
-        </div>
+        {/* Bulle — nouveau format : HTML (éditeur riche) sanitisé ; ancien
+            format markdown-like : rendu via renderMarkdownBody + pre-wrap. */}
+        {(() => {
+          const bodyIsHtml = isHtml(msg.body);
+          return (
+            <div
+              className={bodyIsHtml ? 'yv-msg-html' : undefined}
+              style={{
+                background: bgBubble,
+                border: `1px solid ${borderBubble}`,
+                borderRadius: isAgent ? '14px 4px 14px 14px' : '4px 14px 14px 14px',
+                padding: '12px 16px',
+                fontSize: 14, color: C.grisTF, lineHeight: 1.55,
+                whiteSpace: bodyIsHtml ? 'normal' : 'pre-wrap', wordBreak: 'break-word',
+                boxShadow: boxShadowBubble,
+                maxWidth: '100%',
+              }}
+              {...(bodyIsHtml
+                ? { dangerouslySetInnerHTML: { __html: sanitizeHtml(msg.body) } }
+                : { children: renderMarkdownBody(msg.body) })}
+            />
+          );
+        })()}
         {sendFailed && msg.error && (
           <div style={{
             marginTop: 4, fontSize: 11.5, color: '#B71D1D', fontWeight: 600,
@@ -260,6 +274,21 @@ function Message({ msg, ticketId }) {
       </div>
     </div>
   );
+}
+
+// Styles du HTML rendu dans les bulles de message (liens, listes, paragraphes).
+// Injectés une seule fois.
+if (typeof document !== 'undefined' && !document.getElementById('yv-msg-html-styles')) {
+  const el = document.createElement('style');
+  el.id = 'yv-msg-html-styles';
+  el.textContent = `
+    .yv-msg-html p { margin: 0 0 8px; }
+    .yv-msg-html p:last-child { margin-bottom: 0; }
+    .yv-msg-html ul, .yv-msg-html ol { margin: 0 0 8px; padding-left: 22px; }
+    .yv-msg-html li { margin: 2px 0; }
+    .yv-msg-html a { color: ${TICKETS_COLOR}; font-weight: 600; text-decoration: underline; word-break: break-word; }
+  `;
+  document.head.appendChild(el);
 }
 
 // ─── Emojis fréquents ─────────────────────────────────────────────────────────
@@ -282,7 +311,6 @@ function ReplyComposer({
   const [showLinkInput, setShowLinkInput] = useState(false);
   const [linkUrl, setLinkUrl] = useState('');
   const [linkText, setLinkText] = useState('');
-  const [linkSelection, setLinkSelection] = useState({ start: 0, end: 0 });
   const [selectedStatus, setSelectedStatus] = useState(currentStatus);
   const [statusOpen, setStatusOpen] = useState(false);
   const [afterOpen, setAfterOpen] = useState(false);
@@ -292,7 +320,7 @@ function ReplyComposer({
   const { statuses, statusMap } = useTicketStatuses();
   const fileRef = useRef();
   const modeRef = useRef();
-  const textareaRef = useRef();
+  const editorRef = useRef();
   const emojiRef = useRef();
   const linkRef = useRef();
   const statusRef = useRef();
@@ -327,8 +355,12 @@ function ReplyComposer({
       // Construire le contexte de substitution depuis le ticket + agent
       const ctx = buildPlaceholderContext({ ticket, agent, statusMap });
 
-      // Body : remplace (avec balises substituées)
-      if (typeof macro.body === 'string') setBody(applyPlaceholders(macro.body, ctx));
+      // Body : remplace (avec balises substituées). Le body macro est du texte
+      // plain (markdown-like) → on le convertit en HTML pour l'éditeur riche.
+      // setHTML émet onChange → met body à jour.
+      if (typeof macro.body === 'string') {
+        editorRef.current?.setHTML(markdownTextToHtml(applyPlaceholders(macro.body, ctx)));
+      }
       // Sujet : applique via parent si défini sur la macro (avec balises substituées)
       if (macro.subject && onApplyMacroSubject) onApplyMacroSubject(applyPlaceholders(macro.subject, ctx));
       // Statut : présélectionne
@@ -388,46 +420,28 @@ function ReplyComposer({
     return () => document.removeEventListener('mousedown', handler);
   }, [showLinkInput]);
 
-  // Insérer un emoji à la position du curseur
+  // Insérer un emoji à la position du curseur (via l'éditeur riche)
   const insertEmoji = (emoji) => {
-    const ta = textareaRef.current;
-    if (!ta) return;
-    const start = ta.selectionStart;
-    const end = ta.selectionEnd;
-    const newBody = body.slice(0, start) + emoji + body.slice(end);
-    setBody(newBody);
+    editorRef.current?.insertText(emoji);
     setShowEmojis(false);
-    setTimeout(() => { ta.focus(); ta.setSelectionRange(start + emoji.length, start + emoji.length); }, 0);
   };
 
-  // Ouvrir le popup lien — capturer la sélection avant que le focus parte
+  // Ouvrir le popup lien — pré-remplit le texte affiché avec la sélection courante
   const openLinkInput = () => {
-    const ta = textareaRef.current;
-    const start = ta ? ta.selectionStart : 0;
-    const end = ta ? ta.selectionEnd : 0;
-    const selected = body.slice(start, end);
-    setLinkSelection({ start, end });
+    const selected = editorRef.current?.getSelectedText?.() || '';
     setLinkText(selected);
     setLinkUrl('');
     setShowLinkInput(true);
   };
 
-  // Insérer le lien à la position mémorisée
+  // Insérer le lien dans l'éditeur riche
   const insertLink = () => {
     if (!linkUrl.trim()) return;
     const url = linkUrl.startsWith('http') ? linkUrl : `https://${linkUrl}`;
-    const display = linkText.trim() || url;
-    const { start, end } = linkSelection;
-    const insertion = `[${display}](${url})`;
-    const newBody = body.slice(0, start) + insertion + body.slice(end);
-    setBody(newBody);
+    editorRef.current?.setLink({ url, text: linkText.trim() });
     setLinkUrl('');
     setLinkText('');
     setShowLinkInput(false);
-    setTimeout(() => {
-      const ta = textareaRef.current;
-      if (ta) { ta.focus(); ta.setSelectionRange(start + insertion.length, start + insertion.length); }
-    }, 0);
   };
 
   useEffect(() => {
@@ -453,10 +467,19 @@ function ReplyComposer({
 
   const removeFile = (i) => setFiles(prev => prev.filter((_, idx) => idx !== i));
 
+  // Vrai si l'éditeur contient du texte réel (Tiptap garde un <p></p> vide qui
+  // ne doit pas compter comme du contenu). Fallback sur body si l'éditeur n'est
+  // pas encore monté.
+  const editorHasText = () => {
+    const ref = editorRef.current;
+    if (ref) return !ref.isEmpty();
+    return !!body && body.replace(/<[^>]*>/g, '').trim().length > 0;
+  };
+
   // Envoi : si message/PJ -> POST reply, puis si OK et statut a changé -> PUT status.
   // Si pas de message ni PJ -> juste changer le statut (si différent).
   const handleSend = async () => {
-    const hasContent = body.trim().length > 0 || files.length > 0;
+    const hasContent = editorHasText() || files.length > 0;
     const statusChanged = selectedStatus && selectedStatus !== currentStatus;
 
     if (!hasContent && !statusChanged) return;
@@ -517,7 +540,9 @@ function ReplyComposer({
     }
   };
 
-  const hasContent = body.trim().length > 0 || files.length > 0;
+  // body contient du HTML (ex. <p></p> vide) → on teste le texte réel.
+  const bodyNotEmpty = !!body && body.replace(/<[^>]*>/g, '').trim().length > 0;
+  const hasContent = bodyNotEmpty || files.length > 0;
   const statusChanged = selectedStatus && selectedStatus !== currentStatus;
   const canSend = hasContent || statusChanged;
   const currentStatusLabel = statusMap[selectedStatus]?.label || selectedStatus || '—';
@@ -526,7 +551,7 @@ function ReplyComposer({
     : `Envoyer comme ${currentStatusLabel}`;
 
   // Couleurs selon le mode
-  const borderColor = body.length > 0
+  const borderColor = bodyNotEmpty
     ? (isPrivate ? '#F6C613' : TICKETS_COLOR)
     : C.grisCL;
   const bgColor = isPrivate ? '#FFFDE7' : '#FCFEFF';
@@ -630,19 +655,12 @@ function ReplyComposer({
           )}
         </div>
 
-        {/* Textarea — flex pour remplir l'espace disponible, scroll interne */}
-        <textarea
-          ref={textareaRef}
+        {/* Éditeur riche (Tiptap) — flex pour remplir l'espace, scroll interne */}
+        <RichEditor
+          editorRef={editorRef}
           value={body}
-          onChange={e => setBody(e.target.value)}
+          onChange={setBody}
           placeholder={isPrivate ? 'Ajouter une note interne…' : 'Tapez votre réponse…'}
-          style={{
-            width: '100%', flex: 1, minHeight: 0,
-            padding: '14px 14px 10px',
-            border: 'none', outline: 'none', resize: 'none',
-            fontFamily: 'Lato, sans-serif', fontSize: 14, color: C.grisTF,
-            background: 'transparent', boxSizing: 'border-box',
-          }}
         />
 
         {/* Fichiers en attente */}

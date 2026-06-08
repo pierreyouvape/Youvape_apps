@@ -280,12 +280,15 @@ const savController = {
         return res.json({ success: true, ticket: updated });
       }
 
-      // Réponse publique → envoi email via Mailgun
+      // Réponse publique → envoi email via Mailgun.
+      // body = HTML (éditeur riche front). Le fallback texte est dérivé du HTML
+      // par mailgunService. NB : l'enrobage par le template d'email viendra dans
+      // un chantier suivant ; ici on envoie le HTML du message tel quel.
       const emailResult = await mailgunService.sendReply({
         to:          ticket.customer_email,
         subject:     ticket.subject,
         ticketId,
-        bodyText:    body,
+        bodyHtml:    body,
         attachments: toMailgunAttachments(req.files),
       });
 
