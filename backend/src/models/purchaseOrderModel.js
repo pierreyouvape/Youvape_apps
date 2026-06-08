@@ -350,13 +350,65 @@ const purchaseOrderModel = {
 
     console.log('Creating BMS order:', JSON.stringify(bmsOrderData, null, 2));
 
-    const bmsResponse = await bmsApiModel.createPurchaseOrder(bmsOrderData, bmsCredentials);
+    let bmsResponse;
+    try {
+      bmsResponse = await bmsApiModel.createPurchaseOrder(bmsOrderData, bmsCredentials);
+    } catch (error) {
+      throw purchaseOrderModel.enrichBmsItemError(error, bmsItems);
+    }
     console.log('BMS response:', JSON.stringify(bmsResponse, null, 2));
 
     return {
       bms_po_id: bmsResponse.id || null,
       bms_reference: bmsResponse.reference || null
     };
+  },
+
+  // Réécrit une erreur de validation BMS de la forme "items.<index>.<champ>" en
+  // identifiant le produit concerné (SKU, nom, référence fournisseur), pour que
+  // l'utilisateur sache immédiatement quelle ligne corriger, quel que soit le fournisseur.
+  enrichBmsItemError: (error, bmsItems) => {
+    const match = error.message?.match(/BMS API error: \d+ - (\{.*\})/s);
+    if (!match) return error;
+
+    let parsed;
+    try {
+      parsed = JSON.parse(match[1]);
+    } catch {
+      return error;
+    }
+
+    const fieldErrors = parsed?.errors;
+    if (!fieldErrors || typeof fieldErrors !== 'object') return error;
+
+    const byIndex = new Map();
+    for (const [field, messages] of Object.entries(fieldErrors)) {
+      const fieldMatch = field.match(/^items\.(\d+)\./);
+      if (!fieldMatch) continue;
+
+      const index = parseInt(fieldMatch[1], 10);
+      const item = bmsItems[index];
+      if (!item) continue;
+
+      if (!byIndex.has(index)) {
+        byIndex.set(index, {
+          label: `"${item.name}" (SKU ${item.sku}${item.supplier_sku ? `, réf. fournisseur ${item.supplier_sku}` : ''})`,
+          details: new Set()
+        });
+      }
+      const detail = Array.isArray(messages) ? messages.join(' ') : String(messages);
+      byIndex.get(index).details.add(detail);
+    }
+
+    if (byIndex.size === 0) return error;
+
+    const lines = [...byIndex.values()].map(
+      ({ label, details }) => `${label} : ${[...details].join(' ')}`
+    );
+
+    return new Error(
+      `Erreur BMS, produit(s) à corriger dans la commande avant l'envoi : ${lines.join(' | ')}`
+    );
   },
 
   // Mettre à jour une commande (fournisseur, notes, date, lignes)
