@@ -302,6 +302,7 @@ function ReplyComposer({
   onApplyMacroSubject,
 }) {
   const [body, setBody] = useState(() => localStorage.getItem(`yv.tickets.draft.${ticketId}`) || '');
+  const [fmt, setFmt] = useState({ bold: false, italic: false, underline: false, bulletList: false });
   const [isPrivate, setIsPrivate] = useState(false);
   const [modeOpen, setModeOpen] = useState(false);
   const [files, setFiles] = useState([]);
@@ -511,10 +512,18 @@ function ReplyComposer({
       const data = await res.json();
       if (!data.success) throw new Error(data.error || 'Erreur envoi');
 
-      // Reply OK → vider composer
+      // Le message est enregistré (envoyé OU stocké avec send_failed côté backend)
+      // → on vide le composer et on rafraîchit le fil dans tous les cas.
       setBody(''); setFiles([]);
       localStorage.removeItem(`yv.tickets.draft.${ticketId}`);
       onReplySent(data.ticket);
+
+      if (data.send_failed) {
+        // Envoi mail KO mais message conservé (badge "⚠ Non envoyé" dans le fil).
+        // On n'applique PAS le changement de statut et on ne passe pas au suivant.
+        setError(data.warning || "Le message a été enregistré mais l'email n'a pas pu être envoyé.");
+        return;
+      }
 
       // Si statut a changé → l'appliquer maintenant
       if (statusChanged) {
@@ -523,7 +532,8 @@ function ReplyComposer({
       // Mode Play + "Prochain ticket disponible" -> on avance
       if (playMode && afterActionMode === 'next' && onAdvance) onAdvance();
     } catch (e) {
-      // Reply échoué : on n'applique PAS le changement de statut, on remonte un message local "Non envoyé"
+      // Échec réseau / serveur (le backend n'a rien stocké) : on remonte un
+      // message local "Non envoyé" pour ne pas perdre le texte de l'agent.
       onSendFailed?.({
         from: agentName || 'SAV Youvape',
         body,
@@ -660,6 +670,7 @@ function ReplyComposer({
           editorRef={editorRef}
           value={body}
           onChange={setBody}
+          onStateChange={setFmt}
           placeholder={isPrivate ? 'Ajouter une note interne…' : 'Tapez votre réponse…'}
         />
 
@@ -681,6 +692,30 @@ function ReplyComposer({
 
         {/* Toolbar */}
         <div style={{ padding: '8px 14px', display: 'flex', alignItems: 'center', gap: 8, borderTop: `1px solid ${C.grisCL}`, position: 'relative' }}>
+          {/* Formatage texte */}
+          <button
+            style={{ ...iconBtn(), background: fmt.bold ? `${TICKETS_COLOR}1A` : 'transparent', fontWeight: 800, fontSize: 15, color: fmt.bold ? TICKETS_COLOR : C.grisF }}
+            title="Gras (Ctrl/Cmd+B)"
+            onMouseDown={e => { e.preventDefault(); editorRef.current?.toggleBold(); }}
+          >G</button>
+          <button
+            style={{ ...iconBtn(), background: fmt.italic ? `${TICKETS_COLOR}1A` : 'transparent', fontStyle: 'italic', fontSize: 15, color: fmt.italic ? TICKETS_COLOR : C.grisF }}
+            title="Italique (Ctrl/Cmd+I)"
+            onMouseDown={e => { e.preventDefault(); editorRef.current?.toggleItalic(); }}
+          >I</button>
+          <button
+            style={{ ...iconBtn(), background: fmt.underline ? `${TICKETS_COLOR}1A` : 'transparent', textDecoration: 'underline', fontSize: 15, color: fmt.underline ? TICKETS_COLOR : C.grisF }}
+            title="Souligné (Ctrl/Cmd+U)"
+            onMouseDown={e => { e.preventDefault(); editorRef.current?.toggleUnderline(); }}
+          >S</button>
+          <button
+            style={{ ...iconBtn(), background: fmt.bulletList ? `${TICKETS_COLOR}1A` : 'transparent', fontSize: 15, color: fmt.bulletList ? TICKETS_COLOR : C.grisF }}
+            title="Liste à puces"
+            onMouseDown={e => { e.preventDefault(); editorRef.current?.toggleBulletList(); }}
+          >☰</button>
+
+          <span style={{ width: 1, height: 18, background: C.grisCL, margin: '0 2px' }} />
+
           <button style={iconBtn()} title="Joindre un fichier" onClick={() => fileRef.current.click()}>
             <Ic.Attach />
           </button>

@@ -49,13 +49,26 @@ function ensureStyles() {
  *  - placeholder  : texte affiché quand vide
  *  - editorRef    : ref exposant insertText / setLink / setHTML / clear / getText / focus / isEmpty
  */
-export default function RichEditor({ value, onChange, placeholder, editorRef }) {
+export default function RichEditor({ value, onChange, placeholder, editorRef, onStateChange }) {
   ensureStyles();
 
   // Placeholder réactif (public ↔ note privée) sans re-créer l'éditeur :
   // la fonction Placeholder lit toujours la dernière valeur via ce ref.
   const placeholderRef = useRef(placeholder || '');
   placeholderRef.current = placeholder || '';
+
+  // Remonte au parent l'état des marques actives (gras, italique…) pour
+  // surligner les boutons de la toolbar.
+  const reportState = (ed) => {
+    if (!ed || !onStateChange) return;
+    onStateChange({
+      bold:       ed.isActive('bold'),
+      italic:     ed.isActive('italic'),
+      underline:  ed.isActive('underline'),
+      bulletList: ed.isActive('bulletList'),
+      orderedList: ed.isActive('orderedList'),
+    });
+  };
 
   const editor = useEditor({
     extensions: [
@@ -71,7 +84,9 @@ export default function RichEditor({ value, onChange, placeholder, editorRef }) 
     onUpdate: ({ editor }) => {
       const html = editor.isEmpty ? '' : editor.getHTML();
       onChange?.(html);
+      reportState(editor);
     },
+    onSelectionUpdate: ({ editor }) => reportState(editor),
   });
 
   // Synchroniser le contenu externe → éditeur (draft restauré, reset après envoi,
@@ -120,6 +135,11 @@ export default function RichEditor({ value, onChange, placeholder, editorRef }) 
     getText: () => editor?.getText() || '',
     isEmpty: () => editor?.isEmpty ?? true,
     focus: () => editor?.chain().focus().run(),
+    // Commandes de formatage (boutons toolbar)
+    toggleBold:       () => editor?.chain().focus().toggleBold().run(),
+    toggleItalic:     () => editor?.chain().focus().toggleItalic().run(),
+    toggleUnderline:  () => editor?.chain().focus().toggleUnderline().run(),
+    toggleBulletList: () => editor?.chain().focus().toggleBulletList().run(),
   }), [editor]);
 
   return (

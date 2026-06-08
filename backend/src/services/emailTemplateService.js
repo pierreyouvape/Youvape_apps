@@ -10,7 +10,8 @@ const TEMPLATE_DIR = path.join(__dirname, '..', 'templates', 'email');
 
 // URL publique du logo affiché dans les emails. Servi par le frontend en prod.
 // Surchargeable par env var si besoin (ex. CDN).
-const LOGO_URL = process.env.SAV_EMAIL_LOGO_URL || 'https://apps.youvape.fr/images/logo.jpg';
+const LOGO_URL = process.env.SAV_EMAIL_LOGO_URL
+  || 'https://www.youvape.fr/wp-content/themes/you-vape-theme-child/dist/images/logo.ff500a25.svg';
 
 const FILES = {
   reponse: 'sav-reponse.html',

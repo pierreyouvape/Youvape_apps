@@ -339,8 +339,19 @@ const savController = {
         attachments: toMailgunAttachments(req.files),
       });
 
+      // Échec d'envoi : on stocke quand même le message (avec send_failed) pour
+      // ne pas perdre le travail de l'agent, et on renvoie le ticket à jour avec
+      // un flag. Le front affiche le badge "⚠ Non envoyé".
       if (!emailResult.success) {
-        return res.status(500).json({ error: `Erreur envoi email: ${emailResult.error}` });
+        const failed = await savModel.addMessage(ticketId, {
+          from, body, is_agent: true, is_private: false,
+          attachments: storedAttachments,
+          send_failed: true, error: emailResult.error,
+        });
+        return res.json({
+          success: true, ticket: failed,
+          send_failed: true, warning: `Message enregistré mais non envoyé : ${emailResult.error}`,
+        });
       }
 
       // Stocker le message dans le ticket
@@ -464,29 +475,41 @@ const savController = {
       // Sauvegarde des éventuelles PJ
       const storedAttachments = saveAttachments(ticket.id, req.files);
 
-      // TODO: réactiver l'envoi Mailgun quand la conf sera prête
-      // Si réponse publique → envoi mail Mailgun (actuellement désactivé)
-      // if (!isPrivate) {
-      //   const emailResult = await mailgunService.sendReply({
-      //     to:          customer_email.toLowerCase(),
-      //     subject:     subject,
-      //     ticketId:    ticket.id,
-      //     bodyText:    body,
-      //     attachments: toMailgunAttachments(req.files),
-      //   });
-      //   if (!emailResult.success) {
-      //     console.error('[SAV createManual] Envoi mail échoué:', emailResult.error);
-      //     return res.status(500).json({ error: `Ticket créé mais envoi mail échoué : ${emailResult.error}`, ticket_id: ticket.id });
-      //   }
-      // }
+      // Réponse publique → envoi mail au client (enrobé dans le template réponse).
+      // En cas d'échec, on stocke quand même le message avec send_failed (comme reply).
+      let sendFailedFlag = false;
+      let sendError = null;
+      if (!isPrivate) {
+        const wrappedHtml = emailTemplateService.renderReponse({
+          customer_name: resolved_name || '',
+          subject:       subject || '',
+          ticket_id:     ticket.id,
+          messageBodyHtml: body,
+        });
+        const emailResult = await mailgunService.sendReply({
+          to:          customer_email.toLowerCase(),
+          subject,
+          ticketId:    ticket.id,
+          bodyHtml:    wrappedHtml,
+          bodyText:    mailgunService.htmlToPlainText(body),
+          attachments: toMailgunAttachments(req.files),
+        });
+        if (!emailResult.success) {
+          console.error('[SAV createManual] Envoi mail échoué:', emailResult.error);
+          sendFailedFlag = true;
+          sendError = emailResult.error;
+        }
+      }
 
-      // Stocker le 1er message
+      // Stocker le 1er message (avec le flag send_failed si l'envoi a échoué)
       await savModel.addMessage(ticket.id, {
         from: agent_name || 'SAV Youvape',
         body,
         is_agent: true,
         is_private: isPrivate,
         attachments: storedAttachments,
+        send_failed: sendFailedFlag,
+        error: sendError,
       });
 
       // Détection de doublons (fire-and-forget)
@@ -494,7 +517,10 @@ const savController = {
 
       // Renvoyer le ticket complet (avec enrichissements client, etc.)
       const fullTicket = await savModel.getById(ticket.id);
-      res.status(201).json({ success: true, ticket: fullTicket });
+      res.status(201).json({
+        success: true, ticket: fullTicket,
+        ...(sendFailedFlag ? { send_failed: true, warning: `Ticket créé mais email non envoyé : ${sendError}` } : {}),
+      });
 
     } catch (error) {
       console.error('❌ [SAV] Erreur création manuelle:', error);
