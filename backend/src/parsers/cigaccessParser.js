@@ -169,7 +169,7 @@ function parseFacture(text) {
     const textBefore = blockText.substring(0, blockText.indexOf(numbersMatch[0])).trim();
     if (!textBefore) continue;
 
-    const refMatch = textBefore.match(/^([\d][\d\w-]+)\s+(.+)$/);
+    const refMatch = textBefore.match(/^([\d][\d\w.-]+)\s+(.+)$/);
     let supplierSku = '';
     let designation = textBefore;
 
@@ -262,8 +262,9 @@ function parseProforma(text) {
     const textBefore = blockText.substring(0, blockText.indexOf(numbersMatch[0])).trim();
     if (!textBefore) continue;
 
-    // La ref est au debut : chiffres (6 digits) ou chiffres-lettres-tirets (012884-0-Blac)
-    const refMatch = textBefore.match(/^(\d[\d\w-]+)\s+(.+)$/);
+    // La ref est au debut : chiffres (6 digits), chiffres-lettres-tirets (012884-0-Blac)
+    // ou avec decimale pour les ohms (010315-0-0.80)
+    const refMatch = textBefore.match(/^(\d[\d\w.-]+)\s+(.+)$/);
     if (!refMatch) continue;
 
     const supplierSku = refMatch[1];
