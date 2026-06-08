@@ -224,11 +224,13 @@ async function resolveOrderIds(trackingNumbers) {
   if (!trackingNumbers.length) return {};
   const res = await pool.query(
     `SELECT wp_order_id::int AS order_id, tracking_number
-     FROM orders WHERE tracking_number = ANY($1::text[])`,
-    [trackingNumbers]
+     FROM orders WHERE UPPER(tracking_number) = ANY($1::text[])`,
+    [trackingNumbers.map(t => t.toUpperCase())]
   );
+  // Certaines commandes ont leur tracking enregistre en minuscules : on indexe
+  // la map par valeur normalisee pour que la comparaison soit insensible a la casse
   const map = {};
-  for (const row of res.rows) map[row.tracking_number] = row.order_id;
+  for (const row of res.rows) map[row.tracking_number.toUpperCase()] = row.order_id;
   return map;
 }
 
@@ -262,7 +264,8 @@ async function enrichParcels(parcels) {
   const trackingMap = await resolveOrderIds(trackings);
 
   for (const p of parcels) {
-    if (trackingMap[p.tracking]) p.order_id = trackingMap[p.tracking];
+    const key = p.tracking ? p.tracking.toUpperCase() : null;
+    if (key && trackingMap[key]) p.order_id = trackingMap[key];
   }
 
   const orderIds = parcels.filter(p => p.order_id).map(p => p.order_id);

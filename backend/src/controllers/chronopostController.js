@@ -173,12 +173,14 @@ async function resolveOrderIdsByTracking(trackingNumbers) {
   const res = await pool.query(
     `SELECT wp_order_id::int AS order_id, tracking_number
      FROM orders
-     WHERE tracking_number = ANY($1::text[])`,
-    [trackingNumbers]
+     WHERE UPPER(tracking_number) = ANY($1::text[])`,
+    [trackingNumbers.map(t => t.toUpperCase())]
   );
+  // Certaines commandes ont leur tracking enregistre en minuscules : on indexe
+  // la map par valeur normalisee pour que la comparaison soit insensible a la casse
   const map = {};
   for (const row of res.rows) {
-    map[row.tracking_number] = row.order_id;
+    map[row.tracking_number.toUpperCase()] = row.order_id;
   }
   return map;
 }
@@ -378,8 +380,9 @@ exports.analyze = [
       if (trackingsWithoutId.length) {
         const trackingMap = await resolveOrderIdsByTracking(trackingsWithoutId);
         for (const o of orders) {
-          if (!o.order_id && o.tracking && trackingMap[o.tracking]) {
-            o.order_id = trackingMap[o.tracking];
+          const key = o.tracking ? o.tracking.toUpperCase() : null;
+          if (!o.order_id && key && trackingMap[key]) {
+            o.order_id = trackingMap[key];
           }
         }
       }
@@ -447,8 +450,9 @@ exports.exportExcel = [
       if (trackingsWithoutId2.length) {
         const trackingMap2 = await resolveOrderIdsByTracking(trackingsWithoutId2);
         for (const o of parsed.orders) {
-          if (!o.order_id && o.tracking && trackingMap2[o.tracking]) {
-            o.order_id = trackingMap2[o.tracking];
+          const key2 = o.tracking ? o.tracking.toUpperCase() : null;
+          if (!o.order_id && key2 && trackingMap2[key2]) {
+            o.order_id = trackingMap2[key2];
           }
         }
       }
