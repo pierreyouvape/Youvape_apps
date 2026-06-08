@@ -75,6 +75,33 @@ const mailgunService = {
     }
   },
 
+  // ─── Accusé de réception au client (auto à la création/réponse) ──────────
+  // Comme sendReply, garde [SAV #N] dans le sujet pour que toute réponse du
+  // client se rattache au ticket. bodyHtml = template accusé déjà enrobé.
+  sendAcknowledgement: async ({ to, subject, ticketId, bodyText, bodyHtml }) => {
+    try {
+      const fullSubject = subject.includes(`[SAV #${ticketId}]`)
+        ? subject
+        : `[SAV #${ticketId}] ${subject}`;
+
+      const messageData = {
+        from: FROM,
+        to: [to],
+        subject: fullSubject,
+        text: bodyText || (bodyHtml ? htmlToPlainText(bodyHtml) : ''),
+        'h:Reply-To': FROM,
+      };
+      if (bodyHtml) messageData.html = bodyHtml;
+
+      const result = await mg.messages.create(DOMAIN, messageData);
+      console.log(`📧 [Mailgun] Accusé de réception envoyé à ${to} pour ticket #${ticketId}`);
+      return { success: true, id: result.id };
+    } catch (error) {
+      console.error(`❌ [Mailgun] Erreur accusé réception ticket #${ticketId}:`, error.message);
+      return { success: false, error: error.message };
+    }
+  },
+
   // ─── Notification interne (notif équipe SAV, pas envoyé au client) ──────
   // PAS de préfixe [SAV #N] dans le sujet pour ne pas être confondu avec un
   // inbound client. Permet plusieurs destinataires en CC.
