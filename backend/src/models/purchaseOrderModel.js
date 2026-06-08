@@ -728,7 +728,10 @@ const purchaseOrderModel = {
 
         let status;
         if (bmsOrder.status === 'complete') {
-          status = totalReceived >= totalOrdered ? 'received' : 'partial';
+          // BMS considère la commande terminée (close), même si certains articles
+          // n'ont pas été réceptionnés : on reflète fidèlement ce statut "Terminée"
+          // plutôt que de le déduire des quantités reçues.
+          status = 'completed';
         } else if (bmsOrder.status === 'expected') {
           // Attendu sans aucune réception → confirmed, avec réception partielle → partial
           status = totalReceived > 0 ? 'partial' : 'confirmed';

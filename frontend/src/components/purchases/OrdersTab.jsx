@@ -54,6 +54,7 @@ const OrdersTab = ({ token }) => {
     shipped: 'Expédiée',
     partial: 'Partielle',
     received: 'Reçue',
+    completed: 'Terminée',
     cancelled: 'Annulée'
   };
 
@@ -79,7 +80,7 @@ const OrdersTab = ({ token }) => {
       const params = new URLSearchParams();
       if (filterSupplier) params.append('supplier_id', filterSupplier);
       if (filterStatus === 'active') {
-        params.append('exclude_status', 'received,cancelled');
+        params.append('exclude_status', 'received,completed,cancelled');
       } else if (filterStatus) {
         params.append('status', filterStatus);
       }
@@ -367,7 +368,7 @@ const OrdersTab = ({ token }) => {
 
   // Badge produit manquant : uniquement pour received/partial
   const hasMissingProducts = (order) =>
-    ['received', 'partial'].includes(order.status) &&
+    ['received', 'partial', 'completed'].includes(order.status) &&
     parseInt(order.total_qty_received) < parseInt(order.total_qty_ordered);
 
   const hasMissingProductsDetail = (order) => {
@@ -445,6 +446,7 @@ const OrdersTab = ({ token }) => {
               <option value="confirmed">Attendu</option>
               <option value="partial">Partielle</option>
               <option value="received">Reçue</option>
+              <option value="completed">Terminée</option>
             </select>
           </div>
 
