@@ -56,6 +56,12 @@ const purchaseOrderModel = {
       values.push(filters.to_date);
     }
 
+    if (filters.search) {
+      query += ` AND (po.order_number ILIKE $${paramIndex} OR po.bms_reference ILIKE $${paramIndex})`;
+      values.push(`%${filters.search}%`);
+      paramIndex++;
+    }
+
     query += ' GROUP BY po.id, s.name, s.code, u.email ORDER BY po.created_at DESC';
 
     if (filters.limit) {

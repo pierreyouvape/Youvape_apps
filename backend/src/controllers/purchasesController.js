@@ -154,6 +154,7 @@ const purchasesController = {
         supplier_id: req.query.supplier_id ? parseInt(req.query.supplier_id) : null,
         status: req.query.status || null,
         exclude_status: req.query.exclude_status ? req.query.exclude_status.split(',') : null,
+        search: req.query.search?.trim() || null,
         from_date: req.query.from_date || null,
         to_date: req.query.to_date || null,
         limit: req.query.limit ? parseInt(req.query.limit) : 50

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { formatDate } from '../../utils/dateUtils';
@@ -33,6 +33,15 @@ const OrdersTab = ({ token }) => {
   // Filters
   const [filterSupplier, setFilterSupplier] = useState('');
   const [filterStatus, setFilterStatus] = useState('active');
+  const [searchInput, setSearchInput] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
+  const searchTimeoutRef = useRef(null);
+
+  const handleSearchChange = (value) => {
+    setSearchInput(value);
+    if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
+    searchTimeoutRef.current = setTimeout(() => setSearchQuery(value.trim()), 300);
+  };
 
   // BMS sync commandes
   const [syncing, setSyncing] = useState(false);
@@ -84,6 +93,7 @@ const OrdersTab = ({ token }) => {
       } else if (filterStatus) {
         params.append('status', filterStatus);
       }
+      if (searchQuery) params.append('search', searchQuery);
 
       const response = await axios.get(`${API_URL}/purchases/orders?${params}`, {
         headers: { Authorization: `Bearer ${token}` }
@@ -98,7 +108,7 @@ const OrdersTab = ({ token }) => {
 
   useEffect(() => {
     loadOrders();
-  }, [token, filterSupplier, filterStatus]);
+  }, [token, filterSupplier, filterStatus, searchQuery]);
 
   // Open detail modal
   const openDetail = async (orderId) => {
@@ -448,6 +458,23 @@ const OrdersTab = ({ token }) => {
               <option value="received">Reçue</option>
               <option value="completed">Terminée</option>
             </select>
+          </div>
+
+          <div className="filter-group">
+            <label>Rechercher</label>
+            <input
+              type="text"
+              placeholder="N° de commande ou référence..."
+              value={searchInput}
+              onChange={e => handleSearchChange(e.target.value)}
+              style={{
+                padding: '6px 12px',
+                border: '1px solid #ddd',
+                borderRadius: '6px',
+                fontSize: '13px',
+                width: '220px'
+              }}
+            />
           </div>
 
           <button
