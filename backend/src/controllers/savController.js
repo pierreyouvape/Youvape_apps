@@ -178,9 +178,15 @@ const savController = {
           attachments,
         });
 
-        // Rouvrir le ticket si terminé/refusé
-        if (['terminé', 'refusé'].includes(matchedTicket.sav_status)) {
-          await savModel.updateStatus(matchedTicket.id, 'ouvert');
+        // Une réponse du client repasse le ticket en "reponse_client" (à traiter),
+        // quel que soit le statut courant (sauf s'il y est déjà). Remonte ainsi
+        // le ticket dans la file dès que le client relance.
+        if (matchedTicket.sav_status !== 'reponse_client') {
+          try {
+            await savModel.updateStatus(matchedTicket.id, 'reponse_client');
+          } catch (e) {
+            console.warn(`[SAV Inbound] Maj statut reponse_client échouée (#${matchedTicket.id}):`, e.message);
+          }
         }
 
         console.log(`📨 [SAV Inbound] Réponse client ajoutée au ticket #${matchedTicket.id}`);
