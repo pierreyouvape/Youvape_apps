@@ -1,4 +1,4 @@
-import { useState, useRef, useContext } from 'react';
+import { useState, useRef, useContext, useEffect } from 'react';
 import axios from 'axios';
 import { AuthContext } from '../context/AuthContext';
 import AppShell from '../components/AppShell';
@@ -66,21 +66,201 @@ export default function ColissimoApp() {
   const [dragging, setDragging] = useState(false);
   const [loading, setLoading] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveState, setSaveState] = useState(null); // null | 'saved' | 'already'
   const [error, setError] = useState(null);
   const [result, setResult] = useState(null);
   const [tab, setTab] = useState('poids');
   const [search, setSearch] = useState('');
   const [filterPoids, setFilterPoids] = useState('all');
   const [currentFile, setCurrentFile] = useState(null);
+  const [history, setHistory] = useState([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [applying, setApplying] = useState(false);
+  const [applyProgress, setApplyProgress] = useState(0);
+  const [applyResult, setApplyResult] = useState(null); // {updated, skipped}
+
+  async function loadHistory() {
+    setHistoryLoading(true);
+    try {
+      const { data } = await axios.get(`${API_URL}/colissimo/history`, { headers: { Authorization: `Bearer ${token}` } });
+      if (data.success) setHistory(data.invoices);
+    } catch { /* silently fail */ }
+    finally { setHistoryLoading(false); }
+  }
+
+  useEffect(() => { loadHistory(); }, []);
+
+  // Charge une facture depuis l'historique BDD et la réaffiche comme si elle venait d'être analysée
+  async function handleLoadFromHistory(inv) {
+    setLoading(true); setError(null); setCurrentFile(null); setApplyResult(null);
+    try {
+      const { data } = await axios.get(`${API_URL}/colissimo/history/${inv.id}`, { headers: { Authorization: `Bearer ${token}` } });
+      if (!data.success) throw new Error(data.error);
+
+      const detailByTracking = {};
+      for (const p of (data.invoice.parcels_detail || [])) detailByTracking[p.tracking] = p;
+
+      const parcels = (data.parcels || []).map(p => {
+        const det = detailByTracking[p.tracking] || {};
+        return {
+          tracking: p.tracking,
+          order_id: p.order_id,
+          decarbonation_unit: det.decarbonation_unit ?? null,
+          date: p.date,
+          weight_colissimo: p.weight_carrier != null ? parseFloat(p.weight_carrier) : null,
+          weight_bdd:       p.weight_bdd    != null ? parseFloat(p.weight_bdd)    : null,
+          diff_g: p.diff_g,
+          port_brut: det.port_brut ?? null,
+          tx_remise: det.tx_remise ?? null,
+          remise_ht: det.remise_ht ?? null,
+          port_net:  det.port_net ?? null,
+          cae_ht:    det.cae_ht ?? null,
+          total_ht:  p.amount_ht != null ? parseFloat(p.amount_ht) : (det.total_ht ?? null),
+        };
+      });
+      const supplements = (data.supplements || []).map(s => ({
+        tracking: s.tracking,
+        label: s.description,
+        amount: s.amount_ht != null ? parseFloat(s.amount_ht) : null,
+      }));
+      const indemnizations = (data.invoice.indemnizations || []).map(i => ({
+        date: i.date, reference: i.reference, tracking: i.tracking, label: i.label, amount: i.amount, type: i.type,
+      }));
+      const inv2 = data.invoice;
+      const rebuilt = {
+        success: true,
+        invoiceNumber: inv2.invoice_number,
+        periodStart: inv2.period_start,
+        periodEnd: inv2.period_end,
+        accountNumber: inv2.account_number,
+        parcels, supplements, indemnizations,
+        globalSummary: {
+          portBrut: inv2.port_brut != null ? parseFloat(inv2.port_brut) : null,
+          remise:   inv2.remise    != null ? parseFloat(inv2.remise)    : null,
+          portNet:  inv2.port_net  != null ? parseFloat(inv2.port_net)  : null,
+          cae:      inv2.cae       != null ? parseFloat(inv2.cae)       : null,
+        },
+        stats: {
+          total_parcels: inv2.total_parcels,
+          parcels_matched: inv2.parcels_matched,
+          parcels_unmatched: parcels.filter(p => !p.order_id).length,
+          weight_ok: parcels.filter(p => p.diff_g !== null && Math.abs(p.diff_g) <= 20).length,
+          weight_ecart: parcels.filter(p => p.diff_g !== null && Math.abs(p.diff_g) > 200).length,
+          supplements_count: supplements.length,
+          supplements_total: inv2.supplements_total != null ? parseFloat(inv2.supplements_total) : 0,
+          indemnizations_total: inv2.indemnizations_total != null ? parseFloat(inv2.indemnizations_total) : 0,
+        },
+        _fromHistory: true,
+      };
+      setResult(rebuilt);
+      setSaveState('already');
+      setTab('poids');
+    } catch (e) {
+      setError(e.message);
+    } finally { setLoading(false); }
+  }
+
+  async function handleSave() {
+    if (!result) return;
+    setSaving(true);
+    try {
+      const fd = new FormData();
+      fd.append('data', JSON.stringify(result));
+      if (currentFile) fd.append('pdf', currentFile);
+      const { data } = await axios.post(`${API_URL}/colissimo/save`, fd, { headers: { Authorization: `Bearer ${token}` } });
+      if (data.success) {
+        setSaveState(data.already_saved ? 'already' : 'saved');
+        if (!data.already_saved) loadHistory();
+      }
+    } catch (e) {
+      setError(e.response?.data?.error || 'Erreur lors de l\'enregistrement');
+    } finally { setSaving(false); }
+  }
+
+  async function handleDeleteInvoice(inv, e) {
+    e.stopPropagation();
+    if (!window.confirm(`Supprimer la facture ${inv.invoice_number} ?\nElle pourra être réimportée ensuite.`)) return;
+    try {
+      await axios.delete(`${API_URL}/colissimo/history/${inv.id}`, { headers: { Authorization: `Bearer ${token}` } });
+      if (result?.invoiceNumber === inv.invoice_number) { setResult(null); setSaveState(null); setCurrentFile(null); }
+      loadHistory();
+    } catch {
+      setError('Erreur lors de la suppression');
+    }
+  }
+
+  function handleDownloadPdf(inv, e) {
+    e.stopPropagation();
+    fetch(`${API_URL}/colissimo/history/${inv.id}/pdf`, { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => r.blob())
+      .then(blob => {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = `Colissimo_${inv.invoice_number}.pdf`;
+        a.click();
+        URL.revokeObjectURL(url);
+      })
+      .catch(() => setError('PDF non disponible pour cette facture'));
+  }
+
+  async function handleApplyTariffs() {
+    const matchedParcels = parcels.filter(p => p.order_id && p.total_ht != null);
+    if (!matchedParcels.length) { setError('Aucun colis avec un tarif et une commande identifiée.'); return; }
+
+    const ok = window.confirm(
+      `Mettre à jour le coût livraison HT pour ${matchedParcels.length} commande(s) ?\n\nCette action remplace le coût actuel par le Total HT de la facture Colissimo, majoré des suppléments correspondants et de la participation décarbonation (0,05€/colis).`
+    );
+    if (!ok) return;
+
+    setApplying(true); setApplyResult(null); setApplyProgress(5);
+    let prog = 5;
+    const timer = setInterval(() => {
+      prog = prog < 85 ? prog + Math.random() * 8 : prog + 0.5;
+      setApplyProgress(Math.min(prog, 90));
+    }, 300);
+
+    try {
+      // Suppléments rattachés à un colis (via le tracking) ajoutés à la commande correspondante.
+      // La "Participation à la décarbonation" n'apparaît que dans le récap global de la facture
+      // (jamais par colis) mais s'applique à 100% des colis — son montant unitaire est reporté
+      // sur chaque colis lors de l'analyse (p.decarbonation_unit) et ajouté ici à toutes les commandes.
+      const supplByTracking = {};
+      for (const s of supplements) {
+        if (s.tracking) supplByTracking[s.tracking] = (supplByTracking[s.tracking] || 0) + (s.amount || 0);
+      }
+
+      const tariffs = matchedParcels.map(p => ({
+        order_id: p.order_id,
+        tarif: p.total_ht + (supplByTracking[p.tracking] || 0) + (p.decarbonation_unit || 0),
+      }));
+      const { data } = await axios.post(`${API_URL}/colissimo/apply-tariffs`, { tariffs }, {
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        timeout: 60000,
+      });
+      clearInterval(timer);
+      setApplyProgress(100);
+      if (data.success) setApplyResult(data);
+      else setError(data.error);
+    } catch (e) {
+      clearInterval(timer);
+      setApplyProgress(0);
+      setError(e.response?.data?.error || 'Délai dépassé — réessaie');
+    } finally { setApplying(false); }
+  }
 
   async function handleFile(file) {
     if (!file || file.type !== 'application/pdf') { setError('Fichier PDF requis.'); return; }
-    setCurrentFile(file); setError(null); setResult(null); setLoading(true);
+    setCurrentFile(file); setError(null); setResult(null); setSaveState(null); setApplyResult(null); setLoading(true);
     try {
       const fd = new FormData(); fd.append('pdf', file);
       const { data } = await axios.post(`${API_URL}/colissimo/analyze`, fd, { headers: { Authorization: `Bearer ${token}` } });
       if (!data.success) throw new Error(data.error || 'Erreur analyse');
       setResult(data); setTab('poids');
+      if (data.invoiceNumber) {
+        const alreadySaved = history.some(h => h.invoice_number === data.invoiceNumber);
+        if (alreadySaved) setSaveState('already');
+      }
     } catch (e) { setError(e.response?.data?.error || e.message); }
     finally { setLoading(false); }
   }
@@ -150,10 +330,48 @@ export default function ColissimoApp() {
               <div>
                 <span style={{ fontWeight: 700, fontSize: 14, color: C.dark }}>Facture {result.invoiceNumber}</span>
                 {result.periodStart && <span style={{ color: C.greyT, fontSize: 12.5, marginLeft: 12 }}>{result.periodStart} → {result.periodEnd}</span>}
+                {result.accountNumber && <span style={{ color: C.greyT, fontSize: 12.5, marginLeft: 12 }}>Compte n° {result.accountNumber}</span>}
               </div>
-              <button onClick={handleExport} disabled={exporting} style={{ background: C.accent, color: C.white, border: 'none', borderRadius: 8, padding: '8px 16px', fontWeight: 700, fontSize: 13, cursor: exporting ? 'wait' : 'pointer', opacity: exporting ? .7 : 1 }}>
-                {exporting ? '⏳ Export…' : '⬇️ Télécharger Excel'}
-              </button>
+              <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+                {saveState === 'saved' && (
+                  <span style={{ color: C.green, fontWeight: 700, fontSize: 13 }}>✓ Facture enregistrée</span>
+                )}
+                {saveState === 'already' && (
+                  <span style={{ background: '#FEF3C7', color: '#92400E', border: '1px solid #F59E0B', borderRadius: 8, padding: '6px 14px', fontSize: 13, fontWeight: 600 }}>
+                    ⚠ Facture déjà enregistrée en BDD
+                  </span>
+                )}
+                {saveState === null && (
+                  <button onClick={handleSave} disabled={saving} style={{ background: C.green, color: C.white, border: 'none', borderRadius: 8, padding: '9px 18px', fontWeight: 700, fontSize: 13, cursor: saving ? 'wait' : 'pointer', opacity: saving ? .7 : 1 }}>
+                    {saving ? '⏳ Enregistrement…' : '💾 Enregistrer la facture'}
+                  </button>
+                )}
+                {applyResult ? (
+                  <span style={{ color: C.green, fontWeight: 700, fontSize: 13 }}>
+                    ✓ {applyResult.updated} commande(s) mise(s) à jour
+                    {applyResult.skipped > 0 && ` (${applyResult.skipped} ignorées)`}
+                  </span>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 230 }}>
+                    <button
+                      onClick={handleApplyTariffs}
+                      disabled={applying || !parcels.filter(p => p.order_id && p.total_ht != null).length}
+                      title="Remplace le Coût livraison HT de chaque commande par le Total HT indiqué sur la facture"
+                      style={{ background: '#7C3AED', color: C.white, border: 'none', borderRadius: 8, padding: '9px 18px', fontWeight: 700, fontSize: 13, cursor: applying ? 'wait' : 'pointer', opacity: applying ? .85 : 1, width: '100%' }}
+                    >
+                      {applying ? `⏳ Mise à jour… ${Math.round(applyProgress)}%` : '🔄 Appliquer les tarifs aux commandes'}
+                    </button>
+                    {applying && (
+                      <div style={{ height: 6, background: C.greyB, borderRadius: 4, overflow: 'hidden' }}>
+                        <div style={{ height: '100%', borderRadius: 4, background: 'linear-gradient(90deg, #7C3AED, #A78BFA)', width: `${applyProgress}%`, transition: 'width 0.3s ease' }} />
+                      </div>
+                    )}
+                  </div>
+                )}
+                <button onClick={handleExport} disabled={exporting} style={{ background: C.accent, color: C.white, border: 'none', borderRadius: 8, padding: '8px 16px', fontWeight: 700, fontSize: 13, cursor: exporting ? 'wait' : 'pointer', opacity: exporting ? .7 : 1 }}>
+                  {exporting ? '⏳ Export…' : '⬇️ Télécharger Excel'}
+                </button>
+              </div>
             </div>
 
             {/* Stats */}
@@ -175,6 +393,7 @@ export default function ColissimoApp() {
                 <TabBtn label="Suppléments"       active={tab==='suppl'}   onClick={() => setTab('suppl')}    badge={supplements.length} />
                 <TabBtn label="Indemnisations"    active={tab==='indemn'}  onClick={() => setTab('indemn')}   badge={indemnizations.length} />
                 <TabBtn label="Résumé global"     active={tab==='resume'}  onClick={() => setTab('resume')} />
+                <TabBtn label="Historique"        active={tab==='historique'} onClick={() => setTab('historique')} badge={history.length} />
               </div>
 
               {/* ── POIDS */}
@@ -328,8 +547,133 @@ export default function ColissimoApp() {
                   </div>
                 </div>
               )}
+
+              {/* ── HISTORIQUE */}
+              {tab === 'historique' && (
+                <div style={{ padding: 18 }}>
+                  <div style={{ marginBottom: 14, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <p style={{ margin: 0, color: C.greyT, fontSize: 13 }}>
+                      Factures Colissimo enregistrées — évolution des coûts transporteur.
+                    </p>
+                    <button onClick={loadHistory} style={{ background: 'none', border: `1px solid ${C.greyB}`, borderRadius: 6, padding: '5px 12px', fontSize: 12, cursor: 'pointer', color: C.greyT }}>
+                      ↻ Actualiser
+                    </button>
+                  </div>
+
+                  {historyLoading ? (
+                    <div style={{ textAlign: 'center', padding: 30, color: C.greyT }}>Chargement…</div>
+                  ) : history.length === 0 ? (
+                    <div style={{ textAlign: 'center', padding: 40, color: C.greyT }}>
+                      Aucune facture enregistrée. Analysez et sauvegardez votre première facture.
+                    </div>
+                  ) : (
+                    <div style={{ overflowX: 'auto' }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                        <thead>
+                          <tr>
+                            {['N° Facture', 'Période', 'Colis', 'Cmdes trouvées', 'Poids OK', 'Écarts', 'Total HT', 'Suppléments HT', 'Indemn. HT', 'Enregistrée le', ''].map(h => (
+                              <Th key={h} label={h} />
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {history.map((inv, i) => (
+                            <tr key={inv.id}
+                              onClick={() => handleLoadFromHistory(inv)}
+                              style={{ background: i % 2 === 0 ? C.white : C.grey, cursor: 'pointer', transition: 'background .1s' }}
+                              onMouseEnter={e => e.currentTarget.style.background = C.accentL}
+                              onMouseLeave={e => e.currentTarget.style.background = i % 2 === 0 ? C.white : C.grey}
+                            >
+                              <Td bold color={C.accent}>🔍 {inv.invoice_number}</Td>
+                              <Td color={C.greyT}>{inv.period_start ? `${inv.period_start} → ${inv.period_end}` : '—'}</Td>
+                              <Td align="right">{inv.total_parcels}</Td>
+                              <Td align="right" color={C.blue}>{inv.parcels_matched}</Td>
+                              <Td align="right" color={C.green}>{inv.weight_ok ?? '—'}</Td>
+                              <Td align="right" color={inv.weight_ecart > 0 ? C.red : C.dark}>{inv.weight_ecart ?? '—'}</Td>
+                              <Td bold>{inv.total_ht != null ? fmtEur(inv.total_ht) : '—'}</Td>
+                              <Td color={C.orange}>{inv.supplements_total != null ? fmtEur(inv.supplements_total) : '—'}</Td>
+                              <Td color={C.blue}>{inv.indemnizations_total != null ? fmtEur(inv.indemnizations_total) : '—'}</Td>
+                              <Td color={C.greyT}>{new Date(inv.created_at).toLocaleDateString('fr-FR')}</Td>
+                              <td style={{ padding: '8px 8px', textAlign: 'center', whiteSpace: 'nowrap', borderBottom: `1px solid ${C.greyB}` }}>
+                                <button onClick={e => handleDownloadPdf(inv, e)} title="Télécharger le PDF" style={{ background: 'none', border: `1px solid ${C.greyB}`, borderRadius: 6, padding: '4px 8px', cursor: 'pointer', fontSize: 14, marginRight: 4 }}>⬇️</button>
+                                <button onClick={e => handleDeleteInvoice(inv, e)} title="Supprimer la facture" style={{ background: 'none', border: '1px solid #FECACA', borderRadius: 6, padding: '4px 8px', cursor: 'pointer', fontSize: 14, color: C.red }}>🗑️</button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                        <tfoot>
+                          <tr style={{ borderTop: `2px solid ${C.greyB}`, background: C.grey }}>
+                            <td style={{ padding: '10px 12px', fontWeight: 700 }}>TOTAL ({history.length} factures)</td>
+                            <td colSpan={5} />
+                            <td style={{ padding: '10px 12px', fontWeight: 800, color: C.accent }}>
+                              {fmtEur(history.reduce((s, inv) => s + parseFloat(inv.total_ht || 0), 0))}
+                            </td>
+                            <td style={{ padding: '10px 12px', fontWeight: 700, color: C.orange }}>
+                              {fmtEur(history.reduce((s, inv) => s + parseFloat(inv.supplements_total || 0), 0))}
+                            </td>
+                            <td style={{ padding: '10px 12px', fontWeight: 700, color: C.blue }}>
+                              {fmtEur(history.reduce((s, inv) => s + parseFloat(inv.indemnizations_total || 0), 0))}
+                            </td>
+                            <td colSpan={2} />
+                          </tr>
+                        </tfoot>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </>
+        )}
+
+        {/* Historique accessible même sans facture chargée */}
+        {!result && (
+          <div style={{ background: C.white, borderRadius: 12, border: `1px solid ${C.greyB}`, marginTop: 8 }}>
+            <div style={{ borderBottom: `1px solid ${C.greyB}`, padding: '0 16px' }}>
+              <TabBtn label="Historique des factures" active={true} onClick={() => {}} badge={history.length} />
+            </div>
+            <div style={{ padding: 20 }}>
+              {historyLoading ? (
+                <div style={{ textAlign: 'center', padding: 20, color: C.greyT }}>Chargement…</div>
+              ) : history.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: 30, color: C.greyT }}>
+                  Aucune facture enregistrée pour l'instant.
+                </div>
+              ) : (
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                    <thead>
+                      <tr>
+                        {['N° Facture', 'Période', 'Colis', 'Total HT', 'Suppléments HT', 'Indemn. HT', 'Enregistrée le', ''].map(h => <Th key={h} label={h} />)}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {history.map((inv, i) => (
+                        <tr key={inv.id}
+                          onClick={() => handleLoadFromHistory(inv)}
+                          style={{ background: i % 2 === 0 ? C.white : C.grey, cursor: 'pointer' }}
+                          onMouseEnter={e => e.currentTarget.style.background = C.accentL}
+                          onMouseLeave={e => e.currentTarget.style.background = i % 2 === 0 ? C.white : C.grey}
+                        >
+                          <Td bold color={C.accent}>🔍 {inv.invoice_number}</Td>
+                          <Td color={C.greyT}>{inv.period_start ? `${inv.period_start} → ${inv.period_end}` : '—'}</Td>
+                          <Td align="right">{inv.total_parcels}</Td>
+                          <Td bold>{inv.total_ht != null ? fmtEur(inv.total_ht) : '—'}</Td>
+                          <Td color={C.orange}>{inv.supplements_total != null ? fmtEur(inv.supplements_total) : '—'}</Td>
+                          <Td color={C.blue}>{inv.indemnizations_total != null ? fmtEur(inv.indemnizations_total) : '—'}</Td>
+                          <Td color={C.greyT}>{new Date(inv.created_at).toLocaleDateString('fr-FR')}</Td>
+                          <td style={{ padding: '8px 8px', textAlign: 'center', whiteSpace: 'nowrap', borderBottom: `1px solid ${C.greyB}` }}>
+                            <button onClick={e => handleDownloadPdf(inv, e)} title="Télécharger le PDF" style={{ background: 'none', border: `1px solid ${C.greyB}`, borderRadius: 6, padding: '3px 7px', cursor: 'pointer', fontSize: 13, marginRight: 4 }}>⬇️</button>
+                            <button onClick={e => handleDeleteInvoice(inv, e)} title="Supprimer" style={{ background: 'none', border: '1px solid #FECACA', borderRadius: 6, padding: '3px 7px', cursor: 'pointer', fontSize: 13, color: C.red }}>🗑️</button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </div>
         )}
       </div>
     </AppShell>

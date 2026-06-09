@@ -43,6 +43,7 @@ function parseColissimoPdf(text) {
 
   // ── Metadata extraction
   const INVOICE_RE  = /Facture\s+N°\s*(\w+)/i;
+  const ACCOUNT_RE  = /[Cc]ompte\s*(?:client)?\s*n°?\s*:?\s*(\d{4,12})/;
   const PERIOD_RE   = /du\s+(\d{2}\/\d{2}\/\d{4})\s+au\s+(\d{2}\/\d{2}\/\d{4})/i;
   const PORTBRUT_RE = /^Port Brut\s+([\d\s,]+)/i;
   const REMISE_RE   = /^Remise\s+(-[\d\s,]+)/i;
@@ -50,11 +51,14 @@ function parseColissimoPdf(text) {
   const CAE_RE      = /^Coefficient.*[ÉE]nergie\s+([\d\s,]+)/i;
   const SUPPTOT_RE  = /^Suppl?ements?\s+([\d\s,]+)/i;
   const INDEMTOT_RE = /^Indemnisations\s+(-[\d\s,]+)/i;
+  // Ligne récap : "Article Supplément Participation à la décarbonation - TVA 20.00% 987 0,05€ 49,35€"
+  const DECARBO_RE  = /Article Suppl[ée]ment Participation.*?d[ée]carbonation.*?\d+\s+([\d,]+)\s*[€¤]\s+[\d,]+\s*[€¤]/i;
 
-  let invoiceNumber = null, periodStart = null, periodEnd = null;
+  let invoiceNumber = null, periodStart = null, periodEnd = null, accountNumber = null;
 
   for (const line of lines) {
     const invM = line.match(INVOICE_RE); if (invM && !invoiceNumber) invoiceNumber = invM[1];
+    const accM = line.match(ACCOUNT_RE); if (accM && !accountNumber) accountNumber = accM[1];
     const perM = line.match(PERIOD_RE);  if (perM && !periodStart) { periodStart = perM[1]; periodEnd = perM[2]; }
     const pbM = line.match(PORTBRUT_RE); if (pbM) globalSummary.portBrut = parseFloat(pbM[1].replace(/\s/g,'').replace(',','.'));
     const rmM = line.match(REMISE_RE);   if (rmM) globalSummary.remise   = parseFloat(rmM[1].replace(/\s/g,'').replace(',','.'));
@@ -62,6 +66,7 @@ function parseColissimoPdf(text) {
     const caeM = line.match(CAE_RE);     if (caeM) globalSummary.cae     = parseFloat(caeM[1].replace(/\s/g,'').replace(',','.'));
     const spM = line.match(SUPPTOT_RE);  if (spM) globalSummary.supplements = parseFloat(spM[1].replace(/\s/g,'').replace(',','.'));
     const idM = line.match(INDEMTOT_RE); if (idM) globalSummary.indemnizations = parseFloat(idM[1].replace(/\s/g,'').replace(',','.'));
+    const dcM = line.match(DECARBO_RE);  if (dcM && globalSummary.decarbonationUnit == null) globalSummary.decarbonationUnit = parseFloat(dcM[1].replace(',','.'));
   }
 
   // ── Line classifiers
@@ -216,7 +221,7 @@ function parseColissimoPdf(text) {
   // Commit last parcel
   if (cur) commitParcel();
 
-  return { parcels, supplements, indemnizations, globalSummary, invoiceNumber, periodStart, periodEnd };
+  return { parcels, supplements, indemnizations, globalSummary, invoiceNumber, periodStart, periodEnd, accountNumber };
 }
 
 /* ─── TRACKING → ORDER ID LOOKUP ────────────────────────────── */
@@ -224,13 +229,11 @@ async function resolveOrderIds(trackingNumbers) {
   if (!trackingNumbers.length) return {};
   const res = await pool.query(
     `SELECT wp_order_id::int AS order_id, tracking_number
-     FROM orders WHERE UPPER(tracking_number) = ANY($1::text[])`,
-    [trackingNumbers.map(t => t.toUpperCase())]
+     FROM orders WHERE tracking_number = ANY($1::text[])`,
+    [trackingNumbers]
   );
-  // Certaines commandes ont leur tracking enregistre en minuscules : on indexe
-  // la map par valeur normalisee pour que la comparaison soit insensible a la casse
   const map = {};
-  for (const row of res.rows) map[row.tracking_number.toUpperCase()] = row.order_id;
+  for (const row of res.rows) map[row.tracking_number] = row.order_id;
   return map;
 }
 
@@ -264,8 +267,7 @@ async function enrichParcels(parcels) {
   const trackingMap = await resolveOrderIds(trackings);
 
   for (const p of parcels) {
-    const key = p.tracking ? p.tracking.toUpperCase() : null;
-    if (key && trackingMap[key]) p.order_id = trackingMap[key];
+    if (trackingMap[p.tracking]) p.order_id = trackingMap[p.tracking];
   }
 
   const orderIds = parcels.filter(p => p.order_id).map(p => p.order_id);
@@ -431,13 +433,21 @@ exports.analyze = [
       const parsed = parseColissimoPdf(pdfData.text);
       await enrichParcels(parsed.parcels);
 
-      const { parcels, supplements, indemnizations, globalSummary, invoiceNumber, periodStart, periodEnd } = parsed;
+      const { parcels, supplements, indemnizations, globalSummary, invoiceNumber, periodStart, periodEnd, accountNumber } = parsed;
+
+      // La "Participation à la décarbonation" (0,05€/colis) n'apparaît que dans le récapitulatif
+      // global, jamais ligne par ligne — on la reporte sur chaque colis pour qu'elle survive
+      // à l'enregistrement/rechargement et puisse être appliquée aux commandes correspondantes.
+      if (globalSummary.decarbonationUnit != null) {
+        for (const p of parcels) p.decarbonation_unit = globalSummary.decarbonationUnit;
+      }
 
       res.json({
         success: true,
         invoiceNumber,
         periodStart,
         periodEnd,
+        accountNumber,
         parcels,
         supplements,
         indemnizations,
@@ -485,6 +495,189 @@ exports.exportExcel = [
     }
   },
 ];
+
+/* ─── HISTORIQUE / ENREGISTREMENT ───────────────────────────── */
+
+// POST /api/colissimo/save — enregistre la facture analysée + PDF en BDD
+exports.saveInvoice = [
+  upload.single('pdf'),
+  async (req, res) => {
+    try {
+      let parsed;
+      if (req.body.data) parsed = JSON.parse(req.body.data);
+      else parsed = req.body;
+
+      const { invoiceNumber, periodStart, periodEnd, accountNumber, parcels, supplements, indemnizations, globalSummary, stats } = parsed;
+      if (!invoiceNumber) return res.status(400).json({ success: false, error: 'invoiceNumber requis' });
+
+      const existing = await pool.query(
+        'SELECT id FROM carrier_invoices WHERE carrier = $1 AND invoice_number = $2',
+        ['colissimo', invoiceNumber]
+      );
+      if (existing.rows.length) {
+        if (req.file) {
+          await pool.query('UPDATE carrier_invoices SET pdf_data = $1 WHERE id = $2', [req.file.buffer, existing.rows[0].id]);
+        }
+        return res.json({ success: true, already_saved: true, id: existing.rows[0].id });
+      }
+
+      const gs = globalSummary || {};
+      const supplementsTotal = (supplements || []).reduce((s, x) => s + (x.amount || 0), 0);
+      const indemnizationsTotal = (indemnizations || []).reduce((s, i) => s + (i.amount || 0), 0);
+      const totalHt = (parcels || []).reduce((s, p) => s + (p.total_ht || 0), 0) + supplementsTotal;
+      const pdfBuffer = req.file ? req.file.buffer : null;
+
+      const invRes = await pool.query(`
+        INSERT INTO carrier_invoices
+          (carrier, invoice_number, period_start, period_end, account_number,
+           total_parcels, parcels_matched, total_ht, port_brut, remise, port_net, cae,
+           supplements_total, indemnizations_total, indemnizations, parcels_detail, pdf_data)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
+        RETURNING id
+      `, [
+        'colissimo', invoiceNumber, periodStart || null, periodEnd || null, accountNumber || null,
+        stats?.total_parcels ?? (parcels || []).length,
+        stats?.parcels_matched ?? (parcels || []).filter(p => p.order_id).length,
+        totalHt,
+        gs.portBrut ?? null, gs.remise ?? null, gs.portNet ?? null, gs.cae ?? null,
+        supplementsTotal, indemnizationsTotal,
+        JSON.stringify(indemnizations || []),
+        JSON.stringify(parcels || []),
+        pdfBuffer,
+      ]);
+      const invoiceId = invRes.rows[0].id;
+
+      if (parcels?.length) {
+        const vals = parcels.map((_, i) => { const b = i * 8; return `($${b+1},$${b+2},$${b+3},$${b+4},$${b+5},$${b+6},$${b+7},$${b+8})`; }).join(',');
+        const params = parcels.flatMap(p => [invoiceId, p.tracking || null, p.order_id || null, p.date || null, p.weight_colissimo ?? null, p.weight_bdd ?? null, p.diff_g ?? null, p.total_ht ?? null]);
+        await pool.query(`INSERT INTO carrier_invoice_parcels (invoice_id,tracking,order_id,date,weight_carrier,weight_bdd,diff_g,amount_ht) VALUES ${vals}`, params);
+      }
+
+      if (supplements?.length) {
+        const orderMap = {};
+        for (const p of (parcels || [])) if (p.order_id) orderMap[p.tracking] = p.order_id;
+        const vals = supplements.map((_, i) => { const b = i * 5; return `($${b+1},$${b+2},$${b+3},$${b+4},$${b+5})`; }).join(',');
+        const params = supplements.flatMap(s => [invoiceId, s.tracking || null, orderMap[s.tracking] || null, s.label || null, s.amount ?? null]);
+        await pool.query(`INSERT INTO carrier_invoice_supplements (invoice_id,tracking,order_id,description,amount_ht) VALUES ${vals}`, params);
+      }
+
+      res.json({ success: true, already_saved: false, id: invoiceId });
+    } catch (err) {
+      console.error('[Colissimo] saveInvoice error:', err);
+      res.status(500).json({ success: false, error: err.message });
+    }
+  },
+];
+
+// POST /api/colissimo/apply-tariffs — met à jour shipping_cost_calculated avec le Total HT par colis
+exports.applyTariffs = async (req, res) => {
+  try {
+    const { tariffs } = req.body;
+    if (!Array.isArray(tariffs) || !tariffs.length) {
+      return res.status(400).json({ success: false, error: 'tariffs[] requis' });
+    }
+
+    const valid = tariffs.filter(t => t.order_id && t.tarif != null);
+    const skipped = tariffs.length - valid.length;
+    if (!valid.length) return res.json({ success: true, updated: 0, skipped });
+
+    const valueRows = valid.map((_, i) => `($${i * 2 + 1}::int, $${i * 2 + 2}::numeric)`).join(', ');
+    const params = valid.flatMap(t => [t.order_id, parseFloat(t.tarif.toFixed(4))]);
+
+    const result = await pool.query(`
+      UPDATE orders
+      SET shipping_cost_calculated = c.tarif
+      FROM (VALUES ${valueRows}) AS c(order_id, tarif)
+      WHERE orders.wp_order_id::int = c.order_id
+    `, params);
+
+    res.json({ success: true, updated: result.rowCount, skipped });
+  } catch (err) {
+    console.error('[Colissimo] applyTariffs error:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+};
+
+// DELETE /api/colissimo/history/:id
+exports.deleteInvoice = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const result = await pool.query(
+      'DELETE FROM carrier_invoices WHERE id=$1 AND carrier=$2 RETURNING invoice_number',
+      [id, 'colissimo']
+    );
+    if (!result.rows.length) return res.status(404).json({ success: false, error: 'Facture non trouvée' });
+    res.json({ success: true, deleted: result.rows[0].invoice_number });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+};
+
+// GET /api/colissimo/history/:id/pdf — télécharger le PDF d'une facture
+exports.downloadPdf = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const result = await pool.query(
+      'SELECT invoice_number, pdf_data FROM carrier_invoices WHERE id=$1 AND carrier=$2',
+      [id, 'colissimo']
+    );
+    if (!result.rows.length) return res.status(404).json({ error: 'Facture non trouvée' });
+    const { invoice_number, pdf_data } = result.rows[0];
+    if (!pdf_data) return res.status(404).json({ error: 'PDF non disponible pour cette facture' });
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="Colissimo_${invoice_number}.pdf"`);
+    res.send(pdf_data);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+// GET /api/colissimo/history — liste des factures enregistrées
+exports.getHistory = async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT
+        ci.id, ci.invoice_number, ci.period_start, ci.period_end, ci.account_number,
+        ci.total_parcels, ci.parcels_matched, ci.total_ht,
+        ci.port_brut, ci.remise, ci.port_net, ci.cae,
+        ci.supplements_total, ci.indemnizations_total, ci.created_at,
+        SUM(CASE WHEN cip.diff_g IS NOT NULL AND ABS(cip.diff_g) <= 20 THEN 1 ELSE 0 END) AS weight_ok,
+        SUM(CASE WHEN cip.diff_g IS NOT NULL AND ABS(cip.diff_g) > 200 THEN 1 ELSE 0 END) AS weight_ecart
+      FROM carrier_invoices ci
+      LEFT JOIN carrier_invoice_parcels cip ON cip.invoice_id = ci.id
+      WHERE ci.carrier = 'colissimo'
+      GROUP BY ci.id
+      ORDER BY ci.created_at DESC
+      LIMIT 50
+    `);
+    res.json({ success: true, invoices: result.rows });
+  } catch (err) {
+    console.error('[Colissimo] getHistory error:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+};
+
+// GET /api/colissimo/history/:id — détail d'une facture enregistrée (recharge l'analyse depuis la BDD)
+exports.getInvoiceDetail = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const inv = await pool.query('SELECT * FROM carrier_invoices WHERE id=$1 AND carrier=$2', [id, 'colissimo']);
+    if (!inv.rows.length) return res.status(404).json({ success: false, error: 'Facture non trouvée' });
+
+    const parcels = await pool.query('SELECT * FROM carrier_invoice_parcels WHERE invoice_id=$1 ORDER BY id', [id]);
+    const suppl = await pool.query('SELECT * FROM carrier_invoice_supplements WHERE invoice_id=$1 ORDER BY id', [id]);
+
+    res.json({
+      success: true,
+      invoice: inv.rows[0],
+      parcels: parcels.rows,
+      supplements: suppl.rows,
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+};
 
 // POST /api/colissimo/debug-text
 exports.debugText = [
