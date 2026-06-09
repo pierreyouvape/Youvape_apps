@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useContext } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import StatusBadge from './StatusBadge';
 import { useTicketStatuses } from './useTicketStatuses';
@@ -314,6 +315,7 @@ function ReplyComposer({
   const [linkText, setLinkText] = useState('');
   const [selectedStatus, setSelectedStatus] = useState(currentStatus);
   const [statusOpen, setStatusOpen] = useState(false);
+  const [statusMenuPos, setStatusMenuPos] = useState(null); // { left, bottom } en coords écran
   const [afterOpen, setAfterOpen] = useState(false);
   const [macros, setMacros] = useState([]);
   const [macroOpen, setMacroOpen] = useState(false);
@@ -397,10 +399,15 @@ function ReplyComposer({
   // Resynchroniser le statut sélectionné quand le ticket change
   useEffect(() => { setSelectedStatus(currentStatus); }, [currentStatus, ticketId]);
 
-  // Fermer dropdown statut si clic extérieur
+  // Fermer dropdown statut si clic extérieur (le menu est rendu en portal,
+  // donc hors de statusRef → on ignore aussi les clics dans le portal).
   useEffect(() => {
     if (!statusOpen) return;
-    const handler = (e) => { if (statusRef.current && !statusRef.current.contains(e.target)) setStatusOpen(false); };
+    const handler = (e) => {
+      if (statusRef.current?.contains(e.target)) return;
+      if (e.target.closest?.('[data-status-menu]')) return;
+      setStatusOpen(false);
+    };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, [statusOpen]);
@@ -1031,7 +1038,17 @@ function ReplyComposer({
           </button>
           {/* Partie droite : flèche dropdown */}
           <button
-            onClick={() => setStatusOpen(o => !o)}
+            onClick={() => {
+              setStatusOpen(o => {
+                const next = !o;
+                if (next && statusRef.current) {
+                  const r = statusRef.current.getBoundingClientRect();
+                  // Ancrage : aligné à droite du split-button, ouvre vers le haut
+                  setStatusMenuPos({ right: window.innerWidth - r.right, bottom: window.innerHeight - r.top + 6 });
+                }
+                return next;
+              });
+            }}
             disabled={sending}
             style={{
               background: sending ? C.grisM : `linear-gradient(155deg, ${TICKETS_COLOR}, ${shade(TICKETS_COLOR, -0.2)})`,
@@ -1047,14 +1064,18 @@ function ReplyComposer({
             </span>
           </button>
 
-          {/* Dropdown statuts (ouvre vers le HAUT) */}
-          {statusOpen && (
-            <div style={{
-              position: 'absolute', bottom: '100%', right: 0, marginBottom: 6, zIndex: 200,
-              background: C.blanc, border: `1px solid ${C.grisCL}`, borderRadius: 10,
-              boxShadow: '0 -6px 24px rgba(0,0,0,0.12)', overflow: 'hidden',
-              minWidth: 280, maxHeight: 380, overflowY: 'auto',
-            }}>
+          {/* Dropdown statuts (ouvre vers le HAUT) — rendu en portal pour ne pas
+              être rogné par les conteneurs overflow:hidden du composer. */}
+          {statusOpen && statusMenuPos && createPortal(
+            <div
+              data-status-menu
+              style={{
+                position: 'fixed', right: statusMenuPos.right, bottom: statusMenuPos.bottom, zIndex: 3000,
+                background: C.blanc, border: `1px solid ${C.grisCL}`, borderRadius: 10,
+                boxShadow: '0 -6px 24px rgba(0,0,0,0.18)', overflow: 'hidden',
+                minWidth: 280, maxHeight: `calc(${Math.round(statusMenuPos.bottom)}px - 12px)`, overflowY: 'auto',
+              }}
+            >
               {statuses.length === 0 && (
                 <div style={{ padding: 14, fontSize: 12.5, color: C.grisM, textAlign: 'center' }}>Aucun statut disponible</div>
               )}
@@ -1082,7 +1103,8 @@ function ReplyComposer({
                   </button>
                 );
               })}
-            </div>
+            </div>,
+            document.body
           )}
         </div>
       </div>
