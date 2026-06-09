@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback, useContext } from 'react';
 import { useNavigate } from 'react-router-dom';
 import StatusBadge from './StatusBadge';
 import { useTicketStatuses } from './useTicketStatuses';
-import { TICKETS_COLOR } from './ticketConstants';
+import { TICKETS_COLOR, formatTicketId } from './ticketConstants';
 import { formatDate } from '../../utils/dateUtils';
 import { AuthContext } from '../../context/AuthContext';
 import { useOpenTickets } from '../../context/OpenTicketsContext';
@@ -1611,7 +1611,7 @@ function MergeModal({ ticket, onClose, onMerged }) {
           fontFamily: 'Lato, sans-serif', marginBottom: 6,
         }}
       >
-        <span style={{ fontSize: 12.5, fontWeight: 800, color: selected ? C.bleu : C.grisF }}>#{t.id}</span>
+        <span style={{ fontSize: 12.5, fontWeight: 800, color: selected ? C.bleu : C.grisF }}>{formatTicketId(t.id)}</span>
         <span style={{ fontSize: 12, color: C.grisF, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {t.subject || '—'}
         </span>
@@ -1641,7 +1641,7 @@ function MergeModal({ ticket, onClose, onMerged }) {
       >
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
           <strong style={{ fontSize: 16, color: C.grisTF, fontFamily: "'Tilt Warp', cursive" }}>
-            Fusionner le ticket #{ticket.id}
+            Fusionner le ticket {formatTicketId(ticket.id)}
           </strong>
           <button
             onClick={onClose}
@@ -1886,7 +1886,7 @@ function CustomerPanel({ ticket, onAssignOrder, onUnassignOrder, onMerge }) {
                 onMouseEnter={e => e.currentTarget.style.background = '#FEF2F2'}
                 onMouseLeave={e => e.currentTarget.style.background = C.blanc}
               >
-                <span style={{ fontSize: 12, fontWeight: 800, color: '#B71D1D' }}>#{dup.id}</span>
+                <span style={{ fontSize: 12, fontWeight: 800, color: '#B71D1D' }}>{formatTicketId(dup.id)}</span>
                 <span style={{ fontSize: 11.5, color: C.grisF, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {dup.subject || '—'}
                 </span>
@@ -2114,10 +2114,10 @@ export default function TicketDetail({ ticketId }) {
 
           <span style={{ fontSize: 13, color: C.grisM, fontWeight: 600, whiteSpace: 'nowrap' }}>Tickets / À traiter /</span>
           <strong style={{ fontSize: 14.5, color: C.grisTF, fontFamily: "'Tilt Warp', cursive", whiteSpace: 'nowrap' }}>
-            #{ticket.id}
+            {formatTicketId(ticket.id)}
           </strong>
           <button
-            onClick={() => navigator.clipboard?.writeText(`#${ticket.id}`)}
+            onClick={() => navigator.clipboard?.writeText(formatTicketId(ticket.id))}
             style={{ background: 'transparent', border: 'none', cursor: 'pointer', padding: 4, display: 'flex', alignItems: 'center' }}
             title="Copier l'ID"
           ><Ic.Copy color={C.grisM} /></button>

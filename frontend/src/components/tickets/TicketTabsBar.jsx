@@ -1,6 +1,6 @@
 import { useOpenTickets } from '../../context/OpenTicketsContext';
 import { useTicketStatuses } from './useTicketStatuses';
-import { TICKETS_COLOR } from './ticketConstants';
+import { TICKETS_COLOR, formatTicketId } from './ticketConstants';
 
 const C = {
   blanc: '#fff', grisTL: '#F2F6F8', grisCL: '#E2E2E2',
@@ -213,7 +213,7 @@ export default function TicketTabsBar() {
             }}
             onMouseEnter={e => { if (!isActive) e.currentTarget.style.background = '#EDF2F4'; }}
             onMouseLeave={e => { if (!isActive) e.currentTarget.style.background = C.grisTL; }}
-            title={`#${t.id} — ${t.subject || ''}`}
+            title={`${formatTicketId(t.id)} — ${t.subject || ''}`}
           >
             {/* Pastille statut */}
             <span style={{
@@ -223,7 +223,7 @@ export default function TicketTabsBar() {
             }} />
             <span style={{
               color: isActive ? TICKETS_COLOR : C.grisF, fontWeight: 800, fontSize: 12.5,
-            }}>#{t.id}</span>
+            }}>{formatTicketId(t.id)}</span>
             <span style={{
               flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis',
             }}>{truncate(t.subject || t.customer_name || '—', 26)}</span>

@@ -1,3 +1,13 @@
+// ─── Affichage de l'identifiant d'un ticket ───────────────────────────────────
+// Les tickets importés de Zendesk ont un id = leur id Zendesk (≤ ~10M).
+// Les tickets de test internes vivent dans une plage haute (≥ 90 000 000) et
+// sont affichés « TEST-xxx » pour être reconnaissables sans risque de collision.
+export const TEST_ID_THRESHOLD = 90000000;
+export function formatTicketId(id) {
+  if (id == null) return '';
+  return id >= TEST_ID_THRESHOLD ? `TEST-${id - TEST_ID_THRESHOLD}` : `#${id}`;
+}
+
 // ─── Statuts tickets — configurables plus tard depuis les paramètres ──────────
 export const TICKET_STATUSES = {
   ouvert:   { label: 'Ouvert',   bg: '#FDEAEA', color: '#B71D1D' },

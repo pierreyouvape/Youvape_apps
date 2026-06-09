@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useContext } from 'react';
 import { useNavigate } from 'react-router-dom';
 import StatusBadge from './StatusBadge';
-import { TICKETS_COLOR } from './ticketConstants';
+import { TICKETS_COLOR, formatTicketId } from './ticketConstants';
 import { formatDate } from '../../utils/dateUtils';
 import { useOpenTickets } from '../../context/OpenTicketsContext';
 import { useTicketStatuses } from './useTicketStatuses';
@@ -282,7 +282,7 @@ function BulkMergeModal({ sources, onClose, onDone }) {
         }}>
           {selected && <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#0071EB' }} />}
         </span>
-        <span style={{ fontSize: 12.5, fontWeight: 800, color: selected ? '#0071EB' : C.grisF }}>#{t.id}</span>
+        <span style={{ fontSize: 12.5, fontWeight: 800, color: selected ? '#0071EB' : C.grisF }}>{formatTicketId(t.id)}</span>
         <span style={{ fontSize: 12, color: C.grisF, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {t.subject || '—'}
         </span>
@@ -344,7 +344,7 @@ function BulkMergeModal({ sources, onClose, onDone }) {
             </div>
             <div style={{ fontSize: 12.5, color: '#7C2D12', lineHeight: 1.5, marginBottom: 12 }}>
               Vous fusionnez des tickets de <strong>demandeurs différents</strong> dans
-              {' '}<strong>{target?.customer_name || target?.customer_email || `#${target?.id}`}</strong>.
+              {' '}<strong>{target?.customer_name || target?.customer_email || formatTicketId(target?.id)}</strong>.
               Êtes-vous sûr ?
             </div>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
@@ -356,7 +356,7 @@ function BulkMergeModal({ sources, onClose, onDone }) {
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 18 }}>
             <button onClick={onClose} style={{ background: C.grisTL, border: `1px solid ${C.grisCL}`, borderRadius: 8, padding: '9px 16px', fontSize: 13, fontWeight: 700, color: C.grisF, cursor: 'pointer', fontFamily: 'Lato, sans-serif' }}>Annuler</button>
             <button onClick={doMerge} disabled={!canMerge} style={{ background: canMerge ? '#0071EB' : C.grisCL, border: 'none', borderRadius: 8, padding: '9px 18px', fontSize: 13, fontWeight: 800, color: '#fff', cursor: canMerge ? 'pointer' : 'not-allowed', fontFamily: 'Lato, sans-serif' }}>
-              {merging ? 'Fusion…' : target ? `Fusionner ${realSources.length} dans #${target.id}` : 'Choisir une cible'}
+              {merging ? 'Fusion…' : target ? `Fusionner ${realSources.length} dans ${formatTicketId(target.id)}` : 'Choisir une cible'}
             </button>
           </div>
         )}
@@ -677,7 +677,7 @@ export default function TicketsList({ activeView, views = [], onRefresh, refresh
                         <td style={cell}><StatusBadge status={t.sav_status} /></td>
                         {/* ID */}
                         <td style={{ ...cell, color: C.grisF, fontVariantNumeric: 'tabular-nums', fontWeight: 600 }}>
-                          #{t.id}
+                          {formatTicketId(t.id)}
                         </td>
                         {/* Sujet */}
                         <td style={{ ...cell, maxWidth: 420 }}>
