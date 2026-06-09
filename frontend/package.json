@@ -11,7 +11,11 @@
   },
   "dependencies": {
     "@tanstack/react-table": "^8.21.3",
+    "@tiptap/extension-link": "^3.26.0",
+    "@tiptap/react": "^3.26.0",
+    "@tiptap/starter-kit": "^3.26.0",
     "axios": "^1.12.2",
+    "dompurify": "^3.4.8",
     "jspdf": "^3.0.4",
     "jspdf-autotable": "^5.0.2",
     "prop-types": "^15.8.1",

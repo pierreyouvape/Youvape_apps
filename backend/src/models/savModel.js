@@ -239,7 +239,7 @@ class SavModel {
   }
 
   // ─── Ajouter un message dans le JSONB messages ───────────────────────────
-  async addMessage(id, { from, body, is_agent, is_private, attachments }) {
+  async addMessage(id, { from, body, is_agent, is_private, attachments, send_failed, error }) {
     const message = {
       from,
       body,
@@ -248,6 +248,11 @@ class SavModel {
       date: new Date().toISOString(),
       attachments: Array.isArray(attachments) ? attachments : [],
     };
+    // Flag d'échec d'envoi (badge "⚠ Non envoyé" côté front)
+    if (send_failed) {
+      message.send_failed = true;
+      if (error) message.error = String(error);
+    }
     const result = await pool.query(
       `UPDATE sav_tickets
        SET messages = messages || $1::jsonb,
