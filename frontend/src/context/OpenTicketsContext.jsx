@@ -7,8 +7,11 @@ const PLAY_KEY       = 'yv.tickets.play';            // { queue, viewId, viewSta
 const DRAFT_KEY      = 'yv.tickets.newDraftOpen';    // '1' = onglet brouillon ouvert
 
 // Onglets virtuels
-export const PLAY_TAB = 'play';
-export const NEW_TAB  = 'new';
+export const PLAY_TAB   = 'play';
+export const NEW_TAB    = 'new';
+export const SEARCH_TAB = 'search';
+
+const SEARCH_KEY = 'yv.tickets.searchQuery'; // requête de l'onglet recherche
 
 const OpenTicketsContext = createContext(null);
 
@@ -27,9 +30,19 @@ export function OpenTicketsProvider({ children }) {
     if (!raw || raw === 'list') return 'list';
     if (raw === PLAY_TAB) return PLAY_TAB;
     if (raw === NEW_TAB) return NEW_TAB;
+    if (raw === SEARCH_TAB) return SEARCH_TAB;
     const n = parseInt(raw, 10);
     return Number.isNaN(n) ? 'list' : n;
   });
+
+  // ─── Onglet recherche : requête courante ─────────────────────────────────
+  const [searchQuery, setSearchQuery] = useState(() => {
+    return localStorage.getItem(SEARCH_KEY) || '';
+  });
+  useEffect(() => {
+    if (searchQuery) localStorage.setItem(SEARCH_KEY, searchQuery);
+    else localStorage.removeItem(SEARCH_KEY);
+  }, [searchQuery]);
 
   // Onglet brouillon "Nouveau ticket" (le brouillon lui-même est stocké en localStorage par le composant)
   const [newDraftOpen, setNewDraftOpen] = useState(() => {
@@ -85,7 +98,7 @@ export function OpenTicketsProvider({ children }) {
       const cleaned = results.filter(Boolean);
       setOpenTickets(cleaned);
       setActiveTabState(prev => {
-        if (prev === 'list' || prev === PLAY_TAB) return prev;
+        if (prev === 'list' || prev === PLAY_TAB || prev === NEW_TAB || prev === SEARCH_TAB) return prev;
         return cleaned.find(t => t.id === prev) ? prev : 'list';
       });
     });
@@ -153,6 +166,19 @@ export function OpenTicketsProvider({ children }) {
     setNewDraftOpen(false);
     try { localStorage.removeItem('yv.tickets.draftNew'); } catch { /* ignore */ }
     setActiveTabState(meta.id);
+  }, []);
+
+  // ─── Onglet recherche : ouvrir / fermer ──────────────────────────────────
+  const openSearch = useCallback((q) => {
+    const query = (q || '').trim();
+    if (!query) return;
+    setSearchQuery(query);
+    setActiveTabState(SEARCH_TAB);
+  }, []);
+
+  const closeSearch = useCallback(() => {
+    setSearchQuery('');
+    setActiveTabState(prev => prev === SEARCH_TAB ? 'list' : prev);
   }, []);
 
   // ─── Mode Play : démarrer ────────────────────────────────────────────────
@@ -227,6 +253,11 @@ export function OpenTicketsProvider({ children }) {
     openNewDraft,
     closeNewDraft,
     convertDraftToTicket,
+    // Onglet recherche
+    searchQuery,
+    searchOpen: !!searchQuery,
+    openSearch,
+    closeSearch,
   };
 
   return (

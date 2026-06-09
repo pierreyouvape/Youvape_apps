@@ -45,7 +45,7 @@ function Highlight({ text, query }) {
 }
 
 export default function TicketSearchBox() {
-  const { openTicket } = useOpenTickets();
+  const { openTicket, openSearch } = useOpenTickets();
   const { statusMap } = useTicketStatuses();
   const [query, setQuery] = useState('');
   const [results, setResults] = useState([]);
@@ -92,16 +92,27 @@ export default function TicketSearchBox() {
     inputRef.current?.blur();
   }, [openTicket]);
 
+  const submitSearch = useCallback(() => {
+    const q = query.trim();
+    if (!q) return;
+    openSearch(q);
+    setOpen(false);
+    inputRef.current?.blur();
+  }, [query, openSearch]);
+
   const onKeyDown = (e) => {
     if (e.key === 'Escape') { setOpen(false); inputRef.current?.blur(); return; }
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      // Si une ligne du dropdown est explicitement surlignée (flèches) → ouvre ce ticket.
+      // Sinon → ouvre l'onglet listant tous les résultats.
+      if (activeIdx >= 0 && results[activeIdx]) choose(results[activeIdx]);
+      else submitSearch();
+      return;
+    }
     if (!open || results.length === 0) return;
     if (e.key === 'ArrowDown') { e.preventDefault(); setActiveIdx(i => Math.min(results.length - 1, i + 1)); }
     else if (e.key === 'ArrowUp') { e.preventDefault(); setActiveIdx(i => Math.max(0, i - 1)); }
-    else if (e.key === 'Enter') {
-      e.preventDefault();
-      const t = results[activeIdx] || results[0];
-      if (t) choose(t);
-    }
   };
 
   // Reset surlignage navigation quand les résultats changent
@@ -214,6 +225,30 @@ export default function TicketSearchBox() {
                 </button>
               );
             })
+          )}
+
+          {/* Pied : ouvrir l'onglet listant tous les résultats */}
+          {!loading && results.length > 0 && (
+            <button
+              onClick={submitSearch}
+              style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                width: '100%', textAlign: 'left', marginTop: 4,
+                borderTop: `1px solid ${C.grisCL}`, paddingTop: 8,
+                background: 'transparent', border: 'none', cursor: 'pointer',
+                fontFamily: 'Lato, sans-serif', padding: '10px',
+              }}
+              onMouseEnter={e => e.currentTarget.style.background = C.grisTL}
+              onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+            >
+              <span style={{ fontSize: 12.5, fontWeight: 700, color: TICKETS_COLOR }}>
+                Voir tous les résultats
+              </span>
+              <span style={{
+                fontSize: 11, color: C.grisM, border: `1px solid ${C.grisCL}`,
+                borderRadius: 4, padding: '1px 6px', fontWeight: 700,
+              }}>Entrée ↵</span>
+            </button>
           )}
         </div>
       )}

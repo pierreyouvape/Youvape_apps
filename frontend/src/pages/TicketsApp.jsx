@@ -5,6 +5,7 @@ import TicketsList from '../components/tickets/TicketsList';
 import TicketDetail from '../components/tickets/TicketDetail';
 import TicketTabsBar from '../components/tickets/TicketTabsBar';
 import NewTicketPage from '../components/tickets/NewTicketPage';
+import SearchResultsPage from '../components/tickets/SearchResultsPage';
 import { applyViewsOrder, loadViewsOrder } from '../components/tickets/viewsOrder';
 import { OpenTicketsProvider, useOpenTickets } from '../context/OpenTicketsContext';
 import { useAutoRefresh } from '../components/tickets/useAutoRefresh';
@@ -106,9 +107,15 @@ function TicketsAppInner() {
               />
             </div>
 
-            {activeTab !== 'list' && activeTab !== 'play' && activeTab !== 'new' && (
+            {activeTab !== 'list' && activeTab !== 'play' && activeTab !== 'new' && activeTab !== 'search' && (
               <div style={{ flex: 1, minWidth: 0, display: 'flex', overflow: 'hidden' }}>
                 <TicketDetail key={activeTab} ticketId={activeTab} />
+              </div>
+            )}
+
+            {activeTab === 'search' && (
+              <div style={{ flex: 1, minWidth: 0, display: 'flex', overflow: 'hidden' }}>
+                <SearchResultsPage />
               </div>
             )}
 

@@ -53,6 +53,14 @@ function IconPlus({ size = 12, color = 'currentColor' }) {
   );
 }
 
+function IconSearch({ size = 12, color = 'currentColor' }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="11" cy="11" r="7" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
+    </svg>
+  );
+}
+
 const PLAY_GREEN = '#4AB866';
 
 export default function TicketTabsBar() {
@@ -60,6 +68,7 @@ export default function TicketTabsBar() {
     openTickets, activeTab, setActiveTab, closeTicket,
     isPlayActive, playTicketId, playState, stopPlay,
     newDraftOpen, closeNewDraft,
+    searchOpen, searchQuery, closeSearch,
   } = useOpenTickets();
   const { statusMap } = useTicketStatuses();
 
@@ -193,6 +202,42 @@ export default function TicketTabsBar() {
             onMouseEnter={e => { e.currentTarget.style.background = '#E2E8EC'; e.currentTarget.style.color = '#B71D1D'; }}
             onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = C.grisM; }}
             title="Annuler le brouillon"
+          >
+            <IconClose size={11} />
+          </button>
+        </div>
+      )}
+
+      {/* Onglet Recherche (résultats) — visible quand une recherche est lancée */}
+      {searchOpen && (
+        <div
+          onClick={() => setActiveTab('search')}
+          onMouseDown={e => { if (e.button === 1) { e.preventDefault(); closeSearch(); } }}
+          style={{
+            ...tabBase,
+            ...(activeTab === 'search' ? tabActive : {}),
+            paddingRight: 6,
+            maxWidth: 260,
+          }}
+          onMouseEnter={e => { if (activeTab !== 'search') e.currentTarget.style.background = '#EDF2F4'; }}
+          onMouseLeave={e => { if (activeTab !== 'search') e.currentTarget.style.background = C.grisTL; }}
+          title={`Recherche : ${searchQuery}`}
+        >
+          <IconSearch size={13} color={activeTab === 'search' ? TICKETS_COLOR : C.grisF} />
+          <span style={{
+            flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+          }}>{truncate(searchQuery, 22)}</span>
+          <button
+            onClick={e => { e.stopPropagation(); closeSearch(); }}
+            style={{
+              width: 20, height: 20, borderRadius: 4,
+              background: 'transparent', border: 'none', cursor: 'pointer',
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+              color: C.grisM, padding: 0, flexShrink: 0, marginLeft: 2,
+            }}
+            onMouseEnter={e => { e.currentTarget.style.background = '#E2E8EC'; e.currentTarget.style.color = '#B71D1D'; }}
+            onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = C.grisM; }}
+            title="Fermer la recherche"
           >
             <IconClose size={11} />
           </button>
