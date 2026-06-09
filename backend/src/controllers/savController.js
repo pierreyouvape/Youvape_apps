@@ -9,6 +9,29 @@ const { dispatchNotifications } = require('../services/notificationDispatcher');
 const { tagDuplicates } = require('../services/duplicateDetector');
 const { mergeTickets } = require('../services/ticketMerge');
 
+// Extrait le texte réellement écrit par le client dans un email entrant, en
+// retirant la citation du fil précédent et la signature.
+// 1) Si Mailgun fournit `stripped-text` (corps déjà nettoyé), on l'utilise.
+// 2) Sinon fallback : on coupe à la 1re ligne d'en-tête de citation (EN + FR)
+//    puis on enlève les lignes restantes préfixées par ">".
+function stripQuotedReply(strippedText, bodyPlain) {
+  if (strippedText && strippedText.trim()) return strippedText.trim();
+  if (!bodyPlain) return '';
+
+  // En-têtes de citation : "On ... wrote:" / "Le ... a écrit :"
+  const quoteHeader = /^\s*(On .+ wrote:|Le .+ a écrit\s*:)\s*$/m;
+  let text = bodyPlain.split(quoteHeader)[0];
+
+  // Variante inline (sans saut de ligne avant le "Le ... a écrit :")
+  text = text.replace(/Le .+ a écrit\s*:[\s\S]*$/, '');
+  text = text.replace(/On .+ wrote:[\s\S]*$/, '');
+
+  // Retirer les lignes de citation restantes (préfixe ">")
+  text = text.split('\n').filter(l => !/^\s*>/.test(l)).join('\n');
+
+  return text.trim();
+}
+
 // Envoi (fire-and-forget) d'un accusé de réception au client. Enrobe le template
 // accusé et passe par Mailgun. Sécurité : jamais d'accusé vers notre propre
 // adresse SAV (évite une auto-boucle si un mail système rebondit).
@@ -114,7 +137,11 @@ const savController = {
 
       console.log('📨 [SAV Inbound] Payload reçu:', JSON.stringify(req.body, null, 2));
 
-      const { sender, subject, 'body-plain': bodyPlain, timestamp, token, signature } = req.body;
+      const {
+        sender, subject, 'body-plain': bodyPlain,
+        'stripped-text': strippedText,
+        timestamp, token, signature,
+      } = req.body;
 
       // Vérifier signature Mailgun (optionnel en sandbox)
       if (process.env.MAILGUN_WEBHOOK_SIGNING_KEY) {
@@ -134,10 +161,10 @@ const savController = {
         console.log(`📨 [SAV Inbound] Ticket #${ticketId} fusionné → réponse redirigée vers #${matchedTicket.id}`);
       }
 
-      // Nettoyer le body (enlever les parties quotées des réponses email)
-      const cleanBody = bodyPlain
-        ? bodyPlain.split(/^On .+ wrote:/m)[0].trim()
-        : '';
+      // Nettoyer le body : on privilégie le `stripped-text` de Mailgun (déjà
+      // débarrassé de la citation et de la signature). Sinon, fallback sur un
+      // découpage manuel des en-têtes de citation (EN + FR).
+      const cleanBody = stripQuotedReply(strippedText, bodyPlain);
 
       // ─── Cas 1 : ticket trouvé → ajouter la réponse au fil existant ─────
       if (matchedTicket) {
