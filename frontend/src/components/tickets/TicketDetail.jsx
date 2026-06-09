@@ -1043,8 +1043,13 @@ function ReplyComposer({
                 const next = !o;
                 if (next && statusRef.current) {
                   const r = statusRef.current.getBoundingClientRect();
-                  // Ancrage : aligné à droite du split-button, ouvre vers le haut
-                  setStatusMenuPos({ right: window.innerWidth - r.right, bottom: window.innerHeight - r.top + 6 });
+                  // Ancrage : aligné à droite du split-button, ouvre vers le haut.
+                  // L'espace dispo au-dessus du bouton = r.top ; on garde 16px de marge haute.
+                  setStatusMenuPos({
+                    right: window.innerWidth - r.right,
+                    bottom: window.innerHeight - r.top + 6,
+                    maxHeight: Math.max(160, r.top - 16),
+                  });
                 }
                 return next;
               });
@@ -1073,7 +1078,7 @@ function ReplyComposer({
                 position: 'fixed', right: statusMenuPos.right, bottom: statusMenuPos.bottom, zIndex: 3000,
                 background: C.blanc, border: `1px solid ${C.grisCL}`, borderRadius: 10,
                 boxShadow: '0 -6px 24px rgba(0,0,0,0.18)', overflow: 'hidden',
-                minWidth: 280, maxHeight: `calc(${Math.round(statusMenuPos.bottom)}px - 12px)`, overflowY: 'auto',
+                minWidth: 280, maxHeight: statusMenuPos.maxHeight, overflowY: 'auto',
               }}
             >
               {statuses.length === 0 && (
