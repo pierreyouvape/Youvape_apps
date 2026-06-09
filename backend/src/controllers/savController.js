@@ -267,6 +267,8 @@ const savController = {
         console.warn('[SAV Inbound] Lookup customer échoué:', e.message);
       }
 
+      // Le 1er mail devient un message (pas description) pour pouvoir porter ses
+      // PJ : messages[] supporte les pièces jointes, pas la description.
       const newTicket = await savModel.create({
         order_id:       null,
         customer_id,
@@ -274,14 +276,20 @@ const savController = {
         customer_email: sender.toLowerCase(),
         customer_phone: null,
         subject:        cleanSubject.substring(0, 200),
-        description:    cleanBody,
+        description:    null,
         source:         'email',
       });
 
-      // Sauvegarder les PJ avec le nouvel id (multipart ou URLs Mailgun)
-      await resolveInboundAttachments(newTicket.id);
+      // Sauvegarder les PJ (multipart ou URLs Mailgun) et les attacher au 1er message
+      const newAttachments = await resolveInboundAttachments(newTicket.id);
+      await savModel.addMessage(newTicket.id, {
+        from:        sender,
+        body:        cleanBody,
+        is_agent:    false,
+        attachments: newAttachments,
+      });
 
-      console.log(`✅ [SAV Inbound] Nouveau ticket #${newTicket.id} créé depuis email "${cleanSubject}" (sender=${sender})`);
+      console.log(`✅ [SAV Inbound] Nouveau ticket #${newTicket.id} créé depuis email "${cleanSubject}" (sender=${sender}, ${newAttachments.length} PJ)`);
 
       // Accusé de réception au client (fire-and-forget)
       sendAckEmail({
