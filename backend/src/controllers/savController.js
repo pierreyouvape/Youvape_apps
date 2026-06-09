@@ -8,6 +8,7 @@ const { getTrackingStatus } = require('../services/trackingService');
 const { dispatchNotifications } = require('../services/notificationDispatcher');
 const { tagDuplicates } = require('../services/duplicateDetector');
 const { mergeTickets } = require('../services/ticketMerge');
+const { sendAlert } = require('../services/alertService');
 
 // Déduplication des inbounds : Mailgun peut appeler le webhook plusieurs fois
 // pour un même mail (actions Forward + Store-notify, ou retries). On garde en
@@ -293,6 +294,30 @@ const savController = {
 
     } catch (error) {
       console.error('❌ [SAV Inbound] Erreur:', error);
+      // Filet de sécurité : on conserve le payload brut + on alerte par mail,
+      // pour ne perdre aucun message client mal traité (pas de stockage Mailgun).
+      const b = req.body || {};
+      const failSender = b.sender || b.from || null;
+      const failSubject = b.subject || b.Subject || null;
+      const failMsgId = b['Message-Id'] || b['message-url'] || null;
+      try {
+        await pool.query(
+          `INSERT INTO sav_inbound_failures (sender, subject, message_id, payload, error)
+           VALUES ($1, $2, $3, $4, $5)`,
+          [failSender, failSubject, failMsgId, JSON.stringify(b), error.message]
+        );
+      } catch (dbErr) {
+        console.error('❌ [SAV Inbound] Échec sauvegarde du payload raté:', dbErr.message);
+      }
+      sendAlert(
+        'Email SAV non traité',
+        `Un email entrant n'a pas pu être traité et a été mis de côté.\n\n`
+        + `Expéditeur : ${failSender || '(inconnu)'}\n`
+        + `Sujet : ${failSubject || '(inconnu)'}\n`
+        + `Message-Id : ${failMsgId || '(inconnu)'}\n`
+        + `Erreur : ${error.message}\n\n`
+        + `Le contenu brut est conservé en base (table sav_inbound_failures) pour retraitement manuel.`
+      ).catch(() => {});
     }
   },
 
