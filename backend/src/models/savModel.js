@@ -71,6 +71,7 @@ class SavModel {
       conditions.push(`(
         t.customer_name ILIKE $${idx} OR
         t.customer_email ILIKE $${idx} OR
+        t.customer_phone ILIKE $${idx} OR
         t.order_id ILIKE $${idx} OR
         t.subject ILIKE $${idx}
       )`);

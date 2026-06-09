@@ -1,6 +1,7 @@
 import { useOpenTickets } from '../../context/OpenTicketsContext';
 import { useTicketStatuses } from './useTicketStatuses';
 import { TICKETS_COLOR, formatTicketId } from './ticketConstants';
+import TicketSearchBox from './TicketSearchBox';
 
 const C = {
   blanc: '#fff', grisTL: '#F2F6F8', grisCL: '#E2E2E2',
@@ -86,11 +87,16 @@ export default function TicketTabsBar() {
       background: '#F8FAFB',
       borderBottom: `1px solid ${C.grisCL}`,
       padding: '6px 16px 0',
-      display: 'flex', alignItems: 'flex-end', gap: 4,
-      overflowX: 'auto', overflowY: 'hidden',
-      scrollbarWidth: 'thin',
+      display: 'flex', alignItems: 'flex-end', gap: 8,
       minHeight: 42,
     }}>
+      {/* Zone des onglets : scrollable horizontalement si trop d'onglets */}
+      <div style={{
+        flex: 1, minWidth: 0,
+        display: 'flex', alignItems: 'flex-end', gap: 4,
+        overflowX: 'auto', overflowY: 'hidden',
+        scrollbarWidth: 'thin',
+      }}>
       {/* Onglet Liste (toujours premier, non fermable) */}
       <button
         onClick={() => setActiveTab('list')}
@@ -244,6 +250,12 @@ export default function TicketTabsBar() {
           </div>
         );
       })}
+      </div>
+
+      {/* Champ de recherche — tout à droite de la ligne d'onglets */}
+      <div style={{ position: 'relative', top: -2 }}>
+        <TicketSearchBox />
+      </div>
     </div>
   );
 }
