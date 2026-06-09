@@ -5,25 +5,17 @@ const pool = require('../config/database');
 // statut non terminé/refusé, créés dans les 30 derniers jours, exclut le ticket lui-même.
 async function findDuplicates(ticket) {
   if (!ticket || !ticket.customer_email) return [];
+  // Un doublon n'a de sens que pour une même commande : sans order_id, on ne
+  // signale rien (sinon toutes les demandes d'un même client seraient marquées).
+  if (!ticket.order_id) return [];
 
-  const params = [ticket.customer_email.toLowerCase(), ticket.id];
-  let where = `LOWER(customer_email) = $1 AND id != $2`;
-
-  // Si order_id renseigné -> critère strict ET, sinon -> juste l'email
-  if (ticket.order_id) {
-    where += ` AND order_id = $3`;
-    params.push(String(ticket.order_id));
-  }
-
-  where += `
-    AND sav_status NOT IN ('terminé', 'refusé')
-    AND created_at >= NOW() - INTERVAL '30 days'
-  `;
+  // Critère : même email client ET même order_id (tous statuts, toutes dates).
+  const params = [ticket.customer_email.toLowerCase(), ticket.id, String(ticket.order_id)];
 
   const res = await pool.query(
     `SELECT id, subject, sav_status, created_at, customer_name
      FROM sav_tickets
-     WHERE ${where}
+     WHERE LOWER(customer_email) = $1 AND id != $2 AND order_id = $3
      ORDER BY created_at DESC
      LIMIT 20`,
     params
