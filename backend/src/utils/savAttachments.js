@@ -78,6 +78,67 @@ function saveAttachments(ticketId, files) {
 }
 
 /**
+ * Pour les emails entrants reçus en mode "Store and notify" : Mailgun n'envoie
+ * pas les fichiers en multipart mais un champ `attachments` (chaîne JSON) avec
+ * des URLs vers le stockage Mailgun. On télécharge chaque fichier (auth API key)
+ * et on le persiste localement, au même format que saveAttachments().
+ *
+ * @param {number} ticketId
+ * @param {string|Array} attachmentsField  req.body.attachments (string JSON ou array)
+ * @returns {Promise<Array>} tableau d'objets attachment stockés
+ */
+async function saveAttachmentsFromUrls(ticketId, attachmentsField) {
+  if (!attachmentsField) return [];
+
+  let list;
+  try {
+    list = typeof attachmentsField === 'string' ? JSON.parse(attachmentsField) : attachmentsField;
+  } catch {
+    return [];
+  }
+  if (!Array.isArray(list) || list.length === 0) return [];
+
+  const apiKey = process.env.MAILGUN_API_KEY;
+  if (!apiKey) {
+    console.warn('[savAttachments] MAILGUN_API_KEY absent : impossible de télécharger les PJ entrantes');
+    return [];
+  }
+  const auth = 'Basic ' + Buffer.from(`api:${apiKey}`).toString('base64');
+
+  const dir = path.join(UPLOAD_ROOT, String(ticketId));
+  fs.mkdirSync(dir, { recursive: true });
+
+  const saved = [];
+  for (const att of list) {
+    if (!att || !att.url) continue;
+    try {
+      const res = await fetch(att.url, { headers: { Authorization: auth } });
+      if (!res.ok) {
+        console.warn(`[savAttachments] Téléchargement PJ échoué (${res.status}) : ${att.url}`);
+        continue;
+      }
+      const buffer = Buffer.from(await res.arrayBuffer());
+      const original = att.name || 'piece-jointe';
+      const uuid = crypto.randomUUID();
+      const safe = safeBasename(original);
+      const filename = `${uuid}_${safe}`;
+      fs.writeFileSync(path.join(dir, filename), buffer);
+
+      saved.push({
+        filename,
+        original_name: original,
+        mime: att['content-type'] || 'application/octet-stream',
+        size: att.size || buffer.length,
+        url: `/api/sav/attachments/${ticketId}/${filename}`,
+      });
+    } catch (e) {
+      console.warn(`[savAttachments] Erreur PJ entrante (${att.url}) :`, e.message);
+    }
+  }
+  return saved;
+}
+
+/**
  * Pour les réponses sortantes : retourne les fichiers au format attendu par
  * mailgun.js (champ "attachment" avec data + filename).
  */
@@ -93,6 +154,7 @@ function toMailgunAttachments(files) {
 module.exports = {
   UPLOAD_ROOT,
   saveAttachments,
+  saveAttachmentsFromUrls,
   toMailgunAttachments,
   safeBasename,
 };

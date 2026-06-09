@@ -3,7 +3,7 @@ const savViewModel = require('../models/savViewModel');
 const mailgunService = require('../services/mailgunService');
 const emailTemplateService = require('../services/emailTemplateService');
 const pool = require('../config/database');
-const { saveAttachments, toMailgunAttachments } = require('../utils/savAttachments');
+const { saveAttachments, saveAttachmentsFromUrls, toMailgunAttachments } = require('../utils/savAttachments');
 const { getTrackingStatus } = require('../services/trackingService');
 const { dispatchNotifications } = require('../services/notificationDispatcher');
 const { tagDuplicates } = require('../services/duplicateDetector');
@@ -166,9 +166,16 @@ const savController = {
       // découpage manuel des en-têtes de citation (EN + FR).
       const cleanBody = stripQuotedReply(strippedText, bodyPlain);
 
+      // PJ entrantes : multipart (mode Forward) OU URLs Mailgun (mode Store).
+      const resolveInboundAttachments = async (tid) => {
+        const fromMultipart = saveAttachments(tid, req.files);
+        if (fromMultipart.length > 0) return fromMultipart;
+        return saveAttachmentsFromUrls(tid, req.body.attachments);
+      };
+
       // ─── Cas 1 : ticket trouvé → ajouter la réponse au fil existant ─────
       if (matchedTicket) {
-        const attachments = saveAttachments(matchedTicket.id, req.files);
+        const attachments = await resolveInboundAttachments(matchedTicket.id);
         if (!cleanBody && attachments.length === 0) return;
 
         await savModel.addMessage(matchedTicket.id, {
@@ -204,7 +211,9 @@ const savController = {
       }
 
       // ─── Cas 2 : pas de match → créer un nouveau ticket ─────────────────
-      if (!cleanBody && (!req.files || req.files.length === 0)) {
+      const hasMultipart = req.files && req.files.length > 0;
+      const hasUrlAttachments = !!req.body.attachments && req.body.attachments !== '[]';
+      if (!cleanBody && !hasMultipart && !hasUrlAttachments) {
         console.warn(`⚠️ [SAV Inbound] Mail vide rejeté (sender=${sender})`);
         return;
       }
@@ -243,8 +252,8 @@ const savController = {
         source:         'email',
       });
 
-      // Sauvegarder les PJ avec le nouvel id
-      saveAttachments(newTicket.id, req.files);
+      // Sauvegarder les PJ avec le nouvel id (multipart ou URLs Mailgun)
+      await resolveInboundAttachments(newTicket.id);
 
       console.log(`✅ [SAV Inbound] Nouveau ticket #${newTicket.id} créé depuis email "${cleanSubject}" (sender=${sender})`);
 
