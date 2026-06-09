@@ -9,6 +9,23 @@ const { dispatchNotifications } = require('../services/notificationDispatcher');
 const { tagDuplicates } = require('../services/duplicateDetector');
 const { mergeTickets } = require('../services/ticketMerge');
 
+// Déduplication des inbounds : Mailgun peut appeler le webhook plusieurs fois
+// pour un même mail (actions Forward + Store-notify, ou retries). On garde en
+// mémoire les identifiants récents (TTL 10 min) pour ignorer les doublons.
+const _recentInbound = new Map(); // id -> timestamp
+const INBOUND_DEDUP_TTL_MS = 10 * 60 * 1000;
+function isDuplicateInbound(id) {
+  if (!id) return false;
+  const now = Date.now();
+  // Purge des entrées expirées
+  for (const [k, ts] of _recentInbound) {
+    if (now - ts > INBOUND_DEDUP_TTL_MS) _recentInbound.delete(k);
+  }
+  if (_recentInbound.has(id)) return true;
+  _recentInbound.set(id, now);
+  return false;
+}
+
 // Extrait le texte réellement écrit par le client dans un email entrant, en
 // retirant la citation du fil précédent et la signature.
 // 1) Si Mailgun fournit `stripped-text` (corps déjà nettoyé), on l'utilise.
@@ -140,6 +157,7 @@ const savController = {
       const {
         sender, subject, 'body-plain': bodyPlain,
         'stripped-text': strippedText,
+        'Message-Id': messageId, 'message-url': messageUrl,
         timestamp, token, signature,
       } = req.body;
 
@@ -150,6 +168,13 @@ const savController = {
           console.warn('⚠️ [SAV Inbound] Signature Mailgun invalide');
           return;
         }
+      }
+
+      // Anti-doublon : Mailgun peut notifier 2× le même mail (Forward + Store).
+      const dedupId = messageId || messageUrl || null;
+      if (isDuplicateInbound(dedupId)) {
+        console.log(`📨 [SAV Inbound] Doublon ignoré (${dedupId})`);
+        return;
       }
 
       // Extraire ticket ID du sujet pour matcher à un ticket existant.
