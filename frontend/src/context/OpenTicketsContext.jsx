@@ -67,6 +67,13 @@ export function OpenTicketsProvider({ children }) {
     return localStorage.getItem(AFTER_MODE_KEY) === 'stay' ? 'stay' : 'next';
   });
 
+  // ─── Signal de rafraîchissement de la liste ──────────────────────────────
+  // Bumpé par le détail d'un ticket (ex. changement de statut) pour que la liste
+  // — montée en permanence en arrière-plan — refetch et reflète le changement
+  // sans attendre l'autorefresh (60s).
+  const [listRefreshTick, setListRefreshTick] = useState(0);
+  const notifyListChanged = useCallback(() => setListRefreshTick(t => t + 1), []);
+
   // ─── Persistance ─────────────────────────────────────────────────────────
   useEffect(() => { localStorage.setItem(STORAGE_KEY, JSON.stringify(openTickets)); }, [openTickets]);
   useEffect(() => { localStorage.setItem(ACTIVE_KEY, String(activeTab)); }, [activeTab]);
@@ -248,6 +255,9 @@ export function OpenTicketsProvider({ children }) {
     advancePlay,
     afterActionMode,
     setAfterActionMode,
+    // Signal de rafraîchissement de la liste
+    listRefreshTick,
+    notifyListChanged,
     // Brouillon nouveau ticket
     newDraftOpen,
     openNewDraft,

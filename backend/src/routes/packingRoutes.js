@@ -14,4 +14,7 @@ router.get('/orders/:orderNumber', checkPackingRead, packingController.searchOrd
 // Lookup un barcode
 router.get('/barcode/:barcode', checkPackingRead, packingController.lookupBarcode);
 
+// Mettre à jour l'adresse de livraison d'une commande (correction préparateur)
+router.put('/orders/:orderNumber/shipping', checkPackingRead, packingController.updateShipping);
+
 module.exports = router;

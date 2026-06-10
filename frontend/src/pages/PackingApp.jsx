@@ -70,6 +70,10 @@ const PackingApp = () => {
   const [reprintLoading, setReprintLoading] = useState(null); // label id en cours
   const [hoveredImage, setHoveredImage] = useState(null); // { url, x, y }
   const [wrongShippingOrder, setWrongShippingOrder] = useState(null); // order_number si mauvaise méthode
+  const [editingAddress, setEditingAddress] = useState(false); // édition adresse de livraison
+  const [addressForm, setAddressForm] = useState(null); // copie éditable de order.shipping
+  const [addressSaving, setAddressSaving] = useState(false);
+  const [addressError, setAddressError] = useState(null);
 
   // Refs pour accéder aux valeurs courantes dans le listener clavier
   const orderRef = useRef(null);
@@ -154,6 +158,8 @@ const PackingApp = () => {
     setError(null);
     setMessage(null);
     setIsComplete(false);
+    setEditingAddress(false);
+    setAddressError(null);
 
     try {
       const res = await axios.get(`${API_URL}/packing/orders/${number}`, {
@@ -186,6 +192,50 @@ const PackingApp = () => {
       setLoading(false);
     }
   }, [token]);
+
+  // Ouvrir le formulaire d'édition de l'adresse
+  const startEditAddress = useCallback(() => {
+    if (!order) return;
+    setAddressForm({
+      first_name: order.shipping.first_name || '',
+      last_name: order.shipping.last_name || '',
+      company: order.shipping.company || '',
+      address: order.shipping.address || '',
+      address_2: order.shipping.address_2 || '',
+      postcode: order.shipping.postcode || '',
+      city: order.shipping.city || '',
+      phone: order.shipping.phone || ''
+    });
+    setAddressError(null);
+    setEditingAddress(true);
+  }, [order]);
+
+  // Enregistrer l'adresse corrigée
+  const saveAddress = useCallback(async () => {
+    if (!order || !addressForm) return;
+    if (!addressForm.address.trim() || !addressForm.city.trim() || !addressForm.postcode.trim()) {
+      setAddressError('Adresse, code postal et ville sont obligatoires');
+      return;
+    }
+    setAddressSaving(true);
+    setAddressError(null);
+    try {
+      const res = await axios.put(
+        `${API_URL}/packing/orders/${order.wp_order_id}/shipping`,
+        addressForm,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      setOrder(prev => ({ ...prev, shipping: res.data.shipping }));
+      setEditingAddress(false);
+      setMessage('Adresse mise à jour');
+      playSound('ok');
+    } catch (err) {
+      setAddressError(err.response?.data?.error || 'Erreur lors de la mise à jour');
+      playSound('error');
+    } finally {
+      setAddressSaving(false);
+    }
+  }, [order, addressForm, token]);
 
   // Gérer le scan d'un article
   const handleScan = useCallback(async (barcode) => {
@@ -808,6 +858,30 @@ const PackingApp = () => {
                   <p style={{ margin: '2px 0 0', color: '#999', fontSize: '14px' }}>
                     {order.shipping.address}, {order.shipping.postcode} {order.shipping.city}
                   </p>
+                  {order.shipping.address_2 && (
+                    <p style={{ margin: '2px 0 0', color: '#999', fontSize: '14px' }}>
+                      {order.shipping.address_2}
+                    </p>
+                  )}
+                  {!editingAddress && (
+                    <button
+                      type="button"
+                      onClick={startEditAddress}
+                      style={{
+                        marginTop: '8px',
+                        padding: '5px 12px',
+                        backgroundColor: 'white',
+                        color: '#6366f1',
+                        border: '1px solid #6366f1',
+                        borderRadius: '6px',
+                        fontSize: '13px',
+                        fontWeight: '600',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      ✏️ Modifier l'adresse
+                    </button>
+                  )}
                 </div>
                 <div style={{ textAlign: 'right' }}>
                   <span style={{
@@ -829,6 +903,90 @@ const PackingApp = () => {
                   </p>
                 </div>
               </div>
+
+              {/* Formulaire d'édition de l'adresse de livraison */}
+              {editingAddress && addressForm && (
+                <div style={{
+                  marginTop: '15px',
+                  paddingTop: '15px',
+                  borderTop: '1px solid #eee'
+                }}>
+                  <h3 style={{ margin: '0 0 12px', color: '#333', fontSize: '16px' }}>
+                    Corriger l'adresse de livraison
+                  </h3>
+                  {(() => {
+                    const inputStyle = {
+                      width: '100%',
+                      padding: '9px 12px',
+                      fontSize: '15px',
+                      border: '2px solid #ddd',
+                      borderRadius: '8px',
+                      outline: 'none',
+                      boxSizing: 'border-box'
+                    };
+                    const set = (field) => (e) => setAddressForm(f => ({ ...f, [field]: e.target.value }));
+                    return (
+                      <div style={{ display: 'grid', gap: '10px' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                          <input style={inputStyle} placeholder="Prénom" value={addressForm.first_name} onChange={set('first_name')} />
+                          <input style={inputStyle} placeholder="Nom" value={addressForm.last_name} onChange={set('last_name')} />
+                        </div>
+                        <input style={inputStyle} placeholder="Société (optionnel)" value={addressForm.company} onChange={set('company')} />
+                        <input style={inputStyle} placeholder="Adresse" value={addressForm.address} onChange={set('address')} />
+                        <input style={inputStyle} placeholder="Complément d'adresse (optionnel)" value={addressForm.address_2} onChange={set('address_2')} />
+                        <div style={{ display: 'grid', gridTemplateColumns: '160px 1fr', gap: '10px' }}>
+                          <input style={inputStyle} placeholder="Code postal" value={addressForm.postcode} onChange={set('postcode')} />
+                          <input style={inputStyle} placeholder="Ville" value={addressForm.city} onChange={set('city')} />
+                        </div>
+                        <input style={inputStyle} placeholder="Téléphone (optionnel)" value={addressForm.phone} onChange={set('phone')} />
+                      </div>
+                    );
+                  })()}
+
+                  {addressError && (
+                    <p style={{ margin: '10px 0 0', color: '#dc2626', fontSize: '14px' }}>
+                      {addressError}
+                    </p>
+                  )}
+
+                  <div style={{ display: 'flex', gap: '10px', marginTop: '14px' }}>
+                    <button
+                      type="button"
+                      onClick={saveAddress}
+                      disabled={addressSaving}
+                      style={{
+                        padding: '10px 20px',
+                        backgroundColor: addressSaving ? '#9ca3af' : '#16a34a',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '8px',
+                        fontSize: '15px',
+                        fontWeight: '600',
+                        cursor: addressSaving ? 'default' : 'pointer'
+                      }}
+                    >
+                      {addressSaving ? 'Enregistrement…' : 'Enregistrer'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setEditingAddress(false); setAddressError(null); }}
+                      disabled={addressSaving}
+                      style={{
+                        padding: '10px 20px',
+                        backgroundColor: 'white',
+                        color: '#666',
+                        border: '1px solid #ddd',
+                        borderRadius: '8px',
+                        fontSize: '15px',
+                        fontWeight: '600',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      Annuler
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Zone scan article */}

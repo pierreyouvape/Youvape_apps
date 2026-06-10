@@ -2065,8 +2065,11 @@ export default function TicketDetail({ ticketId }) {
     if (!data.success) throw new Error(data.error || 'Erreur changement statut');
     // Conserver les champs enrichis (order_items, customer_*) qui ne reviennent pas du endpoint /status
     setTicket(t => ({ ...t, ...data.ticket }));
+    // Notifier la liste (en arrière-plan) pour qu'elle se mette à jour tout de
+    // suite : le ticket sort de la vue s'il ne correspond plus au filtre.
+    tabsCtx?.notifyListChanged?.();
     return data.ticket;
-  }, [ticketId]);
+  }, [ticketId, tabsCtx]);
 
   // Lier/délier une commande au ticket : PATCH puis refetch pour récupérer
   // les enrichissements (order_items, order_status, order_total, etc.)
