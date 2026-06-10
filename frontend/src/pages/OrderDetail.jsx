@@ -20,6 +20,9 @@ const C = {
 };
 
 /* ─── CONSTANTES ─────────────────────────────────────────── */
+// Coût moyen de l'emballage (HT), appliqué à chaque commande
+const PACKAGING_COST_HT = 0.30;
+
 const COUNTRY_NAMES = {
   FR: 'France', BE: 'Belgique', CH: 'Suisse', DE: 'Allemagne', ES: 'Espagne',
   IT: 'Italie', NL: 'Pays-Bas', PT: 'Portugal', GB: 'Royaume-Uni', LU: 'Luxembourg',
@@ -251,9 +254,10 @@ const OrderDetail = () => {
 
   const shippingCostCalculated = order.shipping_cost_calculated != null ? parseFloat(order.shipping_cost_calculated) : null;
   const paymentCostCalculated  = order.payment_cost_calculated  != null ? parseFloat(order.payment_cost_calculated)  : null;
+  const packagingCost = PACKAGING_COST_HT;
   const hasAllCosts = shippingCostCalculated != null && paymentCostCalculated != null;
   const orderTotalHT = orderTotal - orderTax; // Total HT = TTC - TVA
-  const margin = hasAllCosts ? orderTotalHT - totalCost - shippingCostCalculated - paymentCostCalculated : null;
+  const margin = hasAllCosts ? orderTotalHT - totalCost - shippingCostCalculated - paymentCostCalculated - packagingCost : null;
 
   const productItems = (order.line_items || []).filter(i => i.order_item_type === 'line_item');
   const couponItems  = (order.line_items || []).filter(i => i.order_item_type === 'coupon');
@@ -586,10 +590,11 @@ const OrderDetail = () => {
                 <MarginRow label="Coût produits HT"  value={fmt(totalCost)} />
                 <MarginRow label="Coût livraison HT" value={shippingCostCalculated != null ? fmt(shippingCostCalculated) : '—'} />
                 <MarginRow label="Coût paiement"     value={paymentCostCalculated  != null ? fmt(paymentCostCalculated)  : '—'} />
+                <MarginRow label="Coût emballage HT" value={fmt(packagingCost)} />
                 {hasAllCosts && (
                   <MarginRow
                     label="Total coût"
-                    value={fmt(totalCost + shippingCostCalculated + paymentCostCalculated)}
+                    value={fmt(totalCost + shippingCostCalculated + paymentCostCalculated + packagingCost)}
                     style={{ borderTop: '1px solid #E2E8EE', paddingTop: 6, marginTop: 2 }}
                   />
                 )}
