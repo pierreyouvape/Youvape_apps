@@ -59,6 +59,8 @@ const STATUS_COLORS = {
   trash: '#6c757d',
 };
 
+const PAGE_SIZE = 200;
+
 const PERIODS = [
   { key: '', label: 'Toutes périodes' },
   { key: '7',  label: '7 derniers jours' },
@@ -95,6 +97,7 @@ const OrdersSearchApp = () => {
 
   const [statuses, setStatuses]   = useState([]);
   const [carriers, setCarriers]   = useState([]);
+  const [page, setPage]           = useState(0);
 
   const [expandedId, setExpandedId]       = useState(null);
   const [orderDetails, setOrderDetails]   = useState({});
@@ -116,7 +119,7 @@ const OrdersSearchApp = () => {
     setLoading(true);
     try {
       const res = await axios.get(`${API_URL}/orders/filter`, {
-        params: { ...params, limit: 200 },
+        params: { ...params, limit: PAGE_SIZE },
         headers: { Authorization: `Bearer ${token}` },
       });
       if (res.data.success) {
@@ -130,6 +133,11 @@ const OrdersSearchApp = () => {
     }
   }, [token]);
 
+  /* ── Reset pagination quand les filtres changent ── */
+  useEffect(() => {
+    setPage(0);
+  }, [search, status, carrier, period, dateFrom, dateTo]);
+
   /* ── Debounce recherche texte ── */
   useEffect(() => {
     clearTimeout(debounceRef.current);
@@ -142,10 +150,11 @@ const OrdersSearchApp = () => {
         carrier: carrier || undefined,
         ...(dates || {}),
         ...customDates,
+        offset: page * PAGE_SIZE,
       });
     }, 400);
     return () => clearTimeout(debounceRef.current);
-  }, [search, status, carrier, period, dateFrom, dateTo, fetchOrders]);
+  }, [search, status, carrier, period, dateFrom, dateTo, page, fetchOrders]);
 
   /* ── Expand ligne ── */
   const toggleExpand = async (orderId) => {
@@ -570,9 +579,27 @@ const OrdersSearchApp = () => {
             </div>
           )}
 
-          {!loading && orders.length > 0 && total > orders.length && (
-            <div style={{ marginTop: 14, textAlign: 'center', fontSize: 12, color: C.grisM }}>
-              Affichage des {orders.length} premières commandes sur {total.toLocaleString('fr-FR')} — affinez vos filtres pour réduire les résultats.
+          {!loading && orders.length > 0 && total > PAGE_SIZE && (
+            <div style={{ marginTop: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 14 }}>
+              <button
+                className="cmd-select"
+                disabled={page === 0}
+                onClick={() => setPage(p => Math.max(0, p - 1))}
+                style={{ cursor: page === 0 ? 'default' : 'pointer', opacity: page === 0 ? 0.5 : 1, fontWeight: 700 }}
+              >
+                ← Précédent
+              </button>
+              <span style={{ fontSize: 12, color: C.grisM }}>
+                Commandes {(page * PAGE_SIZE + 1).toLocaleString('fr-FR')}–{Math.min((page + 1) * PAGE_SIZE, total).toLocaleString('fr-FR')} sur {total.toLocaleString('fr-FR')}
+              </span>
+              <button
+                className="cmd-select"
+                disabled={(page + 1) * PAGE_SIZE >= total}
+                onClick={() => setPage(p => p + 1)}
+                style={{ cursor: (page + 1) * PAGE_SIZE >= total ? 'default' : 'pointer', opacity: (page + 1) * PAGE_SIZE >= total ? 0.5 : 1, fontWeight: 700 }}
+              >
+                Suivant →
+              </button>
             </div>
           )}
         </div>
