@@ -481,7 +481,6 @@ exports.getProfitReport = async (req, res) => {
         COUNT(DISTINCT o.wp_order_id)::int as orders_count,
         COALESCE(SUM(o.order_total), 0)::numeric as gross_sales,
         COALESCE(SUM(o.order_tax), 0)::numeric as taxes,
-        COALESCE(SUM(o.order_total_cost), 0)::numeric as core_cost,
         COALESCE(SUM(o.shipping_cost_calculated), 0)::numeric as shipping_cost
       FROM orders o
       ${whereClause}
@@ -489,6 +488,46 @@ exports.getProfitReport = async (req, res) => {
       ORDER BY date ASC
     `;
     const breakdownResult = await pool.query(breakdownQuery, params);
+
+    // Coût produits (PMP FIFO) par jour
+    const productCostByDayQuery = `
+      SELECT
+        DATE_TRUNC('day', COALESCE(o.paid_date, o.post_date))::date as date,
+        COALESCE(SUM(oi.qty * COALESCE(p.computed_cost, p.wc_cog_cost, 0)), 0)::numeric as product_cost
+      FROM order_items oi
+      JOIN orders o ON oi.wp_order_id = o.wp_order_id
+      LEFT JOIN products p ON p.wp_product_id = oi.product_id
+      ${whereClause}
+      GROUP BY DATE_TRUNC('day', COALESCE(o.paid_date, o.post_date))::date
+    `;
+    const productCostByDayResult = await pool.query(productCostByDayQuery, params);
+    const productCostByDay = {};
+    productCostByDayResult.rows.forEach(r => {
+      productCostByDay[r.date] = parseFloat(r.product_cost) || 0;
+    });
+
+    // Frais de transaction par jour et par moyen de paiement
+    const transactionCostByDayQuery = `
+      SELECT
+        DATE_TRUNC('day', COALESCE(o.paid_date, o.post_date))::date as date,
+        COALESCE(payment_method_title, 'default') as payment_method,
+        COUNT(DISTINCT o.wp_order_id)::int as orders_count,
+        COALESCE(SUM(o.order_total), 0)::numeric as total_amount
+      FROM orders o
+      ${whereClause}
+      GROUP BY DATE_TRUNC('day', COALESCE(o.paid_date, o.post_date))::date, payment_method_title
+    `;
+    const transactionCostByDayResult = await pool.query(transactionCostByDayQuery, params);
+    const transactionCostByDay = {};
+    transactionCostByDayResult.rows.forEach(row => {
+      const amount = parseFloat(row.total_amount) || 0;
+      const ordersCount = row.orders_count || 0;
+      const pm = paymentMethodsMap[row.payment_method];
+      const cost = pm
+        ? (amount * pm.percent_fee / 100) + (pm.fixed_fee * ordersCount)
+        : amount * 0.02;
+      transactionCostByDay[row.date] = (transactionCostByDay[row.date] || 0) + cost;
+    });
 
     // Calculer les refunds par jour
     const refundsByDayQuery = `
@@ -509,11 +548,12 @@ exports.getProfitReport = async (req, res) => {
       const dayGross = parseFloat(row.gross_sales) || 0;
       const dayTaxes = parseFloat(row.taxes) || 0;
       const dayRefunds = refundsByDay[row.date] || 0;
-      const dayCoreCost = parseFloat(row.core_cost) || 0;
+      const dayProductCost = productCostByDay[row.date] || 0;
       const dayShippingCost = parseFloat(row.shipping_cost) || 0;
+      const dayTransactionCost = transactionCostByDay[row.date] || 0;
 
       const dayNetRevenue = dayGross - dayTaxes - dayRefunds;
-      const dayTotalCost = dayCoreCost + dayShippingCost;
+      const dayTotalCost = dayProductCost + dayShippingCost + dayTransactionCost;
       const dayProfit = dayNetRevenue - dayTotalCost;
       const dayMargin = dayNetRevenue > 0 ? (dayProfit / dayNetRevenue) * 100 : 0;
 
