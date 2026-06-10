@@ -36,6 +36,23 @@ const inboundParser = (req, res, next) => {
 };
 router.post('/inbound-email', inboundParser, savController.inboundEmail);
 
+// ─── Inbound Zendesk — webhook de transition (réponses sur anciens tickets) ──
+// Auth par Bearer token partagé (ZENDESK_WEBHOOK_TOKEN), JSON.
+const verifyZendeskWebhook = (req, res, next) => {
+  const expected = process.env.ZENDESK_WEBHOOK_TOKEN;
+  if (!expected) {
+    console.error('❌ [SAV Zendesk] ZENDESK_WEBHOOK_TOKEN non configuré');
+    return res.status(500).json({ error: 'Webhook non configuré' });
+  }
+  const auth = req.headers.authorization || '';
+  const token = auth.startsWith('Bearer ') ? auth.slice(7) : null;
+  if (!token || token !== expected) {
+    return res.status(401).json({ error: 'Non autorisé' });
+  }
+  next();
+};
+router.post('/inbound-zendesk', verifyZendeskWebhook, express.json({ limit: '10mb' }), savController.inboundZendesk);
+
 // ─── Servir une pièce jointe d'un ticket ──────────────────────────────────────
 router.get('/attachments/:ticketId/:filename', (req, res) => {
   const { ticketId, filename } = req.params;

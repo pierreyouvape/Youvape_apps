@@ -329,6 +329,152 @@ const savController = {
     }
   },
 
+  // ─── Inbound Zendesk (webhook de transition) ───────────────────────────────
+  // Pendant la bascule Zendesk → app, les clients répondent encore à d'anciens
+  // tickets côté Zendesk. Un déclencheur Zendesk pousse le commentaire ici.
+  // Matching DIRECT par ticket.id : les IDs de l'app sont alignés sur Zendesk
+  // (voir import Zendesk), donc {{ticket.id}} = sav_tickets.id.
+  inboundZendesk: async (req, res) => {
+    try {
+      // Répondre 200 vite (Zendesk retry sinon)
+      res.status(200).json({ success: true });
+
+      console.log('📨 [SAV Zendesk] Payload reçu:', JSON.stringify(req.body, null, 2));
+
+      const {
+        ticket_id,
+        requester_email,
+        requester_name,
+        subject,
+        comment,
+        comment_id,
+      } = req.body;
+
+      const sender = (requester_email || '').toLowerCase();
+      const cleanBody = (comment || '').trim();
+
+      // Anti-doublon : on dédup sur comment_id si fourni, sinon ticket+hash.
+      const dedupId = comment_id
+        ? `zd-${comment_id}`
+        : (ticket_id ? `zd-${ticket_id}-${cleanBody.slice(0, 40)}` : null);
+      if (isDuplicateInbound(dedupId)) {
+        console.log(`📨 [SAV Zendesk] Doublon ignoré (${dedupId})`);
+        return;
+      }
+
+      // Matching direct par ID (IDs app == IDs Zendesk). On suit la chaîne de
+      // fusion pour atterrir sur le ticket actif.
+      const zid = parseInt(ticket_id, 10);
+      const matchedTicket = Number.isInteger(zid)
+        ? await savModel.resolveActiveTicket(zid)
+        : null;
+      if (matchedTicket && matchedTicket.id !== zid) {
+        console.log(`📨 [SAV Zendesk] Ticket #${zid} fusionné → réponse redirigée vers #${matchedTicket.id}`);
+      }
+
+      // ─── Cas 1 : ticket trouvé → ajouter la réponse au fil existant ─────
+      if (matchedTicket) {
+        if (!cleanBody) return;
+
+        await savModel.addMessage(matchedTicket.id, {
+          from:        sender || requester_name || 'client',
+          body:        cleanBody,
+          is_agent:    false,
+          attachments: [],
+        });
+
+        if (matchedTicket.sav_status !== 'reponse_client') {
+          try {
+            await savModel.updateStatus(matchedTicket.id, 'reponse_client');
+          } catch (e) {
+            console.warn(`[SAV Zendesk] Maj statut reponse_client échouée (#${matchedTicket.id}):`, e.message);
+          }
+        }
+
+        console.log(`📨 [SAV Zendesk] Réponse client ajoutée au ticket #${matchedTicket.id}`);
+
+        dispatchNotifications('reply_received', matchedTicket, {
+          body: cleanBody, from: sender,
+        }).catch(() => {});
+        return;
+      }
+
+      // ─── Cas 2 : ticket inconnu (jamais importé) → créer un ticket ──────
+      if (!cleanBody) {
+        console.warn(`⚠️ [SAV Zendesk] Message vide rejeté (ticket_id=${ticket_id})`);
+        return;
+      }
+
+      const cleanSubject = (subject || '(sans sujet)')
+        .replace(/^\s*(Re\s*:\s*)+/i, '')
+        .trim() || '(sans sujet)';
+
+      // Lookup client par email
+      let customer_id = null;
+      let customer_name = requester_name || sender;
+      if (sender) {
+        try {
+          const r = await pool.query(
+            'SELECT id, first_name, last_name FROM customers WHERE email = $1 LIMIT 1',
+            [sender]
+          );
+          if (r.rows.length > 0) {
+            customer_id = r.rows[0].id;
+            const c = r.rows[0];
+            customer_name = `${c.first_name || ''} ${c.last_name || ''}`.trim() || customer_name;
+          }
+        } catch (e) {
+          console.warn('[SAV Zendesk] Lookup customer échoué:', e.message);
+        }
+      }
+
+      const newTicket = await savModel.create({
+        order_id:       null,
+        customer_id,
+        customer_name,
+        customer_email: sender || null,
+        customer_phone: null,
+        subject:        cleanSubject.substring(0, 200),
+        description:    null,
+        source:         'email',
+      });
+
+      await savModel.addMessage(newTicket.id, {
+        from:        sender || customer_name,
+        body:        cleanBody,
+        is_agent:    false,
+        attachments: [],
+      });
+
+      console.log(`✅ [SAV Zendesk] Nouveau ticket #${newTicket.id} créé (Zendesk #${ticket_id} inconnu, sender=${sender})`);
+
+      dispatchNotifications('new_message', newTicket).catch(() => {});
+      tagDuplicates(newTicket).catch(e => console.warn('[SAV Zendesk] tagDuplicates échoué:', e.message));
+
+    } catch (error) {
+      console.error('❌ [SAV Zendesk] Erreur:', error);
+      const b = req.body || {};
+      try {
+        await pool.query(
+          `INSERT INTO sav_inbound_failures (sender, subject, message_id, payload, error)
+           VALUES ($1, $2, $3, $4, $5)`,
+          [b.requester_email || null, b.subject || null,
+           b.comment_id ? `zd-${b.comment_id}` : null, JSON.stringify(b), error.message]
+        );
+      } catch (dbErr) {
+        console.error('❌ [SAV Zendesk] Échec sauvegarde du payload raté:', dbErr.message);
+      }
+      sendAlert(
+        'Réponse Zendesk non traitée',
+        `Une réponse client transférée depuis Zendesk n'a pas pu être traitée.\n\n`
+        + `Ticket Zendesk : ${b.ticket_id || '(inconnu)'}\n`
+        + `Expéditeur : ${b.requester_email || '(inconnu)'}\n`
+        + `Erreur : ${error.message}\n\n`
+        + `Le contenu brut est conservé en base (sav_inbound_failures).`
+      ).catch(() => {});
+    }
+  },
+
   // ─── Liste des tickets ────────────────────────────────────────────────────
   getAll: async (req, res) => {
     try {
