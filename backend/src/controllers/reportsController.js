@@ -24,12 +24,12 @@ exports.getRevenueReport = async (req, res) => {
 
     // Période
     if (dateFrom) {
-      conditions.push(`(COALESCE(o.paid_date, o.post_date) AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris') >= $${paramIndex}`);
+      conditions.push(`(COALESCE(o.paid_date, o.post_date)) >= $${paramIndex}`);
       params.push(dateFrom);
       paramIndex++;
     }
     if (dateTo) {
-      conditions.push(`(COALESCE(o.paid_date, o.post_date) AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris') <= $${paramIndex}`);
+      conditions.push(`(COALESCE(o.paid_date, o.post_date)) <= $${paramIndex}`);
       params.push(dateTo + ' 23:59:59');
       paramIndex++;
     }
@@ -203,12 +203,12 @@ exports.getByCountryReport = async (req, res) => {
     }
 
     if (dateFrom) {
-      conditions.push(`(COALESCE(o.paid_date, o.post_date) AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris') >= $${paramIndex}`);
+      conditions.push(`(COALESCE(o.paid_date, o.post_date)) >= $${paramIndex}`);
       params.push(dateFrom);
       paramIndex++;
     }
     if (dateTo) {
-      conditions.push(`(COALESCE(o.paid_date, o.post_date) AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris') <= $${paramIndex}`);
+      conditions.push(`(COALESCE(o.paid_date, o.post_date)) <= $${paramIndex}`);
       params.push(dateTo + ' 23:59:59');
       paramIndex++;
     }
@@ -282,12 +282,12 @@ exports.getByTaxReport = async (req, res) => {
     }
 
     if (dateFrom) {
-      conditions.push(`(COALESCE(o.paid_date, o.post_date) AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris') >= $${paramIndex}`);
+      conditions.push(`(COALESCE(o.paid_date, o.post_date)) >= $${paramIndex}`);
       params.push(dateFrom);
       paramIndex++;
     }
     if (dateTo) {
-      conditions.push(`(COALESCE(o.paid_date, o.post_date) AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris') <= $${paramIndex}`);
+      conditions.push(`(COALESCE(o.paid_date, o.post_date)) <= $${paramIndex}`);
       params.push(dateTo + ' 23:59:59');
       paramIndex++;
     }
@@ -348,12 +348,12 @@ exports.getProfitReport = async (req, res) => {
     let paramIndex = 1;
 
     if (dateFrom) {
-      conditions.push(`(COALESCE(o.paid_date, o.post_date) AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris') >= $${paramIndex}`);
+      conditions.push(`(COALESCE(o.paid_date, o.post_date)) >= $${paramIndex}`);
       params.push(dateFrom);
       paramIndex++;
     }
     if (dateTo) {
-      conditions.push(`(COALESCE(o.paid_date, o.post_date) AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris') <= $${paramIndex}`);
+      conditions.push(`(COALESCE(o.paid_date, o.post_date)) <= $${paramIndex}`);
       params.push(dateTo + ' 23:59:59');
       paramIndex++;
     }
@@ -569,12 +569,12 @@ exports.getTransactionCosts = async (req, res) => {
     let paramIndex = 1;
 
     if (dateFrom) {
-      conditions.push(`(COALESCE(o.paid_date, o.post_date) AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris') >= $${paramIndex}`);
+      conditions.push(`(COALESCE(o.paid_date, o.post_date)) >= $${paramIndex}`);
       params.push(dateFrom);
       paramIndex++;
     }
     if (dateTo) {
-      conditions.push(`(COALESCE(o.paid_date, o.post_date) AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris') <= $${paramIndex}`);
+      conditions.push(`(COALESCE(o.paid_date, o.post_date)) <= $${paramIndex}`);
       params.push(dateTo + ' 23:59:59');
       paramIndex++;
     }
@@ -656,12 +656,12 @@ exports.getOrdersReport = async (req, res) => {
     conditions.push(`o.post_status IN ('wc-completed', 'wc-processing', 'wc-delivered', 'wc-awaiting-delivery')`);
 
     if (dateFrom) {
-      conditions.push(`(COALESCE(o.paid_date, o.post_date) AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris') >= $${paramIndex}`);
+      conditions.push(`(COALESCE(o.paid_date, o.post_date)) >= $${paramIndex}`);
       params.push(dateFrom);
       paramIndex++;
     }
     if (dateTo) {
-      conditions.push(`(COALESCE(o.paid_date, o.post_date) AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris') <= $${paramIndex}`);
+      conditions.push(`(COALESCE(o.paid_date, o.post_date)) <= $${paramIndex}`);
       params.push(dateTo + ' 23:59:59');
       paramIndex++;
     }
@@ -1169,12 +1169,12 @@ exports.getRefundsReport = async (req, res) => {
     let orderParamIndex = 1;
 
     if (dateFrom) {
-      orderConditions.push(`(COALESCE(o.paid_date, o.post_date) AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris') >= $${orderParamIndex}`);
+      orderConditions.push(`(COALESCE(o.paid_date, o.post_date)) >= $${orderParamIndex}`);
       orderParams.push(dateFrom);
       orderParamIndex++;
     }
     if (dateTo) {
-      orderConditions.push(`(COALESCE(o.paid_date, o.post_date) AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris') <= $${orderParamIndex}`);
+      orderConditions.push(`(COALESCE(o.paid_date, o.post_date)) <= $${orderParamIndex}`);
       orderParams.push(dateTo + ' 23:59:59');
       orderParamIndex++;
     }
@@ -1403,12 +1403,12 @@ exports.getShippingCosts = async (req, res) => {
     let paramIndex = 1;
 
     if (dateFrom) {
-      conditions.push(`(COALESCE(o.paid_date, o.post_date) AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris') >= $${paramIndex}`);
+      conditions.push(`(COALESCE(o.paid_date, o.post_date)) >= $${paramIndex}`);
       params.push(dateFrom);
       paramIndex++;
     }
     if (dateTo) {
-      conditions.push(`(COALESCE(o.paid_date, o.post_date) AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris') <= $${paramIndex}`);
+      conditions.push(`(COALESCE(o.paid_date, o.post_date)) <= $${paramIndex}`);
       params.push(dateTo + ' 23:59:59');
       paramIndex++;
     }
@@ -1466,12 +1466,12 @@ exports.getByCountryReport = async (req, res) => {
     let paramIndex = 1;
 
     if (dateFrom) {
-      baseConditions.push(`(COALESCE(o.paid_date, o.post_date) AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris') >= $${paramIndex}`);
+      baseConditions.push(`(COALESCE(o.paid_date, o.post_date)) >= $${paramIndex}`);
       params.push(dateFrom);
       paramIndex++;
     }
     if (dateTo) {
-      baseConditions.push(`(COALESCE(o.paid_date, o.post_date) AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris') <= $${paramIndex}`);
+      baseConditions.push(`(COALESCE(o.paid_date, o.post_date)) <= $${paramIndex}`);
       params.push(dateTo + ' 23:59:59');
       paramIndex++;
     }

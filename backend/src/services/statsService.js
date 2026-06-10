@@ -369,12 +369,12 @@ class StatsService {
 
     // Filtre par dates custom
     if (filters.startDate) {
-      conditions.push(`(COALESCE(o.paid_date, o.post_date) AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris') >= $${paramIndex}`);
+      conditions.push(`(COALESCE(o.paid_date, o.post_date)) >= $${paramIndex}`);
       params.push(filters.startDate);
       paramIndex++;
     }
     if (filters.endDate) {
-      conditions.push(`(COALESCE(o.paid_date, o.post_date) AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris') <= $${paramIndex}`);
+      conditions.push(`(COALESCE(o.paid_date, o.post_date)) <= $${paramIndex}`);
       params.push(filters.endDate);
       paramIndex++;
     }
