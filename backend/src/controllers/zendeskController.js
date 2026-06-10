@@ -122,16 +122,34 @@ const zendeskController = {
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no'); // désactive le buffering nginx pour ce flux
     res.flushHeaders?.();
 
     const send = (event, data) => {
       res.write(`event: ${event}\n`);
       res.write(`data: ${JSON.stringify(data)}\n\n`);
+      res.flush?.();
     };
+
+    // Heartbeat : un commentaire SSE (":") toutes les 15s pour que la connexion
+    // ne soit jamais idle (sinon nginx/Cloudflare coupe au bout de leur timeout).
+    const heartbeat = setInterval(() => {
+      res.write(': ping\n\n');
+      res.flush?.();
+    }, 15000);
+
+    // Si le client se déconnecte, on arrête le heartbeat et on signale l'abandon
+    // pour que l'import en cours s'arrête proprement (pas de process orphelin).
+    let aborted = false;
+    req.on('close', () => {
+      aborted = true;
+      clearInterval(heartbeat);
+    });
 
     // Throttle des events progress (évite de saturer le flux sur des milliers de tickets)
     let lastSent = 0;
     const onProgress = (p) => {
+      if (aborted) return;
       const now = Date.now();
       if (now - lastSent > 250 || p.done === p.total) {
         lastSent = now;
@@ -146,10 +164,11 @@ const zendeskController = {
         return res.end();
       }
       const recap = await zendeskModel.importAll(cfg, onProgress);
-      send('done', recap);
+      if (!aborted) send('done', recap);
     } catch (err) {
-      send('error', { error: err.message });
+      if (!aborted) send('error', { error: err.message });
     } finally {
+      clearInterval(heartbeat);
       res.end();
     }
   },
