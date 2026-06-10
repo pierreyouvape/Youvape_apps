@@ -883,7 +883,7 @@ export default function ColissimoApp() {
         {/* Historique accessible même sans facture chargée */}
         {!result && (
           <div style={{ background: C.white, borderRadius: 12, border: `1px solid ${C.greyB}`, marginTop: 8 }}>
-            <div style={{ borderBottom: `1px solid ${C.greyB}`, padding: '0 16px' }}>
+            <div style={{ display: 'flex', borderBottom: `1px solid ${C.greyB}`, padding: '0 16px', flexWrap: 'wrap' }}>
               <TabBtn label="Historique des factures" active={homeTab === 'historique'} onClick={() => setHomeTab('historique')} badge={history.length} />
               <TabBtn label="Totaux" active={homeTab === 'totaux'} onClick={() => setHomeTab('totaux')} />
             </div>
