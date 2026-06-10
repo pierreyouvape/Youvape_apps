@@ -327,8 +327,11 @@ async function upsertTicket(zTicket, appStatus, messages, usersById, natives = {
     .filter(Boolean).join(' ').trim();
   const customerName = fullName || requester.name || null;
 
-  // Colonnes natives + valeurs, construites dynamiquement
+  // Colonnes natives + valeurs, construites dynamiquement.
+  // id = zendesk_id : les tickets importés gardent leur identifiant Zendesk
+  // (alignement IDs app ↔ Zendesk). À l'INSERT seulement — jamais modifié en UPDATE.
   const cols = {
+    id: zTicket.id,
     zendesk_id: zTicket.id,
     customer_name: customerName,
     customer_email: email,
@@ -353,9 +356,9 @@ async function upsertTicket(zTicket, appStatus, messages, usersById, natives = {
   });
   const values = colNames.map((c) => cols[c]);
 
-  // UPDATE : on met à jour toutes les colonnes sauf created_at (on garde l'original)
+  // UPDATE : on met à jour toutes les colonnes sauf l'id, zendesk_id et created_at
   const updates = colNames
-    .filter((c) => c !== 'zendesk_id' && c !== 'created_at')
+    .filter((c) => c !== 'id' && c !== 'zendesk_id' && c !== 'created_at')
     .map((c) => `${c} = EXCLUDED.${c}`)
     .concat('updated_at = NOW()')
     .join(', ');
