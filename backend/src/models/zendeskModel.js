@@ -15,6 +15,7 @@
 
 const pool = require('../config/database');
 const appConfigModel = require('./appConfigModel');
+const { resolveCustomerIdByEmail } = require('./customerResolver');
 
 const PAGE_SIZE = 100; // max Zendesk cursor pagination
 
@@ -327,12 +328,17 @@ async function upsertTicket(zTicket, appStatus, messages, usersById, natives = {
     .filter(Boolean).join(' ').trim();
   const customerName = fullName || requester.name || null;
 
+  // Relier à la fiche client WooCommerce via l'email (Zendesk ne fournit que le
+  // demandeur). Permet à l'app de localiser le client (commandes, historique, CA).
+  const customerId = await resolveCustomerIdByEmail(email);
+
   // Colonnes natives + valeurs, construites dynamiquement.
   // id = zendesk_id : les tickets importés gardent leur identifiant Zendesk
   // (alignement IDs app ↔ Zendesk). À l'INSERT seulement — jamais modifié en UPDATE.
   const cols = {
     id: zTicket.id,
     zendesk_id: zTicket.id,
+    customer_id: customerId,
     customer_name: customerName,
     customer_email: email,
     subject,
@@ -356,10 +362,15 @@ async function upsertTicket(zTicket, appStatus, messages, usersById, natives = {
   });
   const values = colNames.map((c) => cols[c]);
 
-  // UPDATE : on met à jour toutes les colonnes sauf l'id, zendesk_id et created_at
+  // UPDATE : on met à jour toutes les colonnes sauf l'id, zendesk_id et created_at.
+  // customer_id : on ne l'écrase JAMAIS s'il est déjà renseigné (liaison manuelle
+  // par un agent, ou résolution précédente) et on ne l'efface pas si la nouvelle
+  // résolution échoue → COALESCE(existant, nouveau).
   const updates = colNames
     .filter((c) => c !== 'id' && c !== 'zendesk_id' && c !== 'created_at')
-    .map((c) => `${c} = EXCLUDED.${c}`)
+    .map((c) => c === 'customer_id'
+      ? `customer_id = COALESCE(sav_tickets.customer_id, EXCLUDED.customer_id)`
+      : `${c} = EXCLUDED.${c}`)
     .concat('updated_at = NOW()')
     .join(', ');
 
