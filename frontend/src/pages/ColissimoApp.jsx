@@ -52,6 +52,72 @@ function TabBtn({ label, active, onClick, badge }) {
   );
 }
 
+function TotalsView({ totals, totalsLoading, loadTotals, totalsByPeriod }) {
+  const { months, years } = totalsByPeriod;
+  return (
+    <div style={{ padding: 20 }}>
+      <div style={{ marginBottom: 14, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <p style={{ margin: 0, color: C.greyT, fontSize: 13 }}>
+          Total payé à Colissimo (port + suppléments HT), par mois et par année.
+        </p>
+        <button onClick={loadTotals} style={{ background: 'none', border: `1px solid ${C.greyB}`, borderRadius: 6, padding: '5px 12px', fontSize: 12, cursor: 'pointer', color: C.greyT }}>
+          ↻ Actualiser
+        </button>
+      </div>
+
+      {totalsLoading ? (
+        <div style={{ textAlign: 'center', padding: 30, color: C.greyT }}>Chargement…</div>
+      ) : !totals || (months.length === 0 && years.length === 0) ? (
+        <div style={{ textAlign: 'center', padding: 40, color: C.greyT }}>
+          Aucune donnée disponible. Enregistrez des factures pour voir les totaux.
+        </div>
+      ) : (
+        <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
+          <div style={{ flex: 1, minWidth: 280 }}>
+            <h3 style={{ fontSize: 14, fontWeight: 700, color: C.dark, marginBottom: 10 }}>Par mois</h3>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+              <thead>
+                <tr style={{ background: C.grey }}>
+                  <th style={{ padding: '9px 12px', textAlign: 'left', fontWeight: 700, color: C.dark, fontSize: 11.5, borderBottom: `2px solid ${C.greyB}` }}>Mois</th>
+                  <th style={{ padding: '9px 12px', textAlign: 'right', fontWeight: 700, color: C.dark, fontSize: 11.5, borderBottom: `2px solid ${C.greyB}` }}>Total payé HT</th>
+                </tr>
+              </thead>
+              <tbody>
+                {months.map((m, i) => (
+                  <tr key={m.key} style={{ background: i % 2 === 0 ? C.white : C.grey, borderBottom: `1px solid ${C.greyB}` }}>
+                    <td style={{ padding: '8px 12px' }}>{m.label}</td>
+                    <td style={{ padding: '8px 12px', textAlign: 'right', fontWeight: 600 }}>{m.total.toFixed(2)} €</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <div style={{ flex: 1, minWidth: 280 }}>
+            <h3 style={{ fontSize: 14, fontWeight: 700, color: C.dark, marginBottom: 10 }}>Par année</h3>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+              <thead>
+                <tr style={{ background: C.grey }}>
+                  <th style={{ padding: '9px 12px', textAlign: 'left', fontWeight: 700, color: C.dark, fontSize: 11.5, borderBottom: `2px solid ${C.greyB}` }}>Année</th>
+                  <th style={{ padding: '9px 12px', textAlign: 'right', fontWeight: 700, color: C.dark, fontSize: 11.5, borderBottom: `2px solid ${C.greyB}` }}>Total payé HT</th>
+                </tr>
+              </thead>
+              <tbody>
+                {years.map((y, i) => (
+                  <tr key={y.key} style={{ background: i % 2 === 0 ? C.white : C.grey, borderBottom: `1px solid ${C.greyB}` }}>
+                    <td style={{ padding: '8px 12px', fontWeight: 700 }}>{y.label}</td>
+                    <td style={{ padding: '8px 12px', textAlign: 'right', fontWeight: 800, color: C.primary }}>{y.total.toFixed(2)} €</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function Th({ label, align = 'left' }) {
   return <th style={{ padding: '10px 12px', textAlign: align, fontWeight: 700, color: C.dark, fontSize: 11.5, borderBottom: `2px solid ${C.greyB}`, background: C.grey, whiteSpace: 'nowrap' }}>{label}</th>;
 }
@@ -88,6 +154,11 @@ export default function ColissimoApp() {
   const [globalSearchError, setGlobalSearchError] = useState(null);
   const [globalSearchResults, setGlobalSearchResults] = useState(null);
 
+  // ── Totaux payés par mois / par année
+  const [totals, setTotals] = useState(null);
+  const [totalsLoading, setTotalsLoading] = useState(false);
+  const [homeTab, setHomeTab] = useState('historique'); // historique | totaux
+
   async function loadHistory() {
     setHistoryLoading(true);
     try {
@@ -97,7 +168,42 @@ export default function ColissimoApp() {
     finally { setHistoryLoading(false); }
   }
 
-  useEffect(() => { loadHistory(); }, []);
+  async function loadTotals() {
+    setTotalsLoading(true);
+    try {
+      const { data } = await axios.get(`${API_URL}/colissimo/totals`, { headers: { Authorization: `Bearer ${token}` } });
+      if (data.success) setTotals(data);
+    } catch { /* silently fail */ }
+    finally { setTotalsLoading(false); }
+  }
+
+  useEffect(() => { loadHistory(); loadTotals(); }, []);
+
+  const MONTH_NAMES = ['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
+
+  const totalsByPeriod = (() => {
+    const monthMap = {};
+    const yearMap = {};
+    for (const inv of (totals?.invoices || [])) {
+      const parts = (inv.period_start || '').split('/');
+      if (parts.length !== 3) continue;
+      const [, m, y] = parts;
+      const monthKey = `${y}-${m}`;
+      const total = parseFloat(inv.total_ht || 0);
+      monthMap[monthKey] = (monthMap[monthKey] || 0) + total;
+      yearMap[y] = (yearMap[y] || 0) + total;
+    }
+    const months = Object.entries(monthMap)
+      .map(([key, total]) => {
+        const [y, m] = key.split('-');
+        return { key, label: `${MONTH_NAMES[parseInt(m, 10) - 1]} ${y}`, total };
+      })
+      .sort((a, b) => b.key.localeCompare(a.key));
+    const years = Object.entries(yearMap)
+      .map(([y, total]) => ({ key: y, label: y, total }))
+      .sort((a, b) => b.key.localeCompare(a.key));
+    return { months, years };
+  })();
 
   // Charge une facture depuis l'historique BDD et la réaffiche comme si elle venait d'être analysée
   async function handleLoadFromHistory(inv) {
@@ -778,8 +884,15 @@ export default function ColissimoApp() {
         {!result && (
           <div style={{ background: C.white, borderRadius: 12, border: `1px solid ${C.greyB}`, marginTop: 8 }}>
             <div style={{ borderBottom: `1px solid ${C.greyB}`, padding: '0 16px' }}>
-              <TabBtn label="Historique des factures" active={true} onClick={() => {}} badge={history.length} />
+              <TabBtn label="Historique des factures" active={homeTab === 'historique'} onClick={() => setHomeTab('historique')} badge={history.length} />
+              <TabBtn label="Totaux" active={homeTab === 'totaux'} onClick={() => setHomeTab('totaux')} />
             </div>
+
+            {homeTab === 'totaux' && (
+              <TotalsView totals={totals} totalsLoading={totalsLoading} loadTotals={loadTotals} totalsByPeriod={totalsByPeriod} />
+            )}
+
+            {homeTab === 'historique' && (
             <div style={{ padding: 20 }}>
               {historyLoading ? (
                 <div style={{ textAlign: 'center', padding: 20, color: C.greyT }}>Chargement…</div>
@@ -826,6 +939,7 @@ export default function ColissimoApp() {
                 </div>
               )}
             </div>
+            )}
           </div>
         )}
       </div>

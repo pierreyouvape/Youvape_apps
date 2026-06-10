@@ -711,6 +711,22 @@ exports.searchOrder = async (req, res) => {
   }
 };
 
+// GET /api/colissimo/totals — totaux payés par mois / par année
+exports.getTotals = async (req, res) => {
+  try {
+    const invoices = await pool.query(`
+      SELECT id, invoice_number, period_start, total_ht
+      FROM carrier_invoices
+      WHERE carrier = 'colissimo'
+      ORDER BY period_start
+    `);
+    res.json({ success: true, invoices: invoices.rows });
+  } catch (err) {
+    console.error('[Colissimo] getTotals error:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+};
+
 // POST /api/colissimo/debug-text
 exports.debugText = [
   upload.single('pdf'),

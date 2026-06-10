@@ -12,5 +12,6 @@ router.get('/history/:id/pdf',    colissimoController.downloadPdf);
 router.delete('/history/:id',     colissimoController.deleteInvoice);
 router.post('/debug-text',   ...colissimoController.debugText);
 router.get('/search-order',  colissimoController.searchOrder);
+router.get('/totals',        colissimoController.getTotals);
 
 module.exports = router;
