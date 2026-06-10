@@ -190,6 +190,8 @@ export default function OrderCard({ order, highlighted, canAssign, onAssign, onU
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
             <a
               href={orderUrl}
+              target="_blank"
+              rel="noopener noreferrer"
               onClick={e => e.stopPropagation()}
               style={{ fontSize: 14, fontWeight: 800, color: TICKETS_COLOR, textDecoration: 'none' }}
             >#{orderNum}</a>
@@ -273,6 +275,8 @@ export default function OrderCard({ order, highlighted, canAssign, onAssign, onU
             <div style={{ marginTop: 10, display: 'flex', gap: 6 }}>
               <a
                 href={orderUrl}
+                target="_blank"
+                rel="noopener noreferrer"
                 style={{
                   flex: 1,
                   display: 'block', textAlign: 'center', textDecoration: 'none',
