@@ -52,6 +52,23 @@ const STATUS_MAP = {
 const fmt = (n) =>
   new Intl.NumberFormat('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(parseFloat(n) || 0) + ' €';
 
+// Construit le lien de suivi du transporteur à partir du nom du transporteur et du n° de suivi
+function getTrackingUrl(carrier, trackingNumber) {
+  if (!carrier || !trackingNumber) return null;
+  const c = carrier.toLowerCase();
+  const code = encodeURIComponent(trackingNumber);
+  if (c.includes('chronopost') || c.includes('chrono')) {
+    return `https://www.chronopost.fr/tracking-no-cms/suivi-page?listeNumerosLT=${code}`;
+  }
+  if (c.includes('colissimo') || c.includes('la poste') || c.includes('lettre suivie') || c.includes('bpost')) {
+    return `https://www.laposte.fr/outils/suivre-vos-envois?code=${code}`;
+  }
+  if (c.includes('mondial relay')) {
+    return `https://www.mondialrelay.fr/suivi-de-colis/?numeroExpedition=${code}`;
+  }
+  return null;
+}
+
 /* ─── SOUS-COMPOSANTS ────────────────────────────────────── */
 
 function StatusBadge({ status }) {
@@ -252,6 +269,8 @@ const OrderDetail = () => {
   const subtotal      = orderTotal - orderTax + cartDiscount; // articles + livraison, avant remise
   const subtotalItems = subtotal - orderShipping;             // articles HT seuls
 
+  const trackingUrl = getTrackingUrl(order.shipping_carrier, order.tracking_number);
+
   const shippingCostCalculated = order.shipping_cost_calculated != null ? parseFloat(order.shipping_cost_calculated) : null;
   const paymentCostCalculated  = order.payment_cost_calculated  != null ? parseFloat(order.payment_cost_calculated)  : null;
   const packagingCost = PACKAGING_COST_HT;
@@ -430,9 +449,20 @@ const OrderDetail = () => {
                     Suivi
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <span style={{ fontSize: 14, fontWeight: 700, color: C.bleu, fontVariantNumeric: 'tabular-nums' }}>
-                      {order.tracking_number}
-                    </span>
+                    {trackingUrl ? (
+                      <a
+                        href={trackingUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        style={{ fontSize: 14, fontWeight: 700, color: C.bleu, fontVariantNumeric: 'tabular-nums', textDecoration: 'underline' }}
+                      >
+                        {order.tracking_number}
+                      </a>
+                    ) : (
+                      <span style={{ fontSize: 14, fontWeight: 700, color: C.bleu, fontVariantNumeric: 'tabular-nums' }}>
+                        {order.tracking_number}
+                      </span>
+                    )}
                     <CopyButton text={order.tracking_number} size={14} />
                   </div>
                 </div>
