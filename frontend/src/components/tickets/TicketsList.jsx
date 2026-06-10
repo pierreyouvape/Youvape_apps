@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useContext } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import StatusBadge from './StatusBadge';
 import { TICKETS_COLOR, formatTicketId } from './ticketConstants';
@@ -133,6 +134,58 @@ function timeAgo(ts) {
   if (m < 60) return `il y a ${m} min`;
   const h = Math.floor(m / 60);
   return `il y a ${h} h`;
+}
+
+/* ─── Aperçu du message client (tooltip au survol, façon Zendesk) ─────────────── */
+// La description peut contenir du HTML : on le décode et on retire les balises
+// pour n'afficher que le texte. Tronqué côté CSS (line-clamp).
+function plainPreview(html) {
+  if (!html) return '';
+  // decode des entités + suppression des balises via le parseur du navigateur
+  const tmp = document.createElement('div');
+  tmp.innerHTML = html;
+  return (tmp.textContent || tmp.innerText || '').replace(/\s+/g, ' ').trim();
+}
+
+/* Tooltip rendu en portal (position fixed sous la ligne survolée) pour ne pas
+   être coupé par l'overflow de la table. */
+function RowPreview({ ticket, rect }) {
+  if (!ticket || !rect) return null;
+  const text = plainPreview(ticket.description);
+  if (!text) return null;
+
+  // Largeur du tooltip alignée sur la ligne, plafonnée. Positionné juste sous la
+  // ligne ; bascule au-dessus s'il déborderait en bas de l'écran.
+  const width = Math.min(560, Math.max(360, rect.width - 80));
+  const left = Math.min(rect.left + 40, window.innerWidth - width - 16);
+  const estHeight = 150;
+  const below = rect.bottom + 8;
+  const placeBelow = below + estHeight < window.innerHeight;
+  const top = placeBelow ? below : rect.top - estHeight - 8;
+
+  return createPortal(
+    <div style={{
+      position: 'fixed', left, top, width, zIndex: 900,
+      background: C.blanc, border: `1px solid ${C.grisCL}`, borderRadius: 10,
+      boxShadow: '0 10px 32px rgba(0,0,0,0.16)', padding: '14px 16px',
+      fontFamily: 'Lato, sans-serif', pointerEvents: 'none',
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+        <StatusBadge status={ticket.sav_status} />
+        <span style={{ fontSize: 12, color: C.grisM, fontWeight: 700 }}>
+          Ticket {formatTicketId(ticket.id)}
+        </span>
+      </div>
+      <div style={{
+        fontSize: 13, color: C.grisTF, lineHeight: 1.5,
+        display: '-webkit-box', WebkitLineClamp: 6, WebkitBoxOrient: 'vertical',
+        overflow: 'hidden',
+      }}>
+        {text}
+      </div>
+    </div>,
+    document.body
+  );
 }
 
 /* ─── Contrôle autorefresh : toggle ON/OFF + fraîcheur + refresh manuel ───────── */
@@ -383,8 +436,14 @@ export default function TicketsList({ activeView, views = [], onRefresh, refresh
   const [bulkMenu, setBulkMenu] = useState(null); // 'assign' | 'status' | null
   const [bulkBusy, setBulkBusy] = useState(false);
   const [agents, setAgents] = useState([]);
+  // Aperçu du message au survol d'une ligne (façon Zendesk) : { ticket, rect }
+  const [preview, setPreview] = useState(null);
+  const previewTimer = useRef();
   const { token } = useContext(AuthContext);
   const { statuses: allStatuses } = useTicketStatuses();
+
+  // Nettoyer le timer d'aperçu au démontage
+  useEffect(() => () => clearTimeout(previewTimer.current), []);
 
   // Charger les agents pour l'assignation groupée
   useEffect(() => {
@@ -676,8 +735,20 @@ export default function TicketsList({ activeView, views = [], onRefresh, refresh
                           background: isSel ? `rgba(8,145,178,0.06)` : 'transparent',
                           cursor: 'pointer', transition: 'background 0.12s',
                         }}
-                        onMouseEnter={e => { if (!isSel) e.currentTarget.style.background = '#F8FBFD'; }}
-                        onMouseLeave={e => { e.currentTarget.style.background = isSel ? `rgba(8,145,178,0.06)` : 'transparent'; }}
+                        onMouseEnter={e => {
+                          if (!isSel) e.currentTarget.style.background = '#F8FBFD';
+                          // Aperçu du message après un court délai (évite le spam au survol rapide)
+                          const row = e.currentTarget;
+                          clearTimeout(previewTimer.current);
+                          previewTimer.current = setTimeout(() => {
+                            setPreview({ ticket: t, rect: row.getBoundingClientRect() });
+                          }, 350);
+                        }}
+                        onMouseLeave={e => {
+                          e.currentTarget.style.background = isSel ? `rgba(8,145,178,0.06)` : 'transparent';
+                          clearTimeout(previewTimer.current);
+                          setPreview(p => (p && p.ticket.id === t.id ? null : p));
+                        }}
                       >
                         {/* Checkbox */}
                         <td style={{ ...cell, padding: '14px 12px 14px 16px', width: 40 }}
@@ -867,6 +938,11 @@ export default function TicketsList({ activeView, views = [], onRefresh, refresh
             onRefresh?.();
           }}
         />
+      )}
+
+      {/* Aperçu du message au survol (caché pendant une sélection/action groupée) */}
+      {selected.size === 0 && !bulkMergeOpen && (
+        <RowPreview ticket={preview?.ticket} rect={preview?.rect} />
       )}
     </main>
   );

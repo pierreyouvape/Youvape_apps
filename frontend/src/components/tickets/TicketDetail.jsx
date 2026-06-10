@@ -1319,14 +1319,14 @@ function TicketFieldsPanel({ ticket, onFieldChange, users }) {
       <Field
         label="N° de commande"
         hint={ticket.order_id ? 'voir' : null}
-        hintAction={() => ticket.order_id && navigate(`/orders/${ticket.order_id}`)}
+        hintAction={() => ticket.order_id && window.open(`/orders/${ticket.order_id}`, '_blank', 'noopener')}
       >
         <FieldInput
           value={ticket.order_id}
           onChange={e => set('order_id', e.target.value)}
           placeholder="ex. 1222924"
           suffix={ticket.order_id
-            ? <a href={`/orders/${ticket.order_id}`} onClick={e => { e.stopPropagation(); }} style={{ display: 'flex' }}><Ic.External color={C.bleu} /></a>
+            ? <a href={`/orders/${ticket.order_id}`} target="_blank" rel="noopener noreferrer" onClick={e => { e.stopPropagation(); }} style={{ display: 'flex' }}><Ic.External color={C.bleu} /></a>
             : null}
         />
       </Field>
@@ -1856,9 +1856,11 @@ function CustomerPanel({ ticket, onAssignOrder, onUnassignOrder, onMerge }) {
           } />
         </div>
         {ticket.customer_wp_id && (
-          /* Lien natif = cmd+clic fonctionne */
+          /* Nouvel onglet : on garde le ticket ouvert (cmd+clic fonctionne aussi) */
           <a
             href={`/customers/${ticket.customer_wp_id}`}
+            target="_blank"
+            rel="noopener noreferrer"
             style={{
               display: 'block', textAlign: 'center', marginTop: 12,
               padding: '6px 0', background: 'none', border: `1px solid ${C.grisCL}`,
