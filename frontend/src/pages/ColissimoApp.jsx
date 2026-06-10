@@ -364,7 +364,7 @@ export default function ColissimoApp() {
       if (data.success) {
         setSaveState(data.already_saved ? 'already' : 'saved');
         setCurrentInvoiceId(data.id);
-        if (!data.already_saved) loadHistory();
+        if (!data.already_saved) { loadHistory(); loadTotals(); }
       }
     } catch (e) {
       setError(e.response?.data?.error || 'Erreur lors de l\'enregistrement');
@@ -381,6 +381,7 @@ export default function ColissimoApp() {
         setCurrentInvoiceId(null); setTariffsAppliedAt(null); setApplyResult(null);
       }
       loadHistory();
+      loadTotals();
     } catch {
       setError('Erreur lors de la suppression');
     }

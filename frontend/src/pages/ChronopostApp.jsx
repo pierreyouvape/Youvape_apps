@@ -495,7 +495,7 @@ export default function ChronopostApp() {
       if (data.success) {
         setSaveState(data.already_saved ? 'already' : 'saved');
         setCurrentInvoiceId(data.id);
-        if (!data.already_saved) loadHistory();
+        if (!data.already_saved) { loadHistory(); loadTotals(); }
       }
     } catch (e) {
       setError(e.response?.data?.error || 'Erreur lors de l\'enregistrement');
@@ -515,6 +515,7 @@ export default function ChronopostApp() {
         setCurrentInvoiceId(null); setTariffsAppliedAt(null); setApplyResult(null);
       }
       loadHistory();
+      loadTotals();
     } catch (e) {
       setError('Erreur lors de la suppression');
     }
