@@ -9,6 +9,7 @@ const { dispatchNotifications } = require('../services/notificationDispatcher');
 const { tagDuplicates } = require('../services/duplicateDetector');
 const { mergeTickets } = require('../services/ticketMerge');
 const { sendAlert } = require('../services/alertService');
+const { syncTicketOrderTag } = require('../services/bmsOrderTagService');
 
 // Déduplication des inbounds : Mailgun peut appeler le webhook plusieurs fois
 // pour un même mail (actions Forward + Store-notify, ou retries). On garde en
@@ -138,6 +139,9 @@ const savController = {
 
       // Détection de doublons (fire-and-forget)
       tagDuplicates(ticket).catch(e => console.warn('[SAV] tagDuplicates échoué:', e.message));
+
+      // Tag BMS sur la commande associée (fire-and-forget, ne bloque pas)
+      syncTicketOrderTag(ticket);
 
       res.status(200).json({ success: true, ticket_id: ticket.id });
 
@@ -660,6 +664,14 @@ const savController = {
     try {
       const ticket = await savModel.patch(parseInt(req.params.id), req.body);
       if (!ticket) return res.status(404).json({ error: 'Ticket introuvable ou aucun champ valide' });
+
+      // Si le PATCH touche la commande liée → resync du tag BMS (fire-and-forget).
+      // Le ticket renvoyé porte order_id + bms_tagged_order_ref : le service
+      // détecte lui-même un changement et détague l'ancienne commande au besoin.
+      if (Object.prototype.hasOwnProperty.call(req.body, 'order_id')) {
+        syncTicketOrderTag(ticket);
+      }
+
       res.json({ success: true, ticket });
     } catch (error) {
       console.error('❌ [SAV] Erreur patch:', error);
@@ -760,6 +772,9 @@ const savController = {
 
       // Détection de doublons (fire-and-forget)
       tagDuplicates(ticket).catch(e => console.warn('[SAV createManual] tagDuplicates échoué:', e.message));
+
+      // Tag BMS sur la commande associée (fire-and-forget, ne bloque pas)
+      syncTicketOrderTag({ ...ticket, order_id: order_id || null });
 
       // Renvoyer le ticket complet (avec enrichissements client, etc.)
       const fullTicket = await savModel.getById(ticket.id);
