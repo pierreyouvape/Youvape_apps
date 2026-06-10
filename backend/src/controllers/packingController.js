@@ -16,6 +16,7 @@ const searchOrder = async (req, res) => {
         o.shipping_last_name,
         o.shipping_company,
         o.shipping_address_1,
+        o.shipping_address_2,
         o.shipping_city,
         o.shipping_postcode,
         o.shipping_country,
@@ -88,6 +89,7 @@ const searchOrder = async (req, res) => {
           last_name: order.shipping_last_name,
           company: order.shipping_company,
           address: order.shipping_address_1,
+          address_2: order.shipping_address_2,
           city: order.shipping_city,
           postcode: order.shipping_postcode,
           country: order.shipping_country,
@@ -138,7 +140,77 @@ const lookupBarcode = async (req, res) => {
   }
 };
 
+// Mettre à jour l'adresse de livraison d'une commande (correction par le préparateur
+// avant génération de l'étiquette). N'écrit que dans la base locale, qui est lue au
+// moment de la génération de l'étiquette La Poste.
+const updateShipping = async (req, res) => {
+  try {
+    const { orderNumber } = req.params;
+    const {
+      first_name, last_name, company,
+      address, address_2, city, postcode, country, phone
+    } = req.body || {};
+
+    // Champs minimaux requis pour une étiquette exploitable
+    if (!address || !city || !postcode) {
+      return res.status(400).json({ error: 'Adresse, ville et code postal sont obligatoires' });
+    }
+
+    const result = await pool.query(`
+      UPDATE orders SET
+        shipping_first_name = $1,
+        shipping_last_name = $2,
+        shipping_company = $3,
+        shipping_address_1 = $4,
+        shipping_address_2 = $5,
+        shipping_city = $6,
+        shipping_postcode = $7,
+        shipping_country = COALESCE(NULLIF($8, ''), shipping_country),
+        shipping_phone = $9
+      WHERE wp_order_id = $10
+      RETURNING
+        shipping_first_name, shipping_last_name, shipping_company,
+        shipping_address_1, shipping_address_2,
+        shipping_city, shipping_postcode, shipping_country, shipping_phone
+    `, [
+      (first_name || '').trim(),
+      (last_name || '').trim(),
+      (company || '').trim() || null,
+      address.trim(),
+      (address_2 || '').trim() || null,
+      city.trim(),
+      postcode.trim(),
+      (country || '').trim(),
+      (phone || '').trim() || null,
+      orderNumber
+    ]);
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Commande introuvable' });
+    }
+
+    const row = result.rows[0];
+    res.json({
+      shipping: {
+        first_name: row.shipping_first_name,
+        last_name: row.shipping_last_name,
+        company: row.shipping_company,
+        address: row.shipping_address_1,
+        address_2: row.shipping_address_2,
+        city: row.shipping_city,
+        postcode: row.shipping_postcode,
+        country: row.shipping_country,
+        phone: row.shipping_phone
+      }
+    });
+  } catch (error) {
+    console.error('Erreur updateShipping packing:', error.message);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+};
+
 module.exports = {
   searchOrder,
-  lookupBarcode
+  lookupBarcode,
+  updateShipping
 };
