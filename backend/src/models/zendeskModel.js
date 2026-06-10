@@ -101,12 +101,25 @@ async function testConnection(cfg) {
 }
 
 // ─── Itérer sur tous les tickets (cursor pagination) ──────────────────────────
-// Appelle onPage(tickets[], meta) pour chaque page. meta.estimatedTotal si dispo.
-async function forEachTicketPage(cfg, onPage) {
-  let url = `/tickets.json?page[size]=${PAGE_SIZE}`;
+// Appelle onPage(tickets[]) pour chaque page.
+// opts.limit : si fourni, on trie par updated_at décroissant (les plus récents
+//   d'abord) et on s'arrête dès que `limit` tickets ont été parcourus. Permet
+//   une resync rapide des N derniers tickets sans balayer tout l'historique.
+async function forEachTicketPage(cfg, onPage, opts = {}) {
+  const { limit = null } = opts;
+  let url = limit
+    ? `/tickets.json?page[size]=${PAGE_SIZE}&sort=-updated_at`
+    : `/tickets.json?page[size]=${PAGE_SIZE}`;
+  let seen = 0;
   while (url) {
     const data = await apiGet(cfg, url);
-    await onPage(data.tickets || []);
+    let tickets = data.tickets || [];
+    if (limit && seen + tickets.length > limit) {
+      tickets = tickets.slice(0, limit - seen); // ne pas dépasser la limite
+    }
+    await onPage(tickets);
+    seen += tickets.length;
+    if (limit && seen >= limit) break;
     url = data.meta?.has_more ? data.links?.next : null;
   }
 }
@@ -361,7 +374,8 @@ async function upsertTicket(zTicket, appStatus, messages, usersById, natives = {
 // onProgress({ total, done, created, updated, errors, currentSubject })
 // Retourne le récap final. Si un statut Zendesk n'est pas mappé → throw avec la
 // liste des statuts manquants (le front doit alors afficher le matching).
-async function importAll(cfg, onProgress) {
+async function importAll(cfg, onProgress, opts = {}) {
+  const { limit = null } = opts;
   const statusMap = await getStatusMap();
   const fieldMap = await getFieldMap();
 
@@ -374,7 +388,8 @@ async function importAll(cfg, onProgress) {
     }
   } catch { /* pas de statuts custom */ }
 
-  const total = await countTickets(cfg);
+  // En mode limité, le total affiché = la limite (pas le total Zendesk global).
+  const total = limit || await countTickets(cfg);
   let done = 0, created = 0, updated = 0, errors = 0;
   const missingStatuses = new Set();
 
@@ -433,7 +448,7 @@ async function importAll(cfg, onProgress) {
       done += 1;
       if (onProgress) onProgress({ total, done, created, updated, errors, currentSubject: t.subject });
     }
-  });
+  }, { limit });
 
   return { total, done, created, updated, errors, missingStatuses: [...missingStatuses] };
 }
