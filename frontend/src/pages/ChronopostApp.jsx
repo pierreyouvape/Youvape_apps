@@ -2,6 +2,7 @@ import { useState, useRef, useContext, useEffect } from 'react';
 import axios from 'axios';
 import { AuthContext } from '../context/AuthContext';
 import AppShell from '../components/AppShell';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
 const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:3000/api/auth').replace('/auth', '');
 
@@ -115,7 +116,21 @@ function TotalsView({ totals, totalsLoading, loadTotals, totalsByPeriod }) {
           Aucune donnée disponible. Enregistrez des factures pour voir les totaux.
         </div>
       ) : (
-        <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
+        <>
+          <div style={{ marginBottom: 24 }}>
+            <h3 style={{ fontSize: 14, fontWeight: 700, color: C.dark, marginBottom: 10 }}>Évolution mensuelle</h3>
+            <ResponsiveContainer width="100%" height={280}>
+              <LineChart data={[...months].reverse()} margin={{ top: 10, right: 20, left: 0, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke={C.greyB} />
+                <XAxis dataKey="label" tick={{ fontSize: 11 }} />
+                <YAxis tick={{ fontSize: 11 }} tickFormatter={v => `${v} €`} />
+                <Tooltip formatter={v => `${parseFloat(v).toFixed(2)} €`} />
+                <Line type="monotone" dataKey="total" name="Total payé HT" stroke={C.primary} strokeWidth={2} dot={{ r: 3 }} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+
+          <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
           <div style={{ flex: 1, minWidth: 280 }}>
             <h3 style={{ fontSize: 14, fontWeight: 700, color: C.dark, marginBottom: 10 }}>Par mois</h3>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
@@ -155,7 +170,8 @@ function TotalsView({ totals, totalsLoading, loadTotals, totalsByPeriod }) {
               </tbody>
             </table>
           </div>
-        </div>
+          </div>
+        </>
       )}
     </div>
   );
