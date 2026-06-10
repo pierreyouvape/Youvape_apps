@@ -572,7 +572,7 @@ exports.saveInvoice = [
 // POST /api/colissimo/apply-tariffs — met à jour shipping_cost_calculated avec le Total HT par colis
 exports.applyTariffs = async (req, res) => {
   try {
-    const { tariffs } = req.body;
+    const { tariffs, invoiceId } = req.body;
     if (!Array.isArray(tariffs) || !tariffs.length) {
       return res.status(400).json({ success: false, error: 'tariffs[] requis' });
     }
@@ -591,7 +591,16 @@ exports.applyTariffs = async (req, res) => {
       WHERE orders.wp_order_id::int = c.order_id
     `, params);
 
-    res.json({ success: true, updated: result.rowCount, skipped });
+    let appliedAt = null;
+    if (invoiceId) {
+      const upd = await pool.query(
+        `UPDATE carrier_invoices SET tariffs_applied_at = NOW() WHERE id = $1 AND carrier = 'colissimo' RETURNING tariffs_applied_at`,
+        [invoiceId]
+      );
+      appliedAt = upd.rows[0]?.tariffs_applied_at || null;
+    }
+
+    res.json({ success: true, updated: result.rowCount, skipped, tariffsAppliedAt: appliedAt });
   } catch (err) {
     console.error('[Colissimo] applyTariffs error:', err);
     res.status(500).json({ success: false, error: err.message });
@@ -641,7 +650,7 @@ exports.getHistory = async (req, res) => {
         ci.id, ci.invoice_number, ci.period_start, ci.period_end, ci.account_number,
         ci.total_parcels, ci.parcels_matched, ci.total_ht,
         ci.port_brut, ci.remise, ci.port_net, ci.cae,
-        ci.supplements_total, ci.indemnizations_total, ci.created_at,
+        ci.supplements_total, ci.indemnizations_total, ci.created_at, ci.tariffs_applied_at,
         SUM(CASE WHEN cip.diff_g IS NOT NULL AND ABS(cip.diff_g) <= 20 THEN 1 ELSE 0 END) AS weight_ok,
         SUM(CASE WHEN cip.diff_g IS NOT NULL AND ABS(cip.diff_g) > 200 THEN 1 ELSE 0 END) AS weight_ecart
       FROM carrier_invoices ci
@@ -675,6 +684,29 @@ exports.getInvoiceDetail = async (req, res) => {
       supplements: suppl.rows,
     });
   } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+};
+
+// GET /api/colissimo/search-order?q=... — retrouve la/les facture(s) contenant une commande ou un suivi
+exports.searchOrder = async (req, res) => {
+  try {
+    const q = (req.query.q || '').trim();
+    if (!q) return res.json({ success: true, results: [] });
+
+    const result = await pool.query(`
+      SELECT ci.id, ci.invoice_number, ci.invoice_date, cip.order_id, cip.tracking
+      FROM carrier_invoice_parcels cip
+      JOIN carrier_invoices ci ON ci.id = cip.invoice_id
+      WHERE ci.carrier = 'colissimo'
+        AND (cip.order_id::text = $1 OR cip.tracking ILIKE $2)
+      ORDER BY ci.created_at DESC
+      LIMIT 10
+    `, [q, `%${q}%`]);
+
+    res.json({ success: true, results: result.rows });
+  } catch (err) {
+    console.error('[Colissimo] searchOrder error:', err);
     res.status(500).json({ success: false, error: err.message });
   }
 };

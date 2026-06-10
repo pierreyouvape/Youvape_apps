@@ -12,4 +12,15 @@ router.get('/history/:id/pdf',    c.downloadPdf);
 router.delete('/history/:id',     c.deleteInvoice);
 router.post('/debug-text',   ...c.debugText);
 
+// Avoirs (credit notes)
+router.post('/analyze-credit',     ...c.analyzeCredit);
+router.post('/save-credit',        ...c.saveCredit);
+router.get('/credits',             c.getCreditsHistory);
+router.get('/credits-for-orders',  c.getCreditsForOrders);
+router.delete('/credits/:number',  c.deleteCredit);
+router.get('/credits/:number/pdf', c.downloadCreditPdf);
+
+router.get('/search-order', c.searchOrder);
+router.get('/totals', c.getTotals);
+
 module.exports = router;

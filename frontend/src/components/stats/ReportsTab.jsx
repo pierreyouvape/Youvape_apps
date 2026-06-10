@@ -29,8 +29,100 @@ const ReportsTab = () => {
   // Période par défaut: mois en cours
   const today = new Date();
   const firstDayOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
-  const [dateFrom, setDateFrom] = useState(firstDayOfMonth.toISOString().split('T')[0]);
-  const [dateTo, setDateTo] = useState(today.toISOString().split('T')[0]);
+  const fmtDate = (d) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  const [selectedPreset, setSelectedPreset] = useState('this_month');
+  const [dateFrom, setDateFrom] = useState(fmtDate(firstDayOfMonth));
+  const [dateTo, setDateTo] = useState(fmtDate(today));
+
+  const getPresetDates = (preset) => {
+    const now = new Date();
+    const fmt = (d) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    switch (preset) {
+      case 'today': return { from: fmt(now), to: fmt(now) };
+      case 'yesterday': {
+        const y = new Date(now); y.setDate(y.getDate() - 1);
+        return { from: fmt(y), to: fmt(y) };
+      }
+      case 'this_week': {
+        const mon = new Date(now);
+        const day = mon.getDay() === 0 ? 6 : mon.getDay() - 1;
+        mon.setDate(mon.getDate() - day);
+        return { from: fmt(mon), to: fmt(now) };
+      }
+      case 'last_week': {
+        const mon = new Date(now);
+        const day = mon.getDay() === 0 ? 6 : mon.getDay() - 1;
+        mon.setDate(mon.getDate() - day - 7);
+        const sun = new Date(mon); sun.setDate(sun.getDate() + 6);
+        return { from: fmt(mon), to: fmt(sun) };
+      }
+      case 'this_month': {
+        const first = new Date(now.getFullYear(), now.getMonth(), 1);
+        return { from: fmt(first), to: fmt(now) };
+      }
+      case 'last_month': {
+        const first = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+        const last = new Date(now.getFullYear(), now.getMonth(), 0);
+        return { from: fmt(first), to: fmt(last) };
+      }
+      case 'this_year': {
+        const first = new Date(now.getFullYear(), 0, 1);
+        return { from: fmt(first), to: fmt(now) };
+      }
+      case 'last_year': {
+        const first = new Date(now.getFullYear() - 1, 0, 1);
+        const last = new Date(now.getFullYear() - 1, 11, 31);
+        return { from: fmt(first), to: fmt(last) };
+      }
+      case 'all_time': return { from: '2014-01-01', to: fmt(now) };
+      default: return null;
+    }
+  };
+
+  const handlePresetChange = (preset) => {
+    setSelectedPreset(preset);
+    if (preset !== 'custom') {
+      const dates = getPresetDates(preset);
+      if (dates) { setDateFrom(dates.from); setDateTo(dates.to); }
+    }
+  };
+
+  const handleDateFromChange = (val) => { setSelectedPreset('custom'); setDateFrom(val); };
+  const handleDateToChange = (val) => { setSelectedPreset('custom'); setDateTo(val); };
+
+  const renderDateControls = () => (
+    <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+      <select
+        value={selectedPreset}
+        onChange={(e) => handlePresetChange(e.target.value)}
+        style={{ padding: '8px 12px', border: '1px solid #ddd', borderRadius: '6px', fontSize: '14px', backgroundColor: '#fff', cursor: 'pointer' }}
+      >
+        <option value="today">Aujourd'hui</option>
+        <option value="yesterday">Hier</option>
+        <option value="this_week">Cette semaine</option>
+        <option value="last_week">La semaine dernière</option>
+        <option value="this_month">Ce mois</option>
+        <option value="last_month">Le mois dernier</option>
+        <option value="this_year">Depuis le début d'année</option>
+        <option value="last_year">L'année dernière</option>
+        <option value="all_time">Depuis toujours</option>
+        <option value="custom">Personnalisé</option>
+      </select>
+      <input
+        type="date"
+        value={dateFrom}
+        onChange={(e) => handleDateFromChange(e.target.value)}
+        style={{ padding: '8px 12px', border: '1px solid #ddd', borderRadius: '6px', fontSize: '14px' }}
+      />
+      <span style={{ color: '#666' }}>→</span>
+      <input
+        type="date"
+        value={dateTo}
+        onChange={(e) => handleDateToChange(e.target.value)}
+        style={{ padding: '8px 12px', border: '1px solid #ddd', borderRadius: '6px', fontSize: '14px' }}
+      />
+    </div>
+  );
 
   useEffect(() => {
     if (activeSection === 'revenue') {
@@ -215,21 +307,7 @@ const ReportsTab = () => {
             Du {formatFullDate(dateFrom)} au {formatFullDate(dateTo)}
           </p>
         </div>
-        <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-          <input
-            type="date"
-            value={dateFrom}
-            onChange={(e) => setDateFrom(e.target.value)}
-            style={{ padding: '8px 12px', border: '1px solid #ddd', borderRadius: '6px', fontSize: '14px' }}
-          />
-          <span style={{ color: '#666' }}>→</span>
-          <input
-            type="date"
-            value={dateTo}
-            onChange={(e) => setDateTo(e.target.value)}
-            style={{ padding: '8px 12px', border: '1px solid #ddd', borderRadius: '6px', fontSize: '14px' }}
-          />
-        </div>
+        {renderDateControls()}
       </div>
 
       {loading ? (
@@ -383,21 +461,7 @@ const ReportsTab = () => {
             Du {formatFullDate(dateFrom)} au {formatFullDate(dateTo)}
           </p>
         </div>
-        <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-          <input
-            type="date"
-            value={dateFrom}
-            onChange={(e) => setDateFrom(e.target.value)}
-            style={{ padding: '8px 12px', border: '1px solid #ddd', borderRadius: '6px', fontSize: '14px' }}
-          />
-          <span style={{ color: '#666' }}>→</span>
-          <input
-            type="date"
-            value={dateTo}
-            onChange={(e) => setDateTo(e.target.value)}
-            style={{ padding: '8px 12px', border: '1px solid #ddd', borderRadius: '6px', fontSize: '14px' }}
-          />
-        </div>
+        {renderDateControls()}
       </div>
 
       {loading ? (
@@ -686,21 +750,7 @@ const ReportsTab = () => {
             Du {formatFullDate(dateFrom)} au {formatFullDate(dateTo)}
           </p>
         </div>
-        <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-          <input
-            type="date"
-            value={dateFrom}
-            onChange={(e) => setDateFrom(e.target.value)}
-            style={{ padding: '8px 12px', border: '1px solid #ddd', borderRadius: '6px', fontSize: '14px' }}
-          />
-          <span style={{ color: '#666' }}>→</span>
-          <input
-            type="date"
-            value={dateTo}
-            onChange={(e) => setDateTo(e.target.value)}
-            style={{ padding: '8px 12px', border: '1px solid #ddd', borderRadius: '6px', fontSize: '14px' }}
-          />
-        </div>
+        {renderDateControls()}
       </div>
 
       {loading ? (
@@ -1064,21 +1114,7 @@ const ReportsTab = () => {
             Du {formatFullDate(dateFrom)} au {formatFullDate(dateTo)}
           </p>
         </div>
-        <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-          <input
-            type="date"
-            value={dateFrom}
-            onChange={(e) => setDateFrom(e.target.value)}
-            style={{ padding: '8px 12px', border: '1px solid #ddd', borderRadius: '6px', fontSize: '14px' }}
-          />
-          <span style={{ color: '#666' }}>→</span>
-          <input
-            type="date"
-            value={dateTo}
-            onChange={(e) => setDateTo(e.target.value)}
-            style={{ padding: '8px 12px', border: '1px solid #ddd', borderRadius: '6px', fontSize: '14px' }}
-          />
-        </div>
+        {renderDateControls()}
       </div>
 
       {loading ? (
@@ -1254,21 +1290,7 @@ const ReportsTab = () => {
             Du {formatFullDate(dateFrom)} au {formatFullDate(dateTo)}
           </p>
         </div>
-        <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-          <input
-            type="date"
-            value={dateFrom}
-            onChange={(e) => setDateFrom(e.target.value)}
-            style={{ padding: '8px 12px', border: '1px solid #ddd', borderRadius: '6px', fontSize: '14px' }}
-          />
-          <span style={{ color: '#666' }}>→</span>
-          <input
-            type="date"
-            value={dateTo}
-            onChange={(e) => setDateTo(e.target.value)}
-            style={{ padding: '8px 12px', border: '1px solid #ddd', borderRadius: '6px', fontSize: '14px' }}
-          />
-        </div>
+        {renderDateControls()}
       </div>
 
       {loading ? (

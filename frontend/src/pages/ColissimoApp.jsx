@@ -79,6 +79,14 @@ export default function ColissimoApp() {
   const [applying, setApplying] = useState(false);
   const [applyProgress, setApplyProgress] = useState(0);
   const [applyResult, setApplyResult] = useState(null); // {updated, skipped}
+  const [currentInvoiceId, setCurrentInvoiceId] = useState(null);
+  const [tariffsAppliedAt, setTariffsAppliedAt] = useState(null);
+
+  // ── Recherche globale d'une commande (toutes factures)
+  const [globalSearch, setGlobalSearch] = useState('');
+  const [globalSearchLoading, setGlobalSearchLoading] = useState(false);
+  const [globalSearchError, setGlobalSearchError] = useState(null);
+  const [globalSearchResults, setGlobalSearchResults] = useState(null);
 
   async function loadHistory() {
     setHistoryLoading(true);
@@ -93,7 +101,7 @@ export default function ColissimoApp() {
 
   // Charge une facture depuis l'historique BDD et la réaffiche comme si elle venait d'être analysée
   async function handleLoadFromHistory(inv) {
-    setLoading(true); setError(null); setCurrentFile(null); setApplyResult(null);
+    setLoading(true); setError(null); setCurrentFile(null); setApplyResult(null); setApplyProgress(0);
     try {
       const { data } = await axios.get(`${API_URL}/colissimo/history/${inv.id}`, { headers: { Authorization: `Bearer ${token}` } });
       if (!data.success) throw new Error(data.error);
@@ -155,10 +163,72 @@ export default function ColissimoApp() {
       };
       setResult(rebuilt);
       setSaveState('already');
+      setCurrentInvoiceId(inv2.id);
+      setTariffsAppliedAt(inv2.tariffs_applied_at || null);
       setTab('poids');
     } catch (e) {
       setError(e.message);
     } finally { setLoading(false); }
+  }
+
+  function handleBackToHome() {
+    setResult(null);
+    setCurrentFile(null);
+    setError(null);
+    setSaveState(null);
+    setApplyResult(null);
+    setApplyProgress(0);
+    setCurrentInvoiceId(null);
+    setTariffsAppliedAt(null);
+    setSearch('');
+    setFilterPoids('all');
+    setTab('poids');
+    setGlobalSearch('');
+    setGlobalSearchError(null);
+    setGlobalSearchResults(null);
+  }
+
+  async function handleGlobalSearch() {
+    const q = globalSearch.trim();
+    if (!q) return;
+    setGlobalSearchLoading(true);
+    setGlobalSearchError(null);
+    setGlobalSearchResults(null);
+    try {
+      const { data } = await axios.get(`${API_URL}/colissimo/search-order`, {
+        headers: { Authorization: `Bearer ${token}` },
+        params: { q },
+      });
+      if (!data.success) throw new Error(data.error);
+      if (!data.results.length) {
+        setGlobalSearchError(`Aucune commande/suivi correspondant à "${q}" trouvé dans les factures enregistrées.`);
+        return;
+      }
+      if (data.results.length === 1) {
+        const r = data.results[0];
+        await handleLoadFromHistory({ id: r.id });
+        setSearch(String(r.order_id || r.tracking || q));
+        setFilterPoids('all');
+        setTab('tarifs');
+      } else {
+        setGlobalSearchResults(data.results);
+      }
+    } catch (e) {
+      setGlobalSearchError(e.message);
+    } finally { setGlobalSearchLoading(false); }
+  }
+
+  async function handlePickGlobalSearchResult(r) {
+    setGlobalSearchResults(null);
+    setGlobalSearchLoading(true);
+    try {
+      await handleLoadFromHistory({ id: r.id });
+      setSearch(String(r.order_id || r.tracking || globalSearch.trim()));
+      setFilterPoids('all');
+      setTab('tarifs');
+    } catch (e) {
+      setGlobalSearchError(e.message);
+    } finally { setGlobalSearchLoading(false); }
   }
 
   async function handleSave() {
@@ -171,6 +241,7 @@ export default function ColissimoApp() {
       const { data } = await axios.post(`${API_URL}/colissimo/save`, fd, { headers: { Authorization: `Bearer ${token}` } });
       if (data.success) {
         setSaveState(data.already_saved ? 'already' : 'saved');
+        setCurrentInvoiceId(data.id);
         if (!data.already_saved) loadHistory();
       }
     } catch (e) {
@@ -183,7 +254,10 @@ export default function ColissimoApp() {
     if (!window.confirm(`Supprimer la facture ${inv.invoice_number} ?\nElle pourra être réimportée ensuite.`)) return;
     try {
       await axios.delete(`${API_URL}/colissimo/history/${inv.id}`, { headers: { Authorization: `Bearer ${token}` } });
-      if (result?.invoiceNumber === inv.invoice_number) { setResult(null); setSaveState(null); setCurrentFile(null); }
+      if (result?.invoiceNumber === inv.invoice_number) {
+        setResult(null); setSaveState(null); setCurrentFile(null);
+        setCurrentInvoiceId(null); setTariffsAppliedAt(null); setApplyResult(null);
+      }
       loadHistory();
     } catch {
       setError('Erreur lors de la suppression');
@@ -234,14 +308,17 @@ export default function ColissimoApp() {
         order_id: p.order_id,
         tarif: p.total_ht + (supplByTracking[p.tracking] || 0) + (p.decarbonation_unit || 0),
       }));
-      const { data } = await axios.post(`${API_URL}/colissimo/apply-tariffs`, { tariffs }, {
+      const { data } = await axios.post(`${API_URL}/colissimo/apply-tariffs`, { tariffs, invoiceId: currentInvoiceId }, {
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
         timeout: 60000,
       });
       clearInterval(timer);
       setApplyProgress(100);
-      if (data.success) setApplyResult(data);
-      else setError(data.error);
+      if (data.success) {
+        setApplyResult(data);
+        setTariffsAppliedAt(data.tariffsAppliedAt || new Date().toISOString());
+        loadHistory();
+      } else setError(data.error);
     } catch (e) {
       clearInterval(timer);
       setApplyProgress(0);
@@ -251,7 +328,7 @@ export default function ColissimoApp() {
 
   async function handleFile(file) {
     if (!file || file.type !== 'application/pdf') { setError('Fichier PDF requis.'); return; }
-    setCurrentFile(file); setError(null); setResult(null); setSaveState(null); setApplyResult(null); setLoading(true);
+    setCurrentFile(file); setError(null); setResult(null); setSaveState(null); setApplyResult(null); setApplyProgress(0); setCurrentInvoiceId(null); setTariffsAppliedAt(null); setLoading(true);
     try {
       const fd = new FormData(); fd.append('pdf', file);
       const { data } = await axios.post(`${API_URL}/colissimo/analyze`, fd, { headers: { Authorization: `Bearer ${token}` } });
@@ -305,6 +382,58 @@ export default function ColissimoApp() {
           </p>
         </div>
 
+        {/* ── RECHERCHE GLOBALE D'UNE COMMANDE */}
+        <div style={{ marginBottom: 22 }}>
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+            <input
+              placeholder="Rechercher une commande ou un n° de suivi dans toutes les factures…"
+              value={globalSearch}
+              onChange={e => setGlobalSearch(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') handleGlobalSearch(); }}
+              style={{
+                padding: '10px 14px', border: `1px solid ${C.greyB}`,
+                borderRadius: 8, fontSize: 13.5, flex: 1, minWidth: 240,
+                background: C.white,
+              }}
+            />
+            <button
+              onClick={handleGlobalSearch}
+              disabled={globalSearchLoading || !globalSearch.trim()}
+              style={{
+                padding: '10px 20px', border: 'none', borderRadius: 8,
+                background: C.accent, color: C.white, fontWeight: 700,
+                fontSize: 13.5, cursor: globalSearchLoading ? 'default' : 'pointer',
+                opacity: globalSearchLoading || !globalSearch.trim() ? 0.6 : 1,
+              }}
+            >
+              {globalSearchLoading ? 'Recherche…' : '🔍 Rechercher'}
+            </button>
+          </div>
+          {globalSearchError && (
+            <div style={{ marginTop: 8, color: C.red, fontSize: 13 }}>⚠️ {globalSearchError}</div>
+          )}
+          {globalSearchResults && (
+            <div style={{
+              marginTop: 10, background: C.white, border: `1px solid ${C.greyB}`,
+              borderRadius: 8, overflow: 'hidden',
+            }}>
+              {globalSearchResults.map((r, i) => (
+                <div key={i}
+                  onClick={() => handlePickGlobalSearchResult(r)}
+                  style={{
+                    padding: '10px 14px', fontSize: 13, cursor: 'pointer',
+                    borderBottom: i < globalSearchResults.length - 1 ? `1px solid ${C.greyB}` : 'none',
+                  }}
+                  onMouseEnter={e => e.currentTarget.style.background = C.accentL}
+                  onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                >
+                  Facture <strong>{r.invoice_number}</strong> ({r.invoice_date || '—'}) — Commande <strong>{r.order_id || '—'}</strong> · Suivi {r.tracking}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
         {/* Upload */}
         <div
           onDragOver={e => { e.preventDefault(); setDragging(true); }}
@@ -328,6 +457,9 @@ export default function ColissimoApp() {
             {/* Meta + export */}
             <div style={{ background: C.white, borderRadius: 12, border: `1px solid ${C.greyB}`, padding: '14px 18px', marginBottom: 18, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
               <div>
+                <button onClick={handleBackToHome} style={{ background: 'none', border: `1px solid ${C.greyB}`, borderRadius: 8, padding: '6px 12px', fontSize: 12.5, fontWeight: 600, color: C.greyT, cursor: 'pointer', marginRight: 12 }}>
+                  ← Retour à l'accueil
+                </button>
                 <span style={{ fontWeight: 700, fontSize: 14, color: C.dark }}>Facture {result.invoiceNumber}</span>
                 {result.periodStart && <span style={{ color: C.greyT, fontSize: 12.5, marginLeft: 12 }}>{result.periodStart} → {result.periodEnd}</span>}
                 {result.accountNumber && <span style={{ color: C.greyT, fontSize: 12.5, marginLeft: 12 }}>Compte n° {result.accountNumber}</span>}
@@ -346,20 +478,27 @@ export default function ColissimoApp() {
                     {saving ? '⏳ Enregistrement…' : '💾 Enregistrer la facture'}
                   </button>
                 )}
-                {applyResult ? (
-                  <span style={{ color: C.green, fontWeight: 700, fontSize: 13 }}>
-                    ✓ {applyResult.updated} commande(s) mise(s) à jour
-                    {applyResult.skipped > 0 && ` (${applyResult.skipped} ignorées)`}
-                  </span>
-                ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 230 }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 230 }}>
+                    {applyResult && (
+                      <span style={{ color: C.green, fontWeight: 700, fontSize: 13 }}>
+                        ✓ {applyResult.updated} commande(s) mise(s) à jour
+                        {applyResult.skipped > 0 && ` (${applyResult.skipped} ignorées)`}
+                      </span>
+                    )}
+                    {!applyResult && tariffsAppliedAt && (
+                      <span style={{ background: '#FEF9E7', color: '#92400E', border: '1px solid #F59E0B', borderRadius: 8, padding: '4px 10px', fontSize: 12, fontWeight: 600 }}>
+                        ✓ Tarifs déjà appliqués le {new Date(tariffsAppliedAt).toLocaleString('fr-FR')}
+                      </span>
+                    )}
                     <button
                       onClick={handleApplyTariffs}
                       disabled={applying || !parcels.filter(p => p.order_id && p.total_ht != null).length}
                       title="Remplace le Coût livraison HT de chaque commande par le Total HT indiqué sur la facture"
                       style={{ background: '#7C3AED', color: C.white, border: 'none', borderRadius: 8, padding: '9px 18px', fontWeight: 700, fontSize: 13, cursor: applying ? 'wait' : 'pointer', opacity: applying ? .85 : 1, width: '100%' }}
                     >
-                      {applying ? `⏳ Mise à jour… ${Math.round(applyProgress)}%` : '🔄 Appliquer les tarifs aux commandes'}
+                      {applying
+                        ? `⏳ Mise à jour… ${Math.round(applyProgress)}%`
+                        : (tariffsAppliedAt ? '🔄 Réappliquer les tarifs aux commandes' : '🔄 Appliquer les tarifs aux commandes')}
                     </button>
                     {applying && (
                       <div style={{ height: 6, background: C.greyB, borderRadius: 4, overflow: 'hidden' }}>
@@ -367,7 +506,6 @@ export default function ColissimoApp() {
                       </div>
                     )}
                   </div>
-                )}
                 <button onClick={handleExport} disabled={exporting} style={{ background: C.accent, color: C.white, border: 'none', borderRadius: 8, padding: '8px 16px', fontWeight: 700, fontSize: 13, cursor: exporting ? 'wait' : 'pointer', opacity: exporting ? .7 : 1 }}>
                   {exporting ? '⏳ Export…' : '⬇️ Télécharger Excel'}
                 </button>
@@ -431,6 +569,10 @@ export default function ColissimoApp() {
               {/* ── TARIFS */}
               {tab === 'tarifs' && (
                 <div style={{ padding: 18 }}>
+                  <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap', alignItems: 'center' }}>
+                    <input placeholder="Rechercher commande / suivi…" value={search} onChange={e => setSearch(e.target.value)}
+                      style={{ padding: '7px 11px', border: `1px solid ${C.greyB}`, borderRadius: 8, fontSize: 13, flex: 1, minWidth: 180 }} />
+                  </div>
                   <div style={{ overflowX: 'auto' }}>
                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                       <thead><tr>
@@ -439,7 +581,8 @@ export default function ColissimoApp() {
                         <Th label="CAE" align="right" /><Th label="Total HT" align="right" />
                       </tr></thead>
                       <tbody>
-                        {parcels.map((p, i) => (
+                        {filteredParcels.length === 0 && <tr><td colSpan={8} style={{ textAlign: 'center', padding: 32, color: C.greyT }}>Aucun résultat</td></tr>}
+                        {filteredParcels.map((p, i) => (
                           <tr key={i} style={{ background: i%2===0 ? C.white : C.grey }}>
                             <Td bold>{p.order_id ?? <span style={{ color: C.greyT }}>—</span>}</Td>
                             <Td color={C.greyT}>{p.date || '—'}</Td>
@@ -454,9 +597,9 @@ export default function ColissimoApp() {
                       </tbody>
                     </table>
                   </div>
-                  {parcels.length > 0 && (
+                  {filteredParcels.length > 0 && (
                     <div style={{ marginTop: 12, textAlign: 'right', fontWeight: 700, fontSize: 13, color: C.dark }}>
-                      Total HT : <span style={{ color: C.accent }}>{fmtEur(parcels.reduce((s,p) => s+(p.total_ht||0), 0))}</span>
+                      Total HT : <span style={{ color: C.accent }}>{fmtEur(filteredParcels.reduce((s,p) => s+(p.total_ht||0), 0))}</span>
                     </div>
                   )}
                 </div>
@@ -571,7 +714,7 @@ export default function ColissimoApp() {
                       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                         <thead>
                           <tr>
-                            {['N° Facture', 'Période', 'Colis', 'Cmdes trouvées', 'Poids OK', 'Écarts', 'Total HT', 'Suppléments HT', 'Indemn. HT', 'Enregistrée le', ''].map(h => (
+                            {['N° Facture', 'Période', 'Colis', 'Cmdes trouvées', 'Poids OK', 'Écarts', 'Total HT', 'Suppléments HT', 'Indemn. HT', 'Tarifs', 'Enregistrée le', ''].map(h => (
                               <Th key={h} label={h} />
                             ))}
                           </tr>
@@ -593,6 +736,11 @@ export default function ColissimoApp() {
                               <Td bold>{inv.total_ht != null ? fmtEur(inv.total_ht) : '—'}</Td>
                               <Td color={C.orange}>{inv.supplements_total != null ? fmtEur(inv.supplements_total) : '—'}</Td>
                               <Td color={C.blue}>{inv.indemnizations_total != null ? fmtEur(inv.indemnizations_total) : '—'}</Td>
+                              <Td align="center">
+                                {inv.tariffs_applied_at
+                                  ? <span style={{ background: C.greenL, color: C.green, padding: '2px 10px', borderRadius: 20, fontSize: 11.5, fontWeight: 700 }}>✓ Appliqués</span>
+                                  : <span style={{ background: C.greyB, color: C.greyT, padding: '2px 10px', borderRadius: 20, fontSize: 11.5, fontWeight: 700 }}>Non appliqués</span>}
+                              </Td>
                               <Td color={C.greyT}>{new Date(inv.created_at).toLocaleDateString('fr-FR')}</Td>
                               <td style={{ padding: '8px 8px', textAlign: 'center', whiteSpace: 'nowrap', borderBottom: `1px solid ${C.greyB}` }}>
                                 <button onClick={e => handleDownloadPdf(inv, e)} title="Télécharger le PDF" style={{ background: 'none', border: `1px solid ${C.greyB}`, borderRadius: 6, padding: '4px 8px', cursor: 'pointer', fontSize: 14, marginRight: 4 }}>⬇️</button>
@@ -614,7 +762,7 @@ export default function ColissimoApp() {
                             <td style={{ padding: '10px 12px', fontWeight: 700, color: C.blue }}>
                               {fmtEur(history.reduce((s, inv) => s + parseFloat(inv.indemnizations_total || 0), 0))}
                             </td>
-                            <td colSpan={2} />
+                            <td colSpan={3} />
                           </tr>
                         </tfoot>
                       </table>
@@ -644,7 +792,7 @@ export default function ColissimoApp() {
                   <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                     <thead>
                       <tr>
-                        {['N° Facture', 'Période', 'Colis', 'Total HT', 'Suppléments HT', 'Indemn. HT', 'Enregistrée le', ''].map(h => <Th key={h} label={h} />)}
+                        {['N° Facture', 'Période', 'Colis', 'Total HT', 'Suppléments HT', 'Indemn. HT', 'Tarifs', 'Enregistrée le', ''].map(h => <Th key={h} label={h} />)}
                       </tr>
                     </thead>
                     <tbody>
@@ -661,6 +809,11 @@ export default function ColissimoApp() {
                           <Td bold>{inv.total_ht != null ? fmtEur(inv.total_ht) : '—'}</Td>
                           <Td color={C.orange}>{inv.supplements_total != null ? fmtEur(inv.supplements_total) : '—'}</Td>
                           <Td color={C.blue}>{inv.indemnizations_total != null ? fmtEur(inv.indemnizations_total) : '—'}</Td>
+                          <Td align="center">
+                            {inv.tariffs_applied_at
+                              ? <span style={{ background: C.greenL, color: C.green, padding: '2px 10px', borderRadius: 20, fontSize: 11.5, fontWeight: 700 }}>✓ Appliqués</span>
+                              : <span style={{ background: C.greyB, color: C.greyT, padding: '2px 10px', borderRadius: 20, fontSize: 11.5, fontWeight: 700 }}>Non appliqués</span>}
+                          </Td>
                           <Td color={C.greyT}>{new Date(inv.created_at).toLocaleDateString('fr-FR')}</Td>
                           <td style={{ padding: '8px 8px', textAlign: 'center', whiteSpace: 'nowrap', borderBottom: `1px solid ${C.greyB}` }}>
                             <button onClick={e => handleDownloadPdf(inv, e)} title="Télécharger le PDF" style={{ background: 'none', border: `1px solid ${C.greyB}`, borderRadius: 6, padding: '3px 7px', cursor: 'pointer', fontSize: 13, marginRight: 4 }}>⬇️</button>

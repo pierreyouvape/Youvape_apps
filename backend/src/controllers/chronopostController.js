@@ -31,8 +31,8 @@ function parseChronopostPdf(text) {
   const DATE_RE = /\b(\d{2}\/\d{2}\/\d{4})\b/;
   // WooCommerce order ID: 7-digit number starting with 12
   const ORDER_ID_RE = /\b(12\d{5})\b/;
-  // French decimal numbers
-  const FRENCH_NUM_RE = /(\d+),(\d{2,3})/g;
+  // French decimal numbers (avoirs : montants négatifs préfixés par "-")
+  const FRENCH_NUM_RE = /(-?\d+),(\d{2,3})/g;
 
   // Per-order supplement patterns
   const SUPPLEMENT_PATTERNS = [
@@ -49,23 +49,29 @@ function parseChronopostPdf(text) {
     { re: /Correction de poids/i, label: 'Correction de poids' },
   ];
 
-  // Global invoice charge patterns
+  // Global invoice charge patterns (montants négatifs possibles sur les avoirs)
   const GLOBAL_PATTERNS = [
-    { re: /Redevance sûreté\s+(\d+)\s+colis\s+à\s+([\d,]+)\s+EUR\s+([\d,]+)/i, type: 'redevance' },
-    { re: /Participation eco[^0-9]*([\d,]+)\s+colis\s+à\s+([\d,]+)\s+EUR\s+([\d,]+)/i, type: 'eco' },
-    { re: /Surcharge Carburant[^:]*:\s*([\d,]+)\s*%[^0-9]*([\d,]+)\s+EUR\s+([\d,]+)/i, type: 'carburant' },
-    { re: /Frais de gestion de compte\s*:?\s*([\d,]+)/i, type: 'gestion' },
+    { re: /Redevance sûreté\s+(\d+)\s+colis\s+à\s+([\d,]+)\s+EUR\s+(-?[\d,]+)/i, type: 'redevance' },
+    { re: /Participation eco[^0-9]*([\d,]+)\s+colis\s+à\s+([\d,]+)\s+EUR\s+(-?[\d,]+)/i, type: 'eco' },
+    { re: /Surcharge Carburant[^:]*:\s*([\d,]+)\s*%[^0-9]*([\d,]+)\s+EUR\s+(-?[\d,]+)/i, type: 'carburant' },
+    { re: /Frais de gestion de compte\s*:?\s*(-?[\d,]+)/i, type: 'gestion' },
   ];
 
   let lastOrderId = null;
   let lastTracking = null;
   let invoiceNumber = null;
   let invoiceDate = null;
+  let creditNumber = null;
+  let relatedInvoiceNumber = null;
 
   // Extract invoice metadata
   for (const line of lines) {
     const facMatch = line.match(/Facture\s+(\d{8})/i);
     if (facMatch && !invoiceNumber) invoiceNumber = facMatch[1];
+    const avoirMatch = line.match(/^Avoir\s+(\d+)/i);
+    if (avoirMatch && !creditNumber) creditNumber = avoirMatch[1];
+    const relMatch = line.match(/AVOIR SUR FACTURE\s+(\d+)/i);
+    if (relMatch && !relatedInvoiceNumber) relatedInvoiceNumber = relMatch[1];
     const dateMatch = line.match(/Date\s+(\d{2}\/\d{2}\/\d{4})/i);
     if (dateMatch && !invoiceDate) invoiceDate = dateMatch[1];
   }
@@ -118,8 +124,8 @@ function parseChronopostPdf(text) {
     let foundSuppl = false;
     for (const { re, label } of SUPPLEMENT_PATTERNS) {
       if (re.test(line)) {
-        // Extract amount from line
-        const amtMatch = line.match(/(\d+),(\d{2})/);
+        // Extract amount from line (négatif possible sur les avoirs)
+        const amtMatch = line.match(/(-?\d+),(\d{2})/);
         const amount = amtMatch ? parseFloat(`${amtMatch[1]}.${amtMatch[2]}`) : null;
         supplements.push({
           description: label,
@@ -164,7 +170,7 @@ function parseChronopostPdf(text) {
     }
   }
 
-  return { orders, supplements, globalCharges, invoiceNumber, invoiceDate };
+  return { orders, supplements, globalCharges, invoiceNumber, invoiceDate, creditNumber, relatedInvoiceNumber };
 }
 
 /* ─── TRACKING → ORDER ID LOOKUP ────────────────────────────── */
@@ -565,7 +571,7 @@ exports.saveInvoice = [
 // POST /api/chronopost/apply-tariffs — met à jour shipping_cost_calculated en une seule requête batch
 exports.applyTariffs = async (req, res) => {
   try {
-    const { tariffs } = req.body;
+    const { tariffs, invoiceId } = req.body;
     if (!Array.isArray(tariffs) || !tariffs.length) {
       return res.status(400).json({ success: false, error: 'tariffs[] requis' });
     }
@@ -589,7 +595,16 @@ exports.applyTariffs = async (req, res) => {
       WHERE orders.wp_order_id::int = c.order_id
     `, params);
 
-    res.json({ success: true, updated: result.rowCount, skipped });
+    let appliedAt = null;
+    if (invoiceId) {
+      const upd = await pool.query(
+        `UPDATE carrier_invoices SET tariffs_applied_at = NOW() WHERE id = $1 AND carrier = 'chronopost' RETURNING tariffs_applied_at`,
+        [invoiceId]
+      );
+      appliedAt = upd.rows[0]?.tariffs_applied_at || null;
+    }
+
+    res.json({ success: true, updated: result.rowCount, skipped, tariffsAppliedAt: appliedAt });
   } catch (err) {
     console.error('[Chronopost] applyTariffs error:', err);
     res.status(500).json({ success: false, error: err.message });
@@ -637,7 +652,7 @@ exports.getHistory = async (req, res) => {
       SELECT
         ci.id, ci.invoice_number, ci.invoice_date, ci.total_parcels,
         ci.parcels_matched, ci.total_ht, ci.supplements_total,
-        ci.created_at,
+        ci.created_at, ci.tariffs_applied_at,
         COUNT(DISTINCT cip.id) AS parcel_count,
         SUM(CASE WHEN cip.diff_g IS NOT NULL AND ABS(cip.diff_g) <= 20 THEN 1 ELSE 0 END) AS weight_ok,
         SUM(CASE WHEN cip.diff_g IS NOT NULL AND ABS(cip.diff_g) > 200 THEN 1 ELSE 0 END) AS weight_ecart
@@ -676,6 +691,244 @@ exports.getInvoiceDetail = async (req, res) => {
       supplements: suppl.rows,
     });
   } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+};
+
+/* ─── AVOIRS (CREDIT NOTES) ──────────────────────────────────── */
+
+// POST /api/chronopost/analyze-credit — parse un PDF d'avoir Chronopost
+exports.analyzeCredit = [
+  upload.single('pdf'),
+  async (req, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ success: false, error: 'Fichier PDF requis' });
+      }
+
+      const uint8 = new Uint8Array(req.file.buffer);
+      const pdfParser = new PDFParse(uint8);
+      await pdfParser.load();
+      const pdfData = await pdfParser.getText();
+      const { orders, supplements, globalCharges, invoiceDate, creditNumber, relatedInvoiceNumber } =
+        parseChronopostPdf(pdfData.text);
+
+      if (!creditNumber) {
+        return res.status(400).json({ success: false, error: "Ce PDF ne semble pas être un avoir Chronopost (numéro d'avoir introuvable)" });
+      }
+
+      // Résoudre les order_id manquants via numéro de suivi
+      const trackingsWithoutId = orders
+        .filter(o => !o.order_id && o.tracking)
+        .map(o => o.tracking);
+
+      if (trackingsWithoutId.length) {
+        const trackingMap = await resolveOrderIdsByTracking(trackingsWithoutId);
+        for (const o of orders) {
+          const key = o.tracking ? o.tracking.toUpperCase() : null;
+          if (!o.order_id && key && trackingMap[key]) {
+            o.order_id = trackingMap[key];
+          }
+        }
+      }
+
+      res.json({
+        success: true,
+        creditNumber,
+        creditDate: invoiceDate,
+        relatedInvoiceNumber,
+        orders,
+        supplements,
+        globalCharges,
+      });
+    } catch (err) {
+      console.error('[Chronopost] analyzeCredit error:', err);
+      res.status(500).json({ success: false, error: err.message });
+    }
+  },
+];
+
+// POST /api/chronopost/save-credit — enregistre un avoir + son PDF en BDD
+exports.saveCredit = [
+  upload.single('pdf'),
+  async (req, res) => {
+    try {
+      let parsed;
+      if (req.body.data) {
+        parsed = JSON.parse(req.body.data);
+      } else {
+        parsed = req.body;
+      }
+      const { creditNumber, creditDate, relatedInvoiceNumber, credits } = parsed;
+      if (!creditNumber) return res.status(400).json({ success: false, error: 'creditNumber requis' });
+
+      const existing = await pool.query(
+        'SELECT id FROM carrier_credit_documents WHERE carrier = $1 AND credit_number = $2',
+        ['chronopost', creditNumber]
+      );
+      if (existing.rows.length) {
+        return res.json({ success: true, already_saved: true });
+      }
+
+      const pdfBuffer = req.file ? req.file.buffer : null;
+      await pool.query(`
+        INSERT INTO carrier_credit_documents (carrier, credit_number, credit_date, related_invoice_number, pdf_data)
+        VALUES ($1,$2,$3,$4,$5)
+      `, ['chronopost', creditNumber, creditDate || null, relatedInvoiceNumber || null, pdfBuffer]);
+
+      if (credits?.length) {
+        const vals = credits.map((_, i) => { const b = i * 6; return `($${b+1},$${b+2},$${b+3},$${b+4},$${b+5},$${b+6})`; }).join(',');
+        const params = credits.flatMap(c => [
+          'chronopost', creditNumber, creditDate || null,
+          c.order_id || null, c.tracking || null, c.amount_ht ?? null,
+        ]);
+        await pool.query(`
+          INSERT INTO carrier_invoice_credits (carrier, credit_number, credit_date, order_id, tracking, amount_ht)
+          VALUES ${vals}
+        `, params);
+      }
+
+      res.json({ success: true, already_saved: false });
+    } catch (err) {
+      console.error('[Chronopost] saveCredit error:', err);
+      res.status(500).json({ success: false, error: err.message });
+    }
+  },
+];
+
+// GET /api/chronopost/credits — liste des avoirs enregistrés
+exports.getCreditsHistory = async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT
+        d.credit_number, d.credit_date, d.related_invoice_number, d.created_at,
+        COUNT(c.id) AS lines_count,
+        SUM(c.amount_ht) AS total_ht
+      FROM carrier_credit_documents d
+      LEFT JOIN carrier_invoice_credits c ON c.carrier = d.carrier AND c.credit_number = d.credit_number
+      WHERE d.carrier = 'chronopost'
+      GROUP BY d.credit_number, d.credit_date, d.related_invoice_number, d.created_at
+      ORDER BY d.created_at DESC
+      LIMIT 50
+    `);
+    res.json({ success: true, credits: result.rows });
+  } catch (err) {
+    console.error('[Chronopost] getCreditsHistory error:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+};
+
+// DELETE /api/chronopost/credits/:number — supprimer un avoir enregistré
+exports.deleteCredit = async (req, res) => {
+  try {
+    const { number } = req.params;
+    await pool.query('DELETE FROM carrier_invoice_credits WHERE carrier=$1 AND credit_number=$2', ['chronopost', number]);
+    const result = await pool.query(
+      'DELETE FROM carrier_credit_documents WHERE carrier=$1 AND credit_number=$2 RETURNING credit_number',
+      ['chronopost', number]
+    );
+    if (!result.rows.length) return res.status(404).json({ success: false, error: 'Avoir non trouvé' });
+    res.json({ success: true, deleted: result.rows[0].credit_number });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+};
+
+// GET /api/chronopost/credits/:number/pdf — télécharger le PDF d'un avoir
+exports.downloadCreditPdf = async (req, res) => {
+  try {
+    const { number } = req.params;
+    const result = await pool.query(
+      'SELECT credit_number, pdf_data FROM carrier_credit_documents WHERE carrier=$1 AND credit_number=$2',
+      ['chronopost', number]
+    );
+    if (!result.rows.length) return res.status(404).json({ error: 'Avoir non trouvé' });
+    const { credit_number, pdf_data } = result.rows[0];
+    if (!pdf_data) return res.status(404).json({ error: 'PDF non disponible pour cet avoir' });
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="Avoir_Chronopost_${credit_number}.pdf"`);
+    res.send(pdf_data);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+// GET /api/chronopost/credits-for-orders?order_ids=1,2&trackings=AB,CD
+// Retourne les avoirs déjà enregistrés correspondant à des commandes/trackings donnés
+exports.getCreditsForOrders = async (req, res) => {
+  try {
+    const orderIds = (req.query.order_ids || '')
+      .split(',').map(s => parseInt(s.trim())).filter(n => !isNaN(n));
+    const trackings = (req.query.trackings || '')
+      .split(',').map(s => s.trim().toUpperCase()).filter(Boolean);
+
+    if (!orderIds.length && !trackings.length) {
+      return res.json({ success: true, credits: [] });
+    }
+
+    const result = await pool.query(`
+      SELECT order_id, tracking, SUM(amount_ht) AS amount_ht, ARRAY_AGG(DISTINCT credit_number) AS credit_numbers
+      FROM carrier_invoice_credits
+      WHERE carrier = 'chronopost'
+        AND (order_id = ANY($1::int[]) OR UPPER(tracking) = ANY($2::text[]))
+      GROUP BY order_id, tracking
+    `, [orderIds, trackings]);
+
+    res.json({ success: true, credits: result.rows });
+  } catch (err) {
+    console.error('[Chronopost] getCreditsForOrders error:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+};
+
+// GET /api/chronopost/totals — totaux payés par mois / par année
+exports.getTotals = async (req, res) => {
+  try {
+    const invoices = await pool.query(`
+      SELECT ci.id, ci.invoice_number, ci.invoice_date, ci.total_ht, ci.supplements_total,
+        COALESCE((
+          SELECT SUM((elem->>'amount_ht')::numeric)
+          FROM jsonb_array_elements(COALESCE(ci.global_charges, '[]'::jsonb)) elem
+        ), 0) AS global_total
+      FROM carrier_invoices ci
+      WHERE ci.carrier = 'chronopost'
+      ORDER BY ci.invoice_date
+    `);
+
+    const credits = await pool.query(`
+      SELECT credit_date, SUM(amount_ht) AS amount_ht
+      FROM carrier_invoice_credits
+      WHERE carrier = 'chronopost'
+      GROUP BY credit_date
+    `);
+
+    res.json({ success: true, invoices: invoices.rows, credits: credits.rows });
+  } catch (err) {
+    console.error('[Chronopost] getTotals error:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+};
+
+// GET /api/chronopost/search-order?q=... — retrouve la/les facture(s) contenant une commande ou un suivi
+exports.searchOrder = async (req, res) => {
+  try {
+    const q = (req.query.q || '').trim();
+    if (!q) return res.json({ success: true, results: [] });
+
+    const result = await pool.query(`
+      SELECT ci.id, ci.invoice_number, ci.invoice_date, cip.order_id, cip.tracking
+      FROM carrier_invoice_parcels cip
+      JOIN carrier_invoices ci ON ci.id = cip.invoice_id
+      WHERE ci.carrier = 'chronopost'
+        AND (cip.order_id::text = $1 OR cip.tracking ILIKE $2)
+      ORDER BY ci.created_at DESC
+      LIMIT 10
+    `, [q, `%${q}%`]);
+
+    res.json({ success: true, results: result.rows });
+  } catch (err) {
+    console.error('[Chronopost] searchOrder error:', err);
     res.status(500).json({ success: false, error: err.message });
   }
 };

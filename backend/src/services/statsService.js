@@ -363,27 +363,29 @@ class StatsService {
         const value = parseInt(periodMatch[1]);
         const unit = periodMatch[2];
         const unitMap = { h: 'hours', d: 'days', w: 'weeks', m: 'months', y: 'years' };
-        conditions.push(`o.post_date >= NOW() - INTERVAL '${value} ${unitMap[unit]}'`);
+        conditions.push(`COALESCE(o.paid_date, o.post_date) >= NOW() - INTERVAL '${value} ${unitMap[unit]}'`);
       }
     }
 
     // Filtre par dates custom
     if (filters.startDate) {
-      conditions.push(`o.post_date >= $${paramIndex}`);
+      conditions.push(`(COALESCE(o.paid_date, o.post_date) AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris') >= $${paramIndex}`);
       params.push(filters.startDate);
       paramIndex++;
     }
     if (filters.endDate) {
-      conditions.push(`o.post_date <= $${paramIndex}`);
+      conditions.push(`(COALESCE(o.paid_date, o.post_date) AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris') <= $${paramIndex}`);
       params.push(filters.endDate);
       paramIndex++;
     }
 
-    // Filtre par statut
+    // Statuts valides (méthode Metorik)
     if (filters.status) {
       conditions.push(`o.post_status = $${paramIndex}`);
       params.push(filters.status);
       paramIndex++;
+    } else {
+      conditions.push(`o.post_status IN ('wc-completed', 'wc-processing', 'wc-delivered', 'wc-awaiting-delivery')`);
     }
 
     // Filtre par pays
