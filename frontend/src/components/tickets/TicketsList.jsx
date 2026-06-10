@@ -373,6 +373,10 @@ export default function TicketsList({ activeView, views = [], onRefresh, refresh
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(0);
+  // Ne montrer l'écran "Chargement…" qu'au tout premier fetch (ou changement de
+  // vue) : les refreshs (autorefresh, retour de détail) se font en silence pour
+  // ne pas faire clignoter la table.
+  const hasLoadedRef = useRef(false);
   const [sort, setSort] = useState({ key: 'updated', dir: 'desc' });
   const [selected, setSelected] = useState(new Set());
   const [bulkMergeOpen, setBulkMergeOpen] = useState(false);
@@ -414,7 +418,9 @@ export default function TicketsList({ activeView, views = [], onRefresh, refresh
   /* ── Fetch tickets ── */
   const fetchTickets = useCallback(async () => {
     if (!activeView) return;
-    setLoading(true);
+    // "Chargement…" seulement tant qu'on n'a jamais affiché de liste ; ensuite
+    // on rafraîchit en arrière-plan sans vider la table (pas de flash).
+    if (!hasLoadedRef.current) setLoading(true);
     try {
       const params = new URLSearchParams({
         limit: PAGE_SIZE,
@@ -425,11 +431,16 @@ export default function TicketsList({ activeView, views = [], onRefresh, refresh
       const res = await fetch(`${API}?${params}`);
       const data = await res.json();
       if (data.success) { setTickets(data.tickets); setTotal(data.total); }
-    } finally { setLoading(false); }
+    } finally {
+      hasLoadedRef.current = true;
+      setLoading(false);
+    }
   }, [activeView, statusesFilter.join(','), page, refreshTick]);
 
   useEffect(() => { fetchTickets(); }, [fetchTickets]);
-  useEffect(() => { setPage(0); setSelected(new Set()); }, [activeView?.id]);
+  // Changement de vue : on repart d'un état "premier chargement" pour montrer
+  // l'indicateur (le contenu change complètement, le flash est légitime ici).
+  useEffect(() => { hasLoadedRef.current = false; setPage(0); setSelected(new Set()); }, [activeView?.id]);
 
   /* ── Tri local ── */
   const sortedTickets = [...tickets].sort((a, b) => {

@@ -19,9 +19,15 @@ function TicketsAppInner() {
   // Suspend l'autorefresh quand l'agent agit sur la liste (sélection / menu)
   // ou quand il n'est pas sur l'onglet liste.
   const [listBusy, setListBusy] = useState(false);
-  const { activeTab, playTicketId, isPlayActive, newDraftOpen } = useOpenTickets();
+  const { activeTab, playTicketId, isPlayActive, newDraftOpen, listRefreshTick } = useOpenTickets();
 
   const handleRefresh = useCallback(() => setRefreshTick(t => t + 1), []);
+
+  // Un ticket a changé d'état depuis le détail (ex. changement de statut) →
+  // rafraîchir la liste (montée en arrière-plan) sans attendre l'autorefresh.
+  useEffect(() => {
+    if (listRefreshTick > 0) handleRefresh();
+  }, [listRefreshTick, handleRefresh]);
 
   const autoRefresh = useAutoRefresh(handleRefresh, {
     intervalMs: 60000,
