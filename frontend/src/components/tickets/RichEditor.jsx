@@ -48,14 +48,20 @@ function ensureStyles() {
  *  - onChange(html): appelé à chaque modification
  *  - placeholder  : texte affiché quand vide
  *  - editorRef    : ref exposant insertText / setLink / setHTML / clear / getText / focus / isEmpty
+ *  - onImagePaste(file) : appelé quand une image est collée (Ctrl+V) — l'image
+ *    est ajoutée comme pièce jointe plutôt qu'insérée dans le texte.
  */
-export default function RichEditor({ value, onChange, placeholder, editorRef, onStateChange }) {
+export default function RichEditor({ value, onChange, placeholder, editorRef, onStateChange, onImagePaste }) {
   ensureStyles();
 
   // Placeholder réactif (public ↔ note privée) sans re-créer l'éditeur :
   // la fonction Placeholder lit toujours la dernière valeur via ce ref.
   const placeholderRef = useRef(placeholder || '');
   placeholderRef.current = placeholder || '';
+
+  // Ref pour ne pas re-créer l'éditeur quand onImagePaste change de référence
+  const onImagePasteRef = useRef(onImagePaste);
+  onImagePasteRef.current = onImagePaste;
 
   // Remonte au parent l'état des marques actives (gras, italique…) pour
   // surligner les boutons de la toolbar.
@@ -80,6 +86,19 @@ export default function RichEditor({ value, onChange, placeholder, editorRef, on
       }),
       Placeholder.configure({ placeholder: () => placeholderRef.current }),
     ],
+    editorProps: {
+      handlePaste: (_view, event) => {
+        const items = event.clipboardData?.items;
+        if (!items) return false;
+        const imageFiles = Array.from(items)
+          .filter(it => it.kind === 'file' && it.type.startsWith('image/'))
+          .map(it => it.getAsFile())
+          .filter(Boolean);
+        if (imageFiles.length === 0) return false;
+        imageFiles.forEach(file => onImagePasteRef.current?.(file));
+        return true; // image traitée comme pièce jointe, pas insérée dans le texte
+      },
+    },
     content: value || '',
     onUpdate: ({ editor }) => {
       const html = editor.isEmpty ? '' : editor.getHTML();

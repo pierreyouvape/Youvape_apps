@@ -464,13 +464,23 @@ function ReplyComposer({
     return () => document.removeEventListener('mousedown', handler);
   }, [modeOpen]);
 
-  const handleFileChange = (e) => {
-    const selected = Array.from(e.target.files);
+  const addFiles = (selected) => {
     const oversized = selected.filter(f => f.size > 25 * 1024 * 1024);
     if (oversized.length) { setError(`Fichier trop lourd (max 25 Mo) : ${oversized.map(f => f.name).join(', ')}`); return; }
     if (files.length + selected.length > 10) { setError('Maximum 10 fichiers'); return; }
     setError('');
     setFiles(prev => [...prev, ...selected]);
+  };
+
+  const handleFileChange = (e) => addFiles(Array.from(e.target.files));
+
+  // Image collée (Ctrl+V) dans l'éditeur -> ajoutée comme pièce jointe
+  const handleImagePaste = (file) => {
+    const ext = file.type.split('/')[1] || 'png';
+    const named = file.name && file.name !== 'image.png'
+      ? file
+      : new File([file], `image-collee-${Date.now()}.${ext}`, { type: file.type });
+    addFiles([named]);
   };
 
   const removeFile = (i) => setFiles(prev => prev.filter((_, idx) => idx !== i));
@@ -678,6 +688,7 @@ function ReplyComposer({
           value={body}
           onChange={setBody}
           onStateChange={setFmt}
+          onImagePaste={handleImagePaste}
           placeholder={isPrivate ? 'Ajouter une note interne…' : 'Tapez votre réponse…'}
         />
 
