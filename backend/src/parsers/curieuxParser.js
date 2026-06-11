@@ -21,7 +21,7 @@ module.exports = {
     const startIdx = startMatch ? startMatch.index + startMatch[0].length : -1;
     const endIdx = text.indexOf('Détail des taxes');
 
-    if (startIdx < 0 || endIdx < 0) return { orderNumber, orderDate, items, hasPrice: true, skipPackQty: true };
+    if (startIdx < 0 || endIdx < 0) return { orderNumber, orderDate, items, hasPrice: true, invertPackQty: true };
 
     let productZone = text.substring(startIdx, endIdx);
 
@@ -49,8 +49,19 @@ module.exports = {
     let blockStart = 0;
     for (let p = 0; p < priceLineIndices.length; p++) {
       const priceIdx = priceLineIndices[p];
-      const blockLines = lines.slice(blockStart, priceIdx + 1);
+      let blockLines = lines.slice(blockStart, priceIdx + 1);
       blockStart = priceIdx + 1;
+
+      // Ref coupée sur un saut de page : si l'item précédent a une ref tronquée ("NAT-")
+      // et que ce bloc commence par un fragment orphelin ("VERT-50-0MG") qui est la suite,
+      // rattacher le fragment à la ref précédente et l'enlever du bloc courant
+      if (items.length > 0 && items[items.length - 1].supplier_sku.endsWith('-') && blockLines.length > 1) {
+        const firstLine = blockLines[0];
+        if (/^[A-Z0-9][\w-]+$/.test(firstLine)) {
+          items[items.length - 1].supplier_sku += firstLine;
+          blockLines = blockLines.slice(1);
+        }
+      }
 
       // Reconstituer les refs coupees sur 2 lignes :
       // "NAT-" + "GRAN-10-3MG" -> "NAT-GRAN-10-3MG"
@@ -128,6 +139,6 @@ module.exports = {
       }
     }
 
-    return { orderNumber, orderDate, items, hasPrice: true, skipPackQty: true };
+    return { orderNumber, orderDate, items, hasPrice: true, invertPackQty: true };
   }
 };

@@ -110,7 +110,7 @@ function parseConfirmation(text) {
     }
   }
 
-  return { orderNumber, orderDate, items, hasPrice: false };
+  return { orderNumber, orderDate, items, hasPrice: false, pdfIsPackBased: true };
 }
 
 /**
@@ -153,7 +153,7 @@ function parsePreparation(text) {
     }
   }
 
-  return { orderNumber, orderDate, items, hasPrice: false };
+  return { orderNumber, orderDate, items, hasPrice: false, pdfIsPackBased: true };
 }
 
 /**
@@ -226,7 +226,7 @@ function parseSiteWeb(text) {
     });
   }
 
-  return { orderNumber, orderDate, items, hasPrice: false };
+  return { orderNumber, orderDate, items, hasPrice: false, pdfIsPackBased: true };
 }
 
 /**

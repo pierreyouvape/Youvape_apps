@@ -166,8 +166,11 @@ const ImportPdfPage = () => {
 
   const pickFile = (f) => {
     if (!f) return;
-    if (f.type !== 'application/pdf' && !f.name.toLowerCase().endsWith('.pdf')) {
-      alert('Merci de sélectionner un fichier PDF.');
+    const name = f.name.toLowerCase();
+    const isPdf = f.type === 'application/pdf' || name.endsWith('.pdf');
+    const isCsv = f.type === 'text/csv' || name.endsWith('.csv');
+    if (!isPdf && !isCsv) {
+      alert('Merci de sélectionner un fichier PDF ou CSV.');
       return;
     }
     setPdfFile(f);
@@ -194,7 +197,7 @@ const ImportPdfPage = () => {
       })));
       setNewSupplierSkus([]);
     } catch (err) {
-      setParseError(err.response?.data?.error || 'Erreur lors du parsing du PDF');
+      setParseError(err.response?.data?.error || 'Erreur lors du parsing du fichier');
     } finally {
       setParsing(false);
     }
@@ -463,7 +466,7 @@ const ImportPdfPage = () => {
                       </div>
                       <div>
                         <div style={{ fontSize: 14, fontWeight: 700, color: C.grisTF, marginBottom: 3 }}>
-                          {dragOver ? 'Relâchez pour ajouter le fichier' : 'Glissez votre PDF ici'}
+                          {dragOver ? 'Relâchez pour ajouter le fichier' : 'Glissez votre PDF ou CSV ici'}
                         </div>
                         <div style={{ fontSize: 12.5, color: C.grisM }}>
                           ou <span style={{ color: C.orange, fontWeight: 700 }}>parcourez vos fichiers</span>
@@ -472,7 +475,7 @@ const ImportPdfPage = () => {
                       <input
                         ref={inputRef}
                         type="file"
-                        accept="application/pdf,.pdf"
+                        accept="application/pdf,.pdf,.csv,text/csv"
                         onChange={e => pickFile(e.target.files?.[0])}
                         style={{ display: 'none' }}
                       />

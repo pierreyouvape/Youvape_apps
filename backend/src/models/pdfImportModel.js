@@ -38,12 +38,12 @@ function cleanPdfText(text) {
 
 const pdfImportModel = {
   /**
-   * Parse un PDF fournisseur et matche les lignes avec les produits en BDD
-   * @param {Buffer} pdfBuffer - Le buffer du fichier PDF
+   * Parse un fichier fournisseur (PDF ou CSV) et matche les lignes avec les produits en BDD
+   * @param {Buffer} fileBuffer - Le buffer du fichier (PDF ou CSV)
    * @param {number} supplierId - L'ID du fournisseur local
    * @returns {Object} Donnees parsees et enrichies
    */
-  parsePdf: async (pdfBuffer, supplierId) => {
+  parsePdf: async (fileBuffer, supplierId) => {
     // 1. Recuperer le fournisseur
     const supplierResult = await pool.query(
       'SELECT id, name, code FROM suppliers WHERE id = $1',
@@ -56,18 +56,32 @@ const pdfImportModel = {
     const parser = parserRegistry.getParser(supplier.code);
     if (!parser) {
       throw new Error(
-        `Pas de parseur PDF pour le fournisseur ${supplier.name} (code: ${supplier.code || 'non défini'}). ` +
+        `Pas de parseur pour le fournisseur ${supplier.name} (code: ${supplier.code || 'non défini'}). ` +
         `Parseurs disponibles : ${parserRegistry.availableParsers().join(', ') || 'aucun'}`
       );
     }
 
-    // 3. Extraire le texte du PDF
-    const uint8 = new Uint8Array(pdfBuffer);
-    const pdfParser = new PDFParse(uint8);
-    await pdfParser.load();
-    const pdfData = await pdfParser.getText();
-    const rawText = pdfData.text;
-    const text = cleanPdfText(rawText);
+    // 3. Extraire le texte du fichier (PDF ou CSV)
+    const isPdf = fileBuffer.length >= 4 && fileBuffer.toString('ascii', 0, 4) === '%PDF';
+
+    let rawText, text;
+    if (isPdf) {
+      const uint8 = new Uint8Array(fileBuffer);
+      const pdfParser = new PDFParse(uint8);
+      await pdfParser.load();
+      const pdfData = await pdfParser.getText();
+      rawText = pdfData.text;
+      text = cleanPdfText(rawText);
+    } else {
+      // CSV (ou autre fichier texte) : lecture directe, suppression du BOM eventuel
+      // Fallback latin1 si le fichier n'est pas de l'UTF-8 valide (export Excel/Windows)
+      let decoded = fileBuffer.toString('utf-8');
+      if (decoded.includes('�')) {
+        decoded = fileBuffer.toString('latin1');
+      }
+      rawText = decoded.replace(/^﻿/, '');
+      text = rawText;
+    }
 
     // 4. Parser avec le parseur du fournisseur (fallback sur rawText si aucun item trouvé)
     let parsed = parser.parse(text);
@@ -117,17 +131,43 @@ const pdfImportModel = {
       const packQty = parsed.skipPackQty ? 1 : (match ? (parseInt(match.pack_qty) || 1) : 1);
 
       // Prix brut du PDF (avant remise éventuelle)
-      // Pour Revolute/JoshNoa le prix PDF est un prix pack → diviser par pack_qty
-      // Exception : skipPackQty (Curieux) → pack_qty forcé à 1, pas de division
+      // pdfIsPackBased (JoshNoa) : PDF = prix pack ET quantité en packs → aucune conversion
+      // invertPackQty (Curieux)  : PDF = prix unitaire, quantité en unités → × pack_qty et ÷ pack_qty
+      // normal (ancien)          : PDF = prix pack, quantité en packs → ÷ pack_qty et × pack_qty
+      // skipPackQty              : packQty forcé à 1, pas de conversion
       const rawPdfGross = item.unit_price_net != null ? item.unit_price_net : null;
-      const pdfGross = (rawPdfGross != null && packQty > 1) ? rawPdfGross / packQty : rawPdfGross;
+      let pdfGross;
+      if (rawPdfGross != null && packQty > 1 && !parsed.pdfIsPackBased) {
+        pdfGross = parsed.invertPackQty ? rawPdfGross * packQty : rawPdfGross / packQty;
+      } else {
+        pdfGross = rawPdfGross;
+      }
       const discountPercent = item.discount_percent || 0;
-      // Prix net = brut * (1 - remise/100)
       const pdfNet = pdfGross != null ? pdfGross * (1 - discountPercent / 100) : null;
-      // dbPrice : supplier_price BMS = prix pack → diviser par pack_qty réel pour avoir le prix unitaire
+      // dbPrice : supplier_price en BDD = prix pack pour tous les fournisseurs
+      // pdfIsPackBased + invertPackQty : garder tel quel (prix pack, cohérent avec pdfGross)
+      // normal / skipPackQty : diviser par pack_qty pour obtenir le prix unitaire
       const dbPackQty = match ? (parseInt(match.pack_qty) || 1) : 1;
       const rawDbPrice = match ? parseFloat(match.supplier_price) || null : null;
-      const dbPrice = (rawDbPrice != null && dbPackQty > 1) ? rawDbPrice / dbPackQty : rawDbPrice;
+      let dbPrice;
+      if (rawDbPrice != null && dbPackQty > 1) {
+        dbPrice = (parsed.invertPackQty || parsed.pdfIsPackBased) ? rawDbPrice : rawDbPrice / dbPackQty;
+      } else {
+        dbPrice = rawDbPrice;
+      }
+
+      // Quantité finale :
+      // pdfIsPackBased : déjà en packs dans le PDF, garder tel quel
+      // invertPackQty (Curieux) : PDF = nb unités → diviser pour obtenir le nb de packs
+      // normal : PDF = nb packs → multiplier pour obtenir le nb d'unités
+      let qtyOrdered;
+      if (packQty > 1 && parsed.invertPackQty) {
+        qtyOrdered = Math.round(item.qty_ordered / packQty);
+      } else if (packQty > 1 && !parsed.pdfIsPackBased) {
+        qtyOrdered = item.qty_ordered * packQty;
+      } else {
+        qtyOrdered = item.qty_ordered;
+      }
 
       return {
         supplier_sku: item.supplier_sku,
@@ -142,15 +182,15 @@ const pdfImportModel = {
         current_stock: match ? parseInt(match.stock) : null,
         image_url: match ? match.image_url : null,
         // Prix
-        pdf_price: pdfGross,           // prix brut HT (affiché dans "Prix unit.")
-        pdf_price_net: pdfNet,         // prix net après remise (pour calcul unit_price)
+        pdf_price: pdfGross,           // prix brut HT pack ou unité selon le mode
+        pdf_price_net: pdfNet,         // prix net après remise
         discount_percent: discountPercent,
         supplier_price: dbPrice,
         // Prix retenu : PDF si meilleur (ou si pas de prix BDD), sinon prix BDD
         unit_price: (pdfNet != null && (dbPrice == null || pdfNet < dbPrice)) ? pdfNet : dbPrice,
         // Pack
         pack_qty: packQty,
-        qty_ordered: item.qty_ordered * packQty,
+        qty_ordered: qtyOrdered,
       };
     });
 

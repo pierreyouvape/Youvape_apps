@@ -463,7 +463,7 @@ const purchasesController = {
   parsePdf: async (req, res) => {
     try {
       if (!req.file) {
-        return res.status(400).json({ success: false, error: 'Fichier PDF requis' });
+        return res.status(400).json({ success: false, error: 'Fichier requis' });
       }
       const supplierId = parseInt(req.body.supplier_id);
       if (!supplierId) {
@@ -474,7 +474,7 @@ const purchasesController = {
       res.json({ success: true, data: result });
     } catch (error) {
       console.error('Erreur parsePdf:', error);
-      res.status(500).json({ success: false, error: error.message || 'Erreur lors du parsing du PDF' });
+      res.status(500).json({ success: false, error: error.message || 'Erreur lors du parsing du fichier' });
     }
   },
 

@@ -42,6 +42,6 @@ module.exports = {
       });
     }
 
-    return { orderNumber, orderDate, items, hasPrice: true };
+    return { orderNumber, orderDate, items, hasPrice: true, invertPackQty: true };
   }
 };

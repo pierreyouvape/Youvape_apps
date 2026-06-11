@@ -314,19 +314,15 @@ const purchaseOrderModel = {
     }
 
     // Préparer les items pour BMS (seuls les produits avec SKU)
-    // BMS reçoit la quantité commandée (en packs) et le prix unitaire par pack
+    // BMS reçoit la quantité en unités (qty_ordered × pack_qty) et le prix unitaire par unité
     const bmsItems = items
       .filter(item => item.sku)
       .map(item => {
         const discountPercent = parseFloat(item.discount_percent) || 0;
-        const packQty = parseInt(item.pack_qty) || 1;
-        // BMS attend un prix par paquet (cf. son catalogue : price + pack_qty), alors que
-        // notre unit_price est un prix par unité → reconvertir en prix par paquet avant envoi,
-        // sinon BMS divise qty par son pack_qty mais garde notre prix tel quel (sous-évaluation ÷pack_qty)
         const bmsItem = {
           sku: item.sku,
-          qty: parseInt(item.qty_ordered) || 0,
-          price: Math.round((parseFloat(item.unit_price) || 0) * packQty * 100) / 100,
+          qty: (parseInt(item.qty_ordered) || 0) * (parseInt(item.pack_qty) || 1),
+          price: Math.round((parseFloat(item.unit_price) || 0) * 100) / 100,
           name: item.product_name,
           supplier_sku: item.supplier_sku || null
         };

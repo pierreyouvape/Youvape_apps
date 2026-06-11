@@ -1,6 +1,6 @@
 /**
- * Parseur PDF pour LVP Distribution
- * Gere 3 formats :
+ * Parseur PDF/CSV pour LVP Distribution
+ * Gere 4 formats :
  * - "Facture" : facture OpenSi multi-pages avec colonnes Référence | Désignation | Quantité | PU HT | Montant HT
  * - "Confirmation" : confirmation de commande site web lvp-distribution.fr (ancien format)
  *   Colonnes : Produit | Quantité | Prix unitaire HT | Prix total HT | TVA | Prix total TTC
@@ -8,10 +8,17 @@
  * - "Email" : email de confirmation PrestaShop exporté en PDF (nouveau format)
  *   En-tête : "Commande : XXXXXX passée le DD/MM/YYYY"
  *   Colonnes : Référence | Produit | Prix unitaire | Quantité | Prix total
+ * - "Export CSV" : export CSV de commande du site lvp-distribution.fr
+ *   En-tête : "Référence de la commande;XXXXXX;;;"
+ *   Colonnes : Référence article;Désignation;Prix unitaire HT;Quantité;Total HT
  */
 
 module.exports = {
   parse: (text) => {
+    // Export CSV : "Référence de la commande;TWFEDPZUH;;;"
+    if (/Référence de la commande\s*;/.test(text)) {
+      return parseCsvOrder(text);
+    }
     // Email PrestaShop : "Commande : 272122 passée le 01/06/2026"
     if (/Commande\s*:\s*\d+\s+pass[ée]e\s+le\s+\d{2}\/\d{2}\/\d{4}/.test(text)) {
       return parseEmailOrder(text);
@@ -22,6 +29,53 @@ module.exports = {
     return parseFacture(text);
   }
 };
+
+/**
+ * Format "Export CSV" du site lvp-distribution.fr
+ * En-tête : "Référence de la commande;TWFEDPZUH;;;" et "Date de la commande;DD/MM/YYYY HH:MM;;;"
+ * Tableau : Référence article;Désignation;Prix unitaire HT;Quantité;Total HT
+ */
+function parseCsvOrder(text) {
+  const orderMatch = text.match(/Référence de la commande\s*;\s*([^\n;]+)/);
+  const orderNumber = orderMatch ? orderMatch[1].trim() : null;
+
+  const dateMatch = text.match(/Date de la commande\s*;\s*(\d{2})\/(\d{2})\/(\d{4})/);
+  const orderDate = dateMatch ? `${dateMatch[3]}-${dateMatch[2]}-${dateMatch[1]}` : null;
+
+  const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+  const headerIdx = lines.findIndex(l => /^Référence article\s*;\s*Désignation\s*;\s*Prix unitaire HT\s*;\s*Quantité\s*;\s*Total HT/.test(l));
+
+  const items = [];
+  const discountItems = [];
+
+  for (let i = headerIdx + 1; i < lines.length; i++) {
+    const cols = lines[i].split(';').map(c => c.trim());
+    if (cols.length < 5) continue;
+
+    const [ref, designation, unitPrice, qty, totalHt] = cols;
+    if (!ref) continue;
+
+    const qtyNum = parseInt(qty, 10);
+    const unitPriceNum = parseFloat(unitPrice.replace(',', '.'));
+    if (!qtyNum || isNaN(unitPriceNum)) continue;
+
+    // Ligne de remise : pas de référence produit, désignation contenant "remise"
+    if (/remise/i.test(designation)) {
+      const totalNum = parseFloat(totalHt.replace(',', '.'));
+      discountItems.push({ item_type: 'discount', product_name: 'Remise', unit_price: -Math.abs(totalNum), qty_ordered: 1 });
+      continue;
+    }
+
+    items.push({
+      supplier_sku: ref,
+      designation,
+      qty_ordered: qtyNum,
+      unit_price_net: unitPriceNum,
+    });
+  }
+
+  return { orderNumber, orderDate, items, discountItems, hasPrice: true, invertPackQty: true };
+}
 
 /**
  * Format "Email de confirmation" PrestaShop exporté en PDF
@@ -94,7 +148,7 @@ function parseEmailOrder(text) {
     ? [{ item_type: 'discount', product_name: 'Remise', unit_price: -globalDiscount, qty_ordered: 1 }]
     : [];
 
-  return { orderNumber, orderDate, items, discountItems, hasPrice: true, skipPackQty: true };
+  return { orderNumber, orderDate, items, discountItems, hasPrice: true, invertPackQty: true };
 }
 
 /**
@@ -205,7 +259,7 @@ function parseConfirmation(text) {
     ? [{ item_type: 'discount', product_name: 'Remise', unit_price: -globalDiscount, qty_ordered: 1 }]
     : [];
 
-  return { orderNumber, orderDate, items, discountItems, hasPrice: true, skipPackQty: true };
+  return { orderNumber, orderDate, items, discountItems, hasPrice: true, invertPackQty: true };
 }
 
 /**

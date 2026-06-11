@@ -61,7 +61,7 @@ function parseDevis(text) {
     });
   }
 
-  return { orderNumber, orderDate, items, hasPrice: true, skipPackQty: true };
+  return { orderNumber, orderDate, items, hasPrice: true, invertPackQty: true };
 }
 
 /**
@@ -111,7 +111,7 @@ function parseCommande(text) {
     });
   }
 
-  return { orderNumber, orderDate, items, hasPrice: true, skipPackQty: true };
+  return { orderNumber, orderDate, items, hasPrice: true, invertPackQty: true };
 }
 
 /**
@@ -226,5 +226,5 @@ function parseProForma(text) {
       });
     }
 
-  return { orderNumber, orderDate, items, hasPrice: true, skipPackQty: true };
+  return { orderNumber, orderDate, items, hasPrice: true, invertPackQty: true };
 }

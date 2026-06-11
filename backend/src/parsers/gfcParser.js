@@ -106,7 +106,7 @@ function parseConfirmation(text) {
     }
   }
 
-  return { orderNumber, orderDate, items, discountItems, hasPrice: true, skipPackQty: true };
+  return { orderNumber, orderDate, items, discountItems, hasPrice: true, invertPackQty: true };
 }
 
 /**
