@@ -288,6 +288,7 @@ if (typeof document !== 'undefined' && !document.getElementById('yv-msg-html-sty
     .yv-msg-html ul, .yv-msg-html ol { margin: 0 0 8px; padding-left: 22px; }
     .yv-msg-html li { margin: 2px 0; }
     .yv-msg-html a { color: ${TICKETS_COLOR}; font-weight: 600; text-decoration: underline; word-break: break-word; }
+    .yv-msg-html img { max-width: 100%; max-height: 400px; border-radius: 6px; display: block; margin: 6px 0; }
   `;
   document.head.appendChild(el);
 }
@@ -474,13 +475,14 @@ function ReplyComposer({
 
   const handleFileChange = (e) => addFiles(Array.from(e.target.files));
 
-  // Image collée (Ctrl+V) dans l'éditeur -> ajoutée comme pièce jointe
-  const handleImagePaste = (file) => {
-    const ext = file.type.split('/')[1] || 'png';
-    const named = file.name && file.name !== 'image.png'
-      ? file
-      : new File([file], `image-collee-${Date.now()}.${ext}`, { type: file.type });
-    addFiles([named]);
+  // Image collée (Ctrl+V) dans l'éditeur -> uploadée puis insérée inline dans le message
+  const handleImageUpload = async (file) => {
+    const fd = new FormData();
+    fd.append('image', file);
+    const res = await fetch(`${API}/${ticketId}/inline-image`, { method: 'POST', body: fd });
+    const data = await res.json();
+    if (!res.ok || !data.success) throw new Error(data.error || 'Erreur lors de l\'envoi de l\'image');
+    return data.url;
   };
 
   const removeFile = (i) => setFiles(prev => prev.filter((_, idx) => idx !== i));
@@ -688,7 +690,7 @@ function ReplyComposer({
           value={body}
           onChange={setBody}
           onStateChange={setFmt}
-          onImagePaste={handleImagePaste}
+          onImageUpload={handleImageUpload}
           placeholder={isPrivate ? 'Ajouter une note interne…' : 'Tapez votre réponse…'}
         />
 

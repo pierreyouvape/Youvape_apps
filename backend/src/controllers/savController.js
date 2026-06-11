@@ -618,6 +618,28 @@ const savController = {
     }
   },
 
+  // ─── Image collée dans l'éditeur (Ctrl+V) — affichée inline dans le message ──
+  // POST /:id/inline-image (multipart, champ "image")
+  uploadInlineImage: async (req, res) => {
+    try {
+      const ticketId = parseInt(req.params.id);
+      if (!req.file) return res.status(400).json({ error: 'Image requise' });
+      if (!req.file.mimetype?.startsWith('image/')) {
+        return res.status(400).json({ error: 'Le fichier doit être une image' });
+      }
+
+      const ticket = await savModel.getById(ticketId);
+      if (!ticket) return res.status(404).json({ error: 'Ticket introuvable' });
+
+      const [saved] = saveAttachments(ticketId, [req.file]);
+      const appBaseUrl = process.env.APP_BASE_URL || 'https://apps.youvape.fr';
+      res.json({ success: true, url: `${appBaseUrl}${saved.url}` });
+    } catch (error) {
+      console.error('❌ [SAV] Erreur uploadInlineImage:', error);
+      res.status(500).json({ error: 'Erreur serveur' });
+    }
+  },
+
   // ─── Fusionner ce ticket (source) dans un ticket cible ───────────────────
   // POST /:id/merge  body: { target_id, agent_name? }
   // Façon Zendesk : le ticket courant (:id) est absorbé par target_id puis fermé.

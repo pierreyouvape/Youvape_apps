@@ -5,8 +5,8 @@ import DOMPurify from 'dompurify';
 
 // Balises autorisées dans un message affiché. Volontairement restrictif :
 // les bodies peuvent venir d'un client (inbound email) et contenir du HTML hostile.
-const ALLOWED_TAGS = ['p', 'br', 'strong', 'b', 'em', 'i', 'u', 's', 'ul', 'ol', 'li', 'a', 'span'];
-const ALLOWED_ATTR = ['href', 'target', 'rel'];
+const ALLOWED_TAGS = ['p', 'br', 'strong', 'b', 'em', 'i', 'u', 's', 'ul', 'ol', 'li', 'a', 'span', 'img'];
+const ALLOWED_ATTR = ['href', 'target', 'rel', 'src', 'alt'];
 
 // Échappe les caractères HTML d'une chaîne de texte brut.
 function escapeHtml(str) {

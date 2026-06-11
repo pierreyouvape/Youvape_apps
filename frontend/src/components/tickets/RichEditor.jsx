@@ -2,6 +2,7 @@ import { useEffect, useImperativeHandle, useRef } from 'react';
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Link from '@tiptap/extension-link';
+import Image from '@tiptap/extension-image';
 import { Placeholder } from '@tiptap/extensions';
 import { TICKETS_COLOR } from './ticketConstants';
 
@@ -30,6 +31,13 @@ function ensureStyles() {
       color: ${TICKETS_COLOR}; font-weight: 600;
       text-decoration: underline; word-break: break-word;
     }
+    .yv-rich-editor .ProseMirror img {
+      max-width: 100%; max-height: 320px; display: block;
+      border-radius: 6px; margin: 6px 0;
+    }
+    .yv-rich-editor .ProseMirror img.yv-image-uploading {
+      opacity: 0.5;
+    }
     .yv-rich-editor .ProseMirror:focus { outline: none; }
     /* Placeholder (quand vide) */
     .yv-rich-editor .ProseMirror p.is-editor-empty:first-child::before {
@@ -48,10 +56,11 @@ function ensureStyles() {
  *  - onChange(html): appelé à chaque modification
  *  - placeholder  : texte affiché quand vide
  *  - editorRef    : ref exposant insertText / setLink / setHTML / clear / getText / focus / isEmpty
- *  - onImagePaste(file) : appelé quand une image est collée (Ctrl+V) — l'image
- *    est ajoutée comme pièce jointe plutôt qu'insérée dans le texte.
+ *  - onImageUpload(file) : appelé quand une image est collée (Ctrl+V) — doit
+ *    uploader le fichier et renvoyer une Promise<string> (URL publique). L'image
+ *    est alors insérée directement dans le texte.
  */
-export default function RichEditor({ value, onChange, placeholder, editorRef, onStateChange, onImagePaste }) {
+export default function RichEditor({ value, onChange, placeholder, editorRef, onStateChange, onImageUpload }) {
   ensureStyles();
 
   // Placeholder réactif (public ↔ note privée) sans re-créer l'éditeur :
@@ -59,9 +68,9 @@ export default function RichEditor({ value, onChange, placeholder, editorRef, on
   const placeholderRef = useRef(placeholder || '');
   placeholderRef.current = placeholder || '';
 
-  // Ref pour ne pas re-créer l'éditeur quand onImagePaste change de référence
-  const onImagePasteRef = useRef(onImagePaste);
-  onImagePasteRef.current = onImagePaste;
+  // Ref pour ne pas re-créer l'éditeur quand onImageUpload change de référence
+  const onImageUploadRef = useRef(onImageUpload);
+  onImageUploadRef.current = onImageUpload;
 
   // Remonte au parent l'état des marques actives (gras, italique…) pour
   // surligner les boutons de la toolbar.
@@ -84,6 +93,7 @@ export default function RichEditor({ value, onChange, placeholder, editorRef, on
         autolink: true,
         HTMLAttributes: { target: '_blank', rel: 'noopener noreferrer' },
       }),
+      Image.configure({ inline: true, allowBase64: true }),
       Placeholder.configure({ placeholder: () => placeholderRef.current }),
     ],
     editorProps: {
@@ -94,9 +104,19 @@ export default function RichEditor({ value, onChange, placeholder, editorRef, on
           .filter(it => it.kind === 'file' && it.type.startsWith('image/'))
           .map(it => it.getAsFile())
           .filter(Boolean);
-        if (imageFiles.length === 0) return false;
-        imageFiles.forEach(file => onImagePasteRef.current?.(file));
-        return true; // image traitée comme pièce jointe, pas insérée dans le texte
+        if (imageFiles.length === 0 || !onImageUploadRef.current) return false;
+
+        imageFiles.forEach(async (file) => {
+          try {
+            const url = await onImageUploadRef.current(file);
+            if (url) {
+              editor?.chain().focus().setImage({ src: url }).run();
+            }
+          } catch (err) {
+            console.error('Erreur upload image collée :', err);
+          }
+        });
+        return true; // image insérée inline une fois uploadée, pas de comportement par défaut
       },
     },
     content: value || '',
