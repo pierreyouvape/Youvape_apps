@@ -254,24 +254,22 @@ function Sidebar({ user, orderedApps, accessibleKeys, draggingKey, overKey, onPo
           const isOver = overKey === key && draggingKey !== key;
           const isActive = currentPath === path || currentPath?.startsWith(path + '/');
           return (
-            <div
+            <a
               key={key}
+              href={path}
+              draggable={false}
+              onDragStart={e => e.preventDefault()}
               onPointerDown={e => onPointerDown(e, key)}
               onPointerEnter={() => onPointerEnter(key)}
               onPointerUp={e => onPointerUp(e, key)}
               onClick={e => {
-                if (draggingKey) return;
+                if (draggingKey) { e.preventDefault(); return; }
                 if (e.metaKey || e.ctrlKey || e.shiftKey) {
-                  window.open(path, '_blank', 'noopener');
+                  // Laisse le navigateur ouvrir un nouvel onglet (comportement natif sur <a>)
                   return;
                 }
+                e.preventDefault();
                 navigate(path);
-              }}
-              onAuxClick={e => {
-                if (e.button === 1) {
-                  e.preventDefault();
-                  window.open(path, '_blank', 'noopener');
-                }
               }}
               title={collapsed ? label : undefined}
               className={`sb-app-row${isDrag ? ' dragging' : ''}${isOver ? ' drag-over' : ''}`}
@@ -290,6 +288,7 @@ function Sidebar({ user, orderedApps, accessibleKeys, draggingKey, overKey, onPo
                 cursor: isDrag ? 'grabbing' : 'grab',
                 userSelect: 'none',
                 touchAction: 'none',
+                textDecoration: 'none',
               }}
             >
               <span style={{
@@ -316,7 +315,7 @@ function Sidebar({ user, orderedApps, accessibleKeys, draggingKey, overKey, onPo
                   {label}
                 </span>
               )}
-            </div>
+            </a>
           );
         })}
       </div>
