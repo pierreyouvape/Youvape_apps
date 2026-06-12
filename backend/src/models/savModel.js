@@ -68,13 +68,23 @@ class SavModel {
     }
 
     if (search) {
+      // Recherche large : identité (nom/prénom/email/tél), n° ticket, n° de
+      // commande et de suivi (sur le ticket ET la commande liée), sujet,
+      // description, et texte des messages échangés (JSONB → texte brut).
       conditions.push(`(
         t.id::text ILIKE $${idx} OR
         t.customer_name ILIKE $${idx} OR
+        t.customer_first_name ILIKE $${idx} OR
+        t.customer_last_name ILIKE $${idx} OR
         t.customer_email ILIKE $${idx} OR
         t.customer_phone ILIKE $${idx} OR
         t.order_id ILIKE $${idx} OR
-        t.subject ILIKE $${idx}
+        t.order_tracking ILIKE $${idx} OR
+        t.subject ILIKE $${idx} OR
+        t.description ILIKE $${idx} OR
+        o.wp_order_id::text ILIKE $${idx} OR
+        o.tracking_number ILIKE $${idx} OR
+        t.messages::text ILIKE $${idx}
       )`);
       values.push(`%${search}%`);
       idx++;
@@ -82,9 +92,11 @@ class SavModel {
 
     const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
 
-    // Total count
+    // Total count — JOIN orders nécessaire pour la recherche sur les champs commande
     const countResult = await pool.query(
-      `SELECT COUNT(*) FROM sav_tickets t ${where}`,
+      `SELECT COUNT(*) FROM sav_tickets t
+       LEFT JOIN orders o ON o.wp_order_id::text = t.order_id
+       ${where}`,
       values
     );
     const total = parseInt(countResult.rows[0].count);
