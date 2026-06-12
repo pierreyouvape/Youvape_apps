@@ -802,8 +802,9 @@ const purchaseOrderModel = {
           const productId = productBySku.get(item.sku) || null; // NULL si SKU inconnu, on garde quand même la ligne
           const pricepack = parseFloat(item.price) || null;
           const qtyPack = parseInt(item.qty_pack) || 1;
-          // unit_price = prix unitaire — BMS envoie déjà un prix unitaire, pas de division
-          const unitPrice = pricepack;
+          // BMS envoie le prix du pack (item.price = prix pour qty_pack unités) :
+          // on divise par qty_pack pour obtenir le prix unitaire, cohérent avec qty_ordered = qty * qty_pack
+          const unitPrice = pricepack !== null ? pricepack / qtyPack : null;
           const qtyOrdered = (parseInt(item.qty) || 0) * qtyPack;
           const qtyReceived = (parseInt(item.qty_received) || 0) * qtyPack;
 
