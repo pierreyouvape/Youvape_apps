@@ -592,24 +592,26 @@ const ProductDetail = () => {
             )}
           </div>
           <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
-            <button
-              onClick={async () => {
-                try {
-                  const res = await axios.patch(`${API_URL}/products/${id}/track-stock`, {}, { headers });
-                  const newVal = res.data.data.track_stock;
-                  setProduct(prev => ({ ...prev, track_stock: newVal }));
-                } catch (err) {}
-              }}
-              style={{
-                padding: '8px 16px', border: '1px solid',
-                borderColor: product.track_stock ? '#28a745' : '#dc3545',
-                backgroundColor: product.track_stock ? '#f0fff4' : '#fff5f5',
-                color: product.track_stock ? '#28a745' : '#dc3545',
-                borderRadius: '6px', cursor: 'pointer', fontSize: '13px', fontWeight: '600', whiteSpace: 'nowrap'
-              }}
-            >
-              {product.track_stock ? 'Visible dans le catalogue' : 'Masqué du catalogue'}
-            </button>
+            {product.product_type !== 'variable' && (
+              <button
+                onClick={async () => {
+                  try {
+                    const res = await axios.patch(`${API_URL}/products/${id}/track-stock`, {}, { headers });
+                    const newVal = res.data.data.track_stock;
+                    setProduct(prev => ({ ...prev, track_stock: newVal }));
+                  } catch (err) {}
+                }}
+                style={{
+                  padding: '8px 16px', border: '1px solid',
+                  borderColor: product.track_stock ? '#28a745' : '#dc3545',
+                  backgroundColor: product.track_stock ? '#f0fff4' : '#fff5f5',
+                  color: product.track_stock ? '#28a745' : '#dc3545',
+                  borderRadius: '6px', cursor: 'pointer', fontSize: '13px', fontWeight: '600', whiteSpace: 'nowrap'
+                }}
+              >
+                {product.track_stock ? 'Visible dans le catalogue' : 'Masqué du catalogue'}
+              </button>
+            )}
             <button
               onClick={async () => {
                 try {
@@ -698,17 +700,30 @@ const ProductDetail = () => {
                         >
                           <div style={{ fontWeight: '500', fontSize: '13px', marginBottom: '4px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                             <span>{variant.post_title?.replace(product?.post_title + ' - ', '').replace(product?.post_title + ' – ', '') || variant.sku}</span>
-                            <span
-                              title={variant.exclude_from_reorder ? 'Exclu du reassort (cliquer pour inclure)' : 'Propose au reassort (cliquer pour exclure)'}
-                              onClick={async (e) => {
-                                e.stopPropagation();
-                                try {
-                                  const res = await axios.patch(`${API_URL}/products/${variant.wp_product_id}/exclude-reorder`);
-                                  setVariantsPeriodStats(prev => prev.map(v => v.wp_product_id === variant.wp_product_id ? { ...v, exclude_from_reorder: res.data.data.exclude_from_reorder } : v));
-                                } catch (err) {}
-                              }}
-                              style={{ width: '10px', height: '10px', borderRadius: '50%', backgroundColor: variant.exclude_from_reorder ? '#dc3545' : '#28a745', cursor: 'pointer', flexShrink: 0, marginLeft: '8px' }}
-                            />
+                            <span style={{ display: 'flex', alignItems: 'center', gap: '6px', marginLeft: '8px' }}>
+                              <span
+                                title={variant.track_stock ? 'Visible dans le catalogue (cliquer pour masquer)' : 'Masqué du catalogue (cliquer pour réactiver)'}
+                                onClick={async (e) => {
+                                  e.stopPropagation();
+                                  try {
+                                    const res = await axios.patch(`${API_URL}/products/${variant.wp_product_id}/track-stock`, {}, { headers });
+                                    setVariantsPeriodStats(prev => prev.map(v => v.wp_product_id === variant.wp_product_id ? { ...v, track_stock: res.data.data.track_stock } : v));
+                                  } catch (err) {}
+                                }}
+                                style={{ width: '10px', height: '10px', borderRadius: '2px', backgroundColor: variant.track_stock ? '#28a745' : '#dc3545', cursor: 'pointer', flexShrink: 0 }}
+                              />
+                              <span
+                                title={variant.exclude_from_reorder ? 'Exclu du reassort (cliquer pour inclure)' : 'Propose au reassort (cliquer pour exclure)'}
+                                onClick={async (e) => {
+                                  e.stopPropagation();
+                                  try {
+                                    const res = await axios.patch(`${API_URL}/products/${variant.wp_product_id}/exclude-reorder`);
+                                    setVariantsPeriodStats(prev => prev.map(v => v.wp_product_id === variant.wp_product_id ? { ...v, exclude_from_reorder: res.data.data.exclude_from_reorder } : v));
+                                  } catch (err) {}
+                                }}
+                                style={{ width: '10px', height: '10px', borderRadius: '50%', backgroundColor: variant.exclude_from_reorder ? '#dc3545' : '#28a745', cursor: 'pointer', flexShrink: 0 }}
+                              />
+                            </span>
                           </div>
                           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', opacity: 0.8 }}>
                             <span>{variant.quantity_sold || 0} vendues</span>
