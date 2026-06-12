@@ -5,6 +5,7 @@ import { AuthContext } from '../context/AuthContext';
 import axios from 'axios';
 import { formatPrice } from '../utils/formatNumber';
 import { LinkBox, LinkTr } from '../utils/navHelpers';
+import AppShell from '../components/AppShell';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
 
@@ -345,7 +346,8 @@ const CatalogApp = () => {
   );
 
   return (
-    <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
+    <AppShell currentPath="/catalog">
+    <main className="main-scroll" style={{ flex: 1, minWidth: 0, overflowY: 'auto', height: '100vh', display: 'flex', flexDirection: 'column' }}>
       {/* Header */}
       <div style={{
         backgroundColor: '#059669',
@@ -765,7 +767,8 @@ const CatalogApp = () => {
       }}>
         <p style={{ margin: 0 }}>&copy; 2024 YouVape - Tous droits reserves</p>
       </div>
-    </div>
+    </main>
+    </AppShell>
   );
 };
 

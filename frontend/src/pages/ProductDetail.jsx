@@ -1,4 +1,5 @@
 import CloudLogo from '../components/CloudLogo';
+import AppShell from '../components/AppShell';
 import { useState, useEffect, useContext } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { AuthContext } from '../context/AuthContext';
@@ -471,18 +472,22 @@ const ProductDetail = () => {
   // ==================== LOADING / ERROR ====================
 
   if (loading) return (
-    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-      <div style={{ fontSize: '18px', color: '#666' }}>Chargement...</div>
-    </div>
+    <AppShell currentPath="/catalog">
+      <main className="main-scroll" style={{ flex: 1, minWidth: 0, overflowY: 'auto', height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{ fontSize: '18px', color: '#666' }}>Chargement...</div>
+      </main>
+    </AppShell>
   );
 
   if (!product) return (
-    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-      <div style={{ textAlign: 'center' }}>
-        <div style={{ fontSize: '18px', color: '#666', marginBottom: '20px' }}>Produit introuvable</div>
-        <button onClick={() => navigate(-1)} style={{ padding: '10px 20px', backgroundColor: '#135E84', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer' }}>Retour</button>
-      </div>
-    </div>
+    <AppShell currentPath="/catalog">
+      <main className="main-scroll" style={{ flex: 1, minWidth: 0, overflowY: 'auto', height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{ textAlign: 'center' }}>
+          <div style={{ fontSize: '18px', color: '#666', marginBottom: '20px' }}>Produit introuvable</div>
+          <button onClick={() => navigate(-1)} style={{ padding: '10px 20px', backgroundColor: '#135E84', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer' }}>Retour</button>
+        </div>
+      </main>
+    </AppShell>
   );
 
 
@@ -491,7 +496,8 @@ const ProductDetail = () => {
   // ==================== RENDER ====================
 
   return (
-    <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', backgroundColor: '#f5f5f5' }}>
+    <AppShell currentPath="/catalog">
+    <main className="main-scroll" style={{ flex: 1, minWidth: 0, overflowY: 'auto', height: '100vh', display: 'flex', flexDirection: 'column', backgroundColor: '#f5f5f5' }}>
       {/* Header */}
       <div style={{ backgroundColor: '#135E84', padding: '20px 0', display: 'flex', justifyContent: 'center', alignItems: 'center', position: 'relative', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
         <CloudLogo />
@@ -1339,7 +1345,8 @@ const ProductDetail = () => {
       <div style={{ backgroundColor: '#135E84', padding: '20px 0', textAlign: 'center', color: 'white' }}>
         <p style={{ margin: 0 }}>© 2024 YouVape - Tous droits reserves</p>
       </div>
-    </div>
+    </main>
+    </AppShell>
   );
 };
 

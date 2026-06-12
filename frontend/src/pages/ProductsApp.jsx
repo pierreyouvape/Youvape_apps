@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import CopyButton from '../components/CopyButton';
 import { LinkBox } from '../utils/navHelpers';
+import AppShell from '../components/AppShell';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
 
@@ -90,7 +91,8 @@ const ProductsApp = () => {
   const uniqueCategories = [...new Set(products.map(p => p.category).filter(Boolean))].sort();
 
   return (
-    <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', backgroundColor: '#f5f5f5' }}>
+    <AppShell currentPath="/catalog">
+    <main className="main-scroll" style={{ flex: 1, minWidth: 0, overflowY: 'auto', height: '100vh', display: 'flex', flexDirection: 'column', backgroundColor: '#f5f5f5' }}>
       {/* Header */}
       <div
         style={{
@@ -414,7 +416,8 @@ const ProductsApp = () => {
       >
         <p style={{ margin: 0 }}>© 2024 YouVape - Tous droits réservés</p>
       </div>
-    </div>
+    </main>
+    </AppShell>
   );
 };
 
