@@ -198,6 +198,31 @@ class SavModel {
       ticket.customer_orders_history = [];
     }
 
+    // Autres tickets du même client (par customer_id sinon par email),
+    // hors ticket courant. Sert au volet « Tickets du client ».
+    const matchEmail = (ticket.customer_email_db || ticket.customer_email || '').trim();
+    if (ticket.customer_id || matchEmail) {
+      const cond = [];
+      const vals = [ticket.id];
+      let i = 2;
+      if (ticket.customer_id) { cond.push(`t.customer_id = $${i++}`); vals.push(ticket.customer_id); }
+      if (matchEmail)         { cond.push(`LOWER(t.customer_email) = LOWER($${i++})`); vals.push(matchEmail); }
+      const ticketsRes = await pool.query(
+        `SELECT
+           t.id, t.subject, t.sav_status, t.order_id,
+           t.created_at, t.updated_at,
+           jsonb_array_length(COALESCE(t.messages, '[]'::jsonb)) AS message_count
+         FROM sav_tickets t
+         WHERE t.id != $1 AND (${cond.join(' OR ')})
+         ORDER BY t.created_at DESC
+         LIMIT 50`,
+        vals
+      );
+      ticket.customer_tickets = ticketsRes.rows;
+    } else {
+      ticket.customer_tickets = [];
+    }
+
     return ticket;
   }
 

@@ -1787,6 +1787,90 @@ function MergeModal({ ticket, onClose, onMerged }) {
   );
 }
 
+// ─── Carte ticket client (dépliable) ─────────────────────────────────────────
+// Affiche un ticket du client dans le volet droit. Replié par défaut ; déplié
+// révèle le sujet complet + un lien pour ouvrir le ticket.
+function TicketHistoryCard({ t, onOpen }) {
+  const [open, setOpen] = useState(false);
+  const { statusMap } = useTicketStatuses();
+  const s = statusMap[t.sav_status] || { label: t.sav_status || '—', bg: '#F0F0F0', color: '#626E85' };
+  const msgCount = parseInt(t.message_count) || 0;
+
+  return (
+    <div style={{
+      background: C.blanc, border: `1px solid ${C.grisCL}`,
+      borderRadius: 10, marginBottom: 8,
+      boxShadow: '0 1px 2px rgba(0,0,0,0.03)', overflow: 'hidden',
+    }}>
+      <div
+        onClick={() => setOpen(o => !o)}
+        onMouseEnter={e => { if (!open) e.currentTarget.style.background = '#FAFCFD'; }}
+        onMouseLeave={e => { if (!open) e.currentTarget.style.background = 'transparent'; }}
+        style={{
+          padding: '11px 14px', display: 'flex', alignItems: 'center', gap: 10,
+          cursor: 'pointer', background: open ? '#F6FAFC' : 'transparent', transition: 'background 0.12s',
+        }}
+      >
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+            <button
+              onClick={e => { e.stopPropagation(); onOpen(t); }}
+              style={{
+                background: 'none', border: 'none', padding: 0, cursor: 'pointer',
+                fontFamily: 'Lato, sans-serif',
+                fontSize: 13.5, fontWeight: 800, color: TICKETS_COLOR,
+              }}
+            >{formatTicketId(t.id)}</button>
+            <span style={{ fontSize: 11.5, color: C.grisM, fontWeight: 600 }}>{formatDate(t.created_at)}</span>
+            <div style={{ flex: 1 }} />
+            <span style={{
+              display: 'inline-block', background: s.bg, color: s.color,
+              padding: '2px 9px', borderRadius: 6, fontSize: 11, fontWeight: 700, whiteSpace: 'nowrap',
+            }}>{s.label}</span>
+          </div>
+          <div style={{
+            fontSize: 12.5, color: C.grisF, fontWeight: 600,
+            overflow: 'hidden', textOverflow: 'ellipsis',
+            whiteSpace: open ? 'normal' : 'nowrap',
+          }}>
+            {t.subject || '(sans objet)'}
+          </div>
+        </div>
+        <span style={{
+          display: 'inline-flex', transition: 'transform 0.18s',
+          transform: open ? 'rotate(180deg)' : 'none',
+        }}>
+          <svg width={11} height={11} viewBox="0 0 12 12" fill="none">
+            <path d="M2 4 L6 8 L10 4" stroke={C.grisM} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </span>
+      </div>
+
+      {open && (
+        <div style={{ padding: '10px 14px 12px', borderTop: `1px solid ${C.grisCL}`, background: '#FAFCFD' }}>
+          <div style={{ display: 'flex', gap: 16, marginBottom: 10, fontSize: 11.5, color: C.grisM }}>
+            {t.order_id && (
+              <span>Commande <strong style={{ color: C.grisF }}>#{t.order_id}</strong></span>
+            )}
+            <span>{msgCount} message{msgCount > 1 ? 's' : ''}</span>
+            <span>Maj {formatDate(t.updated_at)}</span>
+          </div>
+          <button
+            onClick={() => onOpen(t)}
+            style={{
+              width: '100%', display: 'block', textAlign: 'center',
+              background: C.blanc, color: TICKETS_COLOR,
+              border: `1px solid ${TICKETS_COLOR}40`, borderRadius: 7,
+              padding: '7px 12px', fontSize: 12.5, fontWeight: 700,
+              cursor: 'pointer', fontFamily: 'Lato, sans-serif',
+            }}
+          >Ouvrir le ticket</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Panneau DROIT ────────────────────────────────────────────────────────────
 function CustomerPanel({ ticket, onAssignOrder, onUnassignOrder, onMerge }) {
   const navigate = useNavigate();
@@ -1826,6 +1910,12 @@ function CustomerPanel({ ticket, onAssignOrder, onUnassignOrder, onMerge }) {
     ...o,
     items: o.items || [],
   }));
+
+  const customerTickets = ticket.customer_tickets || [];
+  const openTicketHistory = (t) => {
+    if (tabsCtx) tabsCtx.openTicket(t);
+    else navigate(`/tickets/${t.id}`);
+  };
 
   return (
     <aside style={{
@@ -1891,6 +1981,18 @@ function CustomerPanel({ ticket, onAssignOrder, onUnassignOrder, onMerge }) {
           <NoteField ticketId={ticket.id} initialNotes={ticket.notes} />
         </div>
       </div>
+
+      {/* Tickets du client (dépliables) */}
+      {customerTickets.length > 0 && (
+        <div style={{ marginTop: 18 }}>
+          <SectionLabel right={`${customerTickets.length} ticket${customerTickets.length > 1 ? 's' : ''}`}>
+            Tickets du client
+          </SectionLabel>
+          {customerTickets.map(t => (
+            <TicketHistoryCard key={t.id} t={t} onOpen={openTicketHistory} />
+          ))}
+        </div>
+      )}
 
       {/* Bannière doublon potentiel */}
       {ticket.has_duplicate_warning && Array.isArray(ticket.duplicate_candidates) && ticket.duplicate_candidates.length > 0 && (
