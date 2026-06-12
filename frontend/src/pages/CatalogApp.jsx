@@ -498,7 +498,7 @@ const CatalogApp = () => {
           <p style={{ textAlign: 'center', color: '#6b7280', padding: '40px 0' }}>Chargement...</p>
         ) : (
           <>
-            <div style={{ overflowX: 'auto' }}>
+            <div>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
                 <thead>
                   <tr style={{ backgroundColor: '#f3f4f6', borderBottom: '2px solid #e5e7eb' }}>
