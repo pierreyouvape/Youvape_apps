@@ -237,6 +237,36 @@ exports.toggleExcludeReorder = async (req, res) => {
 };
 
 /**
+ * Toggle track_stock (équivalent ATUM Control Switch)
+ * PATCH /api/products/:id/track-stock
+ */
+exports.toggleTrackStock = async (req, res) => {
+  try {
+    const productId = parseInt(req.params.id);
+    // Toggle le produit lui-meme
+    const result = await pool.query(
+      `UPDATE products SET track_stock = NOT COALESCE(track_stock, true) WHERE wp_product_id = $1 RETURNING wp_product_id, track_stock, product_type`,
+      [productId]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ success: false, error: 'Product not found' });
+    }
+    const product = result.rows[0];
+    // Si c'est un variable (parent), toggle aussi toutes ses variations
+    if (product.product_type === 'variable') {
+      await pool.query(
+        `UPDATE products SET track_stock = $1 WHERE wp_parent_id = $2`,
+        [product.track_stock, productId]
+      );
+    }
+    res.json({ success: true, data: product });
+  } catch (error) {
+    console.error('Error toggling track_stock:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+/**
  * Récupère les produits pour l'onglet Stats avec pagination et tri
  * GET /api/products/stats-list?limit=50&offset=0&search=&sortBy=qty_sold&sortOrder=DESC
  */
@@ -278,9 +308,11 @@ exports.getCatalogList = async (req, res) => {
     const limit = parseInt(req.query.limit) || 50;
     const offset = parseInt(req.query.offset) || 0;
     const search = req.query.search || '';
+    const trackStockOnly = req.query.trackStockOnly !== 'false';
+    const stockTab = req.query.stockTab || 'all';
 
-    const { parents, variations } = await productModel.getAllForCatalog(limit, offset, search);
-    const total = await productModel.countForCatalog(search);
+    const { parents, variations } = await productModel.getAllForCatalog(limit, offset, search, trackStockOnly, stockTab);
+    const total = await productModel.countForCatalog(search, trackStockOnly, stockTab);
 
     res.json({
       success: true,
@@ -301,8 +333,10 @@ exports.getCatalogExport = async (req, res) => {
   try {
     const search = req.query.search || '';
     const format = (req.query.format || 'csv').toLowerCase();
+    const trackStockOnly = req.query.trackStockOnly !== 'false';
+    const stockTab = req.query.stockTab || 'all';
 
-    const { parents, variations } = await productModel.getAllForCatalog(99999, 0, search);
+    const { parents, variations } = await productModel.getAllForCatalog(99999, 0, search, trackStockOnly, stockTab);
 
     const variationsByParent = new Map();
     for (const v of variations) {

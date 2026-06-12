@@ -34,6 +34,13 @@ const numStyle = (v) => {
   return { color: n === 0 ? '#ef4444' : '#111827' };
 };
 
+const STOCK_TABS = [
+  { key: 'all',        label: 'Tout' },
+  { key: 'instock',    label: 'En stock' },
+  { key: 'outofstock', label: 'Rupture de stock' },
+  { key: 'restock',    label: 'À réapprovisionner' },
+];
+
 const CATALOG_COLUMNS = [
   { key: 'price',       label: 'Prix TTC' },
   { key: 'cost_price',  label: 'Coût HT' },
@@ -42,6 +49,7 @@ const CATALOG_COLUMNS = [
   { key: 'stock',       label: 'Stock' },
   { key: 'incoming_qty',label: 'Arrivages' },
   { key: 'sales_30d',   label: 'Ventes 30j' },
+  { key: 'track_stock', label: 'Suivi stock' },
 ];
 
 const CatalogApp = () => {
@@ -58,6 +66,12 @@ const CatalogApp = () => {
   const [compact, setCompact] = useState(false);
   const [showColumnPanel, setShowColumnPanel] = useState(false);
 
+  // Filtre suivi de stock (équivalent ATUM Control Switch)
+  const [trackStockOnly, setTrackStockOnly] = useState(true);
+
+  // Onglet statut de stock (équivalent onglets ATUM Stock Central)
+  const [stockTab, setStockTab] = useState('all');
+
   // CSV import state
   const [csvModal, setCsvModal] = useState(false);
   const [csvHeaders, setCsvHeaders] = useState([]);
@@ -68,11 +82,11 @@ const CatalogApp = () => {
 
   const headers = { Authorization: `Bearer ${token}` };
 
-  const fetchProducts = async (offset = 0, search = searchTerm) => {
+  const fetchProducts = async (offset = 0, search = searchTerm, trackOnly = trackStockOnly, tab = stockTab) => {
     setLoading(true);
     try {
       const res = await axios.get(`${API_URL}/products/catalog`, {
-        params: { limit: 50, offset, search },
+        params: { limit: 50, offset, search, trackStockOnly: trackOnly, stockTab: tab },
         headers
       });
       if (res.data.success) {
@@ -88,11 +102,9 @@ const CatalogApp = () => {
   };
 
   useEffect(() => {
-    fetchProducts(0, '');
-  }, []);
-
-  useEffect(() => {
     const load = async () => {
+      let track = true;
+      let tab = 'all';
       try {
         const res = await axios.get(`${API_URL}/preferences/catalog`, {
           headers: { Authorization: `Bearer ${token}` }
@@ -100,17 +112,35 @@ const CatalogApp = () => {
         if (res.data.success) {
           setHiddenColumns(res.data.hiddenColumns || []);
           setCompact(res.data.compact || false);
+          track = res.data.trackStockOnly !== false;
+          setTrackStockOnly(track);
+          tab = res.data.stockTab || 'all';
+          setStockTab(tab);
         }
       } catch (err) {
         console.error('Erreur chargement préférences colonnes catalog:', err);
       }
+      fetchProducts(0, '', track, tab);
     };
     if (token) load();
   }, [token]);
 
-  const savePreferences = async (cols, cmp) => {
+  const toggleTrackStockOnly = () => {
+    const next = !trackStockOnly;
+    setTrackStockOnly(next);
+    savePreferences(hiddenColumns, compact, next, stockTab);
+    fetchProducts(0, searchTerm, next, stockTab);
+  };
+
+  const handleStockTabChange = (tab) => {
+    setStockTab(tab);
+    savePreferences(hiddenColumns, compact, trackStockOnly, tab);
+    fetchProducts(0, searchTerm, trackStockOnly, tab);
+  };
+
+  const savePreferences = async (cols, cmp, trackOnly = trackStockOnly, tab = stockTab) => {
     try {
-      await axios.put(`${API_URL}/preferences/catalog`, { hiddenColumns: cols, compact: cmp }, {
+      await axios.put(`${API_URL}/preferences/catalog`, { hiddenColumns: cols, compact: cmp, trackStockOnly: trackOnly, stockTab: tab }, {
         headers: { Authorization: `Bearer ${token}` }
       });
     } catch (err) {
@@ -214,7 +244,7 @@ const CatalogApp = () => {
     setExporting(format);
     try {
       const res = await axios.get(`${API_URL}/products/catalog/export`, {
-        params: { format, search: searchTerm },
+        params: { format, search: searchTerm, trackStockOnly, stockTab },
         headers,
         responseType: 'blob'
       });
@@ -278,6 +308,27 @@ const CatalogApp = () => {
     }
   };
 
+  // Toggle suivi de stock (équivalent ATUM Control Switch) sur un produit/déclinaison
+  const handleToggleTrackStock = async (wpProductId, e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    try {
+      const res = await axios.patch(`${API_URL}/products/${wpProductId}/track-stock`, {}, { headers });
+      if (res.data.success) {
+        if (trackStockOnly) {
+          // La ligne peut disparaitre du filtre courant
+          fetchProducts(pagination.offset, searchTerm);
+        } else {
+          const newVal = res.data.data.track_stock;
+          setParents(prev => prev.map(p => p.wp_product_id === wpProductId ? { ...p, track_stock: newVal } : p));
+          setVariations(prev => prev.map(v => v.wp_product_id === wpProductId ? { ...v, track_stock: newVal } : v));
+        }
+      }
+    } catch (err) {
+      console.error('Error toggling track_stock:', err);
+    }
+  };
+
   // Calcul marge %
   const calcMargin = (price, costPrice) => {
     const p = parseFloat(price);
@@ -325,6 +376,29 @@ const CatalogApp = () => {
       <div style={compact ? { flex: 1, maxWidth: '1400px', margin: '30px auto', padding: '0 20px', width: '100%' } : { flex: 1, margin: '30px 0', padding: '0 60px', width: '100%' }}>
         <h1 style={{ color: '#059669', marginBottom: '20px' }}>Catalogue Produits</h1>
 
+        {/* Onglets statut de stock */}
+        <div style={{ display: 'flex', gap: '4px', marginBottom: '16px', borderBottom: '2px solid #e5e7eb' }}>
+          {STOCK_TABS.map(tab => (
+            <button
+              key={tab.key}
+              onClick={() => handleStockTabChange(tab.key)}
+              style={{
+                padding: '10px 18px',
+                border: 'none',
+                borderBottom: stockTab === tab.key ? '3px solid #059669' : '3px solid transparent',
+                backgroundColor: 'transparent',
+                color: stockTab === tab.key ? '#059669' : '#6b7280',
+                fontSize: '14px',
+                fontWeight: stockTab === tab.key ? '600' : '500',
+                cursor: 'pointer',
+                marginBottom: '-2px'
+              }}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+
         {/* Search + CSV */}
         <div style={{ marginBottom: '20px' }}>
           <input
@@ -345,6 +419,10 @@ const CatalogApp = () => {
           <span style={{ marginLeft: '12px', color: '#6b7280', fontSize: '14px' }}>
             {pagination.total} produit{pagination.total > 1 ? 's' : ''}
           </span>
+          <label style={{ marginLeft: '16px', display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '13px', color: '#374151', cursor: 'pointer' }}>
+            <input type="checkbox" checked={trackStockOnly} onChange={toggleTrackStockOnly} />
+            Suivi de stock uniquement
+          </label>
           <label style={{
             marginLeft: '16px', padding: '8px 16px', backgroundColor: '#fff', color: '#374151',
             border: '1px solid #059669', borderRadius: '6px', fontSize: '13px', fontWeight: '600', cursor: 'pointer', display: 'inline-block'
@@ -439,6 +517,7 @@ const CatalogApp = () => {
                     {isVisible('stock') && <th style={headerRight}>Stock</th>}
                     {isVisible('incoming_qty') && <th style={headerRight}>Arrivages</th>}
                     {isVisible('sales_30d') && <th style={headerRight}>Ventes 30j</th>}
+                    {isVisible('track_stock') && <th style={headerRight}>Suivi stock</th>}
                   </tr>
                 </thead>
                 <tbody>
@@ -477,6 +556,7 @@ const CatalogApp = () => {
                           {isVisible('stock') && <td style={{ ...cellRight, fontWeight: 600, ...numStyle(row.stock) }}>{fmtInt(row.stock)}</td>}
                           {isVisible('incoming_qty') && <td style={{ ...cellRight, fontWeight: 600 }}>{fmtInt(row.incoming_qty)}</td>}
                           {isVisible('sales_30d') && <td style={{ ...cellRight, fontWeight: 600, ...numStyle(row.sales_30d) }}>{fmtInt(row.sales_30d)}</td>}
+                          {isVisible('track_stock') && <td style={cellRight}></td>}
                         </tr>
                       );
                     }
@@ -518,6 +598,15 @@ const CatalogApp = () => {
                         {isVisible('stock') && <td style={{ ...cellRight, fontWeight: '600', ...numStyle(row.stock) }}>{fmtInt(row.stock)}</td>}
                         {isVisible('incoming_qty') && <td style={cellRight}>{fmtInt(row.incoming_qty)}</td>}
                         {isVisible('sales_30d') && <td style={{ ...cellRight, ...numStyle(row.sales_30d) }}>{fmtInt(row.sales_30d)}</td>}
+                        {isVisible('track_stock') && (
+                          <td style={cellRight} onClick={(e) => e.stopPropagation()}>
+                            <input
+                              type="checkbox"
+                              checked={row.track_stock}
+                              onChange={(e) => handleToggleTrackStock(row.wp_product_id, e)}
+                            />
+                          </td>
+                        )}
                       </LinkTr>
                     );
                   }); })()}

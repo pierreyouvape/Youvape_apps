@@ -1,5 +1,30 @@
 const pool = require('../config/database');
 const { buildSearchCondition } = require('../utils/searchUtils');
+const needsCalculationModel = require('./needsCalculationModel');
+
+/**
+ * Condition SQL pour le filtre d'onglet stock du catalogue (all/instock/outofstock/restock)
+ * reorderIdsSql : liste de wp_product_id (entiers, déjà validés) séparés par des virgules,
+ * issue de needsCalculationModel.getReorderProductIds() — utilisée pour le tab "restock"
+ */
+function stockTabCondition(alias, stockTab, reorderIdsSql) {
+  switch (stockTab) {
+    case 'instock': return `${alias}.stock_status = 'instock'`;
+    case 'outofstock': return `${alias}.stock_status = 'outofstock'`;
+    case 'restock': return `${alias}.wp_product_id IN (${reorderIdsSql})`;
+    default: return null;
+  }
+}
+
+/**
+ * Récupère la liste des wp_product_id en besoin de réapprovisionnement (onglet "restock"),
+ * prête à être inlinée dans une clause SQL IN(...). Retourne '-1' si aucun (ou tab != restock).
+ */
+async function getReorderIdsSql(stockTab) {
+  if (stockTab !== 'restock') return '-1';
+  const ids = await needsCalculationModel.getReorderProductIds();
+  return ids.length > 0 ? ids.join(',') : '-1';
+}
 
 class ProductModel {
   /**
@@ -260,6 +285,18 @@ class ProductModel {
       wpProductId
     ];
     const result = await pool.query(query, values);
+    return result.rows[0];
+  }
+
+  /**
+   * Active/désactive le suivi de stock (équivalent ATUM Control Switch)
+   * pour un produit ou une déclinaison
+   */
+  async setTrackStock(productId, trackStock) {
+    const result = await pool.query(
+      `UPDATE products SET track_stock = $1, updated_at = NOW() WHERE id = $2 RETURNING id, track_stock`,
+      [trackStock, productId]
+    );
     return result.rows[0];
   }
 
@@ -596,11 +633,38 @@ class ProductModel {
    * Produits simples publiés + variations dont le parent est publish
    * Tri par date de création DESC
    */
-  async getAllForCatalog(limit = 50, offset = 0, search = '') {
+  async getAllForCatalog(limit = 50, offset = 0, search = '', trackStockOnly = true, stockTab = 'all') {
+    const reorderIdsSql = await getReorderIdsSql(stockTab);
     let whereClause = `
       WHERE p.post_status = 'publish'
         AND p.product_type IN ('simple', 'variable')
     `;
+    if (trackStockOnly) {
+      whereClause += `
+        AND (
+          (p.product_type = 'simple' AND p.track_stock = true)
+          OR (p.product_type = 'variable' AND EXISTS (
+            SELECT 1 FROM products v
+            WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation' AND v.track_stock = true
+          ))
+        )
+      `;
+    }
+    const stockCond = stockTabCondition('p', stockTab, reorderIdsSql);
+    const stockCondVar = stockTabCondition('v', stockTab, reorderIdsSql);
+    if (stockCond) {
+      whereClause += `
+        AND (
+          (p.product_type = 'simple' AND ${stockCond})
+          OR (p.product_type = 'variable' AND EXISTS (
+            SELECT 1 FROM products v
+            WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation'
+              ${trackStockOnly ? 'AND v.track_stock = true' : ''}
+              AND ${stockCondVar}
+          ))
+        )
+      `;
+    }
     const params = [];
     let paramIndex = 1;
 
@@ -637,7 +701,8 @@ class ProductModel {
         p.weight,
         p.image_url,
         p.product_type,
-        p.post_date
+        p.post_date,
+        p.track_stock
       FROM products p
       ${whereClause}
       ORDER BY p.post_date DESC
@@ -665,10 +730,13 @@ class ProductModel {
           COALESCE(v.computed_cost, v.wc_cog_cost) as cost_price,
           v.weight,
           COALESCE(v.image_url, p_parent.image_url) as image_url,
-          v.product_type
+          v.product_type,
+          v.track_stock
         FROM products v
         LEFT JOIN products p_parent ON v.wp_parent_id = p_parent.wp_product_id
         WHERE v.wp_parent_id = ANY($1) AND v.product_type = 'variation'
+          ${trackStockOnly ? 'AND v.track_stock = true' : ''}
+          ${stockCondVar ? `AND ${stockCondVar}` : ''}
         ORDER BY v.post_title ASC
       `;
       const variationsResult = await pool.query(variationsQuery, [variableIds]);
@@ -728,11 +796,38 @@ class ProductModel {
   /**
    * Compte les produits pour le catalogue
    */
-  async countForCatalog(search = '') {
+  async countForCatalog(search = '', trackStockOnly = true, stockTab = 'all') {
+    const reorderIdsSql = await getReorderIdsSql(stockTab);
     let whereClause = `
       WHERE p.post_status = 'publish'
         AND p.product_type IN ('simple', 'variable')
     `;
+    if (trackStockOnly) {
+      whereClause += `
+        AND (
+          (p.product_type = 'simple' AND p.track_stock = true)
+          OR (p.product_type = 'variable' AND EXISTS (
+            SELECT 1 FROM products v
+            WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation' AND v.track_stock = true
+          ))
+        )
+      `;
+    }
+    const stockCond = stockTabCondition('p', stockTab, reorderIdsSql);
+    const stockCondVar = stockTabCondition('v', stockTab, reorderIdsSql);
+    if (stockCond) {
+      whereClause += `
+        AND (
+          (p.product_type = 'simple' AND ${stockCond})
+          OR (p.product_type = 'variable' AND EXISTS (
+            SELECT 1 FROM products v
+            WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation'
+              ${trackStockOnly ? 'AND v.track_stock = true' : ''}
+              AND ${stockCondVar}
+          ))
+        )
+      `;
+    }
     const params = [];
 
     if (search) {

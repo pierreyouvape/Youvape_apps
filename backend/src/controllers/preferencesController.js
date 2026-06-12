@@ -13,13 +13,17 @@ const preferencesController = {
       // Support ancien format (tableau) et nouveau format (objet)
       let hiddenColumns = [];
       let compact = false;
+      let trackStockOnly = true;
+      let stockTab = 'all';
       if (Array.isArray(raw)) {
         hiddenColumns = raw;
       } else if (raw && typeof raw === 'object') {
         hiddenColumns = raw.hiddenColumns || [];
         compact = raw.compact || false;
+        trackStockOnly = raw.trackStockOnly !== false;
+        stockTab = raw.stockTab || 'all';
       }
-      res.json({ success: true, hiddenColumns, compact });
+      res.json({ success: true, hiddenColumns, compact, trackStockOnly, stockTab });
     } catch (err) {
       console.error('getPreferences error:', err);
       res.status(500).json({ success: false, error: 'Erreur serveur' });
@@ -29,11 +33,11 @@ const preferencesController = {
   savePreferences: async (req, res) => {
     const userId = req.user.id;
     const { page } = req.params;
-    const { hiddenColumns, compact } = req.body;
+    const { hiddenColumns, compact, trackStockOnly, stockTab } = req.body;
     if (!Array.isArray(hiddenColumns)) {
       return res.status(400).json({ success: false, error: 'hiddenColumns doit être un tableau' });
     }
-    const payload = { hiddenColumns, compact: compact === true };
+    const payload = { hiddenColumns, compact: compact === true, trackStockOnly: trackStockOnly !== false, stockTab: stockTab || 'all' };
     try {
       await pool.query(
         `INSERT INTO user_column_preferences (user_id, page, hidden_columns, updated_at)

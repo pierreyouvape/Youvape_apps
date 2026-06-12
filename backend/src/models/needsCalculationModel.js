@@ -1,4 +1,9 @@
 const pool = require('../config/database');
+const { computeProductNeeds } = require('../services/needsCalculator');
+
+// Cache court pour getReorderProductIds (évite de recalculer 2x par requête catalogue : liste + count)
+const REORDER_IDS_CACHE_TTL_MS = 60 * 1000;
+let reorderIdsCache = { ids: null, timestamp: 0 };
 
 const needsCalculationModel = {
   /**
@@ -207,6 +212,28 @@ const needsCalculationModel = {
       sub_brand: p.sub_brand || null,
       weight: p.weight ? parseFloat(p.weight) : null
     }));
+  },
+
+  /**
+   * Retourne les wp_product_id (simples + variations) ayant une proposition
+   * de réapprovisionnement théorique > 0, avec les paramètres par défaut de
+   * "Besoins achats" (31 derniers jours, couverture 1 mois).
+   * Utilisé pour l'onglet "À réapprovisionner" du catalogue.
+   */
+  getReorderProductIds: async () => {
+    if (reorderIdsCache.ids && (Date.now() - reorderIdsCache.timestamp) < REORDER_IDS_CACHE_TTL_MS) {
+      return reorderIdsCache.ids;
+    }
+    const products = await needsCalculationModel.getAllProductsRaw();
+    const ids = [];
+    for (const product of products) {
+      const needs = computeProductNeeds(product, 31, 1, false, null, null, 'days');
+      if (needs.theoretical_proposal > 0) {
+        ids.push(parseInt(product.wp_product_id));
+      }
+    }
+    reorderIdsCache = { ids, timestamp: Date.now() };
+    return ids;
   },
 
   // Gardé pour compatibilité (utilisé par getProductNeed individuel)
