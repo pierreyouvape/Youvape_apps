@@ -591,7 +591,25 @@ const ProductDetail = () => {
               </div>
             )}
           </div>
-          <div style={{ display: 'flex', alignItems: 'flex-start' }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
+            <button
+              onClick={async () => {
+                try {
+                  const res = await axios.patch(`${API_URL}/products/${id}/track-stock`, {}, { headers });
+                  const newVal = res.data.data.track_stock;
+                  setProduct(prev => ({ ...prev, track_stock: newVal }));
+                } catch (err) {}
+              }}
+              style={{
+                padding: '8px 16px', border: '1px solid',
+                borderColor: product.track_stock ? '#28a745' : '#dc3545',
+                backgroundColor: product.track_stock ? '#f0fff4' : '#fff5f5',
+                color: product.track_stock ? '#28a745' : '#dc3545',
+                borderRadius: '6px', cursor: 'pointer', fontSize: '13px', fontWeight: '600', whiteSpace: 'nowrap'
+              }}
+            >
+              {product.track_stock ? 'Visible dans le catalogue' : 'Masqué du catalogue'}
+            </button>
             <button
               onClick={async () => {
                 try {
