@@ -69,6 +69,10 @@ const CatalogApp = () => {
   // Onglet statut de stock (équivalent onglets ATUM Stock Central)
   const [stockTab, setStockTab] = useState('all');
 
+  // Tri colonnes (prix, coût, stock, ...)
+  const [sortBy, setSortBy] = useState(null);
+  const [sortDir, setSortDir] = useState('desc');
+
   // CSV import state
   const [csvModal, setCsvModal] = useState(false);
   const [csvHeaders, setCsvHeaders] = useState([]);
@@ -79,11 +83,11 @@ const CatalogApp = () => {
 
   const headers = { Authorization: `Bearer ${token}` };
 
-  const fetchProducts = async (offset = 0, search = searchTerm, tab = stockTab) => {
+  const fetchProducts = async (offset = 0, search = searchTerm, tab = stockTab, sort = sortBy, dir = sortDir) => {
     setLoading(true);
     try {
       const res = await axios.get(`${API_URL}/products/catalog`, {
-        params: { limit: 50, offset, search, stockTab: tab },
+        params: { limit: 50, offset, search, stockTab: tab, sortBy: sort || undefined, sortDir: dir },
         headers
       });
       if (res.data.success) {
@@ -123,6 +127,13 @@ const CatalogApp = () => {
     setStockTab(tab);
     savePreferences(hiddenColumns, compact, tab);
     fetchProducts(0, searchTerm, tab);
+  };
+
+  const handleSort = (column) => {
+    const nextDir = (sortBy === column && sortDir === 'desc') ? 'asc' : 'desc';
+    setSortBy(column);
+    setSortDir(nextDir);
+    fetchProducts(0, searchTerm, stockTab, column, nextDir);
   };
 
   const savePreferences = async (cols, cmp, tab = stockTab) => {
@@ -325,6 +336,13 @@ const CatalogApp = () => {
   const cellRight = { ...cellStyle, textAlign: 'right', fontFamily: 'monospace' };
   const headerStyle = { padding: '10px 12px', textAlign: 'left', fontSize: '13px', fontWeight: '600' };
   const headerRight = { ...headerStyle, textAlign: 'right' };
+  const headerSortable = { ...headerRight, cursor: 'pointer', userSelect: 'none' };
+
+  const SortableHeader = ({ column, label }) => (
+    <th style={headerSortable} onClick={() => handleSort(column)}>
+      {label}{sortBy === column ? (sortDir === 'desc' ? ' ▼' : ' ▲') : ''}
+    </th>
+  );
 
   return (
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
@@ -401,7 +419,7 @@ const CatalogApp = () => {
             }}
           />
           <span style={{ marginLeft: '12px', color: '#6b7280', fontSize: '14px' }}>
-            {pagination.total} produit{pagination.total > 1 ? 's' : ''}
+            {pagination.totalWithVariations ?? pagination.total} produit{(pagination.totalWithVariations ?? pagination.total) > 1 ? 's' : ''}
           </span>
           <label style={{
             marginLeft: '16px', padding: '8px 16px', backgroundColor: '#fff', color: '#374151',
@@ -490,13 +508,13 @@ const CatalogApp = () => {
                     <th style={{ ...headerStyle, width: '40px' }}></th>
                     <th style={headerStyle}>Nom</th>
                     <th style={headerStyle}>SKU</th>
-                    {isVisible('price') && <th style={headerRight}>Prix TTC</th>}
-                    {isVisible('cost_price') && <th style={headerRight}>Coût HT</th>}
-                    {isVisible('margin') && <th style={headerRight}>Marge %</th>}
-                    {isVisible('weight') && <th style={headerRight}>Poids</th>}
-                    {isVisible('stock') && <th style={headerRight}>Stock</th>}
-                    {isVisible('incoming_qty') && <th style={headerRight}>Arrivages</th>}
-                    {isVisible('sales_30d') && <th style={headerRight}>Ventes 30j</th>}
+                    {isVisible('price') && <SortableHeader column="price" label="Prix TTC" />}
+                    {isVisible('cost_price') && <SortableHeader column="cost_price" label="Coût HT" />}
+                    {isVisible('margin') && <SortableHeader column="margin" label="Marge %" />}
+                    {isVisible('weight') && <SortableHeader column="weight" label="Poids" />}
+                    {isVisible('stock') && <SortableHeader column="stock" label="Stock" />}
+                    {isVisible('incoming_qty') && <SortableHeader column="incoming_qty" label="Arrivages" />}
+                    {isVisible('sales_30d') && <SortableHeader column="sales_30d" label="Ventes 30j" />}
                     {isVisible('track_stock') && <th style={headerRight}>Suivi stock</th>}
                   </tr>
                 </thead>

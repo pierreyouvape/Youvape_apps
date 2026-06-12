@@ -26,6 +26,53 @@ async function getReorderIdsSql(stockTab) {
   return ids.length > 0 ? ids.join(',') : '-1';
 }
 
+/**
+ * Expressions SQL de tri pour le catalogue : pour un produit variable,
+ * on agrège (somme/moyenne) sur ses variations publiées.
+ */
+const CATALOG_SORT_EXPRESSIONS = {
+  price: `(CASE WHEN p.product_type = 'simple' THEN p.price
+    ELSE (SELECT AVG(v.price) FROM products v WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation' AND v.post_status = 'publish') END)`,
+  cost_price: `(CASE WHEN p.product_type = 'simple' THEN COALESCE(p.computed_cost, p.wc_cog_cost)
+    ELSE (SELECT AVG(COALESCE(v.computed_cost, v.wc_cog_cost)) FROM products v WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation' AND v.post_status = 'publish') END)`,
+  margin: `(CASE WHEN p.product_type = 'simple' THEN (p.price - COALESCE(p.computed_cost, p.wc_cog_cost))
+    ELSE (SELECT AVG(v.price - COALESCE(v.computed_cost, v.wc_cog_cost)) FROM products v WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation' AND v.post_status = 'publish') END)`,
+  weight: `(CASE WHEN p.product_type = 'simple' THEN p.weight
+    ELSE (SELECT AVG(v.weight) FROM products v WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation' AND v.post_status = 'publish') END)`,
+  stock: `(CASE WHEN p.product_type = 'simple' THEN COALESCE(p.stock, 0)
+    ELSE (SELECT COALESCE(SUM(v.stock), 0) FROM products v WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation' AND v.post_status = 'publish') END)`,
+  incoming_qty: `(SELECT COALESCE(SUM(poi.qty_ordered - poi.qty_received), 0)
+    FROM purchase_order_items poi
+    JOIN purchase_orders po ON poi.purchase_order_id = po.id
+    WHERE po.status IN ('sent', 'confirmed', 'shipped', 'partial')
+      AND poi.product_id IN (
+        SELECT x.id FROM products x WHERE x.wp_product_id = p.wp_product_id
+        UNION ALL
+        SELECT x.id FROM products x WHERE x.wp_parent_id = p.wp_product_id AND x.product_type = 'variation'
+      ))`,
+  sales_30d: `(SELECT COALESCE(SUM(oi.qty), 0)
+    FROM order_items oi
+    JOIN orders o ON oi.wp_order_id = o.wp_order_id
+    WHERE o.post_status IN ('wc-completed', 'wc-processing', 'wc-delivered', 'wc-awaiting-delivery', 'wc-shipped', 'wc-being-delivered')
+      AND o.post_date >= NOW() - INTERVAL '30 days'
+      AND (CASE WHEN oi.variation_id > 0 THEN oi.variation_id ELSE oi.product_id END) IN (
+        SELECT p.wp_product_id
+        UNION ALL
+        SELECT x.wp_product_id FROM products x WHERE x.wp_parent_id = p.wp_product_id AND x.product_type = 'variation'
+      ))`,
+};
+
+/**
+ * Clause ORDER BY pour le catalogue. Retombe sur le tri par defaut (date de creation)
+ * si sortBy est absent ou invalide.
+ */
+function catalogOrderBy(sortBy, sortDir) {
+  const expr = CATALOG_SORT_EXPRESSIONS[sortBy];
+  if (!expr) return 'ORDER BY p.post_date DESC';
+  const dir = sortDir === 'asc' ? 'ASC' : 'DESC';
+  return `ORDER BY ${expr} ${dir} NULLS LAST, p.post_date DESC`;
+}
+
 class ProductModel {
   /**
    * Récupère tous les produits avec pagination
@@ -640,7 +687,7 @@ class ProductModel {
    * Produits simples publiés + variations dont le parent est publish
    * Tri par date de création DESC
    */
-  async getAllForCatalog(limit = 50, offset = 0, search = '', trackStockOnly = true, stockTab = 'all') {
+  async getAllForCatalog(limit = 50, offset = 0, search = '', trackStockOnly = true, stockTab = 'all', sortBy = null, sortDir = 'desc') {
     const reorderIdsSql = await getReorderIdsSql(stockTab);
     let whereClause = `
       WHERE p.post_status = 'publish'
@@ -713,7 +760,7 @@ class ProductModel {
         p.track_stock
       FROM products p
       ${whereClause}
-      ORDER BY p.post_date DESC
+      ${catalogOrderBy(sortBy, sortDir)}
       LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
     `;
     const parentsResult = await pool.query(parentsQuery, params);
@@ -858,13 +905,28 @@ class ProductModel {
     }
 
     const query = `
-      SELECT COUNT(*)::int as total
+      SELECT
+        COUNT(*)::int as total,
+        COALESCE(SUM(
+          CASE WHEN p.product_type = 'simple' THEN 1
+            ELSE 1 + (
+              SELECT COUNT(*) FROM products v
+              WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation'
+                AND v.post_status = 'publish'
+                ${trackStockOnly ? 'AND v.track_stock = true' : ''}
+                ${stockCondVar ? `AND ${stockCondVar}` : ''}
+            )
+          END
+        ), 0)::int as total_with_variations
       FROM products p
       ${whereClause}
     `;
 
     const result = await pool.query(query, params);
-    return parseInt(result.rows[0].total);
+    return {
+      total: parseInt(result.rows[0].total),
+      totalWithVariations: parseInt(result.rows[0].total_with_variations)
+    };
   }
 
   /**

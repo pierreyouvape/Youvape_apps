@@ -309,14 +309,16 @@ exports.getCatalogList = async (req, res) => {
     const offset = parseInt(req.query.offset) || 0;
     const search = req.query.search || '';
     const stockTab = req.query.stockTab || 'all';
+    const sortBy = req.query.sortBy || null;
+    const sortDir = req.query.sortDir || 'desc';
 
-    const { parents, variations } = await productModel.getAllForCatalog(limit, offset, search, true, stockTab);
-    const total = await productModel.countForCatalog(search, true, stockTab);
+    const { parents, variations } = await productModel.getAllForCatalog(limit, offset, search, true, stockTab, sortBy, sortDir);
+    const { total, totalWithVariations } = await productModel.countForCatalog(search, true, stockTab);
 
     res.json({
       success: true,
       data: { parents, variations },
-      pagination: { total, limit, offset, hasMore: offset + limit < total }
+      pagination: { total, totalWithVariations, limit, offset, hasMore: offset + limit < total }
     });
   } catch (error) {
     console.error('Error getting catalog list:', error);
