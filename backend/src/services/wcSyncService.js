@@ -268,8 +268,8 @@ const wcSyncService = {
       INSERT INTO products (
         wp_product_id, wp_parent_id, product_type, post_title, sku, post_status,
         stock_status, stock, price, regular_price, image_url, weight, post_date, post_modified,
-        brand, sub_brand, category, sub_category
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+        brand, sub_brand, category, sub_category, manage_stock
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
       ON CONFLICT (wp_product_id)
       DO UPDATE SET
         wp_parent_id = EXCLUDED.wp_parent_id,
@@ -287,14 +287,16 @@ const wcSyncService = {
         brand = COALESCE(EXCLUDED.brand, products.brand),
         sub_brand = COALESCE(EXCLUDED.sub_brand, products.sub_brand),
         category = COALESCE(EXCLUDED.category, products.category),
-        sub_category = COALESCE(EXCLUDED.sub_category, products.sub_category)
+        sub_category = COALESCE(EXCLUDED.sub_category, products.sub_category),
+        manage_stock = EXCLUDED.manage_stock
     `, [
       data.wp_product_id, data.parent_id || null, data.type, data.name,
       data.sku, data.status, data.stock_status, data.stock_quantity,
       data.price, data.regular_price, data.image_url || null, data.weight || null,
       data.date_created, data.date_modified,
       data.brand || null, data.sub_brand || null,
-      data.category || null, data.sub_category || null
+      data.category || null, data.sub_category || null,
+      data.manage_stock === true
     ]);
 
     // Traiter les variations si presentes (donnees completes depuis v1.3.1)
