@@ -69,8 +69,15 @@ class ProductModel {
     const query = `
       SELECT
         p.*,
-        COALESCE(p.computed_cost, p.wc_cog_cost) as cost_price,
-        (p.price - COALESCE(p.computed_cost, p.wc_cog_cost, 0)) as unit_margin,
+        COALESCE(
+          p.computed_cost, p.wc_cog_cost,
+          (SELECT AVG(COALESCE(v.computed_cost, v.wc_cog_cost)) FROM products v WHERE v.wp_parent_id = p.wp_product_id)
+        ) as cost_price,
+        (p.price - COALESCE(
+          p.computed_cost, p.wc_cog_cost,
+          (SELECT AVG(COALESCE(v.computed_cost, v.wc_cog_cost)) FROM products v WHERE v.wp_parent_id = p.wp_product_id),
+          0
+        )) as unit_margin,
         (SELECT COALESCE(SUM(qty), 0) FROM order_items WHERE product_id = p.wp_product_id) as total_quantity_sold,
         (SELECT COALESCE(SUM(line_total), 0) FROM order_items WHERE product_id = p.wp_product_id) as total_revenue,
         (SELECT COUNT(DISTINCT wp_order_id) FROM order_items WHERE product_id = p.wp_product_id) as orders_count
