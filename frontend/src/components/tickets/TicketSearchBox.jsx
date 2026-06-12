@@ -137,7 +137,7 @@ export default function TicketSearchBox() {
           onChange={e => { setQuery(e.target.value); setOpen(true); }}
           onFocus={() => setOpen(true)}
           onKeyDown={onKeyDown}
-          placeholder="Rechercher un ticket…"
+          placeholder="N° ticket, nom, email, commande, suivi, texte…"
           style={{
             flex: 1, minWidth: 0, border: 'none', outline: 'none',
             fontSize: 13, fontFamily: 'Lato, sans-serif', color: C.grisTF,

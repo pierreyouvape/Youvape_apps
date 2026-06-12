@@ -377,7 +377,7 @@ function BulkMergeModal({ sources, onClose, onDone }) {
         <input
           value={query}
           onChange={e => setQuery(e.target.value)}
-          placeholder="ID, nom, email ou sujet…"
+          placeholder="N° ticket, nom, email, commande, suivi, texte…"
           style={{ width: '100%', boxSizing: 'border-box', padding: '9px 12px', border: `1px solid ${C.grisCL}`, borderRadius: 8, fontSize: 13, fontFamily: 'Lato, sans-serif', marginBottom: 8, outline: 'none' }}
         />
         {searchResults.filter(t => !sourceIds.has(t.id)).map(t => <Pick key={t.id} t={t} />)}
