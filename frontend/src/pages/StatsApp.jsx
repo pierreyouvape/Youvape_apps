@@ -9,6 +9,7 @@ import CategoriesStatsTab from '../components/stats/CategoriesStatsTab';
 import OrdersStatsTab from '../components/stats/OrdersStatsTab';
 import AnalysisTab from '../components/stats/AnalysisTab';
 import { LinkBox } from '../utils/navHelpers';
+import AppShell from '../components/AppShell';
 
 const StatsApp = () => {
   const { logout } = useContext(AuthContext);
@@ -60,7 +61,8 @@ const StatsApp = () => {
   });
 
   return (
-    <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
+    <AppShell currentPath="/stats">
+    <main className="main-scroll" style={{ flex: 1, minWidth: 0, overflowY: 'auto', height: '100vh', display: 'flex', flexDirection: 'column' }}>
       {/* Header */}
       <div style={{ backgroundColor: '#ff6b6b', color: 'white', padding: '15px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
@@ -111,7 +113,8 @@ const StatsApp = () => {
       }}>
         <p style={{ margin: 0 }}>© 2024 YouVape - Tous droits réservés</p>
       </div>
-    </div>
+    </main>
+    </AppShell>
   );
 };
 

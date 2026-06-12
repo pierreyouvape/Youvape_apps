@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { AuthContext } from '../context/AuthContext';
 import { LinkBox } from '../utils/navHelpers';
+import AppShell from '../components/AppShell';
 
 const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:3000/api/auth').replace('/auth', '');
 
@@ -132,7 +133,8 @@ const CreateOrderPage = () => {
   const totalQty = orderItems.reduce((sum, item) => sum + item.qty_ordered, 0);
 
   return (
-    <div style={{ minHeight: '100vh', backgroundColor: '#f5f5f5' }}>
+    <AppShell currentPath="/purchases">
+    <main className="main-scroll" style={{ flex: 1, minWidth: 0, overflowY: 'auto', height: '100vh', backgroundColor: '#f5f5f5' }}>
       {/* Header */}
       <div style={{ backgroundColor: '#f59e0b', color: 'white', padding: '15px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
@@ -340,7 +342,8 @@ const CreateOrderPage = () => {
           </div>
         </div>
       </div>
-    </div>
+    </main>
+    </AppShell>
   );
 };
 

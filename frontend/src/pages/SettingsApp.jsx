@@ -4,6 +4,7 @@ import { AuthContext } from '../context/AuthContext';
 import axios from 'axios';
 import './SettingsApp.css';
 import { LinkBox } from '../utils/navHelpers';
+import AppShell from '../components/AppShell';
 
 const SettingsApp = () => {
   const { token, isAdmin, isSuperAdmin } = useContext(AuthContext);
@@ -224,7 +225,8 @@ const SettingsApp = () => {
   };
 
   return (
-    <div className="settings-app">
+    <AppShell currentPath="/settings">
+    <main className="main-scroll settings-app" style={{ flex: 1, minWidth: 0, overflowY: 'auto', height: '100vh' }}>
       <header className="settings-header-bar">
         <LinkBox to="/home" display="inline-block" className="settings-back-button">
           ← Accueil
@@ -428,7 +430,8 @@ const SettingsApp = () => {
           </div>
         )}
       </div>
-    </div>
+    </main>
+    </AppShell>
   );
 };
 

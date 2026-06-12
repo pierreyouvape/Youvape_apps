@@ -5,6 +5,7 @@ import { AuthContext } from '../context/AuthContext';
 import axios from 'axios';
 import { formatPrice } from '../utils/formatNumber';
 import { LinkBox } from '../utils/navHelpers';
+import AppShell from '../components/AppShell';
 
 const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:3000/api').replace('/auth', '');
 
@@ -1133,7 +1134,8 @@ const ShippingSettings = () => {
   const currentSubTabs = activeParentTab === 'transporteur' ? transporteurSubTabs : paiementSubTabs;
 
   return (
-    <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
+    <AppShell currentPath="/stats">
+    <main className="main-scroll" style={{ flex: 1, minWidth: 0, overflowY: 'auto', height: '100vh', display: 'flex', flexDirection: 'column' }}>
       {/* Header */}
       <div style={{ backgroundColor: '#135E84', padding: '20px 0', display: 'flex', justifyContent: 'center', alignItems: 'center', position: 'relative' }}>
         <CloudLogo />
@@ -1202,7 +1204,8 @@ const ShippingSettings = () => {
       <div style={{ backgroundColor: '#135E84', padding: '20px 0', textAlign: 'center', color: 'white' }}>
         <p style={{ margin: 0 }}>© 2024 YouVape - Tous droits réservés</p>
       </div>
-    </div>
+    </main>
+    </AppShell>
   );
 };
 

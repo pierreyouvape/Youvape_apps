@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { AuthContext } from '../context/AuthContext';
 import { LinkBox } from '../utils/navHelpers';
 import axios from 'axios';
+import AppShell from '../components/AppShell';
 
 const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:3000/api/auth').replace('/auth', '');
 
@@ -482,7 +483,8 @@ const PackingApp = () => {
   };
 
   return (
-    <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', backgroundColor: '#f5f5f5' }}>
+    <AppShell currentPath="/packing">
+    <main className="main-scroll" style={{ flex: 1, minWidth: 0, overflowY: 'auto', height: '100vh', display: 'flex', flexDirection: 'column', backgroundColor: '#f5f5f5' }}>
       {/* Header */}
       <div style={{
         backgroundColor: '#6366f1',
@@ -1308,7 +1310,8 @@ const PackingApp = () => {
           <img src={hoveredImage.url} alt="" style={{ width: '300px', height: '300px', objectFit: 'cover', display: 'block' }} />
         </div>
       )}
-    </div>
+    </main>
+    </AppShell>
   );
 };
 

@@ -4,6 +4,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import CopyButton from '../components/CopyButton';
 import { LinkBox } from '../utils/navHelpers';
+import AppShell from '../components/AppShell';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
 
@@ -52,32 +53,37 @@ const SubCategoryDetail = () => {
 
   if (loading) {
     return (
-      <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', backgroundColor: '#f5f5f5' }}>
+      <AppShell currentPath="/catalog">
+      <main className="main-scroll" style={{ flex: 1, minWidth: 0, overflowY: 'auto', height: '100vh', display: 'flex', flexDirection: 'column', backgroundColor: '#f5f5f5' }}>
         <div style={{ backgroundColor: '#135E84', padding: '20px 0', display: 'flex', justifyContent: 'center', alignItems: 'center', position: 'relative', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
           <CloudLogo />
         </div>
         <div style={{ flex: 1, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
           <div style={{ fontSize: '48px', marginBottom: '20px' }}>Chargement...</div>
         </div>
-      </div>
+      </main>
+      </AppShell>
     );
   }
 
   if (!subCategory) {
     return (
-      <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', backgroundColor: '#f5f5f5' }}>
+      <AppShell currentPath="/catalog">
+      <main className="main-scroll" style={{ flex: 1, minWidth: 0, overflowY: 'auto', height: '100vh', display: 'flex', flexDirection: 'column', backgroundColor: '#f5f5f5' }}>
         <div style={{ backgroundColor: '#135E84', padding: '20px 0', display: 'flex', justifyContent: 'center', alignItems: 'center', position: 'relative', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
           <CloudLogo />
         </div>
         <div style={{ flex: 1, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
           <div style={{ fontSize: '18px', color: '#666' }}>Sous-categorie non trouvee</div>
         </div>
-      </div>
+      </main>
+      </AppShell>
     );
   }
 
   return (
-    <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', backgroundColor: '#f5f5f5' }}>
+    <AppShell currentPath="/catalog">
+    <main className="main-scroll" style={{ flex: 1, minWidth: 0, overflowY: 'auto', height: '100vh', display: 'flex', flexDirection: 'column', backgroundColor: '#f5f5f5' }}>
       {/* Header */}
       <div style={{ backgroundColor: '#135E84', padding: '20px 0', display: 'flex', justifyContent: 'center', alignItems: 'center', position: 'relative', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
         <CloudLogo />
@@ -245,7 +251,8 @@ const SubCategoryDetail = () => {
       <div style={{ backgroundColor: '#135E84', padding: '20px 0', textAlign: 'center', color: 'white', marginTop: '50px' }}>
         <p style={{ margin: 0 }}>2024 YouVape - Tous droits reserves</p>
       </div>
-    </div>
+    </main>
+    </AppShell>
   );
 };
 

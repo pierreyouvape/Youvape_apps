@@ -2,6 +2,7 @@ import { useState, useEffect, useContext } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AuthContext } from '../context/AuthContext';
 import axios from 'axios';
+import AppShell from '../components/AppShell';
 
 const ReviewsApp = () => {
   const { token, logout } = useContext(AuthContext);
@@ -323,7 +324,8 @@ const ReviewsApp = () => {
   });
 
   return (
-    <div style={{ minHeight: '100vh', backgroundColor: '#f5f5f5' }}>
+    <AppShell currentPath="/reviews">
+    <main className="main-scroll" style={{ flex: 1, minWidth: 0, overflowY: 'auto', height: '100vh', backgroundColor: '#f5f5f5' }}>
       {/* Header */}
       <div style={{ backgroundColor: '#007bff', color: 'white', padding: '15px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
@@ -854,7 +856,8 @@ const ReviewsApp = () => {
         </div>
       )}
       </div>
-    </div>
+    </main>
+    </AppShell>
   );
 };
 

@@ -2,6 +2,7 @@ import { useState, useEffect, useContext } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AuthContext } from '../context/AuthContext';
 import axios from 'axios';
+import AppShell from '../components/AppShell';
 
 const EmailApp = () => {
   const { token, logout } = useContext(AuthContext);
@@ -619,7 +620,8 @@ const EmailApp = () => {
   );
 
   return (
-    <div style={{ minHeight: '100vh', backgroundColor: '#f5f5f5' }}>
+    <AppShell currentPath="/emails">
+    <main className="main-scroll" style={{ flex: 1, minWidth: 0, overflowY: 'auto', height: '100vh', backgroundColor: '#f5f5f5' }}>
       {/* Header */}
       <div style={{ backgroundColor: '#28a745', color: 'white', padding: '15px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
@@ -653,7 +655,8 @@ const EmailApp = () => {
       {activeTab === 'history' && renderHistoryTab()}
       {activeTab === 'logs' && renderLogsTab()}
       </div>
-    </div>
+    </main>
+    </AppShell>
   );
 };
 
