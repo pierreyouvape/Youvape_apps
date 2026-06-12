@@ -209,6 +209,9 @@ class ProductStatsService {
         COALESCE(p.computed_cost, p.wc_cog_cost) as cost_price,
         p.stock,
         p.stock_status,
+        p.image_url,
+        p.track_stock,
+        p.exclude_from_reorder,
         COALESCE(SUM(foi.qty), 0)::int as net_sold,
         COALESCE(SUM(CASE
           WHEN foi.id IN (SELECT order_item_id FROM bundle_sub_items) THEN 0
@@ -222,7 +225,7 @@ class ProductStatsService {
       FROM products p
       LEFT JOIN filtered_order_items foi ON foi.variation_id = p.wp_product_id
       WHERE p.wp_product_id = ANY($1)
-      GROUP BY p.wp_product_id, p.post_title, p.sku, p.price, p.wc_cog_cost, p.computed_cost, p.stock, p.stock_status
+      GROUP BY p.wp_product_id, p.post_title, p.sku, p.price, p.wc_cog_cost, p.computed_cost, p.stock, p.stock_status, p.image_url, p.track_stock, p.exclude_from_reorder
       ORDER BY p.sku ASC
     `;
 

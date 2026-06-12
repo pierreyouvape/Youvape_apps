@@ -707,10 +707,89 @@ const ProductDetail = () => {
               </div>
             )}
 
+            {/* Variants Table */}
+            {variantsStats.length > 0 && (
+              <div style={cardStyle}>
+                <h2 style={{ marginTop: 0, color: '#333', fontSize: '18px' }}>Variations ({variantsStats.length})</h2>
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '1300px' }}>
+                    <thead>
+                      <tr style={{ backgroundColor: '#f8f9fa', borderBottom: '2px solid #e0e0e0' }}>
+                        <th style={{ textAlign: 'left', padding: '12px', fontSize: '14px', fontWeight: '600' }}>Variante</th>
+                        <th style={{ textAlign: 'center', padding: '12px', fontSize: '14px', fontWeight: '600' }}>Catalogue / Reassort</th>
+                        <th style={{ textAlign: 'center', padding: '12px', fontSize: '14px', fontWeight: '600' }}>SKU</th>
+                        <th style={{ textAlign: 'right', padding: '12px', fontSize: '14px', fontWeight: '600' }}>Prix TTC</th>
+                        <th style={{ textAlign: 'center', padding: '12px', fontSize: '14px', fontWeight: '600' }}>Stock</th>
+                        <th style={{ textAlign: 'center', padding: '12px', fontSize: '14px', fontWeight: '600' }}>Qte vendue</th>
+                        <th style={{ textAlign: 'right', padding: '12px', fontSize: '14px', fontWeight: '600' }}>CA HT</th>
+                        <th style={{ textAlign: 'center', padding: '12px', fontSize: '14px', fontWeight: '600' }}>Commandes</th>
+                        <th style={{ textAlign: 'right', padding: '12px', fontSize: '14px', fontWeight: '600' }}>Profit HT</th>
+                        <th style={{ textAlign: 'right', padding: '12px', fontSize: '14px', fontWeight: '600' }}>Marge HT</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {variantsStats.map((variant) => (
+                        <tr key={variant.wp_product_id} style={{ borderBottom: '1px solid #f0f0f0' }}>
+                          <td style={{ padding: '12px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                              {variant.image_url && (
+                                <img
+                                  src={variant.image_url}
+                                  alt={variant.post_title}
+                                  style={{ width: '40px', height: '40px', objectFit: 'cover', borderRadius: '4px', border: '1px solid #e0e0e0', flexShrink: 0 }}
+                                />
+                              )}
+                              <span>{variant.post_title}</span>
+                            </div>
+                          </td>
+                          <td style={{ padding: '12px' }}>
+                            <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
+                              <Toggle
+                                label="Catalogue"
+                                isOn={!!variant.track_stock}
+                                title={variant.track_stock ? 'Visible dans le catalogue (cliquer pour masquer)' : 'Masque du catalogue (cliquer pour reactiver)'}
+                                onClick={async (e) => {
+                                  e.stopPropagation();
+                                  try {
+                                    const res = await axios.patch(`${API_URL}/products/${variant.wp_product_id}/track-stock`, {}, { headers });
+                                    setVariantsStats(prev => prev.map(v => v.wp_product_id === variant.wp_product_id ? { ...v, track_stock: res.data.data.track_stock } : v));
+                                  } catch (err) {}
+                                }}
+                              />
+                              <Toggle
+                                label="Reassort"
+                                isOn={!variant.exclude_from_reorder}
+                                title={variant.exclude_from_reorder ? 'Exclu du reassort (cliquer pour inclure)' : 'Propose au reassort (cliquer pour exclure)'}
+                                onClick={async (e) => {
+                                  e.stopPropagation();
+                                  try {
+                                    const res = await axios.patch(`${API_URL}/products/${variant.wp_product_id}/exclude-reorder`);
+                                    setVariantsStats(prev => prev.map(v => v.wp_product_id === variant.wp_product_id ? { ...v, exclude_from_reorder: res.data.data.exclude_from_reorder } : v));
+                                  } catch (err) {}
+                                }}
+                              />
+                            </div>
+                          </td>
+                          <td style={{ textAlign: 'center', padding: '12px', fontSize: '13px', color: '#666' }}>{variant.sku}{variant.sku && <CopyButton text={variant.sku} size={12} />}</td>
+                          <td style={{ textAlign: 'right', padding: '12px', fontWeight: '600' }}>{formatCurrency(variant.price)}</td>
+                          <td style={{ textAlign: 'center', padding: '12px', fontWeight: '600' }}>{formatNumber(variant.stock || 0)}</td>
+                          <td style={{ textAlign: 'center', padding: '12px', fontWeight: '600' }}>{formatNumber(variant.net_sold || 0)}</td>
+                          <td style={{ textAlign: 'right', padding: '12px', fontWeight: '600' }}>{formatCurrency(variant.net_revenue || 0)}</td>
+                          <td style={{ textAlign: 'center', padding: '12px', fontWeight: '600' }}>{formatNumber(variant.net_orders || 0)}</td>
+                          <td style={{ textAlign: 'right', padding: '12px', fontWeight: '600' }}>{formatCurrency(variant.profit || 0)}</td>
+                          <td style={{ textAlign: 'right', padding: '12px', fontWeight: '600' }}>{parseFloat(variant.margin_percent || 0).toFixed(1)}%</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
             {/* Sales Evolution Chart */}
             <div style={cardStyle}>
               <h2 style={{ margin: '0 0 20px 0', color: '#333', fontSize: '18px' }}>Evolution des ventes</h2>
-              <div style={{ display: 'grid', gridTemplateColumns: variantsPeriodStats.length > 0 ? '420px 1fr' : '1fr', gap: '20px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: variantsPeriodStats.length > 0 ? '250px 1fr' : '1fr', gap: '20px' }}>
                 {variantsPeriodStats.length > 0 && (
                   <div style={{ borderRight: '1px solid #e0e0e0', paddingRight: '20px' }}>
                     <div style={{ fontSize: '13px', fontWeight: '600', color: '#666', marginBottom: '12px' }}>
@@ -730,34 +809,6 @@ const ProductDetail = () => {
                           <div style={{ fontWeight: '500', fontSize: '13px', marginBottom: '6px' }}>
                             {variant.post_title?.replace(product?.post_title + ' - ', '').replace(product?.post_title + ' – ', '') || variant.sku}
                           </div>
-                          <div style={{ display: 'flex', gap: '8px', marginBottom: '6px' }}>
-                            <Toggle
-                              label="Catalogue"
-                              isOn={!!variant.track_stock}
-                              selected={selectedVariantId === variant.wp_product_id}
-                              title={variant.track_stock ? 'Visible dans le catalogue (cliquer pour masquer)' : 'Masque du catalogue (cliquer pour reactiver)'}
-                              onClick={async (e) => {
-                                e.stopPropagation();
-                                try {
-                                  const res = await axios.patch(`${API_URL}/products/${variant.wp_product_id}/track-stock`, {}, { headers });
-                                  setVariantsPeriodStats(prev => prev.map(v => v.wp_product_id === variant.wp_product_id ? { ...v, track_stock: res.data.data.track_stock } : v));
-                                } catch (err) {}
-                              }}
-                            />
-                            <Toggle
-                              label="Reassort"
-                              isOn={!variant.exclude_from_reorder}
-                              selected={selectedVariantId === variant.wp_product_id}
-                              title={variant.exclude_from_reorder ? 'Exclu du reassort (cliquer pour inclure)' : 'Propose au reassort (cliquer pour exclure)'}
-                              onClick={async (e) => {
-                                e.stopPropagation();
-                                try {
-                                  const res = await axios.patch(`${API_URL}/products/${variant.wp_product_id}/exclude-reorder`);
-                                  setVariantsPeriodStats(prev => prev.map(v => v.wp_product_id === variant.wp_product_id ? { ...v, exclude_from_reorder: res.data.data.exclude_from_reorder } : v));
-                                } catch (err) {}
-                              }}
-                            />
-                          </div>
                           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', opacity: 0.8 }}>
                             <span>{variant.quantity_sold || 0} vendues</span>
                             <span style={{ color: selectedVariantId === variant.wp_product_id ? 'white' : '#111827' }}>Stock: {variant.stock || 0}</span>
@@ -776,45 +827,6 @@ const ProductDetail = () => {
                 </div>
               </div>
             </div>
-
-            {/* Variants Table */}
-            {variantsStats.length > 0 && (
-              <div style={cardStyle}>
-                <h2 style={{ marginTop: 0, color: '#333', fontSize: '18px' }}>Variations ({variantsStats.length})</h2>
-                <div style={{ overflowX: 'auto' }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '1200px' }}>
-                    <thead>
-                      <tr style={{ backgroundColor: '#f8f9fa', borderBottom: '2px solid #e0e0e0' }}>
-                        <th style={{ textAlign: 'left', padding: '12px', fontSize: '14px', fontWeight: '600' }}>Variante</th>
-                        <th style={{ textAlign: 'center', padding: '12px', fontSize: '14px', fontWeight: '600' }}>SKU</th>
-                        <th style={{ textAlign: 'right', padding: '12px', fontSize: '14px', fontWeight: '600' }}>Prix TTC</th>
-                        <th style={{ textAlign: 'center', padding: '12px', fontSize: '14px', fontWeight: '600' }}>Stock</th>
-                        <th style={{ textAlign: 'center', padding: '12px', fontSize: '14px', fontWeight: '600' }}>Qte vendue</th>
-                        <th style={{ textAlign: 'right', padding: '12px', fontSize: '14px', fontWeight: '600' }}>CA HT</th>
-                        <th style={{ textAlign: 'center', padding: '12px', fontSize: '14px', fontWeight: '600' }}>Commandes</th>
-                        <th style={{ textAlign: 'right', padding: '12px', fontSize: '14px', fontWeight: '600' }}>Profit HT</th>
-                        <th style={{ textAlign: 'right', padding: '12px', fontSize: '14px', fontWeight: '600' }}>Marge HT</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {variantsStats.map((variant) => (
-                        <tr key={variant.wp_product_id} style={{ borderBottom: '1px solid #f0f0f0' }}>
-                          <td style={{ padding: '12px' }}>{variant.post_title}</td>
-                          <td style={{ textAlign: 'center', padding: '12px', fontSize: '13px', color: '#666' }}>{variant.sku}{variant.sku && <CopyButton text={variant.sku} size={12} />}</td>
-                          <td style={{ textAlign: 'right', padding: '12px', fontWeight: '600' }}>{formatCurrency(variant.price)}</td>
-                          <td style={{ textAlign: 'center', padding: '12px', fontWeight: '600' }}>{formatNumber(variant.stock || 0)}</td>
-                          <td style={{ textAlign: 'center', padding: '12px', fontWeight: '600' }}>{formatNumber(variant.net_sold || 0)}</td>
-                          <td style={{ textAlign: 'right', padding: '12px', fontWeight: '600' }}>{formatCurrency(variant.net_revenue || 0)}</td>
-                          <td style={{ textAlign: 'center', padding: '12px', fontWeight: '600' }}>{formatNumber(variant.net_orders || 0)}</td>
-                          <td style={{ textAlign: 'right', padding: '12px', fontWeight: '600' }}>{formatCurrency(variant.profit || 0)}</td>
-                          <td style={{ textAlign: 'right', padding: '12px', fontWeight: '600' }}>{parseFloat(variant.margin_percent || 0).toFixed(1)}%</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
 
             {/* Sales by Day & Hour */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(500px, 1fr))', gap: '20px', marginBottom: '30px' }}>
