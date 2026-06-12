@@ -1,5 +1,5 @@
 import CloudLogo from '../components/CloudLogo';
-import { useState, useEffect, useContext, useMemo } from 'react';
+import { useState, useEffect, useContext, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AuthContext } from '../context/AuthContext';
 import axios from 'axios';
@@ -64,6 +64,18 @@ const CatalogApp = () => {
   // Préférences colonnes
   const [hiddenColumns, setHiddenColumns] = useState([]);
   const [compact, setCompact] = useState(false);
+  const controlsRef = useRef(null);
+  const [controlsHeight, setControlsHeight] = useState(0);
+
+  useEffect(() => {
+    const el = controlsRef.current;
+    if (!el) return;
+    const observer = new ResizeObserver(entries => {
+      setControlsHeight(entries[0].contentRect.height);
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
   const [showColumnPanel, setShowColumnPanel] = useState(false);
 
   // Onglet statut de stock (équivalent onglets ATUM Stock Central)
@@ -316,7 +328,7 @@ const CatalogApp = () => {
 
   const cellStyle = { padding: '10px 12px', fontSize: '13px' };
   const cellRight = { ...cellStyle, textAlign: 'right', fontFamily: 'monospace' };
-  const headerStyle = { padding: '10px 12px', textAlign: 'left', fontSize: '13px', fontWeight: '600' };
+  const headerStyle = { padding: '10px 12px', textAlign: 'left', fontSize: '13px', fontWeight: '600', position: 'sticky', top: controlsHeight, zIndex: 20, backgroundColor: '#f3f4f6', borderBottom: '2px solid #e5e7eb' };
   const headerRight = { ...headerStyle, textAlign: 'right' };
   const headerSortable = { ...headerRight, cursor: 'pointer', userSelect: 'none' };
 
@@ -359,6 +371,7 @@ const CatalogApp = () => {
 
       {/* Main Content */}
       <div style={compact ? { flex: 1, maxWidth: '1400px', margin: '30px auto', padding: '0 20px', width: '100%' } : { flex: 1, margin: '30px 0', padding: '0 60px', width: '100%' }}>
+        <div ref={controlsRef} style={{ position: 'sticky', top: 0, zIndex: 30, backgroundColor: '#f5f5f5', paddingTop: '1px' }}>
         <h1 style={{ color: '#059669', marginBottom: '20px' }}>Catalogue Produits</h1>
 
         {/* Onglets statut de stock */}
@@ -477,6 +490,7 @@ const CatalogApp = () => {
               </div>
             )}
           </div>
+        </div>
         </div>
 
         {/* Table */}
