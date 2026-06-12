@@ -50,7 +50,6 @@ const CATALOG_COLUMNS = [
   { key: 'stock',       label: 'Stock' },
   { key: 'incoming_qty',label: 'Arrivages' },
   { key: 'sales_30d',   label: 'Ventes 30j' },
-  { key: 'track_stock', label: 'Suivi stock' },
 ];
 
 const CatalogApp = () => {
@@ -307,24 +306,6 @@ const CatalogApp = () => {
     }
   };
 
-  // Toggle suivi de stock (équivalent ATUM Control Switch) sur un produit/déclinaison
-  const handleToggleTrackStock = async (wpProductId, e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    try {
-      const res = await axios.patch(`${API_URL}/products/${wpProductId}/track-stock`, {}, { headers });
-      if (res.data.success) {
-        // Pas de rechargement immédiat (trop long) : la ligne ne sort du filtre
-        // "Suivi de stock uniquement" qu'au prochain chargement manuel de la page.
-        const newVal = res.data.data.track_stock;
-        setParents(prev => prev.map(p => p.wp_product_id === wpProductId ? { ...p, track_stock: newVal } : p));
-        setVariations(prev => prev.map(v => v.wp_product_id === wpProductId ? { ...v, track_stock: newVal } : v));
-      }
-    } catch (err) {
-      console.error('Error toggling track_stock:', err);
-    }
-  };
-
   // Calcul marge %
   const calcMargin = (price, costPrice) => {
     const p = parseFloat(price);
@@ -517,7 +498,6 @@ const CatalogApp = () => {
                     {isVisible('stock') && <SortableHeader column="stock" label="Stock" />}
                     {isVisible('incoming_qty') && <SortableHeader column="incoming_qty" label="Arrivages" />}
                     {isVisible('sales_30d') && <SortableHeader column="sales_30d" label="Ventes 30j" />}
-                    {isVisible('track_stock') && <th style={headerRight}>Suivi stock</th>}
                   </tr>
                 </thead>
                 <tbody>
@@ -556,7 +536,6 @@ const CatalogApp = () => {
                           {isVisible('stock') && <td style={{ ...cellRight, fontWeight: 600 }}>{fmtInt(row.stock)}</td>}
                           {isVisible('incoming_qty') && <td style={{ ...cellRight, fontWeight: 600 }}>{fmtInt(row.incoming_qty)}</td>}
                           {isVisible('sales_30d') && <td style={{ ...cellRight, fontWeight: 600 }}>{fmtInt(row.sales_30d)}</td>}
-                          {isVisible('track_stock') && <td style={cellRight}></td>}
                         </tr>
                       );
                     }
@@ -598,15 +577,6 @@ const CatalogApp = () => {
                         {isVisible('stock') && <td style={{ ...cellRight, fontWeight: '600', ...numStyle(row.stock) }}>{fmtInt(row.stock)}</td>}
                         {isVisible('incoming_qty') && <td style={cellRight}>{fmtInt(row.incoming_qty)}</td>}
                         {isVisible('sales_30d') && <td style={{ ...cellRight, ...numStyle(row.sales_30d) }}>{fmtInt(row.sales_30d)}</td>}
-                        {isVisible('track_stock') && (
-                          <td style={cellRight} onClick={(e) => e.stopPropagation()}>
-                            <input
-                              type="checkbox"
-                              checked={row.track_stock}
-                              onChange={(e) => handleToggleTrackStock(row.wp_product_id, e)}
-                            />
-                          </td>
-                        )}
                       </LinkTr>
                     );
                   }); })()}
