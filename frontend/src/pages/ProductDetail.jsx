@@ -16,6 +16,29 @@ import { LinkBox } from '../utils/navHelpers';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
 
+// Petit toggle on/off avec libelle, utilise dans la liste des variations
+// pour basculer "Visible au catalogue" / "Propose au reassort".
+const Toggle = ({ label, isOn, onClick, title, selected }) => (
+  <div
+    onClick={onClick}
+    title={title}
+    style={{ display: 'flex', alignItems: 'center', gap: '5px', cursor: 'pointer', userSelect: 'none' }}
+  >
+    <div style={{
+      width: '26px', height: '14px', borderRadius: '7px', flexShrink: 0, position: 'relative',
+      backgroundColor: isOn ? '#28a745' : '#dc3545',
+      transition: 'background-color 0.2s',
+    }}>
+      <div style={{
+        width: '10px', height: '10px', borderRadius: '50%', backgroundColor: '#fff',
+        position: 'absolute', top: '2px', left: isOn ? '14px' : '2px',
+        transition: 'left 0.2s',
+      }} />
+    </div>
+    <span style={{ fontSize: '11px', whiteSpace: 'nowrap', color: selected ? 'white' : '#666' }}>{label}</span>
+  </div>
+);
+
 const ProductDetail = () => {
   const { token } = useContext(AuthContext);
   const navigate = useNavigate();
@@ -687,7 +710,7 @@ const ProductDetail = () => {
             {/* Sales Evolution Chart */}
             <div style={cardStyle}>
               <h2 style={{ margin: '0 0 20px 0', color: '#333', fontSize: '18px' }}>Evolution des ventes</h2>
-              <div style={{ display: 'grid', gridTemplateColumns: variantsPeriodStats.length > 0 ? '250px 1fr' : '1fr', gap: '20px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: variantsPeriodStats.length > 0 ? '420px 1fr' : '1fr', gap: '20px' }}>
                 {variantsPeriodStats.length > 0 && (
                   <div style={{ borderRight: '1px solid #e0e0e0', paddingRight: '20px' }}>
                     <div style={{ fontSize: '13px', fontWeight: '600', color: '#666', marginBottom: '12px' }}>
@@ -704,32 +727,36 @@ const ProductDetail = () => {
                           onMouseEnter={(e) => { if (selectedVariantId !== variant.wp_product_id) e.currentTarget.style.backgroundColor = '#f0f0f0'; }}
                           onMouseLeave={(e) => { if (selectedVariantId !== variant.wp_product_id) e.currentTarget.style.backgroundColor = 'transparent'; }}
                         >
-                          <div style={{ fontWeight: '500', fontSize: '13px', marginBottom: '4px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <span>{variant.post_title?.replace(product?.post_title + ' - ', '').replace(product?.post_title + ' – ', '') || variant.sku}</span>
-                            <span style={{ display: 'flex', alignItems: 'center', gap: '6px', marginLeft: '8px' }}>
-                              <span
-                                title={variant.track_stock ? 'Visible dans le catalogue (cliquer pour masquer)' : 'Masqué du catalogue (cliquer pour réactiver)'}
-                                onClick={async (e) => {
-                                  e.stopPropagation();
-                                  try {
-                                    const res = await axios.patch(`${API_URL}/products/${variant.wp_product_id}/track-stock`, {}, { headers });
-                                    setVariantsPeriodStats(prev => prev.map(v => v.wp_product_id === variant.wp_product_id ? { ...v, track_stock: res.data.data.track_stock } : v));
-                                  } catch (err) {}
-                                }}
-                                style={{ width: '10px', height: '10px', borderRadius: '2px', backgroundColor: variant.track_stock ? '#28a745' : '#dc3545', cursor: 'pointer', flexShrink: 0 }}
-                              />
-                              <span
-                                title={variant.exclude_from_reorder ? 'Exclu du reassort (cliquer pour inclure)' : 'Propose au reassort (cliquer pour exclure)'}
-                                onClick={async (e) => {
-                                  e.stopPropagation();
-                                  try {
-                                    const res = await axios.patch(`${API_URL}/products/${variant.wp_product_id}/exclude-reorder`);
-                                    setVariantsPeriodStats(prev => prev.map(v => v.wp_product_id === variant.wp_product_id ? { ...v, exclude_from_reorder: res.data.data.exclude_from_reorder } : v));
-                                  } catch (err) {}
-                                }}
-                                style={{ width: '10px', height: '10px', borderRadius: '50%', backgroundColor: variant.exclude_from_reorder ? '#dc3545' : '#28a745', cursor: 'pointer', flexShrink: 0 }}
-                              />
-                            </span>
+                          <div style={{ fontWeight: '500', fontSize: '13px', marginBottom: '6px' }}>
+                            {variant.post_title?.replace(product?.post_title + ' - ', '').replace(product?.post_title + ' – ', '') || variant.sku}
+                          </div>
+                          <div style={{ display: 'flex', gap: '8px', marginBottom: '6px' }}>
+                            <Toggle
+                              label="Catalogue"
+                              isOn={!!variant.track_stock}
+                              selected={selectedVariantId === variant.wp_product_id}
+                              title={variant.track_stock ? 'Visible dans le catalogue (cliquer pour masquer)' : 'Masque du catalogue (cliquer pour reactiver)'}
+                              onClick={async (e) => {
+                                e.stopPropagation();
+                                try {
+                                  const res = await axios.patch(`${API_URL}/products/${variant.wp_product_id}/track-stock`, {}, { headers });
+                                  setVariantsPeriodStats(prev => prev.map(v => v.wp_product_id === variant.wp_product_id ? { ...v, track_stock: res.data.data.track_stock } : v));
+                                } catch (err) {}
+                              }}
+                            />
+                            <Toggle
+                              label="Reassort"
+                              isOn={!variant.exclude_from_reorder}
+                              selected={selectedVariantId === variant.wp_product_id}
+                              title={variant.exclude_from_reorder ? 'Exclu du reassort (cliquer pour inclure)' : 'Propose au reassort (cliquer pour exclure)'}
+                              onClick={async (e) => {
+                                e.stopPropagation();
+                                try {
+                                  const res = await axios.patch(`${API_URL}/products/${variant.wp_product_id}/exclude-reorder`);
+                                  setVariantsPeriodStats(prev => prev.map(v => v.wp_product_id === variant.wp_product_id ? { ...v, exclude_from_reorder: res.data.data.exclude_from_reorder } : v));
+                                } catch (err) {}
+                              }}
+                            />
                           </div>
                           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', opacity: 0.8 }}>
                             <span>{variant.quantity_sold || 0} vendues</span>
