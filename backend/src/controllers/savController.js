@@ -366,14 +366,15 @@ const savController = {
         return;
       }
 
-      // Matching direct par ID (IDs app == IDs Zendesk). On suit la chaîne de
-      // fusion pour atterrir sur le ticket actif.
+      // Matching par zendesk_id UNIQUEMENT (jamais par id app) : un ticket créé
+      // dans l'app peut avoir un id qui coïncide par hasard avec un n° Zendesk.
+      // On suit la chaîne de fusion pour atterrir sur le ticket actif.
       const zid = parseInt(ticket_id, 10);
       const matchedTicket = Number.isInteger(zid)
-        ? await savModel.resolveActiveTicket(zid)
+        ? await savModel.resolveActiveByZendeskId(zid)
         : null;
-      if (matchedTicket && matchedTicket.id !== zid) {
-        console.log(`📨 [SAV Zendesk] Ticket #${zid} fusionné → réponse redirigée vers #${matchedTicket.id}`);
+      if (matchedTicket && matchedTicket.zendesk_id !== zid) {
+        console.log(`📨 [SAV Zendesk] Ticket Zendesk #${zid} fusionné → réponse redirigée vers #${matchedTicket.id}`);
       }
 
       // ─── Cas 1 : ticket trouvé → ajouter la réponse au fil existant ─────

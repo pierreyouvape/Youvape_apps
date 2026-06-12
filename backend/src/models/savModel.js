@@ -339,6 +339,20 @@ class SavModel {
   // Si le ticket trouvé a été fusionné (merged_into_id), on remonte vers la
   // cible, en boucle, jusqu'à tomber sur un ticket non fusionné. Garde-fou
   // anti-boucle (max 10 sauts) au cas où une chaîne incohérente existerait.
+  // Résout un ticket à partir d'un ID Zendesk (webhook inbound). On matche
+  // EXCLUSIVEMENT sur la colonne zendesk_id : un ticket créé dans l'app (sans
+  // zendesk_id) ne doit jamais être ciblé par une réponse Zendesk, même si son
+  // id app coïncide par hasard avec un numéro Zendesk. Puis on suit la chaîne
+  // de fusion comme resolveActiveTicket.
+  async resolveActiveByZendeskId(zendeskId) {
+    const r = await pool.query(
+      'SELECT id FROM sav_tickets WHERE zendesk_id = $1 ORDER BY id LIMIT 1',
+      [zendeskId]
+    );
+    if (r.rows.length === 0) return null;
+    return this.resolveActiveTicket(r.rows[0].id);
+  }
+
   async resolveActiveTicket(id) {
     let ticket = await this.findById(id);
     const seen = new Set();
