@@ -84,13 +84,17 @@ function TicketsAppInner() {
         overflow: 'hidden',
         height: '100vh',
       }}>
-        <ViewsSidebar
-          views={views}
-          activeView={activeView}
-          onViewChange={(id) => setActiveView(id)}
-          counts={counts}
-          onRefresh={handleRefresh}
-        />
+        {/* Bandeau des vues : pertinent uniquement sur l'onglet liste.
+            Masqué quand un ticket (ou un autre onglet) est ouvert. */}
+        {activeTab === 'list' && (
+          <ViewsSidebar
+            views={views}
+            activeView={activeView}
+            onViewChange={(id) => setActiveView(id)}
+            counts={counts}
+            onRefresh={handleRefresh}
+          />
+        )}
 
         {/* Zone principale : barre d'onglets en haut + contenu (liste OU détail) */}
         <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
