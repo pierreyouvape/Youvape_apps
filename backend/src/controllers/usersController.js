@@ -58,6 +58,7 @@ const usersController = {
             tickets:     { read: true, write: true },
             chronopost:  { read: true, write: true },
             colissimo:   { read: true, write: true },
+            customers:   { read: true, write: true },
           }
         });
       }

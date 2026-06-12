@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import AppShell from '../components/AppShell';
-import { Stats as StatsIcon } from '../components/AppIcons';
+import { Customers as CustomersIcon } from '../components/AppIcons';
 import { getCountryFlag, getCountryName } from '../utils/countries';
 
 const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:3000/api/auth').replace('/auth', '');
@@ -264,41 +264,6 @@ const CustomersApp = () => {
     URL.revokeObjectURL(url);
   };
 
-  /* Menu interne app Statistiques — section Clients active */
-  const statsSections = [
-    { key: 'reports', label: "Vue d'ensemble", path: '/stats/reports' },
-    { key: 'clients', label: 'Clients', path: '/customers' },
-    { key: 'products', label: 'Produits', path: '/stats/products' },
-    { key: 'orders', label: 'Commandes', path: '/stats/orders' },
-  ];
-  const appMenu = (
-    <div>
-      <div style={{
-        fontSize: 10, fontWeight: 800, letterSpacing: '0.12em',
-        color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase', padding: '4px 10px 10px',
-      }}>Statistiques</div>
-      <div style={{ padding: '0 6px', display: 'flex', flexDirection: 'column', gap: 2 }}>
-        {statsSections.map(s => {
-          const active = s.key === 'clients';
-          return (
-            <button key={s.key} onClick={() => navigate(s.path)} style={{
-              textAlign: 'left', border: 'none', display: 'block', width: '100%',
-              background: active ? 'rgba(255,255,255,0.10)' : 'transparent',
-              color: active ? C.blanc : 'rgba(255,255,255,0.72)',
-              borderRadius: 8, fontSize: 13, fontWeight: active ? 700 : 500, cursor: 'pointer',
-              transition: 'background 0.15s, color 0.15s', fontFamily: 'inherit',
-              borderLeft: active ? `3px solid ${C.orange}` : '3px solid transparent',
-              padding: active ? '8px 12px 8px 9px' : '8px 12px',
-            }}
-              onMouseEnter={e => { if (!active) { e.currentTarget.style.background = 'rgba(255,255,255,0.06)'; e.currentTarget.style.color = 'rgba(255,255,255,0.92)'; } }}
-              onMouseLeave={e => { if (!active) { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'rgba(255,255,255,0.72)'; } }}
-            >{s.label}</button>
-          );
-        })}
-      </div>
-    </div>
-  );
-
   const inputStyle = {
     background: C.blanc, color: C.grisTF, border: `1px solid ${C.grisCL}`, borderRadius: 8,
     padding: '9px 12px', fontSize: 13, fontFamily: 'inherit', outline: 'none', cursor: 'pointer',
@@ -308,7 +273,7 @@ const CustomersApp = () => {
   const visibleColCount = Object.values(visibleCols).filter(Boolean).length;
 
   return (
-    <AppShell currentPath="/stats" appMenu={appMenu}>
+    <AppShell currentPath="/customers">
       <style>{`
         .dt-row { transition: background 0.12s; }
         .dt-row:hover { background: #F8FBFD; }
@@ -329,15 +294,13 @@ const CustomersApp = () => {
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             <div style={{
               width: 30, height: 30, borderRadius: 8, flexShrink: 0,
-              background: `linear-gradient(155deg, #E85A5A, ${shade('#E85A5A', -0.2)})`,
+              background: `linear-gradient(155deg, #0EA5A5, ${shade('#0EA5A5', -0.2)})`,
               display: 'flex', alignItems: 'center', justifyContent: 'center',
-              boxShadow: '0 4px 12px rgba(232,90,90,0.35), 0 1px 0 rgba(255,255,255,0.35) inset',
+              boxShadow: '0 4px 12px rgba(14,165,165,0.35), 0 1px 0 rgba(255,255,255,0.35) inset',
             }}>
-              <StatsIcon size={18} color="#fff" />
+              <CustomersIcon size={18} color="#fff" />
             </div>
-            <div style={{ fontSize: 16, fontWeight: 800, color: C.grisTF, fontFamily: "'Tilt Warp', cursive" }}>Statistiques</div>
-            <span style={{ color: C.grisCL }}>/</span>
-            <span style={{ fontSize: 13, color: C.grisTF, fontWeight: 700 }}>Clients</span>
+            <div style={{ fontSize: 16, fontWeight: 800, color: C.grisTF, fontFamily: "'Tilt Warp', cursive" }}>Clients</div>
           </div>
         </header>
 

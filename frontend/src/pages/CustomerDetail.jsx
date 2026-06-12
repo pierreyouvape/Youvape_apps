@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import AppShell from '../components/AppShell';
-import { Stats as StatsIcon } from '../components/AppIcons';
+import { Customers as CustomersIcon } from '../components/AppIcons';
 import { getCountryLabel, getCountryFlag, getCountryName } from '../utils/countries';
 import { formatDate } from '../utils/dateUtils';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
@@ -162,23 +162,21 @@ const CustomerDetail = () => {
       <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
         <button onClick={() => navigate(-1)} style={{
           display: 'inline-flex', alignItems: 'center', gap: 7,
-          background: `linear-gradient(155deg, #E85A5A, ${shade('#E85A5A', -0.2)})`,
+          background: `linear-gradient(155deg, #0EA5A5, ${shade('#0EA5A5', -0.2)})`,
           color: '#fff', border: 'none', borderRadius: 8, padding: '7px 13px',
           fontSize: 12.5, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit',
-          boxShadow: '0 2px 6px rgba(232,90,90,0.35), 0 1px 0 rgba(255,255,255,0.4) inset', flexShrink: 0,
+          boxShadow: '0 2px 6px rgba(14,165,165,0.35), 0 1px 0 rgba(255,255,255,0.4) inset', flexShrink: 0,
         }}>
           <svg width={13} height={13} viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 12H5" /><path d="M12 19l-7-7 7-7" /></svg>
           Retour
         </button>
         <div style={{
           width: 30, height: 30, borderRadius: 8, flexShrink: 0,
-          background: `linear-gradient(155deg, #E85A5A, ${shade('#E85A5A', -0.2)})`,
+          background: `linear-gradient(155deg, #0EA5A5, ${shade('#0EA5A5', -0.2)})`,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
-          boxShadow: '0 4px 12px rgba(232,90,90,0.35)',
-        }}><StatsIcon size={18} color="#fff" /></div>
-        <span style={{ fontSize: 15, fontWeight: 800, color: C.grisTF, fontFamily: "'Tilt Warp', cursive" }}>Statistiques</span>
-        <span style={{ color: C.grisCL }}>/</span>
-        <button onClick={() => navigate('/customers')} style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontSize: 13, color: C.grisF, fontWeight: 600, fontFamily: 'inherit' }}>Clients</button>
+          boxShadow: '0 4px 12px rgba(14,165,165,0.35)',
+        }}><CustomersIcon size={18} color="#fff" /></div>
+        <button onClick={() => navigate('/customers')} style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontSize: 15, color: C.grisTF, fontWeight: 800, fontFamily: "'Tilt Warp', cursive" }}>Clients</button>
         {trailing && (<><span style={{ color: C.grisCL }}>/</span><span style={{ fontSize: 13, color: C.grisTF, fontWeight: 700 }}>{trailing}</span></>)}
       </div>
     </header>
@@ -186,7 +184,7 @@ const CustomerDetail = () => {
 
   if (loading) {
     return (
-      <AppShell currentPath="/stats">
+      <AppShell currentPath="/customers">
         <main className="main-scroll" style={{ flex: 1, minWidth: 0, overflowY: 'auto', height: '100vh', background: C.grisTL, fontFamily: 'Lato, sans-serif' }}>
           <TopBar />
           <div style={{ padding: 48, textAlign: 'center', color: C.grisM }}>Chargement…</div>
@@ -197,7 +195,7 @@ const CustomerDetail = () => {
 
   if (!customer) {
     return (
-      <AppShell currentPath="/stats">
+      <AppShell currentPath="/customers">
         <main className="main-scroll" style={{ flex: 1, minWidth: 0, overflowY: 'auto', height: '100vh', background: C.grisTL, fontFamily: 'Lato, sans-serif' }}>
           <TopBar />
           <div style={{ padding: 48, textAlign: 'center', color: C.grisM }}>Client non trouvé.</div>
@@ -210,7 +208,7 @@ const CustomerDetail = () => {
   const billing = customer.billing_address;
 
   return (
-    <AppShell currentPath="/stats">
+    <AppShell currentPath="/customers">
       <style>{`
         .dt-row { transition: background 0.12s; }
         .dt-row:hover { background: #F8FBFD; }

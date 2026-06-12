@@ -40,6 +40,7 @@ const SettingsApp = () => {
     { key: 'financier',  label: 'Rapport',     accessOnly: true },
     { key: 'commandes',  label: 'Commandes',   accessOnly: true },
     { key: 'tickets',    label: 'SAV / Tickets', accessOnly: true },
+    { key: 'customers',  label: 'Clients',     accessOnly: true },
   ];
 
   const tabs = [
