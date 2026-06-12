@@ -500,7 +500,11 @@ export default function AppShell({ appMenu, currentPath, children }) {
   }, [prefs.appOrder]);
 
   const handleReorder = useCallback((newOrder) => updatePrefs({ appOrder: newOrder }), [updatePrefs]);
-  const { draggingKey, overKey, onPointerDown, onPointerEnter, onPointerUp, onPointerMove, onPointerCancel } = useDragSort(prefs.appOrder, handleReorder);
+  // On passe l'ordre AFFICHÉ complet (orderedApps), pas prefs.appOrder : les apps
+  // récemment ajoutées au registre absentes du localStorage/BDD ne sont pas dans
+  // prefs.appOrder, donc indexOf() y renvoyait -1 et leur drag était ignoré.
+  const displayedOrder = useMemo(() => orderedApps.map(a => a.key), [orderedApps]);
+  const { draggingKey, overKey, onPointerDown, onPointerEnter, onPointerUp, onPointerMove, onPointerCancel } = useDragSort(displayedOrder, handleReorder);
 
   const handleLogout = () => { logout(); navigate('/login'); };
 

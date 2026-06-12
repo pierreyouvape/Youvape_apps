@@ -257,10 +257,23 @@ class CustomerModel {
    * Récupère tous les clients pour l'onglet Stats avec pagination
    * Exclut les commandes failed, cancelled, refunded
    */
-  async getAllForStats(limit = 50, offset = 0, searchTerm = '', countryFilter = '') {
+  async getAllForStats(limit = 50, offset = 0, searchTerm = '', countryFilter = '', sortKey = 'spent', sortDir = 'desc') {
     let whereClause = '';
     let params = [];
     let paramIndex = 1;
+
+    // Tri serveur — whitelist stricte (anti-injection). Les clés correspondent
+    // aux colonnes/alias du SELECT ci-dessous.
+    const SORT_COLUMNS = {
+      id:      'id',
+      name:    "(LOWER(c.first_name) || ' ' || LOWER(c.last_name))",
+      email:   'LOWER(c.email)',
+      orders:  'order_count',
+      spent:   'total_spent',
+      country: 'country',
+    };
+    const sortCol = SORT_COLUMNS[sortKey] || SORT_COLUMNS.spent;
+    const sortDirection = sortDir === 'asc' ? 'ASC' : 'DESC';
 
     // Ajout du filtre de recherche
     if (searchTerm) {
@@ -318,7 +331,7 @@ class CustomerModel {
         ) as country
       FROM customers c
       ${whereClause}
-      ORDER BY total_spent DESC
+      ORDER BY ${sortCol} ${sortDirection} NULLS LAST
       LIMIT $${limitParam} OFFSET $${offsetParam}
     `;
 

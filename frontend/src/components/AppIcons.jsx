@@ -185,7 +185,17 @@ export const Chronopost = ({ size = 56 }) => (
   </svg>
 );
 
+export const Customers = (props) => (
+  <Base {...props}>
+    <circle cx={9} cy={8} r={3.2} />
+    <path d="M3.5 19 c0 -3.3 2.5 -5.5 5.5 -5.5 s5.5 2.2 5.5 5.5" />
+    <path d="M16 5.2 a3 3 0 0 1 0 5.8" />
+    <path d="M16.5 13.7 c2.6 0.3 4.5 2.4 4.5 5.3" />
+  </Base>
+);
+
 export const APPS = [
+  { key: 'customers', path: '/customers', label: 'Clients',                   Icon: Customers, color: '#0EA5A5' },
   { key: 'reviews',   path: '/reviews',   label: 'Avis Garantis',            Icon: Reviews,   color: '#0071EB' },
   { key: 'rewards',   path: '/rewards',   label: 'Récompense Avis',          Icon: Rewards,   color: '#8B5CF6' },
   { key: 'emails',    path: '/emails',    label: "Envoi d'Emails",           Icon: Emails,    color: '#22A06B' },

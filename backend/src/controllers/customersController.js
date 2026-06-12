@@ -163,8 +163,10 @@ exports.getStatsListing = async (req, res) => {
     const offset = parseInt(req.query.offset) || 0;
     const searchTerm = req.query.search || '';
     const countryFilter = req.query.country || '';
+    const sortKey = req.query.sortKey || 'spent';
+    const sortDir = req.query.sortDir === 'asc' ? 'asc' : 'desc';
 
-    const customers = await customerModel.getAllForStats(limit, offset, searchTerm, countryFilter);
+    const customers = await customerModel.getAllForStats(limit, offset, searchTerm, countryFilter, sortKey, sortDir);
     const total = await customerModel.countForStats(searchTerm, countryFilter);
 
     res.json({

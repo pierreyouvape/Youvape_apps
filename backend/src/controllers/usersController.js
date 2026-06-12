@@ -58,6 +58,7 @@ const usersController = {
             tickets:     { read: true, write: true },
             chronopost:  { read: true, write: true },
             colissimo:   { read: true, write: true },
+            customers:   { read: true, write: true },
           }
         });
       }
@@ -187,7 +188,7 @@ const usersController = {
     if (!home || typeof home !== 'object') {
       return res.status(400).json({ error: 'Corps invalide : { home: {...} } attendu' });
     }
-    const allowed = ['appOrder', 'tileSize', 'gridCols', 'theme', 'accentColor'];
+    const allowed = ['appOrder', 'tileSize', 'gridCols', 'theme', 'accentColor', 'sidebarCollapsed'];
     const sanitized = Object.fromEntries(
       Object.entries(home).filter(([k]) => allowed.includes(k))
     );
