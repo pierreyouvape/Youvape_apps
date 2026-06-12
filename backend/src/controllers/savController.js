@@ -10,6 +10,7 @@ const { tagDuplicates } = require('../services/duplicateDetector');
 const { mergeTickets } = require('../services/ticketMerge');
 const { sendAlert } = require('../services/alertService');
 const { syncTicketOrderTag } = require('../services/bmsOrderTagService');
+const { ticketEvents } = require('../services/ticketEvents');
 
 // Déduplication des inbounds : Mailgun peut appeler le webhook plusieurs fois
 // pour un même mail (actions Forward + Store-notify, ou retries). On garde en
@@ -77,6 +78,57 @@ async function sendAckEmail({ ticketId, email, customerName, subject }) {
 }
 
 const savController = {
+
+  // ─── Flux temps réel des changements de tickets (Server-Sent Events) ──────
+  // Le navigateur ouvre cette connexion et reçoit un événement `change` à
+  // chaque création/modification de ticket (via le bus ticketEvents). La liste
+  // se rafraîchit alors immédiatement, au lieu d'attendre le polling de secours.
+  stream: (req, res) => {
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no'); // pas de buffering nginx sur ce flux
+    res.flushHeaders?.();
+
+    const send = (event, data) => {
+      res.write(`event: ${event}\n`);
+      res.write(`data: ${JSON.stringify(data)}\n\n`);
+      res.flush?.();
+    };
+
+    // Coalescence : un seul PATCH/réponse peut générer plusieurs émissions
+    // rapprochées. On regroupe les `change` reçus dans une fenêtre de 300 ms en
+    // un unique event envoyé au client, pour ne pas le saturer de refetchs.
+    let pending = null;
+    let lastReason = null;
+    const onChange = ({ ticketId, reason }) => {
+      lastReason = reason;
+      if (pending) return;
+      pending = setTimeout(() => {
+        pending = null;
+        send('change', { reason: lastReason });
+      }, 300);
+    };
+    ticketEvents.on('change', onChange);
+
+    // Heartbeat anti-timeout (nginx/Cloudflare coupent les flux idle).
+    const heartbeat = setInterval(() => {
+      res.write(': ping\n\n');
+      res.flush?.();
+    }, 15000);
+
+    // Hello initial : confirme au client que le flux est ouvert.
+    send('hello', { ok: true });
+
+    // Nettoyage à la déconnexion : indispensable pour ne pas accumuler de
+    // listeners (fuite mémoire) à chaque onglet ouvert/fermé.
+    req.on('close', () => {
+      clearInterval(heartbeat);
+      if (pending) clearTimeout(pending);
+      ticketEvents.off('change', onChange);
+      res.end();
+    });
+  },
 
   // ─── Webhook Gravity Forms — création ticket ──────────────────────────────
   webhookGravityForms: async (req, res) => {

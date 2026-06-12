@@ -30,7 +30,9 @@ function TicketsAppInner() {
   }, [listRefreshTick, handleRefresh]);
 
   const autoRefresh = useAutoRefresh(handleRefresh, {
-    intervalMs: 60000,
+    // SSE pousse les changements en temps réel ; ce polling n'est qu'un filet
+    // de sécurité si le flux se coupe → 5 min suffisent.
+    intervalMs: 300000,
     paused: listBusy || activeTab !== 'list',
   });
 
