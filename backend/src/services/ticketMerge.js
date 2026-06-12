@@ -4,6 +4,7 @@ const crypto = require('crypto');
 const pool = require('../config/database');
 const { UPLOAD_ROOT } = require('../utils/savAttachments');
 const { tagDuplicates } = require('./duplicateDetector');
+const { emitChange } = require('./ticketEvents');
 
 // ─── Déplacement physique des PJ source → cible ───────────────────────────────
 // Les attachments d'un message stockent une url absolue
@@ -159,6 +160,10 @@ async function mergeTickets(sourceId, targetId, { agentName = 'SAV Youvape' } = 
   } finally {
     client.release();
   }
+
+  // Les deux tickets ont changé (cible enrichie, source fermée/fusionnée).
+  emitChange(targetId, 'merge');
+  emitChange(sourceId, 'merge');
 
   // Rafraîchir la détection de doublons sur la cible (hors transaction).
   // Le source étant désormais 'terminé', il ne ressortira plus comme doublon.

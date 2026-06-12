@@ -72,6 +72,9 @@ router.get('/attachments/:ticketId/:filename', (req, res) => {
   res.sendFile(resolved);
 });
 
+// ─── Flux temps réel des changements de tickets (SSE) ────────────────────────
+router.get('/stream', savController.stream);
+
 // ─── Tracking transporteur ────────────────────────────────────────────────────
 router.get('/tracking/:number', savController.getTracking);
 

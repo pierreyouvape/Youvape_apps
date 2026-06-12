@@ -16,6 +16,7 @@
 const pool = require('../config/database');
 const appConfigModel = require('./appConfigModel');
 const { resolveCustomerIdByEmail } = require('./customerResolver');
+const { emitChange } = require('../services/ticketEvents');
 
 const PAGE_SIZE = 100; // max Zendesk cursor pagination
 
@@ -463,6 +464,10 @@ async function importAll(cfg, onProgress, opts = {}) {
       if (onProgress) onProgress({ total, done, created, updated, errors, currentSubject: t.subject });
     }
   }, { limit });
+
+  // Import en masse : on n'émet pas par ticket (des milliers), mais un seul
+  // signal global en fin d'import pour que les listes ouvertes se rafraîchissent.
+  if (created > 0 || updated > 0) emitChange(null, 'zendesk-import');
 
   return { total, done, created, updated, errors, missingStatuses: [...missingStatuses] };
 }

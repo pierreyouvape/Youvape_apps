@@ -1,4 +1,5 @@
 const pool = require('../config/database');
+const { emitChange } = require('../services/ticketEvents');
 
 // ─── Statuts ──────────────────────────────────────────────────────────────────
 async function getValidStatuses() {
@@ -49,7 +50,9 @@ class SavModel {
        RETURNING *`,
       [order_id || null, customer_id || null, customer_name, customer_email, customer_phone || null, subject, description, source]
     );
-    return result.rows[0];
+    const ticket = result.rows[0];
+    if (ticket) emitChange(ticket.id, 'create');
+    return ticket;
   }
 
   // ─── Liste avec filtres, recherche et pagination ──────────────────────────
@@ -274,7 +277,9 @@ class SavModel {
        WHERE id = $2 RETURNING *`,
       [sav_status, id]
     );
-    return result.rows[0] || null;
+    const ticket = result.rows[0] || null;
+    if (ticket) emitChange(ticket.id, 'status');
+    return ticket;
   }
 
   // ─── Ajouter un message dans le JSONB messages ───────────────────────────
@@ -300,7 +305,9 @@ class SavModel {
        RETURNING *`,
       [JSON.stringify([message]), id]
     );
-    return result.rows[0] || null;
+    const ticket = result.rows[0] || null;
+    if (ticket) emitChange(ticket.id, 'message');
+    return ticket;
   }
 
   // ─── Mettre à jour les notes internes ────────────────────────────────────
@@ -309,7 +316,9 @@ class SavModel {
       `UPDATE sav_tickets SET notes = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2 RETURNING *`,
       [notes, id]
     );
-    return result.rows[0] || null;
+    const ticket = result.rows[0] || null;
+    if (ticket) emitChange(ticket.id, 'notes');
+    return ticket;
   }
 
   // ─── Mettre à jour des champs libres (PATCH) ─────────────────────────────
@@ -335,7 +344,9 @@ class SavModel {
       `UPDATE sav_tickets SET ${setClauses.join(', ')} WHERE id = $${idx} RETURNING *`,
       values
     );
-    return result.rows[0] || null;
+    const ticket = result.rows[0] || null;
+    if (ticket) emitChange(ticket.id, 'patch');
+    return ticket;
   }
 
   // ─── Trouver un ticket par ID pour matching email entrant ─────────────────
