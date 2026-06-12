@@ -315,14 +315,11 @@ const CatalogApp = () => {
     try {
       const res = await axios.patch(`${API_URL}/products/${wpProductId}/track-stock`, {}, { headers });
       if (res.data.success) {
-        if (trackStockOnly) {
-          // La ligne peut disparaitre du filtre courant
-          fetchProducts(pagination.offset, searchTerm);
-        } else {
-          const newVal = res.data.data.track_stock;
-          setParents(prev => prev.map(p => p.wp_product_id === wpProductId ? { ...p, track_stock: newVal } : p));
-          setVariations(prev => prev.map(v => v.wp_product_id === wpProductId ? { ...v, track_stock: newVal } : v));
-        }
+        // Pas de rechargement immédiat (trop long) : la ligne ne sort du filtre
+        // "Suivi de stock uniquement" qu'au prochain chargement manuel de la page.
+        const newVal = res.data.data.track_stock;
+        setParents(prev => prev.map(p => p.wp_product_id === wpProductId ? { ...p, track_stock: newVal } : p));
+        setVariations(prev => prev.map(v => v.wp_product_id === wpProductId ? { ...v, track_stock: newVal } : v));
       }
     } catch (err) {
       console.error('Error toggling track_stock:', err);
