@@ -69,6 +69,7 @@ class SavModel {
 
     if (search) {
       conditions.push(`(
+        t.id::text ILIKE $${idx} OR
         t.customer_name ILIKE $${idx} OR
         t.customer_email ILIKE $${idx} OR
         t.customer_phone ILIKE $${idx} OR
