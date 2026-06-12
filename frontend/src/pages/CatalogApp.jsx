@@ -66,9 +66,6 @@ const CatalogApp = () => {
   const [compact, setCompact] = useState(false);
   const [showColumnPanel, setShowColumnPanel] = useState(false);
 
-  // Filtre suivi de stock (équivalent ATUM Control Switch)
-  const [trackStockOnly, setTrackStockOnly] = useState(true);
-
   // Onglet statut de stock (équivalent onglets ATUM Stock Central)
   const [stockTab, setStockTab] = useState('all');
 
@@ -82,11 +79,11 @@ const CatalogApp = () => {
 
   const headers = { Authorization: `Bearer ${token}` };
 
-  const fetchProducts = async (offset = 0, search = searchTerm, trackOnly = trackStockOnly, tab = stockTab) => {
+  const fetchProducts = async (offset = 0, search = searchTerm, tab = stockTab) => {
     setLoading(true);
     try {
       const res = await axios.get(`${API_URL}/products/catalog`, {
-        params: { limit: 50, offset, search, trackStockOnly: trackOnly, stockTab: tab },
+        params: { limit: 50, offset, search, stockTab: tab },
         headers
       });
       if (res.data.success) {
@@ -103,7 +100,6 @@ const CatalogApp = () => {
 
   useEffect(() => {
     const load = async () => {
-      let track = true;
       let tab = 'all';
       try {
         const res = await axios.get(`${API_URL}/preferences/catalog`, {
@@ -112,35 +108,26 @@ const CatalogApp = () => {
         if (res.data.success) {
           setHiddenColumns(res.data.hiddenColumns || []);
           setCompact(res.data.compact || false);
-          track = res.data.trackStockOnly !== false;
-          setTrackStockOnly(track);
           tab = res.data.stockTab || 'all';
           setStockTab(tab);
         }
       } catch (err) {
         console.error('Erreur chargement préférences colonnes catalog:', err);
       }
-      fetchProducts(0, '', track, tab);
+      fetchProducts(0, '', tab);
     };
     if (token) load();
   }, [token]);
 
-  const toggleTrackStockOnly = () => {
-    const next = !trackStockOnly;
-    setTrackStockOnly(next);
-    savePreferences(hiddenColumns, compact, next, stockTab);
-    fetchProducts(0, searchTerm, next, stockTab);
-  };
-
   const handleStockTabChange = (tab) => {
     setStockTab(tab);
-    savePreferences(hiddenColumns, compact, trackStockOnly, tab);
-    fetchProducts(0, searchTerm, trackStockOnly, tab);
+    savePreferences(hiddenColumns, compact, tab);
+    fetchProducts(0, searchTerm, tab);
   };
 
-  const savePreferences = async (cols, cmp, trackOnly = trackStockOnly, tab = stockTab) => {
+  const savePreferences = async (cols, cmp, tab = stockTab) => {
     try {
-      await axios.put(`${API_URL}/preferences/catalog`, { hiddenColumns: cols, compact: cmp, trackStockOnly: trackOnly, stockTab: tab }, {
+      await axios.put(`${API_URL}/preferences/catalog`, { hiddenColumns: cols, compact: cmp, stockTab: tab }, {
         headers: { Authorization: `Bearer ${token}` }
       });
     } catch (err) {
@@ -244,7 +231,7 @@ const CatalogApp = () => {
     setExporting(format);
     try {
       const res = await axios.get(`${API_URL}/products/catalog/export`, {
-        params: { format, search: searchTerm, trackStockOnly, stockTab },
+        params: { format, search: searchTerm, stockTab },
         headers,
         responseType: 'blob'
       });
@@ -416,10 +403,6 @@ const CatalogApp = () => {
           <span style={{ marginLeft: '12px', color: '#6b7280', fontSize: '14px' }}>
             {pagination.total} produit{pagination.total > 1 ? 's' : ''}
           </span>
-          <label style={{ marginLeft: '16px', display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '13px', color: '#374151', cursor: 'pointer' }}>
-            <input type="checkbox" checked={trackStockOnly} onChange={toggleTrackStockOnly} />
-            Suivi de stock uniquement
-          </label>
           <label style={{
             marginLeft: '16px', padding: '8px 16px', backgroundColor: '#fff', color: '#374151',
             border: '1px solid #059669', borderRadius: '6px', fontSize: '13px', fontWeight: '600', cursor: 'pointer', display: 'inline-block'

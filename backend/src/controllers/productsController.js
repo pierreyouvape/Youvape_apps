@@ -308,11 +308,10 @@ exports.getCatalogList = async (req, res) => {
     const limit = parseInt(req.query.limit) || 50;
     const offset = parseInt(req.query.offset) || 0;
     const search = req.query.search || '';
-    const trackStockOnly = req.query.trackStockOnly !== 'false';
     const stockTab = req.query.stockTab || 'all';
 
-    const { parents, variations } = await productModel.getAllForCatalog(limit, offset, search, trackStockOnly, stockTab);
-    const total = await productModel.countForCatalog(search, trackStockOnly, stockTab);
+    const { parents, variations } = await productModel.getAllForCatalog(limit, offset, search, true, stockTab);
+    const total = await productModel.countForCatalog(search, true, stockTab);
 
     res.json({
       success: true,
@@ -333,10 +332,9 @@ exports.getCatalogExport = async (req, res) => {
   try {
     const search = req.query.search || '';
     const format = (req.query.format || 'csv').toLowerCase();
-    const trackStockOnly = req.query.trackStockOnly !== 'false';
     const stockTab = req.query.stockTab || 'all';
 
-    const { parents, variations } = await productModel.getAllForCatalog(99999, 0, search, trackStockOnly, stockTab);
+    const { parents, variations } = await productModel.getAllForCatalog(99999, 0, search, true, stockTab);
 
     const variationsByParent = new Map();
     for (const v of variations) {
