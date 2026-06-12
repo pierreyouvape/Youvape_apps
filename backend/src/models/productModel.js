@@ -652,7 +652,7 @@ class ProductModel {
           (p.product_type = 'simple' AND p.track_stock = true)
           OR (p.product_type = 'variable' AND EXISTS (
             SELECT 1 FROM products v
-            WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation' AND v.track_stock = true
+            WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation' AND v.track_stock = true AND v.post_status = 'publish'
           ))
         )
       `;
@@ -666,6 +666,7 @@ class ProductModel {
           OR (p.product_type = 'variable' AND EXISTS (
             SELECT 1 FROM products v
             WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation'
+              AND v.post_status = 'publish'
               ${trackStockOnly ? 'AND v.track_stock = true' : ''}
               AND ${stockCondVar}
           ))
@@ -741,7 +742,7 @@ class ProductModel {
           v.track_stock
         FROM products v
         LEFT JOIN products p_parent ON v.wp_parent_id = p_parent.wp_product_id
-        WHERE v.wp_parent_id = ANY($1) AND v.product_type = 'variation'
+        WHERE v.wp_parent_id = ANY($1) AND v.product_type = 'variation' AND v.post_status = 'publish'
           ${trackStockOnly ? 'AND v.track_stock = true' : ''}
           ${stockCondVar ? `AND ${stockCondVar}` : ''}
         ORDER BY v.post_title ASC
@@ -815,7 +816,7 @@ class ProductModel {
           (p.product_type = 'simple' AND p.track_stock = true)
           OR (p.product_type = 'variable' AND EXISTS (
             SELECT 1 FROM products v
-            WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation' AND v.track_stock = true
+            WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation' AND v.track_stock = true AND v.post_status = 'publish'
           ))
         )
       `;
@@ -829,6 +830,7 @@ class ProductModel {
           OR (p.product_type = 'variable' AND EXISTS (
             SELECT 1 FROM products v
             WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation'
+              AND v.post_status = 'publish'
               ${trackStockOnly ? 'AND v.track_stock = true' : ''}
               AND ${stockCondVar}
           ))

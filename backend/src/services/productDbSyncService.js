@@ -1,51 +1,126 @@
 /**
  * Product DB Sync Service
- * Resynchronise post_status / stock_status / stock / track_stock (ATUM)
- * depuis la base MySQL WordPress (wp_posts, wp_postmeta, atum_product_data)
- * vers la table Postgres `products`.
+ * Resynchronise post_status / stock_status / stock / manage_stock depuis
+ * l'API REST WooCommerce de production (www.youvape.fr) vers la table
+ * Postgres `products`.
  *
  * Les webhooks YouSync couvrent la plupart des changements en temps reel,
  * mais certaines operations (edition groupee WC, ATUM bulk edit) ne
  * declenchent pas toujours de webhook par produit. Ce job de rattrapage
  * tourne chaque nuit pour combler les ecarts residuels.
+ *
+ * NB: le switch ATUM "Suivi de stock" (atum_controlled) n'est pas expose
+ * par l'API REST WooCommerce et n'est donc pas resynchronise ici.
  */
 
-const mysql = require('mysql2/promise');
+const axios = require('axios');
 const pool = require('../config/database');
 
-const MYSQL_CONFIG = {
-  host: 'youvape-site-db-1',
-  port: 3306,
-  user: 'youvape-vps',
-  password: 'd79Ru8FznQdK9MQ2',
-  database: 'youvape-vps',
-  charset: 'utf8mb4',
+const PER_PAGE = 100;
+const REQUEST_DELAY_MS = 300;
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const getWcCredentials = async () => {
+  const result = await pool.query('SELECT consumer_key, consumer_secret, woocommerce_url FROM rewards_config LIMIT 1');
+  if (result.rows.length === 0) throw new Error('Credentials WC non trouvees dans rewards_config');
+  const row = result.rows[0];
+  const urlResult = await pool.query("SELECT config_value FROM app_config WHERE config_key = 'wc_sync_wp_url'");
+  const wcUrl = urlResult.rows[0]?.config_value || row.woocommerce_url;
+  return {
+    url: wcUrl.replace(/\/$/, ''),
+    consumerKey: row.consumer_key,
+    consumerSecret: row.consumer_secret,
+  };
 };
-const P = 'hJvjTIOu'; // prefixe des tables WordPress/WooCommerce
+
+const fetchAllProducts = async (creds) => {
+  const all = [];
+  let page = 1;
+  while (true) {
+    const res = await axios.get(`${creds.url}/wp-json/wc/v3/products`, {
+      params: {
+        consumer_key: creds.consumerKey,
+        consumer_secret: creds.consumerSecret,
+        per_page: PER_PAGE,
+        page,
+        status: 'any',
+        orderby: 'id',
+        order: 'asc',
+      },
+      timeout: 60000,
+    });
+    all.push(...res.data);
+    const totalPages = parseInt(res.headers['x-wp-totalpages']) || 1;
+    if (page >= totalPages) break;
+    page++;
+    await sleep(REQUEST_DELAY_MS);
+  }
+  return all;
+};
+
+const fetchVariations = async (creds, productId) => {
+  const all = [];
+  let page = 1;
+  while (true) {
+    const res = await axios.get(`${creds.url}/wp-json/wc/v3/products/${productId}/variations`, {
+      params: {
+        consumer_key: creds.consumerKey,
+        consumer_secret: creds.consumerSecret,
+        per_page: PER_PAGE,
+        page,
+        status: 'any',
+      },
+      timeout: 60000,
+    });
+    all.push(...res.data);
+    const totalPages = parseInt(res.headers['x-wp-totalpages']) || 1;
+    if (page >= totalPages) break;
+    page++;
+    await sleep(REQUEST_DELAY_MS);
+  }
+  return all;
+};
 
 const runProductDbSync = async () => {
   const startTime = Date.now();
-  const wc = await mysql.createConnection(MYSQL_CONFIG);
+  const creds = await getWcCredentials();
 
-  let rows;
-  try {
-    [rows] = await wc.query(`
-      SELECT p.ID as wp_product_id, p.post_status,
-        MAX(CASE WHEN pm.meta_key = '_stock_status' THEN pm.meta_value END) as stock_status,
-        MAX(CASE WHEN pm.meta_key = '_stock' THEN pm.meta_value END) as stock,
-        a.atum_controlled
-      FROM ${P}posts p
-      LEFT JOIN ${P}postmeta pm ON pm.post_id = p.ID AND pm.meta_key IN ('_stock_status', '_stock')
-      LEFT JOIN ${P}atum_product_data a ON a.product_id = p.ID
-      WHERE p.post_type IN ('product', 'product_variation')
-      GROUP BY p.ID, p.post_status, a.atum_controlled
-    `);
-  } finally {
-    await wc.end();
+  const products = await fetchAllProducts(creds);
+
+  const liveRows = [];
+  const errors = [];
+
+  for (const p of products) {
+    liveRows.push({
+      wp_product_id: p.id,
+      post_status: p.status,
+      stock_status: p.stock_status || 'outofstock',
+      stock: p.stock_quantity === null || p.stock_quantity === undefined ? 0 : Number(p.stock_quantity),
+      manage_stock: !!p.manage_stock,
+    });
+
+    if (p.type === 'variable') {
+      try {
+        const variations = await fetchVariations(creds, p.id);
+        for (const v of variations) {
+          liveRows.push({
+            wp_product_id: v.id,
+            post_status: v.status,
+            stock_status: v.stock_status || 'outofstock',
+            stock: v.stock_quantity === null || v.stock_quantity === undefined ? 0 : Number(v.stock_quantity),
+            manage_stock: !!v.manage_stock,
+          });
+        }
+      } catch (err) {
+        errors.push({ wp_product_id: p.id, error: err.message });
+      }
+      await sleep(REQUEST_DELAY_MS);
+    }
   }
 
   const client = await pool.connect();
-  let result = { statusUpdated: 0, variableUpdated: 0, trackStockUpdated: 0 };
+  let result = { statusUpdated: 0, variableUpdated: 0 };
   try {
     await client.query('BEGIN');
     await client.query(`
@@ -54,45 +129,41 @@ const runProductDbSync = async () => {
         live_post_status text,
         live_stock_status text,
         live_stock numeric,
-        atum_controlled boolean
+        live_manage_stock boolean
       ) ON COMMIT DROP
     `);
 
     const CHUNK = 500;
-    for (let i = 0; i < rows.length; i += CHUNK) {
-      const chunk = rows.slice(i, i + CHUNK);
+    for (let i = 0; i < liveRows.length; i += CHUNK) {
+      const chunk = liveRows.slice(i, i + CHUNK);
       const values = [];
       const params = [];
       chunk.forEach((r, idx) => {
         const base = idx * 5;
         values.push(`($${base + 1},$${base + 2},$${base + 3},$${base + 4},$${base + 5})`);
-        params.push(
-          r.wp_product_id,
-          r.post_status,
-          r.stock_status || 'outofstock',
-          r.stock === null ? 0 : Number(r.stock),
-          r.atum_controlled === null ? null : r.atum_controlled === 1
-        );
+        params.push(r.wp_product_id, r.post_status, r.stock_status, r.stock, r.manage_stock);
       });
       await client.query(
-        `INSERT INTO live_wc_products (wp_product_id, live_post_status, live_stock_status, live_stock, atum_controlled) VALUES ${values.join(',')}`,
+        `INSERT INTO live_wc_products (wp_product_id, live_post_status, live_stock_status, live_stock, live_manage_stock) VALUES ${values.join(',')}`,
         params
       );
     }
 
-    // 1) post_status / stock_status / stock pour simples et variations
+    // 1) post_status / stock_status / stock / manage_stock pour simples, variations et woosb
     const r1 = await client.query(`
       UPDATE products p
       SET post_status = l.live_post_status,
           stock_status = l.live_stock_status,
           stock = l.live_stock,
+          manage_stock = l.live_manage_stock,
           updated_at = NOW()
       FROM live_wc_products l
       WHERE l.wp_product_id = p.wp_product_id
-        AND p.product_type IN ('simple', 'variation')
+        AND p.product_type IN ('simple', 'variation', 'woosb')
         AND (p.post_status IS DISTINCT FROM l.live_post_status
              OR p.stock_status IS DISTINCT FROM l.live_stock_status
-             OR p.stock IS DISTINCT FROM l.live_stock)
+             OR p.stock IS DISTINCT FROM l.live_stock
+             OR p.manage_stock IS DISTINCT FROM l.live_manage_stock)
     `);
 
     // 2) post_status pour les parents variable
@@ -105,20 +176,9 @@ const runProductDbSync = async () => {
         AND p.post_status IS DISTINCT FROM l.live_post_status
     `);
 
-    // 3) track_stock depuis le switch ATUM "Suivi de stock" (simples, variations, woosb)
-    const r3 = await client.query(`
-      UPDATE products p
-      SET track_stock = l.atum_controlled, updated_at = NOW()
-      FROM live_wc_products l
-      WHERE l.wp_product_id = p.wp_product_id
-        AND p.product_type IN ('simple', 'variation', 'woosb')
-        AND l.atum_controlled IS NOT NULL
-        AND p.track_stock IS DISTINCT FROM l.atum_controlled
-    `);
-
     await client.query('COMMIT');
 
-    result = { statusUpdated: r1.rowCount, variableUpdated: r2.rowCount, trackStockUpdated: r3.rowCount };
+    result = { statusUpdated: r1.rowCount, variableUpdated: r2.rowCount };
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});
     throw err;
@@ -127,7 +187,7 @@ const runProductDbSync = async () => {
   }
 
   const elapsed = Date.now() - startTime;
-  return { ...result, totalRows: rows.length, elapsed };
+  return { ...result, totalRows: liveRows.length, errors, elapsed };
 };
 
 module.exports = { runProductDbSync };

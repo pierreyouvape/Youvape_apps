@@ -422,7 +422,14 @@ let productDbSyncCronJob = null;
 const runProductDbSyncJob = async () => {
   try {
     const result = await runProductDbSync();
-    console.log(`[ProductDbSync] ${result.totalRows} produits verifies, ${result.statusUpdated} statuts/stocks, ${result.variableUpdated} parents variables, ${result.trackStockUpdated} suivi de stock, en ${result.elapsed}ms`);
+    console.log(`[ProductDbSync] ${result.totalRows} produits verifies, ${result.statusUpdated} statuts/stocks mis a jour, ${result.variableUpdated} parents variables, ${result.errors.length} erreurs, en ${result.elapsed}ms`);
+    if (result.errors.length > 0) {
+      sendAlert(
+        `Cron Product DB Sync: ${result.errors.length} erreur(s)`,
+        `La resynchronisation nocturne produits a rencontre des erreurs sur certains produits:\n\n` +
+        result.errors.map(e => `- wp_product_id ${e.wp_product_id}: ${e.error}`).join('\n')
+      );
+    }
   } catch (error) {
     console.error('Erreur cron Product DB Sync:', error.message);
     sendAlert(
