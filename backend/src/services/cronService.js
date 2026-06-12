@@ -413,6 +413,37 @@ const setupSavAutomationsCron = () => {
   console.log('Cron SAV Automations configure: toutes les heures (24/7, Europe/Paris)');
 };
 
+// ==================== PRODUCT DB SYNC (WC/ATUM) ====================
+
+const { runProductDbSync } = require('./productDbSyncService');
+
+let productDbSyncCronJob = null;
+
+const runProductDbSyncJob = async () => {
+  try {
+    const result = await runProductDbSync();
+    console.log(`[ProductDbSync] ${result.totalRows} produits verifies, ${result.statusUpdated} statuts/stocks, ${result.variableUpdated} parents variables, ${result.trackStockUpdated} suivi de stock, en ${result.elapsed}ms`);
+  } catch (error) {
+    console.error('Erreur cron Product DB Sync:', error.message);
+    sendAlert(
+      `Cron Product DB Sync: echec`,
+      `La resynchronisation nocturne produits (statut/stock/suivi ATUM) a echoue.\n\nErreur: ${error.message}`
+    );
+  }
+};
+
+const setupProductDbSyncCron = () => {
+  if (productDbSyncCronJob) {
+    productDbSyncCronJob.stop();
+    productDbSyncCronJob = null;
+  }
+  // Tous les jours a 3h du matin
+  productDbSyncCronJob = cron.schedule('0 3 * * *', runProductDbSyncJob, {
+    timezone: 'Europe/Paris'
+  });
+  console.log('Cron Product DB Sync configure: tous les jours a 3h (Europe/Paris)');
+};
+
 module.exports = {
   setupCron,
   restartCron,
@@ -422,4 +453,6 @@ module.exports = {
   setupBmsBarcodeCron,
   setupStockResyncCron,
   setupSavAutomationsCron,
+  setupProductDbSyncCron,
+  runProductDbSyncJob,
 };
