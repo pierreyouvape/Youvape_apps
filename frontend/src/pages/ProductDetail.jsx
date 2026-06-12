@@ -620,48 +620,33 @@ const ProductDetail = () => {
               </div>
             )}
           </div>
-          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
             {product.product_type !== 'variable' && (
-              <button
+              <Toggle
+                label="Catalogue"
+                isOn={!!product.track_stock}
+                title={product.track_stock ? 'Visible dans le catalogue (cliquer pour masquer)' : 'Masque du catalogue (cliquer pour reactiver)'}
                 onClick={async () => {
                   try {
                     const res = await axios.patch(`${API_URL}/products/${id}/track-stock`, {}, { headers });
-                    const newVal = res.data.data.track_stock;
-                    setProduct(prev => ({ ...prev, track_stock: newVal }));
+                    setProduct(prev => ({ ...prev, track_stock: res.data.data.track_stock }));
                   } catch (err) {}
                 }}
-                style={{
-                  padding: '8px 16px', border: '1px solid',
-                  borderColor: product.track_stock ? '#28a745' : '#dc3545',
-                  backgroundColor: product.track_stock ? '#f0fff4' : '#fff5f5',
-                  color: product.track_stock ? '#28a745' : '#dc3545',
-                  borderRadius: '6px', cursor: 'pointer', fontSize: '13px', fontWeight: '600', whiteSpace: 'nowrap'
-                }}
-              >
-                {product.track_stock ? 'Visible dans le catalogue' : 'Masqué du catalogue'}
-              </button>
+              />
             )}
-            <button
-              onClick={async () => {
-                try {
-                  const res = await axios.patch(`${API_URL}/products/${id}/exclude-reorder`);
-                  const newVal = res.data.data.exclude_from_reorder;
-                  setProduct(prev => ({ ...prev, exclude_from_reorder: newVal }));
-                  if (res.data.data.product_type === 'variable') {
-                    setVariantsPeriodStats(prev => prev.map(v => ({ ...v, exclude_from_reorder: newVal })));
-                  }
-                } catch (err) {}
-              }}
-              style={{
-                padding: '8px 16px', border: '1px solid',
-                borderColor: product.exclude_from_reorder ? '#dc3545' : '#28a745',
-                backgroundColor: product.exclude_from_reorder ? '#fff5f5' : '#f0fff4',
-                color: product.exclude_from_reorder ? '#dc3545' : '#28a745',
-                borderRadius: '6px', cursor: 'pointer', fontSize: '13px', fontWeight: '600', whiteSpace: 'nowrap'
-              }}
-            >
-              {product.exclude_from_reorder ? 'Exclu du reassort' : 'Propose au reassort'}
-            </button>
+            {product.product_type !== 'variable' && (
+              <Toggle
+                label="Reassort"
+                isOn={!product.exclude_from_reorder}
+                title={product.exclude_from_reorder ? 'Exclu du reassort (cliquer pour inclure)' : 'Propose au reassort (cliquer pour exclure)'}
+                onClick={async () => {
+                  try {
+                    const res = await axios.patch(`${API_URL}/products/${id}/exclude-reorder`);
+                    setProduct(prev => ({ ...prev, exclude_from_reorder: res.data.data.exclude_from_reorder }));
+                  } catch (err) {}
+                }}
+              />
+            )}
           </div>
         </div>
 
