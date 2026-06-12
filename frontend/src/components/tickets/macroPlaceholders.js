@@ -114,10 +114,14 @@ export function buildPlaceholderContext({ ticket, agent, order, statusMap }) {
 // ─── Substitution {{xxx.yyy}} ────────────────────────────────────────────────
 // Remplace toutes les balises {{key}} par la valeur correspondante du contexte.
 // Si la clé n'existe pas dans le contexte → remplace par chaîne vide.
-export function applyPlaceholders(text, context) {
+// `escapeFn` (optionnel) : appliqué à chaque valeur substituée. Indispensable
+// quand `text` est du HTML (corps de macro riche) pour qu'une valeur contenant
+// `<` ou `&` ne casse pas le balisage. Par défaut : identité (sujet, texte brut).
+export function applyPlaceholders(text, context, escapeFn) {
   if (!text || typeof text !== 'string') return text || '';
+  const esc = typeof escapeFn === 'function' ? escapeFn : (v) => v;
   return text.replace(/\{\{\s*([\w.]+)\s*\}\}/g, (_, key) => {
     const v = context[key];
-    return v !== undefined && v !== null ? String(v) : '';
+    return v !== undefined && v !== null ? esc(String(v)) : '';
   });
 }

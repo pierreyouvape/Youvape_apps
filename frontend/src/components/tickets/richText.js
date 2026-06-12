@@ -9,7 +9,7 @@ const ALLOWED_TAGS = ['p', 'br', 'strong', 'b', 'em', 'i', 'u', 's', 'ul', 'ol',
 const ALLOWED_ATTR = ['href', 'target', 'rel', 'src', 'alt'];
 
 // Échappe les caractères HTML d'une chaîne de texte brut.
-function escapeHtml(str) {
+export function escapeHtml(str) {
   return String(str)
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')

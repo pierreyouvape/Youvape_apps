@@ -2,6 +2,19 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useTicketStatuses } from './useTicketStatuses';
 import { useMacroPlaceholders } from './macroPlaceholders';
 import { TICKETS_COLOR } from './ticketConstants';
+import RichEditor from './RichEditor';
+import { markdownTextToHtml, isHtml } from './richText';
+
+// Emojis proposés (identique au composer de réponse SAV).
+const EMOJIS = ['😊','👍','🙏','😔','✅','❌','⚠️','📦','🚚','🔄','💡','📞','✉️','🎁','⏳','💰','🔍','📋','👋','😅'];
+
+// Petit bouton d'icône de toolbar (repris du composer).
+const iconBtn = () => ({
+  display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+  width: 30, height: 30, borderRadius: 6, border: 'none',
+  background: 'transparent', cursor: 'pointer', color: '#626E85',
+  fontFamily: 'Lato, sans-serif',
+});
 
 const C = {
   grisTL: '#F2F6F8', grisCL: '#E2E2E2', grisM: '#8A99A4',
@@ -9,6 +22,16 @@ const C = {
 };
 
 const API = '/api/sav';
+
+// Aperçu texte d'un corps de macro : retire les balises HTML (les corps sont
+// désormais du HTML) pour un extrait lisible dans la liste des macros.
+function bodyPreview(html) {
+  if (!html) return '';
+  if (typeof document === 'undefined') return html.replace(/<[^>]*>/g, ' ');
+  const tmp = document.createElement('div');
+  tmp.innerHTML = html;
+  return (tmp.textContent || tmp.innerText || '').replace(/\s+/g, ' ').trim();
+}
 
 // ─── Icônes ──────────────────────────────────────────────────────────────────
 const IconPlus = () => (
@@ -133,12 +156,252 @@ function InsertPlaceholderButton({ targetRef, value, onChange, groups }) {
   );
 }
 
+// ─── Insertion de balise dans l'éditeur riche ───────────────────────────────
+// Variante d'InsertPlaceholderButton pour Tiptap : insère {{key}} à la position
+// du curseur via l'API impérative de l'éditeur (pas de selectionStart sur Tiptap).
+function InsertPlaceholderRich({ editorRef, groups }) {
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef();
+
+  useEffect(() => {
+    if (!open) return;
+    const h = (e) => { if (containerRef.current && !containerRef.current.contains(e.target)) setOpen(false); };
+    document.addEventListener('mousedown', h);
+    return () => document.removeEventListener('mousedown', h);
+  }, [open]);
+
+  const insert = (key) => {
+    editorRef.current?.insertText(`{{${key}}}`);
+    setOpen(false);
+  };
+
+  return (
+    <div style={{ position: 'relative', display: 'inline-block' }} ref={containerRef}>
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        style={{
+          display: 'inline-flex', alignItems: 'center', gap: 5,
+          padding: '4px 9px', borderRadius: 6,
+          border: `1px solid ${C.grisCL}`, background: open ? C.grisTL : C.blanc,
+          color: TICKETS_COLOR, fontSize: 11.5, fontWeight: 700,
+          cursor: 'pointer', fontFamily: 'Lato, sans-serif',
+        }}
+        title="Insérer une balise — sera remplacée par la valeur du ticket à l'application de la macro"
+      >
+        {'{ } '} Insérer une balise ▾
+      </button>
+      {open && (
+        <div style={{
+          position: 'absolute', top: 'calc(100% + 4px)', right: 0, zIndex: 200,
+          background: C.blanc, border: `1px solid ${C.grisCL}`, borderRadius: 10,
+          boxShadow: '0 6px 24px rgba(0,0,0,0.10)', overflow: 'hidden',
+          minWidth: 280, maxHeight: 380, overflowY: 'auto',
+        }}>
+          {groups.length === 0 && (
+            <div style={{ padding: 14, fontSize: 12, color: C.grisM, textAlign: 'center' }}>Chargement…</div>
+          )}
+          {groups.map(group => (
+            <div key={group.category}>
+              <div style={{
+                padding: '7px 14px 4px', fontSize: 10.5, fontWeight: 800,
+                color: C.grisM, textTransform: 'uppercase', letterSpacing: 0.6,
+                background: '#FAFCFD',
+              }}>{group.category}</div>
+              {group.items.map(item => (
+                <button
+                  key={item.key}
+                  type="button"
+                  onClick={() => insert(item.key)}
+                  style={{
+                    width: '100%', textAlign: 'left', padding: '7px 14px',
+                    background: 'transparent', border: 'none', cursor: 'pointer',
+                    fontFamily: 'Lato, sans-serif', display: 'flex', flexDirection: 'column', gap: 1,
+                  }}
+                  onMouseEnter={e => e.currentTarget.style.background = C.grisTL}
+                  onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                >
+                  <span style={{ fontSize: 12.5, color: C.grisTF, fontWeight: 600 }}>{item.label}</span>
+                  <span style={{ fontSize: 11, color: C.grisM, fontFamily: 'monospace' }}>{`{{${item.key}}}`}</span>
+                </button>
+              ))}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Éditeur riche du corps de macro (Tiptap + toolbar) ──────────────────────
+// Même expérience que le composer de réponse : gras, italique, souligné, liste
+// à puces, lien, emoji. La valeur `value`/`onChange` est du HTML.
+function MacroRichBody({ value, onChange, placeholderGroups }) {
+  const editorRef = useRef();
+  const [fmt, setFmt] = useState({ bold: false, italic: false, underline: false, bulletList: false });
+  const [showEmojis, setShowEmojis] = useState(false);
+  const [showLink, setShowLink] = useState(false);
+  const [linkUrl, setLinkUrl] = useState('');
+  const [linkText, setLinkText] = useState('');
+  const emojiRef = useRef();
+  const linkRef = useRef();
+
+  useEffect(() => {
+    if (!showEmojis) return;
+    const h = (e) => { if (emojiRef.current && !emojiRef.current.contains(e.target)) setShowEmojis(false); };
+    document.addEventListener('mousedown', h);
+    return () => document.removeEventListener('mousedown', h);
+  }, [showEmojis]);
+
+  useEffect(() => {
+    if (!showLink) return;
+    const h = (e) => { if (linkRef.current && !linkRef.current.contains(e.target)) setShowLink(false); };
+    document.addEventListener('mousedown', h);
+    return () => document.removeEventListener('mousedown', h);
+  }, [showLink]);
+
+  const openLink = () => {
+    setLinkText(editorRef.current?.getSelectedText() || '');
+    setLinkUrl('');
+    setShowLink(true);
+  };
+  const insertLink = () => {
+    const url = linkUrl.trim();
+    if (!url) return;
+    editorRef.current?.setLink({ url, text: linkText.trim() });
+    setShowLink(false);
+  };
+
+  return (
+    <div style={{ border: `1px solid ${C.grisCL}`, borderRadius: 8, overflow: 'hidden', background: C.blanc }}>
+      {/* Zone d'édition (hauteur fixe, scroll interne) */}
+      <div style={{ display: 'flex', flexDirection: 'column', minHeight: 130, maxHeight: 260 }}>
+        <RichEditor
+          editorRef={editorRef}
+          value={value}
+          onChange={onChange}
+          onStateChange={setFmt}
+          placeholder="Texte qui remplacera le message en cours dans le composer…"
+        />
+      </div>
+
+      {/* Toolbar */}
+      <div style={{ padding: '8px 12px', display: 'flex', alignItems: 'center', gap: 8, borderTop: `1px solid ${C.grisCL}`, position: 'relative', flexWrap: 'wrap' }}>
+        <button type="button"
+          style={{ ...iconBtn(), background: fmt.bold ? `${TICKETS_COLOR}1A` : 'transparent', fontWeight: 800, fontSize: 15, color: fmt.bold ? TICKETS_COLOR : C.grisF }}
+          title="Gras (Ctrl/Cmd+B)"
+          onMouseDown={e => { e.preventDefault(); editorRef.current?.toggleBold(); }}
+        >G</button>
+        <button type="button"
+          style={{ ...iconBtn(), background: fmt.italic ? `${TICKETS_COLOR}1A` : 'transparent', fontStyle: 'italic', fontSize: 15, color: fmt.italic ? TICKETS_COLOR : C.grisF }}
+          title="Italique (Ctrl/Cmd+I)"
+          onMouseDown={e => { e.preventDefault(); editorRef.current?.toggleItalic(); }}
+        >I</button>
+        <button type="button"
+          style={{ ...iconBtn(), background: fmt.underline ? `${TICKETS_COLOR}1A` : 'transparent', textDecoration: 'underline', fontSize: 15, color: fmt.underline ? TICKETS_COLOR : C.grisF }}
+          title="Souligné (Ctrl/Cmd+U)"
+          onMouseDown={e => { e.preventDefault(); editorRef.current?.toggleUnderline(); }}
+        >S</button>
+        <button type="button"
+          style={{ ...iconBtn(), background: fmt.bulletList ? `${TICKETS_COLOR}1A` : 'transparent', fontSize: 15, color: fmt.bulletList ? TICKETS_COLOR : C.grisF }}
+          title="Liste à puces"
+          onMouseDown={e => { e.preventDefault(); editorRef.current?.toggleBulletList(); }}
+        >☰</button>
+
+        <span style={{ width: 1, height: 18, background: C.grisCL, margin: '0 2px' }} />
+
+        {/* Lien */}
+        <div style={{ position: 'relative' }} ref={linkRef}>
+          <button type="button"
+            style={{ ...iconBtn(), background: showLink ? C.grisTL : 'transparent' }}
+            title="Insérer un lien"
+            onClick={() => showLink ? setShowLink(false) : openLink()}
+          ><span style={{ fontSize: 13, color: showLink ? TICKETS_COLOR : C.grisF }}>🔗</span></button>
+          {showLink && (
+            <div style={{
+              position: 'absolute', bottom: '100%', left: 0, zIndex: 200,
+              background: C.blanc, border: `1px solid ${C.grisCL}`, borderRadius: 10,
+              boxShadow: '0 4px 20px rgba(0,0,0,0.12)', padding: '12px 14px',
+              marginBottom: 6, minWidth: 300,
+            }}>
+              <div style={{ fontSize: 11.5, fontWeight: 800, color: C.grisF, marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Insérer un lien</div>
+              <div style={{ marginBottom: 8 }}>
+                <label style={{ fontSize: 11, fontWeight: 700, color: C.grisM, textTransform: 'uppercase', letterSpacing: '0.04em', display: 'block', marginBottom: 4 }}>Texte affiché</label>
+                <input type="text" value={linkText} onChange={e => setLinkText(e.target.value)}
+                  placeholder="ex. Suivre ma commande"
+                  onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); insertLink(); } if (e.key === 'Escape') setShowLink(false); }}
+                  style={{ width: '100%', padding: '7px 10px', border: `1px solid ${C.grisCL}`, borderRadius: 6, fontSize: 13, fontFamily: 'Lato, sans-serif', outline: 'none', color: C.grisTF, boxSizing: 'border-box' }}
+                  onFocus={e => e.target.style.borderColor = TICKETS_COLOR}
+                  onBlur={e => e.target.style.borderColor = C.grisCL}
+                />
+              </div>
+              <div style={{ marginBottom: 10 }}>
+                <label style={{ fontSize: 11, fontWeight: 700, color: C.grisM, textTransform: 'uppercase', letterSpacing: '0.04em', display: 'block', marginBottom: 4 }}>URL</label>
+                <input autoFocus type="text" value={linkUrl} onChange={e => setLinkUrl(e.target.value)}
+                  placeholder="https://..."
+                  onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); insertLink(); } if (e.key === 'Escape') setShowLink(false); }}
+                  style={{ width: '100%', padding: '7px 10px', border: `1px solid ${C.grisCL}`, borderRadius: 6, fontSize: 13, fontFamily: 'Lato, sans-serif', outline: 'none', color: C.grisTF, boxSizing: 'border-box' }}
+                  onFocus={e => e.target.style.borderColor = TICKETS_COLOR}
+                  onBlur={e => e.target.style.borderColor = C.grisCL}
+                />
+              </div>
+              <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+                <button type="button" onClick={() => setShowLink(false)}
+                  style={{ padding: '7px 12px', background: 'transparent', color: C.grisF, border: `1px solid ${C.grisCL}`, borderRadius: 6, fontSize: 12.5, fontWeight: 600, cursor: 'pointer', fontFamily: 'Lato, sans-serif' }}
+                >Annuler</button>
+                <button type="button" onClick={insertLink}
+                  style={{ padding: '7px 14px', background: TICKETS_COLOR, color: '#fff', border: 'none', borderRadius: 6, fontSize: 12.5, fontWeight: 700, cursor: 'pointer', fontFamily: 'Lato, sans-serif' }}
+                >Insérer</button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Emoji */}
+        <div style={{ position: 'relative' }} ref={emojiRef}>
+          <button type="button"
+            style={{ ...iconBtn(), background: showEmojis ? C.grisTL : 'transparent' }}
+            title="Emoji"
+            onClick={() => setShowEmojis(o => !o)}
+          ><span style={{ fontSize: 14 }}>😀</span></button>
+          {showEmojis && (
+            <div style={{
+              position: 'absolute', bottom: '100%', left: 0, zIndex: 200,
+              background: C.blanc, border: `1px solid ${C.grisCL}`, borderRadius: 10,
+              boxShadow: '0 4px 20px rgba(0,0,0,0.12)', padding: '10px', marginBottom: 6,
+            }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 4 }}>
+                {EMOJIS.map(emoji => (
+                  <button key={emoji} type="button"
+                    onClick={() => { editorRef.current?.insertText(emoji); setShowEmojis(false); }}
+                    style={{ width: 36, height: 36, background: 'transparent', border: 'none', borderRadius: 6, cursor: 'pointer', fontSize: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'background 0.1s' }}
+                    onMouseEnter={e => e.currentTarget.style.background = C.grisTL}
+                    onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                  >{emoji}</button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div style={{ flex: 1 }} />
+        <InsertPlaceholderRich editorRef={editorRef} groups={placeholderGroups} />
+      </div>
+    </div>
+  );
+}
+
 // ─── Formulaire macro (création + édition) ───────────────────────────────────
 function MacroForm({ initial, statuses, onSubmit, onCancel, submitLabel = 'Enregistrer' }) {
   const [name,        setName]        = useState(initial?.name || '');
   const [description, setDescription] = useState(initial?.description || '');
   const [subject,     setSubject]     = useState(initial?.subject || '');
-  const [body,        setBody]        = useState(initial?.body || '');
+  // Le corps est stocké/édité en HTML. Les anciennes macros (texte/markdown-like)
+  // sont converties à l'ouverture pour s'afficher correctement dans l'éditeur riche.
+  const [body,        setBody]        = useState(() => {
+    const b = initial?.body || '';
+    return isHtml(b) ? b : markdownTextToHtml(b);
+  });
   const [savStatus,   setSavStatus]   = useState(initial?.sav_status || '');
   const [file,        setFile]        = useState(null);
   const [removeAttachment, setRemoveAttachment] = useState(false);
@@ -146,7 +409,6 @@ function MacroForm({ initial, statuses, onSubmit, onCancel, submitLabel = 'Enreg
   const [error,       setError]       = useState('');
   const fileRef = useRef();
   const subjectRef = useRef();
-  const bodyRef = useRef();
   const { groups: placeholderGroups } = useMacroPlaceholders();
 
   const existingAttachment = !removeAttachment && !file && initial?.attachment_filename
@@ -226,25 +488,13 @@ function MacroForm({ initial, statuses, onSubmit, onCancel, submitLabel = 'Enreg
         />
       </div>
 
-      {/* Body */}
+      {/* Body — éditeur riche (gras, italique, souligné, liste, lien, emoji) */}
       <div style={{ marginBottom: 14 }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 5 }}>
-          <label style={{ fontSize: 11, fontWeight: 700, color: C.grisM, textTransform: 'uppercase', letterSpacing: 0.5 }}>Message</label>
-          <InsertPlaceholderButton
-            targetRef={bodyRef}
-            value={body}
-            onChange={setBody}
-            groups={placeholderGroups}
-          />
-        </div>
-        <textarea
-          ref={bodyRef}
-          value={body} onChange={e => setBody(e.target.value)}
-          placeholder="Texte qui remplacera le message en cours dans le composer…"
-          rows={6}
-          style={{ ...inputStyle, resize: 'vertical', minHeight: 100, fontFamily: 'Lato, sans-serif' }}
-          onFocus={e => e.target.style.borderColor = TICKETS_COLOR}
-          onBlur={e => e.target.style.borderColor = C.grisCL}
+        <label style={{ fontSize: 11, fontWeight: 700, color: C.grisM, textTransform: 'uppercase', letterSpacing: 0.5, display: 'block', marginBottom: 5 }}>Message</label>
+        <MacroRichBody
+          value={body}
+          onChange={setBody}
+          placeholderGroups={placeholderGroups}
         />
         <div style={{ fontSize: 11, color: C.grisM, marginTop: 4 }}>
           Les balises <code style={{ fontFamily: 'monospace', background: C.grisTL, padding: '0 4px', borderRadius: 3 }}>{'{{...}}'}</code> seront remplacées par les valeurs du ticket à l'application.
@@ -406,11 +656,14 @@ function MacroRow({ macro, statuses, onSave, onDelete }) {
               <strong style={{ color: C.grisF }}>Sujet :</strong> {macro.subject}
             </div>
           )}
-          {macro.body && (
-            <div style={{ fontSize: 11.5, color: C.grisM, lineHeight: 1.4, marginTop: 4, fontStyle: 'italic', maxHeight: 36, overflow: 'hidden', textOverflow: 'ellipsis' }}>
-              {macro.body.length > 140 ? macro.body.slice(0, 140) + '…' : macro.body}
-            </div>
-          )}
+          {macro.body && (() => {
+            const preview = bodyPreview(macro.body);
+            return preview ? (
+              <div style={{ fontSize: 11.5, color: C.grisM, lineHeight: 1.4, marginTop: 4, fontStyle: 'italic', maxHeight: 36, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                {preview.length > 140 ? preview.slice(0, 140) + '…' : preview}
+              </div>
+            ) : null;
+          })()}
         </div>
         <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
           <button onClick={() => setEditing(true)}

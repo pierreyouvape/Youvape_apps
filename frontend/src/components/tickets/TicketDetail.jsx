@@ -10,7 +10,7 @@ import { useOpenTickets } from '../../context/OpenTicketsContext';
 import OrderCard from './OrderCard';
 import { buildPlaceholderContext, applyPlaceholders } from './macroPlaceholders';
 import RichEditor from './RichEditor';
-import { markdownTextToHtml, isHtml, sanitizeHtml } from './richText';
+import { markdownTextToHtml, isHtml, sanitizeHtml, escapeHtml } from './richText';
 
 const C = {
   orange: '#E28F00', rouge: '#DE2020',
@@ -369,11 +369,16 @@ function ReplyComposer({
       // Construire le contexte de substitution depuis le ticket + agent
       const ctx = buildPlaceholderContext({ ticket, agent, statusMap });
 
-      // Body : remplace (avec balises substituées). Le body macro est du texte
-      // plain (markdown-like) → on le convertit en HTML pour l'éditeur riche.
+      // Body : remplace (avec balises substituées). Deux formats possibles :
+      //  - HTML (macros créées avec l'éditeur riche) → substitution avec échappement
+      //    des valeurs puis injection directe.
+      //  - texte plain/markdown-like (anciennes macros) → conversion en HTML.
       // setHTML émet onChange → met body à jour.
-      if (typeof macro.body === 'string') {
-        editorRef.current?.setHTML(markdownTextToHtml(applyPlaceholders(macro.body, ctx)));
+      if (typeof macro.body === 'string' && macro.body) {
+        const html = isHtml(macro.body)
+          ? applyPlaceholders(macro.body, ctx, escapeHtml)
+          : markdownTextToHtml(applyPlaceholders(macro.body, ctx));
+        editorRef.current?.setHTML(html);
       }
       // Sujet : applique via parent si défini sur la macro (avec balises substituées)
       if (macro.subject && onApplyMacroSubject) onApplyMacroSubject(applyPlaceholders(macro.subject, ctx));
