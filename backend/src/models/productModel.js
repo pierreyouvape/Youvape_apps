@@ -909,7 +909,7 @@ class ProductModel {
         COUNT(*)::int as total,
         COALESCE(SUM(
           CASE WHEN p.product_type = 'simple' THEN 1
-            ELSE 1 + (
+            ELSE (
               SELECT COUNT(*) FROM products v
               WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation'
                 AND v.post_status = 'publish'
