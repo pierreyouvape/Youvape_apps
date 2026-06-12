@@ -188,7 +188,7 @@ const usersController = {
     if (!home || typeof home !== 'object') {
       return res.status(400).json({ error: 'Corps invalide : { home: {...} } attendu' });
     }
-    const allowed = ['appOrder', 'tileSize', 'gridCols', 'theme', 'accentColor'];
+    const allowed = ['appOrder', 'tileSize', 'gridCols', 'theme', 'accentColor', 'sidebarCollapsed'];
     const sanitized = Object.fromEntries(
       Object.entries(home).filter(([k]) => allowed.includes(k))
     );
