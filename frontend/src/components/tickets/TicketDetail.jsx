@@ -20,6 +20,8 @@ const C = {
 };
 
 const API = '/api/sav';
+// Préférence "fermer le ticket après envoi" (hors mode Play), persistée.
+const CLOSE_AFTER_SEND_KEY = 'yv.tickets.afterSendClose';
 
 function shade(hex, amt) {
   const h = hex.replace('#', '');
@@ -301,7 +303,7 @@ function ReplyComposer({
   ticketId, demandeur, agentName, agent, ticket, currentStatus,
   onReplySent, onSendFailed, onStatusChange,
   playMode = false, afterActionMode = 'next', onChangeAfterActionMode, onAdvance,
-  onApplyMacroSubject,
+  onCloseTicket, onApplyMacroSubject,
 }) {
   const [body, setBody] = useState(() => localStorage.getItem(`yv.tickets.draft.${ticketId}`) || '');
   const [fmt, setFmt] = useState({ bold: false, italic: false, underline: false, bulletList: false });
@@ -318,6 +320,13 @@ function ReplyComposer({
   const [statusOpen, setStatusOpen] = useState(false);
   const [statusMenuPos, setStatusMenuPos] = useState(null); // { left, bottom } en coords écran
   const [afterOpen, setAfterOpen] = useState(false);
+  // Comportement après envoi/marquage (hors mode Play) : garder le ticket ouvert
+  // (défaut, comportement actuel) ou fermer l'onglet et revenir à la liste.
+  // Préférence persistée : c'est une habitude de l'agent, pas un choix par ticket.
+  const [closeAfterSend, setCloseAfterSend] = useState(
+    () => localStorage.getItem(CLOSE_AFTER_SEND_KEY) === 'true'
+  );
+  const [closeOpen, setCloseOpen] = useState(false);
   const [macros, setMacros] = useState([]);
   const [macroOpen, setMacroOpen] = useState(false);
   const [applyingMacro, setApplyingMacro] = useState(false);
@@ -329,6 +338,7 @@ function ReplyComposer({
   const linkRef = useRef();
   const statusRef = useRef();
   const afterRef = useRef();
+  const closeRef = useRef();
   const macroRef = useRef();
 
   // Charger les macros au montage
@@ -396,6 +406,21 @@ function ReplyComposer({
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, [afterOpen]);
+
+  // Fermer dropdown "Garder ouvert / Fermer le ticket" si clic extérieur
+  useEffect(() => {
+    if (!closeOpen) return;
+    const handler = (e) => { if (closeRef.current && !closeRef.current.contains(e.target)) setCloseOpen(false); };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [closeOpen]);
+
+  // Choix du comportement après envoi : persiste la préférence.
+  const chooseCloseMode = (close) => {
+    setCloseAfterSend(close);
+    localStorage.setItem(CLOSE_AFTER_SEND_KEY, String(close));
+    setCloseOpen(false);
+  };
 
   // Resynchroniser le statut sélectionné quand le ticket change
   useEffect(() => { setSelectedStatus(currentStatus); }, [currentStatus, ticketId]);
@@ -496,6 +521,13 @@ function ReplyComposer({
     return !!body && body.replace(/<[^>]*>/g, '').trim().length > 0;
   };
 
+  // Hors mode Play : si l'agent a choisi "Fermer le ticket", on referme l'onglet
+  // (retour à la liste) après une action réussie. Le mode Play garde sa propre
+  // logique d'avancement (onAdvance) et n'est pas concerné.
+  const maybeCloseAfterSend = () => {
+    if (!playMode && closeAfterSend && onCloseTicket) onCloseTicket();
+  };
+
   // Envoi : si message/PJ -> POST reply, puis si OK et statut a changé -> PUT status.
   // Si pas de message ni PJ -> juste changer le statut (si différent).
   const handleSend = async () => {
@@ -512,6 +544,7 @@ function ReplyComposer({
         await onStatusChange(selectedStatus);
         // Mode Play + "Prochain ticket disponible" -> on avance
         if (playMode && afterActionMode === 'next' && onAdvance) onAdvance();
+        else maybeCloseAfterSend();
       } catch (e) {
         setError(e.message || 'Erreur changement statut');
       } finally {
@@ -550,6 +583,7 @@ function ReplyComposer({
       }
       // Mode Play + "Prochain ticket disponible" -> on avance
       if (playMode && afterActionMode === 'next' && onAdvance) onAdvance();
+      else maybeCloseAfterSend();
     } catch (e) {
       // Échec réseau / serveur (le backend n'a rien stocké) : on remonte un
       // message local "Non envoyé" pour ne pas perdre le texte de l'agent.
@@ -1026,6 +1060,81 @@ function ReplyComposer({
           </button>
         )}
 
+        {/* Sélecteur "Garder ouvert / Fermer le ticket" — hors mode Play, à gauche
+            du split-button. Détermine si l'onglet se ferme après envoi/marquage. */}
+        {!playMode && onCloseTicket && (
+          <div style={{ position: 'relative' }} ref={closeRef}>
+            <button
+              onClick={() => setCloseOpen(o => !o)}
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 5,
+                background: 'transparent', border: 'none', cursor: 'pointer',
+                fontSize: 12.5, color: C.grisF, fontWeight: 700,
+                fontFamily: 'Lato, sans-serif', padding: '4px 6px',
+              }}
+              title="Comportement après envoi"
+            >
+              {closeAfterSend ? 'Fermer le ticket' : 'Garder le ticket ouvert'}
+              <span style={{ display: 'inline-flex', transform: closeOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.18s' }}>
+                <Ic.Chev color={C.grisM} />
+              </span>
+            </button>
+            {closeOpen && (
+              <div style={{
+                position: 'absolute', bottom: '100%', left: 0, marginBottom: 6, zIndex: 200,
+                background: C.blanc, border: `1px solid ${C.grisCL}`, borderRadius: 10,
+                boxShadow: '0 -6px 24px rgba(0,0,0,0.12)', overflow: 'hidden', minWidth: 280,
+              }}>
+                <button
+                  onClick={() => chooseCloseMode(false)}
+                  style={{
+                    width: '100%', textAlign: 'left', padding: '10px 14px',
+                    background: !closeAfterSend ? `${TICKETS_COLOR}10` : 'transparent',
+                    border: 'none', cursor: 'pointer', fontFamily: 'Lato, sans-serif',
+                    fontSize: 13, color: C.grisTF, fontWeight: !closeAfterSend ? 700 : 500,
+                    display: 'flex', alignItems: 'center', gap: 8,
+                  }}
+                  onMouseEnter={e => e.currentTarget.style.background = C.grisTL}
+                  onMouseLeave={e => e.currentTarget.style.background = !closeAfterSend ? `${TICKETS_COLOR}10` : 'transparent'}
+                >
+                  <span style={{ width: 14, color: TICKETS_COLOR, fontWeight: 800 }}>
+                    {!closeAfterSend ? '✓' : ''}
+                  </span>
+                  <div>
+                    <div>Garder le ticket ouvert</div>
+                    <div style={{ fontSize: 11, color: C.grisM, fontWeight: 400 }}>
+                      Après envoi, rester sur le ticket
+                    </div>
+                  </div>
+                </button>
+                <button
+                  onClick={() => chooseCloseMode(true)}
+                  style={{
+                    width: '100%', textAlign: 'left', padding: '10px 14px',
+                    background: closeAfterSend ? `${TICKETS_COLOR}10` : 'transparent',
+                    border: 'none', cursor: 'pointer', fontFamily: 'Lato, sans-serif',
+                    fontSize: 13, color: C.grisTF, fontWeight: closeAfterSend ? 700 : 500,
+                    display: 'flex', alignItems: 'center', gap: 8,
+                    borderTop: `1px solid ${C.grisCL}`,
+                  }}
+                  onMouseEnter={e => e.currentTarget.style.background = C.grisTL}
+                  onMouseLeave={e => e.currentTarget.style.background = closeAfterSend ? `${TICKETS_COLOR}10` : 'transparent'}
+                >
+                  <span style={{ width: 14, color: TICKETS_COLOR, fontWeight: 800 }}>
+                    {closeAfterSend ? '✓' : ''}
+                  </span>
+                  <div>
+                    <div>Fermer le ticket</div>
+                    <div style={{ fontSize: 11, color: C.grisM, fontWeight: 400 }}>
+                      Après envoi, fermer l'onglet et revenir à la liste
+                    </div>
+                  </div>
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* ── Split-button : Envoyer comme [Statut] ▾ ─────────────────────── */}
         <div style={{ position: 'relative', display: 'inline-flex' }} ref={statusRef}>
           {/* Partie gauche : envoi */}
@@ -1368,7 +1477,7 @@ const COMPOSER_HEIGHT_KEY = 'yv.tickets.composerHeight';
 const COMPOSER_MIN_HEIGHT = 180;
 const COMPOSER_DEFAULT_HEIGHT = 280;
 
-function ConversationPanel({ ticket, onReplySent, onStatusChange, playMode, afterActionMode, onChangeAfterActionMode, onAdvance, onApplyMacroSubject }) {
+function ConversationPanel({ ticket, onReplySent, onStatusChange, playMode, afterActionMode, onChangeAfterActionMode, onAdvance, onCloseTicket, onApplyMacroSubject }) {
   const { user } = useContext(AuthContext);
   const bottomRef = useRef();
   const sectionRef = useRef();
@@ -1510,6 +1619,7 @@ function ConversationPanel({ ticket, onReplySent, onStatusChange, playMode, afte
           afterActionMode={afterActionMode}
           onChangeAfterActionMode={onChangeAfterActionMode}
           onAdvance={onAdvance}
+          onCloseTicket={onCloseTicket}
           onApplyMacroSubject={onApplyMacroSubject}
         />
       </div>
@@ -2298,6 +2408,7 @@ export default function TicketDetail({ ticketId }) {
           afterActionMode={tabsCtx?.afterActionMode || 'next'}
           onChangeAfterActionMode={tabsCtx?.setAfterActionMode}
           onAdvance={tabsCtx?.advancePlay}
+          onCloseTicket={tabsCtx?.closeTicket ? () => tabsCtx.closeTicket(ticket.id) : null}
           onApplyMacroSubject={(subject) => handleFieldChange('subject', subject)}
         />
         <CustomerPanel
