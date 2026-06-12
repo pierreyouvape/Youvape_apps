@@ -550,9 +550,9 @@ const CatalogApp = () => {
                           {isVisible('cost_price') && <td style={cellRight}></td>}
                           {isVisible('margin') && <td style={cellRight}></td>}
                           {isVisible('weight') && <td style={cellRight}></td>}
-                          {isVisible('stock') && <td style={{ ...cellRight, fontWeight: 600, ...numStyle(row.stock) }}>{fmtInt(row.stock)}</td>}
+                          {isVisible('stock') && <td style={{ ...cellRight, fontWeight: 600 }}>{fmtInt(row.stock)}</td>}
                           {isVisible('incoming_qty') && <td style={{ ...cellRight, fontWeight: 600 }}>{fmtInt(row.incoming_qty)}</td>}
-                          {isVisible('sales_30d') && <td style={{ ...cellRight, fontWeight: 600, ...numStyle(row.sales_30d) }}>{fmtInt(row.sales_30d)}</td>}
+                          {isVisible('sales_30d') && <td style={{ ...cellRight, fontWeight: 600 }}>{fmtInt(row.sales_30d)}</td>}
                           {isVisible('track_stock') && <td style={cellRight}></td>}
                         </tr>
                       );
@@ -622,6 +622,7 @@ const CatalogApp = () => {
                     border: '1px solid #d1d5db',
                     borderRadius: '6px',
                     backgroundColor: pagination.offset === 0 ? '#f3f4f6' : '#fff',
+                    color: '#374151',
                     cursor: pagination.offset === 0 ? 'not-allowed' : 'pointer',
                     fontSize: '13px'
                   }}
@@ -639,6 +640,7 @@ const CatalogApp = () => {
                     border: '1px solid #d1d5db',
                     borderRadius: '6px',
                     backgroundColor: !pagination.hasMore ? '#f3f4f6' : '#fff',
+                    color: '#374151',
                     cursor: !pagination.hasMore ? 'not-allowed' : 'pointer',
                     fontSize: '13px'
                   }}
