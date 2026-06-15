@@ -10,12 +10,16 @@ async function findDuplicates(ticket) {
   if (!ticket.order_id) return [];
 
   // Critère : même email client ET même order_id (tous statuts, toutes dates).
+  // On exclut les tickets déjà fusionnés (merged_into_id) : une fois absorbés
+  // dans un autre ticket, ils ne constituent plus un doublon actif → l'alerte
+  // disparaît après fusion, sauf s'il subsiste un autre ticket non fusionné.
   const params = [ticket.customer_email.toLowerCase(), ticket.id, String(ticket.order_id)];
 
   const res = await pool.query(
     `SELECT id, subject, sav_status, created_at, customer_name
      FROM sav_tickets
      WHERE LOWER(customer_email) = $1 AND id != $2 AND order_id = $3
+       AND merged_into_id IS NULL
      ORDER BY created_at DESC
      LIMIT 20`,
     params

@@ -169,7 +169,8 @@ async function mergeTickets(sourceId, targetId, { agentName = 'SAV Youvape' } = 
   emitChange(sourceId, 'merge');
 
   // Rafraîchir la détection de doublons sur la cible (hors transaction).
-  // Le source étant désormais 'terminé', il ne ressortira plus comme doublon.
+  // Le source ayant désormais merged_into_id, il est exclu des doublons →
+  // l'alerte disparaît s'il ne reste aucun autre ticket non fusionné.
   try {
     const targetRow = (await pool.query(`SELECT * FROM sav_tickets WHERE id = $1`, [targetId])).rows[0];
     if (targetRow) await tagDuplicates(targetRow);
