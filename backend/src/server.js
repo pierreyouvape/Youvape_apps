@@ -29,7 +29,7 @@ const financierRoutes = require('./routes/financierRoutes');
 const savRoutes = require('./routes/savRoutes');
 const chronopostRoutes = require('./routes/chronopostRoutes');
 const colissimoRoutes  = require('./routes/colissimoRoutes');
-const { setupCron, setupBmsCron, setupComputedCostCron, setupBmsBarcodeCron, setupStockResyncCron, setupSavAutomationsCron, setupProductDbSyncCron } = require('./services/cronService');
+const { setupCron, setupBmsCron, setupComputedCostCron, setupBmsBarcodeCron, setupStockResyncCron, setupSavAutomationsCron, setupProductDbSyncCron, setupBmsTagRetryCron } = require('./services/cronService');
 const rewardService = require('./services/rewardService');
 const emailService = require('./services/emailService');
 const wcSyncService = require('./services/wcSyncService');
@@ -100,6 +100,9 @@ app.listen(PORT, async () => {
 
   // Initialiser le cron de resynchro produits WC/ATUM (statut, stock, suivi de stock) - tous les jours a 3h
   setupProductDbSyncCron();
+
+  // Initialiser le cron de rattrapage des tags BMS SAV (commandes importees apres coup)
+  setupBmsTagRetryCron();
 
   // Recalcul initial PMP FIFO au demarrage (apres 60s)
   setTimeout(async () => {

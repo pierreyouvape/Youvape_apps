@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import StatusBadge from './StatusBadge';
 import { TICKETS_COLOR, formatTicketId } from './ticketConstants';
-import { formatDate } from '../../utils/dateUtils';
+import { formatDateUTC } from '../../utils/dateUtils';
 import { useOpenTickets } from '../../context/OpenTicketsContext';
 
 const C = {
@@ -213,10 +213,10 @@ export default function SearchResultsPage() {
                         </span>
                       </td>
                       <td style={{ ...cell, color: C.grisF, whiteSpace: 'nowrap', fontSize: 13 }}>
-                        {formatDate(t.created_at, { time: false })}
+                        {formatDateUTC(t.created_at, { time: false })}
                       </td>
                       <td style={{ ...cell, color: C.grisF, whiteSpace: 'nowrap', fontSize: 13 }}>
-                        {formatDate(t.updated_at, { time: true })}
+                        {formatDateUTC(t.updated_at, { time: true })}
                       </td>
                       <td style={{ ...cell, width: 30, color: C.grisM, textAlign: 'center' }}>
                         <IconChevron />

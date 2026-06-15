@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import StatusBadge from './StatusBadge';
 import { TICKETS_COLOR, formatTicketId } from './ticketConstants';
-import { formatDate } from '../../utils/dateUtils';
+import { formatDateUTC } from '../../utils/dateUtils';
 import { useOpenTickets } from '../../context/OpenTicketsContext';
 import { useTicketStatuses } from './useTicketStatuses';
 import { AuthContext } from '../../context/AuthContext';
@@ -798,11 +798,11 @@ export default function TicketsList({ activeView, views = [], onRefresh, refresh
                         </td>
                         {/* Créé */}
                         <td style={{ ...cell, color: C.grisF, whiteSpace: 'nowrap', fontSize: 13 }}>
-                          {formatDate(t.created_at, { time: false })}
+                          {formatDateUTC(t.created_at, { time: false })}
                         </td>
                         {/* Mis à jour */}
                         <td style={{ ...cell, color: C.grisF, whiteSpace: 'nowrap', fontSize: 13 }}>
-                          {formatDate(t.updated_at, { time: true })}
+                          {formatDateUTC(t.updated_at, { time: true })}
                         </td>
                         {/* Chevron */}
                         <td style={{ ...cell, width: 30, color: C.grisM, textAlign: 'center' }}>

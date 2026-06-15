@@ -451,6 +451,34 @@ const setupProductDbSyncCron = () => {
   console.log('Cron Product DB Sync configure: tous les jours a 3h (Europe/Paris)');
 };
 
+// ==================== BMS ORDER TAG RETRY (SAV) ====================
+// Rattrapage des tickets SAV dont le tag BMS « Ticket » n'a pas pu être posé
+// (commande pas encore importée dans BMS au moment où le client a écrit).
+
+const { retryPendingTags } = require('./bmsOrderTagService');
+
+let bmsTagRetryCronJob = null;
+
+const runBmsTagRetry = async () => {
+  try {
+    await retryPendingTags();
+  } catch (error) {
+    console.error('Erreur cron BMS tag retry:', error.message);
+  }
+};
+
+const setupBmsTagRetryCron = () => {
+  if (bmsTagRetryCronJob) {
+    bmsTagRetryCronJob.stop();
+    bmsTagRetryCronJob = null;
+  }
+  // Toutes les heures a :45 (apres la sync commandes BMS de :30), 9h-19h, lun-ven
+  bmsTagRetryCronJob = cron.schedule('45 9-19 * * 1-5', runBmsTagRetry, {
+    timezone: 'Europe/Paris'
+  });
+  console.log('Cron BMS tag retry configure: toutes les heures a :45, 9h-19h, lun-ven');
+};
+
 module.exports = {
   setupCron,
   restartCron,
@@ -461,5 +489,6 @@ module.exports = {
   setupStockResyncCron,
   setupSavAutomationsCron,
   setupProductDbSyncCron,
+  setupBmsTagRetryCron,
   runProductDbSyncJob,
 };

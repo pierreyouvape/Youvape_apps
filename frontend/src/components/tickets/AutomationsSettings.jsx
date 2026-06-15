@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useContext } from 'react';
 import { AuthContext } from '../../context/AuthContext';
 import { useTicketStatuses } from './useTicketStatuses';
 import { TICKETS_COLOR } from './ticketConstants';
-import { formatDate } from '../../utils/dateUtils';
+import { formatDateUTC } from '../../utils/dateUtils';
 
 const C = {
   grisTL: '#F2F6F8', grisCL: '#E2E2E2', grisM: '#8A99A4',
@@ -374,7 +374,7 @@ function AutomationRow({ auto, statuses, onToggle, onUpdate, onDelete, onRunNow 
           {/* Dernière exécution */}
           {auto.last_run_at && (
             <div style={{ fontSize: 11, color: C.grisM, fontStyle: 'italic' }}>
-              Dernière exécution : {formatDate(auto.last_run_at, { time: true })}
+              Dernière exécution : {formatDateUTC(auto.last_run_at, { time: true })}
               {' · '}
               <strong style={{ color: auto.last_run_count > 0 ? C.grisF : C.grisM }}>
                 {auto.last_run_count} ticket{auto.last_run_count > 1 ? 's' : ''} modifié{auto.last_run_count > 1 ? 's' : ''}

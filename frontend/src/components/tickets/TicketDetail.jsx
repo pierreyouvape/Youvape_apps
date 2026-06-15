@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import StatusBadge from './StatusBadge';
 import { useTicketStatuses } from './useTicketStatuses';
 import { TICKETS_COLOR, formatTicketId } from './ticketConstants';
-import { formatDate } from '../../utils/dateUtils';
+import { formatDate, formatDateUTC } from '../../utils/dateUtils';
 import { AuthContext } from '../../context/AuthContext';
 import { useOpenTickets } from '../../context/OpenTicketsContext';
 import OrderCard from './OrderCard';
@@ -235,7 +235,7 @@ function Message({ msg, ticketId }) {
               borderRadius: 4, padding: '1px 6px',
             }}>⚠ Non envoyé</span>
           )}
-          <span style={{ fontSize: 11, color: C.grisM }}>{formatDate(msg.date, { time: true })}</span>
+          <span style={{ fontSize: 11, color: C.grisM }}>{formatDateUTC(msg.date, { time: true })}</span>
         </div>
         {/* Bulle — nouveau format : HTML (éditeur riche) sanitisé ; ancien
             format markdown-like : rendu via renderMarkdownBody + pre-wrap. */}
@@ -1564,7 +1564,7 @@ function ConversationPanel({ ticket, onReplySent, onStatusChange, playMode, afte
           }}>{ticket.subject}</h1>
           <div style={{ fontSize: 12.5, color: C.grisM, marginTop: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
             Via <Ic.Mail size={12} /> {source} · ouvert le{' '}
-            <strong style={{ color: C.grisF }}>{formatDate(ticket.created_at)}</strong>
+            <strong style={{ color: C.grisF }}>{formatDateUTC(ticket.created_at)}</strong>
           </div>
         </div>
       </div>
@@ -1936,7 +1936,7 @@ function TicketHistoryCard({ t, onOpen }) {
                 fontSize: 13.5, fontWeight: 800, color: TICKETS_COLOR,
               }}
             >{formatTicketId(t.id)}</button>
-            <span style={{ fontSize: 11.5, color: C.grisM, fontWeight: 600 }}>{formatDate(t.created_at)}</span>
+            <span style={{ fontSize: 11.5, color: C.grisM, fontWeight: 600 }}>{formatDateUTC(t.created_at)}</span>
             <div style={{ flex: 1 }} />
             <span style={{
               display: 'inline-block', background: s.bg, color: s.color,
@@ -1968,7 +1968,7 @@ function TicketHistoryCard({ t, onOpen }) {
               <span>Commande <strong style={{ color: C.grisF }}>#{t.order_id}</strong></span>
             )}
             <span>{msgCount} message{msgCount > 1 ? 's' : ''}</span>
-            <span>Maj {formatDate(t.updated_at)}</span>
+            <span>Maj {formatDateUTC(t.updated_at)}</span>
           </div>
           <button
             onClick={() => onOpen(t)}
@@ -2150,7 +2150,7 @@ function CustomerPanel({ ticket, onAssignOrder, onUnassignOrder, onMerge }) {
                   {dup.subject || '—'}
                 </span>
                 <span style={{ fontSize: 10.5, color: C.grisM }}>
-                  {dup.created_at ? formatDate(dup.created_at) : ''}
+                  {dup.created_at ? formatDateUTC(dup.created_at) : ''}
                 </span>
               </button>
             ))}
