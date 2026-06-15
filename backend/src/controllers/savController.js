@@ -759,7 +759,7 @@ const savController = {
   createManual: async (req, res) => {
     try {
       const {
-        order_id, customer_name, customer_email, customer_phone,
+        order_id, order_tracking, customer_name, customer_email, customer_phone,
         subject, body, is_private, sav_status, assigned_to_id, agent_name,
       } = req.body;
 
@@ -794,9 +794,10 @@ const savController = {
         source: 'manual',
       });
 
-      // Appliquer assigné et statut initial si fournis
+      // Appliquer assigné, suivi et statut initial si fournis
       const patchFields = {};
       if (assigned_to_id) patchFields.assigned_to_id = assigned_to_id;
+      if (order_tracking && order_tracking.trim()) patchFields.order_tracking = order_tracking.trim();
       if (Object.keys(patchFields).length > 0) {
         await savModel.patch(ticket.id, patchFields);
       }
@@ -897,6 +898,88 @@ const savController = {
       res.json({ success: true, orders });
     } catch (error) {
       console.error('❌ [SAV] Erreur getCustomerOrders:', error);
+      res.status(500).json({ error: 'Erreur serveur' });
+    }
+  },
+
+  // ─── Recherche d'une commande par son numéro (création de ticket) ─────────────
+  // Renvoie la commande (items + suivi) ET le client associé, pour pré-remplir et
+  // lier le demandeur à partir d'un n° de commande. Client enregistré si
+  // wp_customer_id matche, sinon client "invité" reconstruit depuis le billing.
+  getOrderByRef: async (req, res) => {
+    try {
+      const orderId = parseInt(req.params.order_id, 10);
+      if (Number.isNaN(orderId)) return res.status(400).json({ error: 'N° de commande invalide' });
+
+      const ordersRes = await pool.query(
+        `SELECT wp_order_id, wp_customer_id, post_date, post_status, order_total,
+                tracking_number, shipping_carrier, shipping_method,
+                billing_first_name, billing_last_name, billing_email, billing_phone
+         FROM orders WHERE wp_order_id = $1`,
+        [orderId]
+      );
+      if (ordersRes.rows.length === 0) {
+        return res.status(404).json({ error: `Commande #${orderId} introuvable` });
+      }
+      const order = ordersRes.rows[0];
+
+      // Items de la commande (même forme que getCustomerOrders).
+      const itemsRes = await pool.query(
+        `SELECT oi.order_item_name, oi.qty, oi.line_total, p.sku, p.image_url
+         FROM order_items oi
+         LEFT JOIN products p ON p.wp_product_id = COALESCE(oi.variation_id, oi.product_id)
+         WHERE oi.wp_order_id = $1 AND oi.order_item_type = 'line_item'
+         ORDER BY oi.id`,
+        [order.wp_order_id]
+      );
+      order.items = itemsRes.rows;
+
+      // Résolution du client. D'abord par wp_customer_id, sinon par email billing.
+      let customer = null;
+      if (order.wp_customer_id) {
+        const c = await pool.query(
+          `SELECT c.id, c.wp_user_id, c.first_name, c.last_name, c.email,
+                  (SELECT COUNT(*) FROM orders WHERE wp_customer_id = c.wp_user_id) AS order_count,
+                  (SELECT COALESCE(SUM(order_total), 0) FROM orders
+                     WHERE wp_customer_id = c.wp_user_id
+                       AND post_status = ANY(ARRAY['wc-completed','wc-delivered','wc-processing','wc-awaiting-delivery','wc-shipped','wc-being-delivered'])) AS total_spent
+           FROM customers c WHERE c.wp_user_id = $1 LIMIT 1`,
+          [order.wp_customer_id]
+        );
+        if (c.rows.length > 0) customer = c.rows[0];
+      }
+      if (!customer && order.billing_email) {
+        const c = await pool.query(
+          `SELECT c.id, c.wp_user_id, c.first_name, c.last_name, c.email,
+                  (SELECT COUNT(*) FROM orders WHERE wp_customer_id = c.wp_user_id) AS order_count,
+                  (SELECT COALESCE(SUM(order_total), 0) FROM orders
+                     WHERE wp_customer_id = c.wp_user_id
+                       AND post_status = ANY(ARRAY['wc-completed','wc-delivered','wc-processing','wc-awaiting-delivery','wc-shipped','wc-being-delivered'])) AS total_spent
+           FROM customers c WHERE LOWER(c.email) = LOWER($1) LIMIT 1`,
+          [order.billing_email]
+        );
+        if (c.rows.length > 0) customer = c.rows[0];
+      }
+      // Aucun compte client : on reconstruit un "invité" depuis le billing de la
+      // commande, sans id BDD (le ticket sera lié par email à la création).
+      if (!customer) {
+        customer = {
+          id: null,
+          wp_user_id: null,
+          first_name: order.billing_first_name || '',
+          last_name:  order.billing_last_name || '',
+          email:      order.billing_email || '',
+          order_count: 0,
+          total_spent: 0,
+          guest: true,
+        };
+      }
+      // Téléphone : pas de colonne sur customers → on prend celui du billing.
+      customer.billing_phone = order.billing_phone || '';
+
+      res.json({ success: true, order, customer });
+    } catch (error) {
+      console.error('❌ [SAV] Erreur getOrderByRef:', error);
       res.status(500).json({ error: 'Erreur serveur' });
     }
   },

@@ -81,6 +81,9 @@ router.get('/tracking/:number', savController.getTracking);
 // ─── Historique commandes d'un client (pour NewTicketPage) ───────────────────
 router.get('/customer-orders/:wp_user_id', savController.getCustomerOrders);
 
+// ─── Recherche d'une commande par n° (lie le client, pour NewTicketPage) ─────
+router.get('/order-lookup/:order_id', savController.getOrderByRef);
+
 // ─── Routes vues ──────────────────────────────────────────────────────────────
 router.get('/views',              savController.getViews);
 router.post('/views',             savController.createView);

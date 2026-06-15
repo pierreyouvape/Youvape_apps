@@ -131,6 +131,7 @@ export default function NewTicketPage() {
     first_name: '', last_name: '',
     customer_email: '', customer_phone: '',
     order_id: '',
+    order_tracking: '',
     assigned_to_id: null,
     subject: '',
     body: '',
@@ -150,6 +151,8 @@ export default function NewTicketPage() {
   const [sending, setSending] = useState(false);
   const [error, setError] = useState('');
   const [touched, setTouched] = useState({ email: false, subject: false, body: false });
+  const [lookingUpOrder, setLookingUpOrder] = useState(false);
+  const [orderLookupError, setOrderLookupError] = useState('');
 
   const [statusOpen, setStatusOpen] = useState(false);
   const [assignOpen, setAssignOpen] = useState(false);
@@ -205,7 +208,7 @@ export default function NewTicketPage() {
         subject:          form.subject || '',
         sav_status:       form.sav_status || '',
         order_id:         form.order_id || '',
-        order_tracking:   '',
+        order_tracking:   form.order_tracking || '',
         first_name:       form.first_name || '',
         last_name:        form.last_name || '',
         customer_name:    `${form.first_name || ''} ${form.last_name || ''}`.trim(),
@@ -296,6 +299,43 @@ export default function NewTicketPage() {
     }));
   };
 
+  // Recherche d'une commande par n° → lie le client + récupère le suivi.
+  const lookupOrder = async () => {
+    const ref = String(form.order_id || '').trim();
+    if (!ref) { setOrderLookupError('Saisissez un n° de commande'); return; }
+    setLookingUpOrder(true);
+    setOrderLookupError('');
+    try {
+      const res = await fetch(`/api/sav/order-lookup/${encodeURIComponent(ref)}`);
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        setOrderLookupError(data.error || 'Commande introuvable');
+        return;
+      }
+      const { order, customer } = data;
+      // Lier le client (pré-remplit les champs + fiche client à droite).
+      setSelectedCustomer(customer);
+      setSearchValue(`${customer.first_name || ''} ${customer.last_name || ''}`.trim() || customer.email || '');
+      setForm(f => ({
+        ...f,
+        customer_id: customer.id,
+        first_name: customer.first_name || '',
+        last_name: customer.last_name || '',
+        customer_email: customer.email || '',
+        customer_phone: customer.billing_phone || customer.customer_phone || '',
+        order_id: String(order.wp_order_id),
+        order_tracking: order.tracking_number || '',
+      }));
+      // Pour un client invité (sans compte), l'historique ne se chargera pas via
+      // l'effet wp_user_id → on amorce la liste avec la commande trouvée.
+      if (!customer.wp_user_id) setCustomerOrders([order]);
+    } catch {
+      setOrderLookupError('Erreur lors de la recherche');
+    } finally {
+      setLookingUpOrder(false);
+    }
+  };
+
   // Validation
   const errors = {
     email: !form.customer_email || !isValidEmail(form.customer_email),
@@ -317,6 +357,7 @@ export default function NewTicketPage() {
       fd.append('customer_name', `${form.first_name} ${form.last_name}`.trim());
       if (form.customer_phone) fd.append('customer_phone', form.customer_phone);
       if (form.order_id) fd.append('order_id', form.order_id);
+      if (form.order_tracking) fd.append('order_tracking', form.order_tracking);
       fd.append('subject', form.subject.trim());
       fd.append('body', form.body);
       fd.append('is_private', form.is_private ? 'true' : 'false');
@@ -496,7 +537,39 @@ export default function NewTicketPage() {
           <FieldDivider />
 
           <Field label="N° de commande">
-            <FieldInput value={form.order_id} onChange={e => set('order_id', e.target.value)} placeholder="ex. 1222924" />
+            <div style={{ display: 'flex', gap: 6 }}>
+              <div style={{ flex: 1 }}>
+                <FieldInput
+                  value={form.order_id}
+                  onChange={e => { set('order_id', e.target.value); setOrderLookupError(''); }}
+                  placeholder="ex. 1222924"
+                />
+              </div>
+              <button
+                onClick={lookupOrder}
+                disabled={lookingUpOrder || !String(form.order_id || '').trim()}
+                title="Rechercher la commande et lier le client"
+                style={{
+                  flexShrink: 0, background: lookingUpOrder ? C.grisM : TICKETS_COLOR,
+                  color: '#fff', border: 'none', borderRadius: 8, padding: '0 14px',
+                  fontSize: 12.5, fontWeight: 700, cursor: (lookingUpOrder || !String(form.order_id || '').trim()) ? 'not-allowed' : 'pointer',
+                  fontFamily: 'Lato, sans-serif', opacity: !String(form.order_id || '').trim() ? 0.5 : 1,
+                }}
+              >{lookingUpOrder ? '…' : 'Lier'}</button>
+            </div>
+            {orderLookupError && (
+              <div style={{ fontSize: 11, color: '#B71D1D', marginTop: 4, fontWeight: 600 }}>
+                {orderLookupError}
+              </div>
+            )}
+          </Field>
+
+          <Field label="N° de suivi">
+            <FieldInput
+              value={form.order_tracking}
+              onChange={e => set('order_tracking', e.target.value)}
+              placeholder="Rempli depuis la commande"
+            />
           </Field>
         </aside>
 
