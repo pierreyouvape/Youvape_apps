@@ -414,8 +414,8 @@ async function processProductEvent(action, wp_id, data, results) {
       wp_product_id, wp_parent_id, sku, post_title, post_excerpt,
       price, regular_price, stock, stock_status,
       product_type, post_status, weight, image_url,
-      post_date, post_modified, updated_at
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, NOW())
+      post_date, post_modified, product_attributes, updated_at
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, NOW())
     ON CONFLICT (wp_product_id)
     DO UPDATE SET
       wp_parent_id = EXCLUDED.wp_parent_id,
@@ -431,6 +431,7 @@ async function processProductEvent(action, wp_id, data, results) {
       weight = EXCLUDED.weight,
       image_url = EXCLUDED.image_url,
       post_modified = EXCLUDED.post_modified,
+      product_attributes = COALESCE(EXCLUDED.product_attributes, products.product_attributes),
       updated_at = NOW()
     RETURNING (xmax = 0) AS inserted
   `;
@@ -450,7 +451,8 @@ async function processProductEvent(action, wp_id, data, results) {
     data.weight || null,
     data.image_url || null,
     data.date_created || null,
-    data.date_modified || new Date()
+    data.date_modified || new Date(),
+    data.attributes ? JSON.stringify(data.attributes) : null
   ];
 
   const result = await pool.query(query, values);
