@@ -4,7 +4,37 @@ import StarterKit from '@tiptap/starter-kit';
 import Link from '@tiptap/extension-link';
 import Image from '@tiptap/extension-image';
 import { Placeholder } from '@tiptap/extensions';
+import { TextSelection } from 'prosemirror-state';
 import { TICKETS_COLOR } from './ticketConstants';
+
+// Triple-clic : sélectionner la LIGNE logique (segment borné par les sauts de
+// ligne <br> / frontières de bloc), pas le paragraphe entier comme le fait
+// ProseMirror par défaut. `pos` est la position cliquée.
+function selectLineAt(view, pos) {
+  const { state } = view;
+  const { doc } = state;
+  const $pos = doc.resolve(pos);
+  // Bornes du bloc texte contenant le clic.
+  const blockStart = $pos.start();
+  const blockEnd = $pos.end();
+
+  // Étend vers la gauche jusqu'à un hardBreak (exclu) ou le début du bloc.
+  let from = blockStart;
+  for (let p = pos; p > blockStart; p--) {
+    const node = doc.nodeAt(p - 1);
+    if (node && node.type.name === 'hardBreak') { from = p; break; }
+  }
+  // Étend vers la droite jusqu'à un hardBreak (exclu) ou la fin du bloc.
+  let to = blockEnd;
+  for (let p = pos; p < blockEnd; p++) {
+    const node = doc.nodeAt(p);
+    if (node && node.type.name === 'hardBreak') { to = p; break; }
+  }
+
+  const tr = state.tr.setSelection(TextSelection.create(doc, from, to));
+  view.dispatch(tr);
+  return true; // on a géré la sélection, ProseMirror n'applique pas son défaut
+}
 
 // ─── Styles de contenu de l'éditeur (injectés une seule fois) ────────────────
 // Tiptap rend dans un .ProseMirror ; on scope nos styles à .yv-rich-editor.
@@ -97,6 +127,8 @@ export default function RichEditor({ value, onChange, placeholder, editorRef, on
       Placeholder.configure({ placeholder: () => placeholderRef.current }),
     ],
     editorProps: {
+      // Triple-clic : sélectionner la ligne logique, pas tout le paragraphe.
+      handleTripleClick: (view, pos) => selectLineAt(view, pos),
       handlePaste: (_view, event) => {
         const items = event.clipboardData?.items;
         if (!items) return false;
