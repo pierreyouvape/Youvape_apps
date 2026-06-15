@@ -172,25 +172,28 @@ function Message({ msg, ticketId }) {
   const isPrivate = !!msg.is_private;
   const isAgent = !!msg.is_agent;
   const sendFailed = !!msg.send_failed;
+  const mergedFrom = msg.merged_from || null; // message rapatrié d'un ticket fusionné
 
-  // Message système (fusion de tickets, etc.) : séparateur centré discret.
+  // Message système (fusion de tickets, etc.) : séparateur centré, visible.
   if (msg.is_system) {
     return (
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '14px 0 20px' }}>
-        <div style={{ flex: 1, height: 1, background: C.grisCL }} />
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '20px 0 22px' }}>
+        <div style={{ flex: 1, height: 2, background: '#C9D4DC', borderRadius: 2 }} />
         <span style={{
-          fontSize: 11.5, fontWeight: 700, color: C.grisM,
-          background: C.grisTL, border: `1px solid ${C.grisCL}`,
-          borderRadius: 20, padding: '4px 12px', whiteSpace: 'nowrap',
+          fontSize: 12, fontWeight: 800, color: C.grisF,
+          background: '#E3E9EE', border: '1px solid #C9D4DC',
+          borderRadius: 20, padding: '5px 14px', whiteSpace: 'nowrap',
+          letterSpacing: '0.1px',
         }}>
           🔀 {msg.body?.replace(/^—\s*|\s*—$/g, '') || 'Fusion'}
         </span>
-        <div style={{ flex: 1, height: 1, background: C.grisCL }} />
+        <div style={{ flex: 1, height: 2, background: '#C9D4DC', borderRadius: 2 }} />
       </div>
     );
   }
 
-  // Couleurs bulle
+  // Couleurs bulle. Un message fusionné (rapatrié d'un autre ticket) prend un
+  // fond gris distinctif — sauf s'il a déjà une couleur forte (échec/note privée).
   let bgBubble, borderBubble, boxShadowBubble;
   if (sendFailed) {
     bgBubble = '#FDEAEA'; borderBubble = '#E89A9A';
@@ -198,6 +201,9 @@ function Message({ msg, ticketId }) {
   } else if (isPrivate) {
     bgBubble = '#FFFDE7'; borderBubble = '#F6C613';
     boxShadowBubble = '0 1px 4px rgba(246,198,19,0.15)';
+  } else if (mergedFrom) {
+    bgBubble = '#EDF1F4'; borderBubble = '#D2DBE2';
+    boxShadowBubble = '0 1px 3px rgba(0,0,0,0.05)';
   } else if (isAgent) {
     bgBubble = '#EAF2FF'; borderBubble = '#B8D4FF';
     boxShadowBubble = '0 1px 3px rgba(0,0,0,0.06)';
@@ -234,6 +240,13 @@ function Message({ msg, ticketId }) {
               background: '#FFE5E5', border: '1px solid #E89A9A',
               borderRadius: 4, padding: '1px 6px',
             }}>⚠ Non envoyé</span>
+          )}
+          {mergedFrom && (
+            <span style={{
+              fontSize: 10, fontWeight: 700, color: C.grisF,
+              background: '#E3E9EE', border: '1px solid #C9D4DC',
+              borderRadius: 4, padding: '1px 6px',
+            }}>🔀 Fusionné #{mergedFrom}</span>
           )}
           <span style={{ fontSize: 11, color: C.grisM }}>{formatDateUTC(msg.date, { time: true })}</span>
         </div>

@@ -127,7 +127,7 @@ export default function OrderCard({ order, highlighted, canAssign, onAssign, onU
 
   const statusLabel = (s) => {
     const map = {
-      'wc-completed':          'Livrée',
+      'wc-completed':          'Expédiée',
       'wc-delivered':          'Livrée',
       'wc-being-delivered':    'En livraison',
       'wc-awaiting-delivery':  'En attente de livraison',
@@ -148,14 +148,14 @@ export default function OrderCard({ order, highlighted, canAssign, onAssign, onU
 
   const statusColors = (s) => {
     if (!s) return { bg: C.grisTL, color: C.grisF };
-    // Livré (vert) — complete ou delivered
-    if (s.includes('complete') || s === 'wc-delivered') return { bg: '#E5F4EB', color: '#2A8049' };
+    // Livré (vert) — uniquement delivered (chez Youvape, completed = expédiée)
+    if (s === 'wc-delivered' || s.includes('wms_cp_delivered')) return { bg: '#E5F4EB', color: '#2A8049' };
     // En cours de livraison (orange)
     if (s.includes('being-delivered')) return { bg: '#FFF1D6', color: '#8B5A00' };
     // En attente de livraison (jaune clair)
     if (s.includes('awaiting-delivery')) return { bg: '#FFF8E1', color: '#92650A' };
-    // Expédiée (bleu)
-    if (s.includes('shipped')) return { bg: '#E5EEF6', color: '#2C5F80' };
+    // Expédiée / traitée (bleu) — completed ou shipped
+    if (s.includes('complete') || s.includes('shipped')) return { bg: '#E5EEF6', color: '#2C5F80' };
     // En cours (orange clair)
     if (s.includes('process')) return { bg: '#FFF1D6', color: '#8B5A00' };
     // Annulée / échouée (rouge)

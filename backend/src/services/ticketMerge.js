@@ -44,10 +44,13 @@ function moveAttachment(att, sourceId, targetId) {
 }
 
 // Réécrit les attachments de chaque message d'un fil source vers la cible.
+// Marque aussi chaque message rapatrié avec `merged_from` (= id du ticket
+// source) pour que le front les distingue visuellement dans le fil cible.
 function relocateMessages(messages, sourceId, targetId) {
   if (!Array.isArray(messages)) return [];
   return messages.map(msg => ({
     ...msg,
+    merged_from: msg.merged_from || sourceId,
     attachments: Array.isArray(msg.attachments)
       ? msg.attachments.map(att => moveAttachment(att, sourceId, targetId))
       : [],
