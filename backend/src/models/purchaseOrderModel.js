@@ -922,7 +922,7 @@ const purchaseOrderModel = {
 
       // 5. Charger les produits (sku → product_id) pour les lignes de commande
       const productsResult = await client.query(
-        'SELECT wp_product_id as id, sku FROM products WHERE sku IS NOT NULL AND sku != \'\''
+        'SELECT id, sku FROM products WHERE sku IS NOT NULL AND sku != \'\''
       );
       const productBySku = new Map(productsResult.rows.map(r => [r.sku, r.id]));
 
