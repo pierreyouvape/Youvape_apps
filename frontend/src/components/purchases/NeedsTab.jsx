@@ -493,8 +493,13 @@ const NeedsTab = ({ token, onCompactChange }) => {
       if (zeroStockState === true && p.stock > 0) return false;
       if (zeroStockState === false && p.stock <= 0) return false;
 
+      // Rupture de stock : toujours afficher (même sans proposition calculée
+      // sur la période), pour les produits visibles au catalogue. Le réassort
+      // est déjà garanti par le backend (exclude_from_reorder = false).
+      const isOutOfStock = p.stock <= 0 && p.track_stock;
+
       // Par défaut : n'afficher que les produits avec une proposition
-      if (p.theoretical_proposal <= 0 && p.supposed_proposal <= 0) return false;
+      if (!isOutOfStock && p.theoretical_proposal <= 0 && p.supposed_proposal <= 0) return false;
 
       return true;
     });
@@ -583,7 +588,9 @@ const NeedsTab = ({ token, onCompactChange }) => {
   }, [sortedGroups, sortColumn, sortDirection]);
 
   // Pagination locale
-  const totalFiltered = flatRows.length;
+  // flatRows inclut des lignes d'en-tête de groupe (une par produit variable) qui
+  // ne correspondent pas à de vrais produits/variations : on les exclut du compteur.
+  const totalFiltered = flatRows.filter(r => !r._isParent).length;
   const totalPages = pageSize === 0 ? 1 : Math.max(1, Math.ceil(flatRows.length / pageSize));
   const pagedProducts = useMemo(() => {
     if (pageSize === 0) return flatRows; // "Tout"

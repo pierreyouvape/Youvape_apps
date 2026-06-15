@@ -26,6 +26,7 @@ const needsCalculationModel = {
         p.sku,
         COALESCE(p.stock, 0) as stock,
         p.stock_status,
+        p.track_stock,
         p.regular_price,
         COALESCE(p.computed_cost, p.wc_cog_cost) as cost_price,
         pa.alert_threshold,
@@ -189,6 +190,7 @@ const needsCalculationModel = {
       sku: p.sku,
       stock: parseInt(p.stock) || 0,
       stock_status: p.stock_status,
+      track_stock: !!p.track_stock,
       regular_price: p.regular_price,
       cost_price: p.cost_price,
       alert_threshold: parseInt(p.alert_threshold) || 0,
@@ -215,10 +217,12 @@ const needsCalculationModel = {
   },
 
   /**
-   * Retourne les wp_product_id (simples + variations) ayant une proposition
-   * de réapprovisionnement théorique > 0, avec les paramètres par défaut de
-   * "Besoins achats" (31 derniers jours, couverture 1 mois).
-   * Utilisé pour l'onglet "À réapprovisionner" du catalogue.
+   * Retourne les wp_product_id (simples + variations) à réapprovisionner, avec
+   * les paramètres par défaut de "Besoins achats" (31 derniers jours, couverture
+   * 1 mois) : proposition théorique ou supposée > 0, ou produit en rupture de
+   * stock (stock <= 0) toujours visible au catalogue et proposé au réassort.
+   * Reprend la même logique que le filtre par défaut de NeedsTab.jsx, pour que
+   * l'onglet "À réapprovisionner" du catalogue corresponde à "Besoins achats".
    */
   getReorderProductIds: async () => {
     if (reorderIdsCache.ids && (Date.now() - reorderIdsCache.timestamp) < REORDER_IDS_CACHE_TTL_MS) {
@@ -228,7 +232,8 @@ const needsCalculationModel = {
     const ids = [];
     for (const product of products) {
       const needs = computeProductNeeds(product, 31, 1, false, null, null, 'days');
-      if (needs.theoretical_proposal > 0) {
+      const isOutOfStock = product.stock <= 0 && product.track_stock;
+      if (needs.theoretical_proposal > 0 || needs.supposed_proposal > 0 || isOutOfStock) {
         ids.push(parseInt(product.wp_product_id));
       }
     }

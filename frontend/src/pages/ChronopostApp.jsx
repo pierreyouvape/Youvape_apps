@@ -1,4 +1,4 @@
-import { useState, useRef, useContext, useEffect } from 'react';
+import { useState, useRef, useContext, useEffect, useMemo } from 'react';
 import axios from 'axios';
 import { AuthContext } from '../context/AuthContext';
 import AppShell from '../components/AppShell';
@@ -50,6 +50,48 @@ function diffTextColor(g) {
 }
 
 /* ─── SUB-COMPONENTS ─────────────────────────────────────────── */
+function SortTh({ label, align = 'left', sortKey, currentSort, onSort, style }) {
+  const sortable = !!sortKey && !!onSort;
+  const active = sortable && currentSort?.key === sortKey;
+  return (
+    <th
+      onClick={sortable ? () => onSort(sortKey) : undefined}
+      style={{
+        padding: '10px 12px', textAlign: align, fontWeight: 700, color: C.dark, fontSize: 11.5,
+        borderBottom: `2px solid ${C.greyB}`, whiteSpace: 'nowrap',
+        cursor: sortable ? 'pointer' : 'default', userSelect: 'none',
+        ...style,
+      }}
+    >
+      {label}{sortable && (active ? (currentSort.dir === 'asc' ? ' ▲' : ' ▼') : ' ⇕')}
+    </th>
+  );
+}
+
+// Tri de l'historique des factures
+const HISTORY_SORTERS = {
+  invoice_number:     inv => inv.invoice_number || '',
+  date:               inv => { const [d, m, y] = (inv.invoice_date || '').split('/'); return (y && m && d) ? `${y}${m}${d}` : ''; },
+  total_parcels:      inv => inv.total_parcels ?? 0,
+  parcels_matched:    inv => inv.parcels_matched ?? 0,
+  weight_ok:          inv => inv.weight_ok ?? 0,
+  weight_ecart:       inv => inv.weight_ecart ?? 0,
+  total_ht:           inv => parseFloat(inv.total_ht ?? 0),
+  supplements_total:  inv => parseFloat(inv.supplements_total ?? 0),
+  tariffs_applied_at: inv => inv.tariffs_applied_at ? 1 : 0,
+  created_at:         inv => new Date(inv.created_at).getTime(),
+};
+
+function sortHistory(history, sort) {
+  if (!sort?.key) return history;
+  const getValue = HISTORY_SORTERS[sort.key];
+  return [...history].sort((a, b) => {
+    const va = getValue(a), vb = getValue(b);
+    const cmp = typeof va === 'string' ? va.localeCompare(vb) : va - vb;
+    return sort.dir === 'asc' ? cmp : -cmp;
+  });
+}
+
 function Badge({ label, color, bg }) {
   return (
     <span style={{
@@ -264,6 +306,7 @@ export default function ChronopostApp() {
   const [currentFile, setCurrentFile] = useState(null);
   const [history, setHistory] = useState([]);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [historySort, setHistorySort] = useState(null); // { key, dir: 'asc' | 'desc' }
   const [tooltip, setTooltip] = useState(null); // {text, x, y}
   const [applying, setApplying] = useState(false);
   const [applyProgress, setApplyProgress] = useState(0); // 0-100
@@ -328,6 +371,14 @@ export default function ChronopostApp() {
   }
 
   useEffect(() => { loadHistory(); loadCreditsHistory(); loadTotals(); }, []);
+
+  function toggleHistorySort(key) {
+    setHistorySort(prev => prev?.key === key
+      ? { key, dir: prev.dir === 'asc' ? 'desc' : 'asc' }
+      : { key, dir: 'desc' });
+  }
+
+  const sortedHistory = useMemo(() => sortHistory(history, historySort), [history, historySort]);
 
   const MONTH_NAMES = ['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
 
@@ -1550,13 +1601,25 @@ export default function ChronopostApp() {
                       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                         <thead>
                           <tr style={{ background: C.grey }}>
-                            {['N° Facture', 'Date', 'Colis', 'Cmdés trouvées', 'Poids OK', 'Écarts', 'Total HT', 'Suppléments HT', 'Tarifs', 'Enregistrée le', ''].map(h => (
-                              <th key={h} style={{ padding: '10px 12px', textAlign: 'left', fontWeight: 700, color: C.dark, fontSize: 11.5, borderBottom: `2px solid ${C.greyB}`, whiteSpace: 'nowrap' }}>{h}</th>
+                            {[
+                              { label: 'N° Facture', key: 'invoice_number' },
+                              { label: 'Date', key: 'date' },
+                              { label: 'Colis', key: 'total_parcels', align: 'center' },
+                              { label: 'Cmdés trouvées', key: 'parcels_matched', align: 'center' },
+                              { label: 'Poids OK', key: 'weight_ok', align: 'center' },
+                              { label: 'Écarts', key: 'weight_ecart', align: 'center' },
+                              { label: 'Total HT', key: 'total_ht' },
+                              { label: 'Suppléments HT', key: 'supplements_total' },
+                              { label: 'Tarifs', key: 'tariffs_applied_at', align: 'center' },
+                              { label: 'Enregistrée le', key: 'created_at' },
+                              { label: '' },
+                            ].map(({ label, key, align }) => (
+                              <SortTh key={label || 'actions'} label={label} align={align} sortKey={key} currentSort={historySort} onSort={toggleHistorySort} />
                             ))}
                           </tr>
                         </thead>
                         <tbody>
-                          {history.map((inv, i) => (
+                          {sortedHistory.map((inv, i) => (
                             <tr key={inv.id}
                               onClick={() => handleLoadFromHistory(inv)}
                               style={{ background: i % 2 === 0 ? C.white : C.grey, borderBottom: `1px solid ${C.greyB}`, cursor: 'pointer', transition: 'background .1s' }}
@@ -1636,13 +1699,22 @@ export default function ChronopostApp() {
                   <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                     <thead>
                       <tr style={{ background: C.grey }}>
-                        {['N° Facture', 'Date', 'Colis', 'Total HT', 'Suppléments HT', 'Tarifs', 'Enregistrée le', ''].map(h => (
-                          <th key={h} style={{ padding: '9px 12px', textAlign: 'left', fontWeight: 700, color: C.dark, fontSize: 11.5, borderBottom: `2px solid ${C.greyB}` }}>{h}</th>
+                        {[
+                          { label: 'N° Facture', key: 'invoice_number' },
+                          { label: 'Date', key: 'date' },
+                          { label: 'Colis', key: 'total_parcels', align: 'center' },
+                          { label: 'Total HT', key: 'total_ht' },
+                          { label: 'Suppléments HT', key: 'supplements_total' },
+                          { label: 'Tarifs', key: 'tariffs_applied_at', align: 'center' },
+                          { label: 'Enregistrée le', key: 'created_at' },
+                          { label: '' },
+                        ].map(({ label, key, align }) => (
+                          <SortTh key={label || 'actions'} label={label} align={align} sortKey={key} currentSort={historySort} onSort={toggleHistorySort} style={{ padding: '9px 12px' }} />
                         ))}
                       </tr>
                     </thead>
                     <tbody>
-                      {history.map((inv, i) => (
+                      {sortedHistory.map((inv, i) => (
                         <tr key={inv.id}
                           onClick={() => handleLoadFromHistory(inv)}
                           style={{ background: i % 2 === 0 ? C.white : C.grey, borderBottom: `1px solid ${C.greyB}`, cursor: 'pointer' }}
