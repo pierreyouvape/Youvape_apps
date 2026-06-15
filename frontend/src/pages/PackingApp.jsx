@@ -124,10 +124,13 @@ const PackingApp = () => {
       if (err.response?.status === 409) {
         const data = err.response.data;
         setLabelData(null);
-        setLabelError(`Etiquette deja generee pour cette commande — suivi : ${data.trackingId}`);
+        setLabelError({ message: `Etiquette deja generee pour cette commande — suivi : ${data.trackingId}` });
       } else {
-        const detail = err.response?.data?.details || err.response?.data?.error || 'Erreur generation etiquette';
-        setLabelError(typeof detail === 'string' ? detail : JSON.stringify(detail));
+        const data = err.response?.data || {};
+        const detail = data.details || data.error || 'Erreur generation etiquette';
+        const detailStr = typeof detail === 'string' ? detail : JSON.stringify(detail);
+        // userMessage : message clair pour le packing ; detail : technique pour le debug
+        setLabelError({ message: data.userMessage || detailStr, detail: data.userMessage ? detailStr : null });
       }
       playSound('error');
     } finally {
@@ -1200,7 +1203,12 @@ const PackingApp = () => {
                     margin: '0 0 15px',
                     fontSize: '14px'
                   }}>
-                    Erreur etiquette : {labelError}
+                    <div>Erreur etiquette : {labelError.message}</div>
+                    {labelError.detail && (
+                      <div style={{ marginTop: '6px', fontSize: '11px', opacity: 0.7, wordBreak: 'break-word' }}>
+                        Détail technique : {labelError.detail}
+                      </div>
+                    )}
                   </div>
                 )}
 
