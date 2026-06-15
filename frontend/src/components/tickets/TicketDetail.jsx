@@ -30,6 +30,19 @@ function shade(hex, amt) {
   return '#' + adj(r).toString(16).padStart(2, '0') + adj(g).toString(16).padStart(2, '0') + adj(b).toString(16).padStart(2, '0');
 }
 
+// Détecte une mention de pièce jointe dans le texte d'un message (façon Gmail :
+// "oubli de pièce jointe"). On retire le HTML, on normalise les accents/casse,
+// et on cherche les variantes courantes (pièce jointe, ci-joint, joint…).
+const ATTACHMENT_HINT_RE = /\b(pieces?\s*jointes?|ci[-\s]?joint(?:e|s|es)?|ci[-\s]?annex|en\s+piece\s*jointe|en\s+annexe|veuillez\s+trouver|vous\s+trouverez|je\s+(?:vous\s+)?joins?|joint(?:e|s|es)?\s+(?:a\s+|au\s+|dans\s+|ce\s+))/i;
+
+function mentionsAttachment(html) {
+  if (!html) return false;
+  const text = String(html)
+    .replace(/<[^>]*>/g, ' ')         // retire les balises
+    .normalize('NFD').replace(/[̀-ͯ]/g, ''); // retire les accents
+  return ATTACHMENT_HINT_RE.test(text);
+}
+
 // ─── Icônes ───────────────────────────────────────────────────────────────────
 const Ic = {
   Back: ({ size = 14, color = 'currentColor' }) => (
@@ -325,6 +338,9 @@ function ReplyComposer({
   const [files, setFiles] = useState([]);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState('');
+  // Garde-fou "oubli de PJ" : pop-up de confirmation quand le message mentionne
+  // une pièce jointe mais qu'aucune n'est attachée.
+  const [confirmNoAttachment, setConfirmNoAttachment] = useState(false);
   const [showEmojis, setShowEmojis] = useState(false);
   const [showLinkInput, setShowLinkInput] = useState(false);
   const [linkUrl, setLinkUrl] = useState('');
@@ -546,9 +562,22 @@ function ReplyComposer({
     if (!playMode && closeAfterSend && onCloseTicket) onCloseTicket();
   };
 
+  // Point d'entrée du bouton "Envoyer". Garde-fou "oubli de PJ" façon Gmail :
+  // si le message (réponse publique) mentionne une pièce jointe sans qu'aucune
+  // ne soit attachée, on demande confirmation avant d'envoyer.
+  const handleSend = async () => {
+    const hasMessage = editorHasText();
+    if (hasMessage && files.length === 0 && !isPrivate && mentionsAttachment(body)) {
+      setConfirmNoAttachment(true);
+      return;
+    }
+    await proceedSend();
+  };
+
   // Envoi : si message/PJ -> POST reply, puis si OK et statut a changé -> PUT status.
   // Si pas de message ni PJ -> juste changer le statut (si différent).
-  const handleSend = async () => {
+  const proceedSend = async () => {
+    setConfirmNoAttachment(false);
     const hasContent = editorHasText() || files.length > 0;
     const statusChanged = selectedStatus && selectedStatus !== currentStatus;
 
@@ -1253,6 +1282,56 @@ function ReplyComposer({
           )}
         </div>
       </div>
+
+      {/* Confirmation : mention de PJ sans pièce jointe attachée (façon Gmail) */}
+      {confirmNoAttachment && createPortal(
+        <div
+          onClick={() => setConfirmNoAttachment(false)}
+          style={{
+            position: 'fixed', inset: 0, background: 'rgba(20,24,33,0.45)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1100,
+          }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{
+              background: C.blanc, borderRadius: 14, width: 'min(420px, 92vw)',
+              boxShadow: '0 18px 50px rgba(0,0,0,0.3)', fontFamily: 'Lato, sans-serif', padding: 22,
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+              <span style={{ fontSize: 20 }}>📎</span>
+              <strong style={{ fontSize: 15, color: C.grisTF, fontFamily: "'Tilt Warp', cursive" }}>
+                Pièce jointe manquante ?
+              </strong>
+            </div>
+            <p style={{ fontSize: 13, color: C.grisF, lineHeight: 1.5, margin: '0 0 16px' }}>
+              Votre message mentionne une pièce jointe, mais aucune n'est attachée.
+              Êtes-vous sûr de vouloir envoyer le message sans pièce jointe ?
+            </p>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+              <button
+                onClick={() => { setConfirmNoAttachment(false); fileRef.current?.click(); }}
+                style={{
+                  background: C.blanc, border: `1px solid ${C.grisCL}`, borderRadius: 8,
+                  padding: '8px 16px', fontSize: 13, fontWeight: 700, color: C.grisF,
+                  cursor: 'pointer', fontFamily: 'Lato, sans-serif',
+                }}
+              >Ajouter une PJ</button>
+              <button
+                onClick={proceedSend}
+                style={{
+                  background: `linear-gradient(155deg, ${TICKETS_COLOR}, ${shade(TICKETS_COLOR, -0.2)})`,
+                  border: 'none', borderRadius: 8, padding: '8px 16px',
+                  fontSize: 13, fontWeight: 800, color: '#fff',
+                  cursor: 'pointer', fontFamily: 'Lato, sans-serif',
+                }}
+              >Envoyer quand même</button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
     </div>
   );
 }
