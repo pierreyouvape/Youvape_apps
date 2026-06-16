@@ -784,6 +784,27 @@ class ProductModel {
 
     let variations = [];
     if (variableIds.length > 0) {
+      // Construire le filtre search/brand pour les variations (même logique que pour les parents)
+      const varParams = [variableIds]; // $1 = variableIds
+      let varFilter = '';
+      if (search) {
+        const words = search.trim().split(/\s+/).filter(Boolean);
+        const wordClauses = words.map((w, i) => {
+          const p = 1 + i + 1; // $1 = variableIds, mots à partir de $2
+          const isShort = w.length <= 2;
+          const vField = `unaccent(v.post_title || ' ' || COALESCE(v.sku, '') || ' ' || COALESCE(v.brand, '') || ' ' || COALESCE(v.sub_brand, ''))`;
+          return isShort
+            ? `(' ' || ${vField} || ' ') ILIKE unaccent($${p})`
+            : `${vField} ILIKE unaccent($${p})`;
+        });
+        varFilter += ' AND (' + wordClauses.join(' AND ') + ')';
+        words.forEach(w => varParams.push(w.length <= 2 ? `% ${w} %` : `%${w}%`));
+      }
+      if (brand) {
+        varFilter += ` AND v.brand = $${varParams.length + 1}`;
+        varParams.push(brand);
+      }
+
       const variationsQuery = `
         SELECT
           v.id,
@@ -803,9 +824,10 @@ class ProductModel {
         WHERE v.wp_parent_id = ANY($1) AND v.product_type = 'variation' AND v.post_status = 'publish'
           ${trackStockOnly ? 'AND v.track_stock = true' : ''}
           ${stockCondVar ? `AND ${stockCondVar}` : ''}
+          ${varFilter}
         ORDER BY v.post_title ASC
       `;
-      const variationsResult = await pool.query(variationsQuery, [variableIds]);
+      const variationsResult = await pool.query(variationsQuery, varParams);
       variations = variationsResult.rows;
     }
 
