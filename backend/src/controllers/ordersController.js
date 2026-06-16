@@ -484,170 +484,249 @@ exports.updateShippingCost = async (req, res) => {
 };
 
 /**
+ * Réimporte une commande depuis l'API REST WooCommerce (fonction réutilisable).
+ * Utilisée par le bouton manuel (handler reimport) ET par le rattrapage automatique.
+ *
+ * Garde anti-draft : si WC renvoie encore un statut brouillon (auto-draft /
+ * checkout-draft), la commande n'est pas finalisée côté WC — on ne touche à rien
+ * et on retourne { skipped: true }. Elle sera retentée plus tard une fois finalisée.
+ *
+ * @param {number} wpOrderId
+ * @returns {Promise<{success:boolean, skipped?:boolean, reason?:string}>}
+ */
+async function reimportOrderFromWc(wpOrderId) {
+  // Récupérer les credentials WC depuis rewards_config
+  const configResult = await pool.query(
+    'SELECT woocommerce_url, consumer_key, consumer_secret, htaccess_user, htaccess_password FROM rewards_config LIMIT 1'
+  );
+
+  if (!configResult.rows.length || !configResult.rows[0].consumer_key) {
+    throw new Error('WooCommerce credentials not configured');
+  }
+
+  const { woocommerce_url, consumer_key, consumer_secret, htaccess_user, htaccess_password } = configResult.rows[0];
+  const baseUrl = woocommerce_url.replace(/\/$/, '');
+
+  // Headers avec htaccess si configuré
+  const headers = {};
+  if (htaccess_user && htaccess_password) {
+    const encoded = Buffer.from(`${htaccess_user}:${htaccess_password}`).toString('base64');
+    headers['Authorization'] = `Basic ${encoded}`;
+  }
+
+  // Appel API REST WooCommerce
+  const wcResponse = await axios.get(`${baseUrl}/wp-json/wc/v3/orders/${wpOrderId}`, {
+    params: { consumer_key, consumer_secret },
+    headers,
+    httpsAgent,
+    timeout: 15000
+  });
+
+  const wcOrder = wcResponse.data;
+
+  // Garde anti-draft : la commande est encore un brouillon côté WC (admin pas
+  // encore "Créé" la commande). Rien à importer de fiable, on laisse en l'état.
+  if (wcOrder.status === 'auto-draft' || wcOrder.status === 'checkout-draft') {
+    console.log(`↩︎ Order #${wpOrderId} encore en brouillon côté WC (${wcOrder.status}) — réimport ignoré`);
+    return { success: true, skipped: true, reason: 'draft' };
+  }
+
+  // Mapper les données WC vers notre schéma BDD
+  const status = wcOrder.status.startsWith('wc-') ? wcOrder.status : `wc-${wcOrder.status}`;
+  const billing = wcOrder.billing || {};
+  const shipping = wcOrder.shipping || {};
+
+  // Upsert de la commande
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    await client.query(`
+      INSERT INTO orders (
+        wp_order_id, wp_customer_id, post_status, post_date, post_modified,
+        payment_method_title, created_via,
+        billing_first_name, billing_last_name, billing_address_1, billing_address_2,
+        billing_city, billing_postcode, billing_country, billing_email, billing_phone,
+        shipping_first_name, shipping_last_name, shipping_address_1,
+        shipping_city, shipping_postcode, shipping_country,
+        cart_discount, order_shipping, order_tax, order_total, updated_at
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,NOW())
+      ON CONFLICT (wp_order_id) DO UPDATE SET
+        wp_customer_id = EXCLUDED.wp_customer_id,
+        post_status = EXCLUDED.post_status,
+        post_date = EXCLUDED.post_date,
+        post_modified = EXCLUDED.post_modified,
+        payment_method_title = EXCLUDED.payment_method_title,
+        billing_first_name = EXCLUDED.billing_first_name,
+        billing_last_name = EXCLUDED.billing_last_name,
+        billing_address_1 = EXCLUDED.billing_address_1,
+        billing_address_2 = EXCLUDED.billing_address_2,
+        billing_city = EXCLUDED.billing_city,
+        billing_postcode = EXCLUDED.billing_postcode,
+        billing_country = EXCLUDED.billing_country,
+        billing_email = EXCLUDED.billing_email,
+        billing_phone = EXCLUDED.billing_phone,
+        shipping_first_name = EXCLUDED.shipping_first_name,
+        shipping_last_name = EXCLUDED.shipping_last_name,
+        shipping_address_1 = EXCLUDED.shipping_address_1,
+        shipping_city = EXCLUDED.shipping_city,
+        shipping_postcode = EXCLUDED.shipping_postcode,
+        shipping_country = EXCLUDED.shipping_country,
+        cart_discount = EXCLUDED.cart_discount,
+        order_shipping = EXCLUDED.order_shipping,
+        order_tax = EXCLUDED.order_tax,
+        order_total = EXCLUDED.order_total,
+        updated_at = NOW()
+    `, [
+      wpOrderId,
+      wcOrder.customer_id || null,
+      status,
+      wcOrder.date_created_gmt ? wcOrder.date_created_gmt.replace('T', ' ') : null,
+      wcOrder.date_modified_gmt ? wcOrder.date_modified_gmt.replace('T', ' ') : null,
+      wcOrder.payment_method_title || null,
+      wcOrder.created_via || null,
+      billing.first_name || null,
+      billing.last_name || null,
+      billing.address_1 || null,
+      billing.address_2 || null,
+      billing.city || null,
+      billing.postcode || null,
+      billing.country || null,
+      billing.email || null,
+      billing.phone || null,
+      shipping.first_name || null,
+      shipping.last_name || null,
+      shipping.address_1 || null,
+      shipping.city || null,
+      shipping.postcode || null,
+      shipping.country || null,
+      parseFloat(wcOrder.discount_total) || 0,
+      parseFloat(wcOrder.shipping_total) || 0,
+      parseFloat(wcOrder.total_tax) || 0,
+      parseFloat(wcOrder.total) || 0
+    ]);
+
+    // Réimporter les articles
+    await client.query('DELETE FROM order_items WHERE wp_order_id = $1', [wpOrderId]);
+
+    for (const item of (wcOrder.line_items || [])) {
+      await client.query(`
+        INSERT INTO order_items (
+          wp_order_id, order_item_id, order_item_name, order_item_type,
+          product_id, variation_id, qty, line_subtotal, line_total, line_tax
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+      `, [
+        wpOrderId,
+        item.id || 0,
+        item.name || '',
+        'line_item',
+        item.product_id || null,
+        item.variation_id || null,
+        item.quantity || 0,
+        parseFloat(item.subtotal) || 0,
+        parseFloat(item.total) || 0,
+        parseFloat(item.total_tax) || 0
+      ]);
+    }
+
+    // Lignes de livraison
+    for (const line of (wcOrder.shipping_lines || [])) {
+      await client.query(`
+        INSERT INTO order_items (wp_order_id, order_item_id, order_item_name, order_item_type, line_total)
+        VALUES ($1,$2,$3,'shipping',$4)
+      `, [wpOrderId, line.id || 0, line.method_title || '', parseFloat(line.total) || 0]);
+    }
+
+    await client.query('COMMIT');
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+
+  // Appliquer les frais de paiement
+  const { applyPaymentCostToOrder } = require('./paymentController');
+  await applyPaymentCostToOrder(
+    wpOrderId,
+    wcOrder.payment_method_title || null,
+    wcOrder.shipping?.country || null,
+    parseFloat(wcOrder.total) || 0
+  );
+
+  console.log(`✓ Order #${wpOrderId} reimported from WooCommerce`);
+  return { success: true };
+}
+
+/**
+ * Réimporte les commandes importées de façon incomplète (typiquement créées en
+ * back-office WC, synchronisées trop tôt par YouSync avant que WC ait calculé les
+ * totaux et posé la date). Critère fiable : post_date IS NULL (zéro faux positif,
+ * les commandes 100% offertes gardent leur date).
+ *
+ * Limite d'âge : on ignore les brouillons de plus de 7 jours (post_modified),
+ * considérés abandonnés, pour ne pas rappeler l'API indéfiniment.
+ *
+ * @returns {Promise<{checked:number, fixed:number, skipped:number, errors:number}>}
+ */
+async function reimportIncompleteOrders() {
+  const { rows } = await pool.query(`
+    SELECT wp_order_id FROM orders
+    WHERE post_date IS NULL
+      AND post_status NOT IN ('wc-cancelled','wc-refunded','wc-failed','wc-trash')
+      AND post_modified > NOW() - INTERVAL '7 days'
+    ORDER BY post_modified DESC
+  `);
+
+  const stats = { checked: rows.length, fixed: 0, skipped: 0, errors: 0 };
+  if (rows.length === 0) return stats;
+
+  console.log(`🔁 Rattrapage commandes incomplètes : ${rows.length} à vérifier`);
+  for (const { wp_order_id } of rows) {
+    try {
+      const result = await reimportOrderFromWc(wp_order_id);
+      if (result.skipped) stats.skipped++;
+      else stats.fixed++;
+    } catch (err) {
+      stats.errors++;
+      console.error(`🔁 Rattrapage échec order #${wp_order_id}:`, err.response?.data?.message || err.message);
+    }
+  }
+  console.log(`🔁 Rattrapage terminé: ${stats.fixed} corrigée(s), ${stats.skipped} brouillon(s), ${stats.errors} erreur(s)`);
+  return stats;
+}
+
+/**
  * Réimporte une commande depuis l'API REST WooCommerce
  * POST /api/orders/:id/reimport
  */
 exports.reimport = async (req, res) => {
   try {
     const wpOrderId = parseInt(req.params.id);
-
-    // Récupérer les credentials WC depuis rewards_config
-    const configResult = await pool.query(
-      'SELECT woocommerce_url, consumer_key, consumer_secret, htaccess_user, htaccess_password FROM rewards_config LIMIT 1'
-    );
-
-    if (!configResult.rows.length || !configResult.rows[0].consumer_key) {
-      return res.status(500).json({ success: false, error: 'WooCommerce credentials not configured' });
+    const result = await reimportOrderFromWc(wpOrderId);
+    if (result.skipped) {
+      return res.json({ success: true, message: `Commande #${wpOrderId} encore en brouillon côté WooCommerce — non réimportée` });
     }
-
-    const { woocommerce_url, consumer_key, consumer_secret, htaccess_user, htaccess_password } = configResult.rows[0];
-    const baseUrl = woocommerce_url.replace(/\/$/, '');
-
-    // Headers avec htaccess si configuré
-    const headers = {};
-    if (htaccess_user && htaccess_password) {
-      const encoded = Buffer.from(`${htaccess_user}:${htaccess_password}`).toString('base64');
-      headers['Authorization'] = `Basic ${encoded}`;
-    }
-
-    // Appel API REST WooCommerce
-    const wcResponse = await axios.get(`${baseUrl}/wp-json/wc/v3/orders/${wpOrderId}`, {
-      params: { consumer_key, consumer_secret },
-      headers,
-      httpsAgent,
-      timeout: 15000
-    });
-
-    const wcOrder = wcResponse.data;
-
-    // Mapper les données WC vers notre schéma BDD
-    const status = wcOrder.status.startsWith('wc-') ? wcOrder.status : `wc-${wcOrder.status}`;
-    const billing = wcOrder.billing || {};
-    const shipping = wcOrder.shipping || {};
-
-    // Upsert de la commande
-    const client = await pool.connect();
-    try {
-      await client.query('BEGIN');
-
-      await client.query(`
-        INSERT INTO orders (
-          wp_order_id, wp_customer_id, post_status, post_date, post_modified,
-          payment_method_title, created_via,
-          billing_first_name, billing_last_name, billing_address_1, billing_address_2,
-          billing_city, billing_postcode, billing_country, billing_email, billing_phone,
-          shipping_first_name, shipping_last_name, shipping_address_1,
-          shipping_city, shipping_postcode, shipping_country,
-          cart_discount, order_shipping, order_tax, order_total, updated_at
-        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,NOW())
-        ON CONFLICT (wp_order_id) DO UPDATE SET
-          wp_customer_id = EXCLUDED.wp_customer_id,
-          post_status = EXCLUDED.post_status,
-          post_date = EXCLUDED.post_date,
-          post_modified = EXCLUDED.post_modified,
-          payment_method_title = EXCLUDED.payment_method_title,
-          billing_first_name = EXCLUDED.billing_first_name,
-          billing_last_name = EXCLUDED.billing_last_name,
-          billing_address_1 = EXCLUDED.billing_address_1,
-          billing_address_2 = EXCLUDED.billing_address_2,
-          billing_city = EXCLUDED.billing_city,
-          billing_postcode = EXCLUDED.billing_postcode,
-          billing_country = EXCLUDED.billing_country,
-          billing_email = EXCLUDED.billing_email,
-          billing_phone = EXCLUDED.billing_phone,
-          shipping_first_name = EXCLUDED.shipping_first_name,
-          shipping_last_name = EXCLUDED.shipping_last_name,
-          shipping_address_1 = EXCLUDED.shipping_address_1,
-          shipping_city = EXCLUDED.shipping_city,
-          shipping_postcode = EXCLUDED.shipping_postcode,
-          shipping_country = EXCLUDED.shipping_country,
-          cart_discount = EXCLUDED.cart_discount,
-          order_shipping = EXCLUDED.order_shipping,
-          order_tax = EXCLUDED.order_tax,
-          order_total = EXCLUDED.order_total,
-          updated_at = NOW()
-      `, [
-        wpOrderId,
-        wcOrder.customer_id || null,
-        status,
-        wcOrder.date_created_gmt ? wcOrder.date_created_gmt.replace('T', ' ') : null,
-        wcOrder.date_modified_gmt ? wcOrder.date_modified_gmt.replace('T', ' ') : null,
-        wcOrder.payment_method_title || null,
-        wcOrder.created_via || null,
-        billing.first_name || null,
-        billing.last_name || null,
-        billing.address_1 || null,
-        billing.address_2 || null,
-        billing.city || null,
-        billing.postcode || null,
-        billing.country || null,
-        billing.email || null,
-        billing.phone || null,
-        shipping.first_name || null,
-        shipping.last_name || null,
-        shipping.address_1 || null,
-        shipping.city || null,
-        shipping.postcode || null,
-        shipping.country || null,
-        parseFloat(wcOrder.discount_total) || 0,
-        parseFloat(wcOrder.shipping_total) || 0,
-        parseFloat(wcOrder.total_tax) || 0,
-        parseFloat(wcOrder.total) || 0
-      ]);
-
-      // Réimporter les articles
-      await client.query('DELETE FROM order_items WHERE wp_order_id = $1', [wpOrderId]);
-
-      for (const item of (wcOrder.line_items || [])) {
-        await client.query(`
-          INSERT INTO order_items (
-            wp_order_id, order_item_id, order_item_name, order_item_type,
-            product_id, variation_id, qty, line_subtotal, line_total, line_tax
-          ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
-        `, [
-          wpOrderId,
-          item.id || 0,
-          item.name || '',
-          'line_item',
-          item.product_id || null,
-          item.variation_id || null,
-          item.quantity || 0,
-          parseFloat(item.subtotal) || 0,
-          parseFloat(item.total) || 0,
-          parseFloat(item.total_tax) || 0
-        ]);
-      }
-
-      // Lignes de livraison
-      for (const line of (wcOrder.shipping_lines || [])) {
-        await client.query(`
-          INSERT INTO order_items (wp_order_id, order_item_id, order_item_name, order_item_type, line_total)
-          VALUES ($1,$2,$3,'shipping',$4)
-        `, [wpOrderId, line.id || 0, line.method_title || '', parseFloat(line.total) || 0]);
-      }
-
-      await client.query('COMMIT');
-    } catch (err) {
-      await client.query('ROLLBACK');
-      throw err;
-    } finally {
-      client.release();
-    }
-
-    // Appliquer les frais de paiement
-    const { applyPaymentCostToOrder } = require('./paymentController');
-    await applyPaymentCostToOrder(
-      wpOrderId,
-      wcOrder.payment_method_title || null,
-      wcOrder.shipping?.country || null,
-      parseFloat(wcOrder.total) || 0
-    );
-
-    console.log(`✓ Order #${wpOrderId} reimported from WooCommerce`);
     res.json({ success: true, message: `Commande #${wpOrderId} réimportée avec succès` });
-
   } catch (error) {
     console.error('Error reimporting order:', error.response?.data || error.message);
     res.status(500).json({ success: false, error: error.response?.data?.message || error.message });
   }
 };
+
+/**
+ * Rattrape toutes les commandes incomplètes (post_date NULL).
+ * POST /api/orders/reimport-incomplete
+ */
+exports.reimportIncomplete = async (req, res) => {
+  try {
+    const stats = await reimportIncompleteOrders();
+    res.json({ success: true, ...stats });
+  } catch (error) {
+    console.error('Error reimporting incomplete orders:', error.response?.data || error.message);
+    res.status(500).json({ success: false, error: error.response?.data?.message || error.message });
+  }
+};
+
+// Export interne pour le service de sync
+exports.reimportIncompleteOrders = reimportIncompleteOrders;

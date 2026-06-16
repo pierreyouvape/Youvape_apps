@@ -143,6 +143,17 @@ const wcSyncService = {
         }
       }
 
+      // Si des commandes ont été traitées, lancer un rattrapage des commandes
+      // importées de façon incomplète (créées en back-office WC, synchronisées
+      // trop tôt par YouSync avant calcul des totaux). Fire-and-forget : ne doit
+      // jamais bloquer ni faire échouer le cycle de sync.
+      if (processedIds.some(e => e.type === 'order')) {
+        const { reimportIncompleteOrders } = require('../controllers/ordersController');
+        reimportIncompleteOrders().catch(err => {
+          console.error('🔁 Rattrapage commandes incomplètes échoué:', err.message);
+        });
+      }
+
       // Acquitter les événements traités
       if (processedIds.length > 0) {
         try {
