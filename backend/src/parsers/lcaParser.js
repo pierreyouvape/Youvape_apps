@@ -1,14 +1,18 @@
 /**
  * Parseur PDF pour LCA Distribution
- * Gere 3 formats :
+ * Gere 4 formats :
+ * - "Facture" : facture OpenSi avec colonnes Référence | Désignation | Quantité | PU HT | Montant HT
  * - "Confirmation" : mail "Confirmation de votre commande" (refs apres "Référence:", 1 qte + prix total)
  * - "Preparation" : mail "Votre commande est en cours de preparation" (refs en debut de ligne, 3 colonnes qte)
  * - "SiteWeb" : page commande site LCA (tableau Nom|Référence|Prix|Qté avec Commandé/Expédié)
- * Pas de prix exploite — uniquement refs, designations, quantites
  */
 
 module.exports = {
   parse: (text) => {
+    // Facture OpenSi LCA (ex: F2606391933)
+    if (text.includes('LCA DISTRIBUTION') && text.includes('Facture N°')) {
+      return parseFacture(text);
+    }
     // Detecter le format SiteWeb : header de tableau "Nom du produit" + "Référence" + "Qté"
     if (text.includes('Nom du produit') && text.includes('Commandé')) {
       return parseSiteWeb(text);
@@ -227,6 +231,38 @@ function parseSiteWeb(text) {
   }
 
   return { orderNumber, orderDate, items, hasPrice: false, pdfIsPackBased: true };
+}
+
+/**
+ * Format "Facture OpenSi" LCA Distribution
+ * Colonnes : Référence | Désignation | Quantité | PU HT | Montant HT
+ * Ref format : #REFxxxxx-xxxxx
+ * Ex : #REF18934-65382 Cyber G Slim DTE - Aspire - Metallic Purple Red 10 5.96 59.60
+ */
+function parseFacture(text) {
+  // Numéro de facture : "Facture N° F2606391933"
+  const invoiceMatch = text.match(/Facture N°\s+(\S+)/);
+  const orderNumber = invoiceMatch ? invoiceMatch[1] : null;
+
+  // Date : "Date : 15/06/2026" → "2026-06-15"
+  const dateMatch = text.match(/Date\s*:\s*(\d{2})\/(\d{2})\/(\d{4})/);
+  const orderDate = dateMatch ? `${dateMatch[3]}-${dateMatch[2]}-${dateMatch[1]}` : null;
+
+  // Chaque ligne article : #REFdigits-digits <designation> <qty> <pu_ht> <montant_ht>
+  // Le montant HT est le dernier champ, le PU HT l'avant-dernier, la qté l'avant-avant-dernier
+  const items = [];
+  const lineRegex = /^#REF(\d+-\d+)\s+(.+?)\s+(\d+)\s+([\d.]+)\s+([\d.]+)\s*$/gm;
+  let match;
+  while ((match = lineRegex.exec(text)) !== null) {
+    items.push({
+      supplier_sku: `#REF${match[1]}`,
+      designation: match[2].trim(),
+      qty_ordered: parseInt(match[3]),
+      unit_price_net: parseFloat(match[4]),
+    });
+  }
+
+  return { orderNumber, orderDate, items, hasPrice: true, pdfIsPackBased: false };
 }
 
 /**
