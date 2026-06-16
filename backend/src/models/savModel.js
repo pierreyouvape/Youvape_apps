@@ -186,8 +186,7 @@ class SavModel {
          FROM orders
          WHERE wp_customer_id = $1
            AND wp_order_id::text != $2
-         ORDER BY post_date DESC
-         LIMIT 6`,
+         ORDER BY post_date DESC`,
         [ticket.customer_wp_id, ticket.order_id || '0']
       );
 
