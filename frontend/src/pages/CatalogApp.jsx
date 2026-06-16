@@ -85,6 +85,10 @@ const CatalogApp = () => {
   const [sortBy, setSortBy] = useState(null);
   const [sortDir, setSortDir] = useState('desc');
 
+  // Filtre marque
+  const [selectedBrand, setSelectedBrand] = useState('');
+  const [brandsList, setBrandsList] = useState([]);
+
   // CSV import state
   const [csvModal, setCsvModal] = useState(false);
   const [csvHeaders, setCsvHeaders] = useState([]);
@@ -95,11 +99,11 @@ const CatalogApp = () => {
 
   const headers = { Authorization: `Bearer ${token}` };
 
-  const fetchProducts = async (offset = 0, search = searchTerm, tab = stockTab, sort = sortBy, dir = sortDir) => {
+  const fetchProducts = async (offset = 0, search = searchTerm, tab = stockTab, sort = sortBy, dir = sortDir, brand = selectedBrand) => {
     setLoading(true);
     try {
       const res = await axios.get(`${API_URL}/products/catalog`, {
-        params: { limit: 50, offset, search, stockTab: tab, sortBy: sort || undefined, sortDir: dir },
+        params: { limit: 50, offset, search, stockTab: tab, sortBy: sort || undefined, sortDir: dir, brand: brand || undefined },
         headers
       });
       if (res.data.success) {
@@ -118,14 +122,22 @@ const CatalogApp = () => {
     const load = async () => {
       let tab = 'all';
       try {
-        const res = await axios.get(`${API_URL}/preferences/catalog`, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-        if (res.data.success) {
-          setHiddenColumns(res.data.hiddenColumns || []);
-          setCompact(res.data.compact || false);
-          tab = res.data.stockTab || 'all';
+        const [prefsRes, brandsRes] = await Promise.all([
+          axios.get(`${API_URL}/preferences/catalog`, { headers: { Authorization: `Bearer ${token}` } }),
+          axios.get(`${API_URL}/brands`, { headers: { Authorization: `Bearer ${token}` } }),
+        ]);
+        if (prefsRes.data.success) {
+          setHiddenColumns(prefsRes.data.hiddenColumns || []);
+          setCompact(prefsRes.data.compact || false);
+          tab = prefsRes.data.stockTab || 'all';
           setStockTab(tab);
+        }
+        if (brandsRes.data.success) {
+          const names = (brandsRes.data.data || [])
+            .map(b => b.brand)
+            .filter(Boolean)
+            .sort((a, b) => a.localeCompare(b, 'fr'));
+          setBrandsList(names);
         }
       } catch (err) {
         console.error('Erreur chargement préférences colonnes catalog:', err);
@@ -138,14 +150,19 @@ const CatalogApp = () => {
   const handleStockTabChange = (tab) => {
     setStockTab(tab);
     savePreferences(hiddenColumns, compact, tab);
-    fetchProducts(0, searchTerm, tab);
+    fetchProducts(0, searchTerm, tab, sortBy, sortDir, selectedBrand);
   };
 
   const handleSort = (column) => {
     const nextDir = (sortBy === column && sortDir === 'desc') ? 'asc' : 'desc';
     setSortBy(column);
     setSortDir(nextDir);
-    fetchProducts(0, searchTerm, stockTab, column, nextDir);
+    fetchProducts(0, searchTerm, stockTab, column, nextDir, selectedBrand);
+  };
+
+  const handleBrandChange = (brand) => {
+    setSelectedBrand(brand);
+    fetchProducts(0, searchTerm, stockTab, sortBy, sortDir, brand);
   };
 
   const savePreferences = async (cols, cmp, tab = stockTab) => {
@@ -490,6 +507,23 @@ const CatalogApp = () => {
               </div>
             )}
           </div>
+
+          {/* Filtre marque */}
+          <select
+            value={selectedBrand}
+            onChange={e => handleBrandChange(e.target.value)}
+            style={{
+              marginLeft: '12px', padding: '8px 12px', backgroundColor: '#fff', color: selectedBrand ? '#059669' : '#374151',
+              border: selectedBrand ? '1px solid #059669' : '1px solid #d1d5db',
+              borderRadius: '6px', fontSize: '13px', fontWeight: selectedBrand ? '600' : '500',
+              cursor: 'pointer', maxWidth: '160px'
+            }}
+          >
+            <option value="">Toutes les marques</option>
+            {brandsList.map(b => (
+              <option key={b} value={b}>{b}</option>
+            ))}
+          </select>
         </div>
         </div>
 

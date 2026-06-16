@@ -687,7 +687,7 @@ class ProductModel {
    * Produits simples publiés + variations dont le parent est publish
    * Tri par date de création DESC
    */
-  async getAllForCatalog(limit = 50, offset = 0, search = '', trackStockOnly = true, stockTab = 'all', sortBy = null, sortDir = 'desc') {
+  async getAllForCatalog(limit = 50, offset = 0, search = '', trackStockOnly = true, stockTab = 'all', sortBy = null, sortDir = 'desc', brand = '') {
     const reorderIdsSql = await getReorderIdsSql(stockTab);
     let whereClause = `
       WHERE p.post_status = 'publish'
@@ -744,6 +744,12 @@ class ProductModel {
       whereClause += ' AND ' + wordClauses.join(' AND ');
       words.forEach(w => params.push(w.length <= 2 ? `% ${w} %` : `%${w}%`));
       paramIndex += words.length;
+    }
+
+    if (brand) {
+      whereClause += ` AND p.brand = $${paramIndex}`;
+      params.push(brand);
+      paramIndex++;
     }
 
     params.push(limit, offset);
@@ -856,7 +862,7 @@ class ProductModel {
   /**
    * Compte les produits pour le catalogue
    */
-  async countForCatalog(search = '', trackStockOnly = true, stockTab = 'all') {
+  async countForCatalog(search = '', trackStockOnly = true, stockTab = 'all', brand = '') {
     const reorderIdsSql = await getReorderIdsSql(stockTab);
     let whereClause = `
       WHERE p.post_status = 'publish'
@@ -912,6 +918,11 @@ class ProductModel {
       });
       whereClause += ' AND ' + wordClauses.join(' AND ');
       words.forEach(w => params.push(w.length <= 2 ? `% ${w} %` : `%${w}%`));
+    }
+
+    if (brand) {
+      whereClause += ` AND p.brand = $${params.length + 1}`;
+      params.push(brand);
     }
 
     const query = `

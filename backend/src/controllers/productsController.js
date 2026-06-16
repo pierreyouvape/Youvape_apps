@@ -311,9 +311,10 @@ exports.getCatalogList = async (req, res) => {
     const stockTab = req.query.stockTab || 'all';
     const sortBy = req.query.sortBy || null;
     const sortDir = req.query.sortDir || 'desc';
+    const brand = req.query.brand || '';
 
-    const { parents, variations } = await productModel.getAllForCatalog(limit, offset, search, true, stockTab, sortBy, sortDir);
-    const { total, totalWithVariations } = await productModel.countForCatalog(search, true, stockTab);
+    const { parents, variations } = await productModel.getAllForCatalog(limit, offset, search, true, stockTab, sortBy, sortDir, brand);
+    const { total, totalWithVariations } = await productModel.countForCatalog(search, true, stockTab, brand);
 
     res.json({
       success: true,
