@@ -687,7 +687,7 @@ class ProductModel {
    * Produits simples publiés + variations dont le parent est publish
    * Tri par date de création DESC
    */
-  async getAllForCatalog(limit = 50, offset = 0, search = '', trackStockOnly = true, stockTab = 'all', sortBy = null, sortDir = 'desc', brand = '') {
+  async getAllForCatalog(limit = 50, offset = 0, search = '', trackStockOnly = true, stockTab = 'all', sortBy = null, sortDir = 'desc', brand = '', onlyHidden = false) {
     const reorderIdsSql = await getReorderIdsSql(stockTab);
     let whereClause = `
       WHERE p.post_status = 'publish'
@@ -704,6 +704,17 @@ class ProductModel {
         )
       `;
     }
+    if (onlyHidden) {
+      whereClause += `
+        AND (
+          (p.product_type = 'simple' AND p.track_stock = false)
+          OR (p.product_type = 'variable' AND EXISTS (
+            SELECT 1 FROM products v
+            WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation' AND v.track_stock = false AND v.post_status = 'publish'
+          ))
+        )
+      `;
+    }
     const stockCond = stockTabCondition('p', stockTab, reorderIdsSql);
     const stockCondVar = stockTabCondition('v', stockTab, reorderIdsSql);
     if (stockCond) {
@@ -714,7 +725,7 @@ class ProductModel {
             SELECT 1 FROM products v
             WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation'
               AND v.post_status = 'publish'
-              ${trackStockOnly ? 'AND v.track_stock = true' : ''}
+              ${trackStockOnly ? 'AND v.track_stock = true' : onlyHidden ? 'AND v.track_stock = false' : ''}
               AND ${stockCondVar}
           ))
         )
@@ -822,7 +833,7 @@ class ProductModel {
         FROM products v
         LEFT JOIN products p_parent ON v.wp_parent_id = p_parent.wp_product_id
         WHERE v.wp_parent_id = ANY($1) AND v.product_type = 'variation' AND v.post_status = 'publish'
-          ${trackStockOnly ? 'AND v.track_stock = true' : ''}
+          ${trackStockOnly ? 'AND v.track_stock = true' : onlyHidden ? 'AND v.track_stock = false' : ''}
           ${stockCondVar ? `AND ${stockCondVar}` : ''}
           ${varFilter}
         ORDER BY v.post_title ASC
@@ -884,7 +895,7 @@ class ProductModel {
   /**
    * Compte les produits pour le catalogue
    */
-  async countForCatalog(search = '', trackStockOnly = true, stockTab = 'all', brand = '') {
+  async countForCatalog(search = '', trackStockOnly = true, stockTab = 'all', brand = '', onlyHidden = false) {
     const reorderIdsSql = await getReorderIdsSql(stockTab);
     let whereClause = `
       WHERE p.post_status = 'publish'
@@ -901,6 +912,17 @@ class ProductModel {
         )
       `;
     }
+    if (onlyHidden) {
+      whereClause += `
+        AND (
+          (p.product_type = 'simple' AND p.track_stock = false)
+          OR (p.product_type = 'variable' AND EXISTS (
+            SELECT 1 FROM products v
+            WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation' AND v.track_stock = false AND v.post_status = 'publish'
+          ))
+        )
+      `;
+    }
     const stockCond = stockTabCondition('p', stockTab, reorderIdsSql);
     const stockCondVar = stockTabCondition('v', stockTab, reorderIdsSql);
     if (stockCond) {
@@ -911,7 +933,7 @@ class ProductModel {
             SELECT 1 FROM products v
             WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation'
               AND v.post_status = 'publish'
-              ${trackStockOnly ? 'AND v.track_stock = true' : ''}
+              ${trackStockOnly ? 'AND v.track_stock = true' : onlyHidden ? 'AND v.track_stock = false' : ''}
               AND ${stockCondVar}
           ))
         )
@@ -956,7 +978,7 @@ class ProductModel {
               SELECT COUNT(*) FROM products v
               WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation'
                 AND v.post_status = 'publish'
-                ${trackStockOnly ? 'AND v.track_stock = true' : ''}
+                ${trackStockOnly ? 'AND v.track_stock = true' : onlyHidden ? 'AND v.track_stock = false' : ''}
                 ${stockCondVar ? `AND ${stockCondVar}` : ''}
             )
           END

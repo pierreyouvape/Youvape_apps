@@ -89,8 +89,8 @@ const CatalogApp = () => {
   const [selectedBrand, setSelectedBrand] = useState('');
   const [brandsList, setBrandsList] = useState([]);
 
-  // Afficher les produits masqués (track_stock = false)
-  const [showHidden, setShowHidden] = useState(false);
+  // 0 = normaux seulement, 1 = tous (normaux + masqués), 2 = masqués seulement
+  const [showHidden, setShowHidden] = useState(0);
 
   // CSV import state
   const [csvModal, setCsvModal] = useState(false);
@@ -106,7 +106,7 @@ const CatalogApp = () => {
     setLoading(true);
     try {
       const res = await axios.get(`${API_URL}/products/catalog`, {
-        params: { limit: 50, offset, search, stockTab: tab, sortBy: sort || undefined, sortDir: dir, brand: brand || undefined, showHidden: hidden || undefined },
+        params: { limit: 50, offset, search, stockTab: tab, sortBy: sort || undefined, sortDir: dir, brand: brand || undefined, showHidden: hidden === 1 ? 'true' : hidden === 2 ? 'only' : undefined },
         headers
       });
       if (res.data.success) {
@@ -169,7 +169,7 @@ const CatalogApp = () => {
   };
 
   const handleShowHiddenToggle = () => {
-    const next = !showHidden;
+    const next = (showHidden + 1) % 3;
     setShowHidden(next);
     fetchProducts(0, searchTerm, stockTab, sortBy, sortDir, selectedBrand, next);
   };
@@ -534,19 +534,19 @@ const CatalogApp = () => {
             ))}
           </select>
 
-          {/* Toggle produits masqués */}
+          {/* Toggle produits masqués — 3 états */}
           <button
             onClick={handleShowHiddenToggle}
             style={{
               marginLeft: '12px', padding: '8px 16px',
-              backgroundColor: showHidden ? '#fef3c7' : '#fff',
-              color: showHidden ? '#92400e' : '#6b7280',
-              border: showHidden ? '1px solid #f59e0b' : '1px solid #d1d5db',
-              borderRadius: '6px', fontSize: '13px', fontWeight: showHidden ? '600' : '500',
+              backgroundColor: showHidden === 2 ? '#fff7ed' : showHidden === 1 ? '#fef3c7' : '#fff',
+              color: showHidden === 2 ? '#9a3412' : showHidden === 1 ? '#92400e' : '#6b7280',
+              border: showHidden === 2 ? '1px solid #ea580c' : showHidden === 1 ? '1px solid #f59e0b' : '1px solid #d1d5db',
+              borderRadius: '6px', fontSize: '13px', fontWeight: showHidden > 0 ? '600' : '500',
               cursor: 'pointer'
             }}
           >
-            {showHidden ? '👁 Masqués visibles' : '👁 Afficher masqués'}
+            {showHidden === 2 ? '👁 Masqués seuls' : showHidden === 1 ? '👁 + masqués' : '👁 Afficher masqués'}
           </button>
         </div>
         </div>
