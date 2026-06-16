@@ -141,7 +141,7 @@ const ProductDetail = () => {
           axios.get(`${API_URL}/products/${id}/stats/recent-orders`, { params: { limit: 20 } }).catch(() => ({ data: { data: [] } }))
         ]);
         setKpis(kpisRes.data.data);
-        setVariantsStats(variantsStatsRes.data.data || []);
+        setVariantsStats((variantsStatsRes.data.data || []).sort((a, b) => (b.stock || 0) - (a.stock || 0)));
         setSalesByDayOfWeek(dayOfWeekRes.data.data || []);
         setSalesByHour(hourRes.data.data || []);
         setFrequentlyBought(boughtWithRes.data.data || []);
@@ -202,7 +202,7 @@ const ProductDetail = () => {
       if (params.start) queryParams.startDate = params.start;
       if (params.end) queryParams.endDate = params.end;
       const response = await axios.get(`${API_URL}/products/${id}/stats/all-variants`, { params: queryParams });
-      if (response.data.success) setVariantsStats(response.data.data || []);
+      if (response.data.success) setVariantsStats((response.data.data || []).sort((a, b) => (b.stock || 0) - (a.stock || 0)));
     } catch (err) {}
   };
 
