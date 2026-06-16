@@ -485,6 +485,17 @@ function extractRefAndDesignation(fullText) {
     };
   }
 
+  // Strategie 3 : ref de type "VX motminuscule motminuscule... Designation capitale"
+  // Pour les refs LVP à espaces avec préfixe 2+ majuscules suivi de mots minuscules/chiffres
+  // et dont la désignation commence par une majuscule.
+  // Ex: "VP cartouche veco go 0,8 Cartouche Veco Go 4ml/5ml"
+  //      ^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^
+  //      ref (prefix maj + mots min)  désignation (commence par maj)
+  const lcToUcTransition = fullText.match(/^([A-Z]{2,}[^\s]*(?:\s+[a-z0-9][^\s]*)+)\s+([A-Z].+)$/);
+  if (lcToUcTransition) {
+    return { supplierSku: lcToUcTransition[1], designation: lcToUcTransition[2] };
+  }
+
   // Fallback : le premier mot est la ref
   const parts = fullText.split(/\s+/);
   return {
