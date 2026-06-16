@@ -28,10 +28,13 @@ const SalesByDayOfWeekChart = ({ data, height = 350 }) => {
   };
 
   // Transformer les données pour afficher les noms en français
-  const formattedData = data.map(item => ({
-    ...item,
-    day_name_fr: dayNames[item.day_of_week] || item.day_name.trim()
-  })).sort((a, b) => a.day_of_week - b.day_of_week);
+  const formattedData = data
+    .filter(item => item.day_of_week !== null)
+    .map(item => ({
+      ...item,
+      day_name_fr: dayNames[item.day_of_week] || (item.day_name ? item.day_name.trim() : '')
+    }))
+    .sort((a, b) => a.day_of_week - b.day_of_week);
 
   const CustomTooltip = ({ active, payload, label }) => {
     if (active && payload && payload.length) {
