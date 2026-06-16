@@ -7,6 +7,7 @@ import { Stats as StatsIcon } from '../components/AppIcons';
 import { formatDate } from '../utils/dateUtils';
 import { AuthContext } from '../context/AuthContext';
 import { LinkBox } from '../utils/navHelpers';
+import { getTrackingUrl } from '../utils/trackingUtils';
 
 const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:3000/api/auth').replace('/auth', '');
 
@@ -51,23 +52,6 @@ const STATUS_MAP = {
 
 const fmt = (n) =>
   new Intl.NumberFormat('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(parseFloat(n) || 0) + ' €';
-
-// Construit le lien de suivi du transporteur à partir du nom du transporteur et du n° de suivi
-function getTrackingUrl(carrier, trackingNumber) {
-  if (!carrier || !trackingNumber) return null;
-  const c = carrier.toLowerCase();
-  const code = encodeURIComponent(trackingNumber);
-  if (c.includes('chronopost') || c.includes('chrono')) {
-    return `https://www.chronopost.fr/tracking-no-cms/suivi-page?listeNumerosLT=${code}`;
-  }
-  if (c.includes('colissimo') || c.includes('la poste') || c.includes('lettre suivie') || c.includes('bpost')) {
-    return `https://www.laposte.fr/outils/suivre-vos-envois?code=${code}`;
-  }
-  if (c.includes('mondial relay')) {
-    return `https://www.mondialrelay.fr/suivi-de-colis/?numeroExpedition=${code}`;
-  }
-  return null;
-}
 
 /* ─── SOUS-COMPOSANTS ────────────────────────────────────── */
 

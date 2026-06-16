@@ -134,6 +134,7 @@ class SavModel {
          o.post_date         as order_date,
          o.tracking_number   as order_tracking_from_order,
          o.shipping_carrier  as order_carrier,
+         o.shipping_method   as order_shipping_method,
          c.first_name        as customer_first_name,
          c.last_name         as customer_last_name,
          c.email             as customer_email_db,

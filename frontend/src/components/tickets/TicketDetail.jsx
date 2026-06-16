@@ -5,6 +5,7 @@ import StatusBadge from './StatusBadge';
 import { useTicketStatuses } from './useTicketStatuses';
 import { TICKETS_COLOR, formatTicketId } from './ticketConstants';
 import { formatDate, formatDateUTC } from '../../utils/dateUtils';
+import { getTrackingUrl } from '../../utils/trackingUtils';
 import { AuthContext } from '../../context/AuthContext';
 import { useOpenTickets } from '../../context/OpenTicketsContext';
 import OrderCard from './OrderCard';
@@ -1407,7 +1408,13 @@ function TicketFieldsPanel({ ticket, onFieldChange, users }) {
   const nom = parts.slice(1).join(' ') || '';
 
   const trackingNum = ticket.order_tracking || ticket.order_tracking_from_order || '';
-  const trackingUrl = trackingNum ? `https://www.laposte.fr/outils/suivre-vos-envois?code=${trackingNum}` : null;
+  // Lien de suivi selon le transporteur de la commande liée ; à défaut (transporteur
+  // inconnu), on retombe sur La Poste pour conserver l'ancien comportement.
+  const trackingCarrier = ticket.order_carrier || ticket.order_shipping_method || '';
+  const trackingUrl = trackingNum
+    ? (getTrackingUrl(trackingCarrier, trackingNum)
+       || `https://www.laposte.fr/outils/suivre-vos-envois?code=${encodeURIComponent(trackingNum)}`)
+    : null;
 
   const [assignOpen, setAssignOpen] = useState(false);
   const assignRef = useRef();
@@ -2338,6 +2345,43 @@ export default function TicketDetail({ ticketId }) {
     finally { setLoading(false); }
   }, [ticketId]);
 
+  // Rafraîchissement silencieux des données enrichies (fiche client, commandes,
+  // historique, tickets du client) sans repasser par l'écran de chargement.
+  // On préserve les champs éditables localement pour ne pas écraser une saisie
+  // en cours, et on ne rafraîchit pas si un autosave est encore en attente.
+  const refetchTicket = useCallback(async () => {
+    if (saveTimerRef.current) return; // saisie non encore persistée
+    try {
+      const res = await fetch(`${API}/${ticketId}`);
+      const data = await res.json();
+      if (!data.success) return;
+      setTicket(prev => {
+        if (!prev) return data.ticket;
+        // Conserver les champs éditables saisis localement
+        return {
+          ...data.ticket,
+          order_id: prev.order_id,
+          order_tracking: prev.order_tracking,
+          customer_name: prev.customer_name,
+          customer_email: prev.customer_email,
+        };
+      });
+    } catch { /* silencieux */ }
+  }, [ticketId]);
+
+  // Refetch quand l'onglet/la fenêtre reprend le focus (nouvelle commande passée,
+  // statut de livraison changé, nouveau ticket client… pendant que l'onglet était ouvert).
+  useEffect(() => {
+    if (!ticketId) return;
+    const onVisible = () => { if (document.visibilityState === 'visible') refetchTicket(); };
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('focus', refetchTicket);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('focus', refetchTicket);
+    };
+  }, [ticketId, refetchTicket]);
+
   // Sync les méta dans la barre d'onglets quand le ticket change (titre, statut)
   useEffect(() => {
     if (!ticket || !tabsCtx) return;
@@ -2377,6 +2421,7 @@ export default function TicketDetail({ ticketId }) {
           body: JSON.stringify({ [key]: value }),
         });
       } catch { /* silencieux */ }
+      finally { saveTimerRef.current = null; } // saisie persistée → refetch de nouveau autorisé
     }, 600);
   }, [ticketId]);
 
