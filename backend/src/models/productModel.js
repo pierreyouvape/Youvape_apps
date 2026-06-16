@@ -725,19 +725,24 @@ class ProductModel {
 
     if (search) {
       const words = search.trim().split(/\s+/).filter(Boolean);
-      const wordClauses = words.map((_, i) => {
+      const wordClauses = words.map((w, i) => {
         const p = paramIndex + i;
+        const isShort = w.length <= 2;
+        const pField = `unaccent(p.post_title || ' ' || COALESCE(p.sku, '') || ' ' || COALESCE(p.brand, '') || ' ' || COALESCE(p.sub_brand, ''))`;
+        const vField = `unaccent(v.post_title || ' ' || COALESCE(v.sku, '') || ' ' || COALESCE(v.brand, '') || ' ' || COALESCE(v.sub_brand, ''))`;
+        const pCond = isShort ? `(' ' || ${pField} || ' ') ILIKE unaccent($${p})` : `${pField} ILIKE unaccent($${p})`;
+        const vCond = isShort ? `(' ' || ${vField} || ' ') ILIKE unaccent($${p})` : `${vField} ILIKE unaccent($${p})`;
         return `(
-          unaccent(p.post_title || ' ' || COALESCE(p.sku, '') || ' ' || COALESCE(p.brand, '') || ' ' || COALESCE(p.sub_brand, '')) ILIKE unaccent($${p})
+          ${pCond}
           OR EXISTS (
             SELECT 1 FROM products v
             WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation'
-              AND unaccent(v.post_title || ' ' || COALESCE(v.sku, '') || ' ' || COALESCE(v.brand, '') || ' ' || COALESCE(v.sub_brand, '')) ILIKE unaccent($${p})
+              AND ${vCond}
           )
         )`;
       });
       whereClause += ' AND ' + wordClauses.join(' AND ');
-      words.forEach(w => params.push(`%${w}%`));
+      words.forEach(w => params.push(w.length <= 2 ? `% ${w} %` : `%${w}%`));
       paramIndex += words.length;
     }
 
@@ -889,19 +894,24 @@ class ProductModel {
     if (search) {
       const words = search.trim().split(/\s+/).filter(Boolean);
       let idx = 1;
-      const wordClauses = words.map((_, i) => {
+      const wordClauses = words.map((w, i) => {
         const p = idx + i;
+        const isShort = w.length <= 2;
+        const pField = `unaccent(p.post_title || ' ' || COALESCE(p.sku, '') || ' ' || COALESCE(p.brand, '') || ' ' || COALESCE(p.sub_brand, ''))`;
+        const vField = `unaccent(v.post_title || ' ' || COALESCE(v.sku, '') || ' ' || COALESCE(v.brand, '') || ' ' || COALESCE(v.sub_brand, ''))`;
+        const pCond = isShort ? `(' ' || ${pField} || ' ') ILIKE unaccent($${p})` : `${pField} ILIKE unaccent($${p})`;
+        const vCond = isShort ? `(' ' || ${vField} || ' ') ILIKE unaccent($${p})` : `${vField} ILIKE unaccent($${p})`;
         return `(
-          unaccent(p.post_title || ' ' || COALESCE(p.sku, '') || ' ' || COALESCE(p.brand, '') || ' ' || COALESCE(p.sub_brand, '')) ILIKE unaccent($${p})
+          ${pCond}
           OR EXISTS (
             SELECT 1 FROM products v
             WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation'
-              AND unaccent(v.post_title || ' ' || COALESCE(v.sku, '') || ' ' || COALESCE(v.brand, '') || ' ' || COALESCE(v.sub_brand, '')) ILIKE unaccent($${p})
+              AND ${vCond}
           )
         )`;
       });
       whereClause += ' AND ' + wordClauses.join(' AND ');
-      words.forEach(w => params.push(`%${w}%`));
+      words.forEach(w => params.push(w.length <= 2 ? `% ${w} %` : `%${w}%`));
     }
 
     const query = `
