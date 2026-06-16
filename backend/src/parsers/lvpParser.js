@@ -430,8 +430,10 @@ function isTrailingLine(line) {
   // Mais les trailing peuvent aussi avoir des tirets : "0.6 ohm Flat"
   // Les refs avec espaces commencent par des lettres majuscules + chiffres : "VP cartouches xTANK"
 
-  // Pattern de ref structuree (avec tirets)
-  if (/^[\w][\w-]*(?:-[\w]+)+\s/.test(line)) return false;
+  // Pattern de ref structuree (avec tirets, au moins 3 segments) — sans exiger d'espace final
+  // pour détecter les refs seules sur une ligne comme "FR10-TRIB-EX00-01"
+  // {2,} = minimum 2 segments après le premier → 3 segments total (évite "Camo-Blue" = 2 segments)
+  if (/^[\w][\w-]*(?:-[\w]+){2,}/.test(line)) return false;
 
   // Pattern de ref avec espaces qui commence par 2+ lettres maj puis un mot
   // Ex: "VP cartouches", "VO cart", "PP-CSWBAP-0", "ADDSWEETY10"
@@ -452,6 +454,14 @@ function extractRefAndDesignation(fullText) {
   const refWithDashes = fullText.match(/^([\w][\w-]*(?:-[\w]+)+)\s+(.+)$/);
   if (refWithDashes) {
     return { supplierSku: refWithDashes[1], designation: refWithDashes[2] };
+  }
+
+  // Strategie 1b : refs avec tiret entouré d'espaces (ex: "S28968 - TJCSFRBSWE100FRRB")
+  // Format LVP facture OpenSi : ref interne + " - " + ref fournisseur, séparées sur deux lignes
+  // puis rejointes par un espace → "S28968 - TJCSFRBSWE100FRRB Désignation..."
+  const refWithSpacedDash = fullText.match(/^(\S+\s+-\s+\S+)\s+(.+)$/);
+  if (refWithSpacedDash) {
+    return { supplierSku: refWithSpacedDash[1], designation: refWithSpacedDash[2] };
   }
 
   // Strategie 2 : refs avec espaces — trouver ou commence la vraie designation
