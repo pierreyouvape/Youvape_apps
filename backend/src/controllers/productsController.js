@@ -312,9 +312,10 @@ exports.getCatalogList = async (req, res) => {
     const sortBy = req.query.sortBy || null;
     const sortDir = req.query.sortDir || 'desc';
     const brand = req.query.brand || '';
+    const trackStockOnly = req.query.showHidden !== 'true';
 
-    const { parents, variations } = await productModel.getAllForCatalog(limit, offset, search, true, stockTab, sortBy, sortDir, brand);
-    const { total, totalWithVariations } = await productModel.countForCatalog(search, true, stockTab, brand);
+    const { parents, variations } = await productModel.getAllForCatalog(limit, offset, search, trackStockOnly, stockTab, sortBy, sortDir, brand);
+    const { total, totalWithVariations } = await productModel.countForCatalog(search, trackStockOnly, stockTab, brand);
 
     res.json({
       success: true,

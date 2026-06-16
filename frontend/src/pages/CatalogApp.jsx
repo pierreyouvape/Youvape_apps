@@ -89,6 +89,9 @@ const CatalogApp = () => {
   const [selectedBrand, setSelectedBrand] = useState('');
   const [brandsList, setBrandsList] = useState([]);
 
+  // Afficher les produits masqués (track_stock = false)
+  const [showHidden, setShowHidden] = useState(false);
+
   // CSV import state
   const [csvModal, setCsvModal] = useState(false);
   const [csvHeaders, setCsvHeaders] = useState([]);
@@ -99,11 +102,11 @@ const CatalogApp = () => {
 
   const headers = { Authorization: `Bearer ${token}` };
 
-  const fetchProducts = async (offset = 0, search = searchTerm, tab = stockTab, sort = sortBy, dir = sortDir, brand = selectedBrand) => {
+  const fetchProducts = async (offset = 0, search = searchTerm, tab = stockTab, sort = sortBy, dir = sortDir, brand = selectedBrand, hidden = showHidden) => {
     setLoading(true);
     try {
       const res = await axios.get(`${API_URL}/products/catalog`, {
-        params: { limit: 50, offset, search, stockTab: tab, sortBy: sort || undefined, sortDir: dir, brand: brand || undefined },
+        params: { limit: 50, offset, search, stockTab: tab, sortBy: sort || undefined, sortDir: dir, brand: brand || undefined, showHidden: hidden || undefined },
         headers
       });
       if (res.data.success) {
@@ -162,7 +165,13 @@ const CatalogApp = () => {
 
   const handleBrandChange = (brand) => {
     setSelectedBrand(brand);
-    fetchProducts(0, searchTerm, stockTab, sortBy, sortDir, brand);
+    fetchProducts(0, searchTerm, stockTab, sortBy, sortDir, brand, showHidden);
+  };
+
+  const handleShowHiddenToggle = () => {
+    const next = !showHidden;
+    setShowHidden(next);
+    fetchProducts(0, searchTerm, stockTab, sortBy, sortDir, selectedBrand, next);
   };
 
   const savePreferences = async (cols, cmp, tab = stockTab) => {
@@ -524,6 +533,21 @@ const CatalogApp = () => {
               <option key={b} value={b}>{b}</option>
             ))}
           </select>
+
+          {/* Toggle produits masqués */}
+          <button
+            onClick={handleShowHiddenToggle}
+            style={{
+              marginLeft: '12px', padding: '8px 16px',
+              backgroundColor: showHidden ? '#fef3c7' : '#fff',
+              color: showHidden ? '#92400e' : '#6b7280',
+              border: showHidden ? '1px solid #f59e0b' : '1px solid #d1d5db',
+              borderRadius: '6px', fontSize: '13px', fontWeight: showHidden ? '600' : '500',
+              cursor: 'pointer'
+            }}
+          >
+            {showHidden ? '👁 Masqués visibles' : '👁 Afficher masqués'}
+          </button>
         </div>
         </div>
 
