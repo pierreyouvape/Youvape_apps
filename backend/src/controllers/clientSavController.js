@@ -372,11 +372,15 @@ const clientSavController = {
         preview = `${secret.slice(0, 4)}••••••••(${secret.length})`;
       }
 
+      // URL publique de l'API à renseigner dans le plugin WordPress.
+      const appBaseUrl = process.env.APP_BASE_URL || 'https://apps.youvape.fr';
+
       res.json({
         success: true,
         configured,
         preview,
         secret: reveal && configured ? secret : null,
+        api_url: appBaseUrl,
       });
     } catch (error) {
       console.error('❌ [Client SAV] Erreur getSecret:', error);

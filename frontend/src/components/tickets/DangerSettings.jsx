@@ -19,6 +19,7 @@ export default function DangerSettings() {
   const [loading, setLoading]       = useState(true);
   const [configured, setConfigured] = useState(false);
   const [preview, setPreview]       = useState(null);
+  const [apiUrl, setApiUrl]         = useState('');
   const [revealed, setRevealed]     = useState(null); // secret en clair si affiché
   const [manual, setManual]         = useState('');
   const [busy, setBusy]             = useState(false);
@@ -32,6 +33,7 @@ export default function DangerSettings() {
       if (data.success) {
         setConfigured(data.configured);
         setPreview(data.preview);
+        setApiUrl(data.api_url || '');
       }
     } catch {
       setMsg({ type: 'err', text: 'Erreur de chargement.' });
@@ -109,6 +111,13 @@ export default function DangerSettings() {
     }
   };
 
+  const handleCopyUrl = () => {
+    if (apiUrl) {
+      navigator.clipboard?.writeText(apiUrl);
+      setMsg({ type: 'ok', text: 'URL copiée dans le presse-papier.' });
+    }
+  };
+
   const inputStyle = {
     width: '100%', padding: '9px 12px', border: `1px solid ${C.grisCL}`,
     borderRadius: 7, fontSize: 13, fontFamily: 'monospace', color: C.grisTF, outline: 'none',
@@ -132,6 +141,21 @@ export default function DangerSettings() {
         Ce secret authentifie le plugin WordPress « Espace client SAV » auprès de l'application.
         Le <strong>même secret</strong> doit être saisi dans les réglages du plugin côté site.
         Toute modification interrompt la connexion tant que le plugin n'est pas mis à jour.
+      </div>
+
+      {/* URL de l'API à renseigner dans le plugin */}
+      <div style={{ background: C.blanc, border: `1px solid ${C.grisCL}`, borderRadius: 10, padding: '16px 18px', marginBottom: 18 }}>
+        <div style={{ fontSize: 11, fontWeight: 700, color: C.grisM, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 }}>
+          URL de l'API — à coller dans le plugin
+        </div>
+        {loading ? (
+          <span style={{ color: C.grisM, fontSize: 13 }}>Chargement…</span>
+        ) : (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+            <code style={{ fontSize: 13.5, color: C.grisTF, background: C.grisTL, padding: '6px 12px', borderRadius: 6 }}>{apiUrl || '—'}</code>
+            {apiUrl && <button onClick={handleCopyUrl} style={btnGhost}>Copier</button>}
+          </div>
+        )}
       </div>
 
       {/* État courant */}
