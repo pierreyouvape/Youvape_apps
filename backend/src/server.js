@@ -27,6 +27,7 @@ const laposteRoutes = require('./routes/laposteRoutes');
 const preferencesRoutes = require('./routes/preferencesRoutes');
 const financierRoutes = require('./routes/financierRoutes');
 const savRoutes = require('./routes/savRoutes');
+const clientSavRoutes = require('./routes/clientSavRoutes');
 const chronopostRoutes = require('./routes/chronopostRoutes');
 const colissimoRoutes  = require('./routes/colissimoRoutes');
 const { setupCron, setupBmsCron, setupComputedCostCron, setupBmsBarcodeCron, setupStockResyncCron, setupSavAutomationsCron, setupProductDbSyncCron, setupBmsTagRetryCron } = require('./services/cronService');
@@ -73,6 +74,7 @@ app.use('/api/laposte', laposteRoutes); // La Poste - étiquettes Lettre Suivie
 app.use('/api/preferences', preferencesRoutes); // User column preferences
 app.use('/api/financier', financierRoutes);    // Dashboard financier
 app.use('/api/sav', savRoutes);               // Module SAV Zendesk
+app.use('/api/client-sav', clientSavRoutes);  // Espace client SAV (plugin WP youvape-sav-client)
 app.use('/api/chronopost', chronopostRoutes); // Chronopost invoice analysis
 app.use('/api/colissimo',  colissimoRoutes);  // Colissimo invoice analysis
 

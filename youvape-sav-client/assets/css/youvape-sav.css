@@ -1,0 +1,120 @@
+/* Youvape — Espace client SAV : styles de l'onglet "Mes demandes". */
+
+.youvape-sav__empty {
+    margin: 1em 0;
+    color: #626E85;
+}
+
+.youvape-sav__table {
+    width: 100%;
+}
+
+.youvape-sav__status {
+    display: inline-block;
+    padding: 0.2em 0.7em;
+    border-radius: 999px;
+    background: #F0F0F0;
+    color: #626E85;
+    font-size: 0.85em;
+    white-space: nowrap;
+}
+
+.youvape-sav__error {
+    margin-bottom: 1em;
+}
+
+/* ── Détail / fil de discussion ─────────────────────────────────────────── */
+
+.youvape-sav__back {
+    margin-bottom: 1em;
+}
+
+.youvape-sav__detail-head {
+    margin-bottom: 1.5em;
+}
+
+.youvape-sav__subject {
+    margin: 0 0 0.4em;
+}
+
+.youvape-sav__meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5em 1em;
+    align-items: center;
+    color: #626E85;
+    font-size: 0.9em;
+}
+
+.youvape-sav__thread {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.youvape-sav__msg {
+    margin: 0 0 1em;
+    padding: 0.9em 1.1em;
+    border-radius: 10px;
+    border: 1px solid #ECECEC;
+}
+
+.youvape-sav__msg--agent {
+    background: #F4F7FF;
+    border-color: #DCE6FF;
+}
+
+.youvape-sav__msg--customer {
+    background: #FAFAFA;
+}
+
+.youvape-sav__msg-head {
+    display: flex;
+    justify-content: space-between;
+    gap: 1em;
+    margin-bottom: 0.4em;
+    font-size: 0.85em;
+    color: #626E85;
+}
+
+.youvape-sav__msg-from {
+    font-weight: 600;
+}
+
+.youvape-sav__msg-body {
+    word-wrap: break-word;
+}
+
+.youvape-sav__msg-body img {
+    max-width: 100%;
+    height: auto;
+}
+
+/* ── Création ───────────────────────────────────────────────────────────── */
+
+.youvape-sav__actions {
+    margin-bottom: 1.2em;
+}
+
+.youvape-sav__form .form-row {
+    margin-bottom: 1.1em;
+}
+
+.youvape-sav__form label {
+    display: block;
+    margin-bottom: 0.3em;
+    font-weight: 600;
+}
+
+.youvape-sav__form input[type="text"],
+.youvape-sav__form select,
+.youvape-sav__form textarea {
+    width: 100%;
+}
+
+.youvape-sav__hint {
+    display: block;
+    margin-top: 0.3em;
+    color: #626E85;
+    font-size: 0.85em;
+}

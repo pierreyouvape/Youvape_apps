@@ -7,6 +7,7 @@ import MacrosSettings from '../components/tickets/MacrosSettings';
 import NotificationsSettings from '../components/tickets/NotificationsSettings';
 import AutomationsSettings from '../components/tickets/AutomationsSettings';
 import ZendeskImportSettings from '../components/tickets/ZendeskImportSettings';
+import DangerSettings from '../components/tickets/DangerSettings';
 import { LinkBox } from '../utils/navHelpers';
 
 const TICKETS_COLOR = '#0891B2';
@@ -554,6 +555,7 @@ export default function TicketsSettingsApp() {
     { key: 'notifications', label: 'Notifications' },
     { key: 'automations',   label: 'Automatismes' },
     { key: 'zendesk',       label: 'Importation Zendesk' },
+    { key: 'danger',        label: 'DANGER' },
   ];
 
   return (
@@ -583,17 +585,22 @@ export default function TicketsSettingsApp() {
 
             {/* Onglets */}
             <div style={{ display: 'flex', gap: 0, marginBottom: 28, borderBottom: `2px solid ${C.grisCL}` }}>
-              {tabs.map(t => (
-                <button key={t.key} onClick={() => setActiveTab(t.key)} style={{
-                  padding: '8px 20px 10px', fontSize: 13.5, fontWeight: 700, cursor: 'pointer',
-                  background: 'none', border: 'none', outline: 'none',
-                  color: activeTab === t.key ? TICKETS_COLOR : C.grisM,
-                  borderBottom: `2px solid ${activeTab === t.key ? TICKETS_COLOR : 'transparent'}`,
-                  marginBottom: -2, transition: 'color 0.12s, border-color 0.12s',
-                }}>
-                  {t.label}
-                </button>
-              ))}
+              {tabs.map(t => {
+                const isDanger = t.key === 'danger';
+                const accent = isDanger ? '#DC2626' : TICKETS_COLOR;
+                return (
+                  <button key={t.key} onClick={() => setActiveTab(t.key)} style={{
+                    padding: '8px 20px 10px', fontSize: 13.5, fontWeight: isDanger ? 800 : 700, cursor: 'pointer',
+                    background: 'none', border: 'none', outline: 'none',
+                    color: activeTab === t.key ? accent : (isDanger ? '#DC262699' : C.grisM),
+                    borderBottom: `2px solid ${activeTab === t.key ? accent : 'transparent'}`,
+                    marginBottom: -2, transition: 'color 0.12s, border-color 0.12s',
+                    letterSpacing: isDanger ? 0.5 : 0,
+                  }}>
+                    {t.label}
+                  </button>
+                );
+              })}
             </div>
 
             {/* ─── Onglet Statuts ─── */}
@@ -630,6 +637,9 @@ export default function TicketsSettingsApp() {
 
             {/* ─── Onglet Importation Zendesk ─── */}
             {activeTab === 'zendesk' && <ZendeskImportSettings />}
+
+            {/* ─── Onglet DANGER ─── */}
+            {activeTab === 'danger' && <DangerSettings />}
 
             {/* ─── Onglet Vues ─── */}
             {activeTab === 'views' && (

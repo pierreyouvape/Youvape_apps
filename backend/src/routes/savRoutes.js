@@ -5,6 +5,7 @@ const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
 const savController = require('../controllers/savController');
+const clientSavController = require('../controllers/clientSavController');
 const savMacroController = require('../controllers/savMacroController');
 const savNotificationController = require('../controllers/savNotificationController');
 const savAutomationController = require('../controllers/savAutomationController');
@@ -90,6 +91,12 @@ router.post('/views',             savController.createView);
 router.put('/views/reorder',      savController.reorderViews);
 router.put('/views/:id',          savController.updateView);
 router.delete('/views/:id',       savController.deleteView);
+
+// ─── Espace client SAV — secret partagé (onglet DANGER) ──────────────────────
+// Configuré depuis l'app, stocké en base (app_config), pas de .env à toucher.
+router.get('/client-sav-secret',          clientSavController.getSecret);
+router.put('/client-sav-secret',          clientSavController.setSecret);
+router.post('/client-sav-secret/generate', clientSavController.generateSecret);
 
 // ─── Routes statuts ───────────────────────────────────────────────────────────
 router.get('/statuses',          savController.getStatuses);
