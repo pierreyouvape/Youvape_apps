@@ -1407,6 +1407,15 @@ function TicketFieldsPanel({ ticket, onFieldChange, users }) {
   const prenom = parts[0] || '';
   const nom = parts.slice(1).join(' ') || '';
 
+  // Motif de la demande (slug GF type "un_conseil_avant_de_passer_commande") :
+  // humanisé pour l'affichage (remplace _/- par espaces, majuscule initiale).
+  const requestReason = ticket.request_reason
+    ? ticket.request_reason
+        .replace(/[_-]+/g, ' ')
+        .trim()
+        .replace(/^./, c => c.toUpperCase())
+    : '';
+
   const trackingNum = ticket.order_tracking || ticket.order_tracking_from_order || '';
   // Lien de suivi selon le transporteur de la commande liée ; à défaut (transporteur
   // inconnu), on retombe sur La Poste pour conserver l'ancien comportement.
@@ -1540,6 +1549,20 @@ function TicketFieldsPanel({ ticket, onFieldChange, users }) {
       </Field>
 
       <FieldDivider />
+
+      {/* Motif de la demande (lecture seule, depuis le formulaire) */}
+      {requestReason && (
+        <Field label="Motif de la demande">
+          <div style={{
+            ...fieldInputBase,
+            display: 'flex', alignItems: 'center',
+            background: C.grisTL, color: C.grisTF,
+            cursor: 'default', userSelect: 'text',
+          }}>
+            {requestReason}
+          </div>
+        </Field>
+      )}
 
       {/* N° commande */}
       <Field

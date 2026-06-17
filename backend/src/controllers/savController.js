@@ -3,7 +3,7 @@ const savViewModel = require('../models/savViewModel');
 const mailgunService = require('../services/mailgunService');
 const emailTemplateService = require('../services/emailTemplateService');
 const pool = require('../config/database');
-const { saveAttachments, saveAttachmentsFromUrls, toMailgunAttachments } = require('../utils/savAttachments');
+const { saveAttachments, saveAttachmentsFromUrls, saveAttachmentsFromPublicUrls, toMailgunAttachments } = require('../utils/savAttachments');
 const { getTrackingStatus } = require('../services/trackingService');
 const { dispatchNotifications } = require('../services/notificationDispatcher');
 const { tagDuplicates } = require('../services/duplicateDetector');
@@ -157,6 +157,8 @@ const savController = {
       const customer_name  = `${prenom} ${nom}`.trim();
       const customer_phone = body['3'] || null; // si champ téléphone existe
       const subject        = description.substring(0, 100); // premiers 100 chars comme sujet
+      const uploadField    = body['11'] || null; // champ "pièce jointe" GF (JSON d'URLs publiques)
+      const request_reason = body['10'] || null; // champ "motif de la demande" GF (slug)
 
       // Chercher le client par email
       let customer_id = null;
@@ -179,9 +181,25 @@ const savController = {
         subject,
         description,
         source: 'gravity_form',
+        request_reason,
       });
 
       console.log(`✅ [SAV] Ticket #${ticket.id} créé pour ${customer_name} (${email})`);
+
+      // Pièces jointes du formulaire GF : téléchargées depuis les URLs publiques WP
+      // et attachées au 1er message du ticket (même rendu que les PJ email).
+      if (uploadField) {
+        const attachments = await saveAttachmentsFromPublicUrls(ticket.id, uploadField);
+        if (attachments.length > 0) {
+          await savModel.addMessage(ticket.id, {
+            from:        email.toLowerCase(),
+            body:        description,
+            is_agent:    false,
+            attachments,
+          });
+          console.log(`📎 [SAV] ${attachments.length} PJ attachée(s) au ticket #${ticket.id}`);
+        }
+      }
 
       // Accusé de réception au client (fire-and-forget)
       sendAckEmail({ ticketId: ticket.id, email: ticket.customer_email, customerName: customer_name, subject });

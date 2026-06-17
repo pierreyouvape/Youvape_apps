@@ -139,6 +139,63 @@ async function saveAttachmentsFromUrls(ticketId, attachmentsField) {
 }
 
 /**
+ * Pour les formulaires Gravity Forms : le champ upload renvoie une chaîne JSON
+ * contenant un tableau d'URLs publiques vers le serveur WP, ex :
+ *   '["https://www.youvape.fr/wp-content/uploads/gravity_forms/.../photo.jpg"]'
+ * On télécharge chaque fichier (URL publique, pas d'auth) et on le persiste
+ * localement, au même format que saveAttachments().
+ *
+ * @param {number} ticketId
+ * @param {string|Array} urlsField  valeur brute du champ upload GF
+ * @returns {Promise<Array>} tableau d'objets attachment stockés
+ */
+async function saveAttachmentsFromPublicUrls(ticketId, urlsField) {
+  if (!urlsField) return [];
+
+  let urls;
+  try {
+    urls = typeof urlsField === 'string' ? JSON.parse(urlsField) : urlsField;
+  } catch {
+    // Champ avec une seule URL non encodée en JSON
+    urls = typeof urlsField === 'string' ? [urlsField] : [];
+  }
+  if (!Array.isArray(urls)) urls = [urls];
+  urls = urls.filter((u) => typeof u === 'string' && /^https?:\/\//i.test(u));
+  if (urls.length === 0) return [];
+
+  const dir = path.join(UPLOAD_ROOT, String(ticketId));
+  fs.mkdirSync(dir, { recursive: true });
+
+  const saved = [];
+  for (const url of urls) {
+    try {
+      const res = await fetch(url);
+      if (!res.ok) {
+        console.warn(`[savAttachments] Téléchargement PJ GF échoué (${res.status}) : ${url}`);
+        continue;
+      }
+      const buffer = Buffer.from(await res.arrayBuffer());
+      const original = decodeURIComponent(path.basename(new URL(url).pathname)) || 'piece-jointe';
+      const uuid = crypto.randomUUID();
+      const safe = safeBasename(original);
+      const filename = `${uuid}_${safe}`;
+      fs.writeFileSync(path.join(dir, filename), buffer);
+
+      saved.push({
+        filename,
+        original_name: original,
+        mime: res.headers.get('content-type') || 'application/octet-stream',
+        size: Number(res.headers.get('content-length')) || buffer.length,
+        url: `/api/sav/attachments/${ticketId}/${filename}`,
+      });
+    } catch (e) {
+      console.warn(`[savAttachments] Erreur PJ GF (${url}) :`, e.message);
+    }
+  }
+  return saved;
+}
+
+/**
  * Pour les réponses sortantes : retourne les fichiers au format attendu par
  * mailgun.js (champ "attachment" avec data + filename).
  */
@@ -155,6 +212,7 @@ module.exports = {
   UPLOAD_ROOT,
   saveAttachments,
   saveAttachmentsFromUrls,
+  saveAttachmentsFromPublicUrls,
   toMailgunAttachments,
   safeBasename,
 };
