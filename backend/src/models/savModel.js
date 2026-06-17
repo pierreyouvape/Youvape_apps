@@ -174,7 +174,8 @@ class SavModel {
     if (ticket.customer_wp_id) {
       const statsRes = await pool.query(
         `SELECT COUNT(*) as orders_count, SUM(order_total) as total_spent
-         FROM orders WHERE wp_customer_id = $1 AND post_status NOT IN ('wc-cancelled','wc-failed','trash')`,
+         FROM orders WHERE wp_customer_id = $1
+           AND post_status = ANY(ARRAY['wc-completed','wc-delivered','wc-processing','wc-awaiting-delivery','wc-shipped','wc-being-delivered'])`,
         [ticket.customer_wp_id]
       );
       ticket.customer_orders_count = parseInt(statsRes.rows[0].orders_count) || 0;
