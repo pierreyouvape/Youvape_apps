@@ -9,6 +9,11 @@ import AppShell from '../components/AppShell';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
 
+const decodeHtml = (str) => {
+  if (!str || typeof str !== 'string') return str || '';
+  return str.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#039;/g, "'");
+};
+
 const fmtPrice = (v) => {
   const n = parseFloat(v);
   if (!n && n !== 0) return '-';
@@ -226,6 +231,7 @@ const CatalogApp = () => {
     }
 
     for (const p of parents) {
+      const parentTitle = decodeHtml(p.post_title);
       if (p.product_type === 'variable') {
         const children = variationsByParent.get(p.wp_product_id) || [];
         const totalStock = children.reduce((s, c) => s + (parseInt(c.stock) || 0), 0);
@@ -236,7 +242,7 @@ const CatalogApp = () => {
         rows.push({
           _isParent: true,
           wp_product_id: p.wp_product_id,
-          post_title: p.post_title,
+          post_title: parentTitle,
           image_url: p.image_url,
           sku: null,
           price: null,
@@ -249,12 +255,13 @@ const CatalogApp = () => {
 
         // Variation rows
         for (const child of children) {
+          const childTitle = decodeHtml(child.post_title);
           rows.push({
             ...child,
             _isParent: false,
             _isVariation: true,
             // Strip parent title from variation name
-            _displayName: child.post_title.replace(p.post_title + ' - ', '').replace(p.post_title, '') || child.post_title
+            _displayName: childTitle.replace(parentTitle + ' - ', '').replace(parentTitle, '') || childTitle
           });
         }
       } else {
@@ -263,7 +270,8 @@ const CatalogApp = () => {
           ...p,
           _isParent: false,
           _isVariation: false,
-          _displayName: p.post_title
+          post_title: parentTitle,
+          _displayName: parentTitle
         });
       }
     }

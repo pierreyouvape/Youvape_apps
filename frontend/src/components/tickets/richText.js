@@ -8,6 +8,18 @@ import DOMPurify from 'dompurify';
 const ALLOWED_TAGS = ['p', 'br', 'strong', 'b', 'em', 'i', 'u', 's', 'ul', 'ol', 'li', 'a', 'span', 'img'];
 const ALLOWED_ATTR = ['href', 'target', 'rel', 'src', 'alt'];
 
+// Décode les entités HTML d'un texte brut (ex: "&amp;" → "&", stocké ainsi par WooCommerce).
+export function decodeHtml(str) {
+  if (!str || typeof str !== 'string') return str || '';
+  return str
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#039;/g, "'")
+    .replace(/&apos;/g, "'");
+}
+
 // Échappe les caractères HTML d'une chaîne de texte brut.
 export function escapeHtml(str) {
   return String(str)

@@ -11,7 +11,7 @@ import { useOpenTickets } from '../../context/OpenTicketsContext';
 import OrderCard from './OrderCard';
 import { buildPlaceholderContext, applyPlaceholders } from './macroPlaceholders';
 import RichEditor from './RichEditor';
-import { markdownTextToHtml, isHtml, sanitizeHtml, escapeHtml } from './richText';
+import { markdownTextToHtml, isHtml, sanitizeHtml, escapeHtml, decodeHtml } from './richText';
 
 const C = {
   orange: '#E28F00', rouge: '#DE2020',
@@ -162,6 +162,7 @@ function AttachmentItem({ att, ticketId }) {
 // de ligne bruts). Conservé en fallback pour les messages d'avant l'éditeur riche.
 function renderMarkdownBody(text) {
   if (!text) return null;
+  text = decodeHtml(text);
   // Découpe sur les liens markdown [texte](url)
   const parts = [];
   const re = /\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g;
