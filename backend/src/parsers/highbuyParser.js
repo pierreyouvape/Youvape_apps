@@ -109,6 +109,6 @@ module.exports = {
       }
     }
 
-    return { orderNumber, orderDate, items, discountItems, hasPrice: true, pdfIsPackBased: false };
+    return { orderNumber, orderDate, items, discountItems, hasPrice: true, skipPackQty: true };
   }
 };
