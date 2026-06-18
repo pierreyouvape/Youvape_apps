@@ -9,9 +9,9 @@
 
 module.exports = {
   parse: (text) => {
-    // Numéro de facture : "#FA020686"
-    const invoiceMatch = text.match(/#(FA\d+)/);
-    const orderNumber = invoiceMatch ? invoiceMatch[1] : null;
+    // Numéro de commande : "Réf. de commande MUKVTATQG"
+    const orderMatch = text.match(/Réf\.\s*de commande\s+(\S+)/);
+    const orderNumber = orderMatch ? orderMatch[1] : null;
 
     // Date de commande : "Date de commande 18/06/2026"
     const dateMatch = text.match(/Date de commande\s+(\d{2})\/(\d{2})\/(\d{4})/);
