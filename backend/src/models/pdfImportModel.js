@@ -156,13 +156,13 @@ const pdfImportModel = {
         dbPrice = rawDbPrice;
       }
 
-      // Quantité finale :
-      // pdfIsPackBased : déjà en packs dans le PDF, garder tel quel
-      // invertPackQty (Curieux) : PDF = nb unités → diviser pour obtenir le nb de packs
-      // normal : PDF = nb packs → multiplier pour obtenir le nb d'unités
+      // Quantité finale (toujours en unités individuelles) :
+      // invertPackQty : PDF = nb unités → garder tel quel (prix seul est converti × pack_qty)
+      // normal/pdfIsPackBased=false : PDF = nb packs → multiplier pour obtenir les unités
+      // pdfIsPackBased=true : PDF = nb packs, pas de conversion (cas legacy à éviter)
       let qtyOrdered;
-      if (packQty > 1 && parsed.invertPackQty) {
-        qtyOrdered = Math.round(item.qty_ordered / packQty);
+      if (parsed.invertPackQty) {
+        qtyOrdered = item.qty_ordered;
       } else if (packQty > 1 && !parsed.pdfIsPackBased) {
         qtyOrdered = item.qty_ordered * packQty;
       } else {

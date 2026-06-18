@@ -69,6 +69,6 @@ module.exports = {
       });
     }
 
-    return { orderNumber, orderDate, items, hasPrice: true, pdfIsPackBased: true };
+    return { orderNumber, orderDate, items, hasPrice: true, pdfIsPackBased: false };
   }
 };
