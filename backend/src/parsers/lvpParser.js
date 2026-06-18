@@ -451,9 +451,19 @@ function isTrailingLine(line) {
  */
 function extractRefAndDesignation(fullText) {
   // Strategie 1 : refs structurees avec tirets (ex: "FR10-TRIB-PG06-01", "VP-XROS5M-CBB")
+  // Absorbe aussi les segments word-wrappés collés sans tiret
+  // ex: "S30467-TJCSFS DENSWE 100FRRB Sakura Dream..." → sku="S30467-TJCSFSDENSWE100FRRB"
   const refWithDashes = fullText.match(/^([\w][\w-]*(?:-[\w]+)+)\s+(.+)$/);
   if (refWithDashes) {
-    return { supplierSku: refWithDashes[1], designation: refWithDashes[2] };
+    let sku = refWithDashes[1];
+    let rest = refWithDashes[2];
+    // Absorber les segments tout en majuscules/chiffres (≥2 chars) : suite de la ref word-wrappée
+    let cont;
+    while ((cont = rest.match(/^([A-Z0-9]{2,})\s+(.+)$/))) {
+      sku += cont[1];
+      rest = cont[2];
+    }
+    return { supplierSku: sku, designation: rest };
   }
 
   // Strategie 1b : refs avec tiret entouré d'espaces (ex: "S28968 - TJCSFRBSWE100FRRB")
