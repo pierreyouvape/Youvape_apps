@@ -8,6 +8,7 @@ const etastyParser = require('./etastyParser');
 const revoluteParser = require('./revoluteParser');
 const levestParser = require('./levestParser');
 const lipsParser = require('./lipsParser');
+const highbuyParser = require('./highbuyParser');
 
 // Map supplier.code -> parser module
 const parsers = {
@@ -21,6 +22,7 @@ const parsers = {
   'Revolute - Cosmer': revoluteParser,
   'Levest - Roykin': levestParser,
   'LIPS - French Liquide': lipsParser,
+  'Highbuy': highbuyParser,
 };
 
 module.exports = {
