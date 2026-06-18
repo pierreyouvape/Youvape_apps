@@ -354,7 +354,9 @@ function parseFacture(text) {
           trailEnd++;
         }
 
-        const blockText = blockLines.join(' ').replace(/\s+/g, ' ').trim();
+        const blockText = blockLines.join(' ').replace(/\s+/g, ' ').trim()
+          // Normaliser les refs word-wrappees avec tiret : "S30467- TJCSFS..." ou "S28969 - TJCSFS..." → "S30467-TJCSFS..."
+          .replace(/([A-Z0-9])\s*-\s+([A-Z0-9])/g, '$1-$2');
 
         // Extraire les prix (dernier match dans le bloc texte)
         // Variantes : "qty puHT montantHT", "qty puHT rist% montantHT", "codeTVA qty puHT montantHT"
@@ -426,17 +428,16 @@ function isTrailingLine(line) {
   // Si la ligne est courte (< 40 chars) et ne ressemble pas a une ref structuree, c'est un trailing
   if (line.length > 50) return false;
 
-  // Les refs structurees contiennent des tirets significatifs : "PP-CSWPEM-0", "VP-XROS5M-CBB"
-  // Mais les trailing peuvent aussi avoir des tirets : "0.6 ohm Flat"
-  // Les refs avec espaces commencent par des lettres majuscules + chiffres : "VP cartouches xTANK"
+  // Debut de ref word-wrappee se terminant par un tiret : "S30467-" ou "S28969 -"
+  if (/^[A-Z0-9][A-Z0-9\s-]*-$/.test(line.trim())) return false;
 
-  // Pattern de ref structuree (avec tirets, au moins 3 segments) — sans exiger d'espace final
-  // pour détecter les refs seules sur une ligne comme "FR10-TRIB-EX00-01"
-  // {2,} = minimum 2 segments après le premier → 3 segments total (évite "Camo-Blue" = 2 segments)
+  // Continuation de ref word-wrappee : tout en majuscules + chiffres, long (ex: "TJCSFSDENSWE100FRRB")
+  if (/^[A-Z][A-Z0-9]{5,}$/.test(line) && /\d/.test(line)) return false;
+
+  // Pattern de ref structuree (avec tirets, au moins 3 segments)
   if (/^[\w][\w-]*(?:-[\w]+){2,}/.test(line)) return false;
 
   // Pattern de ref avec espaces qui commence par 2+ lettres maj puis un mot
-  // Ex: "VP cartouches", "VO cart", "PP-CSWBAP-0", "ADDSWEETY10"
   if (/^[A-Z]{2,}[\w-]*\s+\w/.test(line) && line.length > 15) return false;
 
   // "5 resistances 1.6ohm" — ref speciale
