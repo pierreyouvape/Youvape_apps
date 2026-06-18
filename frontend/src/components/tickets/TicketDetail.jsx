@@ -346,6 +346,7 @@ function ReplyComposer({
   const [showLinkInput, setShowLinkInput] = useState(false);
   const [linkUrl, setLinkUrl] = useState('');
   const [linkText, setLinkText] = useState('');
+  const [editingLink, setEditingLink] = useState(false);
   const [selectedStatus, setSelectedStatus] = useState(currentStatus);
   const [statusOpen, setStatusOpen] = useState(false);
   const [statusMenuPos, setStatusMenuPos] = useState(null); // { left, bottom } en coords écran
@@ -495,21 +496,31 @@ function ReplyComposer({
     setShowEmojis(false);
   };
 
-  // Ouvrir le popup lien — pré-remplit le texte affiché avec la sélection courante
+  // Ouvrir le popup lien — si le curseur est dans un lien existant, mode édition
   const openLinkInput = () => {
-    const selected = editorRef.current?.getSelectedText?.() || '';
-    setLinkText(selected);
-    setLinkUrl('');
+    const linkInfo = editorRef.current?.getLinkAtCursor?.();
+    if (linkInfo) {
+      setLinkText(linkInfo.text);
+      setLinkUrl(linkInfo.url);
+      setEditingLink(true);
+    } else {
+      const selected = editorRef.current?.getSelectedText?.() || '';
+      setLinkText(selected);
+      setLinkUrl('');
+      setEditingLink(false);
+    }
     setShowLinkInput(true);
   };
 
-  // Insérer le lien dans l'éditeur riche
+  // Insérer ou modifier le lien dans l'éditeur riche
   const insertLink = () => {
     if (!linkUrl.trim()) return;
     const url = linkUrl.startsWith('http') ? linkUrl : `https://${linkUrl}`;
+    if (editingLink) editorRef.current?.selectLinkAtCursor?.();
     editorRef.current?.setLink({ url, text: linkText.trim() });
     setLinkUrl('');
     setLinkText('');
+    setEditingLink(false);
     setShowLinkInput(false);
   };
 
@@ -840,7 +851,7 @@ function ReplyComposer({
                 marginBottom: 6, minWidth: 300,
               }}>
                 <div style={{ fontSize: 11.5, fontWeight: 800, color: C.grisF, marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                  Insérer un lien
+                  {editingLink ? 'Modifier le lien' : 'Insérer un lien'}
                 </div>
                 {/* Champ texte affiché */}
                 <div style={{ marginBottom: 8 }}>
@@ -899,7 +910,7 @@ function ReplyComposer({
                       border: 'none', borderRadius: 6, fontSize: 12.5, fontWeight: 700,
                       cursor: 'pointer', fontFamily: 'Lato, sans-serif',
                     }}
-                  >Insérer</button>
+                  >{editingLink ? 'Modifier' : 'Insérer'}</button>
                 </div>
               </div>
             )}

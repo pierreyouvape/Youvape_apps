@@ -201,6 +201,31 @@ export default function RichEditor({ value, onChange, placeholder, editorRef, on
       const { from, to } = editor.state.selection;
       return from === to ? '' : editor.state.doc.textBetween(from, to, ' ');
     },
+    // Retourne { url, text, from, to } si le curseur est dans un lien, sinon null
+    getLinkAtCursor: () => {
+      if (!editor) return null;
+      const attrs = editor.getAttributes('link');
+      if (!attrs.href) return null;
+      const { state } = editor;
+      const pos = state.selection.$from.pos;
+      const linkType = state.schema.marks.link;
+      let from = pos, to = pos;
+      while (from > 0 && state.doc.rangeHasMark(from - 1, from, linkType)) from--;
+      while (to < state.doc.content.size && state.doc.rangeHasMark(to, to + 1, linkType)) to++;
+      return { url: attrs.href, text: state.doc.textBetween(from, to), from, to };
+    },
+    // Sélectionne le lien entier sous le curseur (pour permettre le remplacement)
+    selectLinkAtCursor: () => {
+      if (!editor) return;
+      const { state } = editor;
+      const pos = state.selection.$from.pos;
+      const linkType = state.schema.marks.link;
+      let from = pos, to = pos;
+      while (from > 0 && state.doc.rangeHasMark(from - 1, from, linkType)) from--;
+      while (to < state.doc.content.size && state.doc.rangeHasMark(to, to + 1, linkType)) to++;
+      if (from === to) return;
+      editor.chain().focus().setTextSelection({ from, to }).run();
+    },
     setHTML: (html) => editor?.chain().focus().setContent(html || '', { emitUpdate: true }).run(),
     clear: () => editor?.chain().clearContent(true).run(),
     getText: () => editor?.getText() || '',
