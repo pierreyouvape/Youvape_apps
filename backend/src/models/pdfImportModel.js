@@ -146,8 +146,9 @@ const pdfImportModel = {
       const pdfNet = pdfGross != null ? pdfGross * (1 - discountPercent / 100) : null;
       // dbPrice : supplier_price en BDD = prix pack pour tous les fournisseurs
       // pdfIsPackBased + invertPackQty : garder tel quel (prix pack, cohérent avec pdfGross)
-      // normal / skipPackQty : diviser par pack_qty pour obtenir le prix unitaire
-      const dbPackQty = match ? (parseInt(match.pack_qty) || 1) : 1;
+      // skipPackQty : packQty forcé à 1, donc dbPackQty doit aussi être 1 pour rester cohérent
+      // normal : diviser par pack_qty pour obtenir le prix unitaire
+      const dbPackQty = packQty;  // déjà normalisé par skipPackQty ci-dessus
       const rawDbPrice = match ? parseFloat(match.supplier_price) || null : null;
       let dbPrice;
       if (rawDbPrice != null && dbPackQty > 1) {
