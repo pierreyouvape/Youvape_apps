@@ -101,7 +101,7 @@ const purchaseOrderModel = {
         p.stock as current_stock,
         p.product_type as product_type
       FROM purchase_order_items poi
-      LEFT JOIN products p ON poi.product_id = p.id
+      LEFT JOIN products p ON poi.product_id = p.id OR poi.product_id = p.wp_product_id
       WHERE poi.purchase_order_id = $1
       ORDER BY poi.id
     `;
@@ -360,6 +360,26 @@ const purchaseOrderModel = {
     try {
       bmsResponse = await bmsApiModel.createPurchaseOrder(bmsOrderData, bmsCredentials);
     } catch (error) {
+      // Sur 500 générique, diagnostiquer les produits absents du catalogue BMS avant de remonter
+      // l'erreur brute — évite d'avoir "An error occurred" sans savoir quoi corriger.
+      if (error.message.includes('500')) {
+        const checks = await Promise.all(
+          bmsItems.map(item =>
+            bmsApiModel.apiCall(
+              `/supplier/products?sku=${encodeURIComponent(item.sku)}&supplier_id=${supplier.bms_id}&limit=1`
+            )
+            .then(r => ({ item, exists: (r?.data?.length ?? 0) > 0 }))
+            .catch(() => ({ item, exists: true })) // en cas d'erreur réseau, ne pas bloquer
+          )
+        );
+        const missing = checks.filter(c => !c.exists).map(c => c.item);
+        if (missing.length > 0) {
+          const lines = missing.map(i => `  • "${i.name}" (SKU : ${i.sku}, réf fournisseur : ${i.supplier_sku || '—'})`).join('\n');
+          throw new Error(
+            `${missing.length} produit(s) introuvable(s) dans le catalogue BMS de ${supplier.name} :\n${lines}\n\nCréez-les dans BMS puis renvoyez la commande.`
+          );
+        }
+      }
       throw purchaseOrderModel.enrichBmsItemError(error, bmsItems);
     }
     console.log('BMS response:', JSON.stringify(bmsResponse, null, 2));
@@ -922,7 +942,7 @@ const purchaseOrderModel = {
 
       // 5. Charger les produits (sku → product_id) pour les lignes de commande
       const productsResult = await client.query(
-        'SELECT id, sku FROM products WHERE sku IS NOT NULL AND sku != \'\''
+        'SELECT wp_product_id as id, sku FROM products WHERE sku IS NOT NULL AND sku != \'\''
       );
       const productBySku = new Map(productsResult.rows.map(r => [r.sku, r.id]));
 
