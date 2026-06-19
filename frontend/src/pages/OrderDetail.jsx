@@ -565,7 +565,16 @@ const OrderDetail = () => {
                           </div>
                         </td>
                         <td style={{ padding: '13px 14px', borderBottom: `1px solid ${C.grisTL}`, verticalAlign: 'middle', color: C.grisF, fontFamily: 'monospace', fontSize: 12.5 }}>
-                          {item.sku || (item.product_id && `${item.product_id}${item.variation_id && item.variation_id !== '0' ? ' / ' + item.variation_id : ''}`)}
+                          {(() => {
+                            const sku = item.sku || (item.product_id && `${item.product_id}${item.variation_id && item.variation_id !== '0' ? '-' + item.variation_id : ''}`);
+                            if (!sku) return null;
+                            return (
+                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                                {sku}
+                                <CopyButton text={String(sku)} size={12} />
+                              </span>
+                            );
+                          })()}
                         </td>
                         <td style={{ padding: '13px 14px', borderBottom: `1px solid ${C.grisTL}`, verticalAlign: 'middle', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
                           {fmt(unitPrice)}
