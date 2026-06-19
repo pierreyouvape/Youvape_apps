@@ -6,6 +6,7 @@ import axios from 'axios';
 import { formatPrice } from '../utils/formatNumber';
 import { LinkBox, LinkTr } from '../utils/navHelpers';
 import AppShell from '../components/AppShell';
+import CopyButton from '../components/CopyButton';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
 
@@ -244,7 +245,7 @@ const CatalogApp = () => {
           wp_product_id: p.wp_product_id,
           post_title: parentTitle,
           image_url: p.image_url,
-          sku: null,
+          sku: p.sku,
           price: null,
           cost_price: null,
           weight: null,
@@ -608,7 +609,14 @@ const CatalogApp = () => {
                               {row.post_title}
                             </a>
                           </td>
-                          <td style={cellStyle}></td>
+                          <td style={{ ...cellStyle, fontFamily: 'monospace', fontSize: '12px' }}>
+                            {row.sku ? (
+                              <span style={{ display: 'inline-flex', alignItems: 'center' }}>
+                                {row.sku}
+                                <CopyButton text={String(row.sku)} size={12} />
+                              </span>
+                            ) : '-'}
+                          </td>
                           {isVisible('price') && <td style={cellRight}></td>}
                           {isVisible('cost_price') && <td style={cellRight}></td>}
                           {isVisible('margin') && <td style={cellRight}></td>}
@@ -649,7 +657,14 @@ const CatalogApp = () => {
                             {row._displayName}
                           </span>
                         </td>
-                        <td style={{ ...cellStyle, color: '#6b7280', fontFamily: 'monospace', fontSize: '12px' }}>{row.sku || '-'}</td>
+                        <td style={{ ...cellStyle, color: '#6b7280', fontFamily: 'monospace', fontSize: '12px' }}>
+                          {row.sku ? (
+                            <span style={{ display: 'inline-flex', alignItems: 'center' }}>
+                              {row.sku}
+                              <CopyButton text={String(row.sku)} size={12} />
+                            </span>
+                          ) : '-'}
+                        </td>
                         {isVisible('price') && <td style={{ ...cellRight, ...numStyle(row.price) }}>{fmtPrice(row.price)}</td>}
                         {isVisible('cost_price') && <td style={{ ...cellRight, ...numStyle(row.cost_price) }}>{fmtPrice(row.cost_price)}</td>}
                         {isVisible('margin') && <td style={{ ...cellRight, ...(margin !== null ? numStyle(margin) : {}) }}>{margin !== null ? fmtPct(margin) : '-'}</td>}
