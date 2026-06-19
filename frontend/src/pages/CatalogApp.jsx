@@ -452,6 +452,16 @@ const CatalogApp = () => {
           <span style={{ marginLeft: '12px', color: '#6b7280', fontSize: '14px' }}>
             {pagination.totalWithVariations ?? pagination.total} produit{(pagination.totalWithVariations ?? pagination.total) > 1 ? 's' : ''}
           </span>
+          {pagination.totalStockValue != null && (
+            <span style={{
+              marginLeft: '16px', padding: '4px 12px',
+              backgroundColor: '#f0fdf4', color: '#065f46',
+              border: '1px solid #bbf7d0', borderRadius: '20px',
+              fontSize: '13px', fontWeight: '600'
+            }}>
+              Valeur stock HT : {pagination.totalStockValue.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €
+            </span>
+          )}
           <label style={{
             marginLeft: '16px', padding: '8px 16px', backgroundColor: '#fff', color: '#374151',
             border: '1px solid #059669', borderRadius: '6px', fontSize: '13px', fontWeight: '600', cursor: 'pointer', display: 'inline-block'

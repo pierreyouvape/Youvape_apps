@@ -317,12 +317,12 @@ exports.getCatalogList = async (req, res) => {
     const onlyHidden = showHiddenParam === 'only';
 
     const { parents, variations } = await productModel.getAllForCatalog(limit, offset, search, trackStockOnly, stockTab, sortBy, sortDir, brand, onlyHidden);
-    const { total, totalWithVariations } = await productModel.countForCatalog(search, trackStockOnly, stockTab, brand, onlyHidden);
+    const { total, totalWithVariations, totalStockValue } = await productModel.countForCatalog(search, trackStockOnly, stockTab, brand, onlyHidden);
 
     res.json({
       success: true,
       data: { parents, variations },
-      pagination: { total, totalWithVariations, limit, offset, hasMore: offset + limit < total }
+      pagination: { total, totalWithVariations, totalStockValue, limit, offset, hasMore: offset + limit < total }
     });
   } catch (error) {
     console.error('Error getting catalog list:', error);

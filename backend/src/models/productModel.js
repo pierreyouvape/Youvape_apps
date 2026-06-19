@@ -979,7 +979,17 @@ class ProductModel {
                 ${stockCondVar ? `AND ${stockCondVar}` : ''}
             )
           END
-        ), 0)::int as total_with_variations
+        ), 0)::int as total_with_variations,
+        COALESCE(SUM(
+          CASE WHEN p.product_type = 'simple' THEN
+            GREATEST(COALESCE(p.stock, 0), 0) * COALESCE(p.computed_cost, p.wc_cog_cost, 0)
+          ELSE (
+            SELECT COALESCE(SUM(GREATEST(COALESCE(v.stock, 0), 0) * COALESCE(v.computed_cost, v.wc_cog_cost, 0)), 0)
+            FROM products v
+            WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation' AND v.post_status = 'publish'
+          )
+          END
+        ), 0) as total_stock_value
       FROM products p
       ${whereClause}
     `;
@@ -987,7 +997,8 @@ class ProductModel {
     const result = await pool.query(query, params);
     return {
       total: parseInt(result.rows[0].total),
-      totalWithVariations: parseInt(result.rows[0].total_with_variations)
+      totalWithVariations: parseInt(result.rows[0].total_with_variations),
+      totalStockValue: parseFloat(result.rows[0].total_stock_value) || 0,
     };
   }
 
