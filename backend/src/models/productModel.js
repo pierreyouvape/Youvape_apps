@@ -681,7 +681,7 @@ class ProductModel {
     `;
     const result = await pool.query(query, params);
     return result.rows;
-  },
+  }
 
   async getBrandsForCatalog() {
     const result = await pool.query(`
@@ -704,7 +704,7 @@ class ProductModel {
         value
     `);
     return result.rows;
-  },
+  }
 
   async getAllForCatalog(limit = 50, offset = 0, search = '', trackStockOnly = true, stockTab = 'all', sortBy = null, sortDir = 'desc', brand = '', onlyHidden = false, subBrand = '') {
     const reorderIdsSql = await getReorderIdsSql(stockTab);
