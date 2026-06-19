@@ -815,7 +815,7 @@ class ProductModel {
         words.forEach(w => varParams.push(w.length <= 2 ? `% ${w} %` : `%${w}%`));
       }
       if (brand) {
-        varFilter += ` AND v.brand = $${varParams.length + 1}`;
+        varFilter += ` AND (v.brand = $${varParams.length + 1} OR p_parent.brand = $${varParams.length + 1})`;
         varParams.push(brand);
       }
 
