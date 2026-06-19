@@ -472,11 +472,11 @@ const setupBmsTagRetryCron = () => {
     bmsTagRetryCronJob.stop();
     bmsTagRetryCronJob = null;
   }
-  // Toutes les heures a :45 (apres la sync commandes BMS de :30), 9h-19h, lun-ven
-  bmsTagRetryCronJob = cron.schedule('45 9-19 * * 1-5', runBmsTagRetry, {
+  // Toutes les 15 min, 9h-19h, lun-ven (reactivite : tag pose des que BMS importe la commande)
+  bmsTagRetryCronJob = cron.schedule('*/15 9-19 * * 1-5', runBmsTagRetry, {
     timezone: 'Europe/Paris'
   });
-  console.log('Cron BMS tag retry configure: toutes les heures a :45, 9h-19h, lun-ven');
+  console.log('Cron BMS tag retry configure: toutes les 15 min, 9h-19h, lun-ven');
 };
 
 module.exports = {
