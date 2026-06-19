@@ -681,12 +681,8 @@ class ProductModel {
     `;
     const result = await pool.query(query, params);
     return result.rows;
-  }
-  /**
-   * Récupère les produits pour le catalogue (paramétrage)
-   * Produits simples publiés + variations dont le parent est publish
-   * Tri par date de création DESC
-   */
+  },
+
   async getBrandsForCatalog() {
     const result = await pool.query(`
       SELECT type, value, parent FROM (
