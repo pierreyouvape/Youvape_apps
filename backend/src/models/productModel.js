@@ -794,22 +794,11 @@ class ProductModel {
 
     let variations = [];
     if (variableIds.length > 0) {
-      // Construire le filtre search/brand pour les variations (même logique que pour les parents)
+      // Les variations sont récupérées pour tous les parents déjà filtrés — on ne réapplique
+      // pas le filtre search sur les variations : si le parent "Pulp Fraise des bois" correspond,
+      // toutes ses déclinaisons "50ml", "100ml" etc. doivent apparaître même sans "pulp" dans leur titre.
       const varParams = [variableIds]; // $1 = variableIds
       let varFilter = '';
-      if (search) {
-        const words = search.trim().split(/\s+/).filter(Boolean);
-        const wordClauses = words.map((w, i) => {
-          const p = 1 + i + 1; // $1 = variableIds, mots à partir de $2
-          const isShort = w.length <= 2;
-          const vField = `unaccent(v.post_title || ' ' || COALESCE(v.sku, '') || ' ' || COALESCE(v.brand, '') || ' ' || COALESCE(v.sub_brand, ''))`;
-          return isShort
-            ? `(' ' || ${vField} || ' ') ILIKE unaccent($${p})`
-            : `${vField} ILIKE unaccent($${p})`;
-        });
-        varFilter += ' AND (' + wordClauses.join(' AND ') + ')';
-        words.forEach(w => varParams.push(w.length <= 2 ? `% ${w} %` : `%${w}%`));
-      }
       if (brand) {
         varFilter += ` AND v.brand = $${varParams.length + 1}`;
         varParams.push(brand);
