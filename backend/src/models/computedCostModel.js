@@ -8,15 +8,13 @@ const computedCostModel = {
     const startTime = Date.now();
 
     // 1. Tous les lots reçus, triés par date d'arrivée
-    // unit_price = prix brut unitaire, on applique la remise puis divise par pack_qty pour avoir le coût unitaire net
+    // unit_price stocke déjà le prix par unité individuelle (jamais le prix pack)
     const lotsResult = await pool.query(`
       SELECT poi.product_id, poi.qty_received,
-             poi.unit_price * (1 - COALESCE(poi.discount_percent, 0) / 100.0)
-               / COALESCE(NULLIF(ps.pack_qty, 0), 1) as unit_price,
+             poi.unit_price * (1 - COALESCE(poi.discount_percent, 0) / 100.0) as unit_price,
              COALESCE(po.received_date, po.order_date, po.created_at) as lot_date
       FROM purchase_order_items poi
       JOIN purchase_orders po ON poi.purchase_order_id = po.id
-      LEFT JOIN product_suppliers ps ON ps.product_id = poi.product_id AND ps.supplier_id = po.supplier_id
       WHERE poi.qty_received > 0
         AND po.status NOT IN ('draft', 'cancelled')
         AND poi.unit_price IS NOT NULL
