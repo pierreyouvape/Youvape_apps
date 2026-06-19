@@ -312,12 +312,13 @@ exports.getCatalogList = async (req, res) => {
     const sortBy = req.query.sortBy || null;
     const sortDir = req.query.sortDir || 'desc';
     const brand = req.query.brand || '';
+    const subBrand = req.query.subBrand || '';
     const showHiddenParam = req.query.showHidden; // undefined | 'true' | 'only'
     const trackStockOnly = !showHiddenParam;
     const onlyHidden = showHiddenParam === 'only';
 
-    const { parents, variations } = await productModel.getAllForCatalog(limit, offset, search, trackStockOnly, stockTab, sortBy, sortDir, brand, onlyHidden);
-    const { total, totalWithVariations, totalStockValue } = await productModel.countForCatalog(search, trackStockOnly, stockTab, brand, onlyHidden);
+    const { parents, variations } = await productModel.getAllForCatalog(limit, offset, search, trackStockOnly, stockTab, sortBy, sortDir, brand, onlyHidden, subBrand);
+    const { total, totalWithVariations, totalStockValue } = await productModel.countForCatalog(search, trackStockOnly, stockTab, brand, onlyHidden, subBrand);
 
     res.json({
       success: true,
@@ -326,6 +327,20 @@ exports.getCatalogList = async (req, res) => {
     });
   } catch (error) {
     console.error('Error getting catalog list:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+/**
+ * Retourne les marques et sous-marques ayant au moins 1 produit publié
+ * GET /api/products/catalog-brands
+ */
+exports.getCatalogBrands = async (req, res) => {
+  try {
+    const items = await productModel.getBrandsForCatalog();
+    res.json({ success: true, data: items });
+  } catch (error) {
+    console.error('Error getting catalog brands:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 };

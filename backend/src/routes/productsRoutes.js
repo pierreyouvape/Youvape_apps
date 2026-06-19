@@ -12,6 +12,7 @@ router.get('/category/:category', productsController.getByCategory);
 router.get('/stats-list', productsController.getStatsListing);
 router.get('/catalog', productsController.getCatalogList);
 router.get('/catalog/export', productsController.getCatalogExport);
+router.get('/catalog-brands', productsController.getCatalogBrands);
 router.post('/barcodes/import', productsController.importBarcodes);
 
 // Détails produit

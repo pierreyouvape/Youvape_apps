@@ -108,11 +108,13 @@ const CatalogApp = () => {
 
   const headers = { Authorization: `Bearer ${token}` };
 
-  const fetchProducts = async (offset = 0, search = searchTerm, tab = stockTab, sort = sortBy, dir = sortDir, brand = selectedBrand, hidden = showHidden) => {
+  const fetchProducts = async (offset = 0, search = searchTerm, tab = stockTab, sort = sortBy, dir = sortDir, brandVal = selectedBrand, hidden = showHidden) => {
     setLoading(true);
     try {
+      const brandParam = brandVal && brandVal.startsWith('brand:') ? brandVal.slice(6) : undefined;
+      const subBrandParam = brandVal && brandVal.startsWith('subBrand:') ? brandVal.slice(9) : undefined;
       const res = await axios.get(`${API_URL}/products/catalog`, {
-        params: { limit: 50, offset, search, stockTab: tab, sortBy: sort || undefined, sortDir: dir, brand: brand || undefined, showHidden: hidden === 1 ? 'true' : hidden === 2 ? 'only' : undefined },
+        params: { limit: 50, offset, search, stockTab: tab, sortBy: sort || undefined, sortDir: dir, brand: brandParam, subBrand: subBrandParam, showHidden: hidden === 1 ? 'true' : hidden === 2 ? 'only' : undefined },
         headers
       });
       if (res.data.success) {
@@ -133,7 +135,7 @@ const CatalogApp = () => {
       try {
         const [prefsRes, brandsRes] = await Promise.all([
           axios.get(`${API_URL}/preferences/catalog`, { headers: { Authorization: `Bearer ${token}` } }),
-          axios.get(`${API_URL}/brands`, { headers: { Authorization: `Bearer ${token}` } }),
+          axios.get(`${API_URL}/products/catalog-brands`, { headers: { Authorization: `Bearer ${token}` } }),
         ]);
         if (prefsRes.data.success) {
           setHiddenColumns(prefsRes.data.hiddenColumns || []);
@@ -142,11 +144,7 @@ const CatalogApp = () => {
           setStockTab(tab);
         }
         if (brandsRes.data.success) {
-          const names = (brandsRes.data.data || [])
-            .map(b => b.brand)
-            .filter(Boolean)
-            .sort((a, b) => a.localeCompare(b, 'fr'));
-          setBrandsList(names);
+          setBrandsList(brandsRes.data.data || []);
         }
       } catch (err) {
         console.error('Erreur chargement préférences colonnes catalog:', err);
@@ -544,12 +542,14 @@ const CatalogApp = () => {
               marginLeft: '12px', padding: '8px 12px', backgroundColor: '#fff', color: selectedBrand ? '#059669' : '#374151',
               border: selectedBrand ? '1px solid #059669' : '1px solid #d1d5db',
               borderRadius: '6px', fontSize: '13px', fontWeight: selectedBrand ? '600' : '500',
-              cursor: 'pointer', maxWidth: '160px'
+              cursor: 'pointer', maxWidth: '180px'
             }}
           >
             <option value="">Toutes les marques</option>
-            {brandsList.map(b => (
-              <option key={b} value={b}>{b}</option>
+            {brandsList.map(item => (
+              item.type === 'brand'
+                ? <option key={`brand:${item.value}`} value={`brand:${item.value}`}>{item.value}</option>
+                : <option key={`subBrand:${item.value}`} value={`subBrand:${item.value}`}>&nbsp;&nbsp;↳ {item.value}</option>
             ))}
           </select>
 

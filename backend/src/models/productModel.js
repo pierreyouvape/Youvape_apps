@@ -687,7 +687,30 @@ class ProductModel {
    * Produits simples publiés + variations dont le parent est publish
    * Tri par date de création DESC
    */
-  async getAllForCatalog(limit = 50, offset = 0, search = '', trackStockOnly = true, stockTab = 'all', sortBy = null, sortDir = 'desc', brand = '', onlyHidden = false) {
+  async getBrandsForCatalog() {
+    const result = await pool.query(`
+      SELECT type, value, parent FROM (
+        SELECT 'brand' as type, brand as value, NULL::text as parent
+        FROM products
+        WHERE brand IS NOT NULL AND product_type IN ('simple','variable') AND post_status = 'publish'
+        GROUP BY brand
+
+        UNION ALL
+
+        SELECT 'sub_brand' as type, sub_brand as value, brand as parent
+        FROM products
+        WHERE sub_brand IS NOT NULL AND product_type IN ('simple','variable') AND post_status = 'publish'
+        GROUP BY sub_brand, brand
+      ) t
+      ORDER BY
+        CASE WHEN type = 'brand' THEN value ELSE parent END,
+        type,
+        value
+    `);
+    return result.rows;
+  },
+
+  async getAllForCatalog(limit = 50, offset = 0, search = '', trackStockOnly = true, stockTab = 'all', sortBy = null, sortDir = 'desc', brand = '', onlyHidden = false, subBrand = '') {
     const reorderIdsSql = await getReorderIdsSql(stockTab);
     let whereClause = `
       WHERE p.post_status = 'publish'
@@ -761,6 +784,11 @@ class ProductModel {
       params.push(brand);
       paramIndex++;
     }
+    if (subBrand) {
+      whereClause += ` AND p.sub_brand = $${paramIndex}`;
+      params.push(subBrand);
+      paramIndex++;
+    }
 
     params.push(limit, offset);
 
@@ -817,6 +845,10 @@ class ProductModel {
       if (brand) {
         varFilter += ` AND (v.brand = $${varParams.length + 1} OR p_parent.brand = $${varParams.length + 1})`;
         varParams.push(brand);
+      }
+      if (subBrand) {
+        varFilter += ` AND p_parent.sub_brand = $${varParams.length + 1}`;
+        varParams.push(subBrand);
       }
 
       const variationsQuery = `
@@ -898,7 +930,7 @@ class ProductModel {
   /**
    * Compte les produits pour le catalogue
    */
-  async countForCatalog(search = '', trackStockOnly = true, stockTab = 'all', brand = '', onlyHidden = false) {
+  async countForCatalog(search = '', trackStockOnly = true, stockTab = 'all', brand = '', onlyHidden = false, subBrand = '') {
     const reorderIdsSql = await getReorderIdsSql(stockTab);
     let whereClause = `
       WHERE p.post_status = 'publish'
@@ -969,6 +1001,10 @@ class ProductModel {
     if (brand) {
       whereClause += ` AND p.brand = $${params.length + 1}`;
       params.push(brand);
+    }
+    if (subBrand) {
+      whereClause += ` AND p.sub_brand = $${params.length + 1}`;
+      params.push(subBrand);
     }
 
     const query = `
