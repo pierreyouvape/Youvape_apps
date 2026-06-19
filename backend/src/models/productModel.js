@@ -794,11 +794,26 @@ class ProductModel {
 
     let variations = [];
     if (variableIds.length > 0) {
-      // Les variations sont récupérées pour tous les parents déjà filtrés — on ne réapplique
-      // pas le filtre search sur les variations : si le parent "Pulp Fraise des bois" correspond,
-      // toutes ses déclinaisons "50ml", "100ml" etc. doivent apparaître même sans "pulp" dans leur titre.
+      // Filtre variations : une déclinaison est montrée si le PARENT correspond à la recherche
+      // (ex: "Pulp Fraise des bois" → toutes ses déclinaisons "50ml", "100ml")
+      // OU si la DÉCLINAISON elle-même correspond (ex: "Mozambique 12mg" dans un parent générique
+      // "Curieux" → seules les déclinaisons "Mozambique" sont montrées, pas "Cassis Givré").
       const varParams = [variableIds]; // $1 = variableIds
       let varFilter = '';
+      if (search) {
+        const words = search.trim().split(/\s+/).filter(Boolean);
+        const pField = `unaccent(p_parent.post_title || ' ' || COALESCE(p_parent.sku, '') || ' ' || COALESCE(p_parent.brand, '') || ' ' || COALESCE(p_parent.sub_brand, ''))`;
+        const vField = `unaccent(v.post_title || ' ' || COALESCE(v.sku, '') || ' ' || COALESCE(v.brand, '') || ' ' || COALESCE(v.sub_brand, ''))`;
+        const wordClauses = words.map((w, i) => {
+          const p = varParams.length + 1 + i;
+          const isShort = w.length <= 2;
+          const pCond = isShort ? `(' ' || ${pField} || ' ') ILIKE unaccent($${p})` : `${pField} ILIKE unaccent($${p})`;
+          const vCond = isShort ? `(' ' || ${vField} || ' ') ILIKE unaccent($${p})` : `${vField} ILIKE unaccent($${p})`;
+          return `(${pCond} OR ${vCond})`;
+        });
+        varFilter += ' AND ' + wordClauses.join(' AND ');
+        words.forEach(w => varParams.push(w.length <= 2 ? `% ${w} %` : `%${w}%`));
+      }
       if (brand) {
         varFilter += ` AND v.brand = $${varParams.length + 1}`;
         varParams.push(brand);
