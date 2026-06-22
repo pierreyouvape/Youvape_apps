@@ -193,7 +193,7 @@ function InsertPlaceholderRich({ editorRef, groups }) {
       </button>
       {open && (
         <div style={{
-          position: 'absolute', top: 'calc(100% + 4px)', right: 0, zIndex: 200,
+          position: 'absolute', bottom: 'calc(100% + 4px)', right: 0, zIndex: 200,
           background: C.blanc, border: `1px solid ${C.grisCL}`, borderRadius: 10,
           boxShadow: '0 6px 24px rgba(0,0,0,0.10)', overflow: 'hidden',
           minWidth: 280, maxHeight: 380, overflowY: 'auto',
