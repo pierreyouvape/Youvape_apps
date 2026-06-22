@@ -394,11 +394,16 @@ class CustomerModel {
    * Récupère la liste des pays uniques des clients
    */
   async getCountries() {
+    // On ne liste que les pays ayant au moins une commande rattachée à un client
+    // existant — même logique que le filtre pays du listing stats, pour éviter
+    // d'afficher des pays issus de commandes invité/orphelines qui ne renverraient
+    // aucun client une fois sélectionnés.
     const query = `
-      SELECT DISTINCT billing_country as country
-      FROM orders
-      WHERE billing_country IS NOT NULL AND billing_country != ''
-      ORDER BY billing_country
+      SELECT DISTINCT o.billing_country as country
+      FROM orders o
+      INNER JOIN customers c ON c.wp_user_id = o.wp_customer_id
+      WHERE o.billing_country IS NOT NULL AND o.billing_country != ''
+      ORDER BY o.billing_country
     `;
     const result = await pool.query(query);
     return result.rows.map(row => row.country);

@@ -527,16 +527,19 @@ const wcSyncService = {
     }
 
     await pool.query(`
-      INSERT INTO refunds (wp_refund_id, wp_order_id, refund_amount, refund_reason, refund_date)
-      VALUES ($1, $2, $3, $4, $5)
+      INSERT INTO refunds (wp_refund_id, wp_order_id, refund_amount, refund_reason, refund_date, order_total, order_tax)
+      VALUES ($1, $2, $3, $4, $5, $6, $7)
       ON CONFLICT (wp_refund_id)
       DO UPDATE SET
         refund_amount = EXCLUDED.refund_amount,
         refund_reason = EXCLUDED.refund_reason,
+        order_total = EXCLUDED.order_total,
+        order_tax = EXCLUDED.order_tax,
         updated_at = NOW()
     `, [
       data.wp_refund_id, data.wp_order_id, data.refund_amount,
-      data.refund_reason, data.refund_date
+      data.refund_reason, data.refund_date,
+      data.order_total ?? null, data.order_tax ?? null
     ]);
 
     console.log(`🔄 WC Sync: Refund #${wpId} ${action === 'create' ? 'créé' : 'mis à jour'}`);
