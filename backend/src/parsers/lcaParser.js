@@ -114,7 +114,9 @@ function parseConfirmation(text) {
     }
   }
 
-  return { orderNumber, orderDate, items, hasPrice: false, pdfIsPackBased: false };
+  // LCA vend les produits "par 10" comme une unite atomique (le SKU = le pack) :
+  // qty et prix catalogue ne doivent jamais etre multiplies/divises par pack_qty.
+  return { orderNumber, orderDate, items, hasPrice: false, pdfIsPackBased: false, skipPackQty: true };
 }
 
 /**
@@ -157,7 +159,9 @@ function parsePreparation(text) {
     }
   }
 
-  return { orderNumber, orderDate, items, hasPrice: false, pdfIsPackBased: false };
+  // LCA vend les produits "par 10" comme une unite atomique (le SKU = le pack) :
+  // qty et prix catalogue ne doivent jamais etre multiplies/divises par pack_qty.
+  return { orderNumber, orderDate, items, hasPrice: false, pdfIsPackBased: false, skipPackQty: true };
 }
 
 /**
@@ -230,7 +234,9 @@ function parseSiteWeb(text) {
     });
   }
 
-  return { orderNumber, orderDate, items, hasPrice: false, pdfIsPackBased: false };
+  // LCA vend les produits "par 10" comme une unite atomique (le SKU = le pack) :
+  // qty et prix catalogue ne doivent jamais etre multiplies/divises par pack_qty.
+  return { orderNumber, orderDate, items, hasPrice: false, pdfIsPackBased: false, skipPackQty: true };
 }
 
 /**
