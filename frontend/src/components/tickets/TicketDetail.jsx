@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, useContext } from 'react';
+import { useState, useEffect, useRef, useCallback, useContext, createContext, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import StatusBadge from './StatusBadge';
@@ -133,16 +133,189 @@ function Avatar({ name, size = 34 }) {
   );
 }
 
+// ─── Lightbox (viewer d'images en popup) ──────────────────────────────────────
+// Contexte partagé par tout le thread : chaque image de pièce jointe s'enregistre
+// dans une galerie commune et ouvre le viewer plein écran au bon index, avec
+// navigation ‹ › entre toutes les images du ticket et téléchargement.
+const LightboxContext = createContext(null);
+
+function LightboxProvider({ children }) {
+  // Galerie : liste d'images { url, name } enregistrées par les pièces jointes,
+  // dans l'ordre du DOM (registre à clés stables pour conserver l'ordre).
+  const registry = useRef(new Map()); // key -> { url, name }
+  const [, force] = useState(0);
+  const [openUrl, setOpenUrl] = useState(null); // url de l'image affichée (ou null)
+
+  const register = useCallback((key, img) => {
+    registry.current.set(key, img);
+    force(n => n + 1);
+    return () => { registry.current.delete(key); force(n => n + 1); };
+  }, []);
+
+  const open = useCallback((url) => setOpenUrl(url), []);
+  const close = useCallback(() => setOpenUrl(null), []);
+
+  const images = useMemo(() => Array.from(registry.current.values()), [registry.current.size, openUrl]);
+  const index = openUrl ? images.findIndex(im => im.url === openUrl) : -1;
+
+  const go = useCallback((delta) => {
+    setOpenUrl(cur => {
+      const list = Array.from(registry.current.values());
+      const i = list.findIndex(im => im.url === cur);
+      if (i < 0 || list.length === 0) return cur;
+      const next = (i + delta + list.length) % list.length;
+      return list[next].url;
+    });
+  }, []);
+
+  const ctx = useMemo(() => ({ register, open }), [register, open]);
+
+  return (
+    <LightboxContext.Provider value={ctx}>
+      {children}
+      {index >= 0 && (
+        <ImageLightbox
+          image={images[index]}
+          index={index}
+          total={images.length}
+          onPrev={() => go(-1)}
+          onNext={() => go(1)}
+          onClose={close}
+        />
+      )}
+    </LightboxContext.Provider>
+  );
+}
+
+function ImageLightbox({ image, index, total, onPrev, onNext, onClose }) {
+  const hasNav = total > 1;
+
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key === 'Escape') onClose();
+      else if (e.key === 'ArrowLeft' && hasNav) onPrev();
+      else if (e.key === 'ArrowRight' && hasNav) onNext();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [hasNav, onPrev, onNext, onClose]);
+
+  const download = async () => {
+    try {
+      const res = await fetch(image.url);
+      const blob = await res.blob();
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = image.name || 'image';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    } catch {
+      window.open(image.url, '_blank', 'noopener');
+    }
+  };
+
+  const navBtn = (onClick, side) => (
+    <button type="button" onClick={(e) => { e.stopPropagation(); onClick(); }}
+      style={{
+        position: 'absolute', [side]: 18, top: '50%', transform: 'translateY(-50%)',
+        width: 48, height: 48, borderRadius: '50%', border: 'none', cursor: 'pointer',
+        background: 'rgba(255,255,255,0.12)', color: '#fff', backdropFilter: 'blur(4px)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'background 0.15s',
+      }}
+      onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.25)'}
+      onMouseLeave={e => e.currentTarget.style.background = 'rgba(255,255,255,0.12)'}
+    >
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+        {side === 'left' ? <path d="M15 18l-6-6 6-6" /> : <path d="M9 18l6-6-6-6" />}
+      </svg>
+    </button>
+  );
+
+  return createPortal(
+    <div
+      onClick={onClose}
+      style={{
+        position: 'fixed', inset: 0, zIndex: 9999,
+        background: 'rgba(15,18,22,0.88)', backdropFilter: 'blur(2px)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+      }}
+    >
+      {/* Barre du haut : compteur + actions */}
+      <div style={{ position: 'absolute', top: 0, left: 0, right: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px' }}>
+        <div style={{ color: 'rgba(255,255,255,0.85)', fontSize: 13, fontWeight: 700, display: 'flex', flexDirection: 'column', gap: 2 }}>
+          <span>{image.name || 'Image'}</span>
+          {total > 1 && <span style={{ color: 'rgba(255,255,255,0.55)', fontWeight: 600 }}>{index + 1} / {total}</span>}
+        </div>
+        <div style={{ display: 'flex', gap: 10 }}>
+          <button type="button" onClick={(e) => { e.stopPropagation(); download(); }}
+            title="Télécharger"
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '8px 14px', borderRadius: 8, border: 'none', cursor: 'pointer', background: 'rgba(255,255,255,0.14)', color: '#fff', fontSize: 12.5, fontWeight: 700, fontFamily: 'Lato, sans-serif' }}
+            onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.26)'}
+            onMouseLeave={e => e.currentTarget.style.background = 'rgba(255,255,255,0.14)'}
+          >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><path d="M7 10l5 5 5-5" /><path d="M12 15V3" />
+            </svg>
+            Télécharger
+          </button>
+          <button type="button" onClick={(e) => { e.stopPropagation(); onClose(); }}
+            title="Fermer (Échap)"
+            style={{ width: 38, height: 38, borderRadius: 8, border: 'none', cursor: 'pointer', background: 'rgba(255,255,255,0.14)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+            onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.26)'}
+            onMouseLeave={e => e.currentTarget.style.background = 'rgba(255,255,255,0.14)'}
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M18 6L6 18" /><path d="M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      {hasNav && navBtn(onPrev, 'left')}
+      {hasNav && navBtn(onNext, 'right')}
+
+      <img
+        src={image.url}
+        alt={image.name}
+        onClick={(e) => e.stopPropagation()}
+        style={{ maxWidth: '88vw', maxHeight: '82vh', objectFit: 'contain', borderRadius: 8, boxShadow: '0 8px 40px rgba(0,0,0,0.5)' }}
+      />
+    </div>,
+    document.body
+  );
+}
+
 // ─── Pièce jointe ─────────────────────────────────────────────────────────────
 function AttachmentItem({ att, ticketId }) {
   const isImage = att.mime?.startsWith('image/');
   const url = att.url || `/api/sav/attachments/${ticketId}/${att.filename}`;
   const sizeKb = att.size ? `${(att.size / 1024).toFixed(0)} Ko` : '';
+  const lightbox = useContext(LightboxContext);
+
+  // Enregistre l'image dans la galerie partagée du thread (pour la navigation).
+  useEffect(() => {
+    if (!isImage || !lightbox) return;
+    return lightbox.register(url, { url, name: att.original_name });
+  }, [isImage, lightbox, url, att.original_name]);
+
   if (isImage) {
+    // Sans provider (cas isolé), fallback sur l'ancien comportement (nouvel onglet).
+    if (!lightbox) {
+      return (
+        <a href={url} target="_blank" rel="noopener noreferrer" style={{ display: 'inline-block', marginRight: 8, marginTop: 6 }}>
+          <img src={url} alt={att.original_name} style={{ height: 80, borderRadius: 6, border: `1px solid ${C.grisCL}`, objectFit: 'cover' }} />
+        </a>
+      );
+    }
     return (
-      <a href={url} target="_blank" rel="noopener noreferrer" style={{ display: 'inline-block', marginRight: 8, marginTop: 6 }}>
-        <img src={url} alt={att.original_name} style={{ height: 80, borderRadius: 6, border: `1px solid ${C.grisCL}`, objectFit: 'cover' }} />
-      </a>
+      <button type="button" onClick={() => lightbox.open(url)}
+        title="Cliquer pour agrandir"
+        style={{ display: 'inline-block', marginRight: 8, marginTop: 6, padding: 0, border: 'none', background: 'transparent', cursor: 'zoom-in' }}
+      >
+        <img src={url} alt={att.original_name} style={{ height: 80, borderRadius: 6, border: `1px solid ${C.grisCL}`, objectFit: 'cover', display: 'block' }} />
+      </button>
     );
   }
   return (
@@ -1704,17 +1877,19 @@ function ConversationPanel({ ticket, onReplySent, onStatusChange, playMode, afte
       </div>
 
       {/* Thread */}
-      <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '20px 28px 16px' }}>
-        {ticket.description && (
-          <Message
-            msg={{ from: ticket.customer_name || ticket.customer_email, body: ticket.description, is_agent: false, date: ticket.created_at, attachments: [] }}
-            ticketId={ticket.id}
-          />
-        )}
-        {messages.map((msg, i) => <Message key={i} msg={msg} ticketId={ticket.id} />)}
-        {failedMessages.map((msg, i) => <Message key={`failed-${i}`} msg={msg} ticketId={ticket.id} />)}
-        <div ref={bottomRef} />
-      </div>
+      <LightboxProvider>
+        <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '20px 28px 16px' }}>
+          {ticket.description && (
+            <Message
+              msg={{ from: ticket.customer_name || ticket.customer_email, body: ticket.description, is_agent: false, date: ticket.created_at, attachments: [] }}
+              ticketId={ticket.id}
+            />
+          )}
+          {messages.map((msg, i) => <Message key={i} msg={msg} ticketId={ticket.id} />)}
+          {failedMessages.map((msg, i) => <Message key={`failed-${i}`} msg={msg} ticketId={ticket.id} />)}
+          <div ref={bottomRef} />
+        </div>
+      </LightboxProvider>
 
       {/* Poignée d'agrandissement (drag vers le haut = composer plus grand) */}
       <div
