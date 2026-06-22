@@ -265,12 +265,14 @@ class CustomerModel {
     // Tri serveur — whitelist stricte (anti-injection). Les clés correspondent
     // aux colonnes/alias du SELECT ci-dessous.
     const SORT_COLUMNS = {
-      id:      'id',
-      name:    "(LOWER(c.first_name) || ' ' || LOWER(c.last_name))",
-      email:   'LOWER(c.email)',
-      orders:  'order_count',
-      spent:   'total_spent',
-      country: 'country',
+      id:          'id',
+      name:        "(LOWER(c.first_name) || ' ' || LOWER(c.last_name))",
+      email:       'LOWER(c.email)',
+      orders:      'order_count',
+      spent:       'total_spent',
+      country:     'country',
+      first_order: 'first_order_date',
+      last_order:  'last_order_date',
     };
     const sortCol = SORT_COLUMNS[sortKey] || SORT_COLUMNS.spent;
     const sortDirection = sortDir === 'asc' ? 'ASC' : 'DESC';
@@ -328,7 +330,19 @@ class CustomerModel {
           WHERE wp_customer_id = c.wp_user_id
           ORDER BY post_date DESC
           LIMIT 1
-        ) as country
+        ) as country,
+        (
+          SELECT MIN(post_date)
+          FROM orders
+          WHERE wp_customer_id = c.wp_user_id
+          AND post_status NOT IN ('wc-failed', 'wc-cancelled', 'wc-refunded')
+        ) as first_order_date,
+        (
+          SELECT MAX(post_date)
+          FROM orders
+          WHERE wp_customer_id = c.wp_user_id
+          AND post_status NOT IN ('wc-failed', 'wc-cancelled', 'wc-refunded')
+        ) as last_order_date
       FROM customers c
       ${whereClause}
       ORDER BY ${sortCol} ${sortDirection} NULLS LAST

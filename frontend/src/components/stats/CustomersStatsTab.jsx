@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { getCountryLabel } from '../../utils/countries';
 import { formatPriceEur, formatPrice, formatInt } from '../../utils/formatNumber';
+import { formatDate } from '../../utils/dateUtils';
 import { AuthContext } from '../../context/AuthContext';
 import { useColumnPreferences } from '../../hooks/useColumnPreferences';
 import ColumnPanel from '../ColumnPanel';
@@ -11,11 +12,25 @@ import { LinkTr } from '../../utils/navHelpers';
 const API_BASE_URL = '/api';
 
 const CUSTOMERS_COLUMNS = [
-  { key: 'email',         label: 'Email' },
-  { key: 'commandes',     label: 'Commandes' },
-  { key: 'total_depense', label: 'Total dépensé' },
-  { key: 'pays',          label: 'Pays' },
+  { key: 'email',              label: 'Email' },
+  { key: 'commandes',          label: 'Commandes' },
+  { key: 'total_depense',      label: 'Total dépensé' },
+  { key: 'premiere_commande',  label: '1ère commande' },
+  { key: 'derniere_commande',  label: 'Dernière commande' },
+  { key: 'pays',               label: 'Pays' },
 ];
+
+const sortableThStyle = {
+  padding: '15px',
+  textAlign: 'left',
+  fontSize: '12px',
+  fontWeight: '600',
+  color: '#6c757d',
+  textTransform: 'uppercase',
+  cursor: 'pointer',
+  userSelect: 'none',
+  whiteSpace: 'nowrap',
+};
 
 const CustomersStatsTab = () => {
   const navigate = useNavigate();
@@ -31,6 +46,22 @@ const CustomersStatsTab = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [countryFilter, setCountryFilter] = useState('');
   const [countries, setCountries] = useState([]);
+  const [sortKey, setSortKey] = useState('spent');
+  const [sortDir, setSortDir] = useState('desc');
+
+  // Tri colonne : 1er clic = décroissant (du plus grand au plus petit),
+  // 2e clic sur la même colonne = croissant.
+  const handleSort = (key) => {
+    if (sortKey === key) {
+      setSortDir((prev) => (prev === 'desc' ? 'asc' : 'desc'));
+    } else {
+      setSortKey(key);
+      setSortDir('desc');
+    }
+    setPagination((prev) => ({ ...prev, pageIndex: 0 }));
+  };
+
+  const sortIndicator = (key) => (sortKey === key ? (sortDir === 'desc' ? ' ▼' : ' ▲') : '');
 
   // Chargement de la liste des pays
   useEffect(() => {
@@ -59,6 +90,8 @@ const CustomersStatsTab = () => {
             offset: offset,
             search: searchTerm,
             country: countryFilter,
+            sortKey,
+            sortDir,
           },
         });
 
@@ -74,7 +107,7 @@ const CustomersStatsTab = () => {
     };
 
     fetchCustomers();
-  }, [pagination.pageIndex, pagination.pageSize, searchTerm, countryFilter]);
+  }, [pagination.pageIndex, pagination.pageSize, searchTerm, countryFilter, sortKey, sortDir]);
 
   const handleSearchChange = (e) => {
     setSearchTerm(e.target.value);
@@ -88,16 +121,21 @@ const CustomersStatsTab = () => {
 
   const handleExport = async () => {
     try {
-      const url = searchTerm || countryFilter
-        ? `${API_BASE_URL}/customers/stats-list?search=${searchTerm}&country=${countryFilter}&limit=10000`
-        : `${API_BASE_URL}/customers/stats-list?limit=10000`;
-
-      const response = await axios.get(url);
+      const response = await axios.get(`${API_BASE_URL}/customers/stats-list`, {
+        params: {
+          search: searchTerm,
+          country: countryFilter,
+          sortKey,
+          sortDir,
+          limit: 10000,
+        },
+      });
 
       if (response.data.success) {
         const customers = response.data.data;
+        const csvDate = (d) => (d ? String(d).replace('T', ' ').split(/[ .]/)[0] : '');
         const csv = [
-          ['ID', 'Prénom', 'Nom', 'Email', 'Commandes', 'Total dépensé TTC', 'Pays'],
+          ['ID', 'Prénom', 'Nom', 'Email', 'Commandes', 'Total dépensé TTC', '1ère commande', 'Dernière commande', 'Pays'],
           ...customers.map(c => [
             c.id,
             c.first_name || '',
@@ -105,6 +143,8 @@ const CustomersStatsTab = () => {
             c.email || '',
             c.order_count || 0,
             parseFloat(c.total_spent || 0).toFixed(2),
+            csvDate(c.first_order_date),
+            csvDate(c.last_order_date),
             c.country || ''
           ])
         ].map(row => row.join(',')).join('\n');
@@ -226,12 +266,14 @@ const CustomersStatsTab = () => {
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
                 <tr style={{ backgroundColor: '#f8f9fa' }}>
-                  <th style={{ padding: '15px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: '#6c757d', textTransform: 'uppercase' }}>ID</th>
-                  <th style={{ padding: '15px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: '#6c757d', textTransform: 'uppercase' }}>Nom Prénom</th>
-                  {isVisible('email') && <th style={{ padding: '15px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: '#6c757d', textTransform: 'uppercase' }}>Email</th>}
-                  {isVisible('commandes') && <th style={{ padding: '15px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: '#6c757d', textTransform: 'uppercase' }}>Commandes</th>}
-                  {isVisible('total_depense') && <th style={{ padding: '15px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: '#6c757d', textTransform: 'uppercase' }}>Total dépensé TTC</th>}
-                  {isVisible('pays') && <th style={{ padding: '15px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: '#6c757d', textTransform: 'uppercase' }}>Pays</th>}
+                  <th onClick={() => handleSort('id')} style={sortableThStyle}>ID{sortIndicator('id')}</th>
+                  <th onClick={() => handleSort('name')} style={sortableThStyle}>Nom Prénom{sortIndicator('name')}</th>
+                  {isVisible('email') && <th onClick={() => handleSort('email')} style={sortableThStyle}>Email{sortIndicator('email')}</th>}
+                  {isVisible('commandes') && <th onClick={() => handleSort('orders')} style={sortableThStyle}>Commandes{sortIndicator('orders')}</th>}
+                  {isVisible('total_depense') && <th onClick={() => handleSort('spent')} style={sortableThStyle}>Total dépensé TTC{sortIndicator('spent')}</th>}
+                  {isVisible('premiere_commande') && <th onClick={() => handleSort('first_order')} style={sortableThStyle}>1ère commande{sortIndicator('first_order')}</th>}
+                  {isVisible('derniere_commande') && <th onClick={() => handleSort('last_order')} style={sortableThStyle}>Dernière commande{sortIndicator('last_order')}</th>}
+                  {isVisible('pays') && <th onClick={() => handleSort('country')} style={sortableThStyle}>Pays{sortIndicator('country')}</th>}
                 </tr>
               </thead>
               <tbody>
@@ -265,6 +307,16 @@ const CustomersStatsTab = () => {
                     {isVisible('total_depense') && (
                       <td style={{ padding: '15px', fontSize: '14px', fontWeight: 'bold' }}>
                         {formatPriceEur(customer.total_spent)}
+                      </td>
+                    )}
+                    {isVisible('premiere_commande') && (
+                      <td style={{ padding: '15px', fontSize: '14px', whiteSpace: 'nowrap' }}>
+                        {formatDate(customer.first_order_date, { time: false })}
+                      </td>
+                    )}
+                    {isVisible('derniere_commande') && (
+                      <td style={{ padding: '15px', fontSize: '14px', whiteSpace: 'nowrap' }}>
+                        {formatDate(customer.last_order_date, { time: false })}
                       </td>
                     )}
                     {isVisible('pays') && (
