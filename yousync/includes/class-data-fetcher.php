@@ -344,11 +344,7 @@ class Data_Fetcher {
             'refund_amount' => floatval($refund->get_amount()),
             'refund_reason' => $refund->get_reason(),
             'refund_date' => $refund->get_date_created() ? $refund->get_date_created()->format('Y-m-d H:i:s') : null,
-            'refunded_by' => $refund->get_refunded_by(),
-            // Total et TVA du remboursement (négatifs, convention WooCommerce)
-            // Indispensables pour calculer la TVA nette dans les rapports.
-            'order_total' => floatval($refund->get_total()),
-            'order_tax' => floatval($refund->get_total_tax())
+            'refunded_by' => $refund->get_refunded_by()
         ];
     }
 }
