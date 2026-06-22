@@ -279,13 +279,13 @@ const CustomersStatsTab = () => {
               <tbody>
                 {data.map((customer) => (
                   <LinkTr
-                    key={customer.wp_user_id || customer.id}
-                    to={`/customers/${customer.wp_user_id}`}
+                    key={customer.id}
+                    to={`/customers/${customer.id}`}
                     style={{ borderTop: '1px solid #dee2e6', transition: 'background-color 0.2s' }}
                     onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f8f9fa'}
                     onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'white'}
                   >
-                    <td style={{ padding: '15px', fontSize: '14px', fontWeight: 'bold', color: '#007bff' }}>{customer.wp_user_id}</td>
+                    <td style={{ padding: '15px', fontSize: '14px', fontWeight: 'bold', color: '#007bff' }}>{customer.id}</td>
                     <td style={{ padding: '15px', fontSize: '14px' }}>
                       {`${customer.first_name || ''} ${customer.last_name || ''}`.trim() || 'N/A'}
                     </td>
