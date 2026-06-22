@@ -3,6 +3,7 @@ const advancedFilterService = require('../services/advancedFilterService');
 const bmsApiModel = require('../models/bmsApiModel');
 const needsCalculationModel = require('../models/needsCalculationModel');
 const pool = require('../config/database');
+const { buildVariationLabel } = require('../utils/variationLabel');
 
 /**
  * Récupère tous les produits
@@ -527,8 +528,11 @@ exports.getProductBarcodes = async (req, res) => {
 exports.getVariationsBarcodes = async (req, res) => {
   try {
     const wpProductId = parseInt(req.params.id);
+    const parentResult = await pool.query('SELECT post_title FROM products WHERE wp_product_id = $1', [wpProductId]);
+    const parentTitle = parentResult.rows[0]?.post_title;
+
     const variations = await pool.query(`
-      SELECT p.id, p.wp_product_id, p.post_title, p.sku, COALESCE(p.stock, 0) as stock
+      SELECT p.id, p.wp_product_id, p.post_title, p.sku, COALESCE(p.stock, 0) as stock, p.product_attributes
       FROM products p
       WHERE p.wp_parent_id = $1 AND p.product_type = 'variation'
       ORDER BY p.post_title ASC
@@ -537,7 +541,8 @@ exports.getVariationsBarcodes = async (req, res) => {
     const result = [];
     for (const v of variations.rows) {
       const barcodes = await productModel.getBarcodes(v.id);
-      result.push({ ...v, barcodes });
+      const { product_attributes, ...rest } = v;
+      result.push({ ...rest, post_title: buildVariationLabel(v.post_title, parentTitle, product_attributes), barcodes });
     }
 
     res.json({ success: true, data: result });
@@ -554,8 +559,11 @@ exports.getVariationsBarcodes = async (req, res) => {
 exports.getVariationsNeeds = async (req, res) => {
   try {
     const wpProductId = parseInt(req.params.id);
+    const parentResult = await pool.query('SELECT post_title FROM products WHERE wp_product_id = $1', [wpProductId]);
+    const parentTitle = parentResult.rows[0]?.post_title;
+
     const variations = await pool.query(`
-      SELECT p.id, p.wp_product_id, p.post_title, p.sku, COALESCE(p.stock, 0)::int as stock
+      SELECT p.id, p.wp_product_id, p.post_title, p.sku, COALESCE(p.stock, 0)::int as stock, p.product_attributes
       FROM products p
       WHERE p.wp_parent_id = $1 AND p.product_type = 'variation'
       ORDER BY p.post_title ASC
@@ -582,8 +590,10 @@ exports.getVariationsNeeds = async (req, res) => {
     const result = [];
     for (const v of variations.rows) {
       const needs = await needsCalculationModel.calculateProductNeeds(v.wp_product_id, 1, 1);
+      const { product_attributes, ...rest } = v;
       result.push({
-        ...v,
+        ...rest,
+        post_title: buildVariationLabel(v.post_title, parentTitle, product_attributes),
         incoming_qty: incomingMap.get(v.id) || 0,
         ...needs
       });

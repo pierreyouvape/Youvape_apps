@@ -1,4 +1,5 @@
 const pool = require('../config/database');
+const { buildVariationLabel } = require('../utils/variationLabel');
 
 // Statuts de commande considérés comme "ventes valides"
 const VALID_ORDER_STATUSES = ['wc-completed', 'wc-delivered', 'wc-processing', 'wc-awaiting-delivery', 'wc-shipped', 'wc-being-delivered'];
@@ -212,6 +213,7 @@ class ProductStatsService {
         p.image_url,
         p.track_stock,
         p.exclude_from_reorder,
+        p.product_attributes,
         COALESCE(SUM(foi.qty), 0)::int as net_sold,
         COALESCE(SUM(CASE
           WHEN foi.id IN (SELECT order_item_id FROM bundle_sub_items) THEN 0
@@ -225,11 +227,12 @@ class ProductStatsService {
       FROM products p
       LEFT JOIN filtered_order_items foi ON foi.variation_id = p.wp_product_id
       WHERE p.wp_product_id = ANY($1)
-      GROUP BY p.wp_product_id, p.post_title, p.sku, p.price, p.wc_cog_cost, p.computed_cost, p.stock, p.stock_status, p.image_url, p.track_stock, p.exclude_from_reorder
+      GROUP BY p.wp_product_id, p.post_title, p.sku, p.price, p.wc_cog_cost, p.computed_cost, p.stock, p.stock_status, p.image_url, p.track_stock, p.exclude_from_reorder, p.product_attributes
       ORDER BY p.sku ASC
     `;
 
     const result = await pool.query(query, params);
+    const parentTitle = family.parent?.post_title;
 
     // Ajouter les calculs de profit et marge pour chaque variante
     return result.rows.map(variant => {
@@ -237,9 +240,11 @@ class ProductStatsService {
       const totalCost = parseFloat(variant.total_cost) || 0;
       const profit = netRevenue - totalCost;
       const marginPercent = netRevenue > 0 ? ((profit / netRevenue) * 100) : 0;
+      const { product_attributes, ...rest } = variant;
 
       return {
-        ...variant,
+        ...rest,
+        post_title: buildVariationLabel(variant.post_title, parentTitle, product_attributes),
         profit: profit.toFixed(2),
         margin_percent: marginPercent.toFixed(2)
       };
@@ -407,6 +412,7 @@ class ProductStatsService {
         p.stock,
         p.exclude_from_reorder,
         p.track_stock,
+        p.product_attributes,
         COALESCE(SUM(oi.qty), 0)::int as quantity_sold
       FROM products p
       LEFT JOIN order_items oi ON oi.variation_id = p.wp_product_id
@@ -414,12 +420,16 @@ class ProductStatsService {
         AND o.post_status = ANY($${statusParamIndex})
         ${dateConditions}
       WHERE p.wp_product_id = ANY($1)
-      GROUP BY p.wp_product_id, p.post_title, p.sku, p.stock, p.exclude_from_reorder, p.track_stock
+      GROUP BY p.wp_product_id, p.post_title, p.sku, p.stock, p.exclude_from_reorder, p.track_stock, p.product_attributes
       ORDER BY p.sku ASC
     `;
 
     const result = await pool.query(query, params);
-    return result.rows;
+    const parentTitle = family.parent?.post_title;
+    return result.rows.map(row => {
+      const { product_attributes, ...rest } = row;
+      return { ...rest, post_title: buildVariationLabel(row.post_title, parentTitle, product_attributes) };
+    });
   }
 
   /**
