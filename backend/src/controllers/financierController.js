@@ -19,11 +19,11 @@ function buildDateConditions(dateFrom, dateTo, startIndex = 1, alias = 'o') {
   let idx = startIndex + 1;
 
   if (dateFrom) {
-    conditions.push(`COALESCE(${alias}.paid_date, ${alias}.post_date) >= $${idx++}`);
+    conditions.push(`(COALESCE(${alias}.paid_date, ${alias}.post_date) AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris') >= $${idx++}`);
     params.push(dateFrom);
   }
   if (dateTo) {
-    conditions.push(`COALESCE(${alias}.paid_date, ${alias}.post_date) <= $${idx++}`);
+    conditions.push(`(COALESCE(${alias}.paid_date, ${alias}.post_date) AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris') <= $${idx++}`);
     params.push(dateTo + ' 23:59:59');
   }
 
@@ -97,11 +97,11 @@ exports.getDashboard = async (req, res) => {
     const refundsConds  = [];
     let rIdx = 1;
     if (dateFrom) {
-      refundsConds.push(`r.refund_date >= $${rIdx++}`);
+      refundsConds.push(`(r.refund_date AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris') >= $${rIdx++}`);
       refundsParams.push(dateFrom);
     }
     if (dateTo) {
-      refundsConds.push(`r.refund_date <= $${rIdx++}`);
+      refundsConds.push(`(r.refund_date AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris') <= $${rIdx++}`);
       refundsParams.push(dateTo + ' 23:59:59');
     }
 
@@ -145,11 +145,11 @@ exports.getDashboard = async (req, res) => {
     }
 
     const truncMap = {
-      quarter: "date_trunc('hour', COALESCE(o.paid_date, o.post_date)) + (floor(extract(minute FROM COALESCE(o.paid_date, o.post_date)) / 15) * interval '15 minutes')",
-      hour:    "date_trunc('hour', COALESCE(o.paid_date, o.post_date))",
-      day:     "date_trunc('day', COALESCE(o.paid_date, o.post_date))",
-      week:    "date_trunc('week', COALESCE(o.paid_date, o.post_date))",
-      month:   "date_trunc('month', COALESCE(o.paid_date, o.post_date))",
+      quarter: "date_trunc('hour', (COALESCE(o.paid_date, o.post_date) AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris')) + (floor(extract(minute FROM (COALESCE(o.paid_date, o.post_date) AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris')) / 15) * interval '15 minutes')",
+      hour:    "date_trunc('hour', (COALESCE(o.paid_date, o.post_date) AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris'))",
+      day:     "date_trunc('day', (COALESCE(o.paid_date, o.post_date) AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris'))",
+      week:    "date_trunc('week', (COALESCE(o.paid_date, o.post_date) AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris'))",
+      month:   "date_trunc('month', (COALESCE(o.paid_date, o.post_date) AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris'))",
     };
     const truncExpr = truncMap[gran] || truncMap.day;
 
