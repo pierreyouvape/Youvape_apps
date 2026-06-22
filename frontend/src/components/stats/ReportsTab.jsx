@@ -385,6 +385,10 @@ const ReportsTab = () => {
                   <span style={{ color: '#666', fontSize: '13px' }}>Total TVA</span>
                   <span style={{ color: '#666', fontSize: '14px' }}>{formatPrice(data.kpis.taxes)}</span>
                 </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px' }}>
+                  <span style={{ color: '#666', fontSize: '13px' }}>Frais de port facturés</span>
+                  <span style={{ color: '#666', fontSize: '14px' }}>{formatPrice(data.kpis.shipping)}</span>
+                </div>
               </div>
 
               <div style={{ borderTop: '1px solid #e9ecef', paddingTop: '15px' }}>

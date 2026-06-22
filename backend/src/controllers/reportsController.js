@@ -24,12 +24,12 @@ exports.getRevenueReport = async (req, res) => {
 
     // Période
     if (dateFrom) {
-      conditions.push(`((COALESCE(o.paid_date, o.post_date) AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris')) >= $${paramIndex}`);
+      conditions.push(`((o.post_date AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris')) >= $${paramIndex}`);
       params.push(dateFrom);
       paramIndex++;
     }
     if (dateTo) {
-      conditions.push(`((COALESCE(o.paid_date, o.post_date) AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris')) <= $${paramIndex}`);
+      conditions.push(`((o.post_date AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris')) <= $${paramIndex}`);
       params.push(dateTo + ' 23:59:59');
       paramIndex++;
     }
@@ -83,8 +83,12 @@ exports.getRevenueReport = async (req, res) => {
     const partialRefundsResult = await pool.query(partialRefundsQuery, partialRefundsParams);
     const partialRefunds = parseFloat(partialRefundsResult.rows[0].total_refunds) || 0;
 
-    // 1c. TOUS les remboursements (pour le KPI)
-    let allRefundsConditions = [];
+    // 1c. Remboursements de la période (pour le KPI et la déduction du CA)
+    // On exclut les commandes annulées/échouées : un remboursement sur une commande
+    // qui n'a jamais compté comme vente ne doit pas réduire le CA (aligné sur Metorik).
+    let allRefundsConditions = [
+      `o.post_status NOT IN ('wc-cancelled', 'wc-failed', 'wc-checkout-draft', 'wc-trash', 'wc-pending', 'wc-auto-draft')`
+    ];
     let allRefundsParams = [];
     let allRefundsParamIndex = 1;
 
@@ -99,10 +103,11 @@ exports.getRevenueReport = async (req, res) => {
       allRefundsParamIndex++;
     }
 
-    const allRefundsWhereClause = allRefundsConditions.length > 0 ? 'WHERE ' + allRefundsConditions.join(' AND ') : '';
+    const allRefundsWhereClause = 'WHERE ' + allRefundsConditions.join(' AND ');
     const allRefundsQuery = `
       SELECT COALESCE(SUM(r.refund_amount), 0)::numeric as total_refunds
       FROM refunds r
+      JOIN orders o ON r.wp_order_id = o.wp_order_id
       ${allRefundsWhereClause}
     `;
     const allRefundsResult = await pool.query(allRefundsQuery, allRefundsParams);
@@ -117,7 +122,7 @@ exports.getRevenueReport = async (req, res) => {
     // 2. Breakdown jour par jour
     const breakdownQuery = `
       WITH filtered_orders AS (
-        SELECT DISTINCT o.wp_order_id, o.order_total, o.order_tax, o.order_shipping, DATE_TRUNC('day', (COALESCE(o.paid_date, o.post_date) AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris'))::date as date
+        SELECT DISTINCT o.wp_order_id, o.order_total, o.order_tax, o.order_shipping, DATE_TRUNC('day', (o.post_date AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris'))::date as date
         FROM orders o
         ${whereClause}
       )
@@ -170,6 +175,7 @@ exports.getRevenueReport = async (req, res) => {
           ca_ttc: caTTCNet.toFixed(2),
           ca_ht: caHTNet.toFixed(2),
           taxes: taxes.toFixed(2),
+          shipping: shipping.toFixed(2),
           refunds: totalRefunds.toFixed(2),
           avg_order_ht: avgOrderHT.toFixed(2)
         },
@@ -203,12 +209,12 @@ exports.getByCountryReport = async (req, res) => {
     }
 
     if (dateFrom) {
-      conditions.push(`((COALESCE(o.paid_date, o.post_date) AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris')) >= $${paramIndex}`);
+      conditions.push(`((o.post_date AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris')) >= $${paramIndex}`);
       params.push(dateFrom);
       paramIndex++;
     }
     if (dateTo) {
-      conditions.push(`((COALESCE(o.paid_date, o.post_date) AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris')) <= $${paramIndex}`);
+      conditions.push(`((o.post_date AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris')) <= $${paramIndex}`);
       params.push(dateTo + ' 23:59:59');
       paramIndex++;
     }
@@ -282,12 +288,12 @@ exports.getByTaxReport = async (req, res) => {
     }
 
     if (dateFrom) {
-      conditions.push(`((COALESCE(o.paid_date, o.post_date) AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris')) >= $${paramIndex}`);
+      conditions.push(`((o.post_date AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris')) >= $${paramIndex}`);
       params.push(dateFrom);
       paramIndex++;
     }
     if (dateTo) {
-      conditions.push(`((COALESCE(o.paid_date, o.post_date) AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris')) <= $${paramIndex}`);
+      conditions.push(`((o.post_date AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris')) <= $${paramIndex}`);
       params.push(dateTo + ' 23:59:59');
       paramIndex++;
     }
@@ -348,12 +354,12 @@ exports.getProfitReport = async (req, res) => {
     let paramIndex = 1;
 
     if (dateFrom) {
-      conditions.push(`((COALESCE(o.paid_date, o.post_date) AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris')) >= $${paramIndex}`);
+      conditions.push(`((o.post_date AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris')) >= $${paramIndex}`);
       params.push(dateFrom);
       paramIndex++;
     }
     if (dateTo) {
-      conditions.push(`((COALESCE(o.paid_date, o.post_date) AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris')) <= $${paramIndex}`);
+      conditions.push(`((o.post_date AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris')) <= $${paramIndex}`);
       params.push(dateTo + ' 23:59:59');
       paramIndex++;
     }
@@ -477,14 +483,14 @@ exports.getProfitReport = async (req, res) => {
     // Breakdown jour par jour
     const breakdownQuery = `
       SELECT
-        DATE_TRUNC('day', (COALESCE(o.paid_date, o.post_date) AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris'))::date as date,
+        DATE_TRUNC('day', (o.post_date AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris'))::date as date,
         COUNT(DISTINCT o.wp_order_id)::int as orders_count,
         COALESCE(SUM(o.order_total), 0)::numeric as gross_sales,
         COALESCE(SUM(o.order_tax), 0)::numeric as taxes,
         COALESCE(SUM(o.shipping_cost_calculated), 0)::numeric as shipping_cost
       FROM orders o
       ${whereClause}
-      GROUP BY DATE_TRUNC('day', (COALESCE(o.paid_date, o.post_date) AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris'))::date
+      GROUP BY DATE_TRUNC('day', (o.post_date AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris'))::date
       ORDER BY date ASC
     `;
     const breakdownResult = await pool.query(breakdownQuery, params);
@@ -492,13 +498,13 @@ exports.getProfitReport = async (req, res) => {
     // Coût produits (PMP FIFO) par jour
     const productCostByDayQuery = `
       SELECT
-        DATE_TRUNC('day', (COALESCE(o.paid_date, o.post_date) AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris'))::date as date,
+        DATE_TRUNC('day', (o.post_date AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris'))::date as date,
         COALESCE(SUM(oi.qty * COALESCE(p.computed_cost, p.wc_cog_cost, 0)), 0)::numeric as product_cost
       FROM order_items oi
       JOIN orders o ON oi.wp_order_id = o.wp_order_id
       LEFT JOIN products p ON p.wp_product_id = oi.product_id
       ${whereClause}
-      GROUP BY DATE_TRUNC('day', (COALESCE(o.paid_date, o.post_date) AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris'))::date
+      GROUP BY DATE_TRUNC('day', (o.post_date AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris'))::date
     `;
     const productCostByDayResult = await pool.query(productCostByDayQuery, params);
     const productCostByDay = {};
@@ -509,13 +515,13 @@ exports.getProfitReport = async (req, res) => {
     // Frais de transaction par jour et par moyen de paiement
     const transactionCostByDayQuery = `
       SELECT
-        DATE_TRUNC('day', (COALESCE(o.paid_date, o.post_date) AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris'))::date as date,
+        DATE_TRUNC('day', (o.post_date AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris'))::date as date,
         COALESCE(payment_method_title, 'default') as payment_method,
         COUNT(DISTINCT o.wp_order_id)::int as orders_count,
         COALESCE(SUM(o.order_total), 0)::numeric as total_amount
       FROM orders o
       ${whereClause}
-      GROUP BY DATE_TRUNC('day', (COALESCE(o.paid_date, o.post_date) AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris'))::date, payment_method_title
+      GROUP BY DATE_TRUNC('day', (o.post_date AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris'))::date, payment_method_title
     `;
     const transactionCostByDayResult = await pool.query(transactionCostByDayQuery, params);
     const transactionCostByDay = {};
@@ -609,12 +615,12 @@ exports.getTransactionCosts = async (req, res) => {
     let paramIndex = 1;
 
     if (dateFrom) {
-      conditions.push(`((COALESCE(o.paid_date, o.post_date) AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris')) >= $${paramIndex}`);
+      conditions.push(`((o.post_date AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris')) >= $${paramIndex}`);
       params.push(dateFrom);
       paramIndex++;
     }
     if (dateTo) {
-      conditions.push(`((COALESCE(o.paid_date, o.post_date) AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris')) <= $${paramIndex}`);
+      conditions.push(`((o.post_date AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris')) <= $${paramIndex}`);
       params.push(dateTo + ' 23:59:59');
       paramIndex++;
     }
@@ -696,12 +702,12 @@ exports.getOrdersReport = async (req, res) => {
     conditions.push(`o.post_status IN ('wc-completed', 'wc-processing', 'wc-delivered', 'wc-awaiting-delivery')`);
 
     if (dateFrom) {
-      conditions.push(`((COALESCE(o.paid_date, o.post_date) AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris')) >= $${paramIndex}`);
+      conditions.push(`((o.post_date AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris')) >= $${paramIndex}`);
       params.push(dateFrom);
       paramIndex++;
     }
     if (dateTo) {
-      conditions.push(`((COALESCE(o.paid_date, o.post_date) AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris')) <= $${paramIndex}`);
+      conditions.push(`((o.post_date AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris')) <= $${paramIndex}`);
       params.push(dateTo + ' 23:59:59');
       paramIndex++;
     }
@@ -758,14 +764,14 @@ exports.getOrdersReport = async (req, res) => {
     // 3. Breakdown jour par jour
     const breakdownQuery = `
       SELECT
-        DATE_TRUNC('day', (COALESCE(o.paid_date, o.post_date) AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris'))::date as date,
+        DATE_TRUNC('day', (o.post_date AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris'))::date as date,
         COUNT(DISTINCT o.wp_order_id)::int as orders_count,
         COALESCE(SUM(o.order_total), 0)::numeric as gross_sales,
         COALESCE(SUM(o.order_tax), 0)::numeric as taxes,
         COALESCE(SUM(o.order_shipping), 0)::numeric as shipping
       FROM orders o
       ${whereClause}
-      GROUP BY DATE_TRUNC('day', (COALESCE(o.paid_date, o.post_date) AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris'))::date
+      GROUP BY DATE_TRUNC('day', (o.post_date AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris'))::date
       ORDER BY date ASC
     `;
     const breakdownResult = await pool.query(breakdownQuery, params);
@@ -991,12 +997,12 @@ exports.getOrdersReport = async (req, res) => {
     // 11. Average order gross by day
     const avgOrderByDayQuery = `
       SELECT
-        DATE_TRUNC('day', (COALESCE(o.paid_date, o.post_date) AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris'))::date as date,
+        DATE_TRUNC('day', (o.post_date AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris'))::date as date,
         AVG(o.order_total)::numeric as avg_gross,
         AVG((SELECT COUNT(*) FROM order_items oi WHERE oi.wp_order_id = o.wp_order_id))::numeric as avg_items
       FROM orders o
       ${whereClause}
-      GROUP BY DATE_TRUNC('day', (COALESCE(o.paid_date, o.post_date) AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris'))::date
+      GROUP BY DATE_TRUNC('day', (o.post_date AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris'))::date
       ORDER BY date ASC
     `;
     const avgOrderByDayResult = await pool.query(avgOrderByDayQuery, params);
@@ -1009,12 +1015,12 @@ exports.getOrdersReport = async (req, res) => {
     // 12. Spend by day of week
     const spendByDayOfWeekQuery = `
       SELECT
-        EXTRACT(DOW FROM (COALESCE(o.paid_date, o.post_date) AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris'))::int as day_of_week,
+        EXTRACT(DOW FROM (o.post_date AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris'))::int as day_of_week,
         COALESCE(SUM(o.order_total), 0)::numeric as total_sales,
         COUNT(DISTINCT o.wp_order_id)::int as orders_count
       FROM orders o
       ${whereClause}
-      GROUP BY EXTRACT(DOW FROM (COALESCE(o.paid_date, o.post_date) AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris'))::int
+      GROUP BY EXTRACT(DOW FROM (o.post_date AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris'))::int
       ORDER BY day_of_week ASC
     `;
     const spendByDayOfWeekResult = await pool.query(spendByDayOfWeekQuery, params);
@@ -1029,12 +1035,12 @@ exports.getOrdersReport = async (req, res) => {
     // 13. Spend by hour
     const spendByHourQuery = `
       SELECT
-        EXTRACT(HOUR FROM (COALESCE(o.paid_date, o.post_date) AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris'))::int as hour,
+        EXTRACT(HOUR FROM (o.post_date AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris'))::int as hour,
         COALESCE(SUM(o.order_total), 0)::numeric as total_sales,
         COUNT(DISTINCT o.wp_order_id)::int as orders_count
       FROM orders o
       ${whereClause}
-      GROUP BY EXTRACT(HOUR FROM (COALESCE(o.paid_date, o.post_date) AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris'))::int
+      GROUP BY EXTRACT(HOUR FROM (o.post_date AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris'))::int
       ORDER BY hour ASC
     `;
     const spendByHourResult = await pool.query(spendByHourQuery, params);
@@ -1048,12 +1054,12 @@ exports.getOrdersReport = async (req, res) => {
     // 14. Orders by day and hour (heatmap)
     const ordersByDayHourQuery = `
       SELECT
-        EXTRACT(DOW FROM (COALESCE(o.paid_date, o.post_date) AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris'))::int as day_of_week,
-        EXTRACT(HOUR FROM (COALESCE(o.paid_date, o.post_date) AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris'))::int as hour,
+        EXTRACT(DOW FROM (o.post_date AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris'))::int as day_of_week,
+        EXTRACT(HOUR FROM (o.post_date AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris'))::int as hour,
         COUNT(DISTINCT o.wp_order_id)::int as orders_count
       FROM orders o
       ${whereClause}
-      GROUP BY EXTRACT(DOW FROM (COALESCE(o.paid_date, o.post_date) AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris'))::int, EXTRACT(HOUR FROM (COALESCE(o.paid_date, o.post_date) AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris'))::int
+      GROUP BY EXTRACT(DOW FROM (o.post_date AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris'))::int, EXTRACT(HOUR FROM (o.post_date AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris'))::int
       ORDER BY day_of_week, hour
     `;
     const ordersByDayHourResult = await pool.query(ordersByDayHourQuery, params);
@@ -1069,10 +1075,10 @@ exports.getOrdersReport = async (req, res) => {
       SELECT
         CASE
           WHEN o.post_status NOT IN ('wc-completed', 'wc-delivered') THEN 'Non terminé'
-          WHEN EXTRACT(DAY FROM (o.post_modified - COALESCE(o.paid_date, o.post_date))) < 1 THEN '0-1 jours'
-          WHEN EXTRACT(DAY FROM (o.post_modified - COALESCE(o.paid_date, o.post_date))) < 2 THEN '1-2 jours'
-          WHEN EXTRACT(DAY FROM (o.post_modified - COALESCE(o.paid_date, o.post_date))) < 3 THEN '2-3 jours'
-          WHEN EXTRACT(DAY FROM (o.post_modified - COALESCE(o.paid_date, o.post_date))) < 4 THEN '3-4 jours'
+          WHEN EXTRACT(DAY FROM (o.post_modified - o.post_date)) < 1 THEN '0-1 jours'
+          WHEN EXTRACT(DAY FROM (o.post_modified - o.post_date)) < 2 THEN '1-2 jours'
+          WHEN EXTRACT(DAY FROM (o.post_modified - o.post_date)) < 3 THEN '2-3 jours'
+          WHEN EXTRACT(DAY FROM (o.post_modified - o.post_date)) < 4 THEN '3-4 jours'
           ELSE '4+ jours'
         END as fulfillment_range,
         COUNT(*)::int as orders_count
@@ -1083,42 +1089,42 @@ exports.getOrdersReport = async (req, res) => {
         CASE
           WHEN CASE
             WHEN o.post_status NOT IN ('wc-completed', 'wc-delivered') THEN 'Non terminé'
-            WHEN EXTRACT(DAY FROM (o.post_modified - COALESCE(o.paid_date, o.post_date))) < 1 THEN '0-1 jours'
-            WHEN EXTRACT(DAY FROM (o.post_modified - COALESCE(o.paid_date, o.post_date))) < 2 THEN '1-2 jours'
-            WHEN EXTRACT(DAY FROM (o.post_modified - COALESCE(o.paid_date, o.post_date))) < 3 THEN '2-3 jours'
-            WHEN EXTRACT(DAY FROM (o.post_modified - COALESCE(o.paid_date, o.post_date))) < 4 THEN '3-4 jours'
+            WHEN EXTRACT(DAY FROM (o.post_modified - o.post_date)) < 1 THEN '0-1 jours'
+            WHEN EXTRACT(DAY FROM (o.post_modified - o.post_date)) < 2 THEN '1-2 jours'
+            WHEN EXTRACT(DAY FROM (o.post_modified - o.post_date)) < 3 THEN '2-3 jours'
+            WHEN EXTRACT(DAY FROM (o.post_modified - o.post_date)) < 4 THEN '3-4 jours'
             ELSE '4+ jours'
           END = '0-1 jours' THEN 1
           WHEN CASE
             WHEN o.post_status NOT IN ('wc-completed', 'wc-delivered') THEN 'Non terminé'
-            WHEN EXTRACT(DAY FROM (o.post_modified - COALESCE(o.paid_date, o.post_date))) < 1 THEN '0-1 jours'
-            WHEN EXTRACT(DAY FROM (o.post_modified - COALESCE(o.paid_date, o.post_date))) < 2 THEN '1-2 jours'
-            WHEN EXTRACT(DAY FROM (o.post_modified - COALESCE(o.paid_date, o.post_date))) < 3 THEN '2-3 jours'
-            WHEN EXTRACT(DAY FROM (o.post_modified - COALESCE(o.paid_date, o.post_date))) < 4 THEN '3-4 jours'
+            WHEN EXTRACT(DAY FROM (o.post_modified - o.post_date)) < 1 THEN '0-1 jours'
+            WHEN EXTRACT(DAY FROM (o.post_modified - o.post_date)) < 2 THEN '1-2 jours'
+            WHEN EXTRACT(DAY FROM (o.post_modified - o.post_date)) < 3 THEN '2-3 jours'
+            WHEN EXTRACT(DAY FROM (o.post_modified - o.post_date)) < 4 THEN '3-4 jours'
             ELSE '4+ jours'
           END = '1-2 jours' THEN 2
           WHEN CASE
             WHEN o.post_status NOT IN ('wc-completed', 'wc-delivered') THEN 'Non terminé'
-            WHEN EXTRACT(DAY FROM (o.post_modified - COALESCE(o.paid_date, o.post_date))) < 1 THEN '0-1 jours'
-            WHEN EXTRACT(DAY FROM (o.post_modified - COALESCE(o.paid_date, o.post_date))) < 2 THEN '1-2 jours'
-            WHEN EXTRACT(DAY FROM (o.post_modified - COALESCE(o.paid_date, o.post_date))) < 3 THEN '2-3 jours'
-            WHEN EXTRACT(DAY FROM (o.post_modified - COALESCE(o.paid_date, o.post_date))) < 4 THEN '3-4 jours'
+            WHEN EXTRACT(DAY FROM (o.post_modified - o.post_date)) < 1 THEN '0-1 jours'
+            WHEN EXTRACT(DAY FROM (o.post_modified - o.post_date)) < 2 THEN '1-2 jours'
+            WHEN EXTRACT(DAY FROM (o.post_modified - o.post_date)) < 3 THEN '2-3 jours'
+            WHEN EXTRACT(DAY FROM (o.post_modified - o.post_date)) < 4 THEN '3-4 jours'
             ELSE '4+ jours'
           END = '2-3 jours' THEN 3
           WHEN CASE
             WHEN o.post_status NOT IN ('wc-completed', 'wc-delivered') THEN 'Non terminé'
-            WHEN EXTRACT(DAY FROM (o.post_modified - COALESCE(o.paid_date, o.post_date))) < 1 THEN '0-1 jours'
-            WHEN EXTRACT(DAY FROM (o.post_modified - COALESCE(o.paid_date, o.post_date))) < 2 THEN '1-2 jours'
-            WHEN EXTRACT(DAY FROM (o.post_modified - COALESCE(o.paid_date, o.post_date))) < 3 THEN '2-3 jours'
-            WHEN EXTRACT(DAY FROM (o.post_modified - COALESCE(o.paid_date, o.post_date))) < 4 THEN '3-4 jours'
+            WHEN EXTRACT(DAY FROM (o.post_modified - o.post_date)) < 1 THEN '0-1 jours'
+            WHEN EXTRACT(DAY FROM (o.post_modified - o.post_date)) < 2 THEN '1-2 jours'
+            WHEN EXTRACT(DAY FROM (o.post_modified - o.post_date)) < 3 THEN '2-3 jours'
+            WHEN EXTRACT(DAY FROM (o.post_modified - o.post_date)) < 4 THEN '3-4 jours'
             ELSE '4+ jours'
           END = '3-4 jours' THEN 4
           WHEN CASE
             WHEN o.post_status NOT IN ('wc-completed', 'wc-delivered') THEN 'Non terminé'
-            WHEN EXTRACT(DAY FROM (o.post_modified - COALESCE(o.paid_date, o.post_date))) < 1 THEN '0-1 jours'
-            WHEN EXTRACT(DAY FROM (o.post_modified - COALESCE(o.paid_date, o.post_date))) < 2 THEN '1-2 jours'
-            WHEN EXTRACT(DAY FROM (o.post_modified - COALESCE(o.paid_date, o.post_date))) < 3 THEN '2-3 jours'
-            WHEN EXTRACT(DAY FROM (o.post_modified - COALESCE(o.paid_date, o.post_date))) < 4 THEN '3-4 jours'
+            WHEN EXTRACT(DAY FROM (o.post_modified - o.post_date)) < 1 THEN '0-1 jours'
+            WHEN EXTRACT(DAY FROM (o.post_modified - o.post_date)) < 2 THEN '1-2 jours'
+            WHEN EXTRACT(DAY FROM (o.post_modified - o.post_date)) < 3 THEN '2-3 jours'
+            WHEN EXTRACT(DAY FROM (o.post_modified - o.post_date)) < 4 THEN '3-4 jours'
             ELSE '4+ jours'
           END = '4+ jours' THEN 5
           ELSE 6
@@ -1209,12 +1215,12 @@ exports.getRefundsReport = async (req, res) => {
     let orderParamIndex = 1;
 
     if (dateFrom) {
-      orderConditions.push(`((COALESCE(o.paid_date, o.post_date) AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris')) >= $${orderParamIndex}`);
+      orderConditions.push(`((o.post_date AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris')) >= $${orderParamIndex}`);
       orderParams.push(dateFrom);
       orderParamIndex++;
     }
     if (dateTo) {
-      orderConditions.push(`((COALESCE(o.paid_date, o.post_date) AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris')) <= $${orderParamIndex}`);
+      orderConditions.push(`((o.post_date AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris')) <= $${orderParamIndex}`);
       orderParams.push(dateTo + ' 23:59:59');
       orderParamIndex++;
     }
@@ -1443,12 +1449,12 @@ exports.getShippingCosts = async (req, res) => {
     let paramIndex = 1;
 
     if (dateFrom) {
-      conditions.push(`((COALESCE(o.paid_date, o.post_date) AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris')) >= $${paramIndex}`);
+      conditions.push(`((o.post_date AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris')) >= $${paramIndex}`);
       params.push(dateFrom);
       paramIndex++;
     }
     if (dateTo) {
-      conditions.push(`((COALESCE(o.paid_date, o.post_date) AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris')) <= $${paramIndex}`);
+      conditions.push(`((o.post_date AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris')) <= $${paramIndex}`);
       params.push(dateTo + ' 23:59:59');
       paramIndex++;
     }
@@ -1506,12 +1512,12 @@ exports.getByCountryReport = async (req, res) => {
     let paramIndex = 1;
 
     if (dateFrom) {
-      baseConditions.push(`((COALESCE(o.paid_date, o.post_date) AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris')) >= $${paramIndex}`);
+      baseConditions.push(`((o.post_date AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris')) >= $${paramIndex}`);
       params.push(dateFrom);
       paramIndex++;
     }
     if (dateTo) {
-      baseConditions.push(`((COALESCE(o.paid_date, o.post_date) AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris')) <= $${paramIndex}`);
+      baseConditions.push(`((o.post_date AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris')) <= $${paramIndex}`);
       params.push(dateTo + ' 23:59:59');
       paramIndex++;
     }

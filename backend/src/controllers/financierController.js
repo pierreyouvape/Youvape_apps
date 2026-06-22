@@ -8,7 +8,7 @@ const ACTIVE_STATUSES = [
 
 /**
  * Construit les conditions WHERE et les paramètres pour une plage de dates.
- * Filtre sur COALESCE(paid_date, post_date) — date de paiement, fallback création.
+ * Filtre sur post_date (date de création), converti en Europe/Paris — aligné sur Metorik.
  * Retourne { conditions, params, nextIndex }
  */
 function buildDateConditions(dateFrom, dateTo, startIndex = 1, alias = 'o') {
@@ -19,11 +19,11 @@ function buildDateConditions(dateFrom, dateTo, startIndex = 1, alias = 'o') {
   let idx = startIndex + 1;
 
   if (dateFrom) {
-    conditions.push(`(COALESCE(${alias}.paid_date, ${alias}.post_date) AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris') >= $${idx++}`);
+    conditions.push(`(${alias}.post_date AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris') >= $${idx++}`);
     params.push(dateFrom);
   }
   if (dateTo) {
-    conditions.push(`(COALESCE(${alias}.paid_date, ${alias}.post_date) AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris') <= $${idx++}`);
+    conditions.push(`(${alias}.post_date AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris') <= $${idx++}`);
     params.push(dateTo + ' 23:59:59');
   }
 
@@ -94,7 +94,11 @@ exports.getDashboard = async (req, res) => {
     // ─── 3. REMBOURSEMENTS ──────────────────────────────────────────────────
     // Construction correcte des params (pas de concaténation avant vérification)
     const refundsParams = [];
-    const refundsConds  = [];
+    // On exclut les remboursements sur commandes annulées/échouées (jamais comptées
+    // comme ventes) pour ne pas réduire le CA à tort — aligné sur Metorik.
+    const refundsConds  = [
+      `o.post_status NOT IN ('wc-cancelled', 'wc-failed', 'wc-checkout-draft', 'wc-trash', 'wc-pending', 'wc-auto-draft')`
+    ];
     let rIdx = 1;
     if (dateFrom) {
       refundsConds.push(`(r.refund_date AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris') >= $${rIdx++}`);
@@ -110,7 +114,8 @@ exports.getDashboard = async (req, res) => {
         COALESCE(SUM(r.refund_amount), 0)::numeric AS remboursements_ttc,
         COUNT(DISTINCT r.wp_order_id)::int          AS refunds_count
       FROM refunds r
-      ${refundsConds.length ? 'WHERE ' + refundsConds.join(' AND ') : ''}
+      JOIN orders o ON r.wp_order_id = o.wp_order_id
+      WHERE ${refundsConds.join(' AND ')}
     `, refundsParams);
 
     const remboursementsTTC = parseFloat(refundsResult.rows[0].remboursements_ttc) || 0;
@@ -145,11 +150,11 @@ exports.getDashboard = async (req, res) => {
     }
 
     const truncMap = {
-      quarter: "date_trunc('hour', (COALESCE(o.paid_date, o.post_date) AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris')) + (floor(extract(minute FROM (COALESCE(o.paid_date, o.post_date) AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris')) / 15) * interval '15 minutes')",
-      hour:    "date_trunc('hour', (COALESCE(o.paid_date, o.post_date) AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris'))",
-      day:     "date_trunc('day', (COALESCE(o.paid_date, o.post_date) AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris'))",
-      week:    "date_trunc('week', (COALESCE(o.paid_date, o.post_date) AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris'))",
-      month:   "date_trunc('month', (COALESCE(o.paid_date, o.post_date) AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris'))",
+      quarter: "date_trunc('hour', (o.post_date AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris')) + (floor(extract(minute FROM (o.post_date AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris')) / 15) * interval '15 minutes')",
+      hour:    "date_trunc('hour', (o.post_date AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris'))",
+      day:     "date_trunc('day', (o.post_date AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris'))",
+      week:    "date_trunc('week', (o.post_date AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris'))",
+      month:   "date_trunc('month', (o.post_date AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris'))",
     };
     const truncExpr = truncMap[gran] || truncMap.day;
 
