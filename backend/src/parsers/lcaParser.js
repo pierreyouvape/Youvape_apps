@@ -262,7 +262,10 @@ function parseFacture(text) {
     });
   }
 
-  return { orderNumber, orderDate, items, hasPrice: true, pdfIsPackBased: false };
+  // "Quantité" et "PU HT" de la facture OpenSi sont deja en unites reelles
+  // (verifie : Quantite x PU HT = Montant HT sur chaque ligne) -> pas de
+  // conversion pack a appliquer, meme pour les produits vendus en pack chez LCA.
+  return { orderNumber, orderDate, items, hasPrice: true, pdfIsPackBased: false, skipPackQty: true };
 }
 
 /**
