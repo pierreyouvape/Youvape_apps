@@ -33,8 +33,6 @@ const KPI_ORDER = [
 const PERCENT_KEYS = new Set(['marge_ht']);
 // Clés = compteurs (pas de devise)
 const COUNT_KEYS = new Set(['orders_count', 'refunds_count']);
-// Clés à afficher en rouge (coûts / déductions)
-const NEGATIVE_KEYS = new Set(['remboursements_ttc', 'tva', 'cout_produits', 'frais_port_reel', 'frais_paiement']);
 
 function humanizeKey(key) {
   return String(key).replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
@@ -80,7 +78,19 @@ function getPeriod(freq, now = new Date()) {
 
 const FREQ_TITLE = { daily: 'Rapport journalier', weekly: 'Rapport hebdomadaire', monthly: 'Rapport mensuel' };
 
-// ─── Rendu HTML ───────────────────────────────────────────────────────────────
+// Pile de polices : Lato (importée dans le head de l'email) → Arial en secours.
+const FONT = "'Lato',Arial,Helvetica,sans-serif";
+
+// ─── Palette (alignée sur l'app /financier) ─────────────────────────────────
+// Textes en noir pour un contraste maximal ; les liserés/accents gardent les
+// couleurs de l'app.
+const COL = {
+  saphir: '#135E84', saphirF: '#003A56', orange: '#C97A00', vert: '#2E9E4F',
+  rouge: '#C81B1B', bleu: '#0071EB', violet: '#7E47A8',
+  noir: '#000000', grisTF: '#111111', grisF: '#1a1a1a', grisM: '#333333',
+  grisCL: '#E2E2E2', grisTL: '#F2F6F8', blanc: '#ffffff',
+};
+
 function orderedKeys(kpis) {
   const keys = Object.keys(kpis);
   const ordered = KPI_ORDER.filter((k) => keys.includes(k));
@@ -88,52 +98,127 @@ function orderedKeys(kpis) {
   return [...ordered, ...rest];
 }
 
-function kpiCardsHtml(kpis) {
-  return orderedKeys(kpis).map((k) => {
-    const color = NEGATIVE_KEYS.has(k) ? '#DE2020' : (k === 'profit_ht' ? '#4AB866' : '#2a2e38');
-    return `
-      <td style="padding:6px;" width="33%" valign="top">
-        <div style="background:#fff;border:1px solid #e2e6ea;border-radius:10px;padding:14px 16px;">
-          <div style="font-size:11px;font-weight:700;color:#8A99A4;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:6px;">${KPI_LABELS[k] || humanizeKey(k)}</div>
-          <div style="font-size:20px;font-weight:800;color:${color};">${formatKpi(k, kpis[k])}</div>
-        </div>
-      </td>`;
-  });
+// ─── Cartes KPI (liseré coloré en haut, façon /financier) ────────────────────
+function kpiCard(label, value, color, big = false) {
+  return `
+    <td valign="top" style="padding:6px;" width="33%">
+      <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:separate;background:${COL.blanc};border:1px solid #d9dee4;border-top:4px solid ${color};border-radius:12px;">
+        <tr><td style="padding:16px 16px 17px;">
+          <div style="font-size:12px;font-weight:700;color:${COL.grisF};text-transform:uppercase;letter-spacing:0.04em;margin-bottom:8px;font-family:${FONT};">${label}</div>
+          <div style="font-size:${big ? 27 : 21}px;font-weight:800;color:${COL.grisTF};font-family:${FONT};letter-spacing:-0.4px;">${value}</div>
+        </td></tr>
+      </table>
+    </td>`;
 }
 
-// Met les cartes en lignes de 3 (compatibilité email = tables)
-function kpiGridHtml(kpis) {
-  const cells = kpiCardsHtml(kpis);
-  let rows = '';
-  for (let i = 0; i < cells.length; i += 3) {
-    const slice = cells.slice(i, i + 3);
-    while (slice.length < 3) slice.push('<td width="33%"></td>');
-    rows += `<tr>${slice.join('')}</tr>`;
-  }
-  return `<table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;">${rows}</table>`;
+function kpiRow(cells) {
+  const slice = [...cells];
+  while (slice.length < 3) slice.push('<td width="33%" style="padding:6px;"></td>');
+  return `<tr>${slice.join('')}</tr>`;
+}
+
+// Cartes "héros" : les 3 chiffres clés de la page (CA HT Net, Profit HT, Marge)
+function heroCardsHtml(k) {
+  return `
+    <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin:0 -6px;">
+      ${kpiRow([
+        kpiCard(KPI_LABELS.ca_ht_net, formatKpi('ca_ht_net', k.ca_ht_net), COL.saphir, true),
+        kpiCard(KPI_LABELS.profit_ht, formatKpi('profit_ht', k.profit_ht), COL.vert, true),
+        kpiCard(KPI_LABELS.marge_ht, formatKpi('marge_ht', k.marge_ht), COL.violet, true),
+      ])}
+    </table>`;
+}
+
+// Cartes secondaires (commandes, panier, remboursements)
+function secondaryCardsHtml(k) {
+  return `
+    <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin:6px -6px 0;">
+      ${kpiRow([
+        kpiCard(KPI_LABELS.orders_count, formatKpi('orders_count', k.orders_count), COL.bleu),
+        kpiCard(KPI_LABELS.panier_moyen_ht, formatKpi('panier_moyen_ht', k.panier_moyen_ht), COL.orange),
+        kpiCard(KPI_LABELS.refunds_count, formatKpi('refunds_count', k.refunds_count), COL.rouge),
+      ])}
+    </table>`;
+}
+
+// Bloc "Récapitulatif" : cascade CA → déductions → coûts → profit (comme la page)
+function recapHtml(k) {
+  const line = (label, value, { color = COL.grisF, bold = false, indent = false } = {}) => `
+    <tr>
+      <td style="padding:8px 0;font-size:14.5px;color:${COL.grisF};font-weight:${bold ? 800 : 700};font-family:${FONT};${indent ? 'padding-left:16px;' : ''}">${label}</td>
+      <td align="right" style="padding:8px 0;font-size:14.5px;color:${color};font-weight:${bold ? 900 : 700};font-family:${FONT};white-space:nowrap;">${value}</td>
+    </tr>`;
+  const sep = `<tr><td colspan="2" style="border-top:1px solid #e3e7ec;font-size:0;line-height:0;height:1px;">&nbsp;</td></tr>`;
+
+  return `
+    <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;background:${COL.blanc};border:1px solid #d9dee4;border-radius:12px;margin-top:18px;">
+      <tr><td style="padding:20px 24px;">
+        <div style="font-size:16px;font-weight:800;color:${COL.grisTF};font-family:${FONT};margin-bottom:4px;">Récapitulatif</div>
+        <div style="font-size:13px;color:${COL.grisM};font-family:${FONT};margin-bottom:12px;">Résumé de la période</div>
+        <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;">
+          ${line('CA TTC Brut', formatKpi('ca_ttc_brut', k.ca_ttc_brut))}
+          ${line('− Remboursements TTC', '− ' + formatKpi('remboursements_ttc', k.remboursements_ttc))}
+          ${line('− TVA', '− ' + formatKpi('tva', k.tva))}
+          ${sep}
+          ${line('CA HT Net', formatKpi('ca_ht_net', k.ca_ht_net), { bold: true })}
+          ${line('— Coût produits', '− ' + formatKpi('cout_produits', k.cout_produits), { indent: true })}
+          ${line('— Frais de port réels', '− ' + formatKpi('frais_port_reel', k.frais_port_reel), { indent: true })}
+          ${line('— Frais de paiement', '− ' + formatKpi('frais_paiement', k.frais_paiement), { indent: true })}
+          ${sep}
+          <tr>
+            <td style="padding:13px 0 2px;font-size:15.5px;font-weight:900;color:${COL.noir};font-family:${FONT};">Profit HT
+              <span style="font-size:12.5px;font-weight:700;color:${COL.grisM};">· marge ${formatKpi('marge_ht', k.marge_ht)}</span>
+            </td>
+            <td align="right" style="padding:13px 0 2px;font-size:20px;font-weight:900;color:${COL.noir};font-family:${FONT};white-space:nowrap;">${formatKpi('profit_ht', k.profit_ht)}</td>
+          </tr>
+        </table>
+      </td></tr>
+    </table>`;
 }
 
 function buildHtml(freq, period, dashboard) {
-  const kpis = dashboard?.kpis || {};
-  const hasData = (kpis.orders_count || 0) > 0 || (kpis.ca_ttc_brut || 0) > 0;
+  const k = dashboard?.kpis || {};
+  const hasData = (k.orders_count || 0) > 0 || (k.ca_ttc_brut || 0) > 0;
+  const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
+
+  const content = hasData
+    ? `${heroCardsHtml(k)}${secondaryCardsHtml(k)}${recapHtml(k)}`
+    : `<table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;background:${COL.blanc};border:1px solid #e6eaee;border-radius:12px;"><tr><td style="padding:32px;text-align:center;color:${COL.grisM};font-family:${FONT};font-size:14px;">Aucune commande sur cette période.</td></tr></table>`;
 
   return `
-  <div style="font-family:Lato,Arial,sans-serif;max-width:720px;margin:0 auto;padding:24px;background:#f2f6f8;">
-    <div style="background:#fff;border-radius:14px;padding:28px 26px;border:1px solid #e2e6ea;">
-      <div style="margin-bottom:4px;">
-        <span style="font-size:22px;">📊</span>
-        <span style="font-size:20px;font-weight:800;color:#2a2e38;vertical-align:middle;margin-left:6px;">${FREQ_TITLE[freq]} — YouVape</span>
-      </div>
-      <p style="margin:0 0 2px;color:#8A99A4;font-size:13px;text-transform:capitalize;">${period.label}</p>
-      <p style="margin:0 0 18px;color:#aab3bd;font-size:12px;">Du ${period.dateFrom} au ${period.dateTo}</p>
-      ${hasData
-        ? kpiGridHtml(kpis)
-        : '<p style="color:#8A99A4;margin:24px 0;">Aucune commande sur cette période.</p>'}
-      <p style="margin-top:28px;color:#aab3bd;font-size:11px;border-top:1px solid #eef0f3;padding-top:16px;line-height:1.6;">
-        Rapport généré automatiquement par l'application Rapport YouVape. Les métriques sont identiques à celles affichées dans l'application.
-      </p>
-    </div>
-  </div>`;
+  <!DOCTYPE html>
+  <html><head>
+    <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+    <link href="https://fonts.googleapis.com/css2?family=Lato:wght@400;700;900&display=swap" rel="stylesheet">
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=Lato:wght@400;700;900&display=swap');
+      body, table, td, div, span, p { font-family: 'Lato', Arial, Helvetica, sans-serif !important; }
+    </style>
+  </head>
+  <body style="margin:0;padding:0;background:${COL.grisTL};">
+    <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;background:${COL.grisTL};">
+      <tr><td align="center" style="padding:26px 16px;">
+        <table width="640" cellpadding="0" cellspacing="0" style="border-collapse:collapse;max-width:640px;width:100%;background:${COL.blanc};border-radius:16px;overflow:hidden;box-shadow:0 2px 12px rgba(0,58,86,0.08);">
+
+          <!-- Bandeau header (dégradé saphir) -->
+          <tr><td style="background:${COL.saphirF};background:linear-gradient(135deg,${COL.saphir} 0%,${COL.saphirF} 100%);padding:28px 30px;">
+            <div style="font-size:13px;font-weight:700;color:#b3d3e2;text-transform:uppercase;letter-spacing:0.1em;font-family:${FONT};margin-bottom:7px;">📊 Rapport YouVape</div>
+            <div style="font-size:25px;font-weight:800;color:#ffffff;font-family:${FONT};letter-spacing:-0.3px;">${FREQ_TITLE[freq]}</div>
+            <div style="font-size:15px;color:#cfe5ef;font-family:${FONT};margin-top:5px;">${cap(period.label)}</div>
+          </td></tr>
+
+          <!-- Corps -->
+          <tr><td style="padding:22px 24px 26px;">
+            ${content}
+            <div style="margin-top:24px;border-top:1px solid #e3e7ec;padding-top:15px;font-size:12.5px;color:${COL.grisM};font-family:${FONT};line-height:1.6;">
+              Période du ${period.dateFrom} au ${period.dateTo}. Rapport généré automatiquement — métriques identiques à l'application Rapport.
+            </div>
+          </td></tr>
+
+        </table>
+      </td></tr>
+    </table>
+  </body></html>`;
 }
 
 // Fallback texte brut (clients mail sans HTML)
