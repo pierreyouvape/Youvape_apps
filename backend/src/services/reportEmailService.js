@@ -1,5 +1,5 @@
 const reportEmailModel = require('../models/reportEmailModel');
-const mailgunService = require('./mailgunService');
+const { sendMail } = require('./alertService');
 const { computeDashboard } = require('../controllers/financierController');
 
 // ─── Libellés des métriques (app Rapport / Financier) ───────────────────────
@@ -136,6 +136,24 @@ function buildHtml(freq, period, dashboard) {
   </div>`;
 }
 
+// Fallback texte brut (clients mail sans HTML)
+function buildText(freq, period, dashboard) {
+  const kpis = dashboard?.kpis || {};
+  const lines = [
+    `${FREQ_TITLE[freq]} — YouVape`,
+    `${period.label} (du ${period.dateFrom} au ${period.dateTo})`,
+    '',
+  ];
+  if ((kpis.orders_count || 0) > 0 || (kpis.ca_ttc_brut || 0) > 0) {
+    for (const k of orderedKeys(kpis)) {
+      lines.push(`${KPI_LABELS[k] || humanizeKey(k)} : ${formatKpi(k, kpis[k])}`);
+    }
+  } else {
+    lines.push('Aucune commande sur cette période.');
+  }
+  return lines.join('\n');
+}
+
 // ─── Génération + envoi ─────────────────────────────────────────────────────
 async function renderReport(freq, now = new Date()) {
   const period = getPeriod(freq, now);
@@ -146,8 +164,9 @@ async function renderReport(freq, now = new Date()) {
     console.error(`[ReportEmail] échec calcul dashboard (${freq}):`, e.message);
   }
   const html = buildHtml(freq, period, dashboard);
+  const text = buildText(freq, period, dashboard);
   const subject = `[YouVape] ${FREQ_TITLE[freq]} — ${period.label}`;
-  return { period, html, subject, dashboard };
+  return { period, html, text, subject, dashboard };
 }
 
 // Envoie le rapport d'une fréquence. Aucune adresse → ne fait rien.
@@ -158,8 +177,8 @@ async function sendReport(freq, { recipientsOverride = null, now = new Date() } 
     return { sent: false, reason: 'no_recipients' };
   }
 
-  const { html, subject } = await renderReport(freq, now);
-  const result = await mailgunService.sendNotification({ to: recipients, subject, bodyHtml: html });
+  const { html, text, subject } = await renderReport(freq, now);
+  const result = await sendMail({ to: recipients, subject, html, text });
 
   if (result.success) {
     console.log(`📊 [ReportEmail] ${freq} envoyé à ${recipients.join(', ')}`);
