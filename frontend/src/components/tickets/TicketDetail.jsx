@@ -117,6 +117,52 @@ function iconBtn() {
   };
 }
 
+// ─── Bouton « Copier le lien » ────────────────────────────────────────────────
+// Copie une URL partageable du ticket (ex. à coller sur Slack). L'URL pointe
+// vers /tickets/:id qui ouvre l'onglet correspondant (cf. TicketDetailPage).
+function CopyLinkButton({ ticketId }) {
+  const [copied, setCopied] = useState(false);
+
+  const copy = async () => {
+    const url = `${window.location.origin}/tickets/${ticketId}`;
+    try {
+      await navigator.clipboard.writeText(url);
+    } catch {
+      // Fallback si clipboard indisponible (contexte non sécurisé)
+      const ta = document.createElement('textarea');
+      ta.value = url;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      try { document.execCommand('copy'); } catch { /* ignore */ }
+      document.body.removeChild(ta);
+    }
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1800);
+  };
+
+  return (
+    <button
+      type="button"
+      onClick={copy}
+      title="Copier le lien du ticket (à partager sur Slack…)"
+      style={{
+        display: 'inline-flex', alignItems: 'center', gap: 6,
+        padding: '6px 11px', borderRadius: 7, flexShrink: 0,
+        border: `1px solid ${copied ? C.vert : C.grisCL}`,
+        background: copied ? '#EAF7EE' : C.blanc,
+        color: copied ? C.vert : C.grisF,
+        fontSize: 12.5, fontWeight: 600, cursor: 'pointer',
+        whiteSpace: 'nowrap', transition: 'all 0.12s',
+      }}
+    >
+      <Ic.Copy size={13} color={copied ? C.vert : C.grisM} />
+      {copied ? 'Lien copié' : 'Copier le lien'}
+    </button>
+  );
+}
+
 // ─── Avatar ───────────────────────────────────────────────────────────────────
 function Avatar({ name, size = 34 }) {
   const initials = (name || '?').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
@@ -1874,6 +1920,7 @@ function ConversationPanel({ ticket, onReplySent, onStatusChange, playMode, afte
             <strong style={{ color: C.grisF }}>{formatDateUTC(ticket.created_at)}</strong>
           </div>
         </div>
+        <CopyLinkButton ticketId={ticket.id} />
       </div>
 
       {/* Thread */}
