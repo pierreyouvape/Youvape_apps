@@ -78,8 +78,10 @@ function getPeriod(freq, now = new Date()) {
 
 const FREQ_TITLE = { daily: 'Rapport journalier', weekly: 'Rapport hebdomadaire', monthly: 'Rapport mensuel' };
 
-// Pile de polices : Lato (importée dans le head de l'email) → Arial en secours.
-const FONT = "'Lato',Arial,Helvetica,sans-serif";
+// Police système (Arial/Helvetica) : disponible sur tous les clients mail.
+// On évite volontairement les webfonts (Lato) car Gmail/Outlook les bloquent et
+// retombent sur un rendu maigre/délavé, ignorant les font-weight.
+const FONT = "Arial,Helvetica,sans-serif";
 
 // ─── Palette (alignée sur l'app /financier) ─────────────────────────────────
 // Textes en noir pour un contraste maximal ; les liserés/accents gardent les
@@ -189,10 +191,8 @@ function buildHtml(freq, period, dashboard) {
   <!DOCTYPE html>
   <html><head>
     <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-    <link href="https://fonts.googleapis.com/css2?family=Lato:wght@400;700;900&display=swap" rel="stylesheet">
     <style>
-      @import url('https://fonts.googleapis.com/css2?family=Lato:wght@400;700;900&display=swap');
-      body, table, td, div, span, p { font-family: 'Lato', Arial, Helvetica, sans-serif !important; }
+      body, table, td, div, span, p { font-family: Arial, Helvetica, sans-serif; }
     </style>
   </head>
   <body style="margin:0;padding:0;background:${COL.grisTL};">
