@@ -165,7 +165,7 @@ async function renderReport(freq, now = new Date()) {
   }
   const html = buildHtml(freq, period, dashboard);
   const text = buildText(freq, period, dashboard);
-  const subject = `[YouVape] ${FREQ_TITLE[freq]} — ${period.label}`;
+  const subject = `${FREQ_TITLE[freq]} — ${period.label}`;
   return { period, html, text, subject, dashboard };
 }
 
