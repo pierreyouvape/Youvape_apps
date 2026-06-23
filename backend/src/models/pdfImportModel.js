@@ -36,6 +36,58 @@ function cleanPdfText(text) {
   }
 }
 
+/** Normalise un texte pour comparaison : minuscules, espaces collapsés, trim. */
+function normalizeSku(s) {
+  return (s || '').toLowerCase().replace(/\s+/g, ' ').trim();
+}
+
+function escapeRegExp(s) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * Réaffecte à chaque ligne sa référence fournisseur COMPLÈTE.
+ *
+ * Les PDF aplatissent les colonnes "Référence" et "Désignation" : une référence
+ * contenant un espace ou un tiret (ex: "MJ AMNESIA 300MG", "VP RES GTX 0.2 V2")
+ * se retrouve collée à la désignation, et aucun parseur ne peut deviner de façon
+ * fiable où elle s'arrête. On lève l'ambiguïté en cherchant, parmi les SKU connus
+ * en BDD pour ce fournisseur, le plus long qui préfixe le texte "réf + désignation"
+ * à la frontière d'un mot. Ce traitement est commun à TOUS les fournisseurs.
+ *
+ * Modifie `items` en place. Ne change une ligne que si un SKU connu plus complet
+ * est trouvé : aucune régression pour les références déjà correctes ou absentes
+ * du catalogue.
+ */
+function resolveCompleteSkus(items, dbSkus) {
+  if (!items || items.length === 0 || !dbSkus || dbSkus.length === 0) return;
+
+  // Plus long SKU d'abord → on retient la référence la plus complète.
+  const entries = dbSkus
+    .map((original) => ({ original, normalized: normalizeSku(original) }))
+    .filter((e) => e.normalized.length > 0)
+    .sort((a, b) => b.normalized.length - a.normalized.length);
+
+  for (const item of items) {
+    if (!item.supplier_sku) continue;
+
+    const combined = `${item.supplier_sku} ${item.designation || ''}`.trim();
+    const nc = normalizeSku(combined);
+
+    // Cherche le plus long SKU connu qui préfixe le texte combiné.
+    const match = entries.find(
+      (e) => nc === e.normalized || nc.startsWith(e.normalized + ' ')
+    );
+    if (!match || match.normalized === normalizeSku(item.supplier_sku)) continue;
+
+    // Retire les mots de la référence en tête → reste = nouvelle désignation.
+    const skuPattern = match.original.trim().split(/\s+/).map(escapeRegExp).join('\\s+');
+    const re = new RegExp('^' + skuPattern + '\\s*', 'i');
+    item.designation = combined.replace(re, '').trim();
+    item.supplier_sku = match.original;
+  }
+}
+
 const pdfImportModel = {
   /**
    * Parse un fichier fournisseur (PDF ou CSV) et matche les lignes avec les produits en BDD
@@ -97,6 +149,15 @@ const pdfImportModel = {
     if (!parsed.items || parsed.items.length === 0) {
       throw new Error('Aucune ligne produit trouvée dans le PDF');
     }
+
+    // 4b. Reconstituer la référence complète à partir des SKU connus du fournisseur.
+    //     Les PDF collent la colonne Référence à la Désignation : une référence avec
+    //     espace/tiret (ex: "MJ AMNESIA 300MG") serait sinon tronquée par le parseur.
+    const knownSkusResult = await pool.query(
+      'SELECT supplier_sku FROM product_suppliers WHERE supplier_id = $1',
+      [supplierId]
+    );
+    resolveCompleteSkus(parsed.items, knownSkusResult.rows.map(r => r.supplier_sku));
 
     // 5. Matcher les supplier_sku dans product_suppliers
     const supplierSkus = parsed.items.map(i => i.supplier_sku);
