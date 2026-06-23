@@ -82,12 +82,14 @@ const PackingApp = () => {
   const loadingRef = useRef(false);
   const scanBufferRef = useRef('');
   const isCompleteRef = useRef(false);
+  const labelLoadingRef = useRef(false);
 
   useEffect(() => { orderRef.current = order; }, [order]);
   useEffect(() => { itemsRef.current = items; }, [items]);
   useEffect(() => { loadingRef.current = loading; }, [loading]);
   useEffect(() => { scanBufferRef.current = scanBuffer; }, [scanBuffer]);
   useEffect(() => { isCompleteRef.current = isComplete; }, [isComplete]);
+  useEffect(() => { labelLoadingRef.current = labelLoading; }, [labelLoading]);
 
   // Télécharger le PDF depuis base64
   const downloadPdf = useCallback((base64, orderNumber) => {
@@ -382,6 +384,14 @@ const PackingApp = () => {
         if (!value) return;
 
         if (!orderRef.current || isCompleteRef.current) {
+          // Empêcher de charger la commande suivante tant que l'étiquette en cours
+          // n'est pas revenue de La Poste : deux POST /label simultanés peuvent
+          // répondre dans le désordre → étiquettes imprimées inversées entre colis.
+          if (labelLoadingRef.current) {
+            setError('Étiquette en cours de génération — attendez avant de scanner la commande suivante');
+            playSound('error');
+            return;
+          }
           // Pas de commande ou commande terminée → charger une nouvelle commande
           handleReset();
           loadOrder(value);
@@ -415,7 +425,14 @@ const PackingApp = () => {
     const value = manualInput.trim();
     if (!value) return;
     setManualInput('');
-    if (!order) {
+    if (!order || isComplete) {
+      // Même garde-fou que le scan : pas de nouvelle commande tant que
+      // l'étiquette précédente n'est pas revenue (évite l'inversion d'impression).
+      if (labelLoading) {
+        setError('Étiquette en cours de génération — attendez avant de charger la commande suivante');
+        playSound('error');
+        return;
+      }
       loadOrder(value);
     } else {
       handleScan(value);
