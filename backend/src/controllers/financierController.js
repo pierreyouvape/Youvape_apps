@@ -31,13 +31,13 @@ function buildDateConditions(dateFrom, dateTo, startIndex = 1, alias = 'o') {
 }
 
 /**
- * POST /api/financier/dashboard
- * Retourne tous les KPIs + séries temporelles + breakdown des coûts
- * pour une période donnée. Source de vérité unique pour tous les onglets.
+ * Calcule tous les KPIs + séries temporelles pour une période donnée.
+ * Source de vérité unique : utilisée par l'endpoint HTTP /dashboard ET par
+ * le service d'envoi de rapports par email (reportEmailService) → garantit
+ * des métriques identiques entre l'app et l'email.
+ * Retourne { granularity, kpis, series }.
  */
-exports.getDashboard = async (req, res) => {
-  try {
-    const { dateFrom, dateTo, granularity } = req.body;
+async function computeDashboard({ dateFrom, dateTo, granularity } = {}) {
     // granularity: 'hour' | 'day' | 'week' | 'month' (auto si non fourni)
 
     const { conditions, params, nextIndex } = buildDateConditions(dateFrom, dateTo);
@@ -261,9 +261,8 @@ exports.getDashboard = async (req, res) => {
       ? periodSlots.map(iso => buildPoint(iso, dataByPeriod[iso] || null))
       : seriesOrdersResult.rows.map(row => buildPoint(normKey(row.period), row));
 
-    // ─── 6. RÉPONSE ─────────────────────────────────────────────────────────
-    res.json({
-      success: true,
+    // ─── 6. RÉSULTAT ────────────────────────────────────────────────────────
+    return {
       granularity: gran,
       kpis: {
         orders_count:       ordersCount,
@@ -282,8 +281,20 @@ exports.getDashboard = async (req, res) => {
         panier_moyen_ht:    round2(panierMoyenHT),
       },
       series,
-    });
+    };
+}
 
+exports.computeDashboard = computeDashboard;
+
+/**
+ * POST /api/financier/dashboard
+ * Source de vérité unique pour tous les onglets.
+ */
+exports.getDashboard = async (req, res) => {
+  try {
+    const { dateFrom, dateTo, granularity } = req.body;
+    const result = await computeDashboard({ dateFrom, dateTo, granularity });
+    res.json({ success: true, ...result });
   } catch (error) {
     console.error('Error in financier dashboard:', error);
     res.status(500).json({ success: false, error: error.message });

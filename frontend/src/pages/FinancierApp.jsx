@@ -3,6 +3,7 @@ import { AuthContext } from '../context/AuthContext';
 import axios from 'axios';
 import AppShell from '../components/AppShell';
 import { Stats as RapportIcon } from '../components/AppIcons';
+import { LinkBox } from '../utils/navHelpers';
 
 const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:3000/api/auth').replace('/auth', '');
 
@@ -497,8 +498,17 @@ export default function FinancierApp() {
                 : PERIODS.find(p => p.key === period)?.label}
             </span>
           </div>
-          <div style={{ fontSize: 12, color: C.grisM, fontWeight: 500 }}>
-            {new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+            <LinkBox
+              to="/financier/report-settings"
+              display="inline-flex"
+              style={{ alignItems: 'center', gap: 6, padding: '7px 13px', borderRadius: 8, border: `1px solid ${C.grisCL}`, background: C.grisTL, color: C.grisF, fontSize: 13, fontWeight: 600 }}
+            >
+              ✉️ Rapports auto
+            </LinkBox>
+            <span style={{ fontSize: 12, color: C.grisM, fontWeight: 500 }}>
+              {new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
+            </span>
           </div>
         </header>
 

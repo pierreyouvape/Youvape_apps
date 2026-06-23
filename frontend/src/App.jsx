@@ -23,6 +23,7 @@ import SubBrandDetail from './pages/SubBrandDetail';
 import CategoryDetail from './pages/CategoryDetail';
 import SubCategoryDetail from './pages/SubCategoryDetail';
 import ShippingSettings from './pages/ShippingSettings';
+import ReportsSettingsApp from './pages/ReportsSettingsApp';
 import CatalogApp from './pages/CatalogApp';
 import PackingApp from './pages/PackingApp';
 import FinancierApp from './pages/FinancierApp';
@@ -132,6 +133,14 @@ function App() {
             element={
               <PrivateRoute>
                 <StatsApp />
+              </PrivateRoute>
+            }
+          />
+          <Route
+            path="/financier/report-settings"
+            element={
+              <PrivateRoute>
+                <ReportsSettingsApp />
               </PrivateRoute>
             }
           />

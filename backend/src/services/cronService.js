@@ -479,6 +479,33 @@ const setupBmsTagRetryCron = () => {
   console.log('Cron BMS tag retry configure: toutes les 15 min, 9h-19h, lun-ven');
 };
 
+// ─── Cron envoi automatique de rapports par email ───────────────────────────
+let reportEmailDailyJob = null;
+let reportEmailWeeklyJob = null;
+let reportEmailMonthlyJob = null;
+
+const runReportEmail = async (freq) => {
+  try {
+    const reportEmailService = require('./reportEmailService');
+    await reportEmailService.sendReport(freq);
+  } catch (error) {
+    console.error(`Erreur cron rapport email (${freq}):`, error.message);
+  }
+};
+
+const setupReportEmailCron = () => {
+  [reportEmailDailyJob, reportEmailWeeklyJob, reportEmailMonthlyJob].forEach((j) => { if (j) j.stop(); });
+
+  // Journalier : tous les jours à 8h (couvre la journée d'hier)
+  reportEmailDailyJob = cron.schedule('0 8 * * *', () => runReportEmail('daily'), { timezone: 'Europe/Paris' });
+  // Hebdomadaire : lundi 8h (couvre la semaine écoulée)
+  reportEmailWeeklyJob = cron.schedule('0 8 * * 1', () => runReportEmail('weekly'), { timezone: 'Europe/Paris' });
+  // Mensuel : 1er du mois 8h (couvre le mois précédent)
+  reportEmailMonthlyJob = cron.schedule('0 8 1 * *', () => runReportEmail('monthly'), { timezone: 'Europe/Paris' });
+
+  console.log('Cron rapports email configure: journalier 8h, hebdo lundi 8h, mensuel 1er 8h (Europe/Paris)');
+};
+
 module.exports = {
   setupCron,
   restartCron,
@@ -490,5 +517,6 @@ module.exports = {
   setupSavAutomationsCron,
   setupProductDbSyncCron,
   setupBmsTagRetryCron,
+  setupReportEmailCron,
   runProductDbSyncJob,
 };

@@ -1,6 +1,15 @@
 const express = require('express');
 const router = express.Router();
 const reportsController = require('../controllers/reportsController');
+const reportEmailController = require('../controllers/reportEmailController');
+
+// ─── Paramètres d'envoi automatique par email ───────────────────────────────
+// GET    /api/reports/email-settings        - lire les destinataires par fréquence
+// PUT    /api/reports/email-settings         - mettre à jour les destinataires
+// POST   /api/reports/email-settings/test    - envoyer un rapport de test
+router.get('/email-settings', reportEmailController.getSettings);
+router.put('/email-settings', reportEmailController.updateSettings);
+router.post('/email-settings/test', reportEmailController.sendTest);
 
 // POST /api/reports/revenue - Rapport Chiffre d'affaires
 router.post('/revenue', reportsController.getRevenueReport);

@@ -30,7 +30,7 @@ const savRoutes = require('./routes/savRoutes');
 const clientSavRoutes = require('./routes/clientSavRoutes');
 const chronopostRoutes = require('./routes/chronopostRoutes');
 const colissimoRoutes  = require('./routes/colissimoRoutes');
-const { setupCron, setupBmsCron, setupComputedCostCron, setupBmsBarcodeCron, setupStockResyncCron, setupSavAutomationsCron, setupProductDbSyncCron, setupBmsTagRetryCron } = require('./services/cronService');
+const { setupCron, setupBmsCron, setupComputedCostCron, setupBmsBarcodeCron, setupStockResyncCron, setupSavAutomationsCron, setupProductDbSyncCron, setupBmsTagRetryCron, setupReportEmailCron } = require('./services/cronService');
 const rewardService = require('./services/rewardService');
 const emailService = require('./services/emailService');
 const wcSyncService = require('./services/wcSyncService');
@@ -105,6 +105,9 @@ app.listen(PORT, async () => {
 
   // Initialiser le cron de rattrapage des tags BMS SAV (commandes importees apres coup)
   setupBmsTagRetryCron();
+
+  // Initialiser le cron d'envoi automatique des rapports par email (journalier/hebdo/mensuel)
+  setupReportEmailCron();
 
   // Recalcul initial PMP FIFO au demarrage (apres 60s)
   setTimeout(async () => {
