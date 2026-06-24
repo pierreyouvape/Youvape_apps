@@ -97,8 +97,7 @@ export default function TicketTabsBar() {
       flexShrink: 0,
       background: '#F8FAFB',
       borderBottom: `1px solid ${C.grisCL}`,
-      // Sur mobile : padding gauche pour dégager le hamburger flottant d'AppShell
-      padding: isMobile ? '6px 10px 0 56px' : '6px 16px 0',
+      padding: isMobile ? '6px 10px 0' : '6px 16px 0',
       display: 'flex', alignItems: 'flex-end', gap: 8,
       minHeight: 42,
     }}>

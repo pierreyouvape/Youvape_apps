@@ -527,6 +527,8 @@ export default function AppShell({ appMenu, currentPath, children }) {
   // ─── Mobile : la sidebar devient un tiroir ouvert par un hamburger ──────────
   const isMobile = useIsMobile();
   const [navOpen, setNavOpen] = useState(false);
+  // App active (pour le titre de la barre supérieure mobile)
+  const activeApp = APPS.find(a => currentPath === a.path || currentPath?.startsWith(a.path + '/'));
   // Toute navigation inter-app remonte un AppShell neuf (navOpen=false) ; on
   // ferme aussi le tiroir si le chemin change au sein du même shell.
   useEffect(() => { setNavOpen(false); }, [currentPath]);
@@ -557,7 +559,9 @@ export default function AppShell({ appMenu, currentPath, children }) {
            Aucune incidence sur desktop (règle sous media query). ── */
         @media (max-width: 768px) {
           html, body { overflow-x: hidden; max-width: 100vw; }
-          .main-scroll { overflow-x: hidden; }
+          /* La page occupe la hauteur sous la barre supérieure mobile (flex:1),
+             pas 100vh : sinon le contenu déborde de 48px sous la barre. */
+          .main-scroll { overflow-x: hidden; height: 100% !important; }
           .main-scroll table {
             display: block;
             max-width: 100%;
@@ -573,29 +577,41 @@ export default function AppShell({ appMenu, currentPath, children }) {
         onPointerCancel={onPointerCancel}
       >
         {isMobile ? (
-          <>
-            {/* Bouton hamburger flottant — ouvre la nav. Les en-têtes des pages
-                Tickets réservent un padding à gauche en mobile pour l'accueillir. */}
-            <button
-              onClick={() => setNavOpen(true)}
-              aria-label="Ouvrir le menu"
-              style={{
-                position: 'fixed', top: 9, left: 9, zIndex: 1500,
-                width: 40, height: 40, borderRadius: 10,
-                background: C.saphirF, color: '#fff', border: 'none',
-                display: navOpen ? 'none' : 'flex', alignItems: 'center', justifyContent: 'center',
-                boxShadow: '0 2px 8px rgba(0,0,0,0.25)', cursor: 'pointer',
-              }}
-            >
-              <svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round">
-                <line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="18" x2="21" y2="18" />
-              </svg>
-            </button>
+          <div style={{ display: 'flex', flexDirection: 'column', height: '100dvh', width: '100%', minWidth: 0 }}>
+            {/* Barre supérieure mobile : hamburger + nom de l'app. Le contenu vit
+                en dessous (flex:1), donc le hamburger ne recouvre jamais la page. */}
+            <header style={{
+              flexShrink: 0, height: 48, display: 'flex', alignItems: 'center', gap: 10,
+              padding: '0 8px', background: C.saphirF, color: '#fff', zIndex: 40,
+              boxShadow: '0 1px 4px rgba(0,0,0,0.18)',
+            }}>
+              <button
+                onClick={() => setNavOpen(true)}
+                aria-label="Ouvrir le menu"
+                style={{
+                  width: 38, height: 38, borderRadius: 9, flexShrink: 0,
+                  background: 'rgba(255,255,255,0.12)', border: 'none', color: '#fff', cursor: 'pointer',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0,
+                }}
+              >
+                <svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round">
+                  <line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="18" x2="21" y2="18" />
+                </svg>
+              </button>
+              <span style={{
+                fontWeight: 800, fontSize: 16, fontFamily: "'Tilt Warp', cursive",
+                whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+              }}>
+                {activeApp?.label || 'YouVape'}
+              </span>
+            </header>
             <Drawer open={navOpen} onClose={() => setNavOpen(false)} side="left" width={260} zIndex={2000}>
               <Sidebar {...sidebarProps} collapsed={false} mobile onToggleCollapse={() => setNavOpen(false)} />
             </Drawer>
-            {children}
-          </>
+            <div style={{ flex: 1, minHeight: 0, width: '100%', position: 'relative' }}>
+              {children}
+            </div>
+          </div>
         ) : (
           <>
             <Sidebar {...sidebarProps} collapsed={collapsed} onToggleCollapse={toggleCollapse} />

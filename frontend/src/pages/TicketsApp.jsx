@@ -87,7 +87,7 @@ function TicketsAppInner() {
         display: 'flex',
         fontFamily: 'Lato, sans-serif',
         overflow: 'hidden',
-        height: '100vh',
+        height: isMobile ? '100%' : '100vh',
       }}>
         {/* Bandeau des vues : pertinent uniquement sur l'onglet liste.
             Masqué quand un ticket (ou un autre onglet) est ouvert.

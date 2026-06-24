@@ -578,8 +578,7 @@ export default function TicketsList({ activeView, views = [], onRefresh, refresh
       {/* ── Top bar ─────────────────────────────────────────────── */}
       <header style={{
         background: C.blanc, borderBottom: `1px solid ${C.grisCL}`,
-        // Sur mobile : padding gauche pour dégager le hamburger flottant d'AppShell
-        padding: isMobile ? '0 14px 0 56px' : '0 28px', minHeight: 58,
+        padding: isMobile ? '0 14px' : '0 28px', minHeight: 58,
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
         position: 'sticky', top: 0, zIndex: 20, gap: 12, flexShrink: 0,
       }}>
