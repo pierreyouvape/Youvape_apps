@@ -549,6 +549,22 @@ export default function AppShell({ appMenu, currentPath, children }) {
         .main-scroll::-webkit-scrollbar { width: 8px; }
         .main-scroll::-webkit-scrollbar-track { background: transparent; }
         .main-scroll::-webkit-scrollbar-thumb { background: #E2E2E2; border-radius: 4px; }
+
+        /* ── Mobile (≤768px) : empêcher le défilement horizontal de la PAGE.
+           Le contenu reste dans la largeur de l'écran (plus de dérive diagonale
+           en scrollant), et toute table large devient son propre conteneur à
+           défilement horizontal — donc consultable sans déformer la page.
+           Aucune incidence sur desktop (règle sous media query). ── */
+        @media (max-width: 768px) {
+          html, body { overflow-x: hidden; max-width: 100vw; }
+          .main-scroll { overflow-x: hidden; }
+          .main-scroll table {
+            display: block;
+            max-width: 100%;
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+          }
+        }
       `}</style>
       <div
         style={{ display: 'flex', minHeight: '100vh', background: '#F2F6F8', fontFamily: "'Lato', sans-serif" }}

@@ -7,6 +7,7 @@ import { formatPrice } from '../utils/formatNumber';
 import { LinkBox, LinkTr } from '../utils/navHelpers';
 import AppShell from '../components/AppShell';
 import CopyButton from '../components/CopyButton';
+import { useIsMobile } from '../hooks/useIsMobile';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
 
@@ -70,6 +71,7 @@ const CatalogApp = () => {
   // Préférences colonnes
   const [hiddenColumns, setHiddenColumns] = useState([]);
   const [compact, setCompact] = useState(false);
+  const isMobile = useIsMobile();
   const controlsRef = useRef(null);
   const [controlsHeight, setControlsHeight] = useState(0);
 
@@ -403,7 +405,11 @@ const CatalogApp = () => {
       </div>
 
       {/* Main Content */}
-      <div style={compact ? { flex: 1, maxWidth: '1400px', margin: '30px auto', padding: '0 20px', width: '100%' } : { flex: 1, margin: '30px 0', padding: '0 60px', width: '100%' }}>
+      <div style={isMobile
+        ? { flex: 1, margin: '16px auto', padding: '0 10px', width: '100%' }
+        : compact
+          ? { flex: 1, maxWidth: '1400px', margin: '30px auto', padding: '0 20px', width: '100%' }
+          : { flex: 1, margin: '30px 0', padding: '0 60px', width: '100%' }}>
         <div ref={controlsRef} style={{ position: 'sticky', top: 0, zIndex: 30, backgroundColor: '#f5f5f5', paddingTop: '1px' }}>
         <h1 style={{ color: '#059669', marginBottom: '20px' }}>Catalogue Produits</h1>
 
