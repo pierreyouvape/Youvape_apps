@@ -135,6 +135,7 @@ class SavModel {
          o.tracking_number   as order_tracking_from_order,
          o.shipping_carrier  as order_carrier,
          o.shipping_method   as order_shipping_method,
+         o.billing_country   as order_billing_country,
          c.first_name        as customer_first_name,
          c.last_name         as customer_last_name,
          c.email             as customer_email_db,
@@ -181,6 +182,21 @@ class SavModel {
       ticket.customer_orders_count = parseInt(statsRes.rows[0].orders_count) || 0;
       ticket.customer_total_spent  = parseFloat(statsRes.rows[0].total_spent) || 0;
 
+      // Pays client : commande concernée, sinon dernière commande du client
+      ticket.customer_country = ticket.order_billing_country || null;
+      if (!ticket.customer_country) {
+        const countryRes = await pool.query(
+          `SELECT billing_country
+           FROM orders
+           WHERE wp_customer_id = $1
+             AND billing_country IS NOT NULL AND billing_country != ''
+           ORDER BY post_date DESC
+           LIMIT 1`,
+          [ticket.customer_wp_id]
+        );
+        ticket.customer_country = countryRes.rows[0]?.billing_country || null;
+      }
+
       // Historique commandes (hors commande concernée) avec articles
       const histRes = await pool.query(
         `SELECT wp_order_id, post_date, post_status, order_total, tracking_number, shipping_carrier
@@ -211,6 +227,7 @@ class SavModel {
     } else {
       ticket.customer_orders_count   = 0;
       ticket.customer_total_spent    = 0;
+      ticket.customer_country        = ticket.order_billing_country || null;
       ticket.customer_orders_history = [];
     }
 

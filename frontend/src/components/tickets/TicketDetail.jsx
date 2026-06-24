@@ -6,6 +6,7 @@ import { useTicketStatuses } from './useTicketStatuses';
 import { TICKETS_COLOR, formatTicketId } from './ticketConstants';
 import { formatDate, formatDateUTC } from '../../utils/dateUtils';
 import { getTrackingUrl } from '../../utils/trackingUtils';
+import { getCountryLabel } from '../../utils/countries';
 import { AuthContext } from '../../context/AuthContext';
 import { useOpenTickets } from '../../context/OpenTicketsContext';
 import OrderCard from './OrderCard';
@@ -2353,6 +2354,7 @@ function CustomerPanel({ ticket, onAssignOrder, onUnassignOrder, onMerge }) {
   const since = ticket.customer_since ? formatDate(ticket.customer_since) : '—';
   const ordersCount = ticket.customer_orders_count ?? 0;
   const totalSpent = ticket.customer_total_spent ? parseFloat(ticket.customer_total_spent).toFixed(2) : '0.00';
+  const country = ticket.customer_country ? getCountryLabel(ticket.customer_country) : '—';
 
   const SectionLabel = ({ children, right }) => (
     <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 8, padding: '0 4px' }}>
@@ -2416,7 +2418,7 @@ function CustomerPanel({ ticket, onAssignOrder, onUnassignOrder, onMerge }) {
           paddingTop: 14, borderTop: `1px solid ${C.grisCL}`,
         }}>
           <Meta label="Client depuis" value={since} />
-          <Meta label="Pays" value="🇫🇷 France" />
+          <Meta label="Pays" value={country} />
           <Meta label="Commandes validées" value={
             <span>
               <strong style={{ fontSize: 17, color: TICKETS_COLOR, fontWeight: 800 }}>{ordersCount}</strong>
