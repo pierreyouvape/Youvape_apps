@@ -419,7 +419,7 @@ function BulkMergeModal({ sources, onClose, onDone }) {
 }
 
 /* ─── Composant principal ─────────────────────────────────────────────────────── */
-export default function TicketsList({ activeView, views = [], onRefresh, refreshTick, autoRefresh, onBusyChange }) {
+export default function TicketsList({ activeView, views = [], onRefresh, refreshTick, autoRefresh, onBusyChange, isMobile = false, onOpenViews }) {
   const navigate = useNavigate();
   const { openTicket, startPlay, openNewDraft } = useOpenTickets();
   const [tickets, setTickets] = useState([]);
@@ -571,61 +571,84 @@ export default function TicketsList({ activeView, views = [], onRefresh, refresh
 
   return (
     <main className="main-scroll" style={{
-      flex: 1, minWidth: 0, overflowY: 'auto', height: '100vh',
+      flex: 1, minWidth: 0, overflowY: 'auto', height: isMobile ? '100%' : '100vh',
       display: 'flex', flexDirection: 'column',
       fontFamily: 'Lato, sans-serif', color: C.grisTF,
     }}>
       {/* ── Top bar ─────────────────────────────────────────────── */}
       <header style={{
         background: C.blanc, borderBottom: `1px solid ${C.grisCL}`,
-        padding: '0 28px', minHeight: 58,
+        // Sur mobile : padding gauche pour dégager le hamburger flottant d'AppShell
+        padding: isMobile ? '0 14px 0 56px' : '0 28px', minHeight: 58,
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        position: 'sticky', top: 0, zIndex: 20, gap: 16, flexShrink: 0,
+        position: 'sticky', top: 0, zIndex: 20, gap: 12, flexShrink: 0,
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-          {/* Icône app */}
-          <div style={{
-            width: 30, height: 30, borderRadius: 8, flexShrink: 0,
-            background: `linear-gradient(155deg, ${TICKETS_COLOR}, ${shade(TICKETS_COLOR, -0.2)})`,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            boxShadow: `0 4px 12px ${TICKETS_COLOR}38, 0 1px 0 rgba(255,255,255,0.35) inset`,
-          }}>
-            <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
-              <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/><path d="M8 9h8M8 13h5"/>
+        {isMobile ? (
+          /* Mobile : bouton « Vues » (ouvre le tiroir) avec le nom de la vue active */
+          <button
+            onClick={onOpenViews}
+            style={{
+              display: 'inline-flex', alignItems: 'center', gap: 8, minWidth: 0,
+              background: C.grisTL, border: `1px solid ${C.grisCL}`, borderRadius: 8,
+              padding: '8px 12px', fontSize: 14, fontWeight: 800, color: C.grisTF,
+              cursor: 'pointer', fontFamily: "'Tilt Warp', cursive",
+            }}
+          >
+            <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke={TICKETS_COLOR} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="8" y1="6" x2="21" y2="6" /><line x1="8" y1="12" x2="21" y2="12" /><line x1="8" y1="18" x2="21" y2="18" />
+              <line x1="3" y1="6" x2="3.01" y2="6" /><line x1="3" y1="12" x2="3.01" y2="12" /><line x1="3" y1="18" x2="3.01" y2="18" />
             </svg>
+            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {activeView?.label || 'Vues'}
+            </span>
+          </button>
+        ) : (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+            {/* Icône app */}
+            <div style={{
+              width: 30, height: 30, borderRadius: 8, flexShrink: 0,
+              background: `linear-gradient(155deg, ${TICKETS_COLOR}, ${shade(TICKETS_COLOR, -0.2)})`,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              boxShadow: `0 4px 12px ${TICKETS_COLOR}38, 0 1px 0 rgba(255,255,255,0.35) inset`,
+            }}>
+              <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/><path d="M8 9h8M8 13h5"/>
+              </svg>
+            </div>
+            <span style={{ fontSize: 16, fontWeight: 800, color: C.grisTF, fontFamily: "'Tilt Warp', cursive" }}>Tickets</span>
+            <span style={{ color: C.grisCL }}>/</span>
+            <span style={{ fontSize: 13, color: C.grisF, fontWeight: 600 }}>{activeView?.label || 'Tous'}</span>
           </div>
-          <span style={{ fontSize: 16, fontWeight: 800, color: C.grisTF, fontFamily: "'Tilt Warp', cursive" }}>Tickets</span>
-          <span style={{ color: C.grisCL }}>/</span>
-          <span style={{ fontSize: 13, color: C.grisF, fontWeight: 600 }}>{activeView?.label || 'Tous'}</span>
-        </div>
-        {/* Bouton Nouveau ticket */}
+        )}
+        {/* Bouton Nouveau ticket (icône seule sur mobile pour gagner de la place) */}
         <button
           onClick={() => openNewDraft()}
           style={{
-            display: 'inline-flex', alignItems: 'center', gap: 7,
+            display: 'inline-flex', alignItems: 'center', gap: 7, flexShrink: 0,
             background: `linear-gradient(155deg, ${TICKETS_COLOR}, ${shade(TICKETS_COLOR, -0.18)})`,
             color: '#fff', border: 'none',
-            borderRadius: 8, padding: '8px 14px', fontSize: 13, fontWeight: 800,
+            borderRadius: 8, padding: isMobile ? '9px 11px' : '8px 14px', fontSize: 13, fontWeight: 800,
             cursor: 'pointer', fontFamily: 'Lato, sans-serif',
             boxShadow: `0 4px 12px ${TICKETS_COLOR}40, 0 1px 0 rgba(255,255,255,0.4) inset`,
             transition: 'transform 0.15s',
           }}
           onMouseEnter={e => e.currentTarget.style.transform = 'translateY(-1px)'}
           onMouseLeave={e => e.currentTarget.style.transform = 'translateY(0)'}
+          title="Nouveau ticket"
         >
-          <IconPlus /> Nouveau ticket
+          <IconPlus />{!isMobile && ' Nouveau ticket'}
         </button>
       </header>
 
       {/* ── Vue header ──────────────────────────────────────────── */}
-      <div style={{ padding: '28px 28px 0', flexShrink: 0 }}>
+      <div style={{ padding: isMobile ? '16px 14px 0' : '28px 28px 0', flexShrink: 0 }}>
         <div style={{
           display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between',
-          gap: 16, flexWrap: 'wrap', marginBottom: 20,
+          gap: 16, flexWrap: 'wrap', marginBottom: isMobile ? 14 : 20,
         }}>
           <div>
             <h1 style={{
-              fontSize: 26, fontWeight: 800, color: C.grisTF,
+              fontSize: isMobile ? 20 : 26, fontWeight: 800, color: C.grisTF,
               fontFamily: "'Tilt Warp', cursive",
               letterSpacing: '-0.4px', margin: '0 0 4px',
             }}>{activeView?.label || 'Tous les tickets'}</h1>
@@ -665,7 +688,7 @@ export default function TicketsList({ activeView, views = [], onRefresh, refresh
       </div>
 
       {/* ── Table ────────────────────────────────────────────────── */}
-      <div style={{ padding: '0 28px 28px', flex: 1 }}>
+      <div style={{ padding: isMobile ? '0 14px 18px' : '0 28px 28px', flex: 1 }}>
         {loading ? (
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 200, color: C.grisM, fontSize: 14 }}>
             Chargement…
@@ -680,6 +703,51 @@ export default function TicketsList({ activeView, views = [], onRefresh, refresh
               <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/>
             </svg>
             Aucun ticket dans cette vue
+          </div>
+        ) : isMobile ? (
+          /* ── Mobile : cartes verticales (le tableau ne tient pas) ── */
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {sortedTickets.map(t => (
+              <div
+                key={t.id}
+                onClick={() => openTicket(t)}
+                style={{
+                  background: C.blanc, borderRadius: 12,
+                  border: `1px solid ${C.grisCL}`,
+                  boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
+                  padding: '12px 14px', cursor: 'pointer',
+                  display: 'flex', flexDirection: 'column', gap: 8,
+                }}
+              >
+                {/* Ligne 1 : statut + ID + date MAJ */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  <StatusBadge status={t.sav_status} />
+                  <span style={{ color: C.grisF, fontWeight: 700, fontVariantNumeric: 'tabular-nums', fontSize: 12.5 }}>
+                    {formatTicketId(t.id)}
+                  </span>
+                  {t.has_duplicate_warning && (
+                    <span style={{
+                      background: '#FEE2E2', color: '#B71D1D', border: '1px solid #FECACA',
+                      borderRadius: 4, padding: '1px 6px', fontSize: 10.5, fontWeight: 800,
+                    }}>⚠ Doublon</span>
+                  )}
+                  <span style={{ marginLeft: 'auto', color: C.grisM, fontSize: 11.5, whiteSpace: 'nowrap' }}>
+                    {formatDateUTC(t.updated_at, { time: true })}
+                  </span>
+                </div>
+                {/* Ligne 2 : sujet */}
+                <div style={{ fontWeight: 700, fontSize: 14.5, color: C.grisTF, lineHeight: 1.3 }}>
+                  {t.subject || '—'}
+                </div>
+                {/* Ligne 3 : demandeur + canal */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', fontSize: 12.5, color: C.grisM }}>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, color: C.grisF, fontWeight: 600 }}>
+                    {t.source === 'gravity_form' ? <IconForm /> : <IconMail />}
+                    {t.customer_name || t.customer_email || '—'}
+                  </span>
+                </div>
+              </div>
+            ))}
           </div>
         ) : (
           <div style={{

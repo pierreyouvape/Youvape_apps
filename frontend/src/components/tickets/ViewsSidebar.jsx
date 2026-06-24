@@ -34,7 +34,7 @@ function IconGrip() {
   );
 }
 
-export default function ViewsSidebar({ views = [], activeView, onViewChange, counts = {}, onRefresh }) {
+export default function ViewsSidebar({ views = [], activeView, onViewChange, counts = {}, onRefresh, mobile = false, onClose }) {
   const navigate = useNavigate();
 
   // Ordre local (localStorage, partagé avec TicketsApp)
@@ -97,7 +97,12 @@ export default function ViewsSidebar({ views = [], activeView, onViewChange, cou
   }, []);
 
   return (
-    <aside style={{
+    <aside style={mobile ? {
+      // En tiroir : occupe tout le panneau du Drawer
+      width: '100%', height: '100%', flex: 1,
+      background: C.blanc,
+      display: 'flex', flexDirection: 'column',
+    } : {
       width: 260, minWidth: 260, flexShrink: 0,
       background: C.blanc,
       height: '100vh', position: 'sticky', top: 0,
@@ -115,20 +120,38 @@ export default function ViewsSidebar({ views = [], activeView, onViewChange, cou
           fontFamily: "'Tilt Warp', cursive",
           letterSpacing: '-0.3px', margin: 0,
         }}>Vues</h2>
-        <button
-          title="Rafraîchir"
-          onClick={onRefresh}
-          style={{
-            width: 28, height: 28, borderRadius: 6,
-            background: 'transparent', border: 'none',
-            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-            cursor: 'pointer', padding: 0, transition: 'background 0.12s',
-          }}
-          onMouseEnter={e => e.currentTarget.style.background = C.grisTL}
-          onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-        >
-          <IconRefresh />
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+          <button
+            title="Rafraîchir"
+            onClick={onRefresh}
+            style={{
+              width: 28, height: 28, borderRadius: 6,
+              background: 'transparent', border: 'none',
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+              cursor: 'pointer', padding: 0, transition: 'background 0.12s',
+            }}
+            onMouseEnter={e => e.currentTarget.style.background = C.grisTL}
+            onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+          >
+            <IconRefresh />
+          </button>
+          {mobile && (
+            <button
+              title="Fermer"
+              aria-label="Fermer"
+              onClick={onClose}
+              style={{
+                width: 30, height: 30, borderRadius: 6,
+                background: 'transparent', border: 'none', cursor: 'pointer',
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: 0,
+              }}
+            >
+              <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke={C.grisF} strokeWidth="2.2" strokeLinecap="round">
+                <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Liste des vues — draggable */}

@@ -2,6 +2,7 @@ import { useOpenTickets } from '../../context/OpenTicketsContext';
 import { useTicketStatuses } from './useTicketStatuses';
 import { TICKETS_COLOR, formatTicketId } from './ticketConstants';
 import TicketSearchBox from './TicketSearchBox';
+import { useIsMobile } from '../../hooks/useIsMobile';
 
 const C = {
   blanc: '#fff', grisTL: '#F2F6F8', grisCL: '#E2E2E2',
@@ -71,6 +72,7 @@ export default function TicketTabsBar() {
     searchOpen, searchQuery, closeSearch,
   } = useOpenTickets();
   const { statusMap } = useTicketStatuses();
+  const isMobile = useIsMobile();
 
   const tabBase = {
     display: 'inline-flex', alignItems: 'center', gap: 8,
@@ -95,7 +97,8 @@ export default function TicketTabsBar() {
       flexShrink: 0,
       background: '#F8FAFB',
       borderBottom: `1px solid ${C.grisCL}`,
-      padding: '6px 16px 0',
+      // Sur mobile : padding gauche pour dégager le hamburger flottant d'AppShell
+      padding: isMobile ? '6px 10px 0 56px' : '6px 16px 0',
       display: 'flex', alignItems: 'flex-end', gap: 8,
       minHeight: 42,
     }}>

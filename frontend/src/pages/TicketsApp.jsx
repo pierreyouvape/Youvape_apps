@@ -9,6 +9,8 @@ import SearchResultsPage from '../components/tickets/SearchResultsPage';
 import { applyViewsOrder, loadViewsOrder } from '../components/tickets/viewsOrder';
 import { OpenTicketsProvider, useOpenTickets } from '../context/OpenTicketsContext';
 import { useAutoRefresh } from '../components/tickets/useAutoRefresh';
+import { useIsMobile } from '../hooks/useIsMobile';
+import Drawer from '../components/Drawer';
 
 // ─── Contenu enveloppé par OpenTicketsProvider ────────────────────────────────
 function TicketsAppInner() {
@@ -19,6 +21,9 @@ function TicketsAppInner() {
   // Suspend l'autorefresh quand l'agent agit sur la liste (sélection / menu)
   // ou quand il n'est pas sur l'onglet liste.
   const [listBusy, setListBusy] = useState(false);
+  const isMobile = useIsMobile();
+  // Sur mobile, la sidebar des vues devient un tiroir (déclenché depuis la liste).
+  const [viewsOpen, setViewsOpen] = useState(false);
   const { activeTab, playTicketId, isPlayActive, newDraftOpen, listRefreshTick } = useOpenTickets();
 
   const handleRefresh = useCallback(() => setRefreshTick(t => t + 1), []);
@@ -85,8 +90,9 @@ function TicketsAppInner() {
         height: '100vh',
       }}>
         {/* Bandeau des vues : pertinent uniquement sur l'onglet liste.
-            Masqué quand un ticket (ou un autre onglet) est ouvert. */}
-        {activeTab === 'list' && (
+            Masqué quand un ticket (ou un autre onglet) est ouvert.
+            Desktop = colonne fixe ; mobile = tiroir (rendu plus bas). */}
+        {activeTab === 'list' && !isMobile && (
           <ViewsSidebar
             views={views}
             activeView={activeView}
@@ -94,6 +100,21 @@ function TicketsAppInner() {
             counts={counts}
             onRefresh={handleRefresh}
           />
+        )}
+
+        {/* Mobile : les vues dans un tiroir glissant depuis la gauche */}
+        {isMobile && (
+          <Drawer open={viewsOpen} onClose={() => setViewsOpen(false)} side="left" width={280} zIndex={1800}>
+            <ViewsSidebar
+              mobile
+              onClose={() => setViewsOpen(false)}
+              views={views}
+              activeView={activeView}
+              onViewChange={(id) => { setActiveView(id); setViewsOpen(false); }}
+              counts={counts}
+              onRefresh={handleRefresh}
+            />
+          </Drawer>
         )}
 
         {/* Zone principale : barre d'onglets en haut + contenu (liste OU détail) */}
@@ -116,6 +137,8 @@ function TicketsAppInner() {
                 onRefresh={handleRefresh}
                 autoRefresh={autoRefresh}
                 onBusyChange={setListBusy}
+                isMobile={isMobile}
+                onOpenViews={() => setViewsOpen(true)}
               />
             </div>
 

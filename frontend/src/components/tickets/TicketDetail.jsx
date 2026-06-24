@@ -13,6 +13,8 @@ import OrderCard from './OrderCard';
 import { buildPlaceholderContext, applyPlaceholders } from './macroPlaceholders';
 import RichEditor from './RichEditor';
 import { markdownTextToHtml, isHtml, sanitizeHtml, escapeHtml, decodeHtml } from './richText';
+import { useIsMobile } from '../../hooks/useIsMobile';
+import Drawer from '../Drawer';
 
 const C = {
   orange: '#E28F00', rouge: '#DE2020',
@@ -30,6 +32,30 @@ function shade(hex, amt) {
   const r = parseInt(h.slice(0, 2), 16), g = parseInt(h.slice(2, 4), 16), b = parseInt(h.slice(4, 6), 16);
   const adj = c => Math.max(0, Math.min(255, Math.round(c + 255 * amt)));
   return '#' + adj(r).toString(16).padStart(2, '0') + adj(g).toString(16).padStart(2, '0') + adj(b).toString(16).padStart(2, '0');
+}
+
+// En-tête d'un tiroir mobile (titre + bouton fermer).
+function DrawerHeader({ title, onClose }) {
+  return (
+    <div style={{
+      flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+      padding: '14px 16px', borderBottom: `1px solid ${C.grisCL}`, background: C.blanc,
+    }}>
+      <span style={{ fontSize: 15, fontWeight: 800, color: C.grisTF, fontFamily: "'Tilt Warp', cursive" }}>{title}</span>
+      <button
+        onClick={onClose}
+        aria-label="Fermer"
+        style={{
+          width: 32, height: 32, borderRadius: 7, border: 'none', cursor: 'pointer',
+          background: C.grisTL, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: 0,
+        }}
+      >
+        <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke={C.grisF} strokeWidth="2.2" strokeLinecap="round">
+          <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+        </svg>
+      </button>
+    </div>
+  );
 }
 
 // Détecte une mention de pièce jointe dans le texte d'un message (façon Gmail :
@@ -551,7 +577,7 @@ function ReplyComposer({
   ticketId, demandeur, agentName, agent, ticket, currentStatus,
   onReplySent, onSendFailed, onStatusChange,
   playMode = false, afterActionMode = 'next', onChangeAfterActionMode, onAdvance,
-  onCloseTicket, onApplyMacroSubject,
+  onCloseTicket, onApplyMacroSubject, isMobile = false,
 }) {
   const [body, setBody] = useState(() => localStorage.getItem(`yv.tickets.draft.${ticketId}`) || '');
   const [fmt, setFmt] = useState({ bold: false, italic: false, underline: false, bulletList: false });
@@ -903,7 +929,7 @@ function ReplyComposer({
   return (
     <div style={{
       background: C.blanc, borderTop: `1px solid ${C.grisCL}`,
-      padding: '14px 28px 16px',
+      padding: isMobile ? '10px 12px 12px' : '14px 28px 16px',
       display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden',
     }}>
       <div style={{
@@ -1630,7 +1656,7 @@ function FieldDivider() {
 }
 
 // ─── Panneau GAUCHE ───────────────────────────────────────────────────────────
-function TicketFieldsPanel({ ticket, onFieldChange, users }) {
+function TicketFieldsPanel({ ticket, onFieldChange, users, mobile = false }) {
   const navigate = useNavigate();
   const set = (k, v) => onFieldChange(k, v);
 
@@ -1671,7 +1697,10 @@ function TicketFieldsPanel({ ticket, onFieldChange, users }) {
   const assignedUser = users.find(u => u.id === ticket.assigned_to_id) || null;
 
   return (
-    <aside style={{
+    <aside style={mobile ? {
+      width: '100%', flex: 1, minHeight: 0,
+      background: C.blanc, overflowY: 'auto', padding: '16px 16px',
+    } : {
       width: 300, minWidth: 300, flexShrink: 0,
       background: C.blanc, borderRight: `1px solid ${C.grisCL}`,
       height: '100%', overflowY: 'auto', padding: '20px 20px',
@@ -1836,7 +1865,7 @@ const COMPOSER_HEIGHT_KEY = 'yv.tickets.composerHeight';
 const COMPOSER_MIN_HEIGHT = 180;
 const COMPOSER_DEFAULT_HEIGHT = 280;
 
-function ConversationPanel({ ticket, onReplySent, onStatusChange, playMode, afterActionMode, onChangeAfterActionMode, onAdvance, onCloseTicket, onApplyMacroSubject }) {
+function ConversationPanel({ ticket, onReplySent, onStatusChange, playMode, afterActionMode, onChangeAfterActionMode, onAdvance, onCloseTicket, onApplyMacroSubject, isMobile = false }) {
   const { user } = useContext(AuthContext);
   const bottomRef = useRef();
   const sectionRef = useRef();
@@ -1907,13 +1936,13 @@ function ConversationPanel({ ticket, onReplySent, onStatusChange, playMode, afte
     <section ref={sectionRef} style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', background: C.grisTL, overflow: 'hidden' }}>
       {/* En-tête sujet */}
       <div style={{
-        padding: '20px 28px 16px', background: C.blanc,
+        padding: isMobile ? '12px 16px 10px' : '20px 28px 16px', background: C.blanc,
         borderBottom: `1px solid ${C.grisCL}`,
         display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16,
       }}>
         <div>
           <h1 style={{
-            fontSize: 19, fontWeight: 800, color: C.grisTF,
+            fontSize: isMobile ? 16 : 19, fontWeight: 800, color: C.grisTF,
             fontFamily: "'Tilt Warp', cursive", letterSpacing: '-0.2px', lineHeight: 1.25, margin: 0,
           }}>{ticket.subject}</h1>
           <div style={{ fontSize: 12.5, color: C.grisM, marginTop: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -1926,7 +1955,7 @@ function ConversationPanel({ ticket, onReplySent, onStatusChange, playMode, afte
 
       {/* Thread */}
       <LightboxProvider>
-        <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '20px 28px 16px' }}>
+        <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: isMobile ? '14px 14px 12px' : '20px 28px 16px' }}>
           {ticket.description && (
             <Message
               msg={{ from: ticket.customer_name || ticket.customer_email, body: ticket.description, is_agent: false, date: ticket.created_at, attachments: [] }}
@@ -1939,34 +1968,38 @@ function ConversationPanel({ ticket, onReplySent, onStatusChange, playMode, afte
         </div>
       </LightboxProvider>
 
-      {/* Poignée d'agrandissement (drag vers le haut = composer plus grand) */}
-      <div
-        onMouseDown={handleDragStart}
-        style={{
-          height: 7, flexShrink: 0, cursor: 'ns-resize',
-          background: dragging ? `${TICKETS_COLOR}30` : C.grisCL,
-          borderTop: `1px solid ${C.grisCL}`,
-          borderBottom: `1px solid ${C.grisCL}`,
-          position: 'relative',
-          transition: 'background 0.12s',
-        }}
-        onMouseEnter={e => { if (!dragging) e.currentTarget.style.background = `${TICKETS_COLOR}40`; }}
-        onMouseLeave={e => { if (!dragging) e.currentTarget.style.background = C.grisCL; }}
-        title="Glisser pour redimensionner le composer"
-      >
-        {/* 3 petits points pour signaler la poignée */}
-        <div style={{
-          position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
-          display: 'flex', gap: 3, pointerEvents: 'none',
-        }}>
-          <span style={{ width: 3, height: 3, borderRadius: '50%', background: C.grisM }} />
-          <span style={{ width: 3, height: 3, borderRadius: '50%', background: C.grisM }} />
-          <span style={{ width: 3, height: 3, borderRadius: '50%', background: C.grisM }} />
+      {/* Poignée d'agrandissement (drag vers le haut = composer plus grand).
+          Sans objet au tactile → masquée sur mobile. */}
+      {!isMobile && (
+        <div
+          onMouseDown={handleDragStart}
+          style={{
+            height: 7, flexShrink: 0, cursor: 'ns-resize',
+            background: dragging ? `${TICKETS_COLOR}30` : C.grisCL,
+            borderTop: `1px solid ${C.grisCL}`,
+            borderBottom: `1px solid ${C.grisCL}`,
+            position: 'relative',
+            transition: 'background 0.12s',
+          }}
+          onMouseEnter={e => { if (!dragging) e.currentTarget.style.background = `${TICKETS_COLOR}40`; }}
+          onMouseLeave={e => { if (!dragging) e.currentTarget.style.background = C.grisCL; }}
+          title="Glisser pour redimensionner le composer"
+        >
+          {/* 3 petits points pour signaler la poignée */}
+          <div style={{
+            position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
+            display: 'flex', gap: 3, pointerEvents: 'none',
+          }}>
+            <span style={{ width: 3, height: 3, borderRadius: '50%', background: C.grisM }} />
+            <span style={{ width: 3, height: 3, borderRadius: '50%', background: C.grisM }} />
+            <span style={{ width: 3, height: 3, borderRadius: '50%', background: C.grisM }} />
+          </div>
         </div>
-      </div>
+      )}
 
-      {/* Composer — hauteur fixe pilotée par la poignée */}
-      <div style={{ height: composerHeight, flexShrink: 0, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+      {/* Composer — hauteur fixe pilotée par la poignée (desktop) ; sur mobile,
+          hauteur fixe raisonnable (la poignée tactile n'a pas de sens). */}
+      <div style={{ height: isMobile ? 'min(52vh, 340px)' : composerHeight, flexShrink: 0, display: 'flex', flexDirection: 'column', minHeight: 0, borderTop: isMobile ? `1px solid ${C.grisCL}` : 'none' }}>
         <ReplyComposer
           ticketId={ticket.id}
           demandeur={ticket.customer_name || ticket.customer_email}
@@ -1983,6 +2016,7 @@ function ConversationPanel({ ticket, onReplySent, onStatusChange, playMode, afte
           onAdvance={onAdvance}
           onCloseTicket={onCloseTicket}
           onApplyMacroSubject={onApplyMacroSubject}
+          isMobile={isMobile}
         />
       </div>
     </section>
@@ -2344,7 +2378,7 @@ function TicketHistoryCard({ t, onOpen }) {
 }
 
 // ─── Panneau DROIT ────────────────────────────────────────────────────────────
-function CustomerPanel({ ticket, onAssignOrder, onUnassignOrder, onMerge }) {
+function CustomerPanel({ ticket, onAssignOrder, onUnassignOrder, onMerge, mobile = false }) {
   const navigate = useNavigate();
   const tabsCtx = useOpenTickets();
 
@@ -2391,7 +2425,10 @@ function CustomerPanel({ ticket, onAssignOrder, onUnassignOrder, onMerge }) {
   };
 
   return (
-    <aside style={{
+    <aside style={mobile ? {
+      width: '100%', flex: 1, minHeight: 0,
+      background: C.grisTL, overflowY: 'auto', padding: '16px 14px',
+    } : {
       width: 360, minWidth: 360, flexShrink: 0,
       background: C.grisTL, borderLeft: `1px solid ${C.grisCL}`,
       height: '100%', overflowY: 'auto', padding: '20px 18px',
@@ -2594,6 +2631,11 @@ export default function TicketDetail({ ticketId }) {
   const [mergeOpen, setMergeOpen] = useState(false);
   const saveTimerRef = useRef();
 
+  // Mobile : les panneaux Champs / Client deviennent des tiroirs glissants.
+  const isMobile = useIsMobile();
+  const [fieldsOpen, setFieldsOpen] = useState(false);
+  const [customerOpen, setCustomerOpen] = useState(false);
+
   const fetchTicket = useCallback(async () => {
     try {
       const res = await fetch(`${API}/${ticketId}`);
@@ -2755,10 +2797,10 @@ export default function TicketDetail({ ticketId }) {
       {/* ── Top bar ──────────────────────────────────────────────────────────── */}
       <header style={{
         background: C.blanc, borderBottom: `1px solid ${C.grisCL}`,
-        padding: '0 24px', minHeight: 58, display: 'flex', alignItems: 'center',
-        justifyContent: 'space-between', flexShrink: 0, zIndex: 30,
+        padding: isMobile ? '0 12px' : '0 24px', minHeight: 58, display: 'flex', alignItems: 'center',
+        justifyContent: 'space-between', flexShrink: 0, zIndex: 30, gap: 10,
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 14, minWidth: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? 10 : 14, minWidth: 0 }}>
           <button
             onClick={handleBack}
             style={{
@@ -2768,39 +2810,74 @@ export default function TicketDetail({ ticketId }) {
               fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'Lato, sans-serif', flexShrink: 0,
               boxShadow: `0 2px 6px ${TICKETS_COLOR}40, 0 1px 0 rgba(255,255,255,0.35) inset`,
             }}
-          ><Ic.Back /> Liste</button>
+          ><Ic.Back />{!isMobile && ' Liste'}</button>
 
-          <span style={{ fontSize: 13, color: C.grisM, fontWeight: 600, whiteSpace: 'nowrap' }}>Tickets / À traiter /</span>
+          {/* Fil d'ariane + copie d'ID : masqués sur mobile pour gagner de la place */}
+          {!isMobile && (
+            <span style={{ fontSize: 13, color: C.grisM, fontWeight: 600, whiteSpace: 'nowrap' }}>Tickets / À traiter /</span>
+          )}
           <strong style={{ fontSize: 14.5, color: C.grisTF, fontFamily: "'Tilt Warp', cursive", whiteSpace: 'nowrap' }}>
             {formatTicketId(ticket.id)}
           </strong>
-          <button
-            onClick={() => navigator.clipboard?.writeText(formatTicketId(ticket.id))}
-            style={{ background: 'transparent', border: 'none', cursor: 'pointer', padding: 4, display: 'flex', alignItems: 'center' }}
-            title="Copier l'ID"
-          ><Ic.Copy color={C.grisM} /></button>
+          {!isMobile && (
+            <button
+              onClick={() => navigator.clipboard?.writeText(formatTicketId(ticket.id))}
+              style={{ background: 'transparent', border: 'none', cursor: 'pointer', padding: 4, display: 'flex', alignItems: 'center' }}
+              title="Copier l'ID"
+            ><Ic.Copy color={C.grisM} /></button>
+          )}
           <StatusBadge status={ticket.sav_status} />
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-          {!ticket.merged_into_id && (
-            <button
-              onClick={() => setMergeOpen(true)}
-              style={{
-                display: 'inline-flex', alignItems: 'center', gap: 6,
-                background: C.grisTL, border: `1px solid ${C.grisCL}`, borderRadius: 8,
-                padding: '7px 13px', fontSize: 13, fontWeight: 700, color: C.grisF,
-                cursor: 'pointer', fontFamily: 'Lato, sans-serif',
-              }}
-              title="Fusionner ce ticket dans un autre"
-            >🔀 Fusionner</button>
+          {/* Mobile : accès aux panneaux Champs (Infos) et Client via tiroirs */}
+          {isMobile ? (
+            <>
+              <button
+                onClick={() => setFieldsOpen(true)}
+                style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 5,
+                  background: C.grisTL, border: `1px solid ${C.grisCL}`, borderRadius: 8,
+                  padding: '8px 11px', fontSize: 12.5, fontWeight: 700, color: C.grisF,
+                  cursor: 'pointer', fontFamily: 'Lato, sans-serif',
+                }}
+                title="Champs du ticket"
+              >Infos</button>
+              <button
+                onClick={() => setCustomerOpen(true)}
+                style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 5,
+                  background: C.grisTL, border: `1px solid ${C.grisCL}`, borderRadius: 8,
+                  padding: '8px 11px', fontSize: 12.5, fontWeight: 700, color: C.grisF,
+                  cursor: 'pointer', fontFamily: 'Lato, sans-serif',
+                }}
+                title="Fiche client"
+              >Client</button>
+            </>
+          ) : (
+            !ticket.merged_into_id && (
+              <button
+                onClick={() => setMergeOpen(true)}
+                style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 6,
+                  background: C.grisTL, border: `1px solid ${C.grisCL}`, borderRadius: 8,
+                  padding: '7px 13px', fontSize: 13, fontWeight: 700, color: C.grisF,
+                  cursor: 'pointer', fontFamily: 'Lato, sans-serif',
+                }}
+                title="Fusionner ce ticket dans un autre"
+              >🔀 Fusionner</button>
+            )
           )}
         </div>
       </header>
 
-      {/* ── 3 colonnes ───────────────────────────────────────────────────────── */}
+      {/* ── Colonnes ─────────────────────────────────────────────────────────────
+          Desktop : 3 colonnes côte à côte.
+          Mobile : conversation seule en plein écran, Champs/Client en tiroirs. */}
       <div style={{ flex: 1, display: 'flex', minHeight: 0, overflow: 'hidden' }}>
-        <TicketFieldsPanel ticket={ticket} onFieldChange={handleFieldChange} users={users} />
+        {!isMobile && (
+          <TicketFieldsPanel ticket={ticket} onFieldChange={handleFieldChange} users={users} />
+        )}
         <ConversationPanel
           ticket={ticket}
           onReplySent={(updatedTicket) => setTicket(t => ({ ...t, ...updatedTicket }))}
@@ -2811,14 +2888,37 @@ export default function TicketDetail({ ticketId }) {
           onAdvance={tabsCtx?.advancePlay}
           onCloseTicket={tabsCtx?.closeTicket ? () => tabsCtx.closeTicket(ticket.id) : null}
           onApplyMacroSubject={(subject) => handleFieldChange('subject', subject)}
+          isMobile={isMobile}
         />
-        <CustomerPanel
-          ticket={ticket}
-          onAssignOrder={handleAssignOrder}
-          onUnassignOrder={handleUnassignOrder}
-          onMerge={() => setMergeOpen(true)}
-        />
+        {!isMobile && (
+          <CustomerPanel
+            ticket={ticket}
+            onAssignOrder={handleAssignOrder}
+            onUnassignOrder={handleUnassignOrder}
+            onMerge={() => setMergeOpen(true)}
+          />
+        )}
       </div>
+
+      {/* Tiroirs mobiles : Champs (gauche) et Client (droite) */}
+      {isMobile && (
+        <>
+          <Drawer open={fieldsOpen} onClose={() => setFieldsOpen(false)} side="left" width="min(90vw, 380px)" zIndex={1600}>
+            <DrawerHeader title="Champs du ticket" onClose={() => setFieldsOpen(false)} />
+            <TicketFieldsPanel ticket={ticket} onFieldChange={handleFieldChange} users={users} mobile />
+          </Drawer>
+          <Drawer open={customerOpen} onClose={() => setCustomerOpen(false)} side="right" width="min(92vw, 400px)" zIndex={1600}>
+            <DrawerHeader title="Fiche client" onClose={() => setCustomerOpen(false)} />
+            <CustomerPanel
+              ticket={ticket}
+              onAssignOrder={handleAssignOrder}
+              onUnassignOrder={handleUnassignOrder}
+              onMerge={() => setMergeOpen(true)}
+              mobile
+            />
+          </Drawer>
+        </>
+      )}
 
       {mergeOpen && (
         <MergeModal

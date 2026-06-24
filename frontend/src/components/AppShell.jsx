@@ -1,8 +1,10 @@
-import { useState, useRef, useCallback, useMemo, useContext } from 'react';
+import { useState, useRef, useCallback, useMemo, useContext, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { AuthContext } from '../context/AuthContext';
 import { APPS, SettingsIcon, LogoutIcon } from './AppIcons';
 import { LinkBox } from '../utils/navHelpers';
+import Drawer from './Drawer';
+import { useIsMobile } from '../hooks/useIsMobile';
 
 // Apps ayant une page de paramètres dédiée
 const APP_SETTINGS_PATHS = {
@@ -510,6 +512,20 @@ export default function AppShell({ appMenu, currentPath, children }) {
   const collapsed = prefs.sidebarCollapsed === true;
   const toggleCollapse = useCallback(() => updatePrefs({ sidebarCollapsed: !collapsed }), [updatePrefs, collapsed]);
 
+  // ─── Mobile : la sidebar devient un tiroir ouvert par un hamburger ──────────
+  const isMobile = useIsMobile();
+  const [navOpen, setNavOpen] = useState(false);
+  // Toute navigation inter-app remonte un AppShell neuf (navOpen=false) ; on
+  // ferme aussi le tiroir si le chemin change au sein du même shell.
+  useEffect(() => { setNavOpen(false); }, [currentPath]);
+
+  // Props communes de la sidebar (collapsed forcé à false en tiroir mobile).
+  const sidebarProps = {
+    user, orderedApps, accessibleKeys, draggingKey, overKey,
+    onPointerDown, onPointerEnter, onPointerUp,
+    onLogout: handleLogout, navigate, currentPath, appMenu,
+  };
+
   return (
     <>
       <style>{`
@@ -528,23 +544,36 @@ export default function AppShell({ appMenu, currentPath, children }) {
         onPointerUp={e => onPointerUp(e, overKey)}
         onPointerCancel={onPointerCancel}
       >
-        <Sidebar
-          user={user}
-          orderedApps={orderedApps}
-          accessibleKeys={accessibleKeys}
-          draggingKey={draggingKey}
-          overKey={overKey}
-          onPointerDown={onPointerDown}
-          onPointerEnter={onPointerEnter}
-          onPointerUp={onPointerUp}
-          onLogout={handleLogout}
-          navigate={navigate}
-          currentPath={currentPath}
-          appMenu={appMenu}
-          collapsed={collapsed}
-          onToggleCollapse={toggleCollapse}
-        />
-        {children}
+        {isMobile ? (
+          <>
+            {/* Bouton hamburger flottant — ouvre la nav. Les en-têtes des pages
+                Tickets réservent un padding à gauche en mobile pour l'accueillir. */}
+            <button
+              onClick={() => setNavOpen(true)}
+              aria-label="Ouvrir le menu"
+              style={{
+                position: 'fixed', top: 9, left: 9, zIndex: 1500,
+                width: 40, height: 40, borderRadius: 10,
+                background: C.saphirF, color: '#fff', border: 'none',
+                display: navOpen ? 'none' : 'flex', alignItems: 'center', justifyContent: 'center',
+                boxShadow: '0 2px 8px rgba(0,0,0,0.25)', cursor: 'pointer',
+              }}
+            >
+              <svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round">
+                <line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="18" x2="21" y2="18" />
+              </svg>
+            </button>
+            <Drawer open={navOpen} onClose={() => setNavOpen(false)} side="left" width={260} zIndex={2000}>
+              <Sidebar {...sidebarProps} collapsed={false} onToggleCollapse={() => setNavOpen(false)} />
+            </Drawer>
+            {children}
+          </>
+        ) : (
+          <>
+            <Sidebar {...sidebarProps} collapsed={collapsed} onToggleCollapse={toggleCollapse} />
+            {children}
+          </>
+        )}
       </div>
     </>
   );
