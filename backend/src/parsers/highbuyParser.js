@@ -9,13 +9,36 @@
 
 module.exports = {
   parse: (text) => {
-    // Numéro de commande : "Réf. de commande MUKVTATQG"
-    const orderMatch = text.match(/Réf\.\s*de commande\s+(\S+)/);
-    const orderNumber = orderMatch ? orderMatch[1] : null;
+    // L'en-tête existe en deux mises en page selon le PDF :
+    //   A) libellé suivi de la valeur : "Réf. de commande MUKVTATQG"
+    //   B) ligne de libellés puis ligne de valeurs :
+    //      "Numéro de facture Date de facturation Réf. de commande Date de commande"
+    //      "#FA020724 24/06/2026 QFNAVMCMQ 24/06/2026"
+    // En B, "Réf. de commande" est immédiatement suivi du libellé "Date de commande" :
+    // la regex naïve capturait alors "Date" au lieu du vrai numéro.
 
-    // Date de commande : "Date de commande 18/06/2026"
+    // Ligne de valeurs : #FA<num> <date facturation> <réf commande> <date commande>
+    const valueRowMatch = text.match(
+      /#FA\d+\s+\d{2}\/\d{2}\/\d{4}\s+(\S+)\s+(\d{2})\/(\d{2})\/(\d{4})/
+    );
+
+    // Numéro de commande
+    let orderNumber = null;
+    const refLabelMatch = text.match(/Réf\.\s*de commande\s+(\S+)/);
+    if (refLabelMatch && !/^Date$/i.test(refLabelMatch[1]) && !/^\d{2}\/\d{2}\/\d{4}$/.test(refLabelMatch[1])) {
+      orderNumber = refLabelMatch[1];                 // format A
+    } else if (valueRowMatch) {
+      orderNumber = valueRowMatch[1];                 // format B
+    }
+
+    // Date de commande
+    let orderDate = null;
     const dateMatch = text.match(/Date de commande\s+(\d{2})\/(\d{2})\/(\d{4})/);
-    const orderDate = dateMatch ? `${dateMatch[3]}-${dateMatch[2]}-${dateMatch[1]}` : null;
+    if (dateMatch) {
+      orderDate = `${dateMatch[3]}-${dateMatch[2]}-${dateMatch[1]}`;   // format A
+    } else if (valueRowMatch) {
+      orderDate = `${valueRowMatch[4]}-${valueRowMatch[3]}-${valueRowMatch[2]}`;   // format B
+    }
 
     const items = [];
 
