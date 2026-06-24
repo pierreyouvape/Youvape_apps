@@ -74,7 +74,8 @@ function parseConfirmation(text) {
     });
   }
 
-  return { orderNumber, orderDate, items, hasPrice: true };
+  // pdfIsPackBased : quantité en packs et prix du pack, stockés tels quels (sans conversion).
+  return { orderNumber, orderDate, items, hasPrice: true, pdfIsPackBased: true };
 }
 
 /**
@@ -163,5 +164,6 @@ function parseFacture(text) {
       }
     }
 
-    return { orderNumber, orderDate, items, hasPrice: true };
+    // pdfIsPackBased : quantité en packs et prix du pack, stockés tels quels (sans conversion).
+    return { orderNumber, orderDate, items, hasPrice: true, pdfIsPackBased: true };
 }

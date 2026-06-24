@@ -190,7 +190,9 @@ function parseFacture(text) {
     }
   }
 
-  return { orderNumber, orderDate, items, hasPrice: true };
+  // pdfIsPackBased : la facture/proforma CigAccess donne la quantité EN PACKS et le
+  // prix DU PACK (ex: "x10", qté 5, 5,31€/pack). On stocke tel quel, sans conversion.
+  return { orderNumber, orderDate, items, hasPrice: true, pdfIsPackBased: true };
 }
 
 /**
@@ -281,5 +283,7 @@ function parseProforma(text) {
     }
   }
 
-  return { orderNumber, orderDate, items, hasPrice: true };
+  // pdfIsPackBased : la facture/proforma CigAccess donne la quantité EN PACKS et le
+  // prix DU PACK (ex: "x10", qté 5, 5,31€/pack). On stocke tel quel, sans conversion.
+  return { orderNumber, orderDate, items, hasPrice: true, pdfIsPackBased: true };
 }

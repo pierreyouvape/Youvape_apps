@@ -411,7 +411,9 @@ function parseFacture(text) {
       ? [{ item_type: 'discount', product_name: 'Remise', unit_price: -globalDiscount, qty_ordered: 1 }]
       : [];
 
-    return { orderNumber, orderDate, items, discountItems, hasPrice: true };
+    // pdfIsPackBased : la facture OpenSi donne la quantité en packs et le prix du pack,
+    // stockés tels quels (sans conversion ÷/× pack_qty).
+    return { orderNumber, orderDate, items, discountItems, hasPrice: true, pdfIsPackBased: true };
 }
 
 /**

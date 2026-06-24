@@ -314,15 +314,21 @@ const purchaseOrderModel = {
     }
 
     // Préparer les items pour BMS (seuls les produits avec SKU)
-    // BMS reçoit la quantité en unités (qty_ordered × pack_qty) et le prix unitaire par unité
+    // Convention : qty_ordered = nombre de packs, unit_price = prix du pack,
+    // pack_qty = nombre d'unités par pack. BMS reçoit donc directement le nombre
+    // de packs, le prix du pack et le conditionnement.
+    // NE PAS multiplier qty_ordered par pack_qty : le coût BMS (qty × price) doit
+    // rester égal au total affiché dans l'app (qty_ordered × unit_price). Multiplier
+    // ici surfacturait ×pack_qty et faussait aussi le rapprochement des réceptions.
     const bmsItems = items
       .filter(item => item.sku)
       .map(item => {
         const discountPercent = parseFloat(item.discount_percent) || 0;
         const bmsItem = {
           sku: item.sku,
-          qty: (parseInt(item.qty_ordered) || 0) * (parseInt(item.pack_qty) || 1),
+          qty: parseInt(item.qty_ordered) || 0,
           price: Math.round((parseFloat(item.unit_price) || 0) * 100) / 100,
+          pack_qty: parseInt(item.pack_qty) || 1,
           name: item.product_name,
           supplier_sku: item.supplier_sku || null
         };
