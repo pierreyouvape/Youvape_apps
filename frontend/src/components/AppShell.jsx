@@ -94,7 +94,7 @@ export function useDragSort(order, onReorder) {
 }
 
 /* ─── SIDEBAR ──────────────────────────────────────────────── */
-function Sidebar({ user, orderedApps, accessibleKeys, draggingKey, overKey, onPointerDown, onPointerEnter, onPointerUp, onLogout, navigate, currentPath, appMenu, collapsed, onToggleCollapse }) {
+function Sidebar({ user, orderedApps, accessibleKeys, draggingKey, overKey, onPointerDown, onPointerEnter, onPointerUp, onLogout, navigate, currentPath, appMenu, collapsed, onToggleCollapse, mobile = false }) {
   const initial = user?.email?.[0]?.toUpperCase() ?? '?';
 
   return (
@@ -232,11 +232,18 @@ function Sidebar({ user, orderedApps, accessibleKeys, draggingKey, overKey, onPo
         </div>
       )}
 
-      {/* Spacer */}
-      <div style={{ flex: 1, minHeight: 0 }} />
+      {/* Spacer — pousse la liste d'apps vers le bas sur desktop. Sur mobile, la
+          liste prend l'espace dispo (flex:1) et défile, donc pas de spacer. */}
+      {!mobile && <div style={{ flex: 1, minHeight: 0 }} />}
 
-      {/* Liste des apps */}
-      <div style={{ overflowY: 'auto', padding: collapsed ? '14px 0' : '14px 12px', maxHeight: '55vh' }}>
+      {/* Liste des apps — sur mobile : flex:1 + scroll tactile pour atteindre
+          toutes les apps. Sur desktop : maxHeight 55vh comme avant. */}
+      <div style={{
+        overflowY: 'auto',
+        WebkitOverflowScrolling: 'touch',
+        padding: collapsed ? '14px 0' : '14px 12px',
+        ...(mobile ? { flex: 1, minHeight: 0 } : { maxHeight: '55vh' }),
+      }}>
         {!collapsed && (
           <div style={{
             fontSize: 10,
@@ -261,9 +268,13 @@ function Sidebar({ user, orderedApps, accessibleKeys, draggingKey, overKey, onPo
               href={path}
               draggable={false}
               onDragStart={e => e.preventDefault()}
-              onPointerDown={e => onPointerDown(e, key)}
-              onPointerEnter={() => onPointerEnter(key)}
-              onPointerUp={e => onPointerUp(e, key)}
+              // Drag-sort par pointeur : desktop seulement. Sur mobile on n'attache
+              // pas ces handlers pour laisser le défilement tactile fonctionner.
+              {...(mobile ? {} : {
+                onPointerDown: e => onPointerDown(e, key),
+                onPointerEnter: () => onPointerEnter(key),
+                onPointerUp: e => onPointerUp(e, key),
+              })}
               onClick={e => {
                 if (draggingKey) { e.preventDefault(); return; }
                 if (e.metaKey || e.ctrlKey || e.shiftKey) {
@@ -287,9 +298,10 @@ function Sidebar({ user, orderedApps, accessibleKeys, draggingKey, overKey, onPo
                 color: isActive ? C.blanc : 'rgba(255,255,255,0.72)',
                 fontSize: 13.5,
                 fontWeight: isActive ? 700 : 500,
-                cursor: isDrag ? 'grabbing' : 'grab',
+                cursor: mobile ? 'pointer' : (isDrag ? 'grabbing' : 'grab'),
                 userSelect: 'none',
-                touchAction: 'none',
+                // touchAction 'none' bloque le scroll tactile → uniquement desktop (drag)
+                touchAction: mobile ? 'auto' : 'none',
                 textDecoration: 'none',
               }}
             >
@@ -564,7 +576,7 @@ export default function AppShell({ appMenu, currentPath, children }) {
               </svg>
             </button>
             <Drawer open={navOpen} onClose={() => setNavOpen(false)} side="left" width={260} zIndex={2000}>
-              <Sidebar {...sidebarProps} collapsed={false} onToggleCollapse={() => setNavOpen(false)} />
+              <Sidebar {...sidebarProps} collapsed={false} mobile onToggleCollapse={() => setNavOpen(false)} />
             </Drawer>
             {children}
           </>
