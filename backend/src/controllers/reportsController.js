@@ -1,4 +1,5 @@
 const pool = require('../config/database');
+const { computeDashboard } = require('./financierController');
 
 /**
  * Rapport Chiffre d'affaires (Revenue)
@@ -19,7 +20,7 @@ exports.getRevenueReport = async (req, res) => {
       params.push(statuses);
       paramIndex++;
     } else {
-      conditions.push(`o.post_status IN ('wc-completed', 'wc-processing', 'wc-delivered', 'wc-awaiting-delivery')`);
+      conditions.push(`o.post_status IN ('wc-completed', 'wc-processing', 'wc-delivered', 'wc-awaiting-delivery', 'wc-shipped', 'wc-being-delivered')`);
     }
 
     // Période
@@ -36,88 +37,11 @@ exports.getRevenueReport = async (req, res) => {
 
     const whereClause = conditions.length > 0 ? 'WHERE ' + conditions.join(' AND ') : '';
 
-    // 1. KPIs globaux de la période
-    const kpisQuery = `
-      WITH filtered_orders AS (
-        SELECT DISTINCT o.wp_order_id, o.order_total, o.order_tax, o.order_shipping, o.cart_discount
-        FROM orders o
-        ${whereClause}
-      )
-      SELECT
-        COUNT(fo.wp_order_id)::int as orders_count,
-        COALESCE(SUM(fo.order_total), 0)::numeric as gross_sales,
-        COALESCE(SUM(fo.order_tax), 0)::numeric as taxes,
-        COALESCE(SUM(fo.order_shipping), 0)::numeric as shipping,
-        COALESCE(SUM(fo.cart_discount), 0)::numeric as discounts,
-        0::numeric as refunds,
-        0::numeric as fees
-      FROM filtered_orders fo
-    `;
-    const kpisResult = await pool.query(kpisQuery, params);
-    const kpis = kpisResult.rows[0];
-
-    // 1b. Remboursements PARTIELS (à déduire du CA - commandes non-refunded)
-    let partialRefundsConditions = [
-      `o.post_status NOT IN ('wc-refunded', 'wc-cancelled', 'wc-failed')`
-    ];
-    let partialRefundsParams = [];
-    let partialRefundsParamIndex = 1;
-
-    if (dateFrom) {
-      partialRefundsConditions.push(`(r.refund_date AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris') >= $${partialRefundsParamIndex}`);
-      partialRefundsParams.push(dateFrom);
-      partialRefundsParamIndex++;
-    }
-    if (dateTo) {
-      partialRefundsConditions.push(`(r.refund_date AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris') <= $${partialRefundsParamIndex}`);
-      partialRefundsParams.push(dateTo + ' 23:59:59');
-      partialRefundsParamIndex++;
-    }
-
-    const partialRefundsQuery = `
-      SELECT COALESCE(SUM(r.refund_amount), 0)::numeric as total_refunds
-      FROM refunds r
-      JOIN orders o ON r.wp_order_id = o.wp_order_id
-      WHERE ${partialRefundsConditions.join(' AND ')}
-    `;
-    const partialRefundsResult = await pool.query(partialRefundsQuery, partialRefundsParams);
-    const partialRefunds = parseFloat(partialRefundsResult.rows[0].total_refunds) || 0;
-
-    // 1c. Remboursements de la période (pour le KPI et la déduction du CA)
-    // On exclut les commandes annulées/échouées : un remboursement sur une commande
-    // qui n'a jamais compté comme vente ne doit pas réduire le CA (aligné sur Metorik).
-    let allRefundsConditions = [
-      `o.post_status NOT IN ('wc-cancelled', 'wc-failed', 'wc-checkout-draft', 'wc-trash', 'wc-pending', 'wc-auto-draft')`
-    ];
-    let allRefundsParams = [];
-    let allRefundsParamIndex = 1;
-
-    if (dateFrom) {
-      allRefundsConditions.push(`(r.refund_date AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris') >= $${allRefundsParamIndex}`);
-      allRefundsParams.push(dateFrom);
-      allRefundsParamIndex++;
-    }
-    if (dateTo) {
-      allRefundsConditions.push(`(r.refund_date AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris') <= $${allRefundsParamIndex}`);
-      allRefundsParams.push(dateTo + ' 23:59:59');
-      allRefundsParamIndex++;
-    }
-
-    const allRefundsWhereClause = 'WHERE ' + allRefundsConditions.join(' AND ');
-    const allRefundsQuery = `
-      SELECT COALESCE(SUM(r.refund_amount), 0)::numeric as total_refunds
-      FROM refunds r
-      JOIN orders o ON r.wp_order_id = o.wp_order_id
-      ${allRefundsWhereClause}
-    `;
-    const allRefundsResult = await pool.query(allRefundsQuery, allRefundsParams);
-    const totalRefunds = parseFloat(allRefundsResult.rows[0].total_refunds) || 0;
-
-    // Calculer le CA
-    const grossSales = parseFloat(kpis.gross_sales) || 0;
-    const taxes = parseFloat(kpis.taxes) || 0;
-    const shipping = parseFloat(kpis.shipping) || 0;
-    const fees = parseFloat(kpis.fees) || 0;
+    // 1. KPIs : source de vérité unique = computeDashboard (calculs strictement identiques
+    // à /financier : 6 statuts payés, TVA réelle line_item+tax, remboursements filtrés par
+    // statut puis TVA ajustée proportionnellement, le tout en heure de Paris).
+    // Le breakdown ci-dessous ne sert qu'au graphe/tableau journalier (CA brut par jour).
+    const { kpis: dashKpis } = await computeDashboard({ dateFrom, dateTo });
 
     // 2. Breakdown jour par jour
     const breakdownQuery = `
@@ -161,23 +85,17 @@ exports.getRevenueReport = async (req, res) => {
       };
     });
 
-    // CA HT net = CA TTC brut - TVA - remboursements (méthode Metorik)
-    const caTTCNet = grossSales - totalRefunds;
-    const caHTNet = grossSales - taxes - totalRefunds;
-    // Panier moyen HT = CA HT net / Nb commandes
-    const avgOrderHT = kpis.orders_count > 0 ? caHTNet / kpis.orders_count : 0;
-
     res.json({
       success: true,
       data: {
         kpis: {
-          orders_count: kpis.orders_count,
-          ca_ttc: caTTCNet.toFixed(2),
-          ca_ht: caHTNet.toFixed(2),
-          taxes: taxes.toFixed(2),
-          shipping: shipping.toFixed(2),
-          refunds: totalRefunds.toFixed(2),
-          avg_order_ht: avgOrderHT.toFixed(2)
+          orders_count: dashKpis.orders_count,
+          ca_ttc: dashKpis.ca_ttc_net.toFixed(2),
+          ca_ht: dashKpis.ca_ht_net.toFixed(2),
+          taxes: dashKpis.tva.toFixed(2),
+          shipping: dashKpis.frais_port_client.toFixed(2),
+          refunds: dashKpis.remboursements_ttc.toFixed(2),
+          avg_order_ht: dashKpis.panier_moyen_ht.toFixed(2)
         },
         breakdown
       }
@@ -205,7 +123,7 @@ exports.getByCountryReport = async (req, res) => {
       params.push(statuses);
       paramIndex++;
     } else {
-      conditions.push(`o.post_status IN ('wc-completed', 'wc-processing', 'wc-delivered', 'wc-awaiting-delivery')`);
+      conditions.push(`o.post_status IN ('wc-completed', 'wc-processing', 'wc-delivered', 'wc-awaiting-delivery', 'wc-shipped', 'wc-being-delivered')`);
     }
 
     if (dateFrom) {
@@ -284,7 +202,7 @@ exports.getByTaxReport = async (req, res) => {
       params.push(statuses);
       paramIndex++;
     } else {
-      conditions.push(`o.post_status IN ('wc-completed', 'wc-processing', 'wc-delivered', 'wc-awaiting-delivery')`);
+      conditions.push(`o.post_status IN ('wc-completed', 'wc-processing', 'wc-delivered', 'wc-awaiting-delivery', 'wc-shipped', 'wc-being-delivered')`);
     }
 
     if (dateFrom) {
@@ -349,7 +267,7 @@ exports.getProfitReport = async (req, res) => {
   try {
     const { dateFrom, dateTo } = req.body;
 
-    let conditions = [`o.post_status IN ('wc-completed', 'wc-processing', 'wc-delivered', 'wc-awaiting-delivery')`];
+    let conditions = [`o.post_status IN ('wc-completed', 'wc-processing', 'wc-delivered', 'wc-awaiting-delivery', 'wc-shipped', 'wc-being-delivered')`];
     let params = [];
     let paramIndex = 1;
 
@@ -366,43 +284,13 @@ exports.getProfitReport = async (req, res) => {
 
     const whereClause = 'WHERE ' + conditions.join(' AND ');
 
-    // KPIs globaux avec coûts
-    // TVA réelle via order_items (order_shipping_tax toujours NULL)
-    const kpisQuery = `
-      WITH tva_reelle AS (
-        SELECT oi.wp_order_id,
-          SUM(CASE WHEN oi.order_item_type = 'line_item' THEN oi.line_tax ELSE 0 END)
-          + SUM(CASE WHEN oi.order_item_type = 'tax'      THEN oi.line_tax ELSE 0 END) AS tva
-        FROM order_items oi
-        WHERE oi.wp_order_id IN (SELECT wp_order_id FROM orders o ${whereClause})
-        GROUP BY oi.wp_order_id
-      )
-      SELECT
-        COUNT(DISTINCT o.wp_order_id)::int as orders_count,
-        COALESCE(SUM(o.order_total), 0)::numeric as gross_sales,
-        COALESCE(SUM(t.tva), 0)::numeric as taxes,
-        COALESCE(SUM(o.order_shipping), 0)::numeric as shipping_charged,
-        COALESCE(SUM(o.shipping_cost_calculated), 0)::numeric as shipping_cost,
-        COALESCE(SUM(o.order_total_cost), 0)::numeric as core_cost
-      FROM orders o
-      LEFT JOIN tva_reelle t ON t.wp_order_id = o.wp_order_id
-      ${whereClause}
-    `;
-    const kpisResult = await pool.query(kpisQuery, params);
-    const kpis = kpisResult.rows[0];
+    // KPIs (CA HT net, coûts, profit, marge) : source de vérité unique = computeDashboard,
+    // strictement identique à /financier (6 statuts, TVA line_item+tax, remboursements
+    // filtrés + TVA ajustée proportionnellement, frais de port/paiement calculés, heure de
+    // Paris). Les requêtes journalières ci-dessous ne servent qu'au tableau/graphe par jour.
+    const { kpis: dash } = await computeDashboard({ dateFrom, dateTo });
 
-    // Calculer les coûts produits (PMP FIFO)
-    const productCostQuery = `
-      SELECT COALESCE(SUM(oi.qty * COALESCE(p.computed_cost, p.wc_cog_cost, 0)), 0)::numeric as product_cost
-      FROM order_items oi
-      JOIN orders o ON oi.wp_order_id = o.wp_order_id
-      LEFT JOIN products p ON p.wp_product_id = oi.product_id
-      ${whereClause}
-    `;
-    const productCostResult = await pool.query(productCostQuery, params);
-    const productCost = parseFloat(productCostResult.rows[0]?.product_cost) || parseFloat(kpis.core_cost) || 0;
-
-    // Remboursements sur la période
+    // Remboursements sur la période (pour le breakdown journalier uniquement)
     let refundsParams = [];
     let refundsConditions = [];
     let refundsParamIndex = 1;
@@ -419,11 +307,8 @@ exports.getProfitReport = async (req, res) => {
     }
 
     const refundsWhereClause = refundsConditions.length > 0 ? 'WHERE ' + refundsConditions.join(' AND ') : '';
-    const refundsQuery = `SELECT COALESCE(SUM(refund_amount), 0)::numeric as total FROM refunds r ${refundsWhereClause}`;
-    const refundsResult = await pool.query(refundsQuery, refundsParams);
-    const refunds = parseFloat(refundsResult.rows[0].total) || 0;
 
-    // Récupérer les taux de frais depuis la table payment_methods
+    // Récupérer les taux de frais depuis la table payment_methods (breakdown journalier)
     const paymentMethodsResult = await pool.query(
       'SELECT wc_payment_method, fixed_fee, percent_fee FROM payment_methods WHERE is_active = true'
     );
@@ -436,49 +321,6 @@ exports.getProfitReport = async (req, res) => {
         };
       }
     });
-
-    // Calculer les transaction costs depuis la base
-    const transactionCostQuery = `
-      SELECT
-        COALESCE(payment_method_title, 'default') as payment_method,
-        COUNT(DISTINCT wp_order_id)::int as orders_count,
-        COALESCE(SUM(order_total), 0)::numeric as total_amount
-      FROM orders o
-      ${whereClause}
-      GROUP BY payment_method_title
-    `;
-    const transactionCostResult = await pool.query(transactionCostQuery, params);
-    let transactionCost = 0;
-    transactionCostResult.rows.forEach(row => {
-      const amount = parseFloat(row.total_amount) || 0;
-      const ordersCount = row.orders_count || 0;
-      const pm = paymentMethodsMap[row.payment_method];
-      if (pm) {
-        // Frais = (montant * pourcentage/100) + (frais fixe * nombre de commandes)
-        transactionCost += (amount * pm.percent_fee / 100) + (pm.fixed_fee * ordersCount);
-      } else {
-        // Fallback: 2% par défaut si méthode non configurée
-        transactionCost += amount * 0.02;
-      }
-    });
-
-    // Calculs
-    const grossSales = parseFloat(kpis.gross_sales) || 0;
-    const taxes = parseFloat(kpis.taxes) || 0;
-    const shippingCharged = parseFloat(kpis.shipping_charged) || 0;
-    const shippingCost = parseFloat(kpis.shipping_cost) || 0;
-    const coreCost = productCost;
-
-    // Net Revenue = Gross Sales - Taxes - Refunds
-    const netRevenue = grossSales - taxes - refunds;
-    // Total Cost = Core Cost + Shipping Cost + Transaction Cost
-    const totalCost = coreCost + shippingCost + transactionCost;
-    // Profit = Net Revenue - Total Cost
-    const profit = netRevenue - totalCost;
-    // Margin = Profit / Net Revenue * 100
-    const margin = netRevenue > 0 ? (profit / netRevenue) * 100 : 0;
-    // Avg Profit per order
-    const avgProfit = kpis.orders_count > 0 ? profit / kpis.orders_count : 0;
 
     // Breakdown jour par jour
     const breakdownQuery = `
@@ -580,18 +422,18 @@ exports.getProfitReport = async (req, res) => {
       success: true,
       data: {
         kpis: {
-          orders_count: kpis.orders_count,
-          net_revenue: netRevenue.toFixed(2),
-          total_cost: totalCost.toFixed(2),
-          profit: profit.toFixed(2),
-          margin: margin.toFixed(2),
-          avg_profit: avgProfit.toFixed(2)
+          orders_count: dash.orders_count,
+          net_revenue: dash.ca_ht_net.toFixed(2),
+          total_cost: (dash.cout_produits + dash.frais_port_reel + dash.frais_paiement).toFixed(2),
+          profit: dash.profit_ht.toFixed(2),
+          margin: dash.marge_ht.toFixed(2),
+          avg_profit: (dash.orders_count > 0 ? dash.profit_ht / dash.orders_count : 0).toFixed(2)
         },
         cost_breakdown: {
-          net_revenue: netRevenue.toFixed(2),
-          shipping_cost: shippingCost.toFixed(2),
-          transaction_cost: transactionCost.toFixed(2),
-          core_cost: coreCost.toFixed(2)
+          net_revenue: dash.ca_ht_net.toFixed(2),
+          shipping_cost: dash.frais_port_reel.toFixed(2),
+          transaction_cost: dash.frais_paiement.toFixed(2),
+          core_cost: dash.cout_produits.toFixed(2)
         },
         breakdown
       }
@@ -610,7 +452,7 @@ exports.getTransactionCosts = async (req, res) => {
   try {
     const { dateFrom, dateTo } = req.body;
 
-    let conditions = [`o.post_status IN ('wc-completed', 'wc-processing', 'wc-delivered', 'wc-awaiting-delivery')`];
+    let conditions = [`o.post_status IN ('wc-completed', 'wc-processing', 'wc-delivered', 'wc-awaiting-delivery', 'wc-shipped', 'wc-being-delivered')`];
     let params = [];
     let paramIndex = 1;
 
@@ -699,7 +541,7 @@ exports.getOrdersReport = async (req, res) => {
     let paramIndex = 1;
 
     // Mêmes filtres que le rapport CA
-    conditions.push(`o.post_status IN ('wc-completed', 'wc-processing', 'wc-delivered', 'wc-awaiting-delivery')`);
+    conditions.push(`o.post_status IN ('wc-completed', 'wc-processing', 'wc-delivered', 'wc-awaiting-delivery', 'wc-shipped', 'wc-being-delivered')`);
 
     if (dateFrom) {
       conditions.push(`((o.post_date AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris')) >= $${paramIndex}`);
@@ -742,9 +584,12 @@ exports.getOrdersReport = async (req, res) => {
     const avgOrderGross = kpis.orders_count > 0 ? grossSales / kpis.orders_count : 0;
     const avgItems = kpis.orders_count > 0 ? kpis.total_items / kpis.orders_count : 0;
 
-    // 2. Remboursements sur la période
+    // 2. Remboursements sur la période — même filtre que /financier : on exclut les
+    // remboursements sur commandes annulées/échouées (jamais comptées comme ventes).
     let refundsParams = [];
-    let refundsConditions = [];
+    let refundsConditions = [
+      `o.post_status NOT IN ('wc-cancelled', 'wc-failed', 'wc-checkout-draft', 'wc-trash', 'wc-pending', 'wc-auto-draft')`
+    ];
     let refundsParamIndex = 1;
     if (dateFrom) {
       refundsConditions.push(`(r.refund_date AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris') >= $${refundsParamIndex}`);
@@ -756,8 +601,8 @@ exports.getOrdersReport = async (req, res) => {
       refundsParams.push(dateTo + ' 23:59:59');
       refundsParamIndex++;
     }
-    const refundsWhereClause = refundsConditions.length > 0 ? 'WHERE ' + refundsConditions.join(' AND ') : '';
-    const refundsQuery = `SELECT COALESCE(SUM(refund_amount), 0)::numeric as total FROM refunds r ${refundsWhereClause}`;
+    const refundsWhereClause = 'WHERE ' + refundsConditions.join(' AND ');
+    const refundsQuery = `SELECT COALESCE(SUM(r.refund_amount), 0)::numeric as total FROM refunds r JOIN orders o ON r.wp_order_id = o.wp_order_id ${refundsWhereClause}`;
     const refundsResult = await pool.query(refundsQuery, refundsParams);
     const refunds = parseFloat(refundsResult.rows[0].total) || 0;
 
@@ -1210,7 +1055,7 @@ exports.getRefundsReport = async (req, res) => {
     const refundWhereClause = refundConditions.length > 0 ? 'WHERE ' + refundConditions.join(' AND ') : '';
 
     // Conditions pour les commandes (même période, pour calculer les taux)
-    let orderConditions = [`o.post_status IN ('wc-completed', 'wc-processing', 'wc-delivered', 'wc-awaiting-delivery')`];
+    let orderConditions = [`o.post_status IN ('wc-completed', 'wc-processing', 'wc-delivered', 'wc-awaiting-delivery', 'wc-shipped', 'wc-being-delivered')`];
     let orderParams = [];
     let orderParamIndex = 1;
 
@@ -1444,7 +1289,7 @@ exports.getShippingCosts = async (req, res) => {
   try {
     const { dateFrom, dateTo } = req.body;
 
-    let conditions = [`o.post_status IN ('wc-completed', 'wc-processing', 'wc-delivered', 'wc-awaiting-delivery')`];
+    let conditions = [`o.post_status IN ('wc-completed', 'wc-processing', 'wc-delivered', 'wc-awaiting-delivery', 'wc-shipped', 'wc-being-delivered')`];
     let params = [];
     let paramIndex = 1;
 
@@ -1507,7 +1352,7 @@ exports.getByCountryReport = async (req, res) => {
     const { dateFrom, dateTo, country } = req.body;
 
     // Conditions de base pour les commandes valides
-    let baseConditions = [`o.post_status IN ('wc-completed', 'wc-processing', 'wc-delivered', 'wc-awaiting-delivery')`];
+    let baseConditions = [`o.post_status IN ('wc-completed', 'wc-processing', 'wc-delivered', 'wc-awaiting-delivery', 'wc-shipped', 'wc-being-delivered')`];
     let params = [];
     let paramIndex = 1;
 
