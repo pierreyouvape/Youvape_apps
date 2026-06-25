@@ -328,8 +328,11 @@ exports.computeByCountry = computeByCountry;
 exports.getDashboard = async (req, res) => {
   try {
     const { dateFrom, dateTo, granularity } = req.body;
-    const result = await computeDashboard({ dateFrom, dateTo, granularity });
-    res.json({ success: true, ...result });
+    const [result, byCountry] = await Promise.all([
+      computeDashboard({ dateFrom, dateTo, granularity }),
+      computeByCountry({ dateFrom, dateTo }),
+    ]);
+    res.json({ success: true, ...result, byCountry });
   } catch (error) {
     console.error('Error in financier dashboard:', error);
     res.status(500).json({ success: false, error: error.message });

@@ -4,6 +4,7 @@ import axios from 'axios';
 import AppShell from '../components/AppShell';
 import { Stats as RapportIcon } from '../components/AppIcons';
 import { LinkBox } from '../utils/navHelpers';
+import { getCountryLabel } from '../utils/countries';
 
 const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:3000/api/auth').replace('/auth', '');
 
@@ -283,6 +284,56 @@ function CostBar({ label, value, total, color }) {
 }
 
 /* ─── SIDEBAR ────────────────────────────────────────────── */
+/* ─── TABLE TOTAL PAR PAYS ───────────────────────────────── */
+function CountryTable({ rows }) {
+  if (!rows || rows.length === 0) {
+    return <div style={{ fontSize: 13, color: C.grisM, padding: '8px 0' }}>Aucune commande sur la période.</div>;
+  }
+  const totalTtc = rows.reduce((s, r) => s + (r.ca_ttc_brut || 0), 0);
+  const totalHt = rows.reduce((s, r) => s + (r.ca_ht || 0), 0);
+  const totalOrders = rows.reduce((s, r) => s + (r.orders_count || 0), 0);
+
+  const th = { fontSize: 11, fontWeight: 700, color: C.grisM, textTransform: 'uppercase', letterSpacing: '0.04em', padding: '0 0 8px', borderBottom: `2px solid ${C.grisCL}` };
+  const td = { fontSize: 13, color: C.grisF, fontWeight: 600, padding: '9px 0', borderBottom: `1px solid ${C.grisTL}` };
+
+  return (
+    <div style={{ overflowX: 'auto' }}>
+      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+        <thead>
+          <tr>
+            <th style={{ ...th, textAlign: 'left' }}>Pays</th>
+            <th style={{ ...th, textAlign: 'right' }}>Commandes</th>
+            <th style={{ ...th, textAlign: 'right' }}>CA TTC</th>
+            <th style={{ ...th, textAlign: 'right' }}>CA HT</th>
+            <th style={{ ...th, textAlign: 'right' }}>%&nbsp;CA&nbsp;HT</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => {
+            const pct = totalHt > 0 ? (r.ca_ht / totalHt * 100) : 0;
+            return (
+              <tr key={r.country_code}>
+                <td style={{ ...td, textAlign: 'left' }}>{r.country_code === '??' ? '🏳️ Inconnu' : getCountryLabel(r.country_code)}</td>
+                <td style={{ ...td, textAlign: 'right' }}>{fmt(r.orders_count)}</td>
+                <td style={{ ...td, textAlign: 'right' }}>{fmtEur(r.ca_ttc_brut)}</td>
+                <td style={{ ...td, textAlign: 'right', fontWeight: 700, color: C.saphir }}>{fmtEur(r.ca_ht)}</td>
+                <td style={{ ...td, textAlign: 'right', color: C.grisM }}>{pct.toFixed(1)}%</td>
+              </tr>
+            );
+          })}
+          <tr>
+            <td style={{ ...td, borderBottom: 'none', fontWeight: 800, color: C.grisTF, textAlign: 'left' }}>Total</td>
+            <td style={{ ...td, borderBottom: 'none', fontWeight: 800, color: C.grisTF, textAlign: 'right' }}>{fmt(totalOrders)}</td>
+            <td style={{ ...td, borderBottom: 'none', fontWeight: 800, color: C.grisTF, textAlign: 'right' }}>{fmtEur(totalTtc)}</td>
+            <td style={{ ...td, borderBottom: 'none', fontWeight: 800, color: C.saphir, textAlign: 'right' }}>{fmtEur(totalHt)}</td>
+            <td style={{ ...td, borderBottom: 'none', textAlign: 'right' }}></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function Sidebar({ open }) {
   return (
     <aside style={{
@@ -692,6 +743,15 @@ export default function FinancierApp() {
                     </span>
                   </div>
                 </div>
+              </div>
+
+              {/* Total par pays */}
+              <div style={{ background: C.blanc, borderRadius: 14, padding: '20px 24px', boxShadow: '0 1px 3px rgba(0,0,0,0.07), 0 0 0 1px rgba(0,0,0,0.05)', marginTop: 14 }}>
+                <div style={{ marginBottom: 18 }}>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: C.grisTF }}>Total par pays</div>
+                  <div style={{ fontSize: 12, color: C.grisM, marginTop: 2 }}>CA par pays de facturation, du plus élevé au plus faible</div>
+                </div>
+                <CountryTable rows={data.byCountry} />
               </div>
             </>
           )}
