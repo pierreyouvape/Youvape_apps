@@ -496,14 +496,14 @@ const runReportEmail = async (freq) => {
 const setupReportEmailCron = () => {
   [reportEmailDailyJob, reportEmailWeeklyJob, reportEmailMonthlyJob].forEach((j) => { if (j) j.stop(); });
 
-  // Journalier : tous les jours à 8h (couvre la journée d'hier)
-  reportEmailDailyJob = cron.schedule('0 8 * * *', () => runReportEmail('daily'), { timezone: 'Europe/Paris' });
-  // Hebdomadaire : lundi 8h (couvre la semaine écoulée)
-  reportEmailWeeklyJob = cron.schedule('0 8 * * 1', () => runReportEmail('weekly'), { timezone: 'Europe/Paris' });
-  // Mensuel : 1er du mois 8h (couvre le mois précédent)
-  reportEmailMonthlyJob = cron.schedule('0 8 1 * *', () => runReportEmail('monthly'), { timezone: 'Europe/Paris' });
+  // Journalier : tous les jours à 6h (couvre la journée d'hier)
+  reportEmailDailyJob = cron.schedule('0 6 * * *', () => runReportEmail('daily'), { timezone: 'Europe/Paris' });
+  // Hebdomadaire : lundi 6h (couvre la semaine écoulée)
+  reportEmailWeeklyJob = cron.schedule('0 6 * * 1', () => runReportEmail('weekly'), { timezone: 'Europe/Paris' });
+  // Mensuel : 1er du mois 6h (couvre le mois précédent)
+  reportEmailMonthlyJob = cron.schedule('0 6 1 * *', () => runReportEmail('monthly'), { timezone: 'Europe/Paris' });
 
-  console.log('Cron rapports email configure: journalier 8h, hebdo lundi 8h, mensuel 1er 8h (Europe/Paris)');
+  console.log('Cron rapports email configure: journalier 6h, hebdo lundi 6h, mensuel 1er 6h (Europe/Paris)');
 };
 
 module.exports = {

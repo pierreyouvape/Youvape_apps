@@ -1,6 +1,21 @@
 const reportEmailModel = require('../models/reportEmailModel');
 const { sendMail } = require('./alertService');
-const { computeDashboard } = require('../controllers/financierController');
+const { computeDashboard, computeByCountry } = require('../controllers/financierController');
+
+// Code ISO pays → nom FR (mêmes libellés que l'app Stats/Commandes).
+const COUNTRY_NAMES = {
+  FR: 'France', BE: 'Belgique', CH: 'Suisse', DE: 'Allemagne', ES: 'Espagne',
+  IT: 'Italie', NL: 'Pays-Bas', PT: 'Portugal', GB: 'Royaume-Uni', LU: 'Luxembourg',
+  AT: 'Autriche', IE: 'Irlande', PL: 'Pologne', CZ: 'Tchéquie', DK: 'Danemark',
+  SE: 'Suède', NO: 'Norvège', FI: 'Finlande', GR: 'Grèce', HU: 'Hongrie',
+  RO: 'Roumanie', BG: 'Bulgarie', HR: 'Croatie', SK: 'Slovaquie', SI: 'Slovénie',
+  EE: 'Estonie', LV: 'Lettonie', LT: 'Lituanie', MT: 'Malte', CY: 'Chypre',
+  US: 'États-Unis', CA: 'Canada', AU: 'Australie', JP: 'Japon', CN: 'Chine',
+  GP: 'Guadeloupe', MQ: 'Martinique', GF: 'Guyane', RE: 'Réunion', YT: 'Mayotte',
+  NC: 'Nouvelle-Calédonie', PF: 'Polynésie', MC: 'Monaco', MA: 'Maroc', TN: 'Tunisie',
+  DZ: 'Algérie', SN: 'Sénégal', CI: "Côte d'Ivoire",
+};
+const countryName = (code) => COUNTRY_NAMES[code] || (code === '??' ? 'Inconnu' : code);
 
 // ─── Libellés des métriques (app Rapport / Financier) ───────────────────────
 // Si une nouvelle métrique apparaît dans le dashboard sans entrée ici, elle est
@@ -55,7 +70,7 @@ const fmt = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0
 const frLong = (d) => d.toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' });
 const frMonth = (d) => d.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
 
-// Période révolue, calculée "maintenant" (cron à 8h → couvre la période close).
+// Période révolue, calculée "maintenant" (cron à 6h → couvre la période close).
 function getPeriod(freq, now = new Date()) {
   if (freq === 'daily') {
     const y = new Date(now); y.setDate(y.getDate() - 1);
@@ -178,13 +193,56 @@ function recapHtml(k) {
     </table>`;
 }
 
-function buildHtml(freq, period, dashboard) {
+// Bloc "Total par pays" : CA TTC + CA HT + nb commandes par pays (CA décroissant)
+function countryHtml(rows) {
+  if (!rows || rows.length === 0) return '';
+
+  const th = (label, align = 'left') => `<td align="${align}" style="padding:8px 0;font-size:11.5px;font-weight:800;color:${COL.grisM};text-transform:uppercase;letter-spacing:0.04em;font-family:${FONT};border-bottom:2px solid #e3e7ec;${align === 'right' ? 'white-space:nowrap;' : ''}">${label}</td>`;
+  const td = (value, { align = 'left', bold = false, color = COL.grisF } = {}) => `<td align="${align}" style="padding:9px 0;font-size:14px;color:${color};font-weight:${bold ? 800 : 600};font-family:${FONT};border-bottom:1px solid #eef1f4;${align === 'right' ? 'white-space:nowrap;' : ''}">${value}</td>`;
+
+  const totalTtc = rows.reduce((s, r) => s + (r.ca_ttc_brut || 0), 0);
+  const totalHt = rows.reduce((s, r) => s + (r.ca_ht || 0), 0);
+  const totalOrders = rows.reduce((s, r) => s + (r.orders_count || 0), 0);
+
+  const body = rows.map((r) => `
+    <tr>
+      ${td(countryName(r.country_code))}
+      ${td(num.format(r.orders_count), { align: 'right' })}
+      ${td(eur.format(r.ca_ttc_brut), { align: 'right' })}
+      ${td(eur.format(r.ca_ht), { align: 'right', bold: true, color: COL.saphir })}
+    </tr>`).join('');
+
+  return `
+    <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;background:${COL.blanc};border:1px solid #d9dee4;border-radius:12px;margin-top:18px;">
+      <tr><td style="padding:20px 24px;">
+        <div style="font-size:16px;font-weight:800;color:${COL.grisTF};font-family:${FONT};margin-bottom:4px;">Total par pays</div>
+        <div style="font-size:13px;color:${COL.grisM};font-family:${FONT};margin-bottom:12px;">CA par pays de facturation, du plus élevé au plus faible</div>
+        <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;">
+          <tr>
+            ${th('Pays')}
+            ${th('Cmd.', 'right')}
+            ${th('CA TTC', 'right')}
+            ${th('CA HT', 'right')}
+          </tr>
+          ${body}
+          <tr>
+            ${td('Total', { bold: true })}
+            ${td(num.format(totalOrders), { align: 'right', bold: true })}
+            ${td(eur.format(totalTtc), { align: 'right', bold: true })}
+            ${td(eur.format(totalHt), { align: 'right', bold: true, color: COL.saphir })}
+          </tr>
+        </table>
+      </td></tr>
+    </table>`;
+}
+
+function buildHtml(freq, period, dashboard, countries) {
   const k = dashboard?.kpis || {};
   const hasData = (k.orders_count || 0) > 0 || (k.ca_ttc_brut || 0) > 0;
   const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
 
   const content = hasData
-    ? `${heroCardsHtml(k)}${secondaryCardsHtml(k)}${recapHtml(k)}`
+    ? `${heroCardsHtml(k)}${secondaryCardsHtml(k)}${recapHtml(k)}${countryHtml(countries)}`
     : `<table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;background:${COL.blanc};border:1px solid #e6eaee;border-radius:12px;"><tr><td style="padding:32px;text-align:center;color:${COL.grisM};font-family:${FONT};font-size:14px;">Aucune commande sur cette période.</td></tr></table>`;
 
   return `
@@ -222,7 +280,7 @@ function buildHtml(freq, period, dashboard) {
 }
 
 // Fallback texte brut (clients mail sans HTML)
-function buildText(freq, period, dashboard) {
+function buildText(freq, period, dashboard, countries) {
   const kpis = dashboard?.kpis || {};
   const lines = [
     `${FREQ_TITLE[freq]} — YouVape`,
@@ -232,6 +290,12 @@ function buildText(freq, period, dashboard) {
   if ((kpis.orders_count || 0) > 0 || (kpis.ca_ttc_brut || 0) > 0) {
     for (const k of orderedKeys(kpis)) {
       lines.push(`${KPI_LABELS[k] || humanizeKey(k)} : ${formatKpi(k, kpis[k])}`);
+    }
+    if (countries && countries.length > 0) {
+      lines.push('', 'Total par pays (CA TTC / CA HT / commandes) :');
+      for (const c of countries) {
+        lines.push(`  ${countryName(c.country_code)} : ${eur.format(c.ca_ttc_brut)} / ${eur.format(c.ca_ht)} / ${num.format(c.orders_count)}`);
+      }
     }
   } else {
     lines.push('Aucune commande sur cette période.');
@@ -243,13 +307,15 @@ function buildText(freq, period, dashboard) {
 async function renderReport(freq, now = new Date()) {
   const period = getPeriod(freq, now);
   let dashboard = null;
+  let countries = [];
   try {
     dashboard = await computeDashboard({ dateFrom: period.dateFrom, dateTo: period.dateTo });
+    countries = await computeByCountry({ dateFrom: period.dateFrom, dateTo: period.dateTo });
   } catch (e) {
     console.error(`[ReportEmail] échec calcul dashboard (${freq}):`, e.message);
   }
-  const html = buildHtml(freq, period, dashboard);
-  const text = buildText(freq, period, dashboard);
+  const html = buildHtml(freq, period, dashboard, countries);
+  const text = buildText(freq, period, dashboard, countries);
   const subject = `${FREQ_TITLE[freq]} — ${period.label}`;
   return { period, html, text, subject, dashboard };
 }

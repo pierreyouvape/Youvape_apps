@@ -287,6 +287,41 @@ async function computeDashboard({ dateFrom, dateTo, granularity } = {}) {
 exports.computeDashboard = computeDashboard;
 
 /**
+ * Total par pays (CA TTC brut + CA HT + nb commandes) pour une période.
+ * Mêmes filtres que computeDashboard : 6 statuts payés, post_date en heure de Paris.
+ * Regroupe sur billing_country, trié par CA décroissant.
+ */
+async function computeByCountry({ dateFrom, dateTo } = {}) {
+  const { conditions, params } = buildDateConditions(dateFrom, dateTo);
+  const where = 'WHERE ' + conditions.join(' AND ');
+
+  const result = await pool.query(`
+    SELECT
+      COALESCE(NULLIF(o.billing_country, ''), '??') AS country_code,
+      COUNT(o.wp_order_id)::int                      AS orders_count,
+      COALESCE(SUM(o.order_total), 0)::numeric        AS ca_ttc_brut,
+      COALESCE(SUM(o.order_tax), 0)::numeric          AS tva
+    FROM orders o
+    ${where}
+    GROUP BY COALESCE(NULLIF(o.billing_country, ''), '??')
+    ORDER BY ca_ttc_brut DESC
+  `, params);
+
+  return result.rows.map((r) => {
+    const ttc = parseFloat(r.ca_ttc_brut) || 0;
+    const tva = parseFloat(r.tva) || 0;
+    return {
+      country_code: r.country_code,
+      orders_count: r.orders_count,
+      ca_ttc_brut: round2(ttc),
+      ca_ht: round2(ttc - tva),
+    };
+  });
+}
+
+exports.computeByCountry = computeByCountry;
+
+/**
  * POST /api/financier/dashboard
  * Source de vérité unique pour tous les onglets.
  */

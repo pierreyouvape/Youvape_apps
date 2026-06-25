@@ -10,19 +10,19 @@ const FREQUENCIES = [
   {
     key: 'daily',
     label: 'Rapport journalier',
-    desc: 'Envoyé chaque matin à 8h. Couvre la journée de la veille.',
+    desc: 'Envoyé chaque matin à 6h. Couvre la journée de la veille.',
     icon: '📅',
   },
   {
     key: 'weekly',
     label: 'Rapport hebdomadaire',
-    desc: 'Envoyé chaque lundi à 8h. Couvre la semaine écoulée (lundi → dimanche).',
+    desc: 'Envoyé chaque lundi à 6h. Couvre la semaine écoulée (lundi → dimanche).',
     icon: '🗓️',
   },
   {
     key: 'monthly',
     label: 'Rapport mensuel',
-    desc: 'Envoyé le 1er de chaque mois à 8h. Couvre le mois précédent.',
+    desc: 'Envoyé le 1er de chaque mois à 6h. Couvre le mois précédent.',
     icon: '📆',
   },
 ];
