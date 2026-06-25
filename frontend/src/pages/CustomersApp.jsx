@@ -4,6 +4,7 @@ import axios from 'axios';
 import AppShell from '../components/AppShell';
 import { Customers as CustomersIcon } from '../components/AppIcons';
 import { getCountryFlag, getCountryName } from '../utils/countries';
+import { formatDate } from '../utils/dateUtils';
 
 const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:3000/api/auth').replace('/auth', '');
 
@@ -142,6 +143,8 @@ const ALL_COLUMNS = [
   { key: 'name', label: 'Nom Prénom' },
   { key: 'email', label: 'Email' },
   { key: 'orders', label: 'Commandes' },
+  { key: 'first_order', label: '1ère commande' },
+  { key: 'last_order', label: 'Dernière commande' },
   { key: 'spent', label: 'Total dépensé TTC' },
   { key: 'country', label: 'Pays' },
 ];
@@ -250,6 +253,8 @@ const CustomersApp = () => {
         case 'name': return `"${fullName(c).replace(/"/g, '""')}"`;
         case 'email': return c.email || '';
         case 'orders': return c.order_count || 0;
+        case 'first_order': return c.first_order_date ? formatDate(c.first_order_date, { time: false }) : '';
+        case 'last_order': return c.last_order_date ? formatDate(c.last_order_date, { time: false }) : '';
         case 'spent': return (parseFloat(c.total_spent) || 0).toFixed(2).replace('.', ',');
         case 'country': return getCountryName(c.country);
         default: return '';
@@ -390,6 +395,8 @@ const CustomersApp = () => {
                     {visibleCols.name && <Th label="Nom Prénom" sortKey="name" sort={sort} onSort={onSort} />}
                     {visibleCols.email && <Th label="Email" sortKey="email" sort={sort} onSort={onSort} />}
                     {visibleCols.orders && <Th label="Commandes" sortKey="orders" sort={sort} onSort={onSort} align="center" />}
+                    {visibleCols.first_order && <Th label="1ère commande" sortKey="first_order" sort={sort} onSort={onSort} align="center" />}
+                    {visibleCols.last_order && <Th label="Dernière commande" sortKey="last_order" sort={sort} onSort={onSort} align="center" />}
                     {visibleCols.spent && <Th label="Total dépensé TTC" sortKey="spent" sort={sort} onSort={onSort} align="right" />}
                     {visibleCols.country && <Th label="Pays" sortKey="country" sort={sort} onSort={onSort} />}
                   </tr>
@@ -438,6 +445,16 @@ const CustomersApp = () => {
                               padding: '3px 11px', borderRadius: 99, fontSize: 12, fontWeight: 700,
                               fontVariantNumeric: 'tabular-nums',
                             }}>{fmtInt(c.order_count)} commandes</span>
+                          </td>
+                        )}
+                        {visibleCols.first_order && (
+                          <td style={{ ...cellBase, textAlign: 'center', color: C.grisF, fontWeight: 600, whiteSpace: 'nowrap' }}>
+                            {c.first_order_date ? formatDate(c.first_order_date, { time: false }) : '—'}
+                          </td>
+                        )}
+                        {visibleCols.last_order && (
+                          <td style={{ ...cellBase, textAlign: 'center', color: C.grisF, fontWeight: 600, whiteSpace: 'nowrap' }}>
+                            {c.last_order_date ? formatDate(c.last_order_date, { time: false }) : '—'}
                           </td>
                         )}
                         {visibleCols.spent && (
