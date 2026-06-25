@@ -436,6 +436,71 @@ exports.filterOrders = async (req, res) => {
 };
 
 /**
+ * Récupère le détail des remboursements d'une commande (lignes produits, frais de
+ * port, frais) directement depuis l'API REST WooCommerce. Ces lignes ne sont pas
+ * stockées en BDD (la table refunds ne contient que les totaux).
+ * GET /api/orders/:id/refunds-detail
+ */
+exports.getRefundsDetail = async (req, res) => {
+  try {
+    const wpOrderId = parseInt(req.params.id);
+
+    const configResult = await pool.query(
+      'SELECT woocommerce_url, consumer_key, consumer_secret, htaccess_user, htaccess_password FROM rewards_config LIMIT 1'
+    );
+    if (!configResult.rows.length || !configResult.rows[0].consumer_key) {
+      // Pas d'API configurée : on renvoie vide, le front retombe sur les totaux BDD.
+      return res.json({ success: true, data: [] });
+    }
+    const { woocommerce_url, consumer_key, consumer_secret, htaccess_user, htaccess_password } = configResult.rows[0];
+    const urlResult = await pool.query("SELECT config_value FROM app_config WHERE config_key = 'wc_sync_wp_url'");
+    const baseUrl = (urlResult.rows[0]?.config_value || woocommerce_url).replace(/\/$/, '');
+
+    const headers = {};
+    if (htaccess_user && htaccess_password) {
+      headers['Authorization'] = `Basic ${Buffer.from(`${htaccess_user}:${htaccess_password}`).toString('base64')}`;
+    }
+
+    const wcResponse = await axios.get(`${baseUrl}/wp-json/wc/v3/orders/${wpOrderId}/refunds`, {
+      params: { consumer_key, consumer_secret },
+      headers,
+      httpsAgent,
+      timeout: 15000
+    });
+
+    const abs = (v) => Math.abs(parseFloat(v) || 0);
+    const data = (wcResponse.data || []).map((r) => ({
+      id: r.id,
+      date: r.date_created,
+      amount: abs(r.amount),
+      reason: r.reason || '',
+      line_items: (r.line_items || []).map((li) => ({
+        name: li.name,
+        sku: li.sku || null,
+        quantity: Math.abs(li.quantity || 0),
+        total: abs(li.total),
+        total_tax: abs(li.total_tax),
+      })),
+      shipping_lines: (r.shipping_lines || []).map((s) => ({
+        method_title: s.method_title || 'Frais de port',
+        total: abs(s.total),
+        total_tax: abs(s.total_tax),
+      })),
+      fee_lines: (r.fee_lines || []).map((f) => ({
+        name: f.name || 'Frais',
+        total: abs(f.total),
+        total_tax: abs(f.total_tax),
+      })),
+    }));
+
+    res.json({ success: true, data });
+  } catch (error) {
+    console.error('Error fetching refunds detail:', error.response?.status, error.message);
+    res.status(500).json({ success: false, error: error.response?.data?.message || error.message });
+  }
+};
+
+/**
  * Récupère les détails d'une commande pour l'affichage dépliable
  * GET /api/orders/:id/details
  */

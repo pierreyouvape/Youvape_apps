@@ -169,6 +169,7 @@ const OrderDetail = () => {
   const { token } = useContext(AuthContext);
 
   const [order, setOrder]       = useState(null);
+  const [refundsDetail, setRefundsDetail] = useState(null);
   const [reviews, setReviews]   = useState([]);
   const [loading, setLoading]   = useState(true);
   const [error, setError]       = useState('');
@@ -178,6 +179,19 @@ const OrderDetail = () => {
   useEffect(() => {
     if (id) { fetchOrder(); fetchReviews(); }
   }, [id]);
+
+  // Détail des remboursements (lignes produits/port) via l'API WC, seulement si la
+  // commande a au moins un remboursement.
+  useEffect(() => {
+    if (!order?.refunds?.length) { setRefundsDetail(null); return; }
+    let cancelled = false;
+    axios.get(`${API_URL}/orders/${id}/refunds-detail`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    })
+      .then(res => { if (!cancelled && res.data.success) setRefundsDetail(res.data.data); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [order?.refunds, id, token]);
 
   const fetchOrder = async () => {
     setLoading(true); setError('');
@@ -655,6 +669,66 @@ const OrderDetail = () => {
               </div>
             </div>
           </Card>
+
+          {/* ── Remboursements ── */}
+          {(order.refunds && order.refunds.length > 0) && (() => {
+            const localRefunds = order.refunds;
+            const totalRefunded = localRefunds.reduce((s, r) => s + (parseFloat(r.refund_amount) || 0), 0);
+            // Détail WC si chargé, sinon fallback sur le résumé local (total seul)
+            const list = (refundsDetail && refundsDetail.length)
+              ? refundsDetail
+              : localRefunds.map(r => ({
+                  id: r.wp_refund_id, date: r.refund_date,
+                  amount: parseFloat(r.refund_amount) || 0, reason: r.refund_reason || '',
+                  line_items: [], shipping_lines: [], fee_lines: [],
+                }));
+            return (
+              <Card style={{ marginBottom: 16 }}>
+                <CardTitle>Remboursements ({localRefunds.length}) · {fmt(totalRefunded)}</CardTitle>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                  {list.map((rf) => {
+                    const lines = [
+                      ...rf.line_items.map(li => ({ label: `${li.name}${li.quantity ? ` × ${li.quantity}` : ''}`, sub: li.sku, value: li.total + li.total_tax })),
+                      ...rf.shipping_lines.map(s => ({ label: `Frais de port — ${s.method_title}`, value: s.total + s.total_tax })),
+                      ...rf.fee_lines.map(f => ({ label: f.name, value: f.total + f.total_tax })),
+                    ];
+                    return (
+                      <div key={rf.id} style={{ background: C.grisTL, borderRadius: 10, padding: '14px 16px', border: `1px solid ${C.grisCL}` }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+                          <span style={{ fontSize: 13, fontWeight: 700, color: C.grisTF }}>
+                            Remboursement #{rf.id} · {formatDate(rf.date)}
+                          </span>
+                          <span style={{ fontSize: 15, fontWeight: 800, color: C.rouge, fontVariantNumeric: 'tabular-nums' }}>−{fmt(rf.amount)}</span>
+                        </div>
+                        {rf.reason && (
+                          <div style={{ fontSize: 12.5, color: C.grisF, marginTop: 4, fontStyle: 'italic' }}>« {rf.reason} »</div>
+                        )}
+                        {lines.length > 0 && (
+                          <div style={{ marginTop: 10, borderTop: `1px solid ${C.grisCL}`, paddingTop: 4 }}>
+                            {lines.map((ln, i) => (
+                              <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', padding: '6px 0', borderBottom: i < lines.length - 1 ? `1px solid ${C.grisCL}` : 'none' }}>
+                                <span style={{ fontSize: 13, color: C.grisF }}>
+                                  {ln.label}
+                                  {ln.sub && <span style={{ fontFamily: 'monospace', fontSize: 11.5, color: C.grisM, marginLeft: 8 }}>{ln.sub}</span>}
+                                </span>
+                                <span style={{ fontSize: 13, fontWeight: 700, color: C.grisTF, fontVariantNumeric: 'tabular-nums' }}>−{fmt(ln.value)}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        {lines.length === 0 && refundsDetail && (
+                          <div style={{ fontSize: 12, color: C.grisM, marginTop: 6 }}>Remboursement sans ventilation par ligne (montant global).</div>
+                        )}
+                        {lines.length === 0 && !refundsDetail && (
+                          <div style={{ fontSize: 12, color: C.grisM, marginTop: 6 }}>Chargement du détail…</div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </Card>
+            );
+          })()}
 
           {/* ── Attribution ── */}
           {(order.attribution_utm_source || order.attribution_referrer || order.attribution_source_type) && (

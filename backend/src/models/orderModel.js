@@ -75,6 +75,15 @@ class OrderModel {
       const itemsResult = await client.query(itemsQuery, [orderId]);
       order.line_items = itemsResult.rows;
 
+      // Remboursements (résumé local : totaux/raison/date). Le détail par ligne
+      // (produits/port remboursés) est récupéré à la demande via l'API WC.
+      const refundsResult = await client.query(
+        `SELECT wp_refund_id, refund_amount, refund_reason, refund_date
+         FROM refunds WHERE wp_order_id = $1 ORDER BY refund_date ASC`,
+        [orderId]
+      );
+      order.refunds = refundsResult.rows;
+
       return order;
     } finally {
       client.release();

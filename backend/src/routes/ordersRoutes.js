@@ -19,6 +19,7 @@ router.get('/country/:country', ordersController.getByCountry);
 // Détails commande
 router.get('/:id', ordersController.getById);
 router.get('/:id/details', ordersController.getOrderDetails);
+router.get('/:id/refunds-detail', ordersController.getRefundsDetail);
 router.get('/:id/reviews', ordersController.getOrderReviews);
 
 // Édition
