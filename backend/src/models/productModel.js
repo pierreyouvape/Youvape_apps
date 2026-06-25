@@ -1,6 +1,7 @@
 const pool = require('../config/database');
 const { buildSearchCondition } = require('../utils/searchUtils');
 const needsCalculationModel = require('./needsCalculationModel');
+const { buildVariationLabel } = require('../utils/variationLabel');
 
 /**
  * Condition SQL pour le filtre d'onglet stock du catalogue (all/instock/outofstock/restock)
@@ -853,6 +854,8 @@ class ProductModel {
           v.wp_product_id,
           v.wp_parent_id,
           v.post_title,
+          v.product_attributes,
+          p_parent.post_title as parent_title,
           v.sku,
           COALESCE(v.stock, 0)::int as stock,
           v.price,
@@ -870,7 +873,13 @@ class ProductModel {
         ORDER BY v.post_title ASC
       `;
       const variationsResult = await pool.query(variationsQuery, varParams);
-      variations = variationsResult.rows;
+      // Compléter le post_title des variations dont le titre WooCommerce est
+      // identique au parent (ex: "Cartouches CLK One") avec les attributs
+      // (saveur, taux de nicotine) pour les distinguer dans le catalogue.
+      variations = variationsResult.rows.map(({ product_attributes, parent_title, ...v }) => ({
+        ...v,
+        post_title: buildVariationLabel(v.post_title, parent_title, product_attributes)
+      }));
     }
 
     // 3) Arrivages en cours (par product internal id)
