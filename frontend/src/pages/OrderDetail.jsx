@@ -274,7 +274,15 @@ const OrderDetail = () => {
   const packagingCost = PACKAGING_COST_HT;
   const hasAllCosts = shippingCostCalculated != null && paymentCostCalculated != null;
   const orderTotalHT = orderTotal - orderTax; // Total HT = TTC - TVA
-  const margin = hasAllCosts ? orderTotalHT - totalCost - shippingCostCalculated - paymentCostCalculated - packagingCost : null;
+
+  // Remboursements (TTC) de la commande — résumé local
+  const totalRefunded = (order.refunds || []).reduce((s, r) => s + (parseFloat(r.refund_amount) || 0), 0);
+  // Part HT du remboursement (méthode proportionnelle, identique à /financier :
+  // remb HT = remb TTC × (1 − TVA/TTC)). Le revenu réellement encaissé exclut le port/produits remboursés.
+  const refundTaxRatio = orderTotal > 0 ? orderTax / orderTotal : 0;
+  const refundedHT = totalRefunded * (1 - refundTaxRatio);
+  const netRevenueHT = orderTotalHT - refundedHT;
+  const margin = hasAllCosts ? netRevenueHT - totalCost - shippingCostCalculated - paymentCostCalculated - packagingCost : null;
 
   const productItems = (order.line_items || []).filter(i => i.order_item_type === 'line_item');
   const couponItems  = (order.line_items || []).filter(i => i.order_item_type === 'coupon');
@@ -624,6 +632,16 @@ const OrderDetail = () => {
                   fontSize: 12, fontWeight: 800, color: C.grisTF,
                   textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 10,
                 }}>Analyse de marge</h3>
+                {totalRefunded > 0 && (
+                  <MarginRow label="Revenu HT (vente)" value={fmt(orderTotalHT)} />
+                )}
+                {totalRefunded > 0 && (
+                  <MarginRow label="− Remboursement HT" value={`-${fmt(refundedHT)}`} />
+                )}
+                {totalRefunded > 0 && (
+                  <MarginRow label="Revenu HT net" value={fmt(netRevenueHT)}
+                    style={{ borderTop: '1px solid #E2E8EE', paddingTop: 6, marginTop: 2 }} />
+                )}
                 <MarginRow label="Coût produits HT"  value={fmt(totalCost)} />
                 <MarginRow label="Coût livraison HT" value={shippingCostCalculated != null ? fmt(shippingCostCalculated) : '—'} />
                 <MarginRow label="Coût paiement"     value={paymentCostCalculated  != null ? fmt(paymentCostCalculated)  : '—'} />
@@ -635,12 +653,12 @@ const OrderDetail = () => {
                     style={{ borderTop: '1px solid #E2E8EE', paddingTop: 6, marginTop: 2 }}
                   />
                 )}
-                <MarginRow label="Marge brute" value={margin != null ? fmt(margin) : '—'} bold />
-                {margin != null && orderTotalHT > 0 && (
+                <MarginRow label={totalRefunded > 0 ? 'Marge nette' : 'Marge brute'} value={margin != null ? fmt(margin) : '—'} bold />
+                {margin != null && netRevenueHT > 0 && (
                   <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', fontSize: 12, color: C.grisF }}>
                     <span>Taux de marge</span>
                     <span style={{ fontWeight: 700, color: margin > 0 ? C.vert : '#dc3545', fontVariantNumeric: 'tabular-nums' }}>
-                      {((margin / orderTotalHT) * 100).toFixed(1)} %
+                      {((margin / netRevenueHT) * 100).toFixed(1)} %
                     </span>
                   </div>
                 )}
@@ -666,6 +684,12 @@ const OrderDetail = () => {
                 <TotalLine label="Total HT" value={fmt(orderTotalHT)} />
                 <TotalLine label="TVA" value={fmt(orderTax)} />
                 <TotalLine label="Total TTC" value={fmt(orderTotal)} color={C.vert} bold separator />
+                {totalRefunded > 0 && (
+                  <>
+                    <TotalLine label="Remboursements" value={`-${fmt(totalRefunded)}`} color={C.rouge} />
+                    <TotalLine label="Total TTC net" value={fmt(orderTotal - totalRefunded)} color={C.vert} bold separator />
+                  </>
+                )}
               </div>
             </div>
           </Card>
