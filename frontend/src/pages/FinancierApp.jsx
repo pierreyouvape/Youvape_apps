@@ -292,6 +292,7 @@ function CountryTable({ rows }) {
   const totalTtc = rows.reduce((s, r) => s + (r.ca_ttc_brut || 0), 0);
   const totalHt = rows.reduce((s, r) => s + (r.ca_ht || 0), 0);
   const totalOrders = rows.reduce((s, r) => s + (r.orders_count || 0), 0);
+  const totalPanier = totalOrders > 0 ? totalHt / totalOrders : 0;
 
   const th = { fontSize: 11, fontWeight: 700, color: C.grisM, textTransform: 'uppercase', letterSpacing: '0.04em', padding: '0 0 8px', borderBottom: `2px solid ${C.grisCL}` };
   const td = { fontSize: 13, color: C.grisF, fontWeight: 600, padding: '9px 0', borderBottom: `1px solid ${C.grisTL}` };
@@ -305,6 +306,7 @@ function CountryTable({ rows }) {
             <th style={{ ...th, textAlign: 'right' }}>Commandes</th>
             <th style={{ ...th, textAlign: 'right' }}>CA TTC</th>
             <th style={{ ...th, textAlign: 'right' }}>CA HT</th>
+            <th style={{ ...th, textAlign: 'right' }}>Panier&nbsp;moyen&nbsp;HT</th>
             <th style={{ ...th, textAlign: 'right' }}>%&nbsp;CA&nbsp;HT</th>
           </tr>
         </thead>
@@ -317,6 +319,7 @@ function CountryTable({ rows }) {
                 <td style={{ ...td, textAlign: 'right' }}>{fmt(r.orders_count)}</td>
                 <td style={{ ...td, textAlign: 'right' }}>{fmtEur(r.ca_ttc_brut)}</td>
                 <td style={{ ...td, textAlign: 'right', fontWeight: 700, color: C.saphir }}>{fmtEur(r.ca_ht)}</td>
+                <td style={{ ...td, textAlign: 'right', color: C.grisF }}>{fmtEur(r.panier_moyen_ht)}</td>
                 <td style={{ ...td, textAlign: 'right', color: C.grisM }}>{pct.toFixed(1)}%</td>
               </tr>
             );
@@ -326,6 +329,7 @@ function CountryTable({ rows }) {
             <td style={{ ...td, borderBottom: 'none', fontWeight: 800, color: C.grisTF, textAlign: 'right' }}>{fmt(totalOrders)}</td>
             <td style={{ ...td, borderBottom: 'none', fontWeight: 800, color: C.grisTF, textAlign: 'right' }}>{fmtEur(totalTtc)}</td>
             <td style={{ ...td, borderBottom: 'none', fontWeight: 800, color: C.saphir, textAlign: 'right' }}>{fmtEur(totalHt)}</td>
+            <td style={{ ...td, borderBottom: 'none', fontWeight: 800, color: C.grisTF, textAlign: 'right' }}>{fmtEur(totalPanier)}</td>
             <td style={{ ...td, borderBottom: 'none', textAlign: 'right' }}></td>
           </tr>
         </tbody>

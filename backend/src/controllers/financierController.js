@@ -287,9 +287,9 @@ async function computeDashboard({ dateFrom, dateTo, granularity } = {}) {
 exports.computeDashboard = computeDashboard;
 
 /**
- * Total par pays (CA TTC brut + CA HT + nb commandes) pour une période.
- * Mêmes filtres que computeDashboard : 6 statuts payés, post_date en heure de Paris.
- * Regroupe sur billing_country, trié par CA décroissant.
+ * Total par pays (CA TTC brut + CA HT + nb commandes + panier moyen HT) pour une
+ * période. Mêmes filtres que computeDashboard : 6 statuts payés, post_date en
+ * heure de Paris. Regroupe sur billing_country, trié par CA décroissant.
  */
 async function computeByCountry({ dateFrom, dateTo } = {}) {
   const { conditions, params } = buildDateConditions(dateFrom, dateTo);
@@ -310,11 +310,13 @@ async function computeByCountry({ dateFrom, dateTo } = {}) {
   return result.rows.map((r) => {
     const ttc = parseFloat(r.ca_ttc_brut) || 0;
     const tva = parseFloat(r.tva) || 0;
+    const ht = ttc - tva;
     return {
       country_code: r.country_code,
       orders_count: r.orders_count,
       ca_ttc_brut: round2(ttc),
-      ca_ht: round2(ttc - tva),
+      ca_ht: round2(ht),
+      panier_moyen_ht: round2(r.orders_count > 0 ? ht / r.orders_count : 0),
     };
   });
 }

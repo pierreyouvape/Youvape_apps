@@ -203,6 +203,7 @@ function countryHtml(rows) {
   const totalTtc = rows.reduce((s, r) => s + (r.ca_ttc_brut || 0), 0);
   const totalHt = rows.reduce((s, r) => s + (r.ca_ht || 0), 0);
   const totalOrders = rows.reduce((s, r) => s + (r.orders_count || 0), 0);
+  const totalPanier = totalOrders > 0 ? totalHt / totalOrders : 0;
 
   const body = rows.map((r) => `
     <tr>
@@ -210,6 +211,7 @@ function countryHtml(rows) {
       ${td(num.format(r.orders_count), { align: 'right' })}
       ${td(eur.format(r.ca_ttc_brut), { align: 'right' })}
       ${td(eur.format(r.ca_ht), { align: 'right', bold: true, color: COL.saphir })}
+      ${td(eur.format(r.panier_moyen_ht), { align: 'right' })}
     </tr>`).join('');
 
   return `
@@ -223,6 +225,7 @@ function countryHtml(rows) {
             ${th('Cmd.', 'right')}
             ${th('CA TTC', 'right')}
             ${th('CA HT', 'right')}
+            ${th('Panier moy. HT', 'right')}
           </tr>
           ${body}
           <tr>
@@ -230,6 +233,7 @@ function countryHtml(rows) {
             ${td(num.format(totalOrders), { align: 'right', bold: true })}
             ${td(eur.format(totalTtc), { align: 'right', bold: true })}
             ${td(eur.format(totalHt), { align: 'right', bold: true, color: COL.saphir })}
+            ${td(eur.format(totalPanier), { align: 'right', bold: true })}
           </tr>
         </table>
       </td></tr>
@@ -292,9 +296,9 @@ function buildText(freq, period, dashboard, countries) {
       lines.push(`${KPI_LABELS[k] || humanizeKey(k)} : ${formatKpi(k, kpis[k])}`);
     }
     if (countries && countries.length > 0) {
-      lines.push('', 'Total par pays (CA TTC / CA HT / commandes) :');
+      lines.push('', 'Total par pays (CA TTC / CA HT / commandes / panier moyen HT) :');
       for (const c of countries) {
-        lines.push(`  ${countryName(c.country_code)} : ${eur.format(c.ca_ttc_brut)} / ${eur.format(c.ca_ht)} / ${num.format(c.orders_count)}`);
+        lines.push(`  ${countryName(c.country_code)} : ${eur.format(c.ca_ttc_brut)} / ${eur.format(c.ca_ht)} / ${num.format(c.orders_count)} / ${eur.format(c.panier_moyen_ht)}`);
       }
     }
   } else {
