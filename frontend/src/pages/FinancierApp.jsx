@@ -98,10 +98,13 @@ function Sparkline({ data, color, width = 80, height = 36 }) {
 }
 
 /* ─── KPI CARD ───────────────────────────────────────────── */
-function KpiCard({ label, value, unit, color, sparkData }) {
+function KpiCard({ label, value, unit, color, sparkData, href }) {
   const [hovered, setHovered] = useState(false);
+  const Tag = href ? 'a' : 'div';
+  const linkProps = href ? { href, target: '_blank', rel: 'noopener noreferrer' } : {};
   return (
-    <div
+    <Tag
+      {...linkProps}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       style={{
@@ -111,21 +114,25 @@ function KpiCard({ label, value, unit, color, sparkData }) {
           ? '0 4px 18px rgba(0,0,0,0.11), 0 0 0 1px rgba(0,0,0,0.06)'
           : '0 1px 3px rgba(0,0,0,0.07), 0 0 0 1px rgba(0,0,0,0.05)',
         borderTop: `3px solid ${color}`,
-        transition: 'box-shadow 0.2s',
+        transition: 'box-shadow 0.2s, transform 0.15s',
+        transform: href && hovered ? 'translateY(-2px)' : 'none',
         minWidth: 0,
+        textDecoration: 'none',
+        cursor: href ? 'pointer' : 'default',
       }}
     >
-      <span style={{ fontSize: 11, fontWeight: 700, color: C.grisM, letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+      <span style={{ fontSize: 11, fontWeight: 700, color: C.grisM, letterSpacing: '0.06em', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: 5 }}>
         {label}
+        {href && <span style={{ fontSize: 11, color: hovered ? color : C.grisM, transition: 'color 0.15s' }} title="Voir les commandes (nouvel onglet)">↗</span>}
       </span>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
         <div>
-          <span style={{ fontSize: 26, fontWeight: 800, color: C.grisTF, letterSpacing: '-0.5px' }}>{value}</span>
+          <span style={{ fontSize: 26, fontWeight: 800, color: href && hovered ? color : C.grisTF, letterSpacing: '-0.5px', transition: 'color 0.15s' }}>{value}</span>
           {unit && <span style={{ fontSize: 14, fontWeight: 600, color: C.grisM, marginLeft: 4 }}>{unit}</span>}
         </div>
         {sparkData && <Sparkline data={sparkData} color={color} />}
       </div>
-    </div>
+    </Tag>
   );
 }
 
@@ -509,14 +516,28 @@ export default function FinancierApp() {
     ? (CUSTOM_PRESETS.find(p => p.key === customPreset)?.label || 'Personnalisé')
     : 'Personnalisé';
 
+  // Plage de dates active (identique à celle envoyée au dashboard) → liens /commandes
+  const reportRange = (() => {
+    if (period === 'custom' && customPreset) return getDateRange(customPreset);
+    if (period === 'custom') return (customFrom && customTo) ? { dateFrom: customFrom, dateTo: customTo } : null;
+    return getDateRange(period);
+  })();
+  const PAID_STATUSES = 'wc-completed,wc-processing,wc-delivered,wc-awaiting-delivery,wc-shipped,wc-being-delivered';
+  const ordersUrl = reportRange
+    ? `/commandes?paris=1&dateFrom=${reportRange.dateFrom}&dateTo=${reportRange.dateTo}&status=${PAID_STATUSES}`
+    : null;
+  const refundsUrl = reportRange
+    ? `/commandes?paris=1&refunded=1&dateFrom=${reportRange.dateFrom}&dateTo=${reportRange.dateTo}`
+    : null;
+
   const kpis = data ? [
     { label: 'CA TTC Brut', value: fmtEur(data.kpis.ca_ttc_brut), color: C.orange, sparkData: data.series.map(s => s.ca_ttc_brut) },
     { label: 'CA HT Net', value: fmtEur(data.kpis.ca_ht_net), color: C.saphir, sparkData: data.series.map(s => s.ca_ht) },
     { label: 'Profit HT', value: fmtEur(data.kpis.profit_ht), color: C.vert, sparkData: data.series.map(s => s.profit_ht) },
     { label: 'Marge', value: fmtPct(data.kpis.marge_ht), color: C.violet, sparkData: null },
-    { label: 'Nb Commandes', value: fmt(data.kpis.orders_count), color: C.bleu, sparkData: data.series.map(s => s.orders_count) },
+    { label: 'Nb Commandes', value: fmt(data.kpis.orders_count), color: C.bleu, sparkData: data.series.map(s => s.orders_count), href: ordersUrl },
     { label: 'Panier moyen HT', value: fmtEur(data.kpis.panier_moyen_ht), color: C.orange, sparkData: null },
-    { label: 'Commandes remboursées', value: fmt(data.kpis.refunds_count), color: C.rouge, sparkData: null },
+    { label: 'Commandes remboursées', value: fmt(data.kpis.refunds_count), color: C.rouge, sparkData: null, href: refundsUrl },
     { label: 'Remboursements TTC', value: fmtEur(data.kpis.remboursements_ttc), color: C.rouge, sparkData: null },
   ] : [];
 

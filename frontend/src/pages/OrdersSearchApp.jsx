@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useContext } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import axios from 'axios';
 import AppShell from '../components/AppShell';
 import CopyButton from '../components/CopyButton';
@@ -83,17 +83,30 @@ function getPeriodDates(key) {
 const OrdersSearchApp = () => {
   const navigate = useNavigate();
   const { token } = useContext(AuthContext);
+  const [searchParams] = useSearchParams();
+
+  // Filtres pré-remplis via l'URL (ex: lien depuis le rapport /financier)
+  const urlStatus = searchParams.get('status') || '';
+  const urlFrom = searchParams.get('dateFrom') || '';
+  const urlTo = searchParams.get('dateTo') || '';
+  const urlRefunded = searchParams.get('refunded') === '1';
+  const urlParis = searchParams.get('paris') === '1';
+  const hasUrlFilter = !!(urlFrom || urlTo || urlStatus || urlRefunded);
 
   const [orders, setOrders]     = useState([]);
   const [loading, setLoading]   = useState(false);
   const [total, setTotal]       = useState(0);
 
   const [search, setSearch]     = useState('');
-  const [status, setStatus]     = useState('');
+  const [status, setStatus]     = useState(urlStatus);
   const [carrier, setCarrier]   = useState('');
-  const [period, setPeriod]     = useState('');
-  const [dateFrom, setDateFrom] = useState('');
-  const [dateTo, setDateTo]     = useState('');
+  const [period, setPeriod]     = useState(hasUrlFilter ? 'custom' : '');
+  const [dateFrom, setDateFrom] = useState(urlFrom);
+  const [dateTo, setDateTo]     = useState(urlTo);
+  // Modes alignés sur /financier (transmis au backend, non modifiables via l'UI)
+  const [paris] = useState(urlParis);
+  const [refunded, setRefunded] = useState(urlRefunded);
+  const [reportBanner, setReportBanner] = useState(hasUrlFilter);
 
   const [statuses, setStatuses]   = useState([]);
   const [carriers, setCarriers]   = useState([]);
@@ -150,11 +163,13 @@ const OrdersSearchApp = () => {
         carrier: carrier || undefined,
         ...(dates || {}),
         ...customDates,
+        paris: paris ? 1 : undefined,
+        refunded: refunded ? 1 : undefined,
         offset: page * PAGE_SIZE,
       });
     }, 400);
     return () => clearTimeout(debounceRef.current);
-  }, [search, status, carrier, period, dateFrom, dateTo, page, fetchOrders]);
+  }, [search, status, carrier, period, dateFrom, dateTo, paris, refunded, page, fetchOrders]);
 
   /* ── Expand ligne ── */
   const toggleExpand = async (orderId) => {
@@ -177,9 +192,11 @@ const OrdersSearchApp = () => {
   const resetFilters = () => {
     setSearch(''); setStatus(''); setCarrier('');
     setPeriod(''); setDateFrom(''); setDateTo('');
+    setRefunded(false); setReportBanner(false);
   };
 
-  const hasActiveFilter = search || status || carrier || period;
+  const hasActiveFilter = search || status || carrier || period || refunded;
+  const isMultiStatus = status.includes(',');
 
   /* ─── RENDU ─────────────────────────────────────────────── */
   return (
@@ -277,6 +294,7 @@ const OrdersSearchApp = () => {
           {/* Statut */}
           <select className="cmd-select" value={status} onChange={e => setStatus(e.target.value)} style={{ minWidth: 160 }}>
             <option value="">Tous les statuts</option>
+            {isMultiStatus && <option value={status}>Commandes payées (rapport)</option>}
             {statuses.map(s => (
               <option key={s.status || s} value={s.status || s}>
                 {STATUS_LABELS[s.status || s] || s.status || s}
@@ -324,6 +342,31 @@ const OrdersSearchApp = () => {
 
         {/* ── Tableau ── */}
         <div style={{ flex: 1, padding: '20px 24px' }}>
+
+          {/* Bannière : filtre issu du rapport /financier */}
+          {reportBanner && (
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
+              background: '#EAF3F8', border: `1px solid #BBD7E6`, color: '#1A4A63',
+              borderRadius: 10, padding: '11px 15px', marginBottom: 16, fontSize: 13,
+            }}>
+              <span style={{ fontSize: 15 }}>📊</span>
+              <span style={{ fontWeight: 700 }}>
+                {refunded ? 'Commandes remboursées' : 'Commandes payées'} du rapport
+              </span>
+              {(dateFrom || dateTo) && (
+                <span style={{ color: '#37718C' }}>
+                  · période du {dateFrom || '…'} au {dateTo || '…'}
+                </span>
+              )}
+              <span style={{ color: '#37718C' }}>· {total} commande{total > 1 ? 's' : ''}</span>
+              <button onClick={resetFilters} style={{
+                marginLeft: 'auto', padding: '5px 11px', fontSize: 12, fontWeight: 600,
+                background: C.blanc, color: '#1A4A63', border: `1px solid #BBD7E6`,
+                borderRadius: 7, cursor: 'pointer',
+              }}>Effacer le filtre</button>
+            </div>
+          )}
 
           {loading && (
             <div style={{ textAlign: 'center', padding: '60px 0', color: C.grisM, fontSize: 14 }}>

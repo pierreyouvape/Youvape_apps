@@ -285,18 +285,47 @@ exports.filterOrders = async (req, res) => {
       paramIndex++;
     }
 
-    // Filtre par date de début
-    if (req.query.dateFrom) {
-      conditions.push(`o.post_date >= $${paramIndex}`);
-      params.push(req.query.dateFrom);
-      paramIndex++;
-    }
+    // Mode "remboursées sur la période" (aligné /financier) : on liste les commandes
+    // ayant un remboursement dont le refund_date tombe dans [dateFrom, dateTo] en heure
+    // de Paris, en excluant les commandes jamais comptées comme ventes. La période
+    // s'applique alors au refund_date (et non au post_date).
+    const refundedMode = req.query.refunded === '1' || req.query.refunded === 'true';
+    // Mode "paris" : filtrage des dates sur post_date converti en heure de Paris, comme
+    // le rapport /financier (sinon léger décalage aux bornes de journée).
+    const parisMode = req.query.paris === '1' || req.query.paris === 'true';
 
-    // Filtre par date de fin
-    if (req.query.dateTo) {
-      conditions.push(`o.post_date <= $${paramIndex}::date + interval '1 day'`);
-      params.push(req.query.dateTo);
-      paramIndex++;
+    if (refundedMode) {
+      conditions.push(`o.post_status NOT IN ('wc-cancelled', 'wc-failed', 'wc-checkout-draft', 'wc-trash', 'wc-pending', 'wc-auto-draft')`);
+      const refundConds = ['r.wp_order_id = o.wp_order_id'];
+      if (req.query.dateFrom) {
+        refundConds.push(`(r.refund_date AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris') >= $${paramIndex}`);
+        params.push(req.query.dateFrom);
+        paramIndex++;
+      }
+      if (req.query.dateTo) {
+        refundConds.push(`(r.refund_date AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris') <= $${paramIndex}`);
+        params.push(req.query.dateTo + ' 23:59:59');
+        paramIndex++;
+      }
+      conditions.push(`EXISTS (SELECT 1 FROM refunds r WHERE ${refundConds.join(' AND ')})`);
+    } else {
+      // Filtre par date de début
+      if (req.query.dateFrom) {
+        conditions.push(parisMode
+          ? `(o.post_date AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris') >= $${paramIndex}`
+          : `o.post_date >= $${paramIndex}`);
+        params.push(req.query.dateFrom);
+        paramIndex++;
+      }
+
+      // Filtre par date de fin
+      if (req.query.dateTo) {
+        conditions.push(parisMode
+          ? `(o.post_date AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris') <= $${paramIndex}`
+          : `o.post_date <= $${paramIndex}::date + interval '1 day'`);
+        params.push(parisMode ? req.query.dateTo + ' 23:59:59' : req.query.dateTo);
+        paramIndex++;
+      }
     }
 
     // Filtre par transporteur
