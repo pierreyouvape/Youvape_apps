@@ -7,8 +7,17 @@ const ACTIVE_STATUSES = [
 ];
 
 /**
+ * Date de référence financière = date de paiement réelle (paid_date), fallback sur
+ * la date de création (post_date), convertie en heure de Paris.
+ * Aligné sur Metorik et sur la règle CLAUDE.md (rattacher le CA au jour du paiement).
+ */
+function refDateParis(alias = 'o') {
+  return `(COALESCE(${alias}.paid_date, ${alias}.post_date) AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris')`;
+}
+
+/**
  * Construit les conditions WHERE et les paramètres pour une plage de dates.
- * Filtre sur post_date (date de création), converti en Europe/Paris — aligné sur Metorik.
+ * Filtre sur la date de paiement (paid_date), converti en Europe/Paris — aligné sur Metorik.
  * Retourne { conditions, params, nextIndex }
  */
 function buildDateConditions(dateFrom, dateTo, startIndex = 1, alias = 'o') {
@@ -19,11 +28,11 @@ function buildDateConditions(dateFrom, dateTo, startIndex = 1, alias = 'o') {
   let idx = startIndex + 1;
 
   if (dateFrom) {
-    conditions.push(`(${alias}.post_date AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris') >= $${idx++}`);
+    conditions.push(`${refDateParis(alias)} >= $${idx++}`);
     params.push(dateFrom);
   }
   if (dateTo) {
-    conditions.push(`(${alias}.post_date AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris') <= $${idx++}`);
+    conditions.push(`${refDateParis(alias)} <= $${idx++}`);
     params.push(dateTo + ' 23:59:59');
   }
 
@@ -149,12 +158,13 @@ async function computeDashboard({ dateFrom, dateTo, granularity } = {}) {
       }
     }
 
+    const ref = refDateParis('o');
     const truncMap = {
-      quarter: "date_trunc('hour', (o.post_date AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris')) + (floor(extract(minute FROM (o.post_date AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris')) / 15) * interval '15 minutes')",
-      hour:    "date_trunc('hour', (o.post_date AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris'))",
-      day:     "date_trunc('day', (o.post_date AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris'))",
-      week:    "date_trunc('week', (o.post_date AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris'))",
-      month:   "date_trunc('month', (o.post_date AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris'))",
+      quarter: `date_trunc('hour', ${ref}) + (floor(extract(minute FROM ${ref}) / 15) * interval '15 minutes')`,
+      hour:    `date_trunc('hour', ${ref})`,
+      day:     `date_trunc('day', ${ref})`,
+      week:    `date_trunc('week', ${ref})`,
+      month:   `date_trunc('month', ${ref})`,
     };
     const truncExpr = truncMap[gran] || truncMap.day;
 
@@ -288,8 +298,8 @@ exports.computeDashboard = computeDashboard;
 
 /**
  * Total par pays (CA TTC brut + CA HT + nb commandes + panier moyen HT) pour une
- * période. Mêmes filtres que computeDashboard : 6 statuts payés, post_date en
- * heure de Paris. Regroupe sur billing_country, trié par CA décroissant.
+ * période. Mêmes filtres que computeDashboard : 6 statuts payés, date de paiement
+ * (paid_date) en heure de Paris. Regroupe sur billing_country, trié par CA décroissant.
  */
 async function computeByCountry({ dateFrom, dateTo } = {}) {
   const { conditions, params } = buildDateConditions(dateFrom, dateTo);
