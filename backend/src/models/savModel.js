@@ -328,6 +328,24 @@ class SavModel {
     return ticket;
   }
 
+  // ─── Pièces jointes de la demande initiale (description) ──────────────────
+  // Stockées hors du tableau `messages` pour ne pas dupliquer la description :
+  // le front affiche déjà la description comme 1er message du fil.
+  async setDescriptionAttachments(id, attachments) {
+    const list = Array.isArray(attachments) ? attachments : [];
+    const result = await pool.query(
+      `UPDATE sav_tickets
+       SET description_attachments = $1::jsonb,
+           updated_at = CURRENT_TIMESTAMP
+       WHERE id = $2
+       RETURNING *`,
+      [JSON.stringify(list), id]
+    );
+    const ticket = result.rows[0] || null;
+    if (ticket) emitChange(ticket.id, 'message');
+    return ticket;
+  }
+
   // ─── Mettre à jour les notes internes ────────────────────────────────────
   async updateNotes(id, notes) {
     const result = await pool.query(

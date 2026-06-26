@@ -1958,7 +1958,7 @@ function ConversationPanel({ ticket, onReplySent, onStatusChange, playMode, afte
         <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: isMobile ? '14px 14px 12px' : '20px 28px 16px' }}>
           {ticket.description && (
             <Message
-              msg={{ from: ticket.customer_name || ticket.customer_email, body: ticket.description, is_agent: false, date: ticket.created_at, attachments: [] }}
+              msg={{ from: ticket.customer_name || ticket.customer_email, body: ticket.description, is_agent: false, date: ticket.created_at, attachments: ticket.description_attachments || [] }}
               ticketId={ticket.id}
             />
           )}

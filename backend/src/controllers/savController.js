@@ -187,17 +187,14 @@ const savController = {
       console.log(`✅ [SAV] Ticket #${ticket.id} créé pour ${customer_name} (${email})`);
 
       // Pièces jointes du formulaire GF : téléchargées depuis les URLs publiques WP
-      // et attachées au 1er message du ticket (même rendu que les PJ email).
+      // et rattachées à la demande initiale (description), pas via un message
+      // séparé — sinon le fil afficherait deux fois la même description (le front
+      // rend déjà la description comme 1er message).
       if (uploadField) {
         const attachments = await saveAttachmentsFromPublicUrls(ticket.id, uploadField);
         if (attachments.length > 0) {
-          await savModel.addMessage(ticket.id, {
-            from:        email.toLowerCase(),
-            body:        description,
-            is_agent:    false,
-            attachments,
-          });
-          console.log(`📎 [SAV] ${attachments.length} PJ attachée(s) au ticket #${ticket.id}`);
+          await savModel.setDescriptionAttachments(ticket.id, attachments);
+          console.log(`📎 [SAV] ${attachments.length} PJ attachée(s) à la demande du ticket #${ticket.id}`);
         }
       }
 
