@@ -218,13 +218,14 @@ const pdfImportModel = {
         dbPrice = rawDbPrice;
       }
 
-      // Quantité finale (toujours en unités individuelles) :
-      // invertPackQty : PDF = nb unités → garder tel quel (prix seul est converti × pack_qty)
-      // normal/pdfIsPackBased=false : PDF = nb packs → multiplier pour obtenir les unités
-      // pdfIsPackBased=true : PDF = nb packs, pas de conversion (cas legacy à éviter)
+      // Quantité finale.
+      // invertPackQty (e.tasty, Curieux) : PDF = nb d'UNITÉS → diviser par pack_qty
+      //   pour obtenir les PACKS (le prix est, lui, converti en prix pack via
+      //   pdfGross × pack_qty). Cohérent avec createInBMS qui renvoie qty × pack_qty.
+      // normal/pdfIsPackBased=false : comportement historique inchangé.
       let qtyOrdered;
       if (parsed.invertPackQty) {
-        qtyOrdered = item.qty_ordered;
+        qtyOrdered = packQty > 1 ? Math.round(item.qty_ordered / packQty) : item.qty_ordered;
       } else if (packQty > 1 && !parsed.pdfIsPackBased) {
         qtyOrdered = item.qty_ordered * packQty;
       } else {
@@ -248,8 +249,15 @@ const pdfImportModel = {
         pdf_price_net: pdfNet,         // prix net après remise
         discount_percent: discountPercent,
         supplier_price: dbPrice,
-        // Prix retenu : PDF si meilleur (ou si pas de prix BDD), sinon prix BDD
-        unit_price: (pdfNet != null && (dbPrice == null || pdfNet < dbPrice)) ? pdfNet : dbPrice,
+        // Prix retenu.
+        // invertPackQty : on fait confiance au prix du PDF (= prix pack reconstruit
+        //   à partir du prix unitaire facturé), car le supplier_price en BDD est
+        //   incohérent selon les produits (parfois prix unité, parfois prix pack).
+        //   Le PDF/facture est la source de vérité du montant réellement payé.
+        // autres modes : PDF si meilleur (ou si pas de prix BDD), sinon prix BDD.
+        unit_price: parsed.invertPackQty
+          ? (pdfNet != null ? pdfNet : dbPrice)
+          : ((pdfNet != null && (dbPrice == null || pdfNet < dbPrice)) ? pdfNet : dbPrice),
         // Pack
         pack_qty: packQty,
         qty_ordered: qtyOrdered,

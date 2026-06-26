@@ -15,13 +15,22 @@ module.exports = {
 
     const items = [];
 
-    // Scan global : chaque bloc REF Designation TAUX% PRIX_UNIT€ QTE TOTAL€
+    // Restreindre le scan au tableau produits : on commence APRES l'en-tete de
+    // colonnes ("... Quantite Total HT") et on s'arrete AVANT le recapitulatif
+    // ("Detail des taxes"). Sinon la 1ere ligne produit capture l'en-tete de
+    // facture (n° de facture, adresses) dans sa designation.
+    const headerMatch = text.match(/Quantit[ée]\s+Total HT/i);
+    const startIdx = headerMatch ? headerMatch.index + headerMatch[0].length : 0;
+    const footerIdx = text.search(/D[ée]tail des taxes/i);
+    const scanText = text.slice(startIdx, footerIdx >= 0 ? footerIdx : text.length);
+
+    // Scan : chaque bloc REF Designation TAUX% PRIX_UNIT€ QTE TOTAL€
     // Insensible aux sauts de page, les headers/footers intercales sont ignores
     // La ref est un token alphanum majuscules en debut de bloc (ex: SWDCO03000, BASIK05000)
     const pricePattern = /([A-Z0-9][\w]+)([\s\S]*?)(\d+)\s*%\s+([\d,]+)\s*€\s+(\d+)\s+([\d,]+)\s*€/g;
 
     let m;
-    while ((m = pricePattern.exec(text)) !== null) {
+    while ((m = pricePattern.exec(scanText)) !== null) {
       const parseDecimal = (str) => parseFloat(str.replace(',', '.'));
 
       const supplierSku = m[1];
