@@ -19,9 +19,12 @@ module.exports = {
     // colonnes ("... Quantite Total HT") et on s'arrete AVANT le recapitulatif
     // ("Detail des taxes"). Sinon la 1ere ligne produit capture l'en-tete de
     // facture (n° de facture, adresses) dans sa designation.
-    const headerMatch = text.match(/Quantit[ée]\s+Total HT/i);
+    // Ancres sans accent (robustes à l'encodage du texte extrait) : "Total HT"
+    // (fin de l'en-tête de colonnes, 1ère occurrence) et "des taxes" (début du
+    // récapitulatif). "Total (HT)" du pied de page contient des parenthèses → non capté.
+    const headerMatch = text.match(/Total HT/i);
     const startIdx = headerMatch ? headerMatch.index + headerMatch[0].length : 0;
-    const footerIdx = text.search(/D[ée]tail des taxes/i);
+    const footerIdx = text.search(/des taxes/i);
     const scanText = text.slice(startIdx, footerIdx >= 0 ? footerIdx : text.length);
 
     // Scan : chaque bloc REF Designation TAUX% PRIX_UNIT€ QTE TOTAL€
