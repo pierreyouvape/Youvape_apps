@@ -2,8 +2,13 @@ const purchaseOrderModel = require('../models/purchaseOrderModel');
 const needsCalculationModel = require('../models/needsCalculationModel');
 const productAlertModel = require('../models/productAlertModel');
 const pdfImportModel = require('../models/pdfImportModel');
+const bmsApiModel = require('../models/bmsApiModel');
 const pool = require('../config/database');
 const { buildSearchCondition } = require('../utils/searchUtils');
+
+// Cache des bons de commande BMS (évite de refetcher ~7 pages d'API à chaque chargement)
+let _bmsPoCache = { data: null, at: 0 };
+const BMS_PO_TTL_MS = 15 * 60 * 1000; // 15 min
 
 const purchasesController = {
   // ==================== RECHERCHE PRODUITS (POUR COMMANDES) ====================
@@ -554,6 +559,37 @@ const purchasesController = {
   getAvailableParsers: async (req, res) => {
     const parserRegistry = require('../parsers');
     res.json({ success: true, data: parserRegistry.availableParsers() });
+  },
+
+  // GET /api/purchases/bms-spending
+  // Achats fournisseurs depuis BMS : bons de commande "complète" + "vérifiée=oui".
+  // Renvoie les lignes au niveau commande (le front agrège par fournisseur × mois).
+  getSupplierSpending: async (req, res) => {
+    try {
+      const force = req.query.refresh === '1';
+      if (force || !_bmsPoCache.data || (Date.now() - _bmsPoCache.at) > BMS_PO_TTL_MS) {
+        const all = await bmsApiModel.getPurchaseOrders();
+        _bmsPoCache = { data: all, at: Date.now() };
+      }
+
+      const orders = (_bmsPoCache.data || [])
+        .filter(o => o.status === 'complete' && Number(o.verified) === 1)
+        .map(o => ({
+          id: o.id,
+          reference: o.reference,
+          supplier_id: o.supplier_id,
+          supplier_name: o.supplier_name || 'Inconnu',
+          order_date: o.created_at,   // date de commande (invoice_date non fournie par l'API)
+          eta: o.eta,
+          ht: parseFloat(o.subtotal) || 0,
+          ttc: parseFloat(o.grandtotal) || 0,
+        }));
+
+      res.json({ success: true, data: orders, cached_at: new Date(_bmsPoCache.at).toISOString() });
+    } catch (error) {
+      console.error('Erreur getSupplierSpending:', error);
+      res.status(500).json({ success: false, error: error.message || 'Erreur récupération des achats BMS' });
+    }
   }
 };
 

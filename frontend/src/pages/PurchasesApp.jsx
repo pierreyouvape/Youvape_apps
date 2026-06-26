@@ -6,6 +6,7 @@ import { Purchases as PurchasesIcon } from '../components/AppIcons';
 import NeedsTab from '../components/purchases/NeedsTab';
 import SuppliersTab from '../components/purchases/SuppliersTab';
 import OrdersTab from '../components/purchases/OrdersTab';
+import SpendingTab from '../components/purchases/SpendingTab';
 import './PurchasesApp.css';
 
 const C = {
@@ -24,6 +25,7 @@ const SECTIONS = [
   { key: 'besoins',      label: 'Besoins',       icon: '📊' },
   { key: 'fournisseurs', label: 'Fournisseurs',   icon: '🏭' },
   { key: 'commandes',    label: 'Commandes',      icon: '📦' },
+  { key: 'depenses',     label: 'Dépenses',       icon: '💶' },
 ];
 
 function shade(hex, amt) {
@@ -132,6 +134,9 @@ const PurchasesApp = () => {
           )}
           {section === 'commandes' && (
             <OrdersTab token={token} />
+          )}
+          {section === 'depenses' && (
+            <SpendingTab token={token} />
           )}
         </div>
       </main>

@@ -94,6 +94,9 @@ router.delete('/alerts/:productId', checkPurchasesWrite, purchasesController.del
 router.post('/orders/parse-pdf', checkPurchasesWrite, upload.single('pdf'), purchasesController.parsePdf);
 router.get('/parsers', checkPurchasesRead, purchasesController.getAvailableParsers);
 
+// Achats fournisseurs (dépenses) depuis BMS
+router.get('/bms-spending', checkPurchasesRead, purchasesController.getSupplierSpending);
+
 // Sync commandes depuis BMS (AVANT /:id pour éviter le conflit de route)
 router.post('/orders/sync-bms', checkPurchasesWrite, purchasesController.syncOrdersFromBMS);
 router.post('/orders/sync-receptions', checkPurchasesWrite, purchasesController.syncReceptionsFromBMS);
