@@ -6,6 +6,8 @@ import { TICKETS_COLOR } from './ticketConstants';
 import CustomerAutocomplete from './CustomerAutocomplete';
 import OrderCard from './OrderCard';
 import { buildPlaceholderContext, applyPlaceholders } from './macroPlaceholders';
+import RichEditor from './RichEditor';
+import { markdownTextToHtml, isHtml, escapeHtml } from './richText';
 
 const C = {
   orange: '#E28F00', vert: '#4AB866', bleu: '#0071EB',
@@ -45,6 +47,19 @@ const Ic = {
     </svg>
   ),
 };
+
+// Emojis proposés (identique au composer de réponse SAV).
+const EMOJIS = ['😊','👍','🙏','😔','✅','❌','⚠️','📦','🚚','🔄','💡','📞','✉️','🎁','⏳','💰','🔍','📋','👋','😅'];
+
+// Petit bouton d'icône de toolbar (repris du composer de réponse).
+function iconBtn() {
+  return {
+    display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+    width: 30, height: 30, borderRadius: 6, border: 'none',
+    background: 'transparent', cursor: 'pointer', color: C.grisF,
+    fontFamily: 'Lato, sans-serif',
+  };
+}
 
 // ─── Avatar ────────────────────────────────────────────────────────────────────
 function Avatar({ name, size = 34 }) {
@@ -166,6 +181,17 @@ export default function NewTicketPage() {
   const macroRef = useRef();
   const fileRef = useRef();
 
+  // Éditeur riche du composer (Tiptap) — le corps est désormais du HTML, comme
+  // les réponses dans TicketDetail. Permet aux macros HTML de s'afficher formatées.
+  const editorRef = useRef();
+  const [fmt, setFmt] = useState({ bold: false, italic: false, underline: false, bulletList: false });
+  const [showEmojis, setShowEmojis] = useState(false);
+  const [showLinkInput, setShowLinkInput] = useState(false);
+  const [linkUrl, setLinkUrl] = useState('');
+  const [linkText, setLinkText] = useState('');
+  const emojiRef = useRef();
+  const linkRef = useRef();
+
   // Initialiser le statut par défaut au premier statut de la liste
   useEffect(() => {
     if (form.sav_status || statuses.length === 0) return;
@@ -222,7 +248,16 @@ export default function NewTicketPage() {
         statusMap,
       });
 
-      if (typeof macro.body === 'string') setForm(f => ({ ...f, body: applyPlaceholders(macro.body, ctx) }));
+      // Body : deux formats possibles, comme dans TicketDetail.
+      //  - HTML (macros de l'éditeur riche) → substitution avec échappement des valeurs
+      //  - texte plain/markdown-like (anciennes macros) → conversion en HTML
+      // setHTML émet onChange → met form.body à jour.
+      if (typeof macro.body === 'string' && macro.body) {
+        const html = isHtml(macro.body)
+          ? applyPlaceholders(macro.body, ctx, escapeHtml)
+          : markdownTextToHtml(applyPlaceholders(macro.body, ctx));
+        editorRef.current?.setHTML(html);
+      }
       if (macro.subject) setForm(f => ({ ...f, subject: applyPlaceholders(macro.subject, ctx) }));
       if (macro.sav_status) setForm(f => ({ ...f, sav_status: macro.sav_status }));
       if (macro.attachment_url) {
@@ -282,6 +317,37 @@ export default function NewTicketPage() {
     document.addEventListener('mousedown', h);
     return () => document.removeEventListener('mousedown', h);
   }, [macroOpen]);
+  useEffect(() => {
+    if (!showEmojis) return;
+    const h = (e) => { if (emojiRef.current && !emojiRef.current.contains(e.target)) setShowEmojis(false); };
+    document.addEventListener('mousedown', h);
+    return () => document.removeEventListener('mousedown', h);
+  }, [showEmojis]);
+  useEffect(() => {
+    if (!showLinkInput) return;
+    const h = (e) => { if (linkRef.current && !linkRef.current.contains(e.target)) setShowLinkInput(false); };
+    document.addEventListener('mousedown', h);
+    return () => document.removeEventListener('mousedown', h);
+  }, [showLinkInput]);
+
+  // Composer riche : emoji + lien
+  const insertEmoji = (emoji) => {
+    editorRef.current?.insertText(emoji);
+    setShowEmojis(false);
+  };
+  const openLinkInput = () => {
+    setLinkText(editorRef.current?.getSelectedText() || '');
+    setLinkUrl('');
+    setShowLinkInput(true);
+  };
+  const insertLink = () => {
+    const url = linkUrl.trim();
+    if (!url) return;
+    editorRef.current?.setLink({ url, text: linkText.trim() });
+    setLinkUrl('');
+    setLinkText('');
+    setShowLinkInput(false);
+  };
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
@@ -680,19 +746,16 @@ export default function NewTicketPage() {
                 )}
               </div>
 
-              {/* Textarea */}
-              <textarea
-                value={form.body}
-                onChange={e => set('body', e.target.value)}
-                onBlur={() => setTouched(t => ({ ...t, body: true }))}
-                placeholder={form.is_private ? 'Note interne au sujet de ce client…' : 'Premier message envoyé au client…'}
-                style={{
-                  width: '100%', minHeight: 100, padding: '14px 14px 10px',
-                  border: 'none', outline: 'none', resize: 'vertical',
-                  fontFamily: 'Lato, sans-serif', fontSize: 14, color: C.grisTF,
-                  background: 'transparent', boxSizing: 'border-box',
-                }}
-              />
+              {/* Éditeur riche (Tiptap) — corps en HTML, comme les réponses */}
+              <div style={{ display: 'flex', flexDirection: 'column', minHeight: 100, maxHeight: 320 }}>
+                <RichEditor
+                  editorRef={editorRef}
+                  value={form.body}
+                  onChange={(html) => set('body', html)}
+                  onStateChange={setFmt}
+                  placeholder={form.is_private ? 'Note interne au sujet de ce client…' : 'Premier message envoyé au client…'}
+                />
+              </div>
 
               {/* Fichiers en attente */}
               {files.length > 0 && (
@@ -711,18 +774,113 @@ export default function NewTicketPage() {
               )}
 
               {/* Toolbar */}
-              <div style={{ padding: '8px 14px', display: 'flex', alignItems: 'center', gap: 8, borderTop: `1px solid ${C.grisCL}` }}>
-                <button
+              <div style={{ padding: '8px 14px', display: 'flex', alignItems: 'center', gap: 8, borderTop: `1px solid ${C.grisCL}`, position: 'relative', flexWrap: 'wrap' }}>
+                {/* Formatage texte */}
+                <button type="button"
+                  style={{ ...iconBtn(), background: fmt.bold ? `${TICKETS_COLOR}1A` : 'transparent', fontWeight: 800, fontSize: 15, color: fmt.bold ? TICKETS_COLOR : C.grisF }}
+                  title="Gras (Ctrl/Cmd+B)"
+                  onMouseDown={e => { e.preventDefault(); editorRef.current?.toggleBold(); }}
+                >G</button>
+                <button type="button"
+                  style={{ ...iconBtn(), background: fmt.italic ? `${TICKETS_COLOR}1A` : 'transparent', fontStyle: 'italic', fontSize: 15, color: fmt.italic ? TICKETS_COLOR : C.grisF }}
+                  title="Italique (Ctrl/Cmd+I)"
+                  onMouseDown={e => { e.preventDefault(); editorRef.current?.toggleItalic(); }}
+                >I</button>
+                <button type="button"
+                  style={{ ...iconBtn(), background: fmt.underline ? `${TICKETS_COLOR}1A` : 'transparent', textDecoration: 'underline', fontSize: 15, color: fmt.underline ? TICKETS_COLOR : C.grisF }}
+                  title="Souligné (Ctrl/Cmd+U)"
+                  onMouseDown={e => { e.preventDefault(); editorRef.current?.toggleUnderline(); }}
+                >S</button>
+                <button type="button"
+                  style={{ ...iconBtn(), background: fmt.bulletList ? `${TICKETS_COLOR}1A` : 'transparent', fontSize: 15, color: fmt.bulletList ? TICKETS_COLOR : C.grisF }}
+                  title="Liste à puces"
+                  onMouseDown={e => { e.preventDefault(); editorRef.current?.toggleBulletList(); }}
+                >☰</button>
+
+                <span style={{ width: 1, height: 18, background: C.grisCL, margin: '0 2px' }} />
+
+                <button type="button"
                   onClick={() => fileRef.current?.click()}
                   title="Joindre un fichier"
-                  style={{
-                    width: 32, height: 32, borderRadius: 7, background: 'transparent', border: 'none',
-                    display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: 0,
-                  }}
+                  style={iconBtn()}
                 >
                   <Ic.Attach />
                 </button>
                 <input ref={fileRef} type="file" multiple style={{ display: 'none' }} onChange={handleFileChange} />
+
+                {/* Lien */}
+                <div style={{ position: 'relative' }} ref={linkRef}>
+                  <button type="button"
+                    style={{ ...iconBtn(), background: showLinkInput ? C.grisTL : 'transparent' }}
+                    title="Insérer un lien"
+                    onClick={() => showLinkInput ? setShowLinkInput(false) : openLinkInput()}
+                  ><span style={{ fontSize: 13, color: showLinkInput ? TICKETS_COLOR : C.grisF }}>🔗</span></button>
+                  {showLinkInput && (
+                    <div style={{
+                      position: 'absolute', bottom: '100%', left: 0, zIndex: 200,
+                      background: C.blanc, border: `1px solid ${C.grisCL}`, borderRadius: 10,
+                      boxShadow: '0 4px 20px rgba(0,0,0,0.12)', padding: '12px 14px',
+                      marginBottom: 6, minWidth: 300,
+                    }}>
+                      <div style={{ fontSize: 11.5, fontWeight: 800, color: C.grisF, marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Insérer un lien</div>
+                      <div style={{ marginBottom: 8 }}>
+                        <label style={{ fontSize: 11, fontWeight: 700, color: C.grisM, textTransform: 'uppercase', letterSpacing: '0.04em', display: 'block', marginBottom: 4 }}>Texte affiché</label>
+                        <input type="text" value={linkText} onChange={e => setLinkText(e.target.value)}
+                          placeholder="ex. Suivre ma commande"
+                          onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); insertLink(); } if (e.key === 'Escape') setShowLinkInput(false); }}
+                          style={{ width: '100%', padding: '7px 10px', border: `1px solid ${C.grisCL}`, borderRadius: 6, fontSize: 13, fontFamily: 'Lato, sans-serif', outline: 'none', color: C.grisTF, boxSizing: 'border-box' }}
+                          onFocus={e => e.target.style.borderColor = TICKETS_COLOR}
+                          onBlur={e => e.target.style.borderColor = C.grisCL}
+                        />
+                      </div>
+                      <div style={{ marginBottom: 10 }}>
+                        <label style={{ fontSize: 11, fontWeight: 700, color: C.grisM, textTransform: 'uppercase', letterSpacing: '0.04em', display: 'block', marginBottom: 4 }}>URL</label>
+                        <input autoFocus type="text" value={linkUrl} onChange={e => setLinkUrl(e.target.value)}
+                          placeholder="https://..."
+                          onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); insertLink(); } if (e.key === 'Escape') setShowLinkInput(false); }}
+                          style={{ width: '100%', padding: '7px 10px', border: `1px solid ${C.grisCL}`, borderRadius: 6, fontSize: 13, fontFamily: 'Lato, sans-serif', outline: 'none', color: C.grisTF, boxSizing: 'border-box' }}
+                          onFocus={e => e.target.style.borderColor = TICKETS_COLOR}
+                          onBlur={e => e.target.style.borderColor = C.grisCL}
+                        />
+                      </div>
+                      <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+                        <button type="button" onClick={() => setShowLinkInput(false)}
+                          style={{ padding: '7px 12px', background: 'transparent', color: C.grisF, border: `1px solid ${C.grisCL}`, borderRadius: 6, fontSize: 12.5, fontWeight: 600, cursor: 'pointer', fontFamily: 'Lato, sans-serif' }}
+                        >Annuler</button>
+                        <button type="button" onClick={insertLink}
+                          style={{ padding: '7px 14px', background: TICKETS_COLOR, color: '#fff', border: 'none', borderRadius: 6, fontSize: 12.5, fontWeight: 700, cursor: 'pointer', fontFamily: 'Lato, sans-serif' }}
+                        >Insérer</button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Emoji */}
+                <div style={{ position: 'relative' }} ref={emojiRef}>
+                  <button type="button"
+                    style={{ ...iconBtn(), background: showEmojis ? C.grisTL : 'transparent' }}
+                    title="Emoji"
+                    onClick={() => setShowEmojis(o => !o)}
+                  ><span style={{ fontSize: 14 }}>😀</span></button>
+                  {showEmojis && (
+                    <div style={{
+                      position: 'absolute', bottom: '100%', left: 0, zIndex: 200,
+                      background: C.blanc, border: `1px solid ${C.grisCL}`, borderRadius: 10,
+                      boxShadow: '0 4px 20px rgba(0,0,0,0.12)', padding: '10px', marginBottom: 6,
+                    }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 4 }}>
+                        {EMOJIS.map(emoji => (
+                          <button key={emoji} type="button"
+                            onClick={() => insertEmoji(emoji)}
+                            style={{ width: 36, height: 36, background: 'transparent', border: 'none', borderRadius: 6, cursor: 'pointer', fontSize: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'background 0.1s' }}
+                            onMouseEnter={e => e.currentTarget.style.background = C.grisTL}
+                            onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                          >{emoji}</button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
 
