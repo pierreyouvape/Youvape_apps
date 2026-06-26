@@ -572,6 +572,13 @@ const purchasesController = {
         _bmsPoCache = { data: all, at: Date.now() };
       }
 
+      // Modèle d'URL ERP BMS (clé de session Magento) — configurable en BDD.
+      // L'id myFulfillment = le po_id de l'ERP ; on remplace {po_id} dans le template.
+      const tplRow = await pool.query(
+        "SELECT config_value FROM app_config WHERE config_key = 'bms_erp_order_url_template'"
+      );
+      const urlTpl = tplRow.rows[0]?.config_value || null;
+
       const orders = (_bmsPoCache.data || [])
         .filter(o => o.status === 'complete' && Number(o.verified) === 1)
         .map(o => ({
@@ -583,6 +590,7 @@ const purchasesController = {
           eta: o.eta,
           ht: parseFloat(o.subtotal) || 0,
           ttc: parseFloat(o.grandtotal) || 0,
+          bms_url: urlTpl ? urlTpl.replace('{po_id}', o.id) : null,
         }));
 
       res.json({ success: true, data: orders, cached_at: new Date(_bmsPoCache.at).toISOString() });

@@ -195,7 +195,17 @@ export default function SpendingTab({ token }) {
             <tbody>
               {selOrders.map(o => (
                 <tr key={o.id}>
-                  <td style={{ ...cellStyle, fontWeight: 700, color: C.saphir }}>{o.reference || `#${o.id}`}</td>
+                  <td style={{ ...cellStyle, fontWeight: 700 }}>
+                    {o.bms_url ? (
+                      <a href={o.bms_url} target="_blank" rel="noopener noreferrer"
+                        style={{ color: C.saphir, textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 5 }}
+                        title="Ouvrir la commande (et sa facture) dans BMS">
+                        {o.reference || `#${o.id}`}<span style={{ fontSize: 11 }}>↗</span>
+                      </a>
+                    ) : (
+                      <span style={{ color: C.saphir }}>{o.reference || `#${o.id}`}</span>
+                    )}
+                  </td>
                   <td style={cellStyle}>{fmtDate(o.order_date)}</td>
                   <td style={{ ...cellStyle, textAlign: 'right', fontWeight: 700 }}>{eur(o.ht)}</td>
                   <td style={{ ...cellStyle, textAlign: 'right', color: C.grisF }}>{eur(o.ttc)}</td>
