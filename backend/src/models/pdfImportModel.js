@@ -250,12 +250,12 @@ const pdfImportModel = {
         discount_percent: discountPercent,
         supplier_price: dbPrice,
         // Prix retenu.
-        // invertPackQty : on fait confiance au prix du PDF (= prix pack reconstruit
-        //   à partir du prix unitaire facturé), car le supplier_price en BDD est
-        //   incohérent selon les produits (parfois prix unité, parfois prix pack).
+        // invertPackQty / trustPdfPrice : on fait confiance au prix du PDF (= prix
+        //   réellement facturé), car le supplier_price en BDD est incohérent selon
+        //   les produits (parfois prix unité/pack, parfois nul ou divergent).
         //   Le PDF/facture est la source de vérité du montant réellement payé.
         // autres modes : PDF si meilleur (ou si pas de prix BDD), sinon prix BDD.
-        unit_price: parsed.invertPackQty
+        unit_price: (parsed.invertPackQty || parsed.trustPdfPrice)
           ? (pdfNet != null ? pdfNet : dbPrice)
           : ((pdfNet != null && (dbPrice == null || pdfNet < dbPrice)) ? pdfNet : dbPrice),
         // Pack

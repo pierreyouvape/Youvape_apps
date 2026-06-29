@@ -61,7 +61,13 @@ function parseDevis(text) {
     });
   }
 
-  return { orderNumber, orderDate, items, hasPrice: true, invertPackQty: true };
+  // LIPS facture toujours à l'unité de vente (= le pack) : la colonne "Unité(s)"
+  // donne le nombre de packs et le prix est déjà le prix DU pack
+  // (ex: pods CLK x5 à 9,50€, sachet boosters x100 à 45€). Donc aucune conversion
+  // pack_qty (pdfIsPackBased), contrairement à invertPackQty (Curieux/e.tasty où le
+  // PDF est en unités individuelles). trustPdfPrice : on retient le prix facturé du
+  // PDF, car le supplier_price en BDD diverge parfois (ou est nul).
+  return { orderNumber, orderDate, items, hasPrice: true, pdfIsPackBased: true, trustPdfPrice: true };
 }
 
 /**
@@ -111,7 +117,13 @@ function parseCommande(text) {
     });
   }
 
-  return { orderNumber, orderDate, items, hasPrice: true, invertPackQty: true };
+  // LIPS facture toujours à l'unité de vente (= le pack) : la colonne "Unité(s)"
+  // donne le nombre de packs et le prix est déjà le prix DU pack
+  // (ex: pods CLK x5 à 9,50€, sachet boosters x100 à 45€). Donc aucune conversion
+  // pack_qty (pdfIsPackBased), contrairement à invertPackQty (Curieux/e.tasty où le
+  // PDF est en unités individuelles). trustPdfPrice : on retient le prix facturé du
+  // PDF, car le supplier_price en BDD diverge parfois (ou est nul).
+  return { orderNumber, orderDate, items, hasPrice: true, pdfIsPackBased: true, trustPdfPrice: true };
 }
 
 /**
@@ -226,5 +238,11 @@ function parseProForma(text) {
       });
     }
 
-  return { orderNumber, orderDate, items, hasPrice: true, invertPackQty: true };
+  // LIPS facture toujours à l'unité de vente (= le pack) : la colonne "Unité(s)"
+  // donne le nombre de packs et le prix est déjà le prix DU pack
+  // (ex: pods CLK x5 à 9,50€, sachet boosters x100 à 45€). Donc aucune conversion
+  // pack_qty (pdfIsPackBased), contrairement à invertPackQty (Curieux/e.tasty où le
+  // PDF est en unités individuelles). trustPdfPrice : on retient le prix facturé du
+  // PDF, car le supplier_price en BDD diverge parfois (ou est nul).
+  return { orderNumber, orderDate, items, hasPrice: true, pdfIsPackBased: true, trustPdfPrice: true };
 }
