@@ -759,7 +759,7 @@ class ProductModel {
         const p = paramIndex + i;
         const isShort = w.length <= 2;
         const pField = `unaccent(p.post_title || ' ' || COALESCE(p.sku, '') || ' ' || COALESCE(p.brand, '') || ' ' || COALESCE(p.sub_brand, ''))`;
-        const vField = `unaccent(v.post_title || ' ' || COALESCE(v.sku, '') || ' ' || COALESCE(v.brand, '') || ' ' || COALESCE(v.sub_brand, ''))`;
+        const vField = `unaccent(v.post_title || ' ' || COALESCE(v.sku, '') || ' ' || COALESCE(v.brand, '') || ' ' || COALESCE(v.sub_brand, '') || ' ' || COALESCE(v.product_attributes::text, ''))`;
         const pCond = isShort ? `(' ' || ${pField} || ' ') ILIKE unaccent($${p})` : `${pField} ILIKE unaccent($${p})`;
         const vCond = isShort ? `(' ' || ${vField} || ' ') ILIKE unaccent($${p})` : `${vField} ILIKE unaccent($${p})`;
         return `(
@@ -828,7 +828,7 @@ class ProductModel {
       if (search) {
         const words = search.trim().split(/\s+/).filter(Boolean);
         const pField = `unaccent(p_parent.post_title || ' ' || COALESCE(p_parent.sku, '') || ' ' || COALESCE(p_parent.brand, '') || ' ' || COALESCE(p_parent.sub_brand, ''))`;
-        const vField = `unaccent(v.post_title || ' ' || COALESCE(v.sku, '') || ' ' || COALESCE(v.brand, '') || ' ' || COALESCE(v.sub_brand, ''))`;
+        const vField = `unaccent(v.post_title || ' ' || COALESCE(v.sku, '') || ' ' || COALESCE(v.brand, '') || ' ' || COALESCE(v.sub_brand, '') || ' ' || COALESCE(v.product_attributes::text, ''))`;
         const wordClauses = words.map((w, i) => {
           const p = varParams.length + 1 + i;
           const isShort = w.length <= 2;
@@ -987,7 +987,7 @@ class ProductModel {
         const p = idx + i;
         const isShort = w.length <= 2;
         const pField = `unaccent(p.post_title || ' ' || COALESCE(p.sku, '') || ' ' || COALESCE(p.brand, '') || ' ' || COALESCE(p.sub_brand, ''))`;
-        const vField = `unaccent(v.post_title || ' ' || COALESCE(v.sku, '') || ' ' || COALESCE(v.brand, '') || ' ' || COALESCE(v.sub_brand, ''))`;
+        const vField = `unaccent(v.post_title || ' ' || COALESCE(v.sku, '') || ' ' || COALESCE(v.brand, '') || ' ' || COALESCE(v.sub_brand, '') || ' ' || COALESCE(v.product_attributes::text, ''))`;
         const pCond = isShort ? `(' ' || ${pField} || ' ') ILIKE unaccent($${p})` : `${pField} ILIKE unaccent($${p})`;
         const vCond = isShort ? `(' ' || ${vField} || ' ') ILIKE unaccent($${p})` : `${vField} ILIKE unaccent($${p})`;
         return `(
