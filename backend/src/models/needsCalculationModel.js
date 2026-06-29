@@ -1,5 +1,6 @@
 const pool = require('../config/database');
 const { computeProductNeeds } = require('../services/needsCalculator');
+const { buildVariationLabel } = require('../utils/variationLabel');
 
 // Cache court pour getReorderProductIds (évite de recalculer 2x par requête catalogue : liste + count)
 const REORDER_IDS_CACHE_TTL_MS = 60 * 1000;
@@ -23,6 +24,7 @@ const needsCalculationModel = {
         p.id,
         p.wp_product_id,
         p.post_title,
+        p.product_attributes,
         p.sku,
         COALESCE(p.stock, 0) as stock,
         p.stock_status,
@@ -186,7 +188,10 @@ const needsCalculationModel = {
     return products.map(p => ({
       id: p.id,
       wp_product_id: p.wp_product_id,
-      post_title: p.post_title,
+      // Compléter le libellé des variations dont le post_title WooCommerce est
+      // identique au parent (ex: "Cartouches CLK One") avec leurs attributs
+      // (saveur, taux de nicotine) — même correctif que le catalogue (getAllForCatalog).
+      post_title: buildVariationLabel(p.post_title, p.parent_title, p.product_attributes),
       sku: p.sku,
       stock: parseInt(p.stock) || 0,
       stock_status: p.stock_status,
