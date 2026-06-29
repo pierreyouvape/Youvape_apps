@@ -20,6 +20,30 @@ function fmtEur(v) { return v !== null && v !== undefined && v !== '' ? `${parse
 
 const MONTH_NAMES = ['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
 
+// Clé triable pour une date "JJ/MM/AAAA"
+function dateKey(d) {
+  const parts = (d || '').split('/');
+  if (parts.length !== 3) return 0;
+  const [dd, mm, yy] = parts;
+  return parseInt(`${yy}${mm}${dd}`, 10) || 0;
+}
+
+// Hook de tri générique (clic sur en-tête → desc puis asc)
+function useSorted(rows, sorters) {
+  const [sort, setSort] = useState(null);
+  const toggle = key => setSort(p => p?.key === key ? { key, dir: p.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: 'desc' });
+  const sorted = useMemo(() => {
+    if (!sort || !sorters[sort.key]) return rows;
+    const get = sorters[sort.key];
+    return [...rows].sort((a, b) => {
+      const va = get(a), vb = get(b);
+      const cmp = typeof va === 'string' ? va.localeCompare(vb) : (va - vb);
+      return sort.dir === 'asc' ? cmp : -cmp;
+    });
+  }, [rows, sort, sorters]);
+  return { sorted, sort, toggle };
+}
+
 function StatCard({ value, label, color }) {
   return (
     <div style={{ flex: 1, minWidth: 110, background: C.white, borderRadius: 10, border: `1px solid ${C.greyB}`, padding: '14px 16px', textAlign: 'center', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
@@ -38,8 +62,17 @@ function TabBtn({ label, active, onClick, badge }) {
   );
 }
 
-function Th({ label, align = 'left' }) {
-  return <th style={{ padding: '10px 12px', textAlign: align, fontWeight: 700, color: C.dark, fontSize: 11.5, borderBottom: `2px solid ${C.greyB}`, background: C.grey, whiteSpace: 'nowrap' }}>{label}</th>;
+function Th({ label, align = 'left', sortKey, sort, onSort }) {
+  const sortable = !!sortKey && !!onSort;
+  const active = sortable && sort?.key === sortKey;
+  return (
+    <th
+      onClick={sortable ? () => onSort(sortKey) : undefined}
+      style={{ padding: '10px 12px', textAlign: align, fontWeight: 700, color: active ? C.accent : C.dark, fontSize: 11.5, borderBottom: `2px solid ${C.greyB}`, background: C.grey, whiteSpace: 'nowrap', cursor: sortable ? 'pointer' : 'default', userSelect: 'none' }}
+    >
+      {label}{sortable && (active ? (sort.dir === 'asc' ? ' ▲' : ' ▼') : ' ⇕')}
+    </th>
+  );
 }
 function Td({ children, align = 'left', bg, color, bold }) {
   return <td style={{ padding: '8px 12px', textAlign: align, background: bg, color: color || C.dark, fontWeight: bold ? 700 : 400, borderBottom: `1px solid ${C.greyB}`, fontSize: 13 }}>{children}</td>;
@@ -51,19 +84,53 @@ const CONTRACT_LABELS = {
   service: 'Service',
 };
 
+const HISTORY_SORTERS = {
+  invoice_number: inv => inv.invoice_number || '',
+  invoice_date:   inv => dateKey(inv.invoice_date),
+  period:         inv => dateKey(inv.period_start),
+  contract_type:  inv => inv.contract_type || '',
+  total_parcels:  inv => Number(inv.total_parcels) || 0,
+  total_ht:       inv => parseFloat(inv.total_ht || 0),
+  total_tva:      inv => parseFloat(inv.total_tva || 0),
+  total_ttc:      inv => parseFloat(inv.total_ttc || 0),
+  created_at:     inv => new Date(inv.created_at).getTime() || 0,
+};
+
+const LINE_SORTERS = {
+  tier:    l => l.tier || '',
+  qty:     l => l.qty || 0,
+  pu:      l => l.pu || 0,
+  montant: l => l.montant || 0,
+};
+
+const TIER_SORTERS = {
+  tier:    t => t.tier || '',
+  pu:      t => t.pu || 0,
+  qty:     t => t.qty || 0,
+  count:   t => t.count || 0,
+  montant: t => t.montant || 0,
+};
+
 function HistoryTable({ history, loadFromHistory, onDelete, onDownload }) {
+  const { sorted, sort, toggle } = useSorted(history, HISTORY_SORTERS);
   return (
     <div style={{ overflowX: 'auto' }}>
       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
         <thead>
           <tr>
-            <Th label="N° Facture" /><Th label="Date" /><Th label="Période" /><Th label="Contrat" />
-            <Th label="Lettres" align="right" /><Th label="Total HT" align="right" /><Th label="TVA" align="right" /><Th label="Total TTC" align="right" />
-            <Th label="Enregistrée le" /><Th label="" />
+            <Th label="N° Facture" sortKey="invoice_number" sort={sort} onSort={toggle} />
+            <Th label="Date" sortKey="invoice_date" sort={sort} onSort={toggle} />
+            <Th label="Période" sortKey="period" sort={sort} onSort={toggle} />
+            <Th label="Contrat" sortKey="contract_type" sort={sort} onSort={toggle} />
+            <Th label="Lettres" align="right" sortKey="total_parcels" sort={sort} onSort={toggle} />
+            <Th label="Total HT" align="right" sortKey="total_ht" sort={sort} onSort={toggle} />
+            <Th label="TVA" align="right" sortKey="total_tva" sort={sort} onSort={toggle} />
+            <Th label="Total TTC" align="right" sortKey="total_ttc" sort={sort} onSort={toggle} />
+            <Th label="Enregistrée le" sortKey="created_at" sort={sort} onSort={toggle} /><Th label="" />
           </tr>
         </thead>
         <tbody>
-          {history.map((inv, i) => (
+          {sorted.map((inv, i) => (
             <tr key={inv.id}
               onClick={() => loadFromHistory(inv)}
               style={{ background: i % 2 === 0 ? C.white : C.grey, cursor: 'pointer' }}
@@ -310,6 +377,8 @@ export default function LettreSuivieApp() {
   const filteredLines = lines.filter(l =>
     !search || (l.tier || '').toLowerCase().includes(search.toLowerCase()) || String(l.montant).includes(search)
   );
+  const lineSort = useSorted(filteredLines, LINE_SORTERS);
+  const tierSort = useSorted(tierSummary, TIER_SORTERS);
 
   return (
     <AppShell currentPath="/lettre-suivie">
@@ -396,10 +465,15 @@ export default function LettreSuivieApp() {
                   </div>
                   <div style={{ overflowX: 'auto' }}>
                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-                      <thead><tr><Th label="Tranche de poids" /><Th label="Quantité" align="right" /><Th label="Prix unitaire" align="right" /><Th label="Montant HT" align="right" /></tr></thead>
+                      <thead><tr>
+                        <Th label="Tranche de poids" sortKey="tier" sort={lineSort.sort} onSort={lineSort.toggle} />
+                        <Th label="Quantité" align="right" sortKey="qty" sort={lineSort.sort} onSort={lineSort.toggle} />
+                        <Th label="Prix unitaire" align="right" sortKey="pu" sort={lineSort.sort} onSort={lineSort.toggle} />
+                        <Th label="Montant HT" align="right" sortKey="montant" sort={lineSort.sort} onSort={lineSort.toggle} />
+                      </tr></thead>
                       <tbody>
-                        {filteredLines.length === 0 && <tr><td colSpan={4} style={{ textAlign: 'center', padding: 32, color: C.greyT }}>Aucune ligne</td></tr>}
-                        {filteredLines.map((l, i) => (
+                        {lineSort.sorted.length === 0 && <tr><td colSpan={4} style={{ textAlign: 'center', padding: 32, color: C.greyT }}>Aucune ligne</td></tr>}
+                        {lineSort.sorted.map((l, i) => (
                           <tr key={i} style={{ background: i % 2 === 0 ? C.white : C.grey }}>
                             <Td><span style={{ background: C.accentL, color: C.accent, padding: '2px 8px', borderRadius: 12, fontSize: 11.5, fontWeight: 600 }}>{l.tier}</span></Td>
                             <Td align="right" bold>{l.qty ?? '—'}</Td>
@@ -421,9 +495,15 @@ export default function LettreSuivieApp() {
                 <div style={{ padding: 18 }}>
                   <div style={{ overflowX: 'auto' }}>
                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-                      <thead><tr><Th label="Tranche de poids" /><Th label="Prix unitaire" align="right" /><Th label="Lettres" align="right" /><Th label="Lignes" align="right" /><Th label="Montant HT" align="right" /></tr></thead>
+                      <thead><tr>
+                        <Th label="Tranche de poids" sortKey="tier" sort={tierSort.sort} onSort={tierSort.toggle} />
+                        <Th label="Prix unitaire" align="right" sortKey="pu" sort={tierSort.sort} onSort={tierSort.toggle} />
+                        <Th label="Lettres" align="right" sortKey="qty" sort={tierSort.sort} onSort={tierSort.toggle} />
+                        <Th label="Lignes" align="right" sortKey="count" sort={tierSort.sort} onSort={tierSort.toggle} />
+                        <Th label="Montant HT" align="right" sortKey="montant" sort={tierSort.sort} onSort={tierSort.toggle} />
+                      </tr></thead>
                       <tbody>
-                        {tierSummary.map((t, i) => (
+                        {tierSort.sorted.map((t, i) => (
                           <tr key={i} style={{ background: i % 2 === 0 ? C.white : C.grey }}>
                             <Td bold>{t.tier}</Td>
                             <Td align="right" color={C.greyT}>{fmtEur(t.pu)}</Td>
