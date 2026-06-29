@@ -515,6 +515,10 @@ const ProductDetail = () => {
 
 
   const metorikUrl = getMetorikUrl();
+  // Lien direct vers la fiche produit en ligne. On passe par la redirection
+  // canonique WordPress (?post_type=product&p=ID) → toujours le bon permalien
+  // quelle que soit l'arborescence catégorie (le guid en BDD est vide/incohérent).
+  const prodUrl = id ? `https://www.youvape.fr/?post_type=product&p=${id}` : null;
 
   // ==================== RENDER ====================
 
@@ -571,6 +575,14 @@ const ProductDetail = () => {
                   {metorikUrl && (
                     <a href={metorikUrl} target="_blank" rel="noopener noreferrer" title="Voir sur Metorik" style={{ display: 'inline-flex', opacity: 0.7 }} onMouseOver={e => e.currentTarget.style.opacity = 1} onMouseOut={e => e.currentTarget.style.opacity = 0.7}>
                       <img src="https://metorik.com/img/brand/logo-icon.png" alt="Metorik" style={{ width: '18px', height: '18px' }} />
+                    </a>
+                  )}
+                  {prodUrl && (
+                    <a href={prodUrl} target="_blank" rel="noopener noreferrer" title="Voir la fiche produit sur youvape.fr"
+                       style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '3px 10px', fontSize: '12px', fontWeight: 600, color: '#135E84', backgroundColor: '#fff', border: '1px solid #135E84', borderRadius: '6px', textDecoration: 'none', lineHeight: 1.4, whiteSpace: 'nowrap' }}
+                       onMouseOver={e => { e.currentTarget.style.backgroundColor = '#135E84'; e.currentTarget.style.color = '#fff'; }}
+                       onMouseOut={e => { e.currentTarget.style.backgroundColor = '#fff'; e.currentTarget.style.color = '#135E84'; }}>
+                      ↗ Voir en prod
                     </a>
                   )}
                 </>
