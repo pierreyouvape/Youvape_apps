@@ -185,6 +185,24 @@ export const Chronopost = ({ size = 56 }) => (
   </svg>
 );
 
+export const LettreSuivie = ({ size = 56 }) => (
+  <svg width={size} height={size} viewBox="0 0 100 100" fill="none" style={{ display: 'block', flexShrink: 0 }}>
+    <defs>
+      <linearGradient id="ls-env" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" stopColor="#FFD43B" />
+        <stop offset="100%" stopColor="#FFB000" />
+      </linearGradient>
+    </defs>
+    {/* Enveloppe */}
+    <rect x="14" y="26" width="72" height="48" rx="6" fill="url(#ls-env)" stroke="#1A1A40" strokeWidth="3" />
+    {/* Rabat */}
+    <path d="M16 30 L50 54 L84 30" fill="none" stroke="#1A1A40" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+    {/* Pastille de suivi */}
+    <circle cx="74" cy="66" r="13" fill="#1457A8" stroke="white" strokeWidth="2.5" />
+    <path d="M68 66 l4 4 l8 -9" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+  </svg>
+);
+
 export const Customers = (props) => (
   <Base {...props}>
     <circle cx={9} cy={8} r={3.2} />
@@ -208,4 +226,5 @@ export const APPS = [
   { key: 'tickets',    path: '/tickets',    label: 'SAV / Tickets',            Icon: Tickets,      color: '#0891B2' },
   { key: 'chronopost', path: '/chronopost', label: 'Factures Chronopost',      Icon: Chronopost,   color: '#0D7FA8' },
   { key: 'colissimo',  path: '/colissimo',  label: 'Factures Colissimo',       Icon: Colissimo,    color: '#D96000' },
+  { key: 'lettre-suivie', path: '/lettre-suivie', label: 'Factures Lettre Suivie', Icon: LettreSuivie, color: '#FFB000' },
 ];

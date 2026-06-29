@@ -30,6 +30,7 @@ const savRoutes = require('./routes/savRoutes');
 const clientSavRoutes = require('./routes/clientSavRoutes');
 const chronopostRoutes = require('./routes/chronopostRoutes');
 const colissimoRoutes  = require('./routes/colissimoRoutes');
+const lettreSuivieRoutes = require('./routes/lettreSuivieRoutes');
 const { setupCron, setupBmsCron, setupComputedCostCron, setupBmsBarcodeCron, setupStockResyncCron, setupSavAutomationsCron, setupProductDbSyncCron, setupBmsTagRetryCron, setupReportEmailCron } = require('./services/cronService');
 const rewardService = require('./services/rewardService');
 const emailService = require('./services/emailService');
@@ -77,6 +78,7 @@ app.use('/api/sav', savRoutes);               // Module SAV Zendesk
 app.use('/api/client-sav', clientSavRoutes);  // Espace client SAV (plugin WP youvape-sav-client)
 app.use('/api/chronopost', chronopostRoutes); // Chronopost invoice analysis
 app.use('/api/colissimo',  colissimoRoutes);  // Colissimo invoice analysis
+app.use('/api/lettre-suivie', lettreSuivieRoutes); // La Poste Lettre Suivie invoice analysis
 
 // Start server
 app.listen(PORT, async () => {
