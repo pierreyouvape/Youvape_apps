@@ -148,7 +148,7 @@ exports.saveInvoice = [
         RETURNING id
       `, [
         CARRIER, invoiceNumber, parsed.invoiceDate || null,
-        parsed.periodDate || null, parsed.periodRange || null,
+        parsed.periodStart || parsed.periodDate || null, parsed.periodEnd || null,
         parsed.contractNumber || null,
         parsed.stats?.nb_lettres ?? 0,
         parsed.stats?.nb_lines ?? 0,

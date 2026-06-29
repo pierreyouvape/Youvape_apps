@@ -72,7 +72,7 @@ function HistoryTable({ history, loadFromHistory, onDelete, onDownload }) {
             >
               <Td bold color={C.accent}>🔍 {inv.invoice_number}</Td>
               <Td color={C.greyT}>{inv.invoice_date || '—'}</Td>
-              <Td color={C.greyT}>{inv.period_end || inv.period_start || '—'}</Td>
+              <Td color={C.greyT}>{inv.period_end ? `${inv.period_start} → ${inv.period_end}` : (inv.period_start || '—')}</Td>
               <Td color={C.greyT}>{inv.contract_type || CONTRACT_LABELS[inv.format] || '—'}</Td>
               <Td align="right">{inv.total_parcels ?? '—'}</Td>
               <Td align="right" bold>{fmtEur(inv.total_ht)}</Td>

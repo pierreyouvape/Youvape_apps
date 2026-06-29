@@ -47,6 +47,7 @@ function parseLettreSuiviePdf(text) {
   let invoiceNumber = null, invoiceDate = null, periodDate = null;
   let contractNumber = null, contractType = null, clientNumber = null;
   let tvaRate = 0, totalTTC = null, periodRange = null;
+  let periodStart = null, periodEnd = null;
 
   for (const l of nonEmpty) {
     let m;
@@ -58,6 +59,7 @@ function parseLettreSuiviePdf(text) {
     }
     if (!periodRange && (m = l.match(/Consommations du\s+(\d{2}\/\d{2}\/\d{4})\s+au\s+(\d{2}\/\d{2}\/\d{4})/i))) {
       periodRange = `${m[1]} → ${m[2]}`;
+      periodStart = m[1]; periodEnd = m[2];
     }
     if (!contractNumber && (m = l.match(/Contrat\s+(.*?)\s+N[°º]\s*(D-[\d-]+)/i))) {
       contractType = m[1].trim(); contractNumber = m[2];
@@ -196,6 +198,7 @@ function parseLettreSuiviePdf(text) {
 
   return {
     invoiceNumber, invoiceDate, periodDate, periodRange,
+    periodStart: periodStart || periodDate, periodEnd,
     contractNumber, contractType, clientNumber,
     tvaRate, exonerated, totalHT, totalTVA, totalTTC,
     format,
