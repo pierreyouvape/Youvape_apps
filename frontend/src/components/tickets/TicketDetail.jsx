@@ -363,22 +363,29 @@ function ImageLightbox({ image, index, total, onPrev, onNext, onClose }) {
 // ─── Pièce jointe ─────────────────────────────────────────────────────────────
 function AttachmentItem({ att, ticketId }) {
   const isImage = att.mime?.startsWith('image/');
-  const url = att.url || `/api/sav/attachments/${ticketId}/${att.filename}`;
+  const rawUrl = att.url || `/api/sav/attachments/${ticketId}/${att.filename}`;
+  // Le HEIC (photos iPhone) n'est pas affichable par les navigateurs hors Safari :
+  // on demande au backend une version JPEG convertie à la volée pour l'affichage.
+  const name = att.original_name || att.filename || '';
+  const isHeic = /image\/hei[cf]/i.test(att.mime || '') || /\.hei[cf]$/i.test(name);
+  const url = isHeic ? `${rawUrl}${rawUrl.includes('?') ? '&' : '?'}format=jpeg` : rawUrl;
+  // Le fichier servi est un JPEG : on aligne le nom affiché/téléchargé.
+  const displayName = isHeic ? name.replace(/\.hei[cf]$/i, '.jpg') : (att.original_name || name);
   const sizeKb = att.size ? `${(att.size / 1024).toFixed(0)} Ko` : '';
   const lightbox = useContext(LightboxContext);
 
   // Enregistre l'image dans la galerie partagée du thread (pour la navigation).
   useEffect(() => {
     if (!isImage || !lightbox) return;
-    return lightbox.register(url, { url, name: att.original_name });
-  }, [isImage, lightbox, url, att.original_name]);
+    return lightbox.register(url, { url, name: displayName });
+  }, [isImage, lightbox, url, displayName]);
 
   if (isImage) {
     // Sans provider (cas isolé), fallback sur l'ancien comportement (nouvel onglet).
     if (!lightbox) {
       return (
         <a href={url} target="_blank" rel="noopener noreferrer" style={{ display: 'inline-block', marginRight: 8, marginTop: 6 }}>
-          <img src={url} alt={att.original_name} style={{ height: 80, borderRadius: 6, border: `1px solid ${C.grisCL}`, objectFit: 'cover' }} />
+          <img src={url} alt={displayName} style={{ height: 80, borderRadius: 6, border: `1px solid ${C.grisCL}`, objectFit: 'cover' }} />
         </a>
       );
     }
@@ -387,7 +394,7 @@ function AttachmentItem({ att, ticketId }) {
         title="Cliquer pour agrandir"
         style={{ display: 'inline-block', marginRight: 8, marginTop: 6, padding: 0, border: 'none', background: 'transparent', cursor: 'zoom-in' }}
       >
-        <img src={url} alt={att.original_name} style={{ height: 80, borderRadius: 6, border: `1px solid ${C.grisCL}`, objectFit: 'cover', display: 'block' }} />
+        <img src={url} alt={displayName} style={{ height: 80, borderRadius: 6, border: `1px solid ${C.grisCL}`, objectFit: 'cover', display: 'block' }} />
       </button>
     );
   }
@@ -398,7 +405,7 @@ function AttachmentItem({ att, ticketId }) {
       background: C.grisTL, border: `1px solid ${C.grisCL}`,
       borderRadius: 6, fontSize: 12, color: TICKETS_COLOR, textDecoration: 'none', fontWeight: 600,
     }}>
-      📎 {att.original_name} {sizeKb && <span style={{ color: C.grisM, fontWeight: 400 }}>({sizeKb})</span>}
+      📎 {displayName} {sizeKb && <span style={{ color: C.grisM, fontWeight: 400 }}>({sizeKb})</span>}
     </a>
   );
 }

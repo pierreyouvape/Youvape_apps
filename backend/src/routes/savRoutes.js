@@ -55,7 +55,9 @@ const verifyZendeskWebhook = (req, res, next) => {
 router.post('/inbound-zendesk', verifyZendeskWebhook, express.json({ limit: '10mb' }), savController.inboundZendesk);
 
 // ─── Servir une pièce jointe d'un ticket ──────────────────────────────────────
-router.get('/attachments/:ticketId/:filename', (req, res) => {
+const { isHeic, heicToJpegCached } = require('../utils/heicConvert');
+
+router.get('/attachments/:ticketId/:filename', async (req, res) => {
   const { ticketId, filename } = req.params;
   // Whitelist stricte sur ticketId (entier) et filename (alphanumérique + . _ -)
   if (!/^\d+$/.test(ticketId) || !/^[A-Za-z0-9._-]+$/.test(filename)) {
@@ -70,6 +72,21 @@ router.get('/attachments/:ticketId/:filename', (req, res) => {
   if (!fs.existsSync(resolved)) {
     return res.status(404).json({ error: 'Fichier introuvable' });
   }
+
+  // Les navigateurs (hors Safari) n'affichent pas le HEIC. Avec ?format=jpeg,
+  // on sert une version JPEG convertie à la volée (cache disque). En cas
+  // d'échec de conversion, on retombe sur le fichier d'origine.
+  if (req.query.format === 'jpeg' && isHeic(null, filename)) {
+    try {
+      const jpegPath = await heicToJpegCached(resolved);
+      res.type('image/jpeg');
+      return res.sendFile(jpegPath);
+    } catch (e) {
+      console.warn(`[SAV] Conversion HEIC→JPEG échouée (${filename}) :`, e.message);
+      // fallback : on sert l'original ci-dessous
+    }
+  }
+
   res.sendFile(resolved);
 });
 
