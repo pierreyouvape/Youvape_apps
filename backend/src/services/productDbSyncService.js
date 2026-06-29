@@ -21,6 +21,15 @@ const REQUEST_DELAY_MS = 300;
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+// Le prix remise (Woo Discount Rules) n'est pas expose par l'API REST WC standard.
+// Un mu-plugin cote prod ajoute le champ `wdr_discounted_price` a la reponse produit/variation.
+// Tant qu'il n'est pas deploye, le champ est absent -> discounted_price reste NULL (colonne vide).
+const parseDiscounted = (raw) => {
+  if (raw === null || raw === undefined || raw === '') return null;
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? n : null;
+};
+
 const getWcCredentials = async () => {
   const result = await pool.query('SELECT consumer_key, consumer_secret, woocommerce_url FROM rewards_config LIMIT 1');
   if (result.rows.length === 0) throw new Error('Credentials WC non trouvees dans rewards_config');
@@ -98,6 +107,7 @@ const runProductDbSync = async () => {
       stock_status: p.stock_status || 'outofstock',
       stock: p.stock_quantity === null || p.stock_quantity === undefined ? 0 : Number(p.stock_quantity),
       manage_stock: !!p.manage_stock,
+      discounted_price: parseDiscounted(p.wdr_discounted_price),
     });
 
     if (p.type === 'variable') {
@@ -110,6 +120,7 @@ const runProductDbSync = async () => {
             stock_status: v.stock_status || 'outofstock',
             stock: v.stock_quantity === null || v.stock_quantity === undefined ? 0 : Number(v.stock_quantity),
             manage_stock: !!v.manage_stock,
+            discounted_price: parseDiscounted(v.wdr_discounted_price),
           });
         }
       } catch (err) {
@@ -129,7 +140,8 @@ const runProductDbSync = async () => {
         live_post_status text,
         live_stock_status text,
         live_stock numeric,
-        live_manage_stock boolean
+        live_manage_stock boolean,
+        live_discounted_price numeric
       ) ON COMMIT DROP
     `);
 
@@ -139,23 +151,24 @@ const runProductDbSync = async () => {
       const values = [];
       const params = [];
       chunk.forEach((r, idx) => {
-        const base = idx * 5;
-        values.push(`($${base + 1},$${base + 2},$${base + 3},$${base + 4},$${base + 5})`);
-        params.push(r.wp_product_id, r.post_status, r.stock_status, r.stock, r.manage_stock);
+        const base = idx * 6;
+        values.push(`($${base + 1},$${base + 2},$${base + 3},$${base + 4},$${base + 5},$${base + 6})`);
+        params.push(r.wp_product_id, r.post_status, r.stock_status, r.stock, r.manage_stock, r.discounted_price);
       });
       await client.query(
-        `INSERT INTO live_wc_products (wp_product_id, live_post_status, live_stock_status, live_stock, live_manage_stock) VALUES ${values.join(',')}`,
+        `INSERT INTO live_wc_products (wp_product_id, live_post_status, live_stock_status, live_stock, live_manage_stock, live_discounted_price) VALUES ${values.join(',')}`,
         params
       );
     }
 
-    // 1) post_status / stock_status / stock / manage_stock pour simples, variations et woosb
+    // 1) post_status / stock_status / stock / manage_stock / discounted_price pour simples, variations et woosb
     const r1 = await client.query(`
       UPDATE products p
       SET post_status = l.live_post_status,
           stock_status = l.live_stock_status,
           stock = l.live_stock,
           manage_stock = l.live_manage_stock,
+          discounted_price = l.live_discounted_price,
           updated_at = NOW()
       FROM live_wc_products l
       WHERE l.wp_product_id = p.wp_product_id
@@ -163,7 +176,8 @@ const runProductDbSync = async () => {
         AND (p.post_status IS DISTINCT FROM l.live_post_status
              OR p.stock_status IS DISTINCT FROM l.live_stock_status
              OR p.stock IS DISTINCT FROM l.live_stock
-             OR p.manage_stock IS DISTINCT FROM l.live_manage_stock)
+             OR p.manage_stock IS DISTINCT FROM l.live_manage_stock
+             OR p.discounted_price IS DISTINCT FROM l.live_discounted_price)
     `);
 
     // 2) post_status pour les parents variable

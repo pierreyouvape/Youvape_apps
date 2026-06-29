@@ -378,6 +378,7 @@ exports.getCatalogExport = async (req, res) => {
             v.sku || '',
             'variation',
             v.price != null ? parseFloat(v.price) : '',
+            v.discounted_price != null ? parseFloat(v.discounted_price) : '',
             v.cost_price != null ? parseFloat(v.cost_price) : '',
             margin,
             v.weight != null ? parseFloat(v.weight) : '',
@@ -396,6 +397,7 @@ exports.getCatalogExport = async (req, res) => {
           p.sku || '',
           'simple',
           p.price != null ? parseFloat(p.price) : '',
+          p.discounted_price != null ? parseFloat(p.discounted_price) : '',
           p.cost_price != null ? parseFloat(p.cost_price) : '',
           margin,
           p.weight != null ? parseFloat(p.weight) : '',
@@ -406,7 +408,7 @@ exports.getCatalogExport = async (req, res) => {
       }
     }
 
-    const HEADERS = ['Famille', 'Nom', 'SKU', 'Type', 'Prix TTC', 'Coût HT', 'Marge %', 'Poids', 'Stock', 'Arrivages', 'Ventes 30j'];
+    const HEADERS = ['Famille', 'Nom', 'SKU', 'Type', 'Prix TTC', 'Tarif Remisé', 'Coût HT', 'Marge %', 'Poids', 'Stock', 'Arrivages', 'Ventes 30j'];
 
     if (format === 'csv') {
       const lines = [HEADERS.join(';')];

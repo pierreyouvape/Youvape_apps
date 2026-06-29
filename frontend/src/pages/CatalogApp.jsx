@@ -50,8 +50,9 @@ const STOCK_TABS = [
 ];
 
 const CATALOG_COLUMNS = [
-  { key: 'price',       label: 'Prix TTC' },
-  { key: 'cost_price',  label: 'Coût HT' },
+  { key: 'price',           label: 'Prix TTC' },
+  { key: 'discounted_price', label: 'Tarif Remisé' },
+  { key: 'cost_price',      label: 'Coût HT' },
   { key: 'margin',      label: 'Marge %' },
   { key: 'weight',      label: 'Poids' },
   { key: 'stock',       label: 'Stock' },
@@ -589,6 +590,7 @@ const CatalogApp = () => {
                     <th style={headerStyle}>Nom</th>
                     <th style={headerStyle}>SKU</th>
                     {isVisible('price') && <SortableHeader column="price" label="Prix TTC" />}
+                    {isVisible('discounted_price') && <SortableHeader column="discounted_price" label="Tarif Remisé" />}
                     {isVisible('cost_price') && <SortableHeader column="cost_price" label="Coût HT" />}
                     {isVisible('margin') && <SortableHeader column="margin" label="Marge %" />}
                     {isVisible('weight') && <SortableHeader column="weight" label="Poids" />}
@@ -634,6 +636,7 @@ const CatalogApp = () => {
                             ) : '-'}
                           </td>
                           {isVisible('price') && <td style={cellRight}></td>}
+                          {isVisible('discounted_price') && <td style={cellRight}></td>}
                           {isVisible('cost_price') && <td style={cellRight}></td>}
                           {isVisible('margin') && <td style={cellRight}></td>}
                           {isVisible('weight') && <td style={cellRight}></td>}
@@ -682,6 +685,11 @@ const CatalogApp = () => {
                           ) : '-'}
                         </td>
                         {isVisible('price') && <td style={{ ...cellRight, ...numStyle(row.price) }}>{fmtPrice(row.price)}</td>}
+                        {isVisible('discounted_price') && (
+                          row.discounted_price != null
+                            ? <td style={{ ...cellRight, color: '#059669', fontWeight: 600 }}>{fmtPrice(row.discounted_price)}</td>
+                            : <td style={{ ...cellRight, color: '#9ca3af' }}>—</td>
+                        )}
                         {isVisible('cost_price') && <td style={{ ...cellRight, ...numStyle(row.cost_price) }}>{fmtPrice(row.cost_price)}</td>}
                         {isVisible('margin') && <td style={{ ...cellRight, ...(margin !== null ? numStyle(margin) : {}) }}>{margin !== null ? fmtPct(margin) : '-'}</td>}
                         {isVisible('weight') && <td style={cellRight}>{fmtWeight(row.weight)}</td>}

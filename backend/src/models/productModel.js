@@ -34,6 +34,8 @@ async function getReorderIdsSql(stockTab) {
 const CATALOG_SORT_EXPRESSIONS = {
   price: `(CASE WHEN p.product_type = 'simple' THEN p.price
     ELSE (SELECT AVG(v.price) FROM products v WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation' AND v.post_status = 'publish') END)`,
+  discounted_price: `(CASE WHEN p.product_type = 'simple' THEN p.discounted_price
+    ELSE (SELECT AVG(v.discounted_price) FROM products v WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation' AND v.post_status = 'publish') END)`,
   cost_price: `(CASE WHEN p.product_type = 'simple' THEN COALESCE(p.computed_cost, p.wc_cog_cost)
     ELSE (SELECT AVG(COALESCE(v.computed_cost, v.wc_cog_cost)) FROM products v WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation' AND v.post_status = 'publish') END)`,
   margin: `(CASE WHEN p.product_type = 'simple' THEN (p.price - COALESCE(p.computed_cost, p.wc_cog_cost))
@@ -798,6 +800,7 @@ class ProductModel {
         p.sku,
         COALESCE(p.stock, 0)::int as stock,
         p.price,
+        p.discounted_price,
         COALESCE(p.computed_cost, p.wc_cog_cost) as cost_price,
         p.weight,
         p.image_url,
@@ -859,6 +862,7 @@ class ProductModel {
           v.sku,
           COALESCE(v.stock, 0)::int as stock,
           v.price,
+          v.discounted_price,
           COALESCE(v.computed_cost, v.wc_cog_cost) as cost_price,
           v.weight,
           COALESCE(v.image_url, p_parent.image_url) as image_url,
