@@ -8,21 +8,26 @@ const ACTIVE_STATUSES = [
 
 /**
  * Date de référence financière = date de paiement réelle (paid_date), fallback sur
- * la date de création (post_date), convertie en heure de Paris.
- * Aligné sur Metorik et sur la règle CLAUDE.md (rattacher le CA au jour du paiement).
+ * la date de création (post_date).
+ * IMPORTANT : paid_date/post_date sont stockés en heure locale Paris (cf. CLAUDE.md),
+ * PAS en UTC. On les compare donc bruts, sans conversion de fuseau. Toute conversion
+ * « AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris' » décale de +1/+2h et fait fuiter
+ * les commandes du soir vers le lendemain (cf. fix 621fa9d, régressé puis re-corrigé).
  */
 function refDateParis(alias = 'o') {
-  return `(COALESCE(${alias}.paid_date, ${alias}.post_date) AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris')`;
+  return `(COALESCE(${alias}.paid_date, ${alias}.post_date))`;
 }
 
 /**
  * Construit les conditions WHERE et les paramètres pour une plage de dates.
- * Filtre sur la date de paiement (paid_date), converti en Europe/Paris — aligné sur Metorik.
+ * Filtre sur la date de paiement (paid_date) en heure Paris brute — aligné sur Metorik.
+ * Exclut les commandes à 0 € (SAV / remplacements) — Metorik ne les compte pas.
  * Retourne { conditions, params, nextIndex }
  */
 function buildDateConditions(dateFrom, dateTo, startIndex = 1, alias = 'o') {
   const conditions = [
-    `${alias}.post_status = ANY($${startIndex})`
+    `${alias}.post_status = ANY($${startIndex})`,
+    `${alias}.order_total > 0`
   ];
   const params = [ACTIVE_STATUSES];
   let idx = startIndex + 1;
@@ -110,11 +115,11 @@ async function computeDashboard({ dateFrom, dateTo, granularity } = {}) {
     ];
     let rIdx = 1;
     if (dateFrom) {
-      refundsConds.push(`(r.refund_date AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris') >= $${rIdx++}`);
+      refundsConds.push(`(r.refund_date) >= $${rIdx++}`);
       refundsParams.push(dateFrom);
     }
     if (dateTo) {
-      refundsConds.push(`(r.refund_date AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris') <= $${rIdx++}`);
+      refundsConds.push(`(r.refund_date) <= $${rIdx++}`);
       refundsParams.push(dateTo + ' 23:59:59');
     }
 

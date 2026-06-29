@@ -298,12 +298,12 @@ exports.filterOrders = async (req, res) => {
       conditions.push(`o.post_status NOT IN ('wc-cancelled', 'wc-failed', 'wc-checkout-draft', 'wc-trash', 'wc-pending', 'wc-auto-draft')`);
       const refundConds = ['r.wp_order_id = o.wp_order_id'];
       if (req.query.dateFrom) {
-        refundConds.push(`(r.refund_date AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris') >= $${paramIndex}`);
+        refundConds.push(`(r.refund_date) >= $${paramIndex}`);
         params.push(req.query.dateFrom);
         paramIndex++;
       }
       if (req.query.dateTo) {
-        refundConds.push(`(r.refund_date AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris') <= $${paramIndex}`);
+        refundConds.push(`(r.refund_date) <= $${paramIndex}`);
         params.push(req.query.dateTo + ' 23:59:59');
         paramIndex++;
       }
@@ -312,7 +312,7 @@ exports.filterOrders = async (req, res) => {
       // Filtre par date de début
       if (req.query.dateFrom) {
         conditions.push(parisMode
-          ? `(o.post_date AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris') >= $${paramIndex}`
+          ? `(o.post_date) >= $${paramIndex}`
           : `o.post_date >= $${paramIndex}`);
         params.push(req.query.dateFrom);
         paramIndex++;
@@ -321,7 +321,7 @@ exports.filterOrders = async (req, res) => {
       // Filtre par date de fin
       if (req.query.dateTo) {
         conditions.push(parisMode
-          ? `(o.post_date AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris') <= $${paramIndex}`
+          ? `(o.post_date) <= $${paramIndex}`
           : `o.post_date <= $${paramIndex}::date + interval '1 day'`);
         params.push(parisMode ? req.query.dateTo + ' 23:59:59' : req.query.dateTo);
         paramIndex++;
