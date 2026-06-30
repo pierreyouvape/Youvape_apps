@@ -248,6 +248,28 @@ export default function TransporteursApp() {
               </div>
             </div>
 
+            {/* Par mois et par transporteur (colis) */}
+            <div style={{ marginBottom: 26 }}>
+              <h3 style={{ fontSize: 14, fontWeight: 700, color: C.dark, marginBottom: 10 }}>Par mois et par transporteur (nombre de colis)</h3>
+              <div style={{ overflowX: 'auto', maxHeight: 460, overflowY: 'auto', border: `1px solid ${C.greyB}`, borderRadius: 8 }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                  <thead style={{ position: 'sticky', top: 0 }}><tr><Th label="Mois" />{CARRIER_LIST.map(c => <Th key={c} label={CARRIERS[c].label} align="right" />)}<Th label="Total colis" align="right" /></tr></thead>
+                  <tbody>{byMonth.map((r, i) => (
+                    <tr key={r.key} style={{ background: i % 2 === 0 ? C.white : C.grey }}>
+                      <Td>{r.label}</Td>
+                      {CARRIER_LIST.map(c => <Td key={c} align="right">{r.perCarrier[c] ? fmtColis(r.perCarrier[c].colis) : '—'}</Td>)}
+                      <Td align="right" bold color={C.accent}>{fmtColis(r.totalColis)}</Td>
+                    </tr>
+                  ))}</tbody>
+                  <tfoot><tr style={{ borderTop: `2px solid ${C.greyB}`, fontWeight: 700 }}>
+                    <Td bold>Total</Td>
+                    {CARRIER_LIST.map(c => <Td key={c} align="right" bold>{fmtColis(byMonth.reduce((s, r) => s + (r.perCarrier[c]?.colis || 0), 0))}</Td>)}
+                    <Td align="right" bold color={C.accent}>{fmtColis(grandColis)}</Td>
+                  </tr></tfoot>
+                </table>
+              </div>
+            </div>
+
             {/* Par pays consolidé */}
             <div style={{ marginBottom: 10 }}>
               <h3 style={{ fontSize: 14, fontWeight: 700, color: C.dark, marginBottom: 4 }}>Par pays de destination (tous transporteurs)</h3>
