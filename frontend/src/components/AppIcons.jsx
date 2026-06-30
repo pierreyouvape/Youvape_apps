@@ -185,36 +185,21 @@ export const Chronopost = ({ size = 56 }) => (
   </svg>
 );
 
-export const LettreSuivie = ({ size = 56 }) => (
-  <svg width={size} height={size} viewBox="0 0 100 100" fill="none" style={{ display: 'block', flexShrink: 0 }}>
-    <defs>
-      <linearGradient id="ls-env" x1="0%" y1="0%" x2="100%" y2="100%">
-        <stop offset="0%" stopColor="#FFD43B" />
-        <stop offset="100%" stopColor="#FFB000" />
-      </linearGradient>
-    </defs>
+export const LettreSuivie = ({ size = 56, color = '#fff' }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" style={{ display: 'block', flexShrink: 0 }}>
     {/* Enveloppe */}
-    <rect x="14" y="26" width="72" height="48" rx="6" fill="url(#ls-env)" stroke="#1A1A40" strokeWidth="3" />
-    {/* Rabat */}
-    <path d="M16 30 L50 54 L84 30" fill="none" stroke="#1A1A40" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
-    {/* Pastille de suivi */}
-    <circle cx="74" cy="66" r="13" fill="#1457A8" stroke="white" strokeWidth="2.5" />
-    <path d="M68 66 l4 4 l8 -9" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+    <rect x="3" y="6" width="18" height="12" rx="2.4" />
+    <path d="M3.6 7.2 L12 12.8 L20.4 7.2" />
+    {/* Coche de suivi */}
+    <path d="M14.5 16.8 l2 2 l3.6 -4.2" />
   </svg>
 );
 
-export const MondialRelay = ({ size = 56 }) => (
-  <svg width={size} height={size} viewBox="0 0 100 100" fill="none" style={{ display: 'block', flexShrink: 0 }}>
-    <defs>
-      <linearGradient id="mr-bg" x1="0%" y1="0%" x2="100%" y2="100%">
-        <stop offset="0%" stopColor="#9C2462" />
-        <stop offset="100%" stopColor="#6E1741" />
-      </linearGradient>
-    </defs>
-    <rect x="10" y="10" width="80" height="80" rx="18" fill="url(#mr-bg)" />
-    {/* Goutte / pin Mondial Relay stylisé */}
-    <path d="M50 26 c-11 0 -19 8 -19 19 c0 13 19 29 19 29 c0 0 19 -16 19 -29 c0 -11 -8 -19 -19 -19 Z" fill="#FFFFFF" />
-    <circle cx="50" cy="44" r="8.5" fill="#9C2462" />
+export const MondialRelay = ({ size = 56, color = '#fff' }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill={color} style={{ display: 'block', flexShrink: 0 }}>
+    {/* Pin point relais (goutte) avec trou ajouré laissant voir la tuile */}
+    <path fillRule="evenodd" clipRule="evenodd"
+      d="M12 2.2 c-4.3 0 -7.8 3.4 -7.8 7.6 c0 5.3 7.8 12 7.8 12 s7.8 -6.7 7.8 -12 c0 -4.2 -3.5 -7.6 -7.8 -7.6 Z M12 7.1 a2.7 2.7 0 1 0 0 5.4 a2.7 2.7 0 0 0 0 -5.4 Z" />
   </svg>
 );
 
