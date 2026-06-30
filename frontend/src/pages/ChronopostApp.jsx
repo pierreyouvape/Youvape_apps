@@ -144,8 +144,27 @@ function TabBtn({ label, active, onClick, badge }) {
   );
 }
 
+const COUNTRY_NAMES = {
+  FR: 'France', BE: 'Belgique', CH: 'Suisse', NL: 'Pays-Bas', DE: 'Allemagne', IT: 'Italie',
+  ES: 'Espagne', PT: 'Portugal', LU: 'Luxembourg', AT: 'Autriche', DK: 'Danemark', SE: 'Suède',
+  FI: 'Finlande', NO: 'Norvège', IE: 'Irlande', GB: 'Royaume-Uni', PL: 'Pologne', CZ: 'Tchéquie',
+  SK: 'Slovaquie', HU: 'Hongrie', RO: 'Roumanie', BG: 'Bulgarie', GR: 'Grèce', HR: 'Croatie',
+  SI: 'Slovénie', LT: 'Lituanie', LV: 'Lettonie', EE: 'Estonie', CY: 'Chypre', MT: 'Malte',
+  MC: 'Monaco', AD: 'Andorre', LI: 'Liechtenstein', SM: 'Saint-Marin',
+  RE: 'Réunion', MQ: 'Martinique', GP: 'Guadeloupe', GF: 'Guyane', YT: 'Mayotte',
+  PF: 'Polynésie fr.', NC: 'Nouvelle-Calédonie', PM: 'St-Pierre-et-M.', BL: 'St-Barthélemy', MF: 'St-Martin',
+  CA: 'Canada', US: 'États-Unis', AU: 'Australie', ZA: 'Afrique du Sud', MA: 'Maroc',
+  TN: 'Tunisie', DZ: 'Algérie', SA: 'Arabie S.', AE: 'Émirats', JP: 'Japon', CN: 'Chine', BZ: 'Belize',
+  '—': 'Non identifié',
+};
+const countryName = code => COUNTRY_NAMES[code] || code;
+
 function TotalsView({ totals, totalsLoading, loadTotals, totalsByPeriod }) {
-  const { months, years } = totalsByPeriod;
+  const { months, years, byPaysYear, yearCols } = totalsByPeriod;
+  const thRight = { padding: '9px 12px', textAlign: 'right', fontWeight: 700, color: C.dark, fontSize: 11.5, borderBottom: `2px solid ${C.greyB}` };
+  const thLeft = { ...thRight, textAlign: 'left' };
+  const tdL = { padding: '8px 12px', borderBottom: `1px solid ${C.greyB}` };
+  const tdR = { ...tdL, textAlign: 'right' };
   return (
     <div style={{ padding: 20 }}>
       <div style={{ marginBottom: 14, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -219,6 +238,34 @@ function TotalsView({ totals, totalsLoading, loadTotals, totalsByPeriod }) {
             </table>
           </div>
           </div>
+
+          {byPaysYear && byPaysYear.length > 0 && yearCols.length > 0 && (
+            <div style={{ marginTop: 24 }}>
+              <h3 style={{ fontSize: 14, fontWeight: 700, color: C.dark, marginBottom: 4 }}>Par pays et par année (HT)</h3>
+              <p style={{ margin: '0 0 10px', color: C.greyT, fontSize: 12 }}>Coût des colis HT par pays de destination (colonne Zone des factures).</p>
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                  <thead><tr style={{ background: C.grey }}>
+                    <th style={thLeft}>Pays</th>
+                    {yearCols.map(y => <th key={y} style={thRight}>{y}</th>)}
+                    <th style={thRight}>Total</th>
+                  </tr></thead>
+                  <tbody>{byPaysYear.map((r, i) => (
+                    <tr key={r.code} style={{ background: i % 2 === 0 ? C.white : C.grey }}>
+                      <td style={{ ...tdL, fontWeight: 700 }}>{countryName(r.code)} <span style={{ color: C.greyT, fontWeight: 400, fontSize: 11.5 }}>{r.code !== '—' ? r.code : ''}</span></td>
+                      {yearCols.map(y => <td key={y} style={tdR}>{r.ym[y] ? fmtEur(r.ym[y]) : '—'}</td>)}
+                      <td style={{ ...tdR, fontWeight: 700, color: C.primary }}>{fmtEur(r.total)}</td>
+                    </tr>
+                  ))}</tbody>
+                  <tfoot><tr style={{ borderTop: `2px solid ${C.greyB}` }}>
+                    <td style={{ ...tdL, fontWeight: 700 }}>Total</td>
+                    {yearCols.map(y => <td key={y} style={{ ...tdR, fontWeight: 700 }}>{fmtEur(byPaysYear.reduce((s, r) => s + (r.ym[y] || 0), 0))}</td>)}
+                    <td style={{ ...tdR, fontWeight: 800, color: C.primary }}>{fmtEur(byPaysYear.reduce((s, r) => s + r.total, 0))}</td>
+                  </tr></tfoot>
+                </table>
+              </div>
+            </div>
+          )}
         </>
       )}
     </div>
@@ -394,6 +441,8 @@ export default function ChronopostApp() {
   const totalsByPeriod = (() => {
     const monthMap = {};
     const yearMap = {};
+    const paysYearMap = {};
+    const yearsSet = new Set();
     for (const inv of (totals?.invoices || [])) {
       const parts = (inv.invoice_date || '').split('/');
       if (parts.length !== 3) continue;
@@ -403,6 +452,12 @@ export default function ChronopostApp() {
       const total = parseFloat(inv.total_ht || 0) + parseFloat(inv.global_total || 0);
       monthMap[monthKey] = (monthMap[monthKey] || 0) + total;
       yearMap[y] = (yearMap[y] || 0) + total;
+      yearsSet.add(y);
+      const ct = inv.country_totals || {};
+      for (const [code, v] of Object.entries(ct)) {
+        if (!paysYearMap[code]) paysYearMap[code] = {};
+        paysYearMap[code][y] = (paysYearMap[code][y] || 0) + parseFloat(v?.ht || 0);
+      }
     }
     for (const c of (totals?.credits || [])) {
       const parts = (c.credit_date || '').split('/');
@@ -422,7 +477,11 @@ export default function ChronopostApp() {
     const years = Object.entries(yearMap)
       .map(([y, total]) => ({ key: y, label: y, total }))
       .sort((a, b) => b.key.localeCompare(a.key));
-    return { months, years };
+    const yearCols = [...yearsSet].sort();
+    const byPaysYear = Object.entries(paysYearMap)
+      .map(([code, ym]) => ({ code, ym, total: Object.values(ym).reduce((s, x) => s + x, 0) }))
+      .sort((a, b) => b.total - a.total);
+    return { months, years, byPaysYear, yearCols };
   })();
 
   // Charge une facture depuis l'historique BDD et l'affiche comme si elle venait d'être analysée

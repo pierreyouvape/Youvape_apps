@@ -58,8 +58,23 @@ function TabBtn({ label, active, onClick, badge }) {
   );
 }
 
+const COUNTRY_NAMES = {
+  FR: 'France', BE: 'Belgique', CH: 'Suisse', NL: 'Pays-Bas', DE: 'Allemagne', IT: 'Italie',
+  ES: 'Espagne', PT: 'Portugal', LU: 'Luxembourg', AT: 'Autriche', DK: 'Danemark', SE: 'Suède',
+  FI: 'Finlande', NO: 'Norvège', IE: 'Irlande', GB: 'Royaume-Uni', PL: 'Pologne', CZ: 'Tchéquie',
+  SK: 'Slovaquie', HU: 'Hongrie', RO: 'Roumanie', BG: 'Bulgarie', GR: 'Grèce', HR: 'Croatie',
+  SI: 'Slovénie', LT: 'Lituanie', LV: 'Lettonie', EE: 'Estonie', CY: 'Chypre', MT: 'Malte',
+  MC: 'Monaco', AD: 'Andorre', LI: 'Liechtenstein', SM: 'Saint-Marin',
+  RE: 'Réunion', MQ: 'Martinique', GP: 'Guadeloupe', GF: 'Guyane', YT: 'Mayotte',
+  PF: 'Polynésie fr.', NC: 'Nouvelle-Calédonie', PM: 'St-Pierre-et-M.', BL: 'St-Barthélemy', MF: 'St-Martin',
+  CA: 'Canada', US: 'États-Unis', AU: 'Australie', ZA: 'Afrique du Sud', MA: 'Maroc',
+  TN: 'Tunisie', DZ: 'Algérie', SA: 'Arabie S.', AE: 'Émirats', JP: 'Japon', CN: 'Chine', BZ: 'Belize',
+  '—': 'Non identifié',
+};
+const countryName = code => COUNTRY_NAMES[code] || code;
+
 function TotalsView({ totals, totalsLoading, loadTotals, totalsByPeriod }) {
-  const { months, years } = totalsByPeriod;
+  const { months, years, byPaysYear, yearCols } = totalsByPeriod;
   return (
     <div style={{ padding: 20 }}>
       <div style={{ marginBottom: 14, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -133,6 +148,30 @@ function TotalsView({ totals, totalsLoading, loadTotals, totalsByPeriod }) {
             </table>
           </div>
           </div>
+
+          {byPaysYear && byPaysYear.length > 0 && yearCols.length > 0 && (
+            <div style={{ marginTop: 24 }}>
+              <h3 style={{ fontSize: 14, fontWeight: 700, color: C.dark, marginBottom: 4 }}>Par pays et par année (HT)</h3>
+              <p style={{ margin: '0 0 10px', color: C.greyT, fontSize: 12 }}>Coût des colis HT par pays de destination (hors suppléments globaux).</p>
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                  <thead><tr><Th label="Pays" />{yearCols.map(y => <Th key={y} label={y} align="right" />)}<Th label="Total" align="right" /></tr></thead>
+                  <tbody>{byPaysYear.map((r, i) => (
+                    <tr key={r.code} style={{ background: i % 2 === 0 ? C.white : C.grey }}>
+                      <Td bold>{countryName(r.code)} <span style={{ color: C.greyT, fontWeight: 400, fontSize: 11.5 }}>{r.code !== '—' ? r.code : ''}</span></Td>
+                      {yearCols.map(y => <Td key={y} align="right">{r.ym[y] ? fmtEur(r.ym[y]) : '—'}</Td>)}
+                      <Td align="right" bold color={C.accent}>{fmtEur(r.total)}</Td>
+                    </tr>
+                  ))}</tbody>
+                  <tfoot><tr style={{ borderTop: `2px solid ${C.greyB}`, fontWeight: 700 }}>
+                    <Td bold>Total</Td>
+                    {yearCols.map(y => <Td key={y} align="right" bold>{fmtEur(byPaysYear.reduce((s, r) => s + (r.ym[y] || 0), 0))}</Td>)}
+                    <Td align="right" bold color={C.accent}>{fmtEur(byPaysYear.reduce((s, r) => s + r.total, 0))}</Td>
+                  </tr></tfoot>
+                </table>
+              </div>
+            </div>
+          )}
         </>
       )}
     </div>
@@ -256,6 +295,8 @@ export default function ColissimoApp() {
   const totalsByPeriod = (() => {
     const monthMap = {};
     const yearMap = {};
+    const paysYearMap = {};
+    const yearsSet = new Set();
     for (const inv of (totals?.invoices || [])) {
       const parts = (inv.period_start || '').split('/');
       if (parts.length !== 3) continue;
@@ -264,6 +305,12 @@ export default function ColissimoApp() {
       const total = parseFloat(inv.total_ht || 0);
       monthMap[monthKey] = (monthMap[monthKey] || 0) + total;
       yearMap[y] = (yearMap[y] || 0) + total;
+      yearsSet.add(y);
+      const ct = inv.country_totals || {};
+      for (const [code, v] of Object.entries(ct)) {
+        if (!paysYearMap[code]) paysYearMap[code] = {};
+        paysYearMap[code][y] = (paysYearMap[code][y] || 0) + parseFloat(v?.ht || 0);
+      }
     }
     const months = Object.entries(monthMap)
       .map(([key, total]) => {
@@ -274,7 +321,11 @@ export default function ColissimoApp() {
     const years = Object.entries(yearMap)
       .map(([y, total]) => ({ key: y, label: y, total }))
       .sort((a, b) => b.key.localeCompare(a.key));
-    return { months, years };
+    const yearCols = [...yearsSet].sort();
+    const byPaysYear = Object.entries(paysYearMap)
+      .map(([code, ym]) => ({ code, ym, total: Object.values(ym).reduce((s, x) => s + x, 0) }))
+      .sort((a, b) => b.total - a.total);
+    return { months, years, byPaysYear, yearCols };
   })();
 
   // Charge une facture depuis l'historique BDD et la réaffiche comme si elle venait d'être analysée
