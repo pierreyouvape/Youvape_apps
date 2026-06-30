@@ -280,17 +280,17 @@ function TotalsView({ totals, totalsLoading, loadTotals, totalsByPeriod }) {
               <div style={{ overflowX: 'auto', border: `1px solid ${C.greyB}`, borderRadius: 8 }}>
                 <table style={{ borderCollapse: 'collapse', fontSize: 13, whiteSpace: 'nowrap' }}>
                   <thead><tr style={{ background: C.grey }}>
-                    <th style={thLeft}>Pays</th>{monthCols.map(mc => <th key={mc.key} style={thRight}>{mc.label}</th>)}<th style={thRight}>Total</th>
+                    <th style={{ ...thLeft, background: C.grey, position: 'sticky', left: 0, zIndex: 2, boxShadow: `2px 0 4px -2px rgba(0,0,0,0.15)` }}>Pays</th>{monthCols.map(mc => <th key={mc.key} style={thRight}>{mc.label}</th>)}<th style={thRight}>Total</th>
                   </tr></thead>
                   <tbody>{byPaysMonth.map((r, i) => (
                     <tr key={r.code} style={{ background: i % 2 === 0 ? C.white : C.grey }}>
-                      <td style={{ ...tdL, fontWeight: 700 }}>{countryName(r.code)} <span style={{ color: C.greyT, fontWeight: 400, fontSize: 11.5 }}>{r.code !== '—' ? r.code : ''}</span></td>
+                      <td style={{ ...tdL, fontWeight: 700, background: i % 2 === 0 ? C.white : C.grey, position: 'sticky', left: 0, zIndex: 1, boxShadow: `2px 0 4px -2px rgba(0,0,0,0.15)` }}>{countryName(r.code)} <span style={{ color: C.greyT, fontWeight: 400, fontSize: 11.5 }}>{r.code !== '—' ? r.code : ''}</span></td>
                       {monthCols.map(mc => <td key={mc.key} style={tdR}>{r.bm[mc.key] ? fmtColis(r.bm[mc.key]) : '—'}</td>)}
                       <td style={{ ...tdR, fontWeight: 700, color: C.primary }}>{fmtColis(r.total)}</td>
                     </tr>
                   ))}</tbody>
                   <tfoot><tr style={{ borderTop: `2px solid ${C.greyB}` }}>
-                    <td style={{ ...tdL, fontWeight: 700 }}>Total</td>
+                    <td style={{ ...tdL, fontWeight: 700, background: C.white, position: 'sticky', left: 0, zIndex: 1, boxShadow: `2px 0 4px -2px rgba(0,0,0,0.15)` }}>Total</td>
                     {monthCols.map(mc => <td key={mc.key} style={{ ...tdR, fontWeight: 700 }}>{fmtColis(byPaysMonth.reduce((s, r) => s + (r.bm[mc.key] || 0), 0))}</td>)}
                     <td style={{ ...tdR, fontWeight: 800, color: C.primary }}>{fmtColis(byPaysMonth.reduce((s, r) => s + r.total, 0))}</td>
                   </tr></tfoot>
