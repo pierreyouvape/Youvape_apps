@@ -4,6 +4,20 @@ const ExcelJS = require('exceljs');
 const JSZip = require('jszip');
 const pool = require('../config/database');
 
+// Agrège les colis par pays de destination : { FR: { colis, ht }, BE: {...}, ... }
+function buildCountryTotals(items, amountKey) {
+  const map = {};
+  for (const it of (items || [])) {
+    const c = it.country || '—';
+    if (!map[c]) map[c] = { colis: 0, ht: 0 };
+    map[c].colis += 1;
+    map[c].ht += (it[amountKey] || 0);
+  }
+  return map;
+}
+exports._parsePdf = parseColissimoPdf;
+exports._buildCountryTotals = buildCountryTotals;
+
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 30 * 1024 * 1024 },
@@ -120,7 +134,7 @@ function parseColissimoPdf(text) {
       tracking,
       weight_colissimo: null, port_brut: null, tx_remise: null, remise_ht: null,
       port_net: null, cae_ht: null, decarbonation: null, smic_ht: null, total_ht: null,
-      order_id: null, weight_bdd: null, diff_g: null, supplements_list: [],
+      order_id: null, weight_bdd: null, diff_g: null, country: null, supplements_list: [],
     };
     fieldIdx = 0;
     state = 'collecting';
@@ -164,6 +178,12 @@ function parseColissimoPdf(text) {
       const lineDate = line.match(DATE_RE)?.[1] || lastDate;
       startParcel(tracking, lineDate);
       continue;
+    }
+
+    // ── Pays de destination (ligne "FR FR 75009" = départ arrivée CP) juste après le tracking
+    if (state === 'collecting' && cur && !cur.country) {
+      const cm = line.match(/^\s*([A-Z]{2})\s+([A-Z]{2})\s+\S+/);
+      if (cm) { cur.country = cm[2]; continue; }
     }
 
     // ── Collecting parcel values (state machine)
@@ -541,8 +561,8 @@ exports.saveInvoice = [
         INSERT INTO carrier_invoices
           (carrier, invoice_number, period_start, period_end, account_number,
            total_parcels, parcels_matched, total_ht, port_brut, remise, port_net, cae,
-           supplements_total, indemnizations_total, indemnizations, parcels_detail, pdf_data)
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
+           supplements_total, indemnizations_total, indemnizations, parcels_detail, country_totals, pdf_data)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
         RETURNING id
       `, [
         'colissimo', invoiceNumber, periodStart || null, periodEnd || null, accountNumber || null,
@@ -553,6 +573,7 @@ exports.saveInvoice = [
         supplementsTotal, indemnizationsTotal,
         JSON.stringify(indemnizations || []),
         JSON.stringify(parcels || []),
+        JSON.stringify(buildCountryTotals(parcels, 'total_ht')),
         pdfBuffer,
       ]);
       const invoiceId = invRes.rows[0].id;
@@ -725,7 +746,7 @@ exports.searchOrder = async (req, res) => {
 exports.getTotals = async (req, res) => {
   try {
     const invoices = await pool.query(`
-      SELECT id, invoice_number, period_start, total_ht
+      SELECT id, invoice_number, period_start, total_ht, country_totals
       FROM carrier_invoices
       WHERE carrier = 'colissimo'
       ORDER BY period_start
@@ -774,15 +795,16 @@ async function persistColissimoInvoice(parsed, pdfBuffer) {
     INSERT INTO carrier_invoices
       (carrier, invoice_number, period_start, period_end, account_number,
        total_parcels, parcels_matched, total_ht, port_brut, remise, port_net, cae,
-       supplements_total, indemnizations_total, indemnizations, parcels_detail, pdf_data)
-    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17) RETURNING id
+       supplements_total, indemnizations_total, indemnizations, parcels_detail, country_totals, pdf_data)
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18) RETURNING id
   `, [
     'colissimo', invoiceNumber, periodStart || null, periodEnd || null, accountNumber || null,
     stats?.total_parcels ?? (parcels || []).length,
     stats?.parcels_matched ?? (parcels || []).filter(p => p.order_id).length,
     totalHt, gs.portBrut ?? null, gs.remise ?? null, gs.portNet ?? null, gs.cae ?? null,
     supplementsTotal, indemnizationsTotal,
-    JSON.stringify(indemnizations || []), JSON.stringify(parcels || []), pdfBuffer || null,
+    JSON.stringify(indemnizations || []), JSON.stringify(parcels || []),
+    JSON.stringify(buildCountryTotals(parcels, 'total_ht')), pdfBuffer || null,
   ]);
   const invoiceId = invRes.rows[0].id;
   if (parcels?.length) {

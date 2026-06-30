@@ -6,6 +6,41 @@ const pool = require('../config/database');
 
 const PACKAGING_KG = 0.011; // 11g
 
+// Zones nationales Chronopost (France) ; toute autre zone à 2 lettres = code pays destination
+const FRANCE_ZONES = new Set(['NT', 'ND', 'NR', 'NM', 'NP']);
+// Extrait la zone d'une ligne de détail colis (token alpha avant le poids 3 décimales)
+function chronoZone(line) {
+  const toks = line.trim().split(/\s+/);
+  const wi = toks.findIndex(t => /^\d+,\d{3}$/.test(t));
+  if (wi < 1) return null;
+  for (let i = wi - 1; i >= 0; i--) {
+    const t = toks[i];
+    if (t === 'P' || t === 'R' || t === 'RR') continue; // flags d'observation
+    if (/^[A-Z]{2,3}$/.test(t)) return t;
+    break;
+  }
+  return null;
+}
+function zoneToCountry(zone) {
+  if (!zone) return 'FR';
+  if (FRANCE_ZONES.has(zone)) return 'FR';
+  if (/^[A-Z]{2}$/.test(zone)) return zone;
+  return 'FR';
+}
+// Agrège les colis par pays : { FR: { colis, ht }, BE: {...}, ... }
+function buildCountryTotals(items, amountKey) {
+  const map = {};
+  for (const it of (items || [])) {
+    const c = it.country || '—';
+    if (!map[c]) map[c] = { colis: 0, ht: 0 };
+    map[c].colis += 1;
+    map[c].ht += (it[amountKey] || 0);
+  }
+  return map;
+}
+exports._parsePdf = parseChronopostPdf;
+exports._buildCountryTotals = buildCountryTotals;
+
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 20 * 1024 * 1024 },
@@ -70,15 +105,15 @@ async function persistChronopostInvoice(parsed, pdfBuffer) {
   const invRes = await pool.query(`
     INSERT INTO carrier_invoices
       (carrier, invoice_number, invoice_date, total_parcels, parcels_matched,
-       total_ht, supplements_total, global_charges, pdf_data)
-    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id
+       total_ht, supplements_total, global_charges, country_totals, pdf_data)
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id
   `, [
     'chronopost', invoiceNumber, invoiceDate || null,
     stats?.total_orders || (orders || []).length,
     stats?.orders_with_bdd || (orders || []).filter(o => o.weight_bdd !== null).length,
     totalHt,
     gc.reduce((s, g) => s + (g.amount_ht || 0), 0) + (supplements || []).reduce((s, x) => s + (x.amount_ht || 0), 0),
-    JSON.stringify(gc), pdfBuffer || null,
+    JSON.stringify(buildCountryTotals(orders, 'amount_ht')), JSON.stringify(gc), pdfBuffer || null,
   ]);
   const invoiceId = invRes.rows[0].id;
   if (orders?.length) {
@@ -221,6 +256,7 @@ function parseChronopostPdf(text) {
           amount_ht: amountNum?.val ?? null,
           is_return: isReturn,
           weight_corrected: isWeightCorrected,
+          country: zoneToCountry(chronoZone(line)),
           weight_bdd: null,
           diff_g: null,
         });
@@ -641,8 +677,8 @@ exports.saveInvoice = [
       const invRes = await pool.query(`
         INSERT INTO carrier_invoices
           (carrier, invoice_number, invoice_date, total_parcels, parcels_matched,
-           total_ht, supplements_total, global_charges, pdf_data)
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+           total_ht, supplements_total, global_charges, country_totals, pdf_data)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
         RETURNING id
       `, [
         'chronopost', invoiceNumber, invoiceDate || null,
@@ -650,6 +686,7 @@ exports.saveInvoice = [
         stats?.orders_with_bdd || (orders||[]).filter(o=>o.weight_bdd!==null).length,
         totalHt,
         gc.reduce((s,g) => s+(g.amount_ht||0), 0) + (supplements||[]).reduce((s,x)=>s+(x.amount_ht||0),0),
+        JSON.stringify(buildCountryTotals(orders, 'amount_ht')),
         JSON.stringify(gc),
         pdfBuffer,
       ]);
@@ -994,7 +1031,7 @@ exports.getCreditsForOrders = async (req, res) => {
 exports.getTotals = async (req, res) => {
   try {
     const invoices = await pool.query(`
-      SELECT ci.id, ci.invoice_number, ci.invoice_date, ci.total_ht, ci.supplements_total,
+      SELECT ci.id, ci.invoice_number, ci.invoice_date, ci.total_ht, ci.supplements_total, ci.country_totals,
         COALESCE((
           SELECT SUM((elem->>'amount_ht')::numeric)
           FROM jsonb_array_elements(COALESCE(ci.global_charges, '[]'::jsonb)) elem
