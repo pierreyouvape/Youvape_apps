@@ -17,7 +17,12 @@ const C = {
 };
 
 function fmtKg(v) { return v !== null && v !== undefined && v !== '—' ? `${parseFloat(v).toFixed(3)} kg` : '—'; }
-function fmtEur(v) { return v !== null && v !== undefined ? `${parseFloat(v).toFixed(2)} €` : '—'; }
+function fmtEur(v) {
+  if (v === null || v === undefined || v === '') return '—';
+  const n = parseFloat(v);
+  if (!isFinite(n)) return '—';
+  return `${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).replace(/,/g, ' ')} €`;
+}
 function fmtDiff(g) {
   if (g === null || g === undefined) return '—';
   return `${g > 0 ? '+' : ''}${g} g`;
@@ -81,7 +86,7 @@ function TotalsView({ totals, totalsLoading, loadTotals, totalsByPeriod }) {
                 <CartesianGrid strokeDasharray="3 3" stroke={C.greyB} />
                 <XAxis dataKey="label" tick={{ fontSize: 11 }} />
                 <YAxis tick={{ fontSize: 11 }} tickFormatter={v => `${v} €`} />
-                <Tooltip formatter={v => `${parseFloat(v).toFixed(2)} €`} />
+                <Tooltip formatter={v => fmtEur(v)} />
                 <Line type="monotone" dataKey="total" name="Total payé HT" stroke={C.primary} strokeWidth={2} dot={{ r: 3 }} />
               </LineChart>
             </ResponsiveContainer>
@@ -101,7 +106,7 @@ function TotalsView({ totals, totalsLoading, loadTotals, totalsByPeriod }) {
                 {months.map((m, i) => (
                   <tr key={m.key} style={{ background: i % 2 === 0 ? C.white : C.grey, borderBottom: `1px solid ${C.greyB}` }}>
                     <td style={{ padding: '8px 12px' }}>{m.label}</td>
-                    <td style={{ padding: '8px 12px', textAlign: 'right', fontWeight: 600 }}>{m.total.toFixed(2)} €</td>
+                    <td style={{ padding: '8px 12px', textAlign: 'right', fontWeight: 600 }}>{fmtEur(m.total)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -121,7 +126,7 @@ function TotalsView({ totals, totalsLoading, loadTotals, totalsByPeriod }) {
                 {years.map((y, i) => (
                   <tr key={y.key} style={{ background: i % 2 === 0 ? C.white : C.grey, borderBottom: `1px solid ${C.greyB}` }}>
                     <td style={{ padding: '8px 12px', fontWeight: 700 }}>{y.label}</td>
-                    <td style={{ padding: '8px 12px', textAlign: 'right', fontWeight: 800, color: C.primary }}>{y.total.toFixed(2)} €</td>
+                    <td style={{ padding: '8px 12px', textAlign: 'right', fontWeight: 800, color: C.primary }}>{fmtEur(y.total)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -721,8 +726,8 @@ export default function ColissimoApp() {
               <StatCard value={stats.weight_ok} label="Poids OK (≤20g)" color={C.green} />
               <StatCard value={stats.weight_ecart} label="Écarts >200g" color={C.red} />
               <StatCard value={stats.supplements_count} label="Suppléments" color={C.orange} />
-              <StatCard value={`${(stats.supplements_total || 0).toFixed(2)} €`} label="Total suppl. HT" color={C.orange} />
-              <StatCard value={`${(stats.indemnizations_total || 0).toFixed(2)} €`} label="Indemnisations" color={C.blue} />
+              <StatCard value={fmtEur(stats.supplements_total || 0)} label="Total suppl. HT" color={C.orange} />
+              <StatCard value={fmtEur(stats.indemnizations_total || 0)} label="Indemnisations" color={C.blue} />
             </div>
 
             {/* Tabs */}

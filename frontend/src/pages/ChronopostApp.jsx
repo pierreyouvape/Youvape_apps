@@ -27,6 +27,12 @@ const C = {
 };
 
 /* ─── UTILS ──────────────────────────────────────────────────── */
+function fmtEur(v) {
+  if (v === null || v === undefined || v === '') return '—';
+  const n = parseFloat(v);
+  if (!isFinite(n)) return '—';
+  return `${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).replace(/,/g, ' ')} €`;
+}
 function fmtKg(val) {
   if (val === null || val === undefined || val === 'N/A') return '—';
   return `${parseFloat(val).toFixed(3)} kg`;
@@ -166,7 +172,7 @@ function TotalsView({ totals, totalsLoading, loadTotals, totalsByPeriod }) {
                 <CartesianGrid strokeDasharray="3 3" stroke={C.greyB} />
                 <XAxis dataKey="label" tick={{ fontSize: 11 }} />
                 <YAxis tick={{ fontSize: 11 }} tickFormatter={v => `${v} €`} />
-                <Tooltip formatter={v => `${parseFloat(v).toFixed(2)} €`} />
+                <Tooltip formatter={v => fmtEur(v)} />
                 <Line type="monotone" dataKey="total" name="Total payé HT" stroke={C.primary} strokeWidth={2} dot={{ r: 3 }} />
               </LineChart>
             </ResponsiveContainer>
@@ -186,7 +192,7 @@ function TotalsView({ totals, totalsLoading, loadTotals, totalsByPeriod }) {
                 {months.map((m, i) => (
                   <tr key={m.key} style={{ background: i % 2 === 0 ? C.white : C.grey, borderBottom: `1px solid ${C.greyB}` }}>
                     <td style={{ padding: '8px 12px' }}>{m.label}</td>
-                    <td style={{ padding: '8px 12px', textAlign: 'right', fontWeight: 600 }}>{m.total.toFixed(2)} €</td>
+                    <td style={{ padding: '8px 12px', textAlign: 'right', fontWeight: 600 }}>{fmtEur(m.total)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -206,7 +212,7 @@ function TotalsView({ totals, totalsLoading, loadTotals, totalsByPeriod }) {
                 {years.map((y, i) => (
                   <tr key={y.key} style={{ background: i % 2 === 0 ? C.white : C.grey, borderBottom: `1px solid ${C.greyB}` }}>
                     <td style={{ padding: '8px 12px', fontWeight: 700 }}>{y.label}</td>
-                    <td style={{ padding: '8px 12px', textAlign: 'right', fontWeight: 800, color: C.primary }}>{y.total.toFixed(2)} €</td>
+                    <td style={{ padding: '8px 12px', textAlign: 'right', fontWeight: 800, color: C.primary }}>{fmtEur(y.total)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -1119,7 +1125,7 @@ export default function ChronopostApp() {
               <StatCard value={countRet} label="Retours" color={C.orange} />
               <StatCard value={supplements.length} label="Suppléments" color={C.accent} />
               <StatCard
-                value={`${result.stats?.supplements_total_ht?.toFixed(2)} €`}
+                value={fmtEur(result.stats?.supplements_total_ht)}
                 label="Total suppléments HT"
                 color={C.orange}
               />
@@ -1165,23 +1171,23 @@ export default function ChronopostApp() {
                       }}>
                         <div>
                           <div style={{ fontSize: 11, color: C.greyT, marginBottom: 2 }}>Total tarif réel calculé</div>
-                          <div style={{ fontSize: 18, fontWeight: 800, color: C.primary }}>{totalTarifCalcule.toFixed(2)} €</div>
+                          <div style={{ fontSize: 18, fontWeight: 800, color: C.primary }}>{fmtEur(totalTarifCalcule)}</div>
                           <div style={{ fontSize: 10, color: C.greyT, marginTop: 2 }}>
-                            Colis {totalParcelsHT.toFixed(2)}€ + Suppl. {totalSupplHT.toFixed(2)}€ + Pro-rata {proRataTotal.toFixed(2)}€
+                            Colis {fmtEur(totalParcelsHT)} + Suppl. {fmtEur(totalSupplHT)} + Pro-rata {fmtEur(proRataTotal)}
                           </div>
                         </div>
                         <div style={{ fontSize: 20, color: C.greyT }}>vs</div>
                         <div>
                           <div style={{ fontSize: 11, color: C.greyT, marginBottom: 2 }}>Total facture HT</div>
-                          <div style={{ fontSize: 18, fontWeight: 800, color: C.dark }}>{totalFactureHT.toFixed(2)} €</div>
+                          <div style={{ fontSize: 18, fontWeight: 800, color: C.dark }}>{fmtEur(totalFactureHT)}</div>
                           <div style={{ fontSize: 10, color: C.greyT, marginTop: 2 }}>
-                            Colis {totalParcelsHT.toFixed(2)}€ + Suppl. {totalSupplHT.toFixed(2)}€ + Globaux {totalGlobalHT.toFixed(2)}€
+                            Colis {fmtEur(totalParcelsHT)} + Suppl. {fmtEur(totalSupplHT)} + Globaux {fmtEur(totalGlobalHT)}
                           </div>
                         </div>
                         <div>
                           <div style={{ fontSize: 11, color: C.greyT, marginBottom: 2 }}>Écart</div>
                           <div style={{ fontSize: 18, fontWeight: 800, color: matchOk ? C.green : C.orange }}>
-                            {ecart >= 0 ? '+' : ''}{ecart.toFixed(2)} €
+                            {ecart >= 0 ? '+' : ''}{fmtEur(ecart)}
                           </div>
                           <div style={{ fontSize: 10, color: C.greyT, marginTop: 2 }}>
                             {matchOk ? '✓ Correspond' : `${ecartPct}% — charges non pro-ratisées`}
@@ -1284,7 +1290,7 @@ export default function ChronopostApp() {
                               }}
                               onMouseLeave={() => setTooltip(null)}
                             >
-                              {o.amount_ht != null ? `${getTarif(o).toFixed(2)} €` : '—'}
+                              {o.amount_ht != null ? fmtEur(getTarif(o)) : '—'}
                             </td>
                             <td style={{ padding: '9px 12px' }}>
                               {o.is_return && <Badge label="Retour" color={C.red} bg={C.redL} />}
@@ -1342,7 +1348,7 @@ export default function ChronopostApp() {
                                   <Badge label={s.description} color={C.orange} bg={C.orangeL} />
                                 </td>
                                 <td style={{ padding: '9px 12px', fontWeight: 700, color: C.orange }}>
-                                  {s.amount_ht != null ? `${s.amount_ht.toFixed(2)} €` : '—'}
+                                  {fmtEur(s.amount_ht)}
                                 </td>
                               </tr>
                             ))}
@@ -1354,7 +1360,7 @@ export default function ChronopostApp() {
                         fontWeight: 700, fontSize: 14, color: C.orange,
                       }}>
                         Total suppléments HT :{' '}
-                        {supplements.reduce((s, x) => s + (x.amount_ht || 0), 0).toFixed(2)} €
+                        {fmtEur(supplements.reduce((s, x) => s + (x.amount_ht || 0), 0))}
                       </div>
                     </>
                   )}
@@ -1394,7 +1400,7 @@ export default function ChronopostApp() {
                                 </td>
                                 <td style={{ padding: '9px 12px', color: C.greyT }}>{g.detail || '—'}</td>
                                 <td style={{ padding: '9px 12px', fontWeight: 700, color: C.accent }}>
-                                  {g.amount_ht != null ? `${g.amount_ht.toFixed(2)} €` : '—'}
+                                  {fmtEur(g.amount_ht)}
                                 </td>
                               </tr>
                             ))}
@@ -1405,7 +1411,7 @@ export default function ChronopostApp() {
                                 TOTAL
                               </td>
                               <td style={{ padding: '10px 12px', fontWeight: 800, color: C.primary, fontSize: 15 }}>
-                                {globalCharges.reduce((s, x) => s + (x.amount_ht || 0), 0).toFixed(2)} €
+                                {fmtEur(globalCharges.reduce((s, x) => s + (x.amount_ht || 0), 0))}
                               </td>
                             </tr>
                           </tfoot>
@@ -1545,9 +1551,9 @@ export default function ChronopostApp() {
                                 </td>
                                 <td style={{ padding: '9px 12px', color: C.greyT }}>{o.date || '—'}</td>
                                 <td style={{ padding: '9px 12px', fontFamily: 'monospace', fontSize: 12, color: C.greyT }}>{o.tracking}</td>
-                                <td style={{ padding: '9px 12px' }}>{o.amount_ht != null ? `${o.amount_ht.toFixed(2)} €` : '—'}</td>
+                                <td style={{ padding: '9px 12px' }}>{fmtEur(o.amount_ht)}</td>
                                 <td style={{ padding: '9px 12px', fontWeight: 800, color: C.red }}>
-                                  {o.amount_ht != null ? `${getCreditAmount(o).toFixed(2)} €` : '—'}
+                                  {o.amount_ht != null ? fmtEur(getCreditAmount(o)) : '—'}
                                 </td>
                               </tr>
                             ))}
@@ -1556,7 +1562,7 @@ export default function ChronopostApp() {
                             <tr style={{ borderTop: `2px solid ${C.greyB}` }}>
                               <td colSpan={4} style={{ padding: '10px 12px', fontWeight: 700, textAlign: 'right' }}>TOTAL AVOIR</td>
                               <td style={{ padding: '10px 12px', fontWeight: 800, color: C.red, fontSize: 15 }}>
-                                {creditOrders.reduce((s, o) => s + (o.amount_ht != null ? getCreditAmount(o) : 0), 0).toFixed(2)} €
+                                {fmtEur(creditOrders.reduce((s, o) => s + (o.amount_ht != null ? getCreditAmount(o) : 0), 0))}
                               </td>
                             </tr>
                           </tfoot>
@@ -1595,7 +1601,7 @@ export default function ChronopostApp() {
                               <td style={{ padding: '9px 12px', color: C.greyT }}>{c.credit_date || '—'}</td>
                               <td style={{ padding: '9px 12px', color: C.greyT }}>{c.related_invoice_number || '—'}</td>
                               <td style={{ padding: '9px 12px', textAlign: 'center' }}>{c.lines_count}</td>
-                              <td style={{ padding: '9px 12px', fontWeight: 700, color: C.red }}>{c.total_ht != null ? `${parseFloat(c.total_ht).toFixed(2)} €` : '—'}</td>
+                              <td style={{ padding: '9px 12px', fontWeight: 700, color: C.red }}>{fmtEur(c.total_ht)}</td>
                               <td style={{ padding: '9px 12px', color: C.greyT, fontSize: 12 }}>{new Date(c.created_at).toLocaleDateString('fr-FR')}</td>
                               <td style={{ padding: '9px 8px', textAlign: 'center', whiteSpace: 'nowrap' }}>
                                 <button onClick={e => handleDownloadCreditPdf(c, e)} title="Télécharger le PDF" style={{ background: 'none', border: `1px solid ${C.greyB}`, borderRadius: 6, padding: '4px 8px', cursor: 'pointer', fontSize: 14, marginRight: 4 }}>⬇️</button>
@@ -1664,8 +1670,8 @@ export default function ChronopostApp() {
                               <td style={{ padding: '9px 12px', textAlign: 'center', color: C.accent }}>{inv.parcels_matched}</td>
                               <td style={{ padding: '9px 12px', textAlign: 'center', color: C.green }}>{inv.weight_ok ?? '—'}</td>
                               <td style={{ padding: '9px 12px', textAlign: 'center', color: inv.weight_ecart > 0 ? C.red : C.dark }}>{inv.weight_ecart ?? '—'}</td>
-                              <td style={{ padding: '9px 12px', fontWeight: 600 }}>{inv.total_ht != null ? `${parseFloat(inv.total_ht).toFixed(2)} €` : '—'}</td>
-                              <td style={{ padding: '9px 12px', color: C.orange }}>{inv.supplements_total != null ? `${parseFloat(inv.supplements_total).toFixed(2)} €` : '—'}</td>
+                              <td style={{ padding: '9px 12px', fontWeight: 600 }}>{fmtEur(inv.total_ht)}</td>
+                              <td style={{ padding: '9px 12px', color: C.orange }}>{fmtEur(inv.supplements_total)}</td>
                               <td style={{ padding: '9px 12px', textAlign: 'center' }}>
                                 {inv.tariffs_applied_at
                                   ? <Badge label="✓ Appliqués" color={C.green} bg={C.greenL} />
@@ -1686,10 +1692,10 @@ export default function ChronopostApp() {
                             <td style={{ padding: '10px 12px', fontWeight: 700 }}>TOTAL ({history.length} factures)</td>
                             <td colSpan={6} />
                             <td style={{ padding: '10px 12px', fontWeight: 800, color: C.primary }}>
-                              {history.reduce((s, inv) => s + parseFloat(inv.total_ht || 0), 0).toFixed(2)} €
+                              {fmtEur(history.reduce((s, inv) => s + parseFloat(inv.total_ht || 0), 0))}
                             </td>
                             <td style={{ padding: '10px 12px', fontWeight: 700, color: C.orange }}>
-                              {history.reduce((s, inv) => s + parseFloat(inv.supplements_total || 0), 0).toFixed(2)} €
+                              {fmtEur(history.reduce((s, inv) => s + parseFloat(inv.supplements_total || 0), 0))}
                             </td>
                             <td />
                           </tr>
@@ -1756,8 +1762,8 @@ export default function ChronopostApp() {
                           <td style={{ padding: '8px 12px', fontWeight: 700, color: C.primary }}>🔍 {inv.invoice_number}</td>
                           <td style={{ padding: '8px 12px', color: C.greyT }}>{inv.invoice_date || '—'}</td>
                           <td style={{ padding: '8px 12px', textAlign: 'center' }}>{inv.total_parcels}</td>
-                          <td style={{ padding: '8px 12px', fontWeight: 600 }}>{inv.total_ht != null ? `${parseFloat(inv.total_ht).toFixed(2)} €` : '—'}</td>
-                          <td style={{ padding: '8px 12px', color: C.orange }}>{inv.supplements_total != null ? `${parseFloat(inv.supplements_total).toFixed(2)} €` : '—'}</td>
+                          <td style={{ padding: '8px 12px', fontWeight: 600 }}>{fmtEur(inv.total_ht)}</td>
+                          <td style={{ padding: '8px 12px', color: C.orange }}>{fmtEur(inv.supplements_total)}</td>
                           <td style={{ padding: '8px 12px', textAlign: 'center' }}>
                             {inv.tariffs_applied_at
                               ? <Badge label="✓ Appliqués" color={C.green} bg={C.greenL} />

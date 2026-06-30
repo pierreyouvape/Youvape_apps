@@ -16,7 +16,12 @@ const C = {
   dark: '#111827', white: '#FFFFFF',
 };
 
-function fmtEur(v) { return v !== null && v !== undefined && v !== '' ? `${parseFloat(v).toFixed(2)} €` : '—'; }
+function fmtEur(v) {
+  if (v === null || v === undefined || v === '') return '—';
+  const n = parseFloat(v);
+  if (!isFinite(n)) return '—';
+  return `${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).replace(/,/g, ' ')} €`;
+}
 
 const MONTH_NAMES = ['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
 
@@ -216,7 +221,7 @@ function TotalsView({ totals, totalsLoading, loadTotals }) {
                 <CartesianGrid strokeDasharray="3 3" stroke={C.greyB} />
                 <XAxis dataKey="label" tick={{ fontSize: 11 }} />
                 <YAxis tick={{ fontSize: 11 }} tickFormatter={v => `${v} €`} />
-                <Tooltip formatter={v => `${parseFloat(v).toFixed(2)} €`} />
+                <Tooltip formatter={v => fmtEur(v)} />
                 <Line type="monotone" dataKey="ttc" name="Total payé TTC" stroke={C.primary} strokeWidth={2} dot={{ r: 3 }} />
               </LineChart>
             </ResponsiveContainer>
