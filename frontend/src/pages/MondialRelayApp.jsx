@@ -151,28 +151,36 @@ function HistoryTable({ history, loadFromHistory, onDelete, onDownload }) {
 }
 
 function TotalsView({ totals, totalsLoading, loadTotals }) {
-  const { months, years, byPays } = useMemo(() => {
-    const monthMap = {}, yearMap = {}, paysMap = {};
+  const { months, years, byPays, yearCols, byPaysYear } = useMemo(() => {
+    const monthMap = {}, yearMap = {}, paysMap = {}, paysYearMap = {}, yearsSet = new Set();
     for (const inv of (totals?.invoices || [])) {
       const parts = (inv.period_start || '').split('/');
       const ttc = parseFloat(inv.total_ttc || inv.total_ht || 0);
       const ht = parseFloat(inv.total_ht || 0);
+      const y = parts.length === 3 ? parts[2] : '—';
       if (parts.length === 3) {
-        const [, m, y] = parts;
+        const m = parts[1];
         const key = `${y}-${m}`;
         monthMap[key] = monthMap[key] || { ht: 0, ttc: 0 };
         monthMap[key].ht += ht; monthMap[key].ttc += ttc;
         yearMap[y] = yearMap[y] || { ht: 0, ttc: 0 };
         yearMap[y].ht += ht; yearMap[y].ttc += ttc;
       }
+      yearsSet.add(y);
       const pays = inv.pays || '—';
       paysMap[pays] = paysMap[pays] || { ht: 0, ttc: 0, colis: 0 };
       paysMap[pays].ht += ht; paysMap[pays].ttc += ttc; paysMap[pays].colis += Number(inv.total_parcels) || 0;
+      paysYearMap[pays] = paysYearMap[pays] || {};
+      paysYearMap[pays][y] = (paysYearMap[pays][y] || 0) + ttc;
     }
-    const months = Object.entries(monthMap).map(([key, v]) => { const [y, m] = key.split('-'); return { key, label: `${MONTH_NAMES[parseInt(m, 10) - 1]} ${y}`, ...v }; }).sort((a, b) => b.key.localeCompare(a.key));
-    const years = Object.entries(yearMap).map(([y, v]) => ({ key: y, label: y, ...v })).sort((a, b) => b.key.localeCompare(a.key));
+    const months = Object.entries(monthMap).map(([key, v]) => { const [yy, m] = key.split('-'); return { key, label: `${MONTH_NAMES[parseInt(m, 10) - 1]} ${yy}`, ...v }; }).sort((a, b) => b.key.localeCompare(a.key));
+    const years = Object.entries(yearMap).map(([yy, v]) => ({ key: yy, label: yy, ...v })).sort((a, b) => b.key.localeCompare(a.key));
     const byPays = Object.entries(paysMap).map(([p, v]) => ({ pays: p, ...v })).sort((a, b) => b.ttc - a.ttc);
-    return { months, years, byPays };
+    const yearCols = [...yearsSet].sort();
+    const byPaysYear = Object.entries(paysYearMap).map(([p, ym]) => ({
+      pays: p, ym, total: Object.values(ym).reduce((s, x) => s + x, 0),
+    })).sort((a, b) => b.total - a.total);
+    return { months, years, byPays, yearCols, byPaysYear };
   }, [totals]);
 
   return (
@@ -212,6 +220,26 @@ function TotalsView({ totals, totalsLoading, loadTotals }) {
               </table>
             </div>
           </div>
+          {yearCols.length > 0 && (
+            <div style={{ marginTop: 24 }}>
+              <h3 style={{ fontSize: 14, fontWeight: 700, color: C.dark, marginBottom: 10 }}>Par pays et par année (TTC)</h3>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                <thead><tr><Th label="Pays" />{yearCols.map(y => <Th key={y} label={y} align="right" />)}<Th label="Total" align="right" /></tr></thead>
+                <tbody>{byPaysYear.map((r, i) => (
+                  <tr key={r.pays} style={{ background: i % 2 === 0 ? C.white : C.grey }}>
+                    <Td bold>{r.pays}</Td>
+                    {yearCols.map(y => <Td key={y} align="right">{r.ym[y] ? fmtEur(r.ym[y]) : '—'}</Td>)}
+                    <Td align="right" bold color={C.accent}>{fmtEur(r.total)}</Td>
+                  </tr>
+                ))}</tbody>
+                <tfoot><tr style={{ borderTop: `2px solid ${C.greyB}`, fontWeight: 700 }}>
+                  <Td bold>Total</Td>
+                  {yearCols.map(y => <Td key={y} align="right" bold>{fmtEur(byPaysYear.reduce((s, r) => s + (r.ym[y] || 0), 0))}</Td>)}
+                  <Td align="right" bold color={C.accent}>{fmtEur(byPaysYear.reduce((s, r) => s + r.total, 0))}</Td>
+                </tr></tfoot>
+              </table>
+            </div>
+          )}
           <div style={{ marginTop: 24 }}>
             <h3 style={{ fontSize: 14, fontWeight: 700, color: C.dark, marginBottom: 10 }}>Par mois</h3>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
