@@ -17,6 +17,7 @@ function buildCountryTotals(items, amountKey) {
 }
 exports._parsePdf = parseColissimoPdf;
 exports._buildCountryTotals = buildCountryTotals;
+exports._analyzeBuffer = analyzeColissimoBuffer;
 
 const upload = multer({
   storage: multer.memoryStorage(),
