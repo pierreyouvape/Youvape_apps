@@ -62,7 +62,9 @@ function parseColissimoPdf(text) {
   const indemnizations = [];
   const globalSummary  = {};
 
-  const TRACKING_RE = /\b(6[AC]\d{11}|8Q\d{11}|C[ABF]\d{9}FR)\b/;
+  // C[A-Z]\d{9}FR couvre tous les produits internationaux : CA/CB/CF (Domicile),
+  // CM (Retrait PU), CG (Consigne), CI (Retrait Poste)… (avant: seulement C[ABF])
+  const TRACKING_RE = /\b(6[AC]\d{11}|8Q\d{11}|C[A-Z]\d{9}FR)\b/;
   const DATE_RE     = /\b(\d{2}\/\d{2})\b/;
 
   // ── Metadata extraction
