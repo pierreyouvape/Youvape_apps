@@ -63,9 +63,10 @@ function parseColissimoPdf(text) {
   const indemnizations = [];
   const globalSummary  = {};
 
-  // C[A-Z]\d{9}FR couvre tous les produits internationaux : CA/CB/CF (Domicile),
-  // CM (Retrait PU), CG (Consigne), CI (Retrait Poste)… (avant: seulement C[ABF])
-  const TRACKING_RE = /\b(6[AC]\d{11}|8Q\d{11}|C[A-Z]\d{9}FR)\b/;
+  // Tous les n° de suivi Colissimo (13 car.), 2 familles :
+  //  • National / Outre-mer : chiffre+lettre + 11 chiffres (6A, 6C, 8Q, 8R, 9L, 9V…)
+  //  • International         : 2 lettres + 9 chiffres + FR (CA, CB, CF, CG, CI, CM, EY…)
+  const TRACKING_RE = /\b([0-9][A-Z]\d{11}|[A-Z]{2}\d{9}FR)\b/;
   const DATE_RE     = /\b(\d{2}\/\d{2})\b/;
 
   // ── Metadata extraction
