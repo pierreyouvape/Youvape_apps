@@ -13,10 +13,13 @@ function chronoZone(line) {
   const toks = line.trim().split(/\s+/);
   const wi = toks.findIndex(t => /^\d+,\d{3}$/.test(t));
   if (wi < 1) return null;
+  // Remonte depuis le poids : saute sous-zones (Z1/Z2) et flags d'observation (1 lettre : P,R,V,S…)
   for (let i = wi - 1; i >= 0; i--) {
     const t = toks[i];
-    if (t === 'P' || t === 'R' || t === 'RR') continue; // flags d'observation
-    if (/^[A-Z]{2,3}$/.test(t)) return t;
+    if (/^Z\d$/.test(t)) continue;        // sous-zone internationale
+    if (/^[A-Z]$/.test(t)) continue;       // flag observation
+    if (/^[A-Z]{2,3}$/.test(t)) return t;  // zone : NT/ND/NR (France) ou code pays
+    if (/^\d+$/.test(t)) break;            // arrivée postale atteinte → pas de zone alpha
     break;
   }
   return null;
