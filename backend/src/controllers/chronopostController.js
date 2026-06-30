@@ -1034,7 +1034,7 @@ exports.getCreditsForOrders = async (req, res) => {
 exports.getTotals = async (req, res) => {
   try {
     const invoices = await pool.query(`
-      SELECT ci.id, ci.invoice_number, ci.invoice_date, ci.total_ht, ci.supplements_total, ci.country_totals,
+      SELECT ci.id, ci.invoice_number, ci.invoice_date, ci.total_ht, ci.supplements_total, ci.total_parcels, ci.country_totals,
         COALESCE((
           SELECT SUM((elem->>'amount_ht')::numeric)
           FROM jsonb_array_elements(COALESCE(ci.global_charges, '[]'::jsonb)) elem

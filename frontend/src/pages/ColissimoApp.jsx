@@ -72,9 +72,10 @@ const COUNTRY_NAMES = {
   '—': 'Non identifié',
 };
 const countryName = code => COUNTRY_NAMES[code] || code;
+const fmtColis = n => (n || 0).toLocaleString('en-US').replace(/,/g, ' ');
 
 function TotalsView({ totals, totalsLoading, loadTotals, totalsByPeriod }) {
-  const { months, years, byPaysYear, yearCols } = totalsByPeriod;
+  const { months, years, byPaysYear, yearCols, paysMonth } = totalsByPeriod;
   return (
     <div style={{ padding: 20 }}>
       <div style={{ marginBottom: 14, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -114,6 +115,7 @@ function TotalsView({ totals, totalsLoading, loadTotals, totalsByPeriod }) {
               <thead>
                 <tr style={{ background: C.grey }}>
                   <th style={{ padding: '9px 12px', textAlign: 'left', fontWeight: 700, color: C.dark, fontSize: 11.5, borderBottom: `2px solid ${C.greyB}` }}>Mois</th>
+                  <th style={{ padding: '9px 12px', textAlign: 'right', fontWeight: 700, color: C.dark, fontSize: 11.5, borderBottom: `2px solid ${C.greyB}` }}>Colis</th>
                   <th style={{ padding: '9px 12px', textAlign: 'right', fontWeight: 700, color: C.dark, fontSize: 11.5, borderBottom: `2px solid ${C.greyB}` }}>Total payé HT</th>
                 </tr>
               </thead>
@@ -121,6 +123,7 @@ function TotalsView({ totals, totalsLoading, loadTotals, totalsByPeriod }) {
                 {months.map((m, i) => (
                   <tr key={m.key} style={{ background: i % 2 === 0 ? C.white : C.grey, borderBottom: `1px solid ${C.greyB}` }}>
                     <td style={{ padding: '8px 12px' }}>{m.label}</td>
+                    <td style={{ padding: '8px 12px', textAlign: 'right', color: C.greyT }}>{m.colis.toLocaleString('en-US').replace(/,/g, ' ')}</td>
                     <td style={{ padding: '8px 12px', textAlign: 'right', fontWeight: 600 }}>{fmtEur(m.total)}</td>
                   </tr>
                 ))}
@@ -152,22 +155,44 @@ function TotalsView({ totals, totalsLoading, loadTotals, totalsByPeriod }) {
           {byPaysYear && byPaysYear.length > 0 && yearCols.length > 0 && (
             <div style={{ marginTop: 24 }}>
               <h3 style={{ fontSize: 14, fontWeight: 700, color: C.dark, marginBottom: 4 }}>Par pays et par année (HT)</h3>
-              <p style={{ margin: '0 0 10px', color: C.greyT, fontSize: 12 }}>Coût des colis HT par pays de destination (hors suppléments globaux).</p>
+              <p style={{ margin: '0 0 10px', color: C.greyT, fontSize: 12 }}>Coût des colis HT par pays de destination (hors suppléments globaux). Colis = total sur la période.</p>
               <div style={{ overflowX: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-                  <thead><tr><Th label="Pays" />{yearCols.map(y => <Th key={y} label={y} align="right" />)}<Th label="Total" align="right" /></tr></thead>
+                  <thead><tr><Th label="Pays" /><Th label="Colis" align="right" />{yearCols.map(y => <Th key={y} label={y} align="right" />)}<Th label="Total HT" align="right" /></tr></thead>
                   <tbody>{byPaysYear.map((r, i) => (
                     <tr key={r.code} style={{ background: i % 2 === 0 ? C.white : C.grey }}>
                       <Td bold>{countryName(r.code)} <span style={{ color: C.greyT, fontWeight: 400, fontSize: 11.5 }}>{r.code !== '—' ? r.code : ''}</span></Td>
-                      {yearCols.map(y => <Td key={y} align="right">{r.ym[y] ? fmtEur(r.ym[y]) : '—'}</Td>)}
+                      <Td align="right" color={C.greyT}>{fmtColis(r.totalColis)}</Td>
+                      {yearCols.map(y => <Td key={y} align="right">{r.ym[y] ? fmtEur(r.ym[y].ht) : '—'}</Td>)}
                       <Td align="right" bold color={C.accent}>{fmtEur(r.total)}</Td>
                     </tr>
                   ))}</tbody>
                   <tfoot><tr style={{ borderTop: `2px solid ${C.greyB}`, fontWeight: 700 }}>
                     <Td bold>Total</Td>
-                    {yearCols.map(y => <Td key={y} align="right" bold>{fmtEur(byPaysYear.reduce((s, r) => s + (r.ym[y] || 0), 0))}</Td>)}
+                    <Td align="right" bold>{fmtColis(byPaysYear.reduce((s, r) => s + r.totalColis, 0))}</Td>
+                    {yearCols.map(y => <Td key={y} align="right" bold>{fmtEur(byPaysYear.reduce((s, r) => s + (r.ym[y]?.ht || 0), 0))}</Td>)}
                     <Td align="right" bold color={C.accent}>{fmtEur(byPaysYear.reduce((s, r) => s + r.total, 0))}</Td>
                   </tr></tfoot>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {paysMonth && paysMonth.length > 0 && (
+            <div style={{ marginTop: 24 }}>
+              <h3 style={{ fontSize: 14, fontWeight: 700, color: C.dark, marginBottom: 4 }}>Détail par pays et par mois</h3>
+              <p style={{ margin: '0 0 10px', color: C.greyT, fontSize: 12 }}>Une ligne par pays et par mois — pour vérification.</p>
+              <div style={{ overflowX: 'auto', maxHeight: 460, overflowY: 'auto', border: `1px solid ${C.greyB}`, borderRadius: 8 }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                  <thead style={{ position: 'sticky', top: 0 }}><tr><Th label="Mois" /><Th label="Pays" /><Th label="Colis" align="right" /><Th label="HT" align="right" /></tr></thead>
+                  <tbody>{paysMonth.map((r, i) => (
+                    <tr key={`${r.key}-${r.code}`} style={{ background: i % 2 === 0 ? C.white : C.grey }}>
+                      <Td>{r.label}</Td>
+                      <Td bold>{countryName(r.code)} <span style={{ color: C.greyT, fontWeight: 400, fontSize: 11.5 }}>{r.code !== '—' ? r.code : ''}</span></Td>
+                      <Td align="right" color={C.greyT}>{fmtColis(r.colis)}</Td>
+                      <Td align="right" bold>{fmtEur(r.ht)}</Td>
+                    </tr>
+                  ))}</tbody>
                 </table>
               </div>
             </div>
@@ -293,9 +318,10 @@ export default function ColissimoApp() {
   const MONTH_NAMES = ['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
 
   const totalsByPeriod = (() => {
-    const monthMap = {};
+    const monthMap = {};       // monthKey -> { ht, colis }
     const yearMap = {};
-    const paysYearMap = {};
+    const paysYearMap = {};    // code -> year -> { ht, colis }
+    const paysMonthMap = {};   // monthKey -> code -> { ht, colis }
     const yearsSet = new Set();
     for (const inv of (totals?.invoices || [])) {
       const parts = (inv.period_start || '').split('/');
@@ -303,29 +329,43 @@ export default function ColissimoApp() {
       const [, m, y] = parts;
       const monthKey = `${y}-${m}`;
       const total = parseFloat(inv.total_ht || 0);
-      monthMap[monthKey] = (monthMap[monthKey] || 0) + total;
+      if (!monthMap[monthKey]) monthMap[monthKey] = { ht: 0, colis: 0 };
+      monthMap[monthKey].ht += total;
+      monthMap[monthKey].colis += parseInt(inv.total_parcels || 0, 10);
       yearMap[y] = (yearMap[y] || 0) + total;
       yearsSet.add(y);
       const ct = inv.country_totals || {};
       for (const [code, v] of Object.entries(ct)) {
+        const ht = parseFloat(v?.ht || 0), colis = parseInt(v?.colis || 0, 10);
         if (!paysYearMap[code]) paysYearMap[code] = {};
-        paysYearMap[code][y] = (paysYearMap[code][y] || 0) + parseFloat(v?.ht || 0);
+        if (!paysYearMap[code][y]) paysYearMap[code][y] = { ht: 0, colis: 0 };
+        paysYearMap[code][y].ht += ht; paysYearMap[code][y].colis += colis;
+        if (!paysMonthMap[monthKey]) paysMonthMap[monthKey] = {};
+        if (!paysMonthMap[monthKey][code]) paysMonthMap[monthKey][code] = { ht: 0, colis: 0 };
+        paysMonthMap[monthKey][code].ht += ht; paysMonthMap[monthKey][code].colis += colis;
       }
     }
     const months = Object.entries(monthMap)
-      .map(([key, total]) => {
-        const [y, m] = key.split('-');
-        return { key, label: `${MONTH_NAMES[parseInt(m, 10) - 1]} ${y}`, total };
-      })
+      .map(([key, v]) => { const [y, m] = key.split('-'); return { key, label: `${MONTH_NAMES[parseInt(m, 10) - 1]} ${y}`, total: v.ht, colis: v.colis }; })
       .sort((a, b) => b.key.localeCompare(a.key));
     const years = Object.entries(yearMap)
       .map(([y, total]) => ({ key: y, label: y, total }))
       .sort((a, b) => b.key.localeCompare(a.key));
     const yearCols = [...yearsSet].sort();
     const byPaysYear = Object.entries(paysYearMap)
-      .map(([code, ym]) => ({ code, ym, total: Object.values(ym).reduce((s, x) => s + x, 0) }))
+      .map(([code, ym]) => ({
+        code, ym,
+        total: Object.values(ym).reduce((s, x) => s + x.ht, 0),
+        totalColis: Object.values(ym).reduce((s, x) => s + x.colis, 0),
+      }))
       .sort((a, b) => b.total - a.total);
-    return { months, years, byPaysYear, yearCols };
+    const paysMonth = Object.entries(paysMonthMap)
+      .flatMap(([key, codes]) => {
+        const [y, m] = key.split('-');
+        return Object.entries(codes).map(([code, v]) => ({ key, label: `${MONTH_NAMES[parseInt(m, 10) - 1]} ${y}`, code, ht: v.ht, colis: v.colis }));
+      })
+      .sort((a, b) => b.key.localeCompare(a.key) || b.ht - a.ht);
+    return { months, years, byPaysYear, yearCols, paysMonth };
   })();
 
   // Charge une facture depuis l'historique BDD et la réaffiche comme si elle venait d'être analysée
