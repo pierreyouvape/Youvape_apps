@@ -1,10 +1,37 @@
 const multer = require('multer');
 const { PDFParse } = require('pdf-parse');
 const ExcelJS = require('exceljs');
+const JSZip = require('jszip');
 const pool = require('../config/database');
 const { parseMondialRelayPdf } = require('../parsers/mondialRelayParser');
 
 const CARRIER = 'mondial_relay';
+
+// Insère une facture analysée (utilisé par save et import ZIP). Renvoie
+// { status: 'inserted'|'already' }.
+async function insertParsed(parsed, pdfBuffer) {
+  const existing = await pool.query(
+    'SELECT id FROM carrier_invoices WHERE carrier = $1 AND invoice_number = $2',
+    [CARRIER, parsed.invoiceNumber]
+  );
+  if (existing.rows.length) {
+    if (pdfBuffer) await pool.query('UPDATE carrier_invoices SET pdf_data = $1 WHERE id = $2', [pdfBuffer, existing.rows[0].id]);
+    return { status: 'already', id: existing.rows[0].id };
+  }
+  const r = await pool.query(`
+    INSERT INTO carrier_invoices
+      (carrier, invoice_number, invoice_date, period_start, period_end, account_number,
+       total_parcels, parcels_matched, total_ht, parcels_detail, pdf_data)
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+    RETURNING id
+  `, [
+    CARRIER, parsed.invoiceNumber, parsed.invoiceDate || null,
+    parsed.periodStart || null, parsed.periodEnd || null, parsed.pays || null,
+    parsed.nbColis ?? 0, parsed.stats?.pu_conform ?? 0, parsed.totalHT ?? null,
+    JSON.stringify(parsed), pdfBuffer || null,
+  ]);
+  return { status: 'inserted', id: r.rows[0].id };
+}
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -12,6 +39,15 @@ const upload = multer({
   fileFilter: (req, file, cb) => {
     if (file.mimetype === 'application/pdf') cb(null, true);
     else cb(new Error('Seuls les fichiers PDF sont acceptés'));
+  },
+});
+
+const uploadZip = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 100 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    if (/zip/i.test(file.mimetype) || /\.zip$/i.test(file.originalname) || file.mimetype === 'application/octet-stream') cb(null, true);
+    else cb(new Error('Un fichier ZIP est attendu'));
   },
 });
 
@@ -221,6 +257,38 @@ exports.getTotals = async (req, res) => {
     res.status(500).json({ success: false, error: err.message });
   }
 };
+
+// POST /api/mondial-relay/import-zip — importe en lot toutes les factures PDF d'un ZIP
+exports.importZip = [
+  uploadZip.single('zip'),
+  async (req, res) => {
+    try {
+      if (!req.file) return res.status(400).json({ success: false, error: 'Fichier ZIP requis' });
+      const zip = await JSZip.loadAsync(req.file.buffer);
+      const pdfEntries = Object.values(zip.files).filter(f => !f.dir && /\.pdf$/i.test(f.name) && !/__MACOSX/.test(f.name));
+      if (!pdfEntries.length) return res.status(400).json({ success: false, error: 'Aucun PDF trouvé dans le ZIP' });
+
+      let imported = 0, already = 0;
+      const failed = [];
+      for (const entry of pdfEntries) {
+        const name = entry.name.split('/').pop();
+        try {
+          const buf = await entry.async('nodebuffer');
+          const parsed = await parsePdfBuffer(buf);
+          if (!parsed.invoiceNumber) { failed.push({ name, error: 'Facture Mondial Relay non reconnue' }); continue; }
+          const r = await insertParsed(parsed, buf);
+          if (r.status === 'inserted') imported++; else already++;
+        } catch (e) {
+          failed.push({ name, error: e.message });
+        }
+      }
+      res.json({ success: true, total: pdfEntries.length, imported, already, failed });
+    } catch (err) {
+      console.error('[MondialRelay] importZip error:', err);
+      res.status(500).json({ success: false, error: err.message });
+    }
+  },
+];
 
 exports.debugText = [
   upload.single('pdf'),
