@@ -211,8 +211,9 @@ const computeProductNeeds = (product, periodDays, coverageMonths, isCustomPeriod
 
 // ==================== FORMATAGE ====================
 
-const fmtInt = (v) => (parseInt(v) || 0).toLocaleString('fr-FR');
-const fmtNum = (v) => (parseFloat(v) || 0).toLocaleString('fr-FR', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+const NBSP = /[\u202f\u00a0]/g; // espace fine insécable -> espace normale
+const fmtInt = (v) => (parseInt(v) || 0).toLocaleString('fr-FR').replace(NBSP, ' ');
+const fmtNum = (v) => (parseFloat(v) || 0).toLocaleString('fr-FR', { minimumFractionDigits: 0, maximumFractionDigits: 2 }).replace(NBSP, ' ');
 
 // ==================== COMPOSANTS UI ====================
 

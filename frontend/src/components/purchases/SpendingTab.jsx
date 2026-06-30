@@ -9,8 +9,11 @@ const C = {
   grisF: '#626E85', grisTF: '#2a2e38', blanc: '#FFFFFF', vert: '#4AB866',
 };
 
-const eur = (n) => new Intl.NumberFormat('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n || 0) + ' €';
-const eur0 = (n) => new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 0 }).format(n || 0) + ' €';
+// Intl utilise une espace fine insécable (U+202F) comme séparateur de milliers,
+// peu lisible -> on la remplace par une espace normale.
+const NBSP = /[\u202f\u00a0]/g;
+const eur = (n) => new Intl.NumberFormat('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n || 0).replace(NBSP, ' ') + ' €';
+const eur0 = (n) => new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 0 }).format(n || 0).replace(NBSP, ' ') + ' €';
 const MONTHS_FR = ['janv.', 'févr.', 'mars', 'avr.', 'mai', 'juin', 'juil.', 'août', 'sept.', 'oct.', 'nov.', 'déc.'];
 const monthLabel = (ym) => { const [y, m] = ym.split('-'); return `${MONTHS_FR[parseInt(m) - 1]} ${y.slice(2)}`; };
 const fmtDate = (d) => d ? `${d.slice(8, 10)}/${d.slice(5, 7)}/${d.slice(0, 4)}` : '—';

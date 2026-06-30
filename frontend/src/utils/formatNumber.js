@@ -1,7 +1,7 @@
 // Espaces insécables utilisées comme séparateur de milliers par Intl (fr-FR) :
 // espace fine insécable (U+202F) et espace insécable (U+00A0).
 // On les remplace par une espace normale, plus lisible dans nos tableaux.
-const NBSP = /[  ]/g;
+const NBSP = /[\u202f\u00a0]/g;
 
 /**
  * Formate un nombre avec séparateur de milliers (espace) et virgule décimale
