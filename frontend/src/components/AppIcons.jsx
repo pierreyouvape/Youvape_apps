@@ -203,6 +203,21 @@ export const LettreSuivie = ({ size = 56 }) => (
   </svg>
 );
 
+export const MondialRelay = ({ size = 56 }) => (
+  <svg width={size} height={size} viewBox="0 0 100 100" fill="none" style={{ display: 'block', flexShrink: 0 }}>
+    <defs>
+      <linearGradient id="mr-bg" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" stopColor="#9C2462" />
+        <stop offset="100%" stopColor="#6E1741" />
+      </linearGradient>
+    </defs>
+    <rect x="10" y="10" width="80" height="80" rx="18" fill="url(#mr-bg)" />
+    {/* Goutte / pin Mondial Relay stylisé */}
+    <path d="M50 26 c-11 0 -19 8 -19 19 c0 13 19 29 19 29 c0 0 19 -16 19 -29 c0 -11 -8 -19 -19 -19 Z" fill="#FFFFFF" />
+    <circle cx="50" cy="44" r="8.5" fill="#9C2462" />
+  </svg>
+);
+
 export const Customers = (props) => (
   <Base {...props}>
     <circle cx={9} cy={8} r={3.2} />
@@ -227,4 +242,5 @@ export const APPS = [
   { key: 'chronopost', path: '/chronopost', label: 'Factures Chronopost',      Icon: Chronopost,   color: '#0D7FA8' },
   { key: 'colissimo',  path: '/colissimo',  label: 'Factures Colissimo',       Icon: Colissimo,    color: '#D96000' },
   { key: 'lettre-suivie', path: '/lettre-suivie', label: 'Factures Lettre Suivie', Icon: LettreSuivie, color: '#FFB000' },
+  { key: 'mondial-relay', path: '/mondial-relay', label: 'Factures Mondial Relay', Icon: MondialRelay, color: '#9C2462' },
 ];

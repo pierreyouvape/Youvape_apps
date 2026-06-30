@@ -34,6 +34,7 @@ import TicketsSettingsApp from './pages/TicketsSettingsApp';
 import ChronopostApp from './pages/ChronopostApp';
 import ColissimoApp from './pages/ColissimoApp';
 import LettreSuivieApp from './pages/LettreSuivieApp';
+import MondialRelayApp from './pages/MondialRelayApp';
 import PrivateRoute from './components/PrivateRoute';
 
 const PAGE_TITLES = {
@@ -55,6 +56,7 @@ const PAGE_TITLES = {
   '/chronopost': 'Chronopost',
   '/colissimo':  'Colissimo',
   '/lettre-suivie': 'Lettre Suivie',
+  '/mondial-relay': 'Mondial Relay',
   '/brands': 'Marque',
   '/sub-brands': 'Sous-marque',
   '/categories': 'Categorie',
@@ -335,6 +337,14 @@ function App() {
             element={
               <PrivateRoute>
                 <LettreSuivieApp />
+              </PrivateRoute>
+            }
+          />
+          <Route
+            path="/mondial-relay"
+            element={
+              <PrivateRoute>
+                <MondialRelayApp />
               </PrivateRoute>
             }
           />
