@@ -128,12 +128,14 @@ export default function TransporteursApp() {
       const [y, m] = key.split('-');
       const row = { label: `${MONTH_NAMES[parseInt(m, 10) - 1].slice(0, 3)} ${y}` };
       for (const c of CARRIER_LIST) row[c] = +(monthMap[key].perCarrier[c]?.ht || 0).toFixed(2);
+      row.total = +monthMap[key].totalHt.toFixed(2);
       return row;
     });
     const chartDataColis = monthKeysAsc.map(key => {
       const [y, m] = key.split('-');
       const row = { label: `${MONTH_NAMES[parseInt(m, 10) - 1].slice(0, 3)} ${y}` };
       for (const c of CARRIER_LIST) row[c] = monthMap[key].perCarrier[c]?.colis || 0;
+      row.total = monthMap[key].totalColis;
       return row;
     });
     const byMonth = monthKeysAsc.slice().reverse().map(key => { const [y, m] = key.split('-'); return { key, label: `${MONTH_NAMES[parseInt(m, 10) - 1]} ${y}`, ...monthMap[key] }; });
@@ -205,9 +207,10 @@ export default function TransporteursApp() {
                   <CartesianGrid strokeDasharray="3 3" stroke={C.greyB} />
                   <XAxis dataKey="label" tick={{ fontSize: 11 }} />
                   <YAxis tick={{ fontSize: 11 }} tickFormatter={v => `${v} €`} />
-                  <Tooltip formatter={(v, n) => [fmtEur(v), CARRIERS[n]?.label || n]} />
-                  <Legend formatter={n => CARRIERS[n]?.label || n} />
+                  <Tooltip formatter={(v, n) => [fmtEur(v), n === 'total' ? 'Total' : (CARRIERS[n]?.label || n)]} />
+                  <Legend formatter={n => n === 'total' ? 'Total' : (CARRIERS[n]?.label || n)} />
                   {CARRIER_LIST.map(c => <Line key={c} type="monotone" dataKey={c} stroke={CARRIERS[c].color} strokeWidth={2} dot={{ r: 2 }} />)}
+                  <Line type="monotone" dataKey="total" stroke={C.dark} strokeWidth={2.5} strokeDasharray="5 4" dot={{ r: 2 }} />
                 </LineChart>
               </ResponsiveContainer>
             </div>
@@ -262,9 +265,10 @@ export default function TransporteursApp() {
                   <CartesianGrid strokeDasharray="3 3" stroke={C.greyB} />
                   <XAxis dataKey="label" tick={{ fontSize: 11 }} />
                   <YAxis tick={{ fontSize: 11 }} />
-                  <Tooltip formatter={(v, n) => [fmtColis(v), CARRIERS[n]?.label || n]} />
-                  <Legend formatter={n => CARRIERS[n]?.label || n} />
+                  <Tooltip formatter={(v, n) => [fmtColis(v), n === 'total' ? 'Total' : (CARRIERS[n]?.label || n)]} />
+                  <Legend formatter={n => n === 'total' ? 'Total' : (CARRIERS[n]?.label || n)} />
                   {CARRIER_LIST.map(c => <Line key={c} type="monotone" dataKey={c} stroke={CARRIERS[c].color} strokeWidth={2} dot={{ r: 2 }} />)}
+                  <Line type="monotone" dataKey="total" stroke={C.dark} strokeWidth={2.5} strokeDasharray="5 4" dot={{ r: 2 }} />
                 </LineChart>
               </ResponsiveContainer>
             </div>
