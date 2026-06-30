@@ -32,6 +32,7 @@ const chronopostRoutes = require('./routes/chronopostRoutes');
 const colissimoRoutes  = require('./routes/colissimoRoutes');
 const lettreSuivieRoutes = require('./routes/lettreSuivieRoutes');
 const mondialRelayRoutes = require('./routes/mondialRelayRoutes');
+const transporteursRoutes = require('./routes/transporteursRoutes');
 const { setupCron, setupBmsCron, setupComputedCostCron, setupBmsBarcodeCron, setupStockResyncCron, setupSavAutomationsCron, setupProductDbSyncCron, setupBmsTagRetryCron, setupReportEmailCron } = require('./services/cronService');
 const rewardService = require('./services/rewardService');
 const emailService = require('./services/emailService');
@@ -81,6 +82,7 @@ app.use('/api/chronopost', chronopostRoutes); // Chronopost invoice analysis
 app.use('/api/colissimo',  colissimoRoutes);  // Colissimo invoice analysis
 app.use('/api/lettre-suivie', lettreSuivieRoutes); // La Poste Lettre Suivie invoice analysis
 app.use('/api/mondial-relay', mondialRelayRoutes); // Mondial Relay invoice analysis
+app.use('/api/transporteurs', transporteursRoutes); // Vue consolidée des 4 transporteurs
 
 // Start server
 app.listen(PORT, async () => {

@@ -203,6 +203,15 @@ export const MondialRelay = ({ size = 56, color = '#fff' }) => (
   </svg>
 );
 
+export const Transporteurs = (props) => (
+  <Base {...props}>
+    <path d="M3 5.5 h10 v9 h-10 z" />
+    <path d="M13 8.5 h4 l3 3 v3 h-7 z" />
+    <circle cx={7} cy={17} r={1.6} />
+    <circle cx={16.5} cy={17} r={1.6} />
+  </Base>
+);
+
 export const Customers = (props) => (
   <Base {...props}>
     <circle cx={9} cy={8} r={3.2} />
@@ -228,4 +237,5 @@ export const APPS = [
   { key: 'colissimo',  path: '/colissimo',  label: 'Factures Colissimo',       Icon: Colissimo,    color: '#D96000' },
   { key: 'lettre-suivie', path: '/lettre-suivie', label: 'Factures Lettre Suivie', Icon: LettreSuivie, color: '#FFB000' },
   { key: 'mondial-relay', path: '/mondial-relay', label: 'Factures Mondial Relay', Icon: MondialRelay, color: '#9C2462' },
+  { key: 'transporteurs', path: '/transporteurs', label: 'Transporteurs (vue globale)', Icon: Transporteurs, color: '#334155' },
 ];

@@ -60,6 +60,7 @@ const usersController = {
             colissimo:   { read: true, write: true },
             'lettre-suivie': { read: true, write: true },
             'mondial-relay': { read: true, write: true },
+            transporteurs: { read: true, write: true },
             customers:   { read: true, write: true },
           }
         });
