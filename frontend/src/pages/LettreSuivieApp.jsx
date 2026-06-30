@@ -258,6 +258,9 @@ function TotalsView({ totals, totalsLoading, loadTotals }) {
 export default function LettreSuivieApp() {
   const { token } = useContext(AuthContext);
   const fileRef = useRef(null);
+  const zipRef = useRef(null);
+  const [importingZip, setImportingZip] = useState(false);
+  const [importResult, setImportResult] = useState(null);
   const [dragging, setDragging] = useState(false);
   const [loading, setLoading] = useState(false);
   const [exporting, setExporting] = useState(false);
@@ -289,6 +292,19 @@ export default function LettreSuivieApp() {
     } catch { /* silently */ } finally { setTotalsLoading(false); }
   }
   useEffect(() => { loadHistory(); loadTotals(); }, []);
+
+  async function handleZip(file) {
+    if (!file) return;
+    if (!/\.zip$/i.test(file.name)) { setError('Fichier ZIP requis.'); return; }
+    setImportingZip(true); setImportResult(null); setError(null);
+    try {
+      const fd = new FormData(); fd.append('zip', file);
+      const { data } = await axios.post(`${API_URL}/lettre-suivie/import-zip`, fd, { headers: { Authorization: `Bearer ${token}` }, timeout: 600000 });
+      if (!data.success) throw new Error(data.error);
+      setImportResult(data); loadHistory(); loadTotals();
+    } catch (e) { setError(e.response?.data?.error || e.message); }
+    finally { setImportingZip(false); if (zipRef.current) zipRef.current.value = ''; }
+  }
 
   async function handleFile(file) {
     if (!file || file.type !== 'application/pdf') { setError('Fichier PDF requis.'); return; }
@@ -406,6 +422,21 @@ export default function LettreSuivieApp() {
           {currentFile && !loading && <div style={{ marginTop: 8, color: C.accent, fontSize: 12.5, fontWeight: 600 }}>📎 {currentFile.name}</div>}
           {loading && <div style={{ marginTop: 12 }}><div style={{ display: 'inline-block', width: 26, height: 26, border: `3px solid ${C.accentL}`, borderTop: `3px solid ${C.accent}`, borderRadius: '50%', animation: 'spin .8s linear infinite' }} /><style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style></div>}
         </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 22, flexWrap: 'wrap' }}>
+          <input ref={zipRef} type="file" accept=".zip,application/zip" style={{ display: 'none' }} onChange={e => handleZip(e.target.files[0])} />
+          <button onClick={() => zipRef.current?.click()} disabled={importingZip}
+            style={{ background: C.white, color: C.accent, border: `1px solid ${C.accent}`, borderRadius: 8, padding: '9px 16px', fontWeight: 700, fontSize: 13, cursor: importingZip ? 'wait' : 'pointer', opacity: importingZip ? .7 : 1 }}>
+            {importingZip ? '⏳ Import en cours…' : '📦 Importer un ZIP de factures'}
+          </button>
+          <span style={{ color: C.greyT, fontSize: 12.5 }}>Toutes les factures PDF du ZIP sont analysées et enregistrées d'un coup (doublons ignorés).</span>
+        </div>
+        {importResult && (
+          <div style={{ background: C.greenL, border: `1px solid ${C.green}`, borderRadius: 10, padding: '11px 15px', color: C.dark, fontSize: 13, marginBottom: 18 }}>
+            ✓ Import terminé : <strong>{importResult.imported}</strong> ajoutée(s){importResult.already > 0 && <>, {importResult.already} déjà présente(s)</>}{importResult.failed?.length > 0 && <>, <span style={{ color: C.red }}>{importResult.failed.length} en échec</span></>} sur {importResult.total}.
+            {importResult.failed?.length > 0 && <ul style={{ margin: '8px 0 0', paddingLeft: 20, color: C.red }}>{importResult.failed.map((f, i) => <li key={i}>{f.name} — {f.error}</li>)}</ul>}
+          </div>
+        )}
 
         {error && <div style={{ background: C.redL, border: `1px solid ${C.red}`, borderRadius: 10, padding: '11px 15px', color: C.red, fontSize: 13, marginBottom: 18 }}>⚠️ {error}</div>}
 

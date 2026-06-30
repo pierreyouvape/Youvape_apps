@@ -1,6 +1,7 @@
 const multer = require('multer');
 const { PDFParse } = require('pdf-parse');
 const ExcelJS = require('exceljs');
+const JSZip = require('jszip');
 const pool = require('../config/database');
 
 const upload = multer({
@@ -9,6 +10,15 @@ const upload = multer({
   fileFilter: (req, file, cb) => {
     if (file.mimetype === 'application/pdf') cb(null, true);
     else cb(new Error('Seuls les fichiers PDF sont acceptés'));
+  },
+});
+
+const uploadZip = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 100 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    if (/zip/i.test(file.mimetype) || /\.zip$/i.test(file.originalname) || file.mimetype === 'application/octet-stream') cb(null, true);
+    else cb(new Error('Un fichier ZIP est attendu'));
   },
 });
 
@@ -726,6 +736,97 @@ exports.getTotals = async (req, res) => {
     res.status(500).json({ success: false, error: err.message });
   }
 };
+
+/* ─── Analyse + persistance réutilisables (save unitaire + import ZIP) ── */
+async function analyzeColissimoBuffer(buffer) {
+  const pdfParser = new PDFParse(new Uint8Array(buffer));
+  await pdfParser.load();
+  const pdfData = await pdfParser.getText();
+  const parsed = parseColissimoPdf(pdfData.text);
+  await enrichParcels(parsed.parcels);
+  const { parcels, supplements, indemnizations, globalSummary, invoiceNumber, periodStart, periodEnd, accountNumber } = parsed;
+  if (globalSummary.decarbonationUnit != null) for (const p of parcels) p.decarbonation_unit = globalSummary.decarbonationUnit;
+  const stats = {
+    total_parcels: parcels.length,
+    parcels_matched: parcels.filter(p => p.order_id).length,
+    parcels_unmatched: parcels.filter(p => !p.order_id).length,
+    weight_ok: parcels.filter(p => p.diff_g !== null && Math.abs(p.diff_g) <= 20).length,
+    weight_ecart: parcels.filter(p => p.diff_g !== null && Math.abs(p.diff_g) > 200).length,
+    supplements_count: supplements.length,
+    supplements_total: supplements.reduce((s, x) => s + (x.amount || 0), 0),
+    indemnizations_total: indemnizations.reduce((s, i) => s + (i.amount || 0), 0),
+  };
+  return { invoiceNumber, periodStart, periodEnd, accountNumber, parcels, supplements, indemnizations, globalSummary, stats };
+}
+
+async function persistColissimoInvoice(parsed, pdfBuffer) {
+  const { invoiceNumber, periodStart, periodEnd, accountNumber, parcels, supplements, indemnizations, globalSummary, stats } = parsed;
+  const existing = await pool.query('SELECT id FROM carrier_invoices WHERE carrier = $1 AND invoice_number = $2', ['colissimo', invoiceNumber]);
+  if (existing.rows.length) {
+    if (pdfBuffer) await pool.query('UPDATE carrier_invoices SET pdf_data = $1 WHERE id = $2', [pdfBuffer, existing.rows[0].id]);
+    return { status: 'already' };
+  }
+  const gs = globalSummary || {};
+  const supplementsTotal = (supplements || []).reduce((s, x) => s + (x.amount || 0), 0);
+  const indemnizationsTotal = (indemnizations || []).reduce((s, i) => s + (i.amount || 0), 0);
+  const totalHt = (parcels || []).reduce((s, p) => s + (p.total_ht || 0), 0) + supplementsTotal;
+  const invRes = await pool.query(`
+    INSERT INTO carrier_invoices
+      (carrier, invoice_number, period_start, period_end, account_number,
+       total_parcels, parcels_matched, total_ht, port_brut, remise, port_net, cae,
+       supplements_total, indemnizations_total, indemnizations, parcels_detail, pdf_data)
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17) RETURNING id
+  `, [
+    'colissimo', invoiceNumber, periodStart || null, periodEnd || null, accountNumber || null,
+    stats?.total_parcels ?? (parcels || []).length,
+    stats?.parcels_matched ?? (parcels || []).filter(p => p.order_id).length,
+    totalHt, gs.portBrut ?? null, gs.remise ?? null, gs.portNet ?? null, gs.cae ?? null,
+    supplementsTotal, indemnizationsTotal,
+    JSON.stringify(indemnizations || []), JSON.stringify(parcels || []), pdfBuffer || null,
+  ]);
+  const invoiceId = invRes.rows[0].id;
+  if (parcels?.length) {
+    const vals = parcels.map((_, i) => { const b = i * 8; return `($${b+1},$${b+2},$${b+3},$${b+4},$${b+5},$${b+6},$${b+7},$${b+8})`; }).join(',');
+    const params = parcels.flatMap(p => [invoiceId, p.tracking || null, p.order_id || null, p.date || null, p.weight_colissimo ?? null, p.weight_bdd ?? null, p.diff_g ?? null, p.total_ht ?? null]);
+    await pool.query(`INSERT INTO carrier_invoice_parcels (invoice_id,tracking,order_id,date,weight_carrier,weight_bdd,diff_g,amount_ht) VALUES ${vals}`, params);
+  }
+  if (supplements?.length) {
+    const orderMap = {};
+    for (const p of (parcels || [])) if (p.order_id) orderMap[p.tracking] = p.order_id;
+    const vals = supplements.map((_, i) => { const b = i * 5; return `($${b+1},$${b+2},$${b+3},$${b+4},$${b+5})`; }).join(',');
+    const params = supplements.flatMap(s => [invoiceId, s.tracking || null, orderMap[s.tracking] || null, s.label || null, s.amount ?? null]);
+    await pool.query(`INSERT INTO carrier_invoice_supplements (invoice_id,tracking,order_id,description,amount_ht) VALUES ${vals}`, params);
+  }
+  return { status: 'inserted', id: invoiceId };
+}
+
+// POST /api/colissimo/import-zip — import en lot des factures PDF d'un ZIP
+exports.importZip = [
+  uploadZip.single('zip'),
+  async (req, res) => {
+    try {
+      if (!req.file) return res.status(400).json({ success: false, error: 'Fichier ZIP requis' });
+      const zip = await JSZip.loadAsync(req.file.buffer);
+      const pdfEntries = Object.values(zip.files).filter(f => !f.dir && /\.pdf$/i.test(f.name) && !/__MACOSX/.test(f.name));
+      if (!pdfEntries.length) return res.status(400).json({ success: false, error: 'Aucun PDF trouvé dans le ZIP' });
+      let imported = 0, already = 0; const failed = [];
+      for (const entry of pdfEntries) {
+        const name = entry.name.split('/').pop();
+        try {
+          const buf = await entry.async('nodebuffer');
+          const parsed = await analyzeColissimoBuffer(buf);
+          if (!parsed.invoiceNumber) { failed.push({ name, error: 'Facture Colissimo non reconnue' }); continue; }
+          const r = await persistColissimoInvoice(parsed, buf);
+          if (r.status === 'inserted') imported++; else already++;
+        } catch (e) { failed.push({ name, error: e.message }); }
+      }
+      res.json({ success: true, total: pdfEntries.length, imported, already, failed });
+    } catch (err) {
+      console.error('[Colissimo] importZip error:', err);
+      res.status(500).json({ success: false, error: err.message });
+    }
+  },
+];
 
 // POST /api/colissimo/debug-text
 exports.debugText = [

@@ -5,6 +5,7 @@ const colissimoController = require('../controllers/colissimoController');
 router.post('/analyze',      ...colissimoController.analyze);
 router.post('/export-excel', ...colissimoController.exportExcel);
 router.post('/save',              ...colissimoController.saveInvoice);
+router.post('/import-zip',        ...colissimoController.importZip);
 router.post('/apply-tariffs',     colissimoController.applyTariffs);
 router.get('/history',            colissimoController.getHistory);
 router.get('/history/:id',        colissimoController.getInvoiceDetail);
