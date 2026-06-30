@@ -26,6 +26,7 @@ function fmtEur(v) {
   return `${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).replace(/,/g, ' ')} €`;
 }
 function fmtKg(v) { return v !== null && v !== undefined ? `${parseFloat(v).toFixed(2)} kg` : '—'; }
+const fmtColis = n => (n || 0).toLocaleString('en-US').replace(/,/g, ' ');
 const MONTH_NAMES = ['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
 
 function dateKey(d) {
@@ -151,36 +152,46 @@ function HistoryTable({ history, loadFromHistory, onDelete, onDownload }) {
 }
 
 function TotalsView({ totals, totalsLoading, loadTotals }) {
-  const { months, years, byPays, yearCols, byPaysYear } = useMemo(() => {
-    const monthMap = {}, yearMap = {}, paysMap = {}, paysYearMap = {}, yearsSet = new Set();
+  const { months, years, byPays, yearCols, byPaysYear, monthCols, byPaysMonth } = useMemo(() => {
+    const monthMap = {}, yearMap = {}, paysMap = {}, paysYearMap = {}, paysMonthMap = {}, yearsSet = new Set();
     for (const inv of (totals?.invoices || [])) {
       const parts = (inv.period_start || '').split('/');
       const ttc = parseFloat(inv.total_ttc || inv.total_ht || 0);
       const ht = parseFloat(inv.total_ht || 0);
+      const colis = Number(inv.total_parcels) || 0;
       const y = parts.length === 3 ? parts[2] : '—';
+      const pays = inv.pays || '—';
+      let key = null;
       if (parts.length === 3) {
-        const m = parts[1];
-        const key = `${y}-${m}`;
-        monthMap[key] = monthMap[key] || { ht: 0, ttc: 0 };
-        monthMap[key].ht += ht; monthMap[key].ttc += ttc;
+        key = `${y}-${parts[1]}`;
+        monthMap[key] = monthMap[key] || { ht: 0, ttc: 0, colis: 0 };
+        monthMap[key].ht += ht; monthMap[key].ttc += ttc; monthMap[key].colis += colis;
         yearMap[y] = yearMap[y] || { ht: 0, ttc: 0 };
         yearMap[y].ht += ht; yearMap[y].ttc += ttc;
+        paysMonthMap[pays] = paysMonthMap[pays] || {};
+        paysMonthMap[pays][key] = (paysMonthMap[pays][key] || 0) + colis;
       }
       yearsSet.add(y);
-      const pays = inv.pays || '—';
       paysMap[pays] = paysMap[pays] || { ht: 0, ttc: 0, colis: 0 };
-      paysMap[pays].ht += ht; paysMap[pays].ttc += ttc; paysMap[pays].colis += Number(inv.total_parcels) || 0;
+      paysMap[pays].ht += ht; paysMap[pays].ttc += ttc; paysMap[pays].colis += colis;
       paysYearMap[pays] = paysYearMap[pays] || {};
-      paysYearMap[pays][y] = (paysYearMap[pays][y] || 0) + ttc;
+      paysYearMap[pays][y] = paysYearMap[pays][y] || { ttc: 0, colis: 0 };
+      paysYearMap[pays][y].ttc += ttc; paysYearMap[pays][y].colis += colis;
     }
     const months = Object.entries(monthMap).map(([key, v]) => { const [yy, m] = key.split('-'); return { key, label: `${MONTH_NAMES[parseInt(m, 10) - 1]} ${yy}`, ...v }; }).sort((a, b) => b.key.localeCompare(a.key));
     const years = Object.entries(yearMap).map(([yy, v]) => ({ key: yy, label: yy, ...v })).sort((a, b) => b.key.localeCompare(a.key));
     const byPays = Object.entries(paysMap).map(([p, v]) => ({ pays: p, ...v })).sort((a, b) => b.ttc - a.ttc);
     const yearCols = [...yearsSet].sort();
     const byPaysYear = Object.entries(paysYearMap).map(([p, ym]) => ({
-      pays: p, ym, total: Object.values(ym).reduce((s, x) => s + x, 0),
+      pays: p, ym,
+      total: Object.values(ym).reduce((s, x) => s + x.ttc, 0),
+      totalColis: Object.values(ym).reduce((s, x) => s + x.colis, 0),
     })).sort((a, b) => b.total - a.total);
-    return { months, years, byPays, yearCols, byPaysYear };
+    const monthCols = [...months].map(m => ({ key: m.key, label: m.label })).reverse();
+    const byPaysMonth = Object.entries(paysMonthMap).map(([p, bm]) => ({
+      pays: p, bm, total: Object.values(bm).reduce((s, x) => s + x, 0),
+    })).sort((a, b) => b.total - a.total);
+    return { months, years, byPays, yearCols, byPaysYear, monthCols, byPaysMonth };
   }, [totals]);
 
   return (
@@ -224,17 +235,19 @@ function TotalsView({ totals, totalsLoading, loadTotals }) {
             <div style={{ marginTop: 24 }}>
               <h3 style={{ fontSize: 14, fontWeight: 700, color: C.dark, marginBottom: 10 }}>Par pays et par année (TTC)</h3>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-                <thead><tr><Th label="Pays" />{yearCols.map(y => <Th key={y} label={y} align="right" />)}<Th label="Total" align="right" /></tr></thead>
+                <thead><tr><Th label="Pays" /><Th label="Colis" align="right" />{yearCols.map(y => <Th key={y} label={y} align="right" />)}<Th label="Total TTC" align="right" /></tr></thead>
                 <tbody>{byPaysYear.map((r, i) => (
                   <tr key={r.pays} style={{ background: i % 2 === 0 ? C.white : C.grey }}>
                     <Td bold>{r.pays}</Td>
-                    {yearCols.map(y => <Td key={y} align="right">{r.ym[y] ? fmtEur(r.ym[y]) : '—'}</Td>)}
+                    <Td align="right" color={C.greyT}>{fmtColis(r.totalColis)}</Td>
+                    {yearCols.map(y => <Td key={y} align="right">{r.ym[y] ? fmtEur(r.ym[y].ttc) : '—'}</Td>)}
                     <Td align="right" bold color={C.accent}>{fmtEur(r.total)}</Td>
                   </tr>
                 ))}</tbody>
                 <tfoot><tr style={{ borderTop: `2px solid ${C.greyB}`, fontWeight: 700 }}>
                   <Td bold>Total</Td>
-                  {yearCols.map(y => <Td key={y} align="right" bold>{fmtEur(byPaysYear.reduce((s, r) => s + (r.ym[y] || 0), 0))}</Td>)}
+                  <Td align="right" bold>{fmtColis(byPaysYear.reduce((s, r) => s + r.totalColis, 0))}</Td>
+                  {yearCols.map(y => <Td key={y} align="right" bold>{fmtEur(byPaysYear.reduce((s, r) => s + (r.ym[y]?.ttc || 0), 0))}</Td>)}
                   <Td align="right" bold color={C.accent}>{fmtEur(byPaysYear.reduce((s, r) => s + r.total, 0))}</Td>
                 </tr></tfoot>
               </table>
@@ -243,10 +256,61 @@ function TotalsView({ totals, totalsLoading, loadTotals }) {
           <div style={{ marginTop: 24 }}>
             <h3 style={{ fontSize: 14, fontWeight: 700, color: C.dark, marginBottom: 10 }}>Par mois</h3>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-              <thead><tr><Th label="Mois" /><Th label="HT" align="right" /><Th label="TTC" align="right" /></tr></thead>
-              <tbody>{months.map((m, i) => (<tr key={m.key} style={{ background: i % 2 === 0 ? C.white : C.grey }}><Td>{m.label}</Td><Td align="right">{fmtEur(m.ht)}</Td><Td align="right" bold>{fmtEur(m.ttc)}</Td></tr>))}</tbody>
+              <thead><tr><Th label="Mois" /><Th label="Colis" align="right" /><Th label="HT" align="right" /><Th label="TTC" align="right" /></tr></thead>
+              <tbody>{months.map((m, i) => (<tr key={m.key} style={{ background: i % 2 === 0 ? C.white : C.grey }}><Td>{m.label}</Td><Td align="right" color={C.greyT}>{fmtColis(m.colis)}</Td><Td align="right">{fmtEur(m.ht)}</Td><Td align="right" bold>{fmtEur(m.ttc)}</Td></tr>))}</tbody>
             </table>
           </div>
+
+          {byPaysMonth.length > 0 && monthCols.length > 0 && (
+            <div style={{ marginTop: 24 }}>
+              <h3 style={{ fontSize: 14, fontWeight: 700, color: C.dark, marginBottom: 4 }}>Nombre de colis par pays et par mois</h3>
+              <p style={{ margin: '0 0 10px', color: C.greyT, fontSize: 12 }}>Nombre de colis par pays de livraison, mois par mois.</p>
+              <div style={{ overflowX: 'auto', border: `1px solid ${C.greyB}`, borderRadius: 8 }}>
+                <table style={{ borderCollapse: 'collapse', fontSize: 13, whiteSpace: 'nowrap' }}>
+                  <thead><tr>
+                    <th style={{ padding: '10px 12px', textAlign: 'left', fontWeight: 700, color: C.dark, fontSize: 11.5, borderBottom: `2px solid ${C.greyB}`, background: C.grey, position: 'sticky', left: 0, zIndex: 2, boxShadow: `2px 0 4px -2px rgba(0,0,0,0.15)` }}>Pays</th>
+                    {monthCols.map(mc => <Th key={mc.key} label={mc.label} align="right" />)}<Th label="Total" align="right" />
+                  </tr></thead>
+                  <tbody>{byPaysMonth.map((r, i) => (
+                    <tr key={r.pays} style={{ background: i % 2 === 0 ? C.white : C.grey }}>
+                      <td style={{ padding: '8px 12px', fontWeight: 700, fontSize: 13, borderBottom: `1px solid ${C.greyB}`, background: i % 2 === 0 ? C.white : C.grey, position: 'sticky', left: 0, zIndex: 1, boxShadow: `2px 0 4px -2px rgba(0,0,0,0.15)` }}>{r.pays}</td>
+                      {monthCols.map(mc => <Td key={mc.key} align="right">{r.bm[mc.key] ? fmtColis(r.bm[mc.key]) : '—'}</Td>)}
+                      <Td align="right" bold color={C.accent}>{fmtColis(r.total)}</Td>
+                    </tr>
+                  ))}</tbody>
+                  <tfoot><tr style={{ borderTop: `2px solid ${C.greyB}`, fontWeight: 700 }}>
+                    <td style={{ padding: '8px 12px', fontWeight: 700, fontSize: 13, background: C.white, borderTop: `2px solid ${C.greyB}`, position: 'sticky', left: 0, zIndex: 1, boxShadow: `2px 0 4px -2px rgba(0,0,0,0.15)` }}>Total</td>
+                    {monthCols.map(mc => <Td key={mc.key} align="right" bold>{fmtColis(byPaysMonth.reduce((s, r) => s + (r.bm[mc.key] || 0), 0))}</Td>)}
+                    <Td align="right" bold color={C.accent}>{fmtColis(byPaysMonth.reduce((s, r) => s + r.total, 0))}</Td>
+                  </tr></tfoot>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {byPaysYear.length > 0 && yearCols.length > 0 && (
+            <div style={{ marginTop: 24 }}>
+              <h3 style={{ fontSize: 14, fontWeight: 700, color: C.dark, marginBottom: 4 }}>Nombre de colis par pays et par année</h3>
+              <p style={{ margin: '0 0 10px', color: C.greyT, fontSize: 12 }}>Nombre de colis par pays de livraison, année par année.</p>
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                  <thead><tr><Th label="Pays" />{yearCols.map(y => <Th key={y} label={y} align="right" />)}<Th label="Total" align="right" /></tr></thead>
+                  <tbody>{byPaysYear.map((r, i) => (
+                    <tr key={r.pays} style={{ background: i % 2 === 0 ? C.white : C.grey }}>
+                      <Td bold>{r.pays}</Td>
+                      {yearCols.map(y => <Td key={y} align="right">{r.ym[y] ? fmtColis(r.ym[y].colis) : '—'}</Td>)}
+                      <Td align="right" bold color={C.accent}>{fmtColis(r.totalColis)}</Td>
+                    </tr>
+                  ))}</tbody>
+                  <tfoot><tr style={{ borderTop: `2px solid ${C.greyB}`, fontWeight: 700 }}>
+                    <Td bold>Total</Td>
+                    {yearCols.map(y => <Td key={y} align="right" bold>{fmtColis(byPaysYear.reduce((s, r) => s + (r.ym[y]?.colis || 0), 0))}</Td>)}
+                    <Td align="right" bold color={C.accent}>{fmtColis(byPaysYear.reduce((s, r) => s + r.totalColis, 0))}</Td>
+                  </tr></tfoot>
+                </table>
+              </div>
+            </div>
+          )}
         </>
       )}
     </div>
