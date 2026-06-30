@@ -36,6 +36,8 @@ const COUNTRY_NAMES = {
 };
 
 const MONTH_NAMES = ['Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin', 'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre'];
+// Abréviations SANS collision (Juin/Juil distincts) pour l'axe X des graphiques
+const SHORT_MONTHS = ['Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Juin', 'Juil', 'Aoû', 'Sep', 'Oct', 'Nov', 'Déc'];
 
 const fmtEur = v => {
   if (v === null || v === undefined || v === '') return '—';
@@ -126,14 +128,14 @@ export default function TransporteursApp() {
     const monthKeysAsc = Object.keys(monthMap).sort();
     const chartData = monthKeysAsc.map(key => {
       const [y, m] = key.split('-');
-      const row = { label: `${MONTH_NAMES[parseInt(m, 10) - 1].slice(0, 3)} ${y}` };
+      const row = { label: `${SHORT_MONTHS[parseInt(m, 10) - 1]} ${y}` };
       for (const c of CARRIER_LIST) row[c] = +(monthMap[key].perCarrier[c]?.ht || 0).toFixed(2);
       row.total = +monthMap[key].totalHt.toFixed(2);
       return row;
     });
     const chartDataColis = monthKeysAsc.map(key => {
       const [y, m] = key.split('-');
-      const row = { label: `${MONTH_NAMES[parseInt(m, 10) - 1].slice(0, 3)} ${y}` };
+      const row = { label: `${SHORT_MONTHS[parseInt(m, 10) - 1]} ${y}` };
       for (const c of CARRIER_LIST) row[c] = monthMap[key].perCarrier[c]?.colis || 0;
       row.total = monthMap[key].totalColis;
       return row;
