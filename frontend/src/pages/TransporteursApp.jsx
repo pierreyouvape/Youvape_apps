@@ -130,14 +130,20 @@ export default function TransporteursApp() {
       for (const c of CARRIER_LIST) row[c] = +(monthMap[key].perCarrier[c]?.ht || 0).toFixed(2);
       return row;
     });
+    const chartDataColis = monthKeysAsc.map(key => {
+      const [y, m] = key.split('-');
+      const row = { label: `${MONTH_NAMES[parseInt(m, 10) - 1].slice(0, 3)} ${y}` };
+      for (const c of CARRIER_LIST) row[c] = monthMap[key].perCarrier[c]?.colis || 0;
+      return row;
+    });
     const byMonth = monthKeysAsc.slice().reverse().map(key => { const [y, m] = key.split('-'); return { key, label: `${MONTH_NAMES[parseInt(m, 10) - 1]} ${y}`, ...monthMap[key] }; });
     const byYear = Object.keys(yearMap).sort().reverse().map(y => ({ year: y, ...yearMap[y] }));
     const byCountry = Object.entries(countryMap).map(([name, v]) => ({ name, ...v })).sort((a, b) => b.colis - a.colis);
 
-    return { byCarrier, chartData, byMonth, byYear, byCountry, grandColis, grandHt, grandInv };
+    return { byCarrier, chartData, chartDataColis, byMonth, byYear, byCountry, grandColis, grandHt, grandInv };
   }, [totals]);
 
-  const { byCarrier, chartData, byMonth, byYear, byCountry, grandColis, grandHt, grandInv } = agg;
+  const { byCarrier, chartData, chartDataColis, byMonth, byYear, byCountry, grandColis, grandHt, grandInv } = agg;
   const avgPerColis = grandColis ? grandHt / grandColis : 0;
 
   return (
@@ -246,6 +252,21 @@ export default function TransporteursApp() {
                   ))}</tbody>
                 </table>
               </div>
+            </div>
+
+            {/* Évolution mensuelle du nombre de colis */}
+            <div style={{ marginBottom: 26 }}>
+              <h3 style={{ fontSize: 14, fontWeight: 700, color: C.dark, marginBottom: 10 }}>Évolution mensuelle du nombre de colis par transporteur</h3>
+              <ResponsiveContainer width="100%" height={300}>
+                <LineChart data={chartDataColis} margin={{ top: 10, right: 20, left: 0, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke={C.greyB} />
+                  <XAxis dataKey="label" tick={{ fontSize: 11 }} />
+                  <YAxis tick={{ fontSize: 11 }} />
+                  <Tooltip formatter={(v, n) => [fmtColis(v), CARRIERS[n]?.label || n]} />
+                  <Legend formatter={n => CARRIERS[n]?.label || n} />
+                  {CARRIER_LIST.map(c => <Line key={c} type="monotone" dataKey={c} stroke={CARRIERS[c].color} strokeWidth={2} dot={{ r: 2 }} />)}
+                </LineChart>
+              </ResponsiveContainer>
             </div>
 
             {/* Par mois et par transporteur (colis) */}
