@@ -1,10 +1,17 @@
+// Espaces insécables utilisées comme séparateur de milliers par Intl (fr-FR) :
+// espace fine insécable (U+202F) et espace insécable (U+00A0).
+// On les remplace par une espace normale, plus lisible dans nos tableaux.
+const NBSP = /[  ]/g;
+
 /**
  * Formate un nombre avec séparateur de milliers (espace) et virgule décimale
  * Ex: 37440.11 → "37 440,11"
  */
 export const formatPrice = (value) => {
   const num = parseFloat(value || 0);
-  return num.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return num
+    .toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+    .replace(NBSP, ' ');
 };
 
 /**
@@ -12,7 +19,7 @@ export const formatPrice = (value) => {
  * Ex: 37440.11 → "37 440,11 €"
  */
 export const formatPriceEur = (value) => {
-  return formatPrice(value) + ' \u20ac';
+  return formatPrice(value) + ' €';
 };
 
 /**
@@ -21,5 +28,5 @@ export const formatPriceEur = (value) => {
  */
 export const formatInt = (value) => {
   const num = parseInt(value || 0);
-  return num.toLocaleString('fr-FR');
+  return num.toLocaleString('fr-FR').replace(NBSP, ' ');
 };
