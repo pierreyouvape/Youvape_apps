@@ -82,7 +82,12 @@ const PeriodFilter = ({ onPeriodChange, onComparisonChange, defaultPeriod = 'all
 
   const formatDateForInput = (date) => {
     if (!date) return '';
-    return date.toISOString().split('T')[0];
+    // Formatage LOCAL (pas toISOString/UTC) : en heure de Paris (UTC+2 l'été),
+    // toISOString() décale la date d'un jour et exclut les ventes du jour courant.
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const d = String(date.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
   };
 
   const handlePeriodClick = (period) => {

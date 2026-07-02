@@ -65,7 +65,9 @@ class ProductStatsService {
     }
     if (endDate) {
       params.push(endDate);
-      dateFilter += ` AND o.post_date <= $${params.length}`;
+      // Borne de fin inclusive sur la journée (::date) : sinon '2026-07-01' = minuit
+      // exclut toutes les commandes passées dans la journée du 1er.
+      dateFilter += ` AND o.post_date::date <= $${params.length}::date`;
     }
 
     const query = `
@@ -171,7 +173,8 @@ class ProductStatsService {
     }
 
     if (endDate) {
-      dateConditions += ` AND o.post_date <= $${paramIndex}`;
+      // Borne de fin inclusive sur la journée (::date) — voir getProductKPIs.
+      dateConditions += ` AND o.post_date::date <= $${paramIndex}::date`;
       params.push(endDate);
       paramIndex++;
     }
@@ -313,7 +316,8 @@ class ProductStatsService {
     }
 
     if (endDate) {
-      whereClause += ` AND o.post_date <= $${paramIndex}`;
+      // Borne de fin inclusive sur la journée (::date) — voir getProductKPIs.
+      whereClause += ` AND o.post_date::date <= $${paramIndex}::date`;
       params.push(endDate);
       paramIndex++;
     }
@@ -391,7 +395,8 @@ class ProductStatsService {
     }
 
     if (endDate) {
-      dateConditions += ` AND o.post_date <= $${paramIndex}`;
+      // Borne de fin inclusive sur la journée (::date) — voir getProductKPIs.
+      dateConditions += ` AND o.post_date::date <= $${paramIndex}::date`;
       params.push(endDate);
       paramIndex++;
     }
