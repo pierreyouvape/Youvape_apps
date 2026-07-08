@@ -90,6 +90,15 @@ const CreateOrderPage = () => {
     ));
   };
 
+  // Update unit price
+  const updateItemPrice = (productId, price) => {
+    setOrderItems(prev => prev.map(item =>
+      item.product_id === productId
+        ? { ...item, unit_price: price === '' ? null : Math.max(0, price) }
+        : item
+    ));
+  };
+
   // Create order
   const handleCreateOrder = async (sendToBMS = false) => {
     if (!supplierId) {
@@ -257,6 +266,7 @@ const CreateOrderPage = () => {
                   <th style={{ textAlign: 'left', padding: '10px', fontWeight: 600, width: '120px' }}>SKU</th>
                   <th style={{ textAlign: 'center', padding: '10px', fontWeight: 600, width: '80px' }}>Stock</th>
                   <th style={{ textAlign: 'center', padding: '10px', fontWeight: 600, width: '120px' }}>Quantité</th>
+                  <th style={{ textAlign: 'center', padding: '10px', fontWeight: 600, width: '140px' }}>Prix unitaire (€)</th>
                   <th style={{ width: '60px' }}></th>
                 </tr>
               </thead>
@@ -277,6 +287,25 @@ const CreateOrderPage = () => {
                         value={item.qty_ordered}
                         onChange={e => updateItemQty(item.product_id, parseInt(e.target.value) || 1)}
                         style={{ width: '80px', padding: '8px', borderRadius: '4px', border: '1px solid #ddd', textAlign: 'center', fontSize: '14px' }}
+                      />
+                    </td>
+                    <td style={{ padding: '12px 10px', textAlign: 'center' }}>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        placeholder="0.00"
+                        value={item.unit_price ?? ''}
+                        onChange={e => updateItemPrice(item.product_id, e.target.value === '' ? '' : parseFloat(e.target.value))}
+                        style={{
+                          width: '100px',
+                          padding: '8px',
+                          borderRadius: '4px',
+                          border: item.unit_price == null ? '1px solid #f59e0b' : '1px solid #ddd',
+                          background: item.unit_price == null ? '#fffbeb' : 'white',
+                          textAlign: 'center',
+                          fontSize: '14px'
+                        }}
                       />
                     </td>
                     <td style={{ padding: '12px 10px', textAlign: 'center' }}>
