@@ -36,6 +36,7 @@ const SettingsApp = () => {
     { key: 'emails', label: 'Envoi d\'Emails' },
     { key: 'stats', label: 'Statistiques WooCommerce' },
     { key: 'purchases', label: 'Gestion d\'achat' },
+    { key: 'purchases-v2', label: 'Gestion d\'achat V2', accessOnly: true },
     { key: 'catalog', label: 'Produits' },
     { key: 'packing',    label: 'Packing',     accessOnly: true },
     { key: 'financier',  label: 'Rapport',     accessOnly: true },
