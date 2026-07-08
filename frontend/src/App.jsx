@@ -10,6 +10,7 @@ import EmailApp from './pages/EmailApp';
 import SettingsApp from './pages/SettingsApp';
 import StatsApp from './pages/StatsApp';
 import PurchasesApp from './pages/PurchasesApp';
+import PurchasesAppV2 from './pages/PurchasesAppV2';
 import CreateOrderPage from './pages/CreateOrderPage';
 import ImportPdfPage from './pages/ImportPdfPage';
 import CustomersApp from './pages/CustomersApp';
@@ -46,6 +47,7 @@ const PAGE_TITLES = {
   '/settings': 'Parametres',
   '/stats': 'Statistiques',
   '/purchases': 'Achats',
+  '/purchases-v2': 'Achats V2',
   '/catalog': 'Catalogue',
   '/customers': 'Clients',
   '/products': 'Produits',
@@ -163,6 +165,14 @@ function App() {
             element={
               <PrivateRoute>
                 <PurchasesApp />
+              </PrivateRoute>
+            }
+          />
+          <Route
+            path="/purchases-v2"
+            element={
+              <PrivateRoute>
+                <PurchasesAppV2 />
               </PrivateRoute>
             }
           />

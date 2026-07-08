@@ -228,6 +228,7 @@ export const APPS = [
   { key: 'emails',    path: '/emails',    label: "Envoi d'Emails",           Icon: Emails,    color: '#22A06B' },
   { key: 'stats',     path: '/stats',     label: 'Statistiques WooCommerce', Icon: Stats,     color: '#E85A5A' },
   { key: 'purchases', path: '/purchases', label: "Gestion d'achat",          Icon: Purchases, color: '#F59E0B' },
+  { key: 'purchases-v2', path: '/purchases-v2', label: "Gestion d'achat V2",  Icon: Purchases, color: '#D97706' },
   { key: 'packing',   path: '/packing',   label: 'Packing',                  Icon: Packing,   color: '#6366F1' },
   { key: 'catalog',   path: '/catalog',   label: 'Produits',                 Icon: Catalog,   color: '#059669' },
   { key: 'financier',  path: '/financier',  label: 'Rapport',                  Icon: Stats,         color: '#135E84' },
