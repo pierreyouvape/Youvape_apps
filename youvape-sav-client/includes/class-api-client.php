@@ -24,9 +24,11 @@ class Youvape_SAV_Api_Client {
 
     /**
      * URL de base de l'API. Priorité : constante wp-config, sinon réglages plugin.
+     * Publique : les templates en ont besoin pour préfixer les URLs relatives
+     * des pièces jointes (servies par l'API Node, ex. /api/sav/attachments/…).
      * @return string
      */
-    private static function api_url() {
+    public static function api_url() {
         if (defined('YOUVAPE_SAV_API_URL') && YOUVAPE_SAV_API_URL) {
             return YOUVAPE_SAV_API_URL;
         }

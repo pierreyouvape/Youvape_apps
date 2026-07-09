@@ -28,7 +28,35 @@ if (!function_exists('youvape_sav_format_datetime')) {
         if (!$ts) {
             return '';
         }
-        return date_i18n(get_option('date_format') . ' ' . get_option('time_format'), $ts);
+        $format = get_option('date_format') . ' ' . get_option('time_format');
+        // Les dates de l'API sont en UTC (suffixe Z). wp_date() applique le
+        // fuseau du site ; date_i18n() sur un timestamp explicite reste en GMT.
+        if (function_exists('wp_date')) {
+            return wp_date($format, $ts);
+        }
+        return date_i18n($format, $ts + (int) (get_option('gmt_offset') * HOUR_IN_SECONDS));
+    }
+}
+
+/**
+ * Résout l'URL publique d'une pièce jointe. L'API renvoie une URL relative
+ * (ex. /api/sav/attachments/123/uuid_photo.jpg) qu'il faut préfixer par la
+ * base de l'API Node pour être atteignable depuis le navigateur du client.
+ */
+if (!function_exists('youvape_sav_attachment_url')) {
+    function youvape_sav_attachment_url($url) {
+        $url = (string) $url;
+        if ($url === '') {
+            return '';
+        }
+        // URL déjà absolue : on la garde telle quelle.
+        if (preg_match('#^https?://#i', $url)) {
+            return $url;
+        }
+        $base = class_exists('Youvape_SAV_Api_Client')
+            ? rtrim(Youvape_SAV_Api_Client::api_url(), '/')
+            : '';
+        return $base . '/' . ltrim($url, '/');
     }
 }
 ?>
@@ -86,6 +114,8 @@ if (!function_exists('youvape_sav_format_datetime')) {
                     // body = HTML (éditeur riche). wp_kses_post = whitelist HTML
                     // sûre de WordPress (anti-XSS), adaptée à du contenu de message.
                     $body     = isset($message['body']) ? wp_kses_post($message['body']) : '';
+                    $attachments = (isset($message['attachments']) && is_array($message['attachments']))
+                        ? $message['attachments'] : array();
                     $row_class = $is_agent ? 'youvape-sav__msg--agent' : 'youvape-sav__msg--customer';
                     ?>
                     <li class="youvape-sav__msg <?php echo esc_attr($row_class); ?>">
@@ -96,6 +126,37 @@ if (!function_exists('youvape_sav_format_datetime')) {
                             <?php endif; ?>
                         </div>
                         <div class="youvape-sav__msg-body"><?php echo $body; // déjà filtré par wp_kses_post ?></div>
+                        <?php if (!empty($attachments)) : ?>
+                            <ul class="youvape-sav__msg-attachments">
+                                <?php foreach ($attachments as $att) :
+                                    $att_url  = youvape_sav_attachment_url(isset($att['url']) ? $att['url'] : '');
+                                    if (!$att_url) {
+                                        continue;
+                                    }
+                                    $att_name = '';
+                                    if (!empty($att['original_name'])) {
+                                        $att_name = (string) $att['original_name'];
+                                    } elseif (!empty($att['filename'])) {
+                                        $att_name = (string) $att['filename'];
+                                    } else {
+                                        $att_name = __('Pièce jointe', 'youvape-sav-client');
+                                    }
+                                    $att_mime = isset($att['mime']) ? (string) $att['mime'] : '';
+                                    $is_image = (strpos($att_mime, 'image/') === 0);
+                                    ?>
+                                    <li class="youvape-sav__msg-attachment">
+                                        <a href="<?php echo esc_url($att_url); ?>" target="_blank" rel="noopener noreferrer">
+                                            <?php if ($is_image) : ?>
+                                                <img src="<?php echo esc_url($att_url); ?>" alt="<?php echo esc_attr($att_name); ?>" class="youvape-sav__msg-attachment-thumb" loading="lazy" />
+                                            <?php else : ?>
+                                                <span class="youvape-sav__msg-attachment-icon" aria-hidden="true">📎</span>
+                                            <?php endif; ?>
+                                            <span class="youvape-sav__msg-attachment-name"><?php echo esc_html($att_name); ?></span>
+                                        </a>
+                                    </li>
+                                <?php endforeach; ?>
+                            </ul>
+                        <?php endif; ?>
                     </li>
                 <?php endforeach; ?>
             </ol>

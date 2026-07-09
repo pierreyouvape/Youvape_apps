@@ -24,7 +24,12 @@ if (!function_exists('youvape_sav_format_date')) {
         if (!$ts) {
             return '';
         }
-        return date_i18n(get_option('date_format'), $ts);
+        $format = get_option('date_format');
+        // Dates API en UTC (suffixe Z) : wp_date() applique le fuseau du site.
+        if (function_exists('wp_date')) {
+            return wp_date($format, $ts);
+        }
+        return date_i18n($format, $ts + (int) (get_option('gmt_offset') * HOUR_IN_SECONDS));
     }
 }
 ?>

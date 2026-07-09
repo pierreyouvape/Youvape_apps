@@ -60,6 +60,20 @@ Le template de la liste peut être surchargé depuis le thème actif :
 <theme>/woocommerce/youvape-sav/list.php
 ```
 
+## Changelog
+
+- **0.1.5** — Fix « Commande invalide » à la création quand « Aucune commande »
+  est sélectionné (`order_id` vide n'est plus transmis comme `0`).
+- **0.1.4** — Heures des messages affichées dans le fuseau du site (les dates API
+  sont en UTC) ; affichage des pièces jointes dans le fil du ticket côté client.
+- **0.1.3** — Radio de sélection agrandi et coloré, aligné à gauche sur la même
+  ligne que le titre de la commande (mise en page en grille).
+- **0.1.2** — Zone de sélection des commandes scrollable (hauteur fixe) pour
+  gérer les clients ayant beaucoup de commandes.
+- **0.1.1** — Sélecteur de commande en cartes (vignettes produits, total, date) ;
+  dropdown « produit concerné » filtré sur la commande sélectionnée (JS).
+- **0.1.0** — Version initiale : liste, détail, création, réponse, réglages.
+
 ## État
 
 - **Lot 1** (actuel) : onglet + liste des demandes en lecture seule.

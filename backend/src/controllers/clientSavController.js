@@ -47,7 +47,7 @@ function plainTextToSafeHtml(text) {
 
 const DEFAULT_CLIENT_LABEL = 'En cours de traitement';
 const CLIENT_TICKET_SOURCE = 'account';
-const AGENT_DISPLAY_NAME = 'Service client Youvape';
+const AGENT_DISPLAY_NAME = 'Service client YouVape';
 
 /**
  * Projette un message brut (JSONB du ticket) vers la forme exposée au client.

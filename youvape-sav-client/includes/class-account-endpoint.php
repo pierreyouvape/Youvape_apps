@@ -217,10 +217,15 @@ class Youvape_SAV_Account_Endpoint {
             exit;
         }
 
+        // order_id : "Aucune commande" envoie une valeur vide. absint('') renvoie 0,
+        // que l'API interprète comme une commande invalide. On ne transmet donc
+        // l'order_id que s'il est un entier strictement positif, sinon chaîne vide.
+        $order_id = isset($_POST['order_id']) ? absint($_POST['order_id']) : 0;
+
         $fields = array(
             'subject'  => isset($_POST['subject']) ? sanitize_text_field(wp_unslash($_POST['subject'])) : '',
             'body'     => isset($_POST['body']) ? sanitize_textarea_field(wp_unslash($_POST['body'])) : '',
-            'order_id' => isset($_POST['order_id']) ? absint($_POST['order_id']) : '',
+            'order_id' => $order_id > 0 ? $order_id : '',
             'product'  => isset($_POST['product']) ? sanitize_text_field(wp_unslash($_POST['product'])) : '',
         );
 
