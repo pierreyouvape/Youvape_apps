@@ -16,7 +16,8 @@
 module.exports = {
   parse: (text) => {
     // Export CSV : "Référence de la commande;TWFEDPZUH;;;"
-    if (/Référence de la commande\s*;/.test(text)) {
+    // (les cellules peuvent être entourées de guillemets : "Référence de la commande";...)
+    if (/"?Référence de la commande"?\s*;/.test(text)) {
       return parseCsvOrder(text);
     }
     // Email PrestaShop : "Commande : 272122 passée le 01/06/2026"
@@ -36,20 +37,32 @@ module.exports = {
  * Tableau : Référence article;Désignation;Prix unitaire HT;Quantité;Total HT
  */
 function parseCsvOrder(text) {
-  const orderMatch = text.match(/Référence de la commande\s*;\s*([^\n;]+)/);
-  const orderNumber = orderMatch ? orderMatch[1].trim() : null;
+  // Retire les guillemets entourant une cellule : "abc" → abc
+  const unquote = (s) => (s || '').trim().replace(/^"(.*)"$/s, '$1').trim();
 
-  const dateMatch = text.match(/Date de la commande\s*;\s*(\d{2})\/(\d{2})\/(\d{4})/);
-  const orderDate = dateMatch ? `${dateMatch[3]}-${dateMatch[2]}-${dateMatch[1]}` : null;
+  const orderMatch = text.match(/"?Référence de la commande"?\s*;\s*([^\n;]+)/);
+  const orderNumber = orderMatch ? unquote(orderMatch[1]) : null;
+
+  // Date : format FR "DD/MM/YYYY" ou format ISO "YYYY-MM-DD" (avec heure optionnelle)
+  let orderDate = null;
+  const dateFrMatch = text.match(/"?Date de la commande"?\s*;\s*"?(\d{2})\/(\d{2})\/(\d{4})/);
+  const dateIsoMatch = text.match(/"?Date de la commande"?\s*;\s*"?(\d{4})-(\d{2})-(\d{2})/);
+  if (dateFrMatch) {
+    orderDate = `${dateFrMatch[3]}-${dateFrMatch[2]}-${dateFrMatch[1]}`;
+  } else if (dateIsoMatch) {
+    orderDate = `${dateIsoMatch[1]}-${dateIsoMatch[2]}-${dateIsoMatch[3]}`;
+  }
 
   const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
-  const headerIdx = lines.findIndex(l => /^Référence article\s*;\s*Désignation\s*;\s*Prix unitaire HT\s*;\s*Quantité\s*;\s*Total HT/.test(l));
+  const headerIdx = lines.findIndex(l =>
+    /^"?Référence article"?\s*;\s*"?Désignation"?\s*;\s*"?Prix unitaire HT"?\s*;\s*"?Quantité"?\s*;\s*"?Total HT"?/.test(l)
+  );
 
   const items = [];
   const discountItems = [];
 
   for (let i = headerIdx + 1; i < lines.length; i++) {
-    const cols = lines[i].split(';').map(c => c.trim());
+    const cols = lines[i].split(';').map(unquote);
     if (cols.length < 5) continue;
 
     const [ref, designation, unitPrice, qty, totalHt] = cols;
