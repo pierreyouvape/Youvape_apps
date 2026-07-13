@@ -101,7 +101,7 @@ const purchaseOrderModel = {
         p.stock as current_stock,
         p.product_type as product_type
       FROM purchase_order_items poi
-      LEFT JOIN products p ON poi.product_id = p.id OR poi.product_id = p.wp_product_id
+      LEFT JOIN products p ON poi.product_id = p.id
       WHERE poi.purchase_order_id = $1
       ORDER BY poi.id
     `;
@@ -170,12 +170,16 @@ const purchaseOrderModel = {
             continue;
           }
 
-          // Récupérer le produit interne (product_id peut être wp_product_id ou id interne)
+          // Récupérer le produit interne (product_id peut être wp_product_id ou id interne).
+          // L'import PDF envoie un wp_product_id : on le prioritise, sinon un wp_product_id
+          // qui coïncide avec l'id interne d'un AUTRE produit (collision) matche le mauvais
+          // produit et fait insérer un SKU erroné → 500 opaque côté BMS.
           const productResult = await client.query(
             `SELECT p.id, p.sku, p.wc_cog_cost, ps.pack_qty
              FROM products p
              LEFT JOIN product_suppliers ps ON ps.product_id = p.id AND ps.supplier_id = $2
              WHERE p.wp_product_id = $1 OR p.id = $1
+             ORDER BY CASE WHEN p.wp_product_id = $1 THEN 0 ELSE 1 END
              LIMIT 1`,
             [item.product_id, data.supplier_id]
           );
@@ -499,7 +503,10 @@ const purchaseOrderModel = {
           } else {
             // Nouvelle ligne
             const productResult = await client.query(
-              `SELECT p.id, p.sku FROM products p WHERE p.wp_product_id = $1 OR p.id = $1 LIMIT 1`,
+              `SELECT p.id, p.sku FROM products p
+               WHERE p.wp_product_id = $1 OR p.id = $1
+               ORDER BY CASE WHEN p.wp_product_id = $1 THEN 0 ELSE 1 END
+               LIMIT 1`,
               [item.product_id]
             );
             const product = productResult.rows[0];
