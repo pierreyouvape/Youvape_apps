@@ -91,6 +91,30 @@ function getPeriod(freq, now = new Date()) {
   throw new Error(`Fréquence inconnue: ${freq}`);
 }
 
+// Période de comparaison précédente (même durée, décalée d'une unité).
+function getPrevPeriod(freq, now = new Date()) {
+  if (freq === 'daily') {
+    // Avant-hier vs hier
+    const y = new Date(now); y.setDate(y.getDate() - 2);
+    return { dateFrom: fmt(y), dateTo: fmt(y), label: `journée du ${frLong(y)}` };
+  }
+  if (freq === 'weekly') {
+    // Semaine d'avant la semaine du rapport
+    const mon = new Date(now);
+    const day = mon.getDay() === 0 ? 6 : mon.getDay() - 1;
+    mon.setDate(mon.getDate() - day - 14);
+    const sun = new Date(mon); sun.setDate(sun.getDate() + 6);
+    return { dateFrom: fmt(mon), dateTo: fmt(sun), label: `semaine du ${frLong(mon)} au ${frLong(sun)}` };
+  }
+  if (freq === 'monthly') {
+    // Mois d'avant le mois du rapport
+    const first = new Date(now.getFullYear(), now.getMonth() - 2, 1);
+    const last = new Date(now.getFullYear(), now.getMonth() - 1, 0);
+    return { dateFrom: fmt(first), dateTo: fmt(last), label: frMonth(first) };
+  }
+  throw new Error(`Fréquence inconnue: ${freq}`);
+}
+
 const FREQ_TITLE = { daily: 'Rapport journalier', weekly: 'Rapport hebdomadaire', monthly: 'Rapport mensuel' };
 
 // Police système (Arial/Helvetica) : disponible sur tous les clients mail.
@@ -116,13 +140,35 @@ function orderedKeys(kpis) {
 }
 
 // ─── Cartes KPI (liseré coloré en haut, façon /financier) ────────────────────
-function kpiCard(label, value, color, big = false) {
+// type: 'eur' | 'pct' | 'count'
+function formatDelta(current, prev, type = 'eur') {
+  if (prev === null || prev === undefined || prev === 0) return null;
+  const delta = ((current - prev) / Math.abs(prev)) * 100;
+  const arrow = delta >= 0 ? '▲' : '▼';
+  const col = delta >= 0 ? COL.vert : COL.rouge;
+  const abs = current - prev;
+  let absStr;
+  if (type === 'pct')   absStr = `${abs >= 0 ? '+' : ''}${abs.toFixed(1)} pts`;
+  else if (type === 'count') absStr = `${abs >= 0 ? '+' : ''}${num.format(Math.round(abs))}`;
+  else                  absStr = `${abs >= 0 ? '+' : ''}${eur.format(abs)}`;
+  return { arrow, pct: Math.abs(delta).toFixed(1), col, absStr };
+}
+
+function kpiCard(label, value, color, big = false, delta = null) {
+  const deltaHtml = delta
+    ? `<div style="margin-top:6px;font-size:12px;font-weight:700;color:${delta.col};font-family:${FONT};">
+         ${delta.arrow} ${delta.pct}%
+         <span style="font-weight:600;"> · ${delta.absStr}</span>
+         <span style="color:${COL.grisM};font-weight:500;font-size:11px;"> vs période préc.</span>
+       </div>`
+    : '';
   return `
     <td valign="top" style="padding:6px;" width="33%">
       <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:separate;background:${COL.blanc};border:1px solid #d9dee4;border-top:4px solid ${color};border-radius:12px;">
         <tr><td style="padding:16px 16px 17px;">
           <div style="font-size:12px;font-weight:700;color:${COL.grisF};text-transform:uppercase;letter-spacing:0.04em;margin-bottom:8px;font-family:${FONT};">${label}</div>
           <div style="font-size:${big ? 27 : 21}px;font-weight:800;color:${COL.grisTF};font-family:${FONT};letter-spacing:-0.4px;">${value}</div>
+          ${deltaHtml}
         </td></tr>
       </table>
     </td>`;
@@ -135,25 +181,25 @@ function kpiRow(cells) {
 }
 
 // Cartes "héros" : les 3 chiffres clés de la page (CA HT Net, Profit HT, Marge)
-function heroCardsHtml(k) {
+function heroCardsHtml(k, pk) {
   return `
     <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin:0 -6px;">
       ${kpiRow([
-        kpiCard(KPI_LABELS.ca_ht_net, formatKpi('ca_ht_net', k.ca_ht_net), COL.saphir, true),
-        kpiCard(KPI_LABELS.profit_ht, formatKpi('profit_ht', k.profit_ht), COL.vert, true),
-        kpiCard(KPI_LABELS.marge_ht, formatKpi('marge_ht', k.marge_ht), COL.violet, true),
+        kpiCard(KPI_LABELS.ca_ht_net, formatKpi('ca_ht_net', k.ca_ht_net), COL.saphir, true, pk ? formatDelta(k.ca_ht_net, pk.ca_ht_net, 'eur') : null),
+        kpiCard(KPI_LABELS.profit_ht, formatKpi('profit_ht', k.profit_ht), COL.vert, true, pk ? formatDelta(k.profit_ht, pk.profit_ht, 'eur') : null),
+        kpiCard(KPI_LABELS.marge_ht, formatKpi('marge_ht', k.marge_ht), COL.violet, true, pk ? formatDelta(k.marge_ht, pk.marge_ht, 'pct') : null),
       ])}
     </table>`;
 }
 
 // Cartes secondaires (commandes, panier, remboursements)
-function secondaryCardsHtml(k) {
+function secondaryCardsHtml(k, pk) {
   return `
     <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin:6px -6px 0;">
       ${kpiRow([
-        kpiCard(KPI_LABELS.orders_count, formatKpi('orders_count', k.orders_count), COL.bleu),
-        kpiCard(KPI_LABELS.panier_moyen_ht, formatKpi('panier_moyen_ht', k.panier_moyen_ht), COL.orange),
-        kpiCard(KPI_LABELS.refunds_count, formatKpi('refunds_count', k.refunds_count), COL.rouge),
+        kpiCard(KPI_LABELS.orders_count, formatKpi('orders_count', k.orders_count), COL.bleu, false, pk ? formatDelta(k.orders_count, pk.orders_count, 'count') : null),
+        kpiCard(KPI_LABELS.panier_moyen_ht, formatKpi('panier_moyen_ht', k.panier_moyen_ht), COL.orange, false, pk ? formatDelta(k.panier_moyen_ht, pk.panier_moyen_ht, 'eur') : null),
+        kpiCard(KPI_LABELS.refunds_count, formatKpi('refunds_count', k.refunds_count), COL.rouge, false, pk ? formatDelta(k.refunds_count, pk.refunds_count, 'count') : null),
       ])}
     </table>`;
 }
@@ -240,13 +286,14 @@ function countryHtml(rows) {
     </table>`;
 }
 
-function buildHtml(freq, period, dashboard, countries) {
+function buildHtml(freq, period, dashboard, countries, prevDashboard, prevPeriod) {
   const k = dashboard?.kpis || {};
+  const pk = prevDashboard?.kpis || null;
   const hasData = (k.orders_count || 0) > 0 || (k.ca_ttc_brut || 0) > 0;
   const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
 
   const content = hasData
-    ? `${heroCardsHtml(k)}${secondaryCardsHtml(k)}${recapHtml(k)}${countryHtml(countries)}`
+    ? `${heroCardsHtml(k, pk)}${secondaryCardsHtml(k, pk)}${recapHtml(k)}${countryHtml(countries)}`
     : `<table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;background:${COL.blanc};border:1px solid #e6eaee;border-radius:12px;"><tr><td style="padding:32px;text-align:center;color:${COL.grisM};font-family:${FONT};font-size:14px;">Aucune commande sur cette période.</td></tr></table>`;
 
   return `
@@ -267,6 +314,7 @@ function buildHtml(freq, period, dashboard, countries) {
             <div style="font-size:13px;font-weight:700;color:#b3d3e2;text-transform:uppercase;letter-spacing:0.1em;font-family:${FONT};margin-bottom:7px;">📊 Rapport YouVape</div>
             <div style="font-size:25px;font-weight:800;color:#ffffff;font-family:${FONT};letter-spacing:-0.3px;">${FREQ_TITLE[freq]}</div>
             <div style="font-size:15px;color:#cfe5ef;font-family:${FONT};margin-top:5px;">${cap(period.label)}</div>
+            ${prevPeriod ? `<div style="font-size:12px;color:#8bbfd4;font-family:${FONT};margin-top:3px;">Comparé à : ${cap(prevPeriod.label)}</div>` : ''}
           </td></tr>
 
           <!-- Corps -->
@@ -284,16 +332,29 @@ function buildHtml(freq, period, dashboard, countries) {
 }
 
 // Fallback texte brut (clients mail sans HTML)
-function buildText(freq, period, dashboard, countries) {
+function buildText(freq, period, dashboard, countries, prevDashboard, prevPeriod) {
   const kpis = dashboard?.kpis || {};
+  const pk = prevDashboard?.kpis || null;
   const lines = [
     `${FREQ_TITLE[freq]} — YouVape`,
     `${period.label} (du ${period.dateFrom} au ${period.dateTo})`,
+    prevPeriod ? `Comparé à : ${prevPeriod.label}` : '',
     '',
   ];
   if ((kpis.orders_count || 0) > 0 || (kpis.ca_ttc_brut || 0) > 0) {
     for (const k of orderedKeys(kpis)) {
-      lines.push(`${KPI_LABELS[k] || humanizeKey(k)} : ${formatKpi(k, kpis[k])}`);
+      let line = `${KPI_LABELS[k] || humanizeKey(k)} : ${formatKpi(k, kpis[k])}`;
+      if (pk && pk[k] !== undefined && pk[k] !== 0) {
+        const delta = ((kpis[k] - pk[k]) / Math.abs(pk[k])) * 100;
+        const abs = kpis[k] - pk[k];
+        const absStr = COUNT_KEYS.has(k)
+          ? `${abs >= 0 ? '+' : ''}${num.format(Math.round(abs))}`
+          : PERCENT_KEYS.has(k)
+            ? `${abs >= 0 ? '+' : ''}${abs.toFixed(1)} pts`
+            : `${abs >= 0 ? '+' : ''}${eur.format(abs)}`;
+        line += `  (${delta >= 0 ? '▲' : '▼'} ${Math.abs(delta).toFixed(1)}% · ${absStr})`;
+      }
+      lines.push(line);
     }
     if (countries && countries.length > 0) {
       lines.push('', 'Total par pays (CA TTC / CA HT / commandes / panier moyen HT) :');
@@ -310,16 +371,21 @@ function buildText(freq, period, dashboard, countries) {
 // ─── Génération + envoi ─────────────────────────────────────────────────────
 async function renderReport(freq, now = new Date()) {
   const period = getPeriod(freq, now);
+  const prevPeriod = getPrevPeriod(freq, now);
   let dashboard = null;
+  let prevDashboard = null;
   let countries = [];
   try {
-    dashboard = await computeDashboard({ dateFrom: period.dateFrom, dateTo: period.dateTo });
-    countries = await computeByCountry({ dateFrom: period.dateFrom, dateTo: period.dateTo });
+    [dashboard, prevDashboard, countries] = await Promise.all([
+      computeDashboard({ dateFrom: period.dateFrom, dateTo: period.dateTo }),
+      computeDashboard({ dateFrom: prevPeriod.dateFrom, dateTo: prevPeriod.dateTo }),
+      computeByCountry({ dateFrom: period.dateFrom, dateTo: period.dateTo }),
+    ]);
   } catch (e) {
     console.error(`[ReportEmail] échec calcul dashboard (${freq}):`, e.message);
   }
-  const html = buildHtml(freq, period, dashboard, countries);
-  const text = buildText(freq, period, dashboard, countries);
+  const html = buildHtml(freq, period, dashboard, countries, prevDashboard, prevPeriod);
+  const text = buildText(freq, period, dashboard, countries, prevDashboard, prevPeriod);
   const subject = `${FREQ_TITLE[freq]} — ${period.label}`;
   return { period, html, text, subject, dashboard };
 }

@@ -71,6 +71,43 @@ function getDateRange(period) {
   return null;
 }
 
+// Retourne la plage de comparaison (période précédente équivalente) pour les 4 tranches prédéfinies.
+// Pour "ce mois" au 13 juillet → 1er–13 juin (même nb de jours).
+function getComparisonRange(period) {
+  const now = new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  const fmt = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+
+  if (period === 'today') {
+    const d = new Date(now); d.setDate(d.getDate() - 1);
+    return { dateFrom: fmt(d), dateTo: fmt(d) };
+  }
+  if (period === 'week') {
+    // Même nb de jours, semaine précédente (lun → aujourd'hui -7j)
+    const day = now.getDay() || 7;
+    const mon = new Date(now); mon.setDate(now.getDate() - day + 1);
+    const prevMon = new Date(mon); prevMon.setDate(mon.getDate() - 7);
+    const prevEnd = new Date(now); prevEnd.setDate(now.getDate() - 7);
+    return { dateFrom: fmt(prevMon), dateTo: fmt(prevEnd) };
+  }
+  if (period === 'month') {
+    // 1er du mois précédent → même numéro de jour du mois précédent
+    const dayOfMonth = now.getDate();
+    const lastDayOfPrevMonth = new Date(now.getFullYear(), now.getMonth(), 0).getDate();
+    const prevStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const prevEnd = new Date(now.getFullYear(), now.getMonth() - 1, Math.min(dayOfMonth, lastDayOfPrevMonth));
+    return { dateFrom: fmt(prevStart), dateTo: fmt(prevEnd) };
+  }
+  if (period === 'year') {
+    // 1er jan année précédente → même jour/mois année précédente
+    const prevYear = now.getFullYear() - 1;
+    const prevEnd = new Date(prevYear, now.getMonth(), now.getDate());
+    if (prevEnd.getMonth() !== now.getMonth()) prevEnd.setDate(0); // gère 29 fév → 28 fév
+    return { dateFrom: `${prevYear}-01-01`, dateTo: fmt(prevEnd) };
+  }
+  return null;
+}
+
 /* ─── SPARKLINE ─────────────────────────────────────────── */
 function Sparkline({ data, color, width = 80, height = 36 }) {
   if (!data || data.length < 2) return null;
@@ -98,7 +135,7 @@ function Sparkline({ data, color, width = 80, height = 36 }) {
 }
 
 /* ─── KPI CARD ───────────────────────────────────────────── */
-function KpiCard({ label, value, unit, color, sparkData, href }) {
+function KpiCard({ label, value, unit, color, sparkData, href, delta, fmtAbs }) {
   const [hovered, setHovered] = useState(false);
   const Tag = href ? 'a' : 'div';
   const linkProps = href ? { href, target: '_blank', rel: 'noopener noreferrer' } : {};
@@ -132,12 +169,25 @@ function KpiCard({ label, value, unit, color, sparkData, href }) {
         </div>
         {sparkData && <Sparkline data={sparkData} color={color} />}
       </div>
+      {delta != null && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
+          <span style={{ fontSize: 12, fontWeight: 700, color: delta.pct >= 0 ? C.vert : C.rouge }}>
+            {delta.pct >= 0 ? '↑' : '↓'} {Math.abs(delta.pct).toFixed(1)}%
+          </span>
+          {fmtAbs && (
+            <span style={{ fontSize: 12, fontWeight: 600, color: delta.pct >= 0 ? C.vert : C.rouge }}>
+              · {fmtAbs(delta.abs)}
+            </span>
+          )}
+          <span style={{ fontSize: 11, color: C.grisM, fontWeight: 500 }}>vs période préc.</span>
+        </div>
+      )}
     </Tag>
   );
 }
 
 /* ─── MAIN CHART ─────────────────────────────────────────── */
-function MainChart({ series, granularity }) {
+function MainChart({ series, prevSeries, granularity }) {
   const svgRef = useRef(null);
   const [hover, setHover] = useState(null);
   const W = 1600, H = 240, PL = 72, PR = 16, PT = 16, PB = 40;
@@ -149,16 +199,24 @@ function MainChart({ series, granularity }) {
     </div>
   );
 
-  const maxCA = Math.max(...series.map(p => p.ca_ht), 1);
+  const allValues = [
+    ...series.map(p => p.ca_ht),
+    ...(prevSeries || []).map(p => p.ca_ht),
+    1,
+  ];
+  const maxCA = Math.max(...allValues);
   const maxY = Math.ceil(maxCA / 1000) * 1000 || 1000;
 
-  const toX = (i) => PL + (i / Math.max(series.length - 1, 1)) * cW;
+  const toX = (i, len) => PL + (i / Math.max(len - 1, 1)) * cW;
   const toY = (v) => PT + cH - (v / maxY) * cH;
 
-  const caPath = series.map((p, i) => `${i === 0 ? 'M' : 'L'}${toX(i).toFixed(1)},${toY(p.ca_ht).toFixed(1)}`).join(' ');
-  const prPath = series.map((p, i) => `${i === 0 ? 'M' : 'L'}${toX(i).toFixed(1)},${toY(p.profit_ht).toFixed(1)}`).join(' ');
-  const caArea = caPath + ` L${toX(series.length - 1)},${PT + cH} L${PL},${PT + cH} Z`;
-  const prArea = prPath + ` L${toX(series.length - 1)},${PT + cH} L${PL},${PT + cH} Z`;
+  const caPath = series.map((p, i) => `${i === 0 ? 'M' : 'L'}${toX(i, series.length).toFixed(1)},${toY(p.ca_ht).toFixed(1)}`).join(' ');
+  const caArea = caPath + ` L${toX(series.length - 1, series.length)},${PT + cH} L${PL},${PT + cH} Z`;
+
+  // Courbe période précédente — alignée par index (même position relative sur l'axe X)
+  const prevPath = prevSeries && prevSeries.length > 0
+    ? prevSeries.map((p, i) => `${i === 0 ? 'M' : 'L'}${toX(i, prevSeries.length).toFixed(1)},${toY(p.ca_ht).toFixed(1)}`).join(' ')
+    : null;
 
   const handleMove = useCallback((e) => {
     const rect = svgRef.current?.getBoundingClientRect();
@@ -171,8 +229,6 @@ function MainChart({ series, granularity }) {
 
   const formatPeriodLabel = (p) => {
     if (!p) return '';
-    // Les dates BDD sont en heure Paris stockée telle quelle — on lit les composantes
-    // ISO directement pour éviter toute reinterprétation UTC→local par le navigateur
     const s = typeof p === 'string' ? p : p.toISOString();
     const [datePart, timePart] = s.split('T');
     const [year, month, day] = datePart.split('-').map(Number);
@@ -187,6 +243,8 @@ function MainChart({ series, granularity }) {
     const d = new Date(year, month - 1, day);
     return d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' });
   };
+
+  const prevHoverVal = prevSeries && hover !== null ? prevSeries[Math.round(hover / (series.length - 1) * (prevSeries.length - 1))]?.ca_ht : null;
 
   return (
     <div style={{ position: 'relative', width: '100%' }}>
@@ -203,10 +261,6 @@ function MainChart({ series, granularity }) {
           <linearGradient id="caGrad" x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stopColor={C.saphir} stopOpacity="0.18" />
             <stop offset="100%" stopColor={C.saphir} stopOpacity="0" />
-          </linearGradient>
-          <linearGradient id="prGrad" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor={C.vert} stopOpacity="0.18" />
-            <stop offset="100%" stopColor={C.vert} stopOpacity="0" />
           </linearGradient>
         </defs>
 
@@ -229,26 +283,26 @@ function MainChart({ series, granularity }) {
           const every = Math.ceil(series.length / 8);
           if (i % every !== 0 && i !== series.length - 1) return null;
           return (
-            <text key={i} x={toX(i)} y={H - 8} textAnchor="middle" fontSize="11" fill={C.grisM} fontFamily="Lato, sans-serif">
+            <text key={i} x={toX(i, series.length)} y={H - 8} textAnchor="middle" fontSize="11" fill={C.grisM} fontFamily="Lato, sans-serif">
               {formatPeriodLabel(p.period)}
             </text>
           );
         })}
 
-        {/* Areas */}
-        <path d={caArea} fill="url(#caGrad)" />
-        <path d={prArea} fill="url(#prGrad)" />
+        {/* Courbe période précédente (derrière) */}
+        {prevPath && (
+          <path d={prevPath} fill="none" stroke={C.orange} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" strokeDasharray="6 4" opacity="0.7" />
+        )}
 
-        {/* Lignes */}
+        {/* Area + courbe période courante */}
+        <path d={caArea} fill="url(#caGrad)" />
         <path d={caPath} fill="none" stroke={C.saphir} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
-        <path d={prPath} fill="none" stroke={C.vert} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
 
         {/* Hover */}
         {hover !== null && (
           <g>
-            <line x1={toX(hover)} y1={PT} x2={toX(hover)} y2={PT + cH} stroke={C.grisCL} strokeWidth="1.5" strokeDasharray="4 3" />
-            <circle cx={toX(hover)} cy={toY(series[hover].ca_ht)} r="5" fill={C.blanc} stroke={C.saphir} strokeWidth="2.5" />
-            <circle cx={toX(hover)} cy={toY(series[hover].profit_ht)} r="5" fill={C.blanc} stroke={C.vert} strokeWidth="2.5" />
+            <line x1={toX(hover, series.length)} y1={PT} x2={toX(hover, series.length)} y2={PT + cH} stroke={C.grisCL} strokeWidth="1.5" strokeDasharray="4 3" />
+            <circle cx={toX(hover, series.length)} cy={toY(series[hover].ca_ht)} r="5" fill={C.blanc} stroke={C.saphir} strokeWidth="2.5" />
           </g>
         )}
       </svg>
@@ -264,7 +318,9 @@ function MainChart({ series, granularity }) {
         }}>
           <span style={{ color: C.grisM, fontWeight: 500 }}>{formatPeriodLabel(series[hover].period)}</span>
           <span><span style={{ color: C.saphir, fontWeight: 700 }}>CA HT </span><span style={{ fontWeight: 600 }}>{fmtEur(series[hover].ca_ht)}</span></span>
-          <span><span style={{ color: C.vert, fontWeight: 700 }}>Profit </span><span style={{ fontWeight: 600 }}>{fmtEur(series[hover].profit_ht)}</span></span>
+          {prevHoverVal != null && (
+            <span><span style={{ color: C.orange, fontWeight: 700 }}>Préc. </span><span style={{ fontWeight: 600 }}>{fmtEur(prevHoverVal)}</span></span>
+          )}
         </div>
       )}
     </div>
@@ -437,6 +493,7 @@ export default function FinancierApp() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [prevData, setPrevData] = useState(null);
 
   useEffect(() => {
     const onResize = () => setWindowW(window.innerWidth);
@@ -451,6 +508,21 @@ export default function FinancierApp() {
     document.addEventListener('mousedown', onClickOutside);
     return () => document.removeEventListener('mousedown', onClickOutside);
   }, []);
+
+  const fetchComparisonData = useCallback(async (p) => {
+    const range = getComparisonRange(p);
+    if (!range) { setPrevData(null); return; }
+    try {
+      const res = await axios.post(
+        `${API_URL}/financier/dashboard`,
+        range,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      setPrevData({ kpis: res.data.kpis, series: res.data.series, dateFrom: range.dateFrom, dateTo: range.dateTo });
+    } catch {
+      setPrevData(null);
+    }
+  }, [token]);
 
   const fetchData = useCallback(async (p, cFrom, cTo, silent = false) => {
     if (!silent) setLoading(true);
@@ -473,12 +545,20 @@ export default function FinancierApp() {
     }
   }, [token, logout]);
 
+  const MAIN_PERIODS = ['today', 'week', 'month', 'year'];
+
   useEffect(() => {
     // Si period=custom sans dates ni preset, ne pas fetcher (évite requête sans filtre)
     if (period === 'custom' && !customPreset && (!customFrom || !customTo)) return;
-    if (period === 'custom' && customPreset) fetchData(customPreset, '', '');
-    else fetchData(period, customFrom, customTo);
-  }, [period, fetchData]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (period === 'custom' && customPreset) {
+      fetchData(customPreset, '', '');
+      setPrevData(null);
+    } else {
+      fetchData(period, customFrom, customTo);
+      if (MAIN_PERIODS.includes(period)) fetchComparisonData(period);
+      else setPrevData(null);
+    }
+  }, [period, fetchData, fetchComparisonData]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Refresh automatique toutes les 60s sur les périodes dynamiques (pas date_range ni presets fixes)
   const activePeriod = customPreset || period;
@@ -530,15 +610,26 @@ export default function FinancierApp() {
     ? `/commandes?paris=1&refunded=1&dateFrom=${reportRange.dateFrom}&dateTo=${reportRange.dateTo}`
     : null;
 
+  const computeDelta = (current, prev) => {
+    if (prevData === null || prev === undefined || prev === null) return undefined;
+    if (prev === 0) return null;
+    return { pct: ((current - prev) / Math.abs(prev)) * 100, abs: current - prev };
+  };
+
+  const signEur = (n) => (n >= 0 ? '+' : '−') + fmtEur(Math.abs(n));
+  const signCnt = (n) => (n >= 0 ? '+' : '−') + fmt(Math.abs(n));
+  const signPts = (n) => (n >= 0 ? '+' : '') + n.toFixed(1) + ' pts';
+
+  const pk = prevData?.kpis;
   const kpis = data ? [
-    { label: 'CA TTC Brut', value: fmtEur(data.kpis.ca_ttc_brut), color: C.orange, sparkData: data.series.map(s => s.ca_ttc_brut) },
-    { label: 'CA HT Net', value: fmtEur(data.kpis.ca_ht_net), color: C.saphir, sparkData: data.series.map(s => s.ca_ht) },
-    { label: 'Profit HT', value: fmtEur(data.kpis.profit_ht), color: C.vert, sparkData: data.series.map(s => s.profit_ht) },
-    { label: 'Marge', value: fmtPct(data.kpis.marge_ht), color: C.violet, sparkData: null },
-    { label: 'Nb Commandes', value: fmt(data.kpis.orders_count), color: C.bleu, sparkData: data.series.map(s => s.orders_count), href: ordersUrl },
-    { label: 'Panier moyen HT', value: fmtEur(data.kpis.panier_moyen_ht), color: C.orange, sparkData: null },
-    { label: 'Commandes remboursées', value: fmt(data.kpis.refunds_count), color: C.rouge, sparkData: null, href: refundsUrl },
-    { label: 'Remboursements TTC', value: fmtEur(data.kpis.remboursements_ttc), color: C.rouge, sparkData: null },
+    { label: 'CA TTC Brut',          value: fmtEur(data.kpis.ca_ttc_brut),        color: C.orange, sparkData: data.series.map(s => s.ca_ttc_brut),    delta: computeDelta(data.kpis.ca_ttc_brut,        pk?.ca_ttc_brut),        fmtAbs: signEur },
+    { label: 'CA HT Net',            value: fmtEur(data.kpis.ca_ht_net),           color: C.saphir, sparkData: data.series.map(s => s.ca_ht),           delta: computeDelta(data.kpis.ca_ht_net,          pk?.ca_ht_net),          fmtAbs: signEur },
+    { label: 'Profit HT',            value: fmtEur(data.kpis.profit_ht),           color: C.vert,   sparkData: data.series.map(s => s.profit_ht),        delta: computeDelta(data.kpis.profit_ht,          pk?.profit_ht),          fmtAbs: signEur },
+    { label: 'Marge',                value: fmtPct(data.kpis.marge_ht),            color: C.violet, sparkData: null,                                     delta: computeDelta(data.kpis.marge_ht,           pk?.marge_ht),           fmtAbs: signPts },
+    { label: 'Nb Commandes',         value: fmt(data.kpis.orders_count),            color: C.bleu,   sparkData: data.series.map(s => s.orders_count),    delta: computeDelta(data.kpis.orders_count,       pk?.orders_count),       fmtAbs: signCnt, href: ordersUrl },
+    { label: 'Panier moyen HT',      value: fmtEur(data.kpis.panier_moyen_ht),     color: C.orange, sparkData: null,                                     delta: computeDelta(data.kpis.panier_moyen_ht,    pk?.panier_moyen_ht),    fmtAbs: signEur },
+    { label: 'Commandes remboursées',value: fmt(data.kpis.refunds_count),           color: C.rouge,  sparkData: null,                                     delta: computeDelta(data.kpis.refunds_count,      pk?.refunds_count),      fmtAbs: signCnt, href: refundsUrl },
+    { label: 'Remboursements TTC',   value: fmtEur(data.kpis.remboursements_ttc),  color: C.rouge,  sparkData: null,                                     delta: computeDelta(data.kpis.remboursements_ttc, pk?.remboursements_ttc), fmtAbs: signEur },
   ] : [];
 
   const gridCols = windowW >= 900 ? 3 : windowW >= 560 ? 2 : 1;
@@ -707,15 +798,25 @@ export default function FinancierApp() {
                   <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                       <div style={{ width: 12, height: 3, borderRadius: 99, background: C.saphir }} />
-                      <span style={{ fontSize: 12, color: C.grisM, fontWeight: 600 }}>CA HT</span>
+                      <span style={{ fontSize: 12, color: C.grisM, fontWeight: 600 }}>CA HT (période)</span>
                     </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <div style={{ width: 12, height: 3, borderRadius: 99, background: C.vert }} />
-                      <span style={{ fontSize: 12, color: C.grisM, fontWeight: 600 }}>Profit HT</span>
-                    </div>
+                    {prevData?.series && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <svg width="18" height="4" viewBox="0 0 18 4"><line x1="0" y1="2" x2="18" y2="2" stroke={C.orange} strokeWidth="2.5" strokeDasharray="5 3" /></svg>
+                        <div>
+                          <span style={{ fontSize: 12, color: C.grisM, fontWeight: 600 }}>CA HT (période préc.)</span>
+                          {prevData.dateFrom && (
+                            <span style={{ fontSize: 11, color: C.grisM, fontWeight: 400, marginLeft: 4 }}>
+                              {new Date(prevData.dateFrom + 'T12:00:00').toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })}
+                              {prevData.dateFrom !== prevData.dateTo && ` – ${new Date(prevData.dateTo + 'T12:00:00').toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })}`}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
-                <MainChart series={data.series} granularity={data.granularity} />
+                <MainChart series={data.series} prevSeries={prevData?.series} granularity={data.granularity} />
               </div>
 
               {/* Bas de page : breakdown + récap */}
