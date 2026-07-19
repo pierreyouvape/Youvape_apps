@@ -992,7 +992,29 @@ const NeedsTab = ({ token, onCompactChange }) => {
                         <img src={row.image_url} alt="" style={{ width: '40px', height: '40px', objectFit: 'cover', borderRadius: '4px' }} />
                       ) : <div style={{ width: '40px', height: '40px', backgroundColor: '#1e6fa0', borderRadius: '4px' }} />}
                     </td>
-                    <td><a href={`/products/${row.wp_product_id}`} target="_blank" rel="noopener noreferrer" style={{ color: 'inherit', textDecoration: 'none' }} onMouseEnter={e => e.target.style.textDecoration = 'underline'} onMouseLeave={e => e.target.style.textDecoration = 'none'}>{row.parent_title}</a></td>
+                    <td>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <a href={`/products/${row.wp_product_id}`} target="_blank" rel="noopener noreferrer" style={{ color: 'inherit', textDecoration: 'none' }} onMouseEnter={e => e.target.style.textDecoration = 'underline'} onMouseLeave={e => e.target.style.textDecoration = 'none'}>{row.parent_title}</a>
+                        <button
+                          type="button"
+                          title="Copier le nom du produit"
+                          onClick={() => copyProductName(`parent-${row.wp_product_id}`, row.parent_title)}
+                          style={{
+                            border: 'none', background: 'transparent', cursor: 'pointer',
+                            padding: '2px', display: 'inline-flex', opacity: 0.7, flexShrink: 0,
+                            color: copiedId === `parent-${row.wp_product_id}` ? '#7CE0A0' : '#ffffff',
+                          }}
+                          onMouseOver={e => e.currentTarget.style.opacity = 1}
+                          onMouseOut={e => e.currentTarget.style.opacity = copiedId === `parent-${row.wp_product_id}` ? 1 : 0.7}
+                        >
+                          {copiedId === `parent-${row.wp_product_id}` ? (
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+                          ) : (
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></svg>
+                          )}
+                        </button>
+                      </div>
+                    </td>
                     <td>
                       {row.parentSku && (
                         <a
