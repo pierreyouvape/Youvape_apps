@@ -298,6 +298,13 @@ const NeedsTab = ({ token, onCompactChange }) => {
   // Sélection pour commande (jamais réinitialisée par les recalculs)
   const [selectedProducts, setSelectedProducts] = useState({});
   const [creatingOrder, setCreatingOrder] = useState(false);
+  const [copiedId, setCopiedId] = useState(null);
+
+  const copyProductName = (productId, name) => {
+    navigator.clipboard.writeText(name);
+    setCopiedId(productId);
+    setTimeout(() => setCopiedId(id => (id === productId ? null : id)), 1500);
+  };
 
   // Ref pour gérer le debounce de la recherche
   const searchTimeoutRef = useRef(null);
@@ -1017,10 +1024,28 @@ const NeedsTab = ({ token, onCompactChange }) => {
                     </td>
                     <td>
                       <div style={{ maxWidth: '250px', paddingLeft: row._isVariation ? '30px' : 0 }}>
-                        <div style={{ fontWeight: 500, marginBottom: '2px' }}>
+                        <div style={{ fontWeight: 500, marginBottom: '2px', display: 'flex', alignItems: 'center', gap: '6px' }}>
                           <a href={`/products/${row.wp_product_id}`} target="_blank" rel="noopener noreferrer" style={{ color: 'inherit', textDecoration: 'none' }} onMouseEnter={e => e.target.style.textDecoration = 'underline'} onMouseLeave={e => e.target.style.textDecoration = 'none'}>
                             {row._isVariation ? row.post_title.replace(row.parent_title + ' - ', '').replace(row.parent_title, '') || row.post_title : row.post_title}
                           </a>
+                          <button
+                            type="button"
+                            title="Copier le nom du produit"
+                            onClick={() => copyProductName(row.id, row.post_title)}
+                            style={{
+                              border: 'none', background: 'transparent', cursor: 'pointer',
+                              padding: '2px', display: 'inline-flex', opacity: 0.5, flexShrink: 0,
+                              color: copiedId === row.id ? '#4AB866' : 'inherit',
+                            }}
+                            onMouseOver={e => e.currentTarget.style.opacity = 1}
+                            onMouseOut={e => e.currentTarget.style.opacity = copiedId === row.id ? 1 : 0.5}
+                          >
+                            {copiedId === row.id ? (
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+                            ) : (
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></svg>
+                            )}
+                          </button>
                         </div>
                         {row.supplier_name && (
                           <small style={{ color: '#666' }}>{row.supplier_name}</small>
