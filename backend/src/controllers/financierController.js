@@ -276,30 +276,80 @@ async function computeDashboard({ dateFrom, dateTo, granularity } = {}) {
       ? periodSlots.map(iso => buildPoint(iso, dataByPeriod[iso] || null))
       : seriesOrdersResult.rows.map(row => buildPoint(normKey(row.period), row));
 
-    // ─── 6. RÉSULTAT ────────────────────────────────────────────────────────
+    // ─── 6. NOUVEAUX CLIENTS ────────────────────────────────────────────────
+    const newCustomers = await computeNewCustomers({ dateFrom, dateTo });
+
+    // ─── 7. RÉSULTAT ────────────────────────────────────────────────────────
     return {
       granularity: gran,
       kpis: {
-        orders_count:       ordersCount,
-        ca_ttc_brut:        round2(caTTCBrut),
-        ca_ttc_net:         round2(caTTCNet),
-        ca_ht_net:          round2(caHTNet),
-        tva:                round2(tvaAjustee),
-        remboursements_ttc: round2(remboursementsTTC),
-        refunds_count:      refundsCount,
-        frais_port_client:  round2(fraisPortClient),
-        frais_port_reel:    round2(fraisPortReel),
-        frais_paiement:     round2(fraisPaiement),
-        cout_produits:      round2(coutProduits),
-        profit_ht:          round2(profitHT),
-        marge_ht:           round2(margeHT),
-        panier_moyen_ht:    round2(panierMoyenHT),
+        orders_count:              ordersCount,
+        ca_ttc_brut:               round2(caTTCBrut),
+        ca_ttc_net:                round2(caTTCNet),
+        ca_ht_net:                 round2(caHTNet),
+        tva:                       round2(tvaAjustee),
+        remboursements_ttc:        round2(remboursementsTTC),
+        refunds_count:             refundsCount,
+        frais_port_client:         round2(fraisPortClient),
+        frais_port_reel:           round2(fraisPortReel),
+        frais_paiement:            round2(fraisPaiement),
+        cout_produits:             round2(coutProduits),
+        profit_ht:                 round2(profitHT),
+        marge_ht:                  round2(margeHT),
+        panier_moyen_ht:           round2(panierMoyenHT),
+        nouveaux_clients:          newCustomers.nouveaux_clients,
+        nouveaux_clients_commande: newCustomers.nouveaux_clients_commande,
       },
       series,
     };
 }
 
 exports.computeDashboard = computeDashboard;
+
+/**
+ * Nouveaux clients inscrits sur la période (customers.user_registered, heure
+ * Paris brute — même logique que refDateParis) + parmi eux, combien ont déjà
+ * passé au moins une commande active (à ce jour, pas uniquement sur la période :
+ * on mesure une conversion, pas juste une coïncidence de dates).
+ */
+async function computeNewCustomers({ dateFrom, dateTo } = {}) {
+  const conditions = [];
+  const params = [ACTIVE_STATUSES];
+  let idx = 2;
+
+  if (dateFrom) {
+    conditions.push(`c.user_registered >= $${idx++}`);
+    params.push(dateFrom);
+  }
+  if (dateTo) {
+    conditions.push(`c.user_registered <= $${idx++}`);
+    params.push(dateTo + ' 23:59:59');
+  }
+  const where = conditions.length ? 'WHERE ' + conditions.join(' AND ') : '';
+
+  const result = await pool.query(`
+    SELECT
+      COUNT(*)::int AS new_customers,
+      COUNT(*) FILTER (
+        WHERE EXISTS (
+          SELECT 1 FROM orders o
+          WHERE o.wp_customer_id = c.wp_user_id
+            AND o.post_status = ANY($1)
+            AND o.order_total > 0
+        )
+      )::int AS new_customers_with_order
+    FROM customers c
+    ${where}
+  `, params);
+
+  const row = result.rows[0];
+  return {
+    nouveaux_clients:          row.new_customers || 0,
+    nouveaux_clients_commande: row.new_customers_with_order || 0,
+  };
+}
+
+exports.computeNewCustomers = computeNewCustomers;
 
 /**
  * Total par pays (CA TTC brut + CA HT + nb commandes + panier moyen HT) pour une

@@ -35,19 +35,22 @@ const KPI_LABELS = {
   frais_port_reel: 'Frais de port réels',
   frais_paiement: 'Frais de paiement',
   cout_produits: 'Coût produits',
+  nouveaux_clients: 'Nouveaux clients inscrits',
+  nouveaux_clients_commande: 'Nouveaux clients ayant commandé',
 };
 
 // Ordre d'affichage souhaité (les clés absentes ici sont ajoutées à la fin).
 const KPI_ORDER = [
   'ca_ttc_brut', 'ca_ttc_net', 'ca_ht_net', 'profit_ht', 'marge_ht',
-  'orders_count', 'panier_moyen_ht', 'refunds_count', 'remboursements_ttc',
+  'orders_count', 'panier_moyen_ht', 'nouveaux_clients', 'nouveaux_clients_commande',
+  'refunds_count', 'remboursements_ttc',
   'tva', 'cout_produits', 'frais_port_reel', 'frais_paiement', 'frais_port_client',
 ];
 
 // Clés en pourcentage
 const PERCENT_KEYS = new Set(['marge_ht']);
 // Clés = compteurs (pas de devise)
-const COUNT_KEYS = new Set(['orders_count', 'refunds_count']);
+const COUNT_KEYS = new Set(['orders_count', 'refunds_count', 'nouveaux_clients', 'nouveaux_clients_commande']);
 
 function humanizeKey(key) {
   return String(key).replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
@@ -165,9 +168,9 @@ function kpiCard(label, value, color, big = false, delta = null) {
   return `
     <td valign="top" style="padding:6px;" width="33%">
       <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:separate;background:${COL.blanc};border:1px solid #d9dee4;border-top:4px solid ${color};border-radius:12px;">
-        <tr><td style="padding:16px 16px 17px;">
+        <tr><td class="yv-card-pad" style="padding:16px 16px 17px;">
           <div style="font-size:12px;font-weight:700;color:${COL.grisF};text-transform:uppercase;letter-spacing:0.04em;margin-bottom:8px;font-family:${FONT};">${label}</div>
-          <div style="font-size:${big ? 27 : 21}px;font-weight:800;color:${COL.grisTF};font-family:${FONT};letter-spacing:-0.4px;">${value}</div>
+          <div class="${big ? 'yv-card-value-big' : 'yv-card-value'}" style="font-size:${big ? 27 : 21}px;font-weight:800;color:${COL.grisTF};font-family:${FONT};letter-spacing:-0.4px;">${value}</div>
           ${deltaHtml}
         </td></tr>
       </table>
@@ -200,6 +203,17 @@ function secondaryCardsHtml(k, pk) {
         kpiCard(KPI_LABELS.orders_count, formatKpi('orders_count', k.orders_count), COL.bleu, false, pk ? formatDelta(k.orders_count, pk.orders_count, 'count') : null),
         kpiCard(KPI_LABELS.panier_moyen_ht, formatKpi('panier_moyen_ht', k.panier_moyen_ht), COL.orange, false, pk ? formatDelta(k.panier_moyen_ht, pk.panier_moyen_ht, 'eur') : null),
         kpiCard(KPI_LABELS.refunds_count, formatKpi('refunds_count', k.refunds_count), COL.rouge, false, pk ? formatDelta(k.refunds_count, pk.refunds_count, 'count') : null),
+      ])}
+    </table>`;
+}
+
+// Cartes nouveaux clients (inscrits sur la période + parmi eux, ceux ayant commandé)
+function newCustomersCardsHtml(k, pk) {
+  return `
+    <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin:6px -6px 0;">
+      ${kpiRow([
+        kpiCard(KPI_LABELS.nouveaux_clients, formatKpi('nouveaux_clients', k.nouveaux_clients), COL.violet, false, pk ? formatDelta(k.nouveaux_clients, pk.nouveaux_clients, 'count') : null),
+        kpiCard(KPI_LABELS.nouveaux_clients_commande, formatKpi('nouveaux_clients_commande', k.nouveaux_clients_commande), COL.vert, false, pk ? formatDelta(k.nouveaux_clients_commande, pk.nouveaux_clients_commande, 'count') : null),
       ])}
     </table>`;
 }
@@ -243,35 +257,42 @@ function recapHtml(k) {
 function countryHtml(rows) {
   if (!rows || rows.length === 0) return '';
 
-  const th = (label, align = 'left') => `<td align="${align}" style="padding:8px 0;font-size:11.5px;font-weight:800;color:${COL.grisM};text-transform:uppercase;letter-spacing:0.04em;font-family:${FONT};border-bottom:2px solid #e3e7ec;${align === 'right' ? 'white-space:nowrap;' : ''}">${label}</td>`;
-  const td = (value, { align = 'left', bold = false, color = COL.grisF } = {}) => `<td align="${align}" style="padding:9px 0;font-size:14px;color:${color};font-weight:${bold ? 800 : 600};font-family:${FONT};border-bottom:1px solid #eef1f4;${align === 'right' ? 'white-space:nowrap;' : ''}">${value}</td>`;
+  const th = (label, align = 'left', cls = '') => `<td align="${align}" class="yv-ctable-cell ${cls}" style="padding:8px 6px;font-size:11.5px;font-weight:800;color:${COL.grisM};text-transform:uppercase;letter-spacing:0.04em;font-family:${FONT};border-bottom:2px solid #e3e7ec;${align === 'right' ? 'white-space:nowrap;' : ''}">${label}</td>`;
+  const td = (value, { align = 'left', bold = false, color = COL.grisF, cls = '' } = {}) => `<td align="${align}" class="yv-ctable-cell ${cls}" style="padding:9px 6px;font-size:14px;color:${color};font-weight:${bold ? 800 : 600};font-family:${FONT};border-bottom:1px solid #eef1f4;${align === 'right' ? 'white-space:nowrap;' : ''}">${value}</td>`;
 
   const totalTtc = rows.reduce((s, r) => s + (r.ca_ttc_brut || 0), 0);
   const totalHt = rows.reduce((s, r) => s + (r.ca_ht || 0), 0);
   const totalOrders = rows.reduce((s, r) => s + (r.orders_count || 0), 0);
   const totalPanier = totalOrders > 0 ? totalHt / totalOrders : 0;
 
+  // Nom de pays tronqué (ellipsis) : évite qu'un nom long ("Nouvelle-Calédonie")
+  // n'élargisse la colonne et ne pousse le tableau hors de l'écran sur mobile.
+  const countryCell = (code) => `<span class="yv-country-name" style="display:inline-block;max-width:110px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:bottom;">${countryName(code)}</span>`;
+
   const body = rows.map((r) => `
     <tr>
-      ${td(countryName(r.country_code))}
+      ${td(countryCell(r.country_code))}
       ${td(num.format(r.orders_count), { align: 'right' })}
       ${td(eur.format(r.ca_ttc_brut), { align: 'right' })}
       ${td(eur.format(r.ca_ht), { align: 'right', bold: true, color: COL.saphir })}
-      ${td(eur.format(r.panier_moyen_ht), { align: 'right' })}
+      ${td(eur.format(r.panier_moyen_ht), { align: 'right', cls: 'yv-hide-mobile' })}
     </tr>`).join('');
 
   return `
     <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;background:${COL.blanc};border:1px solid #d9dee4;border-radius:12px;margin-top:18px;">
-      <tr><td style="padding:20px 24px;">
+      <tr><td class="yv-card-pad-lg" style="padding:20px 24px;">
         <div style="font-size:16px;font-weight:800;color:${COL.grisTF};font-family:${FONT};margin-bottom:4px;">Total par pays</div>
         <div style="font-size:13px;color:${COL.grisM};font-family:${FONT};margin-bottom:12px;">CA par pays de facturation, du plus élevé au plus faible</div>
-        <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;">
+        <!-- Conteneur scrollable en secours si le tableau ne tient pas malgré la
+             réduction de police/marges mobile (cf. media query dans <head>). -->
+        <div style="overflow-x:auto;-webkit-overflow-scrolling:touch;">
+        <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;min-width:300px;">
           <tr>
             ${th('Pays')}
             ${th('Cmd.', 'right')}
             ${th('CA TTC', 'right')}
             ${th('CA HT', 'right')}
-            ${th('Panier moy. HT', 'right')}
+            ${th('Panier moy. HT', 'right', 'yv-hide-mobile')}
           </tr>
           ${body}
           <tr>
@@ -279,9 +300,10 @@ function countryHtml(rows) {
             ${td(num.format(totalOrders), { align: 'right', bold: true })}
             ${td(eur.format(totalTtc), { align: 'right', bold: true })}
             ${td(eur.format(totalHt), { align: 'right', bold: true, color: COL.saphir })}
-            ${td(eur.format(totalPanier), { align: 'right', bold: true })}
+            ${td(eur.format(totalPanier), { align: 'right', bold: true, cls: 'yv-hide-mobile' })}
           </tr>
         </table>
+        </div>
       </td></tr>
     </table>`;
 }
@@ -293,7 +315,7 @@ function buildHtml(freq, period, dashboard, countries, prevDashboard, prevPeriod
   const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
 
   const content = hasData
-    ? `${heroCardsHtml(k, pk)}${secondaryCardsHtml(k, pk)}${recapHtml(k)}${countryHtml(countries)}`
+    ? `${heroCardsHtml(k, pk)}${secondaryCardsHtml(k, pk)}${newCustomersCardsHtml(k, pk)}${recapHtml(k)}${countryHtml(countries)}`
     : `<table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;background:${COL.blanc};border:1px solid #e6eaee;border-radius:12px;"><tr><td style="padding:32px;text-align:center;color:${COL.grisM};font-family:${FONT};font-size:14px;">Aucune commande sur cette période.</td></tr></table>`;
 
   return `
@@ -302,23 +324,39 @@ function buildHtml(freq, period, dashboard, countries, prevDashboard, prevPeriod
     <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
     <style>
       body, table, td, div, span, p { font-family: Arial, Helvetica, sans-serif; }
+      /* Lisibilité mobile (Gmail app/web) : réduit marges, polices, et masque la
+         colonne la moins critique du tableau pays plutôt que de la laisser
+         écraser les autres colonnes ou forcer un scroll horizontal illisible. */
+      @media only screen and (max-width: 480px) {
+        .yv-outer-pad     { padding: 14px 8px !important; }
+        .yv-header-pad    { padding: 20px 16px !important; }
+        .yv-header-title  { font-size: 21px !important; }
+        .yv-body-pad      { padding: 16px 12px 20px !important; }
+        .yv-card-pad      { padding: 12px 12px 13px !important; }
+        .yv-card-pad-lg   { padding: 16px 14px !important; }
+        .yv-card-value    { font-size: 18px !important; }
+        .yv-card-value-big{ font-size: 21px !important; }
+        .yv-ctable-cell   { padding: 7px 4px !important; font-size: 12px !important; }
+        .yv-country-name  { max-width: 68px !important; }
+        .yv-hide-mobile   { display: none !important; }
+      }
     </style>
   </head>
   <body style="margin:0;padding:0;background:${COL.grisTL};">
     <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;background:${COL.grisTL};">
-      <tr><td align="center" style="padding:26px 16px;">
+      <tr><td align="center" class="yv-outer-pad" style="padding:26px 16px;">
         <table width="640" cellpadding="0" cellspacing="0" style="border-collapse:collapse;max-width:640px;width:100%;background:${COL.blanc};border-radius:16px;overflow:hidden;box-shadow:0 2px 12px rgba(0,58,86,0.08);">
 
           <!-- Bandeau header (dégradé saphir) -->
-          <tr><td style="background:${COL.saphirF};background:linear-gradient(135deg,${COL.saphir} 0%,${COL.saphirF} 100%);padding:28px 30px;">
+          <tr><td class="yv-header-pad" style="background:${COL.saphirF};background:linear-gradient(135deg,${COL.saphir} 0%,${COL.saphirF} 100%);padding:28px 30px;">
             <div style="font-size:13px;font-weight:700;color:#b3d3e2;text-transform:uppercase;letter-spacing:0.1em;font-family:${FONT};margin-bottom:7px;">📊 Rapport YouVape</div>
-            <div style="font-size:25px;font-weight:800;color:#ffffff;font-family:${FONT};letter-spacing:-0.3px;">${FREQ_TITLE[freq]}</div>
+            <div class="yv-header-title" style="font-size:25px;font-weight:800;color:#ffffff;font-family:${FONT};letter-spacing:-0.3px;">${FREQ_TITLE[freq]}</div>
             <div style="font-size:15px;color:#cfe5ef;font-family:${FONT};margin-top:5px;">${cap(period.label)}</div>
             ${prevPeriod ? `<div style="font-size:12px;color:#8bbfd4;font-family:${FONT};margin-top:3px;">Comparé à : ${cap(prevPeriod.label)}</div>` : ''}
           </td></tr>
 
           <!-- Corps -->
-          <tr><td style="padding:22px 24px 26px;">
+          <tr><td class="yv-body-pad" style="padding:22px 24px 26px;">
             ${content}
             <div style="margin-top:24px;border-top:1px solid #e3e7ec;padding-top:15px;font-size:12.5px;color:${COL.grisM};font-family:${FONT};line-height:1.6;">
               Période du ${period.dateFrom} au ${period.dateTo}. Rapport généré automatiquement — métriques identiques à l'application Rapport.

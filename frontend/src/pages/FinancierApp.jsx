@@ -630,6 +630,8 @@ export default function FinancierApp() {
     { label: 'Panier moyen HT',      value: fmtEur(data.kpis.panier_moyen_ht),     color: C.orange, sparkData: null,                                     delta: computeDelta(data.kpis.panier_moyen_ht,    pk?.panier_moyen_ht),    fmtAbs: signEur },
     { label: 'Commandes remboursées',value: fmt(data.kpis.refunds_count),           color: C.rouge,  sparkData: null,                                     delta: computeDelta(data.kpis.refunds_count,      pk?.refunds_count),      fmtAbs: signCnt, href: refundsUrl },
     { label: 'Remboursements TTC',   value: fmtEur(data.kpis.remboursements_ttc),  color: C.rouge,  sparkData: null,                                     delta: computeDelta(data.kpis.remboursements_ttc, pk?.remboursements_ttc), fmtAbs: signEur },
+    { label: 'Nouveaux clients',     value: fmt(data.kpis.nouveaux_clients),       color: C.violet, sparkData: null,                                     delta: computeDelta(data.kpis.nouveaux_clients,   pk?.nouveaux_clients),   fmtAbs: signCnt },
+    { label: 'Nvx clients ayant commandé', value: fmt(data.kpis.nouveaux_clients_commande), color: C.vert, sparkData: null,                              delta: computeDelta(data.kpis.nouveaux_clients_commande, pk?.nouveaux_clients_commande), fmtAbs: signCnt },
   ] : [];
 
   const gridCols = windowW >= 900 ? 3 : windowW >= 560 ? 2 : 1;
