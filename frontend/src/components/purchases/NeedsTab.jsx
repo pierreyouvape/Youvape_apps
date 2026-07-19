@@ -300,10 +300,36 @@ const NeedsTab = ({ token, onCompactChange }) => {
   const [creatingOrder, setCreatingOrder] = useState(false);
   const [copiedId, setCopiedId] = useState(null);
 
-  const copyProductName = (productId, name) => {
-    navigator.clipboard.writeText(name);
-    setCopiedId(productId);
-    setTimeout(() => setCopiedId(id => (id === productId ? null : id)), 1500);
+  const copyProductName = async (productId, name) => {
+    let ok = false;
+    if (navigator.clipboard?.writeText) {
+      try {
+        await navigator.clipboard.writeText(name);
+        ok = true;
+      } catch {
+        ok = false;
+      }
+    }
+    if (!ok) {
+      // Fallback pour contexte non sécurisé (HTTP) où navigator.clipboard est indisponible
+      const textarea = document.createElement('textarea');
+      textarea.value = name;
+      textarea.style.position = 'fixed';
+      textarea.style.opacity = '0';
+      document.body.appendChild(textarea);
+      textarea.focus();
+      textarea.select();
+      try {
+        ok = document.execCommand('copy');
+      } catch {
+        ok = false;
+      }
+      document.body.removeChild(textarea);
+    }
+    if (ok) {
+      setCopiedId(productId);
+      setTimeout(() => setCopiedId(id => (id === productId ? null : id)), 1500);
+    }
   };
 
   // Ref pour gérer le debounce de la recherche
