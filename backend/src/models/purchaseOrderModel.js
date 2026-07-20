@@ -372,23 +372,29 @@ const purchaseOrderModel = {
     try {
       bmsResponse = await bmsApiModel.createPurchaseOrder(bmsOrderData, bmsCredentials);
     } catch (error) {
-      // Sur 500 générique, diagnostiquer les produits absents du catalogue BMS avant de remonter
-      // l'erreur brute — évite d'avoir "An error occurred" sans savoir quoi corriger.
+      // Sur 500 générique, diagnostiquer les SKU réellement absents du catalogue BMS avant de
+      // remonter l'erreur brute — évite d'avoir "An error occurred" sans savoir quoi corriger.
+      //
+      // IMPORTANT : ne PAS tester le rattachement au fournisseur. Un produit peut exister dans BMS
+      // sans être lié au fournisseur de la commande (souvent lié à un autre fournisseur) et BMS
+      // l'accepte quand même dans une commande d'achat (il résout le product_id via le SKU).
+      // Le seul vrai déclencheur du 500 est un SKU totalement inconnu du catalogue BMS.
+      // On sonde donc l'existence réelle du SKU via /advanced-stock/product/{sku}/stocks
+      // (200 = présent dans BMS, 400 "Produit ... non trouvé" = absent).
       if (error.message.includes('500')) {
         const checks = await Promise.all(
           bmsItems.map(item =>
-            bmsApiModel.apiCall(
-              `/supplier/products?sku=${encodeURIComponent(item.sku)}&supplier_id=${supplier.bms_id}&limit=1`
-            )
-            .then(r => ({ item, exists: (r?.data?.length ?? 0) > 0 }))
-            .catch(() => ({ item, exists: true })) // en cas d'erreur réseau, ne pas bloquer
+            bmsApiModel.apiCall(`/advanced-stock/product/${encodeURIComponent(item.sku)}/stocks`)
+            .then(() => ({ item, exists: true }))
+            // 400 "non trouvé" = absent de BMS ; toute autre erreur (réseau, auth) ne doit pas bloquer.
+            .catch(err => ({ item, exists: !/non trouv/i.test(err.message || '') }))
           )
         );
         const missing = checks.filter(c => !c.exists).map(c => c.item);
         if (missing.length > 0) {
           const lines = missing.map(i => `  • "${i.name}" (SKU : ${i.sku}, réf fournisseur : ${i.supplier_sku || '—'})`).join('\n');
           throw new Error(
-            `${missing.length} produit(s) introuvable(s) dans le catalogue BMS de ${supplier.name} :\n${lines}\n\nCréez-les dans BMS puis renvoyez la commande.`
+            `${missing.length} produit(s) introuvable(s) dans le catalogue BMS :\n${lines}\n\nCréez-les dans BMS puis renvoyez la commande.`
           );
         }
       }
