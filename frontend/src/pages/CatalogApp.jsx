@@ -262,6 +262,8 @@ const CatalogApp = () => {
             ...child,
             _isParent: false,
             _isVariation: true,
+            // Full decoded title (utilisé pour la copie)
+            _fullName: childTitle,
             // Strip parent title from variation name
             _displayName: childTitle.replace(parentTitle + ' - ', '').replace(parentTitle, '') || childTitle
           });
@@ -616,16 +618,19 @@ const CatalogApp = () => {
                             )}
                           </td>
                           <td style={cellStyle}>
-                            <a
-                              href={`/products/${row.wp_product_id}`}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              style={{ color: '#ffffff', textDecoration: 'none' }}
-                              onMouseEnter={e => e.target.style.textDecoration = 'underline'}
-                              onMouseLeave={e => e.target.style.textDecoration = 'none'}
-                            >
-                              {row.post_title}
-                            </a>
+                            <span style={{ display: 'inline-flex', alignItems: 'center' }}>
+                              <a
+                                href={`/products/${row.wp_product_id}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                style={{ color: '#ffffff', textDecoration: 'none' }}
+                                onMouseEnter={e => e.target.style.textDecoration = 'underline'}
+                                onMouseLeave={e => e.target.style.textDecoration = 'none'}
+                              >
+                                {row.post_title}
+                              </a>
+                              <CopyButton text={row.post_title} size={12} />
+                            </span>
                           </td>
                           <td style={{ ...cellStyle, fontFamily: 'monospace', fontSize: '12px' }}>
                             {row.sku ? (
@@ -672,8 +677,11 @@ const CatalogApp = () => {
                           )}
                         </td>
                         <td style={{ ...cellStyle, paddingLeft: row._isVariation ? '40px' : '10px' }}>
-                          <span style={{ fontWeight: row._isVariation ? '400' : '500', color: '#111827' }}>
-                            {row._displayName}
+                          <span style={{ display: 'inline-flex', alignItems: 'center' }}>
+                            <span style={{ fontWeight: row._isVariation ? '400' : '500', color: '#111827' }}>
+                              {row._displayName}
+                            </span>
+                            <CopyButton text={row._fullName || row.post_title} size={12} />
                           </span>
                         </td>
                         <td style={{ ...cellStyle, color: '#6b7280', fontFamily: 'monospace', fontSize: '12px' }}>
