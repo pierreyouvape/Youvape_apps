@@ -372,29 +372,49 @@ const purchaseOrderModel = {
     try {
       bmsResponse = await bmsApiModel.createPurchaseOrder(bmsOrderData, bmsCredentials);
     } catch (error) {
-      // Sur 500 générique, diagnostiquer les SKU réellement absents du catalogue BMS avant de
-      // remonter l'erreur brute — évite d'avoir "An error occurred" sans savoir quoi corriger.
+      // Sur 500 générique, diagnostiquer les SKU non commandables dans BMS avant de remonter
+      // l'erreur brute — évite d'avoir "An error occurred" sans savoir quoi corriger.
       //
       // IMPORTANT : ne PAS tester le rattachement au fournisseur. Un produit peut exister dans BMS
       // sans être lié au fournisseur de la commande (souvent lié à un autre fournisseur) et BMS
       // l'accepte quand même dans une commande d'achat (il résout le product_id via le SKU).
-      // Le seul vrai déclencheur du 500 est un SKU totalement inconnu du catalogue BMS.
-      // On sonde donc l'existence réelle du SKU via /advanced-stock/product/{sku}/stocks
-      // (200 = présent dans BMS, 400 "Produit ... non trouvé" = absent).
+      // Le vrai déclencheur du 500 est un SKU que BMS ne peut pas résoudre en fiche catalogue
+      // commandable. On le détecte via /advanced-stock/product/{sku}/stocks
+      // (200 = commandable, 400 "Produit ... non trouvé" = non commandable).
       if (error.message.includes('500')) {
         const checks = await Promise.all(
           bmsItems.map(item =>
             bmsApiModel.apiCall(`/advanced-stock/product/${encodeURIComponent(item.sku)}/stocks`)
             .then(() => ({ item, exists: true }))
-            // 400 "non trouvé" = absent de BMS ; toute autre erreur (réseau, auth) ne doit pas bloquer.
+            // 400 "non trouvé" = non commandable ; toute autre erreur (réseau, auth) ne doit pas bloquer.
             .catch(err => ({ item, exists: !/non trouv/i.test(err.message || '') }))
           )
         );
         const missing = checks.filter(c => !c.exists).map(c => c.item);
         if (missing.length > 0) {
-          const lines = missing.map(i => `  • "${i.name}" (SKU : ${i.sku}, réf fournisseur : ${i.supplier_sku || '—'})`).join('\n');
+          // Distinguer "supprimé dans BMS" de "jamais créé". BMS ne supprime pas réellement un
+          // produit : il renomme son SKU en "<sku>_deleted". On interroge /supplier/products pour
+          // repérer ce cas et donner le bon geste (restaurer plutôt que recréer).
+          const classified = await Promise.all(
+            missing.map(item =>
+              bmsApiModel.apiCall(`/supplier/products?sku=${encodeURIComponent(item.sku)}`)
+                .then(r => ({
+                  item,
+                  deleted: (r?.data ?? []).some(row => row.sku === `${item.sku}_deleted`)
+                }))
+                .catch(() => ({ item, deleted: false }))
+            )
+          );
+          const anyDeleted = classified.some(c => c.deleted);
+          const lines = classified.map(c => {
+            const etat = c.deleted ? 'SUPPRIMÉ dans BMS → à restaurer' : 'absent du catalogue BMS → à créer';
+            return `  • "${c.item.name}" (SKU : ${c.item.sku}, réf fournisseur : ${c.item.supplier_sku || '—'}) — ${etat}`;
+          }).join('\n');
+          const consigne = anyDeleted
+            ? 'Restaurez (ou recréez) ces produits dans BMS puis renvoyez la commande.'
+            : 'Créez ces produits dans BMS puis renvoyez la commande.';
           throw new Error(
-            `${missing.length} produit(s) introuvable(s) dans le catalogue BMS :\n${lines}\n\nCréez-les dans BMS puis renvoyez la commande.`
+            `${classified.length} produit(s) non commandable(s) dans BMS :\n${lines}\n\n${consigne}`
           );
         }
       }
