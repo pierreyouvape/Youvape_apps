@@ -32,6 +32,16 @@ const PERIOD_OPTIONS = [
   { value: 'custom', label: 'Période personnalisée' }
 ];
 
+// Formate une Date en 'YYYY-MM-DD' en heure LOCALE (pas UTC).
+// Indispensable : toISOString() renverrait la veille en soirée (heure Paris),
+// ce qui casse les filtres "temps réel" (cf. commit 968bf4e).
+const localFmt = (d) => {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+};
+
 const computeDateRange = (period, customStart, customEnd) => {
   if (period === 'custom') {
     return {
