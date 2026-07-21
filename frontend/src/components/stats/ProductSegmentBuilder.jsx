@@ -156,6 +156,15 @@ export default function ProductSegmentBuilder({
           </div>
         );
       }
+      if (f.op === 'between') {
+        return (
+          <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+            <input type="date" value={f.value} onChange={(e) => patchFilter(i, { value: e.target.value })} style={inputStyle} />
+            <span style={{ color: '#adb5bd' }}>et</span>
+            <input type="date" value={f.value2} onChange={(e) => patchFilter(i, { value2: e.target.value })} style={inputStyle} />
+          </div>
+        );
+      }
       return <input type="date" value={f.value} onChange={(e) => patchFilter(i, { value: e.target.value })} style={{ ...inputStyle }} />;
     }
 

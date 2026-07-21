@@ -36,7 +36,7 @@ const PERIOD_OPTIONS = [
   { value: '1m', label: 'Le mois dernier' },
   { value: '3m', label: 'Les 3 derniers mois' },
   { value: '6m', label: 'Les 6 derniers mois' },
-  { value: 'custom', label: 'Période personnalisée' }
+  { value: 'custom', label: '📅 Dates personnalisées (du… au…)' }
 ];
 
 // Formate une date SQL en JJ/MM/AAAA (ou '—' si jamais vendu)
@@ -380,20 +380,22 @@ const ProductsStatsTab = () => {
             </select>
           </div>
           {period === 'custom' && (
-            <>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 12px', background: '#eef4f8', border: '1px solid #cfe0ea', borderRadius: '8px' }}>
+              <label style={{ fontSize: '13px', color: '#374151', fontWeight: 600 }}>du</label>
               <input
                 type="date"
                 value={customStart}
                 onChange={(e) => { setCustomStart(e.target.value); setPagination(p => ({ ...p, pageIndex: 0 })); }}
-                style={{ padding: '10px 12px', border: '1px solid #ddd', borderRadius: '6px', fontSize: '14px' }}
+                style={{ padding: '9px 12px', border: '1px solid #ddd', borderRadius: '6px', fontSize: '14px' }}
               />
+              <label style={{ fontSize: '13px', color: '#374151', fontWeight: 600 }}>au</label>
               <input
                 type="date"
                 value={customEnd}
                 onChange={(e) => { setCustomEnd(e.target.value); setPagination(p => ({ ...p, pageIndex: 0 })); }}
-                style={{ padding: '10px 12px', border: '1px solid #ddd', borderRadius: '6px', fontSize: '14px' }}
+                style={{ padding: '9px 12px', border: '1px solid #ddd', borderRadius: '6px', fontSize: '14px' }}
               />
-            </>
+            </div>
           )}
         </div>
         <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>

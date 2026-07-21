@@ -45,6 +45,7 @@ function buildStatsFilterClause(filters, matchType, P) {
       else if (op === 'within_days') { const n = Number(f.value); if (Number.isNaN(n)) continue; conds.push(`${col} >= CURRENT_DATE - ${P(n)}::int`); }
       else if (op === 'before') { if (!isYmd(f.value)) continue; conds.push(`${col} < ${P(f.value)}`); }
       else if (op === 'after') { if (!isYmd(f.value)) continue; conds.push(`${col} > ${P(f.value)}`); }
+      else if (op === 'between') { if (!isYmd(f.value) || !isYmd(f.value2)) continue; conds.push(`(${col} >= ${P(f.value)} AND ${col} < (${P(f.value2)}::date + 1))`); }
       else if (op === 'is_set') conds.push(`${col} IS NOT NULL`);
       else if (op === 'not_set') conds.push(`${col} IS NULL`);
     } else if (type === 'text') {
