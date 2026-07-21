@@ -57,7 +57,11 @@ const needsCalculationModel = {
         COALESCE(
           CASE WHEN p.product_type = 'variation' THEN p_parent.sub_brand ELSE p.sub_brand END,
           NULL
-        ) as sub_brand
+        ) as sub_brand,
+        COALESCE(
+          CASE WHEN p.product_type = 'variation' THEN p_parent.sub_category ELSE p.sub_category END,
+          NULL
+        ) as sub_category
       FROM products p
       LEFT JOIN product_alerts pa ON p.id = pa.product_id
       LEFT JOIN products p_parent ON p.wp_parent_id = p_parent.wp_product_id
@@ -217,6 +221,7 @@ const needsCalculationModel = {
       parent_sku: p.parent_sku || null,
       brand: p.brand || null,
       sub_brand: p.sub_brand || null,
+      sub_category: p.sub_category || null,
       weight: p.weight ? parseFloat(p.weight) : null
     }));
   },

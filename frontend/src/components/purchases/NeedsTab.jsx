@@ -563,9 +563,31 @@ const NeedsTab = ({ token, onCompactChange }) => {
     return [...groups.values(), ...standalone];
   }, [filteredProducts]);
 
+  // Clé de regroupement « famille » : marque → sous-catégorie → nom du produit.
+  // Permet de coller les déclinaisons d'une même fiche fournisseur (ex. tous les
+  // « Pack 2 Cartouches … Pod Kiwi ») à la suite. Les valeurs vides sont classées
+  // en fin de liste (￿).
+  const getFamilyKey = (group) => {
+    const first = group.children[0] || {};
+    const brand = (first.brand || '').trim();
+    const subCat = (first.sub_category || '').trim();
+    const title = (group.parent_title || first.post_title || '').trim();
+    return [
+      brand ? brand.toLowerCase() : '￿',
+      subCat ? subCat.toLowerCase() : '￿',
+      title.toLowerCase(),
+    ].join(' ');
+  };
+
   // Tri par groupe : position du groupe basee sur max (desc) ou min (asc) des enfants
   const sortedGroups = useMemo(() => {
     if (!sortColumn) return groupedProducts;
+    if (sortColumn === 'family') {
+      return [...groupedProducts].sort((a, b) => {
+        const cmp = getFamilyKey(a).localeCompare(getFamilyKey(b), 'fr');
+        return sortDirection === 'asc' ? cmp : -cmp;
+      });
+    }
     return [...groupedProducts].sort((a, b) => {
       const getGroupVal = (group) => {
         const vals = group.children.map(c => c[sortColumn] ?? 0);
@@ -604,6 +626,10 @@ const NeedsTab = ({ token, onCompactChange }) => {
         });
         // Trier les enfants dans le groupe aussi
         const sortedChildren = [...group.children].sort((a, b) => {
+          if (sortColumn === 'family') {
+            // Déclinaisons d'une même fiche : tri par nom (ex. 10mg avant 20mg)
+            return (a.post_title || '').localeCompare(b.post_title || '', 'fr');
+          }
           const aVal = a[sortColumn] ?? 0;
           const bVal = b[sortColumn] ?? 0;
           if (typeof aVal === 'string') {
@@ -747,7 +773,8 @@ const NeedsTab = ({ token, onCompactChange }) => {
       setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
     } else {
       setSortColumn(column);
-      setSortDirection('desc');
+      // Le tri par famille (nom) se lit naturellement de A→Z
+      setSortDirection(column === 'family' ? 'asc' : 'desc');
     }
   };
 
@@ -994,7 +1021,7 @@ const NeedsTab = ({ token, onCompactChange }) => {
               <thead>
                 <tr>
                   <th style={{ width: '40px' }}></th>
-                  <th>Produit</th>
+                  <SortableHeader column="family" label="Produit" />
                   <th style={{ width: '30px' }}></th>
                   <th>SKU</th>
                   {isVisible('weight') && <th className="text-right">Poids</th>}
