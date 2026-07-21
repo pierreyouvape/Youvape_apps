@@ -448,139 +448,177 @@ class ProductModel {
    * Produits parents uniquement (simple + variable) avec stats agrégées
    * Exclut les commandes failed et cancelled
    */
-  async getAllForStats(limit = 50, offset = 0, searchTerm = '', sortBy = 'qty_sold', sortOrder = 'DESC', dateFrom = null, dateTo = null) {
-    let whereClause = "WHERE p.product_type IN ('simple', 'variable', 'woosb') AND p.post_status = 'publish'";
-    let params = [];
-    let paramIndex = 1;
+  async getAllForStats(opts = {}) {
+    const {
+      limit = 50, offset = 0, searchTerm = '', sortBy = 'qty_sold', sortOrder = 'DESC',
+      dateFrom = null, dateTo = null, country = null,
+      stockMin = null, stockMax = null, soldMin = null, soldMax = null,
+      marginMin = null, marginMax = null, notSoldSinceDays = null, segment = null,
+    } = opts;
 
+    const params = [];
+    const P = (v) => { params.push(v); return '$' + params.length; };
+
+    // Nombre de jours de la période -> pour la vitesse (ventes/jour) et la couverture stock.
+    // periodDays est un entier calculé côté serveur (jamais une entrée brute) -> inline SQL sûr.
+    let periodDays = 30;
+    if (dateFrom && dateTo) {
+      const d = Math.round((new Date(dateTo) - new Date(dateFrom)) / 86400000);
+      periodDays = d > 0 ? d : 1;
+    }
+
+    // Filtre période (+ pays) appliqué aux ventes de la période
+    const periodConds = [];
+    if (dateFrom) periodConds.push(`ib.post_date >= ${P(dateFrom)}`);
+    if (dateTo) periodConds.push(`ib.post_date < ${P(dateTo)}`);
+    if (country) periodConds.push(`ib.country = ${P(country)}`);
+    const periodWhere = periodConds.length ? 'WHERE ' + periodConds.join(' AND ') : '';
+
+    // Filtre pays appliqué au calcul 1ère/dernière vente (tout l'historique)
+    const lifeWhere = country ? `WHERE ib.country = ${P(country)}` : '';
+
+    // Recherche nom / SKU
+    let searchClause = '';
     if (searchTerm) {
-      const { clause, params: searchParams, nextIndex } = buildSearchCondition(searchTerm, ['p.post_title', 'p.sku'], paramIndex);
-      whereClause += ` AND ${clause}`;
+      const { clause, params: searchParams } = buildSearchCondition(searchTerm, ['p.post_title', 'p.sku'], params.length + 1);
+      searchClause = ` AND ${clause}`;
       params.push(...searchParams);
-      paramIndex = nextIndex;
     }
 
-    // Filtre de dates pour les commandes
-    let dateFilter = '';
-    if (dateFrom) {
-      dateFilter += ` AND o.post_date >= $${paramIndex}`;
-      params.push(dateFrom);
-      paramIndex++;
-    }
-    if (dateTo) {
-      dateFilter += ` AND o.post_date < $${paramIndex}`;
-      params.push(dateTo);
-      paramIndex++;
-    }
+    // Filtres sur les métriques agrégées (segments + filtres manuels)
+    const metricConds = [];
+    if (stockMin != null) metricConds.push(`stock >= ${P(stockMin)}`);
+    if (stockMax != null) metricConds.push(`stock <= ${P(stockMax)}`);
+    if (soldMin != null) metricConds.push(`qty_sold >= ${P(soldMin)}`);
+    if (soldMax != null) metricConds.push(`qty_sold <= ${P(soldMax)}`);
+    if (marginMin != null) metricConds.push(`margin_percent >= ${P(marginMin)}`);
+    if (marginMax != null) metricConds.push(`margin_percent <= ${P(marginMax)}`);
+    if (notSoldSinceDays != null) metricConds.push(`(last_sold IS NULL OR last_sold < CURRENT_DATE - ${P(notSoldSinceDays)}::int)`);
+    // Segments prédéfinis (seuils par défaut, ajustables)
+    if (segment === 'a_solder') metricConds.push(`coverage_days IS NOT NULL AND coverage_days >= 90 AND velocity > 0 AND margin_percent >= 15`);
+    else if (segment === 'stock_mort') metricConds.push(`stock > 0 AND (last_sold IS NULL OR last_sold < CURRENT_DATE - 60)`);
+    else if (segment === 'best_sellers') metricConds.push(`velocity >= 1`);
+    const metricWhere = metricConds.length ? 'WHERE ' + metricConds.join(' AND ') : '';
 
     // Colonnes triables
     const sortColumns = {
-      'name': 'p.post_title',
-      'sku': 'p.sku',
-      'stock': 'stock',
-      'qty_sold': 'qty_sold',
-      'ca_ttc': 'ca_ttc',
-      'ca_ht': 'ca_ht',
-      'cost_ht': 'cost_ht',
-      'margin_ht': 'margin_ht',
-      'margin_percent': 'margin_percent'
+      'name': 'post_title', 'sku': 'sku', 'stock': 'stock',
+      'qty_sold': 'qty_sold', 'ca_ttc': 'ca_ttc', 'ca_ht': 'ca_ht',
+      'cost_ht': 'cost_ht', 'margin_ht': 'margin_ht', 'margin_percent': 'margin_percent',
+      'first_sold': 'first_sold', 'last_sold': 'last_sold',
+      'velocity': 'velocity', 'coverage_days': 'coverage_days',
     };
     const orderColumn = sortColumns[sortBy] || 'qty_sold';
     const order = sortOrder.toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
 
-    params.push(limit, offset);
-    const limitParam = paramIndex;
-    const offsetParam = paramIndex + 1;
+    const limitP = P(limit);
+    const offsetP = P(offset);
+
+    const stockExpr = `CASE WHEN p.product_type = 'variable' THEN COALESCE(vs.s, 0) ELSE COALESCE(p.stock::int, 0) END`;
 
     const query = `
-      WITH product_family AS (
-        -- Créer une relation produit parent -> tous ses IDs (lui-même + variations)
-        SELECT
-          p.wp_product_id as parent_id,
-          COALESCE(v.wp_product_id, p.wp_product_id) as product_id
-        FROM products p
-        LEFT JOIN products v ON v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation'
-        WHERE p.product_type IN ('simple', 'variable', 'woosb') AND p.post_status = 'publish'
+      WITH prod_parent AS (
+        -- Résout chaque produit vers son parent (la variation pointe vers son parent)
+        SELECT wp_product_id AS pid,
+               CASE WHEN product_type = 'variation' THEN wp_parent_id ELSE wp_product_id END AS parent_id
+        FROM products
+      ),
+      var_stock AS (
+        SELECT wp_parent_id, SUM(stock::int) AS s
+        FROM products WHERE product_type = 'variation' GROUP BY wp_parent_id
       ),
       bundle_sub_items AS (
-        -- Identifier les lignes de commande qui sont des sous-produits de bundles
-        -- Ce sont les produits vendus à 0€ qui apparaissent dans le woosb_ids d'un bundle dans la même commande
-        SELECT DISTINCT
-          oi.id as order_item_id
+        -- Sous-produits de bundles woosb vendus à 0€ (à exclure du CA, garder la qté)
+        SELECT DISTINCT oi.id AS order_item_id
         FROM order_items oi
         INNER JOIN order_items oi_bundle ON oi.wp_order_id = oi_bundle.wp_order_id
         INNER JOIN products p_bundle ON p_bundle.wp_product_id = oi_bundle.product_id
-        WHERE
-          p_bundle.product_type = 'woosb'
-          AND p_bundle.woosb_ids IS NOT NULL
-          AND oi.line_total = 0
+        WHERE p_bundle.product_type = 'woosb' AND p_bundle.woosb_ids IS NOT NULL AND oi.line_total = 0
           AND oi.product_id::text = ANY(
-            SELECT jsonb_array_elements_text(
-              jsonb_path_query_array(p_bundle.woosb_ids, '$[*].id')
-            )
-          )
+            SELECT jsonb_array_elements_text(jsonb_path_query_array(p_bundle.woosb_ids, '$[*].id')))
       ),
-      product_stats AS (
-        -- Agréger les stats par produit parent
-        -- Quantité : TOUT compter (bundle + ventes individuelles)
-        -- Financier : UNIQUEMENT les ventes réelles (exclure bundle sub-items)
-        -- WooCommerce: line_total = HT, line_tax = TVA, donc TTC = line_total + line_tax
+      item_base AS (
+        -- Chaque ligne de commande rattachée à son produit PARENT (via variation_id sinon product_id).
+        -- Le coût reste joint sur product_id pour conserver les marges historiques.
+        SELECT oi.id AS order_item_id, pp.parent_id, oi.qty,
+               oi.line_total, oi.line_tax,
+               oi.qty * COALESCE(pcost.computed_cost, pcost.wc_cog_cost, 0) AS cost_line,
+               o.post_date,
+               COALESCE(NULLIF(o.shipping_country, ''), o.billing_country) AS country,
+               (oi.id IN (SELECT order_item_id FROM bundle_sub_items)) AS is_bundle_sub
+        FROM order_items oi
+        JOIN prod_parent pp ON pp.pid = COALESCE(NULLIF(oi.variation_id, 0), oi.product_id)
+        JOIN orders o ON o.wp_order_id = oi.wp_order_id AND o.post_status NOT IN ('wc-failed', 'wc-cancelled')
+        LEFT JOIN products pcost ON pcost.wp_product_id = oi.product_id
+      ),
+      period_stats AS (
+        SELECT ib.parent_id,
+          SUM(ib.qty)::int AS qty_sold,
+          SUM(CASE WHEN ib.is_bundle_sub THEN 0 ELSE COALESCE(ib.line_total, 0) + COALESCE(ib.line_tax, 0) END) AS ca_ttc,
+          SUM(CASE WHEN ib.is_bundle_sub THEN 0 ELSE COALESCE(ib.line_total, 0) END) AS ca_ht,
+          SUM(CASE WHEN ib.is_bundle_sub THEN 0 ELSE ib.cost_line END) AS cost_ht
+        FROM item_base ib
+        ${periodWhere}
+        GROUP BY ib.parent_id
+      ),
+      lifetime_stats AS (
+        SELECT ib.parent_id, MIN(ib.post_date) AS first_sold, MAX(ib.post_date) AS last_sold
+        FROM item_base ib
+        ${lifeWhere}
+        GROUP BY ib.parent_id
+      ),
+      enriched AS (
         SELECT
-          pf.parent_id,
-          SUM(oi.qty)::int as qty_sold,
-          SUM(CASE
-            WHEN oi.id IN (SELECT order_item_id FROM bundle_sub_items) THEN 0
-            ELSE COALESCE(oi.line_total, 0) + COALESCE(oi.line_tax, 0)
-          END) as ca_ttc,
-          SUM(CASE
-            WHEN oi.id IN (SELECT order_item_id FROM bundle_sub_items) THEN 0
-            ELSE COALESCE(oi.line_total, 0)
-          END) as ca_ht,
-          SUM(CASE
-            WHEN oi.id IN (SELECT order_item_id FROM bundle_sub_items) THEN 0
-            ELSE oi.qty * COALESCE(p_cost.computed_cost, p_cost.wc_cog_cost, 0)
-          END) as cost_ht
-        FROM product_family pf
-        INNER JOIN order_items oi ON (oi.product_id = pf.product_id OR oi.variation_id = pf.product_id)
-        INNER JOIN orders o ON o.wp_order_id = oi.wp_order_id
-          AND o.post_status NOT IN ('wc-failed', 'wc-cancelled')
-          ${dateFilter}
-        LEFT JOIN products p_cost ON p_cost.wp_product_id = oi.product_id
-        GROUP BY pf.parent_id
+          p.wp_product_id, p.post_title, p.sku, p.product_type, p.image_url, p.stock_status,
+          ${stockExpr} AS stock,
+          COALESCE(ps.qty_sold, 0) AS qty_sold,
+          COALESCE(ps.ca_ttc, 0) AS ca_ttc,
+          COALESCE(ps.ca_ht, 0) AS ca_ht,
+          COALESCE(ps.cost_ht, 0) AS cost_ht,
+          COALESCE(ps.ca_ht, 0) - COALESCE(ps.cost_ht, 0) AS margin_ht,
+          CASE WHEN COALESCE(ps.ca_ht, 0) > 0
+            THEN ((COALESCE(ps.ca_ht, 0) - COALESCE(ps.cost_ht, 0)) / COALESCE(ps.ca_ht, 0) * 100)
+            ELSE 0 END AS margin_percent,
+          ls.first_sold, ls.last_sold,
+          (SELECT COUNT(*) FROM products WHERE wp_parent_id = p.wp_product_id) AS variations_count
+        FROM products p
+        LEFT JOIN period_stats ps ON ps.parent_id = p.wp_product_id
+        LEFT JOIN lifetime_stats ls ON ls.parent_id = p.wp_product_id
+        LEFT JOIN var_stock vs ON vs.wp_parent_id = p.wp_product_id
+        WHERE p.product_type IN ('simple', 'variable', 'woosb') AND p.post_status = 'publish'${searchClause}
+      ),
+      final AS (
+        SELECT *,
+          ROUND(qty_sold::numeric / ${periodDays}, 2) AS velocity,
+          CASE WHEN qty_sold > 0 THEN ROUND(stock::numeric * ${periodDays} / qty_sold, 0) ELSE NULL END AS coverage_days
+        FROM enriched
       )
-      SELECT
-        p.wp_product_id,
-        p.post_title,
-        p.sku,
-        p.product_type,
-        p.image_url,
-        CASE
-          WHEN p.product_type = 'variable' THEN (
-            SELECT COALESCE(SUM(v.stock::int), 0)
-            FROM products v
-            WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation'
-          )
-          ELSE COALESCE(p.stock::int, 0)
-        END as stock,
-        p.stock_status,
-        COALESCE(ps.qty_sold, 0) as qty_sold,
-        COALESCE(ps.ca_ttc, 0) as ca_ttc,
-        COALESCE(ps.ca_ht, 0) as ca_ht,
-        COALESCE(ps.cost_ht, 0) as cost_ht,
-        COALESCE(ps.ca_ht, 0) - COALESCE(ps.cost_ht, 0) as margin_ht,
-        CASE WHEN COALESCE(ps.ca_ht, 0) > 0
-          THEN ((COALESCE(ps.ca_ht, 0) - COALESCE(ps.cost_ht, 0)) / COALESCE(ps.ca_ht, 0) * 100)
-          ELSE 0
-        END as margin_percent,
-        (SELECT COUNT(*) FROM products WHERE wp_parent_id = p.wp_product_id) as variations_count
-      FROM products p
-      LEFT JOIN product_stats ps ON ps.parent_id = p.wp_product_id
-      ${whereClause}
+      SELECT *, COUNT(*) OVER() AS total_count
+      FROM final
+      ${metricWhere}
       ORDER BY ${orderColumn} ${order} NULLS LAST
-      LIMIT $${limitParam} OFFSET $${offsetParam}
+      LIMIT ${limitP} OFFSET ${offsetP}
     `;
 
     const result = await pool.query(query, params);
+    return result.rows;
+  }
+
+  /**
+   * Liste des pays de destination avec nb de commandes (pour le filtre pays),
+   * triée par volume décroissant, sur les 365 derniers jours.
+   */
+  async getStatsCountries() {
+    const query = `
+      SELECT COALESCE(NULLIF(shipping_country, ''), billing_country) AS country, COUNT(*)::int AS orders
+      FROM orders
+      WHERE post_status NOT IN ('wc-failed', 'wc-cancelled')
+        AND post_date >= CURRENT_DATE - 365
+        AND COALESCE(NULLIF(shipping_country, ''), billing_country) IS NOT NULL
+      GROUP BY 1
+      ORDER BY orders DESC
+    `;
+    const result = await pool.query(query);
     return result.rows;
   }
 
@@ -605,9 +643,10 @@ class ProductModel {
   /**
    * Récupère les variations d'un produit avec leurs stats
    */
-  async getVariationsForStats(wpParentId, dateFrom = null, dateTo = null) {
+  async getVariationsForStats(wpParentId, dateFrom = null, dateTo = null, country = null) {
     let params = [wpParentId];
     let dateFilter = '';
+    let countryFilter = '';
     let paramIndex = 2;
 
     if (dateFrom) {
@@ -619,6 +658,18 @@ class ProductModel {
       dateFilter += ` AND o.post_date < $${paramIndex}`;
       params.push(dateTo);
       paramIndex++;
+    }
+    if (country) {
+      countryFilter = ` AND COALESCE(NULLIF(o.shipping_country, ''), o.billing_country) = $${paramIndex}`;
+      params.push(country);
+      paramIndex++;
+    }
+
+    // periodDays pour vitesse / couverture (entier calculé côté serveur)
+    let periodDays = 30;
+    if (dateFrom && dateTo) {
+      const d = Math.round((new Date(dateTo) - new Date(dateFrom)) / 86400000);
+      periodDays = d > 0 ? d : 1;
     }
 
     const query = `
@@ -654,7 +705,13 @@ class ProductModel {
         CASE WHEN COALESCE(stats.ca_ht, 0) > 0
           THEN ((COALESCE(stats.ca_ht, 0) - COALESCE(stats.cost_ht, 0)) / COALESCE(stats.ca_ht, 0) * 100)
           ELSE 0
-        END as margin_percent
+        END as margin_percent,
+        life.first_sold,
+        life.last_sold,
+        ROUND(COALESCE(stats.qty_sold, 0)::numeric / ${periodDays}, 2) as velocity,
+        CASE WHEN COALESCE(stats.qty_sold, 0) > 0
+          THEN ROUND(COALESCE(p.stock::int, 0)::numeric * ${periodDays} / stats.qty_sold, 0)
+          ELSE NULL END as coverage_days
       FROM products p
       LEFT JOIN LATERAL (
         -- WooCommerce: line_total = HT, line_tax = TVA, donc TTC = line_total + line_tax
@@ -677,8 +734,17 @@ class ProductModel {
         LEFT JOIN products p_cost2 ON p_cost2.wp_product_id = oi.product_id
         WHERE (oi.product_id = p.wp_product_id OR oi.variation_id = p.wp_product_id)
         AND o.post_status NOT IN ('wc-failed', 'wc-cancelled')
-        ${dateFilter}
+        ${dateFilter}${countryFilter}
       ) stats ON true
+      LEFT JOIN LATERAL (
+        -- 1ère / dernière vente (tout l'historique, filtré pays si demandé)
+        SELECT MIN(o.post_date) as first_sold, MAX(o.post_date) as last_sold
+        FROM order_items oi
+        INNER JOIN orders o ON o.wp_order_id = oi.wp_order_id
+        WHERE (oi.product_id = p.wp_product_id OR oi.variation_id = p.wp_product_id)
+        AND o.post_status NOT IN ('wc-failed', 'wc-cancelled')
+        ${countryFilter}
+      ) life ON true
       WHERE p.wp_parent_id = $1 AND p.product_type = 'variation'
       ORDER BY qty_sold DESC NULLS LAST
     `;

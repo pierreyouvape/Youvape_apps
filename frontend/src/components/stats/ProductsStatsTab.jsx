@@ -14,6 +14,10 @@ const PRODUCTS_COLUMNS = [
   { key: 'sku',           label: 'SKU' },
   { key: 'stock',         label: 'Stock' },
   { key: 'qty_sold',      label: 'Vendu' },
+  { key: 'velocity',      label: 'Ventes/j' },
+  { key: 'coverage_days', label: 'Couv. (j)' },
+  { key: 'last_sold',     label: 'Dern. vente' },
+  { key: 'first_sold',    label: '1ère vente' },
   { key: 'ca_ttc',        label: 'CA TTC' },
   { key: 'ca_ht',         label: 'CA HT' },
   { key: 'cost_ht',       label: 'Cout HT' },
@@ -26,11 +30,28 @@ const PERIOD_OPTIONS = [
   { value: '15d', label: '15 derniers jours' },
   { value: '30d', label: '30 derniers jours' },
   { value: '60d', label: '60 derniers jours' },
+  { value: '90d', label: '90 derniers jours' },
+  { value: '180d', label: '180 derniers jours' },
   { value: '1m', label: 'Le mois dernier' },
   { value: '3m', label: 'Les 3 derniers mois' },
   { value: '6m', label: 'Les 6 derniers mois' },
   { value: 'custom', label: 'Période personnalisée' }
 ];
+
+// Segments prédéfinis pour la décision solde
+const SEGMENTS = [
+  { key: 'a_solder',     label: '🎯 À solder',    hint: 'Surstock qui tourne lentement : +90 j de stock au rythme actuel, encore un peu de ventes, marge ≥ 15 %.' },
+  { key: 'stock_mort',   label: '💀 Stock mort',  hint: 'Stock > 0 mais invendu depuis plus de 60 jours : à liquider en priorité.' },
+  { key: 'best_sellers', label: '⭐ Best-sellers', hint: 'Vitesse ≥ 1 vente/jour : à EXCLURE des soldes, tu vends déjà au prix fort.' },
+];
+
+// Formate une date SQL en JJ/MM/AAAA (ou '—' si jamais vendu)
+const formatDateFr = (d) => {
+  if (!d) return '—';
+  const dt = new Date(d);
+  if (isNaN(dt)) return '—';
+  return `${String(dt.getDate()).padStart(2, '0')}/${String(dt.getMonth() + 1).padStart(2, '0')}/${dt.getFullYear()}`;
+};
 
 // Formate une Date en 'YYYY-MM-DD' en heure LOCALE (pas UTC).
 // Indispensable : toISOString() renverrait la veille en soirée (heure Paris),
@@ -98,22 +119,52 @@ const ProductsStatsTab = () => {
   const [customStart, setCustomStart] = useState('');
   const [customEnd, setCustomEnd] = useState('');
 
+  // Pays + segments + filtres avancés
+  const [country, setCountry] = useState('');
+  const [countries, setCountries] = useState([]);
+  const [segment, setSegment] = useState('');
+  const [showFilters, setShowFilters] = useState(false);
+  const [filters, setFilters] = useState({
+    stockMin: '', stockMax: '', soldMin: '', soldMax: '',
+    marginMin: '', marginMax: '', notSoldSinceDays: '',
+  });
+
   const dateRange = useMemo(() => computeDateRange(period, customStart, customEnd), [period, customStart, customEnd]);
+
+  // Nombre de filtres manuels actifs (pour le badge du bouton)
+  const activeFilterCount = useMemo(
+    () => Object.values(filters).filter(v => v !== '' && v != null).length,
+    [filters]
+  );
+
+  // Paramètres partagés listing + export
+  const buildParams = useCallback((extra = {}) => {
+    const clean = (o) => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== '' && v != null));
+    return clean({
+      search: searchTerm,
+      sortBy, sortOrder,
+      dateFrom: dateRange.dateFrom,
+      dateTo: dateRange.dateTo,
+      country,
+      segment,
+      ...filters,
+      ...extra,
+    });
+  }, [searchTerm, sortBy, sortOrder, dateRange.dateFrom, dateRange.dateTo, country, segment, filters]);
+
+  // Charge la liste des pays une fois
+  useEffect(() => {
+    axios.get(`${API_BASE_URL}/products/stats-countries`)
+      .then(res => { if (res.data.success) setCountries(res.data.data); })
+      .catch(err => console.error('Error fetching countries:', err));
+  }, []);
 
   const fetchProducts = useCallback(async () => {
     setLoading(true);
     try {
       const offset = pagination.pageIndex * pagination.pageSize;
       const response = await axios.get(`${API_BASE_URL}/products/stats-list`, {
-        params: {
-          limit: pagination.pageSize,
-          offset: offset,
-          search: searchTerm,
-          sortBy: sortBy,
-          sortOrder: sortOrder,
-          dateFrom: dateRange.dateFrom,
-          dateTo: dateRange.dateTo,
-        },
+        params: buildParams({ limit: pagination.pageSize, offset }),
       });
 
       if (response.data.success) {
@@ -125,17 +176,17 @@ const ProductsStatsTab = () => {
     } finally {
       setLoading(false);
     }
-  }, [pagination.pageIndex, pagination.pageSize, searchTerm, sortBy, sortOrder, dateRange.dateFrom, dateRange.dateTo]);
+  }, [pagination.pageIndex, pagination.pageSize, buildParams]);
 
   useEffect(() => {
     fetchProducts();
   }, [fetchProducts]);
 
-  // Reset variations cache quand la période change
+  // Reset variations cache quand la période / le pays change
   useEffect(() => {
     setVariations({});
     setExpandedProductId(null);
-  }, [dateRange.dateFrom, dateRange.dateTo]);
+  }, [dateRange.dateFrom, dateRange.dateTo, country]);
 
   const fetchVariations = async (productId) => {
     if (variations[productId]) return;
@@ -145,6 +196,7 @@ const ProductsStatsTab = () => {
         params: {
           dateFrom: dateRange.dateFrom,
           dateTo: dateRange.dateTo,
+          country: country || undefined,
         }
       });
       if (response.data.success) {
@@ -198,45 +250,43 @@ const ProductsStatsTab = () => {
     }
   };
 
-  const handleExport = async () => {
+  const handleCountryChange = (value) => {
+    setCountry(value);
+    setPagination((prev) => ({ ...prev, pageIndex: 0 }));
+  };
+
+  const handleSegmentClick = (key) => {
+    setSegment((prev) => (prev === key ? '' : key));
+    setPagination((prev) => ({ ...prev, pageIndex: 0 }));
+  };
+
+  const handleFilterChange = (key, value) => {
+    setFilters((prev) => ({ ...prev, [key]: value }));
+    setPagination((prev) => ({ ...prev, pageIndex: 0 }));
+  };
+
+  const resetFilters = () => {
+    setFilters({ stockMin: '', stockMax: '', soldMin: '', soldMax: '', marginMin: '', marginMax: '', notSoldSinceDays: '' });
+    setSegment('');
+    setPagination((prev) => ({ ...prev, pageIndex: 0 }));
+  };
+
+  // Export serveur : télécharge l'ensemble filtré (toutes les lignes), pas juste la page
+  const handleExport = async (format) => {
     try {
-      const response = await axios.get(`${API_BASE_URL}/products/stats-list`, {
-        params: {
-          limit: 10000,
-          search: searchTerm,
-          sortBy,
-          sortOrder,
-          dateFrom: dateRange.dateFrom,
-          dateTo: dateRange.dateTo,
-        }
+      const response = await axios.get(`${API_BASE_URL}/products/stats-list/export`, {
+        params: buildParams({ format }),
+        responseType: 'blob',
       });
-
-      if (response.data.success) {
-        const products = response.data.data;
-        const csv = [
-          ['Nom', 'SKU', 'Stock', 'Vendu', 'CA TTC', 'CA HT', 'Coût HT', 'Marge HT', '% Marge'],
-          ...products.map(p => [
-            p.post_title || '',
-            p.sku || '',
-            p.stock || 0,
-            p.qty_sold || 0,
-            parseFloat(p.ca_ttc || 0).toFixed(2),
-            parseFloat(p.ca_ht || 0).toFixed(2),
-            parseFloat(p.cost_ht || 0).toFixed(2),
-            parseFloat(p.margin_ht || 0).toFixed(2),
-            parseFloat(p.margin_percent || 0).toFixed(1)
-          ])
-        ].map(row => row.join(';')).join('\n');
-
-        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-        const downloadUrl = window.URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = downloadUrl;
-        link.download = `produits_stats_${new Date().toISOString().split('T')[0]}.csv`;
-        document.body.appendChild(link);
-        link.click();
-        link.remove();
-      }
+      const blob = new Blob([response.data]);
+      const downloadUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = downloadUrl;
+      link.download = `produits_stats_${new Date().toISOString().split('T')[0]}.${format === 'xlsx' ? 'xls' : 'csv'}`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(downloadUrl);
     } catch (error) {
       console.error('Error exporting:', error);
       alert('Erreur lors de l\'export des données');
@@ -261,6 +311,15 @@ const ProductsStatsTab = () => {
 
   const formatPrice = (price) => formatPriceEur(price);
   const formatPercent = (percent) => parseFloat(percent || 0).toFixed(1) + '%';
+  const formatVelocity = (v) => (v == null ? '—' : parseFloat(v).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+  // Couverture stock : peu de jours = tourne vite (vert), beaucoup = surstock (rouge → candidat solde)
+  const coverageColor = (days) => {
+    if (days == null) return { bg: '#e9ecef', fg: '#6c757d' };      // jamais vendu sur la période
+    if (days > 180) return { bg: '#f8d7da', fg: '#721c24' };        // gros surstock
+    if (days > 90)  return { bg: '#fff3cd', fg: '#856404' };        // surstock
+    return { bg: '#d1e7dd', fg: '#0f5132' };                         // sain / tourne bien
+  };
+  const formatCoverage = (days) => (days == null ? '∞' : formatInt(days) + ' j');
 
   const getSortIcon = (column) => {
     if (sortBy !== column) return '';
@@ -312,6 +371,19 @@ const ProductsStatsTab = () => {
               ))}
             </select>
           </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <label style={{ fontSize: '13px', color: '#6c757d', whiteSpace: 'nowrap' }}>Pays :</label>
+            <select
+              value={country}
+              onChange={(e) => handleCountryChange(e.target.value)}
+              style={{ padding: '10px 12px', border: '1px solid #ddd', borderRadius: '6px', fontSize: '14px' }}
+            >
+              <option value="">Tous les pays</option>
+              {countries.map(c => (
+                <option key={c.country} value={c.country}>{c.country} ({formatInt(c.orders)})</option>
+              ))}
+            </select>
+          </div>
           {period === 'custom' && (
             <>
               <input
@@ -331,18 +403,26 @@ const ProductsStatsTab = () => {
         </div>
         <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
           <button
-            onClick={handleExport}
+            onClick={() => setShowFilters(v => !v)}
             style={{
-              padding: '6px 12px',
-              backgroundColor: '#6c757d',
-              color: 'white',
-              border: 'none',
-              borderRadius: '4px',
-              fontSize: '12px',
-              cursor: 'pointer'
+              padding: '8px 14px', backgroundColor: showFilters ? '#135E84' : '#fff',
+              color: showFilters ? '#fff' : '#374151', border: '1px solid #d1d5db',
+              borderRadius: '6px', fontSize: '13px', cursor: 'pointer'
             }}
           >
+            ⚗ Filtres{activeFilterCount > 0 ? ` (${activeFilterCount})` : ''}
+          </button>
+          <button
+            onClick={() => handleExport('csv')}
+            style={{ padding: '6px 12px', backgroundColor: '#6c757d', color: 'white', border: 'none', borderRadius: '4px', fontSize: '12px', cursor: 'pointer' }}
+          >
             CSV
+          </button>
+          <button
+            onClick={() => handleExport('xlsx')}
+            style={{ padding: '6px 12px', backgroundColor: '#1D6F42', color: 'white', border: 'none', borderRadius: '4px', fontSize: '12px', cursor: 'pointer' }}
+          >
+            Excel
           </button>
           <ColumnPanel
             columns={PRODUCTS_COLUMNS}
@@ -356,10 +436,70 @@ const ProductsStatsTab = () => {
         </div>
       </div>
 
+      {/* Segments prédéfinis (aide à la décision solde) */}
+      <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap', marginBottom: '18px' }}>
+        <span style={{ fontSize: '13px', color: '#6c757d', fontWeight: 600 }}>Segments :</span>
+        {SEGMENTS.map(s => (
+          <button
+            key={s.key}
+            onClick={() => handleSegmentClick(s.key)}
+            title={s.hint}
+            style={{
+              padding: '7px 14px', borderRadius: '20px', fontSize: '13px', cursor: 'pointer',
+              border: segment === s.key ? '1px solid #135E84' : '1px solid #d1d5db',
+              backgroundColor: segment === s.key ? '#135E84' : '#fff',
+              color: segment === s.key ? '#fff' : '#374151', fontWeight: segment === s.key ? 700 : 500,
+            }}
+          >
+            {s.label}
+          </button>
+        ))}
+        {(segment || activeFilterCount > 0) && (
+          <button
+            onClick={resetFilters}
+            style={{ padding: '7px 12px', borderRadius: '20px', fontSize: '12px', cursor: 'pointer', border: '1px solid #e0a0a0', backgroundColor: '#fff', color: '#b02a37' }}
+          >
+            ✕ Réinitialiser
+          </button>
+        )}
+      </div>
+
+      {/* Panneau de filtres manuels */}
+      {showFilters && (
+        <div style={{ backgroundColor: 'white', border: '1px solid #e5e7eb', borderRadius: '8px', padding: '16px 18px', marginBottom: '20px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
+          <div style={{ display: 'flex', gap: '22px', flexWrap: 'wrap', alignItems: 'flex-end' }}>
+            {[
+              { label: 'Stock', min: 'stockMin', max: 'stockMax' },
+              { label: 'Vendu (période)', min: 'soldMin', max: 'soldMax' },
+              { label: '% Marge', min: 'marginMin', max: 'marginMax' },
+            ].map(g => (
+              <div key={g.label}>
+                <div style={{ fontSize: '12px', color: '#6c757d', marginBottom: '6px', fontWeight: 600 }}>{g.label}</div>
+                <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                  <input type="number" placeholder="min" value={filters[g.min]}
+                    onChange={(e) => handleFilterChange(g.min, e.target.value)}
+                    style={{ width: '80px', padding: '8px 10px', border: '1px solid #ddd', borderRadius: '6px', fontSize: '13px' }} />
+                  <span style={{ color: '#adb5bd' }}>–</span>
+                  <input type="number" placeholder="max" value={filters[g.max]}
+                    onChange={(e) => handleFilterChange(g.max, e.target.value)}
+                    style={{ width: '80px', padding: '8px 10px', border: '1px solid #ddd', borderRadius: '6px', fontSize: '13px' }} />
+                </div>
+              </div>
+            ))}
+            <div>
+              <div style={{ fontSize: '12px', color: '#6c757d', marginBottom: '6px', fontWeight: 600 }}>Invendu depuis ≥ (jours)</div>
+              <input type="number" placeholder="ex : 60" value={filters.notSoldSinceDays}
+                onChange={(e) => handleFilterChange('notSoldSinceDays', e.target.value)}
+                style={{ width: '120px', padding: '8px 10px', border: '1px solid #ddd', borderRadius: '6px', fontSize: '13px' }} />
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Card de statistique */}
       <div style={{ marginBottom: '30px' }}>
         <div style={{ backgroundColor: 'white', padding: '20px', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)', display: 'inline-block' }}>
-          <p style={{ fontSize: '14px', color: '#6c757d', margin: '0 0 10px 0' }}>Total produits</p>
+          <p style={{ fontSize: '14px', color: '#6c757d', margin: '0 0 10px 0' }}>{segment || activeFilterCount > 0 ? 'Produits filtrés' : 'Total produits'}</p>
           <p style={{ fontSize: '28px', fontWeight: 'bold', color: '#333', margin: 0 }}>{formatInt(totalCount)}</p>
         </div>
       </div>
@@ -378,6 +518,10 @@ const ProductsStatsTab = () => {
                   {isVisible('sku') && <th style={headerStyle('sku')} onClick={() => handleSort('sku')}>SKU{getSortIcon('sku')}</th>}
                   {isVisible('stock') && <th style={headerStyle('stock')} onClick={() => handleSort('stock')}>Stock{getSortIcon('stock')}</th>}
                   {isVisible('qty_sold') && <th style={headerStyle('qty_sold')} onClick={() => handleSort('qty_sold')}>Vendu{getSortIcon('qty_sold')}</th>}
+                  {isVisible('velocity') && <th style={headerStyle('velocity')} onClick={() => handleSort('velocity')} title="Ventes moyennes par jour sur la période">Ventes/j{getSortIcon('velocity')}</th>}
+                  {isVisible('coverage_days') && <th style={headerStyle('coverage_days')} onClick={() => handleSort('coverage_days')} title="Jours de stock restants au rythme actuel (stock ÷ ventes/j). Élevé = surstock.">Couv.{getSortIcon('coverage_days')}</th>}
+                  {isVisible('last_sold') && <th style={headerStyle('last_sold')} onClick={() => handleSort('last_sold')}>Dern. vente{getSortIcon('last_sold')}</th>}
+                  {isVisible('first_sold') && <th style={headerStyle('first_sold')} onClick={() => handleSort('first_sold')}>1ère vente{getSortIcon('first_sold')}</th>}
                   {isVisible('ca_ttc') && <th style={headerStyle('ca_ttc')} onClick={() => handleSort('ca_ttc')}>CA TTC{getSortIcon('ca_ttc')}</th>}
                   {isVisible('ca_ht') && <th style={headerStyle('ca_ht')} onClick={() => handleSort('ca_ht')}>CA HT{getSortIcon('ca_ht')}</th>}
                   {isVisible('cost_ht') && <th style={headerStyle('cost_ht')} onClick={() => handleSort('cost_ht')}>Coût HT{getSortIcon('cost_ht')}</th>}
@@ -466,6 +610,16 @@ const ProductsStatsTab = () => {
                           </td>
                         )}
                         {isVisible('qty_sold') && <td style={{ padding: '15px', fontSize: '14px', fontWeight: 'bold' }}>{formatInt(product.qty_sold)}</td>}
+                        {isVisible('velocity') && <td style={{ padding: '15px', fontSize: '14px' }}>{formatVelocity(product.velocity)}</td>}
+                        {isVisible('coverage_days') && (
+                          <td style={{ padding: '15px', fontSize: '14px' }}>
+                            <span style={{ padding: '4px 10px', borderRadius: '12px', fontSize: '12px', fontWeight: 'bold', backgroundColor: coverageColor(product.coverage_days).bg, color: coverageColor(product.coverage_days).fg }}>
+                              {formatCoverage(product.coverage_days)}
+                            </span>
+                          </td>
+                        )}
+                        {isVisible('last_sold') && <td style={{ padding: '15px', fontSize: '13px', color: '#6c757d', whiteSpace: 'nowrap' }}>{formatDateFr(product.last_sold)}</td>}
+                        {isVisible('first_sold') && <td style={{ padding: '15px', fontSize: '13px', color: '#6c757d', whiteSpace: 'nowrap' }}>{formatDateFr(product.first_sold)}</td>}
                         {isVisible('ca_ttc') && <td style={{ padding: '15px', fontSize: '14px' }}>{formatPrice(product.ca_ttc)}</td>}
                         {isVisible('ca_ht') && <td style={{ padding: '15px', fontSize: '14px' }}>{formatPrice(product.ca_ht)}</td>}
                         {isVisible('cost_ht') && <td style={{ padding: '15px', fontSize: '14px', color: '#dc3545' }}>{formatPrice(product.cost_ht)}</td>}
@@ -512,6 +666,16 @@ const ProductsStatsTab = () => {
                             </td>
                           )}
                           {isVisible('qty_sold') && <td style={{ padding: '10px 15px', fontSize: '13px' }}>{formatInt(variation.qty_sold)}</td>}
+                          {isVisible('velocity') && <td style={{ padding: '10px 15px', fontSize: '13px' }}>{formatVelocity(variation.velocity)}</td>}
+                          {isVisible('coverage_days') && (
+                            <td style={{ padding: '10px 15px', fontSize: '13px' }}>
+                              <span style={{ padding: '3px 8px', borderRadius: '10px', fontSize: '11px', fontWeight: 'bold', backgroundColor: coverageColor(variation.coverage_days).bg, color: coverageColor(variation.coverage_days).fg }}>
+                                {formatCoverage(variation.coverage_days)}
+                              </span>
+                            </td>
+                          )}
+                          {isVisible('last_sold') && <td style={{ padding: '10px 15px', fontSize: '12px', color: '#6c757d', whiteSpace: 'nowrap' }}>{formatDateFr(variation.last_sold)}</td>}
+                          {isVisible('first_sold') && <td style={{ padding: '10px 15px', fontSize: '12px', color: '#6c757d', whiteSpace: 'nowrap' }}>{formatDateFr(variation.first_sold)}</td>}
                           {isVisible('ca_ttc') && <td style={{ padding: '10px 15px', fontSize: '13px' }}>{formatPrice(variation.ca_ttc)}</td>}
                           {isVisible('ca_ht') && <td style={{ padding: '10px 15px', fontSize: '13px' }}>{formatPrice(variation.ca_ht)}</td>}
                           {isVisible('cost_ht') && <td style={{ padding: '10px 15px', fontSize: '13px', color: '#dc3545' }}>{formatPrice(variation.cost_ht)}</td>}

@@ -10,6 +10,8 @@ router.get('/categories/list', productsController.getCategories);
 router.get('/stock-summary', productsController.getStockSummary);
 router.get('/category/:category', productsController.getByCategory);
 router.get('/stats-list', productsController.getStatsListing);
+router.get('/stats-list/export', productsController.getStatsExport);
+router.get('/stats-countries', productsController.getStatsCountries);
 router.get('/catalog', productsController.getCatalogList);
 router.get('/catalog/export', productsController.getCatalogExport);
 router.get('/catalog-brands', productsController.getCatalogBrands);

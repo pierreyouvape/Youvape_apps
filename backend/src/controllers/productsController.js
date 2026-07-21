@@ -271,31 +271,111 @@ exports.toggleTrackStock = async (req, res) => {
  * Récupère les produits pour l'onglet Stats avec pagination et tri
  * GET /api/products/stats-list?limit=50&offset=0&search=&sortBy=qty_sold&sortOrder=DESC
  */
+// Construit les options du modèle stats à partir des query params (partagé listing + export)
+function buildStatsOpts(query) {
+  const num = (v) => (v === undefined || v === '' || v === null ? null : Number(v));
+  return {
+    searchTerm: query.search || '',
+    sortBy: query.sortBy || 'qty_sold',
+    sortOrder: query.sortOrder || 'DESC',
+    dateFrom: query.dateFrom || null,
+    dateTo: query.dateTo || null,
+    country: query.country || null,
+    stockMin: num(query.stockMin),
+    stockMax: num(query.stockMax),
+    soldMin: num(query.soldMin),
+    soldMax: num(query.soldMax),
+    marginMin: num(query.marginMin),
+    marginMax: num(query.marginMax),
+    notSoldSinceDays: num(query.notSoldSinceDays),
+    segment: query.segment || null,
+  };
+}
+
 exports.getStatsListing = async (req, res) => {
   try {
     const limit = parseInt(req.query.limit) || 50;
     const offset = parseInt(req.query.offset) || 0;
-    const searchTerm = req.query.search || '';
-    const sortBy = req.query.sortBy || 'qty_sold';
-    const sortOrder = req.query.sortOrder || 'DESC';
-    const dateFrom = req.query.dateFrom || null;
-    const dateTo = req.query.dateTo || null;
 
-    const products = await productModel.getAllForStats(limit, offset, searchTerm, sortBy, sortOrder, dateFrom, dateTo);
-    const total = await productModel.countForStats(searchTerm);
+    const products = await productModel.getAllForStats({ ...buildStatsOpts(req.query), limit, offset });
+    // Le total (après filtres) est renvoyé par la fenêtre COUNT(*) OVER() sur chaque ligne
+    const total = products.length > 0 ? parseInt(products[0].total_count) : 0;
 
     res.json({
       success: true,
       data: products,
-      pagination: {
-        total,
-        limit,
-        offset,
-        hasMore: offset + limit < total
-      }
+      pagination: { total, limit, offset, hasMore: offset + limit < total }
     });
   } catch (error) {
     console.error('Error getting products stats listing:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+/**
+ * Liste des pays pour le filtre de l'onglet Stats
+ * GET /api/products/stats-countries
+ */
+exports.getStatsCountries = async (req, res) => {
+  try {
+    const countries = await productModel.getStatsCountries();
+    res.json({ success: true, data: countries });
+  } catch (error) {
+    console.error('Error getting stats countries:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+/**
+ * Export CSV/XLSX de la liste stats filtrée (toutes les lignes, pas juste la page)
+ * GET /api/products/stats-list/export?format=csv|xlsx&...filtres
+ */
+exports.getStatsExport = async (req, res) => {
+  try {
+    const format = (req.query.format || 'csv').toLowerCase();
+    const rows = await productModel.getAllForStats({ ...buildStatsOpts(req.query), limit: 100000, offset: 0 });
+
+    const fmtDate = (d) => (d ? new Date(d).toISOString().split('T')[0] : '');
+    const HEADERS = ['Nom', 'SKU', 'Type', 'Stock', 'Vendu', 'Ventes/j', 'Couv. (j)',
+      '1ère vente', 'Dernière vente', 'CA TTC', 'CA HT', 'Coût HT', 'Marge HT', '% Marge'];
+
+    const data = rows.map(p => [
+      p.post_title || '', p.sku || '', p.product_type || '',
+      parseInt(p.stock) || 0, parseInt(p.qty_sold) || 0,
+      p.velocity != null ? parseFloat(p.velocity) : '',
+      p.coverage_days != null ? parseInt(p.coverage_days) : '',
+      fmtDate(p.first_sold), fmtDate(p.last_sold),
+      parseFloat(p.ca_ttc || 0).toFixed(2), parseFloat(p.ca_ht || 0).toFixed(2),
+      parseFloat(p.cost_ht || 0).toFixed(2), parseFloat(p.margin_ht || 0).toFixed(2),
+      parseFloat(p.margin_percent || 0).toFixed(1),
+    ]);
+
+    if (format === 'xlsx') {
+      const esc = (v) => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      let xml = `<?xml version="1.0" encoding="UTF-8"?><?mso-application progid="Excel.Sheet"?>
+<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">
+<Styles><Style ss:ID="h"><Font ss:Bold="1"/></Style></Styles>
+<Worksheet ss:Name="Produits"><Table>
+<Row>${HEADERS.map(h => `<Cell ss:StyleID="h"><Data ss:Type="String">${esc(h)}</Data></Cell>`).join('')}</Row>`;
+      for (const r of data) {
+        xml += `<Row>${r.map(v => {
+          const isNum = v !== '' && v != null && !isNaN(v) && typeof v !== 'string';
+          return `<Cell><Data ss:Type="${isNum ? 'Number' : 'String'}">${esc(v)}</Data></Cell>`;
+        }).join('')}</Row>`;
+      }
+      xml += '</Table></Worksheet></Workbook>';
+      res.setHeader('Content-Type', 'application/vnd.ms-excel');
+      res.setHeader('Content-Disposition', 'attachment; filename="produits_stats.xls"');
+      return res.send(xml);
+    }
+
+    const lines = [HEADERS.join(';')];
+    for (const r of data) lines.push(r.map(v => `"${String(v ?? '').replace(/"/g, '""')}"`).join(';'));
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', 'attachment; filename="produits_stats.csv"');
+    return res.send('﻿' + lines.join('\n'));
+  } catch (error) {
+    console.error('Error exporting products stats:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 };
@@ -497,7 +577,8 @@ exports.getVariationsStats = async (req, res) => {
     const productId = req.params.id;
     const dateFrom = req.query.dateFrom || null;
     const dateTo = req.query.dateTo || null;
-    const variations = await productModel.getVariationsForStats(productId, dateFrom, dateTo);
+    const country = req.query.country || null;
+    const variations = await productModel.getVariationsForStats(productId, dateFrom, dateTo, country);
 
     res.json({ success: true, data: variations });
   } catch (error) {
