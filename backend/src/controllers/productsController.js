@@ -273,7 +273,10 @@ exports.toggleTrackStock = async (req, res) => {
  */
 // Construit les options du modèle stats à partir des query params (partagé listing + export)
 function buildStatsOpts(query) {
-  const num = (v) => (v === undefined || v === '' || v === null ? null : Number(v));
+  let filters = [];
+  if (query.filters) {
+    try { const p = JSON.parse(query.filters); if (Array.isArray(p)) filters = p; } catch { /* ignore */ }
+  }
   return {
     searchTerm: query.search || '',
     sortBy: query.sortBy || 'qty_sold',
@@ -281,14 +284,8 @@ function buildStatsOpts(query) {
     dateFrom: query.dateFrom || null,
     dateTo: query.dateTo || null,
     country: query.country || null,
-    stockMin: num(query.stockMin),
-    stockMax: num(query.stockMax),
-    soldMin: num(query.soldMin),
-    soldMax: num(query.soldMax),
-    marginMin: num(query.marginMin),
-    marginMax: num(query.marginMax),
-    notSoldSinceDays: num(query.notSoldSinceDays),
-    segment: query.segment || null,
+    filters,
+    matchType: query.matchType === 'any' ? 'any' : 'all',
   };
 }
 
@@ -322,6 +319,60 @@ exports.getStatsCountries = async (req, res) => {
     res.json({ success: true, data: countries });
   } catch (error) {
     console.error('Error getting stats countries:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+/**
+ * Segments enregistrés de l'onglet Stats Produits (partagés)
+ * GET    /api/products/segments
+ * POST   /api/products/segments
+ * PUT    /api/products/segments/:id
+ * DELETE /api/products/segments/:id
+ */
+exports.listSegments = async (req, res) => {
+  try {
+    res.json({ success: true, data: await productModel.listSegments() });
+  } catch (error) {
+    console.error('Error listing segments:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+exports.createSegment = async (req, res) => {
+  try {
+    const { name, matchType, filters } = req.body;
+    if (!name || !name.trim()) return res.status(400).json({ success: false, error: 'Nom requis' });
+    const seg = await productModel.createSegment({
+      name: name.trim(), matchType, filters,
+      createdBy: req.user && req.user.id ? req.user.id : null,
+    });
+    res.json({ success: true, data: seg });
+  } catch (error) {
+    console.error('Error creating segment:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+exports.updateSegment = async (req, res) => {
+  try {
+    const { name, matchType, filters } = req.body;
+    const seg = await productModel.updateSegment(parseInt(req.params.id), { name, matchType, filters });
+    if (!seg) return res.status(404).json({ success: false, error: 'Segment introuvable' });
+    res.json({ success: true, data: seg });
+  } catch (error) {
+    console.error('Error updating segment:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+exports.deleteSegment = async (req, res) => {
+  try {
+    const ok = await productModel.deleteSegment(parseInt(req.params.id));
+    if (!ok) return res.status(404).json({ success: false, error: 'Segment introuvable' });
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error deleting segment:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 };

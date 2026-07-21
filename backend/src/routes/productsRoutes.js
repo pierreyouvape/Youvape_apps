@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const productsController = require('../controllers/productsController');
 const productStatsController = require('../controllers/productStatsController');
+const authMiddleware = require('../middleware/authMiddleware');
 
 // Liste et recherche
 router.get('/', productsController.getAll);
@@ -12,6 +13,12 @@ router.get('/category/:category', productsController.getByCategory);
 router.get('/stats-list', productsController.getStatsListing);
 router.get('/stats-list/export', productsController.getStatsExport);
 router.get('/stats-countries', productsController.getStatsCountries);
+
+// Segments enregistrés (CRUD authentifié, avant la route /:id)
+router.get('/segments', productsController.listSegments);
+router.post('/segments', authMiddleware, productsController.createSegment);
+router.put('/segments/:id', authMiddleware, productsController.updateSegment);
+router.delete('/segments/:id', authMiddleware, productsController.deleteSegment);
 router.get('/catalog', productsController.getCatalogList);
 router.get('/catalog/export', productsController.getCatalogExport);
 router.get('/catalog-brands', productsController.getCatalogBrands);

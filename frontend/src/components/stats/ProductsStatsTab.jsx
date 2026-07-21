@@ -7,6 +7,7 @@ import { AuthContext } from '../../context/AuthContext';
 import { useColumnPreferences } from '../../hooks/useColumnPreferences';
 import ColumnPanel from '../ColumnPanel';
 import { LinkBox } from '../../utils/navHelpers';
+import ProductSegmentBuilder from './ProductSegmentBuilder';
 
 const API_BASE_URL = '/api';
 
@@ -36,13 +37,6 @@ const PERIOD_OPTIONS = [
   { value: '3m', label: 'Les 3 derniers mois' },
   { value: '6m', label: 'Les 6 derniers mois' },
   { value: 'custom', label: 'Période personnalisée' }
-];
-
-// Segments prédéfinis pour la décision solde
-const SEGMENTS = [
-  { key: 'a_solder',     label: '🎯 À solder',    hint: 'Surstock qui tourne lentement : +90 j de stock au rythme actuel, encore un peu de ventes, marge ≥ 15 %.' },
-  { key: 'stock_mort',   label: '💀 Stock mort',  hint: 'Stock > 0 mais invendu depuis plus de 60 jours : à liquider en priorité.' },
-  { key: 'best_sellers', label: '⭐ Best-sellers', hint: 'Vitesse ≥ 1 vente/jour : à EXCLURE des soldes, tu vends déjà au prix fort.' },
 ];
 
 // Formate une date SQL en JJ/MM/AAAA (ou '—' si jamais vendu)
@@ -119,25 +113,22 @@ const ProductsStatsTab = () => {
   const [customStart, setCustomStart] = useState('');
   const [customEnd, setCustomEnd] = useState('');
 
-  // Pays + segments + filtres avancés
+  // Pays
   const [country, setCountry] = useState('');
   const [countries, setCountries] = useState([]);
-  const [segment, setSegment] = useState('');
-  const [showFilters, setShowFilters] = useState(false);
-  const [filters, setFilters] = useState({
-    stockMin: '', stockMax: '', soldMin: '', soldMax: '',
-    marginMin: '', marginMax: '', notSoldSinceDays: '',
-  });
+
+  // Constructeur de segments : brouillon (édité) vs appliqué (utilisé pour le fetch/export)
+  const [showBuilder, setShowBuilder] = useState(false);
+  const [filters, setFilters] = useState([]);            // brouillon
+  const [matchType, setMatchType] = useState('all');     // brouillon
+  const [appliedFilters, setAppliedFilters] = useState([]);
+  const [appliedMatchType, setAppliedMatchType] = useState('all');
 
   const dateRange = useMemo(() => computeDateRange(period, customStart, customEnd), [period, customStart, customEnd]);
 
-  // Nombre de filtres manuels actifs (pour le badge du bouton)
-  const activeFilterCount = useMemo(
-    () => Object.values(filters).filter(v => v !== '' && v != null).length,
-    [filters]
-  );
+  const hasActiveFilters = appliedFilters.length > 0;
 
-  // Paramètres partagés listing + export
+  // Paramètres partagés listing + export (utilise les filtres APPLIQUÉS)
   const buildParams = useCallback((extra = {}) => {
     const clean = (o) => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== '' && v != null));
     return clean({
@@ -146,11 +137,31 @@ const ProductsStatsTab = () => {
       dateFrom: dateRange.dateFrom,
       dateTo: dateRange.dateTo,
       country,
-      segment,
-      ...filters,
+      matchType: appliedMatchType,
+      filters: appliedFilters.length > 0 ? JSON.stringify(appliedFilters) : '',
       ...extra,
     });
-  }, [searchTerm, sortBy, sortOrder, dateRange.dateFrom, dateRange.dateTo, country, segment, filters]);
+  }, [searchTerm, sortBy, sortOrder, dateRange.dateFrom, dateRange.dateTo, country, appliedFilters, appliedMatchType]);
+
+  const applyFilters = useCallback(() => {
+    setAppliedFilters(filters);
+    setAppliedMatchType(matchType);
+    setPagination((prev) => ({ ...prev, pageIndex: 0 }));
+  }, [filters, matchType]);
+
+  const clearFilters = useCallback(() => {
+    setFilters([]); setMatchType('all');
+    setAppliedFilters([]); setAppliedMatchType('all');
+    setPagination((prev) => ({ ...prev, pageIndex: 0 }));
+  }, []);
+
+  const loadSegment = useCallback(({ filters: f, matchType: m }) => {
+    const nf = f || []; const nm = m || 'all';
+    setFilters(nf); setMatchType(nm);
+    setAppliedFilters(nf); setAppliedMatchType(nm);
+    setShowBuilder(true);
+    setPagination((prev) => ({ ...prev, pageIndex: 0 }));
+  }, []);
 
   // Charge la liste des pays une fois
   useEffect(() => {
@@ -252,22 +263,6 @@ const ProductsStatsTab = () => {
 
   const handleCountryChange = (value) => {
     setCountry(value);
-    setPagination((prev) => ({ ...prev, pageIndex: 0 }));
-  };
-
-  const handleSegmentClick = (key) => {
-    setSegment((prev) => (prev === key ? '' : key));
-    setPagination((prev) => ({ ...prev, pageIndex: 0 }));
-  };
-
-  const handleFilterChange = (key, value) => {
-    setFilters((prev) => ({ ...prev, [key]: value }));
-    setPagination((prev) => ({ ...prev, pageIndex: 0 }));
-  };
-
-  const resetFilters = () => {
-    setFilters({ stockMin: '', stockMax: '', soldMin: '', soldMax: '', marginMin: '', marginMax: '', notSoldSinceDays: '' });
-    setSegment('');
     setPagination((prev) => ({ ...prev, pageIndex: 0 }));
   };
 
@@ -403,14 +398,14 @@ const ProductsStatsTab = () => {
         </div>
         <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
           <button
-            onClick={() => setShowFilters(v => !v)}
+            onClick={() => setShowBuilder(v => !v)}
             style={{
-              padding: '8px 14px', backgroundColor: showFilters ? '#135E84' : '#fff',
-              color: showFilters ? '#fff' : '#374151', border: '1px solid #d1d5db',
-              borderRadius: '6px', fontSize: '13px', cursor: 'pointer'
+              padding: '8px 14px', backgroundColor: (showBuilder || hasActiveFilters) ? '#135E84' : '#fff',
+              color: (showBuilder || hasActiveFilters) ? '#fff' : '#374151', border: '1px solid #d1d5db',
+              borderRadius: '6px', fontSize: '13px', cursor: 'pointer', fontWeight: 600
             }}
           >
-            ⚗ Filtres{activeFilterCount > 0 ? ` (${activeFilterCount})` : ''}
+            🎯 Segments{hasActiveFilters ? ` (${appliedFilters.length})` : ''}
           </button>
           <button
             onClick={() => handleExport('csv')}
@@ -436,70 +431,23 @@ const ProductsStatsTab = () => {
         </div>
       </div>
 
-      {/* Segments prédéfinis (aide à la décision solde) */}
-      <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap', marginBottom: '18px' }}>
-        <span style={{ fontSize: '13px', color: '#6c757d', fontWeight: 600 }}>Segments :</span>
-        {SEGMENTS.map(s => (
-          <button
-            key={s.key}
-            onClick={() => handleSegmentClick(s.key)}
-            title={s.hint}
-            style={{
-              padding: '7px 14px', borderRadius: '20px', fontSize: '13px', cursor: 'pointer',
-              border: segment === s.key ? '1px solid #135E84' : '1px solid #d1d5db',
-              backgroundColor: segment === s.key ? '#135E84' : '#fff',
-              color: segment === s.key ? '#fff' : '#374151', fontWeight: segment === s.key ? 700 : 500,
-            }}
-          >
-            {s.label}
-          </button>
-        ))}
-        {(segment || activeFilterCount > 0) && (
-          <button
-            onClick={resetFilters}
-            style={{ padding: '7px 12px', borderRadius: '20px', fontSize: '12px', cursor: 'pointer', border: '1px solid #e0a0a0', backgroundColor: '#fff', color: '#b02a37' }}
-          >
-            ✕ Réinitialiser
-          </button>
-        )}
-      </div>
-
-      {/* Panneau de filtres manuels */}
-      {showFilters && (
-        <div style={{ backgroundColor: 'white', border: '1px solid #e5e7eb', borderRadius: '8px', padding: '16px 18px', marginBottom: '20px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
-          <div style={{ display: 'flex', gap: '22px', flexWrap: 'wrap', alignItems: 'flex-end' }}>
-            {[
-              { label: 'Stock', min: 'stockMin', max: 'stockMax' },
-              { label: 'Vendu (période)', min: 'soldMin', max: 'soldMax' },
-              { label: '% Marge', min: 'marginMin', max: 'marginMax' },
-            ].map(g => (
-              <div key={g.label}>
-                <div style={{ fontSize: '12px', color: '#6c757d', marginBottom: '6px', fontWeight: 600 }}>{g.label}</div>
-                <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-                  <input type="number" placeholder="min" value={filters[g.min]}
-                    onChange={(e) => handleFilterChange(g.min, e.target.value)}
-                    style={{ width: '80px', padding: '8px 10px', border: '1px solid #ddd', borderRadius: '6px', fontSize: '13px' }} />
-                  <span style={{ color: '#adb5bd' }}>–</span>
-                  <input type="number" placeholder="max" value={filters[g.max]}
-                    onChange={(e) => handleFilterChange(g.max, e.target.value)}
-                    style={{ width: '80px', padding: '8px 10px', border: '1px solid #ddd', borderRadius: '6px', fontSize: '13px' }} />
-                </div>
-              </div>
-            ))}
-            <div>
-              <div style={{ fontSize: '12px', color: '#6c757d', marginBottom: '6px', fontWeight: 600 }}>Invendu depuis ≥ (jours)</div>
-              <input type="number" placeholder="ex : 60" value={filters.notSoldSinceDays}
-                onChange={(e) => handleFilterChange('notSoldSinceDays', e.target.value)}
-                style={{ width: '120px', padding: '8px 10px', border: '1px solid #ddd', borderRadius: '6px', fontSize: '13px' }} />
-            </div>
-          </div>
-        </div>
+      {/* Constructeur de segments (filtres dynamiques + segments enregistrés) */}
+      {showBuilder && (
+        <ProductSegmentBuilder
+          filters={filters}
+          matchType={matchType}
+          onFiltersChange={setFilters}
+          onMatchTypeChange={setMatchType}
+          onApply={applyFilters}
+          onClear={clearFilters}
+          onLoadSegment={loadSegment}
+        />
       )}
 
       {/* Card de statistique */}
       <div style={{ marginBottom: '30px' }}>
         <div style={{ backgroundColor: 'white', padding: '20px', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)', display: 'inline-block' }}>
-          <p style={{ fontSize: '14px', color: '#6c757d', margin: '0 0 10px 0' }}>{segment || activeFilterCount > 0 ? 'Produits filtrés' : 'Total produits'}</p>
+          <p style={{ fontSize: '14px', color: '#6c757d', margin: '0 0 10px 0' }}>{hasActiveFilters ? 'Produits du segment' : 'Total produits'}</p>
           <p style={{ fontSize: '28px', fontWeight: 'bold', color: '#333', margin: 0 }}>{formatInt(totalCount)}</p>
         </div>
       </div>

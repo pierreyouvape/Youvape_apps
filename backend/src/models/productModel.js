@@ -3,6 +3,63 @@ const { buildSearchCondition } = require('../utils/searchUtils');
 const needsCalculationModel = require('./needsCalculationModel');
 const { buildVariationLabel } = require('../utils/variationLabel');
 
+// Champs autorisés pour les segments de l'onglet Stats Produits.
+// La clé == nom de colonne exposé par la CTE `final` de getAllForStats (jamais une entrée brute).
+const STATS_FILTER_FIELDS = {
+  stock: 'number', qty_sold: 'number', velocity: 'number', coverage_days: 'number',
+  margin_percent: 'number', ca_ttc: 'number', ca_ht: 'number', cost_ht: 'number',
+  last_sold: 'date', first_sold: 'date',
+  brand: 'text', product_type: 'enum',
+};
+const isYmd = (s) => typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s);
+
+/**
+ * Construit une clause SQL (booléenne, sans le WHERE) à partir d'un tableau de filtres
+ * { field, op, value, value2 } et d'un type de correspondance ('all' => AND, 'any' => OR).
+ * Les champs et opérateurs sont whitelistés ; les valeurs sont paramétrées via P().
+ * Retourne '' si aucun filtre valide.
+ */
+function buildStatsFilterClause(filters, matchType, P) {
+  if (!Array.isArray(filters) || filters.length === 0) return '';
+  const conds = [];
+  for (const f of filters) {
+    const type = STATS_FILTER_FIELDS[f && f.field];
+    if (!type) continue;
+    const col = f.field; // whitelisté => sûr
+    const op = f.op;
+
+    if (type === 'number') {
+      const v = Number(f.value);
+      if (f.value === '' || f.value == null || Number.isNaN(v)) continue;
+      const map = { gt: '>', gte: '>=', lt: '<', lte: '<=', eq: '=', neq: '<>' };
+      if (map[op]) conds.push(`${col} ${map[op]} ${P(v)}`);
+      else if (op === 'between') {
+        const v2 = Number(f.value2);
+        if (Number.isNaN(v2)) continue;
+        conds.push(`${col} BETWEEN ${P(v)} AND ${P(v2)}`);
+      }
+    } else if (type === 'date') {
+      if (op === 'over_days_ago') { const n = Number(f.value); if (Number.isNaN(n)) continue; conds.push(`(${col} IS NULL OR ${col} < CURRENT_DATE - ${P(n)}::int)`); }
+      else if (op === 'within_days') { const n = Number(f.value); if (Number.isNaN(n)) continue; conds.push(`${col} >= CURRENT_DATE - ${P(n)}::int`); }
+      else if (op === 'before') { if (!isYmd(f.value)) continue; conds.push(`${col} < ${P(f.value)}`); }
+      else if (op === 'after') { if (!isYmd(f.value)) continue; conds.push(`${col} > ${P(f.value)}`); }
+      else if (op === 'is_set') conds.push(`${col} IS NOT NULL`);
+      else if (op === 'not_set') conds.push(`${col} IS NULL`);
+    } else if (type === 'text') {
+      if (f.value == null || f.value === '') continue;
+      if (op === 'contains') conds.push(`${col} ILIKE ${P('%' + f.value + '%')}`);
+      else if (op === 'eq') conds.push(`${col} = ${P(f.value)}`);
+      else if (op === 'neq') conds.push(`${col} IS DISTINCT FROM ${P(f.value)}`);
+    } else if (type === 'enum') {
+      if (f.value == null || f.value === '') continue;
+      if (op === 'neq') conds.push(`${col} <> ${P(f.value)}`);
+      else conds.push(`${col} = ${P(f.value)}`);
+    }
+  }
+  if (conds.length === 0) return '';
+  return '(' + conds.join(matchType === 'any' ? ' OR ' : ' AND ') + ')';
+}
+
 /**
  * Condition SQL pour le filtre d'onglet stock du catalogue (all/instock/outofstock/restock)
  * reorderIdsSql : liste de wp_product_id (entiers, déjà validés) séparés par des virgules,
@@ -452,8 +509,7 @@ class ProductModel {
     const {
       limit = 50, offset = 0, searchTerm = '', sortBy = 'qty_sold', sortOrder = 'DESC',
       dateFrom = null, dateTo = null, country = null,
-      stockMin = null, stockMax = null, soldMin = null, soldMax = null,
-      marginMin = null, marginMax = null, notSoldSinceDays = null, segment = null,
+      filters = [], matchType = 'all',
     } = opts;
 
     const params = [];
@@ -485,20 +541,9 @@ class ProductModel {
       params.push(...searchParams);
     }
 
-    // Filtres sur les métriques agrégées (segments + filtres manuels)
-    const metricConds = [];
-    if (stockMin != null) metricConds.push(`stock >= ${P(stockMin)}`);
-    if (stockMax != null) metricConds.push(`stock <= ${P(stockMax)}`);
-    if (soldMin != null) metricConds.push(`qty_sold >= ${P(soldMin)}`);
-    if (soldMax != null) metricConds.push(`qty_sold <= ${P(soldMax)}`);
-    if (marginMin != null) metricConds.push(`margin_percent >= ${P(marginMin)}`);
-    if (marginMax != null) metricConds.push(`margin_percent <= ${P(marginMax)}`);
-    if (notSoldSinceDays != null) metricConds.push(`(last_sold IS NULL OR last_sold < CURRENT_DATE - ${P(notSoldSinceDays)}::int)`);
-    // Segments prédéfinis (seuils par défaut, ajustables)
-    if (segment === 'a_solder') metricConds.push(`coverage_days IS NOT NULL AND coverage_days >= 90 AND velocity > 0 AND margin_percent >= 15`);
-    else if (segment === 'stock_mort') metricConds.push(`stock > 0 AND (last_sold IS NULL OR last_sold < CURRENT_DATE - 60)`);
-    else if (segment === 'best_sellers') metricConds.push(`velocity >= 1`);
-    const metricWhere = metricConds.length ? 'WHERE ' + metricConds.join(' AND ') : '';
+    // Filtres du segment (constructeur générique : field/op/value, match all|any)
+    const filterClause = buildStatsFilterClause(filters, matchType, P);
+    const metricWhere = filterClause ? 'WHERE ' + filterClause : '';
 
     // Colonnes triables
     const sortColumns = {
@@ -569,7 +614,7 @@ class ProductModel {
       ),
       enriched AS (
         SELECT
-          p.wp_product_id, p.post_title, p.sku, p.product_type, p.image_url, p.stock_status,
+          p.wp_product_id, p.post_title, p.sku, p.product_type, p.image_url, p.stock_status, p.brand,
           ${stockExpr} AS stock,
           COALESCE(ps.qty_sold, 0) AS qty_sold,
           COALESCE(ps.ca_ttc, 0) AS ca_ttc,
@@ -620,6 +665,45 @@ class ProductModel {
     `;
     const result = await pool.query(query);
     return result.rows;
+  }
+
+  // ─── Segments enregistrés (onglet Stats Produits) ────────────────────────
+  async listSegments() {
+    const r = await pool.query(
+      `SELECT id, name, match_type AS "matchType", filters, is_preset AS "isPreset", updated_at
+       FROM product_segments ORDER BY is_preset DESC, name ASC`
+    );
+    return r.rows;
+  }
+
+  async createSegment({ name, matchType = 'all', filters = [], createdBy = null }) {
+    const r = await pool.query(
+      `INSERT INTO product_segments (name, match_type, filters, created_by)
+       VALUES ($1, $2, $3::jsonb, $4)
+       RETURNING id, name, match_type AS "matchType", filters, is_preset AS "isPreset"`,
+      [name, matchType === 'any' ? 'any' : 'all', JSON.stringify(filters || []), createdBy]
+    );
+    return r.rows[0];
+  }
+
+  async updateSegment(id, { name, matchType, filters }) {
+    const r = await pool.query(
+      `UPDATE product_segments
+       SET name = COALESCE($2, name),
+           match_type = COALESCE($3, match_type),
+           filters = COALESCE($4::jsonb, filters),
+           updated_at = NOW()
+       WHERE id = $1
+       RETURNING id, name, match_type AS "matchType", filters, is_preset AS "isPreset"`,
+      [id, name || null, matchType ? (matchType === 'any' ? 'any' : 'all') : null,
+        filters != null ? JSON.stringify(filters) : null]
+    );
+    return r.rows[0] || null;
+  }
+
+  async deleteSegment(id) {
+    const r = await pool.query('DELETE FROM product_segments WHERE id = $1 RETURNING id', [id]);
+    return r.rowCount > 0;
   }
 
   /**
