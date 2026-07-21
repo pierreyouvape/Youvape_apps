@@ -8,8 +8,10 @@ const { buildVariationLabel } = require('../utils/variationLabel');
 const STATS_FILTER_FIELDS = {
   stock: 'number', qty_sold: 'number', velocity: 'number', coverage_days: 'number',
   margin_percent: 'number', ca_ttc: 'number', ca_ht: 'number', cost_ht: 'number',
-  last_sold: 'date', first_sold: 'date',
-  brand: 'text', product_type: 'enum',
+  unit_cost: 'number', price: 'number', weight: 'number',
+  last_sold: 'date', first_sold: 'date', created_date: 'date',
+  brand: 'text', sub_brand: 'text', category: 'text', sub_category: 'text',
+  supplier: 'text', stock_status: 'text', product_type: 'enum',
 };
 const isYmd = (s) => typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s);
 
@@ -614,7 +616,11 @@ class ProductModel {
       ),
       enriched AS (
         SELECT
-          p.wp_product_id, p.post_title, p.sku, p.product_type, p.image_url, p.stock_status, p.brand,
+          p.wp_product_id, p.post_title, p.sku, p.product_type, p.image_url, p.stock_status,
+          p.brand, p.sub_brand, p.category, p.sub_category,
+          COALESCE(p.computed_cost, p.wc_cog_cost, 0) AS unit_cost,
+          p.price, p.weight, p.post_date AS created_date,
+          sup.name AS supplier,
           ${stockExpr} AS stock,
           COALESCE(ps.qty_sold, 0) AS qty_sold,
           COALESCE(ps.ca_ttc, 0) AS ca_ttc,
@@ -630,6 +636,14 @@ class ProductModel {
         LEFT JOIN period_stats ps ON ps.parent_id = p.wp_product_id
         LEFT JOIN lifetime_stats ls ON ls.parent_id = p.wp_product_id
         LEFT JOIN var_stock vs ON vs.wp_parent_id = p.wp_product_id
+        LEFT JOIN LATERAL (
+          -- Fournisseur principal (product_suppliers.product_id = products.id interne)
+          SELECT s.name
+          FROM product_suppliers psup JOIN suppliers s ON s.id = psup.supplier_id
+          WHERE psup.product_id = p.id
+          ORDER BY psup.is_primary DESC NULLS LAST, psup.id ASC
+          LIMIT 1
+        ) sup ON true
         WHERE p.product_type IN ('simple', 'variable', 'woosb') AND p.post_status = 'publish'${searchClause}
       ),
       final AS (
@@ -665,6 +679,33 @@ class ProductModel {
     `;
     const result = await pool.query(query);
     return result.rows;
+  }
+
+  /**
+   * Valeurs distinctes pour les filtres à liste déroulante (marque, catégorie, fournisseur…).
+   */
+  async getStatsFilterOptions() {
+    const distinct = async (col) => {
+      const r = await pool.query(
+        `SELECT DISTINCT ${col} AS v FROM products
+         WHERE ${col} IS NOT NULL AND ${col} <> ''
+           AND product_type IN ('simple','variable','woosb') AND post_status = 'publish'
+         ORDER BY 1`
+      );
+      return r.rows.map((x) => x.v);
+    };
+    const suppliersR = await pool.query(
+      `SELECT DISTINCT s.name AS v
+       FROM product_suppliers ps JOIN suppliers s ON s.id = ps.supplier_id
+       WHERE s.name IS NOT NULL AND s.name <> '' ORDER BY 1`
+    );
+    return {
+      brands: await distinct('brand'),
+      sub_brands: await distinct('sub_brand'),
+      categories: await distinct('category'),
+      sub_categories: await distinct('sub_category'),
+      suppliers: suppliersR.rows.map((x) => x.v),
+    };
   }
 
   // ─── Segments enregistrés (onglet Stats Produits) ────────────────────────

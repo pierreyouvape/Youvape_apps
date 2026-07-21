@@ -2,17 +2,31 @@
 // Doit rester cohérent avec STATS_FILTER_FIELDS côté backend (productModel.js).
 
 export const FILTER_FIELDS = [
+  // Stock & ventes
   { key: 'stock',          label: 'Stock',              type: 'number', group: 'Stock & ventes' },
   { key: 'qty_sold',       label: 'Vendu (période)',    type: 'number', group: 'Stock & ventes' },
   { key: 'velocity',       label: 'Ventes / jour',      type: 'number', group: 'Stock & ventes' },
   { key: 'coverage_days',  label: 'Couverture (jours)', type: 'number', group: 'Stock & ventes' },
+  { key: 'stock_status',   label: 'État du stock',      type: 'enum',   group: 'Stock & ventes',
+    options: [{ v: 'instock', l: 'En stock' }, { v: 'outofstock', l: 'Rupture' }, { v: 'onbackorder', l: 'Sur commande' }] },
+  // Financier
   { key: 'margin_percent', label: '% Marge',            type: 'number', group: 'Financier' },
-  { key: 'ca_ttc',         label: 'CA TTC',             type: 'number', group: 'Financier' },
-  { key: 'ca_ht',          label: 'CA HT',              type: 'number', group: 'Financier' },
-  { key: 'cost_ht',        label: 'Coût HT',            type: 'number', group: 'Financier' },
+  { key: 'ca_ttc',         label: 'CA TTC (période)',   type: 'number', group: 'Financier' },
+  { key: 'ca_ht',          label: 'CA HT (période)',    type: 'number', group: 'Financier' },
+  { key: 'cost_ht',        label: 'Coût HT (période)',  type: 'number', group: 'Financier' },
+  { key: 'unit_cost',      label: 'Coût unitaire',      type: 'number', group: 'Financier' },
+  { key: 'price',          label: 'Prix TTC',           type: 'number', group: 'Financier' },
+  // Dates
   { key: 'last_sold',      label: 'Dernière vente',     type: 'date',   group: 'Dates' },
   { key: 'first_sold',     label: 'Première vente',     type: 'date',   group: 'Dates' },
-  { key: 'brand',          label: 'Marque',             type: 'text',   group: 'Attributs' },
+  { key: 'created_date',   label: 'Création produit',   type: 'date',   group: 'Dates' },
+  // Attributs
+  { key: 'brand',          label: 'Marque',             type: 'enum',   group: 'Attributs', optionsSource: 'brands' },
+  { key: 'sub_brand',      label: 'Sous-marque',        type: 'enum',   group: 'Attributs', optionsSource: 'sub_brands' },
+  { key: 'category',       label: 'Catégorie',          type: 'enum',   group: 'Attributs', optionsSource: 'categories' },
+  { key: 'sub_category',   label: 'Sous-catégorie',     type: 'enum',   group: 'Attributs', optionsSource: 'sub_categories' },
+  { key: 'supplier',       label: 'Fournisseur',        type: 'enum',   group: 'Attributs', optionsSource: 'suppliers' },
+  { key: 'weight',         label: 'Poids (g)',          type: 'number', group: 'Attributs' },
   { key: 'product_type',   label: 'Type',               type: 'enum',   group: 'Attributs',
     options: [{ v: 'simple', l: 'Simple' }, { v: 'variable', l: 'Variable' }, { v: 'woosb', l: 'Pack (woosb)' }] },
 ];

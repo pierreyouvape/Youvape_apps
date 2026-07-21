@@ -655,11 +655,28 @@ const ProductsStatsTab = () => {
       {/* Pagination */}
       {!loading && data.length > 0 && (
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '20px', backgroundColor: 'white', padding: '15px 20px', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
-          <div style={{ display: 'flex', gap: '10px' }}>
-            <button onClick={() => goToPage(0)} disabled={!canPreviousPage} style={{ padding: '8px 12px', border: '1px solid #ddd', borderRadius: '6px', backgroundColor: canPreviousPage ? 'white' : '#f8f9fa', cursor: canPreviousPage ? 'pointer' : 'not-allowed', fontSize: '14px' }}>{'<<'}</button>
-            <button onClick={previousPage} disabled={!canPreviousPage} style={{ padding: '8px 12px', border: '1px solid #ddd', borderRadius: '6px', backgroundColor: canPreviousPage ? 'white' : '#f8f9fa', cursor: canPreviousPage ? 'pointer' : 'not-allowed', fontSize: '14px' }}>{'<'}</button>
-            <button onClick={nextPage} disabled={!canNextPage} style={{ padding: '8px 12px', border: '1px solid #ddd', borderRadius: '6px', backgroundColor: canNextPage ? 'white' : '#f8f9fa', cursor: canNextPage ? 'pointer' : 'not-allowed', fontSize: '14px' }}>{'>'}</button>
-            <button onClick={() => goToPage(pageCount - 1)} disabled={!canNextPage} style={{ padding: '8px 12px', border: '1px solid #ddd', borderRadius: '6px', backgroundColor: canNextPage ? 'white' : '#f8f9fa', cursor: canNextPage ? 'pointer' : 'not-allowed', fontSize: '14px' }}>{'>>'}</button>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            {[
+              { label: '« Début', onClick: () => goToPage(0), disabled: !canPreviousPage },
+              { label: '‹ Précédent', onClick: previousPage, disabled: !canPreviousPage },
+              { label: 'Suivant ›', onClick: nextPage, disabled: !canNextPage },
+              { label: 'Fin »', onClick: () => goToPage(pageCount - 1), disabled: !canNextPage },
+            ].map((b) => (
+              <button
+                key={b.label}
+                onClick={b.onClick}
+                disabled={b.disabled}
+                style={{
+                  padding: '8px 14px', border: '1px solid #d1d5db', borderRadius: '6px',
+                  backgroundColor: b.disabled ? '#f1f3f5' : '#fff',
+                  color: b.disabled ? '#adb5bd' : '#135E84',
+                  cursor: b.disabled ? 'not-allowed' : 'pointer',
+                  fontSize: '13px', fontWeight: 600, whiteSpace: 'nowrap',
+                }}
+              >
+                {b.label}
+              </button>
+            ))}
           </div>
           <div style={{ fontSize: '14px', color: '#6c757d' }}>
             Page <strong>{pagination.pageIndex + 1}</strong> sur <strong>{pageCount}</strong>

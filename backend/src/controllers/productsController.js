@@ -324,6 +324,19 @@ exports.getStatsCountries = async (req, res) => {
 };
 
 /**
+ * Valeurs distinctes pour les filtres à liste (marque, catégorie, fournisseur…)
+ * GET /api/products/stats-filter-options
+ */
+exports.getStatsFilterOptions = async (req, res) => {
+  try {
+    res.json({ success: true, data: await productModel.getStatsFilterOptions() });
+  } catch (error) {
+    console.error('Error getting stats filter options:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+/**
  * Segments enregistrés de l'onglet Stats Produits (partagés)
  * GET    /api/products/segments
  * POST   /api/products/segments
@@ -387,15 +400,18 @@ exports.getStatsExport = async (req, res) => {
     const rows = await productModel.getAllForStats({ ...buildStatsOpts(req.query), limit: 100000, offset: 0 });
 
     const fmtDate = (d) => (d ? new Date(d).toISOString().split('T')[0] : '');
-    const HEADERS = ['Nom', 'SKU', 'Type', 'Stock', 'Vendu', 'Ventes/j', 'Couv. (j)',
-      '1ère vente', 'Dernière vente', 'CA TTC', 'CA HT', 'Coût HT', 'Marge HT', '% Marge'];
+    const HEADERS = ['Nom', 'SKU', 'Type', 'Marque', 'Catégorie', 'Fournisseur', 'Stock', 'Vendu', 'Ventes/j', 'Couv. (j)',
+      '1ère vente', 'Dernière vente', 'Prix TTC', 'Coût unit.', 'CA TTC', 'CA HT', 'Coût HT', 'Marge HT', '% Marge'];
 
     const data = rows.map(p => [
       p.post_title || '', p.sku || '', p.product_type || '',
+      p.brand || '', p.category || '', p.supplier || '',
       parseInt(p.stock) || 0, parseInt(p.qty_sold) || 0,
       p.velocity != null ? parseFloat(p.velocity) : '',
       p.coverage_days != null ? parseInt(p.coverage_days) : '',
       fmtDate(p.first_sold), fmtDate(p.last_sold),
+      p.price != null ? parseFloat(p.price).toFixed(2) : '',
+      parseFloat(p.unit_cost || 0).toFixed(2),
       parseFloat(p.ca_ttc || 0).toFixed(2), parseFloat(p.ca_ht || 0).toFixed(2),
       parseFloat(p.cost_ht || 0).toFixed(2), parseFloat(p.margin_ht || 0).toFixed(2),
       parseFloat(p.margin_percent || 0).toFixed(1),

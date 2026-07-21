@@ -30,6 +30,14 @@ export default function ProductSegmentBuilder({
   const { token } = useContext(AuthContext);
   const [segments, setSegments] = useState([]);
   const [activeSegmentId, setActiveSegmentId] = useState('');
+  const [dynOptions, setDynOptions] = useState({}); // { brands:[], categories:[], suppliers:[]... }
+
+  // Options des listes déroulantes (marque, catégorie, fournisseur…)
+  useEffect(() => {
+    axios.get(`${API_BASE_URL}/products/stats-filter-options`)
+      .then((res) => { if (res.data.success) setDynOptions(res.data.data); })
+      .catch((err) => console.error('Erreur options filtres:', err));
+  }, []);
 
   const authHeaders = useMemo(() => (token ? { headers: { Authorization: `Bearer ${token}` } } : {}), [token]);
 
@@ -152,9 +160,11 @@ export default function ProductSegmentBuilder({
     }
 
     if (type === 'enum') {
-      const opts = fieldByKey(f.field)?.options || [];
+      const fld = fieldByKey(f.field);
+      const opts = fld?.options
+        || (fld?.optionsSource ? (dynOptions[fld.optionsSource] || []).map((v) => ({ v, l: v })) : []);
       return (
-        <select value={f.value} onChange={(e) => patchFilter(i, { value: e.target.value })} style={{ ...inputStyle, minWidth: '140px' }}>
+        <select value={f.value} onChange={(e) => patchFilter(i, { value: e.target.value })} style={{ ...inputStyle, minWidth: '160px', maxWidth: '260px' }}>
           <option value="">— choisir —</option>
           {opts.map((o) => <option key={o.v} value={o.v}>{o.l}</option>)}
         </select>
