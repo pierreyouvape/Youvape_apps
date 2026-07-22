@@ -48,8 +48,9 @@ const CreateOrderPage = () => {
     setSearchTimeout(setTimeout(async () => {
       setSearchLoading(true);
       try {
-        // Use the new endpoint that returns variants only
-        const response = await axios.get(`${API_URL}/purchases/products/search?q=${encodeURIComponent(value)}&limit=30`, {
+        // Restreint la recherche aux produits déjà associés au fournisseur sélectionné
+        const supplierParam = supplierId ? `&supplier_id=${supplierId}` : '';
+        const response = await axios.get(`${API_URL}/purchases/products/search?q=${encodeURIComponent(value)}&limit=30${supplierParam}`, {
           headers: { Authorization: `Bearer ${token}` }
         });
         // Filter out products already in orderItems
@@ -166,7 +167,12 @@ const CreateOrderPage = () => {
           </label>
           <select
             value={supplierId}
-            onChange={e => setSupplierId(e.target.value)}
+            onChange={e => {
+              setSupplierId(e.target.value);
+              // Le fournisseur conditionne les produits proposés : on repart à zéro
+              setProductSearch('');
+              setSearchResults([]);
+            }}
             style={{ width: '100%', maxWidth: '400px', padding: '12px', borderRadius: '6px', border: '1px solid #ddd', fontSize: '15px' }}
           >
             <option value="">-- Sélectionner un fournisseur --</option>
@@ -181,13 +187,19 @@ const CreateOrderPage = () => {
           <label style={{ fontWeight: 600, display: 'block', marginBottom: '10px', fontSize: '16px' }}>
             Ajouter des produits
           </label>
+          {!supplierId && (
+            <div style={{ marginBottom: '10px', color: '#b45309', fontSize: '14px' }}>
+              Sélectionnez d'abord un fournisseur : seuls ses produits seront proposés.
+            </div>
+          )}
           <div style={{ position: 'relative' }}>
             <input
               type="text"
-              placeholder="Rechercher par nom ou SKU..."
+              placeholder={supplierId ? 'Rechercher un produit de ce fournisseur...' : 'Sélectionnez un fournisseur d\'abord'}
               value={productSearch}
               onChange={e => handleProductSearch(e.target.value)}
-              style={{ width: '100%', padding: '12px', borderRadius: '6px', border: '1px solid #ddd', fontSize: '15px' }}
+              disabled={!supplierId}
+              style={{ width: '100%', padding: '12px', borderRadius: '6px', border: '1px solid #ddd', fontSize: '15px', background: supplierId ? 'white' : '#f3f4f6', cursor: supplierId ? 'text' : 'not-allowed' }}
             />
             {searchLoading && (
               <div style={{ position: 'absolute', right: '15px', top: '50%', transform: 'translateY(-50%)', color: '#666' }}>

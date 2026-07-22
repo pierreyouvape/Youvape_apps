@@ -20,6 +20,10 @@ const purchasesController = {
     try {
       const searchTerm = req.query.q || '';
       const limit = parseInt(req.query.limit) || 30;
+      // Optionnel : restreindre aux produits déjà associés à ce fournisseur.
+      // Utilisé sur les écrans de commande pour ne proposer que les produits
+      // réellement commandés chez ce fournisseur (évite les attributions à tort).
+      const supplierId = req.query.supplier_id ? parseInt(req.query.supplier_id) : null;
 
       if (searchTerm.length < 2) {
         return res.json({ success: true, data: [] });
@@ -34,6 +38,26 @@ const purchasesController = {
         ['p.post_title', 'p.sku', 'parent.post_title'],
         1
       );
+
+      const params = [...searchParams];
+      let idx = nextIndex;
+
+      // Filtre fournisseur : le produit lui-même (simple/variation) OU son parent
+      // (les associations product_suppliers sont stockées au niveau parent pour les variables)
+      let supplierClause = '';
+      if (supplierId) {
+        supplierClause = `AND EXISTS (
+            SELECT 1 FROM product_suppliers ps
+            WHERE ps.supplier_id = $${idx}
+              AND (ps.product_id = p.id OR ps.product_id = parent.id)
+          )`;
+        params.push(supplierId);
+        idx++;
+      }
+
+      const skuIdx = idx;
+      const limitIdx = idx + 1;
+      params.push(searchTerm.toLowerCase(), limit);
 
       const query = `
         SELECT
@@ -52,15 +76,16 @@ const purchasesController = {
           p.product_type IN ('simple', 'variation')
           AND p.post_status = 'publish'
           AND ${clause}
+          ${supplierClause}
         ORDER BY
-          CASE WHEN LOWER(p.sku) = $${nextIndex} THEN 0
+          CASE WHEN LOWER(p.sku) = $${skuIdx} THEN 0
                ELSE 1
           END,
           p.post_title
-        LIMIT $${nextIndex + 1}
+        LIMIT $${limitIdx}
       `;
 
-      const result = await pool.query(query, [...searchParams, searchTerm.toLowerCase(), limit]);
+      const result = await pool.query(query, params);
 
       res.json({ success: true, data: result.rows });
     } catch (error) {

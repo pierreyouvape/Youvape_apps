@@ -289,7 +289,8 @@ const OrdersTab = ({ token }) => {
       setSearchLoading(true);
       try {
         const existingIds = editData.items.filter(i => !i._delete && !i.id).map(i => i.product_id);
-        const response = await axios.get(`${API_URL}/purchases/products/search?q=${encodeURIComponent(value)}&limit=20`, {
+        const supplierParam = editData.supplier_id ? `&supplier_id=${editData.supplier_id}` : '';
+        const response = await axios.get(`${API_URL}/purchases/products/search?q=${encodeURIComponent(value)}&limit=20${supplierParam}`, {
           headers: { Authorization: `Bearer ${token}` }
         });
         setSearchResults((response.data.data || []).filter(p => !existingIds.includes(p.id)));
@@ -328,7 +329,8 @@ const OrdersTab = ({ token }) => {
     setRematchTimeout(setTimeout(async () => {
       setRematchLoading(true);
       try {
-        const response = await axios.get(`${API_URL}/purchases/products/search?q=${encodeURIComponent(value)}&limit=20`, {
+        const supplierParam = editData?.supplier_id ? `&supplier_id=${editData.supplier_id}` : '';
+        const response = await axios.get(`${API_URL}/purchases/products/search?q=${encodeURIComponent(value)}&limit=20${supplierParam}`, {
           headers: { Authorization: `Bearer ${token}` }
         });
         setRematchResults(response.data.data || []);
