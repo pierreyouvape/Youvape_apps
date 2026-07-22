@@ -31,10 +31,26 @@ export const AuthProvider = ({ children }) => {
       localStorage.setItem('isSuperAdmin', JSON.stringify(is_super_admin));
     } catch (error) {
       console.error('Erreur lors du chargement des permissions:', error);
-      // En cas d'erreur, on met des permissions vides
-      setPermissions({});
-      setIsAdmin(false);
-      setIsSuperAdmin(false);
+
+      // 401 = token expiré / invalide. Les routes SAV n'ayant aucune auth,
+      // l'utilisateur pouvait rester « connecté » avec un token périmé : la
+      // sidebar (permissions) tombait vide et la navigation inter-app était
+      // cassée sans jamais être redéconnecté. On force une déconnexion propre
+      // → PrivateRoute renvoie vers /login pour ré-authentification.
+      if (error?.response?.status === 401) {
+        logout();
+        return;
+      }
+
+      // Erreur transitoire (réseau, 500…) : ne pas vider la sidebar. On garde
+      // les permissions déjà en cache (localStorage) si elles existent.
+      const cached = localStorage.getItem('permissions');
+      if (cached) {
+        try { setPermissions(JSON.parse(cached)); }
+        catch { setPermissions({}); }
+      } else {
+        setPermissions({});
+      }
     }
   };
 
