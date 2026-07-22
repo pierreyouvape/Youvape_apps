@@ -232,17 +232,20 @@ function Sidebar({ user, orderedApps, accessibleKeys, draggingKey, overKey, onPo
         </div>
       )}
 
-      {/* Spacer — pousse la liste d'apps vers le bas sur desktop. Sur mobile, la
-          liste prend l'espace dispo (flex:1) et défile, donc pas de spacer. */}
-      {!mobile && <div style={{ flex: 1, minHeight: 0 }} />}
-
-      {/* Liste des apps — sur mobile : flex:1 + scroll tactile pour atteindre
-          toutes les apps. Sur desktop : maxHeight 55vh comme avant. */}
+      {/* Liste des apps — zone flexible qui occupe l'espace restant et défile si
+          besoin (desktop ET mobile). Auparavant le desktop utilisait un spacer
+          flex:1 + maxHeight:55vh : sur un écran pas assez haut, la somme des blocs
+          dépassait 100vh et la liste, plafonnée à 55vh sous le spacer, se
+          retrouvait repoussée sous le bord bas de l'aside (non défilant) → apps
+          invisibles. Le bouton « Paramètres de l'app » (propre aux Tickets)
+          suffisait à faire basculer cet app-là dans le débordement. flex:1 +
+          minHeight:0 rend la liste toujours visible et défilable. */}
       <div style={{
+        flex: 1,
+        minHeight: 0,
         overflowY: 'auto',
         WebkitOverflowScrolling: 'touch',
         padding: collapsed ? '14px 0' : '14px 12px',
-        ...(mobile ? { flex: 1, minHeight: 0 } : { maxHeight: '55vh' }),
       }}>
         {!collapsed && (
           <div style={{
