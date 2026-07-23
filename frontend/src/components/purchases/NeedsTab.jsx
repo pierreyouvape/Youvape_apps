@@ -332,6 +332,11 @@ const NeedsTab = ({ token, onCompactChange }) => {
     }
   };
 
+  // Réf. fournisseur à afficher : celle du fournisseur sélectionné en priorité,
+  // sinon celle du fournisseur principal (supplier_sku).
+  const getSupplierRef = (row) =>
+    (supplierId && row.supplier_skus && row.supplier_skus[String(supplierId)]) || row.supplier_sku || '';
+
   // Ref pour gérer le debounce de la recherche
   const searchTimeoutRef = useRef(null);
 
@@ -1022,6 +1027,7 @@ const NeedsTab = ({ token, onCompactChange }) => {
                 <tr>
                   <th style={{ width: '40px' }}></th>
                   <SortableHeader column="family" label="Produit" />
+                  <th>Réf. fournisseur</th>
                   <th style={{ width: '30px' }}></th>
                   <th>SKU</th>
                   {isVisible('weight') && <th className="text-right">Poids</th>}
@@ -1068,6 +1074,7 @@ const NeedsTab = ({ token, onCompactChange }) => {
                         </button>
                       </div>
                     </td>
+                    <td></td>
                     <td>
                       {row.parentSku && (
                         <a
@@ -1126,6 +1133,34 @@ const NeedsTab = ({ token, onCompactChange }) => {
                           <small style={{ color: '#666' }}>{row.supplier_name}</small>
                         )}
                       </div>
+                    </td>
+                    <td>
+                      {(() => {
+                        const ref = getSupplierRef(row);
+                        if (!ref) return <span style={{ color: '#cbd5e1' }}>-</span>;
+                        const copied = copiedId === `ref-${row.id}`;
+                        return (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', whiteSpace: 'nowrap' }}>
+                            <code style={{ fontSize: '12px' }}>{ref}</code>
+                            <button
+                              type="button"
+                              title={copied ? 'Copié !' : 'Copier la référence fournisseur'}
+                              onClick={() => copyProductName(`ref-${row.id}`, ref)}
+                              style={{
+                                border: 'none', background: 'transparent', cursor: 'pointer',
+                                padding: '2px', display: 'inline-flex', flexShrink: 0,
+                                color: copied ? '#4AB866' : '#94a3b8',
+                              }}
+                            >
+                              {copied ? (
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+                              ) : (
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></svg>
+                              )}
+                            </button>
+                          </div>
+                        );
+                      })()}
                     </td>
                     <td>
                       {!row._isVariation && row.sku && (
