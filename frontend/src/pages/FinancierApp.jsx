@@ -486,7 +486,7 @@ const CUSTOM_PRESETS = [
 /* ─── MAIN APP ───────────────────────────────────────────── */
 export default function FinancierApp() {
   const { token, logout } = useContext(AuthContext);
-  const [period, setPeriod] = useState('month');
+  const [period, setPeriod] = useState('today');
   const [customFrom, setCustomFrom] = useState('');
   const [customTo, setCustomTo] = useState('');
   const [customPreset, setCustomPreset] = useState('');
@@ -499,6 +499,14 @@ export default function FinancierApp() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [prevData, setPrevData] = useState(null);
+
+  // Garde-fou anti-race : chaque fetch reçoit un numéro de séquence ; seule la
+  // réponse de la requête la plus récente est appliquée. Sans ça, un changement
+  // de période concurrent d'un auto-refresh (ou de clics rapides) pouvait laisser
+  // une réponse obsolète écraser `data` — ex. le CA annuel (>1 M€) affiché sous
+  // le libellé « Ce mois ».
+  const dataReqRef = useRef(0);
+  const prevReqRef = useRef(0);
 
   useEffect(() => {
     const onResize = () => setWindowW(window.innerWidth);
@@ -516,20 +524,24 @@ export default function FinancierApp() {
 
   const fetchComparisonData = useCallback(async (p) => {
     const range = getComparisonRange(p);
-    if (!range) { setPrevData(null); return; }
+    if (!range) { prevReqRef.current++; setPrevData(null); return; }
+    const reqId = ++prevReqRef.current;
     try {
       const res = await axios.post(
         `${API_URL}/financier/dashboard`,
         range,
         { headers: { Authorization: `Bearer ${token}` } }
       );
+      if (reqId !== prevReqRef.current) return; // réponse obsolète : une requête plus récente a été lancée
       setPrevData({ kpis: res.data.kpis, series: res.data.series, dateFrom: range.dateFrom, dateTo: range.dateTo });
     } catch {
+      if (reqId !== prevReqRef.current) return;
       setPrevData(null);
     }
   }, [token]);
 
   const fetchData = useCallback(async (p, cFrom, cTo, silent = false) => {
+    const reqId = ++dataReqRef.current;
     if (!silent) setLoading(true);
     setError(null);
     try {
@@ -541,12 +553,14 @@ export default function FinancierApp() {
         range,
         { headers: { Authorization: `Bearer ${token}` } }
       );
+      if (reqId !== dataReqRef.current) return; // réponse obsolète : on n'écrase pas les données d'une requête plus récente
       setData(res.data);
     } catch (err) {
+      if (reqId !== dataReqRef.current) return;
       if (err.response?.status === 401) { logout(); return; }
       setError(err.response?.data?.error || err.message);
     } finally {
-      if (!silent) setLoading(false);
+      if (!silent && reqId === dataReqRef.current) setLoading(false);
     }
   }, [token, logout]);
 
@@ -557,11 +571,11 @@ export default function FinancierApp() {
     if (period === 'custom' && !customPreset && (!customFrom || !customTo)) return;
     if (period === 'custom' && customPreset) {
       fetchData(customPreset, '', '');
-      setPrevData(null);
+      prevReqRef.current++; setPrevData(null); // invalide toute comparaison en vol
     } else {
       fetchData(period, customFrom, customTo);
       if (MAIN_PERIODS.includes(period)) fetchComparisonData(period);
-      else setPrevData(null);
+      else { prevReqRef.current++; setPrevData(null); }
     }
   }, [period, fetchData, fetchComparisonData]); // eslint-disable-line react-hooks/exhaustive-deps
 
