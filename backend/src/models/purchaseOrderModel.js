@@ -734,6 +734,11 @@ const purchaseOrderModel = {
     // 2. Récupérer toutes les commandes BMS
     const allOrders = await bmsApiModel.getPurchaseOrders();
 
+    // Ensemble des ids BMS actuellement existants (liste complète, avant filtre incrémental).
+    // Sert à réconcilier les suppressions : une commande absente de cet ensemble a été
+    // supprimée côté BMS (l'annulation, elle, reste renvoyée avec status='cancelled').
+    const existingBmsIds = new Set(allOrders.map(o => parseInt(o.id)).filter(Number.isFinite));
+
     // Filtrer : commandes créées OU mises à jour >= dernière sync
     const lastSyncDate = new Date(lastSyncAt);
     const orders = allOrders.filter(o => {
@@ -742,8 +747,27 @@ const purchaseOrderModel = {
       return (created && created >= lastSyncDate) || (updated && updated >= lastSyncDate);
     });
 
+    // 2bis. Réconcilier les suppressions BMS : toute commande locale liée à BMS,
+    // encore dans un statut non terminé, dont l'id n'existe plus côté BMS, est
+    // marquée 'cancelled' pour ne plus être comptée « en attente / en arrivage ».
+    // Garde-fou : ne rien faire si la liste BMS est vide (échec/API partielle).
+    let reconciled = 0;
+    if (existingBmsIds.size > 0) {
+      const reconcileResult = await pool.query(`
+        UPDATE purchase_orders
+        SET status = 'cancelled',
+            notes = COALESCE(notes, '') || ' [auto: supprimée de BMS le ' || to_char(CURRENT_DATE, 'YYYY-MM-DD') || ']',
+            updated_at = CURRENT_TIMESTAMP
+        WHERE bms_po_id IS NOT NULL
+          AND status IN ('draft', 'sent', 'confirmed', 'shipped', 'partial')
+          AND NOT (bms_po_id = ANY($1::int[]))
+        RETURNING id
+      `, [Array.from(existingBmsIds)]);
+      reconciled = reconcileResult.rowCount;
+    }
+
     if (orders.length === 0) {
-      return { total: 0, created: 0, updated: 0, skipped: 0, orders: [] };
+      return { total: 0, created: 0, updated: 0, skipped: 0, reconciled, orders: [] };
     }
 
     // 3. Charger le mapping bms_id → supplier local (en une seule requête)
@@ -910,6 +934,7 @@ const purchaseOrderModel = {
         created,
         updated,
         skipped,
+        reconciled,
         orders: results
       };
     } catch (error) {
