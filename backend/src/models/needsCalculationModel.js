@@ -43,6 +43,13 @@ const needsCalculationModel = {
           (SELECT array_agg(supplier_id) FROM product_suppliers WHERE product_id = p.id),
           ARRAY[]::int[]
         ) as supplier_ids,
+        -- Map { supplier_id: supplier_sku } pour afficher la réf du fournisseur sélectionné
+        COALESCE(
+          (SELECT jsonb_object_agg(supplier_id::text, supplier_sku)
+           FROM product_suppliers
+           WHERE product_id = p.id AND supplier_sku IS NOT NULL AND supplier_sku != ''),
+          '{}'::jsonb
+        ) as supplier_skus,
         p.image_url,
         p.weight,
         p.wp_parent_id,
@@ -210,6 +217,7 @@ const needsCalculationModel = {
       supplier_coverage_months: parseFloat(p.supplier_coverage_months) || 1,
       supplier_lead_time_days: parseInt(p.supplier_lead_time_days) || 2,
       supplier_sku: p.supplier_sku,
+      supplier_skus: p.supplier_skus || {},
       supplier_price: p.supplier_price,
       incoming_qty: incomingMap.get(p.id) || 0,
       max_order_qty_12m: maxOrderMap.get(p.id) || 0,
