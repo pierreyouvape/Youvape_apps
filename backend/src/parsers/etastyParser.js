@@ -31,9 +31,15 @@ function parseInvoice(text) {
   const items = [];
 
   // Restreindre le scan au tableau produits : on commence APRES l'en-tete de
-  // colonnes ("... Quantite Total HT") et on s'arrete AVANT le recapitulatif
-  // ("Detail des taxes").
-  const headerMatch = text.match(/Total HT/i);
+  // colonnes et on s'arrete AVANT le recapitulatif ("Detail des taxes").
+  //
+  // L'en-tete de la derniere colonne peut s'ecrire "Total HT", "Total (HT)" ou
+  // etre coupe sur deux lignes ("Total\n(HT)"). Une ancre trop stricte (/Total HT/)
+  // echouait sur ces variantes : startIdx retombait a 0 et le scan capturait
+  // "FACTURE" (1er mot du document) comme reference du 1er produit. La 1re
+  // occurrence de "Total (HT)" est bien l'en-tete (le "Total (HT)" du pied de
+  // page arrive plus loin).
+  const headerMatch = text.match(/Total\s*\(?\s*HT\s*\)?/i);
   const startIdx = headerMatch ? headerMatch.index + headerMatch[0].length : 0;
   const footerIdx = text.search(/des taxes/i);
   const scanText = text.slice(startIdx, footerIdx >= 0 ? footerIdx : text.length);
@@ -51,6 +57,11 @@ function parseInvoice(text) {
 
     // Verification coherence : qty * prix ~= total (evite les faux positifs)
     if (Math.abs(qty * prixUnit - totalHt) > 0.05) continue;
+
+    // Garde-fou : "FACTURE" (mot d'en-tete du document) n'est jamais une
+    // reference produit. Si l'ancre d'en-tete a echoue malgre tout, on ignore
+    // cette pseudo-ligne plutot que de creer un mauvais mapping fournisseur.
+    if (/^FACTURE$/i.test(supplierSku)) continue;
 
     items.push({
       supplier_sku: supplierSku,
