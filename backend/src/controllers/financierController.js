@@ -19,6 +19,17 @@ function refDateParis(alias = 'o') {
 }
 
 /**
+ * Borne haute d'une plage de dates. Si dateTo est une date nue ('YYYY-MM-DD'),
+ * on prend la fin de journée. Si un horaire est déjà présent (ex. comparaison
+ * « à la même heure » envoyée par /financier : 'YYYY-MM-DD HH:MM:SS'), on le
+ * respecte tel quel — permet une comparaison pro rata temporis (journée en cours
+ * vs période précédente coupée à la même heure).
+ */
+function upperBound(dateTo) {
+  return dateTo.length > 10 ? dateTo : dateTo + ' 23:59:59';
+}
+
+/**
  * Construit les conditions WHERE et les paramètres pour une plage de dates.
  * Filtre sur la date de paiement (paid_date) en heure Paris brute — aligné sur Metorik.
  * Exclut les commandes à 0 € (SAV / remplacements) — Metorik ne les compte pas.
@@ -38,7 +49,7 @@ function buildDateConditions(dateFrom, dateTo, startIndex = 1, alias = 'o') {
   }
   if (dateTo) {
     conditions.push(`${refDateParis(alias)} <= $${idx++}`);
-    params.push(dateTo + ' 23:59:59');
+    params.push(upperBound(dateTo));
   }
 
   return { conditions, params, nextIndex: idx };
@@ -120,7 +131,7 @@ async function computeDashboard({ dateFrom, dateTo, granularity } = {}) {
     }
     if (dateTo) {
       refundsConds.push(`(r.refund_date) <= $${rIdx++}`);
-      refundsParams.push(dateTo + ' 23:59:59');
+      refundsParams.push(upperBound(dateTo));
     }
 
     const refundsResult = await pool.query(`
@@ -152,10 +163,15 @@ async function computeDashboard({ dateFrom, dateTo, granularity } = {}) {
       if (!dateFrom && !dateTo) {
         gran = 'day';
       } else {
-        const from = new Date(dateFrom || '2020-01-01');
-        const to   = new Date((dateTo || new Date().toISOString().slice(0, 10)) + 'T23:59:59');
+        // Toujours raisonner sur la date nue : dateTo peut porter un horaire
+        // (comparaison « à la même heure »), qui casserait le parsing et
+        // désalignerait la granularité de la série précédente.
+        const fromDay = (dateFrom || '2020-01-01').slice(0, 10);
+        const toDay   = (dateTo || new Date().toISOString().slice(0, 10)).slice(0, 10);
+        const from = new Date(fromDay);
+        const to   = new Date(toDay + 'T23:59:59');
         const diffDays = (to - from) / (1000 * 60 * 60 * 24);
-        if (dateFrom === dateTo)   gran = 'quarter';
+        if (fromDay === toDay)    gran = 'quarter';
         else if (diffDays <= 1)   gran = 'hour';
         else if (diffDays <= 35)  gran = 'day';
         else if (diffDays <= 120) gran = 'week';
@@ -323,7 +339,7 @@ async function computeNewCustomers({ dateFrom, dateTo } = {}) {
   }
   if (dateTo) {
     conditions.push(`c.user_registered <= $${idx++}`);
-    params.push(dateTo + ' 23:59:59');
+    params.push(upperBound(dateTo));
   }
   const where = conditions.length ? 'WHERE ' + conditions.join(' AND ') : '';
 

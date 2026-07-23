@@ -77,10 +77,15 @@ function getComparisonRange(period) {
   const now = new Date();
   const pad = (n) => String(n).padStart(2, '0');
   const fmt = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  // Comparaison « pro rata temporis » : on coupe le dernier jour de la période précédente
+  // à l'heure actuelle, pour ne pas comparer une journée en cours à une journée complète.
+  // Le backend détecte l'horaire dans dateTo et n'ajoute pas « 23:59:59 » dans ce cas.
+  const nowTime = `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+  const fmtNow = (d) => `${fmt(d)} ${nowTime}`;
 
   if (period === 'today') {
     const d = new Date(now); d.setDate(d.getDate() - 1);
-    return { dateFrom: fmt(d), dateTo: fmt(d) };
+    return { dateFrom: fmt(d), dateTo: fmtNow(d) };
   }
   if (period === 'week') {
     // Même nb de jours, semaine précédente (lun → aujourd'hui -7j)
@@ -88,7 +93,7 @@ function getComparisonRange(period) {
     const mon = new Date(now); mon.setDate(now.getDate() - day + 1);
     const prevMon = new Date(mon); prevMon.setDate(mon.getDate() - 7);
     const prevEnd = new Date(now); prevEnd.setDate(now.getDate() - 7);
-    return { dateFrom: fmt(prevMon), dateTo: fmt(prevEnd) };
+    return { dateFrom: fmt(prevMon), dateTo: fmtNow(prevEnd) };
   }
   if (period === 'month') {
     // 1er du mois précédent → même numéro de jour du mois précédent
@@ -96,14 +101,14 @@ function getComparisonRange(period) {
     const lastDayOfPrevMonth = new Date(now.getFullYear(), now.getMonth(), 0).getDate();
     const prevStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
     const prevEnd = new Date(now.getFullYear(), now.getMonth() - 1, Math.min(dayOfMonth, lastDayOfPrevMonth));
-    return { dateFrom: fmt(prevStart), dateTo: fmt(prevEnd) };
+    return { dateFrom: fmt(prevStart), dateTo: fmtNow(prevEnd) };
   }
   if (period === 'year') {
     // 1er jan année précédente → même jour/mois année précédente
     const prevYear = now.getFullYear() - 1;
     const prevEnd = new Date(prevYear, now.getMonth(), now.getDate());
     if (prevEnd.getMonth() !== now.getMonth()) prevEnd.setDate(0); // gère 29 fév → 28 fév
-    return { dateFrom: `${prevYear}-01-01`, dateTo: fmt(prevEnd) };
+    return { dateFrom: `${prevYear}-01-01`, dateTo: fmtNow(prevEnd) };
   }
   return null;
 }
