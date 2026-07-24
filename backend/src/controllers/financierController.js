@@ -130,8 +130,8 @@ async function computeDashboard({ dateFrom, dateTo, granularity } = {}) {
       FROM orders o
       LEFT JOIN order_items oi ON o.wp_order_id = oi.wp_order_id
       LEFT JOIN products p ON (
-        oi.variation_id = p.wp_product_id
-        OR (oi.variation_id IS NULL AND oi.product_id = p.wp_product_id)
+        NULLIF(oi.variation_id, 0) = p.wp_product_id
+        OR (COALESCE(oi.variation_id, 0) = 0 AND oi.product_id = p.wp_product_id)
       )
       ${parentJoin}
       ${where}
@@ -255,8 +255,8 @@ async function computeDashboard({ dateFrom, dateTo, granularity } = {}) {
       FROM orders o
       LEFT JOIN order_items oi ON o.wp_order_id = oi.wp_order_id
       LEFT JOIN products p ON (
-        oi.variation_id = p.wp_product_id
-        OR (oi.variation_id IS NULL AND oi.product_id = p.wp_product_id)
+        NULLIF(oi.variation_id, 0) = p.wp_product_id
+        OR (COALESCE(oi.variation_id, 0) = 0 AND oi.product_id = p.wp_product_id)
       )
       ${parentJoin}
       ${where}
