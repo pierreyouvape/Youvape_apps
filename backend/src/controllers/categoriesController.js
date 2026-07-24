@@ -35,7 +35,7 @@ exports.getAll = async (req, res) => {
           SUM(oi.qty)::int as qty_sold,
           COALESCE(SUM(oi.line_total), 0) + COALESCE(SUM(oi.line_tax), 0) as ca_ttc,
           COALESCE(SUM(oi.line_total), 0) as ca_ht,
-          COALESCE(SUM(oi.qty * COALESCE(p_cost.computed_cost, p_cost.wc_cog_cost, 0)), 0) as cost_ht
+          COALESCE(SUM(oi.qty * CASE WHEN p_cost.product_type = 'woosb' THEN 0 ELSE COALESCE(p_cost.computed_cost, p_cost.wc_cog_cost, 0) END), 0) as cost_ht
         FROM product_family pf
         LEFT JOIN order_items oi ON (oi.product_id = pf.product_id OR oi.variation_id = pf.product_id)
         LEFT JOIN orders o ON o.wp_order_id = oi.wp_order_id
@@ -109,7 +109,7 @@ exports.getAllSubCategories = async (req, res) => {
           SUM(oi.qty)::int as qty_sold,
           COALESCE(SUM(oi.line_total), 0) + COALESCE(SUM(oi.line_tax), 0) as ca_ttc,
           COALESCE(SUM(oi.line_total), 0) as ca_ht,
-          COALESCE(SUM(oi.qty * COALESCE(p_cost.computed_cost, p_cost.wc_cog_cost, 0)), 0) as cost_ht
+          COALESCE(SUM(oi.qty * CASE WHEN p_cost.product_type = 'woosb' THEN 0 ELSE COALESCE(p_cost.computed_cost, p_cost.wc_cog_cost, 0) END), 0) as cost_ht
         FROM product_family pf
         LEFT JOIN order_items oi ON (oi.product_id = pf.product_id OR oi.variation_id = pf.product_id)
         LEFT JOIN orders o ON o.wp_order_id = oi.wp_order_id
@@ -185,7 +185,7 @@ exports.getByName = async (req, res) => {
           SUM(oi.qty)::int as qty_sold,
           COALESCE(SUM(oi.line_total), 0) + COALESCE(SUM(oi.line_tax), 0) as ca_ttc,
           COALESCE(SUM(oi.line_total), 0) as ca_ht,
-          COALESCE(SUM(oi.qty * COALESCE(p_cost.computed_cost, p_cost.wc_cog_cost, 0)), 0) as cost_ht
+          COALESCE(SUM(oi.qty * CASE WHEN p_cost.product_type = 'woosb' THEN 0 ELSE COALESCE(p_cost.computed_cost, p_cost.wc_cog_cost, 0) END), 0) as cost_ht
         FROM product_family pf
         LEFT JOIN order_items oi ON (oi.product_id = pf.product_id OR oi.variation_id = pf.product_id)
         LEFT JOIN orders o ON o.wp_order_id = oi.wp_order_id
@@ -244,7 +244,7 @@ exports.getByName = async (req, res) => {
           SUM(oi.qty)::int as qty_sold,
           COALESCE(SUM(oi.line_total), 0) + COALESCE(SUM(oi.line_tax), 0) as ca_ttc,
           COALESCE(SUM(oi.line_total), 0) as ca_ht,
-          COALESCE(SUM(oi.qty * COALESCE(p_cost.computed_cost, p_cost.wc_cog_cost, 0)), 0) as cost_ht
+          COALESCE(SUM(oi.qty * CASE WHEN p_cost.product_type = 'woosb' THEN 0 ELSE COALESCE(p_cost.computed_cost, p_cost.wc_cog_cost, 0) END), 0) as cost_ht
         FROM product_family pf
         LEFT JOIN order_items oi ON (oi.product_id = pf.product_id OR oi.variation_id = pf.product_id)
         LEFT JOIN orders o ON o.wp_order_id = oi.wp_order_id
@@ -309,7 +309,7 @@ exports.getByName = async (req, res) => {
         COALESCE(SUM(oi.qty), 0)::int as qty_sold,
         COALESCE(SUM(oi.line_total), 0) + COALESCE(SUM(oi.line_tax), 0) as ca_ttc,
         COALESCE(SUM(oi.line_total), 0) as ca_ht,
-        COALESCE(SUM(oi.qty * COALESCE(p_cost.computed_cost, p_cost.wc_cog_cost, 0)), 0) as cost_ht
+        COALESCE(SUM(oi.qty * CASE WHEN p_cost.product_type = 'woosb' THEN 0 ELSE COALESCE(p_cost.computed_cost, p_cost.wc_cog_cost, 0) END), 0) as cost_ht
       FROM category_products cp
       LEFT JOIN product_family pf ON pf.parent_id = cp.wp_product_id
       LEFT JOIN order_items oi ON (oi.product_id = pf.product_id OR oi.variation_id = pf.product_id)
@@ -399,7 +399,7 @@ exports.getSubCategoryByName = async (req, res) => {
           SUM(oi.qty)::int as qty_sold,
           COALESCE(SUM(oi.line_total), 0) + COALESCE(SUM(oi.line_tax), 0) as ca_ttc,
           COALESCE(SUM(oi.line_total), 0) as ca_ht,
-          COALESCE(SUM(oi.qty * COALESCE(p_cost.computed_cost, p_cost.wc_cog_cost, 0)), 0) as cost_ht
+          COALESCE(SUM(oi.qty * CASE WHEN p_cost.product_type = 'woosb' THEN 0 ELSE COALESCE(p_cost.computed_cost, p_cost.wc_cog_cost, 0) END), 0) as cost_ht
         FROM product_family pf
         LEFT JOIN order_items oi ON (oi.product_id = pf.product_id OR oi.variation_id = pf.product_id)
         LEFT JOIN orders o ON o.wp_order_id = oi.wp_order_id
@@ -463,7 +463,7 @@ exports.getSubCategoryByName = async (req, res) => {
         COALESCE(SUM(oi.qty), 0)::int as qty_sold,
         COALESCE(SUM(oi.line_total), 0) + COALESCE(SUM(oi.line_tax), 0) as ca_ttc,
         COALESCE(SUM(oi.line_total), 0) as ca_ht,
-        COALESCE(SUM(oi.qty * COALESCE(p_cost.computed_cost, p_cost.wc_cog_cost, 0)), 0) as cost_ht
+        COALESCE(SUM(oi.qty * CASE WHEN p_cost.product_type = 'woosb' THEN 0 ELSE COALESCE(p_cost.computed_cost, p_cost.wc_cog_cost, 0) END), 0) as cost_ht
       FROM sub_category_products scp
       LEFT JOIN product_family pf ON pf.parent_id = scp.wp_product_id
       LEFT JOIN order_items oi ON (oi.product_id = pf.product_id OR oi.variation_id = pf.product_id)

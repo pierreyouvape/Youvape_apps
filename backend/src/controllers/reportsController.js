@@ -341,10 +341,11 @@ exports.getProfitReport = async (req, res) => {
     const productCostByDayQuery = `
       SELECT
         DATE_TRUNC('day', (o.post_date))::date as date,
-        COALESCE(SUM(oi.qty * COALESCE(p.computed_cost, p.wc_cog_cost, 0)), 0)::numeric as product_cost
+        COALESCE(SUM(oi.qty * CASE WHEN p.product_type = 'woosb' THEN 0 ELSE COALESCE(p.computed_cost, NULLIF(p.wc_cog_cost,0), par.computed_cost, NULLIF(par.wc_cog_cost,0), 0) END), 0)::numeric as product_cost
       FROM order_items oi
       JOIN orders o ON oi.wp_order_id = o.wp_order_id
-      LEFT JOIN products p ON p.wp_product_id = oi.product_id
+      LEFT JOIN products p ON p.wp_product_id = COALESCE(NULLIF(oi.variation_id, 0), oi.product_id)
+      LEFT JOIN products par ON par.wp_product_id = p.wp_parent_id
       ${whereClause}
       GROUP BY DATE_TRUNC('day', (o.post_date))::date
     `;

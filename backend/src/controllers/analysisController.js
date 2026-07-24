@@ -353,7 +353,7 @@ exports.getStats = async (req, res) => {
 
     // Coût HT : calculé depuis order_items × coût unitaire (computed_cost FIFO prioritaire, sinon wc_cog_cost)
     const costQuery = `
-      SELECT COALESCE(SUM(oi.qty * COALESCE(p.computed_cost, p.wc_cog_cost, 0)), 0)::numeric as cost_ht
+      SELECT COALESCE(SUM(oi.qty * CASE WHEN p.product_type = 'woosb' THEN 0 ELSE COALESCE(p.computed_cost, p.wc_cog_cost, 0) END), 0)::numeric as cost_ht
       FROM order_items oi
       INNER JOIN (
         SELECT DISTINCT o.wp_order_id

@@ -33,10 +33,11 @@ class StatsService {
 
     // Requête séparée pour le coût des produits (PMP FIFO)
     const costQuery = `
-      SELECT COALESCE(SUM(oi.qty * COALESCE(p.computed_cost, p.wc_cog_cost, 0)), 0) as total_products_cost
+      SELECT COALESCE(SUM(oi.qty * CASE WHEN p.product_type = 'woosb' THEN 0 ELSE COALESCE(p.computed_cost, NULLIF(p.wc_cog_cost,0), par.computed_cost, NULLIF(par.wc_cog_cost,0), 0) END), 0) as total_products_cost
       FROM order_items oi
       INNER JOIN orders o ON o.wp_order_id = oi.wp_order_id
-      LEFT JOIN products p ON p.wp_product_id = oi.product_id
+      LEFT JOIN products p ON p.wp_product_id = COALESCE(NULLIF(oi.variation_id, 0), oi.product_id)
+      LEFT JOIN products par ON par.wp_product_id = p.wp_parent_id
       ${whereClause}
     `;
 

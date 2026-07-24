@@ -144,7 +144,7 @@ class CustomerModel {
 
     // Calcul du coût total des produits achetés
     const costQuery = `
-      SELECT COALESCE(SUM(oi.qty * COALESCE(p_cost.computed_cost, p_cost.wc_cog_cost, 0)), 0) as total_cost
+      SELECT COALESCE(SUM(oi.qty * CASE WHEN p_cost.product_type = 'woosb' THEN 0 ELSE COALESCE(p_cost.computed_cost, p_cost.wc_cog_cost, 0) END), 0) as total_cost
       FROM order_items oi
       INNER JOIN orders o ON o.wp_order_id = oi.wp_order_id
       LEFT JOIN products p_cost ON p_cost.wp_product_id = COALESCE(NULLIF(oi.variation_id, 0), oi.product_id)
@@ -496,7 +496,7 @@ class CustomerModel {
 
     // Coût total (exclut failed, cancelled, refunded)
     const costQuery = `
-      SELECT COALESCE(SUM(oi.qty * COALESCE(p_cost.computed_cost, p_cost.wc_cog_cost, 0)), 0) as total_cost
+      SELECT COALESCE(SUM(oi.qty * CASE WHEN p_cost.product_type = 'woosb' THEN 0 ELSE COALESCE(p_cost.computed_cost, p_cost.wc_cog_cost, 0) END), 0) as total_cost
       FROM order_items oi
       INNER JOIN orders o ON o.wp_order_id = oi.wp_order_id
       LEFT JOIN products p_cost ON p_cost.wp_product_id = COALESCE(NULLIF(oi.variation_id, 0), oi.product_id)

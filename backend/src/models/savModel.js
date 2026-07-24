@@ -160,7 +160,7 @@ class SavModel {
            oi.order_item_name, oi.qty, oi.line_total,
            p.sku, p.image_url
          FROM order_items oi
-         LEFT JOIN products p ON p.wp_product_id = COALESCE(oi.variation_id, oi.product_id)
+         LEFT JOIN products p ON p.wp_product_id = COALESCE(NULLIF(oi.variation_id, 0), oi.product_id)
          WHERE oi.wp_order_id = $1
            AND oi.order_item_type = 'line_item'
          ORDER BY oi.id`,
@@ -215,7 +215,7 @@ class SavModel {
              oi.order_item_name, oi.qty, oi.line_total,
              p.sku, p.image_url
            FROM order_items oi
-           LEFT JOIN products p ON p.wp_product_id = COALESCE(oi.variation_id, oi.product_id)
+           LEFT JOIN products p ON p.wp_product_id = COALESCE(NULLIF(oi.variation_id, 0), oi.product_id)
            WHERE oi.wp_order_id = $1
              AND oi.order_item_type = 'line_item'
            ORDER BY oi.id`,
