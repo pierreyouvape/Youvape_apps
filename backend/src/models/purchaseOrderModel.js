@@ -777,12 +777,19 @@ const purchaseOrderModel = {
     const supplierByBmsId = new Map(suppliersResult.rows.map(s => [s.bms_id, s.id]));
 
     // 4. Charger le mapping sku → product.id local (en une seule requête)
+    //    wc_cog_cost sert d'ancre pour désambiguïser la convention de prix BMS
+    //    (prix par unité vs prix par pack), cf. insertion des items ci-dessous.
     const productsResult = await pool.query(`
-      SELECT p.id, p.sku, p.product_type
+      SELECT p.id, p.sku, p.product_type, p.wc_cog_cost
       FROM products p
       WHERE p.sku IS NOT NULL AND p.sku != '' AND p.post_status = 'publish'
     `);
     const productBySku = new Map(productsResult.rows.map(p => [p.sku, p.id]));
+    const wcogBySku = new Map(
+      productsResult.rows
+        .filter(p => p.wc_cog_cost != null && parseFloat(p.wc_cog_cost) > 0)
+        .map(p => [p.sku, parseFloat(p.wc_cog_cost)])
+    );
 
     const client = await pool.connect();
     try {
@@ -885,13 +892,45 @@ const purchaseOrderModel = {
         // Insérer les items
         for (const item of items) {
           const productId = productBySku.get(item.sku) || null; // NULL si SKU inconnu, on garde quand même la ligne
-          const pricepack = parseFloat(item.price) || null;
+          const priceRaw = parseFloat(item.price) || null;
           const qtyPack = parseInt(item.qty_pack) || 1;
-          // BMS envoie le prix du pack (item.price = prix pour qty_pack unités) :
-          // on divise par qty_pack pour obtenir le prix unitaire, cohérent avec qty_ordered = qty * qty_pack
-          const unitPrice = pricepack !== null ? pricepack / qtyPack : null;
-          const qtyOrdered = (parseInt(item.qty) || 0) * qtyPack;
-          const qtyReceived = (parseInt(item.qty_received) || 0) * qtyPack;
+          const bmsQty = parseInt(item.qty) || 0;
+          const bmsQtyRecv = parseInt(item.qty_received) || 0;
+
+          // BMS est INCOHÉRENT sur la convention de prix quand qty_pack > 1 :
+          //  - certains fournisseurs (ex. Curieux) envoient item.price = prix du PACK
+          //    et item.qty en PACKS  → prix unitaire = price / qty_pack, unités = qty × qty_pack
+          //  - d'autres (ex. Cosmer) envoient item.price = prix UNITAIRE
+          //    et item.qty en UNITÉS → stocker tel quel
+          // Aucun champ BMS ne les distingue de façon fiable → on ancre sur wc_cog_cost :
+          // on retient l'interprétation dont le prix unitaire est le plus proche du coût connu.
+          // Le montant total (qty × price) est identique dans les deux cas.
+          let unitPrice, qtyOrdered, qtyReceived;
+          if (priceRaw === null || qtyPack <= 1) {
+            unitPrice = priceRaw;               // pas d'ambiguïté
+            qtyOrdered = bmsQty;
+            qtyReceived = bmsQtyRecv;
+          } else {
+            const unitAsIs  = priceRaw;             // interprétation « prix déjà unitaire »
+            const unitAsPack = priceRaw / qtyPack;  // interprétation « prix du pack »
+            const wcog = wcogBySku.get(item.sku);
+            let usePack;
+            if (wcog) {
+              // Distance multiplicative (log) au coût connu → choisir le plus proche
+              usePack = Math.abs(Math.log(unitAsPack / wcog)) < Math.abs(Math.log(unitAsIs / wcog));
+            } else {
+              usePack = true; // pas d'ancre : conserver le comportement historique (prix pack)
+            }
+            if (usePack) {
+              unitPrice = unitAsPack;
+              qtyOrdered = bmsQty * qtyPack;
+              qtyReceived = bmsQtyRecv * qtyPack;
+            } else {
+              unitPrice = unitAsIs;
+              qtyOrdered = bmsQty;
+              qtyReceived = bmsQtyRecv;
+            }
+          }
 
           await client.query(`
             INSERT INTO purchase_order_items (
