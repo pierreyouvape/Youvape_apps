@@ -323,6 +323,78 @@ async function computeDashboard({ dateFrom, dateTo, granularity } = {}) {
 exports.computeDashboard = computeDashboard;
 
 /**
+ * Exécute `fn` sur chaque élément de `items` avec une concurrence limitée à `limit`.
+ * Évite de saturer le pool PG (BDD PROD partagée) quand on calcule un lot de mois.
+ */
+async function mapLimit(items, limit, fn) {
+  const results = new Array(items.length);
+  let cursor = 0;
+  async function worker() {
+    while (cursor < items.length) {
+      const i = cursor++;
+      results[i] = await fn(items[i], i);
+    }
+  }
+  await Promise.all(
+    Array.from({ length: Math.min(limit, items.length) }, worker)
+  );
+  return results;
+}
+
+/**
+ * Série mensuelle des KPIs sur les `months` derniers mois (mois courant inclus).
+ * Réutilise computeDashboard mois par mois → garantit des chiffres strictement
+ * identiques à ceux des cartes (mêmes formules TVA/remboursements/coûts).
+ * Retourne [{ month: 'YYYY-MM', dateFrom, dateTo, kpis }] du plus ancien au plus récent.
+ */
+async function computeMonthlySeries({ months = 12 } = {}) {
+  const now = new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+
+  const ranges = [];
+  for (let i = months - 1; i >= 0; i--) {
+    const first = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const last  = new Date(now.getFullYear(), now.getMonth() - i + 1, 0);
+    const y  = first.getFullYear();
+    const mo = pad(first.getMonth() + 1);
+    ranges.push({
+      month:    `${y}-${mo}`,
+      dateFrom: `${y}-${mo}-01`,
+      dateTo:   `${y}-${mo}-${pad(last.getDate())}`,
+    });
+  }
+
+  // Concurrence limitée : BDD PROD partagée, on ne lance pas 12 dashboards d'un coup.
+  return mapLimit(ranges, 4, async (r) => {
+    const { kpis } = await computeDashboard({
+      dateFrom: r.dateFrom,
+      dateTo: r.dateTo,
+      granularity: 'month',
+    });
+    return { month: r.month, dateFrom: r.dateFrom, dateTo: r.dateTo, kpis };
+  });
+}
+
+exports.computeMonthlySeries = computeMonthlySeries;
+
+/**
+ * POST /api/financier/monthly
+ * Série mensuelle de tous les KPIs → alimente les graphiques d'évolution
+ * ouverts au clic sur une carte du dashboard.
+ */
+exports.getMonthlySeries = async (req, res) => {
+  try {
+    const raw = parseInt(req.body?.months, 10);
+    const months = Math.min(Math.max(Number.isNaN(raw) ? 12 : raw, 1), 36);
+    const series = await computeMonthlySeries({ months });
+    res.json({ success: true, months: series });
+  } catch (error) {
+    console.error('Error in financier monthly series:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+/**
  * Nouveaux clients inscrits sur la période (customers.user_registered, heure
  * Paris brute — même logique que refDateParis) + parmi eux, combien ont déjà
  * passé au moins une commande active (à ce jour, pas uniquement sur la période :

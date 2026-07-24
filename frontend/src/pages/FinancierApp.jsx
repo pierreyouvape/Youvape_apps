@@ -140,15 +140,17 @@ function Sparkline({ data, color, width = 80, height = 36 }) {
 }
 
 /* ─── KPI CARD ───────────────────────────────────────────── */
-function KpiCard({ label, value, unit, color, sparkData, href, delta, fmtAbs }) {
+function KpiCard({ label, value, unit, color, sparkData, href, delta, fmtAbs, onSelect }) {
   const [hovered, setHovered] = useState(false);
-  const Tag = href ? 'a' : 'div';
-  const linkProps = href ? { href, target: '_blank', rel: 'noopener noreferrer' } : {};
   return (
-    <Tag
-      {...linkProps}
+    <div
+      onClick={onSelect}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelect(); } }}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
+      title="Voir l'évolution mensuelle"
       style={{
         background: C.blanc, borderRadius: 14,
         padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: 8,
@@ -157,19 +159,27 @@ function KpiCard({ label, value, unit, color, sparkData, href, delta, fmtAbs }) 
           : '0 1px 3px rgba(0,0,0,0.07), 0 0 0 1px rgba(0,0,0,0.05)',
         borderTop: `3px solid ${color}`,
         transition: 'box-shadow 0.2s, transform 0.15s',
-        transform: href && hovered ? 'translateY(-2px)' : 'none',
+        transform: hovered ? 'translateY(-2px)' : 'none',
         minWidth: 0,
         textDecoration: 'none',
-        cursor: href ? 'pointer' : 'default',
+        cursor: 'pointer',
       }}
     >
       <span style={{ fontSize: 11, fontWeight: 700, color: C.grisM, letterSpacing: '0.06em', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: 5 }}>
         {label}
-        {href && <span style={{ fontSize: 11, color: hovered ? color : C.grisM, transition: 'color 0.15s' }} title="Voir les commandes (nouvel onglet)">↗</span>}
+        <span style={{ fontSize: 11, color: hovered ? color : C.grisM, transition: 'color 0.15s' }}>📈</span>
+        {href && (
+          <a
+            href={href} target="_blank" rel="noopener noreferrer"
+            onClick={(e) => e.stopPropagation()}
+            title="Voir les commandes (nouvel onglet)"
+            style={{ marginLeft: 'auto', fontSize: 12, color: hovered ? color : C.grisM, textDecoration: 'none', transition: 'color 0.15s' }}
+          >↗</a>
+        )}
       </span>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
         <div>
-          <span style={{ fontSize: 26, fontWeight: 800, color: href && hovered ? color : C.grisTF, letterSpacing: '-0.5px', transition: 'color 0.15s' }}>{value}</span>
+          <span style={{ fontSize: 26, fontWeight: 800, color: hovered ? color : C.grisTF, letterSpacing: '-0.5px', transition: 'color 0.15s' }}>{value}</span>
           {unit && <span style={{ fontSize: 14, fontWeight: 600, color: C.grisM, marginLeft: 4 }}>{unit}</span>}
         </div>
         {sparkData && <Sparkline data={sparkData} color={color} />}
@@ -187,7 +197,205 @@ function KpiCard({ label, value, unit, color, sparkData, href, delta, fmtAbs }) 
           <span style={{ fontSize: 11, color: C.grisM, fontWeight: 500 }}>vs période préc.</span>
         </div>
       )}
-    </Tag>
+    </div>
+  );
+}
+
+/* ─── METRIC MODAL (évolution mensuelle) ─────────────────── */
+const monthLabel = (ym) => {
+  const [y, m] = ym.split('-').map(Number);
+  return new Date(y, m - 1, 1).toLocaleDateString('fr-FR', { month: 'short', year: '2-digit' });
+};
+
+// Graphique linéaire générique : une série de points { month, value } sur 12 mois.
+function MonthlyChart({ points, color, unit }) {
+  const svgRef = useRef(null);
+  const [hover, setHover] = useState(null);
+  const W = 1000, H = 300, PL = 64, PR = 20, PT = 20, PB = 40;
+  const cW = W - PL - PR, cH = H - PT - PB;
+
+  if (!points || points.length === 0) return (
+    <div style={{ height: 120, display: 'flex', alignItems: 'center', justifyContent: 'center', color: C.grisM }}>
+      Aucune donnée
+    </div>
+  );
+
+  const values = points.map(p => p.value);
+  let lo = Math.min(0, ...values);
+  let hi = Math.max(0, ...values);
+  if (lo === hi) hi = lo + 1;
+  const span = hi - lo;
+  hi += span * 0.08;
+  if (lo < 0) lo -= span * 0.08;
+
+  const toX = (i) => PL + (i / Math.max(points.length - 1, 1)) * cW;
+  const toY = (v) => PT + cH - ((v - lo) / (hi - lo)) * cH;
+
+  const compact = (v) => {
+    if (unit === 'pct') return v.toFixed(0) + '%';
+    if (Math.abs(v) >= 1000) return Math.round(v / 1000) + 'k';
+    return String(Math.round(v));
+  };
+  const full = (v) => unit === 'pct' ? fmtPct(v) : unit === 'eur' ? fmtEur(v) : fmt(v);
+
+  const line = points.map((p, i) => `${i === 0 ? 'M' : 'L'}${toX(i).toFixed(1)},${toY(p.value).toFixed(1)}`).join(' ');
+  const area = line + ` L${toX(points.length - 1).toFixed(1)},${PT + cH} L${PL},${PT + cH} Z`;
+  const gradId = `mg${color.replace('#', '')}`;
+
+  const handleMove = (e) => {
+    const rect = svgRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    const x = (clientX - rect.left) / rect.width * W;
+    const idx = Math.round((x - PL) / cW * (points.length - 1));
+    if (idx >= 0 && idx < points.length) setHover(idx);
+  };
+
+  const zeroY = lo < 0 ? toY(0) : null;
+
+  return (
+    <div style={{ position: 'relative', width: '100%' }}>
+      <svg
+        ref={svgRef}
+        viewBox={`0 0 ${W} ${H}`}
+        style={{ width: '100%', height: 'auto', display: 'block', userSelect: 'none' }}
+        onMouseMove={handleMove}
+        onTouchMove={handleMove}
+        onMouseLeave={() => setHover(null)}
+        onTouchEnd={() => setHover(null)}
+      >
+        <defs>
+          <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={color} stopOpacity="0.20" />
+            <stop offset="100%" stopColor={color} stopOpacity="0" />
+          </linearGradient>
+        </defs>
+
+        {/* Grille horizontale */}
+        {Array.from({ length: 6 }, (_, i) => {
+          const y = PT + (i / 5) * cH;
+          const val = hi - (i / 5) * (hi - lo);
+          return (
+            <g key={i}>
+              <line x1={PL} y1={y} x2={W - PR} y2={y} stroke={C.grisCL} strokeWidth="1" />
+              <text x={PL - 8} y={y + 4} textAnchor="end" fontSize="12" fill={C.grisM} fontFamily="Lato, sans-serif">
+                {compact(val)}
+              </text>
+            </g>
+          );
+        })}
+
+        {/* Ligne du zéro (si valeurs négatives) */}
+        {zeroY != null && (
+          <line x1={PL} y1={zeroY} x2={W - PR} y2={zeroY} stroke={C.grisM} strokeWidth="1.2" strokeDasharray="2 3" />
+        )}
+
+        {/* Labels X (mois) */}
+        {points.map((p, i) => (
+          <text key={i} x={toX(i)} y={H - 10} textAnchor="middle" fontSize="12" fill={C.grisM} fontFamily="Lato, sans-serif">
+            {monthLabel(p.month)}
+          </text>
+        ))}
+
+        <path d={area} fill={`url(#${gradId})`} />
+        <path d={line} fill="none" stroke={color} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+
+        {/* Points */}
+        {points.map((p, i) => (
+          <circle key={i} cx={toX(i)} cy={toY(p.value)} r={hover === i ? 5 : 3} fill={C.blanc} stroke={color} strokeWidth="2" />
+        ))}
+
+        {/* Hover */}
+        {hover !== null && (
+          <line x1={toX(hover)} y1={PT} x2={toX(hover)} y2={PT + cH} stroke={C.grisCL} strokeWidth="1.5" strokeDasharray="4 3" />
+        )}
+      </svg>
+
+      {hover !== null && (
+        <div style={{
+          position: 'absolute', top: 8, left: '50%', transform: 'translateX(-50%)',
+          background: C.blanc, border: `1px solid ${C.grisCL}`,
+          borderRadius: 10, padding: '8px 14px', pointerEvents: 'none',
+          boxShadow: '0 4px 16px rgba(0,0,0,0.10)',
+          display: 'flex', gap: 12, alignItems: 'center', fontSize: 13, whiteSpace: 'nowrap',
+        }}>
+          <span style={{ color: C.grisM, fontWeight: 500 }}>{monthLabel(points[hover].month)}</span>
+          <span style={{ color, fontWeight: 700 }}>{full(points[hover].value)}</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function MetricModal({ metric, data, loading, onClose }) {
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  const points = (data || []).map(d => ({ month: d.month, value: metric.getValue(d.kpis) }));
+  const values = points.map(p => p.value);
+  const last = values.length ? values[values.length - 1] : null;
+  const avg = values.length ? values.reduce((s, v) => s + v, 0) / values.length : null;
+  const best = values.length ? Math.max(...values) : null;
+  const worst = values.length ? Math.min(...values) : null;
+  const full = (v) => v == null ? '—' : metric.unit === 'pct' ? fmtPct(v) : metric.unit === 'eur' ? fmtEur(v) : fmt(v);
+
+  const Stat = ({ label, value }) => (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+      <span style={{ fontSize: 11, fontWeight: 700, color: C.grisM, textTransform: 'uppercase', letterSpacing: '0.04em' }}>{label}</span>
+      <span style={{ fontSize: 18, fontWeight: 800, color: C.grisTF }}>{value}</span>
+    </div>
+  );
+
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(20,30,40,0.45)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20,
+        animation: 'fadeIn 0.15s ease',
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          background: C.blanc, borderRadius: 16, width: 'min(920px, 100%)', maxHeight: '90vh',
+          overflowY: 'auto', boxShadow: '0 20px 60px rgba(0,0,0,0.30)', borderTop: `4px solid ${metric.color}`,
+        }}
+      >
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', padding: '22px 26px 0' }}>
+          <div>
+            <div style={{ fontSize: 18, fontWeight: 800, color: C.grisTF, fontFamily: "'Tilt Warp', cursive" }}>{metric.label}</div>
+            <div style={{ fontSize: 13, color: C.grisM, marginTop: 2 }}>Évolution mois par mois (12 derniers mois)</div>
+          </div>
+          <button
+            onClick={onClose}
+            style={{ background: C.grisTL, border: 'none', borderRadius: 8, width: 32, height: 32, fontSize: 18, cursor: 'pointer', color: C.grisF, lineHeight: 1 }}
+            title="Fermer (Échap)"
+          >×</button>
+        </div>
+
+        <div style={{ padding: '18px 26px 26px' }}>
+          {loading ? (
+            <div style={{ height: 260, display: 'flex', alignItems: 'center', justifyContent: 'center', color: C.grisM, animation: 'pulse 1.5s ease-in-out infinite' }}>
+              Chargement…
+            </div>
+          ) : (
+            <>
+              <div style={{ display: 'flex', gap: 28, flexWrap: 'wrap', marginBottom: 18 }}>
+                <Stat label="Dernier mois" value={full(last)} />
+                <Stat label="Moyenne" value={full(avg)} />
+                <Stat label="Meilleur mois" value={full(best)} />
+                <Stat label="Plus bas" value={full(worst)} />
+              </div>
+              <MonthlyChart points={points} color={metric.color} unit={metric.unit} />
+            </>
+          )}
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -500,6 +708,11 @@ export default function FinancierApp() {
   const [error, setError] = useState(null);
   const [prevData, setPrevData] = useState(null);
 
+  // Évolution mensuelle (modal ouvert au clic sur une carte KPI).
+  const [selectedMetric, setSelectedMetric] = useState(null);
+  const [monthlyData, setMonthlyData] = useState(null);
+  const [monthlyLoading, setMonthlyLoading] = useState(false);
+
   // Garde-fou anti-race : chaque fetch reçoit un numéro de séquence ; seule la
   // réponse de la requête la plus récente est appliquée. Sans ça, un changement
   // de période concurrent d'un auto-refresh (ou de clics rapides) pouvait laisser
@@ -611,6 +824,28 @@ export default function FinancierApp() {
     fetchData(key, '', '');
   };
 
+  // Ouvre le graphique d'évolution mensuelle d'un KPI. La série mensuelle est
+  // indépendante de la période sélectionnée (toujours 12 derniers mois) → on ne
+  // la charge qu'une fois puis on la réutilise pour toutes les cartes.
+  const openMetric = useCallback((kpi) => {
+    setSelectedMetric({
+      label: kpi.label,
+      color: kpi.color,
+      unit: kpi.unit,
+      getValue: (kpis) => kpis[kpi.metricKey],
+    });
+    if (monthlyData || monthlyLoading) return;
+    setMonthlyLoading(true);
+    axios.post(
+      `${API_URL}/financier/monthly`,
+      { months: 12 },
+      { headers: { Authorization: `Bearer ${token}` } }
+    )
+      .then(res => setMonthlyData(res.data.months || []))
+      .catch(() => setMonthlyData([]))
+      .finally(() => setMonthlyLoading(false));
+  }, [monthlyData, monthlyLoading, token]);
+
   const customLabel = customPreset
     ? (CUSTOM_PRESETS.find(p => p.key === customPreset)?.label || 'Personnalisé')
     : 'Personnalisé';
@@ -641,16 +876,16 @@ export default function FinancierApp() {
 
   const pk = prevData?.kpis;
   const kpis = data ? [
-    { label: 'CA TTC Brut',          value: fmtEur(data.kpis.ca_ttc_brut),        color: C.orange, sparkData: data.series.map(s => s.ca_ttc_brut),    delta: computeDelta(data.kpis.ca_ttc_brut,        pk?.ca_ttc_brut),        fmtAbs: signEur },
-    { label: 'CA HT Net',            value: fmtEur(data.kpis.ca_ht_net),           color: C.saphir, sparkData: data.series.map(s => s.ca_ht),           delta: computeDelta(data.kpis.ca_ht_net,          pk?.ca_ht_net),          fmtAbs: signEur },
-    { label: 'Profit HT',            value: fmtEur(data.kpis.profit_ht),           color: C.vert,   sparkData: data.series.map(s => s.profit_ht),        delta: computeDelta(data.kpis.profit_ht,          pk?.profit_ht),          fmtAbs: signEur },
-    { label: 'Marge',                value: fmtPct(data.kpis.marge_ht),            color: C.violet, sparkData: null,                                     delta: computeDelta(data.kpis.marge_ht,           pk?.marge_ht),           fmtAbs: signPts },
-    { label: 'Nb Commandes',         value: fmt(data.kpis.orders_count),            color: C.bleu,   sparkData: data.series.map(s => s.orders_count),    delta: computeDelta(data.kpis.orders_count,       pk?.orders_count),       fmtAbs: signCnt, href: ordersUrl },
-    { label: 'Panier moyen HT',      value: fmtEur(data.kpis.panier_moyen_ht),     color: C.orange, sparkData: null,                                     delta: computeDelta(data.kpis.panier_moyen_ht,    pk?.panier_moyen_ht),    fmtAbs: signEur },
-    { label: 'Commandes remboursées',value: fmt(data.kpis.refunds_count),           color: C.rouge,  sparkData: null,                                     delta: computeDelta(data.kpis.refunds_count,      pk?.refunds_count),      fmtAbs: signCnt, href: refundsUrl },
-    { label: 'Remboursements TTC',   value: fmtEur(data.kpis.remboursements_ttc),  color: C.rouge,  sparkData: null,                                     delta: computeDelta(data.kpis.remboursements_ttc, pk?.remboursements_ttc), fmtAbs: signEur },
-    { label: 'Nouveaux clients',     value: fmt(data.kpis.nouveaux_clients),       color: C.violet, sparkData: null,                                     delta: computeDelta(data.kpis.nouveaux_clients,   pk?.nouveaux_clients),   fmtAbs: signCnt },
-    { label: 'Nvx clients ayant commandé', value: fmt(data.kpis.nouveaux_clients_commande), color: C.vert, sparkData: null,                              delta: computeDelta(data.kpis.nouveaux_clients_commande, pk?.nouveaux_clients_commande), fmtAbs: signCnt },
+    { label: 'CA TTC Brut',          metricKey: 'ca_ttc_brut',        unit: 'eur', value: fmtEur(data.kpis.ca_ttc_brut),        color: C.orange, sparkData: data.series.map(s => s.ca_ttc_brut),    delta: computeDelta(data.kpis.ca_ttc_brut,        pk?.ca_ttc_brut),        fmtAbs: signEur },
+    { label: 'CA HT Net',            metricKey: 'ca_ht_net',          unit: 'eur', value: fmtEur(data.kpis.ca_ht_net),           color: C.saphir, sparkData: data.series.map(s => s.ca_ht),           delta: computeDelta(data.kpis.ca_ht_net,          pk?.ca_ht_net),          fmtAbs: signEur },
+    { label: 'Profit HT',            metricKey: 'profit_ht',          unit: 'eur', value: fmtEur(data.kpis.profit_ht),           color: C.vert,   sparkData: data.series.map(s => s.profit_ht),        delta: computeDelta(data.kpis.profit_ht,          pk?.profit_ht),          fmtAbs: signEur },
+    { label: 'Marge',                metricKey: 'marge_ht',           unit: 'pct', value: fmtPct(data.kpis.marge_ht),            color: C.violet, sparkData: null,                                     delta: computeDelta(data.kpis.marge_ht,           pk?.marge_ht),           fmtAbs: signPts },
+    { label: 'Nb Commandes',         metricKey: 'orders_count',       unit: 'cnt', value: fmt(data.kpis.orders_count),            color: C.bleu,   sparkData: data.series.map(s => s.orders_count),    delta: computeDelta(data.kpis.orders_count,       pk?.orders_count),       fmtAbs: signCnt, href: ordersUrl },
+    { label: 'Panier moyen HT',      metricKey: 'panier_moyen_ht',    unit: 'eur', value: fmtEur(data.kpis.panier_moyen_ht),     color: C.orange, sparkData: null,                                     delta: computeDelta(data.kpis.panier_moyen_ht,    pk?.panier_moyen_ht),    fmtAbs: signEur },
+    { label: 'Commandes remboursées',metricKey: 'refunds_count',      unit: 'cnt', value: fmt(data.kpis.refunds_count),           color: C.rouge,  sparkData: null,                                     delta: computeDelta(data.kpis.refunds_count,      pk?.refunds_count),      fmtAbs: signCnt, href: refundsUrl },
+    { label: 'Remboursements TTC',   metricKey: 'remboursements_ttc', unit: 'eur', value: fmtEur(data.kpis.remboursements_ttc),  color: C.rouge,  sparkData: null,                                     delta: computeDelta(data.kpis.remboursements_ttc, pk?.remboursements_ttc), fmtAbs: signEur },
+    { label: 'Nouveaux clients',     metricKey: 'nouveaux_clients',   unit: 'cnt', value: fmt(data.kpis.nouveaux_clients),       color: C.violet, sparkData: null,                                     delta: computeDelta(data.kpis.nouveaux_clients,   pk?.nouveaux_clients),   fmtAbs: signCnt },
+    { label: 'Nvx clients ayant commandé', metricKey: 'nouveaux_clients_commande', unit: 'cnt', value: fmt(data.kpis.nouveaux_clients_commande), color: C.vert, sparkData: null,                              delta: computeDelta(data.kpis.nouveaux_clients_commande, pk?.nouveaux_clients_commande), fmtAbs: signCnt },
   ] : [];
 
   const gridCols = windowW >= 900 ? 3 : windowW >= 560 ? 2 : 1;
@@ -659,7 +894,17 @@ export default function FinancierApp() {
     <AppShell currentPath="/financier">
       <style>{`
         @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.5} }
+        @keyframes fadeIn { from{opacity:0} to{opacity:1} }
       `}</style>
+
+      {selectedMetric && (
+        <MetricModal
+          metric={selectedMetric}
+          data={monthlyData}
+          loading={monthlyLoading}
+          onClose={() => setSelectedMetric(null)}
+        />
+      )}
 
       <main className="main-scroll" style={{ flex: 1, minWidth: 0, overflowY: 'auto', height: '100vh', display: 'flex', flexDirection: 'column', fontFamily: 'Lato, sans-serif', color: C.grisTF }}>
 
@@ -806,7 +1051,7 @@ export default function FinancierApp() {
           {!loading && data && (
             <>
               <div style={{ display: 'grid', gridTemplateColumns: `repeat(${gridCols}, 1fr)`, gap: 14, marginBottom: 24 }}>
-                {kpis.map(k => <KpiCard key={k.label} {...k} />)}
+                {kpis.map(k => <KpiCard key={k.label} {...k} onSelect={() => openMetric(k)} />)}
               </div>
 
               {/* Graphique */}
