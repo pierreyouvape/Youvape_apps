@@ -356,12 +356,12 @@ const CatalogApp = () => {
     }
   };
 
-  // Calcul marge %
-  const calcMargin = (price, costPrice) => {
-    const p = parseFloat(price);
+  // Calcul marge % — base = tarif remisé si présent, sinon prix TTC
+  const calcMargin = (price, costPrice, discountedPrice) => {
+    const base = parseFloat(discountedPrice ?? price);
     const c = parseFloat(costPrice);
-    if (!p || !c) return null;
-    return ((p - c) / p) * 100;
+    if (!base || !c) return null;
+    return ((base - c) / base) * 100;
   };
 
   const cellStyle = { padding: '10px 12px', fontSize: '13px' };
@@ -652,7 +652,7 @@ const CatalogApp = () => {
                       );
                     }
 
-                    const margin = calcMargin(row.price, row.cost_price);
+                    const margin = calcMargin(row.price, row.cost_price, row.discounted_price);
 
                     const varBg = row._isVariation
                       ? (varIdx % 2 === 1 ? '#dbeafe' : '#eff6ff')

@@ -98,8 +98,10 @@ const CATALOG_SORT_EXPRESSIONS = {
     ELSE (SELECT AVG(v.discounted_price) FROM products v WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation' AND v.post_status = 'publish') END)`,
   cost_price: `(CASE WHEN p.product_type = 'simple' THEN COALESCE(p.computed_cost, p.wc_cog_cost)
     ELSE (SELECT AVG(COALESCE(v.computed_cost, v.wc_cog_cost)) FROM products v WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation' AND v.post_status = 'publish') END)`,
-  margin: `(CASE WHEN p.product_type = 'simple' THEN (p.price - COALESCE(p.computed_cost, p.wc_cog_cost))
-    ELSE (SELECT AVG(v.price - COALESCE(v.computed_cost, v.wc_cog_cost)) FROM products v WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation' AND v.post_status = 'publish') END)`,
+  margin: `(CASE WHEN p.product_type = 'simple'
+      THEN (COALESCE(p.discounted_price, p.price) - COALESCE(p.computed_cost, p.wc_cog_cost)) / NULLIF(COALESCE(p.discounted_price, p.price), 0)
+    ELSE (SELECT AVG((COALESCE(v.discounted_price, v.price) - COALESCE(v.computed_cost, v.wc_cog_cost)) / NULLIF(COALESCE(v.discounted_price, v.price), 0))
+      FROM products v WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation' AND v.post_status = 'publish') END)`,
   weight: `(CASE WHEN p.product_type = 'simple' THEN p.weight
     ELSE (SELECT AVG(v.weight) FROM products v WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation' AND v.post_status = 'publish') END)`,
   stock: `(CASE WHEN p.product_type = 'simple' THEN COALESCE(p.stock, 0)

@@ -516,7 +516,7 @@ exports.getCatalogExport = async (req, res) => {
       if (p.product_type === 'variable') {
         const children = variationsByParent.get(p.wp_product_id) || [];
         for (const v of children) {
-          const pr = parseFloat(v.price);
+          const pr = v.discounted_price != null ? parseFloat(v.discounted_price) : parseFloat(v.price);
           const co = parseFloat(v.cost_price);
           const margin = pr && co ? ((pr - co) / pr * 100).toFixed(1) : '';
           rows.push([
@@ -535,7 +535,7 @@ exports.getCatalogExport = async (req, res) => {
           ]);
         }
       } else {
-        const pr = parseFloat(p.price);
+        const pr = p.discounted_price != null ? parseFloat(p.discounted_price) : parseFloat(p.price);
         const co = parseFloat(p.cost_price);
         const margin = pr && co ? ((pr - co) / pr * 100).toFixed(1) : '';
         rows.push([
