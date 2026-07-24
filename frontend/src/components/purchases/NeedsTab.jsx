@@ -466,11 +466,22 @@ const NeedsTab = ({ token, onCompactChange }) => {
     });
   }, [allProducts, effectivePeriodDays, coverageMonths, isCustomPeriod, analysisStartDate, analysisEndDate, analysisPeriodUnit]);
 
-  // Marques distinctes extraites des produits chargés
-  const brands = useMemo(() => {
-    const set = new Set();
-    allProducts.forEach(p => p.brand && set.add(p.brand));
-    return [...set].sort((a, b) => a.localeCompare(b, 'fr'));
+  // Marques distinctes extraites des produits chargés, avec leurs sous-marques
+  const brandGroups = useMemo(() => {
+    const map = new Map(); // brand -> Set(sous-marques)
+    allProducts.forEach(p => {
+      const brand = (p.brand || '').trim();
+      if (!brand) return;
+      if (!map.has(brand)) map.set(brand, new Set());
+      const sub = (p.sub_brand || '').trim();
+      if (sub) map.get(brand).add(sub);
+    });
+    return [...map.entries()]
+      .map(([brand, subs]) => ({
+        brand,
+        subBrands: [...subs].sort((a, b) => a.localeCompare(b, 'fr')),
+      }))
+      .sort((a, b) => a.brand.localeCompare(b.brand, 'fr'));
   }, [allProducts]);
 
   // Normalise une chaîne pour la recherche : minuscules, sans ponctuation, sans accents, espaces simplifiés
@@ -515,8 +526,8 @@ const NeedsTab = ({ token, onCompactChange }) => {
         const matchesViaParent = isRealParentId(p.wp_parent_id) && parentIdsWithSupplier.has(p.wp_parent_id);
         if (!matchesDirect && !matchesViaParent) return false;
       }
-      // Filtre marque
-      if (brandFilter && p.brand !== brandFilter) return false;
+      // Filtre marque : correspond à la marque OU à la sous-marque sélectionnée
+      if (brandFilter && p.brand !== brandFilter && p.sub_brand !== brandFilter) return false;
 
       // Si recherche active, on affiche tous les correspondants (bypass filtre propositions)
       if (hasSearch) {
@@ -818,7 +829,18 @@ const NeedsTab = ({ token, onCompactChange }) => {
             <label>Marque</label>
             <select value={brandFilter} onChange={(e) => setBrandFilter(e.target.value)}>
               <option value="">Toutes les marques</option>
-              {brands.map(b => <option key={b} value={b}>{b}</option>)}
+              {brandGroups.map(g => (
+                g.subBrands.length === 0
+                  ? <option key={g.brand} value={g.brand}>{g.brand}</option>
+                  : (
+                    <optgroup key={g.brand} label={g.brand}>
+                      <option value={g.brand}>{g.brand} (toutes)</option>
+                      {g.subBrands.map(sb => (
+                        <option key={`${g.brand}|${sb}`} value={sb}>&nbsp;&nbsp;↳ {sb}</option>
+                      ))}
+                    </optgroup>
+                  )
+              ))}
             </select>
           </div>
 
