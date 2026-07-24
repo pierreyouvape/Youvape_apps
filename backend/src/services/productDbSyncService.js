@@ -111,10 +111,19 @@ const runProductDbSync = async () => {
   const getWoosb = (obj) => {
     if (obj.type !== 'woosb') return null;
     const m = (obj.meta_data || []).find((x) => x.key === 'woosb_ids');
-    if (!m || !m.value || typeof m.value !== 'object') return null;
-    const arr = Object.values(m.value)
-      .map((it) => ({ id: String(it.id), qty: String(it.qty || '1') }))
-      .filter((x) => x.id && x.id !== 'null');
+    if (!m || !m.value) return null;
+    let arr = [];
+    if (typeof m.value === 'object') {
+      // Format objet WC : {clé:{id,qty}}
+      arr = Object.values(m.value).map((it) => ({ id: String(it.id), qty: String(it.qty || '1') }));
+    } else if (typeof m.value === 'string') {
+      // Format chaîne legacy : "id/qty,id/qty"
+      arr = m.value.split(',').map((s) => {
+        const [id, qty] = s.split('/');
+        return { id: String(id || '').trim(), qty: String(qty || '1').trim() };
+      });
+    }
+    arr = arr.filter((x) => /^\d+$/.test(x.id));
     return arr.length ? JSON.stringify(arr) : null;
   };
 
