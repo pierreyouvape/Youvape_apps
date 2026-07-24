@@ -84,6 +84,14 @@ async function computeDashboard({ dateFrom, dateTo, granularity } = {}) {
       ) ship ON ship.order_id = o.wp_order_id`;
     const shipCostExpr = `COALESCE(ship.real_cost, o.shipping_cost_calculated)`;
 
+    // ─── COÛT PRODUIT UNITAIRE — jamais 0 si un coût existe quelque part ────
+    // Priorité : computed_cost (PMP FIFO achats) → wc_cog_cost du produit →
+    // computed_cost/wc_cog_cost du PARENT variable (dans WooCommerce le COG est
+    // souvent porté par le produit parent, pas par chaque variation) → 0 en
+    // dernier recours. NULLIF(...,0) pour ignorer un wc_cog_cost à 0 littéral.
+    const parentJoin = `LEFT JOIN products par ON par.wp_product_id = p.wp_parent_id`;
+    const prodCostExpr = `COALESCE(p.computed_cost, NULLIF(p.wc_cog_cost,0), par.computed_cost, NULLIF(par.wc_cog_cost,0), 0)`;
+
     // ─── 1. KPIs GLOBAUX — agrégats order-level ────────────────────────────
     // TVA réelle = line_item.line_tax (TVA produits) + tax_item.line_tax (TVA livraison)
     // order_shipping_tax est toujours NULL en BDD, il faut passer par order_items
@@ -113,7 +121,7 @@ async function computeDashboard({ dateFrom, dateTo, granularity } = {}) {
     const coutResult = await pool.query(`
       SELECT
         COALESCE(SUM(
-          oi.qty * COALESCE(p.computed_cost, p.wc_cog_cost, 0)
+          oi.qty * ${prodCostExpr}
         ), 0)::numeric AS cout_produits
       FROM orders o
       LEFT JOIN order_items oi ON o.wp_order_id = oi.wp_order_id
@@ -121,6 +129,7 @@ async function computeDashboard({ dateFrom, dateTo, granularity } = {}) {
         oi.variation_id = p.wp_product_id
         OR (oi.variation_id IS NULL AND oi.product_id = p.wp_product_id)
       )
+      ${parentJoin}
       ${where}
     `, params);
 
@@ -237,7 +246,7 @@ async function computeDashboard({ dateFrom, dateTo, granularity } = {}) {
       SELECT
         ${truncExpr}                                                           AS period,
         COALESCE(SUM(
-          oi.qty * COALESCE(p.computed_cost, p.wc_cog_cost, 0)
+          oi.qty * ${prodCostExpr}
         ), 0)::numeric                                                         AS cout_produits
       FROM orders o
       LEFT JOIN order_items oi ON o.wp_order_id = oi.wp_order_id
@@ -245,6 +254,7 @@ async function computeDashboard({ dateFrom, dateTo, granularity } = {}) {
         oi.variation_id = p.wp_product_id
         OR (oi.variation_id IS NULL AND oi.product_id = p.wp_product_id)
       )
+      ${parentJoin}
       ${where}
       GROUP BY ${truncExpr}
       ORDER BY ${truncExpr}
