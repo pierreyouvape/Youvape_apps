@@ -18,7 +18,15 @@ const C = {
 };
 
 /* ─── UTILS ─────────────────────────────────────────────── */
-const fmt = (n) => new Intl.NumberFormat('fr-FR').format(Math.round(n || 0));
+// Séparateur de milliers explicite (espace insécable U+00A0). On n'utilise PAS
+// Intl.NumberFormat('fr-FR') car il regroupe avec une espace fine insécable (U+202F)
+// mal rendue par certaines polices → chiffres collés (« 1487645 »).
+const fmt = (n) => {
+  const rounded = Math.round(n || 0);
+  const neg = rounded < 0;
+  const digits = String(Math.abs(rounded)).replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+  return (neg ? '-' : '') + digits;
+};
 const fmtEur = (n) => fmt(n) + ' €';
 const fmtPct = (n) => (n || 0).toFixed(1) + ' %';
 
@@ -831,7 +839,7 @@ export default function FinancierApp() {
     setSelectedMetric({
       label: kpi.label,
       color: kpi.color,
-      unit: kpi.unit,
+      unit: kpi.metricUnit,
       getValue: (kpis) => kpis[kpi.metricKey],
     });
     if (monthlyData || monthlyLoading) return;
@@ -876,18 +884,18 @@ export default function FinancierApp() {
 
   const pk = prevData?.kpis;
   const kpis = data ? [
-    { label: 'CA TTC Brut',          metricKey: 'ca_ttc_brut',        unit: 'eur', value: fmtEur(data.kpis.ca_ttc_brut),        color: C.orange, sparkData: data.series.map(s => s.ca_ttc_brut),    delta: computeDelta(data.kpis.ca_ttc_brut,        pk?.ca_ttc_brut),        fmtAbs: signEur },
-    { label: 'CA HT Net',            metricKey: 'ca_ht_net',          unit: 'eur', value: fmtEur(data.kpis.ca_ht_net),           color: C.saphir, sparkData: data.series.map(s => s.ca_ht),           delta: computeDelta(data.kpis.ca_ht_net,          pk?.ca_ht_net),          fmtAbs: signEur },
-    { label: 'Profit HT',            metricKey: 'profit_ht',          unit: 'eur', value: fmtEur(data.kpis.profit_ht),           color: C.vert,   sparkData: data.series.map(s => s.profit_ht),        delta: computeDelta(data.kpis.profit_ht,          pk?.profit_ht),          fmtAbs: signEur },
-    { label: 'Marge',                metricKey: 'marge_ht',           unit: 'pct', value: fmtPct(data.kpis.marge_ht),            color: C.violet, sparkData: null,                                     delta: computeDelta(data.kpis.marge_ht,           pk?.marge_ht),           fmtAbs: signPts },
-    { label: 'Nb Commandes',         metricKey: 'orders_count',       unit: 'cnt', value: fmt(data.kpis.orders_count),            color: C.bleu,   sparkData: data.series.map(s => s.orders_count),    delta: computeDelta(data.kpis.orders_count,       pk?.orders_count),       fmtAbs: signCnt, href: ordersUrl },
-    { label: 'Panier moyen HT',      metricKey: 'panier_moyen_ht',    unit: 'eur', value: fmtEur(data.kpis.panier_moyen_ht),     color: C.orange, sparkData: null,                                     delta: computeDelta(data.kpis.panier_moyen_ht,    pk?.panier_moyen_ht),    fmtAbs: signEur },
-    { label: 'Commandes remboursées',metricKey: 'refunds_count',      unit: 'cnt', value: fmt(data.kpis.refunds_count),           color: C.rouge,  sparkData: null,                                     delta: computeDelta(data.kpis.refunds_count,      pk?.refunds_count),      fmtAbs: signCnt, href: refundsUrl },
-    { label: 'Remboursements TTC',   metricKey: 'remboursements_ttc', unit: 'eur', value: fmtEur(data.kpis.remboursements_ttc),  color: C.rouge,  sparkData: null,                                     delta: computeDelta(data.kpis.remboursements_ttc, pk?.remboursements_ttc), fmtAbs: signEur },
-    { label: 'Frais de port encaissés', metricKey: 'frais_port_client', unit: 'eur', value: fmtEur(data.kpis.frais_port_client), color: C.bleu,  sparkData: null,                                     delta: computeDelta(data.kpis.frais_port_client,  pk?.frais_port_client),  fmtAbs: signEur },
-    { label: 'Coût des expéditions', metricKey: 'frais_port_reel',    unit: 'eur', value: fmtEur(data.kpis.frais_port_reel),     color: C.jaune,  sparkData: data.series.map(s => s.frais_port_reel), delta: computeDelta(data.kpis.frais_port_reel,    pk?.frais_port_reel),    fmtAbs: signEur },
-    { label: 'Nouveaux clients',     metricKey: 'nouveaux_clients',   unit: 'cnt', value: fmt(data.kpis.nouveaux_clients),       color: C.violet, sparkData: null,                                     delta: computeDelta(data.kpis.nouveaux_clients,   pk?.nouveaux_clients),   fmtAbs: signCnt },
-    { label: 'Nvx clients ayant commandé', metricKey: 'nouveaux_clients_commande', unit: 'cnt', value: fmt(data.kpis.nouveaux_clients_commande), color: C.vert, sparkData: null,                              delta: computeDelta(data.kpis.nouveaux_clients_commande, pk?.nouveaux_clients_commande), fmtAbs: signCnt },
+    { label: 'CA TTC Brut',          metricKey: 'ca_ttc_brut',        metricUnit: 'eur', value: fmtEur(data.kpis.ca_ttc_brut),        color: C.orange, sparkData: data.series.map(s => s.ca_ttc_brut),    delta: computeDelta(data.kpis.ca_ttc_brut,        pk?.ca_ttc_brut),        fmtAbs: signEur },
+    { label: 'CA HT Net',            metricKey: 'ca_ht_net',          metricUnit: 'eur', value: fmtEur(data.kpis.ca_ht_net),           color: C.saphir, sparkData: data.series.map(s => s.ca_ht),           delta: computeDelta(data.kpis.ca_ht_net,          pk?.ca_ht_net),          fmtAbs: signEur },
+    { label: 'Profit HT',            metricKey: 'profit_ht',          metricUnit: 'eur', value: fmtEur(data.kpis.profit_ht),           color: C.vert,   sparkData: data.series.map(s => s.profit_ht),        delta: computeDelta(data.kpis.profit_ht,          pk?.profit_ht),          fmtAbs: signEur },
+    { label: 'Marge',                metricKey: 'marge_ht',           metricUnit: 'pct', value: fmtPct(data.kpis.marge_ht),            color: C.violet, sparkData: null,                                     delta: computeDelta(data.kpis.marge_ht,           pk?.marge_ht),           fmtAbs: signPts },
+    { label: 'Nb Commandes',         metricKey: 'orders_count',       metricUnit: 'cnt', value: fmt(data.kpis.orders_count),            color: C.bleu,   sparkData: data.series.map(s => s.orders_count),    delta: computeDelta(data.kpis.orders_count,       pk?.orders_count),       fmtAbs: signCnt, href: ordersUrl },
+    { label: 'Panier moyen HT',      metricKey: 'panier_moyen_ht',    metricUnit: 'eur', value: fmtEur(data.kpis.panier_moyen_ht),     color: C.orange, sparkData: null,                                     delta: computeDelta(data.kpis.panier_moyen_ht,    pk?.panier_moyen_ht),    fmtAbs: signEur },
+    { label: 'Commandes remboursées',metricKey: 'refunds_count',      metricUnit: 'cnt', value: fmt(data.kpis.refunds_count),           color: C.rouge,  sparkData: null,                                     delta: computeDelta(data.kpis.refunds_count,      pk?.refunds_count),      fmtAbs: signCnt, href: refundsUrl },
+    { label: 'Remboursements TTC',   metricKey: 'remboursements_ttc', metricUnit: 'eur', value: fmtEur(data.kpis.remboursements_ttc),  color: C.rouge,  sparkData: null,                                     delta: computeDelta(data.kpis.remboursements_ttc, pk?.remboursements_ttc), fmtAbs: signEur },
+    { label: 'Frais de port encaissés HT', metricKey: 'frais_port_client', metricUnit: 'eur', value: fmtEur(data.kpis.frais_port_client), color: C.bleu,  sparkData: null,                                     delta: computeDelta(data.kpis.frais_port_client,  pk?.frais_port_client),  fmtAbs: signEur },
+    { label: 'Coût des expéditions HT', metricKey: 'frais_port_reel', metricUnit: 'eur', value: fmtEur(data.kpis.frais_port_reel),     color: C.jaune,  sparkData: data.series.map(s => s.frais_port_reel), delta: computeDelta(data.kpis.frais_port_reel,    pk?.frais_port_reel),    fmtAbs: signEur },
+    { label: 'Nouveaux clients',     metricKey: 'nouveaux_clients',   metricUnit: 'cnt', value: fmt(data.kpis.nouveaux_clients),       color: C.violet, sparkData: null,                                     delta: computeDelta(data.kpis.nouveaux_clients,   pk?.nouveaux_clients),   fmtAbs: signCnt },
+    { label: 'Nvx clients ayant commandé', metricKey: 'nouveaux_clients_commande', metricUnit: 'cnt', value: fmt(data.kpis.nouveaux_clients_commande), color: C.vert, sparkData: null,                              delta: computeDelta(data.kpis.nouveaux_clients_commande, pk?.nouveaux_clients_commande), fmtAbs: signCnt },
   ] : [];
 
   const gridCols = windowW >= 900 ? 3 : windowW >= 560 ? 2 : 1;
