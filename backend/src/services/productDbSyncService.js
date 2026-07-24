@@ -97,6 +97,14 @@ const runProductDbSync = async () => {
 
   const products = await fetchAllProducts(creds);
 
+  // Extrait le COG (_wc_cog_cost) depuis les meta_data WC. Renvoie null si absent
+  // ou <= 0 → on ne veut JAMAIS écraser un COG existant par NULL (cf. COALESCE ci-dessous).
+  const getCog = (obj) => {
+    const m = (obj.meta_data || []).find((x) => x.key === '_wc_cog_cost');
+    const v = m ? parseFloat(m.value) : NaN;
+    return Number.isFinite(v) && v > 0 ? v : null;
+  };
+
   const liveRows = [];
   const errors = [];
 
@@ -108,6 +116,7 @@ const runProductDbSync = async () => {
       stock: p.stock_quantity === null || p.stock_quantity === undefined ? 0 : Number(p.stock_quantity),
       manage_stock: !!p.manage_stock,
       discounted_price: parseDiscounted(p.wdr_discounted_price),
+      wc_cog_cost: getCog(p),
     });
 
     if (p.type === 'variable') {
@@ -121,6 +130,7 @@ const runProductDbSync = async () => {
             stock: v.stock_quantity === null || v.stock_quantity === undefined ? 0 : Number(v.stock_quantity),
             manage_stock: !!v.manage_stock,
             discounted_price: parseDiscounted(v.wdr_discounted_price),
+            wc_cog_cost: getCog(v),
           });
         }
       } catch (err) {
@@ -141,7 +151,8 @@ const runProductDbSync = async () => {
         live_stock_status text,
         live_stock numeric,
         live_manage_stock boolean,
-        live_discounted_price numeric
+        live_discounted_price numeric,
+        live_wc_cog_cost numeric
       ) ON COMMIT DROP
     `);
 
@@ -151,17 +162,20 @@ const runProductDbSync = async () => {
       const values = [];
       const params = [];
       chunk.forEach((r, idx) => {
-        const base = idx * 6;
-        values.push(`($${base + 1},$${base + 2},$${base + 3},$${base + 4},$${base + 5},$${base + 6})`);
-        params.push(r.wp_product_id, r.post_status, r.stock_status, r.stock, r.manage_stock, r.discounted_price);
+        const base = idx * 7;
+        values.push(`($${base + 1},$${base + 2},$${base + 3},$${base + 4},$${base + 5},$${base + 6},$${base + 7})`);
+        params.push(r.wp_product_id, r.post_status, r.stock_status, r.stock, r.manage_stock, r.discounted_price, r.wc_cog_cost);
       });
       await client.query(
-        `INSERT INTO live_wc_products (wp_product_id, live_post_status, live_stock_status, live_stock, live_manage_stock, live_discounted_price) VALUES ${values.join(',')}`,
+        `INSERT INTO live_wc_products (wp_product_id, live_post_status, live_stock_status, live_stock, live_manage_stock, live_discounted_price, live_wc_cog_cost) VALUES ${values.join(',')}`,
         params
       );
     }
 
     // 1) post_status / stock_status / stock / manage_stock / discounted_price pour simples, variations et woosb
+    // wc_cog_cost : COALESCE → on ne remplace que si WC renvoie une valeur (jamais
+    // écraser un COG existant par NULL, ex. si un sync partiel ne l'a pas). Corrige
+    // aussi les produits créés par le sync webhook sans COG (bug : COG resté NULL).
     const r1 = await client.query(`
       UPDATE products p
       SET post_status = l.live_post_status,
@@ -169,6 +183,7 @@ const runProductDbSync = async () => {
           stock = l.live_stock,
           manage_stock = l.live_manage_stock,
           discounted_price = l.live_discounted_price,
+          wc_cog_cost = COALESCE(l.live_wc_cog_cost, p.wc_cog_cost),
           updated_at = NOW()
       FROM live_wc_products l
       WHERE l.wp_product_id = p.wp_product_id
@@ -177,17 +192,21 @@ const runProductDbSync = async () => {
              OR p.stock_status IS DISTINCT FROM l.live_stock_status
              OR p.stock IS DISTINCT FROM l.live_stock
              OR p.manage_stock IS DISTINCT FROM l.live_manage_stock
-             OR p.discounted_price IS DISTINCT FROM l.live_discounted_price)
+             OR p.discounted_price IS DISTINCT FROM l.live_discounted_price
+             OR (l.live_wc_cog_cost IS NOT NULL AND p.wc_cog_cost IS DISTINCT FROM l.live_wc_cog_cost))
     `);
 
-    // 2) post_status pour les parents variable
+    // 2) post_status + COG pour les parents variable (le COG vit souvent sur le parent)
     const r2 = await client.query(`
       UPDATE products p
-      SET post_status = l.live_post_status, updated_at = NOW()
+      SET post_status = l.live_post_status,
+          wc_cog_cost = COALESCE(l.live_wc_cog_cost, p.wc_cog_cost),
+          updated_at = NOW()
       FROM live_wc_products l
       WHERE l.wp_product_id = p.wp_product_id
         AND p.product_type = 'variable'
-        AND p.post_status IS DISTINCT FROM l.live_post_status
+        AND (p.post_status IS DISTINCT FROM l.live_post_status
+             OR (l.live_wc_cog_cost IS NOT NULL AND p.wc_cog_cost IS DISTINCT FROM l.live_wc_cog_cost))
     `);
 
     await client.query('COMMIT');

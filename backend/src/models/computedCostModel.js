@@ -97,9 +97,35 @@ const computedCostModel = {
       updatedCount = result.rowCount;
     }
 
+    // 5. BUNDLES (woosb) : computed_cost = somme(composant_qty × coût_composant).
+    // Un bundle ne doit jamais avoir un coût à 0 €. Le coût composant reprend la même
+    // priorité que le reste de l'app (computed_cost → wc_cog_cost → COG du parent).
+    // Fait APRÈS le batch FIFO pour que les computed_cost composants soient à jour.
+    const bundleResult = await pool.query(`
+      WITH comp AS (
+        SELECT b.wp_product_id AS bundle_wp_id,
+               SUM( (c->>'qty')::numeric
+                    * COALESCE(cp.computed_cost, NULLIF(cp.wc_cog_cost,0),
+                               pp.computed_cost, NULLIF(pp.wc_cog_cost,0), 0) ) AS cost
+        FROM products b
+        CROSS JOIN LATERAL jsonb_array_elements(b.woosb_ids::jsonb) AS c
+        LEFT JOIN products cp ON cp.wp_product_id = (c->>'id')::int
+        LEFT JOIN products pp ON pp.wp_product_id = cp.wp_parent_id
+        WHERE b.product_type = 'woosb'
+          AND b.woosb_ids IS NOT NULL AND b.woosb_ids <> 'null'
+        GROUP BY b.wp_product_id
+      )
+      UPDATE products p
+      SET computed_cost = ROUND(comp.cost, 2), computed_cost_updated_at = NOW()
+      FROM comp
+      WHERE p.wp_product_id = comp.bundle_wp_id
+        AND comp.cost > 0
+        AND p.computed_cost IS DISTINCT FROM ROUND(comp.cost, 2)
+    `);
+
     const elapsed = Date.now() - startTime;
-    console.log(`PMP FIFO: ${updatedCount} produits mis a jour en ${elapsed}ms`);
-    return { updatedCount, elapsed };
+    console.log(`PMP FIFO: ${updatedCount} produits + ${bundleResult.rowCount} bundles mis a jour en ${elapsed}ms`);
+    return { updatedCount, bundleCount: bundleResult.rowCount, elapsed };
   }
 };
 

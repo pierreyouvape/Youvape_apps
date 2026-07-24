@@ -89,8 +89,12 @@ async function computeDashboard({ dateFrom, dateTo, granularity } = {}) {
     // computed_cost/wc_cog_cost du PARENT variable (dans WooCommerce le COG est
     // souvent porté par le produit parent, pas par chaque variation) → 0 en
     // dernier recours. NULLIF(...,0) pour ignorer un wc_cog_cost à 0 littéral.
+    // Bundles woosb : leur coût est déjà porté par les lignes composants (à 0 € de CA
+    // mais qty × coût réels) présentes dans la commande → on met 0 sur la ligne PARENT
+    // du bundle pour ne pas double-compter (le bundle a par ailleurs un computed_cost
+    // renseigné = somme des composants, pour l'affichage catalogue).
     const parentJoin = `LEFT JOIN products par ON par.wp_product_id = p.wp_parent_id`;
-    const prodCostExpr = `COALESCE(p.computed_cost, NULLIF(p.wc_cog_cost,0), par.computed_cost, NULLIF(par.wc_cog_cost,0), 0)`;
+    const prodCostExpr = `CASE WHEN p.product_type = 'woosb' THEN 0 ELSE COALESCE(p.computed_cost, NULLIF(p.wc_cog_cost,0), par.computed_cost, NULLIF(par.wc_cog_cost,0), 0) END`;
 
     // ─── 1. KPIs GLOBAUX — agrégats order-level ────────────────────────────
     // TVA réelle = line_item.line_tax (TVA produits) + tax_item.line_tax (TVA livraison)
