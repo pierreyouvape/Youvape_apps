@@ -68,6 +68,22 @@ async function computeDashboard({ dateFrom, dateTo, granularity } = {}) {
     const { conditions, params, nextIndex } = buildDateConditions(dateFrom, dateTo);
     const where = 'WHERE ' + conditions.join(' AND ');
 
+    // ─── COÛT TRANSPORT RÉEL (factures transporteurs) ─────────────────────
+    // Coût d'expédition « réel » d'une commande = somme des colis facturés par le
+    // transporteur (carrier_invoice_parcels.amount_ht), réconciliés via order_id.
+    // Tant qu'une commande n'a AUCUN colis facturé (> 0 €), on retombe sur le coût
+    // ESTIMÉ configuré (orders.shipping_cost_calculated). La jointure est 1:1 par
+    // commande (agrégation par order_id) → pas de fan-out sur les autres agrégats.
+    // amount_ht > 0 : on ignore les colis sans tarif encore appliqué (NULL/0).
+    const shipJoin = `
+      LEFT JOIN (
+        SELECT order_id, SUM(amount_ht) AS real_cost
+        FROM carrier_invoice_parcels
+        WHERE order_id IS NOT NULL AND amount_ht > 0
+        GROUP BY order_id
+      ) ship ON ship.order_id = o.wp_order_id`;
+    const shipCostExpr = `COALESCE(ship.real_cost, o.shipping_cost_calculated)`;
+
     // ─── 1. KPIs GLOBAUX — agrégats order-level ────────────────────────────
     // TVA réelle = line_item.line_tax (TVA produits) + tax_item.line_tax (TVA livraison)
     // order_shipping_tax est toujours NULL en BDD, il faut passer par order_items
@@ -85,10 +101,11 @@ async function computeDashboard({ dateFrom, dateTo, granularity } = {}) {
         COALESCE(SUM(o.order_total), 0)::numeric                          AS ca_ttc_brut,
         COALESCE(SUM(t.tva), 0)::numeric                                  AS tva,
         COALESCE(SUM(o.order_shipping), 0)::numeric                       AS frais_port_client,
-        COALESCE(SUM(o.shipping_cost_calculated), 0)::numeric             AS frais_port_reel,
+        COALESCE(SUM(${shipCostExpr}), 0)::numeric                        AS frais_port_reel,
         COALESCE(SUM(o.payment_cost_calculated), 0)::numeric              AS frais_paiement
       FROM orders o
       LEFT JOIN tva_reelle t ON t.wp_order_id = o.wp_order_id
+      ${shipJoin}
       ${where}
     `, params);
 
@@ -205,10 +222,11 @@ async function computeDashboard({ dateFrom, dateTo, granularity } = {}) {
         COUNT(o.wp_order_id)::int                                              AS orders_count,
         COALESCE(SUM(o.order_total), 0)::numeric                               AS ca_ttc_brut,
         COALESCE(SUM(t.tva), 0)::numeric                                       AS tva,
-        COALESCE(SUM(o.shipping_cost_calculated), 0)::numeric                  AS frais_port_reel,
+        COALESCE(SUM(${shipCostExpr}), 0)::numeric                            AS frais_port_reel,
         COALESCE(SUM(o.payment_cost_calculated), 0)::numeric                   AS frais_paiement
       FROM orders o
       LEFT JOIN tva_reelle t ON t.wp_order_id = o.wp_order_id
+      ${shipJoin}
       ${where}
       GROUP BY ${truncExpr}
       ORDER BY ${truncExpr}
