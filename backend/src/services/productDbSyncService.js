@@ -105,6 +105,19 @@ const runProductDbSync = async () => {
     return Number.isFinite(v) && v > 0 ? v : null;
   };
 
+  // Composition d'un bundle woosb depuis WC (meta woosb_ids = objet {clé:{id,qty}}).
+  // Normalisé au format tableau [{id,qty}] stocké en base. Null si absent → COALESCE
+  // ne l'écrasera pas (certains sync ne portent pas la meta).
+  const getWoosb = (obj) => {
+    if (obj.type !== 'woosb') return null;
+    const m = (obj.meta_data || []).find((x) => x.key === 'woosb_ids');
+    if (!m || !m.value || typeof m.value !== 'object') return null;
+    const arr = Object.values(m.value)
+      .map((it) => ({ id: String(it.id), qty: String(it.qty || '1') }))
+      .filter((x) => x.id && x.id !== 'null');
+    return arr.length ? JSON.stringify(arr) : null;
+  };
+
   const liveRows = [];
   const errors = [];
 
@@ -117,6 +130,7 @@ const runProductDbSync = async () => {
       manage_stock: !!p.manage_stock,
       discounted_price: parseDiscounted(p.wdr_discounted_price),
       wc_cog_cost: getCog(p),
+      woosb_ids: getWoosb(p),
     });
 
     if (p.type === 'variable') {
@@ -152,7 +166,8 @@ const runProductDbSync = async () => {
         live_stock numeric,
         live_manage_stock boolean,
         live_discounted_price numeric,
-        live_wc_cog_cost numeric
+        live_wc_cog_cost numeric,
+        live_woosb_ids text
       ) ON COMMIT DROP
     `);
 
@@ -162,12 +177,12 @@ const runProductDbSync = async () => {
       const values = [];
       const params = [];
       chunk.forEach((r, idx) => {
-        const base = idx * 7;
-        values.push(`($${base + 1},$${base + 2},$${base + 3},$${base + 4},$${base + 5},$${base + 6},$${base + 7})`);
-        params.push(r.wp_product_id, r.post_status, r.stock_status, r.stock, r.manage_stock, r.discounted_price, r.wc_cog_cost);
+        const base = idx * 8;
+        values.push(`($${base + 1},$${base + 2},$${base + 3},$${base + 4},$${base + 5},$${base + 6},$${base + 7},$${base + 8})`);
+        params.push(r.wp_product_id, r.post_status, r.stock_status, r.stock, r.manage_stock, r.discounted_price, r.wc_cog_cost, r.woosb_ids ?? null);
       });
       await client.query(
-        `INSERT INTO live_wc_products (wp_product_id, live_post_status, live_stock_status, live_stock, live_manage_stock, live_discounted_price, live_wc_cog_cost) VALUES ${values.join(',')}`,
+        `INSERT INTO live_wc_products (wp_product_id, live_post_status, live_stock_status, live_stock, live_manage_stock, live_discounted_price, live_wc_cog_cost, live_woosb_ids) VALUES ${values.join(',')}`,
         params
       );
     }
@@ -184,6 +199,7 @@ const runProductDbSync = async () => {
           manage_stock = l.live_manage_stock,
           discounted_price = l.live_discounted_price,
           wc_cog_cost = COALESCE(l.live_wc_cog_cost, p.wc_cog_cost),
+          woosb_ids = COALESCE(l.live_woosb_ids, p.woosb_ids),
           updated_at = NOW()
       FROM live_wc_products l
       WHERE l.wp_product_id = p.wp_product_id
@@ -193,7 +209,8 @@ const runProductDbSync = async () => {
              OR p.stock IS DISTINCT FROM l.live_stock
              OR p.manage_stock IS DISTINCT FROM l.live_manage_stock
              OR p.discounted_price IS DISTINCT FROM l.live_discounted_price
-             OR (l.live_wc_cog_cost IS NOT NULL AND p.wc_cog_cost IS DISTINCT FROM l.live_wc_cog_cost))
+             OR (l.live_wc_cog_cost IS NOT NULL AND p.wc_cog_cost IS DISTINCT FROM l.live_wc_cog_cost)
+             OR (l.live_woosb_ids IS NOT NULL AND p.woosb_ids IS DISTINCT FROM l.live_woosb_ids))
     `);
 
     // 2) post_status + COG pour les parents variable (le COG vit souvent sur le parent)
