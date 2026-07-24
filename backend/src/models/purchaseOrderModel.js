@@ -902,9 +902,14 @@ const purchaseOrderModel = {
           //    et item.qty en PACKS  → prix unitaire = price / qty_pack, unités = qty × qty_pack
           //  - d'autres (ex. Cosmer) envoient item.price = prix UNITAIRE
           //    et item.qty en UNITÉS → stocker tel quel
-          // Aucun champ BMS ne les distingue de façon fiable → on ancre sur wc_cog_cost :
-          // on retient l'interprétation dont le prix unitaire est le plus proche du coût connu.
-          // Le montant total (qty × price) est identique dans les deux cas.
+          // Aucun champ BMS ne les distingue de façon fiable. La convention DOMINANTE
+          // est « prix du pack » (~95 % des lignes) → c'est le défaut. On ne bascule en
+          // « prix unitaire » QUE si wc_cog_cost le désigne NETTEMENT (au moins ~2× plus
+          // proche, marge ln2). wc_cog_cost n'est utilisé QUE comme départage grossier
+          // (jamais comme valeur de coût — le coût stocké reste le prix d'achat BMS) :
+          // une imprécision de wc_cog (remises sur facture) ne peut donc pas faire
+          // basculer une décision, qui n'arrive que sur un écart franc (5-10×).
+          // Le montant total (qty × price) est identique dans les deux interprétations.
           let unitPrice, qtyOrdered, qtyReceived;
           if (priceRaw === null || qtyPack <= 1) {
             unitPrice = priceRaw;               // pas d'ambiguïté
@@ -914,12 +919,12 @@ const purchaseOrderModel = {
             const unitAsIs  = priceRaw;             // interprétation « prix déjà unitaire »
             const unitAsPack = priceRaw / qtyPack;  // interprétation « prix du pack »
             const wcog = wcogBySku.get(item.sku);
-            let usePack;
+            let usePack = true; // défaut : convention dominante « prix du pack »
             if (wcog) {
-              // Distance multiplicative (log) au coût connu → choisir le plus proche
-              usePack = Math.abs(Math.log(unitAsPack / wcog)) < Math.abs(Math.log(unitAsIs / wcog));
-            } else {
-              usePack = true; // pas d'ancre : conserver le comportement historique (prix pack)
+              const dPack = Math.abs(Math.log(unitAsPack / wcog));
+              const dAsIs = Math.abs(Math.log(unitAsIs / wcog));
+              // Basculer en prix unitaire seulement si nettement plus proche du coût connu
+              if (dAsIs + Math.LN2 < dPack) usePack = false;
             }
             if (usePack) {
               unitPrice = unitAsPack;
