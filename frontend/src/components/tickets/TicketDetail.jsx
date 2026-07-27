@@ -2417,6 +2417,7 @@ function CustomerPanel({ ticket, onAssignOrder, onUnassignOrder, onMerge, mobile
     post_status: ticket.order_status,
     order_total: ticket.order_total,
     tracking_number: ticket.order_tracking,
+    shipping_carrier: ticket.order_carrier,
     items: ticket.order_items || [],
   } : null;
 
