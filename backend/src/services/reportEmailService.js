@@ -253,15 +253,26 @@ function recapHtml(k) {
     </table>`;
 }
 
-// Bloc "Total par pays" : CA TTC + CA HT + nb commandes par pays (CA décroissant)
-function countryHtml(rows) {
+// Bloc "Total par pays" : CA HT + évolution vs période préc. + nb commandes par pays (CA décroissant)
+function countryHtml(rows, prevRows = []) {
   if (!rows || rows.length === 0) return '';
 
   const th = (label, align = 'left', cls = '') => `<td align="${align}" class="yv-ctable-cell ${cls}" style="padding:8px 6px;font-size:11.5px;font-weight:800;color:${COL.grisM};text-transform:uppercase;letter-spacing:0.04em;font-family:${FONT};border-bottom:2px solid #e3e7ec;${align === 'right' ? 'white-space:nowrap;' : ''}">${label}</td>`;
   const td = (value, { align = 'left', bold = false, color = COL.grisF, cls = '' } = {}) => `<td align="${align}" class="yv-ctable-cell ${cls}" style="padding:9px 6px;font-size:14px;color:${color};font-weight:${bold ? 800 : 600};font-family:${FONT};border-bottom:1px solid #eef1f4;${align === 'right' ? 'white-space:nowrap;' : ''}">${value}</td>`;
 
-  const totalTtc = rows.reduce((s, r) => s + (r.ca_ttc_brut || 0), 0);
+  // CA HT de la période précédente indexé par pays, pour calculer l'évolution.
+  const prevHtByCountry = new Map((prevRows || []).map((r) => [r.country_code, r.ca_ht || 0]));
+
+  // Cellule d'évolution du CA HT : flèche colorée + % (▲ vert / ▼ rouge).
+  // Pas de valeur précédente (nouveau pays) → "—".
+  const evolCell = (currentHt, prevHt) => {
+    const d = formatDelta(currentHt, prevHt, 'eur');
+    if (!d) return td('—', { align: 'right', color: COL.grisM });
+    return `<td align="right" class="yv-ctable-cell" style="padding:9px 6px;font-size:13px;font-weight:700;color:${d.col};font-family:${FONT};border-bottom:1px solid #eef1f4;white-space:nowrap;">${d.arrow} ${d.pct}%</td>`;
+  };
+
   const totalHt = rows.reduce((s, r) => s + (r.ca_ht || 0), 0);
+  const totalPrevHt = (prevRows || []).reduce((s, r) => s + (r.ca_ht || 0), 0);
   const totalOrders = rows.reduce((s, r) => s + (r.orders_count || 0), 0);
   const totalPanier = totalOrders > 0 ? totalHt / totalOrders : 0;
 
@@ -273,8 +284,8 @@ function countryHtml(rows) {
     <tr>
       ${td(countryCell(r.country_code))}
       ${td(num.format(r.orders_count), { align: 'right' })}
-      ${td(eur.format(r.ca_ttc_brut), { align: 'right' })}
       ${td(eur.format(r.ca_ht), { align: 'right', bold: true, color: COL.saphir })}
+      ${evolCell(r.ca_ht || 0, prevHtByCountry.has(r.country_code) ? prevHtByCountry.get(r.country_code) : null)}
       ${td(eur.format(r.panier_moyen_ht), { align: 'right', cls: 'yv-hide-mobile' })}
     </tr>`).join('');
 
@@ -282,7 +293,7 @@ function countryHtml(rows) {
     <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;background:${COL.blanc};border:1px solid #d9dee4;border-radius:12px;margin-top:18px;">
       <tr><td class="yv-card-pad-lg" style="padding:20px 24px;">
         <div style="font-size:16px;font-weight:800;color:${COL.grisTF};font-family:${FONT};margin-bottom:4px;">Total par pays</div>
-        <div style="font-size:13px;color:${COL.grisM};font-family:${FONT};margin-bottom:12px;">CA par pays de facturation, du plus élevé au plus faible</div>
+        <div style="font-size:13px;color:${COL.grisM};font-family:${FONT};margin-bottom:12px;">CA HT par pays de facturation, du plus élevé au plus faible</div>
         <!-- Conteneur scrollable en secours si le tableau ne tient pas malgré la
              réduction de police/marges mobile (cf. media query dans <head>). -->
         <div style="overflow-x:auto;-webkit-overflow-scrolling:touch;">
@@ -290,16 +301,16 @@ function countryHtml(rows) {
           <tr>
             ${th('Pays')}
             ${th('Cmd.', 'right')}
-            ${th('CA TTC', 'right')}
             ${th('CA HT', 'right')}
+            ${th('Évol.', 'right')}
             ${th('Panier moy. HT', 'right', 'yv-hide-mobile')}
           </tr>
           ${body}
           <tr>
             ${td('Total', { bold: true })}
             ${td(num.format(totalOrders), { align: 'right', bold: true })}
-            ${td(eur.format(totalTtc), { align: 'right', bold: true })}
             ${td(eur.format(totalHt), { align: 'right', bold: true, color: COL.saphir })}
+            ${evolCell(totalHt, totalPrevHt || null)}
             ${td(eur.format(totalPanier), { align: 'right', bold: true, cls: 'yv-hide-mobile' })}
           </tr>
         </table>
@@ -308,14 +319,14 @@ function countryHtml(rows) {
     </table>`;
 }
 
-function buildHtml(freq, period, dashboard, countries, prevDashboard, prevPeriod) {
+function buildHtml(freq, period, dashboard, countries, prevDashboard, prevPeriod, prevCountries = []) {
   const k = dashboard?.kpis || {};
   const pk = prevDashboard?.kpis || null;
   const hasData = (k.orders_count || 0) > 0 || (k.ca_ttc_brut || 0) > 0;
   const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
 
   const content = hasData
-    ? `${heroCardsHtml(k, pk)}${secondaryCardsHtml(k, pk)}${newCustomersCardsHtml(k, pk)}${recapHtml(k)}${countryHtml(countries)}`
+    ? `${heroCardsHtml(k, pk)}${secondaryCardsHtml(k, pk)}${newCustomersCardsHtml(k, pk)}${recapHtml(k)}${countryHtml(countries, prevCountries)}`
     : `<table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;background:${COL.blanc};border:1px solid #e6eaee;border-radius:12px;"><tr><td style="padding:32px;text-align:center;color:${COL.grisM};font-family:${FONT};font-size:14px;">Aucune commande sur cette période.</td></tr></table>`;
 
   return `
@@ -370,7 +381,7 @@ function buildHtml(freq, period, dashboard, countries, prevDashboard, prevPeriod
 }
 
 // Fallback texte brut (clients mail sans HTML)
-function buildText(freq, period, dashboard, countries, prevDashboard, prevPeriod) {
+function buildText(freq, period, dashboard, countries, prevDashboard, prevPeriod, prevCountries = []) {
   const kpis = dashboard?.kpis || {};
   const pk = prevDashboard?.kpis || null;
   const lines = [
@@ -395,9 +406,13 @@ function buildText(freq, period, dashboard, countries, prevDashboard, prevPeriod
       lines.push(line);
     }
     if (countries && countries.length > 0) {
-      lines.push('', 'Total par pays (CA TTC / CA HT / commandes / panier moyen HT) :');
+      const prevHtByCountry = new Map((prevCountries || []).map((r) => [r.country_code, r.ca_ht || 0]));
+      lines.push('', 'Total par pays (CA HT / évolution vs préc. / commandes / panier moyen HT) :');
       for (const c of countries) {
-        lines.push(`  ${countryName(c.country_code)} : ${eur.format(c.ca_ttc_brut)} / ${eur.format(c.ca_ht)} / ${num.format(c.orders_count)} / ${eur.format(c.panier_moyen_ht)}`);
+        const prevHt = prevHtByCountry.has(c.country_code) ? prevHtByCountry.get(c.country_code) : null;
+        const d = formatDelta(c.ca_ht || 0, prevHt, 'eur');
+        const evol = d ? `${d.arrow} ${d.pct}%` : '—';
+        lines.push(`  ${countryName(c.country_code)} : ${eur.format(c.ca_ht)} / ${evol} / ${num.format(c.orders_count)} / ${eur.format(c.panier_moyen_ht)}`);
       }
     }
   } else {
@@ -413,17 +428,19 @@ async function renderReport(freq, now = new Date()) {
   let dashboard = null;
   let prevDashboard = null;
   let countries = [];
+  let prevCountries = [];
   try {
-    [dashboard, prevDashboard, countries] = await Promise.all([
+    [dashboard, prevDashboard, countries, prevCountries] = await Promise.all([
       computeDashboard({ dateFrom: period.dateFrom, dateTo: period.dateTo }),
       computeDashboard({ dateFrom: prevPeriod.dateFrom, dateTo: prevPeriod.dateTo }),
       computeByCountry({ dateFrom: period.dateFrom, dateTo: period.dateTo }),
+      computeByCountry({ dateFrom: prevPeriod.dateFrom, dateTo: prevPeriod.dateTo }),
     ]);
   } catch (e) {
     console.error(`[ReportEmail] échec calcul dashboard (${freq}):`, e.message);
   }
-  const html = buildHtml(freq, period, dashboard, countries, prevDashboard, prevPeriod);
-  const text = buildText(freq, period, dashboard, countries, prevDashboard, prevPeriod);
+  const html = buildHtml(freq, period, dashboard, countries, prevDashboard, prevPeriod, prevCountries);
+  const text = buildText(freq, period, dashboard, countries, prevDashboard, prevPeriod, prevCountries);
   const subject = `${FREQ_TITLE[freq]} — ${period.label}`;
   return { period, html, text, subject, dashboard };
 }
