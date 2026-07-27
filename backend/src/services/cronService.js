@@ -537,6 +537,36 @@ const setupStockValuationSnapshotCron = () => {
   console.log('Cron snapshot valeur de stock configure: tous les jours a 23h55 (Europe/Paris)');
 };
 
+// ==================== RAPPORT HEBDO STOCK NON PUBLIÉ ====================
+
+const { sendWeeklyDraftStockReport } = require('./stockDraftReportService');
+
+let draftStockReportJob = null;
+
+const runDraftStockReport = async () => {
+  try {
+    await sendWeeklyDraftStockReport();
+  } catch (error) {
+    console.error('Erreur rapport hebdo stock non publie:', error.message);
+    sendAlert(
+      'Cron rapport stock non publie: echec',
+      `L'envoi du rapport hebdomadaire des produits en stock non publies a echoue.\n\nErreur: ${error.message}`
+    );
+  }
+};
+
+const setupDraftStockReportCron = () => {
+  if (draftStockReportJob) {
+    draftStockReportJob.stop();
+    draftStockReportJob = null;
+  }
+  // Tous les lundis a 13h (Europe/Paris)
+  draftStockReportJob = cron.schedule('0 13 * * 1', runDraftStockReport, {
+    timezone: 'Europe/Paris'
+  });
+  console.log('Cron rapport stock non publie configure: lundi 13h (Europe/Paris)');
+};
+
 module.exports = {
   setupCron,
   restartCron,
@@ -550,5 +580,6 @@ module.exports = {
   setupBmsTagRetryCron,
   setupReportEmailCron,
   setupStockValuationSnapshotCron,
+  setupDraftStockReportCron,
   runProductDbSyncJob,
 };

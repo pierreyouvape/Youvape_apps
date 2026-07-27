@@ -33,7 +33,7 @@ const colissimoRoutes  = require('./routes/colissimoRoutes');
 const lettreSuivieRoutes = require('./routes/lettreSuivieRoutes');
 const mondialRelayRoutes = require('./routes/mondialRelayRoutes');
 const transporteursRoutes = require('./routes/transporteursRoutes');
-const { setupCron, setupBmsCron, setupComputedCostCron, setupBmsBarcodeCron, setupStockResyncCron, setupSavAutomationsCron, setupProductDbSyncCron, setupBmsTagRetryCron, setupReportEmailCron, setupStockValuationSnapshotCron } = require('./services/cronService');
+const { setupCron, setupBmsCron, setupComputedCostCron, setupBmsBarcodeCron, setupStockResyncCron, setupSavAutomationsCron, setupProductDbSyncCron, setupBmsTagRetryCron, setupReportEmailCron, setupStockValuationSnapshotCron, setupDraftStockReportCron } = require('./services/cronService');
 const rewardService = require('./services/rewardService');
 const emailService = require('./services/emailService');
 const wcSyncService = require('./services/wcSyncService');
@@ -117,6 +117,9 @@ app.listen(PORT, async () => {
 
   // Initialiser le cron snapshot valeur de stock (achat HT) - tous les jours a 23h55
   setupStockValuationSnapshotCron();
+
+  // Initialiser le cron rapport hebdo des produits en stock non publies - lundi 13h
+  setupDraftStockReportCron();
 
   // Recalcul initial PMP FIFO au demarrage (apres 60s)
   setTimeout(async () => {
