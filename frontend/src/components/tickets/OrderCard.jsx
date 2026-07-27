@@ -172,6 +172,9 @@ export default function OrderCard({ order, highlighted, canAssign, onAssign, onU
   const carrierLabel = (raw) => {
     if (!raw) return '';
     const s = raw.toLowerCase();
+    // 2Shop (relais commerçant Chronopost) — tester avant "chrono" car les libellés
+    // 2Shop contiennent aussi "chrono" (ex: "Chrono 2 Shop Direct").
+    if (s.includes('shop'))           return '2Shop';
     if (s.includes('chrono'))         return 'Chronopost';
     if (s.includes('mondial'))        return 'Mondial Relay';
     if (s.includes('colissimo'))      return 'Colissimo';
