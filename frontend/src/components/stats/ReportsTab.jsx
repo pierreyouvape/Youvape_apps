@@ -11,6 +11,7 @@ const REPORT_SECTIONS = [
   { id: 'orders', label: 'Commandes', icon: '📦' },
   { id: 'refunds', label: 'Remboursements', icon: '↩️' },
   { id: 'by-country', label: 'Par Pays', icon: '🌍' },
+  { id: 'stock-value', label: 'Valeur de stock', icon: '🏷️' },
   { id: 'by-tax', label: 'Par TVA', icon: '🧾', disabled: true },
 ];
 
@@ -25,6 +26,15 @@ const ReportsTab = () => {
   const [refundsData, setRefundsData] = useState(null);
   const [byCountryData, setByCountryData] = useState(null);
   const [selectedCountry, setSelectedCountry] = useState(null);
+
+  // Valeur de stock (achat HT)
+  const [stockValueData, setStockValueData] = useState(null);
+  const [stockAtDate, setStockAtDate] = useState(null);
+  const [stockAtLoading, setStockAtLoading] = useState(false);
+  const stockToday = new Date();
+  const [stockPickDate, setStockPickDate] = useState(
+    `${stockToday.getFullYear()}-${String(stockToday.getMonth() + 1).padStart(2, '0')}-${String(stockToday.getDate()).padStart(2, '0')}`
+  );
 
   // Période par défaut: mois en cours
   const today = new Date();
@@ -135,6 +145,8 @@ const ReportsTab = () => {
       fetchRefundsReport();
     } else if (activeSection === 'by-country') {
       fetchByCountryReport();
+    } else if (activeSection === 'stock-value') {
+      fetchStockValueReport();
     }
   }, [activeSection, dateFrom, dateTo]);
 
@@ -238,6 +250,38 @@ const ReportsTab = () => {
   const handleCountrySelect = (country) => {
     setSelectedCountry(country);
     fetchByCountryReport(country);
+  };
+
+  // Valeur de stock : courbe complète depuis le début de l'historique d'achat (~oct. 2025)
+  const fetchStockValueReport = async () => {
+    setLoading(true);
+    try {
+      const now = new Date();
+      const to = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+      const response = await axios.post(`${API_BASE_URL}/reports/stock-valuation`, {
+        dateFrom: '2025-10-01',
+        dateTo: to
+      });
+      if (response.data.success) {
+        setStockValueData(response.data.data);
+      }
+    } catch (error) {
+      console.error('Error fetching stock valuation report:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchStockAtDate = async (date) => {
+    setStockAtLoading(true);
+    try {
+      const response = await axios.post(`${API_BASE_URL}/reports/stock-valuation/at`, { date });
+      if (response.data.success) setStockAtDate(response.data.data);
+    } catch (error) {
+      console.error('Error fetching stock valuation at date:', error);
+    } finally {
+      setStockAtLoading(false);
+    }
   };
 
   const formatPrice = (value) => {
@@ -1477,6 +1521,158 @@ const ReportsTab = () => {
     </div>
   );
 
+  // Données du graphique Valeur de stock
+  const stockChartData = stockValueData?.series?.map(item => ({
+    date: formatDate(item.date),
+    fullDate: formatFullDate(item.date),
+    value: parseFloat(item.total_value_ht),
+    withPo: parseFloat(item.value_with_po_history),
+    withoutPo: parseFloat(item.value_without_po_history),
+    source: item.source
+  })) || [];
+
+  const renderStockValueSection = () => {
+    const current = stockValueData?.current;
+    return (
+      <div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '20px' }}>
+          <div>
+            <h2 style={{ margin: 0, color: '#333', fontSize: '24px' }}>Valeur de stock (achat HT)</h2>
+            <p style={{ margin: '5px 0 0', color: '#666', fontSize: '13px', maxWidth: '620px' }}>
+              Évolution de la valeur du stock aux <strong>coûts d'achat de l'époque</strong> (PMP FIFO reconstruit
+              à chaque date). Historique d'achat disponible depuis octobre 2025 ; les mois passés sont reconstruits
+              (approximatifs, hors ajustements manuels d'inventaire), les jours à venir sont enregistrés exactement chaque soir.
+            </p>
+          </div>
+        </div>
+
+        {loading ? (
+          <div style={{ textAlign: 'center', padding: '100px', color: '#666' }}>Chargement...</div>
+        ) : stockValueData ? (
+          <>
+            {/* KPIs actuels */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '15px', marginBottom: '20px' }}>
+              <div style={{ backgroundColor: '#fff', borderRadius: '8px', padding: '18px', border: '1px solid #e9ecef' }}>
+                <div style={{ color: '#666', fontSize: '12px', marginBottom: '6px' }}>Valeur de stock actuelle</div>
+                <div style={{ color: '#28a745', fontSize: '22px', fontWeight: '700' }}>{formatPrice(current?.total_value_ht || 0)}</div>
+              </div>
+              <div style={{ backgroundColor: '#fff', borderRadius: '8px', padding: '18px', border: '1px solid #e9ecef' }}>
+                <div style={{ color: '#666', fontSize: '12px', marginBottom: '6px' }}>Dont historique d'achat</div>
+                <div style={{ color: '#007bff', fontSize: '20px', fontWeight: '700' }}>{formatPrice(current?.value_with_po_history || 0)}</div>
+              </div>
+              <div style={{ backgroundColor: '#fff', borderRadius: '8px', padding: '18px', border: '1px solid #e9ecef' }}>
+                <div style={{ color: '#666', fontSize: '12px', marginBottom: '6px' }}>Dont coût actuel (sans historique)</div>
+                <div style={{ color: '#f0ad4e', fontSize: '20px', fontWeight: '700' }}>{formatPrice(current?.value_without_po_history || 0)}</div>
+              </div>
+              <div style={{ backgroundColor: '#fff', borderRadius: '8px', padding: '18px', border: '1px solid #e9ecef' }}>
+                <div style={{ color: '#666', fontSize: '12px', marginBottom: '6px' }}>Références en stock</div>
+                <div style={{ color: '#333', fontSize: '20px', fontWeight: '700' }}>{(current?.products_count || 0).toLocaleString('fr-FR')}</div>
+                <div style={{ color: '#999', fontSize: '11px', marginTop: '2px' }}>{(current?.total_units || 0).toLocaleString('fr-FR')} unités</div>
+              </div>
+            </div>
+
+            {/* Sélecteur "valeur à une date" (pour le comptable) */}
+            <div style={{ backgroundColor: '#fff', borderRadius: '8px', padding: '18px 20px', border: '1px solid #e9ecef', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '15px', flexWrap: 'wrap' }}>
+              <div>
+                <div style={{ color: '#333', fontSize: '15px', fontWeight: '600' }}>Valeur de stock à une date précise</div>
+                <div style={{ color: '#666', fontSize: '12px' }}>Pour votre comptable : sélectionnez une date, obtenez la valeur d'inventaire de ce jour-là.</div>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginLeft: 'auto' }}>
+                <input
+                  type="date"
+                  value={stockPickDate}
+                  min="2025-10-01"
+                  onChange={(e) => setStockPickDate(e.target.value)}
+                  style={{ padding: '8px 12px', border: '1px solid #ddd', borderRadius: '6px', fontSize: '14px' }}
+                />
+                <button
+                  onClick={() => fetchStockAtDate(stockPickDate)}
+                  disabled={stockAtLoading}
+                  style={{ padding: '8px 18px', border: 'none', borderRadius: '6px', backgroundColor: '#007bff', color: '#fff', fontSize: '14px', cursor: 'pointer', fontWeight: '600' }}
+                >
+                  {stockAtLoading ? '...' : 'Calculer'}
+                </button>
+              </div>
+              {stockAtDate && (
+                <div style={{ width: '100%', borderTop: '1px solid #e9ecef', paddingTop: '12px', display: 'flex', gap: '30px', flexWrap: 'wrap' }}>
+                  <div>
+                    <span style={{ color: '#666', fontSize: '13px' }}>Valeur au {formatFullDate(stockAtDate.date)} : </span>
+                    <span style={{ color: '#28a745', fontSize: '20px', fontWeight: '700' }}>{formatPrice(stockAtDate.total_value_ht)}</span>
+                  </div>
+                  <div style={{ color: '#999', fontSize: '12px', alignSelf: 'center' }}>
+                    {stockAtDate.total_units.toLocaleString('fr-FR')} unités · {stockAtDate.products_count.toLocaleString('fr-FR')} références
+                    · dont {formatPrice(stockAtDate.value_with_po_history)} au coût d'époque
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Graphique d'évolution */}
+            <div style={{ backgroundColor: '#fff', borderRadius: '8px', padding: '20px', border: '1px solid #e9ecef', marginBottom: '20px' }}>
+              <h3 style={{ margin: '0 0 15px', color: '#333', fontSize: '14px' }}>Évolution mensuelle</h3>
+              <ResponsiveContainer width="100%" height={320}>
+                <AreaChart data={stockChartData}>
+                  <defs>
+                    <linearGradient id="colorStock" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#28a745" stopOpacity={0.8}/>
+                      <stop offset="95%" stopColor="#28a745" stopOpacity={0.1}/>
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e9ecef" />
+                  <XAxis dataKey="date" stroke="#666" fontSize={11} />
+                  <YAxis stroke="#666" fontSize={11} tickFormatter={(v) => `${(v/1000).toFixed(0)}k`} domain={['auto', 'auto']} />
+                  <Tooltip
+                    contentStyle={{ backgroundColor: '#fff', border: '1px solid #ddd', borderRadius: '8px' }}
+                    formatter={(value) => [formatPrice(value), 'Valeur stock HT']}
+                    labelFormatter={(label, payload) => payload[0]?.payload?.fullDate || label}
+                  />
+                  <Area type="monotone" dataKey="value" stroke="#28a745" strokeWidth={2} fillOpacity={1} fill="url(#colorStock)" />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+
+            {/* Tableau */}
+            <div style={{ backgroundColor: '#fff', borderRadius: '8px', overflow: 'hidden', border: '1px solid #e9ecef' }}>
+              <div style={{ padding: '15px 20px', borderBottom: '1px solid #e9ecef' }}>
+                <h3 style={{ margin: 0, color: '#333', fontSize: '16px' }}>Détail par mois</h3>
+              </div>
+              <div style={{ overflowX: 'auto', maxHeight: '400px', overflowY: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <thead style={{ position: 'sticky', top: 0, backgroundColor: '#f8f9fa', zIndex: 1 }}>
+                    <tr>
+                      <th style={{ padding: '12px 15px', textAlign: 'left', color: '#666', fontSize: '11px', fontWeight: '600', textTransform: 'uppercase' }}>Date</th>
+                      <th style={{ padding: '12px 15px', textAlign: 'right', color: '#666', fontSize: '11px', fontWeight: '600', textTransform: 'uppercase' }}>Valeur stock HT</th>
+                      <th style={{ padding: '12px 15px', textAlign: 'right', color: '#666', fontSize: '11px', fontWeight: '600', textTransform: 'uppercase' }}>Coût d'époque</th>
+                      <th style={{ padding: '12px 15px', textAlign: 'right', color: '#666', fontSize: '11px', fontWeight: '600', textTransform: 'uppercase' }}>Coût actuel</th>
+                      <th style={{ padding: '12px 15px', textAlign: 'right', color: '#666', fontSize: '11px', fontWeight: '600', textTransform: 'uppercase' }}>Unités</th>
+                      <th style={{ padding: '12px 15px', textAlign: 'center', color: '#666', fontSize: '11px', fontWeight: '600', textTransform: 'uppercase' }}>Source</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {stockValueData.series.map((row, idx) => (
+                      <tr key={idx} style={{ borderBottom: '1px solid #e9ecef' }}>
+                        <td style={{ padding: '12px 15px', color: '#333', fontSize: '13px' }}>{formatFullDate(row.date)}</td>
+                        <td style={{ padding: '12px 15px', textAlign: 'right', color: '#28a745', fontSize: '13px', fontWeight: '600' }}>{formatPrice(row.total_value_ht)}</td>
+                        <td style={{ padding: '12px 15px', textAlign: 'right', color: '#007bff', fontSize: '13px' }}>{formatPrice(row.value_with_po_history)}</td>
+                        <td style={{ padding: '12px 15px', textAlign: 'right', color: '#f0ad4e', fontSize: '13px' }}>{formatPrice(row.value_without_po_history)}</td>
+                        <td style={{ padding: '12px 15px', textAlign: 'right', color: '#666', fontSize: '13px' }}>{Number(row.total_units).toLocaleString('fr-FR')}</td>
+                        <td style={{ padding: '12px 15px', textAlign: 'center', fontSize: '11px' }}>
+                          <span style={{ padding: '2px 8px', borderRadius: '10px', backgroundColor: row.source === 'snapshot' ? '#d4edda' : '#fff3cd', color: row.source === 'snapshot' ? '#155724' : '#856404' }}>
+                            {row.source === 'snapshot' ? 'Exact' : 'Reconstruit'}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </>
+        ) : null}
+      </div>
+    );
+  };
+
   return (
     <div style={{ display: 'flex', gap: '20px', minHeight: '700px' }}>
       {/* Sidebar gauche */}
@@ -1522,8 +1718,9 @@ const ReportsTab = () => {
         {activeSection === 'orders' && renderOrdersSection()}
         {activeSection === 'refunds' && renderRefundsSection()}
         {activeSection === 'by-country' && renderByCountrySection()}
+        {activeSection === 'stock-value' && renderStockValueSection()}
 
-        {activeSection !== 'revenue' && activeSection !== 'profit' && activeSection !== 'orders' && activeSection !== 'refunds' && activeSection !== 'by-country' && (
+        {activeSection !== 'revenue' && activeSection !== 'profit' && activeSection !== 'orders' && activeSection !== 'refunds' && activeSection !== 'by-country' && activeSection !== 'stock-value' && (
           <div style={{ textAlign: 'center', padding: '100px', color: '#666' }}>
             <p style={{ fontSize: '48px', marginBottom: '20px' }}>🚧</p>
             <p>Cette section sera disponible prochainement</p>

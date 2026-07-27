@@ -35,4 +35,10 @@ router.post('/orders', reportsController.getOrdersReport);
 // POST /api/reports/refunds - Rapport Remboursements
 router.post('/refunds', reportsController.getRefundsReport);
 
+// POST /api/reports/stock-valuation - Valeur de stock (achat HT), courbe d'évolution
+router.post('/stock-valuation', reportsController.getStockValuationReport);
+
+// POST /api/reports/stock-valuation/at - Valeur de stock à une date précise
+router.post('/stock-valuation/at', reportsController.getStockValuationAtDate);
+
 module.exports = router;

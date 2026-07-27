@@ -506,6 +506,37 @@ const setupReportEmailCron = () => {
   console.log('Cron rapports email configure: journalier 6h, hebdo lundi 6h, mensuel 1er 6h (Europe/Paris)');
 };
 
+// ==================== SNAPSHOT VALEUR DE STOCK (achat HT) ====================
+
+const stockValuationModel = require('../models/stockValuationModel');
+
+let stockValuationSnapshotJob = null;
+
+const runStockValuationSnapshot = async () => {
+  try {
+    const point = await stockValuationModel.snapshotToday();
+    console.log(`Snapshot valeur de stock: ${point.total_value_ht} EUR HT (${point.products_count} produits, ${point.total_units} unites)`);
+  } catch (error) {
+    console.error('Erreur snapshot valeur de stock:', error.message);
+    sendAlert(
+      'Cron snapshot valeur de stock: echec',
+      `L'enregistrement quotidien de la valeur de stock a echoue.\n\nErreur: ${error.message}`
+    );
+  }
+};
+
+const setupStockValuationSnapshotCron = () => {
+  if (stockValuationSnapshotJob) {
+    stockValuationSnapshotJob.stop();
+    stockValuationSnapshotJob = null;
+  }
+  // Tous les jours a 23h55 (Europe/Paris) : capture la valeur de fin de journee.
+  stockValuationSnapshotJob = cron.schedule('55 23 * * *', runStockValuationSnapshot, {
+    timezone: 'Europe/Paris'
+  });
+  console.log('Cron snapshot valeur de stock configure: tous les jours a 23h55 (Europe/Paris)');
+};
+
 module.exports = {
   setupCron,
   restartCron,
@@ -518,5 +549,6 @@ module.exports = {
   setupProductDbSyncCron,
   setupBmsTagRetryCron,
   setupReportEmailCron,
+  setupStockValuationSnapshotCron,
   runProductDbSyncJob,
 };

@@ -1536,3 +1536,40 @@ exports.getByCountryReport = async (req, res) => {
     res.status(500).json({ success: false, error: error.message });
   }
 };
+
+const stockValuationModel = require('../models/stockValuationModel');
+
+/**
+ * Rapport Valeur de stock (achat HT) — courbe d'évolution.
+ * POST /api/reports/stock-valuation  { dateFrom, dateTo }
+ */
+exports.getStockValuationReport = async (req, res) => {
+  try {
+    const { dateFrom, dateTo } = req.body;
+    if (!dateFrom || !dateTo) {
+      return res.status(400).json({ success: false, error: 'dateFrom et dateTo requis' });
+    }
+    const series = await stockValuationModel.computeSeries(dateFrom, dateTo);
+    const current = series.length ? series[series.length - 1] : null;
+    res.json({ success: true, data: { series, current } });
+  } catch (error) {
+    console.error('Error getting stock valuation report:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+/**
+ * Valeur de stock à une date précise (sélecteur de date).
+ * POST /api/reports/stock-valuation/at  { date }
+ */
+exports.getStockValuationAtDate = async (req, res) => {
+  try {
+    const { date } = req.body;
+    if (!date) return res.status(400).json({ success: false, error: 'date requise' });
+    const point = await stockValuationModel.computeAt(date);
+    res.json({ success: true, data: point });
+  } catch (error) {
+    console.error('Error getting stock valuation at date:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
