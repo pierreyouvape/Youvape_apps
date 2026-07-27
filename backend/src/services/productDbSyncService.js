@@ -208,7 +208,7 @@ const runProductDbSync = async () => {
           manage_stock = l.live_manage_stock,
           discounted_price = l.live_discounted_price,
           wc_cog_cost = COALESCE(l.live_wc_cog_cost, p.wc_cog_cost),
-          woosb_ids = COALESCE(l.live_woosb_ids, p.woosb_ids),
+          woosb_ids = COALESCE(l.live_woosb_ids::jsonb, p.woosb_ids),
           updated_at = NOW()
       FROM live_wc_products l
       WHERE l.wp_product_id = p.wp_product_id
@@ -219,7 +219,7 @@ const runProductDbSync = async () => {
              OR p.manage_stock IS DISTINCT FROM l.live_manage_stock
              OR p.discounted_price IS DISTINCT FROM l.live_discounted_price
              OR (l.live_wc_cog_cost IS NOT NULL AND p.wc_cog_cost IS DISTINCT FROM l.live_wc_cog_cost)
-             OR (l.live_woosb_ids IS NOT NULL AND p.woosb_ids IS DISTINCT FROM l.live_woosb_ids))
+             OR (l.live_woosb_ids IS NOT NULL AND p.woosb_ids IS DISTINCT FROM l.live_woosb_ids::jsonb))
     `);
 
     // 2) post_status + COG pour les parents variable (le COG vit souvent sur le parent)
