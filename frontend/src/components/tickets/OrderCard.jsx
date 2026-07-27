@@ -167,6 +167,21 @@ export default function OrderCard({ order, highlighted, canAssign, onAssign, onU
     return { bg: C.grisTL, color: C.grisF };
   };
   const sc = statusColors(orderStatus);
+
+  // Nom de transporteur épuré à partir du libellé WooCommerce (souvent verbeux)
+  const carrierLabel = (raw) => {
+    if (!raw) return '';
+    const s = raw.toLowerCase();
+    if (s.includes('chrono'))         return 'Chronopost';
+    if (s.includes('mondial'))        return 'Mondial Relay';
+    if (s.includes('colissimo'))      return 'Colissimo';
+    if (s.includes('courrier suivi') || s.includes('lettre')) return 'Courrier suivi';
+    if (s.includes('la poste'))       return 'La Poste';
+    if (s.includes('store pickup') || s.includes('pickup') || s.includes('entrepot') || s.includes('retrait')) return 'Retrait boutique';
+    return raw;
+  };
+  const carrierName = carrierLabel(shippingCarrier);
+
   const orderUrl = `/orders/${orderNum}`;
 
   return (
@@ -206,6 +221,15 @@ export default function OrderCard({ order, highlighted, canAssign, onAssign, onU
               display: 'inline-block', background: sc.bg, color: sc.color,
               padding: '3px 10px', borderRadius: 6, fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap',
             }}>{statusLabel(orderStatus)}</span>
+            {carrierName && (
+              <span style={{
+                display: 'inline-flex', alignItems: 'center', gap: 4,
+                background: C.grisTL, color: C.grisF,
+                padding: '3px 9px', borderRadius: 6, fontSize: 11.5, fontWeight: 700, whiteSpace: 'nowrap',
+              }} title={shippingCarrier}>
+                <IconTruck size={11} color={C.grisM} />{carrierName}
+              </span>
+            )}
             <TrackingBadge trackingNum={trackingNum} shippingCarrier={shippingCarrier} />
           </div>
         </div>
