@@ -93,7 +93,9 @@ export default function TransporteursApp() {
     const monthMap = {};     // monthKey -> { perCarrier:{carrier:{ht,colis}}, totalHt, totalColis }
     const yearMap = {};      // year -> idem
     const countryMap = {};   // name -> { colis, ht }
+    const currentYear = String(new Date().getFullYear());
     let grandColis = 0, grandHt = 0, grandInv = 0;
+    let curColis = 0, curHt = 0, curInv = 0;   // KPIs du haut = année en cours uniquement
 
     for (const inv of (totals?.invoices || [])) {
       const carrier = inv.carrier;
@@ -107,6 +109,7 @@ export default function TransporteursApp() {
       const cm = carrierMap[carrier] = carrierMap[carrier] || { invoices: 0, colis: 0, ht: 0 };
       cm.invoices += 1; cm.colis += colis; cm.ht += ht;
       grandColis += colis; grandHt += ht; grandInv += 1;
+      if (y === currentYear) { curColis += colis; curHt += ht; curInv += 1; }
 
       const mm = monthMap[monthKey] = monthMap[monthKey] || { perCarrier: {}, totalHt: 0, totalColis: 0 };
       mm.perCarrier[carrier] = mm.perCarrier[carrier] || { ht: 0, colis: 0 };
@@ -144,11 +147,12 @@ export default function TransporteursApp() {
     const byYear = Object.keys(yearMap).sort().reverse().map(y => ({ year: y, ...yearMap[y] }));
     const byCountry = Object.entries(countryMap).map(([name, v]) => ({ name, ...v })).sort((a, b) => b.colis - a.colis);
 
-    return { byCarrier, chartData, chartDataColis, byMonth, byYear, byCountry, grandColis, grandHt, grandInv };
+    return { byCarrier, chartData, chartDataColis, byMonth, byYear, byCountry, grandColis, grandHt, grandInv, currentYear, curColis, curHt, curInv };
   }, [totals]);
 
-  const { byCarrier, chartData, chartDataColis, byMonth, byYear, byCountry, grandColis, grandHt, grandInv } = agg;
+  const { byCarrier, chartData, chartDataColis, byMonth, byYear, byCountry, grandColis, grandHt, grandInv, currentYear, curColis, curHt, curInv } = agg;
   const avgPerColis = grandColis ? grandHt / grandColis : 0;
+  const curAvgPerColis = curColis ? curHt / curColis : 0;
 
   return (
     <AppShell currentPath="/transporteurs">
@@ -169,10 +173,10 @@ export default function TransporteursApp() {
           <>
             {/* KPIs */}
             <div style={{ display: 'flex', gap: 12, marginBottom: 24, flexWrap: 'wrap' }}>
-              <Kpi value={fmtColis(grandColis)} label="Colis (tous transporteurs)" />
-              <Kpi value={fmtEur(grandHt)} label="Total facturé HT" color={C.accent} />
-              <Kpi value={fmtEur(avgPerColis)} label="Coût moyen / colis" color={C.orange} />
-              <Kpi value={fmtColis(grandInv)} label="Factures analysées" color={C.green} />
+              <Kpi value={fmtColis(curColis)} label={`Colis (tous transporteurs) — ${currentYear}`} />
+              <Kpi value={fmtEur(curHt)} label={`Total facturé HT — ${currentYear}`} color={C.accent} />
+              <Kpi value={fmtEur(curAvgPerColis)} label={`Coût moyen / colis — ${currentYear}`} color={C.orange} />
+              <Kpi value={fmtColis(curInv)} label={`Factures analysées — ${currentYear}`} color={C.green} />
             </div>
 
             {/* Par transporteur */}
