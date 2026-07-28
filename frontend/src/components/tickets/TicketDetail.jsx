@@ -10,7 +10,8 @@ import { getCountryLabel } from '../../utils/countries';
 import { AuthContext } from '../../context/AuthContext';
 import { useOpenTickets } from '../../context/OpenTicketsContext';
 import OrderCard from './OrderCard';
-import { buildPlaceholderContext, applyPlaceholders } from './macroPlaceholders';
+import { buildPlaceholderContext, applyPlaceholders, parseInputTags, applyInputTags, findUnresolvedTags } from './macroPlaceholders';
+import MacroInputsModal from './MacroInputsModal';
 import RichEditor from './RichEditor';
 import { markdownTextToHtml, isHtml, sanitizeHtml, escapeHtml, decodeHtml } from './richText';
 import { useIsMobile } from '../../hooks/useIsMobile';
@@ -615,6 +616,8 @@ function ReplyComposer({
   const [macros, setMacros] = useState([]);
   const [macroOpen, setMacroOpen] = useState(false);
   const [applyingMacro, setApplyingMacro] = useState(false);
+  // Macro en attente de complétion : { macro, fields } — voir MacroInputsModal
+  const [pendingMacro, setPendingMacro] = useState(null);
   const { statuses, statusMap } = useTicketStatuses();
   const fileRef = useRef();
   const modeRef = useRef();
@@ -642,12 +645,24 @@ function ReplyComposer({
     return () => document.removeEventListener('mousedown', handler);
   }, [macroOpen]);
 
-  // Application d'une macro :
-  // - body et sujet : substitue les balises {{...}} avec les valeurs du ticket
-  // - remplace body, applique sujet (si défini), présélectionne le statut
-  // - télécharge la PJ et l'ajoute aux fichiers du composer
+  // Application d'une macro, en deux temps :
+  //  1. si la macro contient des balises « à saisir » ({{?produit}}, {{?texte:…}}),
+  //     on ouvre la pop-up de complétion et on attend les réponses de l'agent ;
+  //  2. sinon (ou une fois la pop-up validée) → runMacro applique réellement.
   const applyMacro = async (macro) => {
     setMacroOpen(false);
+    setError('');
+    const fields = parseInputTags(macro.body, macro.subject);
+    if (fields.length > 0) { setPendingMacro({ macro, fields }); return; }
+    await runMacro(macro, {});
+  };
+
+  // Application effective :
+  // - body et sujet : substitue les balises à saisir puis les balises {{...}}
+  //   du ticket
+  // - remplace body, applique sujet (si défini), présélectionne le statut
+  // - télécharge la PJ et l'ajoute aux fichiers du composer
+  const runMacro = async (macro, answers) => {
     setApplyingMacro(true);
     setError('');
     try {
@@ -660,13 +675,17 @@ function ReplyComposer({
       //  - texte plain/markdown-like (anciennes macros) → conversion en HTML.
       // setHTML émet onChange → met body à jour.
       if (typeof macro.body === 'string' && macro.body) {
+        const esc = isHtml(macro.body) ? escapeHtml : undefined;
+        const filled = applyInputTags(macro.body, answers, esc);
         const html = isHtml(macro.body)
-          ? applyPlaceholders(macro.body, ctx, escapeHtml)
-          : markdownTextToHtml(applyPlaceholders(macro.body, ctx));
+          ? applyPlaceholders(filled, ctx, escapeHtml)
+          : markdownTextToHtml(applyPlaceholders(filled, ctx));
         editorRef.current?.setHTML(html);
       }
       // Sujet : applique via parent si défini sur la macro (avec balises substituées)
-      if (macro.subject && onApplyMacroSubject) onApplyMacroSubject(applyPlaceholders(macro.subject, ctx));
+      if (macro.subject && onApplyMacroSubject) {
+        onApplyMacroSubject(applyPlaceholders(applyInputTags(macro.subject, answers), ctx));
+      }
       // Statut : présélectionne
       if (macro.sav_status) setSelectedStatus(macro.sav_status);
       // PJ : télécharge et ajoute à files (sans écraser ce que l'agent avait déjà)
@@ -833,6 +852,14 @@ function ReplyComposer({
   // ne soit attachée, on demande confirmation avant d'envoyer.
   const handleSend = async () => {
     const hasMessage = editorHasText();
+    // Garde-fou : une balise restée en clair partirait telle quelle chez le client.
+    if (hasMessage) {
+      const leftovers = findUnresolvedTags(body);
+      if (leftovers.length > 0) {
+        setError(`Balise non remplie dans le message : ${leftovers.join(', ')} — complétez-la ou supprimez-la avant d'envoyer.`);
+        return;
+      }
+    }
     if (hasMessage && files.length === 0 && !isPrivate && mentionsAttachment(body)) {
       setConfirmNoAttachment(true);
       return;
@@ -1550,6 +1577,20 @@ function ReplyComposer({
       </div>
 
       {/* Confirmation : mention de PJ sans pièce jointe attachée (façon Gmail) */}
+      {pendingMacro && (
+        <MacroInputsModal
+          macroName={pendingMacro.macro.name}
+          fields={pendingMacro.fields}
+          products={(ticket.order_items || []).map(it => it.order_item_name || it.name)}
+          onCancel={() => setPendingMacro(null)}
+          onSubmit={(answers) => {
+            const { macro } = pendingMacro;
+            setPendingMacro(null);
+            runMacro(macro, answers);
+          }}
+        />
+      )}
+
       {confirmNoAttachment && createPortal(
         <div
           onClick={() => setConfirmNoAttachment(false)}

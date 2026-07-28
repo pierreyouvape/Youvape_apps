@@ -125,3 +125,97 @@ export function applyPlaceholders(text, context, escapeFn) {
     return v !== undefined && v !== null ? esc(String(v)) : '';
   });
 }
+
+// ─── Balises « à saisir » {{?type:libellé|option|option}} ────────────────────
+// Contrairement aux balises ci-dessus (valeurs connues du ticket), celles-ci
+// ouvrent une pop-up à l'application de la macro pour que l'agent complète.
+//
+//   {{?produit}}                       → liste des produits de la commande liée
+//   {{?produit:Article défectueux}}    → idem, avec un libellé personnalisé
+//   {{?texte:Nom du produit}}          → champ texte libre
+//   {{?choix:Délai|48h|5 jours}}       → liste déroulante d'options figées
+//   {{?date:Date de renvoi}}           → sélecteur de date
+//
+// Le `?` empêche toute collision avec le regex des balises standard, qui
+// n'accepte que [\w.] — les deux passes de substitution sont indépendantes.
+export const INPUT_TYPES = {
+  produit: { defaultLabel: 'Produit concerné' },
+  texte:   { defaultLabel: 'Valeur à saisir' },
+  choix:   { defaultLabel: 'Choix' },
+  date:    { defaultLabel: 'Date' },
+};
+
+// Nouvelle instance à chaque appel : un regex /g partagé garde un `lastIndex`
+// entre les appels et sauterait des occurrences.
+const inputTagRe = () => /\{\{\s*\?\s*(produit|texte|choix|date)\s*(?::([^{}]*))?\}\}/gi;
+
+// Les corps de macro sont du HTML (Tiptap) : le libellé d'une balise peut donc
+// contenir des entités (&nbsp; sur les espaces multiples, &amp;, apostrophes…).
+// On les décode pour afficher un libellé propre dans la pop-up.
+// `&amp;` en dernier, sinon `&amp;nbsp;` deviendrait un espace.
+function decodeEntities(str) {
+  if (!str) return '';
+  return String(str)
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&quot;/gi, '"')
+    .replace(/&apos;|&#0?39;|&#x27;/gi, "'")
+    .replace(/&amp;/gi, '&');
+}
+
+// Construit le descriptif de champ correspondant à une occurrence de balise.
+// `id` sert de clé de déduplication : une même balise utilisée deux fois dans
+// la macro ne pose qu'une seule question, et remplit les deux emplacements.
+function fieldFromMatch(type, rest) {
+  const t = String(type).toLowerCase();
+  const parts = decodeEntities(rest || '').split('|').map(p => p.trim());
+  const label = parts[0] || INPUT_TYPES[t].defaultLabel;
+  const options = t === 'choix' ? parts.slice(1).filter(Boolean) : [];
+  const id = `${t}:${label.toLowerCase()}${options.length ? `|${options.join('|')}` : ''}`;
+  return { id, type: t, label, options };
+}
+
+// Extrait les champs à saisir d'un ou plusieurs textes (sujet + body), dans
+// l'ordre d'apparition et sans doublon. Retourne [] si la macro n'en a aucun.
+export function parseInputTags(...texts) {
+  const fields = [];
+  const seen = new Set();
+  for (const text of texts) {
+    if (!text || typeof text !== 'string') continue;
+    const re = inputTagRe();
+    let m;
+    while ((m = re.exec(text)) !== null) {
+      const field = fieldFromMatch(m[1], m[2]);
+      if (seen.has(field.id)) continue;
+      seen.add(field.id);
+      fields.push(field);
+    }
+  }
+  return fields;
+}
+
+// Substitue les balises à saisir par les réponses de l'agent (map id → valeur).
+// `escapeFn` : même contrat que applyPlaceholders — indispensable sur du HTML.
+export function applyInputTags(text, answers, escapeFn) {
+  if (!text || typeof text !== 'string') return text || '';
+  const esc = typeof escapeFn === 'function' ? escapeFn : (v) => v;
+  return text.replace(inputTagRe(), (_, type, rest) => {
+    const v = answers?.[fieldFromMatch(type, rest).id];
+    return v !== undefined && v !== null ? esc(String(v)) : '';
+  });
+}
+
+// Garde-fou avant envoi : détecte les {{...}} restés en clair dans un texte.
+// Cas couverts : balise mal orthographiée dans une macro (elle ne matche alors
+// aucun des deux regex et traverse la substitution), brouillon repris, copier-
+// coller manuel. Retourne les balises fautives dédupliquées, [] si tout est bon.
+export function findUnresolvedTags(...texts) {
+  const found = [];
+  for (const text of texts) {
+    if (!text || typeof text !== 'string') continue;
+    const m = text.match(/\{\{[^{}]{0,160}\}\}/g);
+    if (m) found.push(...m.map(t => decodeEntities(t)));
+  }
+  return [...new Set(found)];
+}

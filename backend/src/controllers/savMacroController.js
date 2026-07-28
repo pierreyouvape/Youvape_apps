@@ -86,6 +86,44 @@ const PLACEHOLDER_CATALOG = [
       { key: 'agent.email', label: 'Email de l\'agent', example: 'pierre@youvape.fr' },
     ],
   },
+  // Balises « à saisir » : contrairement aux précédentes, elles n'ont pas de
+  // valeur connue du ticket — elles ouvrent une pop-up de complétion au moment
+  // où l'agent applique la macro. `insert` est le gabarit inséré dans l'éditeur
+  // (le libellé après `:` sert de question, les `|` listent les options).
+  // Parsing & substitution : frontend/src/components/tickets/macroPlaceholders.js
+  {
+    category: 'À compléter à l\'application',
+    items: [
+      {
+        key: '?produit',
+        insert: '{{?produit}}',
+        label: 'Produit concerné',
+        hint: 'Liste déroulante des articles de la commande liée (+ saisie libre)',
+        example: 'Kit Vaporesso XROS 4',
+      },
+      {
+        key: '?texte',
+        insert: '{{?texte:Libellé}}',
+        label: 'Texte libre',
+        hint: 'Remplacez « Libellé » par la question posée à l\'agent',
+        example: 'Numéro de lot',
+      },
+      {
+        key: '?choix',
+        insert: '{{?choix:Libellé|Option A|Option B}}',
+        label: 'Liste de choix',
+        hint: 'Options séparées par des « | » — pour figer les formulations',
+        example: '48h',
+      },
+      {
+        key: '?date',
+        insert: '{{?date:Libellé}}',
+        label: 'Date',
+        hint: 'Sélecteur de date, inséré en toutes lettres (ex. 15 juillet 2026)',
+        example: '15 juillet 2026',
+      },
+    ],
+  },
 ];
 
 module.exports = {

@@ -77,8 +77,10 @@ function InsertPlaceholderButton({ targetRef, value, onChange, groups }) {
     return () => document.removeEventListener('mousedown', h);
   }, [open]);
 
-  const insert = (key) => {
-    const token = `{{${key}}}`;
+  // `item.insert` : gabarit explicite (balises à compléter, qui embarquent un
+  // libellé et parfois des options). Sinon la balise simple {{clé}}.
+  const insert = (item) => {
+    const token = item.insert || `{{${item.key}}}`;
     const el = targetRef.current;
     if (!el) {
       onChange(value + token);
@@ -133,7 +135,7 @@ function InsertPlaceholderButton({ targetRef, value, onChange, groups }) {
                 <button
                   key={item.key}
                   type="button"
-                  onClick={() => insert(item.key)}
+                  onClick={() => insert(item)}
                   style={{
                     width: '100%', textAlign: 'left',
                     padding: '7px 14px',
@@ -145,7 +147,12 @@ function InsertPlaceholderButton({ targetRef, value, onChange, groups }) {
                   onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                 >
                   <span style={{ fontSize: 12.5, color: C.grisTF, fontWeight: 600 }}>{item.label}</span>
-                  <span style={{ fontSize: 11, color: C.grisM, fontFamily: 'monospace' }}>{`{{${item.key}}}`}</span>
+                  <span style={{ fontSize: 11, color: C.grisM, fontFamily: 'monospace' }}>
+                    {item.insert || `{{${item.key}}}`}
+                  </span>
+                  {item.hint && (
+                    <span style={{ fontSize: 10.5, color: C.grisM, lineHeight: 1.3 }}>{item.hint}</span>
+                  )}
                 </button>
               ))}
             </div>
@@ -170,8 +177,8 @@ function InsertPlaceholderRich({ editorRef, groups }) {
     return () => document.removeEventListener('mousedown', h);
   }, [open]);
 
-  const insert = (key) => {
-    editorRef.current?.insertText(`{{${key}}}`);
+  const insert = (item) => {
+    editorRef.current?.insertText(item.insert || `{{${item.key}}}`);
     setOpen(false);
   };
 
@@ -212,7 +219,7 @@ function InsertPlaceholderRich({ editorRef, groups }) {
                 <button
                   key={item.key}
                   type="button"
-                  onClick={() => insert(item.key)}
+                  onClick={() => insert(item)}
                   style={{
                     width: '100%', textAlign: 'left', padding: '7px 14px',
                     background: 'transparent', border: 'none', cursor: 'pointer',
@@ -222,7 +229,12 @@ function InsertPlaceholderRich({ editorRef, groups }) {
                   onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                 >
                   <span style={{ fontSize: 12.5, color: C.grisTF, fontWeight: 600 }}>{item.label}</span>
-                  <span style={{ fontSize: 11, color: C.grisM, fontFamily: 'monospace' }}>{`{{${item.key}}}`}</span>
+                  <span style={{ fontSize: 11, color: C.grisM, fontFamily: 'monospace' }}>
+                    {item.insert || `{{${item.key}}}`}
+                  </span>
+                  {item.hint && (
+                    <span style={{ fontSize: 10.5, color: C.grisM, lineHeight: 1.3 }}>{item.hint}</span>
+                  )}
                 </button>
               ))}
             </div>
@@ -496,8 +508,10 @@ function MacroForm({ initial, statuses, onSubmit, onCancel, submitLabel = 'Enreg
           onChange={setBody}
           placeholderGroups={placeholderGroups}
         />
-        <div style={{ fontSize: 11, color: C.grisM, marginTop: 4 }}>
+        <div style={{ fontSize: 11, color: C.grisM, marginTop: 4, lineHeight: 1.5 }}>
           Les balises <code style={{ fontFamily: 'monospace', background: C.grisTL, padding: '0 4px', borderRadius: 3 }}>{'{{...}}'}</code> seront remplacées par les valeurs du ticket à l'application.
+          <br />
+          Celles en <code style={{ fontFamily: 'monospace', background: C.grisTL, padding: '0 4px', borderRadius: 3 }}>{'{{?...}}'}</code> ouvrent une pop-up demandant à l'agent de les compléter.
         </div>
       </div>
 

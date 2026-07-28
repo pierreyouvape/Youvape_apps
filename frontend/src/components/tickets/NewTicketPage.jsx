@@ -5,7 +5,8 @@ import { useTicketStatuses } from './useTicketStatuses';
 import { TICKETS_COLOR } from './ticketConstants';
 import CustomerAutocomplete from './CustomerAutocomplete';
 import OrderCard from './OrderCard';
-import { buildPlaceholderContext, applyPlaceholders } from './macroPlaceholders';
+import { buildPlaceholderContext, applyPlaceholders, parseInputTags, applyInputTags, findUnresolvedTags } from './macroPlaceholders';
+import MacroInputsModal from './MacroInputsModal';
 import RichEditor from './RichEditor';
 import { markdownTextToHtml, isHtml, escapeHtml } from './richText';
 
@@ -175,6 +176,8 @@ export default function NewTicketPage() {
   const [macros, setMacros] = useState([]);
   const [macroOpen, setMacroOpen] = useState(false);
   const [applyingMacro, setApplyingMacro] = useState(false);
+  // Macro en attente de complétion : { macro, fields } — voir MacroInputsModal
+  const [pendingMacro, setPendingMacro] = useState(null);
   const statusRef = useRef();
   const assignRef = useRef();
   const modeRef = useRef();
@@ -218,17 +221,28 @@ export default function NewTicketPage() {
       .catch(() => {});
   }, []);
 
-  // Application macro : remplace body, applique sujet/statut/PJ
-  // Substitution {{...}} depuis le state local (champs gauche/centre + user + commande liée)
+  // Commande liée au ticket en cours de rédaction (sert au contexte {{commande.*}}
+  // et à la liste de produits proposée par la balise {{?produit}}).
+  const linkedOrder = form.order_id
+    ? customerOrders.find(o => String(o.wp_order_id) === String(form.order_id))
+    : null;
+
+  // Application macro, en deux temps : si la macro contient des balises « à
+  // saisir », on ouvre d'abord la pop-up de complétion (cf. TicketDetail).
   const applyMacro = async (macro) => {
     setMacroOpen(false);
+    setError('');
+    const fields = parseInputTags(macro.body, macro.subject);
+    if (fields.length > 0) { setPendingMacro({ macro, fields }); return; }
+    await runMacro(macro, {});
+  };
+
+  // Application effective : remplace body, applique sujet/statut/PJ
+  // Substitution {{...}} depuis le state local (champs gauche/centre + user + commande liée)
+  const runMacro = async (macro, answers) => {
     setApplyingMacro(true);
     setError('');
     try {
-      // Construire le contexte depuis form (state local) + user + commande liée si présente
-      const linkedOrder = form.order_id
-        ? customerOrders.find(o => String(o.wp_order_id) === String(form.order_id))
-        : null;
       const ticketLike = {
         id:               null,
         subject:          form.subject || '',
@@ -253,12 +267,16 @@ export default function NewTicketPage() {
       //  - texte plain/markdown-like (anciennes macros) → conversion en HTML
       // setHTML émet onChange → met form.body à jour.
       if (typeof macro.body === 'string' && macro.body) {
+        const esc = isHtml(macro.body) ? escapeHtml : undefined;
+        const filled = applyInputTags(macro.body, answers, esc);
         const html = isHtml(macro.body)
-          ? applyPlaceholders(macro.body, ctx, escapeHtml)
-          : markdownTextToHtml(applyPlaceholders(macro.body, ctx));
+          ? applyPlaceholders(filled, ctx, escapeHtml)
+          : markdownTextToHtml(applyPlaceholders(filled, ctx));
         editorRef.current?.setHTML(html);
       }
-      if (macro.subject) setForm(f => ({ ...f, subject: applyPlaceholders(macro.subject, ctx) }));
+      if (macro.subject) {
+        setForm(f => ({ ...f, subject: applyPlaceholders(applyInputTags(macro.subject, answers), ctx) }));
+      }
       if (macro.sav_status) setForm(f => ({ ...f, sav_status: macro.sav_status }));
       if (macro.attachment_url) {
         try {
@@ -414,6 +432,12 @@ export default function NewTicketPage() {
     setTouched({ email: true, subject: true, body: true });
     if (!canSend) {
       setError('Veuillez corriger les champs en rouge avant d\'envoyer.');
+      return;
+    }
+    // Garde-fou : une balise restée en clair partirait telle quelle chez le client.
+    const leftovers = findUnresolvedTags(form.body, form.subject);
+    if (leftovers.length > 0) {
+      setError(`Balise non remplie : ${leftovers.join(', ')} — complétez-la ou supprimez-la avant d'envoyer.`);
       return;
     }
     setSending(true); setError('');
@@ -1127,6 +1151,20 @@ export default function NewTicketPage() {
           )}
         </aside>
       </div>
+
+      {pendingMacro && (
+        <MacroInputsModal
+          macroName={pendingMacro.macro.name}
+          fields={pendingMacro.fields}
+          products={(linkedOrder?.items || []).map(it => it.order_item_name || it.name)}
+          onCancel={() => setPendingMacro(null)}
+          onSubmit={(answers) => {
+            const { macro } = pendingMacro;
+            setPendingMacro(null);
+            runMacro(macro, answers);
+          }}
+        />
+      )}
     </div>
   );
 }
