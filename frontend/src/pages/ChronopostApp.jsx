@@ -160,6 +160,216 @@ const COUNTRY_NAMES = {
 const countryName = code => COUNTRY_NAMES[code] || code;
 const fmtColis = n => (n || 0).toLocaleString('en-US').replace(/,/g, ' ');
 
+/* ─── GRILLES TARIFAIRES CONTRATS 2025 ──────────────────────────────────────
+   Règle Chronopost : poids à la limite inférieure de tranche → tranche inférieure.
+   Ex: 1.000 kg exact → tranche 0-1 kg (non 1-2 kg).
+   Source : contrat My Chrono 34751303 (eff. 01/10/2025) + 2Shop 84284503 (eff. 01/04/2025)
+   Format : [weight_from_kg, weight_to_kg_excluded, price_ht]
+   DEP = NAT = REG = même prix pour tous les services France.
+   ─────────────────────────────────────────────────────────────────────────── */
+const TARIF_CHRONO_13 = [
+  [0,1,6.99],[1,2,7.41],[2,3,7.83],[3,4,8.25],[4,5,8.67],
+  [5,6,9.09],[6,7,9.51],[7,8,9.93],[8,9,10.35],[9,10,10.77],
+  [10,11,11.36],[11,12,11.95],[12,13,12.54],[13,14,13.13],[14,15,13.72],
+  [15,16,14.31],[16,17,14.90],[17,18,15.49],[18,19,16.08],[19,20,16.67],
+  [20,21,17.26],[21,22,17.85],[22,23,18.44],[23,24,19.03],[24,25,19.62],
+  [25,26,20.21],[26,27,20.80],[27,28,21.39],[28,29,21.98],[29,30,22.57],
+];
+const TARIF_RELAIS_13 = [
+  [0,1,4.29],[1,2,4.55],[2,3,4.81],[3,4,5.14],[4,5,5.47],
+  [5,6,5.87],[6,7,6.27],[7,8,6.67],[8,9,7.07],[9,10,7.47],
+  [10,11,8.06],[11,12,8.65],[12,13,9.24],[13,14,9.83],[14,15,10.42],
+  [15,16,11.01],[16,17,11.60],[17,18,12.19],[18,19,12.78],[19,20,13.37],
+];
+const TARIF_2SHOP_DIRECT = [
+  [0,0.5,3.06],[0.5,1,3.56],[1,2,4.15],[2,3,4.74],[3,4,5.59],
+  [4,5,6.44],[5,6,7.29],[6,7,8.14],[7,8,8.99],[8,9,9.84],
+  [9,10,10.69],[10,11,11.54],[11,12,12.39],[12,13,13.24],[13,14,14.09],
+  [14,15,14.94],[15,16,15.79],[16,17,16.64],[17,18,17.49],[18,19,18.34],
+  [19,20,19.19],
+];
+// Chrono Express (XF...FR) — Z1–Z9 — tranches de 0.5 kg jusqu'à 30 kg
+const XF_ZONES = ['Z1','Z2','Z3','Z4','Z5','Z6','Z7','Z8','Z9'];
+const TARIF_XF = [
+  // Z1
+  [8.47,9.37,10.83,11.92,13.01,14.10,15.19,16.28,17.37,18.46,19.55,20.64,21.73,22.82,23.91,25.00,26.09,27.18,28.27,29.36,30.60,31.84,33.08,34.32,35.56,36.80,38.04,39.28,40.52,41.76,43.00,44.24,45.48,46.72,47.96,49.20,50.44,51.68,52.92,54.16,55.69,57.22,58.75,60.28,61.81,63.34,64.87,66.40,67.93,69.46,70.99,72.52,74.05,75.58,77.11,78.64,80.17,81.70,83.23,84.76],
+  // Z2
+  [8.47,10.44,11.90,12.99,14.08,15.17,16.26,17.35,18.44,19.53,20.62,21.71,22.80,23.89,24.98,26.07,27.16,28.25,29.34,30.43,31.67,32.91,34.15,35.39,36.63,37.87,39.11,40.35,41.59,42.83,44.07,45.31,46.55,47.79,49.03,50.27,51.51,52.75,53.99,55.23,56.76,58.29,59.82,61.35,62.88,64.41,65.94,67.47,69.00,70.53,72.06,73.59,75.12,76.65,78.18,79.71,81.24,82.77,84.30,85.83],
+  // Z3
+  [10.07,12.62,14.66,16.27,17.88,19.49,21.10,22.71,24.32,25.93,27.61,29.29,30.97,32.65,34.33,36.01,37.69,39.37,41.05,42.73,44.77,46.81,48.85,50.89,52.93,54.97,57.01,59.05,61.09,63.13,65.17,67.21,69.25,71.29,73.33,75.37,77.41,79.45,81.49,83.53,85.72,87.91,90.10,92.29,94.48,96.67,98.86,101.05,103.24,105.43,107.62,109.81,112.00,114.19,116.38,118.57,120.76,122.95,125.14,127.33],
+  // Z4
+  [18.10,21.17,23.58,25.55,27.52,29.49,31.46,33.43,35.40,37.37,39.41,41.45,43.49,45.53,47.57,49.61,51.65,53.69,55.73,57.77,60.25,62.73,65.21,67.69,70.17,72.65,75.13,77.61,80.09,82.57,85.05,87.53,90.01,92.49,94.97,97.45,99.93,102.41,104.89,107.37,110.07,112.77,115.47,118.17,120.87,123.57,126.27,128.97,131.67,134.37,137.07,139.77,142.47,145.17,147.87,150.57,153.27,155.97,158.67,161.37],
+  // Z5
+  [19.81,23.02,25.57,27.61,29.65,31.69,33.73,35.77,37.81,39.85,42.04,44.23,46.42,48.61,50.80,52.99,55.18,57.37,59.56,61.75,64.38,67.01,69.64,72.27,74.90,77.53,80.16,82.79,85.42,88.05,90.68,93.31,95.94,98.57,101.20,103.83,106.46,109.09,111.72,114.35,117.20,120.05,122.90,125.75,128.60,131.45,134.30,137.15,140.00,142.85,145.70,148.55,151.40,154.25,157.10,159.95,162.80,165.65,168.50,171.35],
+  // Z6
+  [24.59,29.12,32.77,35.69,38.61,41.53,44.45,47.37,50.29,53.21,56.13,59.05,61.97,64.89,67.81,70.73,73.65,76.57,79.49,82.41,85.91,89.41,92.91,96.41,99.91,103.41,106.91,110.41,113.91,117.41,120.91,124.41,127.91,131.41,134.91,138.41,141.91,145.41,148.91,152.41,156.28,160.15,164.02,167.89,171.76,175.63,179.50,183.37,187.24,191.11,194.98,198.85,202.72,206.59,210.46,214.33,218.20,222.07,225.94,229.81],
+  // Z7
+  [26.11,31.66,36.11,39.69,43.27,46.85,50.43,54.01,57.59,61.17,64.75,68.33,71.91,75.49,79.07,82.65,86.23,89.81,93.39,96.97,100.91,104.85,108.79,112.73,116.67,120.61,124.55,128.49,132.43,136.37,140.31,144.25,148.19,152.13,156.07,160.01,163.95,167.89,171.83,175.77,180.08,184.39,188.70,193.01,197.32,201.63,205.94,210.25,214.56,218.87,223.18,227.49,231.80,236.11,240.42,244.73,249.04,253.35,257.66,261.97],
+  // Z8
+  [23.22,26.72,29.42,31.61,33.80,35.99,38.18,40.37,42.56,44.75,46.94,49.13,51.32,53.51,55.70,57.89,60.08,62.27,64.46,66.65,69.20,71.75,74.30,76.85,79.40,81.95,84.50,87.05,89.60,92.15,94.70,97.25,99.80,102.35,104.90,107.45,110.00,112.55,115.10,117.65,120.42,123.19,125.96,128.73,131.50,134.27,137.04,139.81,142.58,145.35,148.12,150.89,153.66,156.43,159.20,161.97,164.74,167.51,170.28,173.05],
+  // Z9
+  [30.04,36.10,40.55,44.13,47.71,51.29,54.87,58.45,62.03,65.61,69.19,72.77,76.35,79.93,83.51,87.09,90.67,94.25,97.83,101.41,105.35,109.29,113.23,117.17,121.11,125.05,128.99,132.93,136.87,140.81,144.75,148.69,152.63,156.57,160.51,164.45,168.39,172.33,176.27,180.21,184.52,188.83,193.14,197.45,201.76,206.07,210.38,214.69,219.00,223.31,227.62,231.93,236.24,240.55,244.86,249.17,253.48,257.79,262.10,266.41],
+];
+// Retourne l'index de tranche XF (0.5 kg/tranche) — limite haute incluse (ex: 0.500 kg → tranche 0)
+function xfBracketIdx(weightKg) {
+  if (weightKg == null || weightKg < 0) return -1;
+  return Math.max(0, Math.ceil(weightKg / 0.5) - 1);
+}
+// Retrouve la zone Z1-Z9 d'un colis XF depuis le montant facturé + poids Chrono
+function getXfZone(amountHt, weightChrono) {
+  const idx = xfBracketIdx(weightChrono);
+  if (idx < 0 || idx >= 60) return -1;
+  for (let z = 0; z < 9; z++) {
+    if (Math.abs(TARIF_XF[z][idx] - amountHt) < 0.02) return z;
+  }
+  return -1;
+}
+
+// 2Shop Europe (XT...TS) — par pays — tranches mixtes : 0–0.5, 0.5–1, puis 1 kg jusqu'à 20 kg
+const XT_COUNTRIES = ['AT','BE','BG','CH','CZ','DE','DK','EE','ES','FI','HR','HU','IE','IT','LT','LU','LV','NL','PL','PT','RO','SE','SI','SK'];
+const TARIF_XT = [
+  // AT
+  [8.57,8.79,9.12,11.61,12.27,12.93,13.59,14.25,14.91,15.57,16.23,16.89,17.55,18.21,18.87,19.53,20.19,20.85,21.51,22.17,22.83],
+  // BE
+  [3.39,3.50,3.83,6.43,7.09,7.75,8.41,9.07,9.73,10.39,11.05,11.71,12.37,13.03,13.69,14.35,15.01,15.67,16.33,16.99,17.65],
+  // BG
+  [11.85,12.07,12.40,14.89,15.55,16.21,16.87,17.53,18.19,18.85,19.51,20.17,20.83,21.49,22.15,22.81,23.47,24.13,24.79,25.45,26.11],
+  // CH
+  [28.67,28.89,29.22,31.71,32.37,33.03,33.69,34.35,35.01,35.67,36.33,36.99,37.65,38.31,38.97,39.63,40.29,40.95,41.61,42.27,42.93],
+  // CZ
+  [7.51,7.73,8.06,10.55,11.21,11.87,12.53,13.19,13.85,14.51,15.17,15.83,16.49,17.15,17.81,18.47,19.13,19.79,20.45,21.11,21.77],
+  // DE
+  [4.43,4.65,4.98,7.47,8.13,8.79,9.45,10.11,10.77,11.43,12.09,12.75,13.41,14.07,14.73,15.39,16.05,16.71,17.37,18.03,18.69],
+  // DK
+  [8.57,8.79,9.12,11.61,12.27,12.93,13.59,14.25,14.91,15.57,16.23,16.89,17.55,18.21,18.87,19.53,20.19,20.85,21.51,22.17,22.83],
+  // EE
+  [11.85,12.07,12.40,14.89,15.55,16.21,16.87,17.53,18.19,18.85,19.51,20.17,20.83,21.49,22.15,22.81,23.47,24.13,24.79,25.45,26.11],
+  // ES
+  [5.50,5.72,6.05,8.54,9.20,9.86,10.52,11.18,11.84,12.50,13.16,13.82,14.48,15.14,15.80,16.46,17.12,17.78,18.44,19.10,19.76],
+  // FI
+  [11.85,12.07,12.40,14.89,15.55,16.21,16.87,17.53,18.19,18.85,19.51,20.17,20.83,21.49,22.15,22.81,23.47,24.13,24.79,25.45,26.11],
+  // HR
+  [11.85,12.07,12.40,14.89,15.55,16.21,16.87,17.53,18.19,18.85,19.51,20.17,20.83,21.49,22.15,22.81,23.47,24.13,24.79,25.45,26.11],
+  // HU
+  [7.51,7.73,8.06,10.55,11.21,11.87,12.53,13.19,13.85,14.51,15.17,15.83,16.49,17.15,17.81,18.47,19.13,19.79,20.45,21.11,21.77],
+  // IE — prix différents à partir de 10 kg
+  [8.57,8.79,9.12,11.61,12.27,12.93,13.59,14.25,14.91,15.57,16.23,20.69,21.35,22.01,22.67,23.33,23.99,24.65,25.31,25.97,26.63],
+  // IT
+  [5.50,5.72,6.05,8.54,9.20,9.86,10.52,11.18,11.84,12.50,13.16,13.82,14.48,15.14,15.80,16.46,17.12,17.78,18.44,19.10,19.76],
+  // LT
+  [9.42,9.64,9.97,12.46,13.12,13.78,14.44,15.10,15.76,16.42,17.08,17.74,18.40,19.06,19.72,20.38,21.04,21.70,22.36,23.02,23.68],
+  // LU
+  [4.43,4.65,4.98,7.47,8.13,8.79,9.45,10.11,10.77,11.43,12.09,12.75,13.41,14.07,14.73,15.39,16.05,16.71,17.37,18.03,18.69],
+  // LV
+  [11.85,12.07,12.40,14.89,15.55,16.21,16.87,17.53,18.19,18.85,19.51,20.17,20.83,21.49,22.15,22.81,23.47,24.13,24.79,25.45,26.11],
+  // NL
+  [4.43,4.65,4.98,7.47,8.13,8.79,9.45,10.11,10.77,11.43,12.09,12.75,13.41,14.07,14.73,15.39,16.05,16.71,17.37,18.03,18.69],
+  // PL
+  [7.51,7.73,8.06,10.55,11.21,11.87,12.53,13.19,13.85,14.51,15.17,15.83,16.49,17.15,17.81,18.47,19.13,19.79,20.45,21.11,21.77],
+  // PT
+  [5.50,5.72,6.05,8.54,9.20,9.86,10.52,11.18,11.84,12.50,13.16,13.82,14.48,15.14,15.80,16.46,17.12,17.78,18.44,19.10,19.76],
+  // RO
+  [11.85,12.90,13.95,15.00,16.05,17.10,18.15,19.20,20.25,21.30,22.35,23.40,24.45,25.50,26.55,27.60,28.65,29.70,30.75,31.80,32.85],
+  // SE
+  [9.42,9.64,9.97,12.46,13.12,13.78,14.44,15.10,15.76,16.42,17.08,17.74,18.40,19.06,19.72,20.38,21.04,21.70,22.36,23.02,23.68],
+  // SI
+  [8.57,8.79,9.12,11.61,12.27,12.93,13.59,14.25,14.91,15.57,16.23,16.89,17.55,18.21,18.87,19.53,20.19,20.85,21.51,22.17,22.83],
+  // SK
+  [8.57,8.79,9.12,11.61,12.27,12.93,13.59,14.25,14.91,15.57,16.23,16.89,17.55,18.21,18.87,19.53,20.19,20.85,21.51,22.17,22.83],
+];
+// Retourne l'index de tranche XT (tranches mixtes 0.5/1 kg) — limite haute incluse (ex: 0.500 kg → tranche 0)
+function xtBracketIdx(weightKg) {
+  if (weightKg == null || weightKg < 0) return -1;
+  const bounds = [0,0.5,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20];
+  for (let i = 1; i < bounds.length; i++) {
+    if (weightKg <= bounds[i]) return i - 1;
+  }
+  return bounds.length - 2;
+}
+// Retrouve le pays d'un colis XT depuis le montant facturé + poids Chrono
+function getXtCountryIdx(amountHt, weightChrono) {
+  const idx = xtBracketIdx(weightChrono);
+  if (idx < 0 || idx >= 21) return -1;
+  for (let c = 0; c < TARIF_XT.length; c++) {
+    if (Math.abs(TARIF_XT[c][idx] - amountHt) < 0.02) return c;
+  }
+  return -1;
+}
+
+// Préfixe (2 cars) + suffixe (2 cars) → service + grille
+const TRACKING_SERVICES = {
+  XS_FR: { name: 'Chrono Relais 13', tarif: TARIF_RELAIS_13 },
+  XA_FR: { name: 'Chrono 13',        tarif: TARIF_CHRONO_13 },
+  XN_FR: { name: 'Chrono 13',        tarif: TARIF_CHRONO_13 },
+  XR_TS: { name: '2Shop Direct',     tarif: TARIF_2SHOP_DIRECT },
+  XY_TS: { name: '2Shop Direct',     tarif: TARIF_2SHOP_DIRECT },
+};
+function getTrackingService(tracking) {
+  if (!tracking || tracking.length < 4) return null;
+  const key = `${tracking.slice(0,2)}_${tracking.slice(-2)}`.toUpperCase();
+  return TRACKING_SERVICES[key] || null;
+}
+function lookupContractPrice(tarif, weightKg) {
+  if (weightKg == null || !tarif) return null;
+  for (const [from, to, price] of tarif) {
+    if (weightKg >= from && weightKg < to) return price;
+  }
+  return null;
+}
+function isXfTracking(tracking) {
+  return !!tracking && tracking.slice(0,2).toUpperCase() === 'XF' && tracking.slice(-2).toUpperCase() === 'FR';
+}
+function isXtTracking(tracking) {
+  return !!tracking && tracking.slice(0,2).toUpperCase() === 'XT' && tracking.slice(-2).toUpperCase() === 'TS';
+}
+// Retourne true si le pays/zone du colis est identifiable (tarif calculable)
+function hasKnownTariff(order) {
+  if (getTrackingService(order.tracking)) return true;
+  if (order.amount_ht != null) {
+    if (isXfTracking(order.tracking)) return getXfZone(order.amount_ht, order.weight_chrono) >= 0;
+    if (isXtTracking(order.tracking)) return getXtCountryIdx(order.amount_ht, order.weight_chrono) >= 0;
+  }
+  return false;
+}
+function computePriceEcart(order) {
+  if (order.is_return || order.weight_bdd == null || order.weight_chrono == null) return null;
+  const svc = getTrackingService(order.tracking);
+  if (svc) {
+    const priceDu  = lookupContractPrice(svc.tarif, order.weight_bdd);
+    const priceFac = lookupContractPrice(svc.tarif, order.weight_chrono);
+    if (priceDu == null || priceFac == null || priceDu === priceFac) return null;
+    return { service: svc.name, priceDu, priceFac, ecart: +(priceFac - priceDu).toFixed(2) };
+  }
+  if (order.amount_ht == null) return null;
+  // Chrono Express (XF...FR) — reverse-lookup zone depuis amount_ht
+  if (isXfTracking(order.tracking)) {
+    const zoneIdx   = getXfZone(order.amount_ht, order.weight_chrono);
+    if (zoneIdx < 0) return null;
+    const idxBdd    = xfBracketIdx(order.weight_bdd);
+    const idxChrono = xfBracketIdx(order.weight_chrono);
+    if (idxBdd < 0 || idxChrono < 0 || idxBdd === idxChrono) return null;
+    if (idxBdd >= TARIF_XF[zoneIdx].length || idxChrono >= TARIF_XF[zoneIdx].length) return null;
+    const priceDu  = TARIF_XF[zoneIdx][idxBdd];
+    const priceFac = TARIF_XF[zoneIdx][idxChrono];
+    if (priceDu >= priceFac) return null;
+    return { service: `Chrono Express ${XF_ZONES[zoneIdx]}`, priceDu, priceFac, ecart: +(priceFac - priceDu).toFixed(2) };
+  }
+  // 2Shop Europe (XT...TS) — reverse-lookup pays depuis amount_ht
+  if (isXtTracking(order.tracking)) {
+    const countryIdx = getXtCountryIdx(order.amount_ht, order.weight_chrono);
+    if (countryIdx < 0) return null;
+    const idxBdd    = xtBracketIdx(order.weight_bdd);
+    const idxChrono = xtBracketIdx(order.weight_chrono);
+    if (idxBdd < 0 || idxChrono < 0 || idxBdd === idxChrono) return null;
+    if (idxBdd >= TARIF_XT[countryIdx].length || idxChrono >= TARIF_XT[countryIdx].length) return null;
+    const priceDu  = TARIF_XT[countryIdx][idxBdd];
+    const priceFac = TARIF_XT[countryIdx][idxChrono];
+    if (priceDu >= priceFac) return null;
+    return { service: `2Shop Europe (${XT_COUNTRIES[countryIdx]})`, priceDu, priceFac, ecart: +(priceFac - priceDu).toFixed(2) };
+  }
+  return null;
+}
+
 function TotalsView({ totals, totalsLoading, loadTotals, totalsByPeriod }) {
   const { months, years, byPaysYear, yearCols, monthCols, byPaysMonth } = totalsByPeriod;
   const thRight = { padding: '9px 12px', textAlign: 'right', fontWeight: 700, color: C.dark, fontSize: 11.5, borderBottom: `2px solid ${C.greyB}` };
@@ -438,6 +648,8 @@ export default function ChronopostApp() {
   const [totals, setTotals] = useState(null);
   const [totalsLoading, setTotalsLoading] = useState(false);
   const [homeTab, setHomeTab] = useState('historique'); // historique | totaux
+
+  const [emailCopied, setEmailCopied] = useState(false);
 
   // ── Avoirs (credit notes)
   const creditFileRef = useRef(null);
@@ -981,6 +1193,15 @@ export default function ChronopostApp() {
   const countOk    = orders.filter(o => o.diff_g !== null && Math.abs(o.diff_g) <= 20).length;
   const countRet   = orders.filter(o => o.is_return).length;
 
+  const tarifEcarts = useMemo(
+    () => orders
+      .filter(o => !o.is_return)
+      .map(o => ({ ...o, _ecart: computePriceEcart(o) }))
+      .filter(o => o._ecart !== null && o._ecart.ecart > 0)
+      .sort((a, b) => b._ecart.ecart - a._ecart.ecart),
+    [orders],
+  );
+
   // ── Extraction des tarifs unitaires depuis les charges globales
   const _tarifParams = computeTarifParams(orders, globalCharges);
   const { redevanceUnit, nbSûreté, ecoUnit, carburantRate, fraisGestionTotal } = _tarifParams;
@@ -995,6 +1216,165 @@ export default function ChronopostApp() {
   }
 
   const proRataPerParcel = 0; // conservé pour compatibilité affichage
+
+  function generateEmailHtml() {
+    const th = (txt, right = false) =>
+      `<th style="padding:8px 12px;text-align:${right?'right':'left'};background:#1F4E79;color:#fff;white-space:nowrap">${txt}</th>`;
+    const td = (txt, right = false, bold = false, color = '') =>
+      `<td style="padding:7px 12px;border-bottom:1px solid #E2E8EE;text-align:${right?'right':'left'};${bold?'font-weight:700;':''}${color?`color:${color};`:''}">${txt}</td>`;
+    const tfoot = (cols) =>
+      `<tr style="background:#EDF2F7">${cols.map((c, i) => `<td style="padding:8px 12px;font-weight:700;border-top:2px solid #B0BEC5;text-align:${i===0?'left':'right'}">${c}</td>`).join('')}</tr>`;
+    const TABLE = (rows) =>
+      `<table style="border-collapse:collapse;width:100%;font-family:Arial,sans-serif;font-size:13px;margin-bottom:20px">${rows}</table>`;
+
+    const supplGroups = {};
+    for (const s of supplements) {
+      const key = s.description;
+      if (!supplGroups[key]) supplGroups[key] = { description: key, count: 0, total: 0, unitCost: s.amount_ht };
+      supplGroups[key].count += 1;
+      supplGroups[key].total += s.amount_ht || 0;
+    }
+
+    const tarifOvercharges = orders
+      .filter(o => !o.is_return)
+      .map(o => ({ ...o, _ecart: computePriceEcart(o) }))
+      .filter(o => o._ecart !== null && o._ecart.ecart > 0)
+      .sort((a, b) => b._ecart.ecart - a._ecart.ecart);
+
+    const bigDiffs = orders.filter(o => o.diff_g !== null && o.diff_g > 200 && !o.is_return && !hasKnownTariff(o));
+
+    let html = `<html><body style="font-family:Arial,sans-serif;font-size:13px;color:#2C3E50;line-height:1.6">`;
+    html += `<p>Bonjour Amel,</p>`;
+    html += `<p>Comme précédemment, je vous transmets les facturations anormales reçues. Votre service facturation avait accepté le remboursement.</p>`;
+
+    if (Object.keys(supplGroups).length > 0) {
+      const totalSup = supplements.reduce((s, x) => s + (x.amount_ht || 0), 0);
+      html += `<p><strong>Facture ${result.invoiceNumber} du ${result.invoiceDate}</strong></p>`;
+      html += TABLE(
+        `<thead><tr>${th('Type de supplément')}${th('Coût unitaire', true)}${th('Nb', true)}${th('Total HT', true)}</tr></thead>` +
+        `<tbody>${Object.values(supplGroups).map((g, i) => `<tr style="background:${i%2===0?'#fff':'#F8FAFB'}">${
+          td(g.description)}${td(g.unitCost!=null?`${g.unitCost.toFixed(2)} €`:'—',true)}${td(String(g.count),true)}${td(`${g.total.toFixed(2)} €`,true,true)
+        }</tr>`).join('')}</tbody>` +
+        `<tfoot>${tfoot(['TOTAL','','',`${totalSup.toFixed(2)} €`])}</tfoot>`
+      );
+    }
+
+    if (tarifOvercharges.length > 0) {
+      const totalEcart = tarifOvercharges.reduce((s, o) => s + o._ecart.ecart, 0);
+      html += `<p><strong style="color:#E74C3C">Surcoûts tarifaires — changement de tranche (${tarifOvercharges.length} colis)</strong><br>`;
+      html += `Total réclamable : <strong style="color:#E74C3C">+${totalEcart.toFixed(2)} €&nbsp;HT</strong></p>`;
+      html += TABLE(
+        `<thead><tr>${th('N° Commande')}${th('N° Suivi')}${th('Service')}${th('Poids déclaré',true)}${th('Poids Chrono',true)}${th('Tarif dû',true)}${th('Tarif facturé',true)}${th('Surcoût HT',true)}</tr></thead>` +
+        `<tbody>${tarifOvercharges.map((o, i) => {
+          const { service, priceDu, priceFac, ecart } = o._ecart;
+          const wBdd = o.weight_bdd!=null?`${parseFloat(o.weight_bdd).toFixed(3)} kg`:'—';
+          const wChr = o.weight_chrono!=null?`${parseFloat(o.weight_chrono).toFixed(3)} kg`:'—';
+          return `<tr style="background:${i%2===0?'#fff':'#F8FAFB'}">${
+            td(o.order_id||'—',false,true)}${td(o.tracking||'—')}${td(service)}${td(wBdd,true)}${td(wChr,true,'','#E74C3C')}${
+            td(`${priceDu.toFixed(2)} €`,true,false,'#27AE60')}${td(`${priceFac.toFixed(2)} €`,true)}${td(`+${ecart.toFixed(2)} €`,true,true,'#E74C3C')
+          }</tr>`;
+        }).join('')}</tbody>` +
+        `<tfoot>${tfoot(['TOTAL','','','','','','',`+${totalEcart.toFixed(2)} €`])}</tfoot>`
+      );
+    }
+
+    if (bigDiffs.length > 0) {
+      html += `<p><strong>Écarts de poids importants — tarif non calculable (Chrono Relais Europe / service inconnu)</strong></p>`;
+      html += TABLE(
+        `<thead><tr>${th('N° Commande')}${th('N° Suivi')}${th('Poids déclaré',true)}${th('Poids Chrono',true)}${th('Écart',true)}</tr></thead>` +
+        `<tbody>${bigDiffs.map((o, i) => {
+          const bdd    = o.weight_bdd!=null?`${parseFloat(o.weight_bdd).toFixed(3)} kg`:'—';
+          const chrono = o.weight_chrono!=null?`${parseFloat(o.weight_chrono).toFixed(3)} kg`:'—';
+          return `<tr style="background:${i%2===0?'#fff':'#F8FAFB'}">${td(o.order_id||'—',false,true)}${td(o.tracking||'—')}${td(bdd,true)}${td(chrono,true,'','#E74C3C')}${td(o.diff_g!=null?`+${o.diff_g} g`:'—',true,true,'#E74C3C')}</tr>`;
+        }).join('')}</tbody>`
+      );
+    }
+
+    html += `<p>Cordialement<br><br><strong>Maxime Coglitore</strong><br>Directeur<br>04 99 78 24 53<br>direction@youvape.fr<br>www.youvape.fr</p>`;
+    html += `</body></html>`;
+    return html;
+  }
+
+  function generateEmailText() {
+    const supplGroups = {};
+    for (const s of supplements) {
+      const key = s.description;
+      if (!supplGroups[key]) supplGroups[key] = { description: key, count: 0, total: 0, unitCost: s.amount_ht };
+      supplGroups[key].count += 1;
+      supplGroups[key].total += s.amount_ht || 0;
+    }
+
+    const bigDiffs = orders
+      .filter(o => o.diff_g !== null && o.diff_g > 200 && !o.is_return)
+      .sort((a, b) => b.diff_g - a.diff_g);
+
+    let text = 'Bonjour Amel,\n\n';
+    text += 'Comme précédemment, je vous transmets les facturations anormales reçues. Votre service facturation avait accepté le remboursement.\n';
+
+    const row = cols => '| ' + cols.join(' | ') + ' |';
+    const sep = cols => '|' + cols.map(w => '-'.repeat(w + 2)).join('|') + '|';
+
+    if (supplements.length > 0) {
+      const totalSup = supplements.reduce((s, x) => s + (x.amount_ht || 0), 0);
+      text += `\nFacture ${result.invoiceNumber} du ${result.invoiceDate}\n\n`;
+      text += row(['Type de supplément', 'Coût unitaire', 'Nb', 'Total HT']) + '\n';
+      text += sep([34, 13, 4, 10]) + '\n';
+      for (const g of Object.values(supplGroups)) {
+        const unitStr = g.unitCost != null ? `${g.unitCost.toFixed(2)} €` : '—';
+        text += row([g.description, unitStr, String(g.count), `${g.total.toFixed(2)} €`]) + '\n';
+      }
+      text += sep([34, 13, 4, 10]) + '\n';
+      text += row(['TOTAL', '', '', `${totalSup.toFixed(2)} €`]) + '\n';
+    }
+
+    // Surcoûts tarifaires réels (changement de tranche)
+    const tarifOvercharges = orders
+      .filter(o => !o.is_return)
+      .map(o => ({ ...o, _ecart: computePriceEcart(o) }))
+      .filter(o => o._ecart !== null && o._ecart.ecart > 0)
+      .sort((a, b) => b._ecart.ecart - a._ecart.ecart);
+
+    if (tarifOvercharges.length > 0) {
+      const totalEcartTarif = tarifOvercharges.reduce((s, o) => s + o._ecart.ecart, 0);
+      text += `\n\nSurcoûts tarifaires — changement de tranche (${tarifOvercharges.length} colis)\n\n`;
+      text += row(['N° Commande', 'N° Suivi', 'Service', 'Poids déclaré', 'Poids Chrono', 'Tarif dû', 'Tarif facturé', 'Surcoût HT']) + '\n';
+      text += sep([11, 16, 14, 13, 12, 8, 13, 10]) + '\n';
+      for (const o of tarifOvercharges) {
+        const { service, priceDu, priceFac, ecart } = o._ecart;
+        const wBdd  = o.weight_bdd    != null ? `${parseFloat(o.weight_bdd).toFixed(3)} kg`    : '—';
+        const wChr  = o.weight_chrono != null ? `${parseFloat(o.weight_chrono).toFixed(3)} kg`  : '—';
+        text += row([
+          String(o.order_id || '—'),
+          String(o.tracking || '—'),
+          service,
+          wBdd,
+          wChr,
+          `${priceDu.toFixed(2)} €`,
+          `${priceFac.toFixed(2)} €`,
+          `+${ecart.toFixed(2)} €`,
+        ]) + '\n';
+      }
+      text += sep([11, 16, 14, 13, 12, 8, 13, 10]) + '\n';
+      text += row(['TOTAL', '', '', '', '', '', '', `+${totalEcartTarif.toFixed(2)} €`]) + '\n';
+    }
+
+    // Écarts de poids importants sur services non analysés tarifairement (XF, XT, XU…)
+    const unknownServiceBigDiffs = bigDiffs.filter(o => !hasKnownTariff(o));
+    if (unknownServiceBigDiffs.length > 0) {
+      text += '\n\nÉcarts de poids importants — tarif non calculable (Chrono Relais Europe / service inconnu)\n\n';
+      text += row(['N° Commande', 'Date', 'N° Suivi', 'Poids déclaré', 'Poids Chrono', 'Écart']) + '\n';
+      text += sep([11, 12, 16, 13, 12, 8]) + '\n';
+      for (const o of unknownServiceBigDiffs) {
+        const bdd    = o.weight_bdd    != null ? `${parseFloat(o.weight_bdd).toFixed(3)} kg`    : '—';
+        const chrono = o.weight_chrono != null ? `${parseFloat(o.weight_chrono).toFixed(3)} kg`  : '—';
+        const ecart  = o.diff_g != null ? `+${o.diff_g} g` : '—';
+        text += row([String(o.order_id || '—'), String(o.date || '—'), String(o.tracking || '—'), bdd, chrono, ecart]) + '\n';
+      }
+    }
+
+    text += '\n\nCordialement\n\nMaxime Coglitore\nDirecteur\n04 99 78 24 53\ndirection@youvape.fr\nwww.youvape.fr';
+    return text;
+  }
 
   return (
     <AppShell currentPath="/chronopost">
@@ -1275,10 +1655,22 @@ export default function ChronopostApp() {
               }}>
                 <TabBtn label="Comparaison poids" active={tab === 'poids'} onClick={() => setTab('poids')} badge={orders.length} />
                 <TabBtn label="Suppléments colis" active={tab === 'suppléments'} onClick={() => setTab('suppléments')} badge={supplements.length} />
+                <TabBtn
+                  label="Écart tarifaire"
+                  active={tab === 'ecart-tarif'}
+                  onClick={() => setTab('ecart-tarif')}
+                  badge={tarifEcarts.length || null}
+                />
                 <TabBtn label="Charges globales" active={tab === 'global'} onClick={() => setTab('global')} badge={globalCharges.length} />
                 <TabBtn label="Avoirs" active={tab === 'avoirs'} onClick={() => setTab('avoirs')} badge={creditsHistory.length} />
                 <TabBtn label="Historique" active={tab === 'historique'} onClick={() => setTab('historique')} badge={history.length} />
                 <TabBtn label="Totaux" active={tab === 'totaux'} onClick={() => setTab('totaux')} />
+                <TabBtn
+                  label="✉ Email réclamation"
+                  active={tab === 'email'}
+                  onClick={() => { setTab('email'); setEmailCopied(false); }}
+                  badge={supplements.length + orders.filter(o => o.diff_g !== null && o.diff_g > 200 && !o.is_return).length || null}
+                />
               </div>
 
               {/* ── TAB POIDS */}
@@ -1499,6 +1891,103 @@ export default function ChronopostApp() {
                 </div>
               )}
 
+              {/* ── TAB ÉCART TARIFAIRE */}
+              {tab === 'ecart-tarif' && (
+                <div style={{ padding: 20 }}>
+                  {orders.length === 0 ? (
+                    <div style={{ textAlign: 'center', padding: 40, color: C.greyT }}>
+                      Chargez une facture pour voir les écarts tarifaires.
+                    </div>
+                  ) : tarifEcarts.length === 0 ? (
+                    <div style={{ textAlign: 'center', padding: 40, color: C.greyT }}>
+                      Aucun changement de tranche tarifaire détecté sur cette facture.
+                      <div style={{ fontSize: 12, marginTop: 8 }}>
+                        Les services analysés : Chrono 13 (XA/XN), Chrono Relais 13 (XS), 2Shop Direct (XR/XY).
+                      </div>
+                    </div>
+                  ) : (
+                    <>
+                      <div style={{
+                        marginBottom: 16, background: C.redL,
+                        border: `1px solid ${C.red}`, borderRadius: 10,
+                        padding: '14px 18px', display: 'flex', gap: 32, flexWrap: 'wrap', alignItems: 'center',
+                      }}>
+                        <div>
+                          <div style={{ fontSize: 11, color: C.greyT, marginBottom: 2 }}>Surcoût tarifaire total réclamable</div>
+                          <div style={{ fontSize: 22, fontWeight: 800, color: C.red }}>
+                            +{fmtEur(tarifEcarts.reduce((s, o) => s + o._ecart.ecart, 0))}
+                          </div>
+                          <div style={{ fontSize: 11, color: C.greyT, marginTop: 2 }}>
+                            {tarifEcarts.length} colis avec changement de tranche tarifaire
+                          </div>
+                        </div>
+                        <div style={{ fontSize: 12, color: C.greyT, maxWidth: 400 }}>
+                          Uniquement les colis où le poids déclaré (BDD) et le poids Chronopost tombent dans des tranches
+                          différentes — ce qui génère un vrai surcoût réclamable.
+                        </div>
+                      </div>
+
+                      <div style={{ overflowX: 'auto' }}>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                          <thead>
+                            <tr style={{ background: C.grey }}>
+                              {['N° Commande', 'Date', 'N° Suivi', 'Service', 'Poids BDD', 'Poids Chrono', 'Prix dû', 'Prix facturé', 'Surcoût'].map(h => (
+                                <th key={h} style={{
+                                  padding: '10px 12px', textAlign: h === 'Surcoût' || h === 'Prix dû' || h === 'Prix facturé' ? 'right' : 'left',
+                                  fontWeight: 700, color: C.dark, fontSize: 12,
+                                  borderBottom: `2px solid ${C.greyB}`, whiteSpace: 'nowrap',
+                                }}>{h}</th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {tarifEcarts.map((o, i) => {
+                              const { service, priceDu, priceFac, ecart } = o._ecart;
+                              return (
+                                <tr key={i} style={{ background: i % 2 === 0 ? C.white : C.grey, borderBottom: `1px solid ${C.greyB}` }}>
+                                  <td style={{ padding: '9px 12px', fontWeight: 600 }}>
+                                    {o.order_id
+                                      ? <a href={`/orders/${o.order_id}`} target="_blank" rel="noreferrer"
+                                          style={{ color: C.accent, textDecoration: 'none', fontWeight: 700 }}
+                                          onMouseEnter={e => e.currentTarget.style.textDecoration='underline'}
+                                          onMouseLeave={e => e.currentTarget.style.textDecoration='none'}
+                                        >{o.order_id}</a>
+                                      : <span style={{ color: C.greyT }}>—</span>}
+                                  </td>
+                                  <td style={{ padding: '9px 12px', color: C.greyT }}>{o.date || '—'}</td>
+                                  <td style={{ padding: '9px 12px', fontFamily: 'monospace', fontSize: 11, color: C.greyT }}>{o.tracking}</td>
+                                  <td style={{ padding: '9px 12px' }}>
+                                    <Badge label={service} color={C.primary} bg={C.accentL} />
+                                  </td>
+                                  <td style={{ padding: '9px 12px', color: C.green, fontWeight: 600 }}>{fmtKg(o.weight_bdd)}</td>
+                                  <td style={{ padding: '9px 12px', fontWeight: 600 }}>{fmtKg(o.weight_chrono)}</td>
+                                  <td style={{ padding: '9px 12px', textAlign: 'right', color: C.green, fontWeight: 700 }}>{fmtEur(priceDu)}</td>
+                                  <td style={{ padding: '9px 12px', textAlign: 'right', fontWeight: 600 }}>{fmtEur(priceFac)}</td>
+                                  <td style={{ padding: '9px 12px', textAlign: 'right', fontWeight: 800, color: C.red }}>+{fmtEur(ecart)}</td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                          <tfoot>
+                            <tr style={{ background: C.grey, borderTop: `2px solid ${C.greyB}` }}>
+                              <td colSpan={8} style={{ padding: '10px 12px', fontWeight: 700, textAlign: 'right', color: C.dark }}>
+                                Total surcoût réclamable HT
+                              </td>
+                              <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: 800, color: C.red, whiteSpace: 'nowrap' }}>
+                                +{fmtEur(tarifEcarts.reduce((s, o) => s + o._ecart.ecart, 0))}
+                              </td>
+                            </tr>
+                          </tfoot>
+                        </table>
+                      </div>
+                      <div style={{ color: C.greyT, fontSize: 12, marginTop: 6 }}>
+                        Services analysés : Chrono 13, Relais 13, 2Shop Direct, Chrono Express (XF), 2Shop Europe (XT). Non analysé : Chrono Relais Europe (XU).
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+
               {/* ── TAB GLOBAL */}
               {tab === 'global' && (
                 <div style={{ padding: 20 }}>
@@ -1549,6 +2038,55 @@ export default function ChronopostApp() {
                           </tfoot>
                         </table>
                       </div>
+                    </>
+                  )}
+                </div>
+              )}
+
+              {/* ── TAB EMAIL RÉCLAMATION */}
+              {tab === 'email' && (
+                <div style={{ padding: 20 }}>
+                  {supplements.length === 0 && orders.filter(o => o.diff_g !== null && o.diff_g > 200 && !o.is_return).length === 0 ? (
+                    <div style={{ textAlign: 'center', padding: 40, color: C.greyT }}>
+                      Aucun supplément ni écart de poids important (&gt;200g) détecté sur cette facture.
+                    </div>
+                  ) : (
+                    <>
+                      <div style={{ marginBottom: 14, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
+                        <p style={{ margin: 0, color: C.greyT, fontSize: 13 }}>
+                          Aperçu de l'email — cliquez <strong>Copier</strong> puis collez directement dans Gmail ou Outlook.
+                        </p>
+                        <button
+                          onClick={async () => {
+                            try {
+                              await navigator.clipboard.write([new ClipboardItem({
+                                'text/html':  new Blob([generateEmailHtml()],  { type: 'text/html' }),
+                                'text/plain': new Blob([generateEmailText()], { type: 'text/plain' }),
+                              })]);
+                            } catch {
+                              navigator.clipboard.writeText(generateEmailText());
+                            }
+                            setEmailCopied(true);
+                            setTimeout(() => setEmailCopied(false), 2500);
+                          }}
+                          style={{
+                            background: emailCopied ? C.green : C.accent, color: C.white,
+                            border: 'none', borderRadius: 8,
+                            padding: '9px 20px', fontWeight: 700, fontSize: 13.5, cursor: 'pointer',
+                            transition: 'background 0.2s',
+                          }}
+                        >
+                          {emailCopied ? '✓ Copié !' : '📋 Copier l\'email'}
+                        </button>
+                      </div>
+                      <div
+                        dangerouslySetInnerHTML={{ __html: generateEmailHtml() }}
+                        style={{
+                          border: `1px solid ${C.greyB}`, borderRadius: 8,
+                          padding: '20px 24px', background: C.white,
+                          minHeight: 300, overflowY: 'auto',
+                        }}
+                      />
                     </>
                   )}
                 </div>
