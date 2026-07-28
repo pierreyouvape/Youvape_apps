@@ -15,6 +15,21 @@ const competitorModel = {
     return rows;
   },
 
+  // Suivis actifs qui n ont encore AUCUN tarif relevé (nouveaux produits)
+  listProductsNeedingPrice: async () => {
+    const { rows } = await pool.query(
+      `SELECT p.id, p.sku, p.product_name, p.competitor, p.url, p.active
+       FROM competitor_products p
+       WHERE p.active = TRUE
+         AND NOT EXISTS (
+           SELECT 1 FROM competitor_prices cp
+           WHERE cp.competitor_product_id = p.id AND cp.status = 'ok' AND cp.price IS NOT NULL
+         )
+       ORDER BY p.sku, p.competitor`
+    );
+    return rows;
+  },
+
   getProduct: async (id) => {
     const { rows } = await pool.query('SELECT * FROM competitor_products WHERE id = $1', [id]);
     return rows[0] || null;

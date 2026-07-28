@@ -77,7 +77,8 @@ const competitorController = {
   runNow: async (req, res) => {
     try {
       const notify = req.body?.notify !== false;
-      const r = startMonitorAsync({ force: true, notify });
+      const onlyNew = req.body?.onlyNew === true;
+      const r = startMonitorAsync({ force: true, notify, onlyNew });
       res.status(202).json({ success: true, ...r });
     } catch (e) {
       res.status(500).json({ error: e.message });

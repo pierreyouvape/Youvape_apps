@@ -155,11 +155,13 @@ export default function VeilleApp() {
     })();
   }, [loadDashboard, loadConfig]);
 
-  const runNow = async (notify) => {
+  const runNow = async (notify, onlyNew = false) => {
     setRunning(true); setProgress({ done: 0, total: 0 });
-    setMsg({ type: 'ok', text: 'Relevé lancé… récupération des prix en cours. Tu peux rester sur la page.' });
+    setMsg({ type: 'ok', text: onlyNew
+      ? 'Relevé des nouveaux produits (sans tarif) lancé…'
+      : 'Relevé complet lancé… récupération des prix en cours. Tu peux rester sur la page.' });
     try {
-      await axios.post(`${API_URL}/competitors/run`, { notify }, authHeaders(token));
+      await axios.post(`${API_URL}/competitors/run`, { notify, onlyNew }, authHeaders(token));
       // Le relevé tourne en arrière-plan : on suit la progression par polling.
       const poll = async () => {
         try {
@@ -172,8 +174,12 @@ export default function VeilleApp() {
             setMsg({ type: 'error', text: 'Erreur relevé : ' + data.error });
           } else if (data.result) {
             const r = data.result;
-            const errTxt = r.errors?.length ? `, ${r.errors.length} en échec` : '';
-            setMsg({ type: r.errors?.length ? 'warn' : 'ok', text: `Relevé terminé : ${r.ok}/${r.total} OK, ${r.changes} changement(s)${errTxt}.${notify ? ' Email envoyé si nouveautés.' : ''}` });
+            if (r.total === 0) {
+              setMsg({ type: 'ok', text: 'Aucun nouveau produit à relever (tous les suivis ont déjà un tarif).' });
+            } else {
+              const errTxt = r.errors?.length ? `, ${r.errors.length} en échec` : '';
+              setMsg({ type: r.errors?.length ? 'warn' : 'ok', text: `Relevé terminé : ${r.ok}/${r.total} OK, ${r.changes} changement(s)${errTxt}.${notify ? ' Email envoyé si nouveautés.' : ''}` });
+            }
           }
           setRunning(false);
         } catch (e) {
@@ -236,6 +242,7 @@ export default function VeilleApp() {
             <Btn variant="ghost" small onClick={() => setShowDiscovery(s => !s)}>🔍 Découverte auto</Btn>
             <Btn variant="ghost" small onClick={() => setShowManage(s => !s)}>⚙️ Gérer les suivis</Btn>
             <Btn variant="ghost" small onClick={() => setShowSettings(s => !s)}>🔔 Réglages</Btn>
+            <Btn variant="ghost" small onClick={() => runNow(false, true)} disabled={running} title="Relève uniquement les produits qui n'ont pas encore de tarif">↻ Relever les nouveaux</Btn>
             <Btn variant="accent" onClick={() => runNow(false)} disabled={running}>{running ? 'Relevé en cours…' : '↻ Relever maintenant'}</Btn>
           </div>
         </div>

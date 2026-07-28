@@ -17,14 +17,16 @@ const fmtEur = (v) => (v === null || v === undefined ? '—' : `${Number(v).toFi
  * @param {boolean} [opts.force] - ignore le flag competitor_monitor_enabled (run manuel)
  * @param {boolean} [opts.notify=true] - envoyer l'email récap
  */
-async function runMonitor({ force = false, notify = true, onProgress = null } = {}) {
+async function runMonitor({ force = false, notify = true, onProgress = null, onlyNew = false } = {}) {
   const enabledCfg = await appConfigModel.get('competitor_monitor_enabled');
   if (!force && enabledCfg?.config_value === 'false') {
     console.log('[Veille] Désactivée (competitor_monitor_enabled=false)');
     return { skipped: true };
   }
 
-  const products = await competitorModel.listProducts({ activeOnly: true });
+  const products = onlyNew
+    ? await competitorModel.listProductsNeedingPrice()
+    : await competitorModel.listProducts({ activeOnly: true });
   console.log(`[Veille] Démarrage : ${products.length} suivi(s) actif(s)`);
   const total = products.length;
   let done = 0;
