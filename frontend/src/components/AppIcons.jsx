@@ -221,6 +221,14 @@ export const Customers = (props) => (
   </Base>
 );
 
+export const Veille = (props) => (
+  <svg viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
+    <circle cx="11" cy="11" r="7" />
+    <line x1="21" y1="21" x2="16.65" y2="16.65" />
+    <polyline points="8 12 10.5 9.5 12.5 11.5 15 8" />
+  </svg>
+);
+
 export const APPS = [
   { key: 'customers', path: '/customers', label: 'Clients',                   Icon: Customers, color: '#0EA5A5' },
   { key: 'reviews',   path: '/reviews',   label: 'Avis Garantis',            Icon: Reviews,   color: '#0071EB' },
@@ -239,4 +247,5 @@ export const APPS = [
   { key: 'lettre-suivie', path: '/lettre-suivie', label: 'Factures Lettre Suivie', Icon: LettreSuivie, color: '#FFB000' },
   { key: 'mondial-relay', path: '/mondial-relay', label: 'Factures Mondial Relay', Icon: MondialRelay, color: '#9C2462' },
   { key: 'transporteurs', path: '/transporteurs', label: 'Transporteurs (vue globale)', Icon: Transporteurs, color: '#334155' },
+  { key: 'veille', path: '/veille', label: 'Veille concurrentielle', Icon: Veille, color: '#135E84' },
 ];

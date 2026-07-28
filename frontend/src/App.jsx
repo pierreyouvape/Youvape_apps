@@ -37,6 +37,7 @@ import ColissimoApp from './pages/ColissimoApp';
 import LettreSuivieApp from './pages/LettreSuivieApp';
 import MondialRelayApp from './pages/MondialRelayApp';
 import TransporteursApp from './pages/TransporteursApp';
+import VeilleApp from './pages/VeilleApp';
 import PrivateRoute from './components/PrivateRoute';
 
 const PAGE_TITLES = {
@@ -61,6 +62,7 @@ const PAGE_TITLES = {
   '/lettre-suivie': 'Lettre Suivie',
   '/mondial-relay': 'Mondial Relay',
   '/transporteurs': 'Transporteurs',
+  '/veille': 'Veille concurrentielle',
   '/brands': 'Marque',
   '/sub-brands': 'Sous-marque',
   '/categories': 'Categorie',
@@ -365,6 +367,14 @@ function App() {
             element={
               <PrivateRoute>
                 <TransporteursApp />
+              </PrivateRoute>
+            }
+          />
+          <Route
+            path="/veille"
+            element={
+              <PrivateRoute>
+                <VeilleApp />
               </PrivateRoute>
             }
           />
