@@ -4,7 +4,7 @@
  */
 const competitorModel = require('../models/competitorModel');
 const appConfigModel = require('../models/appConfigModel');
-const { runMonitor } = require('../services/competitorMonitorService');
+const { startMonitorAsync, getRunState } = require('../services/competitorMonitorService');
 const { runDiscovery } = require('../services/competitorDiscoveryService');
 
 const competitorController = {
@@ -73,21 +73,21 @@ const competitorController = {
     }
   },
 
-  // POST /api/competitors/run — relève maintenant (manuel)
+  // POST /api/competitors/run — lance un relevé en arrière-plan (retour immédiat)
   runNow: async (req, res) => {
     try {
       const notify = req.body?.notify !== false;
-      const summary = await runMonitor({ force: true, notify });
-      res.json({
-        success: true,
-        total: summary.total,
-        ok: summary.ok,
-        changes: summary.changes?.length || 0,
-        errors: summary.errors || [],
-      });
+      const r = startMonitorAsync({ force: true, notify });
+      res.status(202).json({ success: true, ...r });
     } catch (e) {
       res.status(500).json({ error: e.message });
     }
+  },
+
+  // GET /api/competitors/run/status — progression du relevé en cours/terminé
+  runStatus: async (req, res) => {
+    try { res.json(getRunState()); }
+    catch (e) { res.status(500).json({ error: e.message }); }
   },
 
 

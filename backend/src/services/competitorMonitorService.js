@@ -141,4 +141,30 @@ async function sendRecapEmail(changes, errors) {
   else console.error('[Veille] Échec envoi email récap:', res.error);
 }
 
-module.exports = { runMonitor };
+// ─── État de run partagé (pour lancement asynchrone / suivi de progression) ──
+let runState = { running: false, startedAt: null, finishedAt: null, result: null, error: null };
+
+const getRunState = () => runState;
+
+/**
+ * Lance le relevé en arrière-plan et retourne immédiatement (évite les
+ * timeouts de passerelle 524 sur les gros relevés via ScraperAPI).
+ */
+function startMonitorAsync(opts = {}) {
+  if (runState.running) return { alreadyRunning: true, startedAt: runState.startedAt };
+  runState = { running: true, startedAt: Date.now(), finishedAt: null, result: null, error: null };
+  runMonitor(opts)
+    .then((r) => {
+      runState = {
+        running: false, startedAt: runState.startedAt, finishedAt: Date.now(),
+        result: { total: r.total, ok: r.ok, changes: r.changes ? r.changes.length : 0, errors: r.errors || [] },
+        error: null,
+      };
+    })
+    .catch((e) => {
+      runState = { running: false, startedAt: runState.startedAt, finishedAt: Date.now(), result: null, error: e.message };
+    });
+  return { started: true, startedAt: runState.startedAt };
+}
+
+module.exports = { runMonitor, startMonitorAsync, getRunState };

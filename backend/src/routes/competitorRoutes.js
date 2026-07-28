@@ -7,6 +7,7 @@ router.get('/config', c.getConfig);
 router.put('/config', c.updateConfig);
 router.get('/dashboard', c.dashboard);
 router.post('/run', c.runNow);
+router.get('/run/status', c.runStatus);
 
 router.post('/discover', c.discover);
 router.get('/suggestions', c.listSuggestions);

@@ -154,15 +154,34 @@ export default function VeilleApp() {
   }, [loadDashboard, loadConfig]);
 
   const runNow = async (notify) => {
-    setRunning(true); setMsg(null);
+    setRunning(true);
+    setMsg({ type: 'ok', text: 'Relevé lancé… récupération des prix en cours (jusqu’à 2-3 min avec les sites protégés). Tu peux rester sur la page.' });
     try {
-      const { data } = await axios.post(`${API_URL}/competitors/run`, { notify }, authHeaders(token));
-      await loadDashboard();
-      const errTxt = data.errors?.length ? `, ${data.errors.length} en échec` : '';
-      setMsg({ type: data.errors?.length ? 'warn' : 'ok', text: `Relevé terminé : ${data.ok}/${data.total} OK, ${data.changes} changement(s)${errTxt}.${notify ? ' Email envoyé si nouveautés.' : ''}` });
+      await axios.post(`${API_URL}/competitors/run`, { notify }, authHeaders(token));
+      // Le relevé tourne en arrière-plan : on suit la progression par polling.
+      const poll = async () => {
+        try {
+          const { data } = await axios.get(`${API_URL}/competitors/run/status`, authHeaders(token));
+          if (data.running) { setTimeout(poll, 4000); return; }
+          await loadDashboard();
+          if (data.error) {
+            setMsg({ type: 'error', text: 'Erreur relevé : ' + data.error });
+          } else if (data.result) {
+            const r = data.result;
+            const errTxt = r.errors?.length ? `, ${r.errors.length} en échec` : '';
+            setMsg({ type: r.errors?.length ? 'warn' : 'ok', text: `Relevé terminé : ${r.ok}/${r.total} OK, ${r.changes} changement(s)${errTxt}.${notify ? ' Email envoyé si nouveautés.' : ''}` });
+          }
+          setRunning(false);
+        } catch (e) {
+          setMsg({ type: 'error', text: 'Erreur suivi relevé : ' + (e.response?.data?.error || e.message) });
+          setRunning(false);
+        }
+      };
+      setTimeout(poll, 3000);
     } catch (e) {
       setMsg({ type: 'error', text: 'Erreur relevé : ' + (e.response?.data?.error || e.message) });
-    } finally { setRunning(false); }
+      setRunning(false);
+    }
   };
 
   /* KPIs */
