@@ -1,15 +1,20 @@
 /**
  * Découverte automatique des produits d'une marque chez un concurrent, puis
  * matching aux produits Youvape — au niveau MODÈLE (une entrée par modèle, pas
- * par saveur). Produit des suggestions à valider manuellement.
+ * par couleur/saveur). Produit des suggestions à valider manuellement.
+ *
+ * Fonctionne pour deux familles de produits :
+ *  - Puffs (JNR…) : le modèle se termine par une capacité (28k, 39k) et les
+ *    saveurs suivent → modèle = tokens jusqu'à la capacité incluse.
+ *  - Matériel (Aspire, Geekvape, Vaporesso…) : pas de capacité, couleur en
+ *    variation → modèle = tous les tokens significatifs (marque/couleurs/dosages retirés).
  */
 const pool = require('../config/database');
 const { fetchPage } = require('./competitorFetchService');
 
-const MAX_PAGES = 6;
-const MATCH_THRESHOLD = 0.70; // en dessous : proposé comme non matché (évite les faux positifs) // pagination des listings
+const MAX_PAGES = 8;
+const MATCH_THRESHOLD = 0.70; // en dessous : proposé comme "non matché"
 
-// ─── Config par concurrent ──────────────────────────────────────
 const COMPETITORS = {
   'levapoteur-discount': {
     listing: (brand, page) => `https://www.levapoteur-discount.fr/recherche?controller=search&s=${encodeURIComponent(brand)}&p=${page}`,
@@ -23,11 +28,16 @@ const COMPETITORS = {
   },
 };
 
-const STOP = new Set(['puff', 'jnr', 'de', 'la', 'le', 'les', 'pod', 'the', 'x']);
-// On exclut e-liquides / cartouches : on ne veut que les puffs/kits (produits différents)
-const NOISE = /(cartouche|e-liquide|e_liquide|-10-ml|-10ml|liquide)/i;
+// Mots parasites génériques (retirés du modèle)
+const STOP = new Set(['puff', 'jnr', 'pod', 'the', 'a', 'et', 'edition', 'special']);
+const FILLER = new Set(['pour', 'pas', 'cher', 'chers', 'chere', 'cheres', 'le', 'la', 'les', 'de', 'des', 'du', 'avec', 'lot', 'version', 'series']);
+// Couleurs (FR/EN) — retirées pour dédoublonner au niveau modèle
+const COLORS = new Set(['noir', 'black', 'blanc', 'white', 'rouge', 'red', 'bleu', 'blue', 'vert', 'green', 'jaune', 'yellow',
+  'gris', 'grey', 'gray', 'gunmetal', 'argent', 'silver', 'gold', 'rose', 'pink', 'violet', 'purple', 'orange', 'marron',
+  'brown', 'rainbow', 'turquoise', 'cyan', 'bronze', 'chrome', 'transparent', 'clear', 'camo', 'fuchsia', 'beige', 'khaki', 'kaki']);
+// Accessoires purs à exclure (on veut les appareils/consommables, pas la visserie)
+const NOISE = /(drip-tip|embout|filtre|papier|cable|resistance|batterie|chargeur|pyrex|-vide-|vides-|coil)/i;
 
-const isCapacity = (t) => /^\d+k$/.test(t) || /^\d{4,6}$/.test(t);
 const isCapNorm = (t) => /^\d+k$/.test(t);
 const normCap = (t) => {
   let m = t.match(/^(\d+)000$/); if (m) return m[1] + 'k';
@@ -37,29 +47,40 @@ const normCap = (t) => {
 };
 const titleCase = (s) => s.replace(/\b\w/g, (c) => c.toUpperCase());
 
-// "x" est un stopword générique SAUF quand il fait partie d'un nom de modèle
-// (Falcon X, Gorilla X). On le garde donc pour la comparaison mais pas comme bruit.
-function cleanTokens(tokens) {
-  return tokens.filter((t) => !STOP.has(t) && !/^\d*mg$/.test(t)).map(normCap);
+// Tokenise en retirant dosages/volumes (20 mg, 6 ml) et unités
+function tokenize(str) {
+  const raw = str.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+  const out = [];
+  for (let i = 0; i < raw.length; i++) {
+    const t = raw[i];
+    if (t === 'mg' || t === 'ml') continue;
+    if (/^\d+$/.test(t) && (raw[i + 1] === 'mg' || raw[i + 1] === 'ml')) continue;
+    out.push(t);
+  }
+  return out;
 }
 
-/** Tokens "modèle" d'un slug produit (jusqu'à la capacité incluse). */
-function modelFromSlug(slug) {
-  const raw = slug.split('-').filter(Boolean).map((t) => t.toLowerCase());
-  const keepX = raw.map((t) => (t === 'x' ? '__x__' : t)); // préserve le x
-  let sig = keepX.filter((t) => !STOP.has(t) && !/^\d*mg$/.test(t)).map((t) => (t === '__x__' ? 'x' : t));
-  const capIdx = sig.findIndex(isCapacity);
-  let model = capIdx >= 0 ? sig.slice(0, capIdx + 1) : sig;
-  model = model.map(normCap);
+// Tokens significatifs (marque, couleurs, filler retirés) + normalisation capacité
+function significantTokens(str, brandLc) {
+  return tokenize(str)
+    .filter((t) => t !== brandLc && !STOP.has(t) && !COLORS.has(t) && !FILLER.has(t))
+    .map(normCap);
+}
+
+/** Modèle depuis un slug produit (double logique puff / matériel). */
+function modelFromSlug(slug, brandLc) {
+  let toks = significantTokens(slug, brandLc);
+  const capIdx = toks.findIndex(isCapNorm);
+  const model = capIdx >= 0 ? toks.slice(0, capIdx + 1) : toks; // puff → coupe à la capacité
   const key = model.slice().sort().join('-');
-  return { key, label: titleCase(model.join(' ').replace(/\bx\b/g, 'X')), tokens: model };
+  return { key, label: titleCase(model.join(' ')), tokens: model };
 }
 
-/** Tokens "modèle" d'un titre produit Youvape. */
-function modelFromTitle(title) {
-  const raw = title.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
-  const keepX = raw.map((t) => (t === 'x' ? '__x__' : t));
-  return keepX.filter((t) => !STOP.has(t) && !/^\d*mg$/.test(t)).map((t) => (t === '__x__' ? 'x' : t)).map(normCap);
+/** Modèle depuis un titre produit Youvape. */
+function modelFromTitle(title, brandLc) {
+  const toks = significantTokens(title, brandLc);
+  const capIdx = toks.findIndex(isCapNorm);
+  return capIdx >= 0 ? toks.slice(0, capIdx + 1) : toks;
 }
 
 const jaccard = (a, b) => {
@@ -68,8 +89,6 @@ const jaccard = (a, b) => {
   const union = new Set([...A, ...B]).size;
   return union ? inter / union : 0;
 };
-
-// Dice sur bigrammes de caractères (tolère "zpluse" vs "z pluse")
 const bigrams = (s) => { const b = []; for (let i = 0; i < s.length - 1; i++) b.push(s.slice(i, i + 2)); return b; };
 function dice(a, b) {
   const A = bigrams(a), B = bigrams(b);
@@ -81,13 +100,10 @@ function dice(a, b) {
   return (2 * inter) / (A.length + B.length);
 }
 const sortedConcat = (tokens) => tokens.slice().sort().join('');
-
-// Score combiné : max(recouvrement de tokens, similarité caractères) → robuste
-function similarity(a, b) {
-  return Math.max(jaccard(a, b), dice(sortedConcat(a), sortedConcat(b)));
-}
+const similarity = (a, b) => Math.max(jaccard(a, b), dice(sortedConcat(a), sortedConcat(b)));
 
 async function loadYouvapeModels(brand) {
+  const brandLc = brand.toLowerCase();
   const { rows } = await pool.query(
     `SELECT p.sku AS parent_sku, p.post_title, COALESCE(v.sku, p.sku) AS repr_sku
      FROM products p
@@ -99,12 +115,13 @@ async function loadYouvapeModels(brand) {
        AND p.post_status = 'publish' AND p.product_type = 'variable'`,
     [brand]
   );
-  return rows.map((r) => ({ repr_sku: r.repr_sku, title: r.post_title, tokens: modelFromTitle(r.post_title) }));
+  return rows.map((r) => ({ repr_sku: r.repr_sku, title: r.post_title, tokens: modelFromTitle(r.post_title, brandLc) }));
 }
 
 function bestMatch(compTokens, youvapeModels) {
   let best = { score: 0, repr_sku: null, title: null };
   for (const y of youvapeModels) {
+    if (!y.tokens.length) continue;
     const s = similarity(compTokens, y.tokens);
     if (s > best.score) best = { score: s, repr_sku: y.repr_sku, title: y.title };
   }
@@ -116,7 +133,6 @@ async function runDiscovery(competitor, brand = 'JNR') {
   if (!cfg) throw new Error(`Découverte non supportée pour "${competitor}"`);
   const brandLc = brand.toLowerCase();
 
-  // Collecte des produits sur plusieurs pages (dédoublonnage par modèle)
   const models = new Map();
   const seenUrls = new Set();
   for (let page = 1; page <= MAX_PAGES; page++) {
@@ -125,24 +141,22 @@ async function runDiscovery(competitor, brand = 'JNR') {
       if (page === 1) throw new Error(res.error || `Listing inaccessible (HTTP ${res.status})`);
       break;
     }
-    let added = 0;
-    let m;
+    let added = 0, m;
     cfg.productRe.lastIndex = 0;
     while ((m = cfg.productRe.exec(res.html)) !== null) {
-      const url = m[0];
-      const slug = m[2];
+      const url = m[0], slug = m[2];
       if (seenUrls.has(url)) continue;
       seenUrls.add(url);
       added++;
       if (NOISE.test(slug)) continue;
       if (cfg.requireBrandInSlug && !slug.includes(brandLc)) continue;
-      const model = modelFromSlug(slug);
-      if (!model.tokens.some(isCapNorm)) continue; // exige une capacité (Nk) → puff/kit, pas un e-liquide
+      const model = modelFromSlug(slug, brandLc);
+      if (model.tokens.length < 1) continue;
       if (!models.has(model.key)) {
         models.set(model.key, { key: model.key, label: model.label, url, name: slug.replace(/-/g, ' '), tokens: model.tokens });
       }
     }
-    if (added === 0) break; // plus de nouveaux produits → fin de pagination
+    if (added === 0) break;
   }
 
   const youvape = await loadYouvapeModels(brand);
