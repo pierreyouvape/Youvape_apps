@@ -5,7 +5,9 @@
 const competitorModel = require('../models/competitorModel');
 const appConfigModel = require('../models/appConfigModel');
 const { startMonitorAsync, getRunState } = require('../services/competitorMonitorService');
-const { runDiscovery } = require('../services/competitorDiscoveryService');
+const { runDiscovery, modelFromTitle, similarity } = require('../services/competitorDiscoveryService');
+const { searchLpv } = require('../services/lpvSearchService');
+const pool = require('../config/database');
 
 const competitorController = {
   // GET /api/competitors — liste du mapping
@@ -146,6 +148,55 @@ const competitorController = {
       await competitorModel.updateSuggestion(sug.id, { status: "validated", matched_sku: sku });
       res.status(201).json({ success: true, product: created });
     } catch (e) { res.status(500).json({ error: e.message }); }
+  },
+
+
+  // POST /api/competitors/backfill-lpv — ajoute Le Petit Vapoteur (via Algolia)
+  // pour tous les produits suivis qui ne l ont pas encore.
+  backfillLpv: async (req, res) => {
+    try {
+      const { rows: products } = await pool.query(
+        `SELECT DISTINCT ON (cp.sku) cp.sku, cp.product_name, pr.brand
+         FROM competitor_products cp
+         LEFT JOIN products pr ON pr.sku = split_part(cp.sku, '-', 1)
+         WHERE cp.active = TRUE
+         ORDER BY cp.sku`
+      );
+      const { rows: existing } = await pool.query(
+        `SELECT DISTINCT sku FROM competitor_products WHERE competitor ILIKE '%petit%'`
+      );
+      const has = new Set(existing.map((r) => r.sku));
+
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      let added = 0, skipped = 0;
+      const notFound = [];
+      for (const p of products) {
+        if (has.has(p.sku)) { skipped++; continue; }
+        const brandLc = (p.brand || '').toLowerCase();
+        let hits = [];
+        try { hits = await searchLpv(`${p.product_name} ${p.brand || ''}`); }
+        catch (e) { notFound.push({ name: p.product_name, error: e.message }); continue; }
+        const want = modelFromTitle(p.product_name, brandLc);
+        let best = null, bestScore = 0;
+        for (const h of hits) {
+          const s = similarity(want, modelFromTitle(h.name || '', brandLc));
+          if (s > bestScore) { bestScore = s; best = h; }
+        }
+        if (best && bestScore >= 0.55 && best.current_product_link) {
+          await competitorModel.createProduct({
+            sku: p.sku, product_name: p.product_name,
+            competitor: 'Le Petit Vapoteur', url: best.current_product_link,
+          });
+          added++;
+        } else {
+          notFound.push({ name: p.product_name, best: best?.name || null, score: Number(bestScore.toFixed(2)) });
+        }
+        await sleep(120);
+      }
+      res.json({ success: true, total: products.length, added, skipped, notFoundCount: notFound.length, notFound });
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
   },
 
   // GET /api/competitors/config — expose la config (clé scraping masquée)

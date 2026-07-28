@@ -652,6 +652,17 @@ function DiscoveryPanel({ token, onValidated }) {
     } finally { setDiscovering(false); }
   };
 
+  const [backfilling, setBackfilling] = useState(false);
+  const backfillLpv = async () => {
+    setBackfilling(true); setMsg(null);
+    try {
+      const { data } = await axios.post(`${API_URL}/competitors/backfill-lpv`, {}, authHeaders(token));
+      setMsg({ type: 'ok', text: `Le Petit Vapoteur : ${data.added} produit(s) ajouté(s) automatiquement, ${data.skipped} déjà présent(s), ${data.notFoundCount} non trouvé(s) (à ajouter à la main). Pense à « Relever les nouveaux » pour récupérer les prix.` });
+    } catch (e) {
+      setMsg({ type: 'error', text: 'Erreur backfill LPV : ' + (e.response?.data?.error || e.message) });
+    } finally { setBackfilling(false); }
+  };
+
   const shown = hideUnmatched ? sugs.filter(s => s.matched_sku) : sugs;
   const matchedCount = sugs.filter(s => s.matched_sku).length;
 
@@ -667,6 +678,10 @@ function DiscoveryPanel({ token, onValidated }) {
       <p style={{ color: C.greyT, fontSize: 12.5, margin: '8px 0 0' }}>
         Explore levapoteur-discount et cigaretteelec, dédoublonne par modèle (une entrée par modèle, pas par saveur) et propose un rapprochement avec tes produits. Rien n'est ajouté au suivi tant que tu n'as pas cliqué « Valider ».
       </p>
+      <div style={{ marginTop: 10, paddingTop: 10, borderTop: `1px dashed ${C.greyB}`, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+        <Btn variant="ghost" small onClick={backfillLpv} disabled={backfilling}>{backfilling ? 'Ajout en cours…' : '+ Ajouter Le Petit Vapoteur à tous les produits'}</Btn>
+        <span style={{ color: C.greyT, fontSize: 12 }}>Cherche chaque produit suivi chez Le Petit Vapoteur (via son moteur Algolia) et l'ajoute automatiquement s'il le vend.</span>
+      </div>
 
       {msg && (
         <div style={{ marginTop: 12, padding: '9px 12px', borderRadius: 8, fontSize: 13,

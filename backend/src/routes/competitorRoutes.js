@@ -10,6 +10,7 @@ router.post('/run', c.runNow);
 router.get('/run/status', c.runStatus);
 
 router.post('/discover', c.discover);
+router.post('/backfill-lpv', c.backfillLpv);
 router.get('/suggestions', c.listSuggestions);
 router.post('/suggestions/:id/validate', c.validateSuggestion);
 router.put('/suggestions/:id', c.updateSuggestion);
