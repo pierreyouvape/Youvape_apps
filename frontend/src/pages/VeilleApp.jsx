@@ -129,7 +129,9 @@ export default function VeilleApp() {
   const [config, setConfig] = useState(null);
   const [loading, setLoading] = useState(true);
   const [running, setRunning] = useState(false);
+  const [progress, setProgress] = useState(null);
   const [msg, setMsg] = useState(null);
+  const [query, setQuery] = useState('');
   const [expanded, setExpanded] = useState(null);
   const [showSettings, setShowSettings] = useState(false);
   const [showManage, setShowManage] = useState(false);
@@ -154,16 +156,18 @@ export default function VeilleApp() {
   }, [loadDashboard, loadConfig]);
 
   const runNow = async (notify) => {
-    setRunning(true);
-    setMsg({ type: 'ok', text: 'Relevé lancé… récupération des prix en cours (jusqu’à 2-3 min avec les sites protégés). Tu peux rester sur la page.' });
+    setRunning(true); setProgress({ done: 0, total: 0 });
+    setMsg({ type: 'ok', text: 'Relevé lancé… récupération des prix en cours. Tu peux rester sur la page.' });
     try {
       await axios.post(`${API_URL}/competitors/run`, { notify }, authHeaders(token));
       // Le relevé tourne en arrière-plan : on suit la progression par polling.
       const poll = async () => {
         try {
           const { data } = await axios.get(`${API_URL}/competitors/run/status`, authHeaders(token));
-          if (data.running) { setTimeout(poll, 4000); return; }
+          if (data.progress) setProgress(data.progress);
+          if (data.running) { setTimeout(poll, 2000); return; }
           await loadDashboard();
+          setProgress(null);
           if (data.error) {
             setMsg({ type: 'error', text: 'Erreur relevé : ' + data.error });
           } else if (data.result) {
@@ -174,14 +178,20 @@ export default function VeilleApp() {
           setRunning(false);
         } catch (e) {
           setMsg({ type: 'error', text: 'Erreur suivi relevé : ' + (e.response?.data?.error || e.message) });
-          setRunning(false);
+          setRunning(false); setProgress(null);
         }
       };
-      setTimeout(poll, 3000);
+      setTimeout(poll, 2000);
     } catch (e) {
       setMsg({ type: 'error', text: 'Erreur relevé : ' + (e.response?.data?.error || e.message) });
-      setRunning(false);
+      setRunning(false); setProgress(null);
     }
+  };
+
+  const deleteRow = async (row) => {
+    if (!window.confirm(`Retirer le suivi « ${row.product_name || row.sku} » chez ${row.competitor} ?`)) return;
+    try { await axios.delete(`${API_URL}/competitors/${row.id}`, authHeaders(token)); await loadDashboard(); }
+    catch (e) { setMsg({ type: 'error', text: 'Erreur suppression : ' + (e.response?.data?.error || e.message) }); }
   };
 
   /* KPIs */
@@ -195,13 +205,19 @@ export default function VeilleApp() {
 
   /* Regrouper par SKU */
   const groups = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    const filtered = q
+      ? rows.filter(r => (r.sku && r.sku.toLowerCase().includes(q))
+          || (r.product_name && r.product_name.toLowerCase().includes(q))
+          || (r.competitor && r.competitor.toLowerCase().includes(q)))
+      : rows;
     const map = new Map();
-    for (const r of rows) {
+    for (const r of filtered) {
       if (!map.has(r.sku)) map.set(r.sku, { sku: r.sku, name: r.product_name, items: [] });
       map.get(r.sku).items.push(r);
     }
     return Array.from(map.values());
-  }, [rows]);
+  }, [rows, query]);
 
   if (loading) {
     return <AppShell currentPath="/veille"><div style={{ padding: 40, color: C.greyT }}>Chargement…</div></AppShell>;
@@ -233,6 +249,19 @@ export default function VeilleApp() {
           </div>
         )}
 
+        {/* Barre de progression du relevé */}
+        {running && progress && (
+          <div style={{ marginTop: 12 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12.5, color: C.greyT, marginBottom: 4 }}>
+              <span>Relevé en cours…</span>
+              <span>{progress.total ? `${progress.done}/${progress.total}` : '…'}</span>
+            </div>
+            <div style={{ height: 10, borderRadius: 999, background: C.greyB, overflow: 'hidden' }}>
+              <div style={{ height: '100%', width: `${progress.total ? Math.round((progress.done / progress.total) * 100) : 5}%`, background: C.accent, borderRadius: 999, transition: 'width 0.4s ease' }} />
+            </div>
+          </div>
+        )}
+
         {/* KPIs */}
         <div style={{ display: 'flex', gap: 14, marginTop: 18, flexWrap: 'wrap' }}>
           <Kpi value={kpis.suivis} label="Suivis actifs" />
@@ -251,19 +280,36 @@ export default function VeilleApp() {
         {/* Gestion des suivis */}
         {showManage && <ManagePanel token={token} onChanged={loadDashboard} />}
 
+        {/* Recherche */}
+        <div style={{ marginTop: 20, display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div style={{ position: 'relative', flex: 1, maxWidth: 420 }}>
+            <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: C.greyM, fontSize: 14 }}>🔎</span>
+            <input
+              value={query}
+              onChange={e => setQuery(e.target.value)}
+              placeholder="Rechercher par SKU, nom de produit ou concurrent…"
+              style={{ width: '100%', padding: '10px 12px 10px 34px', borderRadius: 10, border: `1px solid ${C.greyB}`, fontSize: 13.5, boxSizing: 'border-box' }}
+            />
+            {query && (
+              <span onClick={() => setQuery('')} style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', color: C.greyM, fontSize: 16, cursor: 'pointer' }}>×</span>
+            )}
+          </div>
+          {query && <span style={{ fontSize: 12.5, color: C.greyT }}>{groups.length} produit(s) trouvé(s)</span>}
+        </div>
+
         {/* Tableau principal */}
-        <div style={{ marginTop: 20, background: C.white, borderRadius: 12, border: `1px solid ${C.greyB}`, overflow: 'hidden' }}>
+        <div style={{ marginTop: 12, background: C.white, borderRadius: 12, border: `1px solid ${C.greyB}`, overflow: 'hidden' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
             <colgroup>
-              <col style={{ width: '20%' }} />
-              <col style={{ width: '11%' }} />
-              <col style={{ width: '12%' }} />
               <col style={{ width: '19%' }} />
-              <col style={{ width: '15%' }} />
-              <col style={{ width: '9%' }} />
-              <col style={{ width: '9%' }} />
-              <col style={{ width: '7%' }} />
-              <col style={{ width: '7%' }} />
+              <col style={{ width: '11%' }} />
+              <col style={{ width: '11%' }} />
+              <col style={{ width: '16%' }} />
+              <col style={{ width: '14%' }} />
+              <col style={{ width: '8%' }} />
+              <col style={{ width: '8%' }} />
+              <col style={{ width: '6%' }} />
+              <col style={{ width: '11%' }} />
             </colgroup>
             <thead>
               <tr>
@@ -275,7 +321,7 @@ export default function VeilleApp() {
                 <Th align="center">Dispo.</Th>
                 <Th align="center">Relevé</Th>
                 <Th align="center">État</Th>
-                <Th align="center">Hist.</Th>
+                <Th align="center">Actions</Th>
               </tr>
             </thead>
             <tbody>
@@ -316,7 +362,10 @@ export default function VeilleApp() {
                               : <Badge color={C.green} bg="#F0FDF4">OK</Badge>}
                           </Td>
                           <Td align="center">
-                            <Btn variant="ghost" small onClick={() => setExpanded(expanded === r.id ? null : r.id)}>{expanded === r.id ? 'Masquer' : '📈'}</Btn>
+                            <div style={{ display: 'flex', gap: 6, justifyContent: 'center' }}>
+                              <Btn variant="ghost" small onClick={() => setExpanded(expanded === r.id ? null : r.id)}>{expanded === r.id ? 'Masquer' : '📈'}</Btn>
+                              <Btn variant="danger" small onClick={() => deleteRow(r)}>🗑</Btn>
+                            </div>
                           </Td>
                         </tr>
                         {isErr && r.last_error && (

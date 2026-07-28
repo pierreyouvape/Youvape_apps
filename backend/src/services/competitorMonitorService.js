@@ -17,7 +17,7 @@ const fmtEur = (v) => (v === null || v === undefined ? '—' : `${Number(v).toFi
  * @param {boolean} [opts.force] - ignore le flag competitor_monitor_enabled (run manuel)
  * @param {boolean} [opts.notify=true] - envoyer l'email récap
  */
-async function runMonitor({ force = false, notify = true } = {}) {
+async function runMonitor({ force = false, notify = true, onProgress = null } = {}) {
   const enabledCfg = await appConfigModel.get('competitor_monitor_enabled');
   if (!force && enabledCfg?.config_value === 'false') {
     console.log('[Veille] Désactivée (competitor_monitor_enabled=false)');
@@ -26,6 +26,9 @@ async function runMonitor({ force = false, notify = true } = {}) {
 
   const products = await competitorModel.listProducts({ activeOnly: true });
   console.log(`[Veille] Démarrage : ${products.length} suivi(s) actif(s)`);
+  const total = products.length;
+  let done = 0;
+  if (onProgress) onProgress({ done: 0, total });
 
   const changes = [];   // { ...product, oldPrice, newPrice }
   const errors = [];    // { ...product, error }
@@ -81,6 +84,8 @@ async function runMonitor({ force = false, notify = true } = {}) {
       errors.push({ ...product, error: err.message });
     }
 
+    done++;
+    if (onProgress) onProgress({ done, total });
     await sleep(1500); // politesse : ~1 requête / 1,5 s
   }
 
@@ -152,8 +157,9 @@ const getRunState = () => runState;
  */
 function startMonitorAsync(opts = {}) {
   if (runState.running) return { alreadyRunning: true, startedAt: runState.startedAt };
-  runState = { running: true, startedAt: Date.now(), finishedAt: null, result: null, error: null };
-  runMonitor(opts)
+  runState = { running: true, startedAt: Date.now(), finishedAt: null, result: null, error: null, progress: { done: 0, total: 0 } };
+  const onProgress = (pr) => { if (runState.running) runState.progress = pr; };
+  runMonitor({ ...opts, onProgress })
     .then((r) => {
       runState = {
         running: false, startedAt: runState.startedAt, finishedAt: Date.now(),
