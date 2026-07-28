@@ -333,7 +333,6 @@ export default function VeilleApp() {
                   <tr>
                     <td colSpan={9} style={{ padding: '10px 12px', background: C.accentL, borderBottom: `1px solid ${C.greyB}`, fontWeight: 700, color: C.dark, fontSize: 13 }}>
                       {g.name || g.sku} <span style={{ color: C.greyM, fontWeight: 400, fontSize: 12 }}>· SKU {g.sku}</span>
-                      {g.items[0]?.my_price != null && <span style={{ color: C.primary, fontWeight: 700, fontSize: 12, marginLeft: 8 }}>· Mon tarif remisé : {fmtEur(g.items[0].my_price)}</span>}
                     </td>
                   </tr>
                   {g.items.map((r) => {
@@ -348,7 +347,11 @@ export default function VeilleApp() {
                             {fmtEur(r.current_price)}
                             {r.regular_price ? <div style={{ fontSize: 11, fontWeight: 400, color: C.greyM }}><s>{fmtEur(r.regular_price)}</s></div> : null}
                           </Td>
-                          <Td align="right" bold color={C.primary}>{fmtEur(r.my_price)}</Td>
+                          <Td align="right" bold>
+                            {r.my_product_url
+                              ? <a href={r.my_product_url} target="_blank" rel="noreferrer" title="Voir ma fiche produit (youvape.fr)" style={{ color: C.primary, textDecoration: 'none' }}>{fmtEur(r.my_price)} ↗</a>
+                              : <span style={{ color: C.primary }}>{fmtEur(r.my_price)}</span>}
+                          </Td>
                           <Td align="center"><Ecart mine={r.my_price} comp={r.current_price} /></Td>
                           <Td align="center"><Variation current={r.current_price} previous={r.previous_price} /></Td>
                           <Td align="center">
@@ -377,6 +380,7 @@ export default function VeilleApp() {
                       </Fragment>
                     );
                   })}
+                  <AddCompetitorRow token={token} group={g} existing={g.items.map(i => i.competitor)} onAdded={loadDashboard} />
                 </Fragment>
               ))}
             </tbody>
@@ -384,6 +388,52 @@ export default function VeilleApp() {
         </div>
       </div>
     </AppShell>
+  );
+}
+
+/* ─── ligne "ajouter un concurrent" sous chaque produit ──────── */
+const KNOWN_COMPETITORS = ['levapoteur-discount', 'cigaretteelec'];
+
+function AddCompetitorRow({ token, group, existing, onAdded }) {
+  const [open, setOpen] = useState(false);
+  const [competitor, setCompetitor] = useState('');
+  const [url, setUrl] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState(null);
+
+  const suggestions = KNOWN_COMPETITORS.filter(c => !existing.includes(c));
+
+  const add = async () => {
+    if (!competitor.trim() || !url.trim()) { setErr('Renseigne le concurrent et l’URL'); return; }
+    setBusy(true); setErr(null);
+    try {
+      await axios.post(`${API_URL}/competitors`,
+        { sku: group.sku, product_name: group.name, competitor: competitor.trim(), url: url.trim() }, authHeaders(token));
+      setOpen(false); setCompetitor(''); setUrl(''); setBusy(false);
+      await onAdded();
+    } catch (e) { setErr(e.response?.data?.error || e.message); setBusy(false); }
+  };
+
+  const inp = { padding: '6px 9px', borderRadius: 7, border: `1px solid ${C.greyB}`, fontSize: 12.5 };
+  return (
+    <tr>
+      <td colSpan={9} style={{ padding: '6px 12px 10px', borderBottom: `1px solid ${C.greyB}`, background: '#FCFCFD' }}>
+        {!open ? (
+          <span onClick={() => setOpen(true)} style={{ color: C.primary, fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>
+            + Ajouter un concurrent pour ce produit
+          </span>
+        ) : (
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+            <input list="known-competitors" style={{ ...inp, width: 180 }} placeholder="Concurrent (ex: levapoteur-discount)" value={competitor} onChange={e => setCompetitor(e.target.value)} />
+            <datalist id="known-competitors">{suggestions.map(c => <option key={c} value={c} />)}</datalist>
+            <input style={{ ...inp, flex: 1, minWidth: 260 }} placeholder="URL de la fiche produit chez ce concurrent" value={url} onChange={e => setUrl(e.target.value)} />
+            <Btn small onClick={add} disabled={busy}>{busy ? '…' : 'Ajouter'}</Btn>
+            <Btn variant="ghost" small onClick={() => { setOpen(false); setErr(null); }} disabled={busy}>Annuler</Btn>
+            {err && <span style={{ color: C.red, fontSize: 12 }}>{err}</span>}
+          </div>
+        )}
+      </td>
+    </tr>
   );
 }
 

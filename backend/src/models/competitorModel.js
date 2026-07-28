@@ -158,6 +158,8 @@ const competitorModel = {
          p.id, p.sku, p.product_name, p.competitor, p.url, p.active,
          COALESCE(yp.discounted_price, yp.price) AS my_price,
          yp.regular_price AS my_regular_price,
+         CASE WHEN yprod.wp_product_id IS NOT NULL
+              THEN 'https://www.youvape.fr/?post_type=product&p=' || yprod.wp_product_id END AS my_product_url,
          cur.price        AS current_price,
          cur.regular_price,
          cur.in_stock,
@@ -172,6 +174,7 @@ const competitorModel = {
        LEFT JOIN ranked prev ON prev.competitor_product_id = p.id AND prev.rn = 2
        LEFT JOIN last_any la ON la.competitor_product_id = p.id
        LEFT JOIN products yp ON yp.sku = p.sku
+       LEFT JOIN products yprod ON yprod.sku = split_part(p.sku, '-', 1)
        ORDER BY p.sku, p.competitor`
     );
     return rows;
