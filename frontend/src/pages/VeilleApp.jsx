@@ -31,10 +31,10 @@ const authHeaders = (token) => ({ headers: { Authorization: `Bearer ${token}` } 
 
 /* ─── petits composants ──────────────────────────────────── */
 function Th({ children, align = 'left' }) {
-  return <th style={{ padding: '9px 12px', textAlign: align, fontWeight: 700, color: C.dark, fontSize: 11.5, borderBottom: `2px solid ${C.greyB}`, background: C.grey, whiteSpace: 'nowrap' }}>{children}</th>;
+  return <th style={{ padding: '13px 18px', textAlign: align, fontWeight: 700, color: C.greyT, fontSize: 11.5, textTransform: 'uppercase', letterSpacing: 0.3, borderBottom: `2px solid ${C.greyB}`, background: C.grey, whiteSpace: 'nowrap' }}>{children}</th>;
 }
 function Td({ children, align = 'left', color, bold, bg }) {
-  return <td style={{ padding: '8px 12px', textAlign: align, color: color || C.dark, fontWeight: bold ? 700 : 400, borderBottom: `1px solid ${C.greyB}`, fontSize: 13, background: bg }}>{children}</td>;
+  return <td style={{ padding: '13px 18px', textAlign: align, color: color || C.dark, fontWeight: bold ? 700 : 400, borderBottom: `1px solid ${C.greyB}`, fontSize: 14, background: bg }}>{children}</td>;
 }
 function Kpi({ value, label, color }) {
   return (
@@ -45,7 +45,7 @@ function Kpi({ value, label, color }) {
   );
 }
 function Badge({ children, color, bg }) {
-  return <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: 999, fontSize: 11, fontWeight: 700, color, background: bg }}>{children}</span>;
+  return <span style={{ display: 'inline-block', padding: '3px 10px', borderRadius: 999, fontSize: 11.5, fontWeight: 700, color, background: bg, whiteSpace: 'nowrap' }}>{children}</span>;
 }
 function Btn({ children, onClick, variant = 'primary', disabled, small }) {
   const styles = {
@@ -189,7 +189,7 @@ export default function VeilleApp() {
 
   return (
     <AppShell currentPath="/veille">
-      <div style={{ padding: '24px 28px', maxWidth: 1280, margin: '0 auto' }}>
+      <div style={{ padding: '24px 32px', maxWidth: 1560, margin: '0 auto' }}>
         {/* En-tête */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 12 }}>
           <div>
@@ -229,18 +229,29 @@ export default function VeilleApp() {
 
         {/* Tableau principal */}
         <div style={{ marginTop: 20, background: C.white, borderRadius: 12, border: `1px solid ${C.greyB}`, overflow: 'hidden' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
+            <colgroup>
+              <col style={{ width: '20%' }} />
+              <col style={{ width: '11%' }} />
+              <col style={{ width: '12%' }} />
+              <col style={{ width: '19%' }} />
+              <col style={{ width: '15%' }} />
+              <col style={{ width: '9%' }} />
+              <col style={{ width: '9%' }} />
+              <col style={{ width: '7%' }} />
+              <col style={{ width: '7%' }} />
+            </colgroup>
             <thead>
               <tr>
                 <Th>Produit / Concurrent</Th>
                 <Th align="right">Prix concurrent</Th>
-                <Th align="right">Mon tarif remisé</Th>
+                <Th align="right">Mon tarif</Th>
                 <Th align="center">Écart (moi vs concurrent)</Th>
                 <Th align="center">Variation concurrent</Th>
                 <Th align="center">Dispo.</Th>
-                <Th align="center">Dernier relevé</Th>
+                <Th align="center">Relevé</Th>
                 <Th align="center">État</Th>
-                <Th></Th>
+                <Th align="center">Hist.</Th>
               </tr>
             </thead>
             <tbody>
