@@ -43,6 +43,7 @@ const SettingsApp = () => {
     { key: 'commandes',  label: 'Commandes',   accessOnly: true },
     { key: 'tickets',    label: 'SAV / Tickets', accessOnly: true },
     { key: 'customers',  label: 'Clients',     accessOnly: true },
+    { key: 'veille',     label: 'Veille concurrentielle', accessOnly: true },
   ];
 
   const tabs = [

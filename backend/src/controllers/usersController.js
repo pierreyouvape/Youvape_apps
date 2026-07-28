@@ -62,6 +62,7 @@ const usersController = {
             'mondial-relay': { read: true, write: true },
             transporteurs: { read: true, write: true },
             customers:   { read: true, write: true },
+            veille:      { read: true, write: true },
           }
         });
       }
