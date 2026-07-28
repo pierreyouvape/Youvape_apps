@@ -33,7 +33,8 @@ const colissimoRoutes  = require('./routes/colissimoRoutes');
 const lettreSuivieRoutes = require('./routes/lettreSuivieRoutes');
 const mondialRelayRoutes = require('./routes/mondialRelayRoutes');
 const transporteursRoutes = require('./routes/transporteursRoutes');
-const { setupCron, setupBmsCron, setupComputedCostCron, setupBmsBarcodeCron, setupStockResyncCron, setupSavAutomationsCron, setupProductDbSyncCron, setupBmsTagRetryCron, setupReportEmailCron, setupStockValuationSnapshotCron, setupDraftStockReportCron } = require('./services/cronService');
+const competitorRoutes = require('./routes/competitorRoutes');
+const { setupCron, setupBmsCron, setupComputedCostCron, setupBmsBarcodeCron, setupStockResyncCron, setupSavAutomationsCron, setupProductDbSyncCron, setupBmsTagRetryCron, setupReportEmailCron, setupStockValuationSnapshotCron, setupDraftStockReportCron, setupCompetitorMonitorCron } = require('./services/cronService');
 const rewardService = require('./services/rewardService');
 const emailService = require('./services/emailService');
 const wcSyncService = require('./services/wcSyncService');
@@ -83,6 +84,7 @@ app.use('/api/colissimo',  colissimoRoutes);  // Colissimo invoice analysis
 app.use('/api/lettre-suivie', lettreSuivieRoutes); // La Poste Lettre Suivie invoice analysis
 app.use('/api/mondial-relay', mondialRelayRoutes); // Mondial Relay invoice analysis
 app.use('/api/transporteurs', transporteursRoutes); // Vue consolidée des 4 transporteurs
+app.use('/api/competitors', competitorRoutes); // Veille concurrentielle
 
 // Start server
 app.listen(PORT, async () => {
@@ -120,6 +122,8 @@ app.listen(PORT, async () => {
 
   // Initialiser le cron rapport hebdo des produits en stock non publies - lundi 13h
   setupDraftStockReportCron();
+
+  setupCompetitorMonitorCron();
 
   // Recalcul initial PMP FIFO au demarrage (apres 60s)
   setTimeout(async () => {

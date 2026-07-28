@@ -567,6 +567,41 @@ const setupDraftStockReportCron = () => {
   console.log('Cron rapport stock non publie configure: lundi 13h (Europe/Paris)');
 };
 
+
+// ==================== VEILLE CONCURRENTIELLE ====================
+
+const { runMonitor: runCompetitorMonitor } = require("./competitorMonitorService");
+
+let competitorMonitorJob = null;
+
+const runCompetitorMonitorJob = async () => {
+  try {
+    const r = await runCompetitorMonitor();
+    if (!r.skipped) {
+      console.log(`Veille concurrentielle: ${r.ok}/${r.total} OK, ${r.changes?.length || 0} changement(s), ${r.errors?.length || 0} erreur(s)`);
+    }
+  } catch (error) {
+    console.error("Erreur cron veille concurrentielle:", error.message);
+    sendAlert(
+      "Cron veille concurrentielle: echec",
+      `Le releve quotidien des prix concurrents a echoue.\n\nErreur: ${error.message}`
+    );
+  }
+};
+
+const setupCompetitorMonitorCron = () => {
+  if (competitorMonitorJob) {
+    competitorMonitorJob.stop();
+    competitorMonitorJob = null;
+  }
+  // Tous les jours a 8h00 (Europe/Paris)
+  competitorMonitorJob = cron.schedule("0 8 * * *", runCompetitorMonitorJob, {
+    timezone: "Europe/Paris"
+  });
+  console.log("Cron veille concurrentielle configure: tous les jours a 8h (Europe/Paris)");
+};
+
+
 module.exports = {
   setupCron,
   restartCron,
@@ -581,5 +616,6 @@ module.exports = {
   setupReportEmailCron,
   setupStockValuationSnapshotCron,
   setupDraftStockReportCron,
+  setupCompetitorMonitorCron,
   runProductDbSyncJob,
 };
