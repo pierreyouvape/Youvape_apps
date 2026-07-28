@@ -121,6 +121,8 @@ const competitorModel = {
        )
        SELECT
          p.id, p.sku, p.product_name, p.competitor, p.url, p.active,
+         COALESCE(yp.discounted_price, yp.price) AS my_price,
+         yp.regular_price AS my_regular_price,
          cur.price        AS current_price,
          cur.regular_price,
          cur.in_stock,
@@ -134,6 +136,7 @@ const competitorModel = {
        LEFT JOIN ranked cur  ON cur.competitor_product_id = p.id  AND cur.rn = 1
        LEFT JOIN ranked prev ON prev.competitor_product_id = p.id AND prev.rn = 2
        LEFT JOIN last_any la ON la.competitor_product_id = p.id
+       LEFT JOIN products yp ON yp.sku = p.sku
        ORDER BY p.sku, p.competitor`
     );
     return rows;

@@ -63,6 +63,21 @@ function Btn({ children, onClick, variant = 'primary', disabled, small }) {
   );
 }
 
+/* Écart entre MON tarif remisé et le prix concurrent.
+   Rouge = je suis plus cher, Vert = je suis moins cher, Gris = identique. */
+function Ecart({ mine, comp }) {
+  if (mine === null || mine === undefined || comp === null || comp === undefined) return <span style={{ color: C.greyM }}>—</span>;
+  const m = parseFloat(mine), c = parseFloat(comp);
+  const delta = m - c; // > 0 : je suis plus cher
+  if (Math.abs(delta) < 0.005) return <Badge color={C.greyT} bg={C.grey}>= identique</Badge>;
+  const pricier = delta > 0;
+  return (
+    <Badge color={pricier ? C.red : C.green} bg={pricier ? '#FEF2F2' : '#F0FDF4'}>
+      {pricier ? '▲ +' : '▼ −'}{Math.abs(delta).toFixed(2).replace('.', ',')} € {pricier ? '(plus cher)' : '(moins cher)'}
+    </Badge>
+  );
+}
+
 function Variation({ current, previous }) {
   if (current === null || current === undefined || previous === null || previous === undefined) return <span style={{ color: C.greyM }}>—</span>;
   const cur = parseFloat(current), prev = parseFloat(previous);
@@ -154,7 +169,8 @@ export default function VeilleApp() {
     const competitors = new Set(rows.map(r => r.competitor));
     const changes = rows.filter(r => r.previous_price != null && r.current_price != null && Math.abs(parseFloat(r.current_price) - parseFloat(r.previous_price)) >= 0.005).length;
     const errors = rows.filter(r => r.last_status === 'error').length;
-    return { suivis: rows.length, competitors: competitors.size, changes, errors };
+    const pricier = rows.filter(r => r.my_price != null && r.current_price != null && parseFloat(r.my_price) - parseFloat(r.current_price) > 0.005).length;
+    return { suivis: rows.length, competitors: competitors.size, changes, errors, pricier };
   }, [rows]);
 
   /* Regrouper par SKU */
@@ -201,6 +217,7 @@ export default function VeilleApp() {
           <Kpi value={kpis.suivis} label="Suivis actifs" />
           <Kpi value={kpis.competitors} label="Concurrents" color={C.blue} />
           <Kpi value={kpis.changes} label="Prix modifiés (dernier relevé)" color={C.orange} />
+          <Kpi value={kpis.pricier} label="Concurrents moins chers que moi" color={kpis.pricier ? C.red : C.green} />
           <Kpi value={kpis.errors} label="Relevés en échec" color={kpis.errors ? C.red : C.green} />
         </div>
 
@@ -216,9 +233,10 @@ export default function VeilleApp() {
             <thead>
               <tr>
                 <Th>Produit / Concurrent</Th>
-                <Th align="right">Prix actuel</Th>
-                <Th align="right">Prix barré</Th>
-                <Th align="center">Variation</Th>
+                <Th align="right">Prix concurrent</Th>
+                <Th align="right">Mon tarif remisé</Th>
+                <Th align="center">Écart (moi vs concurrent)</Th>
+                <Th align="center">Variation concurrent</Th>
                 <Th align="center">Dispo.</Th>
                 <Th align="center">Dernier relevé</Th>
                 <Th align="center">État</Th>
@@ -232,8 +250,9 @@ export default function VeilleApp() {
               {groups.map((g) => (
                 <Fragment key={`g-${g.sku}`}>
                   <tr>
-                    <td colSpan={8} style={{ padding: '10px 12px', background: C.accentL, borderBottom: `1px solid ${C.greyB}`, fontWeight: 700, color: C.dark, fontSize: 13 }}>
+                    <td colSpan={9} style={{ padding: '10px 12px', background: C.accentL, borderBottom: `1px solid ${C.greyB}`, fontWeight: 700, color: C.dark, fontSize: 13 }}>
                       {g.name || g.sku} <span style={{ color: C.greyM, fontWeight: 400, fontSize: 12 }}>· SKU {g.sku}</span>
+                      {g.items[0]?.my_price != null && <span style={{ color: C.primary, fontWeight: 700, fontSize: 12, marginLeft: 8 }}>· Mon tarif remisé : {fmtEur(g.items[0].my_price)}</span>}
                     </td>
                   </tr>
                   {g.items.map((r) => {
@@ -244,8 +263,12 @@ export default function VeilleApp() {
                           <Td>
                             <a href={r.url} target="_blank" rel="noreferrer" style={{ color: C.primary, textDecoration: 'none', fontWeight: 600 }}>{r.competitor} ↗</a>
                           </Td>
-                          <Td align="right" bold>{fmtEur(r.current_price)}</Td>
-                          <Td align="right" color={C.greyM}>{r.regular_price ? <s>{fmtEur(r.regular_price)}</s> : '—'}</Td>
+                          <Td align="right" bold>
+                            {fmtEur(r.current_price)}
+                            {r.regular_price ? <div style={{ fontSize: 11, fontWeight: 400, color: C.greyM }}><s>{fmtEur(r.regular_price)}</s></div> : null}
+                          </Td>
+                          <Td align="right" bold color={C.primary}>{fmtEur(r.my_price)}</Td>
+                          <Td align="center"><Ecart mine={r.my_price} comp={r.current_price} /></Td>
                           <Td align="center"><Variation current={r.current_price} previous={r.previous_price} /></Td>
                           <Td align="center">
                             {r.in_stock === true ? <Badge color={C.green} bg="#F0FDF4">En stock</Badge>
@@ -262,10 +285,10 @@ export default function VeilleApp() {
                           </Td>
                         </tr>
                         {isErr && r.last_error && (
-                          <tr key={`e-${r.id}`}><td colSpan={8} style={{ padding: '4px 12px 8px 12px', fontSize: 11.5, color: C.red, background: '#FFF7F7', borderBottom: `1px solid ${C.greyB}` }}>⚠ {r.last_error}</td></tr>
+                          <tr key={`e-${r.id}`}><td colSpan={9} style={{ padding: '4px 12px 8px 12px', fontSize: 11.5, color: C.red, background: '#FFF7F7', borderBottom: `1px solid ${C.greyB}` }}>⚠ {r.last_error}</td></tr>
                         )}
                         {expanded === r.id && (
-                          <tr key={`h-${r.id}`}><td colSpan={8} style={{ borderBottom: `1px solid ${C.greyB}` }}><HistoryChart token={token} id={r.id} /></td></tr>
+                          <tr key={`h-${r.id}`}><td colSpan={9} style={{ borderBottom: `1px solid ${C.greyB}` }}><HistoryChart token={token} id={r.id} /></td></tr>
                         )}
                       </Fragment>
                     );
