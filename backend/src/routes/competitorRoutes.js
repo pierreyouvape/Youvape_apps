@@ -8,6 +8,12 @@ router.put('/config', c.updateConfig);
 router.get('/dashboard', c.dashboard);
 router.post('/run', c.runNow);
 
+router.post('/discover', c.discover);
+router.get('/suggestions', c.listSuggestions);
+router.post('/suggestions/:id/validate', c.validateSuggestion);
+router.put('/suggestions/:id', c.updateSuggestion);
+router.delete('/suggestions/:id', c.deleteSuggestion);
+
 // Mapping (CRUD)
 router.get('/', c.listProducts);
 router.post('/', c.createProduct);

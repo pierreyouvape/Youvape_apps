@@ -133,6 +133,7 @@ export default function VeilleApp() {
   const [expanded, setExpanded] = useState(null);
   const [showSettings, setShowSettings] = useState(false);
   const [showManage, setShowManage] = useState(false);
+  const [showDiscovery, setShowDiscovery] = useState(false);
 
   const loadDashboard = useCallback(async () => {
     const { data } = await axios.get(`${API_URL}/competitors/dashboard`, authHeaders(token));
@@ -197,6 +198,7 @@ export default function VeilleApp() {
             <p style={{ color: C.greyT, margin: '4px 0 0', fontSize: 13.5 }}>Suivi quotidien des prix concurrents · relevé automatique chaque jour à 8h.</p>
           </div>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <Btn variant="ghost" small onClick={() => setShowDiscovery(s => !s)}>🔍 Découverte auto</Btn>
             <Btn variant="ghost" small onClick={() => setShowManage(s => !s)}>⚙️ Gérer les suivis</Btn>
             <Btn variant="ghost" small onClick={() => setShowSettings(s => !s)}>🔔 Réglages</Btn>
             <Btn variant="accent" onClick={() => runNow(false)} disabled={running}>{running ? 'Relevé en cours…' : '↻ Relever maintenant'}</Btn>
@@ -220,6 +222,9 @@ export default function VeilleApp() {
           <Kpi value={kpis.pricier} label="Concurrents moins chers que moi" color={kpis.pricier ? C.red : C.green} />
           <Kpi value={kpis.errors} label="Relevés en échec" color={kpis.errors ? C.red : C.green} />
         </div>
+
+        {/* Découverte / Suggestions */}
+        {showDiscovery && <DiscoveryPanel token={token} onValidated={loadDashboard} />}
 
         {/* Réglages */}
         {showSettings && config && <SettingsPanel token={token} config={config} onSaved={loadConfig} />}
@@ -413,6 +418,165 @@ function ManagePanel({ token, onChanged }) {
           ))}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+/* ─── panneau découverte auto + suggestions ──────────────────── */
+function ScoreBadge({ score }) {
+  if (score === null || score === undefined) return null;
+  const s = parseFloat(score);
+  const color = s >= 0.85 ? C.green : s >= 0.7 ? C.orange : C.greyT;
+  const bg = s >= 0.85 ? '#F0FDF4' : s >= 0.7 ? '#FFFBEB' : C.grey;
+  return <Badge color={color} bg={bg}>{Math.round(s * 100)}%</Badge>;
+}
+
+function SuggestionRow({ token, sug, onDone }) {
+  const [editing, setEditing] = useState(false);
+  const [sku, setSku] = useState(sug.matched_sku || '');
+  const [title, setTitle] = useState(sug.matched_title || '');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState(null);
+
+  const validate = async () => {
+    if (!sku.trim()) { setErr('Renseigne un SKU Youvape avant de valider'); return; }
+    setBusy(true); setErr(null);
+    try {
+      await axios.post(`${API_URL}/competitors/suggestions/${sug.id}/validate`,
+        { matched_sku: sku.trim(), matched_title: title.trim() }, authHeaders(token));
+      onDone();
+    } catch (e) { setErr(e.response?.data?.error || e.message); setBusy(false); }
+  };
+  const saveEdit = async () => {
+    setBusy(true); setErr(null);
+    try {
+      await axios.put(`${API_URL}/competitors/suggestions/${sug.id}`,
+        { matched_sku: sku.trim() || null, matched_title: title.trim() || null }, authHeaders(token));
+      setEditing(false); setBusy(false);
+    } catch (e) { setErr(e.response?.data?.error || e.message); setBusy(false); }
+  };
+  const reject = async () => {
+    setBusy(true);
+    try { await axios.delete(`${API_URL}/competitors/suggestions/${sug.id}`, authHeaders(token)); onDone(); }
+    catch (e) { setErr(e.response?.data?.error || e.message); setBusy(false); }
+  };
+
+  const inp = { padding: '6px 8px', borderRadius: 6, border: `1px solid ${C.greyB}`, fontSize: 12.5, width: '100%' };
+  return (
+    <tr>
+      <Td>{sug.competitor}</Td>
+      <Td>
+        <a href={sug.representative_url} target="_blank" rel="noreferrer" style={{ color: C.dark, fontWeight: 600, textDecoration: 'none' }}>{sug.model_label} ↗</a>
+      </Td>
+      <Td>
+        {editing ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <input style={inp} value={sku} onChange={e => setSku(e.target.value)} placeholder="SKU Youvape (ex: 1145516-1145581)" />
+            <input style={inp} value={title} onChange={e => setTitle(e.target.value)} placeholder="Nom produit" />
+          </div>
+        ) : sug.matched_sku ? (
+          <div><span style={{ fontWeight: 600, color: C.primary }}>{sug.matched_title}</span><div style={{ fontSize: 11, color: C.greyM }}>SKU {sug.matched_sku}</div></div>
+        ) : (
+          <span style={{ color: C.orange, fontSize: 12.5 }}>Non matché — clique « Modifier » pour associer un produit</span>
+        )}
+        {err && <div style={{ color: C.red, fontSize: 11, marginTop: 4 }}>{err}</div>}
+      </Td>
+      <Td align="center"><ScoreBadge score={sug.match_score} /></Td>
+      <Td align="center">
+        <div style={{ display: 'flex', gap: 6, justifyContent: 'center', flexWrap: 'wrap' }}>
+          {editing ? (
+            <>
+              <Btn small onClick={saveEdit} disabled={busy}>💾 OK</Btn>
+              <Btn variant="ghost" small onClick={() => setEditing(false)} disabled={busy}>Annuler</Btn>
+            </>
+          ) : (
+            <>
+              <Btn variant="accent" small onClick={validate} disabled={busy}>✓ Valider</Btn>
+              <Btn variant="ghost" small onClick={() => setEditing(true)} disabled={busy}>Modifier</Btn>
+              <Btn variant="danger" small onClick={reject} disabled={busy}>Suppr.</Btn>
+            </>
+          )}
+        </div>
+      </Td>
+    </tr>
+  );
+}
+
+function DiscoveryPanel({ token, onValidated }) {
+  const [sugs, setSugs] = useState([]);
+  const [brand, setBrand] = useState('JNR');
+  const [discovering, setDiscovering] = useState(false);
+  const [msg, setMsg] = useState(null);
+  const [hideUnmatched, setHideUnmatched] = useState(false);
+
+  const load = useCallback(async () => {
+    const { data } = await axios.get(`${API_URL}/competitors/suggestions?status=pending`, authHeaders(token));
+    setSugs(data);
+  }, [token]);
+  useEffect(() => { load(); }, [load]);
+
+  const discover = async () => {
+    setDiscovering(true); setMsg(null);
+    try {
+      const { data } = await axios.post(`${API_URL}/competitors/discover`, { brand: brand.trim() }, authHeaders(token));
+      const parts = data.results.map(r => r.error ? `${r.competitor} : erreur (${r.error})` : `${r.competitor} : ${r.discovered} modèles`);
+      setMsg({ type: 'ok', text: `Découverte terminée — ${parts.join(' · ')}` });
+      await load();
+    } catch (e) {
+      setMsg({ type: 'error', text: 'Erreur découverte : ' + (e.response?.data?.error || e.message) });
+    } finally { setDiscovering(false); }
+  };
+
+  const shown = hideUnmatched ? sugs.filter(s => s.matched_sku) : sugs;
+  const matchedCount = sugs.filter(s => s.matched_sku).length;
+
+  return (
+    <div style={{ marginTop: 16, background: C.white, borderRadius: 12, border: `1px solid ${C.greyB}`, padding: 18 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+        <div style={{ fontWeight: 700, color: C.primary }}>🔍 Découverte automatique</div>
+        <div style={{ flex: 1 }} />
+        <input value={brand} onChange={e => setBrand(e.target.value)} placeholder="Marque"
+          style={{ padding: '8px 10px', borderRadius: 8, border: `1px solid ${C.greyB}`, fontSize: 13, width: 120 }} />
+        <Btn variant="accent" onClick={discover} disabled={discovering}>{discovering ? 'Découverte en cours…' : `Découvrir les produits ${brand || ''}`}</Btn>
+      </div>
+      <p style={{ color: C.greyT, fontSize: 12.5, margin: '8px 0 0' }}>
+        Explore levapoteur-discount et cigaretteelec, dédoublonne par modèle (une entrée par modèle, pas par saveur) et propose un rapprochement avec tes produits. Rien n'est ajouté au suivi tant que tu n'as pas cliqué « Valider ».
+      </p>
+
+      {msg && (
+        <div style={{ marginTop: 12, padding: '9px 12px', borderRadius: 8, fontSize: 13,
+          background: msg.type === 'error' ? '#FEF2F2' : '#F0FDF4', color: msg.type === 'error' ? C.red : C.green,
+          border: `1px solid ${msg.type === 'error' ? '#FECACA' : '#BBF7D0'}` }}>{msg.text}</div>
+      )}
+
+      {sugs.length > 0 && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginTop: 14 }}>
+          <span style={{ fontSize: 13, color: C.greyT }}>{sugs.length} suggestion(s) · <b style={{ color: C.green }}>{matchedCount} matchée(s)</b></span>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, cursor: 'pointer' }}>
+            <input type="checkbox" checked={hideUnmatched} onChange={e => setHideUnmatched(e.target.checked)} />
+            Masquer les non matchés
+          </label>
+        </div>
+      )}
+
+      {sugs.length > 0 && (
+        <div style={{ marginTop: 12, border: `1px solid ${C.greyB}`, borderRadius: 10, overflow: 'hidden' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <colgroup>
+              <col style={{ width: '13%' }} /><col style={{ width: '26%' }} /><col style={{ width: '34%' }} /><col style={{ width: '9%' }} /><col style={{ width: '18%' }} />
+            </colgroup>
+            <thead><tr>
+              <Th>Concurrent</Th><Th>Modèle concurrent</Th><Th>Ton produit associé</Th><Th align="center">Score</Th><Th align="center">Action</Th>
+            </tr></thead>
+            <tbody>
+              {shown.map(s => <SuggestionRow key={s.id} token={token} sug={s} onDone={async () => { await load(); await onValidated(); }} />)}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {sugs.length === 0 && !discovering && (
+        <div style={{ marginTop: 14, color: C.greyT, fontSize: 13 }}>Aucune suggestion en attente. Lance une découverte ci-dessus.</div>
+      )}
     </div>
   );
 }

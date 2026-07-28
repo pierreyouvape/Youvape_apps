@@ -58,6 +58,41 @@ const competitorModel = {
     await pool.query('DELETE FROM competitor_products WHERE id = $1', [id]);
   },
 
+
+  // ─── Suggestions de matching (découverte) ───────────────────────
+  listSuggestions: async (status) => {
+    const where = status ? "WHERE status = $1" : "";
+    const params = status ? [status] : [];
+    const { rows } = await pool.query(
+      `SELECT * FROM competitor_match_suggestions ${where} ORDER BY competitor, match_score DESC NULLS LAST, model_label`,
+      params
+    );
+    return rows;
+  },
+
+  getSuggestion: async (id) => {
+    const { rows } = await pool.query("SELECT * FROM competitor_match_suggestions WHERE id = $1", [id]);
+    return rows[0] || null;
+  },
+
+  updateSuggestion: async (id, fields) => {
+    const allowed = ["matched_sku", "matched_title", "model_label", "representative_url", "status"];
+    const sets = [], vals = [];
+    let i = 1;
+    for (const k of allowed) if (fields[k] !== undefined) { sets.push(`${k} = $${i++}`); vals.push(fields[k]); }
+    if (!sets.length) return competitorModel.getSuggestion(id);
+    sets.push("updated_at = NOW()");
+    vals.push(id);
+    const { rows } = await pool.query(
+      `UPDATE competitor_match_suggestions SET ${sets.join(", ")} WHERE id = $${i} RETURNING *`, vals
+    );
+    return rows[0] || null;
+  },
+
+  deleteSuggestion: async (id) => {
+    await pool.query("DELETE FROM competitor_match_suggestions WHERE id = $1", [id]);
+  },
+
   // ─── Historique des prix ────────────────────────────────────────
   getLastOkPrice: async (competitorProductId) => {
     const { rows } = await pool.query(
