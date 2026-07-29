@@ -137,7 +137,7 @@ nouvel appel de lecture est authentifié sans effort. Les appels `fetch()`
 
 ## Bugs corrigés — historique
 
-### 2026-07-29 — Sécurité : exposition de données sans authentification (`commit à venir`)
+### 2026-07-29 — Sécurité : exposition de données sans authentification (`commit 1bbf603`)
 **Fichiers** : `server.js`, `permissionMiddleware.js`, `main.jsx`, `CustomerAutocomplete.jsx`
 
 - **Faille** : ~15 routeurs (dont `customers`, `orders`, `products`, `stats`…)
