@@ -674,7 +674,7 @@ class ProductModel {
     const query = `
       SELECT COALESCE(NULLIF(shipping_country, ''), billing_country) AS country, COUNT(*)::int AS orders
       FROM orders
-      WHERE post_status NOT IN ('wc-failed', 'wc-cancelled')
+      WHERE post_status IN ('wc-completed', 'wc-delivered', 'wc-processing', 'wc-awaiting-delivery', 'wc-shipped', 'wc-being-delivered')
         AND post_date >= CURRENT_DATE - 365
         AND COALESCE(NULLIF(shipping_country, ''), billing_country) IS NOT NULL
       GROUP BY 1

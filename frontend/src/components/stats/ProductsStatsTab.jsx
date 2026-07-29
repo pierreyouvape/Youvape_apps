@@ -256,8 +256,8 @@ const ProductsStatsTab = () => {
       const end = new Date();
       const start = new Date();
       start.setMonth(start.getMonth() - 1);
-      setCustomEnd(end.toISOString().split('T')[0]);
-      setCustomStart(start.toISOString().split('T')[0]);
+      setCustomEnd(localFmt(end));
+      setCustomStart(localFmt(start));
     }
   };
 

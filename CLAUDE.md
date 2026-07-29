@@ -112,6 +112,18 @@ Introspecter avec `\d+ nom_table` plutôt qu'inventer.
 
 ## Bugs corrigés — historique
 
+### 2026-07-29 — Stats : paniers abandonnés comptés comme ventes (`commits 9590b14, 5bd7a26`)
+**Fichiers** : `productModel.js`, `customerModel.js`, `categoriesController.js`, `ProductsStatsTab.jsx`
+
+- **Cause racine** : filtrage par statut incohérent dans toute l'app stats. Plusieurs requêtes utilisaient une **liste noire incomplète** `NOT IN ('wc-failed','wc-cancelled')`, laissant passer `wc-checkout-draft` (3 546 paniers abandonnés, dont 3 532 rattachés à de vrais clients ≈ 157 k€ fantômes), `wc-pending` et `wc-refunded`.
+- **Onglet Produits** (`productModel.getStatsList`, `item_base`) : `qty_sold`/CA/marge gonflés. Ex. Puff Falcon X 60 j = 213 → **148** (Metorik : 144). Corrigé aussi `getVariationsForStats` (détail par variation) et `getStatsCountries` (filtre pays).
+- **Onglet Clients** (`customerModel`) : `order_count`/`total_spent`/dates/coût/marge/commandes-par-mois incluaient les paniers abandonnés. Ex. client 20728 : 17 cmd / 619 € → **0 / 0** (toutes ses "commandes" étaient des drafts).
+- **Onglet Catégories** (`categoriesController.VALID_ORDER_STATUSES`) : contenait le statut **fantôme `wc-wms_cp_delivered`** et **oubliait `wc-shipped` + `wc-awaiting-delivery`** (sous-comptage).
+- **Correctif** : partout, liste blanche des 6 statuts payés (`wc-completed, wc-delivered, wc-processing, wc-awaiting-delivery, wc-shipped, wc-being-delivered`), cohérente avec Financier/Analyse.
+- **Règle** : pour toute stat de ventes/CA, **toujours filtrer en liste blanche des 6 statuts payés**, jamais en liste noire (le shop a des statuts custom + `wc-checkout-draft` très volumineux).
+- **Choix assumé** : la tab Produits reste sur `post_date` (pas `paid_date`) car elle est cross-checkée contre Metorik qui indexe sur la date de commande ; l'écart `paid_date`/`post_date` > 1 j ne concerne que ~0,4 % des commandes.
+- **Bonus** : `ProductsStatsTab` préremplissait les dates du sélecteur perso via `toISOString()` (UTC → veille en soirée), remplacé par `localFmt`.
+
 ### 2026-05-22 — Besoins achats : alignement ATUM (`commits b85d907 → fb35b10`)
 **Fichiers** : `NeedsTab.jsx`, `needsCalculationModel.js`
 
