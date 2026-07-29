@@ -98,7 +98,7 @@ const competitorController = {
   discover: async (req, res) => {
     try {
       const brand = (req.body?.brand || "JNR").trim();
-      const competitors = req.body?.competitors || ["levapoteur-discount", "cigaretteelec"];
+      const competitors = req.body?.competitors || ["levapoteur-discount", "cigaretteelec", "Le Petit Vapoteur"];
       const results = [];
       for (const comp of competitors) {
         try { results.push(await runDiscovery(comp, brand)); }
@@ -166,12 +166,14 @@ const competitorController = {
         `SELECT DISTINCT sku FROM competitor_products WHERE competitor ILIKE '%petit%'`
       );
       const has = new Set(existing.map((r) => r.sku));
+      const rejected = await competitorModel.getRejections();
 
       const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
       let added = 0, skipped = 0;
       const notFound = [];
       for (const p of products) {
         if (has.has(p.sku)) { skipped++; continue; }
+        if (rejected.has(`Le Petit Vapoteur||${String(p.sku).split('-')[0]}`)) { skipped++; continue; }
         const brandLc = (p.brand || '').toLowerCase();
         let hits = [];
         try { hits = await searchLpv(`${p.product_name} ${p.brand || ''}`); }

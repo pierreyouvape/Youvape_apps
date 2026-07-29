@@ -676,7 +676,7 @@ function DiscoveryPanel({ token, onValidated }) {
         <Btn variant="accent" onClick={discover} disabled={discovering}>{discovering ? 'Découverte en cours…' : `Découvrir les produits ${brand || ''}`}</Btn>
       </div>
       <p style={{ color: C.greyT, fontSize: 12.5, margin: '8px 0 0' }}>
-        Explore levapoteur-discount et cigaretteelec, dédoublonne par modèle (une entrée par modèle, pas par saveur) et propose un rapprochement avec tes produits. Rien n'est ajouté au suivi tant que tu n'as pas cliqué « Valider ».
+        Explore les 3 concurrents (levapoteur-discount, cigaretteelec et Le Petit Vapoteur), dédoublonne par modèle (une entrée par modèle, pas par saveur/couleur) et propose un rapprochement avec tes produits. Rien n'est ajouté au suivi tant que tu n'as pas cliqué « Valider ». Un produit que tu supprimes n'est plus re-proposé.
       </p>
       <div style={{ marginTop: 10, paddingTop: 10, borderTop: `1px dashed ${C.greyB}`, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
         <Btn variant="ghost" small onClick={backfillLpv} disabled={backfilling}>{backfilling ? 'Ajout en cours…' : '+ Ajouter Le Petit Vapoteur à tous les produits'}</Btn>

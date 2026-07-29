@@ -30,4 +30,17 @@ async function searchLpv(query, hitsPerPage = 5) {
   return res.data?.hits || [];
 }
 
-module.exports = { searchLpv };
+/**
+ * Recherche paginée par marque (pour la découverte).
+ * @returns {Promise<{hits:Array, nbPages:number}>}
+ */
+async function searchLpvAll(query, { hitsPerPage = 100, page = 0 } = {}) {
+  const res = await axios.post(
+    `https://${APP}-dsn.algolia.net/1/indexes/${INDEX}/query`,
+    { params: `query=${encodeURIComponent(query)}&hitsPerPage=${hitsPerPage}&page=${page}` },
+    { headers: { 'X-Algolia-Application-Id': APP, 'X-Algolia-API-Key': KEY, 'Content-Type': 'application/json' }, timeout: 20000 }
+  );
+  return { hits: res.data?.hits || [], nbPages: res.data?.nbPages || 1 };
+}
+
+module.exports = { searchLpv, searchLpvAll };

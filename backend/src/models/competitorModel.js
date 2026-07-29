@@ -45,6 +45,11 @@ const competitorModel = {
        RETURNING *`,
       [sku, product_name || null, competitor, url, active]
     );
+    // Ajout explicite : on lève un éventuel rejet mémorisé pour ce (concurrent, produit)
+    await pool.query(
+      `DELETE FROM competitor_rejections WHERE competitor = $1 AND parent_sku = split_part($2, '-', 1)`,
+      [competitor, sku]
+    );
     return rows[0];
   },
 
@@ -70,7 +75,23 @@ const competitorModel = {
   },
 
   deleteProduct: async (id) => {
+    const { rows } = await pool.query('SELECT competitor, sku FROM competitor_products WHERE id = $1', [id]);
+    if (rows[0]) {
+      // Mémorise le rejet : ne plus re-proposer/re-ajouter automatiquement ce (concurrent, produit)
+      await pool.query(
+        `INSERT INTO competitor_rejections (competitor, parent_sku)
+         VALUES ($1, split_part($2, '-', 1))
+         ON CONFLICT (competitor, parent_sku) DO NOTHING`,
+        [rows[0].competitor, rows[0].sku]
+      );
+    }
     await pool.query('DELETE FROM competitor_products WHERE id = $1', [id]);
+  },
+
+  // Ensemble des rejets mémorisés (Set de "concurrent||parent_sku")
+  getRejections: async () => {
+    const { rows } = await pool.query('SELECT competitor, parent_sku FROM competitor_rejections');
+    return new Set(rows.map((r) => `${r.competitor}||${r.parent_sku}`));
   },
 
 
@@ -105,6 +126,14 @@ const competitorModel = {
   },
 
   deleteSuggestion: async (id) => {
+    const { rows } = await pool.query("SELECT competitor, matched_sku FROM competitor_match_suggestions WHERE id = $1", [id]);
+    if (rows[0] && rows[0].matched_sku) {
+      await pool.query(
+        `INSERT INTO competitor_rejections (competitor, parent_sku)
+         VALUES ($1, split_part($2, '-', 1)) ON CONFLICT (competitor, parent_sku) DO NOTHING`,
+        [rows[0].competitor, rows[0].matched_sku]
+      );
+    }
     await pool.query("DELETE FROM competitor_match_suggestions WHERE id = $1", [id]);
   },
 

@@ -1,19 +1,23 @@
 /**
- * Découverte automatique des produits d'une marque chez un concurrent, puis
- * matching aux produits Youvape — au niveau MODÈLE (une entrée par modèle, pas
- * par couleur/saveur). Produit des suggestions à valider manuellement.
+ * Découverte automatique des produits d'une marque chez les concurrents, puis
+ * matching aux produits Youvape — au niveau MODÈLE (une entrée par modèle).
  *
- * Fonctionne pour deux familles de produits :
- *  - Puffs (JNR…) : le modèle se termine par une capacité (28k, 39k) et les
- *    saveurs suivent → modèle = tokens jusqu'à la capacité incluse.
- *  - Matériel (Aspire, Geekvape, Vaporesso…) : pas de capacité, couleur en
- *    variation → modèle = tous les tokens significatifs (marque/couleurs/dosages retirés).
+ * Sources :
+ *  - levapoteur-discount : page de recherche PrestaShop (fetch direct)
+ *  - cigaretteelec       : page marque PrestaShop (via ScraperAPI)
+ *  - Le Petit Vapoteur   : API Algolia publique (recherche par marque)
+ *
+ * Respecte les rejets : un (concurrent, produit) supprimé par l'utilisateur
+ * n'est plus proposé comme matché.
  */
 const pool = require('../config/database');
 const { fetchPage } = require('./competitorFetchService');
+const { searchLpvAll } = require('./lpvSearchService');
+const competitorModel = require('../models/competitorModel');
 
 const MAX_PAGES = 8;
-const MATCH_THRESHOLD = 0.70; // en dessous : proposé comme "non matché"
+const MATCH_THRESHOLD = 0.70;
+const LPV = 'Le Petit Vapoteur';
 
 const COMPETITORS = {
   'levapoteur-discount': {
@@ -28,14 +32,11 @@ const COMPETITORS = {
   },
 };
 
-// Mots parasites génériques (retirés du modèle)
 const STOP = new Set(['puff', 'jnr', 'pod', 'the', 'a', 'et', 'edition', 'special']);
 const FILLER = new Set(['pour', 'pas', 'cher', 'chers', 'chere', 'cheres', 'le', 'la', 'les', 'de', 'des', 'du', 'avec', 'lot', 'version', 'series']);
-// Couleurs (FR/EN) — retirées pour dédoublonner au niveau modèle
 const COLORS = new Set(['noir', 'black', 'blanc', 'white', 'rouge', 'red', 'bleu', 'blue', 'vert', 'green', 'jaune', 'yellow',
   'gris', 'grey', 'gray', 'gunmetal', 'argent', 'silver', 'gold', 'rose', 'pink', 'violet', 'purple', 'orange', 'marron',
   'brown', 'rainbow', 'turquoise', 'cyan', 'bronze', 'chrome', 'transparent', 'clear', 'camo', 'fuchsia', 'beige', 'khaki', 'kaki']);
-// Accessoires purs à exclure (on veut les appareils/consommables, pas la visserie)
 const NOISE = /(drip-tip|embout|filtre|papier|cable|resistance|batterie|chargeur|pyrex|-vide-|vides-|coil)/i;
 
 const isCapNorm = (t) => /^\d+k$/.test(t);
@@ -47,7 +48,6 @@ const normCap = (t) => {
 };
 const titleCase = (s) => s.replace(/\b\w/g, (c) => c.toUpperCase());
 
-// Tokenise en retirant dosages/volumes (20 mg, 6 ml) et unités
 function tokenize(str) {
   const raw = str.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
   const out = [];
@@ -59,24 +59,18 @@ function tokenize(str) {
   }
   return out;
 }
-
-// Tokens significatifs (marque, couleurs, filler retirés) + normalisation capacité
 function significantTokens(str, brandLc) {
   return tokenize(str)
     .filter((t) => t !== brandLc && !STOP.has(t) && !COLORS.has(t) && !FILLER.has(t))
     .map(normCap);
 }
-
-/** Modèle depuis un slug produit (double logique puff / matériel). */
 function modelFromSlug(slug, brandLc) {
   let toks = significantTokens(slug, brandLc);
   const capIdx = toks.findIndex(isCapNorm);
-  const model = capIdx >= 0 ? toks.slice(0, capIdx + 1) : toks; // puff → coupe à la capacité
+  const model = capIdx >= 0 ? toks.slice(0, capIdx + 1) : toks;
   const key = model.slice().sort().join('-');
   return { key, label: titleCase(model.join(' ')), tokens: model };
 }
-
-/** Modèle depuis un titre produit Youvape. */
 function modelFromTitle(title, brandLc) {
   const toks = significantTokens(title, brandLc);
   const capIdx = toks.findIndex(isCapNorm);
@@ -101,6 +95,55 @@ function dice(a, b) {
 }
 const sortedConcat = (tokens) => tokens.slice().sort().join('');
 const similarity = (a, b) => Math.max(jaccard(a, b), dice(sortedConcat(a), sortedConcat(b)));
+
+// ─── Collecte des modèles selon la source ────────────────────────
+async function collectFromListing(competitor, brand, brandLc) {
+  const cfg = COMPETITORS[competitor];
+  const models = new Map();
+  const seen = new Set();
+  for (let page = 1; page <= MAX_PAGES; page++) {
+    const res = await fetchPage(cfg.listing(brand, page));
+    if (res.blocked || !res.html) {
+      if (page === 1) throw new Error(res.error || `Listing inaccessible (HTTP ${res.status})`);
+      break;
+    }
+    let added = 0, m;
+    cfg.productRe.lastIndex = 0;
+    while ((m = cfg.productRe.exec(res.html)) !== null) {
+      const url = m[0], slug = m[2];
+      if (seen.has(url)) continue;
+      seen.add(url); added++;
+      if (NOISE.test(slug)) continue;
+      if (cfg.requireBrandInSlug && !slug.includes(brandLc)) continue;
+      const model = modelFromSlug(slug, brandLc);
+      if (!model.tokens.length) continue;
+      if (!models.has(model.key)) models.set(model.key, { ...model, url, name: slug.replace(/-/g, ' ') });
+    }
+    if (added === 0) break;
+  }
+  return models;
+}
+
+async function collectFromLpv(brand, brandLc) {
+  const models = new Map();
+  for (let page = 0; page < 6; page++) {
+    let hits = [], nbPages = 1;
+    try { ({ hits, nbPages } = await searchLpvAll(brand, { hitsPerPage: 100, page })); }
+    catch (e) { if (page === 0) throw new Error(`Algolia LPV: ${e.message}`); break; }
+    for (const h of hits) {
+      const url = h.current_product_link;
+      if (!url) continue;
+      const slug = (h.link_rewrite || (h.name || '').toLowerCase().replace(/[^a-z0-9]+/g, '-'));
+      if (NOISE.test(slug)) continue;
+      if (!slug.includes(brandLc)) continue; // on garde les produits de la marque
+      const model = modelFromSlug(slug, brandLc);
+      if (!model.tokens.length) continue;
+      if (!models.has(model.key)) models.set(model.key, { ...model, url, name: (h.name || slug.replace(/-/g, ' ')) });
+    }
+    if (page + 1 >= nbPages) break;
+  }
+  return models;
+}
 
 async function loadYouvapeModels(brand) {
   const brandLc = brand.toLowerCase();
@@ -129,43 +172,23 @@ function bestMatch(compTokens, youvapeModels) {
 }
 
 async function runDiscovery(competitor, brand = 'JNR') {
-  const cfg = COMPETITORS[competitor];
-  if (!cfg) throw new Error(`Découverte non supportée pour "${competitor}"`);
   const brandLc = brand.toLowerCase();
 
-  const models = new Map();
-  const seenUrls = new Set();
-  for (let page = 1; page <= MAX_PAGES; page++) {
-    const res = await fetchPage(cfg.listing(brand, page));
-    if (res.blocked || !res.html) {
-      if (page === 1) throw new Error(res.error || `Listing inaccessible (HTTP ${res.status})`);
-      break;
-    }
-    let added = 0, m;
-    cfg.productRe.lastIndex = 0;
-    while ((m = cfg.productRe.exec(res.html)) !== null) {
-      const url = m[0], slug = m[2];
-      if (seenUrls.has(url)) continue;
-      seenUrls.add(url);
-      added++;
-      if (NOISE.test(slug)) continue;
-      if (cfg.requireBrandInSlug && !slug.includes(brandLc)) continue;
-      const model = modelFromSlug(slug, brandLc);
-      if (model.tokens.length < 1) continue;
-      if (!models.has(model.key)) {
-        models.set(model.key, { key: model.key, label: model.label, url, name: slug.replace(/-/g, ' '), tokens: model.tokens });
-      }
-    }
-    if (added === 0) break;
-  }
+  let models;
+  if (competitor === LPV) models = await collectFromLpv(brand, brandLc);
+  else if (COMPETITORS[competitor]) models = await collectFromListing(competitor, brand, brandLc);
+  else throw new Error(`Découverte non supportée pour "${competitor}"`);
 
   const youvape = await loadYouvapeModels(brand);
+  const rejected = await competitorModel.getRejections();
 
   let inserted = 0;
   const out = [];
   for (const model of models.values()) {
     const match = bestMatch(model.tokens, youvape);
-    const matched = match.score >= MATCH_THRESHOLD;
+    const parent = match.repr_sku ? String(match.repr_sku).split('-')[0] : null;
+    const isRejected = parent && rejected.has(`${competitor}||${parent}`);
+    const matched = match.score >= MATCH_THRESHOLD && !isRejected;
     await pool.query(
       `INSERT INTO competitor_match_suggestions
          (competitor, brand, model_key, model_label, representative_url, representative_name,
