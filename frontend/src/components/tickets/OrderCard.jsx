@@ -123,6 +123,9 @@ export default function OrderCard({ order, highlighted, canAssign, onAssign, onU
   const orderStatus   = order.post_status || order.order_status;
   const trackingNum   = order.tracking_number;
   const shippingCarrier = order.shipping_carrier || order.order_carrier || '';
+  // Le carrier n'est renseigné qu'à l'expédition ; avant, on se rabat sur la
+  // méthode de livraison choisie au checkout (toujours présente).
+  const shippingMethod  = order.shipping_method || order.order_shipping_method || '';
   const items = order.items || [];
 
   const statusLabel = (s) => {
@@ -177,13 +180,16 @@ export default function OrderCard({ order, highlighted, canAssign, onAssign, onU
     if (s.includes('shop'))           return '2Shop';
     if (s.includes('chrono'))         return 'Chronopost';
     if (s.includes('mondial'))        return 'Mondial Relay';
+    if (s.includes('bpost'))          return 'Bpost';
     if (s.includes('colissimo'))      return 'Colissimo';
     if (s.includes('courrier suivi') || s.includes('lettre')) return 'Courrier suivi';
     if (s.includes('la poste'))       return 'La Poste';
-    if (s.includes('store pickup') || s.includes('pickup') || s.includes('entrepot') || s.includes('retrait')) return 'Retrait boutique';
+    if (s.includes('store pickup') || s.includes('pickup') || s.includes('entrepot') || s.includes('retrait') || s.includes('magasin')) return 'Retrait boutique';
     return raw;
   };
-  const carrierName = carrierLabel(shippingCarrier);
+  // Préférer le carrier réel (posé à l'expédition) ; sinon la méthode de livraison.
+  const carrierSource = shippingCarrier || shippingMethod;
+  const carrierName = carrierLabel(carrierSource);
 
   const orderUrl = `/orders/${orderNum}`;
 
@@ -229,7 +235,7 @@ export default function OrderCard({ order, highlighted, canAssign, onAssign, onU
                 display: 'inline-flex', alignItems: 'center', gap: 4,
                 background: C.grisTL, color: C.grisF,
                 padding: '3px 9px', borderRadius: 6, fontSize: 11.5, fontWeight: 700, whiteSpace: 'nowrap',
-              }} title={shippingCarrier}>
+              }} title={carrierSource}>
                 <IconTruck size={11} color={C.grisM} />{carrierName}
               </span>
             )}

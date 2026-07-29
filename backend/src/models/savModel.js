@@ -199,7 +199,7 @@ class SavModel {
 
       // Historique commandes (hors commande concernée) avec articles
       const histRes = await pool.query(
-        `SELECT wp_order_id, post_date, post_status, order_total, tracking_number, shipping_carrier
+        `SELECT wp_order_id, post_date, post_status, order_total, tracking_number, shipping_carrier, shipping_method
          FROM orders
          WHERE wp_customer_id = $1
            AND wp_order_id::text != $2

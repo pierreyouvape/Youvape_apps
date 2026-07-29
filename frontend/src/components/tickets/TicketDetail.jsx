@@ -2459,6 +2459,7 @@ function CustomerPanel({ ticket, onAssignOrder, onUnassignOrder, onMerge, mobile
     order_total: ticket.order_total,
     tracking_number: ticket.order_tracking,
     shipping_carrier: ticket.order_carrier,
+    shipping_method: ticket.order_shipping_method,
     items: ticket.order_items || [],
   } : null;
 
