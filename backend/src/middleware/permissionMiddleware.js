@@ -8,6 +8,11 @@ const userPermissionsModel = require('../models/userPermissionsModel');
 const checkPermission = (appName, permissionType) => {
   return async (req, res, next) => {
     try {
+      // Pas d'utilisateur authentifié (authMiddleware absent/échoué) → 401, pas 500
+      if (!req.user) {
+        return res.status(401).json({ error: 'Authentification requise' });
+      }
+
       const userId = req.user.id;
       const email = req.user.email;
 
@@ -43,6 +48,10 @@ const checkPermission = (appName, permissionType) => {
  */
 const checkAdmin = async (req, res, next) => {
   try {
+    if (!req.user) {
+      return res.status(401).json({ error: 'Authentification requise' });
+    }
+
     const email = req.user.email;
 
     // Vérifier si super admin
