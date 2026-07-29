@@ -62,7 +62,10 @@ function DrawerHeader({ title, onClose }) {
 // Détecte une mention de pièce jointe dans le texte d'un message (façon Gmail :
 // "oubli de pièce jointe"). On retire le HTML, on normalise les accents/casse,
 // et on cherche les variantes courantes (pièce jointe, ci-joint, joint…).
-const ATTACHMENT_HINT_RE = /\b(pieces?\s*jointes?|ci[-\s]?joint(?:e|s|es)?|ci[-\s]?annex|en\s+piece\s*jointe|en\s+annexe|veuillez\s+trouver|vous\s+trouverez|je\s+(?:vous\s+)?joins?|joint(?:e|s|es)?\s+(?:a\s+|au\s+|dans\s+|ce\s+))/i;
+// « vous trouverez / veuillez trouver » seuls sont trop larges (« vous trouverez
+// ici », « ci-dessous »…) : les vrais cas sont déjà couverts par ci-joint / en
+// pièce jointe / en annexe.
+const ATTACHMENT_HINT_RE = /\b(pieces?\s*jointes?|ci[-\s]?joint(?:e|s|es)?|ci[-\s]?annex|en\s+piece\s*jointe|en\s+annexe|je\s+(?:vous\s+)?joins?|joint(?:e|s|es)?\s+(?:a\s+|au\s+|dans\s+|ce\s+))/i;
 
 function mentionsAttachment(html) {
   if (!html) return false;
