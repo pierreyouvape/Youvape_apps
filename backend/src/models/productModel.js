@@ -598,7 +598,7 @@ class ProductModel {
                (oi.id IN (SELECT order_item_id FROM bundle_sub_items)) AS is_bundle_sub
         FROM order_items oi
         JOIN prod_parent pp ON pp.pid = COALESCE(NULLIF(oi.variation_id, 0), oi.product_id)
-        JOIN orders o ON o.wp_order_id = oi.wp_order_id AND o.post_status NOT IN ('wc-failed', 'wc-cancelled')
+        JOIN orders o ON o.wp_order_id = oi.wp_order_id AND o.post_status IN ('wc-completed', 'wc-delivered', 'wc-processing', 'wc-awaiting-delivery', 'wc-shipped', 'wc-being-delivered')
         LEFT JOIN products pcost ON pcost.wp_product_id = oi.product_id
       ),
       period_stats AS (
