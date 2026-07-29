@@ -316,13 +316,13 @@ class CustomerModel {
           SELECT COUNT(*)
           FROM orders
           WHERE wp_customer_id = c.wp_user_id
-          AND post_status NOT IN ('wc-failed', 'wc-cancelled', 'wc-refunded')
+          AND post_status IN ('wc-completed', 'wc-delivered', 'wc-processing', 'wc-awaiting-delivery', 'wc-shipped', 'wc-being-delivered')
         ) as order_count,
         (
           SELECT COALESCE(SUM(order_total), 0)
           FROM orders
           WHERE wp_customer_id = c.wp_user_id
-          AND post_status NOT IN ('wc-failed', 'wc-cancelled', 'wc-refunded')
+          AND post_status IN ('wc-completed', 'wc-delivered', 'wc-processing', 'wc-awaiting-delivery', 'wc-shipped', 'wc-being-delivered')
         ) as total_spent,
         (
           SELECT billing_country
@@ -335,13 +335,13 @@ class CustomerModel {
           SELECT MIN(post_date)
           FROM orders
           WHERE wp_customer_id = c.wp_user_id
-          AND post_status NOT IN ('wc-failed', 'wc-cancelled', 'wc-refunded')
+          AND post_status IN ('wc-completed', 'wc-delivered', 'wc-processing', 'wc-awaiting-delivery', 'wc-shipped', 'wc-being-delivered')
         ) as first_order_date,
         (
           SELECT MAX(post_date)
           FROM orders
           WHERE wp_customer_id = c.wp_user_id
-          AND post_status NOT IN ('wc-failed', 'wc-cancelled', 'wc-refunded')
+          AND post_status IN ('wc-completed', 'wc-delivered', 'wc-processing', 'wc-awaiting-delivery', 'wc-shipped', 'wc-being-delivered')
         ) as last_order_date
       FROM customers c
       ${whereClause}
@@ -465,7 +465,7 @@ class CustomerModel {
       SELECT COUNT(*)::int as order_count
       FROM orders
       WHERE wp_customer_id = $1
-      AND post_status NOT IN ('wc-failed', 'wc-cancelled')
+      AND post_status IN ('wc-completed', 'wc-delivered', 'wc-processing', 'wc-awaiting-delivery', 'wc-shipped', 'wc-being-delivered')
     `;
     const orderCountResult = await pool.query(orderCountQuery, [wpUserId]);
     const orderCount = parseInt(orderCountResult.rows[0]?.order_count || 0);
@@ -477,7 +477,7 @@ class CustomerModel {
         COALESCE(AVG(order_total), 0) as avg_order
       FROM orders
       WHERE wp_customer_id = $1
-      AND post_status NOT IN ('wc-failed', 'wc-cancelled', 'wc-refunded')
+      AND post_status IN ('wc-completed', 'wc-delivered', 'wc-processing', 'wc-awaiting-delivery', 'wc-shipped', 'wc-being-delivered')
     `;
     const spentResult = await pool.query(spentQuery, [wpUserId]);
     const totalSpent = parseFloat(spentResult.rows[0]?.total_spent || 0);
@@ -489,7 +489,7 @@ class CustomerModel {
       FROM order_items oi
       INNER JOIN orders o ON o.wp_order_id = oi.wp_order_id
       WHERE o.wp_customer_id = $1
-      AND o.post_status NOT IN ('wc-failed', 'wc-cancelled')
+      AND o.post_status IN ('wc-completed', 'wc-delivered', 'wc-processing', 'wc-awaiting-delivery', 'wc-shipped', 'wc-being-delivered')
     `;
     const uniqueProductsResult = await pool.query(uniqueProductsQuery, [wpUserId]);
     const uniqueProducts = parseInt(uniqueProductsResult.rows[0]?.unique_products || 0);
@@ -501,7 +501,7 @@ class CustomerModel {
       INNER JOIN orders o ON o.wp_order_id = oi.wp_order_id
       LEFT JOIN products p_cost ON p_cost.wp_product_id = COALESCE(NULLIF(oi.variation_id, 0), oi.product_id)
       WHERE o.wp_customer_id = $1
-      AND o.post_status NOT IN ('wc-failed', 'wc-cancelled', 'wc-refunded')
+      AND o.post_status IN ('wc-completed', 'wc-delivered', 'wc-processing', 'wc-awaiting-delivery', 'wc-shipped', 'wc-being-delivered')
     `;
     const costResult = await pool.query(costQuery, [wpUserId]);
     const totalCost = parseFloat(costResult.rows[0]?.total_cost || 0);
@@ -524,7 +524,7 @@ class CustomerModel {
       SELECT MIN(post_date) as first_order_date
       FROM orders
       WHERE wp_customer_id = $1
-      AND post_status NOT IN ('wc-failed', 'wc-cancelled')
+      AND post_status IN ('wc-completed', 'wc-delivered', 'wc-processing', 'wc-awaiting-delivery', 'wc-shipped', 'wc-being-delivered')
     `;
     const firstOrderResult = await pool.query(firstOrderQuery, [wpUserId]);
     const firstOrderDate = firstOrderResult.rows[0]?.first_order_date || null;
@@ -625,7 +625,7 @@ class CustomerModel {
         COUNT(*)::int as order_count
       FROM orders
       WHERE wp_customer_id = $1
-      AND post_status NOT IN ('wc-failed', 'wc-cancelled')
+      AND post_status IN ('wc-completed', 'wc-delivered', 'wc-processing', 'wc-awaiting-delivery', 'wc-shipped', 'wc-being-delivered')
       GROUP BY TO_CHAR(post_date, 'YYYY-MM')
       ORDER BY month ASC
     `;

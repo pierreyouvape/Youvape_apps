@@ -861,7 +861,7 @@ class ProductModel {
         INNER JOIN orders o ON o.wp_order_id = oi.wp_order_id
         LEFT JOIN products p_cost2 ON p_cost2.wp_product_id = oi.product_id
         WHERE (oi.product_id = p.wp_product_id OR oi.variation_id = p.wp_product_id)
-        AND o.post_status NOT IN ('wc-failed', 'wc-cancelled')
+        AND o.post_status IN ('wc-completed', 'wc-delivered', 'wc-processing', 'wc-awaiting-delivery', 'wc-shipped', 'wc-being-delivered')
         ${dateFilter}${countryFilter}
       ) stats ON true
       LEFT JOIN LATERAL (
@@ -870,7 +870,7 @@ class ProductModel {
         FROM order_items oi
         INNER JOIN orders o ON o.wp_order_id = oi.wp_order_id
         WHERE (oi.product_id = p.wp_product_id OR oi.variation_id = p.wp_product_id)
-        AND o.post_status NOT IN ('wc-failed', 'wc-cancelled')
+        AND o.post_status IN ('wc-completed', 'wc-delivered', 'wc-processing', 'wc-awaiting-delivery', 'wc-shipped', 'wc-being-delivered')
         ${countryFilter}
       ) life ON true
       WHERE p.wp_parent_id = $1 AND p.product_type = 'variation'
