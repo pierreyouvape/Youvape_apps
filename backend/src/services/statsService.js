@@ -386,7 +386,7 @@ class StatsService {
       params.push(filters.status);
       paramIndex++;
     } else {
-      conditions.push(`o.post_status IN ('wc-completed', 'wc-processing', 'wc-delivered', 'wc-awaiting-delivery')`);
+      conditions.push(`o.post_status IN ('wc-completed', 'wc-processing', 'wc-delivered', 'wc-awaiting-delivery', 'wc-shipped', 'wc-being-delivered')`);
     }
 
     // Filtre par pays

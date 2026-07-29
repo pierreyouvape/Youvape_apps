@@ -124,6 +124,12 @@ Introspecter avec `\d+ nom_table` plutôt qu'inventer.
 - **Choix assumé** : la tab Produits reste sur `post_date` (pas `paid_date`) car elle est cross-checkée contre Metorik qui indexe sur la date de commande ; l'écart `paid_date`/`post_date` > 1 j ne concerne que ~0,4 % des commandes.
 - **Bonus** : `ProductsStatsTab` préremplissait les dates du sélecteur perso via `toISOString()` (UTC → veille en soirée), remplacé par `localFmt`.
 
+**Audit VPS complémentaire (même jour)** — 3 autres foyers du même bug trouvés et corrigés :
+- **Onglet Marques** (`brandsController.VALID_ORDER_STATUSES`, 7 requêtes) : identique à Catégories (statut fantôme `wc-wms_cp_delivered` + oubli `wc-shipped`/`wc-awaiting-delivery`). → 6 statuts payés.
+- **Dashboard `statsService`** (KPIs, top produits/clients, CA par pays/catégorie via `statsRoutes`) : liste blanche à 4 statuts, oubliait `wc-shipped` + `wc-being-delivered` (137 cmd / 6 k€ latents). → 6 statuts.
+- **Coût PMP FIFO** (`computedCostModel.recalculateAll`) : le "total vendu" consommant les lots FIFO utilisait `NOT IN (cancelled,refunded,failed,on-hold,pending)` sans exclure `wc-checkout-draft` → **2 267 produits/3 631 (62 %)** avaient un total vendu gonflé (25 262 unités fantômes, pire cas +6 437), décalant le pointeur FIFO et faussant `computed_cost` (donc toutes les marges). → 6 statuts payés. Recalcul auto via cron (`5,35 9-19 * * 1-5`).
+- **Vérifiés OK** : `stockValuationModel` (exclut bien checkout-draft), `financierController`, `ordersController`/`reportsController` (liste noire complète), `customerResolver` + `reimportIncompleteOrders` (maintenance/identité, sans impact chiffres).
+
 ### 2026-05-22 — Besoins achats : alignement ATUM (`commits b85d907 → fb35b10`)
 **Fichiers** : `NeedsTab.jsx`, `needsCalculationModel.js`
 

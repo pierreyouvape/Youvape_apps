@@ -23,12 +23,15 @@ const computedCostModel = {
     `);
 
     // 2. Total vendu par produit (commandes validées uniquement)
+    // Liste blanche des 6 statuts payés : exclut notamment wc-checkout-draft
+    // (paniers abandonnés) qui ne décrémentent jamais le stock et faussaient le
+    // pointeur FIFO. Cohérent avec stockValuationModel / le reste de l'app.
     const salesResult = await pool.query(`
       SELECT p.id as product_id, COALESCE(SUM(oi.qty), 0)::int as total_sold
       FROM products p
       JOIN order_items oi ON (oi.product_id = p.wp_product_id OR oi.variation_id = p.wp_product_id)
       JOIN orders o ON o.wp_order_id = oi.wp_order_id
-      WHERE o.post_status NOT IN ('wc-cancelled','wc-refunded','wc-failed','wc-on-hold','wc-pending')
+      WHERE o.post_status IN ('wc-completed','wc-delivered','wc-processing','wc-awaiting-delivery','wc-shipped','wc-being-delivered')
         AND p.id IN (SELECT DISTINCT product_id FROM purchase_order_items WHERE qty_received > 0)
       GROUP BY p.id
     `);
