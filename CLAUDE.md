@@ -110,7 +110,48 @@ Introspecter avec `\d+ nom_table` plutôt qu'inventer.
 
 ---
 
+## Sécurité
+
+### Authentification des routes API
+La plupart des routeurs de données (`stats, customers, products, orders, brands,
+categories, analysis, reports, shipping, payment, tariffs, transporteurs,
+competitors, chronopost, colissimo, lettre-suivie, mondial-relay`) sont protégés
+par `authMiddleware` (JWT) **au point de montage dans `server.js`**
+(`app.use('/api/x', authMiddleware, xRoutes)`). Le front attache le token à
+**chaque** requête via un intercepteur axios global (`main.jsx`) — donc tout
+nouvel appel de lecture est authentifié sans effort. Les appels `fetch()`
+(hors axios) doivent poser le header à la main.
+
+**Routeurs volontairement NON couverts par le JWT utilisateur** (ne pas casser) :
+- `/api/auth` (login public)
+- `/api/sync` + `/api/woo-sync` (ingestion YouSync depuis WordPress — **pas d'auth
+  aujourd'hui, à sécuriser via un secret partagé, pas un JWT utilisateur**)
+- `/api/webhook` (a son propre `verifyToken`)
+- `/api/client-sav` (a son propre middleware `CLIENT_SAV_SECRET`)
+- routeurs déjà auto-authentifiés (`reviews, rewards, emails, users, settings,
+  purchases, packing, laposte, preferences, financier, sav`)
+
+**Règle** : tout nouveau routeur exposant des données doit être monté avec
+`authMiddleware` dans `server.js`, sauf s'il est appelé par un système externe
+(alors : secret dédié).
+
 ## Bugs corrigés — historique
+
+### 2026-07-29 — Sécurité : exposition de données sans authentification (`commit à venir`)
+**Fichiers** : `server.js`, `permissionMiddleware.js`, `main.jsx`, `CustomerAutocomplete.jsx`
+
+- **Faille** : ~15 routeurs (dont `customers`, `orders`, `products`, `stats`…)
+  n'appliquaient aucun `authMiddleware` → `GET /api/customers/stats-list` renvoyait
+  emails clients + historique d'achat **sans token**, en clair sur l'IP publique.
+- **Correctif backend** : `authMiddleware` ajouté au montage dans `server.js` (voir
+  section Sécurité pour la liste + exclusions).
+- **Correctif frontend** : intercepteur axios global (`main.jsx`) attachant le token
+  à toutes les requêtes (beaucoup d'appels de lecture ne le posaient pas) ; fix du
+  `fetch()` de `CustomerAutocomplete` (SAV) qui ne l'envoyait pas.
+- **`permissionMiddleware`** : renvoyait 500 au lieu de 401 quand `req.user` absent.
+- **Reste à faire** : sécuriser `/api/sync` + `/api/woo-sync` (ingestion WordPress)
+  via un secret partagé — actuellement sans auth.
+
 
 ### 2026-07-29 — Stats : paniers abandonnés comptés comme ventes (`commits 9590b14, 5bd7a26`)
 **Fichiers** : `productModel.js`, `customerModel.js`, `categoriesController.js`, `ProductsStatsTab.jsx`

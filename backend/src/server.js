@@ -34,6 +34,7 @@ const lettreSuivieRoutes = require('./routes/lettreSuivieRoutes');
 const mondialRelayRoutes = require('./routes/mondialRelayRoutes');
 const transporteursRoutes = require('./routes/transporteursRoutes');
 const competitorRoutes = require('./routes/competitorRoutes');
+const authMiddleware = require('./middleware/authMiddleware');
 const { setupCron, setupBmsCron, setupComputedCostCron, setupBmsBarcodeCron, setupStockResyncCron, setupSavAutomationsCron, setupProductDbSyncCron, setupBmsTagRetryCron, setupReportEmailCron, setupStockValuationSnapshotCron, setupDraftStockReportCron, setupCompetitorMonitorCron } = require('./services/cronService');
 const rewardService = require('./services/rewardService');
 const emailService = require('./services/emailService');
@@ -59,19 +60,19 @@ app.use('/api/emails', emailRoutes);
 app.use('/api/users', usersRoutes);
 app.use('/api/sync', syncRoutes); // Frontend stats app
 app.use('/api/woo-sync', syncRoutes); // WooCommerce module
-app.use('/api/stats', statsRoutes); // Stats & KPIs
-app.use('/api/customers', customersRoutes); // Customers
-app.use('/api/products', productsRoutes); // Products
-app.use('/api/orders', ordersRoutes); // Orders
-app.use('/api/brands', brandsRoutes); // Brands & Sub-brands
-app.use('/api/categories', categoriesRoutes); // Categories & Sub-categories
-app.use('/api/analysis', analysisRoutes); // Analysis & Segmentation
-app.use('/api/reports', reportsRoutes); // Reports
-app.use('/api/webhook', webhookRoutes); // YouSync real-time webhooks
+app.use('/api/stats', authMiddleware, statsRoutes); // Stats & KPIs
+app.use('/api/customers', authMiddleware, customersRoutes); // Customers
+app.use('/api/products', authMiddleware, productsRoutes); // Products
+app.use('/api/orders', authMiddleware, ordersRoutes); // Orders
+app.use('/api/brands', authMiddleware, brandsRoutes); // Brands & Sub-brands
+app.use('/api/categories', authMiddleware, categoriesRoutes); // Categories & Sub-categories
+app.use('/api/analysis', authMiddleware, analysisRoutes); // Analysis & Segmentation
+app.use('/api/reports', authMiddleware, reportsRoutes); // Reports
+app.use('/api/webhook', webhookRoutes); // YouSync real-time webhooks (auth propre : verifyToken)
 app.use('/api/settings', settingsRoutes); // App settings
-app.use('/api/shipping', shippingRoutes); // Shipping costs management
-app.use('/api/payment', paymentRoutes); // Payment methods configuration
-app.use('/api/tariffs', tariffRoutes); // Tariff zones and rates
+app.use('/api/shipping', authMiddleware, shippingRoutes); // Shipping costs management
+app.use('/api/payment', authMiddleware, paymentRoutes); // Payment methods configuration
+app.use('/api/tariffs', authMiddleware, tariffRoutes); // Tariff zones and rates
 app.use('/api/purchases', purchasesRoutes); // Purchase management
 app.use('/api/packing', packingRoutes); // Packing / preparation colis
 app.use('/api/laposte', laposteRoutes); // La Poste - étiquettes Lettre Suivie
@@ -79,12 +80,12 @@ app.use('/api/preferences', preferencesRoutes); // User column preferences
 app.use('/api/financier', financierRoutes);    // Dashboard financier
 app.use('/api/sav', savRoutes);               // Module SAV Zendesk
 app.use('/api/client-sav', clientSavRoutes);  // Espace client SAV (plugin WP youvape-sav-client)
-app.use('/api/chronopost', chronopostRoutes); // Chronopost invoice analysis
-app.use('/api/colissimo',  colissimoRoutes);  // Colissimo invoice analysis
-app.use('/api/lettre-suivie', lettreSuivieRoutes); // La Poste Lettre Suivie invoice analysis
-app.use('/api/mondial-relay', mondialRelayRoutes); // Mondial Relay invoice analysis
-app.use('/api/transporteurs', transporteursRoutes); // Vue consolidée des 4 transporteurs
-app.use('/api/competitors', competitorRoutes); // Veille concurrentielle
+app.use('/api/chronopost', authMiddleware, chronopostRoutes); // Chronopost invoice analysis
+app.use('/api/colissimo',  authMiddleware, colissimoRoutes);  // Colissimo invoice analysis
+app.use('/api/lettre-suivie', authMiddleware, lettreSuivieRoutes); // La Poste Lettre Suivie invoice analysis
+app.use('/api/mondial-relay', authMiddleware, mondialRelayRoutes); // Mondial Relay invoice analysis
+app.use('/api/transporteurs', authMiddleware, transporteursRoutes); // Vue consolidée des 4 transporteurs
+app.use('/api/competitors', authMiddleware, competitorRoutes); // Veille concurrentielle
 
 // Start server
 app.listen(PORT, async () => {

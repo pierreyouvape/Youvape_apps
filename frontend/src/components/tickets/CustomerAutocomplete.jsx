@@ -29,7 +29,9 @@ export default function CustomerAutocomplete({ value, onChange, onSelect, placeh
   const fetchResults = useCallback((q) => {
     if (!q || q.trim().length < 2) { setResults([]); setOpen(false); return; }
     setLoading(true);
-    fetch(`/api/customers/search?q=${encodeURIComponent(q.trim())}&limit=8`)
+    fetch(`/api/customers/search?q=${encodeURIComponent(q.trim())}&limit=8`, {
+      headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
+    })
       .then(r => r.json())
       .then(d => {
         const items = d.success ? (d.data || []) : [];
