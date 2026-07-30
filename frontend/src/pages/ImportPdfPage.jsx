@@ -136,6 +136,10 @@ const ImportPdfPage = () => {
   const [items, setItems] = useState([]);
   const [newSupplierSkus, setNewSupplierSkus] = useState([]);
 
+  // Etape 2 : Dernier tarif validé (commande BMS vérifiée) par wp_product_id
+  const [lastVerified, setLastVerified] = useState({});
+  const fetchedVerifiedRef = useRef(new Set());
+
   // Etape 2 : Recherche pour lignes non matchées
   const [searchingIdx, setSearchingIdx] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
@@ -157,6 +161,32 @@ const ImportPdfPage = () => {
       setAvailableParsers(parsRes.data.data || []);
     }).catch(err => console.error('Erreur chargement:', err));
   }, [token]);
+
+  // Réinitialiser le cache « dernier tarif validé » si le fournisseur change
+  useEffect(() => {
+    fetchedVerifiedRef.current = new Set();
+    setLastVerified({});
+  }, [supplierId]);
+
+  // Charger le dernier tarif validé pour chaque produit matché (une fois par produit)
+  useEffect(() => {
+    if (!supplierId) return;
+    const ids = [...new Set(
+      items
+        .filter(i => i.matched && i.product_id)
+        .map(i => i.product_id)
+        .filter(id => !fetchedVerifiedRef.current.has(id))
+    )];
+    if (ids.length === 0) return;
+    ids.forEach(id => fetchedVerifiedRef.current.add(id));
+    axios.post(
+      `${API_URL}/purchases/last-verified-prices`,
+      { supplier_id: parseInt(supplierId), product_ids: ids },
+      { headers: { Authorization: `Bearer ${token}` } }
+    ).then(res => {
+      setLastVerified(prev => ({ ...prev, ...(res.data.data || {}) }));
+    }).catch(err => console.error('Erreur dernier tarif validé:', err));
+  }, [items, supplierId, token]);
 
   const selectedSupplier = suppliers.find(s => s.id === parseInt(supplierId));
   const hasParser = selectedSupplier ? availableParsers.includes(selectedSupplier.code) : false;
@@ -268,6 +298,28 @@ const ImportPdfPage = () => {
     setItems(prev => prev.map((item, i) => i === idx ? { ...item, discount: d } : item));
   };
 
+  // Appliquer le dernier tarif validé (commande vérifiée) à une ligne.
+  // Le prix validé est net → on le pose comme prix et on remet la remise à 0.
+  // verifiedApplied = true fait que effectivePrice l'utilise tel quel (sans le
+  // plafonner au prix BDD, justement peu fiable ici).
+  const applyVerifiedPrice = (idx) => {
+    setItems(prev => prev.map((item, i) => {
+      if (i !== idx) return item;
+      const v = lastVerified[item.product_id];
+      if (!v) return item;
+      return { ...item, unit_price: v.unit_price, discount: 0, verifiedApplied: true };
+    }));
+  };
+
+  const applyAllVerifiedPrices = () => {
+    setItems(prev => prev.map(item => {
+      if (item.item_type === 'discount' || !item.matched) return item;
+      const v = lastVerified[item.product_id];
+      if (!v) return item;
+      return { ...item, unit_price: v.unit_price, discount: 0, verifiedApplied: true };
+    }));
+  };
+
   const handleRemoveItem = (idx) => {
     setItems(prev => prev.filter((_, i) => i !== idx));
   };
@@ -283,6 +335,8 @@ const ImportPdfPage = () => {
 
   const effectivePrice = (item) => {
     if (item.item_type === 'discount') return item.unit_price;
+    // Tarif validé explicitement appliqué : utilisé tel quel (pas de plafond BDD)
+    if (item.verifiedApplied && item.unit_price) return item.unit_price * (1 - (item.discount || 0) / 100);
     if (!item.unit_price) return item.supplier_price ?? null;
     const pdfNet = item.unit_price * (1 - (item.discount || 0) / 100);
     if (item.supplier_price != null && item.supplier_price < pdfNet) return item.supplier_price;
@@ -621,6 +675,30 @@ const ImportPdfPage = () => {
                   </div>
                 </Card>
 
+                {/* Barre : appliquer tous les derniers tarifs validés */}
+                {(() => {
+                  const nb = matchedItems.filter(i => lastVerified[i.product_id]).length;
+                  if (nb === 0) return null;
+                  return (
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 12, marginBottom: 12 }}>
+                      <span style={{ fontSize: 12.5, color: C.grisF }}>
+                        {nb} produit{nb > 1 ? 's' : ''} avec un dernier tarif validé disponible
+                      </span>
+                      <button
+                        onClick={applyAllVerifiedPrices}
+                        style={{
+                          display: 'inline-flex', alignItems: 'center', gap: 7,
+                          background: '#FFF7E8', color: C.orangeDark, border: '1px solid #F3D9A6',
+                          borderRadius: 8, padding: '8px 14px', fontSize: 13, fontWeight: 700,
+                          cursor: 'pointer', fontFamily: 'inherit',
+                        }}
+                      >
+                        Appliquer tous les derniers tarifs validés
+                      </button>
+                    </div>
+                  );
+                })()}
+
                 {/* Table des lignes */}
                 <div style={{
                   background: C.blanc, borderRadius: 12,
@@ -643,6 +721,7 @@ const ImportPdfPage = () => {
                           <Th label="Qte finale" align="center" width={90} />
                           <Th label="Prix PDF" align="right" width={110} />
                           <Th label="Prix BDD" align="right" width={95} />
+                          <Th label="Dernier tarif validé" align="right" width={130} />
                           <Th label="Remise %" align="center" width={90} />
                           <Th label="Total HT" align="right" width={105} />
                           <Th label="" width={40} />
@@ -660,7 +739,7 @@ const ImportPdfPage = () => {
                                 </td>
                                 <td style={{ ...cell, textAlign: 'center' }} />
                                 <td colSpan={2} style={{ ...cell, color: C.grisM, fontStyle: 'italic' }}>—</td>
-                                <td colSpan={7} style={{ ...cell, fontStyle: 'italic', color: C.grisTF }}>{item.product_name}</td>
+                                <td colSpan={8} style={{ ...cell, fontStyle: 'italic', color: C.grisTF }}>{item.product_name}</td>
                                 <td style={{ ...cell, textAlign: 'right', fontWeight: 600, color: C.rouge }}>
                                   {item.unit_price != null ? item.unit_price.toFixed(2) + ' €' : '—'}
                                 </td>
@@ -755,6 +834,31 @@ const ImportPdfPage = () => {
                               {/* Prix BDD */}
                               <td style={{ ...cell, textAlign: 'right', color: C.grisF, fontVariantNumeric: 'tabular-nums' }}>
                                 {item.supplier_price != null ? item.supplier_price.toFixed(2) + ' €' : '—'}
+                              </td>
+                              {/* Dernier tarif validé */}
+                              <td style={{ ...cell, textAlign: 'right' }}>
+                                {(() => {
+                                  const v = item.matched ? lastVerified[item.product_id] : null;
+                                  if (!v) return <span style={{ color: C.grisM }}>—</span>;
+                                  const applied = item.verifiedApplied && Math.abs((item.unit_price || 0) - v.unit_price) < 0.0001;
+                                  const tip = `Commande ${v.bms_reference || ''}${v.order_date ? ' du ' + new Date(v.order_date).toLocaleDateString('fr-FR') : ''}`;
+                                  return (
+                                    <button
+                                      onClick={() => applyVerifiedPrice(idx)}
+                                      title={`Appliquer ce tarif — ${tip}`}
+                                      style={{
+                                        background: applied ? '#E7F5EC' : '#FFF7E8',
+                                        color: applied ? '#2A8049' : C.orangeDark,
+                                        border: `1px solid ${applied ? '#B5E0C3' : '#F3D9A6'}`,
+                                        borderRadius: 6, padding: '4px 8px', cursor: 'pointer',
+                                        fontSize: 12.5, fontWeight: 700, fontFamily: 'inherit',
+                                        fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap',
+                                      }}
+                                    >
+                                      {applied ? '✓ ' : ''}{v.unit_price.toFixed(2)} €
+                                    </button>
+                                  );
+                                })()}
                               </td>
                               {/* Remise % */}
                               <td style={{ ...cell, textAlign: 'center' }}>

@@ -844,9 +844,9 @@ const purchaseOrderModel = {
             bms_po_id, bms_reference,
             order_date, expected_date, received_date,
             total_items, total_qty, total_amount,
-            notes
+            notes, verified
           )
-          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
           ON CONFLICT (bms_po_id) DO UPDATE SET
             status = EXCLUDED.status,
             bms_reference = EXCLUDED.bms_reference,
@@ -855,6 +855,7 @@ const purchaseOrderModel = {
             total_items = EXCLUDED.total_items,
             total_qty = EXCLUDED.total_qty,
             total_amount = EXCLUDED.total_amount,
+            verified = EXCLUDED.verified,
             updated_at = CURRENT_TIMESTAMP
           RETURNING id, (xmax = 0) AS inserted
         `;
@@ -876,7 +877,9 @@ const purchaseOrderModel = {
           items.length,                     // total_items
           totalQty,                         // total_qty
           totalAmount,                      // total_amount
-          bmsOrder.private_comments || null // notes
+          bmsOrder.private_comments || null,// notes
+          // BMS renvoie verified = 1/0 (number) au niveau commande ; null si absent
+          bmsOrder.verified == null ? null : !!Number(bmsOrder.verified) // verified
         ]);
 
         const { id: poId, inserted } = orderResult.rows[0];
@@ -1164,6 +1167,54 @@ const purchaseOrderModel = {
     `;
     const result = await pool.query(query, [productId, supplierId]);
     return result.rows;
+  },
+
+  /**
+   * Dernier tarif VALIDÉ (commande vérifiée) par produit, pour un fournisseur.
+   * Utilisé à l'import pour proposer le dernier prix réellement validé plutôt
+   * que computed_cost/wc_cog_cost (souvent obsolète).
+   *
+   * productIds = liste de wp_product_id (cf. /products/search qui renvoie le
+   * wp_product_id en `id`, et la page d'import qui l'utilise partout). On résout
+   * wp_product_id → products.id avant de joindre les lignes de commande. On ne
+   * retient que les commandes verified = true et les prix > 0. Retourne, par
+   * wp_product_id fourni, la ligne la plus récente.
+   *
+   * @returns {Object} map { [wpProductId]: { unit_price, order_date, bms_reference } }
+   */
+  getLastVerifiedPrices: async (supplierId, productIds) => {
+    if (!Array.isArray(productIds) || productIds.length === 0) return {};
+
+    const query = `
+      SELECT DISTINCT ON (p.wp_product_id)
+        p.wp_product_id AS input_id,
+        poi.unit_price,
+        po.order_date,
+        po.bms_reference
+      FROM products p
+      JOIN purchase_order_items poi ON poi.product_id = p.id
+      JOIN purchase_orders po ON po.id = poi.purchase_order_id
+      WHERE p.wp_product_id = ANY($2::bigint[])
+        AND po.supplier_id = $1
+        AND po.verified = true
+        AND poi.unit_price IS NOT NULL
+        AND poi.unit_price > 0
+      ORDER BY p.wp_product_id, po.order_date DESC NULLS LAST, po.id DESC
+    `;
+
+    const ids = productIds.map(id => parseInt(id)).filter(Number.isFinite);
+    if (ids.length === 0) return {};
+
+    const result = await pool.query(query, [supplierId, ids]);
+    const map = {};
+    for (const row of result.rows) {
+      map[row.input_id] = {
+        unit_price: parseFloat(row.unit_price),
+        order_date: row.order_date,
+        bms_reference: row.bms_reference,
+      };
+    }
+    return map;
   }
 };
 

@@ -69,6 +69,9 @@ router.put('/suppliers/:supplierId/products/:productId', checkPurchasesWrite, pu
 // Historique commandes d'un produit chez un fournisseur
 router.get('/products/:productId/suppliers/:supplierId/history', checkPurchasesRead, purchasesController.getProductSupplierHistory);
 
+// Dernier tarif validé (commande vérifiée) pour un lot de produits d'un fournisseur (import)
+router.post('/last-verified-prices', checkPurchasesRead, purchasesController.getLastVerifiedPrices);
+
 // ==================== BESOINS ====================
 
 // Toutes les données brutes en bulk (pour calcul frontend)

@@ -412,6 +412,24 @@ const purchasesController = {
     }
   },
 
+  // POST /api/purchases/last-verified-prices
+  // Body: { supplier_id, product_ids: [wp_product_id, ...] }
+  // Retourne le dernier tarif validé (commande BMS vérifiée) par produit.
+  getLastVerifiedPrices: async (req, res) => {
+    try {
+      const supplierId = parseInt(req.body.supplier_id);
+      const productIds = req.body.product_ids;
+      if (!supplierId || !Array.isArray(productIds)) {
+        return res.status(400).json({ success: false, error: 'supplier_id et product_ids requis' });
+      }
+      const prices = await purchaseOrderModel.getLastVerifiedPrices(supplierId, productIds);
+      res.json({ success: true, data: prices });
+    } catch (error) {
+      console.error('Erreur getLastVerifiedPrices:', error);
+      res.status(500).json({ success: false, error: error.message || 'Erreur serveur' });
+    }
+  },
+
   // ==================== EXPORT CSV ====================
 
   // GET /api/purchases/orders/:id/export
