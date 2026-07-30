@@ -294,6 +294,8 @@ const ImportPdfPage = () => {
   const productItems = items.filter(i => i.item_type !== 'discount');
   const discountItems = items.filter(i => i.item_type === 'discount');
   const matchedItems = productItems.filter(i => i.matched && i.product_id);
+  // Produits déjà associés à une ligne : on les masque des suggestions de recherche
+  const usedProductIds = new Set(matchedItems.map(i => i.product_id));
 
   const handleCreateOrder = async (sendToBms = false) => {
     if (matchedItems.length === 0) { alert('Aucune ligne matchée à créer'); return; }
@@ -711,9 +713,11 @@ const ImportPdfPage = () => {
                                       onChange={e => handleSearchProduct(e.target.value, idx)}
                                       style={{ width: '100%', padding: '6px 8px', borderRadius: 6, border: `1px solid ${C.orange}`, fontSize: 13, background: '#FFFBEB', fontFamily: 'inherit', outline: 'none' }}
                                     />
-                                    {searchingIdx === idx && searchResults.length > 0 && (
+                                    {(() => {
+                                      const availableResults = searchResults.filter(p => !usedProductIds.has(p.id));
+                                      return searchingIdx === idx && availableResults.length > 0 && (
                                       <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 1000, background: C.blanc, border: `1px solid ${C.grisCL}`, borderRadius: '0 0 8px 8px', maxHeight: 240, overflowY: 'auto', boxShadow: '0 4px 12px rgba(0,0,0,0.12)' }}>
-                                        {searchResults.map(product => (
+                                        {availableResults.map(product => (
                                           <div key={product.id} onClick={() => handleMatchProduct(idx, product)} style={{ padding: '8px 12px', cursor: 'pointer', borderBottom: `1px solid ${C.grisTL}`, fontSize: 13 }}
                                             onMouseEnter={e => e.currentTarget.style.background = C.grisTL}
                                             onMouseLeave={e => e.currentTarget.style.background = C.blanc}
@@ -723,7 +727,8 @@ const ImportPdfPage = () => {
                                           </div>
                                         ))}
                                       </div>
-                                    )}
+                                      );
+                                    })()}
                                     {searchingIdx === idx && searchLoading && (
                                       <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, background: C.blanc, padding: '8px 12px', fontSize: 13, color: C.grisM, border: `1px solid ${C.grisCL}` }}>Recherche…</div>
                                     )}
