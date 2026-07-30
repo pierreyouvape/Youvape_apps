@@ -168,7 +168,9 @@ const ImportPdfPage = () => {
     setLastVerified({});
   }, [supplierId]);
 
-  // Charger le dernier tarif validé pour chaque produit matché (une fois par produit)
+  // Charger le dernier tarif validé pour chaque produit matché (une fois par produit),
+  // puis l'appliquer AUTOMATIQUEMENT : le tarif validé est prioritaire sur le prix du
+  // document (PDF/CSV) et sur le prix BDD. On ne touche pas une ligne éditée à la main.
   useEffect(() => {
     if (!supplierId) return;
     const ids = [...new Set(
@@ -184,7 +186,15 @@ const ImportPdfPage = () => {
       { supplier_id: parseInt(supplierId), product_ids: ids },
       { headers: { Authorization: `Bearer ${token}` } }
     ).then(res => {
-      setLastVerified(prev => ({ ...prev, ...(res.data.data || {}) }));
+      const data = res.data.data || {};
+      setLastVerified(prev => ({ ...prev, ...data }));
+      setItems(prev => prev.map(item => {
+        if (item.item_type === 'discount' || !item.matched || item.priceEdited) return item;
+        const v = data[item.product_id];
+        if (!v) return item;
+        // Tarif validé net → on le pose comme prix et on annule la remise
+        return { ...item, unit_price: v.unit_price, discount: 0, verifiedApplied: true };
+      }));
     }).catch(err => console.error('Erreur dernier tarif validé:', err));
   }, [items, supplierId, token]);
 
@@ -288,8 +298,10 @@ const ImportPdfPage = () => {
   };
 
   const handleUpdatePrice = (idx, value) => {
+    // priceEdited : saisie manuelle → l'auto-application du tarif validé ne la réécrit pas.
+    // verifiedApplied conservé pour que le prix saisi parte tel quel dans BMS (sans plafond BDD).
     setItems(prev => prev.map((item, i) =>
-      i === idx ? { ...item, unit_price: value === '' ? null : parseFloat(value) || null } : item
+      i === idx ? { ...item, unit_price: value === '' ? null : parseFloat(value) || null, priceEdited: true } : item
     ));
   };
 
@@ -682,7 +694,7 @@ const ImportPdfPage = () => {
                   return (
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 12, marginBottom: 12 }}>
                       <span style={{ fontSize: 12.5, color: C.grisF }}>
-                        {nb} produit{nb > 1 ? 's' : ''} avec un dernier tarif validé disponible
+                        {nb} produit{nb > 1 ? 's' : ''} pré-rempli{nb > 1 ? 's' : ''} avec leur dernier tarif validé (prioritaire sur le prix du document)
                       </span>
                       <button
                         onClick={applyAllVerifiedPrices}
@@ -693,7 +705,7 @@ const ImportPdfPage = () => {
                           cursor: 'pointer', fontFamily: 'inherit',
                         }}
                       >
-                        Appliquer tous les derniers tarifs validés
+                        Réappliquer tous les tarifs validés
                       </button>
                     </div>
                   );
