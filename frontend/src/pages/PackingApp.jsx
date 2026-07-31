@@ -48,6 +48,11 @@ const playSound = (type) => {
   }
 };
 
+const EMPTY_MANUAL_FORM = {
+  orderNumber: '', first_name: '', last_name: '', company: '',
+  address: '', address_2: '', postcode: '', city: '', phone: '', email: ''
+};
+
 const PackingApp = () => {
   const { token, user, logout } = useContext(AuthContext);
   const navigate = useNavigate();
@@ -75,6 +80,13 @@ const PackingApp = () => {
   const [addressForm, setAddressForm] = useState(null); // copie éditable de order.shipping
   const [addressSaving, setAddressSaving] = useState(false);
   const [addressError, setAddressError] = useState(null);
+  const [showManual, setShowManual] = useState(false); // pop-up expédition manuelle
+  const [manualForm, setManualForm] = useState(null); // champs destinataire saisis à la main
+  const [manualLookupLoading, setManualLookupLoading] = useState(false);
+  const [manualSaving, setManualSaving] = useState(false);
+  const [manualError, setManualError] = useState(null);
+  const [manualInfo, setManualInfo] = useState(null);
+  const [manualResult, setManualResult] = useState(null); // { trackingId, orderNumber, pdfBase64 }
 
   // Refs pour accéder aux valeurs courantes dans le listener clavier
   const orderRef = useRef(null);
@@ -83,6 +95,7 @@ const PackingApp = () => {
   const scanBufferRef = useRef('');
   const isCompleteRef = useRef(false);
   const labelLoadingRef = useRef(false);
+  const showManualRef = useRef(false);
 
   useEffect(() => { orderRef.current = order; }, [order]);
   useEffect(() => { itemsRef.current = items; }, [items]);
@@ -90,6 +103,7 @@ const PackingApp = () => {
   useEffect(() => { scanBufferRef.current = scanBuffer; }, [scanBuffer]);
   useEffect(() => { isCompleteRef.current = isComplete; }, [isComplete]);
   useEffect(() => { labelLoadingRef.current = labelLoading; }, [labelLoading]);
+  useEffect(() => { showManualRef.current = showManual; }, [showManual]);
 
   // Télécharger le PDF depuis base64
   const downloadPdf = useCallback((base64, orderNumber) => {
@@ -352,6 +366,106 @@ const PackingApp = () => {
     }
   }, [token, downloadPdf]);
 
+  // --- Expédition manuelle (regénération d'étiquette / envoi hors commande) ---
+
+  const openManualShipment = useCallback(() => {
+    setManualForm({ ...EMPTY_MANUAL_FORM });
+    setManualError(null);
+    setManualInfo(null);
+    setManualResult(null);
+    setShowManual(true);
+  }, []);
+
+  const closeManualShipment = useCallback(() => {
+    setShowManual(false);
+    setManualForm(null);
+    setManualError(null);
+    setManualInfo(null);
+    setManualResult(null);
+  }, []);
+
+  // Préremplir l'adresse depuis une commande existante (facultatif : on peut tout saisir)
+  const lookupManualOrder = useCallback(async () => {
+    const number = (manualForm?.orderNumber || '').trim();
+    if (!number) {
+      setManualError('Saisissez d\'abord un numéro de commande');
+      return;
+    }
+    setManualLookupLoading(true);
+    setManualError(null);
+    setManualInfo(null);
+    try {
+      const res = await axios.get(`${API_URL}/packing/orders/${number}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const loaded = res.data.order;
+      const s = loaded.shipping || {};
+      setManualForm(f => ({
+        ...f,
+        orderNumber: String(loaded.wp_order_id),
+        first_name: s.first_name || '',
+        last_name: s.last_name || '',
+        company: s.company || '',
+        address: s.address || '',
+        address_2: s.address_2 || '',
+        postcode: s.postcode || '',
+        city: s.city || '',
+        phone: s.phone || '',
+        email: loaded.email || ''
+      }));
+      setManualInfo(
+        `Adresse chargée depuis la commande #${loaded.wp_order_id}`
+        + (loaded.shipping_method && loaded.shipping_method !== 'Lettre Suivie'
+          ? ` — attention, méthode d'expédition : ${loaded.shipping_method}`
+          : '')
+      );
+      playSound('ok');
+    } catch (err) {
+      if (err.response?.status === 404) {
+        setManualInfo(`Commande #${number} introuvable — saisissez l'adresse à la main`);
+      } else {
+        setManualError('Erreur lors du chargement de la commande');
+      }
+      playSound('error');
+    } finally {
+      setManualLookupLoading(false);
+    }
+  }, [manualForm, token]);
+
+  const submitManualLabel = useCallback(async () => {
+    if (!manualForm) return;
+    if (!manualForm.orderNumber.trim()) {
+      setManualError('Numéro de commande obligatoire');
+      return;
+    }
+    if (!manualForm.address.trim() || !manualForm.postcode.trim() || !manualForm.city.trim()) {
+      setManualError('Adresse, code postal et ville sont obligatoires');
+      return;
+    }
+    if (!manualForm.first_name.trim() && !manualForm.last_name.trim() && !manualForm.company.trim()) {
+      setManualError('Nom ou société du destinataire obligatoire');
+      return;
+    }
+    setManualSaving(true);
+    setManualError(null);
+    try {
+      const res = await axios.post(`${API_URL}/laposte/label-manual`, manualForm, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const data = res.data;
+      setManualResult({ trackingId: data.trackingId, orderNumber: data.orderNumber, pdfBase64: data.pdfBase64 });
+      downloadPdf(data.pdfBase64, data.orderNumber);
+      playSound('complete');
+    } catch (err) {
+      const data = err.response?.data || {};
+      const detail = data.details || data.error || 'Erreur génération étiquette';
+      setManualError(data.userMessage || (typeof detail === 'string' ? detail : JSON.stringify(detail)));
+      playSound('error');
+    } finally {
+      setManualSaving(false);
+    }
+  }, [manualForm, token, downloadPdf]);
+
   // Réinitialiser
   const handleReset = useCallback(() => {
     setOrder(null);
@@ -374,6 +488,8 @@ const PackingApp = () => {
     const handleKeyDown = (e) => {
       // Ignorer si on est dans un input (boutons manuels etc.)
       if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+      // Pop-up expédition manuelle ouverte : ne pas charger de commande en arrière-plan
+      if (showManualRef.current) return;
 
       if (e.key === 'Enter') {
         e.preventDefault();
@@ -543,6 +659,20 @@ const PackingApp = () => {
             }}
           >
             Etiquettes
+          </button>
+          <button
+            onClick={openManualShipment}
+            style={{
+              background: 'rgba(255,255,255,0.2)',
+              border: 'none',
+              color: 'white',
+              padding: '8px 16px',
+              borderRadius: '6px',
+              cursor: 'pointer',
+              fontSize: '14px'
+            }}
+          >
+            Expedition manuelle
           </button>
         </div>
         <span style={{
@@ -1273,6 +1403,240 @@ const PackingApp = () => {
         </>
         )}
       </div>
+
+      {/* Pop-up expédition manuelle */}
+      {showManual && manualForm && (
+        <div style={{
+          position: 'fixed',
+          top: 0, left: 0, right: 0, bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.5)',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          zIndex: 1000,
+          padding: '20px'
+        }}>
+          <div style={{
+            backgroundColor: 'white',
+            borderRadius: '12px',
+            padding: '25px 30px',
+            maxWidth: '620px',
+            width: '100%',
+            maxHeight: '90vh',
+            overflowY: 'auto',
+            boxShadow: '0 4px 20px rgba(0,0,0,0.3)'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '5px' }}>
+              <h2 style={{ margin: 0, color: '#333', fontSize: '20px' }}>Expedition manuelle</h2>
+              <button
+                onClick={closeManualShipment}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  fontSize: '22px',
+                  color: '#999',
+                  cursor: 'pointer',
+                  lineHeight: 1
+                }}
+              >
+                ×
+              </button>
+            </div>
+            <p style={{ margin: '0 0 18px', color: '#666', fontSize: '13px' }}>
+              Genere une etiquette Lettre Suivie sans scan. L'expedition n'est <strong>pas</strong> confirmee
+              dans BMS — a faire manuellement si necessaire.
+            </p>
+
+            {manualResult ? (
+              <div style={{
+                backgroundColor: '#d4edda',
+                borderRadius: '10px',
+                padding: '25px',
+                textAlign: 'center'
+              }}>
+                <h3 style={{ margin: '0 0 10px', color: '#155724' }}>
+                  Etiquette generee pour #{manualResult.orderNumber}
+                </h3>
+                <p style={{ color: '#155724', margin: '0 0 18px', fontSize: '15px' }}>
+                  N° suivi : <strong>{manualResult.trackingId}</strong>
+                </p>
+                <div style={{ display: 'flex', gap: '10px', justifyContent: 'center', flexWrap: 'wrap' }}>
+                  <button
+                    onClick={() => downloadPdf(manualResult.pdfBase64, manualResult.orderNumber)}
+                    style={{
+                      padding: '10px 24px',
+                      backgroundColor: '#28a745',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '8px',
+                      fontSize: '14px',
+                      fontWeight: '600',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    Re-telecharger l'etiquette
+                  </button>
+                  <button
+                    onClick={openManualShipment}
+                    style={{
+                      padding: '10px 24px',
+                      backgroundColor: 'white',
+                      color: '#6366f1',
+                      border: '1px solid #6366f1',
+                      borderRadius: '8px',
+                      fontSize: '14px',
+                      fontWeight: '600',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    Nouvelle expedition
+                  </button>
+                  <button
+                    onClick={closeManualShipment}
+                    style={{
+                      padding: '10px 24px',
+                      backgroundColor: '#6366f1',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '8px',
+                      fontSize: '14px',
+                      fontWeight: '600',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    Fermer
+                  </button>
+                </div>
+              </div>
+            ) : (
+              (() => {
+                const inputStyle = {
+                  width: '100%',
+                  padding: '9px 12px',
+                  fontSize: '15px',
+                  border: '2px solid #ddd',
+                  borderRadius: '8px',
+                  outline: 'none',
+                  boxSizing: 'border-box'
+                };
+                const set = (field) => (e) => setManualForm(f => ({ ...f, [field]: e.target.value }));
+                return (
+                  <form
+                    onSubmit={(e) => { e.preventDefault(); submitManualLabel(); }}
+                    style={{ display: 'grid', gap: '10px' }}
+                  >
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '10px' }}>
+                      <input
+                        style={inputStyle}
+                        placeholder="N° de commande"
+                        value={manualForm.orderNumber}
+                        onChange={set('orderNumber')}
+                        maxLength={20}
+                        autoFocus
+                      />
+                      <button
+                        type="button"
+                        onClick={lookupManualOrder}
+                        disabled={manualLookupLoading}
+                        style={{
+                          padding: '9px 18px',
+                          backgroundColor: 'white',
+                          color: '#6366f1',
+                          border: '1px solid #6366f1',
+                          borderRadius: '8px',
+                          fontSize: '14px',
+                          fontWeight: '600',
+                          whiteSpace: 'nowrap',
+                          cursor: manualLookupLoading ? 'default' : 'pointer'
+                        }}
+                      >
+                        {manualLookupLoading ? 'Chargement…' : 'Charger l\'adresse'}
+                      </button>
+                    </div>
+
+                    {manualInfo && (
+                      <div style={{
+                        backgroundColor: '#d1ecf1',
+                        color: '#0c5460',
+                        padding: '9px 12px',
+                        borderRadius: '8px',
+                        fontSize: '13px'
+                      }}>
+                        {manualInfo}
+                      </div>
+                    )}
+
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                      <input style={inputStyle} placeholder="Prénom" value={manualForm.first_name} onChange={set('first_name')} />
+                      <input style={inputStyle} placeholder="Nom" value={manualForm.last_name} onChange={set('last_name')} />
+                    </div>
+                    <input style={inputStyle} placeholder="Société (optionnel)" value={manualForm.company} onChange={set('company')} />
+                    <input style={inputStyle} placeholder="Adresse" value={manualForm.address} onChange={set('address')} />
+                    <input style={inputStyle} placeholder="Complément d'adresse (optionnel)" value={manualForm.address_2} onChange={set('address_2')} />
+                    <div style={{ display: 'grid', gridTemplateColumns: '160px 1fr', gap: '10px' }}>
+                      <input style={inputStyle} placeholder="Code postal" value={manualForm.postcode} onChange={set('postcode')} />
+                      <input style={inputStyle} placeholder="Ville" value={manualForm.city} onChange={set('city')} />
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                      <input style={inputStyle} placeholder="Téléphone (optionnel)" value={manualForm.phone} onChange={set('phone')} />
+                      <input style={inputStyle} placeholder="Email (optionnel)" value={manualForm.email} onChange={set('email')} />
+                    </div>
+
+                    {manualError && (
+                      <div style={{
+                        backgroundColor: '#f8d7da',
+                        color: '#721c24',
+                        padding: '9px 12px',
+                        borderRadius: '8px',
+                        fontSize: '13px',
+                        wordBreak: 'break-word'
+                      }}>
+                        {manualError}
+                      </div>
+                    )}
+
+                    <div style={{ display: 'flex', gap: '10px', marginTop: '5px' }}>
+                      <button
+                        type="submit"
+                        disabled={manualSaving}
+                        style={{
+                          padding: '11px 24px',
+                          backgroundColor: manualSaving ? '#9ca3af' : '#16a34a',
+                          color: 'white',
+                          border: 'none',
+                          borderRadius: '8px',
+                          fontSize: '15px',
+                          fontWeight: '600',
+                          cursor: manualSaving ? 'default' : 'pointer'
+                        }}
+                      >
+                        {manualSaving ? 'Generation…' : 'Generer l\'etiquette'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={closeManualShipment}
+                        disabled={manualSaving}
+                        style={{
+                          padding: '11px 24px',
+                          backgroundColor: 'white',
+                          color: '#666',
+                          border: '1px solid #ddd',
+                          borderRadius: '8px',
+                          fontSize: '15px',
+                          fontWeight: '600',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        Annuler
+                      </button>
+                    </div>
+                  </form>
+                );
+              })()
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Pop-up mauvaise méthode d'expédition */}
       {wrongShippingOrder && (
