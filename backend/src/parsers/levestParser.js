@@ -49,6 +49,14 @@ module.exports = {
       });
     }
 
-    return { orderNumber, orderDate, items, hasPrice: true, invertPackQty: true };
+    // Import « tout à l'unité » : la facture Levest est toujours au niveau unité
+    // (prix unitaire + quantité en unités). On importe chaque ligne telle quelle
+    // (pack_qty = 1, qty = unités, prix = prix unitaire du PDF) au lieu de reconvertir
+    // en packs via product_suppliers.pack_qty. Ce pack_qty est synchronisé depuis BMS
+    // et varie légitimement (le fabricant propose tantôt en pack de 10, tantôt à l'unité)
+    // → s'en servir provoquait des mélanges pack/unité (cf. FAC 1737 / PO 118192).
+    // skipPackQty : force pack_qty = 1 (aucune conversion ÷/× pack_qty).
+    // trustPdfPrice : conserve le prix unitaire réellement facturé (source de vérité).
+    return { orderNumber, orderDate, items, hasPrice: true, skipPackQty: true, trustPdfPrice: true };
   }
 };
