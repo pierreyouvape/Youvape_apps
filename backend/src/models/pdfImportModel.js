@@ -261,8 +261,68 @@ const pdfImportModel = {
         // Pack
         pack_qty: packQty,
         qty_ordered: qtyOrdered,
+        // Valeurs brutes conservées pour le garde-fou pack/unité (cf. 6b)
+        _pdfUnit: rawPdfGross,   // prix unitaire réel du PDF (avant × pack_qty)
+        _rawDbPrice: rawDbPrice, // prix pack tel qu'enregistré en BDD
       };
     });
+
+    // 6b. Garde-fou pack/unité (fournisseurs invertPackQty).
+    // Le mode invertPackQty convertit unités→packs en s'appuyant à 100 % sur
+    // product_suppliers.pack_qty (synchronisé depuis BMS). Un pack_qty erroné fait
+    // qu'une ligne reste « à l'unité » pendant que ses sœurs deviennent des « packs »
+    // → le mélange corrigé à la main sur la FAC Levest 1737. On détecte ces cas avant
+    // import pour que l'utilisateur les vérifie plutôt que de les découvrir après.
+    if (parsed.invertPackQty) {
+      // Regrouper les lignes matchées par prix unitaire PDF : une même « famille »
+      // (même prix unitaire) doit avoir un conditionnement homogène.
+      const byUnitPrice = new Map();
+      for (const it of enrichedItems) {
+        if (!it.matched || it._pdfUnit == null) continue;
+        const key = it._pdfUnit.toFixed(2);
+        if (!byUnitPrice.has(key)) byUnitPrice.set(key, []);
+        byUnitPrice.get(key).push(it);
+      }
+
+      for (const it of enrichedItems) {
+        if (!it.matched) continue;
+        const warns = [];
+        const pdfUnit = it._pdfUnit;
+        const dbPrice = it._rawDbPrice; // prix pack en BDD
+        const pack = it.pack_qty;
+        const units = it.qty_from_pdf;  // quantité en unités (PDF)
+
+        // A) Quantité non multiple du conditionnement → l'arrondi corrompt qté + total
+        if (pack > 1 && units % pack !== 0) {
+          warns.push(`Quantité ${units} non multiple du conditionnement ×${pack} (arrondi à ${it.qty_ordered} pack(s))`);
+        }
+
+        // B) Désync prix/pack : le tarif BDD implique un autre conditionnement
+        if (dbPrice != null && pdfUnit != null && pdfUnit > 0) {
+          const impliedPack = Math.round(dbPrice / pdfUnit);
+          if (impliedPack >= 1 && impliedPack !== pack && Math.abs(dbPrice - pdfUnit * impliedPack) < 0.02 * dbPrice) {
+            warns.push(`Tarif BDD ${dbPrice.toFixed(2)} € = prix unitaire ${pdfUnit.toFixed(2)} € × ${impliedPack}, mais conditionnement enregistré ×${pack}`);
+          }
+        }
+
+        // C) Dérive de famille : d'autres lignes au même prix unitaire sont en pack > 1
+        if (pack === 1 && pdfUnit != null) {
+          const siblings = (byUnitPrice.get(pdfUnit.toFixed(2)) || []).filter(s => s !== it && s.pack_qty > 1);
+          if (siblings.length > 0) {
+            // conditionnement le plus fréquent parmi les sœurs
+            const counts = {};
+            for (const s of siblings) counts[s.pack_qty] = (counts[s.pack_qty] || 0) + 1;
+            const majority = Object.keys(counts).sort((a, b) => counts[b] - counts[a])[0];
+            warns.push(`Conditionnement ×1 alors que d'autres articles au même prix unitaire (${pdfUnit.toFixed(2)} €) sont en pack de ${majority} → pack_qty probablement incorrect`);
+          }
+        }
+
+        if (warns.length) it.pack_warning = warns.join(' · ');
+      }
+    }
+
+    // Nettoyage des champs internes (non exposés au front)
+    for (const it of enrichedItems) { delete it._pdfUnit; delete it._rawDbPrice; }
 
     // 7. Verifier si le order_number existe deja
     let duplicateWarning = null;
@@ -304,6 +364,9 @@ const pdfImportModel = {
       total_items: enrichedItems.length,
       matched_count: enrichedItems.filter(i => i.matched).length,
       unmatched_count: enrichedItems.filter(i => !i.matched).length,
+      pack_warnings: enrichedItems
+        .filter(i => i.pack_warning)
+        .map(i => ({ supplier_sku: i.supplier_sku, product_name: i.product_name, message: i.pack_warning })),
     };
   }
 };

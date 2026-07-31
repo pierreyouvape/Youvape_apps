@@ -675,6 +675,24 @@ const ImportPdfPage = () => {
                     </div>
                   )}
 
+                  {parsedData.pack_warnings?.length > 0 && (
+                    <div style={{ marginTop: 14, padding: '10px 14px', background: '#FDECEC', borderRadius: 8, border: '1px solid #F3B4B4', fontSize: 13, color: '#8A1C1C' }}>
+                      <div style={{ fontWeight: 700, marginBottom: 6 }}>
+                        ⚠️ Conditionnement (pack) à vérifier sur {parsedData.pack_warnings.length} ligne{parsedData.pack_warnings.length > 1 ? 's' : ''}
+                      </div>
+                      <div style={{ fontSize: 12, marginBottom: 6, color: '#a04040' }}>
+                        Risque de mélange pack / unité. Vérifie la colonne « Pack » (et corrige le pack_qty dans BMS) avant de créer la commande.
+                      </div>
+                      <ul style={{ margin: 0, paddingLeft: 18 }}>
+                        {parsedData.pack_warnings.map((w, i) => (
+                          <li key={i} style={{ marginBottom: 2 }}>
+                            <strong>{w.supplier_sku}</strong> {w.product_name ? `— ${w.product_name}` : ''} : {w.message}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
                   {!parsedData.has_price && (
                     <div style={{ marginTop: 14, padding: '10px 14px', background: '#EAF3FB', borderRadius: 8, border: '1px solid #BFDCEF', fontSize: 13, color: '#1B4F78', display: 'flex', alignItems: 'center', gap: 10 }}>
                       <InfoIcon />
@@ -834,7 +852,9 @@ const ImportPdfPage = () => {
                               {/* Qte PDF */}
                               <td style={{ ...cell, textAlign: 'center', color: C.grisF }}>{item.qty_from_pdf}</td>
                               {/* Pack */}
-                              <td style={{ ...cell, textAlign: 'center', color: C.grisM }}>{item.pack_qty > 1 ? `×${item.pack_qty}` : '—'}</td>
+                              <td style={{ ...cell, textAlign: 'center', color: item.pack_warning ? '#8A1C1C' : C.grisM, background: item.pack_warning ? '#FDECEC' : undefined, fontWeight: item.pack_warning ? 700 : undefined }} title={item.pack_warning || undefined}>
+                                {item.pack_qty > 1 ? `×${item.pack_qty}` : '—'}{item.pack_warning ? ' ⚠️' : ''}
+                              </td>
                               {/* Qte finale */}
                               <td style={{ ...cell, textAlign: 'center' }}>
                                 <NumInput value={item.qty_ordered} onChange={v => handleUpdateQty(idx, v)} width={60} />
