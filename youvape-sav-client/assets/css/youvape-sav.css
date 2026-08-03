@@ -1,5 +1,46 @@
 /* Youvape — Espace client SAV : styles de l'onglet "Mes demandes". */
 
+/* ── Isolation typographique ────────────────────────────────────────────────
+   Le module peut être rendu n'importe où : onglet Mon Compte, accordéon, bloc
+   de constructeur de page. Si un ancêtre impose une chasse fixe (<pre>, <code>,
+   bloc "HTML") ou `white-space: pre`, tout le formulaire en hérite : police
+   monospace et texte qui déborde au lieu de revenir à la ligne.
+   On repose donc explicitement les bases plutôt que d'hériter.
+   Le graphiste n'a qu'à surcharger `.youvape-sav` pour imposer la charte. */
+
+.youvape-sav {
+    font-family: 'Lato', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    font-size: 15px;
+    line-height: 1.5;
+    white-space: normal;
+    max-width: 100%;
+    box-sizing: border-box;
+}
+
+.youvape-sav *,
+.youvape-sav *::before,
+.youvape-sav *::after {
+    box-sizing: inherit;
+}
+
+/* Les contrôles de formulaire n'héritent pas de la police par défaut. */
+.youvape-sav input,
+.youvape-sav select,
+.youvape-sav textarea,
+.youvape-sav button {
+    font-family: inherit;
+    font-size: inherit;
+}
+
+/* Aucun texte ne doit pousser la page en largeur. */
+.youvape-sav p,
+.youvape-sav span,
+.youvape-sav label,
+.youvape-sav li {
+    white-space: normal;
+    overflow-wrap: break-word;
+}
+
 .youvape-sav__empty {
     margin: 1em 0;
     color: #626E85;
@@ -155,10 +196,77 @@
     font-weight: 600;
 }
 
+/* Champs : style autonome, pour ne pas dépendre de ce que le thème applique
+   (ou n'applique pas) aux widgets natifs du navigateur. */
 .youvape-sav__form input[type="text"],
+.youvape-sav__form input[type="email"],
 .youvape-sav__form select,
 .youvape-sav__form textarea {
     width: 100%;
+    padding: 10px 12px;
+    border: 1px solid #D5DBE0;
+    border-radius: 8px;
+    background: #fff;
+    color: #2A2E38;
+    outline: none;
+    transition: border-color .12s, box-shadow .12s;
+}
+
+.youvape-sav__form textarea {
+    min-height: 140px;
+    resize: vertical;
+}
+
+.youvape-sav__form input[type="text"]:focus,
+.youvape-sav__form input[type="email"]:focus,
+.youvape-sav__form select:focus,
+.youvape-sav__form textarea:focus {
+    border-color: #0891B2;
+    box-shadow: 0 0 0 3px rgba(8, 145, 178, .14);
+}
+
+/* Le <select> natif reste gris et plat sur la plupart des thèmes : on pose la
+   flèche nous-mêmes pour un rendu cohérent avec les autres champs. */
+.youvape-sav__form select {
+    appearance: none;
+    -webkit-appearance: none;
+    padding-right: 38px;
+    background-image: url("data:image/svg+xml;charset=utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23626E85' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 12px center;
+    cursor: pointer;
+}
+
+.youvape-sav__form input[type="file"] {
+    display: block;
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px dashed #C6CFD6;
+    border-radius: 8px;
+    background: #FAFBFC;
+    cursor: pointer;
+}
+
+/* Bouton d'envoi : le thème ne reprend pas toujours la classe `button`. */
+.youvape-sav__form button[type="submit"],
+.youvape-sav a.youvape-sav__cta {
+    display: inline-block;
+    padding: 12px 26px;
+    border: none;
+    border-radius: 999px;
+    background: #0891B2;
+    color: #fff;
+    font-weight: 700;
+    line-height: 1.2;
+    text-decoration: none;
+    cursor: pointer;
+    transition: background .12s;
+}
+
+.youvape-sav__form button[type="submit"]:hover,
+.youvape-sav a.youvape-sav__cta:hover {
+    background: #067A96;
+    color: #fff;
 }
 
 .youvape-sav__hint {
@@ -310,6 +418,16 @@
     background: #F5F6F7;
     color: #40474F;
     font-size: 0.92em;
+}
+
+/* Le texte légal vient d'un éditeur riche : il doit se plier au conteneur,
+   quelle que soit la mise en forme héritée. */
+.youvape-sav__legal,
+.youvape-sav__legal * {
+    font-family: inherit;
+    white-space: normal;
+    overflow-wrap: break-word;
+    max-width: 100%;
 }
 
 .youvape-sav__legal p {

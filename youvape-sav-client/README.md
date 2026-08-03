@@ -148,6 +148,11 @@ comportement de Gravity Forms, conservé volontairement.
 
 ## Changelog
 
+- **0.3.2** — Le module ne dépend plus de la typographie de son conteneur : un
+  ancêtre en chasse fixe (`<pre>`, bloc HTML d'un constructeur de page) ne peut
+  plus imposer sa police ni empêcher les retours à la ligne (texte légal qui
+  débordait). Champs, `<select>` et bouton d'envoi ont désormais un style
+  autonome, surchargeable via `.youvape-sav`.
 - **0.3.1** — Correctif d'affichage dans les constructeurs de page : la sortie
   des shortcodes ne contient plus de saut de ligne, ce qui empêche `wpautop`
   d'y injecter des paragraphes vides (grands trous verticaux) et des `<br>`
