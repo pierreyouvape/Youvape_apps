@@ -3,7 +3,7 @@
  * Plugin Name: YouSync
  * Plugin URI: https://youvape.fr
  * Description: Synchronisation temps réel WooCommerce vers VPS Youvape
- * Version: 1.4.0
+ * Version: 1.4.1
  * Author: Youvape
  * Author URI: https://youvape.fr
  * Text Domain: yousync

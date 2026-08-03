@@ -232,17 +232,24 @@ class Data_Fetcher {
             'permalink' => get_permalink($product->get_id())
         ];
 
-        // Get brand
+        // Get brand -- a product can carry BOTH the parent brand term and its
+        // child sub-brand term (e.g. E.Tasty + Godfall City). Don't blindly take
+        // $brands[0] (which may be the parent and would drop the sub-brand);
+        // pick the child term (parent != 0) as the sub-brand.
         $brands = wp_get_post_terms($product->get_id(), 'pwb-brand', ['fields' => 'all']);
         if (!is_wp_error($brands) && !empty($brands)) {
-            $brand = $brands[0];
-            $data['brand'] = $brand->name;
-            if ($brand->parent) {
-                $parent_brand = get_term($brand->parent, 'pwb-brand');
-                if ($parent_brand && !is_wp_error($parent_brand)) {
-                    $data['brand'] = $parent_brand->name;
-                    $data['sub_brand'] = $brand->name;
-                }
+            $child = null;
+            foreach ($brands as $b) {
+                if ($b->parent) { $child = $b; break; }
+            }
+            if ($child) {
+                $data['sub_brand'] = $child->name;
+                $parent_brand = get_term($child->parent, 'pwb-brand');
+                $data['brand'] = ($parent_brand && !is_wp_error($parent_brand))
+                    ? $parent_brand->name
+                    : $child->name;
+            } else {
+                $data['brand'] = $brands[0]->name;
             }
         }
 
