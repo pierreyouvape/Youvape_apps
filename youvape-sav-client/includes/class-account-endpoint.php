@@ -134,13 +134,34 @@ class Youvape_SAV_Account_Endpoint {
             array(),
             YOUVAPE_SAV_VERSION
         );
+        // Le script pilote l'affichage du formulaire selon le motif choisi. Il
+        // vit dans un fichier à part et non en ligne dans le template : les
+        // constructeurs de page appliquent parfois wpautop à la sortie des
+        // shortcodes, ce qui mutilerait un <script> inline.
+        wp_register_script(
+            'youvape-sav-client',
+            YOUVAPE_SAV_PLUGIN_URL . 'assets/js/youvape-sav-form.js',
+            array(),
+            YOUVAPE_SAV_VERSION,
+            true
+        );
 
         $needed = (function_exists('is_account_page') && is_account_page())
             || (class_exists('Youvape_SAV_Shortcodes') && Youvape_SAV_Shortcodes::page_has_form());
 
         if ($needed) {
-            wp_enqueue_style('youvape-sav-client');
+            self::enqueue_front_assets();
         }
+    }
+
+    /**
+     * Charge CSS + JS du formulaire. Appelable aussi au moment du rendu d'un
+     * shortcode, quand la détection en amont a échoué (contenu stocké par un
+     * constructeur de page hors de post_content).
+     */
+    public static function enqueue_front_assets() {
+        wp_enqueue_style('youvape-sav-client');
+        wp_enqueue_script('youvape-sav-client');
     }
 
     /**

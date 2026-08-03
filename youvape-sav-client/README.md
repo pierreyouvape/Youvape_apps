@@ -148,6 +148,12 @@ comportement de Gravity Forms, conservé volontairement.
 
 ## Changelog
 
+- **0.3.1** — Correctif d'affichage dans les constructeurs de page : la sortie
+  des shortcodes ne contient plus de saut de ligne, ce qui empêche `wpautop`
+  d'y injecter des paragraphes vides (grands trous verticaux) et des `<br>`
+  parasites. Le JS du formulaire passe dans un fichier externe, et la détection
+  des shortcodes couvre aussi les métadonnées (ACF / page builders) pour que
+  les assets partent dans le `<head>`.
 - **0.3.0** — Formulaire public pour les visiteurs non connectés via les
   shortcodes `[youvape_sav_form]` et `[youvape_sav_bouton]`, avec pièces jointes
   et pot-de-miel. Le formulaire complet est désormais affichable hors de « Mon

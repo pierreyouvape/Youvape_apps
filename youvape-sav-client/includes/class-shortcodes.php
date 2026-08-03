@@ -44,8 +44,13 @@ class Youvape_SAV_Shortcodes {
     }
 
     /**
-     * La page courante porte-t-elle le formulaire ? Sert à charger le CSS au bon
-     * moment (dans wp_head plutôt qu'en pied de page).
+     * La page courante porte-t-elle un shortcode du plugin ? Sert à charger les
+     * assets dans wp_head plutôt qu'en pied de page (sinon le formulaire
+     * s'affiche brièvement sans style).
+     *
+     * On regarde post_content, mais aussi les métadonnées : les constructeurs de
+     * page et les champs personnalisés (ACF) stockent le contenu hors de
+     * post_content, et la détection classique passerait à côté.
      *
      * @return bool
      */
@@ -54,11 +59,28 @@ class Youvape_SAV_Shortcodes {
             return false;
         }
         $post = get_post();
-        if (!$post || empty($post->post_content)) {
+        if (!$post) {
             return false;
         }
-        return has_shortcode($post->post_content, 'youvape_sav_form')
-            || has_shortcode($post->post_content, 'youvape_sav_bouton');
+
+        if (!empty($post->post_content)
+            && (has_shortcode($post->post_content, 'youvape_sav_form')
+                || has_shortcode($post->post_content, 'youvape_sav_bouton'))) {
+            return true;
+        }
+
+        // Métadonnées : déjà en cache pour le post courant, le coût est nul.
+        foreach ((array) get_post_meta($post->ID) as $values) {
+            foreach ((array) $values as $value) {
+                if (is_string($value)
+                    && (false !== strpos($value, '[youvape_sav_form')
+                        || false !== strpos($value, '[youvape_sav_bouton'))) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     /**
@@ -89,7 +111,7 @@ class Youvape_SAV_Shortcodes {
      * @return string HTML
      */
     public function render_form() {
-        wp_enqueue_style('youvape-sav-client');
+        Youvape_SAV_Account_Endpoint::enqueue_front_assets();
 
         $return_url = self::current_url();
         $error = isset($_GET['sav_error']) ? sanitize_text_field(wp_unslash($_GET['sav_error'])) : null;
@@ -246,6 +268,30 @@ class Youvape_SAV_Shortcodes {
         // l'utilisateur (même pattern que l'onglet Mon Compte).
         extract($vars, EXTR_SKIP);
         include $located;
-        return ob_get_clean();
+
+        return self::neutralize_autop(ob_get_clean());
+    }
+
+    /**
+     * Supprime les sauts de ligne de la sortie d'un shortcode.
+     *
+     * WordPress applique `wpautop` au contenu des pages : double saut de ligne
+     * → <p>, simple saut de ligne → <br>. Normalement les shortcodes sont
+     * développés après ce filtre et y échappent, mais beaucoup de constructeurs
+     * de page rendent leurs champs avec `wpautop(do_shortcode(...))` — l'ordre
+     * s'inverse et notre HTML indenté se retrouve truffé de paragraphes vides
+     * (grands trous verticaux) et de <br> parasites (astérisque du champ
+     * obligatoire rejeté à la ligne).
+     *
+     * Sans aucun saut de ligne, wpautop n'a plus rien à convertir. On remplace
+     * par une espace plutôt que par du vide, pour préserver les séparations
+     * entre éléments en ligne. Le JS étant dans un fichier externe, il n'y a
+     * plus de <script> inline à mutiler ici.
+     *
+     * @param string $html
+     * @return string
+     */
+    private static function neutralize_autop($html) {
+        return trim(preg_replace('/\s*\R\s*/u', ' ', $html));
     }
 }
