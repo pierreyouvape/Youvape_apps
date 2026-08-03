@@ -39,6 +39,31 @@ class Youvape_SAV_Settings {
         return isset($opts[$key]) && '' !== $opts[$key] ? $opts[$key] : $default;
     }
 
+    /**
+     * Consignes légales affichées au client qui choisit le motif « Je souhaite
+     * me rétracter ». Modifiable dans les réglages ; le texte ci-dessous n'est
+     * qu'un point de départ à valider avec les CGV de la boutique.
+     *
+     * @return string HTML (déjà filtré wp_kses_post à l'enregistrement)
+     */
+    public static function default_withdrawal_notice() {
+        return
+            '<p>' . __('Conformément aux articles L221-18 et suivants du Code de la consommation, vous disposez d\'un délai de <strong>14 jours à compter de la réception de votre commande</strong> pour exercer votre droit de rétractation, sans avoir à motiver votre décision.', 'youvape-sav-client') . '</p>' .
+            '<p>' . __('Les produits doivent être retournés complets, non utilisés et dans leur emballage d\'origine. Pour des raisons d\'hygiène et de protection de la santé, les produits descellés après la livraison ne peuvent pas être repris (e-liquides, résistances, drip tips et tout accessoire en contact avec la bouche).', 'youvape-sav-client') . '</p>' .
+            '<p>' . __('Les frais de retour restent à votre charge. Le remboursement intervient dans les 14 jours suivant la réception du retour, ou la preuve de son expédition.', 'youvape-sav-client') . '</p>' .
+            '<p>' . __('Indiquez ci-dessous la commande et les produits concernés : notre service client vous transmettra la procédure de retour.', 'youvape-sav-client') . '</p>';
+    }
+
+    /**
+     * Consignes de rétractation à afficher (réglage, ou texte par défaut).
+     *
+     * @return string HTML
+     */
+    public static function withdrawal_notice() {
+        $custom = self::get('withdrawal_notice');
+        return '' !== trim($custom) ? $custom : self::default_withdrawal_notice();
+    }
+
     public function add_menu() {
         add_options_page(
             __('Espace client SAV', 'youvape-sav-client'),
@@ -58,6 +83,11 @@ class Youvape_SAV_Settings {
         $out = array();
         $out['api_url'] = isset($input['api_url']) ? esc_url_raw(trim($input['api_url'])) : '';
         $out['api_secret'] = isset($input['api_secret']) ? trim($input['api_secret']) : '';
+        // Texte légal : HTML de contenu autorisé (listes, liens, gras), pas de
+        // script — le champ n'est éditable que par un administrateur.
+        $out['withdrawal_notice'] = isset($input['withdrawal_notice'])
+            ? wp_kses_post(trim($input['withdrawal_notice']))
+            : '';
         return $out;
     }
 
@@ -67,6 +97,9 @@ class Youvape_SAV_Settings {
         }
         $api_url    = self::get('api_url');
         $api_secret = self::get('api_secret');
+        // Champ vide = on propose le texte par défaut, pour que l'admin parte
+        // d'une base rédigée plutôt que d'une zone blanche.
+        $notice     = self::get('withdrawal_notice', self::default_withdrawal_notice());
 
         // Si des constantes wp-config sont définies, elles priment : on le signale.
         $url_locked    = defined('YOUVAPE_SAV_API_URL') && YOUVAPE_SAV_API_URL;
@@ -108,6 +141,24 @@ class Youvape_SAV_Settings {
                         </td>
                     </tr>
                 </table>
+
+                <h2><?php echo esc_html__('Consignes de rétractation', 'youvape-sav-client'); ?></h2>
+                <p class="description">
+                    <?php echo esc_html__('Texte affiché au client dans le formulaire « Mes demandes » lorsqu\'il choisit le motif « Je souhaite me rétracter ». À faire valider par rapport à vos CGV.', 'youvape-sav-client'); ?>
+                </p>
+                <?php
+                wp_editor(
+                    $notice,
+                    'youvape_sav_withdrawal_notice',
+                    array(
+                        'textarea_name' => self::OPTION . '[withdrawal_notice]',
+                        'textarea_rows' => 12,
+                        'media_buttons' => false,
+                        'teeny'         => true,
+                    )
+                );
+                ?>
+
                 <?php submit_button(); ?>
             </form>
         </div>

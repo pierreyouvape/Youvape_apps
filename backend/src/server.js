@@ -28,6 +28,7 @@ const preferencesRoutes = require('./routes/preferencesRoutes');
 const financierRoutes = require('./routes/financierRoutes');
 const savRoutes = require('./routes/savRoutes');
 const clientSavRoutes = require('./routes/clientSavRoutes');
+const clientSavPublicRoutes = require('./routes/clientSavPublicRoutes');
 const chronopostRoutes = require('./routes/chronopostRoutes');
 const colissimoRoutes  = require('./routes/colissimoRoutes');
 const lettreSuivieRoutes = require('./routes/lettreSuivieRoutes');
@@ -80,6 +81,10 @@ app.use('/api/preferences', preferencesRoutes); // User column preferences
 app.use('/api/financier', financierRoutes);    // Dashboard financier
 app.use('/api/sav', savRoutes);               // Module SAV Zendesk
 app.use('/api/client-sav', clientSavRoutes);  // Espace client SAV (plugin WP youvape-sav-client)
+// Formulaire public "Nous contacter" (visiteur non connecté) : secret partagé
+// seul, création uniquement. Préfixe distinct pour qu'aucune route de lecture
+// scopée ne puisse s'y retrouver par erreur de montage.
+app.use('/api/client-sav-public', clientSavPublicRoutes);
 app.use('/api/chronopost', authMiddleware, chronopostRoutes); // Chronopost invoice analysis
 app.use('/api/colissimo',  authMiddleware, colissimoRoutes);  // Colissimo invoice analysis
 app.use('/api/lettre-suivie', authMiddleware, lettreSuivieRoutes); // La Poste Lettre Suivie invoice analysis

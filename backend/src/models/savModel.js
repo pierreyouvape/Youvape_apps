@@ -13,21 +13,36 @@ class StatusModel {
     return res.rows;
   }
 
-  async create({ value, label, bg_color, text_color }) {
+  async create({ value, label, bg_color, text_color, client_label }) {
     const res = await pool.query(
-      `INSERT INTO sav_ticket_statuses (value, label, bg_color, text_color, sort_order, updated_at)
-       VALUES ($1, $2, $3, $4, (SELECT COALESCE(MAX(sort_order),0)+1 FROM sav_ticket_statuses), NOW())
+      `INSERT INTO sav_ticket_statuses (value, label, bg_color, text_color, client_label, sort_order, updated_at)
+       VALUES ($1, $2, $3, $4, $5, (SELECT COALESCE(MAX(sort_order),0)+1 FROM sav_ticket_statuses), NOW())
        RETURNING *`,
-      [value, label, bg_color || '#F0F0F0', text_color || '#626E85']
+      [value, label, bg_color || '#F0F0F0', text_color || '#626E85', client_label || null]
     );
     return res.rows[0];
   }
 
-  async update(id, { label, bg_color, text_color }) {
+  /**
+   * `client_label` (libellé montré au client dans son espace) n'est mis à jour
+   * que s'il est explicitement fourni : un appelant qui ne connaît pas le champ
+   * ne doit pas l'effacer. Chaîne vide ⇒ remise à NULL (repli défensif côté
+   * espace client).
+   */
+  async update(id, { label, bg_color, text_color, client_label }) {
+    const sets = ['label=$1', 'bg_color=$2', 'text_color=$3', 'updated_at=NOW()'];
+    const vals = [label, bg_color, text_color];
+
+    if (client_label !== undefined) {
+      const clean = client_label === null ? null : String(client_label).trim();
+      vals.push(clean || null);
+      sets.push(`client_label=$${vals.length}`);
+    }
+
+    vals.push(id);
     const res = await pool.query(
-      `UPDATE sav_ticket_statuses SET label=$1, bg_color=$2, text_color=$3, updated_at=NOW()
-       WHERE id=$4 RETURNING *`,
-      [label, bg_color, text_color, id]
+      `UPDATE sav_ticket_statuses SET ${sets.join(', ')} WHERE id=$${vals.length} RETURNING *`,
+      vals
     );
     return res.rows[0] || null;
   }

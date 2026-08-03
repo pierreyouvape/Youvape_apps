@@ -10,6 +10,7 @@ const { tagDuplicates } = require('../services/duplicateDetector');
 const { mergeTickets } = require('../services/ticketMerge');
 const { sendAlert } = require('../services/alertService');
 const { syncTicketOrderTag } = require('../services/bmsOrderTagService');
+const { sendAckEmail } = require('../utils/savAckEmail');
 const { ticketEvents } = require('../services/ticketEvents');
 
 // Déduplication des inbounds : Mailgun peut appeler le webhook plusieurs fois
@@ -17,6 +18,9 @@ const { ticketEvents } = require('../services/ticketEvents');
 // mémoire les identifiants récents (TTL 10 min) pour ignorer les doublons.
 const _recentInbound = new Map(); // id -> timestamp
 const INBOUND_DEDUP_TTL_MS = 10 * 60 * 1000;
+
+// Libellé de statut montré au client dans son espace (≠ libellé interne agent).
+const MAX_CLIENT_LABEL_LEN = 100;
 function isDuplicateInbound(id) {
   if (!id) return false;
   const now = Date.now();
@@ -50,31 +54,6 @@ function stripQuotedReply(strippedText, bodyPlain) {
   text = text.split('\n').filter(l => !/^\s*>/.test(l)).join('\n');
 
   return text.trim();
-}
-
-// Envoi (fire-and-forget) d'un accusé de réception au client. Enrobe le template
-// accusé et passe par Mailgun. Sécurité : jamais d'accusé vers notre propre
-// adresse SAV (évite une auto-boucle si un mail système rebondit).
-async function sendAckEmail({ ticketId, email, customerName, subject }) {
-  try {
-    if (!email) return;
-    const from = (process.env.MAILGUN_FROM || '').toLowerCase();
-    if (from && email.toLowerCase() === from) return;
-
-    const html = emailTemplateService.renderAccuse({
-      customer_name: customerName || '',
-      subject:       subject || '',
-      ticket_id:     ticketId,
-    });
-    const result = await mailgunService.sendAcknowledgement({
-      to: email, subject: subject || 'Votre demande', ticketId, bodyHtml: html,
-    });
-    if (!result.success) {
-      console.warn(`[SAV] Accusé réception non envoyé (ticket #${ticketId}):`, result.error);
-    }
-  } catch (e) {
-    console.warn(`[SAV] Accusé réception échoué (ticket #${ticketId}):`, e.message);
-  }
 }
 
 const savController = {
@@ -1084,11 +1063,17 @@ const savController = {
 
   createStatus: async (req, res) => {
     try {
-      const { value, label, bg_color, text_color } = req.body;
+      const { value, label, bg_color, text_color, client_label } = req.body;
       if (!value || !label) return res.status(400).json({ error: 'value et label requis' });
+      if (client_label && String(client_label).length > MAX_CLIENT_LABEL_LEN) {
+        return res.status(400).json({ error: 'Libellé client trop long' });
+      }
       // Slugifier la valeur
       const slug = value.trim().toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_éàèùâêîôûäëïöüç-]/g, '');
-      const status = await savModel.statusModel.create({ value: slug, label: label.trim(), bg_color, text_color });
+      const status = await savModel.statusModel.create({
+        value: slug, label: label.trim(), bg_color, text_color,
+        client_label: client_label ? String(client_label).trim() : null,
+      });
       res.status(201).json({ success: true, status });
     } catch (error) {
       if (error.code === '23505') return res.status(409).json({ error: 'Ce statut existe déjà' });
@@ -1102,7 +1087,19 @@ const savController = {
       const { id } = req.params;
       const { label, bg_color, text_color } = req.body;
       if (!label) return res.status(400).json({ error: 'label requis' });
-      const status = await savModel.statusModel.update(id, { label, bg_color, text_color });
+
+      // client_label n'est transmis au modèle que s'il est présent dans le corps,
+      // pour qu'un appelant qui l'ignore ne l'efface pas.
+      const payload = { label, bg_color, text_color };
+      if (Object.prototype.hasOwnProperty.call(req.body, 'client_label')) {
+        const cl = req.body.client_label;
+        if (cl && String(cl).length > MAX_CLIENT_LABEL_LEN) {
+          return res.status(400).json({ error: 'Libellé client trop long' });
+        }
+        payload.client_label = cl;
+      }
+
+      const status = await savModel.statusModel.update(id, payload);
       if (!status) return res.status(404).json({ error: 'Statut introuvable' });
       res.json({ success: true, status });
     } catch (error) {

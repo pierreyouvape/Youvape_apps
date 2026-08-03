@@ -3,7 +3,7 @@
  * Plugin Name:       Youvape — Espace client SAV
  * Plugin URI:        https://www.youvape.fr
  * Description:        Ajoute un onglet "Mes demandes au service client" dans le compte WooCommerce, permettant au client connecté de consulter et gérer ses tickets SAV. Les tickets vivent dans l'app Node Youvape ; ce plugin communique avec elle en server-to-server (aucune écriture en base WordPress).
- * Version:           0.1.5
+ * Version:           0.3.0
  * Author:            Youvape
  * Text Domain:       youvape-sav-client
  * Requires at least: 6.0
@@ -18,7 +18,7 @@ if (!defined('ABSPATH')) {
     exit; // Pas d'accès direct
 }
 
-define('YOUVAPE_SAV_VERSION', '0.1.5');
+define('YOUVAPE_SAV_VERSION', '0.3.0');
 define('YOUVAPE_SAV_PLUGIN_FILE', __FILE__);
 define('YOUVAPE_SAV_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('YOUVAPE_SAV_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -31,7 +31,7 @@ if (!defined('YOUVAPE_SAV_ENDPOINT')) {
 require_once YOUVAPE_SAV_PLUGIN_DIR . 'includes/class-settings.php';
 require_once YOUVAPE_SAV_PLUGIN_DIR . 'includes/class-api-client.php';
 require_once YOUVAPE_SAV_PLUGIN_DIR . 'includes/class-account-endpoint.php';
-require_once YOUVAPE_SAV_PLUGIN_DIR . 'includes/class-order-button.php';
+require_once YOUVAPE_SAV_PLUGIN_DIR . 'includes/class-shortcodes.php';
 
 /**
  * Initialisation : on n'active la logique que si WooCommerce est présent.
@@ -49,8 +49,11 @@ function youvape_sav_init() {
         });
         return;
     }
+    // Le plugin ne s'accroche qu'à l'espace "Mon compte" et aux pages portant
+    // ses shortcodes : aucun hook sur les pages de commande ni sur les emails
+    // transactionnels WooCommerce.
     Youvape_SAV_Account_Endpoint::instance()->register();
-    Youvape_SAV_Order_Button::instance()->register();
+    Youvape_SAV_Shortcodes::instance()->register();
 }
 add_action('plugins_loaded', 'youvape_sav_init');
 

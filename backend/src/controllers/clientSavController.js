@@ -5,6 +5,7 @@ const appConfigModel = require('../models/appConfigModel');
 const { saveAttachments } = require('../utils/savAttachments');
 const { dispatchNotifications } = require('../services/notificationDispatcher');
 const { getClientSavSecret, CLIENT_SAV_SECRET_KEY } = require('../utils/clientSavSecret');
+const { sendAckEmail } = require('../utils/savAckEmail');
 
 // Statut appliqué à un ticket quand le client (ré)agit : remonte le ticket dans
 // la file agent. Identique au comportement d'un email inbound client.
@@ -14,6 +15,80 @@ const CLIENT_REPLY_STATUS = 'reponse_client';
 const MAX_SUBJECT_LEN = 150;
 const MAX_BODY_LEN = 10000;
 const MAX_PRODUCT_LABEL_LEN = 200;
+const MAX_PRODUCTS = 30;
+// Formulaire public : identité saisie librement, donc bornée.
+const MAX_NAME_LEN = 100;
+const MAX_EMAIL_LEN = 200;
+
+/**
+ * Motifs de demande proposés au client (le "sujet" du ticket n'est plus saisi
+ * librement : il est déduit ici du motif choisi). Le plugin envoie le SLUG ;
+ * le sujet vient de cette table côté serveur — jamais du navigateur.
+ *
+ * ⚠️ `subject` est repris tel quel comme OBJET DES EMAILS envoyés au client
+ * (accusé de réception, réponses agent) : c'est une formulation orientée client,
+ * différente du libellé du choix dans le formulaire ("Une difficulté avec un
+ * produit" côté boutique → "Votre demande d'assistance YouVape" côté email).
+ *
+ * `requestReason` alimente la colonne `sav_tickets.request_reason`, déjà remplie
+ * par le webhook Gravity Forms et déjà affichée dans le détail du ticket côté
+ * app agent (TicketDetail.jsx humanise le slug : _ → espaces + capitale). Le
+ * libellé lisible est donc obtenu sans toucher au front.
+ * ⚠️ Vocabulaire volontairement distinct des slugs GF existants
+ * (`un_conseil_avant_de_passer_commande`, `une_commande_que_j_ai_passée`) : à
+ * unifier si l'on veut un jour filtrer les deux sources sur le même axe.
+ *
+ * Chaque motif porte ses règles métier, revérifiées serveur (le formulaire les
+ * applique aussi, mais un POST forgé ne doit pas pouvoir les contourner) :
+ *   - requiresOrder    : une commande du client est obligatoire
+ *   - requiresProducts : au moins un produit de cette commande est obligatoire
+ *   - requiresBody     : le texte libre est obligatoire
+ */
+const CLIENT_TICKET_REASONS = {
+  question: {
+    subject: 'Votre question au service client YouVape',
+    requestReason: 'question_avant_commande',
+    requiresOrder: false,
+    requiresProducts: false,
+    requiresBody: true,
+  },
+  produit: {
+    subject: 'Votre demande d\'assistance YouVape',
+    requestReason: 'difficulté_avec_une_commande',
+    requiresOrder: true,
+    requiresProducts: true,
+    requiresBody: true,
+  },
+  retractation: {
+    subject: 'Votre demande de rétractation YouVape',
+    requestReason: 'demande_de_rétractation',
+    requiresOrder: true,
+    requiresProducts: true,
+    // Le client n'a pas à motiver sa rétractation (art. L221-18) : la commande
+    // et les produits suffisent, le commentaire est facultatif.
+    requiresBody: false,
+  },
+};
+
+/**
+ * Normalise les produits concernés reçus du formulaire. Le champ `products`
+ * peut arriver en tableau (plusieurs cases cochées), en chaîne (une seule) ou
+ * absent. On borne, on nettoie et on dédoublonne.
+ *
+ * @param {*} raw valeur brute de req.body.products (ou de l'ancien `product`)
+ * @returns {string[]} libellés produits, sans doublon ni valeur vide
+ */
+function normalizeProducts(raw) {
+  if (raw === undefined || raw === null) return [];
+  const list = Array.isArray(raw) ? raw : [raw];
+  const out = [];
+  for (const item of list) {
+    if (item === undefined || item === null) continue;
+    const name = String(item).trim();
+    if (name && !out.includes(name)) out.push(name);
+  }
+  return out;
+}
 
 /**
  * Convertit un texte brut saisi par le client en HTML sûr pour le stockage du
@@ -46,8 +121,45 @@ function plainTextToSafeHtml(text) {
  */
 
 const DEFAULT_CLIENT_LABEL = 'En cours de traitement';
-const CLIENT_TICKET_SOURCE = 'account';
+const CLIENT_TICKET_SOURCE = 'account';        // créé depuis l'espace client connecté
+const PUBLIC_TICKET_SOURCE = 'public';         // créé depuis le formulaire public (non connecté)
 const AGENT_DISPLAY_NAME = 'Service client YouVape';
+
+/**
+ * Origines de tickets visibles par le client dans son espace.
+ * `zendesk`, `email` et `manual` en sont volontairement exclus : ce sont des
+ * fils créés côté agent ou importés, dont le client n'a jamais eu de vue web.
+ */
+const CLIENT_VISIBLE_SOURCES = [CLIENT_TICKET_SOURCE, PUBLIC_TICKET_SOURCE, 'gravity_form'];
+
+/**
+ * Clause d'appartenance d'un ticket au client connecté. UNE seule définition,
+ * réutilisée par la liste, le détail et la réponse — si ces trois vues
+ * divergeaient, un client pourrait voir un ticket auquel il ne pourrait pas
+ * répondre, ou pire, l'inverse.
+ *
+ * Deux façons d'être propriétaire :
+ *   1. le ticket porte son customer_id (cas normal) ;
+ *   2. le ticket est orphelin (customer_id NULL) et porte SON adresse email —
+ *      cas d'une demande déposée via le formulaire public ou Gravity Forms
+ *      avant que son compte n'existe. Le rattachement se fait ainsi à la
+ *      lecture, sans backfill ni cron.
+ *
+ * ⚠️ $2 (email) DOIT provenir de la fiche `customers` résolue par le middleware
+ * depuis la session WordPress — jamais d'une valeur fournie dans la requête,
+ * sinon n'importe qui lirait les tickets de n'importe qui.
+ *
+ * Ordre des paramètres imposé : $1 = customers.id, $2 = email, $3 = sources.
+ */
+const CLIENT_OWNERSHIP_SQL = `(
+    t.customer_id = $1
+    OR (
+      t.customer_id IS NULL
+      AND $2::text IS NOT NULL
+      AND lower(t.customer_email) = lower($2::text)
+    )
+  )
+  AND t.source = ANY($3::text[])`;
 
 /**
  * Projette un message brut (JSONB du ticket) vers la forme exposée au client.
@@ -82,14 +194,14 @@ const clientSavController = {
            t.order_id,
            t.created_at,
            t.updated_at,
-           COALESCE(NULLIF(s.client_label, ''), $2) AS status_label,
-           jsonb_array_length(COALESCE(t.messages, '[]'::jsonb)) AS message_count
+           COALESCE(NULLIF(s.client_label, ''), $4) AS status_label,
+           jsonb_array_length(COALESCE(t.messages, '[]'::jsonb))
+             + CASE WHEN COALESCE(t.description, '') <> '' THEN 1 ELSE 0 END AS message_count
          FROM sav_tickets t
          LEFT JOIN sav_ticket_statuses s ON s.value = t.sav_status
-         WHERE t.customer_id = $1
-           AND t.source = $3
+         WHERE ${CLIENT_OWNERSHIP_SQL}
          ORDER BY t.updated_at DESC NULLS LAST, t.created_at DESC`,
-        [customerId, DEFAULT_CLIENT_LABEL, CLIENT_TICKET_SOURCE]
+        [customerId, req.clientEmail, CLIENT_VISIBLE_SOURCES, DEFAULT_CLIENT_LABEL]
       );
 
       res.json({ success: true, tickets: result.rows });
@@ -116,18 +228,18 @@ const clientSavController = {
            t.id,
            t.subject,
            t.description,
+           t.description_attachments,
            t.order_id,
            t.created_at,
            t.updated_at,
            t.customer_name,
            t.messages,
-           COALESCE(NULLIF(s.client_label, ''), $3) AS status_label
+           COALESCE(NULLIF(s.client_label, ''), $5) AS status_label
          FROM sav_tickets t
          LEFT JOIN sav_ticket_statuses s ON s.value = t.sav_status
-         WHERE t.id = $1
-           AND t.customer_id = $2
-           AND t.source = $4`,
-        [ticketId, customerId, DEFAULT_CLIENT_LABEL, CLIENT_TICKET_SOURCE]
+         WHERE t.id = $4
+           AND ${CLIENT_OWNERSHIP_SQL}`,
+        [customerId, req.clientEmail, CLIENT_VISIBLE_SOURCES, ticketId, DEFAULT_CLIENT_LABEL]
       );
 
       const row = result.rows[0];
@@ -141,6 +253,21 @@ const clientSavController = {
       const messages = rawMessages
         .filter((m) => !m.is_private)
         .map((m) => toClientMessage(m, row.customer_name));
+
+      // Les tickets Gravity Forms rangent la demande initiale dans `description`
+      // (avec ses PJ dans `description_attachments`), pas dans `messages` —
+      // l'app agent la rend déjà comme 1er message du fil. Sans ce rappel, le
+      // client verrait son propre fil amputé de sa demande d'origine.
+      // Texte brut côté GF, donc échappé puis converti en HTML sûr.
+      if (row.description && String(row.description).trim()) {
+        messages.unshift({
+          from: row.customer_name || 'Vous',
+          is_agent: false,
+          body: plainTextToSafeHtml(String(row.description).trim()),
+          date: row.created_at || null,
+          attachments: Array.isArray(row.description_attachments) ? row.description_attachments : [],
+        });
+      }
 
       const ticket = {
         id: row.id,
@@ -183,11 +310,13 @@ const clientSavController = {
       }
 
       // Vérifier l'appartenance AVANT d'écrire (et récupérer le contexte du ticket).
+      // Même clause que la liste et le détail : tout ticket qu'il voit, il peut
+      // y répondre.
       const ticketRes = await pool.query(
-        `SELECT id, customer_name, customer_email, subject, sav_status
-         FROM sav_tickets
-         WHERE id = $1 AND customer_id = $2 AND source = $3`,
-        [ticketId, customerId, CLIENT_TICKET_SOURCE]
+        `SELECT t.id, t.customer_name, t.customer_email, t.subject, t.sav_status
+         FROM sav_tickets t
+         WHERE t.id = $4 AND ${CLIENT_OWNERSHIP_SQL}`,
+        [customerId, req.clientEmail, CLIENT_VISIBLE_SOURCES, ticketId]
       );
       const ticket = ticketRes.rows[0];
       if (!ticket) {
@@ -236,14 +365,36 @@ const clientSavController = {
       const customerId = req.clientCustomerId;
       const wpUserId   = req.clientWpUserId;
 
-      const subject  = (req.body.subject || '').toString().trim();
-      const body     = (req.body.body || '').toString().trim();
-      const orderRaw = req.body.order_id;
-      const product  = (req.body.product || '').toString().trim();
+      const body      = (req.body.body || '').toString().trim();
+      const orderRaw  = req.body.order_id;
+      const reasonKey = (req.body.reason || '').toString().trim();
 
-      // 1. Validation des champs
-      if (!subject || !body) {
-        return res.status(400).json({ error: 'Sujet et message sont requis' });
+      // 1. Motif → sujet du ticket. Le libellé vient de CLIENT_TICKET_REASONS,
+      // jamais du navigateur. `subject` reste accepté en repli pour rester
+      // compatible avec une version antérieure du plugin encore déployée.
+      let reason = null;
+      if (reasonKey) {
+        if (!Object.prototype.hasOwnProperty.call(CLIENT_TICKET_REASONS, reasonKey)) {
+          return res.status(400).json({ error: 'Motif invalide' });
+        }
+        reason = CLIENT_TICKET_REASONS[reasonKey];
+      }
+      const subject = reason ? reason.subject : (req.body.subject || '').toString().trim();
+
+      // Produits concernés : plusieurs choix possibles (`products`), ou l'ancien
+      // champ unique `product`.
+      let products = normalizeProducts(
+        req.body.products !== undefined ? req.body.products : req.body.product
+      );
+
+      // 2. Validation des champs. Le texte libre est obligatoire partout sauf
+      // pour la rétractation (et reste exigé sur l'ancien chemin sans motif).
+      if (!subject) {
+        return res.status(400).json({ error: 'Le motif de la demande est requis' });
+      }
+      const bodyRequired = reason ? reason.requiresBody !== false : true;
+      if (bodyRequired && !body) {
+        return res.status(400).json({ error: 'Le message est requis' });
       }
       if (subject.length > MAX_SUBJECT_LEN) {
         return res.status(400).json({ error: 'Sujet trop long' });
@@ -251,11 +402,18 @@ const clientSavController = {
       if (body.length > MAX_BODY_LEN) {
         return res.status(400).json({ error: 'Message trop long' });
       }
-      if (product.length > MAX_PRODUCT_LABEL_LEN) {
+      if (products.length > MAX_PRODUCTS) {
+        return res.status(400).json({ error: 'Trop de produits sélectionnés' });
+      }
+      if (products.some((p) => p.length > MAX_PRODUCT_LABEL_LEN)) {
         return res.status(400).json({ error: 'Produit concerné invalide' });
       }
+      if (reason && reason.requiresProducts && products.length === 0) {
+        return res.status(400).json({ error: 'Sélectionnez au moins un produit concerné' });
+      }
 
-      // 2. Commande optionnelle — vérifier l'appartenance au client (anti-IDOR)
+      // 3. Commande — obligatoire ou non selon le motif, et dans tous les cas
+      // vérifiée comme appartenant au client (anti-IDOR).
       let order_id = null;
       if (orderRaw !== undefined && orderRaw !== null && `${orderRaw}`.trim() !== '') {
         const wpOrderId = parseInt(orderRaw, 10);
@@ -272,8 +430,18 @@ const clientSavController = {
         }
         order_id = String(wpOrderId);
       }
+      if (reason && reason.requiresOrder && !order_id) {
+        return res.status(400).json({ error: 'Sélectionnez la commande concernée' });
+      }
+      // Motif sans commande : on ignore toute commande/produit reçus malgré tout
+      // (champs masqués côté formulaire), pour ne pas produire de ticket
+      // incohérent avec son sujet.
+      if (reason && !reason.requiresOrder) {
+        order_id = null;
+        products = [];
+      }
 
-      // 3. Identité du client (nom + email) depuis la fiche, jamais depuis le body
+      // 4. Identité du client (nom + email) depuis la fiche, jamais depuis le body
       const custRes = await pool.query(
         'SELECT first_name, last_name, email FROM customers WHERE id = $1 LIMIT 1',
         [customerId]
@@ -282,7 +450,7 @@ const clientSavController = {
       const customer_name = `${cust.first_name || ''} ${cust.last_name || ''}`.trim() || 'Client';
       const customer_email = (req.clientEmail || cust.email || '').toLowerCase();
 
-      // 4. Création du ticket (source='account' → visible dans l'espace client)
+      // 5. Création du ticket (source='account' → visible dans l'espace client)
       const ticket = await savModel.create({
         order_id,
         customer_id: customerId,
@@ -292,16 +460,25 @@ const clientSavController = {
         subject,
         description: null,
         source: CLIENT_TICKET_SOURCE,
+        // Type de demande, exploitable par l'app agent (null si ancien plugin).
+        request_reason: reason ? reason.requestReason : null,
       });
 
-      // 5. Pièces jointes (mêmes stockage/URLs que le SAV agent)
+      // 6. Pièces jointes (mêmes stockage/URLs que le SAV agent)
       const storedAttachments = saveAttachments(ticket.id, req.files);
 
-      // 6. Premier message du client. Le produit concerné (libellé texte) est
-      // préfixé au corps pour donner le contexte à l'agent.
-      const messageText = product
-        ? `Produit concerné : ${product}\n\n${body}`
-        : body;
+      // 7. Premier message du client. Les produits concernés (libellés texte)
+      // sont préfixés au corps pour donner le contexte à l'agent. Le corps peut
+      // être vide (rétractation sans commentaire) : on n'ajoute alors que la
+      // liste des produits, sans ligne vide en fin de message.
+      const blocks = [];
+      if (products.length === 1) {
+        blocks.push(`Produit concerné : ${products[0]}`);
+      } else if (products.length > 1) {
+        blocks.push(`Produits concernés :\n${products.map((p) => `- ${p}`).join('\n')}`);
+      }
+      if (body) blocks.push(body);
+      const messageText = blocks.join('\n\n');
 
       await savModel.addMessage(ticket.id, {
         from: customer_name,
@@ -318,6 +495,81 @@ const clientSavController = {
     }
   },
 
+  // ─── Création publique (visiteur NON connecté) ────────────────────────────
+  // Surface montée sur /api/client-sav-public : le secret prouve que l'appel
+  // vient de notre WordPress, mais il n'y a aucune identité vérifiée. On ne
+  // crée donc qu'un ticket "question avant commande" : ni commande, ni produit,
+  // rien à autoriser, rien à divulguer. Écriture seule, jamais de lecture.
+  //
+  // L'email saisi n'est pas vérifié : on s'en sert pour rattacher une fiche
+  // client existante et pour répondre. C'est exactement le modèle du webhook
+  // Gravity Forms qu'il remplace.
+  createPublicTicket: async (req, res) => {
+    try {
+      const name  = (req.body.name || '').toString().trim();
+      const email = (req.body.email || '').toString().trim().toLowerCase();
+      const body  = (req.body.body || '').toString().trim();
+
+      if (!name || !email || !body) {
+        return res.status(400).json({ error: 'Nom, email et message sont requis' });
+      }
+      if (name.length > MAX_NAME_LEN) {
+        return res.status(400).json({ error: 'Nom trop long' });
+      }
+      if (email.length > MAX_EMAIL_LEN || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        return res.status(400).json({ error: 'Adresse email invalide' });
+      }
+      if (body.length > MAX_BODY_LEN) {
+        return res.status(400).json({ error: 'Message trop long' });
+      }
+
+      const reason = CLIENT_TICKET_REASONS.question;
+
+      // Rattachement à une fiche client existante par email. Introuvable ⇒
+      // customer_id NULL : le ticket sera rattaché à la lecture, le jour où la
+      // personne se crée un compte avec cette adresse (voir CLIENT_OWNERSHIP_SQL).
+      const custRes = await pool.query(
+        'SELECT id FROM customers WHERE lower(email) = $1 LIMIT 1',
+        [email]
+      );
+      const customerId = custRes.rows[0] ? custRes.rows[0].id : null;
+
+      const ticket = await savModel.create({
+        order_id: null,
+        customer_id: customerId,
+        customer_name: name,
+        customer_email: email,
+        customer_phone: null,
+        subject: reason.subject,
+        description: null,
+        source: PUBLIC_TICKET_SOURCE,
+        request_reason: reason.requestReason,
+      });
+
+      const storedAttachments = saveAttachments(ticket.id, req.files);
+
+      await savModel.addMessage(ticket.id, {
+        from: name,
+        body: plainTextToSafeHtml(body),
+        is_agent: false,
+        is_private: false,
+        attachments: storedAttachments,
+      });
+
+      // Accusé de réception au visiteur + notification agent (fire-and-forget) :
+      // un échec d'envoi ne doit pas faire échouer la demande.
+      sendAckEmail({
+        ticketId: ticket.id, email, customerName: name, subject: reason.subject,
+      });
+      dispatchNotifications('new_message', ticket).catch(() => {});
+
+      res.status(201).json({ success: true, ticket_id: ticket.id });
+    } catch (error) {
+      console.error('❌ [Client SAV] Erreur createPublicTicket:', error);
+      res.status(500).json({ error: 'Erreur serveur' });
+    }
+  },
+
   // ─── Commandes du client connecté (pour le sélecteur de création) ─────────
   // Réutilise la logique de savController.getCustomerOrders, scopée sur le
   // wp_user_id résolu par le middleware (jamais un paramètre d'URL).
@@ -327,7 +579,11 @@ const clientSavController = {
       const limit = Math.min(parseInt(req.query.limit, 10) || 20, 50);
 
       const ordersRes = await pool.query(
-        `SELECT wp_order_id, post_date, post_status, order_total, tracking_number, shipping_carrier
+        // post_modified sert de date de livraison approchée quand la commande est
+        // en 'wc-delivered' (pas d'historique de statut en base) : le plugin s'en
+        // sert pour signaler un délai de rétractation vraisemblablement dépassé.
+        `SELECT wp_order_id, post_date, post_modified, post_status, order_total,
+                tracking_number, shipping_carrier
          FROM orders WHERE wp_customer_id = $1
          ORDER BY post_date DESC LIMIT $2`,
         [wpUserId, limit]

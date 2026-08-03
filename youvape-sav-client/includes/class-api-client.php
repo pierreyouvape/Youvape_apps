@@ -96,13 +96,28 @@ class Youvape_SAV_Api_Client {
     /**
      * POST /api/client-sav/tickets — création d'un ticket (multipart, avec PJ).
      *
-     * @param array $fields ['subject'=>..,'body'=>..,'order_id'=>..,'product'=>..]
+     * @param array $fields ['reason'=>..,'body'=>..,'order_id'=>..,'products'=>[..]]
      * @param array $files  fichiers uploadés au format $_FILES['attachments']
      *                      (tableaux name/type/tmp_name/error/size), ou []
      * @return array|WP_Error réponse JSON (avec ticket_id), ou WP_Error
      */
     public static function create_ticket($fields, $files = array()) {
         return self::request_multipart('/api/client-sav/tickets', $fields, $files);
+    }
+
+    /**
+     * POST /api/client-sav-public/tickets — demande d'un visiteur NON connecté.
+     *
+     * Surface séparée côté API : le secret prouve seulement que l'appel vient de
+     * notre WordPress, il n'y a pas d'identité à transmettre. C'est pourquoi on
+     * n'exige pas d'utilisateur connecté ici (4e argument à false).
+     *
+     * @param array $fields ['name'=>..,'email'=>..,'body'=>..]
+     * @param array $files  $_FILES['attachments'] ou []
+     * @return array|WP_Error
+     */
+    public static function create_public_ticket($fields, $files = array()) {
+        return self::request_multipart('/api/client-sav-public/tickets', $fields, $files, false);
     }
 
     /**
@@ -202,11 +217,13 @@ class Youvape_SAV_Api_Client {
      * nativement des fichiers.
      *
      * @param string $path
-     * @param array  $fields champs simples (clé => valeur scalaire)
-     * @param array  $files  structure $_FILES['attachments'] (multiple), ou []
+     * @param array  $fields       champs simples (clé => valeur scalaire ou tableau)
+     * @param array  $files        structure $_FILES['attachments'] (multiple), ou []
+     * @param bool   $require_user exiger un utilisateur connecté et transmettre
+     *                             son identité (false pour la surface publique)
      * @return array|WP_Error
      */
-    private static function request_multipart($path, $fields, $files) {
+    private static function request_multipart($path, $fields, $files, $require_user = true) {
         // Mêmes garde-fous que request() : config + identité serveur.
         $api_url = self::api_url();
         $api_secret = self::api_secret();
@@ -217,7 +234,7 @@ class Youvape_SAV_Api_Client {
             );
         }
         $user_id = get_current_user_id();
-        if (!$user_id) {
+        if ($require_user && !$user_id) {
             return new WP_Error('youvape_sav_not_logged_in', __('Vous devez être connecté.', 'youvape-sav-client'));
         }
 
@@ -225,14 +242,19 @@ class Youvape_SAV_Api_Client {
         $eol = "\r\n";
         $body = '';
 
-        // Champs simples
+        // Champs simples. Une valeur tableau (ex. plusieurs produits concernés)
+        // est envoyée en répétant le même nom de champ : côté Node, multer
+        // regroupe alors les occurrences en tableau.
         foreach ((array) $fields as $name => $value) {
-            if (is_array($value)) {
-                continue;
+            $values = is_array($value) ? $value : array($value);
+            foreach ($values as $item) {
+                if (is_array($item) || is_object($item)) {
+                    continue;
+                }
+                $body .= '--' . $boundary . $eol;
+                $body .= 'Content-Disposition: form-data; name="' . $name . '"' . $eol . $eol;
+                $body .= $item . $eol;
             }
-            $body .= '--' . $boundary . $eol;
-            $body .= 'Content-Disposition: form-data; name="' . $name . '"' . $eol . $eol;
-            $body .= $value . $eol;
         }
 
         // Fichiers : champ "attachments" (multiple). On normalise la structure
@@ -256,15 +278,22 @@ class Youvape_SAV_Api_Client {
 
         $body .= '--' . $boundary . '--' . $eol;
 
+        $headers = array(
+            'x-client-sav-secret' => $api_secret,
+            'Accept'              => 'application/json',
+            'Content-Type'        => 'multipart/form-data; boundary=' . $boundary,
+        );
+        // L'identité n'est transmise que sur la surface authentifiée. Sur la
+        // surface publique, l'API n'attend aucun wp_user_id (et un visiteur
+        // connecté qui passe par le formulaire public ne doit pas en imposer un).
+        if ($require_user) {
+            $headers['x-wp-user-id'] = (string) $user_id;
+        }
+
         $url = rtrim($api_url, '/') . $path;
         $response = wp_remote_post($url, array(
             'timeout' => self::TIMEOUT,
-            'headers' => array(
-                'x-client-sav-secret' => $api_secret,
-                'x-wp-user-id'        => (string) $user_id,
-                'Accept'              => 'application/json',
-                'Content-Type'        => 'multipart/form-data; boundary=' . $boundary,
-            ),
+            'headers' => $headers,
             'body' => $body,
         ));
 

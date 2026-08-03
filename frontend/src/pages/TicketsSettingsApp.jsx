@@ -84,6 +84,7 @@ function StatusPreview({ label, bg, text }) {
 function StatusRow({ status, onSave, onDelete }) {
   const [editing, setEditing] = useState(false);
   const [label, setLabel]     = useState(status.label);
+  const [clientLabel, setClientLabel] = useState(status.client_label || '');
   const [bg, setBg]           = useState(status.bg_color);
   const [text, setText]       = useState(status.text_color);
   const [saving, setSaving]   = useState(false);
@@ -91,13 +92,14 @@ function StatusRow({ status, onSave, onDelete }) {
 
   const handleSave = async () => {
     setSaving(true);
-    await onSave(status.id, { label, bg_color: bg, text_color: text });
+    await onSave(status.id, { label, bg_color: bg, text_color: text, client_label: clientLabel });
     setSaving(false);
     setEditing(false);
   };
 
   const handleCancel = () => {
     setLabel(status.label);
+    setClientLabel(status.client_label || '');
     setBg(status.bg_color);
     setText(status.text_color);
     setEditing(false);
@@ -118,6 +120,16 @@ function StatusRow({ status, onSave, onDelete }) {
           <div style={{ width: 12, height: 12, borderRadius: '50%', background: status.text_color, flexShrink: 0 }} />
           <StatusPreview label={status.label} bg={status.bg_color} text={status.text_color} />
           <span style={{ fontSize: 11.5, color: C.grisM, fontFamily: 'monospace' }}>{status.value}</span>
+          {/* Libellé côté client : signalé en rouge s'il manque, car l'espace
+              client affiche alors le repli générique « En cours de traitement ». */}
+          {status.client_label ? (
+            <span style={{ fontSize: 12, color: C.grisF, display: 'flex', alignItems: 'center', gap: 5 }}>
+              <span style={{ color: C.grisM }}>client&nbsp;:</span>
+              <strong style={{ fontWeight: 700 }}>{status.client_label}</strong>
+            </span>
+          ) : (
+            <span style={{ fontSize: 12, color: '#DC2626', fontWeight: 600 }}>libellé client manquant</span>
+          )}
           <div style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
             <button onClick={() => setEditing(true)} style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 10px', borderRadius: 6, border: `1px solid ${C.grisCL}`, background: C.grisTL, color: C.grisF, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
               <IconEdit /> Modifier
@@ -145,6 +157,13 @@ function StatusRow({ status, onSave, onDelete }) {
             <div>
               <label style={{ fontSize: 11, fontWeight: 700, color: C.grisM, textTransform: 'uppercase', letterSpacing: 0.5, display: 'block', marginBottom: 5 }}>Aperçu</label>
               <StatusPreview label={label} bg={bg} text={text} />
+            </div>
+          </div>
+          <div>
+            <label style={{ fontSize: 11, fontWeight: 700, color: C.grisM, textTransform: 'uppercase', letterSpacing: 0.5, display: 'block', marginBottom: 5 }}>Libellé vu par le client</label>
+            <input value={clientLabel} onChange={e => setClientLabel(e.target.value)} maxLength={100} placeholder="Ex : En cours de traitement" style={{ width: '100%', padding: '8px 12px', border: `1px solid ${C.grisCL}`, borderRadius: 7, fontSize: 13.5, fontFamily: 'Lato, sans-serif', color: C.grisTF, outline: 'none' }} onFocus={e => e.target.style.borderColor = TICKETS_COLOR} onBlur={e => e.target.style.borderColor = C.grisCL} />
+            <div style={{ fontSize: 11, color: C.grisM, marginTop: 4 }}>
+              Affiché dans l'espace client « Mes demandes ». Plusieurs statuts internes peuvent partager le même libellé client. Si vide, le client voit « En cours de traitement ».
             </div>
           </div>
           <div>
@@ -185,6 +204,7 @@ function StatusRow({ status, onSave, onDelete }) {
 function CreateStatusForm({ onCreate }) {
   const [open, setOpen]     = useState(false);
   const [label, setLabel]   = useState('');
+  const [clientLabel, setClientLabel] = useState('');
   const [value, setValue]   = useState('');
   const [bg, setBg]         = useState('#F0F0F0');
   const [text, setText]     = useState('#626E85');
@@ -199,10 +219,10 @@ function CreateStatusForm({ onCreate }) {
   const handleSubmit = async () => {
     if (!label.trim() || !value.trim()) return;
     setSaving(true); setError('');
-    const err = await onCreate({ value, label, bg_color: bg, text_color: text });
+    const err = await onCreate({ value, label, bg_color: bg, text_color: text, client_label: clientLabel });
     setSaving(false);
     if (err) { setError(err); return; }
-    setLabel(''); setValue(''); setBg('#F0F0F0'); setText('#626E85');
+    setLabel(''); setClientLabel(''); setValue(''); setBg('#F0F0F0'); setText('#626E85');
     setOpen(false);
   };
 
@@ -225,6 +245,11 @@ function CreateStatusForm({ onCreate }) {
         <label style={{ fontSize: 11, fontWeight: 700, color: C.grisM, textTransform: 'uppercase', letterSpacing: 0.5, display: 'block', marginBottom: 5 }}>Identifiant interne (slug)</label>
         <input value={value} onChange={e => setValue(e.target.value)} placeholder="en_attente" style={{ width: '100%', padding: '8px 12px', border: `1px solid ${C.grisCL}`, borderRadius: 7, fontSize: 13, fontFamily: 'monospace', color: C.grisF, outline: 'none' }} onFocus={e => e.target.style.borderColor = TICKETS_COLOR} onBlur={e => e.target.style.borderColor = C.grisCL} />
         <div style={{ fontSize: 11, color: C.grisM, marginTop: 4 }}>Généré automatiquement. Ne peut pas être modifié après création.</div>
+      </div>
+      <div style={{ marginBottom: 14 }}>
+        <label style={{ fontSize: 11, fontWeight: 700, color: C.grisM, textTransform: 'uppercase', letterSpacing: 0.5, display: 'block', marginBottom: 5 }}>Libellé vu par le client</label>
+        <input value={clientLabel} onChange={e => setClientLabel(e.target.value)} maxLength={100} placeholder="Ex : En cours de traitement" style={{ width: '100%', padding: '8px 12px', border: `1px solid ${C.grisCL}`, borderRadius: 7, fontSize: 13.5, fontFamily: 'Lato, sans-serif', color: C.grisTF, outline: 'none' }} onFocus={e => e.target.style.borderColor = TICKETS_COLOR} onBlur={e => e.target.style.borderColor = C.grisCL} />
+        <div style={{ fontSize: 11, color: C.grisM, marginTop: 4 }}>Affiché dans l'espace client. Si vide, le client voit « En cours de traitement ».</div>
       </div>
       <div style={{ marginBottom: 14 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
@@ -608,6 +633,9 @@ export default function TicketsSettingsApp() {
               <>
                 <div style={{ background: `linear-gradient(135deg, ${TICKETS_COLOR}10 0%, ${TICKETS_COLOR}04 100%)`, border: `1px solid ${TICKETS_COLOR}30`, borderRadius: 10, padding: '14px 18px', marginBottom: 24, fontSize: 13, color: C.grisF, lineHeight: 1.6 }}>
                   <strong style={{ color: C.grisTF }}>Statuts des tickets SAV</strong> — Définissez les états possibles pour vos tickets de support. Chaque statut possède un label affiché, une couleur de fond et une couleur de texte.
+                  <div style={{ marginTop: 6 }}>
+                    Le <strong>libellé vu par le client</strong> est celui affiché dans son espace « Mes demandes » : il peut être plus simple que le libellé interne, et plusieurs statuts internes peuvent partager le même. Sans libellé client, le client voit « En cours de traitement », y compris sur une demande résolue.
+                  </div>
                 </div>
                 {statusLoading ? (
                   <div style={{ textAlign: 'center', padding: '40px 0', color: C.grisM }}>Chargement…</div>
