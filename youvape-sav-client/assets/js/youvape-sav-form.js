@@ -43,9 +43,22 @@
         };
     }
 
+    /** Liste déroulante des commandes (absente si le client n'en a aucune). */
+    function orderSelect() {
+        return root.querySelector('#youvape-sav-order');
+    }
+
     function selectedOrderId() {
-        var checked = orderRow ? orderRow.querySelector('input[name="order_id"]:checked') : null;
-        return checked ? checked.value : '';
+        var select = orderSelect();
+        return select ? select.value : '';
+    }
+
+    /** La commande choisie est-elle hors délai de rétractation ? */
+    function selectedOrderExpired() {
+        var select = orderSelect();
+        if (!select || !select.value) { return false; }
+        var opt = select.options[select.selectedIndex];
+        return !!opt && opt.getAttribute('data-expired') === '1';
     }
 
     /** N'active que les produits de la commande sélectionnée. */
@@ -82,9 +95,11 @@
         show(filesRow, chosen);
         if (submitRow) { submitRow.classList.toggle(HIDDEN, !chosen); }
 
-        // L'avertissement « délai dépassé » ne concerne que la rétractation.
+        // L'avertissement « délai dépassé » ne concerne que la rétractation, et
+        // seulement si la commande choisie est effectivement hors délai.
+        var showExpired = chosen && reason.notice && selectedOrderExpired();
         each(root.querySelectorAll('[data-role="expired-warning"]'), function (el) {
-            el.classList.toggle(HIDDEN, !(chosen && reason.notice));
+            el.classList.toggle(HIDDEN, !showExpired);
         });
 
         if (chosen && bodyLabel && reason.bodyLabel) {
@@ -103,19 +118,10 @@
 
     select.addEventListener('change', refresh);
 
-    // Sélection d'une commande : mise en évidence de la carte + produits.
-    if (orderRow) {
-        each(orderRow.querySelectorAll('input[name="order_id"]'), function (radio) {
-            radio.addEventListener('change', function (e) {
-                each(orderRow.querySelectorAll('.youvape-sav__order-card'), function (card) {
-                    card.classList.remove('is-selected');
-                });
-                var card = e.target.closest ? e.target.closest('.youvape-sav__order-card') : null;
-                if (card) { card.classList.add('is-selected'); }
-                var reason = currentReason();
-                syncProducts(!!reason && reason.products);
-            });
-        });
+    // Changement de commande : on remet à jour la liste des produits et
+    // l'avertissement de délai. `refresh()` fait les deux.
+    if (orderSelect()) {
+        orderSelect().addEventListener('change', refresh);
     }
 
     if (productsRow) {

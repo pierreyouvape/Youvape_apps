@@ -119,64 +119,43 @@ $hidden = ' is-hidden';
                     <?php echo esc_html__('Aucune commande à associer. Si votre demande ne porte pas sur une commande, choisissez le motif « Une question avant de passer ma commande ».', 'youvape-sav-client'); ?>
                 </p>
             <?php else : ?>
-                <div class="youvape-sav__orders" role="radiogroup">
+                <select id="youvape-sav-order" name="order_id" required <?php disabled(!$show_order); ?>>
+                    <option value=""><?php echo esc_html__('— Choisissez une commande —', 'youvape-sav-client'); ?></option>
                     <?php foreach ((array) $orders as $order) :
                         $oid = isset($order['wp_order_id']) ? (int) $order['wp_order_id'] : 0;
                         if (!$oid) {
                             continue;
                         }
-                        $date    = isset($order['post_date']) ? $order['post_date'] : '';
-                        $total   = isset($order['order_total']) ? $order['order_total'] : 0;
-                        $items   = isset($order['items']) && is_array($order['items']) ? $order['items'] : array();
-                        $expired = !empty($order['withdrawal_expired']);
-                        $checked = ($preselect === $oid);
+                        $date  = isset($order['post_date']) ? $order['post_date'] : '';
+                        $total = isset($order['order_total']) ? $order['order_total'] : 0;
+
+                        // Libellé compact : n° de commande, date, montant. Le montant
+                        // est formaté ici sans passer par wc_price(), qui renvoie du
+                        // HTML — inutilisable dans une <option>.
+                        $label = sprintf(__('Commande #%s', 'youvape-sav-client'), $oid);
+                        if ($date) {
+                            $label .= ' — ' . date_i18n(get_option('date_format'), strtotime($date));
+                        }
+                        $label .= ' — ' . number_format((float) $total, 2, ',', ' ') . ' €';
                         ?>
-                        <label class="youvape-sav__order-card<?php echo $checked ? ' is-selected' : ''; ?>">
-                            <input type="radio" name="order_id" value="<?php echo esc_attr($oid); ?>"
-                                   data-expired="<?php echo $expired ? '1' : '0'; ?>"
-                                   required <?php disabled(!$show_order); ?> <?php checked($checked); ?> />
-                            <span class="youvape-sav__order-body">
-                                <span class="youvape-sav__order-head">
-                                    <strong><?php echo esc_html(sprintf(__('Commande #%s', 'youvape-sav-client'), $oid)); ?></strong>
-                                    <span class="youvape-sav__order-meta">
-                                        <?php echo $date ? esc_html(date_i18n(get_option('date_format'), strtotime($date))) : ''; ?>
-                                        · <?php echo wp_kses_post(youvape_sav_price($total)); ?>
-                                    </span>
-                                </span>
-
-                                <?php if ($expired) : ?>
-                                    <span class="youvape-sav__order-warning<?php echo $show_notice ? '' : $hidden; ?>" data-role="expired-warning">
-                                        <?php echo esc_html(sprintf(
-                                            /* translators: %d : délai légal de rétractation en jours */
-                                            __('Livrée il y a plus de %d jours : le délai de rétractation est probablement dépassé.', 'youvape-sav-client'),
-                                            (int) $withdrawal_days
-                                        )); ?>
-                                    </span>
-                                <?php endif; ?>
-
-                                <?php if (!empty($items)) : ?>
-                                    <span class="youvape-sav__order-items">
-                                        <?php foreach ($items as $it) :
-                                            $name = isset($it['order_item_name']) ? (string) $it['order_item_name'] : '';
-                                            $img  = isset($it['image_url']) ? (string) $it['image_url'] : '';
-                                            $qty  = isset($it['qty']) ? (int) $it['qty'] : 0;
-                                            ?>
-                                            <span class="youvape-sav__item" title="<?php echo esc_attr($name); ?>">
-                                                <?php if ($img) : ?>
-                                                    <img src="<?php echo esc_url($img); ?>" alt="" loading="lazy" />
-                                                <?php endif; ?>
-                                                <span class="youvape-sav__item-name"><?php echo esc_html($name); ?></span>
-                                                <?php if ($qty > 1) : ?>
-                                                    <span class="youvape-sav__item-qty">×<?php echo esc_html($qty); ?></span>
-                                                <?php endif; ?>
-                                            </span>
-                                        <?php endforeach; ?>
-                                    </span>
-                                <?php endif; ?>
-                            </span>
-                        </label>
+                        <option value="<?php echo esc_attr($oid); ?>"
+                                data-expired="<?php echo !empty($order['withdrawal_expired']) ? '1' : '0'; ?>"
+                                <?php selected($preselect, $oid); ?>>
+                            <?php echo esc_html($label); ?>
+                        </option>
                     <?php endforeach; ?>
-                </div>
+                </select>
+
+                <?php /* Avertissement de délai : affiché sous la liste, uniquement
+                         pour la rétractation et si la commande choisie est hors
+                         délai. Purement informatif, jamais bloquant. */ ?>
+                <span class="youvape-sav__order-warning is-hidden" data-role="expired-warning">
+                    <?php echo esc_html(sprintf(
+                        /* translators: %d : délai légal de rétractation en jours */
+                        __('Cette commande est livrée depuis plus de %d jours : le délai de rétractation est probablement dépassé.', 'youvape-sav-client'),
+                        (int) $withdrawal_days
+                    )); ?>
+                </span>
             <?php endif; ?>
         </div>
 

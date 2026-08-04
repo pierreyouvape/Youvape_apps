@@ -148,6 +148,11 @@ comportement de Gravity Forms, conservé volontairement.
 
 ## Changelog
 
+- **0.3.4** — La commande concernée se choisit dans un **menu déroulant** simple
+  (n° de commande, date, montant) au lieu de cartes détaillées à cocher. Les
+  produits restent en cases à cocher, le choix multiple étant nécessaire.
+  L'avertissement de délai de rétractation s'affiche sous la liste, et
+  uniquement si la commande choisie est effectivement hors délai.
 - **0.3.3** — Les shortcodes sont rappelés dans **Réglages → Espace client SAV**,
   dans des champs en lecture seule avec bouton « Copier » : copier depuis un
   champ de saisie ne rapporte que du texte brut, ce qui évite de coller un
