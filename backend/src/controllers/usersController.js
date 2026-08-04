@@ -63,6 +63,7 @@ const usersController = {
             transporteurs: { read: true, write: true },
             customers:   { read: true, write: true },
             veille:      { read: true, write: true },
+            inscrits:    { read: true, write: true },
           }
         });
       }

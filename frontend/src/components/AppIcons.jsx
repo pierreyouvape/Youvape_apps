@@ -229,6 +229,16 @@ export const Veille = (props) => (
   </svg>
 );
 
+// Inscrit sans commande : silhouette + point d'interrogation (aucun achat)
+export const Inscrits = (props) => (
+  <svg viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
+    <path d="M15 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+    <circle cx="8.5" cy="7" r="4" />
+    <path d="M17.5 8.5a2 2 0 1 1 2.6 1.9c-.6.2-1.1.8-1.1 1.6v.5" />
+    <line x1="19" y1="15.5" x2="19" y2="15.5" />
+  </svg>
+);
+
 export const APPS = [
   { key: 'customers', path: '/customers', label: 'Clients',                   Icon: Customers, color: '#0EA5A5' },
   { key: 'reviews',   path: '/reviews',   label: 'Avis Garantis',            Icon: Reviews,   color: '#0071EB' },
@@ -248,4 +258,5 @@ export const APPS = [
   { key: 'mondial-relay', path: '/mondial-relay', label: 'Factures Mondial Relay', Icon: MondialRelay, color: '#9C2462' },
   { key: 'transporteurs', path: '/transporteurs', label: 'Transporteurs (vue globale)', Icon: Transporteurs, color: '#334155' },
   { key: 'veille', path: '/veille', label: 'Veille concurrentielle', Icon: Veille, color: '#135E84' },
+  { key: 'inscrits', path: '/inscrits', label: 'Inscrits sans commande', Icon: Inscrits, color: '#0EA5A5' },
 ];
