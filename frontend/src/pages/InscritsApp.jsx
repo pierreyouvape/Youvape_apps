@@ -147,7 +147,7 @@ const InscritsApp = () => {
 
   /* Export CSV de la sélection courante. */
   const exportCsv = () => {
-    const header = ['Date inscription', 'Heure', 'Nom', 'Prénom', 'Email', 'Pays (code)', 'Pays', 'Dernière commande', 'A commandé (même email)', 'Date 1re commande'];
+    const header = ['Date inscription', 'Heure', 'Nom', 'Prénom', 'Email', 'Pays (code)', 'Pays', 'Dernière commande', 'Raison', 'A commandé (même email)', 'Date 1re commande'];
     const lines = [header.join(';')];
     for (const d of filteredDays) {
       for (const c of d.customers) {
@@ -160,6 +160,7 @@ const InscritsApp = () => {
           c.country_code || '',
           c.country_code ? getCountryName(c.country_code) : 'Inconnu',
           orderStatusInfo(c.last_order_status).label,
+          c.last_order_reason === 'payment_refused' ? 'Paiement refusé' : c.last_order_reason === 'abandon' ? 'Abandon' : '',
           c.ordered_by_email ? 'Oui' : 'Non',
           c.ordered_by_email_date ? String(c.ordered_by_email_date).slice(0, 10) : '',
         ].join(';'));
@@ -367,10 +368,15 @@ const InscritsApp = () => {
                               <td style={{ padding: '10px 18px', whiteSpace: 'nowrap' }}>
                                 {(() => {
                                   const st = orderStatusInfo(c.last_order_status);
+                                  const reason = c.last_order_reason === 'payment_refused' ? 'Paiement refusé'
+                                    : c.last_order_reason === 'abandon' ? 'Abandon' : null;
                                   return (
-                                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: `${st.color}1A`, color: st.color, fontWeight: 700, fontSize: 12, borderRadius: 99, padding: '3px 10px' }}>
-                                      {st.label}
-                                    </span>
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: `${st.color}1A`, color: st.color, fontWeight: 700, fontSize: 12, borderRadius: 99, padding: '3px 10px', alignSelf: 'flex-start' }}>
+                                        {st.label}
+                                      </span>
+                                      {reason && <span style={{ fontSize: 11, color: C.grisM, fontWeight: 600 }}>{reason}</span>}
+                                    </div>
                                   );
                                 })()}
                               </td>
