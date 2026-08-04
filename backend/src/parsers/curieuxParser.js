@@ -125,16 +125,20 @@ module.exports = {
     }
 
     // Gerer la ref qui deborde sur la page suivante :
-    // Le dernier item peut avoir une ref tronquee (ex: "PRE-") car la ref complete est sur page 2
-    // Le fragment orphelin (ex: "PREC-50-0MG") est la ref COMPLETE, pas juste la suite
+    // Le dernier item a une ref tronquee (ex: "PRE-") car la SUITE de la ref est sur page 2.
+    // Le fragment orphelin (ex: "PREC-10-12MG") est la CONTINUATION, pas la ref complete :
+    // on le CONCATENE au prefixe tronque, exactement comme la reconstitution intra-bloc
+    // (cf. plus haut "items[...].supplier_sku += firstLine"). Ex: "PRE-" + "PREC-10-12MG"
+    // = "PRE-PREC-10-12MG" (coherent avec les refs freres PRE-PREC-10-3MG/6MG/18MG).
+    // Bug historique : un `= orphan` ici tronquait la ref en "PREC-10-12MG" -> mismatch
+    // du pack_qty -> quantite non divisee par pack_qty (20 unites vues comme 20 packs).
     if (items.length > 0 && blockStart < lines.length) {
       const orphanLines = lines.slice(blockStart);
       const orphan = orphanLines.join('').trim();
       if (orphan && /^[A-Z0-9][\w-]+$/.test(orphan)) {
         const lastItem = items[items.length - 1];
         if (lastItem.supplier_sku.endsWith('-')) {
-          // Le fragment orphelin est la ref complete (commence par le meme prefixe)
-          lastItem.supplier_sku = orphan;
+          lastItem.supplier_sku += orphan;
         }
       }
     }
