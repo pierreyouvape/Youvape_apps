@@ -65,6 +65,7 @@ const InscritsApp = () => {
   const [dateFrom, setDateFrom] = useState(localYmd(monthAgo));
   const [dateTo, setDateTo] = useState(localYmd(today));
   const [search, setSearch] = useState('');
+  const [orderedFilter, setOrderedFilter] = useState('all'); // 'all' | 'yes' | 'no'
   const [days, setDays] = useState([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -89,22 +90,27 @@ const InscritsApp = () => {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  // Filtre texte (nom / email / pays) appliqué côté client.
+  // Filtres client : texte (nom / email / pays) + statut "a commandé (même email)".
   const filteredDays = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return days;
+    if (!q && orderedFilter === 'all') return days;
     return days
       .map((d) => {
-        const customers = d.customers.filter((c) =>
-          fullName(c).toLowerCase().includes(q) ||
-          (c.email || '').toLowerCase().includes(q) ||
-          getCountryName(c.country_code || '').toLowerCase().includes(q) ||
-          (c.country_code || '').toLowerCase().includes(q)
-        );
+        const customers = d.customers.filter((c) => {
+          if (orderedFilter === 'yes' && !c.ordered_by_email) return false;
+          if (orderedFilter === 'no' && c.ordered_by_email) return false;
+          if (!q) return true;
+          return (
+            fullName(c).toLowerCase().includes(q) ||
+            (c.email || '').toLowerCase().includes(q) ||
+            getCountryName(c.country_code || '').toLowerCase().includes(q) ||
+            (c.country_code || '').toLowerCase().includes(q)
+          );
+        });
         return { ...d, customers, count: customers.length };
       })
       .filter((d) => d.count > 0);
-  }, [days, search]);
+  }, [days, search, orderedFilter]);
 
   const shownTotal = useMemo(
     () => filteredDays.reduce((s, d) => s + d.count, 0),
@@ -158,7 +164,23 @@ const InscritsApp = () => {
 
   return (
     <AppShell currentPath="/inscrits">
-      <main className="main-scroll" style={{ flex: 1, minWidth: 0, overflowY: 'auto', height: '100vh', background: C.grisTL }}>
+      <main className="main-scroll" style={{ flex: 1, minWidth: 0, overflowY: 'auto', height: '100vh', background: C.grisTL, position: 'relative' }}>
+        <style>{`
+          @keyframes yv-indeterminate {
+            0%   { left: -40%; width: 40%; }
+            50%  { left: 30%;  width: 55%; }
+            100% { left: 100%; width: 40%; }
+          }
+          @keyframes yv-spin { to { transform: rotate(360deg); } }
+        `}</style>
+
+        {/* Barre de chargement indéterminée (haut de page) */}
+        {loading && (
+          <div style={{ position: 'sticky', top: 0, left: 0, right: 0, height: 3, background: `${C.teal}22`, overflow: 'hidden', zIndex: 20 }}>
+            <div style={{ position: 'absolute', top: 0, height: '100%', background: C.teal, borderRadius: 2, animation: 'yv-indeterminate 1.1s ease-in-out infinite' }} />
+          </div>
+        )}
+
         {/* En-tête */}
         <section style={{ padding: '28px 40px 20px', background: C.blanc, borderBottom: `1px solid ${C.grisCL}` }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
@@ -192,6 +214,32 @@ const InscritsApp = () => {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: 1, minWidth: 220 }}>
             <label style={{ fontSize: 11, fontWeight: 600, color: C.grisM }}>Recherche (nom, email, pays)</label>
             <input type="text" value={search} placeholder="Filtrer…" onChange={(e) => setSearch(e.target.value)} style={inputStyle} />
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <label style={{ fontSize: 11, fontWeight: 600, color: C.grisM }}>A commandé (même email)</label>
+            <div style={{ display: 'inline-flex', border: `1px solid ${C.grisCL}`, borderRadius: 8, overflow: 'hidden' }}>
+              {[
+                { k: 'all', label: 'Tous' },
+                { k: 'yes', label: 'Oui' },
+                { k: 'no', label: 'Non' },
+              ].map((opt, i) => {
+                const active = orderedFilter === opt.k;
+                return (
+                  <button
+                    key={opt.k}
+                    onClick={() => setOrderedFilter(opt.k)}
+                    style={{
+                      padding: '8px 14px', border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 700,
+                      borderLeft: i === 0 ? 'none' : `1px solid ${C.grisCL}`,
+                      background: active ? (opt.k === 'yes' ? C.vert : opt.k === 'no' ? C.grisF : C.saphir) : C.blanc,
+                      color: active ? '#fff' : C.grisF,
+                    }}
+                  >
+                    {opt.label}
+                  </button>
+                );
+              })}
+            </div>
           </div>
           <button
             onClick={exportCsv}
@@ -230,7 +278,10 @@ const InscritsApp = () => {
         {/* Contenu */}
         <section style={{ padding: '18px 40px 48px' }}>
           {loading ? (
-            <div style={{ padding: 40, textAlign: 'center', color: C.grisM }}>Chargement…</div>
+            <div style={{ padding: 40, textAlign: 'center', color: C.grisM, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14 }}>
+              <div style={{ width: 34, height: 34, borderRadius: '50%', border: `3px solid ${C.teal}33`, borderTopColor: C.teal, animation: 'yv-spin 0.8s linear infinite' }} />
+              <span style={{ fontSize: 13, fontWeight: 600 }}>Chargement des inscrits…</span>
+            </div>
           ) : error ? (
             <div style={{ padding: 24, textAlign: 'center', color: C.rouge, background: C.blanc, borderRadius: 12, border: `1px solid ${C.grisCL}` }}>
               {error}
