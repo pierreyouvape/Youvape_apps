@@ -350,7 +350,7 @@ const InscritsApp = () => {
                           {day.customers.map((c) => (
                             <tr
                               key={c.id}
-                              onClick={() => navigate(`/customers/${c.id}`)}
+                              onClick={() => c.wp_user_id && navigate(`/customers/${c.wp_user_id}`)}
                               style={{ borderTop: `1px solid ${C.grisCL}`, cursor: 'pointer' }}
                               onMouseEnter={(e) => (e.currentTarget.style.background = C.grisTL)}
                               onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
