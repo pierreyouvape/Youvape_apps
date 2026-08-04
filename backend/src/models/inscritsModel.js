@@ -48,7 +48,18 @@ async function listWithoutOrders({ dateFrom, dateTo } = {}) {
 
   const where = conditions.join('\n      AND ');
 
+  // On pré-agrège en UNE passe la 1re commande payée par email (minuscule) plutôt
+  // qu'une sous-requête corrélée par client (qui rescannait `orders` en entier pour
+  // chaque inscrit → requête interminable, pas d'index sur billing_email).
   const query = `
+    WITH paid_email_orders AS (
+      SELECT LOWER(billing_email) AS email_lc, MIN(post_date) AS first_order_date
+      FROM orders
+      WHERE post_status = ANY($1)
+        AND order_total > 0
+        AND NULLIF(billing_email, '') IS NOT NULL
+      GROUP BY LOWER(billing_email)
+    )
     SELECT
       c.id,
       c.wp_user_id,
@@ -66,14 +77,9 @@ async function listWithoutOrders({ dateFrom, dateTo } = {}) {
       ) AS country_code,
       -- A finalement commandé avec CE MÊME email (typiquement en invité,
       -- wp_customer_id = 0, donc non rattaché au compte). Insensible à la casse.
-      (
-        SELECT MIN(o3.post_date)
-        FROM orders o3
-        WHERE LOWER(o3.billing_email) = LOWER(c.email)
-          AND o3.post_status = ANY($1)
-          AND o3.order_total > 0
-      ) AS ordered_by_email_date
+      peo.first_order_date AS ordered_by_email_date
     FROM customers c
+    LEFT JOIN paid_email_orders peo ON peo.email_lc = LOWER(c.email)
     WHERE ${where}
       AND NOT EXISTS (
         SELECT 1
