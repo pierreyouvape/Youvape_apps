@@ -75,6 +75,14 @@ async function listWithoutOrders({ dateFrom, dateTo } = {}) {
         AND NULLIF(billing_email, '') IS NOT NULL
         AND NULLIF(billing_country, '') IS NOT NULL
       ORDER BY LOWER(billing_email), post_date DESC
+    ),
+    last_order_by_email AS (
+      SELECT DISTINCT ON (LOWER(billing_email))
+        LOWER(billing_email) AS email_lc,
+        post_status
+      FROM orders
+      WHERE NULLIF(billing_email, '') IS NOT NULL
+      ORDER BY LOWER(billing_email), post_date DESC
     )
     SELECT
       c.id,
@@ -86,10 +94,13 @@ async function listWithoutOrders({ dateFrom, dateTo } = {}) {
       -- Pays issu de leur dernière commande ÉCHOUÉE ou ANNULÉE.
       fec.cc AS country_code,
       -- A finalement commandé avec CE MÊME email (conversion, invité inclus).
-      peo.first_order_date AS ordered_by_email_date
+      peo.first_order_date AS ordered_by_email_date,
+      -- Statut de leur dernière commande (tous statuts) matché par email.
+      lob.post_status AS last_order_status
     FROM customers c
     LEFT JOIN paid_email_orders peo ON peo.email_lc = LOWER(c.email)
     LEFT JOIN failed_email_country fec ON fec.email_lc = LOWER(c.email)
+    LEFT JOIN last_order_by_email lob ON lob.email_lc = LOWER(c.email)
     WHERE ${where}
       AND NOT EXISTS (
         SELECT 1

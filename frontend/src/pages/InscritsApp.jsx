@@ -41,6 +41,22 @@ function hourOf(val) {
 
 const fullName = (c) => `${c.first_name || ''} ${c.last_name || ''}`.trim() || '—';
 
+/* Libellé + couleur du statut de la dernière commande (par email). */
+const PAID_SET = new Set(['wc-completed', 'wc-processing', 'wc-shipped', 'wc-delivered', 'wc-being-delivered', 'wc-awaiting-delivery']);
+function orderStatusInfo(status) {
+  if (!status) return { label: 'Aucune', color: '#8A99A4' };
+  if (PAID_SET.has(status)) return { label: 'Payée', color: '#4AB866' };
+  switch (status) {
+    case 'wc-failed':         return { label: 'Échouée', color: '#DE2020' };
+    case 'wc-cancelled':      return { label: 'Annulée', color: '#626E85' };
+    case 'wc-checkout-draft': return { label: 'Brouillon', color: '#E28F00' };
+    case 'wc-pending':        return { label: 'En attente', color: '#E28F00' };
+    case 'wc-on-hold':        return { label: 'En attente', color: '#E28F00' };
+    case 'wc-refunded':       return { label: 'Remboursée', color: '#DE2020' };
+    default:                  return { label: status.replace(/^wc-/, ''), color: '#8A99A4' };
+  }
+}
+
 /* ─── CARTE STAT ────────────────────────────────────────── */
 function StatCard({ label, value, accent }) {
   return (
@@ -131,7 +147,7 @@ const InscritsApp = () => {
 
   /* Export CSV de la sélection courante. */
   const exportCsv = () => {
-    const header = ['Date inscription', 'Heure', 'Nom', 'Prénom', 'Email', 'Pays (code)', 'Pays', 'A commandé (même email)', 'Date 1re commande'];
+    const header = ['Date inscription', 'Heure', 'Nom', 'Prénom', 'Email', 'Pays (code)', 'Pays', 'Dernière commande', 'A commandé (même email)', 'Date 1re commande'];
     const lines = [header.join(';')];
     for (const d of filteredDays) {
       for (const c of d.customers) {
@@ -143,6 +159,7 @@ const InscritsApp = () => {
           c.email || '',
           c.country_code || '',
           c.country_code ? getCountryName(c.country_code) : 'Inconnu',
+          orderStatusInfo(c.last_order_status).label,
           c.ordered_by_email ? 'Oui' : 'Non',
           c.ordered_by_email_date ? String(c.ordered_by_email_date).slice(0, 10) : '',
         ].join(';'));
@@ -325,6 +342,7 @@ const InscritsApp = () => {
                             <th style={{ padding: '10px 18px', fontWeight: 700 }}>Prénom</th>
                             <th style={{ padding: '10px 18px', fontWeight: 700 }}>Email</th>
                             <th style={{ padding: '10px 18px', fontWeight: 700 }}>Pays</th>
+                            <th style={{ padding: '10px 18px', fontWeight: 700 }}>Dernière commande</th>
                             <th style={{ padding: '10px 18px', fontWeight: 700 }}>A commandé (même email)</th>
                           </tr>
                         </thead>
@@ -345,6 +363,16 @@ const InscritsApp = () => {
                                 {c.country_code
                                   ? `${getCountryFlag(c.country_code)} ${getCountryName(c.country_code)}`
                                   : <span style={{ color: C.grisM }}>— Inconnu</span>}
+                              </td>
+                              <td style={{ padding: '10px 18px', whiteSpace: 'nowrap' }}>
+                                {(() => {
+                                  const st = orderStatusInfo(c.last_order_status);
+                                  return (
+                                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: `${st.color}1A`, color: st.color, fontWeight: 700, fontSize: 12, borderRadius: 99, padding: '3px 10px' }}>
+                                      {st.label}
+                                    </span>
+                                  );
+                                })()}
                               </td>
                               <td style={{ padding: '10px 18px', whiteSpace: 'nowrap' }}>
                                 {c.ordered_by_email ? (
