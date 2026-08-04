@@ -11,6 +11,7 @@ const { mergeTickets } = require('../services/ticketMerge');
 const { sendAlert } = require('../services/alertService');
 const { syncTicketOrderTag } = require('../services/bmsOrderTagService');
 const { sendAckEmail } = require('../utils/savAckEmail');
+const { resolveForwardedOrigin, stripForwardPrefix } = require('../utils/forwardedEmail');
 const { ticketEvents } = require('../services/ticketEvents');
 
 // Déduplication des inbounds : Mailgun peut appeler le webhook plusieurs fois
@@ -242,6 +243,18 @@ const savController = {
       // découpage manuel des en-têtes de citation (EN + FR).
       const cleanBody = stripQuotedReply(strippedText, bodyPlain);
 
+      // Mail transféré par un agent (client ayant écrit à contact@youvape.fr) :
+      // l'expéditeur du webhook est l'agent. On récupère le client d'origine dans
+      // l'en-tête de transfert, sinon le ticket est ouvert au nom de l'agent.
+      const forwarded = await resolveForwardedOrigin({
+        sender, subject, text: bodyPlain || strippedText,
+      });
+      if (forwarded) {
+        console.log(`📨 [SAV Inbound] Transfert détecté (par ${sender}) → demandeur d'origine ${forwarded.email}`);
+      }
+      const requesterEmail = (forwarded ? forwarded.email : sender || '').toLowerCase();
+      const requesterName  = forwarded ? forwarded.name : null;
+
       // PJ entrantes : multipart (mode Forward) OU URLs Mailgun (mode Store).
       const resolveInboundAttachments = async (tid) => {
         const fromMultipart = saveAttachments(tid, req.files);
@@ -255,7 +268,7 @@ const savController = {
         if (!cleanBody && attachments.length === 0) return;
 
         await savModel.addMessage(matchedTicket.id, {
-          from:        sender,
+          from:        requesterEmail,
           body:        cleanBody,
           is_agent:    false,
           attachments,
@@ -276,12 +289,12 @@ const savController = {
 
         // Accusé de réception (à chaque entrant, choix métier validé)
         sendAckEmail({
-          ticketId: matchedTicket.id, email: sender,
+          ticketId: matchedTicket.id, email: requesterEmail,
           customerName: matchedTicket.customer_name, subject: matchedTicket.subject,
         });
 
         dispatchNotifications('reply_received', matchedTicket, {
-          body: cleanBody, from: sender,
+          body: cleanBody, from: requesterEmail,
         }).catch(() => {});
         return;
       }
@@ -294,24 +307,25 @@ const savController = {
         return;
       }
 
-      // Nettoyer "Re: " du sujet
-      const cleanSubject = (subject || '(sans sujet)')
+      // Nettoyer "Re: " / "Fwd: " du sujet
+      const cleanSubject = stripForwardPrefix(subject || '(sans sujet)')
         .replace(/^\s*(Re\s*:\s*)+/i, '')
         .replace(/\[SAV #\d+\]\s*/i, '')
         .trim() || '(sans sujet)';
 
-      // Lookup client par email
+      // Lookup client par email (celui du demandeur réel : sur un transfert,
+      // l'expéditeur d'origine, pas l'agent)
       let customer_id = null;
-      let customer_name = sender;
+      let customer_name = requesterName || requesterEmail;
       try {
         const customerResult = await pool.query(
           'SELECT id, first_name, last_name FROM customers WHERE email = $1 LIMIT 1',
-          [sender.toLowerCase()]
+          [requesterEmail]
         );
         if (customerResult.rows.length > 0) {
           customer_id = customerResult.rows[0].id;
           const c = customerResult.rows[0];
-          customer_name = `${c.first_name || ''} ${c.last_name || ''}`.trim() || sender;
+          customer_name = `${c.first_name || ''} ${c.last_name || ''}`.trim() || customer_name;
         }
       } catch (e) {
         console.warn('[SAV Inbound] Lookup customer échoué:', e.message);
@@ -323,7 +337,7 @@ const savController = {
         order_id:       null,
         customer_id,
         customer_name,
-        customer_email: sender.toLowerCase(),
+        customer_email: requesterEmail,
         customer_phone: null,
         subject:        cleanSubject.substring(0, 200),
         description:    null,
@@ -333,17 +347,17 @@ const savController = {
       // Sauvegarder les PJ (multipart ou URLs Mailgun) et les attacher au 1er message
       const newAttachments = await resolveInboundAttachments(newTicket.id);
       await savModel.addMessage(newTicket.id, {
-        from:        sender,
+        from:        requesterEmail,
         body:        cleanBody,
         is_agent:    false,
         attachments: newAttachments,
       });
 
-      console.log(`✅ [SAV Inbound] Nouveau ticket #${newTicket.id} créé depuis email "${cleanSubject}" (sender=${sender}, ${newAttachments.length} PJ)`);
+      console.log(`✅ [SAV Inbound] Nouveau ticket #${newTicket.id} créé depuis email "${cleanSubject}" (demandeur=${requesterEmail}${forwarded ? `, transféré par ${sender}` : ''}, ${newAttachments.length} PJ)`);
 
       // Accusé de réception au client (fire-and-forget)
       sendAckEmail({
-        ticketId: newTicket.id, email: sender,
+        ticketId: newTicket.id, email: requesterEmail,
         customerName: newTicket.customer_name, subject: newTicket.subject,
       });
 
@@ -731,7 +745,23 @@ const savController = {
   // ─── PATCH champs éditables (autosave 600ms debounce) ────────────────────
   patchTicket: async (req, res) => {
     try {
-      const ticket = await savModel.patch(parseInt(req.params.id), req.body);
+      const fields = { ...req.body };
+
+      // Correction du demandeur : si l'email change, on re-résout le client lié
+      // (customer_id). Sans ça, la fiche client et l'historique de commandes
+      // resteraient ceux de l'ancien demandeur — cas typique d'un mail transféré
+      // rattaché par erreur à l'agent.
+      if (Object.prototype.hasOwnProperty.call(fields, 'customer_email')) {
+        const email = (fields.customer_email || '').trim().toLowerCase();
+        fields.customer_email = email;
+        const r = await pool.query(
+          'SELECT id FROM customers WHERE email = $1 LIMIT 1',
+          [email]
+        );
+        fields.customer_id = r.rows[0]?.id || null;
+      }
+
+      const ticket = await savModel.patch(parseInt(req.params.id), fields);
       if (!ticket) return res.status(404).json({ error: 'Ticket introuvable ou aucun champ valide' });
 
       // Si le PATCH touche la commande liée → resync du tag BMS (fire-and-forget).

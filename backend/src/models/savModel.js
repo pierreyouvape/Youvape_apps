@@ -376,7 +376,7 @@ class SavModel {
   async patch(id, fields) {
     // Champs autorisés à être mis à jour par PATCH
     const ALLOWED = [
-      'customer_name', 'customer_email', 'customer_phone', 'order_id',
+      'customer_name', 'customer_email', 'customer_phone', 'customer_id', 'order_id',
       'subject', 'assigned_to', 'assigned_to_id', 'ticket_type', 'priority', 'subject_category',
       'tags', 'order_tracking',
     ];
