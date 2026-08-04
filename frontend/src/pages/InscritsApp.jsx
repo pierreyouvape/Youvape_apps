@@ -261,17 +261,17 @@ const InscritsApp = () => {
           <StatCard label="Avec pays connu" value={fmtInt(withCountry)} accent={C.saphir} />
         </section>
 
-        {/* Avertissement synchro paniers abandonnés */}
+        {/* Note sur la source du pays */}
         <section style={{ padding: '10px 40px 0' }}>
           <div style={{
-            background: '#FFF7E6', border: `1px solid ${C.orange}55`, color: '#8a5a00',
+            background: C.grisTL, border: `1px solid ${C.grisCL}`, color: C.grisF,
             borderRadius: 10, padding: '10px 14px', fontSize: 12.5, lineHeight: 1.5,
           }}>
-            ℹ️ Sur la boutique, l'inscription se fait au moment du paiement : ces inscrits sont donc
-            presque toujours des <strong>paniers abandonnés</strong>. Le pays provient de leur panier
-            abandonné (<code>wc-checkout-draft</code>). La synchro de ces paniers étant interrompue depuis
-            le 8/07/2026, le pays peut être « Inconnu » pour les inscriptions récentes tant que le flux
-            WordPress n'est pas rétabli.
+            ℹ️ Sur la boutique, l'inscription se fait au moment du paiement : ces inscrits ont donc
+            généralement une commande <strong>échouée</strong> (<code>wc-failed</code>) ou
+            <strong> annulée</strong> (<code>wc-cancelled</code>). Le <strong>pays</strong> est repris de
+            cette tentative de commande ; il est « Inconnu » lorsqu'aucune commande échouée/annulée n'est
+            rattachée au compte.
           </div>
         </section>
 

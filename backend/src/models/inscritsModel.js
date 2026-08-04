@@ -3,14 +3,10 @@ const pool = require('../config/database');
 /**
  * Clients inscrits SANS commande payée.
  *
- * Contexte métier : sur www.youvape.fr l'inscription se fait AU checkout, donc
- * les inscrits sans commande sont quasi toujours des paniers abandonnés
- * (`wc-checkout-draft`). On récupère leur pays de facturation depuis leur
- * dernière commande (brouillon inclus) quand elle existe — sinon "inconnu".
- *
- * ⚠️ La synchro des `wc-checkout-draft` est cassée depuis le 8/07/2026 : pour
- * les inscriptions récentes, le pays sera souvent absent tant que le flux n'a
- * pas été rétabli côté WordPress (cf. class-draft-scanner yousync).
+ * Contexte métier : sur www.youvape.fr l'inscription se fait AU checkout. Ces
+ * inscrits ont donc typiquement une (ou des) commande(s) qui n'a pas abouti :
+ * paiement **échoué** (`wc-failed`) ou commande **annulée** (`wc-cancelled`).
+ * Ces commandes sont bien synchronisées → on en tire le pays de facturation.
  *
  * "Sans commande" = aucune commande dans les 6 statuts payés avec un total > 0
  * (même liste blanche que Financier / Stats).
@@ -21,6 +17,9 @@ const PAID_STATUSES = [
   'wc-completed', 'wc-processing', 'wc-shipped',
   'wc-delivered', 'wc-being-delivered', 'wc-awaiting-delivery',
 ];
+
+// Tentatives de commande non abouties dont on tire le pays de facturation.
+const FAILED_STATUSES = ['wc-failed', 'wc-cancelled'];
 
 /**
  * Liste des inscrits sans commande sur une plage d'inscription.
@@ -46,11 +45,18 @@ async function listWithoutOrders({ dateFrom, dateTo } = {}) {
     params.push(`${dateTo} 23:59:59.999`);
   }
 
+  // Statuts "échouée / annulée" : source du pays (paramètre dédié).
+  const failedIdx = idx++;
+  params.push(FAILED_STATUSES);
+
   const where = conditions.join('\n      AND ');
 
-  // On pré-agrège en UNE passe la 1re commande payée par email (minuscule) plutôt
-  // qu'une sous-requête corrélée par client (qui rescannait `orders` en entier pour
-  // chaque inscrit → requête interminable, pas d'index sur billing_email).
+  // Deux pré-agrégations en UNE passe chacune, indexées par email (minuscule),
+  // plutôt que des sous-requêtes corrélées par client (qui rescannaient `orders`
+  // en entier pour chaque inscrit → requête interminable) :
+  //   - paid_email_orders : 1re commande PAYÉE (conversion ultérieure) ;
+  //   - failed_email_country : pays de la dernière commande ÉCHOUÉE/ANNULÉE
+  //     (tentative de checkout non aboutie, invité inclus car matché sur l'email).
   const query = `
     WITH paid_email_orders AS (
       SELECT LOWER(billing_email) AS email_lc, MIN(post_date) AS first_order_date
@@ -59,6 +65,16 @@ async function listWithoutOrders({ dateFrom, dateTo } = {}) {
         AND order_total > 0
         AND NULLIF(billing_email, '') IS NOT NULL
       GROUP BY LOWER(billing_email)
+    ),
+    failed_email_country AS (
+      SELECT DISTINCT ON (LOWER(billing_email))
+        LOWER(billing_email) AS email_lc,
+        NULLIF(billing_country, '') AS cc
+      FROM orders
+      WHERE post_status = ANY($${failedIdx})
+        AND NULLIF(billing_email, '') IS NOT NULL
+        AND NULLIF(billing_country, '') IS NOT NULL
+      ORDER BY LOWER(billing_email), post_date DESC
     )
     SELECT
       c.id,
@@ -67,19 +83,13 @@ async function listWithoutOrders({ dateFrom, dateTo } = {}) {
       c.first_name,
       c.last_name,
       c.user_registered,
-      (
-        SELECT NULLIF(o2.billing_country, '')
-        FROM orders o2
-        WHERE o2.wp_customer_id = c.wp_user_id
-          AND NULLIF(o2.billing_country, '') IS NOT NULL
-        ORDER BY o2.post_date DESC
-        LIMIT 1
-      ) AS country_code,
-      -- A finalement commandé avec CE MÊME email (typiquement en invité,
-      -- wp_customer_id = 0, donc non rattaché au compte). Insensible à la casse.
+      -- Pays issu de leur dernière commande ÉCHOUÉE ou ANNULÉE.
+      fec.cc AS country_code,
+      -- A finalement commandé avec CE MÊME email (conversion, invité inclus).
       peo.first_order_date AS ordered_by_email_date
     FROM customers c
     LEFT JOIN paid_email_orders peo ON peo.email_lc = LOWER(c.email)
+    LEFT JOIN failed_email_country fec ON fec.email_lc = LOWER(c.email)
     WHERE ${where}
       AND NOT EXISTS (
         SELECT 1
