@@ -1180,6 +1180,16 @@ const purchaseOrderModel = {
    * retient que les commandes verified = true et les prix > 0. Retourne, par
    * wp_product_id fourni, la ligne la plus récente.
    *
+   * IMPORTANT — convention pack : le prix renvoyé est LE PRIX DU PACK, car il
+   * remplit le champ `unit_price` de l'import, que createInBMS interprète comme
+   * le prix DU PACK (cf. createInBMS). Or syncFromBMS stocke poi.unit_price À
+   * L'UNITÉ (13,40 €/pack ÷ 10 = 1,34 €). Renvoyer ce 1,34 € tel quel pour un
+   * fournisseur « par pack » (skipPackQty, ex. LCA) enverrait 1,34 €/pack à BMS
+   * → total et arrivage divisés par pack_qty. On reconstitue donc le prix pack :
+   *   - pack_qty <= 1 (produit simple) : prix inchangé (feature préservée) ;
+   *   - pack_qty  > 1 : supplier_price (vrai prix pack catalogue) en priorité,
+   *     sinon unit_price × pack_qty.
+   *
    * @returns {Object} map { [wpProductId]: { unit_price, order_date, bms_reference } }
    */
   getLastVerifiedPrices: async (supplierId, productIds) => {
@@ -1189,11 +1199,15 @@ const purchaseOrderModel = {
       SELECT DISTINCT ON (p.wp_product_id)
         p.wp_product_id AS input_id,
         poi.unit_price,
+        ps.pack_qty,
+        ps.supplier_price,
         po.order_date,
         po.bms_reference
       FROM products p
       JOIN purchase_order_items poi ON poi.product_id = p.id
       JOIN purchase_orders po ON po.id = poi.purchase_order_id
+      LEFT JOIN product_suppliers ps
+        ON ps.product_id = p.id AND ps.supplier_id = $1
       WHERE p.wp_product_id = ANY($2::bigint[])
         AND po.supplier_id = $1
         AND po.verified = true
@@ -1208,8 +1222,15 @@ const purchaseOrderModel = {
     const result = await pool.query(query, [supplierId, ids]);
     const map = {};
     for (const row of result.rows) {
+      const unitPrice = parseFloat(row.unit_price);
+      const packQty = parseInt(row.pack_qty) || 1;
+      const supplierPrice = parseFloat(row.supplier_price) || null;
+      // Prix du pack (cf. commentaire ci-dessus). pack_qty<=1 → inchangé.
+      const packPrice = packQty > 1
+        ? (supplierPrice != null && supplierPrice > 0 ? supplierPrice : unitPrice * packQty)
+        : unitPrice;
       map[row.input_id] = {
-        unit_price: parseFloat(row.unit_price),
+        unit_price: Math.round(packPrice * 100) / 100,
         order_date: row.order_date,
         bms_reference: row.bms_reference,
       };
