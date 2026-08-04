@@ -5,6 +5,10 @@ import axios from 'axios';
 import './SettingsApp.css';
 import { LinkBox } from '../utils/navHelpers';
 import AppShell from '../components/AppShell';
+import { APPS as LAUNCHER_APPS } from '../components/AppIcons';
+
+// Apps qui distinguent Lecture / Écriture (les autres n'ont qu'un droit d'accès).
+const WRITE_ENABLED_KEYS = new Set(['reviews', 'rewards', 'emails', 'stats', 'purchases', 'catalog']);
 
 const SettingsApp = () => {
   const { token, isAdmin, isSuperAdmin } = useContext(AuthContext);
@@ -30,21 +34,13 @@ const SettingsApp = () => {
 
   const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:3000/api/auth').replace('/auth', '');
 
-  const APPS = [
-    { key: 'reviews', label: 'Avis Garantis' },
-    { key: 'rewards', label: 'Récompense Avis' },
-    { key: 'emails', label: 'Envoi d\'Emails' },
-    { key: 'stats', label: 'Statistiques WooCommerce' },
-    { key: 'purchases', label: 'Gestion d\'achat' },
-    { key: 'purchases-v2', label: 'Gestion d\'achat V2', accessOnly: true },
-    { key: 'catalog', label: 'Produits' },
-    { key: 'packing',    label: 'Packing',     accessOnly: true },
-    { key: 'financier',  label: 'Rapport',     accessOnly: true },
-    { key: 'commandes',  label: 'Commandes',   accessOnly: true },
-    { key: 'tickets',    label: 'SAV / Tickets', accessOnly: true },
-    { key: 'customers',  label: 'Clients',     accessOnly: true },
-    { key: 'veille',     label: 'Veille concurrentielle', accessOnly: true },
-  ];
+  // Dérivé de la liste canonique des apps (composants/AppIcons) : toute nouvelle
+  // app ajoutée au lanceur apparaît AUTOMATIQUEMENT ici, gérable par utilisateur.
+  const APPS = LAUNCHER_APPS.map(a => ({
+    key: a.key,
+    label: a.label,
+    accessOnly: !WRITE_ENABLED_KEYS.has(a.key),
+  }));
 
   const tabs = [
     { id: 'account', label: 'Mon compte' },
