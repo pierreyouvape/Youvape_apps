@@ -30,6 +30,8 @@ exports.getWithoutOrders = async (req, res) => {
         last_name: r.last_name || '',
         user_registered: r.user_registered,
         country_code: r.country_code || null,
+        ordered_by_email: !!r.ordered_by_email_date,
+        ordered_by_email_date: r.ordered_by_email_date || null,
       });
     }
 

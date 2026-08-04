@@ -116,11 +116,16 @@ const InscritsApp = () => {
     [filteredDays]
   );
 
+  const orderedByEmail = useMemo(
+    () => filteredDays.reduce((s, d) => s + d.customers.filter((c) => c.ordered_by_email).length, 0),
+    [filteredDays]
+  );
+
   const toggleDay = (date) => setCollapsed((prev) => ({ ...prev, [date]: !prev[date] }));
 
   /* Export CSV de la sélection courante. */
   const exportCsv = () => {
-    const header = ['Date inscription', 'Heure', 'Nom', 'Prénom', 'Email', 'Pays (code)', 'Pays'];
+    const header = ['Date inscription', 'Heure', 'Nom', 'Prénom', 'Email', 'Pays (code)', 'Pays', 'A commandé (même email)', 'Date 1re commande'];
     const lines = [header.join(';')];
     for (const d of filteredDays) {
       for (const c of d.customers) {
@@ -132,6 +137,8 @@ const InscritsApp = () => {
           c.email || '',
           c.country_code || '',
           c.country_code ? getCountryName(c.country_code) : 'Inconnu',
+          c.ordered_by_email ? 'Oui' : 'Non',
+          c.ordered_by_email_date ? String(c.ordered_by_email_date).slice(0, 10) : '',
         ].join(';'));
       }
     }
@@ -202,8 +209,8 @@ const InscritsApp = () => {
         <section style={{ padding: '0 40px 8px', display: 'flex', gap: 14, flexWrap: 'wrap' }}>
           <StatCard label="Inscrits sans commande" value={fmtInt(shownTotal)} accent={C.teal} />
           <StatCard label="Jours concernés" value={fmtInt(filteredDays.length)} />
-          <StatCard label="Avec pays connu" value={fmtInt(withCountry)} accent={C.vert} />
-          <StatCard label="Pays inconnu" value={fmtInt(shownTotal - withCountry)} accent={C.grisF} />
+          <StatCard label="Ont commandé (même email)" value={fmtInt(orderedByEmail)} accent={C.vert} />
+          <StatCard label="Avec pays connu" value={fmtInt(withCountry)} accent={C.saphir} />
         </section>
 
         {/* Avertissement synchro paniers abandonnés */}
@@ -267,6 +274,7 @@ const InscritsApp = () => {
                             <th style={{ padding: '10px 18px', fontWeight: 700 }}>Prénom</th>
                             <th style={{ padding: '10px 18px', fontWeight: 700 }}>Email</th>
                             <th style={{ padding: '10px 18px', fontWeight: 700 }}>Pays</th>
+                            <th style={{ padding: '10px 18px', fontWeight: 700 }}>A commandé (même email)</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -286,6 +294,15 @@ const InscritsApp = () => {
                                 {c.country_code
                                   ? `${getCountryFlag(c.country_code)} ${getCountryName(c.country_code)}`
                                   : <span style={{ color: C.grisM }}>— Inconnu</span>}
+                              </td>
+                              <td style={{ padding: '10px 18px', whiteSpace: 'nowrap' }}>
+                                {c.ordered_by_email ? (
+                                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: `${C.vert}1A`, color: C.vert, fontWeight: 700, fontSize: 12, borderRadius: 99, padding: '3px 10px' }}>
+                                    ✓ Oui{c.ordered_by_email_date ? ` · ${String(c.ordered_by_email_date).slice(0, 10)}` : ''}
+                                  </span>
+                                ) : (
+                                  <span style={{ color: C.grisM }}>—</span>
+                                )}
                               </td>
                             </tr>
                           ))}

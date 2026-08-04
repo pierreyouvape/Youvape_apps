@@ -63,7 +63,16 @@ async function listWithoutOrders({ dateFrom, dateTo } = {}) {
           AND NULLIF(o2.billing_country, '') IS NOT NULL
         ORDER BY o2.post_date DESC
         LIMIT 1
-      ) AS country_code
+      ) AS country_code,
+      -- A finalement commandé avec CE MÊME email (typiquement en invité,
+      -- wp_customer_id = 0, donc non rattaché au compte). Insensible à la casse.
+      (
+        SELECT MIN(o3.post_date)
+        FROM orders o3
+        WHERE LOWER(o3.billing_email) = LOWER(c.email)
+          AND o3.post_status = ANY($1)
+          AND o3.order_total > 0
+      ) AS ordered_by_email_date
     FROM customers c
     WHERE ${where}
       AND NOT EXISTS (
