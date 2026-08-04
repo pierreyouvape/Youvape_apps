@@ -83,13 +83,25 @@ async function listWithoutOrders({ dateFrom, dateTo } = {}) {
       FROM orders
       WHERE NULLIF(billing_email, '') IS NOT NULL
       ORDER BY LOWER(billing_email), post_date DESC
+    ),
+    name_by_email AS (
+      -- Nom/prénom de facturation de la dernière commande (tous statuts, échouée/
+      -- annulée incluses) qui en porte un — pour compléter les comptes sans nom.
+      SELECT DISTINCT ON (LOWER(billing_email))
+        LOWER(billing_email) AS email_lc,
+        NULLIF(billing_first_name, '') AS bfn,
+        NULLIF(billing_last_name, '')  AS bln
+      FROM orders
+      WHERE NULLIF(billing_email, '') IS NOT NULL
+        AND (NULLIF(billing_first_name, '') IS NOT NULL OR NULLIF(billing_last_name, '') IS NOT NULL)
+      ORDER BY LOWER(billing_email), post_date DESC
     )
     SELECT
       c.id,
       c.wp_user_id,
       c.email,
-      c.first_name,
-      c.last_name,
+      COALESCE(NULLIF(c.first_name, ''), nbe.bfn) AS first_name,
+      COALESCE(NULLIF(c.last_name, ''),  nbe.bln) AS last_name,
       c.user_registered,
       -- Pays issu de leur dernière commande ÉCHOUÉE ou ANNULÉE.
       fec.cc AS country_code,
@@ -101,6 +113,7 @@ async function listWithoutOrders({ dateFrom, dateTo } = {}) {
     LEFT JOIN paid_email_orders peo ON peo.email_lc = LOWER(c.email)
     LEFT JOIN failed_email_country fec ON fec.email_lc = LOWER(c.email)
     LEFT JOIN last_order_by_email lob ON lob.email_lc = LOWER(c.email)
+    LEFT JOIN name_by_email nbe ON nbe.email_lc = LOWER(c.email)
     WHERE ${where}
       AND NOT EXISTS (
         SELECT 1

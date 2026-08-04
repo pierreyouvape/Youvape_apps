@@ -47,12 +47,12 @@ function orderStatusInfo(status) {
   if (!status) return { label: 'Aucune', color: '#8A99A4' };
   if (PAID_SET.has(status)) return { label: 'Payée', color: '#4AB866' };
   switch (status) {
-    case 'wc-failed':         return { label: 'Échouée', color: '#DE2020' };
-    case 'wc-cancelled':      return { label: 'Annulée', color: '#626E85' };
-    case 'wc-checkout-draft': return { label: 'Brouillon', color: '#E28F00' };
-    case 'wc-pending':        return { label: 'En attente', color: '#E28F00' };
-    case 'wc-on-hold':        return { label: 'En attente', color: '#E28F00' };
-    case 'wc-refunded':       return { label: 'Remboursée', color: '#DE2020' };
+    case 'wc-failed':         return { label: 'Échouée', color: '#DE2020' };   // rouge
+    case 'wc-cancelled':      return { label: 'Annulée', color: '#626E85' };   // ardoise
+    case 'wc-checkout-draft': return { label: 'Brouillon', color: '#E28F00' }; // orange
+    case 'wc-pending':        return { label: 'En attente', color: '#0071EB' };// bleu
+    case 'wc-on-hold':        return { label: 'En attente', color: '#0EA5A5' };// teal
+    case 'wc-refunded':       return { label: 'Remboursée', color: '#8B5CF6' };// violet
     default:                  return { label: status.replace(/^wc-/, ''), color: '#8A99A4' };
   }
 }
