@@ -161,7 +161,85 @@ class Youvape_SAV_Settings {
 
                 <?php submit_button(); ?>
             </form>
+
+            <?php $this->render_shortcodes_help(); ?>
         </div>
+        <?php
+    }
+
+    /**
+     * Pense-bête des shortcodes, affiché sous les réglages.
+     *
+     * Les shortcodes sont dans des champs en lecture seule et non dans du texte
+     * mis en forme : copier depuis un champ de saisie ne rapporte que du texte
+     * brut. Coller un shortcode depuis un bloc de code d'une page web embarque
+     * sa mise en forme (<pre><code>), ce qui casse l'affichage du formulaire —
+     * la police passe en chasse fixe et les sauts de ligne sont rendus tels
+     * quels. Ce champ évite le piège.
+     */
+    private function render_shortcodes_help() {
+        $shortcodes = array(
+            array(
+                'code'  => '[youvape_sav_form]',
+                'title' => __('Formulaire de demande', 'youvape-sav-client'),
+                'desc'  => __('À placer sur la page « Nous contacter ». Le formulaire s\'adapte seul : un client connecté voit les trois motifs avec ses commandes et ses produits ; un visiteur non connecté saisit son nom, son email et son message.', 'youvape-sav-client'),
+            ),
+            array(
+                'code'  => '[youvape_sav_bouton page="/contact/" texte="Nous contacter"]',
+                'title' => __('Bouton vers le formulaire', 'youvape-sav-client'),
+                'desc'  => __('Pour renvoyer vers la page du formulaire depuis un autre endroit du site. Les deux attributs sont facultatifs.', 'youvape-sav-client'),
+            ),
+        );
+        ?>
+        <hr style="margin:30px 0" />
+
+        <h2><?php echo esc_html__('Shortcodes disponibles', 'youvape-sav-client'); ?></h2>
+
+        <p class="description" style="max-width:760px">
+            <?php echo esc_html__('Cliquez dans un champ pour le sélectionner, ou utilisez le bouton Copier. Un menu WordPress pointe vers une URL et non vers un shortcode : placez le formulaire sur une page, puis faites pointer l\'entrée de menu vers cette page.', 'youvape-sav-client'); ?>
+        </p>
+
+        <table class="form-table" role="presentation">
+            <?php foreach ($shortcodes as $i => $sc) : $id = 'youvape-sav-sc-' . $i; ?>
+                <tr>
+                    <th scope="row"><label for="<?php echo esc_attr($id); ?>"><?php echo esc_html($sc['title']); ?></label></th>
+                    <td>
+                        <input type="text" id="<?php echo esc_attr($id); ?>" class="large-text code" readonly
+                               value="<?php echo esc_attr($sc['code']); ?>"
+                               onclick="this.select();" />
+                        <button type="button" class="button" data-youvape-copy="<?php echo esc_attr($id); ?>">
+                            <?php echo esc_html__('Copier', 'youvape-sav-client'); ?>
+                        </button>
+                        <p class="description" style="max-width:700px"><?php echo esc_html($sc['desc']); ?></p>
+                    </td>
+                </tr>
+            <?php endforeach; ?>
+        </table>
+
+        <div class="notice notice-warning inline" style="max-width:760px;margin:16px 0">
+            <p>
+                <strong><?php echo esc_html__('À savoir en collant un shortcode :', 'youvape-sav-client'); ?></strong>
+                <?php echo esc_html__('collez-le en texte brut (⌘⇧V sur Mac, Ctrl+Maj+V sur Windows). Un shortcode copié depuis un bloc de code d\'une page web embarque sa mise en forme et se retrouve enfermé dans un bloc préformaté : le formulaire s\'affiche alors en police à chasse fixe, sans retour à la ligne.', 'youvape-sav-client'); ?>
+            </p>
+        </div>
+
+        <script>
+        document.querySelectorAll('[data-youvape-copy]').forEach(function (btn) {
+            btn.addEventListener('click', function () {
+                var input = document.getElementById(btn.getAttribute('data-youvape-copy'));
+                if (!input) { return; }
+                input.select();
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                    navigator.clipboard.writeText(input.value);
+                } else {
+                    document.execCommand('copy');
+                }
+                var label = btn.textContent;
+                btn.textContent = <?php echo wp_json_encode(__('Copié !', 'youvape-sav-client')); ?>;
+                setTimeout(function () { btn.textContent = label; }, 1500);
+            });
+        });
+        </script>
         <?php
     }
 }
