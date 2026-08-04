@@ -41,6 +41,19 @@ function hourOf(val) {
 
 const fullName = (c) => `${c.first_name || ''} ${c.last_name || ''}`.trim() || '—';
 
+/* Raison unifiée (colonne dédiée + filtre). code → { label, color }. */
+const REASONS = [
+  { code: 'payment_refused', label: 'Paiement refusé',   color: '#DE2020' },
+  { code: 'abandon',         label: 'Abandon panier',    color: '#E28F00' },
+  { code: 'inscription',     label: 'Inscription simple', color: '#6366F1' },
+  { code: 'pending',         label: 'En attente paiement', color: '#0071EB' },
+  { code: 'refunded',        label: 'Remboursée',        color: '#8B5CF6' },
+  { code: 'converted',       label: 'A commandé',        color: '#4AB866' },
+  { code: 'other',           label: 'Autre',             color: '#8A99A4' },
+];
+const REASON_MAP = Object.fromEntries(REASONS.map(r => [r.code, r]));
+const reasonInfo = (code) => REASON_MAP[code] || { label: '—', color: '#8A99A4' };
+
 /* Libellé + couleur du statut de la dernière commande (par email). */
 const PAID_SET = new Set(['wc-completed', 'wc-processing', 'wc-shipped', 'wc-delivered', 'wc-being-delivered', 'wc-awaiting-delivery']);
 function orderStatusInfo(status) {
@@ -82,6 +95,7 @@ const InscritsApp = () => {
   const [dateTo, setDateTo] = useState(localYmd(today));
   const [search, setSearch] = useState('');
   const [orderedFilter, setOrderedFilter] = useState('all'); // 'all' | 'yes' | 'no'
+  const [reasonFilter, setReasonFilter] = useState('all');   // 'all' | code raison
   const [days, setDays] = useState([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -109,12 +123,13 @@ const InscritsApp = () => {
   // Filtres client : texte (nom / email / pays) + statut "a commandé (même email)".
   const filteredDays = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q && orderedFilter === 'all') return days;
+    if (!q && orderedFilter === 'all' && reasonFilter === 'all') return days;
     return days
       .map((d) => {
         const customers = d.customers.filter((c) => {
           if (orderedFilter === 'yes' && !c.ordered_by_email) return false;
           if (orderedFilter === 'no' && c.ordered_by_email) return false;
+          if (reasonFilter !== 'all' && c.reason !== reasonFilter) return false;
           if (!q) return true;
           return (
             fullName(c).toLowerCase().includes(q) ||
@@ -126,7 +141,7 @@ const InscritsApp = () => {
         return { ...d, customers, count: customers.length };
       })
       .filter((d) => d.count > 0);
-  }, [days, search, orderedFilter]);
+  }, [days, search, orderedFilter, reasonFilter]);
 
   const shownTotal = useMemo(
     () => filteredDays.reduce((s, d) => s + d.count, 0),
@@ -160,7 +175,7 @@ const InscritsApp = () => {
           c.country_code || '',
           c.country_code ? getCountryName(c.country_code) : 'Inconnu',
           orderStatusInfo(c.last_order_status).label,
-          c.last_order_reason === 'payment_refused' ? 'Paiement refusé' : c.last_order_reason === 'abandon' ? 'Abandon' : '',
+          reasonInfo(c.reason).label,
           c.ordered_by_email ? 'Oui' : 'Non',
           c.ordered_by_email_date ? String(c.ordered_by_email_date).slice(0, 10) : '',
         ].join(';'));
@@ -259,6 +274,15 @@ const InscritsApp = () => {
               })}
             </div>
           </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <label style={{ fontSize: 11, fontWeight: 600, color: C.grisM }}>Raison</label>
+            <select value={reasonFilter} onChange={(e) => setReasonFilter(e.target.value)} style={{ ...inputStyle, cursor: 'pointer' }}>
+              <option value="all">Toutes</option>
+              {REASONS.map((r) => (
+                <option key={r.code} value={r.code}>{r.label}</option>
+              ))}
+            </select>
+          </div>
           <button
             onClick={exportCsv}
             disabled={shownTotal === 0}
@@ -344,6 +368,7 @@ const InscritsApp = () => {
                             <th style={{ padding: '10px 18px', fontWeight: 700 }}>Email</th>
                             <th style={{ padding: '10px 18px', fontWeight: 700 }}>Pays</th>
                             <th style={{ padding: '10px 18px', fontWeight: 700 }}>Dernière commande</th>
+                            <th style={{ padding: '10px 18px', fontWeight: 700 }}>Raison</th>
                             <th style={{ padding: '10px 18px', fontWeight: 700 }}>A commandé (même email)</th>
                           </tr>
                         </thead>
@@ -368,15 +393,20 @@ const InscritsApp = () => {
                               <td style={{ padding: '10px 18px', whiteSpace: 'nowrap' }}>
                                 {(() => {
                                   const st = orderStatusInfo(c.last_order_status);
-                                  const reason = c.last_order_reason === 'payment_refused' ? 'Paiement refusé'
-                                    : c.last_order_reason === 'abandon' ? 'Abandon' : null;
                                   return (
-                                    <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-                                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: `${st.color}1A`, color: st.color, fontWeight: 700, fontSize: 12, borderRadius: 99, padding: '3px 10px', alignSelf: 'flex-start' }}>
-                                        {st.label}
-                                      </span>
-                                      {reason && <span style={{ fontSize: 11, color: C.grisM, fontWeight: 600 }}>{reason}</span>}
-                                    </div>
+                                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: `${st.color}1A`, color: st.color, fontWeight: 700, fontSize: 12, borderRadius: 99, padding: '3px 10px' }}>
+                                      {st.label}
+                                    </span>
+                                  );
+                                })()}
+                              </td>
+                              <td style={{ padding: '10px 18px', whiteSpace: 'nowrap' }}>
+                                {(() => {
+                                  const rs = reasonInfo(c.reason);
+                                  return (
+                                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: `${rs.color}1A`, color: rs.color, fontWeight: 700, fontSize: 12, borderRadius: 99, padding: '3px 10px' }}>
+                                      {rs.label}
+                                    </span>
                                   );
                                 })()}
                               </td>
