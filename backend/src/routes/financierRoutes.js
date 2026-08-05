@@ -12,4 +12,7 @@ router.post('/dashboard', authMiddleware, checkFinancierRead, financierControlle
 // POST /api/financier/monthly — série mensuelle des KPIs (graphiques d'évolution au clic)
 router.post('/monthly', authMiddleware, checkFinancierRead, financierController.getMonthlySeries);
 
+// POST /api/financier/comptable — déclaration comptable (CA TTC/HT/TVA brut & net, par pays)
+router.post('/comptable', authMiddleware, checkFinancierRead, financierController.getComptable);
+
 module.exports = router;

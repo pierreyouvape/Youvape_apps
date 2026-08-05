@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef, useCallback, useContext } from 'react';
 import { AuthContext } from '../context/AuthContext';
 import axios from 'axios';
+import { jsPDF } from 'jspdf';
+import autoTable from 'jspdf-autotable';
 import AppShell from '../components/AppShell';
 import { Stats as RapportIcon } from '../components/AppIcons';
 import { LinkBox } from '../utils/navHelpers';
@@ -622,6 +624,210 @@ function CountryTable({ rows }) {
   );
 }
 
+/* ─── DÉCLARATION COMPTABLE ──────────────────────────────── */
+const countryName = (code) => (code === '??' ? 'Inconnu' : getCountryLabel(code));
+
+// Construit et télécharge le PDF de la déclaration comptable (paysage : 9 colonnes).
+function exportComptablePDF({ rows, totals, periodLabel, range }) {
+  const doc = new jsPDF({ orientation: 'landscape' });
+  const pageWidth = doc.internal.pageSize.getWidth();
+  let y = 18;
+
+  doc.setFontSize(18);
+  doc.setTextColor(19, 94, 132);
+  doc.text('Déclaration comptable — YouVape', pageWidth / 2, y, { align: 'center' });
+  y += 8;
+
+  doc.setFontSize(10);
+  doc.setTextColor(100);
+  // Police PDF standard (WinAnsi) : remplacer la flèche → (hors jeu) par un tiret.
+  const periodLabelPdf = String(periodLabel).replace(/→/g, '-');
+  doc.text(`Période : ${periodLabelPdf}`, pageWidth / 2, y, { align: 'center' });
+  y += 5;
+  doc.text(`Généré le ${new Date().toLocaleDateString('fr-FR')} à ${new Date().toLocaleTimeString('fr-FR')}`, pageWidth / 2, y, { align: 'center' });
+  y += 12;
+
+  // Récapitulatif global (brut / net)
+  doc.setFontSize(13);
+  doc.setTextColor(0);
+  doc.text('Totaux', 14, y);
+  y += 4;
+  autoTable(doc, {
+    startY: y,
+    head: [['', 'CA TTC', 'CA HT', 'TVA collectée', 'Remboursements']],
+    body: [
+      ['Brut', fmtEur(totals.ca_ttc_brut), fmtEur(totals.ca_ht_brut), fmtEur(totals.tva_brut), '—'],
+      ['Net', fmtEur(totals.ca_ttc_net), fmtEur(totals.ca_ht_net), fmtEur(totals.tva_net), '- ' + fmtEur(totals.remboursements_ttc)],
+    ],
+    theme: 'grid',
+    headStyles: { fillColor: [19, 94, 132] },
+    columnStyles: { 0: { fontStyle: 'bold' } },
+    margin: { left: 14, right: 14 },
+  });
+  y = doc.lastAutoTable.finalY + 12;
+
+  // Détail par pays
+  doc.setFontSize(13);
+  doc.setTextColor(0);
+  doc.text('Détail par pays', 14, y);
+
+  autoTable(doc, {
+    startY: y + 4,
+    head: [['Pays', 'Cmd', 'CA TTC brut', 'CA HT brut', 'TVA brute', 'Rembours.', 'CA TTC net', 'CA HT net', 'TVA nette']],
+    body: rows.map((r) => [
+      countryName(r.country_code),
+      fmt(r.orders_count),
+      fmtEur(r.ca_ttc_brut),
+      fmtEur(r.ca_ht_brut),
+      fmtEur(r.tva_brut),
+      r.remboursements_ttc ? '- ' + fmtEur(r.remboursements_ttc) : '-',
+      fmtEur(r.ca_ttc_net),
+      fmtEur(r.ca_ht_net),
+      fmtEur(r.tva_net),
+    ]),
+    foot: [[
+      'Total', fmt(totals.orders_count),
+      fmtEur(totals.ca_ttc_brut), fmtEur(totals.ca_ht_brut), fmtEur(totals.tva_brut),
+      '- ' + fmtEur(totals.remboursements_ttc),
+      fmtEur(totals.ca_ttc_net), fmtEur(totals.ca_ht_net), fmtEur(totals.tva_net),
+    ]],
+    theme: 'striped',
+    headStyles: { fillColor: [19, 94, 132] },
+    footStyles: { fillColor: [230, 236, 240], textColor: 20, fontStyle: 'bold' },
+    styles: { fontSize: 8, halign: 'right' },
+    columnStyles: { 0: { halign: 'left' } },
+    margin: { left: 14, right: 14 },
+  });
+
+  const pageCount = doc.internal.getNumberOfPages();
+  for (let i = 1; i <= pageCount; i++) {
+    doc.setPage(i);
+    doc.setFontSize(8);
+    doc.setTextColor(150);
+    doc.text(`YouVape — Déclaration comptable — Page ${i}/${pageCount}`, pageWidth / 2, doc.internal.pageSize.getHeight() - 8, { align: 'center' });
+  }
+
+  const suffix = range ? `${range.dateFrom}_${range.dateTo}` : new Date().toISOString().slice(0, 10);
+  doc.save(`declaration_comptable_${suffix}.pdf`);
+}
+
+function ComptableView({ data, loading, periodLabel, range }) {
+  const th = { fontSize: 11, fontWeight: 700, color: C.grisM, textTransform: 'uppercase', letterSpacing: '0.04em', padding: '0 10px 8px', borderBottom: `2px solid ${C.grisCL}`, whiteSpace: 'nowrap' };
+  const td = { fontSize: 13, color: C.grisF, fontWeight: 600, padding: '9px 10px', borderBottom: `1px solid ${C.grisTL}`, whiteSpace: 'nowrap' };
+
+  if (loading) {
+    return (
+      <div style={{ background: C.blanc, borderRadius: 14, height: 220, boxShadow: '0 1px 3px rgba(0,0,0,0.07)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: C.grisM, animation: 'pulse 1.5s ease-in-out infinite' }}>
+        Chargement…
+      </div>
+    );
+  }
+  if (!data || !data.rows || data.rows.length === 0) {
+    return (
+      <div style={{ background: C.blanc, borderRadius: 14, padding: '28px 24px', boxShadow: '0 1px 3px rgba(0,0,0,0.07)', color: C.grisM, fontSize: 14 }}>
+        Aucune commande sur la période sélectionnée.
+      </div>
+    );
+  }
+
+  const t = data.totals;
+
+  // Deux blocs récap : brut et net
+  const RecapCard = ({ title, subtitle, ttc, ht, tva, accent }) => (
+    <div style={{ background: C.blanc, borderRadius: 14, padding: '20px 24px', boxShadow: '0 1px 3px rgba(0,0,0,0.07), 0 0 0 1px rgba(0,0,0,0.05)', borderTop: `3px solid ${accent}` }}>
+      <div style={{ marginBottom: 16 }}>
+        <div style={{ fontSize: 14, fontWeight: 800, color: C.grisTF }}>{title}</div>
+        <div style={{ fontSize: 12, color: C.grisM, marginTop: 2 }}>{subtitle}</div>
+      </div>
+      {[
+        { label: 'CA TTC', value: fmtEur(ttc), color: C.orange },
+        { label: 'CA HT', value: fmtEur(ht), color: C.saphir, bold: true },
+        { label: 'TVA collectée', value: fmtEur(tva), color: C.grisTF },
+      ].map((row) => (
+        <div key={row.label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+          <span style={{ fontSize: 13, color: C.grisF, fontWeight: row.bold ? 700 : 500 }}>{row.label}</span>
+          <span style={{ fontSize: 17, fontWeight: row.bold ? 800 : 700, color: row.color }}>{row.value}</span>
+        </div>
+      ))}
+    </div>
+  );
+
+  return (
+    <>
+      {/* En-tête + export */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12, marginBottom: 18 }}>
+        <div>
+          <div style={{ fontSize: 16, fontWeight: 800, color: C.grisTF, fontFamily: "'Tilt Warp', cursive" }}>Déclaration comptable</div>
+          <div style={{ fontSize: 12, color: C.grisM, marginTop: 2 }}>CA TTC, CA HT et TVA collectée — brut (ventes) et net (après remboursements) — {periodLabel}</div>
+        </div>
+        <button
+          onClick={() => exportComptablePDF({ rows: data.rows, totals: t, periodLabel, range })}
+          style={{ background: C.saphir, color: C.blanc, border: 'none', borderRadius: 9, padding: '10px 18px', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'Lato', display: 'inline-flex', alignItems: 'center', gap: 7 }}
+        >
+          📄 Exporter en PDF
+        </button>
+      </div>
+
+      {/* Récap brut / net */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 14, marginBottom: 20 }}>
+        <RecapCard title="Brut" subtitle="Ventes de la période" ttc={t.ca_ttc_brut} ht={t.ca_ht_brut} tva={t.tva_brut} accent={C.orange} />
+        <RecapCard title="Net" subtitle={`Après remboursements (− ${fmtEur(t.remboursements_ttc)})`} ttc={t.ca_ttc_net} ht={t.ca_ht_net} tva={t.tva_net} accent={C.vert} />
+      </div>
+
+      {/* Détail par pays */}
+      <div style={{ background: C.blanc, borderRadius: 14, padding: '20px 24px', boxShadow: '0 1px 3px rgba(0,0,0,0.07), 0 0 0 1px rgba(0,0,0,0.05)' }}>
+        <div style={{ marginBottom: 16 }}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: C.grisTF }}>Détail par pays</div>
+          <div style={{ fontSize: 12, color: C.grisM, marginTop: 2 }}>Par pays de facturation, du CA le plus élevé au plus faible</div>
+        </div>
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 820 }}>
+            <thead>
+              <tr>
+                <th style={{ ...th, textAlign: 'left' }}>Pays</th>
+                <th style={{ ...th, textAlign: 'right' }}>Cmd</th>
+                <th style={{ ...th, textAlign: 'right' }}>CA TTC brut</th>
+                <th style={{ ...th, textAlign: 'right' }}>CA HT brut</th>
+                <th style={{ ...th, textAlign: 'right' }}>TVA brute</th>
+                <th style={{ ...th, textAlign: 'right' }}>Rembours.</th>
+                <th style={{ ...th, textAlign: 'right' }}>CA TTC net</th>
+                <th style={{ ...th, textAlign: 'right' }}>CA HT net</th>
+                <th style={{ ...th, textAlign: 'right' }}>TVA nette</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.rows.map((r) => (
+                <tr key={r.country_code}>
+                  <td style={{ ...td, textAlign: 'left' }}>{r.country_code === '??' ? '🏳️ Inconnu' : getCountryLabel(r.country_code)}</td>
+                  <td style={{ ...td, textAlign: 'right' }}>{fmt(r.orders_count)}</td>
+                  <td style={{ ...td, textAlign: 'right' }}>{fmtEur(r.ca_ttc_brut)}</td>
+                  <td style={{ ...td, textAlign: 'right', color: C.saphir, fontWeight: 700 }}>{fmtEur(r.ca_ht_brut)}</td>
+                  <td style={{ ...td, textAlign: 'right' }}>{fmtEur(r.tva_brut)}</td>
+                  <td style={{ ...td, textAlign: 'right', color: r.remboursements_ttc ? C.rouge : C.grisM }}>{r.remboursements_ttc ? '− ' + fmtEur(r.remboursements_ttc) : '—'}</td>
+                  <td style={{ ...td, textAlign: 'right' }}>{fmtEur(r.ca_ttc_net)}</td>
+                  <td style={{ ...td, textAlign: 'right', color: C.saphir, fontWeight: 700 }}>{fmtEur(r.ca_ht_net)}</td>
+                  <td style={{ ...td, textAlign: 'right' }}>{fmtEur(r.tva_net)}</td>
+                </tr>
+              ))}
+              <tr>
+                <td style={{ ...td, borderBottom: 'none', fontWeight: 800, color: C.grisTF, textAlign: 'left' }}>Total</td>
+                <td style={{ ...td, borderBottom: 'none', fontWeight: 800, color: C.grisTF, textAlign: 'right' }}>{fmt(t.orders_count)}</td>
+                <td style={{ ...td, borderBottom: 'none', fontWeight: 800, color: C.grisTF, textAlign: 'right' }}>{fmtEur(t.ca_ttc_brut)}</td>
+                <td style={{ ...td, borderBottom: 'none', fontWeight: 800, color: C.saphir, textAlign: 'right' }}>{fmtEur(t.ca_ht_brut)}</td>
+                <td style={{ ...td, borderBottom: 'none', fontWeight: 800, color: C.grisTF, textAlign: 'right' }}>{fmtEur(t.tva_brut)}</td>
+                <td style={{ ...td, borderBottom: 'none', fontWeight: 800, color: C.rouge, textAlign: 'right' }}>{t.remboursements_ttc ? '− ' + fmtEur(t.remboursements_ttc) : '—'}</td>
+                <td style={{ ...td, borderBottom: 'none', fontWeight: 800, color: C.grisTF, textAlign: 'right' }}>{fmtEur(t.ca_ttc_net)}</td>
+                <td style={{ ...td, borderBottom: 'none', fontWeight: 800, color: C.saphir, textAlign: 'right' }}>{fmtEur(t.ca_ht_net)}</td>
+                <td style={{ ...td, borderBottom: 'none', fontWeight: 800, color: C.grisTF, textAlign: 'right' }}>{fmtEur(t.tva_net)}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </>
+  );
+}
+
 function Sidebar({ open }) {
   return (
     <aside style={{
@@ -720,6 +926,12 @@ export default function FinancierApp() {
   const [selectedMetric, setSelectedMetric] = useState(null);
   const [monthlyData, setMonthlyData] = useState(null);
   const [monthlyLoading, setMonthlyLoading] = useState(false);
+
+  // Onglet actif + données de la déclaration comptable (chargées à la demande).
+  const [view, setView] = useState('dashboard');
+  const [comptableData, setComptableData] = useState(null);
+  const [comptableLoading, setComptableLoading] = useState(false);
+  const comptableReqRef = useRef(0);
 
   // Garde-fou anti-race : chaque fetch reçoit un numéro de séquence ; seule la
   // réponse de la requête la plus récente est appliquée. Sans ça, un changement
@@ -854,6 +1066,27 @@ export default function FinancierApp() {
       .finally(() => setMonthlyLoading(false));
   }, [monthlyData, monthlyLoading, token]);
 
+  const fetchComptable = useCallback(async (range) => {
+    if (!range) return;
+    const reqId = ++comptableReqRef.current;
+    setComptableLoading(true);
+    try {
+      const res = await axios.post(
+        `${API_URL}/financier/comptable`,
+        range,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      if (reqId !== comptableReqRef.current) return;
+      setComptableData(res.data);
+    } catch (err) {
+      if (reqId !== comptableReqRef.current) return;
+      if (err.response?.status === 401) { logout(); return; }
+      setComptableData(null);
+    } finally {
+      if (reqId === comptableReqRef.current) setComptableLoading(false);
+    }
+  }, [token, logout]);
+
   const customLabel = customPreset
     ? (CUSTOM_PRESETS.find(p => p.key === customPreset)?.label || 'Personnalisé')
     : 'Personnalisé';
@@ -864,6 +1097,21 @@ export default function FinancierApp() {
     if (period === 'custom') return (customFrom && customTo) ? { dateFrom: customFrom, dateTo: customTo } : null;
     return getDateRange(period);
   })();
+  // Libellé lisible de la période (titre + nom de fichier PDF de la déclaration comptable).
+  const periodLabelText = (() => {
+    if (period === 'custom' && customPreset) return CUSTOM_PRESETS.find(p => p.key === customPreset)?.label || 'Personnalisé';
+    if (period === 'custom') return reportRange ? `${reportRange.dateFrom} → ${reportRange.dateTo}` : 'Personnalisé';
+    const base = PERIODS.find(p => p.key === period)?.label || '';
+    return reportRange ? `${base} (${reportRange.dateFrom} → ${reportRange.dateTo})` : base;
+  })();
+
+  // Charge les données comptables quand l'onglet est actif et que la plage change.
+  const comptableRangeKey = reportRange ? `${reportRange.dateFrom}|${reportRange.dateTo}` : '';
+  useEffect(() => {
+    if (view !== 'comptable' || !reportRange) return;
+    fetchComptable(reportRange);
+  }, [view, comptableRangeKey, fetchComptable]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const PAID_STATUSES = 'wc-completed,wc-processing,wc-delivered,wc-awaiting-delivery,wc-shipped,wc-being-delivered';
   const ordersUrl = reportRange
     ? `/commandes?paris=1&dateFrom=${reportRange.dateFrom}&dateTo=${reportRange.dateTo}&status=${PAID_STATUSES}`
@@ -958,6 +1206,31 @@ export default function FinancierApp() {
         {/* Main */}
         <main style={{ padding: 24, flex: 1 }}>
 
+          {/* Onglets */}
+          <div style={{ display: 'flex', gap: 2, marginBottom: 18, background: C.blanc, borderRadius: 10, border: `1px solid ${C.grisCL}`, padding: 3, width: 'fit-content' }}>
+            {[
+              { key: 'dashboard', label: '📊 Tableau de bord' },
+              { key: 'comptable', label: '🧾 Déclaration comptable' },
+            ].map(tab => {
+              const isActive = view === tab.key;
+              return (
+                <button
+                  key={tab.key}
+                  onClick={() => setView(tab.key)}
+                  style={{
+                    background: isActive ? C.saphir : 'transparent',
+                    color: isActive ? C.blanc : C.grisF,
+                    border: 'none', borderRadius: 8, padding: '7px 16px',
+                    fontSize: 13, fontWeight: isActive ? 700 : 500, cursor: 'pointer',
+                    transition: 'all 0.18s', fontFamily: 'Lato, sans-serif', whiteSpace: 'nowrap',
+                  }}
+                >
+                  {tab.label}
+                </button>
+              );
+            })}
+          </div>
+
           {/* Sélecteur de période */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 20, flexWrap: 'wrap' }}>
             <div style={{ display: 'flex', background: C.blanc, borderRadius: 10, border: `1px solid ${C.grisCL}`, padding: 3, gap: 2 }}>
@@ -1041,6 +1314,17 @@ export default function FinancierApp() {
             )}
           </div>
 
+          {view === 'comptable' && (
+            <ComptableView
+              data={comptableData}
+              loading={comptableLoading}
+              periodLabel={periodLabelText}
+              range={reportRange}
+            />
+          )}
+
+          {view === 'dashboard' && (
+          <>
           {/* Erreur */}
           {error && (
             <div style={{ background: '#fff0f0', border: `1px solid ${C.rouge}30`, borderRadius: 10, padding: '12px 16px', marginBottom: 20, color: C.rouge, fontSize: 13 }}>
@@ -1156,6 +1440,8 @@ export default function FinancierApp() {
                 <CountryTable rows={data.byCountry} />
               </div>
             </>
+          )}
+          </>
           )}
         </main>
       </main>

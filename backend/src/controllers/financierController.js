@@ -509,6 +509,138 @@ async function computeByCountry({ dateFrom, dateTo } = {}) {
 exports.computeByCountry = computeByCountry;
 
 /**
+ * Déclaration comptable : par pays de facturation, CA TTC / CA HT / TVA collectée,
+ * en version BRUTE (ventes de la période) ET NETTE (après remboursements de la période).
+ *
+ * - TVA calculée via la formule exacte order_items (produits + livraison), identique
+ *   au KPI « TVA » du dashboard → les totaux réconcilient avec les cartes.
+ * - CA HT = CA TTC − TVA.
+ * - Remboursements agrégés par pays sur `refund_date` (comme le KPI remboursements),
+ *   et TVA nette = TVA brute − remboursements × (TVA brute / CA TTC brut) — même
+ *   ajustement proportionnel que computeDashboard, mais calculé pays par pays.
+ *
+ * Retourne { rows: [...], totals: {...} } trié par CA TTC brut décroissant.
+ */
+async function computeComptable({ dateFrom, dateTo } = {}) {
+  const { conditions, params } = buildDateConditions(dateFrom, dateTo);
+  const where = 'WHERE ' + conditions.join(' AND ');
+
+  // Ventes par pays + TVA exacte (produits + livraison) via order_items.
+  const salesResult = await pool.query(`
+    WITH tva_reelle AS (
+      SELECT oi.wp_order_id,
+        SUM(CASE WHEN oi.order_item_type = 'line_item' THEN oi.line_tax ELSE 0 END)
+        + SUM(CASE WHEN oi.order_item_type = 'tax'      THEN oi.line_tax ELSE 0 END) AS tva
+      FROM order_items oi
+      WHERE oi.wp_order_id IN (SELECT wp_order_id FROM orders o ${where})
+      GROUP BY oi.wp_order_id
+    )
+    SELECT
+      COALESCE(NULLIF(o.billing_country, ''), '??') AS country_code,
+      COUNT(o.wp_order_id)::int                      AS orders_count,
+      COALESCE(SUM(o.order_total), 0)::numeric        AS ca_ttc_brut,
+      COALESCE(SUM(t.tva), 0)::numeric                AS tva_brut
+    FROM orders o
+    LEFT JOIN tva_reelle t ON t.wp_order_id = o.wp_order_id
+    ${where}
+    GROUP BY COALESCE(NULLIF(o.billing_country, ''), '??')
+  `, params);
+
+  // Remboursements par pays, filtrés sur refund_date (même périmètre que le KPI remboursements).
+  const refundsParams = [];
+  const refundsConds  = [
+    `o.post_status NOT IN ('wc-cancelled', 'wc-failed', 'wc-checkout-draft', 'wc-trash', 'wc-pending', 'wc-auto-draft')`
+  ];
+  let rIdx = 1;
+  if (dateFrom) { refundsConds.push(`(r.refund_date) >= $${rIdx++}`); refundsParams.push(dateFrom); }
+  if (dateTo)   { refundsConds.push(`(r.refund_date) <= $${rIdx++}`); refundsParams.push(upperBound(dateTo)); }
+
+  const refundsResult = await pool.query(`
+    SELECT
+      COALESCE(NULLIF(o.billing_country, ''), '??') AS country_code,
+      COALESCE(SUM(r.refund_amount), 0)::numeric     AS remboursements_ttc
+    FROM refunds r
+    JOIN orders o ON r.wp_order_id = o.wp_order_id
+    WHERE ${refundsConds.join(' AND ')}
+    GROUP BY COALESCE(NULLIF(o.billing_country, ''), '??')
+  `, refundsParams);
+
+  const refundsByCountry = {};
+  for (const row of refundsResult.rows) {
+    refundsByCountry[row.country_code] = parseFloat(row.remboursements_ttc) || 0;
+  }
+
+  const rows = salesResult.rows.map((r) => {
+    const ttcBrut  = parseFloat(r.ca_ttc_brut) || 0;
+    const tvaBrut  = parseFloat(r.tva_brut) || 0;
+    const htBrut   = ttcBrut - tvaBrut;
+    const remb     = refundsByCountry[r.country_code] || 0;
+    const taxRatio = ttcBrut > 0 ? tvaBrut / ttcBrut : 0;
+    const tvaNet   = tvaBrut - remb * taxRatio;
+    const ttcNet   = ttcBrut - remb;
+    const htNet    = ttcNet - tvaNet;
+    return {
+      country_code: r.country_code,
+      orders_count: r.orders_count,
+      ca_ttc_brut: round2(ttcBrut),
+      ca_ht_brut:  round2(htBrut),
+      tva_brut:    round2(tvaBrut),
+      remboursements_ttc: round2(remb),
+      ca_ttc_net:  round2(ttcNet),
+      ca_ht_net:   round2(htNet),
+      tva_net:     round2(tvaNet),
+    };
+  });
+
+  // Remboursements rattachés à un pays sans vente dans la période → lignes purement négatives.
+  for (const [cc, remb] of Object.entries(refundsByCountry)) {
+    if (remb > 0 && !rows.some((r) => r.country_code === cc)) {
+      rows.push({
+        country_code: cc, orders_count: 0,
+        ca_ttc_brut: 0, ca_ht_brut: 0, tva_brut: 0,
+        remboursements_ttc: round2(remb),
+        ca_ttc_net: round2(-remb), ca_ht_net: round2(-remb), tva_net: 0,
+      });
+    }
+  }
+
+  rows.sort((a, b) => b.ca_ttc_brut - a.ca_ttc_brut);
+
+  const totals = rows.reduce((t, r) => ({
+    orders_count:       t.orders_count + r.orders_count,
+    ca_ttc_brut:        t.ca_ttc_brut + r.ca_ttc_brut,
+    ca_ht_brut:         t.ca_ht_brut + r.ca_ht_brut,
+    tva_brut:           t.tva_brut + r.tva_brut,
+    remboursements_ttc: t.remboursements_ttc + r.remboursements_ttc,
+    ca_ttc_net:         t.ca_ttc_net + r.ca_ttc_net,
+    ca_ht_net:          t.ca_ht_net + r.ca_ht_net,
+    tva_net:            t.tva_net + r.tva_net,
+  }), { orders_count: 0, ca_ttc_brut: 0, ca_ht_brut: 0, tva_brut: 0, remboursements_ttc: 0, ca_ttc_net: 0, ca_ht_net: 0, tva_net: 0 });
+
+  for (const k of Object.keys(totals)) totals[k] = round2(totals[k]);
+  totals.orders_count = Math.round(totals.orders_count);
+
+  return { rows, totals };
+}
+
+exports.computeComptable = computeComptable;
+
+/**
+ * POST /api/financier/comptable
+ * Données de la déclaration comptable (CA TTC/HT/TVA brut & net, par pays).
+ */
+exports.getComptable = async (req, res) => {
+  try {
+    const { dateFrom, dateTo } = req.body;
+    const result = await computeComptable({ dateFrom, dateTo });
+    res.json({ success: true, ...result, dateFrom, dateTo });
+  } catch (error) {
+    console.error('Error in financier comptable:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+/**
  * POST /api/financier/dashboard
  * Source de vérité unique pour tous les onglets.
  */
