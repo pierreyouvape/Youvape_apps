@@ -713,22 +713,57 @@ function exportComptablePDF({ rows, totals, periodLabel, range }) {
   doc.save(`declaration_comptable_${suffix}.pdf`);
 }
 
-function ComptableView({ data, loading, periodLabel, range }) {
+function ComptableView({ data, loading, periodLabel, range, months, selectedMonth, onMonthChange }) {
   const th = { fontSize: 11, fontWeight: 700, color: C.grisM, textTransform: 'uppercase', letterSpacing: '0.04em', padding: '0 10px 8px', borderBottom: `2px solid ${C.grisCL}`, whiteSpace: 'nowrap' };
   const td = { fontSize: 13, color: C.grisF, fontWeight: 600, padding: '9px 10px', borderBottom: `1px solid ${C.grisTL}`, whiteSpace: 'nowrap' };
 
+  // En-tête : sélecteur de mois (à gauche) + export PDF (à droite) — toujours visible.
+  const header = (
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', flexWrap: 'wrap', gap: 12, marginBottom: 18 }}>
+      <div>
+        <div style={{ fontSize: 16, fontWeight: 800, color: C.grisTF, fontFamily: "'Tilt Warp', cursive" }}>Déclaration comptable</div>
+        <div style={{ fontSize: 12, color: C.grisM, marginTop: 2 }}>CA TTC, CA HT et TVA collectée — brut (ventes) et net (après remboursements)</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10 }}>
+          <span style={{ fontSize: 12, fontWeight: 700, color: C.grisM, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Mois</span>
+          <select
+            value={selectedMonth}
+            onChange={(e) => onMonthChange(e.target.value)}
+            style={{ border: `1px solid ${C.grisCL}`, borderRadius: 8, padding: '8px 12px', fontSize: 14, fontWeight: 700, fontFamily: 'Lato', color: C.grisTF, background: C.blanc, cursor: 'pointer', minWidth: 180 }}
+          >
+            {months.map((m) => (
+              <option key={m.value} value={m.value}>{m.label}</option>
+            ))}
+          </select>
+        </div>
+      </div>
+      <button
+        onClick={() => data && exportComptablePDF({ rows: data.rows, totals: data.totals, periodLabel, range })}
+        disabled={!data || loading}
+        style={{ background: (!data || loading) ? C.grisM : C.saphir, color: C.blanc, border: 'none', borderRadius: 9, padding: '10px 18px', fontSize: 13, fontWeight: 700, cursor: (!data || loading) ? 'default' : 'pointer', fontFamily: 'Lato', display: 'inline-flex', alignItems: 'center', gap: 7 }}
+      >
+        📄 Exporter en PDF
+      </button>
+    </div>
+  );
+
   if (loading) {
     return (
-      <div style={{ background: C.blanc, borderRadius: 14, height: 220, boxShadow: '0 1px 3px rgba(0,0,0,0.07)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: C.grisM, animation: 'pulse 1.5s ease-in-out infinite' }}>
-        Chargement…
-      </div>
+      <>
+        {header}
+        <div style={{ background: C.blanc, borderRadius: 14, height: 220, boxShadow: '0 1px 3px rgba(0,0,0,0.07)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: C.grisM, animation: 'pulse 1.5s ease-in-out infinite' }}>
+          Chargement…
+        </div>
+      </>
     );
   }
   if (!data || !data.rows || data.rows.length === 0) {
     return (
-      <div style={{ background: C.blanc, borderRadius: 14, padding: '28px 24px', boxShadow: '0 1px 3px rgba(0,0,0,0.07)', color: C.grisM, fontSize: 14 }}>
-        Aucune commande sur la période sélectionnée.
-      </div>
+      <>
+        {header}
+        <div style={{ background: C.blanc, borderRadius: 14, padding: '28px 24px', boxShadow: '0 1px 3px rgba(0,0,0,0.07)', color: C.grisM, fontSize: 14 }}>
+          Aucune commande sur ce mois.
+        </div>
+      </>
     );
   }
 
@@ -756,19 +791,7 @@ function ComptableView({ data, loading, periodLabel, range }) {
 
   return (
     <>
-      {/* En-tête + export */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12, marginBottom: 18 }}>
-        <div>
-          <div style={{ fontSize: 16, fontWeight: 800, color: C.grisTF, fontFamily: "'Tilt Warp', cursive" }}>Déclaration comptable</div>
-          <div style={{ fontSize: 12, color: C.grisM, marginTop: 2 }}>CA TTC, CA HT et TVA collectée — brut (ventes) et net (après remboursements) — {periodLabel}</div>
-        </div>
-        <button
-          onClick={() => exportComptablePDF({ rows: data.rows, totals: t, periodLabel, range })}
-          style={{ background: C.saphir, color: C.blanc, border: 'none', borderRadius: 9, padding: '10px 18px', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'Lato', display: 'inline-flex', alignItems: 'center', gap: 7 }}
-        >
-          📄 Exporter en PDF
-        </button>
-      </div>
+      {header}
 
       {/* Récap brut / net */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 14, marginBottom: 20 }}>
@@ -885,6 +908,32 @@ function YouvapeLogo({ size = 40, light = false }) {
   );
 }
 
+/* ─── MOIS COMPLETS PASSÉS (déclaration comptable) ───────── */
+// Liste des N derniers mois RÉVOLUS (le mois courant, incomplet, est exclu),
+// du plus récent au plus ancien. { value: 'YYYY-MM', label: 'Juillet 2026' }.
+function pastCompleteMonths(count = 36) {
+  const now = new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  const out = [];
+  for (let i = 1; i <= count; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const raw = d.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
+    out.push({
+      value: `${d.getFullYear()}-${pad(d.getMonth() + 1)}`,
+      label: raw.charAt(0).toUpperCase() + raw.slice(1),
+    });
+  }
+  return out;
+}
+
+// Plage { dateFrom, dateTo } du 1er au dernier jour d'un mois 'YYYY-MM'.
+function monthRange(ym) {
+  const [y, m] = ym.split('-').map(Number);
+  const pad = (n) => String(n).padStart(2, '0');
+  const last = new Date(y, m, 0).getDate();
+  return { dateFrom: `${y}-${pad(m)}-01`, dateTo: `${y}-${pad(m)}-${pad(last)}` };
+}
+
 /* ─── PERIOD SELECTOR ────────────────────────────────────── */
 const PERIODS = [
   { key: 'today', label: "Aujourd'hui" },
@@ -934,6 +983,9 @@ export default function FinancierApp() {
   const [comptableData, setComptableData] = useState(null);
   const [comptableLoading, setComptableLoading] = useState(false);
   const comptableReqRef = useRef(0);
+  // Déclaration comptable : sélection d'un mois complet révolu (défaut = mois dernier).
+  const comptableMonths = pastCompleteMonths();
+  const [comptableMonth, setComptableMonth] = useState(comptableMonths[0].value);
 
   // Garde-fou anti-race : chaque fetch reçoit un numéro de séquence ; seule la
   // réponse de la requête la plus récente est appliquée. Sans ça, un changement
@@ -1099,20 +1151,16 @@ export default function FinancierApp() {
     if (period === 'custom') return (customFrom && customTo) ? { dateFrom: customFrom, dateTo: customTo } : null;
     return getDateRange(period);
   })();
-  // Libellé lisible de la période (titre + nom de fichier PDF de la déclaration comptable).
-  const periodLabelText = (() => {
-    if (period === 'custom' && customPreset) return CUSTOM_PRESETS.find(p => p.key === customPreset)?.label || 'Personnalisé';
-    if (period === 'custom') return reportRange ? `${reportRange.dateFrom} → ${reportRange.dateTo}` : 'Personnalisé';
-    const base = PERIODS.find(p => p.key === period)?.label || '';
-    return reportRange ? `${base} (${reportRange.dateFrom} → ${reportRange.dateTo})` : base;
-  })();
 
-  // Charge les données comptables quand l'onglet est actif et que la plage change.
-  const comptableRangeKey = reportRange ? `${reportRange.dateFrom}|${reportRange.dateTo}` : '';
+  // Déclaration comptable : plage = mois complet sélectionné (1er → dernier jour).
+  const comptableRange = monthRange(comptableMonth);
+  const comptableMonthLabel = comptableMonths.find((m) => m.value === comptableMonth)?.label || comptableMonth;
+
+  // Charge les données comptables quand l'onglet est actif et que le mois change.
   useEffect(() => {
-    if (view !== 'comptable' || !reportRange) return;
-    fetchComptable(reportRange);
-  }, [view, comptableRangeKey, fetchComptable]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (view !== 'comptable') return;
+    fetchComptable(comptableRange);
+  }, [view, comptableMonth, fetchComptable]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const PAID_STATUSES = 'wc-completed,wc-processing,wc-delivered,wc-awaiting-delivery,wc-shipped,wc-being-delivered';
   const ordersUrl = reportRange
@@ -1233,7 +1281,8 @@ export default function FinancierApp() {
             })}
           </div>
 
-          {/* Sélecteur de période */}
+          {/* Sélecteur de période (masqué dans l'onglet comptable, qui a son propre sélecteur de mois) */}
+          {view === 'dashboard' && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 20, flexWrap: 'wrap' }}>
             <div style={{ display: 'flex', background: C.blanc, borderRadius: 10, border: `1px solid ${C.grisCL}`, padding: 3, gap: 2 }}>
               {PERIODS.map(p => {
@@ -1315,13 +1364,17 @@ export default function FinancierApp() {
               </div>
             )}
           </div>
+          )}
 
           {view === 'comptable' && (
             <ComptableView
               data={comptableData}
               loading={comptableLoading}
-              periodLabel={periodLabelText}
-              range={reportRange}
+              periodLabel={comptableMonthLabel}
+              range={comptableRange}
+              months={comptableMonths}
+              selectedMonth={comptableMonth}
+              onMonthChange={setComptableMonth}
             />
           )}
 
