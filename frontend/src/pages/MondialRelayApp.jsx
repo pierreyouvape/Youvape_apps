@@ -172,8 +172,8 @@ function TotalsView({ totals, totalsLoading, loadTotals }) {
         const montant = Number(d.montant) || 0;
         autresMap[y] = autresMap[y] || { total: 0, labels: {} };
         autresMap[y].total += montant;
-        const lbl = autresMap[y].labels[d.label] = autresMap[y].labels[d.label] || { montant: 0, count: 0 };
-        lbl.montant += montant; lbl.count += 1;
+        const lbl = autresMap[y].labels[d.label] = autresMap[y].labels[d.label] || { montant: 0, count: 0, qty: 0 };
+        lbl.montant += montant; lbl.count += 1; lbl.qty += Number(d.qty) || 0;
       }
       let key = null;
       if (parts.length === 3) {
@@ -259,7 +259,7 @@ function TotalsView({ totals, totalsLoading, loadTotals }) {
                 Frais exceptionnels &amp; forfaits (colis trop petits, non réclamés, ré-étiquetage, retour PCI, suppléments Corse, forfait collecte…), détaillés ligne par ligne, année par année.
               </p>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-                <thead><tr><Th label="Année / Libellé" /><Th label="Nb factures" align="right" /><Th label="Total HT" align="right" /></tr></thead>
+                <thead><tr><Th label="Année / Libellé" /><Th label="Qté" align="right" /><Th label="Total HT" align="right" /></tr></thead>
                 <tbody>
                   {autresByYear.map(y => (
                     <Fragment key={y.year}>
@@ -270,8 +270,8 @@ function TotalsView({ totals, totalsLoading, loadTotals }) {
                       </tr>
                       {y.lines.map((l, i) => (
                         <tr key={i} style={{ background: C.white }}>
-                          <Td color={C.dark}><span style={{ color: C.greyT, marginRight: 6 }}>↳</span>{l.label}</Td>
-                          <Td align="right" color={C.greyT}>{l.count}</Td>
+                          <Td color={C.dark}><span style={{ color: C.greyT, marginRight: 6 }}>↳</span>{l.label} <span style={{ color: C.greyT, fontSize: 11 }}>· {l.count} fact.</span></Td>
+                          <Td align="right" color={C.greyT}>{l.qty || '—'}</Td>
                           <Td align="right" bold color={C.orange}>{fmtEur(l.montant)}</Td>
                         </tr>
                       ))}
