@@ -6,7 +6,7 @@ import autoTable from 'jspdf-autotable';
 import AppShell from '../components/AppShell';
 import { Stats as RapportIcon } from '../components/AppIcons';
 import { LinkBox } from '../utils/navHelpers';
-import { getCountryLabel } from '../utils/countries';
+import { getCountryLabel, getCountryName } from '../utils/countries';
 
 const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:3000/api/auth').replace('/auth', '');
 
@@ -625,7 +625,9 @@ function CountryTable({ rows }) {
 }
 
 /* ─── DÉCLARATION COMPTABLE ──────────────────────────────── */
-const countryName = (code) => (code === '??' ? 'Inconnu' : getCountryLabel(code));
+// Nom du pays SANS drapeau : la police standard jsPDF ne rend pas les emojis
+// (ils apparaissent en caractères parasites dans le PDF).
+const countryName = (code) => (code === '??' ? 'Inconnu' : getCountryName(code));
 
 // Construit et télécharge le PDF de la déclaration comptable (paysage : 9 colonnes).
 function exportComptablePDF({ rows, totals, periodLabel, range }) {
