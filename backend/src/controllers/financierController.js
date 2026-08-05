@@ -519,11 +519,17 @@ exports.computeByCountry = computeByCountry;
  *   et TVA nette = TVA brute − remboursements × (TVA brute / CA TTC brut) — même
  *   ajustement proportionnel que computeDashboard, mais calculé pays par pays.
  *
+ * Regroupement par PAYS DE FACTURATION (billing_country). La TVA affichée reste
+ * celle réellement collectée sur la commande : une commande facturée à l'étranger
+ * mais livrée en France porte la TVA française et la conserve sous son pays de
+ * facturation (choix métier assumé, cf. commandes CH livrées en FR).
+ *
  * Retourne { rows: [...], totals: {...} } trié par CA TTC brut décroissant.
  */
 async function computeComptable({ dateFrom, dateTo } = {}) {
   const { conditions, params } = buildDateConditions(dateFrom, dateTo);
   const where = 'WHERE ' + conditions.join(' AND ');
+  const countryExpr = `COALESCE(NULLIF(o.billing_country, ''), '??')`;
 
   // Ventes par pays + TVA exacte (produits + livraison) via order_items.
   const salesResult = await pool.query(`
@@ -536,14 +542,14 @@ async function computeComptable({ dateFrom, dateTo } = {}) {
       GROUP BY oi.wp_order_id
     )
     SELECT
-      COALESCE(NULLIF(o.billing_country, ''), '??') AS country_code,
+      ${countryExpr}                                 AS country_code,
       COUNT(o.wp_order_id)::int                      AS orders_count,
       COALESCE(SUM(o.order_total), 0)::numeric        AS ca_ttc_brut,
       COALESCE(SUM(t.tva), 0)::numeric                AS tva_brut
     FROM orders o
     LEFT JOIN tva_reelle t ON t.wp_order_id = o.wp_order_id
     ${where}
-    GROUP BY COALESCE(NULLIF(o.billing_country, ''), '??')
+    GROUP BY ${countryExpr}
   `, params);
 
   // Remboursements par pays, filtrés sur refund_date (même périmètre que le KPI remboursements).
@@ -557,12 +563,12 @@ async function computeComptable({ dateFrom, dateTo } = {}) {
 
   const refundsResult = await pool.query(`
     SELECT
-      COALESCE(NULLIF(o.billing_country, ''), '??') AS country_code,
-      COALESCE(SUM(r.refund_amount), 0)::numeric     AS remboursements_ttc
+      ${countryExpr}                             AS country_code,
+      COALESCE(SUM(r.refund_amount), 0)::numeric  AS remboursements_ttc
     FROM refunds r
     JOIN orders o ON r.wp_order_id = o.wp_order_id
     WHERE ${refundsConds.join(' AND ')}
-    GROUP BY COALESCE(NULLIF(o.billing_country, ''), '??')
+    GROUP BY ${countryExpr}
   `, refundsParams);
 
   const refundsByCountry = {};

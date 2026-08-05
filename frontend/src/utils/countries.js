@@ -62,6 +62,19 @@ export const COUNTRIES = {
   'VN': { name: 'Viêt Nam', flag: '🇻🇳' },
   'PH': { name: 'Philippines', flag: '🇵🇭' },
   'ID': { name: 'Indonésie', flag: '🇮🇩' },
+  // Monaco (territoire TVA français) + DOM-TOM / collectivités d'outre-mer
+  'MC': { name: 'Monaco', flag: '🇲🇨' },
+  'MQ': { name: 'Martinique', flag: '🇲🇶' },
+  'GP': { name: 'Guadeloupe', flag: '🇬🇵' },
+  'GF': { name: 'Guyane', flag: '🇬🇫' },
+  'RE': { name: 'La Réunion', flag: '🇷🇪' },
+  'YT': { name: 'Mayotte', flag: '🇾🇹' },
+  'PF': { name: 'Polynésie française', flag: '🇵🇫' },
+  'NC': { name: 'Nouvelle-Calédonie', flag: '🇳🇨' },
+  'PM': { name: 'Saint-Pierre-et-Miquelon', flag: '🇵🇲' },
+  'WF': { name: 'Wallis-et-Futuna', flag: '🇼🇫' },
+  'BL': { name: 'Saint-Barthélemy', flag: '🇧🇱' },
+  'MF': { name: 'Saint-Martin', flag: '🇲🇫' },
 };
 
 /**
