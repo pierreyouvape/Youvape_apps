@@ -3,7 +3,7 @@ const { PDFParse } = require('pdf-parse');
 const ExcelJS = require('exceljs');
 const JSZip = require('jszip');
 const pool = require('../config/database');
-const { parseMondialRelayPdf } = require('../parsers/mondialRelayParser');
+const { parseMondialRelayPdf, computeAutresFrais } = require('../parsers/mondialRelayParser');
 
 const CARRIER = 'mondial_relay';
 
@@ -100,6 +100,12 @@ async function generateExcel(parsed) {
   parsed.surcharges.forEach(c => addRow(c.label, c.qty, c.pu, c.montant));
   parsed.participations.forEach(c => addRow(c.label, c.qty, c.pu, c.montant));
 
+  // Sous-total « Autres frais » (hors gasoil / participations MR standard / remise)
+  const totRow = ws2.addRow(['Autres frais (hors gasoil, participations MR, remise)', '', '', computeAutresFrais(parsed).total]);
+  totRow.getCell(1).font = { bold: true };
+  totRow.getCell(4).font = { bold: true };
+  totRow.getCell(4).numFmt = FMT;
+
   return wb;
 }
 
@@ -190,13 +196,24 @@ exports.getHistory = async (req, res) => {
         (parcels_detail->>'totalTVA')::numeric  AS total_tva,
         (parcels_detail->>'totalTTC')::numeric  AS total_ttc,
         (parcels_detail->>'remiseRate')::numeric AS remise_rate,
-        (parcels_detail->'stats'->>'reconcile_ok')::boolean AS reconcile_ok
+        (parcels_detail->'stats'->>'reconcile_ok')::boolean AS reconcile_ok,
+        parcels_detail->'collecte'       AS collecte,
+        parcels_detail->'retourPCI'      AS "retourPCI",
+        parcels_detail->'complements'    AS complements,
+        parcels_detail->'surcharges'     AS surcharges,
+        parcels_detail->'participations' AS participations
       FROM carrier_invoices
       WHERE carrier = $1
       ORDER BY created_at DESC
       LIMIT 200
     `, [CARRIER]);
-    res.json({ success: true, invoices: result.rows });
+    // « Autres frais » = frais & remises hors gasoil / participations MR standard / remise
+    const invoices = result.rows.map(r => {
+      const { total } = computeAutresFrais(r);
+      const { collecte, retourPCI, complements, surcharges, participations, ...rest } = r;
+      return { ...rest, autres_frais: total };
+    });
+    res.json({ success: true, invoices });
   } catch (err) {
     console.error('[MondialRelay] getHistory error:', err);
     res.status(500).json({ success: false, error: err.message });
@@ -246,12 +263,23 @@ exports.getTotals = async (req, res) => {
     const invoices = await pool.query(`
       SELECT invoice_number, period_start, total_ht, total_parcels,
              account_number AS pays,
-             (parcels_detail->>'totalTTC')::numeric AS total_ttc
+             (parcels_detail->>'totalTTC')::numeric AS total_ttc,
+             parcels_detail->'collecte'       AS collecte,
+             parcels_detail->'retourPCI'      AS "retourPCI",
+             parcels_detail->'complements'    AS complements,
+             parcels_detail->'surcharges'     AS surcharges,
+             parcels_detail->'participations' AS participations
       FROM carrier_invoices
       WHERE carrier = $1
       ORDER BY period_start
     `, [CARRIER]);
-    res.json({ success: true, invoices: invoices.rows });
+    // « Autres frais » détaillés (hors gasoil / participations MR standard / remise)
+    const rows = invoices.rows.map(r => {
+      const { total, detail } = computeAutresFrais(r);
+      const { collecte, retourPCI, complements, surcharges, participations, ...rest } = r;
+      return { ...rest, autres_frais: total, autres_frais_detail: detail };
+    });
+    res.json({ success: true, invoices: rows });
   } catch (err) {
     console.error('[MondialRelay] getTotals error:', err);
     res.status(500).json({ success: false, error: err.message });

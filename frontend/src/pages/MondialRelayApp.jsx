@@ -1,4 +1,4 @@
-import { useState, useRef, useContext, useEffect, useMemo } from 'react';
+import { useState, useRef, useContext, useEffect, useMemo, Fragment } from 'react';
 import axios from 'axios';
 import { AuthContext } from '../context/AuthContext';
 import AppShell from '../components/AppShell';
@@ -92,6 +92,7 @@ const HISTORY_SORTERS = {
   total_ht:       i => parseFloat(i.total_ht || 0),
   total_ttc:      i => parseFloat(i.total_ttc || 0),
   remise_rate:    i => parseFloat(i.remise_rate || 0),
+  autres_frais:   i => parseFloat(i.autres_frais || 0),
   created_at:     i => new Date(i.created_at).getTime() || 0,
 };
 
@@ -108,6 +109,7 @@ function HistoryTable({ history, loadFromHistory, onDelete, onDownload }) {
             <Th label="Pays" sortKey="pays" sort={sort} onSort={toggle} />
             <Th label="Colis" align="right" sortKey="total_parcels" sort={sort} onSort={toggle} />
             <Th label="Remise" align="right" sortKey="remise_rate" sort={sort} onSort={toggle} />
+            <Th label="Autres frais" align="right" sortKey="autres_frais" sort={sort} onSort={toggle} />
             <Th label="Total HT" align="right" sortKey="total_ht" sort={sort} onSort={toggle} />
             <Th label="Total TTC" align="right" sortKey="total_ttc" sort={sort} onSort={toggle} />
             <Th label="Enregistrée le" sortKey="created_at" sort={sort} onSort={toggle} /><Th label="" />
@@ -125,6 +127,7 @@ function HistoryTable({ history, loadFromHistory, onDelete, onDownload }) {
               <Td><span style={{ background: C.blueL, color: C.blue, padding: '2px 8px', borderRadius: 12, fontSize: 11.5, fontWeight: 600 }}>{inv.pays || '—'}</span></Td>
               <Td align="right">{inv.total_parcels ?? '—'}</Td>
               <Td align="right" color={inv.remise_rate != null && parseFloat(inv.remise_rate) !== EXPECTED_REMISE ? C.orange : C.greyT}>{inv.remise_rate != null ? `${parseFloat(inv.remise_rate)} %` : '—'}</Td>
+              <Td align="right" color={parseFloat(inv.autres_frais) > 0 ? C.orange : C.greyT}>{inv.autres_frais != null ? fmtEur(inv.autres_frais) : '—'}</Td>
               <Td align="right" bold>{fmtEur(inv.total_ht)}</Td>
               <Td align="right" bold color={C.blue}>{fmtEur(inv.total_ttc)}</Td>
               <Td color={C.greyT}>{new Date(inv.created_at).toLocaleDateString('fr-FR')}</Td>
@@ -141,6 +144,7 @@ function HistoryTable({ history, loadFromHistory, onDelete, onDownload }) {
             <td colSpan={3} />
             <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: 700 }}>{history.reduce((s, i) => s + (Number(i.total_parcels) || 0), 0)}</td>
             <td />
+            <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: 700, color: C.orange }}>{fmtEur(history.reduce((s, i) => s + parseFloat(i.autres_frais || 0), 0))}</td>
             <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: 800, color: C.accent }}>{fmtEur(history.reduce((s, i) => s + parseFloat(i.total_ht || 0), 0))}</td>
             <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: 800, color: C.blue }}>{fmtEur(history.reduce((s, i) => s + parseFloat(i.total_ttc || 0), 0))}</td>
             <td colSpan={2} />
@@ -152,8 +156,9 @@ function HistoryTable({ history, loadFromHistory, onDelete, onDownload }) {
 }
 
 function TotalsView({ totals, totalsLoading, loadTotals }) {
-  const { months, years, byPays, yearCols, byPaysYear, monthCols, byPaysMonth } = useMemo(() => {
+  const { months, years, byPays, yearCols, byPaysYear, monthCols, byPaysMonth, autresByYear, autresGrand } = useMemo(() => {
     const monthMap = {}, yearMap = {}, paysMap = {}, paysYearMap = {}, paysMonthMap = {}, yearsSet = new Set();
+    const autresMap = {}; // année -> { total, labels: { label -> { montant, count } } }
     for (const inv of (totals?.invoices || [])) {
       const parts = (inv.period_start || '').split('/');
       const ttc = parseFloat(inv.total_ttc || inv.total_ht || 0);
@@ -161,6 +166,15 @@ function TotalsView({ totals, totalsLoading, loadTotals }) {
       const colis = Number(inv.total_parcels) || 0;
       const y = parts.length === 3 ? parts[2] : '—';
       const pays = inv.pays || '—';
+
+      // « Autres frais » détaillés par année et par libellé
+      for (const d of (inv.autres_frais_detail || [])) {
+        const montant = Number(d.montant) || 0;
+        autresMap[y] = autresMap[y] || { total: 0, labels: {} };
+        autresMap[y].total += montant;
+        const lbl = autresMap[y].labels[d.label] = autresMap[y].labels[d.label] || { montant: 0, count: 0 };
+        lbl.montant += montant; lbl.count += 1;
+      }
       let key = null;
       if (parts.length === 3) {
         key = `${y}-${parts[1]}`;
@@ -191,7 +205,12 @@ function TotalsView({ totals, totalsLoading, loadTotals }) {
     const byPaysMonth = Object.entries(paysMonthMap).map(([p, bm]) => ({
       pays: p, bm, total: Object.values(bm).reduce((s, x) => s + x, 0),
     })).sort((a, b) => b.total - a.total);
-    return { months, years, byPays, yearCols, byPaysYear, monthCols, byPaysMonth };
+    const autresByYear = Object.entries(autresMap).map(([year, v]) => ({
+      year, total: v.total,
+      lines: Object.entries(v.labels).map(([label, x]) => ({ label, ...x })).sort((a, b) => b.montant - a.montant),
+    })).sort((a, b) => b.year.localeCompare(a.year));
+    const autresGrand = autresByYear.reduce((s, y) => s + y.total, 0);
+    return { months, years, byPays, yearCols, byPaysYear, monthCols, byPaysMonth, autresByYear, autresGrand };
   }, [totals]);
 
   return (
@@ -231,6 +250,42 @@ function TotalsView({ totals, totalsLoading, loadTotals }) {
               </table>
             </div>
           </div>
+          {autresByYear.length > 0 && (
+            <div style={{ marginTop: 24 }}>
+              <h3 style={{ fontSize: 14, fontWeight: 700, color: C.dark, marginBottom: 4 }}>
+                Autres frais par année <span style={{ color: C.greyT, fontWeight: 400, fontSize: 12 }}>(hors indexation gasoil, participations MR & remise)</span>
+              </h3>
+              <p style={{ margin: '0 0 10px', color: C.greyT, fontSize: 12 }}>
+                Frais exceptionnels &amp; forfaits (colis trop petits, non réclamés, ré-étiquetage, retour PCI, suppléments Corse, forfait collecte…), détaillés ligne par ligne, année par année.
+              </p>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                <thead><tr><Th label="Année / Libellé" /><Th label="Nb factures" align="right" /><Th label="Total HT" align="right" /></tr></thead>
+                <tbody>
+                  {autresByYear.map(y => (
+                    <Fragment key={y.year}>
+                      <tr style={{ background: C.accentL }}>
+                        <td style={{ padding: '9px 12px', fontWeight: 800, color: C.accent, borderBottom: `1px solid ${C.greyB}` }}>{y.year}</td>
+                        <td style={{ borderBottom: `1px solid ${C.greyB}` }} />
+                        <td style={{ padding: '9px 12px', textAlign: 'right', fontWeight: 800, color: C.accent, borderBottom: `1px solid ${C.greyB}` }}>{fmtEur(y.total)}</td>
+                      </tr>
+                      {y.lines.map((l, i) => (
+                        <tr key={i} style={{ background: C.white }}>
+                          <Td color={C.dark}><span style={{ color: C.greyT, marginRight: 6 }}>↳</span>{l.label}</Td>
+                          <Td align="right" color={C.greyT}>{l.count}</Td>
+                          <Td align="right" bold color={C.orange}>{fmtEur(l.montant)}</Td>
+                        </tr>
+                      ))}
+                    </Fragment>
+                  ))}
+                </tbody>
+                <tfoot><tr style={{ borderTop: `2px solid ${C.greyB}`, background: C.grey }}>
+                  <Td bold>Total tous les ans</Td><Td />
+                  <Td align="right" bold color={C.orange}>{fmtEur(autresGrand)}</Td>
+                </tr></tfoot>
+              </table>
+            </div>
+          )}
+
           {yearCols.length > 0 && (
             <div style={{ marginTop: 24 }}>
               <h3 style={{ fontSize: 14, fontWeight: 700, color: C.dark, marginBottom: 10 }}>Par pays et par année (TTC)</h3>
@@ -442,6 +497,14 @@ export default function MondialRelayApp() {
     (result.participations || []).forEach(c => fees.push({ ...c, kind: 'partic' }));
   }
 
+  // « Autres frais » = frais & remises hors gasoil / participations MR standard / remise
+  const isExclPartic = label => {
+    const n = (label || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+    return n.includes('eco-responsable') || n.includes('eco responsable') || n.includes('surete');
+  };
+  const isAutreFrais = f => !['remise', 'index'].includes(f.kind) && !(f.kind === 'partic' && isExclPartic(f.label));
+  const autresFraisTotal = fees.filter(isAutreFrais).reduce((s, f) => s + (f.montant || 0), 0);
+
   const remiseConform = result && result.remiseRate != null && parseFloat(result.remiseRate) === EXPECTED_REMISE;
 
   return (
@@ -592,13 +655,25 @@ export default function MondialRelayApp() {
                         {fees.length === 0 && <tr><td colSpan={4} style={{ textAlign: 'center', padding: 32, color: C.greyT }}>Aucun frais</td></tr>}
                         {fees.map((f, i) => (
                           <tr key={i} style={{ background: i % 2 === 0 ? C.white : C.grey }}>
-                            <Td bold={f.kind === 'remise'}>{f.label}</Td>
+                            <Td bold={f.kind === 'remise'}>{isAutreFrais(f) && <span title="Compté dans « Autres frais »" style={{ color: C.orange, marginRight: 5 }}>●</span>}{f.label}</Td>
                             <Td align="right" color={C.greyT}>{f.qty !== '' ? f.qty : ''}</Td>
                             <Td align="right" color={C.greyT}>{f.pu != null ? fmtEur(f.pu) : ''}</Td>
                             <Td align="right" bold color={f.montant < 0 ? C.green : (f.kind === 'surcharge' ? C.orange : C.dark)}>{fmtEur(f.montant)}</Td>
                           </tr>
                         ))}
                       </tbody>
+                      {fees.length > 0 && (
+                        <tfoot>
+                          <tr style={{ borderTop: `2px solid ${C.greyB}`, background: C.grey }}>
+                            <td style={{ padding: '10px 12px', fontWeight: 700, fontSize: 13 }}>
+                              <span style={{ color: C.orange, marginRight: 5 }}>●</span>Autres frais
+                              <span style={{ color: C.greyT, fontWeight: 400, marginLeft: 6, fontSize: 11.5 }}>(hors gasoil, participations MR, remise)</span>
+                            </td>
+                            <td /><td />
+                            <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: 800, color: C.orange, fontSize: 13 }}>{fmtEur(autresFraisTotal)}</td>
+                          </tr>
+                        </tfoot>
+                      )}
                     </table>
                   </div>
                 </div>

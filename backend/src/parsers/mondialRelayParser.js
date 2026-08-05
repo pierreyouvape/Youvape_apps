@@ -254,4 +254,46 @@ function parseMondialRelayPdf(text) {
   };
 }
 
-module.exports = { parseMondialRelayPdf, parseFrNum, bracketToGridIndex, GRID_2026_HD };
+/* ─── « Autres frais » ─────────────────────────────────────────
+ * Recap des frais & remises SANS les 3 postes récurrents standard :
+ *   - Indexation Gasoil            (champ `indexation`, jamais dans les listes)
+ *   - Participation MR Eco-responsable
+ *   - Participation MR Sureté
+ * La remise (montant négatif) est aussi exclue : c'est une remise, pas un frais.
+ * Tout le reste (surcharges, retour PCI, compléments, forfait collecte, autres
+ * participations) est agrégé et détaillé ligne par ligne.                     */
+const AUTRES_FRAIS_GROUPS = ['collecte', 'retourPCI', 'complements', 'surcharges', 'participations'];
+
+function normLabel(s) {
+  return String(s || '').toLowerCase()
+    .normalize('NFD').replace(/[̀-ͯ]/g, '') // enlève les accents
+    .replace(/\s+/g, ' ').trim();
+}
+
+// Participations standard à exclure du décompte « autres frais »
+function isExcludedParticipation(label) {
+  const n = normLabel(label);
+  return n.includes('eco-responsable') || n.includes('eco responsable') || n.includes('surete');
+}
+
+// Renvoie { total, detail: [{ label, qty, montant }] } pour une facture parsée
+// (ou tout objet exposant les listes collecte/surcharges/participations/…).
+function computeAutresFrais(parsed) {
+  const detail = [];
+  let total = 0;
+  for (const g of AUTRES_FRAIS_GROUPS) {
+    const arr = Array.isArray(parsed?.[g]) ? parsed[g] : [];
+    for (const it of arr) {
+      if (g === 'participations' && isExcludedParticipation(it.label)) continue;
+      const montant = Number(it.montant) || 0;
+      total += montant;
+      detail.push({ label: it.label, qty: it.qty ?? null, montant: round2(montant) });
+    }
+  }
+  return { total: round2(total), detail };
+}
+
+module.exports = {
+  parseMondialRelayPdf, parseFrNum, bracketToGridIndex, GRID_2026_HD,
+  computeAutresFrais, isExcludedParticipation, normLabel,
+};
