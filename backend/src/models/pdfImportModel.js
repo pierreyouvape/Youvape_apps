@@ -191,46 +191,38 @@ const pdfImportModel = {
       const match = matchMap.get(item.supplier_sku);
       const packQty = parsed.skipPackQty ? 1 : (match ? (parseInt(match.pack_qty) || 1) : 1);
 
-      // Prix brut du PDF (avant remise éventuelle)
-      // pdfIsPackBased (JoshNoa) : PDF = prix pack ET quantité en packs → aucune conversion
-      // invertPackQty (Curieux)  : PDF = prix unitaire, quantité en unités → × pack_qty et ÷ pack_qty
-      // normal (ancien)          : PDF = prix pack, quantité en packs → ÷ pack_qty et × pack_qty
-      // skipPackQty              : packQty forcé à 1, pas de conversion
+      // Prix brut du PDF (avant remise éventuelle).
+      // CONVENTION UNIQUE : on stocke tout À L'UNITÉ (qty_ordered en unités, unit_price par unité).
+      // invertPackQty (e.tasty, Curieux…) : PDF déjà en prix unitaire → tel quel.
+      // pdfIsPackBased (JoshNoa…) / normal : PDF en prix pack → ÷ pack_qty.
+      // skipPackQty : packQty forcé à 1, pas de conversion.
       const rawPdfGross = item.unit_price_net != null ? item.unit_price_net : null;
       let pdfGross;
-      if (rawPdfGross != null && packQty > 1 && !parsed.pdfIsPackBased) {
-        pdfGross = parsed.invertPackQty ? rawPdfGross * packQty : rawPdfGross / packQty;
+      if (rawPdfGross != null && packQty > 1) {
+        pdfGross = parsed.invertPackQty ? rawPdfGross : rawPdfGross / packQty;
       } else {
         pdfGross = rawPdfGross;
       }
       const discountPercent = item.discount_percent || 0;
       const pdfNet = pdfGross != null ? pdfGross * (1 - discountPercent / 100) : null;
-      // dbPrice : supplier_price en BDD = prix pack pour tous les fournisseurs
-      // pdfIsPackBased + invertPackQty : garder tel quel (prix pack, cohérent avec pdfGross)
-      // skipPackQty : packQty forcé à 1, donc dbPackQty doit aussi être 1 pour rester cohérent
-      // normal : diviser par pack_qty pour obtenir le prix unitaire
+      // dbPrice : supplier_price en BDD = prix pack pour tous les fournisseurs.
+      // Convention unités → prix unitaire = ÷ pack_qty pour TOUS les modes.
       const dbPackQty = packQty;  // déjà normalisé par skipPackQty ci-dessus
       const rawDbPrice = match ? parseFloat(match.supplier_price) || null : null;
       let dbPrice;
       if (rawDbPrice != null && dbPackQty > 1) {
-        dbPrice = (parsed.invertPackQty || parsed.pdfIsPackBased) ? rawDbPrice : rawDbPrice / dbPackQty;
+        dbPrice = rawDbPrice / dbPackQty;
       } else {
         dbPrice = rawDbPrice;
       }
 
-      // Quantité finale.
-      // invertPackQty (e.tasty, Curieux) : PDF = nb d'UNITÉS → diviser par pack_qty
-      //   pour obtenir les PACKS (le prix est, lui, converti en prix pack via
-      //   pdfGross × pack_qty). Cohérent avec createInBMS qui renvoie qty × pack_qty.
-      // normal/pdfIsPackBased=false : comportement historique inchangé.
-      let qtyOrdered;
-      if (parsed.invertPackQty) {
-        qtyOrdered = packQty > 1 ? Math.round(item.qty_ordered / packQty) : item.qty_ordered;
-      } else if (packQty > 1 && !parsed.pdfIsPackBased) {
-        qtyOrdered = item.qty_ordered * packQty;
-      } else {
-        qtyOrdered = item.qty_ordered;
-      }
+      // Quantité finale : convention unique = nombre d'UNITÉS individuelles.
+      // invertPackQty (e.tasty, Curieux…) : PDF déjà en unités → tel quel.
+      // pdfIsPackBased (JoshNoa…) / normal : PDF en packs → × pack_qty.
+      // skipPackQty : packQty = 1, donc × 1 (no-op).
+      const qtyOrdered = parsed.invertPackQty
+        ? item.qty_ordered
+        : item.qty_ordered * packQty;
 
       return {
         supplier_sku: item.supplier_sku,

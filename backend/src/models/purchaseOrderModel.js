@@ -318,13 +318,12 @@ const purchaseOrderModel = {
     }
 
     // Préparer les items pour BMS (seuls les produits avec SKU)
+    // Convention de stockage locale : qty_ordered = nombre d'UNITÉS, unit_price = prix PAR UNITÉ.
     // Sémantique BMS (vérifiée en prod) :
-    //   - qty       = nombre d'UNITÉS individuelles  (= qty_ordered packs × pack_qty)
-    //   - pack_qty  = nombre d'unités par pack        → BMS affiche packs = qty / pack_qty
-    //   - price     = prix DU PACK                    (unit_price, déjà au pack)
-    // Convention de stockage : qty_ordered = nb de packs, unit_price = prix du pack.
-    // On envoie donc qty_ordered × pack_qty (unités) et le champ pack_qty pour fixer
-    // le conditionnement côté BMS (sinon BMS retombe sur son propre colisage, faux).
+    //   - qty       = nombre d'UNITÉS individuelles  → BMS en déduit les packs = qty / pack_qty
+    //   - pack_qty  = nombre d'unités par pack        (fixe le conditionnement côté BMS)
+    //   - price     = prix DU PACK                    (= unit_price × pack_qty)
+    // On envoie donc qty_ordered (déjà en unités) et unit_price × pack_qty (prix pack).
     const bmsItems = items
       .filter(item => item.sku)
       .map(item => {
@@ -332,8 +331,8 @@ const purchaseOrderModel = {
         const packQty = parseInt(item.pack_qty) || 1;
         const bmsItem = {
           sku: item.sku,
-          qty: (parseInt(item.qty_ordered) || 0) * packQty,
-          price: Math.round((parseFloat(item.unit_price) || 0) * 100) / 100,
+          qty: (parseInt(item.qty_ordered) || 0),
+          price: Math.round((parseFloat(item.unit_price) || 0) * packQty * 100) / 100,
           pack_qty: packQty,
           name: item.product_name,
           supplier_sku: item.supplier_sku || null
