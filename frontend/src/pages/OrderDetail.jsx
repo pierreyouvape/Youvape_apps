@@ -289,11 +289,15 @@ const OrderDetail = () => {
   const shippingItem = (order.line_items || []).find(i => i.order_item_type === 'shipping');
 
   // Les poids sont stockés en kg dans la BDD.
-  // Un bundle woosb génère une ligne "pack" PUIS chaque composant : le vrai poids
-  // physique est porté par les composants, la ligne pack a un poids placeholder.
-  // On exclut donc les lignes parentes woosb pour ne pas double-compter.
+  // Un bundle woosb ("Items" mode) génère une ligne "pack" PUIS chaque composant à 0€ :
+  // le vrai poids est alors porté par les composants, la ligne pack est un doublon → on l'exclut.
+  // Mais certains bundles ("Bundle" mode) n'ont pas de composants pesés : la ligne pack
+  // porte alors le vrai poids → il faut la garder. On distingue via la présence de
+  // composants pesés (ligne à 0€ avec un poids), notre seul signal (la meta _woosb n'est pas importée).
+  const hasWeighedComponents = productItems.some(i =>
+    i.product_type !== 'woosb' && parseFloat(i.line_total) === 0 && parseFloat(i.weight) > 0);
   const totalWeightKg = productItems.reduce((acc, item) => {
-    if (item.product_type === 'woosb') return acc;
+    if (item.product_type === 'woosb' && hasWeighedComponents) return acc;
     const w = parseFloat(item.weight);
     const q = parseInt(item.qty) || 1;
     return w > 0 ? acc + w * q : acc;
