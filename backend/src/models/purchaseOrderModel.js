@@ -777,9 +777,16 @@ const purchaseOrderModel = {
 
     // 3. Charger le mapping bms_id → supplier local (en une seule requête)
     const suppliersResult = await pool.query(
-      'SELECT id, bms_id FROM suppliers WHERE bms_id IS NOT NULL'
+      'SELECT id, bms_id, code FROM suppliers WHERE bms_id IS NOT NULL'
     );
     const supplierByBmsId = new Map(suppliersResult.rows.map(s => [s.bms_id, s.id]));
+    // Fournisseurs « à l'unité » (Highbuy, LCA…) : leur PO BMS a un prix DÉJÀ unitaire
+    // et une qty DÉJÀ en unités. Ne PAS appliquer la désambiguïsation prix pack /
+    // qty × pack_qty ci-dessous, qui diviserait le prix par pack_qty (bug ÷10 : le
+    // 7,90 relu deviendrait 0,79). Set des supplier_id locaux concernés.
+    const skipPackQtySupplierIds = new Set(
+      suppliersResult.rows.filter(s => parserRegistry.skipsPackQty(s.code)).map(s => s.id)
+    );
 
     // 4. Charger le mapping sku → product.id local (en une seule requête)
     //    wc_cog_cost sert d'ancre pour désambiguïser la convention de prix BMS
@@ -919,8 +926,8 @@ const purchaseOrderModel = {
           // basculer une décision, qui n'arrive que sur un écart franc (5-10×).
           // Le montant total (qty × price) est identique dans les deux interprétations.
           let unitPrice, qtyOrdered, qtyReceived;
-          if (priceRaw === null || qtyPack <= 1) {
-            unitPrice = priceRaw;               // pas d'ambiguïté
+          if (priceRaw === null || qtyPack <= 1 || skipPackQtySupplierIds.has(supplierId)) {
+            unitPrice = priceRaw;               // pas d'ambiguïté (ou fournisseur « à l'unité »)
             qtyOrdered = bmsQty;
             qtyReceived = bmsQtyRecv;
           } else {
