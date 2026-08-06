@@ -65,7 +65,8 @@ class OrderModel {
           oi.*,
           COALESCE(pv.post_title, pp.post_title) as product_name,
           COALESCE(pv.image_url, pp.image_url) as image_url,
-          COALESCE(pv.weight, pp.weight) as weight
+          COALESCE(pv.weight, pp.weight) as weight,
+          COALESCE(pv.product_type, pp.product_type) as product_type
         FROM order_items oi
         LEFT JOIN products pv ON pv.wp_product_id = NULLIF(oi.variation_id, 0)
         LEFT JOIN products pp ON pp.wp_product_id = oi.product_id

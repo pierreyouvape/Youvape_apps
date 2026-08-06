@@ -288,8 +288,12 @@ const OrderDetail = () => {
   const couponItems  = (order.line_items || []).filter(i => i.order_item_type === 'coupon');
   const shippingItem = (order.line_items || []).find(i => i.order_item_type === 'shipping');
 
-  // Les poids sont stockés en kg dans la BDD
+  // Les poids sont stockés en kg dans la BDD.
+  // Un bundle woosb génère une ligne "pack" PUIS chaque composant : le vrai poids
+  // physique est porté par les composants, la ligne pack a un poids placeholder.
+  // On exclut donc les lignes parentes woosb pour ne pas double-compter.
   const totalWeightKg = productItems.reduce((acc, item) => {
+    if (item.product_type === 'woosb') return acc;
     const w = parseFloat(item.weight);
     const q = parseInt(item.qty) || 1;
     return w > 0 ? acc + w * q : acc;

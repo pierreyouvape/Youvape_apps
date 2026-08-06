@@ -404,7 +404,7 @@ const calculateShippingCosts = async (req, res) => {
         o.shipping_method,
         o.shipping_country,
         o.shipping_cost_calculated,
-        COALESCE(SUM(oi.qty * COALESCE(p.weight, parent.weight, 0)) * 1000, 0) + $3 as total_weight
+        COALESCE(SUM(oi.qty * CASE WHEN p.product_type = 'woosb' THEN 0 ELSE COALESCE(p.weight, parent.weight, 0) END) * 1000, 0) + $3 as total_weight
       FROM orders o
       LEFT JOIN order_items oi ON o.wp_order_id = oi.wp_order_id
       LEFT JOIN products p ON p.wp_product_id = COALESCE(NULLIF(oi.variation_id::int, 0), oi.product_id::int)
@@ -499,7 +499,7 @@ const applyShippingCosts = async (req, res) => {
         o.wp_order_id,
         o.shipping_method,
         o.shipping_country,
-        COALESCE(SUM(oi.qty * COALESCE(p.weight, parent.weight, 0)) * 1000, 0) + $3 as total_weight
+        COALESCE(SUM(oi.qty * CASE WHEN p.product_type = 'woosb' THEN 0 ELSE COALESCE(p.weight, parent.weight, 0) END) * 1000, 0) + $3 as total_weight
       FROM orders o
       LEFT JOIN order_items oi ON o.wp_order_id = oi.wp_order_id
       LEFT JOIN products p ON p.wp_product_id = COALESCE(NULLIF(oi.variation_id::int, 0), oi.product_id::int)
@@ -784,7 +784,7 @@ const applyShippingCostToOrder = async (wpOrderId) => {
         o.shipping_method,
         o.shipping_country,
         o.shipping_cost_calculated,
-        COALESCE(SUM(oi.qty * COALESCE(p.weight, parent.weight, 0)) * 1000, 0) + $2 AS total_weight
+        COALESCE(SUM(oi.qty * CASE WHEN p.product_type = 'woosb' THEN 0 ELSE COALESCE(p.weight, parent.weight, 0) END) * 1000, 0) + $2 AS total_weight
       FROM orders o
       LEFT JOIN order_items oi ON o.wp_order_id = oi.wp_order_id
       LEFT JOIN products p ON p.wp_product_id = COALESCE(NULLIF(oi.variation_id::int, 0), oi.product_id::int)

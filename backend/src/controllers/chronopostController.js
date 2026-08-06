@@ -351,7 +351,7 @@ async function fetchBddWeights(orderIds) {
   const res = await pool.query(`
     SELECT
       o.wp_order_id::int AS order_id,
-      COALESCE(SUM(oi.qty * COALESCE(p.weight, parent.weight, 0)), 0) + $1 AS total_weight
+      COALESCE(SUM(oi.qty * CASE WHEN p.product_type = 'woosb' THEN 0 ELSE COALESCE(p.weight, parent.weight, 0) END), 0) + $1 AS total_weight
     FROM orders o
     LEFT JOIN order_items oi ON o.wp_order_id = oi.wp_order_id
     LEFT JOIN products p ON p.wp_product_id = COALESCE(NULLIF(oi.variation_id::int, 0), oi.product_id::int)
