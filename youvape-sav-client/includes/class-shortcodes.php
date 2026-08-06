@@ -56,11 +56,42 @@ class Youvape_SAV_Shortcodes {
         // Retour au formulaire après connexion OU inscription depuis Mon compte.
         add_action('woocommerce_login_form_end', array($this, 'inject_redirect_field'));
         add_action('woocommerce_register_form_end', array($this, 'inject_redirect_field'));
+        // Priorité tardive : le thème enfant force la redirection vers le panier
+        // en priorité 10, sans tenir compte de la destination calculée. On repasse
+        // après lui, mais seulement si le visiteur vient de notre formulaire.
+        add_filter('woocommerce_login_redirect', array($this, 'filter_redirect'), 99);
+        add_filter('woocommerce_registration_redirect', array($this, 'filter_redirect'), 99);
     }
 
     /**
-     * Injecte le champ `redirect` attendu par WooCommerce dans ses formulaires
-     * de connexion et d'inscription, quand on arrive depuis notre formulaire.
+     * Ramène le visiteur sur le formulaire après connexion ou inscription.
+     *
+     * On ne se repose pas sur le champ `redirect` de WooCommerce : le thème
+     * enfant écrase la destination via `woocommerce_login_redirect` pour envoyer
+     * tout le monde au panier. On porte donc notre propre champ et on repasse
+     * après lui — sans champ, ce filtre est transparent et le comportement
+     * habituel de la boutique est intact.
+     *
+     * @param string $redirect destination calculée en amont
+     * @return string
+     */
+    public function filter_redirect($redirect) {
+        if (empty($_POST[self::REDIRECT_ARG])) {
+            return $redirect;
+        }
+        $target = wp_validate_redirect(
+            esc_url_raw(wp_unslash($_POST[self::REDIRECT_ARG])),
+            ''
+        );
+        return $target ? $target : $redirect;
+    }
+
+    /**
+     * Reporte la page de retour de l'URL vers un champ caché, dans les
+     * formulaires de connexion et d'inscription de WooCommerce.
+     *
+     * Champ à notre nom plutôt que le `redirect` de WooCommerce : ce dernier est
+     * écrasé par le thème (voir filter_redirect). Le nôtre traverse intact.
      *
      * `wp_validate_redirect` avec un repli vide écarte toute URL hors du site :
      * ce paramètre venant de l'URL, il ne doit pas pouvoir servir de redirection
@@ -77,7 +108,11 @@ class Youvape_SAV_Shortcodes {
         if (!$target) {
             return;
         }
-        printf('<input type="hidden" name="redirect" value="%s" />', esc_url($target));
+        printf(
+            '<input type="hidden" name="%s" value="%s" />',
+            esc_attr(self::REDIRECT_ARG),
+            esc_url($target)
+        );
     }
 
     /**

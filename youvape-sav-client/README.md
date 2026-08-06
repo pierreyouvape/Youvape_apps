@@ -148,6 +148,11 @@ comportement de Gravity Forms, conservé volontairement.
 
 ## Changelog
 
+- **0.3.6** — Correctif du retour au formulaire : le thème enfant force toute
+  connexion vers le panier via `woocommerce_login_redirect` (priorité 10), en
+  ignorant la destination calculée. Le plugin porte donc son propre champ caché
+  et repasse en priorité 99 — uniquement si le visiteur vient du formulaire, le
+  comportement habituel de la boutique restant inchangé partout ailleurs.
 - **0.3.5** — Le lien « Connectez-vous » du formulaire public mène à la page
   **Mon compte** de WooCommerce et non plus à `wp-login.php`, et ramène le
   visiteur sur le formulaire une fois connecté (ou inscrit). Le retour passe par
