@@ -1207,13 +1207,6 @@ const purchaseOrderModel = {
   getLastVerifiedPrices: async (supplierId, productIds) => {
     if (!Array.isArray(productIds) || productIds.length === 0) return {};
 
-    // Fournisseur « à l'unité » (Highbuy, LCA…) : poi.unit_price est déjà le prix
-    // réellement facturé par unité et sera renvoyé tel quel à BMS (createInBMS force
-    // aussi pack_qty=1). Ne PAS reconstituer de « prix pack » ici, sinon le prefill
-    // proposerait un prix ×pack_qty (bug ×10).
-    const supRes = await pool.query('SELECT code FROM suppliers WHERE id = $1', [supplierId]);
-    const skipPackQty = parserRegistry.skipsPackQty(supRes.rows[0]?.code);
-
     const query = `
       SELECT DISTINCT ON (p.wp_product_id)
         p.wp_product_id AS input_id,
@@ -1245,8 +1238,7 @@ const purchaseOrderModel = {
       const packQty = parseInt(row.pack_qty) || 1;
       const supplierPrice = parseFloat(row.supplier_price) || null;
       // Prix du pack (cf. commentaire ci-dessus). pack_qty<=1 → inchangé.
-      // skipPackQty → toujours le prix unitaire tel quel (pas de reconstitution pack).
-      const packPrice = (!skipPackQty && packQty > 1)
+      const packPrice = packQty > 1
         ? (supplierPrice != null && supplierPrice > 0 ? supplierPrice : unitPrice * packQty)
         : unitPrice;
       map[row.input_id] = {
