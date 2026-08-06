@@ -324,25 +324,27 @@ const purchaseOrderModel = {
     const skipPackQty = parserRegistry.skipsPackQty(supplier.code);
 
     // Préparer les items pour BMS (seuls les produits avec SKU)
-    // Sémantique BMS (vérifiée en prod) : total ligne = qty × price ; pack_qty est une
-    // métadonnée de conditionnement (unités/pack) qui n'entre PAS dans le total, mais
-    // sert à la réception (qty × pack_qty = unités reçues).
-    //   - Fournisseurs normaux : qty_ordered = nb de packs, unit_price = prix PAR UNITÉ
-    //     → on envoie price = unit_price × pack_qty (prix du pack).
-    //   - Fournisseurs « à l'unité » (skipPackQty : Highbuy, LCA…) : la facture est déjà
-    //     AU PACK (unit_price = prix du pack, qty_ordered = nb de packs) → NE PAS
-    //     re-multiplier le prix (sinon ×pack_qty = bug ×10). Le pack_qty reste envoyé
-    //     tel quel pour garder le conditionnement (ex. 3 packs de 10 = 30 unités).
+    // Sémantique BMS (vérifiée en prod) :
+    //   - Le champ `qty` POSTÉ est en UNITÉS ; BMS stocke qty_packs = qty_postée / pack_qty.
+    //   - `price` est le prix DU PACK ; total ligne = qty_packs × price.
+    // Deux conventions de stockage local selon le fournisseur :
+    //   - Normaux : qty_ordered = UNITÉS, unit_price = prix PAR UNITÉ
+    //       → qty = qty_ordered (déjà en unités) ; price = unit_price × pack_qty (prix pack).
+    //   - « À l'unité » (skipPackQty : Highbuy, LCA…) : la facture est AU PACK,
+    //     qty_ordered = nb de PACKS et unit_price = prix DU PACK
+    //       → qty = qty_ordered × pack_qty (packs → unités, car BMS re-divise) ;
+    //         price = unit_price tel quel (déjà un prix pack ; ne PAS ×pack_qty = bug ×10).
+    // pack_qty est toujours envoyé (conditionnement / réception).
     const bmsItems = items
       .filter(item => item.sku)
       .map(item => {
         const discountPercent = parseFloat(item.discount_percent) || 0;
         const packQty = parseInt(item.pack_qty) || 1;
-        const priceMultiplier = skipPackQty ? 1 : packQty;
+        const qtyBase = parseInt(item.qty_ordered) || 0;
         const bmsItem = {
           sku: item.sku,
-          qty: (parseInt(item.qty_ordered) || 0),
-          price: Math.round((parseFloat(item.unit_price) || 0) * priceMultiplier * 100) / 100,
+          qty: skipPackQty ? qtyBase * packQty : qtyBase,
+          price: Math.round((parseFloat(item.unit_price) || 0) * (skipPackQty ? 1 : packQty) * 100) / 100,
           pack_qty: packQty,
           name: item.product_name,
           supplier_sku: item.supplier_sku || null
