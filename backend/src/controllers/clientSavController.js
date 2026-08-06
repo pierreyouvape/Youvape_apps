@@ -450,7 +450,36 @@ const clientSavController = {
       const customer_name = `${cust.first_name || ''} ${cust.last_name || ''}`.trim() || 'Client';
       const customer_email = (req.clientEmail || cust.email || '').toLowerCase();
 
-      // 5. Création du ticket (source='account' → visible dans l'espace client)
+      // 5. Produits concernés, sous forme structurée pour l'app agent.
+      // Le formulaire n'envoie que des libellés ; on les rapproche des lignes de
+      // la commande pour récupérer le SKU et la quantité. C'est le SKU qui
+      // permettra ensuite au panneau "Commande concernée" de surligner les bons
+      // articles, sans dépendre d'une comparaison de chaînes.
+      // Pas d'image stockée : le panneau agent affiche déjà celles des lignes de
+      // commande, et une URL figée ici deviendrait obsolète.
+      let concernedProducts = products.map((name) => ({ name, sku: null, qty: null }));
+      if (products.length > 0 && order_id) {
+        const itemsRes = await pool.query(
+          `SELECT oi.order_item_name, oi.qty, p.sku
+           FROM order_items oi
+           LEFT JOIN products p ON p.wp_product_id = COALESCE(NULLIF(oi.variation_id, 0), oi.product_id)
+           WHERE oi.wp_order_id = $1 AND oi.order_item_type = 'line_item'`,
+          [parseInt(order_id, 10)]
+        );
+        const byName = new Map(
+          itemsRes.rows.map((r) => [String(r.order_item_name || '').trim(), r])
+        );
+        concernedProducts = products.map((name) => {
+          const item = byName.get(name);
+          return {
+            name,
+            sku: item && item.sku ? item.sku : null,
+            qty: item && item.qty !== undefined ? item.qty : null,
+          };
+        });
+      }
+
+      // 6. Création du ticket (source='account' → visible dans l'espace client)
       const ticket = await savModel.create({
         order_id,
         customer_id: customerId,
@@ -462,12 +491,13 @@ const clientSavController = {
         source: CLIENT_TICKET_SOURCE,
         // Type de demande, exploitable par l'app agent (null si ancien plugin).
         request_reason: reason ? reason.requestReason : null,
+        concerned_products: concernedProducts,
       });
 
-      // 6. Pièces jointes (mêmes stockage/URLs que le SAV agent)
+      // 7. Pièces jointes (mêmes stockage/URLs que le SAV agent)
       const storedAttachments = saveAttachments(ticket.id, req.files);
 
-      // 7. Premier message du client. Les produits concernés (libellés texte)
+      // 8. Premier message du client. Les produits concernés (libellés texte)
       // sont préfixés au corps pour donner le contexte à l'agent. Le corps peut
       // être vide (rétractation sans commentaire) : on n'ajoute alors que la
       // liste des produits, sans ligne vide en fin de message.

@@ -27,6 +27,7 @@ import ShippingSettings from './pages/ShippingSettings';
 import ReportsSettingsApp from './pages/ReportsSettingsApp';
 import CatalogApp from './pages/CatalogApp';
 import PackingApp from './pages/PackingApp';
+import ReceptionApp from './pages/ReceptionApp';
 import FinancierApp from './pages/FinancierApp';
 import OrdersSearchApp from './pages/OrdersSearchApp';
 import TicketsApp from './pages/TicketsApp';
@@ -55,6 +56,7 @@ const PAGE_TITLES = {
   '/products': 'Produits',
   '/orders': 'Commandes',
   '/packing': 'Packing',
+  '/reception': 'Réception',
   '/financier': 'Financier',
   '/commandes': 'Commandes',
   '/tickets': 'SAV',
@@ -369,6 +371,14 @@ function App() {
             element={
               <PrivateRoute>
                 <TransporteursApp />
+              </PrivateRoute>
+            }
+          />
+          <Route
+            path="/reception"
+            element={
+              <PrivateRoute>
+                <ReceptionApp />
               </PrivateRoute>
             }
           />

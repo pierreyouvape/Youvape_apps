@@ -221,6 +221,18 @@ export const Customers = (props) => (
   </Base>
 );
 
+export const Reception = (props) => (
+  <Base {...props}>
+    {/* Carton ouvert */}
+    <path d="M3.5 11.5 V19 a1.5 1.5 0 0 0 1.5 1.5 h14 a1.5 1.5 0 0 0 1.5 -1.5 V11.5" />
+    <path d="M3.5 11.5 L6 8.5 h12 l2.5 3" />
+    <path d="M9.5 11.5 h5" />
+    {/* Flèche entrante */}
+    <path d="M12 2.5 V6.5" />
+    <path d="M10 4.8 L12 6.8 L14 4.8" />
+  </Base>
+);
+
 export const Veille = (props) => (
   <svg viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
     <circle cx="11" cy="11" r="7" />
@@ -247,6 +259,7 @@ export const APPS = [
   { key: 'stats',     path: '/stats',     label: 'Statistiques WooCommerce', Icon: Stats,     color: '#E85A5A' },
   { key: 'purchases', path: '/purchases', label: "Gestion d'achat",          Icon: Purchases, color: '#F59E0B' },
   { key: 'purchases-v2', path: '/purchases-v2', label: "Gestion d'achat V2",  Icon: Purchases, color: '#D97706' },
+  { key: 'reception', path: '/reception', label: 'Réception',                Icon: Reception, color: '#65A30D' },
   { key: 'packing',   path: '/packing',   label: 'Packing',                  Icon: Packing,   color: '#6366F1' },
   { key: 'catalog',   path: '/catalog',   label: 'Produits',                 Icon: Catalog,   color: '#059669' },
   { key: 'financier',  path: '/financier',  label: 'Rapport',                  Icon: Stats,         color: '#135E84' },

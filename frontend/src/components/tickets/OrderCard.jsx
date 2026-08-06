@@ -113,7 +113,11 @@ export function TrackingBadge({ trackingNum, shippingCarrier }) {
 //   canAssign    : true = afficher un bouton "Lier" au hover (ticket sans commande)
 //   onAssign     : (wp_order_id) => void   appelé au clic sur Lier
 //   onUnassign   : () => void              appelé au clic sur Délier (visible si highlighted)
-export default function OrderCard({ order, highlighted, canAssign, onAssign, onUnassign }) {
+//   concernedProducts : [{ name, sku }] — articles désignés par le client dans sa
+//                  demande. Ils sont marqués dans la liste plutôt qu'affichés à
+//                  part : ce qui compte pour l'agent, c'est de voir lesquels des
+//                  articles commandés posent problème.
+export default function OrderCard({ order, highlighted, canAssign, onAssign, onUnassign, concernedProducts }) {
   const [open, setOpen] = useState(!!highlighted);
   const [hoverHeader, setHoverHeader] = useState(false);
 
@@ -127,6 +131,26 @@ export default function OrderCard({ order, highlighted, canAssign, onAssign, onU
   // méthode de livraison choisie au checkout (toujours présente).
   const shippingMethod  = order.shipping_method || order.order_shipping_method || '';
   const items = order.items || [];
+
+  // Appariement des articles désignés par le client. Le SKU est la clé fiable
+  // (il vient de la même ligne de commande) ; le libellé sert de repli pour les
+  // demandes où le SKU n'a pas pu être résolu.
+  const concernedSkus = new Set(
+    (concernedProducts || []).map(p => p && p.sku).filter(Boolean)
+  );
+  const concernedNames = new Set(
+    (concernedProducts || [])
+      .map(p => (p && p.name ? String(p.name).trim().toLowerCase() : ''))
+      .filter(Boolean)
+  );
+  const hasConcerned = concernedSkus.size > 0 || concernedNames.size > 0;
+
+  const isConcerned = (it) => {
+    if (!hasConcerned) return false;
+    if (it.sku && concernedSkus.has(it.sku)) return true;
+    const label = (it.order_item_name || it.name || '').trim().toLowerCase();
+    return !!label && concernedNames.has(label);
+  };
 
   const statusLabel = (s) => {
     const map = {
@@ -271,10 +295,19 @@ export default function OrderCard({ order, highlighted, canAssign, onAssign, onU
 
       {open && (
         <div style={{ padding: '4px 14px 14px', borderTop: `1px solid ${C.grisCL}`, background: '#FAFCFD' }}>
-          {items.length > 0 ? items.map((it, i) => (
+          {items.length > 0 ? items.map((it, i) => {
+            const concerned = isConcerned(it);
+            return (
             <div key={i} style={{
               display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0',
               borderBottom: i === items.length - 1 ? 'none' : `1px solid ${C.grisCL}50`,
+              // Article désigné par le client : liseré + fond léger, sans
+              // déplacer la ligne (le liseré est compensé par le padding).
+              borderLeft: concerned ? `3px solid ${TICKETS_COLOR}` : '3px solid transparent',
+              paddingLeft: 8,
+              marginLeft: -8,
+              background: concerned ? `${TICKETS_COLOR}0D` : 'transparent',
+              borderRadius: concerned ? 4 : 0,
             }}>
               {it.image_url ? (
                 <img src={it.image_url} alt={it.order_item_name || it.name}
@@ -290,6 +323,16 @@ export default function OrderCard({ order, highlighted, canAssign, onAssign, onU
                   {it.order_item_name || it.name}
                 </div>
                 {it.sku && <div style={{ fontSize: 11, color: C.grisM, fontFamily: 'monospace', marginTop: 1 }}>SKU: {it.sku}</div>}
+                {concerned && (
+                  <div style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 4, marginTop: 3,
+                    padding: '1px 7px', borderRadius: 999,
+                    background: `${TICKETS_COLOR}1A`, color: TICKETS_COLOR,
+                    fontSize: 10.5, fontWeight: 800, letterSpacing: 0.2,
+                  }}>
+                    ● concerné par la demande
+                  </div>
+                )}
               </div>
               <div style={{ textAlign: 'right', flexShrink: 0 }}>
                 <div style={{ fontSize: 12, color: C.grisF, fontWeight: 700 }}>×{it.qty}</div>
@@ -300,7 +343,8 @@ export default function OrderCard({ order, highlighted, canAssign, onAssign, onU
                 )}
               </div>
             </div>
-          )) : (
+            );
+          }) : (
             <div style={{ padding: '10px 0', fontSize: 12.5, color: C.grisM, textAlign: 'center' }}>Aucun article</div>
           )}
 

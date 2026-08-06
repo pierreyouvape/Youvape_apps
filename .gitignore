@@ -25,3 +25,8 @@ data_example/
 BMS/
 metorik/
 screenshots/
+
+# Nextore (doc + collection Postman, usage interne)
+API Nextore_files/
+docs/nextore-api.md
+docs/nextore-postman-collection.json

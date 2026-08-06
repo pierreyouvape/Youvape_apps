@@ -1,5 +1,4 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import AppShell from '../components/AppShell';
 import { Customers as CustomersIcon } from '../components/AppIcons';
@@ -169,7 +168,6 @@ function pageBtn(disabled) {
 const fullName = (c) => `${c.first_name || ''} ${c.last_name || ''}`.trim() || '(sans nom)';
 
 const CustomersApp = () => {
-  const navigate = useNavigate();
 
   const [customers, setCustomers] = useState([]);
   const [total, setTotal] = useState(0);        // total filtré (footer + card "Affichés")
@@ -422,7 +420,7 @@ const CustomersApp = () => {
                                 color: '#fff', fontSize: 12, fontWeight: 800,
                                 boxShadow: '0 1px 0 rgba(255,255,255,0.3) inset',
                               }}>{initials(name)}</span>
-                              <a href={`/customers/${c.id}`} onClick={e => { e.preventDefault(); navigate(`/customers/${c.id}`); }}
+                              <a href={`/customers/${c.id}`} target="_blank" rel="noopener noreferrer"
                                 style={{ color: C.saphir, fontWeight: 700, textDecoration: 'none', fontSize: 13.5, cursor: 'pointer' }}>
                                 {name}
                               </a>

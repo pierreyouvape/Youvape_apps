@@ -8,7 +8,9 @@ import AppShell from '../components/AppShell';
 import { APPS as LAUNCHER_APPS } from '../components/AppIcons';
 
 // Apps qui distinguent Lecture / Écriture (les autres n'ont qu'un droit d'accès).
-const WRITE_ENABLED_KEYS = new Set(['reviews', 'rewards', 'emails', 'stats', 'purchases', 'catalog']);
+// Réception : Lecture = consulter les PO attendus ; Écriture = valider une
+// réception (écrit dans BMS).
+const WRITE_ENABLED_KEYS = new Set(['reviews', 'rewards', 'emails', 'stats', 'purchases', 'catalog', 'reception']);
 
 const SettingsApp = () => {
   const { token, isAdmin, isSuperAdmin } = useContext(AuthContext);

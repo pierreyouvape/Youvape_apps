@@ -277,7 +277,10 @@ const CustomerDetail = () => {
               {billing?.phone && (
                 <div>
                   <div style={{ fontSize: 11, color: C.grisM, marginBottom: 3, fontWeight: 600 }}>Téléphone</div>
-                  <div style={{ fontSize: 13.5, color: C.grisTF }}>{billing.phone}</div>
+                  <div style={{ fontSize: 13.5 }}>
+                    <a href={`tel:${billing.phone.replace(/[^\d+]/g, '')}`}
+                      style={{ color: C.bleu, textDecoration: 'none', fontWeight: 600 }}>{billing.phone}</a>
+                  </div>
                 </div>
               )}
             </div>

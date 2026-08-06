@@ -2650,6 +2650,7 @@ function CustomerPanel({ ticket, onAssignOrder, onUnassignOrder, onMerge, mobile
             order={currentOrder}
             highlighted
             onUnassign={onUnassignOrder}
+            concernedProducts={ticket.concerned_products}
           />
         </div>
       )}

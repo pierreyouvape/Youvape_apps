@@ -57,13 +57,14 @@ const statusModel = new StatusModel();
 class SavModel {
 
   // ─── Créer un ticket depuis webhook Gravity Forms ────────────────────────
-  async create({ order_id, customer_id, customer_name, customer_email, customer_phone, subject, description, source = 'gravity_form', request_reason = null }) {
+  async create({ order_id, customer_id, customer_name, customer_email, customer_phone, subject, description, source = 'gravity_form', request_reason = null, concerned_products = [] }) {
     const result = await pool.query(
       `INSERT INTO sav_tickets
-         (order_id, customer_id, customer_name, customer_email, customer_phone, subject, description, source, request_reason)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+         (order_id, customer_id, customer_name, customer_email, customer_phone, subject, description, source, request_reason, concerned_products)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb)
        RETURNING *`,
-      [order_id || null, customer_id || null, customer_name, customer_email, customer_phone || null, subject, description, source, request_reason || null]
+      [order_id || null, customer_id || null, customer_name, customer_email, customer_phone || null, subject, description, source, request_reason || null,
+       JSON.stringify(Array.isArray(concerned_products) ? concerned_products : [])]
     );
     const ticket = result.rows[0];
     if (ticket) emitChange(ticket.id, 'create');
