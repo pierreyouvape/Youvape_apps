@@ -1907,6 +1907,13 @@ function TicketFieldsPanel({ ticket, onFieldChange, users, mobile = false }) {
             : null}
         />
       </Field>
+
+      {/* Note du ticket — conclusions, décisions, contexte de traitement.
+          Jamais visible par le client : elle ne part dans aucun email et
+          n'apparaît pas dans l'espace « Mes demandes ». */}
+      <Field label="Note du ticket">
+        <NoteField ticketId={ticket.id} initialNotes={ticket.notes} />
+      </Field>
     </aside>
   );
 }
@@ -2099,9 +2106,9 @@ function NoteField({ ticketId, initialNotes }) {
       <textarea
         value={notes}
         onChange={e => setNotes(e.target.value)}
-        placeholder="Note visible uniquement par l'équipe…"
-        rows={3}
-        style={{ ...fieldInputBase, resize: 'vertical' }}
+        placeholder="Conclusions, décisions, contexte… Visible uniquement par l'équipe."
+        rows={6}
+        style={{ ...fieldInputBase, resize: 'vertical', lineHeight: 1.45 }}
         onMouseEnter={e => e.target.style.borderColor = C.orange}
         onMouseLeave={e => { if (document.activeElement !== e.target) e.target.style.borderColor = C.grisCL; }}
         onFocus={e => { e.target.style.borderColor = C.orange; e.target.style.boxShadow = '0 0 0 3px rgba(226,143,0,0.16)'; }}
@@ -2112,6 +2119,70 @@ function NoteField({ ticketId, initialNotes }) {
         style={{
           marginTop: 8, width: '100%', padding: '7px 0',
           background: saved ? C.vert : (saving ? C.grisM : C.orange),
+          color: '#fff', border: 'none', borderRadius: 6,
+          fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'Lato, sans-serif',
+        }}
+      >
+        {saving ? 'Sauvegarde…' : saved ? '✓ Sauvegardé' : 'Sauvegarder'}
+      </button>
+    </>
+  );
+}
+
+// ─── Note portée par la fiche client ──────────────────────────────────────────
+// À distinguer de NoteField (panneau gauche), qui porte la note du TICKET :
+// celle-ci vit sur `customers` et reste visible depuis toutes les demandes du
+// même client. Le code couleur diffère volontairement des deux côtés.
+function CustomerNoteField({ customerId, initialNote }) {
+  const [note, setNote] = useState(initialNote || '');
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const timerRef = useRef();
+
+  // La note suit le client : sans client rattaché, il n'y a rien à quoi
+  // l'accrocher (demande d'un invité, email non reconnu).
+  if (!customerId) {
+    return (
+      <div style={{ fontSize: 12, color: C.grisM, lineHeight: 1.45 }}>
+        Aucun client rattaché à cette demande : renseignez l'email du demandeur
+        pour pouvoir lui associer une note.
+      </div>
+    );
+  }
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      await fetch(`${API}/customers/${customerId}/note`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ note }),
+      });
+      setSaved(true);
+      clearTimeout(timerRef.current);
+      timerRef.current = setTimeout(() => setSaved(false), 2000);
+    } finally { setSaving(false); }
+  };
+
+  return (
+    <>
+      <textarea
+        value={note}
+        onChange={e => setNote(e.target.value)}
+        placeholder="Ce qu'il faut savoir sur ce client en permanence…"
+        rows={3}
+        maxLength={5000}
+        style={{ ...fieldInputBase, resize: 'vertical', lineHeight: 1.45 }}
+        onFocus={e => { e.target.style.borderColor = C.bleu; e.target.style.boxShadow = '0 0 0 3px rgba(0,113,235,0.16)'; }}
+        onBlur={e => { e.target.style.borderColor = C.grisCL; e.target.style.boxShadow = 'none'; }}
+      />
+      <div style={{ fontSize: 11, color: C.grisM, marginTop: 5, lineHeight: 1.35 }}>
+        Visible sur toutes les demandes de ce client.
+      </div>
+      <button
+        onClick={handleSave} disabled={saving}
+        style={{
+          marginTop: 8, width: '100%', padding: '7px 0',
+          background: saved ? C.vert : (saving ? C.grisM : C.bleu),
           color: '#fff', border: 'none', borderRadius: 6,
           fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'Lato, sans-serif',
         }}
@@ -2537,11 +2608,12 @@ function CustomerPanel({ ticket, onAssignOrder, onUnassignOrder, onMerge, mobile
         )}
       </div>
 
-      {/* Note interne */}
+      {/* Note client — suit le client d'une demande à l'autre. La note du
+          TICKET, elle, est dans le panneau gauche avec les champs du ticket. */}
       <div style={{ marginTop: 14 }}>
-        <SectionLabel>Note interne</SectionLabel>
+        <SectionLabel>Note client</SectionLabel>
         <div style={{ background: C.blanc, borderRadius: 10, border: `1px solid ${C.grisCL}`, padding: '14px 14px 12px' }}>
-          <NoteField ticketId={ticket.id} initialNotes={ticket.notes} />
+          <CustomerNoteField customerId={ticket.customer_id} initialNote={ticket.customer_note} />
         </div>
       </div>
 

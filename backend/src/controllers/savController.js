@@ -22,6 +22,9 @@ const INBOUND_DEDUP_TTL_MS = 10 * 60 * 1000;
 
 // Libellé de statut montré au client dans son espace (≠ libellé interne agent).
 const MAX_CLIENT_LABEL_LEN = 100;
+
+// Note interne portée par la fiche client (customers.internal_note).
+const MAX_CUSTOMER_NOTE_LEN = 5000;
 function isDuplicateInbound(id) {
   if (!id) return false;
   const now = Date.now();
@@ -738,6 +741,38 @@ const savController = {
       res.json({ success: true, ticket });
     } catch (error) {
       console.error('❌ [SAV] Erreur notes:', error);
+      res.status(500).json({ error: 'Erreur serveur' });
+    }
+  },
+
+  // ─── Note interne portée par la FICHE CLIENT ─────────────────────────────
+  // À ne pas confondre avec updateNotes ci-dessus, qui écrit sur le TICKET.
+  // Celle-ci suit le client d'une demande à l'autre : elle vit sur `customers`
+  // et reste donc visible depuis tous ses tickets.
+  updateCustomerNote: async (req, res) => {
+    try {
+      const customerId = parseInt(req.params.customerId, 10);
+      if (!Number.isInteger(customerId) || customerId <= 0) {
+        return res.status(400).json({ error: 'Client invalide' });
+      }
+      const note = req.body.note === null || req.body.note === undefined
+        ? null
+        : String(req.body.note);
+      if (note !== null && note.length > MAX_CUSTOMER_NOTE_LEN) {
+        return res.status(400).json({ error: 'Note trop longue' });
+      }
+
+      const result = await pool.query(
+        'UPDATE customers SET internal_note = $1 WHERE id = $2 RETURNING id, internal_note',
+        [note && note.trim() ? note : null, customerId]
+      );
+      if (result.rows.length === 0) {
+        return res.status(404).json({ error: 'Client introuvable' });
+      }
+
+      res.json({ success: true, customer_note: result.rows[0].internal_note });
+    } catch (error) {
+      console.error('❌ [SAV] Erreur note client:', error);
       res.status(500).json({ error: 'Erreur serveur' });
     }
   },

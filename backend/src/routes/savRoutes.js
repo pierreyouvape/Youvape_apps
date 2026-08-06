@@ -166,5 +166,8 @@ router.post('/:id/reply', memoryUpload.array('attachments', MAX_FILES), savContr
 router.post('/:id/inline-image', memoryUpload.single('image'), savController.uploadInlineImage);
 router.post('/:id/merge',              savController.mergeTicket);
 router.put('/:id/notes',               savController.updateNotes);
+// Note portée par la fiche client (≠ note du ticket ci-dessus). Trois segments,
+// donc aucun recouvrement avec '/:id/notes'.
+router.put('/customers/:customerId/note', savController.updateCustomerNote);
 
 module.exports = router;

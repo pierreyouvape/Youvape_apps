@@ -154,6 +154,7 @@ class SavModel {
          o.billing_country   as order_billing_country,
          c.first_name        as customer_first_name,
          c.last_name         as customer_last_name,
+         c.internal_note     as customer_note,
          c.email             as customer_email_db,
          c.user_registered   as customer_since,
          c.wp_user_id        as customer_wp_id,
