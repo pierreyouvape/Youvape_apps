@@ -9,6 +9,8 @@
  */
 
 module.exports = {
+  // Fournisseur « à l'unité » — voir highbuyParser / parsers/index.js skipsPackQty().
+  skipPackQty: true,
   parse: (text) => {
     // Ref commande : "Référence :\n202602866"
     const refMatch = text.match(/Référence\s*:\s*\n\s*(\S+)/);

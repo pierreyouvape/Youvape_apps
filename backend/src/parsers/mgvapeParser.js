@@ -29,6 +29,8 @@
 const parseDecimal = (str) => parseFloat(String(str).replace(/\s/g, '').replace(',', '.'));
 
 module.exports = {
+  // Fournisseur « à l'unité » — voir highbuyParser / parsers/index.js skipsPackQty().
+  skipPackQty: true,
   parse: (text) => {
     // En-tête : "5746 MD039634 03/08/2026 JTOHJEFYT 03/08/2026"
     //  = ID client | N° facture | Date facturation | Réf. commande | Date commande

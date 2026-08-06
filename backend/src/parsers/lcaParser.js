@@ -8,6 +8,8 @@
  */
 
 module.exports = {
+  // Fournisseur « à l'unité » — voir highbuyParser / parsers/index.js skipsPackQty().
+  skipPackQty: true,
   parse: (text) => {
     // Facture OpenSi LCA (ex: F2606391933)
     if (text.includes('LCA DISTRIBUTION') && text.includes('Facture N°')) {

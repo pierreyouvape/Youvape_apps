@@ -8,6 +8,11 @@
  */
 
 module.exports = {
+  // Fournisseur « à l'unité » : le PDF liste déjà le prix unitaire et les quantités
+  // en unités. La neutralisation de pack_qty doit valoir sur TOUT le cycle (import,
+  // envoi BMS, prefill prix vérifié) — sinon le prix est re-multiplié par pack_qty
+  // à l'envoi (bug ×10). Cf. parsers/index.js → skipsPackQty().
+  skipPackQty: true,
   parse: (text) => {
     // L'en-tête existe en deux mises en page selon le PDF :
     //   A) libellé suivi de la valeur : "Réf. de commande MUKVTATQG"

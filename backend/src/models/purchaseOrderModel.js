@@ -1,5 +1,6 @@
 const pool = require('../config/database');
 const bmsApiModel = require('./bmsApiModel');
+const parserRegistry = require('../parsers');
 
 // Warehouse ID principal BMS (Entrepot)
 const BMS_WAREHOUSE_ID = 270;
@@ -308,7 +309,7 @@ const purchaseOrderModel = {
   createInBMS: async (client, order, supplierId, items, bmsCredentials = null) => {
     // Récupérer le bms_id du fournisseur
     const supplierResult = await client.query(
-      'SELECT bms_id, name FROM suppliers WHERE id = $1',
+      'SELECT bms_id, name, code FROM suppliers WHERE id = $1',
       [supplierId]
     );
     const supplier = supplierResult.rows[0];
@@ -316,6 +317,11 @@ const purchaseOrderModel = {
     if (!supplier?.bms_id) {
       throw new Error(`Le fournisseur n'a pas d'ID BMS associé. Synchronisez les fournisseurs depuis BMS d'abord.`);
     }
+
+    // Fournisseur « à l'unité » (Highbuy, LCA, MG Vape, Levest) : la facture est déjà
+    // en prix unitaire / quantités unitaires. Neutraliser pack_qty (=1) pour NE PAS
+    // re-multiplier le prix par le conditionnement catalogue (bug ×10 : 7,90 → 79,00).
+    const skipPackQty = parserRegistry.skipsPackQty(supplier.code);
 
     // Préparer les items pour BMS (seuls les produits avec SKU)
     // Convention de stockage locale : qty_ordered = nombre d'UNITÉS, unit_price = prix PAR UNITÉ.
@@ -328,7 +334,7 @@ const purchaseOrderModel = {
       .filter(item => item.sku)
       .map(item => {
         const discountPercent = parseFloat(item.discount_percent) || 0;
-        const packQty = parseInt(item.pack_qty) || 1;
+        const packQty = skipPackQty ? 1 : (parseInt(item.pack_qty) || 1);
         const bmsItem = {
           sku: item.sku,
           qty: (parseInt(item.qty_ordered) || 0),
@@ -1194,6 +1200,13 @@ const purchaseOrderModel = {
   getLastVerifiedPrices: async (supplierId, productIds) => {
     if (!Array.isArray(productIds) || productIds.length === 0) return {};
 
+    // Fournisseur « à l'unité » (Highbuy, LCA…) : poi.unit_price est déjà le prix
+    // réellement facturé par unité et sera renvoyé tel quel à BMS (createInBMS force
+    // aussi pack_qty=1). Ne PAS reconstituer de « prix pack » ici, sinon le prefill
+    // proposerait un prix ×pack_qty (bug ×10).
+    const supRes = await pool.query('SELECT code FROM suppliers WHERE id = $1', [supplierId]);
+    const skipPackQty = parserRegistry.skipsPackQty(supRes.rows[0]?.code);
+
     const query = `
       SELECT DISTINCT ON (p.wp_product_id)
         p.wp_product_id AS input_id,
@@ -1225,7 +1238,8 @@ const purchaseOrderModel = {
       const packQty = parseInt(row.pack_qty) || 1;
       const supplierPrice = parseFloat(row.supplier_price) || null;
       // Prix du pack (cf. commentaire ci-dessus). pack_qty<=1 → inchangé.
-      const packPrice = packQty > 1
+      // skipPackQty → toujours le prix unitaire tel quel (pas de reconstitution pack).
+      const packPrice = (!skipPackQty && packQty > 1)
         ? (supplierPrice != null && supplierPrice > 0 ? supplierPrice : unitPrice * packQty)
         : unitPrice;
       map[row.input_id] = {
