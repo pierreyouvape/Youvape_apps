@@ -137,6 +137,16 @@ module.exports = {
       }
     }
 
-    return { orderNumber, orderDate, items, discountItems, hasPrice: true, skipPackQty: true };
+    // Total HT des PRODUITS (avant réductions/livraison) — sert de garde-fou de
+    // réconciliation à l'envoi BMS. "Total produits 2 214,90 €".
+    // Espace = séparateur de milliers, virgule = décimale.
+    let invoiceProductTotalHT = null;
+    const totalMatch = text.match(/Total produits\s+([\d\s.,  ]+?)\s*€/);
+    if (totalMatch) {
+      const n = parseFloat(totalMatch[1].replace(/[\s  ]/g, '').replace(',', '.'));
+      if (Number.isFinite(n) && n > 0) invoiceProductTotalHT = n;
+    }
+
+    return { orderNumber, orderDate, items, discountItems, hasPrice: true, skipPackQty: true, invoiceProductTotalHT };
   }
 };

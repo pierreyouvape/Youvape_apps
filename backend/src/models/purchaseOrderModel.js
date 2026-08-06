@@ -126,9 +126,9 @@ const purchaseOrderModel = {
       // Créer la commande localement
       const orderQuery = `
         INSERT INTO purchase_orders (
-          order_number, supplier_id, status, notes, created_by, order_date
+          order_number, supplier_id, status, notes, created_by, order_date, invoice_total_ht
         )
-        VALUES ($1, $2, $3, $4, $5, $6)
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
         RETURNING *
       `;
       const orderResult = await client.query(orderQuery, [
@@ -138,6 +138,7 @@ const purchaseOrderModel = {
         data.notes || null,
         userId,
         data.order_date || new Date().toISOString().split('T')[0],
+        data.invoice_total_ht != null ? parseFloat(data.invoice_total_ht) : null,
       ]);
       const order = orderResult.rows[0];
 
@@ -366,6 +367,39 @@ const purchaseOrderModel = {
       throw new Error(
         `${itemsSansPrix.length} article(s) sans prix unitaire : ${refs}. Renseignez leurs prix dans la commande avant d'envoyer à BMS.`
       );
+    }
+
+    // ── GARDE-FOU A (structurel, sans dépendance) : la qty postée doit être un
+    // multiple de pack_qty. BMS stocke qty_packs = qty / pack_qty ; une qty non
+    // divisible est arrondie et corrompt le montant (cause des bugs Highbuy ×10 /
+    // qty). Un payload correct est TOUJOURS divisible (qty = nb_packs × pack_qty).
+    const nonDivisible = bmsItems.filter(i => (i.pack_qty || 1) > 1 && (i.qty % i.pack_qty !== 0));
+    if (nonDivisible.length > 0) {
+      const refs = nonDivisible.map(i => `${i.supplier_sku || i.sku} (qty ${i.qty} / pack ${i.pack_qty})`).join(', ');
+      throw new Error(
+        `Envoi BMS bloqué : quantité non multiple du conditionnement pour : ${refs}. ` +
+        `Cela fausserait le montant BMS. Vérifiez les quantités/pack_qty.`
+      );
+    }
+
+    // ── GARDE-FOU B (réconciliation facture) : le total du payload BMS doit
+    // correspondre au total HT produits lu sur la facture. Total ligne BMS =
+    // (qty / pack_qty) × price. Rattrape tout bug de prix (prefill, ×pack_qty…).
+    // Ignoré si la facture n'a pas de total (parseur sans extraction).
+    const invoiceTotal = order.invoice_total_ht != null ? parseFloat(order.invoice_total_ht) : null;
+    if (invoiceTotal != null && invoiceTotal > 0) {
+      const payloadTotal = bmsItems.reduce(
+        (sum, i) => sum + (i.qty / (i.pack_qty || 1)) * i.price, 0
+      );
+      const diff = Math.abs(payloadTotal - invoiceTotal);
+      const tolerance = Math.max(invoiceTotal * 0.02, 0.50); // 2 % ou 0,50 € (arrondis)
+      if (diff > tolerance) {
+        throw new Error(
+          `Envoi BMS bloqué : le total calculé (${payloadTotal.toFixed(2)} € HT) ne correspond ` +
+          `pas au total de la facture (${invoiceTotal.toFixed(2)} € HT), écart ${diff.toFixed(2)} €. ` +
+          `Un prix ou une quantité est probablement erroné — vérifiez la commande avant l'envoi.`
+        );
+      }
     }
 
     // Créer la commande dans BMS

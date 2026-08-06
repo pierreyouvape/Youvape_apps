@@ -69,6 +69,19 @@ module.exports = {
       });
     }
 
-    return { orderNumber, orderDate, items, hasPrice: true, pdfIsPackBased: true };
+    // Total HT produits — garde-fou de réconciliation à l'envoi BMS.
+    // Primaire : "Montant HT 1 733,28 €" ; repli : somme des montants de ligne.
+    let invoiceProductTotalHT = null;
+    const totalMatch = text.match(/Montant HT\s+([\d\s.,  ]+?)\s*€/);
+    if (totalMatch) {
+      const n = parseFloat(totalMatch[1].replace(/[\s  ]/g, '').replace(',', '.'));
+      if (Number.isFinite(n) && n > 0) invoiceProductTotalHT = n;
+    }
+    if (invoiceProductTotalHT == null && items.length > 0) {
+      const s = items.reduce((acc, i) => acc + (Number(i.total_ht) || 0), 0);
+      if (s > 0) invoiceProductTotalHT = Math.round(s * 100) / 100;
+    }
+
+    return { orderNumber, orderDate, items, hasPrice: true, pdfIsPackBased: true, invoiceProductTotalHT };
   }
 };

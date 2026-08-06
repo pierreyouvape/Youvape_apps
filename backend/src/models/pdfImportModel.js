@@ -296,6 +296,9 @@ const pdfImportModel = {
       total_items: enrichedItems.length,
       matched_count: enrichedItems.filter(i => i.matched).length,
       unmatched_count: enrichedItems.filter(i => !i.matched).length,
+      // Total HT produits lu sur la facture (garde-fou de réconciliation à l'envoi BMS).
+      // null si le parseur du fournisseur ne l'extrait pas encore.
+      invoice_total_ht: parsed.invoiceProductTotalHT ?? null,
     };
   }
 };
