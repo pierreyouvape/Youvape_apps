@@ -148,6 +148,12 @@ comportement de Gravity Forms, conservé volontairement.
 
 ## Changelog
 
+- **0.3.5** — Le lien « Connectez-vous » du formulaire public mène à la page
+  **Mon compte** de WooCommerce et non plus à `wp-login.php`, et ramène le
+  visiteur sur le formulaire une fois connecté (ou inscrit). Le retour passe par
+  le champ `redirect` attendu par WooCommerce, injecté via
+  `woocommerce_login_form_end` — le référent ne conviendrait pas, il pointe sur
+  « Mon compte » au moment de la soumission.
 - **0.3.4** — La commande concernée se choisit dans un **menu déroulant** simple
   (n° de commande, date, montant) au lieu de cartes détaillées à cocher. Les
   produits restent en cases à cocher, le choix multiple étant nécessaire.

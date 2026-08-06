@@ -26,6 +26,18 @@ class Youvape_SAV_Shortcodes {
     /** Nom du champ pot-de-miel (doit rester vide : seuls les bots le remplissent). */
     const HONEYPOT_FIELD = 'youvape_sav_site_web';
 
+    /**
+     * Paramètre d'URL portant la page de retour après connexion.
+     *
+     * WooCommerce redirige après connexion vers `$_POST['redirect']` s'il est
+     * présent, sinon vers le référent, sinon vers « Mon compte »
+     * (class-wc-form-handler.php). Son gabarit de connexion n'émet pas ce champ ;
+     * on l'injecte donc via `woocommerce_login_form_end`, en le lisant depuis ce
+     * paramètre. Le référent ne conviendrait pas : au moment du POST, il pointe
+     * sur la page « Mon compte » elle-même, pas sur le formulaire de contact.
+     */
+    const REDIRECT_ARG = 'youvape_sav_redirect';
+
     /** @var Youvape_SAV_Shortcodes */
     private static $instance = null;
 
@@ -41,6 +53,51 @@ class Youvape_SAV_Shortcodes {
         add_shortcode('youvape_sav_bouton', array($this, 'render_button'));
         // Traitement du POST public avant tout rendu (POST-redirect-GET).
         add_action('template_redirect', array($this, 'maybe_handle_public_create'));
+        // Retour au formulaire après connexion OU inscription depuis Mon compte.
+        add_action('woocommerce_login_form_end', array($this, 'inject_redirect_field'));
+        add_action('woocommerce_register_form_end', array($this, 'inject_redirect_field'));
+    }
+
+    /**
+     * Injecte le champ `redirect` attendu par WooCommerce dans ses formulaires
+     * de connexion et d'inscription, quand on arrive depuis notre formulaire.
+     *
+     * `wp_validate_redirect` avec un repli vide écarte toute URL hors du site :
+     * ce paramètre venant de l'URL, il ne doit pas pouvoir servir de redirection
+     * ouverte vers un domaine tiers.
+     */
+    public function inject_redirect_field() {
+        if (empty($_GET[self::REDIRECT_ARG])) {
+            return;
+        }
+        $target = wp_validate_redirect(
+            esc_url_raw(wp_unslash($_GET[self::REDIRECT_ARG])),
+            ''
+        );
+        if (!$target) {
+            return;
+        }
+        printf('<input type="hidden" name="redirect" value="%s" />', esc_url($target));
+    }
+
+    /**
+     * URL de connexion : la page « Mon compte » de WooCommerce, et non
+     * wp-login.php — un client n'a pas à voir l'écran d'administration
+     * WordPress. On y joint la page de retour.
+     *
+     * @param string $return_url page à retrouver une fois connecté
+     * @return string
+     */
+    private static function login_url($return_url) {
+        if (!function_exists('wc_get_page_permalink')) {
+            return wp_login_url($return_url);
+        }
+        $myaccount = wc_get_page_permalink('myaccount');
+        if (!$myaccount) {
+            return wp_login_url($return_url);
+        }
+        // add_query_arg n'encode pas la valeur : à faire nous-mêmes.
+        return add_query_arg(self::REDIRECT_ARG, rawurlencode($return_url), $myaccount);
     }
 
     /**
@@ -132,7 +189,7 @@ class Youvape_SAV_Shortcodes {
             'action_url'     => $return_url,
             'nonce_field'    => wp_nonce_field('youvape_sav_public', 'youvape_sav_public_nonce', true, false),
             'honeypot_field' => self::HONEYPOT_FIELD,
-            'login_url'      => wp_login_url($return_url),
+            'login_url'      => self::login_url($return_url),
         ));
     }
 
