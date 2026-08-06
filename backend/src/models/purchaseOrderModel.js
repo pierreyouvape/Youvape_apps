@@ -324,21 +324,25 @@ const purchaseOrderModel = {
     const skipPackQty = parserRegistry.skipsPackQty(supplier.code);
 
     // Préparer les items pour BMS (seuls les produits avec SKU)
-    // Convention de stockage locale : qty_ordered = nombre d'UNITÉS, unit_price = prix PAR UNITÉ.
-    // Sémantique BMS (vérifiée en prod) :
-    //   - qty       = nombre d'UNITÉS individuelles  → BMS en déduit les packs = qty / pack_qty
-    //   - pack_qty  = nombre d'unités par pack        (fixe le conditionnement côté BMS)
-    //   - price     = prix DU PACK                    (= unit_price × pack_qty)
-    // On envoie donc qty_ordered (déjà en unités) et unit_price × pack_qty (prix pack).
+    // Sémantique BMS (vérifiée en prod) : total ligne = qty × price ; pack_qty est une
+    // métadonnée de conditionnement (unités/pack) qui n'entre PAS dans le total, mais
+    // sert à la réception (qty × pack_qty = unités reçues).
+    //   - Fournisseurs normaux : qty_ordered = nb de packs, unit_price = prix PAR UNITÉ
+    //     → on envoie price = unit_price × pack_qty (prix du pack).
+    //   - Fournisseurs « à l'unité » (skipPackQty : Highbuy, LCA…) : la facture est déjà
+    //     AU PACK (unit_price = prix du pack, qty_ordered = nb de packs) → NE PAS
+    //     re-multiplier le prix (sinon ×pack_qty = bug ×10). Le pack_qty reste envoyé
+    //     tel quel pour garder le conditionnement (ex. 3 packs de 10 = 30 unités).
     const bmsItems = items
       .filter(item => item.sku)
       .map(item => {
         const discountPercent = parseFloat(item.discount_percent) || 0;
-        const packQty = skipPackQty ? 1 : (parseInt(item.pack_qty) || 1);
+        const packQty = parseInt(item.pack_qty) || 1;
+        const priceMultiplier = skipPackQty ? 1 : packQty;
         const bmsItem = {
           sku: item.sku,
           qty: (parseInt(item.qty_ordered) || 0),
-          price: Math.round((parseFloat(item.unit_price) || 0) * packQty * 100) / 100,
+          price: Math.round((parseFloat(item.unit_price) || 0) * priceMultiplier * 100) / 100,
           pack_qty: packQty,
           name: item.product_name,
           supplier_sku: item.supplier_sku || null
