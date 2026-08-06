@@ -284,6 +284,23 @@ const pdfImportModel = {
 
     const allItems = [...enrichedItems, ...discountLines];
 
+    // Total HT produits de la facture, pour le garde-fou de réconciliation à l'envoi
+    // BMS (cf. createInBMS, contrôle B). Deux sources, par priorité :
+    //  1. total explicite extrait par le parseur (parsed.invoiceProductTotalHT) ;
+    //  2. sinon somme des montants de ligne (item.total_ht = colonne « montant HT »
+    //     du PDF, lue indépendamment du prix unitaire retenu → reste un contrôle
+    //     pertinent même si le prefill modifie le prix). Universel : couvre tout
+    //     parseur qui expose total_ht par ligne, sans code spécifique par fournisseur.
+    // On n'utilise la somme QUE si TOUTES les lignes produit ont un total_ht valide
+    // (sinon somme partielle → faux total → on préfère désactiver le contrôle B).
+    let invoiceTotalHt = parsed.invoiceProductTotalHT ?? null;
+    if (invoiceTotalHt == null && Array.isArray(parsed.items) && parsed.items.length > 0) {
+      const lineTotals = parsed.items.map(i => Number(i.total_ht));
+      if (lineTotals.every(t => Number.isFinite(t) && t > 0)) {
+        invoiceTotalHt = Math.round(lineTotals.reduce((a, b) => a + b, 0) * 100) / 100;
+      }
+    }
+
     return {
       supplier_id: supplierId,
       supplier_name: supplier.name,
@@ -297,8 +314,8 @@ const pdfImportModel = {
       matched_count: enrichedItems.filter(i => i.matched).length,
       unmatched_count: enrichedItems.filter(i => !i.matched).length,
       // Total HT produits lu sur la facture (garde-fou de réconciliation à l'envoi BMS).
-      // null si le parseur du fournisseur ne l'extrait pas encore.
-      invoice_total_ht: parsed.invoiceProductTotalHT ?? null,
+      // null si ni total explicite ni montants de ligne exploitables → contrôle B ignoré.
+      invoice_total_ht: invoiceTotalHt,
     };
   }
 };
