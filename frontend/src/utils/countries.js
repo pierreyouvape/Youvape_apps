@@ -77,6 +77,25 @@ export const COUNTRIES = {
   'MF': { name: 'Saint-Martin', flag: '🇲🇫' },
 };
 
+// Repli universel : traduit tout code ISO 3166-1 alpha-2 absent du mapping
+// ci-dessus grâce à Intl.DisplayNames. Garantit qu'aucun code brut à 2 lettres
+// (ex. BZ, SX, GN) ne s'affiche jamais — présent OU futur — sans avoir à
+// maintenir la liste à la main.
+let regionNames = null;
+try {
+  regionNames = new Intl.DisplayNames(['fr'], { type: 'region' });
+} catch { /* environnement sans Intl.DisplayNames : on retombe sur le code */ }
+
+const isCountryCode = (c) => typeof c === 'string' && /^[A-Za-z]{2}$/.test(c);
+
+// Drapeau emoji généré depuis le code (indicateurs régionaux Unicode).
+const flagFromCode = (code) => {
+  if (!isCountryCode(code)) return '';
+  return String.fromCodePoint(
+    ...[...code.toUpperCase()].map((ch) => 0x1f1e6 + ch.charCodeAt(0) - 65)
+  );
+};
+
 /**
  * Obtenir le nom complet d'un pays à partir de son code ISO
  * @param {string} countryCode - Code pays ISO (ex: "FR")
@@ -84,7 +103,14 @@ export const COUNTRIES = {
  */
 export const getCountryName = (countryCode) => {
   if (!countryCode) return 'N/A';
-  return COUNTRIES[countryCode]?.name || countryCode;
+  if (COUNTRIES[countryCode]) return COUNTRIES[countryCode].name;
+  if (isCountryCode(countryCode) && regionNames) {
+    try {
+      const name = regionNames.of(countryCode.toUpperCase());
+      if (name && name !== countryCode.toUpperCase()) return name;
+    } catch { /* code invalide : on retombe sur le code brut */ }
+  }
+  return countryCode;
 };
 
 /**
@@ -94,7 +120,7 @@ export const getCountryName = (countryCode) => {
  */
 export const getCountryFlag = (countryCode) => {
   if (!countryCode) return '';
-  return COUNTRIES[countryCode]?.flag || '';
+  return COUNTRIES[countryCode]?.flag || flagFromCode(countryCode);
 };
 
 /**
@@ -104,7 +130,7 @@ export const getCountryFlag = (countryCode) => {
  */
 export const getCountryLabel = (countryCode) => {
   if (!countryCode) return 'N/A';
-  const country = COUNTRIES[countryCode];
-  if (!country) return countryCode;
-  return `${country.flag} ${country.name}`;
+  const flag = getCountryFlag(countryCode);
+  const name = getCountryName(countryCode);
+  return flag ? `${flag} ${name}` : name;
 };

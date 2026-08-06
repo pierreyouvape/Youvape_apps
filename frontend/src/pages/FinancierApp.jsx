@@ -629,9 +629,10 @@ function CountryTable({ rows }) {
 // (ils apparaissent en caractères parasites dans le PDF).
 const countryName = (code) => (code === '??' ? 'Inconnu' : getCountryName(code));
 
-// Construit et télécharge le PDF de la déclaration comptable (paysage : 9 colonnes).
-function exportComptablePDF({ rows, totals, periodLabel, range }) {
-  const doc = new jsPDF({ orientation: 'landscape' });
+// Construit et télécharge le PDF de la déclaration comptable.
+// detailed=true : détail par pays (paysage, 9 colonnes). detailed=false : totaux seuls (portrait).
+function exportComptablePDF({ rows, totals, periodLabel, range, detailed = true }) {
+  const doc = new jsPDF({ orientation: detailed ? 'landscape' : 'portrait' });
   const pageWidth = doc.internal.pageSize.getWidth();
   let y = 18;
 
@@ -668,38 +669,40 @@ function exportComptablePDF({ rows, totals, periodLabel, range }) {
   });
   y = doc.lastAutoTable.finalY + 12;
 
-  // Détail par pays
-  doc.setFontSize(13);
-  doc.setTextColor(0);
-  doc.text('Détail par pays', 14, y);
+  // Détail par pays (uniquement en mode détaillé)
+  if (detailed) {
+    doc.setFontSize(13);
+    doc.setTextColor(0);
+    doc.text('Détail par pays', 14, y);
 
-  autoTable(doc, {
-    startY: y + 4,
-    head: [['Pays', 'Cmd', 'CA TTC brut', 'CA HT brut', 'TVA brute', 'Rembours.', 'CA TTC net', 'CA HT net', 'TVA nette']],
-    body: rows.map((r) => [
-      countryName(r.country_code),
-      fmt(r.orders_count),
-      fmtEur(r.ca_ttc_brut),
-      fmtEur(r.ca_ht_brut),
-      fmtEur(r.tva_brut),
-      r.remboursements_ttc ? '- ' + fmtEur(r.remboursements_ttc) : '-',
-      fmtEur(r.ca_ttc_net),
-      fmtEur(r.ca_ht_net),
-      fmtEur(r.tva_net),
-    ]),
-    foot: [[
-      'Total', fmt(totals.orders_count),
-      fmtEur(totals.ca_ttc_brut), fmtEur(totals.ca_ht_brut), fmtEur(totals.tva_brut),
-      '- ' + fmtEur(totals.remboursements_ttc),
-      fmtEur(totals.ca_ttc_net), fmtEur(totals.ca_ht_net), fmtEur(totals.tva_net),
-    ]],
-    theme: 'striped',
-    headStyles: { fillColor: [19, 94, 132] },
-    footStyles: { fillColor: [230, 236, 240], textColor: 20, fontStyle: 'bold' },
-    styles: { fontSize: 8, halign: 'right' },
-    columnStyles: { 0: { halign: 'left' } },
-    margin: { left: 14, right: 14 },
-  });
+    autoTable(doc, {
+      startY: y + 4,
+      head: [['Pays', 'Cmd', 'CA TTC brut', 'CA HT brut', 'TVA brute', 'Rembours.', 'CA TTC net', 'CA HT net', 'TVA nette']],
+      body: rows.map((r) => [
+        countryName(r.country_code),
+        fmt(r.orders_count),
+        fmtEur(r.ca_ttc_brut),
+        fmtEur(r.ca_ht_brut),
+        fmtEur(r.tva_brut),
+        r.remboursements_ttc ? '- ' + fmtEur(r.remboursements_ttc) : '-',
+        fmtEur(r.ca_ttc_net),
+        fmtEur(r.ca_ht_net),
+        fmtEur(r.tva_net),
+      ]),
+      foot: [[
+        'Total', fmt(totals.orders_count),
+        fmtEur(totals.ca_ttc_brut), fmtEur(totals.ca_ht_brut), fmtEur(totals.tva_brut),
+        '- ' + fmtEur(totals.remboursements_ttc),
+        fmtEur(totals.ca_ttc_net), fmtEur(totals.ca_ht_net), fmtEur(totals.tva_net),
+      ]],
+      theme: 'striped',
+      headStyles: { fillColor: [19, 94, 132] },
+      footStyles: { fillColor: [230, 236, 240], textColor: 20, fontStyle: 'bold' },
+      styles: { fontSize: 8, halign: 'right' },
+      columnStyles: { 0: { halign: 'left' } },
+      margin: { left: 14, right: 14 },
+    });
+  }
 
   const pageCount = doc.internal.getNumberOfPages();
   for (let i = 1; i <= pageCount; i++) {
@@ -710,34 +713,55 @@ function exportComptablePDF({ rows, totals, periodLabel, range }) {
   }
 
   const suffix = range ? `${range.dateFrom}_${range.dateTo}` : new Date().toISOString().slice(0, 10);
-  doc.save(`declaration_comptable_${suffix}.pdf`);
+  doc.save(`declaration_comptable${detailed ? '' : '_simplifie'}_${suffix}.pdf`);
 }
 
 function ComptableView({ data, loading, periodLabel, range, months, selectedMonth, onMonthChange }) {
+  const [mode, setMode] = useState('detailed'); // 'detailed' | 'simple'
+  const detailed = mode === 'detailed';
   const th = { fontSize: 11, fontWeight: 700, color: C.grisM, textTransform: 'uppercase', letterSpacing: '0.04em', padding: '0 10px 8px', borderBottom: `2px solid ${C.grisCL}`, whiteSpace: 'nowrap' };
   const td = { fontSize: 13, color: C.grisF, fontWeight: 600, padding: '9px 10px', borderBottom: `1px solid ${C.grisTL}`, whiteSpace: 'nowrap' };
 
-  // En-tête : sélecteur de mois (à gauche) + export PDF (à droite) — toujours visible.
+  // En-tête : sélecteur de mois + bascule Détaillé/Simplifié (à gauche) + export PDF (à droite).
   const header = (
     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', flexWrap: 'wrap', gap: 12, marginBottom: 18 }}>
       <div>
         <div style={{ fontSize: 16, fontWeight: 800, color: C.grisTF, fontFamily: "'Tilt Warp', cursive" }}>Déclaration comptable</div>
         <div style={{ fontSize: 12, color: C.grisM, marginTop: 2 }}>CA TTC, CA HT et TVA collectée — brut (ventes) et net (après remboursements)</div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10 }}>
-          <span style={{ fontSize: 12, fontWeight: 700, color: C.grisM, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Mois</span>
-          <select
-            value={selectedMonth}
-            onChange={(e) => onMonthChange(e.target.value)}
-            style={{ border: `1px solid ${C.grisCL}`, borderRadius: 8, padding: '8px 12px', fontSize: 14, fontWeight: 700, fontFamily: 'Lato', color: C.grisTF, background: C.blanc, cursor: 'pointer', minWidth: 180 }}
-          >
-            {months.map((m) => (
-              <option key={m.value} value={m.value}>{m.label}</option>
-            ))}
-          </select>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 10, flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ fontSize: 12, fontWeight: 700, color: C.grisM, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Mois</span>
+            <select
+              value={selectedMonth}
+              onChange={(e) => onMonthChange(e.target.value)}
+              style={{ border: `1px solid ${C.grisCL}`, borderRadius: 8, padding: '8px 12px', fontSize: 14, fontWeight: 700, fontFamily: 'Lato', color: C.grisTF, background: C.blanc, cursor: 'pointer', minWidth: 180 }}
+            >
+              {months.map((m) => (
+                <option key={m.value} value={m.value}>{m.label}</option>
+              ))}
+            </select>
+          </div>
+          <div style={{ display: 'flex', background: C.blanc, borderRadius: 8, border: `1px solid ${C.grisCL}`, padding: 3, gap: 2 }}>
+            {[
+              { key: 'detailed', label: 'Détaillé' },
+              { key: 'simple', label: 'Simplifié' },
+            ].map((opt) => {
+              const active = mode === opt.key;
+              return (
+                <button
+                  key={opt.key}
+                  onClick={() => setMode(opt.key)}
+                  style={{ background: active ? C.saphir : 'transparent', color: active ? C.blanc : C.grisF, border: 'none', borderRadius: 6, padding: '6px 12px', fontSize: 12, fontWeight: active ? 700 : 500, cursor: 'pointer', fontFamily: 'Lato', transition: 'all 0.18s' }}
+                >
+                  {opt.label}
+                </button>
+              );
+            })}
+          </div>
         </div>
       </div>
       <button
-        onClick={() => data && exportComptablePDF({ rows: data.rows, totals: data.totals, periodLabel, range })}
+        onClick={() => data && exportComptablePDF({ rows: data.rows, totals: data.totals, periodLabel, range, detailed })}
         disabled={!data || loading}
         style={{ background: (!data || loading) ? C.grisM : C.saphir, color: C.blanc, border: 'none', borderRadius: 9, padding: '10px 18px', fontSize: 13, fontWeight: 700, cursor: (!data || loading) ? 'default' : 'pointer', fontFamily: 'Lato', display: 'inline-flex', alignItems: 'center', gap: 7 }}
       >
@@ -799,7 +823,8 @@ function ComptableView({ data, loading, periodLabel, range, months, selectedMont
         <RecapCard title="Net" subtitle={`Après remboursements (− ${fmtEur(t.remboursements_ttc)})`} ttc={t.ca_ttc_net} ht={t.ca_ht_net} tva={t.tva_net} accent={C.vert} />
       </div>
 
-      {/* Détail par pays */}
+      {/* Détail par pays (masqué en mode simplifié) */}
+      {detailed && (
       <div style={{ background: C.blanc, borderRadius: 14, padding: '20px 24px', boxShadow: '0 1px 3px rgba(0,0,0,0.07), 0 0 0 1px rgba(0,0,0,0.05)' }}>
         <div style={{ marginBottom: 16 }}>
           <div style={{ fontSize: 14, fontWeight: 700, color: C.grisTF }}>Détail par pays</div>
@@ -849,6 +874,7 @@ function ComptableView({ data, loading, periodLabel, range, months, selectedMont
           </table>
         </div>
       </div>
+      )}
     </>
   );
 }
