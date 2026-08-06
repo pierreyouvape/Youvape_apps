@@ -1198,20 +1198,25 @@ const purchaseOrderModel = {
    * retient que les commandes verified = true et les prix > 0. Retourne, par
    * wp_product_id fourni, la ligne la plus récente.
    *
-   * IMPORTANT — convention pack : le prix renvoyé est LE PRIX DU PACK, car il
-   * remplit le champ `unit_price` de l'import, que createInBMS interprète comme
-   * le prix DU PACK (cf. createInBMS). Or syncFromBMS stocke poi.unit_price À
-   * L'UNITÉ (13,40 €/pack ÷ 10 = 1,34 €). Renvoyer ce 1,34 € tel quel pour un
-   * fournisseur « par pack » (skipPackQty, ex. LCA) enverrait 1,34 €/pack à BMS
-   * → total et arrivage divisés par pack_qty. On reconstitue donc le prix pack :
-   *   - pack_qty <= 1 (produit simple) : prix inchangé (feature préservée) ;
-   *   - pack_qty  > 1 : supplier_price (vrai prix pack catalogue) en priorité,
-   *     sinon unit_price × pack_qty.
+   * IMPORTANT — convention pack, DÉPEND DU FOURNISSEUR (cf. createInBMS) :
+   *   - skipPackQty (Highbuy, LCA…) : createInBMS envoie price = unit_price tel quel
+   *     → le prefill doit renvoyer LE PRIX DU PACK. Comme poi.unit_price de ces
+   *     commandes peut être corrompu (÷pack_qty par d'anciennes syncs), on prend
+   *     supplier_price (vrai prix pack catalogue) en priorité, sinon unit_price×pack.
+   *   - fournisseurs normaux (JoshNoa…) : createInBMS envoie price = unit_price ×
+   *     pack_qty → le prefill doit renvoyer LE PRIX PAR UNITÉ (= poi.unit_price tel
+   *     quel). Renvoyer le prix pack ici donnerait price ×pack_qty en trop (bug :
+   *     24,50 €/pack de 5 → 122,50 € envoyé à BMS).
    *
    * @returns {Object} map { [wpProductId]: { unit_price, order_date, bms_reference } }
    */
   getLastVerifiedPrices: async (supplierId, productIds) => {
     if (!Array.isArray(productIds) || productIds.length === 0) return {};
+
+    // skipPackQty (Highbuy, LCA…) : renvoyer le prix DU PACK ; normaux (JoshNoa…) :
+    // renvoyer le prix PAR UNITÉ (cf. doc ci-dessus, dépend de createInBMS).
+    const supRes = await pool.query('SELECT code FROM suppliers WHERE id = $1', [supplierId]);
+    const skipPackQty = parserRegistry.skipsPackQty(supRes.rows[0]?.code);
 
     const query = `
       SELECT DISTINCT ON (p.wp_product_id)
@@ -1243,8 +1248,9 @@ const purchaseOrderModel = {
       const unitPrice = parseFloat(row.unit_price);
       const packQty = parseInt(row.pack_qty) || 1;
       const supplierPrice = parseFloat(row.supplier_price) || null;
-      // Prix du pack (cf. commentaire ci-dessus). pack_qty<=1 → inchangé.
-      const packPrice = packQty > 1
+      // skipPackQty + pack_qty>1 → prix du pack (supplier_price prioritaire, sinon
+      // unit_price×pack). Sinon (normaux, ou produit simple) → prix par unité tel quel.
+      const packPrice = (skipPackQty && packQty > 1)
         ? (supplierPrice != null && supplierPrice > 0 ? supplierPrice : unitPrice * packQty)
         : unitPrice;
       map[row.input_id] = {
