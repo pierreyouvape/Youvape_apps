@@ -629,8 +629,11 @@ const clientSavController = {
   getMyOrders: async (req, res) => {
     try {
       const wpUserId = req.clientWpUserId;
-      const limit = Math.min(parseInt(req.query.limit, 10) || 20, 50);
 
+      // Pas de limite : le client doit pouvoir désigner n'importe laquelle de ses
+      // commandes, même ancienne. Le volume le permet (145 commandes au maximum
+      // observé, 3 en moyenne) dès lors que les articles sont chargés en une
+      // seule requête — voir plus bas.
       const ordersRes = await pool.query(
         // post_modified sert de date de livraison approchée quand la commande est
         // en 'wc-delivered' (pas d'historique de statut en base) : le plugin s'en
@@ -639,22 +642,38 @@ const clientSavController = {
                 tracking_number, shipping_carrier
          FROM orders
          WHERE wp_customer_id = $1
-           AND post_status = ANY($3::text[])
-         ORDER BY post_date DESC LIMIT $2`,
-        [wpUserId, limit, CLIENT_SELECTABLE_ORDER_STATUSES]
+           AND post_status = ANY($2::text[])
+         ORDER BY post_date DESC`,
+        [wpUserId, CLIENT_SELECTABLE_ORDER_STATUSES]
       );
 
       const orders = ordersRes.rows;
-      for (const order of orders) {
+
+      // Articles de TOUTES les commandes en une requête, puis regroupement en
+      // mémoire. Une requête par commande (N+1) était tenable tant que la liste
+      // était plafonnée à 20 ; sans plafond, elle ne l'est plus.
+      if (orders.length > 0) {
         const itemsRes = await pool.query(
-          `SELECT oi.order_item_name, oi.qty, oi.line_total, p.sku, p.image_url
+          `SELECT oi.wp_order_id, oi.order_item_name, oi.qty, oi.line_total,
+                  p.sku, p.image_url
            FROM order_items oi
            LEFT JOIN products p ON p.wp_product_id = COALESCE(NULLIF(oi.variation_id, 0), oi.product_id)
-           WHERE oi.wp_order_id = $1 AND oi.order_item_type = 'line_item'
-           ORDER BY oi.id`,
-          [order.wp_order_id]
+           WHERE oi.wp_order_id = ANY($1::bigint[])
+             AND oi.order_item_type = 'line_item'
+           ORDER BY oi.wp_order_id, oi.id`,
+          [orders.map((o) => o.wp_order_id)]
         );
-        order.items = itemsRes.rows;
+
+        const itemsByOrder = new Map();
+        for (const row of itemsRes.rows) {
+          const { wp_order_id, ...item } = row;
+          const key = String(wp_order_id);
+          if (!itemsByOrder.has(key)) itemsByOrder.set(key, []);
+          itemsByOrder.get(key).push(item);
+        }
+        for (const order of orders) {
+          order.items = itemsByOrder.get(String(order.wp_order_id)) || [];
+        }
       }
 
       res.json({ success: true, orders });
