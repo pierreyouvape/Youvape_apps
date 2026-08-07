@@ -134,26 +134,33 @@ const CreateOrderPage = () => {
       const orderNum = created?.order_number || '';
       const bmsError = response.data.bms_error;
 
-      // La commande locale est conservée même si BMS refuse (produits pas encore créés
-      // dans BMS…) : on propose l'envoi sans ces produits plutôt que de tout perdre.
+      // La commande locale est conservée quand le refus BMS est « décidable »
+      // (produits pas encore créés dans BMS, écart avec le total du document) :
+      // on laisse l'utilisateur envoyer la commande en l'état.
       if (bmsError) {
-        if (bmsError.can_send_partial &&
+        const label = bmsError.code === 'BMS_MISSING_PRODUCTS'
+          ? `sans ${(bmsError.missing_skus || []).length > 1 ? 'ces produits' : 'ce produit'}`
+          : 'en l\'état';
+        if (bmsError.can_send_anyway &&
             confirm(`Commande ${orderNum} créée, mais NON envoyée à BMS.\n\n${bmsError.message}\n\n` +
-                    `Envoyer quand même la commande à BMS sans ${bmsError.missing_skus.length > 1 ? 'ces produits' : 'ce produit'} ?`)) {
+                    `Envoyer quand même la commande à BMS ${label} ?`)) {
           try {
             const sent = await axios.post(
               `${API_URL}/purchases/orders/${created.id}/send-bms`,
-              { skip_missing: true },
+              bmsError.retry_flags,
               { headers: { Authorization: `Bearer ${token}` } }
             );
             const skipped = sent.data.skipped_items || [];
-            alert(`Commande ${orderNum} envoyée à BMS sans ${skipped.length} produit(s) : ` +
-                  skipped.map(p => p.sku).join(', '));
+            alert(skipped.length
+              ? `Commande ${orderNum} envoyée à BMS sans ${skipped.length} produit(s) : ` +
+                skipped.map(p => p.sku).join(', ')
+              : `Commande ${orderNum} envoyée à BMS.`);
           } catch (e) {
-            alert(e.response?.data?.error || 'Erreur lors de l\'envoi partiel à BMS');
+            alert(e.response?.data?.error || 'Erreur lors de l\'envoi à BMS');
           }
         } else {
-          alert(`Commande ${orderNum} créée avec ${items.length} article(s), mais NON envoyée à BMS :\n\n${bmsError.message}`);
+          alert(`Commande ${orderNum} créée avec ${items.length} article(s), mais NON envoyée à BMS :\n\n${bmsError.message}\n\n` +
+                `Vous pourrez l'envoyer depuis l'onglet Commandes.`);
         }
       } else {
         alert(`Commande ${orderNum} créée avec ${items.length} article(s)${sendToBMS ? ' et envoyée à BMS' : ''}`);

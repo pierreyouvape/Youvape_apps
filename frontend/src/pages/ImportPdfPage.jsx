@@ -399,6 +399,51 @@ const ImportPdfPage = () => {
   // Produits déjà associés à une ligne : on les masque des suggestions de recherche
   const usedProductIds = new Set(matchedItems.map(i => i.product_id));
 
+  // Refus BMS « décidable » : on affiche la raison et on laisse l'utilisateur choisir
+  // d'envoyer la commande en l'état. Chaque acceptation renvoie les drapeaux fournis par
+  // l'API (skip_missing, ignore_total_mismatch) ; un nouveau refus relance le dialogue.
+  const resolveBmsRefusal = async (orderId, orderNum, refusal, flags = {}) => {
+    if (!refusal.can_send_anyway) {
+      alert(`Commande ${orderNum} créée, mais NON envoyée à BMS :\n\n${refusal.message}`);
+      return false;
+    }
+    const label = refusal.code === 'BMS_MISSING_PRODUCTS'
+      ? `sans ${(refusal.missing_skus || []).length > 1 ? 'ces produits' : 'ce produit'}`
+      : 'en l\'état';
+    if (!confirm(`Commande ${orderNum} créée, mais NON envoyée à BMS.\n\n${refusal.message}\n\nEnvoyer quand même la commande à BMS ${label} ?`)) {
+      alert(`Commande ${orderNum} conservée, non envoyée à BMS. Vous pourrez l'envoyer depuis l'onglet Commandes.`);
+      return false;
+    }
+    try {
+      const sent = await axios.post(
+        `${API_URL}/purchases/orders/${orderId}/send-bms`,
+        { ...flags, ...refusal.retry_flags },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      const skipped = sent.data.skipped_items || [];
+      alert(skipped.length
+        ? `Commande ${orderNum} envoyée à BMS sans ${skipped.length} produit(s) :\n` +
+          skipped.map(p => `  • ${p.name} (${p.sku})`).join('\n') +
+          `\n\nCes produits ne sont PAS dans le bon de commande BMS (une note a été ajoutée à la commande) : créez-les dans BMS puis ajoutez-les au bon de commande.`
+        : `Commande ${orderNum} envoyée à BMS.`);
+      return true;
+    } catch (e) {
+      const data = e.response?.data;
+      // Nouveau refus décidable (ex. après l'écart de total, des produits manquants)
+      if (data?.retry_flags) {
+        return resolveBmsRefusal(orderId, orderNum, {
+          message: data.error,
+          code: data.code,
+          missing_skus: data.missing_skus,
+          retry_flags: data.retry_flags,
+          can_send_anyway: data.can_send_anyway
+        }, { ...flags, ...refusal.retry_flags });
+      }
+      alert(data?.error || 'Erreur lors de l\'envoi à BMS');
+      return false;
+    }
+  };
+
   const handleCreateOrder = async (sendToBms = false) => {
     if (matchedItems.length === 0) { alert('Aucune ligne matchée à créer'); return; }
     setCreating(true);
@@ -434,32 +479,13 @@ const ImportPdfPage = () => {
       });
       const created = response.data.data;
       const orderNum = created?.order_number || parsedData.order_number || '';
-      const bmsError = response.data.bms_error;
 
-      // La commande est toujours créée localement, même si BMS refuse : on ne perd pas
-      // l'import. Si le seul blocage est des produits absents de BMS, on propose l'envoi
-      // partiel plutôt que de bloquer (les produits manquants restent dans la commande app).
-      if (bmsError) {
-        if (bmsError.can_send_partial &&
-            confirm(`Commande ${orderNum} créée, mais NON envoyée à BMS.\n\n${bmsError.message}\n\n` +
-                    `Envoyer quand même la commande à BMS sans ${bmsError.missing_skus.length > 1 ? 'ces produits' : 'ce produit'} ?`)) {
-          try {
-            const sent = await axios.post(
-              `${API_URL}/purchases/orders/${created.id}/send-bms`,
-              { skip_missing: true },
-              { headers: { Authorization: `Bearer ${token}` } }
-            );
-            const skipped = sent.data.skipped_items || [];
-            alert(`Commande ${orderNum} envoyée à BMS sans ${skipped.length} produit(s) :\n` +
-                  skipped.map(p => `  • ${p.name} (${p.sku})`).join('\n') +
-                  `\n\nCes produits ne sont PAS dans le bon de commande BMS (une note a été ajoutée à la commande) : créez-les dans BMS puis ajoutez-les au bon de commande.`);
-          } catch (e) {
-            alert(e.response?.data?.error || 'Erreur lors de l\'envoi partiel à BMS');
-          }
-        } else {
-          alert(`Commande ${orderNum} créée avec ${matchedItems.length} article(s), mais NON envoyée à BMS :\n\n${bmsError.message}\n\n` +
-                `Vous pourrez la renvoyer depuis l'onglet Commandes.`);
-        }
+      // La commande locale est TOUJOURS conservée quand BMS refuse pour une raison
+      // « décidable » (produits pas encore créés dans BMS, écart avec le total du
+      // document parce qu'on ne commande qu'une partie des lignes) : on ne perd pas
+      // l'import, on demande simplement quoi faire.
+      if (response.data.bms_error) {
+        await resolveBmsRefusal(created.id, orderNum, response.data.bms_error);
       } else {
         const skipped = response.data.skipped_items || [];
         alert(`Commande ${orderNum} créée avec ${matchedItems.length} article(s)${sendToBms ? ' et envoyée à BMS' : ''}` +

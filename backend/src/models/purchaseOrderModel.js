@@ -5,7 +5,20 @@ const parserRegistry = require('../parsers');
 // Warehouse ID principal BMS (Entrepot)
 const BMS_WAREHOUSE_ID = 270;
 
+// Erreurs d'envoi BMS que l'utilisateur peut lever lui-même : à chaque code
+// correspond le drapeau à renvoyer sur /send-bms pour forcer l'envoi en l'état.
+// Toute erreur ABSENTE de cette table reste bloquante (vraie anomalie).
+const BMS_DECIDABLE_ERRORS = {
+  BMS_MISSING_PRODUCTS: { skip_missing: true },   // produits pas encore créés dans BMS
+  BMS_TOTAL_MISMATCH: { ignore_total_mismatch: true } // commande partielle vs document
+};
+
 const purchaseOrderModel = {
+  BMS_DECIDABLE_ERRORS,
+
+  // Drapeaux de renvoi si l'erreur est « décidable », sinon null
+  bmsRetryFlags: (error) => BMS_DECIDABLE_ERRORS[error?.code] || null,
+
   // Générer un numéro de commande
   generateOrderNumber: async () => {
     const result = await pool.query('SELECT generate_po_number() as order_number');
@@ -293,7 +306,10 @@ const purchaseOrderModel = {
             data.supplier_id,
             itemsWithSku,
             bmsCreds,
-            { skipMissingSkus: !!data.skip_missing_bms_products }
+            {
+              skipMissingSkus: !!data.skip_missing_bms_products,
+              skipTotalCheck: !!data.ignore_total_mismatch
+            }
           );
 
           if (bmsResult.bms_po_id) {
@@ -304,17 +320,21 @@ const purchaseOrderModel = {
           }
           bmsSkipped = bmsResult.skipped_items || [];
         } catch (bmsError) {
-          // Seul le cas « produits pas encore créés dans BMS » est rattrapable : la
-          // commande locale est valide, c'est BMS qui n'a pas encore la fiche produit.
-          // Les autres échecs (garde-fous quantité/total, erreur BMS) signalent une
-          // commande erronée → on annule la création comme avant.
-          if (bmsError.code !== 'BMS_MISSING_PRODUCTS') throw bmsError;
+          // Échec « décidable » (produits absents de BMS, écart avec le total du
+          // document) : la commande locale reste valide, on la conserve et on laisse
+          // l'utilisateur trancher. Les autres échecs (erreur BMS, garde-fou
+          // structurel pack_qty) signalent une commande erronée → annulation.
+          const retryFlags = purchaseOrderModel.bmsRetryFlags(bmsError);
+          if (!retryFlags) throw bmsError;
           console.error('Envoi BMS échoué à la création (commande conservée):', bmsError.message);
           bmsWarning = {
             message: bmsError.message,
-            code: bmsError.code || null,
+            code: bmsError.code,
             missing_skus: bmsError.missingSkus || null,
-            can_send_partial: bmsError.code === 'BMS_MISSING_PRODUCTS' && bmsError.sendableCount > 0
+            totals: bmsError.totals || null,
+            retry_flags: retryFlags,
+            // Rien à envoyer si AUCUN produit n'est commandable dans BMS
+            can_send_anyway: bmsError.code !== 'BMS_MISSING_PRODUCTS' || bmsError.sendableCount > 0
           };
         }
       }
@@ -334,8 +354,10 @@ const purchaseOrderModel = {
   },
 
   // Créer la commande dans BMS
-  // options.skipMissingSkus : envoi partiel assumé — les produits absents du catalogue
-  // BMS sont retirés du payload au lieu de bloquer toute la commande.
+  // options.skipMissingSkus  : envoi partiel assumé — les produits absents du catalogue
+  //                             BMS sont retirés du payload au lieu de bloquer la commande.
+  // options.skipTotalCheck   : écart avec le total du document fournisseur assumé
+  //                             (commande volontairement partielle / quantités ajustées).
   createInBMS: async (client, order, supplierId, items, bmsCredentials = null, options = {}) => {
     // Récupérer le bms_id du fournisseur
     const supplierResult = await client.query(
@@ -427,13 +449,25 @@ const purchaseOrderModel = {
       );
       const diff = Math.abs(payloadTotal - invoiceTotal);
       const tolerance = Math.max(invoiceTotal * 0.10, 0.50); // 10 % ou 0,50 €
-      if (diff > tolerance) {
-        throw new Error(
-          `Envoi BMS bloqué : le total calculé (${payloadTotal.toFixed(2)} € HT) ne correspond ` +
-          `pas au total du document fournisseur (${invoiceTotal.toFixed(2)} € HT), écart ${diff.toFixed(2)} €. ` +
-          `Un tel écart vient d'une quantité ou d'un conditionnement erroné (pas d'une ` +
-          `révision de tarif) — vérifiez les lignes signalées en rouge à l'import.`
+      // L'écart n'est PAS forcément une anomalie : commander une partie seulement du
+      // document (lignes retirées, quantités ajustées) le produit légitimement. On ne
+      // bloque donc plus : on remonte une erreur « décidable » que l'utilisateur peut
+      // lever en connaissance de cause (options.skipTotalCheck).
+      if (diff > tolerance && !options.skipTotalCheck) {
+        const err = new Error(
+          `Le total de la commande (${payloadTotal.toFixed(2)} € HT) ne correspond pas au total ` +
+          `du document fournisseur (${invoiceTotal.toFixed(2)} € HT), écart ${diff.toFixed(2)} €.\n\n` +
+          `C'est normal si vous n'avez pas repris toutes les lignes du document ou si vous avez ` +
+          `ajusté des quantités. Sinon, l'écart trahit une quantité ou un conditionnement erroné ` +
+          `(pas une révision de tarif) — vérifiez les lignes signalées en rouge à l'import.`
         );
+        err.code = 'BMS_TOTAL_MISMATCH';
+        err.totals = {
+          payload_total: Math.round(payloadTotal * 100) / 100,
+          invoice_total: Math.round(invoiceTotal * 100) / 100,
+          diff: Math.round(diff * 100) / 100
+        };
+        throw err;
       }
     }
 

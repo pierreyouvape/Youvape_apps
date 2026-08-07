@@ -575,15 +575,19 @@ const purchasesController = {
       try {
         await client.query('BEGIN');
 
-        // skip_missing : l'utilisateur a choisi d'envoyer la commande sans les produits
-        // qui n'existent pas (encore) dans le catalogue BMS.
+        // Drapeaux d'envoi forcé, décidés par l'utilisateur après un premier refus :
+        //   skip_missing          → envoyer sans les produits absents du catalogue BMS
+        //   ignore_total_mismatch → assumer l'écart avec le total du document fournisseur
         const bmsResult = await purchaseOrderModel.createInBMS(
           client,
           order,
           order.supplier_id,
           itemsWithSku,
           bmsCreds,
-          { skipMissingSkus: !!req.body?.skip_missing }
+          {
+            skipMissingSkus: !!req.body?.skip_missing,
+            skipTotalCheck: !!req.body?.ignore_total_mismatch
+          }
         );
 
         if (bmsResult.bms_po_id) {
@@ -608,15 +612,19 @@ const purchasesController = {
       }
     } catch (error) {
       console.error('Erreur sendToBms:', error);
-      // Produits absents de BMS : pas une erreur serveur mais une décision à prendre.
-      // 409 + liste des produits → le front propose l'envoi partiel (skip_missing).
-      if (error.code === 'BMS_MISSING_PRODUCTS') {
+      // Refus « décidable » (produits absents de BMS, écart avec le total du document) :
+      // pas une erreur serveur mais une décision à prendre. 409 + détails + drapeaux à
+      // renvoyer pour forcer l'envoi → le front propose le choix à l'utilisateur.
+      const retryFlags = purchaseOrderModel.bmsRetryFlags(error);
+      if (retryFlags) {
         return res.status(409).json({
           success: false,
           error: error.message,
           code: error.code,
           missing_skus: error.missingSkus || [],
-          can_send_partial: (error.sendableCount || 0) > 0
+          totals: error.totals || null,
+          retry_flags: retryFlags,
+          can_send_anyway: error.code !== 'BMS_MISSING_PRODUCTS' || (error.sendableCount || 0) > 0
         });
       }
       res.status(500).json({ success: false, error: error.message || 'Erreur envoi BMS' });
