@@ -4,7 +4,7 @@ import { useState } from 'react';
  * Composant de filtre de période compact
  * Version condensée pour s'intégrer en haut à droite du graphique
  */
-const PeriodFilter = ({ onPeriodChange, onComparisonChange, defaultPeriod = 'all' }) => {
+const PeriodFilter = ({ onPeriodChange, onComparisonChange, defaultPeriod = '30d' }) => {
   const [selectedPeriod, setSelectedPeriod] = useState(defaultPeriod);
   const [customStartDate, setCustomStartDate] = useState('');
   const [customEndDate, setCustomEndDate] = useState('');
@@ -29,6 +29,15 @@ const PeriodFilter = ({ onPeriodChange, onComparisonChange, defaultPeriod = 'all
         // Pas de dates = depuis la création (toutes les données)
         start = null;
         end = null;
+        break;
+      case 'today':
+        start = today;
+        end = today;
+        break;
+      case 'yesterday':
+        start = new Date(today);
+        start.setDate(start.getDate() - 1);
+        end = new Date(start);
         break;
       case '7d':
         start = new Date(today);
@@ -93,7 +102,10 @@ const PeriodFilter = ({ onPeriodChange, onComparisonChange, defaultPeriod = 'all
   const handlePeriodClick = (period) => {
     setSelectedPeriod(period);
     if (period !== 'custom') {
-      applyFilters(period, groupBy);
+      // Une seule journee : le groupement semaine/mois n'a pas de sens
+      const group = (period === 'today' || period === 'yesterday') ? 'day' : groupBy;
+      if (group !== groupBy) setGroupBy(group);
+      applyFilters(period, group);
     }
   };
 
@@ -148,10 +160,12 @@ const PeriodFilter = ({ onPeriodChange, onComparisonChange, defaultPeriod = 'all
   return (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '10px' }}>
       {/* Gauche : Période */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
         <span style={{ fontSize: '12px', fontWeight: '600', color: '#6b7280', whiteSpace: 'nowrap' }}>Periode :</span>
         {[
           { value: 'all', label: 'Tout' },
+          { value: 'today', label: "Aujourd'hui" },
+          { value: 'yesterday', label: 'Hier' },
           { value: '7d', label: '7 derniers jours' },
           { value: '30d', label: '30 derniers jours' },
           { value: 'current_month', label: 'Mois en cours' },

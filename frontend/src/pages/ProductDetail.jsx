@@ -102,10 +102,14 @@ const ProductDetail = () => {
 
   useEffect(() => {
     if (id) {
+      // Periode par defaut : 30 derniers jours (doit rester aligne avec
+      // defaultPeriod="30d" passe a <PeriodFilter />).
+      const fmt = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
       const now = new Date();
-      const startOfMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
-      const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-      const defaultParams = { start: startOfMonth, end: today, groupBy: 'day' };
+      const todayDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      const startDate = new Date(todayDate);
+      startDate.setDate(startDate.getDate() - 29);
+      const defaultParams = { start: fmt(startDate), end: fmt(todayDate), groupBy: 'day' };
       setPeriodParams(defaultParams);
       fetchProductData(defaultParams);
       fetchSalesEvolution(defaultParams);
@@ -737,7 +741,7 @@ const ProductDetail = () => {
           <div>
             {/* Period Filter */}
             <div style={{ marginBottom: '20px' }}>
-              <PeriodFilter onPeriodChange={handlePeriodChange} onComparisonChange={handleComparisonChange} defaultPeriod="current_month" />
+              <PeriodFilter onPeriodChange={handlePeriodChange} onComparisonChange={handleComparisonChange} defaultPeriod="30d" />
             </div>
 
             {/* KPIs */}
