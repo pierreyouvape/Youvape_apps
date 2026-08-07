@@ -148,6 +148,13 @@ comportement de Gravity Forms, conservé volontairement.
 
 ## Changelog
 
+- **0.4.0** — **Aucune URL `apps.youvape.fr` n'est plus exposée au client.** Les
+  pièces jointes passent par un relais WordPress (`class-attachment-proxy.php`)
+  qui récupère le fichier en server-to-server et le sert depuis le domaine de la
+  boutique, après vérification que le ticket appartient bien au visiteur et que
+  le fichier y est référencé. Le lien `target="_blank"` sur les pièces jointes
+  est supprimé : une image s'affiche, elle ne s'ouvre plus dans un onglet. Côté
+  email, le repli texte affiche `[Image]` sans URL.
 - **0.3.6** — Correctif du retour au formulaire : le thème enfant force toute
   connexion vers le panier via `woocommerce_login_redirect` (priorité 10), en
   ignorant la destination calculée. Le plugin porte donc son propre champ caché

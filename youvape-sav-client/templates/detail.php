@@ -39,24 +39,24 @@ if (!function_exists('youvape_sav_format_datetime')) {
 }
 
 /**
- * Résout l'URL publique d'une pièce jointe. L'API renvoie une URL relative
- * (ex. /api/sav/attachments/123/uuid_photo.jpg) qu'il faut préfixer par la
- * base de l'API Node pour être atteignable depuis le navigateur du client.
+ * Résout l'URL d'affichage d'une pièce jointe.
+ *
+ * L'API renvoie une URL pointant vers `apps.youvape.fr`. Cette adresse ne doit
+ * JAMAIS parvenir au navigateur du client : on renvoie donc l'URL du relais
+ * WordPress, qui récupère le fichier en server-to-server et le sert depuis le
+ * domaine de la boutique.
  */
 if (!function_exists('youvape_sav_attachment_url')) {
     function youvape_sav_attachment_url($url) {
         $url = (string) $url;
-        if ($url === '') {
+        if ($url === '' || !class_exists('Youvape_SAV_Attachment_Proxy')) {
             return '';
         }
-        // URL déjà absolue : on la garde telle quelle.
-        if (preg_match('#^https?://#i', $url)) {
-            return $url;
+        $parsed = Youvape_SAV_Attachment_Proxy::parse_api_url($url);
+        if (!$parsed) {
+            return '';
         }
-        $base = class_exists('Youvape_SAV_Api_Client')
-            ? rtrim(Youvape_SAV_Api_Client::api_url(), '/')
-            : '';
-        return $base . '/' . ltrim($url, '/');
+        return Youvape_SAV_Attachment_Proxy::url($parsed[0], $parsed[1]);
     }
 }
 ?>
@@ -113,7 +113,16 @@ if (!function_exists('youvape_sav_attachment_url')) {
                     $date     = isset($message['date']) ? $message['date'] : '';
                     // body = HTML (éditeur riche). wp_kses_post = whitelist HTML
                     // sûre de WordPress (anti-XSS), adaptée à du contenu de message.
-                    $body     = isset($message['body']) ? wp_kses_post($message['body']) : '';
+                    // Les images insérées par l'agent pointent vers l'API : on
+                    // les réécrit vers le relais AVANT filtrage, pour qu'aucune
+                    // URL apps.youvape.fr n'atteigne le navigateur du client.
+                    $raw_body = isset($message['body']) ? (string) $message['body'] : '';
+                    if (class_exists('Youvape_SAV_Attachment_Proxy')) {
+                        $raw_body = Youvape_SAV_Attachment_Proxy::rewrite_html($raw_body);
+                    }
+                    // wp_kses_post = whitelist HTML sûre de WordPress (anti-XSS),
+                    // adaptée à du contenu de message.
+                    $body     = wp_kses_post($raw_body);
                     $attachments = (isset($message['attachments']) && is_array($message['attachments']))
                         ? $message['attachments'] : array();
                     $row_class = $is_agent ? 'youvape-sav__msg--agent' : 'youvape-sav__msg--customer';
@@ -144,15 +153,17 @@ if (!function_exists('youvape_sav_attachment_url')) {
                                     $att_mime = isset($att['mime']) ? (string) $att['mime'] : '';
                                     $is_image = (strpos($att_mime, 'image/') === 0);
                                     ?>
+                                    <?php /* Pas de lien : une pièce jointe s'affiche, elle ne
+                                             s'ouvre pas dans un onglet. Les images sont
+                                             montrées en place, les autres fichiers signalés
+                                             par leur nom. */ ?>
                                     <li class="youvape-sav__msg-attachment">
-                                        <a href="<?php echo esc_url($att_url); ?>" target="_blank" rel="noopener noreferrer">
-                                            <?php if ($is_image) : ?>
-                                                <img src="<?php echo esc_url($att_url); ?>" alt="<?php echo esc_attr($att_name); ?>" class="youvape-sav__msg-attachment-thumb" loading="lazy" />
-                                            <?php else : ?>
-                                                <span class="youvape-sav__msg-attachment-icon" aria-hidden="true">📎</span>
-                                            <?php endif; ?>
-                                            <span class="youvape-sav__msg-attachment-name"><?php echo esc_html($att_name); ?></span>
-                                        </a>
+                                        <?php if ($is_image) : ?>
+                                            <img src="<?php echo esc_url($att_url); ?>" alt="<?php echo esc_attr($att_name); ?>" class="youvape-sav__msg-attachment-thumb" loading="lazy" />
+                                        <?php else : ?>
+                                            <span class="youvape-sav__msg-attachment-icon" aria-hidden="true">📎</span>
+                                        <?php endif; ?>
+                                        <span class="youvape-sav__msg-attachment-name"><?php echo esc_html($att_name); ?></span>
                                     </li>
                                 <?php endforeach; ?>
                             </ul>

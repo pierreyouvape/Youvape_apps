@@ -253,7 +253,9 @@ function inlineAttachmentImages(html) {
     // Anti-traversée : le chemin résolu doit rester sous UPLOAD_ROOT.
     const filePath = path.resolve(path.join(UPLOAD_ROOT, ticketId, filename));
     if (!filePath.startsWith(uploadRoot + path.sep) || !fs.existsSync(filePath)) {
-      return tag;
+      // Fichier introuvable : on retire l'image plutôt que de laisser filer une
+      // URL apps.youvape.fr dans l'email. Le client ne doit jamais la voir.
+      return '[Image indisponible]';
     }
 
     if (!seen.has(filename)) {
@@ -266,7 +268,7 @@ function inlineAttachmentImages(html) {
         seen.add(filename);
       } catch (e) {
         console.warn(`[SAV] Image non intégrable (${filename}):`, e.message);
-        return tag;
+        return '[Image indisponible]';
       }
     }
 

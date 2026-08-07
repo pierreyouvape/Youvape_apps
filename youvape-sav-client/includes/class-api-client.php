@@ -81,6 +81,42 @@ class Youvape_SAV_Api_Client {
     }
 
     /**
+     * Récupère le CONTENU binaire d'une pièce jointe, en server-to-server.
+     *
+     * Sert au relais (class-attachment-proxy) : le fichier transite par
+     * WordPress pour que l'URL `apps.youvape.fr` ne soit jamais exposée au
+     * navigateur du client. L'appel n'est pas scopé côté API — c'est le relais
+     * qui vérifie l'appartenance du ticket AVANT d'appeler cette méthode.
+     *
+     * @param int    $ticket_id
+     * @param string $filename
+     * @return array{body:string,content_type:string}|WP_Error
+     */
+    public static function fetch_attachment($ticket_id, $filename) {
+        $api_url = self::api_url();
+        if (!$api_url) {
+            return new WP_Error('youvape_sav_config', __('Espace client SAV non configuré.', 'youvape-sav-client'));
+        }
+
+        $url = rtrim($api_url, '/') . '/api/sav/attachments/'
+            . absint($ticket_id) . '/' . rawurlencode($filename);
+
+        $response = wp_remote_get($url, array('timeout' => self::TIMEOUT));
+        if (is_wp_error($response)) {
+            return $response;
+        }
+        $code = (int) wp_remote_retrieve_response_code($response);
+        if ($code < 200 || $code >= 300) {
+            return new WP_Error('youvape_sav_http_' . $code, __('Pièce jointe introuvable.', 'youvape-sav-client'));
+        }
+
+        return array(
+            'body'         => wp_remote_retrieve_body($response),
+            'content_type' => wp_remote_retrieve_header($response, 'content-type') ?: 'application/octet-stream',
+        );
+    }
+
+    /**
      * GET /api/client-sav/orders — commandes du client (pour sélecteur).
      *
      * @return array|WP_Error
