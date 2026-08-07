@@ -133,6 +133,29 @@ const AGENT_DISPLAY_NAME = 'Service client YouVape';
 const CLIENT_VISIBLE_SOURCES = [CLIENT_TICKET_SOURCE, PUBLIC_TICKET_SOURCE, 'gravity_form'];
 
 /**
+ * Statuts de commande proposables au client dans le sélecteur « Commande
+ * concernée ».
+ *
+ * Liste BLANCHE, conformément à la règle du projet : la boutique a des statuts
+ * personnalisés, et une liste noire laisserait passer tout nouveau venu — dont
+ * `wc-checkout-draft`, les paniers abandonnés, très volumineux (3 500 sur
+ * 2 579 clients). Un client n'a pas à voir ses paniers non validés, ni ses
+ * commandes annulées, échouées ou mises à la corbeille.
+ *
+ * Aux 6 statuts payés canoniques s'ajoutent trois cas qui ne comptent pas dans
+ * le CA mais restent des sujets SAV parfaitement légitimes : un remboursement
+ * qui n'arrive pas, un retour accepté ou annulé.
+ *
+ * ⚠️ Un nouveau statut personnalisé devra être ajouté ici, sinon les commandes
+ * concernées disparaîtront du sélecteur.
+ */
+const CLIENT_SELECTABLE_ORDER_STATUSES = [
+  'wc-completed', 'wc-delivered', 'wc-processing',
+  'wc-awaiting-delivery', 'wc-shipped', 'wc-being-delivered',
+  'wc-refunded', 'wc-return-approved', 'wc-return-cancelled',
+];
+
+/**
  * Clause d'appartenance d'un ticket au client connecté. UNE seule définition,
  * réutilisée par la liste, le détail et la réponse — si ces trois vues
  * divergeaient, un client pourrait voir un ticket auquel il ne pourrait pas
@@ -614,9 +637,11 @@ const clientSavController = {
         // sert pour signaler un délai de rétractation vraisemblablement dépassé.
         `SELECT wp_order_id, post_date, post_modified, post_status, order_total,
                 tracking_number, shipping_carrier
-         FROM orders WHERE wp_customer_id = $1
+         FROM orders
+         WHERE wp_customer_id = $1
+           AND post_status = ANY($3::text[])
          ORDER BY post_date DESC LIMIT $2`,
-        [wpUserId, limit]
+        [wpUserId, limit, CLIENT_SELECTABLE_ORDER_STATUSES]
       );
 
       const orders = ordersRes.rows;
