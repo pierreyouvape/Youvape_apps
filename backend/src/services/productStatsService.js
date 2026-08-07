@@ -418,7 +418,10 @@ class ProductStatsService {
         p.exclude_from_reorder,
         p.track_stock,
         p.product_attributes,
-        COALESCE(SUM(oi.qty), 0)::int as quantity_sold
+        -- Le filtre statut/dates porte sur le LEFT JOIN de "orders" : les lignes
+        -- order_items dont la commande ne matche pas survivent avec o.* a NULL.
+        -- Sans ce CASE elles seraient quand meme sommees et la periode ignoree.
+        COALESCE(SUM(CASE WHEN o.wp_order_id IS NOT NULL THEN oi.qty ELSE 0 END), 0)::int as quantity_sold
       FROM products p
       LEFT JOIN order_items oi ON oi.variation_id = p.wp_product_id
       LEFT JOIN orders o ON o.wp_order_id = oi.wp_order_id
