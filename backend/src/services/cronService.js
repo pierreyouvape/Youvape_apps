@@ -422,7 +422,18 @@ let productDbSyncCronJob = null;
 const runProductDbSyncJob = async () => {
   try {
     const result = await runProductDbSync();
-    console.log(`[ProductDbSync] ${result.totalRows} produits verifies, ${result.statusUpdated} statuts/stocks mis a jour, ${result.variableUpdated} parents variables, ${result.errors.length} erreurs, en ${result.elapsed}ms`);
+    console.log(`[ProductDbSync] ${result.totalRows} produits verifies, ${result.statusUpdated} statuts/stocks mis a jour, ${result.variableUpdated} parents variables, ${result.ghosts.length} fiches fantomes neutralisees, ${result.errors.length} erreurs, en ${result.elapsed}ms`);
+    if (result.ghosts.length > 0) {
+      const units = result.ghosts.reduce((s, g) => s + Number(g.old_stock || 0), 0);
+      sendAlert(
+        `Product DB Sync: ${result.ghosts.length} fiche(s) fantome(s) neutralisee(s)`,
+        `Ces produits avaient du stock en base alors qu'ils n'existent plus dans WooCommerce.\n` +
+        `Leur stock a ete remis a 0 (outofstock, hors catalogue). La ligne est conservee ` +
+        `(elle peut etre referencee par des commandes d'achat).\n\n` +
+        `${result.ghosts.length} fiche(s), ${units} unite(s) fantomes:\n\n` +
+        result.ghosts.map(g => `- [${g.sku || 'sans SKU'}] ${g.post_title} (${g.product_type}, ${g.post_status}) — ${g.old_stock} u. — wp_id ${g.wp_product_id}`).join('\n')
+      );
+    }
     if (result.errors.length > 0) {
       sendAlert(
         `Cron Product DB Sync: ${result.errors.length} erreur(s)`,

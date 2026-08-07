@@ -129,6 +129,10 @@ const runProductDbSync = async () => {
 
   const liveRows = [];
   const errors = [];
+  // Parents dont le fetch des variations a echoue : leurs variations sont absentes de
+  // liveRows sans etre supprimees dans WC. Elles doivent etre exclues de la detection
+  // des fiches fantomes, sinon on neutraliserait du stock bien reel.
+  const failedParents = [];
 
   for (const p of products) {
     liveRows.push({
@@ -158,13 +162,14 @@ const runProductDbSync = async () => {
         }
       } catch (err) {
         errors.push({ wp_product_id: p.id, error: err.message });
+        failedParents.push(p.id);
       }
       await sleep(REQUEST_DELAY_MS);
     }
   }
 
   const client = await pool.connect();
-  let result = { statusUpdated: 0, variableUpdated: 0 };
+  let result = { statusUpdated: 0, variableUpdated: 0, ghosts: [] };
   try {
     await client.query('BEGIN');
     await client.query(`
@@ -235,9 +240,46 @@ const runProductDbSync = async () => {
              OR (l.live_wc_cog_cost IS NOT NULL AND p.wc_cog_cost IS DISTINCT FROM l.live_wc_cog_cost))
     `);
 
+    // 3) Fiches fantomes : lignes locales avec du stock alors que le produit n'existe
+    // plus dans WooCommerce (supprime avant l'arrivee du hook de suppression YouSync,
+    // ou event de suppression jamais arrive). On neutralise le stock sans supprimer la
+    // ligne : elle peut etre referencee par purchase_order_items (FK sans CASCADE).
+    // Deux garde-fous : si le catalogue live est anormalement petit (reponse WC
+    // tronquee) ou si des variations n'ont pas pu etre lues, on ne touche a rien.
+    const dbCountRes = await client.query('SELECT COUNT(*)::int AS db_count FROM products');
+    const dbCount = dbCountRes.rows[0].db_count;
+
+    let ghosts = [];
+    if (liveRows.length >= dbCount * 0.8) {
+      const r3 = await client.query(`
+        WITH ghosts AS (
+          SELECT p.id, p.wp_product_id, p.sku, p.post_title, p.product_type,
+                 p.post_status, p.stock AS old_stock
+          FROM products p
+          WHERE p.stock > 0
+            AND NOT EXISTS (SELECT 1 FROM live_wc_products l WHERE l.wp_product_id = p.wp_product_id)
+            AND (p.wp_parent_id IS NULL OR NOT (p.wp_parent_id = ANY($1::bigint[])))
+        ), upd AS (
+          UPDATE products p
+          SET stock = 0, stock_status = 'outofstock', track_stock = false, updated_at = NOW()
+          FROM ghosts g
+          WHERE p.id = g.id
+          RETURNING p.id
+        )
+        SELECT wp_product_id, sku, post_title, product_type, post_status, old_stock
+        FROM ghosts ORDER BY old_stock DESC
+      `, [failedParents]);
+      ghosts = r3.rows;
+    } else {
+      errors.push({
+        wp_product_id: null,
+        error: `Detection fiches fantomes ignoree: ${liveRows.length} produits live pour ${dbCount} en base`,
+      });
+    }
+
     await client.query('COMMIT');
 
-    result = { statusUpdated: r1.rowCount, variableUpdated: r2.rowCount };
+    result = { statusUpdated: r1.rowCount, variableUpdated: r2.rowCount, ghosts };
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});
     throw err;
