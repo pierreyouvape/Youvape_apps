@@ -432,8 +432,40 @@ const ImportPdfPage = () => {
       const response = await axios.post(`${API_URL}/purchases/orders`, payload, {
         headers: { Authorization: `Bearer ${token}` }
       });
-      const orderNum = response.data.data?.order_number || parsedData.order_number || '';
-      alert(`Commande ${orderNum} créée avec ${matchedItems.length} article(s)${sendToBms ? ' et envoyée à BMS' : ''}`);
+      const created = response.data.data;
+      const orderNum = created?.order_number || parsedData.order_number || '';
+      const bmsError = response.data.bms_error;
+
+      // La commande est toujours créée localement, même si BMS refuse : on ne perd pas
+      // l'import. Si le seul blocage est des produits absents de BMS, on propose l'envoi
+      // partiel plutôt que de bloquer (les produits manquants restent dans la commande app).
+      if (bmsError) {
+        if (bmsError.can_send_partial &&
+            confirm(`Commande ${orderNum} créée, mais NON envoyée à BMS.\n\n${bmsError.message}\n\n` +
+                    `Envoyer quand même la commande à BMS sans ${bmsError.missing_skus.length > 1 ? 'ces produits' : 'ce produit'} ?`)) {
+          try {
+            const sent = await axios.post(
+              `${API_URL}/purchases/orders/${created.id}/send-bms`,
+              { skip_missing: true },
+              { headers: { Authorization: `Bearer ${token}` } }
+            );
+            const skipped = sent.data.skipped_items || [];
+            alert(`Commande ${orderNum} envoyée à BMS sans ${skipped.length} produit(s) :\n` +
+                  skipped.map(p => `  • ${p.name} (${p.sku})`).join('\n') +
+                  `\n\nCes produits ne sont PAS dans le bon de commande BMS (une note a été ajoutée à la commande) : créez-les dans BMS puis ajoutez-les au bon de commande.`);
+          } catch (e) {
+            alert(e.response?.data?.error || 'Erreur lors de l\'envoi partiel à BMS');
+          }
+        } else {
+          alert(`Commande ${orderNum} créée avec ${matchedItems.length} article(s), mais NON envoyée à BMS :\n\n${bmsError.message}\n\n` +
+                `Vous pourrez la renvoyer depuis l'onglet Commandes.`);
+        }
+      } else {
+        const skipped = response.data.skipped_items || [];
+        alert(`Commande ${orderNum} créée avec ${matchedItems.length} article(s)${sendToBms ? ' et envoyée à BMS' : ''}` +
+              (skipped.length ? `\n\n${skipped.length} produit(s) absent(s) de BMS non envoyé(s) : ` +
+                                skipped.map(p => p.sku).join(', ') : ''));
+      }
       navigate('/purchases?tab=orders');
     } catch (err) {
       console.error('Erreur création:', err);

@@ -159,22 +159,42 @@ const OrdersTab = ({ token }) => {
 
   // Envoyer a BMS
   const [sendingBms, setSendingBms] = useState(false);
-  const sendToBms = async (orderId) => {
-    if (!confirm('Envoyer cette commande à BMS ?')) return;
+  const sendToBms = async (orderId, skipMissing = false) => {
+    if (!skipMissing && !confirm('Envoyer cette commande à BMS ?')) return;
     setSendingBms(true);
+    let retryWithoutMissing = false;
     try {
-      const response = await axios.post(`${API_URL}/purchases/orders/${orderId}/send-bms`, {}, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      alert('Commande envoyée à BMS avec succès');
+      const response = await axios.post(
+        `${API_URL}/purchases/orders/${orderId}/send-bms`,
+        { skip_missing: skipMissing },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      const skipped = response.data.skipped_items || [];
+      alert(skipped.length
+        ? `Commande envoyée à BMS sans ${skipped.length} produit(s) absent(s) du catalogue BMS :\n` +
+          skipped.map(p => `  • ${p.name} (${p.sku})`).join('\n') +
+          `\n\nCes produits ne sont PAS dans le bon de commande BMS (une note a été ajoutée à la commande) : créez-les dans BMS puis ajoutez-les au bon de commande.`
+        : 'Commande envoyée à BMS avec succès');
       setSelectedOrder(response.data.data);
       loadOrders();
     } catch (err) {
       console.error('Erreur envoi BMS:', err);
-      alert(err.response?.data?.error || 'Erreur lors de l\'envoi à BMS');
+      const data = err.response?.data;
+      // Produits pas encore créés dans BMS : laisser l'utilisateur décider d'envoyer
+      // la commande en l'état, sans ces lignes, plutôt que de bloquer l'envoi.
+      if (data?.code === 'BMS_MISSING_PRODUCTS' && data.can_send_partial) {
+        const n = (data.missing_skus || []).length;
+        retryWithoutMissing = confirm(
+          `${data.error}\n\nEnvoyer quand même la commande à BMS sans ${n > 1 ? 'ces produits' : 'ce produit'} ?`
+        );
+      } else {
+        alert(data?.error || 'Erreur lors de l\'envoi à BMS');
+      }
     } finally {
       setSendingBms(false);
     }
+    // Renvoi sans les produits absents de BMS, décidé par l'utilisateur
+    if (retryWithoutMissing) return sendToBms(orderId, true);
   };
 
   // Export CSV

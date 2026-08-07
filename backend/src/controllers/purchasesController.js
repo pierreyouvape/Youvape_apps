@@ -226,7 +226,14 @@ const purchasesController = {
       }
 
       const order = await purchaseOrderModel.create(req.body, req.user.id);
-      res.status(201).json({ success: true, data: order });
+      // La commande est créée même si l'envoi BMS a échoué : bms_error décrit le blocage
+      // (produits absents du catalogue BMS…) pour que le front propose l'envoi partiel.
+      res.status(201).json({
+        success: true,
+        data: order,
+        bms_error: order.bms_error || null,
+        skipped_items: order.bms_skipped_items || []
+      });
     } catch (error) {
       console.error('Erreur createOrder:', error);
       res.status(500).json({ success: false, error: error.message || 'Erreur serveur' });
@@ -568,12 +575,15 @@ const purchasesController = {
       try {
         await client.query('BEGIN');
 
+        // skip_missing : l'utilisateur a choisi d'envoyer la commande sans les produits
+        // qui n'existent pas (encore) dans le catalogue BMS.
         const bmsResult = await purchaseOrderModel.createInBMS(
           client,
           order,
           order.supplier_id,
           itemsWithSku,
-          bmsCreds
+          bmsCreds,
+          { skipMissingSkus: !!req.body?.skip_missing }
         );
 
         if (bmsResult.bms_po_id) {
@@ -585,7 +595,11 @@ const purchasesController = {
 
         await client.query('COMMIT');
         const updated = await purchaseOrderModel.getById(orderId);
-        res.json({ success: true, data: updated });
+        res.json({
+          success: true,
+          data: updated,
+          skipped_items: bmsResult.skipped_items || []
+        });
       } catch (error) {
         await client.query('ROLLBACK');
         throw error;
@@ -594,6 +608,17 @@ const purchasesController = {
       }
     } catch (error) {
       console.error('Erreur sendToBms:', error);
+      // Produits absents de BMS : pas une erreur serveur mais une décision à prendre.
+      // 409 + liste des produits → le front propose l'envoi partiel (skip_missing).
+      if (error.code === 'BMS_MISSING_PRODUCTS') {
+        return res.status(409).json({
+          success: false,
+          error: error.message,
+          code: error.code,
+          missing_skus: error.missingSkus || [],
+          can_send_partial: (error.sendableCount || 0) > 0
+        });
+      }
       res.status(500).json({ success: false, error: error.message || 'Erreur envoi BMS' });
     }
   },

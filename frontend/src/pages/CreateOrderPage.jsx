@@ -130,7 +130,34 @@ const CreateOrderPage = () => {
         headers: { Authorization: `Bearer ${token}` }
       });
 
-      alert(`Commande ${response.data.data?.order_number || ''} créée avec ${items.length} article(s)${sendToBMS ? ' et envoyée à BMS' : ''}`);
+      const created = response.data.data;
+      const orderNum = created?.order_number || '';
+      const bmsError = response.data.bms_error;
+
+      // La commande locale est conservée même si BMS refuse (produits pas encore créés
+      // dans BMS…) : on propose l'envoi sans ces produits plutôt que de tout perdre.
+      if (bmsError) {
+        if (bmsError.can_send_partial &&
+            confirm(`Commande ${orderNum} créée, mais NON envoyée à BMS.\n\n${bmsError.message}\n\n` +
+                    `Envoyer quand même la commande à BMS sans ${bmsError.missing_skus.length > 1 ? 'ces produits' : 'ce produit'} ?`)) {
+          try {
+            const sent = await axios.post(
+              `${API_URL}/purchases/orders/${created.id}/send-bms`,
+              { skip_missing: true },
+              { headers: { Authorization: `Bearer ${token}` } }
+            );
+            const skipped = sent.data.skipped_items || [];
+            alert(`Commande ${orderNum} envoyée à BMS sans ${skipped.length} produit(s) : ` +
+                  skipped.map(p => p.sku).join(', '));
+          } catch (e) {
+            alert(e.response?.data?.error || 'Erreur lors de l\'envoi partiel à BMS');
+          }
+        } else {
+          alert(`Commande ${orderNum} créée avec ${items.length} article(s), mais NON envoyée à BMS :\n\n${bmsError.message}`);
+        }
+      } else {
+        alert(`Commande ${orderNum} créée avec ${items.length} article(s)${sendToBMS ? ' et envoyée à BMS' : ''}`);
+      }
       navigate('/purchases?tab=orders');
     } catch (err) {
       console.error('Erreur création commande:', err);

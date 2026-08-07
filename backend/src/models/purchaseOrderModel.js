@@ -117,6 +117,9 @@ const purchaseOrderModel = {
   // Créer une commande
   create: async (data, userId) => {
     const client = await pool.connect();
+    // Avertissement d'envoi BMS remonté au front sans annuler la création locale
+    let bmsWarning = null;
+    let bmsSkipped = [];
     try {
       await client.query('BEGIN');
 
@@ -279,25 +282,49 @@ const purchaseOrderModel = {
           ? { email: userCreds.rows[0].bms_email, password: userCreds.rows[0].bms_password }
           : null;
 
-        const bmsResult = await purchaseOrderModel.createInBMS(
-          client,
-          order,
-          data.supplier_id,
-          itemsWithSku,
-          bmsCreds
-        );
-
-        if (bmsResult.bms_po_id) {
-          await client.query(
-            'UPDATE purchase_orders SET bms_po_id = $2, status = $3 WHERE id = $1',
-            [order.id, bmsResult.bms_po_id, 'sent']
+        // L'échec de l'envoi BMS ne doit PAS annuler la création de la commande locale :
+        // sinon un seul produit absent de BMS fait perdre tout le travail d'import. On
+        // committe la commande et on remonte l'erreur en avertissement, à l'utilisateur
+        // de décider (créer le produit dans BMS, ou renvoyer sans lui via skip_missing).
+        try {
+          const bmsResult = await purchaseOrderModel.createInBMS(
+            client,
+            order,
+            data.supplier_id,
+            itemsWithSku,
+            bmsCreds,
+            { skipMissingSkus: !!data.skip_missing_bms_products }
           );
+
+          if (bmsResult.bms_po_id) {
+            await client.query(
+              'UPDATE purchase_orders SET bms_po_id = $2, status = $3 WHERE id = $1',
+              [order.id, bmsResult.bms_po_id, 'sent']
+            );
+          }
+          bmsSkipped = bmsResult.skipped_items || [];
+        } catch (bmsError) {
+          // Seul le cas « produits pas encore créés dans BMS » est rattrapable : la
+          // commande locale est valide, c'est BMS qui n'a pas encore la fiche produit.
+          // Les autres échecs (garde-fous quantité/total, erreur BMS) signalent une
+          // commande erronée → on annule la création comme avant.
+          if (bmsError.code !== 'BMS_MISSING_PRODUCTS') throw bmsError;
+          console.error('Envoi BMS échoué à la création (commande conservée):', bmsError.message);
+          bmsWarning = {
+            message: bmsError.message,
+            code: bmsError.code || null,
+            missing_skus: bmsError.missingSkus || null,
+            can_send_partial: bmsError.code === 'BMS_MISSING_PRODUCTS' && bmsError.sendableCount > 0
+          };
         }
       }
 
       await client.query('COMMIT');
 
-      return purchaseOrderModel.getById(order.id);
+      const created = await purchaseOrderModel.getById(order.id);
+      if (bmsWarning) created.bms_error = bmsWarning;
+      if (bmsSkipped.length > 0) created.bms_skipped_items = bmsSkipped;
+      return created;
     } catch (error) {
       await client.query('ROLLBACK');
       throw error;
@@ -307,7 +334,9 @@ const purchaseOrderModel = {
   },
 
   // Créer la commande dans BMS
-  createInBMS: async (client, order, supplierId, items, bmsCredentials = null) => {
+  // options.skipMissingSkus : envoi partiel assumé — les produits absents du catalogue
+  // BMS sont retirés du payload au lieu de bloquer toute la commande.
+  createInBMS: async (client, order, supplierId, items, bmsCredentials = null, options = {}) => {
     // Récupérer le bms_id du fournisseur
     const supplierResult = await client.query(
       'SELECT bms_id, name, code FROM suppliers WHERE id = $1',
@@ -420,6 +449,7 @@ const purchaseOrderModel = {
     console.log('Creating BMS order:', JSON.stringify(bmsOrderData, null, 2));
 
     let bmsResponse;
+    let skippedItems = [];
     try {
       bmsResponse = await bmsApiModel.createPurchaseOrder(bmsOrderData, bmsCredentials);
     } catch (error) {
@@ -432,6 +462,7 @@ const purchaseOrderModel = {
       // Le vrai déclencheur du 500 est un SKU que BMS ne peut pas résoudre en fiche catalogue
       // commandable. On le détecte via /advanced-stock/product/{sku}/stocks
       // (200 = commandable, 400 "Produit ... non trouvé" = non commandable).
+      let recovered = false;
       if (error.message.includes('500')) {
         const checks = await Promise.all(
           bmsItems.map(item =>
@@ -461,21 +492,80 @@ const purchaseOrderModel = {
             const etat = c.deleted ? 'SUPPRIMÉ dans BMS → à restaurer' : 'absent du catalogue BMS → à créer';
             return `  • "${c.item.name}" (SKU : ${c.item.sku}, réf fournisseur : ${c.item.supplier_sku || '—'}) — ${etat}`;
           }).join('\n');
-          const consigne = anyDeleted
-            ? 'Restaurez (ou recréez) ces produits dans BMS puis renvoyez la commande.'
-            : 'Créez ces produits dans BMS puis renvoyez la commande.';
-          throw new Error(
-            `${classified.length} produit(s) non commandable(s) dans BMS :\n${lines}\n\n${consigne}`
-          );
+          const details = classified.map(c => ({
+            sku: c.item.sku,
+            name: c.item.name,
+            supplier_sku: c.item.supplier_sku || null,
+            deleted: c.deleted
+          }));
+
+          // Envoi partiel assumé par l'utilisateur : on retire les produits non commandables
+          // et on renvoie la commande telle quelle. Les lignes restent dans la commande locale
+          // (traçabilité / réception) ; elles ne partent simplement pas dans BMS.
+          if (options.skipMissingSkus) {
+            const missingSkus = new Set(missing.map(i => i.sku));
+            const remaining = bmsItems.filter(i => !missingSkus.has(i.sku));
+            if (remaining.length === 0) {
+              throw new Error(
+                `Aucun produit de cette commande n'est commandable dans BMS :\n${lines}\n\n` +
+                `Créez-les dans BMS avant d'envoyer la commande.`
+              );
+            }
+            console.log(
+              `Envoi BMS partiel : ${missing.length} produit(s) non commandable(s) exclu(s) — ` +
+              `${[...missingSkus].join(', ')}`
+            );
+            try {
+              bmsResponse = await bmsApiModel.createPurchaseOrder(
+                { ...bmsOrderData, items: remaining },
+                bmsCredentials
+              );
+            } catch (retryError) {
+              throw purchaseOrderModel.enrichBmsItemError(retryError, remaining);
+            }
+            skippedItems = details;
+            recovered = true;
+
+            // Trace durable de l'envoi partiel : les lignes exclues seront écrasées dans
+            // purchase_order_items à la prochaine syncFromBMS (elle remplace les items par
+            // ceux de BMS), mais `notes` n'est pas touché par la sync.
+            await client.query(`
+              UPDATE purchase_orders
+              SET notes = CASE WHEN notes IS NULL OR notes = '' THEN $2 ELSE notes || E'\n' || $2 END,
+                  updated_at = CURRENT_TIMESTAMP
+              WHERE id = $1
+            `, [
+              order.id,
+              `[Envoi BMS partiel du ${new Date().toISOString().split('T')[0]} : ` +
+              `${details.length} produit(s) non envoyé(s), absents du catalogue BMS — ` +
+              `${details.map(d => d.sku).join(', ')}]`
+            ]);
+          } else {
+            // Erreur "décidable" : le front propose d'envoyer quand même sans ces produits.
+            const err = new Error(
+              `${classified.length} produit(s) non commandable(s) dans BMS :\n${lines}\n\n` +
+              (anyDeleted
+                ? 'Restaurez (ou recréez) ces produits dans BMS puis renvoyez la commande,'
+                : 'Créez ces produits dans BMS puis renvoyez la commande,') +
+              ` ou envoyez la commande sans ${classified.length > 1 ? 'ces produits' : 'ce produit'}.`
+            );
+            err.code = 'BMS_MISSING_PRODUCTS';
+            err.missingSkus = details;
+            err.sendableCount = bmsItems.length - missing.length;
+            throw err;
+          }
         }
       }
-      throw purchaseOrderModel.enrichBmsItemError(error, bmsItems);
+      if (!recovered) {
+        throw purchaseOrderModel.enrichBmsItemError(error, bmsItems);
+      }
     }
     console.log('BMS response:', JSON.stringify(bmsResponse, null, 2));
 
     return {
       bms_po_id: bmsResponse.id || null,
-      bms_reference: bmsResponse.reference || null
+      bms_reference: bmsResponse.reference || null,
+      skipped_items: skippedItems
     };
   },
 
