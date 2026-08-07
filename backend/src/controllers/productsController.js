@@ -917,3 +917,77 @@ exports.importBarcodes = async (req, res) => {
     res.status(500).json({ success: false, error: error.message });
   }
 };
+
+// Cache court des emplacements BMS (1 appel API par SKU, pas d'endpoint bulk cote BMS)
+const shelfLocationCache = new Map(); // sku -> { locations, expiry }
+const SHELF_LOCATION_TTL = 10 * 60 * 1000;
+
+const getShelfLocationsCached = async (sku) => {
+  const cached = shelfLocationCache.get(sku);
+  if (cached && Date.now() < cached.expiry) return cached.locations;
+
+  const locations = await bmsApiModel.getProductShelfLocations(sku);
+  shelfLocationCache.set(sku, { locations, expiry: Date.now() + SHELF_LOCATION_TTL });
+  return locations;
+};
+
+/**
+ * Emplacements BMS d'un produit et de ses variations
+ * GET /api/products/:id/bms-locations?refresh=1
+ */
+exports.getBmsLocations = async (req, res) => {
+  try {
+    const productId = parseInt(req.params.id);
+    const { rows } = await pool.query(
+      `SELECT wp_product_id, wp_parent_id, sku, post_title, product_type
+       FROM products
+       WHERE (wp_product_id = $1 OR wp_parent_id = $1) AND sku IS NOT NULL AND sku != ''
+       ORDER BY wp_parent_id NULLS FIRST, wp_product_id`,
+      [productId]
+    );
+
+    if (rows.length === 0) {
+      return res.status(404).json({ success: false, error: 'Produit ou SKU introuvable' });
+    }
+
+    if (req.query.refresh) {
+      rows.forEach(r => shelfLocationCache.delete(r.sku));
+    }
+
+    // Un produit variable n'a pas de stock propre dans BMS : on interroge les variations
+    const targets = rows.some(r => r.wp_parent_id)
+      ? rows.filter(r => r.wp_parent_id)
+      : rows;
+
+    // Appels en parallele borne pour ne pas saturer l'API BMS
+    const results = [];
+    const CONCURRENCY = 5;
+    for (let i = 0; i < targets.length; i += CONCURRENCY) {
+      const chunk = targets.slice(i, i + CONCURRENCY);
+      const chunkResults = await Promise.all(chunk.map(async (row) => {
+        try {
+          return { ...row, locations: await getShelfLocationsCached(row.sku) };
+        } catch (error) {
+          console.error(`[BMS Locations] ${row.sku}:`, error.message);
+          return { ...row, locations: [], error: error.message };
+        }
+      }));
+      results.push(...chunkResults);
+    }
+
+    res.json({
+      success: true,
+      data: results.map(r => ({
+        wp_product_id: r.wp_product_id,
+        sku: r.sku,
+        post_title: r.post_title,
+        locations: r.locations,
+        // Emplacement principal : celui de l'entrepot qui porte du stock, sinon le premier
+        location: (r.locations.find(l => l.quantity > 0) || r.locations[0] || {}).location || null
+      }))
+    });
+  } catch (error) {
+    console.error('Error fetching BMS locations:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};

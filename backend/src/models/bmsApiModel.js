@@ -296,6 +296,29 @@ const bmsApiModel = {
     return data;
   },
 
+  /**
+   * Emplacement (shelf location) d'un produit par SKU, par entrepot.
+   * Retourne [] si le SKU est inconnu de BMS.
+   */
+  getProductShelfLocations: async (sku) => {
+    let stocks;
+    try {
+      stocks = await bmsApiModel.apiCall(`/advanced-stock/product/${encodeURIComponent(sku)}/stocks`);
+    } catch (error) {
+      // SKU absent de BMS => pas d'emplacement, ce n'est pas une erreur bloquante
+      if (/^BMS API error: 40/.test(error.message)) return [];
+      throw error;
+    }
+    return (Array.isArray(stocks) ? stocks : [])
+      .filter(s => s.wi_shelf_location)
+      .map(s => ({
+        warehouse_id: s.w_id,
+        warehouse: s.w_name,
+        location: String(s.wi_shelf_location).trim(),
+        quantity: s.wi_physical_quantity
+      }));
+  },
+
   // ==================== TRANSPORTEURS ====================
 
   /**

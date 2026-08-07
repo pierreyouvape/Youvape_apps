@@ -83,6 +83,10 @@ const ProductDetail = () => {
   const [newVarBarcode, setNewVarBarcode] = useState({});
   const [newVarPackQty, setNewVarPackQty] = useState({});
 
+  // Emplacements BMS (shelf location), charges a part car 1 appel API BMS par SKU
+  const [bmsLocations, setBmsLocations] = useState({});
+  const [bmsLocationsLoading, setBmsLocationsLoading] = useState(false);
+
   // Suppliers tab
   const [suppliers, setSuppliers] = useState([]);
   const [suppliersLoaded, setSuppliersLoaded] = useState(false);
@@ -106,6 +110,7 @@ const ProductDetail = () => {
       fetchProductData(defaultParams);
       fetchSalesEvolution(defaultParams);
       fetchVariantsPeriodStats(defaultParams);
+      fetchBmsLocations();
     }
   }, [id]);
 
@@ -156,6 +161,22 @@ const ProductDetail = () => {
       setProduct(null);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchBmsLocations = async (refresh = false) => {
+    setBmsLocationsLoading(true);
+    try {
+      const res = await axios.get(`${API_URL}/products/${id}/bms-locations`, {
+        params: refresh ? { refresh: 1 } : {}
+      });
+      const map = {};
+      (res.data.data || []).forEach(row => { map[row.sku] = row; });
+      setBmsLocations(map);
+    } catch (err) {
+      setBmsLocations({});
+    } finally {
+      setBmsLocationsLoading(false);
     }
   };
 
@@ -473,6 +494,20 @@ const ProductDetail = () => {
     return `https://app.metorik.com/products/${product.sku}`;
   };
 
+  // Emplacements BMS distincts (un produit variable a une ligne par variation)
+  const bmsLocationSummary = (() => {
+    const rows = Object.values(bmsLocations);
+    if (rows.length === 0) return [];
+    const seen = new Map();
+    rows.forEach(row => {
+      (row.locations || []).forEach(loc => {
+        const key = `${loc.warehouse}|${loc.location}`;
+        if (!seen.has(key)) seen.set(key, loc);
+      });
+    });
+    return Array.from(seen.values());
+  })();
+
   // ==================== STYLES ====================
 
   const tabStyle = (tab) => ({
@@ -612,6 +647,33 @@ const ProductDetail = () => {
                 <div style={{ fontSize: '12px', color: '#666' }}>Stock</div>
                 <div style={{ fontSize: '24px', fontWeight: '700', color: '#111827' }}>{formatNumber(product.stock || 0)}</div>
               </div>
+              <div>
+                <div style={{ fontSize: '12px', color: '#666', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  Emplacement BMS
+                  <button
+                    onClick={() => fetchBmsLocations(true)}
+                    title="Rafraichir depuis BMS"
+                    style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#135E84', fontSize: '12px', padding: 0, lineHeight: 1 }}
+                  >
+                    &#8635;
+                  </button>
+                </div>
+                {bmsLocationsLoading ? (
+                  <div style={{ fontSize: '14px', color: '#9ca3af', marginTop: '6px' }}>Chargement...</div>
+                ) : bmsLocationSummary.length === 0 ? (
+                  <div style={{ fontSize: '24px', fontWeight: '700', color: '#9ca3af' }}>-</div>
+                ) : (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '4px' }}>
+                    {bmsLocationSummary.map((loc, i) => (
+                      <span key={i} title={`${loc.warehouse} - ${formatNumber(loc.quantity || 0)} en stock`}
+                        style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '4px 10px', backgroundColor: '#eef6fb', border: '1px solid #cfe3ef', borderRadius: '6px', fontSize: '18px', fontWeight: '700', color: '#135E84', fontFamily: 'monospace' }}>
+                        {loc.location}
+                        <CopyButton text={loc.location} size={12} />
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
             {(product.category || product.sub_category) && (
               <div style={{ fontSize: '14px', color: '#666' }}>
@@ -715,6 +777,7 @@ const ProductDetail = () => {
                         <th style={{ textAlign: 'left', padding: '12px', fontSize: '14px', fontWeight: '600' }}>Variante</th>
                         <th style={{ textAlign: 'center', padding: '12px', fontSize: '14px', fontWeight: '600' }}>Catalogue / Reassort</th>
                         <th style={{ textAlign: 'center', padding: '12px', fontSize: '14px', fontWeight: '600' }}>SKU</th>
+                        <th style={{ textAlign: 'center', padding: '12px', fontSize: '14px', fontWeight: '600' }}>Emplacement</th>
                         <th style={{ textAlign: 'right', padding: '12px', fontSize: '14px', fontWeight: '600' }}>Prix TTC</th>
                         <th style={{ textAlign: 'center', padding: '12px', fontSize: '14px', fontWeight: '600' }}>Stock</th>
                         <th style={{ textAlign: 'center', padding: '12px', fontSize: '14px', fontWeight: '600' }}>Qte vendue</th>
@@ -768,6 +831,9 @@ const ProductDetail = () => {
                             </div>
                           </td>
                           <td style={{ textAlign: 'center', padding: '12px', fontSize: '13px', color: '#666' }}>{variant.sku}{variant.sku && <CopyButton text={variant.sku} size={12} />}</td>
+                          <td style={{ textAlign: 'center', padding: '12px', fontSize: '13px', fontFamily: 'monospace', fontWeight: '600', color: bmsLocations[variant.sku]?.location ? '#135E84' : '#9ca3af' }}>
+                            {bmsLocationsLoading ? '...' : (bmsLocations[variant.sku]?.location || '-')}
+                          </td>
                           <td style={{ textAlign: 'right', padding: '12px', fontWeight: '600' }}>{formatCurrency(variant.price)}</td>
                           <td style={{ textAlign: 'center', padding: '12px', fontWeight: '600' }}>{formatNumber(variant.stock || 0)}</td>
                           <td style={{ textAlign: 'center', padding: '12px', fontWeight: '600' }}>{formatNumber(variant.net_sold || 0)}</td>
