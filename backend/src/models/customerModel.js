@@ -270,6 +270,7 @@ class CustomerModel {
       email:       'LOWER(c.email)',
       orders:      'order_count',
       spent:       'total_spent',
+      avg_order:   'avg_order_value',
       country:     'country',
       first_order: 'first_order_date',
       last_order:  'last_order_date',
@@ -324,6 +325,12 @@ class CustomerModel {
           WHERE wp_customer_id = c.wp_user_id
           AND post_status IN ('wc-completed', 'wc-delivered', 'wc-processing', 'wc-awaiting-delivery', 'wc-shipped', 'wc-being-delivered')
         ) as total_spent,
+        (
+          SELECT AVG(order_total)
+          FROM orders
+          WHERE wp_customer_id = c.wp_user_id
+          AND post_status IN ('wc-completed', 'wc-delivered', 'wc-processing', 'wc-awaiting-delivery', 'wc-shipped', 'wc-being-delivered')
+        ) as avg_order_value,
         (
           SELECT billing_country
           FROM orders

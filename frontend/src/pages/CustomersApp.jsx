@@ -145,6 +145,7 @@ const ALL_COLUMNS = [
   { key: 'first_order', label: '1ère commande' },
   { key: 'last_order', label: 'Dernière commande' },
   { key: 'spent', label: 'Total dépensé TTC' },
+  { key: 'avg_order', label: 'Panier moyen' },
   { key: 'country', label: 'Pays' },
 ];
 
@@ -254,6 +255,7 @@ const CustomersApp = () => {
         case 'first_order': return c.first_order_date ? formatDate(c.first_order_date, { time: false }) : '';
         case 'last_order': return c.last_order_date ? formatDate(c.last_order_date, { time: false }) : '';
         case 'spent': return (parseFloat(c.total_spent) || 0).toFixed(2).replace('.', ',');
+        case 'avg_order': return c.avg_order_value != null ? parseFloat(c.avg_order_value).toFixed(2).replace('.', ',') : '';
         case 'country': return getCountryName(c.country);
         default: return '';
       }
@@ -396,6 +398,7 @@ const CustomersApp = () => {
                     {visibleCols.first_order && <Th label="1ère commande" sortKey="first_order" sort={sort} onSort={onSort} align="center" />}
                     {visibleCols.last_order && <Th label="Dernière commande" sortKey="last_order" sort={sort} onSort={onSort} align="center" />}
                     {visibleCols.spent && <Th label="Total dépensé TTC" sortKey="spent" sort={sort} onSort={onSort} align="right" />}
+                    {visibleCols.avg_order && <Th label="Panier moyen" sortKey="avg_order" sort={sort} onSort={onSort} align="right" />}
                     {visibleCols.country && <Th label="Pays" sortKey="country" sort={sort} onSort={onSort} />}
                   </tr>
                 </thead>
@@ -457,6 +460,11 @@ const CustomersApp = () => {
                         )}
                         {visibleCols.spent && (
                           <td style={{ ...cellBase, textAlign: 'right', fontWeight: 800, fontVariantNumeric: 'tabular-nums' }}>{fmtEur(c.total_spent)}</td>
+                        )}
+                        {visibleCols.avg_order && (
+                          <td style={{ ...cellBase, textAlign: 'right', fontWeight: 700, color: C.grisF, fontVariantNumeric: 'tabular-nums' }}>
+                            {c.avg_order_value != null ? fmtEur(c.avg_order_value) : '—'}
+                          </td>
                         )}
                         {visibleCols.country && (
                           <td style={cellBase}>
