@@ -141,7 +141,7 @@ const ProductDetail = () => {
       try {
         const [kpisRes, variantsStatsRes, dayOfWeekRes, hourRes, boughtWithRes, countryRes, customersRes, ordersRes] = await Promise.all([
           axios.get(`${API_URL}/products/${id}/stats/kpis`, { params: kpiParams }).catch(() => ({ data: { data: null } })),
-          axios.get(`${API_URL}/products/${id}/stats/all-variants`).catch(() => ({ data: { data: [] } })),
+          axios.get(`${API_URL}/products/${id}/stats/all-variants`, { params: kpiParams }).catch(() => ({ data: { data: [] } })),
           axios.get(`${API_URL}/products/${id}/stats/by-day-of-week`).catch(() => ({ data: { data: [] } })),
           axios.get(`${API_URL}/products/${id}/stats/by-hour`).catch(() => ({ data: { data: [] } })),
           axios.get(`${API_URL}/products/${id}/stats/frequently-bought-with`, { params: { limit: 10 } }).catch(() => ({ data: { data: [] } })),
