@@ -199,6 +199,83 @@ async function saveAttachmentsFromPublicUrls(ticketId, urlsField) {
  * Pour les réponses sortantes : retourne les fichiers au format attendu par
  * mailgun.js (champ "attachment" avec data + filename).
  */
+// Content-type déduit de l'extension, pour un fichier relu depuis le disque
+// (contrairement à multer, le disque ne conserve pas le type d'origine).
+const MIME_BY_EXT = {
+  '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png',
+  '.gif': 'image/gif',  '.webp': 'image/webp', '.bmp': 'image/bmp',
+  '.svg': 'image/svg+xml', '.heic': 'image/heic',
+};
+
+/**
+ * Transforme les images de la réponse agent en images INTÉGRÉES à l'email.
+ *
+ * L'éditeur riche insère les images sous forme d'URL absolue vers notre API
+ * (`https://…/api/sav/attachments/{ticket}/{fichier}`). Or les messageries
+ * bloquent par défaut les images distantes venant d'un expéditeur inconnu :
+ * le client reçoit alors un message amputé de sa photo — sans même savoir
+ * qu'il en manquait une.
+ *
+ * On lit donc chaque fichier sur disque, on le renvoie comme pièce jointe
+ * `inline` (Mailgun) et on réécrit le `src` en `cid:` : l'image voyage AVEC le
+ * message et s'affiche sans aucune requête réseau.
+ *
+ * ⚠️ Ne s'applique qu'au HTML ENVOYÉ. Le message stocké en base doit garder ses
+ * URLs absolues, sinon les images casseraient dans l'app agent et l'espace client.
+ *
+ * Les images externes (URL hors de notre API) sont laissées telles quelles.
+ *
+ * @param {string} html corps HTML du message
+ * @returns {{html: string, inline: Array<{filename, data, contentType}>}}
+ */
+function inlineAttachmentImages(html) {
+  if (!html || typeof html !== 'string') return { html: html || '', inline: [] };
+
+  const inline = [];
+  const seen = new Set();
+  const uploadRoot = path.resolve(UPLOAD_ROOT);
+
+  const out = html.replace(/<img\b[^>]*>/gi, (tag) => {
+    const srcAttr = tag.match(/\bsrc\s*=\s*["']([^"']+)["']/i);
+    if (!srcAttr) return tag;
+
+    const found = srcAttr[1].match(/\/api\/sav\/attachments\/(\d+)\/([^"'\s?#]+)/);
+    if (!found) return tag; // image externe : on n'y touche pas
+
+    const ticketId = found[1];
+    let filename;
+    try {
+      filename = decodeURIComponent(found[2]);
+    } catch {
+      filename = found[2];
+    }
+
+    // Anti-traversée : le chemin résolu doit rester sous UPLOAD_ROOT.
+    const filePath = path.resolve(path.join(UPLOAD_ROOT, ticketId, filename));
+    if (!filePath.startsWith(uploadRoot + path.sep) || !fs.existsSync(filePath)) {
+      return tag;
+    }
+
+    if (!seen.has(filename)) {
+      try {
+        inline.push({
+          filename,
+          data: fs.readFileSync(filePath),
+          contentType: MIME_BY_EXT[path.extname(filename).toLowerCase()] || 'application/octet-stream',
+        });
+        seen.add(filename);
+      } catch (e) {
+        console.warn(`[SAV] Image non intégrable (${filename}):`, e.message);
+        return tag;
+      }
+    }
+
+    return tag.replace(srcAttr[0], `src="cid:${filename}"`);
+  });
+
+  return { html: out, inline };
+}
+
 function toMailgunAttachments(files) {
   if (!Array.isArray(files) || files.length === 0) return [];
   return files.map((file) => ({
@@ -214,5 +291,6 @@ module.exports = {
   saveAttachmentsFromUrls,
   saveAttachmentsFromPublicUrls,
   toMailgunAttachments,
+  inlineAttachmentImages,
   safeBasename,
 };

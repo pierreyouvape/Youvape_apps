@@ -3,7 +3,7 @@ const savViewModel = require('../models/savViewModel');
 const mailgunService = require('../services/mailgunService');
 const emailTemplateService = require('../services/emailTemplateService');
 const pool = require('../config/database');
-const { saveAttachments, saveAttachmentsFromUrls, saveAttachmentsFromPublicUrls, toMailgunAttachments } = require('../utils/savAttachments');
+const { saveAttachments, saveAttachmentsFromUrls, saveAttachmentsFromPublicUrls, toMailgunAttachments, inlineAttachmentImages } = require('../utils/savAttachments');
 const { getTrackingStatus } = require('../services/trackingService');
 const { dispatchNotifications } = require('../services/notificationDispatcher');
 const { tagDuplicates } = require('../services/duplicateDetector');
@@ -638,19 +638,29 @@ const savController = {
       // Réponse publique → envoi email via Mailgun.
       // body = HTML du message (éditeur riche front), injecté dans le template
       // de réponse. Le fallback texte est dérivé du HTML enrobé par mailgunService.
+      // Images insérées dans l'éditeur : elles pointent vers notre API en URL
+      // absolue, que les messageries bloquent par défaut. On les embarque dans
+      // l'email (cid:) pour qu'elles s'affichent sans requête distante.
+      // `body` (URLs absolues) reste la version STOCKÉE : c'est elle qui doit
+      // s'afficher dans l'app agent et l'espace client.
+      const { html: emailBodyHtml, inline } = inlineAttachmentImages(body);
+
       const wrappedHtml = emailTemplateService.renderReponse({
         customer_name: ticket.customer_name || '',
         subject:       ticket.subject || '',
         ticket_id:     ticketId,
-        messageBodyHtml: body,
+        messageBodyHtml: emailBodyHtml,
       });
       const emailResult = await mailgunService.sendReply({
         to:          ticket.customer_email,
         subject:     ticket.subject,
         ticketId,
         bodyHtml:    wrappedHtml,
-        bodyText:    mailgunService.htmlToPlainText(body), // fallback = message seul, pas tout le template
+        // Repli texte dérivé du corps d'ORIGINE : les URLs absolues y restent
+        // cliquables, alors qu'un « cid: » ne mènerait nulle part.
+        bodyText:    mailgunService.htmlToPlainText(body),
         attachments: toMailgunAttachments(req.files),
+        inline,
       });
 
       // Échec d'envoi : on stocke quand même le message (avec send_failed) pour
@@ -873,11 +883,15 @@ const savController = {
       let sendFailedFlag = false;
       let sendError = null;
       if (!isPrivate) {
+        // Comme dans reply : les images de l'éditeur sont embarquées dans
+        // l'email, le corps stocké gardant ses URLs absolues.
+        const { html: emailBodyHtml, inline } = inlineAttachmentImages(body);
+
         const wrappedHtml = emailTemplateService.renderReponse({
           customer_name: resolved_name || '',
           subject:       subject || '',
           ticket_id:     ticket.id,
-          messageBodyHtml: body,
+          messageBodyHtml: emailBodyHtml,
         });
         const emailResult = await mailgunService.sendReply({
           to:          customer_email.toLowerCase(),
@@ -886,6 +900,7 @@ const savController = {
           bodyHtml:    wrappedHtml,
           bodyText:    mailgunService.htmlToPlainText(body),
           attachments: toMailgunAttachments(req.files),
+          inline,
         });
         if (!emailResult.success) {
           console.error('[SAV createManual] Envoi mail échoué:', emailResult.error);

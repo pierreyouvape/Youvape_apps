@@ -19,6 +19,15 @@ const FROM   = process.env.MAILGUN_FROM;
 function htmlToPlainText(html) {
   if (!html || typeof html !== 'string') return '';
   return html
+    // Les images DOIVENT laisser une trace : sans ça, un message qui renvoie à
+    // une photo devient incompréhensible en lecture texte (le client voit un
+    // blanc et ne sait même pas qu'une image existait).
+    .replace(/<img\b[^>]*>/gi, (tag) => {
+      const src = (tag.match(/\bsrc\s*=\s*["']([^"']+)["']/i) || [])[1] || '';
+      if (!src || src.startsWith('cid:')) return '[Image jointe à cet email]';
+      if (src.startsWith('data:')) return '[Image]';
+      return `[Image : ${src}]`;
+    })
     .replace(/<\s*br\s*\/?>/gi, '\n')
     .replace(/<\s*\/\s*(p|div|li|h[1-6]|tr)\s*>/gi, '\n')
     .replace(/<\s*li[^>]*>/gi, '• ')
@@ -40,7 +49,10 @@ const mailgunService = {
   // ─── Envoyer une réponse agent au client ─────────────────────────────────
   // bodyHtml : HTML du message (éditeur riche). bodyText : fallback texte ;
   // si absent et bodyHtml fourni, il est dérivé automatiquement du HTML.
-  sendReply: async ({ to, subject, ticketId, bodyText, bodyHtml, attachments }) => {
+  // `inline` : images embarquées dans le message et référencées par `cid:` dans
+  // le HTML. À privilégier sur une URL distante, que les messageries bloquent
+  // par défaut quand l'expéditeur n'est pas connu du destinataire.
+  sendReply: async ({ to, subject, ticketId, bodyText, bodyHtml, attachments, inline }) => {
     try {
       // Le sujet contient le ticket ID pour matcher les réponses entrantes
       const fullSubject = subject.includes(`[SAV #${ticketId}]`)
@@ -65,8 +77,15 @@ const mailgunService = {
         messageData.attachment = attachments;
       }
 
+      if (Array.isArray(inline) && inline.length > 0) {
+        messageData.inline = inline;
+      }
+
       const result = await mg.messages.create(DOMAIN, messageData);
-      console.log(`📧 [Mailgun] Email envoyé au client ${to} pour ticket #${ticketId}`);
+      console.log(
+        `📧 [Mailgun] Email envoyé au client ${to} pour ticket #${ticketId}`
+        + (inline && inline.length ? ` (${inline.length} image(s) intégrée(s))` : '')
+      );
       return { success: true, id: result.id };
 
     } catch (error) {
