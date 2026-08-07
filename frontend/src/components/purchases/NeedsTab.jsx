@@ -5,6 +5,10 @@ const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:3000/api/auth
 
 const STORAGE_KEY = 'purchases_needs_filters';
 
+// Valeur spéciale du filtre fournisseur : produits à réassortir qui ne sont
+// rattachés à AUCUN fournisseur (donc absents de toute commande d'achat).
+const NO_SUPPLIER = 'none';
+
 const ANALYSIS_PERIOD_OPTIONS = [
   { value: 7, unit: 'days', label: '7 derniers jours' },
   { value: 15, unit: 'days', label: '15 derniers jours' },
@@ -511,7 +515,11 @@ const NeedsTab = ({ token, onCompactChange }) => {
       return String(p.supplier_id) === String(sid);
     };
 
-    const parentIdsWithSupplier = supplierId
+    // Aucun fournisseur associé (ni principal, ni secondaire)
+    const hasNoSupplier = (p) =>
+      (!Array.isArray(p.supplier_ids) || p.supplier_ids.length === 0) && !p.supplier_id;
+
+    const parentIdsWithSupplier = (supplierId && supplierId !== NO_SUPPLIER)
       ? new Set(
           computedProducts
             .filter(p => isRealParentId(p.wp_parent_id) && productMatchesSupplier(p, supplierId))
@@ -521,7 +529,12 @@ const NeedsTab = ({ token, onCompactChange }) => {
 
     return computedProducts.filter(p => {
       // Filtre fournisseur
-      if (supplierId) {
+      if (supplierId === NO_SUPPLIER) {
+        // Produits orphelins : aucune ligne product_suppliers. Pas de propagation
+        // depuis le parent — une variation sans fournisseur reste à rattacher même
+        // si une sœur en a un, c'est justement ce qu'on cherche à voir.
+        if (!hasNoSupplier(p)) return false;
+      } else if (supplierId) {
         const matchesDirect = productMatchesSupplier(p, supplierId);
         const matchesViaParent = isRealParentId(p.wp_parent_id) && parentIdsWithSupplier.has(p.wp_parent_id);
         if (!matchesDirect && !matchesViaParent) return false;
@@ -738,7 +751,7 @@ const NeedsTab = ({ token, onCompactChange }) => {
   const createOrder = async () => {
     const selectedCount = Object.keys(selectedProducts).length;
     if (selectedCount === 0) { alert('Aucun produit sélectionné'); return; }
-    if (!supplierId) { alert('Veuillez sélectionner un fournisseur'); return; }
+    if (!supplierId || supplierId === NO_SUPPLIER) { alert('Veuillez sélectionner un fournisseur'); return; }
 
     setCreatingOrder(true);
     try {
@@ -821,6 +834,7 @@ const NeedsTab = ({ token, onCompactChange }) => {
             <label>Fournisseur</label>
             <select value={supplierId} onChange={(e) => setSupplierId(e.target.value)}>
               <option value="">Tous les fournisseurs</option>
+              <option value={NO_SUPPLIER}>⚠️ Aucun fournisseur attribué</option>
               {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
           </div>
@@ -1005,8 +1019,8 @@ const NeedsTab = ({ token, onCompactChange }) => {
             <button
               className="btn btn-primary"
               onClick={createOrder}
-              disabled={creatingOrder || !supplierId}
-              title={!supplierId ? 'Sélectionnez un fournisseur pour créer une commande' : ''}
+              disabled={creatingOrder || !supplierId || supplierId === NO_SUPPLIER}
+              title={!supplierId || supplierId === NO_SUPPLIER ? 'Sélectionnez un fournisseur pour créer une commande' : ''}
             >
               {creatingOrder ? 'Création...' : '📦 Créer la commande'}
             </button>
