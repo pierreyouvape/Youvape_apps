@@ -355,11 +355,35 @@ const ImportPdfPage = () => {
     return pdfNet;
   };
 
+  const lineTotalOf = (item) => {
+    const p = effectivePrice(item);
+    return p ? item.qty_ordered * p : null;
+  };
+
+  // Contrôle ligne à ligne : le total calculé doit coller au montant HT imprimé sur
+  // la facture. Rattrape un prefill de tarif périmé ou une quantité mal convertie
+  // AVANT l'envoi, au lieu de ne voir qu'un écart global bloquant côté BMS.
+  // Tolérance 1 % (min 0,10 €) : les PDF arrondissent leurs propres montants.
+  const lineMismatch = (item) => {
+    if (item.item_type === 'discount' || !item.matched) return null;
+    const invoice = item.invoice_line_total_ht;
+    if (invoice == null) return null;
+    const lineTotal = lineTotalOf(item);
+    if (lineTotal == null) return null;
+    const diff = lineTotal - invoice;
+    return Math.abs(diff) > Math.max(invoice * 0.01, 0.10) ? { invoice, diff } : null;
+  };
+
   // ==================== ETAPE 3 ====================
 
   const productItems = items.filter(i => i.item_type !== 'discount');
   const discountItems = items.filter(i => i.item_type === 'discount');
   const matchedItems = productItems.filter(i => i.matched && i.product_id);
+  const mismatchedCount = productItems.filter(i => lineMismatch(i)).length;
+  const mismatchedTotal = productItems.reduce((sum, i) => {
+    const m = lineMismatch(i);
+    return sum + (m ? m.diff : 0);
+  }, 0);
   // Produits déjà associés à une ligne : on les masque des suggestions de recherche
   const usedProductIds = new Set(matchedItems.map(i => i.product_id));
 
@@ -713,6 +737,23 @@ const ImportPdfPage = () => {
                   );
                 })()}
 
+                {/* Lignes qui ne collent pas au montant facturé */}
+                {mismatchedCount > 0 && (
+                  <div style={{
+                    marginBottom: 12, padding: '11px 14px', background: '#FDECEE',
+                    border: '1px solid #F4C5CB', borderRadius: 8,
+                    fontSize: 13, color: '#8E2233', display: 'flex', alignItems: 'center', gap: 10,
+                  }}>
+                    <span style={{ fontSize: 15 }}>⚠️</span>
+                    <span>
+                      <strong>{mismatchedCount} ligne{mismatchedCount > 1 ? 's' : ''}</strong> ne correspond
+                      {mismatchedCount > 1 ? 'ent' : ''} pas au montant de la facture
+                      (écart total <strong>{mismatchedTotal > 0 ? '+' : ''}{fmt(mismatchedTotal)} €</strong>).
+                      Vérifiez leur prix et leur quantité — surlignées en rouge ci-dessous.
+                    </span>
+                  </div>
+                )}
+
                 {/* Table des lignes */}
                 <div style={{
                   background: C.blanc, borderRadius: 12,
@@ -764,10 +805,11 @@ const ImportPdfPage = () => {
                             );
                           }
 
-                          const lineTotal = (() => { const p = effectivePrice(item); return p ? item.qty_ordered * p : null; })();
+                          const lineTotal = lineTotalOf(item);
+                          const mismatch = lineMismatch(item);
 
                           return (
-                            <tr key={idx} style={{ background: item.matched ? C.blanc : '#FFFBEB' }}>
+                            <tr key={idx} style={{ background: mismatch ? '#FDECEE' : (item.matched ? C.blanc : '#FFFBEB') }}>
                               <td style={{ ...cell, textAlign: 'center' }}>
                                 <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: item.matched ? '#2A8049' : C.orange }} />
                               </td>
@@ -879,8 +921,16 @@ const ImportPdfPage = () => {
                                 <NumInput value={item.discount || ''} step="0.1" onChange={v => handleUpdateDiscount(idx, v)} width={58} suffix="%" placeholder="0" />
                               </td>
                               {/* Total HT */}
-                              <td style={{ ...cell, textAlign: 'right', fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>
+                              <td style={{ ...cell, textAlign: 'right', fontWeight: 700, fontVariantNumeric: 'tabular-nums', color: mismatch ? '#C24555' : C.grisTF }}>
                                 {lineTotal != null ? fmt(lineTotal) + ' €' : '—'}
+                                {mismatch && (
+                                  <div
+                                    title="Montant HT de cette ligne sur la facture"
+                                    style={{ marginTop: 3, fontSize: 11.5, fontWeight: 700, color: '#8E2233', whiteSpace: 'nowrap' }}
+                                  >
+                                    facture {fmt(mismatch.invoice)} € ({mismatch.diff > 0 ? '+' : ''}{fmt(mismatch.diff)} €)
+                                  </div>
+                                )}
                               </td>
                               {/* Supprimer */}
                               <td style={{ ...cell, textAlign: 'center' }}>

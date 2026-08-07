@@ -253,6 +253,14 @@ const pdfImportModel = {
         // Pack
         pack_qty: packQty,
         qty_ordered: qtyOrdered,
+        // Montant HT de la ligne tel qu'imprimé sur la facture (colonne « montant »).
+        // Lu indépendamment du prix retenu → permet à l'écran d'import de signaler
+        // ligne par ligne un calcul qui diverge de la facture (prefill d'un ancien
+        // tarif, quantité en packs mal convertie…), au lieu du seul écart global
+        // renvoyé par le garde-fou d'envoi BMS. null si le parseur ne l'expose pas.
+        invoice_line_total_ht: Number.isFinite(Number(item.total_ht)) && Number(item.total_ht) > 0
+          ? Number(item.total_ht)
+          : null,
       };
     });
 
