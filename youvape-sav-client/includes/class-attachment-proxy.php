@@ -45,15 +45,27 @@ class Youvape_SAV_Attachment_Proxy {
     /**
      * URL publique d'une pièce jointe, servie par la boutique.
      *
-     * @param int    $ticket_id
-     * @param string $filename  nom du fichier tel que stocké côté API
+     * Deux identifiants de ticket, et ce n'est pas un doublon :
+     *   - `t` : le ticket AFFICHÉ, celui dont on vérifie qu'il appartient au
+     *           visiteur ;
+     *   - `p` : le ticket sous lequel le fichier est physiquement rangé.
+     *
+     * Les deux diffèrent dès qu'un agent réutilise une image d'une autre
+     * demande dans sa réponse — cas courant d'un message type. Vérifier
+     * l'appartenance de `p` reviendrait à exiger du client qu'il possède la
+     * demande d'un autre : le refus serait systématique.
+     *
+     * @param int    $view_ticket_id ticket consulté (contrôle d'accès)
+     * @param int    $path_ticket_id ticket de rangement du fichier
+     * @param string $filename
      * @return string
      */
-    public static function url($ticket_id, $filename) {
+    public static function url($view_ticket_id, $path_ticket_id, $filename) {
         return add_query_arg(
             array(
                 self::QUERY_FLAG => 1,
-                't'              => absint($ticket_id),
+                't'              => absint($view_ticket_id),
+                'p'              => absint($path_ticket_id),
                 'f'              => rawurlencode($filename),
             ),
             home_url('/')
@@ -82,16 +94,18 @@ class Youvape_SAV_Attachment_Proxy {
      * Utilisé sur le corps des messages, où l'agent peut avoir inséré des images.
      *
      * @param string $html
+     * @param int    $view_ticket_id ticket dans lequel ce HTML est affiché
      * @return string
      */
-    public static function rewrite_html($html) {
+    public static function rewrite_html($html, $view_ticket_id) {
         if (!is_string($html) || $html === '') {
             return (string) $html;
         }
+        $view_ticket_id = absint($view_ticket_id);
         return preg_replace_callback(
             '#https?://[^"\'\s]*?/api/sav/attachments/(\d+)/([^"\'\s?\#/]+)#i',
-            function ($m) {
-                return esc_url_raw(self::url((int) $m[1], rawurldecode($m[2])));
+            function ($m) use ($view_ticket_id) {
+                return esc_url_raw(self::url($view_ticket_id, (int) $m[1], rawurldecode($m[2])));
             },
             $html
         );
@@ -105,28 +119,36 @@ class Youvape_SAV_Attachment_Proxy {
             return;
         }
 
-        $ticket_id = isset($_GET['t']) ? absint($_GET['t']) : 0;
+        $view_ticket_id = isset($_GET['t']) ? absint($_GET['t']) : 0;
+        // Ticket de rangement du fichier ; identique au ticket affiché dans le
+        // cas courant, différent quand l'agent réutilise une image d'une autre
+        // demande.
+        $path_ticket_id = isset($_GET['p']) ? absint($_GET['p']) : $view_ticket_id;
         $filename  = isset($_GET['f']) ? wp_unslash($_GET['f']) : '';
         // Pas de séparateur de chemin : on ne sert que des fichiers du ticket.
         $filename  = str_replace(array('/', '\\', "\0"), '', $filename);
 
-        if (!$ticket_id || $filename === '' || !is_user_logged_in()) {
+        if (!$view_ticket_id || !$path_ticket_id || $filename === '' || !is_user_logged_in()) {
             $this->deny();
         }
 
-        // Appartenance : l'API ne renvoie le ticket que s'il est au client connecté.
-        $ticket = Youvape_SAV_Api_Client::get_ticket($ticket_id);
+        // Appartenance : l'API ne renvoie le ticket que s'il est au client
+        // connecté. On contrôle le ticket AFFICHÉ — c'est lui que le visiteur a
+        // le droit de voir.
+        $ticket = Youvape_SAV_Api_Client::get_ticket($view_ticket_id);
         if (is_wp_error($ticket) || empty($ticket)) {
             $this->deny();
         }
 
         // Le fichier doit être cité dans CE ticket (pièce jointe d'un message ou
-        // image insérée dans un corps) : un nom deviné ne suffit pas.
+        // image insérée dans un corps) : un nom deviné ne suffit pas, et on ne
+        // peut pas aspirer un fichier d'une autre demande. C'est ce contrôle,
+        // et non le chemin de rangement, qui borne réellement l'accès.
         if (!$this->ticket_references_file($ticket, $filename)) {
             $this->deny();
         }
 
-        $file = Youvape_SAV_Api_Client::fetch_attachment($ticket_id, $filename);
+        $file = Youvape_SAV_Api_Client::fetch_attachment($path_ticket_id, $filename);
         if (is_wp_error($file) || empty($file['body'])) {
             $this->deny(404);
         }

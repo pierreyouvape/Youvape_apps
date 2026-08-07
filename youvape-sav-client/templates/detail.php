@@ -47,7 +47,7 @@ if (!function_exists('youvape_sav_format_datetime')) {
  * domaine de la boutique.
  */
 if (!function_exists('youvape_sav_attachment_url')) {
-    function youvape_sav_attachment_url($url) {
+    function youvape_sav_attachment_url($url, $view_ticket_id) {
         $url = (string) $url;
         if ($url === '' || !class_exists('Youvape_SAV_Attachment_Proxy')) {
             return '';
@@ -56,7 +56,9 @@ if (!function_exists('youvape_sav_attachment_url')) {
         if (!$parsed) {
             return '';
         }
-        return Youvape_SAV_Attachment_Proxy::url($parsed[0], $parsed[1]);
+        // $parsed[0] = ticket de RANGEMENT du fichier, qui peut différer du
+        // ticket affiché ; c'est ce dernier qui porte le contrôle d'accès.
+        return Youvape_SAV_Attachment_Proxy::url($view_ticket_id, $parsed[0], $parsed[1]);
     }
 }
 ?>
@@ -118,7 +120,7 @@ if (!function_exists('youvape_sav_attachment_url')) {
                     // URL apps.youvape.fr n'atteigne le navigateur du client.
                     $raw_body = isset($message['body']) ? (string) $message['body'] : '';
                     if (class_exists('Youvape_SAV_Attachment_Proxy')) {
-                        $raw_body = Youvape_SAV_Attachment_Proxy::rewrite_html($raw_body);
+                        $raw_body = Youvape_SAV_Attachment_Proxy::rewrite_html($raw_body, $ticket_id);
                     }
                     // wp_kses_post = whitelist HTML sûre de WordPress (anti-XSS),
                     // adaptée à du contenu de message.
@@ -138,7 +140,7 @@ if (!function_exists('youvape_sav_attachment_url')) {
                         <?php if (!empty($attachments)) : ?>
                             <ul class="youvape-sav__msg-attachments">
                                 <?php foreach ($attachments as $att) :
-                                    $att_url  = youvape_sav_attachment_url(isset($att['url']) ? $att['url'] : '');
+                                    $att_url  = youvape_sav_attachment_url(isset($att['url']) ? $att['url'] : '', $ticket_id);
                                     if (!$att_url) {
                                         continue;
                                     }

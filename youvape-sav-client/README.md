@@ -148,6 +148,12 @@ comportement de Gravity Forms, conservé volontairement.
 
 ## Changelog
 
+- **0.4.1** — Correctif du relais : il vérifiait l'appartenance du ticket **où le
+  fichier est rangé**, et non du ticket **affiché**. Dès qu'un agent réutilise
+  une image d'une autre demande dans sa réponse — cas d'un message type — le
+  client se voyait refuser sa propre pièce jointe (403). L'URL porte désormais
+  les deux identifiants : contrôle d'accès sur le ticket consulté, lecture du
+  fichier à son emplacement réel.
 - **0.4.0** — **Aucune URL `apps.youvape.fr` n'est plus exposée au client.** Les
   pièces jointes passent par un relais WordPress (`class-attachment-proxy.php`)
   qui récupère le fichier en server-to-server et le sert depuis le domaine de la
