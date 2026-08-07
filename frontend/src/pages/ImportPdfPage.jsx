@@ -360,18 +360,30 @@ const ImportPdfPage = () => {
     return p ? item.qty_ordered * p : null;
   };
 
-  // Contrôle ligne à ligne : le total calculé doit coller au montant HT imprimé sur
-  // la facture. Rattrape un prefill de tarif périmé ou une quantité mal convertie
-  // AVANT l'envoi, au lieu de ne voir qu'un écart global bloquant côté BMS.
-  // Tolérance 1 % (min 0,10 €) : les PDF arrondissent leurs propres montants.
+  // Contrôle ligne à ligne vs le montant du document fournisseur.
+  // ATTENTION : ces PDF sont des PRO FORMA — le tarif définitif est celui appliqué
+  // dans BMS après réception de la vraie facture. Un écart de PRIX est donc NORMAL
+  // (ex. Hello Cloudy 6,60 € en pro forma, 6,20 € facturés) et ne doit pas alerter.
+  // On ne signale que les écarts de FACTEUR (×1,5 et plus), signature d'une erreur
+  // de conditionnement ou de quantité — typiquement un « pack offre » compté 1 au
+  // lieu de 3 — jamais d'une simple révision tarifaire.
+  const ECART_FACTEUR = 1.5;
+  const ECART_MINI_EUR = 5;
   const lineMismatch = (item) => {
     if (item.item_type === 'discount' || !item.matched) return null;
     const invoice = item.invoice_line_total_ht;
-    if (invoice == null) return null;
+    if (invoice == null || invoice <= 0) return null;
     const lineTotal = lineTotalOf(item);
     if (lineTotal == null) return null;
     const diff = lineTotal - invoice;
-    return Math.abs(diff) > Math.max(invoice * 0.01, 0.10) ? { invoice, diff } : null;
+    if (Math.abs(diff) < ECART_MINI_EUR) return null;
+    const ratio = lineTotal / invoice;
+    if (ratio < ECART_FACTEUR && ratio > 1 / ECART_FACTEUR) return null;
+    // Facteur lisible : ×3 si trop haut, ÷3 si trop bas
+    const facteur = ratio >= 1
+      ? `×${(Math.round(ratio * 10) / 10).toString().replace('.', ',')}`
+      : `÷${(Math.round((1 / ratio) * 10) / 10).toString().replace('.', ',')}`;
+    return { invoice, diff, facteur };
   };
 
   // ==================== ETAPE 3 ====================
@@ -746,10 +758,12 @@ const ImportPdfPage = () => {
                   }}>
                     <span style={{ fontSize: 15 }}>⚠️</span>
                     <span>
-                      <strong>{mismatchedCount} ligne{mismatchedCount > 1 ? 's' : ''}</strong> ne correspond
-                      {mismatchedCount > 1 ? 'ent' : ''} pas au montant de la facture
-                      (écart total <strong>{mismatchedTotal > 0 ? '+' : ''}{fmt(mismatchedTotal)} €</strong>).
-                      Vérifiez leur prix et leur quantité — surlignées en rouge ci-dessous.
+                      <strong>{mismatchedCount} ligne{mismatchedCount > 1 ? 's' : ''}</strong> s'écarte
+                      {mismatchedCount > 1 ? 'nt' : ''} d'un facteur du montant de la pro forma
+                      (total <strong>{mismatchedTotal > 0 ? '+' : ''}{fmt(mismatchedTotal)} €</strong>) —
+                      surlignée{mismatchedCount > 1 ? 's' : ''} en rouge ci-dessous.
+                      Vérifiez la <strong>quantité</strong> (pack offre, conditionnement).
+                      Les écarts de prix, eux, sont normaux : le tarif définitif vient de BMS.
                     </span>
                   </div>
                 )}
@@ -925,10 +939,10 @@ const ImportPdfPage = () => {
                                 {lineTotal != null ? fmt(lineTotal) + ' €' : '—'}
                                 {mismatch && (
                                   <div
-                                    title="Montant HT de cette ligne sur la facture"
+                                    title="Montant HT de cette ligne sur la pro forma"
                                     style={{ marginTop: 3, fontSize: 11.5, fontWeight: 700, color: '#8E2233', whiteSpace: 'nowrap' }}
                                   >
-                                    facture {fmt(mismatch.invoice)} € ({mismatch.diff > 0 ? '+' : ''}{fmt(mismatch.diff)} €)
+                                    pro forma {fmt(mismatch.invoice)} € ({mismatch.facteur})
                                   </div>
                                 )}
                               </td>

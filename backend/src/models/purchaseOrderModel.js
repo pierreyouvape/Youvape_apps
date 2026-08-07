@@ -382,22 +382,28 @@ const purchaseOrderModel = {
       );
     }
 
-    // ── GARDE-FOU B (réconciliation facture) : le total du payload BMS doit
-    // correspondre au total HT produits lu sur la facture. Total ligne BMS =
-    // (qty / pack_qty) × price. Rattrape tout bug de prix (prefill, ×pack_qty…).
-    // Ignoré si la facture n'a pas de total (parseur sans extraction).
+    // ── GARDE-FOU B (réconciliation facture) : le total du payload BMS doit rester
+    // du même ordre que le total HT produits lu sur le document fournisseur. Total
+    // ligne BMS = (qty / pack_qty) × price. Rattrape les corruptions de facteur
+    // (prefill ×pack_qty, qty ×10, pack offre compté 1 au lieu de 3…).
+    // Tolérance large (10 %) ET NON serrée, car ces documents sont des PRO FORMA :
+    // le tarif définitif est celui appliqué dans BMS après la vraie facture, donc un
+    // écart de prix de quelques % est normal et ne doit pas bloquer l'envoi.
+    // Le détail ligne à ligne est signalé en amont, dans l'écran d'import.
+    // Ignoré si le document n'a pas de total (parseur sans extraction).
     const invoiceTotal = order.invoice_total_ht != null ? parseFloat(order.invoice_total_ht) : null;
     if (invoiceTotal != null && invoiceTotal > 0) {
       const payloadTotal = bmsItems.reduce(
         (sum, i) => sum + (i.qty / (i.pack_qty || 1)) * i.price, 0
       );
       const diff = Math.abs(payloadTotal - invoiceTotal);
-      const tolerance = Math.max(invoiceTotal * 0.02, 0.50); // 2 % ou 0,50 € (arrondis)
+      const tolerance = Math.max(invoiceTotal * 0.10, 0.50); // 10 % ou 0,50 €
       if (diff > tolerance) {
         throw new Error(
           `Envoi BMS bloqué : le total calculé (${payloadTotal.toFixed(2)} € HT) ne correspond ` +
-          `pas au total de la facture (${invoiceTotal.toFixed(2)} € HT), écart ${diff.toFixed(2)} €. ` +
-          `Un prix ou une quantité est probablement erroné — vérifiez la commande avant l'envoi.`
+          `pas au total du document fournisseur (${invoiceTotal.toFixed(2)} € HT), écart ${diff.toFixed(2)} €. ` +
+          `Un tel écart vient d'une quantité ou d'un conditionnement erroné (pas d'une ` +
+          `révision de tarif) — vérifiez les lignes signalées en rouge à l'import.`
         );
       }
     }
