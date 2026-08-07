@@ -159,6 +159,30 @@ const supplierModel = {
   // Associer un produit à un fournisseur (résout wp_product_id vers id interne)
   addProduct: async (supplierId, productId, data = {}) => {
     const resolvedId = await resolveProductId(productId);
+
+    // Produit variable (parent) : les fournisseurs sont gérés par variation.
+    // Une ligne posée sur le parent serait invisible (cf. getSuppliersByProduct),
+    // on associe donc le fournisseur à toutes les variations.
+    const typeResult = await pool.query(
+      `SELECT product_type, wp_product_id FROM products WHERE id = $1`,
+      [resolvedId]
+    );
+    const product = typeResult.rows[0];
+
+    if (product?.product_type === 'variable') {
+      const variations = await pool.query(
+        `SELECT id FROM products WHERE wp_parent_id = $1`,
+        [product.wp_product_id]
+      );
+      if (variations.rows.length === 0) return null;
+
+      const rows = [];
+      for (const variation of variations.rows) {
+        rows.push(await supplierModel.addProduct(supplierId, variation.id, data));
+      }
+      return rows[0];
+    }
+
     const query = `
       INSERT INTO product_suppliers (
         supplier_id, product_id, is_primary, supplier_sku, supplier_price, min_order_qty, pack_qty
@@ -277,19 +301,32 @@ const supplierModel = {
   // Définir le fournisseur principal d'un produit (résout wp_product_id vers id interne)
   setPrimarySupplier: async (productId, supplierId) => {
     const resolvedId = await resolveProductId(productId);
+
+    // Produit variable (parent) : appliquer sur toutes ses variations
+    const typeResult = await pool.query(
+      `SELECT product_type, wp_product_id FROM products WHERE id = $1`,
+      [resolvedId]
+    );
+    const product = typeResult.rows[0];
+
+    const targetIds = product?.product_type === 'variable'
+      ? (await pool.query(`SELECT id FROM products WHERE wp_parent_id = $1`, [product.wp_product_id])).rows.map(r => r.id)
+      : [resolvedId];
+    if (targetIds.length === 0) return null;
+
     // D'abord retirer le statut principal des autres fournisseurs
     await pool.query(`
       UPDATE product_suppliers SET is_primary = false
-      WHERE product_id = $1 AND supplier_id != $2
-    `, [resolvedId, supplierId]);
+      WHERE product_id = ANY($1::int[]) AND supplier_id != $2
+    `, [targetIds, supplierId]);
 
     // Puis définir le nouveau principal
     const query = `
       UPDATE product_suppliers SET is_primary = true, updated_at = CURRENT_TIMESTAMP
-      WHERE product_id = $1 AND supplier_id = $2
+      WHERE product_id = ANY($1::int[]) AND supplier_id = $2
       RETURNING *
     `;
-    const result = await pool.query(query, [resolvedId, supplierId]);
+    const result = await pool.query(query, [targetIds, supplierId]);
     return result.rows[0];
   },
 
