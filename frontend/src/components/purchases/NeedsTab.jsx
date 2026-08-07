@@ -515,9 +515,23 @@ const NeedsTab = ({ token, onCompactChange }) => {
       return String(p.supplier_id) === String(sid);
     };
 
-    // Aucun fournisseur associé (ni principal, ni secondaire)
-    const hasNoSupplier = (p) =>
+    // Aucune ligne fournisseur sur CE produit (ni principal, ni secondaire)
+    const hasNoSupplierRow = (p) =>
       (!Array.isArray(p.supplier_ids) || p.supplier_ids.length === 0) && !p.supplier_id;
+
+    // Familles (parents variables) dont au moins une variation a un fournisseur :
+    // le produit est rattaché au niveau de la famille, une variation sans ligne n'a
+    // qu'une réf fournisseur manquante — ce n'est PAS un produit non rattaché.
+    const parentIdsWithAnySupplier = new Set(
+      computedProducts
+        .filter(p => isRealParentId(p.wp_parent_id) && !hasNoSupplierRow(p))
+        .map(p => p.wp_parent_id)
+    );
+
+    // Produit non rattaché : aucun fournisseur sur lui NI sur sa famille
+    const hasNoSupplier = (p) =>
+      hasNoSupplierRow(p) &&
+      !(isRealParentId(p.wp_parent_id) && parentIdsWithAnySupplier.has(p.wp_parent_id));
 
     const parentIdsWithSupplier = (supplierId && supplierId !== NO_SUPPLIER)
       ? new Set(
@@ -530,9 +544,9 @@ const NeedsTab = ({ token, onCompactChange }) => {
     return computedProducts.filter(p => {
       // Filtre fournisseur
       if (supplierId === NO_SUPPLIER) {
-        // Produits orphelins : aucune ligne product_suppliers. Pas de propagation
-        // depuis le parent — une variation sans fournisseur reste à rattacher même
-        // si une sœur en a un, c'est justement ce qu'on cherche à voir.
+        // Produits orphelins : aucun fournisseur, ni sur le produit ni sur sa famille.
+        // Une variation sans ligne dont les sœurs sont rattachées n'a qu'une réf
+        // fournisseur manquante (autre sujet) et n'apparaît donc pas ici.
         if (!hasNoSupplier(p)) return false;
       } else if (supplierId) {
         const matchesDirect = productMatchesSupplier(p, supplierId);
