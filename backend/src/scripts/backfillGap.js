@@ -224,7 +224,6 @@ async function backfillOrders(wc) {
     SELECT
       wo.id                    AS wp_order_id,
       wo.status,
-      wo.customer_id           AS wc_customer_id,
       wo.billing_email,
       wo.date_created_gmt      AS date_created,
       wo.date_updated_gmt      AS date_modified,
@@ -254,13 +253,19 @@ async function backfillOrders(wc) {
       sa.city        AS shipping_city,
       sa.postcode    AS shipping_postcode,
       sa.country     AS shipping_country,
-      -- customer lookup → user_id réel
-      cl.user_id     AS wp_customer_id
+      -- Propriétaire de la commande.
+      -- ⚠️ wc_orders.customer_id EST déjà l'ID utilisateur WordPress. Il ne faut
+      -- SURTOUT PAS le retraduire via wc_customer_lookup : la colonne
+      -- customer_id de cette table est sa propre clé auto-incrémentée, pas un
+      -- user_id. Ce double passage rattachait chaque commande au client d'une
+      -- ligne sans rapport — 24 871 commandes faussées lors des rattrapages des
+      -- 3 et 9 juin 2026 (ticket SAV #9900526 : commandes de Myriam Moujart
+      -- attribuées à Quentin Boissier).
+      wo.customer_id AS wp_customer_id
     FROM ${P}wc_orders wo
     LEFT JOIN ${P}wc_order_operational_data ood ON ood.order_id = wo.id
     LEFT JOIN ${P}wc_order_addresses ba ON ba.order_id = wo.id AND ba.address_type = 'billing'
     LEFT JOIN ${P}wc_order_addresses sa ON sa.order_id = wo.id AND sa.address_type = 'shipping'
-    LEFT JOIN ${P}wc_customer_lookup cl ON cl.customer_id = wo.customer_id
     WHERE wo.date_created_gmt >= ? AND wo.date_created_gmt < ?
       AND wo.status NOT IN ('trash', 'wc-trash')
       AND wo.type = 'shop_order'

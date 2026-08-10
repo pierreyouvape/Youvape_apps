@@ -360,6 +360,14 @@ const wcSyncService = {
       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37,$38,$39,$40,$41,$42,$43,$44,$45,$46,$47,$48,$49,$50,$51)
       ON CONFLICT (wp_order_id)
       DO UPDATE SET
+        -- Le propriétaire de la commande DOIT être remis à jour : il était absent
+        -- de cette liste, si bien qu'un wp_customer_id erroné restait figé même
+        -- après des mois de sync live portant pourtant la bonne valeur (WooCommerce
+        -- la fournit via $order->get_customer_id()). C'est ce qui a laissé perdurer
+        -- les 24 871 commandes mal rattachées par backfillGap.js.
+        -- COALESCE : un payload sans client (commande invité) ne doit pas effacer
+        -- un rattachement valide déjà en base.
+        wp_customer_id = COALESCE(EXCLUDED.wp_customer_id, orders.wp_customer_id),
         post_status = EXCLUDED.post_status,
         order_total = EXCLUDED.order_total,
         order_tax = EXCLUDED.order_tax,
