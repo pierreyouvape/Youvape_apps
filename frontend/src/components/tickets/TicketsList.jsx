@@ -136,7 +136,7 @@ function timeAgo(ts) {
   return `il y a ${h} h`;
 }
 
-/* ─── Aperçu du message client (tooltip au survol, façon Zendesk) ─────────────── */
+/* ─── Aperçu du dernier échange (tooltip au survol, façon Zendesk) ───────────── */
 // La description peut contenir du HTML : on le décode et on retire les balises
 // pour n'afficher que le texte. Tronqué côté CSS (line-clamp).
 function plainPreview(html) {
@@ -147,12 +147,44 @@ function plainPreview(html) {
   return (tmp.textContent || tmp.innerText || '').replace(/\s+/g, ' ').trim();
 }
 
+/**
+ * Dernier échange du fil, pour l'aperçu.
+ *
+ * On montre le message le plus récent : sur une demande qui vient d'arriver
+ * c'est la demande elle-même, et sur un dossier en cours c'est là où il en est —
+ * l'information utile pour trier la file.
+ *
+ * `description` n'est renseignée que par le webhook Gravity Forms ; tous les
+ * autres canaux (espace client, formulaire public, email entrant, création
+ * manuelle) rangent le premier message dans `messages`. S'appuyer sur la seule
+ * description privait donc d'aperçu tout ce qui ne venait pas de GF.
+ *
+ * Les notes internes sont écartées : l'aperçu reflète la conversation avec le
+ * client, pas les annotations de l'équipe.
+ *
+ * @returns {{text: string, from: string, isAgent: boolean}|null}
+ */
+function lastExchange(ticket) {
+  const messages = Array.isArray(ticket.messages) ? ticket.messages : [];
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i];
+    if (!m || m.is_private) continue;
+    const text = plainPreview(m.body);
+    if (text) return { text, from: m.from || '', isAgent: !!m.is_agent };
+  }
+  // Aucun message exploitable : repli sur la demande initiale (tickets Gravity
+  // Forms sans réponse, dont le texte vit dans description).
+  const text = plainPreview(ticket.description);
+  return text ? { text, from: ticket.customer_name || '', isAgent: false } : null;
+}
+
 /* Tooltip rendu en portal (position fixed sous la ligne survolée) pour ne pas
    être coupé par l'overflow de la table. */
 function RowPreview({ ticket, rect }) {
   if (!ticket || !rect) return null;
-  const text = plainPreview(ticket.description);
-  if (!text) return null;
+  const exchange = lastExchange(ticket);
+  if (!exchange) return null;
+  const { text, from, isAgent } = exchange;
 
   // Largeur du tooltip alignée sur la ligne, plafonnée. Positionné juste sous la
   // ligne ; bascule au-dessus s'il déborderait en bas de l'écran.
@@ -175,6 +207,19 @@ function RowPreview({ ticket, rect }) {
         <span style={{ fontSize: 12, color: C.grisM, fontWeight: 700 }}>
           Ticket {formatTicketId(ticket.id)}
         </span>
+        {/* Qui a parlé en dernier : dit d'un coup d'œil si la balle est dans
+            notre camp ou dans celui du client. */}
+        {from && (
+          <span style={{
+            marginLeft: 'auto', fontSize: 11, fontWeight: 800,
+            padding: '2px 8px', borderRadius: 999,
+            background: isAgent ? '#EEF4FF' : '#F2F6F8',
+            color: isAgent ? '#3B5BA5' : C.grisF,
+            whiteSpace: 'nowrap',
+          }}>
+            {isAgent ? 'Nous' : from}
+          </span>
+        )}
       </div>
       <div style={{
         fontSize: 13, color: C.grisTF, lineHeight: 1.5,
