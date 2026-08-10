@@ -139,7 +139,7 @@ function saveDraft(draft) {
 export default function NewTicketPage() {
   const { user, token } = useContext(AuthContext);
   const { convertDraftToTicket, closeNewDraft } = useOpenTickets();
-  const { statuses, statusMap } = useTicketStatuses();
+  const { activeStatuses: statuses, statusMap } = useTicketStatuses();
 
   // Brouillon
   const initial = loadDraft() || {

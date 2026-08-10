@@ -13,12 +13,13 @@ class StatusModel {
     return res.rows;
   }
 
-  async create({ value, label, bg_color, text_color, client_label }) {
+  async create({ value, label, bg_color, text_color, client_label, is_active }) {
     const res = await pool.query(
-      `INSERT INTO sav_ticket_statuses (value, label, bg_color, text_color, client_label, sort_order, updated_at)
-       VALUES ($1, $2, $3, $4, $5, (SELECT COALESCE(MAX(sort_order),0)+1 FROM sav_ticket_statuses), NOW())
+      `INSERT INTO sav_ticket_statuses (value, label, bg_color, text_color, client_label, is_active, sort_order, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, (SELECT COALESCE(MAX(sort_order),0)+1 FROM sav_ticket_statuses), NOW())
        RETURNING *`,
-      [value, label, bg_color || '#F0F0F0', text_color || '#626E85', client_label || null]
+      [value, label, bg_color || '#F0F0F0', text_color || '#626E85', client_label || null,
+       is_active === undefined ? true : !!is_active]
     );
     return res.rows[0];
   }
@@ -29,7 +30,7 @@ class StatusModel {
    * ne doit pas l'effacer. Chaîne vide ⇒ remise à NULL (repli défensif côté
    * espace client).
    */
-  async update(id, { label, bg_color, text_color, client_label }) {
+  async update(id, { label, bg_color, text_color, client_label, is_active }) {
     const sets = ['label=$1', 'bg_color=$2', 'text_color=$3', 'updated_at=NOW()'];
     const vals = [label, bg_color, text_color];
 
@@ -37,6 +38,13 @@ class StatusModel {
       const clean = client_label === null ? null : String(client_label).trim();
       vals.push(clean || null);
       sets.push(`client_label=$${vals.length}`);
+    }
+
+    // Même règle que client_label : seulement si explicitement fourni, pour
+    // qu'un appelant qui ignore le champ ne réactive pas un statut au passage.
+    if (is_active !== undefined) {
+      vals.push(!!is_active);
+      sets.push(`is_active=$${vals.length}`);
     }
 
     vals.push(id);

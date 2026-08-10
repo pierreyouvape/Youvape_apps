@@ -23,11 +23,18 @@ export function useTicketStatuses() {
   }, []);
 
   // Convertit en map { value -> { label, bg_color, text_color } }
+  // Volontairement construite sur TOUS les statuts, y compris désactivés : un
+  // ticket qui porte un ancien statut doit rester lisible dans la liste et le
+  // détail. Désactiver retire de l'offre, pas de l'affichage.
   const statusMap = Object.fromEntries(
     statuses.map(s => [s.value, { label: s.label, bg: s.bg_color, color: s.text_color }])
   );
 
-  return { statuses, statusMap, loading };
+  // Statuts proposables à l'agent (sélecteur de ticket, actions groupées,
+  // création). `is_active` absent = ancien backend → considéré actif.
+  const activeStatuses = statuses.filter(s => s.is_active !== false);
+
+  return { statuses, activeStatuses, statusMap, loading };
 }
 
 // Invalider le cache (appelé après modification dans les settings)

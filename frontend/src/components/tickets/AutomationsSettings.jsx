@@ -144,7 +144,7 @@ function ConditionRow({ cond, onChange, onRemove, canRemove }) {
 }
 
 // ─── Formulaire (création + édition) ─────────────────────────────────────────
-function AutomationForm({ initial, statuses, onSubmit, onCancel, submitLabel = 'Enregistrer' }) {
+function AutomationForm({ initial, statuses, activeStatuses, onSubmit, onCancel, submitLabel = 'Enregistrer' }) {
   const [name,         setName]         = useState(initial?.name || '');
   const [description,  setDescription]  = useState(initial?.description || '');
   const [filterStatus, setFilterStatus] = useState(initial?.filter_status || '');
@@ -252,7 +252,7 @@ function AutomationForm({ initial, statuses, onSubmit, onCancel, submitLabel = '
         <select value={targetStatus} onChange={e => setTargetStatus(e.target.value)}
           style={{ ...inputStyle, cursor: 'pointer' }}>
           <option value="">— Choisir un statut —</option>
-          {statuses.map(s => (
+          {(activeStatuses || statuses).map(s => (
             <option key={s.value} value={s.value}>{s.label}</option>
           ))}
         </select>
@@ -290,7 +290,7 @@ function AutomationForm({ initial, statuses, onSubmit, onCancel, submitLabel = '
 }
 
 // ─── Ligne automatisme ───────────────────────────────────────────────────────
-function AutomationRow({ auto, statuses, onToggle, onUpdate, onDelete, onRunNow }) {
+function AutomationRow({ auto, statuses, activeStatuses, onToggle, onUpdate, onDelete, onRunNow }) {
   const [editing, setEditing] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [running, setRunning] = useState(false);
@@ -300,6 +300,7 @@ function AutomationRow({ auto, statuses, onToggle, onUpdate, onDelete, onRunNow 
       <AutomationForm
         initial={auto}
         statuses={statuses}
+        activeStatuses={activeStatuses}
         submitLabel="Enregistrer"
         onCancel={() => setEditing(false)}
         onSubmit={async (payload) => {
@@ -439,6 +440,7 @@ function CreateAutomationForm({ statuses, onCreate }) {
   return (
     <AutomationForm
       statuses={statuses}
+      activeStatuses={activeStatuses}
       submitLabel="Créer l'automatisme"
       onCancel={() => setOpen(false)}
       onSubmit={async (payload) => {
@@ -453,7 +455,10 @@ function CreateAutomationForm({ statuses, onCreate }) {
 // ─── Composant principal ─────────────────────────────────────────────────────
 export default function AutomationsSettings() {
   const { token } = useContext(AuthContext);
-  const { statuses } = useTicketStatuses();
+  // `statuses` (tous) pour le filtre source, `activeStatuses` pour la cible :
+  // une automatisation doit pouvoir viser les tickets restés sur un ancien
+  // statut, mais jamais leur en réattribuer un retiré.
+  const { statuses, activeStatuses } = useTicketStatuses();
   const [autos, setAutos] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -539,6 +544,7 @@ export default function AutomationsSettings() {
               key={a.id}
               auto={a}
               statuses={statuses}
+              activeStatuses={activeStatuses}
               onToggle={handleToggle}
               onUpdate={handleUpdate}
               onDelete={handleDelete}
@@ -546,7 +552,7 @@ export default function AutomationsSettings() {
             />
           ))}
           <div style={{ marginTop: 6 }}>
-            <CreateAutomationForm statuses={statuses} onCreate={handleCreate} />
+            <CreateAutomationForm statuses={statuses} activeStatuses={activeStatuses} onCreate={handleCreate} />
           </div>
         </div>
       )}

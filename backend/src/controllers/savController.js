@@ -1157,7 +1157,7 @@ const savController = {
 
   createStatus: async (req, res) => {
     try {
-      const { value, label, bg_color, text_color, client_label } = req.body;
+      const { value, label, bg_color, text_color, client_label, is_active } = req.body;
       if (!value || !label) return res.status(400).json({ error: 'value et label requis' });
       if (client_label && String(client_label).length > MAX_CLIENT_LABEL_LEN) {
         return res.status(400).json({ error: 'Libellé client trop long' });
@@ -1167,6 +1167,7 @@ const savController = {
       const status = await savModel.statusModel.create({
         value: slug, label: label.trim(), bg_color, text_color,
         client_label: client_label ? String(client_label).trim() : null,
+        is_active,
       });
       res.status(201).json({ success: true, status });
     } catch (error) {
@@ -1191,6 +1192,9 @@ const savController = {
           return res.status(400).json({ error: 'Libellé client trop long' });
         }
         payload.client_label = cl;
+      }
+      if (Object.prototype.hasOwnProperty.call(req.body, 'is_active')) {
+        payload.is_active = !!req.body.is_active;
       }
 
       const status = await savModel.statusModel.update(id, payload);

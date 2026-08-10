@@ -534,7 +534,8 @@ export default function TicketsList({ activeView, views = [], onRefresh, refresh
   const [preview, setPreview] = useState(null);
   const previewTimer = useRef();
   const { token } = useContext(AuthContext);
-  const { statuses: allStatuses } = useTicketStatuses();
+  // Actions groupées : on ne propose que les statuts actifs.
+  const { activeStatuses: allStatuses } = useTicketStatuses();
 
   // Nettoyer le timer d'aperçu au démontage
   useEffect(() => () => clearTimeout(previewTimer.current), []);

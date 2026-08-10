@@ -621,7 +621,9 @@ function ReplyComposer({
   const [applyingMacro, setApplyingMacro] = useState(false);
   // Macro en attente de complétion : { macro, fields } — voir MacroInputsModal
   const [pendingMacro, setPendingMacro] = useState(null);
-  const { statuses, statusMap } = useTicketStatuses();
+  // `statuses` sert au rendu, `activeStatuses` au sélecteur : un ticket portant
+  // un statut désactivé reste lisible, mais on ne peut plus l'y remettre.
+  const { statuses, activeStatuses, statusMap } = useTicketStatuses();
   const fileRef = useRef();
   const modeRef = useRef();
   const editorRef = useRef();
@@ -1546,10 +1548,10 @@ function ReplyComposer({
                 minWidth: 280, maxHeight: statusMenuPos.maxHeight, overflowY: 'auto',
               }}
             >
-              {statuses.length === 0 && (
+              {activeStatuses.length === 0 && (
                 <div style={{ padding: 14, fontSize: 12.5, color: C.grisM, textAlign: 'center' }}>Aucun statut disponible</div>
               )}
-              {statuses.map(s => {
+              {activeStatuses.map(s => {
                 const isSelected = s.value === selectedStatus;
                 return (
                   <button
