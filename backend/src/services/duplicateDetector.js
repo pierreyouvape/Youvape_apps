@@ -8,6 +8,10 @@ async function findDuplicates(ticket) {
   // Un doublon n'a de sens que pour une même commande : sans order_id, on ne
   // signale rien (sinon toutes les demandes d'un même client seraient marquées).
   if (!ticket.order_id) return [];
+  // Ticket lui-même absorbé par une fusion : le doublon a déjà été traité, le
+  // signaler ferait doublon avec la bannière de fusion. Symétrique de
+  // l'exclusion des fusionnés côté candidats, plus bas.
+  if (ticket.merged_into_id) return [];
 
   // Critère : même email client ET même order_id (tous statuts, toutes dates).
   // On exclut les tickets déjà fusionnés (merged_into_id) : une fois absorbés

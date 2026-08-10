@@ -4,6 +4,7 @@ const savModel = require('../models/savModel');
 const appConfigModel = require('../models/appConfigModel');
 const { saveAttachments } = require('../utils/savAttachments');
 const { dispatchNotifications } = require('../services/notificationDispatcher');
+const { tagDuplicates } = require('../services/duplicateDetector');
 const { getClientSavSecret, CLIENT_SAV_SECRET_KEY } = require('../utils/clientSavSecret');
 const { sendAckEmail } = require('../utils/savAckEmail');
 
@@ -182,7 +183,13 @@ const CLIENT_OWNERSHIP_SQL = `(
       AND lower(t.customer_email) = lower($2::text)
     )
   )
-  AND t.source = ANY($3::text[])`;
+  AND t.source = ANY($3::text[])
+  -- Ticket absorbé par une fusion : masqué au client. Il ne contient RIEN que la
+  -- cible n'ait déjà (la fusion y recopie ses messages), et le laisser visible
+  -- produirait un cul-de-sac étiqueté « Résolu », ses messages en double, et une
+  -- réponse qui ressusciterait le doublon que l'agent venait de ranger.
+  -- Côté agent, rien ne change : cette clause ne sert qu'à l'espace client.
+  AND t.merged_into_id IS NULL`;
 
 /**
  * Projette un message brut (JSONB du ticket) vers la forme exposée au client.
@@ -562,6 +569,12 @@ const clientSavController = {
         attachments: storedAttachments,
       });
 
+      // Détection de doublons : c'est ICI qu'elle compte le plus, ces demandes
+      // portant presque toujours une commande (obligatoire pour les motifs
+      // « difficulté » et « rétractation »), seul cas que le détecteur sait
+      // reconnaître. Fire-and-forget, comme sur les autres chemins de création.
+      tagDuplicates(ticket).catch(e => console.warn('[Client SAV] tagDuplicates échoué:', e.message));
+
       res.status(201).json({ success: true, ticket_id: ticket.id });
     } catch (error) {
       console.error('❌ [Client SAV] Erreur createMyTicket:', error);
@@ -636,6 +649,10 @@ const clientSavController = {
         ticketId: ticket.id, email, customerName: name, subject: reason.subject,
       });
       dispatchNotifications('new_message', ticket).catch(() => {});
+      // Détection de doublons, comme sur tous les autres chemins de création.
+      // Sans commande rattachée, le détecteur ne signale rien — mais le laisser
+      // ici évite que ce chemin soit à nouveau oublié le jour où ça change.
+      tagDuplicates(ticket).catch(e => console.warn('[Client SAV] tagDuplicates échoué:', e.message));
 
       res.status(201).json({ success: true, ticket_id: ticket.id });
     } catch (error) {
