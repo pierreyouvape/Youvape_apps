@@ -97,6 +97,55 @@ function IconPlus({ color = '#fff' }) {
   );
 }
 
+/* ─── Canal d'origine ────────────────────────────────────────────────────────── */
+// L'affichage était binaire (Gravity Forms ou e-mail) et datait d'une époque où
+// il n'existait que deux canaux : tout le reste — espace client, formulaire
+// public, création manuelle, import Zendesk — s'affichait « E-mail ».
+//
+// « Formulaire GF » est volontairement explicite : une fois la bascule faite,
+// plus aucune demande ne devrait arriver par là. En voir une nous alerte.
+const SOURCE_LABELS = {
+  gravity_form: 'Formulaire GF',
+  account:      'Espace client',
+  public:       'Formulaire',
+  email:        'E-mail',
+  manual:       'Créé par l’équipe',
+  zendesk:      'Zendesk',
+};
+const sourceLabel = (source) => SOURCE_LABELS[source] || source || '—';
+// Seul l'e-mail entrant mérite l'icône enveloppe ; tout le reste vient d'un
+// formulaire ou de l'app.
+const SourceIcon = ({ source }) => (source === 'email' ? <IconMail /> : <IconForm />);
+
+/* ─── Teinte du sujet selon le motif de la demande ───────────────────────────── */
+// Le motif est porté par `request_reason`. Les slugs Gravity Forms historiques
+// sont rattachés aux mêmes familles que les nouveaux, pour que la couleur reste
+// lisible sur l'historique. Un ticket sans motif (e-mail entrant, création
+// manuelle) n'a pas de bulle : mieux vaut rien qu'une couleur arbitraire.
+const REASON_TONES = {
+  question_avant_commande:             'question',
+  un_conseil_avant_de_passer_commande: 'question',
+  'difficulté_avec_une_commande':      'assistance',
+  'une_commande_que_j_ai_passée':      'assistance',
+  'demande_de_rétractation':           'retractation',
+};
+const TONE_STYLES = {
+  question:     { background: '#E8F6EC', color: '#1B7F3B', border: '1px solid #C3E6CE' },
+  assistance:   { background: '#FFF3E2', color: '#A65B00', border: '1px solid #F3D9AF' },
+  retractation: { background: '#FDECEC', color: '#B3261E', border: '1px solid #F2C8C5' },
+};
+function subjectTone(ticket) {
+  const tone = REASON_TONES[ticket?.request_reason];
+  return tone ? TONE_STYLES[tone] : null;
+}
+// Style de bulle appliqué au sujet. Sans motif connu, on ne renvoie rien : le
+// sujet s'affiche alors tel quel, comme avant.
+function subjectPill(ticket) {
+  const tone = subjectTone(ticket);
+  if (!tone) return null;
+  return { ...tone, padding: '3px 10px', borderRadius: 999 };
+}
+
 /* ─── Checkbox ───────────────────────────────────────────────────────────────── */
 function Checkbox({ checked, indeterminate, onChange }) {
   return (
@@ -781,12 +830,14 @@ export default function TicketsList({ activeView, views = [], onRefresh, refresh
                 </div>
                 {/* Ligne 2 : sujet */}
                 <div style={{ fontWeight: 700, fontSize: 14.5, color: C.grisTF, lineHeight: 1.3 }}>
-                  {t.subject || '—'}
+                  <span style={{ display: 'inline-block', ...(subjectPill(t) || {}) }}>
+                    {t.subject || '—'}
+                  </span>
                 </div>
                 {/* Ligne 3 : demandeur + canal */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', fontSize: 12.5, color: C.grisM }}>
                   <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, color: C.grisF, fontWeight: 600 }}>
-                    {t.source === 'gravity_form' ? <IconForm /> : <IconMail />}
+                    <SourceIcon source={t.source} />
                     {t.customer_name || t.customer_email || '—'}
                   </span>
                 </div>
@@ -892,6 +943,7 @@ export default function TicketsList({ activeView, views = [], onRefresh, refresh
                             maxWidth: t.has_duplicate_warning ? 'calc(100% - 80px)' : '100%',
                             whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
                             fontWeight: 500, verticalAlign: 'middle',
+                            ...(subjectPill(t) || {}),
                           }}>
                             {t.subject || '—'}
                           </span>
@@ -904,8 +956,8 @@ export default function TicketsList({ activeView, views = [], onRefresh, refresh
                         {/* Canal */}
                         <td style={cell}>
                           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: C.grisF }}>
-                            {t.source === 'gravity_form' ? <IconForm /> : <IconMail />}
-                            {t.source === 'gravity_form' ? 'Formulaire' : 'E-mail'}
+                            <SourceIcon source={t.source} />
+                            {sourceLabel(t.source)}
                           </span>
                         </td>
                         {/* Créé */}

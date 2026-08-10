@@ -470,7 +470,28 @@ const clientSavController = {
         [customerId]
       );
       const cust = custRes.rows[0] || {};
-      const customer_name = `${cust.first_name || ''} ${cust.last_name || ''}`.trim() || 'Client';
+      // Nom du client : la fiche `customers` est souvent vide (18 % des comptes),
+      // car beaucoup d'acheteurs ne renseignent jamais leur profil WordPress —
+      // leur identité ne vit que dans l'adresse de facturation de leurs
+      // commandes. On s'y replie avant d'abandonner sur un « Client » générique,
+      // qui ne dit rien à l'agent.
+      let customer_name = `${cust.first_name || ''} ${cust.last_name || ''}`.trim();
+      if (!customer_name) {
+        const billing = await pool.query(
+          `SELECT billing_first_name, billing_last_name
+           FROM orders
+           WHERE wp_customer_id = $1
+             AND (COALESCE(billing_first_name, '') <> '' OR COALESCE(billing_last_name, '') <> '')
+           ORDER BY post_date DESC
+           LIMIT 1`,
+          [wpUserId]
+        );
+        const b = billing.rows[0];
+        if (b) {
+          customer_name = `${b.billing_first_name || ''} ${b.billing_last_name || ''}`.trim();
+        }
+      }
+      if (!customer_name) customer_name = 'Client';
       const customer_email = (req.clientEmail || cust.email || '').toLowerCase();
 
       // 5. Produits concernés, sous forme structurée pour l'app agent.
