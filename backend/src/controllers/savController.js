@@ -38,12 +38,24 @@ function isDuplicateInbound(id) {
 }
 
 // Extrait le texte réellement écrit par le client dans un email entrant, en
-// retirant la citation du fil précédent et la signature.
-// 1) Si Mailgun fournit `stripped-text` (corps déjà nettoyé), on l'utilise.
+// retirant la citation du fil précédent.
+// 1) Si Mailgun fournit `stripped-text` (corps déjà nettoyé), on l'utilise —
+//    en y RÉINTÉGRANT `stripped-signature`. La détection de signature de
+//    Mailgun est heuristique et classe régulièrement en "signature" un bloc
+//    porteur d'info (nom + adresse postale, n° de commande, RIB) : sans ça, la
+//    fin du message du client était silencieusement perdue (ex. ticket #9900529,
+//    adresse de livraison coupée juste après "Bonjour oui c'est:").
+//    Contrepartie assumée : les vraies signatures réapparaissent dans le fil.
 // 2) Sinon fallback : on coupe à la 1re ligne d'en-tête de citation (EN + FR)
-//    puis on enlève les lignes restantes préfixées par ">".
-function stripQuotedReply(strippedText, bodyPlain) {
-  if (strippedText && strippedText.trim()) return strippedText.trim();
+//    puis on enlève les lignes restantes préfixées par ">". Ici la signature est
+//    déjà dans `body-plain`, donc rien à réintégrer (sinon on la doublerait).
+function stripQuotedReply(strippedText, bodyPlain, strippedSignature) {
+  if (strippedText && strippedText.trim()) {
+    const signature = (strippedSignature || '').trim();
+    return signature
+      ? `${strippedText.trim()}\n${signature}`
+      : strippedText.trim();
+  }
   if (!bodyPlain) return '';
 
   // En-têtes de citation : "On ... wrote:" / "Le ... a écrit :"
@@ -212,6 +224,7 @@ const savController = {
       const {
         sender, subject, 'body-plain': bodyPlain,
         'stripped-text': strippedText,
+        'stripped-signature': strippedSignature,
         'Message-Id': messageId, 'message-url': messageUrl,
         timestamp, token, signature,
       } = req.body;
@@ -242,9 +255,10 @@ const savController = {
       }
 
       // Nettoyer le body : on privilégie le `stripped-text` de Mailgun (déjà
-      // débarrassé de la citation et de la signature). Sinon, fallback sur un
-      // découpage manuel des en-têtes de citation (EN + FR).
-      const cleanBody = stripQuotedReply(strippedText, bodyPlain);
+      // débarrassé de la citation), en y remettant la `stripped-signature` pour
+      // ne rien perdre du message. Sinon, fallback sur un découpage manuel des
+      // en-têtes de citation (EN + FR).
+      const cleanBody = stripQuotedReply(strippedText, bodyPlain, strippedSignature);
 
       // Mail transféré par un agent (client ayant écrit à contact@youvape.fr) :
       // l'expéditeur du webhook est l'agent. On récupère le client d'origine dans
