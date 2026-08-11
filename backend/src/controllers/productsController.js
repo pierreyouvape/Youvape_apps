@@ -995,15 +995,37 @@ exports.getBmsLocations = async (req, res) => {
 /**
  * Synchronise les emplacements de rangement depuis BMS (cron quotidien).
  *
- * BMS n'a pas d'endpoint bulk : c'est un appel par SKU (~150 ms), d'où le stockage
- * en base plutôt qu'une lecture à la volée. Sur ~5 600 produits publiés et 10 appels
- * en parallèle, un passage complet prend environ 90 s.
+ * ⚠️ BMS limite le débit et signale le dépassement par un HTTP **400** portant
+ * « Too Many Attempts. » — pas un 429. Or bmsApiModel.getProductShelfLocations()
+ * traite tout 40x comme « aucun emplacement » : l'utiliser ici ferait écrire NULL
+ * sur des produits simplement rejetés. On appelle donc l'API en direct pour
+ * distinguer trois cas : réponse valide, SKU inconnu (404, définitif), et échec
+ * (on n'écrit RIEN, ni valeur ni horodatage — le produit repassera).
  *
- * Seul l'entrepôt principal est retenu — les entrepôts « SAV … » sont des stocks de
- * service après-vente et n'indiquent pas où ranger une réception.
+ * Le tri `synced_at NULLS FIRST` + le plafond par passage font que chaque nuit
+ * traite les produits les plus anciennement vus : le catalogue se remplit en
+ * quelques nuits, puis se rafraîchit en continu.
  */
 const MAIN_WAREHOUSE = 'entrepot';
-const LOCATION_SYNC_CONCURRENCY = 10;
+const LOCATION_SYNC_CONCURRENCY = 3;
+const LOCATION_SYNC_MAX_PER_RUN = 1200;
+const LOCATION_SYNC_PAUSE_MS = 120;
+
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
+class RateLimitedError extends Error {}
+
+const fetchShelfLocations = async (sku) => {
+  let raw;
+  try {
+    raw = await bmsApiModel.apiCall(`/advanced-stock/product/${encodeURIComponent(sku)}/stocks`);
+  } catch (error) {
+    if (/Too Many Attempts/i.test(error.message)) throw new RateLimitedError(error.message);
+    if (/BMS API error: 404/.test(error.message)) return [];  // SKU absent de BMS : définitif
+    throw error;                                              // autre échec : on ne conclut pas
+  }
+  return Array.isArray(raw) ? raw : [];
+};
 
 exports.syncShelfLocationsFromBMS = async () => {
   console.log('[BMS Shelf Sync] Debut...');
@@ -1011,22 +1033,28 @@ exports.syncShelfLocationsFromBMS = async () => {
     SELECT id, sku FROM products
     WHERE sku IS NOT NULL AND sku <> '' AND post_status = 'publish'
     ORDER BY shelf_location_synced_at ASC NULLS FIRST
-  `);
-  if (products.length === 0) return { synced: 0, withLocation: 0, total: 0 };
+    LIMIT $1
+  `, [LOCATION_SYNC_MAX_PER_RUN]);
+  if (products.length === 0) return { synced: 0, withLocation: 0, skipped: 0, total: 0, rateLimited: false };
 
-  let synced = 0, withLocation = 0;
-  for (let i = 0; i < products.length; i += LOCATION_SYNC_CONCURRENCY) {
+  let synced = 0, withLocation = 0, skipped = 0, rateLimited = false;
+
+  for (let i = 0; i < products.length && !rateLimited; i += LOCATION_SYNC_CONCURRENCY) {
     const batch = products.slice(i, i + LOCATION_SYNC_CONCURRENCY);
     await Promise.all(batch.map(async (p) => {
       let locations;
       try {
-        locations = await bmsApiModel.getProductShelfLocations(p.sku);
-      } catch {
-        return; // SKU en erreur : on le reverra au prochain passage
+        locations = await fetchShelfLocations(p.sku);
+      } catch (error) {
+        if (error instanceof RateLimitedError) rateLimited = true;
+        skipped++;
+        return; // aucune écriture : ni valeur effacée, ni horodatage posé
       }
       const main = locations.find(l =>
-        String(l.warehouse || '').trim().toLowerCase() === MAIN_WAREHOUSE);
-      const value = main ? main.location : null;
+        String(l.w_name || '').trim().toLowerCase() === MAIN_WAREHOUSE);
+      const value = main && main.wi_shelf_location
+        ? String(main.wi_shelf_location).trim()
+        : null;
       await pool.query(
         'UPDATE products SET shelf_location = $2, shelf_location_synced_at = NOW() WHERE id = $1',
         [p.id, value]
@@ -1034,8 +1062,12 @@ exports.syncShelfLocationsFromBMS = async () => {
       synced++;
       if (value) withLocation++;
     }));
+    if (!rateLimited) await sleep(LOCATION_SYNC_PAUSE_MS);
   }
 
-  console.log(`[BMS Shelf Sync] ${synced}/${products.length} produits, dont ${withLocation} avec emplacement`);
-  return { synced, withLocation, total: products.length };
+  if (rateLimited) {
+    console.warn(`[BMS Shelf Sync] Limite de debit BMS atteinte — arret propre apres ${synced} produits`);
+  }
+  console.log(`[BMS Shelf Sync] ${synced} mis a jour (${withLocation} avec emplacement), ${skipped} reportes`);
+  return { synced, withLocation, skipped, total: products.length, rateLimited };
 };
