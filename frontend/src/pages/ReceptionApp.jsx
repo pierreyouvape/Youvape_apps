@@ -12,7 +12,9 @@ const C = {
   orange: '#EA580C', orangeL: '#FFEDD5',
   grey: '#F9FAFB', greyB: '#E5E7EB', greyT: '#6B7280', greyM: '#8A99A4',
   dark: '#111827', white: '#FFFFFF',
-};
+  zebra: '#F4F7F9', // alternance des lignes — assez marqué pour suivre une ligne
+};                  // sur toute sa largeur, assez discret pour ne pas concurrencer
+                    // les fonds de statut du comptage.
 
 const authHeaders = (token) => ({ headers: { Authorization: `Bearer ${token}` } });
 
@@ -170,10 +172,11 @@ function OrdersList({ token, onOpen }) {
                   Aucune commande en attente de réception.
                 </td></tr>
               )}
-              {!loading && orders.map(o => {
+              {!loading && orders.map((o, idx) => {
                 const st = STATUS_LABEL[o.status] || { label: o.status, color: C.greyT, bg: C.grey };
                 return (
-                  <tr key={o.id} style={{ cursor: 'pointer' }} onClick={() => onOpen(o.id)}>
+                  <tr key={o.id} onClick={() => onOpen(o.id)}
+                    style={{ cursor: 'pointer', background: idx % 2 === 1 ? C.zebra : C.white }}>
                     <Td bold color={C.primary}>{o.order_number}</Td>
                     <Td>{o.supplier_name}</Td>
                     <Td><Badge color={st.color} bg={st.bg}>{st.label}</Badge></Td>
@@ -228,8 +231,8 @@ function OrderDetail({ order, items, onBack, onStart }) {
               </tr>
             </thead>
             <tbody>
-              {items.map(it => (
-                <tr key={it.id}>
+              {items.map((it, idx) => (
+                <tr key={it.id} style={{ background: idx % 2 === 1 ? C.zebra : C.white }}>
                   <Td><Thumb src={it.image_url} alt={it.name} /></Td>
                   <Td>
                     {it.name}
@@ -357,10 +360,13 @@ function CountingScreen({ token, order, items, onBack, onReload }) {
     }
   };
 
-  const rowColors = (it) => {
+  // Le fond d'une ligne porte l'état de son comptage : il prime sur le zébrage, qui
+  // ne s'applique donc qu'aux lignes encore vierges. Sinon l'alternance viendrait
+  // concurrencer le signal orange/vert/rouge, qui est l'information utile ici.
+  const rowColors = (it, idx) => {
     const counted = counts[it.id] || 0;
     const target = it.qty_remaining;
-    if (counted === 0) return { background: C.white };
+    if (counted === 0) return { background: idx % 2 === 1 ? C.zebra : C.white };
     if (counted > target) return { background: C.redL };
     if (counted === target) return { background: C.greenL };
     return { background: C.orangeL };
@@ -421,11 +427,11 @@ function CountingScreen({ token, order, items, onBack, onReload }) {
               </tr>
             </thead>
             <tbody>
-              {items.map(it => {
+              {items.map((it, idx) => {
                 const counted = counts[it.id] || 0;
                 const ecart = counted - it.qty_remaining;
                 return (
-                  <tr key={it.id} style={rowColors(it)}>
+                  <tr key={it.id} style={rowColors(it, idx)}>
                     <Td><Thumb src={it.image_url} alt={it.name} /></Td>
                     <Td>
                       {it.name}
