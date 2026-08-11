@@ -736,7 +736,19 @@ const OrdersTab = ({ token }) => {
                               )}
                             </td>
                             <td><code>{item.supplier_sku || item.product_sku || '-'}</code></td>
-                            <td className="text-right">{formatInt(item.qty_ordered)}</td>
+                            <td className="text-right">
+                              {formatInt(item.qty_ordered)}
+                              {/* Ligne comptée en packs : rappeler le nombre d'unités
+                                  qui entrent réellement en stock (arrivage) */}
+                              {(item.units_per_qty || 1) > 1 && (
+                                <span
+                                  style={{ marginLeft: '6px', color: '#6b7280', fontSize: '12px' }}
+                                  title={`${item.qty_ordered} pack(s) de ${item.units_per_qty}`}
+                                >
+                                  × {item.units_per_qty} = {formatInt(item.qty_ordered * item.units_per_qty)} u.
+                                </span>
+                              )}
+                            </td>
                             <td className="text-right">
                               {['shipped', 'partial'].includes(selectedOrder.status) ? (
                                 <input

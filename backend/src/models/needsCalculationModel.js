@@ -163,7 +163,7 @@ const needsCalculationModel = {
     const incomingResult = await pool.query(`
       SELECT
         poi.product_id,
-        COALESCE(SUM(poi.qty_ordered - poi.qty_received), 0) as incoming_qty
+        COALESCE(SUM((poi.qty_ordered - poi.qty_received) * COALESCE(poi.units_per_qty, 1)), 0) as incoming_qty
       FROM purchase_order_items poi
       JOIN purchase_orders po ON poi.purchase_order_id = po.id
       JOIN products p ON poi.product_id = p.id

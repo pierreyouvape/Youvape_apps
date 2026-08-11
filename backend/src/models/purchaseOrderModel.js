@@ -139,6 +139,16 @@ const purchaseOrderModel = {
       // Utiliser le numéro fourni (import PDF) ou en générer un
       const orderNumber = data.order_number || await purchaseOrderModel.generateOrderNumber();
 
+      // Fournisseur « à l'unité » : ses lignes sont comptées en PACKS (qty_ordered =
+      // nb de packs, unit_price = prix du pack, cf. pdfImportModel qui force packQty=1).
+      // On mémorise le conditionnement sur la ligne (units_per_qty) pour que les
+      // calculs de stock retrouvent les unités individuelles.
+      const supplierCodeResult = await client.query(
+        'SELECT code FROM suppliers WHERE id = $1',
+        [data.supplier_id]
+      );
+      const orderInPacks = parserRegistry.skipsPackQty(supplierCodeResult.rows[0]?.code);
+
       // Créer la commande localement
       const orderQuery = `
         INSERT INTO purchase_orders (
@@ -221,9 +231,10 @@ const purchaseOrderModel = {
           const itemQuery = `
             INSERT INTO purchase_order_items (
               purchase_order_id, product_id, supplier_sku, product_name,
-              qty_ordered, unit_price, discount_percent, stock_before, theoretical_need, supposed_need
+              qty_ordered, unit_price, discount_percent, stock_before, theoretical_need, supposed_need,
+              units_per_qty
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
             RETURNING *
           `;
           const insertedItem = await client.query(itemQuery, [
@@ -236,7 +247,8 @@ const purchaseOrderModel = {
             discountPercent,
             item.stock_before || null,
             item.theoretical_need || null,
-            item.supposed_need || null
+            item.supposed_need || null,
+            orderInPacks ? packQty : 1
           ]);
 
           itemsWithSku.push({
@@ -688,6 +700,17 @@ const purchaseOrderModel = {
 
       // Mettre à jour les lignes existantes
       if (data.items) {
+        // Fournisseur de la commande (après une éventuelle réaffectation ci-dessus) :
+        // sert à savoir si les nouvelles lignes se comptent en packs (units_per_qty)
+        const supplierResult = await client.query(
+          `SELECT s.id, s.code
+           FROM purchase_orders po
+           JOIN suppliers s ON s.id = po.supplier_id
+           WHERE po.id = $1`,
+          [id]
+        );
+        const orderSupplier = supplierResult.rows[0] || null;
+
         for (const item of data.items) {
           if (item._delete) {
             await client.query(
@@ -702,29 +725,37 @@ const purchaseOrderModel = {
               WHERE id = $3 AND purchase_order_id = $4
             `, [item.qty_ordered, item.unit_price ?? null, item.id, id]);
           } else {
-            // Nouvelle ligne
+            // Nouvelle ligne — units_per_qty selon le fournisseur de la commande
+            // (« à l'unité » ⇒ qty_ordered en packs, cf. create/syncFromBMS)
             const productResult = await client.query(
-              `SELECT p.id, p.sku FROM products p
+              `SELECT p.id, p.sku, ps.pack_qty
+               FROM products p
+               LEFT JOIN product_suppliers ps ON ps.product_id = p.id AND ps.supplier_id = $2
                WHERE p.wp_product_id = $1 OR p.id = $1
                ORDER BY CASE WHEN p.wp_product_id = $1 THEN 0 ELSE 1 END
                LIMIT 1`,
-              [item.product_id]
+              [item.product_id, orderSupplier?.id || null]
             );
             const product = productResult.rows[0];
             if (!product) continue;
 
+            const unitsPerQty = parserRegistry.skipsPackQty(orderSupplier?.code)
+              ? Math.max(parseInt(product.pack_qty) || 1, 1)
+              : 1;
+
             await client.query(`
               INSERT INTO purchase_order_items (
                 purchase_order_id, product_id, supplier_sku, product_name,
-                qty_ordered, unit_price, qty_received
-              ) VALUES ($1, $2, $3, $4, $5, $6, 0)
+                qty_ordered, unit_price, qty_received, units_per_qty
+              ) VALUES ($1, $2, $3, $4, $5, $6, 0, $7)
             `, [
               id,
               product.id,
               item.supplier_sku || product.sku || null,
               item.product_name,
               item.qty_ordered,
-              item.unit_price ?? null
+              item.unit_price ?? null,
+              unitsPerQty
             ]);
           }
         }
@@ -861,11 +892,13 @@ const purchaseOrderModel = {
   },
 
   // Récupérer les commandes en cours pour un produit (pour calculer "en arrivage")
+  // qty_ordered/qty_received sont exprimés en UNITÉS de stock (× units_per_qty
+  // pour les lignes comptées en packs, cf. migration add_units_per_qty_*)
   getPendingForProduct: async (productId) => {
     const query = `
       SELECT
-        poi.qty_ordered,
-        poi.qty_received,
+        poi.qty_ordered * COALESCE(poi.units_per_qty, 1) AS qty_ordered,
+        poi.qty_received * COALESCE(poi.units_per_qty, 1) AS qty_received,
         po.order_number,
         po.status,
         po.expected_date
@@ -881,7 +914,7 @@ const purchaseOrderModel = {
   // Calculer le total en arrivage pour un produit
   getIncomingQty: async (productId) => {
     const query = `
-      SELECT COALESCE(SUM(poi.qty_ordered - poi.qty_received), 0) as incoming_qty
+      SELECT COALESCE(SUM((poi.qty_ordered - poi.qty_received) * COALESCE(poi.units_per_qty, 1)), 0) as incoming_qty
       FROM purchase_order_items poi
       JOIN purchase_orders po ON poi.purchase_order_id = po.id
       WHERE poi.product_id = $1
@@ -1095,11 +1128,17 @@ const purchaseOrderModel = {
           // une imprécision de wc_cog (remises sur facture) ne peut donc pas faire
           // basculer une décision, qui n'arrive que sur un écart franc (5-10×).
           // Le montant total (qty × price) est identique dans les deux interprétations.
-          let unitPrice, qtyOrdered, qtyReceived;
+          // BMS compte TOUJOURS en packs : les unités physiques d'une ligne valent
+          // qty × qty_pack (cf. totalOrdered/totalReceived ci-dessus et createInBMS).
+          // Quand on ne convertit pas qty_ordered (prix laissé au pack), la ligne
+          // reste comptée en packs : units_per_qty porte alors le facteur, pour que
+          // les calculs de stock (arrivages, besoins) retrouvent les unités.
+          let unitPrice, qtyOrdered, qtyReceived, unitsPerQty;
           if (priceRaw === null || qtyPack <= 1 || skipPackQtySupplierIds.has(supplierId)) {
             unitPrice = priceRaw;               // pas d'ambiguïté (ou fournisseur « à l'unité »)
             qtyOrdered = bmsQty;
             qtyReceived = bmsQtyRecv;
+            unitsPerQty = qtyPack;
           } else {
             const unitAsIs  = priceRaw;             // interprétation « prix déjà unitaire »
             const unitAsPack = priceRaw / qtyPack;  // interprétation « prix du pack »
@@ -1115,19 +1154,21 @@ const purchaseOrderModel = {
               unitPrice = unitAsPack;
               qtyOrdered = bmsQty * qtyPack;
               qtyReceived = bmsQtyRecv * qtyPack;
+              unitsPerQty = 1;                  // qty_ordered déjà converti en unités
             } else {
               unitPrice = unitAsIs;
               qtyOrdered = bmsQty;
               qtyReceived = bmsQtyRecv;
+              unitsPerQty = qtyPack;
             }
           }
 
           await client.query(`
             INSERT INTO purchase_order_items (
               purchase_order_id, product_id, supplier_sku,
-              product_name, qty_ordered, qty_received, unit_price
+              product_name, qty_ordered, qty_received, unit_price, units_per_qty
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
           `, [
             poId,
             productId,
@@ -1135,7 +1176,8 @@ const purchaseOrderModel = {
             item.name || null,
             qtyOrdered,
             qtyReceived,
-            unitPrice
+            unitPrice,
+            Math.max(parseInt(unitsPerQty) || 1, 1)
           ]);
 
         }

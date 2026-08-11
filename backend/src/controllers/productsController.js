@@ -724,7 +724,7 @@ exports.getVariationsNeeds = async (req, res) => {
     let incomingMap = new Map();
     if (varIds.length > 0) {
       const incomingResult = await pool.query(`
-        SELECT poi.product_id, COALESCE(SUM(poi.qty_ordered - poi.qty_received), 0)::int as incoming_qty
+        SELECT poi.product_id, COALESCE(SUM((poi.qty_ordered - poi.qty_received) * COALESCE(poi.units_per_qty, 1)), 0)::int as incoming_qty
         FROM purchase_order_items poi
         JOIN purchase_orders po ON poi.purchase_order_id = po.id
         WHERE po.status IN ('sent', 'confirmed', 'shipped', 'partial')
