@@ -12,6 +12,7 @@ const checkReceptionRead = checkPermission('reception', 'read');
 router.get('/suppliers', checkReceptionRead, receptionController.getSuppliersWithPending);
 router.get('/orders', checkReceptionRead, receptionController.getPendingOrders);
 router.get('/orders/:id', checkReceptionRead, receptionController.getOrderDetail);
+router.get('/orders/:id/locations', checkReceptionRead, receptionController.getOrderLocations);
 
 // La validation d'une réception (écriture BMS) n'est pas encore exposée : la
 // sémantique de POST /v2/purchase-orders/{id}/receive sur les lignes en pack
