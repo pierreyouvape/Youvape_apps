@@ -11,6 +11,7 @@ const { mergeTickets } = require('../services/ticketMerge');
 const { sendAlert } = require('../services/alertService');
 const { syncTicketOrderTag } = require('../services/bmsOrderTagService');
 const { sendAckEmail } = require('../utils/savAckEmail');
+const { recordInboundFailure } = require('../utils/savInboundFailure');
 const { resolveForwardedOrigin, stripForwardPrefix } = require('../utils/forwardedEmail');
 const { ticketEvents } = require('../services/ticketEvents');
 
@@ -386,27 +387,14 @@ const savController = {
       // Filet de sécurité : on conserve le payload brut + on alerte par mail,
       // pour ne perdre aucun message client mal traité (pas de stockage Mailgun).
       const b = req.body || {};
-      const failSender = b.sender || b.from || null;
-      const failSubject = b.subject || b.Subject || null;
-      const failMsgId = b['Message-Id'] || b['message-url'] || null;
-      try {
-        await pool.query(
-          `INSERT INTO sav_inbound_failures (sender, subject, message_id, payload, error)
-           VALUES ($1, $2, $3, $4, $5)`,
-          [failSender, failSubject, failMsgId, JSON.stringify(b), error.message]
-        );
-      } catch (dbErr) {
-        console.error('❌ [SAV Inbound] Échec sauvegarde du payload raté:', dbErr.message);
-      }
-      sendAlert(
-        'Email SAV non traité',
-        `Un email entrant n'a pas pu être traité et a été mis de côté.\n\n`
-        + `Expéditeur : ${failSender || '(inconnu)'}\n`
-        + `Sujet : ${failSubject || '(inconnu)'}\n`
-        + `Message-Id : ${failMsgId || '(inconnu)'}\n`
-        + `Erreur : ${error.message}\n\n`
-        + `Le contenu brut est conservé en base (table sav_inbound_failures) pour retraitement manuel.`
-      ).catch(() => {});
+      await recordInboundFailure({
+        payload: b,
+        error: error.message,
+        sender: b.sender || b.from || null,
+        subject: b.subject || b.Subject || null,
+        messageId: b['Message-Id'] || b['message-url'] || null,
+        alertTitle: 'Email SAV non traité',
+      });
     }
   },
 
@@ -536,24 +524,15 @@ const savController = {
     } catch (error) {
       console.error('❌ [SAV Zendesk] Erreur:', error);
       const b = req.body || {};
-      try {
-        await pool.query(
-          `INSERT INTO sav_inbound_failures (sender, subject, message_id, payload, error)
-           VALUES ($1, $2, $3, $4, $5)`,
-          [b.requester_email || null, b.subject || null,
-           b.comment_id ? `zd-${b.comment_id}` : null, JSON.stringify(b), error.message]
-        );
-      } catch (dbErr) {
-        console.error('❌ [SAV Zendesk] Échec sauvegarde du payload raté:', dbErr.message);
-      }
-      sendAlert(
-        'Réponse Zendesk non traitée',
-        `Une réponse client transférée depuis Zendesk n'a pas pu être traitée.\n\n`
-        + `Ticket Zendesk : ${b.ticket_id || '(inconnu)'}\n`
-        + `Expéditeur : ${b.requester_email || '(inconnu)'}\n`
-        + `Erreur : ${error.message}\n\n`
-        + `Le contenu brut est conservé en base (sav_inbound_failures).`
-      ).catch(() => {});
+      await recordInboundFailure({
+        payload: b,
+        error: error.message,
+        sender: b.requester_email || null,
+        subject: b.subject || null,
+        messageId: b.comment_id ? `zd-${b.comment_id}` : null,
+        alertTitle: 'Réponse Zendesk non traitée',
+        alertDetail: `Ticket Zendesk : ${b.ticket_id || '(inconnu)'}`,
+      });
     }
   },
 

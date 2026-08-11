@@ -11,6 +11,7 @@ const savNotificationController = require('../controllers/savNotificationControl
 const savAutomationController = require('../controllers/savAutomationController');
 const zendeskController = require('../controllers/zendeskController');
 const authMiddleware = require('../middleware/authMiddleware');
+const { recordInboundFailure } = require('../utils/savInboundFailure');
 
 const UPLOAD_ROOT = path.join('/usr/src/app/uploads/sav');
 const MAX_FILE_SIZE = 25 * 1024 * 1024; // 25 Mo
@@ -23,14 +24,87 @@ const memoryUpload = multer({
   limits: { fileSize: MAX_FILE_SIZE, files: MAX_FILES },
 });
 
+// ─── Limites propres à l'EMAIL ENTRANT ───────────────────────────────────────
+// Un client qui photographie un colis abîmé sous tous les angles dépasse
+// facilement la dizaine de fichiers — et le SAV lui en réclame lui-même. Le
+// plafond de 10 partagé avec les autres routes faisait rejeter ces messages
+// AVANT le contrôleur, donc sans le moindre filet (cas M. Jabur, 24 photos
+// pour 7 Mo, jamais arrivé et jamais signalé).
+const INBOUND_MAX_FILES = 50;
+const INBOUND_MAX_FILE_SIZE = 10 * 1024 * 1024;  // 10 Mo par fichier
+const INBOUND_MAX_TOTAL_SIZE = 40 * 1024 * 1024; // 40 Mo pour tout le message
+
+const inboundUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: INBOUND_MAX_FILE_SIZE, files: INBOUND_MAX_FILES },
+});
+
 // ─── Webhook Gravity Forms (auth par secret header) ───────────────────────────
 router.post('/webhook', savController.webhookGravityForms);
 
 // ─── Inbound email Mailgun — multipart/form-data ou urlencoded ───────────────
+/**
+ * Un message refusé ici ne doit JAMAIS disparaître en silence.
+ *
+ * On répond 200 à Mailgun — un code d'erreur déclencherait des réessais qui
+ * échoueraient à l'identique, puis un abandon sans trace — et on met le message
+ * de côté dans `sav_inbound_failures`, avec alerte à l'équipe.
+ *
+ * Les pièces jointes, elles, sont bel et bien perdues : on refuse justement de
+ * les lire, et le stockage Mailgun est désactivé côté domaine. D'où des plafonds
+ * volontairement larges : mieux vaut accepter le message que savoir
+ * élégamment qu'on l'a perdu. Ce filet ne couvre que le cas extrême.
+ *
+ * Multer avorte le parsing dès l'erreur : `req.body` ne contient donc que les
+ * champs lus avant. Mailgun envoyant ses champs texte d'abord, on récupère en
+ * général l'expéditeur et le sujet — assez pour rappeler le client.
+ */
+const handleInboundRejection = async (req, res, error, detail = '') => {
+  console.error('❌ [SAV Inbound] Message refusé au parsing:', error);
+  const b = req.body || {};
+  await recordInboundFailure({
+    payload: b,
+    error,
+    sender: b.sender || b.from || null,
+    subject: b.subject || b.Subject || null,
+    messageId: b['Message-Id'] || b['message-url'] || null,
+    alertTitle: 'Email SAV refusé (trop volumineux)',
+    alertDetail: detail
+      + `\n⚠️ Les pièces jointes de ce message sont DÉFINITIVEMENT perdues : `
+      + `rappelez le client pour qu'il les renvoie en plusieurs fois.`,
+  });
+  // 200 volontaire : le message est pris en charge de notre côté (mis de côté),
+  // il n'y a rien à réessayer.
+  res.status(200).json({ success: false, stored_for_review: true });
+};
+
 const inboundParser = (req, res, next) => {
   const ct = req.headers['content-type'] || '';
+
+  // Garde-fou global : multer borne la taille d'UN fichier et leur nombre, mais
+  // jamais le total. Sans ça, 50 × 10 Mo tiendraient en mémoire d'un coup.
+  const declared = parseInt(req.headers['content-length'] || '0', 10);
+  if (declared > INBOUND_MAX_TOTAL_SIZE) {
+    const mo = (n) => Math.round(n / 1024 / 1024);
+    return handleInboundRejection(
+      req, res,
+      `Message de ${mo(declared)} Mo, au-delà de la limite de ${mo(INBOUND_MAX_TOTAL_SIZE)} Mo`,
+      'Le message a été refusé avant lecture, sur sa taille annoncée.'
+    );
+  }
+
   if (ct.includes('multipart/form-data')) {
-    memoryUpload.any()(req, res, next);
+    inboundUpload.any()(req, res, (err) => {
+      if (err) {
+        return handleInboundRejection(
+          req, res,
+          `${err.code || 'ERREUR'} — ${err.message}`,
+          `Limites en vigueur : ${INBOUND_MAX_FILES} fichiers, `
+          + `${INBOUND_MAX_FILE_SIZE / 1024 / 1024} Mo par fichier.`
+        );
+      }
+      next();
+    });
   } else {
     express.urlencoded({ extended: true, limit: '50mb' })(req, res, next);
   }
