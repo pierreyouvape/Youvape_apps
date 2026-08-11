@@ -367,6 +367,36 @@ const syncBmsBarcodes = async () => {
   }
 };
 
+let bmsShelfLocationCronJob = null;
+
+const syncBmsShelfLocations = async () => {
+  try {
+    const result = await productsController.syncShelfLocationsFromBMS();
+    console.log(`BMS Emplacements: ${result.withLocation}/${result.synced} produits avec emplacement`);
+  } catch (error) {
+    console.error('Erreur sync BMS emplacements:', error.message);
+    sendAlert(
+      `Cron BMS Emplacements: echec sync`,
+      `La synchronisation des emplacements de rangement a echoue.\n\nErreur: ${error.message}`
+    );
+  }
+};
+
+const setupBmsShelfLocationCron = () => {
+  if (bmsShelfLocationCronJob) {
+    bmsShelfLocationCronJob.stop();
+    bmsShelfLocationCronJob = null;
+  }
+
+  // Une fois par nuit : ~5 600 appels BMS (un par SKU), soit ~90 s. Les emplacements
+  // bougent rarement, un rafraichissement quotidien suffit largement.
+  bmsShelfLocationCronJob = cron.schedule('20 4 * * *', syncBmsShelfLocations, {
+    timezone: 'Europe/Paris'
+  });
+
+  console.log('Cron BMS emplacements configure: tous les jours a 4h20 (Europe/Paris)');
+};
+
 const setupBmsBarcodeCron = () => {
   if (bmsBarcodeCronJob) {
     bmsBarcodeCronJob.stop();
@@ -620,6 +650,7 @@ module.exports = {
   setupBmsCron,
   setupComputedCostCron,
   setupBmsBarcodeCron,
+  setupBmsShelfLocationCron,
   setupStockResyncCron,
   setupSavAutomationsCron,
   setupProductDbSyncCron,

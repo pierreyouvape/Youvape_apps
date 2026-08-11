@@ -72,14 +72,17 @@ function Thumb({ src, alt, size = 100 }) {
       background: '#fff', padding: 3 }} />;
 }
 
-/** Emplacement en entrepôt — chargé après l'écran, donc un état « en attente ». */
-function Location({ value, loading }) {
+/**
+ * Emplacement de rangement dans l'entrepôt principal. Stocké en base et rafraîchi
+ * chaque nuit depuis BMS : aucun appel réseau ici, la donnée arrive avec le détail.
+ */
+function Location({ value }) {
   if (value) {
     return <span style={{ display: 'inline-block', padding: '4px 9px', borderRadius: 6,
       background: C.grey, border: `1px solid ${C.greyB}`, fontSize: 13, fontWeight: 700,
       color: C.primary, letterSpacing: 0.4, whiteSpace: 'nowrap' }}>{value}</span>;
   }
-  return <span style={{ color: C.greyM, fontSize: 13 }}>{loading ? '…' : '—'}</span>;
+  return <span style={{ color: C.greyM, fontSize: 13 }}>—</span>;
 }
 
 function Badge({ children, color, bg }) {
@@ -207,7 +210,7 @@ function OrdersList({ token, onOpen }) {
 }
 
 /* ─── ÉCRAN 2 — DÉTAIL ──────────────────────────────────── */
-function OrderDetail({ order, items, onBack, onStart, locations, locationsLoading }) {
+function OrderDetail({ order, items, onBack, onStart }) {
   return (
     <div style={{ padding: '24px 32px', maxWidth: 1400, margin: '0 auto' }}>
       <Btn variant="ghost" small onClick={onBack} style={{ marginBottom: 16 }}>← Retour</Btn>
@@ -253,7 +256,7 @@ function OrderDetail({ order, items, onBack, onStart, locations, locationsLoadin
                     )}
                   </Td>
                   <Td color={C.greyT}>{it.supplier_sku || it.sku || '—'}</Td>
-                  <Td><Location value={locations?.[it.id]} loading={locationsLoading} /></Td>
+                  <Td><Location value={it.shelf_location} /></Td>
                   <Td align="right" bold>{it.qty_expected}</Td>
                   <Td align="right" color={it.qty_received > 0 ? C.orange : C.greyM}>{it.qty_received}</Td>
                   <Td align="right" bold color={it.qty_remaining > 0 ? C.dark : C.green}>{it.qty_remaining}</Td>
@@ -268,7 +271,7 @@ function OrderDetail({ order, items, onBack, onStart, locations, locationsLoadin
 }
 
 /* ─── ÉCRAN 3 — COMPTAGE ────────────────────────────────── */
-function CountingScreen({ token, order, items, onBack, onReload, locations, locationsLoading }) {
+function CountingScreen({ token, order, items, onBack, onReload }) {
   // counts : { [itemId]: nombre d'unités comptées lors de CETTE réception }
   const [counts, setCounts] = useState(() =>
     Object.fromEntries(items.map(i => [i.id, 0])));
@@ -455,7 +458,7 @@ function CountingScreen({ token, order, items, onBack, onReload, locations, loca
                         {it.supplier_sku || it.sku}
                       </div>
                     </Td>
-                    <Td><Location value={locations?.[it.id]} loading={locationsLoading} /></Td>
+                    <Td><Location value={it.shelf_location} /></Td>
                     <Td align="right" bold>{it.qty_remaining}</Td>
                     <Td align="center">
                       <div style={{ display: 'flex', gap: 6, alignItems: 'center', justifyContent: 'center' }}>
@@ -701,10 +704,6 @@ export default function ReceptionApp() {
   const [orderId, setOrderId] = useState(null);
   const [detail, setDetail] = useState(null);
   const [loading, setLoading] = useState(false);
-  // Les emplacements viennent de BMS (un appel par SKU) : chargés APRES le détail
-  // pour que l'écran s'affiche tout de suite, la colonne se remplissant ensuite.
-  const [locations, setLocations] = useState({});
-  const [locationsLoading, setLocationsLoading] = useState(false);
 
   const canRead = permissions?.reception?.read === true;
 
@@ -716,18 +715,8 @@ export default function ReceptionApp() {
       .finally(() => setLoading(false));
   }, [token]);
 
-  const loadLocations = useCallback((id) => {
-    setLocationsLoading(true);
-    axios.get(`${API_URL}/reception/orders/${id}/locations`, authHeaders(token))
-      .then(r => setLocations(r.data.data || {}))
-      .catch(() => setLocations({}))
-      .finally(() => setLocationsLoading(false));
-  }, [token]);
 
-  const openOrder = (id) => {
-    setOrderId(id); setView('detail'); setLocations({});
-    loadDetail(id); loadLocations(id);
-  };
+  const openOrder = (id) => { setOrderId(id); setView('detail'); loadDetail(id); };
 
   if (permissions && !canRead) {
     return (
@@ -753,8 +742,6 @@ export default function ReceptionApp() {
           items={detail.items}
           onBack={() => { setView('list'); setDetail(null); }}
           onStart={() => setView('counting')}
-          locations={locations}
-          locationsLoading={locationsLoading}
         />
       )}
 
@@ -765,8 +752,6 @@ export default function ReceptionApp() {
           items={detail.items}
           onBack={() => setView('detail')}
           onReload={() => loadDetail(orderId)}
-          locations={locations}
-          locationsLoading={locationsLoading}
         />
       )}
     </AppShell>

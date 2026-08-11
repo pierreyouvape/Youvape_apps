@@ -991,3 +991,51 @@ exports.getBmsLocations = async (req, res) => {
     res.status(500).json({ success: false, error: error.message });
   }
 };
+
+/**
+ * Synchronise les emplacements de rangement depuis BMS (cron quotidien).
+ *
+ * BMS n'a pas d'endpoint bulk : c'est un appel par SKU (~150 ms), d'où le stockage
+ * en base plutôt qu'une lecture à la volée. Sur ~5 600 produits publiés et 10 appels
+ * en parallèle, un passage complet prend environ 90 s.
+ *
+ * Seul l'entrepôt principal est retenu — les entrepôts « SAV … » sont des stocks de
+ * service après-vente et n'indiquent pas où ranger une réception.
+ */
+const MAIN_WAREHOUSE = 'entrepot';
+const LOCATION_SYNC_CONCURRENCY = 10;
+
+exports.syncShelfLocationsFromBMS = async () => {
+  console.log('[BMS Shelf Sync] Debut...');
+  const { rows: products } = await pool.query(`
+    SELECT id, sku FROM products
+    WHERE sku IS NOT NULL AND sku <> '' AND post_status = 'publish'
+    ORDER BY shelf_location_synced_at ASC NULLS FIRST
+  `);
+  if (products.length === 0) return { synced: 0, withLocation: 0, total: 0 };
+
+  let synced = 0, withLocation = 0;
+  for (let i = 0; i < products.length; i += LOCATION_SYNC_CONCURRENCY) {
+    const batch = products.slice(i, i + LOCATION_SYNC_CONCURRENCY);
+    await Promise.all(batch.map(async (p) => {
+      let locations;
+      try {
+        locations = await bmsApiModel.getProductShelfLocations(p.sku);
+      } catch {
+        return; // SKU en erreur : on le reverra au prochain passage
+      }
+      const main = locations.find(l =>
+        String(l.warehouse || '').trim().toLowerCase() === MAIN_WAREHOUSE);
+      const value = main ? main.location : null;
+      await pool.query(
+        'UPDATE products SET shelf_location = $2, shelf_location_synced_at = NOW() WHERE id = $1',
+        [p.id, value]
+      );
+      synced++;
+      if (value) withLocation++;
+    }));
+  }
+
+  console.log(`[BMS Shelf Sync] ${synced}/${products.length} produits, dont ${withLocation} avec emplacement`);
+  return { synced, withLocation, total: products.length };
+};

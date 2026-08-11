@@ -38,7 +38,7 @@ const competitorRoutes = require('./routes/competitorRoutes');
 const receptionRoutes = require('./routes/receptionRoutes');
 const inscritsRoutes = require('./routes/inscritsRoutes');
 const authMiddleware = require('./middleware/authMiddleware');
-const { setupCron, setupBmsCron, setupComputedCostCron, setupBmsBarcodeCron, setupStockResyncCron, setupSavAutomationsCron, setupProductDbSyncCron, setupBmsTagRetryCron, setupReportEmailCron, setupStockValuationSnapshotCron, setupDraftStockReportCron, setupCompetitorMonitorCron } = require('./services/cronService');
+const { setupCron, setupBmsCron, setupComputedCostCron, setupBmsBarcodeCron, setupBmsShelfLocationCron, setupStockResyncCron, setupSavAutomationsCron, setupProductDbSyncCron, setupBmsTagRetryCron, setupReportEmailCron, setupStockValuationSnapshotCron, setupDraftStockReportCron, setupCompetitorMonitorCron } = require('./services/cronService');
 const rewardService = require('./services/rewardService');
 const emailService = require('./services/emailService');
 const wcSyncService = require('./services/wcSyncService');
@@ -112,6 +112,8 @@ app.listen(PORT, async () => {
   // Initialiser le cron BMS Barcodes (sync codes-barres toutes les heures)
   setupBmsBarcodeCron();
 
+  // Emplacements de rangement (indication pour la reception)
+  setupBmsShelfLocationCron();
   // Initialiser le check re-sync stocks (one-shot programme)
   setupStockResyncCron();
 
