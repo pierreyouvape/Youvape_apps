@@ -30,3 +30,12 @@ screenshots/
 API Nextore_files/
 docs/nextore-api.md
 docs/nextore-postman-collection.json
+
+# Artefact de build du plugin WP (le source est versionné dans youvape-sav-client/)
+youvape-sav-client.zip
+
+# Livraison de maquettes ponctuelle
+Design/
+
+# Document de référence SAV (mapping des statuts agent/client)
+Statuts-SAV-mapping-agent-client.pdf

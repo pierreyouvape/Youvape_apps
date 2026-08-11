@@ -52,15 +52,22 @@ function Btn({ children, onClick, variant = 'primary', disabled, small, title, s
     }}>{children}</button>
   );
 }
-/** Vignette produit — 40x40, comme Packing et Catalogue. */
-function Thumb({ src, alt, size = 40 }) {
-  const base = { width: size, height: size, borderRadius: 6, flexShrink: 0 };
+/**
+ * Vignette produit. Plus grande qu'ailleurs dans l'app (100 px contre 40) : en
+ * réception, la photo sert à identifier physiquement l'article qu'on a en main.
+ * D'où aussi `contain` plutôt que `cover` — à cette taille un recadrage masquerait
+ * l'étiquette, donc le dosage, qui est souvent le seul écart entre deux références.
+ */
+function Thumb({ src, alt, size = 100 }) {
+  const base = { width: size, height: size, borderRadius: 8, flexShrink: 0 };
   if (!src) {
     return <div style={{ ...base, background: C.greyB, display: 'inline-flex',
-      alignItems: 'center', justifyContent: 'center', color: C.greyM, fontSize: 14 }}>?</div>;
+      alignItems: 'center', justifyContent: 'center', color: C.greyM,
+      fontSize: Math.round(size / 3) }}>?</div>;
   }
   return <img src={src} alt={alt || ''} loading="lazy"
-    style={{ ...base, objectFit: 'cover', border: `1px solid ${C.greyB}`, background: '#fff' }} />;
+    style={{ ...base, objectFit: 'contain', border: `1px solid ${C.greyB}`,
+      background: '#fff', padding: 3 }} />;
 }
 
 function Badge({ children, color, bg }) {
@@ -211,7 +218,7 @@ function OrderDetail({ order, items, onBack, onStart }) {
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr>
-                <Th width={64} />
+                <Th width={116} />
                 <Th>Produit</Th>
                 <Th>Réf. fournisseur</Th>
                 <Th align="right">Attendu</Th>
@@ -406,7 +413,7 @@ function CountingScreen({ token, order, items, onBack, onReload }) {
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr>
-                <Th width={64} />
+                <Th width={116} />
                 <Th>Produit</Th>
                 <Th align="right">Attendu</Th>
                 <Th align="center" width={230}>Compté</Th>
@@ -630,7 +637,7 @@ function UnknownModal({ barcode, items, onClose, onAttach }) {
             background: selected === it.id ? C.accentL : '#fff',
             display: 'flex', alignItems: 'center', gap: 12,
           }}>
-            <Thumb src={it.image_url} alt={it.name} size={36} />
+            <Thumb src={it.image_url} alt={it.name} size={90} />
             <div style={{ minWidth: 0 }}>
               <div style={{ fontWeight: selected === it.id ? 700 : 400 }}>{it.name}</div>
               <div style={{ fontSize: 11.5, color: C.greyT }}>
