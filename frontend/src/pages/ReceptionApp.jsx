@@ -52,6 +52,17 @@ function Btn({ children, onClick, variant = 'primary', disabled, small, title, s
     }}>{children}</button>
   );
 }
+/** Vignette produit — 40x40, comme Packing et Catalogue. */
+function Thumb({ src, alt, size = 40 }) {
+  const base = { width: size, height: size, borderRadius: 6, flexShrink: 0 };
+  if (!src) {
+    return <div style={{ ...base, background: C.greyB, display: 'inline-flex',
+      alignItems: 'center', justifyContent: 'center', color: C.greyM, fontSize: 14 }}>?</div>;
+  }
+  return <img src={src} alt={alt || ''} loading="lazy"
+    style={{ ...base, objectFit: 'cover', border: `1px solid ${C.greyB}`, background: '#fff' }} />;
+}
+
 function Badge({ children, color, bg }) {
   return <span style={{ display: 'inline-block', padding: '3px 10px', borderRadius: 999,
     fontSize: 11.5, fontWeight: 700, color, background: bg, whiteSpace: 'nowrap' }}>{children}</span>;
@@ -200,6 +211,7 @@ function OrderDetail({ order, items, onBack, onStart }) {
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr>
+                <Th width={64} />
                 <Th>Produit</Th>
                 <Th>Réf. fournisseur</Th>
                 <Th align="right">Attendu</Th>
@@ -211,6 +223,7 @@ function OrderDetail({ order, items, onBack, onStart }) {
             <tbody>
               {items.map(it => (
                 <tr key={it.id}>
+                  <Td><Thumb src={it.image_url} alt={it.name} /></Td>
                   <Td>
                     {it.name}
                     {it.pack_qty > 1 && (
@@ -393,6 +406,7 @@ function CountingScreen({ token, order, items, onBack, onReload }) {
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr>
+                <Th width={64} />
                 <Th>Produit</Th>
                 <Th align="right">Attendu</Th>
                 <Th align="center" width={230}>Compté</Th>
@@ -405,6 +419,7 @@ function CountingScreen({ token, order, items, onBack, onReload }) {
                 const ecart = counted - it.qty_remaining;
                 return (
                   <tr key={it.id} style={rowColors(it)}>
+                    <Td><Thumb src={it.image_url} alt={it.name} /></Td>
                     <Td>
                       {it.name}
                       {it.pack_qty > 1 && (
@@ -613,11 +628,15 @@ function UnknownModal({ barcode, items, onClose, onAttach }) {
             padding: '10px 14px', cursor: 'pointer', fontSize: 13.5,
             borderBottom: `1px solid ${C.greyB}`,
             background: selected === it.id ? C.accentL : '#fff',
+            display: 'flex', alignItems: 'center', gap: 12,
           }}>
-            <div style={{ fontWeight: selected === it.id ? 700 : 400 }}>{it.name}</div>
-            <div style={{ fontSize: 11.5, color: C.greyT }}>
-              {it.supplier_sku || it.sku} · reste {it.qty_remaining}
-              {it.pack_qty > 1 && ` · carton de ${it.pack_qty}`}
+            <Thumb src={it.image_url} alt={it.name} size={36} />
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontWeight: selected === it.id ? 700 : 400 }}>{it.name}</div>
+              <div style={{ fontSize: 11.5, color: C.greyT }}>
+                {it.supplier_sku || it.sku} · reste {it.qty_remaining}
+                {it.pack_qty > 1 && ` · carton de ${it.pack_qty}`}
+              </div>
             </div>
           </div>
         ))}
