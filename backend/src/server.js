@@ -35,6 +35,7 @@ const lettreSuivieRoutes = require('./routes/lettreSuivieRoutes');
 const mondialRelayRoutes = require('./routes/mondialRelayRoutes');
 const transporteursRoutes = require('./routes/transporteursRoutes');
 const competitorRoutes = require('./routes/competitorRoutes');
+const receptionRoutes = require('./routes/receptionRoutes');
 const inscritsRoutes = require('./routes/inscritsRoutes');
 const authMiddleware = require('./middleware/authMiddleware');
 const { setupCron, setupBmsCron, setupComputedCostCron, setupBmsBarcodeCron, setupStockResyncCron, setupSavAutomationsCron, setupProductDbSyncCron, setupBmsTagRetryCron, setupReportEmailCron, setupStockValuationSnapshotCron, setupDraftStockReportCron, setupCompetitorMonitorCron } = require('./services/cronService');
@@ -92,6 +93,7 @@ app.use('/api/lettre-suivie', authMiddleware, lettreSuivieRoutes); // La Poste L
 app.use('/api/mondial-relay', authMiddleware, mondialRelayRoutes); // Mondial Relay invoice analysis
 app.use('/api/transporteurs', authMiddleware, transporteursRoutes); // Vue consolidée des 4 transporteurs
 app.use('/api/competitors', authMiddleware, competitorRoutes); // Veille concurrentielle
+app.use('/api/reception', receptionRoutes); // Réception marchandises (auth + permission dans le routeur)
 app.use('/api/inscrits', authMiddleware, inscritsRoutes); // Inscrits sans commande (par jour)
 
 // Start server
