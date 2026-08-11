@@ -137,6 +137,29 @@ nouvel appel de lecture est authentifié sans effort. Les appels `fetch()`
 
 ## Bugs corrigés — historique
 
+### 2026-08-11 — Achats : arrivages comptés en packs (`commit b41501d`)
+**Fichiers** : `purchaseOrderModel.js`, `productModel.js`, `needsCalculationModel.js`, `productsController.js`, `OrdersTab.jsx`
+
+- **Règle à connaître** : `purchase_order_items` a **deux unités de compte**. Pour les
+  fournisseurs « à l'unité » (`parserRegistry.skipsPackQty` : LCA, Highbuy, Levest,
+  MG Vape), `qty_ordered` = nombre de **PACKS** et `unit_price` = prix **DU PACK** ;
+  ailleurs, `qty_ordered` = unités et `unit_price` = prix unitaire. Dans les deux cas
+  `qty_ordered × unit_price` = montant de la ligne (invariant), d'où la survie du bug.
+- **Symptôme** : un pack de 10 LCA (BMS PO 118531, `#REF12575-41110` : qty 1 ×
+  qty_pack 10 à 8,70 €) apparaissait « 1 pièce en arrivage » au lieu de 10 — les
+  6 requêtes d'arrivage sommaient `qty_ordered - qty_received` comme des unités.
+- **Correctif** : colonne `purchase_order_items.units_per_qty` = nombre d'unités de
+  stock par `qty_ordered` (1 par défaut, `qty_pack` pour les lignes en packs),
+  renseignée à la synchro BMS, à la création et à l'édition de commande.
+  **Tout calcul de stock doit faire `(qty_ordered - qty_received) × units_per_qty`.**
+- **Rattrapage** : jamais via `product_suppliers.pack_qty` (= conditionnement COURANT
+  du catalogue, pas celui de la commande passée : les vieilles lignes boosters LCA,
+  déjà en unités, deviennent des packs de 200). Utiliser
+  `node backend/scripts/backfillUnitsPerQty.js [--all] [--apply]`, qui tranche ligne à
+  ligne en comparant la quantité locale à la commande BMS d'origine.
+- **Sémantique BMS** (utile pour toute reprise) : `qty` est un nombre de packs,
+  `subtotal = qty × price`, unités physiques = `qty × qty_pack`.
+
 ### 2026-07-29 — Sécurité : exposition de données sans authentification (`commit 1bbf603`)
 **Fichiers** : `server.js`, `permissionMiddleware.js`, `main.jsx`, `CustomerAutocomplete.jsx`
 
