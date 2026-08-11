@@ -1302,9 +1302,18 @@ class ProductModel {
     return result.rows;
   }
 
+  // Un même code ne peut pas être à la fois code unité et code pack (contrainte
+  // UNIQUE(product_id, barcode)). Le saisir dans l'autre type le REQUALIFIE au lieu
+  // d'échouer : BMS ne stocke qu'un code par produit, donc les codes de carton y ont
+  // été saisis comme codes unité et doivent pouvoir être rebasculés depuis l'app.
+  // `requalified` (xmax <> 0) distingue une requalification d'une création.
   async addBarcode(productId, barcode, type, quantity = null) {
     const result = await pool.query(
-      'INSERT INTO product_barcodes (product_id, barcode, type, quantity) VALUES ($1, $2, $3, $4) RETURNING *',
+      `INSERT INTO product_barcodes (product_id, barcode, type, quantity)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (product_id, barcode)
+       DO UPDATE SET type = EXCLUDED.type, quantity = EXCLUDED.quantity
+       RETURNING *, (xmax <> 0) AS requalified`,
       [productId, barcode, type, quantity]
     );
     return result.rows[0];

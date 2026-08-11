@@ -333,7 +333,12 @@ const ProductDetail = () => {
       if (type === 'pack' && newPackQty) body.quantity = parseInt(newPackQty);
       const res = await axios.post(`${API_URL}/products/${id}/barcodes`, body, { headers });
       if (res.data.success) {
-        setBarcodes(prev => [...prev, res.data.data]);
+        const saved = res.data.data;
+        // Requalification unité <-> pack : la ligne existe deja, on la remplace
+        // (elle change simplement de colonne a l'affichage) au lieu de la dupliquer.
+        setBarcodes(prev => prev.some(b => b.id === saved.id)
+          ? prev.map(b => (b.id === saved.id ? saved : b))
+          : [...prev, saved]);
         setNewBarcode(prev => ({ ...prev, [type]: '' }));
         if (type === 'pack') setNewPackQty('');
       }
@@ -360,9 +365,15 @@ const ProductDetail = () => {
       if (type === 'pack' && newVarPackQty[varWpId]) body.quantity = parseInt(newVarPackQty[varWpId]);
       const res = await axios.post(`${API_URL}/products/${varWpId}/barcodes`, body, { headers });
       if (res.data.success) {
-        setVariationsBarcodes(prev => prev.map(v =>
-          v.wp_product_id === varWpId ? { ...v, barcodes: [...v.barcodes, res.data.data] } : v
-        ));
+        const saved = res.data.data;
+        setVariationsBarcodes(prev => prev.map(v => {
+          if (v.wp_product_id !== varWpId) return v;
+          // Idem variations : requalification = remplacement, pas ajout.
+          const barcodes = v.barcodes.some(b => b.id === saved.id)
+            ? v.barcodes.map(b => (b.id === saved.id ? saved : b))
+            : [...v.barcodes, saved];
+          return { ...v, barcodes };
+        }));
         setNewVarBarcode(prev => ({ ...prev, [key]: '' }));
         if (type === 'pack') setNewVarPackQty(prev => ({ ...prev, [varWpId]: '' }));
       }
