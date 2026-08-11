@@ -8,10 +8,19 @@ const computedCostModel = {
     const startTime = Date.now();
 
     // 1. Tous les lots reçus, triés par date d'arrivée
-    // unit_price stocke déjà le prix par unité individuelle (jamais le prix pack)
+    // Une ligne n'est pas toujours comptée en unités individuelles : chez les
+    // fournisseurs « à l'unité » (LCA, Highbuy, Levest, MG Vape) et sur les lignes BMS
+    // laissées en packs, qty_received est un nombre de PACKS et unit_price le prix DU
+    // PACK — cf. migration add_units_per_qty_purchase_order_items.sql.
+    // Le FIFO se consomme en unités vendues : il faut donc ramener les deux à l'unité,
+    // sans quoi le lot est pack_qty fois trop petit ET son coût pack_qty fois trop cher
+    // (mesuré : Booster Nicotine 100VG à 22,50 € l'unité au lieu de 0,23 €).
+    // L'invariant montant (qty × prix) est préservé par construction.
     const lotsResult = await pool.query(`
-      SELECT poi.product_id, poi.qty_received,
-             poi.unit_price * (1 - COALESCE(poi.discount_percent, 0) / 100.0) as unit_price,
+      SELECT poi.product_id,
+             poi.qty_received * COALESCE(poi.units_per_qty, 1) as qty_received,
+             poi.unit_price / COALESCE(NULLIF(poi.units_per_qty, 0), 1)
+               * (1 - COALESCE(poi.discount_percent, 0) / 100.0) as unit_price,
              COALESCE(po.received_date, po.order_date, po.created_at) as lot_date
       FROM purchase_order_items poi
       JOIN purchase_orders po ON poi.purchase_order_id = po.id
