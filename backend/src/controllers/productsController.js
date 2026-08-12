@@ -1010,6 +1010,11 @@ const MAIN_WAREHOUSE = 'entrepot';
 const LOCATION_SYNC_CONCURRENCY = 3;
 const LOCATION_SYNC_MAX_PER_RUN = 1200;
 const LOCATION_SYNC_PAUSE_MS = 120;
+// BMS ouvre une nouvelle fenêtre de quota au bout d'une minute. Attendre la fenêtre
+// suivante plutôt qu'abandonner : sinon un passage ne couvre qu'une centaine de
+// produits et la rotation du catalogue prend des mois.
+const LOCATION_SYNC_COOLDOWN_MS = 65000;
+const LOCATION_SYNC_MAX_COOLDOWNS = 12;
 
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
@@ -1021,7 +1026,9 @@ const fetchShelfLocations = async (sku) => {
     raw = await bmsApiModel.apiCall(`/advanced-stock/product/${encodeURIComponent(sku)}/stocks`);
   } catch (error) {
     if (/Too Many Attempts/i.test(error.message)) throw new RateLimitedError(error.message);
-    if (/BMS API error: 404/.test(error.message)) return [];  // SKU absent de BMS : définitif
+    // SKU inconnu de BMS : 404, ou 400 « Produit avec SKU ... non trouvé ». Réponse
+    // définitive — sans ce cas les SKU absents seraient retentés chaque nuit pour rien.
+    if (/BMS API error: 404/.test(error.message) || /non trouv/i.test(error.message)) return [];
     throw error;                                              // autre échec : on ne conclut pas
   }
   return Array.isArray(raw) ? raw : [];
@@ -1037,16 +1044,17 @@ exports.syncShelfLocationsFromBMS = async () => {
   `, [LOCATION_SYNC_MAX_PER_RUN]);
   if (products.length === 0) return { synced: 0, withLocation: 0, skipped: 0, total: 0, rateLimited: false };
 
-  let synced = 0, withLocation = 0, skipped = 0, rateLimited = false;
+  let synced = 0, withLocation = 0, skipped = 0, rateLimited = false, cooldowns = 0;
 
   for (let i = 0; i < products.length && !rateLimited; i += LOCATION_SYNC_CONCURRENCY) {
+    let batchLimited = false;
     const batch = products.slice(i, i + LOCATION_SYNC_CONCURRENCY);
     await Promise.all(batch.map(async (p) => {
       let locations;
       try {
         locations = await fetchShelfLocations(p.sku);
       } catch (error) {
-        if (error instanceof RateLimitedError) rateLimited = true;
+        if (error instanceof RateLimitedError) batchLimited = true;
         skipped++;
         return; // aucune écriture : ni valeur effacée, ni horodatage posé
       }
@@ -1062,12 +1070,22 @@ exports.syncShelfLocationsFromBMS = async () => {
       synced++;
       if (value) withLocation++;
     }));
-    if (!rateLimited) await sleep(LOCATION_SYNC_PAUSE_MS);
+    if (batchLimited) {
+      if (++cooldowns > LOCATION_SYNC_MAX_COOLDOWNS) {
+        rateLimited = true; // quota durablement saturé : on s'arrête proprement
+      } else {
+        console.log(`[BMS Shelf Sync] Quota BMS atteint apres ${synced} produits — pause ${LOCATION_SYNC_COOLDOWN_MS / 1000}s (${cooldowns}/${LOCATION_SYNC_MAX_COOLDOWNS})`);
+        await sleep(LOCATION_SYNC_COOLDOWN_MS);
+        i -= LOCATION_SYNC_CONCURRENCY; // le lot rejete est repris apres la pause
+      }
+      continue;
+    }
+    await sleep(LOCATION_SYNC_PAUSE_MS);
   }
 
   if (rateLimited) {
     console.warn(`[BMS Shelf Sync] Limite de debit BMS atteinte — arret propre apres ${synced} produits`);
   }
-  console.log(`[BMS Shelf Sync] ${synced} mis a jour (${withLocation} avec emplacement), ${skipped} reportes`);
-  return { synced, withLocation, skipped, total: products.length, rateLimited };
+  console.log(`[BMS Shelf Sync] ${synced} mis a jour (${withLocation} avec emplacement), ${skipped} reportes, ${cooldowns} pauses`);
+  return { synced, withLocation, skipped, cooldowns, total: products.length, rateLimited };
 };
