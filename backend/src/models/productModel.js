@@ -115,6 +115,10 @@ const CATALOG_SORT_EXPRESSIONS = {
         UNION ALL
         SELECT x.id FROM products x WHERE x.wp_parent_id = p.wp_product_id AND x.product_type = 'variation'
       ))`,
+  // Emplacement de rangement (entrepot principal), synchronise chaque nuit depuis BMS.
+  // Un parent variable n'a pas de stock propre : on prend le 1er emplacement de ses declinaisons.
+  shelf_location: `(CASE WHEN p.product_type = 'simple' THEN NULLIF(p.shelf_location, '')
+    ELSE (SELECT MIN(NULLIF(v.shelf_location, '')) FROM products v WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation' AND v.post_status = 'publish') END)`,
   sales_30d: `(SELECT COALESCE(SUM(oi.qty), 0)
     FROM order_items oi
     JOIN orders o ON oi.wp_order_id = o.wp_order_id
@@ -1000,7 +1004,8 @@ class ProductModel {
         p.image_url,
         p.product_type,
         p.post_date,
-        p.track_stock
+        p.track_stock,
+        p.shelf_location
       FROM products p
       ${whereClause}
       ${catalogOrderBy(sortBy, sortDir)}
@@ -1061,7 +1066,8 @@ class ProductModel {
           v.weight,
           COALESCE(v.image_url, p_parent.image_url) as image_url,
           v.product_type,
-          v.track_stock
+          v.track_stock,
+          v.shelf_location
         FROM products v
         LEFT JOIN products p_parent ON v.wp_parent_id = p_parent.wp_product_id
         WHERE v.wp_parent_id = ANY($1) AND v.product_type = 'variation'

@@ -36,6 +36,21 @@ const fmtWeight = (v) => {
 
 const fmtInt = (v) => parseInt(v) || 0;
 
+// Emplacement de rangement dans l'entrepot principal. Lu sur la colonne synchronisee
+// chaque nuit depuis BMS (pas d'appel API par ligne, contrairement a la fiche produit).
+const ShelfLocation = ({ value, dark }) => {
+  if (!value) return <span style={{ color: dark ? 'rgba(255,255,255,0.55)' : '#9ca3af' }}>—</span>;
+  return (
+    <span style={{
+      display: 'inline-block', padding: '3px 8px', borderRadius: '6px',
+      backgroundColor: dark ? 'rgba(255,255,255,0.16)' : '#f3f4f6',
+      border: `1px solid ${dark ? 'rgba(255,255,255,0.35)' : '#e5e7eb'}`,
+      fontSize: '12px', fontWeight: '700', letterSpacing: '0.4px',
+      color: dark ? '#ffffff' : '#135E84', whiteSpace: 'nowrap'
+    }}>{value}</span>
+  );
+};
+
 // Style pour les chiffres : 0 en rouge, le reste en noir
 const numStyle = (v) => {
   const n = parseFloat(v) || 0;
@@ -50,6 +65,7 @@ const STOCK_TABS = [
 ];
 
 const CATALOG_COLUMNS = [
+  { key: 'shelf_location',  label: 'Emplacement' },
   { key: 'price',           label: 'Prix TTC' },
   { key: 'discounted_price', label: 'Tarif Remisé' },
   { key: 'cost_price',      label: 'Coût HT' },
@@ -239,6 +255,9 @@ const CatalogApp = () => {
         const totalStock = children.reduce((s, c) => s + (parseInt(c.stock) || 0), 0);
         const totalIncoming = children.reduce((s, c) => s + (parseInt(c.incoming_qty) || 0), 0);
         const totalSales = children.reduce((s, c) => s + (parseInt(c.sales_30d) || 0), 0);
+        // Un parent variable n'a pas d'emplacement propre : on ne l'affiche que si
+        // toutes les declinaisons rangees partagent le meme (sinon chaque ligne montre le sien).
+        const childLocations = [...new Set(children.map(c => c.shelf_location).filter(Boolean))];
 
         // Parent header row
         rows.push({
@@ -247,6 +266,7 @@ const CatalogApp = () => {
           post_title: parentTitle,
           image_url: p.image_url,
           sku: p.sku,
+          shelf_location: p.shelf_location || (childLocations.length === 1 ? childLocations[0] : null),
           price: null,
           cost_price: null,
           weight: null,
@@ -370,8 +390,11 @@ const CatalogApp = () => {
   const headerRight = { ...headerStyle, textAlign: 'right' };
   const headerSortable = { ...headerRight, cursor: 'pointer', userSelect: 'none' };
 
-  const SortableHeader = ({ column, label }) => (
-    <th style={headerSortable} onClick={() => handleSort(column)}>
+  const SortableHeader = ({ column, label, align }) => (
+    <th
+      style={align === 'left' ? { ...headerStyle, cursor: 'pointer', userSelect: 'none' } : headerSortable}
+      onClick={() => handleSort(column)}
+    >
       {label}{sortBy === column ? (sortDir === 'desc' ? ' ▼' : ' ▲') : ''}
     </th>
   );
@@ -591,6 +614,7 @@ const CatalogApp = () => {
                     <th style={{ ...headerStyle, width: '40px' }}></th>
                     <th style={headerStyle}>Nom</th>
                     <th style={headerStyle}>SKU</th>
+                    {isVisible('shelf_location') && <SortableHeader column="shelf_location" label="Emplacement" align="left" />}
                     {isVisible('price') && <SortableHeader column="price" label="Prix TTC" />}
                     {isVisible('discounted_price') && <SortableHeader column="discounted_price" label="Tarif Remisé" />}
                     {isVisible('cost_price') && <SortableHeader column="cost_price" label="Coût HT" />}
@@ -640,6 +664,7 @@ const CatalogApp = () => {
                               </span>
                             ) : '-'}
                           </td>
+                          {isVisible('shelf_location') && <td style={cellStyle}><ShelfLocation value={row.shelf_location} dark /></td>}
                           {isVisible('price') && <td style={cellRight}></td>}
                           {isVisible('discounted_price') && <td style={cellRight}></td>}
                           {isVisible('cost_price') && <td style={cellRight}></td>}
@@ -692,6 +717,7 @@ const CatalogApp = () => {
                             </span>
                           ) : '-'}
                         </td>
+                        {isVisible('shelf_location') && <td style={cellStyle}><ShelfLocation value={row.shelf_location} /></td>}
                         {isVisible('price') && <td style={{ ...cellRight, ...numStyle(row.price) }}>{fmtPrice(row.price)}</td>}
                         {isVisible('discounted_price') && (
                           row.discounted_price != null
