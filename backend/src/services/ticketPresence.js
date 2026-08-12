@@ -21,12 +21,20 @@ const { ticketEvents } = require('./ticketEvents');
 // pour absorber un onglet en veille ou un réseau lent.
 const PRESENCE_TTL_MS = 35 * 1000;
 
-// Un agent est « en train d'écrire » pendant ce délai après sa dernière frappe.
-// Assez long pour couvrir une pause de réflexion, assez court pour libérer
-// rapidement un collègue si l'autre abandonne sa réponse.
-const TYPING_TTL_MS = 12 * 1000;
+// « En train d'écrire » = A UNE RÉPONSE EN COURS, pas « a frappé une touche il
+// y a moins de N secondes ». Un brouillon commencé puis laissé de côté reste une
+// intention de répondre : c'est justement là qu'une collision fait mal.
+//
+// Pas de délai d'expiration, donc : l'état suit le contenu de l'éditeur, et le
+// battement de cœur en fait foi. C'est la présence elle-même qui expire (35 s) —
+// un agent qui ferme son onglet libère le ticket, brouillon ou pas.
+//
+// Contrepartie : un brouillon oublié dans un onglet resté ouvert verrouille
+// longtemps. D'où `typingSince`, exposé pour que l'interface affiche l'ancienneté
+// et que le collègue puisse juger — un brouillon de 30 s et un de 3 h n'appellent
+// pas la même réaction.
 
-// ticketId (string) → Map(userId → { userId, userName, lastSeen, typingUntil })
+// ticketId (string) → Map(userId → { userId, userName, lastSeen, typingSince })
 const byTicket = new Map();
 
 const now = () => Date.now();
@@ -52,7 +60,8 @@ function toPublic(entry) {
   return {
     user_id: entry.userId,
     user_name: entry.userName,
-    typing: entry.typingUntil > now(),
+    typing: !!entry.typingSince,
+    typing_since: entry.typingSince || null,
   };
 }
 
@@ -85,17 +94,18 @@ function heartbeat({ ticketId, userId, userName, typing }) {
     userId: uid,
     userName: userName || 'Agent',
     lastSeen: now(),
-    // Une frappe prolonge la fenêtre ; l'absence de frappe ne l'annule pas
-    // immédiatement, elle la laisse expirer.
-    typingUntil: typing ? now() + TYPING_TTL_MS : (previous?.typingUntil || 0),
+    // On conserve l'horodatage du DÉBUT de la rédaction tant qu'elle dure :
+    // c'est lui qui permet d'afficher « depuis 2 h ». Vider l'éditeur remet à
+    // zéro, et un nouveau brouillon repartira d'un nouvel horodatage.
+    typingSince: typing ? (previous?.typingSince || now()) : null,
   };
   viewers.set(uid, entry);
 
   // On ne diffuse qu'aux changements visibles (arrivée, départ, bascule de
-  // frappe) : un battement de cœur toutes les 10 s par agent ne doit pas
+  // rédaction) : un battement de cœur toutes les 10 s par agent ne doit pas
   // réveiller tous les navigateurs connectés.
-  const wasTyping = previous ? previous.typingUntil > now() : false;
-  const isTyping = entry.typingUntil > now();
+  const wasTyping = !!previous?.typingSince;
+  const isTyping = !!entry.typingSince;
   if (!previous || wasTyping !== isTyping) {
     broadcast(key);
   }
@@ -137,4 +147,4 @@ setInterval(() => {
   }
 }, 15 * 1000).unref();
 
-module.exports = { heartbeat, leave, getViewers, getAll, TYPING_TTL_MS };
+module.exports = { heartbeat, leave, getViewers, getAll };

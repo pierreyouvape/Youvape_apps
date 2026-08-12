@@ -23,7 +23,7 @@ const HEARTBEAT_MS = 10000;
 
 export function useTicketPresence(ticketId, user) {
   const [viewers, setViewers] = useState([]);
-  // Ref plutôt que state : la frappe change à chaque touche, un state
+  // Ref plutôt que state : l'éditeur signale à chaque touche, un state
   // provoquerait un rendu par caractère.
   const typingRef = useRef(false);
   const lastSentTypingRef = useRef(null);
@@ -95,12 +95,21 @@ export function useTicketPresence(ticketId, user) {
     return () => es.close();
   }, [ticketId]);
 
-  // Signalé par l'éditeur à chaque frappe. Un passage de false à true déclenche
-  // un battement immédiat.
+  /**
+   * Signalé par l'éditeur : `true` tant qu'il contient du texte, `false` dès
+   * qu'il est vide — et non « une touche vient d'être frappée ». Un brouillon
+   * laissé de côté reste une intention de répondre, et doit continuer de
+   * protéger le ticket.
+   *
+   * Tout changement d'état déclenche un battement immédiat : sans lui, le
+   * verrou s'armerait ou se lèverait avec jusqu'à 10 s de retard — soit
+   * précisément la fenêtre qu'on cherche à fermer.
+   */
   const setTyping = useCallback((typing) => {
     const was = typingRef.current;
+    if (typing === was) return;
     typingRef.current = typing;
-    if (typing && !was) beat(true);
+    beat(typing);
   }, [beat]);
 
   const others = viewers.filter(v => String(v.user_id) !== String(userId));

@@ -590,7 +590,7 @@ function ReplyComposer({
   onReplySent, onSendFailed, onStatusChange,
   playMode = false, afterActionMode = 'next', onChangeAfterActionMode, onAdvance,
   onCloseTicket, onApplyMacroSubject, isMobile = false,
-  lockedBy = null, onTyping = () => {},
+  lockedBy = null, lockedSince = null, onTyping = () => {},
 }) {
   const [body, setBody] = useState(() => localStorage.getItem(`yv.tickets.draft.${ticketId}`) || '');
   // Verrou levé volontairement par l'agent : on n'enferme jamais quelqu'un qui
@@ -1123,7 +1123,8 @@ function ReplyComposer({
           }}>
             <span style={{ fontSize: 15 }}>✍️</span>
             <span style={{ flex: 1 }}>
-              <strong>{lockedBy}</strong> est en train de répondre à ce ticket.
+              <strong>{lockedBy}</strong> a une réponse en cours sur ce ticket
+              {lockedSince ? ` (depuis ${draftAge(lockedSince)})` : ''}.
             </span>
             <button
               onClick={() => setLockOverridden(true)}
@@ -1140,7 +1141,12 @@ function ReplyComposer({
         <RichEditor
           editorRef={editorRef}
           value={body}
-          onChange={(v) => { setBody(v); onTyping(true); }}
+          onChange={(v) => {
+            setBody(v);
+            // Présence de texte, pas acte de frappe : un brouillon laissé de côté
+            // continue de protéger le ticket (voir useTicketPresence.setTyping).
+            onTyping(!!v && v.replace(/<[^>]*>/g, '').trim().length > 0);
+          }}
           onStateChange={setFmt}
           onImageUpload={handleImageUpload}
           placeholder={isPrivate ? 'Ajouter une note interne…' : 'Tapez votre réponse…'}
@@ -2005,6 +2011,7 @@ function ConversationPanel({ ticket, onReplySent, onStatusChange, playMode, afte
   // Verrou : on bloque seulement pendant qu'un collègue RÉDIGE, pas sur simple
   // consultation — deux agents peuvent légitimement lire le même dossier.
   const lockedBy = typingOthers.length > 0 ? typingOthers[0].user_name : null;
+  const lockedSince = typingOthers.length > 0 ? typingOthers[0].typing_since : null;
   const bottomRef = useRef();
   const sectionRef = useRef();
   const messages = ticket.messages || [];
@@ -2156,6 +2163,7 @@ function ConversationPanel({ ticket, onReplySent, onStatusChange, playMode, afte
           onApplyMacroSubject={onApplyMacroSubject}
           isMobile={isMobile}
           lockedBy={lockedBy}
+          lockedSince={lockedSince}
           onTyping={setTyping}
         />
       </div>
@@ -2209,6 +2217,23 @@ function NoteField({ ticketId, initialNotes }) {
       </button>
     </>
   );
+}
+
+/**
+ * Ancienneté d'un brouillon en cours, en clair.
+ *
+ * Un brouillon de 30 s et un de 3 h n'appellent pas la même réaction : le
+ * premier veut dire « attends deux minutes », le second « il a probablement
+ * oublié, prends la main ». Sans cette information, un bandeau permanent
+ * finirait par être ignoré.
+ */
+function draftAge(since) {
+  const s = Math.max(0, Math.floor((Date.now() - since) / 1000));
+  if (s < 60) return 'moins d\'une minute';
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m} min`;
+  const h = Math.floor(m / 60);
+  return h < 24 ? `${h} h` : `${Math.floor(h / 24)} j`;
 }
 
 // ─── Note portée par la fiche client ──────────────────────────────────────────
