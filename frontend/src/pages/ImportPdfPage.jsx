@@ -537,7 +537,7 @@ const ImportPdfPage = () => {
           <h1 style={{
             fontSize: 16, fontWeight: 800, color: C.grisTF,
             fontFamily: "'Tilt Warp', cursive", margin: 0,
-          }}>Import PDF fournisseur</h1>
+          }}>Import fournisseur (PDF / CSV)</h1>
         </header>
 
         <div style={{ padding: '28px', flex: 1 }}>
@@ -547,8 +547,9 @@ const ImportPdfPage = () => {
             {!parsedData && (
               <>
                 <p style={{ fontSize: 13.5, color: C.grisF, marginBottom: 22, lineHeight: 1.5 }}>
-                  Déposez le bon de commande PDF reçu de votre fournisseur. Notre moteur OCR extrait
-                  automatiquement les lignes pour créer une commande pré-remplie.
+                  Déposez le bon de commande reçu de votre fournisseur — PDF, ou export CSV de
+                  commande (LVP Distribution). Les lignes sont extraites automatiquement pour créer
+                  une commande pré-remplie.
                 </p>
 
                 {/* Card fournisseur */}
@@ -599,11 +600,11 @@ const ImportPdfPage = () => {
                   )}
                 </Card>
 
-                {/* Card fichier PDF */}
+                {/* Card fichier PDF/CSV */}
                 <Card>
-                  <CardLabel n={2} title="Fichier PDF" required />
+                  <CardLabel n={2} title="Fichier PDF ou CSV" required />
                   <p style={{ fontSize: 12.5, color: C.grisM, marginBottom: 14 }}>
-                    Glissez-déposez ou cliquez pour parcourir. PDF uniquement, max 20 Mo.
+                    Glissez-déposez ou cliquez pour parcourir. PDF ou CSV, max 5 Mo.
                   </p>
 
                   {!pdfFile ? (
@@ -665,7 +666,7 @@ const ImportPdfPage = () => {
                           whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
                         }}>{pdfFile.name}</div>
                         <div style={{ fontSize: 12, color: C.grisM, marginTop: 2 }}>
-                          {(pdfFile.size / 1024).toFixed(0)} Ko · PDF
+                          {(pdfFile.size / 1024).toFixed(0)} Ko · {(pdfFile.name.split('.').pop() || '').toUpperCase()}
                         </div>
                       </div>
                       <button onClick={() => setPdfFile(null)} style={{
@@ -719,7 +720,7 @@ const ImportPdfPage = () => {
                     }}
                   >
                     <SparkleIcon />
-                    {parsing ? 'Analyse en cours…' : 'Analyser le PDF'}
+                    {parsing ? 'Analyse en cours…' : 'Analyser le document'}
                   </button>
                 </div>
               </>
@@ -761,7 +762,7 @@ const ImportPdfPage = () => {
                         cursor: 'pointer', fontFamily: 'inherit',
                       }}
                     >
-                      <BackIcon /> Nouveau PDF
+                      <BackIcon /> Nouveau document
                     </button>
                   </div>
 

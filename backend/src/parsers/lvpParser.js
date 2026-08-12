@@ -9,8 +9,9 @@
  *   En-tête : "Commande : XXXXXX passée le DD/MM/YYYY"
  *   Colonnes : Référence | Produit | Prix unitaire | Quantité | Prix total
  * - "Export CSV" : export CSV de commande du site lvp-distribution.fr
- *   En-tête : "Référence de la commande;XXXXXX;;;"
+ *   En-tête : "Référence de la commande;XXXXXX;;;" + "Total produits" HT;X XXX.XX euros;
  *   Colonnes : Référence article;Désignation;Prix unitaire HT;Quantité;Total HT
+ *   Cellules entourées de guillemets, date FR ou ISO, colonnes vides en fin de ligne
  */
 
 module.exports = {
@@ -72,9 +73,10 @@ function parseCsvOrder(text) {
     const unitPriceNum = parseFloat(unitPrice.replace(',', '.'));
     if (!qtyNum || isNaN(unitPriceNum)) continue;
 
+    const totalNum = parseAmount(totalHt);
+
     // Ligne de remise : pas de référence produit, désignation contenant "remise"
     if (/remise/i.test(designation)) {
-      const totalNum = parseFloat(totalHt.replace(',', '.'));
       discountItems.push({ item_type: 'discount', product_name: 'Remise', unit_price: -Math.abs(totalNum), qty_ordered: 1 });
       continue;
     }
@@ -84,10 +86,27 @@ function parseCsvOrder(text) {
       designation,
       qty_ordered: qtyNum,
       unit_price_net: unitPriceNum,
+      // Colonne « Total HT » du CSV, lue indépendamment du prix unitaire : sert au
+      // contrôle ligne à ligne de l'écran d'import et, additionnée, au garde-fou de
+      // réconciliation à l'envoi BMS. Le CSV arrondit le prix unitaire (ex. 3.30 × 50
+      // = 165.00 alors que la ligne vaut 164.98) : c'est ce total qui fait foi.
+      total_ht: Number.isFinite(totalNum) && totalNum > 0 ? totalNum : null,
     });
   }
 
-  return { orderNumber, orderDate, items, discountItems, hasPrice: true, invertPackQty: true };
+  // Total HT produits de l'entête : «"Total produits" HT;1 303.56 euros;»
+  // (milliers séparés par une espace éventuellement insécable, décimale . ou ,)
+  const totalMatch = text.match(/"?Total produits"?\s*HT\s*;\s*"?([\d\s\u00A0\u202F.,]+)/);
+  const invoiceProductTotalHT = totalMatch && parseAmount(totalMatch[1]) > 0
+    ? parseAmount(totalMatch[1])
+    : null;
+
+  return { orderNumber, orderDate, items, discountItems, hasPrice: true, invertPackQty: true, invoiceProductTotalHT };
+}
+
+/** Montant CSV → nombre : «1 303,56» / «1 303.56 euros» → 1303.56 (NaN si illisible) */
+function parseAmount(raw) {
+  return parseFloat(String(raw || '').replace(/[\s\u00A0\u202F]/g, '').replace(',', '.'));
 }
 
 /**
