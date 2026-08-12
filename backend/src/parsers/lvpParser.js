@@ -1,5 +1,17 @@
 /**
  * Parseur PDF/CSV pour LVP Distribution
+ *
+ * CONVENTION DE QUANTITE (les 4 formats) : LVP compte en ARTICLES de son catalogue,
+ * jamais en unites de stock. Quand un article est un conditionnement (sachet de 10
+ * flacons, boite de 100 boosters…), product_suppliers.pack_qty vaut N et le prix
+ * affiche est celui de l'ARTICLE ENTIER (13,00 € le sachet de 10 flacons, pas le
+ * flacon). Les 4 formats renvoient donc pdfIsPackBased : pdfImportModel convertit
+ * (qty × pack_qty unites, prix ÷ pack_qty). Les traiter comme des unites divisait le
+ * montant BMS par pack_qty (ou bloquait sur le garde-fou de divisibilite : commande
+ * YBEXURCXN du 12/08/2026, MXL-DL-100-BK qty 2 / pack 10).
+ * trustPdfPrice : le prix du document fait foi face a un supplier_price BDD parfois
+ * incoherent (comportement historique des formats boutique, conserve).
+ *
  * Gere 4 formats :
  * - "Facture" : facture OpenSi multi-pages avec colonnes Référence | Désignation | Quantité | PU HT | Montant HT
  * - "Confirmation" : confirmation de commande site web lvp-distribution.fr (ancien format)
@@ -101,7 +113,7 @@ function parseCsvOrder(text) {
     ? parseAmount(totalMatch[1])
     : null;
 
-  return { orderNumber, orderDate, items, discountItems, hasPrice: true, invertPackQty: true, invoiceProductTotalHT };
+  return { orderNumber, orderDate, items, discountItems, hasPrice: true, pdfIsPackBased: true, trustPdfPrice: true, invoiceProductTotalHT };
 }
 
 /** Montant CSV → nombre : «1 303,56» / «1 303.56 euros» → 1303.56 (NaN si illisible) */
@@ -180,7 +192,7 @@ function parseEmailOrder(text) {
     ? [{ item_type: 'discount', product_name: 'Remise', unit_price: -globalDiscount, qty_ordered: 1 }]
     : [];
 
-  return { orderNumber, orderDate, items, discountItems, hasPrice: true, invertPackQty: true };
+  return { orderNumber, orderDate, items, discountItems, hasPrice: true, pdfIsPackBased: true, trustPdfPrice: true };
 }
 
 /**
@@ -291,7 +303,7 @@ function parseConfirmation(text) {
     ? [{ item_type: 'discount', product_name: 'Remise', unit_price: -globalDiscount, qty_ordered: 1 }]
     : [];
 
-  return { orderNumber, orderDate, items, discountItems, hasPrice: true, invertPackQty: true };
+  return { orderNumber, orderDate, items, discountItems, hasPrice: true, pdfIsPackBased: true, trustPdfPrice: true };
 }
 
 /**
