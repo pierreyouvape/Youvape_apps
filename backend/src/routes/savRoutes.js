@@ -167,6 +167,11 @@ router.get('/attachments/:ticketId/:filename', async (req, res) => {
 // ─── Flux temps réel des changements de tickets (SSE) ────────────────────────
 router.get('/stream', savController.stream);
 
+// ─── Présence des agents sur les tickets ─────────────────────────────────────
+router.get('/presence', savController.presenceAll);
+router.post('/presence', express.json(), savController.presenceHeartbeat);
+router.post('/presence/leave', express.json(), savController.presenceLeave);
+
 // ─── Tracking transporteur ────────────────────────────────────────────────────
 router.get('/tracking/:number', savController.getTracking);
 

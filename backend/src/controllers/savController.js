@@ -14,6 +14,7 @@ const { sendAckEmail } = require('../utils/savAckEmail');
 const { recordInboundFailure } = require('../utils/savInboundFailure');
 const { resolveForwardedOrigin, stripForwardPrefix } = require('../utils/forwardedEmail');
 const { ticketEvents } = require('../services/ticketEvents');
+const ticketPresence = require('../services/ticketPresence');
 
 // Déduplication des inbounds : Mailgun peut appeler le webhook plusieurs fois
 // pour un même mail (actions Forward + Store-notify, ou retries). On garde en
@@ -95,17 +96,32 @@ const savController = {
     // Coalescence : un seul PATCH/réponse peut générer plusieurs émissions
     // rapprochées. On regroupe les `change` reçus dans une fenêtre de 300 ms en
     // un unique event envoyé au client, pour ne pas le saturer de refetchs.
+    //
+    // Les identifiants sont ACCUMULÉS, pas écrasés : le détail d'un ticket
+    // ouvert filtre sur le sien pour savoir s'il doit se recharger, et deux
+    // tickets modifiés dans la même fenêtre de 300 ms lui feraient rater le
+    // sien si on ne gardait que le dernier.
     let pending = null;
     let lastReason = null;
+    let changedIds = new Set();
     const onChange = ({ ticketId, reason }) => {
       lastReason = reason;
+      if (ticketId !== undefined && ticketId !== null) changedIds.add(String(ticketId));
       if (pending) return;
       pending = setTimeout(() => {
         pending = null;
-        send('change', { reason: lastReason });
+        send('change', { reason: lastReason, ticket_ids: Array.from(changedIds) });
+        changedIds = new Set();
       }, 300);
     };
     ticketEvents.on('change', onChange);
+
+    // Présence : diffusée telle quelle, sans coalescence — c'est un signal rare
+    // (arrivée, départ, début/fin de frappe) dont le retard se verrait.
+    const onPresence = ({ ticketId, viewers }) => {
+      send('presence', { ticket_id: String(ticketId), viewers });
+    };
+    ticketEvents.on('presence', onPresence);
 
     // Heartbeat anti-timeout (nginx/Cloudflare coupent les flux idle).
     const heartbeat = setInterval(() => {
@@ -122,8 +138,42 @@ const savController = {
       clearInterval(heartbeat);
       if (pending) clearTimeout(pending);
       ticketEvents.off('change', onChange);
+      ticketEvents.off('presence', onPresence);
       res.end();
     });
+  },
+
+  // ─── Présence : qui regarde quoi, qui écrit ───────────────────────────────
+  // Battement de cœur envoyé par le navigateur toutes les 10 s tant qu'un
+  // ticket est ouvert. L'identité vient du client : ces routes sont derrière
+  // l'authentification de l'app, et la présence n'est pas une donnée sensible.
+  presenceHeartbeat: (req, res) => {
+    const { ticket_id, user_id, user_name, typing } = req.body || {};
+    if (!ticket_id || !user_id) {
+      return res.status(400).json({ error: 'ticket_id et user_id requis' });
+    }
+    const viewers = ticketPresence.heartbeat({
+      ticketId: ticket_id,
+      userId: user_id,
+      userName: user_name,
+      typing: !!typing,
+    });
+    res.json({ success: true, viewers });
+  },
+
+  // Départ explicite (fermeture d'onglet, changement de ticket). Best-effort :
+  // à défaut, l'entrée expire d'elle-même au bout de 35 s.
+  presenceLeave: (req, res) => {
+    const { ticket_id, user_id } = req.body || {};
+    if (ticket_id && user_id) {
+      ticketPresence.leave({ ticketId: ticket_id, userId: user_id });
+    }
+    res.json({ success: true });
+  },
+
+  // Présence de tous les tickets, pour pastiller la liste.
+  presenceAll: (req, res) => {
+    res.json({ success: true, presence: ticketPresence.getAll() });
   },
 
   // ─── Webhook Gravity Forms — création ticket ──────────────────────────────
@@ -615,6 +665,23 @@ const savController = {
 
       const ticket = await savModel.getById(ticketId);
       if (!ticket) return res.status(404).json({ error: 'Ticket introuvable' });
+
+      // Garde-fou anti-collision. La présence et l'indicateur de frappe rendent
+      // les réponses croisées improbables ; ce contrôle-ci les rend impossibles.
+      // Le navigateur envoie le nombre de messages qu'il avait sous les yeux en
+      // ouvrant son éditeur : s'il a changé, quelqu'un a répondu entre-temps et
+      // l'agent s'apprête à écrire sans l'avoir lu.
+      const expected = req.body.expected_message_count;
+      if (expected !== undefined && expected !== null && expected !== '') {
+        const actual = Array.isArray(ticket.messages) ? ticket.messages.length : 0;
+        if (parseInt(expected, 10) !== actual) {
+          return res.status(409).json({
+            error: 'Le fil a changé depuis l\'ouverture de votre réponse',
+            conflict: true,
+            message_count: actual,
+          });
+        }
+      }
 
       const from = agent_name || 'SAV Youvape';
       const storedAttachments = saveAttachments(ticketId, req.files);

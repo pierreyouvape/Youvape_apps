@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import StatusBadge from './StatusBadge';
 import { useTicketStatuses } from './useTicketStatuses';
+import { useTicketPresence } from './useTicketPresence';
 import { TICKETS_COLOR, formatTicketId } from './ticketConstants';
 import { formatDate, formatDateUTC } from '../../utils/dateUtils';
 import { getTrackingUrl } from '../../utils/trackingUtils';
@@ -589,8 +590,16 @@ function ReplyComposer({
   onReplySent, onSendFailed, onStatusChange,
   playMode = false, afterActionMode = 'next', onChangeAfterActionMode, onAdvance,
   onCloseTicket, onApplyMacroSubject, isMobile = false,
+  lockedBy = null, onTyping = () => {},
 }) {
   const [body, setBody] = useState(() => localStorage.getItem(`yv.tickets.draft.${ticketId}`) || '');
+  // Verrou levé volontairement par l'agent : on n'enferme jamais quelqu'un qui
+  // sait ce qu'il fait (collègue parti sans envoyer, travail à deux assumé).
+  const [lockOverridden, setLockOverridden] = useState(false);
+  // Un collègue a répondu pendant la rédaction : on demande confirmation.
+  const [conflict, setConflict] = useState(false);
+  const [conflictOverride, setConflictOverride] = useState(false);
+  const locked = !!lockedBy && !lockOverridden;
   const [fmt, setFmt] = useState({ bold: false, italic: false, underline: false, bulletList: false });
   const [isPrivate, setIsPrivate] = useState(false);
   const [modeOpen, setModeOpen] = useState(false);
@@ -904,9 +913,22 @@ function ReplyComposer({
       fd.append('body', body);
       fd.append('agent_name', agentName || 'SAV Youvape');
       fd.append('is_private', isPrivate ? 'true' : 'false');
+      // Nombre de messages que l'agent avait sous les yeux : le serveur refuse
+      // l'envoi si le fil a bougé entre-temps (voir `expected_message_count`).
+      // Une note interne n'est pas concernée : elle ne part pas au client, donc
+      // deux notes simultanées ne se contredisent pas.
+      if (!isPrivate && !conflictOverride && Array.isArray(ticket?.messages)) {
+        fd.append('expected_message_count', String(ticket.messages.length));
+      }
       files.forEach(f => fd.append('attachments', f));
       const res = await fetch(`${API}/${ticketId}/reply`, { method: 'POST', body: fd });
       const data = await res.json();
+      if (res.status === 409 && data.conflict) {
+        // Quelqu'un a répondu pendant la rédaction. On NE perd pas le brouillon :
+        // l'agent relit le fil rafraîchi et décide s'il envoie quand même.
+        setConflict(true);
+        return;
+      }
       if (!data.success) throw new Error(data.error || 'Erreur envoi');
 
       // Le message est enregistré (envoyé OU stocké avec send_failed côté backend)
@@ -952,7 +974,9 @@ function ReplyComposer({
   const bodyNotEmpty = !!body && body.replace(/<[^>]*>/g, '').trim().length > 0;
   const hasContent = bodyNotEmpty || files.length > 0;
   const statusChanged = selectedStatus && selectedStatus !== currentStatus;
-  const canSend = hasContent || statusChanged;
+  // Le verrou empêche réellement l'envoi, pas seulement l'affichage d'un
+  // bandeau : sans ça, l'agent averti pourrait tout de même cliquer par réflexe.
+  const canSend = (hasContent || statusChanged) && !locked;
   const currentStatusLabel = statusMap[selectedStatus]?.label || selectedStatus || '—';
   const sendBtnLabel = !hasContent && statusChanged
     ? `Marquer ${currentStatusLabel}`
@@ -1063,11 +1087,60 @@ function ReplyComposer({
           )}
         </div>
 
+        {/* Collision effective : un message est arrivé pendant la rédaction.
+            Le brouillon est intact, l'agent relit le fil (déjà rafraîchi en
+            temps réel) et tranche lui-même. */}
+        {conflict && (
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 10, margin: '0 14px 8px',
+            padding: '9px 12px', borderRadius: 8,
+            background: '#FEF2F2', border: '1px solid #FCA5A5', color: '#B3261E',
+            fontSize: 12.5, fontWeight: 600,
+          }}>
+            <span style={{ fontSize: 15 }}>⚠️</span>
+            <span style={{ flex: 1 }}>
+              Un message est arrivé pendant que vous rédigiez. Relisez le fil avant d'envoyer.
+            </span>
+            <button
+              onClick={() => { setConflict(false); setConflictOverride(true); }}
+              style={{
+                padding: '4px 10px', borderRadius: 6, border: '1px solid #FCA5A5',
+                background: '#fff', color: '#B3261E', fontSize: 12, fontWeight: 700,
+                cursor: 'pointer', fontFamily: 'Lato, sans-serif', whiteSpace: 'nowrap',
+              }}
+            >Envoyer quand même</button>
+          </div>
+        )}
+
+        {/* Un collègue rédige : on avertit et on bloque l'envoi, sans jamais
+            enfermer — le bouton lève le verrou pour qui sait ce qu'il fait. */}
+        {locked && (
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 10, margin: '0 14px 8px',
+            padding: '9px 12px', borderRadius: 8,
+            background: '#FFF7ED', border: '1px solid #FDBA74', color: '#9A3412',
+            fontSize: 12.5, fontWeight: 600,
+          }}>
+            <span style={{ fontSize: 15 }}>✍️</span>
+            <span style={{ flex: 1 }}>
+              <strong>{lockedBy}</strong> est en train de répondre à ce ticket.
+            </span>
+            <button
+              onClick={() => setLockOverridden(true)}
+              style={{
+                padding: '4px 10px', borderRadius: 6, border: '1px solid #FDBA74',
+                background: '#fff', color: '#9A3412', fontSize: 12, fontWeight: 700,
+                cursor: 'pointer', fontFamily: 'Lato, sans-serif', whiteSpace: 'nowrap',
+              }}
+            >Répondre quand même</button>
+          </div>
+        )}
+
         {/* Éditeur riche (Tiptap) — flex pour remplir l'espace, scroll interne */}
         <RichEditor
           editorRef={editorRef}
           value={body}
-          onChange={setBody}
+          onChange={(v) => { setBody(v); onTyping(true); }}
           onStateChange={setFmt}
           onImageUpload={handleImageUpload}
           placeholder={isPrivate ? 'Ajouter une note interne…' : 'Tapez votre réponse…'}
@@ -1927,6 +2000,11 @@ const COMPOSER_DEFAULT_HEIGHT = 280;
 
 function ConversationPanel({ ticket, onReplySent, onStatusChange, playMode, afterActionMode, onChangeAfterActionMode, onAdvance, onCloseTicket, onApplyMacroSubject, isMobile = false }) {
   const { user } = useContext(AuthContext);
+  // Présence : qui d'autre est sur ce ticket, et qui y écrit.
+  const { others, typingOthers, setTyping } = useTicketPresence(ticket?.id, user);
+  // Verrou : on bloque seulement pendant qu'un collègue RÉDIGE, pas sur simple
+  // consultation — deux agents peuvent légitimement lire le même dossier.
+  const lockedBy = typingOthers.length > 0 ? typingOthers[0].user_name : null;
   const bottomRef = useRef();
   const sectionRef = useRef();
   const messages = ticket.messages || [];
@@ -2077,6 +2155,8 @@ function ConversationPanel({ ticket, onReplySent, onStatusChange, playMode, afte
           onCloseTicket={onCloseTicket}
           onApplyMacroSubject={onApplyMacroSubject}
           isMobile={isMobile}
+          lockedBy={lockedBy}
+          onTyping={setTyping}
         />
       </div>
     </section>
@@ -2809,6 +2889,24 @@ export default function TicketDetail({ ticketId }) {
       document.removeEventListener('visibilitychange', onVisible);
       window.removeEventListener('focus', refetchTicket);
     };
+  }, [ticketId, refetchTicket]);
+
+  // Temps réel : le fil se met à jour dès qu'un collègue répond, sans attendre
+  // que la fenêtre reprenne le focus. Le rafraîchissement au focus ci-dessus
+  // se déclenchait précisément quand l'agent ne regardait PAS son ticket —
+  // pendant qu'il le lisait, son fil restait figé, d'où les réponses croisées.
+  useEffect(() => {
+    if (!ticketId) return;
+    const es = new EventSource('/api/sav/stream');
+    es.addEventListener('change', (e) => {
+      try {
+        const data = JSON.parse(e.data);
+        const ids = data.ticket_ids || [];
+        // On ne recharge que pour SON ticket : le flux est global.
+        if (ids.map(String).includes(String(ticketId))) refetchTicket();
+      } catch { /* payload illisible : ignoré */ }
+    });
+    return () => es.close();
   }, [ticketId, refetchTicket]);
 
   // Sync les méta dans la barre d'onglets quand le ticket change (titre, statut)

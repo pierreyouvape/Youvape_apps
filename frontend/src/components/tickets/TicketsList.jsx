@@ -146,6 +146,32 @@ function subjectPill(ticket) {
   return { ...tone, padding: '3px 10px', borderRadius: 999 };
 }
 
+/* ─── Présence : qui est déjà sur ce ticket ──────────────────────────────────── */
+// Voir qu'un collègue est dessus AVANT d'ouvrir évite le doublon en amont.
+// Distinction volontaire : « répond » (il rédige, n'y touchez pas) est bien plus
+// fort que « consulte » (il lit, vous pouvez peut-être prendre la main).
+function PresenceBadge({ viewers }) {
+  if (!viewers || viewers.length === 0) return null;
+  const typing = viewers.filter(v => v.typing);
+  const active = typing.length > 0;
+  const names = (active ? typing : viewers).map(v => v.user_name).join(', ');
+  return (
+    <span
+      title={`${names} — ${active ? 'en train de répondre' : 'consulte ce ticket'}`}
+      style={{
+        display: 'inline-flex', alignItems: 'center', gap: 4,
+        padding: '1px 8px', borderRadius: 999, whiteSpace: 'nowrap',
+        background: active ? '#FFF7ED' : '#F2F6F8',
+        color: active ? '#9A3412' : C.grisF,
+        border: `1px solid ${active ? '#FDBA74' : C.grisCL}`,
+        fontSize: 10.5, fontWeight: 800,
+      }}
+    >
+      {active ? '✍️' : '👁'} {names.length > 18 ? names.slice(0, 17) + '…' : names}
+    </span>
+  );
+}
+
 /* ─── Checkbox ───────────────────────────────────────────────────────────────── */
 function Checkbox({ checked, indeterminate, onChange }) {
   return (
@@ -537,6 +563,31 @@ export default function TicketsList({ activeView, views = [], onRefresh, refresh
   // Actions groupées : on ne propose que les statuts actifs.
   const { activeStatuses: allStatuses } = useTicketStatuses();
 
+  // Présence des collègues, pour éviter d'ouvrir un ticket déjà pris en main.
+  // On charge l'état complet à l'ouverture, puis le flux SSE pousse les
+  // changements ticket par ticket — inutile de re-solliciter l'API.
+  const [presence, setPresence] = useState({});
+  useEffect(() => {
+    let alive = true;
+    fetch('/api/sav/presence')
+      .then(r => r.json())
+      .then(d => { if (alive && d.success) setPresence(d.presence || {}); })
+      .catch(() => {});
+    const es = new EventSource('/api/sav/stream');
+    es.addEventListener('presence', (e) => {
+      try {
+        const d = JSON.parse(e.data);
+        setPresence(prev => {
+          const next = { ...prev };
+          if (d.viewers && d.viewers.length > 0) next[String(d.ticket_id)] = d.viewers;
+          else delete next[String(d.ticket_id)];
+          return next;
+        });
+      } catch { /* payload illisible */ }
+    });
+    return () => { alive = false; es.close(); };
+  }, []);
+
   // Nettoyer le timer d'aperçu au démontage
   useEffect(() => () => clearTimeout(previewTimer.current), []);
 
@@ -841,6 +892,7 @@ export default function TicketsList({ activeView, views = [], onRefresh, refresh
                     <SourceIcon source={t.source} />
                     {t.customer_name || t.customer_email || '—'}
                   </span>
+                  {presence[String(t.id)] && <PresenceBadge viewers={presence[String(t.id)]} />}
                 </div>
               </div>
             ))}
@@ -948,6 +1000,11 @@ export default function TicketsList({ activeView, views = [], onRefresh, refresh
                           }}>
                             {t.subject || '—'}
                           </span>
+                          {presence[String(t.id)] && (
+                            <span style={{ marginLeft: 8, verticalAlign: 'middle' }}>
+                              <PresenceBadge viewers={presence[String(t.id)]} />
+                            </span>
+                          )}
                         </td>
                         {/* Demandeur */}
                         <td style={cell}>
