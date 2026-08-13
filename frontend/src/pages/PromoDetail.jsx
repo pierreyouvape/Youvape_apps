@@ -187,7 +187,8 @@ const PromoDetail = () => {
     return items.filter((i) =>
       (i.display_name || '').toLowerCase().includes(q) ||
       (i.sku || '').toLowerCase().includes(q) ||
-      (i.brand || '').toLowerCase().includes(q));
+      (i.brand || '').toLowerCase().includes(q) ||
+      (i.sub_brand || '').toLowerCase().includes(q));
   }, [items, search]);
 
   const inputStyle = {
@@ -387,7 +388,7 @@ const PromoDetail = () => {
                           <td style={{ ...td, minWidth: 240 }}>
                             <div style={{ fontWeight: 600 }}>{it.display_name}</div>
                             <div style={{ fontSize: 11, color: C.grisM, fontFamily: 'monospace' }}>
-                              {it.sku}{it.brand ? ` · ${it.brand}` : ''}
+                              {it.sku}{it.brand ? ` · ${it.brand}` : ''}{it.sub_brand ? ` › ${it.sub_brand}` : ''}
                             </div>
                           </td>
                           <td style={{ ...tdR, color: it.stock <= 0 ? C.rouge : C.grisTF }}>{int(it.stock)}</td>

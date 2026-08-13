@@ -236,6 +236,7 @@ exports.searchProducts = async (req, res) => {
     const rows = await promoModel.searchProducts({
       q: req.query.q || '',
       brand: req.query.brand || null,
+      subBrand: req.query.subBrand || null,
       category: req.query.category || null,
       inStockOnly: req.query.inStockOnly === '1' || req.query.inStockOnly === 'true',
       limit: req.query.limit,

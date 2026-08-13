@@ -22,7 +22,8 @@ const marginColor = (p) => (p === null || p === undefined ? C.grisM : p < 0 ? C.
  */
 export default function PromoProductPicker({ operationId, onClose, onAdd }) {
   const [q, setQ] = useState('');
-  const [brand, setBrand] = useState('');
+  // Valeur encodée « type:valeur » pour n'avoir qu'un menu marques + sous-marques.
+  const [brandSel, setBrandSel] = useState('');
   const [brands, setBrands] = useState([]);
   const [inStockOnly, setInStockOnly] = useState(true);
   const [rows, setRows] = useState([]);
@@ -40,9 +41,14 @@ export default function PromoProductPicker({ operationId, onClose, onAdd }) {
   const fetchRows = useCallback(async () => {
     setLoading(true);
     try {
+      const [selType, ...selRest] = brandSel.split(':');
+      const selValue = selRest.join(':');
       const res = await axios.get(`${API_URL}/promos/products/search`, {
         params: {
-          q, brand: brand || undefined, inStockOnly: inStockOnly ? 1 : 0,
+          q,
+          brand: selType === 'brand' ? selValue : undefined,
+          subBrand: selType === 'sub_brand' ? selValue : undefined,
+          inStockOnly: inStockOnly ? 1 : 0,
           excludeOperationId: operationId, limit: 150,
         },
       });
@@ -52,7 +58,7 @@ export default function PromoProductPicker({ operationId, onClose, onAdd }) {
     } finally {
       setLoading(false);
     }
-  }, [q, brand, inStockOnly, operationId]);
+  }, [q, brandSel, inStockOnly, operationId]);
 
   // Recherche à la frappe, temporisée.
   useEffect(() => {
@@ -114,9 +120,13 @@ export default function PromoProductPicker({ operationId, onClose, onAdd }) {
         <div style={{ padding: '14px 22px', display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center', borderBottom: `1px solid ${C.grisCL}` }}>
           <input autoFocus value={q} onChange={(e) => setQ(e.target.value)}
             placeholder="Rechercher (nom, SKU, marque)…" style={{ ...inputStyle, flex: 1, minWidth: 240 }} />
-          <select value={brand} onChange={(e) => setBrand(e.target.value)} style={{ ...inputStyle, maxWidth: 220 }}>
+          <select value={brandSel} onChange={(e) => setBrandSel(e.target.value)} style={{ ...inputStyle, maxWidth: 260 }}>
             <option value="">Toutes les marques</option>
-            {brands.map((b) => <option key={b.brand} value={b.brand}>{b.brand} ({b.nb})</option>)}
+            {brands.map((b) => (
+              <option key={`${b.type}:${b.parent || ''}:${b.value}`} value={`${b.type}:${b.value}`}>
+                {b.type === 'sub_brand' ? `\u00A0\u00A0↳ ${b.value}` : b.value} ({b.nb})
+              </option>
+            ))}
           </select>
           <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: C.grisTF, cursor: 'pointer' }}>
             <input type="checkbox" checked={inStockOnly} onChange={(e) => setInStockOnly(e.target.checked)} />
@@ -159,7 +169,7 @@ export default function PromoProductPicker({ operationId, onClose, onAdd }) {
                       <td style={td}>
                         <div style={{ fontWeight: 600 }}>{r.display_name}</div>
                         <div style={{ fontSize: 11, color: C.grisM, fontFamily: 'monospace' }}>
-                          {r.sku}{r.brand ? ` · ${r.brand}` : ''}
+                          {r.sku}{r.brand ? ` · ${r.brand}` : ''}{r.sub_brand ? ` › ${r.sub_brand}` : ''}
                         </div>
                       </td>
                       <td style={{ ...tdR, color: r.stock <= 0 ? C.rouge : C.grisTF }}>{int(r.stock)}</td>

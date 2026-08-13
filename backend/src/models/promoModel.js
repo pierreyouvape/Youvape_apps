@@ -19,6 +19,9 @@ const PAID_STATUSES = [
 
 /**
  * Colonnes produit « live » exposées à l'app (prix TTC, coût HT, stock).
+ * Marque, sous-marque et catégories sont retombées sur le PARENT : en base,
+ * aucune variation ne les porte (elles ne sont renseignées que sur les
+ * `simple` / `variable`), d'où des filtres et une recherche muets sans ce COALESCE.
  * `post_title` / `sku` sont ajoutés à part : sur les lignes d'opération ils
  * retombent sur la valeur figée si le produit a disparu du catalogue.
  */
@@ -30,7 +33,10 @@ const PRODUCT_FIELDS = `
   p.regular_price                                AS regular_price,
   p.discounted_price                             AS discounted_price,
   COALESCE(p.computed_cost, p.wc_cog_cost)       AS cost_price,
-  p.brand, p.sub_brand, p.category, p.sub_category,
+  COALESCE(p.brand, parent.brand)               AS brand,
+  COALESCE(p.sub_brand, parent.sub_brand)       AS sub_brand,
+  COALESCE(p.category, parent.category)         AS category,
+  COALESCE(p.sub_category, parent.sub_category) AS sub_category,
   p.image_url,
   p.product_attributes,
   parent.post_title                              AS parent_title
@@ -255,20 +261,24 @@ const promoModel = {
    * Unités vendables uniquement (simple / variation / woosb) : ce sont elles qui
    * portent un prix. Les parents `variable` sont exclus (pas de prix propre).
    */
-  searchProducts: async ({ q = '', brand, category, inStockOnly = false, limit = 60, excludeOperationId = null }) => {
+  searchProducts: async ({ q = '', brand, subBrand, category, inStockOnly = false, limit = 60, excludeOperationId = null }) => {
     const params = [];
     const where = [`p.product_type IN ('simple', 'variation', 'woosb')`, `p.post_status = 'publish'`];
 
     if (q && q.trim()) {
       const { clause, params: sp, nextIndex } = buildSearchCondition(
-        q, ['p.post_title', 'p.sku', 'p.brand'], params.length + 1
+        q,
+        ['p.post_title', 'p.sku', 'parent.post_title',
+         'COALESCE(p.brand, parent.brand)', 'COALESCE(p.sub_brand, parent.sub_brand)'],
+        params.length + 1
       );
       where.push(clause);
       params.push(...sp);
       void nextIndex;
     }
-    if (brand) { params.push(brand); where.push(`p.brand = $${params.length}`); }
-    if (category) { params.push(category); where.push(`p.category = $${params.length}`); }
+    if (brand) { params.push(brand); where.push(`COALESCE(p.brand, parent.brand) = $${params.length}`); }
+    if (subBrand) { params.push(subBrand); where.push(`COALESCE(p.sub_brand, parent.sub_brand) = $${params.length}`); }
+    if (category) { params.push(category); where.push(`COALESCE(p.category, parent.category) = $${params.length}`); }
     if (inStockOnly) where.push('COALESCE(p.stock, 0) > 0');
     if (excludeOperationId) {
       params.push(excludeOperationId);
@@ -294,14 +304,30 @@ const promoModel = {
     return rows.map(decorate);
   },
 
-  /** Marques présentes au catalogue (filtre du sélecteur). */
+  /**
+   * Marques ET sous-marques, dans la forme utilisée par le catalogue
+   * (`{ type, value, parent }`) : les sous-marques suivent leur marque parente,
+   * ce qui permet un menu unique hiérarchisé. Lues sur les `simple` / `variable`,
+   * seuls types qui portent l'information.
+   */
   listBrands: async () => {
     const { rows } = await pool.query(
-      `SELECT brand, COUNT(*)::int AS nb
-       FROM products
-       WHERE brand IS NOT NULL AND brand <> '' AND post_status = 'publish'
-         AND product_type IN ('simple', 'variation', 'woosb')
-       GROUP BY brand ORDER BY brand`
+      `SELECT type, value, parent, nb FROM (
+         SELECT 'brand' AS type, brand AS value, NULL::text AS parent, COUNT(*)::int AS nb
+         FROM products
+         WHERE brand IS NOT NULL AND brand <> ''
+           AND product_type IN ('simple', 'variable', 'woosb') AND post_status = 'publish'
+         GROUP BY brand
+
+         UNION ALL
+
+         SELECT 'sub_brand' AS type, sub_brand AS value, brand AS parent, COUNT(*)::int AS nb
+         FROM products
+         WHERE sub_brand IS NOT NULL AND sub_brand <> ''
+           AND product_type IN ('simple', 'variable', 'woosb') AND post_status = 'publish'
+         GROUP BY sub_brand, brand
+       ) t
+       ORDER BY CASE WHEN type = 'brand' THEN value ELSE parent END, type, value`
     );
     return rows;
   },
