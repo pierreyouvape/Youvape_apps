@@ -6,6 +6,7 @@ import { Promos as PromosIcon } from '../components/AppIcons';
 import { STATUSES, statusInfo, toYmd } from './PromosApp';
 import PromoAnalysis from '../components/promos/PromoAnalysis';
 import PromoProductPicker from '../components/promos/PromoProductPicker';
+import CopyButton from '../components/CopyButton';
 
 const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:3000/api/auth').replace('/auth', '');
 
@@ -188,7 +189,9 @@ const PromoDetail = () => {
       (i.display_name || '').toLowerCase().includes(q) ||
       (i.sku || '').toLowerCase().includes(q) ||
       (i.brand || '').toLowerCase().includes(q) ||
-      (i.sub_brand || '').toLowerCase().includes(q));
+      (i.sub_brand || '').toLowerCase().includes(q) ||
+      (i.category || '').toLowerCase().includes(q) ||
+      (i.sub_category || '').toLowerCase().includes(q));
   }, [items, search]);
 
   const inputStyle = {
@@ -397,11 +400,25 @@ const PromoDetail = () => {
                         : String(it.promo_price ?? it.promo_price_ttc ?? '');
                       return (
                         <tr key={it.id} style={{ background: it.below_cost ? '#FFF5F5' : undefined }}>
-                          <td style={{ ...td, minWidth: 240 }}>
-                            <div style={{ fontWeight: 600 }}>{it.display_name}</div>
-                            <div style={{ fontSize: 11, color: C.grisM, fontFamily: 'monospace' }}>
-                              {it.sku}{it.brand ? ` · ${it.brand}` : ''}{it.sub_brand ? ` › ${it.sub_brand}` : ''}
+                          <td style={{ ...td, minWidth: 280 }}>
+                            <div style={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: 2 }}>
+                              <span>{it.display_name}</span>
+                              <CopyButton text={it.display_name} size={12} />
                             </div>
+                            <div style={{ fontSize: 11, color: C.grisM, fontFamily: 'monospace', display: 'flex', alignItems: 'center', gap: 2 }}>
+                              <span>{it.sku}</span>
+                              <CopyButton text={it.sku || ''} size={11} />
+                            </div>
+                            {(it.brand || it.sub_brand) && (
+                              <div style={{ fontSize: 11, color: C.promoF }}>
+                                {it.brand}{it.sub_brand ? ` › ${it.sub_brand}` : ''}
+                              </div>
+                            )}
+                            {(it.category || it.sub_category) && (
+                              <div style={{ fontSize: 11, color: C.grisM }}>
+                                {it.category}{it.sub_category ? ` › ${it.sub_category}` : ''}
+                              </div>
+                            )}
                           </td>
                           <td style={{ ...tdR, color: it.stock <= 0 ? C.rouge : C.grisTF }}>{int(it.stock)}</td>
                           <td style={tdR}>{int(it.sales_30d)}</td>

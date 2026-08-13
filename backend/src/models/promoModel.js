@@ -42,15 +42,19 @@ const PRODUCT_FIELDS = `
   parent.post_title                              AS parent_title
 `;
 
-/** Ventes des 30 derniers jours (unités), bundles inclus — indicateur de rotation. */
-const SALES_30D_LATERAL = `
+/**
+ * Ventes du produit en un seul passage : unités des 30 derniers jours (rotation)
+ * et date de la dernière vente (dormance). `last_sold` NULL = jamais vendu.
+ */
+const SALES_LATERAL = `
   LEFT JOIN LATERAL (
-    SELECT COALESCE(SUM(oi.qty), 0)::int AS qty
+    SELECT
+      COALESCE(SUM(CASE WHEN o.post_date >= NOW() - INTERVAL '30 days' THEN oi.qty ELSE 0 END), 0)::int AS qty,
+      MAX(o.post_date) AS last_sold
     FROM order_items oi
     JOIN orders o ON o.wp_order_id = oi.wp_order_id
     WHERE (CASE WHEN oi.variation_id > 0 THEN oi.variation_id ELSE oi.product_id END) = p.wp_product_id
       AND o.post_status = ANY($SALES_STATUS_PARAM)
-      AND o.post_date >= NOW() - INTERVAL '30 days'
   ) s30 ON TRUE
 `;
 
@@ -177,11 +181,12 @@ const promoModel = {
              COALESCE(p.sku, i.sku)                 AS sku,
              COALESCE(p.post_title, i.product_name)  AS post_title,
              ${PRODUCT_FIELDS},
-             COALESCE(s30.qty, 0)                    AS sales_30d
+             COALESCE(s30.qty, 0)                    AS sales_30d,
+             s30.last_sold
       FROM promo_operation_items i
       LEFT JOIN products p ON p.wp_product_id = i.wp_product_id
       LEFT JOIN products parent ON parent.wp_product_id = p.wp_parent_id
-      ${SALES_30D_LATERAL.replace('$SALES_STATUS_PARAM', '$2')}
+      ${SALES_LATERAL.replace('$SALES_STATUS_PARAM', '$2')}
       WHERE i.operation_id = $1
       ORDER BY i.position, i.id
     `;
@@ -261,7 +266,10 @@ const promoModel = {
    * Unités vendables uniquement (simple / variation / woosb) : ce sont elles qui
    * portent un prix. Les parents `variable` sont exclus (pas de prix propre).
    */
-  searchProducts: async ({ q = '', brand, subBrand, category, inStockOnly = false, limit = 60, excludeOperationId = null }) => {
+  searchProducts: async ({
+    q = '', brand, subBrand, category, subCategory,
+    noSaleDays = null, inStockOnly = false, limit = 60, excludeOperationId = null,
+  }) => {
     const params = [];
     const where = [`p.product_type IN ('simple', 'variation', 'woosb')`, `p.post_status = 'publish'`];
 
@@ -279,6 +287,7 @@ const promoModel = {
     if (brand) { params.push(brand); where.push(`COALESCE(p.brand, parent.brand) = $${params.length}`); }
     if (subBrand) { params.push(subBrand); where.push(`COALESCE(p.sub_brand, parent.sub_brand) = $${params.length}`); }
     if (category) { params.push(category); where.push(`COALESCE(p.category, parent.category) = $${params.length}`); }
+    if (subCategory) { params.push(subCategory); where.push(`COALESCE(p.sub_category, parent.sub_category) = $${params.length}`); }
     if (inStockOnly) where.push('COALESCE(p.stock, 0) > 0');
     if (excludeOperationId) {
       params.push(excludeOperationId);
@@ -290,13 +299,26 @@ const promoModel = {
     const statusParam = `$${params.length}`;
     params.push(Math.min(parseInt(limit, 10) || 60, 300));
 
+    // Dormance : « non vendu depuis X jours » inclut les produits jamais vendus
+    // (last_sold NULL). 'never' isole ceux qui n'ont jamais été vendus du tout.
+    const dormancy = [];
+    if (noSaleDays === 'never') {
+      dormancy.push('s30.last_sold IS NULL');
+    } else if (noSaleDays) {
+      const days = parseInt(noSaleDays, 10);
+      if (Number.isFinite(days) && days > 0) {
+        dormancy.push(`(s30.last_sold IS NULL OR s30.last_sold < NOW() - INTERVAL '${days} days')`);
+      }
+    }
+
     const sql = `
       SELECT p.wp_product_id, p.post_title, p.sku, ${PRODUCT_FIELDS},
-             COALESCE(s30.qty, 0) AS sales_30d
+             COALESCE(s30.qty, 0) AS sales_30d,
+             s30.last_sold
       FROM products p
       LEFT JOIN products parent ON parent.wp_product_id = p.wp_parent_id
-      ${SALES_30D_LATERAL.replace('$SALES_STATUS_PARAM', statusParam)}
-      WHERE ${where.join(' AND ')}
+      ${SALES_LATERAL.replace('$SALES_STATUS_PARAM', statusParam)}
+      WHERE ${[...where, ...dormancy].join(' AND ')}
       ORDER BY s30.qty DESC NULLS LAST, p.post_title
       LIMIT $${params.length}
     `;
@@ -328,6 +350,38 @@ const promoModel = {
          GROUP BY sub_brand, brand
        ) t
        ORDER BY CASE WHEN type = 'brand' THEN value ELSE parent END, type, value`
+    );
+    return rows;
+  },
+
+  /**
+   * Catégories ET sous-catégories, même forme que les marques
+   * (`{ type, value, parent }`). Contrairement aux marques, les variations les
+   * portent le plus souvent : on retombe quand même sur le parent pour les ~500
+   * variations qui ne les ont pas.
+   */
+  listCategories: async () => {
+    const { rows } = await pool.query(
+      `WITH sellable AS (
+         SELECT COALESCE(p.category, parent.category)         AS category,
+                COALESCE(p.sub_category, parent.sub_category) AS sub_category
+         FROM products p
+         LEFT JOIN products parent ON parent.wp_product_id = p.wp_parent_id
+         WHERE p.post_status = 'publish'
+           AND p.product_type IN ('simple', 'variation', 'woosb')
+       )
+       SELECT type, value, parent, nb FROM (
+         SELECT 'category' AS type, category AS value, NULL::text AS parent, COUNT(*)::int AS nb
+         FROM sellable WHERE category IS NOT NULL AND category <> ''
+         GROUP BY category
+
+         UNION ALL
+
+         SELECT 'sub_category' AS type, sub_category AS value, category AS parent, COUNT(*)::int AS nb
+         FROM sellable WHERE sub_category IS NOT NULL AND sub_category <> ''
+         GROUP BY sub_category, category
+       ) t
+       ORDER BY CASE WHEN type = 'category' THEN value ELSE parent END, type, value`
     );
     return rows;
   },

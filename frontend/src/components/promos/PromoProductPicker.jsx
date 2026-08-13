@@ -13,6 +13,22 @@ const eur = (v) => (v === null || v === undefined ? '—'
 const int = (v) => new Intl.NumberFormat('fr-FR').format(parseInt(v, 10) || 0);
 const marginColor = (p) => (p === null || p === undefined ? C.grisM : p < 0 ? C.rouge : p < 15 ? C.orange : C.vert);
 
+const daysSince = (v) => (v ? Math.floor((Date.now() - new Date(v)) / 86400000) : null);
+/** Date courte de dernière vente ; « jamais » quand le produit n'a rien vendu. */
+const frDate = (v) => {
+  if (!v) return 'jamais';
+  const s = String(v).slice(0, 10).split('-');
+  return `${s[2]}/${s[1]}/${s[0].slice(2)}`;
+};
+/** Plus la dernière vente est ancienne, plus la date tire vers le rouge. */
+const dormantColor = (v) => {
+  const d = daysSince(v);
+  if (d === null) return C.rouge;
+  if (d > 90) return C.rouge;
+  if (d > 30) return C.orange;
+  return C.grisTF;
+};
+
 /**
  * Sélecteur de produits d'une opération promo.
  *
@@ -25,6 +41,10 @@ export default function PromoProductPicker({ operationId, onClose, onAdd }) {
   // Valeur encodée « type:valeur » pour n'avoir qu'un menu marques + sous-marques.
   const [brandSel, setBrandSel] = useState('');
   const [brands, setBrands] = useState([]);
+  // Même encodage « type:valeur » pour les catégories/sous-catégories.
+  const [catSel, setCatSel] = useState('');
+  const [categories, setCategories] = useState([]);
+  const [noSaleDays, setNoSaleDays] = useState('');
   const [inStockOnly, setInStockOnly] = useState(true);
   const [rows, setRows] = useState([]);
   const [selected, setSelected] = useState(new Set());
@@ -36,18 +56,25 @@ export default function PromoProductPicker({ operationId, onClose, onAdd }) {
     axios.get(`${API_URL}/promos/products/brands`)
       .then((res) => setBrands(res.data.data || []))
       .catch(() => setBrands([]));
+    axios.get(`${API_URL}/promos/products/categories`)
+      .then((res) => setCategories(res.data.data || []))
+      .catch(() => setCategories([]));
   }, []);
 
   const fetchRows = useCallback(async () => {
     setLoading(true);
     try {
-      const [selType, ...selRest] = brandSel.split(':');
-      const selValue = selRest.join(':');
+      const split = (v) => { const [t, ...r] = v.split(':'); return [t, r.join(':')]; };
+      const [bType, bValue] = split(brandSel);
+      const [cType, cValue] = split(catSel);
       const res = await axios.get(`${API_URL}/promos/products/search`, {
         params: {
           q,
-          brand: selType === 'brand' ? selValue : undefined,
-          subBrand: selType === 'sub_brand' ? selValue : undefined,
+          brand: bType === 'brand' ? bValue : undefined,
+          subBrand: bType === 'sub_brand' ? bValue : undefined,
+          category: cType === 'category' ? cValue : undefined,
+          subCategory: cType === 'sub_category' ? cValue : undefined,
+          noSaleDays: noSaleDays || undefined,
           inStockOnly: inStockOnly ? 1 : 0,
           excludeOperationId: operationId, limit: 150,
         },
@@ -58,7 +85,7 @@ export default function PromoProductPicker({ operationId, onClose, onAdd }) {
     } finally {
       setLoading(false);
     }
-  }, [q, brandSel, inStockOnly, operationId]);
+  }, [q, brandSel, catSel, noSaleDays, inStockOnly, operationId]);
 
   // Recherche à la frappe, temporisée.
   useEffect(() => {
@@ -128,10 +155,33 @@ export default function PromoProductPicker({ operationId, onClose, onAdd }) {
               </option>
             ))}
           </select>
+          <select value={catSel} onChange={(e) => setCatSel(e.target.value)} style={{ ...inputStyle, maxWidth: 260 }}>
+            <option value="">Toutes les catégories</option>
+            {categories.map((c) => (
+              <option key={`${c.type}:${c.parent || ''}:${c.value}`} value={`${c.type}:${c.value}`}>
+                {c.type === 'sub_category' ? `\u00A0\u00A0↳ ${c.value}` : c.value} ({c.nb})
+              </option>
+            ))}
+          </select>
+          <select value={noSaleDays} onChange={(e) => setNoSaleDays(e.target.value)}
+            title="Produits dormants : aucune vente sur la période choisie"
+            style={{ ...inputStyle, maxWidth: 210 }}>
+            <option value="">Vendus ou non (tous)</option>
+            <option value="7">Non vendu depuis 7 j</option>
+            <option value="30">Non vendu depuis 30 j</option>
+            <option value="60">Non vendu depuis 60 j</option>
+            <option value="90">Non vendu depuis 90 j</option>
+            <option value="never">Jamais vendu</option>
+          </select>
           <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: C.grisTF, cursor: 'pointer' }}>
             <input type="checkbox" checked={inStockOnly} onChange={(e) => setInStockOnly(e.target.checked)} />
             En stock uniquement
           </label>
+          <button
+            onClick={() => { setQ(''); setBrandSel(''); setCatSel(''); setNoSaleDays(''); setInStockOnly(true); }}
+            style={{ padding: '7px 12px', borderRadius: 8, border: `1px solid ${C.grisCL}`, background: C.blanc, color: C.grisM, fontSize: 12, cursor: 'pointer' }}>
+            Réinitialiser
+          </button>
         </div>
 
         <div style={{ flex: 1, overflow: 'auto' }}>
@@ -150,6 +200,7 @@ export default function PromoProductPicker({ operationId, onClose, onAdd }) {
                   <th style={th}>Produit</th>
                   <th style={thR}>Stock</th>
                   <th style={thR}>Ventes 30 j</th>
+                  <th style={thR} title="Date de la dernière vente (tous statuts payés)">Dernière vente</th>
                   <th style={thR}>Prix achat HT</th>
                   <th style={thR}>Prix vente TTC</th>
                   <th style={thR}>Tarif remisé</th>
@@ -171,9 +222,15 @@ export default function PromoProductPicker({ operationId, onClose, onAdd }) {
                         <div style={{ fontSize: 11, color: C.grisM, fontFamily: 'monospace' }}>
                           {r.sku}{r.brand ? ` · ${r.brand}` : ''}{r.sub_brand ? ` › ${r.sub_brand}` : ''}
                         </div>
+                        {(r.category || r.sub_category) && (
+                          <div style={{ fontSize: 11, color: C.grisM }}>
+                            {r.category}{r.sub_category ? ` › ${r.sub_category}` : ''}
+                          </div>
+                        )}
                       </td>
                       <td style={{ ...tdR, color: r.stock <= 0 ? C.rouge : C.grisTF }}>{int(r.stock)}</td>
                       <td style={tdR}>{int(r.sales_30d)}</td>
+                      <td style={{ ...tdR, color: dormantColor(r.last_sold) }}>{frDate(r.last_sold)}</td>
                       <td style={tdR}>{eur(r.cost_price)}</td>
                       <td style={tdR}>{eur(r.price)}</td>
                       <td style={{ ...tdR, color: r.discounted_price ? C.orange : C.grisM }}>

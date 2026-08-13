@@ -247,6 +247,8 @@ exports.searchProducts = async (req, res) => {
       brand: req.query.brand || null,
       subBrand: req.query.subBrand || null,
       category: req.query.category || null,
+      subCategory: req.query.subCategory || null,
+      noSaleDays: req.query.noSaleDays || null,
       inStockOnly: req.query.inStockOnly === '1' || req.query.inStockOnly === 'true',
       limit: req.query.limit,
       excludeOperationId: req.query.excludeOperationId || null,
@@ -269,6 +271,15 @@ exports.listBrands = async (req, res) => {
     res.json({ success: true, data: await promoModel.listBrands() });
   } catch (error) {
     console.error('Erreur listBrands (promos):', error);
+    res.status(500).json({ success: false, error: error.message || 'Erreur serveur' });
+  }
+};
+
+exports.listCategories = async (req, res) => {
+  try {
+    res.json({ success: true, data: await promoModel.listCategories() });
+  } catch (error) {
+    console.error('Erreur listCategories (promos):', error);
     res.status(500).json({ success: false, error: error.message || 'Erreur serveur' });
   }
 };

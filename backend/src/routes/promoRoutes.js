@@ -5,6 +5,7 @@ const promoController = require('../controllers/promoController');
 // Sélecteur produits (avant /:id pour ne pas être capté par la route paramétrée)
 router.get('/products/search', promoController.searchProducts);
 router.get('/products/brands', promoController.listBrands);
+router.get('/products/categories', promoController.listCategories);
 
 // Opérations
 router.get('/', promoController.listOperations);
