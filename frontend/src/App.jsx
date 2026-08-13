@@ -40,6 +40,8 @@ import MondialRelayApp from './pages/MondialRelayApp';
 import TransporteursApp from './pages/TransporteursApp';
 import VeilleApp from './pages/VeilleApp';
 import InscritsApp from './pages/InscritsApp';
+import PromosApp from './pages/PromosApp';
+import PromoDetail from './pages/PromoDetail';
 import PrivateRoute from './components/PrivateRoute';
 
 const PAGE_TITLES = {
@@ -67,6 +69,7 @@ const PAGE_TITLES = {
   '/transporteurs': 'Transporteurs',
   '/veille': 'Veille concurrentielle',
   '/inscrits': 'Inscrits sans commande',
+  '/promos': 'Actions Promos',
   '/brands': 'Marque',
   '/sub-brands': 'Sous-marque',
   '/categories': 'Categorie',
@@ -395,6 +398,22 @@ function App() {
             element={
               <PrivateRoute>
                 <InscritsApp />
+              </PrivateRoute>
+            }
+          />
+          <Route
+            path="/promos"
+            element={
+              <PrivateRoute>
+                <PromosApp />
+              </PrivateRoute>
+            }
+          />
+          <Route
+            path="/promos/:id"
+            element={
+              <PrivateRoute>
+                <PromoDetail />
               </PrivateRoute>
             }
           />

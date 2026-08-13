@@ -37,6 +37,7 @@ const transporteursRoutes = require('./routes/transporteursRoutes');
 const competitorRoutes = require('./routes/competitorRoutes');
 const receptionRoutes = require('./routes/receptionRoutes');
 const inscritsRoutes = require('./routes/inscritsRoutes');
+const promoRoutes = require('./routes/promoRoutes');
 const authMiddleware = require('./middleware/authMiddleware');
 const { setupCron, setupBmsCron, setupComputedCostCron, setupBmsBarcodeCron, setupBmsShelfLocationCron, setupStockResyncCron, setupSavAutomationsCron, setupProductDbSyncCron, setupBmsTagRetryCron, setupReportEmailCron, setupStockValuationSnapshotCron, setupDraftStockReportCron, setupCompetitorMonitorCron } = require('./services/cronService');
 const rewardService = require('./services/rewardService');
@@ -95,6 +96,7 @@ app.use('/api/transporteurs', authMiddleware, transporteursRoutes); // Vue conso
 app.use('/api/competitors', authMiddleware, competitorRoutes); // Veille concurrentielle
 app.use('/api/reception', receptionRoutes); // Réception marchandises (auth + permission dans le routeur)
 app.use('/api/inscrits', authMiddleware, inscritsRoutes); // Inscrits sans commande (par jour)
+app.use('/api/promos', authMiddleware, promoRoutes); // Actions Promos (préparation d'opérations)
 
 // Start server
 app.listen(PORT, async () => {

@@ -251,6 +251,17 @@ export const Inscrits = (props) => (
   </svg>
 );
 
+// Actions Promos : étiquette de remise (%)
+export const Promos = (props) => (
+  <svg viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
+    <path d="M20.6 13.4 12.9 21a1.9 1.9 0 0 1-2.7 0l-7.2-7.2a1.9 1.9 0 0 1-.6-1.4V4.5A1.5 1.5 0 0 1 3.9 3h7.9c.5 0 1 .2 1.4.6l7.4 7.4a1.9 1.9 0 0 1 0 2.4z" />
+    <circle cx="7" cy="7" r="1.2" />
+    <line x1="15.5" y1="10.5" x2="10.5" y2="15.5" />
+    <circle cx="10.7" cy="10.7" r="1.1" />
+    <circle cx="15.3" cy="15.3" r="1.1" />
+  </svg>
+);
+
 export const APPS = [
   { key: 'customers', path: '/customers', label: 'Clients',                   Icon: Customers, color: '#0EA5A5' },
   { key: 'reviews',   path: '/reviews',   label: 'Avis Garantis',            Icon: Reviews,   color: '#0071EB' },
@@ -272,4 +283,5 @@ export const APPS = [
   { key: 'transporteurs', path: '/transporteurs', label: 'Transporteurs (vue globale)', Icon: Transporteurs, color: '#334155' },
   { key: 'veille', path: '/veille', label: 'Veille concurrentielle', Icon: Veille, color: '#135E84' },
   { key: 'inscrits', path: '/inscrits', label: 'Inscrits sans commande', Icon: Inscrits, color: '#0EA5A5' },
+  { key: 'promos', path: '/promos', label: 'Actions Promos', Icon: Promos, color: '#DB2777' },
 ];
