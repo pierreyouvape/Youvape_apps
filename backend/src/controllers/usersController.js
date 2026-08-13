@@ -1,5 +1,6 @@
 const pool = require('../config/database');
 const userPermissionsModel = require('../models/userPermissionsModel');
+const { allPermissions } = require('../config/apps');
 const bmsApiModel = require('../models/bmsApiModel');
 
 const SUPER_ADMIN_EMAIL = 'youvape34@gmail.com';
@@ -39,32 +40,15 @@ const usersController = {
       const userId = req.user.id;
       const email = req.user.email;
 
-      // Si super admin, retourner tous les droits
+      // Si super admin, retourner tous les droits sur toutes les apps du registre
+      // (`config/apps.js`) : une liste écrite en dur ici rendait invisible toute
+      // app ajoutée après coup, y compris pour le super admin.
       if (userPermissionsModel.isSuperAdmin(email)) {
         return res.json({
           success: true,
           is_super_admin: true,
           is_admin: true,
-          permissions: {
-            reviews:     { read: true, write: true },
-            rewards:     { read: true, write: true },
-            emails:      { read: true, write: true },
-            stats:       { read: true, write: true },
-            purchases:   { read: true, write: true },
-            catalog:     { read: true, write: true },
-            packing:     { read: true, write: true },
-            financier:   { read: true, write: true },
-            commandes:   { read: true, write: true },
-            tickets:     { read: true, write: true },
-            chronopost:  { read: true, write: true },
-            colissimo:   { read: true, write: true },
-            'lettre-suivie': { read: true, write: true },
-            'mondial-relay': { read: true, write: true },
-            transporteurs: { read: true, write: true },
-            customers:   { read: true, write: true },
-            veille:      { read: true, write: true },
-            inscrits:    { read: true, write: true },
-          }
+          permissions: allPermissions(),
         });
       }
 
