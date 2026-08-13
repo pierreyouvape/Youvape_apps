@@ -43,8 +43,13 @@ const PRODUCT_FIELDS = `
 `;
 
 /**
- * Ventes du produit en un seul passage : unités des 30 derniers jours (rotation)
- * et date de la dernière vente (dormance). `last_sold` NULL = jamais vendu.
+ * Ventes du produit : unités des 30 derniers jours (rotation) et date de la
+ * dernière vente (dormance). `last_sold` NULL = jamais vendu.
+ *
+ * ⚠️ Corrélé : réservé aux petits volumes (lignes d'une opération). Sur le
+ * catalogue entier (~4 900 unités vendables) il déclenche autant de parcours
+ * d'historique et fait expirer la requête — la recherche utilise l'agrégat
+ * unique `SALES_CTE`.
  */
 const SALES_LATERAL = `
   LEFT JOIN LATERAL (
@@ -56,6 +61,24 @@ const SALES_LATERAL = `
     WHERE (CASE WHEN oi.variation_id > 0 THEN oi.variation_id ELSE oi.product_id END) = p.wp_product_id
       AND o.post_status = ANY($SALES_STATUS_PARAM)
   ) s30 ON TRUE
+`;
+
+/**
+ * Même information que `SALES_LATERAL`, mais en UN SEUL passage groupé sur
+ * l'historique (~630 ms sur 884 k lignes) au lieu d'un parcours par produit.
+ * Utilisé par la recherche, qui balaye tout le catalogue.
+ */
+const SALES_CTE = `
+  sales AS (
+    SELECT
+      (CASE WHEN oi.variation_id > 0 THEN oi.variation_id ELSE oi.product_id END) AS wp_id,
+      COALESCE(SUM(CASE WHEN o.post_date >= NOW() - INTERVAL '30 days' THEN oi.qty ELSE 0 END), 0)::int AS qty,
+      MAX(o.post_date) AS last_sold
+    FROM order_items oi
+    JOIN orders o ON o.wp_order_id = oi.wp_order_id
+    WHERE o.post_status = ANY($SALES_STATUS_PARAM)
+    GROUP BY 1
+  )
 `;
 
 /** Nom lisible : les variations WC reprennent souvent le titre du parent. */
@@ -312,12 +335,13 @@ const promoModel = {
     }
 
     const sql = `
+      WITH ${SALES_CTE.replace('$SALES_STATUS_PARAM', statusParam)}
       SELECT p.wp_product_id, p.post_title, p.sku, ${PRODUCT_FIELDS},
              COALESCE(s30.qty, 0) AS sales_30d,
              s30.last_sold
       FROM products p
       LEFT JOIN products parent ON parent.wp_product_id = p.wp_parent_id
-      ${SALES_LATERAL.replace('$SALES_STATUS_PARAM', statusParam)}
+      LEFT JOIN sales s30 ON s30.wp_id = p.wp_product_id
       WHERE ${[...where, ...dormancy].join(' AND ')}
       ORDER BY s30.qty DESC NULLS LAST, p.post_title
       LIMIT $${params.length}
