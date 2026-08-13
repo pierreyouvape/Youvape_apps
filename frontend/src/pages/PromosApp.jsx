@@ -208,7 +208,7 @@ const PromosApp = () => {
                         </td>
                         <td style={{ ...td, textAlign: 'right' }} onClick={(e) => e.stopPropagation()}>
                           <button onClick={() => duplicate(op)} title="Dupliquer"
-                            style={{ padding: '5px 10px', marginRight: 6, borderRadius: 7, border: `1px solid ${C.grisCL}`, background: C.blanc, cursor: 'pointer', fontSize: 12 }}>
+                            style={{ padding: '5px 10px', marginRight: 6, borderRadius: 7, border: `1px solid ${C.grisCL}`, background: C.blanc, color: C.grisTF, cursor: 'pointer', fontSize: 12 }}>
                             Dupliquer
                           </button>
                           <button onClick={() => remove(op)} title="Supprimer"

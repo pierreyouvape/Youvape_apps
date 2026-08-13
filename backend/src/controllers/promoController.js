@@ -51,6 +51,13 @@ function computeLine(item, { vatRate, basePriceMode }) {
   // Remise effective par rapport au prix de vente public (référence client).
   const effectiveDiscount = (price && promoTtc !== null) ? (1 - promoTtc / price) * 100 : null;
 
+  // Remise TOTALE : écart entre le prix sans aucune remise et le prix promo.
+  // Le prix sans remise est le prix barré WooCommerce (`regular_price`) quand il
+  // existe — `price` peut déjà être un prix soldé, auquel cas la remise réellement
+  // vue par le client est plus élevée que le pourcentage saisi.
+  const undiscounted = num(item.regular_price) ?? price;
+  const totalDiscount = (undiscounted && promoTtc !== null) ? (1 - promoTtc / undiscounted) * 100 : null;
+
   const htOf = (ttc) => (ttc === null || ttc === undefined ? null : ttc / vat);
   const marginOf = (ttc) => {
     const ht = htOf(ttc);
@@ -69,6 +76,8 @@ function computeLine(item, { vatRate, basePriceMode }) {
     promo_price_ttc: round2(promoTtc),
     promo_price_ht: round2(htOf(promoTtc)),
     effective_discount_percent: round2(effectiveDiscount),
+    undiscounted_price: round2(undiscounted),
+    total_discount_percent: round2(totalDiscount),
     current_price_ttc: round2(discounted ?? price),
     current_margin_eur: round2(current.eur),
     current_margin_pct: round2(current.pct),
@@ -431,9 +440,9 @@ exports.exportCsv = async (req, res) => {
     const opts = { vatRate: op.vat_rate, basePriceMode: op.base_price_mode };
     const items = (await promoModel.listItems(op.id)).map((it) => computeLine(it, opts));
 
-    const header = ['SKU', 'Produit', 'Stock', 'Ventes 30j', 'Prix achat HT', 'Prix vente TTC',
-      'Tarif remisé TTC', 'Remise %', 'Prix promo TTC', 'Prix promo HT',
-      'Marge actuelle €', 'Marge actuelle %', 'Marge promo €', 'Marge promo %', 'Note'];
+    const header = ['SKU', 'Produit', 'Stock', 'Ventes 30j', 'Prix achat HT', 'Prix sans remise TTC',
+      'Prix vente TTC', 'Tarif remisé TTC', 'Remise %', 'Prix promo TTC', 'Prix promo HT',
+      'Remise totale %', 'Marge actuelle €', 'Marge actuelle %', 'Marge promo €', 'Marge promo %', 'Note'];
     const esc = (v) => (v === null || v === undefined ? '' : String(v).replace(/[;\r\n]/g, ' '));
     const nb = (v) => (v === null || v === undefined ? '' : String(v).replace('.', ','));
 
@@ -441,9 +450,9 @@ exports.exportCsv = async (req, res) => {
     for (const it of items) {
       lines.push([
         esc(it.sku), esc(it.display_name), it.stock, it.sales_30d,
-        nb(it.cost_price), nb(it.price), nb(it.discounted_price),
+        nb(it.cost_price), nb(it.undiscounted_price), nb(it.price), nb(it.discounted_price),
         nb(it.effective_discount_percent), nb(it.promo_price_ttc), nb(it.promo_price_ht),
-        nb(it.current_margin_eur), nb(it.current_margin_pct),
+        nb(it.total_discount_percent), nb(it.current_margin_eur), nb(it.current_margin_pct),
         nb(it.promo_margin_eur), nb(it.promo_margin_pct), esc(it.note),
       ].join(';'));
     }

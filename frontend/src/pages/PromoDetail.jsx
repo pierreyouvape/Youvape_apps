@@ -215,7 +215,7 @@ const PromoDetail = () => {
       <AppShell currentPath="/promos">
         <main style={{ flex: 1, padding: 40, background: C.grisTL, height: '100vh' }}>
           <div style={{ padding: 14, borderRadius: 10, background: '#FEE', color: C.rouge, fontSize: 13 }}>{error || 'Opération introuvable'}</div>
-          <button onClick={() => navigate('/promos')} style={{ marginTop: 16, padding: '8px 14px', borderRadius: 8, border: `1px solid ${C.grisCL}`, background: C.blanc, cursor: 'pointer' }}>
+          <button onClick={() => navigate('/promos')} style={{ marginTop: 16, padding: '8px 14px', borderRadius: 8, border: `1px solid ${C.grisCL}`, background: C.blanc, color: C.grisTF, cursor: 'pointer' }}>
             ← Retour
           </button>
         </main>
@@ -340,12 +340,12 @@ const PromoDetail = () => {
                 <input value={bulkPct} onChange={(e) => setBulkPct(e.target.value)} placeholder="%" inputMode="decimal"
                   style={{ ...inputStyle, width: 70, textAlign: 'right' }} />
                 <button onClick={applyBulk} disabled={!bulkPct}
-                  style={{ padding: '8px 14px', borderRadius: 8, border: `1px solid ${C.grisCL}`, background: C.blanc, fontSize: 13, cursor: 'pointer', opacity: bulkPct ? 1 : 0.5 }}>
+                  style={{ padding: '8px 14px', borderRadius: 8, border: `1px solid ${C.grisCL}`, background: C.blanc, color: C.grisTF, fontSize: 13, cursor: 'pointer', opacity: bulkPct ? 1 : 0.5 }}>
                   Appliquer à tous
                 </button>
               </div>
               <button onClick={exportCsv}
-                style={{ padding: '8px 14px', borderRadius: 8, border: `1px solid ${C.grisCL}`, background: C.blanc, fontSize: 13, cursor: 'pointer' }}>
+                style={{ padding: '8px 14px', borderRadius: 8, border: `1px solid ${C.grisCL}`, background: C.blanc, color: C.grisTF, fontSize: 13, cursor: 'pointer' }}>
                 Export CSV
               </button>
             </div>
@@ -368,6 +368,10 @@ const PromoDetail = () => {
                       <th style={thR} title="Marge au tarif actuellement appliqué">Marge actuelle</th>
                       <th style={{ ...thR, background: '#FDF2F8' }}>Remise %</th>
                       <th style={{ ...thR, background: '#FDF2F8' }}>Prix promo TTC</th>
+                      <th style={{ ...thR, background: '#FDF2F8' }}
+                        title="Écart total entre le prix sans remise (prix barré s'il existe, sinon prix de vente) et le prix promo TTC">
+                        Remise totale
+                      </th>
                       <th style={{ ...thR, background: '#FDF2F8' }}>Marge promo</th>
                       <th style={thR}>Δ marge / u.</th>
                       <th style={th}>Note</th>
@@ -435,6 +439,17 @@ const PromoDetail = () => {
                               }}
                               style={{ ...inputStyle, width: 80, textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, color: C.promoF }}
                             />
+                          </td>
+                          <td style={{ ...tdR, background: '#FDF2F8', color: C.promoF, fontWeight: 700 }}
+                            title={it.undiscounted_price !== it.price
+                              ? `Prix sans remise ${it.undiscounted_price} € (le prix de vente est déjà soldé)`
+                              : undefined}>
+                            {it.total_discount_percent === null ? '—' : `−${pct(it.total_discount_percent)}`}
+                            {it.undiscounted_price !== it.price && (
+                              <div style={{ fontSize: 11, fontWeight: 600, color: C.grisM }}>
+                                sur {eur(it.undiscounted_price)}
+                              </div>
+                            )}
                           </td>
                           <td style={{ ...tdR, background: '#FDF2F8', color: marginColor(it.promo_margin_pct), fontWeight: 700 }}>
                             {eur(it.promo_margin_eur)}<br />

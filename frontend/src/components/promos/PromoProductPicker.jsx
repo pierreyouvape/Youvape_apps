@@ -194,7 +194,7 @@ export default function PromoProductPicker({ operationId, onClose, onAdd }) {
           <span style={{ fontSize: 13, color: C.grisM, flex: 1 }}>
             {selected.size} produit{selected.size > 1 ? 's' : ''} sélectionné{selected.size > 1 ? 's' : ''}
           </span>
-          <button onClick={onClose} style={{ padding: '9px 16px', borderRadius: 8, border: `1px solid ${C.grisCL}`, background: C.blanc, fontSize: 13, cursor: 'pointer' }}>
+          <button onClick={onClose} style={{ padding: '9px 16px', borderRadius: 8, border: `1px solid ${C.grisCL}`, background: C.blanc, color: C.grisTF, fontSize: 13, cursor: 'pointer' }}>
             Annuler
           </button>
           <button onClick={confirm} disabled={selected.size === 0 || adding}
