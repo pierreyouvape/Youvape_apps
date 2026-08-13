@@ -454,20 +454,20 @@ exports.exportCsv = async (req, res) => {
     const opts = { vatRate: op.vat_rate, basePriceMode: op.base_price_mode };
     const items = (await promoModel.listItems(op.id)).map((it) => computeLine(it, opts));
 
-    const header = ['SKU', 'Produit', 'Stock', 'Ventes 30j', 'Prix achat HT', 'Prix sans remise TTC',
+    const header = ['SKU', 'Produit', 'Stock', 'En arrivage', 'Ventes 30j', 'Prix achat HT', 'Prix sans remise TTC',
       'Prix vente TTC', 'Tarif remisé TTC', 'Remise %', 'Prix promo TTC', 'Prix promo HT',
-      'Remise totale %', 'Marge actuelle €', 'Marge actuelle %', 'Marge promo €', 'Marge promo %', 'Note'];
+      'Remise totale %', 'Marge actuelle €', 'Marge actuelle %', 'Marge promo €', 'Marge promo %'];
     const esc = (v) => (v === null || v === undefined ? '' : String(v).replace(/[;\r\n]/g, ' '));
     const nb = (v) => (v === null || v === undefined ? '' : String(v).replace('.', ','));
 
     const lines = [header.join(';')];
     for (const it of items) {
       lines.push([
-        esc(it.sku), esc(it.display_name), it.stock, it.sales_30d,
+        esc(it.sku), esc(it.display_name), it.stock, it.incoming_qty, it.sales_30d,
         nb(it.cost_price), nb(it.undiscounted_price), nb(it.price), nb(it.discounted_price),
         nb(it.effective_discount_percent), nb(it.promo_price_ttc), nb(it.promo_price_ht),
         nb(it.total_discount_percent), nb(it.current_margin_eur), nb(it.current_margin_pct),
-        nb(it.promo_margin_eur), nb(it.promo_margin_pct), esc(it.note),
+        nb(it.promo_margin_eur), nb(it.promo_margin_pct),
       ].join(';'));
     }
 

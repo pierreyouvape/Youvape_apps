@@ -241,7 +241,7 @@ const PromoDetail = () => {
 
   /** Valeur triable d'une colonne : nombre, ou texte normalisé. */
   const sortValue = (it, key) => {
-    const numeric = ['stock', 'sales_30d', 'cost_price', 'price', 'discounted_price',
+    const numeric = ['stock', 'incoming_qty', 'sales_30d', 'cost_price', 'price', 'discounted_price',
       'current_margin_pct', 'discount_percent', 'promo_price_ttc', 'total_discount_percent',
       'promo_margin_pct', 'margin_delta_eur', 'promo_margin_eur', 'current_margin_eur'];
     if (numeric.includes(key)) {
@@ -311,6 +311,7 @@ const PromoDetail = () => {
       count: g.items.length,
       stock: sum(g.items, 'stock'),
       sales_30d: sum(g.items, 'sales_30d'),
+      incoming_qty: sum(g.items, 'incoming_qty'),
       cost_price: range(g.items, 'cost_price'),
       price: range(g.items, 'price'),
       discounted_price: range(g.items, 'discounted_price'),
@@ -389,6 +390,9 @@ const PromoDetail = () => {
                             )}
                           </td>
                           <td style={{ ...tdR, color: it.stock <= 0 ? C.rouge : C.grisTF }}>{int(it.stock)}</td>
+                          <td style={{ ...tdR, color: it.incoming_qty > 0 ? C.bleu : C.grisM }}>
+                            {it.incoming_qty > 0 ? `+${int(it.incoming_qty)}` : '—'}
+                          </td>
                           <td style={tdR}>{int(it.sales_30d)}</td>
                           <td style={tdR}>{eur(it.cost_price)}</td>
                           <td style={tdR}>{eur(it.price)}</td>
@@ -455,15 +459,6 @@ const PromoDetail = () => {
                           </td>
                           <td style={{ ...tdR, color: it.margin_delta_eur < 0 ? C.rouge : C.vert }}>
                             {it.margin_delta_eur === null ? '—' : `${it.margin_delta_eur > 0 ? '+' : ''}${eur(it.margin_delta_eur)}`}
-                          </td>
-                          <td style={{ ...td, minWidth: 130 }}>
-                            <input
-                              defaultValue={it.note || ''}
-                              placeholder="…"
-                              onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
-                              onBlur={(e) => { if (e.target.value !== (it.note || '')) saveItem(it.id, { note: e.target.value }); }}
-                              style={{ ...inputStyle, width: '100%', minWidth: 110 }}
-                            />
                           </td>
                           <td style={td}>
                             <button onClick={() => removeItem(it.id)} title="Retirer de l'opération"
@@ -692,6 +687,8 @@ const PromoDetail = () => {
                     <tr>
                       <SortTh column="display_name" label="Produit" align="left" title="Trier par nom de produit" />
                       <SortTh column="stock" label="Stock" />
+                      <SortTh column="incoming_qty" label="En arrivage"
+                        title="Unités commandées aux fournisseurs et pas encore reçues (commandes envoyées, confirmées, expédiées ou partielles)" />
                       <SortTh column="sales_30d" label="Ventes 30 j" title="Unités vendues sur les 30 derniers jours" />
                       <SortTh column="cost_price" label="Prix achat HT" title="Prix d'achat HT (PMP FIFO, sinon coût WooCommerce)" />
                       <SortTh column="price" label="Prix vente TTC" />
@@ -710,7 +707,6 @@ const PromoDetail = () => {
                         title="Écart total entre le prix sans remise (prix barré s'il existe, sinon prix de vente) et le prix promo TTC" />
                       <SortTh column="promo_margin_pct" label="Marge promo" promo title="Marge au tarif promo (tri sur le %)" />
                       <SortTh column="margin_delta_eur" label="Δ marge / u." />
-                      <th style={th}>Note</th>
                       <th style={th}></th>
                     </tr>
                   </thead>
@@ -752,6 +748,9 @@ const PromoDetail = () => {
                                   )}
                                 </td>
                                 <td style={{ ...tdR, fontWeight: 700 }}>{int(g.stock)}</td>
+                                <td style={{ ...tdR, fontWeight: 700, color: g.incoming_qty > 0 ? C.bleu : C.grisM }}>
+                                  {g.incoming_qty > 0 ? `+${int(g.incoming_qty)}` : '—'}
+                                </td>
                                 <td style={{ ...tdR, fontWeight: 700 }}>{int(g.sales_30d)}</td>
                                 <td style={tdR}>{rangeText(g.cost_price, eur)}</td>
                                 <td style={tdR}>{rangeText(g.price, eur)}</td>
@@ -782,7 +781,6 @@ const PromoDetail = () => {
                                 <td style={{ ...tdR, color: g.margin_delta_total < 0 ? C.rouge : C.vert }}>
                                   {eur(g.margin_delta_total)}
                                 </td>
-                                <td style={td} />
                                 <td style={td} />
                               </tr>
                               {open && g.items.map((it) => renderItemRow(it, true))}

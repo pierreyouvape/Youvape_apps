@@ -84,6 +84,22 @@ const SALES_CTE = `
   )
 `;
 
+/**
+ * Quantité en arrivage : reliquat des commandes fournisseur parties mais pas
+ * encore reçues. `units_per_qty` est indispensable — pour les fournisseurs qui
+ * vendent au pack, `qty_ordered` compte des PACKS, pas des unités de stock
+ * (voir CLAUDE.md, correctif du 2026-08-11). Mêmes statuts que le catalogue.
+ */
+const INCOMING_LATERAL = `
+  LEFT JOIN LATERAL (
+    SELECT COALESCE(SUM((poi.qty_ordered - poi.qty_received) * COALESCE(poi.units_per_qty, 1)), 0)::int AS qty
+    FROM purchase_order_items poi
+    JOIN purchase_orders po ON po.id = poi.purchase_order_id
+    WHERE poi.product_id = COALESCE(p.id, i.product_id)
+      AND po.status IN ('sent', 'confirmed', 'shipped', 'partial')
+  ) inc ON TRUE
+`;
+
 /** Nom lisible : les variations WC reprennent souvent le titre du parent. */
 function decorate(row) {
   if (!row) return row;
@@ -215,11 +231,13 @@ const promoModel = {
              COALESCE(p.post_title, i.product_name)  AS post_title,
              ${PRODUCT_FIELDS},
              COALESCE(s30.qty, 0)                    AS sales_30d,
-             s30.last_sold
+             s30.last_sold,
+             COALESCE(inc.qty, 0)                    AS incoming_qty
       FROM promo_operation_items i
       LEFT JOIN products p ON p.wp_product_id = i.wp_product_id
       LEFT JOIN products parent ON parent.wp_product_id = p.wp_parent_id
       ${SALES_LATERAL.replace('$SALES_STATUS_PARAM', '$2')}
+      ${INCOMING_LATERAL}
       WHERE i.operation_id = $1
       ORDER BY i.position, i.id
     `;
