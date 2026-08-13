@@ -24,6 +24,33 @@ const int = (v) => new Intl.NumberFormat('fr-FR').format(parseInt(v, 10) || 0);
 /** Couleur d'une marge : rouge sous 0, orange sous 15 %, vert au-delà. */
 const marginColor = (p) => (p === null || p === undefined ? C.grisM : p < 0 ? C.rouge : p < 15 ? C.orange : C.vert);
 
+/**
+ * Retour visuel de l'enregistrement automatique. L'app n'a volontairement pas de
+ * bouton « Enregistrer » : sans ce témoin, le badge de statut « Brouillon » se lit
+ * à tort comme « non enregistré ».
+ */
+function SaveIndicator({ state, at }) {
+  if (state === 'idle') {
+    return (
+      <span style={{ fontSize: 11, color: C.grisM, whiteSpace: 'nowrap' }}>
+        Enregistrement automatique
+      </span>
+    );
+  }
+  const saving = state === 'saving';
+  const hhmm = at ? `${String(at.getHours()).padStart(2, '0')}:${String(at.getMinutes()).padStart(2, '0')}` : '';
+  return (
+    <span style={{
+      display: 'inline-flex', alignItems: 'center', gap: 5, whiteSpace: 'nowrap',
+      fontSize: 11, fontWeight: 700, color: saving ? C.grisM : C.vert,
+      background: saving ? C.grisTL : '#ECFDF3', border: `1px solid ${saving ? C.grisCL : '#B7E4C7'}`,
+      borderRadius: 20, padding: '4px 11px',
+    }}>
+      {saving ? 'Enregistrement…' : `✓ Enregistré${hhmm ? ` à ${hhmm}` : ''}`}
+    </span>
+  );
+}
+
 function StatCard({ label, value, sub, accent }) {
   return (
     <div style={{ flex: 1, minWidth: 150, background: C.blanc, borderRadius: 14, border: `1px solid ${C.grisCL}`, padding: '14px 16px' }}>
@@ -46,8 +73,29 @@ const PromoDetail = () => {
   const [tab, setTab] = useState('prep');
   const [pickerOpen, setPickerOpen] = useState(false);
   const [bulkPct, setBulkPct] = useState('');
+  // Tout est enregistré à la volée : cet état sert uniquement à le montrer.
+  const [saveState, setSaveState] = useState('idle'); // idle | saving | saved
+  const [savedAt, setSavedAt] = useState(null);
   const [search, setSearch] = useState('');
   const [drafts, setDrafts] = useState({}); // saisies en cours : { [itemId]: { discount, promo } }
+
+  /**
+   * Enveloppe d'enregistrement : l'app n'a pas de bouton « Enregistrer », chaque
+   * saisie part immédiatement en base. Sans retour visuel, l'utilisateur croit
+   * que rien n'est sauvegardé (le badge « Brouillon » est un statut de workflow,
+   * pas un état d'enregistrement).
+   */
+  const autosave = useCallback(async (fn) => {
+    setSaveState('saving');
+    try {
+      await fn();
+      setSavedAt(new Date());
+      setSaveState('saved');
+    } catch (err) {
+      setSaveState('idle');
+      throw err;
+    }
+  }, []);
 
   const fetchOperation = useCallback(async () => {
     try {
@@ -68,7 +116,7 @@ const PromoDetail = () => {
   const saveOperation = async (patch) => {
     setOperation((o) => ({ ...o, ...patch }));
     try {
-      await axios.put(`${API_URL}/promos/${id}`, patch);
+      await autosave(() => axios.put(`${API_URL}/promos/${id}`, patch));
       // Le taux de TVA et la base de remise changent tous les calculs de marge.
       if ('vat_rate' in patch || 'base_price_mode' in patch) fetchOperation();
     } catch (err) {
@@ -79,7 +127,7 @@ const PromoDetail = () => {
 
   const saveItem = async (itemId, patch) => {
     try {
-      await axios.put(`${API_URL}/promos/${id}/items/${itemId}`, patch);
+      await autosave(() => axios.put(`${API_URL}/promos/${id}/items/${itemId}`, patch));
       setDrafts((d) => { const n = { ...d }; delete n[itemId]; return n; });
       fetchOperation();
     } catch (err) {
@@ -89,7 +137,7 @@ const PromoDetail = () => {
 
   const removeItem = async (itemId) => {
     try {
-      await axios.delete(`${API_URL}/promos/${id}/items/${itemId}`);
+      await autosave(() => axios.delete(`${API_URL}/promos/${id}/items/${itemId}`));
       fetchOperation();
     } catch (err) {
       alert(err.response?.data?.error || 'Erreur à la suppression');
@@ -101,7 +149,7 @@ const PromoDetail = () => {
     if (!Number.isFinite(v)) return;
     if (!window.confirm(`Appliquer −${v} % à l'ensemble des ${items.length} produit(s) ? Les prix promo saisis à la main seront écrasés.`)) return;
     try {
-      await axios.put(`${API_URL}/promos/${id}/items/bulk-discount`, { discount_percent: v });
+      await autosave(() => axios.put(`${API_URL}/promos/${id}/items/bulk-discount`, { discount_percent: v }));
       setBulkPct('');
       fetchOperation();
     } catch (err) {
@@ -112,7 +160,7 @@ const PromoDetail = () => {
   const addProducts = async (wpIds) => {
     if (wpIds.length === 0) return;
     try {
-      await axios.post(`${API_URL}/promos/${id}/items`, { wp_product_ids: wpIds });
+      await autosave(() => axios.post(`${API_URL}/promos/${id}/items`, { wp_product_ids: wpIds }));
       fetchOperation();
     } catch (err) {
       alert(err.response?.data?.error || 'Erreur à l\'ajout');
@@ -196,7 +244,11 @@ const PromoDetail = () => {
               onBlur={(e) => saveOperation({ name: e.target.value.trim() || 'Sans nom' })}
               style={{ fontSize: 22, fontWeight: 800, color: C.grisTF, fontFamily: "'Tilt Warp', cursive", border: 'none', outline: 'none', background: 'transparent', minWidth: 260, flex: 1 }}
             />
-            <span style={{ padding: '4px 12px', borderRadius: 20, fontSize: 11, fontWeight: 700, color: '#fff', background: st.color }}>{st.label}</span>
+            <SaveIndicator state={saveState} at={savedAt} />
+            <span title="Statut d'avancement de l'opération — sans rapport avec l'enregistrement, qui est automatique"
+              style={{ padding: '4px 12px', borderRadius: 20, fontSize: 11, fontWeight: 700, color: '#fff', background: st.color }}>
+              {st.label}
+            </span>
           </div>
 
           {/* Réglages de l'opération */}
@@ -324,9 +376,12 @@ const PromoDetail = () => {
                   <tbody>
                     {visibleItems.map((it) => {
                       const draft = drafts[it.id] || {};
-                      const discountVal = draft.discount !== undefined ? draft.discount : (it.discount_percent ?? 0);
+                      // numeric pg -> '30.00' : on affiche '30' pour rester lisible à la saisie.
+                      const discountVal = draft.discount !== undefined
+                        ? draft.discount
+                        : String(parseFloat(it.discount_percent ?? 0));
                       const promoVal = draft.promo !== undefined ? draft.promo
-                        : (it.promo_price !== null && it.promo_price !== undefined ? it.promo_price : (it.promo_price_ttc ?? ''));
+                        : String(it.promo_price ?? it.promo_price_ttc ?? '');
                       return (
                         <tr key={it.id} style={{ background: it.below_cost ? '#FFF5F5' : undefined }}>
                           <td style={{ ...td, minWidth: 240 }}>
