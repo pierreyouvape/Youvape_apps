@@ -219,7 +219,10 @@ exports.bulkDiscount = async (req, res) => {
   try {
     const pct = num(req.body?.discount_percent);
     if (pct === null) return res.status(400).json({ success: false, error: 'Pourcentage invalide' });
-    const updated = await promoModel.bulkDiscount(req.params.id, pct);
+    const itemIds = Array.isArray(req.body?.item_ids)
+      ? req.body.item_ids.map((v) => parseInt(v, 10)).filter(Boolean)
+      : null;
+    const updated = await promoModel.bulkDiscount(req.params.id, pct, itemIds);
     res.json({ success: true, updated });
   } catch (error) {
     console.error('Erreur bulkDiscount (promos):', error);

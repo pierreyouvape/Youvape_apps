@@ -39,6 +39,7 @@ const PRODUCT_FIELDS = `
   COALESCE(p.sub_category, parent.sub_category) AS sub_category,
   p.image_url,
   p.product_attributes,
+  p.wp_parent_id,
   parent.post_title                              AS parent_title
 `;
 
@@ -89,8 +90,15 @@ function decorate(row) {
   const label = row.parent_title
     ? buildVariationLabel(row.post_title, row.parent_title, row.product_attributes)
     : row.post_title;
-  const { product_attributes, parent_title, ...rest } = row;
-  return { ...rest, display_name: label || row.post_title };
+  const { product_attributes, ...rest } = row;
+  return {
+    ...rest,
+    display_name: label || row.post_title,
+    // Regroupement des déclinaisons : clé du parent, ou le produit lui-même
+    // quand il n'est pas décliné (il forme alors un groupe d'un seul élément).
+    group_key: String(row.wp_parent_id || row.wp_product_id),
+    group_name: row.parent_title || row.post_title,
+  };
 }
 
 const promoModel = {
@@ -266,13 +274,17 @@ const promoModel = {
     return rows[0] || null;
   },
 
-  /** Applique une remise à toutes les lignes de l'opération. */
-  bulkDiscount: async (operationId, discountPercent) => {
+  /**
+   * Applique une remise à toutes les lignes de l'opération, ou seulement à
+   * celles passées en `itemIds` (remise appliquée à un groupe de déclinaisons).
+   */
+  bulkDiscount: async (operationId, discountPercent, itemIds = null) => {
+    const scoped = Array.isArray(itemIds) && itemIds.length > 0;
     const { rowCount } = await pool.query(
       `UPDATE promo_operation_items
        SET discount_percent = $2, promo_price = NULL, updated_at = NOW()
-       WHERE operation_id = $1`,
-      [operationId, discountPercent]
+       WHERE operation_id = $1${scoped ? ' AND id = ANY($3::int[])' : ''}`,
+      scoped ? [operationId, discountPercent, itemIds] : [operationId, discountPercent]
     );
     return rowCount;
   },

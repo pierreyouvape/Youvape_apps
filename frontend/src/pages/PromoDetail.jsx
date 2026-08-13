@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, Fragment } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import AppShell from '../components/AppShell';
@@ -23,6 +23,12 @@ const pct = (v, d = 1) => (v === null || v === undefined ? '—'
 const int = (v) => new Intl.NumberFormat('fr-FR').format(parseInt(v, 10) || 0);
 
 /** Couleur d'une marge : rouge sous 0, orange sous 15 %, vert au-delà. */
+/** Résumé d'une fourchette de valeurs : une seule valeur si toutes identiques. */
+const rangeText = (r, fmt) => {
+  if (!r) return '—';
+  return r.uniform ? fmt(r.min) : `${fmt(r.min)} – ${fmt(r.max)}`;
+};
+
 const marginColor = (p) => (p === null || p === undefined ? C.grisM : p < 0 ? C.rouge : p < 15 ? C.orange : C.vert);
 
 /**
@@ -80,6 +86,8 @@ const PromoDetail = () => {
   const [brandFilter, setBrandFilter] = useState('');   // 'brand:X' | 'sub_brand:X'
   const [catFilter, setCatFilter] = useState('');       // 'category:X' | 'sub_category:X'
   const [sort, setSort] = useState({ key: null, dir: 'asc' }); // null = ordre d'ajout
+  const [grouped, setGrouped] = useState(true);
+  const [openGroups, setOpenGroups] = useState({}); // { [group_key]: true }
   const [drafts, setDrafts] = useState({}); // saisies en cours : { [itemId]: { discount, promo } }
 
   /**
@@ -254,6 +262,61 @@ const PromoDetail = () => {
     return rows;
   }, [items, brandFilter, catFilter, sort]);
 
+  /**
+   * Regroupe les lignes visibles par produit parent. Les colonnes additives
+   * (stock, ventes) sont sommées ; les colonnes de prix et de marge sont
+   * résumées en fourchette min–max, une moyenne masquerait les écarts (deux
+   * déclinaisons d'un même kit peuvent avoir des prix d'achat très différents).
+   */
+  const groups = useMemo(() => {
+    const map = new Map();
+    for (const it of visibleItems) {
+      if (!map.has(it.group_key)) {
+        map.set(it.group_key, { key: it.group_key, name: it.group_name, items: [] });
+      }
+      map.get(it.group_key).items.push(it);
+    }
+    const sum = (arr, k) => arr.reduce((t, x) => t + (parseFloat(x[k]) || 0), 0);
+    const range = (arr, k) => {
+      const vals = arr.map((x) => parseFloat(x[k])).filter((v) => Number.isFinite(v));
+      if (vals.length === 0) return null;
+      const min = Math.min(...vals);
+      const max = Math.max(...vals);
+      return { min, max, uniform: Math.abs(max - min) < 0.005 };
+    };
+    return [...map.values()].map((g) => ({
+      ...g,
+      count: g.items.length,
+      stock: sum(g.items, 'stock'),
+      sales_30d: sum(g.items, 'sales_30d'),
+      cost_price: range(g.items, 'cost_price'),
+      price: range(g.items, 'price'),
+      discounted_price: range(g.items, 'discounted_price'),
+      current_margin_pct: range(g.items, 'current_margin_pct'),
+      discount_percent: range(g.items, 'discount_percent'),
+      promo_price_ttc: range(g.items, 'promo_price_ttc'),
+      total_discount_percent: range(g.items, 'total_discount_percent'),
+      promo_margin_pct: range(g.items, 'promo_margin_pct'),
+      margin_delta_total: sum(g.items, 'margin_delta_eur'),
+      below_cost: g.items.filter((x) => x.below_cost).length,
+    }));
+  }, [visibleItems]);
+
+  /** Applique une remise à toutes les déclinaisons d'un groupe. */
+  const applyGroupDiscount = async (group, value) => {
+    const v = parseFloat(String(value).replace(',', '.'));
+    if (!Number.isFinite(v)) return;
+    try {
+      await autosave(() => axios.put(`${API_URL}/promos/${id}/items/bulk-discount`, {
+        discount_percent: v,
+        item_ids: group.items.map((x) => x.id),
+      }));
+      fetchOperation();
+    } catch (err) {
+      alert(err.response?.data?.error || 'Erreur');
+    }
+  };
+
   const inputStyle = {
     padding: '7px 9px', border: `1px solid ${C.grisCL}`, borderRadius: 8,
     fontSize: 13, color: C.grisTF, outline: 'none', background: C.blanc,
@@ -262,6 +325,125 @@ const PromoDetail = () => {
   const thR = { ...th, textAlign: 'right' };
   const td = { padding: '9px 10px', fontSize: 13, color: C.grisTF, borderBottom: `1px solid ${C.grisCL}` };
   const tdR = { ...td, textAlign: 'right', fontFamily: 'monospace' };
+
+  /** Rendu d'une ligne produit (partagé entre vue à plat et vue groupée). */
+  const renderItemRow = (it, nested = false) => {
+                      const draft = drafts[it.id] || {};
+                      // numeric pg -> '30.00' : on affiche '30' pour rester lisible à la saisie.
+                      const discountVal = draft.discount !== undefined
+                        ? draft.discount
+                        : String(parseFloat(it.discount_percent ?? 0));
+                      const promoVal = draft.promo !== undefined ? draft.promo
+                        : String(it.promo_price ?? it.promo_price_ttc ?? '');
+                      return (
+                        <tr key={it.id} style={{ background: it.below_cost ? '#FFF5F5' : undefined }}>
+                          <td style={{
+                            ...td, minWidth: 280,
+                            ...(nested ? { paddingLeft: 30, borderLeft: `3px solid ${C.grisCL}` } : null),
+                          }}>
+                            <div style={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: 2 }}>
+                              <span>{it.display_name}</span>
+                              <CopyButton text={it.display_name} size={12} />
+                            </div>
+                            <div style={{ fontSize: 11, color: C.grisM, fontFamily: 'monospace', display: 'flex', alignItems: 'center', gap: 2 }}>
+                              <span>{it.sku}</span>
+                              <CopyButton text={it.sku || ''} size={11} />
+                            </div>
+                            {(it.brand || it.sub_brand) && (
+                              <div style={{ fontSize: 11, color: C.promoF }}>
+                                {it.brand}{it.sub_brand ? ` › ${it.sub_brand}` : ''}
+                              </div>
+                            )}
+                            {it.sub_category && (
+                              <div style={{ fontSize: 11, color: C.grisM }}>{it.sub_category}</div>
+                            )}
+                          </td>
+                          <td style={{ ...tdR, color: it.stock <= 0 ? C.rouge : C.grisTF }}>{int(it.stock)}</td>
+                          <td style={tdR}>{int(it.sales_30d)}</td>
+                          <td style={tdR}>{eur(it.cost_price)}</td>
+                          <td style={tdR}>{eur(it.price)}</td>
+                          <td style={{
+                            ...tdR,
+                            color: it.discounted_price ? C.orange : C.grisM,
+                            // La base réellement utilisée pour la remise est soulignée.
+                            fontWeight: operation.base_price_mode === 'discounted' && it.discounted_price ? 700 : 400,
+                          }}>
+                            {it.discounted_price ? eur(it.discounted_price) : '—'}
+                          </td>
+                          <td style={{ ...tdR, color: marginColor(it.current_margin_pct) }}>
+                            {eur(it.current_margin_eur)}<br />
+                            <span style={{ fontSize: 11 }}>{pct(it.current_margin_pct)}</span>
+                          </td>
+                          <td style={{ ...tdR, background: '#FDF2F8' }}>
+                            <input
+                              value={discountVal}
+                              inputMode="decimal"
+                              onChange={(e) => setDrafts((d) => ({ ...d, [it.id]: { discount: e.target.value } }))}
+                              onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
+                              onBlur={(e) => {
+                                const v = parseFloat(String(e.target.value).replace(',', '.'));
+                                const next = Number.isFinite(v) ? v : 0;
+                                if (next === parseFloat(it.discount_percent) && it.promo_price === null) {
+                                  setDrafts((d) => { const n = { ...d }; delete n[it.id]; return n; });
+                                  return;
+                                }
+                                saveItem(it.id, { discount_percent: next });
+                              }}
+                              style={{ ...inputStyle, width: 62, textAlign: 'right', fontFamily: 'monospace' }}
+                            />
+                          </td>
+                          <td style={{ ...tdR, background: '#FDF2F8' }}>
+                            <input
+                              value={promoVal}
+                              inputMode="decimal"
+                              title="Saisir un prix ici force ce tarif (prioritaire sur le pourcentage)"
+                              onChange={(e) => setDrafts((d) => ({ ...d, [it.id]: { promo: e.target.value } }))}
+                              onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
+                              onBlur={(e) => {
+                                if (draft.promo === undefined) return;
+                                const raw = String(e.target.value).trim();
+                                const v = parseFloat(raw.replace(',', '.'));
+                                saveItem(it.id, { promo_price: raw === '' || !Number.isFinite(v) ? null : v });
+                              }}
+                              style={{ ...inputStyle, width: 80, textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, color: C.promoF }}
+                            />
+                          </td>
+                          <td style={{ ...tdR, background: '#FDF2F8', color: C.promoF, fontWeight: 700 }}
+                            title={it.undiscounted_price !== it.price
+                              ? `Prix sans remise ${it.undiscounted_price} € (le prix de vente est déjà soldé)`
+                              : undefined}>
+                            {it.total_discount_percent === null ? '—' : `−${pct(it.total_discount_percent)}`}
+                            {it.undiscounted_price !== it.price && (
+                              <div style={{ fontSize: 11, fontWeight: 600, color: C.grisM }}>
+                                sur {eur(it.undiscounted_price)}
+                              </div>
+                            )}
+                          </td>
+                          <td style={{ ...tdR, background: '#FDF2F8', color: marginColor(it.promo_margin_pct), fontWeight: 700 }}>
+                            {eur(it.promo_margin_eur)}<br />
+                            <span style={{ fontSize: 11 }}>{pct(it.promo_margin_pct)}</span>
+                          </td>
+                          <td style={{ ...tdR, color: it.margin_delta_eur < 0 ? C.rouge : C.vert }}>
+                            {it.margin_delta_eur === null ? '—' : `${it.margin_delta_eur > 0 ? '+' : ''}${eur(it.margin_delta_eur)}`}
+                          </td>
+                          <td style={{ ...td, minWidth: 130 }}>
+                            <input
+                              defaultValue={it.note || ''}
+                              placeholder="…"
+                              onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
+                              onBlur={(e) => { if (e.target.value !== (it.note || '')) saveItem(it.id, { note: e.target.value }); }}
+                              style={{ ...inputStyle, width: '100%', minWidth: 110 }}
+                            />
+                          </td>
+                          <td style={td}>
+                            <button onClick={() => removeItem(it.id)} title="Retirer de l'opération"
+                              style={{ border: 'none', background: 'none', color: C.grisM, cursor: 'pointer', fontSize: 16, lineHeight: 1 }}>
+                              ×
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    };
 
   /** En-tête cliquable : 1er clic asc, 2e desc, 3e retour à l'ordre d'ajout. */
   const SortTh = ({ column, label, align = 'right', title, promo = false, children }) => {
@@ -431,17 +613,33 @@ const PromoDetail = () => {
                   <option key={`${o.type}:${o.value}`} value={`${o.type}:${o.value}`}>{o.label}</option>
                 ))}
               </select>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: C.grisTF, cursor: 'pointer' }}
+                title="Regrouper les déclinaisons sous leur produit parent">
+                <input type="checkbox" checked={grouped} onChange={(e) => setGrouped(e.target.checked)} />
+                Grouper
+              </label>
+              {grouped && groups.some((g) => g.count > 1) && (
+                <button
+                  onClick={() => {
+                    const anyClosed = groups.some((g) => g.count > 1 && !openGroups[g.key]);
+                    setOpenGroups(Object.fromEntries(groups.map((g) => [g.key, anyClosed])));
+                  }}
+                  style={{ padding: '8px 12px', borderRadius: 8, border: `1px solid ${C.grisCL}`, background: C.blanc, color: C.grisTF, fontSize: 12, cursor: 'pointer' }}>
+                  {groups.some((g) => g.count > 1 && !openGroups[g.key]) ? 'Tout déplier' : 'Tout replier'}
+                </button>
+              )}
               {(brandFilter || catFilter || sort.key) && (
                 <button onClick={() => { setBrandFilter(''); setCatFilter(''); setSort({ key: null, dir: 'asc' }); }}
                   style={{ padding: '8px 12px', borderRadius: 8, border: `1px solid ${C.grisCL}`, background: C.blanc, color: C.grisM, fontSize: 12, cursor: 'pointer' }}>
                   Réinitialiser
                 </button>
               )}
-              {visibleItems.length !== items.length && (
-                <span style={{ fontSize: 12, color: C.grisM }}>
-                  {visibleItems.length} / {items.length} produits
-                </span>
-              )}
+              <span style={{ fontSize: 12, color: C.grisM }}>
+                {visibleItems.length !== items.length
+                  ? `${visibleItems.length} / ${items.length} produits`
+                  : `${items.length} produits`}
+                {grouped && groups.length !== visibleItems.length && ` · ${groups.length} produits parents`}
+              </span>
               <div style={{ flex: 1 }} />
               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                 <input value={bulkPct} onChange={(e) => setBulkPct(e.target.value)} placeholder="%" inputMode="decimal"
@@ -491,120 +689,68 @@ const PromoDetail = () => {
                     </tr>
                   </thead>
                   <tbody>
-                    {visibleItems.map((it) => {
-                      const draft = drafts[it.id] || {};
-                      // numeric pg -> '30.00' : on affiche '30' pour rester lisible à la saisie.
-                      const discountVal = draft.discount !== undefined
-                        ? draft.discount
-                        : String(parseFloat(it.discount_percent ?? 0));
-                      const promoVal = draft.promo !== undefined ? draft.promo
-                        : String(it.promo_price ?? it.promo_price_ttc ?? '');
-                      return (
-                        <tr key={it.id} style={{ background: it.below_cost ? '#FFF5F5' : undefined }}>
-                          <td style={{ ...td, minWidth: 280 }}>
-                            <div style={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: 2 }}>
-                              <span>{it.display_name}</span>
-                              <CopyButton text={it.display_name} size={12} />
-                            </div>
-                            <div style={{ fontSize: 11, color: C.grisM, fontFamily: 'monospace', display: 'flex', alignItems: 'center', gap: 2 }}>
-                              <span>{it.sku}</span>
-                              <CopyButton text={it.sku || ''} size={11} />
-                            </div>
-                            {(it.brand || it.sub_brand) && (
-                              <div style={{ fontSize: 11, color: C.promoF }}>
-                                {it.brand}{it.sub_brand ? ` › ${it.sub_brand}` : ''}
-                              </div>
-                            )}
-                            {it.sub_category && (
-                              <div style={{ fontSize: 11, color: C.grisM }}>{it.sub_category}</div>
-                            )}
-                          </td>
-                          <td style={{ ...tdR, color: it.stock <= 0 ? C.rouge : C.grisTF }}>{int(it.stock)}</td>
-                          <td style={tdR}>{int(it.sales_30d)}</td>
-                          <td style={tdR}>{eur(it.cost_price)}</td>
-                          <td style={tdR}>{eur(it.price)}</td>
-                          <td style={{
-                            ...tdR,
-                            color: it.discounted_price ? C.orange : C.grisM,
-                            // La base réellement utilisée pour la remise est soulignée.
-                            fontWeight: operation.base_price_mode === 'discounted' && it.discounted_price ? 700 : 400,
-                          }}>
-                            {it.discounted_price ? eur(it.discounted_price) : '—'}
-                          </td>
-                          <td style={{ ...tdR, color: marginColor(it.current_margin_pct) }}>
-                            {eur(it.current_margin_eur)}<br />
-                            <span style={{ fontSize: 11 }}>{pct(it.current_margin_pct)}</span>
-                          </td>
-                          <td style={{ ...tdR, background: '#FDF2F8' }}>
-                            <input
-                              value={discountVal}
-                              inputMode="decimal"
-                              onChange={(e) => setDrafts((d) => ({ ...d, [it.id]: { discount: e.target.value } }))}
-                              onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
-                              onBlur={(e) => {
-                                const v = parseFloat(String(e.target.value).replace(',', '.'));
-                                const next = Number.isFinite(v) ? v : 0;
-                                if (next === parseFloat(it.discount_percent) && it.promo_price === null) {
-                                  setDrafts((d) => { const n = { ...d }; delete n[it.id]; return n; });
-                                  return;
-                                }
-                                saveItem(it.id, { discount_percent: next });
-                              }}
-                              style={{ ...inputStyle, width: 62, textAlign: 'right', fontFamily: 'monospace' }}
-                            />
-                          </td>
-                          <td style={{ ...tdR, background: '#FDF2F8' }}>
-                            <input
-                              value={promoVal}
-                              inputMode="decimal"
-                              title="Saisir un prix ici force ce tarif (prioritaire sur le pourcentage)"
-                              onChange={(e) => setDrafts((d) => ({ ...d, [it.id]: { promo: e.target.value } }))}
-                              onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
-                              onBlur={(e) => {
-                                if (draft.promo === undefined) return;
-                                const raw = String(e.target.value).trim();
-                                const v = parseFloat(raw.replace(',', '.'));
-                                saveItem(it.id, { promo_price: raw === '' || !Number.isFinite(v) ? null : v });
-                              }}
-                              style={{ ...inputStyle, width: 80, textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, color: C.promoF }}
-                            />
-                          </td>
-                          <td style={{ ...tdR, background: '#FDF2F8', color: C.promoF, fontWeight: 700 }}
-                            title={it.undiscounted_price !== it.price
-                              ? `Prix sans remise ${it.undiscounted_price} € (le prix de vente est déjà soldé)`
-                              : undefined}>
-                            {it.total_discount_percent === null ? '—' : `−${pct(it.total_discount_percent)}`}
-                            {it.undiscounted_price !== it.price && (
-                              <div style={{ fontSize: 11, fontWeight: 600, color: C.grisM }}>
-                                sur {eur(it.undiscounted_price)}
-                              </div>
-                            )}
-                          </td>
-                          <td style={{ ...tdR, background: '#FDF2F8', color: marginColor(it.promo_margin_pct), fontWeight: 700 }}>
-                            {eur(it.promo_margin_eur)}<br />
-                            <span style={{ fontSize: 11 }}>{pct(it.promo_margin_pct)}</span>
-                          </td>
-                          <td style={{ ...tdR, color: it.margin_delta_eur < 0 ? C.rouge : C.vert }}>
-                            {it.margin_delta_eur === null ? '—' : `${it.margin_delta_eur > 0 ? '+' : ''}${eur(it.margin_delta_eur)}`}
-                          </td>
-                          <td style={{ ...td, minWidth: 130 }}>
-                            <input
-                              defaultValue={it.note || ''}
-                              placeholder="…"
-                              onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
-                              onBlur={(e) => { if (e.target.value !== (it.note || '')) saveItem(it.id, { note: e.target.value }); }}
-                              style={{ ...inputStyle, width: '100%', minWidth: 110 }}
-                            />
-                          </td>
-                          <td style={td}>
-                            <button onClick={() => removeItem(it.id)} title="Retirer de l'opération"
-                              style={{ border: 'none', background: 'none', color: C.grisM, cursor: 'pointer', fontSize: 16, lineHeight: 1 }}>
-                              ×
-                            </button>
-                          </td>
-                        </tr>
-                      );
-                    })}
+                    {grouped
+                      ? groups.map((g) => {
+                          // Un produit non décliné ne mérite pas d'en-tête de groupe.
+                          if (g.count === 1) return renderItemRow(g.items[0]);
+                          const open = !!openGroups[g.key];
+                          return (
+                            <Fragment key={g.key}>
+                              <tr
+                                onClick={() => setOpenGroups((o) => ({ ...o, [g.key]: !open }))}
+                                style={{ background: '#F8FAFC', cursor: 'pointer', borderTop: `2px solid ${C.grisCL}` }}
+                              >
+                                <td style={{ ...td, fontWeight: 700 }}>
+                                  <span style={{ display: 'inline-block', width: 16, color: C.promo }}>{open ? '▾' : '▸'}</span>
+                                  {g.name}
+                                  <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 600, color: C.grisM }}>
+                                    {g.count} déclinaisons
+                                  </span>
+                                  {g.below_cost > 0 && (
+                                    <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 700, color: C.rouge }}>
+                                      {g.below_cost} à perte
+                                    </span>
+                                  )}
+                                </td>
+                                <td style={{ ...tdR, fontWeight: 700 }}>{int(g.stock)}</td>
+                                <td style={{ ...tdR, fontWeight: 700 }}>{int(g.sales_30d)}</td>
+                                <td style={tdR}>{rangeText(g.cost_price, eur)}</td>
+                                <td style={tdR}>{rangeText(g.price, eur)}</td>
+                                <td style={{ ...tdR, color: C.orange }}>{rangeText(g.discounted_price, eur)}</td>
+                                <td style={tdR}>{rangeText(g.current_margin_pct, (v) => pct(v))}</td>
+                                <td style={{ ...tdR, background: '#FDF2F8' }} onClick={(e) => e.stopPropagation()}>
+                                  <input
+                                    defaultValue={g.discount_percent?.uniform ? String(g.discount_percent.min) : ''}
+                                    placeholder={g.discount_percent?.uniform ? '' : 'mixte'}
+                                    inputMode="decimal"
+                                    title="Appliquer cette remise à toutes les déclinaisons du produit"
+                                    onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
+                                    onBlur={(e) => {
+                                      const raw = String(e.target.value).trim();
+                                      if (raw === '') return;
+                                      const v = parseFloat(raw.replace(',', '.'));
+                                      if (g.discount_percent?.uniform && v === g.discount_percent.min) return;
+                                      applyGroupDiscount(g, v);
+                                    }}
+                                    style={{ ...inputStyle, width: 62, textAlign: 'right', fontFamily: 'monospace', fontWeight: 700 }}
+                                  />
+                                </td>
+                                <td style={{ ...tdR, background: '#FDF2F8', fontWeight: 700 }}>{rangeText(g.promo_price_ttc, eur)}</td>
+                                <td style={{ ...tdR, background: '#FDF2F8', color: C.promoF, fontWeight: 700 }}>
+                                  {rangeText(g.total_discount_percent, (v) => `−${pct(v)}`)}
+                                </td>
+                                <td style={{ ...tdR, background: '#FDF2F8', fontWeight: 700 }}>{rangeText(g.promo_margin_pct, (v) => pct(v))}</td>
+                                <td style={{ ...tdR, color: g.margin_delta_total < 0 ? C.rouge : C.vert }}>
+                                  {eur(g.margin_delta_total)}
+                                </td>
+                                <td style={td} />
+                                <td style={td} />
+                              </tr>
+                              {open && g.items.map((it) => renderItemRow(it, true))}
+                            </Fragment>
+                          );
+                        })
+                      : visibleItems.map(renderItemRow)}
                   </tbody>
                 </table>
               </div>
