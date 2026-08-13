@@ -77,7 +77,9 @@ const PromoDetail = () => {
   // Tout est enregistré à la volée : cet état sert uniquement à le montrer.
   const [saveState, setSaveState] = useState('idle'); // idle | saving | saved
   const [savedAt, setSavedAt] = useState(null);
-  const [search, setSearch] = useState('');
+  const [brandFilter, setBrandFilter] = useState('');   // 'brand:X' | 'sub_brand:X'
+  const [catFilter, setCatFilter] = useState('');       // 'category:X' | 'sub_category:X'
+  const [sort, setSort] = useState({ key: null, dir: 'asc' }); // null = ordre d'ajout
   const [drafts, setDrafts] = useState({}); // saisies en cours : { [itemId]: { discount, promo } }
 
   /**
@@ -182,17 +184,75 @@ const PromoDetail = () => {
     }
   };
 
+  /**
+   * Options des menus, déduites des produits réellement présents dans
+   * l'opération : on ne peut donc pas choisir un critère qui ne renverrait rien.
+   * Deux niveaux (marque › sous-marque, catégorie › sous-catégorie), encodés
+   * « type:valeur » comme dans le sélecteur de produits.
+   */
+  const buildOptions = (parentKey, childKey) => {
+    const parents = new Map(); // parent -> Set(enfants)
+    for (const it of items) {
+      const par = it[parentKey];
+      if (!par) continue;
+      if (!parents.has(par)) parents.set(par, new Set());
+      if (it[childKey]) parents.get(par).add(it[childKey]);
+    }
+    const out = [];
+    for (const par of [...parents.keys()].sort((a, b) => a.localeCompare(b, 'fr'))) {
+      out.push({ type: parentKey, value: par, label: par });
+      for (const child of [...parents.get(par)].sort((a, b) => a.localeCompare(b, 'fr'))) {
+        out.push({ type: childKey, value: child, label: `\u00A0\u00A0↳ ${child}` });
+      }
+    }
+    return out;
+  };
+
+  const brandOptions = useMemo(() => buildOptions('brand', 'sub_brand'), [items]);
+  const catOptions = useMemo(() => buildOptions('category', 'sub_category'), [items]);
+
+  /** Valeur triable d'une colonne : nombre, ou texte normalisé. */
+  const sortValue = (it, key) => {
+    const numeric = ['stock', 'sales_30d', 'cost_price', 'price', 'discounted_price',
+      'current_margin_pct', 'discount_percent', 'promo_price_ttc', 'total_discount_percent',
+      'promo_margin_pct', 'margin_delta_eur', 'promo_margin_eur', 'current_margin_eur'];
+    if (numeric.includes(key)) {
+      const n = parseFloat(it[key]);
+      return Number.isFinite(n) ? n : null;
+    }
+    return (it[key] || '').toString().toLowerCase();
+  };
+
+  const toggleSort = (key) => setSort((s) => {
+    if (s.key !== key) return { key, dir: 'asc' };
+    if (s.dir === 'asc') return { key, dir: 'desc' };
+    return { key: null, dir: 'asc' }; // 3e clic : retour à l'ordre d'ajout
+  });
+
   const visibleItems = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    if (!q) return items;
-    return items.filter((i) =>
-      (i.display_name || '').toLowerCase().includes(q) ||
-      (i.sku || '').toLowerCase().includes(q) ||
-      (i.brand || '').toLowerCase().includes(q) ||
-      (i.sub_brand || '').toLowerCase().includes(q) ||
-      (i.category || '').toLowerCase().includes(q) ||
-      (i.sub_category || '').toLowerCase().includes(q));
-  }, [items, search]);
+    const match = (it, sel) => {
+      if (!sel) return true;
+      const [type, ...rest] = sel.split(':');
+      return (it[type] || '') === rest.join(':');
+    };
+
+    let rows = items.filter((i) => match(i, brandFilter) && match(i, catFilter));
+
+    if (sort.key) {
+      const mul = sort.dir === 'asc' ? 1 : -1;
+      rows = [...rows].sort((a, b) => {
+        const va = sortValue(a, sort.key);
+        const vb = sortValue(b, sort.key);
+        // Valeurs absentes toujours en bas, quel que soit le sens du tri.
+        if (va === null && vb === null) return 0;
+        if (va === null) return 1;
+        if (vb === null) return -1;
+        if (typeof va === 'number') return (va - vb) * mul;
+        return va.localeCompare(vb, 'fr') * mul;
+      });
+    }
+    return rows;
+  }, [items, brandFilter, catFilter, sort]);
 
   const inputStyle = {
     padding: '7px 9px', border: `1px solid ${C.grisCL}`, borderRadius: 8,
@@ -202,6 +262,27 @@ const PromoDetail = () => {
   const thR = { ...th, textAlign: 'right' };
   const td = { padding: '9px 10px', fontSize: 13, color: C.grisTF, borderBottom: `1px solid ${C.grisCL}` };
   const tdR = { ...td, textAlign: 'right', fontFamily: 'monospace' };
+
+  /** En-tête cliquable : 1er clic asc, 2e desc, 3e retour à l'ordre d'ajout. */
+  const SortTh = ({ column, label, align = 'right', title, promo = false, children }) => {
+    const active = sort.key === column;
+    const base = align === 'right' ? thR : th;
+    return (
+      <th
+        onClick={() => toggleSort(column)}
+        title={title || 'Trier'}
+        style={{
+          ...base,
+          ...(promo ? { background: '#FDF2F8' } : null),
+          cursor: 'pointer', userSelect: 'none',
+          color: active ? C.promo : C.grisM,
+        }}
+      >
+        {label}{active ? (sort.dir === 'asc' ? ' ▲' : ' ▼') : ''}
+        {children}
+      </th>
+    );
+  };
 
   if (loading) {
     return (
@@ -336,8 +417,31 @@ const PromoDetail = () => {
                 style={{ padding: '9px 16px', borderRadius: 8, border: 'none', background: C.promo, color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
                 + Ajouter des produits
               </button>
-              <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Filtrer la sélection…"
-                style={{ ...inputStyle, minWidth: 200 }} />
+              <select value={brandFilter} onChange={(e) => setBrandFilter(e.target.value)}
+                style={{ ...inputStyle, maxWidth: 230 }}>
+                <option value="">Toutes les marques</option>
+                {brandOptions.map((o) => (
+                  <option key={`${o.type}:${o.value}`} value={`${o.type}:${o.value}`}>{o.label}</option>
+                ))}
+              </select>
+              <select value={catFilter} onChange={(e) => setCatFilter(e.target.value)}
+                style={{ ...inputStyle, maxWidth: 260 }}>
+                <option value="">Toutes les catégories</option>
+                {catOptions.map((o) => (
+                  <option key={`${o.type}:${o.value}`} value={`${o.type}:${o.value}`}>{o.label}</option>
+                ))}
+              </select>
+              {(brandFilter || catFilter || sort.key) && (
+                <button onClick={() => { setBrandFilter(''); setCatFilter(''); setSort({ key: null, dir: 'asc' }); }}
+                  style={{ padding: '8px 12px', borderRadius: 8, border: `1px solid ${C.grisCL}`, background: C.blanc, color: C.grisM, fontSize: 12, cursor: 'pointer' }}>
+                  Réinitialiser
+                </button>
+              )}
+              {visibleItems.length !== items.length && (
+                <span style={{ fontSize: 12, color: C.grisM }}>
+                  {visibleItems.length} / {items.length} produits
+                </span>
+              )}
               <div style={{ flex: 1 }} />
               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                 <input value={bulkPct} onChange={(e) => setBulkPct(e.target.value)} placeholder="%" inputMode="decimal"
@@ -362,29 +466,26 @@ const PromoDetail = () => {
                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                   <thead>
                     <tr>
-                      <th style={th}>Produit</th>
-                      <th style={thR}>Stock</th>
-                      <th style={thR} title="Unités vendues sur les 30 derniers jours">Ventes 30 j</th>
-                      <th style={thR} title="Prix d'achat HT (PMP FIFO, sinon coût WooCommerce)">Prix achat HT</th>
-                      <th style={thR}>Prix vente TTC</th>
-                      <th style={thR} title="Tarif remisé actuellement actif (Woo Discount Rules)">Tarif remisé</th>
-                      <th style={thR} title="Marge au tarif actuellement appliqué">Marge actuelle</th>
-                      <th style={{ ...thR, background: '#FDF2F8' }}
+                      <SortTh column="display_name" label="Produit" align="left" title="Trier par nom de produit" />
+                      <SortTh column="stock" label="Stock" />
+                      <SortTh column="sales_30d" label="Ventes 30 j" title="Unités vendues sur les 30 derniers jours" />
+                      <SortTh column="cost_price" label="Prix achat HT" title="Prix d'achat HT (PMP FIFO, sinon coût WooCommerce)" />
+                      <SortTh column="price" label="Prix vente TTC" />
+                      <SortTh column="discounted_price" label="Tarif remisé" title="Tarif remisé actuellement actif (Woo Discount Rules)" />
+                      <SortTh column="current_margin_pct" label="Marge actuelle" title="Marge au tarif actuellement appliqué (tri sur le %)" />
+                      <SortTh column="discount_percent" label="Remise %" promo
                         title={operation.base_price_mode === 'discounted'
                           ? 'Pourcentage appliqué au tarif remisé (ou au prix de vente si aucune remise en cours)'
                           : 'Pourcentage appliqué au prix de vente public, en ignorant la remise en cours'}>
-                        Remise %
                         <div style={{ fontSize: 10, fontWeight: 600, color: C.promoF, textTransform: 'none' }}>
                           sur {operation.base_price_mode === 'discounted' ? 'tarif remisé' : 'prix public'}
                         </div>
-                      </th>
-                      <th style={{ ...thR, background: '#FDF2F8' }}>Prix promo TTC</th>
-                      <th style={{ ...thR, background: '#FDF2F8' }}
-                        title="Écart total entre le prix sans remise (prix barré s'il existe, sinon prix de vente) et le prix promo TTC">
-                        Remise totale
-                      </th>
-                      <th style={{ ...thR, background: '#FDF2F8' }}>Marge promo</th>
-                      <th style={thR}>Δ marge / u.</th>
+                      </SortTh>
+                      <SortTh column="promo_price_ttc" label="Prix promo TTC" promo />
+                      <SortTh column="total_discount_percent" label="Remise totale" promo
+                        title="Écart total entre le prix sans remise (prix barré s'il existe, sinon prix de vente) et le prix promo TTC" />
+                      <SortTh column="promo_margin_pct" label="Marge promo" promo title="Marge au tarif promo (tri sur le %)" />
+                      <SortTh column="margin_delta_eur" label="Δ marge / u." />
                       <th style={th}>Note</th>
                       <th style={th}></th>
                     </tr>
@@ -414,10 +515,8 @@ const PromoDetail = () => {
                                 {it.brand}{it.sub_brand ? ` › ${it.sub_brand}` : ''}
                               </div>
                             )}
-                            {(it.category || it.sub_category) && (
-                              <div style={{ fontSize: 11, color: C.grisM }}>
-                                {it.category}{it.sub_category ? ` › ${it.sub_category}` : ''}
-                              </div>
+                            {it.sub_category && (
+                              <div style={{ fontSize: 11, color: C.grisM }}>{it.sub_category}</div>
                             )}
                           </td>
                           <td style={{ ...tdR, color: it.stock <= 0 ? C.rouge : C.grisTF }}>{int(it.stock)}</td>
