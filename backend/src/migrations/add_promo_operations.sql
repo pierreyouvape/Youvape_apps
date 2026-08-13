@@ -13,9 +13,10 @@ CREATE TABLE IF NOT EXISTS promo_operations (
   end_date         DATE,
   -- Taux de TVA utilisé pour repasser les prix TTC en HT (marges).
   vat_rate         NUMERIC(5,2) NOT NULL DEFAULT 20.00,
-  -- Base de calcul de la remise : 'price' = prix de vente public TTC,
-  -- 'discounted' = tarif déjà remisé (Woo Discount Rules) quand il existe.
-  base_price_mode  TEXT NOT NULL DEFAULT 'price',
+  -- Base de calcul de la remise : 'discounted' = tarif remisé en cours (Woo
+  -- Discount Rules) quand il existe, sinon le prix de vente ; 'price' = prix de
+  -- vente public, en ignorant la remise déjà active.
+  base_price_mode  TEXT NOT NULL DEFAULT 'discounted',
   created_by       INTEGER REFERENCES users(id) ON DELETE SET NULL,
   created_at       TIMESTAMP NOT NULL DEFAULT NOW(),
   updated_at       TIMESTAMP NOT NULL DEFAULT NOW()
@@ -50,3 +51,7 @@ CREATE TABLE IF NOT EXISTS promo_operation_items (
 CREATE INDEX IF NOT EXISTS idx_promo_items_operation ON promo_operation_items(operation_id);
 CREATE INDEX IF NOT EXISTS idx_promo_items_wp_product ON promo_operation_items(wp_product_id);
 CREATE INDEX IF NOT EXISTS idx_promo_operations_status ON promo_operations(status);
+
+-- 2026-08-13 : la remise s'applique par défaut au tarif REMISÉ (attendu métier :
+-- « -30 % » se lit à partir du tarif déjà affiché au client, pas du prix public).
+ALTER TABLE promo_operations ALTER COLUMN base_price_mode SET DEFAULT 'discounted';

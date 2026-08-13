@@ -99,7 +99,7 @@ const promoModel = {
     const { rows } = await pool.query(
       `INSERT INTO promo_operations
          (name, description, status, start_date, end_date, vat_rate, base_price_mode, created_by)
-       VALUES ($1, $2, COALESCE($3, 'draft'), $4, $5, COALESCE($6, 20.00), COALESCE($7, 'price'), $8)
+       VALUES ($1, $2, COALESCE($3, 'draft'), $4, $5, COALESCE($6, 20.00), COALESCE($7, 'discounted'), $8)
        RETURNING *`,
       [name, description || null, status || null, start_date || null, end_date || null,
        vat_rate ?? null, base_price_mode || null, created_by || null]

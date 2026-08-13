@@ -273,8 +273,8 @@ const PromoDetail = () => {
                 Remise appliquée sur
               </label>
               <select value={operation.base_price_mode} onChange={(e) => saveOperation({ base_price_mode: e.target.value })} style={inputStyle}>
+                <option value="discounted">Tarif remisé (sinon prix de vente)</option>
                 <option value="price">Prix de vente public</option>
-                <option value="discounted">Tarif déjà remisé</option>
               </select>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
@@ -366,7 +366,15 @@ const PromoDetail = () => {
                       <th style={thR}>Prix vente TTC</th>
                       <th style={thR} title="Tarif remisé actuellement actif (Woo Discount Rules)">Tarif remisé</th>
                       <th style={thR} title="Marge au tarif actuellement appliqué">Marge actuelle</th>
-                      <th style={{ ...thR, background: '#FDF2F8' }}>Remise %</th>
+                      <th style={{ ...thR, background: '#FDF2F8' }}
+                        title={operation.base_price_mode === 'discounted'
+                          ? 'Pourcentage appliqué au tarif remisé (ou au prix de vente si aucune remise en cours)'
+                          : 'Pourcentage appliqué au prix de vente public, en ignorant la remise en cours'}>
+                        Remise %
+                        <div style={{ fontSize: 10, fontWeight: 600, color: C.promoF, textTransform: 'none' }}>
+                          sur {operation.base_price_mode === 'discounted' ? 'tarif remisé' : 'prix public'}
+                        </div>
+                      </th>
                       <th style={{ ...thR, background: '#FDF2F8' }}>Prix promo TTC</th>
                       <th style={{ ...thR, background: '#FDF2F8' }}
                         title="Écart total entre le prix sans remise (prix barré s'il existe, sinon prix de vente) et le prix promo TTC">
@@ -399,7 +407,12 @@ const PromoDetail = () => {
                           <td style={tdR}>{int(it.sales_30d)}</td>
                           <td style={tdR}>{eur(it.cost_price)}</td>
                           <td style={tdR}>{eur(it.price)}</td>
-                          <td style={{ ...tdR, color: it.discounted_price ? C.orange : C.grisM }}>
+                          <td style={{
+                            ...tdR,
+                            color: it.discounted_price ? C.orange : C.grisM,
+                            // La base réellement utilisée pour la remise est soulignée.
+                            fontWeight: operation.base_price_mode === 'discounted' && it.discounted_price ? 700 : 400,
+                          }}>
                             {it.discounted_price ? eur(it.discounted_price) : '—'}
                           </td>
                           <td style={{ ...tdR, color: marginColor(it.current_margin_pct) }}>
