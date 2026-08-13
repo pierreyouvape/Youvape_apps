@@ -57,9 +57,9 @@ const SALES_LATERAL = `
       MAX(o.post_date) AS last_sold
     FROM order_items oi
     JOIN orders o ON o.wp_order_id = oi.wp_order_id
-    -- Forme OR volontaire : `CASE ... = p.wp_product_id` n'utilise aucun index
-    -- et déclenche un parcours complet d'order_items par produit (20 s pour
-    -- 16 lignes). Ici, BitmapOr sur idx_order_items_product_id / _variation_id.
+    -- Forme OR volontaire : un CASE comparé a p.wp_product_id n'utilise aucun
+    -- index et declenche un parcours complet d'order_items par produit (20 s
+    -- pour 16 lignes). Ici, BitmapOr sur les index product_id / variation_id.
     WHERE (oi.product_id = p.wp_product_id OR oi.variation_id = p.wp_product_id)
       AND o.post_status = ANY($SALES_STATUS_PARAM)
   ) s30 ON TRUE
