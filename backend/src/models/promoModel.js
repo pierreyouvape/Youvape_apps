@@ -357,7 +357,9 @@ const promoModel = {
       LEFT JOIN products parent ON parent.wp_product_id = p.wp_parent_id
       LEFT JOIN sales s30 ON s30.wp_id = p.wp_product_id
       WHERE ${[...where, ...dormancy].join(' AND ')}
-      ORDER BY s30.qty DESC NULLS LAST, p.post_title
+      -- Toujours le plus gros stock en tête : c'est lui qu'on cherche à écouler
+      -- en promo. Les ventes 30 j départagent à stock égal.
+      ORDER BY COALESCE(p.stock, 0) DESC, s30.qty DESC NULLS LAST, p.post_title
       LIMIT $${params.length}
     `;
     const { rows } = await pool.query(sql, params);

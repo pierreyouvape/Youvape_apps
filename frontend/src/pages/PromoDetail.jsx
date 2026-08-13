@@ -39,6 +39,13 @@ const effCategory = (it) => it?.sub_category || it?.category || null;
  *     produits simples sans parent commun, s'étale en autant de lignes isolées ;
  *  3. sinon le produit lui-même (groupe d'un seul élément, rendu à plat).
  */
+/**
+ * Fiche produit de l'app. Pour une déclinaison on ouvre la fiche du PARENT :
+ * c'est elle qui porte les statistiques (les lignes de commande d'une variation
+ * sont rattachées à `variation_id`, la fiche d'une variation afficherait 0).
+ */
+const productHref = (it) => `/products/${it.wp_parent_id || it.wp_product_id}`;
+
 const groupOf = (it, parentCounts) => {
   // Le parent ne fait groupe que s'il apporte au moins deux lignes : une
   // déclinaison retenue seule (un seul dosage d'un e-liquide, par exemple)
@@ -357,7 +364,17 @@ const PromoDetail = () => {
                             ...(nested ? { paddingLeft: 30, borderLeft: `3px solid ${C.grisCL}` } : null),
                           }}>
                             <div style={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: 2 }}>
-                              <span>{it.display_name}</span>
+                              <a
+                                href={productHref(it)}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                title="Ouvrir la fiche produit dans un nouvel onglet"
+                                style={{ color: C.grisTF, textDecoration: 'none' }}
+                                onMouseEnter={(e) => { e.currentTarget.style.textDecoration = 'underline'; }}
+                                onMouseLeave={(e) => { e.currentTarget.style.textDecoration = 'none'; }}
+                              >
+                                {it.display_name}
+                              </a>
                               <CopyButton text={it.display_name} size={12} />
                             </div>
                             <div style={{ fontSize: 11, color: C.grisM, fontFamily: 'monospace', display: 'flex', alignItems: 'center', gap: 2 }}>
@@ -711,7 +728,20 @@ const PromoDetail = () => {
                               >
                                 <td style={{ ...td, fontWeight: 700 }}>
                                   <span style={{ display: 'inline-block', width: 16, color: C.promo }}>{open ? '▾' : '▸'}</span>
-                                  {g.name}
+                                  {g.kind === 'variations' ? (
+                                    <a
+                                      href={productHref(g.items[0])}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      onClick={(e) => e.stopPropagation()}
+                                      title="Ouvrir la fiche produit dans un nouvel onglet"
+                                      style={{ color: C.grisTF, textDecoration: 'none' }}
+                                      onMouseEnter={(e) => { e.currentTarget.style.textDecoration = 'underline'; }}
+                                      onMouseLeave={(e) => { e.currentTarget.style.textDecoration = 'none'; }}
+                                    >
+                                      {g.name}
+                                    </a>
+                                  ) : g.name}
                                   <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 600, color: C.grisM }}>
                                     {g.count} {g.kind === 'variations' ? 'déclinaisons' : 'produits'}
                                   </span>
