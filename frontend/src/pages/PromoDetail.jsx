@@ -32,6 +32,25 @@ const int = (v) => new Intl.NumberFormat('fr-FR').format(parseInt(v, 10) || 0);
 const effBrand = (it) => it?.sub_brand || it?.brand || null;
 const effCategory = (it) => it?.sub_category || it?.category || null;
 
+/**
+ * Groupe d'appartenance d'une ligne, par ordre de priorité :
+ *  1. le produit parent, pour les déclinaisons d'un même produit ;
+ *  2. à défaut la marque effective — sans quoi une gamme d'e-liquides, faite de
+ *     produits simples sans parent commun, s'étale en autant de lignes isolées ;
+ *  3. sinon le produit lui-même (groupe d'un seul élément, rendu à plat).
+ */
+const groupOf = (it, parentCounts) => {
+  // Le parent ne fait groupe que s'il apporte au moins deux lignes : une
+  // déclinaison retenue seule (un seul dosage d'un e-liquide, par exemple)
+  // rejoint sa marque plutôt que de rester isolée entre deux groupes.
+  if (it.wp_parent_id && parentCounts.get(String(it.wp_parent_id)) > 1) {
+    return { key: `p:${it.wp_parent_id}`, name: it.parent_title || it.display_name, kind: 'variations' };
+  }
+  const brand = effBrand(it);
+  if (brand) return { key: `b:${brand}`, name: brand, kind: 'brand' };
+  return { key: `s:${it.wp_product_id}`, name: it.display_name, kind: 'single' };
+};
+
 /** Résumé d'une fourchette de valeurs : une seule valeur si toutes identiques. */
 const rangeText = (r, fmt) => {
   if (!r) return '—';
@@ -253,18 +272,24 @@ const PromoDetail = () => {
   }, [items, brandFilter, catFilter, sort]);
 
   /**
-   * Regroupe les lignes visibles par produit parent. Les colonnes additives
+   * Regroupe les lignes visibles (voir `groupOf`). Les colonnes additives
    * (stock, ventes) sont sommées ; les colonnes de prix et de marge sont
    * résumées en fourchette min–max, une moyenne masquerait les écarts (deux
    * déclinaisons d'un même kit peuvent avoir des prix d'achat très différents).
    */
   const groups = useMemo(() => {
+    const parentCounts = new Map();
+    for (const it of visibleItems) {
+      if (!it.wp_parent_id) continue;
+      const k = String(it.wp_parent_id);
+      parentCounts.set(k, (parentCounts.get(k) || 0) + 1);
+    }
+
     const map = new Map();
     for (const it of visibleItems) {
-      if (!map.has(it.group_key)) {
-        map.set(it.group_key, { key: it.group_key, name: it.group_name, items: [] });
-      }
-      map.get(it.group_key).items.push(it);
+      const g = groupOf(it, parentCounts);
+      if (!map.has(g.key)) map.set(g.key, { ...g, items: [] });
+      map.get(g.key).items.push(it);
     }
     const sum = (arr, k) => arr.reduce((t, x) => t + (parseFloat(x[k]) || 0), 0);
     const range = (arr, k) => {
@@ -688,7 +713,7 @@ const PromoDetail = () => {
                                   <span style={{ display: 'inline-block', width: 16, color: C.promo }}>{open ? '▾' : '▸'}</span>
                                   {g.name}
                                   <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 600, color: C.grisM }}>
-                                    {g.count} déclinaisons
+                                    {g.count} {g.kind === 'variations' ? 'déclinaisons' : 'produits'}
                                   </span>
                                   {g.below_cost > 0 && (
                                     <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 700, color: C.rouge }}>
@@ -707,7 +732,7 @@ const PromoDetail = () => {
                                     defaultValue={g.discount_percent?.uniform ? String(g.discount_percent.min) : ''}
                                     placeholder={g.discount_percent?.uniform ? '' : 'mixte'}
                                     inputMode="decimal"
-                                    title="Appliquer cette remise à toutes les déclinaisons du produit"
+                                    title="Appliquer cette remise à tous les produits du groupe"
                                     onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
                                     onBlur={(e) => {
                                       const raw = String(e.target.value).trim();
