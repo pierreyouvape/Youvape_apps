@@ -23,6 +23,15 @@ const pct = (v, d = 1) => (v === null || v === undefined ? '—'
 const int = (v) => new Intl.NumberFormat('fr-FR').format(parseInt(v, 10) || 0);
 
 /** Couleur d'une marge : rouge sous 0, orange sous 15 %, vert au-delà. */
+/**
+ * Libellé retenu pour la marque et la catégorie : le niveau le PLUS PRÉCIS
+ * disponible. La sous-marque suffit à identifier le produit (« Ultimate » dit
+ * tout, « Arômes et Liquides › Ultimate » n'ajoute rien) ; on retombe sur le
+ * niveau parent uniquement quand le sous-niveau est absent.
+ */
+const effBrand = (it) => it?.sub_brand || it?.brand || null;
+const effCategory = (it) => it?.sub_category || it?.category || null;
+
 /** Résumé d'une fourchette de valeurs : une seule valeur si toutes identiques. */
 const rangeText = (r, fmt) => {
   if (!r) return '—';
@@ -194,30 +203,15 @@ const PromoDetail = () => {
 
   /**
    * Options des menus, déduites des produits réellement présents dans
-   * l'opération : on ne peut donc pas choisir un critère qui ne renverrait rien.
-   * Deux niveaux (marque › sous-marque, catégorie › sous-catégorie), encodés
-   * « type:valeur » comme dans le sélecteur de produits.
+   * l'opération : impossible de choisir un critère qui ne renverrait rien.
+   * Liste à plat sur la valeur effective (sous-marque, sinon marque), pour
+   * coller à ce qui est affiché sous chaque produit.
    */
-  const buildOptions = (parentKey, childKey) => {
-    const parents = new Map(); // parent -> Set(enfants)
-    for (const it of items) {
-      const par = it[parentKey];
-      if (!par) continue;
-      if (!parents.has(par)) parents.set(par, new Set());
-      if (it[childKey]) parents.get(par).add(it[childKey]);
-    }
-    const out = [];
-    for (const par of [...parents.keys()].sort((a, b) => a.localeCompare(b, 'fr'))) {
-      out.push({ type: parentKey, value: par, label: par });
-      for (const child of [...parents.get(par)].sort((a, b) => a.localeCompare(b, 'fr'))) {
-        out.push({ type: childKey, value: child, label: `\u00A0\u00A0↳ ${child}` });
-      }
-    }
-    return out;
-  };
+  const distinctOptions = (fn) => [...new Set(items.map(fn).filter(Boolean))]
+    .sort((a, b) => a.localeCompare(b, 'fr'));
 
-  const brandOptions = useMemo(() => buildOptions('brand', 'sub_brand'), [items]);
-  const catOptions = useMemo(() => buildOptions('category', 'sub_category'), [items]);
+  const brandOptions = useMemo(() => distinctOptions(effBrand), [items]);
+  const catOptions = useMemo(() => distinctOptions(effCategory), [items]);
 
   /** Valeur triable d'une colonne : nombre, ou texte normalisé. */
   const sortValue = (it, key) => {
@@ -238,13 +232,9 @@ const PromoDetail = () => {
   });
 
   const visibleItems = useMemo(() => {
-    const match = (it, sel) => {
-      if (!sel) return true;
-      const [type, ...rest] = sel.split(':');
-      return (it[type] || '') === rest.join(':');
-    };
-
-    let rows = items.filter((i) => match(i, brandFilter) && match(i, catFilter));
+    let rows = items.filter((i) =>
+      (!brandFilter || effBrand(i) === brandFilter) &&
+      (!catFilter || effCategory(i) === catFilter));
 
     if (sort.key) {
       const mul = sort.dir === 'asc' ? 1 : -1;
@@ -349,13 +339,11 @@ const PromoDetail = () => {
                               <span>{it.sku}</span>
                               <CopyButton text={it.sku || ''} size={11} />
                             </div>
-                            {(it.brand || it.sub_brand) && (
-                              <div style={{ fontSize: 11, color: C.promoF }}>
-                                {it.brand}{it.sub_brand ? ` › ${it.sub_brand}` : ''}
-                              </div>
+                            {effBrand(it) && (
+                              <div style={{ fontSize: 11, color: C.promoF }}>{effBrand(it)}</div>
                             )}
-                            {it.sub_category && (
-                              <div style={{ fontSize: 11, color: C.grisM }}>{it.sub_category}</div>
+                            {effCategory(it) && (
+                              <div style={{ fontSize: 11, color: C.grisM }}>{effCategory(it)}</div>
                             )}
                           </td>
                           <td style={{ ...tdR, color: it.stock <= 0 ? C.rouge : C.grisTF }}>{int(it.stock)}</td>
@@ -602,16 +590,12 @@ const PromoDetail = () => {
               <select value={brandFilter} onChange={(e) => setBrandFilter(e.target.value)}
                 style={{ ...inputStyle, maxWidth: 230 }}>
                 <option value="">Toutes les marques</option>
-                {brandOptions.map((o) => (
-                  <option key={`${o.type}:${o.value}`} value={`${o.type}:${o.value}`}>{o.label}</option>
-                ))}
+                {brandOptions.map((o) => <option key={o} value={o}>{o}</option>)}
               </select>
               <select value={catFilter} onChange={(e) => setCatFilter(e.target.value)}
                 style={{ ...inputStyle, maxWidth: 260 }}>
                 <option value="">Toutes les catégories</option>
-                {catOptions.map((o) => (
-                  <option key={`${o.type}:${o.value}`} value={`${o.type}:${o.value}`}>{o.label}</option>
-                ))}
+                {catOptions.map((o) => <option key={o} value={o}>{o}</option>)}
               </select>
               <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: C.grisTF, cursor: 'pointer' }}
                 title="Regrouper les déclinaisons sous leur produit parent">

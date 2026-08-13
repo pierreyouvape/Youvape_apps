@@ -13,6 +13,10 @@ const eur = (v) => (v === null || v === undefined ? '—'
 const int = (v) => new Intl.NumberFormat('fr-FR').format(parseInt(v, 10) || 0);
 const marginColor = (p) => (p === null || p === undefined ? C.grisM : p < 0 ? C.rouge : p < 15 ? C.orange : C.vert);
 
+/** Niveau le plus précis disponible (voir PromoDetail) : sous-marque, sinon marque. */
+const effBrand = (it) => it?.sub_brand || it?.brand || null;
+const effCategory = (it) => it?.sub_category || it?.category || null;
+
 const daysSince = (v) => (v ? Math.floor((Date.now() - new Date(v)) / 86400000) : null);
 /** Date courte de dernière vente ; « jamais » quand le produit n'a rien vendu. */
 const frDate = (v) => {
@@ -220,12 +224,10 @@ export default function PromoProductPicker({ operationId, onClose, onAdd }) {
                       <td style={td}>
                         <div style={{ fontWeight: 600 }}>{r.display_name}</div>
                         <div style={{ fontSize: 11, color: C.grisM, fontFamily: 'monospace' }}>
-                          {r.sku}{r.brand ? ` · ${r.brand}` : ''}{r.sub_brand ? ` › ${r.sub_brand}` : ''}
+                          {r.sku}{effBrand(r) ? ` · ${effBrand(r)}` : ''}
                         </div>
-                        {(r.category || r.sub_category) && (
-                          <div style={{ fontSize: 11, color: C.grisM }}>
-                            {r.category}{r.sub_category ? ` › ${r.sub_category}` : ''}
-                          </div>
+                        {effCategory(r) && (
+                          <div style={{ fontSize: 11, color: C.grisM }}>{effCategory(r)}</div>
                         )}
                       </td>
                       <td style={{ ...tdR, color: r.stock <= 0 ? C.rouge : C.grisTF }}>{int(r.stock)}</td>
