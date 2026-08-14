@@ -39,7 +39,7 @@ const receptionRoutes = require('./routes/receptionRoutes');
 const inscritsRoutes = require('./routes/inscritsRoutes');
 const promoRoutes = require('./routes/promoRoutes');
 const authMiddleware = require('./middleware/authMiddleware');
-const { setupCron, setupBmsCron, setupComputedCostCron, setupBmsBarcodeCron, setupBmsShelfLocationCron, setupStockResyncCron, setupSavAutomationsCron, setupProductDbSyncCron, setupBmsTagRetryCron, setupReportEmailCron, setupStockValuationSnapshotCron, setupDraftStockReportCron, setupCompetitorMonitorCron } = require('./services/cronService');
+const { setupCron, setupBmsCron, setupComputedCostCron, setupBmsBarcodeCron, setupBmsShelfLocationCron, setupStockResyncCron, setupSavAutomationsCron, setupProductDbSyncCron, setupBmsTagRetryCron, setupReportEmailCron, setupStockValuationSnapshotCron, setupDraftStockReportCron, setupCompetitorMonitorCron, setupBrandMapCron } = require('./services/cronService');
 const rewardService = require('./services/rewardService');
 const emailService = require('./services/emailService');
 const wcSyncService = require('./services/wcSyncService');
@@ -124,6 +124,9 @@ app.listen(PORT, async () => {
 
   // Initialiser le cron de resynchro produits WC/ATUM (statut, stock, suivi de stock) - tous les jours a 3h
   setupProductDbSyncCron();
+
+  // Initialiser le cron des sous-marques (pwb-brand) - toutes les heures
+  setupBrandMapCron();
 
   // Initialiser le cron de rattrapage des tags BMS SAV (commandes importees apres coup)
   setupBmsTagRetryCron();

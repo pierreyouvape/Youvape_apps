@@ -4,6 +4,8 @@
  * Handles: Simple products, Variable products (parent + variations)
  */
 
+const { applySubBrandFallback } = require('../services/brandMapService');
+
 /**
  * Transform RAW product data from WordPress (SIMPLE or VARIABLE PARENT)
  * @param {Object} rawData - RAW data from WordPress (post + meta)
@@ -230,6 +232,11 @@ function parseWoosbIds(value) {
  * @returns {Object} Result with inserted/updated info
  */
 async function insertProduct(pool, productData) {
+  // yousync (v1.4.0 en prod) envoie sub_brand vide des qu'un produit porte a la
+  // fois le terme pwb-brand parent et son enfant. On restaure la sous-marque
+  // depuis wp_product_brand_map avant l'upsert, sinon elle serait ecrasee.
+  await applySubBrandFallback(pool, productData);
+
   const query = `
     INSERT INTO products (
       wp_product_id, product_type, wp_parent_id, post_author, post_date,

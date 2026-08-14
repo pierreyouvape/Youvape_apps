@@ -643,6 +643,41 @@ const setupCompetitorMonitorCron = () => {
 };
 
 
+// ==================== SOUS-MARQUES (pwb-brand) ====================
+// yousync v1.4.0 renvoie sub_brand vide quand un produit porte le terme
+// pwb-brand parent ET son enfant. Le correctif plugin (v1.4.1) est efface a
+// chaque deploiement Deployer du site, la correction vit donc cote backend :
+// on reconstruit la correspondance depuis WordPress et on realigne products.
+
+const { refreshBrandMap } = require("./brandMapService");
+
+let brandMapCronJob = null;
+
+const runBrandMapJob = async () => {
+  try {
+    const r = await refreshBrandMap();
+    if (r.filled > 0 || r.cleared > 0) {
+      console.log(`Sous-marques: ${r.mapped} produit(s) mappe(s) sur ${r.products}, ${r.filled} corrige(s), ${r.cleared} vide(s)`);
+    }
+  } catch (error) {
+    console.error("Erreur cron sous-marques:", error.message);
+  }
+};
+
+const setupBrandMapCron = () => {
+  if (brandMapCronJob) {
+    brandMapCronJob.stop();
+    brandMapCronJob = null;
+  }
+  // Toutes les heures a la 10e minute : delai max avant qu'une sous-marque
+  // nouvellement affectee dans WordPress apparaisse dans l'app.
+  brandMapCronJob = cron.schedule("10 * * * *", runBrandMapJob, {
+    timezone: "Europe/Paris"
+  });
+  console.log("Cron sous-marques configure: toutes les heures (Europe/Paris)");
+};
+
+
 module.exports = {
   setupCron,
   restartCron,
@@ -659,5 +694,7 @@ module.exports = {
   setupStockValuationSnapshotCron,
   setupDraftStockReportCron,
   setupCompetitorMonitorCron,
+  setupBrandMapCron,
   runProductDbSyncJob,
+  runBrandMapJob,
 };
