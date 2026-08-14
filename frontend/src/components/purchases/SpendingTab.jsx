@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import axios from 'axios';
 import {
-  ResponsiveContainer, BarChart, Bar, Cell, XAxis, YAxis,
+  ResponsiveContainer, BarChart, Bar, LineChart, Line, Cell, XAxis, YAxis,
   CartesianGrid, Tooltip, Legend, LabelList,
 } from 'recharts';
 
@@ -40,6 +40,7 @@ export default function SpendingTab({ token }) {
   const [error, setError] = useState('');
   const [year, setYear] = useState('all');
   const [sel, setSel] = useState(null); // { supplier, month }
+  const [hidden, setHidden] = useState(() => new Set()); // clés de séries masquées via la légende
 
   const fetchData = async (refresh = false) => {
     if (refresh) setRefreshing(true); else setLoading(true);
@@ -120,8 +121,8 @@ export default function SpendingTab({ token }) {
     return { series, data };
   }, [suppliers, months, cell, monthTotal]);
 
-  // On n'estompe le graphe que si la sélection courante y est représentée.
-  const selInStack = !!sel && stack.series.some(s => !s.isOther && s.name === sel.supplier);
+  // On n'estompe les courbes que si la sélection courante y est représentée.
+  const selInChart = !!sel && stack.series.some(s => !s.isOther && s.name === sel.supplier);
 
   const selOrders = useMemo(() => {
     if (!sel) return [];
@@ -188,34 +189,42 @@ export default function SpendingTab({ token }) {
         </ChartCard>
       )}
 
-      {/* Graphique 2 — répartition mensuelle */}
+      {/* Graphique 2 — évolution mensuelle */}
       {suppliers.length > 0 && months.length > 0 && (
-        <ChartCard title="Dépenses HT par mois et par fournisseur"
-          footer="Montants HT — cliquez une portion de barre pour voir le détail des commandes">
+        <ChartCard title="Évolution des dépenses HT par mois"
+          footer="Montants HT — cliquez un point pour voir le détail des commandes, ou une entrée de légende pour masquer la courbe">
           <ResponsiveContainer width="100%" height={340}>
-            <BarChart data={stack.data} margin={{ top: 4, right: 8, bottom: 0, left: 4 }}>
+            <LineChart data={stack.data} margin={{ top: 8, right: 12, bottom: 0, left: 4 }}>
               <CartesianGrid strokeDasharray="3 3" stroke={C.grisTL} vertical={false} />
               <XAxis dataKey="label" stroke={C.grisM} fontSize={11} tickLine={false} axisLine={false} />
               <YAxis tickFormatter={eurAxis} stroke={C.grisM} fontSize={11} tickLine={false} axisLine={false} width={62} />
-              <Tooltip cursor={{ fill: 'rgba(19,94,132,0.06)' }} content={<StackTooltip />} />
-              <Legend iconType="circle" iconSize={9} wrapperStyle={{ fontSize: 11.5, paddingTop: 6 }} />
+              <Tooltip content={<MonthTooltip />} />
+              <Legend iconType="plainline" iconSize={14} wrapperStyle={{ fontSize: 11.5, paddingTop: 6, cursor: 'pointer' }}
+                onClick={(e) => {
+                  const key = e?.dataKey;
+                  if (!key) return;
+                  setHidden(cur => {
+                    const next = new Set(cur);
+                    if (next.has(key)) next.delete(key); else next.add(key);
+                    return next;
+                  });
+                }} />
               {stack.series.map(s => (
-                <Bar key={s.key} dataKey={s.key} name={s.name} stackId="a" fill={s.color}
-                  stroke={C.blanc} strokeWidth={1.5} radius={[2, 2, 0, 0]} isAnimationActive={false}
-                  cursor={s.isOther ? 'default' : 'pointer'}
-                  onClick={(d) => {
-                    if (s.isOther) return;
-                    const ym = d?.payload?.ym ?? d?.ym;
-                    if (!ym) return;
-                    setSel(cur => (cur && cur.supplier === s.name && cur.month === ym) ? null : { supplier: s.name, month: ym });
-                  }}>
-                  {stack.data.map(row => (
-                    <Cell key={row.ym}
-                      fillOpacity={selInStack && !(sel.supplier === s.name && sel.month === row.ym) ? 0.28 : 1} />
-                  ))}
-                </Bar>
+                <Line key={s.key} dataKey={s.key} name={s.name} type="linear"
+                  stroke={s.color} strokeWidth={2} dot={false} hide={hidden.has(s.key)}
+                  strokeOpacity={selInChart && sel.supplier !== s.name ? 0.22 : 1}
+                  isAnimationActive={false}
+                  activeDot={{
+                    r: 5, strokeWidth: 2, stroke: C.blanc, cursor: s.isOther ? 'default' : 'pointer',
+                    onClick: (_, e) => {
+                      if (s.isOther) return;
+                      const ym = e?.payload?.ym ?? e?.payload?.payload?.ym;
+                      if (!ym) return;
+                      setSel(cur => (cur && cur.supplier === s.name && cur.month === ym) ? null : { supplier: s.name, month: ym });
+                    },
+                  }} />
               ))}
-            </BarChart>
+            </LineChart>
           </ResponsiveContainer>
         </ChartCard>
       )}
@@ -347,9 +356,9 @@ function RankTooltip({ active, payload, total }) {
   );
 }
 
-function StackTooltip({ active, payload, label }) {
+function MonthTooltip({ active, payload, label }) {
   if (!active || !payload?.length) return null;
-  const rows = payload.filter(p => p.value > 0).slice().reverse();
+  const rows = payload.filter(p => p.value > 0).slice().sort((a, b) => b.value - a.value);
   if (!rows.length) return null;
   const total = rows.reduce((a, p) => a + p.value, 0);
   return (
