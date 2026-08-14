@@ -39,7 +39,6 @@ export default function SpendingTab({ token }) {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
   const [year, setYear] = useState('all');
-  const [view, setView] = useState('supplier'); // 'supplier' | 'month'
   const [sel, setSel] = useState(null); // { supplier, month }
 
   const fetchData = async (refresh = false) => {
@@ -168,70 +167,57 @@ export default function SpendingTab({ token }) {
         <StatCard label="Fournisseurs" value={suppliers.length} color={C.grisF} />
       </div>
 
-      {/* Graphique */}
+      {/* Graphique 1 — classement des fournisseurs */}
       {suppliers.length > 0 && (
-        <div style={{ background: C.blanc, borderRadius: 12, border: `1px solid ${C.grisCL}`, padding: '16px 18px 10px', marginBottom: 16 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 10, flexWrap: 'wrap' }}>
-            <div style={{ fontSize: 13.5, fontWeight: 800, color: C.grisTF }}>
-              {view === 'supplier' ? 'Total HT par fournisseur' : 'Dépenses HT par mois et par fournisseur'}
-            </div>
-            <div style={{ marginLeft: 'auto', display: 'flex', border: `1px solid ${C.grisCL}`, borderRadius: 8, overflow: 'hidden' }}>
-              {[['supplier', 'Par fournisseur'], ['month', 'Par mois']].map(([k, lbl]) => (
-                <button key={k} onClick={() => setView(k)}
-                  style={{
-                    padding: '6px 12px', border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 700,
-                    background: view === k ? C.saphir : C.blanc, color: view === k ? C.blanc : C.grisF,
-                  }}>{lbl}</button>
-              ))}
-            </div>
-          </div>
+        <ChartCard title="Total HT par fournisseur"
+          footer="Montants HT, toutes périodes affichées confondues">
+          <ResponsiveContainer width="100%" height={Math.max(180, rankData.length * 30 + 40)}>
+            <BarChart data={rankData} layout="vertical" margin={{ top: 4, right: 80, bottom: 4, left: 4 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke={C.grisTL} horizontal={false} />
+              <XAxis type="number" tickFormatter={eurAxis} stroke={C.grisM} fontSize={11} tickLine={false} axisLine={false} />
+              <YAxis type="category" dataKey="label" width={170} stroke={C.grisF} fontSize={11.5}
+                tickLine={false} axisLine={false} interval={0} />
+              <Tooltip cursor={{ fill: 'rgba(19,94,132,0.06)' }} content={<RankTooltip total={grand.ht} />} />
+              <Bar dataKey="ht" name="Total HT" fill={BAR_COLOR} radius={[0, 4, 4, 0]} barSize={16} isAnimationActive={false}>
+                {rankData.map(r => <Cell key={r.name} fill={r.isOther ? OTHER_COLOR : BAR_COLOR} />)}
+                <LabelList dataKey="ht" position="right" formatter={eur0}
+                  fill={C.grisF} fontSize={11} fontWeight={700} />
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        </ChartCard>
+      )}
 
-          {view === 'supplier' ? (
-            <ResponsiveContainer width="100%" height={Math.max(180, rankData.length * 30 + 40)}>
-              <BarChart data={rankData} layout="vertical" margin={{ top: 4, right: 80, bottom: 4, left: 4 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke={C.grisTL} horizontal={false} />
-                <XAxis type="number" tickFormatter={eurAxis} stroke={C.grisM} fontSize={11} tickLine={false} axisLine={false} />
-                <YAxis type="category" dataKey="label" width={170} stroke={C.grisF} fontSize={11.5}
-                  tickLine={false} axisLine={false} interval={0} />
-                <Tooltip cursor={{ fill: 'rgba(19,94,132,0.06)' }} content={<RankTooltip total={grand.ht} />} />
-                <Bar dataKey="ht" name="Total HT" fill={BAR_COLOR} radius={[0, 4, 4, 0]} barSize={16} isAnimationActive={false}>
-                  {rankData.map(r => <Cell key={r.name} fill={r.isOther ? OTHER_COLOR : BAR_COLOR} />)}
-                  <LabelList dataKey="ht" position="right" formatter={eur0}
-                    fill={C.grisF} fontSize={11} fontWeight={700} />
+      {/* Graphique 2 — répartition mensuelle */}
+      {suppliers.length > 0 && months.length > 0 && (
+        <ChartCard title="Dépenses HT par mois et par fournisseur"
+          footer="Montants HT — cliquez une portion de barre pour voir le détail des commandes">
+          <ResponsiveContainer width="100%" height={340}>
+            <BarChart data={stack.data} margin={{ top: 4, right: 8, bottom: 0, left: 4 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke={C.grisTL} vertical={false} />
+              <XAxis dataKey="label" stroke={C.grisM} fontSize={11} tickLine={false} axisLine={false} />
+              <YAxis tickFormatter={eurAxis} stroke={C.grisM} fontSize={11} tickLine={false} axisLine={false} width={62} />
+              <Tooltip cursor={{ fill: 'rgba(19,94,132,0.06)' }} content={<StackTooltip />} />
+              <Legend iconType="circle" iconSize={9} wrapperStyle={{ fontSize: 11.5, paddingTop: 6 }} />
+              {stack.series.map(s => (
+                <Bar key={s.key} dataKey={s.key} name={s.name} stackId="a" fill={s.color}
+                  stroke={C.blanc} strokeWidth={1.5} radius={[2, 2, 0, 0]} isAnimationActive={false}
+                  cursor={s.isOther ? 'default' : 'pointer'}
+                  onClick={(d) => {
+                    if (s.isOther) return;
+                    const ym = d?.payload?.ym ?? d?.ym;
+                    if (!ym) return;
+                    setSel(cur => (cur && cur.supplier === s.name && cur.month === ym) ? null : { supplier: s.name, month: ym });
+                  }}>
+                  {stack.data.map(row => (
+                    <Cell key={row.ym}
+                      fillOpacity={selInStack && !(sel.supplier === s.name && sel.month === row.ym) ? 0.28 : 1} />
+                  ))}
                 </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          ) : (
-            <ResponsiveContainer width="100%" height={330}>
-              <BarChart data={stack.data} margin={{ top: 4, right: 8, bottom: 0, left: 4 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke={C.grisTL} vertical={false} />
-                <XAxis dataKey="label" stroke={C.grisM} fontSize={11} tickLine={false} axisLine={false} />
-                <YAxis tickFormatter={eurAxis} stroke={C.grisM} fontSize={11} tickLine={false} axisLine={false} width={62} />
-                <Tooltip cursor={{ fill: 'rgba(19,94,132,0.06)' }} content={<StackTooltip />} />
-                <Legend iconType="circle" iconSize={9} wrapperStyle={{ fontSize: 11.5, paddingTop: 6 }} />
-                {stack.series.map(s => (
-                  <Bar key={s.key} dataKey={s.key} name={s.name} stackId="a" fill={s.color}
-                    stroke={C.blanc} strokeWidth={1.5} radius={[2, 2, 0, 0]} isAnimationActive={false}
-                    cursor={s.isOther ? 'default' : 'pointer'}
-                    onClick={(d) => {
-                      if (s.isOther) return;
-                      const ym = d?.payload?.ym ?? d?.ym;
-                      if (!ym) return;
-                      setSel(cur => (cur && cur.supplier === s.name && cur.month === ym) ? null : { supplier: s.name, month: ym });
-                    }}>
-                    {stack.data.map(row => (
-                      <Cell key={row.ym}
-                        fillOpacity={selInStack && !(sel.supplier === s.name && sel.month === row.ym) ? 0.28 : 1} />
-                    ))}
-                  </Bar>
-                ))}
-              </BarChart>
-            </ResponsiveContainer>
-          )}
-          <div style={{ fontSize: 11, color: C.grisM, marginTop: 2 }}>
-            Montants HT{view === 'month' ? ' — cliquez une portion de barre pour voir le détail des commandes' : ''}
-          </div>
-        </div>
+              ))}
+            </BarChart>
+          </ResponsiveContainer>
+        </ChartCard>
       )}
 
       {suppliers.length === 0 ? (
@@ -389,6 +375,16 @@ function TipRow({ label, value, strong }) {
     <div style={{ display: 'flex', gap: 10, padding: '2px 0' }}>
       <span style={{ color: C.grisF, flex: 1 }}>{label}</span>
       <span style={{ fontWeight: strong ? 800 : 700, color: strong ? C.saphir : C.grisTF }}>{value}</span>
+    </div>
+  );
+}
+
+function ChartCard({ title, footer, children }) {
+  return (
+    <div style={{ background: C.blanc, borderRadius: 12, border: `1px solid ${C.grisCL}`, padding: '16px 18px 10px', marginBottom: 16 }}>
+      <div style={{ fontSize: 13.5, fontWeight: 800, color: C.grisTF, marginBottom: 10 }}>{title}</div>
+      {children}
+      <div style={{ fontSize: 11, color: C.grisM, marginTop: 2 }}>{footer}</div>
     </div>
   );
 }
