@@ -1,5 +1,9 @@
 import { useState, useEffect, useMemo } from 'react';
 import axios from 'axios';
+import {
+  ResponsiveContainer, BarChart, Bar, Cell, XAxis, YAxis,
+  CartesianGrid, Tooltip, Legend, LabelList,
+} from 'recharts';
 
 const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:3000/api/auth').replace('/auth', '');
 
@@ -9,14 +13,25 @@ const C = {
   grisF: '#626E85', grisTF: '#2a2e38', blanc: '#FFFFFF', vert: '#4AB866',
 };
 
+// Palette catégorielle : ordre FIXE (jamais recyclé), validée pour le daltonisme
+// sur fond blanc (pire paire adjacente : ΔE CVD 9,1 / vision normale 19,6).
+// Au-delà, les fournisseurs sont repliés dans « Autres » (gris neutre, volontairement discret).
+const SERIES_COLORS = ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4', '#008300'];
+const OTHER_COLOR = '#7C8B96';
+const BAR_COLOR = '#2a78d6';
+const TOP_STACK = 6;   // fournisseurs colorés dans le graphe mensuel
+const TOP_RANK = 14;   // barres du classement
+
 // Intl utilise une espace fine insécable (U+202F) comme séparateur de milliers,
 // peu lisible -> on la remplace par une espace normale.
 const NBSP = /[\u202f\u00a0]/g;
 const eur = (n) => new Intl.NumberFormat('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n || 0).replace(NBSP, ' ') + ' €';
 const eur0 = (n) => new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 0 }).format(n || 0).replace(NBSP, ' ') + ' €';
+const eurAxis = (n) => (Math.abs(n) >= 1000 ? `${Math.round(n / 1000)} k€` : `${Math.round(n)} €`);
 const MONTHS_FR = ['janv.', 'févr.', 'mars', 'avr.', 'mai', 'juin', 'juil.', 'août', 'sept.', 'oct.', 'nov.', 'déc.'];
 const monthLabel = (ym) => { const [y, m] = ym.split('-'); return `${MONTHS_FR[parseInt(m) - 1]} ${y.slice(2)}`; };
 const fmtDate = (d) => d ? `${d.slice(8, 10)}/${d.slice(5, 7)}/${d.slice(0, 4)}` : '—';
+const ellips = (s, n) => (s && s.length > n ? s.slice(0, n - 1) + '…' : s);
 
 export default function SpendingTab({ token }) {
   const [orders, setOrders] = useState(null);
@@ -24,6 +39,7 @@ export default function SpendingTab({ token }) {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
   const [year, setYear] = useState('all');
+  const [view, setView] = useState('supplier'); // 'supplier' | 'month'
   const [sel, setSel] = useState(null); // { supplier, month }
 
   const fetchData = async (refresh = false) => {
@@ -71,6 +87,43 @@ export default function SpendingTab({ token }) {
     return { suppliers, months, cell, supTotal, monthTotal, grand };
   }, [filtered]);
 
+  // Classement : total HT par fournisseur, le reste replié dans « Autres ».
+  const rankData = useMemo(() => {
+    const rows = suppliers.slice(0, TOP_RANK).map(s => ({
+      name: s, label: ellips(s, 24), ht: supTotal[s].ht, ttc: supTotal[s].ttc, count: supTotal[s].count,
+    }));
+    const rest = suppliers.slice(TOP_RANK);
+    if (rest.length) {
+      rows.push({
+        name: `Autres (${rest.length})`, label: `Autres (${rest.length})`, isOther: true,
+        ht: rest.reduce((a, s) => a + supTotal[s].ht, 0),
+        ttc: rest.reduce((a, s) => a + supTotal[s].ttc, 0),
+        count: rest.reduce((a, s) => a + supTotal[s].count, 0),
+      });
+    }
+    return rows;
+  }, [suppliers, supTotal]);
+
+  // Empilement mensuel : une série par fournisseur du top, plus « Autres ».
+  // Les clés sont indexées (s0, s1…) pour ne pas entrer en collision avec un
+  // nom de fournisseur qui vaudrait « total » ou « ym ».
+  const stack = useMemo(() => {
+    const top = suppliers.slice(0, TOP_STACK);
+    const rest = suppliers.slice(TOP_STACK);
+    const series = top.map((name, i) => ({ key: `s${i}`, name, color: SERIES_COLORS[i] }));
+    if (rest.length) series.push({ key: 'other', name: `Autres (${rest.length})`, color: OTHER_COLOR, isOther: true });
+    const data = months.map(ym => {
+      const row = { ym, label: monthLabel(ym), total: monthTotal[ym].ht };
+      top.forEach((name, i) => { row[`s${i}`] = cell[name + '||' + ym]?.ht || 0; });
+      if (rest.length) row.other = rest.reduce((a, name) => a + (cell[name + '||' + ym]?.ht || 0), 0);
+      return row;
+    });
+    return { series, data };
+  }, [suppliers, months, cell, monthTotal]);
+
+  // On n'estompe le graphe que si la sélection courante y est représentée.
+  const selInStack = !!sel && stack.series.some(s => !s.isOther && s.name === sel.supplier);
+
   const selOrders = useMemo(() => {
     if (!sel) return [];
     return filtered
@@ -114,6 +167,72 @@ export default function SpendingTab({ token }) {
         <StatCard label="Commandes" value={grand.count} color={C.vert} />
         <StatCard label="Fournisseurs" value={suppliers.length} color={C.grisF} />
       </div>
+
+      {/* Graphique */}
+      {suppliers.length > 0 && (
+        <div style={{ background: C.blanc, borderRadius: 12, border: `1px solid ${C.grisCL}`, padding: '16px 18px 10px', marginBottom: 16 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 10, flexWrap: 'wrap' }}>
+            <div style={{ fontSize: 13.5, fontWeight: 800, color: C.grisTF }}>
+              {view === 'supplier' ? 'Total HT par fournisseur' : 'Dépenses HT par mois et par fournisseur'}
+            </div>
+            <div style={{ marginLeft: 'auto', display: 'flex', border: `1px solid ${C.grisCL}`, borderRadius: 8, overflow: 'hidden' }}>
+              {[['supplier', 'Par fournisseur'], ['month', 'Par mois']].map(([k, lbl]) => (
+                <button key={k} onClick={() => setView(k)}
+                  style={{
+                    padding: '6px 12px', border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 700,
+                    background: view === k ? C.saphir : C.blanc, color: view === k ? C.blanc : C.grisF,
+                  }}>{lbl}</button>
+              ))}
+            </div>
+          </div>
+
+          {view === 'supplier' ? (
+            <ResponsiveContainer width="100%" height={Math.max(180, rankData.length * 30 + 40)}>
+              <BarChart data={rankData} layout="vertical" margin={{ top: 4, right: 80, bottom: 4, left: 4 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke={C.grisTL} horizontal={false} />
+                <XAxis type="number" tickFormatter={eurAxis} stroke={C.grisM} fontSize={11} tickLine={false} axisLine={false} />
+                <YAxis type="category" dataKey="label" width={170} stroke={C.grisF} fontSize={11.5}
+                  tickLine={false} axisLine={false} interval={0} />
+                <Tooltip cursor={{ fill: 'rgba(19,94,132,0.06)' }} content={<RankTooltip total={grand.ht} />} />
+                <Bar dataKey="ht" name="Total HT" fill={BAR_COLOR} radius={[0, 4, 4, 0]} barSize={16} isAnimationActive={false}>
+                  {rankData.map(r => <Cell key={r.name} fill={r.isOther ? OTHER_COLOR : BAR_COLOR} />)}
+                  <LabelList dataKey="ht" position="right" formatter={eur0}
+                    fill={C.grisF} fontSize={11} fontWeight={700} />
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          ) : (
+            <ResponsiveContainer width="100%" height={330}>
+              <BarChart data={stack.data} margin={{ top: 4, right: 8, bottom: 0, left: 4 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke={C.grisTL} vertical={false} />
+                <XAxis dataKey="label" stroke={C.grisM} fontSize={11} tickLine={false} axisLine={false} />
+                <YAxis tickFormatter={eurAxis} stroke={C.grisM} fontSize={11} tickLine={false} axisLine={false} width={62} />
+                <Tooltip cursor={{ fill: 'rgba(19,94,132,0.06)' }} content={<StackTooltip />} />
+                <Legend iconType="circle" iconSize={9} wrapperStyle={{ fontSize: 11.5, paddingTop: 6 }} />
+                {stack.series.map(s => (
+                  <Bar key={s.key} dataKey={s.key} name={s.name} stackId="a" fill={s.color}
+                    stroke={C.blanc} strokeWidth={1.5} radius={[2, 2, 0, 0]} isAnimationActive={false}
+                    cursor={s.isOther ? 'default' : 'pointer'}
+                    onClick={(d) => {
+                      if (s.isOther) return;
+                      const ym = d?.payload?.ym ?? d?.ym;
+                      if (!ym) return;
+                      setSel(cur => (cur && cur.supplier === s.name && cur.month === ym) ? null : { supplier: s.name, month: ym });
+                    }}>
+                    {stack.data.map(row => (
+                      <Cell key={row.ym}
+                        fillOpacity={selInStack && !(sel.supplier === s.name && sel.month === row.ym) ? 0.28 : 1} />
+                    ))}
+                  </Bar>
+                ))}
+              </BarChart>
+            </ResponsiveContainer>
+          )}
+          <div style={{ fontSize: 11, color: C.grisM, marginTop: 2 }}>
+            Montants HT{view === 'month' ? ' — cliquez une portion de barre pour voir le détail des commandes' : ''}
+          </div>
+        </div>
+      )}
 
       {suppliers.length === 0 ? (
         <div style={{ padding: 40, textAlign: 'center', color: C.grisM, background: C.blanc, borderRadius: 12, border: `1px solid ${C.grisCL}` }}>
@@ -218,6 +337,58 @@ export default function SpendingTab({ token }) {
           </table>
         </div>
       )}
+    </div>
+  );
+}
+
+const TIP_BOX = {
+  background: C.blanc, border: `1px solid ${C.grisCL}`, borderRadius: 10,
+  padding: '10px 12px', boxShadow: '0 4px 14px rgba(0,0,0,0.08)', fontSize: 12, minWidth: 190,
+};
+
+function RankTooltip({ active, payload, total }) {
+  if (!active || !payload?.length) return null;
+  const d = payload[0].payload;
+  const part = total ? (d.ht / total) * 100 : 0;
+  return (
+    <div style={TIP_BOX}>
+      <div style={{ fontWeight: 800, color: C.grisTF, marginBottom: 6 }}>{d.name}</div>
+      <TipRow label="HT" value={eur(d.ht)} strong />
+      <TipRow label="TTC" value={eur(d.ttc)} />
+      <TipRow label="Commandes" value={d.count} />
+      <TipRow label="Part des achats" value={`${part.toFixed(1)} %`} />
+    </div>
+  );
+}
+
+function StackTooltip({ active, payload, label }) {
+  if (!active || !payload?.length) return null;
+  const rows = payload.filter(p => p.value > 0).slice().reverse();
+  if (!rows.length) return null;
+  const total = rows.reduce((a, p) => a + p.value, 0);
+  return (
+    <div style={TIP_BOX}>
+      <div style={{ fontWeight: 800, color: C.grisTF, marginBottom: 6 }}>{label}</div>
+      {rows.map(p => (
+        <div key={p.dataKey} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '2px 0' }}>
+          <span style={{ width: 9, height: 9, borderRadius: 2, background: p.color, flex: '0 0 auto' }} />
+          <span style={{ color: C.grisF, flex: 1 }}>{p.name}</span>
+          <span style={{ fontWeight: 700, color: C.grisTF }}>{eur0(p.value)}</span>
+        </div>
+      ))}
+      <div style={{ display: 'flex', gap: 8, marginTop: 6, paddingTop: 6, borderTop: `1px solid ${C.grisTL}` }}>
+        <span style={{ color: C.grisF, flex: 1, fontWeight: 700 }}>Total</span>
+        <span style={{ fontWeight: 800, color: C.saphir }}>{eur0(total)}</span>
+      </div>
+    </div>
+  );
+}
+
+function TipRow({ label, value, strong }) {
+  return (
+    <div style={{ display: 'flex', gap: 10, padding: '2px 0' }}>
+      <span style={{ color: C.grisF, flex: 1 }}>{label}</span>
+      <span style={{ fontWeight: strong ? 800 : 700, color: strong ? C.saphir : C.grisTF }}>{value}</span>
     </div>
   );
 }
