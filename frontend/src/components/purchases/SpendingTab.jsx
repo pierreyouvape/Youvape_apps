@@ -20,6 +20,7 @@ const SERIES_COLORS = ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4', '#
 const OTHER_COLOR = '#7C8B96';
 const BAR_COLOR = '#2a78d6';
 const TOP_STACK = 6;   // fournisseurs colorés dans le graphe mensuel
+const Y_STEP = 5000;   // pas de l'axe des montants, en €
 const TOP_RANK = 14;   // barres du classement
 
 // Intl utilise une espace fine insécable (U+202F) comme séparateur de milliers,
@@ -124,6 +125,21 @@ export default function SpendingTab({ token }) {
   // On n'estompe les courbes que si la sélection courante y est représentée.
   const selInChart = !!sel && stack.series.some(s => !s.isOther && s.name === sel.supplier);
 
+  // Axe des montants gradué tous les 5 k€, borné aux courbes VISIBLES :
+  // masquer un gros fournisseur via la légende re-zoome l'axe sur les autres.
+  const yAxis = useMemo(() => {
+    const visible = stack.series.filter(s => !hidden.has(s.key));
+    let max = 0;
+    for (const row of stack.data) {
+      for (const s of visible) max = Math.max(max, row[s.key] || 0);
+    }
+    const top = Math.max(Y_STEP, Math.ceil(max / Y_STEP) * Y_STEP);
+    const ticks = [];
+    for (let v = 0; v <= top; v += Y_STEP) ticks.push(v);
+    return { top, ticks };
+  }, [stack, hidden]);
+
+
   const selOrders = useMemo(() => {
     if (!sel) return [];
     return filtered
@@ -193,11 +209,12 @@ export default function SpendingTab({ token }) {
       {suppliers.length > 0 && months.length > 0 && (
         <ChartCard title="Évolution des dépenses HT par mois"
           footer="Montants HT — cliquez un point pour voir le détail des commandes, ou une entrée de légende pour masquer la courbe">
-          <ResponsiveContainer width="100%" height={340}>
+          <ResponsiveContainer width="100%" height={420}>
             <LineChart data={stack.data} margin={{ top: 8, right: 12, bottom: 0, left: 4 }}>
               <CartesianGrid strokeDasharray="3 3" stroke={C.grisTL} vertical={false} />
               <XAxis dataKey="label" stroke={C.grisM} fontSize={11} tickLine={false} axisLine={false} />
-              <YAxis tickFormatter={eurAxis} stroke={C.grisM} fontSize={11} tickLine={false} axisLine={false} width={62} />
+              <YAxis tickFormatter={eurAxis} stroke={C.grisM} fontSize={11} tickLine={false} axisLine={false}
+                width={62} domain={[0, yAxis.top]} ticks={yAxis.ticks} interval={0} />
               <Tooltip content={<MonthTooltip />} />
               <Legend iconType="plainline" iconSize={14} wrapperStyle={{ fontSize: 11.5, paddingTop: 6, cursor: 'pointer' }}
                 onClick={(e) => {
