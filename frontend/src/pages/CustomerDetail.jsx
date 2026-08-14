@@ -75,15 +75,41 @@ function customerSince(firstOrderDate) {
 }
 
 /* ─── Carte de stat ──────────────────────────────────────── */
-function StatBox({ label, value, color = C.saphir }) {
+function StatBox({ label, value, color = C.saphir, onClick, active }) {
+  const clickable = typeof onClick === 'function';
   return (
-    <div style={{
-      background: C.blanc, borderRadius: 12, border: `1px solid ${C.grisCL}`,
-      boxShadow: '0 1px 3px rgba(0,0,0,0.04)', padding: '16px 18px',
-    }}>
+    <div
+      onClick={onClick}
+      title={clickable ? 'Cliquer pour voir le détail' : undefined}
+      style={{
+        background: C.blanc, borderRadius: 12,
+        border: `1px solid ${active ? color : C.grisCL}`,
+        boxShadow: active ? `0 0 0 2px ${color}22` : '0 1px 3px rgba(0,0,0,0.04)',
+        padding: '16px 18px',
+        cursor: clickable ? 'pointer' : 'default',
+        transition: 'border-color 0.12s, box-shadow 0.12s',
+      }}>
       <div style={{ fontSize: 11, fontWeight: 700, color: C.grisM, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 7 }}>{label}</div>
-      <div style={{ fontSize: 22, fontWeight: 900, fontFamily: "'Tilt Warp', cursive", color, letterSpacing: '-0.5px', fontVariantNumeric: 'tabular-nums', lineHeight: 1 }}>{value}</div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        <div style={{ fontSize: 22, fontWeight: 900, fontFamily: "'Tilt Warp', cursive", color, letterSpacing: '-0.5px', fontVariantNumeric: 'tabular-nums', lineHeight: 1 }}>{value}</div>
+        {clickable && (
+          <svg width={13} height={13} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"
+            style={{ transform: active ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s', flexShrink: 0 }}>
+            <path d="M6 9l6 6 6-6" />
+          </svg>
+        )}
+      </div>
     </div>
+  );
+}
+
+/* ─── Étoiles ────────────────────────────────────────────── */
+function Stars({ rating }) {
+  const n = parseInt(rating) || 0;
+  return (
+    <span style={{ fontSize: 14, letterSpacing: 1, color: C.orange, whiteSpace: 'nowrap' }}>
+      {'★'.repeat(n)}<span style={{ color: C.grisCL }}>{'★'.repeat(Math.max(0, 5 - n))}</span>
+    </span>
   );
 }
 
@@ -99,6 +125,8 @@ const CustomerDetail = () => {
   const [customer, setCustomer] = useState(null);
   const [stats, setStats] = useState(null);
   const [orders, setOrders] = useState([]);
+  const [reviews, setReviews] = useState([]);
+  const [showReviews, setShowReviews] = useState(false);
   const [ordersByMonth, setOrdersByMonth] = useState([]);
   const [loading, setLoading] = useState(true);
   const [expandedOrderId, setExpandedOrderId] = useState(null);
@@ -117,6 +145,7 @@ const CustomerDetail = () => {
         setCustomer(res.data.data.customer);
         setStats(res.data.data.stats);
         setOrders(res.data.data.orders);
+        setReviews(res.data.data.reviews || []);
       }
     } catch (error) {
       console.error('Error fetching customer detail:', error);
@@ -294,10 +323,89 @@ const CustomerDetail = () => {
               <StatBox label="Coût HT" value={fmtPrice(stats?.total_cost)} color={C.rouge} />
               <StatBox label="Bénéfice" value={fmtPrice(stats?.profit)} color={C.vert} />
               <StatBox label="Marge" value={`${stats?.margin?.toFixed(1) || 0}%`} color={C.vert} />
-              <StatBox label="Avis laissés" value={stats?.reviews_count || 0} color={C.orange} />
+              <StatBox
+                label="Avis laissés"
+                value={stats?.reviews_count || 0}
+                color={C.orange}
+                active={showReviews}
+                onClick={reviews.length > 0 ? () => setShowReviews(v => !v) : undefined}
+              />
               <StatBox label="Client depuis" value={customerSince(stats?.first_order_date)} color={C.saphir} />
             </div>
           </div>
+
+          {/* Avis laissés par le client */}
+          {showReviews && reviews.length > 0 && (
+            <div style={{ ...cardStyle, overflow: 'hidden', marginBottom: 20 }}>
+              <div style={{ padding: '16px 20px', borderBottom: `1px solid ${C.grisCL}`, background: '#FCFDFE', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+                <h3 style={{ fontSize: 13, fontWeight: 800, color: C.grisTF, textTransform: 'uppercase', letterSpacing: '0.05em', margin: 0 }}>
+                  Avis laissés ({reviews.length})
+                </h3>
+                <button onClick={() => navigate('/reviews')} style={{
+                  background: 'none', border: `1px solid ${C.grisCL}`, borderRadius: 7, padding: '5px 11px',
+                  fontSize: 12, fontWeight: 700, color: C.grisF, cursor: 'pointer', fontFamily: 'inherit',
+                }}>Voir l'app Avis</button>
+              </div>
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr>
+                      {['Date', 'Note', 'Type', 'Produit', 'Commentaire', 'Commande', 'Publication', 'Récompense'].map((h, i) => (
+                        <th key={i} style={{
+                          padding: '11px 16px', textAlign: 'left',
+                          fontSize: 11, fontWeight: 800, color: C.grisM, textTransform: 'uppercase',
+                          letterSpacing: '0.06em', background: '#FCFDFE', borderBottom: `1px solid ${C.grisCL}`, whiteSpace: 'nowrap',
+                        }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {reviews.map((r) => (
+                      <tr key={r.id} className="dt-row" style={{ borderBottom: `1px solid ${C.grisTL}` }}>
+                        <td style={{ padding: '13px 16px', fontSize: 13, color: C.grisF, whiteSpace: 'nowrap' }}>
+                          {r.review_date ? formatDate(r.review_date) : '—'}
+                        </td>
+                        <td style={{ padding: '13px 16px' }}><Stars rating={r.rating} /></td>
+                        <td style={{ padding: '13px 16px', fontSize: 12.5 }}>
+                          <span style={{
+                            padding: '3px 9px', borderRadius: 6, fontSize: 11, fontWeight: 700,
+                            background: r.review_type === 'site' ? '#E5EEF6' : '#FFF4E0',
+                            color: r.review_type === 'site' ? '#3C6E8F' : C.orange,
+                          }}>{r.review_type === 'site' ? 'Site' : 'Produit'}</span>
+                        </td>
+                        <td style={{ padding: '13px 16px', fontSize: 13, color: C.grisTF, maxWidth: 220 }}>
+                          {r.product_name || (r.product_id ? `#${r.product_id}` : <span style={{ color: C.grisM }}>—</span>)}
+                        </td>
+                        <td style={{ padding: '13px 16px', fontSize: 13, color: C.grisTF, minWidth: 260, lineHeight: 1.45 }}>
+                          {r.comment || <span style={{ color: C.grisM }}>—</span>}
+                        </td>
+                        <td style={{ padding: '13px 16px', fontSize: 13 }}>
+                          {r.order_id ? (
+                            <span onClick={() => navigate(`/orders/${r.order_id}`)}
+                              style={{ fontWeight: 700, color: C.saphir, cursor: 'pointer', fontVariantNumeric: 'tabular-nums' }}>#{r.order_id}</span>
+                          ) : <span style={{ color: C.grisM }}>—</span>}
+                        </td>
+                        <td style={{ padding: '13px 16px' }}>
+                          <span style={{
+                            padding: '3px 11px', borderRadius: 99, fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap',
+                            background: r.review_status === 1 ? '#E6F5EC' : '#FBE8EA',
+                            color: r.review_status === 1 ? '#2A8049' : '#C24555',
+                          }}>{r.review_status === 1 ? '✓ Publié' : '✗ Non publié'}</span>
+                        </td>
+                        <td style={{ padding: '13px 16px' }}>
+                          <span style={{
+                            padding: '3px 11px', borderRadius: 99, fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap',
+                            background: r.rewarded ? '#E6F5EC' : '#F3F4F6',
+                            color: r.rewarded ? '#2A8049' : '#6B7280',
+                          }}>{r.rewarded ? '✓ Récompensé' : 'En attente'}</span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
 
           {/* Graphe commandes par mois */}
           {ordersByMonth.length > 0 && (

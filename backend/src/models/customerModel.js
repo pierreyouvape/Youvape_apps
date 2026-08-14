@@ -550,6 +550,33 @@ class CustomerModel {
   }
 
   /**
+   * Récupère les avis laissés par un client (via son email)
+   */
+  async getReviewsByEmail(customerEmail) {
+    if (!customerEmail) return [];
+    const query = `
+      SELECT
+        r.id,
+        r.review_id,
+        r.review_type,
+        r.rating,
+        r.comment,
+        r.review_date,
+        r.review_status,
+        r.rewarded,
+        r.order_id,
+        r.product_id,
+        p.post_title as product_name
+      FROM reviews r
+      LEFT JOIN products p ON p.wp_product_id::text = r.product_id
+      WHERE r.customer_email = $1
+      ORDER BY r.review_date DESC NULLS LAST, r.id DESC
+    `;
+    const result = await pool.query(query, [customerEmail]);
+    return result.rows;
+  }
+
+  /**
    * Récupère les commandes d'un client avec indicateur avis
    */
   async getOrdersWithReviews(wpUserId) {

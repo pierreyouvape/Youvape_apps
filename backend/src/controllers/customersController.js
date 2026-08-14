@@ -214,13 +214,15 @@ exports.getDetail = async (req, res) => {
 
     const stats = await customerModel.getStatsForDetail(customerId, customer.email);
     const orders = await customerModel.getOrdersWithReviews(customerId);
+    const reviews = await customerModel.getReviewsByEmail(customer.email);
 
     res.json({
       success: true,
       data: {
         customer,
         stats,
-        orders
+        orders,
+        reviews
       }
     });
   } catch (error) {
