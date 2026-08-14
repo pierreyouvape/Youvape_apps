@@ -309,7 +309,7 @@ export const APP_GROUPS = [
     key: 'grp-factures-transporteurs',
     label: 'Factures Transporteurs',
     color: '#1F4B6E',
-    members: ['chronopost', 'colissimo', 'mondial-relay', 'transporteurs'],
+    members: ['chronopost', 'colissimo', 'lettre-suivie', 'mondial-relay', 'transporteurs'],
   },
 ];
 
