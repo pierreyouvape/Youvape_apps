@@ -232,10 +232,13 @@ class Data_Fetcher {
             'permalink' => get_permalink($product->get_id())
         ];
 
-        // Get brand -- a product can carry BOTH the parent brand term and its
-        // child sub-brand term (e.g. E.Tasty + Godfall City). Don't blindly take
-        // $brands[0] (which may be the parent and would drop the sub-brand);
-        // pick the child term (parent != 0) as the sub-brand.
+        // Get brand -- NE PAS REVENIR A $brands[0] (voir yousync/AVANT-DE-MODIFIER.md).
+        // Un produit peut porter A LA FOIS le terme parent et son enfant
+        // (ex. Eliquid France + Fruizee Max). $brands[0] renvoie le parent, donc
+        // sub_brand part vide et ecrase la sous-marque en base a chaque edition.
+        // On retient le terme qui a un parent : resultat independant de l'ordre.
+        // La prod tourne encore en 1.4.0 avec l'ancien code ; le backend
+        // (brandMapService) neutralise le bug en attendant.
         $brands = wp_get_post_terms($product->get_id(), 'pwb-brand', ['fields' => 'all']);
         if (!is_wp_error($brands) && !empty($brands)) {
             $child = null;

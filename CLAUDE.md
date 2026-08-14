@@ -99,6 +99,24 @@ Les produits de type `woosb` (packs) génèrent **deux lignes** dans `order_item
 ### Doutes sur une table/colonne
 Introspecter avec `\d+ nom_table` plutôt qu'inventer.
 
+### Modifier le plugin yousync
+**Lire `yousync/AVANT-DE-MODIFIER.md` avant toute mise à jour du module.**
+
+`git push` ne met PAS à jour la prod : le plugin tourne sur un hébergement
+Plesk séparé déployé par Deployer (`current -> releases/N`) à partir du repo
+du site, géré côté agence. Toute modif déposée à la main y est effacée au
+déploiement suivant — c'est déjà arrivé (correctif posé le 03/08/2026, effacé
+le 05/08).
+
+Ce repo est en **1.4.1**, la prod en **1.4.0**. L'écart = le correctif marques
+parent/enfant dans `get_product()`. Une nouvelle version repartie de la 1.4.0
+réintroduirait le bug : le conserver, et faire passer la version par le repo
+du site.
+
+Le bug est neutralisé côté backend en attendant
+(`backend/src/services/brandMapService.js`) — ne pas supprimer ce service en
+même temps qu'une mise à jour du plugin.
+
 ---
 
 ## Connexion VPS
@@ -136,6 +154,26 @@ nouvel appel de lecture est authentifié sans effort. Les appels `fetch()`
 (alors : secret dédié).
 
 ## Bugs corrigés — historique
+
+### 2026-08-14 — Sous-marques vidées par yousync (`commit 2c5b07b`)
+Un produit portant à la fois le terme `pwb-brand` parent (« Eliquid France »)
+et son enfant (« Fruizee Max ») revenait avec `sub_brand` **vide** : yousync
+1.4.0 déduit la marque avec `$brands[0]`, qui est le parent. La sous-marque
+était écrasée en base à chaque édition du produit et n'apparaissait nulle part
+dans l'app (20 des 24 produits Fruizee Max étaient concernés).
+
+Le correctif plugin (1.4.1) ne tient pas : les déploiements Deployer du site
+l'effacent. La correction vit donc dans le backend —
+`backend/src/services/brandMapService.js` reconstruit produit →
+marque/sous-marque depuis la taxonomie `pwb-brand` via l'API REST WP v2
+(`wc/v3` n'expose pas les taxonomies custom), réaligne `products` toutes les
+heures et restaure la sous-marque avant chaque upsert produit.
+
+Premier passage : 2159 produits analysés, 77 corrigés, 34 vidés (sous-marques
+retirées dans WordPress, valeurs périmées en base).
+
+Voir `yousync/AVANT-DE-MODIFIER.md`.
+
 
 ### 2026-08-11 — Achats : arrivages comptés en packs (`commit b41501d`)
 **Fichiers** : `purchaseOrderModel.js`, `productModel.js`, `needsCalculationModel.js`, `productsController.js`, `OrdersTab.jsx`
