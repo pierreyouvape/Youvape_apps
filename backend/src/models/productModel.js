@@ -907,7 +907,25 @@ class ProductModel {
     return result.rows;
   }
 
-  async getAllForCatalog(limit = 50, offset = 0, search = '', trackStockOnly = true, stockTab = 'all', sortBy = null, sortDir = 'desc', brand = '', onlyHidden = false, subBrand = '') {
+  /**
+   * Fournisseurs ayant au moins 1 produit publie rattache (product_suppliers).
+   * Les liens fournisseur vivent sur les produits simples et les declinaisons,
+   * jamais sur le parent variable.
+   */
+  async getSuppliersForCatalog() {
+    const result = await pool.query(`
+      SELECT s.id, s.name, COUNT(DISTINCT ps.product_id)::int AS product_count
+      FROM suppliers s
+      JOIN product_suppliers ps ON ps.supplier_id = s.id
+      JOIN products p ON p.id = ps.product_id AND p.post_status = 'publish'
+      WHERE s.is_active = true
+      GROUP BY s.id, s.name
+      ORDER BY s.name
+    `);
+    return result.rows;
+  }
+
+  async getAllForCatalog(limit = 50, offset = 0, search = '', trackStockOnly = true, stockTab = 'all', sortBy = null, sortDir = 'desc', brand = '', onlyHidden = false, subBrand = '', supplierId = '') {
     const reorderIdsSql = await getReorderIdsSql(stockTab);
     let whereClause = `
       WHERE p.post_status = 'publish'
@@ -987,6 +1005,26 @@ class ProductModel {
       paramIndex++;
     }
 
+    // Un parent est retenu si lui-meme (simple) ou une de ses declinaisons est
+    // rattachee au fournisseur.
+    if (supplierId) {
+      whereClause += `
+        AND (
+          EXISTS (
+            SELECT 1 FROM product_suppliers ps_f
+            WHERE ps_f.product_id = p.id AND ps_f.supplier_id = $${paramIndex}
+          )
+          OR EXISTS (
+            SELECT 1 FROM products v_f
+            JOIN product_suppliers ps_f ON ps_f.product_id = v_f.id AND ps_f.supplier_id = $${paramIndex}
+            WHERE v_f.wp_parent_id = p.wp_product_id AND v_f.product_type = 'variation'
+          )
+        )
+      `;
+      params.push(supplierId);
+      paramIndex++;
+    }
+
     params.push(limit, offset);
 
     // 1) Parents/simples paginés
@@ -1048,6 +1086,14 @@ class ProductModel {
       if (subBrand) {
         varFilter += ` AND p_parent.sub_brand = $${varParams.length + 1}`;
         varParams.push(subBrand);
+      }
+      // Seules les declinaisons commandees chez ce fournisseur sont montrees
+      if (supplierId) {
+        varFilter += ` AND EXISTS (
+          SELECT 1 FROM product_suppliers ps_v
+          WHERE ps_v.product_id = v.id AND ps_v.supplier_id = $${varParams.length + 1}
+        )`;
+        varParams.push(supplierId);
       }
 
       const variationsQuery = `
@@ -1139,7 +1185,7 @@ class ProductModel {
   /**
    * Compte les produits pour le catalogue
    */
-  async countForCatalog(search = '', trackStockOnly = true, stockTab = 'all', brand = '', onlyHidden = false, subBrand = '') {
+  async countForCatalog(search = '', trackStockOnly = true, stockTab = 'all', brand = '', onlyHidden = false, subBrand = '', supplierId = '') {
     const reorderIdsSql = await getReorderIdsSql(stockTab);
     let whereClause = `
       WHERE p.post_status = 'publish'
@@ -1216,6 +1262,32 @@ class ProductModel {
       params.push(subBrand);
     }
 
+    // Meme perimetre que getAllForCatalog : le parent compte si lui-meme ou une
+    // de ses declinaisons est rattachee au fournisseur. `supplierVarCond` limite
+    // ensuite le decompte des declinaisons et la valeur de stock a ce fournisseur.
+    let supplierVarCond = '';
+    if (supplierId) {
+      const supIdx = params.length + 1;
+      whereClause += `
+        AND (
+          EXISTS (
+            SELECT 1 FROM product_suppliers ps_f
+            WHERE ps_f.product_id = p.id AND ps_f.supplier_id = $${supIdx}
+          )
+          OR EXISTS (
+            SELECT 1 FROM products v_f
+            JOIN product_suppliers ps_f ON ps_f.product_id = v_f.id AND ps_f.supplier_id = $${supIdx}
+            WHERE v_f.wp_parent_id = p.wp_product_id AND v_f.product_type = 'variation'
+          )
+        )
+      `;
+      params.push(supplierId);
+      supplierVarCond = `AND EXISTS (
+        SELECT 1 FROM product_suppliers ps_v
+        WHERE ps_v.product_id = v.id AND ps_v.supplier_id = $${supIdx}
+      )`;
+    }
+
     const query = `
       SELECT
         COUNT(*)::int as total,
@@ -1226,6 +1298,7 @@ class ProductModel {
               WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation'
                 ${trackStockOnly ? 'AND v.track_stock = true' : onlyHidden ? 'AND v.track_stock = false' : ''}
                 ${stockCondVar ? `AND ${stockCondVar}` : ''}
+                ${supplierVarCond}
             )
           END
         ), 0)::int as total_with_variations,
@@ -1236,6 +1309,7 @@ class ProductModel {
             SELECT COALESCE(SUM(GREATEST(COALESCE(v.stock, 0), 0) * COALESCE(v.computed_cost, v.wc_cog_cost, 0)), 0)
             FROM products v
             WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation' AND v.post_status = 'publish'
+              ${supplierVarCond}
           )
           END
         ), 0) as total_stock_value

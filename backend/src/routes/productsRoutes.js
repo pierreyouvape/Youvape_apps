@@ -23,6 +23,7 @@ router.delete('/segments/:id', authMiddleware, productsController.deleteSegment)
 router.get('/catalog', productsController.getCatalogList);
 router.get('/catalog/export', productsController.getCatalogExport);
 router.get('/catalog-brands', productsController.getCatalogBrands);
+router.get('/catalog-suppliers', productsController.getCatalogSuppliers);
 router.post('/barcodes/import', productsController.importBarcodes);
 
 // Détails produit

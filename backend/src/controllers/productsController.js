@@ -461,12 +461,13 @@ exports.getCatalogList = async (req, res) => {
     const sortDir = req.query.sortDir || 'desc';
     const brand = req.query.brand || '';
     const subBrand = req.query.subBrand || '';
+    const supplierId = parseInt(req.query.supplierId) || '';
     const showHiddenParam = req.query.showHidden; // undefined | 'true' | 'only'
     const trackStockOnly = !showHiddenParam;
     const onlyHidden = showHiddenParam === 'only';
 
-    const { parents, variations } = await productModel.getAllForCatalog(limit, offset, search, trackStockOnly, stockTab, sortBy, sortDir, brand, onlyHidden, subBrand);
-    const { total, totalWithVariations, totalStockValue } = await productModel.countForCatalog(search, trackStockOnly, stockTab, brand, onlyHidden, subBrand);
+    const { parents, variations } = await productModel.getAllForCatalog(limit, offset, search, trackStockOnly, stockTab, sortBy, sortDir, brand, onlyHidden, subBrand, supplierId);
+    const { total, totalWithVariations, totalStockValue } = await productModel.countForCatalog(search, trackStockOnly, stockTab, brand, onlyHidden, subBrand, supplierId);
 
     res.json({
       success: true,
@@ -494,16 +495,31 @@ exports.getCatalogBrands = async (req, res) => {
 };
 
 /**
+ * Retourne les fournisseurs ayant au moins 1 produit publie rattache
+ * GET /api/products/catalog-suppliers
+ */
+exports.getCatalogSuppliers = async (req, res) => {
+  try {
+    const items = await productModel.getSuppliersForCatalog();
+    res.json({ success: true, data: items });
+  } catch (error) {
+    console.error('Error getting catalog suppliers:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+/**
  * Exporte le catalogue complet en CSV ou XLS
- * GET /api/products/catalog/export?format=csv|xlsx&search=...
+ * GET /api/products/catalog/export?format=csv|xlsx&search=...&supplierId=...
  */
 exports.getCatalogExport = async (req, res) => {
   try {
     const search = req.query.search || '';
     const format = (req.query.format || 'csv').toLowerCase();
     const stockTab = req.query.stockTab || 'all';
+    const supplierId = parseInt(req.query.supplierId) || '';
 
-    const { parents, variations } = await productModel.getAllForCatalog(99999, 0, search, true, stockTab);
+    const { parents, variations } = await productModel.getAllForCatalog(99999, 0, search, true, stockTab, null, 'desc', '', false, '', supplierId);
 
     const variationsByParent = new Map();
     for (const v of variations) {

@@ -114,6 +114,10 @@ const CatalogApp = () => {
   const [selectedBrand, setSelectedBrand] = useState('');
   const [brandsList, setBrandsList] = useState([]);
 
+  // Filtre fournisseur
+  const [selectedSupplier, setSelectedSupplier] = useState('');
+  const [suppliersList, setSuppliersList] = useState([]);
+
   // 0 = normaux seulement, 1 = tous (normaux + masqués), 2 = masqués seulement
   const [showHidden, setShowHidden] = useState(0);
 
@@ -127,13 +131,13 @@ const CatalogApp = () => {
 
   const headers = { Authorization: `Bearer ${token}` };
 
-  const fetchProducts = async (offset = 0, search = searchTerm, tab = stockTab, sort = sortBy, dir = sortDir, brandVal = selectedBrand, hidden = showHidden) => {
+  const fetchProducts = async (offset = 0, search = searchTerm, tab = stockTab, sort = sortBy, dir = sortDir, brandVal = selectedBrand, hidden = showHidden, supplierVal = selectedSupplier) => {
     setLoading(true);
     try {
       const brandParam = brandVal && brandVal.startsWith('brand:') ? brandVal.slice(6) : undefined;
       const subBrandParam = brandVal && brandVal.startsWith('subBrand:') ? brandVal.slice(9) : undefined;
       const res = await axios.get(`${API_URL}/products/catalog`, {
-        params: { limit: 50, offset, search, stockTab: tab, sortBy: sort || undefined, sortDir: dir, brand: brandParam, subBrand: subBrandParam, showHidden: hidden === 1 ? 'true' : hidden === 2 ? 'only' : undefined },
+        params: { limit: 50, offset, search, stockTab: tab, sortBy: sort || undefined, sortDir: dir, brand: brandParam, subBrand: subBrandParam, supplierId: supplierVal || undefined, showHidden: hidden === 1 ? 'true' : hidden === 2 ? 'only' : undefined },
         headers
       });
       if (res.data.success) {
@@ -152,9 +156,10 @@ const CatalogApp = () => {
     const load = async () => {
       let tab = 'all';
       try {
-        const [prefsRes, brandsRes] = await Promise.all([
+        const [prefsRes, brandsRes, suppliersRes] = await Promise.all([
           axios.get(`${API_URL}/preferences/catalog`, { headers: { Authorization: `Bearer ${token}` } }),
           axios.get(`${API_URL}/products/catalog-brands`, { headers: { Authorization: `Bearer ${token}` } }),
+          axios.get(`${API_URL}/products/catalog-suppliers`, { headers: { Authorization: `Bearer ${token}` } }),
         ]);
         if (prefsRes.data.success) {
           setHiddenColumns(prefsRes.data.hiddenColumns || []);
@@ -164,6 +169,9 @@ const CatalogApp = () => {
         }
         if (brandsRes.data.success) {
           setBrandsList(brandsRes.data.data || []);
+        }
+        if (suppliersRes.data.success) {
+          setSuppliersList(suppliersRes.data.data || []);
         }
       } catch (err) {
         console.error('Erreur chargement préférences colonnes catalog:', err);
@@ -176,25 +184,30 @@ const CatalogApp = () => {
   const handleStockTabChange = (tab) => {
     setStockTab(tab);
     savePreferences(hiddenColumns, compact, tab);
-    fetchProducts(0, searchTerm, tab, sortBy, sortDir, selectedBrand);
+    fetchProducts(0, searchTerm, tab, sortBy, sortDir, selectedBrand, showHidden, selectedSupplier);
   };
 
   const handleSort = (column) => {
     const nextDir = (sortBy === column && sortDir === 'desc') ? 'asc' : 'desc';
     setSortBy(column);
     setSortDir(nextDir);
-    fetchProducts(0, searchTerm, stockTab, column, nextDir, selectedBrand);
+    fetchProducts(0, searchTerm, stockTab, column, nextDir, selectedBrand, showHidden, selectedSupplier);
   };
 
   const handleBrandChange = (brand) => {
     setSelectedBrand(brand);
-    fetchProducts(0, searchTerm, stockTab, sortBy, sortDir, brand, showHidden);
+    fetchProducts(0, searchTerm, stockTab, sortBy, sortDir, brand, showHidden, selectedSupplier);
+  };
+
+  const handleSupplierChange = (supplier) => {
+    setSelectedSupplier(supplier);
+    fetchProducts(0, searchTerm, stockTab, sortBy, sortDir, selectedBrand, showHidden, supplier);
   };
 
   const handleShowHiddenToggle = () => {
     const next = (showHidden + 1) % 3;
     setShowHidden(next);
-    fetchProducts(0, searchTerm, stockTab, sortBy, sortDir, selectedBrand, next);
+    fetchProducts(0, searchTerm, stockTab, sortBy, sortDir, selectedBrand, next, selectedSupplier);
   };
 
   const savePreferences = async (cols, cmp, tab = stockTab) => {
@@ -312,7 +325,7 @@ const CatalogApp = () => {
     setExporting(format);
     try {
       const res = await axios.get(`${API_URL}/products/catalog/export`, {
-        params: { format, search: searchTerm, stockTab },
+        params: { format, search: searchTerm, stockTab, supplierId: selectedSupplier || undefined },
         headers,
         responseType: 'blob'
       });
@@ -582,6 +595,23 @@ const CatalogApp = () => {
               item.type === 'brand'
                 ? <option key={`brand:${item.value}`} value={`brand:${item.value}`}>{item.value}</option>
                 : <option key={`subBrand:${item.value}`} value={`subBrand:${item.value}`}>&nbsp;&nbsp;↳ {item.value}</option>
+            ))}
+          </select>
+
+          {/* Filtre fournisseur */}
+          <select
+            value={selectedSupplier}
+            onChange={e => handleSupplierChange(e.target.value)}
+            style={{
+              marginLeft: '12px', padding: '8px 12px', backgroundColor: '#fff', color: selectedSupplier ? '#059669' : '#374151',
+              border: selectedSupplier ? '1px solid #059669' : '1px solid #d1d5db',
+              borderRadius: '6px', fontSize: '13px', fontWeight: selectedSupplier ? '600' : '500',
+              cursor: 'pointer', maxWidth: '200px'
+            }}
+          >
+            <option value="">Tous les fournisseurs</option>
+            {suppliersList.map(sup => (
+              <option key={sup.id} value={sup.id}>{sup.name} ({sup.product_count})</option>
             ))}
           </select>
 
