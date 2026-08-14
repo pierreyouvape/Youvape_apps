@@ -1,7 +1,8 @@
 import { useState, useRef, useCallback, useMemo, useContext, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { AuthContext } from '../context/AuthContext';
-import { APPS, SettingsIcon, LogoutIcon } from './AppIcons';
+import { APPS, SettingsIcon, LogoutIcon, PileIcon, ChevronIcon } from './AppIcons';
+import { buildLauncherItems, expandItemOrder, groupOfApp } from '../utils/launcherLayout';
 import { LinkBox } from '../utils/navHelpers';
 import Drawer from './Drawer';
 import { useIsMobile } from '../hooks/useIsMobile';
@@ -94,17 +95,35 @@ export function useDragSort(order, onReorder) {
 }
 
 /* ─── SIDEBAR ──────────────────────────────────────────────── */
-function Sidebar({ user, orderedApps, accessibleKeys, draggingKey, overKey, onPointerDown, onPointerEnter, onPointerUp, onLogout, navigate, currentPath, appMenu, collapsed, onToggleCollapse, mobile = false }) {
+function Sidebar({ user, items, draggingKey, overKey, onPointerDown, onPointerEnter, onPointerUp, onLogout, navigate, currentPath, appMenu, collapsed, onToggleCollapse, mobile = false }) {
   const initial = user?.email?.[0]?.toUpperCase() ?? '?';
+
+  // Piles dépliées. La pile contenant la page courante s'ouvre d'elle-même
+  // pour que l'app active reste visible dans le menu.
+  const activeGroupKey = useMemo(() => {
+    const active = APPS.find(a => currentPath === a.path || currentPath?.startsWith(a.path + '/'));
+    return active ? groupOfApp(active.key)?.key ?? null : null;
+  }, [currentPath]);
+
+  const [openGroups, setOpenGroups] = useState(() => (activeGroupKey ? [activeGroupKey] : []));
+  useEffect(() => {
+    if (activeGroupKey) setOpenGroups(prev => (prev.includes(activeGroupKey) ? prev : [...prev, activeGroupKey]));
+  }, [activeGroupKey]);
+
+  const toggleGroup = useCallback((key) => {
+    setOpenGroups(prev => (prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key]));
+  }, []);
 
   return (
     <aside style={{
-      width: collapsed ? 68 : 260,
-      minWidth: collapsed ? 68 : 260,
+      // En tiroir mobile, l'aside remplit le panneau (largeur/hauteur 100 %) :
+      // un height:100vh y déborderait sous la barre d'URL des navigateurs mobiles.
+      width: mobile ? '100%' : (collapsed ? 68 : 260),
+      minWidth: mobile ? 0 : (collapsed ? 68 : 260),
       flexShrink: 0,
       background: C.saphirF,
-      height: '100vh',
-      position: 'sticky',
+      height: mobile ? '100%' : '100vh',
+      position: mobile ? 'relative' : 'sticky',
       top: 0,
       display: 'flex',
       flexDirection: 'column',
@@ -260,8 +279,132 @@ function Sidebar({ user, orderedApps, accessibleKeys, draggingKey, overKey, onPo
           </div>
         )}
 
-        {orderedApps.filter(a => accessibleKeys.includes(a.key)).map(app => {
-          const { Icon, color, path, label, key } = app;
+        {items.map(item => {
+          if (item.type === 'group') {
+            const { group, apps: members } = item;
+            const isDrag = draggingKey === item.key;
+            const isOver = overKey === item.key && draggingKey !== item.key;
+            const isOpen = openGroups.includes(group.key);
+            const hasActive = members.some(a => currentPath === a.path || currentPath?.startsWith(a.path + '/'));
+            return (
+              <div key={item.key}>
+                <button
+                  type="button"
+                  {...(mobile ? {} : {
+                    onPointerDown: e => onPointerDown(e, item.key),
+                    onPointerEnter: () => onPointerEnter(item.key),
+                    onPointerUp: e => onPointerUp(e, item.key),
+                  })}
+                  onClick={() => { if (!draggingKey) toggleGroup(group.key); }}
+                  title={collapsed ? group.label : undefined}
+                  className={`sb-app-row${isDrag ? ' dragging' : ''}${isOver ? ' drag-over' : ''}`}
+                  style={{
+                    width: '100%',
+                    textAlign: 'left',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: collapsed ? 'center' : 'flex-start',
+                    gap: 11,
+                    padding: collapsed ? '9px 0' : '9px 10px',
+                    borderRadius: 8,
+                    marginBottom: 1,
+                    background: hasActive && !isOpen ? 'rgba(255,255,255,0.10)' : 'transparent',
+                    color: hasActive ? C.blanc : 'rgba(255,255,255,0.72)',
+                    fontSize: 13.5,
+                    fontWeight: hasActive ? 700 : 500,
+                    border: 'none',
+                    fontFamily: 'inherit',
+                    cursor: mobile ? 'pointer' : (isDrag ? 'grabbing' : 'grab'),
+                    userSelect: 'none',
+                    touchAction: mobile ? 'auto' : 'none',
+                  }}
+                >
+                  <span style={{
+                    width: 26, height: 26, borderRadius: 7, flexShrink: 0,
+                    background: group.color,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    boxShadow: '0 1px 0 rgba(255,255,255,0.25) inset',
+                  }}>
+                    <PileIcon apps={members} size={20} />
+                  </span>
+                  {!collapsed && (
+                    <>
+                      <span style={{
+                        whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                        flex: 1, minWidth: 0,
+                      }}>
+                        {group.label}
+                      </span>
+                      <span style={{
+                        fontSize: 10.5, fontWeight: 700, color: 'rgba(255,255,255,0.45)', flexShrink: 0,
+                      }}>
+                        {members.length}
+                      </span>
+                      <ChevronIcon size={13} color="rgba(255,255,255,0.55)" open={isOpen} />
+                    </>
+                  )}
+                </button>
+
+                {isOpen && members.map(app => {
+                  const isActive = currentPath === app.path || currentPath?.startsWith(app.path + '/');
+                  return (
+                    <a
+                      key={app.key}
+                      href={app.path}
+                      draggable={false}
+                      onDragStart={e => e.preventDefault()}
+                      onClick={e => {
+                        if (draggingKey) { e.preventDefault(); return; }
+                        if (e.metaKey || e.ctrlKey || e.shiftKey) return;
+                        e.preventDefault();
+                        navigate(app.path);
+                      }}
+                      title={collapsed ? app.label : undefined}
+                      className="sb-app-row"
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: collapsed ? 'center' : 'flex-start',
+                        gap: 10,
+                        // Retrait + filet vertical : on voit d'un coup d'œil que ces
+                        // lignes appartiennent à la pile au-dessus.
+                        padding: collapsed ? '8px 0' : '8px 10px 8px 18px',
+                        marginLeft: collapsed ? 0 : 12,
+                        borderLeft: collapsed ? 'none' : '1px solid rgba(255,255,255,0.14)',
+                        borderRadius: collapsed ? 8 : '0 8px 8px 0',
+                        marginBottom: 1,
+                        background: isActive ? 'rgba(255,255,255,0.10)' : 'transparent',
+                        color: isActive ? C.blanc : 'rgba(255,255,255,0.68)',
+                        fontSize: 13,
+                        fontWeight: isActive ? 700 : 500,
+                        textDecoration: 'none',
+                        userSelect: 'none',
+                      }}
+                    >
+                      <span style={{
+                        width: 22, height: 22, borderRadius: 6, flexShrink: 0,
+                        background: app.color,
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        boxShadow: '0 1px 0 rgba(255,255,255,0.25) inset',
+                      }}>
+                        <app.Icon size={14} color="#fff" />
+                      </span>
+                      {!collapsed && (
+                        <span style={{
+                          whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                          flex: 1, minWidth: 0,
+                        }}>
+                          {app.label}
+                        </span>
+                      )}
+                    </a>
+                  );
+                })}
+              </div>
+            );
+          }
+
+          const { Icon, color, path, label, key } = item.app;
           const isDrag = draggingKey === key;
           const isOver = overKey === key && draggingKey !== key;
           const isActive = currentPath === path || currentPath?.startsWith(path + '/');
@@ -515,11 +658,23 @@ export default function AppShell({ appMenu, currentPath, children }) {
     return ordered;
   }, [prefs.appOrder]);
 
-  const handleReorder = useCallback((newOrder) => updatePrefs({ appOrder: newOrder }), [updatePrefs]);
+  // Éléments de premier niveau : apps seules + piles (dont les membres sont
+  // repliés sous elles). C'est cette liste qui est déplaçable.
+  const items = useMemo(
+    () => buildLauncherItems(orderedApps, accessibleKeys),
+    [orderedApps, accessibleKeys],
+  );
+
+  const handleReorder = useCallback(
+    // Une pile déplacée emporte ses membres : on re-déplie l'ordre des éléments
+    // en ordre d'apps avant de l'enregistrer (les prefs restent en clés d'app).
+    (newOrder) => updatePrefs({ appOrder: expandItemOrder(newOrder, items, orderedApps.map(a => a.key)) }),
+    [updatePrefs, items, orderedApps],
+  );
   // On passe l'ordre AFFICHÉ complet (orderedApps), pas prefs.appOrder : les apps
   // récemment ajoutées au registre absentes du localStorage/BDD ne sont pas dans
   // prefs.appOrder, donc indexOf() y renvoyait -1 et leur drag était ignoré.
-  const displayedOrder = useMemo(() => orderedApps.map(a => a.key), [orderedApps]);
+  const displayedOrder = useMemo(() => items.map(i => i.key), [items]);
   const { draggingKey, overKey, onPointerDown, onPointerEnter, onPointerUp, onPointerMove, onPointerCancel } = useDragSort(displayedOrder, handleReorder);
 
   const handleLogout = () => { logout(); navigate('/login'); };
@@ -538,7 +693,7 @@ export default function AppShell({ appMenu, currentPath, children }) {
 
   // Props communes de la sidebar (collapsed forcé à false en tiroir mobile).
   const sidebarProps = {
-    user, orderedApps, accessibleKeys, draggingKey, overKey,
+    user, items, draggingKey, overKey,
     onPointerDown, onPointerEnter, onPointerUp,
     onLogout: handleLogout, navigate, currentPath, appMenu,
   };

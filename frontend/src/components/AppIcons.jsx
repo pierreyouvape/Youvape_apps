@@ -262,6 +262,17 @@ export const Promos = (props) => (
   </svg>
 );
 
+
+export const ChevronIcon = ({ size = 14, color = 'currentColor', open = false }) => (
+  <svg
+    width={size} height={size} viewBox="0 0 24 24" fill="none"
+    stroke={color} strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round"
+    style={{ display: 'block', flexShrink: 0, transform: open ? 'rotate(90deg)' : 'none', transition: 'transform 0.16s' }}
+  >
+    <polyline points="9 18 15 12 9 6" />
+  </svg>
+);
+
 export const APPS = [
   { key: 'customers', path: '/customers', label: 'Clients',                   Icon: Customers, color: '#0EA5A5' },
   { key: 'reviews',   path: '/reviews',   label: 'Avis Garantis',            Icon: Reviews,   color: '#0071EB' },
@@ -285,3 +296,47 @@ export const APPS = [
   { key: 'inscrits', path: '/inscrits', label: 'Inscrits sans commande', Icon: Inscrits, color: '#0EA5A5' },
   { key: 'promos', path: '/promos', label: 'Actions Promos', Icon: Promos, color: '#DB2777' },
 ];
+
+/* ─── PILES D'APPS (dossiers du launcher) ──────────────────
+ * Regroupe plusieurs apps sous UNE tuile (accueil) et UN dossier dépliable
+ * (sidebar). Les permissions restent strictement par app : une pile n'affiche
+ * que les membres auxquels l'utilisateur a accès et disparaît s'il n'en a
+ * aucun. Ne rien changer à APPS ni aux clés de permission : SettingsApp et
+ * backend/src/config/apps.js continuent de raisonner app par app.
+ * ──────────────────────────────────────────────────────── */
+export const APP_GROUPS = [
+  {
+    key: 'grp-factures-transporteurs',
+    label: 'Factures Transporteurs',
+    color: '#1F4B6E',
+    members: ['chronopost', 'colissimo', 'mondial-relay', 'transporteurs'],
+  },
+];
+
+/**
+ * Vignette d'une pile : mini-grille 2×2 des icônes des apps qu'elle contient
+ * (métaphore « dossier »). `apps` = entrées APPS déjà filtrées par permission.
+ */
+export const PileIcon = ({ apps = [], size = 56 }) => {
+  const cell = Math.round(size * 0.42);
+  const gap = Math.max(2, Math.round(size * 0.07));
+  return (
+    <div style={{
+      width: size, height: size, display: 'grid',
+      gridTemplateColumns: `repeat(2, ${cell}px)`,
+      gridTemplateRows: `repeat(2, ${cell}px)`,
+      gap, justifyContent: 'center', alignContent: 'center', flexShrink: 0,
+    }}>
+      {apps.slice(0, 4).map(a => (
+        <div key={a.key} style={{
+          width: cell, height: cell, borderRadius: Math.max(3, Math.round(cell * 0.3)),
+          background: 'rgba(255,255,255,0.22)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          overflow: 'hidden',
+        }}>
+          <a.Icon size={Math.round(cell * 0.74)} color="#fff" />
+        </div>
+      ))}
+    </div>
+  );
+};
