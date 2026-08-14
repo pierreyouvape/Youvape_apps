@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import axios from 'axios';
 import {
   ResponsiveContainer, BarChart, Bar, LineChart, Line, Cell, XAxis, YAxis,
-  CartesianGrid, Tooltip, Legend, LabelList,
+  CartesianGrid, Tooltip, LabelList,
 } from 'recharts';
 
 const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:3000/api/auth').replace('/auth', '');
@@ -13,15 +13,15 @@ const C = {
   grisF: '#626E85', grisTF: '#2a2e38', blanc: '#FFFFFF', vert: '#4AB866',
 };
 
-// Palette catégorielle : ordre FIXE (jamais recyclé), validée pour le daltonisme
-// sur fond blanc (pire paire adjacente : ΔE CVD 9,1 / vision normale 19,6).
-// Au-delà, les fournisseurs sont repliés dans « Autres » (gris neutre, volontairement discret).
-const SERIES_COLORS = ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4', '#008300'];
+// Un fournisseur pèse dix à trente fois les suivants (LCA ~50 k€/mois contre
+// 1-5 k€) : sur un axe partagé les petits sont écrasés quel que soit le pas de
+// graduation. D'où les petits multiples — un panneau par fournisseur, à sa
+// propre échelle. L'identité vient du titre du panneau, pas de la couleur :
+// une seule teinte suffit et aucune palette catégorielle n'est nécessaire.
 const OTHER_COLOR = '#7C8B96';
 const BAR_COLOR = '#2a78d6';
-const TOP_STACK = 6;   // fournisseurs colorés dans le graphe mensuel
-const Y_STEP = 5000;   // pas de l'axe des montants, en €
-const TOP_RANK = 14;   // barres du classement
+const TOP_RANK = 14;    // barres du classement
+const TOP_PANELS = 15;  // panneaux individuels, le reste agrégé dans « Autres »
 
 // Intl utilise une espace fine insécable (U+202F) comme séparateur de milliers,
 // peu lisible -> on la remplace par une espace normale.
@@ -41,7 +41,7 @@ export default function SpendingTab({ token }) {
   const [error, setError] = useState('');
   const [year, setYear] = useState('all');
   const [sel, setSel] = useState(null); // { supplier, month }
-  const [hidden, setHidden] = useState(() => new Set()); // clés de séries masquées via la légende
+  const [scaleMode, setScaleMode] = useState('own'); // 'own' = chaque panneau à son échelle | 'common' = échelle partagée
 
   const fetchData = async (refresh = false) => {
     if (refresh) setRefreshing(true); else setLoading(true);
@@ -105,40 +105,38 @@ export default function SpendingTab({ token }) {
     return rows;
   }, [suppliers, supTotal]);
 
-  // Empilement mensuel : une série par fournisseur du top, plus « Autres ».
-  // Les clés sont indexées (s0, s1…) pour ne pas entrer en collision avec un
-  // nom de fournisseur qui vaudrait « total » ou « ym ».
-  const stack = useMemo(() => {
-    const top = suppliers.slice(0, TOP_STACK);
-    const rest = suppliers.slice(TOP_STACK);
-    const series = top.map((name, i) => ({ key: `s${i}`, name, color: SERIES_COLORS[i] }));
-    if (rest.length) series.push({ key: 'other', name: `Autres (${rest.length})`, color: OTHER_COLOR, isOther: true });
-    const data = months.map(ym => {
-      const row = { ym, label: monthLabel(ym), total: monthTotal[ym].ht };
-      top.forEach((name, i) => { row[`s${i}`] = cell[name + '||' + ym]?.ht || 0; });
-      if (rest.length) row.other = rest.reduce((a, name) => a + (cell[name + '||' + ym]?.ht || 0), 0);
-      return row;
-    });
-    return { series, data };
-  }, [suppliers, months, cell, monthTotal]);
-
-  // On n'estompe les courbes que si la sélection courante y est représentée.
-  const selInChart = !!sel && stack.series.some(s => !s.isOther && s.name === sel.supplier);
-
-  // Axe des montants gradué tous les 5 k€, borné aux courbes VISIBLES :
-  // masquer un gros fournisseur via la légende re-zoome l'axe sur les autres.
-  const yAxis = useMemo(() => {
-    const visible = stack.series.filter(s => !hidden.has(s.key));
-    let max = 0;
-    for (const row of stack.data) {
-      for (const s of visible) max = Math.max(max, row[s.key] || 0);
+  // Petits multiples : un panneau par fournisseur, mêmes mois en abscisse.
+  // Chaque panneau porte son propre pic, affiché en clair — sans ça, des
+  // échelles indépendantes donneraient à un fournisseur à 2 k€ la même allure
+  // qu'un fournisseur à 50 k€.
+  const panels = useMemo(() => {
+    const build = (name, pick) => {
+      const data = months.map(ym => {
+        const c = pick(ym);
+        return { ym, label: monthLabel(ym), ht: c.ht, ttc: c.ttc, count: c.count };
+      });
+      return { name, data, peak: Math.max(0, ...data.map(d => d.ht)) };
+    };
+    const top = suppliers.slice(0, TOP_PANELS).map(name => ({
+      ...build(name, ym => cell[name + '||' + ym] || { ht: 0, ttc: 0, count: 0 }),
+      total: supTotal[name].ht,
+    }));
+    const rest = suppliers.slice(TOP_PANELS);
+    if (rest.length) {
+      top.push({
+        ...build(`Autres (${rest.length})`, ym => rest.reduce((a, n) => {
+          const c = cell[n + '||' + ym];
+          return c ? { ht: a.ht + c.ht, ttc: a.ttc + c.ttc, count: a.count + c.count } : a;
+        }, { ht: 0, ttc: 0, count: 0 })),
+        total: rest.reduce((a, n) => a + supTotal[n].ht, 0),
+        isOther: true,
+      });
     }
-    const top = Math.max(Y_STEP, Math.ceil(max / Y_STEP) * Y_STEP);
-    const ticks = [];
-    for (let v = 0; v <= top; v += Y_STEP) ticks.push(v);
-    return { top, ticks };
-  }, [stack, hidden]);
+    return top;
+  }, [suppliers, months, cell, supTotal]);
 
+  // Échelle commune : le pic le plus haut, tous panneaux confondus.
+  const commonTop = useMemo(() => Math.max(1, ...panels.map(p => p.peak)), [panels]);
 
   const selOrders = useMemo(() => {
     if (!sel) return [];
@@ -205,45 +203,70 @@ export default function SpendingTab({ token }) {
         </ChartCard>
       )}
 
-      {/* Graphique 2 — évolution mensuelle */}
-      {suppliers.length > 0 && months.length > 0 && (
-        <ChartCard title="Évolution des dépenses HT par mois"
-          footer="Montants HT — cliquez un point pour voir le détail des commandes, ou une entrée de légende pour masquer la courbe">
-          <ResponsiveContainer width="100%" height={420}>
-            <LineChart data={stack.data} margin={{ top: 8, right: 12, bottom: 0, left: 4 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke={C.grisTL} vertical={false} />
-              <XAxis dataKey="label" stroke={C.grisM} fontSize={11} tickLine={false} axisLine={false} />
-              <YAxis tickFormatter={eurAxis} stroke={C.grisM} fontSize={11} tickLine={false} axisLine={false}
-                width={62} domain={[0, yAxis.top]} ticks={yAxis.ticks} interval={0} />
-              <Tooltip content={<MonthTooltip />} />
-              <Legend iconType="plainline" iconSize={14} wrapperStyle={{ fontSize: 11.5, paddingTop: 6, cursor: 'pointer' }}
-                onClick={(e) => {
-                  const key = e?.dataKey;
-                  if (!key) return;
-                  setHidden(cur => {
-                    const next = new Set(cur);
-                    if (next.has(key)) next.delete(key); else next.add(key);
-                    return next;
-                  });
-                }} />
-              {stack.series.map(s => (
-                <Line key={s.key} dataKey={s.key} name={s.name} type="linear"
-                  stroke={s.color} strokeWidth={2} dot={false} hide={hidden.has(s.key)}
-                  strokeOpacity={selInChart && sel.supplier !== s.name ? 0.22 : 1}
-                  isAnimationActive={false}
-                  activeDot={{
-                    r: 5, strokeWidth: 2, stroke: C.blanc, cursor: s.isOther ? 'default' : 'pointer',
-                    onClick: (_, e) => {
-                      if (s.isOther) return;
-                      const ym = e?.payload?.ym ?? e?.payload?.payload?.ym;
-                      if (!ym) return;
-                      setSel(cur => (cur && cur.supplier === s.name && cur.month === ym) ? null : { supplier: s.name, month: ym });
-                    },
-                  }} />
+      {/* Graphique 2 — petits multiples : un panneau par fournisseur */}
+      {panels.length > 0 && months.length > 0 && (
+        <div style={{ background: C.blanc, borderRadius: 12, border: `1px solid ${C.grisCL}`, padding: '16px 18px', marginBottom: 16 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 4, flexWrap: 'wrap' }}>
+            <div style={{ fontSize: 13.5, fontWeight: 800, color: C.grisTF }}>Évolution mensuelle, fournisseur par fournisseur</div>
+            <div style={{ marginLeft: 'auto', display: 'flex', border: `1px solid ${C.grisCL}`, borderRadius: 8, overflow: 'hidden' }}>
+              {[['own', 'Échelle propre'], ['common', 'Échelle commune']].map(([k, lbl]) => (
+                <button key={k} onClick={() => setScaleMode(k)}
+                  style={{
+                    padding: '6px 12px', border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 700,
+                    background: scaleMode === k ? C.saphir : C.blanc, color: scaleMode === k ? C.blanc : C.grisF,
+                  }}>{lbl}</button>
               ))}
-            </LineChart>
-          </ResponsiveContainer>
-        </ChartCard>
+            </div>
+          </div>
+          <div style={{ fontSize: 11.5, color: C.grisM, marginBottom: 12 }}>
+            {monthLabel(months[0])} → {monthLabel(months[months.length - 1])} — {scaleMode === 'own'
+              ? 'chaque panneau est cadré sur SON propre pic (indiqué en haut à droite) : les allures se comparent, pas les hauteurs'
+              : `tous les panneaux partagent la même échelle, 0 → ${eur0(commonTop)} : les hauteurs se comparent directement`}
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: 12 }}>
+            {panels.map(p => {
+              const top = scaleMode === 'own' ? Math.max(1, p.peak) : commonTop;
+              const isSel = sel && sel.supplier === p.name;
+              return (
+                <div key={p.name}
+                  style={{
+                    border: `1px solid ${isSel ? C.saphir : C.grisTL}`, borderRadius: 10, padding: '9px 10px 4px',
+                    background: isSel ? '#F6FAFD' : C.blanc,
+                  }}>
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
+                    <span title={p.name} style={{ fontSize: 12, fontWeight: 800, color: C.grisTF, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {p.name}
+                    </span>
+                    <span style={{ fontSize: 10.5, color: C.grisM, whiteSpace: 'nowrap' }}>pic {eur0(p.peak)}</span>
+                  </div>
+                  <div style={{ fontSize: 10.5, color: C.grisM, marginBottom: 2 }}>{eur0(p.total)} au total</div>
+                  <ResponsiveContainer width="100%" height={78}>
+                    <LineChart data={p.data} margin={{ top: 6, right: 4, bottom: 0, left: 4 }}>
+                      <XAxis dataKey="label" hide />
+                      <YAxis hide domain={[0, top]} />
+                      <Tooltip content={<PanelTooltip supplier={p.name} />} />
+                      <Line dataKey="ht" name={p.name} type="linear" isAnimationActive={false}
+                        stroke={p.isOther ? OTHER_COLOR : BAR_COLOR} strokeWidth={2} dot={false}
+                        activeDot={{
+                          r: 4, strokeWidth: 2, stroke: C.blanc, cursor: p.isOther ? 'default' : 'pointer',
+                          onClick: (_, e) => {
+                            if (p.isOther) return;
+                            const ym = e?.payload?.ym ?? e?.payload?.payload?.ym;
+                            if (!ym) return;
+                            setSel(cur => (cur && cur.supplier === p.name && cur.month === ym) ? null : { supplier: p.name, month: ym });
+                          },
+                        }} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              );
+            })}
+          </div>
+          <div style={{ fontSize: 11, color: C.grisM, marginTop: 10 }}>
+            Montants HT — cliquez un point pour voir le détail des commandes du mois
+          </div>
+        </div>
       )}
 
       {suppliers.length === 0 ? (
@@ -373,25 +396,21 @@ function RankTooltip({ active, payload, total }) {
   );
 }
 
-function MonthTooltip({ active, payload, label }) {
+function PanelTooltip({ active, payload, supplier }) {
   if (!active || !payload?.length) return null;
-  const rows = payload.filter(p => p.value > 0).slice().sort((a, b) => b.value - a.value);
-  if (!rows.length) return null;
-  const total = rows.reduce((a, p) => a + p.value, 0);
+  const d = payload[0].payload;
   return (
     <div style={TIP_BOX}>
-      <div style={{ fontWeight: 800, color: C.grisTF, marginBottom: 6 }}>{label}</div>
-      {rows.map(p => (
-        <div key={p.dataKey} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '2px 0' }}>
-          <span style={{ width: 9, height: 9, borderRadius: 2, background: p.color, flex: '0 0 auto' }} />
-          <span style={{ color: C.grisF, flex: 1 }}>{p.name}</span>
-          <span style={{ fontWeight: 700, color: C.grisTF }}>{eur0(p.value)}</span>
-        </div>
-      ))}
-      <div style={{ display: 'flex', gap: 8, marginTop: 6, paddingTop: 6, borderTop: `1px solid ${C.grisTL}` }}>
-        <span style={{ color: C.grisF, flex: 1, fontWeight: 700 }}>Total</span>
-        <span style={{ fontWeight: 800, color: C.saphir }}>{eur0(total)}</span>
-      </div>
+      <div style={{ fontWeight: 800, color: C.grisTF, marginBottom: 6 }}>{supplier} — {d.label}</div>
+      {d.count ? (
+        <>
+          <TipRow label="HT" value={eur(d.ht)} strong />
+          <TipRow label="TTC" value={eur(d.ttc)} />
+          <TipRow label="Commandes" value={d.count} />
+        </>
+      ) : (
+        <div style={{ color: C.grisM }}>Aucune commande ce mois-ci</div>
+      )}
     </div>
   );
 }
