@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import StatusBadge from './StatusBadge';
 import { useTicketStatuses } from './useTicketStatuses';
 import { useTicketPresence } from './useTicketPresence';
-import { TICKETS_COLOR, formatTicketId } from './ticketConstants';
+import { TICKETS_COLOR, formatTicketId, senderBlockInfo } from './ticketConstants';
 import { formatDate, formatDateUTC } from '../../utils/dateUtils';
 import { getTrackingUrl } from '../../utils/trackingUtils';
 import { getCountryLabel } from '../../utils/countries';
@@ -2607,18 +2607,6 @@ function TicketHistoryCard({ t, onOpen }) {
 }
 
 // ─── Panneau DROIT ────────────────────────────────────────────────────────────
-// Fournisseurs de boîtes grand public : bloquer un de ces domaines classerait
-// en spam toutes les demandes publiques d'un client sur quatre. La sonde de
-// relais du 13/08 utilisait précisément gmail, outlook, aol et yahoo — l'option
-// « domaine » doit donc rester interdite ici, pas seulement déconseillée.
-const PUBLIC_MAIL_DOMAINS = new Set([
-  'gmail.com', 'googlemail.com', 'outlook.com', 'outlook.fr', 'hotmail.com', 'hotmail.fr',
-  'live.fr', 'live.com', 'msn.com', 'yahoo.com', 'yahoo.fr', 'ymail.com', 'aol.com',
-  'icloud.com', 'me.com', 'orange.fr', 'wanadoo.fr', 'free.fr', 'sfr.fr', 'laposte.net',
-  'bbox.fr', 'numericable.fr', 'gmx.com', 'gmx.us', 'gmx.fr', 'protonmail.com', 'proton.me',
-  'zohomail.eu', 'skynet.be', 'telenet.be', 'voo.be',
-]);
-
 /**
  * Classement d'un ticket en spam, avec ajout facultatif de l'expéditeur à la
  * liste de blocage. C'est ce second geste qui donne sa portée au bouton : sans
@@ -2631,9 +2619,7 @@ function SpamModal({ ticket, onClose, onDone }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
-  const email  = (ticket.customer_email || '').toLowerCase();
-  const domain = email.includes('@') ? email.split('@').pop() : '';
-  const domainBlockable = !!domain && !PUBLIC_MAIL_DOMAINS.has(domain);
+  const { email, domain, domainBlockable } = senderBlockInfo(ticket.customer_email);
 
   const submit = async () => {
     setBusy(true);

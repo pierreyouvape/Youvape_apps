@@ -1,8 +1,8 @@
-import { useState, useEffect, useCallback, useRef, useContext } from 'react';
+import { useState, useEffect, useCallback, useRef, useContext, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import StatusBadge from './StatusBadge';
-import { TICKETS_COLOR, formatTicketId } from './ticketConstants';
+import { TICKETS_COLOR, formatTicketId, senderBlockInfo } from './ticketConstants';
 import { formatDateUTC } from '../../utils/dateUtils';
 import { useOpenTickets } from '../../context/OpenTicketsContext';
 import { useTicketStatuses } from './useTicketStatuses';
@@ -538,6 +538,174 @@ function BulkMergeModal({ sources, onClose, onDone }) {
   );
 }
 
+/* ─── Modale de classement spam groupé ────────────────────────────────────────
+   Le choix de blocage se fait par EXPÉDITEUR, pas par ticket : une sélection en
+   mélange souvent plusieurs, et un même expéditeur peut y avoir plusieurs
+   tickets (une règle suffit alors). Défaut : ne rien bloquer — on ne bloque
+   jamais quelqu'un sans l'avoir sous les yeux. */
+function BulkSpamModal({ tickets, token, onClose, onDone }) {
+  // Expéditeurs distincts de la sélection, avec leurs tickets.
+  const senders = useMemo(() => {
+    const map = new Map();
+    for (const t of tickets) {
+      const { email, domain, domainBlockable } = senderBlockInfo(t.customer_email);
+      const key = email || `#${t.id}`; // ticket sans email : entrée à part
+      if (!map.has(key)) {
+        map.set(key, { key, email, domain, domainBlockable, name: t.customer_name, ticketIds: [] });
+      }
+      map.get(key).ticketIds.push(t.id);
+    }
+    return [...map.values()];
+  }, [tickets]);
+
+  // key → 'none' | 'email' | 'domain'
+  const [choices, setChoices] = useState({});
+  const [busy, setBusy] = useState(false);
+  const [progress, setProgress] = useState(null);
+  const [error, setError] = useState('');
+
+  const choiceOf = (s) => choices[s.key] || 'none';
+  const blockedCount = senders.filter(s => choiceOf(s) !== 'none').length;
+
+  const run = async () => {
+    setBusy(true);
+    setError('');
+    let done = 0;
+    setProgress({ done: 0, total: tickets.length });
+    const blockErrors = [];
+    try {
+      for (const s of senders) {
+        const choice = choiceOf(s);
+        for (const [i, id] of s.ticketIds.entries()) {
+          // Le motif de blocage n'est joint qu'au PREMIER ticket de l'expéditeur :
+          // une règle par expéditeur, pas une par ticket (les suivantes seraient
+          // refusées comme doublons).
+          const body = (choice !== 'none' && i === 0)
+            ? { block: { type: choice, value: choice === 'email' ? s.email : s.domain } }
+            : {};
+          const res = await fetch(`${API}/${id}/spam`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+            body: JSON.stringify(body),
+          });
+          const data = await res.json();
+          if (!data.success) throw new Error(`Ticket ${formatTicketId(id)} : ${data.error || 'échec'}`);
+          if (data.block_error) blockErrors.push(`${s.email} : ${data.block_error}`);
+          done += 1;
+          setProgress({ done, total: tickets.length });
+        }
+      }
+      onDone(blockErrors);
+    } catch (e) {
+      setError(e.message);
+      setBusy(false);
+    }
+  };
+
+  const segStyle = (active, disabled) => ({
+    background: active ? '#FEF2F2' : C.blanc,
+    border: `1px solid ${active ? '#DE2020' : C.grisCL}`,
+    color: active ? '#B71D1D' : (disabled ? C.grisM : C.grisF),
+    borderRadius: 7, padding: '5px 10px', fontSize: 11.5, fontWeight: 800,
+    cursor: disabled ? 'not-allowed' : 'pointer', fontFamily: 'Lato, sans-serif',
+    opacity: disabled ? 0.5 : 1, whiteSpace: 'nowrap',
+  });
+
+  return (
+    <div
+      onClick={onClose}
+      style={{ position: 'fixed', inset: 0, background: 'rgba(20,24,33,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}
+    >
+      <div
+        onClick={e => e.stopPropagation()}
+        style={{ background: C.blanc, borderRadius: 14, width: 'min(560px, 92vw)', maxHeight: '86vh', overflow: 'auto', boxShadow: '0 18px 50px rgba(0,0,0,0.3)', fontFamily: 'Lato, sans-serif', padding: 22 }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+          <strong style={{ fontSize: 16, color: C.grisTF, fontFamily: "'Tilt Warp', cursive" }}>
+            Classer {tickets.length} ticket{tickets.length > 1 ? 's' : ''} en spam
+          </strong>
+          <button onClick={onClose} style={{ background: 'transparent', border: 'none', cursor: 'pointer', fontSize: 20, color: C.grisM, lineHeight: 1 }}>×</button>
+        </div>
+        <p style={{ fontSize: 12.5, color: C.grisF, lineHeight: 1.5, margin: '6px 0 16px' }}>
+          Les tickets sortent de toutes les vues et rejoignent la vue <strong>Spam</strong>. Rien
+          n'est supprimé, rien n'est envoyé aux expéditeurs, et le classement se retire d'un clic.
+        </p>
+
+        <div style={{ fontSize: 10.5, fontWeight: 800, color: C.grisM, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>
+          Bloquer aussi {senders.length > 1 ? 'des expéditeurs' : "l'expéditeur"} ?
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+          {senders.map(s => {
+            const choice = choiceOf(s);
+            return (
+              <div key={s.key} style={{
+                display: 'flex', alignItems: 'center', gap: 10,
+                border: `1px solid ${choice !== 'none' ? '#FECACA' : C.grisCL}`,
+                background: choice !== 'none' ? '#FFFBFB' : C.blanc,
+                borderRadius: 9, padding: '9px 11px',
+              }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 12.5, fontWeight: 700, color: C.grisTF, wordBreak: 'break-all' }}>
+                    {s.email || <span style={{ color: C.grisM, fontWeight: 600 }}>sans adresse</span>}
+                  </div>
+                  <div style={{ fontSize: 11, color: C.grisM, marginTop: 1 }}>
+                    {s.name ? `${s.name} · ` : ''}
+                    {s.ticketIds.length} ticket{s.ticketIds.length > 1 ? 's' : ''}
+                  </div>
+                </div>
+                <div style={{ display: 'flex', gap: 5, flexShrink: 0 }}>
+                  <button
+                    onClick={() => setChoices(c => ({ ...c, [s.key]: 'none' }))}
+                    style={segStyle(choice === 'none', false)}
+                  >Ne pas bloquer</button>
+                  <button
+                    onClick={() => s.email && setChoices(c => ({ ...c, [s.key]: 'email' }))}
+                    disabled={!s.email}
+                    style={segStyle(choice === 'email', !s.email)}
+                    title={s.email ? `Bloquer ${s.email}` : 'Aucune adresse sur ce ticket'}
+                  >Adresse</button>
+                  <button
+                    onClick={() => s.domainBlockable && setChoices(c => ({ ...c, [s.key]: 'domain' }))}
+                    disabled={!s.domainBlockable}
+                    style={segStyle(choice === 'domain', !s.domainBlockable)}
+                    title={s.domain
+                      ? (s.domainBlockable
+                          ? `Bloquer tout @${s.domain}`
+                          : `@${s.domain} est une messagerie grand public : impossible à bloquer sans écarter de vrais clients`)
+                      : 'Aucun domaine'}
+                  >Domaine</button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        <div style={{ fontSize: 11.5, color: C.grisM, marginTop: 12, lineHeight: 1.5 }}>
+          Un expéditeur bloqué peut toujours écrire : sa demande arrive directement dans la vue
+          Spam, sans accusé de réception ni notification.
+        </div>
+
+        {error && <div style={{ fontSize: 12.5, color: '#B71D1D', fontWeight: 700, margin: '10px 0' }}>{error}</div>}
+        {progress && busy && (
+          <div style={{ fontSize: 12.5, color: C.grisF, fontWeight: 600, margin: '10px 0' }}>
+            Classement {progress.done}/{progress.total}…
+          </div>
+        )}
+
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 18 }}>
+          <button onClick={onClose} disabled={busy} style={{ background: C.grisTL, border: `1px solid ${C.grisCL}`, borderRadius: 8, padding: '9px 16px', fontSize: 13, fontWeight: 700, color: C.grisF, cursor: busy ? 'not-allowed' : 'pointer', fontFamily: 'Lato, sans-serif' }}>Annuler</button>
+          <button onClick={run} disabled={busy} style={{ background: '#DE2020', border: 'none', borderRadius: 8, padding: '9px 18px', fontSize: 13, fontWeight: 800, color: '#fff', cursor: busy ? 'wait' : 'pointer', fontFamily: 'Lato, sans-serif' }}>
+            {busy ? 'Classement…' : blockedCount > 0
+              ? `Classer et bloquer ${blockedCount} expéditeur${blockedCount > 1 ? 's' : ''}`
+              : 'Classer en spam'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ─── Composant principal ─────────────────────────────────────────────────────── */
 export default function TicketsList({ activeView, views = [], onRefresh, refreshTick, autoRefresh, onBusyChange, isMobile = false, onOpenViews }) {
   const navigate = useNavigate();
@@ -553,6 +721,8 @@ export default function TicketsList({ activeView, views = [], onRefresh, refresh
   const [sort, setSort] = useState({ key: 'updated', dir: 'desc' });
   const [selected, setSelected] = useState(new Set());
   const [bulkMergeOpen, setBulkMergeOpen] = useState(false);
+  const [bulkSpamOpen, setBulkSpamOpen] = useState(false);
+  const [bulkNotice, setBulkNotice] = useState('');
   const [bulkMenu, setBulkMenu] = useState(null); // 'assign' | 'status' | null
   const [bulkBusy, setBulkBusy] = useState(false);
   const [agents, setAgents] = useState([]);
@@ -603,9 +773,9 @@ export default function TicketsList({ activeView, views = [], onRefresh, refresh
   // Signaler à l'autorefresh qu'on est "occupé" (ne pas rafraîchir sous les
   // doigts de l'agent) : sélection en cours, menu ouvert, modale ou action.
   useEffect(() => {
-    const busy = selected.size > 0 || !!bulkMenu || bulkMergeOpen || bulkBusy;
+    const busy = selected.size > 0 || !!bulkMenu || bulkMergeOpen || bulkSpamOpen || bulkBusy;
     onBusyChange?.(busy);
-  }, [selected.size, bulkMenu, bulkMergeOpen, bulkBusy, onBusyChange]);
+  }, [selected.size, bulkMenu, bulkMergeOpen, bulkSpamOpen, bulkBusy, onBusyChange]);
 
   // Fermer les menus d'action groupée au clic extérieur / Échap
   useEffect(() => {
@@ -702,17 +872,15 @@ export default function TicketsList({ activeView, views = [], onRefresh, refresh
     },
   }));
 
-  // Classement spam groupé. Contrairement aux autres actions groupées, les
-  // routes /spam sont authentifiées (on trace l'agent qui classe) : le token
-  // doit être posé à la main, `fetch` ne passe pas par l'intercepteur axios.
-  const bulkSpam = (isSpam) => runBulk(id => ({
+  // Déclassement groupé (depuis la vue Spam) : direct, sans modale — le backend
+  // retire lui-même la règle de blocage qui visait chaque expéditeur.
+  // Les routes /spam sont authentifiées (on trace l'agent qui classe), donc le
+  // token est posé à la main : `fetch` ne passe pas par l'intercepteur axios.
+  const bulkUnspam = () => runBulk(id => ({
     url: `${API}/${id}/spam`,
     options: {
-      method: isSpam ? 'POST' : 'DELETE',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      // Pas de blocage d'expéditeur en action groupée : le motif se choisit un
-      // par un, depuis le ticket, où l'agent voit à qui il a affaire.
-      body: isSpam ? JSON.stringify({}) : undefined,
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}` },
     },
   }));
 
@@ -847,6 +1015,24 @@ export default function TicketsList({ activeView, views = [], onRefresh, refresh
           </div>
         </div>
       </div>
+
+      {/* Retour d'une action groupée qui a partiellement échoué (motif de blocage
+          déjà présent, typiquement) : le classement, lui, a bien eu lieu. */}
+      {bulkNotice && (
+        <div style={{
+          margin: isMobile ? '0 14px 12px' : '0 28px 14px',
+          background: '#FFFBEB', border: '1px solid #FDE68A', borderRadius: 10,
+          padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 10,
+          fontSize: 12.5, color: '#92400E', flexShrink: 0,
+        }}>
+          <span style={{ flex: 1 }}>{bulkNotice}</span>
+          <button
+            onClick={() => setBulkNotice('')}
+            style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#92400E', fontWeight: 800, fontSize: 15 }}
+            aria-label="Masquer"
+          >×</button>
+        </div>
+      )}
 
       {/* ── Table ────────────────────────────────────────────────── */}
       <div style={{ padding: isMobile ? '0 14px 18px' : '0 28px 28px', flex: 1 }}>
@@ -1154,16 +1340,21 @@ export default function TicketsList({ activeView, views = [], onRefresh, refresh
                 style={bulkBtnStyle(bulkBusy)}
               >{bulkBusy ? 'Application…' : 'Marquer résolu'}</button>
 
-              {/* Spam : classer en lot depuis une vue normale, déclasser depuis
+              {/* Spam : classer en lot depuis une vue normale (via la modale, pour
+                  choisir les expéditeurs à bloquer), déclasser directement depuis
                   la vue Spam. Aucune suppression — le ticket change de vue. */}
               <button
-                onClick={() => bulkSpam(!activeView?.spam)}
+                onClick={() => {
+                  if (activeView?.spam) { bulkUnspam(); return; }
+                  setBulkMenu(null);
+                  setBulkSpamOpen(true);
+                }}
                 disabled={bulkBusy}
                 title={activeView?.spam
                   ? 'Ces tickets ne sont pas du spam : les remettre dans les vues normales'
-                  : 'Classer en spam : les tickets sortent de toutes les vues'}
+                  : 'Classer en spam, et bloquer les expéditeurs au besoin'}
                 style={bulkBtnStyle(bulkBusy)}
-              >{activeView?.spam ? '↩ Pas du spam' : '🚫 Spam'}</button>
+              >{activeView?.spam ? '↩ Pas du spam' : '🚫 Spam…'}</button>
 
               <button onClick={() => { setBulkMenu(null); setSelected(new Set()); }} disabled={bulkBusy} style={{
                 background: 'transparent', color: 'rgba(255,255,255,0.7)',
@@ -1183,6 +1374,25 @@ export default function TicketsList({ activeView, views = [], onRefresh, refresh
           onDone={() => {
             setBulkMergeOpen(false);
             setSelected(new Set());
+            fetchTickets();
+            onRefresh?.();
+          }}
+        />
+      )}
+
+      {bulkSpamOpen && (
+        <BulkSpamModal
+          tickets={tickets.filter(t => selected.has(t.id))}
+          token={token}
+          onClose={() => setBulkSpamOpen(false)}
+          onDone={(blockErrors) => {
+            setBulkSpamOpen(false);
+            setSelected(new Set());
+            // Motifs refusés (déjà présents le plus souvent) : le classement a
+            // bien eu lieu, on le signale sans en faire une erreur.
+            setBulkNotice(blockErrors?.length
+              ? `Tickets classés. Motifs non ajoutés — ${blockErrors.join(' ; ')}`
+              : '');
             fetchTickets();
             onRefresh?.();
           }}
