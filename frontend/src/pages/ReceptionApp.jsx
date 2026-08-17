@@ -240,8 +240,8 @@ function OrderDetail({ order, items, onBack, onStart }) {
                 <Th>Produit</Th>
                 <Th>Réf. fournisseur</Th>
                 <Th>Emplacement</Th>
-                <Th align="right">Commandé</Th>
-                <Th align="right">Par pack</Th>
+                <Th align="right">Boîtes</Th>
+                <Th align="right">Par boîte</Th>
                 <Th align="right">Total unités</Th>
                 <Th align="right">Déjà reçu</Th>
                 <Th align="right">Reste</Th>
@@ -253,23 +253,12 @@ function OrderDetail({ order, items, onBack, onStart }) {
                   <Td><Thumb src={it.image_url} alt={it.name} /></Td>
                   <Td>
                     {it.name}
-                    {/* Voir l'écran de comptage : le badge n'apparaît que sur les lignes
-                        comptées à l'unité, où il est la seule trace du conditionnement
-                        fournisseur. Ailleurs les colonnes disent déjà tout. */}
-                    {it.pack_qty > 1 && it.units_per_qty === 1 && (
-                      <span style={{ marginLeft: 8 }}>
-                        <Badge color={C.accent} bg={C.accentL}
-                          title={`Conditionnement fournisseur : vendu par ${it.pack_qty}. Cette ligne est comptée à l'unité.`}>
-                          vendu par {it.pack_qty}
-                        </Badge>
-                      </span>
-                    )}
                   </Td>
                   <Td color={C.greyT}>{it.supplier_sku || it.sku || '—'}</Td>
                   <Td><Location value={it.shelf_location} /></Td>
-                  <Td align="right">{it.qty_ordered}</Td>
-                  <Td align="right" color={it.units_per_qty > 1 ? C.accent : C.greyM}>
-                    {it.units_per_qty > 1 ? `× ${it.units_per_qty}` : '—'}
+                  <Td align="right">{it.qty_expected_packs}</Td>
+                  <Td align="right" color={it.pack_size > 1 ? C.accent : C.greyM}>
+                    {it.pack_size > 1 ? `× ${it.pack_size}` : '—'}
                   </Td>
                   <Td align="right" bold>{it.qty_expected}</Td>
                   <Td align="right" color={it.qty_received > 0 ? C.orange : C.greyM}>{it.qty_received}</Td>
@@ -341,6 +330,14 @@ function CountingScreen({ token, order, items, onBack, onReload }) {
       return;
     }
 
+    // Un bip = une boîte sur une ligne conditionnée, quel que soit le code scanné :
+    // le carton porte souvent le code du flacon qu'il contient.
+    if (found.pack_size > 1) {
+      addCount(found.id, 1);
+      flash(`${found.name} — +1 boîte de ${found.pack_size}`);
+      return;
+    }
+
     if (matched.type === 'pack') {
       const step = parseInt(matched.quantity) || 1;
       addCount(found.id, step);
@@ -390,18 +387,26 @@ function CountingScreen({ token, order, items, onBack, onReload }) {
   // Le fond d'une ligne porte l'état de son comptage : il prime sur le zébrage, qui
   // ne s'applique donc qu'aux lignes encore vierges. Sinon l'alternance viendrait
   // concurrencer le signal orange/vert/rouge, qui est l'information utile ici.
+  // Cible du comptage : en BOÎTES pour un produit conditionné (on reçoit un carton
+  // scellé, pas des flacons à l'unité), en unités sinon.
+  const targetOf = (it) => it.pack_size > 1
+    ? Math.max(0, it.qty_expected_packs - it.qty_received_packs)
+    : it.qty_remaining;
+
   const rowColors = (it, idx) => {
     const counted = counts[it.id] || 0;
-    const target = it.qty_remaining;
+    const target = targetOf(it);
     if (counted === 0) return { background: idx % 2 === 1 ? C.zebra : C.white };
     if (counted > target) return { background: C.redL };
     if (counted === target) return { background: C.greenL };
     return { background: C.orangeL };
   };
 
-  const missing = items.filter(i => (counts[i.id] || 0) < i.qty_remaining);
-  const surplus = items.filter(i => (counts[i.id] || 0) > i.qty_remaining);
-  const totalCounted = items.reduce((s, i) => s + (counts[i.id] || 0), 0);
+  const missing = items.filter(i => (counts[i.id] || 0) < targetOf(i));
+  const surplus = items.filter(i => (counts[i.id] || 0) > targetOf(i));
+  // Les totaux d'en-tête restent en UNITÉS : c'est ce qui entre en stock.
+  const unitsOf = (i) => (counts[i.id] || 0) * (i.pack_size > 1 ? i.pack_size : 1);
+  const totalCounted = items.reduce((s, i) => s + unitsOf(i), 0);
   const totalExpected = items.reduce((s, i) => s + i.qty_remaining, 0);
   const allMotifsSet = missing.every(i => motifs[i.id]);
 
@@ -457,39 +462,23 @@ function CountingScreen({ token, order, items, onBack, onReload }) {
             <tbody>
               {items.map((it, idx) => {
                 const counted = counts[it.id] || 0;
-                const ecart = counted - it.qty_remaining;
+                const ecart = counted - targetOf(it);
                 return (
                   <tr key={it.id} style={rowColors(it, idx)}>
                     <Td><Thumb src={it.image_url} alt={it.name} /></Td>
                     <Td>
                       {it.name}
-                      {/* `pack_qty` est le conditionnement CATALOGUE du fournisseur, pas
-                          l'unité de compte de la ligne (celle-ci vit dans units_per_qty).
-                          Quand la ligne est déjà comptée en cartons, les colonnes le
-                          disent : le badge ferait doublon et laisserait croire à une
-                          double multiplication. On ne l'affiche donc que sur les lignes
-                          comptées à l'unité, où il est la seule trace du conditionnement. */}
-                      {it.pack_qty > 1 && it.units_per_qty === 1 && (
-                        <span style={{ marginLeft: 8 }}>
-                          <Badge color={C.accent} bg={C.accentL}
-                            title={`Conditionnement fournisseur : vendu par ${it.pack_qty}. Cette ligne est comptée à l'unité.`}>
-                            vendu par {it.pack_qty}
-                          </Badge>
-                        </span>
-                      )}
                       <div style={{ fontSize: 11.5, color: C.greyT, marginTop: 2 }}>
                         {it.supplier_sku || it.sku}
                       </div>
                     </Td>
                     <Td><Location value={it.shelf_location} /></Td>
                     <Td align="right" bold>
-                      {it.qty_remaining}
-                      {/* L'ecran de comptage reste lean : la decomposition est rappelee
-                          sous le total plutot qu'en colonnes, pour ne pas encombrer
-                          l'ecran de travail du scan. */}
-                      {it.units_per_qty > 1 && (
-                        <div style={{ fontSize: 11, fontWeight: 500, color: C.greyT, marginTop: 2 }}>
-                          {it.qty_ordered} × {it.units_per_qty}
+                      {targetOf(it)}
+                      {it.pack_size > 1 && (
+                        <div style={{ fontSize: 11, fontWeight: 600, color: C.accent, marginTop: 2 }}>
+                          boîte{targetOf(it) > 1 ? 's' : ''} de {it.pack_size}
+                          <span style={{ color: C.greyT, fontWeight: 500 }}> · {it.qty_remaining} u.</span>
                         </div>
                       )}
                     </Td>
@@ -502,7 +491,7 @@ function CountingScreen({ token, order, items, onBack, onReload }) {
                           style={{ width: 74, padding: '6px 8px', textAlign: 'center', fontSize: 14,
                             fontWeight: 700, borderRadius: 7, border: `1px solid ${C.greyB}` }} />
                         <Btn small variant="ghost" title="Tout réceptionner"
-                          onClick={() => setCount(it.id, it.qty_remaining)}>Tout</Btn>
+                          onClick={() => setCount(it.id, targetOf(it))}>Tout</Btn>
                       </div>
                     </Td>
                     <Td align="right" bold
@@ -582,8 +571,9 @@ function CountingScreen({ token, order, items, onBack, onReload }) {
                       <div style={{ flex: 1, fontSize: 13.5 }}>
                         {it.name}
                         <span style={{ color: C.greyT }}>
-                          {' '}— {counts[it.id] || 0} / {it.qty_remaining}
-                          {' '}(manque {it.qty_remaining - (counts[it.id] || 0)})
+                          {' '}— {counts[it.id] || 0} / {targetOf(it)}
+                          {it.pack_size > 1 ? ` boîte(s) de ${it.pack_size}` : ''}
+                          {' '}(manque {targetOf(it) - (counts[it.id] || 0)})
                         </span>
                       </div>
                       <select value={motifs[it.id] || ''}
@@ -607,8 +597,9 @@ function CountingScreen({ token, order, items, onBack, onReload }) {
                     <div key={it.id} style={{ padding: '9px 0', borderBottom: `1px solid ${C.greyB}`, fontSize: 13.5 }}>
                       {it.name}
                       <span style={{ color: C.greyT }}>
-                        {' '}— {counts[it.id]} reçus pour {it.qty_remaining} attendus
-                        {' '}(+{counts[it.id] - it.qty_remaining})
+                        {' '}— {counts[it.id]} reçus pour {targetOf(it)} attendus
+                        {it.pack_size > 1 ? ` boîte(s) de ${it.pack_size}` : ''}
+                        {' '}(+{counts[it.id] - targetOf(it)})
                       </span>
                     </div>
                   ))}
@@ -696,7 +687,7 @@ function UnknownModal({ barcode, items, onClose, onAttach }) {
               <div style={{ fontWeight: selected === it.id ? 700 : 400 }}>{it.name}</div>
               <div style={{ fontSize: 11.5, color: C.greyT }}>
                 {it.supplier_sku || it.sku} · reste {it.qty_remaining}
-                {it.pack_qty > 1 && ` · carton de ${it.pack_qty}`}
+                {it.pack_size > 1 && ` · boîtes de ${it.pack_size}`}
               </div>
             </div>
           </div>

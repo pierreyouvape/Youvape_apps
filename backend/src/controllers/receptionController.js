@@ -147,6 +147,10 @@ exports.getOrderDetail = async (req, res) => {
     const items = itemsResult.rows.map(row => {
       const barcodes = barcodesByProduct.get(row.product_id) || [];
       const packQty = parseInt(row.pack_qty) || 1;
+      const unitsPerQty = parseInt(row.units_per_qty) || 1;
+      const packSize = unitsPerQty > 1
+        ? unitsPerQty
+        : (packQty > 1 && row.qty_expected % packQty === 0 ? packQty : 1);
       // Ambiguïté : le produit est acheté au carton mais tous ses codes connus sont
       // typés « unité ». Le code scanné peut donc être celui du carton — c'est le
       // seul cas où l'opérateur doit trancher (et sa réponse est enregistrée).
@@ -170,8 +174,18 @@ exports.getOrderDetail = async (req, res) => {
         // Décomposition exposée telle quelle pour que l'écran puisse la vérifier :
         // qty_ordered (packs ou unités selon le fournisseur) × units_per_qty = total.
         qty_ordered: parseInt(row.qty_ordered) || 0,
-        units_per_qty: parseInt(row.units_per_qty) || 1,
+        units_per_qty: unitsPerQty,
         pack_qty: packQty,
+        // ── Comptage à la boîte ──────────────────────────────────────────────
+        // Un produit conditionné arrive en cartons scellés : l'opérateur reçoit
+        // une boîte entière ou rien, jamais 5 flacons sur 10. L'unité de comptage
+        // est donc la BOÎTE, et les unités n'en sont que la conséquence.
+        // `pack_size` vaut units_per_qty quand la ligne est déjà comptée en packs,
+        // sinon le conditionnement catalogue — à condition que le total soit un
+        // multiple exact, sans quoi on retombe sur un comptage à l'unité.
+        pack_size: packSize,
+        qty_expected_packs: packSize > 1 ? (row.qty_expected / packSize) : row.qty_expected,
+        qty_received_packs: packSize > 1 ? (row.qty_received / packSize) : row.qty_received,
         barcodes,
         ambiguous,
       };
