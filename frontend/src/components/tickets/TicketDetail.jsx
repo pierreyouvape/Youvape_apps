@@ -2172,6 +2172,10 @@ function ConversationPanel({ ticket, onReplySent, onStatusChange, playMode, afte
 }
 
 // ─── Note interne ─────────────────────────────────────────────────────────────
+// Orange assombri : l'accent orange du champ (#E28F00) tombe à 2,6:1 sur blanc,
+// illisible en corps de texte ; cette variante passe le seuil AA.
+const NOTE_ORANGE_TEXTE = shade(C.orange, -0.2);
+
 function NoteField({ ticketId, initialNotes }) {
   const [notes, setNotes] = useState(initialNotes || '');
   const [saving, setSaving] = useState(false);
@@ -2191,6 +2195,13 @@ function NoteField({ ticketId, initialNotes }) {
     } finally { setSaving(false); }
   };
 
+  // Une note écrite se lit en gras et à la couleur du champ, le champ vide garde
+  // le gris du placeholder : d'un coup d'œil dans le panneau, l'agent distingue
+  // une vraie consigne de traitement du simple texte d'aide.
+  // L'orange est assombri pour le texte — à sa valeur d'accent il passe sous le
+  // seuil de contraste lisible sur fond blanc.
+  const hasNote = notes.trim().length > 0;
+
   return (
     <>
       <textarea
@@ -2198,7 +2209,13 @@ function NoteField({ ticketId, initialNotes }) {
         onChange={e => setNotes(e.target.value)}
         placeholder="Conclusions, décisions, contexte… Visible uniquement par l'équipe."
         rows={6}
-        style={{ ...fieldInputBase, resize: 'vertical', lineHeight: 1.45 }}
+        style={{
+          ...fieldInputBase,
+          resize: 'vertical',
+          lineHeight: 1.45,
+          color: hasNote ? NOTE_ORANGE_TEXTE : C.grisTF,
+          fontWeight: hasNote ? 700 : 400,
+        }}
         onMouseEnter={e => e.target.style.borderColor = C.orange}
         onMouseLeave={e => { if (document.activeElement !== e.target) e.target.style.borderColor = C.grisCL; }}
         onFocus={e => { e.target.style.borderColor = C.orange; e.target.style.boxShadow = '0 0 0 3px rgba(226,143,0,0.16)'; }}
@@ -2270,6 +2287,10 @@ function CustomerNoteField({ customerId, initialNote }) {
     } finally { setSaving(false); }
   };
 
+  // Même règle que la note du ticket (cf. NoteField), au bleu du champ : une
+  // note écrite ressort en gras et en couleur, le champ vide reste gris.
+  const hasNote = note.trim().length > 0;
+
   return (
     <>
       <textarea
@@ -2278,7 +2299,13 @@ function CustomerNoteField({ customerId, initialNote }) {
         placeholder="Ce qu'il faut savoir sur ce client en permanence…"
         rows={3}
         maxLength={5000}
-        style={{ ...fieldInputBase, resize: 'vertical', lineHeight: 1.45 }}
+        style={{
+          ...fieldInputBase,
+          resize: 'vertical',
+          lineHeight: 1.45,
+          color: hasNote ? C.bleu : C.grisTF,
+          fontWeight: hasNote ? 700 : 400,
+        }}
         onFocus={e => { e.target.style.borderColor = C.bleu; e.target.style.boxShadow = '0 0 0 3px rgba(0,113,235,0.16)'; }}
         onBlur={e => { e.target.style.borderColor = C.grisCL; e.target.style.boxShadow = 'none'; }}
       />
