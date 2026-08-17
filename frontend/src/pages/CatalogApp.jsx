@@ -389,6 +389,18 @@ const CatalogApp = () => {
     }
   };
 
+  // Ecart de cout d'achat entre les declinaisons d'un produit variable.
+  // Sert a reperer une declinaison ~10x moins (ou plus) chere que ses soeurs :
+  // typiquement un prix de pack saisi comme prix unitaire lors de l'import BMS.
+  // Seuil : ratio max/min >= 2 (alerte), >= 5 (alerte forte, ordre de grandeur).
+  const costSpread = (row) => {
+    if (row._isVariation) return null;
+    const min = parseFloat(row.cost_min);
+    const max = parseFloat(row.cost_max);
+    if (!min || !max || max / min < 2) return null;
+    return { min, max, ratio: max / min, severe: max / min >= 5 };
+  };
+
   // Calcul marge % — base = tarif remisé si présent, sinon prix TTC
   const calcMargin = (price, costPrice, discountedPrice) => {
     const base = parseFloat(discountedPrice ?? price);
@@ -754,7 +766,22 @@ const CatalogApp = () => {
                             ? <td style={{ ...cellRight, color: '#059669', fontWeight: 600 }}>{fmtPrice(row.discounted_price)}</td>
                             : <td style={{ ...cellRight, color: '#9ca3af' }}>—</td>
                         )}
-                        {isVisible('cost_price') && <td style={{ ...cellRight, ...numStyle(row.cost_price) }}>{fmtPrice(row.cost_price)}</td>}
+                        {isVisible('cost_price') && (() => {
+                          const spread = costSpread(row);
+                          return (
+                            <td style={{ ...cellRight, ...numStyle(row.cost_price), ...(spread ? { backgroundColor: spread.severe ? '#fee2e2' : '#fef3c7' } : {}) }}>
+                              {fmtPrice(row.cost_price)}
+                              {spread && (
+                                <span
+                                  title={`Coût d'achat incohérent entre déclinaisons : de ${fmtPrice(spread.min)} à ${fmtPrice(spread.max)} (×${spread.ratio.toFixed(1)}). Prix pack saisi comme prix unitaire ?`}
+                                  style={{ marginLeft: '6px', fontSize: '11px', color: spread.severe ? '#b91c1c' : '#92400e', whiteSpace: 'nowrap' }}
+                                >
+                                  ⚠ ×{spread.ratio.toFixed(1)}
+                                </span>
+                              )}
+                            </td>
+                          );
+                        })()}
                         {isVisible('margin') && <td style={{ ...cellRight, ...(margin !== null ? numStyle(margin) : {}) }}>{margin !== null ? fmtPct(margin) : '-'}</td>}
                         {isVisible('weight') && <td style={cellRight}>{fmtWeight(row.weight)}</td>}
                         {isVisible('stock') && <td style={{ ...cellRight, fontWeight: '600', ...numStyle(row.stock) }}>{fmtInt(row.stock)}</td>}

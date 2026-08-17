@@ -1038,6 +1038,15 @@ class ProductModel {
         p.price,
         p.discounted_price,
         COALESCE(p.computed_cost, p.wc_cog_cost) as cost_price,
+        -- Dispersion du cout d'achat entre declinaisons publiees : permet de reperer
+        -- dans le catalogue un produit dont une declinaison est ~10x moins chere que
+        -- les autres (prix pack saisi comme prix unitaire, ou l'inverse).
+        (SELECT MIN(COALESCE(v.computed_cost, v.wc_cog_cost)) FROM products v
+          WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation'
+            AND v.post_status = 'publish' AND COALESCE(v.computed_cost, v.wc_cog_cost) > 0) as cost_min,
+        (SELECT MAX(COALESCE(v.computed_cost, v.wc_cog_cost)) FROM products v
+          WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation'
+            AND v.post_status = 'publish' AND COALESCE(v.computed_cost, v.wc_cog_cost) > 0) as cost_max,
         p.weight,
         p.image_url,
         p.product_type,
