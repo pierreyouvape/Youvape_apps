@@ -106,7 +106,9 @@ function Modal({ title, children, onClose, width = 560 }) {
 
 const STATUS_LABEL = {
   sent:      { label: 'Envoyée',   color: '#1D4ED8', bg: '#DBEAFE' },
-  confirmed: { label: 'Confirmée', color: C.primary, bg: '#E0F2FE' },
+  // « Attendue » et non « Confirmée » : le statut traduit l'état `expected` de BMS,
+  // pas un accusé de réception du fournisseur. Même libellé que l'app d'achat.
+  confirmed: { label: 'Attendue', color: C.primary, bg: '#E0F2FE' },
   partial:   { label: 'Partielle', color: C.orange,  bg: C.orangeL },
 };
 
