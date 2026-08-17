@@ -77,7 +77,9 @@ export default function SearchResultsPage() {
     if (!q) { setTickets([]); setTotal(0); setLoading(false); return; }
     setLoading(true);
     try {
-      const params = new URLSearchParams({ search: q, limit: 200, offset: 0 });
+      // spam=all : la recherche est un geste explicite, elle doit retrouver un
+      // ticket même classé en spam (typiquement pour rattraper un faux positif).
+      const params = new URLSearchParams({ search: q, limit: 200, offset: 0, spam: 'all' });
       const res = await fetch(`${API}?${params}`);
       const data = await res.json();
       if (data.success) {
@@ -179,7 +181,18 @@ export default function SearchResultsPage() {
                       onMouseEnter={e => { e.currentTarget.style.background = '#F8FBFD'; }}
                       onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
                     >
-                      <td style={cell}><StatusBadge status={t.sav_status} /></td>
+                      <td style={cell}>
+                        <StatusBadge status={t.sav_status} />
+                        {/* La recherche est le seul endroit hors vue Spam où un
+                            ticket classé peut apparaître : il doit se voir. */}
+                        {t.is_spam && (
+                          <span style={{
+                            marginLeft: 6, fontSize: 10.5, fontWeight: 800, color: '#B71D1D',
+                            background: '#FEF2F2', border: '1px solid #FECACA',
+                            borderRadius: 5, padding: '2px 6px', whiteSpace: 'nowrap',
+                          }}>SPAM</span>
+                        )}
+                      </td>
                       <td style={{ ...cell, color: C.grisF, fontVariantNumeric: 'tabular-nums', fontWeight: 600 }}>
                         {formatTicketId(t.id)}
                       </td>

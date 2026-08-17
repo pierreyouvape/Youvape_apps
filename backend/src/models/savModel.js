@@ -80,8 +80,17 @@ class SavModel {
   }
 
   // ─── Liste avec filtres, recherche et pagination ──────────────────────────
-  async getAll({ limit = 50, offset = 0, sav_status, sav_statuses, search } = {}) {
-    const conditions = [];
+  // `spam` : false (défaut) = tickets normaux, true = uniquement les tickets
+  // classés spam (vue Spam), 'all' = sans filtre. Le classement est un drapeau et
+  // non un statut, donc il se filtre ici et non via sav_statuses — sinon les
+  // tickets spam ressortiraient dans la vue « Tous » (statuses = []).
+  //
+  // 'all' sert à la recherche : chercher un client par son nom ou son email est
+  // précisément le geste de l'agent à qui l'on signale « je vous ai écrit et je
+  // n'ai pas de réponse » — cas typique d'un classement à tort, qu'un filtre
+  // silencieux rendrait introuvable.
+  async getAll({ limit = 50, offset = 0, sav_status, sav_statuses, search, spam = false } = {}) {
+    const conditions = spam === 'all' ? [] : [spam ? 't.is_spam' : 'NOT t.is_spam'];
     const values = [];
     let idx = 1;
 
@@ -407,6 +416,26 @@ class SavModel {
     );
     const ticket = result.rows[0] || null;
     if (ticket) emitChange(ticket.id, 'patch');
+    return ticket;
+  }
+
+  // ─── Classer / déclasser un ticket en spam ───────────────────────────────
+  // Drapeau volontairement séparé du statut : le ticket garde l'état métier
+  // qu'il avait, il sort simplement de toutes les vues sauf la vue Spam.
+  // Réversible — on conserve qui a classé et quand.
+  async setSpam(id, isSpam, userId = null) {
+    const result = await pool.query(
+      `UPDATE sav_tickets
+          SET is_spam        = $2::boolean,
+              spam_marked_at = CASE WHEN $2::boolean THEN CURRENT_TIMESTAMP ELSE NULL END,
+              spam_marked_by = CASE WHEN $2::boolean THEN $3::integer ELSE NULL END,
+              updated_at     = CURRENT_TIMESTAMP
+        WHERE id = $1
+        RETURNING *`,
+      [id, !!isSpam, userId]
+    );
+    const ticket = result.rows[0] || null;
+    if (ticket) emitChange(ticket.id, 'spam');
     return ticket;
   }
 

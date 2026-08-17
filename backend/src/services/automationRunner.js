@@ -68,7 +68,9 @@ async function runOne(automation) {
   const condSQLs = conds.map(buildConditionSQL).filter(Boolean);
   if (condSQLs.length === 0) return { count: 0, ticketIds: [], skipped: 'aucune condition valide' };
 
-  const whereParts = [...condSQLs];
+  // Un ticket classé spam est hors du flux de travail : aucun automatisme ne
+  // doit lui changer son statut (ni le faire remonter dans le flux SSE).
+  const whereParts = ['NOT t.is_spam', ...condSQLs];
   const params = [];
   let paramIdx = 1;
 

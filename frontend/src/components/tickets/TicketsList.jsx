@@ -631,6 +631,8 @@ export default function TicketsList({ activeView, views = [], onRefresh, refresh
         limit: PAGE_SIZE,
         offset: page * PAGE_SIZE,
       });
+      // Vue Spam : les tickets classés sont exclus partout ailleurs.
+      if (activeView.spam) params.set('spam', '1');
       // Ajouter les statuts comme paramètres répétés (Express qs les parse en tableau)
       statusesFilter.forEach(s => params.append('sav_statuses', s));
       const res = await fetch(`${API}?${params}`);
@@ -697,6 +699,20 @@ export default function TicketsList({ activeView, views = [], onRefresh, refresh
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ sav_status: statusValue }),
+    },
+  }));
+
+  // Classement spam groupé. Contrairement aux autres actions groupées, les
+  // routes /spam sont authentifiées (on trace l'agent qui classe) : le token
+  // doit être posé à la main, `fetch` ne passe pas par l'intercepteur axios.
+  const bulkSpam = (isSpam) => runBulk(id => ({
+    url: `${API}/${id}/spam`,
+    options: {
+      method: isSpam ? 'POST' : 'DELETE',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      // Pas de blocage d'expéditeur en action groupée : le motif se choisit un
+      // par un, depuis le ticket, où l'agent voit à qui il a affaire.
+      body: isSpam ? JSON.stringify({}) : undefined,
     },
   }));
 
@@ -1137,6 +1153,17 @@ export default function TicketsList({ activeView, views = [], onRefresh, refresh
                 disabled={bulkBusy}
                 style={bulkBtnStyle(bulkBusy)}
               >{bulkBusy ? 'Application…' : 'Marquer résolu'}</button>
+
+              {/* Spam : classer en lot depuis une vue normale, déclasser depuis
+                  la vue Spam. Aucune suppression — le ticket change de vue. */}
+              <button
+                onClick={() => bulkSpam(!activeView?.spam)}
+                disabled={bulkBusy}
+                title={activeView?.spam
+                  ? 'Ces tickets ne sont pas du spam : les remettre dans les vues normales'
+                  : 'Classer en spam : les tickets sortent de toutes les vues'}
+                style={bulkBtnStyle(bulkBusy)}
+              >{activeView?.spam ? '↩ Pas du spam' : '🚫 Spam'}</button>
 
               <button onClick={() => { setBulkMenu(null); setSelected(new Set()); }} disabled={bulkBusy} style={{
                 background: 'transparent', color: 'rgba(255,255,255,0.7)',

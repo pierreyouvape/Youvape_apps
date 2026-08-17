@@ -6,6 +6,7 @@ import { invalidateStatusCache } from '../components/tickets/useTicketStatuses';
 import MacrosSettings from '../components/tickets/MacrosSettings';
 import NotificationsSettings from '../components/tickets/NotificationsSettings';
 import AutomationsSettings from '../components/tickets/AutomationsSettings';
+import BlocklistSettings from '../components/tickets/BlocklistSettings';
 import ZendeskImportSettings from '../components/tickets/ZendeskImportSettings';
 import DangerSettings from '../components/tickets/DangerSettings';
 import { LinkBox } from '../utils/navHelpers';
@@ -615,6 +616,7 @@ export default function TicketsSettingsApp() {
     { key: 'macros',        label: 'Macros' },
     { key: 'notifications', label: 'Notifications' },
     { key: 'automations',   label: 'Automatismes' },
+    { key: 'blocklist',     label: 'Blocklist' },
     { key: 'zendesk',       label: 'Importation Zendesk' },
     { key: 'danger',        label: 'DANGER' },
   ];
@@ -701,6 +703,9 @@ export default function TicketsSettingsApp() {
 
             {/* ─── Onglet Automatismes ─── */}
             {activeTab === 'automations' && <AutomationsSettings />}
+
+            {/* ─── Onglet Blocklist ─── */}
+            {activeTab === 'blocklist' && <BlocklistSettings />}
 
             {/* ─── Onglet Importation Zendesk ─── */}
             {activeTab === 'zendesk' && <ZendeskImportSettings />}

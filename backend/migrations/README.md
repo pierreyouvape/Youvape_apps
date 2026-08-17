@@ -30,6 +30,22 @@ chmod +x run-migration.sh
 
 ## Migrations disponibles
 
+### `add_sav_spam_blocklist.sql`
+**Date:** 2026-08-17 — **appliquée en prod le 2026-08-17**
+**Description:** Ajoute `is_spam` / `spam_marked_at` / `spam_marked_by` à
+`sav_tickets` (+ index partiel sur `is_spam`), et crée la table `sav_blocklist`
+(motifs `email` / `domain` / `local` / `contains`, index unique insensible à la
+casse) avec 2 motifs de départ.
+
+**Pourquoi:** Le formulaire SAV public envoie un accusé de réception à l'adresse
+saisie sans la vérifier — des bots s'en servaient pour tester un relais d'envoi
+(9 sondes « Test » les 13 et 14/08/2026, adresse tierce différente à chaque fois).
+Le classement spam sort ces demandes des vues, et la blocklist les prive d'accusé
+de réception dès la deuxième.
+
+⚠️ **À appliquer AVANT de rebuilder le backend** : sans la colonne `is_spam`,
+toutes les requêtes de liste des tickets échouent.
+
 ### `add_woosb_ids_column.sql`
 **Date:** 2025-11-26
 **Description:** Ajoute la colonne `woosb_ids` (JSONB) à la table `products` pour stocker les IDs des produits inclus dans les bundles (type woosb).

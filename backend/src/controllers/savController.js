@@ -1,5 +1,6 @@
 const savModel = require('../models/savModel');
 const savViewModel = require('../models/savViewModel');
+const savBlocklistModel = require('../models/savBlocklistModel');
 const mailgunService = require('../services/mailgunService');
 const emailTemplateService = require('../services/emailTemplateService');
 const pool = require('../config/database');
@@ -589,7 +590,7 @@ const savController = {
   // ─── Liste des tickets ────────────────────────────────────────────────────
   getAll: async (req, res) => {
     try {
-      const { limit = 50, offset = 0, sav_status, sav_statuses, search } = req.query;
+      const { limit = 50, offset = 0, sav_status, sav_statuses, search, spam } = req.query;
       // sav_statuses peut arriver comme ?sav_statuses[]=ouvert&sav_statuses[]=accepté
       const statusesArray = sav_statuses
         ? (Array.isArray(sav_statuses) ? sav_statuses : [sav_statuses])
@@ -600,6 +601,9 @@ const savController = {
         sav_status:    sav_status || null,
         sav_statuses:  statusesArray,
         search:        search || null,
+        // ?spam=1 → vue Spam ; ?spam=all → sans filtre (recherche) ;
+        // absent → les tickets classés spam sont exclus.
+        spam:          spam === 'all' ? 'all' : (spam === '1' || spam === 'true'),
       });
       res.json({ success: true, tickets, total });
     } catch (error) {
@@ -880,6 +884,109 @@ const savController = {
     } catch (error) {
       console.error('❌ [SAV] Erreur patch:', error);
       res.status(500).json({ error: 'Erreur serveur' });
+    }
+  },
+
+  // ─── Classer un ticket en spam ───────────────────────────────────────────
+  // Optionnellement, ajoute l'expéditeur à la liste de blocage : c'est ce qui
+  // rend le bouton utile au-delà du ticket courant — la prochaine demande du
+  // même expéditeur sera classée d'office, sans accusé de réception.
+  // Un motif déjà présent (ou invalide) n'échoue pas l'appel : le classement du
+  // ticket, lui, a bien eu lieu. Le détail part dans `block_error`.
+  markSpam: async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      if (Number.isNaN(id)) return res.status(400).json({ error: 'Ticket invalide' });
+
+      const ticket = await savModel.setSpam(id, true, req.user?.id || null);
+      if (!ticket) return res.status(404).json({ error: 'Ticket introuvable' });
+
+      let blockRule = null;
+      let blockError = null;
+      if (req.body?.block?.type && req.body?.block?.value) {
+        const created = await savBlocklistModel.create({
+          type:       req.body.block.type,
+          value:      req.body.block.value,
+          reason:     req.body.block.reason || `Signalé depuis le ticket #${id}`,
+          created_by: req.user?.id || null,
+        });
+        if (created.error) blockError = created.error;
+        else blockRule = created;
+      }
+
+      res.json({ success: true, ticket, block: blockRule, block_error: blockError });
+    } catch (error) {
+      console.error('❌ [SAV] Erreur classement spam:', error);
+      res.status(500).json({ error: error.message || 'Erreur serveur' });
+    }
+  },
+
+  // ─── Déclasser (faux positif) ────────────────────────────────────────────
+  // Retire aussi la règle de blocage qui visait cet expéditeur : sans ça, le
+  // ticket ressort de la vue Spam mais la demande suivante y retombe aussitôt.
+  unmarkSpam: async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      if (Number.isNaN(id)) return res.status(400).json({ error: 'Ticket invalide' });
+
+      const ticket = await savModel.setSpam(id, false, null);
+      if (!ticket) return res.status(404).json({ error: 'Ticket introuvable' });
+
+      const removed = await savBlocklistModel.removeForSender(ticket.customer_email);
+      res.json({ success: true, ticket, removed_rules: removed });
+    } catch (error) {
+      console.error('❌ [SAV] Erreur déclassement spam:', error);
+      res.status(500).json({ error: error.message || 'Erreur serveur' });
+    }
+  },
+
+  // ─── Liste de blocage (réglages) ─────────────────────────────────────────
+  getBlocklist: async (req, res) => {
+    try {
+      res.json({ success: true, rules: await savBlocklistModel.getAll() });
+    } catch (error) {
+      console.error('❌ [SAV] Erreur liste de blocage:', error);
+      res.status(500).json({ error: error.message || 'Erreur serveur' });
+    }
+  },
+
+  createBlockRule: async (req, res) => {
+    try {
+      const rule = await savBlocklistModel.create({
+        type:       req.body.type,
+        value:      req.body.value,
+        reason:     req.body.reason,
+        created_by: req.user?.id || null,
+      });
+      if (rule.error) return res.status(400).json({ error: rule.error });
+      res.status(201).json({ success: true, rule });
+    } catch (error) {
+      console.error('❌ [SAV] Erreur création motif de blocage:', error);
+      res.status(500).json({ error: error.message || 'Erreur serveur' });
+    }
+  },
+
+  updateBlockRule: async (req, res) => {
+    try {
+      const rule = await savBlocklistModel.update(parseInt(req.params.id), {
+        is_active: req.body.is_active,
+        reason:    req.body.reason,
+      });
+      if (!rule) return res.status(404).json({ error: 'Motif introuvable ou aucun champ modifiable' });
+      res.json({ success: true, rule });
+    } catch (error) {
+      console.error('❌ [SAV] Erreur modification motif de blocage:', error);
+      res.status(500).json({ error: error.message || 'Erreur serveur' });
+    }
+  },
+
+  deleteBlockRule: async (req, res) => {
+    try {
+      await savBlocklistModel.delete(parseInt(req.params.id));
+      res.json({ success: true });
+    } catch (error) {
+      console.error('❌ [SAV] Erreur suppression motif de blocage:', error);
+      res.status(500).json({ error: error.message || 'Erreur serveur' });
     }
   },
 

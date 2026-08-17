@@ -12,6 +12,14 @@ import { useAutoRefresh } from '../components/tickets/useAutoRefresh';
 import { useIsMobile } from '../hooks/useIsMobile';
 import Drawer from '../components/Drawer';
 
+// Vue système « Spam » : ajoutée aux vues de la base, mais pas stockée avec
+// elles. Les vues configurables filtrent par statut ; le spam est un drapeau
+// (is_spam), ce qui la rend inexprimable en `statuses` — et la mettre en base
+// exposerait à sa suppression accidentelle depuis l'écran de réglages, alors
+// qu'elle est le seul accès aux tickets classés. Son id est une chaîne : rien
+// ne le suppose numérique (ordre localStorage, compteurs, sélection).
+const SPAM_VIEW = { id: 'spam', label: 'Spam', statuses: [], spam: true };
+
 // ─── Contenu enveloppé par OpenTicketsProvider ────────────────────────────────
 function TicketsAppInner() {
   const [views, setViews]           = useState([]);
@@ -47,7 +55,7 @@ function TicketsAppInner() {
       .then(r => r.json())
       .then(d => {
         if (d.success && d.views.length > 0) {
-          setViews(d.views);
+          setViews([...d.views, SPAM_VIEW]);
           // Sélectionner la première vue dans l'ordre custom de l'utilisateur
           // (drag & drop persisté en localStorage)
           const ordered = applyViewsOrder(d.views, loadViewsOrder());
@@ -66,6 +74,7 @@ function TicketsAppInner() {
       const results = {};
       await Promise.all(views.map(async v => {
         const p = new URLSearchParams({ limit: 1, offset: 0 });
+        if (v.spam) p.set('spam', '1');
         (v.statuses || []).forEach(s => p.append('sav_statuses', s));
         try {
           const res = await fetch(`/api/sav?${p}`);

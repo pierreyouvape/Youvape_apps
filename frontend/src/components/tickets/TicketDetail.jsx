@@ -2607,6 +2607,164 @@ function TicketHistoryCard({ t, onOpen }) {
 }
 
 // ─── Panneau DROIT ────────────────────────────────────────────────────────────
+// Fournisseurs de boîtes grand public : bloquer un de ces domaines classerait
+// en spam toutes les demandes publiques d'un client sur quatre. La sonde de
+// relais du 13/08 utilisait précisément gmail, outlook, aol et yahoo — l'option
+// « domaine » doit donc rester interdite ici, pas seulement déconseillée.
+const PUBLIC_MAIL_DOMAINS = new Set([
+  'gmail.com', 'googlemail.com', 'outlook.com', 'outlook.fr', 'hotmail.com', 'hotmail.fr',
+  'live.fr', 'live.com', 'msn.com', 'yahoo.com', 'yahoo.fr', 'ymail.com', 'aol.com',
+  'icloud.com', 'me.com', 'orange.fr', 'wanadoo.fr', 'free.fr', 'sfr.fr', 'laposte.net',
+  'bbox.fr', 'numericable.fr', 'gmx.com', 'gmx.us', 'gmx.fr', 'protonmail.com', 'proton.me',
+  'zohomail.eu', 'skynet.be', 'telenet.be', 'voo.be',
+]);
+
+/**
+ * Classement d'un ticket en spam, avec ajout facultatif de l'expéditeur à la
+ * liste de blocage. C'est ce second geste qui donne sa portée au bouton : sans
+ * lui, on range un ticket ; avec lui, la prochaine demande du même expéditeur
+ * est classée d'office et ne déclenche aucun accusé de réception.
+ */
+function SpamModal({ ticket, onClose, onDone }) {
+  const { token } = useContext(AuthContext);
+  const [block, setBlock] = useState('none'); // 'none' | 'email' | 'domain'
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  const email  = (ticket.customer_email || '').toLowerCase();
+  const domain = email.includes('@') ? email.split('@').pop() : '';
+  const domainBlockable = !!domain && !PUBLIC_MAIL_DOMAINS.has(domain);
+
+  const submit = async () => {
+    setBusy(true);
+    setError('');
+    try {
+      const body = block === 'none' ? {} : {
+        block: {
+          type:  block,
+          value: block === 'email' ? email : domain,
+          reason: `Signalé depuis le ticket ${formatTicketId(ticket.id)}`,
+        },
+      };
+      const res = await fetch(`${API}/${ticket.id}/spam`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error || 'Erreur');
+      // Le motif a pu être refusé (déjà présent) sans que le classement échoue :
+      // on le dit, mais on n'annule rien.
+      onDone(data.ticket, data.block_error);
+    } catch (e) {
+      setError(e.message || 'Erreur');
+      setBusy(false);
+    }
+  };
+
+  const optionStyle = (val) => ({
+    display: 'flex', alignItems: 'flex-start', gap: 9,
+    padding: '9px 11px', borderRadius: 8,
+    border: `1px solid ${block === val ? C.rouge : C.grisCL}`,
+    background: block === val ? '#FEF2F2' : C.blanc,
+    cursor: 'pointer', textAlign: 'left', width: '100%',
+    fontFamily: 'Lato, sans-serif',
+  });
+
+  return createPortal(
+    <div
+      onClick={onClose}
+      style={{
+        position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 3000,
+      }}
+    >
+      <div
+        onClick={e => e.stopPropagation()}
+        style={{
+          background: C.blanc, borderRadius: 14, padding: '22px 24px',
+          width: 'min(94vw, 460px)', boxShadow: '0 20px 50px rgba(0,0,0,0.28)',
+          fontFamily: 'Lato, sans-serif',
+        }}
+      >
+        <h3 style={{ margin: 0, fontSize: 16.5, fontWeight: 800, color: C.grisTF, fontFamily: "'Tilt Warp', cursive" }}>
+          Classer {formatTicketId(ticket.id)} en spam
+        </h3>
+        <p style={{ margin: '10px 0 16px', fontSize: 13, color: C.grisF, lineHeight: 1.55 }}>
+          Le ticket sort de toutes les vues et rejoint la vue <strong>Spam</strong>. Rien n'est
+          supprimé, rien n'est envoyé à l'expéditeur, et le classement se retire d'un clic.
+        </p>
+
+        <div style={{ fontSize: 12, fontWeight: 800, color: C.grisF, marginBottom: 8 }}>
+          Bloquer aussi l'expéditeur ?
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+          <button onClick={() => setBlock('none')} style={optionStyle('none')}>
+            <span style={{ fontSize: 13, fontWeight: 700, color: C.grisTF }}>Non, ce ticket seulement</span>
+          </button>
+
+          <button onClick={() => setBlock('email')} style={optionStyle('email')} disabled={!email}>
+            <span>
+              <span style={{ fontSize: 13, fontWeight: 700, color: C.grisTF }}>Bloquer cette adresse</span>
+              <span style={{ display: 'block', fontSize: 12, color: C.grisM, marginTop: 2, wordBreak: 'break-all' }}>
+                {email || 'aucune adresse sur ce ticket'}
+              </span>
+            </span>
+          </button>
+
+          <button
+            onClick={() => domainBlockable && setBlock('domain')}
+            style={{ ...optionStyle('domain'), cursor: domainBlockable ? 'pointer' : 'not-allowed', opacity: domainBlockable ? 1 : 0.55 }}
+            disabled={!domainBlockable}
+          >
+            <span>
+              <span style={{ fontSize: 13, fontWeight: 700, color: C.grisTF }}>Bloquer tout le domaine</span>
+              <span style={{ display: 'block', fontSize: 12, color: C.grisM, marginTop: 2, wordBreak: 'break-all' }}>
+                {domain
+                  ? (domainBlockable
+                      ? `@${domain} — toutes les adresses de ce domaine`
+                      : `@${domain} est une messagerie grand public : impossible à bloquer sans écarter de vrais clients`)
+                  : 'aucun domaine sur ce ticket'}
+              </span>
+            </span>
+          </button>
+        </div>
+
+        <div style={{ fontSize: 11.5, color: C.grisM, marginTop: 12, lineHeight: 1.5 }}>
+          Un expéditeur bloqué peut toujours écrire : sa demande arrive directement dans la vue
+          Spam, sans accusé de réception ni notification.
+        </div>
+
+        {error && (
+          <div style={{ marginTop: 12, fontSize: 12.5, color: C.rouge, fontWeight: 700 }}>{error}</div>
+        )}
+
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 18 }}>
+          <button
+            onClick={onClose}
+            disabled={busy}
+            style={{
+              background: C.grisTL, border: `1px solid ${C.grisCL}`, borderRadius: 8,
+              padding: '8px 16px', fontSize: 13, fontWeight: 700, color: C.grisF,
+              cursor: busy ? 'not-allowed' : 'pointer', fontFamily: 'Lato, sans-serif',
+            }}
+          >Annuler</button>
+          <button
+            onClick={submit}
+            disabled={busy}
+            style={{
+              background: C.rouge, border: 'none', borderRadius: 8,
+              padding: '8px 16px', fontSize: 13, fontWeight: 800, color: '#fff',
+              cursor: busy ? 'not-allowed' : 'pointer', fontFamily: 'Lato, sans-serif',
+            }}
+          >{busy ? 'Classement…' : 'Classer en spam'}</button>
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
 function CustomerPanel({ ticket, onAssignOrder, onUnassignOrder, onMerge, mobile = false }) {
   const navigate = useNavigate();
   const tabsCtx = useOpenTickets();
@@ -2862,6 +3020,8 @@ export default function TicketDetail({ ticketId }) {
   const [error, setError] = useState('');
   const [users, setUsers] = useState([]);
   const [mergeOpen, setMergeOpen] = useState(false);
+  const [spamOpen, setSpamOpen] = useState(false);
+  const [spamNotice, setSpamNotice] = useState('');
   const saveTimerRef = useRef();
 
   // Mobile : les panneaux Champs / Client deviennent des tiroirs glissants.
@@ -3016,6 +3176,36 @@ export default function TicketDetail({ ticketId }) {
     } catch { /* silencieux */ }
   }, [ticketId, fetchTicket]);
 
+  // Classement spam confirmé depuis la modale.
+  const handleSpammed = useCallback((updated, blockError) => {
+    setSpamOpen(false);
+    if (updated) setTicket(t => ({ ...t, ...updated }));
+    setSpamNotice(blockError ? `Ticket classé en spam — motif de blocage non ajouté : ${blockError}` : '');
+    tabsCtx?.notifyListChanged?.();
+  }, [tabsCtx]);
+
+  // Déclassement : le ticket revient dans les vues normales, et la règle de
+  // blocage qui visait cet expéditeur est retirée côté backend (sans quoi la
+  // demande suivante retomberait aussitôt en spam).
+  const handleUnspam = useCallback(async () => {
+    try {
+      const res = await fetch(`${API}/${ticketId}/spam`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error || 'Erreur');
+      setTicket(t => ({ ...t, ...data.ticket }));
+      const n = (data.removed_rules || []).length;
+      setSpamNotice(n > 0
+        ? `Ticket déclassé — ${n} motif${n > 1 ? 's' : ''} de blocage retiré${n > 1 ? 's' : ''}.`
+        : '');
+      tabsCtx?.notifyListChanged?.();
+    } catch (e) {
+      setSpamNotice(e.message || 'Erreur au déclassement');
+    }
+  }, [ticketId, token, tabsCtx]);
+
   // Fusion réussie : le ticket courant (source) est désormais fermé.
   // On bascule vers le ticket cible. Dans la barre d'onglets, on ferme
   // l'onglet source et on ouvre la cible ; sinon on navigue.
@@ -3104,23 +3294,87 @@ export default function TicketDetail({ ticketId }) {
                 }}
                 title="Fiche client"
               >Client</button>
+              {!ticket.is_spam && (
+                <button
+                  onClick={() => setSpamOpen(true)}
+                  style={{
+                    background: C.grisTL, border: `1px solid ${C.grisCL}`, borderRadius: 8,
+                    padding: '8px 10px', fontSize: 13, cursor: 'pointer',
+                    fontFamily: 'Lato, sans-serif', lineHeight: 1,
+                  }}
+                  title="Classer en spam"
+                  aria-label="Classer en spam"
+                >🚫</button>
+              )}
             </>
           ) : (
-            !ticket.merged_into_id && (
-              <button
-                onClick={() => setMergeOpen(true)}
-                style={{
-                  display: 'inline-flex', alignItems: 'center', gap: 6,
-                  background: C.grisTL, border: `1px solid ${C.grisCL}`, borderRadius: 8,
-                  padding: '7px 13px', fontSize: 13, fontWeight: 700, color: C.grisF,
-                  cursor: 'pointer', fontFamily: 'Lato, sans-serif',
-                }}
-                title="Fusionner ce ticket dans un autre"
-              >🔀 Fusionner</button>
-            )
+            <>
+              {!ticket.merged_into_id && (
+                <button
+                  onClick={() => setMergeOpen(true)}
+                  style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 6,
+                    background: C.grisTL, border: `1px solid ${C.grisCL}`, borderRadius: 8,
+                    padding: '7px 13px', fontSize: 13, fontWeight: 700, color: C.grisF,
+                    cursor: 'pointer', fontFamily: 'Lato, sans-serif',
+                  }}
+                  title="Fusionner ce ticket dans un autre"
+                >🔀 Fusionner</button>
+              )}
+              {!ticket.is_spam && (
+                <button
+                  onClick={() => setSpamOpen(true)}
+                  style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 6,
+                    background: C.grisTL, border: `1px solid ${C.grisCL}`, borderRadius: 8,
+                    padding: '7px 13px', fontSize: 13, fontWeight: 700, color: C.grisF,
+                    cursor: 'pointer', fontFamily: 'Lato, sans-serif',
+                  }}
+                  title="Classer ce ticket en spam, et bloquer l'expéditeur au besoin"
+                >🚫 Spam</button>
+              )}
+            </>
           )}
         </div>
       </header>
+
+      {/* Bandeau : ticket classé spam (visible aussi sur mobile, où la barre du
+          haut n'a pas la place d'un bouton de plus) */}
+      {ticket.is_spam && (
+        <div style={{
+          background: '#FEF2F2', borderBottom: '1px solid #FECACA',
+          padding: '9px 16px', display: 'flex', alignItems: 'center', gap: 10,
+          flexShrink: 0, fontFamily: 'Lato, sans-serif',
+        }}>
+          <span style={{ fontSize: 15 }}>🚫</span>
+          <span style={{ flex: 1, fontSize: 12.5, color: '#B71D1D', fontWeight: 600, minWidth: 0 }}>
+            Ticket classé en spam — hors des vues, aucun accusé de réception n'a été envoyé.
+          </span>
+          <button
+            onClick={handleUnspam}
+            style={{
+              background: C.blanc, border: '1px solid #FECACA', borderRadius: 8,
+              padding: '6px 12px', fontSize: 12.5, fontWeight: 800, color: '#B71D1D',
+              cursor: 'pointer', fontFamily: 'Lato, sans-serif', flexShrink: 0,
+            }}
+          >↩ Ce n'est pas du spam</button>
+        </div>
+      )}
+
+      {spamNotice && (
+        <div style={{
+          background: '#FFFBEB', borderBottom: '1px solid #FDE68A',
+          padding: '8px 16px', display: 'flex', alignItems: 'center', gap: 10,
+          flexShrink: 0, fontSize: 12.5, color: '#92400E', fontFamily: 'Lato, sans-serif',
+        }}>
+          <span style={{ flex: 1 }}>{spamNotice}</span>
+          <button
+            onClick={() => setSpamNotice('')}
+            style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#92400E', fontWeight: 800, fontSize: 14 }}
+            aria-label="Masquer"
+          >×</button>
+        </div>
+      )}
 
       {/* ── Colonnes ─────────────────────────────────────────────────────────────
           Desktop : 3 colonnes côte à côte.
@@ -3176,6 +3430,14 @@ export default function TicketDetail({ ticketId }) {
           ticket={ticket}
           onClose={() => setMergeOpen(false)}
           onMerged={handleMerged}
+        />
+      )}
+
+      {spamOpen && (
+        <SpamModal
+          ticket={ticket}
+          onClose={() => setSpamOpen(false)}
+          onDone={handleSpammed}
         />
       )}
     </div>

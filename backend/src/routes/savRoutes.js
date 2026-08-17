@@ -195,6 +195,15 @@ router.put('/client-sav-secret',          clientSavController.setSecret);
 router.post('/client-sav-secret/generate', clientSavController.generateSecret);
 
 // ─── Routes statuts ───────────────────────────────────────────────────────────
+// ─── Liste de blocage du formulaire public ───────────────────────────────────
+// Doit rester AVANT les routes génériques '/:id' de la fin de fichier, sinon
+// '/blocklist' serait capté par '/:id'. Authentifié : ces motifs conditionnent
+// ce qui entre dans le SAV, et on trace qui les ajoute.
+router.get('/blocklist',         authMiddleware, savController.getBlocklist);
+router.post('/blocklist',        authMiddleware, savController.createBlockRule);
+router.patch('/blocklist/:id',   authMiddleware, savController.updateBlockRule);
+router.delete('/blocklist/:id',  authMiddleware, savController.deleteBlockRule);
+
 router.get('/statuses',          savController.getStatuses);
 router.post('/statuses',         savController.createStatus);
 router.put('/statuses/:id',      savController.updateStatus_s);
@@ -244,6 +253,9 @@ router.put('/:id/status',              savController.updateStatus);
 router.post('/:id/reply', memoryUpload.array('attachments', MAX_FILES), savController.reply);
 router.post('/:id/inline-image', memoryUpload.single('image'), savController.uploadInlineImage);
 router.post('/:id/merge',              savController.mergeTicket);
+// Classement spam : authentifié, pour tracer l'agent qui classe (spam_marked_by).
+router.post('/:id/spam',               authMiddleware, savController.markSpam);
+router.delete('/:id/spam',             authMiddleware, savController.unmarkSpam);
 router.put('/:id/notes',               savController.updateNotes);
 // Note portée par la fiche client (≠ note du ticket ci-dessus). Trois segments,
 // donc aucun recouvrement avec '/:id/notes'.

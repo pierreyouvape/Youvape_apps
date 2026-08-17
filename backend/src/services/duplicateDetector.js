@@ -24,6 +24,8 @@ async function findDuplicates(ticket) {
      FROM sav_tickets
      WHERE LOWER(customer_email) = $1 AND id != $2 AND order_id = $3
        AND merged_into_id IS NULL
+       -- Un ticket classé spam n'est pas un doublon à signaler à l'agent.
+       AND NOT is_spam
      ORDER BY created_at DESC
      LIMIT 20`,
     params

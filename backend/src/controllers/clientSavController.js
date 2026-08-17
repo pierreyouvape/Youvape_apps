@@ -1,6 +1,7 @@
 const crypto = require('crypto');
 const pool = require('../config/database');
 const savModel = require('../models/savModel');
+const savBlocklistModel = require('../models/savBlocklistModel');
 const appConfigModel = require('../models/appConfigModel');
 const { saveAttachments } = require('../utils/savAttachments');
 const { dispatchNotifications } = require('../services/notificationDispatcher');
@@ -189,7 +190,11 @@ const CLIENT_OWNERSHIP_SQL = `(
   -- produirait un cul-de-sac étiqueté « Résolu », ses messages en double, et une
   -- réponse qui ressusciterait le doublon que l'agent venait de ranger.
   -- Côté agent, rien ne change : cette clause ne sert qu'à l'espace client.
-  AND t.merged_into_id IS NULL`;
+  AND t.merged_into_id IS NULL
+  -- Idem pour un ticket classé spam : il n'a reçu aucun accusé de réception et
+  -- n'attend aucune réponse. S'il s'agissait d'un faux positif, le déclassement
+  -- par un agent le fait réapparaître ici.
+  AND NOT t.is_spam`;
 
 /**
  * Projette un message brut (JSONB du ticket) vers la forme exposée au client.
@@ -612,6 +617,14 @@ const clientSavController = {
 
       const reason = CLIENT_TICKET_REASONS.question;
 
+      // Liste de blocage : expéditeurs déjà identifiés comme spam par un agent.
+      // On CRÉE quand même le ticket, marqué spam d'emblée — un faux positif
+      // reste ainsi récupérable dans la vue Spam, là où un rejet pur et simple
+      // ferait disparaître en silence la demande d'un vrai client. Ce qui saute,
+      // c'est l'accusé de réception : c'est lui l'enjeu, un mail partant de
+      // notre domaine vers une adresse arbitraire non vérifiée.
+      const blockRule = await savBlocklistModel.findMatch({ email, name, body });
+
       // Rattachement à une fiche client existante par email. Introuvable ⇒
       // customer_id NULL : le ticket sera rattaché à la lecture, le jour où la
       // personne se crée un compte avec cette adresse (voir CLIENT_OWNERSHIP_SQL).
@@ -642,6 +655,15 @@ const clientSavController = {
         is_private: false,
         attachments: storedAttachments,
       });
+
+      // Expéditeur bloqué : ni accusé au visiteur, ni notification aux agents —
+      // la boîte SAV n'a pas à sonner pour du spam. La réponse reste un 201
+      // normal : un bot qui verrait une erreur adapterait sa sonde.
+      if (blockRule) {
+        await savModel.setSpam(ticket.id, true, null);
+        console.log(`🚫 [Client SAV] Demande publique classée spam (motif ${blockRule.type}="${blockRule.value}") → ticket #${ticket.id}`);
+        return res.status(201).json({ success: true, ticket_id: ticket.id });
+      }
 
       // Accusé de réception au visiteur + notification agent (fire-and-forget) :
       // un échec d'envoi ne doit pas faire échouer la demande.
