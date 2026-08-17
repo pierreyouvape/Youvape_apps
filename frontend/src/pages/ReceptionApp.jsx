@@ -85,8 +85,8 @@ function Location({ value }) {
   return <span style={{ color: C.greyM, fontSize: 13 }}>—</span>;
 }
 
-function Badge({ children, color, bg }) {
-  return <span style={{ display: 'inline-block', padding: '3px 10px', borderRadius: 999,
+function Badge({ children, color, bg, title }) {
+  return <span title={title} style={{ display: 'inline-block', padding: '3px 10px', borderRadius: 999,
     fontSize: 11.5, fontWeight: 700, color, background: bg, whiteSpace: 'nowrap' }}>{children}</span>;
 }
 function Modal({ title, children, onClose, width = 560 }) {
@@ -253,9 +253,15 @@ function OrderDetail({ order, items, onBack, onStart }) {
                   <Td><Thumb src={it.image_url} alt={it.name} /></Td>
                   <Td>
                     {it.name}
-                    {it.pack_qty > 1 && (
+                    {/* Voir l'écran de comptage : le badge n'apparaît que sur les lignes
+                        comptées à l'unité, où il est la seule trace du conditionnement
+                        fournisseur. Ailleurs les colonnes disent déjà tout. */}
+                    {it.pack_qty > 1 && it.units_per_qty === 1 && (
                       <span style={{ marginLeft: 8 }}>
-                        <Badge color={C.accent} bg={C.accentL}>carton de {it.pack_qty}</Badge>
+                        <Badge color={C.accent} bg={C.accentL}
+                          title={`Conditionnement fournisseur : vendu par ${it.pack_qty}. Cette ligne est comptée à l'unité.`}>
+                          vendu par {it.pack_qty}
+                        </Badge>
                       </span>
                     )}
                   </Td>
@@ -457,9 +463,18 @@ function CountingScreen({ token, order, items, onBack, onReload }) {
                     <Td><Thumb src={it.image_url} alt={it.name} /></Td>
                     <Td>
                       {it.name}
-                      {it.pack_qty > 1 && (
+                      {/* `pack_qty` est le conditionnement CATALOGUE du fournisseur, pas
+                          l'unité de compte de la ligne (celle-ci vit dans units_per_qty).
+                          Quand la ligne est déjà comptée en cartons, les colonnes le
+                          disent : le badge ferait doublon et laisserait croire à une
+                          double multiplication. On ne l'affiche donc que sur les lignes
+                          comptées à l'unité, où il est la seule trace du conditionnement. */}
+                      {it.pack_qty > 1 && it.units_per_qty === 1 && (
                         <span style={{ marginLeft: 8 }}>
-                          <Badge color={C.accent} bg={C.accentL}>carton de {it.pack_qty}</Badge>
+                          <Badge color={C.accent} bg={C.accentL}
+                            title={`Conditionnement fournisseur : vendu par ${it.pack_qty}. Cette ligne est comptée à l'unité.`}>
+                            vendu par {it.pack_qty}
+                          </Badge>
                         </span>
                       )}
                       <div style={{ fontSize: 11.5, color: C.greyT, marginTop: 2 }}>
