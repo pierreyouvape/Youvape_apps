@@ -113,7 +113,7 @@ exports.getOrderDetail = async (req, res) => {
     const itemsResult = await pool.query(`
       SELECT
         poi.id, poi.product_id, poi.supplier_sku, poi.product_name,
-        poi.units_per_qty,
+        poi.units_per_qty, poi.qty_ordered,
         ${QTY_EXPECTED}::int AS qty_expected,
         ${QTY_RECEIVED}::int AS qty_received,
         p.wp_product_id, p.sku, p.post_title, p.image_url, p.stock, p.shelf_location,
@@ -167,6 +167,9 @@ exports.getOrderDetail = async (req, res) => {
         qty_expected: row.qty_expected,
         qty_received: row.qty_received,
         qty_remaining: Math.max(0, (row.qty_expected || 0) - (row.qty_received || 0)),
+        // Décomposition exposée telle quelle pour que l'écran puisse la vérifier :
+        // qty_ordered (packs ou unités selon le fournisseur) × units_per_qty = total.
+        qty_ordered: parseInt(row.qty_ordered) || 0,
         units_per_qty: parseInt(row.units_per_qty) || 1,
         pack_qty: packQty,
         barcodes,

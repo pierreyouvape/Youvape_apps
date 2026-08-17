@@ -702,6 +702,8 @@ const OrdersTab = ({ token }) => {
                         <th>Produit</th>
                         <th>Réf.</th>
                         <th className="text-right">Commandé</th>
+                        <th className="text-right">Par pack</th>
+                        <th className="text-right">Total unités</th>
                         <th className="text-right">Reçu</th>
                         <th className="text-right">Prix unit.</th>
                         <th className="text-right">Total HT</th>
@@ -713,7 +715,7 @@ const OrdersTab = ({ token }) => {
                         if (item.item_type === 'discount') {
                           return (
                             <tr key={item.id} style={{ background: '#f3f4f6' }}>
-                              <td style={{ maxWidth: '300px', fontStyle: 'italic', color: '#6b7280' }} colSpan={4}>
+                              <td style={{ maxWidth: '300px', fontStyle: 'italic', color: '#6b7280' }} colSpan={6}>
                                 {item.product_name}
                               </td>
                               <td className="text-right">—</td>
@@ -736,18 +738,15 @@ const OrdersTab = ({ token }) => {
                               )}
                             </td>
                             <td><code>{item.supplier_sku || item.product_sku || '-'}</code></td>
-                            <td className="text-right">
-                              {formatInt(item.qty_ordered)}
-                              {/* Ligne comptée en packs : rappeler le nombre d'unités
-                                  qui entrent réellement en stock (arrivage) */}
-                              {(item.units_per_qty || 1) > 1 && (
-                                <span
-                                  style={{ marginLeft: '6px', color: '#6b7280', fontSize: '12px' }}
-                                  title={`${item.qty_ordered} pack(s) de ${item.units_per_qty}`}
-                                >
-                                  × {item.units_per_qty} = {formatInt(item.qty_ordered * item.units_per_qty)} u.
-                                </span>
-                              )}
+                            <td className="text-right">{formatInt(item.qty_ordered)}</td>
+                            {/* Décomposition en colonnes : commandé × par pack = total
+                                unités. Permet de vérifier d'un coup d'œil qu'une ligne
+                                comptée en packs entre bien au bon volume en stock. */}
+                            <td className="text-right" style={{ color: (item.units_per_qty || 1) > 1 ? '#E28F00' : '#9ca3af' }}>
+                              {(item.units_per_qty || 1) > 1 ? `× ${item.units_per_qty}` : '—'}
+                            </td>
+                            <td className="text-right" style={{ fontWeight: 600 }}>
+                              {formatInt(item.qty_ordered * (item.units_per_qty || 1))}
                             </td>
                             <td className="text-right">
                               {['shipped', 'partial'].includes(selectedOrder.status) ? (

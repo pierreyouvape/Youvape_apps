@@ -238,7 +238,9 @@ function OrderDetail({ order, items, onBack, onStart }) {
                 <Th>Produit</Th>
                 <Th>Réf. fournisseur</Th>
                 <Th>Emplacement</Th>
-                <Th align="right">Attendu</Th>
+                <Th align="right">Commandé</Th>
+                <Th align="right">Par pack</Th>
+                <Th align="right">Total unités</Th>
                 <Th align="right">Déjà reçu</Th>
                 <Th align="right">Reste</Th>
               </tr>
@@ -257,6 +259,10 @@ function OrderDetail({ order, items, onBack, onStart }) {
                   </Td>
                   <Td color={C.greyT}>{it.supplier_sku || it.sku || '—'}</Td>
                   <Td><Location value={it.shelf_location} /></Td>
+                  <Td align="right">{it.qty_ordered}</Td>
+                  <Td align="right" color={it.units_per_qty > 1 ? C.accent : C.greyM}>
+                    {it.units_per_qty > 1 ? `× ${it.units_per_qty}` : '—'}
+                  </Td>
                   <Td align="right" bold>{it.qty_expected}</Td>
                   <Td align="right" color={it.qty_received > 0 ? C.orange : C.greyM}>{it.qty_received}</Td>
                   <Td align="right" bold color={it.qty_remaining > 0 ? C.dark : C.green}>{it.qty_remaining}</Td>
@@ -459,7 +465,17 @@ function CountingScreen({ token, order, items, onBack, onReload }) {
                       </div>
                     </Td>
                     <Td><Location value={it.shelf_location} /></Td>
-                    <Td align="right" bold>{it.qty_remaining}</Td>
+                    <Td align="right" bold>
+                      {it.qty_remaining}
+                      {/* L'ecran de comptage reste lean : la decomposition est rappelee
+                          sous le total plutot qu'en colonnes, pour ne pas encombrer
+                          l'ecran de travail du scan. */}
+                      {it.units_per_qty > 1 && (
+                        <div style={{ fontSize: 11, fontWeight: 500, color: C.greyT, marginTop: 2 }}>
+                          {it.qty_ordered} × {it.units_per_qty}
+                        </div>
+                      )}
+                    </Td>
                     <Td align="center">
                       <div style={{ display: 'flex', gap: 6, alignItems: 'center', justifyContent: 'center' }}>
                         <Btn small variant="ghost" title="Remettre à zéro"
