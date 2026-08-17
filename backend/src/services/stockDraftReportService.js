@@ -19,6 +19,13 @@ const statusLabel = (s) => STATUS_LABELS[s] || s;
  * Produits avec du stock mais NON publiés (draft, private, pending...).
  * La Corbeille (trash) est exclue (produits déjà supprimés dans WC).
  * Parents 'variable' exclus (pas de stock propre). Coût = COALESCE(computed_cost, wc_cog_cost).
+ *
+ * Deux garde-fous contre les faux positifs (le stock n'est pas "oublié", il est arrêté) :
+ *  - stock_status = 'outofstock' : WooCommerce considère déjà le produit indisponible,
+ *    le `stock` restant est un résidu (cas fréquent des bundles woosb épuisés) ;
+ *  - bundle woosb dont au moins un composant est absent / non publié / hors stock :
+ *    le pack est en brouillon parce qu'il n'est plus assemblable (composant arrêté),
+ *    et son stock n'est de toute façon pas du stock propre mais celui des composants.
  */
 async function fetchDraftStockProducts() {
   const { rows } = await pool.query(`
@@ -37,6 +44,19 @@ async function fetchDraftStockProducts() {
     WHERE p.stock > 0
       AND p.post_status NOT IN ('publish', 'trash')
       AND (p.product_type IS NULL OR p.product_type <> 'variable')
+      AND COALESCE(p.stock_status, 'instock') <> 'outofstock'
+      AND NOT (
+        p.product_type = 'woosb'
+        AND jsonb_typeof(p.woosb_ids) = 'array'
+        AND EXISTS (
+          SELECT 1
+          FROM jsonb_array_elements(p.woosb_ids) c
+          LEFT JOIN products cp ON cp.wp_product_id = (c->>'id')::int
+          WHERE cp.id IS NULL
+             OR cp.post_status <> 'publish'
+             OR COALESCE(cp.stock_status, 'instock') = 'outofstock'
+        )
+      )
     ORDER BY value_ht DESC, p.stock DESC
   `);
   return rows;
@@ -111,7 +131,7 @@ function buildHtml(rows, dateStr, wpUrl) {
         </tr>
       </tfoot>
     </table>
-    <p style="color:#999;font-size:11px;margin-top:14px">Rapport automatique Youvape Apps — chaque lundi 13h. Produits avec stock &gt; 0 en statut brouillon / privé / en attente (Corbeille exclue). Clique sur « Éditer » pour ouvrir la fiche dans WooCommerce.</p>
+    <p style="color:#999;font-size:11px;margin-top:14px">Rapport automatique Youvape Apps — chaque lundi 13h. Produits avec stock &gt; 0 en statut brouillon / privé / en attente (Corbeille exclue). Sont ignorés les produits déjà marqués « hors stock » dans WooCommerce et les packs dont un composant est arrêté. Clique sur « Éditer » pour ouvrir la fiche dans WooCommerce.</p>
   </div>`;
 }
 
