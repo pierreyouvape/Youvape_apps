@@ -43,7 +43,7 @@ export default function BoutiqueApp() {
 
   return (
     <AppShell currentPath={currentPath}>
-      <div style={{ padding: '24px 32px', maxWidth: 1400, margin: '0 auto' }}>
+      <div style={{ flex: 1, minWidth: 0, padding: '24px 32px', maxWidth: 1400, margin: '0 auto' }}>
         {/* En-tête boutique — couleur dédiée pour distinguer les deux magasins */}
         <div style={{
           display: 'flex', alignItems: 'center', gap: 14, marginBottom: 20,

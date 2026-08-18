@@ -2,7 +2,10 @@
  * Boutiques physiques (Nextore) — synchro + requêtes.
  *
  * Cloisonné par warehouse_id (1 = Montpellier, 2 = Castelnau). Catalogue global,
- * stock + historique par boutique. Voir docs/nextore-api.md pour les pièges API.
+ * stock par boutique. L'historique est un JOURNAL DES CHANGEMENTS
+ * (nextore_stock_history) : une ligne seulement quand le stock d'un produit
+ * change → on reconstruit le stock à n'importe quel instant T. Voir
+ * docs/nextore-api.md pour les pièges API.
  */
 
 const pool = require('../config/database');
@@ -23,27 +26,18 @@ function num(v) {
 }
 function ts(v) {
   const c = s(v);
-  // Nextore renvoie '0000-00-00 00:00:00' pour "jamais"
   if (c === null || c.startsWith('0000-00-00')) return null;
   return c;
 }
 
-/**
- * Upsert en masse, par lots (Postgres limite ~65535 paramètres par requête).
- * @param {string} table
- * @param {string[]} cols  colonnes insérées
- * @param {string[]} conflictKeys  colonnes du PK / ON CONFLICT
- * @param {Array<Array>} rows  valeurs alignées sur cols
- */
+/** Upsert en masse, par lots (Postgres limite ~65535 paramètres par requête). */
 async function bulkUpsert(client, table, cols, conflictKeys, rows) {
   if (!rows.length) return 0;
   const updateCols = cols.filter((c) => !conflictKeys.includes(c));
   const setClause = updateCols.map((c) => `${c} = EXCLUDED.${c}`).join(', ');
   const perRow = cols.length;
-  const maxParams = 60000;
-  const chunkSize = Math.max(1, Math.floor(maxParams / perRow));
+  const chunkSize = Math.max(1, Math.floor(60000 / perRow));
   let count = 0;
-
   for (let i = 0; i < rows.length; i += chunkSize) {
     const chunk = rows.slice(i, i + chunkSize);
     const values = [];
@@ -64,8 +58,17 @@ async function bulkUpsert(client, table, cols, conflictKeys, rows) {
   return count;
 }
 
-// --- Synchro complète (catalogue + stock 2 boutiques + snapshot) -----------
-async function syncAll() {
+async function setConfig(client, key) {
+  await client.query(
+    `INSERT INTO app_config (config_key, config_value, updated_at)
+     VALUES ($1, NOW()::text, NOW())
+     ON CONFLICT (config_key) DO UPDATE SET config_value = NOW()::text, updated_at = NOW()`,
+    [key]
+  );
+}
+
+// --- Synchro CATALOGUE (produits + catégories, global) ---------------------
+async function syncCatalog() {
   const started = Date.now();
   const [products, categories, subcategories] = await Promise.all([
     api.getProducts(),
@@ -77,70 +80,33 @@ async function syncAll() {
   try {
     await client.query('BEGIN');
 
-    // Catégories
     if (Array.isArray(categories)) {
-      await bulkUpsert(
-        client, 'nextore_categories',
-        ['id', 'code', 'name'], ['id'],
-        categories.map((c) => [s(c.id), s(c.code), s(c.name)])
-      );
+      await bulkUpsert(client, 'nextore_categories', ['id', 'code', 'name'], ['id'],
+        categories.map((c) => [s(c.id), s(c.code), s(c.name)]));
     }
     if (Array.isArray(subcategories)) {
-      await bulkUpsert(
-        client, 'nextore_subcategories',
-        ['id', 'category_id', 'code', 'name'], ['id'],
-        subcategories.map((c) => [s(c.id), s(c.category_id), s(c.code), s(c.name)])
-      );
+      await bulkUpsert(client, 'nextore_subcategories', ['id', 'category_id', 'code', 'name'], ['id'],
+        subcategories.map((c) => [s(c.id), s(c.category_id), s(c.code), s(c.name)]));
     }
 
-    // Produits
     const productRows = (products || []).map((p) => [
       s(p.id), s(p.code), s(p.name), s(p.unit), num(p.cost), num(p.price),
       s(p.category_id), s(p.subcategory_id), s(p.subsubcategory_id),
       s(p.barcode), s(p.tax_rate), s(p.type), s(p.status), ts(p.date_update),
     ]);
-    const nbProducts = await bulkUpsert(
-      client, 'nextore_products',
+    const nbProducts = await bulkUpsert(client, 'nextore_products',
       ['product_id', 'code', 'name', 'unit', 'cost', 'price', 'category_id',
        'subcategory_id', 'subsubcategory_id', 'barcode', 'tax_rate', 'type',
        'status', 'date_update'],
-      ['product_id'], productRows
-    );
+      ['product_id'], productRows);
 
-    // Stock par boutique + snapshot du jour (date Europe/Paris)
-    const stockByWh = {};
-    for (const wh of WAREHOUSES) {
-      const stock = await api.getWarehouseStock(wh.id);
-      const rows = (stock || []).map((r) => [s(r.product_id), wh.id, num(r.stock) ?? 0, s(r.rack)]);
-      await bulkUpsert(
-        client, 'nextore_stock',
-        ['product_id', 'warehouse_id', 'stock', 'rack'],
-        ['product_id', 'warehouse_id'], rows
-      );
-      stockByWh[wh.id] = rows.length;
-
-      // Snapshot : recopie l'état courant de la boutique à la date Paris du jour
-      await client.query(
-        `INSERT INTO nextore_stock_snapshots (snapshot_date, warehouse_id, product_id, stock)
-         SELECT (NOW() AT TIME ZONE 'Europe/Paris')::date, warehouse_id, product_id, stock
-         FROM nextore_stock WHERE warehouse_id = $1
-         ON CONFLICT (snapshot_date, warehouse_id, product_id)
-         DO UPDATE SET stock = EXCLUDED.stock`,
-        [wh.id]
-      );
-    }
-
-    await client.query(
-      `INSERT INTO app_config (config_key, config_value, updated_at)
-       VALUES ('nextore_last_sync_at', NOW()::text, NOW())
-       ON CONFLICT (config_key) DO UPDATE SET config_value = NOW()::text, updated_at = NOW()`
-    );
-
+    await setConfig(client, 'nextore_last_catalog_sync_at');
+    await setConfig(client, 'nextore_last_sync_at');
     await client.query('COMMIT');
     return {
       products: nbProducts,
       categories: Array.isArray(categories) ? categories.length : 0,
-      stock: stockByWh,
+      subcategories: Array.isArray(subcategories) ? subcategories.length : 0,
       durationMs: Date.now() - started,
     };
   } catch (err) {
@@ -151,11 +117,68 @@ async function syncAll() {
   }
 }
 
+// --- Synchro STOCK (par boutique) + journal des changements ----------------
+async function syncStock() {
+  const started = Date.now();
+  const stockByWh = {};
+
+  // On récupère hors transaction (appels réseau), puis on écrit par boutique.
+  const fetched = {};
+  for (const wh of WAREHOUSES) {
+    fetched[wh.id] = await api.getWarehouseStock(wh.id);
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const changes = {};
+
+    for (const wh of WAREHOUSES) {
+      const rows = (fetched[wh.id] || []).map((r) => [s(r.product_id), wh.id, num(r.stock) ?? 0, s(r.rack)]);
+      await bulkUpsert(client, 'nextore_stock',
+        ['product_id', 'warehouse_id', 'stock', 'rack'],
+        ['product_id', 'warehouse_id'], rows);
+      stockByWh[wh.id] = rows.length;
+
+      // Journal : on n'insère un point que si le stock diffère du dernier connu.
+      // Premier passage (historique vide) → baseline complète.
+      const res = await client.query(
+        `INSERT INTO nextore_stock_history (captured_at, warehouse_id, product_id, stock)
+         SELECT NOW(), st.warehouse_id, st.product_id, st.stock
+         FROM nextore_stock st
+         LEFT JOIN LATERAL (
+           SELECT h.stock AS last_stock
+           FROM nextore_stock_history h
+           WHERE h.warehouse_id = st.warehouse_id AND h.product_id = st.product_id
+           ORDER BY h.captured_at DESC LIMIT 1
+         ) last ON true
+         WHERE st.warehouse_id = $1
+           AND (last.last_stock IS NULL OR last.last_stock <> st.stock)`,
+        [wh.id]
+      );
+      changes[wh.id] = res.rowCount;
+    }
+
+    await setConfig(client, 'nextore_last_stock_sync_at');
+    await setConfig(client, 'nextore_last_sync_at');
+    await client.query('COMMIT');
+    return { stock: stockByWh, changes, durationMs: Date.now() - started };
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+// --- Synchro complète (catalogue puis stock) -------------------------------
+async function syncAll() {
+  const cat = await syncCatalog();
+  const stk = await syncStock();
+  return { ...cat, stock: stk.stock, changes: stk.changes, durationMs: cat.durationMs + stk.durationMs };
+}
+
 // --- Relevé de stock d'une boutique ----------------------------------------
-/**
- * @param {number} warehouseId
- * @param {object} opts { search, onlyInStock }
- */
 async function getStockDashboard(warehouseId, opts = {}) {
   const params = [warehouseId];
   const where = ['s.warehouse_id = $1'];
@@ -185,11 +208,12 @@ async function getStockDashboard(warehouseId, opts = {}) {
      JOIN nextore_products p ON p.product_id = s.product_id
      LEFT JOIN nextore_categories c ON c.id = p.category_id
      LEFT JOIN LATERAL (
-        SELECT stock FROM nextore_stock_snapshots ns
-        WHERE ns.warehouse_id = s.warehouse_id
-          AND ns.product_id = s.product_id
-          AND ns.snapshot_date < (NOW() AT TIME ZONE 'Europe/Paris')::date
-        ORDER BY ns.snapshot_date DESC LIMIT 1
+        -- dernier état connu AVANT le début de la journée Paris = stock d'hier soir
+        SELECT h.stock FROM nextore_stock_history h
+        WHERE h.warehouse_id = s.warehouse_id
+          AND h.product_id = s.product_id
+          AND h.captured_at < date_trunc('day', NOW() AT TIME ZONE 'Europe/Paris') AT TIME ZONE 'Europe/Paris'
+        ORDER BY h.captured_at DESC LIMIT 1
      ) prev ON true
      WHERE ${where.join(' AND ')}
      ORDER BY p.name ASC`,
@@ -198,7 +222,6 @@ async function getStockDashboard(warehouseId, opts = {}) {
   return rows;
 }
 
-/** Résumé chiffré pour l'en-tête du relevé. */
 async function getStockSummary(warehouseId) {
   const { rows } = await pool.query(
     `SELECT
@@ -216,6 +239,22 @@ async function getStockSummary(warehouseId) {
   return rows[0];
 }
 
+/**
+ * Historique d'un produit dans une boutique (points de changement, plus récent
+ * d'abord). Permet de tracer l'évolution du stock dans le temps.
+ */
+async function getProductStockHistory(warehouseId, productId, limit = 200) {
+  const { rows } = await pool.query(
+    `SELECT captured_at, stock::float AS stock
+     FROM nextore_stock_history
+     WHERE warehouse_id = $1 AND product_id = $2
+     ORDER BY captured_at DESC
+     LIMIT $3`,
+    [warehouseId, productId, limit]
+  );
+  return rows;
+}
+
 async function getLastSyncAt() {
   const { rows } = await pool.query(
     "SELECT config_value FROM app_config WHERE config_key = 'nextore_last_sync_at'"
@@ -224,8 +263,11 @@ async function getLastSyncAt() {
 }
 
 module.exports = {
+  syncCatalog,
+  syncStock,
   syncAll,
   getStockDashboard,
   getStockSummary,
+  getProductStockHistory,
   getLastSyncAt,
 };

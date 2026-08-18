@@ -678,38 +678,68 @@ const setupBrandMapCron = () => {
 };
 
 
-// ==================== BOUTIQUES NEXTORE (sync + snapshot stock) ====================
-// Nextore ne fournit pas d'historique de stock : on synchronise le catalogue et
-// le stock des deux boutiques chaque soir et on ecrit le snapshot du jour, qui
-// construit l'historique dont les modules suivants (besoins, comptage) ont besoin.
+// ==================== BOUTIQUES NEXTORE (catalogue + stock) ====================
+// Nextore ne fournit pas d'historique de stock : on l'alimente nous-memes via un
+// journal des changements (nextore_stock_history). Deux crons decouples :
+//  - Catalogue (6 Mo, change peu)      : toutes les 30 min, 8h-20h
+//  - Stock (leger, alimente l'historique) : toutes les 10 min pendant l'ouverture 9h30-19h
+//  - Passage complet de securite chaque nuit a 23h50
 
 const nextoreModel = require('../models/nextoreModel');
 
-let nextoreSyncJob = null;
+let nextoreCatalogJob = null;
+let nextoreStockJobs = [];
+let nextoreNightlyJob = null;
 
-const runNextoreSync = async () => {
+const runNextoreCatalog = async () => {
   try {
-    const r = await nextoreModel.syncAll();
-    console.log(`Nextore sync: ${r.products} produits, stock MTP=${r.stock[1]} CAST=${r.stock[2]} (${r.durationMs} ms)`);
+    const r = await nextoreModel.syncCatalog();
+    console.log(`Nextore catalogue: ${r.products} produits (${r.durationMs} ms)`);
   } catch (error) {
-    console.error('Erreur cron Nextore sync:', error.message);
-    sendAlert(
-      'Cron boutiques Nextore: echec',
-      `La synchro quotidienne du catalogue et du stock des boutiques a echoue.\n\nErreur: ${error.message}`
-    );
+    console.error('Erreur cron Nextore catalogue:', error.message);
+    sendAlert('Cron boutiques Nextore (catalogue): echec',
+      `La synchro du catalogue des boutiques a echoue.\n\nErreur: ${error.message}`);
   }
 };
 
-const setupNextoreSyncCron = () => {
-  if (nextoreSyncJob) {
-    nextoreSyncJob.stop();
-    nextoreSyncJob = null;
+const runNextoreStock = async () => {
+  try {
+    const r = await nextoreModel.syncStock();
+    console.log(`Nextore stock: MTP ${r.changes[1]} chg / CAST ${r.changes[2]} chg (${r.durationMs} ms)`);
+  } catch (error) {
+    console.error('Erreur cron Nextore stock:', error.message);
   }
-  // Tous les jours a 23h50 (Europe/Paris) : capture l'etat de fin de journee.
-  nextoreSyncJob = cron.schedule('50 23 * * *', runNextoreSync, {
-    timezone: 'Europe/Paris'
-  });
-  console.log('Cron boutiques Nextore configure: tous les jours a 23h50 (Europe/Paris)');
+};
+
+const runNextoreNightly = async () => {
+  try {
+    const r = await nextoreModel.syncAll();
+    console.log(`Nextore complet (nuit): ${r.products} produits, stock MTP=${r.stock[1]} CAST=${r.stock[2]} (${r.durationMs} ms)`);
+  } catch (error) {
+    console.error('Erreur cron Nextore complet:', error.message);
+    sendAlert('Cron boutiques Nextore (complet): echec',
+      `La synchro complete nocturne des boutiques a echoue.\n\nErreur: ${error.message}`);
+  }
+};
+
+const setupNextoreCrons = () => {
+  nextoreCatalogJob?.stop();
+  nextoreStockJobs.forEach((j) => j.stop());
+  nextoreNightlyJob?.stop();
+
+  const tz = { timezone: 'Europe/Paris' };
+  // Catalogue : toutes les 30 min, 8h-20h
+  nextoreCatalogJob = cron.schedule('*/30 8-20 * * *', runNextoreCatalog, tz);
+  // Stock : toutes les 10 min pendant l'ouverture 9h30 -> 19h00
+  nextoreStockJobs = [
+    cron.schedule('30,40,50 9 * * *', runNextoreStock, tz),  // 9h30, 9h40, 9h50
+    cron.schedule('*/10 10-18 * * *', runNextoreStock, tz),  // 10h00 -> 18h50
+    cron.schedule('0 19 * * *',       runNextoreStock, tz),  // 19h00
+  ];
+  // Passage complet de securite chaque nuit
+  nextoreNightlyJob = cron.schedule('50 23 * * *', runNextoreNightly, tz);
+
+  console.log('Crons boutiques Nextore configures: catalogue */30 8-20h, stock */10 9h30-19h, complet 23h50 (Europe/Paris)');
 };
 
 
@@ -730,8 +760,10 @@ module.exports = {
   setupDraftStockReportCron,
   setupCompetitorMonitorCron,
   setupBrandMapCron,
-  setupNextoreSyncCron,
+  setupNextoreCrons,
   runProductDbSyncJob,
   runBrandMapJob,
-  runNextoreSync,
+  runNextoreCatalog,
+  runNextoreStock,
+  runNextoreNightly,
 };

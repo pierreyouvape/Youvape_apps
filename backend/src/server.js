@@ -40,7 +40,7 @@ const inscritsRoutes = require('./routes/inscritsRoutes');
 const promoRoutes = require('./routes/promoRoutes');
 const nextoreRoutes = require('./routes/nextoreRoutes');
 const authMiddleware = require('./middleware/authMiddleware');
-const { setupCron, setupBmsCron, setupComputedCostCron, setupBmsBarcodeCron, setupBmsShelfLocationCron, setupStockResyncCron, setupSavAutomationsCron, setupProductDbSyncCron, setupBmsTagRetryCron, setupReportEmailCron, setupStockValuationSnapshotCron, setupDraftStockReportCron, setupCompetitorMonitorCron, setupBrandMapCron, setupNextoreSyncCron } = require('./services/cronService');
+const { setupCron, setupBmsCron, setupComputedCostCron, setupBmsBarcodeCron, setupBmsShelfLocationCron, setupStockResyncCron, setupSavAutomationsCron, setupProductDbSyncCron, setupBmsTagRetryCron, setupReportEmailCron, setupStockValuationSnapshotCron, setupDraftStockReportCron, setupCompetitorMonitorCron, setupBrandMapCron, setupNextoreCrons } = require('./services/cronService');
 const rewardService = require('./services/rewardService');
 const emailService = require('./services/emailService');
 const wcSyncService = require('./services/wcSyncService');
@@ -144,8 +144,8 @@ app.listen(PORT, async () => {
 
   setupCompetitorMonitorCron();
 
-  // Initialiser le cron boutiques Nextore (sync catalogue + stock + snapshot) - tous les jours a 23h50
-  setupNextoreSyncCron();
+  // Initialiser les crons boutiques Nextore (catalogue */30 8-20h, stock */10 9h30-19h, complet 23h50)
+  setupNextoreCrons();
 
   // Recalcul initial PMP FIFO au demarrage (apres 60s)
   setTimeout(async () => {

@@ -48,4 +48,18 @@ async function getStock(req, res) {
   }
 }
 
-module.exports = { postSync, getStock };
+// GET /api/nextore/:shop/stock/:productId/history — évolution du stock d'un produit
+async function getStockHistory(req, res) {
+  const wh = getShopOr400(req, res);
+  if (!wh) return;
+  try {
+    const limit = Math.min(Number(req.query.limit) || 200, 1000);
+    const rows = await nextoreModel.getProductStockHistory(wh.id, req.params.productId, limit);
+    res.json({ warehouse: wh, product_id: req.params.productId, history: rows });
+  } catch (err) {
+    console.error('Nextore getStockHistory:', err);
+    res.status(500).json({ error: err.message || 'Erreur récupération historique' });
+  }
+}
+
+module.exports = { postSync, getStock, getStockHistory };
