@@ -57,4 +57,5 @@ module.exports = {
 
   getWarehouses: () => nextoreGet('/warehouses'),
   getTaxRates: () => nextoreGet('/tax_rates'),
+  getSuppliers: () => nextoreGet('/suppliers'),
 };
