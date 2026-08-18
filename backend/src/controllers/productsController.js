@@ -558,7 +558,7 @@ exports.getCatalogExport = async (req, res) => {
           '',
           p.post_title,
           p.sku || '',
-          'simple',
+          p.product_type === 'woosb' ? 'pack' : 'simple',
           p.price != null ? parseFloat(p.price) : '',
           p.discounted_price != null ? parseFloat(p.discounted_price) : '',
           p.cost_price != null ? parseFloat(p.cost_price) : '',

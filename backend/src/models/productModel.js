@@ -88,23 +88,30 @@ async function getReorderIdsSql(stockTab) {
 }
 
 /**
+ * Types affichés comme une ligne autonome dans le catalogue : ils portent leur propre
+ * stock / prix / coût. Un parent 'variable' en est exclu car il agrège ses déclinaisons ;
+ * un pack (woosb) se comporte lui exactement comme un produit simple.
+ */
+const CATALOG_STANDALONE = `p.product_type IN ('simple', 'woosb')`;
+
+/**
  * Expressions SQL de tri pour le catalogue : pour un produit variable,
  * on agrège (somme/moyenne) sur ses variations publiées.
  */
 const CATALOG_SORT_EXPRESSIONS = {
-  price: `(CASE WHEN p.product_type = 'simple' THEN p.price
+  price: `(CASE WHEN ${CATALOG_STANDALONE} THEN p.price
     ELSE (SELECT AVG(v.price) FROM products v WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation' AND v.post_status = 'publish') END)`,
-  discounted_price: `(CASE WHEN p.product_type = 'simple' THEN p.discounted_price
+  discounted_price: `(CASE WHEN ${CATALOG_STANDALONE} THEN p.discounted_price
     ELSE (SELECT AVG(v.discounted_price) FROM products v WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation' AND v.post_status = 'publish') END)`,
-  cost_price: `(CASE WHEN p.product_type = 'simple' THEN COALESCE(p.computed_cost, p.wc_cog_cost)
+  cost_price: `(CASE WHEN ${CATALOG_STANDALONE} THEN COALESCE(p.computed_cost, p.wc_cog_cost)
     ELSE (SELECT AVG(COALESCE(v.computed_cost, v.wc_cog_cost)) FROM products v WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation' AND v.post_status = 'publish') END)`,
-  margin: `(CASE WHEN p.product_type = 'simple'
+  margin: `(CASE WHEN ${CATALOG_STANDALONE}
       THEN (COALESCE(p.discounted_price, p.price) - COALESCE(p.computed_cost, p.wc_cog_cost)) / NULLIF(COALESCE(p.discounted_price, p.price), 0)
     ELSE (SELECT AVG((COALESCE(v.discounted_price, v.price) - COALESCE(v.computed_cost, v.wc_cog_cost)) / NULLIF(COALESCE(v.discounted_price, v.price), 0))
       FROM products v WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation' AND v.post_status = 'publish') END)`,
-  weight: `(CASE WHEN p.product_type = 'simple' THEN p.weight
+  weight: `(CASE WHEN ${CATALOG_STANDALONE} THEN p.weight
     ELSE (SELECT AVG(v.weight) FROM products v WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation' AND v.post_status = 'publish') END)`,
-  stock: `(CASE WHEN p.product_type = 'simple' THEN COALESCE(p.stock, 0)
+  stock: `(CASE WHEN ${CATALOG_STANDALONE} THEN COALESCE(p.stock, 0)
     ELSE (SELECT COALESCE(SUM(v.stock), 0) FROM products v WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation' AND v.post_status = 'publish') END)`,
   incoming_qty: `(SELECT COALESCE(SUM((poi.qty_ordered - poi.qty_received) * COALESCE(poi.units_per_qty, 1)), 0)
     FROM purchase_order_items poi
@@ -117,7 +124,7 @@ const CATALOG_SORT_EXPRESSIONS = {
       ))`,
   // Emplacement de rangement (entrepot principal), synchronise chaque nuit depuis BMS.
   // Un parent variable n'a pas de stock propre : on prend le 1er emplacement de ses declinaisons.
-  shelf_location: `(CASE WHEN p.product_type = 'simple' THEN NULLIF(p.shelf_location, '')
+  shelf_location: `(CASE WHEN ${CATALOG_STANDALONE} THEN NULLIF(p.shelf_location, '')
     ELSE (SELECT MIN(NULLIF(v.shelf_location, '')) FROM products v WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation' AND v.post_status = 'publish') END)`,
   sales_30d: `(SELECT COALESCE(SUM(oi.qty), 0)
     FROM order_items oi
@@ -889,14 +896,14 @@ class ProductModel {
       SELECT type, value, parent FROM (
         SELECT 'brand' as type, brand as value, NULL::text as parent
         FROM products
-        WHERE brand IS NOT NULL AND product_type IN ('simple','variable') AND post_status = 'publish'
+        WHERE brand IS NOT NULL AND product_type IN ('simple','variable','woosb') AND post_status = 'publish'
         GROUP BY brand
 
         UNION ALL
 
         SELECT 'sub_brand' as type, sub_brand as value, brand as parent
         FROM products
-        WHERE sub_brand IS NOT NULL AND product_type IN ('simple','variable') AND post_status = 'publish'
+        WHERE sub_brand IS NOT NULL AND product_type IN ('simple','variable','woosb') AND post_status = 'publish'
         GROUP BY sub_brand, brand
       ) t
       ORDER BY
@@ -929,12 +936,12 @@ class ProductModel {
     const reorderIdsSql = await getReorderIdsSql(stockTab);
     let whereClause = `
       WHERE p.post_status = 'publish'
-        AND p.product_type IN ('simple', 'variable')
+        AND p.product_type IN ('simple', 'variable', 'woosb')
     `;
     if (trackStockOnly) {
       whereClause += `
         AND (
-          (p.product_type = 'simple' AND p.track_stock = true)
+          (${CATALOG_STANDALONE} AND p.track_stock = true)
           OR (p.product_type = 'variable' AND EXISTS (
             SELECT 1 FROM products v
             WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation' AND v.track_stock = true
@@ -945,7 +952,7 @@ class ProductModel {
     if (onlyHidden) {
       whereClause += `
         AND (
-          (p.product_type = 'simple' AND p.track_stock = false)
+          (${CATALOG_STANDALONE} AND p.track_stock = false)
           OR (p.product_type = 'variable' AND EXISTS (
             SELECT 1 FROM products v
             WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation' AND v.track_stock = false
@@ -958,7 +965,7 @@ class ProductModel {
     if (stockCond) {
       whereClause += `
         AND (
-          (p.product_type = 'simple' AND ${stockCond})
+          (${CATALOG_STANDALONE} AND ${stockCond})
           OR (p.product_type = 'variable' AND EXISTS (
             SELECT 1 FROM products v
             WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation'
@@ -1198,12 +1205,12 @@ class ProductModel {
     const reorderIdsSql = await getReorderIdsSql(stockTab);
     let whereClause = `
       WHERE p.post_status = 'publish'
-        AND p.product_type IN ('simple', 'variable')
+        AND p.product_type IN ('simple', 'variable', 'woosb')
     `;
     if (trackStockOnly) {
       whereClause += `
         AND (
-          (p.product_type = 'simple' AND p.track_stock = true)
+          (${CATALOG_STANDALONE} AND p.track_stock = true)
           OR (p.product_type = 'variable' AND EXISTS (
             SELECT 1 FROM products v
             WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation' AND v.track_stock = true
@@ -1214,7 +1221,7 @@ class ProductModel {
     if (onlyHidden) {
       whereClause += `
         AND (
-          (p.product_type = 'simple' AND p.track_stock = false)
+          (${CATALOG_STANDALONE} AND p.track_stock = false)
           OR (p.product_type = 'variable' AND EXISTS (
             SELECT 1 FROM products v
             WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation' AND v.track_stock = false
@@ -1227,7 +1234,7 @@ class ProductModel {
     if (stockCond) {
       whereClause += `
         AND (
-          (p.product_type = 'simple' AND ${stockCond})
+          (${CATALOG_STANDALONE} AND ${stockCond})
           OR (p.product_type = 'variable' AND EXISTS (
             SELECT 1 FROM products v
             WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation'
@@ -1301,7 +1308,7 @@ class ProductModel {
       SELECT
         COUNT(*)::int as total,
         COALESCE(SUM(
-          CASE WHEN p.product_type = 'simple' THEN 1
+          CASE WHEN ${CATALOG_STANDALONE} THEN 1
             ELSE (
               SELECT COUNT(*) FROM products v
               WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation'
@@ -1312,7 +1319,10 @@ class ProductModel {
           END
         ), 0)::int as total_with_variations,
         COALESCE(SUM(
-          CASE WHEN p.product_type = 'simple' THEN
+          -- Un pack (woosb) ne compte pas dans la valeur du stock : son computed_cost
+          -- est la somme des couts de ses composants, deja valorises sur leur ligne.
+          CASE WHEN p.product_type = 'woosb' THEN 0
+          WHEN p.product_type = 'simple' THEN
             GREATEST(COALESCE(p.stock, 0), 0) * COALESCE(p.computed_cost, p.wc_cog_cost, 0)
           ELSE (
             SELECT COALESCE(SUM(GREATEST(COALESCE(v.stock, 0), 0) * COALESCE(v.computed_cost, v.wc_cog_cost, 0)), 0)
