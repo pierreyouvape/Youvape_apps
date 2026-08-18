@@ -273,6 +273,15 @@ export const ChevronIcon = ({ size = 14, color = 'currentColor', open = false })
   </svg>
 );
 
+export const Boutique = (props) => (
+  <Base {...props}>
+    <path d="M4 10 L5.2 4.5 H18.8 L20 10" />
+    <path d="M4 10 H20 V20 H4 Z" />
+    <path d="M4 10 C5.3 12 7 12 8 10 C9 12 10.7 12 12 10 C13.3 12 15 12 16 10 C17 12 18.7 12 20 10" />
+    <path d="M9.5 20 V15 H14.5 V20" />
+  </Base>
+);
+
 export const APPS = [
   { key: 'customers', path: '/customers', label: 'Clients',                   Icon: Customers, color: '#0EA5A5' },
   { key: 'reviews',   path: '/reviews',   label: 'Avis Garantis',            Icon: Reviews,   color: '#0071EB' },
@@ -295,6 +304,8 @@ export const APPS = [
   { key: 'veille', path: '/veille', label: 'Veille concurrentielle', Icon: Veille, color: '#135E84' },
   { key: 'inscrits', path: '/inscrits', label: 'Inscrits sans commande', Icon: Inscrits, color: '#0EA5A5' },
   { key: 'promos', path: '/promos', label: 'Actions Promos', Icon: Promos, color: '#DB2777' },
+  { key: 'boutique-mtp',  path: '/boutique/montpellier', label: 'Boutique Montpellier', Icon: Boutique, color: '#0D9488' },
+  { key: 'boutique-cast', path: '/boutique/castelnau',   label: 'Boutique Castelnau',   Icon: Boutique, color: '#C2410C' },
 ];
 
 /* ─── PILES D'APPS (dossiers du launcher) ──────────────────

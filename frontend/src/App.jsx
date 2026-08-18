@@ -41,6 +41,7 @@ import TransporteursApp from './pages/TransporteursApp';
 import VeilleApp from './pages/VeilleApp';
 import InscritsApp from './pages/InscritsApp';
 import PromosApp from './pages/PromosApp';
+import BoutiqueApp from './pages/BoutiqueApp';
 import PromoDetail from './pages/PromoDetail';
 import PrivateRoute from './components/PrivateRoute';
 
@@ -70,6 +71,7 @@ const PAGE_TITLES = {
   '/veille': 'Veille concurrentielle',
   '/inscrits': 'Inscrits sans commande',
   '/promos': 'Actions Promos',
+  '/boutique': 'Boutique',
   '/brands': 'Marque',
   '/sub-brands': 'Sous-marque',
   '/categories': 'Categorie',
@@ -414,6 +416,14 @@ function App() {
             element={
               <PrivateRoute>
                 <PromoDetail />
+              </PrivateRoute>
+            }
+          />
+          <Route
+            path="/boutique/:shop"
+            element={
+              <PrivateRoute>
+                <BoutiqueApp />
               </PrivateRoute>
             }
           />

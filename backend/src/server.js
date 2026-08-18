@@ -38,8 +38,9 @@ const competitorRoutes = require('./routes/competitorRoutes');
 const receptionRoutes = require('./routes/receptionRoutes');
 const inscritsRoutes = require('./routes/inscritsRoutes');
 const promoRoutes = require('./routes/promoRoutes');
+const nextoreRoutes = require('./routes/nextoreRoutes');
 const authMiddleware = require('./middleware/authMiddleware');
-const { setupCron, setupBmsCron, setupComputedCostCron, setupBmsBarcodeCron, setupBmsShelfLocationCron, setupStockResyncCron, setupSavAutomationsCron, setupProductDbSyncCron, setupBmsTagRetryCron, setupReportEmailCron, setupStockValuationSnapshotCron, setupDraftStockReportCron, setupCompetitorMonitorCron, setupBrandMapCron } = require('./services/cronService');
+const { setupCron, setupBmsCron, setupComputedCostCron, setupBmsBarcodeCron, setupBmsShelfLocationCron, setupStockResyncCron, setupSavAutomationsCron, setupProductDbSyncCron, setupBmsTagRetryCron, setupReportEmailCron, setupStockValuationSnapshotCron, setupDraftStockReportCron, setupCompetitorMonitorCron, setupBrandMapCron, setupNextoreSyncCron } = require('./services/cronService');
 const rewardService = require('./services/rewardService');
 const emailService = require('./services/emailService');
 const wcSyncService = require('./services/wcSyncService');
@@ -97,6 +98,7 @@ app.use('/api/competitors', authMiddleware, competitorRoutes); // Veille concurr
 app.use('/api/reception', receptionRoutes); // Réception marchandises (auth + permission dans le routeur)
 app.use('/api/inscrits', authMiddleware, inscritsRoutes); // Inscrits sans commande (par jour)
 app.use('/api/promos', authMiddleware, promoRoutes); // Actions Promos (préparation d'opérations)
+app.use('/api/nextore', nextoreRoutes); // Boutiques physiques Nextore (auth + permission dans le routeur)
 
 // Start server
 app.listen(PORT, async () => {
@@ -141,6 +143,9 @@ app.listen(PORT, async () => {
   setupDraftStockReportCron();
 
   setupCompetitorMonitorCron();
+
+  // Initialiser le cron boutiques Nextore (sync catalogue + stock + snapshot) - tous les jours a 23h50
+  setupNextoreSyncCron();
 
   // Recalcul initial PMP FIFO au demarrage (apres 60s)
   setTimeout(async () => {

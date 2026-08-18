@@ -678,6 +678,41 @@ const setupBrandMapCron = () => {
 };
 
 
+// ==================== BOUTIQUES NEXTORE (sync + snapshot stock) ====================
+// Nextore ne fournit pas d'historique de stock : on synchronise le catalogue et
+// le stock des deux boutiques chaque soir et on ecrit le snapshot du jour, qui
+// construit l'historique dont les modules suivants (besoins, comptage) ont besoin.
+
+const nextoreModel = require('../models/nextoreModel');
+
+let nextoreSyncJob = null;
+
+const runNextoreSync = async () => {
+  try {
+    const r = await nextoreModel.syncAll();
+    console.log(`Nextore sync: ${r.products} produits, stock MTP=${r.stock[1]} CAST=${r.stock[2]} (${r.durationMs} ms)`);
+  } catch (error) {
+    console.error('Erreur cron Nextore sync:', error.message);
+    sendAlert(
+      'Cron boutiques Nextore: echec',
+      `La synchro quotidienne du catalogue et du stock des boutiques a echoue.\n\nErreur: ${error.message}`
+    );
+  }
+};
+
+const setupNextoreSyncCron = () => {
+  if (nextoreSyncJob) {
+    nextoreSyncJob.stop();
+    nextoreSyncJob = null;
+  }
+  // Tous les jours a 23h50 (Europe/Paris) : capture l'etat de fin de journee.
+  nextoreSyncJob = cron.schedule('50 23 * * *', runNextoreSync, {
+    timezone: 'Europe/Paris'
+  });
+  console.log('Cron boutiques Nextore configure: tous les jours a 23h50 (Europe/Paris)');
+};
+
+
 module.exports = {
   setupCron,
   restartCron,
@@ -695,6 +730,8 @@ module.exports = {
   setupDraftStockReportCron,
   setupCompetitorMonitorCron,
   setupBrandMapCron,
+  setupNextoreSyncCron,
   runProductDbSyncJob,
   runBrandMapJob,
+  runNextoreSync,
 };

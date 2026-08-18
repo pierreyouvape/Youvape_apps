@@ -30,6 +30,8 @@ const APP_KEYS = [
   'veille',
   'inscrits',
   'promos',
+  'boutique-mtp',
+  'boutique-cast',
 ];
 
 /** Permissions complètes (lecture + écriture) sur toutes les apps. */
