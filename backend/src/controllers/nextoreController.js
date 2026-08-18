@@ -48,21 +48,35 @@ async function getStock(req, res) {
   }
 }
 
-// GET /api/nextore/:shop/needs — prévision d'achat (besoins)
+// GET /api/nextore/:shop/needs — prévision d'achat (besoins), logique V2
 async function getNeeds(req, res) {
   const wh = getShopOr400(req, res);
   if (!wh) return;
   try {
     const result = await nextoreModel.getNeeds(wh.id, {
-      windowDays: req.query.window,
-      leadTimeDays: req.query.lead,
+      analysisDays: req.query.period,
+      alertDays: req.query.seuil,
       coverageDays: req.query.coverage,
+      supplierId: req.query.supplier || null,
     });
     const lastSyncAt = await nextoreModel.getLastSyncAt();
     res.json({ warehouse: wh, lastSyncAt, ...result });
   } catch (err) {
     console.error('Nextore getNeeds:', err);
     res.status(500).json({ error: err.message || 'Erreur calcul des besoins' });
+  }
+}
+
+// GET /api/nextore/:shop/suppliers — fournisseurs de la boutique (pour le filtre)
+async function getSuppliers(req, res) {
+  const wh = getShopOr400(req, res);
+  if (!wh) return;
+  try {
+    const suppliers = await nextoreModel.getSuppliersForShop(wh.id);
+    res.json({ warehouse: wh, suppliers });
+  } catch (err) {
+    console.error('Nextore getSuppliers:', err);
+    res.status(500).json({ error: err.message || 'Erreur récupération fournisseurs' });
   }
 }
 
@@ -80,4 +94,4 @@ async function getStockHistory(req, res) {
   }
 }
 
-module.exports = { postSync, getStock, getNeeds, getStockHistory };
+module.exports = { postSync, getStock, getNeeds, getSuppliers, getStockHistory };

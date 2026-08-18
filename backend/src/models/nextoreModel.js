@@ -11,9 +11,11 @@
 const pool = require('../config/database');
 const api = require('../services/nextoreApiClient');
 const { WAREHOUSES } = require('../config/nextore');
-// Moteur de besoins PARTAGÉ avec WooCommerce (base + tendance/coefficient).
-// Fonction pure : on la réutilise telle quelle, sans la modifier.
-const { computeProductNeeds } = require('../services/needsCalculator');
+// Moteur de tendance PARTAGÉ avec WooCommerce (régression + moyenne mobile
+// pondérée). Fonctions pures réutilisées telles quelles, sans les modifier.
+// La logique de déclenchement V2 (seuil/couverture) est portée ici (comme
+// NeedsTabV2), sans délai de réappro (inutile pour les boutiques).
+const { calculateTrendCoefficient } = require('../services/needsCalculator');
 
 // --- Nettoyage des valeurs Nextore (tout est string, vide = 'None' ou '') ---
 function s(v) {
@@ -96,11 +98,18 @@ async function setConfig(client, key) {
 // --- Synchro CATALOGUE (produits + catégories, global) ---------------------
 async function syncCatalog() {
   const started = Date.now();
-  const [products, categories, subcategories] = await Promise.all([
+  const [products, categories, subcategories, suppliers] = await Promise.all([
     api.getProducts(),
     api.getCategories(),
     api.getSubcategories(),
+    api.getSuppliers(),
   ]);
+
+  // Fournisseurs d'un produit : principal (supplier1) + liste dédupliquée
+  const supplierIds = (p) => {
+    const ids = [s(p.supplier1), s(p.supplier2), s(p.supplier3), s(p.supplier4), s(p.supplier5)].filter(Boolean);
+    return [...new Set(ids)];
+  };
 
   const client = await pool.connect();
   try {
@@ -114,16 +123,21 @@ async function syncCatalog() {
       await bulkUpsert(client, 'nextore_subcategories', ['id', 'category_id', 'code', 'name'], ['id'],
         subcategories.map((c) => [s(c.id), s(c.category_id), s(c.code), s(c.name)]));
     }
+    if (Array.isArray(suppliers)) {
+      await bulkUpsert(client, 'nextore_suppliers', ['id', 'company'], ['id'],
+        suppliers.map((sp) => [s(sp.id), s(sp.company)]));
+    }
 
     const productRows = (products || []).map((p) => [
       s(p.id), s(p.code), s(p.name), s(p.unit), num(p.cost), num(p.price),
       s(p.category_id), s(p.subcategory_id), s(p.subsubcategory_id),
       s(p.barcode), s(p.tax_rate), s(p.type), s(p.status), ts(p.date_update),
+      s(p.supplier1), supplierIds(p),
     ]);
     const nbProducts = await bulkUpsert(client, 'nextore_products',
       ['product_id', 'code', 'name', 'unit', 'cost', 'price', 'category_id',
        'subcategory_id', 'subsubcategory_id', 'barcode', 'tax_rate', 'type',
-       'status', 'date_update'],
+       'status', 'date_update', 'supplier_id', 'supplier_ids'],
       ['product_id'], productRows);
 
     await setConfig(client, 'nextore_last_catalog_sync_at');
@@ -133,6 +147,7 @@ async function syncCatalog() {
       products: nbProducts,
       categories: Array.isArray(categories) ? categories.length : 0,
       subcategories: Array.isArray(subcategories) ? subcategories.length : 0,
+      suppliers: Array.isArray(suppliers) ? suppliers.length : 0,
       durationMs: Date.now() - started,
     };
   } catch (err) {
@@ -340,46 +355,57 @@ async function getStockSummary(warehouseId) {
 }
 
 /**
- * Calcul des BESOINS (prévision d'achat) pour une boutique, en réutilisant le
- * MÊME moteur que WooCommerce (services/needsCalculator.computeProductNeeds) :
- *   - base : dailyRate → stockWillLast → besoin théorique (couverture cible)
- *   - tendance : régression linéaire (R²) sinon moyenne mobile pondérée
- *                → coefficient → besoin PROJETÉ (supposé)
- * Délai + couverture ne sont pas fournis par Nextore → paramètres (réglés UI).
- * `coverage` est saisi en JOURS ; computeProductNeeds attend des MOIS (×30) →
- * on passe coverageDays/30.
+ * Calcul des BESOINS (prévision d'achat) pour une boutique — logique V2 (comme
+ * NeedsTabV2), SANS délai de réappro :
+ *   - dailyRate      = ventes sur la période d'analyse / nb de jours
+ *   - stockWillLast  = stock / dailyRate
+ *   - SEUIL de déclenchement (alertDays) : on commande seulement si le stock ne
+ *     tient plus jusqu'à ce seuil (casse la boucle « 1 vente/j = +1 chaque jour »)
+ *   - COUVERTURE (coverageDays) : niveau cible auquel on remonte le stock
+ *   - garde-fou : couverture >= seuil
+ *   - tendance : réutilise calculateTrendCoefficient (partagé WooCommerce)
+ * Filtre fournisseur optionnel (supplier_ids du produit).
  */
 async function getNeeds(warehouseId, opts = {}) {
-  const windowDays = Math.min(Math.max(parseInt(opts.windowDays, 10) || 31, 1), 365);
-  const leadTimeDays = Math.min(Math.max(parseInt(opts.leadTimeDays, 10) || 7, 0), 365);
-  const coverageDays = Math.min(Math.max(parseInt(opts.coverageDays, 10) || 21, 0), 365);
-  const coverageMonths = coverageDays / 30;
+  const analysisDays = Math.min(Math.max(parseInt(opts.analysisDays, 10) || 31, 1), 365);
+  const alertDays = Math.min(Math.max(parseInt(opts.alertDays, 10) || 15, 0), 365);
+  let coverageDays = Math.min(Math.max(parseInt(opts.coverageDays, 10) || 45, 0), 365);
+  coverageDays = Math.max(coverageDays, alertDays); // couverture >= seuil
+  const supplierId = opts.supplierId ? String(opts.supplierId) : null;
 
-  // Produits + stock (exclut le fourre-tout Nextore "Produit non cree")
+  const prodParams = [warehouseId];
+  let supplierFilter = '';
+  if (supplierId) {
+    prodParams.push(supplierId);
+    supplierFilter = `AND p.supplier_ids @> ARRAY[$${prodParams.length}]`; // index GIN
+  }
+
   const { rows: prods } = await pool.query(
     `SELECT p.product_id, p.name, p.code, p.barcode, c.name AS category_name, st.rack,
-            st.stock::float AS stock, p.cost::float AS cost
+            st.stock::float AS stock, p.cost::float AS cost,
+            p.supplier_id, sup.company AS supplier_name
      FROM nextore_stock st
      JOIN nextore_products p ON p.product_id = st.product_id
      LEFT JOIN nextore_categories c ON c.id = p.category_id
+     LEFT JOIN nextore_suppliers sup ON sup.id = p.supplier_id
      WHERE st.warehouse_id = $1
-       AND (p.name IS NULL OR p.name NOT ILIKE 'produit non cr%')`,
-    [warehouseId]
+       AND (p.name IS NULL OR p.name NOT ILIKE 'produit non cr%')
+       ${supplierFilter}`,
+    prodParams
   );
 
-  // Ventes JOURNALIÈRES sur la fenêtre (pour la tendance hebdo + le rythme)
   const { rows: sales } = await pool.query(
     `SELECT product_id, sold_at::date::text AS date, SUM(quantity)::float AS total_qty
      FROM nextore_sales
      WHERE warehouse_id = $1
        AND sold_at >= (NOW() AT TIME ZONE 'Europe/Paris') - make_interval(days => $2::int)
      GROUP BY product_id, sold_at::date`,
-    [warehouseId, windowDays]
+    [warehouseId, analysisDays]
   );
   const salesByProduct = new Map();
-  for (const s of sales) {
-    if (!salesByProduct.has(s.product_id)) salesByProduct.set(s.product_id, []);
-    salesByProduct.get(s.product_id).push({ date: s.date, total_qty: s.total_qty });
+  for (const row of sales) {
+    if (!salesByProduct.has(row.product_id)) salesByProduct.set(row.product_id, []);
+    salesByProduct.get(row.product_id).push({ date: row.date, total_qty: row.total_qty });
   }
 
   const items = [];
@@ -387,18 +413,37 @@ async function getNeeds(warehouseId, opts = {}) {
 
   for (const p of prods) {
     const daily = salesByProduct.get(p.product_id) || [];
-    if (!daily.length) continue; // aucune vente sur la fenêtre → pas de besoin
+    if (!daily.length) continue;
 
-    const n = computeProductNeeds(
-      { daily_sales: daily, stock: p.stock, incoming_qty: 0, supplier_lead_time_days: leadTimeDays },
-      windowDays, coverageMonths, false, null, null, 'days'
-    );
+    const salesInPeriod = daily.reduce((a, d) => a + (d.total_qty || 0), 0);
+    const dailyRate = salesInPeriod / analysisDays;
+    if (dailyRate <= 0) continue;
 
-    // On garde la ligne si l'un des deux besoins est positif
-    if (n.theoretical_proposal <= 0 && n.supposed_proposal <= 0) continue;
+    const stockWillLast = p.stock / dailyRate;
+    // DÉCLENCHEUR : on ne commande que si le stock ne tient plus jusqu'au seuil
+    if (stockWillLast >= alertDays) continue;
 
-    const value = n.supposed_proposal * (p.cost || 0);
-    if (n.supposed_proposal > 0) { unitsProjected += n.supposed_proposal; valueProjected += value; }
+    // Tendance : agrégation hebdo puis coefficient partagé
+    const weeklyMap = new Map();
+    for (const d of daily) {
+      const dt = new Date(d.date);
+      const dow = (dt.getDay() + 6) % 7;
+      const monday = new Date(dt);
+      monday.setDate(dt.getDate() - dow);
+      const key = monday.toISOString().slice(0, 10);
+      weeklyMap.set(key, (weeklyMap.get(key) || 0) + (d.total_qty || 0));
+    }
+    const weekly = [...weeklyMap.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([, q]) => ({ total_qty: q }));
+    const coef = calculateTrendCoefficient(weekly).coefficient;
+    const dir = coef > 1.1 ? 'up' : coef < 0.9 ? 'down' : 'stable';
+
+    const targetDays = coverageDays; // pas de délai
+    const theoProposal = Math.max(0, Math.ceil(dailyRate * targetDays) - p.stock);
+    const suppProposal = Math.max(0, Math.ceil(dailyRate * coef * targetDays) - p.stock);
+    if (theoProposal <= 0 && suppProposal <= 0) continue;
+
+    const value = suppProposal * (p.cost || 0);
+    if (suppProposal > 0) { unitsProjected += suppProposal; valueProjected += value; }
     if (p.stock < 0) negativeCount += 1;
 
     items.push({
@@ -410,34 +455,46 @@ async function getNeeds(warehouseId, opts = {}) {
       rack: p.rack,
       stock: p.stock,
       cost: p.cost,
-      sales_period: n.sales_in_period,
-      daily_rate: n.daily_rate,
-      stock_will_last: n.stock_will_last,
-      trend_coefficient: n.trend_coefficient,
-      trend_direction: n.trend_direction,
-      to_order_theoretical: n.theoretical_proposal,
-      to_order: n.supposed_proposal,           // projeté (tendance) = principal
+      supplier_id: p.supplier_id,
+      supplier_name: p.supplier_name,
+      sales_period: salesInPeriod,
+      daily_rate: Math.round(dailyRate * 1000) / 1000,
+      stock_will_last: Math.round(stockWillLast),
+      trend_coefficient: Math.round(coef * 100) / 100,
+      trend_direction: dir,
+      to_order_theoretical: theoProposal,
+      to_order: suppProposal,          // projeté (tendance) = principal
       order_value: Math.round(value * 100) / 100,
     });
   }
 
-  // Plus urgent d'abord : stock restant le plus court (null en dernier), puis + gros besoin
-  items.sort((a, b) => {
-    const la = a.stock_will_last == null ? Infinity : a.stock_will_last;
-    const lb = b.stock_will_last == null ? Infinity : b.stock_will_last;
-    return (la - lb) || (b.to_order - a.to_order);
-  });
+  items.sort((a, b) => (a.stock_will_last - b.stock_will_last) || (b.to_order - a.to_order));
 
   return {
-    params: { windowDays, leadTimeDays, coverageDays, targetDays: leadTimeDays + coverageDays },
+    params: { analysisDays, alertDays, coverageDays },
     summary: {
       to_order_count: items.length,
       total_units: unitsProjected,
       total_value: Math.round(valueProjected * 100) / 100,
-      negative_count: negativeCount, // stock négatif → comptage à faire
+      negative_count: negativeCount,
     },
     items,
   };
+}
+
+/** Fournisseurs ayant des produits en stock dans cette boutique (pour le filtre). */
+async function getSuppliersForShop(warehouseId) {
+  const { rows } = await pool.query(
+    `SELECT sup.id, sup.company, COUNT(DISTINCT p.product_id)::int AS product_count
+     FROM nextore_suppliers sup
+     JOIN nextore_products p ON sup.id = ANY(p.supplier_ids)
+     JOIN nextore_stock st ON st.product_id = p.product_id AND st.warehouse_id = $1
+     WHERE (p.name IS NULL OR p.name NOT ILIKE 'produit non cr%')
+     GROUP BY sup.id, sup.company
+     ORDER BY sup.company NULLS LAST`,
+    [warehouseId]
+  );
+  return rows;
 }
 
 /**
@@ -473,6 +530,7 @@ module.exports = {
   getStockDashboard,
   getStockSummary,
   getNeeds,
+  getSuppliersForShop,
   getProductStockHistory,
   getLastSyncAt,
 };

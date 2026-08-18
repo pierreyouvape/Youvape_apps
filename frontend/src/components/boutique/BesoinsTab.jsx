@@ -15,9 +15,9 @@ const authHeaders = (token) => ({ headers: { Authorization: `Bearer ${token}` } 
 const fmtEur = (n) => (n == null ? '—' : Number(n).toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' }));
 const fmtNum = (n, d = 0) => (n == null ? '—' : Number(n).toLocaleString('fr-FR', { maximumFractionDigits: d }));
 
-/* Paramètres réglables, sauvegardés par boutique */
-const PARAM_KEY = (slug) => `yv.boutique.needs.${slug}.v1`;
-const DEFAULTS = { window: 31, lead: 7, coverage: 21 };
+/* Réglages sauvegardés par boutique (v2 : période / seuil / couverture) */
+const PARAM_KEY = (slug) => `yv.boutique.needs.${slug}.v2`;
+const DEFAULTS = { period: 31, seuil: 15, coverage: 45 };
 function loadParams(slug) {
   try {
     const raw = localStorage.getItem(PARAM_KEY(slug));
@@ -77,22 +77,33 @@ function NumField({ label, value, onChange, suffix }) {
 /* ─── BESOINS TAB ───────────────────────────────────────── */
 export default function BesoinsTab({ shop, token }) {
   const [params, setParams] = useState(() => loadParams(shop.slug));
+  const [supplier, setSupplier] = useState('');           // filtre fournisseur (id) ou '' = tous
+  const [suppliers, setSuppliers] = useState([]);
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [search, setSearch] = useState('');
   const [sort, setSort] = useState({ key: 'stock_will_last', dir: 'asc' });
 
-  // Persiste les paramètres par boutique
   useEffect(() => {
     try { localStorage.setItem(PARAM_KEY(shop.slug), JSON.stringify(params)); } catch { /* ignore */ }
   }, [params, shop.slug]);
+
+  // Liste des fournisseurs de la boutique (pour le filtre)
+  useEffect(() => {
+    let alive = true;
+    axios.get(`${API_URL}/nextore/${shop.slug}/suppliers`, authHeaders(token))
+      .then((r) => { if (alive) setSuppliers(r.data.suppliers || []); })
+      .catch(() => { /* filtre indisponible, non bloquant */ });
+    return () => { alive = false; };
+  }, [shop.slug, token]);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const qs = new URLSearchParams({ window: params.window, lead: params.lead, coverage: params.coverage });
+      const qs = new URLSearchParams({ period: params.period, seuil: params.seuil, coverage: params.coverage });
+      if (supplier) qs.set('supplier', supplier);
       const res = await axios.get(`${API_URL}/nextore/${shop.slug}/needs?${qs}`, authHeaders(token));
       setData(res.data);
     } catch (e) {
@@ -100,7 +111,7 @@ export default function BesoinsTab({ shop, token }) {
     } finally {
       setLoading(false);
     }
-  }, [shop.slug, token, params]);
+  }, [shop.slug, token, params, supplier]);
 
   useEffect(() => {
     const t = setTimeout(load, 350); // debounce sur les réglages
@@ -118,7 +129,8 @@ export default function BesoinsTab({ shop, token }) {
       list = list.filter((r) =>
         (r.name || '').toLowerCase().includes(q) ||
         (r.code || '').toLowerCase().includes(q) ||
-        (r.barcode || '').toLowerCase().includes(q));
+        (r.barcode || '').toLowerCase().includes(q) ||
+        (r.supplier_name || '').toLowerCase().includes(q));
     }
     const { key, dir } = sort;
     const mult = dir === 'asc' ? 1 : -1;
@@ -139,11 +151,23 @@ export default function BesoinsTab({ shop, token }) {
         display: 'flex', gap: 20, alignItems: 'flex-end', flexWrap: 'wrap',
         background: C.white, border: `1px solid ${C.greyB}`, borderRadius: 12, padding: '14px 18px', marginBottom: 18,
       }}>
-        <NumField label="Fenêtre de ventes" value={params.window} onChange={setP('window')} suffix="jours" />
-        <NumField label="Délai de réappro" value={params.lead} onChange={setP('lead')} suffix="jours" />
+        <NumField label="Période d'analyse" value={params.period} onChange={setP('period')} suffix="jours" />
+        <NumField label="Seuil de déclenchement" value={params.seuil} onChange={setP('seuil')} suffix="jours" />
         <NumField label="Couverture visée" value={params.coverage} onChange={setP('coverage')} suffix="jours" />
-        <div style={{ fontSize: 12, color: C.greyM, paddingBottom: 6 }}>
-          Cible de stock = ventes/jour × <strong>{params.lead + params.coverage} j</strong> (délai + couverture)
+        <label style={{ display: 'flex', flexDirection: 'column', gap: 3, fontSize: 12, color: C.greyT, fontWeight: 600 }}>
+          Fournisseur
+          <select
+            value={supplier} onChange={(e) => setSupplier(e.target.value)}
+            style={{ padding: '7px 9px', borderRadius: 8, border: `1px solid ${C.greyB}`, fontSize: 13.5, minWidth: 200, background: C.white }}
+          >
+            <option value="">Tous les fournisseurs</option>
+            {suppliers.map((sp) => (
+              <option key={sp.id} value={sp.id}>{sp.company || `#${sp.id}`} ({sp.product_count})</option>
+            ))}
+          </select>
+        </label>
+        <div style={{ fontSize: 12, color: C.greyM, paddingBottom: 6, maxWidth: 320 }}>
+          Commande déclenchée si le stock tient moins de <strong>{params.seuil} j</strong> ; on remonte alors à <strong>{Math.max(params.coverage, params.seuil)} j</strong> de couverture.
         </div>
       </div>
 
@@ -159,8 +183,8 @@ export default function BesoinsTab({ shop, token }) {
       <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap', marginBottom: 14 }}>
         <input
           value={search} onChange={(e) => setSearch(e.target.value)}
-          placeholder="Rechercher (nom, code, code-barres)…"
-          style={{ padding: '9px 14px', borderRadius: 8, border: `1px solid ${C.greyB}`, fontSize: 13.5, minWidth: 260, flex: 1, maxWidth: 420 }}
+          placeholder="Rechercher (nom, code, code-barres, fournisseur)…"
+          style={{ padding: '9px 14px', borderRadius: 8, border: `1px solid ${C.greyB}`, fontSize: 13.5, minWidth: 260, flex: 1, maxWidth: 460 }}
         />
       </div>
 
@@ -195,7 +219,9 @@ export default function BesoinsTab({ shop, token }) {
                   <tr key={r.product_id} style={{ background: i % 2 ? C.zebra : C.white }}>
                     <Td bold>
                       {r.name || '—'}
-                      {r.code && <span style={{ color: C.greyM, fontWeight: 400, fontSize: 12, marginLeft: 8 }}>#{r.code}</span>}
+                      <div style={{ fontSize: 12, color: C.greyM, fontWeight: 400, marginTop: 2 }}>
+                        {r.supplier_name || 'Sans fournisseur'}{r.code ? ` · #${r.code}` : ''}
+                      </div>
                     </Td>
                     <Td color={C.greyT}>{r.category_name || '—'}</Td>
                     <Td align="right" bold color={r.stock < 0 ? C.red : r.stock === 0 ? C.orange : C.dark}>
@@ -203,8 +229,8 @@ export default function BesoinsTab({ shop, token }) {
                       {r.stock < 0 && <span title="Stock négatif — comptage à faire" style={{ marginLeft: 6, fontSize: 12 }}>⚠</span>}
                     </Td>
                     <Td align="right" color={C.greyT}>{fmtNum(r.daily_rate, 2)}</Td>
-                    <Td align="right" bold color={r.stock_will_last == null ? C.greyM : r.stock_will_last <= params.lead ? C.red : r.stock_will_last <= params.lead + params.coverage ? C.orange : C.green}>
-                      {r.stock_will_last == null ? '∞' : `${fmtNum(r.stock_will_last, 1)} j`}
+                    <Td align="right" bold color={r.stock_will_last <= 0 ? C.red : C.orange}>
+                      {`${fmtNum(r.stock_will_last)} j`}
                     </Td>
                     <Td align="center"><TrendCell dir={r.trend_direction} coef={r.trend_coefficient} /></Td>
                     <Td align="right" color={C.greyT}>{fmtNum(r.to_order_theoretical)}</Td>
