@@ -689,6 +689,7 @@ const nextoreModel = require('../models/nextoreModel');
 
 let nextoreCatalogJob = null;
 let nextoreStockJobs = [];
+let nextoreSalesJob = null;
 let nextoreNightlyJob = null;
 
 const runNextoreCatalog = async () => {
@@ -711,6 +712,17 @@ const runNextoreStock = async () => {
   }
 };
 
+const runNextoreSales = async () => {
+  try {
+    const r = await nextoreModel.syncRecentSales(3);
+    console.log(`Nextore ventes: ${r.inserted} lignes reimportees (${r.range[0]} -> ${r.range[1]})`);
+  } catch (error) {
+    console.error('Erreur cron Nextore ventes:', error.message);
+    sendAlert('Cron boutiques Nextore (ventes): echec',
+      `La synchro quotidienne des ventes des boutiques a echoue.\n\nErreur: ${error.message}`);
+  }
+};
+
 const runNextoreNightly = async () => {
   try {
     const r = await nextoreModel.syncAll();
@@ -725,6 +737,7 @@ const runNextoreNightly = async () => {
 const setupNextoreCrons = () => {
   nextoreCatalogJob?.stop();
   nextoreStockJobs.forEach((j) => j.stop());
+  nextoreSalesJob?.stop();
   nextoreNightlyJob?.stop();
 
   const tz = { timezone: 'Europe/Paris' };
@@ -736,10 +749,12 @@ const setupNextoreCrons = () => {
     cron.schedule('*/10 10-18 * * *', runNextoreStock, tz),  // 10h00 -> 18h50
     cron.schedule('0 19 * * *',       runNextoreStock, tz),  // 19h00
   ];
+  // Ventes : chaque soir a 23h40, reimporte les 3 derniers jours (retours/edits)
+  nextoreSalesJob = cron.schedule('40 23 * * *', runNextoreSales, tz);
   // Passage complet de securite chaque nuit
   nextoreNightlyJob = cron.schedule('50 23 * * *', runNextoreNightly, tz);
 
-  console.log('Crons boutiques Nextore configures: catalogue */30 8-20h, stock */10 9h30-19h, complet 23h50 (Europe/Paris)');
+  console.log('Crons boutiques Nextore configures: catalogue */30 8-20h, stock */10 9h30-19h, ventes 23h40, complet 23h50 (Europe/Paris)');
 };
 
 
@@ -765,5 +780,6 @@ module.exports = {
   runBrandMapJob,
   runNextoreCatalog,
   runNextoreStock,
+  runNextoreSales,
   runNextoreNightly,
 };

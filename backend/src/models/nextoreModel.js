@@ -58,6 +58,29 @@ async function bulkUpsert(client, table, cols, conflictKeys, rows) {
   return count;
 }
 
+/** Insert en masse, par lots (pas d'upsert : on purge la fenêtre avant). */
+async function bulkInsert(client, table, cols, rows) {
+  if (!rows.length) return 0;
+  const perRow = cols.length;
+  const chunkSize = Math.max(1, Math.floor(60000 / perRow));
+  let count = 0;
+  for (let i = 0; i < rows.length; i += chunkSize) {
+    const chunk = rows.slice(i, i + chunkSize);
+    const values = [];
+    const placeholders = chunk.map((row, r) => {
+      const ph = row.map((_, c) => `$${r * perRow + c + 1}`);
+      values.push(...row);
+      return `(${ph.join(', ')})`;
+    });
+    await client.query(
+      `INSERT INTO ${table} (${cols.join(', ')}) VALUES ${placeholders.join(', ')}`,
+      values
+    );
+    count += chunk.length;
+  }
+  return count;
+}
+
 async function setConfig(client, key) {
   await client.query(
     `INSERT INTO app_config (config_key, config_value, updated_at)
@@ -178,6 +201,80 @@ async function syncAll() {
   return { ...cat, stock: stk.stock, changes: stk.changes, durationMs: cat.durationMs + stk.durationMs };
 }
 
+// --- Historique de VENTES (base prévision d'achat) -------------------------
+const SALES_COLS = [
+  'sale_id', 'sale_reference', 'warehouse_id', 'product_id', 'product_name',
+  'quantity', 'unit_price', 'real_unit_price', 'unit_cost', 'tax_rate',
+  'item_discount', 'payments', 'biller_id', 'biller_name', 'customer_id', 'sold_at',
+];
+
+function saleRow(r) {
+  return [
+    s(r.sale_id), s(r.sale_reference), num(r.warehouse_id), s(r.product_id),
+    s(r.product_name), num(r.quantity) ?? 0, num(r.unit_price), num(r.real_unit_price),
+    num(r.unit_cost), num(r.tax_rate), num(r.item_discount), s(r.payments),
+    s(r.biller_id), s(r.biller_name), s(r.customer_id), ts(r.date),
+  ];
+}
+
+/**
+ * Importe les ventes d'une fenêtre [startDate, endDate] (dates 'YYYY-MM-DD',
+ * inclusives). Idempotent : purge la fenêtre puis réinsère.
+ */
+async function syncSalesRange(startDate, endDate) {
+  const items = await api.getSaleItems(startDate, endDate);
+  const list = Array.isArray(items) ? items : [];
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query(
+      `DELETE FROM nextore_sales WHERE sold_at::date >= $1::date AND sold_at::date <= $2::date`,
+      [startDate, endDate]
+    );
+    const inserted = await bulkInsert(client, 'nextore_sales', SALES_COLS, list.map(saleRow));
+    await setConfig(client, 'nextore_last_sales_sync_at');
+    await client.query('COMMIT');
+    return { range: [startDate, endDate], fetched: list.length, inserted };
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+/** Backfill mois par mois depuis `fromDate` jusqu'au mois courant. */
+async function backfillSales(fromDate = '2023-12-01') {
+  const start = new Date(`${fromDate}T00:00:00`);
+  const now = new Date();
+  const results = [];
+  let y = start.getFullYear();
+  let mo = start.getMonth(); // 0-based
+  while (y < now.getFullYear() || (y === now.getFullYear() && mo <= now.getMonth())) {
+    const mm = String(mo + 1).padStart(2, '0');
+    const first = `${y}-${mm}-01`;
+    const lastDay = new Date(y, mo + 1, 0).getDate();
+    const last = `${y}-${mm}-${String(lastDay).padStart(2, '0')}`;
+    const r = await syncSalesRange(first, last);
+    results.push(r);
+    mo += 1;
+    if (mo > 11) { mo = 0; y += 1; }
+  }
+  return {
+    months: results.length,
+    totalInserted: results.reduce((a, r) => a + r.inserted, 0),
+    results,
+  };
+}
+
+/** Réimporte les N derniers jours (cron quotidien, rattrape retours/édits). */
+async function syncRecentSales(days = 3) {
+  const now = new Date();
+  const from = new Date(now.getTime() - days * 86400000);
+  const fmt = (d) => d.toISOString().slice(0, 10);
+  return syncSalesRange(fmt(from), fmt(now));
+}
+
 // --- Relevé de stock d'une boutique ----------------------------------------
 async function getStockDashboard(warehouseId, opts = {}) {
   const params = [warehouseId];
@@ -266,6 +363,9 @@ module.exports = {
   syncCatalog,
   syncStock,
   syncAll,
+  syncSalesRange,
+  backfillSales,
+  syncRecentSales,
   getStockDashboard,
   getStockSummary,
   getProductStockHistory,
