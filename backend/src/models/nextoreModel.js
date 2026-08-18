@@ -110,6 +110,16 @@ async function syncCatalog() {
     const ids = [s(p.supplier1), s(p.supplier2), s(p.supplier3), s(p.supplier4), s(p.supplier5)].filter(Boolean);
     return [...new Set(ids)];
   };
+  // Réf + prix par fournisseur : { "<id>": { ref, price } }
+  const supplierRefs = (p) => {
+    const out = {};
+    for (let i = 1; i <= 5; i += 1) {
+      const id = s(p[`supplier${i}`]);
+      if (!id) continue;
+      out[id] = { ref: s(p[`supplier${i}ref`]), price: num(p[`supplier${i}price`]) };
+    }
+    return out;
+  };
 
   const client = await pool.connect();
   try {
@@ -132,12 +142,12 @@ async function syncCatalog() {
       s(p.id), s(p.code), s(p.name), s(p.unit), num(p.cost), num(p.price),
       s(p.category_id), s(p.subcategory_id), s(p.subsubcategory_id),
       s(p.barcode), s(p.tax_rate), s(p.type), s(p.status), ts(p.date_update),
-      s(p.supplier1), supplierIds(p),
+      s(p.supplier1), supplierIds(p), JSON.stringify(supplierRefs(p)),
     ]);
     const nbProducts = await bulkUpsert(client, 'nextore_products',
       ['product_id', 'code', 'name', 'unit', 'cost', 'price', 'category_id',
        'subcategory_id', 'subsubcategory_id', 'barcode', 'tax_rate', 'type',
-       'status', 'date_update', 'supplier_id', 'supplier_ids'],
+       'status', 'date_update', 'supplier_id', 'supplier_ids', 'supplier_refs'],
       ['product_id'], productRows);
 
     await setConfig(client, 'nextore_last_catalog_sync_at');
@@ -380,14 +390,17 @@ async function getNeeds(warehouseId, opts = {}) {
     supplierFilter = `AND p.supplier_ids @> ARRAY[$${prodParams.length}]`; // index GIN
   }
 
+  // Map fournisseur id → nom (pour afficher le fournisseur filtré, option B)
+  const { rows: supRows } = await pool.query('SELECT id, company FROM nextore_suppliers');
+  const supMap = new Map(supRows.map((r) => [r.id, r.company]));
+
   const { rows: prods } = await pool.query(
     `SELECT p.product_id, p.name, p.code, p.barcode, c.name AS category_name, st.rack,
             st.stock::float AS stock, p.cost::float AS cost,
-            p.supplier_id, sup.company AS supplier_name
+            p.supplier_id, p.supplier_refs
      FROM nextore_stock st
      JOIN nextore_products p ON p.product_id = st.product_id
      LEFT JOIN nextore_categories c ON c.id = p.category_id
-     LEFT JOIN nextore_suppliers sup ON sup.id = p.supplier_id
      WHERE st.warehouse_id = $1
        AND (p.name IS NULL OR p.name NOT ILIKE 'produit non cr%')
        ${supplierFilter}`,
@@ -446,25 +459,28 @@ async function getNeeds(warehouseId, opts = {}) {
     if (suppProposal > 0) { unitsProjected += suppProposal; valueProjected += value; }
     if (p.stock < 0) negativeCount += 1;
 
+    // Fournisseur affiché : le filtré si filtre actif, sinon le principal (B)
+    const displaySupId = supplierId || p.supplier_id;
+    const meta = (displaySupId && p.supplier_refs && p.supplier_refs[displaySupId]) || {};
+
     items.push({
       product_id: p.product_id,
       name: p.name,
-      code: p.code,
+      sku: p.code,
       barcode: p.barcode,
       category_name: p.category_name,
       rack: p.rack,
       stock: p.stock,
-      cost: p.cost,
-      supplier_id: p.supplier_id,
-      supplier_name: p.supplier_name,
+      supplier_name: displaySupId ? (supMap.get(displaySupId) || null) : null,
+      supplier_ref: meta.ref || null,
       sales_period: salesInPeriod,
+      sales_per_month: Math.round(dailyRate * 30 * 100) / 100,
       daily_rate: Math.round(dailyRate * 1000) / 1000,
       stock_will_last: Math.round(stockWillLast),
       trend_coefficient: Math.round(coef * 100) / 100,
       trend_direction: dir,
       to_order_theoretical: theoProposal,
       to_order: suppProposal,          // projeté (tendance) = principal
-      order_value: Math.round(value * 100) / 100,
     });
   }
 

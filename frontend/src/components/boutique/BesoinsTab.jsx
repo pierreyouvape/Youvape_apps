@@ -12,7 +12,6 @@ const C = {
 };
 
 const authHeaders = (token) => ({ headers: { Authorization: `Bearer ${token}` } });
-const fmtEur = (n) => (n == null ? '—' : Number(n).toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' }));
 const fmtNum = (n, d = 0) => (n == null ? '—' : Number(n).toLocaleString('fr-FR', { maximumFractionDigits: d }));
 
 /* Réglages sauvegardés par boutique (v2 : période / seuil / couverture) */
@@ -42,15 +41,6 @@ function Td({ children, align = 'left', bold, color, style }) {
       padding: '11px 16px', textAlign: align, color: color || C.dark,
       fontWeight: bold ? 700 : 400, borderBottom: `1px solid ${C.greyB}`, fontSize: 14, ...style,
     }}>{children}</td>
-  );
-}
-function Kpi({ label, value, sub, color = C.primary }) {
-  return (
-    <div style={{ flex: '1 1 150px', minWidth: 140, background: C.white, borderRadius: 12, border: `1px solid ${C.greyB}`, padding: '14px 16px' }}>
-      <div style={{ fontSize: 11.5, fontWeight: 700, color: C.greyT, textTransform: 'uppercase', letterSpacing: 0.3 }}>{label}</div>
-      <div style={{ fontSize: 22, fontWeight: 800, color, margin: '4px 0 0' }}>{value}</div>
-      {sub != null && <div style={{ fontSize: 12, color: C.greyM, marginTop: 2 }}>{sub}</div>}
-    </div>
   );
 }
 function TrendCell({ dir, coef }) {
@@ -142,8 +132,6 @@ export default function BesoinsTab({ shop, token }) {
     return list;
   }, [data, search, sort]);
 
-  const s = data?.summary;
-
   return (
     <div>
       {/* Réglages */}
@@ -171,14 +159,6 @@ export default function BesoinsTab({ shop, token }) {
         </div>
       </div>
 
-      {/* KPI */}
-      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 18 }}>
-        <Kpi label="Produits à commander" value={s ? fmtNum(s.to_order_count) : '—'} color={C.accent} />
-        <Kpi label="Unités (projeté)" value={s ? fmtNum(s.total_units) : '—'} sub="tendance incluse" color={C.dark} />
-        <Kpi label="Valeur d'achat (projeté)" value={s ? fmtEur(s.total_value) : '—'} sub="au coût HT" color={C.primary} />
-        <Kpi label="À compter" value={s ? fmtNum(s.negative_count) : '—'} sub="stock négatif" color={s?.negative_count > 0 ? C.red : C.greyM} />
-      </div>
-
       {/* Recherche */}
       <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap', marginBottom: 14 }}>
         <input
@@ -199,14 +179,14 @@ export default function BesoinsTab({ shop, token }) {
             <thead>
               <tr>
                 <Th onClick={() => toggleSort('name')} active={sort.key === 'name'} dir={sort.dir}>Produit</Th>
-                <Th onClick={() => toggleSort('category_name')} active={sort.key === 'category_name'} dir={sort.dir}>Catégorie</Th>
+                <Th onClick={() => toggleSort('supplier_ref')} active={sort.key === 'supplier_ref'} dir={sort.dir}>Réf. fournisseur</Th>
+                <Th onClick={() => toggleSort('sku')} active={sort.key === 'sku'} dir={sort.dir}>SKU</Th>
                 <Th align="right" onClick={() => toggleSort('stock')} active={sort.key === 'stock'} dir={sort.dir}>Stock</Th>
-                <Th align="right" onClick={() => toggleSort('daily_rate')} active={sort.key === 'daily_rate'} dir={sort.dir}>Ventes/j</Th>
-                <Th align="right" onClick={() => toggleSort('stock_will_last')} active={sort.key === 'stock_will_last'} dir={sort.dir}>Jours restants</Th>
+                <Th align="right" onClick={() => toggleSort('sales_period')} active={sort.key === 'sales_period'} dir={sort.dir}>Ventes période</Th>
+                <Th align="right" onClick={() => toggleSort('sales_per_month')} active={sort.key === 'sales_per_month'} dir={sort.dir}>Ventes/mois</Th>
                 <Th align="center" onClick={() => toggleSort('trend_coefficient')} active={sort.key === 'trend_coefficient'} dir={sort.dir}>Tendance</Th>
-                <Th align="right" onClick={() => toggleSort('to_order_theoretical')} active={sort.key === 'to_order_theoretical'} dir={sort.dir}>Théorique</Th>
-                <Th align="right" onClick={() => toggleSort('to_order')} active={sort.key === 'to_order'} dir={sort.dir}>Projeté</Th>
-                <Th align="right" onClick={() => toggleSort('order_value')} active={sort.key === 'order_value'} dir={sort.dir}>Valeur</Th>
+                <Th align="right" onClick={() => toggleSort('to_order_theoretical')} active={sort.key === 'to_order_theoretical'} dir={sort.dir}>Prop. théo.</Th>
+                <Th align="right" onClick={() => toggleSort('to_order')} active={sort.key === 'to_order'} dir={sort.dir}>Prop. supp.</Th>
               </tr>
             </thead>
             <tbody>
@@ -220,22 +200,20 @@ export default function BesoinsTab({ shop, token }) {
                     <Td bold>
                       {r.name || '—'}
                       <div style={{ fontSize: 12, color: C.greyM, fontWeight: 400, marginTop: 2 }}>
-                        {r.supplier_name || 'Sans fournisseur'}{r.code ? ` · #${r.code}` : ''}
+                        {r.supplier_name || 'Sans fournisseur'}
                       </div>
                     </Td>
-                    <Td color={C.greyT}>{r.category_name || '—'}</Td>
+                    <Td color={C.greyT}>{r.supplier_ref || '—'}</Td>
+                    <Td color={C.greyT}>{r.sku || '—'}</Td>
                     <Td align="right" bold color={r.stock < 0 ? C.red : r.stock === 0 ? C.orange : C.dark}>
                       {fmtNum(r.stock)}
                       {r.stock < 0 && <span title="Stock négatif — comptage à faire" style={{ marginLeft: 6, fontSize: 12 }}>⚠</span>}
                     </Td>
-                    <Td align="right" color={C.greyT}>{fmtNum(r.daily_rate, 2)}</Td>
-                    <Td align="right" bold color={r.stock_will_last <= 0 ? C.red : C.orange}>
-                      {`${fmtNum(r.stock_will_last)} j`}
-                    </Td>
+                    <Td align="right" color={C.greyT}>{fmtNum(r.sales_period)}</Td>
+                    <Td align="right" color={C.greyT}>{fmtNum(r.sales_per_month, 2)}</Td>
                     <Td align="center"><TrendCell dir={r.trend_direction} coef={r.trend_coefficient} /></Td>
                     <Td align="right" color={C.greyT}>{fmtNum(r.to_order_theoretical)}</Td>
                     <Td align="right" bold color={C.accent}>{fmtNum(r.to_order)}</Td>
-                    <Td align="right">{fmtEur(r.order_value)}</Td>
                   </tr>
                 ))
               )}
