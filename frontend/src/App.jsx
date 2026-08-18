@@ -427,6 +427,14 @@ function App() {
               </PrivateRoute>
             }
           />
+          <Route
+            path="/boutique/:shop/:section"
+            element={
+              <PrivateRoute>
+                <BoutiqueApp />
+              </PrivateRoute>
+            }
+          />
         </Routes>
       </BrowserRouter>
     </AuthProvider>
