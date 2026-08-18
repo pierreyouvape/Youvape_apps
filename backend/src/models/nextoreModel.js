@@ -11,6 +11,9 @@
 const pool = require('../config/database');
 const api = require('../services/nextoreApiClient');
 const { WAREHOUSES } = require('../config/nextore');
+// Moteur de besoins PARTAGÉ avec WooCommerce (base + tendance/coefficient).
+// Fonction pure : on la réutilise telle quelle, sans la modifier.
+const { computeProductNeeds } = require('../services/needsCalculator');
 
 // --- Nettoyage des valeurs Nextore (tout est string, vide = 'None' ou '') ---
 function s(v) {
@@ -337,6 +340,107 @@ async function getStockSummary(warehouseId) {
 }
 
 /**
+ * Calcul des BESOINS (prévision d'achat) pour une boutique, en réutilisant le
+ * MÊME moteur que WooCommerce (services/needsCalculator.computeProductNeeds) :
+ *   - base : dailyRate → stockWillLast → besoin théorique (couverture cible)
+ *   - tendance : régression linéaire (R²) sinon moyenne mobile pondérée
+ *                → coefficient → besoin PROJETÉ (supposé)
+ * Délai + couverture ne sont pas fournis par Nextore → paramètres (réglés UI).
+ * `coverage` est saisi en JOURS ; computeProductNeeds attend des MOIS (×30) →
+ * on passe coverageDays/30.
+ */
+async function getNeeds(warehouseId, opts = {}) {
+  const windowDays = Math.min(Math.max(parseInt(opts.windowDays, 10) || 31, 1), 365);
+  const leadTimeDays = Math.min(Math.max(parseInt(opts.leadTimeDays, 10) || 7, 0), 365);
+  const coverageDays = Math.min(Math.max(parseInt(opts.coverageDays, 10) || 21, 0), 365);
+  const coverageMonths = coverageDays / 30;
+
+  // Produits + stock (exclut le fourre-tout Nextore "Produit non cree")
+  const { rows: prods } = await pool.query(
+    `SELECT p.product_id, p.name, p.code, p.barcode, c.name AS category_name, st.rack,
+            st.stock::float AS stock, p.cost::float AS cost
+     FROM nextore_stock st
+     JOIN nextore_products p ON p.product_id = st.product_id
+     LEFT JOIN nextore_categories c ON c.id = p.category_id
+     WHERE st.warehouse_id = $1
+       AND (p.name IS NULL OR p.name NOT ILIKE 'produit non cr%')`,
+    [warehouseId]
+  );
+
+  // Ventes JOURNALIÈRES sur la fenêtre (pour la tendance hebdo + le rythme)
+  const { rows: sales } = await pool.query(
+    `SELECT product_id, sold_at::date::text AS date, SUM(quantity)::float AS total_qty
+     FROM nextore_sales
+     WHERE warehouse_id = $1
+       AND sold_at >= (NOW() AT TIME ZONE 'Europe/Paris') - make_interval(days => $2::int)
+     GROUP BY product_id, sold_at::date`,
+    [warehouseId, windowDays]
+  );
+  const salesByProduct = new Map();
+  for (const s of sales) {
+    if (!salesByProduct.has(s.product_id)) salesByProduct.set(s.product_id, []);
+    salesByProduct.get(s.product_id).push({ date: s.date, total_qty: s.total_qty });
+  }
+
+  const items = [];
+  let unitsProjected = 0, valueProjected = 0, negativeCount = 0;
+
+  for (const p of prods) {
+    const daily = salesByProduct.get(p.product_id) || [];
+    if (!daily.length) continue; // aucune vente sur la fenêtre → pas de besoin
+
+    const n = computeProductNeeds(
+      { daily_sales: daily, stock: p.stock, incoming_qty: 0, supplier_lead_time_days: leadTimeDays },
+      windowDays, coverageMonths, false, null, null, 'days'
+    );
+
+    // On garde la ligne si l'un des deux besoins est positif
+    if (n.theoretical_proposal <= 0 && n.supposed_proposal <= 0) continue;
+
+    const value = n.supposed_proposal * (p.cost || 0);
+    if (n.supposed_proposal > 0) { unitsProjected += n.supposed_proposal; valueProjected += value; }
+    if (p.stock < 0) negativeCount += 1;
+
+    items.push({
+      product_id: p.product_id,
+      name: p.name,
+      code: p.code,
+      barcode: p.barcode,
+      category_name: p.category_name,
+      rack: p.rack,
+      stock: p.stock,
+      cost: p.cost,
+      sales_period: n.sales_in_period,
+      daily_rate: n.daily_rate,
+      stock_will_last: n.stock_will_last,
+      trend_coefficient: n.trend_coefficient,
+      trend_direction: n.trend_direction,
+      to_order_theoretical: n.theoretical_proposal,
+      to_order: n.supposed_proposal,           // projeté (tendance) = principal
+      order_value: Math.round(value * 100) / 100,
+    });
+  }
+
+  // Plus urgent d'abord : stock restant le plus court (null en dernier), puis + gros besoin
+  items.sort((a, b) => {
+    const la = a.stock_will_last == null ? Infinity : a.stock_will_last;
+    const lb = b.stock_will_last == null ? Infinity : b.stock_will_last;
+    return (la - lb) || (b.to_order - a.to_order);
+  });
+
+  return {
+    params: { windowDays, leadTimeDays, coverageDays, targetDays: leadTimeDays + coverageDays },
+    summary: {
+      to_order_count: items.length,
+      total_units: unitsProjected,
+      total_value: Math.round(valueProjected * 100) / 100,
+      negative_count: negativeCount, // stock négatif → comptage à faire
+    },
+    items,
+  };
+}
+
+/**
  * Historique d'un produit dans une boutique (points de changement, plus récent
  * d'abord). Permet de tracer l'évolution du stock dans le temps.
  */
@@ -368,6 +472,7 @@ module.exports = {
   syncRecentSales,
   getStockDashboard,
   getStockSummary,
+  getNeeds,
   getProductStockHistory,
   getLastSyncAt,
 };

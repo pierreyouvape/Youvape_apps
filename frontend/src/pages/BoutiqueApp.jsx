@@ -3,6 +3,7 @@ import { useParams, useNavigate, Navigate } from 'react-router-dom';
 import { AuthContext } from '../context/AuthContext';
 import AppShell from '../components/AppShell';
 import StockTab from '../components/boutique/StockTab';
+import BesoinsTab from '../components/boutique/BesoinsTab';
 
 /* ─── PALETTE (alignée Rapport / SAV / Réception) ───────── */
 const C = {
@@ -31,7 +32,7 @@ const IcSafe  = () => <Ic><rect x={3.5} y={5} width={17} height={14} rx={2} /><c
 /* Sections de la boutique. `ready:false` → tuile « Bientôt » (non cliquable). */
 const SECTIONS = [
   { key: 'stock',    label: 'Stock',    color: '#0D9488', Icon: IcStock, ready: true },
-  { key: 'besoin',   label: 'Besoins',  color: '#E28F00', Icon: IcNeeds, ready: false },
+  { key: 'besoin',   label: 'Besoins',  color: '#E28F00', Icon: IcNeeds, ready: true },
   { key: 'comptage', label: 'Comptage', color: '#7C3AED', Icon: IcCount, ready: false },
   { key: 'coffre',   label: 'Coffre',   color: '#334155', Icon: IcSafe,  ready: false },
 ];
@@ -175,6 +176,14 @@ export default function BoutiqueApp() {
           <>
             <ShopHeader shop={shop} subtitle="Suivi de stock — données caisse Nextore" onBack={goHome} />
             <StockTab shop={shop} token={token} />
+          </>
+        )}
+
+        {/* ── Section Besoins (prévision d'achat) ── */}
+        {section === 'besoin' && (
+          <>
+            <ShopHeader shop={shop} subtitle="Besoins — prévision d'achat (vélocité des ventes)" onBack={goHome} />
+            <BesoinsTab shop={shop} token={token} />
           </>
         )}
 

@@ -48,6 +48,24 @@ async function getStock(req, res) {
   }
 }
 
+// GET /api/nextore/:shop/needs — prévision d'achat (besoins)
+async function getNeeds(req, res) {
+  const wh = getShopOr400(req, res);
+  if (!wh) return;
+  try {
+    const result = await nextoreModel.getNeeds(wh.id, {
+      windowDays: req.query.window,
+      leadTimeDays: req.query.lead,
+      coverageDays: req.query.coverage,
+    });
+    const lastSyncAt = await nextoreModel.getLastSyncAt();
+    res.json({ warehouse: wh, lastSyncAt, ...result });
+  } catch (err) {
+    console.error('Nextore getNeeds:', err);
+    res.status(500).json({ error: err.message || 'Erreur calcul des besoins' });
+  }
+}
+
 // GET /api/nextore/:shop/stock/:productId/history — évolution du stock d'un produit
 async function getStockHistory(req, res) {
   const wh = getShopOr400(req, res);
@@ -62,4 +80,4 @@ async function getStockHistory(req, res) {
   }
 }
 
-module.exports = { postSync, getStock, getStockHistory };
+module.exports = { postSync, getStock, getNeeds, getStockHistory };

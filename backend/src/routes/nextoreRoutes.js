@@ -31,6 +31,9 @@ router.post('/:shop/sync', boutiquePerm('read'), nextoreController.postSync);
 // Relevé de stock d'une boutique (:shop = montpellier|castelnau ou 1|2)
 router.get('/:shop/stock', boutiquePerm('read'), nextoreController.getStock);
 
+// Prévision d'achat (besoins) : ?window=&lead=&coverage=
+router.get('/:shop/needs', boutiquePerm('read'), nextoreController.getNeeds);
+
 // Historique (évolution) du stock d'un produit dans une boutique
 router.get('/:shop/stock/:productId/history', boutiquePerm('read'), nextoreController.getStockHistory);
 
