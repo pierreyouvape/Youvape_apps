@@ -1,20 +1,13 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import axios from 'axios';
+import '../../pages/PurchasesApp.css'; // réutilise la charte de la Gestion d'achat V2
 
 const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:3000/api/auth').replace('/auth', '');
-
-/* ─── PALETTE (alignée Rapport / SAV / Réception) ───────── */
-const C = {
-  primary: '#135E84', accent: '#E28F00',
-  green: '#16A34A', red: '#DC2626', redL: '#FEE2E2', orange: '#EA580C',
-  grey: '#F9FAFB', greyB: '#E5E7EB', greyT: '#6B7280', greyM: '#8A99A4',
-  dark: '#111827', white: '#FFFFFF', zebra: '#F4F7F9',
-};
 
 const authHeaders = (token) => ({ headers: { Authorization: `Bearer ${token}` } });
 const fmtNum = (n, d = 0) => (n == null ? '—' : Number(n).toLocaleString('fr-FR', { maximumFractionDigits: d }));
 
-/* Réglages sauvegardés par boutique (v2 : période / seuil / couverture) */
+/* Réglages sauvegardés par boutique (période / seuil / couverture, en jours) */
 const PARAM_KEY = (slug) => `yv.boutique.needs.${slug}.v2`;
 const DEFAULTS = { period: 31, seuil: 15, coverage: 45 };
 function loadParams(slug) {
@@ -24,50 +17,15 @@ function loadParams(slug) {
   } catch { return { ...DEFAULTS }; }
 }
 
-/* ─── PETITS COMPOSANTS (charte Réception) ──────────────── */
-function Th({ children, align = 'left', width, onClick, active, dir }) {
-  return (
-    <th onClick={onClick} style={{
-      padding: '12px 16px', textAlign: align, width, fontWeight: 700,
-      color: active ? C.primary : C.greyT, fontSize: 11.5, textTransform: 'uppercase',
-      letterSpacing: 0.3, borderBottom: `2px solid ${C.greyB}`, background: C.grey,
-      whiteSpace: 'nowrap', cursor: onClick ? 'pointer' : 'default', userSelect: 'none',
-    }}>{children}{active ? (dir === 'asc' ? ' ▲' : ' ▼') : ''}</th>
-  );
-}
-function Td({ children, align = 'left', bold, color, style }) {
-  return (
-    <td style={{
-      padding: '11px 16px', textAlign: align, color: color || C.dark,
-      fontWeight: bold ? 700 : 400, borderBottom: `1px solid ${C.greyB}`, fontSize: 14, ...style,
-    }}>{children}</td>
-  );
-}
-function TrendCell({ dir, coef }) {
-  const map = { up: { s: '↑', c: C.green }, down: { s: '↓', c: C.red }, stable: { s: '→', c: C.greyM } };
-  const t = map[dir] || map.stable;
-  return <span style={{ color: t.c, fontWeight: 700 }} title={`Coefficient de tendance ×${fmtNum(coef, 2)}`}>{t.s} ×{fmtNum(coef, 2)}</span>;
-}
-function NumField({ label, value, onChange, suffix }) {
-  return (
-    <label style={{ display: 'flex', flexDirection: 'column', gap: 3, fontSize: 12, color: C.greyT, fontWeight: 600 }}>
-      {label}
-      <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-        <input
-          type="number" min={0} value={value}
-          onChange={(e) => onChange(Math.max(0, parseInt(e.target.value, 10) || 0))}
-          style={{ width: 74, padding: '7px 9px', borderRadius: 8, border: `1px solid ${C.greyB}`, fontSize: 13.5 }}
-        />
-        <span style={{ color: C.greyM, fontWeight: 500 }}>{suffix}</span>
-      </span>
-    </label>
-  );
-}
+const TREND = {
+  up: { cls: 'trend-up', s: '↑' },
+  down: { cls: 'trend-down', s: '↓' },
+  stable: { cls: 'trend-stable', s: '→' },
+};
 
-/* ─── BESOINS TAB ───────────────────────────────────────── */
 export default function BesoinsTab({ shop, token }) {
   const [params, setParams] = useState(() => loadParams(shop.slug));
-  const [supplier, setSupplier] = useState('');           // filtre fournisseur (id) ou '' = tous
+  const [supplier, setSupplier] = useState('');
   const [suppliers, setSuppliers] = useState([]);
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -79,12 +37,11 @@ export default function BesoinsTab({ shop, token }) {
     try { localStorage.setItem(PARAM_KEY(shop.slug), JSON.stringify(params)); } catch { /* ignore */ }
   }, [params, shop.slug]);
 
-  // Liste des fournisseurs de la boutique (pour le filtre)
   useEffect(() => {
     let alive = true;
     axios.get(`${API_URL}/nextore/${shop.slug}/suppliers`, authHeaders(token))
       .then((r) => { if (alive) setSuppliers(r.data.suppliers || []); })
-      .catch(() => { /* filtre indisponible, non bloquant */ });
+      .catch(() => { /* non bloquant */ });
     return () => { alive = false; };
   }, [shop.slug, token]);
 
@@ -104,11 +61,11 @@ export default function BesoinsTab({ shop, token }) {
   }, [shop.slug, token, params, supplier]);
 
   useEffect(() => {
-    const t = setTimeout(load, 350); // debounce sur les réglages
+    const t = setTimeout(load, 350);
     return () => clearTimeout(t);
   }, [load]);
 
-  const setP = (k) => (v) => setParams((p) => ({ ...p, [k]: v }));
+  const setP = (k) => (v) => setParams((p) => ({ ...p, [k]: Math.max(0, parseInt(v, 10) || 0) }));
   const toggleSort = (key) =>
     setSort((s) => (s.key === key ? { key, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: 'asc' }));
 
@@ -118,9 +75,10 @@ export default function BesoinsTab({ shop, token }) {
       const q = search.trim().toLowerCase();
       list = list.filter((r) =>
         (r.name || '').toLowerCase().includes(q) ||
-        (r.code || '').toLowerCase().includes(q) ||
+        (r.sku || '').toLowerCase().includes(q) ||
         (r.barcode || '').toLowerCase().includes(q) ||
-        (r.supplier_name || '').toLowerCase().includes(q));
+        (r.supplier_name || '').toLowerCase().includes(q) ||
+        (r.supplier_ref || '').toLowerCase().includes(q));
     }
     const { key, dir } = sort;
     const mult = dir === 'asc' ? 1 : -1;
@@ -132,101 +90,125 @@ export default function BesoinsTab({ shop, token }) {
     return list;
   }, [data, search, sort]);
 
-  return (
-    <div>
-      {/* Réglages */}
-      <div style={{
-        display: 'flex', gap: 20, alignItems: 'flex-end', flexWrap: 'wrap',
-        background: C.white, border: `1px solid ${C.greyB}`, borderRadius: 12, padding: '14px 18px', marginBottom: 18,
-      }}>
-        <NumField label="Période d'analyse" value={params.period} onChange={setP('period')} suffix="jours" />
-        <NumField label="Seuil de déclenchement" value={params.seuil} onChange={setP('seuil')} suffix="jours" />
-        <NumField label="Couverture visée" value={params.coverage} onChange={setP('coverage')} suffix="jours" />
-        <label style={{ display: 'flex', flexDirection: 'column', gap: 3, fontSize: 12, color: C.greyT, fontWeight: 600 }}>
-          Fournisseur
-          <select
-            value={supplier} onChange={(e) => setSupplier(e.target.value)}
-            style={{ padding: '7px 9px', borderRadius: 8, border: `1px solid ${C.greyB}`, fontSize: 13.5, minWidth: 200, background: C.white }}
-          >
-            <option value="">Tous les fournisseurs</option>
-            {suppliers.map((sp) => (
-              <option key={sp.id} value={sp.id}>{sp.company || `#${sp.id}`} ({sp.product_count})</option>
-            ))}
-          </select>
-        </label>
-        <div style={{ fontSize: 12, color: C.greyM, paddingBottom: 6, maxWidth: 320 }}>
-          Commande déclenchée si le stock tient moins de <strong>{params.seuil} j</strong> ; on remonte alors à <strong>{Math.max(params.coverage, params.seuil)} j</strong> de couverture.
-        </div>
-      </div>
+  const SortTh = ({ col, label, right, center }) => (
+    <th
+      className={right ? 'text-right' : center ? 'text-center' : ''}
+      onClick={() => toggleSort(col)}
+      style={{ cursor: 'pointer', userSelect: 'none' }}
+    >
+      {label}
+      <span style={{ marginLeft: 4, opacity: sort.key === col ? 1 : 0.3 }}>
+        {sort.key === col ? (sort.dir === 'asc' ? '▲' : '▼') : '▼'}
+      </span>
+    </th>
+  );
 
-      {/* Recherche */}
-      <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap', marginBottom: 14 }}>
-        <input
-          value={search} onChange={(e) => setSearch(e.target.value)}
-          placeholder="Rechercher (nom, code, code-barres, fournisseur)…"
-          style={{ padding: '9px 14px', borderRadius: 8, border: `1px solid ${C.greyB}`, fontSize: 13.5, minWidth: 260, flex: 1, maxWidth: 460 }}
-        />
+  const totalCount = data?.items?.length || 0;
+
+  return (
+    <div className="needs-tab">
+      {/* Barre de filtres (charte V2) */}
+      <div className="purchases-card">
+        <div className="filters-bar">
+          <div className="filter-group">
+            <label>Fournisseur</label>
+            <select value={supplier} onChange={(e) => setSupplier(e.target.value)}>
+              <option value="">Tous les fournisseurs</option>
+              {suppliers.map((sp) => (
+                <option key={sp.id} value={sp.id}>{sp.company || `#${sp.id}`} ({sp.product_count})</option>
+              ))}
+            </select>
+          </div>
+          <div className="filter-group">
+            <label>Période d'analyse</label>
+            <input type="number" min={1} value={params.period} onChange={(e) => setP('period')(e.target.value)} />
+          </div>
+          <div className="filter-group">
+            <label>Seuil de déclenchement (j)</label>
+            <input type="number" min={0} value={params.seuil} onChange={(e) => setP('seuil')(e.target.value)} />
+          </div>
+          <div className="filter-group">
+            <label>
+              Couverture visée (j)
+              {params.coverage < params.seuil && (
+                <span title="La couverture ne peut pas être inférieure au seuil ; elle est ramenée au seuil."
+                  style={{ color: '#d97706', marginLeft: 6, cursor: 'help' }}>⚠ ajustée à {params.seuil} j</span>
+              )}
+            </label>
+            <input type="number" min={0} value={params.coverage} onChange={(e) => setP('coverage')(e.target.value)} />
+          </div>
+        </div>
+
+        {/* Ligne secondaire : recherche + compteur */}
+        <div className="filters-bar" style={{ marginTop: 10, marginBottom: 0 }}>
+          <input
+            type="text"
+            placeholder="Rechercher produit, SKU, fournisseur…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            style={{ padding: '6px 12px', border: '1px solid #ddd', borderRadius: 6, fontSize: 13, width: 260 }}
+          />
+          <div style={{ marginLeft: 'auto', fontSize: 13, color: '#888' }}>
+            {loading ? 'Chargement…' : `${fmtNum(rows.length)} / ${fmtNum(totalCount)} à commander`}
+          </div>
+        </div>
       </div>
 
       {error && (
-        <div style={{ padding: '12px 16px', background: C.redL, color: C.red, borderRadius: 8, marginBottom: 14, fontSize: 13.5 }}>{error}</div>
+        <div style={{ padding: '12px 16px', background: '#FEE2E2', color: '#DC2626', borderRadius: 8, marginBottom: 14, fontSize: 13.5 }}>{error}</div>
       )}
 
-      {/* Table */}
-      <div style={{ background: C.white, borderRadius: 12, border: `1px solid ${C.greyB}`, overflow: 'hidden' }}>
-        <div style={{ overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead>
-              <tr>
-                <Th onClick={() => toggleSort('name')} active={sort.key === 'name'} dir={sort.dir}>Produit</Th>
-                <Th onClick={() => toggleSort('supplier_ref')} active={sort.key === 'supplier_ref'} dir={sort.dir}>Réf. fournisseur</Th>
-                <Th onClick={() => toggleSort('sku')} active={sort.key === 'sku'} dir={sort.dir}>SKU</Th>
-                <Th align="right" onClick={() => toggleSort('stock')} active={sort.key === 'stock'} dir={sort.dir}>Stock</Th>
-                <Th align="right" onClick={() => toggleSort('sales_period')} active={sort.key === 'sales_period'} dir={sort.dir}>Ventes période</Th>
-                <Th align="right" onClick={() => toggleSort('sales_per_month')} active={sort.key === 'sales_per_month'} dir={sort.dir}>Ventes/mois</Th>
-                <Th align="center" onClick={() => toggleSort('trend_coefficient')} active={sort.key === 'trend_coefficient'} dir={sort.dir}>Tendance</Th>
-                <Th align="right" onClick={() => toggleSort('to_order_theoretical')} active={sort.key === 'to_order_theoretical'} dir={sort.dir}>Prop. théo.</Th>
-                <Th align="right" onClick={() => toggleSort('to_order')} active={sort.key === 'to_order'} dir={sort.dir}>Prop. supp.</Th>
-              </tr>
-            </thead>
-            <tbody>
-              {loading ? (
-                <tr><td colSpan={9} style={{ textAlign: 'center', padding: 32, color: C.greyT }}>Chargement…</td></tr>
-              ) : rows.length === 0 ? (
-                <tr><td colSpan={9} style={{ textAlign: 'center', padding: 32, color: C.greyM }}>Aucun besoin avec ces réglages.</td></tr>
-              ) : (
-                rows.map((r, i) => (
-                  <tr key={r.product_id} style={{ background: i % 2 ? C.zebra : C.white }}>
-                    <Td bold>
-                      {r.name || '—'}
-                      <div style={{ fontSize: 12, color: C.greyM, fontWeight: 400, marginTop: 2 }}>
-                        {r.supplier_name || 'Sans fournisseur'}
-                      </div>
-                    </Td>
-                    <Td color={C.greyT}>{r.supplier_ref || '—'}</Td>
-                    <Td color={C.greyT}>{r.sku || '—'}</Td>
-                    <Td align="right" bold color={r.stock < 0 ? C.red : r.stock === 0 ? C.orange : C.dark}>
-                      {fmtNum(r.stock)}
-                      {r.stock < 0 && <span title="Stock négatif — comptage à faire" style={{ marginLeft: 6, fontSize: 12 }}>⚠</span>}
-                    </Td>
-                    <Td align="right" color={C.greyT}>{fmtNum(r.sales_period)}</Td>
-                    <Td align="right" color={C.greyT}>{fmtNum(r.sales_per_month, 2)}</Td>
-                    <Td align="center"><TrendCell dir={r.trend_direction} coef={r.trend_coefficient} /></Td>
-                    <Td align="right" color={C.greyT}>{fmtNum(r.to_order_theoretical)}</Td>
-                    <Td align="right" bold color={C.accent}>{fmtNum(r.to_order)}</Td>
+      {/* Table (charte V2) */}
+      <div className="purchases-card" style={{ padding: 0, overflowX: 'auto' }}>
+        <table className="purchases-table">
+          <thead>
+            <tr>
+              <SortTh col="name" label="Produit" />
+              <SortTh col="supplier_ref" label="Réf. fournisseur" />
+              <SortTh col="sku" label="SKU" />
+              <SortTh col="stock" label="Stock" right />
+              <SortTh col="sales_period" label="Ventes période" right />
+              <SortTh col="sales_per_month" label="Ventes/mois" right />
+              <SortTh col="trend_coefficient" label="Tendance" center />
+              <SortTh col="to_order_theoretical" label="Prop. théo." right />
+              <SortTh col="to_order" label="Prop. supp." right />
+            </tr>
+          </thead>
+          <tbody>
+            {loading ? (
+              <tr><td colSpan={9} style={{ textAlign: 'center', padding: 32, color: '#6B7280' }}>Chargement…</td></tr>
+            ) : rows.length === 0 ? (
+              <tr><td colSpan={9} style={{ textAlign: 'center', padding: 32, color: '#8A99A4' }}>Aucun besoin avec ces réglages.</td></tr>
+            ) : (
+              rows.map((r) => {
+                const tr = TREND[r.trend_direction] || TREND.stable;
+                const stockCls = r.stock < 0 ? 'stock-critical' : r.stock === 0 ? 'stock-low' : '';
+                return (
+                  <tr key={r.product_id}>
+                    <td>
+                      <div style={{ fontWeight: 600, color: '#2a2e38' }}>{r.name || '—'}</div>
+                      <div style={{ fontSize: 12, color: '#8A99A4' }}>{r.supplier_name || 'Sans fournisseur'}</div>
+                    </td>
+                    <td>{r.supplier_ref || '—'}</td>
+                    <td>{r.sku || '—'}</td>
+                    <td className="text-right">
+                      <span className={stockCls}>{fmtNum(r.stock)}</span>
+                      {r.stock < 0 && <span title="Stock négatif — comptage à faire" style={{ marginLeft: 5 }}>⚠</span>}
+                    </td>
+                    <td className="text-right">{fmtNum(r.sales_period)}</td>
+                    <td className="text-right">{fmtNum(r.sales_per_month, 2)}</td>
+                    <td className="text-center">
+                      <span className={tr.cls}>{tr.s} ×{fmtNum(r.trend_coefficient, 2)}</span>
+                    </td>
+                    <td className="text-right">{fmtNum(r.to_order_theoretical)}</td>
+                    <td className="text-right" style={{ fontWeight: 700, color: '#E28F00' }}>{fmtNum(r.to_order)}</td>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
+                );
+              })
+            )}
+          </tbody>
+        </table>
       </div>
-
-      {!loading && rows.length > 0 && (
-        <div style={{ fontSize: 12, color: C.greyM, marginTop: 10, textAlign: 'right' }}>
-          {fmtNum(rows.length)} produit{rows.length > 1 ? 's' : ''} à commander
-        </div>
-      )}
     </div>
   );
 }
