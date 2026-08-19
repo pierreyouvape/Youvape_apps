@@ -3,8 +3,9 @@ import React, { useState } from 'react';
 /**
  * Bouton pour copier du texte dans le presse-papier
  * Affiche une icône de copie, puis un check pendant 2 secondes après copie
+ * `label` : rend un bouton texte + icône au lieu de l'icône seule
  */
-const CopyButton = ({ text, size = 14, style = {} }) => {
+const CopyButton = ({ text, size = 14, label, title, style = {} }) => {
   const [copied, setCopied] = useState(false);
 
   const handleCopy = async (e) => {
@@ -50,12 +51,15 @@ const CopyButton = ({ text, size = 14, style = {} }) => {
     }
   };
 
+  // Fond au repos : transparent pour l'icône seule, blanc pour le bouton avec label
+  const baseBg = label ? '#FFFFFF' : 'transparent';
+
   return (
     <button
       onClick={handleCopy}
-      title={copied ? 'Copié !' : 'Copier'}
+      title={title || (copied ? 'Copié !' : 'Copier')}
       style={{
-        background: 'none',
+        background: baseBg,
         border: 'none',
         cursor: 'pointer',
         padding: '2px 4px',
@@ -66,10 +70,22 @@ const CopyButton = ({ text, size = 14, style = {} }) => {
         justifyContent: 'center',
         transition: 'background-color 0.2s',
         verticalAlign: 'middle',
+        ...(label ? {
+          gap: 6,
+          padding: '7px 13px',
+          marginLeft: 0,
+          borderRadius: 7,
+          border: '1px solid #E2E2E2',
+          fontFamily: 'inherit',
+          fontSize: 12.5,
+          fontWeight: 700,
+          color: copied ? '#22c55e' : '#2a2e38',
+          whiteSpace: 'nowrap',
+        } : null),
         ...style
       }}
-      onMouseEnter={(e) => e.target.style.backgroundColor = '#f0f0f0'}
-      onMouseLeave={(e) => e.target.style.backgroundColor = 'transparent'}
+      onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f0f0f0'}
+      onMouseLeave={(e) => e.currentTarget.style.backgroundColor = baseBg}
     >
       {copied ? (
         // Icône check
@@ -83,6 +99,7 @@ const CopyButton = ({ text, size = 14, style = {} }) => {
           <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
         </svg>
       )}
+      {label && <span>{copied ? 'Copié !' : label}</span>}
     </button>
   );
 };

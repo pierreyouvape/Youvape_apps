@@ -96,12 +96,13 @@ function Card({ children, style = {} }) {
   );
 }
 
-function CardTitle({ children }) {
+function CardTitle({ children, style = {} }) {
   return (
     <h2 style={{
       fontSize: 16, fontWeight: 800, color: C.grisTF,
       fontFamily: "'Tilt Warp', cursive",
       letterSpacing: '-0.2px', marginBottom: 18,
+      ...style,
     }}>{children}</h2>
   );
 }
@@ -302,6 +303,22 @@ const OrderDetail = () => {
     const q = parseInt(item.qty) || 1;
     return w > 0 ? acc + w * q : acc;
   }, 0);
+  // Liste "contenu du colis" pour les réclamations transporteur (Chronopost) : "6x Relax 100ml".
+  // Un bundle woosb éclaté génère la ligne pack PUIS ses composants à 0€ (toujours à la suite,
+  // cf. ordre order_item_id) : on retire le pack, ses composants sont le contenu physique réel.
+  // Un bundle sans composants listés n'est suivi d'aucune ligne à 0€ → on le garde.
+  const packingItems = productItems.filter((item, i) => {
+    if (item.product_type !== 'woosb') return true;
+    const next = productItems[i + 1];
+    return !(next && next.product_type !== 'woosb' && parseFloat(next.line_total) === 0);
+  });
+  // Un même produit peut apparaître deux fois (composant d'un pack + acheté à l'unité) → on cumule.
+  const packingList = [...packingItems.reduce((map, item) => {
+    const name = (item.order_item_name || item.product_name || '').trim();
+    if (!name) return map;
+    return map.set(name, (map.get(name) || 0) + (parseInt(item.qty) || 1));
+  }, new Map())].map(([name, qty]) => `${qty}x ${name}`).join('\n');
+
   const weightDisplay = totalWeightKg > 0
     ? totalWeightKg >= 1
       ? `${totalWeightKg.toFixed(3).replace(/\.?0+$/, '').replace('.', ',')} kg`
@@ -495,15 +512,21 @@ const OrderDetail = () => {
               extra={
                 <div style={{ marginTop: 14 }}>
                   <div style={{ fontSize: 11, fontWeight: 700, color: C.grisM, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 3 }}>Email</div>
-                  <a href={`mailto:${order.billing_email}`} style={{ fontSize: 13.5, color: C.bleu, textDecoration: 'none', fontWeight: 600, display: 'block', marginBottom: 12 }}>
-                    {order.billing_email}
-                  </a>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 2, marginBottom: 12 }}>
+                    <a href={`mailto:${order.billing_email}`} style={{ fontSize: 13.5, color: C.bleu, textDecoration: 'none', fontWeight: 600, wordBreak: 'break-all' }}>
+                      {order.billing_email}
+                    </a>
+                    {order.billing_email && <CopyButton text={order.billing_email} size={13} />}
+                  </div>
                   {order.billing_phone && (
                     <>
                       <div style={{ fontSize: 11, fontWeight: 700, color: C.grisM, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 3 }}>Téléphone</div>
-                      <a href={`tel:${order.billing_phone}`} style={{ fontSize: 13.5, color: C.grisTF, textDecoration: 'none', fontWeight: 600, display: 'block', marginBottom: 0 }}>
-                        {order.billing_phone}
-                      </a>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                        <a href={`tel:${order.billing_phone}`} style={{ fontSize: 13.5, color: C.grisTF, textDecoration: 'none', fontWeight: 600 }}>
+                          {order.billing_phone}
+                        </a>
+                        <CopyButton text={order.billing_phone} size={13} />
+                      </div>
                     </>
                   )}
                   {order.wp_customer_id && (
@@ -547,7 +570,17 @@ const OrderDetail = () => {
 
           {/* ── Articles ── */}
           <Card style={{ marginBottom: 16 }}>
-            <CardTitle>Articles ({productItems.length})</CardTitle>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 18 }}>
+              <CardTitle style={{ marginBottom: 0 }}>Articles ({productItems.length})</CardTitle>
+              {packingList && (
+                <CopyButton
+                  text={packingList}
+                  label="Copier les articles"
+                  size={13}
+                  title="Copier le contenu du colis (1x Produit par ligne) — packs éclatés en composants"
+                />
+              )}
+            </div>
             <div style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13.5 }}>
                 <thead>
