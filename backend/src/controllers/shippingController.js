@@ -330,7 +330,91 @@ function resolveCarrierMethod(shippingMethod) {
   return null;
 }
 
-async function computeOrderCost(pool, order, packagingWeight) {
+/* ─────────────────────────────────────────────────────────────────────────────
+ * Paramètres de surcharge lus SUR LA FACTURE de la période
+ *
+ * Le taux de carburant change tous les mois (16,9 % à 23,2 % chez Chronopost,
+ * 11,0 % à 14,3 % de CAE chez Colissimo) : une valeur moyenne figée sur la zone
+ * serait fausse onze mois sur douze. On lit donc les paramètres réels dans la
+ * facture qui couvre la date de la commande, et on ne retombe sur les valeurs
+ * de zone que si aucune facture ne couvre encore la période — typiquement le
+ * mois en cours, pas encore facturé.
+ *
+ * Chronopost émet deux factures par mois, sur deux comptes aux structures
+ * différentes : le compte France (domicile + relais) porte une redevance sûreté,
+ * le compte 2Shop / international n'en a pas. C'est ce qui les distingue.
+ *
+ * Colissimo n'a pas de charges globales : son CAE est réparti dans le prix de
+ * chaque colis, et le récapitulatif de facture en donne le montant — d'où le
+ * taux déduit de cae / port_net.
+ * ───────────────────────────────────────────────────────────────────────────── */
+function periodKey(dateValue) {
+  if (!dateValue) return null;
+  const d = dateValue instanceof Date ? dateValue : new Date(dateValue);
+  if (isNaN(d)) return null;
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
+
+async function getPeriodParams(pool, carrier, method, period, cache) {
+  if (!period) return null;
+  const key = `${carrier}|${method}|${period}`;
+  if (cache.has(key)) return cache.get(key);
+
+  let params = null;
+
+  if (carrier === 'chronopost') {
+    // Le compte 2Shop n'a pas de redevance sûreté : c'est le discriminant.
+    const wantsSurete = method !== '2shop';
+    const { rows } = await pool.query(`
+      SELECT
+        MAX(CASE WHEN e->>'description' ~* 'carburant'
+            THEN NULLIF(substring(e->>'detail' from '([0-9.]+)\\s*%'), '')::numeric END) AS fuel,
+        MAX(CASE WHEN e->>'description' ~* 'redevance'
+            THEN (e->>'amount_ht')::numeric
+                 / NULLIF(NULLIF(substring(e->>'detail' from '([0-9]+)\\s*colis'), '')::int, 0) END) AS surete,
+        MAX(CASE WHEN e->>'description' ~* 'eco'
+            THEN (e->>'amount_ht')::numeric
+                 / NULLIF(NULLIF(substring(e->>'detail' from '([0-9]+)\\s*colis'), '')::int, 0) END) AS eco,
+        MAX(CASE WHEN e->>'description' ~* 'frais de gestion'
+            THEN (e->>'amount_ht')::numeric / NULLIF(ci.total_parcels, 0) END) AS gestion,
+        bool_or(e->>'description' ~* 'redevance') AS has_surete
+      FROM carrier_invoices ci, LATERAL jsonb_array_elements(ci.global_charges) e
+      WHERE ci.carrier = 'chronopost'
+        AND jsonb_typeof(ci.global_charges) = 'array'
+        AND to_char(to_date(NULLIF(ci.invoice_date, ''), 'DD/MM/YYYY'), 'YYYY-MM') = $1
+      GROUP BY ci.id
+      HAVING bool_or(e->>'description' ~* 'redevance') = $2
+      ORDER BY MAX(ci.total_parcels) DESC
+      LIMIT 1
+    `, [period, wantsSurete]);
+    if (rows.length) {
+      params = {
+        fuel: parseFloat(rows[0].fuel) || 0,
+        feeInFuelBase: parseFloat(rows[0].surete) || 0,
+        feeAfterFuel: (parseFloat(rows[0].eco) || 0) + (parseFloat(rows[0].gestion) || 0),
+        source: 'facture',
+      };
+    }
+  } else if (carrier === 'colissimo') {
+    const { rows } = await pool.query(`
+      SELECT 100.0 * cae / NULLIF(port_net, 0) AS fuel
+      FROM carrier_invoices
+      WHERE carrier = 'colissimo' AND port_net > 0 AND cae IS NOT NULL
+        AND to_char(to_date(NULLIF(period_start, ''), 'DD/MM/YYYY'), 'YYYY-MM') = $1
+      ORDER BY total_parcels DESC
+      LIMIT 1
+    `, [period]);
+    if (rows.length && rows[0].fuel != null) {
+      // Le CAE remplace le taux de zone ; les forfaits fixes restent ceux de la zone.
+      params = { fuel: parseFloat(rows[0].fuel), source: 'facture' };
+    }
+  }
+
+  cache.set(key, params);
+  return params;
+}
+
+async function computeOrderCost(pool, order, packagingWeight, periodCache) {
   const weight = parseFloat(order.total_weight);
   const resolved = resolveCarrierMethod(order.shipping_method);
 
@@ -381,10 +465,25 @@ async function computeOrderCost(pool, order, packagingWeight) {
   }
 
   const basePrice = parseFloat(rateResult.rows[0].price_ht);
-  const fuelSurcharge = parseFloat(rateResult.rows[0].fuel_surcharge) || 0;
   const discount = parseFloat(rateResult.rows[0].discount_percent) || 0;
-  const feeInFuelBase = parseFloat(rateResult.rows[0].fee_in_fuel_base) || 0;
-  const feeAfterFuel = parseFloat(rateResult.rows[0].fee_after_fuel) || 0;
+  let fuelSurcharge = parseFloat(rateResult.rows[0].fuel_surcharge) || 0;
+  let feeInFuelBase = parseFloat(rateResult.rows[0].fee_in_fuel_base) || 0;
+  let feeAfterFuel = parseFloat(rateResult.rows[0].fee_after_fuel) || 0;
+  let paramsSource = 'zone';
+
+  // Les surcharges de la facture du mois priment sur les valeurs de zone.
+  const period = periodKey(order.order_date);
+  const invoiceParams = periodCache
+    ? await getPeriodParams(pool, carrier, method, period, periodCache)
+    : null;
+  if (invoiceParams) {
+    paramsSource = invoiceParams.source;
+    if (invoiceParams.fuel != null) fuelSurcharge = invoiceParams.fuel;
+    if (invoiceParams.feeInFuelBase != null) feeInFuelBase = invoiceParams.feeInFuelBase;
+    // Les forfaits périodiques amortis (collecte Mondial Relay, abonnement La
+    // Poste) restent portés par la zone : ils s'ajoutent à ceux de la facture.
+    if (invoiceParams.feeAfterFuel != null) feeAfterFuel += invoiceParams.feeAfterFuel;
+  }
 
   // Le port remisé et les frais soumis au carburant (redevance sûreté Chronopost)
   // forment la base ; l'éco-participation, les frais de gestion et les forfaits
@@ -398,6 +497,7 @@ async function computeOrderCost(pool, order, packagingWeight) {
     carrier, method, zone: zoneName,
     base_price: basePrice, discount_percent: discount, fuel_surcharge: fuelSurcharge,
     fee_in_fuel_base: feeInFuelBase, fee_after_fuel: feeAfterFuel,
+    params_source: paramsSource,
     calculated_cost: calculatedCost,
   };
 }
@@ -419,6 +519,7 @@ const calculateShippingCosts = async (req, res) => {
         o.wp_order_id,
         o.shipping_method,
         o.shipping_country,
+        COALESCE(o.paid_date, o.post_date) AS order_date,
         o.shipping_cost_calculated,
         COALESCE((SUM(oi.qty * COALESCE(p.weight, parent.weight, 0)) FILTER (WHERE p.product_type IS DISTINCT FROM 'woosb') + CASE WHEN bool_or(oi.line_total = 0 AND COALESCE(p.weight, parent.weight, 0) > 0 AND p.product_type IS DISTINCT FROM 'woosb') THEN 0 ELSE COALESCE(SUM(oi.qty * COALESCE(p.weight, parent.weight, 0)) FILTER (WHERE p.product_type = 'woosb'), 0) END) * 1000, 0) + $3 as total_weight
       FROM orders o
@@ -428,16 +529,17 @@ const calculateShippingCosts = async (req, res) => {
       WHERE o.post_date >= $1 AND o.post_date < $2
         AND o.post_status IN ('wc-completed', 'wc-processing', 'wc-shipped', 'wc-delivered', 'wc-being-delivered', 'wc-awaiting-delivery')
         AND o.shipping_method <> ''
-      GROUP BY o.wp_order_id, o.shipping_method, o.shipping_country, o.shipping_cost_calculated
+      GROUP BY o.wp_order_id, o.shipping_method, o.shipping_country, o.paid_date, o.post_date, o.shipping_cost_calculated
     `, [date_from, date_to, packagingWeight]);
 
+    const periodCache = new Map();
     const results = [];
     let totalCalculated = 0;
     let ordersMatched = 0;
     let ordersUnmatched = 0;
 
     for (const order of ordersResult.rows) {
-      const computed = await computeOrderCost(pool, order, packagingWeight);
+      const computed = await computeOrderCost(pool, order, packagingWeight, periodCache);
 
       if (computed.skip) {
         // Retrait magasin ou méthode sans frais → coût = 0, pas une erreur
@@ -476,6 +578,9 @@ const calculateShippingCosts = async (req, res) => {
           zone: computed.zone,
           base_price: computed.base_price,
           fuel_surcharge: computed.fuel_surcharge,
+          fee_in_fuel_base: computed.fee_in_fuel_base,
+          fee_after_fuel: computed.fee_after_fuel,
+          params_source: computed.params_source,
           calculated_cost: computed.calculated_cost,
           current_cost: order.shipping_cost_calculated ? parseFloat(order.shipping_cost_calculated) : null
         });
@@ -515,6 +620,7 @@ const applyShippingCosts = async (req, res) => {
         o.wp_order_id,
         o.shipping_method,
         o.shipping_country,
+        COALESCE(o.paid_date, o.post_date) AS order_date,
         COALESCE((SUM(oi.qty * COALESCE(p.weight, parent.weight, 0)) FILTER (WHERE p.product_type IS DISTINCT FROM 'woosb') + CASE WHEN bool_or(oi.line_total = 0 AND COALESCE(p.weight, parent.weight, 0) > 0 AND p.product_type IS DISTINCT FROM 'woosb') THEN 0 ELSE COALESCE(SUM(oi.qty * COALESCE(p.weight, parent.weight, 0)) FILTER (WHERE p.product_type = 'woosb'), 0) END) * 1000, 0) + $3 as total_weight
       FROM orders o
       LEFT JOIN order_items oi ON o.wp_order_id = oi.wp_order_id
@@ -523,14 +629,15 @@ const applyShippingCosts = async (req, res) => {
       WHERE o.post_date >= $1 AND o.post_date < $2
         AND o.post_status IN ('wc-completed', 'wc-processing', 'wc-shipped', 'wc-delivered', 'wc-being-delivered', 'wc-awaiting-delivery')
         AND o.shipping_method <> ''
-      GROUP BY o.wp_order_id, o.shipping_method, o.shipping_country
+      GROUP BY o.wp_order_id, o.shipping_method, o.shipping_country, o.paid_date, o.post_date
     `, [date_from, date_to, packagingWeight]);
 
+    const periodCache = new Map();
     let updated = 0;
     let skipped = 0;
 
     for (const order of ordersResult.rows) {
-      const computed = await computeOrderCost(pool, order, packagingWeight);
+      const computed = await computeOrderCost(pool, order, packagingWeight, periodCache);
 
       if (computed.error) {
         skipped++;
@@ -799,6 +906,7 @@ const applyShippingCostToOrder = async (wpOrderId) => {
         o.wp_order_id,
         o.shipping_method,
         o.shipping_country,
+        COALESCE(o.paid_date, o.post_date) AS order_date,
         o.shipping_cost_calculated,
         COALESCE((SUM(oi.qty * COALESCE(p.weight, parent.weight, 0)) FILTER (WHERE p.product_type IS DISTINCT FROM 'woosb') + CASE WHEN bool_or(oi.line_total = 0 AND COALESCE(p.weight, parent.weight, 0) > 0 AND p.product_type IS DISTINCT FROM 'woosb') THEN 0 ELSE COALESCE(SUM(oi.qty * COALESCE(p.weight, parent.weight, 0)) FILTER (WHERE p.product_type = 'woosb'), 0) END) * 1000, 0) + $2 AS total_weight
       FROM orders o
@@ -806,7 +914,7 @@ const applyShippingCostToOrder = async (wpOrderId) => {
       LEFT JOIN products p ON p.wp_product_id = COALESCE(NULLIF(oi.variation_id::int, 0), oi.product_id::int)
       LEFT JOIN products parent ON p.wp_parent_id = parent.wp_product_id
       WHERE o.wp_order_id = $1
-      GROUP BY o.wp_order_id, o.shipping_method, o.shipping_country, o.shipping_cost_calculated
+      GROUP BY o.wp_order_id, o.shipping_method, o.shipping_country, o.paid_date, o.post_date, o.shipping_cost_calculated
     `, [wpOrderId, packagingWeight]);
 
     if (orderResult.rows.length === 0) return;
@@ -814,7 +922,7 @@ const applyShippingCostToOrder = async (wpOrderId) => {
 
     if (!order.shipping_method) return;
 
-    const computed = await computeOrderCost(pool, order, packagingWeight);
+    const computed = await computeOrderCost(pool, order, packagingWeight, new Map());
 
     if (computed.skip) {
       await pool.query(
