@@ -47,14 +47,28 @@ const fmtEur = v => {
 };
 const fmtColis = n => (n || 0).toLocaleString('en-US').replace(/,/g, ' ');
 
+// Dépense réelle de la facture. `total_ht` n'est que le sous-total transport : sur
+// Chronopost il ignore les charges globales de fin de facture (surcharge carburant,
+// redevance sûreté, éco-participation, frais de gestion), soit +32 %. Le backend
+// expose `total_ht_reel` ; on retombe sur `total_ht` pour les données non migrées.
+const invoiceHt = inv => parseFloat(inv.total_ht_reel ?? inv.total_ht ?? 0);
+
 function countryEntries(inv) {
   const colisTot = parseInt(inv.total_parcels || 0, 10);
-  const htTot = parseFloat(inv.total_ht || 0);
+  const htTot = invoiceHt(inv);
   if (inv.carrier === 'mondial_relay') return [[inv.mr_pays || '—', { colis: colisTot, ht: htTot }]];
   if (inv.carrier === 'lettre_suivie') return [['France', { colis: colisTot, ht: htTot }]];
   const ct = inv.country_totals || {};
   const out = Object.entries(ct).map(([code, v]) => [COUNTRY_NAMES[code] || code, { colis: parseInt(v.colis || 0, 10), ht: parseFloat(v.ht || 0) }]);
-  return out.length ? out : [['—', { colis: colisTot, ht: htTot }]];
+  if (!out.length) return [['—', { colis: colisTot, ht: htTot }]];
+  // country_totals ne porte que le port : on y répartit les charges au prorata,
+  // sinon la ventilation par pays ne somme pas à la dépense réelle.
+  const portTot = out.reduce((s, [, v]) => s + v.ht, 0);
+  if (portTot > 0 && Math.abs(htTot - portTot) > 0.01) {
+    const k = htTot / portTot;
+    for (const [, v] of out) v.ht *= k;
+  }
+  return out;
 }
 
 function Th({ label, align = 'left' }) {
@@ -103,7 +117,7 @@ export default function TransporteursApp() {
       if (parts.length !== 3) continue;
       const [, m, y] = parts;
       const monthKey = `${y}-${m}`;
-      const ht = parseFloat(inv.total_ht || 0);
+      const ht = invoiceHt(inv);
       const colis = parseInt(inv.total_parcels || 0, 10);
 
       const cm = carrierMap[carrier] = carrierMap[carrier] || { invoices: 0, colis: 0, ht: 0 };

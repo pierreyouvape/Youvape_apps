@@ -365,7 +365,9 @@ async function computeOrderCost(pool, order, packagingWeight) {
 
   // Trouver le tarif dans shipping_tariff_zones/rates
   const rateResult = await pool.query(`
-    SELECT str.price_ht, stz.fuel_surcharge, COALESCE(stz.discount_percent, 0) AS discount_percent
+    SELECT str.price_ht, stz.fuel_surcharge, COALESCE(stz.discount_percent, 0) AS discount_percent,
+           COALESCE(stz.fee_in_fuel_base, 0) AS fee_in_fuel_base,
+           COALESCE(stz.fee_after_fuel, 0)   AS fee_after_fuel
     FROM shipping_tariff_zones stz
     JOIN shipping_tariff_rates str ON str.zone_id = stz.id
     WHERE stz.carrier = $1 AND stz.method = $2 AND stz.zone_name = $3
@@ -381,9 +383,23 @@ async function computeOrderCost(pool, order, packagingWeight) {
   const basePrice = parseFloat(rateResult.rows[0].price_ht);
   const fuelSurcharge = parseFloat(rateResult.rows[0].fuel_surcharge) || 0;
   const discount = parseFloat(rateResult.rows[0].discount_percent) || 0;
-  const calculatedCost = Math.round(basePrice * (1 - discount / 100) * (1 + fuelSurcharge / 100) * 100) / 100;
+  const feeInFuelBase = parseFloat(rateResult.rows[0].fee_in_fuel_base) || 0;
+  const feeAfterFuel = parseFloat(rateResult.rows[0].fee_after_fuel) || 0;
 
-  return { carrier, method, zone: zoneName, base_price: basePrice, discount_percent: discount, fuel_surcharge: fuelSurcharge, calculated_cost: calculatedCost };
+  // Le port remisé et les frais soumis au carburant (redevance sûreté Chronopost)
+  // forment la base ; l'éco-participation, les frais de gestion et les forfaits
+  // périodiques amortis s'ajoutent après. Voir add_shipping_zone_fixed_fees.sql.
+  const netPrice = basePrice * (1 - discount / 100);
+  const calculatedCost = Math.round(
+    ((netPrice + feeInFuelBase) * (1 + fuelSurcharge / 100) + feeAfterFuel) * 100
+  ) / 100;
+
+  return {
+    carrier, method, zone: zoneName,
+    base_price: basePrice, discount_percent: discount, fuel_surcharge: fuelSurcharge,
+    fee_in_fuel_base: feeInFuelBase, fee_after_fuel: feeAfterFuel,
+    calculated_cost: calculatedCost,
+  };
 }
 
 /**
