@@ -193,7 +193,9 @@ function parseLettreSuiviePdf(text) {
 
   /* ─── Réconciliation ───────────────────────────────────────── */
   const linesTotal = round2(recon.reduce((s, r) => s + r.montant, 0));
-  const nbLettres = recon.reduce((s, r) => s + (r.qty || 0), 0);
+  // Une facture de prestation (abonnement collecte, frais de dossier) n'a pas de tranche
+  // de poids : ses lignes ne sont pas des lettres et ne doivent pas gonfler le compteur.
+  const nbLettres = isLettre ? recon.reduce((s, r) => s + (r.qty || 0), 0) : 0;
   const reconcileOK = totalHT != null && Math.abs(linesTotal - totalHT) < 0.05;
 
   return {
