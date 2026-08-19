@@ -80,6 +80,24 @@ async function getSuppliers(req, res) {
   }
 }
 
+// GET /api/nextore/:shop/needs-data — données brutes pour l'écran Besoins V2 (calcul client)
+async function getNeedsData(req, res) {
+  const wh = getShopOr400(req, res);
+  if (!wh) return;
+  try {
+    const [products, suppliers, categories, lastSyncAt] = await Promise.all([
+      nextoreModel.getNeedsData(wh.id),
+      nextoreModel.getSuppliersForShop(wh.id),
+      nextoreModel.getCategoriesForShop(wh.id),
+      nextoreModel.getLastSyncAt(),
+    ]);
+    res.json({ warehouse: wh, lastSyncAt, products, suppliers, categories });
+  } catch (err) {
+    console.error('Nextore getNeedsData:', err);
+    res.status(500).json({ error: err.message || 'Erreur récupération données besoins' });
+  }
+}
+
 // GET /api/nextore/:shop/stock/:productId/history — évolution du stock d'un produit
 async function getStockHistory(req, res) {
   const wh = getShopOr400(req, res);
@@ -94,4 +112,4 @@ async function getStockHistory(req, res) {
   }
 }
 
-module.exports = { postSync, getStock, getNeeds, getSuppliers, getStockHistory };
+module.exports = { postSync, getStock, getNeeds, getNeedsData, getSuppliers, getStockHistory };

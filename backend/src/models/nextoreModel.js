@@ -498,6 +498,78 @@ async function getNeeds(warehouseId, opts = {}) {
   };
 }
 
+/**
+ * Données BRUTES pour l'écran Besoins style V2 (calcul côté client) :
+ * par produit → stock, fournisseur(s), réf(s), + ventes journalières (90 j).
+ * On ne garde que les produits en stock (<>0) OU ayant vendu récemment.
+ */
+async function getNeedsData(warehouseId) {
+  const { rows: prods } = await pool.query(
+    `SELECT p.product_id, p.name, p.code AS sku, st.stock::float AS stock,
+            p.category_id, c.name AS category_name, p.cost::float AS cost,
+            p.supplier_id, p.supplier_ids, p.supplier_refs, sup.company AS supplier_name
+     FROM nextore_stock st
+     JOIN nextore_products p ON p.product_id = st.product_id
+     LEFT JOIN nextore_categories c ON c.id = p.category_id
+     LEFT JOIN nextore_suppliers sup ON sup.id = p.supplier_id
+     WHERE st.warehouse_id = $1
+       AND (p.name IS NULL OR p.name NOT ILIKE 'produit non cr%')`,
+    [warehouseId]
+  );
+
+  // Ventes journalières sur 90 j (fenêtre max des périodes d'analyse)
+  const { rows: sales } = await pool.query(
+    `SELECT product_id, sold_at::date::text AS date, SUM(quantity)::float AS total_qty
+     FROM nextore_sales
+     WHERE warehouse_id = $1
+       AND sold_at >= (NOW() AT TIME ZONE 'Europe/Paris') - make_interval(days => 90)
+     GROUP BY product_id, sold_at::date`,
+    [warehouseId]
+  );
+  const salesByProduct = new Map();
+  for (const s of sales) {
+    if (!salesByProduct.has(s.product_id)) salesByProduct.set(s.product_id, []);
+    salesByProduct.get(s.product_id).push({ date: s.date, total_qty: s.total_qty });
+  }
+
+  // On ne renvoie que les produits pertinents : en stock OU avec ventes récentes
+  const products = [];
+  for (const p of prods) {
+    const daily = salesByProduct.get(p.product_id) || [];
+    if (p.stock === 0 && daily.length === 0) continue;
+    products.push({
+      id: p.product_id,
+      name: p.name,
+      sku: p.sku,
+      stock: p.stock,
+      category_id: p.category_id,
+      category_name: p.category_name,
+      cost: p.cost,
+      supplier_id: p.supplier_id,
+      supplier_name: p.supplier_name,
+      supplier_ids: p.supplier_ids || [],
+      supplier_refs: p.supplier_refs || {},
+      daily_sales: daily,
+    });
+  }
+  return products;
+}
+
+/** Catégories ayant des produits en stock dans cette boutique (pour le filtre). */
+async function getCategoriesForShop(warehouseId) {
+  const { rows } = await pool.query(
+    `SELECT c.id, c.name, COUNT(DISTINCT p.product_id)::int AS product_count
+     FROM nextore_categories c
+     JOIN nextore_products p ON p.category_id = c.id
+     JOIN nextore_stock st ON st.product_id = p.product_id AND st.warehouse_id = $1
+     WHERE (p.name IS NULL OR p.name NOT ILIKE 'produit non cr%')
+     GROUP BY c.id, c.name
+     ORDER BY c.name NULLS LAST`,
+    [warehouseId]
+  );
+  return rows;
+}
+
 /** Fournisseurs ayant des produits en stock dans cette boutique (pour le filtre). */
 async function getSuppliersForShop(warehouseId) {
   const { rows } = await pool.query(
@@ -546,7 +618,9 @@ module.exports = {
   getStockDashboard,
   getStockSummary,
   getNeeds,
+  getNeedsData,
   getSuppliersForShop,
+  getCategoriesForShop,
   getProductStockHistory,
   getLastSyncAt,
 };

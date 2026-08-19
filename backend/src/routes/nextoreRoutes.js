@@ -37,6 +37,9 @@ router.get('/:shop/needs', boutiquePerm('read'), nextoreController.getNeeds);
 // Fournisseurs de la boutique (pour le filtre des besoins)
 router.get('/:shop/suppliers', boutiquePerm('read'), nextoreController.getSuppliers);
 
+// Données brutes pour l'écran Besoins style V2 (calcul côté client)
+router.get('/:shop/needs-data', boutiquePerm('read'), nextoreController.getNeedsData);
+
 // Historique (évolution) du stock d'un produit dans une boutique
 router.get('/:shop/stock/:productId/history', boutiquePerm('read'), nextoreController.getStockHistory);
 
