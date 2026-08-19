@@ -116,7 +116,7 @@ async function persistChronopostInvoice(parsed, pdfBuffer) {
     stats?.orders_with_bdd || (orders || []).filter(o => o.weight_bdd !== null).length,
     totalHt,
     gc.reduce((s, g) => s + (g.amount_ht || 0), 0) + (supplements || []).reduce((s, x) => s + (x.amount_ht || 0), 0),
-    JSON.stringify(buildCountryTotals(orders, 'amount_ht')), JSON.stringify(gc), pdfBuffer || null,
+    JSON.stringify(gc), JSON.stringify(buildCountryTotals(orders, 'amount_ht')), pdfBuffer || null,
   ]);
   const invoiceId = invRes.rows[0].id;
   if (orders?.length) {
@@ -689,8 +689,8 @@ exports.saveInvoice = [
         stats?.orders_with_bdd || (orders||[]).filter(o=>o.weight_bdd!==null).length,
         totalHt,
         gc.reduce((s,g) => s+(g.amount_ht||0), 0) + (supplements||[]).reduce((s,x)=>s+(x.amount_ht||0),0),
-        JSON.stringify(buildCountryTotals(orders, 'amount_ht')),
         JSON.stringify(gc),
+        JSON.stringify(buildCountryTotals(orders, 'amount_ht')),
         pdfBuffer,
       ]);
       const invoiceId = invRes.rows[0].id;
@@ -1037,7 +1037,10 @@ exports.getTotals = async (req, res) => {
       SELECT ci.id, ci.invoice_number, ci.invoice_date, ci.total_ht, ci.supplements_total, ci.total_parcels, ci.country_totals,
         COALESCE((
           SELECT SUM((elem->>'amount_ht')::numeric)
-          FROM jsonb_array_elements(COALESCE(ci.global_charges, '[]'::jsonb)) elem
+          FROM jsonb_array_elements(
+            CASE WHEN jsonb_typeof(ci.global_charges) = 'array'
+                 THEN ci.global_charges ELSE '[]'::jsonb END
+          ) elem
         ), 0) AS global_total
       FROM carrier_invoices ci
       WHERE ci.carrier = 'chronopost'
