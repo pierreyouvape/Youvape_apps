@@ -47,12 +47,19 @@ function Td({ children, align = 'left', bold, color, style }) {
     }}>{children}</td>
   );
 }
-function Kpi({ label, value, sub, color = C.primary }) {
+function Kpi({ label, value, sub, color = C.primary, onClick, active }) {
   return (
-    <div style={{
-      flex: '1 1 150px', minWidth: 140, background: C.white, borderRadius: 12,
-      border: `1px solid ${C.greyB}`, padding: '14px 16px',
-    }}>
+    <div
+      onClick={onClick}
+      title={onClick ? 'Filtrer' : undefined}
+      style={{
+        flex: '1 1 150px', minWidth: 140, background: active ? '#EEF5F9' : C.white, borderRadius: 12,
+        border: `${active ? 2 : 1}px solid ${active ? color : C.greyB}`,
+        padding: active ? '13px 15px' : '14px 16px',
+        cursor: onClick ? 'pointer' : 'default',
+        transition: 'border-color 0.15s, background 0.15s',
+      }}
+    >
       <div style={{ fontSize: 11.5, fontWeight: 700, color: C.greyT, textTransform: 'uppercase', letterSpacing: 0.3 }}>{label}</div>
       <div style={{ fontSize: 22, fontWeight: 800, color, margin: '4px 0 0' }}>{value}</div>
       {sub != null && <div style={{ fontSize: 12, color: C.greyM, marginTop: 2 }}>{sub}</div>}
@@ -96,6 +103,7 @@ export default function StockTab({ shop, token }) {
   const [syncing, setSyncing] = useState(false);
   const [search, setSearch] = useState('');
   const [onlyInStock, setOnlyInStock] = useState(true);
+  const [kpiFilter, setKpiFilter] = useState(null); // null | 'zero' | 'negative' (piloté par les KPI)
   const [sort, setSort] = useState({ key: 'name', dir: 'asc' });
 
   const load = useCallback(async () => {
@@ -103,7 +111,8 @@ export default function StockTab({ shop, token }) {
     setError(null);
     try {
       const params = new URLSearchParams();
-      if (onlyInStock) params.set('only_in_stock', '1');
+      // Un filtre KPI (rupture/négatif) a besoin de tout le catalogue → on charge tout
+      if (onlyInStock && !kpiFilter) params.set('only_in_stock', '1');
       if (search.trim()) params.set('search', search.trim());
       const res = await axios.get(
         `${API_URL}/nextore/${shop.slug}/stock?${params.toString()}`,
@@ -115,7 +124,7 @@ export default function StockTab({ shop, token }) {
     } finally {
       setLoading(false);
     }
-  }, [shop.slug, token, onlyInStock, search]);
+  }, [shop.slug, token, onlyInStock, kpiFilter, search]);
 
   // Rechargement (debounce sur la recherche)
   useEffect(() => {
@@ -140,7 +149,9 @@ export default function StockTab({ shop, token }) {
     setSort((s) => (s.key === key ? { key, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: 'asc' }));
 
   const rows = useMemo(() => {
-    const list = data?.rows ? [...data.rows] : [];
+    let list = data?.rows ? [...data.rows] : [];
+    if (kpiFilter === 'negative') list = list.filter((r) => r.stock < 0);
+    else if (kpiFilter === 'zero') list = list.filter((r) => r.stock === 0);
     const { key, dir } = sort;
     const mult = dir === 'asc' ? 1 : -1;
     list.sort((a, b) => {
@@ -149,7 +160,7 @@ export default function StockTab({ shop, token }) {
       return String(va ?? '').localeCompare(String(vb ?? ''), 'fr') * mult;
     });
     return list;
-  }, [data, sort]);
+  }, [data, sort, kpiFilter]);
 
   const s = data?.summary;
 
@@ -158,11 +169,17 @@ export default function StockTab({ shop, token }) {
       {/* Barre KPI */}
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 18 }}>
         <Kpi label="Références" value={s ? fmtNum(s.total_products) : '—'}
-             sub={s ? `${fmtNum(s.in_stock)} en stock` : null} />
+             sub={s ? `${fmtNum(s.in_stock)} en stock` : null}
+             active={!kpiFilter && !onlyInStock}
+             onClick={() => { setKpiFilter(null); setOnlyInStock(false); }} />
         <Kpi label="Unités en stock" value={s ? fmtNum(s.total_units) : '—'} color={C.dark} />
         <Kpi label="Valeur du stock" value={s ? fmtEur(s.total_value) : '—'} sub="au prix d'achat" color={C.primary} />
-        <Kpi label="Ruptures" value={s ? fmtNum(s.out_of_stock) : '—'} sub="stock à 0" color={C.orange} />
-        <Kpi label="Stock négatif" value={s ? fmtNum(s.negative) : '—'} sub="à vérifier" color={s?.negative > 0 ? C.red : C.greyM} />
+        <Kpi label="Ruptures" value={s ? fmtNum(s.out_of_stock) : '—'} sub="stock à 0" color={C.orange}
+             active={kpiFilter === 'zero'}
+             onClick={() => setKpiFilter((f) => (f === 'zero' ? null : 'zero'))} />
+        <Kpi label="Stock négatif" value={s ? fmtNum(s.negative) : '—'} sub="à vérifier" color={s?.negative > 0 ? C.red : C.greyM}
+             active={kpiFilter === 'negative'}
+             onClick={() => setKpiFilter((f) => (f === 'negative' ? null : 'negative'))} />
       </div>
 
       {/* Barre d'outils */}
@@ -177,7 +194,8 @@ export default function StockTab({ shop, token }) {
           }}
         />
         <label style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 13.5, color: C.greyT, cursor: 'pointer', userSelect: 'none' }}>
-          <input type="checkbox" checked={onlyInStock} onChange={(e) => setOnlyInStock(e.target.checked)} />
+          <input type="checkbox" checked={onlyInStock && !kpiFilter}
+                 onChange={(e) => { setKpiFilter(null); setOnlyInStock(e.target.checked); }} />
           En stock seulement
         </label>
         <div style={{ flex: 1 }} />
