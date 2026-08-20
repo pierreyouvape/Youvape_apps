@@ -172,7 +172,7 @@ nouvel appel de lecture est authentifié sans effort. Les appels `fetch()`
 
 ## Bugs corrigés — historique
 
-### 2026-08-20 — Valeur de stock du rapport stats désalignée du catalogue (`commit e322721`)
+### 2026-08-20 — Valeur de stock du rapport stats désalignée du catalogue (`commit 9ecb1ed`)
 **Fichiers** : `stockValuationModel.js`, `cronService.js`, `ReportsTab.jsx`,
 `scripts/checkStockValuation.js`, `scripts/recomputeStockValuationSnapshots.js`
 
