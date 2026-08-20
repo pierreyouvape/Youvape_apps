@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { TICKETS_COLOR } from './ticketConstants';
+import { TICKETS_COLOR, normalizeProductLabel } from './ticketConstants';
 import { formatDate } from '../../utils/dateUtils';
 
 const C = {
@@ -140,7 +140,7 @@ export default function OrderCard({ order, highlighted, canAssign, onAssign, onU
   );
   const concernedNames = new Set(
     (concernedProducts || [])
-      .map(p => (p && p.name ? String(p.name).trim().toLowerCase() : ''))
+      .map(p => (p ? normalizeProductLabel(p.name) : ''))
       .filter(Boolean)
   );
   const hasConcerned = concernedSkus.size > 0 || concernedNames.size > 0;
@@ -148,7 +148,7 @@ export default function OrderCard({ order, highlighted, canAssign, onAssign, onU
   const isConcerned = (it) => {
     if (!hasConcerned) return false;
     if (it.sku && concernedSkus.has(it.sku)) return true;
-    const label = (it.order_item_name || it.name || '').trim().toLowerCase();
+    const label = normalizeProductLabel(it.order_item_name || it.name);
     return !!label && concernedNames.has(label);
   };
 

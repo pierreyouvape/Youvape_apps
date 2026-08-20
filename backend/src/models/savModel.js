@@ -62,6 +62,27 @@ class StatusModel {
 
 const statusModel = new StatusModel();
 
+// ─── Libellés produits : normalisation avant appariement ─────────────────────
+// La commande stocke le HTML de WooCommerce (« Pod Pixo Aura&nbsp;2 ») là où le
+// formulaire client renvoie le texte tel que le client l'a lu (espace insécable
+// U+00A0). Sans normalisation, les deux libellés ne s'apparient pas — cas réel
+// du ticket #9900640, dont un article restait non marqué. Le SKU reste la clé
+// fiable ; ceci ne concerne que le repli par libellé.
+function normalizeProductLabel(value) {
+  return String(value || '')
+    .replace(/&nbsp;|&#160;/gi, ' ')
+    .replace(/&quot;|&#34;/gi, '"')
+    .replace(/&#0?39;|&apos;|&rsquo;|&#8217;/gi, "'")
+    .replace(/&lt;|&#60;/gi, '<')
+    .replace(/&gt;|&#62;/gi, '>')
+    .replace(/&amp;|&#38;/gi, '&')
+    .replace(/[\u00a0\u202f]/g, ' ')
+    .replace(/[\u2018\u2019]/g, "'")
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+}
+
 class SavModel {
 
   // ─── Créer un ticket depuis webhook Gravity Forms ────────────────────────
@@ -310,6 +331,142 @@ class SavModel {
       [customer_id]
     );
     return result.rows;
+  }
+
+  // ─── Badges « demande SAV » hors app SAV ──────────────────────────────────
+  // Les fiches client et commande n'ont pas à ouvrir le SAV pour signaler qu'une
+  // demande existe : ces trois méthodes ne servent qu'à poser un badge.
+  // Deux exclusions communes :
+  //   - `merged_into_id` : ticket replié sur un autre — son contenu vit dans la
+  //     cible, deux badges pour une seule demande induiraient en erreur ;
+  //   - `is_spam` : classé indésirable, ce n'est pas une demande du client.
+  // Le libellé et les couleurs du statut sont joints depuis `sav_ticket_statuses`
+  // (statuts configurables) pour que les pages hors SAV restent justes sans
+  // appeler l'API SAV en plus.
+
+  // Tickets rattachés à un lot de commandes, groupés par n° de commande.
+  // `order_id` est du texte libre côté ticket (quelques-uns contiennent une
+  // phrase ou deux numéros) : seule une correspondance exacte fait un badge,
+  // pas de tentative d'extraction — un badge sur la mauvaise commande coûte
+  // plus cher qu'un badge manquant.
+  async getBadgesByOrderIds(orderIds) {
+    const ids = [...new Set((orderIds || []).map(v => String(v ?? '').trim()).filter(Boolean))];
+    if (ids.length === 0) return {};
+    const result = await pool.query(
+      `SELECT
+         t.order_id,
+         t.id, t.subject, t.sav_status, t.created_at, t.request_reason,
+         s.label      AS status_label,
+         s.bg_color   AS status_bg,
+         s.text_color AS status_color
+       FROM sav_tickets t
+       LEFT JOIN sav_ticket_statuses s ON s.value = t.sav_status
+       WHERE t.order_id = ANY($1::text[])
+         AND t.merged_into_id IS NULL
+         AND NOT t.is_spam
+       ORDER BY t.created_at DESC`,
+      [ids]
+    );
+    const byOrder = {};
+    for (const row of result.rows) {
+      const { order_id, ...ticket } = row;
+      (byOrder[order_id] = byOrder[order_id] || []).push(ticket);
+    }
+    return byOrder;
+  }
+
+  // Tickets d'un client. Le rattachement se fait sur l'id client OU sur l'email
+  // (même règle que `customer_tickets` du détail ticket) : une demande envoyée
+  // depuis une autre adresse que celle du compte n'a pas de `customer_id`.
+  async getBadgesByCustomer({ customerId, email }) {
+    const conditions = [];
+    const values = [];
+    if (customerId) {
+      values.push(customerId);
+      conditions.push(`t.customer_id = $${values.length}`);
+    }
+    const mail = (email || '').trim();
+    if (mail) {
+      values.push(mail);
+      conditions.push(`LOWER(t.customer_email) = LOWER($${values.length})`);
+    }
+    if (conditions.length === 0) return [];
+
+    const result = await pool.query(
+      `SELECT
+         t.id, t.order_id, t.subject, t.sav_status, t.created_at, t.request_reason,
+         s.label      AS status_label,
+         s.bg_color   AS status_bg,
+         s.text_color AS status_color
+       FROM sav_tickets t
+       LEFT JOIN sav_ticket_statuses s ON s.value = t.sav_status
+       WHERE (${conditions.join(' OR ')})
+         AND t.merged_into_id IS NULL
+         AND NOT t.is_spam
+       ORDER BY t.created_at DESC`,
+      values
+    );
+    return result.rows;
+  }
+
+  // Contexte SAV d'une commande : ses tickets + les lignes de commande désignées
+  // par le client, sous la forme { order_item_id: [id de ticket, …] }.
+  async getOrderContext(wpOrderId) {
+    const orderRef = String(wpOrderId ?? '').trim();
+    const empty = { tickets: [], concernedItems: {} };
+    if (!/^\d+$/.test(orderRef)) return empty;
+
+    const ticketsResult = await pool.query(
+      `SELECT
+         t.id, t.subject, t.sav_status, t.created_at, t.request_reason,
+         t.concerned_products,
+         s.label      AS status_label,
+         s.bg_color   AS status_bg,
+         s.text_color AS status_color
+       FROM sav_tickets t
+       LEFT JOIN sav_ticket_statuses s ON s.value = t.sav_status
+       WHERE t.order_id = $1
+         AND t.merged_into_id IS NULL
+         AND NOT t.is_spam
+       ORDER BY t.created_at DESC`,
+      [orderRef]
+    );
+    const tickets = ticketsResult.rows;
+    if (tickets.length === 0) return empty;
+
+    // Même jointure que celle qui a servi à enregistrer les SKU à la création du
+    // ticket (variation d'abord, produit parent en repli) : le SKU est donc la
+    // clé fiable, le libellé un repli pour les demandes où il n'a pas pu être
+    // résolu (saisie libre, produit supprimé depuis).
+    const itemsResult = await pool.query(
+      `SELECT
+         oi.order_item_id, oi.order_item_name, p.sku
+       FROM order_items oi
+       LEFT JOIN products p ON p.wp_product_id = COALESCE(NULLIF(oi.variation_id, 0), oi.product_id)
+       WHERE oi.wp_order_id = $1
+         AND oi.order_item_type = 'line_item'`,
+      [parseInt(orderRef, 10)]
+    );
+
+    const concernedItems = {};
+    for (const ticket of tickets) {
+      const products = Array.isArray(ticket.concerned_products) ? ticket.concerned_products : [];
+      const skus  = new Set(products.map(p => p && p.sku).filter(Boolean));
+      const names = new Set(
+        products.map(p => (p ? normalizeProductLabel(p.name) : '')).filter(Boolean)
+      );
+      if (skus.size === 0 && names.size === 0) continue;
+
+      for (const item of itemsResult.rows) {
+        const label = normalizeProductLabel(item.order_item_name);
+        const match = (item.sku && skus.has(item.sku)) || (label && names.has(label));
+        if (!match) continue;
+        const key = String(item.order_item_id);
+        (concernedItems[key] = concernedItems[key] || []).push(ticket.id);
+      }
+    }
+
+    return { tickets, concernedItems };
   }
 
   // ─── Mettre à jour le statut ──────────────────────────────────────────────

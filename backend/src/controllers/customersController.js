@@ -1,4 +1,5 @@
 const customerModel = require('../models/customerModel');
+const savModel = require('../models/savModel');
 const advancedFilterService = require('../services/advancedFilterService');
 
 /**
@@ -216,13 +217,41 @@ exports.getDetail = async (req, res) => {
     const orders = await customerModel.getOrdersWithReviews(customerId);
     const reviews = await customerModel.getReviewsByEmail(customer.email);
 
+    // Demandes SAV du client. Deux sources volontairement croisées :
+    //   - par client (id interne ou email) → attrape les demandes sans commande ;
+    //   - par n° de commande → attrape celles ouvertes depuis une autre adresse
+    //     que celle du compte, qui n'ont donc pas de `customer_id`.
+    // L'union dédoublonnée alimente le compteur, le regroupement par commande
+    // alimente les badges de l'historique.
+    let savTickets = [];
+    let savByOrder = {};
+    try {
+      const [byCustomer, byOrder] = await Promise.all([
+        savModel.getBadgesByCustomer({ customerId: customer.id, email: customer.email }),
+        savModel.getBadgesByOrderIds(orders.map(o => o.wp_order_id)),
+      ]);
+      savByOrder = byOrder;
+      const seen = new Set();
+      savTickets = [...byCustomer, ...Object.entries(byOrder).flatMap(
+        ([order_id, tickets]) => tickets.map(t => ({ ...t, order_id }))
+      )]
+        .filter(t => (seen.has(t.id) ? false : seen.add(t.id)))
+        .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+    } catch (savError) {
+      console.error('Error getting SAV tickets for customer:', savError);
+    }
+
     res.json({
       success: true,
       data: {
         customer,
         stats,
-        orders,
-        reviews
+        orders: orders.map(o => ({
+          ...o,
+          sav_tickets: savByOrder[String(o.wp_order_id)] || [],
+        })),
+        reviews,
+        sav_tickets: savTickets
       }
     });
   } catch (error) {
@@ -239,6 +268,21 @@ exports.getOrderDetails = async (req, res) => {
   try {
     const orderId = parseInt(req.params.orderId);
     const details = await customerModel.getOrderDetails(orderId);
+
+    // Articles désignés dans une demande SAV : la ligne dépliée de l'historique
+    // montre la même chose que la fiche commande, sinon le badge posé sur la
+    // ligne laisse l'agent sans réponse sur « quel article ».
+    try {
+      const savContext = await savModel.getOrderContext(orderId);
+      details.sav_tickets = savContext.tickets;
+      details.items = (details.items || []).map(item => ({
+        ...item,
+        sav_ticket_ids: savContext.concernedItems[String(item.order_item_id)] || [],
+      }));
+    } catch (savError) {
+      console.error('Error getting SAV context for order details:', savError);
+      details.sav_tickets = [];
+    }
 
     res.json({ success: true, data: details });
   } catch (error) {

@@ -1,4 +1,5 @@
 const orderModel = require('../models/orderModel');
+const savModel = require('../models/savModel');
 const advancedFilterService = require('../services/advancedFilterService');
 const pool = require('../config/database');
 const { buildSearchCondition } = require('../utils/searchUtils');
@@ -45,6 +46,22 @@ exports.getById = async (req, res) => {
 
     if (!order) {
       return res.status(404).json({ success: false, error: 'Order not found' });
+    }
+
+    // Demandes SAV rattachées à la commande : la fiche les signale d'un badge,
+    // et marque les lignes que le client a désignées dans sa demande. Un échec
+    // du SAV ne doit pas priver l'agent de la commande elle-même — on dégrade
+    // en « aucune demande » plutôt que de renvoyer une 500.
+    try {
+      const savContext = await savModel.getOrderContext(order.wp_order_id);
+      order.sav_tickets = savContext.tickets;
+      order.line_items = (order.line_items || []).map(item => ({
+        ...item,
+        sav_ticket_ids: savContext.concernedItems[String(item.order_item_id)] || [],
+      }));
+    } catch (savError) {
+      console.error('Error getting SAV context for order:', savError);
+      order.sav_tickets = [];
     }
 
     res.json({ success: true, data: order });

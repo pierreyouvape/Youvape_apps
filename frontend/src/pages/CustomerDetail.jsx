@@ -8,6 +8,7 @@ import { formatDate } from '../utils/dateUtils';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import CopyButton from '../components/CopyButton';
 import { formatPriceEur } from '../utils/formatNumber';
+import { SavTicketChips, SavConcernedTag, TICKETS_COLOR } from '../components/SavBadge';
 
 const API_BASE_URL = '/api';
 
@@ -127,6 +128,8 @@ const CustomerDetail = () => {
   const [orders, setOrders] = useState([]);
   const [reviews, setReviews] = useState([]);
   const [showReviews, setShowReviews] = useState(false);
+  const [savTickets, setSavTickets] = useState([]);
+  const [showSavTickets, setShowSavTickets] = useState(false);
   const [ordersByMonth, setOrdersByMonth] = useState([]);
   const [loading, setLoading] = useState(true);
   const [expandedOrderId, setExpandedOrderId] = useState(null);
@@ -146,6 +149,7 @@ const CustomerDetail = () => {
         setStats(res.data.data.stats);
         setOrders(res.data.data.orders);
         setReviews(res.data.data.reviews || []);
+        setSavTickets(res.data.data.sav_tickets || []);
       }
     } catch (error) {
       console.error('Error fetching customer detail:', error);
@@ -330,9 +334,74 @@ const CustomerDetail = () => {
                 active={showReviews}
                 onClick={reviews.length > 0 ? () => setShowReviews(v => !v) : undefined}
               />
+              <StatBox
+                label="Demandes SAV"
+                value={savTickets.length}
+                color={TICKETS_COLOR}
+                active={showSavTickets}
+                onClick={savTickets.length > 0 ? () => setShowSavTickets(v => !v) : undefined}
+              />
               <StatBox label="Client depuis" value={customerSince(stats?.first_order_date)} color={C.saphir} />
             </div>
           </div>
+
+          {/* Demandes SAV du client — toutes, y compris celles sans commande liée */}
+          {showSavTickets && savTickets.length > 0 && (
+            <div style={{ ...cardStyle, overflow: 'hidden', marginBottom: 20 }}>
+              <div style={{ padding: '16px 20px', borderBottom: `1px solid ${C.grisCL}`, background: '#FCFDFE', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+                <h3 style={{ fontSize: 13, fontWeight: 800, color: C.grisTF, textTransform: 'uppercase', letterSpacing: '0.05em', margin: 0 }}>
+                  Demandes SAV ({savTickets.length})
+                </h3>
+                <button onClick={() => navigate('/tickets')} style={{
+                  background: 'none', border: `1px solid ${C.grisCL}`, borderRadius: 7, padding: '5px 11px',
+                  fontSize: 12, fontWeight: 700, color: C.grisF, cursor: 'pointer', fontFamily: 'inherit',
+                }}>Voir l'app SAV</button>
+              </div>
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr>
+                      {['Date', 'Ticket', 'Sujet', 'Motif', 'Commande'].map((h, i) => (
+                        <th key={i} style={{
+                          padding: '11px 16px', textAlign: 'left',
+                          fontSize: 11, fontWeight: 800, color: C.grisM, textTransform: 'uppercase',
+                          letterSpacing: '0.06em', background: '#FCFDFE', borderBottom: `1px solid ${C.grisCL}`, whiteSpace: 'nowrap',
+                        }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {savTickets.map((t) => (
+                      <tr key={t.id} className="dt-row" style={{ borderBottom: `1px solid ${C.grisTL}` }}>
+                        <td style={{ padding: '13px 16px', fontSize: 13, color: C.grisF, whiteSpace: 'nowrap' }}>
+                          {t.created_at ? formatDate(t.created_at) : '—'}
+                        </td>
+                        <td style={{ padding: '13px 16px' }}>
+                          <SavTicketChips tickets={[t]} />
+                        </td>
+                        <td style={{ padding: '13px 16px', fontSize: 13, color: C.grisTF, minWidth: 240, lineHeight: 1.45 }}>
+                          {t.subject || <span style={{ color: C.grisM }}>—</span>}
+                        </td>
+                        <td style={{ padding: '13px 16px', fontSize: 13, color: C.grisF }}>
+                          {t.request_reason || <span style={{ color: C.grisM }}>—</span>}
+                        </td>
+                        <td style={{ padding: '13px 16px', fontSize: 13 }}>
+                          {!t.order_id ? <span style={{ color: C.grisM }}>—</span>
+                            : /^\d+$/.test(t.order_id) ? (
+                              <span onClick={() => navigate(`/orders/${t.order_id}`)}
+                                style={{ fontWeight: 700, color: C.saphir, cursor: 'pointer', fontVariantNumeric: 'tabular-nums' }}>#{t.order_id}</span>
+                            ) : (
+                              /* Import Zendesk : quelques tickets portent une phrase au lieu d'un n° */
+                              <span style={{ color: C.grisF }}>{t.order_id}</span>
+                            )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
 
           {/* Avis laissés par le client */}
           {showReviews && reviews.length > 0 && (
@@ -432,7 +501,7 @@ const CustomerDetail = () => {
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead>
                   <tr>
-                    {['Commande', 'Date', 'Statut', 'Total TTC', 'Articles', 'Coupon', 'Avis'].map((h, i) => (
+                    {['Commande', 'Date', 'Statut', 'Total TTC', 'Articles', 'Coupon', 'SAV', 'Avis'].map((h, i) => (
                       <th key={i} style={{
                         padding: '11px 16px', textAlign: i === 3 ? 'right' : 'left',
                         fontSize: 11, fontWeight: 800, color: C.grisM, textTransform: 'uppercase',
@@ -466,11 +535,17 @@ const CustomerDetail = () => {
                               <span style={{ padding: '3px 9px', borderRadius: 6, fontSize: 11, fontWeight: 700, background: '#FFF4E0', color: C.orange }}>{order.coupons}</span>
                             ) : <span style={{ color: C.grisM }}>—</span>}
                           </td>
+                          <td style={{ padding: '13px 16px' }}
+                            onClick={order.sav_tickets?.length ? (e) => e.stopPropagation() : undefined}>
+                            {order.sav_tickets?.length
+                              ? <SavTicketChips tickets={order.sav_tickets} showStatus={false} />
+                              : <span style={{ color: C.grisM, fontSize: 13 }}>—</span>}
+                          </td>
                           <td style={{ padding: '13px 16px', fontSize: 16 }}>{order.has_review ? '⭐' : ''}</td>
                         </tr>
                         {isExpanded && (
                           <tr key={`${order.wp_order_id}-d`}>
-                            <td colSpan={7} style={{ padding: 0, background: '#F8FBFD' }}>
+                            <td colSpan={8} style={{ padding: 0, background: '#F8FBFD' }}>
                               <div style={{ padding: '18px 24px' }}>
                                 {!details ? (
                                   <p style={{ color: C.grisM, margin: 0 }}>Chargement…</p>
@@ -487,8 +562,21 @@ const CustomerDetail = () => {
                                       </thead>
                                       <tbody>
                                         {details.items.map((item, idx) => (
-                                          <tr key={idx} style={{ borderTop: `1px solid ${C.grisTL}` }}>
-                                            <td style={{ padding: '9px 12px', fontSize: 13 }}>{item.product_name || item.order_item_name}</td>
+                                          <tr key={idx} style={{
+                                            borderTop: `1px solid ${C.grisTL}`,
+                                            background: item.sav_ticket_ids?.length ? `${TICKETS_COLOR}0D` : 'transparent',
+                                          }}>
+                                            <td style={{
+                                              padding: '9px 12px', fontSize: 13,
+                                              borderLeft: item.sav_ticket_ids?.length ? `3px solid ${TICKETS_COLOR}` : '3px solid transparent',
+                                            }}>
+                                              {item.product_name || item.order_item_name}
+                                              {item.sav_ticket_ids?.length > 0 && (
+                                                <div style={{ marginTop: 3 }}>
+                                                  <SavConcernedTag ticketIds={item.sav_ticket_ids} />
+                                                </div>
+                                              )}
+                                            </td>
                                             <td style={{ padding: '9px 12px', fontSize: 13, color: C.grisF }}>
                                               {item.sku || '—'}{item.sku && <CopyButton text={item.sku} size={11} />}
                                             </td>

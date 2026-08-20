@@ -20,6 +20,29 @@ export const TICKET_STATUS_LIST = Object.entries(TICKET_STATUSES).map(([value, s
   value, ...s,
 }));
 
+// ─── Appariement des articles désignés par le client ─────────────────────────
+// La commande stocke le HTML de WooCommerce (« Pod Pixo Aura&nbsp;2 ») là où le
+// formulaire client renvoie le texte tel que le client l'a lu (espace insécable
+// U+00A0) : sans normalisation, les deux libellés ne s'apparient pas et
+// l'article reste non marqué (cas réel, ticket #9900640). Le SKU reste la clé
+// fiable — ceci ne sert qu'au repli par libellé. Même règle côté backend
+// (`savModel.normalizeProductLabel`), pour que la fiche commande et le panneau
+// « Commande concernée » marquent exactement les mêmes lignes.
+export function normalizeProductLabel(value) {
+  return String(value || '')
+    .replace(/&nbsp;|&#160;/gi, ' ')
+    .replace(/&quot;|&#34;/gi, '"')
+    .replace(/&#0?39;|&apos;|&rsquo;|&#8217;/gi, "'")
+    .replace(/&lt;|&#60;/gi, '<')
+    .replace(/&gt;|&#62;/gi, '>')
+    .replace(/&amp;|&#38;/gi, '&')
+    .replace(/[\u00a0\u202f]/g, ' ')
+    .replace(/[\u2018\u2019]/g, "'")
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+}
+
 // ─── Couleur accent de l'app tickets ─────────────────────────────────────────
 export const TICKETS_COLOR = '#0891B2';
 

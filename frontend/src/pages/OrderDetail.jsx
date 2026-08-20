@@ -8,6 +8,7 @@ import { formatDate } from '../utils/dateUtils';
 import { AuthContext } from '../context/AuthContext';
 import { LinkBox } from '../utils/navHelpers';
 import { getTrackingUrl } from '../utils/trackingUtils';
+import { SavTicketChips, SavConcernedTag, TICKETS_COLOR } from '../components/SavBadge';
 
 const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:3000/api/auth').replace('/auth', '');
 
@@ -457,7 +458,11 @@ const OrderDetail = () => {
                   </span>
                 )}
               </div>
-              <StatusBadge status={order.post_status} />
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 8 }}>
+                <StatusBadge status={order.post_status} />
+                {/* Demandes SAV rattachées à la commande */}
+                <SavTicketChips tickets={order.sav_tickets} style={{ justifyContent: 'flex-end' }} />
+              </div>
             </div>
 
             {/* Grille méta */}
@@ -608,23 +613,38 @@ const OrderDetail = () => {
                     const qty        = parseInt(item.qty) || 1;
                     const unitPrice  = qty > 0 ? lineTotal / qty : 0;
                     const itemCost   = parseFloat(item.item_cost) || 0;
+                    // Article désigné par le client dans une demande SAV : liseré
+                    // + fond léger, comme dans le panneau « Commande concernée »
+                    // de l'app SAV, pour que les deux vues se lisent pareil.
+                    const savIds     = item.sav_ticket_ids || [];
+                    const concerned  = savIds.length > 0;
 
                     return (
-                      <tr key={idx} className="dt-row">
-                        <td style={{ padding: '13px 14px', borderBottom: `1px solid ${C.grisTL}`, verticalAlign: 'middle' }}>
+                      <tr key={idx} className="dt-row" style={concerned ? { background: `${TICKETS_COLOR}0D` } : undefined}>
+                        <td style={{
+                          padding: '13px 14px', borderBottom: `1px solid ${C.grisTL}`, verticalAlign: 'middle',
+                          borderLeft: concerned ? `3px solid ${TICKETS_COLOR}` : '3px solid transparent',
+                        }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                             {item.image_url ? (
                               <img src={item.image_url} alt="" style={{ width: 40, height: 40, objectFit: 'cover', borderRadius: 8, border: `1px solid ${C.grisCL}`, flexShrink: 0 }} />
                             ) : (
                               <div style={{ width: 40, height: 40, borderRadius: 8, background: C.grisTL, border: `1px solid ${C.grisCL}`, flexShrink: 0 }} />
                             )}
-                            <LinkBox
-                              to={`/products/${item.variation_id || item.product_id}`}
-                              display="inline"
-                              style={{ color: C.bleu, fontWeight: 700, fontSize: 13.5 }}
-                            >
-                              {item.order_item_name || item.product_name}
-                            </LinkBox>
+                            <div style={{ minWidth: 0 }}>
+                              <LinkBox
+                                to={`/products/${item.variation_id || item.product_id}`}
+                                display="inline"
+                                style={{ color: C.bleu, fontWeight: 700, fontSize: 13.5 }}
+                              >
+                                {item.order_item_name || item.product_name}
+                              </LinkBox>
+                              {concerned && (
+                                <div style={{ marginTop: 4 }}>
+                                  <SavConcernedTag ticketIds={savIds} />
+                                </div>
+                              )}
+                            </div>
                           </div>
                         </td>
                         <td style={{ padding: '13px 14px', borderBottom: `1px solid ${C.grisTL}`, verticalAlign: 'middle', color: C.grisF, fontFamily: 'monospace', fontSize: 12.5 }}>
