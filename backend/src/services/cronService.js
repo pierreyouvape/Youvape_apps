@@ -557,6 +557,22 @@ const runStockValuationSnapshot = async () => {
   try {
     const point = await stockValuationModel.snapshotToday();
     console.log(`Snapshot valeur de stock: ${point.total_value_ht} EUR HT (${point.products_count} produits, ${point.total_units} unites)`);
+
+    // Garde-fou : le rapport doit toujours donner le meme chiffre que le catalogue.
+    // Toute divergence signale une regression (perimetre, units_per_qty, statuts de vente).
+    const check = await stockValuationModel.checkAlignmentWithCatalog();
+    if (!check.aligned) {
+      console.error(`Valeur de stock desalignee du catalogue: rapport ${check.report} vs catalogue ${check.catalog} (ecart ${check.delta})`);
+      sendAlert(
+        'Valeur de stock: rapport desaligne du catalogue',
+        `Le rapport /stats/reports et le catalogue ne donnent plus la meme valeur de stock HT.\n\n` +
+        `Rapport   : ${check.report} EUR HT\n` +
+        `Catalogue : ${check.catalog} EUR HT\n` +
+        `Ecart     : ${check.delta} EUR\n\n` +
+        `A verifier dans stockValuationModel : perimetre (STOCK_VALUE_SCOPE), units_per_qty sur les lots, ` +
+        `liste blanche des 6 statuts payes.`
+      );
+    }
   } catch (error) {
     console.error('Erreur snapshot valeur de stock:', error.message);
     sendAlert(

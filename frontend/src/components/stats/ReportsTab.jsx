@@ -1539,9 +1539,10 @@ const ReportsTab = () => {
           <div>
             <h2 style={{ margin: 0, color: '#333', fontSize: '24px' }}>Valeur de stock (achat HT)</h2>
             <p style={{ margin: '5px 0 0', color: '#666', fontSize: '13px', maxWidth: '620px' }}>
-              Évolution de la valeur du stock aux <strong>coûts d'achat de l'époque</strong> (PMP FIFO reconstruit
-              à chaque date). Historique d'achat disponible depuis octobre 2025 ; les mois passés sont reconstruits
-              (approximatifs, hors ajustements manuels d'inventaire), les jours à venir sont enregistrés exactement chaque soir.
+              La valeur du jour est <strong>identique à celle du catalogue</strong> (même périmètre, même coût d'achat).
+              Les dates passées sont valorisées aux <strong>coûts d'achat de l'époque</strong> (PMP FIFO borné à la date) :
+              historique d'achat disponible depuis octobre 2025, mois antérieurs reconstruits de façon approximative
+              (hors ajustements manuels d'inventaire).
             </p>
           </div>
         </div>
@@ -1555,6 +1556,7 @@ const ReportsTab = () => {
               <div style={{ backgroundColor: '#fff', borderRadius: '8px', padding: '18px', border: '1px solid #e9ecef' }}>
                 <div style={{ color: '#666', fontSize: '12px', marginBottom: '6px' }}>Valeur de stock actuelle</div>
                 <div style={{ color: '#28a745', fontSize: '22px', fontWeight: '700' }}>{formatPrice(current?.total_value_ht || 0)}</div>
+                <div style={{ color: '#999', fontSize: '11px', marginTop: '2px' }}>= valeur affichée dans le catalogue</div>
               </div>
               <div style={{ backgroundColor: '#fff', borderRadius: '8px', padding: '18px', border: '1px solid #e9ecef' }}>
                 <div style={{ color: '#666', fontSize: '12px', marginBottom: '6px' }}>Dont historique d'achat</div>

@@ -86,6 +86,23 @@ SUM(oi.qty * COALESCE(p.computed_cost, p.wc_cog_cost, 0))
 ```
 via jointure `order_items` → `products`.
 
+### Valeur de stock HT
+Le **catalogue fait référence** : `productModel.countForCatalog` → `totalStockValue`, affiché en haut
+de `/catalog`. Toute autre page qui affiche une valeur de stock (rapport `/stats/reports`, snapshots,
+exports) doit donner **exactement le même chiffre à la date du jour**.
+
+- **Coût unitaire** : toujours `COALESCE(p.computed_cost, p.wc_cog_cost, 0)`. Jamais un `unit_price`
+  de bon de commande brut : il est exprimé **au pack** pour les fournisseurs facturés au pack
+  (`units_per_qty`, cf. bug du 2026-08-11).
+- **Périmètre** (`stockValuationModel.STOCK_VALUE_SCOPE`) : produits `publish`, `simple` suivis en
+  stock (`track_stock = true`) + déclinaisons publiées d'un parent `variable` retenu. Packs `woosb`
+  exclus (leur coût est déjà porté par les composants), parents `variable` exclus (le stock est sur
+  les déclinaisons).
+- Le stock non publié ou non suivi est **hors périmètre** — c'est l'objet du rapport hebdo
+  `stockDraftReportService`, pas de la valeur d'inventaire.
+- **Contrôle** : `node src/scripts/checkStockValuation.js` (le cron de 23h55 le fait chaque nuit et
+  alerte par mail en cas d'écart).
+
 ### Bundles WooCommerce (woosb)
 
 Les produits de type `woosb` (packs) génèrent **deux lignes** dans `order_items` :
@@ -154,6 +171,32 @@ nouvel appel de lecture est authentifié sans effort. Les appels `fetch()`
 (alors : secret dédié).
 
 ## Bugs corrigés — historique
+
+### 2026-08-20 — Valeur de stock du rapport stats désalignée du catalogue (`commit 57fb43d`)
+**Fichiers** : `stockValuationModel.js`, `cronService.js`, `ReportsTab.jsx`,
+`scripts/checkStockValuation.js`, `scripts/recomputeStockValuationSnapshots.js`
+
+- **Symptôme** : la « Valeur de stock » de `/stats/reports` était très supérieure à celle du
+  catalogue à la même date.
+- **Causes (3, cumulatives)** :
+  1. `units_per_qty` ignoré — `stockValuationModel` était le **seul** consommateur de
+     `purchase_order_items` à ne pas l'appliquer : lots FIFO `units_per_qty` fois trop petits ET prix
+     **du pack** appliqué à chaque unité (cf. Booster Nicotine 100VG : 22,50 €/u au lieu de 0,23 €).
+     Les lots trop petits étaient en plus intégralement consommés par le pointeur de ventes → repli
+     sur « prix du dernier lot » = dernier prix de pack.
+  2. Statuts de vente en **liste noire** au lieu de la liste blanche des 6 statuts payés → pointeur
+     FIFO décalé par les statuts custom (même bug que le 2026-07-29 sur `computedCostModel`).
+  3. Périmètre différent du catalogue : tous les produits ayant du stock (brouillons, privés, non
+     suivis) au lieu des seuls publiés/suivis.
+- **Correctif** : `stockValuationModel` aligné sur le catalogue — même périmètre
+  (`STOCK_VALUE_SCOPE`), même coût courant à la date du jour, lots ramenés à l'unité, liste blanche.
+  Les dates passées gardent le coût d'époque (PMP FIFO borné à la date), mais avec exactement les
+  mêmes entrées que `computedCostModel`.
+- **Garde-fou** : le cron de snapshot (23h55) compare rapport et catalogue et alerte par mail au-delà
+  d'un centime d'écart. Vérification manuelle : `node src/scripts/checkStockValuation.js`.
+- **Rattrapage** : `node src/scripts/recomputeStockValuationSnapshots.js --apply` recalcule les
+  snapshots déjà pris avec l'ancienne formule (ils passent en `method = 'recomputed'`, affichés
+  « Reconstruit » — leurs quantités redeviennent approximatives).
 
 ### 2026-08-14 — Sous-marques vidées par yousync (`commit 2c5b07b`)
 Un produit portant à la fois le terme `pwb-brand` parent (« Eliquid France »)
