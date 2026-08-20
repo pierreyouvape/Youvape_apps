@@ -1,4 +1,5 @@
 const productModel = require('../models/productModel');
+const nextoreModel = require('../models/nextoreModel');
 const advancedFilterService = require('../services/advancedFilterService');
 const bmsApiModel = require('../models/bmsApiModel');
 const needsCalculationModel = require('../models/needsCalculationModel');
@@ -468,6 +469,21 @@ exports.getCatalogList = async (req, res) => {
 
     const { parents, variations } = await productModel.getAllForCatalog(limit, offset, search, trackStockOnly, stockTab, sortBy, sortDir, brand, onlyHidden, subBrand, supplierId);
     const { total, totalWithVariations, totalStockValue } = await productModel.countForCatalog(search, trackStockOnly, stockTab, brand, onlyHidden, subBrand, supplierId);
+
+    // Stock boutiques (Nextore) rapproché par EAN — MTP (1) et CAST (2)
+    try {
+      const ids = [...parents.map((p) => p.id), ...variations.map((v) => v.id)];
+      const boutiqueStock = await nextoreModel.getBoutiqueStockByWcIds(ids);
+      const attach = (row) => {
+        const b = boutiqueStock[row.id];
+        row.boutique_mtp = b && b[1] != null ? b[1] : null;
+        row.boutique_cast = b && b[2] != null ? b[2] : null;
+      };
+      parents.forEach(attach);
+      variations.forEach(attach);
+    } catch (e) {
+      console.error('Catalog: stock boutiques indisponible:', e.message);
+    }
 
     res.json({
       success: true,

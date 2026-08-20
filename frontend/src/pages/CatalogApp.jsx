@@ -74,7 +74,15 @@ const CATALOG_COLUMNS = [
   { key: 'stock',       label: 'Stock' },
   { key: 'incoming_qty',label: 'Arrivages' },
   { key: 'sales_30d',   label: 'Ventes 30j' },
+  { key: 'boutique_mtp',  label: 'Stock MTP' },
+  { key: 'boutique_cast', label: 'Stock CAST' },
 ];
+
+// Cellule de stock boutique : "—" si non suivi en boutique, rouge si négatif
+const boutiqueCell = (v) => {
+  if (v == null) return <span style={{ color: '#cbd5e1' }}>—</span>;
+  return <span style={{ color: v < 0 ? '#dc2626' : v === 0 ? '#ea580c' : '#111827', fontWeight: v ? 600 : 400 }}>{fmtInt(v)}</span>;
+};
 
 const CatalogApp = () => {
   const { token } = useContext(AuthContext);
@@ -268,6 +276,11 @@ const CatalogApp = () => {
         const totalStock = children.reduce((s, c) => s + (parseInt(c.stock) || 0), 0);
         const totalIncoming = children.reduce((s, c) => s + (parseInt(c.incoming_qty) || 0), 0);
         const totalSales = children.reduce((s, c) => s + (parseInt(c.sales_30d) || 0), 0);
+        // Stock boutiques : somme des déclinaisons ; null si aucune n'est suivie en boutique
+        const anyMtp = children.some(c => c.boutique_mtp != null);
+        const anyCast = children.some(c => c.boutique_cast != null);
+        const totalMtp = anyMtp ? children.reduce((s, c) => s + (c.boutique_mtp || 0), 0) : null;
+        const totalCast = anyCast ? children.reduce((s, c) => s + (c.boutique_cast || 0), 0) : null;
         // Un parent variable n'a pas d'emplacement propre : on ne l'affiche que si
         // toutes les declinaisons rangees partagent le meme (sinon chaque ligne montre le sien).
         const childLocations = [...new Set(children.map(c => c.shelf_location).filter(Boolean))];
@@ -285,7 +298,9 @@ const CatalogApp = () => {
           weight: null,
           stock: totalStock,
           incoming_qty: totalIncoming,
-          sales_30d: totalSales
+          sales_30d: totalSales,
+          boutique_mtp: totalMtp,
+          boutique_cast: totalCast
         });
 
         // Variation rows
@@ -665,6 +680,8 @@ const CatalogApp = () => {
                     {isVisible('stock') && <SortableHeader column="stock" label="Stock" />}
                     {isVisible('incoming_qty') && <SortableHeader column="incoming_qty" label="Arrivages" />}
                     {isVisible('sales_30d') && <SortableHeader column="sales_30d" label="Ventes 30j" />}
+                    {isVisible('boutique_mtp') && <SortableHeader column="boutique_mtp" label="Stock MTP" />}
+                    {isVisible('boutique_cast') && <SortableHeader column="boutique_cast" label="Stock CAST" />}
                   </tr>
                 </thead>
                 <tbody>
@@ -715,6 +732,8 @@ const CatalogApp = () => {
                           {isVisible('stock') && <td style={{ ...cellRight, fontWeight: 600 }}>{fmtInt(row.stock)}</td>}
                           {isVisible('incoming_qty') && <td style={{ ...cellRight, fontWeight: 600 }}>{fmtInt(row.incoming_qty)}</td>}
                           {isVisible('sales_30d') && <td style={{ ...cellRight, fontWeight: 600 }}>{fmtInt(row.sales_30d)}</td>}
+                          {isVisible('boutique_mtp') && <td style={cellRight}>{boutiqueCell(row.boutique_mtp)}</td>}
+                          {isVisible('boutique_cast') && <td style={cellRight}>{boutiqueCell(row.boutique_cast)}</td>}
                         </tr>
                       );
                     }
@@ -787,6 +806,8 @@ const CatalogApp = () => {
                         {isVisible('stock') && <td style={{ ...cellRight, fontWeight: '600', ...numStyle(row.stock) }}>{fmtInt(row.stock)}</td>}
                         {isVisible('incoming_qty') && <td style={cellRight}>{fmtInt(row.incoming_qty)}</td>}
                         {isVisible('sales_30d') && <td style={{ ...cellRight, ...numStyle(row.sales_30d) }}>{fmtInt(row.sales_30d)}</td>}
+                        {isVisible('boutique_mtp') && <td style={cellRight}>{boutiqueCell(row.boutique_mtp)}</td>}
+                        {isVisible('boutique_cast') && <td style={cellRight}>{boutiqueCell(row.boutique_cast)}</td>}
                       </LinkTr>
                     );
                   }); })()}

@@ -305,7 +305,8 @@ async function syncRecentSales(days = 3) {
 
 // --- Relevé de stock d'une boutique ----------------------------------------
 async function getStockDashboard(warehouseId, opts = {}) {
-  const params = [warehouseId];
+  const otherId = Number(warehouseId) === 1 ? 2 : 1; // l'autre boutique
+  const params = [warehouseId, otherId];
   const where = ['s.warehouse_id = $1'];
 
   if (opts.search) {
@@ -328,10 +329,13 @@ async function getStockDashboard(warehouseId, opts = {}) {
         p.price::float             AS price,
         (s.stock * COALESCE(p.cost, 0))::float AS stock_value,
         prev.stock::float          AS prev_stock,
-        (s.stock - COALESCE(prev.stock, s.stock))::float AS stock_delta
+        (s.stock - COALESCE(prev.stock, s.stock))::float AS stock_delta,
+        other.stock::float         AS other_stock,
+        wcs.wc_stock::float        AS wc_stock
      FROM nextore_stock s
      JOIN nextore_products p ON p.product_id = s.product_id
      LEFT JOIN nextore_categories c ON c.id = p.category_id
+     LEFT JOIN nextore_stock other ON other.product_id = s.product_id AND other.warehouse_id = $2
      LEFT JOIN LATERAL (
         -- dernier état connu AVANT le début de la journée Paris = stock d'hier soir
         SELECT h.stock FROM nextore_stock_history h
@@ -340,6 +344,15 @@ async function getStockDashboard(warehouseId, opts = {}) {
           AND h.captured_at < date_trunc('day', NOW() AT TIME ZONE 'Europe/Paris') AT TIME ZONE 'Europe/Paris'
         ORDER BY h.captured_at DESC LIMIT 1
      ) prev ON true
+     LEFT JOIN LATERAL (
+        -- stock WooCommerce rapproché par EAN (somme des produits WC ayant ce code-barres)
+        SELECT SUM(w.stock)::float AS wc_stock FROM (
+          SELECT DISTINCT pr.id, pr.stock
+          FROM product_barcodes pb
+          JOIN products pr ON pr.id = pb.product_id
+          WHERE p.barcode <> '' AND pb.barcode = p.barcode
+        ) w
+     ) wcs ON true
      WHERE ${where.join(' AND ')}
      ORDER BY p.name ASC`,
     params
@@ -555,6 +568,35 @@ async function getNeedsData(warehouseId) {
   return products;
 }
 
+/**
+ * Rapprochement WC → boutiques par EAN : pour une liste d'id produits WC
+ * (products.id), renvoie le stock par boutique (MTP=1, CAST=2).
+ * Map { wc_id: { 1: stockMtp, 2: stockCast } }. Dédoublonne les matchs
+ * multiples (un même produit Nextore atteint via 2 codes-barres WC).
+ */
+async function getBoutiqueStockByWcIds(wcIds) {
+  if (!Array.isArray(wcIds) || wcIds.length === 0) return {};
+  const ids = wcIds.map((n) => parseInt(n, 10)).filter((n) => Number.isInteger(n));
+  if (!ids.length) return {};
+  const { rows } = await pool.query(
+    `SELECT wc_id, warehouse_id, SUM(stock)::float AS stock FROM (
+        SELECT DISTINCT pb.product_id AS wc_id, np.product_id AS nx_id, ns.warehouse_id, ns.stock
+        FROM product_barcodes pb
+        JOIN nextore_products np ON np.barcode = pb.barcode AND np.barcode <> ''
+        JOIN nextore_stock ns ON ns.product_id = np.product_id
+        WHERE pb.product_id = ANY($1::int[])
+     ) t
+     GROUP BY wc_id, warehouse_id`,
+    [ids]
+  );
+  const map = {};
+  for (const r of rows) {
+    if (!map[r.wc_id]) map[r.wc_id] = {};
+    map[r.wc_id][r.warehouse_id] = r.stock;
+  }
+  return map;
+}
+
 /** Catégories ayant des produits en stock dans cette boutique (pour le filtre). */
 async function getCategoriesForShop(warehouseId) {
   const { rows } = await pool.query(
@@ -621,6 +663,7 @@ module.exports = {
   getNeedsData,
   getSuppliersForShop,
   getCategoriesForShop,
+  getBoutiqueStockByWcIds,
   getProductStockHistory,
   getLastSyncAt,
 };

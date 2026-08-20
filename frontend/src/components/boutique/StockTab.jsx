@@ -163,6 +163,10 @@ export default function StockTab({ shop, token }) {
   }, [data, sort, kpiFilter]);
 
   const s = data?.summary;
+  const otherLabel = Number(shop.id) === 1 ? 'Castelnau' : 'Montpellier';
+  // Cellule stock rapproché (autre boutique / WC) : "—" si non suivi, rouge si négatif
+  const crossCell = (v) => (v == null ? <span style={{ color: C.greyM }}>—</span>
+    : <span style={{ color: v < 0 ? C.red : v === 0 ? C.orange : C.dark, fontWeight: v ? 600 : 400 }}>{fmtNum(v)}</span>);
 
   return (
     <div>
@@ -226,13 +230,15 @@ export default function StockTab({ shop, token }) {
                 <Th align="right" onClick={() => toggleSort('cost')} active={sort.key === 'cost'} dir={sort.dir}>Coût HT</Th>
                 <Th align="right" onClick={() => toggleSort('price')} active={sort.key === 'price'} dir={sort.dir}>Prix TTC</Th>
                 <Th align="right" onClick={() => toggleSort('stock_value')} active={sort.key === 'stock_value'} dir={sort.dir}>Valeur</Th>
+                <Th align="right" onClick={() => toggleSort('other_stock')} active={sort.key === 'other_stock'} dir={sort.dir}>Stock {otherLabel}</Th>
+                <Th align="right" onClick={() => toggleSort('wc_stock')} active={sort.key === 'wc_stock'} dir={sort.dir}>Stock WC</Th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
                 <tr><Td style={{ textAlign: 'center', padding: 32, color: C.greyT }} align="center">Chargement…</Td></tr>
               ) : rows.length === 0 ? (
-                <tr><td colSpan={7} style={{ textAlign: 'center', padding: 32, color: C.greyM }}>Aucun produit.</td></tr>
+                <tr><td colSpan={9} style={{ textAlign: 'center', padding: 32, color: C.greyM }}>Aucun produit.</td></tr>
               ) : (
                 rows.map((r, i) => (
                   <tr key={r.product_id} style={{ background: i % 2 ? C.zebra : C.white }}>
@@ -249,6 +255,8 @@ export default function StockTab({ shop, token }) {
                     <Td align="right" color={C.greyT}>{r.cost == null ? '—' : fmtEur(r.cost)}</Td>
                     <Td align="right" color={C.greyT}>{r.price == null ? '—' : fmtEur(r.price)}</Td>
                     <Td align="right" bold>{fmtEur(r.stock_value)}</Td>
+                    <Td align="right">{crossCell(r.other_stock)}</Td>
+                    <Td align="right">{crossCell(r.wc_stock)}</Td>
                   </tr>
                 ))
               )}
