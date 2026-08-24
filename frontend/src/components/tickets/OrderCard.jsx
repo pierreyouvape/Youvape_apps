@@ -53,18 +53,18 @@ function IconUnlink({ size = 12, color = 'currentColor' }) {
 }
 
 // ─── Badge statut livraison (live tracking) ──────────────────────────────────
-export function TrackingBadge({ trackingNum, shippingCarrier }) {
+export function TrackingBadge({ trackingNum, shippingCarrier, country }) {
   const [status, setStatus] = useState(null);
 
   useEffect(() => {
     if (!trackingNum) { setStatus(false); return; }
     let cancelled = false;
-    fetch(`/api/sav/tracking/${encodeURIComponent(trackingNum)}?carrier=${encodeURIComponent(shippingCarrier || '')}`)
+    fetch(`/api/sav/tracking/${encodeURIComponent(trackingNum)}?carrier=${encodeURIComponent(shippingCarrier || '')}&country=${encodeURIComponent(country || '')}`)
       .then(r => r.json())
       .then(d => { if (!cancelled && d.success) setStatus(d); })
       .catch(() => { if (!cancelled) setStatus(false); });
     return () => { cancelled = true; };
-  }, [trackingNum, shippingCarrier]);
+  }, [trackingNum, shippingCarrier, country]);
 
   if (!trackingNum) return null;
 
@@ -130,6 +130,8 @@ export default function OrderCard({ order, highlighted, canAssign, onAssign, onU
   // Le carrier n'est renseigné qu'à l'expédition ; avant, on se rabat sur la
   // méthode de livraison choisie au checkout (toujours présente).
   const shippingMethod  = order.shipping_method || order.order_shipping_method || '';
+  // Pays de livraison : porté par le lien de suivi Mondial Relay (relais BE/LU).
+  const shippingCountry = order.shipping_country || order.order_shipping_country || '';
   const items = order.items || [];
 
   // Appariement des articles désignés par le client. Le SKU est la clé fiable
@@ -263,7 +265,7 @@ export default function OrderCard({ order, highlighted, canAssign, onAssign, onU
                 <IconTruck size={11} color={C.grisM} />{carrierName}
               </span>
             )}
-            <TrackingBadge trackingNum={trackingNum} shippingCarrier={shippingCarrier} />
+            <TrackingBadge trackingNum={trackingNum} shippingCarrier={shippingCarrier} country={shippingCountry} />
           </div>
         </div>
 

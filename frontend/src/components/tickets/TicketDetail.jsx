@@ -1810,8 +1810,10 @@ function TicketFieldsPanel({ ticket, onFieldChange, users, mobile = false }) {
   // Lien de suivi selon le transporteur de la commande liée ; à défaut (transporteur
   // inconnu), on retombe sur La Poste pour conserver l'ancien comportement.
   const trackingCarrier = ticket.order_carrier || ticket.order_shipping_method || '';
+  // Pays de livraison : utile pour Mondial Relay (relais BE/LU), FR par défaut.
+  const trackingCountry = ticket.order_shipping_country || ticket.order_billing_country || 'FR';
   const trackingUrl = trackingNum
-    ? (getTrackingUrl(trackingCarrier, trackingNum)
+    ? (getTrackingUrl(trackingCarrier, trackingNum, trackingCountry)
        || `https://www.laposte.fr/outils/suivre-vos-envois?code=${encodeURIComponent(trackingNum)}`)
     : null;
 

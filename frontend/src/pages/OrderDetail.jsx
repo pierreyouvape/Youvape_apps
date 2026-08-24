@@ -269,7 +269,7 @@ const OrderDetail = () => {
   const subtotal      = orderTotal - orderTax + cartDiscount; // articles + livraison, avant remise
   const subtotalItems = subtotal - orderShipping;             // articles HT seuls
 
-  const trackingUrl = getTrackingUrl(order.shipping_carrier, order.tracking_number);
+  const trackingUrl = getTrackingUrl(order.shipping_carrier, order.tracking_number, order.shipping_country);
 
   const shippingCostCalculated = order.shipping_cost_calculated != null ? parseFloat(order.shipping_cost_calculated) : null;
   const paymentCostCalculated  = order.payment_cost_calculated  != null ? parseFloat(order.payment_cost_calculated)  : null;

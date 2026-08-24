@@ -11,10 +11,17 @@ function detectCarrier(shippingCarrier) {
 }
 
 // ─── URL suivi publique par transporteur ─────────────────────────────────────
-function buildTrackingUrl(number, carrier) {
+// Mondial Relay : le n° d'expédition à 8 chiffres n'est unique QUE par enseigne.
+// Le lien doit donc porter `ens` (code enseigne Youvape) + `exp` + `pays` —
+// format vers lequel MR redirige ses propres liens permanents. Sans lui, la page
+// de suivi ne trouve pas le colis et réclame le code postal du destinataire.
+const MR_BRAND = process.env.MONDIAL_RELAY_BRAND_ID || 'LGYOUVAP';
+
+function buildTrackingUrl(number, carrier, country) {
   if (!number || !carrier) return null;
+  const pays = encodeURIComponent((country || 'FR').toUpperCase());
   const urls = {
-    mondial_relay: `https://www.mondialrelay.fr/suivi-de-colis?codeMarque=LG&numeroExpedition=${encodeURIComponent(number)}&language=FR`,
+    mondial_relay: `https://www.mondialrelay.fr/suivi-de-colis/?ens=${MR_BRAND}&exp=${encodeURIComponent(number)}&pays=${pays}&language=fr`,
     colissimo:     `https://www.laposte.fr/outils/suivre-vos-envois?code=${encodeURIComponent(number)}`,
     chronopost:    `https://www.chronopost.fr/tracking-no-cms/suivi-page?listeNumerosLT=${encodeURIComponent(number)}&langue=fr`,
   };
@@ -116,9 +123,9 @@ async function trackMondialRelay(number, trackingUrl) {
 }
 
 // ─── Point d'entrée principal ─────────────────────────────────────────────────
-async function getTrackingStatus(number, shippingCarrier) {
+async function getTrackingStatus(number, shippingCarrier, country) {
   const carrier    = detectCarrier(shippingCarrier);
-  const trackingUrl = buildTrackingUrl(number, carrier);
+  const trackingUrl = buildTrackingUrl(number, carrier, country);
 
   if (!number) {
     return { label: null, color: null, trackingUrl: null, carrier: null, live: false };

@@ -1117,7 +1117,7 @@ const savController = {
 
       const limit = parseInt(req.query.limit) || 6;
       const ordersRes = await pool.query(
-        `SELECT wp_order_id, post_date, post_status, order_total, tracking_number, shipping_carrier
+        `SELECT wp_order_id, post_date, post_status, order_total, tracking_number, shipping_carrier, shipping_country
          FROM orders WHERE wp_customer_id = $1
          ORDER BY post_date DESC LIMIT $2`,
         [wpUserId, limit]
@@ -1154,7 +1154,7 @@ const savController = {
 
       const ordersRes = await pool.query(
         `SELECT wp_order_id, wp_customer_id, post_date, post_status, order_total,
-                tracking_number, shipping_carrier, shipping_method,
+                tracking_number, shipping_carrier, shipping_method, shipping_country,
                 billing_first_name, billing_last_name, billing_email, billing_phone
          FROM orders WHERE wp_order_id = $1`,
         [orderId]
@@ -1229,8 +1229,8 @@ const savController = {
   getTracking: async (req, res) => {
     try {
       const { number } = req.params;
-      const { carrier } = req.query; // shipping_carrier WooCommerce
-      const result = await getTrackingStatus(number, carrier || '');
+      const { carrier, country } = req.query; // shipping_carrier + pays de livraison WooCommerce
+      const result = await getTrackingStatus(number, carrier || '', country || '');
       res.json({ success: true, ...result });
     } catch (error) {
       console.error('❌ [SAV Tracking]:', error);

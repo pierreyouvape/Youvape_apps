@@ -189,6 +189,7 @@ class SavModel {
          o.tracking_number   as order_tracking_from_order,
          o.shipping_carrier  as order_carrier,
          o.shipping_method   as order_shipping_method,
+         o.shipping_country  as order_shipping_country,
          o.billing_country   as order_billing_country,
          c.first_name        as customer_first_name,
          c.last_name         as customer_last_name,
@@ -254,7 +255,7 @@ class SavModel {
 
       // Historique commandes (hors commande concernée) avec articles
       const histRes = await pool.query(
-        `SELECT wp_order_id, post_date, post_status, order_total, tracking_number, shipping_carrier, shipping_method
+        `SELECT wp_order_id, post_date, post_status, order_total, tracking_number, shipping_carrier, shipping_method, shipping_country
          FROM orders
          WHERE wp_customer_id = $1
            AND wp_order_id::text != $2
