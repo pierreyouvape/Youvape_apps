@@ -41,13 +41,15 @@ function confidenceOf(row) {
 }
 
 /* ─── PETITS COMPOSANTS ─────────────────────────────────── */
-function Th({ children, align = 'left', width }) {
+function Th({ children, align = 'left', width, onClick, active, dir }) {
   return (
-    <th style={{
-      padding: '11px 14px', textAlign: align, width, fontWeight: 700, color: C.greyT,
+    <th onClick={onClick} title={onClick ? 'Trier' : undefined} style={{
+      padding: '11px 14px', textAlign: align, width, fontWeight: 700,
+      color: active ? C.primary : C.greyT,
       fontSize: 11.5, textTransform: 'uppercase', letterSpacing: 0.3,
       borderBottom: `2px solid ${C.greyB}`, background: C.grey, whiteSpace: 'nowrap',
-    }}>{children}</th>
+      cursor: onClick ? 'pointer' : 'default', userSelect: 'none',
+    }}>{children}{active ? (dir === 'asc' ? ' ▲' : ' ▼') : ''}</th>
   );
 }
 function Td({ children, align = 'left', bold, color, style }) {
@@ -96,6 +98,19 @@ function Chip({ children, color, bg, title }) {
     }}>{children}</span>
   );
 }
+
+/**
+ * Seuils « ceux qui posent problème ». Le % isole les tarifs caisse qui ont
+ * dérivé ; les euros isolent ceux qui pèsent sur la valeur de stock — les deux
+ * ne désignent pas les mêmes lignes.
+ */
+const GAP_PRESETS = [
+  { key: 'none', label: 'Tous',        pct: 0,  eur: 0 },
+  { key: 'p20',  label: 'Écart ≥ 20 %', pct: 20, eur: 0 },
+  { key: 'p50',  label: 'Écart ≥ 50 %', pct: 50, eur: 0 },
+  { key: 'e50',  label: 'Impact ≥ 50 €', pct: 0,  eur: 50 },
+  { key: 'e200', label: 'Impact ≥ 200 €', pct: 0, eur: 200 },
+];
 
 /* ─── ONGLETS DE STATUT ─────────────────────────────────── */
 const TABS = [
@@ -180,6 +195,8 @@ export default function RapprochementTab({ shop, token }) {
   const [search, setSearch] = useState('');
   const [onlyWarnings, setOnlyWarnings] = useState(false);
   const [scopeAll, setScopeAll] = useState(false);
+  const [gap, setGap] = useState('none');
+  const [sort, setSort] = useState({ key: null, dir: 'desc' });  // null = tri par confiance
   const [selected, setSelected] = useState(() => new Set());
   const [expanded, setExpanded] = useState(null);   // nx_product_id dont on édite le lien
   const [savingIds, setSavingIds] = useState(() => new Set());
@@ -192,6 +209,10 @@ export default function RapprochementTab({ shop, token }) {
       if (search.trim()) params.set('search', search.trim());
       if (onlyWarnings) params.set('warnings', '1');
       if (scopeAll) params.set('scope', 'all');
+      const preset = GAP_PRESETS.find((g) => g.key === gap);
+      if (preset?.pct) params.set('min_ecart_pct', String(preset.pct));
+      if (preset?.eur) params.set('min_impact', String(preset.eur));
+      if (sort.key) { params.set('sort', sort.key); params.set('dir', sort.dir); }
       const res = await axios.get(`${API_URL}/nextore/${shop.slug}/match?${params}`, authHeaders(token));
       setData(res.data);
       setSelected(new Set());
@@ -200,7 +221,7 @@ export default function RapprochementTab({ shop, token }) {
     } finally {
       setLoading(false);
     }
-  }, [shop.slug, token, status, search, onlyWarnings, scopeAll]);
+  }, [shop.slug, token, status, search, onlyWarnings, scopeAll, gap, sort]);
 
   useEffect(() => {
     const t = setTimeout(load, 300);
@@ -223,6 +244,10 @@ export default function RapprochementTab({ shop, token }) {
       setRunning(false);
     }
   };
+
+  const toggleSort = (key) => setSort((cur) => (
+    cur.key === key ? { key, dir: cur.dir === 'desc' ? 'asc' : 'desc' } : { key, dir: 'desc' }
+  ));
 
   const markSaving = (id, on) => setSavingIds((s) => {
     const next = new Set(s);
@@ -293,6 +318,10 @@ export default function RapprochementTab({ shop, token }) {
         <Kpi label="Alertes pack" value={s ? fmtNum(s.warnings) : '—'} sub="conditionnement à trancher"
              color={s?.warnings > 0 ? C.orange : C.greyM}
              active={onlyWarnings} onClick={() => setOnlyWarnings((w) => !w)} />
+        <Kpi label="Enjeu en attente" value={s ? fmtEur(s.pending_impact) : '—'}
+             sub={s ? `${fmtNum(s.pending_big_gap)} réf. à plus de 30 % d'écart` : null}
+             color={s?.pending_impact < 0 ? C.red : C.green}
+             active={gap !== 'none'} onClick={() => setGap((g) => (g === 'none' ? 'p20' : 'none'))} />
         <Kpi label="Valeur alignée" value={s ? fmtEur(s.approved_value_aligned) : '—'}
              sub={s ? `caisse : ${fmtEur(s.approved_value_nextore)}${ecart ? ` (${ecart > 0 ? '+' : ''}${fmtEur(ecart)})` : ''}` : null}
              color={ecart != null && ecart < 0 ? C.red : C.primary} />
@@ -324,6 +353,16 @@ export default function RapprochementTab({ shop, token }) {
           <input type="checkbox" checked={scopeAll} onChange={(e) => setScopeAll(e.target.checked)} />
           Tout le catalogue
         </label>
+        <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+          {GAP_PRESETS.map((g) => (
+            <button key={g.key} onClick={() => setGap(g.key)} style={{
+              padding: '5px 11px', borderRadius: 20, fontSize: 12.5, fontWeight: 600, cursor: 'pointer',
+              border: `1px solid ${gap === g.key ? C.accent : C.greyB}`,
+              background: gap === g.key ? C.accentL : C.white,
+              color: gap === g.key ? '#8A5A00' : C.greyT,
+            }}>{g.label}</button>
+          ))}
+        </div>
         <div style={{ flex: 1 }} />
         <span style={{ fontSize: 12, color: C.greyM }}>Dernier passage : {fmtDateTime(s?.lastMatchAt)}</span>
         <Btn onClick={runEngine} disabled={running} variant="accent">
@@ -367,21 +406,33 @@ export default function RapprochementTab({ shop, token }) {
                   <input type="checkbox" checked={allSelected} onChange={toggleAll}
                          disabled={!selectableIds.length} title="Tout sélectionner" />
                 </Th>
-                <Th>Produit caisse</Th>
-                <Th align="right" width={70}>Stock</Th>
-                <Th align="right" width={90}>Coût caisse</Th>
+                <Th onClick={() => toggleSort('name')} active={sort.key === 'name'} dir={sort.dir}>Produit caisse</Th>
+                <Th align="right" width={70} onClick={() => toggleSort('stock')} active={sort.key === 'stock'} dir={sort.dir}>Stock</Th>
+                <Th align="right" width={90} onClick={() => toggleSort('cost')} active={sort.key === 'cost'} dir={sort.dir}>Coût caisse</Th>
                 <Th>Produit site</Th>
                 <Th align="center" width={60}>Pack</Th>
-                <Th align="right" width={100}>Coût aligné</Th>
-                <Th align="center" width={100}>Confiance</Th>
+                <Th align="right" width={100} onClick={() => toggleSort('aligned')} active={sort.key === 'aligned'} dir={sort.dir}>Coût aligné</Th>
+                {/* Deux tris distincts : la dérive du tarif (%) et son poids (€) ne
+                    désignent pas les mêmes lignes — on laisse choisir. */}
+                <Th align="right" width={120}>
+                  Écart{' '}
+                  <span onClick={() => toggleSort('ecart_pct')} style={{ cursor: 'pointer', color: sort.key === 'ecart_pct' ? C.primary : C.greyM }}>
+                    %{sort.key === 'ecart_pct' ? (sort.dir === 'asc' ? ' ▲' : ' ▼') : ''}
+                  </span>
+                  <span style={{ color: C.greyB }}> / </span>
+                  <span onClick={() => toggleSort('impact')} style={{ cursor: 'pointer', color: sort.key === 'impact' ? C.primary : C.greyM }}>
+                    €{sort.key === 'impact' ? (sort.dir === 'asc' ? ' ▲' : ' ▼') : ''}
+                  </span>
+                </Th>
+                <Th align="center" width={100} onClick={() => toggleSort('score')} active={sort.key === 'score'} dir={sort.dir}>Confiance</Th>
                 <Th align="right" width={190}>Décision</Th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={9} style={{ textAlign: 'center', padding: 32, color: C.greyT }}>Chargement…</td></tr>
+                <tr><td colSpan={10} style={{ textAlign: 'center', padding: 32, color: C.greyT }}>Chargement…</td></tr>
               ) : rows.length === 0 ? (
-                <tr><td colSpan={9} style={{ textAlign: 'center', padding: 32, color: C.greyM }}>
+                <tr><td colSpan={10} style={{ textAlign: 'center', padding: 32, color: C.greyM }}>
                   Aucun lien dans cette vue. Lancez le moteur pour générer des propositions.
                 </td></tr>
               ) : rows.map((r, i) => {
@@ -389,8 +440,7 @@ export default function RapprochementTab({ shop, token }) {
                 const saving = savingIds.has(r.nx_product_id);
                 const isOpen = expanded === r.nx_product_id;
                 // Écart en % entre le coût caisse et le coût dérivé du site
-                const delta = (r.aligned_cost != null && r.nx_cost)
-                  ? (r.aligned_cost - r.nx_cost) / r.nx_cost : null;
+                const delta = r.ecart_pct;
                 return (
                   <tr key={r.nx_product_id} style={{ background: i % 2 ? C.zebra : C.white, opacity: saving ? 0.5 : 1 }}>
                     <Td>
@@ -470,14 +520,20 @@ export default function RapprochementTab({ shop, token }) {
                       ) : <span style={{ color: C.greyM }}>—</span>}
                     </Td>
                     <Td align="right" bold>
-                      {r.aligned_cost == null ? <span style={{ color: C.greyM, fontWeight: 400 }}>—</span> : (
+                      {r.aligned_cost == null
+                        ? <span style={{ color: C.greyM, fontWeight: 400 }}>—</span>
+                        : fmtEur(r.aligned_cost)}
+                    </Td>
+                    <Td align="right">
+                      {delta == null ? <span style={{ color: C.greyM }}>—</span> : (
                         <>
-                          {fmtEur(r.aligned_cost)}
-                          {delta != null && Math.abs(delta) >= 0.05 && (
-                            <div style={{ fontSize: 11.5, fontWeight: 700, color: delta > 0 ? C.green : C.red }}>
-                              {delta > 0 ? '▲' : '▼'} {Math.abs(Math.round(delta * 100))}%
-                            </div>
-                          )}
+                          <div style={{ fontWeight: 700, fontSize: 13.5, color: delta > 0 ? C.green : delta < 0 ? C.red : C.greyT }}>
+                            {delta > 0 ? '+' : ''}{Math.round(delta * 100)} %
+                          </div>
+                          {/* Ce que l'écart pèse sur la valeur de stock : le vrai enjeu */}
+                          <div style={{ fontSize: 11.5, color: C.greyT, fontWeight: 600 }} title="Impact sur la valeur de stock">
+                            {r.ecart_valeur > 0 ? '+' : ''}{fmtEur(r.ecart_valeur)}
+                          </div>
                         </>
                       )}
                     </Td>

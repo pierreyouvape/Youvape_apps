@@ -18,6 +18,29 @@ const WC_COST = 'COALESCE(pr.computed_cost, pr.wc_cog_cost)';
 /** Coût unitaire boutique dérivé du site (SQL réutilisé partout). */
 const ALIGNED_COST = `(${WC_COST} / NULLIF(l.pack_qty, 0))`;
 
+/** Dérive du tarif caisse, à l'unité puis en %. */
+const ECART_UNIT = `(${ALIGNED_COST} - p.cost)`;
+const ECART_PCT = `(${ECART_UNIT} / NULLIF(p.cost, 0))`;
+/**
+ * Ce que l'écart pèse VRAIMENT sur la valeur de stock. C'est le bon critère de
+ * tri : 300 % de dérive sur une unité à 0,20 € ne coûte rien, 20 % sur 500
+ * unités change le total. Le tri par confiance ne dit rien de l'enjeu.
+ */
+const ECART_VALEUR = `(st.stock * ${ECART_UNIT})`;
+
+/** Tris autorisés (jamais d'expression venue du client dans le ORDER BY). */
+const SORTS = {
+  impact:     `ABS(${ECART_VALEUR})`,
+  ecart_pct:  `ABS(${ECART_PCT})`,
+  stock:      'ABS(COALESCE(st.stock, 0))',
+  cost:       'p.cost',
+  aligned:    ALIGNED_COST,
+  name:       'p.name',
+  score:      'l.score',
+};
+/** Tri par défaut : les pistes les plus sûres d'abord, à enjeu décroissant. */
+const SORT_CONFIDENCE = `(l.match_method = 'ean') DESC, l.score DESC NULLS LAST, ABS(COALESCE(st.stock, 0)) DESC`;
+
 /**
  * File de validation. `shop` (1|2) restreint aux produits portant du stock dans
  * cette boutique et fait remonter ce stock, mais les liens eux-mêmes sont
@@ -47,6 +70,18 @@ async function listLinks(opts = {}) {
   }
   if (opts.onlyWarnings) where.push('l.pack_warning IS NOT NULL');
 
+  // Seuils « ceux qui posent problème » : dérive en % et/ou poids en euros
+  const minPct = Number(opts.minEcartPct);
+  if (Number.isFinite(minPct) && minPct > 0) {
+    params.push(minPct / 100);
+    where.push(`ABS(${ECART_PCT}) >= $${params.length}`);
+  }
+  const minImpact = Number(opts.minImpact);
+  if (Number.isFinite(minImpact) && minImpact > 0) {
+    params.push(minImpact);
+    where.push(`ABS(${ECART_VALEUR}) >= $${params.length}`);
+  }
+
   let shopJoin = 'LEFT JOIN LATERAL (SELECT SUM(ABS(stock)) AS stock FROM nextore_stock s WHERE s.product_id = p.product_id) st ON true';
   if (opts.shopId) {
     params.push(Number(opts.shopId));
@@ -54,6 +89,11 @@ async function listLinks(opts = {}) {
                   WHERE s.product_id = p.product_id AND s.warehouse_id = $${params.length}) st ON true`;
     where.push('st.stock <> 0');
   }
+
+  const dir = String(opts.dir || 'desc').toLowerCase() === 'asc' ? 'ASC' : 'DESC';
+  const orderBy = SORTS[opts.sort]
+    ? `${SORTS[opts.sort]} ${dir} NULLS LAST, p.name ASC`
+    : SORT_CONFIDENCE;
 
   const limit = Math.min(Math.max(parseInt(opts.limit, 10) || 200, 1), 2000);
   const offset = Math.max(parseInt(opts.offset, 10) || 0, 0);
@@ -71,7 +111,9 @@ async function listLinks(opts = {}) {
        pr.post_title AS wc_title, pr.sku AS wc_sku, pr.post_status AS wc_status,
        pr.image_url AS wc_image, pr.wp_product_id AS wc_wp_id,
        ${WC_COST}::float AS wc_cost,
-       ${ALIGNED_COST}::float AS aligned_cost
+       ${ALIGNED_COST}::float AS aligned_cost,
+       ${ECART_PCT}::float    AS ecart_pct,
+       ${ECART_VALEUR}::float AS ecart_valeur
      FROM nextore_product_links l
      JOIN nextore_products p ON p.product_id = l.nx_product_id
      LEFT JOIN nextore_categories c ON c.id = p.category_id
@@ -79,7 +121,7 @@ async function listLinks(opts = {}) {
      LEFT JOIN users u ON u.id = l.reviewed_by
      ${shopJoin}
      ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
-     ORDER BY (l.match_method = 'ean') DESC, l.score DESC NULLS LAST, ABS(COALESCE(st.stock, 0)) DESC
+     ORDER BY ${orderBy}
      LIMIT $${params.length - 1} OFFSET $${params.length}`,
     params
   );
@@ -131,7 +173,10 @@ async function getSummary(shopId) {
        COUNT(*) FILTER (WHERE l.pack_warning IS NOT NULL AND l.status = 'pending')::int  AS warnings,
        COUNT(*) FILTER (WHERE l.status = 'approved' AND l.pack_qty > 1)::int      AS approved_packs,
        COALESCE(SUM(st.stock * COALESCE(p.cost, 0)) FILTER (WHERE l.status = 'approved'), 0)::float      AS approved_value_nextore,
-       COALESCE(SUM(st.stock * ${ALIGNED_COST}) FILTER (WHERE l.status = 'approved'), 0)::float          AS approved_value_aligned
+       COALESCE(SUM(st.stock * ${ALIGNED_COST}) FILTER (WHERE l.status = 'approved'), 0)::float          AS approved_value_aligned,
+       -- Enjeu restant : ce que la validation des propositions changerait
+       COALESCE(SUM(${ECART_VALEUR}) FILTER (WHERE l.status = 'pending'), 0)::float                      AS pending_impact,
+       COUNT(*) FILTER (WHERE l.status = 'pending' AND ABS(${ECART_PCT}) >= 0.3)::int                     AS pending_big_gap
      FROM nextore_product_links l
      JOIN nextore_products p ON p.product_id = l.nx_product_id
      LEFT JOIN products pr ON pr.id = l.wc_product_id
