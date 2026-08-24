@@ -702,6 +702,7 @@ const setupBrandMapCron = () => {
 //  - Passage complet de securite chaque nuit a 23h50
 
 const nextoreModel = require('../models/nextoreModel');
+const nextoreMatchService = require('./nextoreMatchService');
 
 let nextoreCatalogJob = null;
 let nextoreStockJobs = [];
@@ -743,6 +744,17 @@ const runNextoreNightly = async () => {
   try {
     const r = await nextoreModel.syncAll();
     console.log(`Nextore complet (nuit): ${r.products} produits, stock MTP=${r.stock[1]} CAST=${r.stock[2]} (${r.durationMs} ms)`);
+    // Rapprochement caisse <-> site : les nouveaux produits arrivent avec une
+    // proposition prete a relire. Les liens deja valides ou rejetes ne sont
+    // jamais retouches (cf. nextoreMatchService), le cron ne peut donc pas
+    // defaire un arbitrage humain.
+    try {
+      const m = await nextoreMatchService.runMatching({ onlyInStock: true });
+      console.log(`Nextore rapprochement: ${m.ean} EAN, ${m.name} nom, ${m.none} sans piste, ${m.skippedLocked} deja arbitres (${m.durationMs} ms)`);
+    } catch (err) {
+      // Un echec du rapprochement ne doit pas masquer le succes de la synchro
+      console.error('Erreur cron Nextore rapprochement:', err.message);
+    }
   } catch (error) {
     console.error('Erreur cron Nextore complet:', error.message);
     sendAlert('Cron boutiques Nextore (complet): echec',
@@ -770,7 +782,7 @@ const setupNextoreCrons = () => {
   // Passage complet de securite chaque nuit
   nextoreNightlyJob = cron.schedule('50 23 * * *', runNextoreNightly, tz);
 
-  console.log('Crons boutiques Nextore configures: catalogue */30 8-20h, stock */10 9h30-19h, ventes 23h40, complet 23h50 (Europe/Paris)');
+  console.log('Crons boutiques Nextore configures: catalogue */30 8-20h, stock */10 9h30-19h, ventes 23h40, complet + rapprochement 23h50 (Europe/Paris)');
 };
 
 

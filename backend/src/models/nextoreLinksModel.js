@@ -145,10 +145,28 @@ async function getSummary(shopId) {
   return { ...rows[0], lastMatchAt: cfg[0]?.config_value || null };
 }
 
-/** Produits site pour le rattachement manuel (recherche titre / SKU / EAN). */
+/**
+ * Produits site pour le rattachement manuel (recherche titre / SKU / EAN).
+ *
+ * Chaque mot doit être présent, mais pas forcément côte à côte : on tape
+ * « nautilus mesh » pour trouver « Pack 5 Résistances Nautilus - 1.00 Ω mesh ».
+ * Un ILIKE sur la chaîne entière ne ramènerait rien.
+ */
 async function searchWcProducts(q, limit = 25) {
   const term = String(q || '').trim();
   if (term.length < 2) return [];
+  const words = term.split(/\s+/).filter((w) => w.length >= 2).slice(0, 6);
+  if (!words.length) return [];
+
+  const params = [];
+  const conds = words.map((w) => {
+    params.push(`%${w}%`);
+    return `(pr.post_title ILIKE $${params.length} OR pr.sku ILIKE $${params.length})`;
+  });
+  params.push(term);                       // EAN / SKU exact : court-circuite les mots
+  const exactIdx = params.length;
+  params.push(Math.min(Math.max(parseInt(limit, 10) || 25, 1), 100));
+
   const { rows } = await pool.query(
     `SELECT DISTINCT ON (pr.id)
        pr.id, pr.post_title, pr.sku, pr.post_status, pr.product_type,
@@ -156,10 +174,10 @@ async function searchWcProducts(q, limit = 25) {
      FROM products pr
      LEFT JOIN product_barcodes pb ON pb.product_id = pr.id
      WHERE pr.product_type IN ('simple', 'variation', 'woosb')
-       AND (pr.post_title ILIKE $1 OR pr.sku ILIKE $1 OR pb.barcode = $2)
+       AND ((${conds.join(' AND ')}) OR pb.barcode = $${exactIdx} OR pr.sku = $${exactIdx})
      ORDER BY pr.id, pr.post_status
-     LIMIT $3`,
-    [`%${term}%`, term, Math.min(Math.max(parseInt(limit, 10) || 25, 1), 100)]
+     LIMIT $${params.length}`,
+    params
   );
   // Publiés d'abord : un lien vers un brouillon est rarement le bon
   rows.sort((a, b) => (a.post_status === 'publish' ? 0 : 1) - (b.post_status === 'publish' ? 0 : 1));
