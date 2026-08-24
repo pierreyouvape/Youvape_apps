@@ -101,9 +101,13 @@ function tokenize(str) {
   return [...new Set(out)];
 }
 
-/** Nombre d'unités annoncé par le titre : « Pack 5 … », « Lot de 3 … ». */
+/**
+ * Nombre d'unités annoncé par un libellé : « Pack 5 … », « Pack 2X … »,
+ * « Pack X4 … », « Pack de 42 … », « Set 30 … ». Les deux catalogues écrivent
+ * la même chose de six façons différentes.
+ */
 function packFromTitle(title) {
-  const m = normalize(title).match(/\b(?:pack|lot|set|boite|boite de)\s*(?:de\s*)?([0-9]{1,2})\b/);
+  const m = normalize(title).match(/\b(?:pack|lot|set|boite)\s*(?:de\s*)?(?:x\s*)?([0-9]{1,2})\s*x?\b/);
   if (!m) return null;
   const n = parseInt(m[1], 10);
   return n >= 2 && n <= 50 ? n : null;
@@ -308,19 +312,29 @@ async function runMatching({ onlyInStock = true } = {}) {
     let packWarning = null;
     if (wcId) {
       const w = wcById.get(wcId);
-      const byTitle = w ? packFromTitle(w.post_title) : null;
+      // pack_qty est un RAPPORT entre les deux conditionnements, pas le compte
+      // affiché par le site : la caisse vend elle aussi des packs (« PACK 2
+      // CARTOUCHES »). Un pack de 2 des deux côtés = même granularité = 1.
+      const nxUnits = packFromTitle(nx.name) || 1;
+      const wcUnits = (w ? packFromTitle(w.post_title) : null) || 1;
       const byRatio = w ? packFromCostRatio(w.cost, nx.cost) : null;
-      // Le titre fait foi. Le ratio de coût ne sert QU'À CONTRÔLER : le déduire
-      // du ratio serait circulaire, puisque c'est justement le coût caisse qui
-      // est faux — un écart de prix deviendrait un faux pack.
-      if (byTitle) {
-        packQty = byTitle;
-        packSource = 'title';
-        if (byRatio && byRatio !== byTitle) {
-          packWarning = `Titre « pack ${byTitle} » mais le rapport des coûts indique ${byRatio}×`;
-        }
-      } else if (byRatio && byRatio > 1) {
-        packWarning = `Le coût site vaut ${byRatio}× le coût caisse : pack de ${byRatio} ou tarif caisse à revoir ?`;
+
+      if (wcUnits % nxUnits === 0 && wcUnits >= nxUnits) {
+        packQty = wcUnits / nxUnits;
+        packSource = wcUnits === 1 && nxUnits === 1 ? 'default' : 'title';
+      } else {
+        // Conditionnements non multiples (caisse par 3, site par 5) : pack_qty
+        // est entier en base, on ne devine pas — l'arbitrage revient à l'humain.
+        packWarning = `Conditionnements non multiples : caisse par ${nxUnits}, site par ${wcUnits}`;
+      }
+
+      // Le ratio de coût ne sert QU'À CONTRÔLER. Le déduire serait circulaire :
+      // c'est justement le coût caisse qui est faux, un écart de prix
+      // deviendrait un faux pack.
+      if (!packWarning && byRatio && byRatio !== packQty) {
+        packWarning = packSource === 'title'
+          ? `Conditionnements : ×${packQty} attendu, mais le rapport des coûts indique ×${byRatio}`
+          : `Le coût site vaut ${byRatio}× le coût caisse : pack non déclaré ou tarif caisse à revoir ?`;
       }
     }
 
