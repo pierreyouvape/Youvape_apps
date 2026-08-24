@@ -127,6 +127,11 @@ function packFromCostRatio(wcCost, nxCost) {
   return n;
 }
 
+/** Montant en euros, format français, sans dépendre d'ICU. */
+function eur(n) {
+  return `${Number(n).toFixed(2).replace('.', ',')} €`;
+}
+
 /** EAN exploitables d'un champ barcode Nextore (multi-valué, avec du bruit). */
 function splitBarcodes(barcode) {
   if (!barcode) return [];
@@ -335,10 +340,15 @@ async function runMatching({ onlyInStock = true } = {}) {
       // Le ratio de coût ne sert QU'À CONTRÔLER. Le déduire serait circulaire :
       // c'est justement le coût caisse qui est faux, un écart de prix
       // deviendrait un faux pack.
+      // Message volontairement chiffré : « le rapport indique ×4 » se lisait à
+      // tort comme « le pack contient 4 unités », alors que 4 n'est qu'une
+      // division. On donne les deux montants et ce qui devrait être vrai.
       if (!packWarning && byRatio && byRatio !== packQty) {
-        packWarning = packSource === 'title'
-          ? `Conditionnements : ×${packQty} attendu, mais le rapport des coûts indique ×${byRatio}`
-          : `Le coût site vaut ${byRatio}× le coût caisse : pack non déclaré ou tarif caisse à revoir ?`;
+        packWarning = packQty > 1
+          ? `Coût site ${eur(w.cost)} au lieu de ${packQty} × ${eur(nx.cost)} = ${eur(nx.cost * packQty)}`
+            + ' — tarif caisse périmé, ou mauvais produit site.'
+          : `Coût site ${eur(w.cost)} pour ${eur(nx.cost)} en caisse (${byRatio}×)`
+            + ' — pack non déclaré, ou mauvais produit site.';
       }
     }
 
