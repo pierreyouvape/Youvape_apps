@@ -211,13 +211,16 @@ async function runMatching({ onlyInStock = true } = {}) {
        ${onlyInStock ? 'AND COALESCE(st.stock, 0) <> 0' : ''}`
   );
 
-  // Produits site candidats : publiés, hors parents variables (doublons de titre)
+  // Produits site, hors parents variables (leur titre doublonne celui des
+  // déclinaisons). On charge TOUS les statuts : un EAN peut pointer vers une
+  // déclinaison `private`, et sans elle en mémoire le pack et le coût de
+  // contrôle retombaient silencieusement sur leurs valeurs par défaut.
+  // Seuls les produits publiés servent de candidats à la recherche par nom.
   const { rows: wcRows } = await pool.query(
-    `SELECT id, sku, post_title, product_type,
+    `SELECT id, sku, post_title, product_type, post_status,
             COALESCE(computed_cost, wc_cog_cost)::float AS cost
      FROM products
-     WHERE post_status = 'publish'
-       AND product_type IN ('simple', 'variation', 'woosb')
+     WHERE product_type IN ('simple', 'variation', 'woosb')
        AND COALESCE(post_title, '') <> ''`
   );
 
@@ -239,12 +242,13 @@ async function runMatching({ onlyInStock = true } = {}) {
   }
 
   const wcById = new Map();
-  const wcProducts = wcRows.map((p) => {
+  const wcProducts = [];   // corpus indexé pour la recherche par nom (publiés)
+  for (const p of wcRows) {
     const item = { ...p, tokens: tokenize(p.post_title), tokenSet: null };
     item.tokenSet = new Set(item.tokens);
     wcById.set(p.id, item);
-    return item;
-  });
+    if (p.post_status === 'publish') wcProducts.push(item);
+  }
   const { postings, idf, maxIdf } = buildIndex(wcProducts);
 
   const stats = { scanned: 0, ean: 0, eanAmbiguous: 0, name: 0, none: 0, skippedLocked: 0 };
