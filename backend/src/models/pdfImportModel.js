@@ -160,10 +160,17 @@ const pdfImportModel = {
     resolveCompleteSkus(parsed.items, knownSkusResult.rows.map(r => r.supplier_sku));
 
     // 5. Matcher les supplier_sku dans product_suppliers
+    //    Une même référence fournisseur pointe parfois sur PLUSIEURS produits : le
+    //    fournisseur recycle sa réf. sur le produit successeur (chez LCA, la réf. de
+    //    la Batterie Elfa Pro sert aussi à l'Elfa Turbo) ou l'utilise pour plusieurs
+    //    déclinaisons. Sans ORDER BY, la ligne retenue dépendait de l'ordre physique
+    //    des lignes en base : l'import commandait — donc mettait en stock — le
+    //    produit arrêté au lieu de l'actuel. On tranche explicitement : un produit
+    //    en ligne (publish) l'emporte toujours sur un produit arrêté (draft/private).
     const supplierSkus = parsed.items.map(i => i.supplier_sku);
 
     const matchQuery = `
-      SELECT
+      SELECT DISTINCT ON (ps.supplier_sku)
         ps.supplier_sku,
         ps.supplier_price,
         ps.pack_qty,
@@ -173,11 +180,20 @@ const pdfImportModel = {
         p.sku as product_sku,
         p.stock,
         p.product_type,
-        p.image_url
+        p.image_url,
+        COUNT(*) OVER (PARTITION BY ps.supplier_sku)::int AS nb_candidates,
+        STRING_AGG(p.post_title || ' (' || COALESCE(p.sku, '?') || ')', ' • ')
+          OVER (PARTITION BY ps.supplier_sku) AS candidates
       FROM product_suppliers ps
       JOIN products p ON ps.product_id = p.id
       WHERE ps.supplier_id = $1
         AND ps.supplier_sku = ANY($2)
+      ORDER BY
+        ps.supplier_sku,
+        (p.post_status = 'publish') DESC,
+        ps.is_primary DESC NULLS LAST,
+        ps.updated_at DESC NULLS LAST,
+        p.id DESC
     `;
     const matchResult = await pool.query(matchQuery, [supplierId, supplierSkus]);
 
@@ -236,6 +252,10 @@ const pdfImportModel = {
         product_sku: match ? match.product_sku : null,
         current_stock: match ? parseInt(match.stock) : null,
         image_url: match ? match.image_url : null,
+        // Réf. fournisseur partagée par plusieurs produits : le choix ci-dessus reste
+        // une heuristique, l'écran d'import le signale pour que l'opérateur tranche.
+        ambiguous_match: match ? (match.nb_candidates || 1) > 1 : false,
+        match_candidates: match && (match.nb_candidates || 1) > 1 ? match.candidates : null,
         // Prix
         pdf_price: pdfGross,           // prix brut HT pack ou unité selon le mode
         pdf_price_net: pdfNet,         // prix net après remise

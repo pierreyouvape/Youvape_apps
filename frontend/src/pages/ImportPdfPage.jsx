@@ -277,6 +277,7 @@ const ImportPdfPage = () => {
         product_sku: product.sku,
         current_stock: product.stock,
         image_url: product.image_url || null,
+        ambiguous_match: false,
         supplier_price: product.cost_price != null ? parseFloat(product.cost_price) : null,
         unit_price: item.unit_price ?? product.cost_price ?? null,
       };
@@ -907,6 +908,14 @@ const ImportPdfPage = () => {
                                   <div>
                                     <div style={{ fontWeight: 600, color: C.grisTF, lineHeight: 1.3, marginBottom: 2 }}>{item.product_name}</div>
                                     {item.product_sku && <div style={{ fontSize: 11.5, color: C.grisM, fontFamily: 'monospace' }}>SKU: {item.product_sku}</div>}
+                                    {item.ambiguous_match && (
+                                      <div
+                                        title={`Cette référence fournisseur est associée à plusieurs produits :\n${(item.match_candidates || '').split(' • ').join('\n')}\n\nLe produit en ligne a été retenu — vérifiez que c'est le bon.`}
+                                        style={{ marginTop: 3, display: 'inline-block', fontSize: 11, fontWeight: 600, color: '#92400E', background: '#FEF3C7', border: '1px solid #FCD34D', borderRadius: 5, padding: '1px 6px', cursor: 'help' }}
+                                      >
+                                        réf. partagée — à vérifier
+                                      </div>
+                                    )}
                                     <button onClick={() => handleRematch(idx)} style={{ marginTop: 4, fontSize: 12, color: C.bleu, background: 'none', border: 'none', cursor: 'pointer', padding: 0, textDecoration: 'underline', fontFamily: 'inherit' }}>
                                       modifier
                                     </button>
