@@ -102,14 +102,27 @@ function tokenize(str) {
 }
 
 /**
- * Nombre d'unités annoncé par un libellé : « Pack 5 … », « Pack 2X … »,
- * « Pack X4 … », « Pack de 42 … », « Set 30 … ». Les deux catalogues écrivent
- * la même chose de six façons différentes.
+ * Nombre d'unités annoncé par un libellé. Les deux catalogues écrivent la même
+ * chose de dix façons : « Pack 5 », « Pack 2X », « Pack X4 », « Pack de 42 »,
+ * « Set 30 », « Cartouche Ursa PAR 3 », « 2X Cartouches », « RPM40 (X3) ».
+ *
+ * Le « xN » NU est volontairement exclu : c'est un nom de modèle bien plus
+ * souvent qu'un conditionnement (« Kit Pod Drag X2 », « SMOK X4 »,
+ * « TFV12 Prince X6 »). Entre parenthèses il est en revanche sans ambiguïté.
  */
 function packFromTitle(title) {
-  const m = normalize(title).match(/\b(?:pack|lot|set|boite)\s*(?:de\s*)?(?:x\s*)?([0-9]{1,2})\s*x?\b/);
-  if (!m) return null;
-  const n = parseInt(m[1], 10);
+  if (!title) return null;
+  const raw = String(title);
+  const norm = normalize(raw);
+  const found = (
+    // « (X3) » : à lire sur la chaîne brute, normalize() efface les parenthèses
+    raw.match(/\(\s*[xX]\s*([0-9]{1,2})\s*\)/)
+    || norm.match(/\b(?:pack|lot|set|boite)\s*(?:de\s*)?(?:x\s*)?([0-9]{1,2})\s*x?\b/)
+    || norm.match(/\bpar\s*([0-9]{1,2})\b/)
+    || norm.match(/^([0-9]{1,2})\s*x\b/)
+  );
+  if (!found) return null;
+  const n = parseInt(found[1], 10);
   return n >= 2 && n <= 50 ? n : null;
 }
 
