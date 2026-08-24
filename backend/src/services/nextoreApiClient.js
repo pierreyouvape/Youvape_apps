@@ -31,6 +31,30 @@ async function nextoreGet(path, params = {}) {
   return response.json();
 }
 
+/** Écriture Nextore (PUT/POST) en application/x-www-form-urlencoded. */
+async function nextoreWrite(method, path, body = {}) {
+  if (!NEXTORE_API_KEY) {
+    throw new Error('NEXTORE_API_KEY manquante (à définir dans .env)');
+  }
+  const form = new URLSearchParams();
+  for (const [k, v] of Object.entries(body)) {
+    if (v !== undefined && v !== null) form.set(k, v);
+  }
+  const response = await fetch(`${NEXTORE_API_URL}${path}`, {
+    method,
+    headers: {
+      'X-API-KEY': NEXTORE_API_KEY,
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    body: form.toString(),
+  });
+  if (!response.ok) {
+    const t = await response.text().catch(() => '');
+    throw new Error(`Nextore ${method} ${path} → HTTP ${response.status} ${t.slice(0, 200)}`);
+  }
+  return response.json().catch(() => response.text()); // /stocks PUT renvoie `true`
+}
+
 module.exports = {
   nextoreGet,
 
@@ -58,4 +82,21 @@ module.exports = {
   getWarehouses: () => nextoreGet('/warehouses'),
   getTaxRates: () => nextoreGet('/tax_rates'),
   getSuppliers: () => nextoreGet('/suppliers'),
+
+  /** Stock LIVE d'un produit dans une boutique (scalaire, ex "7.00"). */
+  getLiveStock: (warehouseId, productId) =>
+    nextoreGet('/stocks', { warehouse_id: warehouseId, product_id: productId })
+      .then((v) => (v === false ? null : parseFloat(v))),
+
+  /**
+   * Ajuste le stock (DELTA). quantity = mouvement à appliquer (peut être négatif).
+   * Pour poser un stock compté C : quantity = C − stock_live_de_référence.
+   */
+  putStock: (productId, warehouseId, quantity, referenceNo) =>
+    nextoreWrite('PUT', '/stocks', {
+      product_id: productId,
+      warehouse_id: warehouseId,
+      quantity,
+      reference_no: referenceNo,
+    }),
 };

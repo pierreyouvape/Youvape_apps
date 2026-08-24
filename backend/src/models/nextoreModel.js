@@ -635,6 +635,21 @@ async function getCategoriesForShop(warehouseId) {
   return rows;
 }
 
+/** Sous-catégories ayant des produits en stock dans cette boutique. */
+async function getSubcategoriesForShop(warehouseId) {
+  const { rows } = await pool.query(
+    `SELECT sc.id, sc.name, sc.category_id, COUNT(DISTINCT p.product_id)::int AS product_count
+     FROM nextore_subcategories sc
+     JOIN nextore_products p ON p.subcategory_id = sc.id
+     JOIN nextore_stock st ON st.product_id = p.product_id AND st.warehouse_id = $1
+     WHERE (p.name IS NULL OR p.name NOT ILIKE 'produit non cr%')
+     GROUP BY sc.id, sc.name, sc.category_id
+     ORDER BY sc.name NULLS LAST`,
+    [warehouseId],
+  );
+  return rows;
+}
+
 /** Fournisseurs ayant des produits en stock dans cette boutique (pour le filtre). */
 async function getSuppliersForShop(warehouseId) {
   const { rows } = await pool.query(
@@ -686,6 +701,7 @@ module.exports = {
   getNeedsData,
   getSuppliersForShop,
   getCategoriesForShop,
+  getSubcategoriesForShop,
   getBoutiqueStockByWcIds,
   getProductStockHistory,
   getLastSyncAt,

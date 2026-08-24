@@ -6,6 +6,7 @@
 const nextoreModel = require('../models/nextoreModel');
 const linksModel = require('../models/nextoreLinksModel');
 const matchService = require('../services/nextoreMatchService');
+const comptageModel = require('../models/nextoreComptageModel');
 const { resolveWarehouse } = require('../config/nextore');
 
 /** Résout la boutique depuis req.params.shop, renvoie 400 sinon. */
@@ -199,6 +200,124 @@ async function postMatchBulk(req, res) {
   }
 }
 
+// GET /:shop/categories — catégories + sous-catégories (pour le comptage type 3)
+async function getCategories(req, res) {
+  const wh = getShopOr400(req, res);
+  if (!wh) return;
+  try {
+    const [categories, subcategories] = await Promise.all([
+      nextoreModel.getCategoriesForShop(wh.id),
+      nextoreModel.getSubcategoriesForShop(wh.id),
+    ]);
+    res.json({ warehouse: wh, categories, subcategories });
+  } catch (err) {
+    console.error('Nextore getCategories:', err);
+    res.status(500).json({ error: err.message || 'Erreur' });
+  }
+}
+
+// ===== COMPTAGE (inventaire) =====
+
+// GET /:shop/comptages — liste des sessions
+async function listComptages(req, res) {
+  const wh = getShopOr400(req, res);
+  if (!wh) return;
+  try {
+    res.json({ warehouse: wh, comptages: await comptageModel.listComptages(wh.id) });
+  } catch (err) {
+    console.error('Nextore listComptages:', err);
+    res.status(500).json({ error: err.message || 'Erreur' });
+  }
+}
+
+// POST /:shop/comptage — crée une session (type tournant|spontane|categorie)
+async function createComptage(req, res) {
+  const wh = getShopOr400(req, res);
+  if (!wh) return;
+  try {
+    const { type, name, filterType, filterId } = req.body || {};
+    if (!['tournant', 'spontane', 'categorie'].includes(type)) {
+      return res.status(400).json({ error: 'type invalide (tournant|spontane|categorie)' });
+    }
+    const comptage = await comptageModel.createComptage(wh.id, {
+      type, name, filterType, filterId, createdBy: req.user?.email || null,
+    });
+    res.json({ warehouse: wh, comptage });
+  } catch (err) {
+    console.error('Nextore createComptage:', err);
+    res.status(500).json({ error: err.message || 'Erreur création comptage' });
+  }
+}
+
+/** Charge la session et vérifie qu'elle appartient bien à la boutique. */
+async function loadOwned(req, res, wh) {
+  const comptage = await comptageModel.getComptage(req.params.id);
+  if (!comptage || Number(comptage.warehouse_id) !== Number(wh.id)) {
+    res.status(404).json({ error: 'Comptage introuvable pour cette boutique' });
+    return null;
+  }
+  return comptage;
+}
+
+// GET /:shop/comptage/:id
+async function getComptage(req, res) {
+  const wh = getShopOr400(req, res);
+  if (!wh) return;
+  try {
+    const comptage = await loadOwned(req, res, wh);
+    if (!comptage) return;
+    res.json({ warehouse: wh, comptage });
+  } catch (err) {
+    console.error('Nextore getComptage:', err);
+    res.status(500).json({ error: err.message || 'Erreur' });
+  }
+}
+
+// POST /:shop/comptage/:id/count — {barcode} (scan +1) OU {product_id, qty, mode}
+async function countComptage(req, res) {
+  const wh = getShopOr400(req, res);
+  if (!wh) return;
+  try {
+    const comptage = await loadOwned(req, res, wh);
+    if (!comptage) return;
+    const { barcode, product_id, qty, mode } = req.body || {};
+    let productId = product_id;
+    if (barcode && !productId) {
+      const prod = await comptageModel.resolveBarcode(wh.id, barcode);
+      if (!prod) return res.status(404).json({ error: `Code-barres inconnu en boutique : ${barcode}`, barcode });
+      productId = prod.product_id;
+    }
+    if (!productId) return res.status(400).json({ error: 'barcode ou product_id requis' });
+    const result = await comptageModel.recordCount(comptage.id, wh.id, String(productId), {
+      qty: qty != null ? Number(qty) : 1,
+      mode: mode === 'set' ? 'set' : 'scan',
+    });
+    res.json({ ok: true, ...result });
+  } catch (err) {
+    console.error('Nextore countComptage:', err);
+    res.status(500).json({ error: err.message || 'Erreur comptage' });
+  }
+}
+
+// POST /:shop/comptage/:id/validate — {mode: partial|final, zeroProductIds?}
+async function validateComptage(req, res) {
+  const wh = getShopOr400(req, res);
+  if (!wh) return;
+  try {
+    const comptage = await loadOwned(req, res, wh);
+    if (!comptage) return;
+    const { mode, zeroProductIds } = req.body || {};
+    const out = await comptageModel.validateComptage(comptage.id, wh.id, {
+      mode: mode === 'final' ? 'final' : 'partial',
+      zeroProductIds: Array.isArray(zeroProductIds) ? zeroProductIds.map(String) : [],
+    });
+    res.json({ ok: true, ...out });
+  } catch (err) {
+    console.error('Nextore validateComptage:', err);
+    res.status(500).json({ error: err.message || 'Erreur validation' });
+  }
+}
+
 module.exports = {
   postSync,
   getStock,
@@ -212,4 +331,11 @@ module.exports = {
   getWcSearch,
   patchMatch,
   postMatchBulk,
+  // Comptage (inventaire)
+  getCategories,
+  listComptages,
+  createComptage,
+  getComptage,
+  countComptage,
+  validateComptage,
 };

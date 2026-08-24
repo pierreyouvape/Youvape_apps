@@ -5,6 +5,7 @@ import AppShell from '../components/AppShell';
 import StockTab from '../components/boutique/StockTab';
 import BesoinsTab from '../components/boutique/BesoinsTab';
 import RapprochementTab from '../components/boutique/RapprochementTab';
+import ComptageTab from '../components/boutique/ComptageTab';
 
 /* ─── PALETTE (alignée Rapport / SAV / Réception) ───────── */
 const C = {
@@ -36,7 +37,7 @@ const SECTIONS = [
   { key: 'stock',    label: 'Stock',    color: '#0D9488', Icon: IcStock, ready: true },
   { key: 'besoin',   label: 'Besoins',  color: '#E28F00', Icon: IcNeeds, ready: true },
   { key: 'rapprochement', label: 'Rapprochement', color: '#2563EB', Icon: IcLink, ready: true },
-  { key: 'comptage', label: 'Comptage', color: '#7C3AED', Icon: IcCount, ready: false },
+  { key: 'comptage', label: 'Comptage', color: '#7C3AED', Icon: IcCount, ready: true },
   { key: 'coffre',   label: 'Coffre',   color: '#334155', Icon: IcSafe,  ready: false },
 ];
 
@@ -195,6 +196,14 @@ export default function BoutiqueApp() {
           <>
             <ShopHeader shop={shop} subtitle="Rapprochement caisse ↔ site — validation des liens et alignement des prix d'achat" onBack={goHome} />
             <RapprochementTab shop={shop} token={token} />
+          </>
+        )}
+
+        {/* ── Section Comptage (inventaire) ── */}
+        {section === 'comptage' && (
+          <>
+            <ShopHeader shop={shop} subtitle="Comptage — inventaire (écrit dans Nextore)" onBack={goHome} />
+            <ComptageTab shop={shop} token={token} />
           </>
         )}
 
