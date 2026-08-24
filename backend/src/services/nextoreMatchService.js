@@ -39,30 +39,64 @@ function normalize(str) {
   let s = String(str);
   for (const [ent, ch] of Object.entries(ENTITIES)) s = s.split(ent).join(ch);
   return s
-    .replace(/[   ]/g, ' ')       // espaces insécables / fines
-    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/[\u00A0\u202F\u2009]/g, ' ')             // espaces insécables / fines
+    .normalize('NFD').replace(/[\u0300-\u036F]/g, '')   // accents
+    // Ω AVANT le passage en minuscules : toLowerCase() transforme Ω en ω, que le
+    // filtre [a-z0-9.] jetterait ensuite — la valeur en ohms serait perdue.
+    .replace(/[\u03A9\u2126\u03C9]/g, ' ohm ')
+    // Virgule décimale AVANT le nettoyage de la ponctuation : « 0,80 Ω » des
+    // titres WooCommerce donnerait sinon deux tokens « 0 » et « 80 ».
+    .replace(/([0-9]),([0-9])/g, '$1.$2')
     .toLowerCase()
-    .replace(/Ω|Ω/g, ' ohm ')          // Ω → ohm
     .replace(/[^a-z0-9.]+/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
 }
 
+/** Unités du domaine : collées au nombre qui les précède (voir tokenize). */
+const UNITS = new Set(['ml', 'mg', 'ohm', 'ohms', 'mah', 'mm', 'cm', 'ga', 'w', 'v', 'g', 'kg', 'l', 'pcs']);
+
+/** « 1.00 » et « 1.0 » doivent donner le même token. */
+function canonNum(x) {
+  const n = Number(x);
+  return Number.isNaN(n) ? x : String(n);
+}
+
 /**
- * Tokens significatifs. Les nombres sont canonisés (0.70 → 0.7, 1.00 → 1) pour
- * que « 1.00 Ω » et « 1.0 ohm » tombent sur le même token : dans ce catalogue,
- * la valeur en ohms est LE discriminant entre deux références jumelles.
+ * Tokens significatifs.
+ *
+ * Un nombre est TOUJOURS recollé à son unité (« 10 ml » et « 10ml » → `10ml`,
+ * « 0,80 Ω » → `0.8ohm`). Sans ça le « 10 » de « 10 ml » entre en collision
+ * avec le « 10 » de « Pack 10 Coils » et fabrique des faux positifs — c'est
+ * exactement ce qui rapprochait un e-liquide d'un pack de résistances.
+ * Les nombres nus (valeurs en ohms sans unité, millésimes) sont conservés :
+ * dans ce catalogue ils séparent deux références jumelles.
  */
 function tokenize(str) {
+  // 1. éclater « 50ml » en (50, ml) pour n'avoir qu'une forme à traiter
+  const parts = [];
+  for (const w of normalize(str).split(' ')) {
+    if (!w) continue;
+    const m = w.match(/^([0-9]*\.?[0-9]+)([a-z]+)$/);
+    if (m && UNITS.has(m[2])) parts.push(m[1], m[2]);
+    else parts.push(w);
+  }
+  // 2. recoller nombre + unité, filtrer le reste
   const out = [];
-  for (const raw of normalize(str).split(' ')) {
-    if (!raw) continue;
-    if (/^[0-9]*\.?[0-9]+$/.test(raw)) {
-      const n = Number(raw);
-      if (!Number.isNaN(n)) { out.push(String(n)); continue; }
+  for (let i = 0; i < parts.length; i += 1) {
+    const w = parts[i];
+    if (/^[0-9]*\.?[0-9]+$/.test(w)) {
+      const unit = parts[i + 1];
+      if (unit && UNITS.has(unit)) {
+        out.push(canonNum(w) + (unit === 'ohms' ? 'ohm' : unit));
+        i += 1;
+      } else {
+        out.push(canonNum(w));
+      }
+      continue;
     }
-    if (raw.length < 2 || STOPWORDS.has(raw)) continue;
-    out.push(raw);
+    if (w.length < 2 || STOPWORDS.has(w)) continue;
+    out.push(w);
   }
   return [...new Set(out)];
 }
@@ -120,8 +154,17 @@ function buildIndex(wcProducts, maxDf = 400) {
   }
   const n = wcProducts.length || 1;
   const idf = new Map();
-  for (const [t, c] of df) idf.set(t, Math.log(1 + n / c));
-  return { postings, idf };
+  let maxIdf = 1;
+  for (const [t, c] of df) {
+    const v = Math.log(1 + n / c);
+    idf.set(t, v);
+    if (v > maxIdf) maxIdf = v;
+  }
+  // Un token du nom de caisse ABSENT du catalogue site est le plus rare de tous.
+  // Lui donner un poids faible inverserait le score : un nom propre inconnu
+  // (« SCAFAYA ») pèserait moins qu'un « pack » générique, et la ligne serait
+  // rapprochée sur ses seuls mots creux.
+  return { postings, idf, maxIdf };
 }
 
 /**
@@ -129,11 +172,11 @@ function buildIndex(wcProducts, maxDf = 400) {
  * du poids informatif du nom de caisse se retrouve dans le titre du site.
  * Asymétrique volontairement — le titre site est souvent plus verbeux.
  */
-function scoreMatch(nxTokens, wcTokenSet, idf) {
+function scoreMatch(nxTokens, wcTokenSet, idf, maxIdf = 1) {
   let total = 0;
   let shared = 0;
   for (const t of nxTokens) {
-    const w = idf.get(t) || 1;
+    const w = idf.get(t) ?? maxIdf;
     total += w;
     if (wcTokenSet.has(t)) shared += w;
   }
@@ -198,7 +241,7 @@ async function runMatching({ onlyInStock = true } = {}) {
     wcById.set(p.id, item);
     return item;
   });
-  const { postings, idf } = buildIndex(wcProducts);
+  const { postings, idf, maxIdf } = buildIndex(wcProducts);
 
   const stats = { scanned: 0, ean: 0, eanAmbiguous: 0, name: 0, none: 0, skippedLocked: 0 };
   const upserts = [];
@@ -228,7 +271,7 @@ async function runMatching({ onlyInStock = true } = {}) {
       const ranked = [...hits]
         .map((id) => {
           const w = wcById.get(id);
-          return { id, score: w ? scoreMatch(nxTokens, w.tokenSet, idf) : 0 };
+          return { id, score: w ? scoreMatch(nxTokens, w.tokenSet, idf, maxIdf) : 0 };
         })
         .sort((a, b) => b.score - a.score);
       wcId = ranked[0].id;
@@ -247,7 +290,7 @@ async function runMatching({ onlyInStock = true } = {}) {
       }
       const ranked = [];
       for (const w of seen.values()) {
-        const sc = scoreMatch(nxTokens, w.tokenSet, idf);
+        const sc = scoreMatch(nxTokens, w.tokenSet, idf, maxIdf);
         if (sc >= NAME_MIN_SCORE) ranked.push({ id: w.id, score: sc });
       }
       ranked.sort((a, b) => b.score - a.score);
@@ -267,16 +310,17 @@ async function runMatching({ onlyInStock = true } = {}) {
       const w = wcById.get(wcId);
       const byTitle = w ? packFromTitle(w.post_title) : null;
       const byRatio = w ? packFromCostRatio(w.cost, nx.cost) : null;
+      // Le titre fait foi. Le ratio de coût ne sert QU'À CONTRÔLER : le déduire
+      // du ratio serait circulaire, puisque c'est justement le coût caisse qui
+      // est faux — un écart de prix deviendrait un faux pack.
       if (byTitle) {
         packQty = byTitle;
         packSource = 'title';
         if (byRatio && byRatio !== byTitle) {
-          packWarning = `Titre « pack ${byTitle} » mais le rapport des coûts indique ${byRatio}`;
+          packWarning = `Titre « pack ${byTitle} » mais le rapport des coûts indique ${byRatio}×`;
         }
       } else if (byRatio && byRatio > 1) {
-        packQty = byRatio;
-        packSource = 'cost_ratio';
-        packWarning = `Déduit du rapport des coûts (${byRatio}×), non confirmé par le titre`;
+        packWarning = `Le coût site vaut ${byRatio}× le coût caisse : pack de ${byRatio} ou tarif caisse à revoir ?`;
       }
     }
 
