@@ -43,4 +43,14 @@ router.get('/:shop/needs-data', boutiquePerm('read'), nextoreController.getNeeds
 // Historique (évolution) du stock d'un produit dans une boutique
 router.get('/:shop/stock/:productId/history', boutiquePerm('read'), nextoreController.getStockHistory);
 
+// --- Rapprochement caisse <-> site ------------------------------------------
+// Lecture de la file de validation + recherche de produits site
+router.get('/:shop/match', boutiquePerm('read'), nextoreController.getMatches);
+router.get('/:shop/match/search', boutiquePerm('read'), nextoreController.getWcSearch);
+// Relance du moteur : ne fait que PROPOSER (tout reste en attente) → read suffit
+router.post('/:shop/match/run', boutiquePerm('read'), nextoreController.postRunMatching);
+// Arbitrage (valider / rejeter / rattacher) : modifie les coûts affichés → write
+router.post('/:shop/match/bulk', boutiquePerm('write'), nextoreController.postMatchBulk);
+router.patch('/:shop/match/:nxId', boutiquePerm('write'), nextoreController.patchMatch);
+
 module.exports = router;

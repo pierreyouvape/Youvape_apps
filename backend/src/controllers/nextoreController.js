@@ -4,6 +4,8 @@
  */
 
 const nextoreModel = require('../models/nextoreModel');
+const linksModel = require('../models/nextoreLinksModel');
+const matchService = require('../services/nextoreMatchService');
 const { resolveWarehouse } = require('../config/nextore');
 
 /** Résout la boutique depuis req.params.shop, renvoie 400 sinon. */
@@ -112,4 +114,98 @@ async function getStockHistory(req, res) {
   }
 }
 
-module.exports = { postSync, getStock, getNeeds, getNeedsData, getSuppliers, getStockHistory };
+// --- Rapprochement caisse <-> site ----------------------------------------
+
+// POST /api/nextore/:shop/match/run — relance le moteur (propose, ne valide pas)
+async function postRunMatching(req, res) {
+  if (!getShopOr400(req, res)) return;
+  try {
+    const result = await matchService.runMatching({
+      onlyInStock: req.body?.all !== true && req.body?.all !== 'true',
+    });
+    res.json({ ok: true, ...result });
+  } catch (err) {
+    console.error('Nextore runMatching:', err);
+    res.status(500).json({ error: err.message || 'Erreur du moteur de rapprochement' });
+  }
+}
+
+// GET /api/nextore/:shop/match — file de validation + compteurs
+async function getMatches(req, res) {
+  const wh = getShopOr400(req, res);
+  if (!wh) return;
+  try {
+    // ?scope=all → tout le catalogue, sinon seulement le stock de CETTE boutique
+    const shopId = req.query.scope === 'all' ? null : wh.id;
+    const [rows, summary] = await Promise.all([
+      linksModel.listLinks({
+        shopId,
+        status: req.query.status || 'pending',
+        method: req.query.method,
+        search: req.query.search,
+        onlyWarnings: req.query.warnings === '1',
+        limit: req.query.limit,
+        offset: req.query.offset,
+      }),
+      linksModel.getSummary(shopId),
+    ]);
+    res.json({ warehouse: wh, summary, rows });
+  } catch (err) {
+    console.error('Nextore getMatches:', err);
+    res.status(500).json({ error: err.message || 'Erreur récupération des rapprochements' });
+  }
+}
+
+// GET /api/nextore/:shop/match/search?q= — produits site, pour rattacher à la main
+async function getWcSearch(req, res) {
+  if (!getShopOr400(req, res)) return;
+  try {
+    res.json({ rows: await linksModel.searchWcProducts(req.query.q, req.query.limit) });
+  } catch (err) {
+    console.error('Nextore getWcSearch:', err);
+    res.status(500).json({ error: err.message || 'Erreur de recherche produit' });
+  }
+}
+
+// PATCH /api/nextore/:shop/match/:nxId — arbitrage d'un lien
+async function patchMatch(req, res) {
+  if (!getShopOr400(req, res)) return;
+  try {
+    const link = await linksModel.updateLink(req.params.nxId, {
+      ...(req.body.wc_product_id !== undefined ? { wcProductId: req.body.wc_product_id } : {}),
+      ...(req.body.pack_qty !== undefined ? { packQty: req.body.pack_qty } : {}),
+      ...(req.body.status !== undefined ? { status: req.body.status } : {}),
+    }, req.user?.id);
+    res.json({ ok: true, link });
+  } catch (err) {
+    console.error('Nextore patchMatch:', err);
+    res.status(400).json({ error: err.message || 'Erreur de mise à jour du lien' });
+  }
+}
+
+// POST /api/nextore/:shop/match/bulk — validation / rejet en masse
+async function postMatchBulk(req, res) {
+  if (!getShopOr400(req, res)) return;
+  try {
+    const result = await linksModel.bulkUpdateStatus(req.body.ids, req.body.status, req.user?.id);
+    res.json({ ok: true, ...result });
+  } catch (err) {
+    console.error('Nextore postMatchBulk:', err);
+    res.status(400).json({ error: err.message || 'Erreur de mise à jour en masse' });
+  }
+}
+
+module.exports = {
+  postSync,
+  getStock,
+  getNeeds,
+  getNeedsData,
+  getSuppliers,
+  getStockHistory,
+  // Rapprochement caisse <-> site
+  postRunMatching,
+  getMatches,
+  getWcSearch,
+  patchMatch,
+  postMatchBulk,
+};

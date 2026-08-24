@@ -331,7 +331,12 @@ async function getStockDashboard(warehouseId, opts = {}) {
         prev.stock::float          AS prev_stock,
         (s.stock - COALESCE(prev.stock, s.stock))::float AS stock_delta,
         other.stock::float         AS other_stock,
-        wcs.wc_stock::float        AS wc_stock
+        wcs.wc_stock::float        AS wc_stock,
+        lnk.aligned_cost::float    AS aligned_cost,
+        (s.stock * lnk.aligned_cost)::float AS aligned_value,
+        lnk.pack_qty               AS link_pack_qty,
+        lnk.wc_title               AS link_wc_title,
+        lnk.link_status            AS link_status
      FROM nextore_stock s
      JOIN nextore_products p ON p.product_id = s.product_id
      LEFT JOIN nextore_categories c ON c.id = p.category_id
@@ -344,6 +349,14 @@ async function getStockDashboard(warehouseId, opts = {}) {
           AND h.captured_at < date_trunc('day', NOW() AT TIME ZONE 'Europe/Paris') AT TIME ZONE 'Europe/Paris'
         ORDER BY h.captured_at DESC LIMIT 1
      ) prev ON true
+     LEFT JOIN LATERAL (
+        -- coût aligné sur le site : lien APPROUVÉ uniquement, coût site / pack_qty
+        SELECT (COALESCE(pr.computed_cost, pr.wc_cog_cost) / NULLIF(l.pack_qty, 0)) AS aligned_cost,
+               l.pack_qty, l.status AS link_status, pr.post_title AS wc_title
+        FROM nextore_product_links l
+        JOIN products pr ON pr.id = l.wc_product_id
+        WHERE l.nx_product_id = s.product_id AND l.status = 'approved'
+     ) lnk ON true
      LEFT JOIN LATERAL (
         -- stock WooCommerce rapproché par EAN (somme des produits WC ayant ce code-barres)
         SELECT SUM(w.stock)::float AS wc_stock FROM (
@@ -368,9 +381,19 @@ async function getStockSummary(warehouseId) {
         COUNT(*) FILTER (WHERE s.stock = 0)::int                 AS out_of_stock,
         COUNT(*) FILTER (WHERE s.stock < 0)::int                 AS negative,
         COALESCE(SUM(s.stock * COALESCE(p.cost, 0)), 0)::float   AS total_value,
-        COALESCE(SUM(GREATEST(s.stock, 0)), 0)::float            AS total_units
+        COALESCE(SUM(GREATEST(s.stock, 0)), 0)::float            AS total_units,
+        -- Valeur alignée : coût du site (/ pack) sur les lignes au lien APPROUVÉ,
+        -- coût caisse sur les autres → un total directement comparable à total_value.
+        COALESCE(SUM(s.stock * COALESCE(lnk.aligned_cost, p.cost, 0)), 0)::float AS total_value_aligned,
+        COUNT(*) FILTER (WHERE lnk.aligned_cost IS NOT NULL)::int                AS aligned_products
      FROM nextore_stock s
      JOIN nextore_products p ON p.product_id = s.product_id
+     LEFT JOIN LATERAL (
+        SELECT (COALESCE(pr.computed_cost, pr.wc_cog_cost) / NULLIF(l.pack_qty, 0)) AS aligned_cost
+        FROM nextore_product_links l
+        JOIN products pr ON pr.id = l.wc_product_id
+        WHERE l.nx_product_id = s.product_id AND l.status = 'approved'
+     ) lnk ON true
      WHERE s.warehouse_id = $1`,
     [warehouseId]
   );
