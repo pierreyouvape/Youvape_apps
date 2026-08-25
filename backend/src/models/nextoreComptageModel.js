@@ -264,6 +264,7 @@ async function validateComptage(comptageId, warehouseId, { mode = 'partial', zer
 async function listComptages(warehouseId) {
   const { rows } = await pool.query(
     `SELECT c.*,
+            (SELECT name FROM users u WHERE u.email = c.created_by LIMIT 1) AS created_by_name,
             (SELECT COUNT(*) FROM nextore_comptage_items ci WHERE ci.comptage_id = c.id AND ci.counted_qty IS NOT NULL)::int AS counted_count,
             (SELECT COUNT(*) FROM nextore_comptage_items ci WHERE ci.comptage_id = c.id)::int AS items_count
      FROM nextore_comptages c
