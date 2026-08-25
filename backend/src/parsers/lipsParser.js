@@ -1,7 +1,8 @@
 /**
  * Parseur PDF pour LIPS - French Liquide (Laboratoire LIPS France)
  * Deux formats :
- * - "Devis" : Odoo, refs entre crochets [PACK-...], qty "4,000 Unité(s)", prix "9,5000 TVA 20% 38,00 €"
+ * - Odoo ("Devis #" / "Commande #") : refs entre crochets [PACK-...], qty "4,000 Unité(s)",
+ *   prix "9,5000 [15,00] TVA 20% 38,00 €" (colonne remise optionnelle)
  * - "Facture Pro Forma" : ancien format SARL EMC, refs type E2S-MOON-GOLDSUCKER-60-03
  */
 
@@ -14,84 +15,51 @@ module.exports = {
 };
 
 /**
- * Format Devis Odoo
+ * Formats Odoo « Devis # Sxxxxx » et « Commande # Sxxxxx »
+ * Meme tableau : [REF] designation\nqty\nUnité(s)\nprixBrut [remise%] TVA% total €
+ * La colonne « Rem.% » n'est presente que sur les lignes remisees.
  */
 function parseDevis(text) {
-  // Numero : "Devis # S00220"
-  const orderMatch = text.match(/Devis\s*#\s*(\S+)/);
+  return parseOdoo(text, {
+    numberRe: /Devis\s*#\s*(\S+)/,
+    dateRe: /Date du devis\s*\n\s*(\d{2})\/(\d{2})\/(\d{4})/,
+  });
+}
+
+function parseCommande(text) {
+  return parseOdoo(text, {
+    numberRe: /Commande\s*#\s*(\S+)/,
+    dateRe: /Date de la commande\s*\n\s*(\d{2})\/(\d{2})\/(\d{4})/,
+  });
+}
+
+function parseOdoo(text, { numberRe, dateRe }) {
+  const orderMatch = text.match(numberRe);
   const orderNumber = orderMatch ? orderMatch[1] : null;
 
-  // Date : "14/04/2026"
-  const dateMatch = text.match(/Date du devis\s*\n\s*(\d{2})\/(\d{2})\/(\d{4})/);
+  const dateMatch = text.match(dateRe);
   const orderDate = dateMatch ? `${dateMatch[3]}-${dateMatch[2]}-${dateMatch[1]}` : null;
 
   const items = [];
-  const parseNum = (s) => parseFloat(s.replace(',', '.'));
+  const parseNum = (s) => parseFloat(s.replace(/[\s\u00a0\u202f]/g, '').replace(',', '.'));
 
-  // Pages 1-2 : résumé avec "Unité •", pages 3+ : tableau avec "Unité(s)"
+  // Pages de garde : resume sans « Unité(s) », puis le tableau.
   // Couper au premier "Unité(s)" puis remonter au début de ligne \n[
   const firstUnite = text.indexOf('Unité(s)');
   const textBefore = firstUnite >= 0 ? text.substring(0, firstUnite) : '';
   const lastNLBracket = textBefore.lastIndexOf('\n[');
   const priceText = lastNLBracket >= 0 ? text.substring(lastNLBracket + 1) : text;
 
-  // Format réel : [REF] designation\nQTE\nUnité(s)\n9,5000 TVA 20% \t38,00 €
-  const pattern = /\[([A-Z0-9-]+)\](.*?)([\d,]+)\nUnité\(s\)\n([\d,]+)\s+TVA\s+\d+%\s*([\d,.]+)\s*€/gs;
-
-  let m;
-  while ((m = pattern.exec(priceText)) !== null) {
-    const supplierSku = m[1];
-
-    // Ignorer livraison/expédition
-    if (/livraison|exp[eé]dition/i.test(m[2])) continue;
-    // Ignorer items à 0
-    const prixUnit = parseNum(m[4]);
-    if (prixUnit === 0) continue;
-
-    const designation = m[2].replace(/\s+/g, ' ').trim();
-    const qty = Math.round(parseNum(m[3]));
-    const totalHt = parseNum(m[5]);
-
-    items.push({
-      supplier_sku: supplierSku,
-      designation,
-      qty_ordered: qty,
-      unit_price_net: prixUnit,
-      total_ht: totalHt,
-    });
-  }
-
-  // LIPS facture toujours à l'unité de vente (= le pack) : la colonne "Unité(s)"
-  // donne le nombre de packs et le prix est déjà le prix DU pack
-  // (ex: pods CLK x5 à 9,50€, sachet boosters x100 à 45€). Donc aucune conversion
-  // pack_qty (pdfIsPackBased), contrairement à invertPackQty (Curieux/e.tasty où le
-  // PDF est en unités individuelles). trustPdfPrice : on retient le prix facturé du
-  // PDF, car le supplier_price en BDD diverge parfois (ou est nul).
-  return { orderNumber, orderDate, items, hasPrice: true, pdfIsPackBased: true, trustPdfPrice: true };
-}
-
-/**
- * Format Commande Odoo (Commande # S00xxx)
- * Ligne : [REF] designation\nqty\nUnité(s)\nprixBrut remise% TVA% total €
- */
-function parseCommande(text) {
-  const orderMatch = text.match(/Commande\s*#\s*(\S+)/);
-  const orderNumber = orderMatch ? orderMatch[1] : null;
-
-  const dateMatch = text.match(/Date de la commande\s*\n\s*(\d{2})\/(\d{2})\/(\d{4})/);
-  const orderDate = dateMatch ? `${dateMatch[3]}-${dateMatch[2]}-${dateMatch[1]}` : null;
-
-  const items = [];
-  const parseNum = (s) => parseFloat(s.replace(',', '.'));
-
-  // Couper la partie récapitulatif (avant les lignes Unité(s) du tableau)
-  const firstUnite = text.indexOf('Unité(s)');
-  const textBefore = firstUnite >= 0 ? text.substring(0, firstUnite) : '';
-  const lastNLBracket = textBefore.lastIndexOf('\n[');
-  const priceText = lastNLBracket >= 0 ? text.substring(lastNLBracket + 1) : text;
-
-  // [REF] designation\nqty\nUnité(s)\nprixBrut remise% TVA% total €
-  const pattern = /\[([A-Z0-9-]+)\](.*?)([\d,]+)\nUnité\(s\)\n([\d,]+)\s+([\d,]+)\s+TVA\s+\d+%\s*([\d,.]+)\s*€/gs;
+  // [REF] designation\nqty\nUnité(s)\nprixBrut [remise] TVA% total €
+  //
+  // Deux garde-fous, sans lesquels une ligne non reconnue faisait disparaitre sa
+  // voisine (cf. commande S03855 : 22 lignes au PDF, 19 parsees) :
+  //  - remise optionnelle : les packs CLK sont factures sans remise, donc sans
+  //    colonne « Rem.% » ;
+  //  - designation sans « € » : chaque ligne du tableau se termine par un montant
+  //    en euros, donc [^€]*? empeche .*? d'enjamber la ligne suivante et de lui
+  //    voler sa quantite et son prix.
+  const pattern = /\[([A-Z0-9-]+)\]([^€]*?)([\d,]+)\nUnité\(s\)\n([\d,]+)(?:\s+([\d,]+))?\s+TVA\s+\d+%\s*([\d,.\s\u00a0\u202f]+?)\s*€/gs;
 
   let m;
   while ((m = pattern.exec(priceText)) !== null) {
@@ -103,7 +71,7 @@ function parseCommande(text) {
     const prixBrut = parseNum(m[4]);
     if (prixBrut === 0) continue;
 
-    const remisePct = parseNum(m[5]);
+    const remisePct = m[5] ? parseNum(m[5]) : 0;
     const totalHt = parseNum(m[6]);
     const qty = Math.round(parseNum(m[3]));
     const unitPriceNet = prixBrut * (1 - remisePct / 100);
@@ -117,13 +85,20 @@ function parseCommande(text) {
     });
   }
 
+  // Total HT du document : garde-fou de reconciliation (pdfImportModel). Sans lui,
+  // le controle retombait sur la somme des lignes parsees — donc aveugle a une
+  // ligne manquante.
+  const totalMatch = text.match(/Montant hors taxes\s*([\d,.\s\u00a0\u202f]+?)\s*€/);
+  const parsedTotal = totalMatch ? parseNum(totalMatch[1]) : NaN;
+  const invoiceProductTotalHT = Number.isFinite(parsedTotal) && parsedTotal > 0 ? parsedTotal : null;
+
   // LIPS facture toujours à l'unité de vente (= le pack) : la colonne "Unité(s)"
   // donne le nombre de packs et le prix est déjà le prix DU pack
   // (ex: pods CLK x5 à 9,50€, sachet boosters x100 à 45€). Donc aucune conversion
   // pack_qty (pdfIsPackBased), contrairement à invertPackQty (Curieux/e.tasty où le
   // PDF est en unités individuelles). trustPdfPrice : on retient le prix facturé du
   // PDF, car le supplier_price en BDD diverge parfois (ou est nul).
-  return { orderNumber, orderDate, items, hasPrice: true, pdfIsPackBased: true, trustPdfPrice: true };
+  return { orderNumber, orderDate, items, hasPrice: true, pdfIsPackBased: true, trustPdfPrice: true, invoiceProductTotalHT };
 }
 
 /**
