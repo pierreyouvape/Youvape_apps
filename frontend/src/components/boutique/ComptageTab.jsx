@@ -325,7 +325,7 @@ function Row({ item, onSet, muted, disabled }) {
       border: `1px solid ${C.greyB}`, borderRadius: 10, marginBottom: 6, opacity: muted ? 0.7 : 1,
     }}>
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontWeight: 600, fontSize: 14, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.name || item.product_id}</div>
+        <div style={{ fontWeight: 600, fontSize: 14, lineHeight: 1.3, overflowWrap: 'anywhere' }}>{item.name || item.product_id}</div>
         <div style={{ fontSize: 12, color: C.greyM }}>
           {item.sku ? `#${item.sku}` : ''}{reason ? <span style={{ color: reason.color, marginLeft: 6 }}>· {reason.label}</span> : ''}
         </div>
