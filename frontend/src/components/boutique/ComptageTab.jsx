@@ -167,6 +167,7 @@ export default function ComptageTab({ shop, token }) {
             </div>
             <div style={{ fontSize: 13, color: C.greyM, marginTop: 4 }}>
               {c.type} · {c.counted_count}/{c.items_count} compté(s) · {String(c.created_at).slice(0, 10)}
+              {c.created_by && <> · 👤 {String(c.created_by).split('@')[0]}</>}
             </div>
           </div>
         ))}
