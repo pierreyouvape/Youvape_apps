@@ -98,7 +98,7 @@ async function productInfo(productIds) {
 }
 
 // --- Création d'une session -------------------------------------------------
-async function createComptage(warehouseId, { type, name, filterType, filterId, createdBy }) {
+async function createComptage(warehouseId, { type, name, filterType, filterId, createdBy, productIds }) {
   const { rows } = await pool.query(
     `INSERT INTO nextore_comptages (warehouse_id, type, name, filter_type, filter_id, created_by)
      VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
@@ -129,6 +129,16 @@ async function createComptage(warehouseId, { type, name, filterType, filterId, c
        ON CONFLICT (comptage_id, product_id) DO NOTHING`,
       [comptage.id, warehouseId, filterId],
     );
+  }
+  // Liste manuelle : pré-remplir les produits sélectionnés par le manager
+  if (type === 'liste' && Array.isArray(productIds)) {
+    for (const pid of productIds) {
+      await pool.query(
+        `INSERT INTO nextore_comptage_items (comptage_id, product_id)
+         VALUES ($1, $2) ON CONFLICT (comptage_id, product_id) DO NOTHING`,
+        [comptage.id, String(pid)],
+      );
+    }
   }
   return getComptage(comptage.id);
 }
@@ -204,7 +214,7 @@ async function recordCount(comptageId, warehouseId, productId, { qty = 1, mode =
  * encore poussées, session reste ouverte. mode 'final' → idem + clôture ;
  * `zeroProductIds` = réfs non comptées à mettre à 0 (type catégorie).
  */
-async function validateComptage(comptageId, warehouseId, { mode = 'partial', zeroProductIds = [] }) {
+async function validateComptage(comptageId, warehouseId, { mode = 'partial', zeroProductIds = [], validatedBy = null }) {
   const comptage = await getComptage(comptageId);
   if (!comptage) throw new Error('Comptage introuvable');
 
@@ -253,8 +263,8 @@ async function validateComptage(comptageId, warehouseId, { mode = 'partial', zer
 
   if (mode === 'final') {
     await pool.query(
-      `UPDATE nextore_comptages SET status = 'valide', validated_at = NOW() WHERE id = $1`,
-      [comptageId],
+      `UPDATE nextore_comptages SET status = 'valide', validated_at = NOW(), validated_by = $2 WHERE id = $1`,
+      [comptageId, validatedBy],
     );
   }
   return { mode, results };
@@ -265,6 +275,7 @@ async function listComptages(warehouseId) {
   const { rows } = await pool.query(
     `SELECT c.*,
             (SELECT name FROM users u WHERE u.email = c.created_by LIMIT 1) AS created_by_name,
+            (SELECT name FROM users u WHERE u.email = c.validated_by LIMIT 1) AS validated_by_name,
             (SELECT COUNT(*) FROM nextore_comptage_items ci WHERE ci.comptage_id = c.id AND ci.counted_qty IS NOT NULL)::int AS counted_count,
             (SELECT COUNT(*) FROM nextore_comptage_items ci WHERE ci.comptage_id = c.id)::int AS items_count
      FROM nextore_comptages c

@@ -142,12 +142,12 @@ async function syncCatalog() {
       s(p.id), s(p.code), s(p.name), s(p.unit), num(p.cost), num(p.price),
       s(p.category_id), s(p.subcategory_id), s(p.subsubcategory_id),
       s(p.barcode), s(p.tax_rate), s(p.type), s(p.status), ts(p.date_update),
-      s(p.supplier1), supplierIds(p), JSON.stringify(supplierRefs(p)),
+      s(p.supplier1), supplierIds(p), JSON.stringify(supplierRefs(p)), s(p.cf1),
     ]);
     const nbProducts = await bulkUpsert(client, 'nextore_products',
       ['product_id', 'code', 'name', 'unit', 'cost', 'price', 'category_id',
        'subcategory_id', 'subsubcategory_id', 'barcode', 'tax_rate', 'type',
-       'status', 'date_update', 'supplier_id', 'supplier_ids', 'supplier_refs'],
+       'status', 'date_update', 'supplier_id', 'supplier_ids', 'supplier_refs', 'brand'],
       ['product_id'], productRows);
 
     await setConfig(client, 'nextore_last_catalog_sync_at');
@@ -635,6 +635,46 @@ async function getCategoriesForShop(warehouseId) {
   return rows;
 }
 
+/** Marques (cf1) ayant des produits en stock dans cette boutique. */
+async function getBrandsForShop(warehouseId) {
+  const { rows } = await pool.query(
+    `SELECT p.brand, COUNT(DISTINCT p.product_id)::int AS product_count
+     FROM nextore_products p
+     JOIN nextore_stock st ON st.product_id = p.product_id AND st.warehouse_id = $1
+     WHERE p.brand IS NOT NULL AND p.brand <> ''
+       AND (p.name IS NULL OR p.name NOT ILIKE 'produit non cr%')
+     GROUP BY p.brand ORDER BY p.brand`,
+    [warehouseId],
+  );
+  return rows;
+}
+
+/** Recherche produit dans une boutique (nom/SKU/EAN + filtres marque/cat/sous-cat). */
+async function getProductSearch(warehouseId, opts = {}) {
+  const params = [warehouseId];
+  const where = ['st.warehouse_id = $1', "(p.name IS NULL OR p.name NOT ILIKE 'produit non cr%')"];
+  if (opts.categoryId) { params.push(String(opts.categoryId)); where.push(`p.category_id = $${params.length}`); }
+  if (opts.subcategoryId) { params.push(String(opts.subcategoryId)); where.push(`p.subcategory_id = $${params.length}`); }
+  if (opts.brand) { params.push(String(opts.brand)); where.push(`p.brand = $${params.length}`); }
+  if (opts.q) {
+    params.push(`%${opts.q}%`);
+    const i = params.length;
+    where.push(`(p.name ILIKE $${i} OR p.code ILIKE $${i} OR p.barcode ILIKE $${i} OR p.brand ILIKE $${i})`);
+  }
+  const limit = Math.min(Math.max(parseInt(opts.limit, 10) || 200, 1), 500);
+  const { rows } = await pool.query(
+    `SELECT p.product_id, p.name, p.code AS sku, p.barcode, p.brand,
+            c.name AS category_name, st.stock::float AS stock
+     FROM nextore_stock st
+     JOIN nextore_products p ON p.product_id = st.product_id
+     LEFT JOIN nextore_categories c ON c.id = p.category_id
+     WHERE ${where.join(' AND ')}
+     ORDER BY p.name ASC LIMIT ${limit}`,
+    params,
+  );
+  return rows;
+}
+
 /** Sous-catégories ayant des produits en stock dans cette boutique. */
 async function getSubcategoriesForShop(warehouseId) {
   const { rows } = await pool.query(
@@ -702,6 +742,8 @@ module.exports = {
   getSuppliersForShop,
   getCategoriesForShop,
   getSubcategoriesForShop,
+  getBrandsForShop,
+  getProductSearch,
   getBoutiqueStockByWcIds,
   getProductStockHistory,
   getLastSyncAt,

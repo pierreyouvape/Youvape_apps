@@ -205,14 +205,34 @@ async function getCategories(req, res) {
   const wh = getShopOr400(req, res);
   if (!wh) return;
   try {
-    const [categories, subcategories] = await Promise.all([
+    const [categories, subcategories, brands] = await Promise.all([
       nextoreModel.getCategoriesForShop(wh.id),
       nextoreModel.getSubcategoriesForShop(wh.id),
+      nextoreModel.getBrandsForShop(wh.id),
     ]);
-    res.json({ warehouse: wh, categories, subcategories });
+    res.json({ warehouse: wh, categories, subcategories, brands });
   } catch (err) {
     console.error('Nextore getCategories:', err);
     res.status(500).json({ error: err.message || 'Erreur' });
+  }
+}
+
+// GET /:shop/products/search — recherche produit (pour la liste de comptage manuelle)
+async function searchProducts(req, res) {
+  const wh = getShopOr400(req, res);
+  if (!wh) return;
+  try {
+    const products = await nextoreModel.getProductSearch(wh.id, {
+      q: req.query.q ? String(req.query.q).trim() : null,
+      categoryId: req.query.category || null,
+      subcategoryId: req.query.subcategory || null,
+      brand: req.query.brand || null,
+      limit: req.query.limit,
+    });
+    res.json({ warehouse: wh, products });
+  } catch (err) {
+    console.error('Nextore searchProducts:', err);
+    res.status(500).json({ error: err.message || 'Erreur recherche' });
   }
 }
 
@@ -235,12 +255,13 @@ async function createComptage(req, res) {
   const wh = getShopOr400(req, res);
   if (!wh) return;
   try {
-    const { type, name, filterType, filterId } = req.body || {};
-    if (!['tournant', 'spontane', 'categorie'].includes(type)) {
-      return res.status(400).json({ error: 'type invalide (tournant|spontane|categorie)' });
+    const { type, name, filterType, filterId, productIds } = req.body || {};
+    if (!['tournant', 'spontane', 'categorie', 'liste'].includes(type)) {
+      return res.status(400).json({ error: 'type invalide (tournant|spontane|categorie|liste)' });
     }
     const comptage = await comptageModel.createComptage(wh.id, {
       type, name, filterType, filterId, createdBy: req.user?.email || null,
+      productIds: Array.isArray(productIds) ? productIds.map(String) : [],
     });
     res.json({ warehouse: wh, comptage });
   } catch (err) {
@@ -310,6 +331,7 @@ async function validateComptage(req, res) {
     const out = await comptageModel.validateComptage(comptage.id, wh.id, {
       mode: mode === 'final' ? 'final' : 'partial',
       zeroProductIds: Array.isArray(zeroProductIds) ? zeroProductIds.map(String) : [],
+      validatedBy: req.user?.email || null,
     });
     res.json({ ok: true, ...out });
   } catch (err) {
@@ -333,6 +355,7 @@ module.exports = {
   postMatchBulk,
   // Comptage (inventaire)
   getCategories,
+  searchProducts,
   listComptages,
   createComptage,
   getComptage,

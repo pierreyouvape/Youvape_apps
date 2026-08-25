@@ -38,9 +38,17 @@ export default function ComptageTab({ shop, token }) {
   const [msg, setMsg] = useState(null);
 
   // création
-  const [cats, setCats] = useState({ categories: [], subcategories: [] });
+  const [cats, setCats] = useState({ categories: [], subcategories: [], brands: [] });
   const [newName, setNewName] = useState('');
   const [catFilter, setCatFilter] = useState(''); // "category:ID" | "subcategory:ID"
+
+  // constructeur de liste manuelle
+  const [bQ, setBQ] = useState('');
+  const [bBrand, setBBrand] = useState('');
+  const [bCat, setBCat] = useState('');
+  const [bResults, setBResults] = useState([]);
+  const [bSelected, setBSelected] = useState({}); // product_id -> {name}
+  const [bSearching, setBSearching] = useState(false);
 
   // comptage
   const [scanVal, setScanVal] = useState('');
@@ -76,8 +84,45 @@ export default function ComptageTab({ shop, token }) {
     setNewName(''); setCatFilter(''); setView('create');
     try {
       const r = await axios.get(`${API_URL}/nextore/${shop.slug}/categories`, auth(token));
-      setCats({ categories: r.data.categories || [], subcategories: r.data.subcategories || [] });
+      setCats({ categories: r.data.categories || [], subcategories: r.data.subcategories || [], brands: r.data.brands || [] });
     } catch { /* non bloquant */ }
+  };
+
+  const openBuilder = () => { setBQ(''); setBBrand(''); setBCat(''); setBResults([]); setBSelected({}); setView('builder'); };
+
+  // Recherche produit (debounce) pour le constructeur de liste
+  useEffect(() => {
+    if (view !== 'builder') return undefined;
+    const t = setTimeout(async () => {
+      if (!bQ.trim() && !bBrand && !bCat) { setBResults([]); return; }
+      setBSearching(true);
+      try {
+        const qs = new URLSearchParams();
+        if (bQ.trim()) qs.set('q', bQ.trim());
+        if (bBrand) qs.set('brand', bBrand);
+        if (bCat) qs.set('category', bCat);
+        const r = await axios.get(`${API_URL}/nextore/${shop.slug}/products/search?${qs}`, auth(token));
+        setBResults(r.data.products || []);
+      } catch { setBResults([]); }
+      finally { setBSearching(false); }
+    }, 300);
+    return () => clearTimeout(t);
+  }, [view, bQ, bBrand, bCat, shop.slug, token]);
+
+  const toggleSel = (p) => setBSelected((s) => {
+    const n = { ...s };
+    if (n[p.product_id]) delete n[p.product_id]; else n[p.product_id] = { name: p.name };
+    return n;
+  });
+
+  const createList = async () => {
+    const ids = Object.keys(bSelected);
+    if (!ids.length) { setError('Sélectionne au moins un produit'); return; }
+    try {
+      const r = await axios.post(`${API_URL}/nextore/${shop.slug}/comptage`,
+        { type: 'liste', name: newName || null, productIds: ids }, auth(token));
+      setSession(r.data.comptage); setView('session');
+    } catch (e) { setError(e.response?.data?.error || e.message); }
   };
 
   const create = async (type) => {
@@ -160,14 +205,17 @@ export default function ComptageTab({ shop, token }) {
             background: C.white, border: `1px solid ${C.greyB}`, borderRadius: 12, padding: 14, marginBottom: 10, cursor: 'pointer',
           }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <strong>{c.name || ({ tournant: 'Inventaire tournant', spontane: 'Spontané', categorie: 'Par catégorie' }[c.type])}</strong>
+              <strong>{c.name || ({ tournant: 'Inventaire tournant', spontane: 'Spontané', categorie: 'Par catégorie', liste: 'Liste manuelle' }[c.type])}</strong>
               <span style={{ fontSize: 12, fontWeight: 700, color: c.status === 'valide' ? C.green : C.accent }}>
                 {c.status === 'valide' ? 'Validé' : 'En cours'}
               </span>
             </div>
             <div style={{ fontSize: 13, color: C.greyM, marginTop: 4 }}>
               {c.type} · {c.counted_count}/{c.items_count} compté(s) · {String(c.created_at).slice(0, 10)}
-              {(c.created_by_name || c.created_by) && <> · 👤 {c.created_by_name || String(c.created_by).split('@')[0]}</>}
+              {(() => {
+                const agent = c.validated_by_name || c.created_by_name || (c.validated_by || c.created_by || '').split('@')[0];
+                return agent ? <> · 👤 {agent}</> : null;
+              })()}
             </div>
           </div>
         ))}
@@ -185,7 +233,8 @@ export default function ComptageTab({ shop, token }) {
           style={{ width: '100%', padding: 12, borderRadius: 10, border: `1px solid ${C.greyB}`, fontSize: 16, margin: '6px 0 18px', boxSizing: 'border-box' }} />
 
         <Btn onClick={() => create('tournant')} bg={C.purple} style={{ marginBottom: 12 }}>🔄 Inventaire tournant (10 réfs proposées)</Btn>
-        <Btn onClick={() => create('spontane')} bg={C.primary} style={{ marginBottom: 18 }}>✋ Comptage spontané (libre)</Btn>
+        <Btn onClick={() => create('spontane')} bg={C.primary} style={{ marginBottom: 12 }}>✋ Comptage spontané (libre)</Btn>
+        <Btn onClick={openBuilder} bg="#2563EB" style={{ marginBottom: 18 }}>📝 Liste manuelle (rechercher & sélectionner)</Btn>
 
         <div style={{ background: C.white, border: `1px solid ${C.greyB}`, borderRadius: 12, padding: 14 }}>
           <label style={{ fontSize: 13, fontWeight: 600, color: C.greyT }}>Par catégorie / sous-catégorie</label>
@@ -205,6 +254,52 @@ export default function ComptageTab({ shop, token }) {
     );
   }
 
+  if (view === 'builder') {
+    const selCount = Object.keys(bSelected).length;
+    return (
+      <div style={{ paddingBottom: 80 }}>
+        <button onClick={() => setView('create')} style={{ background: 'none', border: 'none', color: C.primary, fontSize: 15, padding: 0, marginBottom: 12, cursor: 'pointer' }}>‹ Retour</button>
+        {error && <div style={{ background: C.redL, color: C.red, padding: 12, borderRadius: 8, marginBottom: 12 }}>{error}</div>}
+
+        <input value={bQ} onChange={(e) => setBQ(e.target.value)} placeholder="Rechercher (nom, SKU, code-barres, marque)…"
+          style={{ width: '100%', padding: 12, borderRadius: 10, border: `1px solid ${C.greyB}`, fontSize: 16, boxSizing: 'border-box', marginBottom: 8 }} />
+        <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+          <select value={bBrand} onChange={(e) => setBBrand(e.target.value)} style={{ flex: 1, padding: 10, borderRadius: 10, border: `1px solid ${C.greyB}`, fontSize: 14, background: '#fff' }}>
+            <option value="">Toutes marques</option>
+            {cats.brands.map((b) => <option key={b.brand} value={b.brand}>{b.brand} ({b.product_count})</option>)}
+          </select>
+          <select value={bCat} onChange={(e) => setBCat(e.target.value)} style={{ flex: 1, padding: 10, borderRadius: 10, border: `1px solid ${C.greyB}`, fontSize: 14, background: '#fff' }}>
+            <option value="">Toutes catégories</option>
+            {cats.categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </select>
+        </div>
+
+        {bSearching && <div style={{ color: C.greyT, fontSize: 13, marginBottom: 8 }}>Recherche…</div>}
+        {!bSearching && bResults.length === 0 && (bQ || bBrand || bCat) && <div style={{ color: C.greyM, fontSize: 14, padding: 12 }}>Aucun produit.</div>}
+
+        {bResults.map((p) => {
+          const on = !!bSelected[p.product_id];
+          return (
+            <div key={p.product_id} onClick={() => toggleSel(p)} style={{
+              display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', marginBottom: 6, cursor: 'pointer',
+              background: on ? '#EFF6FF' : '#fff', border: `1px solid ${on ? '#2563EB' : C.greyB}`, borderRadius: 10,
+            }}>
+              <input type="checkbox" checked={on} readOnly style={{ width: 20, height: 20 }} />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontWeight: 600, fontSize: 14, lineHeight: 1.3, overflowWrap: 'anywhere' }}>{p.name}</div>
+                <div style={{ fontSize: 12, color: C.greyM }}>{p.brand ? `${p.brand} · ` : ''}{p.category_name || ''}{p.sku ? ` · #${p.sku}` : ''} · stock {fmt(p.stock)}</div>
+              </div>
+            </div>
+          );
+        })}
+
+        <div style={{ position: 'fixed', left: 0, right: 0, bottom: 0, background: '#fff', borderTop: `1px solid ${C.greyB}`, padding: 12 }}>
+          <Btn onClick={createList} disabled={selCount === 0} bg={C.green}>Créer le comptage ({selCount} sélectionné{selCount > 1 ? 's' : ''})</Btn>
+        </div>
+      </div>
+    );
+  }
+
   // view === 'session'
   const items = session?.items || [];
   const counted = items.filter((i) => i.counted_qty != null);
@@ -219,7 +314,7 @@ export default function ComptageTab({ shop, token }) {
       <button onClick={() => { setView('list'); setSession(null); loadSessions(); }} style={{ background: 'none', border: 'none', color: C.primary, fontSize: 15, padding: 0, marginBottom: 12, cursor: 'pointer' }}>‹ Comptages</button>
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-        <strong style={{ fontSize: 18 }}>{session?.name || ({ tournant: 'Tournant', spontane: 'Spontané', categorie: 'Catégorie' }[session?.type])}</strong>
+        <strong style={{ fontSize: 18 }}>{session?.name || ({ tournant: 'Tournant', spontane: 'Spontané', categorie: 'Catégorie', liste: 'Liste manuelle' }[session?.type])}</strong>
         <span style={{ fontSize: 13, color: C.greyM }}>{counted.length}/{items.length || counted.length} compté(s)</span>
       </div>
 

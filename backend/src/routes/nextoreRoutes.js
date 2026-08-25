@@ -53,8 +53,10 @@ router.post('/:shop/match/run', boutiquePerm('read'), nextoreController.postRunM
 router.post('/:shop/match/bulk', boutiquePerm('write'), nextoreController.postMatchBulk);
 router.patch('/:shop/match/:nxId', boutiquePerm('write'), nextoreController.patchMatch);
 
-// Catégories + sous-catégories de la boutique (pour le comptage par catégorie)
+// Catégories + sous-catégories + marques (facettes du comptage)
 router.get('/:shop/categories', boutiquePerm('read'), nextoreController.getCategories);
+// Recherche produit (pour construire une liste de comptage manuelle)
+router.get('/:shop/products/search', boutiquePerm('read'), nextoreController.searchProducts);
 
 // Comptage (inventaire) — écriture Nextore : count/validate en permission 'write'
 router.get('/:shop/comptages', boutiquePerm('read'), nextoreController.listComptages);
