@@ -14,6 +14,7 @@
  *   string      $nonce_field    HTML du champ nonce (déjà généré)
  *   string      $honeypot_field nom du champ pot-de-miel
  *   string      $login_url      URL de connexion, retour sur cette page
+ *   string      $turnstile_site_key clé de site Cloudflare Turnstile ('' = désactivé)
  */
 
 if (!defined('ABSPATH')) {
@@ -72,6 +73,18 @@ if (!defined('ABSPATH')) {
             <label for="<?php echo esc_attr($honeypot_field); ?>"><?php echo esc_html__('Ne remplissez pas ce champ', 'youvape-sav-client'); ?></label>
             <input type="text" id="<?php echo esc_attr($honeypot_field); ?>" name="<?php echo esc_attr($honeypot_field); ?>" tabindex="-1" autocomplete="off" />
         </div>
+
+        <?php if (!empty($turnstile_site_key)) : ?>
+            <?php /* Le script Cloudflare détecte ce bloc au chargement et y rend
+                     le widget. En mode « Managed », le visiteur n'a le plus
+                     souvent rien à faire : le contrôle se résout seul. */ ?>
+            <div class="form-row form-row-wide">
+                <div class="cf-turnstile"
+                     data-sitekey="<?php echo esc_attr($turnstile_site_key); ?>"
+                     data-language="fr"
+                     data-theme="light"></div>
+            </div>
+        <?php endif; ?>
 
         <p class="form-row">
             <button type="submit" name="youvape_sav_public_submit" value="1" class="button">

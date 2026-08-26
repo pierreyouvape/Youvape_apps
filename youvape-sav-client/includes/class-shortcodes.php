@@ -219,12 +219,30 @@ class Youvape_SAV_Shortcodes {
             return $this->render_logged_in_form($return_url, $error);
         }
 
+        // Turnstile : uniquement sur le formulaire public. Un client connecte est
+        // deja authentifie, lui imposer un controle anti-robot n'apporte rien.
+        $turnstile_site_key = Youvape_SAV_Settings::turnstile_enabled()
+            ? Youvape_SAV_Settings::turnstile_site_key()
+            : '';
+        if ('' !== $turnstile_site_key) {
+            // Version null : Cloudflare sert un point d'entree stable, un ?ver=
+            // ne ferait que casser leur mise en cache.
+            wp_enqueue_script(
+                'cloudflare-turnstile',
+                'https://challenges.cloudflare.com/turnstile/v0/api.js',
+                array(),
+                null,
+                true
+            );
+        }
+
         return $this->capture('public-form.php', array(
-            'error'          => $error,
-            'action_url'     => $return_url,
-            'nonce_field'    => wp_nonce_field('youvape_sav_public', 'youvape_sav_public_nonce', true, false),
-            'honeypot_field' => self::HONEYPOT_FIELD,
-            'login_url'      => self::login_url($return_url),
+            'error'              => $error,
+            'action_url'         => $return_url,
+            'nonce_field'        => wp_nonce_field('youvape_sav_public', 'youvape_sav_public_nonce', true, false),
+            'honeypot_field'     => self::HONEYPOT_FIELD,
+            'login_url'          => self::login_url($return_url),
+            'turnstile_site_key' => $turnstile_site_key,
         ));
     }
 
@@ -319,6 +337,15 @@ class Youvape_SAV_Shortcodes {
             exit;
         }
 
+        // Cloudflare Turnstile. Le pot-de-miel ne suffit plus : le formulaire
+        // etait utilise comme relais d'envoi par des robots, ce qui expose le
+        // domaine d'envoi a une mise en liste noire.
+        $turnstile_error = self::verify_turnstile();
+        if (null !== $turnstile_error) {
+            wp_safe_redirect(add_query_arg('sav_error', rawurlencode($turnstile_error), $return_url));
+            exit;
+        }
+
         $fields = array(
             'name'  => isset($_POST['name']) ? sanitize_text_field(wp_unslash($_POST['name'])) : '',
             'email' => isset($_POST['email']) ? sanitize_email(wp_unslash($_POST['email'])) : '',
@@ -335,6 +362,78 @@ class Youvape_SAV_Shortcodes {
 
         wp_safe_redirect(add_query_arg('sav_sent', '1', $return_url));
         exit;
+    }
+
+    /**
+     * Verifie le jeton Turnstile aupres de Cloudflare.
+     *
+     * Choix assume : on echoue FERME. Si Cloudflare est injoignable, la demande
+     * est refusee avec une invitation a reessayer, plutot que laissee passer.
+     * Laisser passer en cas de panne rouvrirait exactement la breche qu'on
+     * ferme — et un robot n'a qu'a provoquer l'erreur pour en profiter.
+     *
+     * @return string|null message d'erreur a afficher, ou null si tout va bien
+     */
+    private static function verify_turnstile() {
+        if (!Youvape_SAV_Settings::turnstile_enabled()) {
+            return null; // Non configure : on s'en remet au seul pot-de-miel.
+        }
+
+        $token = isset($_POST['cf-turnstile-response'])
+            ? sanitize_text_field(wp_unslash($_POST['cf-turnstile-response']))
+            : '';
+        if ('' === $token) {
+            return __('Merci de valider le contrôle anti-robot avant d\'envoyer votre demande.', 'youvape-sav-client');
+        }
+
+        $body = array(
+            'secret'   => Youvape_SAV_Settings::turnstile_secret_key(),
+            'response' => $token,
+        );
+        $remote_ip = self::client_ip();
+        if ('' !== $remote_ip) {
+            $body['remoteip'] = $remote_ip;
+        }
+
+        $response = wp_remote_post(
+            'https://challenges.cloudflare.com/turnstile/v0/siteverify',
+            array('timeout' => 10, 'body' => $body)
+        );
+
+        if (is_wp_error($response)) {
+            return __('La vérification anti-robot n\'a pas abouti, merci de réessayer dans un instant.', 'youvape-sav-client');
+        }
+
+        $data = json_decode(wp_remote_retrieve_body($response), true);
+        if (!is_array($data) || empty($data['success'])) {
+            return __('Le contrôle anti-robot a échoué. Rechargez la page et renvoyez votre demande.', 'youvape-sav-client');
+        }
+
+        return null;
+    }
+
+    /**
+     * IP du visiteur, transmise a Cloudflare pour affiner la verification.
+     *
+     * Le site est servi derriere Cloudflare : REMOTE_ADDR est alors l'IP du
+     * proxy, jamais celle du visiteur. CF-Connecting-IP porte la vraie. On ne
+     * fait confiance a cet en-tete que pour ce seul usage (parametre optionnel
+     * de siteverify) : il n'est ni journalise, ni utilise pour une decision.
+     *
+     * @return string
+     */
+    private static function client_ip() {
+        $candidates = array('HTTP_CF_CONNECTING_IP', 'REMOTE_ADDR');
+        foreach ($candidates as $key) {
+            if (empty($_SERVER[$key])) {
+                continue;
+            }
+            $ip = trim(wp_unslash($_SERVER[$key]));
+            if (filter_var($ip, FILTER_VALIDATE_IP)) {
+                return $ip;
+            }
+        }
+        return '';
     }
 
     /**

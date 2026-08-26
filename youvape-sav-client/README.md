@@ -45,7 +45,41 @@ define('YOUVAPE_SAV_API_SECRET', 'le-meme-secret-que-le-backend');
 Si ces constantes existent, elles priment sur les réglages de l'interface (les
 champs correspondants sont alors verrouillés dans la page de réglages).
 
-### 3. Consignes de rétractation
+### 3. Anti-spam du formulaire public (Cloudflare Turnstile)
+
+Le formulaire ouvert aux visiteurs non connectés était utilisé par des robots
+comme relais d'envoi : l'accusé de réception partait vers une adresse non
+vérifiée, ce qui expose le domaine d'envoi (`service-client.youvape.fr`) à une
+mise en liste noire. Le pot-de-miel seul ne suffisait pas.
+
+**Réglages → Espace client SAV → Anti-spam du formulaire public** attend les
+deux clés du widget Turnstile créé dans le tableau de bord Cloudflare :
+- **Clé de site** — publique, rendue dans le HTML du formulaire ;
+- **Clé secrète** — utilisée uniquement pour l'appel serveur à `siteverify`.
+
+La protection ne s'active **que si les deux clés sont renseignées** : une clé de
+site sans secret afficherait un widget que personne ne vérifie. L'état est
+affiché dans la page de réglages.
+
+La clé secrète peut aussi venir de `wp-config.php`, comme le secret partagé :
+
+```php
+define('YOUVAPE_SAV_TURNSTILE_SECRET', 'la-cle-secrete');
+```
+
+⚠️ **Après avoir renseigné les clés, purger le cache de page.** Une page mise en
+cache avant l'activation ne contient pas le widget : le jeton serait absent et
+toutes les demandes seraient refusées.
+
+⚠️ Le formulaire public est **surchargeable par le thème**
+(`woocommerce/youvape-sav/public-form.php`). Une surcharge datant d'avant la
+0.5.0 n'affiche pas le widget — même conséquence. La mettre à jour, ou la
+supprimer.
+
+Le contrôle ne s'applique **qu'au formulaire public** : un client connecté est
+déjà authentifié.
+
+### 4. Consignes de rétractation
 
 **Réglages → Espace client SAV** contient aussi l'éditeur des **consignes de
 rétractation**, affichées au client qui choisit le motif « Je souhaite me
@@ -148,6 +182,13 @@ comportement de Gravity Forms, conservé volontairement.
 
 ## Changelog
 
+- **0.5.0** — **Cloudflare Turnstile sur le formulaire public.** Deux nouveaux
+  réglages (clé de site, clé secrète), widget rendu sous le formulaire et
+  vérification serveur via `siteverify` avant toute création de demande. Échec
+  **fermé** : si Cloudflare est injoignable, la demande est refusée avec une
+  invitation à réessayer — laisser passer en cas de panne rouvrirait la brèche,
+  et un robot n'aurait qu'à provoquer l'erreur pour en profiter. Sans clés, le
+  comportement reste celui de la 0.4.1 (pot-de-miel seul).
 - **0.4.1** — Correctif du relais : il vérifiait l'appartenance du ticket **où le
   fichier est rangé**, et non du ticket **affiché**. Dès qu'un agent réutilise
   une image d'une autre demande dans sa réponse — cas d'un message type — le

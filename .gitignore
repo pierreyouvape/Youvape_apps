@@ -39,3 +39,7 @@ Design/
 
 # Document de référence SAV (mapping des statuts agent/client)
 Statuts-SAV-mapping-agent-client.pdf
+
+# Secrets fournis a la main (cles Turnstile, etc.) — ne JAMAIS versionner
+Cl*.rtf
+*.secret

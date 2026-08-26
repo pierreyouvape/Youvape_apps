@@ -64,6 +64,40 @@ class Youvape_SAV_Settings {
         return '' !== trim($custom) ? $custom : self::default_withdrawal_notice();
     }
 
+    /**
+     * Cle de site Turnstile (publique, rendue dans le formulaire).
+     *
+     * @return string
+     */
+    public static function turnstile_site_key() {
+        return trim(self::get('turnstile_site_key'));
+    }
+
+    /**
+     * Cle secrete Turnstile, utilisee uniquement pour l'appel serveur a
+     * siteverify. La constante wp-config prime sur l'option, pour les
+     * installations qui preferent garder leurs secrets hors base.
+     *
+     * @return string
+     */
+    public static function turnstile_secret_key() {
+        if (defined('YOUVAPE_SAV_TURNSTILE_SECRET') && YOUVAPE_SAV_TURNSTILE_SECRET) {
+            return trim(YOUVAPE_SAV_TURNSTILE_SECRET);
+        }
+        return trim(self::get('turnstile_secret_key'));
+    }
+
+    /**
+     * La protection n'est active que si les DEUX cles sont renseignees : une
+     * cle de site sans secret afficherait un widget que personne ne verifie,
+     * ce qui donnerait une fausse impression de securite.
+     *
+     * @return bool
+     */
+    public static function turnstile_enabled() {
+        return '' !== self::turnstile_site_key() && '' !== self::turnstile_secret_key();
+    }
+
     public function add_menu() {
         add_options_page(
             __('Espace client SAV', 'youvape-sav-client'),
@@ -83,6 +117,17 @@ class Youvape_SAV_Settings {
         $out = array();
         $out['api_url'] = isset($input['api_url']) ? esc_url_raw(trim($input['api_url'])) : '';
         $out['api_secret'] = isset($input['api_secret']) ? trim($input['api_secret']) : '';
+        // Turnstile : la cle de site est publique (elle part dans le HTML), la
+        // cle secrete ne quitte jamais le serveur.
+        $out['turnstile_site_key'] = isset($input['turnstile_site_key'])
+            ? sanitize_text_field(trim($input['turnstile_site_key']))
+            : '';
+        // Champ absent du POST = champ desactive (secret impose par wp-config) :
+        // on conserve la valeur stockee au lieu de l'effacer. Une chaine vide
+        // explicitement soumise reste, elle, un effacement volontaire.
+        $out['turnstile_secret_key'] = isset($input['turnstile_secret_key'])
+            ? trim($input['turnstile_secret_key'])
+            : self::get('turnstile_secret_key');
         // Texte légal : HTML de contenu autorisé (listes, liens, gras), pas de
         // script — le champ n'est éditable que par un administrateur.
         $out['withdrawal_notice'] = isset($input['withdrawal_notice'])
@@ -104,6 +149,9 @@ class Youvape_SAV_Settings {
         // Si des constantes wp-config sont définies, elles priment : on le signale.
         $url_locked    = defined('YOUVAPE_SAV_API_URL') && YOUVAPE_SAV_API_URL;
         $secret_locked = defined('YOUVAPE_SAV_API_SECRET') && YOUVAPE_SAV_API_SECRET;
+        $turnstile_site_key   = self::turnstile_site_key();
+        $turnstile_locked     = defined('YOUVAPE_SAV_TURNSTILE_SECRET') && YOUVAPE_SAV_TURNSTILE_SECRET;
+        $turnstile_secret_key = $turnstile_locked ? '' : self::get('turnstile_secret_key');
         ?>
         <div class="wrap">
             <h1><?php echo esc_html__('Espace client SAV — Réglages', 'youvape-sav-client'); ?></h1>
@@ -137,6 +185,46 @@ class Youvape_SAV_Settings {
                                 <p class="description"><?php echo esc_html__('Défini dans wp-config.php (YOUVAPE_SAV_API_SECRET) — prioritaire.', 'youvape-sav-client'); ?></p>
                             <?php else : ?>
                                 <p class="description"><?php echo esc_html__('Collez ici le secret généré dans l\'onglet DANGER de l\'application.', 'youvape-sav-client'); ?></p>
+                            <?php endif; ?>
+                        </td>
+                    </tr>
+                </table>
+
+                <h2><?php echo esc_html__('Anti-spam du formulaire public', 'youvape-sav-client'); ?></h2>
+                <p class="description">
+                    <?php echo esc_html__('Cloudflare Turnstile protège le formulaire de contact ouvert aux visiteurs non connectés. Sans ces deux clés, seul le pot-de-miel filtre les robots.', 'youvape-sav-client'); ?>
+                </p>
+                <table class="form-table" role="presentation">
+                    <tr>
+                        <th scope="row"><label for="youvape_sav_turnstile_site_key"><?php echo esc_html__('Clé de site', 'youvape-sav-client'); ?></label></th>
+                        <td>
+                            <input name="<?php echo esc_attr(self::OPTION); ?>[turnstile_site_key]" id="youvape_sav_turnstile_site_key"
+                                   type="text" class="regular-text" value="<?php echo esc_attr($turnstile_site_key); ?>"
+                                   autocomplete="off" />
+                            <p class="description"><?php echo esc_html__('Publique : elle apparaît dans le code du formulaire.', 'youvape-sav-client'); ?></p>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row"><label for="youvape_sav_turnstile_secret_key"><?php echo esc_html__('Clé secrète', 'youvape-sav-client'); ?></label></th>
+                        <td>
+                            <input name="<?php echo esc_attr(self::OPTION); ?>[turnstile_secret_key]" id="youvape_sav_turnstile_secret_key"
+                                   type="password" class="regular-text" value="<?php echo esc_attr($turnstile_secret_key); ?>"
+                                   autocomplete="off" <?php disabled($turnstile_locked); ?> />
+                            <button type="button" class="button" onclick="(function(){var i=document.getElementById('youvape_sav_turnstile_secret_key');i.type=i.type==='password'?'text':'password';})();">
+                                <?php echo esc_html__('Afficher / masquer', 'youvape-sav-client'); ?>
+                            </button>
+                            <?php if ($turnstile_locked) : ?>
+                                <p class="description"><?php echo esc_html__('Définie dans wp-config.php (YOUVAPE_SAV_TURNSTILE_SECRET) — prioritaire.', 'youvape-sav-client'); ?></p>
+                            <?php endif; ?>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row"><?php echo esc_html__('État', 'youvape-sav-client'); ?></th>
+                        <td>
+                            <?php if (self::turnstile_enabled()) : ?>
+                                <span style="color:#046b2d;font-weight:600;">&#10003; <?php echo esc_html__('Protection active', 'youvape-sav-client'); ?></span>
+                            <?php else : ?>
+                                <span style="color:#b32d2e;font-weight:600;">&#9888; <?php echo esc_html__('Protection inactive — les deux clés sont nécessaires.', 'youvape-sav-client'); ?></span>
                             <?php endif; ?>
                         </td>
                     </tr>
