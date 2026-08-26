@@ -115,6 +115,15 @@ export default function ComptageTab({ shop, token }) {
     return n;
   });
 
+  // Sélectionne / désélectionne d'un coup tous les produits de la recherche courante
+  const toggleSelAll = () => setBSelected((s) => {
+    const n = { ...s };
+    const allOn = bResults.length > 0 && bResults.every((p) => n[p.product_id]);
+    if (allOn) bResults.forEach((p) => { delete n[p.product_id]; });
+    else bResults.forEach((p) => { n[p.product_id] = { name: p.name }; });
+    return n;
+  });
+
   const createList = async () => {
     const ids = Object.keys(bSelected);
     if (!ids.length) { setError('Sélectionne au moins un produit'); return; }
@@ -256,6 +265,7 @@ export default function ComptageTab({ shop, token }) {
 
   if (view === 'builder') {
     const selCount = Object.keys(bSelected).length;
+    const allResultsSelected = bResults.length > 0 && bResults.every((p) => bSelected[p.product_id]);
     return (
       <div style={{ paddingBottom: 80 }}>
         <button onClick={() => setView('create')} style={{ background: 'none', border: 'none', color: C.primary, fontSize: 15, padding: 0, marginBottom: 12, cursor: 'pointer' }}>‹ Retour</button>
@@ -276,6 +286,18 @@ export default function ComptageTab({ shop, token }) {
 
         {bSearching && <div style={{ color: C.greyT, fontSize: 13, marginBottom: 8 }}>Recherche…</div>}
         {!bSearching && bResults.length === 0 && (bQ || bBrand || bCat) && <div style={{ color: C.greyM, fontSize: 14, padding: 12 }}>Aucun produit.</div>}
+
+        {!bSearching && bResults.length > 0 && (
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 8 }}>
+            <span style={{ fontSize: 13, color: C.greyM }}>{bResults.length} résultat{bResults.length > 1 ? 's' : ''}</span>
+            <button onClick={toggleSelAll} style={{
+              background: '#fff', border: `1px solid ${C.primary}`, color: C.primary, borderRadius: 8,
+              padding: '8px 12px', fontSize: 14, fontWeight: 600, cursor: 'pointer',
+            }}>
+              {allResultsSelected ? 'Tout désélectionner' : 'Tout sélectionner'}
+            </button>
+          </div>
+        )}
 
         {bResults.map((p) => {
           const on = !!bSelected[p.product_id];
