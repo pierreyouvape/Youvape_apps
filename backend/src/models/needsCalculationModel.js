@@ -1,6 +1,7 @@
 const pool = require('../config/database');
 const { computeProductNeeds } = require('../services/needsCalculator');
 const { buildVariationLabel } = require('../utils/variationLabel');
+const { normalizeVerifiedPrice } = require('../utils/verifiedPrice');
 
 // Cache court pour getReorderProductIds (évite de recalculer 2x par requête catalogue : liste + count)
 const REORDER_IDS_CACHE_TTL_MS = 60 * 1000;
@@ -174,6 +175,33 @@ const needsCalculationModel = {
       GROUP BY poi.product_id
     `);
 
+    // 5. Dernier tarif d'achat VALIDÉ par (produit, fournisseur)
+    // Seules les commandes verified = true font foi : les PDF fournisseurs sont des
+    // PRO FORMA, le tarif réel est celui constaté dans BMS après la vraie facture.
+    // Toutes les liaisons sont remontées (pas seulement le fournisseur principal) pour
+    // que la colonne suive le fournisseur sélectionné dans le filtre.
+    const verifiedPricesResult = await pool.query(`
+      SELECT DISTINCT ON (poi.product_id, po.supplier_id)
+        poi.product_id,
+        po.supplier_id,
+        poi.unit_price,
+        po.order_date,
+        po.bms_reference,
+        s.code AS supplier_code,
+        ps.pack_qty,
+        ps.supplier_price
+      FROM purchase_order_items poi
+      JOIN purchase_orders po ON po.id = poi.purchase_order_id
+      JOIN suppliers s ON s.id = po.supplier_id
+      LEFT JOIN product_suppliers ps
+        ON ps.product_id = poi.product_id AND ps.supplier_id = po.supplier_id
+      WHERE po.verified = true
+        AND poi.product_id IS NOT NULL
+        AND poi.unit_price IS NOT NULL
+        AND poi.unit_price > 0
+      ORDER BY poi.product_id, po.supplier_id, po.order_date DESC NULLS LAST, po.id DESC
+    `);
+
     // Indexer par product_id (parseInt pour éviter le mismatch string/int entre les queries)
     const dailySalesMap = new Map(); // product_id → [{date, total_qty}]
     for (const row of dailySalesResult.rows) {
@@ -193,6 +221,28 @@ const needsCalculationModel = {
     const incomingMap = new Map(); // product_id → incoming_qty
     for (const row of incomingResult.rows) {
       incomingMap.set(parseInt(row.product_id), parseInt(row.incoming_qty) || 0);
+    }
+
+    // product_id → { [supplier_id]: { unit_price, order_date, bms_reference } }
+    // unit_price est normalisé dans la convention du fournisseur (prix pack pour les
+    // fournisseurs « à l'unité », prix unitaire pour les autres) : même valeur que le
+    // prefill de l'import PDF, cf. purchaseOrderModel.getLastVerifiedPrices.
+    const verifiedPricesMap = new Map();
+    for (const row of verifiedPricesResult.rows) {
+      const price = normalizeVerifiedPrice({
+        supplierCode: row.supplier_code,
+        unitPrice: row.unit_price,
+        packQty: row.pack_qty,
+        supplierPrice: row.supplier_price,
+      });
+      if (price == null) continue;
+      const pid = parseInt(row.product_id);
+      if (!verifiedPricesMap.has(pid)) verifiedPricesMap.set(pid, {});
+      verifiedPricesMap.get(pid)[String(row.supplier_id)] = {
+        unit_price: price,
+        order_date: row.order_date,
+        bms_reference: row.bms_reference,
+      };
     }
 
     // Assembler la réponse
@@ -219,6 +269,7 @@ const needsCalculationModel = {
       supplier_sku: p.supplier_sku,
       supplier_skus: p.supplier_skus || {},
       supplier_price: p.supplier_price,
+      last_verified_prices: verifiedPricesMap.get(p.id) || {},
       incoming_qty: incomingMap.get(p.id) || 0,
       max_order_qty_12m: maxOrderMap.get(p.id) || 0,
       daily_sales: dailySalesMap.get(p.id) || [], // [{date, total_qty}]

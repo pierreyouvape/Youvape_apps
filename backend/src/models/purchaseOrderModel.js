@@ -1,6 +1,7 @@
 const pool = require('../config/database');
 const bmsApiModel = require('./bmsApiModel');
 const parserRegistry = require('../parsers');
+const { normalizeVerifiedPrice } = require('../utils/verifiedPrice');
 
 // Warehouse ID principal BMS (Entrepot)
 const BMS_WAREHOUSE_ID = 270;
@@ -1422,7 +1423,7 @@ const purchaseOrderModel = {
     // skipPackQty (Highbuy, LCA…) : renvoyer le prix DU PACK ; normaux (JoshNoa…) :
     // renvoyer le prix PAR UNITÉ (cf. doc ci-dessus, dépend de createInBMS).
     const supRes = await pool.query('SELECT code FROM suppliers WHERE id = $1', [supplierId]);
-    const skipPackQty = parserRegistry.skipsPackQty(supRes.rows[0]?.code);
+    const supplierCode = supRes.rows[0]?.code;
 
     const query = `
       SELECT DISTINCT ON (p.wp_product_id)
@@ -1451,16 +1452,16 @@ const purchaseOrderModel = {
     const result = await pool.query(query, [supplierId, ids]);
     const map = {};
     for (const row of result.rows) {
-      const unitPrice = parseFloat(row.unit_price);
-      const packQty = parseInt(row.pack_qty) || 1;
-      const supplierPrice = parseFloat(row.supplier_price) || null;
-      // skipPackQty + pack_qty>1 → prix du pack (supplier_price prioritaire, sinon
-      // unit_price×pack). Sinon (normaux, ou produit simple) → prix par unité tel quel.
-      const packPrice = (skipPackQty && packQty > 1)
-        ? (supplierPrice != null && supplierPrice > 0 ? supplierPrice : unitPrice * packQty)
-        : unitPrice;
+      // Conversion pack/unité mutualisée avec la colonne « Tarif achat » des Besoins.
+      const price = normalizeVerifiedPrice({
+        supplierCode,
+        unitPrice: row.unit_price,
+        packQty: row.pack_qty,
+        supplierPrice: row.supplier_price,
+      });
+      if (price == null) continue;
       map[row.input_id] = {
-        unit_price: Math.round(packPrice * 100) / 100,
+        unit_price: price,
         order_date: row.order_date,
         bms_reference: row.bms_reference,
       };

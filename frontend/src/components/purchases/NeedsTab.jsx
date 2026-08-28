@@ -246,6 +246,7 @@ const TriStateCheckbox = ({ value, onChange, label }) => {
 // ==================== COMPOSANT PRINCIPAL ====================
 
 const NEEDS_COLUMNS = [
+  { key: 'verified_price',      label: 'Tarif achat' },
   { key: 'weight',              label: 'Poids' },
   { key: 'stock',               label: 'Stock' },
   { key: 'arrivage',            label: 'Arrivage' },
@@ -340,6 +341,36 @@ const NeedsTab = ({ token, onCompactChange }) => {
   // sinon celle du fournisseur principal (supplier_sku).
   const getSupplierRef = (row) =>
     (supplierId && row.supplier_skus && row.supplier_skus[String(supplierId)]) || row.supplier_sku || '';
+
+  // Dernier tarif d'achat VALIDÉ (commande BMS vérifiée) : celui du fournisseur
+  // sélectionné en priorité, sinon celui du fournisseur de la fiche — même repli
+  // que getSupplierRef. Renvoie { unit_price, order_date, bms_reference }.
+  const getVerifiedPrice = (row) => {
+    const prices = row.last_verified_prices;
+    if (!prices) return null;
+    const key = (supplierId && supplierId !== NO_SUPPLIER)
+      ? String(supplierId)
+      : (row.supplier_id != null ? String(row.supplier_id) : null);
+    return (key && prices[key]) || null;
+  };
+
+  const renderVerifiedPrice = (row) => {
+    const verified = getVerifiedPrice(row);
+    if (!verified) return <span style={{ color: '#cbd5e1' }}>-</span>;
+    const date = verified.order_date
+      ? new Date(verified.order_date).toLocaleDateString('fr-FR')
+      : null;
+    const title = [
+      'Dernier tarif validé (commande BMS vérifiée)',
+      date ? `le ${date}` : null,
+      verified.bms_reference ? `— ${verified.bms_reference}` : null,
+    ].filter(Boolean).join(' ');
+    return (
+      <span title={title} style={{ whiteSpace: 'nowrap' }}>
+        {verified.unit_price.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €
+      </span>
+    );
+  };
 
   // Ref pour gérer le debounce de la recherche
   const searchTimeoutRef = useRef(null);
@@ -1079,6 +1110,7 @@ const NeedsTab = ({ token, onCompactChange }) => {
                   <SortableHeader column="family" label="Produit" />
                   <th>Réf. fournisseur</th>
                   <th style={{ width: '30px' }}></th>
+                  {isVisible('verified_price') && <th className="text-right">Tarif achat</th>}
                   <th>SKU</th>
                   {isVisible('weight') && <th className="text-right">Poids</th>}
                   {isVisible('stock') && <SortableHeader column="stock" label="Stock" className="text-right" />}
@@ -1140,6 +1172,7 @@ const NeedsTab = ({ token, onCompactChange }) => {
                         </a>
                       )}
                     </td>
+                    {isVisible('verified_price') && <td></td>}
                     <td></td>
                     {isVisible('weight') && <td></td>}
                     {isVisible('stock') && <td className="text-right">{fmtInt(row.totalStock)}</td>}
@@ -1227,6 +1260,7 @@ const NeedsTab = ({ token, onCompactChange }) => {
                         </a>
                       )}
                     </td>
+                    {isVisible('verified_price') && <td className="text-right">{renderVerifiedPrice(row)}</td>}
                     <td><code style={{ fontSize: '12px' }}>{row.sku || '-'}</code></td>
                     {isVisible('weight') && <td className="text-right" style={{ color: '#6b7280' }}>{row.weight ? parseFloat(row.weight).toLocaleString('fr-FR', { minimumFractionDigits: 0, maximumFractionDigits: 3 }) : '-'}</td>}
                     {isVisible('stock') && <td className="text-right">{fmtInt(row.stock)}</td>}
