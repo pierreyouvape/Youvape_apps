@@ -172,6 +172,31 @@ nouvel appel de lecture est authentifié sans effort. Les appels `fetch()`
 
 ## Bugs corrigés — historique
 
+### 2026-08-31 — Import fournisseur : des lignes disparaissaient sans un mot
+**Fichiers** : `parsers/revoluteParser.js`, `parsers/etastyParser.js`,
+`parsers/cigaccessParser.js`, `models/parseAudit.js`, `models/pdfImportModel.js`,
+`ImportPdfPage.jsx`, `tests/parsers.test.js`
+
+- **Symptôme** : une ligne de la facture n'arrivait jamais dans la commande. Aucune
+  erreur, aucun total incohérent — le contrôle de total retombait sur la **somme des
+  lignes parsées**, donc cohérent par construction. Trois cas réels :
+  Revolute FA020464 (REF2665, 60,00 € HT), e.tasty FA072725 (54,40 € HT),
+  CigAccess FA128317 (160,32 € HT, **et** sa référence recopiée sur la ligne suivante).
+- **Causes** : saut de page (le mobilier de page se colle devant le 1er article de la
+  page suivante, la référence n'est plus en tête de bloc) ; colonne « Prix de base »
+  à `--` chez CigAccess, qui faisait échouer la détection de ligne de prix.
+- **Garde-fou universel** : `models/parseAudit.js` → `findUnparsedRows()` relit le
+  document à la recherche de la signature `PRIX € QTÉ TOTAL €` **vérifiant
+  QTÉ × PRIX = TOTAL** (l'égalité s'auto-valide) et signale en rouge, dans l'écran
+  d'import, toute ligne qui n'a produit aucun item. Indépendant du fournisseur : il
+  couvre aussi les parseurs jamais testés.
+- **Réconciliation de total** : un parseur peut exposer `invoiceProductTotalHT` +
+  `invoiceProductTotalIsGross` (total « Total produits » IMPRIMÉ, brut). Sans ce
+  second drapeau, pas de comparaison : « Montant HT » inclut parfois port et remises,
+  et une alerte qui crie au loup ne protège plus de rien.
+- **Non-régression** : `cd backend && npm test` rejoue les 3 factures réelles
+  (fixtures = texte brut figé de pdf-parse). **À lancer après toute modif de parseur.**
+
 ### 2026-08-20 — Valeur de stock du rapport stats désalignée du catalogue (`commit 9ecb1ed`)
 **Fichiers** : `stockValuationModel.js`, `cronService.js`, `ReportsTab.jsx`,
 `scripts/checkStockValuation.js`, `scripts/recomputeStockValuationSnapshots.js`

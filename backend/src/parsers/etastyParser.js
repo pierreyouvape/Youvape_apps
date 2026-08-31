@@ -91,7 +91,7 @@ function parseInvoice(text) {
     if (Number.isFinite(n) && n > 0) invoiceProductTotalHT = n;
   }
 
-  return { orderNumber, orderDate, items, hasPrice: true, invertPackQty: true, invoiceProductTotalHT };
+  return { orderNumber, orderDate, items, hasPrice: true, invertPackQty: true, invoiceProductTotalHT, invoiceProductTotalIsGross: true };
 }
 
 /**

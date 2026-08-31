@@ -767,6 +767,26 @@ const ImportPdfPage = () => {
                     </button>
                   </div>
 
+                  {/* Anomalie de lecture du document : une ligne du PDF n'a pas ete
+                      reprise, ou le total imprime ne colle pas aux lignes lues.
+                      En rouge et au-dessus de tout : c'est le seul signal qui
+                      empeche de commander une facture amputee sans s'en rendre compte. */}
+                  {(parsedData.parse_warnings || []).map((w, wi) => (
+                    <div key={wi} style={{ marginTop: 14, padding: '12px 14px', background: '#FEF2F2', borderRadius: 8, border: '1px solid #FCA5A5', fontSize: 13, color: '#991B1B' }}>
+                      <div style={{ fontWeight: 700 }}>⚠️ {w.message}</div>
+                      {(w.rows || []).length > 0 && (
+                        <ul style={{ margin: '8px 0 0', paddingLeft: 20 }}>
+                          {w.rows.map((r, ri) => (
+                            <li key={ri} style={{ marginTop: 2 }}>
+                              {r.context ? <span style={{ opacity: 0.85 }}>{r.context} — </span> : null}
+                              <strong>{r.qty} × {Number(r.unit_price).toFixed(2)} € = {Number(r.total).toFixed(2)} € HT</strong>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  ))}
+
                   {parsedData.duplicate_warning && (
                     <div style={{ marginTop: 14, padding: '10px 14px', background: '#FFF4E0', borderRadius: 8, border: '1px solid #F5D78E', fontSize: 13, color: '#92400e', display: 'flex', gap: 10 }}>
                       ⚠️ {parsedData.duplicate_warning}

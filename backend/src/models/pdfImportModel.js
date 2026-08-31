@@ -1,6 +1,7 @@
 const { PDFParse } = require('pdf-parse');
 const pool = require('../config/database');
 const parserRegistry = require('../parsers');
+const { findUnparsedRows } = require('./parseAudit');
 
 /**
  * Nettoie le texte brut extrait d'un PDF avant parsing :
@@ -148,6 +149,26 @@ const pdfImportModel = {
 
     if (!parsed.items || parsed.items.length === 0) {
       throw new Error('Aucune ligne produit trouvée dans le PDF');
+    }
+
+    // 4a. Garde-fou anti-ligne perdue (voir findUnparsedRows). On relit le texte
+    //     réellement parsé — celui qui a produit les items, nettoyé ou brut.
+    const parseWarnings = [];
+    const parsedText = parseMode === 'clean' ? text : rawText;
+    const orphanRows = findUnparsedRows(parsedText, parsed.items, parsed.discountItems);
+    if (orphanRows.length > 0) {
+      const detail = orphanRows
+        .map((o) => `${o.context ? o.context + ' — ' : ''}${o.qty} × ${o.unit_price.toFixed(2)} € = ${o.total.toFixed(2)} € HT`)
+        .join(' | ');
+      console.warn(`[pdfImport] ${supplier.name} : ${orphanRows.length} ligne(s) du document non parsée(s) → ${detail}`);
+      parseWarnings.push({
+        type: 'unparsed_rows',
+        message:
+          `${orphanRows.length} ligne${orphanRows.length > 1 ? 's' : ''} du document ${orphanRows.length > 1 ? 'ne sont pas reprises' : "n'est pas reprise"} ` +
+          `ci-dessous (total ${orphanRows.reduce((a, o) => a + o.total, 0).toFixed(2)} € HT). ` +
+          `Ajoutez-${orphanRows.length > 1 ? 'les' : 'la'} à la main, puis signalez le parseur ${supplier.code || supplier.name}.`,
+        rows: orphanRows,
+      });
     }
 
     // 4b. Reconstituer la référence complète à partir des SKU connus du fournisseur.
@@ -322,10 +343,34 @@ const pdfImportModel = {
     // On n'utilise la somme QUE si TOUTES les lignes produit ont un total_ht valide
     // (sinon somme partielle → faux total → on préfère désactiver le contrôle B).
     let invoiceTotalHt = parsed.invoiceProductTotalHT ?? null;
-    if (invoiceTotalHt == null && Array.isArray(parsed.items) && parsed.items.length > 0) {
-      const lineTotals = parsed.items.map(i => Number(i.total_ht));
-      if (lineTotals.every(t => Number.isFinite(t) && t > 0)) {
-        invoiceTotalHt = Math.round(lineTotals.reduce((a, b) => a + b, 0) * 100) / 100;
+    const lineTotals = (parsed.items || []).map(i => Number(i.total_ht));
+    const lineTotalsSum = lineTotals.every(t => Number.isFinite(t) && t > 0) && lineTotals.length > 0
+      ? Math.round(lineTotals.reduce((a, b) => a + b, 0) * 100) / 100
+      : null;
+    if (invoiceTotalHt == null) invoiceTotalHt = lineTotalsSum;
+
+    // Réconciliation : quand le parseur sait lire le total produits IMPRIMÉ sur le
+    // document, il devient une source indépendante des lignes parsées. Un écart =
+    // une ligne perdue ou dénaturée, signalé ici plutôt qu'à l'envoi BMS (trop tard,
+    // et confondu avec un envoi partiel légitime).
+    //
+    // Réservé aux parseurs qui déclarent invoiceProductTotalIsGross, c.-à-d. dont le
+    // total lu est bien le BRUT produits (libellé « Total produits »), donc
+    // comparable ligne à ligne. Ailleurs le libellé est ambigu (« Montant HT » peut
+    // inclure port et remises) : comparer déclencherait une alerte à chaque import,
+    // et une alerte qui crie au loup ne protège plus de rien. Ces documents restent
+    // couverts par le garde-fou universel findUnparsedRows ci-dessus.
+    if (parsed.invoiceProductTotalIsGross && parsed.invoiceProductTotalHT != null && lineTotalsSum != null) {
+      const gap = Math.round((parsed.invoiceProductTotalHT - lineTotalsSum) * 100) / 100;
+      if (Math.abs(gap) > 0.02) {
+        console.warn(`[pdfImport] ${supplier.name} : total imprimé ${parsed.invoiceProductTotalHT} € ≠ somme des lignes ${lineTotalsSum} € (écart ${gap} €)`);
+        parseWarnings.push({
+          type: 'total_mismatch',
+          message:
+            `Le document totalise ${parsed.invoiceProductTotalHT.toFixed(2)} € HT de produits, ` +
+            `mais les ${parsed.items.length} lignes lues totalisent ${lineTotalsSum.toFixed(2)} € HT ` +
+            `(écart ${gap.toFixed(2)} €). Une ligne est probablement manquante ou mal lue.`,
+        });
       }
     }
 
@@ -337,6 +382,9 @@ const pdfImportModel = {
       has_price: parsed.hasPrice || false,
       parse_mode: parseMode,
       duplicate_warning: duplicateWarning,
+      // Anomalies de lecture du document (lignes non reprises, total incohérent).
+      // Affichées en rouge dans l'écran d'import : une ligne perdue doit se voir.
+      parse_warnings: parseWarnings,
       items: allItems,
       total_items: enrichedItems.length,
       matched_count: enrichedItems.filter(i => i.matched).length,

@@ -1,0 +1,100 @@
+FACTURE
+21/08/2026
+#FA128317
+Adresse de livraison
+Maxime coglitore
+YOUVAPE Site-web
+0000
+580 avenue de l aube rouge
+34170 castelnau le lez
+France
+0695975267
+0695975267
+Adresse de facturation
+Maxime coglitore
+YOUVAPE Site-web
+0000
+580 avenue de l aube rouge
+34170 castelnau le lez
+France
+0695975267
+0695975267
+Numéro de facture Date de facturation Réf. de commande Date de commande Numéro de TVA
+#FA128317 21/08/2026 GJONURSRU 21/08/2026 0000
+Moyen de paiement Paiement par carte bancaire 428,00 €
+Référence Produit Poids
+Unitaire
+(KG)
+Taux de
+taxe
+Prix de base
+(HT)
+Prix unitaire
+(HT)
+Quantité Total
+(HT)
+005518 PGVG Labs - Don Cristo XO
+50ML
+0.08 20 % 7,90 € 5,80 € 2 11,60 €
+012558 PGVG Labs - Don Cristo Cuba
+50ML
+0.08 20 % 7,90 € 5,80 € 5 29,00 €
+006040 Sunlight - Apple Berry
+Concentré 10mL
+0.02 20 % 2,50 € 2,25 € 20 45,00 €
+011496 Dotmod Juice - Mango
+Passion 50/50 50ml
+0.07 20 % 5,90 € 4,50 € 10 45,00 €
+012882 CEDRIC GROSCAKE - La
+Grosse Vanille 50ML
+0.08 20 % 5,90 € 4,90 € 4 19,60 €
+012881 CEDRIC GROSCAKE - La
+Grosse Pistache 50ML
+0.08 20 % 5,90 € 4,90 € 4 19,60 €
+012884-0-Bla
+c
+Dovpo - Flipside Solo 100W
+Squonk - Couleur : Black
+0.23 20 % -- 40,08 € 4 160,32 €
+012959 CEDRIC GROSCAKE - La
+Grosse Fraise - Concentré
+30ML
+0.05 20 % 5,90 € 5,31 € 5 26,55 €
+012888 Dovpo - Flipside bottle 0.01 20 % 8,90 € 8,01 € 4 32,04 €
+Réductions
+Offre Dovpo Flipside 1 bouteille offerte - 32,04 €
+Détail des taxes Taux de taxe Taxe totale
+Produits 20.000 % 71,33 €
+Total produits 388,71 €
+Total Réductions - 32,04 €
+Frais de livraison Livraison gratuite
+cig access pro - SARL ALAV, 148 Rue de Lenche, - 13400 Aubagne - France
+Pour toute assistance, merci de nous contacter :
+Tél. : 04 42 98 11 08 Fax : 04 42 98 11 08
+SARL ALAV - TVA intracommunautaire : FR94792912818 - Siret: 792 912 818 00038 - RCS MARSEILLE - FRANCE
+Une version électronique est conservée sur votre compte. Pour y accéder, identifiez-vous sur le site CigAcess avec vos identifiants (Créés lors de votre première commande). BANQUE PALATINE
+MARS.PRO. IBAN : FR76 4097 8000 2321 3957 4221 407 BIC-ADRESSE SWIFT : BSPFFRPPXXX | BANQUE DELUBAC & CIE. IBAN : FR76 1287 9000 0111 2280 1700 126 BIC-ADRESSE SWIFT
+
+-- 1 of 2 --
+
+FACTURE
+21/08/2026
+#FA128317
+Total (HT) 356,67 €
+Taxe totale 71,33 €
+Total 428,00 €
+Date de paiement : Immédiat
+Escompte pour paiement anticipé : néant
+Loi LME du 04-08-2008, les pénalités de retard seront
+calculées sur la base de 3 fois le taux d'intéret légal.
+Indemnité forfaitaire pour frais de recouvrement : 40 euros.
+Powered by TCPDF (www.tcpdf.org)
+cig access pro - SARL ALAV, 148 Rue de Lenche, - 13400 Aubagne - France
+Pour toute assistance, merci de nous contacter :
+Tél. : 04 42 98 11 08 Fax : 04 42 98 11 08
+SARL ALAV - TVA intracommunautaire : FR94792912818 - Siret: 792 912 818 00038 - RCS MARSEILLE - FRANCE
+Une version électronique est conservée sur votre compte. Pour y accéder, identifiez-vous sur le site CigAcess avec vos identifiants (Créés lors de votre première commande). BANQUE PALATINE
+MARS.PRO. IBAN : FR76 4097 8000 2321 3957 4221 407 BIC-ADRESSE SWIFT : BSPFFRPPXXX | BANQUE DELUBAC & CIE. IBAN : FR76 1287 9000 0111 2280 1700 126 BIC-ADRESSE SWIFT
+
+-- 2 of 2 --
+

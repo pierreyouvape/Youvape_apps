@@ -126,7 +126,12 @@ function parseFacture(text) {
   const lines = cleaned.split('\n').map(l => l.trim()).filter(l => l.length > 0);
 
   // Ligne de prix : POIDS TAUX% PRIX_BASE€ PRIX_UNIT€ QTE TOTAL€
-  const priceLineRegex = /[\d.]+\s+\d+\s*%\s+[\d,]+\s*€\s+[\d,]+\s*€\s+\d+\s+[\d,]+\s*€\s*$/;
+  // La colonne « Prix de base » vaut "--" quand l'article n'a pas de tarif barre
+  // (aucune remise). Exiger un montant a cet endroit faisait echouer la detection :
+  // la ligne n'etait plus reconnue comme ligne de prix, l'article disparaissait ET
+  // sa reference etait recuperee par l'article suivant (facture GJONURSRU :
+  // Dovpo Flipside Solo, 4 x 40,08 € = 160,32 € perdus, ref. collee sur le 012959).
+  const priceLineRegex = /[\d.]+\s+\d+\s*%\s+(?:--|[\d,]+\s*€)\s+[\d,]+\s*€\s+\d+\s+[\d,]+\s*€\s*$/;
 
   const priceLineIndices = [];
   for (let i = 0; i < lines.length; i++) {
@@ -145,7 +150,13 @@ function parseFacture(text) {
       const line = blockLines[i];
       if (i > 0 && blockLines[i - 1].length < 15 && line.length < 10 && /^[\w-]+$/.test(line) && i < 3) {
         const prev = blockText.trimEnd();
-        if (prev.match(/[-A-Z]$/) && !line.match(/^\d+\s*%/)) {
+        // Reference coupee en fin de colonne ("012884-0-Bla" + "c"). On recolle si
+        // la fin du bloc precedent est un tiret / une majuscule, ou si c'est une
+        // reference nue (chiffres puis suffixe), sans quoi le SKU reste tronque et
+        // la ligne ne matche plus aucun produit.
+        const prevTail = prev.split(/\s/).pop() || '';
+        const looksLikeRef = /^\d{5,}[\w.-]*$/.test(prevTail);
+        if ((prev.match(/[-A-Z]$/) || looksLikeRef) && !line.match(/^\d+\s*%/)) {
           blockText = prev + line + ' ';
           continue;
         }
@@ -155,13 +166,14 @@ function parseFacture(text) {
     blockText = blockText.replace(/\s+/g, ' ').trim();
 
     const numbersMatch = blockText.match(
-      /([\d.]+)\s+(\d+)\s*%\s+([\d,]+)\s*€\s+([\d,]+)\s*€\s+(\d+)\s+([\d,]+)\s*€\s*$/
+      /([\d.]+)\s+(\d+)\s*%\s+(--|[\d,]+\s*€)\s+([\d,]+)\s*€\s+(\d+)\s+([\d,]+)\s*€\s*$/
     );
     if (!numbersMatch) continue;
 
     const parseDecimal = (str) => parseFloat(str.replace(',', '.'));
 
-    const prixBase = parseDecimal(numbersMatch[3]);
+    // "--" = pas de tarif barre sur cet article.
+    const prixBase = numbersMatch[3] === '--' ? null : parseDecimal(numbersMatch[3]);
     const prixUnit = parseDecimal(numbersMatch[4]);
     const qty = parseInt(numbersMatch[5]);
     const totalHt = parseDecimal(numbersMatch[6]);
@@ -190,9 +202,18 @@ function parseFacture(text) {
     }
   }
 
+  // Total HT produits imprime sur la facture ("Total produits 388,71 €").
+  // Source independante des lignes parsees : un ecart trahit une ligne perdue.
+  let invoiceProductTotalHT = null;
+  const totalMatch = text.match(/Total\s+produits\s+([0-9][0-9  \u202f]*,\d{2})\s*€/i);
+  if (totalMatch) {
+    const n = parseFloat(totalMatch[1].replace(/[\s  \u202f]/g, '').replace(',', '.'));
+    if (Number.isFinite(n) && n > 0) invoiceProductTotalHT = n;
+  }
+
   // pdfIsPackBased : la facture/proforma CigAccess donne la quantité EN PACKS et le
   // prix DU PACK (ex: "x10", qté 5, 5,31€/pack). On stocke tel quel, sans conversion.
-  return { orderNumber, orderDate, items, hasPrice: true, pdfIsPackBased: true };
+  return { orderNumber, orderDate, items, hasPrice: true, pdfIsPackBased: true, invoiceProductTotalHT, invoiceProductTotalIsGross: true };
 }
 
 /**

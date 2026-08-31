@@ -1,0 +1,122 @@
+FACTURE
+25/08/2026
+#FA072725
+Adresse de livraison
+maxime coglitore
+SAS EMC
+FR87789508439
+580 avenue de l'aube rouge
+YOUVAPE SITE
+34170 CASTELNAU LE LEZ
+France
+0695975267
+Adresse de facturation
+maxime coglitore
+SAS EMC
+FR87789508439
+580 avenue de l'aube rouge
+YOUVAPE SITE
+34170 CASTELNAU LE LEZ
+France
+0695975267
+Numéro de facture Date de facturation Réf. de commande Date de commande Numéro de TVA
+#FA072725 25/08/2026 HNIHRDZCR 25/08/2026 FR87789508439
+Référence Produit Taux de
+taxe
+Prix unitaire
+(HT)
+Quantité Total
+(HT)
+AST-
+LICO-10-10SDN
+La Licorne - Sel de Nicotine (Taux de nicotine :
+10mg)
+20 % 1,36 € 20 27,20 €
+AST-
+LICO-200-0MG
+La Licorne - 200ml (Taux de nicotine : 00mg) 20 % 19,12 € 10 191,20 €
+BOO-PACK500
+SELDENICO-20M
+G
+500 boosters SEL DE NICOTINE 20mg - 50/50 -
+100% VÉGÉTAL - 10ml (Taux de nicotine : 20mg)
+20 % 150,00 € 1 150,00 €
+COT-
+SAIN-50-0MG
+Saint Malo - 50ml (Taux de nicotine : 00mg) 20 % 5,52 € 6 33,12 €
+HEX-
+LILL-50-00MG
+Lille Etait Une Fois - 50ml (Taux de nicotine :
+00mg)
+20 % 5,52 € 18 99,36 €
+HEX-REIM-
+CONC
+Reims-Toi la Bulle - Concentré 30ML (Contenance
+: 30ML)
+20 % 4,72 € 10 47,20 €
+NAT-
+BOOS-10-6MG
+Booster Natural - 10ml (Taux de nicotine : 6mg) 20 % 1,36 € 100 136,00 €
+NAT-
+ELIX-10-6MG
+Elixir - 10ml (Taux de nicotine : 6mg) 20 % 1,36 € 50 68,00 €
+NAT-
+ELIX-50-0MG
+Elixir - 50ml (Taux de nicotine : 00mg) 20 % 5,52 € 24 132,48 €
+NAT-
+GRAN-10-12MG
+Grand Elixir - 10ml (Taux de nicotine : 12mg) 20 % 1,36 € 10 13,60 €
+NAT-
+GRAN-50-0MG
+Grand Elixir - 50ml (Taux de nicotine : 00mg) 20 % 5,52 € 6 33,12 €
+NAT-
+ROUG-50-0MG
+Fruits Rouges - 50ml (Taux de nicotine : 00mg) 20 % 5,52 € 12 66,24 €
+NAT-
+TANZ-50-0MG
+Tanzanien - 50ml (Taux de nicotine : 00mg) 20 % 5,52 € 24 132,48 €
+1 / 2
+
+-- 1 of 2 --
+
+FACTURE
+25/08/2026
+#FA072725
+NAT-
+VERT-10-6MG
+Menthe Verte - 10ml (Taux de nicotine : 6mg) 20 % 1,36 € 40 54,40 €
+NAT-
+VERT-50-0MG
+Menthe Verte - 50ml (Taux de nicotine : 00mg) 20 % 5,52 € 12 66,24 €
+PRE-
+PREC-10-12MG
+Le Precieux - 10ml (Taux de nicotine : 12mg) 20 % 1,36 € 50 68,00 €
+PRE-
+PREC-50-0MG
+Le Precieux en 50ml (Taux de nicotine : 00mg) 20 % 5,52 € 6 33,12 €
+PRE-
+SEL-10-20MG
+Le Précieux - Sel de Nicotine (Taux de nicotine :
+20mg)
+20 % 1,36 € 10 13,60 €
+Détail des taxes Taux de taxe Taxe totale
+Produits 20.000 % 273,07 €
+Total produits 1 365,36 €
+Frais de livraison Livraison gratuite
+Total (HT) 1 365,36 €
+Taxe totale 273,07 €
+Total 1 638,43 €
+Moyen de paiement Paiement VISA 1 638,43 €
+Transporteur Chronopost - Express à domicile J+1 avant
+13h
+RIB HSBC, 3 rue des Mathurins, 75009, Paris
+IBAN : FR76 3005 6009 1509 1500 4920 968
+BIC / SWIFT : CCFRFRPP
+Powered by TCPDF (www.tcpdf.org)
+Curieux e-liquides PRO - 42 avenue du Général de Gaulle - 45200 MONTARGIS - France
+Pour toute assistance, merci de nous contacter :
+Tél. : +33 1 48 18 75 62
+Siret : 83841399500047 / Numero EORI FR83841399500013 / TVA FR84838413995
+
+-- 2 of 2 --
+
