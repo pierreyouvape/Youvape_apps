@@ -1,4 +1,4 @@
-import { useState, useEffect, useContext } from 'react';
+import { useState, useEffect, useContext, useMemo } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import axios from 'axios';
 import AppShell from '../components/AppShell';
@@ -194,6 +194,27 @@ const OrderDetail = () => {
       .catch(() => {});
     return () => { cancelled = true; };
   }, [order?.refunds, id, token]);
+
+  // Articles remboursés, indexés pour le tableau « Articles ». WC rattache chaque
+  // ligne de remboursement à la ligne d'origine via `refunded_item_id` ; repli sur
+  // le produit (déclinaison si elle existe) quand la meta manque.
+  const refundedByItem = useMemo(() => {
+    const map = new Map();
+    for (const rf of refundsDetail || []) {
+      for (const li of rf.line_items || []) {
+        const key = li.refunded_item_id != null
+          ? `item:${li.refunded_item_id}`
+          : `prod:${li.variation_id || li.product_id}`;
+        const prev = map.get(key) || { qty: 0, amount: 0, date: null };
+        map.set(key, {
+          qty: prev.qty + (li.quantity || 0),
+          amount: prev.amount + (li.total || 0) + (li.total_tax || 0),
+          date: prev.date || rf.date,
+        });
+      }
+    }
+    return map;
+  }, [refundsDetail]);
 
   const fetchOrder = async () => {
     setLoading(true); setError('');
@@ -618,12 +639,24 @@ const OrderDetail = () => {
                     // de l'app SAV, pour que les deux vues se lisent pareil.
                     const savIds     = item.sav_ticket_ids || [];
                     const concerned  = savIds.length > 0;
+                    // Remboursement : le remboursement ne modifie pas la ligne de
+                    // commande côté WC, l'article resterait donc affiché comme vendu.
+                    const refund     = refundedByItem.get(`item:${item.order_item_id}`)
+                                    || refundedByItem.get(`prod:${(parseInt(item.variation_id, 10) || 0) || item.product_id}`);
+                    const refundQty  = refund?.qty || 0;
+                    const fullyRefunded = refundQty > 0 && refundQty >= qty;
 
                     return (
-                      <tr key={idx} className="dt-row" style={concerned ? { background: `${TICKETS_COLOR}0D` } : undefined}>
+                      <tr key={idx} className="dt-row" style={
+                        refundQty > 0 ? { background: `${C.rouge}0A` }
+                        : concerned   ? { background: `${TICKETS_COLOR}0D` }
+                        : undefined
+                      }>
                         <td style={{
                           padding: '13px 14px', borderBottom: `1px solid ${C.grisTL}`, verticalAlign: 'middle',
-                          borderLeft: concerned ? `3px solid ${TICKETS_COLOR}` : '3px solid transparent',
+                          borderLeft: refundQty > 0 ? `3px solid ${C.rouge}`
+                                    : concerned ? `3px solid ${TICKETS_COLOR}`
+                                    : '3px solid transparent',
                         }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                             {item.image_url ? (
@@ -639,6 +672,24 @@ const OrderDetail = () => {
                               >
                                 {item.order_item_name || item.product_name}
                               </LinkBox>
+                              {refundQty > 0 && (
+                                <div style={{ marginTop: 4 }}>
+                                  <span
+                                    title={refund.date ? `Remboursé le ${formatDate(refund.date)}` : 'Article remboursé'}
+                                    style={{
+                                      display: 'inline-flex', alignItems: 'center', gap: 5,
+                                      padding: '3px 9px', borderRadius: 999,
+                                      background: `${C.rouge}14`, border: `1px solid ${C.rouge}40`,
+                                      color: C.rouge, fontSize: 11.5, fontWeight: 800,
+                                      lineHeight: 1.4, whiteSpace: 'nowrap',
+                                    }}
+                                  >
+                                    <span style={{ width: 5, height: 5, borderRadius: '50%', background: C.rouge, flexShrink: 0 }} />
+                                    {fullyRefunded ? 'remboursé' : `${refundQty} sur ${qty} remboursé${refundQty > 1 ? 's' : ''}`}
+                                    {refund.amount > 0 && ` · −${fmt(refund.amount)} TTC`}
+                                  </span>
+                                </div>
+                              )}
                               {concerned && (
                                 <div style={{ marginTop: 4 }}>
                                   <SavConcernedTag ticketIds={savIds} />
@@ -663,13 +714,13 @@ const OrderDetail = () => {
                           {fmt(unitPrice)}
                         </td>
                         <td style={{ padding: '13px 14px', borderBottom: `1px solid ${C.grisTL}`, verticalAlign: 'middle', textAlign: 'center', fontWeight: 800, fontVariantNumeric: 'tabular-nums' }}>
-                          {qty}
+                          <span style={fullyRefunded ? { textDecoration: 'line-through', color: C.grisM } : undefined}>{qty}</span>
                         </td>
                         <td style={{ padding: '13px 14px', borderBottom: `1px solid ${C.grisTL}`, verticalAlign: 'middle', textAlign: 'right', color: C.grisF, fontVariantNumeric: 'tabular-nums' }}>
                           {itemCost > 0 ? fmt(itemCost * qty) : '—'}
                         </td>
                         <td style={{ padding: '13px 14px', borderBottom: `1px solid ${C.grisTL}`, verticalAlign: 'middle', textAlign: 'right', fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>
-                          {fmt(lineTotal)}
+                          <span style={fullyRefunded ? { textDecoration: 'line-through', color: C.grisM } : undefined}>{fmt(lineTotal)}</span>
                         </td>
                       </tr>
                     );

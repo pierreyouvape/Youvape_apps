@@ -486,6 +486,11 @@ exports.getRefundsDetail = async (req, res) => {
     });
 
     const abs = (v) => Math.abs(parseFloat(v) || 0);
+    const refundedItemId = (li) => {
+      const meta = (li.meta_data || []).find((m) => m.key === '_refunded_item_id');
+      const id = parseInt(meta?.value, 10);
+      return Number.isFinite(id) ? id : null;
+    };
     const data = (wcResponse.data || []).map((r) => ({
       id: r.id,
       date: r.date_created,
@@ -497,6 +502,12 @@ exports.getRefundsDetail = async (req, res) => {
         quantity: Math.abs(li.quantity || 0),
         total: abs(li.total),
         total_tax: abs(li.total_tax),
+        // Ligne de la commande d'origine visée par le remboursement : WC la note
+        // dans la meta `_refunded_item_id`. C'est ce qui permet à la fiche de
+        // marquer l'article remboursé dans le tableau « Articles ».
+        refunded_item_id: refundedItemId(li),
+        product_id: li.product_id || null,
+        variation_id: li.variation_id || null,
       })),
       shipping_lines: (r.shipping_lines || []).map((s) => ({
         method_title: s.method_title || 'Frais de port',
