@@ -148,6 +148,9 @@
   font-weight: 600;
   color: #333;
   border-bottom: 2px solid #e0e0e0;
+  /* border-collapse laisse la bordure derrière quand l'en-tête se décolle :
+     ce liseré interne suit le th et garde la séparation visible au défilement. */
+  box-shadow: inset 0 -2px 0 #e0e0e0;
   white-space: nowrap;
   position: sticky;
   top: 0;

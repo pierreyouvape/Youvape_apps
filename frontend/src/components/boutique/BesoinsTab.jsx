@@ -299,7 +299,7 @@ export default function BesoinsTab({ shop, token }) {
   const visCount = NEEDS_COLUMNS.filter((c) => isVisible(c.key)).length;
 
   return (
-    <div className="needs-tab">
+    <div className="needs-tab" style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 150px)', minHeight: 420 }}>
       <div className="purchases-card">
         {/* Filtres */}
         <div className="filters-bar">
@@ -383,8 +383,9 @@ export default function BesoinsTab({ shop, token }) {
         )}
       </div>
 
-      {/* Table */}
-      <div className="purchases-card" style={{ padding: 0, overflowX: 'auto' }}>
+      {/* Table — conteneur de défilement (vertical + horizontal) : l'en-tête
+          sticky s'accroche à ce scrollport et reste visible au défilement. */}
+      <div className="purchases-card" style={{ padding: 0, flex: 1, minHeight: 0, overflow: 'auto' }}>
         {loading ? (
           <div style={{ padding: 40, textAlign: 'center', color: '#6b7280' }}>Chargement des produits…</div>
         ) : error ? (
