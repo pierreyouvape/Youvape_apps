@@ -107,7 +107,13 @@ function parseFacture(text) {
       .replace(/\d+\s*\/\s*\d+\s*\n/g, '\n')
       .replace(/--\s*\d+\s*of\s*\d+\s*--/g, '\n')
       .replace(/FACTURE\n[\s\S]*?#FA\d+/g, '\n')
-      .replace(/Laboratoire cosmer[^\n]*/g, '\n');
+      .replace(/Laboratoire cosmer[^\n]*/g, '\n')
+      // Reste du pied de page, repete a chaque page. Sans ce nettoyage ces lignes
+      // se collent devant le PREMIER article de la page suivante, dont la ref
+      // n'est alors plus en tete de bloc : l'article entier est perdu.
+      .replace(/Pour toute assistance[^\n]*/g, '\n')
+      .replace(/T[eé]l\.?\s*:[^\n]*/g, '\n')
+      .replace(/Siret\s*:[^\n]*/g, '\n');
 
     const lines = productZone.split('\n').map(l => l.trim()).filter(l => l.length > 0);
 
@@ -143,8 +149,10 @@ function parseFacture(text) {
       const textBefore = blockText.substring(0, blockText.indexOf(numbersMatch[0])).trim();
       if (!textBefore) continue;
 
-      // La ref commence par REF : "REF0029 -- Base 50/50..."
-      const refMatch = textBefore.match(/^(REF[\w]+)\s+(.+)$/);
+      // La ref commence par REF : "REF0029 -- Base 50/50...".
+      // Non ancre en debut de bloc : un residu d'en-tete/pied de page saute-page
+      // peut la preceder, on prend la premiere ref rencontree.
+      const refMatch = textBefore.match(/\b(REF[\w]+)\s+(.+)$/);
       let supplierSku = '';
       let designation = textBefore;
 
@@ -164,6 +172,16 @@ function parseFacture(text) {
       }
     }
 
+    // Total HT produits imprime sur la facture ("Total produits 1 899,60 €").
+    // Garde-fou de reconciliation : si une ligne saute au parsing, la somme des
+    // lignes ne colle plus a ce total et l'ecart est signale a l'envoi BMS.
+    let invoiceProductTotalHT = null;
+    const totalMatch = text.match(/Total\s+produits\s+([0-9][0-9  \u202f]*,\d{2})\s*€/);
+    if (totalMatch) {
+      const n = parseFloat(totalMatch[1].replace(/[\s  \u202f]/g, '').replace(',', '.'));
+      if (Number.isFinite(n) && n > 0) invoiceProductTotalHT = n;
+    }
+
     // pdfIsPackBased : quantité en packs et prix du pack, stockés tels quels (sans conversion).
-    return { orderNumber, orderDate, items, hasPrice: true, pdfIsPackBased: true };
+    return { orderNumber, orderDate, items, hasPrice: true, pdfIsPackBased: true, invoiceProductTotalHT };
 }

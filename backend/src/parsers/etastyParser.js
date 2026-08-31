@@ -42,7 +42,16 @@ function parseInvoice(text) {
   const headerMatch = text.match(/Total\s*\(?\s*HT\s*\)?/i);
   const startIdx = headerMatch ? headerMatch.index + headerMatch[0].length : 0;
   const footerIdx = text.search(/des taxes/i);
-  const scanText = text.slice(startIdx, footerIdx >= 0 ? footerIdx : text.length);
+  // Saut de page TCPDF : entre deux lignes produit s'intercalent le numero de
+  // page et l'en-tete de la page suivante ("FACTURE / date / #FAxxxx"). Le scan
+  // prend alors "FACTURE" pour la reference du 1er article de cette page, que le
+  // garde-fou plus bas ecarte : l'article entier disparaissait en silence
+  // (ex. FA072725, NAT-VERT-10-6MG a 54,40 €). On retire ce mobilier de page.
+  const scanText = text
+    .slice(startIdx, footerIdx >= 0 ? footerIdx : text.length)
+    .replace(/FACTURE\s*\n\s*\d{2}\/\d{2}\/\d{4}\s*\n\s*#FA[\w/]+/g, '\n')
+    .replace(/--\s*\d+\s*of\s*\d+\s*--/g, '\n')
+    .replace(/^[^\S\n]*\d+[^\S\n]*\/[^\S\n]*\d+[^\S\n]*$/gm, '');
 
   // Scan : chaque bloc REF Designation TAUX% PRIX_UNIT€ QTE TOTAL€
   const pricePattern = /([A-Z0-9][\w]+)([\s\S]*?)(\d+)\s*%\s+([\d,]+)\s*€\s+(\d+)\s+([\d,]+)\s*€/g;
@@ -72,7 +81,17 @@ function parseInvoice(text) {
     });
   }
 
-  return { orderNumber, orderDate, items, hasPrice: true, invertPackQty: true };
+  // Total HT produits imprime sur la facture ("Total produits 1 365,36 €").
+  // Garde-fou de reconciliation : si une ligne saute au parsing, la somme des
+  // lignes ne colle plus a ce total et l'ecart est signale a l'envoi BMS.
+  let invoiceProductTotalHT = null;
+  const totalMatch = text.match(/Total\s+produits\s+([0-9][0-9  \u202f]*,\d{2})\s*€/);
+  if (totalMatch) {
+    const n = parseDecimal(totalMatch[1].replace(/[  \u202f]/g, ''));
+    if (Number.isFinite(n) && n > 0) invoiceProductTotalHT = n;
+  }
+
+  return { orderNumber, orderDate, items, hasPrice: true, invertPackQty: true, invoiceProductTotalHT };
 }
 
 /**
