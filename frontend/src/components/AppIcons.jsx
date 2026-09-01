@@ -263,6 +263,18 @@ export const Promos = (props) => (
 );
 
 
+// Process : une procédure = des étapes numérotées, cochées au fur et à mesure
+export const Process = (props) => (
+  <Base {...props}>
+    <path d="M5 3.5 H15.5 L19 7 V20.5 H5 Z" />
+    <path d="M15.5 3.5 V7 H19" />
+    <path d="M8 11.5 L9.2 12.7 L11.6 10.3" />
+    <path d="M13.5 11.8 H16.2" />
+    <path d="M8 16.5 L9.2 17.7 L11.6 15.3" />
+    <path d="M13.5 16.8 H16.2" />
+  </Base>
+);
+
 export const ChevronIcon = ({ size = 14, color = 'currentColor', open = false }) => (
   <svg
     width={size} height={size} viewBox="0 0 24 24" fill="none"
@@ -306,6 +318,7 @@ export const APPS = [
   { key: 'promos', path: '/promos', label: 'Actions Promos', Icon: Promos, color: '#DB2777' },
   { key: 'boutique-mtp',  path: '/boutique/montpellier', label: 'Boutique Montpellier', Icon: Boutique, color: '#0D9488' },
   { key: 'boutique-cast', path: '/boutique/castelnau',   label: 'Boutique Castelnau',   Icon: Boutique, color: '#C2410C' },
+  { key: 'process', path: '/process', label: 'Process', Icon: Process, color: '#9333EA' },
 ];
 
 /* ─── PILES D'APPS (dossiers du launcher) ──────────────────

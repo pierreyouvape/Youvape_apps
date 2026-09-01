@@ -39,6 +39,7 @@ const receptionRoutes = require('./routes/receptionRoutes');
 const inscritsRoutes = require('./routes/inscritsRoutes');
 const promoRoutes = require('./routes/promoRoutes');
 const nextoreRoutes = require('./routes/nextoreRoutes');
+const processRoutes = require('./routes/processRoutes');
 const authMiddleware = require('./middleware/authMiddleware');
 const { setupCron, setupBmsCron, setupComputedCostCron, setupBmsBarcodeCron, setupBmsShelfLocationCron, setupStockResyncCron, setupSavAutomationsCron, setupProductDbSyncCron, setupBmsTagRetryCron, setupReportEmailCron, setupStockValuationSnapshotCron, setupDraftStockReportCron, setupCompetitorMonitorCron, setupBrandMapCron, setupNextoreCrons } = require('./services/cronService');
 const rewardService = require('./services/rewardService');
@@ -99,6 +100,7 @@ app.use('/api/reception', receptionRoutes); // Réception marchandises (auth + p
 app.use('/api/inscrits', authMiddleware, inscritsRoutes); // Inscrits sans commande (par jour)
 app.use('/api/promos', authMiddleware, promoRoutes); // Actions Promos (préparation d'opérations)
 app.use('/api/nextore', nextoreRoutes); // Boutiques physiques Nextore (auth + permission dans le routeur)
+app.use('/api/process', processRoutes); // Process — procédures internes (auth + permission dans le routeur)
 
 // Start server
 app.listen(PORT, async () => {

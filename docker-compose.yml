@@ -29,6 +29,7 @@ services:
     volumes:
       - backend_logs:/usr/src/app/logs
       - sav_attachments:/usr/src/app/uploads/sav
+      - process_uploads:/usr/src/app/uploads/process
     depends_on:
       - postgres
     networks:
@@ -58,6 +59,7 @@ volumes:
   postgres_data:
   backend_logs:
   sav_attachments:
+  process_uploads:
 
 networks:
   youvape_network:

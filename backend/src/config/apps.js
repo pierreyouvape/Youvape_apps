@@ -32,6 +32,7 @@ const APP_KEYS = [
   'promos',
   'boutique-mtp',
   'boutique-cast',
+  'process',
 ];
 
 /** Permissions complètes (lecture + écriture) sur toutes les apps. */

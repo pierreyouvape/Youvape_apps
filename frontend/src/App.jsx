@@ -43,6 +43,8 @@ import InscritsApp from './pages/InscritsApp';
 import PromosApp from './pages/PromosApp';
 import BoutiqueApp from './pages/BoutiqueApp';
 import PromoDetail from './pages/PromoDetail';
+import ProcessApp from './pages/ProcessApp';
+import ProcessDetail from './pages/ProcessDetail';
 import PrivateRoute from './components/PrivateRoute';
 
 const PAGE_TITLES = {
@@ -71,6 +73,7 @@ const PAGE_TITLES = {
   '/veille': 'Veille concurrentielle',
   '/inscrits': 'Inscrits sans commande',
   '/promos': 'Actions Promos',
+  '/process': 'Process',
   '/boutique': 'Boutique',
   '/brands': 'Marque',
   '/sub-brands': 'Sous-marque',
@@ -432,6 +435,22 @@ function App() {
             element={
               <PrivateRoute>
                 <BoutiqueApp />
+              </PrivateRoute>
+            }
+          />
+          <Route
+            path="/process"
+            element={
+              <PrivateRoute>
+                <ProcessApp />
+              </PrivateRoute>
+            }
+          />
+          <Route
+            path="/process/:id"
+            element={
+              <PrivateRoute>
+                <ProcessDetail />
               </PrivateRoute>
             }
           />
