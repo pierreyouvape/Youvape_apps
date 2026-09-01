@@ -9,12 +9,6 @@ const inputStyle = {
   boxSizing: 'border-box', fontFamily: 'inherit',
 };
 
-// crypto.randomUUID n'existe qu'en contexte sécurisé (https / localhost) :
-// repli sur un compteur, l'identifiant ne sert qu'au rendu React.
-let uidSeq = 0;
-const newUid = () =>
-  (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `step-${++uidSeq}`);
-
 const iconBtn = (disabled) => ({
   width: 28, height: 28, border: `1px solid ${C.grisCL}`, background: C.blanc,
   borderRadius: 6, cursor: disabled ? 'default' : 'pointer',
@@ -22,14 +16,34 @@ const iconBtn = (disabled) => ({
   display: 'flex', alignItems: 'center', justifyContent: 'center',
 });
 
-/* ─── Bande photo éditable d'une étape ──────────────────────────────────── */
+// crypto.randomUUID n'existe qu'en contexte sécurisé (https / localhost) :
+// repli sur un compteur, l'identifiant ne sert qu'au rendu React.
+let uidSeq = 0;
+const newUid = () =>
+  (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `blk-${++uidSeq}`);
+
+/** Bloc vierge, forme commune à une étape et à une sous-étape. */
+const emptyBlock = () => ({ _uid: newUid(), title: '', body: '', callout: null, images: [] });
+
+/** Bloc venant du serveur → forme éditable (identité stable ajoutée). */
+const toEditable = (b) => ({
+  _uid: newUid(),
+  title: b?.title || '',
+  body: b?.body || '',
+  callout: b?.callout || null,
+  images: Array.isArray(b?.images) ? b.images : [],
+});
+
+/* ─── Bande photo éditable ──────────────────────────────────────────────── */
 function StepImageEditor({ images, onChange, onUpload, uploading }) {
   const fileRef = useRef(null);
   const [dragOver, setDragOver] = useState(false);
 
   const pickFiles = (fileList) => {
     const files = Array.from(fileList || []).filter((f) => f.type.startsWith('image/'));
-    files.forEach(onUpload);
+    // Lambda explicite : forEach passerait l'index en 2e argument, que
+    // onUpload interprète comme l'indice de sous-étape.
+    files.forEach((f) => onUpload(f));
   };
 
   const setCaption = (i, caption) =>
@@ -68,7 +82,7 @@ function StepImageEditor({ images, onChange, onUpload, uploading }) {
                   <button type="button" onClick={() => move(i, -1)} disabled={i === 0} title="Reculer" style={iconBtn(i === 0)}>←</button>
                   <button type="button" onClick={() => move(i, 1)} disabled={i === images.length - 1} title="Avancer" style={iconBtn(i === images.length - 1)}>→</button>
                   <div style={{ flex: 1 }} />
-                  <button type="button" onClick={() => remove(i)} title="Retirer de l'étape"
+                  <button type="button" onClick={() => remove(i)} title="Retirer du bloc"
                     style={{ ...iconBtn(false), color: C.rouge, borderColor: '#F5C6C6' }}>×</button>
                 </div>
               </div>
@@ -85,13 +99,13 @@ function StepImageEditor({ images, onChange, onUpload, uploading }) {
         style={{
           border: `1px dashed ${dragOver ? C.process : C.grisCL}`,
           background: dragOver ? C.processL : C.grisTL,
-          borderRadius: 8, padding: '12px 14px', textAlign: 'center', cursor: 'pointer',
+          borderRadius: 8, padding: '10px 14px', textAlign: 'center', cursor: 'pointer',
           fontSize: 12.5, color: dragOver ? C.processF : C.grisM,
         }}
       >
         {uploading
           ? 'Envoi de l\'image…'
-          : 'Ajouter une photo — cliquez, déposez un fichier, ou collez une capture (Cmd+V) dans le texte ci-dessus'}
+          : 'Ajouter une photo — cliquez, déposez, ou collez une capture (Cmd+V) dans le texte'}
         <input
           ref={fileRef} type="file" accept="image/*" multiple hidden
           onChange={(e) => { pickFiles(e.target.files); e.target.value = ''; }}
@@ -101,8 +115,103 @@ function StepImageEditor({ images, onChange, onUpload, uploading }) {
   );
 }
 
-/* ─── Une étape en édition ──────────────────────────────────────────────── */
-function StepCard({ step, index, total, onPatch, onMove, onRemove, onUpload, uploading }) {
+/* ─── Corps d'un bloc : texte riche, encadré, photos ────────────────────── */
+/**
+ * Partagé par les étapes et les sous-étapes. C'est ce partage qui garantit
+ * qu'une sous-étape offre exactement les mêmes possibilités qu'une étape —
+ * sans quoi on finirait par en manquer une des deux côtés.
+ */
+function BlockEditor({ block, onPatch, onUpload, uploading, placeholder }) {
+  return (
+    <>
+      <ProcessEditor
+        value={block.body || ''}
+        onChange={(html) => onPatch({ body: html })}
+        placeholder={placeholder}
+        onPasteImage={onUpload}
+      />
+
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 12, alignItems: 'center' }}>
+        <span style={{ fontSize: 12, fontWeight: 700, color: C.grisM, marginRight: 4 }}>Encadré :</span>
+        <button
+          type="button" onClick={() => onPatch({ callout: null })}
+          style={{
+            padding: '5px 11px', borderRadius: 20, fontSize: 12, fontWeight: 700, cursor: 'pointer',
+            border: `1px solid ${!block.callout ? C.grisF : C.grisCL}`,
+            background: !block.callout ? C.grisF : C.blanc,
+            color: !block.callout ? '#fff' : C.grisF,
+          }}
+        >
+          Aucun
+        </button>
+        {CALLOUTS.map((co) => {
+          const active = block.callout === co.code;
+          return (
+            <button
+              key={co.code} type="button" onClick={() => onPatch({ callout: active ? null : co.code })}
+              style={{
+                padding: '5px 11px', borderRadius: 20, fontSize: 12, fontWeight: 700, cursor: 'pointer',
+                border: `1px solid ${active ? co.color : C.grisCL}`,
+                background: active ? co.color : C.blanc,
+                color: active ? '#fff' : C.grisF,
+              }}
+            >
+              {co.icon} {co.label}
+            </button>
+          );
+        })}
+      </div>
+
+      <StepImageEditor
+        images={block.images || []}
+        onChange={(images) => onPatch({ images })}
+        onUpload={onUpload}
+        uploading={uploading}
+      />
+    </>
+  );
+}
+
+/* ─── Une sous-étape ────────────────────────────────────────────────────── */
+function SubStepCard({ sub, stepNumber, index, total, onPatch, onMove, onRemove, onUpload, uploading }) {
+  return (
+    <div style={{
+      marginTop: 12, paddingLeft: 14,
+      borderLeft: `2px solid ${C.grisCL}`,
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+        <span style={{ fontSize: 12.5, fontWeight: 800, color: C.process, flexShrink: 0, minWidth: 26 }}>
+          {stepNumber}.{index + 1}
+        </span>
+        <input
+          value={sub.title || ''}
+          onChange={(e) => onPatch({ title: e.target.value })}
+          placeholder={`Titre de la sous-étape ${stepNumber}.${index + 1}`}
+          style={{ ...inputStyle, fontWeight: 600, flex: 1, fontSize: 13 }}
+        />
+        <button type="button" onClick={() => onMove(-1)} disabled={index === 0} title="Monter" style={iconBtn(index === 0)}>↑</button>
+        <button type="button" onClick={() => onMove(1)} disabled={index === total - 1} title="Descendre" style={iconBtn(index === total - 1)}>↓</button>
+        <button type="button" onClick={onRemove} title="Supprimer la sous-étape"
+          style={{ ...iconBtn(false), color: C.rouge, borderColor: '#F5C6C6' }}>×</button>
+      </div>
+
+      <BlockEditor
+        block={sub}
+        onPatch={onPatch}
+        onUpload={onUpload}
+        uploading={uploading}
+        placeholder="Ce point précis, avec la ou les captures qui l'illustrent."
+      />
+    </div>
+  );
+}
+
+/* ─── Une étape ─────────────────────────────────────────────────────────── */
+function StepCard({
+  step, index, total, onPatch, onMove, onRemove, onUpload, uploading,
+  onSubPatch, onSubMove, onSubRemove, onSubAdd, uploadingSub,
+}) {
+  const subs = step.substeps || [];
   return (
     <div style={{
       background: C.blanc, border: `1px solid ${C.grisCL}`, borderRadius: 12,
@@ -127,50 +236,43 @@ function StepCard({ step, index, total, onPatch, onMove, onRemove, onUpload, upl
           style={{ ...iconBtn(false), color: C.rouge, borderColor: '#F5C6C6' }}>×</button>
       </div>
 
-      <ProcessEditor
-        value={step.body || ''}
-        onChange={(html) => onPatch({ body: html })}
-        placeholder="Ce qu'il faut faire, précisément. Cmd+V pour coller une capture d'écran."
-        onPasteImage={onUpload}
-      />
-
-      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 12, alignItems: 'center' }}>
-        <span style={{ fontSize: 12, fontWeight: 700, color: C.grisM, marginRight: 4 }}>Encadré :</span>
-        <button
-          type="button" onClick={() => onPatch({ callout: null })}
-          style={{
-            padding: '5px 11px', borderRadius: 20, fontSize: 12, fontWeight: 700, cursor: 'pointer',
-            border: `1px solid ${!step.callout ? C.grisF : C.grisCL}`,
-            background: !step.callout ? C.grisF : C.blanc,
-            color: !step.callout ? '#fff' : C.grisF,
-          }}
-        >
-          Aucun
-        </button>
-        {CALLOUTS.map((co) => {
-          const active = step.callout === co.code;
-          return (
-            <button
-              key={co.code} type="button" onClick={() => onPatch({ callout: active ? null : co.code })}
-              style={{
-                padding: '5px 11px', borderRadius: 20, fontSize: 12, fontWeight: 700, cursor: 'pointer',
-                border: `1px solid ${active ? co.color : C.grisCL}`,
-                background: active ? co.color : C.blanc,
-                color: active ? '#fff' : C.grisF,
-              }}
-            >
-              {co.icon} {co.label}
-            </button>
-          );
-        })}
-      </div>
-
-      <StepImageEditor
-        images={step.images || []}
-        onChange={(images) => onPatch({ images })}
+      <BlockEditor
+        block={step}
+        onPatch={onPatch}
         onUpload={onUpload}
         uploading={uploading}
+        placeholder="Ce qu'il faut faire. Découpez en sous-étapes si plusieurs captures sont nécessaires."
       />
+
+      {subs.length > 0 && (
+        <div style={{ marginTop: 18 }}>
+          <p style={{ fontSize: 11.5, fontWeight: 800, color: C.grisM, textTransform: 'uppercase', letterSpacing: 0.4, margin: '0 0 4px' }}>
+            Sous-étapes
+          </p>
+          {subs.map((sub, j) => (
+            <SubStepCard
+              key={sub._uid}
+              sub={sub} stepNumber={index + 1} index={j} total={subs.length}
+              onPatch={(patch) => onSubPatch(j, patch)}
+              onMove={(delta) => onSubMove(j, delta)}
+              onRemove={() => onSubRemove(j)}
+              onUpload={(file) => onUpload(file, j)}
+              uploading={uploadingSub === j}
+            />
+          ))}
+        </div>
+      )}
+
+      <button
+        type="button" onClick={onSubAdd}
+        style={{
+          marginTop: 12, padding: '8px 14px', borderRadius: 8, cursor: 'pointer',
+          border: `1px dashed ${C.grisCL}`, background: C.grisTL,
+          color: C.process, fontWeight: 700, fontSize: 12.5,
+        }}
+      >
+        + Ajouter une sous-étape
+      </button>
     </div>
   );
 }
@@ -182,18 +284,21 @@ export default function ProcessEditorPanel({ process, categories, onSave, onCanc
   const [categoryId, setCategoryId] = useState(process.category_id ? String(process.category_id) : '');
   const [status, setStatus] = useState(process.status || 'draft');
   const [changeNote, setChangeNote] = useState('');
+
   // _uid : identité stable côté client, pour que React ne recycle pas
-  // l'instance Tiptap d'une étape voisine lors d'un déplacement ou d'une
+  // l'instance Tiptap d'un bloc voisin lors d'un déplacement ou d'une
   // suppression. Le backend ignore ce champ.
   const [steps, setSteps] = useState(() =>
     (process.steps || []).map((s) => ({
-      _uid: newUid(),
-      title: s.title || '', body: s.body || '', callout: s.callout || null,
-      images: Array.isArray(s.images) ? s.images : [],
+      ...toEditable(s),
+      substeps: Array.isArray(s.substeps) ? s.substeps.map(toEditable) : [],
     }))
   );
-  const [uploadingStep, setUploadingStep] = useState(null);
 
+  // Cible de l'upload en cours : { step, sub } — sub vaut null pour l'étape.
+  const [uploadTarget, setUploadTarget] = useState(null);
+
+  /* ─── Étapes ─────────────────────────────────────────────────────────── */
   const patchStep = (i, patch) =>
     setSteps((prev) => prev.map((s, k) => (k === i ? { ...s, ...patch } : s)));
 
@@ -208,18 +313,44 @@ export default function ProcessEditorPanel({ process, categories, onSave, onCanc
   };
 
   const removeStep = (i) => {
-    if (!window.confirm(`Supprimer l'étape ${i + 1} ?`)) return;
+    const subCount = (steps[i]?.substeps || []).length;
+    const warn = subCount > 0 ? ` et ses ${subCount} sous-étape${subCount > 1 ? 's' : ''}` : '';
+    if (!window.confirm(`Supprimer l'étape ${i + 1}${warn} ?`)) return;
     setSteps((prev) => prev.filter((_, k) => k !== i));
   };
 
   const addStep = () =>
-    setSteps((prev) => [...prev, { _uid: newUid(), title: '', body: '', callout: null, images: [] }]);
+    setSteps((prev) => [...prev, { ...emptyBlock(), substeps: [] }]);
 
+  /* ─── Sous-étapes ────────────────────────────────────────────────────── */
+  const updateSubs = (i, fn) =>
+    setSteps((prev) => prev.map((s, k) => (k === i ? { ...s, substeps: fn(s.substeps || []) } : s)));
+
+  const patchSub = (i, j, patch) =>
+    updateSubs(i, (subs) => subs.map((sub, k) => (k === j ? { ...sub, ...patch } : sub)));
+
+  const moveSub = (i, j, delta) =>
+    updateSubs(i, (subs) => {
+      const t = j + delta;
+      if (t < 0 || t >= subs.length) return subs;
+      const next = [...subs];
+      [next[j], next[t]] = [next[t], next[j]];
+      return next;
+    });
+
+  const removeSub = (i, j) => {
+    if (!window.confirm(`Supprimer la sous-étape ${i + 1}.${j + 1} ?`)) return;
+    updateSubs(i, (subs) => subs.filter((_, k) => k !== j));
+  };
+
+  const addSub = (i) => updateSubs(i, (subs) => [...subs, emptyBlock()]);
+
+  /* ─── Photos ─────────────────────────────────────────────────────────── */
   // Upload immédiat : le fichier part sur le serveur dès qu'il est choisi, et
-  // c'est l'URL renvoyée qu'on stocke dans l'étape. L'enregistrement du process
+  // c'est l'URL renvoyée qu'on stocke dans le bloc. L'enregistrement du process
   // ne transporte donc jamais de binaire.
-  const uploadImage = useCallback(async (stepIndex, file) => {
-    setUploadingStep(stepIndex);
+  const uploadImage = useCallback(async (stepIndex, subIndex, file) => {
+    setUploadTarget({ step: stepIndex, sub: subIndex });
     try {
       const fd = new FormData();
       fd.append('image', file);
@@ -227,11 +358,20 @@ export default function ProcessEditorPanel({ process, categories, onSave, onCanc
         headers: { 'Content-Type': 'multipart/form-data' },
       });
       const image = res.data.data;
-      setSteps((prev) => prev.map((s, k) => (k === stepIndex ? { ...s, images: [...(s.images || []), image] } : s)));
+
+      setSteps((prev) => prev.map((s, k) => {
+        if (k !== stepIndex) return s;
+        if (subIndex === null) return { ...s, images: [...(s.images || []), image] };
+        return {
+          ...s,
+          substeps: (s.substeps || []).map((sub, m) =>
+            (m === subIndex ? { ...sub, images: [...(sub.images || []), image] } : sub)),
+        };
+      }));
     } catch (err) {
       alert(err.response?.data?.error || "L'envoi de l'image a échoué");
     } finally {
-      setUploadingStep(null);
+      setUploadTarget(null);
     }
   }, [process.id]);
 
@@ -298,8 +438,13 @@ export default function ProcessEditorPanel({ process, categories, onSave, onCanc
           onPatch={(patch) => patchStep(i, patch)}
           onMove={(delta) => moveStep(i, delta)}
           onRemove={() => removeStep(i)}
-          onUpload={(file) => uploadImage(i, file)}
-          uploading={uploadingStep === i}
+          onUpload={(file, subIndex = null) => uploadImage(i, subIndex, file)}
+          uploading={uploadTarget?.step === i && uploadTarget?.sub === null}
+          onSubPatch={(j, patch) => patchSub(i, j, patch)}
+          onSubMove={(j, delta) => moveSub(i, j, delta)}
+          onSubRemove={(j) => removeSub(i, j)}
+          onSubAdd={() => addSub(i)}
+          uploadingSub={uploadTarget?.step === i ? uploadTarget?.sub : null}
         />
       ))}
 

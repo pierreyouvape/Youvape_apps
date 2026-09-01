@@ -19,32 +19,50 @@ const normalizeVisibility = (v) => (VISIBILITIES.includes(v) ? v : 'restricted')
 
 const SUPER_ADMIN_EMAIL = 'youvape34@gmail.com';
 
+/** Photos d'un bloc : on ne garde que les champs connus, URL dénudée. */
+function normalizeImages(images) {
+  if (!Array.isArray(images)) return [];
+  return images
+    .filter((img) => img && typeof img.url === 'string')
+    .map((img) => ({
+      filename: img.filename || null,
+      original_name: img.original_name || null,
+      mime: img.mime || null,
+      size: img.size || null,
+      // On retire toute signature : l'URL stockée est le chemin nu, et
+      // c'est le contrôleur qui re-signe à chaque lecture.
+      url: String(img.url).split('?')[0],
+      caption: (img.caption ?? '').toString().slice(0, 300) || null,
+    }));
+}
+
+/**
+ * Bloc de contenu : titre, texte riche, encadré, photos.
+ * Forme commune à une étape et à une sous-étape — d'où la factorisation.
+ */
+function normalizeBlock(b, index) {
+  return {
+    position: index + 1,
+    title: (b?.title ?? '').toString().slice(0, 500) || null,
+    body: (b?.body ?? '').toString() || null,
+    callout: CALLOUTS.includes(b?.callout) ? b.callout : null,
+    images: normalizeImages(b?.images),
+  };
+}
+
 /**
  * Normalise les étapes reçues du frontend avant écriture.
  * La position est TOUJOURS recalculée depuis l'ordre du tableau : le frontend
- * n'a qu'à envoyer les étapes dans le bon ordre.
+ * n'a qu'à envoyer les étapes — et leurs sous-étapes — dans le bon ordre.
+ *
+ * Un seul niveau d'imbrication : ce qu'une sous-étape porterait en `substeps`
+ * est ignoré.
  */
 function normalizeSteps(steps) {
   if (!Array.isArray(steps)) return [];
   return steps.map((s, i) => ({
-    position: i + 1,
-    title: (s?.title ?? '').toString().slice(0, 500) || null,
-    body: (s?.body ?? '').toString() || null,
-    callout: CALLOUTS.includes(s?.callout) ? s.callout : null,
-    images: Array.isArray(s?.images)
-      ? s.images
-          .filter((img) => img && typeof img.url === 'string')
-          .map((img) => ({
-            filename: img.filename || null,
-            original_name: img.original_name || null,
-            mime: img.mime || null,
-            size: img.size || null,
-            // On retire toute signature : l'URL stockée est le chemin nu, et
-            // c'est le contrôleur qui re-signe à chaque lecture.
-            url: String(img.url).split('?')[0],
-            caption: (img.caption ?? '').toString().slice(0, 300) || null,
-          }))
-      : [],
+    ...normalizeBlock(s, i),
+    substeps: Array.isArray(s?.substeps) ? s.substeps.map(normalizeBlock) : [],
   }));
 }
 
@@ -272,7 +290,7 @@ class ProcessModel {
     if (!process) return null;
 
     const steps = await pool.query(
-      `SELECT id, position, title, body, callout, images
+      `SELECT id, position, title, body, callout, images, substeps
        FROM process_steps WHERE process_id = $1 ORDER BY position ASC`,
       [id]
     );
@@ -376,9 +394,12 @@ class ProcessModel {
       await client.query(`DELETE FROM process_steps WHERE process_id = $1`, [id]);
       for (const step of cleanSteps) {
         await client.query(
-          `INSERT INTO process_steps (process_id, position, title, body, callout, images)
-           VALUES ($1, $2, $3, $4, $5, $6::jsonb)`,
-          [id, step.position, step.title, step.body, step.callout, JSON.stringify(step.images)]
+          `INSERT INTO process_steps (process_id, position, title, body, callout, images, substeps)
+           VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb)`,
+          [
+            id, step.position, step.title, step.body, step.callout,
+            JSON.stringify(step.images), JSON.stringify(step.substeps),
+          ]
         );
       }
 

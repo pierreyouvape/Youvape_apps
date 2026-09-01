@@ -79,13 +79,20 @@ function signMediaUrl(url) {
   return `${bare}?exp=${exp}&sig=${computeSignature(processId, filename, exp)}`;
 }
 
-/** Signe toutes les images d'un tableau d'étapes (copie, ne mute pas l'entrée). */
+const signImages = (images) =>
+  (Array.isArray(images) ? images.map((img) => ({ ...img, url: signMediaUrl(img.url) })) : []);
+
+/**
+ * Signe les images d'un tableau d'étapes, sous-étapes comprises.
+ * Copie : l'entrée n'est pas mutée.
+ */
 function signStepImages(steps) {
   if (!Array.isArray(steps)) return [];
   return steps.map((step) => ({
     ...step,
-    images: Array.isArray(step.images)
-      ? step.images.map((img) => ({ ...img, url: signMediaUrl(img.url) }))
+    images: signImages(step.images),
+    substeps: Array.isArray(step.substeps)
+      ? step.substeps.map((sub) => ({ ...sub, images: signImages(sub.images) }))
       : [],
   }));
 }

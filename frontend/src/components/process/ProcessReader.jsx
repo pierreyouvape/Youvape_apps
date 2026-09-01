@@ -92,9 +92,62 @@ function StepImages({ images, onOpen }) {
   );
 }
 
+/* ─── Corps commun à une étape et à une sous-étape ──────────────────────── */
+function BlockContent({ block, onOpenImage }) {
+  const callout = calloutInfo(block.callout);
+  return (
+    <>
+      {hasContent(block.body) && (
+        <div
+          className="yv-process-body"
+          dangerouslySetInnerHTML={{ __html: sanitizeProcessHtml(block.body) }}
+        />
+      )}
+
+      {callout && (
+        <div style={{
+          marginTop: 12, padding: '11px 14px', borderRadius: 8,
+          background: callout.bg, borderLeft: `4px solid ${callout.color}`,
+          fontSize: 13, fontWeight: 700, color: callout.color,
+          display: 'flex', alignItems: 'center', gap: 8,
+        }}>
+          <span>{callout.icon}</span> {callout.label}
+        </div>
+      )}
+
+      <StepImages images={block.images} onOpen={onOpenImage} />
+    </>
+  );
+}
+
+/* ─── Une sous-étape ────────────────────────────────────────────────────── */
+function SubStep({ sub, stepNumber, index, onOpenImage }) {
+  return (
+    <section
+      id={`etape-${stepNumber}-${index + 1}`}
+      style={{
+        marginTop: 20, paddingLeft: 16,
+        borderLeft: `2px solid ${C.grisCL}`, scrollMarginTop: 24,
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 9, marginBottom: 8 }}>
+        <span style={{ fontSize: 13, fontWeight: 800, color: C.process, flexShrink: 0 }}>
+          {stepNumber}.{index + 1}
+        </span>
+        {sub.title && (
+          <h4 style={{ fontSize: 15, fontWeight: 700, color: C.grisTF, margin: 0, lineHeight: 1.4 }}>
+            {sub.title}
+          </h4>
+        )}
+      </div>
+      <BlockContent block={sub} onOpenImage={onOpenImage} />
+    </section>
+  );
+}
+
 /* ─── Une étape ─────────────────────────────────────────────────────────── */
 function Step({ step, index, isLast, onOpenImage }) {
-  const callout = calloutInfo(step.callout);
+  const subs = Array.isArray(step.substeps) ? step.substeps : [];
   return (
     <section id={`etape-${index + 1}`} style={{ display: 'flex', gap: 16, scrollMarginTop: 24 }}>
       {/* Colonne numéro + filet de liaison */}
@@ -116,25 +169,17 @@ function Step({ step, index, isLast, onOpenImage }) {
           </h3>
         )}
 
-        {hasContent(step.body) && (
-          <div
-            className="yv-process-body"
-            dangerouslySetInnerHTML={{ __html: sanitizeProcessHtml(step.body) }}
+        <BlockContent block={step} onOpenImage={onOpenImage} />
+
+        {subs.map((sub, j) => (
+          <SubStep
+            key={j}
+            sub={sub}
+            stepNumber={index + 1}
+            index={j}
+            onOpenImage={onOpenImage}
           />
-        )}
-
-        {callout && (
-          <div style={{
-            marginTop: 12, padding: '11px 14px', borderRadius: 8,
-            background: callout.bg, borderLeft: `4px solid ${callout.color}`,
-            fontSize: 13, fontWeight: 700, color: callout.color,
-            display: 'flex', alignItems: 'center', gap: 8,
-          }}>
-            <span>{callout.icon}</span> {callout.label}
-          </div>
-        )}
-
-        <StepImages images={step.images} onOpen={onOpenImage} />
+        ))}
       </div>
     </section>
   );
@@ -157,7 +202,7 @@ export default function ProcessReader({ process, headerRight }) {
       <div style={{ display: 'flex', gap: 32, alignItems: 'flex-start' }}>
 
         {/* Sommaire */}
-        {steps.length > 1 && (
+        {(steps.length > 1 || steps.some((s) => (s.substeps || []).length > 0)) && (
           <nav className="yv-process-toc" style={{ position: 'sticky', top: 24, width: 210, flexShrink: 0 }}>
             <p style={{ fontSize: 11, fontWeight: 800, color: C.grisM, textTransform: 'uppercase', letterSpacing: 0.5, margin: '0 0 10px' }}>
               Sommaire
@@ -175,6 +220,25 @@ export default function ProcessReader({ process, headerRight }) {
                     <span style={{ color: C.process, fontWeight: 800, flexShrink: 0 }}>{i + 1}.</span>
                     <span>{s.title || `Étape ${i + 1}`}</span>
                   </a>
+
+                  {Array.isArray(s.substeps) && s.substeps.length > 0 && (
+                    <ol style={{ listStyle: 'none', margin: 0, padding: '0 0 0 14px', display: 'flex', flexDirection: 'column', gap: 1 }}>
+                      {s.substeps.map((sub, j) => (
+                        <li key={j}>
+                          <a
+                            href={`#etape-${i + 1}-${j + 1}`}
+                            style={{
+                              display: 'flex', gap: 7, padding: '4px 8px', borderRadius: 6,
+                              fontSize: 12, color: C.grisM, textDecoration: 'none', lineHeight: 1.4,
+                            }}
+                          >
+                            <span style={{ fontWeight: 700, flexShrink: 0 }}>{i + 1}.{j + 1}</span>
+                            <span>{sub.title || 'Sous-étape'}</span>
+                          </a>
+                        </li>
+                      ))}
+                    </ol>
+                  )}
                 </li>
               ))}
             </ol>
