@@ -1,0 +1,182 @@
+FACTURE
+01/09/2026
+#FA072952
+Adresse de livraison
+maxime coglitore
+SAS EMC
+FR87789508439
+580 avenue de l'aube rouge
+YOUVAPE SITE
+34170 CASTELNAU LE LEZ
+France
+0695975267
+Adresse de facturation
+maxime coglitore
+SAS EMC
+FR87789508439
+580 avenue de l'aube rouge
+YOUVAPE SITE
+34170 CASTELNAU LE LEZ
+France
+0695975267
+Numéro de facture Date de facturation Réf. de commande Date de commande Numéro de TVA
+#FA072952 01/09/2026 JGOJKMMKJ 01/09/2026 FR87789508439
+Référence Produit Taux de
+taxe
+Prix de
+base
+(HT)
+Prix
+unitaire
+(HT)
+Quantité Total
+(HT)
+AST-LICO-1
+0-10SDN
+La Licorne - Sel de Nicotine (Taux de
+nicotine : 10mg)
+20 % -- 1,36 € 20 27,20 €
+AST-LICO-1
+0-20SDN
+La Licorne - Sel de Nicotine (Taux de
+nicotine : 20mg)
+20 % -- 1,36 € 40 54,40 €
+CAN-
+SEQU-100-00
+SEQUOIA - 100ml (Taux de nicotine :
+100ml 00mg)
+20 % -- 6,32 € 9 56,88 €
+COT-
+SAIN-50-0MG
+Saint Malo - 50ml (Taux de nicotine :
+00mg)
+20 % -- 5,52 € 6 33,12 €
+HEX-ANNE-
+CONC
+Annecy Va La Vie - Concentré 30ML
+(Contenance : 30ML)
+20 % 5,90 € 3,84 € 5 19,18 €
+HEX-BORD-
+50-00MG
+Bamboche à Bordeaux - 50ml (Taux de
+nicotine : 00mg)
+20 % 6,90 € 4,49 € 6 26,91 €
+HEX-CHER-
+CONC
+Cherbourg Mon Amour - Concentré
+30ML (Contenance : 30ML)
+20 % 5,90 € 3,84 € 10 38,35 €
+HEX-LILL-5
+0-00MG
+Lille Etait Une Fois - 50ml (Taux de
+nicotine : 00mg)
+20 % 6,90 € 4,49 € 12 53,82 €
+HEX-LILL-
+CONC
+Lille Etait Une Fois - Concentré 30ML
+(Contenance : 30ML)
+20 % 5,90 € 3,84 € 10 38,35 €
+HEX-NANT-
+50-00MG
+Nantes est à l'Ouest - 50ml (Taux de
+nicotine : 00mg)
+20 % 6,90 € 4,49 € 6 26,91 €
+HEX-NICE-1
+0-12MG
+Nice to Meet You - 10ml (Taux de
+nicotine : 12mg)
+20 % 1,70 € 1,11 € 20 22,10 €
+HEX-NICE-
+CONC
+Nice to Meet You - Concentré 30ML
+(Contenance : 30ML)
+20 % 5,90 € 3,84 € 5 19,18 €
+HEX-PARI-5
+0-00MG
+Un Matin à Paris - 50ml (Taux de
+nicotine : 00mg)
+20 % 6,90 € 4,49 € 18 80,73 €
+1 / 2
+
+-- 1 of 2 --
+
+FACTURE
+01/09/2026
+#FA072952
+HEX-RENN-
+50-00MG
+Rennes des Reinettes - 50ml (Taux de
+nicotine : 00mg)
+20 % 6,90 € 4,49 € 6 26,91 €
+HEX-RENN-
+CONC
+Rennes des Reinettes - Concentré 30ML
+(Contenance : 30ML)
+20 % 5,90 € 3,84 € 5 19,18 €
+HEX-STRA-
+50-00MG
+Strasbourg et Paillettes - 50ml (Taux de
+nicotine : 00mg)
+20 % 6,90 € 4,49 € 6 26,91 €
+HEX-TOUL-
+CONC
+Nothing Toulouse - Concentré 30ML
+(Contenance : 30ML)
+20 % 5,90 € 3,84 € 10 38,35 €
+NAT-AMAZ-
+50-0MG
+Amazonien - 50ml (Taux de nicotine :
+00mg)
+20 % -- 5,52 € 18 99,36 €
+NAT-GRAN-
+50-0MG
+Grand Elixir - 50ml (Taux de nicotine :
+00mg)
+20 % -- 5,52 € 18 99,36 €
+NAT-
+INTE-50-0MG
+Menthe Intense - 50ml (Taux de nicotine
+: 00mg)
+20 % -- 5,52 € 6 33,12 €
+PRE-PREC-
+10-3MG
+Le Precieux - 10ml (Taux de nicotine :
+3mg)
+20 % -- 1,36 € 20 27,20 €
+PRE-PREC-
+10-6MG
+Le Precieux - 10ml (Taux de nicotine :
+6mg)
+20 % -- 1,36 € 10 13,60 €
+PRE-PREC-
+10-12MG
+Le Precieux - 10ml (Taux de nicotine :
+12mg)
+20 % -- 1,36 € 30 40,80 €
+PRE-
+SEL-10-20M
+G
+Le Précieux - Sel de Nicotine (Taux de
+nicotine : 20mg)
+20 % -- 1,36 € 30 40,80 €
+Détail des taxes Taux de taxe Taxe totale
+Produits 20.000 % 192,54 €
+Total produits 962,71 €
+Frais de livraison Livraison gratuite
+Total (HT) 962,71 €
+Taxe totale 192,54 €
+Total 1 155,25 €
+Moyen de paiement Paiement VISA 1 155,25 €
+Transporteur Chronopost - Express à domicile J+1 avant
+13h
+RIB HSBC, 3 rue des Mathurins, 75009, Paris
+IBAN : FR76 3005 6009 1509 1500 4920 968
+BIC / SWIFT : CCFRFRPP
+Powered by TCPDF (www.tcpdf.org)
+Curieux e-liquides PRO - 42 avenue du Général de Gaulle - 45200 MONTARGIS - France
+Pour toute assistance, merci de nous contacter :
+Tél. : +33 1 48 18 75 62
+Siret : 83841399500047 / Numero EORI FR83841399500013 / TVA FR84838413995
+
+-- 2 of 2 --
+

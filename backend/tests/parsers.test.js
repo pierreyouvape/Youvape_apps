@@ -66,6 +66,19 @@ const CASES = [
     mustContain: '012959', // la réf. que l'article perdu s'appropriait
   },
   {
+    label: 'Curieux FA072952 (colonne « Prix de base » ajoutée, réfs coupées hors tiret)',
+    parser: require('../src/parsers/curieuxParser'),
+    text: fixture('curieux-FA072952.txt'),
+    orderNumber: 'JGOJKMMKJ',
+    expectedItems: 24,
+    expectedTotal: 962.71,
+    // Curieux arrondit le prix unitaire à l'affichage mais totalise sur la valeur
+    // exacte : la somme des lignes imprimées dépasse leur total de 1 centime.
+    // Écart réel du document, sous le seuil de réconciliation (0,02 €).
+    expectedSum: 962.72,
+    mustContain: 'AST-LICO-10-10SDN', // réf. coupée au milieu ("AST-LICO-1" + "0-10SDN")
+  },
+  {
     label: 'e.tasty FA072725 (2 pages, NAT-VERT-10-6MG en tête de page 2)',
     parser: require('../src/parsers/etastyParser'),
     text: fixture('etasty-FA072725.txt'),
@@ -84,8 +97,15 @@ for (const c of CASES) {
     assert.strictEqual(parsed.items.length, c.expectedItems);
   });
 
-  test(`${c.label} : somme des lignes = ${c.expectedTotal.toFixed(2)} €`, () => {
-    assert.strictEqual(sumLines(parsed.items), c.expectedTotal);
+  const expectedSum = c.expectedSum ?? c.expectedTotal;
+  test(`${c.label} : somme des lignes = ${expectedSum.toFixed(2)} €`, () => {
+    assert.strictEqual(sumLines(parsed.items), expectedSum);
+  });
+
+  test(`${c.label} : total imprimé et somme des lignes réconciliés`, () => {
+    // Le contrôle de pdfImportModel n'alerte qu'au-delà de 0,02 € : une fixture
+    // qui dépasserait ce seuil ferait crier au loup à chaque import.
+    assert.ok(Math.abs(parsed.invoiceProductTotalHT - expectedSum) <= 0.02);
   });
 
   test(`${c.label} : total imprimé lu et cohérent`, () => {
