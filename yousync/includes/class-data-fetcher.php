@@ -69,6 +69,9 @@ class Data_Fetcher {
         $shipping_carrier = $order->get_meta('bms_carrier');
         $tracking_number = $order->get_meta('bms_tracking_number');
 
+        // Point relais choisi par le client (voir get_relay_point)
+        $relay_point = self::get_relay_point($order);
+
         // Get coupons (codes for backward compat + detailed items)
         $coupons = [];
         foreach ($order->get_coupon_codes() as $code) {
@@ -180,6 +183,7 @@ class Data_Fetcher {
             'shipping_method' => $shipping_method,
             'shipping_carrier' => $shipping_carrier ?: null,
             'tracking_number' => $tracking_number ?: null,
+            'relay_point' => $relay_point,
             'coupons' => $coupons,
             'coupon_items' => $coupon_items,
             'fee_items' => $fee_items,
@@ -187,6 +191,82 @@ class Data_Fetcher {
             'attribution' => $attribution,
             'payment_meta' => $payment_meta
         ];
+    }
+
+    /**
+     * Point relais choisi par le client, normalisé quel que soit le plugin d'origine.
+     *
+     * Trois plugins coexistent sur la boutique et ne stockent pas la même chose :
+     *
+     *  - Mondial Relay et Chronopost (plugins WMS) écrivent un tableau sérialisé sous
+     *    une clé par réseau. Sa clé `shipping_method` distingue Chrono Relais de 2Shop
+     *    (`chronopost_relais`, `chronopost_2shop`, `chronopost_2shop_europe`), ce qui
+     *    déterminera lequel des deux contrats Chronopost utiliser. Elle est absente des
+     *    enregistrements laissés par les anciennes versions du plugin (variante à
+     *    7 clés) : on la transmet quand elle existe, sans en dépendre — le titre de la
+     *    méthode de livraison reste la source fiable côté VPS.
+     *
+     *  - Colissimo (plugin officiel La Poste, préfixe `lpc`) éclate l'information sur
+     *    quatre métas. `_lpc_meta_pickUpProductCode` contient le *type de point*
+     *    (PCS, CMT, BPR, A2P…), pas le code produit de l'envoi : l'API le réclame à
+     *    côté de l'identifiant du point.
+     *
+     * Sans identifiant de point, aucun de ces transporteurs n'accepte l'expédition.
+     * C'est la donnée qui manquait pour générer les étiquettes en point relais.
+     *
+     * @param WC_Order $order
+     * @return array|null
+     */
+    private static function get_relay_point($order) {
+        // Mondial Relay et Chronopost : même plugin, même structure
+        $wms_networks = [
+            '_wms_mondial_relay_pickup_info' => 'mondial_relay',
+            '_wms_chronopost_pickup_info'    => 'chronopost',
+        ];
+
+        foreach ($wms_networks as $meta_key => $network) {
+            // maybe_unserialize : WooCommerce désérialise déjà la plupart des métas,
+            // mais pas toutes selon le mode de stockage (HPOS ou postmeta).
+            $info = maybe_unserialize($order->get_meta($meta_key));
+
+            if (!is_array($info) || empty($info['pickup_id'])) {
+                continue;
+            }
+
+            return [
+                'network'  => $network,
+                'id'       => (string) $info['pickup_id'],
+                'name'     => $info['pickup_name'] ?? null,
+                'address'  => $info['pickup_address'] ?? null,
+                'postcode' => $info['pickup_zipcode'] ?? null,
+                'city'     => $info['pickup_city'] ?? null,
+                'country'  => $info['pickup_country'] ?? null,
+                'type'     => null,
+                'service'  => $info['shipping_method'] ?? null,
+            ];
+        }
+
+        // Colissimo : quatre métas séparées, la fiche complète du point est en JSON
+        $colissimo_id = $order->get_meta('_lpc_meta_pickUpLocationId');
+
+        if (!empty($colissimo_id)) {
+            $data = json_decode($order->get_meta('_lpc_meta_pickUpLocationData'), true);
+            $data = is_array($data) ? $data : [];
+
+            return [
+                'network'  => 'colissimo',
+                'id'       => (string) $colissimo_id,
+                'name'     => $order->get_meta('_lpc_meta_pickUpLocationLabel') ?: ($data['nom'] ?? null),
+                'address'  => $data['adresse1'] ?? null,
+                'postcode' => $data['codePostal'] ?? null,
+                'city'     => $data['localite'] ?? null,
+                'country'  => $data['codePays'] ?? null,
+                'type'     => $order->get_meta('_lpc_meta_pickUpProductCode') ?: ($data['typeDePoint'] ?? null),
+                'service'  => null,
+            ];
+        }
+
+        return null;
     }
 
     /**

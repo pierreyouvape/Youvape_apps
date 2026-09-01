@@ -356,8 +356,9 @@ const wcSyncService = {
         transaction_id, mollie_payment_id, mollie_order_id,
         mollie_payment_mode, mollie_customer_id,
         date_paid, paid_date,
-        mollie_payment_instructions, mollie_paid_and_processed
-      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37,$38,$39,$40,$41,$42,$43,$44,$45,$46,$47,$48,$49,$50,$51)
+        mollie_payment_instructions, mollie_paid_and_processed,
+        relay_point
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37,$38,$39,$40,$41,$42,$43,$44,$45,$46,$47,$48,$49,$50,$51,$52)
       ON CONFLICT (wp_order_id)
       DO UPDATE SET
         -- Le propriétaire de la commande DOIT être remis à jour : il était absent
@@ -415,7 +416,10 @@ const wcSyncService = {
         date_paid = COALESCE(EXCLUDED.date_paid, orders.date_paid),
         paid_date = COALESCE(EXCLUDED.paid_date, orders.paid_date),
         mollie_payment_instructions = COALESCE(EXCLUDED.mollie_payment_instructions, orders.mollie_payment_instructions),
-        mollie_paid_and_processed = COALESCE(EXCLUDED.mollie_paid_and_processed, orders.mollie_paid_and_processed)
+        mollie_paid_and_processed = COALESCE(EXCLUDED.mollie_paid_and_processed, orders.mollie_paid_and_processed),
+        -- COALESCE : une commande resynchronisée après expédition ne doit pas
+        -- perdre son point relais si le plugin a entre-temps purgé la méta.
+        relay_point = COALESCE(EXCLUDED.relay_point, orders.relay_point)
     `, [
       data.wp_order_id, data.customer_id, 'wc-' + data.status, data.total,
       data.total_tax, data.shipping_total, data.discount_total, data.payment_method_title,
@@ -435,7 +439,8 @@ const wcSyncService = {
       pm.transaction_id || null, pm.mollie_payment_id || null, pm.mollie_order_id || null,
       pm.mollie_payment_mode || null, pm.mollie_customer_id || null,
       null, data.date_paid || null,
-      pm.mollie_payment_instructions || null, pm.mollie_paid_and_processed || false
+      pm.mollie_payment_instructions || null, pm.mollie_paid_and_processed || false,
+      data.relay_point ? JSON.stringify(data.relay_point) : null
     ]);
 
     // Delete old items and insert new ones
