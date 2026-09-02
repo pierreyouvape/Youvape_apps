@@ -126,6 +126,10 @@ const CatalogApp = () => {
   const [selectedSupplier, setSelectedSupplier] = useState('');
   const [suppliersList, setSuppliersList] = useState([]);
 
+  // Filtre categorie / sous-categorie
+  const [selectedCategory, setSelectedCategory] = useState('');
+  const [categoriesList, setCategoriesList] = useState([]);
+
   // 0 = normaux seulement, 1 = tous (normaux + masqués), 2 = masqués seulement
   const [showHidden, setShowHidden] = useState(0);
 
@@ -139,13 +143,24 @@ const CatalogApp = () => {
 
   const headers = { Authorization: `Bearer ${token}` };
 
-  const fetchProducts = async (offset = 0, search = searchTerm, tab = stockTab, sort = sortBy, dir = sortDir, brandVal = selectedBrand, hidden = showHidden, supplierVal = selectedSupplier) => {
+  const fetchProducts = async (offset = 0, search = searchTerm, tab = stockTab, sort = sortBy, dir = sortDir, brandVal = selectedBrand, hidden = showHidden, supplierVal = selectedSupplier, categoryVal = selectedCategory) => {
     setLoading(true);
     try {
       const brandParam = brandVal && brandVal.startsWith('brand:') ? brandVal.slice(6) : undefined;
       const subBrandParam = brandVal && brandVal.startsWith('subBrand:') ? brandVal.slice(9) : undefined;
+      // Une sous-categorie est portee par son parent (`subCategory:<categorie>|<sous-categorie>`)
+      // car quelques libelles existent sous deux categories differentes.
+      let categoryParam, subCategoryParam;
+      if (categoryVal && categoryVal.startsWith('category:')) {
+        categoryParam = categoryVal.slice(9);
+      } else if (categoryVal && categoryVal.startsWith('subCategory:')) {
+        const rest = categoryVal.slice(12);
+        const sep = rest.indexOf('|');
+        categoryParam = rest.slice(0, sep) || undefined;
+        subCategoryParam = rest.slice(sep + 1);
+      }
       const res = await axios.get(`${API_URL}/products/catalog`, {
-        params: { limit: 50, offset, search, stockTab: tab, sortBy: sort || undefined, sortDir: dir, brand: brandParam, subBrand: subBrandParam, supplierId: supplierVal || undefined, showHidden: hidden === 1 ? 'true' : hidden === 2 ? 'only' : undefined },
+        params: { limit: 50, offset, search, stockTab: tab, sortBy: sort || undefined, sortDir: dir, brand: brandParam, subBrand: subBrandParam, supplierId: supplierVal || undefined, category: categoryParam, subCategory: subCategoryParam, showHidden: hidden === 1 ? 'true' : hidden === 2 ? 'only' : undefined },
         headers
       });
       if (res.data.success) {
@@ -164,10 +179,11 @@ const CatalogApp = () => {
     const load = async () => {
       let tab = 'all';
       try {
-        const [prefsRes, brandsRes, suppliersRes] = await Promise.all([
+        const [prefsRes, brandsRes, suppliersRes, categoriesRes] = await Promise.all([
           axios.get(`${API_URL}/preferences/catalog`, { headers: { Authorization: `Bearer ${token}` } }),
           axios.get(`${API_URL}/products/catalog-brands`, { headers: { Authorization: `Bearer ${token}` } }),
           axios.get(`${API_URL}/products/catalog-suppliers`, { headers: { Authorization: `Bearer ${token}` } }),
+          axios.get(`${API_URL}/products/catalog-categories`, { headers: { Authorization: `Bearer ${token}` } }),
         ]);
         if (prefsRes.data.success) {
           setHiddenColumns(prefsRes.data.hiddenColumns || []);
@@ -181,6 +197,9 @@ const CatalogApp = () => {
         if (suppliersRes.data.success) {
           setSuppliersList(suppliersRes.data.data || []);
         }
+        if (categoriesRes.data.success) {
+          setCategoriesList(categoriesRes.data.data || []);
+        }
       } catch (err) {
         console.error('Erreur chargement préférences colonnes catalog:', err);
       }
@@ -192,30 +211,35 @@ const CatalogApp = () => {
   const handleStockTabChange = (tab) => {
     setStockTab(tab);
     savePreferences(hiddenColumns, compact, tab);
-    fetchProducts(0, searchTerm, tab, sortBy, sortDir, selectedBrand, showHidden, selectedSupplier);
+    fetchProducts(0, searchTerm, tab, sortBy, sortDir, selectedBrand, showHidden, selectedSupplier, selectedCategory);
   };
 
   const handleSort = (column) => {
     const nextDir = (sortBy === column && sortDir === 'desc') ? 'asc' : 'desc';
     setSortBy(column);
     setSortDir(nextDir);
-    fetchProducts(0, searchTerm, stockTab, column, nextDir, selectedBrand, showHidden, selectedSupplier);
+    fetchProducts(0, searchTerm, stockTab, column, nextDir, selectedBrand, showHidden, selectedSupplier, selectedCategory);
   };
 
   const handleBrandChange = (brand) => {
     setSelectedBrand(brand);
-    fetchProducts(0, searchTerm, stockTab, sortBy, sortDir, brand, showHidden, selectedSupplier);
+    fetchProducts(0, searchTerm, stockTab, sortBy, sortDir, brand, showHidden, selectedSupplier, selectedCategory);
   };
 
   const handleSupplierChange = (supplier) => {
     setSelectedSupplier(supplier);
-    fetchProducts(0, searchTerm, stockTab, sortBy, sortDir, selectedBrand, showHidden, supplier);
+    fetchProducts(0, searchTerm, stockTab, sortBy, sortDir, selectedBrand, showHidden, supplier, selectedCategory);
+  };
+
+  const handleCategoryChange = (category) => {
+    setSelectedCategory(category);
+    fetchProducts(0, searchTerm, stockTab, sortBy, sortDir, selectedBrand, showHidden, selectedSupplier, category);
   };
 
   const handleShowHiddenToggle = () => {
     const next = (showHidden + 1) % 3;
     setShowHidden(next);
-    fetchProducts(0, searchTerm, stockTab, sortBy, sortDir, selectedBrand, next, selectedSupplier);
+    fetchProducts(0, searchTerm, stockTab, sortBy, sortDir, selectedBrand, next, selectedSupplier, selectedCategory);
   };
 
   const savePreferences = async (cols, cmp, tab = stockTab) => {
@@ -622,6 +646,25 @@ const CatalogApp = () => {
               item.type === 'brand'
                 ? <option key={`brand:${item.value}`} value={`brand:${item.value}`}>{item.value}</option>
                 : <option key={`subBrand:${item.value}`} value={`subBrand:${item.value}`}>&nbsp;&nbsp;↳ {item.value}</option>
+            ))}
+          </select>
+
+          {/* Filtre categorie / sous-categorie */}
+          <select
+            value={selectedCategory}
+            onChange={e => handleCategoryChange(e.target.value)}
+            style={{
+              marginLeft: '12px', padding: '8px 12px', backgroundColor: '#fff', color: selectedCategory ? '#059669' : '#374151',
+              border: selectedCategory ? '1px solid #059669' : '1px solid #d1d5db',
+              borderRadius: '6px', fontSize: '13px', fontWeight: selectedCategory ? '600' : '500',
+              cursor: 'pointer', maxWidth: '200px'
+            }}
+          >
+            <option value="">Toutes les catégories</option>
+            {categoriesList.map(item => (
+              item.type === 'category'
+                ? <option key={`category:${item.value}`} value={`category:${item.value}`}>{decodeHtml(item.value)} ({item.nb})</option>
+                : <option key={`subCategory:${item.parent}:${item.value}`} value={`subCategory:${item.parent || ''}|${item.value}`}>&nbsp;&nbsp;↳ {decodeHtml(item.value)} ({item.nb})</option>
             ))}
           </select>
 

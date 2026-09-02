@@ -24,6 +24,7 @@ router.get('/catalog', productsController.getCatalogList);
 router.get('/catalog/export', productsController.getCatalogExport);
 router.get('/catalog-brands', productsController.getCatalogBrands);
 router.get('/catalog-suppliers', productsController.getCatalogSuppliers);
+router.get('/catalog-categories', productsController.getCatalogCategories);
 router.post('/barcodes/import', productsController.importBarcodes);
 
 // Détails produit

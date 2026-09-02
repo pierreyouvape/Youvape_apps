@@ -915,6 +915,37 @@ class ProductModel {
   }
 
   /**
+   * Categories et sous-categories, meme forme que les marques
+   * (`{ type, value, parent, nb }`). Le perimetre est celui du catalogue :
+   * seuls les produits « tete de ligne » (simple / variable / woosb) comptent,
+   * les declinaisons heritent de la categorie de leur parent.
+   */
+  async getCategoriesForCatalog() {
+    const result = await pool.query(`
+      SELECT type, value, parent, nb FROM (
+        SELECT 'category' as type, category as value, NULL::text as parent, COUNT(*)::int as nb
+        FROM products
+        WHERE category IS NOT NULL AND category <> ''
+          AND product_type IN ('simple','variable','woosb') AND post_status = 'publish'
+        GROUP BY category
+
+        UNION ALL
+
+        SELECT 'sub_category' as type, sub_category as value, category as parent, COUNT(*)::int as nb
+        FROM products
+        WHERE sub_category IS NOT NULL AND sub_category <> ''
+          AND product_type IN ('simple','variable','woosb') AND post_status = 'publish'
+        GROUP BY sub_category, category
+      ) t
+      ORDER BY
+        CASE WHEN type = 'category' THEN value ELSE parent END,
+        type,
+        value
+    `);
+    return result.rows;
+  }
+
+  /**
    * Fournisseurs ayant au moins 1 produit publie rattache (product_suppliers).
    * Les liens fournisseur vivent sur les produits simples et les declinaisons,
    * jamais sur le parent variable.
@@ -932,7 +963,7 @@ class ProductModel {
     return result.rows;
   }
 
-  async getAllForCatalog(limit = 50, offset = 0, search = '', trackStockOnly = true, stockTab = 'all', sortBy = null, sortDir = 'desc', brand = '', onlyHidden = false, subBrand = '', supplierId = '') {
+  async getAllForCatalog(limit = 50, offset = 0, search = '', trackStockOnly = true, stockTab = 'all', sortBy = null, sortDir = 'desc', brand = '', onlyHidden = false, subBrand = '', supplierId = '', category = '', subCategory = '') {
     const reorderIdsSql = await getReorderIdsSql(stockTab);
     let whereClause = `
       WHERE p.post_status = 'publish'
@@ -1009,6 +1040,19 @@ class ProductModel {
     if (subBrand) {
       whereClause += ` AND p.sub_brand = $${paramIndex}`;
       params.push(subBrand);
+      paramIndex++;
+    }
+
+    // Les declinaisons portent soit la categorie de leur parent, soit rien :
+    // filtrer sur la tete de ligne suffit, pas de condition sur les variations.
+    if (category) {
+      whereClause += ` AND p.category = $${paramIndex}`;
+      params.push(category);
+      paramIndex++;
+    }
+    if (subCategory) {
+      whereClause += ` AND p.sub_category = $${paramIndex}`;
+      params.push(subCategory);
       paramIndex++;
     }
 
@@ -1201,7 +1245,7 @@ class ProductModel {
   /**
    * Compte les produits pour le catalogue
    */
-  async countForCatalog(search = '', trackStockOnly = true, stockTab = 'all', brand = '', onlyHidden = false, subBrand = '', supplierId = '') {
+  async countForCatalog(search = '', trackStockOnly = true, stockTab = 'all', brand = '', onlyHidden = false, subBrand = '', supplierId = '', category = '', subCategory = '') {
     const reorderIdsSql = await getReorderIdsSql(stockTab);
     let whereClause = `
       WHERE p.post_status = 'publish'
@@ -1276,6 +1320,14 @@ class ProductModel {
     if (subBrand) {
       whereClause += ` AND p.sub_brand = $${params.length + 1}`;
       params.push(subBrand);
+    }
+    if (category) {
+      whereClause += ` AND p.category = $${params.length + 1}`;
+      params.push(category);
+    }
+    if (subCategory) {
+      whereClause += ` AND p.sub_category = $${params.length + 1}`;
+      params.push(subCategory);
     }
 
     // Meme perimetre que getAllForCatalog : le parent compte si lui-meme ou une

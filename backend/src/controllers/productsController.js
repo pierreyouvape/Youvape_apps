@@ -463,12 +463,14 @@ exports.getCatalogList = async (req, res) => {
     const brand = req.query.brand || '';
     const subBrand = req.query.subBrand || '';
     const supplierId = parseInt(req.query.supplierId) || '';
+    const category = req.query.category || '';
+    const subCategory = req.query.subCategory || '';
     const showHiddenParam = req.query.showHidden; // undefined | 'true' | 'only'
     const trackStockOnly = !showHiddenParam;
     const onlyHidden = showHiddenParam === 'only';
 
-    const { parents, variations } = await productModel.getAllForCatalog(limit, offset, search, trackStockOnly, stockTab, sortBy, sortDir, brand, onlyHidden, subBrand, supplierId);
-    const { total, totalWithVariations, totalStockValue } = await productModel.countForCatalog(search, trackStockOnly, stockTab, brand, onlyHidden, subBrand, supplierId);
+    const { parents, variations } = await productModel.getAllForCatalog(limit, offset, search, trackStockOnly, stockTab, sortBy, sortDir, brand, onlyHidden, subBrand, supplierId, category, subCategory);
+    const { total, totalWithVariations, totalStockValue } = await productModel.countForCatalog(search, trackStockOnly, stockTab, brand, onlyHidden, subBrand, supplierId, category, subCategory);
 
     // Stock boutiques (Nextore) rapproché par EAN — MTP (1) et CAST (2)
     try {
@@ -520,6 +522,20 @@ exports.getCatalogSuppliers = async (req, res) => {
     res.json({ success: true, data: items });
   } catch (error) {
     console.error('Error getting catalog suppliers:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+/**
+ * Retourne les categories et sous-categories ayant au moins 1 produit publie
+ * GET /api/products/catalog-categories
+ */
+exports.getCatalogCategories = async (req, res) => {
+  try {
+    const items = await productModel.getCategoriesForCatalog();
+    res.json({ success: true, data: items });
+  } catch (error) {
+    console.error('Error getting catalog categories:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 };
