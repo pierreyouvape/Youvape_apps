@@ -59,6 +59,8 @@ const PackingApp = () => {
 
   const [order, setOrder] = useState(null);
   const [items, setItems] = useState([]);
+  // Poids expédié calculé par le backend (tare comprise, packs non comptés deux fois)
+  const [weight, setWeight] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [message, setMessage] = useState(null);
@@ -194,6 +196,7 @@ const PackingApp = () => {
       }
 
       setOrder(loadedOrder);
+      setWeight(res.data.weight || null);
       setItems(res.data.items.map(item => ({
         ...item,
         scanned: 0
@@ -207,6 +210,7 @@ const PackingApp = () => {
       }
       playSound('error');
       setOrder(null);
+      setWeight(null);
       setItems([]);
     } finally {
       setLoading(false);
@@ -469,6 +473,7 @@ const PackingApp = () => {
   // Réinitialiser
   const handleReset = useCallback(() => {
     setOrder(null);
+    setWeight(null);
     setItems([]);
     setError(null);
     setMessage(null);
@@ -1051,7 +1056,9 @@ const PackingApp = () => {
                     {order.total} EUR
                   </p>
                   <p style={{ margin: '3px 0 0', color: '#999', fontSize: '13px' }}>
-                    {(items.reduce((sum, item) => sum + (item.weight || 0) * item.qty, 0) * 1000).toFixed(0)}g
+                    {weight?.total_g != null
+                      ? `${weight.total_g} g${weight.packaging_g ? ` (dont ${weight.packaging_g} g d'emballage)` : ''}`
+                      : '—'}
                   </p>
                 </div>
               </div>

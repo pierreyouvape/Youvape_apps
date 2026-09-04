@@ -1,4 +1,5 @@
 const pool = require('../config/database');
+const { orderWeightSql, getPackagingWeight } = require('../services/orderWeightService');
 
 /**
  * Récupérer les paramètres généraux de livraison
@@ -509,10 +510,7 @@ const calculateShippingCosts = async (req, res) => {
   try {
     const { date_from, date_to } = req.body;
 
-    const settingsResult = await pool.query(
-      "SELECT config_value FROM shipping_settings WHERE config_key = 'packaging_weight'"
-    );
-    const packagingWeight = settingsResult.rows[0] ? parseFloat(settingsResult.rows[0].config_value) : 0;
+    const packagingWeight = await getPackagingWeight(pool);
 
     const ordersResult = await pool.query(`
       SELECT
@@ -521,9 +519,9 @@ const calculateShippingCosts = async (req, res) => {
         o.shipping_country,
         COALESCE(o.paid_date, o.post_date) AS order_date,
         o.shipping_cost_calculated,
-        COALESCE((SUM(oi.qty * COALESCE(p.weight, parent.weight, 0)) FILTER (WHERE p.product_type IS DISTINCT FROM 'woosb') + CASE WHEN bool_or(oi.line_total = 0 AND COALESCE(p.weight, parent.weight, 0) > 0 AND p.product_type IS DISTINCT FROM 'woosb') THEN 0 ELSE COALESCE(SUM(oi.qty * COALESCE(p.weight, parent.weight, 0)) FILTER (WHERE p.product_type = 'woosb'), 0) END) * 1000, 0) + $3 as total_weight
+        ${orderWeightSql('$3')} AS total_weight
       FROM orders o
-      LEFT JOIN order_items oi ON o.wp_order_id = oi.wp_order_id
+      LEFT JOIN order_items oi ON o.wp_order_id = oi.wp_order_id AND oi.order_item_type = 'line_item'
       LEFT JOIN products p ON p.wp_product_id = COALESCE(NULLIF(oi.variation_id::int, 0), oi.product_id::int)
       LEFT JOIN products parent ON p.wp_parent_id = parent.wp_product_id
       WHERE o.post_date >= $1 AND o.post_date < $2
@@ -610,10 +608,7 @@ const applyShippingCosts = async (req, res) => {
   try {
     const { date_from, date_to } = req.body;
 
-    const settingsResult = await pool.query(
-      "SELECT config_value FROM shipping_settings WHERE config_key = 'packaging_weight'"
-    );
-    const packagingWeight = settingsResult.rows[0] ? parseFloat(settingsResult.rows[0].config_value) : 0;
+    const packagingWeight = await getPackagingWeight(pool);
 
     const ordersResult = await pool.query(`
       SELECT
@@ -621,9 +616,9 @@ const applyShippingCosts = async (req, res) => {
         o.shipping_method,
         o.shipping_country,
         COALESCE(o.paid_date, o.post_date) AS order_date,
-        COALESCE((SUM(oi.qty * COALESCE(p.weight, parent.weight, 0)) FILTER (WHERE p.product_type IS DISTINCT FROM 'woosb') + CASE WHEN bool_or(oi.line_total = 0 AND COALESCE(p.weight, parent.weight, 0) > 0 AND p.product_type IS DISTINCT FROM 'woosb') THEN 0 ELSE COALESCE(SUM(oi.qty * COALESCE(p.weight, parent.weight, 0)) FILTER (WHERE p.product_type = 'woosb'), 0) END) * 1000, 0) + $3 as total_weight
+        ${orderWeightSql('$3')} AS total_weight
       FROM orders o
-      LEFT JOIN order_items oi ON o.wp_order_id = oi.wp_order_id
+      LEFT JOIN order_items oi ON o.wp_order_id = oi.wp_order_id AND oi.order_item_type = 'line_item'
       LEFT JOIN products p ON p.wp_product_id = COALESCE(NULLIF(oi.variation_id::int, 0), oi.product_id::int)
       LEFT JOIN products parent ON p.wp_parent_id = parent.wp_product_id
       WHERE o.post_date >= $1 AND o.post_date < $2
@@ -896,10 +891,7 @@ const deleteMethodZoneRate = async (req, res) => {
  */
 const applyShippingCostToOrder = async (wpOrderId) => {
   try {
-    const settingsResult = await pool.query(
-      "SELECT config_value FROM shipping_settings WHERE config_key = 'packaging_weight'"
-    );
-    const packagingWeight = settingsResult.rows[0] ? parseFloat(settingsResult.rows[0].config_value) : 0;
+    const packagingWeight = await getPackagingWeight(pool);
 
     const orderResult = await pool.query(`
       SELECT
@@ -908,9 +900,9 @@ const applyShippingCostToOrder = async (wpOrderId) => {
         o.shipping_country,
         COALESCE(o.paid_date, o.post_date) AS order_date,
         o.shipping_cost_calculated,
-        COALESCE((SUM(oi.qty * COALESCE(p.weight, parent.weight, 0)) FILTER (WHERE p.product_type IS DISTINCT FROM 'woosb') + CASE WHEN bool_or(oi.line_total = 0 AND COALESCE(p.weight, parent.weight, 0) > 0 AND p.product_type IS DISTINCT FROM 'woosb') THEN 0 ELSE COALESCE(SUM(oi.qty * COALESCE(p.weight, parent.weight, 0)) FILTER (WHERE p.product_type = 'woosb'), 0) END) * 1000, 0) + $2 AS total_weight
+        ${orderWeightSql('$2')} AS total_weight
       FROM orders o
-      LEFT JOIN order_items oi ON o.wp_order_id = oi.wp_order_id
+      LEFT JOIN order_items oi ON o.wp_order_id = oi.wp_order_id AND oi.order_item_type = 'line_item'
       LEFT JOIN products p ON p.wp_product_id = COALESCE(NULLIF(oi.variation_id::int, 0), oi.product_id::int)
       LEFT JOIN products parent ON p.wp_parent_id = parent.wp_product_id
       WHERE o.wp_order_id = $1

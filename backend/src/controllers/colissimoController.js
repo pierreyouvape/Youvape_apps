@@ -3,6 +3,7 @@ const { PDFParse } = require('pdf-parse');
 const ExcelJS = require('exceljs');
 const JSZip = require('jszip');
 const pool = require('../config/database');
+const { orderWeightSql, getPackagingWeight } = require('../services/orderWeightService');
 
 // Agrège les colis par pays de destination : { FR: { colis, ht }, BE: {...}, ... }
 function buildCountryTotals(items, amountKey) {
@@ -274,16 +275,14 @@ async function resolveOrderIds(trackingNumbers) {
 /* ─── BDD WEIGHT LOOKUP ──────────────────────────────────────── */
 async function fetchBddWeights(orderIds) {
   if (!orderIds.length) return {};
-  const settingsRes = await pool.query(
-    "SELECT config_value FROM shipping_settings WHERE config_key = 'packaging_weight'"
-  );
-  const packagingKg = settingsRes.rows[0] ? parseFloat(settingsRes.rows[0].config_value) / 1000 : 0.011;
+  // Repli à 11 g conservé : c'est ce que faisait ce contrôleur avant l'extraction.
+  const packagingKg = (await getPackagingWeight(pool, 11)) / 1000;
 
   const res = await pool.query(`
     SELECT o.wp_order_id::int AS order_id,
-           COALESCE((SUM(oi.qty * COALESCE(p.weight, parent.weight, 0)) FILTER (WHERE p.product_type IS DISTINCT FROM 'woosb') + CASE WHEN bool_or(oi.line_total = 0 AND COALESCE(p.weight, parent.weight, 0) > 0 AND p.product_type IS DISTINCT FROM 'woosb') THEN 0 ELSE COALESCE(SUM(oi.qty * COALESCE(p.weight, parent.weight, 0)) FILTER (WHERE p.product_type = 'woosb'), 0) END), 0) + $1 AS total_weight
+           ${orderWeightSql('$1', 'kg')} AS total_weight
     FROM orders o
-    LEFT JOIN order_items oi ON o.wp_order_id = oi.wp_order_id
+    LEFT JOIN order_items oi ON o.wp_order_id = oi.wp_order_id AND oi.order_item_type = 'line_item'
     LEFT JOIN products p ON p.wp_product_id = COALESCE(NULLIF(oi.variation_id::int, 0), oi.product_id::int)
     LEFT JOIN products parent ON p.wp_parent_id = parent.wp_product_id
     WHERE o.wp_order_id::int = ANY($2::int[])
