@@ -40,6 +40,9 @@ const { buildUserMessage } = require('../services/carriers/errors');
  * @returns {Promise<{labelId: number, carrierOrderId: ?string, trackingNumber: ?string, pdfBase64: string, weightGrams: number}>}
  */
 const createShipmentLabel = async ({ adapter, orderNumber, receiver, packedBy }) => {
+  // Avant de dépenser une étiquette : s'assurer qu'on saura l'enregistrer.
+  await shipmentLabelModel.assertSchemaReady();
+
   const account = await getAccount(adapter.code, adapter.accountCode);
   const weightGrams = await adapter.resolveWeight({ pool, orderNumber, account });
 

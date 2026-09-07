@@ -15,6 +15,40 @@ const pool = require('../config/database');
 const ORDER_NUMBER_MAX_LENGTH = 20;
 
 /**
+ * Vérifie une fois par processus que la table d'étiquettes est là.
+ *
+ * Sert à un cas précis et coûteux : une étiquette achetée chez le transporteur
+ * puis impossible à enregistrer. L'argent est dépensé, le numéro de suivi
+ * perdu, et personne ne le sait. La génération depuis le packing touche la base
+ * avant d'appeler le transporteur (contrôle de doublon), donc elle échoue seule ;
+ * l'expédition manuelle, elle, n'a aucun contrôle de doublon — d'où ce garde-fou,
+ * appelé avant tout appel transporteur.
+ *
+ * Le résultat est mémorisé : une requête par vie du processus, pas par colis.
+ *
+ * @throws {Error & {statusCode: number}} 500 si la migration n'a pas tourné.
+ */
+let schemaReady = false;
+const assertSchemaReady = async () => {
+  if (schemaReady) return;
+
+  const { rows } = await pool.query(
+    `SELECT to_regclass('public.shipment_labels') IS NOT NULL AS ok`
+  );
+
+  if (!rows[0].ok) {
+    const err = new Error(
+      "Table shipment_labels absente : appliquer la migration " +
+      "backend/src/migrations/add_shipment_labels.sql avant de reconstruire le backend"
+    );
+    err.statusCode = 500;
+    throw err;
+  }
+
+  schemaReady = true;
+};
+
+/**
  * Étiquette active existant déjà pour cette commande, tous transporteurs
  * confondus.
  *
@@ -115,6 +149,7 @@ const markCancelled = async (id) => {
 
 module.exports = {
   ORDER_NUMBER_MAX_LENGTH,
+  assertSchemaReady,
   findActiveByOrderNumber,
   findById,
   findPdfById,

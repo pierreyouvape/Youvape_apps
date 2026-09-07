@@ -13,6 +13,26 @@
 -- Idempotente : relançable sans dégât. laposte_labels n'est ni vidée ni
 -- supprimée — elle reste la photo d'avant-bascule le temps que la lettre suivie
 -- soit validée sur le nouveau chemin.
+--
+-- ── PROCÉDURE — l'ordre n'est pas négociable ────────────────────────────────
+-- Le packing envoie des lettres suivies toute la journée et n'a pas de solution
+-- de secours. La migration passe AVANT le rebuild : dans ce sens, l'ancien code
+-- continue de tourner sur laposte_labels sans rien voir. Dans l'autre, le
+-- nouveau code refuse d'acheter une étiquette qu'il ne saurait pas enregistrer,
+-- et l'expédition s'arrête jusqu'à ce que la migration passe.
+--
+--   1. git pull                                        (sur le VPS)
+--   2. docker compose exec -T postgres psql -U youvape -d youvape_db \
+--        < backend/src/migrations/add_shipment_labels.sql
+--   3. docker exec youvape_backend node src/scripts/checkShipmentSchema.js
+--      → doit afficher « Bascule possible » et sortir en 0. Sinon, NE PAS
+--        continuer : à ce stade rien n'a changé pour le packing.
+--   4. docker compose up --build -d backend
+--   5. rejouer l'étape 3, puis une vraie étiquette de test au packing.
+--
+-- Retour arrière : passer rollback_shipment_labels.sql AVANT de revenir à la
+-- version précédente du backend, sans quoi les étiquettes émises depuis la
+-- bascule seraient invisibles à l'écran de réimpression.
 
 BEGIN;
 

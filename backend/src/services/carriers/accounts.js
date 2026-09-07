@@ -19,6 +19,63 @@ const CACHE_TTL_MS = 60000;
 const cache = new Map();
 
 /**
+ * Repli de transition : reconstruit le contrat La Poste depuis les clés
+ * `laposte_*` d'app_config, telles qu'elles étaient lues avant le lot 0.
+ *
+ * Raison d'être : le packing envoie des lettres suivies toute la journée et
+ * n'a pas de solution de secours. Si le backend est reconstruit avant que la
+ * migration ait tourné, ce repli évite l'arrêt de l'expédition — au prix d'un
+ * avertissement dans les logs, pas d'une panne.
+ *
+ * À SUPPRIMER une fois la migration passée en production et la lettre suivie
+ * validée sur carrier_accounts. Il n'existe que pour la fenêtre de bascule.
+ *
+ * @returns {Promise<?object>} le contrat, ou null si ce n'est pas La Poste ou
+ *          si app_config ne porte pas non plus la configuration.
+ */
+const legacyAppConfigAccount = async (carrierCode, accountCode) => {
+  if (carrierCode !== 'laposte' || accountCode !== 'lettre_suivie') return null;
+
+  let rows;
+  try {
+    ({ rows } = await pool.query(
+      `SELECT config_key, config_value FROM app_config WHERE config_key LIKE 'laposte\\_%'`
+    ));
+  } catch (e) {
+    return null;
+  }
+
+  const cfg = Object.fromEntries(rows.map(r => [r.config_key, r.config_value]));
+  if (!cfg.laposte_api_url || !cfg.laposte_client_id) return null;
+
+  return {
+    id: null,
+    carrierCode,
+    accountCode,
+    label: 'La Poste — Lettre Suivie (app_config)',
+    credentials: {
+      token_url: cfg.laposte_token_url,
+      client_id: cfg.laposte_client_id,
+      client_secret: cfg.laposte_client_secret
+    },
+    settings: {
+      api_url: cfg.laposte_api_url,
+      contract_number: cfg.laposte_contract_number,
+      cust_acc_number: cfg.laposte_cust_acc_number,
+      cust_invoice: cfg.laposte_cust_invoice,
+      sender: {
+        email: cfg.laposte_sender_email,
+        phone: cfg.laposte_sender_phone,
+        name: cfg.laposte_sender_name,
+        address: cfg.laposte_sender_address,
+        zipcode: cfg.laposte_sender_zipcode,
+        town: cfg.laposte_sender_town
+      }
+    }
+  };
+};
+
+/**
  * Charge un contrat transporteur.
  *
  * @param {string} carrierCode - code transporteur (`shipping_carriers.code`)
@@ -34,14 +91,32 @@ const getAccount = async (carrierCode, accountCode) => {
     return cached.account;
   }
 
-  const result = await pool.query(
-    `SELECT id, carrier_code, account_code, label, credentials, settings
-     FROM carrier_accounts
-     WHERE carrier_code = $1 AND account_code = $2 AND active = true`,
-    [carrierCode, accountCode]
-  );
+  let row = null;
+  try {
+    const result = await pool.query(
+      `SELECT id, carrier_code, account_code, label, credentials, settings
+       FROM carrier_accounts
+       WHERE carrier_code = $1 AND account_code = $2 AND active = true`,
+      [carrierCode, accountCode]
+    );
+    row = result.rows[0] || null;
+  } catch (e) {
+    // Table absente : la migration n'a pas encore tourné. On le dit et on
+    // tente le repli plutôt que d'arrêter le packing.
+    console.warn(`[carriers] Lecture de carrier_accounts impossible (${e.message})`);
+  }
 
-  if (result.rows.length === 0) {
+  if (!row) {
+    const fallback = await legacyAppConfigAccount(carrierCode, accountCode);
+    if (fallback) {
+      console.warn(
+        `[carriers] Contrat « ${key} » absent de carrier_accounts — repli sur les clés app_config. ` +
+        `Appliquer la migration add_shipment_labels.sql.`
+      );
+      cache.set(key, { account: fallback, expiresAt: Date.now() + CACHE_TTL_MS });
+      return fallback;
+    }
+
     const err = new Error(
       `Contrat transporteur « ${key} » introuvable ou désactivé dans carrier_accounts`
     );
@@ -49,7 +124,6 @@ const getAccount = async (carrierCode, accountCode) => {
     throw err;
   }
 
-  const row = result.rows[0];
   const account = {
     id: row.id,
     carrierCode: row.carrier_code,
