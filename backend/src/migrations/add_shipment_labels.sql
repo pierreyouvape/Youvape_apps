@@ -24,11 +24,24 @@
 --   1. git pull                                        (sur le VPS)
 --   2. docker compose exec -T postgres psql -U youvape -d youvape_db \
 --        < backend/src/migrations/add_shipment_labels.sql
---   3. docker exec youvape_backend node src/scripts/checkShipmentSchema.js
+--   3. Contrôle go / no-go. Le script arrive avec le pull mais PAS dans l'image
+--      qui tourne encore : le faire tourner depuis les sources fraîches, sans
+--      toucher au conteneur en service.
+--        cd /home/ubuntu/Youvape_apps
+--        tar czf /tmp/precheck.tgz -C backend src
+--        docker cp /tmp/precheck.tgz youvape_backend:/tmp/
+--        docker exec youvape_backend sh -c 'rm -rf /app/precheck /tmp/src && \
+--          mkdir -p /app/precheck && tar xzf /tmp/precheck.tgz -C /tmp && \
+--          cp -r /tmp/src/. /app/precheck/'
+--        docker exec -w /app/precheck youvape_backend node scripts/checkShipmentSchema.js
+--        docker exec youvape_backend sh -c 'rm -rf /app/precheck /tmp/src /tmp/precheck.tgz'
 --      → doit afficher « Bascule possible » et sortir en 0. Sinon, NE PAS
 --        continuer : à ce stade rien n'a changé pour le packing.
 --   4. docker compose up --build -d backend
---   5. rejouer l'étape 3, puis une vraie étiquette de test au packing.
+--   5. docker exec youvape_backend node src/scripts/checkShipmentSchema.js
+--      (le script est dans l'image, cette fois), puis surveiller la première
+--      étiquette réellement émise par l'équipe :
+--        docker logs youvape_backend --since 10m | grep -E '\[LaPoste\]|\[BMS\]'
 --
 -- Retour arrière : passer rollback_shipment_labels.sql AVANT de revenir à la
 -- version précédente du backend, sans quoi les étiquettes émises depuis la
