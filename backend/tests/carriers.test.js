@@ -216,5 +216,117 @@ test('le libellé BMS de La Poste est celui attendu par BMS', () => {
   assert.strictEqual(laposte.bmsShipmentTitle, 'La poste - Courrier suivi (port payé)');
 });
 
+// ── Mondial Relay ────────────────────────────────────────────────────────────
+console.log('\nMondial Relay — corps de la requête');
+
+const mr = require('../src/services/carriers/mondialRelayAdapter');
+
+const MR_ACCOUNT = {
+  carrierCode: 'mondial_relay', accountCode: 'sandbox',
+  credentials: { login: 'X@business-api.mondialrelay.com', password: 'secret', customer_id: 'TTMRSDBX' },
+  settings: {
+    api_url: 'https://exemple/api/shipment', output_format: '10x15', output_type: 'PdfUrl',
+    culture: 'fr-FR', version_api: '1.0', collection_mode: 'CCC',
+    sender: { firstname: 'Youvape', lastname: 'SAS EMC', house_no: '580',
+              streetname: 'avenue de l aube rouge', postcode: '34170',
+              city: 'Castelnau le lez', country_code: 'FR', email: 'c@y.fr', phone: '0499782453' }
+  }
+};
+const MR_RECEIVER = {
+  first_name: 'Marie', last_name: 'Testeuse', address: '12 rue de la Republique',
+  postcode: '69003', city: 'Lyon 3e', country: 'FR', phone: '0600000000', email: 't@e.com'
+};
+const mrXml = (over = {}) => mr.buildLabelPayload({
+  orderNumber: over.orderNumber ?? '1258938',
+  receiver: { ...MR_RECEIVER, ...(over.receiver || {}) },
+  account: MR_ACCOUNT, weightGrams: over.weightGrams ?? 480,
+  options: over.options ?? { deliveryMode: '24R', relayPoint: { id: '022112', country: 'FR' } }
+});
+
+test('le point relais est préfixé du pays du POINT, pas « FR » en dur', () => {
+  const be = mrXml({ options: { deliveryMode: '24R', relayPoint: { id: '041212', country: 'BE' } } });
+  assert.ok(be.includes('Location="BE-041212"'), 'préfixe pays perdu');
+  const lu = mrXml({ options: { deliveryMode: '24R', relayPoint: { id: '000123', country: 'lu' } } });
+  assert.ok(lu.includes('Location="LU-000123"'), 'pays non mis en majuscules');
+});
+
+test('les consignes passent en 24R comme les points relais', () => {
+  assert.ok(mrXml({ options: { deliveryMode: '24R', relayPoint: { id: '016834', country: 'FR' } } })
+    .includes('Mode="24R"'));
+});
+
+test('le poids part en grammes', () => {
+  assert.ok(mrXml({ weightGrams: 323 }).includes('<Weight Value="323" Unit="gr"/>'));
+});
+
+test('le numéro de voie est séparé du nom de rue', () => {
+  const x = mrXml();
+  assert.ok(x.includes('<HouseNo>12</HouseNo>'), x.match(/<HouseNo>[^<]*/)?.[0]);
+  assert.ok(x.includes('<Streetname>rue de la Republique</Streetname>'));
+});
+
+test('une adresse sans numéro reste entière dans Streetname', () => {
+  const x = mrXml({ receiver: { address: 'Lieu-dit Les Chenes' } });
+  assert.ok(x.includes('<HouseNo></HouseNo>'), 'numéro inventé');
+  assert.ok(x.includes('<Streetname>Lieu-dit Les Chenes</Streetname>'));
+});
+
+test('la ville perd ses chiffres, que l\'API refuse', () => {
+  assert.ok(mrXml({ receiver: { city: 'Lyon 3e' } }).includes('<City>Lyon e</City>'));
+});
+
+test('Title+Firstname+Lastname est ramené à 32 caractères', () => {
+  const x = mrXml({ receiver: { first_name: 'Jean-Baptiste-Emmanuel', last_name: 'De La Tour Du Pin Verclause' } });
+  const [, t] = x.match(/<Title>([^<]*)<\/Title>/);
+  const [, f] = x.match(/<Firstname>([^<]*)<\/Firstname>/);
+  const [, l] = x.match(/<Lastname>([^<]*)<\/Lastname>/);
+  assert.ok((t + f + l).length <= 32, `${(t + f + l).length} caractères au lieu de 32 max`);
+  assert.ok(f.length > 0, 'le prénom a été entièrement rogné');
+});
+
+test('Streetname+HouseNo est ramené à 40 caractères', () => {
+  const x = mrXml({ receiver: { address: '1234 avenue du General Charles De Gaulle Prolongee' } });
+  const [, st] = x.match(/<Streetname>([^<]*)<\/Streetname>/);
+  const [, ho] = x.match(/<HouseNo>([^<]*)<\/HouseNo>/);
+  assert.ok((st + ho).length <= 40, `${(st + ho).length} caractères au lieu de 40 max`);
+});
+
+test('le numéro de commande est mis en majuscules et filtré', () => {
+  assert.ok(mrXml({ orderNumber: 'test-abc/123' }).includes('<OrderNo>TEST-ABC123</OrderNo>'));
+});
+
+test('les caractères XML des adresses sont échappés', () => {
+  const x = mrXml({ receiver: { last_name: 'Durand & Fils', address: '3 rue <test>' } });
+  assert.ok(x.includes('Durand &amp; Fils'), 'esperluette non échappée');
+  assert.ok(!/<Streetname>[^<]*<test>/.test(x), 'balise injectée dans l\'adresse');
+});
+
+test('le mot de passe est caviardé avant journalisation', () => {
+  const r = mr.redact({ contextField: { passwordField: 'secret', loginField: 'moi' }, autre: 1 });
+  assert.strictEqual(r.contextField.passwordField, '***');
+  assert.strictEqual(r.contextField.loginField, '***');
+  assert.strictEqual(r.autre, 1);
+});
+
+test('Mondial Relay se déclare non annulable, avec la raison', () => {
+  const w = mr.cancelWindow();
+  assert.strictEqual(w.cancellable, false);
+  assert.ok(/annuler/i.test(w.reason));
+});
+
+// ── Retrait magasin ──────────────────────────────────────────────────────────
+console.log('\nRetrait magasin (adaptateur interne)');
+
+const interne = require('../src/services/carriers/interneAdapter');
+
+test('ne réclame ni contrat ni confirmation BMS', () => {
+  assert.strictEqual(interne.requiresAccount, false);
+  assert.strictEqual(interne.confirmsShipmentInBms, false);
+});
+
+test('ne déclare aucun poids : rien n\'est transporté', async () => {
+  assert.strictEqual(await interne.resolveWeight({}), 0);
+});
+
 console.log(failures === 0 ? '\nTous les tests passent.' : `\n${failures} test(s) en échec.`);
 process.exit(failures === 0 ? 0 : 1);

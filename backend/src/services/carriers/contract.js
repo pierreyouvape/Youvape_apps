@@ -58,6 +58,12 @@
  * @property {(label: object, now?: Date) => {cancellable: boolean, reason: ?string}} cancelWindow
  *           Règle d'annulation du transporteur, appliquée AVANT l'appel API.
  * @property {() => void} [onAuthFailure] - appelé sur 401, pour purger un cache de jeton.
+ * @property {boolean} [requiresAccount=true] - à false, l'adaptateur n'a pas de
+ *           contrat dans carrier_accounts : ni identifiants ni réglages à charger.
+ *           C'est le cas du retrait magasin, qui n'appelle aucune API.
+ * @property {boolean} [confirmsShipmentInBms=true] - à false, aucune confirmation
+ *           d'expédition n'est envoyée à BMS. Le retrait magasin n'est pas une
+ *           expédition : la confirmer ferait mentir les stats de transport.
  */
 
 const REQUIRED_PROPS = [

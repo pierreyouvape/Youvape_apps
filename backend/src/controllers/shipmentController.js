@@ -20,6 +20,7 @@
 const pool = require('../config/database');
 const bmsApiModel = require('../models/bmsApiModel');
 const shipmentLabelModel = require('../models/shipmentLabelModel');
+const shippingMethodMapModel = require('../models/shippingMethodMapModel');
 const { sendAlert } = require('../services/alertService');
 const { getAdapter } = require('../services/carriers');
 const { getAccount } = require('../services/carriers/accounts');
@@ -39,18 +40,24 @@ const { buildUserMessage } = require('../services/carriers/errors');
  * @param {?number} input.packedBy
  * @returns {Promise<{labelId: number, carrierOrderId: ?string, trackingNumber: ?string, pdfBase64: string, weightGrams: number}>}
  */
-const createShipmentLabel = async ({ adapter, orderNumber, receiver, packedBy }) => {
+const createShipmentLabel = async ({ adapter, orderNumber, receiver, packedBy, accountCode, options = {} }) => {
   // Avant de dépenser une étiquette : s'assurer qu'on saura l'enregistrer.
   await shipmentLabelModel.assertSchemaReady();
 
-  const account = await getAccount(adapter.code, adapter.accountCode);
-  const weightGrams = await adapter.resolveWeight({ pool, orderNumber, account });
+  // Le retrait magasin n'appelle aucune API : il n'a ni identifiants ni réglages.
+  const resolvedAccountCode = accountCode || adapter.accountCode;
+  const account = adapter.requiresAccount === false
+    ? { carrierCode: adapter.code, accountCode: resolvedAccountCode, credentials: {}, settings: {} }
+    : await getAccount(adapter.code, resolvedAccountCode);
+
+  const weightGrams = await adapter.resolveWeight({ pool, orderNumber, account, options });
 
   const { carrierOrderId, trackingNumber, pdfBase64: rawPdf } = await adapter.createLabel({
     orderNumber,
     receiver,
     account,
-    weightGrams
+    weightGrams,
+    options
   });
 
   // Le numéro de commande imprimé en bas à gauche : c'est lui qui rattache
@@ -61,8 +68,8 @@ const createShipmentLabel = async ({ adapter, orderNumber, receiver, packedBy })
 
   const label = await shipmentLabelModel.insert({
     carrierCode: adapter.code,
-    accountCode: adapter.accountCode,
-    methodCode: adapter.methodCode,
+    accountCode: resolvedAccountCode,
+    methodCode: options.deliveryMode || adapter.methodCode,
     orderNumber,
     trackingNumber,
     carrierOrderId,
@@ -95,6 +102,149 @@ const confirmShipmentInBms = async (adapter, orderNumber, trackingNumber) => {
       `BUG VPS : commande N°${orderNumber} non confirmee en expedition BMS`,
       `Bonjour,\n\nL'expedition de la commande N°${orderNumber} avec le numero de suivi : ${trackingNumber} n'a pas pu etre confirmee a BMS pour la raison suivante :\n\n${bmsError.message}\n\nPensez a corriger cela.`
     );
+  }
+};
+
+/**
+ * Charge la commande et son point relais.
+ *
+ * `relay_point` n'est renseigné que depuis le 07/09/2026 : les commandes
+ * antérieures n'en ont pas, et un transporteur en point de retrait ne peut pas
+ * étiqueter sans. L'adaptateur le signalera explicitement plutôt que d'envoyer
+ * une requête vouée à l'échec.
+ */
+const loadOrderForLabel = async (orderNumber) => {
+  const { rows } = await pool.query(`
+    SELECT
+      wp_order_id, shipping_method,
+      shipping_first_name, shipping_last_name, shipping_company,
+      shipping_address_1, shipping_address_2,
+      shipping_city, shipping_postcode, shipping_country,
+      shipping_phone, billing_email, order_total, relay_point
+    FROM orders
+    WHERE wp_order_id = $1
+  `, [orderNumber]);
+  return rows[0] || null;
+};
+
+/** Destinataire, dans la forme attendue par le contrat transporteur. */
+const receiverFromOrder = (order) => ({
+  name: `${order.shipping_first_name || ''} ${order.shipping_last_name || ''}`.trim(),
+  first_name: order.shipping_first_name,
+  last_name: order.shipping_last_name,
+  company: order.shipping_company,
+  address: order.shipping_address_1,
+  address_2: order.shipping_address_2,
+  postcode: order.shipping_postcode,
+  city: order.shipping_city,
+  country: order.shipping_country,
+  phone: order.shipping_phone,
+  email: order.billing_email
+});
+
+/**
+ * Génération d'étiquette pilotée par la correspondance des dénominations.
+ *
+ * À la différence des handlers par transporteur, celui-ci ne sait pas d'avance à
+ * qui il parle : c'est `shipping_method_carrier_map` qui tranche, et **elle seule**.
+ * Une dénomination inconnue renvoie 422 avec de quoi afficher au préparateur un
+ * message utile — le nom exact à faire mapper par un responsable — au lieu de
+ * fabriquer une étiquette chez le mauvais transporteur.
+ *
+ * @param {object} req.params.orderNumber
+ */
+const generateForOrder = async (req, res) => {
+  const { orderNumber } = req.params;
+  let adapter = null;
+
+  try {
+    const order = await loadOrderForLabel(orderNumber);
+    if (!order) {
+      return res.status(404).json({ error: 'Commande introuvable' });
+    }
+
+    const mapping = await shippingMethodMapModel.resolve(order.shipping_method);
+
+    // Dénomination jamais mappée : on refuse, et on dit quoi faire.
+    if (mapping.status === 'unknown') {
+      return res.status(422).json({
+        error: 'Mode de livraison non reconnu',
+        reason: 'unknown_shipping_method',
+        denomination: order.shipping_method,
+        orderNumber,
+        userMessage: `Le mode de livraison « ${order.shipping_method || '(vide)'} » n'est associé à aucun transporteur. `
+          + `Demandez à un responsable de l'ajouter dans les réglages avant d'expédier cette commande.`
+      });
+    }
+
+    // Dénomination connue, volontairement sans étiquette.
+    if (mapping.status === 'no_label') {
+      return res.status(200).json({
+        success: true,
+        noLabel: true,
+        denomination: mapping.denomination,
+        orderNumber,
+        userMessage: `« ${mapping.denomination} » ne génère pas d'étiquette.`
+      });
+    }
+
+    adapter = getAdapter(mapping.carrierCode);
+
+    // Une commande = un colis.
+    const existing = await shipmentLabelModel.findActiveByOrderNumber(orderNumber);
+    if (existing) {
+      return res.status(409).json({
+        error: 'Une étiquette active existe déjà pour cette commande',
+        trackingId: existing.tracking_number,
+        labelId: existing.id,
+        createdAt: existing.created_at,
+        carrier: existing.carrier_code
+      });
+    }
+
+    const { carrierOrderId, trackingNumber, pdfBase64, weightGrams } = await createShipmentLabel({
+      adapter,
+      orderNumber,
+      accountCode: mapping.accountCode,
+      receiver: receiverFromOrder(order),
+      packedBy: req.user?.id || null,
+      options: {
+        deliveryMode: mapping.deliveryMode,
+        relayPoint: order.relay_point || null,
+        shippingMethod: order.shipping_method
+      }
+    });
+
+    // Le retrait magasin n'est pas une expédition : la confirmer à BMS ferait
+    // mentir les statistiques de transport.
+    if (trackingNumber && adapter.confirmsShipmentInBms !== false) {
+      await confirmShipmentInBms(adapter, orderNumber, trackingNumber);
+    }
+
+    res.json({
+      success: true,
+      carrier: adapter.code,
+      carrierLabel: adapter.label,
+      orderId: carrierOrderId,
+      trackingId: trackingNumber,
+      weightGrams,
+      pdfBase64,
+      orderNumber
+    });
+
+  } catch (error) {
+    const tag = adapter ? adapter.logTag : 'Expedition';
+    console.error(`[${tag}] Erreur generateForOrder ${orderNumber}:`, error.message);
+
+    if (error.statusCode === 401 && adapter && typeof adapter.onAuthFailure === 'function') {
+      adapter.onAuthFailure();
+    }
+
+    res.status(error.statusCode || 500).json({
+      error: adapter ? `Erreur génération étiquette ${adapter.label}` : 'Erreur génération étiquette',
+      userMessage: adapter ? buildUserMessage(error, adapter.label) : null,
+      details: error.body || error.message
+    });
   }
 };
 
@@ -367,4 +517,4 @@ const makeCarrierHandlers = (carrierCode) => {
   return { generateLabel, generateManualLabel, listLabels, cancelLabel, getLabelPdf };
 };
 
-module.exports = { makeCarrierHandlers, createShipmentLabel };
+module.exports = { makeCarrierHandlers, createShipmentLabel, generateForOrder };

@@ -1,0 +1,287 @@
+/**
+ * Adaptateur Mondial Relay — API Connect (« API 2 »).
+ *
+ * Contrat détaillé dans `docs/mondial-relay-api.md`. Les particularités qui
+ * expliquent la forme de ce fichier :
+ *
+ *   - **Requête en XML, réponse en JSON.** Pas de JSON en entrée, pas de XML en
+ *     sortie. Les clés de réponse sont suffixées `Field` (sérialisation .NET).
+ *   - **Aucune authentification HTTP** : login et mot de passe voyagent dans le
+ *     corps XML. Une sonde HTTP ne peut donc pas valider des identifiants.
+ *   - **Les erreurs arrivent en HTTP 200.** Le code HTTP ne dit rien ; c'est
+ *     `statusListField` qu'il faut lire. Vérifié sur le sandbox : refus de
+ *     produit, point relais inexistant, plan de tri absent — tous en 200.
+ *   - **La réponse renvoie le mot de passe en clair.** Jamais de log brut.
+ *   - **Pas d'annulation.** L'API Connect ne fait que créer.
+ *   - **L'étiquette arrive en URL**, pas en base64 : on la télécharge, sinon la
+ *     réimpression ne marcherait plus hors ligne.
+ */
+
+const axios = require('axios');
+const { sanitizeAddressField } = require('./addressFields');
+const { assertAdapter } = require('./contract');
+const { assertAccountComplete } = require('./accounts');
+
+const LOG_TAG = 'MondialRelay';
+const CARRIER_LABEL = 'Mondial Relay';
+
+/** Échappement XML. Les adresses clients contiennent & et guillemets. */
+const esc = (value) => String(value ?? '').replace(/[<>&'"]/g, (c) =>
+  ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', "'": '&apos;', '"': '&quot;' }[c]));
+
+/**
+ * Sépare le numéro de voie du nom de rue.
+ *
+ * Mondial Relay veut `HouseNo` et `Streetname` en deux champs, là où
+ * WooCommerce n'en a qu'un. La quasi-totalité des adresses françaises commence
+ * par le numéro, éventuellement suivi de bis/ter/quater ou d'une lettre.
+ * Quand rien ne ressemble à un numéro, on laisse `HouseNo` vide plutôt que
+ * d'inventer : l'adresse reste complète dans `Streetname`.
+ *
+ * @param {string} line
+ * @returns {{houseNo: string, streetname: string}}
+ */
+const splitStreet = (line) => {
+  const s = String(line ?? '').trim();
+  const m = s.match(/^(\d+\s*(?:bis|ter|quater|[A-Za-z])?)\s+(.*)$/i);
+  if (!m) return { houseNo: '', streetname: s };
+  return { houseNo: m[1].replace(/\s+/g, '').substring(0, 10), streetname: m[2].trim() };
+};
+
+/**
+ * `City` n'accepte ni chiffre ni la plupart des ponctuations (max 30).
+ * « Lyon 3e » ou « Saint-Étienne Cedex 2 » passeraient à la trappe côté API :
+ * on nettoie plutôt que de laisser l'appel échouer sur un détail cosmétique.
+ */
+const cleanCity = (city) => sanitizeAddressField(String(city ?? ''))
+  .replace(/[0-9]/g, ' ')
+  .replace(/\s+/g, ' ')
+  .trim()
+  .substring(0, 30);
+
+/**
+ * Applique les deux contraintes de longueur COMBINÉE du schéma Mondial Relay :
+ * `Title`+`Firstname`+`Lastname` ≤ 32 et `Streetname`+`HouseNo` ≤ 40.
+ *
+ * C'est le piège du schéma : chaque champ passe isolément, c'est la somme qui
+ * est refusée. Un nom trop long doit rétrécir plutôt que faire échouer
+ * l'expédition — le colis part avec un nom tronqué, ce qui reste très
+ * préférable à un colis qui ne part pas.
+ */
+const fitCombined = (parts, max) => {
+  const out = [...parts];
+  let total = out.join('').length;
+  for (let i = out.length - 1; i >= 0 && total > max; i--) {
+    const excess = total - max;
+    const keep = Math.max(0, out[i].length - excess);
+    total -= out[i].length - keep;
+    out[i] = out[i].substring(0, keep).trim();
+  }
+  return out;
+};
+
+/**
+ * Poids réel de la commande, en grammes — à la différence de la lettre suivie,
+ * qui est au forfait. `Weight Unit="gr"` : l'API attend justement des grammes,
+ * comme `orderWeightService`.
+ */
+const resolveWeight = async ({ pool, orderNumber }) => {
+  const { computeOrderWeight } = require('../orderWeightService');
+  const grams = await computeOrderWeight(pool, orderNumber);
+
+  if (!grams || grams <= 0) {
+    const err = new Error(
+      `Poids introuvable ou nul pour la commande ${orderNumber} — Mondial Relay refuse une expédition sans poids`
+    );
+    err.statusCode = 400;
+    throw err;
+  }
+  return Math.round(grams);
+};
+
+/** Bloc <Address> d'une personne. */
+const addressXml = (p) => {
+  const [title, firstname, lastname] = fitCombined(
+    [p.title || '', p.firstname || '', p.lastname || ''], 32
+  );
+  const { houseNo, streetname } = splitStreet(p.addressLine);
+  const [street, house] = fitCombined([streetname, houseNo], 40);
+
+  return `<Title>${esc(title)}</Title>` +
+    `<Firstname>${esc(firstname)}</Firstname>` +
+    `<Lastname>${esc(lastname)}</Lastname>` +
+    `<Streetname>${esc(street)}</Streetname>` +
+    `<HouseNo>${esc(house)}</HouseNo>` +
+    `<CountryCode>${esc((p.countryCode || 'FR').toUpperCase().substring(0, 2))}</CountryCode>` +
+    `<PostCode>${esc(String(p.postcode || '').substring(0, 10))}</PostCode>` +
+    `<City>${esc(cleanCity(p.city))}</City>` +
+    `<PhoneNo>${esc(String(p.phone || '').substring(0, 20))}</PhoneNo>` +
+    `<MobileNo>${esc(String(p.mobile || '').substring(0, 20))}</MobileNo>` +
+    `<Email>${esc(String(p.email || '').substring(0, 70))}</Email>`;
+};
+
+/**
+ * Construit le corps XML de la demande d'étiquette.
+ *
+ * Fonction pure : c'est elle que le banc de non-régression vérifie, sans réseau.
+ *
+ * @param {import('./contract').CreateLabelInput} input
+ * @returns {string} XML
+ */
+const buildLabelPayload = ({ orderNumber, receiver, account, weightGrams, options = {} }) => {
+  const c = account.credentials;
+  const s = account.settings;
+  const sender = s.sender || {};
+
+  const deliveryMode = options.deliveryMode || '24R';
+  const relay = options.relayPoint || {};
+
+  // Location = pays du point relais + son code. JAMAIS « FR » en dur : nos
+  // points sont aussi en Belgique et au Luxembourg.
+  const location = relay.id
+    ? `${String(relay.country || 'FR').toUpperCase()}-${String(relay.id).toUpperCase()}`
+    : '';
+
+  // OrderNo n'accepte que [0-9A-Z_-], 15 max.
+  const orderNo = String(orderNumber).toUpperCase().replace(/[^0-9A-Z_-]/g, '').substring(0, 15);
+
+  return `<?xml version="1.0" encoding="utf-8"?>
+<ShipmentCreationRequest xmlns="http://www.example.org/Request">
+<Context><Login>${esc(c.login)}</Login><Password>${esc(c.password)}</Password>` +
+    `<CustomerId>${esc(c.customer_id)}</CustomerId>` +
+    `<Culture>${esc(s.culture || 'fr-FR')}</Culture>` +
+    `<VersionAPI>${esc(s.version_api || '1.0')}</VersionAPI></Context>
+<OutputOptions><OutputFormat>${esc(s.output_format || '10x15')}</OutputFormat>` +
+    `<OutputType>${esc(s.output_type || 'PdfUrl')}</OutputType></OutputOptions>
+<ShipmentsList><Shipment>` +
+    `<OrderNo>${esc(orderNo)}</OrderNo>` +
+    `<ParcelCount>1</ParcelCount>` +
+    `<CollectionMode Mode="${esc(s.collection_mode || 'CCC')}"/>` +
+    `<DeliveryMode Mode="${esc(deliveryMode)}"${location ? ` Location="${esc(location)}"` : ''}/>` +
+    `<Parcels><Parcel><Content>${esc((s.parcel_content || 'Cigarette electronique').substring(0, 40))}</Content>` +
+    `<Weight Value="${Number(weightGrams)}" Unit="gr"/></Parcel></Parcels>` +
+    `<Sender><Address>${addressXml({ ...sender, addressLine: sender.address_line || `${sender.house_no || ''} ${sender.streetname || ''}`.trim(), countryCode: sender.country_code, postcode: sender.postcode })}</Address></Sender>` +
+    `<Recipient><Address>${addressXml({
+      title: receiver.title,
+      firstname: sanitizeAddressField(receiver.first_name || receiver.name || ''),
+      lastname: sanitizeAddressField(receiver.last_name || ''),
+      addressLine: sanitizeAddressField(receiver.address || ''),
+      countryCode: receiver.country,
+      postcode: receiver.postcode,
+      city: receiver.city,
+      phone: receiver.phone,
+      mobile: receiver.phone,
+      email: receiver.email
+    })}</Address></Recipient>` +
+    `</Shipment></ShipmentsList></ShipmentCreationRequest>`;
+};
+
+/**
+ * Retire tout secret d'une réponse avant de la journaliser.
+ * L'API renvoie `contextField.passwordField` **en clair**.
+ */
+const redact = (data) => {
+  if (!data || typeof data !== 'object') return data;
+  const copy = JSON.parse(JSON.stringify(data));
+  if (copy.contextField) {
+    if (copy.contextField.passwordField) copy.contextField.passwordField = '***';
+    if (copy.contextField.loginField) copy.contextField.loginField = '***';
+  }
+  return copy;
+};
+
+/** Première erreur de `statusListField`, ou null. */
+const findError = (data) => (data?.statusListField || [])
+  .find(s => String(s?.levelField || '').toLowerCase().includes('error')) || null;
+
+/**
+ * Demande une étiquette à Mondial Relay.
+ *
+ * @param {import('./contract').CreateLabelInput} input
+ * @returns {Promise<import('./contract').CreateLabelResult>}
+ */
+const createLabel = async ({ orderNumber, receiver, account, weightGrams, options = {} }) => {
+  assertAccountComplete(account, {
+    credentials: ['login', 'password', 'customer_id'],
+    settings: ['api_url']
+  });
+
+  if (!options.relayPoint?.id) {
+    const err = new Error(
+      `Point relais absent pour la commande ${orderNumber} — Mondial Relay ne peut pas étiqueter sans point de retrait`
+    );
+    err.statusCode = 400;
+    throw err;
+  }
+
+  const xml = buildLabelPayload({ orderNumber, receiver, account, weightGrams, options });
+
+  console.log(`[${LOG_TAG}] Appel API pour commande`, orderNumber,
+    '— mode:', options.deliveryMode || '24R',
+    '| point:', `${options.relayPoint.country}-${options.relayPoint.id}`,
+    '| poids:', weightGrams, 'g');
+
+  const res = await axios.post(account.settings.api_url, xml, {
+    headers: { 'Content-Type': 'application/xml' },
+    timeout: 30000,
+    validateStatus: () => true
+  });
+
+  // Le code HTTP ne dit rien : Mondial Relay répond 200 y compris sur refus.
+  const error = findError(res.data);
+  if (error) {
+    console.error(`[${LOG_TAG}] Refus ${error.codeField}:`, error.messageField);
+    const err = new Error(`Mondial Relay ${error.codeField} : ${error.messageField}`);
+    err.statusCode = 400;
+    err.body = { code: error.codeField, message: error.messageField };
+    throw err;
+  }
+
+  const shipment = res.data?.shipmentsListField?.[0];
+  const trackingNumber = shipment?.shipmentNumberField || null;
+  const labelUrl = shipment?.labelListField?.labelField?.outputField || null;
+
+  if (!trackingNumber || !labelUrl) {
+    console.error(`[${LOG_TAG}] Réponse inattendue:`, JSON.stringify(redact(res.data)).substring(0, 500));
+    const err = new Error('Réponse Mondial Relay sans numéro d\'expédition ou sans étiquette');
+    err.statusCode = 502;
+    throw err;
+  }
+
+  // L'étiquette est une URL. On la télécharge : shipment_labels stocke du base64,
+  // et la réimpression doit marcher même si Mondial Relay est indisponible.
+  const pdf = await axios.get(labelUrl, { responseType: 'arraybuffer', timeout: 30000 });
+  const pdfBase64 = Buffer.from(pdf.data).toString('base64');
+
+  return { carrierOrderId: trackingNumber, trackingNumber, pdfBase64 };
+};
+
+/**
+ * Mondial Relay ne sait pas annuler par API : Connect ne fait que créer.
+ * On le dit franchement plutôt que de laisser croire à une annulation.
+ */
+const cancelWindow = () => ({
+  cancellable: false,
+  reason: "Mondial Relay ne permet pas d'annuler une étiquette par API — une étiquette non utilisée n'est pas facturée"
+});
+
+const cancelLabel = async () => {
+  const err = new Error("L'API Mondial Relay ne permet pas l'annulation d'une étiquette");
+  err.statusCode = 400;
+  throw err;
+};
+
+module.exports = assertAdapter({
+  code: 'mondial_relay',
+  accountCode: 'sandbox',
+  methodCode: '24R',
+  label: CARRIER_LABEL,
+  logTag: LOG_TAG,
+  bmsShipmentTitle: 'Mondial Relay',
+  resolveWeight,
+  createLabel,
+  cancelLabel,
+  cancelWindow,
+  buildLabelPayload,
+  redact
+});
