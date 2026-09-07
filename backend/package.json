@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
-    "test": "node tests/parsers.test.js"
+    "test": "node tests/parsers.test.js && node tests/carriers.test.js"
   },
   "keywords": [],
   "author": "",

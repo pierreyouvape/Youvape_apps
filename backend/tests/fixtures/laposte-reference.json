@@ -1,0 +1,403 @@
+{
+  "payloads": [
+    {
+      "label": "nominal",
+      "orderNumber": "123456",
+      "receiver": {
+        "name": "Jean Dupont",
+        "company": null,
+        "address": "12 rue des Lilas",
+        "address_2": null,
+        "postcode": "34000",
+        "city": "Montpellier",
+        "phone": "0612345678",
+        "email": "j@d.fr"
+      },
+      "payload": {
+        "order": {
+          "custPurchaseOrderNumber": "123456",
+          "invoicing": {
+            "contractNumber": "D-1153498-1",
+            "custAccNumber": "2109320",
+            "custInvoice": "2109320"
+          },
+          "offer": {
+            "offerCode": "3125",
+            "masterOutputOptions": {
+              "visualFormatCode": "rollA"
+            },
+            "products": [
+              {
+                "productCode": "K7",
+                "productOptions": {
+                  "weight": 20,
+                  "deliveryTrackingFlag": true
+                },
+                "sender": {
+                  "email": "contact@youvape.fr",
+                  "phone": "0499782453",
+                  "address": {
+                    "name1": "SAS EMC",
+                    "add4": "580 avenue de l aube rouge",
+                    "zipcode": "34170",
+                    "town": "Castelnau le lez",
+                    "countryCode": "250"
+                  }
+                },
+                "receiver": {
+                  "email": "j@d.fr",
+                  "phone": "0612345678",
+                  "address": {
+                    "name1": "Jean Dupont",
+                    "add4": "12 rue des Lilas",
+                    "zipcode": "34000",
+                    "town": "Montpellier",
+                    "countryCode": "250"
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "label": "societe + complement d adresse",
+      "orderNumber": "123456",
+      "receiver": {
+        "name": "Marie Curie",
+        "company": "SAS Radium",
+        "address": "5 bd Pasteur",
+        "address_2": "Bat B, 3e étage",
+        "postcode": "75015",
+        "city": "Paris",
+        "phone": "",
+        "email": ""
+      },
+      "payload": {
+        "order": {
+          "custPurchaseOrderNumber": "123456",
+          "invoicing": {
+            "contractNumber": "D-1153498-1",
+            "custAccNumber": "2109320",
+            "custInvoice": "2109320"
+          },
+          "offer": {
+            "offerCode": "3125",
+            "masterOutputOptions": {
+              "visualFormatCode": "rollA"
+            },
+            "products": [
+              {
+                "productCode": "K7",
+                "productOptions": {
+                  "weight": 20,
+                  "deliveryTrackingFlag": true
+                },
+                "sender": {
+                  "email": "contact@youvape.fr",
+                  "phone": "0499782453",
+                  "address": {
+                    "name1": "SAS EMC",
+                    "add4": "580 avenue de l aube rouge",
+                    "zipcode": "34170",
+                    "town": "Castelnau le lez",
+                    "countryCode": "250"
+                  }
+                },
+                "receiver": {
+                  "email": "",
+                  "phone": "",
+                  "address": {
+                    "name1": "Marie Curie",
+                    "add2": "SAS Radium",
+                    "add3": "Bat B, 3e étage",
+                    "add4": "5 bd Pasteur",
+                    "zipcode": "75015",
+                    "town": "Paris",
+                    "countryCode": "250"
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "label": "entites HTML et typographie",
+      "orderNumber": "123456",
+      "receiver": {
+        "name": "L&eacute;a O&rsquo;Brien",
+        "company": "Café &amp; Co",
+        "address": "3 allée des Chênes &#8211; lot 2",
+        "address_2": "« Résidence »",
+        "postcode": "69003",
+        "city": "Lyon 3e",
+        "phone": null,
+        "email": null
+      },
+      "payload": {
+        "order": {
+          "custPurchaseOrderNumber": "123456",
+          "invoicing": {
+            "contractNumber": "D-1153498-1",
+            "custAccNumber": "2109320",
+            "custInvoice": "2109320"
+          },
+          "offer": {
+            "offerCode": "3125",
+            "masterOutputOptions": {
+              "visualFormatCode": "rollA"
+            },
+            "products": [
+              {
+                "productCode": "K7",
+                "productOptions": {
+                  "weight": 20,
+                  "deliveryTrackingFlag": true
+                },
+                "sender": {
+                  "email": "contact@youvape.fr",
+                  "phone": "0499782453",
+                  "address": {
+                    "name1": "SAS EMC",
+                    "add4": "580 avenue de l aube rouge",
+                    "zipcode": "34170",
+                    "town": "Castelnau le lez",
+                    "countryCode": "250"
+                  }
+                },
+                "receiver": {
+                  "email": "",
+                  "phone": "",
+                  "address": {
+                    "name1": "Léa O'Brien",
+                    "add2": "Café & Co",
+                    "add3": "« Résidence »",
+                    "add4": "3 allée des Chênes - lot 2",
+                    "zipcode": "69003",
+                    "town": "Lyon 3e",
+                    "countryCode": "250"
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "label": "champs vides",
+      "orderNumber": "123456",
+      "receiver": {
+        "name": "",
+        "company": null,
+        "address": null,
+        "address_2": null,
+        "postcode": null,
+        "city": null,
+        "phone": null,
+        "email": null
+      },
+      "payload": {
+        "order": {
+          "custPurchaseOrderNumber": "123456",
+          "invoicing": {
+            "contractNumber": "D-1153498-1",
+            "custAccNumber": "2109320",
+            "custInvoice": "2109320"
+          },
+          "offer": {
+            "offerCode": "3125",
+            "masterOutputOptions": {
+              "visualFormatCode": "rollA"
+            },
+            "products": [
+              {
+                "productCode": "K7",
+                "productOptions": {
+                  "weight": 20,
+                  "deliveryTrackingFlag": true
+                },
+                "sender": {
+                  "email": "contact@youvape.fr",
+                  "phone": "0499782453",
+                  "address": {
+                    "name1": "SAS EMC",
+                    "add4": "580 avenue de l aube rouge",
+                    "zipcode": "34170",
+                    "town": "Castelnau le lez",
+                    "countryCode": "250"
+                  }
+                },
+                "receiver": {
+                  "email": "",
+                  "phone": "",
+                  "address": {
+                    "name1": "",
+                    "add4": "",
+                    "zipcode": "",
+                    "town": "",
+                    "countryCode": "250"
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "label": "caracteres de controle",
+      "orderNumber": "123456",
+      "receiver": {
+        "name": "Test\u0000\u000bNul",
+        "company": null,
+        "address": "RueX",
+        "address_2": "",
+        "postcode": "13001",
+        "city": "  Marseille  ",
+        "phone": "04",
+        "email": "a@b.c"
+      },
+      "payload": {
+        "order": {
+          "custPurchaseOrderNumber": "123456",
+          "invoicing": {
+            "contractNumber": "D-1153498-1",
+            "custAccNumber": "2109320",
+            "custInvoice": "2109320"
+          },
+          "offer": {
+            "offerCode": "3125",
+            "masterOutputOptions": {
+              "visualFormatCode": "rollA"
+            },
+            "products": [
+              {
+                "productCode": "K7",
+                "productOptions": {
+                  "weight": 20,
+                  "deliveryTrackingFlag": true
+                },
+                "sender": {
+                  "email": "contact@youvape.fr",
+                  "phone": "0499782453",
+                  "address": {
+                    "name1": "SAS EMC",
+                    "add4": "580 avenue de l aube rouge",
+                    "zipcode": "34170",
+                    "town": "Castelnau le lez",
+                    "countryCode": "250"
+                  }
+                },
+                "receiver": {
+                  "email": "a@b.c",
+                  "phone": "04",
+                  "address": {
+                    "name1": "TestNul",
+                    "add4": "RueX",
+                    "zipcode": "13001",
+                    "town": "Marseille",
+                    "countryCode": "250"
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "sanitize": [
+    {
+      "in": "&#8211;",
+      "out": "-"
+    },
+    {
+      "in": "&amp;",
+      "out": "&"
+    },
+    {
+      "in": "&eacute;",
+      "out": "é"
+    },
+    {
+      "in": "&nbsp;",
+      "out": ""
+    },
+    {
+      "in": "&rsquo;",
+      "out": "'"
+    },
+    {
+      "in": "&inconnu;",
+      "out": "&inconnu;"
+    },
+    {
+      "in": "&#x2013;",
+      "out": "-"
+    },
+    {
+      "in": "—X—",
+      "out": "-X-"
+    },
+    {
+      "in": "O’Brien",
+      "out": "O'Brien"
+    },
+    {
+      "in": "“cite”",
+      "out": "\"cite\""
+    },
+    {
+      "in": "a b",
+      "out": "a b"
+    },
+    {
+      "in": "a−b",
+      "out": "a-b"
+    },
+    {
+      "in": "  espaces   multiples  ",
+      "out": "espaces multiples"
+    },
+    {
+      "in": "\u0000debut",
+      "out": "debut"
+    },
+    {
+      "in": "fin",
+      "out": "fin"
+    },
+    {
+      "in": "v\u000bt",
+      "out": "vt"
+    },
+    {
+      "in": "&#999999999;",
+      "out": ""
+    },
+    {
+      "in": "",
+      "out": ""
+    },
+    {
+      "in": "déjà propre",
+      "out": "déjà propre"
+    },
+    {
+      "in": "L&eacute;a &amp; C&ocirc;me",
+      "out": "Léa & Côme"
+    },
+    {
+      "in": "‐tiret‐",
+      "out": "-tiret-"
+    },
+    {
+      "in": "A―Z",
+      "out": "A-Z"
+    }
+  ]
+}
