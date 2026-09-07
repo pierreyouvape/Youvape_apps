@@ -71,23 +71,52 @@ y compris avec des identifiants bidon (constaté le 07/09/2026).
 `DeliveryMode` et `CollectionMode` portent leurs valeurs en **attributs**, pas en
 éléments. Idem pour `Weight`, `Length`, `Width`, `Depth`.
 
-### Modes de livraison
+### Modes de livraison — **vérifié sur le sandbox le 07/09/2026**
 
-`Mode` ∈ `LCC` · `HOM` · `24R` · `24L` · `XOH`
+`Mode` ∈ `LCC` · `HOM` · `24R` · `24L` · `XOH`. Tout autre code renvoie l'erreur
+`10024 « Le produit de livraison n'est pas autorisé »` : ce sont les seuls produits
+auxquels le contrat donne droit (22 codes plausibles essayés, tous refusés).
 
-Correspondance avec nos commandes — **se fier à `orders.relay_point->>'service'`,
-pas au libellé `shipping_method`** : ce libellé a déjà changé une fois (« Mondial
-Relay 3 à 6 jours ouvrés » remplacé le 03/09/2026 par « Point Relais » et
-« Lockers »), et les anciennes commandes portent encore l'ancien.
+| Mode | Ce que c'est | Location |
+|---|---|---|
+| **`24R`** | **Point Relais L — le produit à utiliser** | obligatoire |
+| `24L` | Point Relais **XL** (variante de TAILLE) | obligatoire, et le point doit être XL |
+| `LCC` | Livraison à l'enseigne | **refuse** tout point de retrait (`10074`) |
+| `HOM` | Domicile | exige les dimensions du colis (`10106`) |
+| `XOH` | D+1 | — |
 
-| `relay_point->>'service'` | `Mode` |
-|---|---|
-| `mondial_relay_point_relais` | `24R` |
-| `mondial_relay_lockers` | `24L` |
+⚠️ **`24L` n'est PAS le mode « locker ».** C'est une variante de taille. Un point
+Relais Standard comme une Consigne s'y font refuser :
+`10075 « Le type de point de retrait <type> n'est pas compatible avec le produit
+Point Relais XL »`. Seuls les points eux-mêmes XL l'acceptent.
 
-⚠️ **`Location` est préfixé du pays du point relais** : `FR-022112`, et non
-`022112`. Nos points sont en **FR, BE et LU** — prendre `relay_point->>'country'`,
-jamais « FR » en dur. Nos identifiants font 6 chiffres, zéros compris.
+⚠️ **`24R` couvre les consignes (lockers) aussi bien que les points relais.**
+Vérifié sur des codes réels tirés de nos commandes : `FR-016834` et `FR-028548`
+(service `mondial_relay_lockers`) passent en `24R`. **Les deux modes de livraison
+du site — Point Relais et Lockers — se traduisent donc par le même `24R`.**
+
+Certains points renvoient `10055 « Le plan de tri est introuvable »` : la
+combinaison produit / pays / code postal destinataire / point n'est pas desservie.
+Ce n'est pas une erreur de code, c'est un refus métier — à remonter tel quel au
+préparateur, qui devra faire choisir un autre point.
+
+### Routage : ne pas déduire, mapper
+
+⚠️ **Ne pas router sur `relay_point->>'service'`** : le champ est renseigné par
+yousync et se trompe déjà — 256 commandes portent le réseau `mondial_relay` alors
+que le libellé WooCommerce dit « Bpost Relais », et Colissimo n'a jamais de
+`service`. S'y fier enverrait des colis Bpost chez Mondial Relay.
+
+⚠️ **Ne pas router sur le libellé en dur non plus** : « Mondial Relay 3 à 6 jours
+ouvrés » a été remplacé le 03/09/2026 par « Point Relais » et « Lockers ». Un
+libellé nouveau doit produire une alerte, pas une étiquette au hasard.
+
+Le routage passe par une table de correspondance **dénomination WooCommerce →
+transporteur**, éditable dans les réglages de l'app. Une dénomination inconnue
+bloque le packing avec un message demandant à un responsable de la mapper. Les
+modes sans étiquette API (« Retrait Magasin », 284 commandes/90 j) doivent y être
+déclarés explicitement comme « pas d'étiquette », sans quoi l'alerte se déclenche
+tous les jours et les préparateurs apprennent à l'ignorer.
 
 ### Contraintes de champs (schéma officiel)
 
@@ -121,7 +150,11 @@ statusListField[].levelField / .messageField                 → erreurs
 ```
 
 Une erreur se lit dans `statusListField` avec un `levelField` contenant `error` —
-**le HTTP peut rester 200**, il faut inspecter le corps.
+**le HTTP reste 200**, vérifié : toutes les erreurs ci-dessus sont arrivées en 200.
+Un succès porte `codeField = "0"`.
+
+⚠️ **La réponse renvoie le mot de passe en clair** dans `contextField.passwordField`.
+Ne jamais journaliser la réponse brute — la caviarder avant tout `console.log`.
 
 ⚠️ `PdfUrl` rend une **URL**, pas du base64. `shipment_labels.pdf_data` stocke du
 base64 : l'adaptateur devra télécharger le PDF pour que la réimpression continue de
