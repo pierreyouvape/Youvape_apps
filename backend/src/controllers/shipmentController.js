@@ -89,18 +89,23 @@ const createShipmentLabel = async ({ adapter, orderNumber, receiver, packedBy, a
  */
 const confirmShipmentInBms = async (adapter, orderNumber, trackingNumber) => {
   try {
+    // `tracking_number` n'est pas obligatoire côté BMS (le champ `tracking` est
+    // même déclaré nullable). Un retrait magasin n'a aucun numéro de suivi :
+    // on envoie le titre seul plutôt que d'inventer un numéro qui polluerait
+    // les recherches de colis.
     await bmsApiModel.apiCall(`/sales/order/${orderNumber}/ship?ref=true`, 'POST', {
       tracking: {
         title: adapter.bmsShipmentTitle,
-        tracking_number: trackingNumber
+        ...(trackingNumber ? { tracking_number: trackingNumber } : {})
       }
     });
-    console.log('[BMS] Expédition confirmée pour commande', orderNumber, 'tracking:', trackingNumber);
+    console.log('[BMS] Expédition confirmée pour commande', orderNumber,
+      'tracking:', trackingNumber || '(sans numéro de suivi)');
   } catch (bmsError) {
     console.error('[BMS] Erreur confirmation expédition commande', orderNumber, ':', bmsError.message);
     sendAlert(
       `BUG VPS : commande N°${orderNumber} non confirmee en expedition BMS`,
-      `Bonjour,\n\nL'expedition de la commande N°${orderNumber} avec le numero de suivi : ${trackingNumber} n'a pas pu etre confirmee a BMS pour la raison suivante :\n\n${bmsError.message}\n\nPensez a corriger cela.`
+      `Bonjour,\n\nL'expedition de la commande N°${orderNumber} avec le numero de suivi : ${trackingNumber || '(aucun - retrait magasin)'} n'a pas pu etre confirmee a BMS pour la raison suivante :\n\n${bmsError.message}\n\nPensez a corriger cela.`
     );
   }
 };
@@ -215,9 +220,10 @@ const generateForOrder = async (req, res) => {
       }
     });
 
-    // Le retrait magasin n'est pas une expédition : la confirmer à BMS ferait
-    // mentir les statistiques de transport.
-    if (trackingNumber && adapter.confirmsShipmentInBms !== false) {
+    // Toute étiquette émise sort du stock : BMS doit le savoir, y compris pour
+    // un retrait magasin, qui n'a pourtant aucun numéro de suivi. La condition
+    // porte sur l'adaptateur, pas sur la présence d'un numéro.
+    if (adapter.confirmsShipmentInBms !== false) {
       await confirmShipmentInBms(adapter, orderNumber, trackingNumber);
     }
 

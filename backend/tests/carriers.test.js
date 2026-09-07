@@ -23,6 +23,7 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 
+const { PDFDocument } = require('pdf-lib');
 const laposte = require('../src/services/carriers/laposteAdapter');
 const { sanitizeAddressField } = require('../src/services/carriers/addressFields');
 const { buildUserMessage } = require('../src/services/carriers/errors');
@@ -34,13 +35,26 @@ const reference = JSON.parse(
 );
 
 let failures = 0;
+// Les tests asynchrones doivent être ATTENDUS, sinon une promesse rejetée
+// s'échappe du try/catch et le test s'affiche « ok » alors qu'il a échoué.
+// Un banc qui ment est pire que pas de banc : on collecte les promesses ici et
+// on les attend avant de conclure.
+const pending = [];
 function test(name, fn) {
-  try {
-    fn();
-    console.log(`  ok   ${name}`);
-  } catch (err) {
+  const ok = () => console.log(`  ok   ${name}`);
+  const ko = (err) => {
     failures++;
     console.error(`  FAIL ${name}\n       ${err.message}`);
+  };
+  try {
+    const out = fn();
+    if (out && typeof out.then === 'function') {
+      pending.push(out.then(ok, ko));
+    } else {
+      ok();
+    }
+  } catch (err) {
+    ko(err);
   }
 }
 
@@ -319,14 +333,43 @@ console.log('\nRetrait magasin (adaptateur interne)');
 
 const interne = require('../src/services/carriers/interneAdapter');
 
-test('ne réclame ni contrat ni confirmation BMS', () => {
+test('ne réclame aucun contrat : il n\'appelle aucune API', () => {
   assert.strictEqual(interne.requiresAccount, false);
-  assert.strictEqual(interne.confirmsShipmentInBms, false);
+});
+
+test('confirme quand même l\'expédition à BMS : le colis sort du stock', () => {
+  assert.notStrictEqual(interne.confirmsShipmentInBms, false);
+  assert.strictEqual(interne.bmsShipmentTitle, 'Retrait magasin');
+});
+
+test('l\'étiquette met le NOM en avant, pas le numéro de commande', async () => {
+  // On cherche le colis au nom du client qui se présente au comptoir ; le
+  // numéro ne sert qu'à départager deux commandes du même client.
+  const { pdfBase64, trackingNumber } = await interne.createLabel({
+    orderNumber: '1259103',
+    receiver: { first_name: 'Jean-Baptiste', last_name: 'Dupont-Lachapelle' }
+  });
+  assert.strictEqual(trackingNumber, null, 'un numéro de suivi a été inventé');
+  const pdf = await PDFDocument.load(Buffer.from(pdfBase64, 'base64'));
+  const [page] = pdf.getPages();
+  // 10 × 15 cm en points PDF.
+  assert.ok(Math.abs(page.getWidth() - 283.46) < 1, `largeur ${page.getWidth()}`);
+  assert.ok(Math.abs(page.getHeight() - 425.2) < 1, `hauteur ${page.getHeight()}`);
+});
+
+test('un nom très long rétrécit au lieu de déborder', async () => {
+  const { pdfBase64 } = await interne.createLabel({
+    orderNumber: '1',
+    receiver: { first_name: 'Marie-Christine', last_name: 'Vandenbroucke-Vermeulen' }
+  });
+  assert.ok(pdfBase64.length > 100);
 });
 
 test('ne déclare aucun poids : rien n\'est transporté', async () => {
   assert.strictEqual(await interne.resolveWeight({}), 0);
 });
 
-console.log(failures === 0 ? '\nTous les tests passent.' : `\n${failures} test(s) en échec.`);
-process.exit(failures === 0 ? 0 : 1);
+Promise.all(pending).then(() => {
+  console.log(failures === 0 ? '\nTous les tests passent.' : `\n${failures} test(s) en échec.`);
+  process.exit(failures === 0 ? 0 : 1);
+});

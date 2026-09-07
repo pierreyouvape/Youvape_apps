@@ -33,9 +33,10 @@ const resolveWeight = async () => 0;
 /**
  * Dessine l'étiquette de retrait.
  *
- * Sobre et grande : elle est lue à distance, dans une réserve, par quelqu'un qui
- * cherche un carton parmi d'autres. Le numéro de commande domine parce que c'est
- * lui qu'on recherche ; le nom vient confirmer.
+ * Elle est lue dans la réserve, par quelqu'un qui cherche le colis d'un client
+ * qui vient d'arriver au comptoir. **On cherche au nom, pas au numéro de
+ * commande** : c'est le nom qui domine l'étiquette, le numéro ne sert qu'à
+ * lever un doute entre deux commandes du même client.
  *
  * @param {import('./contract').CreateLabelInput} input
  * @returns {Promise<import('./contract').CreateLabelResult>}
@@ -52,29 +53,45 @@ const createLabel = async ({ orderNumber, receiver }) => {
     page.drawText(t, { x: (WIDTH - w) / 2, y, size, font });
   };
 
-  centre('RETRAIT MAGASIN', bold, 16, HEIGHT - 45);
-  page.drawLine({ start: { x: 25, y: HEIGHT - 60 }, end: { x: WIDTH - 25, y: HEIGHT - 60 }, thickness: 1.2 });
+  /** Rétrécit jusqu'à tenir sur la largeur : un nom long doit rester entier. */
+  const centreAjuste = (text, font, tailleMax, tailleMin, y) => {
+    const t = sanitizeAddressField(String(text ?? '')) || '';
+    let taille = tailleMax;
+    while (taille > tailleMin && font.widthOfTextAtSize(t, taille) > WIDTH - 30) taille -= 1;
+    centre(t, font, taille, y);
+    return taille;
+  };
 
-  // Le numéro de commande, en très grand : c'est le critère de recherche.
-  centre(`#${orderNumber}`, bold, 34, HEIGHT - 115);
+  centre('RETRAIT MAGASIN', bold, 14, HEIGHT - 40);
+  page.drawLine({ start: { x: 20, y: HEIGHT - 54 }, end: { x: WIDTH - 20, y: HEIGHT - 54 }, thickness: 1.2 });
 
-  const nom = [receiver.first_name, receiver.last_name].filter(Boolean).join(' ').trim()
-    || receiver.name || '';
-  // Rétrécir plutôt que déborder : un nom long doit rester lisible en entier.
-  let taille = 20;
-  while (taille > 9 && bold.widthOfTextAtSize(sanitizeAddressField(nom) || '', taille) > WIDTH - 40) {
-    taille -= 1;
+  // Le bloc est centré verticalement : l'étiquette se lit à un mètre, dans une
+  // réserve, sur un carton posé de travers. Tout tasser en haut gâcherait la
+  // moitié de la surface utile.
+  const nom = (receiver.last_name || '').trim().toUpperCase();
+  const prenom = (receiver.first_name || '').trim();
+
+  if (nom && prenom) {
+    centreAjuste(nom, bold, 34, 12, 250);
+    centreAjuste(prenom, bold, 24, 10, 210);
+  } else {
+    // Repli : certaines commandes n'ont qu'un nom complet non séparé.
+    centreAjuste(nom || prenom || receiver.name || '(sans nom)', bold, 32, 10, 230);
   }
-  centre(nom, bold, taille, HEIGHT - 165);
 
-  if (receiver.company) centre(receiver.company, regular, 12, HEIGHT - 190);
+  if (receiver.company) centreAjuste(receiver.company, regular, 13, 8, 175);
 
+  // Le numéro de commande, discret : il ne sert qu'à départager deux commandes
+  // du même client.
+  page.drawLine({ start: { x: 60, y: 140 }, end: { x: WIDTH - 60, y: 140 }, thickness: 0.5 });
+  centre(`Commande n° ${orderNumber}`, regular, 13, 115);
   centre(new Date().toLocaleDateString('fr-FR'), regular, 10, 30);
 
   const pdfBase64 = Buffer.from(await doc.save()).toString('base64');
   console.log(`[${LOG_TAG}] Étiquette de retrait pour la commande`, orderNumber);
 
-  // Ni numéro de suivi ni identifiant transporteur : il n'y a pas de transport.
+  // Pas de numéro de suivi : il n'y a pas de transport. BMS est quand même
+  // informé de la sortie de stock, cf. shipmentController.
   return { carrierOrderId: null, trackingNumber: null, pdfBase64 };
 };
 
@@ -92,10 +109,11 @@ module.exports = assertAdapter({
   methodCode: 'retrait_magasin',
   label: CARRIER_LABEL,
   logTag: LOG_TAG,
-  // Aucune expédition à confirmer : le colis ne quitte pas le magasin.
+  // Le colis ne part pas chez un transporteur, mais il sort du stock : BMS doit
+  // le savoir comme pour n'importe quelle expédition. Il n'aura simplement
+  // aucun numéro de suivi.
   bmsShipmentTitle: 'Retrait magasin',
   requiresAccount: false,
-  confirmsShipmentInBms: false,
   resolveWeight,
   createLabel,
   cancelLabel,
