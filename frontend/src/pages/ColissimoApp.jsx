@@ -642,11 +642,16 @@ export default function ColissimoApp() {
   }
 
   async function handleFile(file) {
-    if (!file || file.type !== 'application/pdf') { setError('Fichier PDF requis.'); return; }
+    const isZip = file && /\.zip$/i.test(file.name);
+    if (!file || (file.type !== 'application/pdf' && !isZip)) { setError('Fichier PDF ou ZIP Colissimo Box requis.'); return; }
     setCurrentFile(file); setError(null); setResult(null); setSaveState(null); setApplyResult(null); setApplyProgress(0); setCurrentInvoiceId(null); setTariffsAppliedAt(null); setLoading(true);
     try {
-      const fd = new FormData(); fd.append('pdf', file);
-      const { data } = await axios.post(`${API_URL}/colissimo/analyze`, fd, { headers: { Authorization: `Bearer ${token}` } });
+      // Depuis août 2026 le PDF est agrégé (aucun n° de suivi) : le détail au colis
+      // arrive dans le ZIP CSV de Colissimo Box.
+      const fd = new FormData();
+      fd.append(isZip ? 'zip' : 'pdf', file);
+      const url = isZip ? `${API_URL}/colissimo/analyze-csv` : `${API_URL}/colissimo/analyze`;
+      const { data } = await axios.post(url, fd, { headers: { Authorization: `Bearer ${token}` }, timeout: 300000 });
       if (!data.success) throw new Error(data.error || 'Erreur analyse');
       setResult(data); setTab('poids');
       if (data.invoiceNumber) {
@@ -661,8 +666,12 @@ export default function ColissimoApp() {
     if (!currentFile) return;
     setExporting(true);
     try {
-      const fd = new FormData(); fd.append('pdf', currentFile);
-      const resp = await axios.post(`${API_URL}/colissimo/export-excel`, fd, { headers: { Authorization: `Bearer ${token}` }, responseType: 'blob' });
+      const isZip = /\.zip$/i.test(currentFile.name);
+      const fd = new FormData(); fd.append(isZip ? 'zip' : 'pdf', currentFile);
+      const resp = await axios.post(
+        `${API_URL}/colissimo/${isZip ? 'export-excel-csv' : 'export-excel'}`,
+        fd, { headers: { Authorization: `Bearer ${token}` }, responseType: 'blob', timeout: 300000 }
+      );
       const url = URL.createObjectURL(resp.data);
       const a = document.createElement('a');
       a.href = url; a.download = result?.invoiceNumber ? `Colissimo_${result.invoiceNumber}.xlsx` : 'Colissimo_analyse.xlsx';
@@ -757,10 +766,10 @@ export default function ColissimoApp() {
           onClick={() => fileRef.current?.click()}
           style={{ border: `2px dashed ${dragging ? C.accent : C.greyB}`, borderRadius: 14, background: dragging ? C.accentL : C.grey, padding: '36px 24px', textAlign: 'center', cursor: 'pointer', marginBottom: 22, transition: 'all .15s' }}
         >
-          <input ref={fileRef} type="file" accept=".pdf" style={{ display: 'none' }} onChange={e => handleFile(e.target.files[0])} />
+          <input ref={fileRef} type="file" accept=".pdf,.zip" style={{ display: 'none' }} onChange={e => handleFile(e.target.files[0])} />
           <div style={{ fontSize: 36, marginBottom: 10 }}>📦</div>
-          <div style={{ fontWeight: 700, fontSize: 14.5, color: C.dark }}>{loading ? 'Analyse en cours…' : 'Déposer la facture PDF ici'}</div>
-          <div style={{ color: C.greyT, fontSize: 12.5, marginTop: 5 }}>ou cliquer pour sélectionner</div>
+          <div style={{ fontWeight: 700, fontSize: 14.5, color: C.dark }}>{loading ? 'Analyse en cours…' : 'Déposer la facture ici'}</div>
+          <div style={{ color: C.greyT, fontSize: 12.5, marginTop: 5 }}>PDF (avant août 2026) ou ZIP Colissimo Box (CSV au colis) — ou cliquer pour sélectionner</div>
           {currentFile && !loading && <div style={{ marginTop: 8, color: C.accent, fontSize: 12.5, fontWeight: 600 }}>📎 {currentFile.name}</div>}
           {loading && <div style={{ marginTop: 12 }}><div style={{ display: 'inline-block', width: 26, height: 26, border: `3px solid ${C.accentL}`, borderTop: `3px solid ${C.accent}`, borderRadius: '50%', animation: 'spin .8s linear infinite' }} /><style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style></div>}
         </div>

@@ -3,7 +3,9 @@ const router = express.Router();
 const colissimoController = require('../controllers/colissimoController');
 
 router.post('/analyze',      ...colissimoController.analyze);
+router.post('/analyze-csv',  ...colissimoController.analyzeCsv);
 router.post('/export-excel', ...colissimoController.exportExcel);
+router.post('/export-excel-csv', ...colissimoController.exportExcelCsv);
 router.post('/save',              ...colissimoController.saveInvoice);
 router.post('/import-zip',        ...colissimoController.importZip);
 router.post('/apply-tariffs',     colissimoController.applyTariffs);

@@ -19,6 +19,7 @@ function buildCountryTotals(items, amountKey) {
 exports._parsePdf = parseColissimoPdf;
 exports._buildCountryTotals = buildCountryTotals;
 exports._analyzeBuffer = analyzeColissimoBuffer;
+exports._parseCsv = parseColissimoCsv;
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -451,6 +452,276 @@ async function generateExcel(data) {
   return wb;
 }
 
+/* ─── PARSER CSV COLISSIMO BOX (nouveau format 2026) ──────────── */
+/*
+ * Depuis la facture d'août 2026, le PDF Colissimo est agrégé : plus aucun
+ * n° de suivi, donc plus de comparaison de poids possible (cf. la note de
+ * facture qui renvoie vers Colissimo Box). Le détail unitaire est livré dans
+ * un ZIP contenant CSV_Prestations_au_colis.csv + CSV_Indemnisations.csv,
+ * en ISO-8859-1 et séparés par des « ; ».
+ *
+ * Chaque colis y occupe plusieurs lignes, une par « Rubrique de la facture » :
+ *   FRAIS DE PORT       → 2 lignes : « Charge 6A » (port brut) et
+ *                         « Remise Charge 6A » (remise, qui porte le %)
+ *   AJUSTEMENT ENERGIE  → CAE
+ *   AJUSTEMENT SMIC     → nouveau poste (absent de l'ancien format)
+ *   SUPPLEMENTS         → décarbonation, sûreté internationale, qualité
+ *                         d'annonce, poids volumétrique…
+ * On les ré-agrège par « N colis » pour retrouver la structure `parcels`
+ * du parseur PDF, à l'identique en aval (Excel, persistance, réclamations).
+ */
+const CSV_COUNTRY_ISO = {
+  'FRANCE': 'FR', 'BELGIQUE': 'BE', 'SUISSE': 'CH', 'LUXEMBOURG': 'LU',
+  'PAYS-BAS': 'NL', 'ALLEMAGNE': 'DE', 'ESPAGNE': 'ES', 'PORTUGAL': 'PT',
+  'ITALIE': 'IT', 'DANEMARK': 'DK', 'POLOGNE': 'PL', 'HONGRIE': 'HU',
+  'LITUANIE': 'LT', 'MONACO': 'MC', 'REUNION': 'RE', 'MARTINIQUE': 'MQ',
+  'GUADELOUPE': 'GP', 'GUYANE': 'GF', 'MAYOTTE': 'YT',
+  'POLYNESIE FRANCAISE': 'PF', 'NOUVELLE-CALEDONIE': 'NC',
+};
+
+function csvSplitLine(line) {
+  const out = []; let cur = ''; let inQ = false;
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i];
+    if (c === '"') { if (inQ && line[i + 1] === '"') { cur += '"'; i++; } else inQ = !inQ; }
+    else if (c === ';' && !inQ) { out.push(cur); cur = ''; }
+    else cur += c;
+  }
+  out.push(cur);
+  return out;
+}
+
+function csvParse(text) {
+  const lines = text.replace(/^﻿/, '').split(/\r?\n/).filter(l => l.trim().length);
+  if (!lines.length) return [];
+  const headers = csvSplitLine(lines[0]).map(h => h.trim());
+  return lines.slice(1).map(line => {
+    const cells = csvSplitLine(line);
+    const row = {};
+    headers.forEach((h, i) => { row[h] = (cells[i] ?? '').trim(); });
+    return row;
+  });
+}
+
+// Retrouve une colonne par mot-clé : les entêtes Colissimo varient
+// (« Produit » avec espace final, « Référence externe colis client »…).
+function csvCol(headers, ...needles) {
+  const norm = s => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  for (const n of needles) {
+    const hit = headers.find(h => norm(h).includes(norm(n)));
+    if (hit) return hit;
+  }
+  return null;
+}
+
+function csvNum(s) {
+  if (s === undefined || s === null || !String(s).trim()) return null;
+  const v = parseFloat(String(s).replace(/\s/g, '').replace(',', '.'));
+  return Number.isNaN(v) ? null : v;
+}
+
+function parseColissimoCsv(prestationsText, indemnisationsText) {
+  const rows = csvParse(prestationsText || '');
+  const parcels = [];
+  const supplements = [];
+  const indemnizations = [];
+  const globalSummary = {};
+  let invoiceNumber = null, accountNumber = null;
+  const allDates = [];
+
+  if (rows.length) {
+    const H = Object.keys(rows[0]);
+    const C = {
+      invoice: csvCol(H, 'N facture', 'N° facture'),
+      date: csvCol(H, 'Date'),
+      account: csvCol(H, 'Compte deposant', 'Compte déposant'),
+      desc: csvCol(H, 'Description'),
+      product: csvCol(H, 'Produit'),
+      parcel: csvCol(H, 'N colis', 'N° colis'),
+      country: csvCol(H, 'Pays Destination'),
+      cp: csvCol(H, 'Code Postal Destination'),
+      discount: csvCol(H, 'Pourcentage de remise'),
+      ref: csvCol(H, 'externe colis client'),
+      nature: csvCol(H, 'Nature du poids'),
+      weight: csvCol(H, 'Poids Kg'),
+      len: csvCol(H, 'LEN'), hgt: csvCol(H, 'HGT'), wid: csvCol(H, 'WID'),
+      total: csvCol(H, 'Total HT'),
+      rubrique: csvCol(H, 'Rubrique de la facture'),
+      charge: csvCol(H, 'Code charge'),
+    };
+
+    const byParcel = new Map();
+    for (const r of rows) {
+      const tracking = C.parcel ? r[C.parcel] : '';
+      if (!tracking) continue;
+      if (!invoiceNumber && C.invoice) invoiceNumber = r[C.invoice] || null;
+      if (!accountNumber && C.account) accountNumber = r[C.account] || null;
+
+      if (!byParcel.has(tracking)) {
+        byParcel.set(tracking, {
+          date: null, tracking,
+          weight_colissimo: null, port_brut: null, tx_remise: null, remise_ht: null,
+          port_net: null, cae_ht: null, smic_ht: null, decarbonation: null, total_ht: null,
+          order_id: null, weight_bdd: null, diff_g: null, country: null,
+          postal_code: null, product: null, weight_type: null, dimensions: null,
+          supplements_list: [],
+        });
+      }
+      const p = byParcel.get(tracking);
+
+      const fullDate = C.date ? r[C.date] : '';
+      if (fullDate) {
+        allDates.push(fullDate);
+        if (!p.date) p.date = fullDate.slice(0, 5); // DD/MM, comme le parseur PDF
+      }
+      if (!p.country && C.country && r[C.country]) {
+        const name = r[C.country].toUpperCase();
+        p.country = CSV_COUNTRY_ISO[name] || name;
+      }
+      if (!p.postal_code && C.cp) p.postal_code = r[C.cp] || null;
+      if (!p.product && C.product) p.product = r[C.product] || null;
+
+      const rubrique = (C.rubrique ? r[C.rubrique] : '').toUpperCase();
+      const desc = C.desc ? r[C.desc] : '';
+      const amount = csvNum(C.total ? r[C.total] : null);
+      if (amount === null) continue;
+
+      if (rubrique === 'FRAIS DE PORT') {
+        // Le % de remise n'est porté que par la ligne « Remise Charge XX »
+        if (/^Remise/i.test(desc)) {
+          p.remise_ht = (p.remise_ht ?? 0) + amount;
+          const pct = csvNum(C.discount ? r[C.discount] : null);
+          if (pct !== null) p.tx_remise = pct;
+        } else {
+          p.port_brut = (p.port_brut ?? 0) + amount;
+          const w = csvNum(C.weight ? r[C.weight] : null);
+          if (w !== null) p.weight_colissimo = w;
+          if (C.nature && r[C.nature]) p.weight_type = r[C.nature]; // M = réel, V = volumétrique
+          const dims = [C.len, C.hgt, C.wid].map(c => (c ? r[c] : '')).filter(Boolean);
+          if (dims.length === 3) p.dimensions = dims.join('x');
+        }
+      } else if (rubrique.includes('ENERGIE')) {
+        p.cae_ht = (p.cae_ht ?? 0) + amount;
+      } else if (rubrique.includes('SMIC')) {
+        p.smic_ht = (p.smic_ht ?? 0) + amount;
+      } else if (rubrique === 'SUPPLEMENTS') {
+        const code = C.charge ? r[C.charge] : '';
+        if (/DECARBONATION/i.test(code) || /d[ée]carbonation/i.test(desc)) {
+          p.decarbonation = (p.decarbonation ?? 0) + amount;
+        } else {
+          const label = desc.replace(/^Suppl[ée]ment\s*:\s*/i, '').replace(/^Article\s+/i, '').trim();
+          supplements.push({ tracking, label, amount, parcel_idx: parcels.length });
+          p.supplements_list.push({ label, amount });
+        }
+      }
+      if (C.ref && r[C.ref] && !p.order_id) p.order_id = parseInt(r[C.ref], 10) || null;
+    }
+
+    for (const p of byParcel.values()) {
+      if (p.port_brut !== null || p.remise_ht !== null) {
+        p.port_net = Math.round(((p.port_brut ?? 0) + (p.remise_ht ?? 0)) * 100) / 100;
+      }
+      const suppTotal = p.supplements_list.reduce((s, x) => s + x.amount, 0);
+      p.total_ht = Math.round((
+        (p.port_net ?? 0) + (p.cae_ht ?? 0) + (p.smic_ht ?? 0) + (p.decarbonation ?? 0) + suppTotal
+      ) * 100) / 100;
+      parcels.push(p);
+    }
+
+    const sum = fn => Math.round(parcels.reduce((s, p) => s + (fn(p) ?? 0), 0) * 100) / 100;
+    globalSummary.portBrut = sum(p => p.port_brut);
+    globalSummary.remise = sum(p => p.remise_ht);
+    globalSummary.portNet = sum(p => p.port_net);
+    globalSummary.cae = sum(p => p.cae_ht);
+    globalSummary.smic = sum(p => p.smic_ht);
+    globalSummary.supplements = Math.round((
+      sum(p => p.decarbonation) + supplements.reduce((s, x) => s + (x.amount || 0), 0)
+    ) * 100) / 100;
+    const decarbUnits = parcels.map(p => p.decarbonation).filter(v => v);
+    if (decarbUnits.length) globalSummary.decarbonationUnit = decarbUnits[0];
+  }
+
+  // ── CSV_Indemnisations.csv (n° de suivi + référence COL-…, absents du PDF)
+  const indRows = csvParse(indemnisationsText || '');
+  if (indRows.length) {
+    const H = Object.keys(indRows[0]);
+    const C = {
+      date: csvCol(H, 'Date'), desc: csvCol(H, 'Description'),
+      parcel: csvCol(H, 'N colis', 'N° colis'), ref: csvCol(H, 'Reference', 'Référence'),
+      total: csvCol(H, 'Total HT'),
+    };
+    for (const r of indRows) {
+      const amount = csvNum(C.total ? r[C.total] : null);
+      if (amount === null) continue;
+      indemnizations.push({
+        date: C.date && r[C.date] ? r[C.date].slice(0, 5) : null,
+        reference: C.ref ? (r[C.ref] || null) : null,
+        tracking: C.parcel ? (r[C.parcel] || null) : null,
+        label: C.desc ? r[C.desc].replace(/\s+/g, ' ').trim() : '',
+        amount,
+        type: 'Diverses',
+      });
+    }
+  }
+  globalSummary.indemnizations = Math.round(
+    indemnizations.reduce((s, i) => s + (i.amount || 0), 0) * 100
+  ) / 100;
+
+  // Période = min/max des dates de dépôt (le CSV ne porte pas d'entête de période)
+  let periodStart = null, periodEnd = null;
+  if (allDates.length) {
+    const toKey = d => { const [dd, mm, yy] = d.split('/'); return `${yy}${mm}${dd}`; };
+    const sorted = [...new Set(allDates)].sort((a, b) => toKey(a).localeCompare(toKey(b)));
+    periodStart = sorted[0];
+    periodEnd = sorted[sorted.length - 1];
+  }
+
+  return { parcels, supplements, indemnizations, globalSummary, invoiceNumber, periodStart, periodEnd, accountNumber };
+}
+
+/* ─── Extraction du ZIP Colissimo Box (ZIP imbriqué) ──────────── */
+async function extractColissimoCsvZip(buffer) {
+  let zip = await JSZip.loadAsync(buffer);
+  // Le téléchargement Colissimo Box est un ZIP contenant un second ZIP
+  for (let depth = 0; depth < 3; depth++) {
+    const entries = Object.values(zip.files).filter(f => !f.dir && !/__MACOSX/.test(f.name));
+    if (entries.some(f => /\.csv$/i.test(f.name))) break;
+    const inner = entries.find(f => /\.zip$/i.test(f.name));
+    if (!inner) break;
+    zip = await JSZip.loadAsync(await inner.async('nodebuffer'));
+  }
+  const entries = Object.values(zip.files).filter(f => !f.dir && !/__MACOSX/.test(f.name) && /\.csv$/i.test(f.name));
+  const read = async entry => (await entry.async('nodebuffer')).toString('latin1'); // ISO-8859-1
+  const prest = entries.find(f => /prestation/i.test(f.name));
+  const indem = entries.find(f => /indemnisation/i.test(f.name));
+  return {
+    prestations: prest ? await read(prest) : null,
+    indemnisations: indem ? await read(indem) : null,
+    names: entries.map(f => f.name.split('/').pop()),
+  };
+}
+
+async function analyzeColissimoCsvBuffer(buffer) {
+  const { prestations, indemnisations, names } = await extractColissimoCsvZip(buffer);
+  if (!prestations) {
+    throw new Error(`CSV_Prestations_au_colis.csv introuvable dans le ZIP${names.length ? ` (contenu : ${names.join(', ')})` : ''}`);
+  }
+  const parsed = parseColissimoCsv(prestations, indemnisations);
+  await enrichParcels(parsed.parcels);
+  const { parcels, supplements, indemnizations, globalSummary, invoiceNumber, periodStart, periodEnd, accountNumber } = parsed;
+  const stats = {
+    total_parcels: parcels.length,
+    parcels_matched: parcels.filter(p => p.order_id).length,
+    parcels_unmatched: parcels.filter(p => !p.order_id).length,
+    weight_ok: parcels.filter(p => p.diff_g !== null && Math.abs(p.diff_g) <= 20).length,
+    weight_ecart: parcels.filter(p => p.diff_g !== null && Math.abs(p.diff_g) > 200).length,
+    supplements_count: supplements.length,
+    supplements_total: supplements.reduce((s, x) => s + (x.amount || 0), 0),
+    indemnizations_total: indemnizations.reduce((s, i) => s + (i.amount || 0), 0),
+  };
+  return { invoiceNumber, periodStart, periodEnd, accountNumber, parcels, supplements, indemnizations, globalSummary, stats, source: 'csv' };
+}
+
 /* ─── CONTROLLERS ────────────────────────────────────────────── */
 
 exports.analyze = [
@@ -503,6 +774,24 @@ exports.analyze = [
   },
 ];
 
+// POST /api/colissimo/analyze-csv — nouveau format : ZIP Colissimo Box (CSV au colis)
+exports.analyzeCsv = [
+  uploadZip.single('zip'),
+  async (req, res) => {
+    try {
+      if (!req.file) return res.status(400).json({ success: false, error: 'ZIP Colissimo Box requis' });
+      const parsed = await analyzeColissimoCsvBuffer(req.file.buffer);
+      if (!parsed.invoiceNumber) {
+        return res.status(400).json({ success: false, error: 'N° de facture introuvable dans le CSV' });
+      }
+      res.json({ success: true, ...parsed });
+    } catch (err) {
+      console.error('[Colissimo] analyzeCsv error:', err);
+      res.status(500).json({ success: false, error: err.message });
+    }
+  },
+];
+
 exports.exportExcel = [
   upload.single('pdf'),
   async (req, res) => {
@@ -532,6 +821,26 @@ exports.exportExcel = [
 /* ─── HISTORIQUE / ENREGISTREMENT ───────────────────────────── */
 
 // POST /api/colissimo/save — enregistre la facture analysée + PDF en BDD
+// POST /api/colissimo/export-excel-csv — export Excel depuis le ZIP Colissimo Box
+exports.exportExcelCsv = [
+  uploadZip.single('zip'),
+  async (req, res) => {
+    try {
+      if (!req.file) return res.status(400).json({ success: false, error: 'ZIP Colissimo Box requis' });
+      const parsed = await analyzeColissimoCsvBuffer(req.file.buffer);
+      const wb = await generateExcel(parsed);
+      const fname = `Colissimo_${parsed.invoiceNumber || 'facture'}_${Date.now()}.xlsx`;
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      res.setHeader('Content-Disposition', `attachment; filename="${fname}"`);
+      await wb.xlsx.write(res);
+      res.end();
+    } catch (err) {
+      console.error('[Colissimo] exportExcelCsv error:', err);
+      res.status(500).json({ success: false, error: err.message });
+    }
+  },
+];
+
 exports.saveInvoice = [
   upload.single('pdf'),
   async (req, res) => {
@@ -785,10 +1094,23 @@ async function analyzeColissimoBuffer(buffer) {
 
 async function persistColissimoInvoice(parsed, pdfBuffer) {
   const { invoiceNumber, periodStart, periodEnd, accountNumber, parcels, supplements, indemnizations, globalSummary, stats } = parsed;
-  const existing = await pool.query('SELECT id FROM carrier_invoices WHERE carrier = $1 AND invoice_number = $2', ['colissimo', invoiceNumber]);
+  const existing = await pool.query(
+    'SELECT id, total_parcels FROM carrier_invoices WHERE carrier = $1 AND invoice_number = $2',
+    ['colissimo', invoiceNumber]
+  );
   if (existing.rows.length) {
-    if (pdfBuffer) await pool.query('UPDATE carrier_invoices SET pdf_data = $1 WHERE id = $2', [pdfBuffer, existing.rows[0].id]);
-    return { status: 'already' };
+    const prev = existing.rows[0];
+    // Une facture déjà enregistrée SANS aucun colis vient forcément d'un PDF
+    // « format cible » (agrégé, sans n° de suivi) : le CSV la remplace.
+    // Sinon on ne touche à rien pour ne pas écraser un détail valide.
+    const incomingHasParcels = (parcels || []).length > 0;
+    if (Number(prev.total_parcels) > 0 || !incomingHasParcels) {
+      if (pdfBuffer) await pool.query('UPDATE carrier_invoices SET pdf_data = $1 WHERE id = $2', [pdfBuffer, prev.id]);
+      return { status: 'already', id: prev.id };
+    }
+    await pool.query('DELETE FROM carrier_invoice_parcels WHERE invoice_id = $1', [prev.id]);
+    await pool.query('DELETE FROM carrier_invoice_supplements WHERE invoice_id = $1', [prev.id]);
+    await pool.query('DELETE FROM carrier_invoices WHERE id = $1', [prev.id]);
   }
   const gs = globalSummary || {};
   const supplementsTotal = (supplements || []).reduce((s, x) => s + (x.amount || 0), 0);
@@ -833,7 +1155,22 @@ exports.importZip = [
       if (!req.file) return res.status(400).json({ success: false, error: 'Fichier ZIP requis' });
       const zip = await JSZip.loadAsync(req.file.buffer);
       const pdfEntries = Object.values(zip.files).filter(f => !f.dir && /\.pdf$/i.test(f.name) && !/__MACOSX/.test(f.name));
-      if (!pdfEntries.length) return res.status(400).json({ success: false, error: 'Aucun PDF trouvé dans le ZIP' });
+
+      // Nouveau format : le ZIP Colissimo Box ne contient pas de PDF mais les CSV
+      // unitaires (éventuellement dans un ZIP imbriqué) — une seule facture.
+      if (!pdfEntries.length) {
+        const parsed = await analyzeColissimoCsvBuffer(req.file.buffer);
+        if (!parsed.invoiceNumber) {
+          return res.status(400).json({ success: false, error: 'N° de facture introuvable dans le CSV' });
+        }
+        const r = await persistColissimoInvoice(parsed, null);
+        return res.json({
+          success: true, total: 1,
+          imported: r.status === 'inserted' ? 1 : 0,
+          already: r.status === 'already' ? 1 : 0,
+          failed: [],
+        });
+      }
       let imported = 0, already = 0; const failed = [];
       for (const entry of pdfEntries) {
         const name = entry.name.split('/').pop();
