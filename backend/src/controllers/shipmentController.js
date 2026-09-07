@@ -195,7 +195,14 @@ const makeCarrierHandlers = (carrierCode) => {
    * (réimpression après perte / annulation, envoi hors commande).
    *
    * Deux différences volontaires avec generateLabel :
-   *  - aucun contrôle de doublon : refaire une étiquette est justement le but ;
+   *
+   *  - AUCUN contrôle de doublon, et ce n'est pas un oubli : cet écran sert
+   *    précisément à renvoyer une commande déjà expédiée une première fois
+   *    (colis perdu, retour, geste commercial). Une commande peut donc porter
+   *    plusieurs étiquettes actives, avec des numéros de suivi distincts, toutes
+   *    listées et réimprimables. Ajouter ici le contrôle de doublon de
+   *    generateLabel casserait le seul moyen de réexpédier.
+   *
    *  - aucune confirmation d'expédition dans BMS : la commande y est en général
    *    déjà expédiée, un second /ship échouerait et déclencherait une alerte mail.
    */
