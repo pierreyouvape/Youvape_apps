@@ -1,4 +1,5 @@
 const pool = require('../config/database');
+const { computeOrderWeight, getPackagingWeight } = require('../services/orderWeightService');
 
 // Rechercher une commande par numéro WC pour le packing
 const searchOrder = async (req, res) => {
@@ -78,7 +79,21 @@ const searchOrder = async (req, res) => {
       });
     }
 
+    // Poids expédié : c'est ce chiffre qui sera déclaré au transporteur pour tous
+    // les colis. La lettre suivie garde son poids forfaitaire de 20 g (cf.
+    // laposteController), elle n'est pas concernée.
+    const [totalWeight, packagingWeight] = await Promise.all([
+      computeOrderWeight(pool, orderNumber),
+      getPackagingWeight(pool)
+    ]);
+
     res.json({
+      weight: {
+        // Grammes, tare comprise. Le détail permet au préparateur de comprendre
+        // l'écart avec la somme des poids produits affichés ligne à ligne.
+        total_g: totalWeight,
+        packaging_g: packagingWeight
+      },
       order: {
         wp_order_id: order.wp_order_id,
         status: order.post_status,
