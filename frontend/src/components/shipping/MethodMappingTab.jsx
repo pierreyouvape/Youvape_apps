@@ -2,7 +2,10 @@ import { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import { visuelTransporteur } from '../../utils/carrierVisuals';
 
-const API_URL = import.meta.env.VITE_API_URL || '/api';
+// Même construction que le reste de l'app (cf. ShippingSettings) : le repli
+// pointe le backend local, et le `.replace` couvre les configurations où la
+// variable se termine par /auth.
+const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:3000/api').replace('/auth', '');
 
 /**
  * Réglages « Étiquetage » : quelle dénomination WooCommerce part chez quel
