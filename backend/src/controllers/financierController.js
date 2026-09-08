@@ -14,6 +14,58 @@ const ACTIVE_STATUSES = [
  * « AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris' » décale de +1/+2h et fait fuiter
  * les commandes du soir vers le lendemain (cf. fix 621fa9d, régressé puis re-corrigé).
  */
+/**
+ * ─── TVA RÉELLEMENT COLLECTÉE SUR UNE COMMANDE ─────────────────────────────
+ * TVA = TVA des lignes produit (line_item.line_tax) + TVA du port.
+ *
+ * La TVA du port est portée par la ligne de taxe (order_item_type = 'tax',
+ * colonne line_tax) — mais cette ligne est ABSENTE d'une grande partie des
+ * commandes antérieures à avril 2026 : la synchro ne la créait pas. La TVA du
+ * port était alors purement et simplement perdue, alors que le client l'a payée
+ * (elle est bien comprise dans order_total). Résultat : TVA sous-évaluée et, par
+ * construction, CA HT surévalué d'autant — de l'ordre de 800 à 1 300 € par mois.
+ *
+ * Elle est donc reconstituée par le résidu :
+ *     order_total − port − Σ(line_total + line_tax des lignes produit)
+ * Ce résidu n'est retenu que s'il correspond au port multiplié par le taux
+ * constaté sur les produits, à 2 centimes près. Garde-fou indispensable : sur les
+ * commandes dont les lignes produit sont elles-mêmes incomplètes, le résidu
+ * capterait n'importe quoi.
+ *
+ * Contrôlé sur les 9 399 commandes depuis 2025 où la TVA du port EST enregistrée :
+ * le résidu la retrouve exactement (0 commande divergente, 2 centimes d'écart
+ * cumulé au total). Aucun risque de double comptage, la valeur enregistrée restant
+ * prioritaire quand elle existe.
+ *
+ * Produit une CTE `tva_reelle(wp_order_id, tva)`.
+ */
+function orderVatCTE(cmdSource, name = 'tva_reelle') {
+  return `
+  ${name} AS (
+    SELECT b.wp_order_id,
+      b.tva_prod + CASE
+        WHEN b.tva_port <> 0 THEN b.tva_port
+        WHEN b.residu > 0 AND b.ht_prod > 0
+         AND ABS(b.residu - ROUND(b.port * b.tva_prod / b.ht_prod, 2)) <= 0.02
+          THEN b.residu
+        ELSE 0
+      END AS tva
+    FROM (
+      SELECT o.wp_order_id,
+        COALESCE(o.order_shipping, 0) AS port,
+        SUM(CASE WHEN oi.order_item_type = 'line_item' THEN oi.line_total ELSE 0 END) AS ht_prod,
+        SUM(CASE WHEN oi.order_item_type = 'line_item' THEN oi.line_tax   ELSE 0 END) AS tva_prod,
+        SUM(CASE WHEN oi.order_item_type = 'tax'       THEN oi.line_tax   ELSE 0 END) AS tva_port,
+        o.order_total - COALESCE(o.order_shipping, 0)
+          - SUM(CASE WHEN oi.order_item_type = 'line_item' THEN oi.line_total + oi.line_tax ELSE 0 END) AS residu
+      FROM orders o
+      JOIN order_items oi ON oi.wp_order_id = o.wp_order_id
+      WHERE o.wp_order_id IN (${cmdSource})
+      GROUP BY o.wp_order_id, o.order_shipping, o.order_total
+    ) b
+  )`;
+}
+
 function refDateParis(alias = 'o') {
   return `(COALESCE(${alias}.paid_date, ${alias}.post_date))`;
 }
@@ -86,14 +138,9 @@ const REFUND_TAX_EXPR = `
  * commande de juin, il faut alors le taux de cette commande-là. La table refunds
  * est petite (~1 200 lignes), le coût est négligeable.
  */
-const REFUND_ORDER_TAX_CTE = `
-  tva_cmd_remboursee AS (
-    SELECT oi.wp_order_id,
-      SUM(CASE WHEN oi.order_item_type IN ('line_item', 'tax') THEN oi.line_tax ELSE 0 END) AS tva
-    FROM order_items oi
-    WHERE oi.wp_order_id IN (SELECT DISTINCT wp_order_id FROM refunds)
-    GROUP BY oi.wp_order_id
-  )`;
+const REFUND_ORDER_TAX_CTE = orderVatCTE(
+  'SELECT DISTINCT wp_order_id FROM refunds', 'tva_cmd_remboursee'
+);
 
 const REFUND_TAX_JOIN = `LEFT JOIN tva_cmd_remboursee tc ON tc.wp_order_id = r.wp_order_id`;
 
@@ -142,14 +189,7 @@ async function computeDashboard({ dateFrom, dateTo, granularity } = {}) {
     // TVA réelle = line_item.line_tax (TVA produits) + tax_item.line_tax (TVA livraison)
     // order_shipping_tax est toujours NULL en BDD, il faut passer par order_items
     const orderKpisResult = await pool.query(`
-      WITH tva_reelle AS (
-        SELECT oi.wp_order_id,
-          SUM(CASE WHEN oi.order_item_type = 'line_item' THEN oi.line_tax ELSE 0 END)
-          + SUM(CASE WHEN oi.order_item_type = 'tax'      THEN oi.line_tax ELSE 0 END) AS tva
-        FROM order_items oi
-        WHERE oi.wp_order_id IN (SELECT wp_order_id FROM orders o ${where})
-        GROUP BY oi.wp_order_id
-      )
+      WITH ${orderVatCTE(`SELECT wp_order_id FROM orders o ${where}`)}
       SELECT
         COUNT(o.wp_order_id)::int                                          AS orders_count,
         COALESCE(SUM(o.order_total), 0)::numeric                          AS ca_ttc_brut,
@@ -268,14 +308,7 @@ async function computeDashboard({ dateFrom, dateTo, granularity } = {}) {
     // Séries : order-level (pas de fan-out)
     // TVA via order_items (order_shipping_tax toujours NULL en BDD)
     const seriesOrdersResult = await pool.query(`
-      WITH tva_reelle AS (
-        SELECT oi.wp_order_id,
-          SUM(CASE WHEN oi.order_item_type = 'line_item' THEN oi.line_tax ELSE 0 END)
-          + SUM(CASE WHEN oi.order_item_type = 'tax'      THEN oi.line_tax ELSE 0 END) AS tva
-        FROM order_items oi
-        WHERE oi.wp_order_id IN (SELECT wp_order_id FROM orders o ${where})
-        GROUP BY oi.wp_order_id
-      )
+      WITH ${orderVatCTE(`SELECT wp_order_id FROM orders o ${where}`)}
       SELECT
         ${truncExpr}                                                           AS period,
         COUNT(o.wp_order_id)::int                                              AS orders_count,
@@ -580,14 +613,7 @@ async function computeComptable({ dateFrom, dateTo } = {}) {
 
   // Ventes par pays + TVA exacte (produits + livraison) via order_items.
   const salesResult = await pool.query(`
-    WITH tva_reelle AS (
-      SELECT oi.wp_order_id,
-        SUM(CASE WHEN oi.order_item_type = 'line_item' THEN oi.line_tax ELSE 0 END)
-        + SUM(CASE WHEN oi.order_item_type = 'tax'      THEN oi.line_tax ELSE 0 END) AS tva
-      FROM order_items oi
-      WHERE oi.wp_order_id IN (SELECT wp_order_id FROM orders o ${where})
-      GROUP BY oi.wp_order_id
-    )
+    WITH ${orderVatCTE(`SELECT wp_order_id FROM orders o ${where}`)}
     SELECT
       ${countryExpr}                                 AS country_code,
       COUNT(o.wp_order_id)::int                      AS orders_count,
@@ -651,6 +677,8 @@ async function computeComptable({ dateFrom, dateTo } = {}) {
       ca_ttc_net:  round2(ttcNet),
       ca_ht_net:   round2(htNet),
       tva_net:     round2(tvaNet),
+      // Valeurs non arrondies, réservées au calcul des totaux (cf. plus bas).
+      _brut: { ttcBrut, htBrut, tvaBrut, remb, rembTVA, ttcNet, htNet, tvaNet },
     };
   });
 
@@ -666,27 +694,37 @@ async function computeComptable({ dateFrom, dateTo } = {}) {
         ca_ttc_net: round2(-refund.ttc),
         ca_ht_net:  round2(-(refund.ttc - refund.tva)),
         tva_net:    round2(-refund.tva),
+        _brut: {
+          ttcBrut: 0, htBrut: 0, tvaBrut: 0,
+          remb: refund.ttc, rembTVA: refund.tva,
+          ttcNet: -refund.ttc, htNet: -(refund.ttc - refund.tva), tvaNet: -refund.tva,
+        },
       });
     }
   }
 
   rows.sort((a, b) => b.ca_ttc_brut - a.ca_ttc_brut);
 
+  // Les totaux cumulent les valeurs EXACTES puis sont arrondis une seule fois.
+  // Sommer des lignes déjà arrondies faisait dériver le total d'un centime et
+  // désaccordait l'onglet comptable et la CA3 sur une même période.
   const totals = rows.reduce((t, r) => ({
     orders_count:       t.orders_count + r.orders_count,
-    ca_ttc_brut:        t.ca_ttc_brut + r.ca_ttc_brut,
-    ca_ht_brut:         t.ca_ht_brut + r.ca_ht_brut,
-    tva_brut:           t.tva_brut + r.tva_brut,
-    remboursements_ttc: t.remboursements_ttc + r.remboursements_ttc,
-    remboursements_ht:  t.remboursements_ht + r.remboursements_ht,
-    remboursements_tva: t.remboursements_tva + r.remboursements_tva,
-    ca_ttc_net:         t.ca_ttc_net + r.ca_ttc_net,
-    ca_ht_net:          t.ca_ht_net + r.ca_ht_net,
-    tva_net:            t.tva_net + r.tva_net,
+    ca_ttc_brut:        t.ca_ttc_brut + r._brut.ttcBrut,
+    ca_ht_brut:         t.ca_ht_brut + r._brut.htBrut,
+    tva_brut:           t.tva_brut + r._brut.tvaBrut,
+    remboursements_ttc: t.remboursements_ttc + r._brut.remb,
+    remboursements_ht:  t.remboursements_ht + (r._brut.remb - r._brut.rembTVA),
+    remboursements_tva: t.remboursements_tva + r._brut.rembTVA,
+    ca_ttc_net:         t.ca_ttc_net + r._brut.ttcNet,
+    ca_ht_net:          t.ca_ht_net + r._brut.htNet,
+    tva_net:            t.tva_net + r._brut.tvaNet,
   }), { orders_count: 0, ca_ttc_brut: 0, ca_ht_brut: 0, tva_brut: 0, remboursements_ttc: 0, remboursements_ht: 0, remboursements_tva: 0, ca_ttc_net: 0, ca_ht_net: 0, tva_net: 0 });
 
   for (const k of Object.keys(totals)) totals[k] = round2(totals[k]);
   totals.orders_count = Math.round(totals.orders_count);
+
+  for (const r of rows) delete r._brut;
 
   return { rows, totals };
 }
@@ -752,12 +790,17 @@ function ca3MonacoExpr(alias = 'o') {
 }
 
 /**
- * Taux de TVA d'une commande, lu sur ses lignes de taxe.
+ * Taux de TVA d'une commande, lu sur ses lignes de taxe QUAND ELLES EXISTENT.
  * Le taux n'est stocké nulle part en clair : il est porté par le libellé du taux
  * (line_tax_data->>'rate_code', ex. « FR-TVA 20%-1 », sinon order_item_name).
- * On l'extrait au regexp. Contrôlé sur 58 075 lignes de taxe depuis 2025 :
- * 100 % des lignes parsées, un seul taux rencontré (20 %).
- * Les lignes de taxe à 0 € sont écartées : elles ne caractérisent pas la commande.
+ *
+ * ATTENTION — ce libellé ne peut pas servir de source unique : une grande partie
+ * des commandes n'a AUCUNE ligne de taxe synchronisée alors qu'elle porte bien de
+ * la TVA sur ses lignes produit (2 019 commandes sur 4 038 en mars 2026, soit
+ * 16 540 € de TVA). S'en remettre au seul libellé revenait à les traiter comme non
+ * taxées et à sortir leur TVA du cadre B. Le taux est donc systématiquement
+ * recalculé à partir des montants (cf. ca3EffRate) et le libellé n'est qu'une
+ * source prioritaire quand il est disponible.
  */
 const CA3_RATE_CTE = (cmdSource) => `
   taux_cmd AS (
@@ -773,8 +816,47 @@ const CA3_RATE_CTE = (cmdSource) => `
     GROUP BY oi.wp_order_id
   )`;
 
+/**
+ * Taux effectif d'une opération, recalculé depuis les montants : TVA / HT.
+ * Source de vérité de repli, indépendante de la présence des lignes de taxe.
+ */
+function ca3EffRate(tvaExpr, ttcExpr) {
+  return `CASE
+      WHEN COALESCE(${tvaExpr}, 0) = 0 THEN NULL
+      WHEN (${ttcExpr}) - COALESCE(${tvaExpr}, 0) > 0
+        THEN COALESCE(${tvaExpr}, 0) / ((${ttcExpr}) - COALESCE(${tvaExpr}, 0)) * 100
+      ELSE NULL
+    END`;
+}
+
+/**
+ * Aligne un taux effectif sur le taux légal le plus proche. Une commande à 20 %
+ * peut tomber à 19,98 % ou 20,02 % à cause des arrondis au centime ligne à ligne ;
+ * sans cet alignement le cadre B se fragmenterait en dizaines de faux taux.
+ * La fenêtre (±0,3 point) est très inférieure à l'écart entre deux taux légaux.
+ *
+ * Un taux hors de toute fenêtre n'est PAS inventé : il retourne NULL et l'opération
+ * bascule en ligne 14 (« taux indéterminé »), où son montant de TVA — lui, bien réel —
+ * est conservé. Sans cela le cadre B se remplissait de pseudo-taux (jusqu'à 218 lignes
+ * à 18,97 %, 19,22 %…) issus de commandes aux lignes produit incomplètes, ce qui donnait
+ * un formulaire illisible et un faux air de précision.
+ */
+function ca3SnapRate(effExpr) {
+  return `CASE
+      WHEN (${effExpr}) IS NULL THEN NULL
+      WHEN (${effExpr}) BETWEEN 19.7 AND 20.3 THEN 20
+      WHEN (${effExpr}) BETWEEN  9.7 AND 10.3 THEN 10
+      WHEN (${effExpr}) BETWEEN  5.2 AND  5.8 THEN 5.5
+      WHEN (${effExpr}) BETWEEN  1.8 AND  2.4 THEN 2.1
+      ELSE NULL
+    END`;
+}
+
 /** Ligne du cadre B (TVA brute) correspondant à un taux. */
 function ca3RateLine(taux) {
+  // Taux introuvable alors que de la TVA a bien été collectée : l'opération reste
+  // dans le cadre B (sinon la TVA brute ne serait plus égale à la TVA encaissée).
+  if (taux === null) return { code: '14', libelle: 'Opérations imposables — taux indéterminé' };
   if (taux === 20)  return { code: '08', libelle: 'Taux normal 20 %' };
   if (taux === 5.5) return { code: '09', libelle: 'Taux réduit 5,5 %' };
   if (taux === 10)  return { code: '9B', libelle: 'Taux réduit 10 %' };
@@ -799,27 +881,24 @@ async function computeCA3({ dateFrom, dateTo } = {}) {
       FROM orders o
       ${where}
     ),
-    tva_cmd AS (
-      SELECT oi.wp_order_id,
-        SUM(CASE WHEN oi.order_item_type = 'line_item' THEN oi.line_tax ELSE 0 END)
-        + SUM(CASE WHEN oi.order_item_type = 'tax'      THEN oi.line_tax ELSE 0 END) AS tva
-      FROM order_items oi
-      WHERE oi.wp_order_id IN (SELECT wp_order_id FROM cmd)
-      GROUP BY oi.wp_order_id
-    ),
+    ${orderVatCTE('SELECT wp_order_id FROM cmd', 'tva_cmd')},
     ${CA3_RATE_CTE('SELECT wp_order_id FROM cmd')}
     SELECT
       c.zone,
       c.monaco,
       COALESCE(array_length(tx.taux, 1), 0)::int    AS nb_taux,
-      tx.taux[1]                                    AS taux,
+      COALESCE(
+        replace(tx.taux[1], ',', '.')::numeric,
+        ${ca3SnapRate(ca3EffRate('t.tva', 'c.order_total'))}
+      )                                             AS taux,
+      CASE WHEN tx.taux[1] IS NOT NULL THEN 'libelle' ELSE 'calcule' END AS taux_source,
       COUNT(*)::int                                 AS cmd,
       COALESCE(SUM(c.order_total), 0)::numeric      AS ttc,
       COALESCE(SUM(COALESCE(t.tva, 0)), 0)::numeric AS tva
     FROM cmd c
     LEFT JOIN tva_cmd t  ON t.wp_order_id  = c.wp_order_id
     LEFT JOIN taux_cmd tx ON tx.wp_order_id = c.wp_order_id
-    GROUP BY 1, 2, 3, 4
+    GROUP BY 1, 2, 3, 4, 5
   `, params);
 
   // ─── AVOIRS : par zone × taux, rattachés au mois de leur émission ────────
@@ -836,7 +915,10 @@ async function computeCA3({ dateFrom, dateTo } = {}) {
     ${CA3_RATE_CTE('SELECT DISTINCT wp_order_id FROM refunds')}
     SELECT
       ${ca3ZoneExpr('o')}                              AS zone,
-      tx.taux[1]                                       AS taux,
+      COALESCE(
+        replace(tx.taux[1], ',', '.')::numeric,
+        ${ca3SnapRate(ca3EffRate('tc.tva', 'o.order_total'))}
+      )                                                AS taux,
       COALESCE(SUM(r.refund_amount), 0)::numeric       AS ttc,
       COALESCE(SUM(${REFUND_TAX_EXPR}), 0)::numeric    AS tva
     FROM refunds r
@@ -861,12 +943,16 @@ async function computeCA3({ dateFrom, dateTo } = {}) {
 
   let monacoHT = 0, monacoTVA = 0;
   let mixtes = 0;
+  let tauxCalcule = 0;      // TVA dont le taux a dû être recalculé faute de ligne de taxe
+  let tauxIndetermine = 0;  // TVA collectée sans taux identifiable
 
   for (const row of ventesResult.rows) {
     const ttc  = parseFloat(row.ttc) || 0;
     const tva  = parseFloat(row.tva) || 0;
-    const taux = row.nb_taux > 0 ? parseTaux(row.taux) : null;
+    const taux = parseTaux(row.taux);
     if (row.nb_taux > 1) mixtes += row.cmd;
+    if (tva !== 0 && row.taux_source === 'calcule') tauxCalcule += tva;
+    if (tva !== 0 && taux === null) tauxIndetermine += tva;
     const op = getOp(row.zone, taux);
     op.cmd += row.cmd;
     op.ht  += ttc - tva;
@@ -880,7 +966,7 @@ async function computeCA3({ dateFrom, dateTo } = {}) {
     const taux = parseTaux(row.taux);
     // Un avoir sur une commande dont on ne retrouve pas le taux et qui ne porte
     // pas de TVA est rattaché à l'opération non taxée de sa zone.
-    const op = getOp(row.zone, tva !== 0 || taux !== null ? taux : null);
+    const op = getOp(row.zone, taux);
     op.ht_avoirs  += ttc - tva;
     op.tva_avoirs += tva;
   }
@@ -901,7 +987,11 @@ async function computeCA3({ dateFrom, dateTo } = {}) {
   for (const op of ops.values()) {
     const htNet  = op.ht - op.ht_avoirs;
     const tvaNet = op.tva - op.tva_avoirs;
-    const taxee  = op.taux !== null && op.tva !== 0;
+    // Le seul critère est la TVA effectivement collectée : une commande taxée
+    // dont on n'a pas su nommer le taux reste une opération imposable.
+    // Les avoirs comptent aussi : un avoir sur une vente taxée d'un mois antérieur
+    // peut arriver sur une période sans vente de même zone et de même taux.
+    const taxee  = op.tva !== 0 || op.tva_avoirs !== 0;
 
     let ligne;
     if (taxee) {
@@ -936,47 +1026,45 @@ async function computeCA3({ dateFrom, dateTo } = {}) {
   // ─── CADRE B — TVA brute, par taux ───────────────────────────────────────
   const parTaux = new Map();
   for (const op of ops.values()) {
-    if (op.taux === null || op.tva === 0) continue;
+    // Écarter une opération sans TVA de vente ferait disparaître la TVA d'un avoir
+    // isolé (avoir du mois portant sur une vente d'un mois précédent).
+    if (op.tva === 0 && op.tva_avoirs === 0) continue;
     if (!parTaux.has(op.taux)) parTaux.set(op.taux, { base: 0, tva: 0 });
     const b = parTaux.get(op.taux);
     b.base += op.ht - op.ht_avoirs;
     b.tva  += op.tva - op.tva_avoirs;
   }
 
-  const cadreB = [...parTaux.entries()]
-    .sort((a, b) => b[0] - a[0])
-    .map(([taux, v]) => ({ ...ca3RateLine(taux), taux, base: round2(v.base), tva: round2(v.tva) }));
+  // Total calculé sur les valeurs exactes, avant arrondi des lignes : un total
+  // reconstitué à partir de lignes arrondies dérive d'un centime.
+  const tvaBrute = [...parTaux.values()].reduce((s, v) => s + v.tva, 0);
 
-  const tvaBrute = cadreB.reduce((s, l) => s + l.tva, 0);
+  const cadreB = [...parTaux.entries()]
+    .sort((a, b) => (b[0] === null ? -1 : b[0]) - (a[0] === null ? -1 : a[0]))
+    .map(([taux, v]) => ({ ...ca3RateLine(taux), taux, base: round2(v.base), tva: round2(v.tva) }));
 
   // ─── CONTRÔLES ───────────────────────────────────────────────────────────
   const zoneAgg = (zone, taxee) => [...ops.values()]
-    .filter((o) => o.zone === zone && ((o.taux !== null && o.tva !== 0) === taxee))
+    .filter((o) => o.zone === zone && ((o.tva !== 0 || o.tva_avoirs !== 0) === taxee))
     .reduce((s, o) => s + (o.ht - o.ht_avoirs), 0);
 
-  const ueTaxee = zoneAgg('UE', true);
-  if (ueTaxee > 0) {
-    controles.push({
-      niveau: 'alerte',
-      titre: 'Ventes UE taxées au taux français',
-      montant: round2(ueTaxee),
-      message: "Ces ventes à destination d'autres États membres portent la TVA française. "
-        + "Au-delà du seuil unique de 10 000 € de ventes à distance dans l'UE, elles relèvent "
-        + "du guichet unique (OSS) au taux du pays de destination et sortent alors de la CA3. "
-        + "À arbitrer avec le comptable : le paramétrage WooCommerce applique aujourd'hui 20 % à tous les pays.",
-    });
-  }
+  // Les contrôles ci-dessous portent sur la FIABILITÉ DES MONTANTS. Le traitement
+  // fiscal des ventes hors de France (guichet unique, taux de destination) est un
+  // arbitrage qui n'appartient pas à cet outil : la CA3 restitue la TVA française
+  // réellement collectée, telle qu'encaissée.
 
   const ueExoneree = zoneAgg('UE', false);
-  controles.push({
-    niveau: ueExoneree > 0 ? 'alerte' : 'info',
-    titre: 'Ligne 06 — livraisons intracommunautaires non déterminables',
-    montant: round2(ueExoneree),
-    message: "Le numéro de TVA intracommunautaire de l'acquéreur n'est enregistré sur aucune "
-      + "commande (colonne billing_tax vide à 100 %). Impossible de distinguer une livraison "
-      + "intracommunautaire exonérée (ligne 06) d'une vente à distance B2C. Le montant ci-dessus "
-      + "est donc rangé en ligne 05 par défaut.",
-  });
+  if (ueExoneree > 0) {
+    controles.push({
+      niveau: 'alerte',
+      titre: 'Ligne 06 — livraisons intracommunautaires non déterminables',
+      montant: round2(ueExoneree),
+      message: "Le numéro de TVA intracommunautaire de l'acquéreur n'est enregistré sur aucune "
+        + "commande (colonne billing_tax vide à 100 %). Impossible de distinguer une livraison "
+        + "intracommunautaire exonérée (ligne 06) d'une vente à distance. Le montant ci-dessus "
+        + "est donc rangé en ligne 05 par défaut.",
+    });
+  }
 
   const frNonTaxee = zoneAgg('FR', false);
   if (frNonTaxee > 0) {
@@ -1021,6 +1109,30 @@ async function computeCA3({ dateFrom, dateTo } = {}) {
     });
   }
 
+  if (tauxIndetermine !== 0) {
+    controles.push({
+      niveau: 'alerte',
+      titre: 'TVA collectée sans taux identifiable',
+      montant: null,
+      message: `${round2(tauxIndetermine)} € de TVA n'ont pas pu être rattachés à un taux légal : `
+        + `le rapport TVA / HT de ces commandes ne tombe sur aucun taux français, signe de lignes `
+        + `de commande incomplètes en base (surtout entre août 2025 et janvier 2026). Le montant `
+        + `est porté en ligne 14 pour que la TVA brute reste égale à la TVA encaissée, mais sa `
+        + `ventilation par taux est à reprendre à la main.`,
+    });
+  }
+
+  if (tauxCalcule > 0) {
+    controles.push({
+      niveau: 'info',
+      titre: 'Taux reconstitué depuis les montants',
+      montant: null,
+      message: `${round2(tauxCalcule)} € de TVA proviennent de commandes sans ligne de taxe `
+        + `synchronisée : leur taux a été recalculé (TVA / HT) puis aligné sur le taux légal le `
+        + `plus proche. Le montant de TVA, lui, est celui réellement collecté et n'est pas estimé.`,
+    });
+  }
+
   if (mixtes > 0) {
     controles.push({
       niveau: 'alerte',
@@ -1040,6 +1152,7 @@ async function computeCA3({ dateFrom, dateTo } = {}) {
       + "fournisseurs et reste à la charge du comptable.",
   });
 
+  const totalOperations = Object.values(cadreA).reduce((s, l) => s + l.base, 0);
   for (const l of Object.values(cadreA)) l.base = round2(l.base);
   territorialite.sort((a, b) => b.ht_net - a.ht_net);
 
@@ -1047,7 +1160,7 @@ async function computeCA3({ dateFrom, dateTo } = {}) {
     cadreA: ['01', '04', '05', '06'].map((c) => cadreA[c]),
     cadreB,
     tva_brute: round2(tvaBrute),
-    total_operations: round2(Object.values(cadreA).reduce((s, l) => s + l.base, 0)),
+    total_operations: round2(totalOperations),
     territorialite,
     controles,
     monaco: { ht: round2(monacoHT), tva: round2(monacoTVA) },
