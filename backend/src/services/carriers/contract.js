@@ -68,7 +68,11 @@
  *           Description des champs du contrat, pour que l'écran de réglages
  *           génère son formulaire. Sans elle, un transporteur ne peut être
  *           configuré qu'en base — ce qu'on veut justement éviter.
- *           Un `Field` = `{key, label, secret?, placeholder?, group?}` ; `key`
+ *           Un `Field` = `{key, label, secret?, required?, advanced?, perContract?,
+ *           placeholder?, group?}` ; `perContract: true` marque une valeur qui NE
+ *           DOIT PAS être recopiée d'un contrat à l'autre — typiquement l'URL de
+ *           l'API, différente entre le bac à sable et la production. La dupliquer
+ *           enverrait les identifiants de production au serveur de test. `key`
  *           accepte un chemin pointé (`sender.city`). `secret: true` signifie
  *           que la valeur ne redescend JAMAIS vers le navigateur : le champ
  *           s'affiche vide et n'est écrit que si on saisit quelque chose.

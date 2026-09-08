@@ -149,6 +149,7 @@ async function main() {
     `SELECT m.denomination, m.carrier_code, m.account_code,
             a.id IS NOT NULL AS contrat_present,
             COALESCE(NULLIF(a.settings->>'sandbox', '')::boolean, false) AS sandbox,
+            COALESCE(a.settings->>'api_url', '') AS api_url,
             COALESCE(a.active, false) AS contrat_actif
      FROM shipping_method_carrier_map m
      LEFT JOIN carrier_accounts a
@@ -169,6 +170,16 @@ async function main() {
     if (!m.contrat_present) { ko(`${cle} : contrat INTROUVABLE`); continue; }
     if (!m.contrat_actif)   { ko(`${cle} : contrat désactivé`); continue; }
     if (m.sandbox)          { ko(`${cle} : contrat de TEST — les étiquettes ne seront pas valides`); continue; }
+
+    // Le drapeau « test » est déclaratif ; l'URL est ce qui décide vraiment du
+    // serveur appelé. Un contrat de production pointant le bac à sable se fait
+    // refuser ses identifiants (« 10001 : login et/ou mot de passe non valide »),
+    // et rien dans les réglages ne le laissait deviner — arrivé le 08/09/2026,
+    // l'URL ayant été recopiée depuis le contrat de test.
+    if (/sandbox|\/test\//i.test(m.api_url)) {
+      ko(`${cle} : l'URL pointe le serveur de TEST (${m.api_url}) — les identifiants de production y seront refusés`);
+      continue;
+    }
     ok(cle);
   }
 

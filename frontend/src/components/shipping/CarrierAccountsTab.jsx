@@ -71,6 +71,11 @@ function CarrierAccountsTab() {
       valeurs['cred.' + f.key] = (f.secret || !compte) ? '' : (lire(compte.credentials || {}, f.key) ?? '');
     }
     for (const f of def?.accountFields?.settings || []) {
+      // `perContract` : une valeur propre à CHAQUE contrat, jamais recopiée.
+      // L'URL de l'API en est l'exemple — la dupliquer depuis le contrat de test
+      // enverrait les identifiants de production au serveur de test, qui répond
+      // « login et/ou mot de passe non valide » (arrivé le 08/09/2026).
+      if (!compte && f.perContract) { valeurs['set.' + f.key] = ''; continue; }
       const v = lire(modele?.settings || {}, f.key);
       valeurs['set.' + f.key] = v == null ? '' : String(v);
     }
@@ -304,6 +309,29 @@ function CarrierAccountsTab() {
                     {avances.map(f => champ(f, 'set.'))}
                   </div>
                 )}
+              </div>
+            );
+          })()}
+
+          {(() => {
+            // Le drapeau « test » est déclaratif ; l'URL, elle, est la réalité.
+            // Quand les deux se contredisent, c'est l'URL qui décide du serveur
+            // appelé — mieux vaut le dire avant d'enregistrer.
+            const url = String(edition.valeurs['set.api_url'] || '');
+            const urlDeTest = /sandbox|test/i.test(url);
+            const caseCochee = edition.valeurs['set.sandbox'] === 'true';
+            if (!url || urlDeTest === caseCochee) return null;
+            return (
+              <div style={{
+                padding: '10px 14px', marginBottom: '16px', borderRadius: '6px',
+                backgroundColor: urlDeTest ? '#f8d7da' : '#fff3cd',
+                color: urlDeTest ? '#721c24' : '#856404', fontSize: '13.5px'
+              }}>
+                {urlDeTest
+                  ? <>⚠️ L'URL pointe le <strong>serveur de test</strong> alors que le contrat n'est pas coché « test ».
+                      Des identifiants de production y seront refusés.</>
+                  : <>⚠️ Le contrat est coché « test » mais l'URL pointe le <strong>serveur de production</strong> :
+                      les étiquettes émises seront réelles et facturées.</>}
               </div>
             );
           })()}

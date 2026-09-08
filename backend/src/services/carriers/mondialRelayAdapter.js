@@ -403,7 +403,7 @@ const ACCOUNT_FIELDS = {
     { key: 'customer_id', label: "Code enseigne", required: true, placeholder: 'LGYOUVAP' }
   ],
   settings: [
-    { key: 'api_url',       label: "URL de l'API", required: true, placeholder: 'https://connect-api.mondialrelay.com/api/shipment' },
+    { key: 'api_url',       label: "URL de l'API", required: true, perContract: true, placeholder: 'https://connect-api.mondialrelay.com/api/shipment' },
     { key: 'sandbox',       label: "Contrat de test — n'émet aucune expédition réelle", type: 'boolean' },
 
     { key: 'sender.firstname',    label: 'Prénom / enseigne', group: 'Expéditeur', required: true },

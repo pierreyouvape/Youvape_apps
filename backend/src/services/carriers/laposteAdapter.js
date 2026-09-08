@@ -264,12 +264,12 @@ const labelFileName = (orderNumber) => `LS-${orderNumber}.pdf`;
 // puisse recopier sans traduire.
 const ACCOUNT_FIELDS = {
   credentials: [
-    { key: 'token_url',     label: "URL du jeton OAuth2", required: true, placeholder: 'https://…/oauth2/token' },
+    { key: 'token_url',     label: "URL du jeton OAuth2", required: true, perContract: true, placeholder: 'https://…/oauth2/token' },
     { key: 'client_id',     label: 'Client ID', required: true },
     { key: 'client_secret', label: 'Client secret', required: true, secret: true }
   ],
   settings: [
-    { key: 'api_url',         label: "URL de l'API", required: true, placeholder: 'https://apim-gw-vente.extra.laposte.fr/postage/v1' },
+    { key: 'api_url',         label: "URL de l'API", required: true, perContract: true, placeholder: 'https://apim-gw-vente.extra.laposte.fr/postage/v1' },
     { key: 'contract_number', label: 'Numéro de contrat', required: true },
     { key: 'cust_acc_number', label: 'Numéro de compte client', required: true },
     { key: 'cust_invoice',    label: 'Compte de facturation', required: true },
