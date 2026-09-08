@@ -175,6 +175,32 @@ JWT au montage (`server.js`) + droit applicatif `atb` en lecture (vérifié dans
   - Corps : `{ preset, dateFrom, dateTo, countries[], showM1, showN1 }`. Les clés inconnues
     sont écartées, les dates mal formées ou inversées ignorées.
 
+## 🫀 Santé de la synchronisation WooCommerce
+
+- `GET /api/settings/sync-health` - Fraîcheur de la synchro YouSync (JWT)
+  - ⚠️ Déclarée **avant** `GET /api/settings/:key` dans `settingsRoutes.js`, qui
+    capturerait sinon `sync-health` comme une clé de configuration.
+  - Réponse : `{ status, healthy, stale, staleAfterSeconds, intervalSeconds,
+    lastPollOkAt, secondsSinceLastPoll, lastEventAt, lastBatchSize, lastError }`
+  - `stale` au-delà de 5 intervalles, avec un plancher de 5 min (un poll un peu long
+    ne doit pas crier au loup).
+
+Le battement de coeur est écrit par `wcSyncService` dans `app_config` — donc il
+**survit aux rebuilds Docker**, contrairement aux logs du conteneur qui étaient
+jusqu'ici la seule trace (et qui ont fait échouer une enquête le 08/09/2026).
+
+| Clé | Sens |
+|---|---|
+| `wc_sync_status` | `running` \| `disabled` \| `unconfigured` — écrit au démarrage |
+| `wc_sync_last_poll_ok_at` | dernier poll **abouti**, même sans aucun événement |
+| `wc_sync_last_event_at` | dernier événement réellement traité |
+| `wc_sync_last_batch_size` | taille du dernier lot (un lot qui gonfle = file en retard) |
+| `wc_sync_last_error` | `{message, code, at}` du dernier échec, vidé au retour à la normale |
+
+Le poll abouti est enregistré **même quand la file est vide** : c'est le signal de vie.
+Ne l'écrire qu'en présence d'événements ferait passer une nuit calme pour une panne.
+L'écriture ne peut jamais faire échouer la synchro (erreur avalée et journalisée).
+
 ## 🔄 Sync Routes (`/sync`)
 
 ### Connexion et santé

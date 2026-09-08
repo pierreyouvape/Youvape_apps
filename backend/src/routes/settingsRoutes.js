@@ -22,6 +22,67 @@ router.get('/', authMiddleware, async (req, res) => {
   }
 });
 
+/*
+ * GET /api/settings/sync-health - Fraîcheur de la synchronisation WooCommerce.
+ *
+ * ⚠️ DOIT rester déclarée AVANT `GET /:key`, qui capturerait sinon
+ * « sync-health » comme une clé de configuration et renverrait 404.
+ *
+ * Répond à la question que les logs seuls ne permettaient pas de trancher :
+ * « les données sont-elles à jour ? ». Les valeurs viennent d'app_config, donc
+ * elles survivent aux rebuilds Docker.
+ */
+router.get('/sync-health', authMiddleware, async (req, res) => {
+  try {
+    const read = async (key) => (await appConfigModel.get(key))?.config_value || null;
+
+    const [status, lastPollOkAt, lastEventAt, lastBatchSize, lastErrorRaw, intervalRaw] =
+      await Promise.all([
+        read('wc_sync_status'),
+        read('wc_sync_last_poll_ok_at'),
+        read('wc_sync_last_event_at'),
+        read('wc_sync_last_batch_size'),
+        read('wc_sync_last_error'),
+        read('wc_sync_interval'),
+      ]);
+
+    const intervalSeconds = parseInt(intervalRaw, 10) || 60;
+
+    const secondsSinceLastPoll = lastPollOkAt
+      ? Math.round((Date.now() - new Date(lastPollOkAt).getTime()) / 1000)
+      : null;
+
+    // Périmé au-delà de 5 intervalles, avec un plancher de 5 minutes : en deçà,
+    // un simple poll un peu long déclencherait une fausse alerte.
+    const staleAfter = Math.max(intervalSeconds * 5, 300);
+    const stale = secondsSinceLastPoll === null || secondsSinceLastPoll > staleAfter;
+
+    let lastError = null;
+    if (lastErrorRaw) {
+      try { lastError = JSON.parse(lastErrorRaw); } catch { lastError = { message: lastErrorRaw }; }
+    }
+
+    res.json({
+      success: true,
+      health: {
+        status: status || 'unknown',
+        healthy: status === 'running' && !stale && !lastError,
+        stale,
+        staleAfterSeconds: staleAfter,
+        intervalSeconds,
+        lastPollOkAt,
+        secondsSinceLastPoll,
+        lastEventAt,
+        lastBatchSize: lastBatchSize === null ? null : parseInt(lastBatchSize, 10),
+        lastError,
+      },
+    });
+  } catch (error) {
+    console.error('Error fetching sync health:', error);
+    res.status(500).json({ success: false, error: 'Failed to fetch sync health' });
+  }
+});
+
 // GET /api/settings/:key - Récupérer un paramètre spécifique
 router.get('/:key', authMiddleware, async (req, res) => {
   try {
