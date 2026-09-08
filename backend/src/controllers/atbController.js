@@ -3,7 +3,11 @@ const atbModel = require('../models/atbModel');
 /** Fenêtre maximale demandable, en jours (garde-fou : la requête scanne 3 fenêtres). */
 const MAX_RANGE_DAYS = 366;
 
+/** Plafond du filtre pays — la base n'en compte que 38, au-delà c'est du bruit. */
+const MAX_COUNTRIES = 60;
+
 const YMD_RE = /^\d{4}-\d{2}-\d{2}$/;
+const COUNTRY_RE = /^[A-Z]{2}$/;
 
 /** Nombre de jours du mois (year, month 1-12). */
 const daysInMonth = (year, month) => new Date(year, month, 0).getDate();
@@ -54,12 +58,38 @@ function boundsOf(days) {
 }
 
 /**
- * GET /api/atb/orders/daily?dateFrom=YYYY-MM-DD&dateTo=YYYY-MM-DD
+ * Normalise le paramètre `countries` : 'FR,BE' → ['FR','BE'].
+ * Renvoie `null` (= tous les pays) si vide, et lève si un code est mal formé —
+ * mieux vaut une 400 explicite qu'un filtre silencieusement ignoré.
+ */
+function parseCountries(raw) {
+  if (raw === undefined || raw === null || raw === '') return null;
+
+  const list = (Array.isArray(raw) ? raw : String(raw).split(','))
+    .map((c) => String(c).trim().toUpperCase())
+    .filter(Boolean);
+
+  if (!list.length) return null;
+  if (list.length > MAX_COUNTRIES) {
+    throw Object.assign(new Error(`Trop de pays sélectionnés (maximum ${MAX_COUNTRIES})`), { status: 400 });
+  }
+  const bad = list.find((c) => !COUNTRY_RE.test(c));
+  if (bad) {
+    throw Object.assign(new Error(`Code pays invalide : ${bad}`), { status: 400 });
+  }
+  return [...new Set(list)];
+}
+
+/**
+ * GET /api/atb/orders/daily?dateFrom=YYYY-MM-DD&dateTo=YYYY-MM-DD[&countries=FR,BE]
  *
  * Nombre de commandes payées par jour sur la période, avec pour chaque jour sa
  * contrepartie M-1 (même quantième, mois précédent) et N-1 (même date, année
  * précédente). La comparaison est calendaire, pas par jour de semaine : le
  * 7 septembre 2026 (lundi) se compare au 7 septembre 2025 (dimanche).
+ *
+ * Le filtre pays s'applique aux TROIS fenêtres, sinon on comparerait la France
+ * de cette année à l'Europe entière de l'an dernier.
  */
 exports.getDailyOrders = async (req, res) => {
   try {
@@ -74,6 +104,8 @@ exports.getDailyOrders = async (req, res) => {
     if (dateFrom > dateTo) {
       return res.status(400).json({ success: false, error: 'dateFrom doit précéder dateTo' });
     }
+
+    const countries = parseCountries(req.query.countries);
 
     const days = eachDay(dateFrom, dateTo);
     if (days.length > MAX_RANGE_DAYS) {
@@ -92,9 +124,9 @@ exports.getDailyOrders = async (req, res) => {
     // Trois fenêtres disjointes (un mois puis un an d'écart) → trois requêtes
     // ciblées, en parallèle. Une seule requête couvrirait un an entier.
     const [current, m1, n1] = await Promise.all([
-      atbModel.dailyOrderCounts({ dateFrom, dateTo }),
-      m1Bounds ? atbModel.dailyOrderCounts({ dateFrom: m1Bounds.from, dateTo: m1Bounds.to }) : new Map(),
-      n1Bounds ? atbModel.dailyOrderCounts({ dateFrom: n1Bounds.from, dateTo: n1Bounds.to }) : new Map(),
+      atbModel.dailyOrderCounts({ dateFrom, dateTo, countries }),
+      m1Bounds ? atbModel.dailyOrderCounts({ dateFrom: m1Bounds.from, dateTo: m1Bounds.to, countries }) : new Map(),
+      n1Bounds ? atbModel.dailyOrderCounts({ dateFrom: n1Bounds.from, dateTo: n1Bounds.to, countries }) : new Map(),
     ]);
 
     const series = days.map((date, i) => ({
@@ -123,11 +155,99 @@ exports.getDailyOrders = async (req, res) => {
       range: { from: dateFrom, to: dateTo, days: days.length },
       compare: { m1: m1Bounds, n1: n1Bounds },
       statuses: atbModel.PAID_STATUSES,
+      countries,
       series,
       totals,
     });
   } catch (error) {
+    if (error.status === 400) {
+      return res.status(400).json({ success: false, error: error.message });
+    }
     console.error('Erreur getDailyOrders (ATB):', error);
+    res.status(500).json({ success: false, error: error.message || 'Erreur serveur' });
+  }
+};
+
+/**
+ * GET /api/atb/orders/countries
+ * Pays servis sur les 24 derniers mois, du plus gros volume au plus petit.
+ * Les libellés et drapeaux sont posés côté front (`utils/countries.js`), qui les
+ * tient déjà pour les autres écrans — inutile de les redire en SQL.
+ */
+exports.getCountries = async (req, res) => {
+  try {
+    const countries = await atbModel.listCountries();
+    res.json({ success: true, countries });
+  } catch (error) {
+    console.error('Erreur getCountries (ATB):', error);
+    res.status(500).json({ success: false, error: error.message || 'Erreur serveur' });
+  }
+};
+
+/* ─── PRÉFÉRENCES DU MODULE ─────────────────────────────────────────────────
+ * Ce qui est enregistré, c'est le CHOIX, pas son résultat : pour un préréglage
+ * on garde sa clé ('30j'), pas les dates qu'elle produit. Sinon « 30 derniers
+ * jours » se figerait au 30 jours du jour où il a été coché, et il faudrait le
+ * refaire chaque matin — précisément ce qu'on veut éviter. Seule la période
+ * personnalisée mérite des dates en dur.
+ *
+ * La liste des préréglages vit côté front (un seul endroit). Ici on ne valide
+ * que la FORME de la clé : un préréglage inconnu est ignoré par le front, qui
+ * retombe sur son défaut.
+ * ────────────────────────────────────────────────────────────────────────── */
+
+const PRESET_RE = /^[a-zA-Z0-9]{1,16}$/;
+
+function sanitizePrefs(body) {
+  const out = {};
+
+  if (typeof body.preset === 'string' && PRESET_RE.test(body.preset)) {
+    out.preset = body.preset;
+  }
+  if (YMD_RE.test(body.dateFrom || '')) out.dateFrom = body.dateFrom;
+  if (YMD_RE.test(body.dateTo || '')) out.dateTo = body.dateTo;
+
+  // Dates incohérentes : on n'en garde aucune plutôt qu'une plage inversée que
+  // le front rejouerait en boucle en 400.
+  if (out.dateFrom && out.dateTo && out.dateFrom > out.dateTo) {
+    delete out.dateFrom;
+    delete out.dateTo;
+  }
+
+  const countries = parseCountries(body.countries);
+  out.countries = countries || [];
+
+  if (typeof body.showM1 === 'boolean') out.showM1 = body.showM1;
+  if (typeof body.showN1 === 'boolean') out.showN1 = body.showN1;
+
+  return out;
+}
+
+/** GET /api/atb/preferences */
+exports.getPreferences = async (req, res) => {
+  try {
+    const prefs = await atbModel.getPreferences(req.user.id);
+    res.json({ success: true, preferences: prefs });
+  } catch (error) {
+    console.error('Erreur getPreferences (ATB):', error);
+    res.status(500).json({ success: false, error: error.message || 'Erreur serveur' });
+  }
+};
+
+/** PUT /api/atb/preferences */
+exports.savePreferences = async (req, res) => {
+  try {
+    if (!req.body || typeof req.body !== 'object') {
+      return res.status(400).json({ success: false, error: 'Corps invalide' });
+    }
+    const prefs = sanitizePrefs(req.body);
+    await atbModel.savePreferences(req.user.id, prefs);
+    res.json({ success: true, preferences: prefs });
+  } catch (error) {
+    if (error.status === 400) {
+      return res.status(400).json({ success: false, error: error.message });
+    }
+    console.error('Erreur savePreferences (ATB):', error);
     res.status(500).json({ success: false, error: error.message || 'Erreur serveur' });
   }
 };

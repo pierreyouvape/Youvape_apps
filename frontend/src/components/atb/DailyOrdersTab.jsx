@@ -1,8 +1,10 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import axios from 'axios';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from 'recharts';
+import CountryPicker from './CountryPicker';
+import { getCountryFlag, getCountryName } from '../../utils/countries';
 
 const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:3000/api/auth').replace('/auth', '');
 
@@ -49,7 +51,13 @@ function prettyDay(ymd) {
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
-/* ─── PRÉRÉGLAGES DE PÉRIODE ────────────────────────────── */
+/* ─── PRÉRÉGLAGES DE PÉRIODE ────────────────────────────────
+ * Source de vérité unique : le backend ne valide que la FORME de la clé, il ne
+ * duplique pas cette liste. Une clé enregistrée puis retirée d'ici est ignorée
+ * au chargement, et on retombe sur le défaut.
+ * ────────────────────────────────────────────────────────── */
+const DEFAULT_PRESET = '30j';
+
 const PRESETS = [
   {
     key: '7j',
@@ -82,6 +90,14 @@ const PRESETS = [
     range: () => { const to = new Date(); const from = new Date(); from.setDate(from.getDate() - 89); return [from, to]; },
   },
 ];
+
+/** Clé de préréglage → ['YYYY-MM-DD', 'YYYY-MM-DD'], recalculé à l'instant présent. */
+function rangeForPreset(key) {
+  const def = PRESETS.find((p) => p.key === key);
+  if (!def) return null;
+  const [from, to] = def.range();
+  return [localYmd(from), localYmd(to)];
+}
 
 /* ─── CARTE KPI ─────────────────────────────────────────── */
 function StatCard({ label, value, sub, subColor, accent }) {
@@ -128,6 +144,11 @@ function ChartTooltip({ active, payload }) {
       padding: '10px 12px', boxShadow: '0 6px 20px rgba(0,0,0,0.10)',
     }}>
       <div style={{ fontSize: 12.5, fontWeight: 700, color: C.grisTF }}>{prettyDay(p.date)}</div>
+      {p.date === localYmd(new Date()) && (
+        <div style={{ fontSize: 11.5, color: C.m1, fontWeight: 600, marginTop: 2 }}>
+          Jour en cours — le total montera encore
+        </div>
+      )}
       <Line color={C.atb} title="Période" date={p.date} value={p.orders} />
       <Line color={C.m1} title="M-1" date={p.m1Date} value={p.m1Orders} delta={pctDelta(p.orders, p.m1Orders)} />
       <Line color={C.n1} title="N-1" date={p.n1Date} value={p.n1Orders} delta={pctDelta(p.orders, p.n1Orders)} />
@@ -137,32 +158,106 @@ function ChartTooltip({ active, payload }) {
 
 /* ─── MODULE ────────────────────────────────────────────── */
 export default function DailyOrdersTab() {
-  const [preset, setPreset] = useState('30j');
+  const initial = rangeForPreset(DEFAULT_PRESET);
 
-  const initial = PRESETS.find((p) => p.key === '30j').range();
-  const [dateFrom, setDateFrom] = useState(localYmd(initial[0]));
-  const [dateTo, setDateTo] = useState(localYmd(initial[1]));
-
-  const [data, setData] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
+  const [preset, setPreset] = useState(DEFAULT_PRESET);
+  const [dateFrom, setDateFrom] = useState(initial[0]);
+  const [dateTo, setDateTo] = useState(initial[1]);
+  const [selectedCountries, setSelectedCountries] = useState([]);
   const [showM1, setShowM1] = useState(true);
   const [showN1, setShowN1] = useState(true);
 
-  const applyPreset = (key) => {
-    const def = PRESETS.find((p) => p.key === key);
-    if (!def) return;
-    const [from, to] = def.range();
-    setPreset(key);
-    setDateFrom(localYmd(from));
-    setDateTo(localYmd(to));
-  };
+  const [availableCountries, setAvailableCountries] = useState([]);
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
 
+  /* Tant que les préférences ne sont pas revenues, on ne charge rien : sinon on
+   * ferait un premier appel sur la période par défaut, aussitôt suivi d'un
+   * second sur la période restaurée. */
+  const [prefsLoaded, setPrefsLoaded] = useState(false);
+  const skipFirstSave = useRef(true);
+  const saveTimer = useRef(null);
+
+  /* Dépendance stable pour les effets : un tableau change d'identité à chaque rendu. */
+  const countriesKey = selectedCountries.join(',');
+
+  /* ── Chargement initial : préférences + liste des pays ── */
+  useEffect(() => {
+    let cancelled = false;
+
+    (async () => {
+      const [prefsRes, countriesRes] = await Promise.allSettled([
+        axios.get(`${API_URL}/atb/preferences`),
+        axios.get(`${API_URL}/atb/orders/countries`),
+      ]);
+
+      if (cancelled) return;
+
+      if (countriesRes.status === 'fulfilled') {
+        setAvailableCountries(countriesRes.value.data.countries || []);
+      }
+
+      // Préférences illisibles ou absentes → on garde les défauts, sans bruit :
+      // un module qui refuse de s'afficher parce qu'il n'a pas retrouvé une
+      // préférence de confort serait une régression.
+      const p = prefsRes.status === 'fulfilled' ? prefsRes.value.data?.preferences : null;
+      if (p) {
+        if (p.preset === 'perso' && p.dateFrom && p.dateTo) {
+          setPreset('perso');
+          setDateFrom(p.dateFrom);
+          setDateTo(p.dateTo);
+        } else if (p.preset) {
+          // Un préréglage se recalcule à la date du jour : c'est tout l'intérêt
+          // d'enregistrer « 30 derniers jours » plutôt que les dates produites.
+          const r = rangeForPreset(p.preset);
+          if (r) { setPreset(p.preset); setDateFrom(r[0]); setDateTo(r[1]); }
+        }
+        if (Array.isArray(p.countries)) setSelectedCountries(p.countries);
+        if (typeof p.showM1 === 'boolean') setShowM1(p.showM1);
+        if (typeof p.showN1 === 'boolean') setShowN1(p.showN1);
+      }
+
+      setPrefsLoaded(true);
+    })();
+
+    return () => { cancelled = true; };
+  }, []);
+
+  /* ── Enregistrement (débounce) ── */
+  useEffect(() => {
+    if (!prefsLoaded) return undefined;
+    // Le premier passage suit immédiatement la restauration : réenregistrer ce
+    // qu'on vient de lire ne sert à rien.
+    if (skipFirstSave.current) { skipFirstSave.current = false; return undefined; }
+
+    clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(() => {
+      axios.put(`${API_URL}/atb/preferences`, {
+        preset,
+        dateFrom,
+        dateTo,
+        countries: selectedCountries,
+        showM1,
+        showN1,
+      }).catch((err) => {
+        // Échec silencieux à dessein : la période reste utilisable dans l'onglet,
+        // seule la mémorisation est perdue.
+        console.error('Préférences ATB non enregistrées:', err);
+      });
+    }, 600);
+
+    return () => clearTimeout(saveTimer.current);
+  }, [prefsLoaded, preset, dateFrom, dateTo, countriesKey, showM1, showN1]);
+
+  /* ── Chargement des données ── */
   const fetchData = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const res = await axios.get(`${API_URL}/atb/orders/daily`, { params: { dateFrom, dateTo } });
+      const params = { dateFrom, dateTo };
+      if (selectedCountries.length) params.countries = selectedCountries.join(',');
+      const res = await axios.get(`${API_URL}/atb/orders/daily`, { params });
       setData(res.data);
     } catch (err) {
       console.error('Erreur chargement commandes/jour (ATB):', err);
@@ -171,9 +266,17 @@ export default function DailyOrdersTab() {
     } finally {
       setLoading(false);
     }
-  }, [dateFrom, dateTo]);
+  }, [dateFrom, dateTo, countriesKey]);
 
-  useEffect(() => { fetchData(); }, [fetchData]);
+  useEffect(() => { if (prefsLoaded) fetchData(); }, [prefsLoaded, fetchData]);
+
+  const applyPreset = (key) => {
+    const r = rangeForPreset(key);
+    if (!r) return;
+    setPreset(key);
+    setDateFrom(r[0]);
+    setDateTo(r[1]);
+  };
 
   const series = data?.series || [];
   const totals = data?.totals;
@@ -191,7 +294,22 @@ export default function DailyOrdersTab() {
   /* Un label d'axe tous les k jours, pour ne pas empiler les dates. */
   const tickInterval = useMemo(() => Math.max(0, Math.ceil(series.length / 15) - 1), [series.length]);
 
-  const avgPerDay = series.length ? Math.round(totals.current / series.length) : 0;
+  const avgPerDay = series.length && totals ? Math.round(totals.current / series.length) : 0;
+
+  /* La moyenne par jour et le dernier bâton portent un jour partiel tant que la
+   * période va jusqu'à aujourd'hui : le dire vaut mieux que laisser lire une chute. */
+  const includesToday = useMemo(
+    () => series.length > 0 && series[series.length - 1].date === localYmd(new Date()),
+    [series],
+  );
+
+  const countryScope = useMemo(() => {
+    if (!selectedCountries.length) return 'tous pays confondus';
+    if (selectedCountries.length <= 4) {
+      return selectedCountries.map((c) => `${getCountryFlag(c)} ${getCountryName(c)}`).join(', ');
+    }
+    return `${selectedCountries.length} pays sélectionnés`;
+  }, [selectedCountries]);
 
   const inputStyle = {
     padding: '8px 10px', border: `1px solid ${C.grisCL}`, borderRadius: 8,
@@ -224,8 +342,8 @@ export default function DailyOrdersTab() {
 
   return (
     <div>
-      {/* ── Sélection de période ── */}
-      <section style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'flex-end', marginBottom: 18 }}>
+      {/* ── Filtres : période + pays ── */}
+      <section style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'flex-end', marginBottom: 8 }}>
         {PRESETS.map((p) => (
           <button key={p.key} onClick={() => applyPreset(p.key)} style={chipStyle(preset === p.key)}>
             {p.label}
@@ -246,7 +364,18 @@ export default function DailyOrdersTab() {
             onChange={(e) => { setDateTo(e.target.value); setPreset('perso'); }}
           />
         </div>
+
+        <CountryPicker
+          countries={availableCountries}
+          selected={selectedCountries}
+          onChange={setSelectedCountries}
+        />
       </section>
+
+      <p style={{ fontSize: 12, color: C.grisM, margin: '0 0 18px' }}>
+        Période et pays sont retenus pour la prochaine visite. Un préréglage se recalcule à la date du jour ;
+        seule une période personnalisée reste figée sur ses dates.
+      </p>
 
       {error && (
         <div style={{
@@ -291,12 +420,17 @@ export default function DailyOrdersTab() {
         }}>
           <div>
             <h2 style={{ fontSize: 15.5, fontWeight: 700, color: C.grisTF, margin: 0 }}>
-              Commandes par jour
+              Commandes par jour — <span style={{ color: C.atb }}>{countryScope}</span>
             </h2>
             <p style={{ fontSize: 12, color: C.grisM, margin: '3px 0 0' }}>
               Comparaison à date calendaire : le 7 septembre se compare au 7 août et au 7 septembre de l'an dernier —
               donc pas au même jour de la semaine.
             </p>
+            {includesToday && (
+              <p style={{ fontSize: 12, color: C.m1, margin: '3px 0 0', fontWeight: 600 }}>
+                Le dernier bâton est le jour en cours : il est encore incomplet.
+              </p>
+            )}
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
             {legendChip(C.m1, 'M-1', showM1, () => setShowM1((v) => !v))}

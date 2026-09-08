@@ -151,6 +151,29 @@ JWT au montage (`server.js`) + droit applicatif `atb` en lecture (vérifié dans
   - Réponse : `{ range, compare, statuses, series[{date, orders, m1Date, m1Orders, n1Date, n1Orders}], totals }`
   - `totals.currentForM1` / `currentForN1` = total courant restreint aux jours ayant une
     contrepartie — c'est cette base qu'il faut utiliser pour l'écart %, pas `totals.current`.
+  - `countries` (optionnel) : codes ISO 2 lettres séparés par des virgules (`FR,BE`).
+    Absent ou vide = tous les pays. Le pays est `orders.shipping_country`, comme
+    `statsService` et `analysisController`. Le filtre s'applique aux **trois** fenêtres,
+    sinon on comparerait la France de cette année à l'Europe entière de l'an dernier.
+    Un code mal formé renvoie 400 plutôt que d'être ignoré en silence.
+
+- `GET /atb/orders/countries` - Pays servis sur les 24 derniers mois, du plus gros volume au plus petit
+  - Fenêtre glissante et non « toute la période affichée » : la liste doit rester stable
+    quand on change les dates, sinon un pays déjà coché disparaîtrait de la liste.
+  - Renvoie `{ code, orders }` seulement. Libellés et drapeaux viennent du front
+    (`utils/countries.js`), qui les tient déjà pour les autres écrans.
+
+- `GET /atb/preferences` - Période, pays et séries affichées de l'utilisateur connecté
+- `PUT /atb/preferences` - Enregistre ces choix
+  - Stocké dans `user_column_preferences` (page `atb-commandes`), dépôt JSON générique
+    déjà utilisé pour la page « home ». **Aucune migration.**
+  - Ce qui est enregistré est le CHOIX, pas son résultat : pour un préréglage on garde
+    sa clé (`30j`), pas les dates produites — sinon « 30 derniers jours » se figerait au
+    jour où il a été coché. Seule la période `perso` garde des dates en dur.
+  - La liste des préréglages vit côté front. Le backend ne valide que la forme de la clé ;
+    une clé inconnue est ignorée au chargement et le front retombe sur son défaut.
+  - Corps : `{ preset, dateFrom, dateTo, countries[], showM1, showN1 }`. Les clés inconnues
+    sont écartées, les dates mal formées ou inversées ignorées.
 
 ## 🔄 Sync Routes (`/sync`)
 
