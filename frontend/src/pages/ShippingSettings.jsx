@@ -1,4 +1,5 @@
 import CloudLogo from '../components/CloudLogo';
+import MethodMappingTab from '../components/shipping/MethodMappingTab';
 import { useState, useEffect, useContext, Fragment } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AuthContext } from '../context/AuthContext';
@@ -87,6 +88,7 @@ const ShippingSettings = () => {
     { id: 'general', label: 'Général' },
     { id: 'tarifs', label: 'Tarifs' },
     { id: 'zones_pays', label: 'Zones/Pays' },
+    { id: 'etiquetage', label: 'Étiquetage' },
     { id: 'apply', label: 'Appliquer' }
   ];
 
@@ -1187,6 +1189,7 @@ const ShippingSettings = () => {
               {activeSubTab === 'general' && renderGeneralTab()}
               {activeSubTab === 'tarifs' && renderTarifsTab()}
               {activeSubTab === 'zones_pays' && renderZonesPaysTab()}
+              {activeSubTab === 'etiquetage' && <MethodMappingTab />}
               {activeSubTab === 'apply' && renderApplyTab()}
             </>
           )}

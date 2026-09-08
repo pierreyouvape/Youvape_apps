@@ -1,5 +1,6 @@
 const pool = require('../config/database');
 const { computeOrderWeight, getPackagingWeight } = require('../services/orderWeightService');
+const shippingMethodMapModel = require('../models/shippingMethodMapModel');
 
 // Rechercher une commande par numéro WC pour le packing
 const searchOrder = async (req, res) => {
@@ -82,12 +83,20 @@ const searchOrder = async (req, res) => {
     // Poids expédié : c'est ce chiffre qui sera déclaré au transporteur pour tous
     // les colis. La lettre suivie garde son poids forfaitaire de 20 g (cf.
     // laposteController), elle n'est pas concernée.
-    const [totalWeight, packagingWeight] = await Promise.all([
+    const [totalWeight, packagingWeight, carrier] = await Promise.all([
       computeOrderWeight(pool, orderNumber),
-      getPackagingWeight(pool)
+      getPackagingWeight(pool),
+      // Le transporteur est résolu DÈS LE SCAN, pas au moment d'imprimer :
+      // l'écran doit afficher sa couleur et son nom pendant que la personne
+      // prépare le colis, et refuser tout de suite un mode de livraison
+      // inconnu plutôt que la laisser tout scanner pour rien.
+      shippingMethodMapModel.resolve(order.shipping_method)
     ]);
 
     res.json({
+      // status : 'mapped' (on sait étiqueter), 'no_label' (rien à imprimer,
+      // volontairement) ou 'unknown' (personne ne l'a mappé : on bloque).
+      carrier,
       weight: {
         // Grammes, tare comprise. Le détail permet au préparateur de comprendre
         // l'écart avec la somme des poids produits affichés ligne à ligne.
