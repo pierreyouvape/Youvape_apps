@@ -83,11 +83,14 @@ const findById = async (id) => {
 
 /**
  * @param {number|string} id
- * @returns {Promise<?{pdf_data: ?string, order_number: string}>}
+ * Le transporteur est rendu avec : la réimpression doit renommer le fichier
+ * selon sa convention, sinon AutoPrint l'envoie sur la mauvaise imprimante.
+ *
+ * @returns {Promise<?{pdf_data: ?string, order_number: string, carrier_code: string}>}
  */
 const findPdfById = async (id) => {
   const result = await pool.query(
-    'SELECT pdf_data, order_number FROM shipment_labels WHERE id = $1',
+    'SELECT pdf_data, order_number, carrier_code FROM shipment_labels WHERE id = $1',
     [id]
   );
   return result.rows[0] || null;

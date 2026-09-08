@@ -103,12 +103,21 @@ const createLabel = async ({ orderNumber, receiver }) => {
 const cancelWindow = () => ({ cancellable: true, reason: null });
 const cancelLabel = async () => ({ cancelled: true, carrier: 'interne' });
 
+/**
+ * Nom du fichier téléchargé au packing : `retraitmagasin_<n°>.pdf`.
+ *
+ * Même forme que Mondial Relay, faute de consigne AutoPrint pour le retrait —
+ * à ajuster si l'imprimante du comptoir doit être distinguée.
+ */
+const labelFileName = (orderNumber) => `retraitmagasin_${orderNumber}.pdf`;
+
 module.exports = assertAdapter({
   code: 'interne',
   accountCode: 'retrait_magasin',
   methodCode: 'retrait_magasin',
   label: CARRIER_LABEL,
   logTag: LOG_TAG,
+  labelFileName,
   // Le colis ne part pas chez un transporteur, mais il sort du stock : BMS doit
   // le savoir comme pour n'importe quelle expédition. Il n'aura simplement
   // aucun numéro de suivi.

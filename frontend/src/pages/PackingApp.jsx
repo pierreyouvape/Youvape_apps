@@ -111,7 +111,15 @@ const PackingApp = () => {
   useEffect(() => { showManualRef.current = showManual; }, [showManual]);
 
   // Télécharger le PDF depuis base64
-  const downloadPdf = useCallback((base64, orderNumber) => {
+  /**
+   * Télécharge l'étiquette. Le NOM DU FICHIER compte : AutoPrint s'en sert pour
+   * choisir l'imprimante. Il est décidé par le backend, qui seul connaît le
+   * transporteur — « LS-1259134.pdf » pour la lettre suivie,
+   * « mondialrelay_1259134.pdf » pour Mondial Relay. Le repli sur « LS- » ne
+   * sert qu'aux appels qui ne passent pas par la route routée (expédition
+   * manuelle, réimpression), tous en lettre suivie.
+   */
+  const downloadPdf = useCallback((base64, orderNumber, fileName) => {
     const byteCharacters = atob(base64);
     const byteNumbers = new Array(byteCharacters.length);
     for (let i = 0; i < byteCharacters.length; i++) {
@@ -122,7 +130,7 @@ const PackingApp = () => {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `LS-${orderNumber}.pdf`;
+    a.download = fileName || `LS-${orderNumber}.pdf`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -147,8 +155,8 @@ const PackingApp = () => {
         return;
       }
 
-      setLabelData({ pdfBase64: data.pdfBase64, trackingId: data.trackingId, orderNumber: data.orderNumber });
-      downloadPdf(data.pdfBase64, orderNumber);
+      setLabelData({ pdfBase64: data.pdfBase64, trackingId: data.trackingId, orderNumber: data.orderNumber, fileName: data.fileName });
+      downloadPdf(data.pdfBase64, orderNumber, data.fileName);
       setMessage(data.trackingId
         ? `Etiquette ${data.carrierLabel || ''} generee — suivi : ${data.trackingId}`
         : `Etiquette ${data.carrierLabel || ''} generee`);
@@ -391,7 +399,7 @@ const PackingApp = () => {
       const res = await axios.get(`${API_URL}/laposte/labels/${label.id}/pdf`, {
         headers: { Authorization: `Bearer ${token}` }
       });
-      downloadPdf(res.data.pdfBase64, res.data.orderNumber);
+      downloadPdf(res.data.pdfBase64, res.data.orderNumber, res.data.fileName);
     } catch (err) {
       alert(err.response?.data?.error || 'Erreur récupération PDF');
     } finally {
@@ -1431,7 +1439,7 @@ const PackingApp = () => {
                       N° suivi : <strong>{labelData.trackingId}</strong>
                     </p>
                     <button
-                      onClick={() => downloadPdf(labelData.pdfBase64, labelData.orderNumber)}
+                      onClick={() => downloadPdf(labelData.pdfBase64, labelData.orderNumber, labelData.fileName)}
                       style={{
                         padding: '10px 24px',
                         backgroundColor: '#28a745',

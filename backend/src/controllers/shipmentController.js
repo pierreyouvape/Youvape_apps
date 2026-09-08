@@ -235,6 +235,10 @@ const generateForOrder = async (req, res) => {
       trackingId: trackingNumber,
       weightGrams,
       pdfBase64,
+      // AutoPrint choisit l'imprimante d'après le NOM du fichier téléchargé.
+      // C'est donc l'adaptateur qui le décide, pas l'écran : chaque
+      // transporteur a sa convention, séparateur compris.
+      fileName: adapter.labelFileName(orderNumber),
       orderNumber
     });
 
@@ -517,7 +521,18 @@ const makeCarrierHandlers = (carrierCode) => {
         return res.status(404).json({ error: 'PDF non disponible pour cette étiquette' });
       }
 
-      res.json({ pdfBase64: row.pdf_data, orderNumber: row.order_number });
+      // Le nom vient du transporteur QUI A ÉMIS l'étiquette, pas de celui de la
+      // route : la liste est commune à tous, et une étiquette Mondial Relay
+      // réimprimée sous le nom d'une lettre suivie partirait sur la mauvaise
+      // imprimante.
+      let fileName = null;
+      try {
+        fileName = getAdapter(row.carrier_code).labelFileName(row.order_number);
+      } catch (e) {
+        console.warn(`[${adapter.logTag}] Étiquette ${id} : transporteur « ${row.carrier_code} » inconnu, nom de fichier par défaut`);
+      }
+
+      res.json({ pdfBase64: row.pdf_data, orderNumber: row.order_number, fileName });
     } catch (error) {
       console.error(`[${adapter.logTag}] Erreur getLabelPdf:`, error.message);
       res.status(500).json({ error: 'Erreur serveur' });

@@ -192,6 +192,35 @@ test('erreur sans cas connu : pas de message inventé', () => {
   assert.strictEqual(msg(Object.assign(new Error('x'), { statusCode: 400 })), null);
 });
 
+// ── Nom du fichier téléchargé (détection AutoPrint) ──────────────────────────
+console.log('\nNom de fichier des étiquettes');
+
+test('la lettre suivie garde EXACTEMENT son nom historique', () => {
+  // AutoPrint est réglé sur « LS-… » depuis la mise en service : le tiret et
+  // les deux majuscules ne sont pas un choix de style. Les changer ferait
+  // cesser l'impression automatique des lettres suivies.
+  assert.strictEqual(laposte.labelFileName('1259134'), 'LS-1259134.pdf');
+});
+
+test('Mondial Relay suit sa propre convention', () => {
+  assert.strictEqual(getAdapter('mondial_relay').labelFileName('1259134'), 'mondialrelay_1259134.pdf');
+});
+
+test('chaque transporteur a un nom distinct : c\'est ce qui permet le routage', () => {
+  const noms = listCarrierCodes().map(c => getAdapter(c).labelFileName('1259134'));
+  assert.strictEqual(new Set(noms).size, noms.length, `noms en double : ${noms.join(', ')}`);
+  for (const n of noms) assert.ok(n.endsWith('.pdf'), n);
+});
+
+test('un adaptateur sans nom de fichier casse au chargement', () => {
+  assert.throws(
+    () => assertAdapter({ code: 'x', accountCode: 'a', methodCode: 'm', label: 'X', logTag: 'X',
+                          bmsShipmentTitle: 't', resolveWeight() {}, createLabel() {},
+                          cancelLabel() {}, cancelWindow() {} }),
+    /labelFileName/
+  );
+});
+
 // ── Contrat ──────────────────────────────────────────────────────────────────
 console.log('\nContrat transporteur');
 

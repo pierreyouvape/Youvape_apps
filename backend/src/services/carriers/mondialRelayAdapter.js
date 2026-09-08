@@ -383,12 +383,23 @@ const cancelLabel = async () => {
   throw err;
 };
 
+/**
+ * Nom du fichier téléchargé au packing : `mondialrelay_<n°>.pdf`.
+ *
+ * Convention propre à Mondial Relay, sur laquelle AutoPrint se règle pour
+ * router vers la bonne imprimante. Elle diffère de celle de la lettre suivie
+ * (`LS-<n°>.pdf`) — chaque transporteur a la sienne, et c'est justement ce qui
+ * permet à AutoPrint de les distinguer.
+ */
+const labelFileName = (orderNumber) => `mondialrelay_${orderNumber}.pdf`;
+
 module.exports = assertAdapter({
   code: 'mondial_relay',
   accountCode: 'sandbox',
   methodCode: '24R',
   label: CARRIER_LABEL,
   logTag: LOG_TAG,
+  labelFileName,
   bmsShipmentTitle: 'Mondial Relay',
   resolveWeight,
   createLabel,

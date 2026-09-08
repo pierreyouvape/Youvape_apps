@@ -48,6 +48,12 @@
  * @property {string} methodCode  - offre / mode de livraison
  * @property {string} label       - nom affiché à l'écran (« La Poste »)
  * @property {string} logTag      - préfixe de log, sans crochets (« LaPoste »)
+ * @property {(orderNumber: string|number) => string} labelFileName
+ *           Nom du fichier PDF téléchargé au packing. **AutoPrint choisit
+ *           l'imprimante d'après ce nom** : ce n'est pas une valeur cosmétique,
+ *           la changer casse l'impression automatique. Chaque transporteur a sa
+ *           convention, séparateur compris — c'est pour ça que c'est une méthode
+ *           et pas un préfixe commun.
  * @property {string} bmsShipmentTitle - libellé de suivi attendu par BMS
  * @property {(input: {pool: object, orderNumber: string|number, account: object}) => Promise<number>} resolveWeight
  *           Poids à déclarer, en grammes.
@@ -70,7 +76,7 @@ const REQUIRED_PROPS = [
   'code', 'accountCode', 'methodCode', 'label', 'logTag', 'bmsShipmentTitle'
 ];
 const REQUIRED_METHODS = [
-  'resolveWeight', 'createLabel', 'cancelLabel', 'cancelWindow'
+  'resolveWeight', 'createLabel', 'cancelLabel', 'cancelWindow', 'labelFileName'
 ];
 
 /**

@@ -250,12 +250,22 @@ const cancelLabel = async ({ label, account }) => {
   return data;
 };
 
+/**
+ * Nom du fichier téléchargé au packing.
+ *
+ * `LS-<n°>.pdf` depuis la mise en service, et **AutoPrint est réglé dessus** :
+ * le tiret et les deux majuscules ne sont pas un choix de style, les changer
+ * ferait cesser l'impression automatique des lettres suivies.
+ */
+const labelFileName = (orderNumber) => `LS-${orderNumber}.pdf`;
+
 module.exports = assertAdapter({
   code: 'laposte',
   accountCode: 'lettre_suivie',
   methodCode: 'lettre_suivie',
   label: CARRIER_LABEL,
   logTag: LOG_TAG,
+  labelFileName,
   bmsShipmentTitle: 'La poste - Courrier suivi (port payé)',
   resolveWeight,
   createLabel,
