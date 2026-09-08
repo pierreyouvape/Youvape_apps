@@ -105,13 +105,17 @@ async function main() {
     }
     if (!champs) { ok(`${cle} : aucun champ requis`); continue; }
 
+    // Seuls les champs OBLIGATOIRES sont exigés. Les avancés et les facultatifs
+    // ont une valeur par défaut dans l'adaptateur : les réclamer ferait échouer
+    // le contrôle sur des contrats parfaitement fonctionnels — et une alerte qui
+    // crie au loup finit ignorée.
     const lire = (o, chemin) => chemin.split('.').reduce((x, k) => (x && typeof x === 'object' ? x[k] : undefined), o);
+    const vide = (v) => v === undefined || v === null || v === '';
     const manquants = [
-      ...champs.credentials.filter(f => !lire(c.credentials, f.key)).map(f => 'identifiants.' + f.key),
-      ...champs.settings.filter(f => {
-        const v = lire(c.settings, f.key);
-        return v === undefined || v === null || v === '';
-      }).map(f => 'réglages.' + f.key)
+      ...champs.credentials.filter(f => f.required && vide(lire(c.credentials, f.key)))
+        .map(f => 'identifiants.' + f.key),
+      ...champs.settings.filter(f => f.required && vide(lire(c.settings, f.key)))
+        .map(f => 'réglages.' + f.key)
     ];
 
     manquants.length === 0
