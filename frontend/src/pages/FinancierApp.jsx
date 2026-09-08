@@ -650,24 +650,59 @@ function exportComptablePDF({ rows, totals, periodLabel, range, detailed = true 
   doc.text(`Généré le ${new Date().toLocaleDateString('fr-FR')} à ${new Date().toLocaleTimeString('fr-FR')}`, pageWidth / 2, y, { align: 'center' });
   y += 12;
 
-  // Récapitulatif global (brut / net)
+  // Récapitulatif global en CASCADE : ventes − avoirs = à déclarer.
+  // Format attendu par un comptable : l'écart entre le brut et le net est une LIGNE
+  // explicite (et non une soustraction à refaire), et le total porte le libellé qui
+  // dit sans ambiguïté quelle ligne se reporte sur la déclaration de TVA.
   doc.setFontSize(13);
   doc.setTextColor(0);
   doc.text('Totaux', 14, y);
   y += 4;
   autoTable(doc, {
     startY: y,
-    head: [['', 'CA TTC', 'CA HT', 'TVA collectée', 'Remboursements']],
+    head: [['', 'CA TTC', 'CA HT', 'TVA collectée']],
     body: [
-      ['Brut', fmtEur(totals.ca_ttc_brut), fmtEur(totals.ca_ht_brut), fmtEur(totals.tva_brut), '—'],
-      ['Net', fmtEur(totals.ca_ttc_net), fmtEur(totals.ca_ht_net), fmtEur(totals.tva_net), '- ' + fmtEur(totals.remboursements_ttc)],
+      ['Ventes de la période', fmtEur(totals.ca_ttc_brut), fmtEur(totals.ca_ht_brut), fmtEur(totals.tva_brut)],
+      ['Remboursements / avoirs',
+        '- ' + fmtEur(totals.remboursements_ttc),
+        '- ' + fmtEur(totals.remboursements_ht),
+        '- ' + fmtEur(totals.remboursements_tva)],
+      ['A declarer', fmtEur(totals.ca_ttc_net), fmtEur(totals.ca_ht_net), fmtEur(totals.tva_net)],
     ],
     theme: 'grid',
     headStyles: { fillColor: [19, 94, 132] },
-    columnStyles: { 0: { fontStyle: 'bold' } },
+    columnStyles: { 0: { fontStyle: 'bold' }, 1: { halign: 'right' }, 2: { halign: 'right' }, 3: { halign: 'right' } },
+    // Ligne 1 = avoirs (rouge), ligne 2 = total à déclarer (fond gris, gras).
+    didParseCell: (d) => {
+      if (d.section !== 'body') return;
+      if (d.row.index === 1 && d.column.index > 0) d.cell.styles.textColor = [178, 34, 34];
+      if (d.row.index === 2) {
+        d.cell.styles.fontStyle = 'bold';
+        d.cell.styles.fillColor = [230, 236, 240];
+      }
+    },
     margin: { left: 14, right: 14 },
   });
-  y = doc.lastAutoTable.finalY + 12;
+  y = doc.lastAutoTable.finalY + 6;
+
+  // Note de méthode — le comptable doit savoir quelle ligne déclarer, sur quelle
+  // période les avoirs sont rattachés, et comment leur TVA a été obtenue.
+  doc.setFontSize(8);
+  doc.setTextColor(110);
+  const notes = [
+    "Ligne « A declarer » : base a reporter sur la declaration de TVA. Les avoirs sont rattaches au mois de leur emission,",
+    "pas a celui de la commande d'origine (regularisation sur la periode de l'avoir).",
+    "TVA des avoirs : montant ventile par WooCommerce lorsqu'il est disponible, sinon reconstitue au taux de TVA reel de la",
+    "commande remboursee.",
+  ];
+  if (!detailed) {
+    notes.push("Version simplifiee : la ventilation par pays (territorialite) figure dans la version detaillee.");
+  }
+  for (const line of notes) {
+    doc.text(line, 14, y);
+    y += 4;
+  }
+  y += 8;
 
   // Détail par pays (uniquement en mode détaillé)
   if (detailed) {
@@ -793,34 +828,63 @@ function ComptableView({ data, loading, periodLabel, range, months, selectedMont
 
   const t = data.totals;
 
-  // Deux blocs récap : brut et net
-  const RecapCard = ({ title, subtitle, ttc, ht, tva, accent }) => (
-    <div style={{ background: C.blanc, borderRadius: 14, padding: '20px 24px', boxShadow: '0 1px 3px rgba(0,0,0,0.07), 0 0 0 1px rgba(0,0,0,0.05)', borderTop: `3px solid ${accent}` }}>
-      <div style={{ marginBottom: 16 }}>
-        <div style={{ fontSize: 14, fontWeight: 800, color: C.grisTF }}>{title}</div>
-        <div style={{ fontSize: 12, color: C.grisM, marginTop: 2 }}>{subtitle}</div>
-      </div>
-      {[
-        { label: 'CA TTC', value: fmtEur(ttc), color: C.orange },
-        { label: 'CA HT', value: fmtEur(ht), color: C.saphir, bold: true },
-        { label: 'TVA collectée', value: fmtEur(tva), color: C.grisTF },
-      ].map((row) => (
-        <div key={row.label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-          <span style={{ fontSize: 13, color: C.grisF, fontWeight: row.bold ? 700 : 500 }}>{row.label}</span>
-          <span style={{ fontSize: 17, fontWeight: row.bold ? 800 : 700, color: row.color }}>{row.value}</span>
-        </div>
-      ))}
-    </div>
+  // Récap en CASCADE : ventes − avoirs = à déclarer. Même structure que le PDF, pour
+  // qu'un comptable lise l'écart brut/net comme une ligne et non comme une soustraction
+  // à refaire de tête.
+  const cascade = [
+    { label: 'Ventes de la période', hint: 'Commandes payées du mois',
+      ttc: t.ca_ttc_brut, ht: t.ca_ht_brut, tva: t.tva_brut },
+    { label: 'Remboursements / avoirs', hint: 'Rattachés au mois de leur émission', negative: true,
+      ttc: t.remboursements_ttc, ht: t.remboursements_ht, tva: t.remboursements_tva },
+    { label: 'À déclarer', hint: 'Base à reporter sur la déclaration de TVA', total: true,
+      ttc: t.ca_ttc_net, ht: t.ca_ht_net, tva: t.tva_net },
+  ];
+  const cascadeCell = (row, value, color) => (
+    <td style={{
+      ...td, textAlign: 'right', borderBottom: row.total ? 'none' : td.borderBottom,
+      fontSize: row.total ? 16 : 15, fontWeight: row.total ? 800 : 700,
+      color: row.negative ? C.rouge : (color || C.grisTF),
+    }}>
+      {row.negative ? (value ? '− ' + fmtEur(value) : '—') : fmtEur(value)}
+    </td>
   );
 
   return (
     <>
       {header}
 
-      {/* Récap brut / net */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 14, marginBottom: 20 }}>
-        <RecapCard title="Brut" subtitle="Ventes de la période" ttc={t.ca_ttc_brut} ht={t.ca_ht_brut} tva={t.tva_brut} accent={C.orange} />
-        <RecapCard title="Net" subtitle={`Après remboursements (− ${fmtEur(t.remboursements_ttc)})`} ttc={t.ca_ttc_net} ht={t.ca_ht_net} tva={t.tva_net} accent={C.vert} />
+      {/* Récap en cascade : ventes − avoirs = à déclarer */}
+      <div style={{ background: C.blanc, borderRadius: 14, padding: '20px 24px', marginBottom: 20, boxShadow: '0 1px 3px rgba(0,0,0,0.07), 0 0 0 1px rgba(0,0,0,0.05)' }}>
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 520 }}>
+            <thead>
+              <tr>
+                <th style={{ ...th, textAlign: 'left' }}></th>
+                <th style={{ ...th, textAlign: 'right' }}>CA TTC</th>
+                <th style={{ ...th, textAlign: 'right' }}>CA HT</th>
+                <th style={{ ...th, textAlign: 'right' }}>TVA collectée</th>
+              </tr>
+            </thead>
+            <tbody>
+              {cascade.map((row) => (
+                <tr key={row.label} style={row.total ? { background: C.grisTL } : undefined}>
+                  <td style={{ ...td, textAlign: 'left', borderBottom: row.total ? 'none' : td.borderBottom }}>
+                    <div style={{ fontWeight: row.total ? 800 : 700, color: C.grisTF }}>{row.label}</div>
+                    <div style={{ fontSize: 11, fontWeight: 500, color: C.grisM, marginTop: 2 }}>{row.hint}</div>
+                  </td>
+                  {cascadeCell(row, row.ttc, C.orange)}
+                  {cascadeCell(row, row.ht, C.saphir)}
+                  {cascadeCell(row, row.tva, C.grisTF)}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div style={{ fontSize: 11, color: C.grisM, marginTop: 14, lineHeight: 1.5 }}>
+          Les avoirs sont rattachés au mois de leur émission, pas à celui de la commande d'origine.
+          Leur TVA est celle ventilée par WooCommerce quand elle est disponible, sinon elle est
+          reconstituée au taux de TVA réel de la commande remboursée.
+        </div>
       </div>
 
       {/* Détail par pays (masqué en mode simplifié) */}
