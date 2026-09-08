@@ -248,7 +248,11 @@ const generateForOrder = async (req, res) => {
 
     res.status(error.statusCode || 500).json({
       error: adapter ? `Erreur génération étiquette ${adapter.label}` : 'Erreur génération étiquette',
-      userMessage: adapter ? buildUserMessage(error, adapter.label) : null,
+      // Un adaptateur qui sait expliquer le problème en français le dit
+      // lui-même : son message prime sur la traduction générique des pannes
+      // d'API, qui ne connaît que les timeouts et les 5xx.
+      userMessage: error.userMessage
+        || (adapter ? buildUserMessage(error, adapter.label) : null),
       details: error.body || error.message
     });
   }

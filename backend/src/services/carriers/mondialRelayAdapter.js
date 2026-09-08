@@ -249,6 +249,67 @@ const redact = (data) => {
 const findError = (data) => (data?.statusListField || [])
   .find(s => String(s?.levelField || '').toLowerCase().includes('error')) || null;
 
+// Format d'un identifiant de point relais Mondial Relay : exactement 6 chiffres,
+// zéros de tête compris. Constaté sur 566 commandes réelles, sans exception.
+// Le contrôle attrape aussi les codes d'un AUTRE réseau posés par erreur sur une
+// commande Mondial Relay — Chronopost utilise 5 caractères alphanumériques
+// (« 5761X »), et on a déjà vu des Bpost Relais étiquetés réseau `mondial_relay`.
+const FORMAT_POINT_RELAIS = /^[0-9]{6}$/;
+const FORMAT_PAYS = /^[A-Za-z]{2}$/;
+
+/**
+ * Vérifie que la commande porte un point relais exploitable.
+ *
+ * Sans ce contrôle, un code absent ou mal formé part quand même chez Mondial
+ * Relay, qui répond « Le plan de tri est introuvable » (10055) — un message que
+ * personne au comptoir ne peut interpréter. On préfère refuser ici, en disant
+ * ce qui manque et quoi faire.
+ *
+ * @param {?object} relayPoint - `orders.relay_point`
+ * @param {string|number} orderNumber
+ * @throws {Error & {statusCode: number, userMessage: string}}
+ */
+const assertRelayPoint = (relayPoint, orderNumber) => {
+  const refus = (userMessage) => {
+    const err = new Error(userMessage);
+    err.statusCode = 400;
+    // Message destiné au packing : il est repris tel quel à l'écran.
+    err.userMessage = userMessage;
+    throw err;
+  };
+
+  const id = relayPoint && relayPoint.id != null ? String(relayPoint.id).trim() : '';
+
+  if (!relayPoint || !id) {
+    refus(
+      `La commande n°${orderNumber} part en Mondial Relay, mais aucun point relais n'y est `
+      + `enregistré. Rouvrez et enregistrez la commande dans WooCommerce pour récupérer le point `
+      + `choisi par le client, ou expédiez-la par un autre transporteur.`
+    );
+  }
+
+  // Volontairement AUCUN rattrapage de zéro de tête : si l'identifiant arrive en
+  // nombre, « 041983 » devient 41983, et rien ne permet de le distinguer d'un
+  // code à 5 chiffres d'un autre réseau. Re-compléter enverrait le colis
+  // ailleurs ; refuser fait corriger la donnée à la source.
+  if (!FORMAT_POINT_RELAIS.test(id)) {
+    refus(
+      `Le point relais de la commande n°${orderNumber} (« ${id} ») n'a pas le format attendu par `
+      + `Mondial Relay : 6 chiffres. Ce code vient probablement d'un autre transporteur. `
+      + `Vérifiez le point de retrait de la commande dans WooCommerce.`
+    );
+  }
+
+  const pays = relayPoint.country ? String(relayPoint.country).trim() : '';
+  if (!FORMAT_PAYS.test(pays)) {
+    refus(
+      `Le pays du point relais de la commande n°${orderNumber} est absent ou invalide `
+      + `(« ${pays || 'vide'} »). Mondial Relay attend un code pays à deux lettres (FR, BE, LU). `
+      + `Rouvrez et enregistrez la commande dans WooCommerce pour le récupérer.`
+    );
+  }
+};
+
 /**
  * Demande une étiquette à Mondial Relay.
  *
@@ -261,13 +322,7 @@ const createLabel = async ({ orderNumber, receiver, account, weightGrams, option
     settings: ['api_url']
   });
 
-  if (!options.relayPoint?.id) {
-    const err = new Error(
-      `Point relais absent pour la commande ${orderNumber} — Mondial Relay ne peut pas étiqueter sans point de retrait`
-    );
-    err.statusCode = 400;
-    throw err;
-  }
+  assertRelayPoint(options.relayPoint, orderNumber);
 
   const xml = buildLabelPayload({ orderNumber, receiver, account, weightGrams, options });
 
@@ -338,5 +393,6 @@ module.exports = assertAdapter({
   cancelLabel,
   cancelWindow,
   buildLabelPayload,
+  assertRelayPoint,
   redact
 });

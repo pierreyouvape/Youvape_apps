@@ -338,6 +338,78 @@ test('Mondial Relay se déclare non annulable, avec la raison', () => {
   assert.ok(/annuler/i.test(w.reason));
 });
 
+// ── Point relais manquant ou mal formé ───────────────────────────────────────
+console.log('\nContrôle du point relais');
+
+const relais = (rp) => () => mr.assertRelayPoint(rp, '1259200');
+const messageDe = (rp) => {
+  try { mr.assertRelayPoint(rp, '1259200'); return null; }
+  catch (e) { return e.userMessage; }
+};
+
+test('aucun point relais : refus expliqué, avec la marche à suivre', () => {
+  for (const vide of [null, undefined, {}, { id: '' }, { id: '   ' }]) {
+    assert.throws(relais(vide), /aucun point relais/i, JSON.stringify(vide));
+  }
+  const m = messageDe(null);
+  assert.ok(/WooCommerce/.test(m), 'le message ne dit pas quoi faire');
+  assert.ok(/1259200/.test(m), 'le message ne dit pas quelle commande');
+});
+
+test('un code d\'un autre transporteur est attrapé', () => {
+  // Chronopost fait 5 caractères alphanumériques : « 5761X » sur une commande
+  // Mondial Relay est un point de retrait qui n'est pas le bon.
+  const m = messageDe({ id: '5761X', country: 'FR' });
+  assert.ok(/6 chiffres/.test(m), m);
+  assert.ok(/5761X/.test(m), 'le message ne montre pas le code fautif');
+  assert.ok(/autre transporteur/.test(m), m);
+});
+
+test('les formats voisins sont refusés, pas devinés', () => {
+  for (const id of ['12345', '1234567', '04198a', '41983', 'ABCDEF', '04 1983', '-041983']) {
+    assert.throws(relais({ id, country: 'FR' }), /format attendu/, `« ${id} » aurait dû être refusé`);
+  }
+});
+
+test('un identifiant valide passe, zéros de tête compris', () => {
+  for (const id of ['041983', '000123', '022112']) {
+    assert.doesNotThrow(relais({ id, country: 'FR' }), `« ${id} » aurait dû passer`);
+  }
+});
+
+test('un zéro de tête perdu est refusé, pas rattrapé', () => {
+  // Si l'identifiant arrive en NOMBRE, « 041983 » devient 41983. On refuse au
+  // lieu de re-compléter : impossible de distinguer un zéro perdu d'un code à
+  // 5 chiffres appartenant à un autre réseau. Deviner enverrait le colis
+  // ailleurs ; refuser fait corriger la donnée.
+  assert.throws(relais({ id: 41983, country: 'BE' }), /format attendu/);
+});
+
+test('pays absent ou invalide : refus expliqué', () => {
+  for (const country of [null, '', 'FRA', 'F', '12']) {
+    assert.throws(relais({ id: '041983', country }), /pays du point relais/i, `pays « ${country} »`);
+  }
+  const m = messageDe({ id: '041983', country: 'FRA' });
+  assert.ok(/FR, BE, LU/.test(m), m);
+});
+
+test('les trois pays de nos points relais sont acceptés', () => {
+  for (const country of ['FR', 'BE', 'LU', 'be']) {
+    assert.doesNotThrow(relais({ id: '041983', country }), `pays ${country}`);
+  }
+});
+
+test('le refus arrive AVANT tout appel réseau', async () => {
+  // createLabel doit échouer sur la validation, sans toucher à l'API.
+  await assert.rejects(
+    mr.createLabel({ orderNumber: '1259200', receiver: {}, weightGrams: 400,
+      account: { credentials: { login: 'l', password: 'p', customer_id: 'c' },
+                 settings: { api_url: 'http://127.0.0.1:1/inatteignable' } },
+      options: { deliveryMode: '24R', relayPoint: { id: 'XXX' } } }),
+    /format attendu/
+  );
+});
+
 // ── Caractères refusés par les transporteurs ─────────────────────────────────
 console.log('\nCaractères spéciaux et invisibles');
 
