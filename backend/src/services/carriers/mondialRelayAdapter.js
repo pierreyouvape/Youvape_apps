@@ -288,10 +288,12 @@ const assertRelayPoint = (relayPoint, orderNumber) => {
     );
   }
 
-  // Volontairement AUCUN rattrapage de zéro de tête : si l'identifiant arrive en
-  // nombre, « 041983 » devient 41983, et rien ne permet de le distinguer d'un
-  // code à 5 chiffres d'un autre réseau. Re-compléter enverrait le colis
-  // ailleurs ; refuser fait corriger la donnée à la source.
+  // Aucune tentative de rattrapage : un identifiant qui ne fait pas 6 chiffres
+  // est refusé tel quel, sans qu'on essaie de le compléter ou de le tronquer.
+  // On ne sait pas ce qu'il est — un code d'un autre réseau, une valeur tronquée,
+  // une saisie manuelle — et chaque hypothèse de correction enverrait le colis
+  // quelque part sans qu'on puisse dire où. Le zéro de tête, lui, ne se perd pas
+  // en chemin : yousync convertit `pickup_id` en chaîne à la source.
   if (!FORMAT_POINT_RELAIS.test(id)) {
     refus(
       `Le point relais de la commande n°${orderNumber} (« ${id} ») n'a pas le format attendu par `

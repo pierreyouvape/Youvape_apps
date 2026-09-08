@@ -377,11 +377,12 @@ test('un identifiant valide passe, zéros de tête compris', () => {
   }
 });
 
-test('un zéro de tête perdu est refusé, pas rattrapé', () => {
-  // Si l'identifiant arrive en NOMBRE, « 041983 » devient 41983. On refuse au
-  // lieu de re-compléter : impossible de distinguer un zéro perdu d'un code à
-  // 5 chiffres appartenant à un autre réseau. Deviner enverrait le colis
-  // ailleurs ; refuser fait corriger la donnée.
+test('un identifiant numérique est traité comme les autres', () => {
+  // Le type ne change rien : seul le format compte. 6 chiffres passent, le
+  // reste est refusé sans tentative de complétion — on ne sait pas ce qu'est
+  // une valeur hors format, et chaque correction supposée enverrait le colis
+  // quelque part sans qu'on puisse dire où.
+  assert.doesNotThrow(relais({ id: 410983, country: 'BE' }), 'un nombre à 6 chiffres devrait passer');
   assert.throws(relais({ id: 41983, country: 'BE' }), /format attendu/);
 });
 
