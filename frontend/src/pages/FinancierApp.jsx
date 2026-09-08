@@ -858,7 +858,7 @@ function exportCA3PDF({ ca3, periodLabel, range }) {
     head: [['Zone de livraison', 'Taux', 'Ligne', 'Cmd', 'HT net', 'TVA nette']],
     body: ca3.territorialite.map((r) => [
       r.zone_libelle,
-      r.taux === null ? 'Sans TVA' : `${r.taux} %`,
+      r.taux !== null ? `${r.taux} %` : (r.tva_net !== 0 ? 'Indetermine' : 'Sans TVA'),
       r.ligne_ca3,
       fmt(r.cmd),
       fmtEur(r.ht_net),
@@ -1129,7 +1129,9 @@ function ComptableView({ data, loading, periodLabel, range, months, selectedMont
                 {ca3.territorialite.map((r, i) => (
                   <tr key={i}>
                     <td style={{ ...td, textAlign: 'left' }}>{r.zone_libelle}</td>
-                    <td style={{ ...td, textAlign: 'right', color: r.taux === null ? C.grisM : C.grisF }}>{r.taux === null ? 'Sans TVA' : `${r.taux} %`}</td>
+                    <td style={{ ...td, textAlign: 'right', color: r.taux === null ? C.grisM : C.grisF }}>
+                      {r.taux !== null ? `${r.taux} %` : (r.tva_net !== 0 ? 'Indéterminé' : 'Sans TVA')}
+                    </td>
                     <td style={{ ...td, textAlign: 'center', fontWeight: 800, color: C.saphir }}>{r.ligne_ca3}</td>
                     <td style={{ ...td, textAlign: 'right' }}>{fmt(r.cmd)}</td>
                     <td style={{ ...td, textAlign: 'right' }}>{fmtEur(r.ht_brut)}</td>
