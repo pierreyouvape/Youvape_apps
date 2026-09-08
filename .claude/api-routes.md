@@ -175,6 +175,45 @@ JWT au montage (`server.js`) + droit applicatif `atb` en lecture (vérifié dans
   - Corps : `{ preset, dateFrom, dateTo, countries[], showM1, showN1 }`. Les clés inconnues
     sont écartées, les dates mal formées ou inversées ignorées.
 
+### Module « Recherche de commandes » (critères croisés)
+
+- `POST /atb/orders/search` - Recherche par règles croisées
+  - Corps : `{ rules: [...], limit, offset }`. **POST et non GET** : l'arbre de règles est
+    structuré, une query string buterait sur la longueur d'URL dès quelques produits.
+  - Une règle porte le connecteur qui la relie à la **précédente** (`join: 'AND' | 'OR'`).
+    **Le ET lie plus fort que le OU** : « A ET B OU C » vaut « (A ET B) OU C ». Cette
+    priorité est rendue visible dans l'écran (les règles ET sont encadrées ensemble) et
+    dans la phrase récapitulative — sans ça, on croit avoir demandé autre chose.
+  - Critères : `status`, `city`, `postcode`, `country`, `carrier`, `date`, `amount`, `content`.
+  - `content` : `op: 'includes' | 'excludes'`, `target: 'product' | 'category' | 'brand'`.
+
+- `POST /atb/orders/search/export` - Mêmes règles, toutes les lignes (plafond 5 000) pour le CSV
+  - Renvoie `truncated: true` au-delà. Exporter la seule page affichée serait un piège.
+
+- `GET /atb/search/cities?q=` - Villes suggérées, **regroupées sur leur forme normalisée**
+- `GET /atb/search/products?q=` - Produits, parents avant déclinaisons
+- `GET /atb/search/facets` - Catégories, marques et **modes de livraison**
+- `GET|PUT /atb/search/saved` - Recherches enregistrées (page `atb-recherche`)
+
+**Quatre pièges de données, tous traités — ne pas les défaire :**
+
+1. **Ville** : texte libre saisi par le client. 32 127 valeurs distinctes, « Montpellier »
+   en 3 casses sur 4 codes postaux. Le filtre normalise des DEUX côtés
+   (`UPPER(unaccent(TRIM(...)))`). En égalité exacte, la recherche « Montpellier » renvoie
+   3 238 commandes au lieu de **4 213** : 975 perdues en silence.
+2. **Marque** : portée par le produit PARENT, pas par la déclinaison. Sans le repli
+   `COALESCE(variation, parent)`, la couverture tombe de **99,9 % à 30 %**.
+3. **« Ne comprend pas »** : `NOT EXISTS`, jamais une jointure niée — celle-ci renverrait
+   toute commande ayant au moins un AUTRE article, donc presque toutes. Contrôle : contient
+   (97 414) + ne contient pas (91 015) = 188 429 = total exact.
+4. **Transporteur** : la règle filtre `shipping_method` (mode choisi, complet), et la liste
+   du menu vient de `/atb/search/facets`. Ne PAS servir `/api/orders/carriers/list`, qui
+   porte `shipping_carrier` (vide sur 3 447 commandes en 3 mois) — le menu ne
+   correspondrait à rien.
+
+À savoir : un produit vendu dans un pack `woosb` apparaît en ligne séparée à 0 €, donc
+« comprend ce produit » le trouve aussi quand il a été vendu en pack.
+
 ## 🫀 Santé de la synchronisation WooCommerce
 
 - `GET /api/settings/sync-health` - Fraîcheur de la synchro YouSync (JWT)

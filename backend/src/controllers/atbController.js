@@ -251,3 +251,155 @@ exports.savePreferences = async (req, res) => {
     res.status(500).json({ success: false, error: error.message || 'Erreur serveur' });
   }
 };
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * MODULE « RECHERCHE DE COMMANDES »
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+const MAX_RULES = 20;
+const MAX_PAGE_SIZE = 200;
+const MAX_EXPORT_ROWS = 5000;
+const MAX_SAVED_SEARCHES = 30;
+
+/** Règles reçues du front : forme et volume seulement. Le SQL est bâti (et validé) par le modèle. */
+function parseRules(body) {
+  const rules = body?.rules;
+  if (!Array.isArray(rules)) {
+    throw Object.assign(new Error('Corps invalide : { rules: [...] } attendu'), { status: 400 });
+  }
+  if (rules.length > MAX_RULES) {
+    throw Object.assign(new Error(`Trop de critères (${rules.length}, maximum ${MAX_RULES})`), { status: 400 });
+  }
+  return rules;
+}
+
+/**
+ * POST /api/atb/orders/search
+ * Recherche par critères croisés. POST et non GET : l'arbre de règles est
+ * structuré, le faire tenir dans une query string le rendrait illisible et
+ * buterait sur la limite de longueur d'URL dès quelques produits sélectionnés.
+ */
+exports.searchOrders = async (req, res) => {
+  try {
+    const rules = parseRules(req.body);
+    const limit = Math.min(parseInt(req.body.limit, 10) || 50, MAX_PAGE_SIZE);
+    const offset = Math.max(parseInt(req.body.offset, 10) || 0, 0);
+
+    const { total, rows } = await atbModel.searchOrders({ rules, limit, offset });
+
+    res.json({ success: true, total, limit, offset, orders: rows });
+  } catch (error) {
+    if (error.status === 400) return res.status(400).json({ success: false, error: error.message });
+    console.error('Erreur searchOrders (ATB):', error);
+    res.status(500).json({ success: false, error: error.message || 'Erreur serveur' });
+  }
+};
+
+/**
+ * POST /api/atb/orders/search/export
+ * Même recherche, mais toutes les lignes (plafonnées) pour l'export CSV.
+ * Exporter la seule page affichée serait un piège : on croirait avoir tout sorti.
+ */
+exports.exportOrders = async (req, res) => {
+  try {
+    const rules = parseRules(req.body);
+    const { total, rows } = await atbModel.searchOrders({ rules, limit: MAX_EXPORT_ROWS, offset: 0 });
+
+    res.json({
+      success: true,
+      total,
+      exported: rows.length,
+      truncated: total > rows.length,
+      orders: rows,
+    });
+  } catch (error) {
+    if (error.status === 400) return res.status(400).json({ success: false, error: error.message });
+    console.error('Erreur exportOrders (ATB):', error);
+    res.status(500).json({ success: false, error: error.message || 'Erreur serveur' });
+  }
+};
+
+/** GET /api/atb/search/cities?q= */
+exports.getCities = async (req, res) => {
+  try {
+    const q = String(req.query.q || '').trim();
+    if (q.length < 2) return res.json({ success: true, cities: [] });
+    res.json({ success: true, cities: await atbModel.suggestCities(q) });
+  } catch (error) {
+    console.error('Erreur getCities (ATB):', error);
+    res.status(500).json({ success: false, error: error.message || 'Erreur serveur' });
+  }
+};
+
+/** GET /api/atb/search/products?q= */
+exports.getProducts = async (req, res) => {
+  try {
+    const q = String(req.query.q || '').trim();
+    if (q.length < 2) return res.json({ success: true, products: [] });
+    res.json({ success: true, products: await atbModel.suggestProducts(q) });
+  } catch (error) {
+    console.error('Erreur getProducts (ATB):', error);
+    res.status(500).json({ success: false, error: error.message || 'Erreur serveur' });
+  }
+};
+
+/**
+ * GET /api/atb/search/facets
+ * Listes courtes du constructeur de règles, chargées une fois : catégories,
+ * marques et modes de livraison.
+ */
+exports.getSearchFacets = async (req, res) => {
+  try {
+    const [categories, brands, shippingMethods] = await Promise.all([
+      atbModel.listCategories(),
+      atbModel.listBrands(),
+      atbModel.listShippingMethods(),
+    ]);
+    res.json({ success: true, categories, brands, shippingMethods });
+  } catch (error) {
+    console.error('Erreur getSearchFacets (ATB):', error);
+    res.status(500).json({ success: false, error: error.message || 'Erreur serveur' });
+  }
+};
+
+/* ─── RECHERCHES ENREGISTRÉES ───────────────────────────────────────────── */
+
+/** GET /api/atb/search/saved */
+exports.getSavedSearches = async (req, res) => {
+  try {
+    const saved = await atbModel.getPreferences(req.user.id, atbModel.SEARCH_PREFS_PAGE);
+    res.json({ success: true, searches: Array.isArray(saved) ? saved : [] });
+  } catch (error) {
+    console.error('Erreur getSavedSearches (ATB):', error);
+    res.status(500).json({ success: false, error: error.message || 'Erreur serveur' });
+  }
+};
+
+/** PUT /api/atb/search/saved — remplace la liste complète. */
+exports.saveSavedSearches = async (req, res) => {
+  try {
+    const list = req.body?.searches;
+    if (!Array.isArray(list)) {
+      return res.status(400).json({ success: false, error: 'Corps invalide : { searches: [...] } attendu' });
+    }
+    if (list.length > MAX_SAVED_SEARCHES) {
+      return res.status(400).json({
+        success: false,
+        error: `Trop de recherches enregistrées (maximum ${MAX_SAVED_SEARCHES})`,
+      });
+    }
+
+    const clean = list.slice(0, MAX_SAVED_SEARCHES).map((item, i) => ({
+      id: String(item?.id || `s${Date.now()}${i}`).slice(0, 40),
+      name: String(item?.name || 'Sans titre').trim().slice(0, 80) || 'Sans titre',
+      rules: Array.isArray(item?.rules) ? item.rules.slice(0, MAX_RULES) : [],
+    }));
+
+    await atbModel.savePreferences(req.user.id, clean, atbModel.SEARCH_PREFS_PAGE);
+    res.json({ success: true, searches: clean });
+  } catch (error) {
+    console.error('Erreur saveSavedSearches (ATB):', error);
+    res.status(500).json({ success: false, error: error.message || 'Erreur serveur' });
+  }
+};

@@ -3,6 +3,7 @@ import { useParams, useNavigate, Navigate } from 'react-router-dom';
 import { AuthContext } from '../context/AuthContext';
 import AppShell from '../components/AppShell';
 import DailyOrdersTab from '../components/atb/DailyOrdersTab';
+import OrderSearchTab from '../components/atb/OrderSearchTab';
 
 /* ─── PALETTE (alignée Boutique / Rapport / SAV) ─────────── */
 const C = {
@@ -20,6 +21,14 @@ const Ic = ({ children }) => (
     {children}
   </svg>
 );
+const IcSearch = () => (
+  <Ic>
+    <circle cx={10.5} cy={10.5} r={6} />
+    <path d="M15 15 L20 20" />
+    <path d="M8 9.5 H13" />
+    <path d="M8 12 H11.5" />
+  </Ic>
+);
 const IcOrders = () => (
   <Ic>
     <path d="M4 20 H20" />
@@ -36,6 +45,8 @@ const IcOrders = () => (
 const SECTIONS = [
   { key: 'commandes', label: 'Commandes / jour', color: '#BE123C', Icon: IcOrders, ready: true,
     subtitle: 'Volume de commandes payées par jour, comparé au mois et à l\'année précédents' },
+  { key: 'recherche', label: 'Recherche commandes', color: '#0F766E', Icon: IcSearch, ready: true,
+    subtitle: 'Croiser des critères : ville, contenu, statut, période — et exporter la liste' },
 ];
 
 function shade(hex, amt) {
@@ -174,6 +185,14 @@ export default function ATBApp() {
             <>
               <AtbHeader title="Commandes / jour" subtitle={sectionDef.subtitle} onBack={goHome} />
               <DailyOrdersTab />
+            </>
+          )}
+
+          {/* ── Module Recherche de commandes ── */}
+          {section === 'recherche' && (
+            <>
+              <AtbHeader title="Recherche de commandes" subtitle={sectionDef.subtitle} onBack={goHome} />
+              <OrderSearchTab />
             </>
           )}
 
