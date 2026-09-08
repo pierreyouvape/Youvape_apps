@@ -64,6 +64,14 @@
  * @property {(label: object, now?: Date) => {cancellable: boolean, reason: ?string}} cancelWindow
  *           Règle d'annulation du transporteur, appliquée AVANT l'appel API.
  * @property {() => void} [onAuthFailure] - appelé sur 401, pour purger un cache de jeton.
+ * @property {{credentials: Field[], settings: Field[]}} [accountFields]
+ *           Description des champs du contrat, pour que l'écran de réglages
+ *           génère son formulaire. Sans elle, un transporteur ne peut être
+ *           configuré qu'en base — ce qu'on veut justement éviter.
+ *           Un `Field` = `{key, label, secret?, placeholder?, group?}` ; `key`
+ *           accepte un chemin pointé (`sender.city`). `secret: true` signifie
+ *           que la valeur ne redescend JAMAIS vers le navigateur : le champ
+ *           s'affiche vide et n'est écrit que si on saisit quelque chose.
  * @property {boolean} [requiresAccount=true] - à false, l'adaptateur n'a pas de
  *           contrat dans carrier_accounts : ni identifiants ni réglages à charger.
  *           C'est le cas du retrait magasin, qui n'appelle aucune API.

@@ -39,4 +39,16 @@ router.post('/method-map',
 router.delete('/method-map/:id',
   checkPermission('transporteurs', 'write'), mapController.deleteMapping);
 
+// ── Contrats transporteurs ──────────────────────────────────────────────────
+// Les identifiants d'API se saisissent ici, jamais en dur ni par SQL. La
+// lecture ne rend jamais les secrets : voir models/carrierAccountModel.
+router.get('/carrier-accounts',
+  checkPermission('transporteurs', 'read'), mapController.getAccounts);
+
+router.post('/carrier-accounts',
+  checkPermission('transporteurs', 'write'), mapController.saveAccount);
+
+router.delete('/carrier-accounts/:id',
+  checkPermission('transporteurs', 'write'), mapController.deleteAccount);
+
 module.exports = router;

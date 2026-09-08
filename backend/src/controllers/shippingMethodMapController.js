@@ -11,6 +11,7 @@
 
 const pool = require('../config/database');
 const shippingMethodMapModel = require('../models/shippingMethodMapModel');
+const carrierAccountModel = require('../models/carrierAccountModel');
 const { getAdapter, listCarrierCodes } = require('../services/carriers');
 
 /**
@@ -32,6 +33,10 @@ const listCarriers = async () => {
     return {
       code,
       label: adapter.label,
+      // Description des champs du contrat : c'est elle qui permet à l'écran de
+      // générer le formulaire, plutôt que de coder en dur les champs de chaque
+      // transporteur.
+      accountFields: adapter.accountFields || null,
       // Le retrait magasin n'a pas de contrat : l'écran ne doit pas en réclamer un.
       requiresAccount: adapter.requiresAccount !== false,
       defaultAccountCode: adapter.accountCode,
@@ -98,4 +103,54 @@ const deleteMapping = async (req, res) => {
   }
 };
 
-module.exports = { getMap, saveMapping, deleteMapping, listCarriers };
+/** GET /carrier-accounts — les contrats, sans leurs secrets. */
+const getAccounts = async (req, res) => {
+  try {
+    const [accounts, carriers] = await Promise.all([
+      carrierAccountModel.listForSettings(),
+      listCarriers()
+    ]);
+    res.json({ accounts, carriers });
+  } catch (error) {
+    console.error('[Expedition] Erreur getAccounts:', error.message);
+    res.status(500).json({ error: error.message || 'Erreur serveur' });
+  }
+};
+
+/** POST /carrier-accounts — créer ou modifier un contrat. */
+const saveAccount = async (req, res) => {
+  try {
+    const { carrier_code, account_code, label, credentials, settings, active } = req.body || {};
+    const row = await carrierAccountModel.upsert({
+      carrierCode: carrier_code,
+      accountCode: account_code,
+      label,
+      credentials: credentials || {},
+      settings: settings || {},
+      active
+    });
+    // La réponse ne renvoie surtout pas ce qui vient d'être écrit : l'écran
+    // recharge la liste expurgée.
+    res.json({ success: true, id: row.id });
+  } catch (error) {
+    console.error('[Expedition] Erreur saveAccount:', error.message);
+    res.status(error.statusCode || 500).json({ error: error.message || 'Erreur serveur' });
+  }
+};
+
+/** DELETE /carrier-accounts/:id */
+const deleteAccount = async (req, res) => {
+  try {
+    const row = await carrierAccountModel.remove(req.params.id);
+    if (!row) return res.status(404).json({ error: 'Contrat introuvable' });
+    res.json({ success: true });
+  } catch (error) {
+    console.error('[Expedition] Erreur deleteAccount:', error.message);
+    res.status(error.statusCode || 500).json({ error: error.message || 'Erreur serveur' });
+  }
+};
+
+module.exports = {
+  getMap, saveMapping, deleteMapping, listCarriers,
+  getAccounts, saveAccount, deleteAccount
+};

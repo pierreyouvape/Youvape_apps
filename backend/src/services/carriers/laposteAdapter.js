@@ -259,6 +259,29 @@ const cancelLabel = async ({ label, account }) => {
  */
 const labelFileName = (orderNumber) => `LS-${orderNumber}.pdf`;
 
+// Champs du contrat, tels que l'écran de réglages doit les demander.
+// Les libellés reprennent ceux du portail La Poste, pour qu'un responsable
+// puisse recopier sans traduire.
+const ACCOUNT_FIELDS = {
+  credentials: [
+    { key: 'token_url',     label: "URL du jeton OAuth2", placeholder: 'https://…/oauth2/token' },
+    { key: 'client_id',     label: 'Client ID' },
+    { key: 'client_secret', label: 'Client secret', secret: true }
+  ],
+  settings: [
+    { key: 'api_url',         label: "URL de l'API", placeholder: 'https://apim-gw-vente.extra.laposte.fr/postage/v1' },
+    { key: 'contract_number', label: 'Numéro de contrat' },
+    { key: 'cust_acc_number', label: 'Numéro de compte client' },
+    { key: 'cust_invoice',    label: 'Compte de facturation' },
+    { key: 'sender.name',    label: 'Raison sociale',   group: 'Expéditeur' },
+    { key: 'sender.address', label: 'Adresse',          group: 'Expéditeur' },
+    { key: 'sender.zipcode', label: 'Code postal',      group: 'Expéditeur' },
+    { key: 'sender.town',    label: 'Ville',            group: 'Expéditeur' },
+    { key: 'sender.email',   label: 'Courriel',         group: 'Expéditeur' },
+    { key: 'sender.phone',   label: 'Téléphone',        group: 'Expéditeur' }
+  ]
+};
+
 module.exports = assertAdapter({
   code: 'laposte',
   accountCode: 'lettre_suivie',
@@ -266,6 +289,7 @@ module.exports = assertAdapter({
   label: CARRIER_LABEL,
   logTag: LOG_TAG,
   labelFileName,
+  accountFields: ACCOUNT_FIELDS,
   bmsShipmentTitle: 'La poste - Courrier suivi (port payé)',
   resolveWeight,
   createLabel,

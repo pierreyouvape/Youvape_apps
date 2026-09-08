@@ -393,6 +393,31 @@ const cancelLabel = async () => {
  */
 const labelFileName = (orderNumber) => `mondialrelay_${orderNumber}.pdf`;
 
+// Champs du contrat. Les libellés reprennent ceux de l'écran « Paramétrage des
+// API » de Mondial Relay (API 2 / Connect), pour qu'un responsable recopie sans
+// avoir à interpréter.
+const ACCOUNT_FIELDS = {
+  credentials: [
+    { key: 'login',       label: 'Connexion API', placeholder: 'LGYOUVAP@business-api.mondialrelay.com' },
+    { key: 'password',    label: "Mot de passe API", secret: true },
+    { key: 'customer_id', label: "Identification de marque (code enseigne)", placeholder: 'LGYOUVAP' }
+  ],
+  settings: [
+    { key: 'api_url',       label: "URL de l'API", placeholder: 'https://connect-api.mondialrelay.com/api/shipment' },
+    { key: 'output_format', label: "Format d'étiquette", placeholder: '10x15' },
+    { key: 'sandbox',       label: 'Contrat de test (aucune expédition réelle)' },
+    { key: 'sender.firstname',   label: 'Prénom / enseigne', group: 'Expéditeur' },
+    { key: 'sender.lastname',    label: 'Raison sociale',    group: 'Expéditeur' },
+    { key: 'sender.house_no',    label: 'N° de voie',        group: 'Expéditeur' },
+    { key: 'sender.streetname',  label: 'Rue',               group: 'Expéditeur' },
+    { key: 'sender.postcode',    label: 'Code postal',       group: 'Expéditeur' },
+    { key: 'sender.city',        label: 'Ville',             group: 'Expéditeur' },
+    { key: 'sender.country_code',label: 'Pays (2 lettres)',  group: 'Expéditeur' },
+    { key: 'sender.email',       label: 'Courriel',          group: 'Expéditeur' },
+    { key: 'sender.phone',       label: 'Téléphone',         group: 'Expéditeur' }
+  ]
+};
+
 module.exports = assertAdapter({
   code: 'mondial_relay',
   accountCode: 'sandbox',
@@ -400,6 +425,7 @@ module.exports = assertAdapter({
   label: CARRIER_LABEL,
   logTag: LOG_TAG,
   labelFileName,
+  accountFields: ACCOUNT_FIELDS,
   bmsShipmentTitle: 'Mondial Relay',
   resolveWeight,
   createLabel,
