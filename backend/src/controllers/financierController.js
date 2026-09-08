@@ -693,6 +693,369 @@ async function computeComptable({ dateFrom, dateTo } = {}) {
 
 exports.computeComptable = computeComptable;
 
+/* ═══════════════════════════════════════════════════════════════════════════
+ * CA3 — formulaire 3310-CA3 (déclaration de TVA au régime réel normal)
+ * ═══════════════════════════════════════════════════════════════════════════
+ * Ce bloc ne couvre que la TVA COLLECTÉE : cadre A (montant des opérations) et
+ * la TVA brute du cadre B (lignes 08 à 16). La TVA DÉDUCTIBLE (lignes 19 à 23)
+ * vient des factures d'achat et n'est pas dans le périmètre de cette app.
+ *
+ * Territorialité : la TVA suit le lieu de LIVRAISON, donc shipping_country
+ * (repli sur billing_country s'il est vide — 0 cas constaté). C'est la seule
+ * différence de fond avec le détail par pays de la déclaration comptable, qui
+ * regroupe lui par pays de FACTURATION : une commande facturée en Suisse mais
+ * livrée en France est une vente française pour la CA3.
+ *
+ * Les codes postaux ne sont PAS utilisés pour détecter l'outre-mer : des
+ * adresses étrangères commencent aussi par 97/98 (constaté : BE 970xx, NL
+ * 974xx, LU 976xx). Seul shipping_country fait foi. Exception assumée : Monaco,
+ * que WooCommerce enregistre tantôt en 'MC', tantôt en 'FR' + CP 980xx.
+ */
+
+// UE-27 hors France (la France est traitée à part, avec Monaco).
+const CA3_UE = [
+  'AT', 'BE', 'BG', 'HR', 'CY', 'CZ', 'DK', 'EE', 'FI', 'DE', 'GR', 'HU',
+  'IE', 'IT', 'LV', 'LT', 'LU', 'MT', 'NL', 'PL', 'PT', 'RO', 'SK', 'SI',
+  'ES', 'SE'
+];
+// Départements et régions d'outre-mer : territoires d'exportation au sens de
+// la TVA (art. 294 CGI). Guyane et Mayotte : TVA provisoirement non applicable.
+const CA3_DOM = ['GP', 'MQ', 'GF', 'RE', 'YT'];
+// Collectivités d'outre-mer et Nouvelle-Calédonie : hors territoire TVA.
+const CA3_TOM = ['PF', 'NC', 'WF', 'PM', 'BL', 'MF', 'TF'];
+
+const CA3_ZONE_LABELS = {
+  FR:      'France métropolitaine + Monaco',
+  DOM:     "Départements d'outre-mer",
+  TOM:     "Collectivités d'outre-mer",
+  UE:      'Union européenne (hors France)',
+  HORS_UE: 'Pays tiers (hors UE)',
+};
+
+/** Zone de territorialité TVA, à partir du pays de livraison. */
+function ca3ZoneExpr(alias = 'o') {
+  const dest = `COALESCE(NULLIF(${alias}.shipping_country, ''), ${alias}.billing_country)`;
+  const list = (arr) => arr.map((c) => `'${c}'`).join(', ');
+  return `CASE
+      WHEN ${dest} IN ('FR', 'MC')        THEN 'FR'
+      WHEN ${dest} IN (${list(CA3_DOM)})  THEN 'DOM'
+      WHEN ${dest} IN (${list(CA3_TOM)})  THEN 'TOM'
+      WHEN ${dest} IN (${list(CA3_UE)})   THEN 'UE'
+      ELSE 'HORS_UE'
+    END`;
+}
+
+/** Monaco : identifié par le pays 'MC' ou par un CP 980xx en France. */
+function ca3MonacoExpr(alias = 'o') {
+  const dest = `COALESCE(NULLIF(${alias}.shipping_country, ''), ${alias}.billing_country)`;
+  return `(${dest} = 'MC' OR (${dest} = 'FR' AND ${alias}.shipping_postcode LIKE '980%'))`;
+}
+
+/**
+ * Taux de TVA d'une commande, lu sur ses lignes de taxe.
+ * Le taux n'est stocké nulle part en clair : il est porté par le libellé du taux
+ * (line_tax_data->>'rate_code', ex. « FR-TVA 20%-1 », sinon order_item_name).
+ * On l'extrait au regexp. Contrôlé sur 58 075 lignes de taxe depuis 2025 :
+ * 100 % des lignes parsées, un seul taux rencontré (20 %).
+ * Les lignes de taxe à 0 € sont écartées : elles ne caractérisent pas la commande.
+ */
+const CA3_RATE_CTE = (cmdSource) => `
+  taux_cmd AS (
+    SELECT oi.wp_order_id,
+      array_agg(DISTINCT (regexp_match(
+        COALESCE(oi.line_tax_data->>'rate_code', oi.order_item_name),
+        '([0-9]+([.,][0-9]+)?)\\s*%'
+      ))[1]) AS taux
+    FROM order_items oi
+    WHERE oi.order_item_type = 'tax'
+      AND oi.wp_order_id IN (${cmdSource})
+      AND COALESCE(oi.line_total, 0) + COALESCE(oi.line_tax, 0) <> 0
+    GROUP BY oi.wp_order_id
+  )`;
+
+/** Ligne du cadre B (TVA brute) correspondant à un taux. */
+function ca3RateLine(taux) {
+  if (taux === 20)  return { code: '08', libelle: 'Taux normal 20 %' };
+  if (taux === 5.5) return { code: '09', libelle: 'Taux réduit 5,5 %' };
+  if (taux === 10)  return { code: '9B', libelle: 'Taux réduit 10 %' };
+  if (taux === 2.1) return { code: '10', libelle: 'Taux particulier 2,1 %' };
+  return { code: '14', libelle: `Opérations imposables à un autre taux (${taux} %)` };
+}
+
+/**
+ * Construit la CA3 d'une période.
+ * Retourne { cadreA, cadreB, tva_brute, territorialite, controles, meta }.
+ */
+async function computeCA3({ dateFrom, dateTo } = {}) {
+  const { conditions, params } = buildDateConditions(dateFrom, dateTo);
+  const where = 'WHERE ' + conditions.join(' AND ');
+
+  // ─── VENTES : par zone × taux ────────────────────────────────────────────
+  const ventesResult = await pool.query(`
+    WITH cmd AS (
+      SELECT o.wp_order_id, o.order_total,
+             ${ca3ZoneExpr('o')} AS zone,
+             ${ca3MonacoExpr('o')} AS monaco
+      FROM orders o
+      ${where}
+    ),
+    tva_cmd AS (
+      SELECT oi.wp_order_id,
+        SUM(CASE WHEN oi.order_item_type = 'line_item' THEN oi.line_tax ELSE 0 END)
+        + SUM(CASE WHEN oi.order_item_type = 'tax'      THEN oi.line_tax ELSE 0 END) AS tva
+      FROM order_items oi
+      WHERE oi.wp_order_id IN (SELECT wp_order_id FROM cmd)
+      GROUP BY oi.wp_order_id
+    ),
+    ${CA3_RATE_CTE('SELECT wp_order_id FROM cmd')}
+    SELECT
+      c.zone,
+      c.monaco,
+      COALESCE(array_length(tx.taux, 1), 0)::int    AS nb_taux,
+      tx.taux[1]                                    AS taux,
+      COUNT(*)::int                                 AS cmd,
+      COALESCE(SUM(c.order_total), 0)::numeric      AS ttc,
+      COALESCE(SUM(COALESCE(t.tva, 0)), 0)::numeric AS tva
+    FROM cmd c
+    LEFT JOIN tva_cmd t  ON t.wp_order_id  = c.wp_order_id
+    LEFT JOIN taux_cmd tx ON tx.wp_order_id = c.wp_order_id
+    GROUP BY 1, 2, 3, 4
+  `, params);
+
+  // ─── AVOIRS : par zone × taux, rattachés au mois de leur émission ────────
+  const refundsParams = [];
+  const refundsConds  = [
+    `o.post_status NOT IN ('wc-cancelled', 'wc-failed', 'wc-checkout-draft', 'wc-trash', 'wc-pending', 'wc-auto-draft')`
+  ];
+  let rIdx = 1;
+  if (dateFrom) { refundsConds.push(`(r.refund_date) >= $${rIdx++}`); refundsParams.push(dateFrom); }
+  if (dateTo)   { refundsConds.push(`(r.refund_date) <= $${rIdx++}`); refundsParams.push(upperBound(dateTo)); }
+
+  const avoirsResult = await pool.query(`
+    WITH ${REFUND_ORDER_TAX_CTE},
+    ${CA3_RATE_CTE('SELECT DISTINCT wp_order_id FROM refunds')}
+    SELECT
+      ${ca3ZoneExpr('o')}                              AS zone,
+      tx.taux[1]                                       AS taux,
+      COALESCE(SUM(r.refund_amount), 0)::numeric       AS ttc,
+      COALESCE(SUM(${REFUND_TAX_EXPR}), 0)::numeric    AS tva
+    FROM refunds r
+    JOIN orders o ON r.wp_order_id = o.wp_order_id
+    ${REFUND_TAX_JOIN}
+    LEFT JOIN taux_cmd tx ON tx.wp_order_id = r.wp_order_id
+    WHERE ${refundsConds.join(' AND ')}
+    GROUP BY 1, 2
+  `, refundsParams);
+
+  // ─── AGRÉGATION ──────────────────────────────────────────────────────────
+  // Une « opération » = un couple (zone, taux). taux null = aucune TVA facturée.
+  const ops = new Map();
+  const key = (zone, taux) => `${zone}|${taux === null ? '' : taux}`;
+  const getOp = (zone, taux) => {
+    const k = key(zone, taux);
+    if (!ops.has(k)) ops.set(k, { zone, taux, cmd: 0, ht: 0, tva: 0, ht_avoirs: 0, tva_avoirs: 0 });
+    return ops.get(k);
+  };
+
+  const parseTaux = (v) => (v === null || v === undefined ? null : parseFloat(String(v).replace(',', '.')));
+
+  let monacoHT = 0, monacoTVA = 0;
+  let mixtes = 0;
+
+  for (const row of ventesResult.rows) {
+    const ttc  = parseFloat(row.ttc) || 0;
+    const tva  = parseFloat(row.tva) || 0;
+    const taux = row.nb_taux > 0 ? parseTaux(row.taux) : null;
+    if (row.nb_taux > 1) mixtes += row.cmd;
+    const op = getOp(row.zone, taux);
+    op.cmd += row.cmd;
+    op.ht  += ttc - tva;
+    op.tva += tva;
+    if (row.monaco) { monacoHT += ttc - tva; monacoTVA += tva; }
+  }
+
+  for (const row of avoirsResult.rows) {
+    const ttc  = parseFloat(row.ttc) || 0;
+    const tva  = parseFloat(row.tva) || 0;
+    const taux = parseTaux(row.taux);
+    // Un avoir sur une commande dont on ne retrouve pas le taux et qui ne porte
+    // pas de TVA est rattaché à l'opération non taxée de sa zone.
+    const op = getOp(row.zone, tva !== 0 || taux !== null ? taux : null);
+    op.ht_avoirs  += ttc - tva;
+    op.tva_avoirs += tva;
+  }
+
+  // ─── CADRE A — montant des opérations réalisées ──────────────────────────
+  // Chaque opération est rangée sur une ligne CA3 selon sa zone et le fait
+  // qu'elle porte ou non de la TVA française.
+  const cadreA = {
+    '01': { code: '01', libelle: 'Ventes, prestations de services', base: 0, detail: [] },
+    '04': { code: '04', libelle: 'Exportations hors UE', base: 0, detail: [] },
+    '05': { code: '05', libelle: 'Autres opérations non imposables', base: 0, detail: [] },
+    '06': { code: '06', libelle: 'Livraisons intracommunautaires', base: 0, detail: [] },
+  };
+
+  const controles = [];
+  const territorialite = [];
+
+  for (const op of ops.values()) {
+    const htNet  = op.ht - op.ht_avoirs;
+    const tvaNet = op.tva - op.tva_avoirs;
+    const taxee  = op.taux !== null && op.tva !== 0;
+
+    let ligne;
+    if (taxee) {
+      // Toute opération soumise à la TVA française va en ligne 01, quelle que
+      // soit la destination : c'est la TVA effectivement collectée qui est due.
+      ligne = '01';
+    } else if (op.zone === 'HORS_UE' || op.zone === 'DOM' || op.zone === 'TOM') {
+      ligne = '04';
+    } else {
+      // UE sans TVA : ce serait une livraison intracommunautaire (ligne 06),
+      // mais elle exige le n° de TVA de l'acquéreur, qui n'est pas collecté.
+      // France sans TVA : anomalie. Les deux atterrissent en ligne 05, signalées.
+      ligne = '05';
+    }
+
+    cadreA[ligne].base += htNet;
+    cadreA[ligne].detail.push({
+      zone: op.zone, zone_libelle: CA3_ZONE_LABELS[op.zone],
+      taux: op.taux, cmd: op.cmd,
+      ht: round2(htNet), tva: round2(tvaNet),
+    });
+
+    territorialite.push({
+      zone: op.zone, zone_libelle: CA3_ZONE_LABELS[op.zone],
+      taux: op.taux, ligne_ca3: ligne, cmd: op.cmd,
+      ht_brut: round2(op.ht), tva_brute: round2(op.tva),
+      ht_avoirs: round2(op.ht_avoirs), tva_avoirs: round2(op.tva_avoirs),
+      ht_net: round2(htNet), tva_net: round2(tvaNet),
+    });
+  }
+
+  // ─── CADRE B — TVA brute, par taux ───────────────────────────────────────
+  const parTaux = new Map();
+  for (const op of ops.values()) {
+    if (op.taux === null || op.tva === 0) continue;
+    if (!parTaux.has(op.taux)) parTaux.set(op.taux, { base: 0, tva: 0 });
+    const b = parTaux.get(op.taux);
+    b.base += op.ht - op.ht_avoirs;
+    b.tva  += op.tva - op.tva_avoirs;
+  }
+
+  const cadreB = [...parTaux.entries()]
+    .sort((a, b) => b[0] - a[0])
+    .map(([taux, v]) => ({ ...ca3RateLine(taux), taux, base: round2(v.base), tva: round2(v.tva) }));
+
+  const tvaBrute = cadreB.reduce((s, l) => s + l.tva, 0);
+
+  // ─── CONTRÔLES ───────────────────────────────────────────────────────────
+  const zoneAgg = (zone, taxee) => [...ops.values()]
+    .filter((o) => o.zone === zone && ((o.taux !== null && o.tva !== 0) === taxee))
+    .reduce((s, o) => s + (o.ht - o.ht_avoirs), 0);
+
+  const ueTaxee = zoneAgg('UE', true);
+  if (ueTaxee > 0) {
+    controles.push({
+      niveau: 'alerte',
+      titre: 'Ventes UE taxées au taux français',
+      montant: round2(ueTaxee),
+      message: "Ces ventes à destination d'autres États membres portent la TVA française. "
+        + "Au-delà du seuil unique de 10 000 € de ventes à distance dans l'UE, elles relèvent "
+        + "du guichet unique (OSS) au taux du pays de destination et sortent alors de la CA3. "
+        + "À arbitrer avec le comptable : le paramétrage WooCommerce applique aujourd'hui 20 % à tous les pays.",
+    });
+  }
+
+  const ueExoneree = zoneAgg('UE', false);
+  controles.push({
+    niveau: ueExoneree > 0 ? 'alerte' : 'info',
+    titre: 'Ligne 06 — livraisons intracommunautaires non déterminables',
+    montant: round2(ueExoneree),
+    message: "Le numéro de TVA intracommunautaire de l'acquéreur n'est enregistré sur aucune "
+      + "commande (colonne billing_tax vide à 100 %). Impossible de distinguer une livraison "
+      + "intracommunautaire exonérée (ligne 06) d'une vente à distance B2C. Le montant ci-dessus "
+      + "est donc rangé en ligne 05 par défaut.",
+  });
+
+  const frNonTaxee = zoneAgg('FR', false);
+  if (frNonTaxee > 0) {
+    controles.push({
+      niveau: 'alerte',
+      titre: 'Ventes France sans TVA',
+      montant: round2(frNonTaxee),
+      message: 'Livraisons en France métropolitaine ou à Monaco sans TVA collectée. '
+        + 'À vérifier commande par commande : soit une exonération justifiée, soit un défaut de taxation.',
+    });
+  }
+
+  const domTomTaxee = zoneAgg('DOM', true) + zoneAgg('TOM', true);
+  if (domTomTaxee > 0) {
+    controles.push({
+      niveau: 'alerte',
+      titre: "TVA facturée sur une livraison outre-mer",
+      montant: round2(domTomTaxee),
+      message: "Les livraisons vers les DOM et les COM sont exonérées de TVA métropolitaine "
+        + "(art. 294 CGI). De la TVA a pourtant été collectée sur ces commandes.",
+    });
+  }
+
+  const domTomExo = zoneAgg('DOM', false) + zoneAgg('TOM', false);
+  if (domTomExo > 0) {
+    controles.push({
+      niveau: 'info',
+      titre: 'Outre-mer rangé en ligne 04',
+      montant: round2(domTomExo),
+      message: "Les livraisons vers les DOM et COM sont assimilées à des exportations et "
+        + "portées en ligne 04. Certains cabinets les déclarent en ligne 05 : à confirmer avec le comptable.",
+    });
+  }
+
+  if (monacoHT > 0) {
+    controles.push({
+      niveau: 'info',
+      titre: 'Opérations à destination de Monaco',
+      montant: round2(monacoHT),
+      message: `Monaco est un territoire français pour la TVA : ces ventes sont taxables (ligne 01). `
+        + `La CA3 demande de les isoler en ligne 18 — TVA correspondante : ${round2(monacoTVA)} €.`,
+    });
+  }
+
+  if (mixtes > 0) {
+    controles.push({
+      niveau: 'alerte',
+      titre: 'Commandes à plusieurs taux de TVA',
+      montant: null,
+      message: `${mixtes} commande(s) portent plusieurs taux. Elles sont rattachées au premier taux `
+        + `rencontré, ce qui fausse la ventilation du cadre B. À traiter manuellement.`,
+    });
+  }
+
+  controles.push({
+    niveau: 'info',
+    titre: 'TVA déductible non couverte',
+    montant: null,
+    message: "Ce document ne porte que la TVA collectée (cadre A et lignes 08 à 16). La TVA "
+      + "déductible sur achats et immobilisations (lignes 19 à 23) provient des factures "
+      + "fournisseurs et reste à la charge du comptable.",
+  });
+
+  for (const l of Object.values(cadreA)) l.base = round2(l.base);
+  territorialite.sort((a, b) => b.ht_net - a.ht_net);
+
+  return {
+    cadreA: ['01', '04', '05', '06'].map((c) => cadreA[c]),
+    cadreB,
+    tva_brute: round2(tvaBrute),
+    total_operations: round2(Object.values(cadreA).reduce((s, l) => s + l.base, 0)),
+    territorialite,
+    controles,
+    monaco: { ht: round2(monacoHT), tva: round2(monacoTVA) },
+  };
+}
+
+exports.computeCA3 = computeCA3;
+
 /**
  * POST /api/financier/comptable
  * Données de la déclaration comptable (CA TTC/HT/TVA brut & net, par pays).
@@ -700,8 +1063,13 @@ exports.computeComptable = computeComptable;
 exports.getComptable = async (req, res) => {
   try {
     const { dateFrom, dateTo } = req.body;
-    const result = await computeComptable({ dateFrom, dateTo });
-    res.json({ success: true, ...result, dateFrom, dateTo });
+    // La CA3 est calculée dans le même appel : l'onglet comptable en a toujours
+    // besoin, et cela garantit que les deux vues portent sur la même période.
+    const [result, ca3] = await Promise.all([
+      computeComptable({ dateFrom, dateTo }),
+      computeCA3({ dateFrom, dateTo }),
+    ]);
+    res.json({ success: true, ...result, ca3, dateFrom, dateTo });
   } catch (error) {
     console.error('Error in financier comptable:', error);
     res.status(500).json({ success: false, error: error.message });
