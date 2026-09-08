@@ -138,6 +138,20 @@ Base URL: `http://54.37.156.233:3000/api`
 - `PUT /products/:id/cost` - Modifier le prix de revient
   - Body: `{ costPrice }`
 
+## 🧰 ATB Routes (`/atb`) — Anthony Tool Box
+
+JWT au montage (`server.js`) + droit applicatif `atb` en lecture (vérifié dans le routeur).
+
+- `GET /atb/orders/daily` - Commandes payées par jour, avec contreparties M-1 et N-1
+  - Query params (obligatoires) : `dateFrom`, `dateTo` au format `YYYY-MM-DD`, bornes incluses, 366 jours maximum
+  - Statuts : liste blanche des 6 statuts payés. Jour de rattachement : `COALESCE(paid_date, post_date)`
+  - Comparaison **calendaire** (même quantième), pas par jour de semaine. Un quantième
+    inexistant dans le mois/l'année cible (31 février, 29 février non bissextile) renvoie
+    `m1Date`/`n1Date` à `null` : pas de barre fantôme plutôt qu'une valeur rabattue.
+  - Réponse : `{ range, compare, statuses, series[{date, orders, m1Date, m1Orders, n1Date, n1Orders}], totals }`
+  - `totals.currentForM1` / `currentForN1` = total courant restreint aux jours ayant une
+    contrepartie — c'est cette base qu'il faut utiliser pour l'écart %, pas `totals.current`.
+
 ## 🔄 Sync Routes (`/sync`)
 
 ### Connexion et santé
