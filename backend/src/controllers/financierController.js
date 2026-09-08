@@ -1152,6 +1152,17 @@ async function computeCA3({ dateFrom, dateTo } = {}) {
       + "fournisseurs et reste à la charge du comptable.",
   });
 
+  // Rapprochement ventes → avoirs → bases déclarées. La CA3 n'a pas de ligne
+  // « remboursements » (le formulaire demande le net), mais sans ces totaux le
+  // document n'est pas vérifiable : impossible de le rapprocher de l'onglet
+  // comptable, qui lui affiche la cascade.
+  const brut = [...ops.values()].reduce(
+    (t, o) => ({ ht: t.ht + o.ht, tva: t.tva + o.tva }), { ht: 0, tva: 0 }
+  );
+  const avoirs = [...ops.values()].reduce(
+    (t, o) => ({ ht: t.ht + o.ht_avoirs, tva: t.tva + o.tva_avoirs }), { ht: 0, tva: 0 }
+  );
+
   const totalOperations = Object.values(cadreA).reduce((s, l) => s + l.base, 0);
   for (const l of Object.values(cadreA)) l.base = round2(l.base);
   territorialite.sort((a, b) => b.ht_net - a.ht_net);
@@ -1161,6 +1172,8 @@ async function computeCA3({ dateFrom, dateTo } = {}) {
     cadreB,
     tva_brute: round2(tvaBrute),
     total_operations: round2(totalOperations),
+    brut:   { ht: round2(brut.ht),   tva: round2(brut.tva) },
+    avoirs: { ht: round2(avoirs.ht), tva: round2(avoirs.tva) },
     territorialite,
     controles,
     monaco: { ht: round2(monacoHT), tva: round2(monacoTVA) },

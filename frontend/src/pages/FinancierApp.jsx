@@ -774,7 +774,36 @@ function exportCA3PDF({ ca3, periodLabel, range }) {
   doc.text('Montants nets des avoirs emis sur la periode — TVA collectee uniquement', pageWidth / 2, y, { align: 'center' });
   y += 11;
 
+  // ─── Rapprochement ventes / avoirs / bases declarees ───────────────────
+  // La CA3 ne comporte pas de ligne « remboursements » : les cadres A et B sont
+  // nets. Ce bloc rend l'ecart verifiable et rapprochable de l'onglet comptable.
+  if (ca3.brut && ca3.avoirs) {
+    doc.setFontSize(13);
+    doc.setTextColor(0);
+    doc.text('Des ventes aux bases declarees', 14, y);
+    autoTable(doc, {
+      startY: y + 4,
+      head: [['', 'Base HT', 'TVA']],
+      body: [
+        ['Ventes de la periode', fmtEur(ca3.brut.ht), fmtEur(ca3.brut.tva)],
+        ['Remboursements / avoirs', '- ' + fmtEur(ca3.avoirs.ht), '- ' + fmtEur(ca3.avoirs.tva)],
+        ['Reporte sur la declaration', fmtEur(ca3.total_operations), fmtEur(ca3.tva_brute)],
+      ],
+      theme: 'grid',
+      headStyles: { fillColor: [19, 94, 132] },
+      columnStyles: { 0: { fontStyle: 'bold' }, 1: { halign: 'right', cellWidth: 40 }, 2: { halign: 'right', cellWidth: 40 } },
+      didParseCell: (d) => {
+        if (d.section !== 'body') return;
+        if (d.row.index === 1 && d.column.index > 0) d.cell.styles.textColor = [178, 34, 34];
+        if (d.row.index === 2) { d.cell.styles.fontStyle = 'bold'; d.cell.styles.fillColor = [230, 236, 240]; }
+      },
+      margin: { left: 14, right: 14 },
+    });
+    y = doc.lastAutoTable.finalY + 10;
+  }
+
   // ─── Cadre A ───────────────────────────────────────────────────────────
+  if (y > 210) { doc.addPage(); y = 18; }
   doc.setFontSize(13);
   doc.setTextColor(0);
   doc.text('Cadre A — Montant des operations realisees', 14, y);
@@ -855,19 +884,22 @@ function exportCA3PDF({ ca3, periodLabel, range }) {
   doc.text('Detail par territorialite', 14, y);
   autoTable(doc, {
     startY: y + 4,
-    head: [['Zone de livraison', 'Taux', 'Ligne', 'Cmd', 'HT net', 'TVA nette']],
+    head: [['Zone de livraison', 'Taux', 'Ligne', 'Cmd', 'HT brut', 'Avoirs HT', 'Avoirs TVA', 'HT net', 'TVA nette']],
     body: ca3.territorialite.map((r) => [
       r.zone_libelle,
       r.taux !== null ? `${r.taux} %` : (r.tva_net !== 0 ? 'Indetermine' : 'Sans TVA'),
       r.ligne_ca3,
       fmt(r.cmd),
+      fmtEur(r.ht_brut),
+      r.ht_avoirs ? '- ' + fmtEur(r.ht_avoirs) : '-',
+      r.tva_avoirs ? '- ' + fmtEur(r.tva_avoirs) : '-',
       fmtEur(r.ht_net),
       fmtEur(r.tva_net),
     ]),
     theme: 'striped',
     headStyles: { fillColor: [19, 94, 132] },
-    styles: { fontSize: 8 },
-    columnStyles: { 3: { halign: 'right' }, 4: { halign: 'right' }, 5: { halign: 'right' } },
+    styles: { fontSize: 7.5 },
+    columnStyles: { 3: { halign: 'right' }, 4: { halign: 'right' }, 5: { halign: 'right' }, 6: { halign: 'right' }, 7: { halign: 'right' }, 8: { halign: 'right' } },
     margin: { left: 14, right: 14 },
   });
   y = doc.lastAutoTable.finalY + 6;
@@ -1005,6 +1037,47 @@ function ComptableView({ data, loading, periodLabel, range, months, selectedMont
       <>
         {header}
 
+        {/* Des ventes aux bases déclarées — la CA3 est nette, l'écart doit rester visible */}
+        {ca3.brut && ca3.avoirs && (
+          <div style={card}>
+            <div style={{ fontSize: 14, fontWeight: 700, color: C.grisTF, marginBottom: 4 }}>Des ventes aux bases déclarées</div>
+            <div style={{ fontSize: 12, color: C.grisM, marginBottom: 14 }}>
+              La CA3 n'a pas de ligne « remboursements » : les cadres A et B sont nets. Le détail est ici.
+            </div>
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 460 }}>
+                <thead>
+                  <tr>
+                    <th style={{ ...th, textAlign: 'left' }}></th>
+                    <th style={{ ...th, textAlign: 'right' }}>Base HT</th>
+                    <th style={{ ...th, textAlign: 'right' }}>TVA</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {[
+                    { label: 'Ventes de la période', ht: ca3.brut.ht, tva: ca3.brut.tva },
+                    { label: 'Remboursements / avoirs', ht: ca3.avoirs.ht, tva: ca3.avoirs.tva, negative: true },
+                    { label: 'Reporté sur la déclaration', ht: ca3.total_operations, tva: ca3.tva_brute, total: true },
+                  ].map((r) => (
+                    <tr key={r.label} style={r.total ? { background: C.grisTL } : undefined}>
+                      <td style={{ ...td, textAlign: 'left', borderBottom: r.total ? 'none' : td.borderBottom, fontWeight: r.total ? 800 : 600, color: C.grisTF }}>{r.label}</td>
+                      {[r.ht, r.tva].map((v, i) => (
+                        <td key={i} style={{
+                          ...td, textAlign: 'right', borderBottom: r.total ? 'none' : td.borderBottom,
+                          fontSize: r.total ? 16 : 14, fontWeight: r.total ? 800 : 700,
+                          color: r.negative ? C.rouge : (i === 0 ? C.saphir : C.grisTF),
+                        }}>
+                          {r.negative ? (v ? '− ' + fmtEur(v) : '—') : fmtEur(v)}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
         {/* Cadre A — montant des opérations */}
         <div style={card}>
           <div style={{ fontSize: 14, fontWeight: 700, color: C.grisTF, marginBottom: 4 }}>Cadre A — Montant des opérations réalisées</div>
@@ -1121,6 +1194,7 @@ function ComptableView({ data, loading, periodLabel, range, months, selectedMont
                   <th style={{ ...th, textAlign: 'right' }}>Cmd</th>
                   <th style={{ ...th, textAlign: 'right' }}>HT brut</th>
                   <th style={{ ...th, textAlign: 'right' }}>Avoirs HT</th>
+                  <th style={{ ...th, textAlign: 'right' }}>Avoirs TVA</th>
                   <th style={{ ...th, textAlign: 'right' }}>HT net</th>
                   <th style={{ ...th, textAlign: 'right' }}>TVA nette</th>
                 </tr>
@@ -1136,6 +1210,7 @@ function ComptableView({ data, loading, periodLabel, range, months, selectedMont
                     <td style={{ ...td, textAlign: 'right' }}>{fmt(r.cmd)}</td>
                     <td style={{ ...td, textAlign: 'right' }}>{fmtEur(r.ht_brut)}</td>
                     <td style={{ ...td, textAlign: 'right', color: r.ht_avoirs ? C.rouge : C.grisM }}>{r.ht_avoirs ? '− ' + fmtEur(r.ht_avoirs) : '—'}</td>
+                    <td style={{ ...td, textAlign: 'right', color: r.tva_avoirs ? C.rouge : C.grisM }}>{r.tva_avoirs ? '− ' + fmtEur(r.tva_avoirs) : '—'}</td>
                     <td style={{ ...td, textAlign: 'right', fontWeight: 700, color: C.saphir }}>{fmtEur(r.ht_net)}</td>
                     <td style={{ ...td, textAlign: 'right' }}>{fmtEur(r.tva_net)}</td>
                   </tr>
