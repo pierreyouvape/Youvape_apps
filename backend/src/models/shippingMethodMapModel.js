@@ -114,4 +114,78 @@ const listUnmappedSeen = async (days = 90) => {
   return rows;
 };
 
-module.exports = { resolve, listActive, listAll, listUnmappedSeen, invalidateCache };
+/**
+ * Crée ou met à jour une correspondance.
+ *
+ * L'écriture passe par la dénomination et non par l'id : c'est elle la clé
+ * métier, et l'écran de réglages propose de mapper des dénominations repérées
+ * dans les commandes, qui n'ont donc pas encore de ligne.
+ *
+ * @param {object} entry
+ * @param {string} entry.denomination
+ * @param {?string} entry.carrierCode - null pour « connu, sans étiquette »
+ * @param {?string} entry.accountCode
+ * @param {?string} entry.deliveryMode
+ * @param {?string} entry.note
+ * @param {boolean} [entry.active]
+ * @returns {Promise<object>} la ligne écrite
+ */
+const upsert = async ({ denomination, carrierCode, accountCode, deliveryMode, note, active = true }) => {
+  const nom = String(denomination ?? '').trim();
+  if (!nom) {
+    const err = new Error('La dénomination est obligatoire');
+    err.statusCode = 400;
+    throw err;
+  }
+
+  // « Pas d'étiquette » se dit avec un transporteur ET un contrat vides : la
+  // contrainte de cohérence en base refuse les demi-mesures.
+  const carrier = carrierCode || null;
+  const account = carrier ? (accountCode || null) : null;
+  if (carrier && !account) {
+    const err = new Error(`Le transporteur « ${carrier} » exige un contrat`);
+    err.statusCode = 400;
+    throw err;
+  }
+
+  const { rows } = await pool.query(
+    `INSERT INTO shipping_method_carrier_map
+       (denomination, carrier_code, account_code, delivery_mode, note, active)
+     VALUES ($1, $2, $3, $4, $5, $6)
+     ON CONFLICT (denomination) DO UPDATE
+       SET carrier_code  = EXCLUDED.carrier_code,
+           account_code  = EXCLUDED.account_code,
+           delivery_mode = EXCLUDED.delivery_mode,
+           note          = EXCLUDED.note,
+           active        = EXCLUDED.active,
+           updated_at    = NOW()
+     RETURNING *`,
+    [nom, carrier, account, deliveryMode || null, note || null, active]
+  );
+
+  invalidateCache();
+  return rows[0];
+};
+
+/**
+ * Supprime une correspondance.
+ *
+ * Supprimer n'est pas anodin : la dénomination redevient « inconnue » et
+ * bloquera le packing. C'est parfois voulu (une dénomination mappée par erreur),
+ * mais pour retirer temporairement un transporteur, `active = false` est plus
+ * sûr — la ligne et sa note sont conservées.
+ *
+ * @param {number|string} id
+ * @returns {Promise<?object>} la ligne supprimée, ou null
+ */
+const remove = async (id) => {
+  const { rows } = await pool.query(
+    'DELETE FROM shipping_method_carrier_map WHERE id = $1 RETURNING *', [id]
+  );
+  invalidateCache();
+  return rows[0] || null;
+};
+
+module.exports = {
+  resolve, listActive, listAll, listUnmappedSeen, upsert, remove, invalidateCache
+};
