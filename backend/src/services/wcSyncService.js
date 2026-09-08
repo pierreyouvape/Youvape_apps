@@ -299,7 +299,10 @@ const wcSyncService = {
         sub_brand = COALESCE(EXCLUDED.sub_brand, products.sub_brand),
         category = COALESCE(EXCLUDED.category, products.category),
         sub_category = COALESCE(EXCLUDED.sub_category, products.sub_category),
-        manage_stock = EXCLUDED.manage_stock
+        manage_stock = EXCLUDED.manage_stock,
+        -- Même oubli que pour la table orders. La mise à jour rapide du stock,
+        -- juste au-dessus, pose bien updated_at = NOW() ; cet upsert complet, non.
+        updated_at = NOW()
     `, [
       data.wp_product_id, data.parent_id || null, data.type, data.name,
       data.sku, data.status, data.stock_status, data.stock_quantity,
@@ -419,7 +422,14 @@ const wcSyncService = {
         mollie_paid_and_processed = COALESCE(EXCLUDED.mollie_paid_and_processed, orders.mollie_paid_and_processed),
         -- COALESCE : une commande resynchronisée après expédition ne doit pas
         -- perdre son point relais si le plugin a entre-temps purgé la méta.
-        relay_point = COALESCE(EXCLUDED.relay_point, orders.relay_point)
+        relay_point = COALESCE(EXCLUDED.relay_point, orders.relay_point),
+        -- Sans cette ligne, updated_at restait figé à la date de création alors que
+        -- le statut, lui, changeait : impossible de savoir quand une commande avait
+        -- bougé, ni si la synchro était fraîche. C'est ce qui a rendu muette
+        -- l'enquête du 08/09/2026 sur un comptage journalier qui avait varié.
+        -- Les autres écrivains de la table (ordersController, orderModel) la posent
+        -- déjà ; seul cet upsert-ci, de loin le plus gros volume, l'oubliait.
+        updated_at = NOW()
     `, [
       data.wp_order_id, data.customer_id, 'wc-' + data.status, data.total,
       data.total_tax, data.shipping_total, data.discount_total, data.payment_method_title,
