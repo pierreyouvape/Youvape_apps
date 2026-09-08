@@ -751,9 +751,154 @@ function exportComptablePDF({ rows, totals, periodLabel, range, detailed = true 
   doc.save(`declaration_comptable${detailed ? '' : '_simplifie'}_${suffix}.pdf`);
 }
 
+// Construit et télécharge le PDF de la CA3 (formulaire 3310-CA3).
+// Portrait : cadre A, cadre B, contrôles, puis détail par territorialité.
+function exportCA3PDF({ ca3, periodLabel, range }) {
+  const doc = new jsPDF({ orientation: 'portrait' });
+  const pageWidth = doc.internal.pageSize.getWidth();
+  let y = 18;
+
+  doc.setFontSize(18);
+  doc.setTextColor(19, 94, 132);
+  doc.text('Declaration de TVA (CA3) — YouVape', pageWidth / 2, y, { align: 'center' });
+  y += 8;
+
+  doc.setFontSize(10);
+  doc.setTextColor(100);
+  const periodLabelPdf = String(periodLabel).replace(/→/g, '-');
+  doc.text(`Periode : ${periodLabelPdf}`, pageWidth / 2, y, { align: 'center' });
+  y += 5;
+  doc.text(`Genere le ${new Date().toLocaleDateString('fr-FR')} a ${new Date().toLocaleTimeString('fr-FR')}`, pageWidth / 2, y, { align: 'center' });
+  y += 5;
+  doc.setFontSize(9);
+  doc.text('Montants nets des avoirs emis sur la periode — TVA collectee uniquement', pageWidth / 2, y, { align: 'center' });
+  y += 11;
+
+  // ─── Cadre A ───────────────────────────────────────────────────────────
+  doc.setFontSize(13);
+  doc.setTextColor(0);
+  doc.text('Cadre A — Montant des operations realisees', 14, y);
+  autoTable(doc, {
+    startY: y + 4,
+    head: [['Ligne', 'Operations', 'Base HT']],
+    body: ca3.cadreA.map((l) => [l.code, l.libelle, fmtEur(l.base)]),
+    foot: [['', 'Total des operations', fmtEur(ca3.total_operations)]],
+    theme: 'grid',
+    headStyles: { fillColor: [19, 94, 132] },
+    footStyles: { fillColor: [230, 236, 240], textColor: 20, fontStyle: 'bold' },
+    columnStyles: { 0: { cellWidth: 18, fontStyle: 'bold' }, 2: { halign: 'right', cellWidth: 40 } },
+    margin: { left: 14, right: 14 },
+  });
+  y = doc.lastAutoTable.finalY + 10;
+
+  // ─── Cadre B ───────────────────────────────────────────────────────────
+  doc.setFontSize(13);
+  doc.text('Cadre B — TVA brute collectee', 14, y);
+  autoTable(doc, {
+    startY: y + 4,
+    head: [['Ligne', 'Operations imposables', 'Base HT', 'TVA due']],
+    body: ca3.cadreB.map((l) => [l.code, l.libelle, fmtEur(l.base), fmtEur(l.tva)]),
+    foot: [['16', 'Total TVA brute collectee', '', fmtEur(ca3.tva_brute)]],
+    theme: 'grid',
+    headStyles: { fillColor: [19, 94, 132] },
+    footStyles: { fillColor: [230, 236, 240], textColor: 20, fontStyle: 'bold' },
+    columnStyles: { 0: { cellWidth: 18, fontStyle: 'bold' }, 2: { halign: 'right', cellWidth: 35 }, 3: { halign: 'right', cellWidth: 35 } },
+    margin: { left: 14, right: 14 },
+  });
+  y = doc.lastAutoTable.finalY + 6;
+
+  if (ca3.monaco && ca3.monaco.ht > 0) {
+    doc.setFontSize(9);
+    doc.setTextColor(80);
+    doc.text(`Ligne 18 — dont operations a destination de Monaco : ${fmtEur(ca3.monaco.ht)} HT / ${fmtEur(ca3.monaco.tva)} de TVA.`, 14, y);
+    y += 8;
+  }
+
+  // ─── Points a arbitrer ─────────────────────────────────────────────────
+  if (ca3.controles && ca3.controles.length) {
+    if (y > 215) { doc.addPage(); y = 18; }
+    doc.setFontSize(13);
+    doc.setTextColor(0);
+    doc.text('Points a arbitrer avec le comptable', 14, y);
+    autoTable(doc, {
+      startY: y + 4,
+      head: [['', 'Point', 'Montant HT', 'Detail']],
+      body: ca3.controles.map((c) => [
+        c.niveau === 'alerte' ? '!' : 'i',
+        c.titre,
+        c.montant === null || c.montant === undefined ? '-' : fmtEur(c.montant),
+        c.message,
+      ]),
+      theme: 'striped',
+      headStyles: { fillColor: [19, 94, 132] },
+      styles: { fontSize: 8, cellPadding: 2.5, valign: 'top' },
+      columnStyles: {
+        0: { cellWidth: 7, halign: 'center', fontStyle: 'bold' },
+        1: { cellWidth: 42, fontStyle: 'bold' },
+        2: { cellWidth: 24, halign: 'right' },
+        3: { cellWidth: 'auto' },
+      },
+      didParseCell: (d) => {
+        if (d.section === 'body' && d.column.index === 0 && d.cell.raw === '!') {
+          d.cell.styles.textColor = [178, 34, 34];
+        }
+      },
+      margin: { left: 14, right: 14 },
+    });
+    y = doc.lastAutoTable.finalY + 10;
+  }
+
+  // ─── Detail par territorialite ─────────────────────────────────────────
+  if (y > 200) { doc.addPage(); y = 18; }
+  doc.setFontSize(13);
+  doc.setTextColor(0);
+  doc.text('Detail par territorialite', 14, y);
+  autoTable(doc, {
+    startY: y + 4,
+    head: [['Zone de livraison', 'Taux', 'Ligne', 'Cmd', 'HT net', 'TVA nette']],
+    body: ca3.territorialite.map((r) => [
+      r.zone_libelle,
+      r.taux === null ? 'Sans TVA' : `${r.taux} %`,
+      r.ligne_ca3,
+      fmt(r.cmd),
+      fmtEur(r.ht_net),
+      fmtEur(r.tva_net),
+    ]),
+    theme: 'striped',
+    headStyles: { fillColor: [19, 94, 132] },
+    styles: { fontSize: 8 },
+    columnStyles: { 3: { halign: 'right' }, 4: { halign: 'right' }, 5: { halign: 'right' } },
+    margin: { left: 14, right: 14 },
+  });
+  y = doc.lastAutoTable.finalY + 6;
+
+  doc.setFontSize(8);
+  doc.setTextColor(110);
+  for (const line of [
+    "Territorialite determinee par le pays de LIVRAISON (shipping_country), la TVA suivant le lieu de livraison.",
+    "Les avoirs sont rattaches au mois de leur emission, pas a celui de la commande d'origine.",
+    "TVA deductible sur achats et immobilisations (lignes 19 a 23) non couverte : elle provient des factures fournisseurs.",
+  ]) {
+    doc.text(line, 14, y);
+    y += 4;
+  }
+
+  const pageCount = doc.internal.getNumberOfPages();
+  for (let i = 1; i <= pageCount; i++) {
+    doc.setPage(i);
+    doc.setFontSize(8);
+    doc.setTextColor(150);
+    doc.text(`YouVape — Declaration de TVA (CA3) — Page ${i}/${pageCount}`, pageWidth / 2, doc.internal.pageSize.getHeight() - 8, { align: 'center' });
+  }
+
+  const suffix = range ? `${range.dateFrom}_${range.dateTo}` : new Date().toISOString().slice(0, 10);
+  doc.save(`ca3_${suffix}.pdf`);
+}
+
 function ComptableView({ data, loading, periodLabel, range, months, selectedMonth, onMonthChange }) {
-  const [mode, setMode] = useState('detailed'); // 'detailed' | 'simple'
+  const [mode, setMode] = useState('detailed'); // 'detailed' | 'simple' | 'ca3'
   const detailed = mode === 'detailed';
+  const isCA3 = mode === 'ca3';
   const th = { fontSize: 11, fontWeight: 700, color: C.grisM, textTransform: 'uppercase', letterSpacing: '0.04em', padding: '0 10px 8px', borderBottom: `2px solid ${C.grisCL}`, whiteSpace: 'nowrap' };
   const td = { fontSize: 13, color: C.grisF, fontWeight: 600, padding: '9px 10px', borderBottom: `1px solid ${C.grisTL}`, whiteSpace: 'nowrap' };
 
@@ -762,7 +907,11 @@ function ComptableView({ data, loading, periodLabel, range, months, selectedMont
     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', flexWrap: 'wrap', gap: 12, marginBottom: 18 }}>
       <div>
         <div style={{ fontSize: 16, fontWeight: 800, color: C.grisTF, fontFamily: "'Tilt Warp', cursive" }}>Déclaration comptable</div>
-        <div style={{ fontSize: 12, color: C.grisM, marginTop: 2 }}>CA TTC, CA HT et TVA collectée — brut (ventes) et net (après remboursements)</div>
+        <div style={{ fontSize: 12, color: C.grisM, marginTop: 2 }}>
+          {isCA3
+            ? 'Formulaire 3310-CA3 — cadres A et B, TVA collectée, net des avoirs de la période'
+            : 'CA TTC, CA HT et TVA collectée — brut (ventes) et net (après remboursements)'}
+        </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 10, flexWrap: 'wrap' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <span style={{ fontSize: 12, fontWeight: 700, color: C.grisM, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Mois</span>
@@ -780,6 +929,7 @@ function ComptableView({ data, loading, periodLabel, range, months, selectedMont
             {[
               { key: 'detailed', label: 'Détaillé' },
               { key: 'simple', label: 'Simplifié' },
+              { key: 'ca3', label: 'CA3' },
             ].map((opt) => {
               const active = mode === opt.key;
               return (
@@ -796,8 +946,15 @@ function ComptableView({ data, loading, periodLabel, range, months, selectedMont
         </div>
       </div>
       <button
-        onClick={() => data && exportComptablePDF({ rows: data.rows, totals: data.totals, periodLabel, range, detailed })}
-        disabled={!data || loading}
+        onClick={() => {
+          if (!data) return;
+          if (isCA3) {
+            if (data.ca3) exportCA3PDF({ ca3: data.ca3, periodLabel, range });
+          } else {
+            exportComptablePDF({ rows: data.rows, totals: data.totals, periodLabel, range, detailed });
+          }
+        }}
+        disabled={!data || loading || (isCA3 && !data.ca3)}
         style={{ background: (!data || loading) ? C.grisM : C.saphir, color: C.blanc, border: 'none', borderRadius: 9, padding: '10px 18px', fontSize: 13, fontWeight: 700, cursor: (!data || loading) ? 'default' : 'pointer', fontFamily: 'Lato', display: 'inline-flex', alignItems: 'center', gap: 7 }}
       >
         📄 Exporter en PDF
@@ -827,6 +984,171 @@ function ComptableView({ data, loading, periodLabel, range, months, selectedMont
   }
 
   const t = data.totals;
+
+  // ─── Vue CA3 : cadre A, cadre B, points à arbitrer, détail territorial ───
+  if (isCA3) {
+    const ca3 = data.ca3;
+    if (!ca3) {
+      return (
+        <>
+          {header}
+          <div style={{ background: C.blanc, borderRadius: 14, padding: '28px 24px', boxShadow: '0 1px 3px rgba(0,0,0,0.07)', color: C.grisM, fontSize: 14 }}>
+            CA3 indisponible pour cette période.
+          </div>
+        </>
+      );
+    }
+    const card = { background: C.blanc, borderRadius: 14, padding: '20px 24px', marginBottom: 20, boxShadow: '0 1px 3px rgba(0,0,0,0.07), 0 0 0 1px rgba(0,0,0,0.05)' };
+    const codeCell = { ...td, textAlign: 'left', fontWeight: 800, color: C.saphir, width: 60 };
+
+    return (
+      <>
+        {header}
+
+        {/* Cadre A — montant des opérations */}
+        <div style={card}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: C.grisTF, marginBottom: 4 }}>Cadre A — Montant des opérations réalisées</div>
+          <div style={{ fontSize: 12, color: C.grisM, marginBottom: 14 }}>Bases hors taxes, nettes des avoirs émis sur la période</div>
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 520 }}>
+              <thead>
+                <tr>
+                  <th style={{ ...th, textAlign: 'left' }}>Ligne</th>
+                  <th style={{ ...th, textAlign: 'left' }}>Opérations</th>
+                  <th style={{ ...th, textAlign: 'right' }}>Base HT</th>
+                </tr>
+              </thead>
+              <tbody>
+                {ca3.cadreA.map((l) => (
+                  <tr key={l.code}>
+                    <td style={codeCell}>{l.code}</td>
+                    <td style={{ ...td, textAlign: 'left' }}>{l.libelle}</td>
+                    <td style={{ ...td, textAlign: 'right', fontWeight: 700, color: l.base ? C.saphir : C.grisM }}>{fmtEur(l.base)}</td>
+                  </tr>
+                ))}
+                <tr style={{ background: C.grisTL }}>
+                  <td style={{ ...td, borderBottom: 'none' }}></td>
+                  <td style={{ ...td, textAlign: 'left', borderBottom: 'none', fontWeight: 800, color: C.grisTF }}>Total des opérations</td>
+                  <td style={{ ...td, textAlign: 'right', borderBottom: 'none', fontWeight: 800, fontSize: 16, color: C.saphir }}>{fmtEur(ca3.total_operations)}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* Cadre B — TVA brute */}
+        <div style={card}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: C.grisTF, marginBottom: 4 }}>Cadre B — TVA brute collectée</div>
+          <div style={{ fontSize: 12, color: C.grisM, marginBottom: 14 }}>Ventilation par taux, reconstituée depuis les lignes de taxe des commandes</div>
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 520 }}>
+              <thead>
+                <tr>
+                  <th style={{ ...th, textAlign: 'left' }}>Ligne</th>
+                  <th style={{ ...th, textAlign: 'left' }}>Opérations imposables</th>
+                  <th style={{ ...th, textAlign: 'right' }}>Base HT</th>
+                  <th style={{ ...th, textAlign: 'right' }}>TVA due</th>
+                </tr>
+              </thead>
+              <tbody>
+                {ca3.cadreB.map((l) => (
+                  <tr key={l.code}>
+                    <td style={codeCell}>{l.code}</td>
+                    <td style={{ ...td, textAlign: 'left' }}>{l.libelle}</td>
+                    <td style={{ ...td, textAlign: 'right' }}>{fmtEur(l.base)}</td>
+                    <td style={{ ...td, textAlign: 'right', fontWeight: 700, color: C.grisTF }}>{fmtEur(l.tva)}</td>
+                  </tr>
+                ))}
+                <tr style={{ background: C.grisTL }}>
+                  <td style={{ ...codeCell, borderBottom: 'none' }}>16</td>
+                  <td style={{ ...td, textAlign: 'left', borderBottom: 'none', fontWeight: 800, color: C.grisTF }}>Total TVA brute collectée</td>
+                  <td style={{ ...td, borderBottom: 'none' }}></td>
+                  <td style={{ ...td, textAlign: 'right', borderBottom: 'none', fontWeight: 800, fontSize: 16, color: C.grisTF }}>{fmtEur(ca3.tva_brute)}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          {ca3.monaco && ca3.monaco.ht > 0 && (
+            <div style={{ fontSize: 12, color: C.grisM, marginTop: 12 }}>
+              <strong style={{ color: C.grisF }}>Ligne 18</strong> — dont opérations à destination de Monaco :
+              {' '}{fmtEur(ca3.monaco.ht)} HT / {fmtEur(ca3.monaco.tva)} de TVA.
+            </div>
+          )}
+        </div>
+
+        {/* Points à arbitrer */}
+        {ca3.controles && ca3.controles.length > 0 && (
+          <div style={card}>
+            <div style={{ fontSize: 14, fontWeight: 700, color: C.grisTF, marginBottom: 4 }}>Points à arbitrer avec le comptable</div>
+            <div style={{ fontSize: 12, color: C.grisM, marginBottom: 14 }}>Ce que la base ne permet pas de trancher seule</div>
+            {ca3.controles.map((c, i) => {
+              const alerte = c.niveau === 'alerte';
+              return (
+                <div key={i} style={{
+                  display: 'flex', gap: 12, padding: '12px 14px', borderRadius: 10, marginBottom: 8,
+                  background: alerte ? '#FDF2F2' : C.grisTL,
+                  border: `1px solid ${alerte ? '#F5C6C6' : C.grisCL}`,
+                }}>
+                  <div style={{ fontSize: 15, lineHeight: 1.3, color: alerte ? C.rouge : C.grisM }}>{alerte ? '⚠' : 'ℹ'}</div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+                      <span style={{ fontSize: 13, fontWeight: 700, color: C.grisTF }}>{c.titre}</span>
+                      {c.montant !== null && c.montant !== undefined && (
+                        <span style={{ fontSize: 14, fontWeight: 800, color: alerte ? C.rouge : C.grisF }}>{fmtEur(c.montant)}</span>
+                      )}
+                    </div>
+                    <div style={{ fontSize: 12, color: C.grisF, marginTop: 4, lineHeight: 1.5 }}>{c.message}</div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Détail par territorialité */}
+        <div style={card}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: C.grisTF, marginBottom: 4 }}>Détail par territorialité</div>
+          <div style={{ fontSize: 12, color: C.grisM, marginBottom: 14 }}>
+            Par pays de <strong>livraison</strong> — la TVA suit le lieu de livraison, pas l'adresse de facturation
+          </div>
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 700 }}>
+              <thead>
+                <tr>
+                  <th style={{ ...th, textAlign: 'left' }}>Zone de livraison</th>
+                  <th style={{ ...th, textAlign: 'right' }}>Taux</th>
+                  <th style={{ ...th, textAlign: 'center' }}>Ligne</th>
+                  <th style={{ ...th, textAlign: 'right' }}>Cmd</th>
+                  <th style={{ ...th, textAlign: 'right' }}>HT brut</th>
+                  <th style={{ ...th, textAlign: 'right' }}>Avoirs HT</th>
+                  <th style={{ ...th, textAlign: 'right' }}>HT net</th>
+                  <th style={{ ...th, textAlign: 'right' }}>TVA nette</th>
+                </tr>
+              </thead>
+              <tbody>
+                {ca3.territorialite.map((r, i) => (
+                  <tr key={i}>
+                    <td style={{ ...td, textAlign: 'left' }}>{r.zone_libelle}</td>
+                    <td style={{ ...td, textAlign: 'right', color: r.taux === null ? C.grisM : C.grisF }}>{r.taux === null ? 'Sans TVA' : `${r.taux} %`}</td>
+                    <td style={{ ...td, textAlign: 'center', fontWeight: 800, color: C.saphir }}>{r.ligne_ca3}</td>
+                    <td style={{ ...td, textAlign: 'right' }}>{fmt(r.cmd)}</td>
+                    <td style={{ ...td, textAlign: 'right' }}>{fmtEur(r.ht_brut)}</td>
+                    <td style={{ ...td, textAlign: 'right', color: r.ht_avoirs ? C.rouge : C.grisM }}>{r.ht_avoirs ? '− ' + fmtEur(r.ht_avoirs) : '—'}</td>
+                    <td style={{ ...td, textAlign: 'right', fontWeight: 700, color: C.saphir }}>{fmtEur(r.ht_net)}</td>
+                    <td style={{ ...td, textAlign: 'right' }}>{fmtEur(r.tva_net)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div style={{ fontSize: 11, color: C.grisM, marginTop: 14, lineHeight: 1.5 }}>
+            TVA déductible sur achats et immobilisations (lignes 19 à 23) non couverte : elle provient des
+            factures fournisseurs, hors périmètre de cette application.
+          </div>
+        </div>
+      </>
+    );
+  }
 
   // Récap en CASCADE : ventes − avoirs = à déclarer. Même structure que le PDF, pour
   // qu'un comptable lise l'écart brut/net comme une ligne et non comme une soustraction
