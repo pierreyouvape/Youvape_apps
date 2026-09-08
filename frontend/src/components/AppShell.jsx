@@ -10,6 +10,16 @@ import { useIsMobile } from '../hooks/useIsMobile';
 // Apps ayant une page de paramètres dédiée
 const APP_SETTINGS_PATHS = {
   tickets: '/tickets/settings',
+  packing: '/packing/settings',
+};
+
+// Pages de réglages réservées : la clé est l'app, la valeur le droit exigé en
+// écriture. Le packing est le cas typique — un préparateur y travaille toute la
+// journée, mais mapper un mode de livraison sur le mauvais transporteur enverrait
+// des colis ailleurs. Sans cette liste, le lien s'afficherait pour tout le monde
+// et mènerait à une page qui répond 403.
+const APP_SETTINGS_PERMISSION = {
+  packing: 'transporteurs',
 };
 
 const C = {
@@ -96,6 +106,7 @@ export function useDragSort(order, onReorder) {
 
 /* ─── SIDEBAR ──────────────────────────────────────────────── */
 function Sidebar({ user, items, draggingKey, overKey, onPointerDown, onPointerEnter, onPointerUp, onLogout, navigate, currentPath, appMenu, collapsed, onToggleCollapse, mobile = false }) {
+  const { permissions, isSuperAdmin } = useContext(AuthContext);
   const initial = user?.email?.[0]?.toUpperCase() ?? '?';
 
   // Piles dépliées. La pile contenant la page courante s'ouvre d'elle-même
@@ -191,7 +202,9 @@ function Sidebar({ user, items, draggingKey, overKey, onPointerDown, onPointerEn
       {/* Bloc app active : titre + bouton paramètres */}
       {!collapsed && (() => {
         const activeApp = APPS.find(a => currentPath === a.path || currentPath?.startsWith(a.path + '/'));
-        const settingsPath = activeApp ? APP_SETTINGS_PATHS[activeApp.key] : null;
+        const droitRequis = activeApp ? APP_SETTINGS_PERMISSION[activeApp.key] : null;
+        const autorise = !droitRequis || isSuperAdmin || permissions?.[droitRequis]?.write === true;
+        const settingsPath = activeApp && autorise ? APP_SETTINGS_PATHS[activeApp.key] : null;
         if (!activeApp || currentPath === '/home') return null;
         return (
           <div style={{

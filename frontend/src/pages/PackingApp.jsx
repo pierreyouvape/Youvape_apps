@@ -1,7 +1,5 @@
 import { useState, useEffect, useRef, useContext, useCallback } from 'react';
 import { visuelTransporteur } from '../utils/carrierVisuals';
-import MethodMappingTab from '../components/shipping/MethodMappingTab';
-import CarrierAccountsTab from '../components/shipping/CarrierAccountsTab';
 import { useNavigate } from 'react-router-dom';
 import { AuthContext } from '../context/AuthContext';
 import { LinkBox } from '../utils/navHelpers';
@@ -57,10 +55,7 @@ const EMPTY_MANUAL_FORM = {
 };
 
 const PackingApp = () => {
-  const { token, user, logout, permissions, isSuperAdmin } = useContext(AuthContext);
-  // Seuls les responsables mappent les modes de livraison : un mauvais mappage
-  // envoie des colis chez le mauvais transporteur.
-  const peutRegler = isSuperAdmin || permissions?.transporteurs?.write === true;
+  const { token, user, logout } = useContext(AuthContext);
   const navigate = useNavigate();
 
   const [order, setOrder] = useState(null);
@@ -77,12 +72,6 @@ const PackingApp = () => {
   const [labelData, setLabelData] = useState(null); // { pdfBase64, trackingId, orderNumber }
   const [labelError, setLabelError] = useState(null);
   const [showLabels, setShowLabels] = useState(false);
-  // Réglages d'expédition : ils vivent ici et non dans les réglages Livraison
-  // (app Stats), parce que c'est ici que le problème apparaît — un préparateur
-  // bloqué sur un mode de livraison inconnu — et ici que le responsable vient
-  // le régler.
-  const [showSettings, setShowSettings] = useState(false);
-  const [settingsTab, setSettingsTab] = useState('etiquetage');
   const [labelsList, setLabelsList] = useState([]);
   const [labelsLoading, setLabelsLoading] = useState(false);
   const [cancelConfirm, setCancelConfirm] = useState(null); // label id to confirm cancel
@@ -701,7 +690,7 @@ const PackingApp = () => {
           </LinkBox>
           <h1 style={{ margin: 0, fontSize: '22px' }}>Packing</h1>
           <button
-            onClick={() => { setShowLabels(true); setShowSettings(false); loadLabels(); }}
+            onClick={() => { setShowLabels(true); loadLabels(); }}
             style={{
               background: 'rgba(255,255,255,0.2)',
               border: 'none',
@@ -728,22 +717,6 @@ const PackingApp = () => {
           >
             Expedition manuelle
           </button>
-          {peutRegler && (
-            <button
-              onClick={() => { setShowSettings(true); setShowLabels(false); }}
-              style={{
-                background: 'rgba(255,255,255,0.2)',
-                border: 'none',
-                color: 'white',
-                padding: '8px 16px',
-                borderRadius: '6px',
-                cursor: 'pointer',
-                fontSize: '14px'
-              }}
-            >
-              Reglages
-            </button>
-          )}
         </div>
         <span style={{
           position: 'absolute',
@@ -791,28 +764,7 @@ const PackingApp = () => {
       {/* Content */}
       <div style={{ flex: 1, maxWidth: '900px', margin: '0 auto', padding: '20px', width: '100%' }}>
 
-        {showSettings ? (
-          <div style={{ backgroundColor: 'white', borderRadius: '12px', marginTop: '15px', overflow: 'hidden' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '15px 20px', borderBottom: '1px solid #e9ecef' }}>
-              <button onClick={() => setShowSettings(false)} style={{
-                padding: '8px 16px', backgroundColor: '#6c757d', color: 'white',
-                border: 'none', borderRadius: '6px', cursor: 'pointer'
-              }}>Retour au scan</button>
-              <h2 style={{ margin: 0, fontSize: '18px' }}>Réglages d'expédition</h2>
-            </div>
-            <div style={{ display: 'flex', borderBottom: '2px solid #eee' }}>
-              {[['etiquetage', 'Modes de livraison'], ['contrats', 'Contrats API']].map(([id, label]) => (
-                <div key={id} onClick={() => setSettingsTab(id)} style={{
-                  padding: '12px 25px', cursor: 'pointer',
-                  borderBottom: settingsTab === id ? '3px solid #6366f1' : '3px solid transparent',
-                  color: settingsTab === id ? '#6366f1' : '#666',
-                  fontWeight: settingsTab === id ? 'bold' : 'normal'
-                }}>{label}</div>
-              ))}
-            </div>
-            {settingsTab === 'etiquetage' ? <MethodMappingTab /> : <CarrierAccountsTab />}
-          </div>
-        ) : showLabels ? (
+        {showLabels ? (
           <>
             {/* Vue liste étiquettes */}
             <div style={{

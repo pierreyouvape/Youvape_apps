@@ -27,6 +27,7 @@ import ShippingSettings from './pages/ShippingSettings';
 import ReportsSettingsApp from './pages/ReportsSettingsApp';
 import CatalogApp from './pages/CatalogApp';
 import PackingApp from './pages/PackingApp';
+import PackingSettings from './pages/PackingSettings';
 import ReceptionApp from './pages/ReceptionApp';
 import FinancierApp from './pages/FinancierApp';
 import OrdersSearchApp from './pages/OrdersSearchApp';
@@ -293,6 +294,14 @@ function App() {
             element={
               <PrivateRoute>
                 <PackingApp />
+              </PrivateRoute>
+            }
+          />
+          <Route
+            path="/packing/settings"
+            element={
+              <PrivateRoute>
+                <PackingSettings />
               </PrivateRoute>
             }
           />
