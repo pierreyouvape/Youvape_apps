@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useContext, useCallback } from 'react';
+import { visuelTransporteur } from '../utils/carrierVisuals';
 import { useNavigate } from 'react-router-dom';
 import { AuthContext } from '../context/AuthContext';
 import { LinkBox } from '../utils/navHelpers';
@@ -77,7 +78,9 @@ const PackingApp = () => {
   const [cancelLoading, setCancelLoading] = useState(false);
   const [reprintLoading, setReprintLoading] = useState(null); // label id en cours
   const [hoveredImage, setHoveredImage] = useState(null); // { url, x, y }
-  const [wrongShippingOrder, setWrongShippingOrder] = useState(null); // order_number si mauvaise méthode
+  // Transporteur résolu au scan : sert au bandeau coloré ET au blocage.
+  const [carrier, setCarrier] = useState(null);
+  const [wrongShippingOrder, setWrongShippingOrder] = useState(null); // { orderNumber, denomination } si mode inconnu
   const [editingAddress, setEditingAddress] = useState(false); // édition adresse de livraison
   const [addressForm, setAddressForm] = useState(null); // copie éditable de order.shipping
   const [addressSaving, setAddressSaving] = useState(false);
@@ -108,7 +111,15 @@ const PackingApp = () => {
   useEffect(() => { showManualRef.current = showManual; }, [showManual]);
 
   // Télécharger le PDF depuis base64
-  const downloadPdf = useCallback((base64, orderNumber) => {
+  /**
+   * Télécharge l'étiquette. Le NOM DU FICHIER compte : AutoPrint s'en sert pour
+   * choisir l'imprimante. Il est décidé par le backend, qui seul connaît le
+   * transporteur — « LS-1259134.pdf » pour la lettre suivie,
+   * « mondialrelay_1259134.pdf » pour Mondial Relay. Le repli sur « LS- » ne
+   * sert qu'aux appels qui ne passent pas par la route routée (expédition
+   * manuelle, réimpression), tous en lettre suivie.
+   */
+  const downloadPdf = useCallback((base64, orderNumber, fileName) => {
     const byteCharacters = atob(base64);
     const byteNumbers = new Array(byteCharacters.length);
     for (let i = 0; i < byteCharacters.length; i++) {
@@ -119,7 +130,7 @@ const PackingApp = () => {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `LS-${orderNumber}.pdf`;
+    a.download = fileName || `LS-${orderNumber}.pdf`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -131,15 +142,32 @@ const PackingApp = () => {
     setLabelLoading(true);
     setLabelError(null);
     try {
-      const res = await axios.post(`${API_URL}/laposte/label/${orderNumber}`, {}, {
+      const res = await axios.post(`${API_URL}/shipments/label/${orderNumber}`, {}, {
         headers: { Authorization: `Bearer ${token}` }
       });
       const data = res.data;
-      setLabelData({ pdfBase64: data.pdfBase64, trackingId: data.trackingId, orderNumber: data.orderNumber });
-      downloadPdf(data.pdfBase64, orderNumber);
-      setMessage(`Etiquette generee — suivi : ${data.trackingId}`);
+
+      // Un mode déclaré « sans étiquette » n'est pas une erreur : on le dit et
+      // on s'arrête là, sans PDF ni bruit d'échec.
+      if (data.noLabel) {
+        setLabelData(null);
+        setMessage(data.userMessage || 'Pas d\'étiquette pour ce mode de livraison');
+        return;
+      }
+
+      setLabelData({ pdfBase64: data.pdfBase64, trackingId: data.trackingId, orderNumber: data.orderNumber, fileName: data.fileName });
+      downloadPdf(data.pdfBase64, orderNumber, data.fileName);
+      setMessage(data.trackingId
+        ? `Etiquette ${data.carrierLabel || ''} generee — suivi : ${data.trackingId}`
+        : `Etiquette ${data.carrierLabel || ''} generee`);
     } catch (err) {
-      if (err.response?.status === 409) {
+      if (err.response?.status === 422 && err.response.data?.reason === 'unknown_shipping_method') {
+        setLabelData(null);
+        setWrongShippingOrder({
+          orderNumber: err.response.data.orderNumber,
+          denomination: err.response.data.denomination
+        });
+      } else if (err.response?.status === 409) {
         const data = err.response.data;
         setLabelData(null);
         setLabelError({ message: `Etiquette deja generee pour cette commande — suivi : ${data.trackingId}` });
@@ -189,11 +217,20 @@ const PackingApp = () => {
       });
 
       const loadedOrder = res.data.order;
-      if (loadedOrder.shipping_method !== 'Lettre Suivie') {
-        setWrongShippingOrder(loadedOrder.wp_order_id);
+      const resolu = res.data.carrier;
+
+      // Un mode de livraison que personne n'a associé à un transporteur bloque
+      // ici, avant que la personne ne scanne quoi que ce soit. Le libellé exact
+      // est affiché pour qu'un responsable puisse le renseigner tel quel.
+      if (!resolu || resolu.status === 'unknown') {
+        setWrongShippingOrder({
+          orderNumber: loadedOrder.wp_order_id,
+          denomination: loadedOrder.shipping_method
+        });
         playSound('error');
         return;
       }
+      setCarrier(resolu);
 
       setOrder(loadedOrder);
       setWeight(res.data.weight || null);
@@ -362,7 +399,7 @@ const PackingApp = () => {
       const res = await axios.get(`${API_URL}/laposte/labels/${label.id}/pdf`, {
         headers: { Authorization: `Bearer ${token}` }
       });
-      downloadPdf(res.data.pdfBase64, res.data.orderNumber);
+      downloadPdf(res.data.pdfBase64, res.data.orderNumber, res.data.fileName);
     } catch (err) {
       alert(err.response?.data?.error || 'Erreur récupération PDF');
     } finally {
@@ -483,6 +520,7 @@ const PackingApp = () => {
     setLabelError(null);
     setLabelLoading(false);
     setWrongShippingOrder(null);
+    setCarrier(null);
   }, []);
 
   // Listener clavier global — capture les scans sans champ de saisie
@@ -997,6 +1035,35 @@ const PackingApp = () => {
         {/* Commande chargée */}
         {order && (
           <>
+            {/* Chez qui part ce colis — lisible sans lire. Le préparateur
+                enchaîne les commandes : la couleur le renseigne avant même
+                qu'il ait lu le libellé. */}
+            {carrier && carrier.status === 'mapped' && (() => {
+              const v = visuelTransporteur(carrier.carrierCode);
+              return (
+                <div style={{
+                  display: 'flex', alignItems: 'center', gap: '14px', flexWrap: 'wrap',
+                  backgroundColor: v.fond, borderLeft: `10px solid ${v.couleur}`,
+                  borderRadius: '12px', padding: '16px 20px', marginTop: '15px'
+                }}>
+                  <span style={{
+                    padding: '8px 16px', borderRadius: '6px',
+                    backgroundColor: v.couleur, color: v.encre,
+                    fontSize: '16px', fontWeight: 800, letterSpacing: '0.6px', whiteSpace: 'nowrap'
+                  }}>{v.court}</span>
+                  <span style={{ color: '#333', fontSize: '15px' }}>{carrier.denomination}</span>
+                </div>
+              );
+            })()}
+            {carrier && carrier.status === 'no_label' && (
+              <div style={{
+                backgroundColor: '#f1f3f5', borderLeft: '10px solid #adb5bd',
+                borderRadius: '12px', padding: '16px 20px', marginTop: '15px', color: '#495057'
+              }}>
+                <strong>{carrier.denomination}</strong> — aucune étiquette à imprimer pour ce mode de livraison.
+              </div>
+            )}
+
             {/* Info commande */}
             <div style={{
               backgroundColor: 'white',
@@ -1372,7 +1439,7 @@ const PackingApp = () => {
                       N° suivi : <strong>{labelData.trackingId}</strong>
                     </p>
                     <button
-                      onClick={() => downloadPdf(labelData.pdfBase64, labelData.orderNumber)}
+                      onClick={() => downloadPdf(labelData.pdfBase64, labelData.orderNumber, labelData.fileName)}
                       style={{
                         padding: '10px 24px',
                         backgroundColor: '#28a745',
@@ -1666,10 +1733,21 @@ const PackingApp = () => {
             boxShadow: '0 4px 20px rgba(0,0,0,0.3)'
           }}>
             <h3 style={{ margin: '0 0 15px', color: '#dc3545', fontSize: '20px' }}>
-              Cette commande n'est pas une lettre suivie
+              Mode de livraison non reconnu
             </h3>
-            <p style={{ color: '#666', margin: '0 0 25px', fontSize: '15px' }}>
-              Commande #{wrongShippingOrder}
+            <p style={{ color: '#333', margin: '0 0 8px', fontSize: '15px' }}>
+              Commande #{wrongShippingOrder.orderNumber}
+            </p>
+            <div style={{
+              backgroundColor: '#f8f9fa', border: '1px solid #dee2e6', borderRadius: '6px',
+              padding: '12px', margin: '0 0 18px', fontSize: '15px', fontWeight: 600, color: '#333'
+            }}>
+              {wrongShippingOrder.denomination || '(aucun mode de livraison)'}
+            </div>
+            <p style={{ color: '#666', margin: '0 0 25px', fontSize: '14px', lineHeight: 1.6 }}>
+              Ce mode de livraison n'est associé à aucun transporteur. <strong>Demandez à un
+              responsable</strong> de l'ajouter dans les réglages Livraison, onglet
+              « Étiquetage », avant d'expédier cette commande.
             </p>
             <button
               onClick={handleReset}

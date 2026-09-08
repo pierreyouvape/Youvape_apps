@@ -23,6 +23,7 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 
+const { PDFDocument } = require('pdf-lib');
 const laposte = require('../src/services/carriers/laposteAdapter');
 const { sanitizeAddressField } = require('../src/services/carriers/addressFields');
 const { buildUserMessage } = require('../src/services/carriers/errors');
@@ -34,13 +35,26 @@ const reference = JSON.parse(
 );
 
 let failures = 0;
+// Les tests asynchrones doivent être ATTENDUS, sinon une promesse rejetée
+// s'échappe du try/catch et le test s'affiche « ok » alors qu'il a échoué.
+// Un banc qui ment est pire que pas de banc : on collecte les promesses ici et
+// on les attend avant de conclure.
+const pending = [];
 function test(name, fn) {
-  try {
-    fn();
-    console.log(`  ok   ${name}`);
-  } catch (err) {
+  const ok = () => console.log(`  ok   ${name}`);
+  const ko = (err) => {
     failures++;
     console.error(`  FAIL ${name}\n       ${err.message}`);
+  };
+  try {
+    const out = fn();
+    if (out && typeof out.then === 'function') {
+      pending.push(out.then(ok, ko));
+    } else {
+      ok();
+    }
+  } catch (err) {
+    ko(err);
   }
 }
 
@@ -178,6 +192,35 @@ test('erreur sans cas connu : pas de message inventé', () => {
   assert.strictEqual(msg(Object.assign(new Error('x'), { statusCode: 400 })), null);
 });
 
+// ── Nom du fichier téléchargé (détection AutoPrint) ──────────────────────────
+console.log('\nNom de fichier des étiquettes');
+
+test('la lettre suivie garde EXACTEMENT son nom historique', () => {
+  // AutoPrint est réglé sur « LS-… » depuis la mise en service : le tiret et
+  // les deux majuscules ne sont pas un choix de style. Les changer ferait
+  // cesser l'impression automatique des lettres suivies.
+  assert.strictEqual(laposte.labelFileName('1259134'), 'LS-1259134.pdf');
+});
+
+test('Mondial Relay suit sa propre convention', () => {
+  assert.strictEqual(getAdapter('mondial_relay').labelFileName('1259134'), 'mondialrelay_1259134.pdf');
+});
+
+test('chaque transporteur a un nom distinct : c\'est ce qui permet le routage', () => {
+  const noms = listCarrierCodes().map(c => getAdapter(c).labelFileName('1259134'));
+  assert.strictEqual(new Set(noms).size, noms.length, `noms en double : ${noms.join(', ')}`);
+  for (const n of noms) assert.ok(n.endsWith('.pdf'), n);
+});
+
+test('un adaptateur sans nom de fichier casse au chargement', () => {
+  assert.throws(
+    () => assertAdapter({ code: 'x', accountCode: 'a', methodCode: 'm', label: 'X', logTag: 'X',
+                          bmsShipmentTitle: 't', resolveWeight() {}, createLabel() {},
+                          cancelLabel() {}, cancelWindow() {} }),
+    /labelFileName/
+  );
+});
+
 // ── Contrat ──────────────────────────────────────────────────────────────────
 console.log('\nContrat transporteur');
 
@@ -216,5 +259,332 @@ test('le libellé BMS de La Poste est celui attendu par BMS', () => {
   assert.strictEqual(laposte.bmsShipmentTitle, 'La poste - Courrier suivi (port payé)');
 });
 
-console.log(failures === 0 ? '\nTous les tests passent.' : `\n${failures} test(s) en échec.`);
-process.exit(failures === 0 ? 0 : 1);
+// ── Mondial Relay ────────────────────────────────────────────────────────────
+console.log('\nMondial Relay — corps de la requête');
+
+const mr = require('../src/services/carriers/mondialRelayAdapter');
+
+const MR_ACCOUNT = {
+  carrierCode: 'mondial_relay', accountCode: 'sandbox',
+  credentials: { login: 'X@business-api.mondialrelay.com', password: 'secret', customer_id: 'TTMRSDBX' },
+  settings: {
+    api_url: 'https://exemple/api/shipment', output_format: '10x15', output_type: 'PdfUrl',
+    culture: 'fr-FR', version_api: '1.0', collection_mode: 'CCC',
+    sender: { firstname: 'Youvape', lastname: 'SAS EMC', house_no: '580',
+              streetname: 'avenue de l aube rouge', postcode: '34170',
+              city: 'Castelnau le lez', country_code: 'FR', email: 'c@y.fr', phone: '0499782453' }
+  }
+};
+const MR_RECEIVER = {
+  first_name: 'Marie', last_name: 'Testeuse', address: '12 rue de la Republique',
+  postcode: '69003', city: 'Lyon 3e', country: 'FR', phone: '0600000000', email: 't@e.com'
+};
+const mrXml = (over = {}) => mr.buildLabelPayload({
+  orderNumber: over.orderNumber ?? '1258938',
+  receiver: { ...MR_RECEIVER, ...(over.receiver || {}) },
+  account: MR_ACCOUNT, weightGrams: over.weightGrams ?? 480,
+  options: over.options ?? { deliveryMode: '24R', relayPoint: { id: '022112', country: 'FR' } }
+});
+
+test('le point relais est préfixé du pays du POINT, pas « FR » en dur', () => {
+  const be = mrXml({ options: { deliveryMode: '24R', relayPoint: { id: '041212', country: 'BE' } } });
+  assert.ok(be.includes('Location="BE-041212"'), 'préfixe pays perdu');
+  const lu = mrXml({ options: { deliveryMode: '24R', relayPoint: { id: '000123', country: 'lu' } } });
+  assert.ok(lu.includes('Location="LU-000123"'), 'pays non mis en majuscules');
+});
+
+test('les consignes passent en 24R comme les points relais', () => {
+  assert.ok(mrXml({ options: { deliveryMode: '24R', relayPoint: { id: '016834', country: 'FR' } } })
+    .includes('Mode="24R"'));
+});
+
+test('le poids part en grammes', () => {
+  assert.ok(mrXml({ weightGrams: 323 }).includes('<Weight Value="323" Unit="gr"/>'));
+});
+
+test('le numéro de voie est séparé du nom de rue', () => {
+  const x = mrXml();
+  assert.ok(x.includes('<HouseNo>12</HouseNo>'), x.match(/<HouseNo>[^<]*/)?.[0]);
+  assert.ok(x.includes('<Streetname>rue de la Republique</Streetname>'));
+});
+
+test('une adresse sans numéro reste entière dans Streetname', () => {
+  const x = mrXml({ receiver: { address: 'Lieu-dit Les Chenes' } });
+  assert.ok(x.includes('<HouseNo></HouseNo>'), 'numéro inventé');
+  assert.ok(x.includes('<Streetname>Lieu-dit Les Chenes</Streetname>'));
+});
+
+test('la ville perd ses chiffres, que l\'API refuse', () => {
+  assert.ok(mrXml({ receiver: { city: 'Lyon 3e' } }).includes('<City>Lyon e</City>'));
+});
+
+test('Title+Firstname+Lastname est ramené à 32 caractères', () => {
+  const x = mrXml({ receiver: { first_name: 'Jean-Baptiste-Emmanuel', last_name: 'De La Tour Du Pin Verclause' } });
+  const [, t] = x.match(/<Title>([^<]*)<\/Title>/);
+  const [, f] = x.match(/<Firstname>([^<]*)<\/Firstname>/);
+  const [, l] = x.match(/<Lastname>([^<]*)<\/Lastname>/);
+  assert.ok((t + f + l).length <= 32, `${(t + f + l).length} caractères au lieu de 32 max`);
+  assert.ok(f.length > 0, 'le prénom a été entièrement rogné');
+});
+
+test('Streetname+HouseNo est ramené à 40 caractères', () => {
+  const x = mrXml({ receiver: { address: '1234 avenue du General Charles De Gaulle Prolongee' } });
+  const [, st] = x.match(/<Streetname>([^<]*)<\/Streetname>/);
+  const [, ho] = x.match(/<HouseNo>([^<]*)<\/HouseNo>/);
+  assert.ok((st + ho).length <= 40, `${(st + ho).length} caractères au lieu de 40 max`);
+});
+
+test('le numéro de commande est mis en majuscules et filtré', () => {
+  assert.ok(mrXml({ orderNumber: 'test-abc/123' }).includes('<OrderNo>TEST-ABC123</OrderNo>'));
+});
+
+test('aucune balise ne peut être injectée par une adresse', () => {
+  // Double protection : le jeu de caractères retire déjà « < » et « > » des
+  // champs d'adresse, l'échappement XML couvre les champs qui n'y sont pas
+  // soumis (courriel, téléphone).
+  const x = mrXml({ receiver: { last_name: 'Durand', address: '3 rue <test>' } });
+  assert.ok(!/<Streetname>[^<]*<test>/.test(x), 'balise injectée dans l\'adresse');
+});
+
+test('les champs non filtrés restent échappés en XML', () => {
+  // Le courriel n'est pas restreint à un jeu de caractères : c'est l'échappement
+  // qui empêche qu'un « & » y casse le document.
+  const x = mrXml({ receiver: { email: 'a&b<c>@exemple.fr' } });
+  assert.ok(x.includes('a&amp;b&lt;c&gt;@exemple.fr'), 'courriel non échappé');
+  assert.ok(!x.includes('<c>@'), 'balise injectée par le courriel');
+});
+
+test('le mot de passe est caviardé avant journalisation', () => {
+  const r = mr.redact({ contextField: { passwordField: 'secret', loginField: 'moi' }, autre: 1 });
+  assert.strictEqual(r.contextField.passwordField, '***');
+  assert.strictEqual(r.contextField.loginField, '***');
+  assert.strictEqual(r.autre, 1);
+});
+
+test('Mondial Relay se déclare non annulable, avec la raison', () => {
+  const w = mr.cancelWindow();
+  assert.strictEqual(w.cancellable, false);
+  assert.ok(/annuler/i.test(w.reason));
+});
+
+// ── Point relais manquant ou mal formé ───────────────────────────────────────
+console.log('\nContrôle du point relais');
+
+const relais = (rp) => () => mr.assertRelayPoint(rp, '1259200');
+const messageDe = (rp) => {
+  try { mr.assertRelayPoint(rp, '1259200'); return null; }
+  catch (e) { return e.userMessage; }
+};
+
+test('aucun point relais : refus expliqué, avec la marche à suivre', () => {
+  for (const vide of [null, undefined, {}, { id: '' }, { id: '   ' }]) {
+    assert.throws(relais(vide), /aucun point relais/i, JSON.stringify(vide));
+  }
+  const m = messageDe(null);
+  assert.ok(/WooCommerce/.test(m), 'le message ne dit pas quoi faire');
+  assert.ok(/1259200/.test(m), 'le message ne dit pas quelle commande');
+});
+
+test('un code d\'un autre transporteur est attrapé', () => {
+  // Chronopost fait 5 caractères alphanumériques : « 5761X » sur une commande
+  // Mondial Relay est un point de retrait qui n'est pas le bon.
+  const m = messageDe({ id: '5761X', country: 'FR' });
+  assert.ok(/6 chiffres/.test(m), m);
+  assert.ok(/5761X/.test(m), 'le message ne montre pas le code fautif');
+  assert.ok(/autre transporteur/.test(m), m);
+});
+
+test('les formats voisins sont refusés, pas devinés', () => {
+  for (const id of ['12345', '1234567', '04198a', '41983', 'ABCDEF', '04 1983', '-041983']) {
+    assert.throws(relais({ id, country: 'FR' }), /format attendu/, `« ${id} » aurait dû être refusé`);
+  }
+});
+
+test('un identifiant valide passe, zéros de tête compris', () => {
+  for (const id of ['041983', '000123', '022112']) {
+    assert.doesNotThrow(relais({ id, country: 'FR' }), `« ${id} » aurait dû passer`);
+  }
+});
+
+test('un identifiant numérique est traité comme les autres', () => {
+  // Le type ne change rien : seul le format compte. 6 chiffres passent, le
+  // reste est refusé sans tentative de complétion — on ne sait pas ce qu'est
+  // une valeur hors format, et chaque correction supposée enverrait le colis
+  // quelque part sans qu'on puisse dire où.
+  assert.doesNotThrow(relais({ id: 410983, country: 'BE' }), 'un nombre à 6 chiffres devrait passer');
+  assert.throws(relais({ id: 41983, country: 'BE' }), /format attendu/);
+});
+
+test('pays absent ou invalide : refus expliqué', () => {
+  for (const country of [null, '', 'FRA', 'F', '12']) {
+    assert.throws(relais({ id: '041983', country }), /pays du point relais/i, `pays « ${country} »`);
+  }
+  const m = messageDe({ id: '041983', country: 'FRA' });
+  assert.ok(/FR, BE, LU/.test(m), m);
+});
+
+test('les trois pays de nos points relais sont acceptés', () => {
+  for (const country of ['FR', 'BE', 'LU', 'be']) {
+    assert.doesNotThrow(relais({ id: '041983', country }), `pays ${country}`);
+  }
+});
+
+test('le refus arrive AVANT tout appel réseau', async () => {
+  // createLabel doit échouer sur la validation, sans toucher à l'API.
+  await assert.rejects(
+    mr.createLabel({ orderNumber: '1259200', receiver: {}, weightGrams: 400,
+      account: { credentials: { login: 'l', password: 'p', customer_id: 'c' },
+                 settings: { api_url: 'http://127.0.0.1:1/inatteignable' } },
+      options: { deliveryMode: '24R', relayPoint: { id: 'XXX' } } }),
+    /format attendu/
+  );
+});
+
+// ── Caractères refusés par les transporteurs ─────────────────────────────────
+console.log('\nCaractères spéciaux et invisibles');
+
+const { restrictToCharset } = require('../src/services/carriers/addressFields');
+const JEU_NOM = /[A-Za-zÀ-ÖØ-öø-ÿ_'.,\s-]/;
+
+const destinataire = (over = {}) => {
+  const x = mrXml({ receiver: over, options: { deliveryMode: '24R',
+    relayPoint: { id: '010041', country: over.country || 'FR' } } });
+  const bloc = x.match(/<Recipient>[\s\S]*<\/Recipient>/)[0];
+  const lire = (t) => bloc.match(new RegExp(`<${t}>([^<]*)<`))[1];
+  return { firstname: lire('Firstname'), lastname: lire('Lastname'),
+           street: lire('Streetname'), houseNo: lire('HouseNo'), city: lire('City') };
+};
+
+test('le caractère invisible U+202A de la commande 1259134 est retiré', () => {
+  // Venu d'un clavier arabe, invisible à l'écran, il faisait échouer la clé de
+  // sécurité Mondial Relay côté BMS.
+  const d = destinataire({ first_name: '\u202aHassan', last_name: 'Alkhadour',
+    address: 'BERLARIJ 54', city: 'LIER', postcode: '2500', country: 'BE' });
+  assert.strictEqual(d.firstname, 'Hassan');
+});
+
+test('les autres invisibles passent aussi à la trappe', () => {
+  for (const c of ['\u200b', '\u200e', '\u202e', '\ufeff', '\u00ad', '\u2066']) {
+    assert.strictEqual(restrictToCharset(`Du${c}rand`, JEU_NOM), 'Durand',
+      `caractère U+${c.codePointAt(0).toString(16)} non retiré`);
+  }
+});
+
+test('les latines étendues sont ramenées à leur base, pas supprimées', () => {
+  // « Gőz » doit devenir « Goz », pas « Gz » : le nom reste lisible et livrable.
+  assert.strictEqual(restrictToCharset('Gőz Ğül', JEU_NOM), 'Goz Gül');
+  assert.strictEqual(restrictToCharset('Sœur Łucja', JEU_NOM), 'Soeur Lucja');
+  // « ř » est refusé donc ramené à « r » ; « á » est admis donc conservé tel quel.
+  assert.strictEqual(restrictToCharset('Ivan Dvořák', JEU_NOM), 'Ivan Dvorák');
+  assert.strictEqual(restrictToCharset('Mustafa Yıldız', JEU_NOM), 'Mustafa Yildiz');
+});
+
+test('ce que Mondial Relay accepte déjà n\'est pas transformé', () => {
+  // Le jeu admis va jusqu'à « ÿ » : ß, ü, ø et les accents français en font
+  // partie. Les translittérer abîmerait le nom du client sans raison.
+  assert.strictEqual(restrictToCharset('Straße', JEU_NOM), 'Straße');
+  assert.strictEqual(restrictToCharset('Jørgen Müller', JEU_NOM), 'Jørgen Müller');
+});
+
+test('les accents français, eux, sont conservés', () => {
+  assert.strictEqual(restrictToCharset("José-Marie D'Argent", JEU_NOM), "José-Marie D'Argent");
+});
+
+test('« & » devient « et » au lieu de disparaître', () => {
+  assert.strictEqual(restrictToCharset('Durand & Fils', JEU_NOM), 'Durand et Fils');
+});
+
+test('la ponctuation refusée devient une espace, sans coller les mots', () => {
+  assert.strictEqual(restrictToCharset('Dupont(Fils)', JEU_NOM), 'Dupont Fils');
+});
+
+test('un champ obligatoire vidé par le nettoyage fait échouer, avec le champ nommé', () => {
+  // Un nom entièrement cyrillique ne laisse rien : mieux vaut refuser que
+  // d'imprimer une étiquette sans destinataire.
+  assert.throws(
+    () => destinataire({ first_name: 'Ivan', last_name: 'Петров',
+      address: '12 rue des Lilas', city: 'Lyon', postcode: '69003' }),
+    /« nom »/
+  );
+});
+
+console.log('\nNuméro de voie selon le pays');
+
+test('France : le numéro précède la rue', () => {
+  const d = destinataire({ first_name: 'Jean', last_name: 'Test',
+    address: '12 rue des Lilas', city: 'Lyon', postcode: '69003', country: 'FR' });
+  assert.strictEqual(d.houseNo, '12');
+  assert.strictEqual(d.street, 'rue des Lilas');
+});
+
+test('Belgique et Luxembourg : le numéro suit la rue', () => {
+  for (const [pays, adr, rue, no] of [
+    ['BE', 'BERLARIJ 54', 'BERLARIJ', '54'],
+    ['LU', 'Rue de Hollerich 22', 'Rue de Hollerich', '22'],
+    ['BE', 'Chaussee de Wavre 1234 B', 'Chaussee de Wavre', '1234B']
+  ]) {
+    const d = destinataire({ first_name: 'Jean', last_name: 'Test',
+      address: adr, city: 'Ville', postcode: '2500', country: pays });
+    assert.strictEqual(d.street, rue, `${pays} ${adr}`);
+    assert.strictEqual(d.houseNo, no, `${pays} ${adr}`);
+  }
+});
+
+test('« Rue du 8 Mai 1945 » ne se fait pas prendre l\'année pour un numéro', () => {
+  const d = destinataire({ first_name: 'Jean', last_name: 'Test',
+    address: 'Rue du 8 Mai 1945', city: 'Nimes', postcode: '30000', country: 'FR' });
+  assert.strictEqual(d.houseNo, '');
+  assert.strictEqual(d.street, 'Rue du 8 Mai 1945');
+});
+
+test('« 3 bis » reste un numéro complet', () => {
+  const d = destinataire({ first_name: 'Jean', last_name: 'Test',
+    address: '3 bis avenue Foch', city: 'Paris', postcode: '75116', country: 'FR' });
+  assert.strictEqual(d.houseNo, '3BIS');
+});
+
+// ── Retrait magasin ──────────────────────────────────────────────────────────
+console.log('\nRetrait magasin (adaptateur interne)');
+
+const interne = require('../src/services/carriers/interneAdapter');
+
+test('ne réclame aucun contrat : il n\'appelle aucune API', () => {
+  assert.strictEqual(interne.requiresAccount, false);
+});
+
+test('confirme quand même l\'expédition à BMS : le colis sort du stock', () => {
+  assert.notStrictEqual(interne.confirmsShipmentInBms, false);
+  assert.strictEqual(interne.bmsShipmentTitle, 'Retrait magasin');
+});
+
+test('l\'étiquette met le NOM en avant, pas le numéro de commande', async () => {
+  // On cherche le colis au nom du client qui se présente au comptoir ; le
+  // numéro ne sert qu'à départager deux commandes du même client.
+  const { pdfBase64, trackingNumber } = await interne.createLabel({
+    orderNumber: '1259103',
+    receiver: { first_name: 'Jean-Baptiste', last_name: 'Dupont-Lachapelle' }
+  });
+  assert.strictEqual(trackingNumber, null, 'un numéro de suivi a été inventé');
+  const pdf = await PDFDocument.load(Buffer.from(pdfBase64, 'base64'));
+  const [page] = pdf.getPages();
+  // 10 × 15 cm en points PDF.
+  assert.ok(Math.abs(page.getWidth() - 283.46) < 1, `largeur ${page.getWidth()}`);
+  assert.ok(Math.abs(page.getHeight() - 425.2) < 1, `hauteur ${page.getHeight()}`);
+});
+
+test('un nom très long rétrécit au lieu de déborder', async () => {
+  const { pdfBase64 } = await interne.createLabel({
+    orderNumber: '1',
+    receiver: { first_name: 'Marie-Christine', last_name: 'Vandenbroucke-Vermeulen' }
+  });
+  assert.ok(pdfBase64.length > 100);
+});
+
+test('ne déclare aucun poids : rien n\'est transporté', async () => {
+  assert.strictEqual(await interne.resolveWeight({}), 0);
+});
+
+Promise.all(pending).then(() => {
+  console.log(failures === 0 ? '\nTous les tests passent.' : `\n${failures} test(s) en échec.`);
+  process.exit(failures === 0 ? 0 : 1);
+});

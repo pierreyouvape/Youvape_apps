@@ -250,12 +250,51 @@ const cancelLabel = async ({ label, account }) => {
   return data;
 };
 
+/**
+ * Nom du fichier téléchargé au packing.
+ *
+ * `LS-<n°>.pdf` depuis la mise en service, et **AutoPrint est réglé dessus** :
+ * le tiret et les deux majuscules ne sont pas un choix de style, les changer
+ * ferait cesser l'impression automatique des lettres suivies.
+ */
+const labelFileName = (orderNumber) => `LS-${orderNumber}.pdf`;
+
+// Champs du contrat, tels que l'écran de réglages doit les demander.
+// Les libellés reprennent ceux du portail La Poste, pour qu'un responsable
+// puisse recopier sans traduire.
+const ACCOUNT_FIELDS = {
+  credentials: [
+    { key: 'token_url',     label: "URL du jeton OAuth2", placeholder: 'https://…/oauth2/token' },
+    { key: 'client_id',     label: 'Client ID' },
+    { key: 'client_secret', label: 'Client secret', secret: true }
+  ],
+  settings: [
+    { key: 'api_url',         label: "URL de l'API", placeholder: 'https://apim-gw-vente.extra.laposte.fr/postage/v1' },
+    { key: 'contract_number', label: 'Numéro de contrat' },
+    { key: 'cust_acc_number', label: 'Numéro de compte client' },
+    { key: 'cust_invoice',    label: 'Compte de facturation' },
+    { key: 'offer_code',     label: 'Code offre',            group: 'Offre', placeholder: '3125' },
+    { key: 'product_code',   label: 'Code produit',          group: 'Offre', placeholder: 'K7' },
+    { key: 'visual_format',  label: "Format d'impression",    group: 'Offre', placeholder: 'rollA' },
+    { key: 'country_code',   label: 'Code pays (numérique)',  group: 'Offre', placeholder: '250' },
+    { key: 'fixed_weight_g', label: 'Poids forfaitaire (g)',  group: 'Offre', placeholder: '20' },
+    { key: 'sender.name',    label: 'Raison sociale',   group: 'Expéditeur' },
+    { key: 'sender.address', label: 'Adresse',          group: 'Expéditeur' },
+    { key: 'sender.zipcode', label: 'Code postal',      group: 'Expéditeur' },
+    { key: 'sender.town',    label: 'Ville',            group: 'Expéditeur' },
+    { key: 'sender.email',   label: 'Courriel',         group: 'Expéditeur' },
+    { key: 'sender.phone',   label: 'Téléphone',        group: 'Expéditeur' }
+  ]
+};
+
 module.exports = assertAdapter({
   code: 'laposte',
   accountCode: 'lettre_suivie',
   methodCode: 'lettre_suivie',
   label: CARRIER_LABEL,
   logTag: LOG_TAG,
+  labelFileName,
+  accountFields: ACCOUNT_FIELDS,
   bmsShipmentTitle: 'La poste - Courrier suivi (port payé)',
   resolveWeight,
   createLabel,

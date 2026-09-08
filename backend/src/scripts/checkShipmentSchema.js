@@ -27,20 +27,24 @@ async function main() {
 
   // 1. Les deux tables sont là.
   const { rows: [tables] } = await pool.query(`
-    SELECT to_regclass('public.shipment_labels')  IS NOT NULL AS labels,
-           to_regclass('public.carrier_accounts') IS NOT NULL AS accounts,
-           to_regclass('public.laposte_labels')   IS NOT NULL AS ancienne
+    SELECT to_regclass('public.shipment_labels')             IS NOT NULL AS labels,
+           to_regclass('public.carrier_accounts')            IS NOT NULL AS accounts,
+           to_regclass('public.shipping_method_carrier_map') IS NOT NULL AS mappage,
+           to_regclass('public.laposte_labels')              IS NOT NULL AS ancienne
   `);
   console.log('Tables');
   tables.labels   ? ok('shipment_labels présente')  : ko('shipment_labels ABSENTE — migration non passée');
   tables.accounts ? ok('carrier_accounts présente') : ko('carrier_accounts ABSENTE — migration non passée');
+  tables.mappage  ? ok('shipping_method_carrier_map présente') : ko('shipping_method_carrier_map ABSENTE — migration non passée');
   tables.ancienne ? ok('laposte_labels conservée (photo d\'avant-bascule, retour arrière possible)')
                   : ko('laposte_labels a disparu — le retour arrière n\'est plus possible');
 
-  if (!tables.labels || !tables.accounts) {
+  if (!tables.labels || !tables.accounts || !tables.mappage) {
     console.log('\n⛔ NE PAS RECONSTRUIRE LE BACKEND. Appliquer d\'abord :');
     console.log('   docker compose exec -T postgres psql -U youvape -d youvape_db \\');
-    console.log('     < backend/src/migrations/add_shipment_labels.sql\n');
+    console.log('     < backend/src/migrations/add_shipment_labels.sql');
+    console.log('   docker compose exec -T postgres psql -U youvape -d youvape_db \\');
+    console.log('     < backend/src/migrations/add_shipping_method_carrier_map.sql\n');
     return 1;
   }
 
@@ -88,17 +92,35 @@ async function main() {
     const cle = `${c.carrier_code}/${c.account_code}`;
     if (!c.active) { ko(`${cle} : contrat désactivé`); continue; }
 
+    // Les champs obligatoires viennent de l'ADAPTATEUR, pas d'une liste figée :
+    // La Poste attend un client_id, Mondial Relay une connexion API. Une liste
+    // en dur ferait échouer le contrôle sur des contrats parfaitement valides,
+    // et une alerte qui crie au loup finit ignorée.
+    let champs;
+    try {
+      champs = getAdapter(c.carrier_code).accountFields;
+    } catch (e) {
+      ko(`${cle} : transporteur absent du registre`);
+      continue;
+    }
+    if (!champs) { ok(`${cle} : aucun champ requis`); continue; }
+
+    const lire = (o, chemin) => chemin.split('.').reduce((x, k) => (x && typeof x === 'object' ? x[k] : undefined), o);
     const manquants = [
-      ...['token_url', 'client_id', 'client_secret'].filter(k => !c.credentials?.[k]).map(k => 'credentials.' + k),
-      ...['api_url', 'contract_number', 'cust_acc_number', 'cust_invoice'].filter(k => !c.settings?.[k]).map(k => 'settings.' + k),
-      ...['name', 'address', 'zipcode', 'town'].filter(k => !c.settings?.sender?.[k]).map(k => 'settings.sender.' + k)
+      ...champs.credentials.filter(f => !lire(c.credentials, f.key)).map(f => 'identifiants.' + f.key),
+      ...champs.settings.filter(f => {
+        const v = lire(c.settings, f.key);
+        return v === undefined || v === null || v === '';
+      }).map(f => 'réglages.' + f.key)
     ];
+
     manquants.length === 0
       ? ok(`${cle} : configuration complète`)
       : ko(`${cle} : il manque ${manquants.join(', ')}`);
 
-    // Le contrat doit correspondre encore à ce qu'app_config contenait : c'est
-    // la seule vérification qui prouve que la migration a lu les bonnes clés.
+    // Le contrat La Poste doit toujours correspondre aux clés app_config
+    // d'origine : c'est la seule vérification qui prouve que la migration du
+    // lot 0 a lu les bonnes.
     if (c.carrier_code === 'laposte') {
       const { rows } = await pool.query(
         `SELECT config_key, config_value FROM app_config WHERE config_key LIKE 'laposte\\_%'`
@@ -119,6 +141,41 @@ async function main() {
         : ko(`${cle} : diverge d'app_config sur ${ecarts.join(', ')}`);
     }
   }
+
+  // 4 bis. Une correspondance active qui désigne un contrat absent ou de TEST
+  // enverrait le packing dans le mur au premier colis.
+  console.log('\nCorrespondances des modes de livraison');
+  const { rows: maps } = await pool.query(
+    `SELECT m.denomination, m.carrier_code, m.account_code,
+            a.id IS NOT NULL AS contrat_present,
+            COALESCE((a.settings->>'sandbox')::boolean, false) AS sandbox,
+            COALESCE(a.active, false) AS contrat_actif
+     FROM shipping_method_carrier_map m
+     LEFT JOIN carrier_accounts a
+       ON a.carrier_code = m.carrier_code AND a.account_code = m.account_code
+     WHERE m.active = true AND m.carrier_code IS NOT NULL`
+  );
+  if (maps.length === 0) ko('aucune correspondance active — le packing bloquera sur tout');
+
+  for (const m of maps) {
+    const cle = `${m.denomination} → ${m.carrier_code}/${m.account_code}`;
+
+    // Le retrait magasin n'appelle aucune API : lui réclamer un contrat serait
+    // une fausse alerte, et les fausses alertes font ignorer les vraies.
+    let sansContrat = false;
+    try { sansContrat = getAdapter(m.carrier_code).requiresAccount === false; } catch (e) { /* signalé plus bas */ }
+    if (sansContrat) { ok(`${cle} (aucun contrat nécessaire)`); continue; }
+
+    if (!m.contrat_present) { ko(`${cle} : contrat INTROUVABLE`); continue; }
+    if (!m.contrat_actif)   { ko(`${cle} : contrat désactivé`); continue; }
+    if (m.sandbox)          { ko(`${cle} : contrat de TEST — les étiquettes ne seront pas valides`); continue; }
+    ok(cle);
+  }
+
+  const { rows: sansEtiquette } = await pool.query(
+    `SELECT count(*)::int c FROM shipping_method_carrier_map WHERE active = true AND carrier_code IS NULL`
+  );
+  ok(`${sansEtiquette[0].c} mode(s) déclaré(s) sans étiquette (volontairement)`);
 
   // 5. Un adaptateur existe pour chaque transporteur présent en base.
   console.log('\nAdaptateurs');

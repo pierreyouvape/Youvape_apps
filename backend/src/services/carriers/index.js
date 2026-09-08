@@ -2,19 +2,23 @@
  * Registre des adaptateurs transporteurs.
  *
  * Un seul endroit où déclarer un transporteur. Les lots suivants du chantier
- * expédition (Mondial Relay, Colissimo, Chronopost/2Shop) n'ajoutent qu'un
- * fichier d'adaptateur et une ligne ici — le contrôleur, le modèle et les
- * routes n'ont pas à changer.
+ * expédition (Colissimo, Chronopost/2Shop) n'ajoutent qu'un fichier d'adaptateur
+ * et une ligne ici — le contrôleur, le modèle et les routes n'ont pas à changer.
  *
- * Les codes reprennent `shipping_carriers.code`, le vocabulaire déjà en place
- * pour les tarifs et le contrôle de factures.
+ * Le choix de l'adaptateur pour une commande donnée ne se déduit pas : il passe
+ * par `shipping_method_carrier_map`, alimentée à la main dans les réglages. Voir
+ * `models/shippingMethodMapModel`.
  */
 
 const laposteAdapter = require('./laposteAdapter');
+const mondialRelayAdapter = require('./mondialRelayAdapter');
+const interneAdapter = require('./interneAdapter');
 
 /** @type {Record<string, import('./contract').CarrierAdapter>} */
 const ADAPTERS = {
-  [laposteAdapter.code]: laposteAdapter
+  [laposteAdapter.code]: laposteAdapter,
+  [mondialRelayAdapter.code]: mondialRelayAdapter,
+  [interneAdapter.code]: interneAdapter
 };
 
 /**

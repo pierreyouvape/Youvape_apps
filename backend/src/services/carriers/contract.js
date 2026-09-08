@@ -48,6 +48,12 @@
  * @property {string} methodCode  - offre / mode de livraison
  * @property {string} label       - nom affiché à l'écran (« La Poste »)
  * @property {string} logTag      - préfixe de log, sans crochets (« LaPoste »)
+ * @property {(orderNumber: string|number) => string} labelFileName
+ *           Nom du fichier PDF téléchargé au packing. **AutoPrint choisit
+ *           l'imprimante d'après ce nom** : ce n'est pas une valeur cosmétique,
+ *           la changer casse l'impression automatique. Chaque transporteur a sa
+ *           convention, séparateur compris — c'est pour ça que c'est une méthode
+ *           et pas un préfixe commun.
  * @property {string} bmsShipmentTitle - libellé de suivi attendu par BMS
  * @property {(input: {pool: object, orderNumber: string|number, account: object}) => Promise<number>} resolveWeight
  *           Poids à déclarer, en grammes.
@@ -58,13 +64,27 @@
  * @property {(label: object, now?: Date) => {cancellable: boolean, reason: ?string}} cancelWindow
  *           Règle d'annulation du transporteur, appliquée AVANT l'appel API.
  * @property {() => void} [onAuthFailure] - appelé sur 401, pour purger un cache de jeton.
+ * @property {{credentials: Field[], settings: Field[]}} [accountFields]
+ *           Description des champs du contrat, pour que l'écran de réglages
+ *           génère son formulaire. Sans elle, un transporteur ne peut être
+ *           configuré qu'en base — ce qu'on veut justement éviter.
+ *           Un `Field` = `{key, label, secret?, placeholder?, group?}` ; `key`
+ *           accepte un chemin pointé (`sender.city`). `secret: true` signifie
+ *           que la valeur ne redescend JAMAIS vers le navigateur : le champ
+ *           s'affiche vide et n'est écrit que si on saisit quelque chose.
+ * @property {boolean} [requiresAccount=true] - à false, l'adaptateur n'a pas de
+ *           contrat dans carrier_accounts : ni identifiants ni réglages à charger.
+ *           C'est le cas du retrait magasin, qui n'appelle aucune API.
+ * @property {boolean} [confirmsShipmentInBms=true] - à false, aucune confirmation
+ *           d'expédition n'est envoyée à BMS. Le retrait magasin n'est pas une
+ *           expédition : la confirmer ferait mentir les stats de transport.
  */
 
 const REQUIRED_PROPS = [
   'code', 'accountCode', 'methodCode', 'label', 'logTag', 'bmsShipmentTitle'
 ];
 const REQUIRED_METHODS = [
-  'resolveWeight', 'createLabel', 'cancelLabel', 'cancelWindow'
+  'resolveWeight', 'createLabel', 'cancelLabel', 'cancelWindow', 'labelFileName'
 ];
 
 /**
