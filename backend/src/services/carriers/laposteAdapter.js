@@ -264,26 +264,31 @@ const labelFileName = (orderNumber) => `LS-${orderNumber}.pdf`;
 // puisse recopier sans traduire.
 const ACCOUNT_FIELDS = {
   credentials: [
-    { key: 'token_url',     label: "URL du jeton OAuth2", placeholder: 'https://…/oauth2/token' },
-    { key: 'client_id',     label: 'Client ID' },
-    { key: 'client_secret', label: 'Client secret', secret: true }
+    { key: 'token_url',     label: "URL du jeton OAuth2", required: true, placeholder: 'https://…/oauth2/token' },
+    { key: 'client_id',     label: 'Client ID', required: true },
+    { key: 'client_secret', label: 'Client secret', required: true, secret: true }
   ],
   settings: [
-    { key: 'api_url',         label: "URL de l'API", placeholder: 'https://apim-gw-vente.extra.laposte.fr/postage/v1' },
-    { key: 'contract_number', label: 'Numéro de contrat' },
-    { key: 'cust_acc_number', label: 'Numéro de compte client' },
-    { key: 'cust_invoice',    label: 'Compte de facturation' },
-    { key: 'offer_code',     label: 'Code offre',            group: 'Offre', placeholder: '3125' },
-    { key: 'product_code',   label: 'Code produit',          group: 'Offre', placeholder: 'K7' },
-    { key: 'visual_format',  label: "Format d'impression",    group: 'Offre', placeholder: 'rollA' },
-    { key: 'country_code',   label: 'Code pays (numérique)',  group: 'Offre', placeholder: '250' },
-    { key: 'fixed_weight_g', label: 'Poids forfaitaire (g)',  group: 'Offre', placeholder: '20' },
-    { key: 'sender.name',    label: 'Raison sociale',   group: 'Expéditeur' },
-    { key: 'sender.address', label: 'Adresse',          group: 'Expéditeur' },
-    { key: 'sender.zipcode', label: 'Code postal',      group: 'Expéditeur' },
-    { key: 'sender.town',    label: 'Ville',            group: 'Expéditeur' },
+    { key: 'api_url',         label: "URL de l'API", required: true, placeholder: 'https://apim-gw-vente.extra.laposte.fr/postage/v1' },
+    { key: 'contract_number', label: 'Numéro de contrat', required: true },
+    { key: 'cust_acc_number', label: 'Numéro de compte client', required: true },
+    { key: 'cust_invoice',    label: 'Compte de facturation', required: true },
+
+    { key: 'sender.name',    label: 'Raison sociale',   group: 'Expéditeur', required: true },
+    { key: 'sender.address', label: 'Adresse',          group: 'Expéditeur', required: true },
+    { key: 'sender.zipcode', label: 'Code postal',      group: 'Expéditeur', required: true },
+    { key: 'sender.town',    label: 'Ville',            group: 'Expéditeur', required: true },
     { key: 'sender.email',   label: 'Courriel',         group: 'Expéditeur' },
-    { key: 'sender.phone',   label: 'Téléphone',        group: 'Expéditeur' }
+    { key: 'sender.phone',   label: 'Téléphone',        group: 'Expéditeur' },
+
+    // Avancés : l'adaptateur applique ces valeurs si le champ reste vide. Les
+    // demander à chaque création de contrat n'apporte rien et fait rater les
+    // champs qui comptent vraiment.
+    { key: 'offer_code',     label: 'Code offre',           advanced: true, placeholder: '3125' },
+    { key: 'product_code',   label: 'Code produit',         advanced: true, placeholder: 'K7' },
+    { key: 'visual_format',  label: "Format d'impression",  advanced: true, placeholder: 'rollA' },
+    { key: 'country_code',   label: 'Code pays (numérique)', advanced: true, placeholder: '250' },
+    { key: 'fixed_weight_g', label: 'Poids forfaitaire (g)', advanced: true, placeholder: '20' }
   ]
 };
 

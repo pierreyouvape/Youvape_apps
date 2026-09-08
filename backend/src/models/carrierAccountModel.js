@@ -35,6 +35,14 @@ const ecrire = (obj, chemin, valeur) => {
   cible[dernier] = valeur;
 };
 
+/** Retire une valeur par chemin pointé, sans laisser d'objet vide derrière. */
+const supprimer = (obj, chemin) => {
+  const parts = chemin.split('.');
+  const dernier = parts.pop();
+  const cible = parts.reduce((o, k) => (o && typeof o === 'object' ? o[k] : undefined), obj);
+  if (cible && typeof cible === 'object') delete cible[dernier];
+};
+
 /** Champs déclarés par l'adaptateur, ou une description vide. */
 const champsDe = (carrierCode) => {
   try {
@@ -133,7 +141,17 @@ const upsert = async ({ carrierCode, accountCode, label, credentials = {}, setti
 
   const nouveauxSettings = { ...(actuel.settings || {}) };
   for (const [cle, valeur] of Object.entries(settings)) {
-    ecrire(nouveauxSettings, cle, typeof valeur === 'string' ? valeur.trim() : valeur);
+    const v = typeof valeur === 'string' ? valeur.trim() : valeur;
+
+    // Un champ laissé vide n'écrit RIEN : l'adaptateur applique alors sa valeur
+    // par défaut (`PdfUrl`, `CCC`, `fr-FR`…). Écrire une chaîne vide serait pire
+    // que de ne rien écrire — elle prend le pas sur le repli, et un réglage
+    // booléen vide faisait carrément échouer la relecture des contrats.
+    if (v === '' || v === null || v === undefined) {
+      supprimer(nouveauxSettings, cle);
+      continue;
+    }
+    ecrire(nouveauxSettings, cle, v);
   }
 
   const { rows } = await pool.query(

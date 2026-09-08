@@ -56,23 +56,35 @@ function CarrierAccountsTab() {
   const ouvrir = (compte, carrierCode) => {
     const code = carrierCode || compte.carrier_code;
     const def = data.carriers.find(c => c.code === code);
+
+    // Créer un contrat, c'est presque toujours DOUBLER celui qui existe — passer
+    // du contrat de test à celui de production, par exemple. On reprend donc les
+    // réglages du contrat existant du même transporteur : l'adresse expéditeur,
+    // l'URL, les codes. Restent à saisir les identifiants, qui eux diffèrent.
+    const modele = compte || data.accounts.find(a => a.carrier_code === code) || null;
     const valeurs = {};
 
     for (const f of def?.accountFields?.credentials || []) {
-      // Un secret n'est jamais préremplí : sa valeur n'a pas quitté le serveur.
-      valeurs['cred.' + f.key] = f.secret ? '' : (lire(compte?.credentials || {}, f.key) ?? '');
+      // Jamais de secret prérempli : sa valeur n'a pas quitté le serveur. Et sur
+      // un NOUVEAU contrat, les identifiants ne se recopient pas — ce sont eux
+      // qui changent.
+      valeurs['cred.' + f.key] = (f.secret || !compte) ? '' : (lire(compte.credentials || {}, f.key) ?? '');
     }
     for (const f of def?.accountFields?.settings || []) {
-      const v = lire(compte?.settings || {}, f.key);
+      const v = lire(modele?.settings || {}, f.key);
       valeurs['set.' + f.key] = v == null ? '' : String(v);
     }
+    // Un contrat dupliqué n'hérite pas du drapeau « test » de son modèle.
+    if (!compte) valeurs['set.sandbox'] = '';
 
     setEdition({
       carrier_code: code,
       account_code: compte?.account_code || '',
       label: compte?.label || '',
       nouveau: !compte,
+      reprisDe: !compte && modele ? modele.account_code : null,
       secretsRenseignes: compte?.secretsRenseignes || [],
+      avances: false,
       valeurs
     });
     setMessage(null);
@@ -82,6 +94,20 @@ function CarrierAccountsTab() {
     e?.preventDefault();
     if (!edition.account_code.trim()) {
       setMessage({ type: 'error', text: 'Le code du contrat est obligatoire' });
+      return;
+    }
+    // Dire ce qui manque plutôt que de laisser l'API refuser sans détail — ou,
+    // pire, d'enregistrer un contrat incomplet qui échouera au premier colis.
+    const def0 = data.carriers.find(c => c.code === edition.carrier_code);
+    const oublis = [
+      ...(def0?.accountFields?.credentials || []).filter(f =>
+        f.required && !edition.valeurs['cred.' + f.key] &&
+        !(f.secret && edition.secretsRenseignes.includes(f.key))),
+      ...(def0?.accountFields?.settings || []).filter(f =>
+        f.required && !edition.valeurs['set.' + f.key])
+    ];
+    if (oublis.length > 0) {
+      setMessage({ type: 'error', text: `Champs obligatoires non renseignés : ${oublis.map(f => f.label).join(', ')}` });
       return;
     }
     setSaving(true);
@@ -120,10 +146,27 @@ function CarrierAccountsTab() {
   const champ = (f, prefixe) => {
     const cle = prefixe + f.key;
     const dejaEnregistre = f.secret && edition.secretsRenseignes.includes(f.key);
+    const valeur = edition.valeurs[cle] ?? '';
+    const majEdition = (v) => setEdition(ed => ({ ...ed, valeurs: { ...ed.valeurs, [cle]: v } }));
+
+    if (f.type === 'boolean') {
+      // Une case à cocher, pas un champ texte : un « true » tapé à la main dans
+      // un champ libre finissait en chaîne, et une chaîne vide faisait échouer
+      // la relecture des contrats.
+      return (
+        <label key={cle} style={{ flex: '1 1 260px', display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, color: '#333' }}>
+          <input type="checkbox" checked={valeur === 'true' || valeur === true}
+            onChange={e => majEdition(e.target.checked ? 'true' : '')} />
+          {f.label}
+        </label>
+      );
+    }
+
     return (
       <div key={cle} style={{ flex: '1 1 240px' }}>
         <label style={labelStyle}>
           {f.label}
+          {f.required && <span style={{ color: '#dc3545', marginLeft: 3 }}>*</span>}
           {dejaEnregistre && (
             <span style={{ color: '#28a745', marginLeft: '6px' }}>déjà enregistré</span>
           )}
@@ -131,11 +174,11 @@ function CarrierAccountsTab() {
         <input
           type={f.secret ? 'password' : 'text'}
           autoComplete={f.secret ? 'new-password' : 'off'}
-          value={edition.valeurs[cle] ?? ''}
+          value={valeur}
           placeholder={f.secret
             ? (dejaEnregistre ? 'Laisser vide pour ne pas changer' : '')
             : (f.placeholder || '')}
-          onChange={e => setEdition(ed => ({ ...ed, valeurs: { ...ed.valeurs, [cle]: e.target.value } }))}
+          onChange={e => majEdition(e.target.value)}
           style={{ ...inputStyle, width: '100%' }} />
       </div>
     );
@@ -144,6 +187,7 @@ function CarrierAccountsTab() {
   const groupes = (champs) => {
     const out = new Map();
     for (const f of champs) {
+      if (f.advanced) continue;
       const g = f.group || '';
       if (!out.has(g)) out.set(g, []);
       out.get(g).push(f);
@@ -194,9 +238,15 @@ function CarrierAccountsTab() {
           border: `2px solid ${visuelTransporteur(edition.carrier_code).couleur}`,
           borderRadius: '8px', padding: '20px', marginBottom: '25px'
         }}>
-          <h4 style={{ margin: '0 0 16px' }}>
+          <h4 style={{ margin: '0 0 6px' }}>
             {edition.nouveau ? 'Nouveau contrat' : 'Modifier le contrat'} — {def.label}
           </h4>
+          {edition.reprisDe && (
+            <p style={{ margin: '0 0 16px', color: '#666', fontSize: '13px' }}>
+              Réglages repris du contrat « {edition.reprisDe} ». Seuls les identifiants
+              sont à saisir — ce sont eux qui changent.
+            </p>
+          )}
 
           <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', marginBottom: '18px' }}>
             <div style={{ flex: '1 1 190px' }}>
@@ -228,6 +278,35 @@ function CarrierAccountsTab() {
               </div>
             </div>
           ))}
+
+          {(() => {
+            const avances = (def.accountFields?.settings || []).filter(f => f.advanced);
+            if (avances.length === 0) return null;
+            return (
+              <div style={{ marginBottom: '18px' }}>
+                <button type="button"
+                  onClick={() => setEdition(ed => ({ ...ed, avances: !ed.avances }))}
+                  onMouseEnter={e => { e.currentTarget.style.backgroundColor = '#f8f9fa'; }}
+                  onMouseLeave={e => { e.currentTarget.style.backgroundColor = 'white'; }}
+                  style={{
+                    padding: '7px 12px', border: '1px solid #ccc', backgroundColor: 'white',
+                    color: '#555', borderRadius: '6px', cursor: 'pointer', fontSize: '13px'
+                  }}>
+                  {edition.avances ? '▾' : '▸'} Réglages avancés ({avances.length})
+                </button>
+                {!edition.avances && (
+                  <span style={{ color: '#888', marginLeft: 10, fontSize: 12.5 }}>
+                    laissés vides, les valeurs par défaut s'appliquent
+                  </span>
+                )}
+                {edition.avances && (
+                  <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', marginTop: '12px' }}>
+                    {avances.map(f => champ(f, 'set.'))}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
 
           <div style={{ display: 'flex', gap: '10px' }}>
             <button type="submit" disabled={saving} style={{

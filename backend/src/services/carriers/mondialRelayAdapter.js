@@ -398,27 +398,30 @@ const labelFileName = (orderNumber) => `mondialrelay_${orderNumber}.pdf`;
 // avoir à interpréter.
 const ACCOUNT_FIELDS = {
   credentials: [
-    { key: 'login',       label: 'Connexion API', placeholder: 'LGYOUVAP@business-api.mondialrelay.com' },
-    { key: 'password',    label: "Mot de passe API", secret: true },
-    { key: 'customer_id', label: "Identification de marque (code enseigne)", placeholder: 'LGYOUVAP' }
+    { key: 'login',       label: 'Connexion API', required: true, placeholder: 'LGYOUVAP@business-api.mondialrelay.com' },
+    { key: 'password',    label: "Mot de passe API", required: true, secret: true },
+    { key: 'customer_id', label: "Code enseigne", required: true, placeholder: 'LGYOUVAP' }
   ],
   settings: [
-    { key: 'api_url',       label: "URL de l'API", placeholder: 'https://connect-api.mondialrelay.com/api/shipment' },
-    { key: 'output_format', label: "Format d'étiquette", placeholder: '10x15' },
-    { key: 'sandbox',       label: 'Contrat de test (aucune expédition réelle)' },
-    { key: 'output_type',     label: "Type de sortie",      group: 'Technique', placeholder: 'PdfUrl' },
-    { key: 'collection_mode', label: 'Mode de collecte',    group: 'Technique', placeholder: 'CCC' },
-    { key: 'culture',         label: 'Langue',              group: 'Technique', placeholder: 'fr-FR' },
-    { key: 'version_api',     label: "Version d'API",       group: 'Technique', placeholder: '1.0' },
-    { key: 'sender.firstname',   label: 'Prénom / enseigne', group: 'Expéditeur' },
-    { key: 'sender.lastname',    label: 'Raison sociale',    group: 'Expéditeur' },
-    { key: 'sender.house_no',    label: 'N° de voie',        group: 'Expéditeur' },
-    { key: 'sender.streetname',  label: 'Rue',               group: 'Expéditeur' },
-    { key: 'sender.postcode',    label: 'Code postal',       group: 'Expéditeur' },
-    { key: 'sender.city',        label: 'Ville',             group: 'Expéditeur' },
-    { key: 'sender.country_code',label: 'Pays (2 lettres)',  group: 'Expéditeur' },
-    { key: 'sender.email',       label: 'Courriel',          group: 'Expéditeur' },
-    { key: 'sender.phone',       label: 'Téléphone',         group: 'Expéditeur' }
+    { key: 'api_url',       label: "URL de l'API", required: true, placeholder: 'https://connect-api.mondialrelay.com/api/shipment' },
+    { key: 'sandbox',       label: "Contrat de test — n'émet aucune expédition réelle", type: 'boolean' },
+
+    { key: 'sender.firstname',    label: 'Prénom / enseigne', group: 'Expéditeur', required: true },
+    { key: 'sender.lastname',     label: 'Raison sociale',    group: 'Expéditeur', required: true },
+    { key: 'sender.house_no',     label: 'N° de voie',        group: 'Expéditeur', required: true },
+    { key: 'sender.streetname',   label: 'Rue',               group: 'Expéditeur', required: true },
+    { key: 'sender.postcode',     label: 'Code postal',       group: 'Expéditeur', required: true },
+    { key: 'sender.city',         label: 'Ville',             group: 'Expéditeur', required: true },
+    { key: 'sender.country_code', label: 'Pays (2 lettres)',  group: 'Expéditeur', required: true },
+    { key: 'sender.email',        label: 'Courriel',          group: 'Expéditeur' },
+    { key: 'sender.phone',        label: 'Téléphone',         group: 'Expéditeur' },
+
+    // Avancés : valeurs par défaut de l'adaptateur si le champ reste vide.
+    { key: 'output_format',   label: "Format d'étiquette", advanced: true, placeholder: '10x15' },
+    { key: 'output_type',     label: "Type de sortie",     advanced: true, placeholder: 'PdfUrl' },
+    { key: 'collection_mode', label: 'Mode de collecte',   advanced: true, placeholder: 'CCC' },
+    { key: 'culture',         label: 'Langue',             advanced: true, placeholder: 'fr-FR' },
+    { key: 'version_api',     label: "Version d'API",      advanced: true, placeholder: '1.0' }
   ]
 };
 

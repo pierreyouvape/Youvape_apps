@@ -148,7 +148,7 @@ async function main() {
   const { rows: maps } = await pool.query(
     `SELECT m.denomination, m.carrier_code, m.account_code,
             a.id IS NOT NULL AS contrat_present,
-            COALESCE((a.settings->>'sandbox')::boolean, false) AS sandbox,
+            COALESCE(NULLIF(a.settings->>'sandbox', '')::boolean, false) AS sandbox,
             COALESCE(a.active, false) AS contrat_actif
      FROM shipping_method_carrier_map m
      LEFT JOIN carrier_accounts a

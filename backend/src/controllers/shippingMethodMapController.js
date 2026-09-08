@@ -21,7 +21,7 @@ const { getAdapter, listCarrierCodes } = require('../services/carriers');
 const listCarriers = async () => {
   const { rows } = await pool.query(
     `SELECT carrier_code, account_code, label, active,
-            COALESCE((settings->>'sandbox')::boolean, false) AS sandbox
+            COALESCE(NULLIF(settings->>'sandbox', '')::boolean, false) AS sandbox
      FROM carrier_accounts
      ORDER BY carrier_code, account_code`
   );
