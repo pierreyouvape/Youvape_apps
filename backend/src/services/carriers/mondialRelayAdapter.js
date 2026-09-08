@@ -18,7 +18,7 @@
  */
 
 const axios = require('axios');
-const { sanitizeAddressField } = require('./addressFields');
+const { sanitizeAddressField, restrictToCharset } = require('./addressFields');
 const { assertAdapter } = require('./contract');
 const { assertAccountComplete } = require('./accounts');
 
@@ -29,35 +29,84 @@ const CARRIER_LABEL = 'Mondial Relay';
 const esc = (value) => String(value ?? '').replace(/[<>&'"]/g, (c) =>
   ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', "'": '&apos;', '"': '&quot;' }[c]));
 
+// Pays où le numéro suit le nom de rue. C'est la convention de tout le
+// Benelux et de l'espace germanophone — « BERLARIJ 54 », pas « 54 BERLARIJ ».
+// Nos points relais sont en France, Belgique et Luxembourg : la moitié de nos
+// adresses relais suit donc la convention inverse de la française.
+const NUMERO_APRES_RUE = new Set(['BE', 'NL', 'LU', 'DE', 'AT', 'CH']);
+
 /**
  * Sépare le numéro de voie du nom de rue.
  *
  * Mondial Relay veut `HouseNo` et `Streetname` en deux champs, là où
- * WooCommerce n'en a qu'un. La quasi-totalité des adresses françaises commence
- * par le numéro, éventuellement suivi de bis/ter/quater ou d'une lettre.
- * Quand rien ne ressemble à un numéro, on laisse `HouseNo` vide plutôt que
- * d'inventer : l'adresse reste complète dans `Streetname`.
+ * WooCommerce n'en a qu'un. La position du numéro dépend du pays, et se
+ * tromper de convention est pire que ne rien faire : « Rue du 8 Mai 1945 »
+ * livrerait un numéro « 1945 » si on cherchait bêtement un nombre en fin de
+ * ligne. On applique donc la règle du pays, sans repli vers l'autre.
+ *
+ * Quand rien ne ressemble à un numéro, `HouseNo` reste vide plutôt qu'inventé :
+ * l'adresse reste complète dans `Streetname`.
  *
  * @param {string} line
+ * @param {string} [countryCode] - pays du destinataire
  * @returns {{houseNo: string, streetname: string}}
  */
-const splitStreet = (line) => {
+const splitStreet = (line, countryCode = 'FR') => {
   const s = String(line ?? '').trim();
-  const m = s.match(/^(\d+\s*(?:bis|ter|quater|[A-Za-z])?)\s+(.*)$/i);
+  if (!s) return { houseNo: '', streetname: '' };
+
+  const suffixe = '(?:\\s*(?:bis|ter|quater|[A-Za-z]))?';
+
+  if (NUMERO_APRES_RUE.has(String(countryCode).toUpperCase())) {
+    const m = s.match(new RegExp(`^(.*?)[\\s,]+(\\d{1,5}${suffixe})$`, 'i'));
+    if (m) return { houseNo: m[2].replace(/\s+/g, '').substring(0, 10), streetname: m[1].trim() };
+    return { houseNo: '', streetname: s };
+  }
+
+  const m = s.match(new RegExp(`^(\\d{1,5}${suffixe})\\s+(.*)$`, 'i'));
   if (!m) return { houseNo: '', streetname: s };
   return { houseNo: m[1].replace(/\s+/g, '').substring(0, 10), streetname: m[2].trim() };
 };
 
+// Jeux de caractères admis par Mondial Relay, champ par champ (schéma officiel).
+// Tout ce qui en sort fait échouer la validation — y compris des caractères
+// INVISIBLES que personne ne voit dans l'interface : la commande 1259134
+// portait un U+202A devant le prénom, venu d'un clavier arabe, et faisait
+// échouer la clé de sécurité côté BMS.
+const CHARSET = {
+  // Ni chiffre ni ponctuation exotique. « Lyon 3e » devient « Lyon e ».
+  city:     /[A-Za-zÀ-ÖØ-öø-ÿ_'.,\s-]/,
+  name:     /[A-Za-zÀ-ÖØ-öø-ÿ_'.,\s-]/,
+  street:   /[0-9A-Za-zÀ-ÖØ-öø-ÿ_'.,\s-]/,
+  houseNo:  /[0-9A-Z_'.,/-]/,
+  postcode: /[0-9A-Za-z_'-]/
+};
+
 /**
- * `City` n'accepte ni chiffre ni la plupart des ponctuations (max 30).
- * « Lyon 3e » ou « Saint-Étienne Cedex 2 » passeraient à la trappe côté API :
- * on nettoie plutôt que de laisser l'appel échouer sur un détail cosmétique.
+ * Nettoie un champ pour Mondial Relay, et refuse de le vider en silence.
+ *
+ * Un nom entièrement hors alphabet latin — cyrillique, arabe, grec — ne laisse
+ * rien après filtrage. Envoyer un champ vide ferait échouer l'appel avec un
+ * message incompréhensible, ou pire, imprimerait une étiquette sans
+ * destinataire. On refuse tout de suite, en nommant le champ fautif et sa
+ * valeur, pour que la personne au packing sache quoi corriger.
+ *
+ * @throws {Error & {statusCode: number}} si le nettoyage vide un champ qui ne l'était pas
  */
-const cleanCity = (city) => sanitizeAddressField(String(city ?? ''))
-  .replace(/[0-9]/g, ' ')
-  .replace(/\s+/g, ' ')
-  .trim()
-  .substring(0, 30);
+const champ = (valeur, charset, nomChamp, { obligatoire = false, orderNumber } = {}) => {
+  const source = String(valeur ?? '').trim();
+  const propre = restrictToCharset(source, charset);
+
+  if (obligatoire && source && !propre) {
+    const err = new Error(
+      `Commande ${orderNumber} : le champ « ${nomChamp} » (« ${source} ») ne contient aucun caractère `
+      + `accepté par Mondial Relay. Corrigez l'adresse dans la commande avant d'expédier.`
+    );
+    err.statusCode = 400;
+    throw err;
+  }
+  return propre;
+};
 
 /**
  * Applique les deux contraintes de longueur COMBINÉE du schéma Mondial Relay :
@@ -99,22 +148,28 @@ const resolveWeight = async ({ pool, orderNumber }) => {
   return Math.round(grams);
 };
 
-/** Bloc <Address> d'une personne. */
-const addressXml = (p) => {
-  const [title, firstname, lastname] = fitCombined(
-    [p.title || '', p.firstname || '', p.lastname || ''], 32
+/** Bloc `<Address>` d'une personne, chaque champ ramené au jeu admis. */
+const addressXml = (p, ctx = {}) => {
+  const [title, firstname, lastname] = fitCombined([
+    p.title || '',
+    champ(p.firstname, CHARSET.name, 'prénom', ctx),
+    champ(p.lastname, CHARSET.name, 'nom', ctx)
+  ], 32);
+
+  const { houseNo, streetname } = splitStreet(
+    champ(p.addressLine, CHARSET.street, 'adresse', ctx),
+    p.countryCode
   );
-  const { houseNo, streetname } = splitStreet(p.addressLine);
-  const [street, house] = fitCombined([streetname, houseNo], 40);
+  const [street, house] = fitCombined([streetname, houseNo.toUpperCase()], 40);
 
   return `<Title>${esc(title)}</Title>` +
     `<Firstname>${esc(firstname)}</Firstname>` +
     `<Lastname>${esc(lastname)}</Lastname>` +
     `<Streetname>${esc(street)}</Streetname>` +
-    `<HouseNo>${esc(house)}</HouseNo>` +
+    `<HouseNo>${esc(restrictToCharset(house, CHARSET.houseNo))}</HouseNo>` +
     `<CountryCode>${esc((p.countryCode || 'FR').toUpperCase().substring(0, 2))}</CountryCode>` +
-    `<PostCode>${esc(String(p.postcode || '').substring(0, 10))}</PostCode>` +
-    `<City>${esc(cleanCity(p.city))}</City>` +
+    `<PostCode>${esc(restrictToCharset(String(p.postcode || ''), CHARSET.postcode).substring(0, 10))}</PostCode>` +
+    `<City>${esc(champ(p.city, CHARSET.city, 'ville', ctx).substring(0, 30))}</City>` +
     `<PhoneNo>${esc(String(p.phone || '').substring(0, 20))}</PhoneNo>` +
     `<MobileNo>${esc(String(p.mobile || '').substring(0, 20))}</MobileNo>` +
     `<Email>${esc(String(p.email || '').substring(0, 70))}</Email>`;
@@ -163,16 +218,16 @@ const buildLabelPayload = ({ orderNumber, receiver, account, weightGrams, option
     `<Sender><Address>${addressXml({ ...sender, addressLine: sender.address_line || `${sender.house_no || ''} ${sender.streetname || ''}`.trim(), countryCode: sender.country_code, postcode: sender.postcode })}</Address></Sender>` +
     `<Recipient><Address>${addressXml({
       title: receiver.title,
-      firstname: sanitizeAddressField(receiver.first_name || receiver.name || ''),
-      lastname: sanitizeAddressField(receiver.last_name || ''),
-      addressLine: sanitizeAddressField(receiver.address || ''),
+      firstname: receiver.first_name || receiver.name || '',
+      lastname: receiver.last_name || '',
+      addressLine: receiver.address || '',
       countryCode: receiver.country,
       postcode: receiver.postcode,
       city: receiver.city,
       phone: receiver.phone,
       mobile: receiver.phone,
       email: receiver.email
-    })}</Address></Recipient>` +
+    }, { obligatoire: true, orderNumber })}</Address></Recipient>` +
     `</Shipment></ShipmentsList></ShipmentCreationRequest>`;
 };
 

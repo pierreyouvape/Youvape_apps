@@ -309,10 +309,20 @@ test('le numéro de commande est mis en majuscules et filtré', () => {
   assert.ok(mrXml({ orderNumber: 'test-abc/123' }).includes('<OrderNo>TEST-ABC123</OrderNo>'));
 });
 
-test('les caractères XML des adresses sont échappés', () => {
-  const x = mrXml({ receiver: { last_name: 'Durand & Fils', address: '3 rue <test>' } });
-  assert.ok(x.includes('Durand &amp; Fils'), 'esperluette non échappée');
+test('aucune balise ne peut être injectée par une adresse', () => {
+  // Double protection : le jeu de caractères retire déjà « < » et « > » des
+  // champs d'adresse, l'échappement XML couvre les champs qui n'y sont pas
+  // soumis (courriel, téléphone).
+  const x = mrXml({ receiver: { last_name: 'Durand', address: '3 rue <test>' } });
   assert.ok(!/<Streetname>[^<]*<test>/.test(x), 'balise injectée dans l\'adresse');
+});
+
+test('les champs non filtrés restent échappés en XML', () => {
+  // Le courriel n'est pas restreint à un jeu de caractères : c'est l'échappement
+  // qui empêche qu'un « & » y casse le document.
+  const x = mrXml({ receiver: { email: 'a&b<c>@exemple.fr' } });
+  assert.ok(x.includes('a&amp;b&lt;c&gt;@exemple.fr'), 'courriel non échappé');
+  assert.ok(!x.includes('<c>@'), 'balise injectée par le courriel');
 });
 
 test('le mot de passe est caviardé avant journalisation', () => {
@@ -326,6 +336,109 @@ test('Mondial Relay se déclare non annulable, avec la raison', () => {
   const w = mr.cancelWindow();
   assert.strictEqual(w.cancellable, false);
   assert.ok(/annuler/i.test(w.reason));
+});
+
+// ── Caractères refusés par les transporteurs ─────────────────────────────────
+console.log('\nCaractères spéciaux et invisibles');
+
+const { restrictToCharset } = require('../src/services/carriers/addressFields');
+const JEU_NOM = /[A-Za-zÀ-ÖØ-öø-ÿ_'.,\s-]/;
+
+const destinataire = (over = {}) => {
+  const x = mrXml({ receiver: over, options: { deliveryMode: '24R',
+    relayPoint: { id: '010041', country: over.country || 'FR' } } });
+  const bloc = x.match(/<Recipient>[\s\S]*<\/Recipient>/)[0];
+  const lire = (t) => bloc.match(new RegExp(`<${t}>([^<]*)<`))[1];
+  return { firstname: lire('Firstname'), lastname: lire('Lastname'),
+           street: lire('Streetname'), houseNo: lire('HouseNo'), city: lire('City') };
+};
+
+test('le caractère invisible U+202A de la commande 1259134 est retiré', () => {
+  // Venu d'un clavier arabe, invisible à l'écran, il faisait échouer la clé de
+  // sécurité Mondial Relay côté BMS.
+  const d = destinataire({ first_name: '\u202aHassan', last_name: 'Alkhadour',
+    address: 'BERLARIJ 54', city: 'LIER', postcode: '2500', country: 'BE' });
+  assert.strictEqual(d.firstname, 'Hassan');
+});
+
+test('les autres invisibles passent aussi à la trappe', () => {
+  for (const c of ['\u200b', '\u200e', '\u202e', '\ufeff', '\u00ad', '\u2066']) {
+    assert.strictEqual(restrictToCharset(`Du${c}rand`, JEU_NOM), 'Durand',
+      `caractère U+${c.codePointAt(0).toString(16)} non retiré`);
+  }
+});
+
+test('les latines étendues sont ramenées à leur base, pas supprimées', () => {
+  // « Gőz » doit devenir « Goz », pas « Gz » : le nom reste lisible et livrable.
+  assert.strictEqual(restrictToCharset('Gőz Ğül', JEU_NOM), 'Goz Gül');
+  assert.strictEqual(restrictToCharset('Sœur Łucja', JEU_NOM), 'Soeur Lucja');
+  // « ř » est refusé donc ramené à « r » ; « á » est admis donc conservé tel quel.
+  assert.strictEqual(restrictToCharset('Ivan Dvořák', JEU_NOM), 'Ivan Dvorák');
+  assert.strictEqual(restrictToCharset('Mustafa Yıldız', JEU_NOM), 'Mustafa Yildiz');
+});
+
+test('ce que Mondial Relay accepte déjà n\'est pas transformé', () => {
+  // Le jeu admis va jusqu'à « ÿ » : ß, ü, ø et les accents français en font
+  // partie. Les translittérer abîmerait le nom du client sans raison.
+  assert.strictEqual(restrictToCharset('Straße', JEU_NOM), 'Straße');
+  assert.strictEqual(restrictToCharset('Jørgen Müller', JEU_NOM), 'Jørgen Müller');
+});
+
+test('les accents français, eux, sont conservés', () => {
+  assert.strictEqual(restrictToCharset("José-Marie D'Argent", JEU_NOM), "José-Marie D'Argent");
+});
+
+test('« & » devient « et » au lieu de disparaître', () => {
+  assert.strictEqual(restrictToCharset('Durand & Fils', JEU_NOM), 'Durand et Fils');
+});
+
+test('la ponctuation refusée devient une espace, sans coller les mots', () => {
+  assert.strictEqual(restrictToCharset('Dupont(Fils)', JEU_NOM), 'Dupont Fils');
+});
+
+test('un champ obligatoire vidé par le nettoyage fait échouer, avec le champ nommé', () => {
+  // Un nom entièrement cyrillique ne laisse rien : mieux vaut refuser que
+  // d'imprimer une étiquette sans destinataire.
+  assert.throws(
+    () => destinataire({ first_name: 'Ivan', last_name: 'Петров',
+      address: '12 rue des Lilas', city: 'Lyon', postcode: '69003' }),
+    /« nom »/
+  );
+});
+
+console.log('\nNuméro de voie selon le pays');
+
+test('France : le numéro précède la rue', () => {
+  const d = destinataire({ first_name: 'Jean', last_name: 'Test',
+    address: '12 rue des Lilas', city: 'Lyon', postcode: '69003', country: 'FR' });
+  assert.strictEqual(d.houseNo, '12');
+  assert.strictEqual(d.street, 'rue des Lilas');
+});
+
+test('Belgique et Luxembourg : le numéro suit la rue', () => {
+  for (const [pays, adr, rue, no] of [
+    ['BE', 'BERLARIJ 54', 'BERLARIJ', '54'],
+    ['LU', 'Rue de Hollerich 22', 'Rue de Hollerich', '22'],
+    ['BE', 'Chaussee de Wavre 1234 B', 'Chaussee de Wavre', '1234B']
+  ]) {
+    const d = destinataire({ first_name: 'Jean', last_name: 'Test',
+      address: adr, city: 'Ville', postcode: '2500', country: pays });
+    assert.strictEqual(d.street, rue, `${pays} ${adr}`);
+    assert.strictEqual(d.houseNo, no, `${pays} ${adr}`);
+  }
+});
+
+test('« Rue du 8 Mai 1945 » ne se fait pas prendre l\'année pour un numéro', () => {
+  const d = destinataire({ first_name: 'Jean', last_name: 'Test',
+    address: 'Rue du 8 Mai 1945', city: 'Nimes', postcode: '30000', country: 'FR' });
+  assert.strictEqual(d.houseNo, '');
+  assert.strictEqual(d.street, 'Rue du 8 Mai 1945');
+});
+
+test('« 3 bis » reste un numéro complet', () => {
+  const d = destinataire({ first_name: 'Jean', last_name: 'Test',
+    address: '3 bis avenue Foch', city: 'Paris', postcode: '75116', country: 'FR' });
+  assert.strictEqual(d.houseNo, '3BIS');
 });
 
 // ── Retrait magasin ──────────────────────────────────────────────────────────
