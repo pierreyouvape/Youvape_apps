@@ -150,8 +150,38 @@ const markCancelled = async (id) => {
   );
 };
 
+/**
+ * Étiquettes d'une commande, avec le nom du préparateur.
+ *
+ * Sert la fiche commande, qui affiche qui a préparé le colis et quand
+ * l'étiquette a été émise. BMS ne sait pas recevoir le préparateur — son API de
+ * création d'expédition n'a aucun champ pour ça (vérifié sur la spec en ligne le
+ * 08/09/2026) — donc notre base est la seule source de cette information.
+ *
+ * L'étiquette correspondant au numéro de suivi de la commande est remontée en
+ * premier : une commande réexpédiée en porte plusieurs, et c'est celle dont le
+ * suivi est affiché qui intéresse.
+ *
+ * @param {string|number} orderNumber
+ * @param {?string} trackingNumber - suivi affiché sur la commande, pour trancher
+ * @returns {Promise<object[]>} de la plus pertinente à la plus ancienne
+ */
+const findForOrderNumber = async (orderNumber, trackingNumber = null) => {
+  const { rows } = await pool.query(
+    `SELECT l.id, l.carrier_code, l.account_code, l.tracking_number, l.status,
+            l.weight_g, l.created_at, l.cancelled_at, u.name AS packer_name
+     FROM shipment_labels l
+     LEFT JOIN users u ON u.id = l.packed_by
+     WHERE l.order_number = $1
+     ORDER BY (l.tracking_number IS NOT DISTINCT FROM $2) DESC, l.created_at DESC`,
+    [String(orderNumber), trackingNumber]
+  );
+  return rows;
+};
+
 module.exports = {
   ORDER_NUMBER_MAX_LENGTH,
+  findForOrderNumber,
   assertSchemaReady,
   findActiveByOrderNumber,
   findById,

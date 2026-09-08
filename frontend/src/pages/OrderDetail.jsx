@@ -4,7 +4,7 @@ import axios from 'axios';
 import AppShell from '../components/AppShell';
 import CopyButton from '../components/CopyButton';
 import { Stats as StatsIcon } from '../components/AppIcons';
-import { formatDate } from '../utils/dateUtils';
+import { formatDate, formatDateUTC } from '../utils/dateUtils';
 import { AuthContext } from '../context/AuthContext';
 import { LinkBox } from '../utils/navHelpers';
 import { getTrackingUrl } from '../utils/trackingUtils';
@@ -292,6 +292,11 @@ const OrderDetail = () => {
 
   const trackingUrl = getTrackingUrl(order.shipping_carrier, order.tracking_number, order.shipping_country);
 
+  // Étiquettes émises par le packing, la plus pertinente d'abord (le backend
+  // remonte en tête celle qui porte le numéro de suivi affiché).
+  const etiquette = (order.shipment_labels || [])[0] || null;
+  const autresEtiquettes = Math.max(0, (order.shipment_labels || []).length - 1);
+
   const shippingCostCalculated = order.shipping_cost_calculated != null ? parseFloat(order.shipping_cost_calculated) : null;
   const paymentCostCalculated  = order.payment_cost_calculated  != null ? parseFloat(order.payment_cost_calculated)  : null;
   const packagingCost = PACKAGING_COST_HT;
@@ -526,6 +531,36 @@ const OrderDetail = () => {
               )}
               {weightDisplay && (
                 <MetaItem label="Poids total">{weightDisplay}</MetaItem>
+              )}
+              {/* Qui a préparé le colis, et quand l'étiquette a été émise.
+                  BMS ne sait pas recevoir le préparateur — son API de création
+                  d'expédition n'a aucun champ pour ça — donc notre base est la
+                  seule à le savoir. L'étiquette retenue est celle qui porte le
+                  numéro de suivi affiché ci-dessus ; une commande réexpédiée en
+                  compte plusieurs. */}
+              {etiquette && (
+                <>
+                  <MetaItem label="Préparateur">
+                    {etiquette.packer_name || 'inconnu'}
+                  </MetaItem>
+                  <MetaItem label="Étiquette créée le">
+                    {/* created_at est écrit par NOW() sur un VPS en UTC :
+                        formatDateUTC convertit, formatDate afficherait 2 h de moins. */}
+                    {formatDateUTC(etiquette.created_at)}
+                    {etiquette.status === 'cancelled' && (
+                      <span style={{ color: C.rouge, fontWeight: 600, marginLeft: 6 }}>
+                        (annulée)
+                      </span>
+                    )}
+                    {/* Une commande réexpédiée porte plusieurs étiquettes :
+                        n'en montrer qu'une sans le dire induirait en erreur. */}
+                    {autresEtiquettes > 0 && (
+                      <span style={{ color: C.grisM, fontWeight: 500, fontSize: 12, marginLeft: 6 }}>
+                        +{autresEtiquettes} autre{autresEtiquettes > 1 ? 's' : ''}
+                      </span>
+                    )}
+                  </MetaItem>
+                </>
               )}
             </div>
           </Card>

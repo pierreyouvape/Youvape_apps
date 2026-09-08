@@ -1,5 +1,6 @@
 const orderModel = require('../models/orderModel');
 const savModel = require('../models/savModel');
+const shipmentLabelModel = require('../models/shipmentLabelModel');
 const advancedFilterService = require('../services/advancedFilterService');
 const pool = require('../config/database');
 const { buildSearchCondition } = require('../utils/searchUtils');
@@ -62,6 +63,19 @@ exports.getById = async (req, res) => {
     } catch (savError) {
       console.error('Error getting SAV context for order:', savError);
       order.sav_tickets = [];
+    }
+
+    // Étiquettes émises par le packing : qui a préparé le colis, et quand.
+    // BMS ne sait pas recevoir le préparateur, notre base est donc la seule
+    // source. Comme pour le SAV ci-dessus, un échec ici ne doit pas priver
+    // l'agent de la commande elle-même.
+    try {
+      order.shipment_labels = await shipmentLabelModel.findForOrderNumber(
+        order.wp_order_id, order.tracking_number || null
+      );
+    } catch (labelError) {
+      console.error('Error getting shipment labels for order:', labelError.message);
+      order.shipment_labels = [];
     }
 
     res.json({ success: true, data: order });
