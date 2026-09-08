@@ -175,10 +175,16 @@ function CarrierAccountsTab() {
       {!edition && (
         <div style={{ display: 'flex', gap: '10px', marginBottom: '20px', flexWrap: 'wrap' }}>
           {transporteurs.map(c => (
-            <button key={c.code} onClick={() => ouvrir(null, c.code)} style={{
-              padding: '9px 16px', border: `2px solid ${visuelTransporteur(c.code).couleur}`,
-              backgroundColor: 'white', borderRadius: '6px', cursor: 'pointer', fontWeight: 600
-            }}>+ Contrat {c.label}</button>
+            // Couleur et survol explicites : `index.css` met tous les boutons en
+            // blanc sur bleu, ce qui rendrait ce libellé invisible sur fond clair.
+            <button key={c.code} onClick={() => ouvrir(null, c.code)}
+              onMouseEnter={e => { e.currentTarget.style.backgroundColor = '#f8f9fa'; }}
+              onMouseLeave={e => { e.currentTarget.style.backgroundColor = 'white'; }}
+              style={{
+                padding: '9px 16px', border: `2px solid ${visuelTransporteur(c.code).couleur}`,
+                backgroundColor: 'white', color: '#333',
+                borderRadius: '6px', cursor: 'pointer', fontWeight: 600
+              }}>+ Contrat {c.label}</button>
           ))}
         </div>
       )}

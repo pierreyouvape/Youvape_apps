@@ -150,8 +150,15 @@ function MethodMappingTab() {
                 key={u.denomination}
                 onClick={() => { setForm({ ...VIDE, denomination: u.denomination }); setMessage(null); }}
                 title="Renseigner ce mode de livraison"
+                // `index.css` impose `button { color: white }` et un survol bleu à
+                // TOUS les boutons : sur fond clair, le libellé serait blanc sur
+                // blanc — invisible. D'où la couleur explicite et le survol repris
+                // à la main, comme le fait AppShell.
+                onMouseEnter={e => { e.currentTarget.style.backgroundColor = '#fff3cd'; }}
+                onMouseLeave={e => { e.currentTarget.style.backgroundColor = 'white'; }}
                 style={{
                   padding: '7px 12px', border: '1px solid #ffc107', backgroundColor: 'white',
+                  color: '#333',
                   borderRadius: '6px', cursor: 'pointer', fontSize: '13px', textAlign: 'left'
                 }}>
                 {u.denomination}
