@@ -56,6 +56,48 @@ function buildDateConditions(dateFrom, dateTo, startIndex = 1, alias = 'o') {
 }
 
 /**
+ * ─── TVA CONTENUE DANS UN REMBOURSEMENT ────────────────────────────────────
+ * Deux sources, par ordre de fiabilité :
+ *  1) refunds.order_tax — la TVA que WooCommerce a réellement ventilée sur l'avoir
+ *     (meta `_order_tax` du remboursement, stockée en négatif). Valeur EXACTE.
+ *  2) À défaut, le taux de TVA réel de LA COMMANDE remboursée
+ *     (TVA de la commande / total TTC de la commande) appliqué au montant de l'avoir.
+ *     C'est une estimation, mais commande par commande : un avoir sur une commande
+ *     export (0 %) ne retire plus de TVA à tort, contrairement à l'ancien calcul qui
+ *     appliquait le taux MOYEN de la période à tous les remboursements.
+ *
+ * Le cas 2) est aujourd'hui majoritaire : depuis le 17/06/2026 les remboursements
+ * arrivent par le webhook temps réel (webhookController.insertRefund), qui n'écrit
+ * ni order_total ni order_tax → colonnes NULL. Corriger cette ingestion rendra le
+ * cas 1) à nouveau dominant sans rien changer ici.
+ *
+ * Alias attendus : r = refunds, o = orders, tc = TVA de la commande remboursée.
+ */
+const REFUND_TAX_EXPR = `
+  CASE
+    WHEN COALESCE(r.order_tax, 0) <> 0 THEN ABS(r.order_tax)
+    WHEN COALESCE(o.order_total, 0) > 0 THEN r.refund_amount * (COALESCE(tc.tva, 0) / o.order_total)
+    ELSE 0
+  END`;
+
+/**
+ * TVA réelle (produits + livraison) des commandes ayant au moins un remboursement.
+ * Volontairement NON filtré par date : un avoir de juillet peut porter sur une
+ * commande de juin, il faut alors le taux de cette commande-là. La table refunds
+ * est petite (~1 200 lignes), le coût est négligeable.
+ */
+const REFUND_ORDER_TAX_CTE = `
+  tva_cmd_remboursee AS (
+    SELECT oi.wp_order_id,
+      SUM(CASE WHEN oi.order_item_type IN ('line_item', 'tax') THEN oi.line_tax ELSE 0 END) AS tva
+    FROM order_items oi
+    WHERE oi.wp_order_id IN (SELECT DISTINCT wp_order_id FROM refunds)
+    GROUP BY oi.wp_order_id
+  )`;
+
+const REFUND_TAX_JOIN = `LEFT JOIN tva_cmd_remboursee tc ON tc.wp_order_id = r.wp_order_id`;
+
+/**
  * Calcule tous les KPIs + séries temporelles pour une période donnée.
  * Source de vérité unique : utilisée par l'endpoint HTTP /dashboard ET par
  * le service d'envoi de rapports par email (reportEmailService) → garantit
@@ -165,21 +207,25 @@ async function computeDashboard({ dateFrom, dateTo, granularity } = {}) {
     }
 
     const refundsResult = await pool.query(`
+      WITH ${REFUND_ORDER_TAX_CTE}
       SELECT
-        COALESCE(SUM(r.refund_amount), 0)::numeric AS remboursements_ttc,
-        COUNT(DISTINCT r.wp_order_id)::int          AS refunds_count
+        COALESCE(SUM(r.refund_amount), 0)::numeric        AS remboursements_ttc,
+        COALESCE(SUM(${REFUND_TAX_EXPR}), 0)::numeric     AS remboursements_tva,
+        COUNT(DISTINCT r.wp_order_id)::int                AS refunds_count
       FROM refunds r
       JOIN orders o ON r.wp_order_id = o.wp_order_id
+      ${REFUND_TAX_JOIN}
       WHERE ${refundsConds.join(' AND ')}
     `, refundsParams);
 
     const remboursementsTTC = parseFloat(refundsResult.rows[0].remboursements_ttc) || 0;
+    const remboursementsTVA = parseFloat(refundsResult.rows[0].remboursements_tva) || 0;
     const refundsCount      = refundsResult.rows[0].refunds_count || 0;
 
     // ─── 4. CALCULS DÉRIVÉS ─────────────────────────────────────────────────
-    // TVA ajustée des remboursements (proportionnelle)
-    const taxRatio      = caTTCBrut > 0 ? tva / caTTCBrut : 0;
-    const tvaAjustee    = tva - (remboursementsTTC * taxRatio);
+    // TVA ajustée des remboursements — TVA réelle de chaque avoir (cf. REFUND_TAX_EXPR),
+    // et non plus le taux moyen de la période appliqué au total remboursé.
+    const tvaAjustee    = tva - remboursementsTVA;
     const caTTCNet      = caTTCBrut - remboursementsTTC;
     const caHTNet       = caTTCNet - tvaAjustee;
     const profitHT      = caHTNet - fraisPortReel - coutProduits - fraisPaiement;
@@ -337,6 +383,7 @@ async function computeDashboard({ dateFrom, dateTo, granularity } = {}) {
         ca_ht_net:                 round2(caHTNet),
         tva:                       round2(tvaAjustee),
         remboursements_ttc:        round2(remboursementsTTC),
+        remboursements_tva:        round2(remboursementsTVA),
         refunds_count:             refundsCount,
         frais_port_client:         round2(fraisPortClient),
         frais_port_reel:           round2(fraisPortReel),
@@ -515,9 +562,9 @@ exports.computeByCountry = computeByCountry;
  * - TVA calculée via la formule exacte order_items (produits + livraison), identique
  *   au KPI « TVA » du dashboard → les totaux réconcilient avec les cartes.
  * - CA HT = CA TTC − TVA.
- * - Remboursements agrégés par pays sur `refund_date` (comme le KPI remboursements),
- *   et TVA nette = TVA brute − remboursements × (TVA brute / CA TTC brut) — même
- *   ajustement proportionnel que computeDashboard, mais calculé pays par pays.
+ * - Remboursements agrégés par pays sur `refund_date` (comme le KPI remboursements).
+ *   TVA nette = TVA brute − TVA réellement contenue dans les avoirs, calculée avoir
+ *   par avoir (cf. REFUND_TAX_EXPR) et non par une règle de trois sur le total.
  *
  * Regroupement par PAYS DE FACTURATION (billing_country). La TVA affichée reste
  * celle réellement collectée sur la commande : une commande facturée à l'étranger
@@ -562,27 +609,34 @@ async function computeComptable({ dateFrom, dateTo } = {}) {
   if (dateTo)   { refundsConds.push(`(r.refund_date) <= $${rIdx++}`); refundsParams.push(upperBound(dateTo)); }
 
   const refundsResult = await pool.query(`
+    WITH ${REFUND_ORDER_TAX_CTE}
     SELECT
-      ${countryExpr}                             AS country_code,
-      COALESCE(SUM(r.refund_amount), 0)::numeric  AS remboursements_ttc
+      ${countryExpr}                                 AS country_code,
+      COALESCE(SUM(r.refund_amount), 0)::numeric      AS remboursements_ttc,
+      COALESCE(SUM(${REFUND_TAX_EXPR}), 0)::numeric   AS remboursements_tva
     FROM refunds r
     JOIN orders o ON r.wp_order_id = o.wp_order_id
+    ${REFUND_TAX_JOIN}
     WHERE ${refundsConds.join(' AND ')}
     GROUP BY ${countryExpr}
   `, refundsParams);
 
   const refundsByCountry = {};
   for (const row of refundsResult.rows) {
-    refundsByCountry[row.country_code] = parseFloat(row.remboursements_ttc) || 0;
+    refundsByCountry[row.country_code] = {
+      ttc: parseFloat(row.remboursements_ttc) || 0,
+      tva: parseFloat(row.remboursements_tva) || 0,
+    };
   }
 
   const rows = salesResult.rows.map((r) => {
     const ttcBrut  = parseFloat(r.ca_ttc_brut) || 0;
     const tvaBrut  = parseFloat(r.tva_brut) || 0;
     const htBrut   = ttcBrut - tvaBrut;
-    const remb     = refundsByCountry[r.country_code] || 0;
-    const taxRatio = ttcBrut > 0 ? tvaBrut / ttcBrut : 0;
-    const tvaNet   = tvaBrut - remb * taxRatio;
+    const refund   = refundsByCountry[r.country_code] || { ttc: 0, tva: 0 };
+    const remb     = refund.ttc;
+    const rembTVA  = refund.tva;
+    const tvaNet   = tvaBrut - rembTVA;
     const ttcNet   = ttcBrut - remb;
     const htNet    = ttcNet - tvaNet;
     return {
@@ -592,6 +646,8 @@ async function computeComptable({ dateFrom, dateTo } = {}) {
       ca_ht_brut:  round2(htBrut),
       tva_brut:    round2(tvaBrut),
       remboursements_ttc: round2(remb),
+      remboursements_ht:  round2(remb - rembTVA),
+      remboursements_tva: round2(rembTVA),
       ca_ttc_net:  round2(ttcNet),
       ca_ht_net:   round2(htNet),
       tva_net:     round2(tvaNet),
@@ -599,13 +655,17 @@ async function computeComptable({ dateFrom, dateTo } = {}) {
   });
 
   // Remboursements rattachés à un pays sans vente dans la période → lignes purement négatives.
-  for (const [cc, remb] of Object.entries(refundsByCountry)) {
-    if (remb > 0 && !rows.some((r) => r.country_code === cc)) {
+  for (const [cc, refund] of Object.entries(refundsByCountry)) {
+    if (refund.ttc > 0 && !rows.some((r) => r.country_code === cc)) {
       rows.push({
         country_code: cc, orders_count: 0,
         ca_ttc_brut: 0, ca_ht_brut: 0, tva_brut: 0,
-        remboursements_ttc: round2(remb),
-        ca_ttc_net: round2(-remb), ca_ht_net: round2(-remb), tva_net: 0,
+        remboursements_ttc: round2(refund.ttc),
+        remboursements_ht:  round2(refund.ttc - refund.tva),
+        remboursements_tva: round2(refund.tva),
+        ca_ttc_net: round2(-refund.ttc),
+        ca_ht_net:  round2(-(refund.ttc - refund.tva)),
+        tva_net:    round2(-refund.tva),
       });
     }
   }
@@ -618,10 +678,12 @@ async function computeComptable({ dateFrom, dateTo } = {}) {
     ca_ht_brut:         t.ca_ht_brut + r.ca_ht_brut,
     tva_brut:           t.tva_brut + r.tva_brut,
     remboursements_ttc: t.remboursements_ttc + r.remboursements_ttc,
+    remboursements_ht:  t.remboursements_ht + r.remboursements_ht,
+    remboursements_tva: t.remboursements_tva + r.remboursements_tva,
     ca_ttc_net:         t.ca_ttc_net + r.ca_ttc_net,
     ca_ht_net:          t.ca_ht_net + r.ca_ht_net,
     tva_net:            t.tva_net + r.tva_net,
-  }), { orders_count: 0, ca_ttc_brut: 0, ca_ht_brut: 0, tva_brut: 0, remboursements_ttc: 0, ca_ttc_net: 0, ca_ht_net: 0, tva_net: 0 });
+  }), { orders_count: 0, ca_ttc_brut: 0, ca_ht_brut: 0, tva_brut: 0, remboursements_ttc: 0, remboursements_ht: 0, remboursements_tva: 0, ca_ttc_net: 0, ca_ht_net: 0, tva_net: 0 });
 
   for (const k of Object.keys(totals)) totals[k] = round2(totals[k]);
   totals.orders_count = Math.round(totals.orders_count);

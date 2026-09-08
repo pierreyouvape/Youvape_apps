@@ -548,19 +548,29 @@ async function processRefundEvent(action, wp_id, data, results) {
     return;
   }
 
+  // order_total / order_tax : montant et TVA ventilés par WooCommerce sur l'avoir
+  // (négatifs). order_tax est la TVA EXACTE du remboursement, utilisée telle quelle
+  // par la déclaration comptable (/financier). Absents du payload = COALESCE sur
+  // l'existant : on ne veut jamais qu'une mise à jour partielle écrase une valeur
+  // déjà connue par un NULL.
   const query = `
     INSERT INTO refunds (
-      wp_refund_id, wp_order_id, refund_amount, refund_reason, refund_date, refunded_by
-    ) VALUES ($1, $2, $3, $4, $5, $6)
+      wp_refund_id, wp_order_id, refund_amount, refund_reason, refund_date, refunded_by,
+      order_total, order_tax
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
     ON CONFLICT (wp_refund_id)
     DO UPDATE SET
       wp_order_id = EXCLUDED.wp_order_id,
       refund_amount = EXCLUDED.refund_amount,
       refund_reason = EXCLUDED.refund_reason,
       refund_date = EXCLUDED.refund_date,
-      refunded_by = EXCLUDED.refunded_by
+      refunded_by = EXCLUDED.refunded_by,
+      order_total = COALESCE(EXCLUDED.order_total, refunds.order_total),
+      order_tax = COALESCE(EXCLUDED.order_tax, refunds.order_tax)
     RETURNING (xmax = 0) AS inserted
   `;
+
+  const numOrNull = (v) => (v === undefined || v === null || v === '' ? null : parseFloat(v));
 
   const values = [
     wp_id,
@@ -568,7 +578,9 @@ async function processRefundEvent(action, wp_id, data, results) {
     data.refund_amount || data.amount || 0,
     data.refund_reason || data.reason || null,
     data.refund_date || data.date_created || new Date(),
-    data.refunded_by || null
+    data.refunded_by || null,
+    numOrNull(data.order_total),
+    numOrNull(data.order_tax)
   ];
 
   const result = await pool.query(query, values);
