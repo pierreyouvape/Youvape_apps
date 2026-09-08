@@ -75,7 +75,7 @@ CREATE TABLE IF NOT EXISTS carrier_accounts (
 COMMENT ON TABLE carrier_accounts IS
   'Contrats transporteurs : identifiants API et réglages d''expédition. Un transporteur peut en avoir plusieurs (Chronopost).';
 COMMENT ON COLUMN carrier_accounts.credentials IS
-  'Secrets (client_id, client_secret, token_url). Ne jamais exposer côté front.';
+  'Identifiants d''API. Seuls les champs marqués `secret` par l''adaptateur (accountFields) ne descendent jamais vers le navigateur : mot de passe, client_secret. Les identifiants non secrets (client_id, login, URL de jeton) restent lisibles dans les réglages, pour qu''un responsable puisse vérifier la configuration face au portail du transporteur.';
 COMMENT ON COLUMN carrier_accounts.settings IS
   'Réglages non secrets : URL d''API, numéros de contrat, adresse expéditeur, codes offre/produit.';
 
