@@ -15,6 +15,47 @@ const httpsAgent = new https.Agent({ rejectUnauthorized: false });
 let syncInterval = null;
 let isProcessing = false;
 
+/*
+ * Battement de coeur de la synchro.
+ *
+ * Persisté dans app_config, donc SURVIT aux rebuilds Docker — contrairement aux
+ * logs du conteneur, seule trace jusqu'ici, effacés à chaque `docker compose
+ * up --build`. Le 08/09/2026, c'est précisément la fenêtre de logs nécessaire à
+ * une enquête qui avait disparu de cette façon.
+ *
+ * Clés (convention des autres synchros : bms_last_po_sync_at, nextore_last_*) :
+ *   wc_sync_status          running | disabled | unconfigured
+ *   wc_sync_last_poll_ok_at dernier poll ABOUTI, même sans aucun événement
+ *   wc_sync_last_event_at   dernier événement réellement traité
+ *   wc_sync_last_batch_size taille du dernier lot (un lot qui gonfle = file en retard)
+ *   wc_sync_last_error      {message, code, at} du dernier échec, effacé au retour à la normale
+ *
+ * Le poll abouti est enregistré même quand la file est vide : c'est LE signal de
+ * vie. Ne l'écrire qu'en présence d'événements ferait passer une nuit calme pour
+ * une panne.
+ */
+const HEARTBEAT_KEYS = {
+  status: 'wc_sync_status',
+  lastPollOkAt: 'wc_sync_last_poll_ok_at',
+  lastEventAt: 'wc_sync_last_event_at',
+  lastBatchSize: 'wc_sync_last_batch_size',
+  lastError: 'wc_sync_last_error',
+};
+
+/**
+ * Écrit une clé de battement de coeur sans jamais faire échouer l'appelant :
+ * un incident sur la mesure ne doit pas arrêter la synchronisation qu'elle mesure.
+ */
+let errorNeedsClearing = true;
+
+async function heartbeat(key, value) {
+  try {
+    await appConfigModel.upsert(key, String(value));
+  } catch (err) {
+    console.error(`🫀 Battement de coeur non enregistré (${key}):`, err.message);
+  }
+}
+
 // Anti-spam alertes
 let pollFailureAlerted = false;
 const failedEventKeys = new Set(); // "type:wp_id" deja alertes
@@ -32,6 +73,9 @@ const wcSyncService = {
 
     if (intervalSeconds <= 0) {
       console.log('🔄 WC Sync Service: Désactivé (intervalle = 0)');
+      // Consigné en base : sans ça, une synchro coupée par un réglage à 0 est
+      // indiscernable d'une synchro en panne, et rien ne le dit hors des logs.
+      await heartbeat(HEARTBEAT_KEYS.status, 'disabled');
       return;
     }
 
@@ -41,10 +85,13 @@ const wcSyncService = {
 
     if (!wpUrlConfig || !wpTokenConfig) {
       console.log('🔄 WC Sync Service: Non configuré (URL ou token manquant)');
+      await heartbeat(HEARTBEAT_KEYS.status, 'unconfigured');
       return;
     }
 
     console.log(`🔄 WC Sync Service: Démarré (intervalle: ${intervalSeconds}s)`);
+    errorNeedsClearing = true;
+    await heartbeat(HEARTBEAT_KEYS.status, 'running');
 
     // Lancer le polling
     wcSyncService.poll();
@@ -103,6 +150,17 @@ const wcSyncService = {
         httpsAgent
       });
 
+      // Signal de vie, noté AVANT le retour anticipé ci-dessous : un poll abouti
+      // sur une file vide est un poll SAIN. Ne l'enregistrer qu'en présence
+      // d'événements ferait passer une nuit sans commande pour une panne.
+      if (response.data.success) {
+        await heartbeat(HEARTBEAT_KEYS.lastPollOkAt, new Date().toISOString());
+        if (errorNeedsClearing) {
+          await heartbeat(HEARTBEAT_KEYS.lastError, '');
+          errorNeedsClearing = false;
+        }
+      }
+
       if (!response.data.success || !response.data.events || response.data.events.length === 0) {
         return; // Pas d'événements à traiter
       }
@@ -154,6 +212,13 @@ const wcSyncService = {
         });
       }
 
+      // Taille du lot : un lot qui gonfle poll après poll signale une file en
+      // retard, ce qu'aucune autre mesure ne montre.
+      await heartbeat(HEARTBEAT_KEYS.lastBatchSize, events.length);
+      if (processedIds.length > 0) {
+        await heartbeat(HEARTBEAT_KEYS.lastEventAt, new Date().toISOString());
+      }
+
       // Acquitter les événements traités
       if (processedIds.length > 0) {
         try {
@@ -181,6 +246,13 @@ const wcSyncService = {
       if (err.code !== 'ECONNREFUSED' && err.code !== 'ETIMEDOUT') {
         console.error('🔄 WC Sync Poll Error:', err.message);
       }
+      await heartbeat(HEARTBEAT_KEYS.lastError, JSON.stringify({
+        message: err.message,
+        code: err.code || null,
+        at: new Date().toISOString(),
+      }));
+      errorNeedsClearing = true;
+
       if (!pollFailureAlerted) {
         pollFailureAlerted = true;
         sendAlert(
@@ -299,7 +371,10 @@ const wcSyncService = {
         sub_brand = COALESCE(EXCLUDED.sub_brand, products.sub_brand),
         category = COALESCE(EXCLUDED.category, products.category),
         sub_category = COALESCE(EXCLUDED.sub_category, products.sub_category),
-        manage_stock = EXCLUDED.manage_stock
+        manage_stock = EXCLUDED.manage_stock,
+        -- Même oubli que pour la table orders. La mise à jour rapide du stock,
+        -- juste au-dessus, pose bien updated_at = NOW() ; cet upsert complet, non.
+        updated_at = NOW()
     `, [
       data.wp_product_id, data.parent_id || null, data.type, data.name,
       data.sku, data.status, data.stock_status, data.stock_quantity,
@@ -419,7 +494,14 @@ const wcSyncService = {
         mollie_paid_and_processed = COALESCE(EXCLUDED.mollie_paid_and_processed, orders.mollie_paid_and_processed),
         -- COALESCE : une commande resynchronisée après expédition ne doit pas
         -- perdre son point relais si le plugin a entre-temps purgé la méta.
-        relay_point = COALESCE(EXCLUDED.relay_point, orders.relay_point)
+        relay_point = COALESCE(EXCLUDED.relay_point, orders.relay_point),
+        -- Sans cette ligne, updated_at restait figé à la date de création alors que
+        -- le statut, lui, changeait : impossible de savoir quand une commande avait
+        -- bougé, ni si la synchro était fraîche. C'est ce qui a rendu muette
+        -- l'enquête du 08/09/2026 sur un comptage journalier qui avait varié.
+        -- Les autres écrivains de la table (ordersController, orderModel) la posent
+        -- déjà ; seul cet upsert-ci, de loin le plus gros volume, l'oubliait.
+        updated_at = NOW()
     `, [
       data.wp_order_id, data.customer_id, 'wc-' + data.status, data.total,
       data.total_tax, data.shipping_total, data.discount_total, data.payment_method_title,

@@ -33,6 +33,7 @@ const APP_KEYS = [
   'boutique-mtp',
   'boutique-cast',
   'process',
+  'atb',
 ];
 
 /** Permissions complètes (lecture + écriture) sur toutes les apps. */

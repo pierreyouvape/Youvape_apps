@@ -138,6 +138,108 @@ Base URL: `http://54.37.156.233:3000/api`
 - `PUT /products/:id/cost` - Modifier le prix de revient
   - Body: `{ costPrice }`
 
+## 🧰 ATB Routes (`/atb`) — Anthony Tool Box
+
+JWT au montage (`server.js`) + droit applicatif `atb` en lecture (vérifié dans le routeur).
+
+- `GET /atb/orders/daily` - Commandes payées par jour, avec contreparties M-1 et N-1
+  - Query params (obligatoires) : `dateFrom`, `dateTo` au format `YYYY-MM-DD`, bornes incluses, 366 jours maximum
+  - Statuts : liste blanche des 6 statuts payés. Jour de rattachement : `COALESCE(paid_date, post_date)`
+  - Comparaison **calendaire** (même quantième), pas par jour de semaine. Un quantième
+    inexistant dans le mois/l'année cible (31 février, 29 février non bissextile) renvoie
+    `m1Date`/`n1Date` à `null` : pas de barre fantôme plutôt qu'une valeur rabattue.
+  - Réponse : `{ range, compare, statuses, series[{date, orders, m1Date, m1Orders, n1Date, n1Orders}], totals }`
+  - `totals.currentForM1` / `currentForN1` = total courant restreint aux jours ayant une
+    contrepartie — c'est cette base qu'il faut utiliser pour l'écart %, pas `totals.current`.
+  - `countries` (optionnel) : codes ISO 2 lettres séparés par des virgules (`FR,BE`).
+    Absent ou vide = tous les pays. Le pays est `orders.shipping_country`, comme
+    `statsService` et `analysisController`. Le filtre s'applique aux **trois** fenêtres,
+    sinon on comparerait la France de cette année à l'Europe entière de l'an dernier.
+    Un code mal formé renvoie 400 plutôt que d'être ignoré en silence.
+
+- `GET /atb/orders/countries` - Pays servis sur les 24 derniers mois, du plus gros volume au plus petit
+  - Fenêtre glissante et non « toute la période affichée » : la liste doit rester stable
+    quand on change les dates, sinon un pays déjà coché disparaîtrait de la liste.
+  - Renvoie `{ code, orders }` seulement. Libellés et drapeaux viennent du front
+    (`utils/countries.js`), qui les tient déjà pour les autres écrans.
+
+- `GET /atb/preferences` - Période, pays et séries affichées de l'utilisateur connecté
+- `PUT /atb/preferences` - Enregistre ces choix
+  - Stocké dans `user_column_preferences` (page `atb-commandes`), dépôt JSON générique
+    déjà utilisé pour la page « home ». **Aucune migration.**
+  - Ce qui est enregistré est le CHOIX, pas son résultat : pour un préréglage on garde
+    sa clé (`30j`), pas les dates produites — sinon « 30 derniers jours » se figerait au
+    jour où il a été coché. Seule la période `perso` garde des dates en dur.
+  - La liste des préréglages vit côté front. Le backend ne valide que la forme de la clé ;
+    une clé inconnue est ignorée au chargement et le front retombe sur son défaut.
+  - Corps : `{ preset, dateFrom, dateTo, countries[], showM1, showN1 }`. Les clés inconnues
+    sont écartées, les dates mal formées ou inversées ignorées.
+
+### Module « Recherche de commandes » (critères croisés)
+
+- `POST /atb/orders/search` - Recherche par règles croisées
+  - Corps : `{ rules: [...], limit, offset }`. **POST et non GET** : l'arbre de règles est
+    structuré, une query string buterait sur la longueur d'URL dès quelques produits.
+  - Une règle porte le connecteur qui la relie à la **précédente** (`join: 'AND' | 'OR'`).
+    **Le ET lie plus fort que le OU** : « A ET B OU C » vaut « (A ET B) OU C ». Cette
+    priorité est rendue visible dans l'écran (les règles ET sont encadrées ensemble) et
+    dans la phrase récapitulative — sans ça, on croit avoir demandé autre chose.
+  - Critères : `status`, `city`, `postcode`, `country`, `carrier`, `date`, `amount`, `content`.
+  - `content` : `op: 'includes' | 'excludes'`, `target: 'product' | 'category' | 'brand'`.
+
+- `POST /atb/orders/search/export` - Mêmes règles, toutes les lignes (plafond 5 000) pour le CSV
+  - Renvoie `truncated: true` au-delà. Exporter la seule page affichée serait un piège.
+
+- `GET /atb/search/cities?q=` - Villes suggérées, **regroupées sur leur forme normalisée**
+- `GET /atb/search/products?q=` - Produits, parents avant déclinaisons
+- `GET /atb/search/facets` - Catégories, marques et **modes de livraison**
+- `GET|PUT /atb/search/saved` - Recherches enregistrées (page `atb-recherche`)
+
+**Quatre pièges de données, tous traités — ne pas les défaire :**
+
+1. **Ville** : texte libre saisi par le client. 32 127 valeurs distinctes, « Montpellier »
+   en 3 casses sur 4 codes postaux. Le filtre normalise des DEUX côtés
+   (`UPPER(unaccent(TRIM(...)))`). En égalité exacte, la recherche « Montpellier » renvoie
+   3 238 commandes au lieu de **4 213** : 975 perdues en silence.
+2. **Marque** : portée par le produit PARENT, pas par la déclinaison. Sans le repli
+   `COALESCE(variation, parent)`, la couverture tombe de **99,9 % à 30 %**.
+3. **« Ne comprend pas »** : `NOT EXISTS`, jamais une jointure niée — celle-ci renverrait
+   toute commande ayant au moins un AUTRE article, donc presque toutes. Contrôle : contient
+   (97 414) + ne contient pas (91 015) = 188 429 = total exact.
+4. **Transporteur** : la règle filtre `shipping_method` (mode choisi, complet), et la liste
+   du menu vient de `/atb/search/facets`. Ne PAS servir `/api/orders/carriers/list`, qui
+   porte `shipping_carrier` (vide sur 3 447 commandes en 3 mois) — le menu ne
+   correspondrait à rien.
+
+À savoir : un produit vendu dans un pack `woosb` apparaît en ligne séparée à 0 €, donc
+« comprend ce produit » le trouve aussi quand il a été vendu en pack.
+
+## 🫀 Santé de la synchronisation WooCommerce
+
+- `GET /api/settings/sync-health` - Fraîcheur de la synchro YouSync (JWT)
+  - ⚠️ Déclarée **avant** `GET /api/settings/:key` dans `settingsRoutes.js`, qui
+    capturerait sinon `sync-health` comme une clé de configuration.
+  - Réponse : `{ status, healthy, stale, staleAfterSeconds, intervalSeconds,
+    lastPollOkAt, secondsSinceLastPoll, lastEventAt, lastBatchSize, lastError }`
+  - `stale` au-delà de 5 intervalles, avec un plancher de 5 min (un poll un peu long
+    ne doit pas crier au loup).
+
+Le battement de coeur est écrit par `wcSyncService` dans `app_config` — donc il
+**survit aux rebuilds Docker**, contrairement aux logs du conteneur qui étaient
+jusqu'ici la seule trace (et qui ont fait échouer une enquête le 08/09/2026).
+
+| Clé | Sens |
+|---|---|
+| `wc_sync_status` | `running` \| `disabled` \| `unconfigured` — écrit au démarrage |
+| `wc_sync_last_poll_ok_at` | dernier poll **abouti**, même sans aucun événement |
+| `wc_sync_last_event_at` | dernier événement réellement traité |
+| `wc_sync_last_batch_size` | taille du dernier lot (un lot qui gonfle = file en retard) |
+| `wc_sync_last_error` | `{message, code, at}` du dernier échec, vidé au retour à la normale |
+
+Le poll abouti est enregistré **même quand la file est vide** : c'est le signal de vie.
+Ne l'écrire qu'en présence d'événements ferait passer une nuit calme pour une panne.
+L'écriture ne peut jamais faire échouer la synchro (erreur avalée et journalisée).
+
 ## 🔄 Sync Routes (`/sync`)
 
 ### Connexion et santé

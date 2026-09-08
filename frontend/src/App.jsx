@@ -45,6 +45,7 @@ import BoutiqueApp from './pages/BoutiqueApp';
 import PromoDetail from './pages/PromoDetail';
 import ProcessApp from './pages/ProcessApp';
 import ProcessDetail from './pages/ProcessDetail';
+import ATBApp from './pages/ATBApp';
 import PrivateRoute from './components/PrivateRoute';
 
 const PAGE_TITLES = {
@@ -75,6 +76,7 @@ const PAGE_TITLES = {
   '/promos': 'Actions Promos',
   '/process': 'Process',
   '/boutique': 'Boutique',
+  '/atb': 'ATB',
   '/brands': 'Marque',
   '/sub-brands': 'Sous-marque',
   '/categories': 'Categorie',
@@ -435,6 +437,22 @@ function App() {
             element={
               <PrivateRoute>
                 <BoutiqueApp />
+              </PrivateRoute>
+            }
+          />
+          <Route
+            path="/atb"
+            element={
+              <PrivateRoute>
+                <ATBApp />
+              </PrivateRoute>
+            }
+          />
+          <Route
+            path="/atb/:section"
+            element={
+              <PrivateRoute>
+                <ATBApp />
               </PrivateRoute>
             }
           />
