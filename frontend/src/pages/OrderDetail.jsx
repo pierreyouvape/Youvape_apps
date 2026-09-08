@@ -8,6 +8,7 @@ import { formatDate, formatDateUTC } from '../utils/dateUtils';
 import { AuthContext } from '../context/AuthContext';
 import { LinkBox } from '../utils/navHelpers';
 import { getTrackingUrl } from '../utils/trackingUtils';
+import { visuelTransporteur } from '../utils/carrierVisuals';
 import { SavTicketChips, SavConcernedTag, TICKETS_COLOR } from '../components/SavBadge';
 
 const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:3000/api/auth').replace('/auth', '');
@@ -290,12 +291,23 @@ const OrderDetail = () => {
   const subtotal      = orderTotal - orderTax + cartDiscount; // articles + livraison, avant remise
   const subtotalItems = subtotal - orderShipping;             // articles HT seuls
 
-  const trackingUrl = getTrackingUrl(order.shipping_carrier, order.tracking_number, order.shipping_country);
-
   // Étiquettes émises par le packing, la plus pertinente d'abord (le backend
-  // remonte en tête celle qui porte le numéro de suivi affiché).
+  // remonte en tête celle qui porte le numéro de suivi de la commande).
   const etiquette = (order.shipment_labels || [])[0] || null;
   const autresEtiquettes = Math.max(0, (order.shipment_labels || []).length - 1);
+
+  // Le suivi de la commande vient de WooCommerce, après un aller-retour : on
+  // confirme l'expédition à BMS, BMS l'écrit dans WooCommerce, yousync nous le
+  // ramène. Ça marche (1 130 commandes La Poste sur 1 146 l'ont), mais ça prend
+  // du temps — et juste après le packing, la commande n'a encore rien. On
+  // affiche alors le numéro de NOTRE étiquette : c'est le même, et nous le
+  // connaissons déjà. Celui de la commande reste prioritaire quand il existe,
+  // c'est lui qui fait foi côté transporteur.
+  const suiviNumero = order.tracking_number || etiquette?.tracking_number || null;
+  const suiviTransporteur = order.shipping_carrier
+    || (etiquette ? visuelTransporteur(etiquette.carrier_code).label : null)
+    || order.shipping_method;
+  const trackingUrl = getTrackingUrl(suiviTransporteur, suiviNumero, order.shipping_country);
 
   const shippingCostCalculated = order.shipping_cost_calculated != null ? parseFloat(order.shipping_cost_calculated) : null;
   const paymentCostCalculated  = order.payment_cost_calculated  != null ? parseFloat(order.payment_cost_calculated)  : null;
@@ -505,7 +517,7 @@ const OrderDetail = () => {
                   {order.shipping_carrier || order.shipping_method || shippingItem?.order_item_name}
                 </MetaItem>
               )}
-              {order.tracking_number && (
+              {suiviNumero && (
                 <div>
                   <div style={{ fontSize: 11, fontWeight: 700, color: C.grisM, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>
                     Suivi
@@ -518,14 +530,14 @@ const OrderDetail = () => {
                         rel="noopener noreferrer"
                         style={{ fontSize: 14, fontWeight: 700, color: C.bleu, fontVariantNumeric: 'tabular-nums', textDecoration: 'underline' }}
                       >
-                        {order.tracking_number}
+                        {suiviNumero}
                       </a>
                     ) : (
                       <span style={{ fontSize: 14, fontWeight: 700, color: C.bleu, fontVariantNumeric: 'tabular-nums' }}>
-                        {order.tracking_number}
+                        {suiviNumero}
                       </span>
                     )}
-                    <CopyButton text={order.tracking_number} size={14} />
+                    <CopyButton text={suiviNumero} size={14} />
                   </div>
                 </div>
               )}
