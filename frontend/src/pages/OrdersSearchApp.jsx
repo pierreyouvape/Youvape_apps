@@ -472,9 +472,11 @@ const OrdersSearchApp = () => {
                               </span>
                             </td>
 
-                            {/* Transporteur */}
+                            {/* Transporteur — shipping_method d'abord : c'est la
+                                colonne que filtre le menu (shipping_carrier est la
+                                case grossière du WMS, souvent vide) */}
                             <td style={{ padding: '11px 12px', fontSize: 12, color: C.grisF }}>
-                              {order.shipping_carrier || order.shipping_method || '-'}
+                              {order.shipping_method || order.shipping_carrier || '-'}
                             </td>
 
                             {/* Articles */}
@@ -529,7 +531,7 @@ const OrdersSearchApp = () => {
                                     <InfoCard title="Détails commande">
                                       <div>Paiement : {order.payment_method_title || '-'}</div>
                                       <div>Frais de port : {formatPriceEur(order.order_shipping)}</div>
-                                      <div>Transporteur : {details?.shipping_carrier || order.shipping_carrier || order.shipping_method || '-'}</div>
+                                      <div>Transporteur : {order.shipping_method || details?.shipping_carrier || order.shipping_carrier || '-'}</div>
                                       {(details?.tracking_number || order.tracking_number) && (
                                         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                                           <span>Suivi :</span>

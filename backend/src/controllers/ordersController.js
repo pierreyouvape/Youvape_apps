@@ -216,17 +216,28 @@ exports.getShippingMethods = async (req, res) => {
 };
 
 /**
- * Récupère tous les transporteurs (shipping_carrier) distincts
+ * Récupère les transporteurs proposés au filtre de /commandes
  * GET /api/orders/carriers/list
+ *
+ * ⚠️ C'est `shipping_method` — le mode CHOISI par le client — et non
+ * `shipping_carrier`, le transporteur assigné ensuite par le WMS. Ce dernier est
+ * une case grossière et souvent vide : « Mondial Relay - Lockers » y arrive sous
+ * « Mondial Relay - Point Relais » (ou vide), donc un nouveau mode de livraison
+ * n'apparaissait JAMAIS dans le menu. Même colonne et même convention que le
+ * module Recherche de commandes de l'ATB (cf. atbRoutes.js).
+ *
+ * Fenêtre de 12 mois : la colonne porte 124 libellés depuis 2015 (« Shipping »,
+ * « Colissimo Access »…, morts depuis des années) pour 31 réellement utilisés.
  */
 exports.getCarriers = async (req, res) => {
   try {
     const pool = require('../config/database');
     const result = await pool.query(`
-      SELECT DISTINCT shipping_carrier as carrier, COUNT(*) as count
-      FROM orders
-      WHERE shipping_carrier IS NOT NULL AND shipping_carrier != ''
-      GROUP BY shipping_carrier
+      SELECT o.shipping_method AS carrier, COUNT(*)::int AS count
+      FROM orders o
+      WHERE COALESCE(o.shipping_method, '') <> ''
+        AND COALESCE(o.paid_date, o.post_date) >= (CURRENT_DATE - INTERVAL '12 months')
+      GROUP BY o.shipping_method
       ORDER BY count DESC
     `);
     res.json({ success: true, data: result.rows });
@@ -371,9 +382,10 @@ exports.filterOrders = async (req, res) => {
       paramIndex++;
     }
 
-    // Filtre par transporteur (shipping_carrier)
+    // Filtre par transporteur — même colonne que /carriers/list et que la
+    // colonne « Transporteur » du tableau, sinon le menu ne rend rien.
     if (req.query.carrier) {
-      conditions.push(`o.shipping_carrier = $${paramIndex}`);
+      conditions.push(`o.shipping_method = $${paramIndex}`);
       params.push(req.query.carrier);
       paramIndex++;
     }
