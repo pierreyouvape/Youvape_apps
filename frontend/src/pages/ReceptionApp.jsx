@@ -17,6 +17,23 @@ const C = {
 };                  // sur toute sa largeur, assez discret pour ne pas concurrencer
                     // les fonds de statut du comptage.
 
+// Fonds de ligne du comptage, VOLONTAIREMENT plus saturés que les teintes pâles
+// de la palette ci-dessus : l'opérateur lit l'état d'une ligne d'un coup d'œil,
+// à un mètre, parfois debout. Les teintes pâles ne se distinguaient pas assez
+// les unes des autres. Le badge « Partielle » garde la sienne (`orangeL`) : il
+// est petit et lu de près.
+//
+// Ce sont les couleurs demandées (#1DDB55, #DBB01D, #DB311D) ramenées à 55 % sur
+// fond blanc. Le rouge PLEIN tombe à 3,8 de contraste avec le texte, sous le
+// seuil de lisibilité de 4,5 ; à 55 % il remonte à 8,0 tout en restant franc.
+// Les badges de statut, eux, gardent leurs teintes pâles : ils sont petits et
+// lus de près.
+const COMPTAGE = {
+  juste:   '#83EBA2',  // compte exact
+  partiel: '#EBD483',  // il en manque
+  surplus: '#EB8E83',  // compté plus que prévu
+};
+
 const authHeaders = (token) => ({ headers: { Authorization: `Bearer ${token}` } });
 
 const fmtDate = (s) => {
@@ -398,9 +415,9 @@ function CountingScreen({ token, order, items, onBack, onReload }) {
     const counted = counts[it.id] || 0;
     const target = targetOf(it);
     if (counted === 0) return { background: idx % 2 === 1 ? C.zebra : C.white };
-    if (counted > target) return { background: C.redL };
-    if (counted === target) return { background: C.greenL };
-    return { background: C.orangeL };
+    if (counted > target) return { background: COMPTAGE.surplus };
+    if (counted === target) return { background: COMPTAGE.juste };
+    return { background: COMPTAGE.partiel };
   };
 
   const missing = items.filter(i => (counts[i.id] || 0) < targetOf(i));

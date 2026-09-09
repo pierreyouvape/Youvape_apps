@@ -656,11 +656,17 @@ const PackingApp = () => {
   // l'autre et faire sauter la ligne sous le doigt du préparateur.
   const itemsAffiches = trierParAvancement(items, item => (item.scanned >= item.qty ? 1 : 0));
 
-  // Couleur de ligne
+  // Couleur de ligne — mêmes teintes qu'à la réception, pour que les deux écrans
+  // se lisent pareil. Volontairement saturées : le préparateur lit l'état d'une
+  // ligne d'un coup d'œil, à un mètre, souvent debout.
+  //
+  // Ce sont les couleurs demandées (#1DDB55, #DBB01D, #DB311D) ramenées à 55 %
+  // sur fond blanc. Le rouge PLEIN tombe à 3,8 de contraste avec le texte, sous
+  // le seuil de lisibilité de 4,5 ; à 55 % il remonte à 8,0 en restant franc.
   const getRowColor = (item) => {
-    if (item.scanned >= item.qty) return '#d4edda';
-    if (item.scanned > 0) return '#fff3cd';
-    return '#f8d7da';
+    if (item.scanned >= item.qty) return '#83EBA2';  // complet
+    if (item.scanned > 0) return '#EBD483';          // partiel
+    return '#EB8E83';                                // rien scanné
   };
 
   return (
