@@ -87,6 +87,8 @@ const PackingApp = () => {
   const [addressSaving, setAddressSaving] = useState(false);
   const [addressError, setAddressError] = useState(null);
   const [showManual, setShowManual] = useState(false); // pop-up expédition manuelle
+  // Carton scanné dont on ignore encore la contenance (code GTIN-14 venu de BMS)
+  const [packQtyPrompt, setPackQtyPrompt] = useState(null);
   const [manualForm, setManualForm] = useState(null); // champs destinataire saisis à la main
   const [manualLookupLoading, setManualLookupLoading] = useState(false);
   const [manualSaving, setManualSaving] = useState(false);
@@ -102,6 +104,7 @@ const PackingApp = () => {
   const isCompleteRef = useRef(false);
   const labelLoadingRef = useRef(false);
   const showManualRef = useRef(false);
+  const packQtyPromptRef = useRef(null);
 
   useEffect(() => { orderRef.current = order; }, [order]);
   useEffect(() => { itemsRef.current = items; }, [items]);
@@ -110,6 +113,7 @@ const PackingApp = () => {
   useEffect(() => { isCompleteRef.current = isComplete; }, [isComplete]);
   useEffect(() => { labelLoadingRef.current = labelLoading; }, [labelLoading]);
   useEffect(() => { showManualRef.current = showManual; }, [showManual]);
+  useEffect(() => { packQtyPromptRef.current = packQtyPrompt; }, [packQtyPrompt]);
 
   // Télécharger le PDF depuis base64
   /**
@@ -311,6 +315,18 @@ const PackingApp = () => {
       });
 
       const barcodeData = res.data;
+
+      // Code de carton ingéré depuis BMS : le GTIN-14 n'encode pas le nombre
+      // d'unités. Sans la question, le `|| 1` du backend ferait compter UNE unité
+      // pour un carton entier — une erreur silencieuse. On demande une fois, on
+      // enregistre, et le scan est rejoué avec la bonne quantité.
+      if (barcodeData.type === 'pack' && !barcodeData.quantity_known) {
+        setPackQtyPrompt({
+          barcode, name: barcodeData.name, wp_product_id: barcodeData.wp_product_id,
+        });
+        return;
+      }
+
       const incrementQty = barcodeData.type === 'pack' ? barcodeData.quantity : 1;
       const currentItems = itemsRef.current;
 
@@ -534,6 +550,8 @@ const PackingApp = () => {
       if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
       // Pop-up expédition manuelle ouverte : ne pas charger de commande en arrière-plan
       if (showManualRef.current) return;
+      // Question de contenance ouverte : le scan attend la réponse
+      if (packQtyPromptRef.current) return;
 
       if (e.key === 'Enter') {
         e.preventDefault();
@@ -1487,6 +1505,54 @@ const PackingApp = () => {
       </div>
 
       {/* Pop-up expédition manuelle */}
+      {packQtyPrompt && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(17,24,39,0.5)', display: 'flex',
+          alignItems: 'center', justifyContent: 'center', zIndex: 2000, padding: 20 }}>
+          <div style={{ background: '#fff', borderRadius: 12, padding: 24, maxWidth: 460, width: '100%',
+            boxShadow: '0 20px 50px rgba(0,0,0,0.25)' }}>
+            <h3 style={{ margin: '0 0 6px', fontSize: 17, fontWeight: 800, color: '#135E84' }}>
+              Vous scannez un carton — quelle quantité contient-il ?
+            </h3>
+            <p style={{ fontSize: 14, color: '#111827', margin: '0 0 4px' }}>{packQtyPrompt.name}</p>
+            <p style={{ fontSize: 12.5, color: '#6B7280', margin: '0 0 18px' }}>
+              Code <strong>{packQtyPrompt.barcode}</strong> — la contenance est enregistrée
+              définitivement, la question ne sera plus posée.
+            </p>
+            <form onSubmit={async (e) => {
+              e.preventDefault();
+              const qty = parseInt(new FormData(e.target).get('qty'));
+              if (!(qty > 0)) return;
+              const { barcode: code, wp_product_id } = packQtyPrompt;
+              try {
+                await axios.post(`${API_URL}/products/${wp_product_id}/barcodes`,
+                  { barcode: code, type: 'pack', quantity: qty },
+                  { headers: { Authorization: `Bearer ${token}` } });
+                setPackQtyPrompt(null);
+                handleScan(code);   // rejoue le scan, la quantité est maintenant connue
+              } catch {
+                setError("La contenance n'a pas pu être enregistrée");
+                setPackQtyPrompt(null);
+              }
+            }}>
+              <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                <input name="qty" type="number" min="1" autoFocus placeholder="ex. 10"
+                  style={{ width: 110, padding: '9px 11px', textAlign: 'center', fontSize: 15,
+                    fontWeight: 700, borderRadius: 8, border: '1px solid #E5E7EB' }} />
+                <span style={{ fontSize: 13.5, color: '#6B7280' }}>unités par carton</span>
+                <button type="submit" style={{ marginLeft: 'auto', background: '#E28F00', color: '#fff',
+                  border: 'none', padding: '9px 17px', borderRadius: 8, fontWeight: 600, cursor: 'pointer' }}>
+                  Enregistrer
+                </button>
+              </div>
+            </form>
+            <button onClick={() => setPackQtyPrompt(null)} style={{ marginTop: 14, background: 'none',
+              border: 'none', color: '#6B7280', fontSize: 13, cursor: 'pointer', padding: 0 }}>
+              Annuler ce scan
+            </button>
+          </div>
+        </div>
+      )}
+
       {showManual && manualForm && (
         <div style={{
           position: 'fixed',

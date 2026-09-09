@@ -301,6 +301,7 @@ function CountingScreen({ token, order, items, onBack, onReload }) {
   const [message, setMessage] = useState(null);
   const [error, setError] = useState(null);
   const [typeModal, setTypeModal] = useState(null);    // { item, barcode, packQty }
+  const [packQtyModal, setPackQtyModal] = useState(null); // { item, barcode, suggestion }
   const [unknownModal, setUnknownModal] = useState(null); // { barcode }
   const [diffModal, setDiffModal] = useState(false);
   const [motifs, setMotifs] = useState({});            // { [itemId]: 'reliquat'|'solde'|'manquant' }
@@ -348,6 +349,14 @@ function CountingScreen({ token, order, items, onBack, onReload }) {
       return;
     }
 
+    // Code de carton dont la quantité n'est pas encore connue : les codes GTIN-14
+    // ingérés depuis BMS n'encodent pas le nombre d'unités. On la demande UNE fois,
+    // elle est enregistrée, la question ne revient plus.
+    if (matched.type === 'pack' && !matched.quantity && askType) {
+      setPackQtyModal({ item: found, barcode: value, suggestion: found.pack_qty > 1 ? found.pack_qty : '' });
+      return;
+    }
+
     // Un bip = une boîte sur une ligne conditionnée, quel que soit le code scanné :
     // le carton porte souvent le code du flacon qu'il contient.
     if (found.pack_size > 1) {
@@ -376,7 +385,7 @@ function CountingScreen({ token, order, items, onBack, onReload }) {
   // Capture clavier globale (douchette) — ignorée quand on saisit dans un champ
   // ou qu'une pop-up est ouverte.
   useEffect(() => {
-    const blocked = () => typeModal || unknownModal || diffModal;
+    const blocked = () => typeModal || packQtyModal || unknownModal || diffModal;
     const onKey = (e) => {
       const tag = (e.target?.tagName || '').toLowerCase();
       if (tag === 'input' || tag === 'select' || tag === 'textarea' || blocked()) return;
@@ -389,7 +398,7 @@ function CountingScreen({ token, order, items, onBack, onReload }) {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [handleScan, typeModal, unknownModal, diffModal]);
+  }, [handleScan, typeModal, packQtyModal, unknownModal, diffModal]);
 
   // Enregistre durablement le type d'un code-barre (requalification unité <-> pack)
   const persistBarcode = async (wpProductId, barcode, type, quantity) => {
@@ -557,6 +566,21 @@ function CountingScreen({ token, order, items, onBack, onReload }) {
         />
       )}
 
+      {/* Pop-up : quantité d'un carton encore inconnue */}
+      {packQtyModal && (
+        <PackQtyModal
+          data={packQtyModal}
+          onClose={() => setPackQtyModal(null)}
+          onConfirm={async (qty) => {
+            // Sur une ligne conditionnée on compte en boîtes : le bip vaut 1 boîte.
+            addCount(packQtyModal.item.id, packQtyModal.item.pack_size > 1 ? 1 : qty);
+            await persistBarcode(packQtyModal.item.wp_product_id, packQtyModal.barcode, 'pack', qty);
+            flash(`${packQtyModal.item.name} — carton de ${qty} enregistré`);
+            setPackQtyModal(null);
+          }}
+        />
+      )}
+
       {/* Pop-up : code-barre inconnu → choix de la ligne */}
       {unknownModal && (
         <UnknownModal
@@ -682,6 +706,32 @@ function TypeModal({ data, onClose, onChoose }) {
             style={{ width: 82, padding: '8px 10px', textAlign: 'center', fontSize: 14, fontWeight: 700,
               borderRadius: 7, border: `1px solid ${C.greyB}` }} />
         </div>
+      </div>
+    </Modal>
+  );
+}
+
+/* ─── POP-UP : quantité d'un carton ─────────────────────── */
+function PackQtyModal({ data, onClose, onConfirm }) {
+  const [qty, setQty] = useState(data.suggestion || '');
+  const valide = parseInt(qty) > 0;
+  return (
+    <Modal title="Vous scannez un carton — quelle quantité contient-il ?" onClose={onClose}>
+      <p style={{ fontSize: 14, color: C.dark, margin: '0 0 6px' }}>{data.item.name}</p>
+      <p style={{ fontSize: 12.5, color: C.greyT, margin: '0 0 18px' }}>
+        Code <strong>{data.barcode}</strong> — reconnu comme un code de carton, mais sa
+        contenance n'est pas encore connue. Elle est enregistrée définitivement :
+        la question ne sera plus posée pour ce code.
+      </p>
+      <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+        <input type="number" min="1" autoFocus value={qty} onChange={e => setQty(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter' && valide) onConfirm(parseInt(qty)); }}
+          placeholder="ex. 10"
+          style={{ width: 110, padding: '9px 11px', textAlign: 'center', fontSize: 15, fontWeight: 700,
+            borderRadius: 8, border: `1px solid ${C.greyB}` }} />
+        <span style={{ fontSize: 13.5, color: C.greyT }}>unités par carton</span>
+        <Btn variant="accent" disabled={!valide} onClick={() => onConfirm(parseInt(qty))}
+          style={{ marginLeft: 'auto' }}>Enregistrer</Btn>
       </div>
     </Modal>
   );

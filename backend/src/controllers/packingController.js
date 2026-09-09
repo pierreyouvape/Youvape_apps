@@ -153,6 +153,10 @@ const lookupBarcode = async (req, res) => {
       barcode: row.barcode,
       type: row.type,
       quantity: row.quantity || 1,
+      // Un code de carton ingéré depuis BMS arrive SANS quantité : le GTIN-14 ne
+      // l'encode pas. Le front doit pouvoir la demander une fois plutôt que de
+      // compter 1 en silence (ce que ferait le `|| 1` ci-dessus).
+      quantity_known: row.quantity != null,
       wp_product_id: row.wp_product_id,
       wp_parent_id: row.wp_parent_id,
       sku: row.sku,

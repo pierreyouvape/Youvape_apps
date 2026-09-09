@@ -259,17 +259,22 @@ const bmsApiModel = {
    * Récupérer tous les produits du catalogue BMS (toutes les pages)
    * Retourne les infos produit dont le champ barcode
    */
+  // v2 et non v1 : le payload v1 (/catalog-product/products) s'arrête à `barcode`,
+  // alors que la v2 expose aussi `additionnal_barcodes` — les codes de carton, que
+  // nous ignorions donc complètement. Même enveloppe { data, meta.total }, mêmes
+  // champs utiles ; seul `price_incl_tax` disparaît, il n'est lu nulle part.
+  // (Le champ v2 porte bien deux « n » : c'est l'orthographe de BMS.)
   getCatalogProducts: async () => {
-    const limit = 100;
+    const limit = 200;
     let offset = 0;
     let allProducts = [];
 
-    const firstPage = await bmsApiModel.apiCall(`/catalog-product/products?offset=0&limit=${limit}`);
+    const firstPage = await bmsApiModel.apiCall(`/v2/products?offset=0&limit=${limit}`);
     const total = firstPage.meta?.total || 0;
     allProducts = firstPage.data || [];
 
     for (offset = limit; offset < total; offset += limit) {
-      const data = await bmsApiModel.apiCall(`/catalog-product/products?offset=${offset}&limit=${limit}`);
+      const data = await bmsApiModel.apiCall(`/v2/products?offset=${offset}&limit=${limit}`);
       allProducts = allProducts.concat(data.data || []);
     }
 

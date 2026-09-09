@@ -899,51 +899,100 @@ exports.fetchBmsBarcode = async (req, res) => {
  * Sync tous les codes-barres depuis BMS pour les produits qui n'en ont pas
  * Appelé par le cron
  */
+/**
+ * Un code-barre de carton est un GTIN-14 : chiffre indicateur de conditionnement
+ * (1 à 8) + les 12 premiers chiffres du GTIN-13 de l'unité + nouvelle clé de
+ * contrôle. On peut donc reconnaître mécaniquement qu'un code supplémentaire
+ * désigne le CARTON du même produit — vérifié sur les données BMS :
+ *   unité 3662572948479 -> carton 1(366257294847)6
+ * Les codes supplémentaires qui ne suivent pas cette règle (anciens codes
+ * recyclés, références alternatives) restent typés « unité ».
+ *
+ * Le GTIN-14 n'encode PAS la quantité par carton : elle reste à renseigner, une
+ * seule fois, par l'opérateur au premier scan.
+ */
+const isCartonBarcode = (principal, candidate) => {
+  const p = String(principal || '').trim();
+  const c = String(candidate || '').trim();
+  if (p.length !== 13 || c.length !== 14) return false;
+  if (!/^[1-8]$/.test(c[0])) return false;        // 0 = même niveau, 9 = quantité variable
+  return c.slice(1, 13) === p.slice(0, 12);
+};
+exports.isCartonBarcode = isCartonBarcode;
+
+/**
+ * Synchronise les codes-barres depuis BMS (cron horaire).
+ *
+ * Ingère le code principal ET les `additionnal_barcodes` — ces derniers portent
+ * les codes de carton, invisibles tant que la synchro lisait la v1.
+ *
+ * N'ÉCRASE JAMAIS une ligne existante (`ON CONFLICT DO NOTHING`) : un code
+ * requalifié à la main par un opérateur, ou une quantité par carton saisie au
+ * scan, doit survivre à tous les passages suivants.
+ */
 exports.syncBarcodesFromBMS = async () => {
   console.log('[BMS Barcode Sync] Debut...');
   try {
-    // Produits sans code-barre unite
-    const productsWithout = await pool.query(`
-      SELECT p.id, p.sku
-      FROM products p
-      WHERE p.sku IS NOT NULL AND p.sku != ''
-        AND NOT EXISTS (
-          SELECT 1 FROM product_barcodes pb WHERE pb.product_id = p.id AND pb.type = 'unit'
-        )
+    // Tous les produits ayant un SKU : on ne se limite plus à ceux dépourvus de
+    // code, puisqu'il s'agit désormais aussi d'ajouter les codes de carton aux
+    // produits qui ont déjà leur code unité.
+    const localProducts = await pool.query(`
+      SELECT id, sku FROM products WHERE sku IS NOT NULL AND sku != ''
     `);
+    if (localProducts.rows.length === 0) return { synced: 0, units: 0, cartons: 0, total: 0 };
 
-    if (productsWithout.rows.length === 0) {
-      console.log('[BMS Barcode Sync] Tous les produits ont deja un code-barre');
-      return { synced: 0, total: 0 };
-    }
-
-    console.log(`[BMS Barcode Sync] ${productsWithout.rows.length} produits sans code-barre`);
-
-    // Fetch tous les produits BMS
     const bmsProducts = await bmsApiModel.getCatalogProducts();
-    const bmsMap = new Map();
+    const bmsBySku = new Map();
     for (const bp of bmsProducts) {
-      if (bp.sku && bp.barcode) {
-        bmsMap.set(bp.sku, bp.barcode);
-      }
+      if (bp.sku) bmsBySku.set(bp.sku, bp);
+    }
+    console.log(`[BMS Barcode Sync] ${bmsBySku.size} produits BMS lus`);
+
+    // Propriétaire actuel de chaque code : un même code-barre ne doit JAMAIS
+    // désigner deux produits, sinon le lookup du packing (sans ORDER BY) résout
+    // au hasard. Mesuré : 16 codes BMS sont déjà portés par un autre produit —
+    // on les laisse de côté plutôt que de créer l'ambiguïté.
+    const owners = new Map();
+    const { rows: existingRows } = await pool.query('SELECT product_id, barcode FROM product_barcodes');
+    for (const r of existingRows) {
+      if (!owners.has(r.barcode)) owners.set(r.barcode, new Set());
+      owners.get(r.barcode).add(r.product_id);
     }
 
-    console.log(`[BMS Barcode Sync] ${bmsMap.size} produits BMS avec code-barre`);
+    let units = 0, cartons = 0, touched = 0, ambigus = 0;
+    for (const product of localProducts.rows) {
+      const bp = bmsBySku.get(product.sku);
+      if (!bp) continue;
 
-    let synced = 0;
-    for (const product of productsWithout.rows) {
-      const barcode = bmsMap.get(product.sku);
-      if (barcode) {
-        await pool.query(
-          'INSERT INTO product_barcodes (product_id, barcode, type) VALUES ($1, $2, $3) ON CONFLICT (product_id, barcode) DO NOTHING',
-          [product.id, barcode, 'unit']
+      const codes = [];
+      if (bp.barcode) codes.push({ barcode: String(bp.barcode).trim(), type: 'unit' });
+      for (const extra of (Array.isArray(bp.additionnal_barcodes) ? bp.additionnal_barcodes : [])) {
+        const code = String(extra || '').trim();
+        if (!code) continue;
+        codes.push({ barcode: code, type: isCartonBarcode(bp.barcode, code) ? 'pack' : 'unit' });
+      }
+      if (codes.length === 0) continue;
+
+      for (const c of codes) {
+        const own = owners.get(c.barcode);
+        if (own && !own.has(product.id)) { ambigus++; continue; }  // code d'un autre produit
+        const res = await pool.query(
+          `INSERT INTO product_barcodes (product_id, barcode, type, quantity)
+           VALUES ($1, $2, $3, NULL)
+           ON CONFLICT (product_id, barcode) DO NOTHING`,
+          [product.id, c.barcode, c.type]
         );
-        synced++;
+        if (res.rowCount > 0) {
+          touched++;
+          if (c.type === 'pack') cartons++; else units++;
+          if (!owners.has(c.barcode)) owners.set(c.barcode, new Set());
+          owners.get(c.barcode).add(product.id);
+        }
       }
     }
 
-    console.log(`[BMS Barcode Sync] ${synced} codes-barres importes`);
-    return { synced, total: productsWithout.rows.length };
+    console.log(`[BMS Barcode Sync] ${touched} codes ajoutes (${units} unite, ${cartons} carton), ${ambigus} ecartes car deja sur un autre produit`);
+    return { synced: touched, units, cartons, ambigus, total: localProducts.rows.length };
   } catch (error) {
     console.error('[BMS Barcode Sync] Erreur:', error.message);
     throw error;
