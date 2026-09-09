@@ -31,7 +31,7 @@ const KPI_LABELS = {
   refunds_count: 'Commandes remboursées',
   remboursements_ttc: 'Remboursements TTC',
   tva: 'TVA',
-  frais_port_client: 'Frais de port facturés',
+  frais_port_client: 'Frais de port encaissés HT',
   frais_port_reel: 'Frais de port réels',
   frais_paiement: 'Frais de paiement',
   cout_produits: 'Coût produits',
@@ -195,26 +195,27 @@ function heroCardsHtml(k, pk) {
     </table>`;
 }
 
-// Cartes secondaires (commandes, panier, remboursements)
+// Cartes secondaires : commandes, panier, remboursements, nouveaux clients
+// (inscrits sur la période + parmi eux ceux ayant commandé) et frais de port
+// réellement encaissés auprès des clients. Découpées en rangées de 3.
 function secondaryCardsHtml(k, pk) {
-  return `
-    <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin:6px -6px 0;">
-      ${kpiRow([
-        kpiCard(KPI_LABELS.orders_count, formatKpi('orders_count', k.orders_count), COL.bleu, false, pk ? formatDelta(k.orders_count, pk.orders_count, 'count') : null),
-        kpiCard(KPI_LABELS.panier_moyen_ht, formatKpi('panier_moyen_ht', k.panier_moyen_ht), COL.orange, false, pk ? formatDelta(k.panier_moyen_ht, pk.panier_moyen_ht, 'eur') : null),
-        kpiCard(KPI_LABELS.refunds_count, formatKpi('refunds_count', k.refunds_count), COL.rouge, false, pk ? formatDelta(k.refunds_count, pk.refunds_count, 'count') : null),
-      ])}
-    </table>`;
-}
+  const cells = [
+    kpiCard(KPI_LABELS.orders_count, formatKpi('orders_count', k.orders_count), COL.bleu, false, pk ? formatDelta(k.orders_count, pk.orders_count, 'count') : null),
+    kpiCard(KPI_LABELS.panier_moyen_ht, formatKpi('panier_moyen_ht', k.panier_moyen_ht), COL.orange, false, pk ? formatDelta(k.panier_moyen_ht, pk.panier_moyen_ht, 'eur') : null),
+    kpiCard(KPI_LABELS.refunds_count, formatKpi('refunds_count', k.refunds_count), COL.rouge, false, pk ? formatDelta(k.refunds_count, pk.refunds_count, 'count') : null),
+    kpiCard(KPI_LABELS.nouveaux_clients, formatKpi('nouveaux_clients', k.nouveaux_clients), COL.violet, false, pk ? formatDelta(k.nouveaux_clients, pk.nouveaux_clients, 'count') : null),
+    kpiCard(KPI_LABELS.nouveaux_clients_commande, formatKpi('nouveaux_clients_commande', k.nouveaux_clients_commande), COL.vert, false, pk ? formatDelta(k.nouveaux_clients_commande, pk.nouveaux_clients_commande, 'count') : null),
+    // Frais de port payés par les clients (orders.order_shipping, HT) : à mettre en
+    // regard du coût réel des expéditions du récapitulatif.
+    kpiCard(KPI_LABELS.frais_port_client, formatKpi('frais_port_client', k.frais_port_client), COL.saphir, false, pk ? formatDelta(k.frais_port_client, pk.frais_port_client, 'eur') : null),
+  ];
 
-// Cartes nouveaux clients (inscrits sur la période + parmi eux, ceux ayant commandé)
-function newCustomersCardsHtml(k, pk) {
+  const rows = [];
+  for (let i = 0; i < cells.length; i += 3) rows.push(kpiRow(cells.slice(i, i + 3)));
+
   return `
     <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin:6px -6px 0;">
-      ${kpiRow([
-        kpiCard(KPI_LABELS.nouveaux_clients, formatKpi('nouveaux_clients', k.nouveaux_clients), COL.violet, false, pk ? formatDelta(k.nouveaux_clients, pk.nouveaux_clients, 'count') : null),
-        kpiCard(KPI_LABELS.nouveaux_clients_commande, formatKpi('nouveaux_clients_commande', k.nouveaux_clients_commande), COL.vert, false, pk ? formatDelta(k.nouveaux_clients_commande, pk.nouveaux_clients_commande, 'count') : null),
-      ])}
+      ${rows.join('')}
     </table>`;
 }
 
@@ -326,7 +327,7 @@ function buildHtml(freq, period, dashboard, countries, prevDashboard, prevPeriod
   const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
 
   const content = hasData
-    ? `${heroCardsHtml(k, pk)}${secondaryCardsHtml(k, pk)}${newCustomersCardsHtml(k, pk)}${recapHtml(k)}${countryHtml(countries, prevCountries)}`
+    ? `${heroCardsHtml(k, pk)}${secondaryCardsHtml(k, pk)}${recapHtml(k)}${countryHtml(countries, prevCountries)}`
     : `<table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;background:${COL.blanc};border:1px solid #e6eaee;border-radius:12px;"><tr><td style="padding:32px;text-align:center;color:${COL.grisM};font-family:${FONT};font-size:14px;">Aucune commande sur cette période.</td></tr></table>`;
 
   return `
