@@ -1,4 +1,5 @@
 import { useState, useEffect, useContext, useCallback, useMemo, useRef } from 'react';
+import { trierParAvancement } from '../utils/scanOrder';
 import axios from 'axios';
 import { AuthContext } from '../context/AuthContext';
 import AppShell from '../components/AppShell';
@@ -410,6 +411,24 @@ function CountingScreen({ token, order, items, onBack, onReload }) {
   const totalExpected = items.reduce((s, i) => s + i.qty_remaining, 0);
   const allMotifsSet = missing.every(i => motifs[i.id]);
 
+  // Ordre d'affichage : ce qui reste à compter en haut, ce qui est bouclé en bas.
+  // Sur un bon de cinquante lignes, chercher les incomplètes entre les vertes fait
+  // perdre plus de temps que le comptage lui-même ; ici la liste se vide par le
+  // haut.
+  //
+  // Les lignes en SURPLUS ne descendent PAS avec les lignes justes : compter plus
+  // que prévu est une anomalie à corriger avant de valider, la reléguer en bas de
+  // page reviendrait à la cacher. Elles se rangent juste après les incomplètes.
+  const rangAffichage = (it) => {
+    const compte = counts[it.id] || 0;
+    const cible = targetOf(it);
+    if (compte < cible) return 0;   // il en manque : c'est le travail en cours
+    if (compte > cible) return 1;   // surplus : anomalie, reste sous les yeux
+    return 2;                       // compte juste : rangé en bas
+  };
+
+  const itemsAffiches = trierParAvancement(items, rangAffichage);
+
   return (
     <div style={{ padding: '24px 32px', maxWidth: 1400, margin: '0 auto' }}>
       <Btn variant="ghost" small onClick={onBack} style={{ marginBottom: 16 }}>← Retour</Btn>
@@ -460,7 +479,7 @@ function CountingScreen({ token, order, items, onBack, onReload }) {
               </tr>
             </thead>
             <tbody>
-              {items.map((it, idx) => {
+              {itemsAffiches.map((it, idx) => {
                 const counted = counts[it.id] || 0;
                 const ecart = counted - targetOf(it);
                 return (

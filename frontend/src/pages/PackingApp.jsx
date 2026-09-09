@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useContext, useCallback } from 'react';
 import { visuelTransporteur } from '../utils/carrierVisuals';
+import { trierParAvancement } from '../utils/scanOrder';
 import { useNavigate } from 'react-router-dom';
 import { AuthContext } from '../context/AuthContext';
 import { LinkBox } from '../utils/navHelpers';
@@ -598,61 +599,62 @@ const PackingApp = () => {
     }
   };
 
+  // Les quatre boutons manuels agissent par IDENTIFIANT de ligne, pas par position.
+  // L'ordre d'affichage n'est plus celui du tableau d'état — les lignes complètes
+  // descendent en bas — donc un index d'affichage désignerait un autre article.
+  const modifierLigne = (itemId, transforme) => {
+    setItems(prev => prev.map(item => (item.id === itemId ? transforme({ ...item }) : item)));
+  };
+
   // Incrémenter manuellement (+1)
-  const handleManualIncrement = (index) => {
-    setItems(prev => {
-      const updated = [...prev];
-      const item = { ...updated[index] };
+  const handleManualIncrement = (itemId) => {
+    modifierLigne(itemId, item => {
       if (item.scanned < item.qty) {
         item.scanned += 1;
-        updated[index] = item;
         playSound('ok');
         setMessage(`${item.name} - ${item.scanned}/${item.qty}`);
       }
-      return updated;
+      return item;
     });
   };
 
   // Incrémenter tout (++)
-  const handleManualIncrementAll = (index) => {
-    setItems(prev => {
-      const updated = [...prev];
-      const item = { ...updated[index] };
+  const handleManualIncrementAll = (itemId) => {
+    modifierLigne(itemId, item => {
       if (item.scanned < item.qty) {
         item.scanned = item.qty;
-        updated[index] = item;
         playSound('ok');
         setMessage(`${item.name} - ${item.scanned}/${item.qty}`);
       }
-      return updated;
+      return item;
     });
   };
 
   // Décrémenter manuellement (-1)
-  const handleManualDecrement = (index) => {
-    setItems(prev => {
-      const updated = [...prev];
-      const item = { ...updated[index] };
-      if (item.scanned > 0) {
-        item.scanned -= 1;
-        updated[index] = item;
-      }
-      return updated;
+  const handleManualDecrement = (itemId) => {
+    modifierLigne(itemId, item => {
+      if (item.scanned > 0) item.scanned -= 1;
+      return item;
     });
   };
 
   // Décrémenter tout (--)
-  const handleManualDecrementAll = (index) => {
-    setItems(prev => {
-      const updated = [...prev];
-      const item = { ...updated[index] };
-      if (item.scanned > 0) {
-        item.scanned = 0;
-        updated[index] = item;
-      }
-      return updated;
+  const handleManualDecrementAll = (itemId) => {
+    modifierLigne(itemId, item => {
+      if (item.scanned > 0) item.scanned = 0;
+      return item;
     });
   };
+
+  // Ordre d'affichage : ce qui reste à scanner en haut, ce qui est complet en bas.
+  // La liste se vide par le haut, au lieu d'obliger à chercher les lignes
+  // incomplètes entre les vertes. Même comportement pour tous les transporteurs :
+  // le tri ne dépend que de l'avancement du scan.
+  //
+  // Tri stable : à état égal, l'ordre d'origine de la commande est conservé. Sans
+  // le départage par index d'origine, deux lignes pourraient permuter d'un rendu à
+  // l'autre et faire sauter la ligne sous le doigt du préparateur.
+  const itemsAffiches = trierParAvancement(items, item => (item.scanned >= item.qty ? 1 : 0));
 
   // Couleur de ligne
   const getRowColor = (item) => {
@@ -1280,7 +1282,7 @@ const PackingApp = () => {
                   </tr>
                 </thead>
                 <tbody>
-                  {items.map((item, index) => (
+                  {itemsAffiches.map((item) => (
                     <tr
                       key={item.id}
                       style={{
@@ -1313,7 +1315,7 @@ const PackingApp = () => {
                       <td style={{ padding: '14px 16px', textAlign: 'center' }}>
                         <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '4px' }}>
                           <button
-                            onClick={() => handleManualDecrementAll(index)}
+                            onClick={() => handleManualDecrementAll(item.id)}
                             disabled={item.scanned === 0}
                             style={{
                               width: '36px',
@@ -1330,7 +1332,7 @@ const PackingApp = () => {
                             --
                           </button>
                           <button
-                            onClick={() => handleManualDecrement(index)}
+                            onClick={() => handleManualDecrement(item.id)}
                             disabled={item.scanned === 0}
                             style={{
                               width: '36px',
@@ -1356,7 +1358,7 @@ const PackingApp = () => {
                             {item.scanned}/{item.qty}
                           </span>
                           <button
-                            onClick={() => handleManualIncrement(index)}
+                            onClick={() => handleManualIncrement(item.id)}
                             disabled={item.scanned >= item.qty}
                             style={{
                               width: '36px',
@@ -1373,7 +1375,7 @@ const PackingApp = () => {
                             +
                           </button>
                           <button
-                            onClick={() => handleManualIncrementAll(index)}
+                            onClick={() => handleManualIncrementAll(item.id)}
                             disabled={item.scanned >= item.qty}
                             style={{
                               width: '36px',
