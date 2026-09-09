@@ -228,6 +228,10 @@ exports.getShippingMethods = async (req, res) => {
  *
  * Fenêtre de 12 mois : la colonne porte 124 libellés depuis 2015 (« Shipping »,
  * « Colissimo Access »…, morts depuis des années) pour 31 réellement utilisés.
+ *
+ * Tri alphabétique sous collation française : la collation de la base classe les
+ * majuscules avant les minuscules (« Colissimo Signature » avant « Colissimo avec
+ * Signature ») et les accents après le reste de l'alphabet.
  */
 exports.getCarriers = async (req, res) => {
   try {
@@ -238,7 +242,7 @@ exports.getCarriers = async (req, res) => {
       WHERE COALESCE(o.shipping_method, '') <> ''
         AND COALESCE(o.paid_date, o.post_date) >= (CURRENT_DATE - INTERVAL '12 months')
       GROUP BY o.shipping_method
-      ORDER BY count DESC
+      ORDER BY o.shipping_method COLLATE "fr-FR-x-icu"
     `);
     res.json({ success: true, data: result.rows });
   } catch (error) {
