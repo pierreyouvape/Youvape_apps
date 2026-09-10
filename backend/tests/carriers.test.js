@@ -16,7 +16,10 @@
  *   - le nettoyage des champs d'adresse ;
  *   - la fenêtre d'annulation La Poste (7 jours ET même mois civil) ;
  *   - les messages rendus au packing en cas de panne d'API ;
- *   - le respect du contrat par les adaptateurs enregistrés.
+ *   - le respect du contrat par les adaptateurs enregistrés ;
+ *   - Colissimo (lot 2) : code produit service × pays, point de retrait Bpost,
+ *     CN23 sur des commandes réelles, réponse multipart — avec des échanges
+ *     simulés, aucun appel ne sort.
  */
 
 const assert = require('assert');
@@ -583,6 +586,551 @@ test('un nom très long rétrécit au lieu de déborder', async () => {
 test('ne déclare aucun poids : rien n\'est transporté', async () => {
   assert.strictEqual(await interne.resolveWeight({}), 0);
 });
+
+// ── Colissimo ────────────────────────────────────────────────────────────────
+console.log('\nColissimo — code produit selon le service et la destination');
+
+const coli = require('../src/services/carriers/colissimoAdapter');
+const { customsArticles } = require('../src/services/orderCustomsService');
+const { customsDocumentFileName } = require('../src/services/carriers/contract');
+
+const COLI_ACCOUNT = {
+  carrierCode: 'colissimo', accountCode: 'production',
+  credentials: { contract_number: '906524', password: 'secret' },
+  settings: {
+    api_url: 'https://ws.colissimo.fr/sls-ws/SlsServiceWSRest/3.1',
+    commercial_name: 'EMC',
+    sender: { company_name: 'SAS EMC', line2: "580 avenue de l'aube rouge", zip_code: '34170',
+              city: 'Castelnau le Lez', country_code: 'FR', email: 'contact@youvape.fr', phone: '04 99 78 24 53' },
+    customs: { hs_code: '85437070', origin_country: 'FR', category: '3' }
+  }
+};
+// shipping_phone vide, billing_phone renseigné : c'est la situation de 100 % des
+// commandes Bpost.
+const COLI_RECEIVER = {
+  first_name: 'Marie', last_name: 'Testeuse', address: '12 rue de la République',
+  postcode: '69003', city: 'Lyon', country: 'FR', phone: '', billing_phone: '0600000000', email: 't@e.com'
+};
+const NOW = new Date('2026-09-10T10:00:00Z');
+// Point réel, relevé en base (commande « Bpost Relais »).
+const BPOST = { id: '315300', city: 'BELOEIL', name: 'BBOX 24/7 PROXY BELOEIL', type: 'PCS',
+  address: 'RUE DES VIVIERS AU BOIS 206', country: 'BE', network: 'colissimo', postcode: '7970' };
+
+const coliPayload = (over = {}) => coli.buildLabelPayload({
+  orderNumber: over.orderNumber ?? '1259808',
+  receiver: { ...COLI_RECEIVER, ...(over.receiver || {}) },
+  account: over.account ?? COLI_ACCOUNT,
+  weightGrams: over.weightGrams ?? 480,
+  options: over.options ?? { deliveryMode: 'domicile', shippingMethod: 'Colissimo Domicile' },
+  customs: over.customs ?? null,
+  now: over.now ?? NOW
+});
+const dest = (service, country, relayPoint) => coli.resolveDestination({
+  receiver: { country }, options: { deliveryMode: service, relayPoint }, orderNumber: '1'
+});
+const refusDe = (fn) => {
+  try { fn(); return null; } catch (e) { return e.userMessage || e.message; }
+};
+
+test('« Colissimo Domicile » vers la France : DOM, sans CN23', () => {
+  assert.deepStrictEqual(dest('domicile', 'FR'), { service: 'domicile', pays: 'FR', productCode: 'DOM', cn23: false });
+});
+
+test('la MÊME dénomination vers l\'outre-mer : COM, et CN23 obligatoire', () => {
+  for (const pays of ['GF', 'GP', 'MQ', 'RE', 'PF']) {
+    assert.strictEqual(dest('domicile', pays).productCode, 'COM', pays);
+    assert.strictEqual(dest('domicile', pays).cn23, true, pays);
+  }
+});
+
+test('Monaco reste en DOM, sans CN23', () => {
+  assert.strictEqual(dest('domicile', 'MC').productCode, 'DOM');
+  assert.strictEqual(dest('domicile', 'MC').cn23, false);
+});
+
+test('avec signature : DOS en métropole et en Europe, CDS outre-mer', () => {
+  assert.strictEqual(dest('signature', 'FR').productCode, 'DOS');
+  assert.strictEqual(dest('signature', 'DK').productCode, 'DOS');
+  assert.strictEqual(dest('signature', 'MQ').productCode, 'CDS');
+});
+
+test('toutes les destinations des 90 derniers jours sont couvertes', () => {
+  // Relevé le 08/09/2026, par service.
+  const vues = {
+    domicile: 'FR GF GP MQ RE PF MC BE',
+    signature: 'FR AT CZ DK ES GB HR HU IE LT LV NL PL PT BE LU',
+    relais: 'BE'
+  };
+  for (const [service, pays] of Object.entries(vues)) {
+    for (const p of pays.split(' ')) {
+      assert.doesNotThrow(() => dest(service, p, service === 'relais' ? { country: p } : undefined), `${service} vers ${p}`);
+    }
+  }
+});
+
+test('la CN23 est exigée exactement pour l\'outre-mer et le Royaume-Uni', () => {
+  const nos = 'FR MC BE LU AT CZ DK ES GB HR HU IE LT LV NL PL PT GF GP MQ RE PF'.split(' ');
+  assert.deepStrictEqual(nos.filter(p => coli.DESTINATIONS[p].cn23).sort(), ['GB', 'GF', 'GP', 'MQ', 'PF', 'RE']);
+});
+
+test('sans signature vers le Danemark : refus qui indique la solution', () => {
+  const m = refusDe(() => dest('domicile', 'DK'));
+  assert.ok(/ne propose pas/.test(m), m);
+  assert.ok(/Domicile avec signature/.test(m), 'le message ne dit pas quoi choisir');
+});
+
+test('un pays hors matrice est refusé, pas deviné', () => {
+  for (const pays of ['US', 'XX', '', 'MF']) {
+    assert.throws(() => dest('domicile', pays), /pas pris en charge/, `« ${pays} »`);
+  }
+});
+
+test('un mode inconnu est refusé, avec la liste des modes', () => {
+  assert.ok(/domicile, signature, relais/.test(refusDe(() => dest('24R', 'FR'))));
+});
+
+test('en point de retrait, c\'est le pays du POINT qui compte', () => {
+  assert.strictEqual(coli.resolveDestination({ receiver: { country: 'FR' },
+    options: { deliveryMode: 'relais', relayPoint: { country: 'BE' } }, orderNumber: '1' }).pays, 'BE');
+});
+
+console.log('\nColissimo — corps de la requête');
+
+test('le poids part en kilogrammes à deux décimales, 10 g minimum', () => {
+  assert.strictEqual(coliPayload({ weightGrams: 480 }).letter.parcel.weight, '0.48');
+  assert.strictEqual(coliPayload({ weightGrams: 1234 }).letter.parcel.weight, '1.23');
+  assert.strictEqual(coliPayload({ weightGrams: 3 }).letter.parcel.weight, '0.01');
+});
+
+test('la date de dépôt est celle de Paris, pas celle du serveur en UTC', () => {
+  // 22 h 30 UTC le 09/09 = 0 h 30 à Paris le 10/09 ; une date passée est refusée.
+  assert.strictEqual(coli.dateDepot(new Date('2026-09-09T22:30:00Z')), '2026-09-10');
+  assert.strictEqual(coli.dateDepot(new Date('2026-01-15T23:30:00Z')), '2026-01-16');
+});
+
+test('domicile France : contrat, code produit, référence, aucun point de retrait', () => {
+  const p = coliPayload();
+  assert.strictEqual(p.contractNumber, '906524');
+  assert.strictEqual(p.letter.service.productCode, 'DOM');
+  assert.strictEqual(p.letter.service.orderNumber, '1259808');
+  assert.strictEqual(p.letter.sender.senderParcelRef, '1259808');
+  assert.strictEqual(p.outputFormat.outputPrintingType, 'PDF_10x15_300dpi');
+  assert.strictEqual(p.letter.parcel.pickupLocationId, undefined, 'point hors HD : Colissimo refuse');
+  assert.strictEqual(p.letter.customsDeclarations, undefined);
+  assert.strictEqual(p.letter.service.reseauPostal, undefined);
+});
+
+test('le téléphone vient de billing_phone quand shipping_phone est vide', () => {
+  assert.strictEqual(coliPayload().letter.addressee.address.phoneNumber, '0600000000');
+});
+
+test('Bpost relais : HD, le point, son adresse, le mobile belge au format international', () => {
+  const p = coliPayload({
+    orderNumber: '1259784',
+    receiver: { first_name: 'Hassan', last_name: 'Alkhadour', address: 'Rue du Client 1', postcode: '7970',
+      city: 'Beloeil', country: 'BE', billing_phone: '0470 12 34 56' },
+    options: { deliveryMode: 'relais', relayPoint: BPOST, shippingMethod: 'Bpost Relais' }
+  });
+  const a = p.letter.addressee.address;
+  assert.strictEqual(p.letter.service.productCode, 'HD');
+  assert.strictEqual(p.letter.parcel.pickupLocationId, '315300');
+  assert.strictEqual(p.letter.service.commercialName, 'EMC');
+  assert.strictEqual(a.companyName, 'BBOX 24/7 PROXY BELOEIL');
+  assert.strictEqual(a.line2, 'RUE DES VIVIERS AU BOIS 206');
+  assert.strictEqual(a.zipCode, '7970');
+  assert.strictEqual(a.countryCode, 'BE');
+  assert.strictEqual(a.lastName, 'Alkhadour', 'le colis est remis au CLIENT');
+  assert.strictEqual(a.mobileNumber, '+32470123456');
+  assert.strictEqual(a.phoneNumber, undefined);
+});
+
+test('toutes les écritures d\'un mobile belge sont ramenées à +324…', () => {
+  for (const brut of ['0470123456', '+32470123456', '0032470123456', '0470 12 34 56', '0470.12.34.56']) {
+    assert.strictEqual(coli.normaliserTelephone(brut, 'BE'), '+32470123456', brut);
+  }
+  // Le fixe français de la commande 1250863 part tel quel : Colissimo tranchera.
+  assert.strictEqual(coli.normaliserTelephone('+33493549851', 'BE'), '+33493549851');
+});
+
+test('point de retrait sans aucun téléphone : refus, avant tout appel', () => {
+  const m = refusDe(() => coliPayload({ receiver: { country: 'BE', billing_phone: '' },
+    options: { deliveryMode: 'relais', relayPoint: BPOST } }));
+  assert.ok(/mobile/.test(m), m);
+});
+
+test('réseau partenaire en signature : BE et LU oui, NL non, France sans objet', () => {
+  const svc = (country, postcode = '1000') => coliPayload({ receiver: { country, postcode },
+    options: { deliveryMode: 'signature' } }).letter.service;
+  assert.strictEqual(svc('BE').reseauPostal, 1);
+  assert.strictEqual(svc('LU', 'L-1234').reseauPostal, 1);
+  assert.strictEqual(svc('NL').reseauPostal, 0);
+  assert.strictEqual(svc('FR', '69003').reseauPostal, undefined);
+});
+
+test('Luxembourg : le préfixe « L- » est retiré du code postal', () => {
+  assert.strictEqual(coliPayload({ receiver: { country: 'LU', postcode: 'L-1234' },
+    options: { deliveryMode: 'signature' } }).letter.addressee.address.zipCode, '1234');
+});
+
+test('noms en ASCII, adresse en latin-1', () => {
+  const a = coliPayload({ receiver: { first_name: 'José', last_name: 'Müller-Łukasz',
+    address: "3 rue de l'Église", city: 'Saint-Étienne' } }).letter.addressee.address;
+  assert.strictEqual(a.firstName, 'Jose');
+  assert.strictEqual(a.lastName, 'Muller-Lukasz');
+  assert.strictEqual(a.line2, "3 rue de l'Église");
+  assert.strictEqual(a.city, 'Saint-Étienne');
+});
+
+test('« ø » est ramené à « o » dans un nom ASCII, pas supprimé', () => {
+  // Client danois réel : « Søren » devenait « S ren ».
+  assert.strictEqual(coliPayload({ receiver: { first_name: 'Søren', last_name: 'Jørgensen' } })
+    .letter.addressee.address.firstName, 'Soren');
+});
+
+test('le « N° » d\'une adresse devient « No » au lieu de disparaître', () => {
+  const a = coliPayload({ receiver: { address: 'Résidence Les Pins, Bât. B N°12' } }).letter.addressee.address;
+  assert.strictEqual(a.line2, 'Résidence Les Pins, Bât. B No12');
+});
+
+test('une rue trop longue déborde sur line3, coupée entre deux mots', () => {
+  const { line2, line3 } = coli.lignesAdresse('12 avenue du Général Charles de Gaulle Prolongée', 'Bât C', 'FR');
+  assert.strictEqual(line2, '12 avenue du Général Charles de');
+  assert.strictEqual(line3, 'Gaulle Prolongée Bât C');
+});
+
+test('Belgique : le complément remonte en line2, la seule que l\'étiquette imprime', () => {
+  assert.deepStrictEqual(coli.lignesAdresse('Rue Haute 5', 'Boîte 3', 'BE'), { line2: 'Rue Haute 5 Boîte 3', line3: '' });
+});
+
+test('un destinataire sans nom exploitable est refusé', () => {
+  const m = refusDe(() => coliPayload({ receiver: { first_name: '', last_name: 'Петров' } }));
+  assert.ok(/prénom et un nom/.test(m), m);
+});
+
+console.log('\nColissimo — point de retrait');
+
+const pointRefuse = (rp) => refusDe(() => coli.assertRelayPoint(rp, '1259784'));
+
+test('point absent : refus, avec la marche à suivre', () => {
+  for (const vide of [null, undefined, {}, { id: '' }]) {
+    assert.ok(/aucun point/.test(pointRefuse(vide)), JSON.stringify(vide));
+  }
+});
+
+test('un point d\'un autre réseau est refusé, même au bon format', () => {
+  // Constaté : une commande « Bpost Relais » du 05/09/2026 porte un point mondial_relay.
+  assert.ok(/mondial_relay/.test(pointRefuse({ id: '041983', network: 'mondial_relay', country: 'BE' })));
+});
+
+test('un code hors format est refusé, pas corrigé', () => {
+  for (const id of ['31530', '3153000', '5761X']) {
+    assert.ok(/6 chiffres/.test(pointRefuse({ ...BPOST, id })), id);
+  }
+});
+
+test('les trois types de point Bpost relevés passent', () => {
+  for (const type of ['PCS', 'CMT', 'BDP']) assert.strictEqual(pointRefuse({ ...BPOST, type }), null, type);
+});
+
+console.log('\nColissimo — déclaration douanière (CN23)');
+
+// Lignes réelles relevées en base le 10/09/2026 (SKU fictifs).
+const CMD_1254235 = [ // Guadeloupe : un pack et ses dix composants à 0 €
+  { name: 'Pack 3 Cartouches Pod Oby', qty: 4, line_total: '23.70', product_type: 'simple', sku: 'A', weight_kg: '0.030' },
+  { name: 'Pack 10 Boosters YouBoost 50/50', qty: 1, line_total: '6.58', product_type: 'woosb', sku: 'B', weight_kg: '0.200' },
+  { name: 'Booster YouBoost 50/50', qty: 10, line_total: '0.00', product_type: 'simple', sku: 'C', weight_kg: '0.010' }
+];
+const CMD_1240410 = [ // Polynésie : un article offert, sans aucun pack
+  { name: 'Philippines Mango 100ml', qty: 2, line_total: '31.69', product_type: 'simple', sku: 'A', weight_kg: '0.140' },
+  { name: 'Freezy Pineapple 100ml', qty: 1, line_total: '15.85', product_type: 'simple', sku: 'B', weight_kg: '0.140' },
+  { name: 'Grapple Apple 100ml', qty: 1, line_total: '15.85', product_type: 'simple', sku: 'C', weight_kg: '0.140' },
+  { name: 'The Green Oil 100ml', qty: 1, line_total: '0.00', product_type: 'simple', sku: 'D', weight_kg: '0.140' },
+  { name: 'The White Oil 100ml', qty: 1, line_total: '11.67', product_type: 'simple', sku: 'E', weight_kg: '0.140' },
+  { name: 'Booster YouBoost 50/50', qty: 6, line_total: '1.00', product_type: 'simple', sku: 'F', weight_kg: '0.010' },
+  { name: 'Accu 18650 P28A - 2800mAh - 35A', qty: 2, line_total: '13.35', product_type: 'simple', sku: 'G', weight_kg: '0.050' }
+];
+
+test('1254235 : le pack est déclaré à son prix, ses composants à 0 € ignorés', () => {
+  const a = customsArticles(CMD_1254235);
+  assert.deepStrictEqual(a.map(x => x.name), ['Pack 3 Cartouches Pod Oby', 'Pack 10 Boosters YouBoost 50/50']);
+  assert.strictEqual(a[1].unitValue, 6.58, 'le plugin officiel aurait déclaré 10 × 1 €');
+});
+
+test('1240410 : un article offert sans pack figure sur la déclaration', () => {
+  const a = customsArticles(CMD_1240410);
+  assert.strictEqual(a.length, 7);
+  assert.strictEqual(a.find(x => x.name === 'The Green Oil 100ml').unitValue, 1, 'l\'API refuse une valeur nulle');
+});
+
+test('la valeur unitaire est calculée en centimes : 31,69 / 2 = 15,85, pas 15,84', () => {
+  assert.strictEqual(customsArticles(CMD_1240410)[0].unitValue, 15.85);
+  assert.strictEqual(customsArticles(CMD_1254235)[0].unitValue, 5.93);
+});
+
+test('angle mort documenté : un offert dans une commande qui a un pack est omis', () => {
+  const a = customsArticles([...CMD_1254235, { name: 'Offert', qty: 1, line_total: '0', product_type: 'simple' }]);
+  assert.ok(!a.some(x => x.name === 'Offert'));
+});
+
+const CUSTOMS_RE = {
+  articles: customsArticles([
+    { name: 'Cartouche Avata - 0.40 Ω', qty: 2, line_total: '11.80', product_type: 'simple', sku: 'AVATA040', weight_kg: '0.010' },
+    { name: 'Liquide Crème Brûlée à la Vanille de Madagascar Édition Spéciale 50ml', qty: 1,
+      line_total: '19.90', product_type: 'simple', sku: 'CB50', weight_kg: '0.080' }
+  ]),
+  shippingTotal: 7.9
+};
+const payloadRE = (over = {}) => coliPayload({
+  orderNumber: '1258878', receiver: { country: 'RE', postcode: '97400', city: 'Saint-Denis', address: '5 rue de Paris' },
+  customs: CUSTOMS_RE, ...over
+});
+
+test('outre-mer : COM, déclaration jointe, port en centimes', () => {
+  const p = payloadRE();
+  assert.strictEqual(p.letter.service.productCode, 'COM');
+  assert.strictEqual(p.letter.service.totalAmount, 790);
+  assert.strictEqual(p.letter.service.transportationAmount, 790);
+  const d = p.letter.customsDeclarations;
+  assert.strictEqual(d.includeCustomsDeclarations, 1);
+  assert.strictEqual(d.contents.category.value, 3);
+  assert.strictEqual(d.invoiceNumber, '1258878');
+  assert.ok(p.fields.field.some(f => f.key === 'OUTPUT_PRINT_TYPE_CN23' && f.value === 'PDF_A4_300dpi'));
+});
+
+test('CN23 : code SH et origine du contrat, les mêmes pour tout le catalogue', () => {
+  for (const a of payloadRE().letter.customsDeclarations.contents.article) {
+    assert.strictEqual(a.hsCode, '85437070');
+    assert.strictEqual(a.originCountry, 'FR');
+    assert.strictEqual(a.currency, 'EUR');
+  }
+});
+
+test('CN23 : l\'oméga d\'un vrai libellé produit devient « ohm »', () => {
+  assert.strictEqual(payloadRE().letter.customsDeclarations.contents.article[0].description, 'Cartouche Avata - 0.40 ohm');
+});
+
+test('CN23 : désignation sans accent ni symbole, 64 caractères au plus', () => {
+  const d = payloadRE().letter.customsDeclarations.contents.article[1].description;
+  assert.ok(d.length <= 64, `${d.length} caractères`);
+  assert.ok(/^[A-Za-z0-9 '.,\/()%+-]+$/.test(d), d);
+  assert.ok(d.startsWith('Liquide Creme Brulee a la Vanille'), d);
+});
+
+test('CN23 : aucun EORI envoyé tant qu\'il n\'est pas renseigné', () => {
+  assert.ok(!payloadRE().fields.field.some(f => f.key === 'EORI'));
+  const avec = { ...COLI_ACCOUNT, settings: { ...COLI_ACCOUNT.settings,
+    customs: { ...COLI_ACCOUNT.settings.customs, eori_number: 'FR12345678900012' } } };
+  assert.ok(payloadRE({ account: avec }).fields.field.some(f => f.key === 'EORI' && f.value === 'FR12345678900012'));
+});
+
+test('CN23 : port gratuit refusé en clair, avant l\'appel', () => {
+  assert.ok(/port gratuit/.test(refusDe(() => payloadRE({ customs: { ...CUSTOMS_RE, shippingTotal: 0 } }))));
+});
+
+test('CN23 : réglage douanier manquant = erreur de configuration nommant le champ', () => {
+  const sans = { ...COLI_ACCOUNT, settings: { ...COLI_ACCOUNT.settings, customs: { origin_country: 'FR', category: '3' } } };
+  let e = null;
+  try { payloadRE({ account: sans }); } catch (x) { e = x; }
+  assert.ok(e, 'aucune erreur');
+  assert.strictEqual(e.statusCode, 500);
+  assert.ok(/customs\.hs_code/.test(e.message), e.message);
+});
+
+test('pas de CN23 vers la France, même avec des lignes fournies', () => {
+  assert.strictEqual(coliPayload({ customs: CUSTOMS_RE }).letter.customsDeclarations, undefined);
+});
+
+test('DDP outre-mer désactivé par défaut : c\'est le client qui paie les droits', () => {
+  assert.strictEqual(payloadRE().letter.parcel.ftd, undefined);
+});
+
+console.log('\nColissimo — réponse multipart');
+
+const FRONTIERE = 'uuid:7c5b1f0e-3a41-4d1b-9a0c-5d2e8b6f4a11';
+const multipart = (parts, frontiere = FRONTIERE) => Buffer.concat([
+  Buffer.from('\r\n', 'latin1'),
+  ...parts.flatMap(([id, type, contenu]) => [
+    Buffer.from(`--${frontiere}\r\nContent-Type: ${type}\r\nContent-Transfer-Encoding: binary\r\n`
+      + `Content-ID: <${id}>\r\n\r\n`, 'latin1'),
+    Buffer.isBuffer(contenu) ? contenu : Buffer.from(contenu, 'utf8'),
+    Buffer.from('\r\n', 'latin1')
+  ]),
+  Buffer.from(`--${frontiere}--\r\n`, 'latin1')
+]);
+const CT = `multipart/mixed; boundary="${FRONTIERE}"; type="application/json"`;
+// Un faux PDF qui contient TOUS les octets et des CRLF : exactement ce qu'une
+// conversion en chaîne abîmerait sans rien dire.
+const OCTETS = Buffer.concat([Buffer.from('%PDF-1.4\r\n\r\n', 'latin1'),
+  Buffer.from([...Array(256).keys()]), Buffer.from('\r\n%%EOF', 'latin1')]);
+const infos = (o) => ['jsonInfos', 'application/json', JSON.stringify(o)];
+const SUCCES = (extra = []) => multipart([
+  infos({ messages: [{ id: '0', type: 'INFOS', messageContent: 'La requête a été traitée avec succès' }],
+    labelV31Response: { parcelNumber: '6A07657471207' } }),
+  ['label', 'application/octet-stream', OCTETS],
+  ...extra
+]);
+
+test('les trois parties sont séparées, et les octets de l\'étiquette arrivent intacts', () => {
+  const p = coli.parseMultipart(SUCCES([['cn23', 'application/octet-stream', Buffer.from('CN23')]]), CT);
+  assert.strictEqual(p.jsonInfos.labelV31Response.parcelNumber, '6A07657471207');
+  assert.ok(p.label.equals(OCTETS), 'étiquette corrompue');
+  assert.strictEqual(p.cn23.toString(), 'CN23');
+});
+
+test('la frontière est retrouvée dans le corps quand l\'en-tête ne la donne pas', () => {
+  assert.ok(coli.parseMultipart(SUCCES(), 'multipart/mixed').label.equals(OCTETS));
+});
+
+test('une réponse JSON seule est lue comme jsonInfos', () => {
+  const p = coli.parseMultipart(Buffer.from('{"messages":[{"id":"30108","messageContent":"x"}]}'), 'application/json');
+  assert.strictEqual(p.jsonInfos.messages[0].id, '30108');
+});
+
+console.log('\nColissimo — contrat');
+
+test('Colissimo suit sa convention de nom, et la CN23 la sienne', () => {
+  assert.strictEqual(coli.labelFileName(1259808), 'colissimo_1259808.pdf');
+  assert.strictEqual(customsDocumentFileName(1258878), 'customs_document_1258878.pdf');
+});
+
+test('Colissimo se déclare non annulable, avec la raison', () => {
+  const w = coli.cancelWindow();
+  assert.strictEqual(w.cancellable, false);
+  assert.ok(/annuler/i.test(w.reason));
+});
+
+test('le mappage propose les trois services, « domicile » par défaut', () => {
+  assert.deepStrictEqual(coli.deliveryModes.map(m => m.code), ['domicile', 'signature', 'relais']);
+  assert.strictEqual(coli.methodCode, 'domicile');
+});
+
+test('la table de symboles ne touche pas la lettre suivie', () => {
+  // La Poste ne passe que par sanitizeAddressField : ses payloads sont figés.
+  assert.strictEqual(sanitizeAddressField('Cartouche 0.40 Ω - N° 5'), 'Cartouche 0.40 Ω - N° 5');
+});
+
+// ── Échanges simulés ─────────────────────────────────────────────────────────
+// axios est remplacé le temps de ces tests : aucun appel ne sort. Ils tournent
+// EN SÉRIE, sinon deux tests se disputeraient la même réponse simulée.
+
+const axiosModule = require('axios');
+const postReel = axiosModule.post;
+let appels = [];
+const simuler = (status, corps, contentType = CT) => {
+  appels = [];
+  axiosModule.post = async (url, body) => {
+    appels.push({ url, body: JSON.parse(body) });
+    return { status, headers: { 'content-type': contentType }, data: corps };
+  };
+};
+let serie = Promise.resolve();
+const testEnSerie = (name, fn) => {
+  serie = serie.then(fn).then(
+    () => console.log(`  ok   ${name}`),
+    (err) => { failures++; console.error(`  FAIL ${name}\n       ${err.message}`); }
+  );
+  pending.push(serie);
+};
+const entree = (over = {}) => ({
+  orderNumber: '1259808', receiver: COLI_RECEIVER, account: COLI_ACCOUNT, weightGrams: 480,
+  options: { deliveryMode: 'domicile', shippingMethod: 'Colissimo Domicile' }, ...over
+});
+
+serie = serie.then(() => console.log('\nColissimo — échanges simulés (aucun appel réseau)'));
+
+testEnSerie('succès : numéro de colis, étiquette intacte, code produit, libellé BMS du service', async () => {
+  simuler(200, SUCCES());
+  const r = await coli.createLabel(entree());
+  assert.strictEqual(appels.length, 1);
+  assert.ok(appels[0].url.endsWith('/3.1/generateLabel'), appels[0].url);
+  assert.strictEqual(r.trackingNumber, '6A07657471207');
+  assert.ok(Buffer.from(r.pdfBase64, 'base64').equals(OCTETS));
+  assert.strictEqual(r.cn23Base64, null);
+  assert.strictEqual(r.methodCode, 'DOM');
+  assert.strictEqual(r.bmsShipmentTitle, 'La Poste : Colissimo - Domicile sans signature');
+});
+
+testEnSerie('La Réunion : COM et CN23, mais libellé BMS « sans signature » — il suit le service', async () => {
+  simuler(200, SUCCES([['cn23', 'application/octet-stream', Buffer.from('%PDF cn23')]]));
+  const pool = { query: async (sql) => (/order_items/.test(sql)
+    ? { rows: CMD_1254235 } : { rows: [{ order_shipping: '7.90' }] }) };
+  const r = await coli.createLabel(entree({ orderNumber: '1258878', pool,
+    receiver: { ...COLI_RECEIVER, country: 'RE', postcode: '97400', city: 'Saint-Denis' } }));
+  assert.strictEqual(r.methodCode, 'COM');
+  assert.strictEqual(r.bmsShipmentTitle, 'La Poste : Colissimo - Domicile sans signature');
+  assert.strictEqual(Buffer.from(r.cn23Base64, 'base64').toString(), '%PDF cn23');
+  // La déclaration envoyée porte le pack, pas ses dix composants.
+  assert.deepStrictEqual(appels[0].body.letter.customsDeclarations.contents.article.map(a => a.value), ['5.93', '6.58']);
+  assert.strictEqual(appels[0].body.letter.service.totalAmount, 790);
+});
+
+testEnSerie('Bpost relais : libellé BMS « Point de retrait »', async () => {
+  simuler(200, SUCCES());
+  const r = await coli.createLabel(entree({ receiver: { ...COLI_RECEIVER, country: 'BE', billing_phone: '0470123456' },
+    options: { deliveryMode: 'relais', relayPoint: BPOST } }));
+  assert.strictEqual(r.methodCode, 'HD');
+  assert.strictEqual(r.bmsShipmentTitle, 'La Poste : Colissimo - Point de retrait');
+});
+
+testEnSerie('un refus Colissimo remonte au préparateur, avec son code', async () => {
+  simuler(400, multipart([infos({ messages: [{ id: '30108', type: 'ERROR',
+    messageContent: 'Le code postal du destinataire est invalide' }] })]));
+  await assert.rejects(coli.createLabel(entree()), (e) => {
+    assert.strictEqual(e.statusCode, 400);
+    assert.ok(/code postal du destinataire est invalide/.test(e.userMessage), e.userMessage);
+    assert.ok(/30108/.test(e.userMessage));
+    return true;
+  });
+});
+
+testEnSerie('HTTP 200 avec un message d\'erreur : c\'est un refus, pas un succès', async () => {
+  simuler(200, multipart([infos({ messages: [{ id: '30220', type: 'ERROR', messageContent: 'Poids invalide' }] })]));
+  await assert.rejects(coli.createLabel(entree()), /30220/);
+});
+
+testEnSerie('succès annoncé sans étiquette : erreur 502, rien d\'enregistré', async () => {
+  simuler(200, multipart([infos({ messages: [{ id: '0' }], labelV31Response: { parcelNumber: 'X' } })]));
+  await assert.rejects(coli.createLabel(entree()), (e) => e.statusCode === 502);
+});
+
+testEnSerie('une page HTML d\'erreur : message « indisponible » au packing', async () => {
+  simuler(503, Buffer.from('<html>Service Unavailable</html>'), 'text/html');
+  await assert.rejects(coli.createLabel(entree()), (e) => {
+    assert.strictEqual(e.statusCode, 503);
+    assert.ok(/indisponible/.test(buildUserMessage(e, 'Colissimo')));
+    return true;
+  });
+});
+
+testEnSerie('contrat de test : validé par checkGenerateLabel, aucune étiquette produite', async () => {
+  simuler(200, multipart([infos({ messages: [{ id: '0', type: 'INFOS' }] })]));
+  const contratTest = { ...COLI_ACCOUNT, settings: { ...COLI_ACCOUNT.settings, sandbox: 'true' } };
+  await assert.rejects(coli.createLabel(entree({ account: contratTest })), /VALIDE/);
+  assert.strictEqual(appels.length, 1);
+  assert.ok(appels[0].url.endsWith('/checkGenerateLabel'), appels[0].url);
+});
+
+testEnSerie('validateLabel passe par checkGenerateLabel', async () => {
+  simuler(200, multipart([infos({ messages: [{ id: '0' }] })]));
+  assert.strictEqual((await coli.validateLabel(entree())).valid, true);
+  assert.ok(appels[0].url.endsWith('/checkGenerateLabel'));
+});
+
+testEnSerie('un format ZPL est refusé AVANT l\'appel : l\'étiquette serait payée puis perdue', async () => {
+  simuler(200, SUCCES());
+  const zpl = { ...COLI_ACCOUNT, settings: { ...COLI_ACCOUNT.settings, output_format: 'ZPL_10x15_203dpi' } };
+  await assert.rejects(coli.createLabel(entree({ account: zpl })), /PDF/);
+  assert.strictEqual(appels.length, 0, 'l\'API a été appelée');
+});
+
+testEnSerie('point d\'un autre réseau : refus, et aucun appel à l\'API', async () => {
+  simuler(200, SUCCES());
+  await assert.rejects(coli.createLabel(entree({ receiver: { ...COLI_RECEIVER, country: 'BE' },
+    options: { deliveryMode: 'relais', relayPoint: { ...BPOST, network: 'mondial_relay' } } })), /mondial_relay/);
+  assert.strictEqual(appels.length, 0);
+});
+
+serie = serie.then(() => { axiosModule.post = postReel; });
 
 Promise.all(pending).then(() => {
   console.log(failures === 0 ? '\nTous les tests passent.' : `\n${failures} test(s) en échec.`);

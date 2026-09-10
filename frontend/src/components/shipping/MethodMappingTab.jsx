@@ -213,7 +213,22 @@ function MethodMappingTab() {
             </div>
           )}
 
-          {transporteur && transporteur.defaultDeliveryMode && (
+          {/* Le transporteur déclare ses modes : une liste, pas un champ libre.
+              Une faute de frappe enverrait le colis sur le mauvais service. */}
+          {transporteur && transporteur.deliveryModes && (
+            <div style={{ flex: '1 1 190px' }}>
+              <label style={labelStyle}>Mode</label>
+              <select value={form.delivery_mode}
+                onChange={e => setForm(f => ({ ...f, delivery_mode: e.target.value }))}
+                style={{ ...inputStyle, width: '100%' }}>
+                {transporteur.deliveryModes.map(m => (
+                  <option key={m.code} value={m.code}>{m.label}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {transporteur && !transporteur.deliveryModes && transporteur.defaultDeliveryMode && (
             <div style={{ flex: '0 1 110px' }}>
               <label style={labelStyle}>Mode</label>
               <input value={form.delivery_mode}
@@ -276,7 +291,10 @@ function MethodMappingTab() {
                   : <span style={{ color: '#6c757d', fontSize: '13px' }}>Pas d'étiquette</span>}
               </td>
               <td style={tdStyle}>{m.account_code || '—'}</td>
-              <td style={tdStyle}>{m.delivery_mode || '—'}</td>
+              <td style={tdStyle}>
+                {data.carriers.find(c => c.code === m.carrier_code)?.deliveryModes
+                  ?.find(x => x.code === m.delivery_mode)?.label || m.delivery_mode || '—'}
+              </td>
               <td style={{ ...tdStyle, color: '#666', fontSize: '13px' }}>{m.note || ''}</td>
               <td style={{ ...tdStyle, textAlign: 'right', whiteSpace: 'nowrap' }}>
                 <button onClick={() => setForm({

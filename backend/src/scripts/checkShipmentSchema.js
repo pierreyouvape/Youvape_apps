@@ -30,7 +30,9 @@ async function main() {
     SELECT to_regclass('public.shipment_labels')             IS NOT NULL AS labels,
            to_regclass('public.carrier_accounts')            IS NOT NULL AS accounts,
            to_regclass('public.shipping_method_carrier_map') IS NOT NULL AS mappage,
-           to_regclass('public.laposte_labels')              IS NOT NULL AS ancienne
+           to_regclass('public.laposte_labels')              IS NOT NULL AS ancienne,
+           EXISTS (SELECT 1 FROM information_schema.columns
+                   WHERE table_name = 'shipment_labels' AND column_name = 'cn23_data') AS cn23
   `);
   console.log('Tables');
   tables.labels   ? ok('shipment_labels présente')  : ko('shipment_labels ABSENTE — migration non passée');
@@ -38,6 +40,14 @@ async function main() {
   tables.mappage  ? ok('shipping_method_carrier_map présente') : ko('shipping_method_carrier_map ABSENTE — migration non passée');
   tables.ancienne ? ok('laposte_labels conservée (photo d\'avant-bascule, retour arrière possible)')
                   : ko('laposte_labels a disparu — le retour arrière n\'est plus possible');
+
+  // Lot 2 : sans cette colonne, Colissimo refuse d'étiqueter (avant d'acheter
+  // l'étiquette). La lettre suivie et Mondial Relay, eux, n'en dépendent pas.
+  const cn23Requise = listCarrierCodes().some(c => getAdapter(c).producesCustomsDocuments === true);
+  if (cn23Requise) {
+    tables.cn23 ? ok('shipment_labels.cn23_data présente (déclarations douanières)')
+                : ko('shipment_labels.cn23_data ABSENTE — appliquer add_cn23_to_shipment_labels.sql');
+  }
 
   if (!tables.labels || !tables.accounts || !tables.mappage) {
     console.log('\n⛔ NE PAS RECONSTRUIRE LE BACKEND. Appliquer d\'abord :');
@@ -150,7 +160,7 @@ async function main() {
   // enverrait le packing dans le mur au premier colis.
   console.log('\nCorrespondances des modes de livraison');
   const { rows: maps } = await pool.query(
-    `SELECT m.denomination, m.carrier_code, m.account_code,
+    `SELECT m.denomination, m.carrier_code, m.account_code, m.delivery_mode,
             a.id IS NOT NULL AS contrat_present,
             COALESCE(NULLIF(a.settings->>'sandbox', '')::boolean, false) AS sandbox,
             COALESCE(a.settings->>'api_url', '') AS api_url,
@@ -167,9 +177,18 @@ async function main() {
 
     // Le retrait magasin n'appelle aucune API : lui réclamer un contrat serait
     // une fausse alerte, et les fausses alertes font ignorer les vraies.
-    let sansContrat = false;
-    try { sansContrat = getAdapter(m.carrier_code).requiresAccount === false; } catch (e) { /* signalé plus bas */ }
-    if (sansContrat) { ok(`${cle} (aucun contrat nécessaire)`); continue; }
+    let adapterMap = null;
+    try { adapterMap = getAdapter(m.carrier_code); } catch (e) { /* signalé plus bas */ }
+
+    // Un mode hors de la liste du transporteur n'échouerait qu'au packing,
+    // colis en main — typiquement une faute de frappe dans les réglages.
+    const modes = adapterMap?.deliveryModes;
+    if (modes && !modes.some(x => x.code === m.delivery_mode)) {
+      ko(`${cle} : mode « ${m.delivery_mode || 'vide'} » inconnu (attendu : ${modes.map(x => x.code).join(', ')})`);
+      continue;
+    }
+
+    if (adapterMap?.requiresAccount === false) { ok(`${cle} (aucun contrat nécessaire)`); continue; }
 
     if (!m.contrat_present) { ko(`${cle} : contrat INTROUVABLE`); continue; }
     if (!m.contrat_actif)   { ko(`${cle} : contrat désactivé`); continue; }

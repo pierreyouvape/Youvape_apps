@@ -26,17 +26,26 @@ const ORDER_NUMBER_MAX_LENGTH = 20;
  *
  * Le résultat est mémorisé : une requête par vie du processus, pas par colis.
  *
+ * `cn23` : le transporteur peut rendre une déclaration douanière, qui s'écrit
+ * dans la colonne cn23_data (lot 2). Seul ce transporteur-là est bloqué si la
+ * colonne manque — la lettre suivie et Mondial Relay n'y écrivent jamais et
+ * continuent de tourner si la migration tarde.
+ *
+ * @param {{cn23?: boolean}} [options]
  * @throws {Error & {statusCode: number}} 500 si la migration n'a pas tourné.
  */
 let schemaReady = false;
-const assertSchemaReady = async () => {
-  if (schemaReady) return;
+let cn23Ready = false;
+const assertSchemaReady = async ({ cn23 = false } = {}) => {
+  if (schemaReady && (!cn23 || cn23Ready)) return;
 
-  const { rows } = await pool.query(
-    `SELECT to_regclass('public.shipment_labels') IS NOT NULL AS ok`
+  const { rows: [etat] } = await pool.query(
+    `SELECT to_regclass('public.shipment_labels') IS NOT NULL AS ok,
+            EXISTS (SELECT 1 FROM information_schema.columns
+                    WHERE table_name = 'shipment_labels' AND column_name = 'cn23_data') AS cn23`
   );
 
-  if (!rows[0].ok) {
+  if (!etat.ok) {
     const err = new Error(
       "Table shipment_labels absente : appliquer la migration " +
       "backend/src/migrations/add_shipment_labels.sql avant de reconstruire le backend"
@@ -44,8 +53,17 @@ const assertSchemaReady = async () => {
     err.statusCode = 500;
     throw err;
   }
-
   schemaReady = true;
+  if (etat.cn23) cn23Ready = true;
+
+  if (cn23 && !etat.cn23) {
+    const err = new Error(
+      "Colonne shipment_labels.cn23_data absente : appliquer la migration " +
+      "backend/src/migrations/add_cn23_to_shipment_labels.sql. Aucune étiquette n'a été achetée."
+    );
+    err.statusCode = 500;
+    throw err;
+  }
 };
 
 /**
@@ -86,11 +104,16 @@ const findById = async (id) => {
  * Le transporteur est rendu avec : la réimpression doit renommer le fichier
  * selon sa convention, sinon AutoPrint l'envoie sur la mauvaise imprimante.
  *
- * @returns {Promise<?{pdf_data: ?string, order_number: string, carrier_code: string}>}
+ * La CN23 passe par `to_jsonb(l)` et non par son nom de colonne : la
+ * réimpression d'une lettre suivie doit continuer de marcher sur une base où la
+ * migration du lot 2 n'a pas encore tourné.
+ *
+ * @returns {Promise<?{pdf_data: ?string, cn23_data: ?string, order_number: string, carrier_code: string}>}
  */
 const findPdfById = async (id) => {
   const result = await pool.query(
-    'SELECT pdf_data, order_number, carrier_code FROM shipment_labels WHERE id = $1',
+    `SELECT l.pdf_data, l.order_number, l.carrier_code, to_jsonb(l)->>'cn23_data' AS cn23_data
+     FROM shipment_labels l WHERE l.id = $1`,
     [id]
   );
   return result.rows[0] || null;
@@ -105,16 +128,26 @@ const findPdfById = async (id) => {
  */
 const insert = async ({
   carrierCode, accountCode, methodCode, orderNumber, trackingNumber,
-  carrierOrderId, weightGrams, packedBy, pdfBase64
+  carrierOrderId, weightGrams, packedBy, pdfBase64, cn23Base64 = null
 }) => {
+  const colonnes = ['carrier_code', 'account_code', 'method_code', 'order_number', 'tracking_number',
+    'carrier_order_id', 'weight_g', 'packed_by', 'pdf_data'];
+  const valeurs = [carrierCode, accountCode, methodCode || null, orderNumber, trackingNumber,
+    carrierOrderId, weightGrams ?? null, packedBy || null, pdfBase64];
+
+  // La colonne n'est nommée que quand il y a une CN23 : une étiquette sans
+  // déclaration s'enregistre à l'identique, migration du lot 2 passée ou non.
+  if (cn23Base64) {
+    colonnes.push('cn23_data');
+    valeurs.push(cn23Base64);
+  }
+
   const result = await pool.query(
-    `INSERT INTO shipment_labels
-       (carrier_code, account_code, method_code, order_number, tracking_number,
-        carrier_order_id, weight_g, packed_by, pdf_data)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-     RETURNING *`,
-    [carrierCode, accountCode, methodCode || null, orderNumber, trackingNumber,
-     carrierOrderId, weightGrams ?? null, packedBy || null, pdfBase64]
+    `INSERT INTO shipment_labels (${colonnes.join(', ')})
+     VALUES (${valeurs.map((_, i) => `$${i + 1}`).join(', ')})
+     RETURNING id, carrier_code, account_code, method_code, order_number, tracking_number,
+               carrier_order_id, status, weight_g, packed_by, created_at`,
+    valeurs
   );
   return result.rows[0];
 };
