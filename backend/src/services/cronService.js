@@ -388,8 +388,9 @@ const setupBmsShelfLocationCron = () => {
     bmsShelfLocationCronJob = null;
   }
 
-  // Une fois par nuit : ~5 600 appels BMS (un par SKU), soit ~90 s. Les emplacements
-  // bougent rarement, un rafraichissement quotidien suffit largement.
+  // Une fois par nuit, tout le catalogue publie : ~5 700 appels BMS (un par SKU) a
+  // ~335 req/min, soit ~17 min, plus d'eventuelles pauses de quota de 65 s. Les
+  // emplacements bougent rarement, un rafraichissement quotidien suffit largement.
   bmsShelfLocationCronJob = cron.schedule('20 4 * * *', syncBmsShelfLocations, {
     timezone: 'Europe/Paris'
   });

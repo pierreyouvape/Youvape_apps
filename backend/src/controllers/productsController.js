@@ -1130,13 +1130,18 @@ exports.getBmsLocations = async (req, res) => {
  * distinguer trois cas : réponse valide, SKU inconnu (404, définitif), et échec
  * (on n'écrit RIEN, ni valeur ni horodatage — le produit repassera).
  *
- * Le tri `synced_at NULLS FIRST` + le plafond par passage font que chaque nuit
- * traite les produits les plus anciennement vus : le catalogue se remplit en
- * quelques nuits, puis se rafraîchit en continu.
+ * Le tri `synced_at NULLS FIRST` fait passer en tete les produits les plus
+ * anciennement vus (et les nouveaux, jamais synchronises). Le plafond par passage
+ * couvre tout le catalogue publie : un emplacement change dans BMS remonte des la
+ * nuit suivante. Les produits rejetes par le quota gardent leur horodatage et
+ * repassent donc en tete au passage suivant.
  */
 const MAIN_WAREHOUSE = 'entrepot';
 const LOCATION_SYNC_CONCURRENCY = 3;
-const LOCATION_SYNC_MAX_PER_RUN = 1200;
+// Plafond de securite (le catalogue publie tourne autour de 5 700 SKU) : il doit rester
+// AU-DESSUS du catalogue, sinon un passage n'en rafraichit qu'une fraction et un
+// emplacement modifie dans BMS met plusieurs jours a remonter dans /catalog.
+const LOCATION_SYNC_MAX_PER_RUN = 9000;
 const LOCATION_SYNC_PAUSE_MS = 120;
 // BMS ouvre une nouvelle fenêtre de quota au bout d'une minute. Attendre la fenêtre
 // suivante plutôt qu'abandonner : sinon un passage ne couvre qu'une centaine de
