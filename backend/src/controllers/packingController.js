@@ -46,7 +46,9 @@ const searchOrder = async (req, res) => {
         p.sku,
         p.post_title,
         COALESCE(p.image_url, p_parent.image_url) as image_url,
-        p.weight
+        p.weight,
+        p.product_type,
+        oi.line_total
       FROM order_items oi
       LEFT JOIN products p ON p.wp_product_id = COALESCE(NULLIF(oi.variation_id, 0), oi.product_id)
       LEFT JOIN products p_parent ON p.wp_parent_id = p_parent.wp_product_id
@@ -55,9 +57,31 @@ const searchOrder = async (req, res) => {
       ORDER BY oi.id
     `, [orderNumber]);
 
+    // Les lots (produits `woosb` : « Lot 10 Boosters YouBoost », « Lot Gros
+    // Nuages »…) ne s'emballent pas. WooCommerce écrit deux sortes de lignes
+    // pour un lot : le lot lui-même, au prix payé, et une ligne par composant à
+    // 0 €. Ce sont les composants qu'on met dans le carton ; faire scanner le lot
+    // en plus revenait à demander un article qui n'existe pas physiquement.
+    //
+    // Garde-fou : on ne retire le lot QUE si la commande porte des lignes à 0 €.
+    // Sans elles, ses articles n'apparaîtraient nulle part et la commande
+    // partirait incomplète sans que personne s'en aperçoive. Le cas ne s'est pas
+    // présenté sur 90 jours (1 975 lignes de lot, toutes accompagnées de leurs
+    // composants) — c'est la même règle que services/orderWeightService, qui ne
+    // compte le poids d'un lot que si ses composants sont absents.
+    const aDesComposants = itemsResult.rows.some(r =>
+      r.product_type !== 'woosb' && Number(r.line_total) === 0);
+    const estLotMasque = (r) => r.product_type === 'woosb' && aDesComposants;
+
+    // Rendus à part : le lot figure sur la commande, le préparateur doit savoir
+    // pourquoi il ne le retrouve pas dans la liste.
+    const hiddenPacks = itemsResult.rows
+      .filter(estLotMasque)
+      .map(r => ({ name: r.order_item_name || r.post_title, qty: r.qty }));
+
     // Pour chaque article, chercher les barcodes associés
     const items = [];
-    for (const item of itemsResult.rows) {
+    for (const item of itemsResult.rows.filter(r => !estLotMasque(r))) {
       const productWpId = item.variation_id && item.variation_id !== 0 ? item.variation_id : item.product_id;
 
       const barcodesResult = await pool.query(`
@@ -94,6 +118,7 @@ const searchOrder = async (req, res) => {
     ]);
 
     res.json({
+      hidden_packs: hiddenPacks,
       // status : 'mapped' (on sait étiqueter), 'no_label' (rien à imprimer,
       // volontairement) ou 'unknown' (personne ne l'a mappé : on bloque).
       carrier,

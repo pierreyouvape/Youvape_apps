@@ -81,6 +81,8 @@ const PackingApp = () => {
   const [hoveredImage, setHoveredImage] = useState(null); // { url, x, y }
   // Transporteur résolu au scan : sert au bandeau coloré ET au blocage.
   const [carrier, setCarrier] = useState(null);
+  // Lots (`woosb`) retirés de la liste : leurs articles y sont déjà, à l'unité.
+  const [hiddenPacks, setHiddenPacks] = useState([]);
   const [wrongShippingOrder, setWrongShippingOrder] = useState(null); // { orderNumber, denomination } si mode inconnu
   const [editingAddress, setEditingAddress] = useState(false); // édition adresse de livraison
   const [addressForm, setAddressForm] = useState(null); // copie éditable de order.shipping
@@ -239,6 +241,7 @@ const PackingApp = () => {
 
       setOrder(loadedOrder);
       setWeight(res.data.weight || null);
+      setHiddenPacks(res.data.hidden_packs || []);
       setItems(res.data.items.map(item => ({
         ...item,
         scanned: 0
@@ -538,6 +541,7 @@ const PackingApp = () => {
     setLabelLoading(false);
     setWrongShippingOrder(null);
     setCarrier(null);
+    setHiddenPacks([]);
   }, []);
 
   // Listener clavier global — capture les scans sans champ de saisie
@@ -1288,6 +1292,19 @@ const PackingApp = () => {
               </div>
             )}
 
+            {/* Un lot figure sur la commande mais ne s'emballe pas : sans cette
+                mention, le préparateur chercherait un article absent de la liste. */}
+            {hiddenPacks.length > 0 && (
+              <div style={{
+                marginTop: '15px', padding: '12px 18px', borderRadius: '10px',
+                backgroundColor: '#eef2ff', color: '#3730a3', fontSize: '15px'
+              }}>
+                <strong>Rien à emballer pour :</strong>{' '}
+                {hiddenPacks.map(p => `${p.name}${p.qty > 1 ? ` ×${p.qty}` : ''}`).join(', ')}
+                {' '}— lot{hiddenPacks.length > 1 ? 's' : ''} virtuel{hiddenPacks.length > 1 ? 's' : ''}, ses articles sont listés ci-dessous à l'unité.
+              </div>
+            )}
+
             {/* Liste des articles */}
             <div style={{
               backgroundColor: 'white',
@@ -1299,10 +1316,10 @@ const PackingApp = () => {
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead>
                   <tr style={{ backgroundColor: '#f8f9fa' }}>
-                    <th style={{ padding: '12px 8px', width: '50px' }}></th>
-                    <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: '14px', color: '#666' }}>Article</th>
-                    <th style={{ padding: '12px 16px', textAlign: 'center', fontSize: '14px', color: '#666', width: '80px' }}>SKU</th>
-                    <th style={{ padding: '12px 16px', textAlign: 'center', fontSize: '14px', color: '#666', width: '260px' }}>Quantite</th>
+                    <th style={{ padding: '14px 12px', width: '75px' }}></th>
+                    <th style={{ padding: '14px 24px', textAlign: 'left', fontSize: '17px', color: '#666' }}>Article</th>
+                    <th style={{ padding: '14px 24px', textAlign: 'center', fontSize: '17px', color: '#666', width: '120px' }}>SKU</th>
+                    <th style={{ padding: '14px 24px', textAlign: 'center', fontSize: '17px', color: '#666', width: '390px' }}>Quantite</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1314,12 +1331,12 @@ const PackingApp = () => {
                         transition: 'background-color 0.3s ease'
                       }}
                     >
-                      <td style={{ padding: '6px 8px', textAlign: 'center' }}>
+                      <td style={{ padding: '9px 12px', textAlign: 'center' }}>
                         {item.image_url ? (
                           <img
                             src={item.image_url}
                             alt=""
-                            style={{ width: '40px', height: '40px', objectFit: 'cover', borderRadius: '4px', cursor: 'pointer' }}
+                            style={{ width: '60px', height: '60px', objectFit: 'cover', borderRadius: '4px', cursor: 'pointer' }}
                             onMouseEnter={(e) => {
                               const rect = e.target.getBoundingClientRect();
                               setHoveredImage({ url: item.image_url, x: rect.right + 10, y: rect.top });
@@ -1327,29 +1344,29 @@ const PackingApp = () => {
                             onMouseLeave={() => setHoveredImage(null)}
                           />
                         ) : (
-                          <div style={{ width: '40px', height: '40px', backgroundColor: '#e5e7eb', borderRadius: '4px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', color: '#9ca3af', fontSize: '14px' }}>?</div>
+                          <div style={{ width: '60px', height: '60px', backgroundColor: '#e5e7eb', borderRadius: '4px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', color: '#9ca3af', fontSize: '21px' }}>?</div>
                         )}
                       </td>
-                      <td style={{ padding: '14px 16px', fontSize: '15px', fontWeight: '500' }}>
+                      <td style={{ padding: '21px 24px', fontSize: '22px', fontWeight: '500' }}>
                         {item.name}
                       </td>
-                      <td style={{ padding: '14px 16px', textAlign: 'center', fontSize: '13px', color: '#666' }}>
+                      <td style={{ padding: '21px 24px', textAlign: 'center', fontSize: '19px', color: '#666' }}>
                         {item.sku || '-'}
                       </td>
-                      <td style={{ padding: '14px 16px', textAlign: 'center' }}>
-                        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '4px' }}>
+                      <td style={{ padding: '21px 24px', textAlign: 'center' }}>
+                        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '6px' }}>
                           <button
                             onClick={() => handleManualDecrementAll(item.id)}
                             disabled={item.scanned === 0}
                             style={{
-                              width: '36px',
-                              height: '32px',
+                              width: '54px',
+                              height: '48px',
                               borderRadius: '6px',
                               border: 'none',
                               backgroundColor: '#dee2e6',
                               color: item.scanned === 0 ? '#adb5bd' : '#dc3545',
                               cursor: item.scanned === 0 ? 'default' : 'pointer',
-                              fontSize: '13px',
+                              fontSize: '19px',
                               fontWeight: '700'
                             }}
                           >
@@ -1359,23 +1376,23 @@ const PackingApp = () => {
                             onClick={() => handleManualDecrement(item.id)}
                             disabled={item.scanned === 0}
                             style={{
-                              width: '36px',
-                              height: '32px',
+                              width: '54px',
+                              height: '48px',
                               borderRadius: '6px',
                               border: 'none',
                               backgroundColor: '#dee2e6',
                               color: item.scanned === 0 ? '#adb5bd' : '#dc3545',
                               cursor: item.scanned === 0 ? 'default' : 'pointer',
-                              fontSize: '16px',
+                              fontSize: '24px',
                               fontWeight: '700'
                             }}
                           >
                             -
                           </button>
                           <span style={{
-                            fontSize: '18px',
+                            fontSize: '27px',
                             fontWeight: '700',
-                            minWidth: '50px',
+                            minWidth: '75px',
                             textAlign: 'center',
                             color: item.scanned >= item.qty ? '#155724' : item.scanned > 0 ? '#856404' : '#721c24'
                           }}>
@@ -1385,14 +1402,14 @@ const PackingApp = () => {
                             onClick={() => handleManualIncrement(item.id)}
                             disabled={item.scanned >= item.qty}
                             style={{
-                              width: '36px',
-                              height: '32px',
+                              width: '54px',
+                              height: '48px',
                               borderRadius: '6px',
                               border: 'none',
                               backgroundColor: '#dee2e6',
                               color: item.scanned >= item.qty ? '#adb5bd' : '#28a745',
                               cursor: item.scanned >= item.qty ? 'default' : 'pointer',
-                              fontSize: '16px',
+                              fontSize: '24px',
                               fontWeight: '700'
                             }}
                           >
@@ -1402,14 +1419,14 @@ const PackingApp = () => {
                             onClick={() => handleManualIncrementAll(item.id)}
                             disabled={item.scanned >= item.qty}
                             style={{
-                              width: '36px',
-                              height: '32px',
+                              width: '54px',
+                              height: '48px',
                               borderRadius: '6px',
                               border: 'none',
                               backgroundColor: '#dee2e6',
                               color: item.scanned >= item.qty ? '#adb5bd' : '#28a745',
                               cursor: item.scanned >= item.qty ? 'default' : 'pointer',
-                              fontSize: '16px',
+                              fontSize: '24px',
                               fontWeight: '700'
                             }}
                           >
