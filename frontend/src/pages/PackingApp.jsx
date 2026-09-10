@@ -792,7 +792,7 @@ const PackingApp = () => {
       </div>
 
       {/* Content */}
-      <div style={{ flex: 1, maxWidth: '900px', margin: '0 auto', padding: '20px', width: '100%' }}>
+      <div style={{ flex: 1, maxWidth: '940px', margin: '0 auto', padding: '20px', width: '100%' }}>
 
         {showLabels ? (
           <>
