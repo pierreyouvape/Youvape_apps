@@ -1316,10 +1316,10 @@ const PackingApp = () => {
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead>
                   <tr style={{ backgroundColor: '#f8f9fa' }}>
-                    <th style={{ padding: '14px 12px', width: '75px' }}></th>
-                    <th style={{ padding: '14px 24px', textAlign: 'left', fontSize: '17px', color: '#666' }}>Article</th>
-                    <th style={{ padding: '14px 24px', textAlign: 'center', fontSize: '17px', color: '#666', width: '120px' }}>SKU</th>
-                    <th style={{ padding: '14px 24px', textAlign: 'center', fontSize: '17px', color: '#666', width: '390px' }}>Quantite</th>
+                    <th style={{ padding: '13px 10px', width: '62px' }}></th>
+                    <th style={{ padding: '13px 20px', textAlign: 'left', fontSize: '16px', color: '#666' }}>Article</th>
+                    <th style={{ padding: '13px 20px', textAlign: 'center', fontSize: '16px', color: '#666', width: '100px' }}>SKU</th>
+                    <th style={{ padding: '13px 20px', textAlign: 'center', fontSize: '16px', color: '#666', width: '325px' }}>Quantite</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1331,12 +1331,12 @@ const PackingApp = () => {
                         transition: 'background-color 0.3s ease'
                       }}
                     >
-                      <td style={{ padding: '9px 12px', textAlign: 'center' }}>
+                      <td style={{ padding: '8px 10px', textAlign: 'center' }}>
                         {item.image_url ? (
                           <img
                             src={item.image_url}
                             alt=""
-                            style={{ width: '60px', height: '60px', objectFit: 'cover', borderRadius: '4px', cursor: 'pointer' }}
+                            style={{ width: '50px', height: '50px', objectFit: 'cover', borderRadius: '4px', cursor: 'pointer' }}
                             onMouseEnter={(e) => {
                               const rect = e.target.getBoundingClientRect();
                               setHoveredImage({ url: item.image_url, x: rect.right + 10, y: rect.top });
@@ -1344,29 +1344,29 @@ const PackingApp = () => {
                             onMouseLeave={() => setHoveredImage(null)}
                           />
                         ) : (
-                          <div style={{ width: '60px', height: '60px', backgroundColor: '#e5e7eb', borderRadius: '4px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', color: '#9ca3af', fontSize: '21px' }}>?</div>
+                          <div style={{ width: '50px', height: '50px', backgroundColor: '#e5e7eb', borderRadius: '4px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', color: '#9ca3af', fontSize: '18px' }}>?</div>
                         )}
                       </td>
-                      <td style={{ padding: '21px 24px', fontSize: '22px', fontWeight: '500' }}>
+                      <td style={{ padding: '18px 20px', fontSize: '19px', fontWeight: '500' }}>
                         {item.name}
                       </td>
-                      <td style={{ padding: '21px 24px', textAlign: 'center', fontSize: '19px', color: '#666' }}>
+                      <td style={{ padding: '18px 20px', textAlign: 'center', fontSize: '16px', color: '#666' }}>
                         {item.sku || '-'}
                       </td>
-                      <td style={{ padding: '21px 24px', textAlign: 'center' }}>
-                        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '6px' }}>
+                      <td style={{ padding: '18px 20px', textAlign: 'center' }}>
+                        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '5px' }}>
                           <button
                             onClick={() => handleManualDecrementAll(item.id)}
                             disabled={item.scanned === 0}
                             style={{
-                              width: '54px',
-                              height: '48px',
+                              width: '45px',
+                              height: '40px',
                               borderRadius: '6px',
                               border: 'none',
                               backgroundColor: '#dee2e6',
                               color: item.scanned === 0 ? '#adb5bd' : '#dc3545',
                               cursor: item.scanned === 0 ? 'default' : 'pointer',
-                              fontSize: '19px',
+                              fontSize: '16px',
                               fontWeight: '700'
                             }}
                           >
@@ -1376,23 +1376,23 @@ const PackingApp = () => {
                             onClick={() => handleManualDecrement(item.id)}
                             disabled={item.scanned === 0}
                             style={{
-                              width: '54px',
-                              height: '48px',
+                              width: '45px',
+                              height: '40px',
                               borderRadius: '6px',
                               border: 'none',
                               backgroundColor: '#dee2e6',
                               color: item.scanned === 0 ? '#adb5bd' : '#dc3545',
                               cursor: item.scanned === 0 ? 'default' : 'pointer',
-                              fontSize: '24px',
+                              fontSize: '20px',
                               fontWeight: '700'
                             }}
                           >
                             -
                           </button>
                           <span style={{
-                            fontSize: '27px',
+                            fontSize: '22px',
                             fontWeight: '700',
-                            minWidth: '75px',
+                            minWidth: '62px',
                             textAlign: 'center',
                             color: item.scanned >= item.qty ? '#155724' : item.scanned > 0 ? '#856404' : '#721c24'
                           }}>
@@ -1402,14 +1402,14 @@ const PackingApp = () => {
                             onClick={() => handleManualIncrement(item.id)}
                             disabled={item.scanned >= item.qty}
                             style={{
-                              width: '54px',
-                              height: '48px',
+                              width: '45px',
+                              height: '40px',
                               borderRadius: '6px',
                               border: 'none',
                               backgroundColor: '#dee2e6',
                               color: item.scanned >= item.qty ? '#adb5bd' : '#28a745',
                               cursor: item.scanned >= item.qty ? 'default' : 'pointer',
-                              fontSize: '24px',
+                              fontSize: '20px',
                               fontWeight: '700'
                             }}
                           >
@@ -1419,14 +1419,14 @@ const PackingApp = () => {
                             onClick={() => handleManualIncrementAll(item.id)}
                             disabled={item.scanned >= item.qty}
                             style={{
-                              width: '54px',
-                              height: '48px',
+                              width: '45px',
+                              height: '40px',
                               borderRadius: '6px',
                               border: 'none',
                               backgroundColor: '#dee2e6',
                               color: item.scanned >= item.qty ? '#adb5bd' : '#28a745',
                               cursor: item.scanned >= item.qty ? 'default' : 'pointer',
-                              fontSize: '24px',
+                              fontSize: '20px',
                               fontWeight: '700'
                             }}
                           >

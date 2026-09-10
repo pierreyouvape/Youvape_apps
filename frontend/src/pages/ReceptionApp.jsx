@@ -47,17 +47,17 @@ const fmtDate = (s) => {
 const PREF_KEY = 'yv.reception.askBarcodeType';
 
 /* ─── PETITS COMPOSANTS ─────────────────────────────────── */
-// `large` : version agrandie de moitié, réservée à l'écran de COMPTAGE — celui
+// `large` : version agrandie d'un quart, réservée à l'écran de COMPTAGE — celui
 // qu'on lit debout, douchette en main, à un mètre de l'écran. Les listes de bons
 // et le détail d'un bon gardent la taille normale.
 function Th({ children, align = 'left', width, large }) {
-  return <th style={{ padding: large ? '16px 24px' : '12px 16px', textAlign: align, width, fontWeight: 700, color: C.greyT,
-    fontSize: large ? 16 : 11.5, textTransform: 'uppercase', letterSpacing: 0.3,
+  return <th style={{ padding: large ? '14px 20px' : '12px 16px', textAlign: align, width, fontWeight: 700, color: C.greyT,
+    fontSize: large ? 14 : 11.5, textTransform: 'uppercase', letterSpacing: 0.3,
     borderBottom: `2px solid ${C.greyB}`, background: C.grey, whiteSpace: 'nowrap' }}>{children}</th>;
 }
 function Td({ children, align = 'left', bold, color, style, large }) {
-  return <td style={{ padding: large ? '18px 24px' : '12px 16px', textAlign: align, color: color || C.dark,
-    fontWeight: bold ? 700 : 400, borderBottom: `1px solid ${C.greyB}`, fontSize: large ? 21 : 14, ...style }}>{children}</td>;
+  return <td style={{ padding: large ? '15px 20px' : '12px 16px', textAlign: align, color: color || C.dark,
+    fontWeight: bold ? 700 : 400, borderBottom: `1px solid ${C.greyB}`, fontSize: large ? 18 : 14, ...style }}>{children}</td>;
 }
 function Btn({ children, onClick, variant = 'primary', disabled, small, large, title, style }) {
   const variants = {
@@ -69,9 +69,9 @@ function Btn({ children, onClick, variant = 'primary', disabled, small, large, t
   return (
     <button onClick={onClick} disabled={disabled} title={title} style={{
       ...variants[variant],
-      padding: small ? (large ? '8px 16px' : '5px 11px') : (large ? '13px 25px' : '9px 17px'),
+      padding: small ? (large ? '6px 14px' : '5px 11px') : (large ? '11px 21px' : '9px 17px'),
       borderRadius: 8, fontWeight: 600,
-      fontSize: small ? (large ? 19 : 12.5) : (large ? 20 : 13.5),
+      fontSize: small ? (large ? 16 : 12.5) : (large ? 17 : 13.5),
       cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.5 : 1,
       whiteSpace: 'nowrap', ...style,
     }}>{children}</button>
@@ -101,11 +101,11 @@ function Thumb({ src, alt, size = 100 }) {
  */
 function Location({ value, large }) {
   if (value) {
-    return <span style={{ display: 'inline-block', padding: large ? '6px 13px' : '4px 9px', borderRadius: 6,
-      background: C.grey, border: `1px solid ${C.greyB}`, fontSize: large ? 19 : 13, fontWeight: 700,
+    return <span style={{ display: 'inline-block', padding: large ? '5px 11px' : '4px 9px', borderRadius: 6,
+      background: C.grey, border: `1px solid ${C.greyB}`, fontSize: large ? 16 : 13, fontWeight: 700,
       color: C.primary, letterSpacing: 0.4, whiteSpace: 'nowrap' }}>{value}</span>;
   }
-  return <span style={{ color: C.greyM, fontSize: large ? 19 : 13 }}>—</span>;
+  return <span style={{ color: C.greyM, fontSize: large ? 16 : 13 }}>—</span>;
 }
 
 function Badge({ children, color, bg, title }) {
@@ -505,7 +505,7 @@ function CountingScreen({ token, order, items, onBack, onReload }) {
                 <Th large>Produit</Th>
                 <Th large>Emplacement</Th>
                 <Th align="right" large>Attendu</Th>
-                <Th align="center" width={345} large>Compté</Th>
+                <Th align="center" width={288} large>Compté</Th>
                 <Th align="right" large>Écart</Th>
               </tr>
             </thead>
@@ -518,7 +518,7 @@ function CountingScreen({ token, order, items, onBack, onReload }) {
                     <Td large><Thumb src={it.image_url} alt={it.name} /></Td>
                     <Td large>
                       {it.name}
-                      <div style={{ fontSize: 17, color: C.greyT, marginTop: 3 }}>
+                      <div style={{ fontSize: 14, color: C.greyT, marginTop: 3 }}>
                         {it.supplier_sku || it.sku}
                       </div>
                     </Td>
@@ -526,19 +526,19 @@ function CountingScreen({ token, order, items, onBack, onReload }) {
                     <Td align="right" bold large>
                       {targetOf(it)}
                       {it.pack_size > 1 && (
-                        <div style={{ fontSize: 16, fontWeight: 600, color: C.accent, marginTop: 3 }}>
+                        <div style={{ fontSize: 14, fontWeight: 600, color: C.accent, marginTop: 3 }}>
                           boîte{targetOf(it) > 1 ? 's' : ''} de {it.pack_size}
                           <span style={{ color: C.greyT, fontWeight: 500 }}> · {it.qty_remaining} u.</span>
                         </div>
                       )}
                     </Td>
                     <Td align="center" large>
-                      <div style={{ display: 'flex', gap: 9, alignItems: 'center', justifyContent: 'center' }}>
+                      <div style={{ display: 'flex', gap: 8, alignItems: 'center', justifyContent: 'center' }}>
                         <Btn small large variant="ghost" title="Remettre à zéro"
                           onClick={() => setCount(it.id, 0)}>Rien</Btn>
                         <input type="number" min="0" value={counted}
                           onChange={e => setCount(it.id, e.target.value)}
-                          style={{ width: 111, padding: '9px 12px', textAlign: 'center', fontSize: 21,
+                          style={{ width: 92, padding: '8px 10px', textAlign: 'center', fontSize: 18,
                             fontWeight: 700, borderRadius: 7, border: `1px solid ${C.greyB}` }} />
                         <Btn small large variant="ghost" title="Tout réceptionner"
                           onClick={() => setCount(it.id, targetOf(it))}>Tout</Btn>
