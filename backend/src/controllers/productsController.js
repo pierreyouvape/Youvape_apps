@@ -921,6 +921,23 @@ const isCartonBarcode = (principal, candidate) => {
 exports.isCartonBarcode = isCartonBarcode;
 
 /**
+ * Filtre d'ingestion : le champ `additionnal_barcodes` de BMS contient de la saisie
+ * libre, pas seulement des codes — relevé le 10/09/2026 : « è », « f », une URL,
+ * une date (« 08-2029 »), des emplacements (« E 6-2 »), et surtout des EAN précédés
+ * d'une frappe parasite (« f3760230726367 », « >3666528044413 »). On n'accepte que :
+ *   - un code numérique de 8 à 14 chiffres (EAN-8, UPC-A, EAN-13, GTIN-14) ;
+ *   - un code alphanumérique MAJUSCULE de 8 à 20 caractères (Code 128) — c'est le
+ *     format des codes « Z » + 11 chiffres imprimés sur les packs Vaporesso/Aspire.
+ * Les numéros de lot (« LOT… ») sont écartés : ce ne sont pas des codes produit.
+ */
+const isPlausibleBarcode = (code) => {
+  const c = String(code || '').trim();
+  if (/^LOT/i.test(c)) return false;
+  return /^[0-9]{8,14}$/.test(c) || /^[A-Z0-9]{8,20}$/.test(c);
+};
+exports.isPlausibleBarcode = isPlausibleBarcode;
+
+/**
  * Synchronise les codes-barres depuis BMS (cron horaire).
  *
  * Ingère le code principal ET les `additionnal_barcodes` — ces derniers portent
@@ -953,10 +970,13 @@ exports.syncBarcodesFromBMS = async () => {
     // au hasard. Mesuré : 16 codes BMS sont déjà portés par un autre produit —
     // on les laisse de côté plutôt que de créer l'ambiguïté.
     const owners = new Map();
+    const knownByProduct = new Map();   // product_id -> Set(codes deja connus)
     const { rows: existingRows } = await pool.query('SELECT product_id, barcode FROM product_barcodes');
     for (const r of existingRows) {
       if (!owners.has(r.barcode)) owners.set(r.barcode, new Set());
       owners.get(r.barcode).add(r.product_id);
+      if (!knownByProduct.has(r.product_id)) knownByProduct.set(r.product_id, new Set());
+      knownByProduct.get(r.product_id).add(r.barcode);
     }
 
     let units = 0, cartons = 0, touched = 0, ambigus = 0;
@@ -964,12 +984,23 @@ exports.syncBarcodesFromBMS = async () => {
       const bp = bmsBySku.get(product.sku);
       if (!bp) continue;
 
+      const extras = (Array.isArray(bp.additionnal_barcodes) ? bp.additionnal_barcodes : [])
+        .map(e => String(e || '').trim()).filter(Boolean);
+      const principal = bp.barcode ? String(bp.barcode).trim() : null;
+
+      // Codes unité de référence : le principal BMS, ses codes supplémentaires et
+      // ceux que NOUS connaissons déjà. Comparer au seul principal BMS ratait les
+      // 86 produits où BMS garde un code différent du nôtre — FR-K 3mg : BMS a
+      // 3662572952896, notre EAN est 3662572947953, et son carton
+      // 13662572947950 dérive du nôtre (constaté le 10/09/2026).
+      const references = new Set([principal, ...extras, ...(knownByProduct.get(product.id) || [])]
+        .filter(c => c && /^[0-9]{13}$/.test(c)));
+
       const codes = [];
-      if (bp.barcode) codes.push({ barcode: String(bp.barcode).trim(), type: 'unit' });
-      for (const extra of (Array.isArray(bp.additionnal_barcodes) ? bp.additionnal_barcodes : [])) {
-        const code = String(extra || '').trim();
-        if (!code) continue;
-        codes.push({ barcode: code, type: isCartonBarcode(bp.barcode, code) ? 'pack' : 'unit' });
+      for (const code of [principal, ...extras]) {
+        if (!code || !isPlausibleBarcode(code)) continue;
+        const carton = [...references].some(ref => isCartonBarcode(ref, code));
+        codes.push({ barcode: code, type: carton ? 'pack' : 'unit' });
       }
       if (codes.length === 0) continue;
 
