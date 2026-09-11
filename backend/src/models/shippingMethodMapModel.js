@@ -85,6 +85,31 @@ const resolve = async (denomination) => {
 };
 
 /**
+ * Correspondance d'une dénomination, active OU NON.
+ *
+ * `resolve` ne voit que les actives, parce que c'est lui qui décide d'une
+ * étiquette. La fiche commande, elle, veut savoir si le mode exige un point
+ * relais — y compris pour une dénomination encore inactive, comme les
+ * dénominations Colissimo amorcées inactives au lot 2.
+ *
+ * @param {?string} denomination
+ * @returns {Promise<?object>}
+ */
+const findByDenomination = async (denomination) => {
+  const needle = String(denomination ?? '').trim().toLowerCase();
+  if (!needle) return null;
+
+  const { rows } = await pool.query(
+    `SELECT denomination, carrier_code, account_code, delivery_mode, active
+     FROM shipping_method_carrier_map
+     WHERE lower(btrim(denomination)) = $1
+     LIMIT 1`,
+    [needle]
+  );
+  return rows[0] || null;
+};
+
+/**
  * Dénominations vues dans les commandes récentes et jamais mappées.
  *
  * Sert l'écran de réglages : proposer à mapper ce qui arrive vraiment, plutôt
@@ -187,5 +212,5 @@ const remove = async (id) => {
 };
 
 module.exports = {
-  resolve, listActive, listAll, listUnmappedSeen, upsert, remove, invalidateCache
+  resolve, listActive, listAll, findByDenomination, listUnmappedSeen, upsert, remove, invalidateCache
 };

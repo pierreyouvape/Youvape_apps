@@ -489,6 +489,27 @@ class OrderModel {
   }
 
   /**
+   * Enregistre le point relais saisi à la main, ou le retire (`point` à null).
+   *
+   * `relay_point_manual` n'est jamais écrit par la synchro WooCommerce : c'est
+   * ce qui empêche un changement de statut d'effacer la saisie. Voir
+   * services/carriers/relayPoints.
+   *
+   * @param {number} orderId - wp_order_id
+   * @param {?object} point
+   * @returns {Promise<?object>} null si la commande n'existe pas
+   */
+  async setManualRelayPoint(orderId, point) {
+    const result = await pool.query(
+      `UPDATE orders SET relay_point_manual = $1
+       WHERE wp_order_id = $2
+       RETURNING wp_order_id, relay_point, relay_point_manual`,
+      [point ? JSON.stringify(point) : null, orderId]
+    );
+    return result.rows[0] || null;
+  }
+
+  /**
    * Récupère les items d'une commande
    */
   async getItems(orderId) {

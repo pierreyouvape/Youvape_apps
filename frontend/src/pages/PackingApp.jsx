@@ -162,11 +162,18 @@ const PackingApp = () => {
         return;
       }
 
-      setLabelData({ pdfBase64: data.pdfBase64, trackingId: data.trackingId, orderNumber: data.orderNumber, fileName: data.fileName });
+      setLabelData({
+        pdfBase64: data.pdfBase64, trackingId: data.trackingId, orderNumber: data.orderNumber, fileName: data.fileName,
+        cn23Base64: data.cn23Base64 || null, cn23FileName: data.cn23FileName || null
+      });
       downloadPdf(data.pdfBase64, orderNumber, data.fileName);
+      // Déclaration douanière (outre-mer, Royaume-Uni) : un SECOND fichier, que
+      // AutoPrint envoie sur la Brother A4 d'après son nom (customs_document_*).
+      if (data.cn23Base64) downloadPdf(data.cn23Base64, orderNumber, data.cn23FileName);
+      const cn23 = data.cn23Base64 ? ' + declaration douaniere (CN23)' : '';
       setMessage(data.trackingId
-        ? `Etiquette ${data.carrierLabel || ''} generee — suivi : ${data.trackingId}`
-        : `Etiquette ${data.carrierLabel || ''} generee`);
+        ? `Etiquette ${data.carrierLabel || ''} generee${cn23} — suivi : ${data.trackingId}`
+        : `Etiquette ${data.carrierLabel || ''} generee${cn23}`);
     } catch (err) {
       if (err.response?.status === 422 && err.response.data?.reason === 'unknown_shipping_method') {
         setLabelData(null);
@@ -420,6 +427,8 @@ const PackingApp = () => {
         headers: { Authorization: `Bearer ${token}` }
       });
       downloadPdf(res.data.pdfBase64, res.data.orderNumber, res.data.fileName);
+      // Un colis outre-mer ne part pas sans sa CN23 : elle se réimprime avec.
+      if (res.data.cn23Base64) downloadPdf(res.data.cn23Base64, res.data.orderNumber, res.data.cn23FileName);
     } catch (err) {
       alert(err.response?.data?.error || 'Erreur récupération PDF');
     } finally {
@@ -1496,6 +1505,23 @@ const PackingApp = () => {
                     >
                       Re-telecharger l'etiquette
                     </button>
+                    {labelData.cn23Base64 && (
+                      <button
+                        onClick={() => downloadPdf(labelData.cn23Base64, labelData.orderNumber, labelData.cn23FileName)}
+                        style={{
+                          padding: '10px 24px',
+                          backgroundColor: '#28a745',
+                          color: 'white',
+                          border: 'none',
+                          borderRadius: '8px',
+                          fontSize: '14px',
+                          cursor: 'pointer',
+                          marginRight: '10px'
+                        }}
+                      >
+                        Re-telecharger la CN23
+                      </button>
+                    )}
                   </div>
                 )}
 

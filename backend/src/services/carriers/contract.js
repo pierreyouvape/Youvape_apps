@@ -35,12 +35,23 @@
  * @property {Receiver} receiver
  * @property {object}   account     - contrat, cf. services/carriers/accounts
  * @property {number}   weightGrams - poids déclaré, issu de resolveWeight
+ * @property {object}   [options]   - `deliveryMode` (issu du mappage), `relayPoint`,
+ *                                    `shippingMethod` (la dénomination WooCommerce)
+ * @property {object}   [pool]      - accès base, pour l'adaptateur qui a besoin de
+ *                                    plus que le destinataire : les lignes de
+ *                                    commande d'une déclaration douanière
  *
  * @typedef {object} CreateLabelResult
  * @property {?string} carrierOrderId - identifiant de commande chez le transporteur,
  *                                      celui qui permettra l'annulation
  * @property {?string} trackingNumber - numéro de suivi
  * @property {string}  pdfBase64      - étiquette brute, AVANT tamponnage
+ * @property {?string} [cn23Base64]   - déclaration douanière, quand le transporteur
+ *                                      en produit une : imprimée à part, jamais tamponnée
+ * @property {?string} [methodCode]   - code produit réellement employé (DOM, HD…),
+ *                                      enregistré à la place du mode générique
+ * @property {?string} [bmsShipmentTitle] - libellé BMS propre à CETTE étiquette,
+ *                                      quand il dépend du service (Colissimo)
  *
  * @typedef {object} CarrierAdapter
  * @property {string} code        - code transporteur (`shipping_carriers.code`)
@@ -79,6 +90,14 @@
  * @property {boolean} [requiresAccount=true] - à false, l'adaptateur n'a pas de
  *           contrat dans carrier_accounts : ni identifiants ni réglages à charger.
  *           C'est le cas du retrait magasin, qui n'appelle aucune API.
+ * @property {{code: string, label: string}[]} [deliveryModes] - modes que la
+ *           correspondance peut désigner. Quand l'adaptateur les déclare, l'écran
+ *           de mappage propose une liste au lieu d'un champ libre, et le serveur
+ *           comme le préflight refusent tout autre valeur : une faute de frappe
+ *           enverrait le colis sur le mauvais service sans que personne le voie.
+ * @property {boolean} [producesCustomsDocuments=false] - l'adaptateur peut rendre
+ *           une CN23 : l'enregistrement exige alors la colonne cn23_data, vérifiée
+ *           AVANT d'acheter l'étiquette.
  * @property {boolean} [confirmsShipmentInBms=true] - à false, aucune confirmation
  *           d'expédition n'est envoyée à BMS. Le retrait magasin n'est pas une
  *           expédition : la confirmer ferait mentir les stats de transport.
@@ -118,4 +137,16 @@ const assertAdapter = (adapter) => {
   return adapter;
 };
 
-module.exports = { assertAdapter };
+/**
+ * Nom du fichier de la déclaration douanière (CN23).
+ *
+ * Commun à tous les transporteurs, à la différence du nom d'étiquette : AutoPrint
+ * a une seule règle, `customs_document*`, qui l'envoie sur la Brother A4 — là où
+ * l'étiquette part sur l'Intermec.
+ *
+ * @param {string|number} orderNumber
+ * @returns {string}
+ */
+const customsDocumentFileName = (orderNumber) => `customs_document_${orderNumber}.pdf`;
+
+module.exports = { assertAdapter, customsDocumentFileName };

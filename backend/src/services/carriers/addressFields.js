@@ -22,11 +22,29 @@
 // clé de sécurité Mondial Relay côté BMS.
 const INVISIBLES = /[\u00ad\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]/g;
 
-// Ligatures et lettres barrées, sans décomposition Unicode.
+// Ligatures et lettres barrées, sans décomposition Unicode. « ø » y figure
+// depuis le lot 2 : un transporteur qui n'admet que l'ASCII (noms Colissimo)
+// changeait « Søren » — client danois réel — en « S ren ».
 const LIGATURES = [
-  ['Œ', 'OE'], ['œ', 'oe'], ['Æ', 'AE'], ['æ', 'ae'], ['ß', 'ss'],
+  ['Œ', 'OE'], ['œ', 'oe'], ['Æ', 'AE'], ['æ', 'ae'], ['ß', 'ss'], ['Ø', 'O'], ['ø', 'o'],
   ['Ł', 'L'], ['ł', 'l'], ['Đ', 'D'], ['đ', 'd'], ['Ð', 'D'], ['ð', 'd'],
   ['Þ', 'TH'], ['þ', 'th'], ['ı', 'i'], ['İ', 'I'], ['ſ', 's']
+];
+
+// Symboles hors alphabet qui PORTENT DU SENS : les supprimer ferait perdre une
+// information, pas un ornement. Relevés le 10/09/2026 sur nos libellés produits
+// et nos adresses :
+//   - « Ω » (620 libellés) : l'unité des résistances. Supprimé, « Cartouche
+//     Avata - 0.40 Ω » devenait « Cartouche Avata - 0.40 » ;
+//   - « ° » et « º » (79 libellés, 79 adresses) : « N° de série », « N° 5 » ;
+//   - « ² », « ³ », « € ».
+// Aucune décomposition Unicode ne les ramène au latin : il faut les nommer. Le
+// signe ohm U+2126 et l'oméga minuscule sont inclus — même glyphe, autre clavier.
+const SYMBOLES = [
+  ['\u03a9', 'ohm'], ['\u2126', 'ohm'], ['\u03c9', 'ohm'],
+  ['\u00b0', 'o'], ['\u00ba', 'o'],
+  ['\u00b2', '2'], ['\u00b3', '3'],
+  ['\u20ac', 'EUR']
 ];
 
 const sanitizeAddressField = (value) => {
@@ -64,6 +82,21 @@ const sanitizeAddressField = (value) => {
 };
 
 /**
+ * Remplace les symboles qui ont un équivalent en lettres (« Ω » → « ohm »).
+ *
+ * Volontairement HORS de `sanitizeAddressField` : la lettre suivie en dépend et
+ * ses payloads sont figés au caractère près par le banc de non-régression.
+ *
+ * @param {string} value
+ * @returns {string}
+ */
+const replaceSymbols = (value) => {
+  let s = String(value ?? '');
+  for (const [from, to] of SYMBOLES) s = s.split(from).join(to);
+  return s;
+};
+
+/**
  * Ramène à leur lettre de base les caractères latins que les transporteurs
  * n'acceptent pas.
  *
@@ -90,8 +123,9 @@ const transliterateLatin = (value) => {
 /**
  * Restreint une valeur au jeu de caractères accepté par un transporteur.
  *
- * Marche en trois temps : nettoyage commun, translittération de ce qui a un
- * équivalent latin, puis suppression de ce qui reste hors jeu. Un caractère
+ * Marche en quatre temps : nettoyage commun, symboles nommés (« Ω » → « ohm »),
+ * translittération de ce qui a un équivalent latin, puis suppression de ce qui
+ * reste hors jeu. Un caractère
  * supprimé devient une espace plutôt que rien : « Dupont(Fils) » donne
  * « Dupont Fils » et non « DupontFils ».
  *
@@ -104,7 +138,7 @@ const restrictToCharset = (value, allowed) => {
 
   // « & » porte du sens dans les raisons sociales : le perdre en silence
   // transformerait « Durand & Fils » en « Durand Fils ».
-  let s = source.replace(/&/g, ' et ');
+  let s = replaceSymbols(source.replace(/&/g, ' et '));
 
   return [...s]
     .map((c) => (allowed.test(c) ? c : (allowed.test(transliterateLatin(c)) ? transliterateLatin(c) : ' ')))
@@ -113,4 +147,4 @@ const restrictToCharset = (value, allowed) => {
     .trim();
 };
 
-module.exports = { sanitizeAddressField, transliterateLatin, restrictToCharset };
+module.exports = { sanitizeAddressField, replaceSymbols, transliterateLatin, restrictToCharset };

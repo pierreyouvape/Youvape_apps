@@ -12,12 +12,14 @@
 
 const laposteAdapter = require('./laposteAdapter');
 const mondialRelayAdapter = require('./mondialRelayAdapter');
+const colissimoAdapter = require('./colissimoAdapter');
 const interneAdapter = require('./interneAdapter');
 
 /** @type {Record<string, import('./contract').CarrierAdapter>} */
 const ADAPTERS = {
   [laposteAdapter.code]: laposteAdapter,
   [mondialRelayAdapter.code]: mondialRelayAdapter,
+  [colissimoAdapter.code]: colissimoAdapter,
   [interneAdapter.code]: interneAdapter
 };
 

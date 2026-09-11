@@ -165,6 +165,152 @@ function MarginRow({ label, value, bold, style: extraStyle }) {
   );
 }
 
+/* ─── POINT RELAIS ───────────────────────────────────────── */
+// Une commande créée au back-office WooCommerce n'a pas de point relais : la
+// méta du plugin ne s'y édite pas, et le packing refuse alors d'étiqueter. On le
+// saisit ici. Le packing lit le point saisi en premier ; il est stocké à part
+// (relay_point_manual), si bien que la synchro WooCommerce ne peut pas l'écraser.
+const LIBELLE_META = {
+  fontSize: 11, fontWeight: 700, color: C.grisM,
+  textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4,
+};
+
+function PointRelais({ order, token, onChange }) {
+  const saisi = order.relay_point_manual || null;
+  const wc = order.relay_point || null;
+  const { expected = null, networks = [] } = order.relay_point_options || {};
+  const [edition, setEdition] = useState(null);
+  const [envoi, setEnvoi] = useState(false);
+  const [erreur, setErreur] = useState('');
+
+  // Rien à montrer pour une commande sans point dont le mode n'en exige pas.
+  if (!saisi && !wc && !expected) return null;
+
+  const actif = saisi || wc;
+  const libelleReseau = (code) => networks.find(n => n.code === code)?.label || code;
+  const auth = token ? { headers: { Authorization: `Bearer ${token}` } } : {};
+
+  const ouvrir = () => {
+    setErreur('');
+    setEdition({
+      network: saisi?.network || expected?.code || wc?.network || networks[0]?.code || '',
+      id: saisi?.id || '',
+      country: saisi?.country || wc?.country || order.shipping_country || '',
+    });
+  };
+
+  const enregistrer = async (e) => {
+    e.preventDefault();
+    setEnvoi(true); setErreur('');
+    try {
+      const res = await axios.put(`${API_URL}/orders/${order.wp_order_id}/relay-point`, edition, auth);
+      onChange(res.data.data.relay_point_manual);
+      setEdition(null);
+    } catch (err) {
+      setErreur(err.response?.data?.error || 'Enregistrement impossible');
+    } finally {
+      setEnvoi(false);
+    }
+  };
+
+  const retirer = async () => {
+    if (!window.confirm(wc
+      ? `Retirer le point saisi ? Le point choisi par le client (${wc.id}) reprendra la main.`
+      : 'Retirer le point saisi ? La commande n\'aura plus de point relais.')) return;
+    setEnvoi(true); setErreur('');
+    try {
+      await axios.delete(`${API_URL}/orders/${order.wp_order_id}/relay-point`, auth);
+      onChange(null);
+    } catch (err) {
+      setErreur(err.response?.data?.error || 'Suppression impossible');
+    } finally {
+      setEnvoi(false);
+    }
+  };
+
+  const petit = { fontSize: 12, fontWeight: 500, color: C.grisM, marginTop: 2 };
+  const lien = {
+    background: 'none', border: 'none', padding: 0, cursor: 'pointer',
+    color: C.bleu, fontSize: 12, fontWeight: 700, textDecoration: 'underline',
+  };
+  const champ = {
+    padding: '6px 8px', border: `1px solid ${C.grisCL}`, borderRadius: 6,
+    fontSize: 13, color: C.grisTF, background: C.blanc,
+  };
+
+  return (
+    <div style={edition ? { gridColumn: '1 / -1' } : undefined}>
+      <div style={LIBELLE_META}>Point relais</div>
+
+      {!edition && (
+        <>
+          {actif ? (
+            <div style={{ fontSize: 14, fontWeight: 700, color: C.grisTF, fontVariantNumeric: 'tabular-nums' }}>
+              {actif.id}
+              <span style={{ fontWeight: 500, color: C.grisF }}>
+                {' · '}{libelleReseau(actif.network)}{actif.country ? ` ${actif.country}` : ''}
+              </span>
+            </div>
+          ) : (
+            <div style={{ fontSize: 14, fontWeight: 700, color: C.rouge }}>Aucun</div>
+          )}
+          {actif?.name && (
+            <div style={petit}>{actif.name}{actif.city ? `, ${actif.city}` : ''}</div>
+          )}
+          <div style={petit}>
+            {saisi
+              ? `Saisi par ${saisi.entered_by || 'inconnu'} le ${formatDateUTC(saisi.entered_at)}`
+              : wc
+                ? 'Choisi par le client (WooCommerce)'
+                : `Requis pour l'étiquette ${expected.label}`}
+          </div>
+          {/* Une correction ne doit pas faire oublier ce que le client avait choisi. */}
+          {saisi && wc && wc.id !== saisi.id && (
+            <div style={petit}>Remplace le point WooCommerce {wc.id}</div>
+          )}
+          <div style={{ display: 'flex', gap: 12, marginTop: 4 }}>
+            <button type="button" onClick={ouvrir} disabled={envoi} style={lien}>
+              {saisi ? 'Modifier' : wc ? 'Corriger' : 'Saisir'}
+            </button>
+            {saisi && (
+              <button type="button" onClick={retirer} disabled={envoi} style={{ ...lien, color: C.rouge }}>
+                Retirer
+              </button>
+            )}
+          </div>
+        </>
+      )}
+
+      {edition && (
+        <form onSubmit={enregistrer} style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+          <select value={edition.network}
+            onChange={e => setEdition(ed => ({ ...ed, network: e.target.value }))}
+            style={champ}>
+            {networks.map(n => <option key={n.code} value={n.code}>{n.label}</option>)}
+          </select>
+          <input value={edition.id} autoFocus placeholder="N° du point (ex. 305025)"
+            onChange={e => setEdition(ed => ({ ...ed, id: e.target.value }))}
+            style={{ ...champ, width: 170, fontVariantNumeric: 'tabular-nums' }} />
+          <input value={edition.country} placeholder="Pays" maxLength={2}
+            onChange={e => setEdition(ed => ({ ...ed, country: e.target.value.toUpperCase() }))}
+            style={{ ...champ, width: 60, textTransform: 'uppercase' }} />
+          <button type="submit" disabled={envoi} style={{
+            padding: '7px 16px', background: envoi ? C.grisM : C.saphir, color: C.blanc,
+            border: 'none', borderRadius: 6, fontSize: 13, fontWeight: 700, cursor: 'pointer',
+          }}>
+            {envoi ? 'Enregistrement…' : 'Enregistrer'}
+          </button>
+          <button type="button" onClick={() => { setEdition(null); setErreur(''); }} disabled={envoi} style={lien}>
+            Annuler
+          </button>
+        </form>
+      )}
+
+      {erreur && <div style={{ fontSize: 12, color: C.rouge, marginTop: 4, fontWeight: 600 }}>{erreur}</div>}
+    </div>
+  );
+}
+
 /* ─── COMPOSANT PRINCIPAL ────────────────────────────────── */
 const OrderDetail = () => {
   const navigate = useNavigate();
@@ -251,6 +397,9 @@ const OrderDetail = () => {
       setTimeout(() => setReimportMsg(''), 4000);
     }
   };
+
+  // Point relais saisi ou retiré : mise à jour sur place, sans recharger la fiche.
+  const majPointSaisi = (point) => setOrder(o => ({ ...o, relay_point_manual: point }));
 
   /* ── États de chargement ── */
   if (loading) {
@@ -517,6 +666,7 @@ const OrderDetail = () => {
                   {order.shipping_carrier || order.shipping_method || shippingItem?.order_item_name}
                 </MetaItem>
               )}
+              <PointRelais order={order} token={token} onChange={majPointSaisi} />
               {suiviNumero && (
                 <div>
                   <div style={{ fontSize: 11, fontWeight: 700, color: C.grisM, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>

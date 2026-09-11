@@ -26,6 +26,7 @@ const { getAdapter } = require('../services/carriers');
 const { getAccount } = require('../services/carriers/accounts');
 const { stampOrderNumber } = require('../services/carriers/labelPdf');
 const { buildUserMessage } = require('../services/carriers/errors');
+const { customsDocumentFileName } = require('../services/carriers/contract');
 
 /**
  * Cœur de la génération : appel du transporteur, tamponnage du n° de commande
@@ -38,11 +39,13 @@ const { buildUserMessage } = require('../services/carriers/errors');
  * @param {string|number} input.orderNumber
  * @param {import('../services/carriers/contract').Receiver} input.receiver
  * @param {?number} input.packedBy
- * @returns {Promise<{labelId: number, carrierOrderId: ?string, trackingNumber: ?string, pdfBase64: string, weightGrams: number}>}
+ * @returns {Promise<{labelId: number, carrierOrderId: ?string, trackingNumber: ?string, pdfBase64: string,
+ *                    cn23Base64: ?string, bmsShipmentTitle: ?string, weightGrams: number}>}
  */
 const createShipmentLabel = async ({ adapter, orderNumber, receiver, packedBy, accountCode, options = {} }) => {
-  // Avant de dépenser une étiquette : s'assurer qu'on saura l'enregistrer.
-  await shipmentLabelModel.assertSchemaReady();
+  // Avant de dépenser une étiquette : s'assurer qu'on saura l'enregistrer — CN23
+  // comprise quand le transporteur peut en rendre une.
+  await shipmentLabelModel.assertSchemaReady({ cn23: adapter.producesCustomsDocuments === true });
 
   // Le retrait magasin n'appelle aucune API : il n'a ni identifiants ni réglages.
   const resolvedAccountCode = accountCode || adapter.accountCode;
@@ -52,12 +55,16 @@ const createShipmentLabel = async ({ adapter, orderNumber, receiver, packedBy, a
 
   const weightGrams = await adapter.resolveWeight({ pool, orderNumber, account, options });
 
-  const { carrierOrderId, trackingNumber, pdfBase64: rawPdf } = await adapter.createLabel({
+  const {
+    carrierOrderId, trackingNumber, pdfBase64: rawPdf,
+    cn23Base64 = null, methodCode = null, bmsShipmentTitle = null
+  } = await adapter.createLabel({
     orderNumber,
     receiver,
     account,
     weightGrams,
-    options
+    options,
+    pool
   });
 
   // Le numéro de commande imprimé en bas à gauche : c'est lui qui rattache
@@ -69,16 +76,19 @@ const createShipmentLabel = async ({ adapter, orderNumber, receiver, packedBy, a
   const label = await shipmentLabelModel.insert({
     carrierCode: adapter.code,
     accountCode: resolvedAccountCode,
-    methodCode: options.deliveryMode || adapter.methodCode,
+    // Le code produit réellement employé quand l'adaptateur le connaît (DOM, COM,
+    // HD…) : c'est lui qui dira, plus tard, ce qui a été facturé.
+    methodCode: methodCode || options.deliveryMode || adapter.methodCode,
     orderNumber,
     trackingNumber,
     carrierOrderId,
     weightGrams,
     packedBy,
-    pdfBase64
+    pdfBase64,
+    cn23Base64
   });
 
-  return { labelId: label.id, carrierOrderId, trackingNumber, pdfBase64, weightGrams };
+  return { labelId: label.id, carrierOrderId, trackingNumber, pdfBase64, cn23Base64, bmsShipmentTitle, weightGrams };
 };
 
 /**
@@ -87,7 +97,7 @@ const createShipmentLabel = async ({ adapter, orderNumber, receiver, packedBy, a
  * ne ferait qu'immobiliser le colis. L'échec part en alerte mail pour être
  * rattrapé à la main.
  */
-const confirmShipmentInBms = async (adapter, orderNumber, trackingNumber) => {
+const confirmShipmentInBms = async (adapter, orderNumber, trackingNumber, title = null) => {
   try {
     // `tracking_number` n'est pas obligatoire côté BMS (le champ `tracking` est
     // même déclaré nullable). Un retrait magasin n'a aucun numéro de suivi :
@@ -95,7 +105,9 @@ const confirmShipmentInBms = async (adapter, orderNumber, trackingNumber) => {
     // les recherches de colis.
     await bmsApiModel.apiCall(`/sales/order/${orderNumber}/ship?ref=true`, 'POST', {
       tracking: {
-        title: adapter.bmsShipmentTitle,
+        // Colissimo rend un libellé par étiquette (domicile, signature, point de
+        // retrait) ; les autres s'en tiennent au leur.
+        title: title || adapter.bmsShipmentTitle,
         ...(trackingNumber ? { tracking_number: trackingNumber } : {})
       }
     });
@@ -117,6 +129,12 @@ const confirmShipmentInBms = async (adapter, orderNumber, trackingNumber) => {
  * antérieures n'en ont pas, et un transporteur en point de retrait ne peut pas
  * étiqueter sans. L'adaptateur le signalera explicitement plutôt que d'envoyer
  * une requête vouée à l'échec.
+ *
+ * Le point saisi à la main dans la fiche commande (`relay_point_manual`) prime
+ * sur celui de WooCommerce : c'est le seul moyen d'en donner un à une commande
+ * créée au back-office. Il est lu via `to_jsonb` sans nommer la colonne, pour
+ * que le packing continue de tourner si la migration n'est pas encore passée ;
+ * le NULLIF écarte le `null` JSON que rend une colonne présente mais vide.
  */
 const loadOrderForLabel = async (orderNumber) => {
   const { rows } = await pool.query(`
@@ -125,8 +143,9 @@ const loadOrderForLabel = async (orderNumber) => {
       shipping_first_name, shipping_last_name, shipping_company,
       shipping_address_1, shipping_address_2,
       shipping_city, shipping_postcode, shipping_country,
-      shipping_phone, billing_email, order_total, relay_point
-    FROM orders
+      shipping_phone, billing_phone, billing_email, order_total,
+      COALESCE(NULLIF(to_jsonb(o) -> 'relay_point_manual', 'null'::jsonb), o.relay_point) AS relay_point
+    FROM orders o
     WHERE wp_order_id = $1
   `, [orderNumber]);
   return rows[0] || null;
@@ -144,6 +163,11 @@ const receiverFromOrder = (order) => ({
   city: order.shipping_city,
   country: order.shipping_country,
   phone: order.shipping_phone,
+  // Champ À PART, pas un repli de `phone` : les payloads La Poste et Mondial
+  // Relay restent identiques au caractère près. Colissimo en a besoin — il exige
+  // un mobile en point de retrait, et `shipping_phone` est vide sur 100 % des
+  // commandes Bpost (0 sur 977 en 90 jours), `billing_phone` jamais.
+  billing_phone: order.billing_phone,
   email: order.billing_email
 });
 
@@ -207,7 +231,7 @@ const generateForOrder = async (req, res) => {
       });
     }
 
-    const { carrierOrderId, trackingNumber, pdfBase64, weightGrams } = await createShipmentLabel({
+    const { carrierOrderId, trackingNumber, pdfBase64, cn23Base64, bmsShipmentTitle, weightGrams } = await createShipmentLabel({
       adapter,
       orderNumber,
       accountCode: mapping.accountCode,
@@ -224,7 +248,7 @@ const generateForOrder = async (req, res) => {
     // un retrait magasin, qui n'a pourtant aucun numéro de suivi. La condition
     // porte sur l'adaptateur, pas sur la présence d'un numéro.
     if (adapter.confirmsShipmentInBms !== false) {
-      await confirmShipmentInBms(adapter, orderNumber, trackingNumber);
+      await confirmShipmentInBms(adapter, orderNumber, trackingNumber, bmsShipmentTitle);
     }
 
     res.json({
@@ -239,6 +263,9 @@ const generateForOrder = async (req, res) => {
       // C'est donc l'adaptateur qui le décide, pas l'écran : chaque
       // transporteur a sa convention, séparateur compris.
       fileName: adapter.labelFileName(orderNumber),
+      // Déclaration douanière : un second fichier, pour une autre imprimante.
+      cn23Base64: cn23Base64 || null,
+      cn23FileName: cn23Base64 ? customsDocumentFileName(orderNumber) : null,
       orderNumber
     });
 
@@ -532,7 +559,15 @@ const makeCarrierHandlers = (carrierCode) => {
         console.warn(`[${adapter.logTag}] Étiquette ${id} : transporteur « ${row.carrier_code} » inconnu, nom de fichier par défaut`);
       }
 
-      res.json({ pdfBase64: row.pdf_data, orderNumber: row.order_number, fileName });
+      res.json({
+        pdfBase64: row.pdf_data,
+        orderNumber: row.order_number,
+        fileName,
+        // La CN23 se réimprime avec l'étiquette : un colis outre-mer sans elle
+        // reste bloqué en douane.
+        cn23Base64: row.cn23_data || null,
+        cn23FileName: row.cn23_data ? customsDocumentFileName(row.order_number) : null
+      });
     } catch (error) {
       console.error(`[${adapter.logTag}] Erreur getLabelPdf:`, error.message);
       res.status(500).json({ error: 'Erreur serveur' });
@@ -542,4 +577,7 @@ const makeCarrierHandlers = (carrierCode) => {
   return { generateLabel, generateManualLabel, listLabels, cancelLabel, getLabelPdf };
 };
 
-module.exports = { makeCarrierHandlers, createShipmentLabel, generateForOrder };
+// loadOrderForLabel et receiverFromOrder sont exportés pour la répétition
+// Colissimo (scripts/checkColissimoLabels.js) : elle doit lire les commandes
+// EXACTEMENT comme le packing, sinon elle valide autre chose que ce qui partira.
+module.exports = { makeCarrierHandlers, createShipmentLabel, generateForOrder, loadOrderForLabel, receiverFromOrder };

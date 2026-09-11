@@ -41,6 +41,8 @@ const listCarriers = async () => {
       requiresAccount: adapter.requiresAccount !== false,
       defaultAccountCode: adapter.accountCode,
       defaultDeliveryMode: adapter.methodCode,
+      // Modes autorisés : l'écran en fait une liste au lieu d'un champ libre.
+      deliveryModes: adapter.deliveryModes || null,
       cancellable: adapter.cancelWindow({ created_at: new Date() }).cancellable,
       accounts: adapter.requiresAccount === false
         ? [{ code: adapter.accountCode, label: adapter.label, active: true, sandbox: false }]
@@ -72,7 +74,17 @@ const saveMapping = async (req, res) => {
 
     // Un transporteur inconnu du registre produirait une ligne qui bloque le
     // packing sans que personne comprenne pourquoi.
-    if (carrier_code) getAdapter(carrier_code);
+    const adapter = carrier_code ? getAdapter(carrier_code) : null;
+
+    // Un mode hors de la liste du transporteur passerait l'enregistrement et
+    // n'échouerait qu'au packing, colis en main. On le refuse ici.
+    const modes = adapter?.deliveryModes;
+    if (modes && !modes.some(m => m.code === delivery_mode)) {
+      return res.status(400).json({
+        error: `Mode « ${delivery_mode || '(vide)'} » inconnu pour ${adapter.label} — `
+          + `choisir parmi : ${modes.map(m => `${m.code} (${m.label})`).join(', ')}`
+      });
+    }
 
     const row = await shippingMethodMapModel.upsert({
       denomination,
