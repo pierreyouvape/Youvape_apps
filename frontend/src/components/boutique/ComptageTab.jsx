@@ -167,8 +167,24 @@ export default function ComptageTab({ shop, token }) {
       applyCount(r.data);
       setLastScan({ ok: true, name: r.data.name, qty: r.data.counted_qty });
     } catch (e) {
-      setLastScan({ ok: false, msg: e.response?.data?.error || 'Code-barres inconnu' });
+      const data = e.response?.data || {};
+      // Code porté par plusieurs articles : la caméra se ferme pour laisser choisir
+      if (data.code === 'AMBIGUOUS_BARCODE') setCameraOpen(false);
+      setLastScan({ ok: false, msg: data.error || 'Code-barres inconnu', candidates: data.candidates });
     }
+  };
+
+  // Choix de l'article après un code ambigu : compte +1 comme un scan
+  const pickCandidate = async (productId) => {
+    try {
+      const r = await axios.post(`${API_URL}/nextore/${shop.slug}/comptage/${session.id}/count`,
+        { product_id: productId, qty: 1, mode: 'scan' }, auth(token));
+      applyCount(r.data);
+      setLastScan({ ok: true, name: r.data.name, qty: r.data.counted_qty });
+    } catch (e) {
+      setLastScan({ ok: false, msg: e.response?.data?.error || e.message });
+    }
+    if (scanRef.current) scanRef.current.focus();
   };
 
   const setQty = async (productId, qty) => {
@@ -362,6 +378,19 @@ export default function ComptageTab({ shop, token }) {
           {lastScan && (
             <div style={{ fontSize: 14, marginBottom: 12, color: lastScan.ok ? C.green : C.red }}>
               {lastScan.ok ? `✓ ${lastScan.name} → ${lastScan.qty}` : `✕ ${lastScan.msg}`}
+            </div>
+          )}
+          {lastScan?.candidates?.length > 0 && (
+            <div style={{ marginBottom: 14 }}>
+              {lastScan.candidates.map((c) => (
+                <button key={c.product_id} onClick={() => pickCandidate(c.product_id)} style={{
+                  display: 'block', width: '100%', textAlign: 'left', padding: '10px 12px', marginBottom: 6,
+                  background: '#fff', border: `1px solid ${C.accent}`, borderRadius: 10, cursor: 'pointer',
+                }}>
+                  <div style={{ fontWeight: 600, fontSize: 14, lineHeight: 1.3, overflowWrap: 'anywhere', color: C.dark }}>{c.name}</div>
+                  <div style={{ fontSize: 12, color: C.greyM }}>{c.sku ? `#${c.sku} · ` : ''}stock {fmt(c.stock)}</div>
+                </button>
+              ))}
             </div>
           )}
         </>

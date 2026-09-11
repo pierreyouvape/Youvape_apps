@@ -304,9 +304,17 @@ async function countComptage(req, res) {
     const { barcode, product_id, qty, mode } = req.body || {};
     let productId = product_id;
     if (barcode && !productId) {
-      const prod = await comptageModel.resolveBarcode(wh.id, barcode);
-      if (!prod) return res.status(404).json({ error: `Code-barres inconnu en boutique : ${barcode}`, barcode });
-      productId = prod.product_id;
+      const candidates = await comptageModel.resolveBarcode(comptage.id, wh.id, barcode);
+      if (!candidates.length) return res.status(404).json({ error: `Code-barres inconnu en boutique : ${barcode}`, barcode });
+      if (candidates.length > 1) {
+        return res.status(409).json({
+          error: `Ce code-barres correspond à ${candidates.length} articles : choisis lequel`,
+          code: 'AMBIGUOUS_BARCODE',
+          barcode,
+          candidates: candidates.map(({ product_id, name, sku, stock }) => ({ product_id, name, sku, stock })),
+        });
+      }
+      productId = candidates[0].product_id;
     }
     if (!productId) return res.status(400).json({ error: 'barcode ou product_id requis' });
     const result = await comptageModel.recordCount(comptage.id, wh.id, String(productId), {

@@ -16,6 +16,7 @@ const { WAREHOUSES } = require('../config/nextore');
 // La logique de déclenchement V2 (seuil/couverture) est portée ici (comme
 // NeedsTabV2), sans délai de réappro (inutile pour les boutiques).
 const { calculateTrendCoefficient } = require('../services/needsCalculator');
+const { splitNextoreBarcodes } = require('../utils/nextoreBarcodes');
 
 // --- Nettoyage des valeurs Nextore (tout est string, vide = 'None' ou '') ---
 function s(v) {
@@ -149,6 +150,15 @@ async function syncCatalog() {
        'subcategory_id', 'subsubcategory_id', 'barcode', 'tax_rate', 'type',
        'status', 'date_update', 'supplier_id', 'supplier_ids', 'supplier_refs', 'brand'],
       ['product_id'], productRows);
+
+    // Un code par ligne : Nextore en range plusieurs dans le même champ « ; ».
+    // Réécrite en entier, jamais vidée sur un catalogue vide.
+    if (Array.isArray(products) && products.length) {
+      const barcodeRows = products.flatMap((p) =>
+        splitNextoreBarcodes(p.barcode).map((code) => [s(p.id), code]));
+      await client.query('DELETE FROM nextore_product_barcodes');
+      await bulkInsert(client, 'nextore_product_barcodes', ['product_id', 'barcode'], barcodeRows);
+    }
 
     await setConfig(client, 'nextore_last_catalog_sync_at');
     await setConfig(client, 'nextore_last_sync_at');
@@ -358,12 +368,13 @@ async function getStockDashboard(warehouseId, opts = {}) {
         WHERE l.nx_product_id = s.product_id AND l.status = 'approved'
      ) lnk ON true
      LEFT JOIN LATERAL (
-        -- stock WooCommerce rapproché par EAN (somme des produits WC ayant ce code-barres)
+        -- stock WooCommerce rapproché par EAN (somme des produits WC ayant l'un de ses codes-barres)
         SELECT SUM(w.stock)::float AS wc_stock FROM (
           SELECT DISTINCT pr.id, pr.stock
-          FROM product_barcodes pb
+          FROM nextore_product_barcodes nb
+          JOIN product_barcodes pb ON pb.barcode = nb.barcode
           JOIN products pr ON pr.id = pb.product_id
-          WHERE p.barcode <> '' AND pb.barcode = p.barcode
+          WHERE nb.product_id = p.product_id
         ) w
      ) wcs ON true
      WHERE ${where.join(' AND ')}
@@ -603,10 +614,10 @@ async function getBoutiqueStockByWcIds(wcIds) {
   if (!ids.length) return {};
   const { rows } = await pool.query(
     `SELECT wc_id, warehouse_id, SUM(stock)::float AS stock FROM (
-        SELECT DISTINCT pb.product_id AS wc_id, np.product_id AS nx_id, ns.warehouse_id, ns.stock
+        SELECT DISTINCT pb.product_id AS wc_id, nb.product_id AS nx_id, ns.warehouse_id, ns.stock
         FROM product_barcodes pb
-        JOIN nextore_products np ON np.barcode = pb.barcode AND np.barcode <> ''
-        JOIN nextore_stock ns ON ns.product_id = np.product_id
+        JOIN nextore_product_barcodes nb ON nb.barcode = pb.barcode
+        JOIN nextore_stock ns ON ns.product_id = nb.product_id
         WHERE pb.product_id = ANY($1::int[])
      ) t
      GROUP BY wc_id, warehouse_id`,

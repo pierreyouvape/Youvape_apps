@@ -8,6 +8,7 @@
 
 const pool = require('../config/database');
 const api = require('../services/nextoreApiClient');
+const { normalizeBarcode } = require('../utils/nextoreBarcodes');
 
 const COOLDOWN_DAYS = 14;         // une réf comptée n'est pas reproposée avant 14 j
 const OVERSTOCK_DAYS = 60;        // "anormalement élevé" : > 60 j de ventes
@@ -162,16 +163,30 @@ async function getComptage(comptageId) {
   return { ...comptage, items: enriched };
 }
 
-/** Résout un code-barres → produit de la boutique. */
-async function resolveBarcode(warehouseId, barcode) {
+/**
+ * Résout un code-barres → article(s) de la boutique. Un article porte parfois
+ * plusieurs codes, et un code plusieurs articles (EAN recyclés, codes internes
+ * « 123456 ») : on ne retient que les plus plausibles — déjà dans la session,
+ * sinon non supprimés dans Nextore. Plus d'un candidat restant = au vendeur de
+ * choisir : un mauvais choix pousserait un faux stock dans Nextore.
+ */
+async function resolveBarcode(comptageId, warehouseId, barcode) {
   const { rows } = await pool.query(
-    `SELECT p.product_id, p.name, p.code AS sku, p.barcode
-     FROM nextore_products p
-     JOIN nextore_stock st ON st.product_id = p.product_id AND st.warehouse_id = $1
-     WHERE p.barcode = $2 AND p.barcode <> '' LIMIT 1`,
-    [warehouseId, String(barcode).trim()],
+    `SELECT DISTINCT p.product_id, p.name, p.code AS sku, p.barcode, st.stock::float AS stock,
+            (ci.id IS NOT NULL) AS in_session,
+            (COALESCE(p.status, '') = 'deleted') AS deleted
+     FROM nextore_product_barcodes b
+     JOIN nextore_products p ON p.product_id = b.product_id
+     JOIN nextore_stock st ON st.product_id = p.product_id AND st.warehouse_id = $2
+     LEFT JOIN nextore_comptage_items ci ON ci.comptage_id = $1 AND ci.product_id = p.product_id
+     WHERE b.barcode = $3
+     ORDER BY p.name`,
+    [comptageId, warehouseId, normalizeBarcode(barcode)],
   );
-  return rows[0] || null;
+  const inSession = rows.filter((r) => r.in_session);
+  if (inSession.length) return inSession;
+  const alive = rows.filter((r) => !r.deleted);
+  return alive.length ? alive : rows;
 }
 
 /**
