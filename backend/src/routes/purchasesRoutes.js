@@ -66,6 +66,11 @@ router.put('/products/:productId/primary-supplier', checkPurchasesWrite, supplie
 // Mettre à jour les données d'un produit chez un fournisseur
 router.put('/suppliers/:supplierId/products/:productId', checkPurchasesWrite, purchasesController.updateProductSupplier);
 
+// Réfs fournisseur (plusieurs par produit, une réf = un seul produit)
+router.post('/supplier-refs', checkPurchasesWrite, suppliersController.createSupplierRef);
+router.put('/supplier-refs/:refId', checkPurchasesWrite, suppliersController.updateSupplierRef);
+router.delete('/supplier-refs/:refId', checkPurchasesWrite, suppliersController.deleteSupplierRef);
+
 // Historique commandes d'un produit chez un fournisseur
 router.get('/products/:productId/suppliers/:supplierId/history', checkPurchasesRead, purchasesController.getProductSupplierHistory);
 
@@ -95,6 +100,7 @@ router.delete('/alerts/:productId', checkPurchasesWrite, purchasesController.del
 
 // Import PDF fournisseur (AVANT /:id pour éviter le conflit de route)
 router.post('/orders/parse-pdf', checkPurchasesWrite, upload.single('pdf'), purchasesController.parsePdf);
+router.post('/orders/parse-pdf/map-line', checkPurchasesWrite, purchasesController.mapPdfLine);
 router.get('/parsers', checkPurchasesRead, purchasesController.getAvailableParsers);
 
 // Achats fournisseurs (dépenses) depuis BMS

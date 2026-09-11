@@ -1,4 +1,23 @@
 const supplierModel = require('../models/supplierModel');
+const supplierRefModel = require('../models/supplierRefModel');
+
+const sendRefError = (res, error, where) => {
+  if (error.code === 'REF_TAKEN') {
+    return res.status(409).json({
+      success: false,
+      code: 'REF_TAKEN',
+      error: error.message,
+      owner: {
+        product_id: error.owner.product_id,
+        wp_product_id: error.owner.wp_product_id,
+        post_title: error.owner.post_title,
+        sku: error.owner.sku,
+      },
+    });
+  }
+  console.error(`Erreur ${where}:`, error);
+  res.status(500).json({ success: false, error: error.message || 'Erreur serveur' });
+};
 
 const suppliersController = {
   // GET /api/purchases/suppliers
@@ -94,14 +113,13 @@ const suppliersController = {
   // POST /api/purchases/suppliers/:id/products
   addProductToSupplier: async (req, res) => {
     try {
-      const { product_id, is_primary, supplier_sku, supplier_price, min_order_qty } = req.body;
+      const { product_id, is_primary, supplier_price, min_order_qty } = req.body;
       if (!product_id) {
         return res.status(400).json({ success: false, error: 'product_id requis' });
       }
 
       const result = await supplierModel.addProduct(req.params.id, product_id, {
         is_primary,
-        supplier_sku,
         supplier_price,
         min_order_qty
       });
@@ -154,6 +172,61 @@ const suppliersController = {
     } catch (error) {
       console.error('Erreur getProductSuppliers:', error);
       res.status(500).json({ success: false, error: 'Erreur serveur' });
+    }
+  },
+
+  // ==================== RÉFS FOURNISSEUR ====================
+  // Réf déjà portée par un autre produit → 409 REF_TAKEN avec ce produit : l'écran
+  // demande confirmation puis rejoue la requête avec move = true (déplacement).
+
+  // POST /api/purchases/supplier-refs  { supplier_id, product_id (id INTERNE), supplier_sku, label, pack_qty, pack_price, move }
+  createSupplierRef: async (req, res) => {
+    try {
+      const { supplier_id, product_id, supplier_sku, label, pack_qty, pack_price, move } = req.body;
+      if (!supplier_id || !product_id) {
+        return res.status(400).json({ success: false, error: 'supplier_id et product_id requis' });
+      }
+      const result = await supplierRefModel.save({
+        supplierId: supplier_id,
+        productId: product_id,
+        supplierSku: supplier_sku,
+        label,
+        packQty: pack_qty,
+        packPrice: pack_price,
+        move: !!move,
+      });
+      res.status(201).json({ success: true, data: result.ref, moved_from: result.movedFrom });
+    } catch (error) {
+      sendRefError(res, error, 'createSupplierRef');
+    }
+  },
+
+  // PUT /api/purchases/supplier-refs/:refId  { supplier_sku, label, pack_qty, pack_price, move }
+  updateSupplierRef: async (req, res) => {
+    try {
+      const { supplier_sku, label, pack_qty, pack_price, move } = req.body;
+      const ref = await supplierRefModel.update(req.params.refId, {
+        supplierSku: supplier_sku,
+        label,
+        packQty: pack_qty,
+        packPrice: pack_price,
+        move: !!move,
+      });
+      if (!ref) return res.status(404).json({ success: false, error: 'Réf. introuvable' });
+      res.json({ success: true, data: ref });
+    } catch (error) {
+      sendRefError(res, error, 'updateSupplierRef');
+    }
+  },
+
+  // DELETE /api/purchases/supplier-refs/:refId
+  deleteSupplierRef: async (req, res) => {
+    try {
+      const ref = await supplierRefModel.remove(req.params.refId);
+      if (!ref) return res.status(404).json({ success: false, error: 'Réf. introuvable' });
+      res.json({ success: true, data: ref });
+    } catch (error) {
+      sendRefError(res, error, 'deleteSupplierRef');
     }
   },
 

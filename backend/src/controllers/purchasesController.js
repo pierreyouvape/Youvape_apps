@@ -533,6 +533,32 @@ const purchasesController = {
     }
   },
 
+  // POST /api/purchases/orders/parse-pdf/map-line
+  // Mapping manuel d'une ligne d'import : conversion quantité / prix selon le
+  // conditionnement saisi, et détection d'une réf déjà portée par un autre produit.
+  mapPdfLine: async (req, res) => {
+    try {
+      const { supplier_id, product_id, supplier_sku, pack_qty, qty_from_pdf, pdf_price_raw, discount_percent, conversion } = req.body;
+      if (!supplier_id || !product_id) {
+        return res.status(400).json({ success: false, error: 'supplier_id et product_id requis' });
+      }
+      const result = await pdfImportModel.mapLine({
+        supplierId: parseInt(supplier_id),
+        productId: parseInt(product_id),
+        supplierSku: supplier_sku,
+        packQty: pack_qty,
+        docQty: qty_from_pdf,
+        docPrice: pdf_price_raw,
+        discountPercent: discount_percent,
+        conversion,
+      });
+      res.json({ success: true, data: result });
+    } catch (error) {
+      console.error('Erreur mapPdfLine:', error);
+      res.status(500).json({ success: false, error: error.message || 'Erreur serveur' });
+    }
+  },
+
   // POST /api/purchases/orders/:id/send-bms
   sendToBms: async (req, res) => {
     try {

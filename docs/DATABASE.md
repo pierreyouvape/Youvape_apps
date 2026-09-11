@@ -128,14 +128,22 @@ Le projet utilise **trois systèmes d'ID en parallèle** (BDD interne, WordPress
 - `exclude_from_reorder` : exclure ce produit du calcul des besoins
 - `image_url` · `post_title` · `post_status` · `post_date`
 
-**`product_suppliers`** — Liaisons produit ↔ fournisseur
+**`product_suppliers`** — Liaisons produit ↔ fournisseur (UNIQUE `product_id, supplier_id`)
 - `product_id` → `products.id` (toujours une variation ou un simple, jamais un parent)
 - `supplier_id` → `suppliers.id`
 - `is_primary` : fournisseur principal pour ce produit
-- `supplier_price` : prix d'achat HT (prix du pack)
-- `pack_qty` : nombre d'unités dans un pack (synté depuis BMS)
+- `supplier_price` : prix d'achat HT de l'association BMS (prix du pack BMS)
+- `pack_qty` : conditionnement imposé par l'association BMS (synté depuis BMS) — sert à l'envoi des commandes
 - `min_order_qty` : quantité minimale de commande
-- `supplier_sku` : référence fournisseur
+- `supplier_sku` : **OBSOLÈTE depuis le 11/09/2026**, figée — les réfs sont dans `supplier_refs`
+
+**`supplier_refs`** — Références fournisseur (une ligne par réf.)
+- `supplier_id`, `product_id` → lien `product_suppliers` (FK composite, CASCADE)
+- `supplier_sku` : **unique par fournisseur** sur la réf. normalisée (casse, espaces) — une réf. = un seul produit
+- `label` : libellé libre (Unité, Pack 50, Promo 4+1…)
+- `pack_qty` : unités de ce produit dans un article de la réf.
+- `pack_price` : prix HT **du pack** de la réf. (prix unitaire = `pack_price / pack_qty`)
+- Un produit peut avoir plusieurs réfs chez un même fournisseur.
 
 **`product_barcodes`** — Codes-barres
 - `product_id` → `products.id`

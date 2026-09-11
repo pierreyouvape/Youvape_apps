@@ -344,10 +344,11 @@ const NeedsTabV2 = ({ token, onCompactChange }) => {
     }).catch(() => {});
   };
 
-  // Réf. fournisseur à afficher : celle du fournisseur sélectionné en priorité,
-  // sinon celle du fournisseur principal (supplier_sku).
-  const getSupplierRef = (row) =>
-    (supplierId && row.supplier_skus && row.supplier_skus[String(supplierId)]) || row.supplier_sku || '';
+  // Réfs fournisseur à afficher (un produit peut en avoir plusieurs chez un même
+  // fournisseur : unité, pack, promo…) : celles du fournisseur sélectionné en
+  // priorité, sinon celles du fournisseur principal.
+  const getSupplierRefs = (row) =>
+    (row.supplier_skus && row.supplier_skus[String(supplierId || row.supplier_id)]) || [];
 
   // Ref pour gérer le debounce de la recherche
   const searchTimeoutRef = useRef(null);
@@ -720,6 +721,9 @@ const NeedsTabV2 = ({ token, onCompactChange }) => {
     try {
       const items = Object.entries(selectedProducts).map(([productId, qty]) => {
         const product = computedProducts.find(p => p.id === parseInt(productId));
+        // Réf. reprise sur la ligne seulement si elle est unique chez ce fournisseur :
+        // avec plusieurs réfs (unité, pack…), le choix se fait dans la commande.
+        const refs = (product?.supplier_skus && product.supplier_skus[String(supplierId)]) || [];
         return {
           product_id: parseInt(productId),
           product_name: product?.post_title || '',
@@ -727,7 +731,7 @@ const NeedsTabV2 = ({ token, onCompactChange }) => {
           stock_before: product?.stock || 0,
           theoretical_need: product?.theoretical_need || 0,
           supposed_need: product?.supposed_need || 0,
-          supplier_sku: product?.supplier_sku || null,
+          supplier_sku: refs.length === 1 ? refs[0] : null,
           unit_price: product?.supplier_price || product?.cost_price || null
         };
       });
@@ -1099,15 +1103,17 @@ const NeedsTabV2 = ({ token, onCompactChange }) => {
                     </td>
                     <td>
                       {(() => {
-                        const ref = getSupplierRef(row);
-                        if (!ref) return <span style={{ color: '#cbd5e1' }}>-</span>;
-                        const copied = copiedRefId === row.id;
+                        const refs = getSupplierRefs(row);
+                        if (refs.length === 0) return <span style={{ color: '#cbd5e1' }}>-</span>;
+                        return refs.map(ref => {
+                        const copyKey = `${row.id}|${ref}`;
+                        const copied = copiedRefId === copyKey;
                         return (
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', whiteSpace: 'nowrap' }}>
+                          <div key={ref} style={{ display: 'flex', alignItems: 'center', gap: '6px', whiteSpace: 'nowrap' }}>
                             <code style={{ fontSize: '12px' }}>{ref}</code>
                             <button
                               type="button"
-                              onClick={() => copySupplierRef(row.id, ref)}
+                              onClick={() => copySupplierRef(copyKey, ref)}
                               title={copied ? 'Copié !' : 'Copier la référence fournisseur'}
                               style={{
                                 border: 'none', background: 'none', cursor: 'pointer',
@@ -1119,6 +1125,7 @@ const NeedsTabV2 = ({ token, onCompactChange }) => {
                             </button>
                           </div>
                         );
+                        });
                       })()}
                     </td>
                     <td>

@@ -2,6 +2,8 @@ const { PDFParse } = require('pdf-parse');
 const pool = require('../config/database');
 const parserRegistry = require('../parsers');
 const { findUnparsedRows } = require('./parseAudit');
+const supplierRefModel = require('./supplierRefModel');
+const { convertLine } = require('../utils/importLineConversion');
 
 /**
  * Nettoie le texte brut extrait d'un PDF avant parsing :
@@ -90,6 +92,112 @@ function resolveCompleteSkus(items, dbSkus) {
 }
 
 const pdfImportModel = {
+  convertLine,
+
+  /**
+   * Réfs connues d'un fournisseur parmi une liste, indexées par réf normalisée,
+   * avec le produit, le conditionnement de la réf et celui de l'association BMS.
+   */
+  findRefs: async (supplierId, supplierSkus, db = pool) => {
+    const normalized = [...new Set((supplierSkus || []).map(normalizeSku).filter(Boolean))];
+    const map = new Map();
+    if (normalized.length === 0) return map;
+    const result = await db.query(`
+      SELECT
+        ${supplierRefModel.normalizedSql('r.supplier_sku')} AS norm,
+        r.id AS ref_id,
+        r.supplier_sku,
+        r.pack_qty AS ref_pack_qty,
+        r.pack_price,
+        COALESCE(ps.pack_qty, 1) AS bms_pack_qty,
+        p.id AS internal_product_id,
+        p.wp_product_id,
+        p.post_title,
+        p.sku AS product_sku,
+        p.stock,
+        p.product_type,
+        p.image_url
+      FROM supplier_refs r
+      JOIN product_suppliers ps ON ps.product_id = r.product_id AND ps.supplier_id = r.supplier_id
+      JOIN products p ON p.id = r.product_id
+      WHERE r.supplier_id = $1
+        AND ${supplierRefModel.normalizedSql('r.supplier_sku')} = ANY($2)
+    `, [supplierId, normalized]);
+    for (const row of result.rows) map.set(row.norm, row);
+    return map;
+  },
+
+  /**
+   * Mapping manuel d'une ligne d'import : l'opérateur choisit le produit et le
+   * conditionnement de la réf. Renvoie la ligne convertie (même calcul que
+   * parsePdf) et, si la réf est déjà portée par un autre produit, ce produit :
+   * l'écran demande alors confirmation avant de la déplacer.
+   * productId = wp_product_id (recherche produits) ou id interne.
+   * packQty absent → conditionnement proposé : celui de la réf si elle existe déjà,
+   * sinon le pack BMS chez les fournisseurs comptés en packs (chez LCA, un article
+   * de la réf EST le pack BMS — c'était le comportement implicite avant les réfs),
+   * sinon 1. L'écran le soumet à l'opérateur, puis rappelle avec son choix.
+   */
+  mapLine: async ({ supplierId, productId, supplierSku, packQty, docQty, docPrice, discountPercent, conversion }) => {
+    const productResult = await pool.query(`
+      SELECT p.id, p.wp_product_id, p.post_title, p.sku, p.stock, p.image_url,
+             COALESCE(p.computed_cost, p.wc_cog_cost) AS cost_price,
+             COALESCE(ps.pack_qty, 1) AS bms_pack_qty
+      FROM products p
+      LEFT JOIN product_suppliers ps ON ps.product_id = p.id AND ps.supplier_id = $2
+      WHERE p.wp_product_id = $1 OR p.id = $1
+      ORDER BY CASE WHEN p.wp_product_id = $1 THEN 0 ELSE 1 END
+      LIMIT 1
+    `, [productId, supplierId]);
+    const product = productResult.rows[0];
+    if (!product) throw new Error(`Produit introuvable (${productId})`);
+
+    const bmsPack = parseInt(product.bms_pack_qty, 10) || 1;
+    const existing = supplierSku ? await supplierRefModel.findBySku(supplierId, supplierSku) : null;
+    const refPack = parseInt(packQty, 10) >= 1
+      ? parseInt(packQty, 10)
+      : (existing ? existing.pack_qty : (conversion?.skipPackQty ? bmsPack : 1));
+    // Prix connu de la réf, seulement s'il correspond au conditionnement choisi
+    const refPrice = existing && existing.pack_price != null && existing.pack_qty === refPack
+      ? parseFloat(existing.pack_price)
+      : null;
+
+    const line = convertLine({
+      docQty: parseInt(docQty, 10) || 1,
+      docPrice: docPrice != null && docPrice !== '' ? parseFloat(docPrice) : null,
+      discountPercent: parseFloat(discountPercent) || 0,
+      refPack,
+      refPrice,
+      bmsPack,
+      conversion: conversion || {},
+    });
+
+    // Sans prix de réf : repli sur le coût du produit (unitaire), ramené à l'unité
+    // de ligne (pack BMS chez les fournisseurs comptés en packs).
+    const cost = product.cost_price != null ? parseFloat(product.cost_price) : null;
+    const costPerLineUnit = cost != null ? cost * (conversion?.skipPackQty ? bmsPack : 1) : null;
+
+    return {
+      product: {
+        id: product.wp_product_id,
+        internal_product_id: product.id,
+        post_title: product.post_title,
+        sku: product.sku,
+        stock: product.stock,
+        image_url: product.image_url,
+      },
+      line: {
+        ...line,
+        dbPrice: line.dbPrice != null ? line.dbPrice : costPerLineUnit,
+        refPack,
+        bmsPack,
+      },
+      conflict: existing && existing.product_id !== product.id
+        ? { post_title: existing.post_title, sku: existing.sku, wp_product_id: existing.wp_product_id }
+        : null,
+    };
+  },
+
   /**
    * Parse un fichier fournisseur (PDF ou CSV) et matche les lignes avec les produits en BDD
    * @param {Buffer} fileBuffer - Le buffer du fichier (PDF ou CSV)
@@ -175,91 +283,35 @@ const pdfImportModel = {
     //     Les PDF collent la colonne Référence à la Désignation : une référence avec
     //     espace/tiret (ex: "MJ AMNESIA 300MG") serait sinon tronquée par le parseur.
     const knownSkusResult = await pool.query(
-      'SELECT supplier_sku FROM product_suppliers WHERE supplier_id = $1',
+      'SELECT supplier_sku FROM supplier_refs WHERE supplier_id = $1',
       [supplierId]
     );
     resolveCompleteSkus(parsed.items, knownSkusResult.rows.map(r => r.supplier_sku));
 
-    // 5. Matcher les supplier_sku dans product_suppliers
-    //    Une même référence fournisseur pointe parfois sur PLUSIEURS produits : le
-    //    fournisseur recycle sa réf. sur le produit successeur (chez LCA, la réf. de
-    //    la Batterie Elfa Pro sert aussi à l'Elfa Turbo) ou l'utilise pour plusieurs
-    //    déclinaisons. Sans ORDER BY, la ligne retenue dépendait de l'ordre physique
-    //    des lignes en base : l'import commandait — donc mettait en stock — le
-    //    produit arrêté au lieu de l'actuel. On tranche explicitement : un produit
-    //    en ligne (publish) l'emporte toujours sur un produit arrêté (draft/private).
-    const supplierSkus = parsed.items.map(i => i.supplier_sku);
+    // 5. Matcher les réfs dans supplier_refs. Une réf ne désigne qu'un produit
+    //    (index unique sur la réf normalisée) : plus d'arbitrage entre candidats.
+    const matchMap = await pdfImportModel.findRefs(supplierId, parsed.items.map(i => i.supplier_sku));
 
-    const matchQuery = `
-      SELECT DISTINCT ON (ps.supplier_sku)
-        ps.supplier_sku,
-        ps.supplier_price,
-        ps.pack_qty,
-        p.id as internal_product_id,
-        p.wp_product_id,
-        p.post_title,
-        p.sku as product_sku,
-        p.stock,
-        p.product_type,
-        p.image_url,
-        COUNT(*) OVER (PARTITION BY ps.supplier_sku)::int AS nb_candidates,
-        STRING_AGG(p.post_title || ' (' || COALESCE(p.sku, '?') || ')', ' • ')
-          OVER (PARTITION BY ps.supplier_sku) AS candidates
-      FROM product_suppliers ps
-      JOIN products p ON ps.product_id = p.id
-      WHERE ps.supplier_id = $1
-        AND ps.supplier_sku = ANY($2)
-      ORDER BY
-        ps.supplier_sku,
-        (p.post_status = 'publish') DESC,
-        ps.is_primary DESC NULLS LAST,
-        ps.updated_at DESC NULLS LAST,
-        p.id DESC
-    `;
-    const matchResult = await pool.query(matchQuery, [supplierId, supplierSkus]);
-
-    const matchMap = new Map();
-    for (const row of matchResult.rows) {
-      matchMap.set(row.supplier_sku, row);
-    }
+    const conversion = {
+      invertPackQty: !!parsed.invertPackQty,
+      skipPackQty: !!parsed.skipPackQty,
+      trustPdfPrice: !!parsed.trustPdfPrice,
+    };
 
     // 6. Enrichir chaque ligne avec les infos de matching
     const enrichedItems = parsed.items.map(item => {
-      const match = matchMap.get(item.supplier_sku);
-      const packQty = parsed.skipPackQty ? 1 : (match ? (parseInt(match.pack_qty) || 1) : 1);
-
-      // Prix brut du PDF (avant remise éventuelle).
-      // CONVENTION UNIQUE : on stocke tout À L'UNITÉ (qty_ordered en unités, unit_price par unité).
-      // invertPackQty (e.tasty, Curieux…) : PDF déjà en prix unitaire → tel quel.
-      // pdfIsPackBased (JoshNoa…) / normal : PDF en prix pack → ÷ pack_qty.
-      // skipPackQty : packQty forcé à 1, pas de conversion.
-      const rawPdfGross = item.unit_price_net != null ? item.unit_price_net : null;
-      let pdfGross;
-      if (rawPdfGross != null && packQty > 1) {
-        pdfGross = parsed.invertPackQty ? rawPdfGross : rawPdfGross / packQty;
-      } else {
-        pdfGross = rawPdfGross;
-      }
+      const match = matchMap.get(normalizeSku(item.supplier_sku));
       const discountPercent = item.discount_percent || 0;
-      const pdfNet = pdfGross != null ? pdfGross * (1 - discountPercent / 100) : null;
-      // dbPrice : supplier_price en BDD = prix pack pour tous les fournisseurs.
-      // Convention unités → prix unitaire = ÷ pack_qty pour TOUS les modes.
-      const dbPackQty = packQty;  // déjà normalisé par skipPackQty ci-dessus
-      const rawDbPrice = match ? parseFloat(match.supplier_price) || null : null;
-      let dbPrice;
-      if (rawDbPrice != null && dbPackQty > 1) {
-        dbPrice = rawDbPrice / dbPackQty;
-      } else {
-        dbPrice = rawDbPrice;
-      }
-
-      // Quantité finale : convention unique = nombre d'UNITÉS individuelles.
-      // invertPackQty (e.tasty, Curieux…) : PDF déjà en unités → tel quel.
-      // pdfIsPackBased (JoshNoa…) / normal : PDF en packs → × pack_qty.
-      // skipPackQty : packQty = 1, donc × 1 (no-op).
-      const qtyOrdered = parsed.invertPackQty
-        ? item.qty_ordered
-        : item.qty_ordered * packQty;
+      const rawPdfGross = item.unit_price_net != null ? item.unit_price_net : null;
+      const line = convertLine({
+        docQty: item.qty_ordered,
+        docPrice: rawPdfGross,
+        discountPercent,
+        refPack: match ? parseInt(match.ref_pack_qty) : 1,
+        refPrice: match && match.pack_price != null ? parseFloat(match.pack_price) : null,
+        bmsPack: match ? parseInt(match.bms_pack_qty) : 1,
+        conversion,
+      });
 
       return {
         supplier_sku: item.supplier_sku,
@@ -273,27 +325,21 @@ const pdfImportModel = {
         product_sku: match ? match.product_sku : null,
         current_stock: match ? parseInt(match.stock) : null,
         image_url: match ? match.image_url : null,
-        // Réf. fournisseur partagée par plusieurs produits : le choix ci-dessus reste
-        // une heuristique, l'écran d'import le signale pour que l'opérateur tranche.
-        ambiguous_match: match ? (match.nb_candidates || 1) > 1 : false,
-        match_candidates: match && (match.nb_candidates || 1) > 1 ? match.candidates : null,
+        // Conditionnement de la réf (ce que le fournisseur facture) et de
+        // l'association BMS (ce que BMS impose) : repris par le mapping manuel.
+        ref_pack_qty: match ? parseInt(match.ref_pack_qty) || 1 : null,
+        bms_pack_qty: match ? parseInt(match.bms_pack_qty) || 1 : null,
+        pack_warning: line.packWarning,
         // Prix
-        pdf_price: pdfGross,           // prix brut HT pack ou unité selon le mode
-        pdf_price_net: pdfNet,         // prix net après remise
+        pdf_price_raw: rawPdfGross,    // prix du document, avant conversion
+        pdf_price: line.pdfGross,      // prix brut HT dans l'unité de la ligne
+        pdf_price_net: line.pdfNet,    // prix net après remise
         discount_percent: discountPercent,
-        supplier_price: dbPrice,
-        // Prix retenu.
-        // invertPackQty / trustPdfPrice : on fait confiance au prix du PDF (= prix
-        //   réellement facturé), car le supplier_price en BDD est incohérent selon
-        //   les produits (parfois prix unité/pack, parfois nul ou divergent).
-        //   Le PDF/facture est la source de vérité du montant réellement payé.
-        // autres modes : PDF si meilleur (ou si pas de prix BDD), sinon prix BDD.
-        unit_price: (parsed.invertPackQty || parsed.trustPdfPrice)
-          ? (pdfNet != null ? pdfNet : dbPrice)
-          : ((pdfNet != null && (dbPrice == null || pdfNet < dbPrice)) ? pdfNet : dbPrice),
-        // Pack
-        pack_qty: packQty,
-        qty_ordered: qtyOrdered,
+        supplier_price: line.dbPrice,
+        unit_price: line.unitPrice,
+        // Pack : facteur appliqué à la quantité du document
+        pack_qty: line.packQty,
+        qty_ordered: line.qtyOrdered,
         // Montant HT de la ligne tel qu'imprimé sur la facture (colonne « montant »).
         // Lu indépendamment du prix retenu → permet à l'écran d'import de signaler
         // ligne par ligne un calcul qui diverge de la facture (prefill d'un ancien
@@ -385,6 +431,8 @@ const pdfImportModel = {
       // Anomalies de lecture du document (lignes non reprises, total incohérent).
       // Affichées en rouge dans l'écran d'import : une ligne perdue doit se voir.
       parse_warnings: parseWarnings,
+      // Drapeaux du parseur, renvoyés par l'écran lors d'un mapping manuel (mapLine)
+      conversion,
       items: allItems,
       total_items: enrichedItems.length,
       matched_count: enrichedItems.filter(i => i.matched).length,

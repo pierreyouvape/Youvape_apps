@@ -1,6 +1,7 @@
 const pool = require('../config/database');
 const bmsApiModel = require('./bmsApiModel');
 const parserRegistry = require('../parsers');
+const supplierRefModel = require('./supplierRefModel');
 const { normalizeVerifiedPrice } = require('../utils/verifiedPrice');
 
 // Warehouse ID principal BMS (Entrepot)
@@ -276,25 +277,38 @@ const purchaseOrderModel = {
         `, [order.id, totalItems, totalQty, totalAmount]);
       }
 
-      // Enregistrer les nouvelles associations supplier_sku (import PDF, matching manuel)
-      // Stocké sur le produit exact (variation ou simple), pas le parent
+      // Enregistrer les réfs mappées à la main dans l'import PDF, avec le conditionnement
+      // saisi. Stockées sur le produit exact (variation ou simple), pas le parent.
+      // Une réf portée par un autre produit n'est déplacée que si l'écran l'a
+      // confirmé (move) ; sinon elle reste où elle est, la commande passe quand même.
       if (data.new_supplier_skus && data.new_supplier_skus.length > 0) {
         for (const entry of data.new_supplier_skus) {
-          // Résoudre wp_product_id vers id interne (sans remonter au parent)
-          const resolveResult = await client.query(
-            'SELECT id FROM products WHERE id = $1 OR wp_product_id = $1 LIMIT 1',
-            [entry.product_id]
-          );
-          const productId = resolveResult.rows[0]?.id || entry.product_id;
+          if (!entry.supplier_sku || !String(entry.supplier_sku).trim()) continue;
+          // wp_product_id prioritaire : un wp_product_id égal à l'id interne d'un AUTRE
+          // produit rattachait la réf au mauvais produit (cas des résistances Nautilus).
+          const resolveResult = await client.query(`
+            SELECT id FROM products WHERE wp_product_id = $1 OR id = $1
+            ORDER BY CASE WHEN wp_product_id = $1 THEN 0 ELSE 1 END
+            LIMIT 1
+          `, [entry.product_id]);
+          const productId = resolveResult.rows[0]?.id;
+          if (!productId) continue;
 
-          // Upsert : ne met a jour QUE le supplier_sku, sans ecraser prix/pack_qty existants
-          await client.query(`
-            INSERT INTO product_suppliers (supplier_id, product_id, supplier_sku)
-            VALUES ($1, $2, $3)
-            ON CONFLICT (product_id, supplier_id) DO UPDATE SET
-              supplier_sku = EXCLUDED.supplier_sku,
-              updated_at = CURRENT_TIMESTAMP
-          `, [data.supplier_id, productId, entry.supplier_sku]);
+          try {
+            await client.query('SAVEPOINT save_ref');
+            await supplierRefModel.save({
+              supplierId: data.supplier_id,
+              productId,
+              supplierSku: entry.supplier_sku,
+              packQty: entry.pack_qty,
+              move: !!entry.move,
+            }, client);
+            await client.query('RELEASE SAVEPOINT save_ref');
+          } catch (err) {
+            await client.query('ROLLBACK TO SAVEPOINT save_ref');
+            if (err.code !== 'REF_TAKEN') throw err;
+            console.warn(`[import] réf ${entry.supplier_sku} non enregistrée : ${err.message}`);
+          }
         }
       }
 

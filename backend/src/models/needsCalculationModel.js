@@ -38,17 +38,26 @@ const needsCalculationModel = {
         COALESCE(s_primary.analysis_period_months, s_any.analysis_period_months, 1) as supplier_analysis_period,
         COALESCE(s_primary.coverage_months, s_any.coverage_months, 1) as supplier_coverage_months,
         COALESCE(s_primary.lead_time_days, s_any.lead_time_days, 2) as supplier_lead_time_days,
-        ps_primary.supplier_sku,
+        -- Réf. du fournisseur principal, seulement si elle est UNIQUE : les besoins
+        -- portent sur le produit, pas sur une réf (unité, pack, promo…), et une
+        -- commande créée d'ici ne doit pas choisir un conditionnement au hasard.
+        (SELECT CASE WHEN count(*) = 1 THEN min(r.supplier_sku) END
+         FROM supplier_refs r
+         WHERE r.product_id = p.id AND r.supplier_id = ps_primary.supplier_id) as supplier_sku,
         ps_primary.supplier_price,
         COALESCE(
           (SELECT array_agg(supplier_id) FROM product_suppliers WHERE product_id = p.id),
           ARRAY[]::int[]
         ) as supplier_ids,
-        -- Map { supplier_id: supplier_sku } pour afficher la réf du fournisseur sélectionné
+        -- Map { supplier_id: [réfs] } pour afficher les réfs du fournisseur sélectionné
         COALESCE(
-          (SELECT jsonb_object_agg(supplier_id::text, supplier_sku)
-           FROM product_suppliers
-           WHERE product_id = p.id AND supplier_sku IS NOT NULL AND supplier_sku != ''),
+          (SELECT jsonb_object_agg(g.supplier_id::text, g.refs)
+           FROM (
+             SELECT supplier_id, jsonb_agg(supplier_sku ORDER BY pack_qty, supplier_sku) AS refs
+             FROM supplier_refs
+             WHERE product_id = p.id
+             GROUP BY supplier_id
+           ) g),
           '{}'::jsonb
         ) as supplier_skus,
         p.image_url,

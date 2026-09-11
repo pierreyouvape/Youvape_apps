@@ -103,6 +103,20 @@ exports) doit donner **exactement le même chiffre à la date du jour**.
 - **Contrôle** : `node src/scripts/checkStockValuation.js` (le cron de 23h55 le fait chaque nuit et
   alerte par mail en cas d'écart).
 
+### Références fournisseur (`supplier_refs`, depuis le 11/09/2026)
+
+- Un produit (simple ou déclinaison) peut avoir **plusieurs réfs chez un même fournisseur** :
+  unité, pack de 50, pack de 100, promo 4+1… chacune avec son `pack_qty` et son `pack_price`
+  (prix HT **du pack**).
+- Une réf d'un fournisseur désigne **un seul produit** (index unique sur la réf normalisée).
+  La remapper sur un autre produit la **déplace**, après confirmation à l'écran (409 `REF_TAKEN`).
+- `product_suppliers` reste le **lien** produit × fournisseur (principal, pack et prix de
+  l'association BMS) : `UNIQUE(product_id, supplier_id)` est conservé exprès, ~15 requêtes
+  joignent sur ce couple. **Ne jamais lire `product_suppliers.supplier_sku`** (colonne figée).
+- Jamais de réf sur un parent variable, jamais recopiée d'une déclinaison à l'autre : on ne
+  commande jamais un parent.
+- Les besoins portent sur le **produit**, pas sur une réf.
+
 ### Bundles WooCommerce (woosb)
 
 Les produits de type `woosb` (packs) génèrent **deux lignes** dans `order_items` :

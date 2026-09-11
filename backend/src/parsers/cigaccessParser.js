@@ -52,8 +52,10 @@ function parseConfirmation(text) {
     .replace(/Frais de livraison[^\n]*/g, '')
     .replace(/^Total\s+[\d,]+\s*€/gm, '');
 
-  // Trouver tous les blocs "Référence: XXXXXX"
-  const refRegex = /Référence:\s*(\d+)/g;
+  // Trouver tous les blocs "Référence: XXXXXX". La réf. d'une déclinaison a la forme
+  // 012460-1-Blac : ne lire que les chiffres la ramenait à la réf. PARENT, partagée
+  // par toutes les couleurs — or on ne commande jamais un parent.
+  const refRegex = /Référence:\s*(\d[\w.-]*)/g;
   let match;
   const refMatches = [];
   while ((match = refRegex.exec(cleaned)) !== null) {

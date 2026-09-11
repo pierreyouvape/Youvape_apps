@@ -1,5 +1,6 @@
 const pool = require('../config/database');
 const bmsApiModel = require('./bmsApiModel');
+const supplierRefModel = require('./supplierRefModel');
 
 /**
  * Résout un productId (id interne OU wp_product_id) vers l'id interne.
@@ -143,7 +144,9 @@ const supplierModel = {
       SELECT
         p.*,
         ps.is_primary,
-        ps.supplier_sku,
+        (SELECT string_agg(r.supplier_sku, ', ' ORDER BY r.pack_qty, r.supplier_sku)
+         FROM supplier_refs r
+         WHERE r.product_id = p.id AND r.supplier_id = ps.supplier_id) AS supplier_sku,
         ps.supplier_price,
         ps.min_order_qty,
         ps.pack_qty
@@ -156,13 +159,16 @@ const supplierModel = {
     return result.rows;
   },
 
-  // Associer un produit à un fournisseur (résout wp_product_id vers id interne)
+  // Associer un produit à un fournisseur (résout wp_product_id vers id interne).
+  // Crée le LIEN seulement : les réfs fournisseur se gèrent via supplierRefModel.
   addProduct: async (supplierId, productId, data = {}) => {
     const resolvedId = await resolveProductId(productId);
 
     // Produit variable (parent) : les fournisseurs sont gérés par variation.
     // Une ligne posée sur le parent serait invisible (cf. getSuppliersByProduct),
-    // on associe donc le fournisseur à toutes les variations.
+    // on associe donc le fournisseur à toutes les variations. Aucune réf n'est
+    // recopiée : une réf ne désigne qu'une déclinaison (recopier la réf du parent
+    // sur chaque couleur a produit les doublons Cigaccess 012460, 012861, 012884).
     const typeResult = await pool.query(
       `SELECT product_type, wp_product_id FROM products WHERE id = $1`,
       [resolvedId]
@@ -185,12 +191,11 @@ const supplierModel = {
 
     const query = `
       INSERT INTO product_suppliers (
-        supplier_id, product_id, is_primary, supplier_sku, supplier_price, min_order_qty, pack_qty
+        supplier_id, product_id, is_primary, supplier_price, min_order_qty, pack_qty
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7)
+      VALUES ($1, $2, $3, $4, $5, $6)
       ON CONFLICT (product_id, supplier_id) DO UPDATE SET
         is_primary = EXCLUDED.is_primary,
-        supplier_sku = EXCLUDED.supplier_sku,
         supplier_price = EXCLUDED.supplier_price,
         min_order_qty = EXCLUDED.min_order_qty,
         pack_qty = EXCLUDED.pack_qty,
@@ -201,7 +206,6 @@ const supplierModel = {
       supplierId,
       resolvedId,
       data.is_primary || false,
-      data.supplier_sku || null,
       data.supplier_price || null,
       data.min_order_qty || 1,
       data.pack_qty || 1
@@ -210,17 +214,14 @@ const supplierModel = {
     return result.rows[0];
   },
 
-  // Mettre à jour les données d'un produit chez un fournisseur (résout wp_product_id vers id interne)
+  // Mettre à jour le LIEN produit × fournisseur (résout wp_product_id vers id interne).
+  // Les réfs fournisseur ne passent plus par ici : cf. supplierRefModel.
   updateProductSupplier: async (supplierId, productId, data) => {
     const resolvedId = await resolveProductId(productId);
     const fields = [];
     const values = [supplierId, resolvedId];
     let paramIndex = 3;
 
-    if (data.supplier_sku !== undefined) {
-      fields.push(`supplier_sku = $${paramIndex++}`);
-      values.push(data.supplier_sku);
-    }
     if (data.supplier_price !== undefined) {
       fields.push(`supplier_price = $${paramIndex++}`);
       values.push(data.supplier_price);
@@ -243,10 +244,9 @@ const supplierModel = {
     // Upsert : crée la ligne si elle n'existe pas encore (variation sans fournisseur assigné)
     const query = `
       INSERT INTO product_suppliers (
-        supplier_id, product_id, supplier_sku, supplier_price, pack_qty, min_order_qty, is_primary
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+        supplier_id, product_id, supplier_price, pack_qty, min_order_qty, is_primary
+      ) VALUES ($1, $2, $3, $4, $5, $6)
       ON CONFLICT (product_id, supplier_id) DO UPDATE SET
-        supplier_sku = COALESCE(EXCLUDED.supplier_sku, product_suppliers.supplier_sku),
         supplier_price = COALESCE(EXCLUDED.supplier_price, product_suppliers.supplier_price),
         pack_qty = COALESCE(EXCLUDED.pack_qty, product_suppliers.pack_qty),
         min_order_qty = COALESCE(EXCLUDED.min_order_qty, product_suppliers.min_order_qty),
@@ -256,7 +256,6 @@ const supplierModel = {
     `;
     const result = await pool.query(query, [
       supplierId, resolvedId,
-      data.supplier_sku !== undefined ? data.supplier_sku : null,
       data.supplier_price !== undefined ? data.supplier_price : null,
       data.pack_qty !== undefined ? data.pack_qty : null,
       data.min_order_qty !== undefined ? data.min_order_qty : null,
@@ -353,7 +352,6 @@ const supplierModel = {
           child.wp_product_id as variation_wp_id,
           child.post_title as variation_title,
           child.sku as variation_sku,
-          ps.supplier_sku,
           ps.supplier_price,
           ps.min_order_qty,
           ps.pack_qty
@@ -367,10 +365,13 @@ const supplierModel = {
         LEFT JOIN product_suppliers ps ON ps.supplier_id = s.id AND ps.product_id = child.id
         WHERE child.wp_parent_id = $1 AND s.is_active = true
         GROUP BY s.id, s.name, child.id, child.wp_product_id, child.post_title, child.sku,
-                 ps.supplier_sku, ps.supplier_price, ps.min_order_qty, ps.pack_qty, ps.is_primary
+                 ps.supplier_price, ps.min_order_qty, ps.pack_qty, ps.is_primary
         ORDER BY s.name, child.post_title
       `;
       const result = await pool.query(query, [product.wp_product_id]);
+      const refs = await supplierRefModel.listByProducts([...new Set(result.rows.map(r => r.variation_id))]);
+      const refsOf = (supplierId, variationId) =>
+        refs.filter(r => r.supplier_id === supplierId && r.product_id === variationId);
 
       // Regrouper par fournisseur : { id, name, is_primary, variations: [...] }
       const suppliersMap = new Map();
@@ -391,10 +392,12 @@ const supplierModel = {
           variation_wp_id: row.variation_wp_id,
           variation_label: varLabel,
           variation_sku: row.variation_sku,
-          supplier_sku: row.supplier_sku,
+          // Lien produit × fournisseur (null si la déclinaison n'est pas encore liée)
+          // : conditionnement / prix de l'association BMS, en lecture seule à l'écran.
           supplier_price: row.supplier_price,
           min_order_qty: row.min_order_qty,
-          pack_qty: row.pack_qty
+          pack_qty: row.pack_qty,
+          refs: refsOf(row.supplier_id, row.variation_id)
         });
       }
 
@@ -406,7 +409,6 @@ const supplierModel = {
       SELECT
         s.*,
         ps.is_primary,
-        ps.supplier_sku,
         ps.supplier_price,
         ps.min_order_qty,
         ps.pack_qty
@@ -416,7 +418,12 @@ const supplierModel = {
       ORDER BY ps.is_primary DESC, s.name
     `;
     const result = await pool.query(query, [resolvedId]);
-    return result.rows;
+    const refs = await supplierRefModel.listByProducts([resolvedId]);
+    return result.rows.map(row => ({
+      ...row,
+      product_id: resolvedId,
+      refs: refs.filter(r => r.supplier_id === row.id),
+    }));
   },
 
   // Import CSV de fournisseurs

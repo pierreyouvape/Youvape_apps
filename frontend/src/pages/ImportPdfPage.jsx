@@ -266,26 +266,86 @@ const ImportPdfPage = () => {
     }, 300);
   };
 
-  const handleMatchProduct = (idx, product) => {
-    setItems(prev => prev.map((item, i) => {
-      if (i !== idx) return item;
+  // Mapping manuel : la réf. retient le produit ET son conditionnement (un produit a
+  // parfois une réf. à l'unité, une par pack de 50, une promo…). Le backend convertit
+  // la ligne avec ce conditionnement et signale une réf. déjà portée par un autre
+  // produit : une réf. ne désigne qu'un produit, la remapper la déplace.
+  const handleMatchProduct = async (idx, product) => {
+    const item = items[idx];
+    const requestMap = async (packQty) => {
+      const res = await axios.post(`${API_URL}/purchases/orders/parse-pdf/map-line`, {
+        supplier_id: parseInt(supplierId),
+        product_id: product.id,
+        supplier_sku: item.supplier_sku,
+        pack_qty: packQty,
+        qty_from_pdf: item.qty_from_pdf,
+        pdf_price_raw: item.pdf_price_raw,
+        discount_percent: item.discount_percent || 0,
+        conversion: parsedData?.conversion,
+      }, { headers: { Authorization: `Bearer ${token}` } });
+      return res.data.data;
+    };
+
+    let mapped;
+    try {
+      // 1er appel sans conditionnement : le backend propose celui de la réf. connue,
+      // ou le pack BMS chez les fournisseurs comptés en packs.
+      mapped = await requestMap(null);
+      const proposed = mapped.line.refPack;
+      const answer = window.prompt(
+        `Réf. ${item.supplier_sku || '(sans réf.)'} → ${product.post_title}\n\n` +
+        `Combien d'unités de ce produit dans UN article de cette réf. ?\n` +
+        `(1 = vendu à l'unité, 50 = pack de 50…)`,
+        String(proposed)
+      );
+      if (answer === null) return;
+      const packQty = parseInt(answer, 10);
+      if (!Number.isInteger(packQty) || packQty < 1 || String(packQty) !== answer.trim()) {
+        alert('Conditionnement invalide : un nombre entier supérieur ou égal à 1 est attendu.');
+        return;
+      }
+      if (packQty !== proposed) mapped = await requestMap(packQty);
+    } catch (err) {
+      alert(err.response?.data?.error || 'Erreur lors du rattachement de la ligne');
+      return;
+    }
+
+    const { line, conflict } = mapped;
+    const packQty = line.refPack;
+    let move = false;
+    if (conflict) {
+      const owner = `${conflict.post_title}${conflict.sku ? ` (${conflict.sku})` : ''}`;
+      if (!confirm(
+        `La réf. ${item.supplier_sku} est déjà associée à :\n${owner}\n\n` +
+        `Une réf. fournisseur ne désigne qu'un seul produit.\n` +
+        `La déplacer sur ${product.post_title} ? (elle sera retirée de l'autre produit)`
+      )) return;
+      move = true;
+    }
+
+    setItems(prev => prev.map((it, i) => {
+      if (i !== idx) return it;
       return {
-        ...item,
+        ...it,
         matched: true,
         product_id: product.id,
         product_name: product.post_title,
         product_sku: product.sku,
         current_stock: product.stock,
         image_url: product.image_url || null,
-        ambiguous_match: false,
-        supplier_price: product.cost_price != null ? parseFloat(product.cost_price) : null,
-        unit_price: item.unit_price ?? product.cost_price ?? null,
+        ref_pack_qty: packQty,
+        bms_pack_qty: line.bmsPack,
+        pack_warning: line.packWarning,
+        pack_qty: line.packQty,
+        qty_ordered: line.qtyOrdered,
+        supplier_price: line.dbPrice,
+        unit_price: it.priceEdited ? it.unit_price : (line.pdfGross ?? line.dbPrice ?? null),
+        verifiedApplied: false,
       };
     }));
-    const item = items[idx];
     setNewSupplierSkus(prev => [
       ...prev.filter(e => e.supplier_sku !== item.supplier_sku),
-      { product_id: product.id, supplier_sku: item.supplier_sku }
+      { product_id: product.id, supplier_sku: item.supplier_sku, pack_qty: packQty, move }
     ]);
     setSearchingIdx(null);
     setSearchTerm('');
@@ -397,7 +457,7 @@ const ImportPdfPage = () => {
     const m = lineMismatch(i);
     return sum + (m ? m.diff : 0);
   }, 0);
-  // Produits déjà associés à une ligne : on les masque des suggestions de recherche
+  // Produits déjà associés à une ligne : signalés dans les suggestions de recherche
   const usedProductIds = new Set(matchedItems.map(i => i.product_id));
 
   // Refus BMS « décidable » : on affiche la raison et on laisse l'utilisateur choisir
@@ -928,12 +988,12 @@ const ImportPdfPage = () => {
                                   <div>
                                     <div style={{ fontWeight: 600, color: C.grisTF, lineHeight: 1.3, marginBottom: 2 }}>{item.product_name}</div>
                                     {item.product_sku && <div style={{ fontSize: 11.5, color: C.grisM, fontFamily: 'monospace' }}>SKU: {item.product_sku}</div>}
-                                    {item.ambiguous_match && (
+                                    {item.pack_warning && (
                                       <div
-                                        title={`Cette référence fournisseur est associée à plusieurs produits :\n${(item.match_candidates || '').split(' • ').join('\n')}\n\nLe produit en ligne a été retenu — vérifiez que c'est le bon.`}
+                                        title={item.pack_warning}
                                         style={{ marginTop: 3, display: 'inline-block', fontSize: 11, fontWeight: 600, color: '#92400E', background: '#FEF3C7', border: '1px solid #FCD34D', borderRadius: 5, padding: '1px 6px', cursor: 'help' }}
                                       >
-                                        réf. partagée — à vérifier
+                                        conditionnement à vérifier
                                       </div>
                                     )}
                                     <button onClick={() => handleRematch(idx)} style={{ marginTop: 4, fontSize: 12, color: C.bleu, background: 'none', border: 'none', cursor: 'pointer', padding: 0, textDecoration: 'underline', fontFamily: 'inherit' }}>
@@ -951,16 +1011,20 @@ const ImportPdfPage = () => {
                                       style={{ width: '100%', padding: '6px 8px', borderRadius: 6, border: `1px solid ${C.orange}`, fontSize: 13, background: '#FFFBEB', fontFamily: 'inherit', outline: 'none' }}
                                     />
                                     {(() => {
-                                      const availableResults = searchResults.filter(p => !usedProductIds.has(p.id));
-                                      return searchingIdx === idx && availableResults.length > 0 && (
+                                      // Un produit peut revenir sur plusieurs lignes (réf. à l'unité + réf. pack) :
+                                      // on le signale au lieu de le masquer.
+                                      return searchingIdx === idx && searchResults.length > 0 && (
                                       <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 1000, background: C.blanc, border: `1px solid ${C.grisCL}`, borderRadius: '0 0 8px 8px', maxHeight: 240, overflowY: 'auto', boxShadow: '0 4px 12px rgba(0,0,0,0.12)' }}>
-                                        {availableResults.map(product => (
+                                        {searchResults.map(product => (
                                           <div key={product.id} onClick={() => handleMatchProduct(idx, product)} style={{ padding: '8px 12px', cursor: 'pointer', borderBottom: `1px solid ${C.grisTL}`, fontSize: 13 }}
                                             onMouseEnter={e => e.currentTarget.style.background = C.grisTL}
                                             onMouseLeave={e => e.currentTarget.style.background = C.blanc}
                                           >
                                             <div style={{ fontWeight: 600 }}>{product.post_title}</div>
-                                            <div style={{ color: C.grisM, fontSize: 12 }}>SKU: {product.sku || '—'} | Stock: {product.stock ?? '—'}</div>
+                                            <div style={{ color: C.grisM, fontSize: 12 }}>
+                                              SKU: {product.sku || '—'} | Stock: {product.stock ?? '—'}
+                                              {usedProductIds.has(product.id) && <span style={{ color: C.orangeDark, fontWeight: 600 }}> · déjà sur une autre ligne</span>}
+                                            </div>
                                           </div>
                                         ))}
                                       </div>
@@ -980,7 +1044,12 @@ const ImportPdfPage = () => {
                               {/* Qte PDF */}
                               <td style={{ ...cell, textAlign: 'center', color: C.grisF }}>{item.qty_from_pdf}</td>
                               {/* Pack */}
-                              <td style={{ ...cell, textAlign: 'center', color: C.grisM }}>{item.pack_qty > 1 ? `×${item.pack_qty}` : '—'}</td>
+                              <td
+                                style={{ ...cell, textAlign: 'center', color: C.grisM }}
+                                title={item.ref_pack_qty > 1 ? `Réf. vendue par pack de ${item.ref_pack_qty}` : undefined}
+                              >
+                                {item.pack_qty !== 1 && item.pack_qty ? `×${String(Math.round(item.pack_qty * 100) / 100).replace('.', ',')}` : '—'}
+                              </td>
                               {/* Qte finale */}
                               <td style={{ ...cell, textAlign: 'center' }}>
                                 <NumInput value={item.qty_ordered} onChange={v => handleUpdateQty(idx, v)} width={60} />

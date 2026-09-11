@@ -1,4 +1,5 @@
 const pool = require('../config/database');
+const supplierRefModel = require('../models/supplierRefModel');
 
 
 // Commandes considérées « en attente de réception » : envoyée au fournisseur,
@@ -117,11 +118,18 @@ exports.getOrderDetail = async (req, res) => {
         ${QTY_EXPECTED}::int AS qty_expected,
         ${QTY_RECEIVED}::int AS qty_received,
         p.wp_product_id, p.sku, p.post_title, p.image_url, p.stock, p.shelf_location,
-        COALESCE(ps.pack_qty, 1) AS pack_qty
+        -- Conditionnement de la RÉF commandée (un produit peut avoir une réf à l'unité
+        -- et une réf pack de 50 : le carton reçu est celui de la réf), sinon celui
+        -- de l'association BMS.
+        COALESCE(sr.pack_qty, ps.pack_qty, 1) AS pack_qty
       FROM purchase_order_items poi
       LEFT JOIN products p ON p.id = poi.product_id
       LEFT JOIN product_suppliers ps
              ON ps.product_id = poi.product_id AND ps.supplier_id = $2
+      LEFT JOIN supplier_refs sr
+             ON sr.supplier_id = $2
+            AND sr.product_id = poi.product_id
+            AND ${supplierRefModel.normalizedSql('sr.supplier_sku')} = ${supplierRefModel.normalizedSql('poi.supplier_sku')}
       WHERE poi.purchase_order_id = $1
       ORDER BY COALESCE(p.post_title, poi.product_name)
     `, [orderId, order.supplier_id]);
