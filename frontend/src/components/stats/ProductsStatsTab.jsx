@@ -14,6 +14,8 @@ const API_BASE_URL = '/api';
 const PRODUCTS_COLUMNS = [
   { key: 'sku',           label: 'SKU' },
   { key: 'stock',         label: 'Stock' },
+  { key: 'unit_cost',     label: 'Coût unit. HT' },
+  { key: 'stock_value',   label: 'Valeur stock HT' },
   { key: 'qty_sold',      label: 'Vendu' },
   { key: 'velocity',      label: 'Ventes/j' },
   { key: 'coverage_days', label: 'Couv. (j)' },
@@ -467,6 +469,8 @@ const ProductsStatsTab = () => {
                   <th style={headerStyle('name')} onClick={() => handleSort('name')}>Nom{getSortIcon('name')}</th>
                   {isVisible('sku') && <th style={headerStyle('sku')} onClick={() => handleSort('sku')}>SKU{getSortIcon('sku')}</th>}
                   {isVisible('stock') && <th style={headerStyle('stock')} onClick={() => handleSort('stock')}>Stock{getSortIcon('stock')}</th>}
+                  {isVisible('unit_cost') && <th style={headerStyle('unit_cost')} onClick={() => handleSort('unit_cost')} title="Coût d'achat HT d'une pièce (PMP, sinon coût WooCommerce). Produit variable : moyenne des déclinaisons pondérée par leur stock.">Coût unit. HT{getSortIcon('unit_cost')}</th>}
+                  {isVisible('stock_value') && <th style={headerStyle('stock_value')} onClick={() => handleSort('stock_value')} title="Stock × coût unitaire HT (même calcul que la valeur de stock du catalogue). Packs : valorisés sur leurs composants.">Valeur stock HT{getSortIcon('stock_value')}</th>}
                   {isVisible('qty_sold') && <th style={headerStyle('qty_sold')} onClick={() => handleSort('qty_sold')}>Vendu{getSortIcon('qty_sold')}</th>}
                   {isVisible('velocity') && <th style={headerStyle('velocity')} onClick={() => handleSort('velocity')} title="Ventes moyennes par jour sur la période">Ventes/j{getSortIcon('velocity')}</th>}
                   {isVisible('coverage_days') && <th style={headerStyle('coverage_days')} onClick={() => handleSort('coverage_days')} title="Jours de stock restants au rythme actuel (stock ÷ ventes/j). Élevé = surstock.">Couv.{getSortIcon('coverage_days')}</th>}
@@ -474,7 +478,7 @@ const ProductsStatsTab = () => {
                   {isVisible('first_sold') && <th style={headerStyle('first_sold')} onClick={() => handleSort('first_sold')}>1ère vente{getSortIcon('first_sold')}</th>}
                   {isVisible('ca_ttc') && <th style={headerStyle('ca_ttc')} onClick={() => handleSort('ca_ttc')}>CA TTC{getSortIcon('ca_ttc')}</th>}
                   {isVisible('ca_ht') && <th style={headerStyle('ca_ht')} onClick={() => handleSort('ca_ht')}>CA HT{getSortIcon('ca_ht')}</th>}
-                  {isVisible('cost_ht') && <th style={headerStyle('cost_ht')} onClick={() => handleSort('cost_ht')}>Coût HT{getSortIcon('cost_ht')}</th>}
+                  {isVisible('cost_ht') && <th style={headerStyle('cost_ht')} onClick={() => handleSort('cost_ht')} title="Coût d'achat des unités VENDUES sur la période (0 si rien vendu). Pour le coût d'une pièce, voir « Coût unit. HT ».">Coût HT{getSortIcon('cost_ht')}</th>}
                   {isVisible('margin_ht') && <th style={headerStyle('margin_ht')} onClick={() => handleSort('margin_ht')}>Marge HT{getSortIcon('margin_ht')}</th>}
                   {isVisible('margin_percent') && <th style={headerStyle('margin_percent')} onClick={() => handleSort('margin_percent')}>% Marge{getSortIcon('margin_percent')}</th>}
                 </tr>
@@ -559,6 +563,8 @@ const ProductsStatsTab = () => {
                             </span>
                           </td>
                         )}
+                        {isVisible('unit_cost') && <td style={{ padding: '15px', fontSize: '14px' }}>{formatPrice(product.unit_cost)}</td>}
+                        {isVisible('stock_value') && <td style={{ padding: '15px', fontSize: '14px', fontWeight: 'bold' }}>{product.stock_value != null ? formatPrice(product.stock_value) : '—'}</td>}
                         {isVisible('qty_sold') && <td style={{ padding: '15px', fontSize: '14px', fontWeight: 'bold' }}>{formatInt(product.qty_sold)}</td>}
                         {isVisible('velocity') && <td style={{ padding: '15px', fontSize: '14px' }}>{formatVelocity(product.velocity)}</td>}
                         {isVisible('coverage_days') && (
@@ -615,6 +621,8 @@ const ProductsStatsTab = () => {
                               </span>
                             </td>
                           )}
+                          {isVisible('unit_cost') && <td style={{ padding: '10px 15px', fontSize: '13px' }}>{formatPrice(variation.unit_cost)}</td>}
+                          {isVisible('stock_value') && <td style={{ padding: '10px 15px', fontSize: '13px' }}>{formatPrice(variation.stock_value)}</td>}
                           {isVisible('qty_sold') && <td style={{ padding: '10px 15px', fontSize: '13px' }}>{formatInt(variation.qty_sold)}</td>}
                           {isVisible('velocity') && <td style={{ padding: '10px 15px', fontSize: '13px' }}>{formatVelocity(variation.velocity)}</td>}
                           {isVisible('coverage_days') && (

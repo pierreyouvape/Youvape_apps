@@ -402,7 +402,7 @@ exports.getStatsExport = async (req, res) => {
 
     const fmtDate = (d) => (d ? new Date(d).toISOString().split('T')[0] : '');
     const HEADERS = ['Nom', 'SKU', 'Type', 'Marque', 'Catégorie', 'Fournisseur', 'Stock', 'Vendu', 'Ventes/j', 'Couv. (j)',
-      '1ère vente', 'Dernière vente', 'Prix TTC', 'Coût unit.', 'CA TTC', 'CA HT', 'Coût HT', 'Marge HT', '% Marge'];
+      '1ère vente', 'Dernière vente', 'Prix TTC', 'Coût unit.', 'Valeur stock HT', 'CA TTC', 'CA HT', 'Coût HT', 'Marge HT', '% Marge'];
 
     const data = rows.map(p => [
       p.post_title || '', p.sku || '', p.product_type || '',
@@ -413,6 +413,7 @@ exports.getStatsExport = async (req, res) => {
       fmtDate(p.first_sold), fmtDate(p.last_sold),
       p.price != null ? parseFloat(p.price).toFixed(2) : '',
       parseFloat(p.unit_cost || 0).toFixed(2),
+      p.stock_value != null ? parseFloat(p.stock_value).toFixed(2) : '',
       parseFloat(p.ca_ttc || 0).toFixed(2), parseFloat(p.ca_ht || 0).toFixed(2),
       parseFloat(p.cost_ht || 0).toFixed(2), parseFloat(p.margin_ht || 0).toFixed(2),
       parseFloat(p.margin_percent || 0).toFixed(1),

@@ -15,6 +15,7 @@ export const FILTER_FIELDS = [
   { key: 'ca_ht',          label: 'CA HT (période)',    type: 'number', group: 'Financier' },
   { key: 'cost_ht',        label: 'Coût HT (période)',  type: 'number', group: 'Financier' },
   { key: 'unit_cost',      label: 'Coût unitaire',      type: 'number', group: 'Financier' },
+  { key: 'stock_value',    label: 'Valeur stock HT',    type: 'number', group: 'Financier' },
   { key: 'price',          label: 'Prix TTC',           type: 'number', group: 'Financier' },
   // Dates
   { key: 'last_sold',      label: 'Dernière vente',     type: 'date',   group: 'Dates' },

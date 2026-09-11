@@ -8,7 +8,7 @@ const { buildVariationLabel } = require('../utils/variationLabel');
 const STATS_FILTER_FIELDS = {
   stock: 'number', qty_sold: 'number', velocity: 'number', coverage_days: 'number',
   margin_percent: 'number', ca_ttc: 'number', ca_ht: 'number', cost_ht: 'number',
-  unit_cost: 'number', price: 'number', weight: 'number',
+  unit_cost: 'number', stock_value: 'number', price: 'number', weight: 'number',
   last_sold: 'date', first_sold: 'date', created_date: 'date',
   brand: 'text', sub_brand: 'text', category: 'text', sub_category: 'text',
   supplier: 'text', stock_status: 'text', product_type: 'enum',
@@ -568,6 +568,7 @@ class ProductModel {
       'cost_ht': 'cost_ht', 'margin_ht': 'margin_ht', 'margin_percent': 'margin_percent',
       'first_sold': 'first_sold', 'last_sold': 'last_sold',
       'velocity': 'velocity', 'coverage_days': 'coverage_days',
+      'unit_cost': 'unit_cost', 'stock_value': 'stock_value',
     };
     const orderColumn = sortColumns[sortBy] || 'qty_sold';
     const order = sortOrder.toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
@@ -585,7 +586,14 @@ class ProductModel {
         FROM products
       ),
       var_stock AS (
-        SELECT wp_parent_id, SUM(stock::int) AS s
+        -- value : même formule que la valeur de stock du catalogue (countForCatalog),
+        -- déclinaisons publiées, stock négatif ramené à 0.
+        SELECT wp_parent_id, SUM(stock::int) AS s,
+          SUM(GREATEST(COALESCE(stock, 0), 0) * COALESCE(computed_cost, wc_cog_cost, 0))
+            FILTER (WHERE post_status = 'publish') AS value,
+          SUM(GREATEST(COALESCE(stock, 0), 0)) FILTER (WHERE post_status = 'publish') AS pos_stock,
+          AVG(NULLIF(COALESCE(computed_cost, wc_cog_cost, 0), 0))
+            FILTER (WHERE post_status = 'publish') AS avg_cost
         FROM products WHERE product_type = 'variation' GROUP BY wp_parent_id
       ),
       bundle_sub_items AS (
@@ -632,7 +640,16 @@ class ProductModel {
         SELECT
           p.wp_product_id, p.post_title, p.sku, p.product_type, p.image_url, p.stock_status,
           p.brand, p.sub_brand, p.category, p.sub_category,
-          COALESCE(p.computed_cost, p.wc_cog_cost, 0) AS unit_cost,
+          -- Variable : le coût est sur les déclinaisons (moyenne pondérée par leur stock,
+          -- sinon moyenne simple). Pack woosb : pas de valeur de stock propre (portée par
+          -- ses composants, comme au catalogue).
+          CASE WHEN p.product_type = 'variable'
+            THEN COALESCE(vs.value / NULLIF(vs.pos_stock, 0), vs.avg_cost, 0)
+            ELSE COALESCE(p.computed_cost, p.wc_cog_cost, 0) END AS unit_cost,
+          CASE WHEN p.product_type = 'woosb' THEN NULL
+            WHEN p.product_type = 'variable' THEN COALESCE(vs.value, 0)
+            ELSE GREATEST(COALESCE(p.stock, 0), 0) * COALESCE(p.computed_cost, p.wc_cog_cost, 0)
+          END AS stock_value,
           p.price, p.weight, p.post_date AS created_date,
           sup.name AS supplier,
           ${stockExpr} AS stock,
@@ -834,6 +851,8 @@ class ProductModel {
         p.post_title,
         p.sku,
         COALESCE(p.stock::int, 0) as stock,
+        COALESCE(p.computed_cost, p.wc_cog_cost, 0) as unit_cost,
+        GREATEST(COALESCE(p.stock, 0), 0) * COALESCE(p.computed_cost, p.wc_cog_cost, 0) as stock_value,
         p.stock_status,
         p.product_attributes,
         COALESCE(stats.qty_sold, 0)::int as qty_sold,
