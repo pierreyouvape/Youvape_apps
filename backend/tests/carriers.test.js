@@ -744,6 +744,38 @@ test('Bpost relais : HD, le point, son adresse, le mobile belge au format intern
   assert.strictEqual(a.phoneNumber, undefined);
 });
 
+test('un mobile français part aussi comme mobile : c\'est lui que Colissimo imprime', () => {
+  // Commande 1260104 : mobile envoyé comme fixe seulement → « Téléphone : / ».
+  const a = coliPayload({ receiver: { billing_phone: '+33783246892' } }).letter.addressee.address;
+  assert.strictEqual(a.mobileNumber, '+33783246892');
+  assert.strictEqual(a.phoneNumber, '+33783246892');
+});
+
+test('un mobile d\'outre-mer est reconnu, un fixe reste un fixe', () => {
+  assert.strictEqual(coliPayload({ receiver: { country: 'RE', postcode: '97400', billing_phone: '0692123456' },
+    customs: { articles: [{ name: 'Liquide', sku: 'L', quantity: 1, unitValue: 10, unitWeightKg: 0.1 }], shippingTotal: 7.9 }
+  }).letter.addressee.address.mobileNumber, '0692123456');
+  // Même mobile écrit avec l'indicatif de la Guadeloupe.
+  assert.strictEqual(coliPayload({ receiver: { country: 'GP', postcode: '97110', billing_phone: '+590690123456' },
+    customs: { articles: [{ name: 'Liquide', sku: 'L', quantity: 1, unitValue: 10, unitWeightKg: 0.1 }], shippingTotal: 7.9 }
+  }).letter.addressee.address.mobileNumber, '+590690123456');
+  const fixe = coliPayload({ receiver: { billing_phone: '0499782453' } }).letter.addressee.address;
+  assert.strictEqual(fixe.phoneNumber, '0499782453');
+  assert.strictEqual(fixe.mobileNumber, undefined);
+});
+
+test('le décalage garde le format de page, et 0 mm ne touche à rien', async () => {
+  const { shiftContentDown } = require('../src/services/carriers/labelPdf');
+  const d = await PDFDocument.create();
+  d.addPage([283.46, 425.2]).drawText('X', { x: 5, y: 415, size: 10 });
+  const b64 = Buffer.from(await d.save()).toString('base64');
+  assert.strictEqual(await shiftContentDown(b64, 0), b64);
+  const decale = await PDFDocument.load(Buffer.from(await shiftContentDown(b64, 8), 'base64'));
+  assert.strictEqual(decale.getPageCount(), 1);
+  assert.ok(Math.abs(decale.getPage(0).getWidth() - 283.46) < 0.01);
+  assert.ok(Math.abs(decale.getPage(0).getHeight() - 425.2) < 0.01);
+});
+
 test('toutes les écritures d\'un mobile belge sont ramenées à +324…', () => {
   for (const brut of ['0470123456', '+32470123456', '0032470123456', '0470 12 34 56', '0470.12.34.56']) {
     assert.strictEqual(coli.normaliserTelephone(brut, 'BE'), '+32470123456', brut);
@@ -1038,20 +1070,38 @@ const entree = (over = {}) => ({
 
 serie = serie.then(() => console.log('\nColissimo — échanges simulés (aucun appel réseau)'));
 
-testEnSerie('succès : numéro de colis, étiquette intacte, code produit, libellé BMS du service', async () => {
-  simuler(200, SUCCES());
+// Une vraie étiquette 10 × 15 cm, nom collé au bord supérieur comme chez
+// Colissimo : l'adaptateur la décale, il lui faut un PDF lisible.
+let VRAI_PDF = null;
+serie = serie.then(async () => {
+  const d = await PDFDocument.create();
+  d.addPage([283.46, 425.2]).drawText('SEGURA LAURIE', { x: 5, y: 415, size: 10 });
+  VRAI_PDF = Buffer.from(await d.save());
+});
+const SUCCES_PDF = (extra = []) => multipart([
+  infos({ messages: [{ id: '0', type: 'INFOS', messageContent: 'La requête a été traitée avec succès' }],
+    labelV31Response: { parcelNumber: '6A07657471207' } }),
+  ['label', 'application/octet-stream', VRAI_PDF],
+  ...extra
+]);
+
+testEnSerie('succès : numéro de colis, étiquette décalée, code produit, libellé BMS du service', async () => {
+  simuler(200, SUCCES_PDF());
   const r = await coli.createLabel(entree());
   assert.strictEqual(appels.length, 1);
   assert.ok(appels[0].url.endsWith('/3.1/generateLabel'), appels[0].url);
   assert.strictEqual(r.trackingNumber, '6A07657471207');
-  assert.ok(Buffer.from(r.pdfBase64, 'base64').equals(OCTETS));
+  // Décalée de 8 mm par défaut : autre PDF, même format de page.
+  const pdf = await PDFDocument.load(Buffer.from(r.pdfBase64, 'base64'));
+  assert.ok(!Buffer.from(r.pdfBase64, 'base64').equals(VRAI_PDF), 'étiquette non décalée');
+  assert.ok(Math.abs(pdf.getPage(0).getHeight() - 425.2) < 0.01, 'format de page modifié');
   assert.strictEqual(r.cn23Base64, null);
   assert.strictEqual(r.methodCode, 'DOM');
   assert.strictEqual(r.bmsShipmentTitle, 'La Poste : Colissimo - Domicile sans signature');
 });
 
 testEnSerie('La Réunion : COM et CN23, mais libellé BMS « sans signature » — il suit le service', async () => {
-  simuler(200, SUCCES([['cn23', 'application/octet-stream', Buffer.from('%PDF cn23')]]));
+  simuler(200, SUCCES_PDF([['cn23', 'application/octet-stream', Buffer.from('%PDF cn23')]]));
   const pool = { query: async (sql) => (/order_items/.test(sql)
     ? { rows: CMD_1254235 } : { rows: [{ order_shipping: '7.90' }] }) };
   const r = await coli.createLabel(entree({ orderNumber: '1258878', pool,
@@ -1065,7 +1115,7 @@ testEnSerie('La Réunion : COM et CN23, mais libellé BMS « sans signature » �
 });
 
 testEnSerie('Bpost relais : libellé BMS « Point de retrait »', async () => {
-  simuler(200, SUCCES());
+  simuler(200, SUCCES_PDF());
   const r = await coli.createLabel(entree({ receiver: { ...COLI_RECEIVER, country: 'BE', billing_phone: '0470123456' },
     options: { deliveryMode: 'relais', relayPoint: BPOST } }));
   assert.strictEqual(r.methodCode, 'HD');
@@ -1117,17 +1167,24 @@ testEnSerie('validateLabel passe par checkGenerateLabel', async () => {
 });
 
 testEnSerie('un format ZPL est refusé AVANT l\'appel : l\'étiquette serait payée puis perdue', async () => {
-  simuler(200, SUCCES());
+  simuler(200, SUCCES_PDF());
   const zpl = { ...COLI_ACCOUNT, settings: { ...COLI_ACCOUNT.settings, output_format: 'ZPL_10x15_203dpi' } };
   await assert.rejects(coli.createLabel(entree({ account: zpl })), /PDF/);
   assert.strictEqual(appels.length, 0, 'l\'API a été appelée');
 });
 
 testEnSerie('point d\'un autre réseau : refus, et aucun appel à l\'API', async () => {
-  simuler(200, SUCCES());
+  simuler(200, SUCCES_PDF());
   await assert.rejects(coli.createLabel(entree({ receiver: { ...COLI_RECEIVER, country: 'BE' },
     options: { deliveryMode: 'relais', relayPoint: { ...BPOST, network: 'mondial_relay' } } })), /mondial_relay/);
   assert.strictEqual(appels.length, 0);
+});
+
+testEnSerie('décalage réglé à 0 dans le contrat : étiquette rendue telle quelle', async () => {
+  simuler(200, SUCCES_PDF());
+  const sansDecalage = { ...COLI_ACCOUNT, settings: { ...COLI_ACCOUNT.settings, label_top_offset_mm: '0' } };
+  const r = await coli.createLabel(entree({ account: sansDecalage }));
+  assert.ok(Buffer.from(r.pdfBase64, 'base64').equals(VRAI_PDF));
 });
 
 serie = serie.then(() => { axiosModule.post = postReel; });

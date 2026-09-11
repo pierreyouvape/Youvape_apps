@@ -162,6 +162,22 @@ transporteur — le même contrôle qu'au packing. Le packing lit
 - `line2` et `line3` : **35 caractères**. Ce qui déborde de la rue passe en tête de `line3`.
 - Belgique et Suisse : l'étiquette n'imprime pas `line3` — le complément remonte en `line2`.
 - Luxembourg : code postal sans le préfixe `L-`.
+- Téléphone : un mobile part aussi en `mobileNumber` — c'est le seul numéro que
+  Colissimo imprime, et celui qui reçoit ses SMS. Un fixe reste en `phoneNumber`.
+
+### Impression : le contenu est collé au bord supérieur
+
+Le PDF Colissimo (`PDF_10x15_300dpi`) place son contenu à moins d'un millimètre du
+haut de la page, et laisse environ 30 mm vides en bas. Imprimé par le pilote de
+l'Intermec, le haut est perdu — la première étiquette (commande 1260104) est sortie
+**sans le nom du destinataire**. Le décalage réglé dans l'imprimante (45 points pour
+BMS) ne s'applique qu'au ZPL envoyé tel quel, pas à un PDF que le pilote transforme
+en image : même à 400 points, rien ne changeait.
+
+L'adaptateur décale donc le contenu de **8 mm** vers le bas à la réception, avant le
+tampon du numéro de commande (`labelPdf.shiftContentDown`, vectoriel, sans mise à
+l'échelle). Valeur trouvée à l'impression le 11/09/2026 (5, 8 et 12 mm essayés),
+réglable dans le contrat : `label_top_offset_mm`.
 - Symboles nommés avant tout filtrage (`addressFields.replaceSymbols`) : `Ω` → `ohm`
   (620 libellés produits), `°` / `º` → `o`, `²` → `2`, `€` → `EUR`.
 

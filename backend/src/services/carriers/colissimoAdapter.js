@@ -31,6 +31,7 @@
 
 const axios = require('axios');
 const { restrictToCharset } = require('./addressFields');
+const { shiftContentDown } = require('./labelPdf');
 const { assertAdapter } = require('./contract');
 const { assertAccountComplete } = require('./accounts');
 
@@ -94,6 +95,29 @@ const RESEAU_PARTENAIRE_DEFAUT = 'AT,BE,DE,IT,LU';
 // Droits et taxes payés par l'expéditeur (DDP) : n'existe que pour ces
 // territoires. Désactivé par défaut — c'est le client qui paie les droits.
 const PAYS_FTD = new Set(['GF', 'GP', 'MQ', 'RE']);
+
+// Décalage du contenu de l'étiquette vers le bas, en millimètres. Colissimo colle
+// son contenu au bord supérieur de la page, et l'impression PDF sur l'Intermec en
+// perd le haut. 8 mm validés à l'impression par Pierre le 11/09/2026 (5 et 12 mm
+// essayés). Réglable dans le contrat : `label_top_offset_mm`.
+const DECALAGE_HAUT_DEFAUT = 8;
+
+// Numéros mobiles reconnus. Un mobile part aussi en `mobileNumber` : c'est le seul
+// numéro que Colissimo imprime (la commande 1260104, dont le mobile n'était envoyé
+// que comme fixe, est sortie avec « Téléphone : / »), et celui qui reçoit ses SMS.
+//
+// L'outre-mer suit la numérotation française (0690, 0692, 0694, 0696, 0639…),
+// écrite aussi avec son indicatif (+590, +594, +596, +262, +508). La Polynésie et
+// la Nouvelle-Calédonie ont leur propre plan : leurs numéros restent en fixe.
+const MOBILES = {
+  FR: /^(?:(?:\+|00)(?:33|590|594|596|262|508)|0)[67]\d{8}$/,
+  BE: /^(?:\+32|0032|0)4\d{8}$/
+};
+const PLAN_FRANCAIS = new Set(['FR', 'GF', 'GP', 'MQ', 'RE', 'YT', 'PM', 'BL', 'MF']);
+const estMobile = (telephone, pays) => {
+  const regle = MOBILES[PLAN_FRANCAIS.has(pays) ? 'FR' : pays];
+  return Boolean(regle && regle.test(telephone));
+};
 
 // Pays dont l'étiquette n'affiche pas `line3` : le complément d'adresse doit
 // remonter en `line2`, sinon il n'apparaît pas sur le colis.
@@ -421,13 +445,14 @@ const buildLabelPayload = ({ orderNumber, receiver = {}, account, weightGrams, o
     zipCode,
     email: String(receiver.email || '')
   };
-  // En point de retrait le téléphone est un mobile, obligatoire ; ailleurs un
-  // fixe. En Belgique, le plugin le double en mobile quand il n'y en a pas.
+  // En point de retrait le téléphone est un mobile, obligatoire. Ailleurs il part
+  // comme fixe, et AUSSI comme mobile quand c'en est un (voir MOBILES). En
+  // Belgique, le plugin le double en mobile quoi qu'il arrive.
   if (telephone) {
     if (relais) addressee.mobileNumber = telephone;
     else {
       addressee.phoneNumber = telephone;
-      if (pays === 'BE') addressee.mobileNumber = telephone;
+      if (pays === 'BE' || estMobile(telephone, pays)) addressee.mobileNumber = telephone;
     }
   }
 
@@ -739,10 +764,15 @@ const createLabel = async (input) => {
     console.error(`[${LOG_TAG}] ⚠️ Commande ${orderNumber} : CN23 attendue mais absente de la réponse`);
   }
 
+  // Le contenu est décalé vers le bas AVANT le tampon du numéro de commande, qui
+  // reste ainsi en bas à gauche, dans la zone vide.
+  const decalage = Number(account.settings.label_top_offset_mm ?? DECALAGE_HAUT_DEFAUT);
+  const pdfBase64 = await shiftContentDown(label.toString('base64'), decalage);
+
   return {
     carrierOrderId: trackingNumber,
     trackingNumber,
-    pdfBase64: label.toString('base64'),
+    pdfBase64,
     cn23Base64: parts.cn23 && parts.cn23.length ? parts.cn23.toString('base64') : null,
     methodCode: dest.productCode,
     bmsShipmentTitle: SERVICES[dest.service].bms
@@ -799,6 +829,7 @@ const ACCOUNT_FIELDS = {
 
     // Avancés : valeurs par défaut de l'adaptateur si le champ reste vide.
     { key: 'output_format',             label: "Format d'étiquette (PDF obligatoire)", advanced: true, placeholder: 'PDF_10x15_300dpi' },
+    { key: 'label_top_offset_mm',       label: "Décalage de l'étiquette vers le bas (mm)", advanced: true, placeholder: String(DECALAGE_HAUT_DEFAUT) },
     { key: 'cn23_format',               label: 'Format de la CN23 (PDF obligatoire)',  advanced: true, placeholder: 'PDF_A4_300dpi' },
     { key: 'cn23_copies',               label: 'Exemplaires de CN23',                   advanced: true, placeholder: '4' },
     { key: 'partner_network_countries', label: 'Pays livrés par le réseau partenaire (bpost…)', advanced: true, placeholder: RESEAU_PARTENAIRE_DEFAUT },
