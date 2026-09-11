@@ -129,6 +129,12 @@ const confirmShipmentInBms = async (adapter, orderNumber, trackingNumber, title 
  * antérieures n'en ont pas, et un transporteur en point de retrait ne peut pas
  * étiqueter sans. L'adaptateur le signalera explicitement plutôt que d'envoyer
  * une requête vouée à l'échec.
+ *
+ * Le point saisi à la main dans la fiche commande (`relay_point_manual`) prime
+ * sur celui de WooCommerce : c'est le seul moyen d'en donner un à une commande
+ * créée au back-office. Il est lu via `to_jsonb` sans nommer la colonne, pour
+ * que le packing continue de tourner si la migration n'est pas encore passée ;
+ * le NULLIF écarte le `null` JSON que rend une colonne présente mais vide.
  */
 const loadOrderForLabel = async (orderNumber) => {
   const { rows } = await pool.query(`
@@ -137,8 +143,9 @@ const loadOrderForLabel = async (orderNumber) => {
       shipping_first_name, shipping_last_name, shipping_company,
       shipping_address_1, shipping_address_2,
       shipping_city, shipping_postcode, shipping_country,
-      shipping_phone, billing_phone, billing_email, order_total, relay_point
-    FROM orders
+      shipping_phone, billing_phone, billing_email, order_total,
+      COALESCE(NULLIF(to_jsonb(o) -> 'relay_point_manual', 'null'::jsonb), o.relay_point) AS relay_point
+    FROM orders o
     WHERE wp_order_id = $1
   `, [orderNumber]);
   return rows[0] || null;

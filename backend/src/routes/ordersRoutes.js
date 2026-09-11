@@ -24,6 +24,9 @@ router.get('/:id/reviews', ordersController.getOrderReviews);
 
 // Édition
 router.put('/:id/shipping-cost', ordersController.updateShippingCost);
+// Point relais saisi à la main (commandes créées au back-office WooCommerce)
+router.put('/:id/relay-point', ordersController.setRelayPoint);
+router.delete('/:id/relay-point', ordersController.clearRelayPoint);
 router.post('/reimport-incomplete', ordersController.reimportIncomplete);
 router.post('/:id/reimport', ordersController.reimport);
 

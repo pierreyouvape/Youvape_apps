@@ -1132,6 +1132,67 @@ testEnSerie('point d\'un autre réseau : refus, et aucun appel à l\'API', async
 
 serie = serie.then(() => { axiosModule.post = postReel; });
 
+// ── Point relais saisi à la main ─────────────────────────────────────────────
+console.log('\nPoint relais saisi dans la fiche commande');
+
+const { relayNetworks, expectedNetwork, buildManualRelayPoint } = require('../src/services/carriers/relayPoints');
+const saisie = (s) => buildManualRelayPoint(s, {
+  orderNumber: '1259888', enteredBy: 'Pierre', enteredById: 1, now: new Date('2026-09-11T08:00:00Z')
+});
+const refusSaisie = (s) => {
+  try { saisie(s); return null; } catch (e) { return e.userMessage; }
+};
+
+test('on ne saisit un point que chez un transporteur qui sait le contrôler', () => {
+  assert.deepStrictEqual(relayNetworks().map(r => r.code).sort(), ['colissimo', 'mondial_relay']);
+});
+
+test('le cas réel : point Bpost 305025 de la commande 1259888, créée au back-office', () => {
+  const p = saisie({ network: 'colissimo', id: ' 305025 ', country: 'be' });
+  assert.strictEqual(p.id, '305025');
+  assert.strictEqual(p.country, 'BE');
+  assert.strictEqual(p.network, 'colissimo');
+  assert.strictEqual(p.entered_by, 'Pierre');
+  assert.strictEqual(p.entered_at, '2026-09-11T08:00:00.000Z');
+});
+
+test('un point accepté à la saisie passe le contrôle du packing', () => {
+  assert.doesNotThrow(() => coli.assertRelayPoint(saisie({ network: 'colissimo', id: '305025', country: 'BE' }), '1'));
+  assert.doesNotThrow(() => mr.assertRelayPoint(saisie({ network: 'mondial_relay', id: '022112', country: 'FR' }), '1'));
+});
+
+test('un point saisi sans adresse donne une étiquette Colissimo à l\'adresse du client', () => {
+  const p = coliPayload({ receiver: { country: 'BE', postcode: '7970', billing_phone: '0470123456' },
+    options: { deliveryMode: 'relais', relayPoint: saisie({ network: 'colissimo', id: '305025', country: 'BE' }) } });
+  assert.strictEqual(p.letter.parcel.pickupLocationId, '305025');
+  assert.strictEqual(p.letter.addressee.address.line2, '12 rue de la République');
+});
+
+test('un numéro mal formé est refusé à la saisie, pas colis en main', () => {
+  assert.ok(/6 chiffres/.test(refusSaisie({ network: 'colissimo', id: '30502', country: 'BE' })));
+  assert.ok(/6 chiffres/.test(refusSaisie({ network: 'mondial_relay', id: '5761X', country: 'FR' })));
+});
+
+test('réseau, numéro et pays sont contrôlés', () => {
+  assert.ok(/Réseau/.test(refusSaisie({ network: 'laposte', id: '305025', country: 'BE' })));
+  assert.ok(/obligatoire/.test(refusSaisie({ network: 'colissimo', id: '  ', country: 'BE' })));
+  assert.ok(/deux lettres/.test(refusSaisie({ network: 'colissimo', id: '305025', country: 'Belgique' })));
+});
+
+test('la fiche sait quels modes exigent un point', () => {
+  assert.strictEqual(expectedNetwork('colissimo', 'relais').code, 'colissimo');
+  assert.strictEqual(expectedNetwork('colissimo', 'domicile'), null);
+  assert.strictEqual(expectedNetwork('mondial_relay', '24R').code, 'mondial_relay');
+  assert.strictEqual(expectedNetwork('laposte', null), null);
+  assert.strictEqual(expectedNetwork(null, null), null);
+  assert.strictEqual(expectedNetwork('inconnu', 'relais'), null);
+});
+
+test('le refus du packing mène à la fiche commande', () => {
+  assert.ok(/fiche/.test(messageDe(null)), 'Mondial Relay');
+  assert.ok(/fiche/.test(pointRefuse(null)), 'Colissimo');
+});
+
 Promise.all(pending).then(() => {
   console.log(failures === 0 ? '\nTous les tests passent.' : `\n${failures} test(s) en échec.`);
   process.exit(failures === 0 ? 0 : 1);

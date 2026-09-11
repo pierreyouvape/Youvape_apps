@@ -32,7 +32,9 @@ async function main() {
            to_regclass('public.shipping_method_carrier_map') IS NOT NULL AS mappage,
            to_regclass('public.laposte_labels')              IS NOT NULL AS ancienne,
            EXISTS (SELECT 1 FROM information_schema.columns
-                   WHERE table_name = 'shipment_labels' AND column_name = 'cn23_data') AS cn23
+                   WHERE table_name = 'shipment_labels' AND column_name = 'cn23_data') AS cn23,
+           EXISTS (SELECT 1 FROM information_schema.columns
+                   WHERE table_name = 'orders' AND column_name = 'relay_point_manual') AS saisie_point
   `);
   console.log('Tables');
   tables.labels   ? ok('shipment_labels présente')  : ko('shipment_labels ABSENTE — migration non passée');
@@ -48,6 +50,11 @@ async function main() {
     tables.cn23 ? ok('shipment_labels.cn23_data présente (déclarations douanières)')
                 : ko('shipment_labels.cn23_data ABSENTE — appliquer add_cn23_to_shipment_labels.sql');
   }
+
+  // Point relais saisi dans la fiche commande. Le packing lit la colonne sans la
+  // nommer et tourne sans elle ; c'est la saisie qui échouerait.
+  tables.saisie_point ? ok('orders.relay_point_manual présente (point relais saisi à la main)')
+                      : ko('orders.relay_point_manual ABSENTE — appliquer add_orders_relay_point_manual.sql');
 
   if (!tables.labels || !tables.accounts || !tables.mappage) {
     console.log('\n⛔ NE PAS RECONSTRUIRE LE BACKEND. Appliquer d\'abord :');

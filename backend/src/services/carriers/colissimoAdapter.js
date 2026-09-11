@@ -257,8 +257,8 @@ const assertRelayPoint = (relayPoint, orderNumber) => {
   if (!id) {
     refus(
       `La commande n°${orderNumber} part en point de retrait Colissimo, mais aucun point n'y est `
-      + `enregistré. Rouvrez et enregistrez la commande dans WooCommerce pour récupérer le point `
-      + `choisi par le client, ou expédiez-la par un autre transporteur.`
+      + `enregistré. Si elle a été créée à la main, saisissez le point dans sa fiche (app Commandes) ; `
+      + `sinon, rouvrez et enregistrez-la dans WooCommerce pour récupérer le point choisi par le client.`
     );
   }
 
@@ -818,6 +818,9 @@ module.exports = assertAdapter({
   // Libellé par défaut ; chaque étiquette rend le sien, selon son service.
   bmsShipmentTitle: SERVICES.domicile.bms,
   deliveryModes: Object.entries(SERVICES).map(([code, s]) => ({ code, label: s.label })),
+  // Seul le mode « relais » passe par un point — Bpost en Belgique.
+  requiresRelayPoint: (deliveryMode) => deliveryMode === 'relais',
+  relayNetworkLabel: 'Colissimo / Bpost',
   // La CN23 est stockée à part : l'enregistrement exige la colonne cn23_data.
   producesCustomsDocuments: true,
   resolveWeight,

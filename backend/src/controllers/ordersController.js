@@ -1,6 +1,8 @@
 const orderModel = require('../models/orderModel');
 const savModel = require('../models/savModel');
 const shipmentLabelModel = require('../models/shipmentLabelModel');
+const shippingMethodMapModel = require('../models/shippingMethodMapModel');
+const { relayNetworks, expectedNetwork, buildManualRelayPoint } = require('../services/carriers/relayPoints');
 const advancedFilterService = require('../services/advancedFilterService');
 const pool = require('../config/database');
 const { buildSearchCondition } = require('../utils/searchUtils');
@@ -76,6 +78,20 @@ exports.getById = async (req, res) => {
     } catch (labelError) {
       console.error('Error getting shipment labels for order:', labelError.message);
       order.shipment_labels = [];
+    }
+
+    // Point relais : le réseau attendu d'après la correspondance de la
+    // dénomination (active ou non), et les réseaux qu'on peut saisir. Même
+    // règle qu'au-dessus : un échec ne prive pas l'agent de la commande.
+    try {
+      const mapping = await shippingMethodMapModel.findByDenomination(order.shipping_method);
+      order.relay_point_options = {
+        expected: mapping ? expectedNetwork(mapping.carrier_code, mapping.delivery_mode) : null,
+        networks: relayNetworks()
+      };
+    } catch (relayError) {
+      console.error('Error getting relay point options for order:', relayError.message);
+      order.relay_point_options = { expected: null, networks: [] };
     }
 
     res.json({ success: true, data: order });
@@ -631,6 +647,62 @@ exports.updateShippingCost = async (req, res) => {
     });
   } catch (error) {
     console.error('Error updating shipping cost:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+/**
+ * Saisit ou corrige le point relais d'une commande.
+ * PUT /api/orders/:id/relay-point  { network, id, country }
+ *
+ * Sert les commandes créées au back-office WooCommerce, qui n'ont pas de point :
+ * la méta des plugins ne s'y édite pas. Ouvert à toute personne connectée
+ * (décision du 11/09/2026) ; la saisie garde qui et quand.
+ *
+ * Le point est contrôlé par le transporteur lui-même, comme au packing : un
+ * point accepté ici ne sera pas refusé au moment d'expédier.
+ */
+exports.setRelayPoint = async (req, res) => {
+  try {
+    const orderId = parseInt(req.params.id, 10);
+    const point = buildManualRelayPoint(req.body || {}, {
+      orderNumber: orderId,
+      enteredBy: req.user?.name || req.user?.email || null,
+      enteredById: req.user?.id ?? null
+    });
+
+    const row = await orderModel.setManualRelayPoint(orderId, point);
+    if (!row) {
+      return res.status(404).json({ success: false, error: 'Commande introuvable' });
+    }
+
+    console.log(`[PointRelais] Commande ${orderId} : ${point.network} ${point.country}-${point.id} saisi par ${point.entered_by || '?'}`);
+    res.json({ success: true, data: row });
+  } catch (error) {
+    if (error.statusCode === 400) {
+      return res.status(400).json({ success: false, error: error.userMessage || error.message });
+    }
+    console.error('Error setting relay point:', error.message);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+/**
+ * Retire le point saisi à la main : celui de WooCommerce, s'il existe, reprend la main.
+ * DELETE /api/orders/:id/relay-point
+ */
+exports.clearRelayPoint = async (req, res) => {
+  try {
+    const orderId = parseInt(req.params.id, 10);
+    const row = await orderModel.setManualRelayPoint(orderId, null);
+    if (!row) {
+      return res.status(404).json({ success: false, error: 'Commande introuvable' });
+    }
+
+    console.log(`[PointRelais] Commande ${orderId} : point saisi retiré par ${req.user?.name || req.user?.email || '?'}`);
+    res.json({ success: true, data: row });
+  } catch (error) {
+    console.error('Error clearing relay point:', error.message);
     res.status(500).json({ success: false, error: error.message });
   }
 };

@@ -138,7 +138,22 @@ Trois contraintes dures (`checkConsistency` du plugin) :
 (`^(?:(?:\+|00)32|0)4\d{8}$`), ramenés au format `+324…`.
 
 En point de retrait, l'adresse destinataire devient **celle du point**, son nom en
-`companyName` ; le nom du client reste en `firstName` / `lastName`.
+`companyName` ; le nom du client reste en `firstName` / `lastName`. Quand l'adresse du
+point est inconnue (point saisi à la main), l'adresse du client est conservée, comme
+le fait le plugin : Colissimo n'a besoin que de `pickupLocationId`.
+
+### Commandes créées au back-office
+
+Une commande créée à la main dans l'administration WooCommerce n'a **pas** de point :
+la méta du plugin ne s'y édite pas (commande 1259888 : `created_via: admin`, ligne
+« Bpost Relais » sans méthode, aucune méta `_lpc_meta_*`). Ce n'est pas un défaut de
+synchro — yousync n'a rien à transmettre.
+
+Le point se saisit dans la **fiche commande** de l'app (case « Point relais »), ouverte
+à toute personne connectée. Il est stocké dans `orders.relay_point_manual`, que la
+synchro n'écrit jamais, et contrôlé à la saisie par le `assertRelayPoint` du
+transporteur — le même contrôle qu'au packing. Le packing lit
+`COALESCE(relay_point_manual, relay_point)`. Voir `services/carriers/relayPoints.js`.
 
 ## Adresses et caractères
 

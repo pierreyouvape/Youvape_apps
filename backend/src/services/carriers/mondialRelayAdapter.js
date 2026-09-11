@@ -283,8 +283,8 @@ const assertRelayPoint = (relayPoint, orderNumber) => {
   if (!relayPoint || !id) {
     refus(
       `La commande n°${orderNumber} part en Mondial Relay, mais aucun point relais n'y est `
-      + `enregistré. Rouvrez et enregistrez la commande dans WooCommerce pour récupérer le point `
-      + `choisi par le client, ou expédiez-la par un autre transporteur.`
+      + `enregistré. Si elle a été créée à la main, saisissez le point dans sa fiche (app Commandes) ; `
+      + `sinon, rouvrez et enregistrez-la dans WooCommerce pour récupérer le point choisi par le client.`
     );
   }
 
@@ -434,6 +434,8 @@ module.exports = assertAdapter({
   labelFileName,
   accountFields: ACCOUNT_FIELDS,
   bmsShipmentTitle: 'Mondial Relay',
+  // 24R (points relais ET consignes) et 24L passent par un point ; HOM et LCC non.
+  requiresRelayPoint: (deliveryMode) => ['24R', '24L'].includes(deliveryMode || '24R'),
   resolveWeight,
   createLabel,
   cancelLabel,
