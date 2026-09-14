@@ -279,6 +279,13 @@ const pdfImportModel = {
       });
     }
 
+    // 4a bis. Anomalies propres au gabarit, que seul le parseur sait voir
+    //     (référence reconstituée douteuse, remises qui ne collent pas…).
+    for (const w of parsed.warnings || []) {
+      console.warn(`[pdfImport] ${supplier.name} : ${w.message}`);
+      parseWarnings.push(w);
+    }
+
     // 4b. Reconstituer la référence complète à partir des SKU connus du fournisseur.
     //     Les PDF collent la colonne Référence à la Désignation : une référence avec
     //     espace/tiret (ex: "MJ AMNESIA 300MG") serait sinon tronquée par le parseur.

@@ -87,6 +87,19 @@ const CASES = [
     expectedTotal: 1365.36,
     mustContain: null, // réf. tronquée par la mise en page, recollée plus tard en BDD
   },
+  {
+    label: 'e.tasty confirmation UOPZIWQDN (email Gmail, HOMAN05000 à cheval sur 2 pages)',
+    parser: require('../src/parsers/etastyParser'),
+    text: fixture('etasty-UOPZIWQDN.txt'),
+    orderNumber: 'UOPZIWQDN',
+    expectedItems: 23,
+    expectedTotal: 1817.50,
+    mustContain: 'HOMAN05000', // lue "HOMAN0" avant correction
+    // 23 lignes pour 3 couples (prix, qté) seulement : le garde-fou arithmétique
+    // est aveugle aux lignes identiques par construction. Ce document est protégé
+    // par la réconciliation avec « Produits » (voir tests e.tasty plus bas).
+    noUniqueRow: true,
+  },
 ];
 
 console.log('Parseurs — lignes qui disparaissaient en silence');
@@ -133,6 +146,8 @@ for (const c of CASES) {
     assert.deepStrictEqual(orphans, [], `alertes inattendues : ${JSON.stringify(orphans)}`);
   });
 
+  if (c.noUniqueRow) continue;
+
   test(`${c.label} : une ligne retirée est détectée`, () => {
     // On retire une ligne dont le couple (prix, quantité) est unique, comme
     // l'était la ligne réellement perdue.
@@ -147,6 +162,117 @@ for (const c of CASES) {
     assert.strictEqual(orphans.length, 1, `attendu 1 orpheline, obtenu ${orphans.length}`);
     assert.strictEqual(orphans[0].qty, victim.qty_ordered);
     assert.strictEqual(orphans[0].unit_price, victim.unit_price_net);
+  });
+}
+
+// ── e.tasty, confirmation de commande (email Gmail) ──────────────────────────
+console.log('e.tasty — confirmation de commande');
+{
+  const etasty = require('../src/parsers/etastyParser');
+  const text = fixture('etasty-UOPZIWQDN.txt');
+  const parsed = etasty.parse(text);
+
+  // Relevé ligne à ligne sur le PDF, réfs recoupées avec le bon de commande
+  // « House of Magic » d'e.tasty (qui imprime les réfs entières).
+  const EXPECTED = {
+    HOBOI05000: [40, 5.20], HOBOIS01010: [50, 1.35], HOBOIS01020: [50, 1.35],
+    HOBOI01006: [30, 1.35], HOBOI01012: [30, 1.35], HOBOI01003: [30, 1.35],
+    HODRA01006: [30, 1.35], HODRA01012: [30, 1.35], HODRA01003: [30, 1.35],
+    HODRAS01010: [50, 1.35], HODRAS01020: [50, 1.35], HODRA05000: [40, 5.20],
+    HOMAN05000: [40, 5.20], HOMANS01010: [50, 1.35], HOMANS01020: [50, 1.35],
+    HOMAN01003: [30, 1.35], HOMAN01006: [30, 1.35], HOMAN01012: [30, 1.35],
+    HOSER01006: [30, 1.35], HOSER01003: [30, 1.35], HOSERS01010: [50, 1.35],
+    HOSERS01020: [50, 1.35], HOSER05000: [40, 5.20],
+  };
+
+  test('UOPZIWQDN : chaque réf. avec sa quantité et son prix, rien en trop', () => {
+    const got = Object.fromEntries(parsed.items.map((i) => [i.supplier_sku, [i.qty_ordered, i.unit_price_net]]));
+    assert.strictEqual(Object.keys(got).length, parsed.items.length, 'réf. en double');
+    assert.deepStrictEqual(got, EXPECTED);
+  });
+
+  test('UOPZIWQDN : date de commande', () => {
+    assert.strictEqual(parsed.orderDate, '2026-09-11');
+  });
+
+  test('UOPZIWQDN : goodies à 0,00 € non repris comme produits', () => {
+    assert.ok(!parsed.items.some((i) => /HOM-26|ETASTY|Goodies/i.test(i.supplier_sku + i.designation)));
+  });
+
+  test('UOPZIWQDN : désignation recollée sur le saut de page', () => {
+    const it = parsed.items.find((i) => i.supplier_sku === 'HOMAN05000');
+    assert.strictEqual(it.designation, 'MANGPOUFFLE 50ML - Taux de nicotine : 0- Etiquettes : Multilingue');
+  });
+
+  test('UOPZIWQDN : 2 remises, total = « Réductions » 652,20 €', () => {
+    assert.deepStrictEqual(
+      parsed.discountItems.map((d) => [d.product_name, d.unit_price]),
+      [
+        ['PACK IMP 80 PRDS 50ML - HOUSE OF MAGIC 2026', -345.60],
+        ['PACK IMP 1€ 10ML - HOUSE OF MAGIC 2026', -306.60],
+      ]
+    );
+  });
+
+  test('UOPZIWQDN : aucune alerte sur un parsing complet', () => {
+    assert.deepStrictEqual(parsed.warnings, []);
+  });
+
+  // Mutations du document : chaque défaillance de lecture doit se voir.
+  const mutate = (from, to) => {
+    assert.ok(text.includes(from), `fixture modifiée ? motif introuvable : ${JSON.stringify(from)}`);
+    return etasty.parse(text.replace(from, to));
+  };
+  const suspectContexts = (p) =>
+    (p.warnings.find((w) => w.type === 'suspect_rows')?.rows || []).map((r) => r.context);
+
+  test('UOPZIWQDN : fin de réf. perdue au saut de page → ligne signalée', () => {
+    const p = mutate('\n5000 de nicotine', '\nde nicotine');
+    assert.ok(suspectContexts(p).some((c) => c.startsWith('HOMAN0 ')), JSON.stringify(p.warnings));
+  });
+
+  test('UOPZIWQDN : réf. qui ne colle pas au taux de nicotine → ligne signalée', () => {
+    const p = mutate('HODRA0\n1012\n', 'HODRA0\n1013\n');
+    assert.ok(suspectContexts(p).some((c) => c.startsWith('HODRA01013 ')), JSON.stringify(p.warnings));
+  });
+
+  test('UOPZIWQDN : fin de ligne basculée APRÈS le prix sur la page suivante', () => {
+    const p = mutate(
+      'HODRA0\n1012\nDragondor 10ml - Taux de\nnicotine : 12- Etiquettes :\nFrançais\n1,35 € 30 40,50 €\n',
+      'HODRA0\nDragondor 10ml - Taux de\n1,35 € 30 40,50 €\n\n-- 1 of 6 --\n\n1012 nicotine : 12- Etiquettes :\nFrançais\n'
+    );
+    const skus = p.items.map((i) => i.supplier_sku);
+    assert.ok(skus.includes('HODRA01012') && skus.includes('HODRA01003'), skus.join(' '));
+    assert.deepStrictEqual(p.warnings, []);
+  });
+
+  test('UOPZIWQDN : remise perdue → écart avec « Réductions » signalé', () => {
+    const p = mutate('PACK IMP 1€ 10ML - HOUSE OF MAGIC 2026 -306,60 €', 'PACK IMP 1€ 10ML - HOUSE OF MAGIC 2026');
+    assert.ok(p.warnings.some((w) => w.type === 'discount_mismatch'), JSON.stringify(p.warnings));
+  });
+
+  test('UOPZIWQDN : ligne produit illisible → écart avec « Produits »', () => {
+    const p = mutate('5,20 € 40 208,00 €\nHOMANS', '5,20 € 40 208,00\nHOMANS');
+    assert.notStrictEqual(sumLines(p.items), p.invoiceProductTotalHT);
+  });
+
+  // Ancien gabarit (BIBAIERBM, juillet 2026) : réf. sur 2 lignes, prix collé à la désignation.
+  test('confirmation juillet 2026 : ancien gabarit toujours lu', () => {
+    const p = etasty.parse([
+      'Numéro de commande : BIBAIERBM',
+      'Date de la commande : 23/07/2026 14:33:58',
+      'Détail de votre commande :',
+      'Référence Produit Prix unitaire Quantité Prix total',
+      'INAZU01', '006', 'Azura 10ml - Taux de', 'nicotine : 6- Etiquettes : Français 1,35 € 10 13,50 €',
+      'INAZU05', '000', 'AZURA 50ML - Taux de nicotine : 0- Etiquettes :', 'Multilingue', '5,20 € 4 20,80 €',
+      'Livraison gratuite', 'Produits 34,30 €',
+    ].join('\n'));
+    assert.deepStrictEqual(
+      p.items.map((i) => [i.supplier_sku, i.qty_ordered, i.unit_price_net]),
+      [['INAZU01006', 10, 1.35], ['INAZU05000', 4, 5.20]]
+    );
+    assert.strictEqual(p.invoiceProductTotalHT, 34.30);
+    assert.deepStrictEqual(p.warnings, []);
   });
 }
 
