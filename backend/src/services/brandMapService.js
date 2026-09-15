@@ -126,6 +126,31 @@ const buildMap = (terms, products) => {
   return { withSubBrand, withoutSubBrand };
 };
 
+/**
+ * Toutes les marques de premier niveau de chaque produit publie.
+ * yousync n'en garde qu'une (`$brands[0]`) : un produit rattache a deux
+ * marques (ex. Cubana = The Fuu + XO Havana) disparaissait du filtre de la
+ * seconde. Un terme enfant compte pour sa marque parente.
+ */
+const buildBrandRows = (terms, products) => {
+  const termsById = new Map(terms.map((t) => [t.id, t]));
+  const rows = [];
+
+  for (const product of products) {
+    const brands = new Set();
+    for (const id of product['pwb-brand'] || []) {
+      const term = termsById.get(id);
+      if (!term) continue;
+      const top = term.parent && termsById.get(term.parent) ? termsById.get(term.parent) : term;
+      const name = decodeEntities(top.name);
+      if (name) brands.add(name);
+    }
+    for (const brand of brands) rows.push({ wp_product_id: product.id, brand });
+  }
+
+  return rows;
+};
+
 const persistMap = async (client, rows) => {
   await client.query('TRUNCATE wp_product_brand_map');
   if (rows.length === 0) return;
@@ -145,6 +170,17 @@ const persistMap = async (client, rows) => {
   );
 };
 
+const persistBrands = async (client, rows) => {
+  await client.query('TRUNCATE wp_product_brands');
+  if (rows.length === 0) return;
+
+  await client.query(
+    `INSERT INTO wp_product_brands (wp_product_id, brand)
+     SELECT * FROM UNNEST($1::bigint[], $2::varchar[])`,
+    [rows.map((r) => r.wp_product_id), rows.map((r) => r.brand)]
+  );
+};
+
 // Les migrations .sql ne sont pas versionnees dans ce repo (.gitignore *.sql),
 // le service cree donc sa table lui-meme : un deploiement suffit.
 const ensureTable = async () => {
@@ -156,6 +192,15 @@ const ensureTable = async () => {
       refreshed_at  TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
     )
   `);
+  // Lue par le filtre marque du catalogue : doit exister des le demarrage.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS wp_product_brands (
+      wp_product_id BIGINT NOT NULL,
+      brand         VARCHAR(255) NOT NULL,
+      PRIMARY KEY (wp_product_id, brand)
+    )
+  `);
+  await pool.query('CREATE INDEX IF NOT EXISTS idx_wp_product_brands_brand ON wp_product_brands (brand)');
 };
 
 /**
@@ -185,12 +230,14 @@ const refreshBrandMap = async () => {
   }
 
   const { withSubBrand, withoutSubBrand } = buildMap(terms, products);
+  const brandRows = buildBrandRows(terms, products);
 
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
 
     await persistMap(client, withSubBrand);
+    await persistBrands(client, brandRows);
 
     // Remplit / corrige les produits qui ont une sous-marque cote WordPress.
     const filled = await client.query(
@@ -264,6 +311,7 @@ const applySubBrandFallback = async (dbPool, productData) => {
 };
 
 module.exports = {
+  ensureTable,
   refreshBrandMap,
   applySubBrandFallback,
 };

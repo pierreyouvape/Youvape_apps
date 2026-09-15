@@ -13,6 +13,13 @@ const STATS_FILTER_FIELDS = {
   brand: 'text', sub_brand: 'text', category: 'text', sub_category: 'text',
   supplier: 'text', stock_status: 'text', product_type: 'enum',
 };
+// Un produit peut porter plusieurs marques dans WordPress alors que
+// products.brand n'en garde qu'une : wp_product_brands (brandMapService) complete.
+const brandMatch = (alias, param) => `(${alias}.brand = ${param} OR EXISTS (
+  SELECT 1 FROM wp_product_brands pb
+  WHERE pb.wp_product_id = ${alias}.wp_product_id AND pb.brand = ${param}
+))`;
+
 const isYmd = (s) => typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s);
 
 /**
@@ -918,6 +925,13 @@ class ProductModel {
         WHERE brand IS NOT NULL AND product_type IN ('simple','variable','woosb') AND post_status = 'publish'
         GROUP BY brand
 
+        UNION
+
+        SELECT 'brand', pb.brand, NULL::text
+        FROM wp_product_brands pb
+        JOIN products p ON p.wp_product_id = pb.wp_product_id
+        WHERE p.product_type IN ('simple','variable','woosb') AND p.post_status = 'publish'
+
         UNION ALL
 
         SELECT 'sub_brand' as type, sub_brand as value, brand as parent
@@ -1052,7 +1066,7 @@ class ProductModel {
     }
 
     if (brand) {
-      whereClause += ` AND p.brand = $${paramIndex}`;
+      whereClause += ` AND ${brandMatch('p', `$${paramIndex}`)}`;
       params.push(brand);
       paramIndex++;
     }
@@ -1159,7 +1173,7 @@ class ProductModel {
         words.forEach(w => varParams.push(w.length <= 2 ? `% ${w} %` : `%${w}%`));
       }
       if (brand) {
-        varFilter += ` AND (v.brand = $${varParams.length + 1} OR p_parent.brand = $${varParams.length + 1})`;
+        varFilter += ` AND (v.brand = $${varParams.length + 1} OR ${brandMatch('p_parent', `$${varParams.length + 1}`)})`;
         varParams.push(brand);
       }
       if (subBrand) {
@@ -1333,7 +1347,7 @@ class ProductModel {
     }
 
     if (brand) {
-      whereClause += ` AND p.brand = $${params.length + 1}`;
+      whereClause += ` AND ${brandMatch('p', `$${params.length + 1}`)}`;
       params.push(brand);
     }
     if (subBrand) {

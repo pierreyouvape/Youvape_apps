@@ -666,7 +666,7 @@ const setupCompetitorMonitorCron = () => {
 // chaque deploiement Deployer du site, la correction vit donc cote backend :
 // on reconstruit la correspondance depuis WordPress et on realigne products.
 
-const { refreshBrandMap } = require("./brandMapService");
+const { refreshBrandMap, ensureTable: ensureBrandMapTables } = require("./brandMapService");
 
 let brandMapCronJob = null;
 
@@ -692,6 +692,11 @@ const setupBrandMapCron = () => {
     timezone: "Europe/Paris"
   });
   console.log("Cron sous-marques configure: toutes les heures (Europe/Paris)");
+  // Remplit wp_product_brands des le demarrage : sans elle, le filtre marque
+  // du catalogue ignore les produits rattaches a plusieurs marques.
+  ensureBrandMapTables()
+    .then(runBrandMapJob)
+    .catch((error) => console.error("Erreur init sous-marques:", error.message));
 };
 
 
