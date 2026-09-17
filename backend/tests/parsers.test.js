@@ -100,6 +100,19 @@ const CASES = [
     // par la réconciliation avec « Produits » (voir tests e.tasty plus bas).
     noUniqueRow: true,
   },
+  {
+    label: 'LIPS FAC/2026/04162 (facture Odoo, totaux en tete de page 2)',
+    parser: require('../src/parsers/lipsParser'),
+    text: fixture('lips-FAC-2026-04162.txt'),
+    orderNumber: 'FAC/2026/04162',
+    expectedItems: 16,
+    expectedTotal: 443.25,
+    mustContain: 'SEV-POLAR-BER-10-10', // 1er article de la page 2, sous le bloc des totaux
+    // Le tableau Odoo n'imprime pas la signature « prix € qte total € » du garde-fou
+    // arithmetique (le montant seul porte l'euro) : ce document est protege par la
+    // reconciliation avec « Montant hors taxes ».
+    noUniqueRow: true,
+  },
 ];
 
 console.log('Parseurs — lignes qui disparaissaient en silence');

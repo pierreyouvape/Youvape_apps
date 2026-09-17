@@ -1,8 +1,9 @@
 /**
  * Parseur PDF pour LIPS - French Liquide (Laboratoire LIPS France)
- * Deux formats :
- * - Odoo ("Devis #" / "Commande #") : refs entre crochets [PACK-...], qty "4,000 Unité(s)",
- *   prix "9,5000 [15,00] TVA 20% 38,00 €" (colonne remise optionnelle)
+ * Trois formats :
+ * - Odoo ("Devis #" / "Commande #" / "Facture FAC/aaaa/nnnnn") : refs entre crochets
+ *   [PACK-...], qty "4,000 Unité(s)", prix "9,5000 [15,00] TVA 20% 38,00 €"
+ *   (colonne remise optionnelle) — meme tableau pour les trois documents
  * - "Facture Pro Forma" : ancien format SARL EMC, refs type E2S-MOON-GOLDSUCKER-60-03
  */
 
@@ -10,12 +11,13 @@ module.exports = {
   parse: (text) => {
     if (text.includes('Devis #')) return parseDevis(text);
     if (text.includes('Commande #')) return parseCommande(text);
+    if (/Facture\s+FAC\//.test(text)) return parseFacture(text);
     return parseProForma(text);
   }
 };
 
 /**
- * Formats Odoo « Devis # Sxxxxx » et « Commande # Sxxxxx »
+ * Formats Odoo « Devis # Sxxxxx », « Commande # Sxxxxx » et « Facture FAC/aaaa/nnnnn »
  * Meme tableau : [REF] designation\nqty\nUnité(s)\nprixBrut [remise%] TVA% total €
  * La colonne « Rem.% » n'est presente que sur les lignes remisees.
  */
@@ -30,6 +32,21 @@ function parseCommande(text) {
   return parseOdoo(text, {
     numberRe: /Commande\s*#\s*(\S+)/,
     dateRe: /Date de la commande\s*\n\s*(\d{2})\/(\d{2})\/(\d{4})/,
+  });
+}
+
+/**
+ * Facture definitive Odoo (ex. FAC/2026/04162) : meme tableau que le devis et la
+ * commande, seul l'entete change. Le numero retenu est celui de la FACTURE (identite
+ * du document, comme pour les autres fournisseurs) et non le « Source » S04517, qui
+ * rappelle la commande d'origine — ainsi le controle de doublon vise bien la facture.
+ * La ligne « Frais de transport EXTRANET » n'a pas de reference entre crochets : elle
+ * est ignoree par construction (et son prix est nul).
+ */
+function parseFacture(text) {
+  return parseOdoo(text, {
+    numberRe: /Facture\s+(FAC\/[\w/-]+)/,
+    dateRe: /Date de facturation\s*\n\s*(\d{2})\/(\d{2})\/(\d{4})/,
   });
 }
 
