@@ -104,7 +104,7 @@ const CASES = [
     label: 'LIPS FAC/2026/04162 (facture Odoo, totaux en tete de page 2)',
     parser: require('../src/parsers/lipsParser'),
     text: fixture('lips-FAC-2026-04162.txt'),
-    orderNumber: 'FAC/2026/04162',
+    orderNumber: 'S04517', // le « Source », soit la commande d'origine, pas le n° de facture
     expectedItems: 16,
     expectedTotal: 443.25,
     mustContain: 'SEV-POLAR-BER-10-10', // 1er article de la page 2, sous le bloc des totaux

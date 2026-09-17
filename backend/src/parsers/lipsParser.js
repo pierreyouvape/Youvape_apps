@@ -37,17 +37,29 @@ function parseCommande(text) {
 
 /**
  * Facture definitive Odoo (ex. FAC/2026/04162) : meme tableau que le devis et la
- * commande, seul l'entete change. Le numero retenu est celui de la FACTURE (identite
- * du document, comme pour les autres fournisseurs) et non le « Source » S04517, qui
- * rappelle la commande d'origine — ainsi le controle de doublon vise bien la facture.
+ * commande, seul l'entete change.
+ *
+ * Le numero retenu est le « Source » (S04517), c.-a-d. la commande d'origine, et non
+ * le numero de facture : c'est le meme identifiant que sur le devis et la commande
+ * (« Devis # S04517 »), donc une commande gardee sous une seule reference d'un bout
+ * a l'autre — et un doublon signale si le document a deja ete importe a un autre
+ * stade. Repli sur le numero de facture si l'entete ne porte pas de Source.
+ *
  * La ligne « Frais de transport EXTRANET » n'a pas de reference entre crochets : elle
  * est ignoree par construction (et son prix est nul).
  */
 function parseFacture(text) {
-  return parseOdoo(text, {
-    numberRe: /Facture\s+(FAC\/[\w/-]+)/,
+  const parsed = parseOdoo(text, {
+    numberRe: /Source\s*\n\s*(S\d+)/,
     dateRe: /Date de facturation\s*\n\s*(\d{2})\/(\d{2})\/(\d{4})/,
   });
+
+  if (!parsed.orderNumber) {
+    const invoiceMatch = text.match(/Facture\s+(FAC\/[\w/-]+)/);
+    if (invoiceMatch) parsed.orderNumber = invoiceMatch[1];
+  }
+
+  return parsed;
 }
 
 function parseOdoo(text, { numberRe, dateRe }) {
