@@ -532,6 +532,9 @@ exports.getSubCategoryByName = async (req, res) => {
   }
 };
 
+// Commande livrée en France (pays de livraison, à défaut de facturation — même règle que l'onglet Produits)
+const IS_FR = `COALESCE(NULLIF(o.shipping_country, ''), o.billing_country) = 'FR'`;
+
 /**
  * CA mensuel par catégorie (vue « Par mois » de /stats)
  * GET /api/categories/monthly?dateFrom=YYYY-MM-DD&dateTo=YYYY-MM-DD
@@ -558,7 +561,11 @@ exports.getMonthly = async (req, res) => {
         to_char(date_trunc('month', o.post_date), 'YYYY-MM') as month,
         SUM(oi.qty)::int as qty_sold,
         COALESCE(SUM(oi.line_total), 0) + COALESCE(SUM(oi.line_tax), 0) as ca_ttc,
-        COALESCE(SUM(oi.line_total), 0) as ca_ht
+        COALESCE(SUM(oi.line_total), 0) as ca_ht,
+        -- Part France (le reste = autres pays)
+        COALESCE(SUM(oi.qty) FILTER (WHERE ${IS_FR}), 0)::int as qty_sold_fr,
+        COALESCE(SUM(oi.line_total + COALESCE(oi.line_tax, 0)) FILTER (WHERE ${IS_FR}), 0) as ca_ttc_fr,
+        COALESCE(SUM(oi.line_total) FILTER (WHERE ${IS_FR}), 0) as ca_ht_fr
       FROM product_family pf
       JOIN order_items oi ON (oi.product_id = pf.product_id OR oi.variation_id = pf.product_id)
       JOIN orders o ON o.wp_order_id = oi.wp_order_id

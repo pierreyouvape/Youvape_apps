@@ -4,7 +4,8 @@ import { LinkBox } from '../../utils/navHelpers';
 import { localFmt } from './PeriodFilter';
 
 // Vue « Par mois » : une ligne par groupe (marque, catégorie…), une colonne par mois,
-// chaque cellule = valeur du mois + % d'évolution vs le mois précédent.
+// chaque cellule = valeur du mois + % d'évolution vs le mois précédent,
+// puis la répartition France / autres pays (pays de livraison).
 
 const METRICS = [
   { key: 'ca_ttc', label: 'CA TTC', format: (v) => formatPriceEur(v) },
@@ -50,6 +51,7 @@ const MonthlyPivotTable = ({ rows, groupKey, groupLabel, linkPrefix, dateRange, 
   const [metric, setMetric] = useState('ca_ttc');
   const [sortCol, setSortCol] = useState('total');
   const [sortOrder, setSortOrder] = useState('DESC');
+  const [showCountry, setShowCountry] = useState(true);
 
   const metricDef = METRICS.find(m => m.key === metric);
 
@@ -83,15 +85,22 @@ const MonthlyPivotTable = ({ rows, groupKey, groupLabel, linkPrefix, dateRange, 
   };
 
   const value = (g, ym) => parseFloat(g.byMonth[ym]?.[metric] || 0);
+  const valueFr = (g, ym) => parseFloat(g.byMonth[ym]?.[`${metric}_fr`] || 0);
+  const shareAbroad = (total, fr) => (total > 0 ? ((total - fr) / total) * 100 : null);
 
   const tableRows = useMemo(() => {
     const words = normalize(searchTerm).split(/\s+/).filter(Boolean);
     const filtered = groups
       .filter(g => words.every(w => normalize(g.name).includes(w)))
-      .map(g => ({ ...g, total: months.reduce((s, ym) => s + value(g, ym), 0) }));
+      .map(g => {
+        const total = months.reduce((s, ym) => s + value(g, ym), 0);
+        const totalFr = months.reduce((s, ym) => s + valueFr(g, ym), 0);
+        return { ...g, total, totalFr, abroad: shareAbroad(total, totalFr) };
+      });
     const dir = sortOrder === 'ASC' ? 1 : -1;
     return filtered.sort((a, b) => {
       if (sortCol === 'name') return dir * a.name.localeCompare(b.name, 'fr');
+      if (sortCol === 'abroad') return dir * ((a.abroad ?? -1) - (b.abroad ?? -1));
       const av = sortCol === 'total' ? a.total : value(a, sortCol);
       const bv = sortCol === 'total' ? b.total : value(b, sortCol);
       return dir * (av - bv);
@@ -100,7 +109,9 @@ const MonthlyPivotTable = ({ rows, groupKey, groupLabel, linkPrefix, dateRange, 
   }, [groups, months, metric, searchTerm, sortCol, sortOrder]);
 
   const monthTotals = months.map(ym => tableRows.reduce((s, g) => s + value(g, ym), 0));
+  const monthTotalsFr = months.map(ym => tableRows.reduce((s, g) => s + valueFr(g, ym), 0));
   const grandTotal = monthTotals.reduce((s, v) => s + v, 0);
+  const grandTotalFr = monthTotalsFr.reduce((s, v) => s + v, 0);
 
   const handleSort = (col) => {
     if (sortCol === col) setSortOrder(sortOrder === 'ASC' ? 'DESC' : 'ASC');
@@ -110,8 +121,10 @@ const MonthlyPivotTable = ({ rows, groupKey, groupLabel, linkPrefix, dateRange, 
 
   const handleExport = () => {
     const header = [groupLabel];
-    months.forEach(ym => { header.push(`${monthLabel(ym)} ${metricDef.label}`, `${monthLabel(ym)} évol. %`); });
-    header.push(`Total ${metricDef.label}`);
+    months.forEach(ym => {
+      header.push(`${monthLabel(ym)} ${metricDef.label}`, `${monthLabel(ym)} évol. %`, `${monthLabel(ym)} FR`, `${monthLabel(ym)} Autres pays`);
+    });
+    header.push(`Total ${metricDef.label}`, 'Total FR', 'Total Autres pays', '% hors FR');
     const lines = tableRows.map(g => {
       const line = [g.name];
       months.forEach((ym, i) => {
@@ -119,8 +132,11 @@ const MonthlyPivotTable = ({ rows, groupKey, groupLabel, linkPrefix, dateRange, 
         const prev = i > 0 ? value(g, months[i - 1]) : null;
         line.push(cur.toFixed(2).replace('.', ','));
         line.push(prev ? (((cur - prev) / prev) * 100).toFixed(1).replace('.', ',') : '');
+        const fr = valueFr(g, ym);
+        line.push(fr.toFixed(2).replace('.', ','), (cur - fr).toFixed(2).replace('.', ','));
       });
-      line.push(g.total.toFixed(2).replace('.', ','));
+      line.push(g.total.toFixed(2).replace('.', ','), g.totalFr.toFixed(2).replace('.', ','), (g.total - g.totalFr).toFixed(2).replace('.', ','));
+      line.push(g.abroad === null ? '' : g.abroad.toFixed(1).replace('.', ','));
       return line;
     });
     const csv = [header, ...lines].map(row => row.join(';')).join('\n');
@@ -149,22 +165,55 @@ const MonthlyPivotTable = ({ rows, groupKey, groupLabel, linkPrefix, dateRange, 
   });
   const stickyCell = { position: 'sticky', left: 0, zIndex: 1, textAlign: 'left', minWidth: '180px', borderRight: '1px solid #dee2e6' };
 
-  const renderCell = (cur, prev, key, bold = false) => {
+  // Lignes « FR » / « Autres pays » sous la valeur, avec leur part du total de la cellule
+  const renderCountry = (cur, fr) => {
+    if (!showCountry || !cur) return null;
+    const other = cur - fr;
+    const pct = (v) => `${Math.round((v / cur) * 100)}%`;
+    const line = (label, v, highlight) => (
+      <div style={{ fontSize: '11px', color: highlight ? '#c2410c' : '#6c757d', fontWeight: highlight ? 600 : 400 }}>
+        {label} {metricDef.format(v)} <span style={{ opacity: 0.8 }}>· {pct(v)}</span>
+      </div>
+    );
+    return (
+      <div style={{ marginTop: '4px', paddingTop: '4px', borderTop: '1px dashed #e5e7eb' }}>
+        {line('FR', fr, false)}
+        {line('Autres', other, other > fr)}
+      </div>
+    );
+  };
+
+  const renderCell = (cur, prev, fr, key, bold = false) => {
     const evo = prev === null ? null : evolution(cur, prev);
     return (
-      <td key={key} style={{ padding: '10px 14px', textAlign: 'right', whiteSpace: 'nowrap', fontSize: '14px' }}>
+      <td key={key} style={{ padding: '10px 14px', textAlign: 'right', whiteSpace: 'nowrap', fontSize: '14px', verticalAlign: 'top' }}>
         <div style={{ fontWeight: bold ? 700 : 400, color: cur ? '#333' : '#adb5bd' }}>{metricDef.format(cur)}</div>
         <div style={{ fontSize: '11px', fontWeight: 600, color: evo ? evo.color : '#adb5bd', minHeight: '14px' }}>
           {evo ? evo.label : (prev === null ? '' : '–')}
         </div>
+        {renderCountry(cur, fr)}
       </td>
     );
+  };
+
+  const renderTotalCells = (total, totalFr) => {
+    const abroad = shareAbroad(total, totalFr);
+    return (<>
+      <td style={{ padding: '10px 14px', textAlign: 'right', whiteSpace: 'nowrap', fontSize: '14px', fontWeight: 700, borderLeft: '1px solid #dee2e6', verticalAlign: 'top' }}>
+        {metricDef.format(total)}
+        <div style={{ minHeight: '14px' }} />
+        {renderCountry(total, totalFr)}
+      </td>
+      <td style={{ padding: '10px 14px', textAlign: 'right', whiteSpace: 'nowrap', fontSize: '14px', fontWeight: 700, verticalAlign: 'top', color: abroad === null ? '#adb5bd' : abroad > 50 ? '#c2410c' : '#333' }}>
+        {abroad === null ? '–' : `${abroad.toFixed(1)}%`}
+      </td>
+    </>);
   };
 
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px', gap: '10px', flexWrap: 'wrap' }}>
-        <div style={{ display: 'flex', gap: '6px' }}>
+        <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
           {METRICS.map(m => (
             <button
               key={m.key}
@@ -179,6 +228,10 @@ const MonthlyPivotTable = ({ rows, groupKey, groupLabel, linkPrefix, dateRange, 
               {m.label}
             </button>
           ))}
+          <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', color: '#374151', marginLeft: '10px', cursor: 'pointer' }}>
+            <input type="checkbox" checked={showCountry} onChange={(e) => setShowCountry(e.target.checked)} />
+            Détail France / autres pays
+          </label>
         </div>
         <button
           onClick={handleExport}
@@ -200,31 +253,28 @@ const MonthlyPivotTable = ({ rows, groupKey, groupLabel, linkPrefix, dateRange, 
                   </th>
                 ))}
                 <th style={th('total', { borderLeft: '1px solid #dee2e6' })} onClick={() => handleSort('total')}>Total{sortIcon('total')}</th>
+                <th style={th('abroad')} onClick={() => handleSort('abroad')} title="Part du total réalisée hors de France (pays de livraison)">% hors FR{sortIcon('abroad')}</th>
               </tr>
             </thead>
             <tbody>
               {tableRows.map(g => (
                 <tr key={g.name} style={{ borderTop: '1px solid #dee2e6' }}>
-                  <td style={{ ...stickyCell, padding: '10px 14px', fontSize: '14px', backgroundColor: 'white' }}>
+                  <td style={{ ...stickyCell, padding: '10px 14px', fontSize: '14px', backgroundColor: 'white', verticalAlign: 'top' }}>
                     <LinkBox to={`${linkPrefix}${encodeURIComponent(g.name)}`} display="inline" style={{ fontWeight: 'bold', color: '#007bff' }}>
                       {g.name}
                     </LinkBox>
                   </td>
-                  {months.map((ym, i) => renderCell(value(g, ym), i > 0 ? value(g, months[i - 1]) : null, ym))}
-                  <td style={{ padding: '10px 14px', textAlign: 'right', whiteSpace: 'nowrap', fontSize: '14px', fontWeight: 700, borderLeft: '1px solid #dee2e6' }}>
-                    {metricDef.format(g.total)}
-                  </td>
+                  {months.map((ym, i) => renderCell(value(g, ym), i > 0 ? value(g, months[i - 1]) : null, valueFr(g, ym), ym))}
+                  {renderTotalCells(g.total, g.totalFr)}
                 </tr>
               ))}
               {tableRows.length > 0 && (
                 <tr style={{ borderTop: '2px solid #adb5bd', backgroundColor: '#f8f9fa' }}>
-                  <td style={{ ...stickyCell, padding: '10px 14px', fontSize: '14px', fontWeight: 700, backgroundColor: '#f8f9fa' }}>
+                  <td style={{ ...stickyCell, padding: '10px 14px', fontSize: '14px', fontWeight: 700, backgroundColor: '#f8f9fa', verticalAlign: 'top' }}>
                     Total ({tableRows.length})
                   </td>
-                  {months.map((ym, i) => renderCell(monthTotals[i], i > 0 ? monthTotals[i - 1] : null, ym, true))}
-                  <td style={{ padding: '10px 14px', textAlign: 'right', whiteSpace: 'nowrap', fontSize: '14px', fontWeight: 700, borderLeft: '1px solid #dee2e6' }}>
-                    {metricDef.format(grandTotal)}
-                  </td>
+                  {months.map((ym, i) => renderCell(monthTotals[i], i > 0 ? monthTotals[i - 1] : null, monthTotalsFr[i], ym, true))}
+                  {renderTotalCells(grandTotal, grandTotalFr)}
                 </tr>
               )}
             </tbody>
@@ -235,7 +285,7 @@ const MonthlyPivotTable = ({ rows, groupKey, groupLabel, linkPrefix, dateRange, 
         )}
       </div>
       <p style={{ fontSize: '12px', color: '#6c757d', marginTop: '10px' }}>
-        % = évolution par rapport au mois précédent. * mois incomplet sur la période choisie (ex. mois en cours) : son évolution n'est pas comparable à un mois entier.
+        % = évolution par rapport au mois précédent. FR / Autres = pays de livraison (à défaut, de facturation), avec leur part du mois ; en orange quand l'étranger dépasse la France. * mois incomplet sur la période choisie (ex. mois en cours) : son évolution n'est pas comparable à un mois entier.
       </p>
     </div>
   );
