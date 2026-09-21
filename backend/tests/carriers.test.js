@@ -633,7 +633,8 @@ const refusDe = (fn) => {
 };
 
 test('« Colissimo Domicile » vers la France : DOM, sans CN23', () => {
-  assert.deepStrictEqual(dest('domicile', 'FR'), { service: 'domicile', pays: 'FR', productCode: 'DOM', cn23: false });
+  assert.deepStrictEqual(dest('domicile', 'FR'),
+    { service: 'domicile', pays: 'FR', productCode: 'DOM', cn23: false, repli: false });
 });
 
 test('la MÊME dénomination vers l\'outre-mer : COM, et CN23 obligatoire', () => {
@@ -673,10 +674,28 @@ test('la CN23 est exigée exactement pour l\'outre-mer et le Royaume-Uni', () =>
   assert.deepStrictEqual(nos.filter(p => coli.DESTINATIONS[p].cn23).sort(), ['GB', 'GF', 'GP', 'MQ', 'PF', 'RE']);
 });
 
-test('sans signature vers le Danemark : refus qui indique la solution', () => {
-  const m = refusDe(() => dest('domicile', 'DK'));
-  assert.ok(/ne propose pas/.test(m), m);
-  assert.ok(/Domicile avec signature/.test(m), 'le message ne dit pas quoi choisir');
+test('Luxembourg : « sans signature » n\'existe pas, le repli passe en signature', () => {
+  // « Bpost, Colissimo International » couvre BE et LU avec un seul réglage.
+  const lu = dest('domicile', 'LU');
+  assert.strictEqual(lu.productCode, 'DOS');
+  assert.strictEqual(lu.service, 'signature', 'le libellé BMS doit dire la vérité');
+  assert.strictEqual(lu.repli, true);
+  // La Belgique, elle, garde le produit sans signature.
+  const be = dest('domicile', 'BE');
+  assert.strictEqual(be.productCode, 'DOM');
+  assert.strictEqual(be.repli, false);
+});
+
+test('le repli ne va jamais dans l\'autre sens, et jamais pour un point de retrait', () => {
+  // Une signature demandée n'est pas retirée…
+  assert.strictEqual(dest('signature', 'FR').productCode, 'DOS');
+  // … et un point de retrait choisi par le client ne devient pas du domicile.
+  assert.throws(() => dest('relais', 'GB', { country: 'GB' }), /ne propose pas/);
+});
+
+test('un pays sans aucun service reste refusé', () => {
+  // L'outre-mer n'a pas de point de retrait : rien vers quoi se replier.
+  assert.throws(() => dest('relais', 'RE', { country: 'RE' }), /ne propose pas/);
 });
 
 test('un pays hors matrice est refusé, pas deviné', () => {

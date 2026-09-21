@@ -223,8 +223,16 @@ const kilos = (grammes) => (Math.max(Number(grammes) || 0, 10) / 1000).toFixed(2
  * part le colis.
  *
  * @param {{receiver: object, options: object, orderNumber: string|number}} input
- * @returns {{service: string, pays: string, productCode: string, cn23: boolean}}
- * @throws refus si le service n'existe pas vers ce pays
+ * Repli : quand le service réglé n'existe pas vers le pays mais que la livraison
+ * avec signature y existe, c'est elle qui part. Colissimo ne livre au Luxembourg
+ * qu'avec signature, alors que « Bpost, Colissimo International » couvre la
+ * Belgique ET le Luxembourg avec un seul réglage : sans ce repli, 5 commandes sur
+ * 90 jours étaient refusées au packing. Le repli ne va JAMAIS dans l'autre sens —
+ * on n'enlève pas une signature demandée — et l'étiquette enregistre le produit
+ * réellement employé, pas celui qu'on visait.
+ *
+ * @returns {{service: string, pays: string, productCode: string, cn23: boolean, repli: boolean}}
+ * @throws refus si aucun service n'existe vers ce pays
  */
 const resolveDestination = ({ receiver = {}, options = {}, orderNumber }) => {
   const service = options.deliveryMode || 'domicile';
@@ -248,19 +256,30 @@ const resolveDestination = ({ receiver = {}, options = {}, orderNumber }) => {
     );
   }
 
-  const productCode = service === 'domicile' ? cap.sansSignature
+  let productCode = service === 'domicile' ? cap.sansSignature
     : service === 'signature' ? cap.avecSignature
       : (cap.relais ? PRODUIT_RELAIS : null);
+
+  // Un point de retrait ne se replie pas : le client a choisi un point, on ne le
+  // transforme pas en livraison à domicile.
+  const repli = !productCode && service === 'domicile' && Boolean(cap.avecSignature);
+  let servicePrevu = service;
+  if (repli) {
+    productCode = cap.avecSignature;
+    servicePrevu = 'signature';
+  }
 
   if (!productCode) {
     refus(
       `Commande n°${orderNumber} : Colissimo ne propose pas la livraison « ${SERVICES[service].label} » `
       + `vers ${pays}. Demandez à un responsable de faire passer ${denomination} sur un autre mode `
-      + `dans les réglages${cap.avecSignature ? ' (« Domicile avec signature » existe vers ce pays)' : ''}.`
+      + `dans les réglages.`
     );
   }
 
-  return { service, pays, productCode, cn23: cap.cn23 };
+  // Le service rendu est celui réellement employé : c'est lui qui donne le
+  // libellé envoyé à BMS, et le code produit enregistré sur l'étiquette.
+  return { service: servicePrevu, pays, productCode, cn23: cap.cn23, repli };
 };
 
 // Le code d'un point Colissimo — Bpost compris — fait 6 chiffres. Constaté sur
@@ -730,6 +749,11 @@ const preparer = async ({ orderNumber, receiver, account, weightGrams, options =
   }
 
   const payload = buildLabelPayload({ orderNumber, receiver, account, weightGrams, options, customs });
+
+  if (dest.repli) {
+    console.log(`[${LOG_TAG}] Commande ${orderNumber} : Colissimo ne livre pas sans signature vers `
+      + `${dest.pays} — repli sur « ${SERVICES[dest.service].label} » (${dest.productCode}).`);
+  }
 
   console.log(`[${LOG_TAG}] Commande`, orderNumber,
     '— produit:', dest.productCode, '| pays:', dest.pays,
