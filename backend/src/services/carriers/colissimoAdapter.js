@@ -580,6 +580,22 @@ const parseMultipart = (body, contentType = '') => {
   return parts;
 };
 
+// Refus d'identifiants. Colissimo bloque l'authentification du COMPTE pendant
+// 30 minutes au bout de quelques refus — et le compte est partagé avec BMS et
+// l'espace client. Le 11/09/2026, un script qui n'a pas su s'arrêter au premier
+// refus a fait 48 tentatives et arrêté l'expédition Colissimo de toute
+// l'entreprise. Tout appelant DOIT s'arrêter au premier.
+const REFUS_IDENTIFIANTS = new Set(['30000', '30013']);
+
+/**
+ * L'erreur est-elle un refus d'identifiants ? Sert au packing comme au script
+ * de répétition : dans les deux cas, on s'arrête, on ne réessaie pas.
+ *
+ * @param {Error & {authFailure?: boolean}} error
+ * @returns {boolean}
+ */
+const estRefusIdentifiants = (error) => Boolean(error && error.authFailure);
+
 /** Premier message d'erreur de `jsonInfos`, ou null. Un succès porte l'id 0. */
 const trouverErreur = (info) => {
   const m = info?.messages?.[0];
@@ -620,6 +636,20 @@ const appeler = async (account, action, payload) => {
     err.statusCode = res.status >= 500 ? res.status : 400;
     err.userMessage = `Colissimo refuse l'étiquette : ${erreur.messageContent} (code ${erreur.id})`;
     err.body = { code: erreur.id, message: erreur.messageContent };
+
+    // Un refus d'identifiants ne se réessaie JAMAIS : quelques tentatives de
+    // plus bloquent le compte 30 minutes, pour l'app, pour BMS et pour l'espace
+    // Colissimo. Le message le dit au préparateur, et le drapeau arrête les
+    // traitements par lots.
+    if (REFUS_IDENTIFIANTS.has(String(erreur.id))) {
+      err.authFailure = true;
+      err.statusCode = 401;
+      err.userMessage = `Colissimo refuse les identifiants du contrat (code ${erreur.id}). `
+        + `NE RÉESSAYEZ PAS : quelques tentatives de plus bloquent le compte 30 minutes, `
+        + `BMS compris. Prévenez un responsable, qui doit vérifier le mot de passe du `
+        + `contrat dans les réglages.`;
+    }
+
     throw err;
   }
 
@@ -860,6 +890,7 @@ module.exports = assertAdapter({
   cancelWindow,
   // Exposés pour le banc et pour la répétition avant mise en service.
   validateLabel,
+  estRefusIdentifiants,
   buildLabelPayload,
   resolveDestination,
   assertRelayPoint,

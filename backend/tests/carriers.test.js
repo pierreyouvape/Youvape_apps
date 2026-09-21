@@ -1133,6 +1133,32 @@ testEnSerie('un refus Colissimo remonte au préparateur, avec son code', async (
   });
 });
 
+testEnSerie('un refus d\'IDENTIFIANTS est marqué, et dit de ne pas réessayer', async () => {
+  // 11/09/2026 : 48 tentatives après le premier refus ont bloqué le compte 30 min,
+  // BMS et l'espace Colissimo compris. Le drapeau arrête les traitements par lots.
+  for (const code of ['30000', '30013']) {
+    simuler(400, multipart([infos({ messages: [{ id: code, type: 'ERROR',
+      messageContent: 'Identifiant ou mot de passe incorrect' }] })]));
+    await assert.rejects(coli.createLabel(entree()), (e) => {
+      assert.strictEqual(coli.estRefusIdentifiants(e), true, code);
+      assert.strictEqual(e.statusCode, 401, code);
+      assert.ok(/NE RÉESSAYEZ PAS/.test(e.userMessage), e.userMessage);
+      assert.ok(/responsable/.test(e.userMessage), e.userMessage);
+      return true;
+    });
+  }
+});
+
+testEnSerie('un refus métier n\'est PAS un refus d\'identifiants : le lot peut continuer', async () => {
+  simuler(400, multipart([infos({ messages: [{ id: '30108', type: 'ERROR',
+    messageContent: 'Le code postal du destinataire est invalide' }] })]));
+  await assert.rejects(coli.createLabel(entree()), (e) => {
+    assert.strictEqual(coli.estRefusIdentifiants(e), false);
+    assert.strictEqual(e.statusCode, 400);
+    return true;
+  });
+});
+
 testEnSerie('HTTP 200 avec un message d\'erreur : c\'est un refus, pas un succès', async () => {
   simuler(200, multipart([infos({ messages: [{ id: '30220', type: 'ERROR', messageContent: 'Poids invalide' }] })]));
   await assert.rejects(coli.createLabel(entree()), /30220/);

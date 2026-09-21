@@ -24,6 +24,11 @@
  *     contrat  : account_code dans carrier_accounts (défaut : test)
  *     par_pays : commandes par pays et par dénomination (défaut : 2)
  *
+ * ⚠️ S'ARRÊTE au premier refus d'identifiants. Colissimo bloque l'authentification
+ * du compte au bout de quelques refus, pendant 30 minutes, et ce compte est celui
+ * de BMS et de l'espace client : le 11/09/2026, une boucle qui a continué après le
+ * premier refus a arrêté l'expédition Colissimo de toute l'entreprise.
+ *
  * Sortie : code 0 si toutes les requêtes sont valides, 1 sinon.
  */
 
@@ -88,6 +93,14 @@ async function main() {
       } catch (e) {
         refusees++;
         console.log(`  ❌ ${orderNumber} ${order.shipping_country} — ${e.userMessage || e.message}`);
+
+        if (coli.estRefusIdentifiants(e)) {
+          console.log(`\n⛔ ARRÊT IMMÉDIAT : Colissimo a refusé les identifiants du contrat `
+            + `« ${accountCode} ». Aucune autre requête ne part. Quelques tentatives de plus `
+            + `bloqueraient le compte 30 minutes, BMS et l'espace Colissimo compris.\n`
+            + `   Corrigez le mot de passe du contrat dans les réglages, puis relancez.`);
+          return 1;
+        }
       }
     }
   }
