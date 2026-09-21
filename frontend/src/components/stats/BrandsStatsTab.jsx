@@ -11,6 +11,13 @@ import MonthlyPivotTable from './MonthlyPivotTable';
 
 const API_BASE_URL = '/api';
 
+// Répartition France / autres pays (pays de livraison), en TTC
+const withCountrySplit = (row) => {
+  const ca = parseFloat(row.ca_ttc || 0);
+  const fr = parseFloat(row.ca_ttc_fr || 0);
+  return { ...row, ca_fr: fr, ca_abroad: ca - fr, abroad_percent: ca > 0 ? ((ca - fr) / ca) * 100 : null };
+};
+
 const BRANDS_COLUMNS = [
   { key: 'product_count',  label: 'Produits' },
   { key: 'sub_brand_count',label: 'Sous-marques' },
@@ -20,6 +27,9 @@ const BRANDS_COLUMNS = [
   { key: 'cost_ht',        label: 'Cout HT' },
   { key: 'margin_ht',      label: 'Marge HT' },
   { key: 'margin_percent', label: '% Marge' },
+  { key: 'ca_fr',          label: 'CA France TTC' },
+  { key: 'ca_abroad',      label: 'CA hors France TTC' },
+  { key: 'abroad_percent', label: '% hors France' },
 ];
 
 const BrandsStatsTab = () => {
@@ -70,7 +80,7 @@ const BrandsStatsTab = () => {
     try {
       const response = await axios.get(`${API_BASE_URL}/brands`, { params: dateParams(dateRange) });
       if (response.data.success) {
-        setBrands(response.data.data);
+        setBrands(response.data.data.map(withCountrySplit));
       }
     } catch (error) {
       console.error('Error fetching brands:', error);
@@ -87,7 +97,7 @@ const BrandsStatsTab = () => {
       if (response.data.success) {
         setSubBrands(prev => ({
           ...prev,
-          [brandName]: response.data.data.sub_brands || []
+          [brandName]: (response.data.data.sub_brands || []).map(withCountrySplit)
         }));
       }
     } catch (error) {
@@ -155,7 +165,7 @@ const BrandsStatsTab = () => {
 
   const handleExport = () => {
     const csv = [
-      ['Marque', 'Nb Produits', 'Nb Sous-marques', 'Qte Vendue', 'CA TTC', 'CA HT', 'Cout HT', 'Marge HT', '% Marge'],
+      ['Marque', 'Nb Produits', 'Nb Sous-marques', 'Qte Vendue', 'CA TTC', 'CA HT', 'Cout HT', 'Marge HT', '% Marge', 'CA France TTC', 'CA hors France TTC', '% hors France'],
       ...sortedBrands.map(b => [
         b.brand || '',
         b.product_count || 0,
@@ -165,7 +175,10 @@ const BrandsStatsTab = () => {
         parseFloat(b.ca_ht || 0).toFixed(2),
         parseFloat(b.cost_ht || 0).toFixed(2),
         parseFloat(b.margin_ht || 0).toFixed(2),
-        parseFloat(b.margin_percent || 0).toFixed(1)
+        parseFloat(b.margin_percent || 0).toFixed(1),
+        parseFloat(b.ca_fr || 0).toFixed(2),
+        parseFloat(b.ca_abroad || 0).toFixed(2),
+        b.abroad_percent === null ? '' : b.abroad_percent.toFixed(1)
       ])
     ].map(row => row.join(';')).join('\n');
 
@@ -207,8 +220,9 @@ const BrandsStatsTab = () => {
     sub_brand_count: acc.sub_brand_count + (b.sub_brand_count || 0),
     qty_sold: acc.qty_sold + (b.qty_sold || 0),
     ca_ttc: acc.ca_ttc + parseFloat(b.ca_ttc || 0),
+    ca_fr: acc.ca_fr + (b.ca_fr || 0),
     margin_ht: acc.margin_ht + parseFloat(b.margin_ht || 0)
-  }), { product_count: 0, sub_brand_count: 0, qty_sold: 0, ca_ttc: 0, margin_ht: 0 });
+  }), { product_count: 0, sub_brand_count: 0, qty_sold: 0, ca_ttc: 0, ca_fr: 0, margin_ht: 0 });
 
   return (
     <div style={compact ? { maxWidth: '1400px', margin: '0 auto' } : {}}>
@@ -320,6 +334,10 @@ const BrandsStatsTab = () => {
           <p style={{ fontSize: '14px', color: '#6c757d', margin: '0 0 10px 0' }}>Marge HT Totale</p>
           <p style={{ fontSize: '28px', fontWeight: 'bold', color: totals.margin_ht >= 0 ? '#28a745' : '#dc3545', margin: 0 }}>{formatPrice(totals.margin_ht)}</p>
         </div>
+        <div style={{ backgroundColor: 'white', padding: '20px', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
+          <p style={{ fontSize: '14px', color: '#6c757d', margin: '0 0 10px 0' }}>Part hors France</p>
+          <p style={{ fontSize: '28px', fontWeight: 'bold', color: '#333', margin: 0 }}>{totals.ca_ttc > 0 ? formatPercent((1 - totals.ca_fr / totals.ca_ttc) * 100) : '–'}</p>
+        </div>
       </div>
 
       {/* Table */}
@@ -340,6 +358,9 @@ const BrandsStatsTab = () => {
                   {isVisible('cost_ht') && <th style={headerStyle('cost_ht')} onClick={() => handleSort('cost_ht')}>Cout HT{getSortIcon('cost_ht')}</th>}
                   {isVisible('margin_ht') && <th style={headerStyle('margin_ht')} onClick={() => handleSort('margin_ht')}>Marge HT{getSortIcon('margin_ht')}</th>}
                   {isVisible('margin_percent') && <th style={headerStyle('margin_percent')} onClick={() => handleSort('margin_percent')}>% Marge{getSortIcon('margin_percent')}</th>}
+                  {isVisible('ca_fr') && <th style={headerStyle('ca_fr')} onClick={() => handleSort('ca_fr')}>CA France{getSortIcon('ca_fr')}</th>}
+                  {isVisible('ca_abroad') && <th style={headerStyle('ca_abroad')} onClick={() => handleSort('ca_abroad')}>CA hors France{getSortIcon('ca_abroad')}</th>}
+                  {isVisible('abroad_percent') && <th style={headerStyle('abroad_percent')} onClick={() => handleSort('abroad_percent')} title="Part du CA TTC livrée hors de France">% hors France{getSortIcon('abroad_percent')}</th>}
                 </tr>
               </thead>
               <tbody>
@@ -385,6 +406,9 @@ const BrandsStatsTab = () => {
                         {isVisible('cost_ht') && <td style={{ padding: '15px', fontSize: '14px', color: '#dc3545' }}>{formatPrice(brand.cost_ht)}</td>}
                         {isVisible('margin_ht') && <td style={{ padding: '15px', fontSize: '14px', fontWeight: 'bold', color: brand.margin_ht >= 0 ? '#28a745' : '#dc3545' }}>{formatPrice(brand.margin_ht)}</td>}
                         {isVisible('margin_percent') && <td style={{ padding: '15px', fontSize: '14px', fontWeight: 'bold', color: brand.margin_percent >= 30 ? '#28a745' : brand.margin_percent >= 15 ? '#ffc107' : '#dc3545' }}>{formatPercent(brand.margin_percent)}</td>}
+                        {isVisible('ca_fr') && <td style={{ padding: '15px', fontSize: '14px' }}>{formatPrice(brand.ca_fr)}</td>}
+                        {isVisible('ca_abroad') && <td style={{ padding: '15px', fontSize: '14px' }}>{formatPrice(brand.ca_abroad)}</td>}
+                        {isVisible('abroad_percent') && <td style={{ padding: '15px', fontSize: '14px', fontWeight: 'bold', color: brand.abroad_percent > 50 ? '#c2410c' : '#333' }}>{brand.abroad_percent === null ? '–' : formatPercent(brand.abroad_percent)}</td>}
                       </tr>
                       {isExpanded && brandSubBrands.length > 0 && brandSubBrands.map((sb) => (
                         <tr key={sb.sub_brand} style={{ backgroundColor: '#f8f9fa', borderTop: '1px solid #e9ecef' }}>
@@ -406,6 +430,9 @@ const BrandsStatsTab = () => {
                           {isVisible('cost_ht') && <td style={{ padding: '10px 15px', fontSize: '13px', color: '#dc3545' }}>{formatPrice(sb.cost_ht)}</td>}
                           {isVisible('margin_ht') && <td style={{ padding: '10px 15px', fontSize: '13px', color: sb.margin_ht >= 0 ? '#28a745' : '#dc3545' }}>{formatPrice(sb.margin_ht)}</td>}
                           {isVisible('margin_percent') && <td style={{ padding: '10px 15px', fontSize: '13px', color: sb.margin_percent >= 30 ? '#28a745' : sb.margin_percent >= 15 ? '#ffc107' : '#dc3545' }}>{formatPercent(sb.margin_percent)}</td>}
+                          {isVisible('ca_fr') && <td style={{ padding: '10px 15px', fontSize: '13px' }}>{formatPrice(sb.ca_fr)}</td>}
+                          {isVisible('ca_abroad') && <td style={{ padding: '10px 15px', fontSize: '13px' }}>{formatPrice(sb.ca_abroad)}</td>}
+                          {isVisible('abroad_percent') && <td style={{ padding: '10px 15px', fontSize: '13px', color: sb.abroad_percent > 50 ? '#c2410c' : '#333' }}>{sb.abroad_percent === null ? '–' : formatPercent(sb.abroad_percent)}</td>}
                         </tr>
                       ))}
                       {isExpanded && brandSubBrands.length === 0 && (

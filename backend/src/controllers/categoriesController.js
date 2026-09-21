@@ -10,6 +10,9 @@ const parseDateRange = (req) => {
   return { dateFrom: valid(req.query.dateFrom), dateTo: valid(req.query.dateTo) };
 };
 
+// Commande livrée en France (pays de livraison, à défaut de facturation — même règle que l'onglet Produits)
+const IS_FR = `COALESCE(NULLIF(o.shipping_country, ''), o.billing_country) = 'FR'`;
+
 /**
  * Récupère toutes les catégories avec stats agrégées
  * GET /api/categories
@@ -43,6 +46,8 @@ exports.getAll = async (req, res) => {
           SUM(oi.qty)::int as qty_sold,
           COALESCE(SUM(oi.line_total), 0) + COALESCE(SUM(oi.line_tax), 0) as ca_ttc,
           COALESCE(SUM(oi.line_total), 0) as ca_ht,
+          COALESCE(SUM(oi.line_total + COALESCE(oi.line_tax, 0)) FILTER (WHERE ${IS_FR}), 0) as ca_ttc_fr,
+          COALESCE(SUM(oi.line_total) FILTER (WHERE ${IS_FR}), 0) as ca_ht_fr,
           COALESCE(SUM(oi.qty * CASE WHEN p_cost.product_type = 'woosb' THEN 0 ELSE COALESCE(p_cost.computed_cost, p_cost.wc_cog_cost, 0) END), 0) as cost_ht
         FROM product_family pf
         LEFT JOIN (order_items oi
@@ -61,6 +66,8 @@ exports.getAll = async (req, res) => {
         COALESCE(cs.qty_sold, 0) as qty_sold,
         COALESCE(cs.ca_ttc, 0) as ca_ttc,
         COALESCE(cs.ca_ht, 0) as ca_ht,
+        COALESCE(cs.ca_ttc_fr, 0) as ca_ttc_fr,
+        COALESCE(cs.ca_ht_fr, 0) as ca_ht_fr,
         COALESCE(cs.cost_ht, 0) as cost_ht,
         COALESCE(cs.ca_ht, 0) - COALESCE(cs.cost_ht, 0) as margin_ht,
         CASE WHEN COALESCE(cs.ca_ht, 0) > 0
@@ -70,7 +77,7 @@ exports.getAll = async (req, res) => {
       FROM (SELECT DISTINCT category FROM products WHERE category IS NOT NULL) c
       LEFT JOIN category_products cp ON cp.category = c.category
       LEFT JOIN category_stats cs ON cs.category = c.category
-      GROUP BY c.category, cs.qty_sold, cs.ca_ttc, cs.ca_ht, cs.cost_ht
+      GROUP BY c.category, cs.qty_sold, cs.ca_ttc, cs.ca_ht, cs.cost_ht, cs.ca_ttc_fr, cs.ca_ht_fr
       ORDER BY ca_ttc DESC NULLS LAST
     `;
 
@@ -121,6 +128,8 @@ exports.getAllSubCategories = async (req, res) => {
           SUM(oi.qty)::int as qty_sold,
           COALESCE(SUM(oi.line_total), 0) + COALESCE(SUM(oi.line_tax), 0) as ca_ttc,
           COALESCE(SUM(oi.line_total), 0) as ca_ht,
+          COALESCE(SUM(oi.line_total + COALESCE(oi.line_tax, 0)) FILTER (WHERE ${IS_FR}), 0) as ca_ttc_fr,
+          COALESCE(SUM(oi.line_total) FILTER (WHERE ${IS_FR}), 0) as ca_ht_fr,
           COALESCE(SUM(oi.qty * CASE WHEN p_cost.product_type = 'woosb' THEN 0 ELSE COALESCE(p_cost.computed_cost, p_cost.wc_cog_cost, 0) END), 0) as cost_ht
         FROM product_family pf
         LEFT JOIN (order_items oi
@@ -139,6 +148,8 @@ exports.getAllSubCategories = async (req, res) => {
         COALESCE(scs.qty_sold, 0) as qty_sold,
         COALESCE(scs.ca_ttc, 0) as ca_ttc,
         COALESCE(scs.ca_ht, 0) as ca_ht,
+        COALESCE(scs.ca_ttc_fr, 0) as ca_ttc_fr,
+        COALESCE(scs.ca_ht_fr, 0) as ca_ht_fr,
         COALESCE(scs.cost_ht, 0) as cost_ht,
         COALESCE(scs.ca_ht, 0) - COALESCE(scs.cost_ht, 0) as margin_ht,
         CASE WHEN COALESCE(scs.ca_ht, 0) > 0
@@ -148,7 +159,7 @@ exports.getAllSubCategories = async (req, res) => {
       FROM (SELECT DISTINCT sub_category, category FROM products WHERE sub_category IS NOT NULL) sc
       LEFT JOIN sub_category_products scp ON scp.sub_category = sc.sub_category
       LEFT JOIN sub_category_stats scs ON scs.sub_category = sc.sub_category
-      GROUP BY sc.sub_category, sc.category, scs.qty_sold, scs.ca_ttc, scs.ca_ht, scs.cost_ht
+      GROUP BY sc.sub_category, sc.category, scs.qty_sold, scs.ca_ttc, scs.ca_ht, scs.cost_ht, scs.ca_ttc_fr, scs.ca_ht_fr
       ORDER BY ca_ttc DESC NULLS LAST
     `;
 
@@ -201,6 +212,8 @@ exports.getByName = async (req, res) => {
           SUM(oi.qty)::int as qty_sold,
           COALESCE(SUM(oi.line_total), 0) + COALESCE(SUM(oi.line_tax), 0) as ca_ttc,
           COALESCE(SUM(oi.line_total), 0) as ca_ht,
+          COALESCE(SUM(oi.line_total + COALESCE(oi.line_tax, 0)) FILTER (WHERE ${IS_FR}), 0) as ca_ttc_fr,
+          COALESCE(SUM(oi.line_total) FILTER (WHERE ${IS_FR}), 0) as ca_ht_fr,
           COALESCE(SUM(oi.qty * CASE WHEN p_cost.product_type = 'woosb' THEN 0 ELSE COALESCE(p_cost.computed_cost, p_cost.wc_cog_cost, 0) END), 0) as cost_ht
         FROM product_family pf
         LEFT JOIN (order_items oi
@@ -218,6 +231,8 @@ exports.getByName = async (req, res) => {
         COALESCE(scs.qty_sold, 0) as qty_sold,
         COALESCE(scs.ca_ttc, 0) as ca_ttc,
         COALESCE(scs.ca_ht, 0) as ca_ht,
+        COALESCE(scs.ca_ttc_fr, 0) as ca_ttc_fr,
+        COALESCE(scs.ca_ht_fr, 0) as ca_ht_fr,
         COALESCE(scs.cost_ht, 0) as cost_ht,
         COALESCE(scs.ca_ht, 0) - COALESCE(scs.cost_ht, 0) as margin_ht,
         CASE WHEN COALESCE(scs.ca_ht, 0) > 0
@@ -227,7 +242,7 @@ exports.getByName = async (req, res) => {
       FROM (SELECT DISTINCT sub_category FROM products WHERE category = $1 AND sub_category IS NOT NULL) sc
       LEFT JOIN sub_category_products scp ON scp.sub_category = sc.sub_category
       LEFT JOIN sub_category_stats scs ON scs.sub_category = sc.sub_category
-      GROUP BY sc.sub_category, scs.qty_sold, scs.ca_ttc, scs.ca_ht, scs.cost_ht
+      GROUP BY sc.sub_category, scs.qty_sold, scs.ca_ttc, scs.ca_ht, scs.cost_ht, scs.ca_ttc_fr, scs.ca_ht_fr
       ORDER BY ca_ttc DESC NULLS LAST
     `;
 
@@ -263,6 +278,8 @@ exports.getByName = async (req, res) => {
           SUM(oi.qty)::int as qty_sold,
           COALESCE(SUM(oi.line_total), 0) + COALESCE(SUM(oi.line_tax), 0) as ca_ttc,
           COALESCE(SUM(oi.line_total), 0) as ca_ht,
+          COALESCE(SUM(oi.line_total + COALESCE(oi.line_tax, 0)) FILTER (WHERE ${IS_FR}), 0) as ca_ttc_fr,
+          COALESCE(SUM(oi.line_total) FILTER (WHERE ${IS_FR}), 0) as ca_ht_fr,
           COALESCE(SUM(oi.qty * CASE WHEN p_cost.product_type = 'woosb' THEN 0 ELSE COALESCE(p_cost.computed_cost, p_cost.wc_cog_cost, 0) END), 0) as cost_ht
         FROM product_family pf
         LEFT JOIN (order_items oi
@@ -292,6 +309,8 @@ exports.getByName = async (req, res) => {
         COALESCE(ps.qty_sold, 0) as qty_sold,
         COALESCE(ps.ca_ttc, 0) as ca_ttc,
         COALESCE(ps.ca_ht, 0) as ca_ht,
+        COALESCE(ps.ca_ttc_fr, 0) as ca_ttc_fr,
+        COALESCE(ps.ca_ht_fr, 0) as ca_ht_fr,
         COALESCE(ps.cost_ht, 0) as cost_ht,
         COALESCE(ps.ca_ht, 0) - COALESCE(ps.cost_ht, 0) as margin_ht,
         CASE WHEN COALESCE(ps.ca_ht, 0) > 0
@@ -425,6 +444,8 @@ exports.getSubCategoryByName = async (req, res) => {
           SUM(oi.qty)::int as qty_sold,
           COALESCE(SUM(oi.line_total), 0) + COALESCE(SUM(oi.line_tax), 0) as ca_ttc,
           COALESCE(SUM(oi.line_total), 0) as ca_ht,
+          COALESCE(SUM(oi.line_total + COALESCE(oi.line_tax, 0)) FILTER (WHERE ${IS_FR}), 0) as ca_ttc_fr,
+          COALESCE(SUM(oi.line_total) FILTER (WHERE ${IS_FR}), 0) as ca_ht_fr,
           COALESCE(SUM(oi.qty * CASE WHEN p_cost.product_type = 'woosb' THEN 0 ELSE COALESCE(p_cost.computed_cost, p_cost.wc_cog_cost, 0) END), 0) as cost_ht
         FROM product_family pf
         LEFT JOIN (order_items oi
@@ -454,6 +475,8 @@ exports.getSubCategoryByName = async (req, res) => {
         COALESCE(ps.qty_sold, 0) as qty_sold,
         COALESCE(ps.ca_ttc, 0) as ca_ttc,
         COALESCE(ps.ca_ht, 0) as ca_ht,
+        COALESCE(ps.ca_ttc_fr, 0) as ca_ttc_fr,
+        COALESCE(ps.ca_ht_fr, 0) as ca_ht_fr,
         COALESCE(ps.cost_ht, 0) as cost_ht,
         COALESCE(ps.ca_ht, 0) - COALESCE(ps.cost_ht, 0) as margin_ht,
         CASE WHEN COALESCE(ps.ca_ht, 0) > 0
@@ -531,9 +554,6 @@ exports.getSubCategoryByName = async (req, res) => {
     res.status(500).json({ success: false, error: error.message });
   }
 };
-
-// Commande livrée en France (pays de livraison, à défaut de facturation — même règle que l'onglet Produits)
-const IS_FR = `COALESCE(NULLIF(o.shipping_country, ''), o.billing_country) = 'FR'`;
 
 /**
  * CA mensuel par catégorie (vue « Par mois » de /stats)

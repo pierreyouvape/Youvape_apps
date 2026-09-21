@@ -11,6 +11,13 @@ import MonthlyPivotTable from './MonthlyPivotTable';
 
 const API_BASE_URL = '/api';
 
+// Répartition France / autres pays (pays de livraison), en TTC
+const withCountrySplit = (row) => {
+  const ca = parseFloat(row.ca_ttc || 0);
+  const fr = parseFloat(row.ca_ttc_fr || 0);
+  return { ...row, ca_fr: fr, ca_abroad: ca - fr, abroad_percent: ca > 0 ? ((ca - fr) / ca) * 100 : null };
+};
+
 const CATEGORIES_COLUMNS = [
   { key: 'product_count',      label: 'Produits' },
   { key: 'sub_category_count', label: 'Sous-cat.' },
@@ -20,6 +27,9 @@ const CATEGORIES_COLUMNS = [
   { key: 'cost_ht',            label: 'Cout HT' },
   { key: 'margin_ht',          label: 'Marge HT' },
   { key: 'margin_percent',     label: '% Marge' },
+  { key: 'ca_fr',          label: 'CA France TTC' },
+  { key: 'ca_abroad',      label: 'CA hors France TTC' },
+  { key: 'abroad_percent', label: '% hors France' },
 ];
 
 const CategoriesStatsTab = () => {
@@ -70,7 +80,7 @@ const CategoriesStatsTab = () => {
     try {
       const response = await axios.get(`${API_BASE_URL}/categories`, { params: dateParams(dateRange) });
       if (response.data.success) {
-        setCategories(response.data.data);
+        setCategories(response.data.data.map(withCountrySplit));
       }
     } catch (error) {
       console.error('Error fetching categories:', error);
@@ -87,7 +97,7 @@ const CategoriesStatsTab = () => {
       if (response.data.success) {
         setSubCategories(prev => ({
           ...prev,
-          [categoryName]: response.data.data.sub_categories || []
+          [categoryName]: (response.data.data.sub_categories || []).map(withCountrySplit)
         }));
       }
     } catch (error) {
@@ -155,7 +165,7 @@ const CategoriesStatsTab = () => {
 
   const handleExport = () => {
     const csv = [
-      ['Categorie', 'Nb Produits', 'Nb Sous-categories', 'Qte Vendue', 'CA TTC', 'CA HT', 'Cout HT', 'Marge HT', '% Marge'],
+      ['Categorie', 'Nb Produits', 'Nb Sous-categories', 'Qte Vendue', 'CA TTC', 'CA HT', 'Cout HT', 'Marge HT', '% Marge', 'CA France TTC', 'CA hors France TTC', '% hors France'],
       ...sortedCategories.map(c => [
         c.category || '',
         c.product_count || 0,
@@ -165,7 +175,10 @@ const CategoriesStatsTab = () => {
         parseFloat(c.ca_ht || 0).toFixed(2),
         parseFloat(c.cost_ht || 0).toFixed(2),
         parseFloat(c.margin_ht || 0).toFixed(2),
-        parseFloat(c.margin_percent || 0).toFixed(1)
+        parseFloat(c.margin_percent || 0).toFixed(1),
+        parseFloat(c.ca_fr || 0).toFixed(2),
+        parseFloat(c.ca_abroad || 0).toFixed(2),
+        c.abroad_percent === null ? '' : c.abroad_percent.toFixed(1)
       ])
     ].map(row => row.join(';')).join('\n');
 
@@ -207,8 +220,9 @@ const CategoriesStatsTab = () => {
     sub_category_count: acc.sub_category_count + (c.sub_category_count || 0),
     qty_sold: acc.qty_sold + (c.qty_sold || 0),
     ca_ttc: acc.ca_ttc + parseFloat(c.ca_ttc || 0),
+    ca_fr: acc.ca_fr + (c.ca_fr || 0),
     margin_ht: acc.margin_ht + parseFloat(c.margin_ht || 0)
-  }), { product_count: 0, sub_category_count: 0, qty_sold: 0, ca_ttc: 0, margin_ht: 0 });
+  }), { product_count: 0, sub_category_count: 0, qty_sold: 0, ca_ttc: 0, ca_fr: 0, margin_ht: 0 });
 
   return (
     <div style={compact ? { maxWidth: '1400px', margin: '0 auto' } : {}}>
@@ -320,6 +334,10 @@ const CategoriesStatsTab = () => {
           <p style={{ fontSize: '14px', color: '#6c757d', margin: '0 0 10px 0' }}>Marge HT Totale</p>
           <p style={{ fontSize: '28px', fontWeight: 'bold', color: totals.margin_ht >= 0 ? '#28a745' : '#dc3545', margin: 0 }}>{formatPrice(totals.margin_ht)}</p>
         </div>
+        <div style={{ backgroundColor: 'white', padding: '20px', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
+          <p style={{ fontSize: '14px', color: '#6c757d', margin: '0 0 10px 0' }}>Part hors France</p>
+          <p style={{ fontSize: '28px', fontWeight: 'bold', color: '#333', margin: 0 }}>{totals.ca_ttc > 0 ? formatPercent((1 - totals.ca_fr / totals.ca_ttc) * 100) : '–'}</p>
+        </div>
       </div>
 
       {/* Table */}
@@ -340,6 +358,9 @@ const CategoriesStatsTab = () => {
                   {isVisible('cost_ht') && <th style={headerStyle('cost_ht')} onClick={() => handleSort('cost_ht')}>Cout HT{getSortIcon('cost_ht')}</th>}
                   {isVisible('margin_ht') && <th style={headerStyle('margin_ht')} onClick={() => handleSort('margin_ht')}>Marge HT{getSortIcon('margin_ht')}</th>}
                   {isVisible('margin_percent') && <th style={headerStyle('margin_percent')} onClick={() => handleSort('margin_percent')}>% Marge{getSortIcon('margin_percent')}</th>}
+                  {isVisible('ca_fr') && <th style={headerStyle('ca_fr')} onClick={() => handleSort('ca_fr')}>CA France{getSortIcon('ca_fr')}</th>}
+                  {isVisible('ca_abroad') && <th style={headerStyle('ca_abroad')} onClick={() => handleSort('ca_abroad')}>CA hors France{getSortIcon('ca_abroad')}</th>}
+                  {isVisible('abroad_percent') && <th style={headerStyle('abroad_percent')} onClick={() => handleSort('abroad_percent')} title="Part du CA TTC livrée hors de France">% hors France{getSortIcon('abroad_percent')}</th>}
                 </tr>
               </thead>
               <tbody>
@@ -385,6 +406,9 @@ const CategoriesStatsTab = () => {
                         {isVisible('cost_ht') && <td style={{ padding: '15px', fontSize: '14px', color: '#dc3545' }}>{formatPrice(category.cost_ht)}</td>}
                         {isVisible('margin_ht') && <td style={{ padding: '15px', fontSize: '14px', fontWeight: 'bold', color: category.margin_ht >= 0 ? '#28a745' : '#dc3545' }}>{formatPrice(category.margin_ht)}</td>}
                         {isVisible('margin_percent') && <td style={{ padding: '15px', fontSize: '14px', fontWeight: 'bold', color: category.margin_percent >= 30 ? '#28a745' : category.margin_percent >= 15 ? '#ffc107' : '#dc3545' }}>{formatPercent(category.margin_percent)}</td>}
+                        {isVisible('ca_fr') && <td style={{ padding: '15px', fontSize: '14px' }}>{formatPrice(category.ca_fr)}</td>}
+                        {isVisible('ca_abroad') && <td style={{ padding: '15px', fontSize: '14px' }}>{formatPrice(category.ca_abroad)}</td>}
+                        {isVisible('abroad_percent') && <td style={{ padding: '15px', fontSize: '14px', fontWeight: 'bold', color: category.abroad_percent > 50 ? '#c2410c' : '#333' }}>{category.abroad_percent === null ? '–' : formatPercent(category.abroad_percent)}</td>}
                       </tr>
                       {isExpanded && categorySubCategories.length > 0 && categorySubCategories.map((sc) => (
                         <tr key={sc.sub_category} style={{ backgroundColor: '#f8f9fa', borderTop: '1px solid #e9ecef' }}>
@@ -406,6 +430,9 @@ const CategoriesStatsTab = () => {
                           {isVisible('cost_ht') && <td style={{ padding: '10px 15px', fontSize: '13px', color: '#dc3545' }}>{formatPrice(sc.cost_ht)}</td>}
                           {isVisible('margin_ht') && <td style={{ padding: '10px 15px', fontSize: '13px', color: sc.margin_ht >= 0 ? '#28a745' : '#dc3545' }}>{formatPrice(sc.margin_ht)}</td>}
                           {isVisible('margin_percent') && <td style={{ padding: '10px 15px', fontSize: '13px', color: sc.margin_percent >= 30 ? '#28a745' : sc.margin_percent >= 15 ? '#ffc107' : '#dc3545' }}>{formatPercent(sc.margin_percent)}</td>}
+                          {isVisible('ca_fr') && <td style={{ padding: '10px 15px', fontSize: '13px' }}>{formatPrice(sc.ca_fr)}</td>}
+                          {isVisible('ca_abroad') && <td style={{ padding: '10px 15px', fontSize: '13px' }}>{formatPrice(sc.ca_abroad)}</td>}
+                          {isVisible('abroad_percent') && <td style={{ padding: '10px 15px', fontSize: '13px', color: sc.abroad_percent > 50 ? '#c2410c' : '#333' }}>{sc.abroad_percent === null ? '–' : formatPercent(sc.abroad_percent)}</td>}
                         </tr>
                       ))}
                       {isExpanded && categorySubCategories.length === 0 && (
