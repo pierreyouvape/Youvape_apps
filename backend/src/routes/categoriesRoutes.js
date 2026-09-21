@@ -8,6 +8,9 @@ router.get('/', categoriesController.getAll);
 // Liste toutes les sous-catégories
 router.get('/sub-categories', categoriesController.getAllSubCategories);
 
+// CA mensuel (vue « Par mois » de /stats) — avant /:name
+router.get('/monthly', categoriesController.getMonthly);
+
 // Détails d'une catégorie avec ses sous-catégories et produits
 router.get('/:categoryName', categoriesController.getByName);
 

@@ -8,6 +8,9 @@ router.get('/', brandsController.getAll);
 // Liste toutes les sous-marques
 router.get('/sub-brands', brandsController.getAllSubBrands);
 
+// CA mensuel (vue « Par mois » de /stats) — avant /:name
+router.get('/monthly', brandsController.getMonthly);
+
 // Détails d'une marque avec ses sous-marques et produits
 router.get('/:brandName', brandsController.getByName);
 

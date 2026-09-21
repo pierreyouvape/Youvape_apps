@@ -1,4 +1,4 @@
-import { useState, useEffect, useContext } from 'react';
+import { useState, useEffect, useContext, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { formatPriceEur } from '../../utils/formatNumber';
@@ -6,6 +6,8 @@ import { AuthContext } from '../../context/AuthContext';
 import { useColumnPreferences } from '../../hooks/useColumnPreferences';
 import ColumnPanel from '../ColumnPanel';
 import { LinkBox } from '../../utils/navHelpers';
+import PeriodFilter, { computeDateRange, dateParams } from './PeriodFilter';
+import MonthlyPivotTable from './MonthlyPivotTable';
 
 const API_BASE_URL = '/api';
 
@@ -31,15 +33,42 @@ const BrandsStatsTab = () => {
   const [sortBy, setSortBy] = useState('ca_ttc');
   const [sortOrder, setSortOrder] = useState('DESC');
   const [searchTerm, setSearchTerm] = useState('');
+  const [view, setView] = useState('totals'); // 'totals' | 'monthly'
+  const [period, setPeriod] = useState('all');
+  const [customStart, setCustomStart] = useState('');
+  const [customEnd, setCustomEnd] = useState('');
+  const [monthlyRows, setMonthlyRows] = useState([]);
+  const [monthlyLoading, setMonthlyLoading] = useState(false);
+
+  const dateRange = useMemo(() => computeDateRange(period, customStart, customEnd), [period, customStart, customEnd]);
 
   useEffect(() => {
-    fetchBrands();
-  }, []);
+    // Les sous-marques déjà chargées l'ont été pour l'ancienne période
+    setSubBrands({});
+    setExpandedBrandName(null);
+    if (view === 'monthly') fetchMonthly();
+    else fetchBrands();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view, dateRange.dateFrom, dateRange.dateTo]);
+
+  const fetchMonthly = async () => {
+    setMonthlyLoading(true);
+    try {
+      const response = await axios.get(`${API_BASE_URL}/brands/monthly`, { params: dateParams(dateRange) });
+      if (response.data.success) {
+        setMonthlyRows(response.data.data);
+      }
+    } catch (error) {
+      console.error('Error fetching monthly brands:', error);
+    } finally {
+      setMonthlyLoading(false);
+    }
+  };
 
   const fetchBrands = async () => {
     setLoading(true);
     try {
-      const response = await axios.get(`${API_BASE_URL}/brands`);
+      const response = await axios.get(`${API_BASE_URL}/brands`, { params: dateParams(dateRange) });
       if (response.data.success) {
         setBrands(response.data.data);
       }
@@ -54,7 +83,7 @@ const BrandsStatsTab = () => {
     if (subBrands[brandName]) return;
 
     try {
-      const response = await axios.get(`${API_BASE_URL}/brands/${encodeURIComponent(brandName)}`);
+      const response = await axios.get(`${API_BASE_URL}/brands/${encodeURIComponent(brandName)}`, { params: dateParams(dateRange) });
       if (response.data.success) {
         setSubBrands(prev => ({
           ...prev,
@@ -185,7 +214,7 @@ const BrandsStatsTab = () => {
     <div style={compact ? { maxWidth: '1400px', margin: '0 auto' } : {}}>
       {/* Header avec recherche et bouton export */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px', flexWrap: 'wrap', gap: '15px' }}>
-        <div style={{ display: 'flex', gap: '15px', flex: 1 }}>
+        <div style={{ display: 'flex', gap: '15px', flex: 1, flexWrap: 'wrap', alignItems: 'center' }}>
           <input
             type="text"
             value={searchTerm}
@@ -201,8 +230,32 @@ const BrandsStatsTab = () => {
               maxWidth: '400px'
             }}
           />
+          <PeriodFilter
+            period={period}
+            setPeriod={setPeriod}
+            customStart={customStart}
+            setCustomStart={setCustomStart}
+            customEnd={customEnd}
+            setCustomEnd={setCustomEnd}
+          />
         </div>
         <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+          <div style={{ display: 'flex', border: '1px solid #d1d5db', borderRadius: '6px', overflow: 'hidden' }}>
+            {[{ id: 'totals', label: 'Totaux' }, { id: 'monthly', label: 'Par mois' }].map(v => (
+              <button
+                key={v.id}
+                onClick={() => setView(v.id)}
+                style={{
+                  padding: '8px 14px', border: 'none', fontSize: '13px', cursor: 'pointer', fontWeight: 600,
+                  backgroundColor: view === v.id ? '#135E84' : '#fff',
+                  color: view === v.id ? '#fff' : '#374151'
+                }}
+              >
+                {v.label}
+              </button>
+            ))}
+          </div>
+          {view === 'totals' && (<>
           <button
             onClick={handleExport}
             style={{
@@ -226,9 +279,25 @@ const BrandsStatsTab = () => {
             show={showColumnPanel}
             setShow={setShowColumnPanel}
           />
+          </>)}
         </div>
       </div>
 
+      {view === 'monthly' ? (
+        monthlyLoading ? (
+          <div style={{ textAlign: 'center', padding: '50px', backgroundColor: 'white', borderRadius: '8px' }}>Chargement...</div>
+        ) : (
+          <MonthlyPivotTable
+            rows={monthlyRows}
+            groupKey="brand"
+            groupLabel="Marque"
+            linkPrefix="/brands/"
+            dateRange={dateRange}
+            searchTerm={searchTerm}
+            exportName="marques"
+          />
+        )
+      ) : (<>
       {/* Cards de statistiques */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '15px', marginBottom: '30px' }}>
         <div style={{ backgroundColor: 'white', padding: '20px', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
@@ -359,6 +428,7 @@ const BrandsStatsTab = () => {
           )}
         </div>
       )}
+      </>)}
     </div>
   );
 };

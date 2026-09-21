@@ -3,12 +3,20 @@ const pool = require('../config/database');
 // Statuts de commande considérés comme "ventes valides"
 const VALID_ORDER_STATUSES = ['wc-completed', 'wc-delivered', 'wc-processing', 'wc-awaiting-delivery', 'wc-shipped', 'wc-being-delivered'];
 
+// Période optionnelle ?dateFrom=YYYY-MM-DD&dateTo=YYYY-MM-DD (bornes incluses).
+// post_date est stockée en heure Paris locale : on compare sans conversion de fuseau.
+const parseDateRange = (req) => {
+  const valid = (d) => (typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d) ? d : null);
+  return { dateFrom: valid(req.query.dateFrom), dateTo: valid(req.query.dateTo) };
+};
+
 /**
  * Récupère toutes les marques avec stats agrégées
  * GET /api/brands
  */
 exports.getAll = async (req, res) => {
   try {
+    const { dateFrom, dateTo } = parseDateRange(req);
     const query = `
       WITH brand_products AS (
         SELECT DISTINCT
@@ -37,9 +45,12 @@ exports.getAll = async (req, res) => {
           COALESCE(SUM(oi.line_total), 0) as ca_ht,
           COALESCE(SUM(oi.qty * CASE WHEN p_cost.product_type = 'woosb' THEN 0 ELSE COALESCE(p_cost.computed_cost, p_cost.wc_cog_cost, 0) END), 0) as cost_ht
         FROM product_family pf
-        LEFT JOIN order_items oi ON (oi.product_id = pf.product_id OR oi.variation_id = pf.product_id)
-        LEFT JOIN orders o ON o.wp_order_id = oi.wp_order_id
-          AND o.post_status = ANY($1)
+        LEFT JOIN (order_items oi
+          JOIN orders o ON o.wp_order_id = oi.wp_order_id
+            AND o.post_status = ANY($1)
+            AND ($2::date IS NULL OR o.post_date >= $2::date)
+            AND ($3::date IS NULL OR o.post_date < $3::date + 1))
+          ON (oi.product_id = pf.product_id OR oi.variation_id = pf.product_id)
         LEFT JOIN products p_cost ON p_cost.wp_product_id = COALESCE(NULLIF(oi.variation_id, 0), oi.product_id)
         GROUP BY pf.brand
       )
@@ -63,7 +74,7 @@ exports.getAll = async (req, res) => {
       ORDER BY ca_ttc DESC NULLS LAST
     `;
 
-    const result = await pool.query(query, [VALID_ORDER_STATUSES]);
+    const result = await pool.query(query, [VALID_ORDER_STATUSES, dateFrom, dateTo]);
 
     res.json({
       success: true,
@@ -81,6 +92,7 @@ exports.getAll = async (req, res) => {
  */
 exports.getAllSubBrands = async (req, res) => {
   try {
+    const { dateFrom, dateTo } = parseDateRange(req);
     const query = `
       WITH sub_brand_products AS (
         SELECT DISTINCT
@@ -111,9 +123,12 @@ exports.getAllSubBrands = async (req, res) => {
           COALESCE(SUM(oi.line_total), 0) as ca_ht,
           COALESCE(SUM(oi.qty * CASE WHEN p_cost.product_type = 'woosb' THEN 0 ELSE COALESCE(p_cost.computed_cost, p_cost.wc_cog_cost, 0) END), 0) as cost_ht
         FROM product_family pf
-        LEFT JOIN order_items oi ON (oi.product_id = pf.product_id OR oi.variation_id = pf.product_id)
-        LEFT JOIN orders o ON o.wp_order_id = oi.wp_order_id
-          AND o.post_status = ANY($1)
+        LEFT JOIN (order_items oi
+          JOIN orders o ON o.wp_order_id = oi.wp_order_id
+            AND o.post_status = ANY($1)
+            AND ($2::date IS NULL OR o.post_date >= $2::date)
+            AND ($3::date IS NULL OR o.post_date < $3::date + 1))
+          ON (oi.product_id = pf.product_id OR oi.variation_id = pf.product_id)
         LEFT JOIN products p_cost ON p_cost.wp_product_id = COALESCE(NULLIF(oi.variation_id, 0), oi.product_id)
         GROUP BY pf.sub_brand
       )
@@ -137,7 +152,7 @@ exports.getAllSubBrands = async (req, res) => {
       ORDER BY ca_ttc DESC NULLS LAST
     `;
 
-    const result = await pool.query(query, [VALID_ORDER_STATUSES]);
+    const result = await pool.query(query, [VALID_ORDER_STATUSES, dateFrom, dateTo]);
 
     res.json({
       success: true,
@@ -155,6 +170,7 @@ exports.getAllSubBrands = async (req, res) => {
  */
 exports.getByName = async (req, res) => {
   try {
+    const { dateFrom, dateTo } = parseDateRange(req);
     const brandName = decodeURIComponent(req.params.brandName);
 
     // Récupérer les sous-marques de cette marque avec leurs stats
@@ -187,9 +203,12 @@ exports.getByName = async (req, res) => {
           COALESCE(SUM(oi.line_total), 0) as ca_ht,
           COALESCE(SUM(oi.qty * CASE WHEN p_cost.product_type = 'woosb' THEN 0 ELSE COALESCE(p_cost.computed_cost, p_cost.wc_cog_cost, 0) END), 0) as cost_ht
         FROM product_family pf
-        LEFT JOIN order_items oi ON (oi.product_id = pf.product_id OR oi.variation_id = pf.product_id)
-        LEFT JOIN orders o ON o.wp_order_id = oi.wp_order_id
-          AND o.post_status = ANY($2)
+        LEFT JOIN (order_items oi
+          JOIN orders o ON o.wp_order_id = oi.wp_order_id
+            AND o.post_status = ANY($2)
+            AND ($3::date IS NULL OR o.post_date >= $3::date)
+            AND ($4::date IS NULL OR o.post_date < $4::date + 1))
+          ON (oi.product_id = pf.product_id OR oi.variation_id = pf.product_id)
         LEFT JOIN products p_cost ON p_cost.wp_product_id = COALESCE(NULLIF(oi.variation_id, 0), oi.product_id)
         GROUP BY pf.sub_brand
       )
@@ -212,7 +231,7 @@ exports.getByName = async (req, res) => {
       ORDER BY ca_ttc DESC NULLS LAST
     `;
 
-    const subBrandsResult = await pool.query(subBrandsQuery, [brandName, VALID_ORDER_STATUSES]);
+    const subBrandsResult = await pool.query(subBrandsQuery, [brandName, VALID_ORDER_STATUSES, dateFrom, dateTo]);
 
     // Récupérer les produits de cette marque SANS sous-marque (produits "directs")
     const productsWithoutSubBrandQuery = `
@@ -246,9 +265,12 @@ exports.getByName = async (req, res) => {
           COALESCE(SUM(oi.line_total), 0) as ca_ht,
           COALESCE(SUM(oi.qty * CASE WHEN p_cost.product_type = 'woosb' THEN 0 ELSE COALESCE(p_cost.computed_cost, p_cost.wc_cog_cost, 0) END), 0) as cost_ht
         FROM product_family pf
-        LEFT JOIN order_items oi ON (oi.product_id = pf.product_id OR oi.variation_id = pf.product_id)
-        LEFT JOIN orders o ON o.wp_order_id = oi.wp_order_id
-          AND o.post_status = ANY($2)
+        LEFT JOIN (order_items oi
+          JOIN orders o ON o.wp_order_id = oi.wp_order_id
+            AND o.post_status = ANY($2)
+            AND ($3::date IS NULL OR o.post_date >= $3::date)
+            AND ($4::date IS NULL OR o.post_date < $4::date + 1))
+          ON (oi.product_id = pf.product_id OR oi.variation_id = pf.product_id)
         LEFT JOIN products p_cost ON p_cost.wp_product_id = COALESCE(NULLIF(oi.variation_id, 0), oi.product_id)
         GROUP BY pf.parent_id
       )
@@ -282,7 +304,7 @@ exports.getByName = async (req, res) => {
       ORDER BY ca_ttc DESC NULLS LAST
     `;
 
-    const productsResult = await pool.query(productsWithoutSubBrandQuery, [brandName, VALID_ORDER_STATUSES]);
+    const productsResult = await pool.query(productsWithoutSubBrandQuery, [brandName, VALID_ORDER_STATUSES, dateFrom, dateTo]);
 
     // Récupérer les stats globales de la marque
     const globalStatsQuery = `
@@ -312,13 +334,16 @@ exports.getByName = async (req, res) => {
         COALESCE(SUM(oi.qty * CASE WHEN p_cost.product_type = 'woosb' THEN 0 ELSE COALESCE(p_cost.computed_cost, p_cost.wc_cog_cost, 0) END), 0) as cost_ht
       FROM brand_products bp
       LEFT JOIN product_family pf ON pf.parent_id = bp.wp_product_id
-      LEFT JOIN order_items oi ON (oi.product_id = pf.product_id OR oi.variation_id = pf.product_id)
-      LEFT JOIN orders o ON o.wp_order_id = oi.wp_order_id
-        AND o.post_status = ANY($2)
+      LEFT JOIN (order_items oi
+        JOIN orders o ON o.wp_order_id = oi.wp_order_id
+          AND o.post_status = ANY($2)
+          AND ($3::date IS NULL OR o.post_date >= $3::date)
+          AND ($4::date IS NULL OR o.post_date < $4::date + 1))
+        ON (oi.product_id = pf.product_id OR oi.variation_id = pf.product_id)
       LEFT JOIN products p_cost ON p_cost.wp_product_id = COALESCE(NULLIF(oi.variation_id, 0), oi.product_id)
     `;
 
-    const globalStatsResult = await pool.query(globalStatsQuery, [brandName, VALID_ORDER_STATUSES]);
+    const globalStatsResult = await pool.query(globalStatsQuery, [brandName, VALID_ORDER_STATUSES, dateFrom, dateTo]);
     const globalStats = globalStatsResult.rows[0];
 
     res.json({
@@ -353,6 +378,7 @@ exports.getByName = async (req, res) => {
  */
 exports.getSubBrandByName = async (req, res) => {
   try {
+    const { dateFrom, dateTo } = parseDateRange(req);
     const subBrandName = decodeURIComponent(req.params.subBrandName);
 
     // Récupérer les infos de base et la marque parente
@@ -401,9 +427,12 @@ exports.getSubBrandByName = async (req, res) => {
           COALESCE(SUM(oi.line_total), 0) as ca_ht,
           COALESCE(SUM(oi.qty * CASE WHEN p_cost.product_type = 'woosb' THEN 0 ELSE COALESCE(p_cost.computed_cost, p_cost.wc_cog_cost, 0) END), 0) as cost_ht
         FROM product_family pf
-        LEFT JOIN order_items oi ON (oi.product_id = pf.product_id OR oi.variation_id = pf.product_id)
-        LEFT JOIN orders o ON o.wp_order_id = oi.wp_order_id
-          AND o.post_status = ANY($2)
+        LEFT JOIN (order_items oi
+          JOIN orders o ON o.wp_order_id = oi.wp_order_id
+            AND o.post_status = ANY($2)
+            AND ($3::date IS NULL OR o.post_date >= $3::date)
+            AND ($4::date IS NULL OR o.post_date < $4::date + 1))
+          ON (oi.product_id = pf.product_id OR oi.variation_id = pf.product_id)
         LEFT JOIN products p_cost ON p_cost.wp_product_id = COALESCE(NULLIF(oi.variation_id, 0), oi.product_id)
         GROUP BY pf.parent_id
       )
@@ -437,7 +466,7 @@ exports.getSubBrandByName = async (req, res) => {
       ORDER BY ca_ttc DESC NULLS LAST
     `;
 
-    const productsResult = await pool.query(productsQuery, [subBrandName, VALID_ORDER_STATUSES]);
+    const productsResult = await pool.query(productsQuery, [subBrandName, VALID_ORDER_STATUSES, dateFrom, dateTo]);
 
     // Calculer les stats globales
     const globalStatsQuery = `
@@ -466,13 +495,16 @@ exports.getSubBrandByName = async (req, res) => {
         COALESCE(SUM(oi.qty * CASE WHEN p_cost.product_type = 'woosb' THEN 0 ELSE COALESCE(p_cost.computed_cost, p_cost.wc_cog_cost, 0) END), 0) as cost_ht
       FROM sub_brand_products sbp
       LEFT JOIN product_family pf ON pf.parent_id = sbp.wp_product_id
-      LEFT JOIN order_items oi ON (oi.product_id = pf.product_id OR oi.variation_id = pf.product_id)
-      LEFT JOIN orders o ON o.wp_order_id = oi.wp_order_id
-        AND o.post_status = ANY($2)
+      LEFT JOIN (order_items oi
+        JOIN orders o ON o.wp_order_id = oi.wp_order_id
+          AND o.post_status = ANY($2)
+          AND ($3::date IS NULL OR o.post_date >= $3::date)
+          AND ($4::date IS NULL OR o.post_date < $4::date + 1))
+        ON (oi.product_id = pf.product_id OR oi.variation_id = pf.product_id)
       LEFT JOIN products p_cost ON p_cost.wp_product_id = COALESCE(NULLIF(oi.variation_id, 0), oi.product_id)
     `;
 
-    const globalStatsResult = await pool.query(globalStatsQuery, [subBrandName, VALID_ORDER_STATUSES]);
+    const globalStatsResult = await pool.query(globalStatsQuery, [subBrandName, VALID_ORDER_STATUSES, dateFrom, dateTo]);
     const globalStats = globalStatsResult.rows[0];
 
     res.json({
@@ -496,6 +528,55 @@ exports.getSubBrandByName = async (req, res) => {
     });
   } catch (error) {
     console.error('Error getting sub-brand by name:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+/**
+ * CA mensuel par marque (vue « Par mois » de /stats)
+ * GET /api/brands/monthly?dateFrom=YYYY-MM-DD&dateTo=YYYY-MM-DD
+ */
+exports.getMonthly = async (req, res) => {
+  try {
+    const { dateFrom, dateTo } = parseDateRange(req);
+    const query = `
+      WITH group_products AS (
+        SELECT DISTINCT p.brand, p.wp_product_id
+        FROM products p
+        WHERE p.brand IS NOT NULL
+          AND p.product_type IN ('simple', 'variable', 'woosb')
+          AND p.post_status = 'publish'
+      ),
+      product_family AS (
+        SELECT gp.brand, COALESCE(v.wp_product_id, gp.wp_product_id) as product_id
+        FROM group_products gp
+        LEFT JOIN products v ON v.wp_parent_id = gp.wp_product_id AND v.product_type = 'variation'
+      )
+      -- WooCommerce: line_total = HT, line_tax = TVA, donc TTC = line_total + line_tax
+      SELECT
+        pf.brand,
+        to_char(date_trunc('month', o.post_date), 'YYYY-MM') as month,
+        SUM(oi.qty)::int as qty_sold,
+        COALESCE(SUM(oi.line_total), 0) + COALESCE(SUM(oi.line_tax), 0) as ca_ttc,
+        COALESCE(SUM(oi.line_total), 0) as ca_ht
+      FROM product_family pf
+      JOIN order_items oi ON (oi.product_id = pf.product_id OR oi.variation_id = pf.product_id)
+      JOIN orders o ON o.wp_order_id = oi.wp_order_id
+        AND o.post_status = ANY($1)
+        AND ($2::date IS NULL OR o.post_date >= $2::date)
+        AND ($3::date IS NULL OR o.post_date < $3::date + 1)
+      GROUP BY pf.brand, month
+      ORDER BY pf.brand, month
+    `;
+
+    const result = await pool.query(query, [VALID_ORDER_STATUSES, dateFrom, dateTo]);
+
+    res.json({
+      success: true,
+      data: result.rows
+    });
+  } catch (error) {
+    console.error('Error getting monthly marque:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 };
