@@ -1,6 +1,7 @@
 const pool = require('../config/database');
 const { computeOrderWeight, getPackagingWeight } = require('../services/orderWeightService');
 const shippingMethodMapModel = require('../models/shippingMethodMapModel');
+const { expectedNetwork, relayNetworks } = require('../services/carriers/relayPoints');
 
 // Rechercher une commande par numéro WC pour le packing
 const searchOrder = async (req, res) => {
@@ -24,7 +25,12 @@ const searchOrder = async (req, res) => {
         o.shipping_country,
         o.shipping_phone,
         o.billing_email,
-        o.order_total
+        o.order_total,
+        o.relay_point,
+        -- Lu sans nommer la colonne, pour que le packing continue de tourner si
+        -- la migration du point saisi n'est pas passée. Le NULLIF écarte la
+        -- valeur JSON nulle que rend une colonne présente mais vide.
+        NULLIF(to_jsonb(o) -> 'relay_point_manual', 'null'::jsonb) AS relay_point_manual
       FROM orders o
       WHERE o.wp_order_id = $1
     `, [orderNumber]);
@@ -117,6 +123,22 @@ const searchOrder = async (req, res) => {
       shippingMethodMapModel.resolve(order.shipping_method)
     ]);
 
+    // Point relais : le préparateur doit pouvoir le corriger sans quitter le
+    // packing — un client au téléphone demande parfois un autre point, et le
+    // colis est déjà sur la table. Même règle que le reste : un échec de cette
+    // lecture ne doit pas empêcher de préparer la commande.
+    let relayOptions = { expected: null, networks: [] };
+    try {
+      relayOptions = {
+        expected: carrier?.status === 'mapped'
+          ? expectedNetwork(carrier.carrierCode, carrier.deliveryMode)
+          : null,
+        networks: relayNetworks()
+      };
+    } catch (relayError) {
+      console.error('Erreur options point relais packing:', relayError.message);
+    }
+
     res.json({
       hidden_packs: hiddenPacks,
       // status : 'mapped' (on sait étiqueter), 'no_label' (rien à imprimer,
@@ -133,6 +155,11 @@ const searchOrder = async (req, res) => {
         status: order.post_status,
         date: order.post_date,
         shipping_method: order.shipping_method,
+        // Le point effectivement utilisé pour l'étiquette : celui saisi à la
+        // main prime sur celui de WooCommerce (cf. shipmentController).
+        relay_point: order.relay_point_manual || order.relay_point || null,
+        relay_point_manual: order.relay_point_manual || null,
+        relay_point_options: relayOptions,
         shipping: {
           first_name: order.shipping_first_name,
           last_name: order.shipping_last_name,

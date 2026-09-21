@@ -7,6 +7,18 @@ import { LinkBox } from '../utils/navHelpers';
 import axios from 'axios';
 import AppShell from '../components/AppShell';
 
+// Champs du bloc « point relais », repris de l'aspect du formulaire d'adresse.
+// Déclaré ici et non dans le rendu : le `inputStyle` de ce formulaire lui est
+// local, l'utiliser ailleurs ne casse pas le build mais fait planter l'écran.
+const CHAMP_RELAIS = {
+  padding: '9px 12px',
+  fontSize: '15px',
+  border: '2px solid #ddd',
+  borderRadius: '8px',
+  outline: 'none',
+  boxSizing: 'border-box'
+};
+
 const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:3000/api/auth').replace('/auth', '');
 
 // Génération de sons avec Web Audio API
@@ -85,6 +97,12 @@ const PackingApp = () => {
   const [hiddenPacks, setHiddenPacks] = useState([]);
   const [wrongShippingOrder, setWrongShippingOrder] = useState(null); // { orderNumber, denomination } si mode inconnu
   const [editingAddress, setEditingAddress] = useState(false); // édition adresse de livraison
+  // Point relais : corrigeable sans quitter le packing. Un client appelle
+  // parfois pour changer de point alors que le colis est déjà sur la table.
+  const [editingRelay, setEditingRelay] = useState(false);
+  const [relayForm, setRelayForm] = useState(null);
+  const [relaySaving, setRelaySaving] = useState(false);
+  const [relayError, setRelayError] = useState(null);
   const [addressForm, setAddressForm] = useState(null); // copie éditable de order.shipping
   const [addressSaving, setAddressSaving] = useState(false);
   const [addressError, setAddressError] = useState(null);
@@ -312,6 +330,72 @@ const PackingApp = () => {
       setAddressSaving(false);
     }
   }, [order, addressForm, token]);
+
+  // ── Point relais ──────────────────────────────────────────────────────────
+  // L'enregistrement passe par la même route que la fiche commande, donc par le
+  // même contrôle : un point accepté ici ne sera jamais refusé à l'étiquetage.
+  // Il est stocké à part (relay_point_manual), hors d'atteinte de la synchro
+  // WooCommerce, qui écraserait sinon la correction au premier changement de
+  // statut.
+  const startEditRelay = useCallback(() => {
+    if (!order) return;
+    const actuel = order.relay_point || null;
+    const attendu = order.relay_point_options?.expected || null;
+    setRelayForm({
+      network: order.relay_point_manual?.network || attendu?.code || actuel?.network
+        || order.relay_point_options?.networks?.[0]?.code || '',
+      id: order.relay_point_manual?.id || '',
+      country: actuel?.country || order.shipping?.country || 'FR'
+    });
+    setRelayError(null);
+    setEditingRelay(true);
+  }, [order]);
+
+  const saveRelay = useCallback(async () => {
+    if (!order || !relayForm) return;
+    setRelaySaving(true);
+    setRelayError(null);
+    try {
+      const res = await axios.put(
+        `${API_URL}/orders/${order.wp_order_id}/relay-point`,
+        relayForm,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      const saisi = res.data.data.relay_point_manual;
+      setOrder(prev => ({ ...prev, relay_point: saisi, relay_point_manual: saisi }));
+      setEditingRelay(false);
+      setMessage(`Point relais mis a jour : ${saisi.id}`);
+      playSound('ok');
+    } catch (err) {
+      setRelayError(err.response?.data?.error || 'Enregistrement impossible');
+      playSound('error');
+    } finally {
+      setRelaySaving(false);
+    }
+  }, [order, relayForm, token]);
+
+  // Retirer la correction : le point choisi par le client reprend la main.
+  const clearRelay = useCallback(async () => {
+    if (!order) return;
+    setRelaySaving(true);
+    setRelayError(null);
+    try {
+      const res = await axios.delete(
+        `${API_URL}/orders/${order.wp_order_id}/relay-point`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      const wc = res.data?.data?.relay_point || null;
+      setOrder(prev => ({ ...prev, relay_point: wc, relay_point_manual: null }));
+      setEditingRelay(false);
+      setMessage('Point relais saisi retire');
+      playSound('ok');
+    } catch (err) {
+      setRelayError(err.response?.data?.error || 'Suppression impossible');
+      playSound('error');
+    } finally {
+      setRelaySaving(false);
+    }
+  }, [order, token]);
 
   // Gérer le scan d'un article
   const handleScan = useCallback(async (barcode) => {
@@ -551,6 +635,9 @@ const PackingApp = () => {
     setWrongShippingOrder(null);
     setCarrier(null);
     setHiddenPacks([]);
+    setEditingRelay(false);
+    setRelayForm(null);
+    setRelayError(null);
   }, []);
 
   // Listener clavier global — capture les scans sans champ de saisie
@@ -1125,6 +1212,120 @@ const PackingApp = () => {
                     <p style={{ margin: '2px 0 0', color: '#999', fontSize: '14px' }}>
                       {order.shipping.address_2}
                     </p>
+                  )}
+
+                  {/* Point relais — affiché quand le mode de livraison en exige un,
+                      ou quand la commande en porte déjà un. Corrigeable ici même :
+                      un client demande parfois un autre point alors que le colis
+                      est sur la table, et aller le changer dans l'app Commandes
+                      ferait perdre la commande en cours de scan. */}
+                  {(order.relay_point || order.relay_point_options?.expected) && (
+                    <div style={{ marginTop: '10px' }}>
+                      {!editingRelay ? (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                          <span style={{ fontSize: '14px', color: '#555' }}>
+                            <strong>Point relais :</strong>{' '}
+                            {order.relay_point ? (
+                              <span style={{ fontWeight: 700, color: '#333' }}>
+                                {order.relay_point.id}
+                                <span style={{ fontWeight: 500, color: '#888' }}>
+                                  {' · '}
+                                  {order.relay_point_options?.networks?.find(n => n.code === order.relay_point.network)?.label
+                                    || order.relay_point.network}
+                                  {order.relay_point.country ? ` ${order.relay_point.country}` : ''}
+                                </span>
+                              </span>
+                            ) : (
+                              <span style={{ fontWeight: 700, color: '#dc2626' }}>Aucun</span>
+                            )}
+                          </span>
+                          {order.relay_point_manual && (
+                            <span style={{ fontSize: '12px', color: '#888' }}>
+                              saisi par {order.relay_point_manual.entered_by || 'inconnu'}
+                            </span>
+                          )}
+                          <button
+                            type="button"
+                            onClick={startEditRelay}
+                            style={{
+                              padding: '5px 12px', backgroundColor: 'white', color: '#6366f1',
+                              border: '1px solid #6366f1', borderRadius: '6px',
+                              fontSize: '13px', fontWeight: '600', cursor: 'pointer'
+                            }}
+                          >
+                            📍 Modifier le point relais
+                          </button>
+                        </div>
+                      ) : (
+                        <div style={{
+                          padding: '12px', border: '1px solid #c7d2fe', borderRadius: '8px',
+                          backgroundColor: '#eef2ff'
+                        }}>
+                          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
+                            <select
+                              value={relayForm.network}
+                              onChange={e => setRelayForm(f => ({ ...f, network: e.target.value }))}
+                              style={{ ...CHAMP_RELAIS, minWidth: '160px' }}
+                            >
+                              {(order.relay_point_options?.networks || []).map(n => (
+                                <option key={n.code} value={n.code}>{n.label}</option>
+                              ))}
+                            </select>
+                            <input
+                              style={{ ...CHAMP_RELAIS, width: '140px' }}
+                              placeholder="N° du point"
+                              value={relayForm.id}
+                              onChange={e => setRelayForm(f => ({ ...f, id: e.target.value }))}
+                              autoFocus
+                            />
+                            <input
+                              style={{ ...CHAMP_RELAIS, width: '70px' }}
+                              placeholder="Pays"
+                              value={relayForm.country}
+                              onChange={e => setRelayForm(f => ({ ...f, country: e.target.value.toUpperCase() }))}
+                            />
+                            <button
+                              type="button" onClick={saveRelay} disabled={relaySaving}
+                              style={{
+                                padding: '8px 16px', backgroundColor: relaySaving ? '#9ca3af' : '#16a34a',
+                                color: 'white', border: 'none', borderRadius: '8px',
+                                fontSize: '14px', fontWeight: '600', cursor: relaySaving ? 'default' : 'pointer'
+                              }}
+                            >
+                              {relaySaving ? '…' : 'Enregistrer'}
+                            </button>
+                            {order.relay_point_manual && (
+                              <button
+                                type="button" onClick={clearRelay} disabled={relaySaving}
+                                title="Revenir au point choisi par le client"
+                                style={{
+                                  padding: '8px 14px', backgroundColor: 'white', color: '#dc2626',
+                                  border: '1px solid #dc2626', borderRadius: '8px',
+                                  fontSize: '14px', fontWeight: '600', cursor: relaySaving ? 'default' : 'pointer'
+                                }}
+                              >
+                                Retirer
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => { setEditingRelay(false); setRelayError(null); }}
+                              disabled={relaySaving}
+                              style={{
+                                padding: '8px 14px', backgroundColor: '#e5e7eb', color: '#374151',
+                                border: 'none', borderRadius: '8px',
+                                fontSize: '14px', fontWeight: '600', cursor: relaySaving ? 'default' : 'pointer'
+                              }}
+                            >
+                              Annuler
+                            </button>
+                          </div>
+                          {relayError && (
+                            <p style={{ margin: '10px 0 0', color: '#dc2626', fontSize: '14px' }}>{relayError}</p>
+                          )}
+                        </div>
+                      )}
+                    </div>
                   )}
                   {!editingAddress && (
                     <button
