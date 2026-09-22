@@ -27,6 +27,7 @@ const bordereauModel = require('../models/bordereauModel');
 const { getAdapter, listCarrierCodes } = require('../services/carriers');
 const { getAccount } = require('../services/carriers/accounts');
 const { depositSlipFileName, supportsDepositSlip } = require('../services/carriers/contract');
+const { buildDepositSlipPdf } = require('../services/carriers/depositSlipPdf');
 const { buildUserMessage } = require('../services/carriers/errors');
 
 const LOG_TAG = 'Bordereau';
@@ -56,11 +57,28 @@ const VERROU_GENERATION = 4210001;
  * @returns {Array[]}
  */
 const decouperEnLots = (items, max) => {
-  const taille = Math.max(1, Number(max) || 1);
+  // `null` = le transporteur n'impose aucune limite : c'est le cas du
+  // récapitulatif local, qui pagine. Un seul document, quel que soit le nombre.
+  if (!max) return items.length ? [items.slice()] : [];
+  const taille = Math.max(1, Number(max));
   const lots = [];
   for (let i = 0; i < items.length; i += taille) lots.push(items.slice(i, i + taille));
   return lots;
 };
+
+/**
+ * Transporteurs attendus, mais dont l'app n'étiquette encore aucun colis.
+ *
+ * Le bordereau ne porte que ce que l'app a étiqueté : tant qu'un transporteur
+ * n'a pas d'adaptateur, il n'a aucun colis à déposer, et une entrée vide dans
+ * le menu ferait chercher une panne. On l'annonce donc, avec la raison.
+ * L'entrée disparaît d'elle-même le jour où l'adaptateur arrive.
+ */
+const A_VENIR = [
+  { carrierCode: 'chronopost', carrierLabel: 'Chronopost',
+    reason: "L'app n'étiquette pas encore les colis Chronopost (lot 3) — ils sortent de BMS, "
+      + 'et leur bordereau se fait donc dans BMS.' }
+];
 
 /** Les transporteurs branchés qui savent produire un bordereau. */
 const carriersWithDepositSlip = () =>
@@ -120,18 +138,22 @@ const listPending = async (req, res) => {
 
       return contrats.map(accountCode => {
         const aDeposer = siens.filter(p => p.account_code === accountCode);
+        const { kind, maxParcels } = adapter.depositSlip;
         return {
           carrierCode: adapter.code,
           carrierLabel: adapter.label,
           accountCode,
-          maxParcels: adapter.depositSlip.maxParcels,
+          kind,
+          maxParcels: maxParcels || null,
           parcels: aDeposer,
-          bordereauCount: Math.ceil(aDeposer.length / adapter.depositSlip.maxParcels)
+          // Sans limite, un seul document quel que soit le nombre de colis.
+          bordereauCount: maxParcels ? Math.ceil(aDeposer.length / maxParcels) : (aDeposer.length ? 1 : 0)
         };
       });
     });
 
-    res.json({ since, sections });
+    const branches = new Set(adapters.map(a => a.code));
+    res.json({ since, sections, planned: A_VENIR.filter(c => !branches.has(c.carrierCode)) });
   } catch (error) {
     console.error(`[${LOG_TAG}] Erreur listPending :`, error.message);
     res.status(error.statusCode || 500).json({
@@ -140,6 +162,37 @@ const listPending = async (req, res) => {
       details: error.message
     });
   }
+};
+
+/**
+ * Fabrique le récapitulatif de remise d'un transporteur qui n'en émet pas.
+ *
+ * Fait DANS la transaction, à la différence d'un bordereau transporteur : le
+ * numéro est réservé par la transaction elle-même, il ne vient de nulle part
+ * ailleurs. Rien ne sort vers l'extérieur, donc rien ne peut être produit
+ * « à moitié » chez un tiers.
+ *
+ * @param {object} client - client pg, transaction ouverte
+ * @returns {Promise<{number: string, publishedAt: Date, pdfBase64: string}>}
+ */
+const produireRecapitulatif = async (client, { adapter, account, accountCode, lot }) => {
+  const number = await bordereauModel.nextLocalNumber(client, {
+    carrierCode: adapter.code,
+    prefix: adapter.depositSlip.numberPrefix || adapter.code.slice(0, 2).toUpperCase(),
+    dayParis: aujourdhuiParis()
+  });
+
+  const now = new Date();
+  const pdfBase64 = await buildDepositSlipPdf({
+    carrierLabel: adapter.label,
+    number,
+    accountLabel: account.label || accountCode,
+    settings: account.settings,
+    parcels: lot,
+    now
+  });
+
+  return { number, publishedAt: now, pdfBase64 };
 };
 
 /**
@@ -196,6 +249,7 @@ const generate = async (req, res) => {
       });
     }
 
+    const local = adapter.depositSlip.kind === 'local';
     const lots = decouperEnLots(parcels, adapter.depositSlip.maxParcels);
     console.log(`[${LOG_TAG}] ${adapter.label} — ${parcels.length} colis depuis le ${since} → ${lots.length} bordereau(x)`);
 
@@ -206,23 +260,26 @@ const generate = async (req, res) => {
     for (let i = 0; i < lots.length && !stopped; i++) {
       const lot = lots[i];
       try {
-        const slip = await adapter.createDepositSlip({
-          account,
-          trackingNumbers: lot.map(p => p.tracking_number)
-        });
+        // Bordereau émis par le transporteur : il existe chez lui dès sa
+        // réponse, donc on l'obtient AVANT d'ouvrir la transaction — et à
+        // partir de là, tout échec d'écriture perdrait un papier déjà émis.
+        // Récapitulatif local : rien n'existe tant que la transaction n'a pas
+        // réservé son numéro, il se fabrique donc dedans.
+        const slip = local
+          ? null
+          : await adapter.createDepositSlip({ account, trackingNumbers: lot.map(p => p.tracking_number) });
 
-        // Le bordereau existe chez le transporteur : à partir d'ici, tout échec
-        // d'écriture perdrait un papier déjà émis. D'où la transaction, et le
-        // fait qu'on n'en sorte pas sans avoir rattaché les colis.
         const client = await pool.connect();
         try {
           await client.query('BEGIN');
+          const emis = slip
+            || await produireRecapitulatif(client, { adapter, account, accountCode, lot });
           const bordereau = await bordereauModel.insertBordereau(client, {
             carrierCode: adapter.code,
             accountCode,
-            number: slip.number,
-            publishedAt: slip.publishedAt,
-            pdfBase64: slip.pdfBase64,
+            number: emis.number,
+            publishedAt: emis.publishedAt,
+            pdfBase64: emis.pdfBase64,
             labelIds: lot.map(p => p.id),
             userId: req.user?.id || null
           });
@@ -231,7 +288,7 @@ const generate = async (req, res) => {
           if (bordereau.attached !== lot.length) {
             // Un colis annulé ou rattaché entre-temps. Le papier, lui, le
             // porte : on le dit dans les logs plutôt que de le taire.
-            console.warn(`[${LOG_TAG}] Bordereau ${slip.number} : ${bordereau.attached}/${lot.length} colis rattachés`);
+            console.warn(`[${LOG_TAG}] Bordereau ${emis.number} : ${bordereau.attached}/${lot.length} colis rattachés`);
           }
 
           created.push({
@@ -242,7 +299,7 @@ const generate = async (req, res) => {
             fileName: depositSlipFileName(bordereau.bordereau_number),
             orderNumbers: lot.map(p => p.order_number)
           });
-          console.log(`[${LOG_TAG}] Bordereau ${slip.number} — ${lot.length} colis, id ${bordereau.id}`);
+          console.log(`[${LOG_TAG}] Bordereau ${emis.number} — ${lot.length} colis, id ${bordereau.id}`);
         } catch (e) {
           await client.query('ROLLBACK').catch(() => {});
           throw e;
@@ -273,8 +330,9 @@ const generate = async (req, res) => {
 
     const messages = [];
     if (created.length) {
+      const mot = local ? 'Récapitulatif de remise' : 'Bordereau';
       messages.push(created.length === 1
-        ? `Bordereau ${created[0].number} généré (${created[0].parcelCount} colis).`
+        ? `${mot} ${created[0].number} généré (${created[0].parcelCount} colis).`
         : `${created.length} bordereaux générés (${created.reduce((n, c) => n + c.parcelCount, 0)} colis).`);
     }
     if (failed.length) {
@@ -288,6 +346,7 @@ const generate = async (req, res) => {
       since,
       carrierCode: adapter.code,
       carrierLabel: adapter.label,
+      kind: adapter.depositSlip.kind,
       created,
       failed,
       stopped,

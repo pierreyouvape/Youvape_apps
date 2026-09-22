@@ -97,6 +97,35 @@ const listPending = async ({ carrierCodes, since }) => {
 };
 
 /**
+ * Numéro du prochain récapitulatif local d'un transporteur, pour la journée.
+ *
+ * Forme `MR-20260923-01` : le préfixe du transporteur, le jour de remise en
+ * heure de Paris, et un rang dans la journée. Un numéro qui se lit à voix haute
+ * au téléphone quand le chauffeur en cherche un.
+ *
+ * Appelé DANS la transaction, et sous le verrou de génération : deux postes ne
+ * peuvent pas tomber sur le même rang. L'index unique
+ * (carrier_code, bordereau_number) reste la dernière barrière — si elle cède,
+ * l'écriture échoue et l'app le dit, ce qui vaut mieux que deux papiers
+ * portant le même numéro.
+ *
+ * @param {object} client - client pg de la transaction en cours
+ * @param {{carrierCode: string, prefix: string, dayParis: string}} params
+ * @returns {Promise<string>}
+ */
+const nextLocalNumber = async (client, { carrierCode, prefix, dayParis }) => {
+  const { rows: [{ rang }] } = await client.query(
+    `SELECT COUNT(*) + 1 AS rang
+       FROM shipment_bordereaux
+      WHERE carrier_code = $1
+        AND (created_at AT TIME ZONE 'UTC') AT TIME ZONE 'Europe/Paris' >= $2::date
+        AND (created_at AT TIME ZONE 'UTC') AT TIME ZONE 'Europe/Paris' <  $2::date + 1`,
+    [carrierCode, dayParis]
+  );
+  return `${prefix}-${dayParis.replace(/-/g, '')}-${String(rang).padStart(2, '0')}`;
+};
+
+/**
  * Enregistre un bordereau et y rattache ses colis, d'un seul tenant.
  *
  * L'étiquette est déjà achetée quand on arrive ici : si l'écriture échouait à
@@ -199,6 +228,7 @@ const findPdfById = async (id) => {
 module.exports = {
   assertSchemaReady,
   listPending,
+  nextLocalNumber,
   insertBordereau,
   listHistory,
   listLabelsForBordereau,

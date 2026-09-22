@@ -98,15 +98,27 @@
  * @property {boolean} [producesCustomsDocuments=false] - l'adaptateur peut rendre
  *           une CN23 : l'enregistrement exige alors la colonne cn23_data, vérifiée
  *           AVANT d'acheter l'étiquette.
- * @property {{maxParcels: number}} [depositSlip] - le transporteur sait produire
- *           un bordereau de dépôt (le papier que le chauffeur signe en emportant
- *           les colis). `maxParcels` est la limite d'un bordereau chez lui : au
- *           delà, l'app en produit plusieurs. Sans cette propriété, le
- *           transporteur n'apparaît pas dans l'app Bordereau — Mondial Relay et
- *           la lettre suivie n'en ont pas, et une section vide ferait croire à
- *           une panne.
+ * @property {{kind: 'carrier'|'local', maxParcels: ?number, numberPrefix?: string}} [depositSlip]
+ *           Le transporteur figure dans l'app Bordereau — le papier que le
+ *           chauffeur signe en emportant les colis. Deux sortes, et la
+ *           différence n'est pas cosmétique :
+ *             - `carrier` : le transporteur ÉMET le bordereau par API
+ *               (Colissimo). Il porte son numéro, il fait foi chez lui, et il
+ *               n'est rendu qu'une fois. `createDepositSlip` est obligatoire.
+ *             - `local` : le transporteur n'en produit pas (Mondial Relay : son
+ *               API publique ne sait que créer des étiquettes et chercher des
+ *               points relais). L'app produit alors SON récapitulatif de remise
+ *               — `services/carriers/depositSlipPdf` — numéroté avec
+ *               `numberPrefix`. C'est une preuve de remise, pas une pièce du
+ *               transporteur, et le document le dit.
+ *           `maxParcels` est la limite d'un bordereau chez le transporteur
+ *           (Colissimo : 50) ; au-delà l'app en produit plusieurs. `null` = pas
+ *           de découpage, le récapitulatif local paginant tout seul.
+ *           Sans cette propriété, le transporteur n'apparaît pas dans l'app : la
+ *           lettre suivie et le retrait magasin ne se déposent pas, et une
+ *           section vide ferait croire à une panne.
  * @property {(input: {account: object, trackingNumbers: string[]}) => Promise<DepositSlipResult>} [createDepositSlip]
- *           Obligatoire dès que `depositSlip` est déclaré.
+ *           Obligatoire pour un bordereau de sorte `carrier`.
  *
  * @typedef {object} DepositSlipResult
  * @property {string}  number      - numéro du bordereau chez le transporteur
@@ -179,15 +191,21 @@ const customsDocumentFileName = (orderNumber) => `customs_document_${orderNumber
 const depositSlipFileName = (bordereauNumber) => `bordereau_${bordereauNumber}.pdf`;
 
 /**
- * Le transporteur sait-il produire un bordereau de dépôt ?
+ * Le transporteur figure-t-il dans l'app Bordereau ?
  *
- * Les deux conditions sont exigées ensemble : déclarer la capacité sans la
- * méthode donnerait une section à l'écran et une erreur au clic.
+ * Pour un bordereau émis par le transporteur, la méthode est exigée avec la
+ * capacité : déclarer l'une sans l'autre donnerait une entrée à l'écran et une
+ * erreur au clic. Un récapitulatif local, lui, ne dépend d'aucune API — c'est
+ * justement pour ça qu'il existe.
  *
  * @param {CarrierAdapter} adapter
  * @returns {boolean}
  */
-const supportsDepositSlip = (adapter) =>
-  Boolean(adapter && adapter.depositSlip && typeof adapter.createDepositSlip === 'function');
+const supportsDepositSlip = (adapter) => {
+  const capacite = adapter && adapter.depositSlip;
+  if (!capacite) return false;
+  if (capacite.kind === 'local') return true;
+  return typeof adapter.createDepositSlip === 'function';
+};
 
 module.exports = { assertAdapter, customsDocumentFileName, depositSlipFileName, supportsDepositSlip };

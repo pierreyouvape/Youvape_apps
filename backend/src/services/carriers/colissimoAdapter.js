@@ -1000,8 +1000,8 @@ module.exports = assertAdapter({
   relayNetworkLabel: 'Colissimo / Bpost',
   // La CN23 est stockée à part : l'enregistrement exige la colonne cn23_data.
   producesCustomsDocuments: true,
-  // Bordereau de dépôt : Colissimo en produit un, par lots de 50 colis.
-  depositSlip: { maxParcels: MAX_COLIS_BORDEREAU },
+  // Bordereau de dépôt : Colissimo en émet un par API, par lots de 50 colis.
+  depositSlip: { kind: 'carrier', maxParcels: MAX_COLIS_BORDEREAU },
   createDepositSlip,
   resolveWeight,
   createLabel,

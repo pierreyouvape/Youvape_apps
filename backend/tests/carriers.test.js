@@ -1077,10 +1077,31 @@ test('le bordereau suit sa convention de nom, commune à tous les transporteurs'
   assert.strictEqual(depositSlipFileName('6789012'), 'bordereau_6789012.pdf');
 });
 
-test('seul Colissimo annonce un bordereau : une section vide ferait croire à une panne', () => {
+test('deux sortes de bordereau, et seuls ceux qui se déposent figurent dans l\'app', () => {
+  // Colissimo émet le sien par API ; Mondial Relay n'en émet aucun (WSDL public
+  // relevé le 22/09/2026 : 15 opérations, pas une de bordereau) donc l'app
+  // produit le récapitulatif. La lettre suivie et le retrait magasin ne se
+  // déposent pas : ils n'apparaissent pas, une entrée vide ferait chercher une
+  // panne.
+  assert.strictEqual(coli.depositSlip.kind, 'carrier');
+  assert.strictEqual(getAdapter('mondial_relay').depositSlip.kind, 'local');
   assert.strictEqual(supportsDepositSlip(coli), true);
+  assert.strictEqual(supportsDepositSlip(getAdapter('mondial_relay')), true);
   assert.strictEqual(supportsDepositSlip(laposte), false);
-  assert.strictEqual(supportsDepositSlip(getAdapter('mondial_relay')), false);
+  assert.strictEqual(supportsDepositSlip(getAdapter('interne')), false);
+});
+
+test('un bordereau transporteur sans méthode pour le produire ne s\'affiche pas', () => {
+  // Déclarer la capacité sans la méthode donnerait une entrée à l'écran et une
+  // erreur au clic. Un récapitulatif local, lui, n'a besoin d'aucune API.
+  assert.strictEqual(supportsDepositSlip({ depositSlip: { kind: 'carrier', maxParcels: 50 } }), false);
+  assert.strictEqual(supportsDepositSlip({ depositSlip: { kind: 'local', maxParcels: null } }), true);
+});
+
+test('sans limite du transporteur, un seul document quel que soit le nombre', () => {
+  // Mondial Relay n'impose rien : le récapitulatif pagine au lieu de se scinder.
+  assert.strictEqual(decouperEnLots(Array.from({ length: 300 }), null).length, 1);
+  assert.strictEqual(decouperEnLots([], null).length, 0);
 });
 
 test('la table de symboles ne touche pas la lettre suivie', () => {
@@ -1349,6 +1370,70 @@ testEnSerie('réponse sans PDF : le message dit que les colis ne sont PAS dépos
 serie = serie.then(() => { axiosModule.post = postReel; });
 
 // ── Point relais saisi à la main ─────────────────────────────────────────────
+console.log('\nRécapitulatif de remise (transporteurs sans bordereau)');
+
+const { decouperEnPages, buildDepositSlipPdf, lireExpediteur } = require('../src/services/carriers/depositSlipPdf');
+
+test('aucun colis ne se perd entre deux pages', () => {
+  // Un colis remis qui ne figure sur aucun papier, c'est exactement ce que le
+  // récapitulatif est censé empêcher.
+  // 36 à 43 : le cas qui a cassé le banc — tout tenait sur une page, mais la
+  // case de signature n'y tenait plus.
+  for (const n of [0, 1, 34, 35, 36, 40, 43, 44, 78, 300]) {
+    const pages = decouperEnPages(Array.from({ length: n }, (_, i) => i));
+    const lignes = pages.flatMap(p => p.lignes);
+    assert.strictEqual(lignes.length, n, `${n} colis : ${lignes.length} rendus`);
+    assert.deepStrictEqual(lignes, Array.from({ length: n }, (_, i) => i), `${n} colis : ordre changé`);
+    assert.ok(pages.length >= 1);
+    assert.strictEqual(pages.filter(p => p.derniere).length, 1, 'une seule dernière page');
+  }
+});
+
+test("l'expéditeur se lit dans les deux formes de contrat", () => {
+  // Colissimo range l'adresse autrement que Mondial Relay ; un gabarit par
+  // transporteur serait la garantie qu'ils divergent.
+  const mr = lireExpediteur({ sender: { lastname: 'SAS EMC', house_no: '580',
+    streetname: 'avenue de l aube rouge', postcode: '34170', city: 'Castelnau le lez' } });
+  assert.strictEqual(mr.nom, 'SAS EMC');
+  assert.deepStrictEqual(mr.lignes, ['580 avenue de l aube rouge', '34170 Castelnau le lez']);
+
+  const cl = lireExpediteur({ sender: { company_name: 'YOUVAPE', line2: '580 AV AUBE ROUGE',
+    zip_code: '34170', city: 'CASTELNAU LE LEZ' } });
+  assert.strictEqual(cl.nom, 'YOUVAPE');
+  assert.deepStrictEqual(cl.lignes, ['580 AV AUBE ROUGE', '34170 CASTELNAU LE LEZ']);
+
+  // Contrat sans expéditeur : le document sort quand même, au nom de la société.
+  assert.strictEqual(lireExpediteur({}).nom, 'SAS EMC');
+});
+
+const colisFactices = (n) => Array.from({ length: n }, (_, i) => ({
+  order_number: 1262500 + i, tracking_number: `19A${10000000 + i}`,
+  weight_g: 200 + i, created_at: new Date('2026-09-22T09:00:00Z')
+}));
+
+testEnSerie('le récapitulatif est un vrai PDF, paginé, et ne dépend d\'aucune API', async () => {
+  // Réponse simulée armée exprès : si le moindre appel partait, il serait ici.
+  simuler(200, Buffer.from(''));
+  const b64 = await buildDepositSlipPdf({
+    carrierLabel: 'Mondial Relay', number: 'MR-20260922-01', accountLabel: 'Prod',
+    settings: { sender: { lastname: 'SAS EMC', postcode: '34170', city: 'Castelnau le lez' } },
+    parcels: colisFactices(14), now: new Date('2026-09-22T16:51:00Z')
+  });
+  const pdf = await PDFDocument.load(Buffer.from(b64, 'base64'));
+  assert.strictEqual(pdf.getPageCount(), 1);
+  assert.strictEqual(appels.length, 0, 'un appel réseau est parti');
+});
+
+testEnSerie('80 colis tiennent sur plusieurs pages, sans rien perdre', async () => {
+  const b64 = await buildDepositSlipPdf({
+    carrierLabel: 'Mondial Relay', number: 'MR-20260922-02', accountLabel: 'Prod',
+    settings: {}, parcels: colisFactices(80)
+  });
+  const pdf = await PDFDocument.load(Buffer.from(b64, 'base64'));
+  assert.strictEqual(pdf.getPageCount(), decouperEnPages(colisFactices(80)).length);
+  assert.ok(pdf.getPageCount() > 1);
+});
+
 console.log('\nPoint relais saisi dans la fiche commande');
 
 const { relayNetworks, expectedNetwork, buildManualRelayPoint } = require('../src/services/carriers/relayPoints');

@@ -44,6 +44,24 @@ const aujourdhuiParis = () =>
   new Intl.DateTimeFormat('fr-CA', { timeZone: 'Europe/Paris' }).format(new Date());
 
 const SINCE_KEY = 'yv.bordereau.since';
+const CARRIER_KEY = 'yv.bordereau.carrier';
+
+/** Pour l'historique : les lignes anciennes ne portent que le code. */
+const LIBELLES_TRANSPORTEUR = {
+  colissimo: 'Colissimo',
+  mondial_relay: 'Mondial Relay',
+  chronopost: 'Chronopost',
+  laposte: 'La Poste',
+};
+
+/** Un transporteur PLUS un contrat : un bordereau ne mélange jamais les deux. */
+const cleSection = (s) => `${s.carrierCode}/${s.accountCode}`;
+
+/** Le contrat n'est nommé que s'il y en a plusieurs : sinon c'est du bruit. */
+const nomSection = (s, toutes = []) =>
+  toutes.filter(x => x.carrierCode === s.carrierCode).length > 1
+    ? `${s.carrierLabel} — contrat ${s.accountCode}`
+    : s.carrierLabel;
 
 const fmtDateHeure = (iso) => {
   if (!iso) return '—';
@@ -138,6 +156,10 @@ const BordereauApp = () => {
     catch { return aujourdhuiParis(); }
   });
   const [sections, setSections] = useState([]);
+  const [planned, setPlanned] = useState([]);
+  const [choix, setChoix] = useState(() => {
+    try { return localStorage.getItem(CARRIER_KEY) || null; } catch { return null; }
+  });
   const [loading, setLoading] = useState(false);
   const [erreur, setErreur] = useState(null);
   const [resultat, setResultat] = useState(null);
@@ -154,9 +176,19 @@ const BordereauApp = () => {
       const res = await axios.get(`${API_URL}/bordereaux/pending`, {
         ...authHeaders(token), params: { since: date },
       });
-      setSections(res.data.sections || []);
+      const liste = res.data.sections || [];
+      setSections(liste);
+      setPlanned(res.data.planned || []);
+      // Le choix enregistré prime, tant qu'il existe encore. Sinon on ouvre sur
+      // le transporteur qui a des colis : c'est celui qu'on vient déposer.
+      setChoix(prev => {
+        if (prev && liste.some(s2 => cleSection(s2) === prev)) return prev;
+        const avecColis = liste.find(s2 => s2.parcels.length > 0) || liste[0];
+        return avecColis ? cleSection(avecColis) : null;
+      });
     } catch (err) {
       setSections([]);
+      setPlanned([]);
       setErreur(err.response?.data?.userMessage || err.response?.data?.details
         || err.response?.data?.error || 'Erreur de chargement');
     } finally {
@@ -178,6 +210,13 @@ const BordereauApp = () => {
   }, [token]);
 
   useEffect(() => { chargerPending(since); chargerHistorique(); }, [chargerPending, chargerHistorique, since]);
+
+  const changerTransporteur = (valeur) => {
+    if (String(valeur).startsWith('planned:')) return;
+    setChoix(valeur);
+    setResultat(null);
+    try { localStorage.setItem(CARRIER_KEY, valeur); } catch { /* navigation privée */ }
+  };
 
   const changerDate = (valeur) => {
     setSince(valeur);
@@ -248,6 +287,7 @@ const BordereauApp = () => {
   }, [token]);
 
   const totalADeposer = sections.reduce((n, s) => n + s.parcels.length, 0);
+  const section = sections.find(s2 => cleSection(s2) === choix) || null;
 
   return (
     <AppShell currentPath="/bordereau">
@@ -272,7 +312,9 @@ const BordereauApp = () => {
           <p style={{ margin: '0 0 22px', color: C.greyT, fontSize: 13.5, lineHeight: 1.5 }}>
             Le papier que le chauffeur signe en emportant les colis. Il porte les colis
             étiquetés <strong>par l'app</strong> depuis la date choisie et <strong>pas encore déposés</strong> —
-            ceux déposés via BMS n'y figurent jamais.
+            ceux déposés via BMS n'y figurent jamais. Colissimo émet son bordereau ;
+            pour les transporteurs qui n'en produisent pas, l'app édite un récapitulatif
+            de remise à faire signer.
           </p>
 
           {/* Date de départ */}
@@ -323,21 +365,62 @@ const BordereauApp = () => {
             </Bandeau>
           )}
 
-          {/* Une section par transporteur sachant produire un bordereau */}
+          {/* Le choix du transporteur. Un menu plutôt que des sections empilées :
+              on dépose chez un transporteur à la fois, et les colis d'un autre
+              au milieu de l'écran ne font que brouiller le comptage. */}
           {sections.length === 0 && !loading && (
             <Bandeau ton="info">
-              Aucun transporteur ne produit de bordereau pour l'instant. Mondial Relay et la
-              lettre suivie n'en ont pas ; Chronopost arrivera avec le lot 3.
+              Aucun transporteur ne produit de bordereau pour l'instant.
             </Bandeau>
           )}
 
-          {sections.map(section => {
-            const cle = `${section.carrierCode}/${section.accountCode}`;
-            // Le contrat n'est affiché que s'il y en a plusieurs chez ce
-            // transporteur : sinon c'est du bruit (« production »).
-            const plusieursContrats = sections.filter(s2 => s2.carrierCode === section.carrierCode).length > 1;
-            return (
-            <section key={cle} style={{
+          {sections.length > 0 && (
+            <div style={{
+              background: C.white, border: `1px solid ${C.greyB}`, borderRadius: 12,
+              padding: '16px 18px', marginBottom: 20,
+              display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap',
+            }}>
+              <label style={{ fontSize: 13.5, fontWeight: 600, color: C.dark }}>Transporteur</label>
+              <select
+                value={choix || ''}
+                onChange={e => changerTransporteur(e.target.value)}
+                style={{
+                  padding: '8px 12px', borderRadius: 8, border: `1px solid ${C.greyB}`,
+                  fontSize: 14, fontFamily: 'inherit', color: C.dark, background: C.white,
+                  minWidth: 260,
+                }}
+              >
+                {sections.map(s2 => (
+                  <option key={cleSection(s2)} value={cleSection(s2)}>
+                    {nomSection(s2, sections)} — {s2.parcels.length} colis
+                  </option>
+                ))}
+                {/* Annoncés, mais sans colis : dire pourquoi vaut mieux que
+                    laisser chercher. */}
+                {planned.map(p => (
+                  <option key={p.carrierCode} value={`planned:${p.carrierCode}`} disabled>
+                    {p.carrierLabel} — pas encore étiqueté par l'app
+                  </option>
+                ))}
+              </select>
+              {section && (
+                <span style={{ fontSize: 12.5, color: C.greyT }}>
+                  {section.kind === 'local'
+                    ? "Récapitulatif produit par l'app : ce transporteur n'émet pas de bordereau."
+                    : 'Bordereau émis par le transporteur.'}
+                </span>
+              )}
+            </div>
+          )}
+
+          {planned.length > 0 && (
+            <div style={{ fontSize: 12.5, color: C.greyT, margin: '-8px 0 18px' }}>
+              {planned.map(p => <div key={p.carrierCode}>{p.carrierLabel} : {p.reason}</div>)}
+            </div>
+          )}
+
+          {section && (
+            <section style={{
               background: C.white, border: `1px solid ${C.greyB}`, borderRadius: 12,
               marginBottom: 20, overflow: 'hidden',
             }}>
@@ -346,7 +429,7 @@ const BordereauApp = () => {
                 display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap',
               }}>
                 <h2 style={{ margin: 0, fontSize: 16, fontWeight: 800, color: C.dark }}>
-                  {section.carrierLabel}
+                  {nomSection(section, sections)}
                 </h2>
                 <span style={{
                   fontSize: 12, fontWeight: 700, color: C.teal, background: C.tealL,
@@ -355,15 +438,14 @@ const BordereauApp = () => {
                   {section.parcels.length} colis
                   {section.bordereauCount > 1 && ` → ${section.bordereauCount} bordereaux`}
                 </span>
-                {plusieursContrats && (
-                  <span style={{ fontSize: 12, color: C.greyT }}>contrat {section.accountCode}</span>
-                )}
                 <div style={{ marginLeft: 'auto' }}>
                   <Btn
                     onClick={() => setConfirmation(section)}
-                    disabled={section.parcels.length === 0 || enCours === cle}
+                    disabled={section.parcels.length === 0 || enCours === cleSection(section)}
                   >
-                    {enCours === cle ? 'Génération…' : 'Générer le bordereau'}
+                    {enCours === cleSection(section)
+                      ? 'Génération…'
+                      : (section.kind === 'local' ? 'Générer le récapitulatif' : 'Générer le bordereau')}
                   </Btn>
                 </div>
               </header>
@@ -399,8 +481,7 @@ const BordereauApp = () => {
                 </div>
               )}
             </section>
-            );
-          })}
+          )}
 
           {/* Historique */}
           <h2 style={{
@@ -437,7 +518,7 @@ const BordereauApp = () => {
                       <Fragment key={b.id}>
                         <tr style={{ background: i % 2 ? C.zebra : C.white }}>
                           <Td bold>{b.bordereau_number}</Td>
-                          <Td color={C.greyT}>{b.carrier_code}</Td>
+                          <Td color={C.greyT}>{LIBELLES_TRANSPORTEUR[b.carrier_code] || b.carrier_code}</Td>
                           <Td align="right">{b.parcel_count}</Td>
                           <Td color={C.greyT}>{fmtDateHeure(b.created_at)}</Td>
                           <Td color={C.greyT}>{b.created_by_name || '—'}</Td>
@@ -498,22 +579,32 @@ const BordereauApp = () => {
             width: 'min(520px, 100%)', boxShadow: '0 24px 60px rgba(0,0,0,0.32)',
           }}>
             <h3 style={{ margin: '0 0 12px', fontSize: 18, fontWeight: 800, color: C.dark }}>
-              Générer le bordereau {confirmation.carrierLabel} ?
+              {confirmation.kind === 'local' ? 'Générer le récapitulatif' : 'Générer le bordereau'}
+              {' '}{confirmation.carrierLabel} ?
             </h3>
             <p style={{ margin: '0 0 8px', fontSize: 14, color: C.dark, lineHeight: 1.55 }}>
               {confirmation.parcels.length} colis
               {confirmation.bordereauCount > 1
                 ? ` → ${confirmation.bordereauCount} bordereaux (${confirmation.maxParcels} colis maximum par bordereau chez ${confirmation.carrierLabel}). Chacun a son numéro et s'imprime séparément.`
-                : ' → 1 bordereau.'}
+                : (confirmation.kind === 'local' ? ' → 1 récapitulatif.' : ' → 1 bordereau.')}
             </p>
+            {confirmation.kind === 'local' && (
+              <p style={{ margin: '0 0 8px', fontSize: 13, color: C.greyT, lineHeight: 1.55 }}>
+                {confirmation.carrierLabel} n'émet pas de bordereau par API : le document est
+                produit par l'app — la liste des colis et une case pour la signature du
+                chauffeur. Il prouve la remise, il ne vient pas de chez eux.
+              </p>
+            )}
             <p style={{ margin: '0 0 20px', fontSize: 13, color: C.greyT, lineHeight: 1.55 }}>
-              Tous les colis affichés partent sur le bordereau. Ils n'y reviendront plus :
+              Tous les colis affichés partent sur le document. Ils n'y reviendront plus :
               un colis ne figure que dans un seul bordereau.
             </p>
             <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
               <Btn variant="ghost" onClick={() => setConfirmation(null)}>Annuler</Btn>
               <Btn onClick={() => genererMaintenant(confirmation)}>
-                Générer {confirmation.bordereauCount > 1 ? `les ${confirmation.bordereauCount} bordereaux` : 'le bordereau'}
+                Générer {confirmation.bordereauCount > 1
+                  ? `les ${confirmation.bordereauCount} bordereaux`
+                  : (confirmation.kind === 'local' ? 'le récapitulatif' : 'le bordereau')}
               </Btn>
             </div>
           </div>

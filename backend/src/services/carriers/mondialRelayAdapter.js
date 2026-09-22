@@ -436,6 +436,14 @@ module.exports = assertAdapter({
   bmsShipmentTitle: 'Mondial Relay',
   // 24R (points relais ET consignes) et 24L passent par un point ; HOM et LCC non.
   requiresRelayPoint: (deliveryMode) => ['24R', '24L'].includes(deliveryMode || '24R'),
+  // Remise des colis : Mondial Relay n'émet AUCUN bordereau par API. Relevé le
+  // 22/09/2026 sur leur WSDL public (api.mondialrelay.com/Web_Services.asmx) :
+  // 15 opérations — étiquettes, points relais, suivi, stats — et pas une de
+  // bordereau ; l'API Connect, elle, ne fait que créer des expéditions. Leur
+  // bordereau de remise vit dans l'extranet. L'app produit donc le sien, qui
+  // prouve la remise au chauffeur sans prétendre venir de chez eux.
+  // Pas de découpage : le récapitulatif pagine.
+  depositSlip: { kind: 'local', maxParcels: null, numberPrefix: 'MR' },
   resolveWeight,
   createLabel,
   cancelLabel,
