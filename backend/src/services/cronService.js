@@ -521,6 +521,48 @@ const setupBmsTagRetryCron = () => {
   console.log('Cron BMS tag retry configure: toutes les 15 min, 9h-19h, lun-ven');
 };
 
+// ==================== CONFIRMATION D'EXPEDITION BMS ====================
+
+const bmsShipmentConfirmService = require('./bmsShipmentConfirmService');
+
+let bmsShipmentRetryCronJob = null;
+let bmsShipmentDigestCronJob = null;
+
+const runBmsShipmentRetry = async () => {
+  try {
+    await bmsShipmentConfirmService.retryPendingConfirmations();
+  } catch (error) {
+    console.error('Erreur cron reprise confirmation expedition BMS:', error.message);
+  }
+};
+
+const runBmsShipmentDigest = async () => {
+  try {
+    await bmsShipmentConfirmService.reportStuckConfirmations();
+  } catch (error) {
+    console.error('Erreur cron synthese expeditions non confirmees:', error.message);
+  }
+};
+
+const setupBmsShipmentConfirmCron = () => {
+  [bmsShipmentRetryCronJob, bmsShipmentDigestCronJob].forEach((j) => { if (j) j.stop(); });
+
+  // Reprise toutes les 15 min pendant les heures de packing. Inutile la nuit :
+  // aucune etiquette n'est emise, et la reprise ne peut rien sur une commande
+  // que BMS n'a pas encore importee.
+  bmsShipmentRetryCronJob = cron.schedule('*/15 8-20 * * 1-6', runBmsShipmentRetry, {
+    timezone: 'Europe/Paris'
+  });
+
+  // UNE synthese en fin de journee, au lieu d'un mail par echec : c'est
+  // precisement le mail-par-echec qui a laisse passer la commande 1262418.
+  bmsShipmentDigestCronJob = cron.schedule('45 18 * * *', runBmsShipmentDigest, {
+    timezone: 'Europe/Paris'
+  });
+
+  console.log('Cron confirmation expedition BMS configure: reprise */15 8h-20h lun-sam, synthese 18h45 (Europe/Paris)');
+};
+
 // ─── Cron envoi automatique de rapports par email ───────────────────────────
 let reportEmailDailyJob = null;
 let reportEmailWeeklyJob = null;
@@ -804,6 +846,7 @@ module.exports = {
   setupSavAutomationsCron,
   setupProductDbSyncCron,
   setupBmsTagRetryCron,
+  setupBmsShipmentConfirmCron,
   setupReportEmailCron,
   setupStockValuationSnapshotCron,
   setupDraftStockReportCron,

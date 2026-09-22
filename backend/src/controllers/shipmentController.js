@@ -18,10 +18,9 @@
  */
 
 const pool = require('../config/database');
-const bmsApiModel = require('../models/bmsApiModel');
 const shipmentLabelModel = require('../models/shipmentLabelModel');
 const shippingMethodMapModel = require('../models/shippingMethodMapModel');
-const { sendAlert } = require('../services/alertService');
+const bmsShipmentConfirmService = require('../services/bmsShipmentConfirmService');
 const { getAdapter } = require('../services/carriers');
 const { getAccount } = require('../services/carriers/accounts');
 const { stampOrderNumber } = require('../services/carriers/labelPdf');
@@ -39,10 +38,18 @@ const { customsDocumentFileName } = require('../services/carriers/contract');
  * @param {string|number} input.orderNumber
  * @param {import('../services/carriers/contract').Receiver} input.receiver
  * @param {?number} input.packedBy
+ * @param {function({adapter: object, trackingNumber: ?string}): boolean} [input.expectsBmsConfirmation]
+ *        Dit si l'appelant confirmera l'expédition dans BMS juste après. C'est
+ *        ce qui décide si l'étiquette part en 'pending' — donc si la reprise
+ *        automatique a le droit de la rejouer. Par défaut non : une étiquette
+ *        dont personne n'attend de confirmation ne doit jamais être rejouée.
  * @returns {Promise<{labelId: number, carrierOrderId: ?string, trackingNumber: ?string, pdfBase64: string,
  *                    cn23Base64: ?string, bmsShipmentTitle: ?string, weightGrams: number}>}
  */
-const createShipmentLabel = async ({ adapter, orderNumber, receiver, packedBy, accountCode, options = {} }) => {
+const createShipmentLabel = async ({
+  adapter, orderNumber, receiver, packedBy, accountCode, options = {},
+  expectsBmsConfirmation = () => false
+}) => {
   // Avant de dépenser une étiquette : s'assurer qu'on saura l'enregistrer — CN23
   // comprise quand le transporteur peut en rendre une.
   await shipmentLabelModel.assertSchemaReady({ cn23: adapter.producesCustomsDocuments === true });
@@ -85,7 +92,12 @@ const createShipmentLabel = async ({ adapter, orderNumber, receiver, packedBy, a
     weightGrams,
     packedBy,
     pdfBase64,
-    cn23Base64
+    cn23Base64,
+    bmsShipStatus: expectsBmsConfirmation({ adapter, trackingNumber }) ? 'pending' : 'skipped',
+    // Exactement le libellé que la confirmation va envoyer : c'est lui que la
+    // reprise renverra, pour ne pas étiqueter un point de retrait Colissimo en
+    // « Domicile sans signature ».
+    bmsShipTitle: bmsShipmentTitle || adapter.bmsShipmentTitle
   });
 
   return { labelId: label.id, carrierOrderId, trackingNumber, pdfBase64, cn23Base64, bmsShipmentTitle, weightGrams };
@@ -94,33 +106,27 @@ const createShipmentLabel = async ({ adapter, orderNumber, receiver, packedBy, a
 /**
  * Confirme l'expédition dans BMS. Volontairement non bloquant : l'étiquette est
  * déjà achetée et imprimée, refuser la réponse au packing parce que BMS tousse
- * ne ferait qu'immobiliser le colis. L'échec part en alerte mail pour être
- * rattrapé à la main.
+ * ne ferait qu'immobiliser le colis.
+ *
+ * L'échec n'est plus un mail et rien d'autre : il est écrit sur l'étiquette,
+ * repris toutes les 15 min par le cron, et affiché dans l'écran des étiquettes
+ * (cf. services/bmsShipmentConfirmService).
+ *
+ * @param {object} adapter
+ * @param {?number} labelId - l'étiquette à marquer ; c'est elle qui rend
+ *        l'échec rattrapable
+ * @param {string|number} orderNumber
+ * @param {?string} trackingNumber
+ * @param {?string} title - Colissimo rend un libellé par étiquette (domicile,
+ *        signature, point de retrait) ; les autres s'en tiennent au leur.
  */
-const confirmShipmentInBms = async (adapter, orderNumber, trackingNumber, title = null) => {
-  try {
-    // `tracking_number` n'est pas obligatoire côté BMS (le champ `tracking` est
-    // même déclaré nullable). Un retrait magasin n'a aucun numéro de suivi :
-    // on envoie le titre seul plutôt que d'inventer un numéro qui polluerait
-    // les recherches de colis.
-    await bmsApiModel.apiCall(`/sales/order/${orderNumber}/ship?ref=true`, 'POST', {
-      tracking: {
-        // Colissimo rend un libellé par étiquette (domicile, signature, point de
-        // retrait) ; les autres s'en tiennent au leur.
-        title: title || adapter.bmsShipmentTitle,
-        ...(trackingNumber ? { tracking_number: trackingNumber } : {})
-      }
-    });
-    console.log('[BMS] Expédition confirmée pour commande', orderNumber,
-      'tracking:', trackingNumber || '(sans numéro de suivi)');
-  } catch (bmsError) {
-    console.error('[BMS] Erreur confirmation expédition commande', orderNumber, ':', bmsError.message);
-    sendAlert(
-      `BUG VPS : commande N°${orderNumber} non confirmee en expedition BMS`,
-      `Bonjour,\n\nL'expedition de la commande N°${orderNumber} avec le numero de suivi : ${trackingNumber || '(aucun - retrait magasin)'} n'a pas pu etre confirmee a BMS pour la raison suivante :\n\n${bmsError.message}\n\nPensez a corriger cela.`
-    );
-  }
-};
+const confirmShipmentInBms = (adapter, labelId, orderNumber, trackingNumber, title = null) =>
+  bmsShipmentConfirmService.confirmNow({
+    labelId,
+    orderNumber,
+    trackingNumber,
+    title: title || adapter.bmsShipmentTitle
+  });
 
 /**
  * Charge la commande et son point relais.
@@ -231,7 +237,7 @@ const generateForOrder = async (req, res) => {
       });
     }
 
-    const { carrierOrderId, trackingNumber, pdfBase64, cn23Base64, bmsShipmentTitle, weightGrams } = await createShipmentLabel({
+    const { labelId, carrierOrderId, trackingNumber, pdfBase64, cn23Base64, bmsShipmentTitle, weightGrams } = await createShipmentLabel({
       adapter,
       orderNumber,
       accountCode: mapping.accountCode,
@@ -241,14 +247,17 @@ const generateForOrder = async (req, res) => {
         deliveryMode: mapping.deliveryMode,
         relayPoint: order.relay_point || null,
         shippingMethod: order.shipping_method
-      }
+      },
+      // Même condition que la confirmation ci-dessous, et pour la même raison :
+      // elle porte sur l'adaptateur, pas sur la présence d'un numéro de suivi.
+      expectsBmsConfirmation: () => adapter.confirmsShipmentInBms !== false
     });
 
     // Toute étiquette émise sort du stock : BMS doit le savoir, y compris pour
     // un retrait magasin, qui n'a pourtant aucun numéro de suivi. La condition
     // porte sur l'adaptateur, pas sur la présence d'un numéro.
     if (adapter.confirmsShipmentInBms !== false) {
-      await confirmShipmentInBms(adapter, orderNumber, trackingNumber, bmsShipmentTitle);
+      await confirmShipmentInBms(adapter, labelId, orderNumber, trackingNumber, bmsShipmentTitle);
     }
 
     res.json({
@@ -348,7 +357,7 @@ const makeCarrierHandlers = (carrierCode) => {
         });
       }
 
-      const { carrierOrderId, trackingNumber, pdfBase64 } = await createShipmentLabel({
+      const { labelId, carrierOrderId, trackingNumber, pdfBase64 } = await createShipmentLabel({
         adapter,
         orderNumber,
         receiver: {
@@ -361,11 +370,13 @@ const makeCarrierHandlers = (carrierCode) => {
           phone: order.shipping_phone,
           email: order.billing_email
         },
-        packedBy: req.user?.id || null
+        packedBy: req.user?.id || null,
+        // Même condition que la confirmation ci-dessous.
+        expectsBmsConfirmation: ({ trackingNumber: suivi }) => Boolean(suivi)
       });
 
       if (trackingNumber) {
-        await confirmShipmentInBms(adapter, orderNumber, trackingNumber);
+        await confirmShipmentInBms(adapter, labelId, orderNumber, trackingNumber);
       }
 
       res.json({
@@ -497,6 +508,25 @@ const makeCarrierHandlers = (carrierCode) => {
     }
   };
 
+  /**
+   * POST /labels/:id/confirm-bms — rejoue la confirmation d'expédition.
+   *
+   * Pour l'étiquette qu'aucune reprise automatique n'a réussi à confirmer : soit
+   * BMS a fini par accepter, soit l'expédition a été saisie à la main dans BMS
+   * et il ne reste qu'à la classer. Le service lit BMS avant d'écrire, donc ce
+   * bouton ne peut pas créer une seconde expédition, quel que soit le nombre de
+   * clics.
+   */
+  const confirmBmsShipment = async (req, res) => {
+    try {
+      const resultat = await bmsShipmentConfirmService.confirmLabelById(req.params.id);
+      res.json({ success: true, ...resultat });
+    } catch (error) {
+      console.error(`[${adapter.logTag}] Erreur confirmBmsShipment:`, error.message);
+      res.status(error.statusCode || 500).json({ error: error.message });
+    }
+  };
+
   /** POST /labels/:id/cancel */
   const cancelLabel = async (req, res) => {
     try {
@@ -574,7 +604,7 @@ const makeCarrierHandlers = (carrierCode) => {
     }
   };
 
-  return { generateLabel, generateManualLabel, listLabels, cancelLabel, getLabelPdf };
+  return { generateLabel, generateManualLabel, listLabels, cancelLabel, getLabelPdf, confirmBmsShipment };
 };
 
 // loadOrderForLabel et receiverFromOrder sont exportés pour la répétition

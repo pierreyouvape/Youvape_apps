@@ -90,6 +90,7 @@ const PackingApp = () => {
   const [cancelConfirm, setCancelConfirm] = useState(null); // label id to confirm cancel
   const [cancelLoading, setCancelLoading] = useState(false);
   const [reprintLoading, setReprintLoading] = useState(null); // label id en cours
+  const [bmsConfirmLoading, setBmsConfirmLoading] = useState(null); // label id en cours
   const [hoveredImage, setHoveredImage] = useState(null); // { url, x, y }
   // Transporteur résolu au scan : sert au bandeau coloré ET au blocage.
   const [carrier, setCarrier] = useState(null);
@@ -520,6 +521,29 @@ const PackingApp = () => {
     }
   }, [token, downloadPdf]);
 
+  /**
+   * Rejoue la confirmation d'expédition dans BMS pour une étiquette restée
+   * « non confirmée ». Le backend relit la commande dans BMS avant d'écrire :
+   * cliquer deux fois ne crée pas deux expéditions.
+   */
+  const confirmBmsShipment = useCallback(async (label) => {
+    setBmsConfirmLoading(label.id);
+    try {
+      const res = await axios.post(`${API_URL}/laposte/labels/${label.id}/confirm-bms`, {}, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      alert(res.data?.message || 'Expédition confirmée dans BMS.');
+      loadLabels();
+    } catch (err) {
+      alert(err.response?.data?.error || 'BMS a refusé la confirmation.');
+      // La tentative a été enregistrée (compteur, dernière erreur) : on recharge
+      // pour que la ligne dise la vérité.
+      loadLabels();
+    } finally {
+      setBmsConfirmLoading(null);
+    }
+  }, [token, loadLabels]);
+
   // --- Expédition manuelle (regénération d'étiquette / envoi hors commande) ---
 
   const openManualShipment = useCallback(() => {
@@ -929,7 +953,8 @@ const PackingApp = () => {
                       <th style={{ padding: '10px 12px', textAlign: 'left', fontSize: '13px', color: '#666' }}>N° suivi</th>
                       <th style={{ padding: '10px 12px', textAlign: 'center', fontSize: '13px', color: '#666' }}>Date</th>
                       <th style={{ padding: '10px 12px', textAlign: 'left', fontSize: '13px', color: '#666' }}>Packer</th>
-                      <th style={{ padding: '10px 12px', textAlign: 'center', fontSize: '13px', color: '#666', width: '180px' }}>Actions</th>
+                      <th style={{ padding: '10px 12px', textAlign: 'center', fontSize: '13px', color: '#666' }}>BMS</th>
+                      <th style={{ padding: '10px 12px', textAlign: 'center', fontSize: '13px', color: '#666', width: '260px' }}>Actions</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -937,7 +962,11 @@ const PackingApp = () => {
                       <tr
                         key={label.id}
                         style={{
-                          backgroundColor: label.status === 'cancelled' ? '#f8d7da' : 'white',
+                          // L'ambre signale un colis parti que BMS ignore : son
+                          // stock est faux tant que ce n'est pas régularisé.
+                          backgroundColor: label.status === 'cancelled'
+                            ? '#f8d7da'
+                            : label.bms_ship_status === 'pending' ? '#fff8e1' : 'white',
                           borderBottom: '1px solid #eee'
                         }}
                       >
@@ -952,6 +981,31 @@ const PackingApp = () => {
                         </td>
                         <td style={{ padding: '10px 12px', fontSize: '13px', color: '#666' }}>
                           {label.packer_name || '-'}
+                        </td>
+                        <td style={{ padding: '10px 12px', textAlign: 'center' }}>
+                          {label.status !== 'cancelled' && label.bms_ship_status === 'pending' ? (
+                            <span
+                              title={`${label.bms_attempts || 0} tentative(s). Derniere erreur : ${label.bms_last_error || 'aucune'}`}
+                              style={{
+                                display: 'inline-block',
+                                padding: '3px 8px',
+                                borderRadius: '10px',
+                                backgroundColor: '#fd7e14',
+                                color: 'white',
+                                fontSize: '11px',
+                                fontWeight: '700',
+                                whiteSpace: 'nowrap'
+                              }}
+                            >
+                              Non confirme
+                            </span>
+                          ) : label.bms_ship_status === 'confirmed' ? (
+                            <span title="Expedition enregistree dans BMS" style={{ color: '#198754', fontSize: '14px', fontWeight: '700' }}>OK</span>
+                          ) : label.bms_ship_status === 'manual' ? (
+                            <span title="Regularise hors application" style={{ color: '#6c757d', fontSize: '12px' }}>Regularise</span>
+                          ) : (
+                            <span title="Aucune confirmation BMS attendue pour cette etiquette" style={{ color: '#ced4da' }}>-</span>
+                          )}
                         </td>
                         <td style={{ padding: '10px 12px', textAlign: 'center' }}>
                           {label.status === 'cancelled' ? (
@@ -975,6 +1029,27 @@ const PackingApp = () => {
                               >
                                 {reprintLoading === label.id ? '...' : 'Imprimer'}
                               </button>
+                              {label.bms_ship_status === 'pending' && (
+                                <button
+                                  onClick={() => confirmBmsShipment(label)}
+                                  disabled={bmsConfirmLoading === label.id}
+                                  title="Rejouer la confirmation d'expedition dans BMS"
+                                  style={{
+                                    padding: '5px 10px',
+                                    backgroundColor: '#fd7e14',
+                                    color: 'white',
+                                    border: 'none',
+                                    borderRadius: '5px',
+                                    cursor: bmsConfirmLoading === label.id ? 'default' : 'pointer',
+                                    fontSize: '12px',
+                                    fontWeight: '600',
+                                    opacity: bmsConfirmLoading === label.id ? 0.6 : 1,
+                                    whiteSpace: 'nowrap'
+                                  }}
+                                >
+                                  {bmsConfirmLoading === label.id ? '...' : 'Confirmer BMS'}
+                                </button>
+                              )}
                               <button
                                 onClick={() => setCancelConfirm(label)}
                                 disabled={!label.cancellable}

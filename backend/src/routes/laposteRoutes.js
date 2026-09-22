@@ -20,6 +20,10 @@ router.get('/labels', checkPackingRead, laposteController.listLabels);
 // Annuler une étiquette
 router.post('/labels/:id/cancel', checkPackingRead, laposteController.cancelLabel);
 
+// Rejouer la confirmation d'expédition dans BMS (étiquette restée non confirmée).
+// Même droit que l'annulation : c'est une action du poste de packing.
+router.post('/labels/:id/confirm-bms', checkPackingRead, laposteController.confirmBmsShipment);
+
 // Récupérer le PDF d'une étiquette existante
 router.get('/labels/:id/pdf', checkPackingRead, laposteController.getLabelPdf);
 

@@ -36,14 +36,41 @@ const ORDER_NUMBER_MAX_LENGTH = 20;
  */
 let schemaReady = false;
 let cn23Ready = false;
-const assertSchemaReady = async ({ cn23 = false } = {}) => {
-  if (schemaReady && (!cn23 || cn23Ready)) return;
+let bmsReady = false;
 
+const probeSchema = async () => {
   const { rows: [etat] } = await pool.query(
     `SELECT to_regclass('public.shipment_labels') IS NOT NULL AS ok,
             EXISTS (SELECT 1 FROM information_schema.columns
-                    WHERE table_name = 'shipment_labels' AND column_name = 'cn23_data') AS cn23`
+                    WHERE table_name = 'shipment_labels' AND column_name = 'cn23_data') AS cn23,
+            EXISTS (SELECT 1 FROM information_schema.columns
+                    WHERE table_name = 'shipment_labels' AND column_name = 'bms_ship_status') AS bms`
   );
+  if (etat.ok) schemaReady = true;
+  if (etat.cn23) cn23Ready = true;
+  if (etat.bms) bmsReady = true;
+  return etat;
+};
+
+/**
+ * Les colonnes de suivi de confirmation BMS sont-elles là ?
+ *
+ * Mémorise le succès, jamais l'échec : la reprise doit pouvoir démarrer dès que
+ * la migration est passée, sans attendre un redémarrage du backend. Une sonde
+ * toutes les 15 minutes, c'est gratuit.
+ *
+ * @returns {Promise<boolean>}
+ */
+const hasBmsColumns = async () => {
+  if (bmsReady) return true;
+  const etat = await probeSchema();
+  return Boolean(etat.bms);
+};
+
+const assertSchemaReady = async ({ cn23 = false } = {}) => {
+  if (schemaReady && (!cn23 || cn23Ready)) return;
+
+  const etat = await probeSchema();
 
   if (!etat.ok) {
     const err = new Error(
@@ -53,9 +80,6 @@ const assertSchemaReady = async ({ cn23 = false } = {}) => {
     err.statusCode = 500;
     throw err;
   }
-  schemaReady = true;
-  if (etat.cn23) cn23Ready = true;
-
   if (cn23 && !etat.cn23) {
     const err = new Error(
       "Colonne shipment_labels.cn23_data absente : appliquer la migration " +
@@ -128,7 +152,8 @@ const findPdfById = async (id) => {
  */
 const insert = async ({
   carrierCode, accountCode, methodCode, orderNumber, trackingNumber,
-  carrierOrderId, weightGrams, packedBy, pdfBase64, cn23Base64 = null
+  carrierOrderId, weightGrams, packedBy, pdfBase64, cn23Base64 = null,
+  bmsShipStatus = null, bmsShipTitle = null
 }) => {
   const colonnes = ['carrier_code', 'account_code', 'method_code', 'order_number', 'tracking_number',
     'carrier_order_id', 'weight_g', 'packed_by', 'pdf_data'];
@@ -140,6 +165,18 @@ const insert = async ({
   if (cn23Base64) {
     colonnes.push('cn23_data');
     valeurs.push(cn23Base64);
+  }
+
+  // Idem pour l'état de confirmation BMS : tant que la migration n'est pas
+  // passée, l'étiquette s'enregistre sans, et la reprise reste en sommeil.
+  // Le défaut de la colonne ('skipped') couvre ce cas comme il couvre les
+  // étiquettes qui n'ont jamais eu à être confirmées.
+  if (bmsShipStatus && await hasBmsColumns()) {
+    colonnes.push('bms_ship_status');
+    valeurs.push(bmsShipStatus);
+    // Le libellé exact envoyé à BMS, pour que la reprise renvoie le même.
+    colonnes.push('bms_ship_title');
+    valeurs.push(bmsShipTitle ? String(bmsShipTitle).slice(0, 120) : null);
   }
 
   const result = await pool.query(
@@ -162,7 +199,12 @@ const listRecent = async (limit = 100) => {
     `SELECT l.id, l.carrier_code, l.account_code, l.method_code, l.order_number,
             l.tracking_number, l.carrier_order_id, l.status, l.weight_g,
             l.created_at, l.cancelled_at,
-            u.name AS packer_name
+            u.name AS packer_name,
+            -- Via to_jsonb, comme cn23_data : la liste des étiquettes doit
+            -- s'afficher sur une base où la migration n'a pas encore tourné.
+            to_jsonb(l)->>'bms_ship_status' AS bms_ship_status,
+            to_jsonb(l)->>'bms_last_error'  AS bms_last_error,
+            (to_jsonb(l)->>'bms_attempts')::int AS bms_attempts
      FROM shipment_labels l
      LEFT JOIN users u ON u.id = l.packed_by
      ORDER BY l.created_at DESC
@@ -181,6 +223,18 @@ const markCancelled = async (id) => {
     `UPDATE shipment_labels SET status = 'cancelled', cancelled_at = NOW() WHERE id = $1`,
     [id]
   );
+
+  // Le colis ne part plus : il n'y a plus rien à confirmer dans BMS, et la
+  // reprise n'a pas à s'acharner (ni la synthèse du soir à le signaler). Le
+  // packing réémettra une étiquette, qui repartira en 'pending' pour son compte.
+  if (await hasBmsColumns()) {
+    await pool.query(
+      `UPDATE shipment_labels
+          SET bms_ship_status = 'skipped'
+        WHERE id = $1 AND bms_ship_status = 'pending'`,
+      [id]
+    );
+  }
 };
 
 /**
@@ -212,6 +266,130 @@ const findForOrderNumber = async (orderNumber, trackingNumber = null) => {
   return rows;
 };
 
+/* ── Confirmation d'expédition dans BMS ──────────────────────────────────────
+ *
+ * Toutes ces fonctions rendent un résultat vide (ou ne font rien) tant que la
+ * migration add_bms_confirmation_to_shipment_labels.sql n'est pas passée. La
+ * reprise reste donc en sommeil sur une base non migrée, au lieu de planter
+ * toutes les 15 minutes.
+ */
+
+/** Les champs dont la reprise a besoin pour rejouer une confirmation. */
+const BMS_CONFIRM_FIELDS = `l.id, l.order_number, l.tracking_number, l.carrier_code,
+            l.status, l.created_at, l.bms_ship_status, l.bms_ship_title, l.bms_attempts,
+            l.bms_last_attempt_at, l.bms_last_error`;
+
+/**
+ * Passe l'étiquette en confirmée.
+ *
+ * `bms_last_error` est conservé : après un succès tardif, c'est lui qui dit
+ * pourquoi la première tentative avait échoué.
+ *
+ * @param {number|string} id
+ * @param {{status?: 'confirmed'|'manual'}} [options] - 'manual' = régularisé
+ *        hors app (bouton de l'écran, ou expédition déjà présente dans BMS).
+ */
+const markBmsConfirmed = async (id, { status = 'confirmed' } = {}) => {
+  if (!(await hasBmsColumns())) return;
+  await pool.query(
+    `UPDATE shipment_labels
+        SET bms_ship_status = $2, bms_confirmed_at = NOW()
+      WHERE id = $1`,
+    [id, status]
+  );
+};
+
+/**
+ * Enregistre une tentative ratée. L'étiquette reste en 'pending' : c'est
+ * précisément ce qui la fera reprendre au prochain passage du cron.
+ *
+ * @param {number|string} id
+ * @param {string} message - message d'erreur BMS, tronqué à 1000 caractères
+ */
+const recordBmsFailure = async (id, message) => {
+  if (!(await hasBmsColumns())) return;
+  await pool.query(
+    `UPDATE shipment_labels
+        SET bms_ship_status = 'pending',
+            bms_attempts = bms_attempts + 1,
+            bms_last_attempt_at = NOW(),
+            bms_last_error = $2
+      WHERE id = $1`,
+    [id, String(message || '').slice(0, 1000)]
+  );
+};
+
+/**
+ * Étiquettes à reprendre.
+ *
+ * Bornée à `maxAgeDays` : au-delà, l'état de la commande dans BMS a bougé
+ * (réceptions, avoirs, expédition saisie à la main) et rejouer un /ship n'a plus
+ * de sens. Elles restent en 'pending' et continuent d'apparaître à l'écran et
+ * dans la synthèse — c'est un humain qui doit trancher, pas une 300e tentative.
+ *
+ * Les étiquettes annulées sont écartées : le colis n'est pas parti.
+ *
+ * @param {{maxAgeDays?: number, limit?: number}} [options]
+ * @returns {Promise<object[]>} de la plus ancienne à la plus récente
+ */
+const listPendingBmsConfirmations = async ({ maxAgeDays = 7, limit = 100 } = {}) => {
+  if (!(await hasBmsColumns())) return [];
+  const { rows } = await pool.query(
+    `SELECT ${BMS_CONFIRM_FIELDS}
+       FROM shipment_labels l
+      WHERE l.bms_ship_status = 'pending'
+        AND l.status = 'active'
+        AND l.created_at >= NOW() - ($2 || ' days')::interval
+      ORDER BY l.created_at ASC
+      LIMIT $1`,
+    [limit, String(maxAgeDays)]
+  );
+  return rows;
+};
+
+/**
+ * Étiquettes en souffrance, pour la synthèse quotidienne.
+ *
+ * `minAgeMinutes` laisse au cron le temps de faire son travail : une
+ * confirmation ratée à 17h51 et rattrapée à 18h06 n'a jamais besoin d'un mail.
+ * Sans borne haute ici, à la différence de la reprise : une étiquette que
+ * personne ne régularise doit continuer d'être signalée.
+ *
+ * @param {{minAgeMinutes?: number}} [options]
+ * @returns {Promise<object[]>} de la plus ancienne à la plus récente
+ */
+const listStuckBmsConfirmations = async ({ minAgeMinutes = 120 } = {}) => {
+  if (!(await hasBmsColumns())) return [];
+  const { rows } = await pool.query(
+    `SELECT ${BMS_CONFIRM_FIELDS}, u.name AS packer_name
+       FROM shipment_labels l
+       LEFT JOIN users u ON u.id = l.packed_by
+      WHERE l.bms_ship_status = 'pending'
+        AND l.status = 'active'
+        AND l.created_at <= NOW() - ($1 || ' minutes')::interval
+      ORDER BY l.created_at ASC`,
+    [String(minAgeMinutes)]
+  );
+  return rows;
+};
+
+/**
+ * Une étiquette et son état de confirmation, pour la reprise déclenchée à la
+ * main depuis l'écran des étiquettes.
+ *
+ * @param {number|string} id
+ * @returns {Promise<?object>} null si l'étiquette n'existe pas ou si la
+ *          migration n'est pas passée
+ */
+const findBmsConfirmationById = async (id) => {
+  if (!(await hasBmsColumns())) return null;
+  const { rows } = await pool.query(
+    `SELECT ${BMS_CONFIRM_FIELDS} FROM shipment_labels l WHERE l.id = $1`,
+    [id]
+  );
+  return rows[0] || null;
+};
+
 module.exports = {
   ORDER_NUMBER_MAX_LENGTH,
   findForOrderNumber,
@@ -221,5 +399,11 @@ module.exports = {
   findPdfById,
   insert,
   listRecent,
-  markCancelled
+  markCancelled,
+  hasBmsColumns,
+  markBmsConfirmed,
+  recordBmsFailure,
+  listPendingBmsConfirmations,
+  listStuckBmsConfirmations,
+  findBmsConfirmationById
 };
