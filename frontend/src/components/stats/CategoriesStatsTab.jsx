@@ -11,6 +11,9 @@ import MonthlyPivotTable from './MonthlyPivotTable';
 
 const API_BASE_URL = '/api';
 
+// Sans aucune vente sur la période : ligne masquée (n'apporte rien)
+const hasSales = (row) => parseFloat(row.ca_ttc || 0) !== 0 || (parseInt(row.qty_sold) || 0) !== 0;
+
 // Répartition France / autres pays (pays de livraison), en TTC
 const withCountrySplit = (row) => {
   const ca = parseFloat(row.ca_ttc || 0);
@@ -136,7 +139,8 @@ const CategoriesStatsTab = () => {
   };
 
   // Filtrer par recherche
-  const filteredCategories = categories.filter(c => {
+  const withSales = categories.filter(hasSales);
+  const filteredCategories = withSales.filter(c => {
     if (!searchTerm) return true;
     const normalize = s => (s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
     const words = normalize(searchTerm).split(/\s+/).filter(Boolean);
@@ -316,7 +320,7 @@ const CategoriesStatsTab = () => {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '15px', marginBottom: '30px' }}>
         <div style={{ backgroundColor: 'white', padding: '20px', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
           <p style={{ fontSize: '14px', color: '#6c757d', margin: '0 0 10px 0' }}>Categories</p>
-          <p style={{ fontSize: '28px', fontWeight: 'bold', color: '#135E84', margin: 0 }}>{filteredCategories.length}{searchTerm && ` / ${categories.length}`}</p>
+          <p style={{ fontSize: '28px', fontWeight: 'bold', color: '#135E84', margin: 0 }}>{filteredCategories.length}{searchTerm && ` / ${withSales.length}`}</p>
         </div>
         <div style={{ backgroundColor: 'white', padding: '20px', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
           <p style={{ fontSize: '14px', color: '#6c757d', margin: '0 0 10px 0' }}>Sous-categories</p>
@@ -367,7 +371,8 @@ const CategoriesStatsTab = () => {
                 {sortedCategories.map((category) => {
                   const isExpanded = expandedCategoryName === category.category;
                   const hasSubCategories = category.sub_category_count > 0;
-                  const categorySubCategories = subCategories[category.category] || [];
+                  const categorySubCategoriesLoaded = subCategories[category.category] !== undefined;
+                  const categorySubCategories = (subCategories[category.category] || []).filter(hasSales);
 
                   return (
                     <>
@@ -438,7 +443,7 @@ const CategoriesStatsTab = () => {
                       {isExpanded && categorySubCategories.length === 0 && (
                         <tr key={`${category.category}-loading`} style={{ backgroundColor: '#f8f9fa' }}>
                           <td colSpan={1 + CATEGORIES_COLUMNS.filter(c => isVisible(c.key)).length} style={{ padding: '15px 45px', fontSize: '13px', color: '#6c757d' }}>
-                            Chargement des sous-categories...
+                            {categorySubCategoriesLoaded ? 'Aucune vente sur la période' : 'Chargement des sous-categories...'}
                           </td>
                         </tr>
                       )}
@@ -448,7 +453,7 @@ const CategoriesStatsTab = () => {
               </tbody>
             </table>
           </div>
-          {categories.length === 0 && !loading && (
+          {withSales.length === 0 && !loading && (
             <div style={{ textAlign: 'center', padding: '50px', color: '#6c757d' }}>
               Aucune categorie trouvee
             </div>

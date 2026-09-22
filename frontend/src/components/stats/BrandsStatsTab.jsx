@@ -11,6 +11,9 @@ import MonthlyPivotTable from './MonthlyPivotTable';
 
 const API_BASE_URL = '/api';
 
+// Sans aucune vente sur la période : ligne masquée (n'apporte rien)
+const hasSales = (row) => parseFloat(row.ca_ttc || 0) !== 0 || (parseInt(row.qty_sold) || 0) !== 0;
+
 // Répartition France / autres pays (pays de livraison), en TTC
 const withCountrySplit = (row) => {
   const ca = parseFloat(row.ca_ttc || 0);
@@ -136,7 +139,8 @@ const BrandsStatsTab = () => {
   };
 
   // Filtrer par recherche
-  const filteredBrands = brands.filter(b => {
+  const withSales = brands.filter(hasSales);
+  const filteredBrands = withSales.filter(b => {
     if (!searchTerm) return true;
     const normalize = s => (s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
     const words = normalize(searchTerm).split(/\s+/).filter(Boolean);
@@ -316,7 +320,7 @@ const BrandsStatsTab = () => {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '15px', marginBottom: '30px' }}>
         <div style={{ backgroundColor: 'white', padding: '20px', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
           <p style={{ fontSize: '14px', color: '#6c757d', margin: '0 0 10px 0' }}>Marques</p>
-          <p style={{ fontSize: '28px', fontWeight: 'bold', color: '#135E84', margin: 0 }}>{filteredBrands.length}{searchTerm && ` / ${brands.length}`}</p>
+          <p style={{ fontSize: '28px', fontWeight: 'bold', color: '#135E84', margin: 0 }}>{filteredBrands.length}{searchTerm && ` / ${withSales.length}`}</p>
         </div>
         <div style={{ backgroundColor: 'white', padding: '20px', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
           <p style={{ fontSize: '14px', color: '#6c757d', margin: '0 0 10px 0' }}>Sous-marques</p>
@@ -367,7 +371,8 @@ const BrandsStatsTab = () => {
                 {sortedBrands.map((brand) => {
                   const isExpanded = expandedBrandName === brand.brand;
                   const hasSubBrands = brand.sub_brand_count > 0;
-                  const brandSubBrands = subBrands[brand.brand] || [];
+                  const brandSubBrandsLoaded = subBrands[brand.brand] !== undefined;
+                  const brandSubBrands = (subBrands[brand.brand] || []).filter(hasSales);
 
                   return (
                     <>
@@ -438,7 +443,7 @@ const BrandsStatsTab = () => {
                       {isExpanded && brandSubBrands.length === 0 && (
                         <tr key={`${brand.brand}-loading`} style={{ backgroundColor: '#f8f9fa' }}>
                           <td colSpan={1 + BRANDS_COLUMNS.filter(c => isVisible(c.key)).length} style={{ padding: '15px 45px', fontSize: '13px', color: '#6c757d' }}>
-                            Chargement des sous-marques...
+                            {brandSubBrandsLoaded ? 'Aucune vente sur la période' : 'Chargement des sous-marques...'}
                           </td>
                         </tr>
                       )}
@@ -448,7 +453,7 @@ const BrandsStatsTab = () => {
               </tbody>
             </table>
           </div>
-          {brands.length === 0 && !loading && (
+          {withSales.length === 0 && !loading && (
             <div style={{ textAlign: 'center', padding: '50px', color: '#6c757d' }}>
               Aucune marque trouvee
             </div>
