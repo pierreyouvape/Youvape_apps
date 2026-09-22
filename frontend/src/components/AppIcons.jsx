@@ -304,6 +304,16 @@ export const Toolbox = (props) => (
   </Base>
 );
 
+export const Employees = (props) => (
+  <Base {...props}>
+    <path d="M12 2.5 V5" />
+    <rect x={4} y={5} width={16} height={16} rx={2} />
+    <circle cx={12} cy={10.2} r={2.1} />
+    <path d="M8.6 14.6 C9.2 13.4 10.5 12.8 12 12.8 C13.5 12.8 14.8 13.4 15.4 14.6" />
+    <path d="M8 17.8 V19.4 M10 17.8 V19.4 M12 17.8 V19.4 M14.2 17.8 V19.4 M16 17.8 V19.4" />
+  </Base>
+);
+
 export const APPS = [
   { key: 'customers', path: '/customers', label: 'Clients',                   Icon: Customers, color: '#0EA5A5' },
   { key: 'reviews',   path: '/reviews',   label: 'Avis Garantis',            Icon: Reviews,   color: '#0071EB' },
@@ -330,6 +340,7 @@ export const APPS = [
   { key: 'boutique-cast', path: '/boutique/castelnau',   label: 'Boutique Castelnau',   Icon: Boutique, color: '#C2410C' },
   { key: 'process', path: '/process', label: 'Process', Icon: Process, color: '#9333EA' },
   { key: 'atb', path: '/atb', label: 'ATB — Anthony Tool Box', Icon: Toolbox, color: '#BE123C' },
+  { key: 'employes', path: '/employes', label: 'Gestion employé', Icon: Employees, color: '#4338CA' },
 ];
 
 /* ─── PILES D'APPS (dossiers du launcher) ──────────────────

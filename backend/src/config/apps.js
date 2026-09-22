@@ -34,6 +34,7 @@ const APP_KEYS = [
   'boutique-cast',
   'process',
   'atb',
+  'employes',
 ];
 
 /** Permissions complètes (lecture + écriture) sur toutes les apps. */

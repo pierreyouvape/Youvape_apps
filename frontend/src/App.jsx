@@ -47,6 +47,7 @@ import PromoDetail from './pages/PromoDetail';
 import ProcessApp from './pages/ProcessApp';
 import ProcessDetail from './pages/ProcessDetail';
 import ATBApp from './pages/ATBApp';
+import EmployeesApp from './pages/EmployeesApp';
 import PrivateRoute from './components/PrivateRoute';
 
 const PAGE_TITLES = {
@@ -78,6 +79,7 @@ const PAGE_TITLES = {
   '/process': 'Process',
   '/boutique': 'Boutique',
   '/atb': 'ATB',
+  '/employes': 'Gestion employé',
   '/brands': 'Marque',
   '/sub-brands': 'Sous-marque',
   '/categories': 'Categorie',
@@ -462,6 +464,22 @@ function App() {
             element={
               <PrivateRoute>
                 <ATBApp />
+              </PrivateRoute>
+            }
+          />
+          <Route
+            path="/employes"
+            element={
+              <PrivateRoute>
+                <EmployeesApp />
+              </PrivateRoute>
+            }
+          />
+          <Route
+            path="/employes/:section"
+            element={
+              <PrivateRoute>
+                <EmployeesApp />
               </PrivateRoute>
             }
           />
