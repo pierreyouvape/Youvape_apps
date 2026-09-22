@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useContext, useMemo } from 'react';
 import axios from 'axios';
 import { AuthContext } from '../../context/AuthContext';
 import { ean13Svg, formatBarcode } from '../../utils/ean13';
+import AddEmployeeForm from './AddEmployeeForm';
 
 const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:3000/api/auth').replace('/auth', '');
 
@@ -47,7 +48,6 @@ export default function BarcodesTab() {
   const [busyId, setBusyId] = useState(null);
   const [showArchived, setShowArchived] = useState(false);
   const [adding, setAdding] = useState(false);
-  const [form, setForm] = useState({ first_name: '', last_name: '', user_id: '' });
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -77,40 +77,6 @@ export default function BarcodesTab() {
     try {
       const { data } = await axios.post(`${API_URL}/employees/${employee.id}/barcode`);
       setEmployees((prev) => prev.map((e) => (e.id === employee.id ? data.data : e)));
-      setError(null);
-    } catch (e) {
-      setError(e.response?.data?.error || e.message);
-    } finally {
-      setBusyId(null);
-    }
-  };
-
-  const toggleActive = async (employee) => {
-    setBusyId(employee.id);
-    try {
-      const { data } = await axios.put(`${API_URL}/employees/${employee.id}`, { active: !employee.active });
-      setEmployees((prev) => prev.map((e) => (e.id === employee.id ? data.data : e)));
-      setError(null);
-    } catch (e) {
-      setError(e.response?.data?.error || e.message);
-    } finally {
-      setBusyId(null);
-    }
-  };
-
-  const addEmployee = async (event) => {
-    event.preventDefault();
-    if (!form.first_name.trim() || !form.last_name.trim()) return;
-    setBusyId('new');
-    try {
-      await axios.post(`${API_URL}/employees`, {
-        first_name: form.first_name.trim(),
-        last_name: form.last_name.trim(),
-        user_id: form.user_id || null,
-      });
-      setForm({ first_name: '', last_name: '', user_id: '' });
-      setAdding(false);
-      await load();
       setError(null);
     } catch (e) {
       setError(e.response?.data?.error || e.message);
@@ -220,38 +186,12 @@ ${labels.map((e) => `<div class="lab"><p class="who">${fullName(e)}</p>`
 
       {/* ── Nouveau salarié ── */}
       {adding && canWrite && (
-        <form
-          onSubmit={addEmployee}
-          style={{
-            display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center',
-            background: C.white, border: `1px solid ${C.greyB}`, borderRadius: 12,
-            padding: 14, marginBottom: 16,
-          }}
-        >
-          <input
-            style={input} placeholder="Prénom" value={form.first_name} autoFocus
-            onChange={(e) => setForm((f) => ({ ...f, first_name: e.target.value }))}
-          />
-          <input
-            style={input} placeholder="Nom" value={form.last_name}
-            onChange={(e) => setForm((f) => ({ ...f, last_name: e.target.value }))}
-          />
-          <select
-            style={input} value={form.user_id}
-            onChange={(e) => setForm((f) => ({ ...f, user_id: e.target.value }))}
-          >
-            <option value="">Compte app — aucun</option>
-            {users.filter((u) => !u.employee_id).map((u) => (
-              <option key={u.id} value={u.id}>{u.name || u.email}</option>
-            ))}
-          </select>
-          <button type="submit" style={btn(C.green, busyId === 'new')} disabled={busyId === 'new'}>
-            Enregistrer
-          </button>
-          <span style={{ fontSize: 12.5, color: C.greyM }}>
-            Le code-barre se génère ensuite, depuis la ligne du salarié.
-          </span>
-        </form>
+        <AddEmployeeForm
+          users={users}
+          onAdded={load}
+          onError={setError}
+          onCancel={() => setAdding(false)}
+        />
       )}
 
       {/* ── Liste ── */}
@@ -305,15 +245,7 @@ ${labels.map((e) => `<div class="lab"><p class="who">${fullName(e)}</p>`
                       Télécharger
                     </button>
                   )}
-                  {canWrite && (
-                    <button
-                      style={{ ...btnGhost, marginLeft: 8, color: e.active ? C.greyT : C.green }}
-                      disabled={busyId === e.id}
-                      onClick={() => toggleActive(e)}
-                    >
-                      {e.active ? 'Archiver' : 'Réactiver'}
-                    </button>
-                  )}
+
                 </td>
               </tr>
             ))}

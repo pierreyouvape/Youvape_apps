@@ -84,6 +84,7 @@ const userPermissionsModel = {
         u.name,
         u.is_admin,
         u.created_at,
+        u.disabled_at,
         COALESCE(
           json_agg(
             json_build_object(
@@ -96,7 +97,12 @@ const userPermissionsModel = {
         ) as permissions
       FROM users u
       LEFT JOIN user_permissions up ON u.id = up.user_id
-      GROUP BY u.id, u.email, u.name, u.is_admin, u.created_at
+      -- Un compte désactivé (départ, cf. app Gestion employé) sort de l'écran
+      -- Réglages : il n'a plus de droits et ne peut plus se connecter, le
+      -- laisser dans la grille ferait croire à un accès encore vivant.
+      -- Il reste visible dans Gestion employé, pour un éventuel retour.
+      WHERE u.disabled_at IS NULL
+      GROUP BY u.id, u.email, u.name, u.is_admin, u.created_at, u.disabled_at
       ORDER BY u.created_at DESC
     `;
 

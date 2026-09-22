@@ -9,8 +9,9 @@ const usersController = {
   // Liste simple des agents (pour dropdown d'assignation)
   getAgents: async (req, res) => {
     try {
+      // Un compte désactivé (salarié parti) n'est plus proposé à l'assignation.
       const result = await pool.query(
-        `SELECT id, name, email FROM users ORDER BY name ASC`
+        `SELECT id, name, email FROM users WHERE disabled_at IS NULL ORDER BY name ASC`
       );
       res.json({ success: true, users: result.rows });
     } catch (error) {

@@ -54,11 +54,13 @@ module.exports = {
       if (!id) return res.status(400).json({ error: 'Identifiant invalide' });
 
       const body = req.body || {};
+      // `active` n'est volontairement PAS modifiable ici : un départ passe par
+      // /deactivate, qui coupe aussi l'accès. Deux chemins laisseraient des
+      // fiches archivées dont le compte reste grand ouvert.
       const employee = await employeeModel.update(id, {
         firstName: body.first_name,
         lastName: body.last_name,
         userId: body.user_id === undefined ? undefined : parseId(body.user_id),
-        active: body.active,
       });
       if (!employee) return res.status(404).json({ error: 'Salarié introuvable' });
       res.json({ success: true, data: employee });
@@ -91,18 +93,55 @@ module.exports = {
     } catch (error) { fail(res, error, 'generateBarcode'); }
   },
 
-  remove: async (req, res) => {
+  /** Comptes app rattachés à aucun salarié (à rattacher, ou restes d'un départ). */
+  orphanAccounts: async (req, res) => {
+    try {
+      res.json({ success: true, data: await employeeModel.listOrphanAccounts() });
+    } catch (error) { fail(res, error, 'orphanAccounts'); }
+  },
+
+  /** Ce qu'un départ entraînerait — lu par l'écran de confirmation. */
+  deactivationImpact: async (req, res) => {
     try {
       const id = parseId(req.params.id);
       if (!id) return res.status(400).json({ error: 'Identifiant invalide' });
 
-      const deleted = await employeeModel.remove(id);
-      if (!deleted) {
-        return res.status(409).json({
-          error: 'Un salarié qui a déjà un code-barre ne se supprime pas : archivez-le',
+      const impact = await employeeModel.deactivationImpact(id);
+      if (!impact) return res.status(404).json({ error: 'Salarié introuvable' });
+      res.json({ success: true, data: impact });
+    } catch (error) { fail(res, error, 'deactivationImpact'); }
+  },
+
+  /**
+   * Départ : fiche archivée, compte app désactivé, droits effacés.
+   * `keep_account = true` archive la fiche sans toucher au compte (fiche en
+   * double, compte partagé rattaché par erreur…).
+   */
+  deactivate: async (req, res) => {
+    try {
+      const id = parseId(req.params.id);
+      if (!id) return res.status(400).json({ error: 'Identifiant invalide' });
+
+      const result = await employeeModel.deactivate(id, req.body?.keep_account === true);
+      if (result.error === 'NOT_FOUND') return res.status(404).json({ error: 'Salarié introuvable' });
+      if (result.error === 'SUPER_ADMIN') {
+        return res.status(403).json({
+          error: "Le super administrateur ne peut pas perdre son accès depuis cet écran",
         });
       }
-      res.json({ success: true });
-    } catch (error) { fail(res, error, 'remove'); }
+      res.json({ success: true, data: result });
+    } catch (error) { fail(res, error, 'deactivate'); }
+  },
+
+  /** Retour d'un salarié : fiche et connexion réactivées (droits à redonner). */
+  reactivate: async (req, res) => {
+    try {
+      const id = parseId(req.params.id);
+      if (!id) return res.status(400).json({ error: 'Identifiant invalide' });
+
+      const result = await employeeModel.reactivate(id);
+      if (result.error === 'NOT_FOUND') return res.status(404).json({ error: 'Salarié introuvable' });
+      res.json({ success: true, data: result });
+    } catch (error) { fail(res, error, 'reactivate'); }
   },
 };

@@ -3,6 +3,7 @@ import { useParams, useNavigate, Navigate } from 'react-router-dom';
 import { AuthContext } from '../context/AuthContext';
 import AppShell from '../components/AppShell';
 import BarcodesTab from '../components/employees/BarcodesTab';
+import EmployeesListTab from '../components/employees/EmployeesListTab';
 
 /* ─── PALETTE (alignée ATB / Boutique / Rapport) ─────────── */
 const C = {
@@ -20,6 +21,15 @@ const Ic = ({ children }) => (
     {children}
   </svg>
 );
+const IcList = () => (
+  <Ic>
+    <circle cx={8} cy={8} r={2.6} />
+    <path d="M3.6 16.5 C4.4 14.3 6 13.2 8 13.2 C10 13.2 11.6 14.3 12.4 16.5" />
+    <path d="M15 7.5 H20.8" />
+    <path d="M15 12 H20.8" />
+    <path d="M15 16.5 H20.8" />
+  </Ic>
+);
 const IcBarcode = () => (
   <Ic>
     <path d="M3.5 6 V4.6 A1.1 1.1 0 0 1 4.6 3.5 H7" />
@@ -36,6 +46,8 @@ const IcBarcode = () => (
  * non cliquable.
  */
 const SECTIONS = [
+  { key: 'liste', label: 'Liste employé', color: '#0F766E', Icon: IcList, ready: true,
+    subtitle: "Les salariés, leur compte app et leurs droits — ajout, départ, suppression" },
   { key: 'codes-barres', label: 'Code barre', color: '#4338CA', Icon: IcBarcode, ready: true,
     subtitle: "Le code-barre de chaque salarié, et sa génération pour les nouveaux arrivants" },
 ];
@@ -171,6 +183,14 @@ export default function EmployeesApp() {
                   />
                 ))}
               </div>
+            </>
+          )}
+
+          {/* ── Module Liste employé ── */}
+          {section === 'liste' && (
+            <>
+              <EmployeesHeader title="Liste employé" subtitle={sectionDef.subtitle} onBack={goHome} />
+              <EmployeesListTab />
             </>
           )}
 

@@ -69,6 +69,12 @@ const authController = {
         return res.status(401).json({ error: 'Email ou mot de passe incorrect' });
       }
 
+      // Compte désactivé (départ d'un salarié, cf. app Gestion employé) : la
+      // ligne est conservée pour l'historique, mais elle n'ouvre plus l'app.
+      if (user.disabled_at) {
+        return res.status(403).json({ error: 'Ce compte est désactivé' });
+      }
+
       // Générer le token JWT
       const { rememberMe } = req.body;
       const token = jwt.sign(
