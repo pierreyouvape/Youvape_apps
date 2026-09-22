@@ -314,6 +314,18 @@ export const Employees = (props) => (
   </Base>
 );
 
+export const Bordereau = (props) => (
+  <Base {...props}>
+    {/* Feuille du bordereau */}
+    <path d="M6 3 h9 l3.5 3.5 V20 a1 1 0 0 1 -1 1 H6 a1 1 0 0 1 -1 -1 V4 a1 1 0 0 1 1 -1 Z" />
+    <path d="M14.8 3.2 V7 h3.9" />
+    {/* Les colis listés */}
+    <path d="M7.6 10 h8.4 M7.6 12.8 h8.4" />
+    {/* La signature du chauffeur */}
+    <path d="M7.6 17.2 c1.2 -1.6 2 0.9 3.2 -0.6 c0.9 -1.1 1.7 1.4 2.6 0.2" />
+  </Base>
+);
+
 export const APPS = [
   { key: 'customers', path: '/customers', label: 'Clients',                   Icon: Customers, color: '#0EA5A5' },
   { key: 'reviews',   path: '/reviews',   label: 'Avis Garantis',            Icon: Reviews,   color: '#0071EB' },
@@ -324,6 +336,12 @@ export const APPS = [
   { key: 'purchases-v2', path: '/purchases-v2', label: "Gestion d'achat V2",  Icon: Purchases, color: '#D97706' },
   { key: 'reception', path: '/reception', label: 'Réception',                Icon: Reception, color: '#65A30D' },
   { key: 'packing',   path: '/packing',   label: 'Packing',                  Icon: Packing,   color: '#6366F1' },
+  // `permissionKey` : cette app s'ouvre avec le droit d'une AUTRE. Le bordereau
+  // est produit par les mêmes personnes que le packing, avec la même case à
+  // cocher dans les réglages — il n'a donc pas de clé de permission à lui, et
+  // n'apparaît pas dans la grille des droits. Le backend dit la même chose :
+  // routes/bordereauRoutes.js exige `packing`.
+  { key: 'bordereau', path: '/bordereau', label: 'Bordereau de dépôt', Icon: Bordereau, color: '#0E7490', permissionKey: 'packing' },
   { key: 'catalog',   path: '/catalog',   label: 'Produits',                 Icon: Catalog,   color: '#059669' },
   { key: 'financier',  path: '/financier',  label: 'Rapport',                  Icon: Stats,         color: '#135E84' },
   { key: 'commandes',  path: '/commandes',  label: 'Commandes',                Icon: OrdersSearch, color: '#5B21B6' },
@@ -345,12 +363,26 @@ export const APPS = [
 
 /* ─── PILES D'APPS (dossiers du launcher) ──────────────────
  * Regroupe plusieurs apps sous UNE tuile (accueil) et UN dossier dépliable
- * (sidebar). Les permissions restent strictement par app : une pile n'affiche
- * que les membres auxquels l'utilisateur a accès et disparaît s'il n'en a
- * aucun. Ne rien changer à APPS ni aux clés de permission : SettingsApp et
+ * (sidebar). Les permissions restent par app : une pile n'affiche que les
+ * membres auxquels l'utilisateur a accès et disparaît s'il n'en a aucun. Ne
+ * rien changer à APPS ni aux clés de permission : SettingsApp et
  * backend/src/config/apps.js continuent de raisonner app par app.
+ *
+ * ⚠️ Un GROUPE ne donne aucun droit. Deux apps peuvent partager le même droit,
+ * mais cela se déclare app par app avec `permissionKey` (cf. Bordereau, qui
+ * s'ouvre avec le droit `packing`) — appartenir au même groupe n'y suffit pas,
+ * et c'est ce qui permet de ranger ensemble des apps aux droits différents.
  * ──────────────────────────────────────────────────────── */
 export const APP_GROUPS = [
+  {
+    // Le groupe, et pas une app conteneur : une app conteneur déplacerait le
+    // packing de /packing vers /prepa/packing, or cette adresse est en favori
+    // sur les postes de préparation. Picking rejoindra ce groupe.
+    key: 'grp-prepa-commande',
+    label: 'Prépa de commande',
+    color: '#4F46E5',
+    members: ['packing', 'bordereau'],
+  },
   {
     key: 'grp-factures-transporteurs',
     label: 'Factures Transporteurs',

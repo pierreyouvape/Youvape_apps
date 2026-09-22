@@ -38,10 +38,23 @@ const SettingsApp = () => {
 
   // Dérivé de la liste canonique des apps (composants/AppIcons) : toute nouvelle
   // app ajoutée au lanceur apparaît AUTOMATIQUEMENT ici, gérable par utilisateur.
-  const APPS = LAUNCHER_APPS.map(a => ({
+  //
+  // Sauf celles qui s'ouvrent avec le droit d'une autre (`permissionKey`) : leur
+  // colonne serait une case à cocher sans effet, et cocher deux cases pour une
+  // seule autorisation finit toujours par en laisser une de côté. Elles sont
+  // nommées dans l'infobulle de l'app qui porte le droit, pour qu'on sache ce
+  // qu'on ouvre vraiment.
+  const sharedBy = LAUNCHER_APPS.reduce((m, a) => {
+    if (!a.permissionKey) return m;
+    (m[a.permissionKey] = m[a.permissionKey] || []).push(a.label);
+    return m;
+  }, {});
+
+  const APPS = LAUNCHER_APPS.filter(a => !a.permissionKey).map(a => ({
     key: a.key,
     label: a.label,
     accessOnly: !WRITE_ENABLED_KEYS.has(a.key),
+    alsoOpens: sharedBy[a.key] || null,
   }));
 
   const tabs = [
@@ -294,7 +307,14 @@ const SettingsApp = () => {
                         <th>Email</th>
                         <th>Admin</th>
                         {APPS.map(app => (
-                          <th key={app.key} colSpan="2">{app.label}</th>
+                          <th
+                            key={app.key}
+                            colSpan="2"
+                            title={app.alsoOpens ? `Donne aussi accès à : ${app.alsoOpens.join(', ')}` : undefined}
+                          >
+                            {app.label}
+                            {app.alsoOpens && <span className="perm-shared"> + {app.alsoOpens.join(', ')}</span>}
+                          </th>
                         ))}
                         <th>Actions</th>
                       </tr>

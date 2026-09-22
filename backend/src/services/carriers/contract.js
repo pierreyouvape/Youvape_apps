@@ -98,6 +98,21 @@
  * @property {boolean} [producesCustomsDocuments=false] - l'adaptateur peut rendre
  *           une CN23 : l'enregistrement exige alors la colonne cn23_data, vérifiée
  *           AVANT d'acheter l'étiquette.
+ * @property {{maxParcels: number}} [depositSlip] - le transporteur sait produire
+ *           un bordereau de dépôt (le papier que le chauffeur signe en emportant
+ *           les colis). `maxParcels` est la limite d'un bordereau chez lui : au
+ *           delà, l'app en produit plusieurs. Sans cette propriété, le
+ *           transporteur n'apparaît pas dans l'app Bordereau — Mondial Relay et
+ *           la lettre suivie n'en ont pas, et une section vide ferait croire à
+ *           une panne.
+ * @property {(input: {account: object, trackingNumbers: string[]}) => Promise<DepositSlipResult>} [createDepositSlip]
+ *           Obligatoire dès que `depositSlip` est déclaré.
+ *
+ * @typedef {object} DepositSlipResult
+ * @property {string}  number      - numéro du bordereau chez le transporteur
+ * @property {?Date}   publishedAt - date de publication annoncée par lui
+ * @property {string}  pdfBase64   - le bordereau, à stocker : il n'est rendu
+ *                                   qu'une fois, aucune API ne le relit
  * @property {boolean} [confirmsShipmentInBms=true] - à false, aucune confirmation
  *           d'expédition n'est envoyée à BMS. Le retrait magasin n'est pas une
  *           expédition : la confirmer ferait mentir les stats de transport.
@@ -149,4 +164,30 @@ const assertAdapter = (adapter) => {
  */
 const customsDocumentFileName = (orderNumber) => `customs_document_${orderNumber}.pdf`;
 
-module.exports = { assertAdapter, customsDocumentFileName };
+/**
+ * Nom du fichier d'un bordereau de dépôt : `bordereau_<numéro>.pdf`.
+ *
+ * Commun à tous les transporteurs, comme la CN23 : il n'y a qu'un bac à papier
+ * pour les bordereaux. Aucune règle AutoPrint ne porte ce nom aujourd'hui —
+ * l'impression est manuelle, décision de Pierre du 21/09/2026 — mais la
+ * convention est posée pour que la règle puisse être ajoutée sur les postes
+ * sans qu'on retouche le code.
+ *
+ * @param {string|number} bordereauNumber
+ * @returns {string}
+ */
+const depositSlipFileName = (bordereauNumber) => `bordereau_${bordereauNumber}.pdf`;
+
+/**
+ * Le transporteur sait-il produire un bordereau de dépôt ?
+ *
+ * Les deux conditions sont exigées ensemble : déclarer la capacité sans la
+ * méthode donnerait une section à l'écran et une erreur au clic.
+ *
+ * @param {CarrierAdapter} adapter
+ * @returns {boolean}
+ */
+const supportsDepositSlip = (adapter) =>
+  Boolean(adapter && adapter.depositSlip && typeof adapter.createDepositSlip === 'function');
+
+module.exports = { assertAdapter, customsDocumentFileName, depositSlipFileName, supportsDepositSlip };

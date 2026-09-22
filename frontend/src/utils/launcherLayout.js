@@ -20,6 +20,32 @@ export function groupOfApp(appKey) {
 }
 
 /**
+ * Clé de permission qui commande l'ouverture d'une app.
+ *
+ * C'est sa propre clé, sauf quand l'entrée porte `permissionKey` : l'app
+ * s'ouvre alors avec le droit d'une AUTRE (Bordereau avec le droit Packing).
+ * Une seule case à cocher dans les réglages, et le backend exige la même clé.
+ *
+ * @param {{key: string, permissionKey?: string}} app
+ * @returns {string}
+ */
+export function permissionKeyOfApp(app) {
+  return app?.permissionKey || app?.key;
+}
+
+/**
+ * L'utilisateur peut-il ouvrir cette app ?
+ *
+ * @param {object} app - entrée APPS
+ * @param {Array<string>|Set<string>} accessibleKeys - clés de droit autorisées
+ * @returns {boolean}
+ */
+export function canOpenApp(app, accessibleKeys) {
+  const allowed = accessibleKeys instanceof Set ? accessibleKeys : new Set(accessibleKeys || []);
+  return allowed.has(permissionKeyOfApp(app));
+}
+
+/**
  * Construit les éléments de premier niveau à afficher.
  * @param {Array} orderedApps  entrées APPS dans l'ordre de l'utilisateur
  * @param {Array<string>} accessibleKeys  clés d'app autorisées en lecture
@@ -31,7 +57,7 @@ export function buildLauncherItems(orderedApps, accessibleKeys) {
   const placed = new Set();
 
   orderedApps.forEach(app => {
-    if (!allowed.has(app.key)) return;
+    if (!canOpenApp(app, allowed)) return;
     const group = GROUP_BY_MEMBER[app.key];
     if (!group) {
       items.push({ type: 'app', key: app.key, app });
@@ -39,7 +65,7 @@ export function buildLauncherItems(orderedApps, accessibleKeys) {
     }
     if (placed.has(group.key)) return;
     placed.add(group.key);
-    const members = orderedApps.filter(a => group.members.includes(a.key) && allowed.has(a.key));
+    const members = orderedApps.filter(a => group.members.includes(a.key) && canOpenApp(a, allowed));
     items.push({ type: 'group', key: group.key, group, apps: members });
   });
 

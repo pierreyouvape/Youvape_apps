@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { AuthContext } from '../context/AuthContext';
 import { APPS, GripIcon, PileIcon } from '../components/AppIcons';
 import AppShell, { useDragSort } from '../components/AppShell';
-import { buildLauncherItems, expandItemOrder } from '../utils/launcherLayout';
+import { buildLauncherItems, expandItemOrder, canOpenApp } from '../utils/launcherLayout';
 import { useIsMobile } from '../hooks/useIsMobile';
 
 const C = {
@@ -195,7 +195,7 @@ const Home = () => {
     return ordered;
   }, [prefs.appOrder]);
 
-  const accessibleApps = orderedApps.filter(a => accessibleKeys.includes(a.key));
+  const accessibleApps = orderedApps.filter(a => canOpenApp(a, accessibleKeys));
   // Tuiles de premier niveau : apps seules + piles (dossiers).
   const items = useMemo(
     () => buildLauncherItems(orderedApps, accessibleKeys),

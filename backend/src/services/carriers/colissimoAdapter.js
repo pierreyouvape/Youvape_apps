@@ -845,6 +845,98 @@ const cancelLabel = async () => {
   throw err;
 };
 
+// ── Bordereau de dépôt ───────────────────────────────────────────────────────
+
+// Limite de Colissimo, relevée dans le plugin officiel (`LpcBordereauGeneration
+// ::MAX_LABEL_PER_BORDEREAU`, qui découpe en `array_chunk` de 50). Au-delà,
+// l'app produit plusieurs bordereaux — chacun avec son numéro, chacun à
+// imprimer.
+const MAX_COLIS_BORDEREAU = 50;
+
+/**
+ * Date de publication du bordereau.
+ *
+ * Colissimo la rend en millisecondes depuis l'époque (le plugin coupe les trois
+ * derniers chiffres pour retomber sur des secondes). Rendue en Date, ou null :
+ * un bordereau sans date reste imprimable, une date fausse ferait croire à un
+ * dépôt d'un autre jour.
+ *
+ * @param {string|number} brut
+ * @returns {?Date}
+ */
+const datePublication = (brut) => {
+  const ms = Number(brut);
+  if (!Number.isFinite(ms) || ms <= 0) return null;
+  const d = new Date(ms);
+  return Number.isNaN(d.getTime()) ? null : d;
+};
+
+/**
+ * Demande un bordereau de dépôt pour une liste de colis déjà étiquetés.
+ *
+ * C'est le papier que le chauffeur signe. Colissimo ne le rend qu'UNE fois et
+ * ne sait pas le relire : l'appelant DOIT stocker le PDF rendu ici, sinon le
+ * bordereau est perdu et les colis, eux, sont déjà déclarés déposés.
+ *
+ * Aucun mode « test » : l'API ne propose pas de `checkGenerateBordereau`, à la
+ * différence de l'étiquette. Un contrat marqué sandbox n'arrive pas jusqu'ici —
+ * il n'a jamais pu produire d'étiquette, donc il n'a aucun colis à déposer.
+ *
+ * @param {{account: object, trackingNumbers: string[]}} input
+ * @returns {Promise<import('./contract').DepositSlipResult & {parcelCount: number}>}
+ */
+const createDepositSlip = async ({ account, trackingNumbers = [] }) => {
+  assertAccountComplete(account, {
+    credentials: ['contract_number', 'password'],
+    settings: ['api_url']
+  });
+
+  // Dédoublonné : un même numéro deux fois dans la requête fait refuser tout le
+  // bordereau, et 50 colis dont deux jumeaux n'en font que 49 de déposés.
+  const colis = [...new Set(
+    trackingNumbers.map(n => String(n == null ? '' : n).trim()).filter(Boolean)
+  )];
+
+  if (colis.length === 0) refus('Aucun numéro de colis à porter sur le bordereau.', 500);
+  if (colis.length > MAX_COLIS_BORDEREAU) {
+    refus(
+      `Colissimo n'accepte que ${MAX_COLIS_BORDEREAU} colis par bordereau (${colis.length} demandés). `
+      + `C'est à l'appelant de découper la liste.`,
+      500
+    );
+  }
+
+  const payload = {
+    contractNumber: account.credentials.contract_number,
+    password: account.credentials.password,
+    generateBordereauParcelNumberList: { parcelsNumbers: colis }
+  };
+
+  console.log(`[${LOG_TAG}] Bordereau de dépôt — ${colis.length} colis`);
+
+  const { parts } = await appeler(account, 'generateBordereauByParcelsNumbers', payload);
+
+  const entete = parts.jsonInfos?.bordereauHeader || {};
+  const numero = entete.bordereauNumber == null ? null : String(entete.bordereauNumber).trim();
+  const pdf = parts.deliveryPaper;
+
+  if (!numero || !pdf || pdf.length === 0) {
+    console.error(`[${LOG_TAG}] Réponse de bordereau incomplète — parties reçues :`, Object.keys(parts).join(', '));
+    const err = new Error('Réponse Colissimo sans numéro de bordereau ou sans PDF');
+    err.statusCode = 502;
+    err.userMessage = "Colissimo a répondu sans bordereau exploitable. Les colis n'ont PAS été déposés : "
+      + 'ils restent dans la liste, réessayez.';
+    throw err;
+  }
+
+  return {
+    number: numero,
+    publishedAt: datePublication(entete.publishingDate),
+    pdfBase64: pdf.toString('base64'),
+    parcelCount: colis.length
+  };
+};
+
 /**
  * Nom du fichier téléchargé au packing : `colissimo_<n°>.pdf`.
  *
@@ -908,6 +1000,9 @@ module.exports = assertAdapter({
   relayNetworkLabel: 'Colissimo / Bpost',
   // La CN23 est stockée à part : l'enregistrement exige la colonne cn23_data.
   producesCustomsDocuments: true,
+  // Bordereau de dépôt : Colissimo en produit un, par lots de 50 colis.
+  depositSlip: { maxParcels: MAX_COLIS_BORDEREAU },
+  createDepositSlip,
   resolveWeight,
   createLabel,
   cancelLabel,
@@ -919,6 +1014,7 @@ module.exports = assertAdapter({
   resolveDestination,
   assertRelayPoint,
   parseMultipart,
+  datePublication,
   lignesAdresse,
   normaliserTelephone,
   dateDepot,

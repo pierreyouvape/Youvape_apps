@@ -188,6 +188,15 @@
   border-bottom: 2px solid #dee2e6;
 }
 
+/* Apps qui s'ouvrent avec le droit de la colonne (AppIcons : permissionKey).
+   Discret : c'est un rappel, pas un second titre. */
+.users-table th .perm-shared {
+  display: block;
+  font-size: 0.72rem;
+  font-weight: 500;
+  color: #6c757d;
+}
+
 .users-table th.sub-header {
   font-size: 0.85rem;
   font-weight: 500;

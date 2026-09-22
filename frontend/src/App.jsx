@@ -28,6 +28,7 @@ import ReportsSettingsApp from './pages/ReportsSettingsApp';
 import CatalogApp from './pages/CatalogApp';
 import PackingApp from './pages/PackingApp';
 import PackingSettings from './pages/PackingSettings';
+import BordereauApp from './pages/BordereauApp';
 import ReceptionApp from './pages/ReceptionApp';
 import FinancierApp from './pages/FinancierApp';
 import OrdersSearchApp from './pages/OrdersSearchApp';
@@ -64,6 +65,7 @@ const PAGE_TITLES = {
   '/products': 'Produits',
   '/orders': 'Commandes',
   '/packing': 'Packing',
+  '/bordereau': 'Bordereau de dépôt',
   '/reception': 'Réception',
   '/financier': 'Financier',
   '/commandes': 'Commandes',
@@ -304,6 +306,16 @@ function App() {
             element={
               <PrivateRoute>
                 <PackingSettings />
+              </PrivateRoute>
+            }
+          />
+          {/* Groupe « Prépa de commande ». L'app s'ouvre avec le droit packing
+              (AppIcons : permissionKey) ; le backend exige la même clé. */}
+          <Route
+            path="/bordereau"
+            element={
+              <PrivateRoute>
+                <BordereauApp />
               </PrivateRoute>
             }
           />

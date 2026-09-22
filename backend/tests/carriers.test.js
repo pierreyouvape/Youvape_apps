@@ -1055,6 +1055,34 @@ test('le mappage propose les trois services, « domicile » par défaut', () => 
   assert.strictEqual(coli.methodCode, 'domicile');
 });
 
+const { decouperEnLots } = require('../src/controllers/bordereauController');
+const { depositSlipFileName, supportsDepositSlip } = require('../src/services/carriers/contract');
+
+test('62 colis chez Colissimo font 2 bordereaux : 50 puis 12', () => {
+  const colis = Array.from({ length: 62 }, (_, i) => i);
+  const lots = decouperEnLots(colis, coli.depositSlip.maxParcels);
+  assert.deepStrictEqual(lots.map(l => l.length), [50, 12]);
+  // Aucun colis perdu ni compté deux fois : c'est ce qui ferait signer au
+  // chauffeur un papier qui ne correspond pas à ce qu'il emporte.
+  assert.deepStrictEqual(lots.flat(), colis);
+});
+
+test('pile la limite : un seul bordereau, pas deux', () => {
+  assert.strictEqual(decouperEnLots(Array.from({ length: 50 }), 50).length, 1);
+  assert.strictEqual(decouperEnLots(Array.from({ length: 51 }), 50).length, 2);
+  assert.strictEqual(decouperEnLots([], 50).length, 0);
+});
+
+test('le bordereau suit sa convention de nom, commune à tous les transporteurs', () => {
+  assert.strictEqual(depositSlipFileName('6789012'), 'bordereau_6789012.pdf');
+});
+
+test('seul Colissimo annonce un bordereau : une section vide ferait croire à une panne', () => {
+  assert.strictEqual(supportsDepositSlip(coli), true);
+  assert.strictEqual(supportsDepositSlip(laposte), false);
+  assert.strictEqual(supportsDepositSlip(getAdapter('mondial_relay')), false);
+});
+
 test('la table de symboles ne touche pas la lettre suivie', () => {
   // La Poste ne passe que par sanitizeAddressField : ses payloads sont figés.
   assert.strictEqual(sanitizeAddressField('Cartouche 0.40 Ω - N° 5'), 'Cartouche 0.40 Ω - N° 5');
@@ -1230,6 +1258,92 @@ testEnSerie('décalage réglé à 0 dans le contrat : étiquette rendue telle qu
   const sansDecalage = { ...COLI_ACCOUNT, settings: { ...COLI_ACCOUNT.settings, label_top_offset_mm: '0' } };
   const r = await coli.createLabel(entree({ account: sansDecalage }));
   assert.ok(Buffer.from(r.pdfBase64, 'base64').equals(VRAI_PDF));
+});
+
+// ── Bordereau de dépôt ───────────────────────────────────────────────────────
+// Le papier que le chauffeur signe. Il n'est rendu qu'une fois par Colissimo :
+// une erreur ici coûte un dépôt, pas un simple message d'erreur.
+
+serie = serie.then(() => console.log('\nColissimo — bordereau de dépôt (aucun appel réseau)'));
+
+const BORDEREAU = (extra = {}) => multipart([
+  infos({
+    messages: [{ id: '0', type: 'INFOS' }],
+    bordereauHeader: { bordereauNumber: 6789012, publishingDate: '1758542400000', ...extra }
+  }),
+  ['deliveryPaper', 'application/octet-stream', OCTETS]
+]);
+
+testEnSerie('la requête porte les colis et les identifiants, comme le plugin officiel', async () => {
+  simuler(200, BORDEREAU());
+  await coli.createDepositSlip({ account: COLI_ACCOUNT, trackingNumbers: ['6A07657471207', '6A07657471208'] });
+  assert.strictEqual(appels.length, 1);
+  assert.ok(appels[0].url.endsWith('/generateBordereauByParcelsNumbers'), appels[0].url);
+  assert.deepStrictEqual(
+    appels[0].body.generateBordereauParcelNumberList.parcelsNumbers,
+    ['6A07657471207', '6A07657471208']
+  );
+  assert.strictEqual(appels[0].body.contractNumber, COLI_ACCOUNT.credentials.contract_number);
+  assert.strictEqual(appels[0].body.password, COLI_ACCOUNT.credentials.password);
+});
+
+testEnSerie('le numéro, le PDF et la date de publication sont rendus', async () => {
+  simuler(200, BORDEREAU());
+  const b = await coli.createDepositSlip({ account: COLI_ACCOUNT, trackingNumbers: ['6A07657471207'] });
+  assert.strictEqual(b.number, '6789012');
+  assert.strictEqual(b.parcelCount, 1);
+  assert.ok(Buffer.from(b.pdfBase64, 'base64').equals(OCTETS), 'bordereau corrompu');
+  assert.strictEqual(b.publishedAt.getTime(), 1758542400000);
+});
+
+testEnSerie('une date de publication illisible ne fait pas perdre le bordereau', async () => {
+  simuler(200, BORDEREAU({ publishingDate: 'jamais' }));
+  const b = await coli.createDepositSlip({ account: COLI_ACCOUNT, trackingNumbers: ['6A07657471207'] });
+  assert.strictEqual(b.publishedAt, null);
+  assert.strictEqual(b.number, '6789012');
+});
+
+testEnSerie('un colis en double ne part qu\'une fois : 50 numéros dont 2 jumeaux font 49 colis', async () => {
+  simuler(200, BORDEREAU());
+  const b = await coli.createDepositSlip({
+    account: COLI_ACCOUNT,
+    trackingNumbers: ['6A1', ' 6A2 ', '6A1', '', null, '6A3']
+  });
+  assert.deepStrictEqual(appels[0].body.generateBordereauParcelNumberList.parcelsNumbers, ['6A1', '6A2', '6A3']);
+  assert.strictEqual(b.parcelCount, 3);
+});
+
+testEnSerie('au-delà de 50 colis, refus AVANT l\'appel : c\'est à l\'appelant de découper', async () => {
+  simuler(200, BORDEREAU());
+  const trop = Array.from({ length: 51 }, (_, i) => `6A${i}`);
+  await assert.rejects(coli.createDepositSlip({ account: COLI_ACCOUNT, trackingNumbers: trop }), /50 colis/);
+  assert.strictEqual(appels.length, 0, 'l\'API a été appelée');
+});
+
+testEnSerie('aucun colis : refus, sans appel', async () => {
+  simuler(200, BORDEREAU());
+  await assert.rejects(coli.createDepositSlip({ account: COLI_ACCOUNT, trackingNumbers: [] }), /Aucun numéro/);
+  assert.strictEqual(appels.length, 0);
+});
+
+testEnSerie('refus d\'identifiants : drapeau authFailure, comme pour l\'étiquette', async () => {
+  simuler(400, multipart([infos({ messages: [{ id: '30013', type: 'ERROR',
+    messageContent: 'Trop de tentatives' }] })]));
+  await assert.rejects(coli.createDepositSlip({ account: COLI_ACCOUNT, trackingNumbers: ['6A1'] }), (e) => {
+    assert.strictEqual(e.authFailure, true);
+    assert.strictEqual(e.statusCode, 401);
+    assert.ok(/NE RÉESSAYEZ PAS/.test(e.userMessage));
+    return true;
+  });
+});
+
+testEnSerie('réponse sans PDF : le message dit que les colis ne sont PAS déposés', async () => {
+  simuler(200, multipart([infos({ messages: [{ id: '0' }], bordereauHeader: { bordereauNumber: 1 } })]));
+  await assert.rejects(coli.createDepositSlip({ account: COLI_ACCOUNT, trackingNumbers: ['6A1'] }), (e) => {
+    assert.strictEqual(e.statusCode, 502);
+    assert.ok(/PAS été déposés/.test(e.userMessage));
+    return true;
+  });
 });
 
 serie = serie.then(() => { axiosModule.post = postReel; });

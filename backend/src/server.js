@@ -25,6 +25,7 @@ const purchasesRoutes = require('./routes/purchasesRoutes');
 const packingRoutes = require('./routes/packingRoutes');
 const laposteRoutes = require('./routes/laposteRoutes');
 const shipmentRoutes = require('./routes/shipmentRoutes');
+const bordereauRoutes = require('./routes/bordereauRoutes');
 const preferencesRoutes = require('./routes/preferencesRoutes');
 const financierRoutes = require('./routes/financierRoutes');
 const savRoutes = require('./routes/savRoutes');
@@ -86,6 +87,7 @@ app.use('/api/purchases', purchasesRoutes); // Purchase management
 app.use('/api/packing', packingRoutes); // Packing / preparation colis
 app.use('/api/laposte', laposteRoutes); // La Poste - étiquettes Lettre Suivie
 app.use('/api/shipments', shipmentRoutes); // Étiquetage multi-transporteurs (auth + permissions dans le routeur)
+app.use('/api/bordereaux', bordereauRoutes); // Bordereaux de dépôt (droit packing, dans le routeur)
 app.use('/api/preferences', preferencesRoutes); // User column preferences
 app.use('/api/financier', financierRoutes);    // Dashboard financier
 app.use('/api/sav', savRoutes);               // Module SAV Zendesk
