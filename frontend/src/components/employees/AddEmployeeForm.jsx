@@ -3,7 +3,10 @@ import axios from 'axios';
 
 const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:3000/api/auth').replace('/auth', '');
 
-const C = { greyB: '#E5E7EB', greyM: '#8A99A4', dark: '#2a2e38', white: '#FFFFFF', green: '#059669' };
+const C = {
+  greyB: '#E5E7EB', greyM: '#8A99A4', dark: '#2a2e38', white: '#FFFFFF',
+  green: '#059669', red: '#DE2020', redB: '#FCA5A5',
+};
 
 const input = {
   padding: '8px 10px', borderRadius: 8, border: `1px solid ${C.greyB}`,
@@ -23,10 +26,16 @@ const input = {
 export default function AddEmployeeForm({ users = [], onAdded, onError, onCancel }) {
   const [form, setForm] = useState({ first_name: '', last_name: '', user_id: '' });
   const [busy, setBusy] = useState(false);
+  const [missing, setMissing] = useState(null);   // 'first_name' | 'last_name' | null
 
   const submit = async (event) => {
     event.preventDefault();
-    if (!form.first_name.trim() || !form.last_name.trim()) return;
+    // Un champ manquant se DIT. Un retour muet donne l'impression que le
+    // salarié est enregistré, et on le cherche ensuite dans une liste où il
+    // n'a jamais été (c'est arrivé le 23/09/2026).
+    if (!form.first_name.trim()) return setMissing('first_name');
+    if (!form.last_name.trim()) return setMissing('last_name');
+    setMissing(null);
     setBusy(true);
     try {
       await axios.post(`${API_URL}/employees`, {
@@ -58,12 +67,20 @@ export default function AddEmployeeForm({ users = [], onAdded, onError, onCancel
       }}
     >
       <input
-        style={input} placeholder="Prénom" value={form.first_name} autoFocus
-        onChange={(e) => setForm((f) => ({ ...f, first_name: e.target.value }))}
+        style={missing === 'first_name' ? { ...input, borderColor: C.redB } : input}
+        placeholder="Prénom" value={form.first_name} autoFocus
+        onChange={(e) => {
+          setMissing(null);
+          setForm((f) => ({ ...f, first_name: e.target.value }));
+        }}
       />
       <input
-        style={input} placeholder="Nom" value={form.last_name}
-        onChange={(e) => setForm((f) => ({ ...f, last_name: e.target.value }))}
+        style={missing === 'last_name' ? { ...input, borderColor: C.redB } : input}
+        placeholder="Nom" value={form.last_name}
+        onChange={(e) => {
+          setMissing(null);
+          setForm((f) => ({ ...f, last_name: e.target.value }));
+        }}
       />
       <select
         style={input} value={form.user_id}
@@ -85,8 +102,10 @@ export default function AddEmployeeForm({ users = [], onAdded, onError, onCancel
       >
         Enregistrer
       </button>
-      <span style={{ fontSize: 12.5, color: C.greyM }}>
-        Le code-barre se génère ensuite, depuis la ligne du salarié.
+      <span style={{ fontSize: 12.5, color: missing ? C.red : C.greyM, fontWeight: missing ? 600 : 400 }}>
+        {missing === 'first_name' ? 'Le prénom est obligatoire.'
+          : missing === 'last_name' ? 'Le nom est obligatoire — il donne la 2e initiale du code-barre.'
+            : 'Le code-barre se génère ensuite, depuis la ligne du salarié.'}
       </span>
     </form>
   );
