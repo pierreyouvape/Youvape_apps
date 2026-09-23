@@ -62,6 +62,12 @@ const playSound = (type) => {
   }
 };
 
+// Jour de la semaine en heure de Paris (1 = lundi … 5 = vendredi), quel que
+// soit le fuseau du poste.
+const JOURS = { Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6, Sun: 7 };
+const jourParis = () =>
+  JOURS[new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Paris', weekday: 'short' }).format(new Date())];
+
 const EMPTY_MANUAL_FORM = {
   orderNumber: '', first_name: '', last_name: '', company: '',
   address: '', address_2: '', postcode: '', city: '', phone: '', email: ''
@@ -116,6 +122,12 @@ const PackingApp = () => {
   const [manualError, setManualError] = useState(null);
   const [manualInfo, setManualInfo] = useState(null);
   const [manualResult, setManualResult] = useState(null); // { trackingId, orderNumber, pdfBase64 }
+  // Livraison le samedi (Chrono 13 et Chrono Relais) : l'interrupteur n'existe
+  // que le jeudi et le vendredi, coché d'office le vendredi. Le jeudi soir, on
+  // le coche à la main si les colis Chronopost partent le lendemain.
+  const [jourCourant, setJourCourant] = useState(jourParis);
+  const [samedi, setSamedi] = useState(() => jourParis() === 5);
+  const samediVisible = jourCourant === 4 || jourCourant === 5;
 
   // Refs pour accéder aux valeurs courantes dans le listener clavier
   const orderRef = useRef(null);
@@ -126,6 +138,7 @@ const PackingApp = () => {
   const labelLoadingRef = useRef(false);
   const showManualRef = useRef(false);
   const packQtyPromptRef = useRef(null);
+  const saturdayRef = useRef(false);
 
   useEffect(() => { orderRef.current = order; }, [order]);
   useEffect(() => { itemsRef.current = items; }, [items]);
@@ -135,6 +148,15 @@ const PackingApp = () => {
   useEffect(() => { labelLoadingRef.current = labelLoading; }, [labelLoading]);
   useEffect(() => { showManualRef.current = showManual; }, [showManual]);
   useEffect(() => { packQtyPromptRef.current = packQtyPrompt; }, [packQtyPrompt]);
+  useEffect(() => { saturdayRef.current = samediVisible && samedi; }, [samediVisible, samedi]);
+
+  // Poste resté ouvert d'un jour à l'autre : l'interrupteur reprend la valeur
+  // du jour, pour qu'un choix du jeudi soir ne vaille pas le vendredi.
+  useEffect(() => {
+    const t = setInterval(() => setJourCourant(jourParis()), 60000);
+    return () => clearInterval(t);
+  }, []);
+  useEffect(() => { setSamedi(jourCourant === 5); }, [jourCourant]);
 
   // Télécharger le PDF depuis base64
   /**
@@ -168,7 +190,11 @@ const PackingApp = () => {
     setLabelLoading(true);
     setLabelError(null);
     try {
-      const res = await axios.post(`${API_URL}/shipments/label/${orderNumber}`, {}, {
+      // L'état de l'interrupteur part avec chaque étiquette ; seul Chronopost
+      // (Chrono 13 et Relais) s'en sert, les autres l'ignorent.
+      const res = await axios.post(`${API_URL}/shipments/label/${orderNumber}`, {
+        saturdayDelivery: saturdayRef.current
+      }, {
         headers: { Authorization: `Bearer ${token}` }
       });
       const data = res.data;
@@ -878,6 +904,31 @@ const PackingApp = () => {
           {user?.name || user?.email || ''}
         </span>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', zIndex: 1 }}>
+          {samediVisible && (
+            <label
+              title="Chronopost : Chrono 13 domicile et Chrono Relais livrés le samedi"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                background: samedi ? '#FFCC00' : 'rgba(255,255,255,0.2)',
+                color: samedi ? '#1f2937' : 'white',
+                padding: '8px 14px',
+                borderRadius: '6px',
+                cursor: 'pointer',
+                fontSize: '14px',
+                fontWeight: samedi ? '700' : '400'
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={samedi}
+                onChange={(e) => setSamedi(e.target.checked)}
+                style={{ width: '16px', height: '16px', cursor: 'pointer' }}
+              />
+              Livraison samedi (Chrono)
+            </label>
+          )}
           {order && !showLabels && (
             <button
               onClick={handleReset}
@@ -975,6 +1026,19 @@ const PackingApp = () => {
                         </td>
                         <td style={{ padding: '10px 12px', fontSize: '13px', color: '#666' }}>
                           {label.tracking_id}
+                          {String(label.method_code || '').endsWith('-SAMEDI') && (
+                            <span style={{
+                              marginLeft: '6px',
+                              padding: '2px 6px',
+                              borderRadius: '8px',
+                              backgroundColor: '#FFCC00',
+                              color: '#1f2937',
+                              fontSize: '11px',
+                              fontWeight: '700'
+                            }}>
+                              Samedi
+                            </span>
+                          )}
                         </td>
                         <td style={{ padding: '10px 12px', textAlign: 'center', fontSize: '13px', color: '#666' }}>
                           {new Date(label.created_at).toLocaleDateString('fr-FR')}

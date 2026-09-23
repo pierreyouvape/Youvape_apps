@@ -1445,7 +1445,7 @@ const refusSaisie = (s) => {
 };
 
 test('on ne saisit un point que chez un transporteur qui sait le contrôler', () => {
-  assert.deepStrictEqual(relayNetworks().map(r => r.code).sort(), ['colissimo', 'mondial_relay']);
+  assert.deepStrictEqual(relayNetworks().map(r => r.code).sort(), ['chronopost', 'colissimo', 'mondial_relay']);
 });
 
 test('le cas réel : point Bpost 305025 de la commande 1259888, créée au back-office', () => {
@@ -1493,6 +1493,275 @@ test('le refus du packing mène à la fiche commande', () => {
   assert.ok(/fiche/.test(messageDe(null)), 'Mondial Relay');
   assert.ok(/fiche/.test(pointRefuse(null)), 'Colissimo');
 });
+
+// ── Chronopost (lot 3) ───────────────────────────────────────────────────────
+console.log('\nChronopost (lot 3)');
+
+const chrono = require('../src/services/carriers/chronopostAdapter');
+
+const CHRONO_ACCOUNT = {
+  carrierCode: 'chronopost',
+  accountCode: 'principal',
+  credentials: { account_number: '34751303', password: 'secret' },
+  settings: {
+    sender: { name: 'SAS EMC', address: '1 rue de test', zipcode: '34170', city: 'Castelnau-le-Lez', country: 'FR', phone: '0467000000' }
+  }
+};
+// Commande 1262992, relevée le 23/09/2026 : Chrono Relais, point 854AF.
+const POINT_854AF = { id: '854AF', city: 'BRON', name: 'PANIER D ORIENT', address: '123 AVENUE PIERRE BROSSOLETTE',
+  country: 'FR', network: 'chronopost', service: 'chronopost_relais', postcode: '69500' };
+const CHRONO_RECEIVER = {
+  name: 'Jean Dupont', first_name: 'Jean', last_name: 'Dupont', company: null,
+  address: '12 rue de la République', address_2: 'Bât. B', postcode: '69003', city: 'Lyon', country: 'FR',
+  phone: null, billing_phone: '+330625565659', email: 'jean@example.com'
+};
+// Le 25/09/2026 est un vendredi, le 24 un jeudi (midi à Paris).
+const VENDREDI = new Date('2026-09-25T10:00:00Z');
+const JEUDI = new Date('2026-09-24T10:00:00Z');
+
+const chronoXml = (over = {}) => chrono.buildLabelPayload({
+  orderNumber: '1262992', receiver: CHRONO_RECEIVER, account: CHRONO_ACCOUNT, weightGrams: 480,
+  options: { deliveryMode: 'relais', relayPoint: POINT_854AF }, now: JEUDI, ...over
+});
+const chronoProduit = (mode, pays, relayCountry) => {
+  try {
+    return chrono.resolveDestination({
+      receiver: { country: pays }, orderNumber: '1',
+      options: { deliveryMode: mode, relayPoint: relayCountry ? { country: relayCountry } : null }
+    }).productCode;
+  } catch (e) { return null; }
+};
+
+test('code produit : mode × pays, le pays du POINT en relais et en 2Shop', () => {
+  assert.strictEqual(chronoProduit('relais', 'FR', 'FR'), '86');
+  assert.strictEqual(chronoProduit('domicile', 'FR'), '01');
+  assert.strictEqual(chronoProduit('2shop', 'FR', 'FR'), '5X');
+  // « 2Shop 2 à 4 jours ouvrés » couvre aussi l'Allemagne et l'Italie.
+  assert.strictEqual(chronoProduit('2shop', 'FR', 'DE'), '6B');
+  assert.strictEqual(chronoProduit('2shop', 'FR', 'IT'), '6B');
+  assert.strictEqual(chronoProduit('express', 'BE'), '17');
+  assert.strictEqual(chronoProduit('express', 'AT'), '17');
+});
+
+test('refus clairs : Express hors UE (pas de douane), relais hors France, mode inconnu', () => {
+  assert.strictEqual(chronoProduit('express', 'CH'), null);
+  assert.strictEqual(chronoProduit('express', 'GB'), null);
+  assert.strictEqual(chronoProduit('relais', 'FR', 'BE'), null);
+  assert.strictEqual(chronoProduit('domicile', 'DE'), null);
+  assert.ok(/n'existe pas/.test(refusDe(() => chrono.resolveDestination({ receiver: {}, options: { deliveryMode: 'fret' }, orderNumber: '1' }))));
+});
+
+test('samedi : le vendredi par défaut, jamais les autres jours sans l\'interrupteur', () => {
+  assert.strictEqual(chrono.livraisonSamedi('86', undefined, VENDREDI), true);
+  assert.strictEqual(chrono.livraisonSamedi('01', undefined, VENDREDI), true);
+  assert.strictEqual(chrono.livraisonSamedi('86', undefined, JEUDI), false);
+});
+
+test('samedi : l\'interrupteur du packing prime, dans les deux sens', () => {
+  // Jeudi soir, colis Chronopost qui partent le lendemain : coché à la main.
+  assert.strictEqual(chrono.livraisonSamedi('01', true, JEUDI), true);
+  // Vendredi, décoché.
+  assert.strictEqual(chrono.livraisonSamedi('86', false, VENDREDI), false);
+});
+
+test('samedi : jamais pour 2Shop ni Express, même coché', () => {
+  for (const p of ['5X', '6B', '17']) assert.strictEqual(chrono.livraisonSamedi(p, true, VENDREDI), false, p);
+});
+
+test('le code service de la requête suit l\'interrupteur', () => {
+  assert.ok(/<service>6<\/service>/.test(chronoXml({ now: VENDREDI }).xml));
+  assert.ok(/<service>0<\/service>/.test(chronoXml({ now: VENDREDI, options: { deliveryMode: 'relais', relayPoint: POINT_854AF, saturdayDelivery: false } }).xml));
+  assert.ok(/<service>6<\/service>/.test(chronoXml({ options: { deliveryMode: 'relais', relayPoint: POINT_854AF, saturdayDelivery: true } }).xml));
+  assert.ok(/<service>0<\/service>/.test(chronoXml().xml));
+});
+
+test('2Shop Europe : service 337 jusqu\'à 3 kg, 338 au-delà', () => {
+  const de = { ...POINT_854AF, country: 'DE', id: '0389B', service: 'chronopost_2shop_europe' };
+  assert.strictEqual(chronoXml({ options: { deliveryMode: '2shop', relayPoint: de } }).service, '337');
+  assert.strictEqual(chronoXml({ weightGrams: 3200, options: { deliveryMode: '2shop', relayPoint: de } }).service, '338');
+});
+
+test('le jour se lit en heure de Paris : vendredi 23 h 30 UTC, c\'est déjà samedi', () => {
+  assert.strictEqual(chrono.instantParis(new Date('2026-09-25T22:30:00Z')).jour, 6);
+  assert.strictEqual(chrono.instantParis(new Date('2026-09-25T21:30:00Z')).jour, 5);
+});
+
+test('relais : le point est désigné par recipientRef, à son adresse, son nom en premier', () => {
+  const { xml } = chronoXml();
+  assert.ok(xml.includes('<recipientRef>854AF</recipientRef>'));
+  assert.ok(xml.includes('<shipperRef>1262992</shipperRef>'));
+  assert.ok(xml.includes('<recipientName>PANIER D ORIENT</recipientName>'));
+  assert.ok(xml.includes('<recipientName2>Jean Dupont</recipientName2>'));
+  assert.ok(xml.includes('<recipientAdress1>123 AVENUE PIERRE BROSSOLETTE</recipientAdress1>'));
+  assert.ok(xml.includes('<recipientAdress2></recipientAdress2>'));
+  assert.ok(xml.includes('<recipientZipCode>69500</recipientZipCode>'));
+  assert.ok(xml.includes('<productCode>86</productCode>'));
+});
+
+test('domicile : adresse du client, accents retirés, complément gardé', () => {
+  const { xml } = chronoXml({ options: { deliveryMode: 'domicile' } });
+  assert.ok(xml.includes('<recipientRef>1262992</recipientRef>'));
+  assert.ok(xml.includes('<recipientAdress1>12 rue de la Republique</recipientAdress1>'), xml);
+  assert.ok(xml.includes('<recipientAdress2>Bat. B</recipientAdress2>'));
+  assert.ok(xml.includes('<productCode>01</productCode>'));
+});
+
+test('requête : identifiants, poids en kg, ordre du schéma, XML échappé', () => {
+  const { xml } = chronoXml({ receiver: { ...CHRONO_RECEIVER, first_name: 'Durand & Fils' } });
+  assert.ok(xml.includes('<accountNumber>34751303</accountNumber>'));
+  assert.ok(xml.includes('<password>secret</password>'));
+  assert.ok(xml.includes('<weight>0.480</weight><weightUnit>KGM</weightUnit>'));
+  assert.ok(xml.includes('<numberOfParcel>1</numberOfParcel>'));
+  assert.ok(xml.includes('<mode>THE</mode>'));
+  assert.ok(xml.includes('Durand et Fils'));
+  // xs:sequence : l'en-tête avant l'expéditeur, le colis avant ses paramètres.
+  const ordre = ['headerValue', 'shipperValue', 'customerValue', 'recipientValue', 'refValue', 'skybillValue', 'skybillParamsValue', '<password>', 'numberOfParcel']
+    .map(t => xml.indexOf(t));
+  assert.deepStrictEqual([...ordre].sort((a, b) => a - b), ordre);
+});
+
+test('téléphone : +33 et +330 ramenés au national, étranger en 00', () => {
+  assert.deepStrictEqual(chrono.normaliserTelephone('+330625565659', 'FR'), { phone: '0625565659', mobile: '0625565659' });
+  assert.deepStrictEqual(chrono.normaliserTelephone('+33781433869', 'FR'), { phone: '0781433869', mobile: '0781433869' });
+  assert.deepStrictEqual(chrono.normaliserTelephone('04 67 00 00 00', 'FR'), { phone: '0467000000', mobile: '' });
+  assert.deepStrictEqual(chrono.normaliserTelephone('+32477204838', 'BE'), { phone: '0032477204838', mobile: '0032477204838' });
+});
+
+test('point relais : réseau, format et pays contrôlés', () => {
+  const r = (rp) => refusDe(() => chrono.assertRelayPoint(rp, '1'));
+  assert.strictEqual(r(POINT_854AF), null);
+  assert.ok(/fiche/.test(r(null)));
+  assert.ok(/réseau/.test(r({ ...POINT_854AF, network: 'mondial_relay' })));
+  assert.ok(/5 lettres/.test(r({ ...POINT_854AF, id: '022112' })));
+  assert.ok(/pays/.test(r({ ...POINT_854AF, country: '' })));
+});
+
+test('Chronopost : relais et 2Shop exigent un point, domicile et Express non', () => {
+  assert.strictEqual(chrono.requiresRelayPoint('relais'), true);
+  assert.strictEqual(chrono.requiresRelayPoint('2shop'), true);
+  assert.strictEqual(chrono.requiresRelayPoint('domicile'), false);
+  assert.strictEqual(chrono.requiresRelayPoint('express'), false);
+  assert.deepStrictEqual(chrono.deliveryModes.map(m => m.code), ['relais', 'domicile', '2shop', 'express']);
+});
+
+test('Chronopost : nom de fichier, bordereau local, annulable', () => {
+  assert.strictEqual(chrono.labelFileName('1262992'), 'chronopost_1262992.pdf');
+  assert.strictEqual(chrono.depositSlip.kind, 'local');
+  assert.strictEqual(supportsDepositSlip(chrono), true);
+  assert.strictEqual(chrono.cancelWindow({}).cancellable, true);
+});
+
+// Échanges SOAP simulés, en série derrière ceux de Colissimo.
+const soap = (retour, op = 'shippingMultiParcelWithReservationV3Response') =>
+  `<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"><soap:Body>`
+  + `<ns1:${op} xmlns:ns1="http://cxf.shipping.soap.chronopost.fr/"><return>${retour}</return></ns1:${op}>`
+  + `</soap:Body></soap:Envelope>`;
+let chronoAppels = [];
+const simulerChrono = (...reponses) => {
+  chronoAppels = [];
+  axiosModule.post = async (url, body) => {
+    chronoAppels.push({ url, body });
+    const [status, data] = reponses.shift();
+    return { status, headers: { 'content-type': 'text/xml' }, data };
+  };
+};
+const chronoEntree = (over = {}) => ({
+  orderNumber: '1262992', receiver: CHRONO_RECEIVER, account: CHRONO_ACCOUNT, weightGrams: 480,
+  options: { deliveryMode: 'relais', relayPoint: POINT_854AF, saturdayDelivery: true }, ...over
+});
+
+testEnSerie('Chronopost : réservation puis PDF, numéro de colis, samedi enregistré, libellé BMS', async () => {
+  simulerChrono(
+    [200, soap('<errorCode>0</errorCode><reservationNumber>R123</reservationNumber><resultParcelValue><skybillNumber>XS486204123FR</skybillNumber></resultParcelValue>')],
+    [200, soap(`<errorCode>0</errorCode><skybill>${VRAI_PDF.toString('base64')}</skybill>`, 'getReservedSkybillWithTypeAndModeResponse')]
+  );
+  const r = await chrono.createLabel(chronoEntree());
+  assert.strictEqual(chronoAppels.length, 2);
+  assert.ok(chronoAppels[0].body.includes('shippingMultiParcelWithReservationV3'));
+  assert.ok(chronoAppels[1].body.includes('<reservationNumber>R123</reservationNumber>'));
+  assert.strictEqual(r.trackingNumber, 'XS486204123FR');
+  assert.strictEqual(r.carrierOrderId, 'R123');
+  assert.strictEqual(r.methodCode, '86-SAMEDI');
+  assert.strictEqual(r.bmsShipmentTitle, 'Chrono Relais FR - Livraison en point relais en France');
+  assert.ok(Buffer.from(r.pdfBase64, 'base64').equals(VRAI_PDF));
+});
+
+testEnSerie('Chronopost : 2Shop France, libellé 2Shop Direct, pas de samedi', async () => {
+  simulerChrono(
+    [200, soap('<errorCode>0</errorCode><reservationNumber>R9</reservationNumber><resultParcelValue><skybillNumber>XR1FR</skybillNumber></resultParcelValue>')],
+    [200, soap(`<errorCode>0</errorCode><skybill>${VRAI_PDF.toString('base64')}</skybill>`, 'x')]
+  );
+  const r = await chrono.createLabel(chronoEntree({
+    options: { deliveryMode: '2shop', relayPoint: { ...POINT_854AF, service: 'chronopost_2shop' }, saturdayDelivery: true }
+  }));
+  assert.strictEqual(r.methodCode, '5X');
+  assert.strictEqual(r.bmsShipmentTitle, 'Chrono 2 Shop Direct - 2Shop Direct');
+  assert.ok(chronoAppels[0].body.includes('<service>0</service>'));
+});
+
+testEnSerie('Chronopost : refus métier rendu au packing, avec son code', async () => {
+  simulerChrono([200, soap('<errorCode>33</errorCode><errorMessage>Code postal et ville incohérents</errorMessage>')]);
+  await assert.rejects(chrono.createLabel(chronoEntree()), (e) => {
+    assert.strictEqual(e.statusCode, 400);
+    assert.ok(!e.authFailure);
+    assert.ok(/incohérents \(code 33\)/.test(e.userMessage), e.userMessage);
+    return true;
+  });
+  assert.strictEqual(chronoAppels.length, 1, 'aucun second appel après un refus');
+});
+
+testEnSerie('Chronopost : refus d\'identifiants = 401, NE RÉESSAYEZ PAS', async () => {
+  simulerChrono([200, soap('<errorCode>3</errorCode><errorMessage>Erreur d\'authentification</errorMessage>')]);
+  await assert.rejects(chrono.createLabel(chronoEntree()), (e) => {
+    assert.strictEqual(e.statusCode, 401);
+    assert.ok(chrono.estRefusIdentifiants(e));
+    assert.ok(/NE RÉESSAYEZ PAS/.test(e.userMessage));
+    return true;
+  });
+});
+
+testEnSerie('Chronopost : faute SOAP lue et rendue, pas une page d\'erreur opaque', async () => {
+  simulerChrono([500, '<soap:Envelope><soap:Body><soap:Fault><faultcode>soap:Client</faultcode><faultstring>Unmarshalling Error: shipHour</faultstring></soap:Fault></soap:Body></soap:Envelope>']);
+  await assert.rejects(chrono.createLabel(chronoEntree()), (e) => {
+    assert.strictEqual(e.statusCode, 400);
+    assert.ok(/Unmarshalling Error/.test(e.userMessage));
+    return true;
+  });
+});
+
+testEnSerie('Chronopost : colis créé mais PDF perdu — le message donne le numéro et interdit de réessayer', async () => {
+  simulerChrono(
+    [200, soap('<errorCode>0</errorCode><reservationNumber>R1</reservationNumber><resultParcelValue><skybillNumber>XS1FR</skybillNumber></resultParcelValue>')],
+    [503, 'Service Unavailable']
+  );
+  await assert.rejects(chrono.createLabel(chronoEntree()), (e) => {
+    assert.ok(/XS1FR/.test(e.userMessage) && /second colis/.test(e.userMessage), e.userMessage);
+    return true;
+  });
+});
+
+testEnSerie('Chronopost : annulation, et refus « déjà pris en charge » en clair', async () => {
+  const label = { tracking_number: 'XS1FR' };
+  simulerChrono([200, soap('<errorCode>0</errorCode><statusCode>0</statusCode>', 'cancelSkybillResponse')]);
+  const r = await chrono.cancelLabel({ label, account: CHRONO_ACCOUNT });
+  assert.strictEqual(r.errorCode, '0');
+  assert.ok(chronoAppels[0].url.includes('TrackingServiceWS'));
+  assert.ok(chronoAppels[0].body.includes('<skybillNumber>XS1FR</skybillNumber>'));
+
+  simulerChrono([200, soap('<errorCode>3</errorCode>', 'cancelSkybillResponse')]);
+  await assert.rejects(chrono.cancelLabel({ label, account: CHRONO_ACCOUNT }), /déjà pris ce colis en charge/);
+});
+
+testEnSerie('Chronopost : format non PDF refusé avant tout appel', async () => {
+  simulerChrono();
+  await assert.rejects(
+    chrono.createLabel(chronoEntree({ account: { ...CHRONO_ACCOUNT, settings: { ...CHRONO_ACCOUNT.settings, output_format: 'Z2D' } } })),
+    /pas un PDF/
+  );
+  assert.strictEqual(chronoAppels.length, 0);
+});
+
+serie = serie.then(() => { axiosModule.post = postReel; });
 
 Promise.all(pending).then(() => {
   console.log(failures === 0 ? '\nTous les tests passent.' : `\n${failures} test(s) en échec.`);

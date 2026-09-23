@@ -246,7 +246,10 @@ const generateForOrder = async (req, res) => {
       options: {
         deliveryMode: mapping.deliveryMode,
         relayPoint: order.relay_point || null,
-        shippingMethod: order.shipping_method
+        shippingMethod: order.shipping_method,
+        // Interrupteur « Livraison samedi » du packing (Chronopost). Absent,
+        // l'adaptateur applique sa règle par défaut : oui le vendredi.
+        saturdayDelivery: typeof req.body?.saturdayDelivery === 'boolean' ? req.body.saturdayDelivery : undefined
       },
       // Même condition que la confirmation ci-dessous, et pour la même raison :
       // elle porte sur l'adaptateur, pas sur la présence d'un numéro de suivi.

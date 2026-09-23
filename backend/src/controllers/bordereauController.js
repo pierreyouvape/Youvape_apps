@@ -74,11 +74,8 @@ const decouperEnLots = (items, max) => {
  * le menu ferait chercher une panne. On l'annonce donc, avec la raison.
  * L'entrée disparaît d'elle-même le jour où l'adaptateur arrive.
  */
-const A_VENIR = [
-  { carrierCode: 'chronopost', carrierLabel: 'Chronopost',
-    reason: "L'app n'étiquette pas encore les colis Chronopost (lot 3) — ils sortent de BMS, "
-      + 'et leur bordereau se fait donc dans BMS.' }
-];
+// Vide depuis le lot 3 : Chronopost, dernier attendu, est branché.
+const A_VENIR = [];
 
 /** Les transporteurs branchés qui savent produire un bordereau. */
 const carriersWithDepositSlip = () =>
