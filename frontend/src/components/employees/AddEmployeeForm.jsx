@@ -19,7 +19,7 @@ const input = {
  * Le code-barre n'est PAS généré ici : il se demande ensuite, explicitement.
  *
  * @param {Array}    users     comptes app (pour le rattachement facultatif)
- * @param {Function} onAdded   rappelé après création, pour recharger la liste
+ * @param {Function} onAdded   rappelé après création avec le salarié créé
  * @param {Function} onError   remonte le message d'erreur à l'écran parent
  * @param {Function} onCancel  ferme le formulaire
  */
@@ -38,14 +38,16 @@ export default function AddEmployeeForm({ users = [], onAdded, onError, onCancel
     setMissing(null);
     setBusy(true);
     try {
-      await axios.post(`${API_URL}/employees`, {
+      const { data } = await axios.post(`${API_URL}/employees`, {
         first_name: form.first_name.trim(),
         last_name: form.last_name.trim(),
         user_id: form.user_id || null,
       });
       setForm({ first_name: '', last_name: '', user_id: '' });
       onError?.(null);
-      await onAdded?.();
+      // Le salarié créé remonte : l'écran peut le nommer dans sa confirmation,
+      // au lieu de laisser chercher une ligne au milieu d'un tableau trié.
+      await onAdded?.(data?.data);
       onCancel?.();
     } catch (e) {
       onError?.(e.response?.data?.error || e.message);

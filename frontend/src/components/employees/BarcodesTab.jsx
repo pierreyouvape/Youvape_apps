@@ -45,6 +45,7 @@ export default function BarcodesTab() {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [notice, setNotice] = useState(null);
   const [busyId, setBusyId] = useState(null);
   const [showArchived, setShowArchived] = useState(false);
   const [adding, setAdding] = useState(false);
@@ -184,11 +185,31 @@ ${labels.map((e) => `<div class="lab"><p class="who">${fullName(e)}</p>`
         }}>{error}</div>
       )}
 
+      {notice && (
+        <div style={{
+          background: '#ECFDF5', border: '1px solid #A7F3D0', color: C.green,
+          padding: '10px 14px', borderRadius: 10, marginBottom: 14, fontSize: 13.5,
+          display: 'flex', justifyContent: 'space-between', gap: 12,
+        }}>
+          <span>{notice}</span>
+          <button
+            onClick={() => setNotice(null)}
+            style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.green }}
+          >✕</button>
+        </div>
+      )}
+
       {/* ── Nouveau salarié ── */}
       {adding && canWrite && (
         <AddEmployeeForm
           users={users}
-          onAdded={load}
+          onAdded={async (created) => {
+            await load();
+            if (created) {
+              setNotice(`${fullName(created)} est ajouté. Sa ligne est dans le tableau, `
+                + `triée par nom — cliquez « Générer » pour lui donner son code-barre.`);
+            }
+          }}
           onError={setError}
           onCancel={() => setAdding(false)}
         />

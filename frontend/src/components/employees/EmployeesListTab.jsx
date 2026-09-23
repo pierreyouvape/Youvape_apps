@@ -273,7 +273,10 @@ export default function EmployeesListTab() {
       {adding && canWrite && (
         <AddEmployeeForm
           users={users}
-          onAdded={load}
+          onAdded={async (created) => {
+            await load();
+            if (created) setNotice(`${fullName(created)} est ajouté à la liste.`);
+          }}
           onError={setError}
           onCancel={() => setAdding(false)}
         />
