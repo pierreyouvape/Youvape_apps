@@ -84,16 +84,18 @@ export function CategoryScopeSelect({ scope, setScope, options }) {
     >
       <option value="">Tout le catalogue</option>
       {tree.length > 0 ? (
-        tree.map((g) => (
-          <optgroup key={g.category} label={decodeEntities(g.category)}>
-            <option value={`cat:${g.category}`}>Tout le rayon ({g.count})</option>
-            {g.sub_categories.map((sc) => (
-              <option key={`sub:${sc.name}`} value={`sub:${sc.name}`}>
-                {' '}{decodeEntities(sc.name)} ({sc.count})
-              </option>
-            ))}
-          </optgroup>
-        ))
+        // Le rayon est lui-même une ligne sélectionnable ; ses familles sont
+        // indentées dessous. Pas d'en-tête de groupe : il répéterait le rayon.
+        tree.flatMap((g) => [
+          <option key={`cat:${g.category}`} value={`cat:${g.category}`}>
+            {decodeEntities(g.category)} ({g.count})
+          </option>,
+          ...g.sub_categories.map((sc) => (
+            <option key={`sub:${sc.name}`} value={`sub:${sc.name}`}>
+              {'\u2003'}{decodeEntities(sc.name)} ({sc.count})
+            </option>
+          )),
+        ])
       ) : (<>
         <optgroup label="Catégorie">
           {dedupe(options.categories).map((c) => (
