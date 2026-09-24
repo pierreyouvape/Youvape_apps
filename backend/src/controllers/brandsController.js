@@ -20,10 +20,17 @@ const parseScope = (req) => {
   return { category: clean(req.query.category), subCategory: clean(req.query.subCategory) };
 };
 
+// Comparaison de libellé de catégorie insensible à la casse et à la ponctuation :
+// le catalogue porte encore d'anciens noms de termes WooCommerce (« E-Liquides pour
+// cigarette électronique » à côté de « E Liquides pour cigarette électronique »), et
+// les deux graphies doivent rentrer dans le même classement.
+const norm = (e) => `lower(regexp_replace(${e}, '[^[:alnum:]]+', '', 'g'))`;
+
 // Clause à coller dans un WHERE portant sur products (alias `a`). $i = catégorie,
 // $j = sous-catégorie ; NULL des deux côtés = aucune restriction.
 const scopeSql = (a, i, j) =>
-  `AND ($${i}::text IS NULL OR ${a}.category = $${i}) AND ($${j}::text IS NULL OR ${a}.sub_category = $${j})`;
+  `AND ($${i}::text IS NULL OR ${norm(`${a}.category`)} = ${norm(`$${i}::text`)})
+   AND ($${j}::text IS NULL OR ${norm(`${a}.sub_category`)} = ${norm(`$${j}::text`)})`;
 
 /**
  * Récupère toutes les marques avec stats agrégées

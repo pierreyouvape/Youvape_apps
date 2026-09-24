@@ -26,6 +26,20 @@ const scopeToParams = (scope) => {
 };
 const scopeLabel = (scope) => (scope ? decodeEntities(scope.slice(4)) : '');
 
+// Deux graphies du même rayon (« E-Liquides pour… » / « E Liquides pour… ») ne font
+// qu'une entrée : le backend compare lui aussi sans casse ni ponctuation.
+const normKey = (v) => decodeEntities(v).toLowerCase().normalize('NFD')
+  .replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '');
+const dedupe = (list) => {
+  const seen = new Set();
+  return (list || []).filter((v) => {
+    const k = normKey(v);
+    if (!k || seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
+};
+
 // Répartition France / autres pays (pays de livraison), en TTC
 const withCountrySplit = (row) => {
   const ca = parseFloat(row.ca_ttc || 0);
@@ -59,7 +73,7 @@ const BrandsStatsTab = () => {
   const [sortOrder, setSortOrder] = useState('DESC');
   const [searchTerm, setSearchTerm] = useState('');
   const [view, setView] = useState('totals'); // 'totals' | 'monthly'
-  const [period, setPeriod] = useState('all');
+  const [period, setPeriod] = useState('30d');
   const [customStart, setCustomStart] = useState('');
   const [customEnd, setCustomEnd] = useState('');
   const [monthlyRows, setMonthlyRows] = useState([]);
@@ -294,12 +308,12 @@ const BrandsStatsTab = () => {
           >
             <option value="">Tout le catalogue</option>
             <optgroup label="Catégorie">
-              {(scopeOptions.categories || []).map((c) => (
+              {dedupe(scopeOptions.categories).map((c) => (
                 <option key={`cat:${c}`} value={`cat:${c}`}>{decodeEntities(c)}</option>
               ))}
             </optgroup>
             <optgroup label="Sous-catégorie">
-              {(scopeOptions.sub_categories || []).map((c) => (
+              {dedupe(scopeOptions.sub_categories).map((c) => (
                 <option key={`sub:${c}`} value={`sub:${c}`}>{decodeEntities(c)}</option>
               ))}
             </optgroup>

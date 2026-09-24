@@ -47,7 +47,7 @@ const CategoriesStatsTab = () => {
   const [sortOrder, setSortOrder] = useState('DESC');
   const [searchTerm, setSearchTerm] = useState('');
   const [view, setView] = useState('totals'); // 'totals' | 'monthly'
-  const [period, setPeriod] = useState('all');
+  const [period, setPeriod] = useState('30d');
   const [customStart, setCustomStart] = useState('');
   const [customEnd, setCustomEnd] = useState('');
   const [monthlyRows, setMonthlyRows] = useState([]);
