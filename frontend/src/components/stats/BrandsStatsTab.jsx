@@ -79,7 +79,7 @@ const BrandsStatsTab = () => {
   const [monthlyRows, setMonthlyRows] = useState([]);
   const [monthlyLoading, setMonthlyLoading] = useState(false);
   const [scope, setScope] = useState('');
-  const [scopeOptions, setScopeOptions] = useState({ categories: [], sub_categories: [] });
+  const [scopeOptions, setScopeOptions] = useState({ categories: [], sub_categories: [], category_tree: [] });
 
   const dateRange = useMemo(() => computeDateRange(period, customStart, customEnd), [period, customStart, customEnd]);
   // Mêmes params pour la liste, la vue par mois et le dépliage des sous-marques
@@ -307,16 +307,29 @@ const BrandsStatsTab = () => {
             }}
           >
             <option value="">Tout le catalogue</option>
-            <optgroup label="Catégorie">
-              {dedupe(scopeOptions.categories).map((c) => (
-                <option key={`cat:${c}`} value={`cat:${c}`}>{decodeEntities(c)}</option>
-              ))}
-            </optgroup>
-            <optgroup label="Sous-catégorie">
-              {dedupe(scopeOptions.sub_categories).map((c) => (
-                <option key={`sub:${c}`} value={`sub:${c}`}>{decodeEntities(c)}</option>
-              ))}
-            </optgroup>
+            {(scopeOptions.category_tree || []).length > 0 ? (
+              scopeOptions.category_tree.map((g) => (
+                <optgroup key={g.category} label={decodeEntities(g.category)}>
+                  <option value={`cat:${g.category}`}>Tout le rayon ({g.count})</option>
+                  {g.sub_categories.map((sc) => (
+                    <option key={`sub:${sc.name}`} value={`sub:${sc.name}`}>
+                      {'\u2003'}{decodeEntities(sc.name)} ({sc.count})
+                    </option>
+                  ))}
+                </optgroup>
+              ))
+            ) : (<>
+              <optgroup label="Catégorie">
+                {dedupe(scopeOptions.categories).map((c) => (
+                  <option key={`cat:${c}`} value={`cat:${c}`}>{decodeEntities(c)}</option>
+                ))}
+              </optgroup>
+              <optgroup label="Sous-catégorie">
+                {dedupe(scopeOptions.sub_categories).map((c) => (
+                  <option key={`sub:${c}`} value={`sub:${c}`}>{decodeEntities(c)}</option>
+                ))}
+              </optgroup>
+            </>)}
           </select>
         </div>
         <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>

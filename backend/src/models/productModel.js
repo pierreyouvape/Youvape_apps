@@ -737,12 +737,41 @@ class ProductModel {
        FROM product_suppliers ps JOIN suppliers s ON s.id = ps.supplier_id
        WHERE s.name IS NOT NULL AND s.name <> '' ORDER BY 1`
     );
+    // Arbre rayon → familles : permet de proposer « Eliquides 10ml » sous son
+    // rayon plutôt que noyé dans une liste à plat de 40 entrées (filtre de
+    // l'onglet Marques). Compté sur les seuls produits publiés, du plus vendu
+    // au moins fourni, pour que les gros rayons arrivent en tête.
+    const treeR = await pool.query(
+      `SELECT category, sub_category, COUNT(*)::int AS n
+         FROM products
+        WHERE category IS NOT NULL AND category <> ''
+          AND product_type IN ('simple','variable','woosb') AND post_status = 'publish'
+        GROUP BY 1, 2`
+    );
+    const byCategory = new Map();
+    for (const { category, sub_category: sub, n } of treeR.rows) {
+      if (!byCategory.has(category)) byCategory.set(category, { category, count: 0, subs: new Map() });
+      const entry = byCategory.get(category);
+      entry.count += n;
+      if (sub) entry.subs.set(sub, (entry.subs.get(sub) || 0) + n);
+    }
+    const category_tree = [...byCategory.values()]
+      .sort((a, b) => b.count - a.count)
+      .map(({ category, count, subs }) => ({
+        category,
+        count,
+        sub_categories: [...subs.entries()]
+          .sort((a, b) => b[1] - a[1])
+          .map(([name, n]) => ({ name, count: n })),
+      }));
+
     return {
       brands: await distinct('brand'),
       sub_brands: await distinct('sub_brand'),
       categories: await distinct('category'),
       sub_categories: await distinct('sub_category'),
       suppliers: suppliersR.rows.map((x) => x.v),
+      category_tree,
     };
   }
 
