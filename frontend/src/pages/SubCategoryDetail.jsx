@@ -14,7 +14,7 @@ const SubCategoryDetail = () => {
   const navigate = useNavigate();
   const [subCategory, setSubCategory] = useState(null);
   const [loading, setLoading] = useState(true);
-  const { params, bar, filterKey } = useDetailFilters('brand');
+  const { params, bar, filterKey } = useDetailFilters('brand', { subCategory: subCategoryName });
 
   useEffect(() => {
     fetchSubCategoryData();

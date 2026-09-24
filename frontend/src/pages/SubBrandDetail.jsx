@@ -14,7 +14,7 @@ const SubBrandDetail = () => {
   const navigate = useNavigate();
   const [subBrand, setSubBrand] = useState(null);
   const [loading, setLoading] = useState(true);
-  const { params, bar, filterKey } = useDetailFilters('category');
+  const { params, bar, filterKey } = useDetailFilters('category', { subBrand: subBrandName });
 
   useEffect(() => {
     fetchSubBrandData();

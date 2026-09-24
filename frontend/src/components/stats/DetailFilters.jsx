@@ -4,6 +4,9 @@
 //
 //   kind = 'category' → page d'une marque : on restreint à un rayon du catalogue
 //   kind = 'brand'    → page d'une catégorie : on restreint à une marque
+//
+// `context` (ex. { brand: 'Kiwi Vapor' }) limite le menu à ce qui existe vraiment
+// dans le périmètre de la page — pas de rayon proposé où la marque n'a rien.
 
 import { useState, useMemo } from 'react';
 import PeriodFilter, { computeDateRange, dateParams, PERIOD_OPTIONS } from './PeriodFilter';
@@ -11,12 +14,12 @@ import {
   CategoryScopeSelect, BrandScopeSelect, useCatalogOptions, scopeToParams, scopeLabel,
 } from './ScopeFilter';
 
-export function useDetailFilters(kind) {
+export function useDetailFilters(kind, context) {
   const [period, setPeriod] = useState('30d');
   const [customStart, setCustomStart] = useState('');
   const [customEnd, setCustomEnd] = useState('');
   const [scope, setScope] = useState('');
-  const options = useCatalogOptions();
+  const options = useCatalogOptions(context);
 
   const dateRange = useMemo(
     () => computeDateRange(period, customStart, customEnd),

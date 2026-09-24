@@ -16,7 +16,7 @@ const CategoryDetail = () => {
   const [loading, setLoading] = useState(true);
   const [expandedSubCategories, setExpandedSubCategories] = useState({});
   const [subCategoryProducts, setSubCategoryProducts] = useState({});
-  const { params, bar, filterKey } = useDetailFilters('brand');
+  const { params, bar, filterKey } = useDetailFilters('brand', { category: categoryName });
 
   useEffect(() => {
     // Les produits déjà chargés l'ont été pour l'ancienne période / l'ancienne marque

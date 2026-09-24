@@ -45,17 +45,23 @@ export const dedupe = (list) => {
   });
 };
 
-/** Listes du catalogue (marques, rayons, familles), chargées une fois par écran. */
-export function useCatalogOptions() {
+/**
+ * Listes du catalogue (marques, rayons, familles), chargées une fois par écran.
+ * `context` restreint les propositions au périmètre de la page : sur une marque,
+ * seuls ses rayons apparaissent, avec le nombre de SES produits.
+ *   { brand } | { subBrand } | { category } | { subCategory }
+ */
+export function useCatalogOptions(context) {
   const [options, setOptions] = useState({
     brands: [], sub_brands: [], categories: [], sub_categories: [], category_tree: [],
   });
+  const contextKey = JSON.stringify(context || {});
 
   useEffect(() => {
-    axios.get(`${API_BASE_URL}/products/stats-filter-options`)
+    axios.get(`${API_BASE_URL}/products/stats-filter-options`, { params: JSON.parse(contextKey) })
       .then((r) => { if (r.data?.success) setOptions((prev) => ({ ...prev, ...r.data.data })); })
       .catch(() => {});
-  }, []);
+  }, [contextKey]);
 
   return options;
 }

@@ -330,7 +330,13 @@ exports.getStatsCountries = async (req, res) => {
  */
 exports.getStatsFilterOptions = async (req, res) => {
   try {
-    res.json({ success: true, data: await productModel.getStatsFilterOptions() });
+    // Contexte optionnel : ?brand= / ?subBrand= / ?category= / ?subCategory=
+    // (les pages de détail ne proposent que ce qui existe dans leur périmètre)
+    const { brand, subBrand, category, subCategory } = req.query;
+    res.json({
+      success: true,
+      data: await productModel.getStatsFilterOptions({ brand, subBrand, category, subCategory }),
+    });
   } catch (error) {
     console.error('Error getting stats filter options:', error);
     res.status(500).json({ success: false, error: error.message });

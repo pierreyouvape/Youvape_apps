@@ -722,13 +722,40 @@ class ProductModel {
   /**
    * Valeurs distinctes pour les filtres à liste déroulante (marque, catégorie, fournisseur…).
    */
-  async getStatsFilterOptions() {
+  /**
+   * Listes pour les filtres (marques, rayons, familles…).
+   * `ctx` restreint le périmètre : sur la page d'une marque on ne propose que les
+   * rayons où cette marque a des produits, et inversement. Sans contexte, on
+   * renvoie tout le catalogue (cas du constructeur de segments).
+   */
+  async getStatsFilterOptions(ctx = {}) {
+    const conds = [`product_type IN ('simple','variable','woosb')`, `post_status = 'publish'`];
+    const params = [];
+    const eq = (col, v) => {
+      if (!v) return;
+      params.push(v);
+      conds.push(`${col} = $${params.length}`);
+    };
+    // Libellé de catégorie : comparaison sans casse ni ponctuation, comme partout
+    // ailleurs (deux graphies ont longtemps coexisté pour le rayon e-liquides).
+    const eqLabel = (col, v) => {
+      if (!v) return;
+      params.push(v);
+      const n = (e) => `lower(regexp_replace(${e}, '[^[:alnum:]]+', '', 'g'))`;
+      conds.push(`${n(col)} = ${n(`$${params.length}::text`)}`);
+    };
+    eq('brand', ctx.brand);
+    eq('sub_brand', ctx.subBrand);
+    eqLabel('category', ctx.category);
+    eqLabel('sub_category', ctx.subCategory);
+    const scope = conds.join(' AND ');
+
     const distinct = async (col) => {
       const r = await pool.query(
         `SELECT DISTINCT ${col} AS v FROM products
-         WHERE ${col} IS NOT NULL AND ${col} <> ''
-           AND product_type IN ('simple','variable','woosb') AND post_status = 'publish'
-         ORDER BY 1`
+         WHERE ${col} IS NOT NULL AND ${col} <> '' AND ${scope}
+         ORDER BY 1`,
+        params
       );
       return r.rows.map((x) => x.v);
     };
@@ -744,9 +771,9 @@ class ProductModel {
     const treeR = await pool.query(
       `SELECT category, sub_category, COUNT(*)::int AS n
          FROM products
-        WHERE category IS NOT NULL AND category <> ''
-          AND product_type IN ('simple','variable','woosb') AND post_status = 'publish'
-        GROUP BY 1, 2`
+        WHERE category IS NOT NULL AND category <> '' AND ${scope}
+        GROUP BY 1, 2`,
+      params
     );
     const byCategory = new Map();
     for (const { category, sub_category: sub, n } of treeR.rows) {
