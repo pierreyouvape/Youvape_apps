@@ -210,11 +210,11 @@ const CategoriesStatsTab = () => {
     textAlign: 'left',
     fontSize: '12px',
     fontWeight: '600',
-    color: '#6c757d',
+    color: '#8A99A4',
     textTransform: 'uppercase',
     cursor: 'pointer',
     userSelect: 'none',
-    backgroundColor: sortBy === column ? '#e9ecef' : '#f8f9fa',
+    backgroundColor: sortBy === column ? '#e9ecef' : '#F2F6F8',
     transition: 'background-color 0.2s'
   });
 
@@ -278,7 +278,7 @@ const CategoriesStatsTab = () => {
             onClick={handleExport}
             style={{
               padding: '6px 12px',
-              backgroundColor: '#6c757d',
+              backgroundColor: '#8A99A4',
               color: 'white',
               border: 'none',
               borderRadius: '4px',
@@ -317,30 +317,30 @@ const CategoriesStatsTab = () => {
         )
       ) : (<>
       {/* Cards de statistiques */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '15px', marginBottom: '30px' }}>
-        <div style={{ backgroundColor: 'white', padding: '20px', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
-          <p style={{ fontSize: '14px', color: '#6c757d', margin: '0 0 10px 0' }}>Categories</p>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 180px), 1fr))', gap: '15px', marginBottom: '30px' }}>
+        <div style={{ backgroundColor: 'white', padding: '20px', borderRadius: '8px', boxShadow: '0 1px 3px rgba(0,0,0,0.07), 0 0 0 1px rgba(0,0,0,0.05)' }}>
+          <p style={{ fontSize: '14px', color: '#8A99A4', margin: '0 0 10px 0' }}>Categories</p>
           <p style={{ fontSize: '28px', fontWeight: 'bold', color: '#135E84', margin: 0 }}>{filteredCategories.length}{searchTerm && ` / ${withSales.length}`}</p>
         </div>
-        <div style={{ backgroundColor: 'white', padding: '20px', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
-          <p style={{ fontSize: '14px', color: '#6c757d', margin: '0 0 10px 0' }}>Sous-categories</p>
+        <div style={{ backgroundColor: 'white', padding: '20px', borderRadius: '8px', boxShadow: '0 1px 3px rgba(0,0,0,0.07), 0 0 0 1px rgba(0,0,0,0.05)' }}>
+          <p style={{ fontSize: '14px', color: '#8A99A4', margin: '0 0 10px 0' }}>Sous-categories</p>
           <p style={{ fontSize: '28px', fontWeight: 'bold', color: '#135E84', margin: 0 }}>{totals.sub_category_count}</p>
         </div>
-        <div style={{ backgroundColor: 'white', padding: '20px', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
-          <p style={{ fontSize: '14px', color: '#6c757d', margin: '0 0 10px 0' }}>Qte vendue</p>
-          <p style={{ fontSize: '28px', fontWeight: 'bold', color: '#333', margin: 0 }}>{formatNumber(totals.qty_sold)}</p>
+        <div style={{ backgroundColor: 'white', padding: '20px', borderRadius: '8px', boxShadow: '0 1px 3px rgba(0,0,0,0.07), 0 0 0 1px rgba(0,0,0,0.05)' }}>
+          <p style={{ fontSize: '14px', color: '#8A99A4', margin: '0 0 10px 0' }}>Qte vendue</p>
+          <p style={{ fontSize: '28px', fontWeight: 'bold', color: '#2a2e38', margin: 0 }}>{formatNumber(totals.qty_sold)}</p>
         </div>
-        <div style={{ backgroundColor: 'white', padding: '20px', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
-          <p style={{ fontSize: '14px', color: '#6c757d', margin: '0 0 10px 0' }}>CA TTC Total</p>
-          <p style={{ fontSize: '28px', fontWeight: 'bold', color: '#28a745', margin: 0 }}>{formatPrice(totals.ca_ttc)}</p>
+        <div style={{ backgroundColor: 'white', padding: '20px', borderRadius: '8px', boxShadow: '0 1px 3px rgba(0,0,0,0.07), 0 0 0 1px rgba(0,0,0,0.05)' }}>
+          <p style={{ fontSize: '14px', color: '#8A99A4', margin: '0 0 10px 0' }}>CA TTC Total</p>
+          <p style={{ fontSize: '28px', fontWeight: 'bold', color: '#4AB866', margin: 0 }}>{formatPrice(totals.ca_ttc)}</p>
         </div>
-        <div style={{ backgroundColor: 'white', padding: '20px', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
-          <p style={{ fontSize: '14px', color: '#6c757d', margin: '0 0 10px 0' }}>Marge HT Totale</p>
-          <p style={{ fontSize: '28px', fontWeight: 'bold', color: totals.margin_ht >= 0 ? '#28a745' : '#dc3545', margin: 0 }}>{formatPrice(totals.margin_ht)}</p>
+        <div style={{ backgroundColor: 'white', padding: '20px', borderRadius: '8px', boxShadow: '0 1px 3px rgba(0,0,0,0.07), 0 0 0 1px rgba(0,0,0,0.05)' }}>
+          <p style={{ fontSize: '14px', color: '#8A99A4', margin: '0 0 10px 0' }}>Marge HT Totale</p>
+          <p style={{ fontSize: '28px', fontWeight: 'bold', color: totals.margin_ht >= 0 ? '#4AB866' : '#DE2020', margin: 0 }}>{formatPrice(totals.margin_ht)}</p>
         </div>
-        <div style={{ backgroundColor: 'white', padding: '20px', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
-          <p style={{ fontSize: '14px', color: '#6c757d', margin: '0 0 10px 0' }}>Part hors France</p>
-          <p style={{ fontSize: '28px', fontWeight: 'bold', color: '#333', margin: 0 }}>{totals.ca_ttc > 0 ? formatPercent((1 - totals.ca_fr / totals.ca_ttc) * 100) : '–'}</p>
+        <div style={{ backgroundColor: 'white', padding: '20px', borderRadius: '8px', boxShadow: '0 1px 3px rgba(0,0,0,0.07), 0 0 0 1px rgba(0,0,0,0.05)' }}>
+          <p style={{ fontSize: '14px', color: '#8A99A4', margin: '0 0 10px 0' }}>Part hors France</p>
+          <p style={{ fontSize: '28px', fontWeight: 'bold', color: '#2a2e38', margin: 0 }}>{totals.ca_ttc > 0 ? formatPercent((1 - totals.ca_fr / totals.ca_ttc) * 100) : '–'}</p>
         </div>
       </div>
 
@@ -348,7 +348,7 @@ const CategoriesStatsTab = () => {
       {loading ? (
         <div style={{ textAlign: 'center', padding: '50px', backgroundColor: 'white', borderRadius: '8px' }}>Chargement...</div>
       ) : (
-        <div style={{ backgroundColor: 'white', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)', overflow: 'hidden' }}>
+        <div style={{ backgroundColor: 'white', borderRadius: '8px', boxShadow: '0 1px 3px rgba(0,0,0,0.07), 0 0 0 1px rgba(0,0,0,0.05)', overflow: 'hidden' }}>
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
@@ -380,24 +380,24 @@ const CategoriesStatsTab = () => {
                         key={category.category}
                         onClick={() => handleRowClick(category)}
                         style={{
-                          borderTop: '1px solid #dee2e6',
+                          borderTop: '1px solid #E2E2E2',
                           cursor: hasSubCategories ? 'pointer' : 'default',
-                          backgroundColor: isExpanded ? '#f8f9fa' : 'white',
+                          backgroundColor: isExpanded ? '#F2F6F8' : 'white',
                           transition: 'background-color 0.2s'
                         }}
-                        onMouseEnter={(e) => { if (hasSubCategories) e.currentTarget.style.backgroundColor = '#f8f9fa'; }}
+                        onMouseEnter={(e) => { if (hasSubCategories) e.currentTarget.style.backgroundColor = '#F2F6F8'; }}
                         onMouseLeave={(e) => { if (!isExpanded) e.currentTarget.style.backgroundColor = 'white'; }}
                       >
                         <td style={{ padding: '15px', fontSize: '14px' }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                             {hasSubCategories && (
-                              <span style={{ color: '#6c757d', fontSize: '12px' }}>{isExpanded ? '▼' : '▶'}</span>
+                              <span style={{ color: '#8A99A4', fontSize: '12px' }}>{isExpanded ? '▼' : '▶'}</span>
                             )}
                             <LinkBox
                               to={`/categories/${encodeURIComponent(category.category)}`}
                               display="inline"
                               onClick={(e) => e.stopPropagation()}
-                              style={{ fontWeight: 'bold', color: '#007bff' }}
+                              style={{ fontWeight: 'bold', color: '#135E84' }}
                             >
                               {category.category}
                             </LinkBox>
@@ -408,41 +408,41 @@ const CategoriesStatsTab = () => {
                         {isVisible('qty_sold') && <td style={{ padding: '15px', fontSize: '14px', fontWeight: 'bold' }}>{formatNumber(category.qty_sold)}</td>}
                         {isVisible('ca_ttc') && <td style={{ padding: '15px', fontSize: '14px' }}>{formatPrice(category.ca_ttc)}</td>}
                         {isVisible('ca_ht') && <td style={{ padding: '15px', fontSize: '14px' }}>{formatPrice(category.ca_ht)}</td>}
-                        {isVisible('cost_ht') && <td style={{ padding: '15px', fontSize: '14px', color: '#dc3545' }}>{formatPrice(category.cost_ht)}</td>}
-                        {isVisible('margin_ht') && <td style={{ padding: '15px', fontSize: '14px', fontWeight: 'bold', color: category.margin_ht >= 0 ? '#28a745' : '#dc3545' }}>{formatPrice(category.margin_ht)}</td>}
-                        {isVisible('margin_percent') && <td style={{ padding: '15px', fontSize: '14px', fontWeight: 'bold', color: category.margin_percent >= 30 ? '#28a745' : category.margin_percent >= 15 ? '#ffc107' : '#dc3545' }}>{formatPercent(category.margin_percent)}</td>}
+                        {isVisible('cost_ht') && <td style={{ padding: '15px', fontSize: '14px', color: '#DE2020' }}>{formatPrice(category.cost_ht)}</td>}
+                        {isVisible('margin_ht') && <td style={{ padding: '15px', fontSize: '14px', fontWeight: 'bold', color: category.margin_ht >= 0 ? '#4AB866' : '#DE2020' }}>{formatPrice(category.margin_ht)}</td>}
+                        {isVisible('margin_percent') && <td style={{ padding: '15px', fontSize: '14px', fontWeight: 'bold', color: category.margin_percent >= 30 ? '#4AB866' : category.margin_percent >= 15 ? '#E28F00' : '#DE2020' }}>{formatPercent(category.margin_percent)}</td>}
                         {isVisible('ca_fr') && <td style={{ padding: '15px', fontSize: '14px' }}>{formatPrice(category.ca_fr)}</td>}
                         {isVisible('ca_abroad') && <td style={{ padding: '15px', fontSize: '14px' }}>{formatPrice(category.ca_abroad)}</td>}
-                        {isVisible('abroad_percent') && <td style={{ padding: '15px', fontSize: '14px', fontWeight: 'bold', color: category.abroad_percent > 50 ? '#c2410c' : '#333' }}>{category.abroad_percent === null ? '–' : formatPercent(category.abroad_percent)}</td>}
+                        {isVisible('abroad_percent') && <td style={{ padding: '15px', fontSize: '14px', fontWeight: 'bold', color: category.abroad_percent > 50 ? '#c2410c' : '#2a2e38' }}>{category.abroad_percent === null ? '–' : formatPercent(category.abroad_percent)}</td>}
                       </tr>
                       {isExpanded && categorySubCategories.length > 0 && categorySubCategories.map((sc) => (
-                        <tr key={sc.sub_category} style={{ backgroundColor: '#f8f9fa', borderTop: '1px solid #e9ecef' }}>
+                        <tr key={sc.sub_category} style={{ backgroundColor: '#F2F6F8', borderTop: '1px solid #e9ecef' }}>
                           <td style={{ padding: '10px 15px 10px 45px', fontSize: '13px' }}>
                             <LinkBox
                               to={`/sub-categories/${encodeURIComponent(sc.sub_category)}`}
                               display="inline"
                               onClick={(e) => e.stopPropagation()}
-                              style={{ color: '#007bff' }}
+                              style={{ color: '#135E84' }}
                             >
                               ↳ {sc.sub_category}
                             </LinkBox>
                           </td>
-                          {isVisible('product_count') && <td style={{ padding: '10px 15px', fontSize: '13px', color: '#6c757d' }}>{formatNumber(sc.product_count)}</td>}
-                          {isVisible('sub_category_count') && <td style={{ padding: '10px 15px', fontSize: '13px', color: '#6c757d' }}>-</td>}
+                          {isVisible('product_count') && <td style={{ padding: '10px 15px', fontSize: '13px', color: '#8A99A4' }}>{formatNumber(sc.product_count)}</td>}
+                          {isVisible('sub_category_count') && <td style={{ padding: '10px 15px', fontSize: '13px', color: '#8A99A4' }}>-</td>}
                           {isVisible('qty_sold') && <td style={{ padding: '10px 15px', fontSize: '13px' }}>{formatNumber(sc.qty_sold)}</td>}
                           {isVisible('ca_ttc') && <td style={{ padding: '10px 15px', fontSize: '13px' }}>{formatPrice(sc.ca_ttc)}</td>}
                           {isVisible('ca_ht') && <td style={{ padding: '10px 15px', fontSize: '13px' }}>{formatPrice(sc.ca_ht)}</td>}
-                          {isVisible('cost_ht') && <td style={{ padding: '10px 15px', fontSize: '13px', color: '#dc3545' }}>{formatPrice(sc.cost_ht)}</td>}
-                          {isVisible('margin_ht') && <td style={{ padding: '10px 15px', fontSize: '13px', color: sc.margin_ht >= 0 ? '#28a745' : '#dc3545' }}>{formatPrice(sc.margin_ht)}</td>}
-                          {isVisible('margin_percent') && <td style={{ padding: '10px 15px', fontSize: '13px', color: sc.margin_percent >= 30 ? '#28a745' : sc.margin_percent >= 15 ? '#ffc107' : '#dc3545' }}>{formatPercent(sc.margin_percent)}</td>}
+                          {isVisible('cost_ht') && <td style={{ padding: '10px 15px', fontSize: '13px', color: '#DE2020' }}>{formatPrice(sc.cost_ht)}</td>}
+                          {isVisible('margin_ht') && <td style={{ padding: '10px 15px', fontSize: '13px', color: sc.margin_ht >= 0 ? '#4AB866' : '#DE2020' }}>{formatPrice(sc.margin_ht)}</td>}
+                          {isVisible('margin_percent') && <td style={{ padding: '10px 15px', fontSize: '13px', color: sc.margin_percent >= 30 ? '#4AB866' : sc.margin_percent >= 15 ? '#E28F00' : '#DE2020' }}>{formatPercent(sc.margin_percent)}</td>}
                           {isVisible('ca_fr') && <td style={{ padding: '10px 15px', fontSize: '13px' }}>{formatPrice(sc.ca_fr)}</td>}
                           {isVisible('ca_abroad') && <td style={{ padding: '10px 15px', fontSize: '13px' }}>{formatPrice(sc.ca_abroad)}</td>}
-                          {isVisible('abroad_percent') && <td style={{ padding: '10px 15px', fontSize: '13px', color: sc.abroad_percent > 50 ? '#c2410c' : '#333' }}>{sc.abroad_percent === null ? '–' : formatPercent(sc.abroad_percent)}</td>}
+                          {isVisible('abroad_percent') && <td style={{ padding: '10px 15px', fontSize: '13px', color: sc.abroad_percent > 50 ? '#c2410c' : '#2a2e38' }}>{sc.abroad_percent === null ? '–' : formatPercent(sc.abroad_percent)}</td>}
                         </tr>
                       ))}
                       {isExpanded && categorySubCategories.length === 0 && (
-                        <tr key={`${category.category}-loading`} style={{ backgroundColor: '#f8f9fa' }}>
-                          <td colSpan={1 + CATEGORIES_COLUMNS.filter(c => isVisible(c.key)).length} style={{ padding: '15px 45px', fontSize: '13px', color: '#6c757d' }}>
+                        <tr key={`${category.category}-loading`} style={{ backgroundColor: '#F2F6F8' }}>
+                          <td colSpan={1 + CATEGORIES_COLUMNS.filter(c => isVisible(c.key)).length} style={{ padding: '15px 45px', fontSize: '13px', color: '#8A99A4' }}>
                             {categorySubCategoriesLoaded ? 'Aucune vente sur la période' : 'Chargement des sous-categories...'}
                           </td>
                         </tr>
@@ -454,7 +454,7 @@ const CategoriesStatsTab = () => {
             </table>
           </div>
           {withSales.length === 0 && !loading && (
-            <div style={{ textAlign: 'center', padding: '50px', color: '#6c757d' }}>
+            <div style={{ textAlign: 'center', padding: '50px', color: '#8A99A4' }}>
               Aucune categorie trouvee
             </div>
           )}

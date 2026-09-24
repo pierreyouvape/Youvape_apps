@@ -1,6 +1,5 @@
-import { useContext, useEffect } from 'react';
+import { useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { AuthContext } from '../context/AuthContext';
 import ReportsTab from '../components/stats/ReportsTab';
 import CustomersStatsTab from '../components/stats/CustomersStatsTab';
 import ProductsStatsTab from '../components/stats/ProductsStatsTab';
@@ -10,110 +9,154 @@ import OrdersStatsTab from '../components/stats/OrdersStatsTab';
 import AnalysisTab from '../components/stats/AnalysisTab';
 import { LinkBox } from '../utils/navHelpers';
 import AppShell from '../components/AppShell';
+import { Stats as StatsIcon } from '../components/AppIcons';
+
+/* ─── PALETTE (alignée Rapport / Promos / Gestion employé) ─── */
+const C = {
+  app: '#E85A5A', appF: '#B93A3A',
+  grisTL: '#F2F6F8', grisCL: '#E2E2E2', grisM: '#8A99A4', grisF: '#626E85', grisTF: '#2a2e38',
+  blanc: '#FFFFFF',
+};
+
+const TABS = [
+  { id: 'reports', label: 'Rapports', component: ReportsTab },
+  { id: 'clients', label: 'Clients', component: CustomersStatsTab },
+  { id: 'products', label: 'Produits', component: ProductsStatsTab },
+  { id: 'brands', label: 'Marques', component: BrandsStatsTab },
+  { id: 'categories', label: 'Catégories', component: CategoriesStatsTab },
+  { id: 'orders', label: 'Commandes', component: OrdersStatsTab },
+  { id: 'analysis', label: 'Analyse', component: AnalysisTab },
+];
 
 const StatsApp = () => {
-  const { logout } = useContext(AuthContext);
   const navigate = useNavigate();
   const { tab } = useParams();
 
-  const tabs = [
-    { id: 'reports', label: 'Rapports', component: ReportsTab },
-    { id: 'clients', label: 'Clients', component: CustomersStatsTab },
-    { id: 'products', label: 'Produits', component: ProductsStatsTab },
-    { id: 'brands', label: 'Marques', component: BrandsStatsTab },
-    { id: 'categories', label: 'Categories', component: CategoriesStatsTab },
-    { id: 'orders', label: 'Commandes', component: OrdersStatsTab },
-    { id: 'analysis', label: 'Analyse', component: AnalysisTab },
-  ];
-
   // Onglet actif basé sur l'URL, défaut = reports
-  const activeTab = tabs.find((t) => t.id === tab)?.id || 'reports';
+  const activeTab = TABS.find((t) => t.id === tab)?.id || 'reports';
+  const activeLabel = TABS.find((t) => t.id === activeTab)?.label;
 
   // Rediriger vers /stats/reports si on est sur /stats sans onglet
   useEffect(() => {
-    if (!tab) {
-      navigate('/stats/reports', { replace: true });
-    }
+    if (!tab) navigate('/stats/reports', { replace: true });
   }, [tab, navigate]);
 
-  const handleTabChange = (tabId) => {
-    navigate(`/stats/${tabId}`);
-  };
-
-  const ActiveTabComponent = tabs.find((t) => t.id === activeTab)?.component;
-
-  const handleLogout = () => {
-    logout();
-    navigate('/login');
-  };
-
-  const handleBackHome = () => {
-    navigate('/home');
-  };
-
-  const tabStyle = (tabId) => ({
-    padding: '15px 30px',
-    cursor: 'pointer',
-    borderBottom: activeTab === tabId ? '3px solid #007bff' : '3px solid transparent',
-    color: activeTab === tabId ? '#007bff' : '#666',
-    fontWeight: activeTab === tabId ? 'bold' : 'normal',
-    transition: 'all 0.3s ease'
-  });
+  const ActiveTabComponent = TABS.find((t) => t.id === activeTab)?.component;
 
   return (
     <AppShell currentPath="/stats">
-    <main className="main-scroll" style={{ flex: 1, minWidth: 0, overflowY: 'auto', height: '100vh', display: 'flex', flexDirection: 'column' }}>
-      {/* Header */}
-      <div style={{ backgroundColor: '#ff6b6b', color: 'white', padding: '15px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
-          <button onClick={handleBackHome} style={{ background: 'rgba(255,255,255,0.2)', border: 'none', color: 'white', padding: '8px 16px', borderRadius: '6px', cursor: 'pointer', fontSize: '14px' }}>
-            ← Accueil
-          </button>
-          <h1 style={{ margin: 0, fontSize: '1.5rem', fontWeight: 600 }}>📊 Statistiques WooCommerce</h1>
-        </div>
-        <div style={{ display: 'flex', gap: '10px' }}>
+      <main
+        className="main-scroll stats-app"
+        style={{
+          flex: 1, minWidth: 0, overflowY: 'auto', height: '100vh',
+          display: 'flex', flexDirection: 'column',
+          background: C.grisTL, fontFamily: 'Lato, sans-serif', color: C.grisTF,
+        }}
+      >
+        <style>{`
+          /* Barre d'onglets : défile horizontalement quand l'écran est étroit,
+             plutôt que d'élargir la page. */
+          .stats-tabs { overflow-x: auto; scrollbar-width: none; -ms-overflow-style: none; }
+          .stats-tabs::-webkit-scrollbar { display: none; }
+          .stats-tab { transition: background 0.15s, color 0.15s; }
+          .stats-tab:not(.is-active):hover { background: ${C.grisTL}; color: ${C.grisTF}; }
+
+          /* ── Mobile : on remet dans la largeur de l'écran ce qui était pensé
+             pour un grand écran (colonnes fixes, panneaux latéraux, tableaux
+             aérés). AppShell fait déjà défiler les tables horizontalement. ── */
+          @media (max-width: 900px) {
+            .stats-app .yv-row { flex-direction: column !important; }
+            .stats-app .yv-side { width: 100% !important; }
+            .stats-app .yv-reports-layout { flex-direction: column !important; min-height: 0 !important; }
+            .stats-app .yv-reports-nav { width: 100% !important; }
+          }
+          @media (max-width: 768px) {
+            .stats-app .stats-content { padding: 12px !important; }
+            .stats-app th, .stats-app td { padding: 9px 10px !important; font-size: 12.5px !important; }
+            /* 16px : en dessous, iOS zoome sur le champ au focus */
+            .stats-app input, .stats-app select, .stats-app textarea { font-size: 16px !important; }
+          }
+        `}</style>
+
+        {/* ── Barre supérieure ── */}
+        <header
+          style={{
+            background: C.blanc, borderBottom: `1px solid ${C.grisCL}`,
+            padding: '10px 16px', display: 'flex', alignItems: 'center',
+            justifyContent: 'space-between', gap: 12, flexWrap: 'wrap',
+            position: 'sticky', top: 0, zIndex: 30,
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
+            <div
+              style={{
+                width: 30, height: 30, borderRadius: 8, flexShrink: 0,
+                background: `linear-gradient(155deg, ${C.app} 0%, ${C.appF} 100%)`,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                boxShadow: `0 4px 12px ${C.app}59`,
+              }}
+            >
+              <StatsIcon size={18} color="#fff" />
+            </div>
+            <span style={{ fontSize: 16, fontWeight: 800, fontFamily: "'Tilt Warp', cursive", whiteSpace: 'nowrap' }}>
+              Statistiques
+            </span>
+            <span style={{ color: C.grisCL }}>/</span>
+            <span style={{
+              fontSize: 13, color: C.grisF, fontWeight: 600,
+              whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+            }}>
+              {activeLabel}
+            </span>
+          </div>
           <LinkBox
             to="/stats/shipping-settings"
-            display="inline-block"
-            style={{ background: 'rgba(255,255,255,0.2)', color: 'white', padding: '8px 16px', borderRadius: '6px', fontSize: '14px' }}
+            display="inline-flex"
+            style={{
+              alignItems: 'center', gap: 6, padding: '7px 13px', borderRadius: 8,
+              border: `1px solid ${C.grisCL}`, background: C.grisTL, color: C.grisF,
+              fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap',
+            }}
           >
             ⚙️ Paramètres
           </LinkBox>
-          <button onClick={handleLogout} style={{ background: 'rgba(255,255,255,0.2)', border: 'none', color: 'white', padding: '8px 16px', borderRadius: '6px', cursor: 'pointer', fontSize: '14px' }}>
-            Déconnexion
-          </button>
+        </header>
+
+        {/* ── Contenu ── */}
+        <div className="stats-content" style={{ flex: 1, padding: 'clamp(12px, 2vw, 24px)', minWidth: 0 }}>
+          {/* Onglets */}
+          <div
+            className="stats-tabs"
+            style={{
+              display: 'flex', gap: 2, marginBottom: 18, padding: 3,
+              background: C.blanc, borderRadius: 10, border: `1px solid ${C.grisCL}`,
+              width: 'fit-content', maxWidth: '100%',
+            }}
+          >
+            {TABS.map((t) => {
+              const isActive = activeTab === t.id;
+              return (
+                <button
+                  key={t.id}
+                  className={`stats-tab${isActive ? ' is-active' : ''}`}
+                  onClick={() => navigate(`/stats/${t.id}`)}
+                  style={{
+                    background: isActive ? C.app : 'transparent',
+                    color: isActive ? C.blanc : C.grisF,
+                    border: 'none', borderRadius: 8, cursor: 'pointer',
+                    padding: '8px 14px', fontSize: 13.5, fontWeight: 700,
+                    fontFamily: 'inherit', whiteSpace: 'nowrap',
+                  }}
+                >
+                  {t.label}
+                </button>
+              );
+            })}
+          </div>
+
+          {ActiveTabComponent && <ActiveTabComponent />}
         </div>
-      </div>
-
-      {/* Main Content */}
-      <div style={{ flex: 1, padding: '20px 60px', width: '100%' }}>
-        {/* Onglets */}
-        <div style={{ display: 'flex', borderBottom: '2px solid #ddd', marginBottom: '20px' }}>
-          {tabs.map((t) => (
-            <div
-              key={t.id}
-              onClick={() => handleTabChange(t.id)}
-              style={tabStyle(t.id)}
-            >
-              {t.label}
-            </div>
-          ))}
-        </div>
-
-        {/* Contenu de l'onglet actif */}
-        <div>{ActiveTabComponent && <ActiveTabComponent />}</div>
-      </div>
-
-      {/* Footer */}
-      <div style={{
-        backgroundColor: '#ff6b6b',
-        padding: '20px 0',
-        textAlign: 'center',
-        color: 'white'
-      }}>
-        <p style={{ margin: 0 }}>© 2024 YouVape - Tous droits réservés</p>
-      </div>
-    </main>
+      </main>
     </AppShell>
   );
 };

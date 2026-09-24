@@ -152,7 +152,7 @@ export default function ProductSegmentBuilder({
         return (
           <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
             <input type="number" value={f.value} onChange={(e) => patchFilter(i, { value: e.target.value })} style={{ ...inputStyle, width: '90px' }} />
-            <span style={{ fontSize: '13px', color: '#6c757d' }}>jours</span>
+            <span style={{ fontSize: '13px', color: '#8A99A4' }}>jours</span>
           </div>
         );
       }
@@ -205,7 +205,7 @@ export default function ProductSegmentBuilder({
             <>
               <button onClick={updateActive} disabled={!isDirty} title="Écraser le segment avec les filtres actuels"
                 style={{ ...btn(isDirty ? '#135E84' : '#c7d2da'), cursor: isDirty ? 'pointer' : 'not-allowed' }}>💾 Mettre à jour</button>
-              <button onClick={renameActive} style={btn('#6c757d')} title="Renommer">✎</button>
+              <button onClick={renameActive} style={btn('#8A99A4')} title="Renommer">✎</button>
               <button onClick={deleteActive} style={btn('#b02a37')} title="Supprimer ce segment">🗑</button>
             </>
           ) : (

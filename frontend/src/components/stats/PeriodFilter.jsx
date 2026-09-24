@@ -66,7 +66,7 @@ export const dateParams = ({ dateFrom, dateTo }) => {
 const PeriodFilter = ({ period, setPeriod, customStart, setCustomStart, customEnd, setCustomEnd }) => (
   <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-      <label style={{ fontSize: '13px', color: '#6c757d', whiteSpace: 'nowrap' }}>Période :</label>
+      <label style={{ fontSize: '13px', color: '#8A99A4', whiteSpace: 'nowrap' }}>Période :</label>
       <select
         value={period}
         onChange={(e) => setPeriod(e.target.value)}

@@ -13,6 +13,18 @@ const parseDateRange = (req) => {
 // Commande livrée en France (pays de livraison, à défaut de facturation — même règle que l'onglet Produits)
 const IS_FR = `COALESCE(NULLIF(o.shipping_country, ''), o.billing_country) = 'FR'`;
 
+// Périmètre optionnel ?category=… / ?subCategory=… : le classement des marques se
+// calcule alors sur les seuls produits de cette catégorie (ex. « Eliquides 10ml »).
+const parseScope = (req) => {
+  const clean = (v) => (typeof v === 'string' && v.trim() !== '' ? v.trim() : null);
+  return { category: clean(req.query.category), subCategory: clean(req.query.subCategory) };
+};
+
+// Clause à coller dans un WHERE portant sur products (alias `a`). $i = catégorie,
+// $j = sous-catégorie ; NULL des deux côtés = aucune restriction.
+const scopeSql = (a, i, j) =>
+  `AND ($${i}::text IS NULL OR ${a}.category = $${i}) AND ($${j}::text IS NULL OR ${a}.sub_category = $${j})`;
+
 /**
  * Récupère toutes les marques avec stats agrégées
  * GET /api/brands
@@ -20,6 +32,7 @@ const IS_FR = `COALESCE(NULLIF(o.shipping_country, ''), o.billing_country) = 'FR
 exports.getAll = async (req, res) => {
   try {
     const { dateFrom, dateTo } = parseDateRange(req);
+    const { category, subCategory } = parseScope(req);
     const query = `
       WITH brand_products AS (
         SELECT DISTINCT
@@ -30,6 +43,7 @@ exports.getAll = async (req, res) => {
         WHERE p.brand IS NOT NULL
           AND p.product_type IN ('simple', 'variable', 'woosb')
           AND p.post_status = 'publish'
+          ${scopeSql('p', 4, 5)}
       ),
       product_family AS (
         SELECT
@@ -62,7 +76,7 @@ exports.getAll = async (req, res) => {
       SELECT
         b.brand,
         COUNT(DISTINCT bp.wp_product_id)::int as product_count,
-        (SELECT COUNT(DISTINCT p2.sub_brand) FROM products p2 WHERE p2.brand = b.brand AND p2.sub_brand IS NOT NULL)::int as sub_brand_count,
+        (SELECT COUNT(DISTINCT p2.sub_brand) FROM products p2 WHERE p2.brand = b.brand AND p2.sub_brand IS NOT NULL ${scopeSql('p2', 4, 5)})::int as sub_brand_count,
         COALESCE(bs.qty_sold, 0) as qty_sold,
         COALESCE(bs.ca_ttc, 0) as ca_ttc,
         COALESCE(bs.ca_ht, 0) as ca_ht,
@@ -74,14 +88,14 @@ exports.getAll = async (req, res) => {
           THEN ((COALESCE(bs.ca_ht, 0) - COALESCE(bs.cost_ht, 0)) / COALESCE(bs.ca_ht, 0) * 100)
           ELSE 0
         END as margin_percent
-      FROM (SELECT DISTINCT brand FROM products WHERE brand IS NOT NULL) b
+      FROM (SELECT DISTINCT p.brand FROM products p WHERE p.brand IS NOT NULL ${scopeSql('p', 4, 5)}) b
       LEFT JOIN brand_products bp ON bp.brand = b.brand
       LEFT JOIN brand_stats bs ON bs.brand = b.brand
       GROUP BY b.brand, bs.qty_sold, bs.ca_ttc, bs.ca_ht, bs.cost_ht, bs.ca_ttc_fr, bs.ca_ht_fr
       ORDER BY ca_ttc DESC NULLS LAST
     `;
 
-    const result = await pool.query(query, [VALID_ORDER_STATUSES, dateFrom, dateTo]);
+    const result = await pool.query(query, [VALID_ORDER_STATUSES, dateFrom, dateTo, category, subCategory]);
 
     res.json({
       success: true,
@@ -100,6 +114,7 @@ exports.getAll = async (req, res) => {
 exports.getAllSubBrands = async (req, res) => {
   try {
     const { dateFrom, dateTo } = parseDateRange(req);
+    const { category, subCategory } = parseScope(req);
     const query = `
       WITH sub_brand_products AS (
         SELECT DISTINCT
@@ -111,6 +126,7 @@ exports.getAllSubBrands = async (req, res) => {
         WHERE p.sub_brand IS NOT NULL
           AND p.product_type IN ('simple', 'variable', 'woosb')
           AND p.post_status = 'publish'
+          ${scopeSql('p', 4, 5)}
       ),
       product_family AS (
         SELECT
@@ -156,14 +172,14 @@ exports.getAllSubBrands = async (req, res) => {
           THEN ((COALESCE(sbs.ca_ht, 0) - COALESCE(sbs.cost_ht, 0)) / COALESCE(sbs.ca_ht, 0) * 100)
           ELSE 0
         END as margin_percent
-      FROM (SELECT DISTINCT sub_brand, brand FROM products WHERE sub_brand IS NOT NULL) sb
+      FROM (SELECT DISTINCT p.sub_brand, p.brand FROM products p WHERE p.sub_brand IS NOT NULL ${scopeSql('p', 4, 5)}) sb
       LEFT JOIN sub_brand_products sbp ON sbp.sub_brand = sb.sub_brand
       LEFT JOIN sub_brand_stats sbs ON sbs.sub_brand = sb.sub_brand
       GROUP BY sb.sub_brand, sb.brand, sbs.qty_sold, sbs.ca_ttc, sbs.ca_ht, sbs.cost_ht, sbs.ca_ttc_fr, sbs.ca_ht_fr
       ORDER BY ca_ttc DESC NULLS LAST
     `;
 
-    const result = await pool.query(query, [VALID_ORDER_STATUSES, dateFrom, dateTo]);
+    const result = await pool.query(query, [VALID_ORDER_STATUSES, dateFrom, dateTo, category, subCategory]);
 
     res.json({
       success: true,
@@ -182,6 +198,7 @@ exports.getAllSubBrands = async (req, res) => {
 exports.getByName = async (req, res) => {
   try {
     const { dateFrom, dateTo } = parseDateRange(req);
+    const { category, subCategory } = parseScope(req);
     const brandName = decodeURIComponent(req.params.brandName);
 
     // Récupérer les sous-marques de cette marque avec leurs stats
@@ -196,6 +213,7 @@ exports.getByName = async (req, res) => {
           AND p.sub_brand IS NOT NULL
           AND p.product_type IN ('simple', 'variable', 'woosb')
           AND p.post_status = 'publish'
+          ${scopeSql('p', 5, 6)}
       ),
       product_family AS (
         SELECT
@@ -239,14 +257,14 @@ exports.getByName = async (req, res) => {
           THEN ((COALESCE(sbs.ca_ht, 0) - COALESCE(sbs.cost_ht, 0)) / COALESCE(sbs.ca_ht, 0) * 100)
           ELSE 0
         END as margin_percent
-      FROM (SELECT DISTINCT sub_brand FROM products WHERE brand = $1 AND sub_brand IS NOT NULL) sb
+      FROM (SELECT DISTINCT p.sub_brand FROM products p WHERE p.brand = $1 AND p.sub_brand IS NOT NULL ${scopeSql('p', 5, 6)}) sb
       LEFT JOIN sub_brand_products sbp ON sbp.sub_brand = sb.sub_brand
       LEFT JOIN sub_brand_stats sbs ON sbs.sub_brand = sb.sub_brand
       GROUP BY sb.sub_brand, sbs.qty_sold, sbs.ca_ttc, sbs.ca_ht, sbs.cost_ht, sbs.ca_ttc_fr, sbs.ca_ht_fr
       ORDER BY ca_ttc DESC NULLS LAST
     `;
 
-    const subBrandsResult = await pool.query(subBrandsQuery, [brandName, VALID_ORDER_STATUSES, dateFrom, dateTo]);
+    const subBrandsResult = await pool.query(subBrandsQuery, [brandName, VALID_ORDER_STATUSES, dateFrom, dateTo, category, subCategory]);
 
     // Récupérer les produits de cette marque SANS sous-marque (produits "directs")
     const productsWithoutSubBrandQuery = `
@@ -263,6 +281,7 @@ exports.getByName = async (req, res) => {
           AND p.sub_brand IS NULL
           AND p.product_type IN ('simple', 'variable', 'woosb')
           AND p.post_status = 'publish'
+          ${scopeSql('p', 5, 6)}
       ),
       product_family AS (
         SELECT
@@ -323,7 +342,7 @@ exports.getByName = async (req, res) => {
       ORDER BY ca_ttc DESC NULLS LAST
     `;
 
-    const productsResult = await pool.query(productsWithoutSubBrandQuery, [brandName, VALID_ORDER_STATUSES, dateFrom, dateTo]);
+    const productsResult = await pool.query(productsWithoutSubBrandQuery, [brandName, VALID_ORDER_STATUSES, dateFrom, dateTo, category, subCategory]);
 
     // Récupérer les stats globales de la marque
     const globalStatsQuery = `
@@ -335,6 +354,7 @@ exports.getByName = async (req, res) => {
         WHERE p.brand = $1
           AND p.product_type IN ('simple', 'variable', 'woosb')
           AND p.post_status = 'publish'
+          ${scopeSql('p', 5, 6)}
       ),
       product_family AS (
         SELECT
@@ -346,7 +366,7 @@ exports.getByName = async (req, res) => {
       -- WooCommerce: line_total = HT, line_tax = TVA, donc TTC = line_total + line_tax
       SELECT
         COUNT(DISTINCT bp.wp_product_id)::int as product_count,
-        (SELECT COUNT(DISTINCT sub_brand) FROM products WHERE brand = $1 AND sub_brand IS NOT NULL)::int as sub_brand_count,
+        (SELECT COUNT(DISTINCT p2.sub_brand) FROM products p2 WHERE p2.brand = $1 AND p2.sub_brand IS NOT NULL ${scopeSql('p2', 5, 6)})::int as sub_brand_count,
         COALESCE(SUM(oi.qty), 0)::int as qty_sold,
         COALESCE(SUM(oi.line_total), 0) + COALESCE(SUM(oi.line_tax), 0) as ca_ttc,
         COALESCE(SUM(oi.line_total), 0) as ca_ht,
@@ -362,7 +382,7 @@ exports.getByName = async (req, res) => {
       LEFT JOIN products p_cost ON p_cost.wp_product_id = COALESCE(NULLIF(oi.variation_id, 0), oi.product_id)
     `;
 
-    const globalStatsResult = await pool.query(globalStatsQuery, [brandName, VALID_ORDER_STATUSES, dateFrom, dateTo]);
+    const globalStatsResult = await pool.query(globalStatsQuery, [brandName, VALID_ORDER_STATUSES, dateFrom, dateTo, category, subCategory]);
     const globalStats = globalStatsResult.rows[0];
 
     res.json({
@@ -562,6 +582,7 @@ exports.getSubBrandByName = async (req, res) => {
 exports.getMonthly = async (req, res) => {
   try {
     const { dateFrom, dateTo } = parseDateRange(req);
+    const { category, subCategory } = parseScope(req);
     const query = `
       WITH group_products AS (
         SELECT DISTINCT p.brand, p.wp_product_id
@@ -569,6 +590,7 @@ exports.getMonthly = async (req, res) => {
         WHERE p.brand IS NOT NULL
           AND p.product_type IN ('simple', 'variable', 'woosb')
           AND p.post_status = 'publish'
+          ${scopeSql('p', 4, 5)}
       ),
       product_family AS (
         SELECT gp.brand, COALESCE(v.wp_product_id, gp.wp_product_id) as product_id
@@ -596,7 +618,7 @@ exports.getMonthly = async (req, res) => {
       ORDER BY pf.brand, month
     `;
 
-    const result = await pool.query(query, [VALID_ORDER_STATUSES, dateFrom, dateTo]);
+    const result = await pool.query(query, [VALID_ORDER_STATUSES, dateFrom, dateTo, category, subCategory]);
 
     res.json({
       success: true,

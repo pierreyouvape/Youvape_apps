@@ -41,7 +41,7 @@ const evolution = (cur, prev) => {
   const pct = ((cur - prev) / prev) * 100;
   return {
     label: `${pct > 0 ? '+' : ''}${pct.toFixed(1)}%`,
-    color: pct > 0 ? '#28a745' : pct < 0 ? '#dc3545' : '#6c757d'
+    color: pct > 0 ? '#4AB866' : pct < 0 ? '#DE2020' : '#8A99A4'
   };
 };
 
@@ -155,15 +155,15 @@ const MonthlyPivotTable = ({ rows, groupKey, groupLabel, linkPrefix, dateRange, 
     textAlign: 'right',
     fontSize: '12px',
     fontWeight: 600,
-    color: '#6c757d',
+    color: '#8A99A4',
     textTransform: 'uppercase',
     cursor: 'pointer',
     userSelect: 'none',
     whiteSpace: 'nowrap',
-    backgroundColor: sortCol === col ? '#e9ecef' : '#f8f9fa',
+    backgroundColor: sortCol === col ? '#e9ecef' : '#F2F6F8',
     ...extra
   });
-  const stickyCell = { position: 'sticky', left: 0, zIndex: 1, textAlign: 'left', minWidth: '180px', borderRight: '1px solid #dee2e6' };
+  const stickyCell = { position: 'sticky', left: 0, zIndex: 1, textAlign: 'left', minWidth: '180px', borderRight: '1px solid #E2E2E2' };
 
   // Lignes « FR » / « Autres pays » sous la valeur, avec leur part du total de la cellule
   const renderCountry = (cur, fr) => {
@@ -171,7 +171,7 @@ const MonthlyPivotTable = ({ rows, groupKey, groupLabel, linkPrefix, dateRange, 
     const other = cur - fr;
     const pct = (v) => `${Math.round((v / cur) * 100)}%`;
     const line = (label, v, highlight) => (
-      <div style={{ fontSize: '11px', color: highlight ? '#c2410c' : '#6c757d', fontWeight: highlight ? 600 : 400 }}>
+      <div style={{ fontSize: '11px', color: highlight ? '#c2410c' : '#8A99A4', fontWeight: highlight ? 600 : 400 }}>
         {label} {metricDef.format(v)} <span style={{ opacity: 0.8 }}>· {pct(v)}</span>
       </div>
     );
@@ -187,7 +187,7 @@ const MonthlyPivotTable = ({ rows, groupKey, groupLabel, linkPrefix, dateRange, 
     const evo = prev === null ? null : evolution(cur, prev);
     return (
       <td key={key} style={{ padding: '10px 14px', textAlign: 'right', whiteSpace: 'nowrap', fontSize: '14px', verticalAlign: 'top' }}>
-        <div style={{ fontWeight: bold ? 700 : 400, color: cur ? '#333' : '#adb5bd' }}>{metricDef.format(cur)}</div>
+        <div style={{ fontWeight: bold ? 700 : 400, color: cur ? '#2a2e38' : '#adb5bd' }}>{metricDef.format(cur)}</div>
         <div style={{ fontSize: '11px', fontWeight: 600, color: evo ? evo.color : '#adb5bd', minHeight: '14px' }}>
           {evo ? evo.label : (prev === null ? '' : '–')}
         </div>
@@ -199,12 +199,12 @@ const MonthlyPivotTable = ({ rows, groupKey, groupLabel, linkPrefix, dateRange, 
   const renderTotalCells = (total, totalFr) => {
     const abroad = shareAbroad(total, totalFr);
     return (<>
-      <td style={{ padding: '10px 14px', textAlign: 'right', whiteSpace: 'nowrap', fontSize: '14px', fontWeight: 700, borderLeft: '1px solid #dee2e6', verticalAlign: 'top' }}>
+      <td style={{ padding: '10px 14px', textAlign: 'right', whiteSpace: 'nowrap', fontSize: '14px', fontWeight: 700, borderLeft: '1px solid #E2E2E2', verticalAlign: 'top' }}>
         {metricDef.format(total)}
         <div style={{ minHeight: '14px' }} />
         {renderCountry(total, totalFr)}
       </td>
-      <td style={{ padding: '10px 14px', textAlign: 'right', whiteSpace: 'nowrap', fontSize: '14px', fontWeight: 700, verticalAlign: 'top', color: abroad === null ? '#adb5bd' : abroad > 50 ? '#c2410c' : '#333' }}>
+      <td style={{ padding: '10px 14px', textAlign: 'right', whiteSpace: 'nowrap', fontSize: '14px', fontWeight: 700, verticalAlign: 'top', color: abroad === null ? '#adb5bd' : abroad > 50 ? '#c2410c' : '#2a2e38' }}>
         {abroad === null ? '–' : `${abroad.toFixed(1)}%`}
       </td>
     </>);
@@ -235,13 +235,13 @@ const MonthlyPivotTable = ({ rows, groupKey, groupLabel, linkPrefix, dateRange, 
         </div>
         <button
           onClick={handleExport}
-          style={{ padding: '6px 12px', backgroundColor: '#6c757d', color: 'white', border: 'none', borderRadius: '4px', fontSize: '12px', cursor: 'pointer' }}
+          style={{ padding: '6px 12px', backgroundColor: '#8A99A4', color: 'white', border: 'none', borderRadius: '4px', fontSize: '12px', cursor: 'pointer' }}
         >
           CSV
         </button>
       </div>
 
-      <div style={{ backgroundColor: 'white', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)', overflow: 'hidden' }}>
+      <div style={{ backgroundColor: 'white', borderRadius: '8px', boxShadow: '0 1px 3px rgba(0,0,0,0.07), 0 0 0 1px rgba(0,0,0,0.05)', overflow: 'hidden' }}>
         <div style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
@@ -252,15 +252,15 @@ const MonthlyPivotTable = ({ rows, groupKey, groupLabel, linkPrefix, dateRange, 
                     {monthLabel(ym)}{isPartial(ym) ? '*' : ''}{sortIcon(ym)}
                   </th>
                 ))}
-                <th style={th('total', { borderLeft: '1px solid #dee2e6' })} onClick={() => handleSort('total')}>Total{sortIcon('total')}</th>
+                <th style={th('total', { borderLeft: '1px solid #E2E2E2' })} onClick={() => handleSort('total')}>Total{sortIcon('total')}</th>
                 <th style={th('abroad')} onClick={() => handleSort('abroad')} title="Part du total réalisée hors de France (pays de livraison)">% hors FR{sortIcon('abroad')}</th>
               </tr>
             </thead>
             <tbody>
               {tableRows.map(g => (
-                <tr key={g.name} style={{ borderTop: '1px solid #dee2e6' }}>
+                <tr key={g.name} style={{ borderTop: '1px solid #E2E2E2' }}>
                   <td style={{ ...stickyCell, padding: '10px 14px', fontSize: '14px', backgroundColor: 'white', verticalAlign: 'top' }}>
-                    <LinkBox to={`${linkPrefix}${encodeURIComponent(g.name)}`} display="inline" style={{ fontWeight: 'bold', color: '#007bff' }}>
+                    <LinkBox to={`${linkPrefix}${encodeURIComponent(g.name)}`} display="inline" style={{ fontWeight: 'bold', color: '#135E84' }}>
                       {g.name}
                     </LinkBox>
                   </td>
@@ -269,8 +269,8 @@ const MonthlyPivotTable = ({ rows, groupKey, groupLabel, linkPrefix, dateRange, 
                 </tr>
               ))}
               {tableRows.length > 0 && (
-                <tr style={{ borderTop: '2px solid #adb5bd', backgroundColor: '#f8f9fa' }}>
-                  <td style={{ ...stickyCell, padding: '10px 14px', fontSize: '14px', fontWeight: 700, backgroundColor: '#f8f9fa', verticalAlign: 'top' }}>
+                <tr style={{ borderTop: '2px solid #adb5bd', backgroundColor: '#F2F6F8' }}>
+                  <td style={{ ...stickyCell, padding: '10px 14px', fontSize: '14px', fontWeight: 700, backgroundColor: '#F2F6F8', verticalAlign: 'top' }}>
                     Total ({tableRows.length})
                   </td>
                   {months.map((ym, i) => renderCell(monthTotals[i], i > 0 ? monthTotals[i - 1] : null, monthTotalsFr[i], ym, true))}
@@ -281,10 +281,10 @@ const MonthlyPivotTable = ({ rows, groupKey, groupLabel, linkPrefix, dateRange, 
           </table>
         </div>
         {tableRows.length === 0 && (
-          <div style={{ textAlign: 'center', padding: '50px', color: '#6c757d' }}>Aucune vente sur la période</div>
+          <div style={{ textAlign: 'center', padding: '50px', color: '#8A99A4' }}>Aucune vente sur la période</div>
         )}
       </div>
-      <p style={{ fontSize: '12px', color: '#6c757d', marginTop: '10px' }}>
+      <p style={{ fontSize: '12px', color: '#8A99A4', marginTop: '10px' }}>
         % = évolution par rapport au mois précédent. FR / Autres = pays de livraison (à défaut, de facturation), avec leur part du mois ; en orange quand l'étranger dépasse la France. * mois incomplet sur la période choisie (ex. mois en cours) : son évolution n'est pas comparable à un mois entier.
       </p>
     </div>

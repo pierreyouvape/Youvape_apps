@@ -25,7 +25,7 @@ const sortableThStyle = {
   textAlign: 'left',
   fontSize: '12px',
   fontWeight: '600',
-  color: '#6c757d',
+  color: '#8A99A4',
   textTransform: 'uppercase',
   cursor: 'pointer',
   userSelect: 'none',
@@ -227,7 +227,7 @@ const CustomersStatsTab = () => {
             onClick={handleExport}
             style={{
               padding: '6px 12px',
-              backgroundColor: '#6c757d',
+              backgroundColor: '#8A99A4',
               color: 'white',
               border: 'none',
               borderRadius: '4px',
@@ -251,9 +251,9 @@ const CustomersStatsTab = () => {
 
       {/* Card de statistique */}
       <div style={{ marginBottom: '30px' }}>
-        <div style={{ backgroundColor: 'white', padding: '20px', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)', display: 'inline-block' }}>
-          <p style={{ fontSize: '14px', color: '#6c757d', margin: '0 0 10px 0' }}>Total clients</p>
-          <p style={{ fontSize: '28px', fontWeight: 'bold', color: '#333', margin: 0 }}>{formatInt(totalCount)}</p>
+        <div style={{ backgroundColor: 'white', padding: '20px', borderRadius: '8px', boxShadow: '0 1px 3px rgba(0,0,0,0.07), 0 0 0 1px rgba(0,0,0,0.05)', display: 'inline-block' }}>
+          <p style={{ fontSize: '14px', color: '#8A99A4', margin: '0 0 10px 0' }}>Total clients</p>
+          <p style={{ fontSize: '28px', fontWeight: 'bold', color: '#2a2e38', margin: 0 }}>{formatInt(totalCount)}</p>
         </div>
       </div>
 
@@ -261,11 +261,11 @@ const CustomersStatsTab = () => {
       {loading ? (
         <div style={{ textAlign: 'center', padding: '50px', backgroundColor: 'white', borderRadius: '8px' }}>Chargement...</div>
       ) : (
-        <div style={{ backgroundColor: 'white', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)', overflow: 'hidden' }}>
+        <div style={{ backgroundColor: 'white', borderRadius: '8px', boxShadow: '0 1px 3px rgba(0,0,0,0.07), 0 0 0 1px rgba(0,0,0,0.05)', overflow: 'hidden' }}>
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
-                <tr style={{ backgroundColor: '#f8f9fa' }}>
+                <tr style={{ backgroundColor: '#F2F6F8' }}>
                   <th onClick={() => handleSort('id')} style={sortableThStyle}>ID{sortIndicator('id')}</th>
                   <th onClick={() => handleSort('name')} style={sortableThStyle}>Nom Prénom{sortIndicator('name')}</th>
                   {isVisible('email') && <th onClick={() => handleSort('email')} style={sortableThStyle}>Email{sortIndicator('email')}</th>}
@@ -281,11 +281,11 @@ const CustomersStatsTab = () => {
                   <LinkTr
                     key={customer.id}
                     to={`/customers/${customer.id}`}
-                    style={{ borderTop: '1px solid #dee2e6', transition: 'background-color 0.2s' }}
-                    onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f8f9fa'}
+                    style={{ borderTop: '1px solid #E2E2E2', transition: 'background-color 0.2s' }}
+                    onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#F2F6F8'}
                     onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'white'}
                   >
-                    <td style={{ padding: '15px', fontSize: '14px', fontWeight: 'bold', color: '#007bff' }}>{customer.id}</td>
+                    <td style={{ padding: '15px', fontSize: '14px', fontWeight: 'bold', color: '#135E84' }}>{customer.id}</td>
                     <td style={{ padding: '15px', fontSize: '14px' }}>
                       {`${customer.first_name || ''} ${customer.last_name || ''}`.trim() || 'N/A'}
                     </td>
@@ -330,7 +330,7 @@ const CustomersStatsTab = () => {
             </table>
           </div>
           {data.length === 0 && (
-            <div style={{ textAlign: 'center', padding: '50px', color: '#6c757d' }}>
+            <div style={{ textAlign: 'center', padding: '50px', color: '#8A99A4' }}>
               Aucun client trouvé
             </div>
           )}
@@ -339,7 +339,7 @@ const CustomersStatsTab = () => {
 
       {/* Pagination */}
       {!loading && data.length > 0 && (
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '20px', backgroundColor: 'white', padding: '15px 20px', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '20px', backgroundColor: 'white', padding: '15px 20px', borderRadius: '8px', boxShadow: '0 1px 3px rgba(0,0,0,0.07), 0 0 0 1px rgba(0,0,0,0.05)' }}>
           <div style={{ display: 'flex', gap: '10px' }}>
             <button
               onClick={() => goToPage(0)}
@@ -348,7 +348,7 @@ const CustomersStatsTab = () => {
                 padding: '8px 12px',
                 border: '1px solid #ddd',
                 borderRadius: '6px',
-                backgroundColor: canPreviousPage ? 'white' : '#f8f9fa',
+                backgroundColor: canPreviousPage ? 'white' : '#F2F6F8',
                 cursor: canPreviousPage ? 'pointer' : 'not-allowed',
                 fontSize: '14px'
               }}
@@ -362,7 +362,7 @@ const CustomersStatsTab = () => {
                 padding: '8px 12px',
                 border: '1px solid #ddd',
                 borderRadius: '6px',
-                backgroundColor: canPreviousPage ? 'white' : '#f8f9fa',
+                backgroundColor: canPreviousPage ? 'white' : '#F2F6F8',
                 cursor: canPreviousPage ? 'pointer' : 'not-allowed',
                 fontSize: '14px'
               }}
@@ -376,7 +376,7 @@ const CustomersStatsTab = () => {
                 padding: '8px 12px',
                 border: '1px solid #ddd',
                 borderRadius: '6px',
-                backgroundColor: canNextPage ? 'white' : '#f8f9fa',
+                backgroundColor: canNextPage ? 'white' : '#F2F6F8',
                 cursor: canNextPage ? 'pointer' : 'not-allowed',
                 fontSize: '14px'
               }}
@@ -390,7 +390,7 @@ const CustomersStatsTab = () => {
                 padding: '8px 12px',
                 border: '1px solid #ddd',
                 borderRadius: '6px',
-                backgroundColor: canNextPage ? 'white' : '#f8f9fa',
+                backgroundColor: canNextPage ? 'white' : '#F2F6F8',
                 cursor: canNextPage ? 'pointer' : 'not-allowed',
                 fontSize: '14px'
               }}
@@ -398,11 +398,11 @@ const CustomersStatsTab = () => {
               {'>>'}
             </button>
           </div>
-          <div style={{ fontSize: '14px', color: '#6c757d' }}>
+          <div style={{ fontSize: '14px', color: '#8A99A4' }}>
             Page <strong>{pagination.pageIndex + 1}</strong> sur <strong>{pageCount}</strong>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <span style={{ fontSize: '14px', color: '#6c757d' }}>Afficher:</span>
+            <span style={{ fontSize: '14px', color: '#8A99A4' }}>Afficher:</span>
             <select
               value={pagination.pageSize}
               onChange={(e) => setPagination((prev) => ({ ...prev, pageSize: Number(e.target.value), pageIndex: 0 }))}

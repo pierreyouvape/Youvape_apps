@@ -14,6 +14,18 @@ const API_BASE_URL = '/api';
 // Sans aucune vente sur la période : ligne masquée (n'apporte rien)
 const hasSales = (row) => parseFloat(row.ca_ttc || 0) !== 0 || (parseInt(row.qty_sold) || 0) !== 0;
 
+// Libellé lisible : les noms de catégories WooCommerce arrivent encodés (« Box &amp; Mods »)
+const decodeEntities = (s) => (s || '').replace(/&amp;/g, '&').replace(/&#0?39;/g, "'").replace(/&quot;/g, '"');
+
+// Périmètre : '' = tout le catalogue, 'cat:<nom>' = une catégorie, 'sub:<nom>' = une
+// sous-catégorie (c'est ce qui permet « les marques qui vendent le plus en 10ml »).
+const scopeToParams = (scope) => {
+  if (scope.startsWith('cat:')) return { category: scope.slice(4) };
+  if (scope.startsWith('sub:')) return { subCategory: scope.slice(4) };
+  return {};
+};
+const scopeLabel = (scope) => (scope ? decodeEntities(scope.slice(4)) : '');
+
 // Répartition France / autres pays (pays de livraison), en TTC
 const withCountrySplit = (row) => {
   const ca = parseFloat(row.ca_ttc || 0);
@@ -52,22 +64,34 @@ const BrandsStatsTab = () => {
   const [customEnd, setCustomEnd] = useState('');
   const [monthlyRows, setMonthlyRows] = useState([]);
   const [monthlyLoading, setMonthlyLoading] = useState(false);
+  const [scope, setScope] = useState('');
+  const [scopeOptions, setScopeOptions] = useState({ categories: [], sub_categories: [] });
 
   const dateRange = useMemo(() => computeDateRange(period, customStart, customEnd), [period, customStart, customEnd]);
+  // Mêmes params pour la liste, la vue par mois et le dépliage des sous-marques
+  const queryParams = useMemo(() => ({ ...dateParams(dateRange), ...scopeToParams(scope) }), [dateRange, scope]);
+
+  // Catégories et sous-catégories du catalogue (mêmes listes que le constructeur
+  // de segments de l'onglet Produits)
+  useEffect(() => {
+    axios.get(`${API_BASE_URL}/products/stats-filter-options`)
+      .then((r) => { if (r.data?.success) setScopeOptions(r.data.data || {}); })
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
-    // Les sous-marques déjà chargées l'ont été pour l'ancienne période
+    // Les sous-marques déjà chargées l'ont été pour l'ancien périmètre
     setSubBrands({});
     setExpandedBrandName(null);
     if (view === 'monthly') fetchMonthly();
     else fetchBrands();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [view, dateRange.dateFrom, dateRange.dateTo]);
+  }, [view, dateRange.dateFrom, dateRange.dateTo, scope]);
 
   const fetchMonthly = async () => {
     setMonthlyLoading(true);
     try {
-      const response = await axios.get(`${API_BASE_URL}/brands/monthly`, { params: dateParams(dateRange) });
+      const response = await axios.get(`${API_BASE_URL}/brands/monthly`, { params: queryParams });
       if (response.data.success) {
         setMonthlyRows(response.data.data);
       }
@@ -81,7 +105,7 @@ const BrandsStatsTab = () => {
   const fetchBrands = async () => {
     setLoading(true);
     try {
-      const response = await axios.get(`${API_BASE_URL}/brands`, { params: dateParams(dateRange) });
+      const response = await axios.get(`${API_BASE_URL}/brands`, { params: queryParams });
       if (response.data.success) {
         setBrands(response.data.data.map(withCountrySplit));
       }
@@ -96,7 +120,7 @@ const BrandsStatsTab = () => {
     if (subBrands[brandName]) return;
 
     try {
-      const response = await axios.get(`${API_BASE_URL}/brands/${encodeURIComponent(brandName)}`, { params: dateParams(dateRange) });
+      const response = await axios.get(`${API_BASE_URL}/brands/${encodeURIComponent(brandName)}`, { params: queryParams });
       if (response.data.success) {
         setSubBrands(prev => ({
           ...prev,
@@ -169,6 +193,7 @@ const BrandsStatsTab = () => {
 
   const handleExport = () => {
     const csv = [
+      ...(scope ? [[`Perimetre : ${scopeLabel(scope)}`]] : []),
       ['Marque', 'Nb Produits', 'Nb Sous-marques', 'Qte Vendue', 'CA TTC', 'CA HT', 'Cout HT', 'Marge HT', '% Marge', 'CA France TTC', 'CA hors France TTC', '% hors France'],
       ...sortedBrands.map(b => [
         b.brand || '',
@@ -190,7 +215,8 @@ const BrandsStatsTab = () => {
     const downloadUrl = window.URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = downloadUrl;
-    link.download = `marques_stats_${new Date().toISOString().split('T')[0]}.csv`;
+    const scopeSlug = scope ? '_' + scopeLabel(scope).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') : '';
+    link.download = `marques_stats${scopeSlug}_${new Date().toISOString().split('T')[0]}.csv`;
     document.body.appendChild(link);
     link.click();
     link.remove();
@@ -210,11 +236,11 @@ const BrandsStatsTab = () => {
     textAlign: 'left',
     fontSize: '12px',
     fontWeight: '600',
-    color: '#6c757d',
+    color: '#8A99A4',
     textTransform: 'uppercase',
     cursor: 'pointer',
     userSelect: 'none',
-    backgroundColor: sortBy === column ? '#e9ecef' : '#f8f9fa',
+    backgroundColor: sortBy === column ? '#e9ecef' : '#F2F6F8',
     transition: 'background-color 0.2s'
   });
 
@@ -256,6 +282,28 @@ const BrandsStatsTab = () => {
             customEnd={customEnd}
             setCustomEnd={setCustomEnd}
           />
+          <select
+            value={scope}
+            onChange={(e) => setScope(e.target.value)}
+            title="Classer les marques sur une seule catégorie (ex. Eliquides 10ml)"
+            style={{
+              padding: '9px 12px', border: '1px solid #ddd', borderRadius: '6px',
+              fontSize: '14px', background: '#fff', color: '#374151', maxWidth: '100%',
+              fontWeight: scope ? 700 : 400,
+            }}
+          >
+            <option value="">Tout le catalogue</option>
+            <optgroup label="Catégorie">
+              {(scopeOptions.categories || []).map((c) => (
+                <option key={`cat:${c}`} value={`cat:${c}`}>{decodeEntities(c)}</option>
+              ))}
+            </optgroup>
+            <optgroup label="Sous-catégorie">
+              {(scopeOptions.sub_categories || []).map((c) => (
+                <option key={`sub:${c}`} value={`sub:${c}`}>{decodeEntities(c)}</option>
+              ))}
+            </optgroup>
+          </select>
         </div>
         <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
           <div style={{ display: 'flex', border: '1px solid #d1d5db', borderRadius: '6px', overflow: 'hidden' }}>
@@ -278,7 +326,7 @@ const BrandsStatsTab = () => {
             onClick={handleExport}
             style={{
               padding: '6px 12px',
-              backgroundColor: '#6c757d',
+              backgroundColor: '#8A99A4',
               color: 'white',
               border: 'none',
               borderRadius: '4px',
@@ -317,30 +365,30 @@ const BrandsStatsTab = () => {
         )
       ) : (<>
       {/* Cards de statistiques */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '15px', marginBottom: '30px' }}>
-        <div style={{ backgroundColor: 'white', padding: '20px', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
-          <p style={{ fontSize: '14px', color: '#6c757d', margin: '0 0 10px 0' }}>Marques</p>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 180px), 1fr))', gap: '15px', marginBottom: '30px' }}>
+        <div style={{ backgroundColor: 'white', padding: '20px', borderRadius: '8px', boxShadow: '0 1px 3px rgba(0,0,0,0.07), 0 0 0 1px rgba(0,0,0,0.05)' }}>
+          <p style={{ fontSize: '14px', color: '#8A99A4', margin: '0 0 10px 0' }}>{scope ? `Marques · ${scopeLabel(scope)}` : 'Marques'}</p>
           <p style={{ fontSize: '28px', fontWeight: 'bold', color: '#135E84', margin: 0 }}>{filteredBrands.length}{searchTerm && ` / ${withSales.length}`}</p>
         </div>
-        <div style={{ backgroundColor: 'white', padding: '20px', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
-          <p style={{ fontSize: '14px', color: '#6c757d', margin: '0 0 10px 0' }}>Sous-marques</p>
+        <div style={{ backgroundColor: 'white', padding: '20px', borderRadius: '8px', boxShadow: '0 1px 3px rgba(0,0,0,0.07), 0 0 0 1px rgba(0,0,0,0.05)' }}>
+          <p style={{ fontSize: '14px', color: '#8A99A4', margin: '0 0 10px 0' }}>Sous-marques</p>
           <p style={{ fontSize: '28px', fontWeight: 'bold', color: '#135E84', margin: 0 }}>{totals.sub_brand_count}</p>
         </div>
-        <div style={{ backgroundColor: 'white', padding: '20px', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
-          <p style={{ fontSize: '14px', color: '#6c757d', margin: '0 0 10px 0' }}>Qte vendue</p>
-          <p style={{ fontSize: '28px', fontWeight: 'bold', color: '#333', margin: 0 }}>{formatNumber(totals.qty_sold)}</p>
+        <div style={{ backgroundColor: 'white', padding: '20px', borderRadius: '8px', boxShadow: '0 1px 3px rgba(0,0,0,0.07), 0 0 0 1px rgba(0,0,0,0.05)' }}>
+          <p style={{ fontSize: '14px', color: '#8A99A4', margin: '0 0 10px 0' }}>Qte vendue</p>
+          <p style={{ fontSize: '28px', fontWeight: 'bold', color: '#2a2e38', margin: 0 }}>{formatNumber(totals.qty_sold)}</p>
         </div>
-        <div style={{ backgroundColor: 'white', padding: '20px', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
-          <p style={{ fontSize: '14px', color: '#6c757d', margin: '0 0 10px 0' }}>CA TTC Total</p>
-          <p style={{ fontSize: '28px', fontWeight: 'bold', color: '#28a745', margin: 0 }}>{formatPrice(totals.ca_ttc)}</p>
+        <div style={{ backgroundColor: 'white', padding: '20px', borderRadius: '8px', boxShadow: '0 1px 3px rgba(0,0,0,0.07), 0 0 0 1px rgba(0,0,0,0.05)' }}>
+          <p style={{ fontSize: '14px', color: '#8A99A4', margin: '0 0 10px 0' }}>CA TTC Total</p>
+          <p style={{ fontSize: '28px', fontWeight: 'bold', color: '#4AB866', margin: 0 }}>{formatPrice(totals.ca_ttc)}</p>
         </div>
-        <div style={{ backgroundColor: 'white', padding: '20px', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
-          <p style={{ fontSize: '14px', color: '#6c757d', margin: '0 0 10px 0' }}>Marge HT Totale</p>
-          <p style={{ fontSize: '28px', fontWeight: 'bold', color: totals.margin_ht >= 0 ? '#28a745' : '#dc3545', margin: 0 }}>{formatPrice(totals.margin_ht)}</p>
+        <div style={{ backgroundColor: 'white', padding: '20px', borderRadius: '8px', boxShadow: '0 1px 3px rgba(0,0,0,0.07), 0 0 0 1px rgba(0,0,0,0.05)' }}>
+          <p style={{ fontSize: '14px', color: '#8A99A4', margin: '0 0 10px 0' }}>Marge HT Totale</p>
+          <p style={{ fontSize: '28px', fontWeight: 'bold', color: totals.margin_ht >= 0 ? '#4AB866' : '#DE2020', margin: 0 }}>{formatPrice(totals.margin_ht)}</p>
         </div>
-        <div style={{ backgroundColor: 'white', padding: '20px', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
-          <p style={{ fontSize: '14px', color: '#6c757d', margin: '0 0 10px 0' }}>Part hors France</p>
-          <p style={{ fontSize: '28px', fontWeight: 'bold', color: '#333', margin: 0 }}>{totals.ca_ttc > 0 ? formatPercent((1 - totals.ca_fr / totals.ca_ttc) * 100) : '–'}</p>
+        <div style={{ backgroundColor: 'white', padding: '20px', borderRadius: '8px', boxShadow: '0 1px 3px rgba(0,0,0,0.07), 0 0 0 1px rgba(0,0,0,0.05)' }}>
+          <p style={{ fontSize: '14px', color: '#8A99A4', margin: '0 0 10px 0' }}>Part hors France</p>
+          <p style={{ fontSize: '28px', fontWeight: 'bold', color: '#2a2e38', margin: 0 }}>{totals.ca_ttc > 0 ? formatPercent((1 - totals.ca_fr / totals.ca_ttc) * 100) : '–'}</p>
         </div>
       </div>
 
@@ -348,7 +396,7 @@ const BrandsStatsTab = () => {
       {loading ? (
         <div style={{ textAlign: 'center', padding: '50px', backgroundColor: 'white', borderRadius: '8px' }}>Chargement...</div>
       ) : (
-        <div style={{ backgroundColor: 'white', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)', overflow: 'hidden' }}>
+        <div style={{ backgroundColor: 'white', borderRadius: '8px', boxShadow: '0 1px 3px rgba(0,0,0,0.07), 0 0 0 1px rgba(0,0,0,0.05)', overflow: 'hidden' }}>
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
@@ -380,24 +428,24 @@ const BrandsStatsTab = () => {
                         key={brand.brand}
                         onClick={() => handleRowClick(brand)}
                         style={{
-                          borderTop: '1px solid #dee2e6',
+                          borderTop: '1px solid #E2E2E2',
                           cursor: hasSubBrands ? 'pointer' : 'default',
-                          backgroundColor: isExpanded ? '#f8f9fa' : 'white',
+                          backgroundColor: isExpanded ? '#F2F6F8' : 'white',
                           transition: 'background-color 0.2s'
                         }}
-                        onMouseEnter={(e) => { if (hasSubBrands) e.currentTarget.style.backgroundColor = '#f8f9fa'; }}
+                        onMouseEnter={(e) => { if (hasSubBrands) e.currentTarget.style.backgroundColor = '#F2F6F8'; }}
                         onMouseLeave={(e) => { if (!isExpanded) e.currentTarget.style.backgroundColor = 'white'; }}
                       >
                         <td style={{ padding: '15px', fontSize: '14px' }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                             {hasSubBrands && (
-                              <span style={{ color: '#6c757d', fontSize: '12px' }}>{isExpanded ? '▼' : '▶'}</span>
+                              <span style={{ color: '#8A99A4', fontSize: '12px' }}>{isExpanded ? '▼' : '▶'}</span>
                             )}
                             <LinkBox
                               to={`/brands/${encodeURIComponent(brand.brand)}`}
                               display="inline"
                               onClick={(e) => e.stopPropagation()}
-                              style={{ fontWeight: 'bold', color: '#007bff' }}
+                              style={{ fontWeight: 'bold', color: '#135E84' }}
                             >
                               {brand.brand}
                             </LinkBox>
@@ -408,41 +456,41 @@ const BrandsStatsTab = () => {
                         {isVisible('qty_sold') && <td style={{ padding: '15px', fontSize: '14px', fontWeight: 'bold' }}>{formatNumber(brand.qty_sold)}</td>}
                         {isVisible('ca_ttc') && <td style={{ padding: '15px', fontSize: '14px' }}>{formatPrice(brand.ca_ttc)}</td>}
                         {isVisible('ca_ht') && <td style={{ padding: '15px', fontSize: '14px' }}>{formatPrice(brand.ca_ht)}</td>}
-                        {isVisible('cost_ht') && <td style={{ padding: '15px', fontSize: '14px', color: '#dc3545' }}>{formatPrice(brand.cost_ht)}</td>}
-                        {isVisible('margin_ht') && <td style={{ padding: '15px', fontSize: '14px', fontWeight: 'bold', color: brand.margin_ht >= 0 ? '#28a745' : '#dc3545' }}>{formatPrice(brand.margin_ht)}</td>}
-                        {isVisible('margin_percent') && <td style={{ padding: '15px', fontSize: '14px', fontWeight: 'bold', color: brand.margin_percent >= 30 ? '#28a745' : brand.margin_percent >= 15 ? '#ffc107' : '#dc3545' }}>{formatPercent(brand.margin_percent)}</td>}
+                        {isVisible('cost_ht') && <td style={{ padding: '15px', fontSize: '14px', color: '#DE2020' }}>{formatPrice(brand.cost_ht)}</td>}
+                        {isVisible('margin_ht') && <td style={{ padding: '15px', fontSize: '14px', fontWeight: 'bold', color: brand.margin_ht >= 0 ? '#4AB866' : '#DE2020' }}>{formatPrice(brand.margin_ht)}</td>}
+                        {isVisible('margin_percent') && <td style={{ padding: '15px', fontSize: '14px', fontWeight: 'bold', color: brand.margin_percent >= 30 ? '#4AB866' : brand.margin_percent >= 15 ? '#E28F00' : '#DE2020' }}>{formatPercent(brand.margin_percent)}</td>}
                         {isVisible('ca_fr') && <td style={{ padding: '15px', fontSize: '14px' }}>{formatPrice(brand.ca_fr)}</td>}
                         {isVisible('ca_abroad') && <td style={{ padding: '15px', fontSize: '14px' }}>{formatPrice(brand.ca_abroad)}</td>}
-                        {isVisible('abroad_percent') && <td style={{ padding: '15px', fontSize: '14px', fontWeight: 'bold', color: brand.abroad_percent > 50 ? '#c2410c' : '#333' }}>{brand.abroad_percent === null ? '–' : formatPercent(brand.abroad_percent)}</td>}
+                        {isVisible('abroad_percent') && <td style={{ padding: '15px', fontSize: '14px', fontWeight: 'bold', color: brand.abroad_percent > 50 ? '#c2410c' : '#2a2e38' }}>{brand.abroad_percent === null ? '–' : formatPercent(brand.abroad_percent)}</td>}
                       </tr>
                       {isExpanded && brandSubBrands.length > 0 && brandSubBrands.map((sb) => (
-                        <tr key={sb.sub_brand} style={{ backgroundColor: '#f8f9fa', borderTop: '1px solid #e9ecef' }}>
+                        <tr key={sb.sub_brand} style={{ backgroundColor: '#F2F6F8', borderTop: '1px solid #e9ecef' }}>
                           <td style={{ padding: '10px 15px 10px 45px', fontSize: '13px' }}>
                             <LinkBox
                               to={`/sub-brands/${encodeURIComponent(sb.sub_brand)}`}
                               display="inline"
                               onClick={(e) => e.stopPropagation()}
-                              style={{ color: '#007bff' }}
+                              style={{ color: '#135E84' }}
                             >
                               ↳ {sb.sub_brand}
                             </LinkBox>
                           </td>
-                          {isVisible('product_count') && <td style={{ padding: '10px 15px', fontSize: '13px', color: '#6c757d' }}>{formatNumber(sb.product_count)}</td>}
-                          {isVisible('sub_brand_count') && <td style={{ padding: '10px 15px', fontSize: '13px', color: '#6c757d' }}>-</td>}
+                          {isVisible('product_count') && <td style={{ padding: '10px 15px', fontSize: '13px', color: '#8A99A4' }}>{formatNumber(sb.product_count)}</td>}
+                          {isVisible('sub_brand_count') && <td style={{ padding: '10px 15px', fontSize: '13px', color: '#8A99A4' }}>-</td>}
                           {isVisible('qty_sold') && <td style={{ padding: '10px 15px', fontSize: '13px' }}>{formatNumber(sb.qty_sold)}</td>}
                           {isVisible('ca_ttc') && <td style={{ padding: '10px 15px', fontSize: '13px' }}>{formatPrice(sb.ca_ttc)}</td>}
                           {isVisible('ca_ht') && <td style={{ padding: '10px 15px', fontSize: '13px' }}>{formatPrice(sb.ca_ht)}</td>}
-                          {isVisible('cost_ht') && <td style={{ padding: '10px 15px', fontSize: '13px', color: '#dc3545' }}>{formatPrice(sb.cost_ht)}</td>}
-                          {isVisible('margin_ht') && <td style={{ padding: '10px 15px', fontSize: '13px', color: sb.margin_ht >= 0 ? '#28a745' : '#dc3545' }}>{formatPrice(sb.margin_ht)}</td>}
-                          {isVisible('margin_percent') && <td style={{ padding: '10px 15px', fontSize: '13px', color: sb.margin_percent >= 30 ? '#28a745' : sb.margin_percent >= 15 ? '#ffc107' : '#dc3545' }}>{formatPercent(sb.margin_percent)}</td>}
+                          {isVisible('cost_ht') && <td style={{ padding: '10px 15px', fontSize: '13px', color: '#DE2020' }}>{formatPrice(sb.cost_ht)}</td>}
+                          {isVisible('margin_ht') && <td style={{ padding: '10px 15px', fontSize: '13px', color: sb.margin_ht >= 0 ? '#4AB866' : '#DE2020' }}>{formatPrice(sb.margin_ht)}</td>}
+                          {isVisible('margin_percent') && <td style={{ padding: '10px 15px', fontSize: '13px', color: sb.margin_percent >= 30 ? '#4AB866' : sb.margin_percent >= 15 ? '#E28F00' : '#DE2020' }}>{formatPercent(sb.margin_percent)}</td>}
                           {isVisible('ca_fr') && <td style={{ padding: '10px 15px', fontSize: '13px' }}>{formatPrice(sb.ca_fr)}</td>}
                           {isVisible('ca_abroad') && <td style={{ padding: '10px 15px', fontSize: '13px' }}>{formatPrice(sb.ca_abroad)}</td>}
-                          {isVisible('abroad_percent') && <td style={{ padding: '10px 15px', fontSize: '13px', color: sb.abroad_percent > 50 ? '#c2410c' : '#333' }}>{sb.abroad_percent === null ? '–' : formatPercent(sb.abroad_percent)}</td>}
+                          {isVisible('abroad_percent') && <td style={{ padding: '10px 15px', fontSize: '13px', color: sb.abroad_percent > 50 ? '#c2410c' : '#2a2e38' }}>{sb.abroad_percent === null ? '–' : formatPercent(sb.abroad_percent)}</td>}
                         </tr>
                       ))}
                       {isExpanded && brandSubBrands.length === 0 && (
-                        <tr key={`${brand.brand}-loading`} style={{ backgroundColor: '#f8f9fa' }}>
-                          <td colSpan={1 + BRANDS_COLUMNS.filter(c => isVisible(c.key)).length} style={{ padding: '15px 45px', fontSize: '13px', color: '#6c757d' }}>
+                        <tr key={`${brand.brand}-loading`} style={{ backgroundColor: '#F2F6F8' }}>
+                          <td colSpan={1 + BRANDS_COLUMNS.filter(c => isVisible(c.key)).length} style={{ padding: '15px 45px', fontSize: '13px', color: '#8A99A4' }}>
                             {brandSubBrandsLoaded ? 'Aucune vente sur la période' : 'Chargement des sous-marques...'}
                           </td>
                         </tr>
@@ -454,7 +502,7 @@ const BrandsStatsTab = () => {
             </table>
           </div>
           {withSales.length === 0 && !loading && (
-            <div style={{ textAlign: 'center', padding: '50px', color: '#6c757d' }}>
+            <div style={{ textAlign: 'center', padding: '50px', color: '#8A99A4' }}>
               Aucune marque trouvee
             </div>
           )}

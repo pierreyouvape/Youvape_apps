@@ -311,7 +311,7 @@ const ProductsStatsTab = () => {
   const formatVelocity = (v) => (v == null ? '—' : parseFloat(v).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
   // Couverture stock : peu de jours = tourne vite (vert), beaucoup = surstock (rouge → candidat solde)
   const coverageColor = (days) => {
-    if (days == null) return { bg: '#e9ecef', fg: '#6c757d' };      // jamais vendu sur la période
+    if (days == null) return { bg: '#e9ecef', fg: '#8A99A4' };      // jamais vendu sur la période
     if (days > 180) return { bg: '#f8d7da', fg: '#721c24' };        // gros surstock
     if (days > 90)  return { bg: '#fff3cd', fg: '#856404' };        // surstock
     return { bg: '#d1e7dd', fg: '#0f5132' };                         // sain / tourne bien
@@ -328,11 +328,11 @@ const ProductsStatsTab = () => {
     textAlign: 'left',
     fontSize: '12px',
     fontWeight: '600',
-    color: '#6c757d',
+    color: '#8A99A4',
     textTransform: 'uppercase',
     cursor: 'pointer',
     userSelect: 'none',
-    backgroundColor: sortBy === column ? '#e9ecef' : '#f8f9fa',
+    backgroundColor: sortBy === column ? '#e9ecef' : '#F2F6F8',
     transition: 'background-color 0.2s'
   });
 
@@ -357,7 +357,7 @@ const ProductsStatsTab = () => {
             }}
           />
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <label style={{ fontSize: '13px', color: '#6c757d', whiteSpace: 'nowrap' }}>Période :</label>
+            <label style={{ fontSize: '13px', color: '#8A99A4', whiteSpace: 'nowrap' }}>Période :</label>
             <select
               value={period}
               onChange={(e) => handlePeriodChange(e.target.value)}
@@ -369,7 +369,7 @@ const ProductsStatsTab = () => {
             </select>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <label style={{ fontSize: '13px', color: '#6c757d', whiteSpace: 'nowrap' }}>Pays :</label>
+            <label style={{ fontSize: '13px', color: '#8A99A4', whiteSpace: 'nowrap' }}>Pays :</label>
             <select
               value={country}
               onChange={(e) => handleCountryChange(e.target.value)}
@@ -413,7 +413,7 @@ const ProductsStatsTab = () => {
           </button>
           <button
             onClick={() => handleExport('csv')}
-            style={{ padding: '6px 12px', backgroundColor: '#6c757d', color: 'white', border: 'none', borderRadius: '4px', fontSize: '12px', cursor: 'pointer' }}
+            style={{ padding: '6px 12px', backgroundColor: '#8A99A4', color: 'white', border: 'none', borderRadius: '4px', fontSize: '12px', cursor: 'pointer' }}
           >
             CSV
           </button>
@@ -450,9 +450,9 @@ const ProductsStatsTab = () => {
 
       {/* Card de statistique */}
       <div style={{ marginBottom: '30px' }}>
-        <div style={{ backgroundColor: 'white', padding: '20px', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)', display: 'inline-block' }}>
-          <p style={{ fontSize: '14px', color: '#6c757d', margin: '0 0 10px 0' }}>{hasActiveFilters ? 'Produits du segment' : 'Total produits'}</p>
-          <p style={{ fontSize: '28px', fontWeight: 'bold', color: '#333', margin: 0 }}>{formatInt(totalCount)}</p>
+        <div style={{ backgroundColor: 'white', padding: '20px', borderRadius: '8px', boxShadow: '0 1px 3px rgba(0,0,0,0.07), 0 0 0 1px rgba(0,0,0,0.05)', display: 'inline-block' }}>
+          <p style={{ fontSize: '14px', color: '#8A99A4', margin: '0 0 10px 0' }}>{hasActiveFilters ? 'Produits du segment' : 'Total produits'}</p>
+          <p style={{ fontSize: '28px', fontWeight: 'bold', color: '#2a2e38', margin: 0 }}>{formatInt(totalCount)}</p>
         </div>
       </div>
 
@@ -460,7 +460,7 @@ const ProductsStatsTab = () => {
       {loading ? (
         <div style={{ textAlign: 'center', padding: '50px', backgroundColor: 'white', borderRadius: '8px' }}>Chargement...</div>
       ) : (
-        <div style={{ backgroundColor: 'white', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)', overflow: 'hidden' }}>
+        <div style={{ backgroundColor: 'white', borderRadius: '8px', boxShadow: '0 1px 3px rgba(0,0,0,0.07), 0 0 0 1px rgba(0,0,0,0.05)', overflow: 'hidden' }}>
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
@@ -495,12 +495,12 @@ const ProductsStatsTab = () => {
                         key={product.wp_product_id}
                         onClick={() => handleRowClick(product)}
                         style={{
-                          borderTop: '1px solid #dee2e6',
+                          borderTop: '1px solid #E2E2E2',
                           cursor: hasVariations ? 'pointer' : 'default',
-                          backgroundColor: isExpanded ? '#f8f9fa' : 'white',
+                          backgroundColor: isExpanded ? '#F2F6F8' : 'white',
                           transition: 'background-color 0.2s'
                         }}
-                        onMouseEnter={(e) => { if (hasVariations) e.currentTarget.style.backgroundColor = '#f8f9fa'; }}
+                        onMouseEnter={(e) => { if (hasVariations) e.currentTarget.style.backgroundColor = '#F2F6F8'; }}
                         onMouseLeave={(e) => { if (!isExpanded) e.currentTarget.style.backgroundColor = 'white'; }}
                       >
                         <td style={{ padding: '8px 10px', width: '50px' }}>
@@ -517,20 +517,20 @@ const ProductsStatsTab = () => {
                         <td style={{ padding: '15px', fontSize: '14px' }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                             {hasVariations && (
-                              <span style={{ color: '#6c757d', fontSize: '12px' }}>{isExpanded ? '▼' : '▶'}</span>
+                              <span style={{ color: '#8A99A4', fontSize: '12px' }}>{isExpanded ? '▼' : '▶'}</span>
                             )}
                             <LinkBox
                               to={`/products/${product.wp_product_id}`}
                               display="inline"
                               onClick={(e) => e.stopPropagation()}
-                              style={{ fontWeight: 'bold', color: '#007bff' }}
+                              style={{ fontWeight: 'bold', color: '#135E84' }}
                             >
                               {product.post_title}
                             </LinkBox>
                           </div>
                         </td>
                         {isVisible('sku') && (
-                          <td style={{ padding: '15px', fontSize: '14px', color: '#6c757d' }}>
+                          <td style={{ padding: '15px', fontSize: '14px', color: '#8A99A4' }}>
                             {product.sku ? (
                               <>
                                 <a
@@ -574,22 +574,22 @@ const ProductsStatsTab = () => {
                             </span>
                           </td>
                         )}
-                        {isVisible('last_sold') && <td style={{ padding: '15px', fontSize: '13px', color: '#6c757d', whiteSpace: 'nowrap' }}>{formatDateFr(product.last_sold)}</td>}
-                        {isVisible('first_sold') && <td style={{ padding: '15px', fontSize: '13px', color: '#6c757d', whiteSpace: 'nowrap' }}>{formatDateFr(product.first_sold)}</td>}
+                        {isVisible('last_sold') && <td style={{ padding: '15px', fontSize: '13px', color: '#8A99A4', whiteSpace: 'nowrap' }}>{formatDateFr(product.last_sold)}</td>}
+                        {isVisible('first_sold') && <td style={{ padding: '15px', fontSize: '13px', color: '#8A99A4', whiteSpace: 'nowrap' }}>{formatDateFr(product.first_sold)}</td>}
                         {isVisible('ca_ttc') && <td style={{ padding: '15px', fontSize: '14px' }}>{formatPrice(product.ca_ttc)}</td>}
                         {isVisible('ca_ht') && <td style={{ padding: '15px', fontSize: '14px' }}>{formatPrice(product.ca_ht)}</td>}
-                        {isVisible('cost_ht') && <td style={{ padding: '15px', fontSize: '14px', color: '#dc3545' }}>{formatPrice(product.cost_ht)}</td>}
-                        {isVisible('margin_ht') && <td style={{ padding: '15px', fontSize: '14px', fontWeight: 'bold', color: '#28a745' }}>{formatPrice(product.margin_ht)}</td>}
-                        {isVisible('margin_percent') && <td style={{ padding: '15px', fontSize: '14px', fontWeight: 'bold', color: product.margin_percent >= 30 ? '#28a745' : product.margin_percent >= 15 ? '#ffc107' : '#dc3545' }}>{formatPercent(product.margin_percent)}</td>}
+                        {isVisible('cost_ht') && <td style={{ padding: '15px', fontSize: '14px', color: '#DE2020' }}>{formatPrice(product.cost_ht)}</td>}
+                        {isVisible('margin_ht') && <td style={{ padding: '15px', fontSize: '14px', fontWeight: 'bold', color: '#4AB866' }}>{formatPrice(product.margin_ht)}</td>}
+                        {isVisible('margin_percent') && <td style={{ padding: '15px', fontSize: '14px', fontWeight: 'bold', color: product.margin_percent >= 30 ? '#4AB866' : product.margin_percent >= 15 ? '#E28F00' : '#DE2020' }}>{formatPercent(product.margin_percent)}</td>}
                       </tr>
                       {isExpanded && productVariations.length > 0 && productVariations.map((variation) => (
-                        <tr key={variation.wp_product_id} style={{ backgroundColor: '#f8f9fa', borderTop: '1px solid #e9ecef' }}>
+                        <tr key={variation.wp_product_id} style={{ backgroundColor: '#F2F6F8', borderTop: '1px solid #e9ecef' }}>
                           <td style={{ padding: '8px 10px', width: '50px' }}></td>
-                          <td style={{ padding: '10px 15px 10px 15px', fontSize: '13px', color: '#6c757d' }}>
+                          <td style={{ padding: '10px 15px 10px 15px', fontSize: '13px', color: '#8A99A4' }}>
                             ↳ {variation.post_title}
                           </td>
                           {isVisible('sku') && (
-                            <td style={{ padding: '10px 15px', fontSize: '13px', color: '#6c757d' }}>
+                            <td style={{ padding: '10px 15px', fontSize: '13px', color: '#8A99A4' }}>
                               {variation.sku ? (
                                 <>
                                   <a
@@ -632,18 +632,18 @@ const ProductsStatsTab = () => {
                               </span>
                             </td>
                           )}
-                          {isVisible('last_sold') && <td style={{ padding: '10px 15px', fontSize: '12px', color: '#6c757d', whiteSpace: 'nowrap' }}>{formatDateFr(variation.last_sold)}</td>}
-                          {isVisible('first_sold') && <td style={{ padding: '10px 15px', fontSize: '12px', color: '#6c757d', whiteSpace: 'nowrap' }}>{formatDateFr(variation.first_sold)}</td>}
+                          {isVisible('last_sold') && <td style={{ padding: '10px 15px', fontSize: '12px', color: '#8A99A4', whiteSpace: 'nowrap' }}>{formatDateFr(variation.last_sold)}</td>}
+                          {isVisible('first_sold') && <td style={{ padding: '10px 15px', fontSize: '12px', color: '#8A99A4', whiteSpace: 'nowrap' }}>{formatDateFr(variation.first_sold)}</td>}
                           {isVisible('ca_ttc') && <td style={{ padding: '10px 15px', fontSize: '13px' }}>{formatPrice(variation.ca_ttc)}</td>}
                           {isVisible('ca_ht') && <td style={{ padding: '10px 15px', fontSize: '13px' }}>{formatPrice(variation.ca_ht)}</td>}
-                          {isVisible('cost_ht') && <td style={{ padding: '10px 15px', fontSize: '13px', color: '#dc3545' }}>{formatPrice(variation.cost_ht)}</td>}
-                          {isVisible('margin_ht') && <td style={{ padding: '10px 15px', fontSize: '13px', color: '#28a745' }}>{formatPrice(variation.margin_ht)}</td>}
-                          {isVisible('margin_percent') && <td style={{ padding: '10px 15px', fontSize: '13px', color: variation.margin_percent >= 30 ? '#28a745' : variation.margin_percent >= 15 ? '#ffc107' : '#dc3545' }}>{formatPercent(variation.margin_percent)}</td>}
+                          {isVisible('cost_ht') && <td style={{ padding: '10px 15px', fontSize: '13px', color: '#DE2020' }}>{formatPrice(variation.cost_ht)}</td>}
+                          {isVisible('margin_ht') && <td style={{ padding: '10px 15px', fontSize: '13px', color: '#4AB866' }}>{formatPrice(variation.margin_ht)}</td>}
+                          {isVisible('margin_percent') && <td style={{ padding: '10px 15px', fontSize: '13px', color: variation.margin_percent >= 30 ? '#4AB866' : variation.margin_percent >= 15 ? '#E28F00' : '#DE2020' }}>{formatPercent(variation.margin_percent)}</td>}
                         </tr>
                       ))}
                       {isExpanded && productVariations.length === 0 && (
-                        <tr key={`${product.wp_product_id}-loading`} style={{ backgroundColor: '#f8f9fa' }}>
-                          <td colSpan={2 + PRODUCTS_COLUMNS.filter(c => isVisible(c.key)).length} style={{ padding: '15px 45px', fontSize: '13px', color: '#6c757d' }}>
+                        <tr key={`${product.wp_product_id}-loading`} style={{ backgroundColor: '#F2F6F8' }}>
+                          <td colSpan={2 + PRODUCTS_COLUMNS.filter(c => isVisible(c.key)).length} style={{ padding: '15px 45px', fontSize: '13px', color: '#8A99A4' }}>
                             Chargement des variations...
                           </td>
                         </tr>
@@ -655,7 +655,7 @@ const ProductsStatsTab = () => {
             </table>
           </div>
           {data.length === 0 && (
-            <div style={{ textAlign: 'center', padding: '50px', color: '#6c757d' }}>
+            <div style={{ textAlign: 'center', padding: '50px', color: '#8A99A4' }}>
               Aucun produit trouvé
             </div>
           )}
@@ -664,7 +664,7 @@ const ProductsStatsTab = () => {
 
       {/* Pagination */}
       {!loading && data.length > 0 && (
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '20px', backgroundColor: 'white', padding: '15px 20px', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '20px', backgroundColor: 'white', padding: '15px 20px', borderRadius: '8px', boxShadow: '0 1px 3px rgba(0,0,0,0.07), 0 0 0 1px rgba(0,0,0,0.05)' }}>
           <div style={{ display: 'flex', gap: '8px' }}>
             {[
               { label: '« Début', onClick: () => goToPage(0), disabled: !canPreviousPage },
@@ -688,11 +688,11 @@ const ProductsStatsTab = () => {
               </button>
             ))}
           </div>
-          <div style={{ fontSize: '14px', color: '#6c757d' }}>
+          <div style={{ fontSize: '14px', color: '#8A99A4' }}>
             Page <strong>{pagination.pageIndex + 1}</strong> sur <strong>{pageCount}</strong>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <span style={{ fontSize: '14px', color: '#6c757d' }}>Afficher:</span>
+            <span style={{ fontSize: '14px', color: '#8A99A4' }}>Afficher:</span>
             <select
               value={pagination.pageSize}
               onChange={(e) => setPagination((prev) => ({ ...prev, pageSize: Number(e.target.value), pageIndex: 0 }))}

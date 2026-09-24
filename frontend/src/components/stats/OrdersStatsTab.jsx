@@ -39,15 +39,15 @@ const STATUS_LABELS = {
 
 const STATUS_COLORS = {
   'wc-completed': '#135E84',
-  'wc-delivered': '#28a745',
-  'wc-processing': '#ffc107',
+  'wc-delivered': '#4AB866',
+  'wc-processing': '#E28F00',
   'wc-on-hold': '#fd7e14',
-  'wc-pending': '#6c757d',
-  'wc-cancelled': '#dc3545',
+  'wc-pending': '#8A99A4',
+  'wc-cancelled': '#DE2020',
   'wc-refunded': '#6f42c1',
-  'wc-failed': '#dc3545',
+  'wc-failed': '#DE2020',
   'wc-being-delivered': '#17a2b8',
-  'trash': '#6c757d'
+  'trash': '#8A99A4'
 };
 
 const ORDERS_COLUMNS = [
@@ -274,7 +274,7 @@ const OrdersStatsTab = () => {
   return (
     <div style={compact ? { maxWidth: '1400px', margin: '0 auto' } : {}}>
       {/* Filtres */}
-      <div style={{ backgroundColor: 'white', padding: '20px', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)', marginBottom: '20px' }}>
+      <div style={{ backgroundColor: 'white', padding: '20px', borderRadius: '8px', boxShadow: '0 1px 3px rgba(0,0,0,0.07), 0 0 0 1px rgba(0,0,0,0.05)', marginBottom: '20px' }}>
         {/* Ligne 1: Recherche */}
         <div style={{ display: 'flex', gap: '15px', marginBottom: '15px', flexWrap: 'wrap' }}>
           <input
@@ -379,8 +379,8 @@ const OrdersStatsTab = () => {
                 fontSize: '12px',
                 padding: '4px 8px',
                 borderRadius: '4px',
-                backgroundColor: status.includes(s) ? (STATUS_COLORS[s] || '#6c757d') : '#f8f9fa',
-                color: status.includes(s) ? 'white' : '#333'
+                backgroundColor: status.includes(s) ? (STATUS_COLORS[s] || '#8A99A4') : '#F2F6F8',
+                color: status.includes(s) ? 'white' : '#2a2e38'
               }}>
                 {STATUS_LABELS[s] || s}
               </span>
@@ -398,13 +398,13 @@ const OrdersStatsTab = () => {
           </button>
           <button
             onClick={handleReset}
-            style={{ padding: '10px 25px', backgroundColor: '#6c757d', color: 'white', border: 'none', borderRadius: '6px', fontSize: '14px', cursor: 'pointer' }}
+            style={{ padding: '10px 25px', backgroundColor: '#8A99A4', color: 'white', border: 'none', borderRadius: '6px', fontSize: '14px', cursor: 'pointer' }}
           >
             Reinitialiser
           </button>
           <button
             onClick={handleExport}
-            style={{ padding: '6px 12px', backgroundColor: '#6c757d', color: 'white', border: 'none', borderRadius: '4px', fontSize: '12px', cursor: 'pointer' }}
+            style={{ padding: '6px 12px', backgroundColor: '#8A99A4', color: 'white', border: 'none', borderRadius: '4px', fontSize: '12px', cursor: 'pointer' }}
           >
             CSV
           </button>
@@ -453,7 +453,7 @@ const OrdersStatsTab = () => {
       </div>
 
       {/* Resultats */}
-      <div style={{ backgroundColor: 'white', padding: '15px', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)', marginBottom: '15px' }}>
+      <div style={{ backgroundColor: 'white', padding: '15px', borderRadius: '8px', boxShadow: '0 1px 3px rgba(0,0,0,0.07), 0 0 0 1px rgba(0,0,0,0.05)', marginBottom: '15px' }}>
         <span style={{ fontSize: '14px', color: '#666' }}>
           {pagination.total} commande{pagination.total > 1 ? 's' : ''} trouvee{pagination.total > 1 ? 's' : ''}
         </span>
@@ -463,21 +463,21 @@ const OrdersStatsTab = () => {
       {loading ? (
         <div style={{ textAlign: 'center', padding: '50px', backgroundColor: 'white', borderRadius: '8px' }}>Chargement...</div>
       ) : (
-        <div style={{ backgroundColor: 'white', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)', overflow: 'hidden' }}>
+        <div style={{ backgroundColor: 'white', borderRadius: '8px', boxShadow: '0 1px 3px rgba(0,0,0,0.07), 0 0 0 1px rgba(0,0,0,0.05)', overflow: 'hidden' }}>
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
-                <tr style={{ backgroundColor: '#f8f9fa' }}>
-                  <th style={{ padding: '12px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: '#6c757d', textTransform: 'uppercase' }}>N°</th>
-                  {isVisible('date') && <th style={{ padding: '12px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: '#6c757d', textTransform: 'uppercase' }}>Date</th>}
-                  {isVisible('client') && <th style={{ padding: '12px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: '#6c757d', textTransform: 'uppercase' }}>Client</th>}
-                  {isVisible('pays') && <th style={{ padding: '12px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: '#6c757d', textTransform: 'uppercase' }}>Pays</th>}
-                  {isVisible('montant') && <th style={{ padding: '12px', textAlign: 'right', fontSize: '12px', fontWeight: '600', color: '#6c757d', textTransform: 'uppercase' }}>Montant TTC</th>}
-                  {isVisible('statut') && <th style={{ padding: '12px', textAlign: 'center', fontSize: '12px', fontWeight: '600', color: '#6c757d', textTransform: 'uppercase' }}>Statut</th>}
-                  {isVisible('transporteur') && <th style={{ padding: '12px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: '#6c757d', textTransform: 'uppercase' }}>Transporteur</th>}
-                  {isVisible('articles') && <th style={{ padding: '12px', textAlign: 'center', fontSize: '12px', fontWeight: '600', color: '#6c757d', textTransform: 'uppercase' }}>Articles</th>}
-                  {isVisible('avis') && <th style={{ padding: '12px', textAlign: 'center', fontSize: '12px', fontWeight: '600', color: '#6c757d', textTransform: 'uppercase' }}>Avis</th>}
-                  {isVisible('coupon') && <th style={{ padding: '12px', textAlign: 'center', fontSize: '12px', fontWeight: '600', color: '#6c757d', textTransform: 'uppercase' }}>Coupon</th>}
+                <tr style={{ backgroundColor: '#F2F6F8' }}>
+                  <th style={{ padding: '12px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: '#8A99A4', textTransform: 'uppercase' }}>N°</th>
+                  {isVisible('date') && <th style={{ padding: '12px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: '#8A99A4', textTransform: 'uppercase' }}>Date</th>}
+                  {isVisible('client') && <th style={{ padding: '12px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: '#8A99A4', textTransform: 'uppercase' }}>Client</th>}
+                  {isVisible('pays') && <th style={{ padding: '12px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: '#8A99A4', textTransform: 'uppercase' }}>Pays</th>}
+                  {isVisible('montant') && <th style={{ padding: '12px', textAlign: 'right', fontSize: '12px', fontWeight: '600', color: '#8A99A4', textTransform: 'uppercase' }}>Montant TTC</th>}
+                  {isVisible('statut') && <th style={{ padding: '12px', textAlign: 'center', fontSize: '12px', fontWeight: '600', color: '#8A99A4', textTransform: 'uppercase' }}>Statut</th>}
+                  {isVisible('transporteur') && <th style={{ padding: '12px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: '#8A99A4', textTransform: 'uppercase' }}>Transporteur</th>}
+                  {isVisible('articles') && <th style={{ padding: '12px', textAlign: 'center', fontSize: '12px', fontWeight: '600', color: '#8A99A4', textTransform: 'uppercase' }}>Articles</th>}
+                  {isVisible('avis') && <th style={{ padding: '12px', textAlign: 'center', fontSize: '12px', fontWeight: '600', color: '#8A99A4', textTransform: 'uppercase' }}>Avis</th>}
+                  {isVisible('coupon') && <th style={{ padding: '12px', textAlign: 'center', fontSize: '12px', fontWeight: '600', color: '#8A99A4', textTransform: 'uppercase' }}>Coupon</th>}
                 </tr>
               </thead>
               <tbody>
@@ -491,22 +491,22 @@ const OrdersStatsTab = () => {
                         key={order.wp_order_id}
                         onClick={() => toggleOrderDetails(order.wp_order_id)}
                         style={{
-                          borderTop: '1px solid #dee2e6',
+                          borderTop: '1px solid #E2E2E2',
                           cursor: 'pointer',
-                          backgroundColor: isExpanded ? '#f8f9fa' : 'white',
+                          backgroundColor: isExpanded ? '#F2F6F8' : 'white',
                           transition: 'background-color 0.2s'
                         }}
-                        onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f8f9fa'}
+                        onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#F2F6F8'}
                         onMouseLeave={(e) => { if (!isExpanded) e.currentTarget.style.backgroundColor = 'white'; }}
                       >
                         <td style={{ padding: '12px', fontSize: '14px' }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            <span style={{ color: '#6c757d', fontSize: '12px' }}>{isExpanded ? '▼' : '▶'}</span>
+                            <span style={{ color: '#8A99A4', fontSize: '12px' }}>{isExpanded ? '▼' : '▶'}</span>
                             <LinkBox
                               to={`/orders/${order.wp_order_id}`}
                               display="inline"
                               onClick={(e) => e.stopPropagation()}
-                              style={{ fontWeight: 'bold', color: '#007bff' }}
+                              style={{ fontWeight: 'bold', color: '#135E84' }}
                             >
                               #{order.wp_order_id}
                             </LinkBox>
@@ -538,7 +538,7 @@ const OrdersStatsTab = () => {
                           </td>
                         )}
                         {isVisible('pays') && <td style={{ padding: '12px', fontSize: '14px' }}>{COUNTRY_NAMES[order.billing_country] || order.billing_country}</td>}
-                        {isVisible('montant') && <td style={{ padding: '12px', fontSize: '14px', textAlign: 'right', fontWeight: 'bold', color: '#28a745' }}>{formatPrice(order.order_total)}</td>}
+                        {isVisible('montant') && <td style={{ padding: '12px', fontSize: '14px', textAlign: 'right', fontWeight: 'bold', color: '#4AB866' }}>{formatPrice(order.order_total)}</td>}
                         {isVisible('statut') && (
                           <td style={{ padding: '12px', textAlign: 'center' }}>
                             <span style={{
@@ -546,7 +546,7 @@ const OrdersStatsTab = () => {
                               borderRadius: '4px',
                               fontSize: '11px',
                               fontWeight: '600',
-                              backgroundColor: STATUS_COLORS[order.post_status] || '#6c757d',
+                              backgroundColor: STATUS_COLORS[order.post_status] || '#8A99A4',
                               color: 'white'
                             }}>
                               {STATUS_LABELS[order.post_status] || order.post_status}
@@ -581,9 +581,9 @@ const OrdersStatsTab = () => {
                       {/* Ligne depliable */}
                       {isExpanded && (
                         <tr key={`${order.wp_order_id}-details`}>
-                          <td colSpan={visibleColCount} style={{ padding: '0', backgroundColor: '#f8f9fa' }}>
+                          <td colSpan={visibleColCount} style={{ padding: '0', backgroundColor: '#F2F6F8' }}>
                             <div style={{ padding: '20px', borderTop: '1px solid #e9ecef' }}>
-                              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '20px', marginBottom: '20px' }}>
+                              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 300px), 1fr))', gap: '20px', marginBottom: '20px' }}>
                                 {/* Infos client */}
                                 <div style={{ backgroundColor: 'white', padding: '15px', borderRadius: '8px', border: '1px solid #e0e0e0' }}>
                                   <h4 style={{ margin: '0 0 10px 0', color: '#135E84', fontSize: '14px' }}>Informations Client</h4>
@@ -640,7 +640,7 @@ const OrdersStatsTab = () => {
                                 ) : (
                                   <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                                     <thead>
-                                      <tr style={{ backgroundColor: '#f8f9fa' }}>
+                                      <tr style={{ backgroundColor: '#F2F6F8' }}>
                                         <th style={{ padding: '10px', textAlign: 'left', fontSize: '12px', fontWeight: '600' }}>Produit</th>
                                         <th style={{ padding: '10px', textAlign: 'left', fontSize: '12px', fontWeight: '600' }}>SKU</th>
                                         <th style={{ padding: '10px', textAlign: 'right', fontSize: '12px', fontWeight: '600' }}>Qte</th>
@@ -660,7 +660,7 @@ const OrdersStatsTab = () => {
                                                 <LinkBox
                                                   to={`/products/${item.product_id || item.variation_id}`}
                                                   onClick={(e) => e.stopPropagation()}
-                                                  style={{ fontWeight: '500', color: '#007bff' }}
+                                                  style={{ fontWeight: '500', color: '#135E84' }}
                                                 >
                                                   {item.product_title || item.order_item_name}
                                                 </LinkBox>
@@ -688,7 +688,7 @@ const OrdersStatsTab = () => {
                                           </td>
                                           <td style={{ padding: '10px', fontSize: '13px', textAlign: 'right', fontWeight: '600' }}>{item.qty}</td>
                                           <td style={{ padding: '10px', fontSize: '13px', textAlign: 'right' }}>{formatPrice(item.line_subtotal / item.qty)}</td>
-                                          <td style={{ padding: '10px', fontSize: '13px', textAlign: 'right', fontWeight: '600', color: '#28a745' }}>{formatPrice(item.line_total)}</td>
+                                          <td style={{ padding: '10px', fontSize: '13px', textAlign: 'right', fontWeight: '600', color: '#4AB866' }}>{formatPrice(item.line_total)}</td>
                                         </tr>
                                       ))}
                                     </tbody>
@@ -720,14 +720,14 @@ const OrdersStatsTab = () => {
 
           {/* Pagination */}
           {pagination.total > pagination.limit && (
-            <div style={{ padding: '15px', borderTop: '1px solid #dee2e6', display: 'flex', justifyContent: 'center', gap: '10px' }}>
+            <div style={{ padding: '15px', borderTop: '1px solid #E2E2E2', display: 'flex', justifyContent: 'center', gap: '10px' }}>
               <button
                 onClick={() => fetchOrders(Math.max(0, pagination.offset - pagination.limit))}
                 disabled={pagination.offset === 0}
                 style={{
                   padding: '8px 15px',
                   backgroundColor: pagination.offset === 0 ? '#e9ecef' : '#135E84',
-                  color: pagination.offset === 0 ? '#6c757d' : 'white',
+                  color: pagination.offset === 0 ? '#8A99A4' : 'white',
                   border: 'none',
                   borderRadius: '4px',
                   cursor: pagination.offset === 0 ? 'not-allowed' : 'pointer'
@@ -744,7 +744,7 @@ const OrdersStatsTab = () => {
                 style={{
                   padding: '8px 15px',
                   backgroundColor: !pagination.hasMore ? '#e9ecef' : '#135E84',
-                  color: !pagination.hasMore ? '#6c757d' : 'white',
+                  color: !pagination.hasMore ? '#8A99A4' : 'white',
                   border: 'none',
                   borderRadius: '4px',
                   cursor: !pagination.hasMore ? 'not-allowed' : 'pointer'
@@ -756,7 +756,7 @@ const OrdersStatsTab = () => {
           )}
 
           {orders.length === 0 && !loading && (
-            <div style={{ textAlign: 'center', padding: '50px', color: '#6c757d' }}>
+            <div style={{ textAlign: 'center', padding: '50px', color: '#8A99A4' }}>
               Aucune commande trouvee
             </div>
           )}

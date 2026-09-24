@@ -153,9 +153,9 @@ const AnalysisTab = () => {
   // Formatage de la variation avec couleur
   const formatVariation = (variation) => {
     const v = parseFloat(variation);
-    if (v > 0) return { text: `+${v}%`, color: '#28a745' };
-    if (v < 0) return { text: `${v}%`, color: '#dc3545' };
-    return { text: '0%', color: '#6c757d' };
+    if (v > 0) return { text: `+${v}%`, color: '#4AB866' };
+    if (v < 0) return { text: `${v}%`, color: '#DE2020' };
+    return { text: '0%', color: '#8A99A4' };
   };
 
   const formatPrice = (value) => {
@@ -391,8 +391,8 @@ const AnalysisTab = () => {
   // Style pour les filtres multi-select
   const MultiSelect = ({ label, options, selected, filterName, maxHeight = '150px' }) => (
     <div style={{ marginBottom: '15px' }}>
-      <label style={{ display: 'block', marginBottom: '5px', fontWeight: '600', fontSize: '13px', color: '#333' }}>
-        {label} {selected.length > 0 && <span style={{ color: '#007bff' }}>({selected.length})</span>}
+      <label style={{ display: 'block', marginBottom: '5px', fontWeight: '600', fontSize: '13px', color: '#2a2e38' }}>
+        {label} {selected.length > 0 && <span style={{ color: '#135E84' }}>({selected.length})</span>}
       </label>
       <div style={{
         border: '1px solid #ddd',
@@ -417,7 +417,7 @@ const AnalysisTab = () => {
             }}
           >
             <span style={{
-              color: selected.includes(option.value) ? '#007bff' : '#333',
+              color: selected.includes(option.value) ? '#135E84' : '#2a2e38',
               fontWeight: selected.includes(option.value) ? '600' : 'normal'
             }}>
               {option.label}
@@ -430,16 +430,16 @@ const AnalysisTab = () => {
   );
 
   // Carte KPI avec comparaison
-  const KpiCard = ({ label, value, color = '#333', subValue = null, variation = null }) => (
+  const KpiCard = ({ label, value, color = '#2a2e38', subValue = null, variation = null }) => (
     <div style={{
       backgroundColor: 'white',
       padding: '20px',
       borderRadius: '8px',
-      boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+      boxShadow: '0 1px 3px rgba(0,0,0,0.07), 0 0 0 1px rgba(0,0,0,0.05)',
       flex: '1',
       minWidth: '150px'
     }}>
-      <p style={{ fontSize: '13px', color: '#6c757d', margin: '0 0 8px 0', textTransform: 'uppercase' }}>{label}</p>
+      <p style={{ fontSize: '13px', color: '#8A99A4', margin: '0 0 8px 0', textTransform: 'uppercase' }}>{label}</p>
       <div style={{ display: 'flex', alignItems: 'baseline', gap: '10px' }}>
         <p style={{ fontSize: '24px', fontWeight: 'bold', color: color, margin: 0 }}>{value}</p>
         {variation !== null && (
@@ -474,18 +474,18 @@ const AnalysisTab = () => {
         backgroundColor: 'white',
         padding: '20px',
         borderRadius: '8px',
-        boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+        boxShadow: '0 1px 3px rgba(0,0,0,0.07), 0 0 0 1px rgba(0,0,0,0.05)',
         marginBottom: '20px'
       }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
-          <h3 style={{ margin: 0, fontSize: '18px', color: '#333' }}>Filtres</h3>
+          <h3 style={{ margin: 0, fontSize: '18px', color: '#2a2e38' }}>Filtres</h3>
           <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
             <button
               onClick={exportToPDF}
               disabled={!stats}
               style={{
                 padding: '8px 15px',
-                backgroundColor: stats ? '#dc3545' : '#ccc',
+                backgroundColor: stats ? '#DE2020' : '#ccc',
                 color: 'white',
                 border: 'none',
                 borderRadius: '4px',
@@ -502,7 +502,7 @@ const AnalysisTab = () => {
               onClick={clearFilters}
               style={{
                 padding: '8px 15px',
-                backgroundColor: '#6c757d',
+                backgroundColor: '#8A99A4',
                 color: 'white',
                 border: 'none',
                 borderRadius: '4px',
@@ -533,7 +533,7 @@ const AnalysisTab = () => {
         <div style={{ display: 'flex', gap: '30px', marginBottom: '20px', flexWrap: 'wrap' }}>
           {/* Période principale */}
           <div style={{ flex: '1', minWidth: '300px' }}>
-            <p style={{ margin: '0 0 10px 0', fontWeight: '600', fontSize: '14px', color: '#333' }}>Période analysée</p>
+            <p style={{ margin: '0 0 10px 0', fontWeight: '600', fontSize: '14px', color: '#2a2e38' }}>Période analysée</p>
             <div style={{ display: 'flex', gap: '15px' }}>
               <div style={{ flex: '1' }}>
                 <label style={{ display: 'block', marginBottom: '5px', fontWeight: '500', fontSize: '12px', color: '#666' }}>Début</label>
@@ -560,7 +560,7 @@ const AnalysisTab = () => {
           <div style={{ flex: '1', minWidth: '300px' }}>
             <p style={{ margin: '0 0 10px 0', fontWeight: '600', fontSize: '14px', color: '#666' }}>
               Comparer avec (optionnel)
-              {compareStats && <span style={{ color: '#007bff', fontWeight: 'normal', marginLeft: '10px' }}>Comparaison active</span>}
+              {compareStats && <span style={{ color: '#135E84', fontWeight: 'normal', marginLeft: '10px' }}>Comparaison active</span>}
             </p>
             <div style={{ display: 'flex', gap: '15px' }}>
               <div style={{ flex: '1' }}>
@@ -586,7 +586,7 @@ const AnalysisTab = () => {
         </div>
 
         {/* Multi-selects en grille */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '20px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 250px), 1fr))', gap: '20px' }}>
           <MultiSelect
             label="Catégories produit"
             options={filters?.categories}
@@ -692,10 +692,10 @@ const AnalysisTab = () => {
           </div>
 
           {/* Graphiques */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))', gap: '20px', marginBottom: '20px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 400px), 1fr))', gap: '20px', marginBottom: '20px' }}>
             {/* Répartition par transporteur */}
-            <div style={{ backgroundColor: 'white', padding: '20px', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
-              <h4 style={{ margin: '0 0 15px 0', fontSize: '16px', color: '#333' }}>Répartition par transporteur</h4>
+            <div style={{ backgroundColor: 'white', padding: '20px', borderRadius: '8px', boxShadow: '0 1px 3px rgba(0,0,0,0.07), 0 0 0 1px rgba(0,0,0,0.05)' }}>
+              <h4 style={{ margin: '0 0 15px 0', fontSize: '16px', color: '#2a2e38' }}>Répartition par transporteur</h4>
               {stats.breakdowns.byShipping.length > 0 ? (() => {
                 const total = stats.breakdowns.byShipping.reduce((s, e) => s + parseInt(e.count), 0);
                 return (
@@ -725,8 +725,8 @@ const AnalysisTab = () => {
                       {stats.breakdowns.byShipping.map((entry, index) => (
                         <div key={index} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '4px 0', borderBottom: '1px solid #f0f0f0' }}>
                           <span style={{ width: '10px', height: '10px', borderRadius: '2px', backgroundColor: COLORS[index % COLORS.length], flexShrink: 0 }} />
-                          <span style={{ flex: 1, color: '#333', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{entry.name}</span>
-                          <span style={{ fontWeight: 600, color: '#333', whiteSpace: 'nowrap' }}>{((entry.count / total) * 100).toFixed(1)}%</span>
+                          <span style={{ flex: 1, color: '#2a2e38', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{entry.name}</span>
+                          <span style={{ fontWeight: 600, color: '#2a2e38', whiteSpace: 'nowrap' }}>{((entry.count / total) * 100).toFixed(1)}%</span>
                           <span style={{ color: '#999', whiteSpace: 'nowrap', minWidth: '40px', textAlign: 'right' }}>{formatNumber(entry.count)}</span>
                         </div>
                       ))}
@@ -739,8 +739,8 @@ const AnalysisTab = () => {
             </div>
 
             {/* Répartition par pays */}
-            <div style={{ backgroundColor: 'white', padding: '20px', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
-              <h4 style={{ margin: '0 0 15px 0', fontSize: '16px', color: '#333' }}>Répartition par pays</h4>
+            <div style={{ backgroundColor: 'white', padding: '20px', borderRadius: '8px', boxShadow: '0 1px 3px rgba(0,0,0,0.07), 0 0 0 1px rgba(0,0,0,0.05)' }}>
+              <h4 style={{ margin: '0 0 15px 0', fontSize: '16px', color: '#2a2e38' }}>Répartition par pays</h4>
               {stats.breakdowns.byCountry.length > 0 ? (() => {
                 const total = stats.breakdowns.byCountry.reduce((s, e) => s + parseInt(e.count), 0);
                 return (
@@ -770,8 +770,8 @@ const AnalysisTab = () => {
                       {stats.breakdowns.byCountry.map((entry, index) => (
                         <div key={index} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '4px 0', borderBottom: '1px solid #f0f0f0' }}>
                           <span style={{ width: '10px', height: '10px', borderRadius: '2px', backgroundColor: COLORS[index % COLORS.length], flexShrink: 0 }} />
-                          <span style={{ flex: 1, color: '#333' }}>{entry.name}</span>
-                          <span style={{ fontWeight: 600, color: '#333', whiteSpace: 'nowrap' }}>{((entry.count / total) * 100).toFixed(1)}%</span>
+                          <span style={{ flex: 1, color: '#2a2e38' }}>{entry.name}</span>
+                          <span style={{ fontWeight: 600, color: '#2a2e38', whiteSpace: 'nowrap' }}>{((entry.count / total) * 100).toFixed(1)}%</span>
                           <span style={{ color: '#999', whiteSpace: 'nowrap', minWidth: '40px', textAlign: 'right' }}>{formatNumber(entry.count)}</span>
                         </div>
                       ))}
@@ -785,31 +785,31 @@ const AnalysisTab = () => {
           </div>
 
           {/* Histogrammes transporteurs et pays */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))', gap: '20px', marginBottom: '20px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 400px), 1fr))', gap: '20px', marginBottom: '20px' }}>
             {stats.breakdowns.byShipping.length > 0 && (
-              <div style={{ backgroundColor: 'white', padding: '20px', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
-                <h4 style={{ margin: '0 0 15px 0', fontSize: '16px', color: '#333' }}>Commandes par transporteur</h4>
+              <div style={{ backgroundColor: 'white', padding: '20px', borderRadius: '8px', boxShadow: '0 1px 3px rgba(0,0,0,0.07), 0 0 0 1px rgba(0,0,0,0.05)' }}>
+                <h4 style={{ margin: '0 0 15px 0', fontSize: '16px', color: '#2a2e38' }}>Commandes par transporteur</h4>
                 <ResponsiveContainer width="100%" height={Math.max(250, stats.breakdowns.byShipping.length * 35)}>
                   <BarChart data={stats.breakdowns.byShipping} layout="vertical" margin={{ left: 10 }}>
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis type="number" />
                     <YAxis type="category" dataKey="name" width={180} tick={{ fontSize: 11 }} />
                     <Tooltip formatter={(value) => [formatNumber(value), 'Commandes']} />
-                    <Bar dataKey="count" fill="#007bff" radius={[0, 4, 4, 0]} />
+                    <Bar dataKey="count" fill="#135E84" radius={[0, 4, 4, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
             )}
             {stats.breakdowns.byCountry.length > 0 && (
-              <div style={{ backgroundColor: 'white', padding: '20px', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
-                <h4 style={{ margin: '0 0 15px 0', fontSize: '16px', color: '#333' }}>Commandes par pays</h4>
+              <div style={{ backgroundColor: 'white', padding: '20px', borderRadius: '8px', boxShadow: '0 1px 3px rgba(0,0,0,0.07), 0 0 0 1px rgba(0,0,0,0.05)' }}>
+                <h4 style={{ margin: '0 0 15px 0', fontSize: '16px', color: '#2a2e38' }}>Commandes par pays</h4>
                 <ResponsiveContainer width="100%" height={Math.max(250, stats.breakdowns.byCountry.length * 35)}>
                   <BarChart data={stats.breakdowns.byCountry} layout="vertical" margin={{ left: 10 }}>
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis type="number" />
                     <YAxis type="category" dataKey="name" width={120} tick={{ fontSize: 11 }} />
                     <Tooltip formatter={(value) => [formatNumber(value), 'Commandes']} />
-                    <Bar dataKey="count" fill="#28a745" radius={[0, 4, 4, 0]} />
+                    <Bar dataKey="count" fill="#4AB866" radius={[0, 4, 4, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
@@ -818,8 +818,8 @@ const AnalysisTab = () => {
 
           {/* Top coupons */}
           {stats.breakdowns.byCoupon && stats.breakdowns.byCoupon.length > 0 && (
-            <div style={{ backgroundColor: 'white', padding: '20px', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)', marginBottom: '20px' }}>
-              <h4 style={{ margin: '0 0 15px 0', fontSize: '16px', color: '#333' }}>Top coupons de réduction</h4>
+            <div style={{ backgroundColor: 'white', padding: '20px', borderRadius: '8px', boxShadow: '0 1px 3px rgba(0,0,0,0.07), 0 0 0 1px rgba(0,0,0,0.05)', marginBottom: '20px' }}>
+              <h4 style={{ margin: '0 0 15px 0', fontSize: '16px', color: '#2a2e38' }}>Top coupons de réduction</h4>
               <ResponsiveContainer width="100%" height={350}>
                 <BarChart data={stats.breakdowns.byCoupon} layout="vertical" margin={{ left: 100 }}>
                   <CartesianGrid strokeDasharray="3 3" />
@@ -839,8 +839,8 @@ const AnalysisTab = () => {
           )}
 
           {/* Top catégories */}
-          <div style={{ backgroundColor: 'white', padding: '20px', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)', marginBottom: '20px' }}>
-            <h4 style={{ margin: '0 0 15px 0', fontSize: '16px', color: '#333' }}>CA par catégorie</h4>
+          <div style={{ backgroundColor: 'white', padding: '20px', borderRadius: '8px', boxShadow: '0 1px 3px rgba(0,0,0,0.07), 0 0 0 1px rgba(0,0,0,0.05)', marginBottom: '20px' }}>
+            <h4 style={{ margin: '0 0 15px 0', fontSize: '16px', color: '#2a2e38' }}>CA par catégorie</h4>
             {stats.breakdowns.byCategory.length > 0 ? (
               <ResponsiveContainer width="100%" height={300}>
                 <BarChart data={stats.breakdowns.byCategory} layout="vertical" margin={{ left: 150 }}>
@@ -848,7 +848,7 @@ const AnalysisTab = () => {
                   <XAxis type="number" tickFormatter={(v) => formatPrice(v)} />
                   <YAxis type="category" dataKey="name" width={140} tick={{ fontSize: 12 }} />
                   <Tooltip formatter={(value) => formatPrice(value)} />
-                  <Bar dataKey="ca_ttc" fill="#007bff" name="CA TTC" />
+                  <Bar dataKey="ca_ttc" fill="#135E84" name="CA TTC" />
                 </BarChart>
               </ResponsiveContainer>
             ) : (
@@ -857,8 +857,8 @@ const AnalysisTab = () => {
           </div>
 
           {/* Evolution dans le temps */}
-          <div style={{ backgroundColor: 'white', padding: '20px', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
-            <h4 style={{ margin: '0 0 15px 0', fontSize: '16px', color: '#333' }}>Evolution du CA</h4>
+          <div style={{ backgroundColor: 'white', padding: '20px', borderRadius: '8px', boxShadow: '0 1px 3px rgba(0,0,0,0.07), 0 0 0 1px rgba(0,0,0,0.05)' }}>
+            <h4 style={{ margin: '0 0 15px 0', fontSize: '16px', color: '#2a2e38' }}>Evolution du CA</h4>
             {stats.breakdowns.byTime.length > 0 ? (
               <>
                 <ResponsiveContainer width="100%" height={250}>
@@ -874,7 +874,7 @@ const AnalysisTab = () => {
                       labelFormatter={(d) => new Date(d).toLocaleDateString('fr-FR')}
                       formatter={(value) => [formatPrice(value), 'CA TTC']}
                     />
-                    <Line type="monotone" dataKey="ca_ttc" stroke="#28a745" name="CA TTC" strokeWidth={2} dot={false} />
+                    <Line type="monotone" dataKey="ca_ttc" stroke="#4AB866" name="CA TTC" strokeWidth={2} dot={false} />
                   </LineChart>
                 </ResponsiveContainer>
                 <ResponsiveContainer width="100%" height={200}>
@@ -890,7 +890,7 @@ const AnalysisTab = () => {
                       labelFormatter={(d) => new Date(d).toLocaleDateString('fr-FR')}
                       formatter={(value) => [formatPrice(value), 'CA TTC']}
                     />
-                    <Bar dataKey="ca_ttc" fill="#007bff" name="CA TTC" radius={[2, 2, 0, 0]} />
+                    <Bar dataKey="ca_ttc" fill="#135E84" name="CA TTC" radius={[2, 2, 0, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
               </>

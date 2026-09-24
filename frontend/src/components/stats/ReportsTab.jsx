@@ -346,7 +346,7 @@ const ReportsTab = () => {
       {/* Header avec titre et période */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
         <div>
-          <h2 style={{ margin: 0, color: '#333', fontSize: '24px' }}>Chiffre d'affaires</h2>
+          <h2 style={{ margin: 0, color: '#2a2e38', fontSize: '24px' }}>Chiffre d'affaires</h2>
           <p style={{ margin: '5px 0 0', color: '#666', fontSize: '13px' }}>
             Du {formatFullDate(dateFrom)} au {formatFullDate(dateTo)}
           </p>
@@ -359,7 +359,7 @@ const ReportsTab = () => {
       ) : data ? (
         <>
           {/* Section Graphique + KPIs */}
-          <div style={{ display: 'flex', gap: '20px', marginBottom: '30px' }}>
+          <div className="yv-row" style={{ display: 'flex', gap: '20px', marginBottom: '30px' }}>
             {/* Graphique */}
             <div style={{
               flex: 1,
@@ -372,8 +372,8 @@ const ReportsTab = () => {
                 <AreaChart data={chartData}>
                   <defs>
                     <linearGradient id="colorCa" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#007bff" stopOpacity={0.8}/>
-                      <stop offset="95%" stopColor="#007bff" stopOpacity={0.1}/>
+                      <stop offset="5%" stopColor="#135E84" stopOpacity={0.8}/>
+                      <stop offset="95%" stopColor="#135E84" stopOpacity={0.1}/>
                     </linearGradient>
                   </defs>
                   <CartesianGrid strokeDasharray="3 3" stroke="#e9ecef" />
@@ -381,14 +381,14 @@ const ReportsTab = () => {
                   <YAxis stroke="#666" fontSize={11} tickFormatter={(v) => `${(v/1000).toFixed(0)}k`} />
                   <Tooltip
                     contentStyle={{ backgroundColor: '#fff', border: '1px solid #ddd', borderRadius: '8px' }}
-                    labelStyle={{ color: '#333' }}
+                    labelStyle={{ color: '#2a2e38' }}
                     formatter={(value) => [formatPrice(value), 'CA TTC']}
                     labelFormatter={(label, payload) => payload[0]?.payload?.fullDate || label}
                   />
                   <Area
                     type="monotone"
                     dataKey="ca"
-                    stroke="#007bff"
+                    stroke="#135E84"
                     strokeWidth={2}
                     fillOpacity={1}
                     fill="url(#colorCa)"
@@ -398,7 +398,7 @@ const ReportsTab = () => {
             </div>
 
             {/* KPIs */}
-            <div style={{
+            <div className="yv-side" style={{
               width: '280px',
               backgroundColor: '#fff',
               borderRadius: '8px',
@@ -412,18 +412,18 @@ const ReportsTab = () => {
               <div style={{ marginBottom: '20px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px' }}>
                   <span style={{ color: '#666', fontSize: '13px' }}>CA TTC</span>
-                  <span style={{ color: '#333', fontSize: '18px', fontWeight: '700' }}>{formatPrice(data.kpis.ca_ttc)}</span>
+                  <span style={{ color: '#2a2e38', fontSize: '18px', fontWeight: '700' }}>{formatPrice(data.kpis.ca_ttc)}</span>
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px' }}>
                   <span style={{ color: '#666', fontSize: '13px' }}>CA HT</span>
-                  <span style={{ color: '#28a745', fontSize: '16px', fontWeight: '600' }}>{formatPrice(data.kpis.ca_ht)}</span>
+                  <span style={{ color: '#4AB866', fontSize: '16px', fontWeight: '600' }}>{formatPrice(data.kpis.ca_ht)}</span>
                 </div>
               </div>
 
               <div style={{ borderTop: '1px solid #e9ecef', paddingTop: '15px', marginBottom: '15px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px' }}>
                   <span style={{ color: '#666', fontSize: '13px' }}>Total Remboursements</span>
-                  <span style={{ color: '#dc3545', fontSize: '14px' }}>{formatPrice(data.kpis.refunds)}</span>
+                  <span style={{ color: '#DE2020', fontSize: '14px' }}>{formatPrice(data.kpis.refunds)}</span>
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px' }}>
                   <span style={{ color: '#666', fontSize: '13px' }}>Total TVA</span>
@@ -438,11 +438,11 @@ const ReportsTab = () => {
               <div style={{ borderTop: '1px solid #e9ecef', paddingTop: '15px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px' }}>
                   <span style={{ color: '#666', fontSize: '13px' }}>Nombre de commandes</span>
-                  <span style={{ color: '#333', fontSize: '16px', fontWeight: '600' }}>{data.kpis.orders_count.toLocaleString('fr-FR')}</span>
+                  <span style={{ color: '#2a2e38', fontSize: '16px', fontWeight: '600' }}>{data.kpis.orders_count.toLocaleString('fr-FR')}</span>
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                   <span style={{ color: '#666', fontSize: '13px' }}>Panier moyen HT</span>
-                  <span style={{ color: '#333', fontSize: '14px', fontWeight: '600' }}>{formatPrice(data.kpis.avg_order_ht)}</span>
+                  <span style={{ color: '#2a2e38', fontSize: '14px', fontWeight: '600' }}>{formatPrice(data.kpis.avg_order_ht)}</span>
                 </div>
               </div>
             </div>
@@ -456,11 +456,11 @@ const ReportsTab = () => {
             border: '1px solid #e9ecef'
           }}>
             <div style={{ padding: '15px 20px', borderBottom: '1px solid #e9ecef' }}>
-              <h3 style={{ margin: 0, color: '#333', fontSize: '16px' }}>Détail par jour</h3>
+              <h3 style={{ margin: 0, color: '#2a2e38', fontSize: '16px' }}>Détail par jour</h3>
             </div>
             <div style={{ overflowX: 'auto', maxHeight: '400px', overflowY: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                <thead style={{ position: 'sticky', top: 0, backgroundColor: '#f8f9fa', zIndex: 1 }}>
+                <thead style={{ position: 'sticky', top: 0, backgroundColor: '#F2F6F8', zIndex: 1 }}>
                   <tr>
                     <th style={{ padding: '12px 15px', textAlign: 'left', color: '#666', fontSize: '11px', fontWeight: '600', textTransform: 'uppercase' }}>Date</th>
                     <th style={{ padding: '12px 15px', textAlign: 'right', color: '#666', fontSize: '11px', fontWeight: '600', textTransform: 'uppercase' }}>Commandes</th>
@@ -472,22 +472,22 @@ const ReportsTab = () => {
                 <tbody>
                   {data.breakdown.map((row, idx) => (
                     <tr key={idx} style={{ borderBottom: '1px solid #e9ecef' }}>
-                      <td style={{ padding: '12px 15px', color: '#333', fontSize: '13px' }}>{formatFullDate(row.date)}</td>
-                      <td style={{ padding: '12px 15px', textAlign: 'right', color: '#007bff', fontSize: '13px', fontWeight: '600' }}>{(row.orders_count || 0).toLocaleString('fr-FR')}</td>
-                      <td style={{ padding: '12px 15px', textAlign: 'right', color: '#333', fontSize: '13px' }}>{formatPrice(row.gross_sales)}</td>
+                      <td style={{ padding: '12px 15px', color: '#2a2e38', fontSize: '13px' }}>{formatFullDate(row.date)}</td>
+                      <td style={{ padding: '12px 15px', textAlign: 'right', color: '#135E84', fontSize: '13px', fontWeight: '600' }}>{(row.orders_count || 0).toLocaleString('fr-FR')}</td>
+                      <td style={{ padding: '12px 15px', textAlign: 'right', color: '#2a2e38', fontSize: '13px' }}>{formatPrice(row.gross_sales)}</td>
                       <td style={{ padding: '12px 15px', textAlign: 'right', color: '#666', fontSize: '13px' }}>{formatPrice(row.taxes)}</td>
-                      <td style={{ padding: '12px 15px', textAlign: 'right', color: '#28a745', fontSize: '13px', fontWeight: '600' }}>{formatPrice(parseFloat(row.gross_sales) - parseFloat(row.taxes))}</td>
+                      <td style={{ padding: '12px 15px', textAlign: 'right', color: '#4AB866', fontSize: '13px', fontWeight: '600' }}>{formatPrice(parseFloat(row.gross_sales) - parseFloat(row.taxes))}</td>
                     </tr>
                   ))}
                 </tbody>
-                <tfoot style={{ position: 'sticky', bottom: 0, backgroundColor: '#f8f9fa' }}>
+                <tfoot style={{ position: 'sticky', bottom: 0, backgroundColor: '#F2F6F8' }}>
                   {totals && (
                     <tr style={{ fontWeight: '700' }}>
-                      <td style={{ padding: '15px', color: '#333', fontSize: '14px' }}>Totaux</td>
-                      <td style={{ padding: '15px', textAlign: 'right', color: '#007bff', fontSize: '14px' }}>{totals.orders.toLocaleString('fr-FR')}</td>
-                      <td style={{ padding: '15px', textAlign: 'right', color: '#333', fontSize: '14px' }}>{formatPrice(totals.gross)}</td>
+                      <td style={{ padding: '15px', color: '#2a2e38', fontSize: '14px' }}>Totaux</td>
+                      <td style={{ padding: '15px', textAlign: 'right', color: '#135E84', fontSize: '14px' }}>{totals.orders.toLocaleString('fr-FR')}</td>
+                      <td style={{ padding: '15px', textAlign: 'right', color: '#2a2e38', fontSize: '14px' }}>{formatPrice(totals.gross)}</td>
                       <td style={{ padding: '15px', textAlign: 'right', color: '#666', fontSize: '14px' }}>{formatPrice(totals.taxes)}</td>
-                      <td style={{ padding: '15px', textAlign: 'right', color: '#28a745', fontSize: '14px' }}>{formatPrice(totals.gross - totals.taxes)}</td>
+                      <td style={{ padding: '15px', textAlign: 'right', color: '#4AB866', fontSize: '14px' }}>{formatPrice(totals.gross - totals.taxes)}</td>
                     </tr>
                   )}
                 </tfoot>
@@ -504,7 +504,7 @@ const ReportsTab = () => {
       {/* Header avec titre et période */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
         <div>
-          <h2 style={{ margin: 0, color: '#333', fontSize: '24px' }}>Profit</h2>
+          <h2 style={{ margin: 0, color: '#2a2e38', fontSize: '24px' }}>Profit</h2>
           <p style={{ margin: '5px 0 0', color: '#666', fontSize: '13px' }}>
             Du {formatFullDate(dateFrom)} au {formatFullDate(dateTo)}
           </p>
@@ -517,7 +517,7 @@ const ReportsTab = () => {
       ) : profitData ? (
         <>
           {/* Section Graphique + KPIs */}
-          <div style={{ display: 'flex', gap: '20px', marginBottom: '30px' }}>
+          <div className="yv-row" style={{ display: 'flex', gap: '20px', marginBottom: '30px' }}>
             {/* Graphique */}
             <div style={{
               flex: 1,
@@ -526,17 +526,17 @@ const ReportsTab = () => {
               padding: '20px',
               border: '1px solid #e9ecef'
             }}>
-              <h3 style={{ margin: '0 0 15px', color: '#333', fontSize: '14px' }}>Net Profit</h3>
+              <h3 style={{ margin: '0 0 15px', color: '#2a2e38', fontSize: '14px' }}>Net Profit</h3>
               <ResponsiveContainer width="100%" height={280}>
                 <ComposedChart data={profitChartData}>
                   <defs>
                     <linearGradient id="colorProfit" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#28a745" stopOpacity={0.8}/>
-                      <stop offset="95%" stopColor="#28a745" stopOpacity={0.1}/>
+                      <stop offset="5%" stopColor="#4AB866" stopOpacity={0.8}/>
+                      <stop offset="95%" stopColor="#4AB866" stopOpacity={0.1}/>
                     </linearGradient>
                     <linearGradient id="colorRevenue" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#007bff" stopOpacity={0.3}/>
-                      <stop offset="95%" stopColor="#007bff" stopOpacity={0.05}/>
+                      <stop offset="5%" stopColor="#135E84" stopOpacity={0.3}/>
+                      <stop offset="95%" stopColor="#135E84" stopOpacity={0.05}/>
                     </linearGradient>
                   </defs>
                   <CartesianGrid strokeDasharray="3 3" stroke="#e9ecef" />
@@ -544,22 +544,22 @@ const ReportsTab = () => {
                   <YAxis stroke="#666" fontSize={11} tickFormatter={(v) => `${(v/1000).toFixed(0)}k`} />
                   <Tooltip
                     contentStyle={{ backgroundColor: '#fff', border: '1px solid #ddd', borderRadius: '8px' }}
-                    labelStyle={{ color: '#333' }}
+                    labelStyle={{ color: '#2a2e38' }}
                     formatter={(value, name) => {
                       const labels = { netRevenue: 'CA HT', cost: 'Coûts HT', profit: 'Profit HT' };
                       return [formatPrice(value), labels[name] || name];
                     }}
                     labelFormatter={(label, payload) => payload[0]?.payload?.fullDate || label}
                   />
-                  <Area type="monotone" dataKey="netRevenue" stroke="#007bff" strokeWidth={1} fill="url(#colorRevenue)" />
-                  <Area type="monotone" dataKey="profit" stroke="#28a745" strokeWidth={2} fill="url(#colorProfit)" />
-                  <Line type="monotone" dataKey="cost" stroke="#dc3545" strokeWidth={2} dot={false} />
+                  <Area type="monotone" dataKey="netRevenue" stroke="#135E84" strokeWidth={1} fill="url(#colorRevenue)" />
+                  <Area type="monotone" dataKey="profit" stroke="#4AB866" strokeWidth={2} fill="url(#colorProfit)" />
+                  <Line type="monotone" dataKey="cost" stroke="#DE2020" strokeWidth={2} dot={false} />
                 </ComposedChart>
               </ResponsiveContainer>
             </div>
 
             {/* KPIs + Cost Breakdown */}
-            <div style={{ width: '300px', display: 'flex', flexDirection: 'column', gap: '15px' }}>
+            <div className="yv-side" style={{ width: '300px', display: 'flex', flexDirection: 'column', gap: '15px' }}>
               {/* KPIs */}
               <div style={{
                 backgroundColor: '#fff',
@@ -573,27 +573,27 @@ const ReportsTab = () => {
 
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px' }}>
                   <span style={{ color: '#666', fontSize: '13px' }}>Commandes</span>
-                  <span style={{ color: '#333', fontSize: '16px', fontWeight: '700' }}>{profitData.kpis.orders_count.toLocaleString('fr-FR')}</span>
+                  <span style={{ color: '#2a2e38', fontSize: '16px', fontWeight: '700' }}>{profitData.kpis.orders_count.toLocaleString('fr-FR')}</span>
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px' }}>
                   <span style={{ color: '#666', fontSize: '13px' }}>CA HT</span>
-                  <span style={{ color: '#007bff', fontSize: '16px', fontWeight: '700' }}>{formatPrice(profitData.kpis.net_revenue)}</span>
+                  <span style={{ color: '#135E84', fontSize: '16px', fontWeight: '700' }}>{formatPrice(profitData.kpis.net_revenue)}</span>
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px' }}>
                   <span style={{ color: '#666', fontSize: '13px' }}>Cout total HT</span>
-                  <span style={{ color: '#dc3545', fontSize: '16px', fontWeight: '700' }}>{formatPrice(profitData.kpis.total_cost)}</span>
+                  <span style={{ color: '#DE2020', fontSize: '16px', fontWeight: '700' }}>{formatPrice(profitData.kpis.total_cost)}</span>
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px' }}>
                   <span style={{ color: '#666', fontSize: '13px' }}>Profit HT</span>
-                  <span style={{ color: '#28a745', fontSize: '18px', fontWeight: '700' }}>{formatPrice(profitData.kpis.profit)}</span>
+                  <span style={{ color: '#4AB866', fontSize: '18px', fontWeight: '700' }}>{formatPrice(profitData.kpis.profit)}</span>
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px' }}>
                   <span style={{ color: '#666', fontSize: '13px' }}>Marge HT</span>
-                  <span style={{ color: '#333', fontSize: '14px', fontWeight: '600' }}>{parseFloat(profitData.kpis.margin).toFixed(1)}%</span>
+                  <span style={{ color: '#2a2e38', fontSize: '14px', fontWeight: '600' }}>{parseFloat(profitData.kpis.margin).toFixed(1)}%</span>
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                   <span style={{ color: '#666', fontSize: '13px' }}>Profit moyen HT</span>
-                  <span style={{ color: '#333', fontSize: '14px', fontWeight: '600' }}>{formatPrice(profitData.kpis.avg_profit)}</span>
+                  <span style={{ color: '#2a2e38', fontSize: '14px', fontWeight: '600' }}>{formatPrice(profitData.kpis.avg_profit)}</span>
                 </div>
               </div>
 
@@ -610,19 +610,19 @@ const ReportsTab = () => {
 
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px' }}>
                   <span style={{ color: '#666', fontSize: '13px' }}>Net Revenue</span>
-                  <span style={{ color: '#007bff', fontSize: '14px' }}>{formatPrice(profitData.cost_breakdown.net_revenue)}</span>
+                  <span style={{ color: '#135E84', fontSize: '14px' }}>{formatPrice(profitData.cost_breakdown.net_revenue)}</span>
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px' }}>
                   <span style={{ color: '#666', fontSize: '13px' }}>Shipping Costs</span>
-                  <span style={{ color: '#dc3545', fontSize: '14px' }}>{formatPrice(profitData.cost_breakdown.shipping_cost)}</span>
+                  <span style={{ color: '#DE2020', fontSize: '14px' }}>{formatPrice(profitData.cost_breakdown.shipping_cost)}</span>
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px' }}>
                   <span style={{ color: '#666', fontSize: '13px' }}>Transaction Costs</span>
-                  <span style={{ color: '#dc3545', fontSize: '14px' }}>{formatPrice(profitData.cost_breakdown.transaction_cost)}</span>
+                  <span style={{ color: '#DE2020', fontSize: '14px' }}>{formatPrice(profitData.cost_breakdown.transaction_cost)}</span>
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                   <span style={{ color: '#666', fontSize: '13px' }}>Core Cost</span>
-                  <span style={{ color: '#dc3545', fontSize: '14px' }}>{formatPrice(profitData.cost_breakdown.core_cost)}</span>
+                  <span style={{ color: '#DE2020', fontSize: '14px' }}>{formatPrice(profitData.cost_breakdown.core_cost)}</span>
                 </div>
               </div>
             </div>
@@ -637,11 +637,11 @@ const ReportsTab = () => {
             marginBottom: '30px'
           }}>
             <div style={{ padding: '15px 20px', borderBottom: '1px solid #e9ecef' }}>
-              <h3 style={{ margin: 0, color: '#333', fontSize: '16px' }}>Profit by Date</h3>
+              <h3 style={{ margin: 0, color: '#2a2e38', fontSize: '16px' }}>Profit by Date</h3>
             </div>
             <div style={{ overflowX: 'auto', maxHeight: '400px', overflowY: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                <thead style={{ position: 'sticky', top: 0, backgroundColor: '#f8f9fa', zIndex: 1 }}>
+                <thead style={{ position: 'sticky', top: 0, backgroundColor: '#F2F6F8', zIndex: 1 }}>
                   <tr>
                     <th style={{ padding: '12px 15px', textAlign: 'left', color: '#666', fontSize: '11px', fontWeight: '600', textTransform: 'uppercase' }}>Date</th>
                     <th style={{ padding: '12px 15px', textAlign: 'right', color: '#666', fontSize: '11px', fontWeight: '600', textTransform: 'uppercase' }}>Orders</th>
@@ -657,30 +657,30 @@ const ReportsTab = () => {
                 <tbody>
                   {profitData.breakdown.map((row, idx) => (
                     <tr key={idx} style={{ borderBottom: '1px solid #e9ecef' }}>
-                      <td style={{ padding: '12px 15px', color: '#333', fontSize: '13px' }}>{formatFullDate(row.date)}</td>
-                      <td style={{ padding: '12px 15px', textAlign: 'right', color: '#007bff', fontSize: '13px', fontWeight: '600' }}>{(row.orders_count || 0).toLocaleString('fr-FR')}</td>
-                      <td style={{ padding: '12px 15px', textAlign: 'right', color: '#333', fontSize: '13px' }}>{formatPrice(row.gross_sales)}</td>
+                      <td style={{ padding: '12px 15px', color: '#2a2e38', fontSize: '13px' }}>{formatFullDate(row.date)}</td>
+                      <td style={{ padding: '12px 15px', textAlign: 'right', color: '#135E84', fontSize: '13px', fontWeight: '600' }}>{(row.orders_count || 0).toLocaleString('fr-FR')}</td>
+                      <td style={{ padding: '12px 15px', textAlign: 'right', color: '#2a2e38', fontSize: '13px' }}>{formatPrice(row.gross_sales)}</td>
                       <td style={{ padding: '12px 15px', textAlign: 'right', color: '#666', fontSize: '13px' }}>{formatPrice(row.taxes)}</td>
-                      <td style={{ padding: '12px 15px', textAlign: 'right', color: '#dc3545', fontSize: '13px' }}>{formatPrice(row.refunds)}</td>
-                      <td style={{ padding: '12px 15px', textAlign: 'right', color: '#007bff', fontSize: '13px' }}>{formatPrice(row.net_revenue)}</td>
-                      <td style={{ padding: '12px 15px', textAlign: 'right', color: '#dc3545', fontSize: '13px' }}>{formatPrice(row.cost)}</td>
-                      <td style={{ padding: '12px 15px', textAlign: 'right', color: '#28a745', fontSize: '13px', fontWeight: '600' }}>{formatPrice(row.profit)}</td>
-                      <td style={{ padding: '12px 15px', textAlign: 'right', color: '#333', fontSize: '13px' }}>{parseFloat(row.margin).toFixed(1)}%</td>
+                      <td style={{ padding: '12px 15px', textAlign: 'right', color: '#DE2020', fontSize: '13px' }}>{formatPrice(row.refunds)}</td>
+                      <td style={{ padding: '12px 15px', textAlign: 'right', color: '#135E84', fontSize: '13px' }}>{formatPrice(row.net_revenue)}</td>
+                      <td style={{ padding: '12px 15px', textAlign: 'right', color: '#DE2020', fontSize: '13px' }}>{formatPrice(row.cost)}</td>
+                      <td style={{ padding: '12px 15px', textAlign: 'right', color: '#4AB866', fontSize: '13px', fontWeight: '600' }}>{formatPrice(row.profit)}</td>
+                      <td style={{ padding: '12px 15px', textAlign: 'right', color: '#2a2e38', fontSize: '13px' }}>{parseFloat(row.margin).toFixed(1)}%</td>
                     </tr>
                   ))}
                 </tbody>
-                <tfoot style={{ position: 'sticky', bottom: 0, backgroundColor: '#f8f9fa' }}>
+                <tfoot style={{ position: 'sticky', bottom: 0, backgroundColor: '#F2F6F8' }}>
                   {profitTotals && (
                     <tr style={{ fontWeight: '700' }}>
-                      <td style={{ padding: '15px', color: '#333', fontSize: '14px' }}>Totaux</td>
-                      <td style={{ padding: '15px', textAlign: 'right', color: '#007bff', fontSize: '14px' }}>{profitTotals.orders.toLocaleString('fr-FR')}</td>
-                      <td style={{ padding: '15px', textAlign: 'right', color: '#333', fontSize: '14px' }}>{formatPrice(profitTotals.gross)}</td>
+                      <td style={{ padding: '15px', color: '#2a2e38', fontSize: '14px' }}>Totaux</td>
+                      <td style={{ padding: '15px', textAlign: 'right', color: '#135E84', fontSize: '14px' }}>{profitTotals.orders.toLocaleString('fr-FR')}</td>
+                      <td style={{ padding: '15px', textAlign: 'right', color: '#2a2e38', fontSize: '14px' }}>{formatPrice(profitTotals.gross)}</td>
                       <td style={{ padding: '15px', textAlign: 'right', color: '#666', fontSize: '14px' }}>{formatPrice(profitTotals.taxes)}</td>
-                      <td style={{ padding: '15px', textAlign: 'right', color: '#dc3545', fontSize: '14px' }}>{formatPrice(profitTotals.refunds)}</td>
-                      <td style={{ padding: '15px', textAlign: 'right', color: '#007bff', fontSize: '14px' }}>{formatPrice(profitTotals.netRevenue)}</td>
-                      <td style={{ padding: '15px', textAlign: 'right', color: '#dc3545', fontSize: '14px' }}>{formatPrice(profitTotals.cost)}</td>
-                      <td style={{ padding: '15px', textAlign: 'right', color: '#28a745', fontSize: '14px' }}>{formatPrice(profitTotals.profit)}</td>
-                      <td style={{ padding: '15px', textAlign: 'right', color: '#333', fontSize: '14px' }}>{profitTotals.netRevenue > 0 ? ((profitTotals.profit / profitTotals.netRevenue) * 100).toFixed(1) : 0}%</td>
+                      <td style={{ padding: '15px', textAlign: 'right', color: '#DE2020', fontSize: '14px' }}>{formatPrice(profitTotals.refunds)}</td>
+                      <td style={{ padding: '15px', textAlign: 'right', color: '#135E84', fontSize: '14px' }}>{formatPrice(profitTotals.netRevenue)}</td>
+                      <td style={{ padding: '15px', textAlign: 'right', color: '#DE2020', fontSize: '14px' }}>{formatPrice(profitTotals.cost)}</td>
+                      <td style={{ padding: '15px', textAlign: 'right', color: '#4AB866', fontSize: '14px' }}>{formatPrice(profitTotals.profit)}</td>
+                      <td style={{ padding: '15px', textAlign: 'right', color: '#2a2e38', fontSize: '14px' }}>{profitTotals.netRevenue > 0 ? ((profitTotals.profit / profitTotals.netRevenue) * 100).toFixed(1) : 0}%</td>
                     </tr>
                   )}
                 </tfoot>
@@ -697,12 +697,12 @@ const ReportsTab = () => {
             marginBottom: '30px'
           }}>
             <div style={{ padding: '15px 20px', borderBottom: '1px solid #e9ecef' }}>
-              <h3 style={{ margin: 0, color: '#333', fontSize: '16px' }}>Transaction Costs by Payment Method</h3>
+              <h3 style={{ margin: 0, color: '#2a2e38', fontSize: '16px' }}>Transaction Costs by Payment Method</h3>
             </div>
             <div style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead>
-                  <tr style={{ backgroundColor: '#f8f9fa' }}>
+                  <tr style={{ backgroundColor: '#F2F6F8' }}>
                     <th style={{ padding: '12px 15px', textAlign: 'left', color: '#666', fontSize: '11px', fontWeight: '600', textTransform: 'uppercase' }}>Payment Method</th>
                     <th style={{ padding: '12px 15px', textAlign: 'right', color: '#666', fontSize: '11px', fontWeight: '600', textTransform: 'uppercase' }}>Orders</th>
                     <th style={{ padding: '12px 15px', textAlign: 'right', color: '#666', fontSize: '11px', fontWeight: '600', textTransform: 'uppercase' }}>Transaction Cost</th>
@@ -712,9 +712,9 @@ const ReportsTab = () => {
                 <tbody>
                   {transactionCosts.map((row, idx) => (
                     <tr key={idx} style={{ borderBottom: '1px solid #e9ecef' }}>
-                      <td style={{ padding: '12px 15px', color: '#333', fontSize: '13px' }}>{row.payment_method}</td>
-                      <td style={{ padding: '12px 15px', textAlign: 'right', color: '#007bff', fontSize: '13px', fontWeight: '600' }}>{row.orders_count.toLocaleString('fr-FR')}</td>
-                      <td style={{ padding: '12px 15px', textAlign: 'right', color: '#dc3545', fontSize: '13px' }}>{formatPrice(row.transaction_cost)}</td>
+                      <td style={{ padding: '12px 15px', color: '#2a2e38', fontSize: '13px' }}>{row.payment_method}</td>
+                      <td style={{ padding: '12px 15px', textAlign: 'right', color: '#135E84', fontSize: '13px', fontWeight: '600' }}>{row.orders_count.toLocaleString('fr-FR')}</td>
+                      <td style={{ padding: '12px 15px', textAlign: 'right', color: '#DE2020', fontSize: '13px' }}>{formatPrice(row.transaction_cost)}</td>
                       <td style={{ padding: '12px 15px', textAlign: 'right', color: '#666', fontSize: '13px' }}>{row.avg_percent}%</td>
                     </tr>
                   ))}
@@ -731,12 +731,12 @@ const ReportsTab = () => {
             border: '1px solid #e9ecef'
           }}>
             <div style={{ padding: '15px 20px', borderBottom: '1px solid #e9ecef' }}>
-              <h3 style={{ margin: 0, color: '#333', fontSize: '16px' }}>Shipping Costs by Shipping Method</h3>
+              <h3 style={{ margin: 0, color: '#2a2e38', fontSize: '16px' }}>Shipping Costs by Shipping Method</h3>
             </div>
             <div style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead>
-                  <tr style={{ backgroundColor: '#f8f9fa' }}>
+                  <tr style={{ backgroundColor: '#F2F6F8' }}>
                     <th style={{ padding: '12px 15px', textAlign: 'left', color: '#666', fontSize: '11px', fontWeight: '600', textTransform: 'uppercase' }}>Shipping Method</th>
                     <th style={{ padding: '12px 15px', textAlign: 'right', color: '#666', fontSize: '11px', fontWeight: '600', textTransform: 'uppercase' }}>Orders</th>
                     <th style={{ padding: '12px 15px', textAlign: 'right', color: '#666', fontSize: '11px', fontWeight: '600', textTransform: 'uppercase' }}>Shipping Cost</th>
@@ -748,12 +748,12 @@ const ReportsTab = () => {
                 <tbody>
                   {shippingCosts.map((row, idx) => (
                     <tr key={idx} style={{ borderBottom: '1px solid #e9ecef' }}>
-                      <td style={{ padding: '12px 15px', color: '#333', fontSize: '13px' }}>{row.shipping_method}</td>
-                      <td style={{ padding: '12px 15px', textAlign: 'right', color: '#007bff', fontSize: '13px', fontWeight: '600' }}>{row.orders_count.toLocaleString('fr-FR')}</td>
-                      <td style={{ padding: '12px 15px', textAlign: 'right', color: '#dc3545', fontSize: '13px' }}>{formatPrice(row.shipping_cost)}</td>
-                      <td style={{ padding: '12px 15px', textAlign: 'right', color: '#dc3545', fontSize: '13px' }}>{formatPrice(row.avg_cost)}</td>
-                      <td style={{ padding: '12px 15px', textAlign: 'right', color: '#28a745', fontSize: '13px' }}>{formatPrice(row.shipping_charged)}</td>
-                      <td style={{ padding: '12px 15px', textAlign: 'right', color: '#28a745', fontSize: '13px' }}>{formatPrice(row.avg_charged)}</td>
+                      <td style={{ padding: '12px 15px', color: '#2a2e38', fontSize: '13px' }}>{row.shipping_method}</td>
+                      <td style={{ padding: '12px 15px', textAlign: 'right', color: '#135E84', fontSize: '13px', fontWeight: '600' }}>{row.orders_count.toLocaleString('fr-FR')}</td>
+                      <td style={{ padding: '12px 15px', textAlign: 'right', color: '#DE2020', fontSize: '13px' }}>{formatPrice(row.shipping_cost)}</td>
+                      <td style={{ padding: '12px 15px', textAlign: 'right', color: '#DE2020', fontSize: '13px' }}>{formatPrice(row.avg_cost)}</td>
+                      <td style={{ padding: '12px 15px', textAlign: 'right', color: '#4AB866', fontSize: '13px' }}>{formatPrice(row.shipping_charged)}</td>
+                      <td style={{ padding: '12px 15px', textAlign: 'right', color: '#4AB866', fontSize: '13px' }}>{formatPrice(row.avg_charged)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -793,7 +793,7 @@ const ReportsTab = () => {
       {/* Header avec titre et période */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
         <div>
-          <h2 style={{ margin: 0, color: '#333', fontSize: '24px' }}>Commandes</h2>
+          <h2 style={{ margin: 0, color: '#2a2e38', fontSize: '24px' }}>Commandes</h2>
           <p style={{ margin: '5px 0 0', color: '#666', fontSize: '13px' }}>
             Du {formatFullDate(dateFrom)} au {formatFullDate(dateTo)}
           </p>
@@ -806,14 +806,14 @@ const ReportsTab = () => {
       ) : ordersData ? (
         <>
           {/* KPIs principaux */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: '15px', marginBottom: '20px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 150px), 1fr))', gap: '15px', marginBottom: '20px' }}>
             <div style={{ backgroundColor: '#fff', borderRadius: '8px', padding: '15px', border: '1px solid #e9ecef' }}>
               <div style={{ color: '#666', fontSize: '12px', marginBottom: '5px' }}>Ventes Brutes</div>
-              <div style={{ color: '#333', fontSize: '20px', fontWeight: '700' }}>{formatPrice(ordersData.kpis.gross_sales)}</div>
+              <div style={{ color: '#2a2e38', fontSize: '20px', fontWeight: '700' }}>{formatPrice(ordersData.kpis.gross_sales)}</div>
             </div>
             <div style={{ backgroundColor: '#fff', borderRadius: '8px', padding: '15px', border: '1px solid #e9ecef' }}>
               <div style={{ color: '#666', fontSize: '12px', marginBottom: '5px' }}>Remboursements</div>
-              <div style={{ color: '#dc3545', fontSize: '20px', fontWeight: '700' }}>{formatPrice(ordersData.kpis.refunds)}</div>
+              <div style={{ color: '#DE2020', fontSize: '20px', fontWeight: '700' }}>{formatPrice(ordersData.kpis.refunds)}</div>
             </div>
             <div style={{ backgroundColor: '#fff', borderRadius: '8px', padding: '15px', border: '1px solid #e9ecef' }}>
               <div style={{ color: '#666', fontSize: '12px', marginBottom: '5px' }}>Remises</div>
@@ -829,19 +829,19 @@ const ReportsTab = () => {
             </div>
             <div style={{ backgroundColor: '#fff', borderRadius: '8px', padding: '15px', border: '1px solid #e9ecef' }}>
               <div style={{ color: '#666', fontSize: '12px', marginBottom: '5px' }}>Ventes Nettes</div>
-              <div style={{ color: '#28a745', fontSize: '20px', fontWeight: '700' }}>{formatPrice(ordersData.kpis.net_sales)}</div>
+              <div style={{ color: '#4AB866', fontSize: '20px', fontWeight: '700' }}>{formatPrice(ordersData.kpis.net_sales)}</div>
             </div>
           </div>
 
           {/* Ligne 2: Moyennes journalières */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '15px', marginBottom: '30px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 200px), 1fr))', gap: '15px', marginBottom: '30px' }}>
             <div style={{ backgroundColor: '#fff', borderRadius: '8px', padding: '15px', border: '1px solid #e9ecef' }}>
               <div style={{ color: '#666', fontSize: '12px', marginBottom: '5px' }}>Net journalier</div>
-              <div style={{ color: '#28a745', fontSize: '18px', fontWeight: '700' }}>{formatPrice(ordersData.kpis.daily_net)}</div>
+              <div style={{ color: '#4AB866', fontSize: '18px', fontWeight: '700' }}>{formatPrice(ordersData.kpis.daily_net)}</div>
             </div>
             <div style={{ backgroundColor: '#fff', borderRadius: '8px', padding: '15px', border: '1px solid #e9ecef' }}>
               <div style={{ color: '#666', fontSize: '12px', marginBottom: '5px' }}>Commandes/jour</div>
-              <div style={{ color: '#007bff', fontSize: '18px', fontWeight: '700' }}>{ordersData.kpis.daily_orders}</div>
+              <div style={{ color: '#135E84', fontSize: '18px', fontWeight: '700' }}>{ordersData.kpis.daily_orders}</div>
             </div>
             <div style={{ backgroundColor: '#fff', borderRadius: '8px', padding: '15px', border: '1px solid #e9ecef' }}>
               <div style={{ color: '#666', fontSize: '12px', marginBottom: '5px' }}>Articles/jour</div>
@@ -849,19 +849,19 @@ const ReportsTab = () => {
             </div>
             <div style={{ backgroundColor: '#fff', borderRadius: '8px', padding: '15px', border: '1px solid #e9ecef' }}>
               <div style={{ color: '#666', fontSize: '12px', marginBottom: '5px' }}>Panier moyen TTC</div>
-              <div style={{ color: '#333', fontSize: '18px', fontWeight: '700' }}>{formatPrice(ordersData.kpis.avg_order_gross)}</div>
+              <div style={{ color: '#2a2e38', fontSize: '18px', fontWeight: '700' }}>{formatPrice(ordersData.kpis.avg_order_gross)}</div>
             </div>
           </div>
 
           {/* Graphique principal */}
           <div style={{ backgroundColor: '#fff', borderRadius: '8px', padding: '20px', border: '1px solid #e9ecef', marginBottom: '30px' }}>
-            <h3 style={{ margin: '0 0 15px', color: '#333', fontSize: '16px' }}>Commandes et ventes nettes</h3>
+            <h3 style={{ margin: '0 0 15px', color: '#2a2e38', fontSize: '16px' }}>Commandes et ventes nettes</h3>
             <ResponsiveContainer width="100%" height={300}>
               <ComposedChart data={ordersChartData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#e9ecef" />
                 <XAxis dataKey="date" stroke="#666" fontSize={11} />
-                <YAxis yAxisId="left" stroke="#007bff" fontSize={11} />
-                <YAxis yAxisId="right" orientation="right" stroke="#28a745" fontSize={11} tickFormatter={(v) => `${(v/1000).toFixed(0)}k`} />
+                <YAxis yAxisId="left" stroke="#135E84" fontSize={11} />
+                <YAxis yAxisId="right" orientation="right" stroke="#4AB866" fontSize={11} tickFormatter={(v) => `${(v/1000).toFixed(0)}k`} />
                 <Tooltip
                   contentStyle={{ backgroundColor: '#fff', border: '1px solid #ddd', borderRadius: '8px' }}
                   formatter={(value, name) => {
@@ -870,8 +870,8 @@ const ReportsTab = () => {
                   }}
                   labelFormatter={(label, payload) => payload[0]?.payload?.fullDate || label}
                 />
-                <Bar yAxisId="left" dataKey="orders" fill="#007bff" radius={[4, 4, 0, 0]} />
-                <Line yAxisId="right" type="monotone" dataKey="netSales" stroke="#28a745" strokeWidth={2} dot={{ fill: '#28a745', r: 3 }} />
+                <Bar yAxisId="left" dataKey="orders" fill="#135E84" radius={[4, 4, 0, 0]} />
+                <Line yAxisId="right" type="monotone" dataKey="netSales" stroke="#4AB866" strokeWidth={2} dot={{ fill: '#4AB866', r: 3 }} />
               </ComposedChart>
             </ResponsiveContainer>
           </div>
@@ -879,12 +879,12 @@ const ReportsTab = () => {
           {/* New vs Returning */}
           <div style={{ backgroundColor: '#fff', borderRadius: '8px', overflow: 'hidden', border: '1px solid #e9ecef', marginBottom: '30px' }}>
             <div style={{ padding: '15px 20px', borderBottom: '1px solid #e9ecef', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <h3 style={{ margin: 0, color: '#333', fontSize: '16px' }}>Nouveaux vs Clients fidèles</h3>
+              <h3 style={{ margin: 0, color: '#2a2e38', fontSize: '16px' }}>Nouveaux vs Clients fidèles</h3>
               <span style={{ color: '#666', fontSize: '13px' }}>{ordersData.kpis.customers_count.toLocaleString('fr-FR')} clients</span>
             </div>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
-                <tr style={{ backgroundColor: '#f8f9fa' }}>
+                <tr style={{ backgroundColor: '#F2F6F8' }}>
                   <th style={{ padding: '12px 15px', textAlign: 'left', color: '#666', fontSize: '11px', fontWeight: '600', textTransform: 'uppercase' }}>Type</th>
                   <th style={{ padding: '12px 15px', textAlign: 'right', color: '#666', fontSize: '11px', fontWeight: '600', textTransform: 'uppercase' }}>Clients</th>
                   <th style={{ padding: '12px 15px', textAlign: 'right', color: '#666', fontSize: '11px', fontWeight: '600', textTransform: 'uppercase' }}>Commandes</th>
@@ -897,11 +897,11 @@ const ReportsTab = () => {
               <tbody>
                 {ordersData.newVsReturning.map((row, idx) => (
                   <tr key={idx} style={{ borderBottom: '1px solid #e9ecef' }}>
-                    <td style={{ padding: '12px 15px', color: '#333', fontSize: '13px', fontWeight: '600' }}>{row.type}</td>
-                    <td style={{ padding: '12px 15px', textAlign: 'right', color: '#007bff', fontSize: '13px' }}>{row.customers.toLocaleString('fr-FR')}</td>
-                    <td style={{ padding: '12px 15px', textAlign: 'right', color: '#007bff', fontSize: '13px' }}>{row.orders.toLocaleString('fr-FR')}</td>
-                    <td style={{ padding: '12px 15px', textAlign: 'right', color: '#28a745', fontSize: '13px' }}>{formatPrice(row.net_sales)}</td>
-                    <td style={{ padding: '12px 15px', textAlign: 'right', color: '#333', fontSize: '13px' }}>{formatPrice(row.gross_sales)}</td>
+                    <td style={{ padding: '12px 15px', color: '#2a2e38', fontSize: '13px', fontWeight: '600' }}>{row.type}</td>
+                    <td style={{ padding: '12px 15px', textAlign: 'right', color: '#135E84', fontSize: '13px' }}>{row.customers.toLocaleString('fr-FR')}</td>
+                    <td style={{ padding: '12px 15px', textAlign: 'right', color: '#135E84', fontSize: '13px' }}>{row.orders.toLocaleString('fr-FR')}</td>
+                    <td style={{ padding: '12px 15px', textAlign: 'right', color: '#4AB866', fontSize: '13px' }}>{formatPrice(row.net_sales)}</td>
+                    <td style={{ padding: '12px 15px', textAlign: 'right', color: '#2a2e38', fontSize: '13px' }}>{formatPrice(row.gross_sales)}</td>
                     <td style={{ padding: '12px 15px', textAlign: 'right', color: '#666', fontSize: '13px' }}>{formatPrice(row.avg_net)}</td>
                     <td style={{ padding: '12px 15px', textAlign: 'right', color: '#666', fontSize: '13px' }}>{formatPrice(row.avg_gross)}</td>
                   </tr>
@@ -913,11 +913,11 @@ const ReportsTab = () => {
           {/* Par Statut */}
           <div style={{ backgroundColor: '#fff', borderRadius: '8px', overflow: 'hidden', border: '1px solid #e9ecef', marginBottom: '30px' }}>
             <div style={{ padding: '15px 20px', borderBottom: '1px solid #e9ecef' }}>
-              <h3 style={{ margin: 0, color: '#333', fontSize: '16px' }}>Par statut</h3>
+              <h3 style={{ margin: 0, color: '#2a2e38', fontSize: '16px' }}>Par statut</h3>
             </div>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
-                <tr style={{ backgroundColor: '#f8f9fa' }}>
+                <tr style={{ backgroundColor: '#F2F6F8' }}>
                   <th style={{ padding: '12px 15px', textAlign: 'left', color: '#666', fontSize: '11px', fontWeight: '600', textTransform: 'uppercase' }}>Statut</th>
                   <th style={{ padding: '12px 15px', textAlign: 'right', color: '#666', fontSize: '11px', fontWeight: '600', textTransform: 'uppercase' }}>Commandes</th>
                   <th style={{ padding: '12px 15px', textAlign: 'right', color: '#666', fontSize: '11px', fontWeight: '600', textTransform: 'uppercase' }}>Articles</th>
@@ -930,12 +930,12 @@ const ReportsTab = () => {
               <tbody>
                 {ordersData.byStatus.map((row, idx) => (
                   <tr key={idx} style={{ borderBottom: '1px solid #e9ecef' }}>
-                    <td style={{ padding: '12px 15px', color: '#333', fontSize: '13px', fontWeight: '600' }}>{row.status}</td>
-                    <td style={{ padding: '12px 15px', textAlign: 'right', color: '#007bff', fontSize: '13px', fontWeight: '600' }}>{row.orders.toLocaleString('fr-FR')}</td>
+                    <td style={{ padding: '12px 15px', color: '#2a2e38', fontSize: '13px', fontWeight: '600' }}>{row.status}</td>
+                    <td style={{ padding: '12px 15px', textAlign: 'right', color: '#135E84', fontSize: '13px', fontWeight: '600' }}>{row.orders.toLocaleString('fr-FR')}</td>
                     <td style={{ padding: '12px 15px', textAlign: 'right', color: '#666', fontSize: '13px' }}>{row.items.toLocaleString('fr-FR')}</td>
                     <td style={{ padding: '12px 15px', textAlign: 'right', color: '#666', fontSize: '13px' }}>{row.customers.toLocaleString('fr-FR')}</td>
-                    <td style={{ padding: '12px 15px', textAlign: 'right', color: '#28a745', fontSize: '13px' }}>{formatPrice(row.net_sales)}</td>
-                    <td style={{ padding: '12px 15px', textAlign: 'right', color: '#333', fontSize: '13px' }}>{formatPrice(row.gross_sales)}</td>
+                    <td style={{ padding: '12px 15px', textAlign: 'right', color: '#4AB866', fontSize: '13px' }}>{formatPrice(row.net_sales)}</td>
+                    <td style={{ padding: '12px 15px', textAlign: 'right', color: '#2a2e38', fontSize: '13px' }}>{formatPrice(row.gross_sales)}</td>
                     <td style={{ padding: '12px 15px', textAlign: 'right', color: '#666', fontSize: '13px' }}>{formatPrice(row.avg_gross)}</td>
                   </tr>
                 ))}
@@ -946,11 +946,11 @@ const ReportsTab = () => {
           {/* Par Méthode de paiement */}
           <div style={{ backgroundColor: '#fff', borderRadius: '8px', overflow: 'hidden', border: '1px solid #e9ecef', marginBottom: '30px' }}>
             <div style={{ padding: '15px 20px', borderBottom: '1px solid #e9ecef' }}>
-              <h3 style={{ margin: 0, color: '#333', fontSize: '16px' }}>Par méthode de paiement</h3>
+              <h3 style={{ margin: 0, color: '#2a2e38', fontSize: '16px' }}>Par méthode de paiement</h3>
             </div>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
-                <tr style={{ backgroundColor: '#f8f9fa' }}>
+                <tr style={{ backgroundColor: '#F2F6F8' }}>
                   <th style={{ padding: '12px 15px', textAlign: 'left', color: '#666', fontSize: '11px', fontWeight: '600', textTransform: 'uppercase' }}>Méthode</th>
                   <th style={{ padding: '12px 15px', textAlign: 'right', color: '#666', fontSize: '11px', fontWeight: '600', textTransform: 'uppercase' }}>Commandes</th>
                   <th style={{ padding: '12px 15px', textAlign: 'right', color: '#666', fontSize: '11px', fontWeight: '600', textTransform: 'uppercase' }}>Articles</th>
@@ -963,12 +963,12 @@ const ReportsTab = () => {
               <tbody>
                 {ordersData.byPayment.map((row, idx) => (
                   <tr key={idx} style={{ borderBottom: '1px solid #e9ecef' }}>
-                    <td style={{ padding: '12px 15px', color: '#333', fontSize: '13px', fontWeight: '600' }}>{row.payment_method}</td>
-                    <td style={{ padding: '12px 15px', textAlign: 'right', color: '#007bff', fontSize: '13px', fontWeight: '600' }}>{row.orders.toLocaleString('fr-FR')}</td>
+                    <td style={{ padding: '12px 15px', color: '#2a2e38', fontSize: '13px', fontWeight: '600' }}>{row.payment_method}</td>
+                    <td style={{ padding: '12px 15px', textAlign: 'right', color: '#135E84', fontSize: '13px', fontWeight: '600' }}>{row.orders.toLocaleString('fr-FR')}</td>
                     <td style={{ padding: '12px 15px', textAlign: 'right', color: '#666', fontSize: '13px' }}>{row.items.toLocaleString('fr-FR')}</td>
                     <td style={{ padding: '12px 15px', textAlign: 'right', color: '#666', fontSize: '13px' }}>{row.customers.toLocaleString('fr-FR')}</td>
-                    <td style={{ padding: '12px 15px', textAlign: 'right', color: '#28a745', fontSize: '13px' }}>{formatPrice(row.net_sales)}</td>
-                    <td style={{ padding: '12px 15px', textAlign: 'right', color: '#333', fontSize: '13px' }}>{formatPrice(row.gross_sales)}</td>
+                    <td style={{ padding: '12px 15px', textAlign: 'right', color: '#4AB866', fontSize: '13px' }}>{formatPrice(row.net_sales)}</td>
+                    <td style={{ padding: '12px 15px', textAlign: 'right', color: '#2a2e38', fontSize: '13px' }}>{formatPrice(row.gross_sales)}</td>
                     <td style={{ padding: '12px 15px', textAlign: 'right', color: '#666', fontSize: '13px' }}>{formatPrice(row.avg_gross)}</td>
                   </tr>
                 ))}
@@ -979,11 +979,11 @@ const ReportsTab = () => {
           {/* Par Méthode de livraison */}
           <div style={{ backgroundColor: '#fff', borderRadius: '8px', overflow: 'hidden', border: '1px solid #e9ecef', marginBottom: '30px' }}>
             <div style={{ padding: '15px 20px', borderBottom: '1px solid #e9ecef' }}>
-              <h3 style={{ margin: 0, color: '#333', fontSize: '16px' }}>Par méthode de livraison</h3>
+              <h3 style={{ margin: 0, color: '#2a2e38', fontSize: '16px' }}>Par méthode de livraison</h3>
             </div>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
-                <tr style={{ backgroundColor: '#f8f9fa' }}>
+                <tr style={{ backgroundColor: '#F2F6F8' }}>
                   <th style={{ padding: '12px 15px', textAlign: 'left', color: '#666', fontSize: '11px', fontWeight: '600', textTransform: 'uppercase' }}>Méthode</th>
                   <th style={{ padding: '12px 15px', textAlign: 'right', color: '#666', fontSize: '11px', fontWeight: '600', textTransform: 'uppercase' }}>Commandes</th>
                   <th style={{ padding: '12px 15px', textAlign: 'right', color: '#666', fontSize: '11px', fontWeight: '600', textTransform: 'uppercase' }}>Articles</th>
@@ -996,12 +996,12 @@ const ReportsTab = () => {
               <tbody>
                 {ordersData.byShipping.map((row, idx) => (
                   <tr key={idx} style={{ borderBottom: '1px solid #e9ecef' }}>
-                    <td style={{ padding: '12px 15px', color: '#333', fontSize: '13px', fontWeight: '600' }}>{row.shipping_method}</td>
-                    <td style={{ padding: '12px 15px', textAlign: 'right', color: '#007bff', fontSize: '13px', fontWeight: '600' }}>{row.orders.toLocaleString('fr-FR')}</td>
+                    <td style={{ padding: '12px 15px', color: '#2a2e38', fontSize: '13px', fontWeight: '600' }}>{row.shipping_method}</td>
+                    <td style={{ padding: '12px 15px', textAlign: 'right', color: '#135E84', fontSize: '13px', fontWeight: '600' }}>{row.orders.toLocaleString('fr-FR')}</td>
                     <td style={{ padding: '12px 15px', textAlign: 'right', color: '#666', fontSize: '13px' }}>{row.items.toLocaleString('fr-FR')}</td>
                     <td style={{ padding: '12px 15px', textAlign: 'right', color: '#666', fontSize: '13px' }}>{row.customers.toLocaleString('fr-FR')}</td>
-                    <td style={{ padding: '12px 15px', textAlign: 'right', color: '#28a745', fontSize: '13px' }}>{formatPrice(row.net_sales)}</td>
-                    <td style={{ padding: '12px 15px', textAlign: 'right', color: '#333', fontSize: '13px' }}>{formatPrice(row.gross_sales)}</td>
+                    <td style={{ padding: '12px 15px', textAlign: 'right', color: '#4AB866', fontSize: '13px' }}>{formatPrice(row.net_sales)}</td>
+                    <td style={{ padding: '12px 15px', textAlign: 'right', color: '#2a2e38', fontSize: '13px' }}>{formatPrice(row.gross_sales)}</td>
                     <td style={{ padding: '12px 15px', textAlign: 'right', color: '#666', fontSize: '13px' }}>{formatPrice(row.avg_gross)}</td>
                   </tr>
                 ))}
@@ -1012,11 +1012,11 @@ const ReportsTab = () => {
           {/* Par Pays */}
           <div style={{ backgroundColor: '#fff', borderRadius: '8px', overflow: 'hidden', border: '1px solid #e9ecef', marginBottom: '30px' }}>
             <div style={{ padding: '15px 20px', borderBottom: '1px solid #e9ecef' }}>
-              <h3 style={{ margin: 0, color: '#333', fontSize: '16px' }}>Par pays de facturation</h3>
+              <h3 style={{ margin: 0, color: '#2a2e38', fontSize: '16px' }}>Par pays de facturation</h3>
             </div>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
-                <tr style={{ backgroundColor: '#f8f9fa' }}>
+                <tr style={{ backgroundColor: '#F2F6F8' }}>
                   <th style={{ padding: '12px 15px', textAlign: 'left', color: '#666', fontSize: '11px', fontWeight: '600', textTransform: 'uppercase' }}>Pays</th>
                   <th style={{ padding: '12px 15px', textAlign: 'right', color: '#666', fontSize: '11px', fontWeight: '600', textTransform: 'uppercase' }}>Commandes</th>
                   <th style={{ padding: '12px 15px', textAlign: 'right', color: '#666', fontSize: '11px', fontWeight: '600', textTransform: 'uppercase' }}>Articles</th>
@@ -1029,14 +1029,14 @@ const ReportsTab = () => {
               <tbody>
                 {ordersData.byCountry.map((row, idx) => (
                   <tr key={idx} style={{ borderBottom: '1px solid #e9ecef' }}>
-                    <td style={{ padding: '12px 15px', color: '#333', fontSize: '13px', fontWeight: '600' }}>
+                    <td style={{ padding: '12px 15px', color: '#2a2e38', fontSize: '13px', fontWeight: '600' }}>
                       {countryFlags[row.country] || '🏳️'} {row.country}
                     </td>
-                    <td style={{ padding: '12px 15px', textAlign: 'right', color: '#007bff', fontSize: '13px', fontWeight: '600' }}>{row.orders.toLocaleString('fr-FR')}</td>
+                    <td style={{ padding: '12px 15px', textAlign: 'right', color: '#135E84', fontSize: '13px', fontWeight: '600' }}>{row.orders.toLocaleString('fr-FR')}</td>
                     <td style={{ padding: '12px 15px', textAlign: 'right', color: '#666', fontSize: '13px' }}>{row.items.toLocaleString('fr-FR')}</td>
                     <td style={{ padding: '12px 15px', textAlign: 'right', color: '#666', fontSize: '13px' }}>{row.customers.toLocaleString('fr-FR')}</td>
-                    <td style={{ padding: '12px 15px', textAlign: 'right', color: '#28a745', fontSize: '13px' }}>{formatPrice(row.net_sales)}</td>
-                    <td style={{ padding: '12px 15px', textAlign: 'right', color: '#333', fontSize: '13px' }}>{formatPrice(row.gross_sales)}</td>
+                    <td style={{ padding: '12px 15px', textAlign: 'right', color: '#4AB866', fontSize: '13px' }}>{formatPrice(row.net_sales)}</td>
+                    <td style={{ padding: '12px 15px', textAlign: 'right', color: '#2a2e38', fontSize: '13px' }}>{formatPrice(row.gross_sales)}</td>
                     <td style={{ padding: '12px 15px', textAlign: 'right', color: '#666', fontSize: '13px' }}>{formatPrice(row.avg_gross)}</td>
                   </tr>
                 ))}
@@ -1045,53 +1045,53 @@ const ReportsTab = () => {
           </div>
 
           {/* Distributions et graphiques */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '30px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 280px), 1fr))', gap: '20px', marginBottom: '30px' }}>
             {/* Distribution articles par commande */}
             <div style={{ backgroundColor: '#fff', borderRadius: '8px', padding: '20px', border: '1px solid #e9ecef' }}>
-              <h3 style={{ margin: '0 0 15px', color: '#333', fontSize: '16px' }}>Distribution nb articles</h3>
+              <h3 style={{ margin: '0 0 15px', color: '#2a2e38', fontSize: '16px' }}>Distribution nb articles</h3>
               <ResponsiveContainer width="100%" height={200}>
                 <BarChart data={ordersData.itemDistribution.slice(0, 20)}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#e9ecef" />
                   <XAxis dataKey="item_count" stroke="#666" fontSize={11} />
                   <YAxis stroke="#666" fontSize={11} />
                   <Tooltip formatter={(v) => [v, 'Commandes']} />
-                  <Bar dataKey="orders_count" fill="#007bff" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="orders_count" fill="#135E84" radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
 
             {/* Distribution valeur commande */}
             <div style={{ backgroundColor: '#fff', borderRadius: '8px', padding: '20px', border: '1px solid #e9ecef' }}>
-              <h3 style={{ margin: '0 0 15px', color: '#333', fontSize: '16px' }}>Distribution valeur commande</h3>
+              <h3 style={{ margin: '0 0 15px', color: '#2a2e38', fontSize: '16px' }}>Distribution valeur commande</h3>
               <ResponsiveContainer width="100%" height={200}>
                 <BarChart data={ordersData.valueDistribution.slice(0, 10)}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#e9ecef" />
                   <XAxis dataKey="range" stroke="#666" fontSize={9} angle={-20} textAnchor="end" height={50} />
                   <YAxis stroke="#666" fontSize={11} />
                   <Tooltip formatter={(v) => [v, 'Commandes']} />
-                  <Bar dataKey="orders_count" fill="#28a745" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="orders_count" fill="#4AB866" radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
           </div>
 
           {/* Panier moyen et articles moyens par jour */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '30px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 280px), 1fr))', gap: '20px', marginBottom: '30px' }}>
             <div style={{ backgroundColor: '#fff', borderRadius: '8px', padding: '20px', border: '1px solid #e9ecef' }}>
-              <h3 style={{ margin: '0 0 15px', color: '#333', fontSize: '16px' }}>Panier moyen TTC par jour</h3>
+              <h3 style={{ margin: '0 0 15px', color: '#2a2e38', fontSize: '16px' }}>Panier moyen TTC par jour</h3>
               <ResponsiveContainer width="100%" height={200}>
                 <LineChart data={avgOrderChartData}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#e9ecef" />
                   <XAxis dataKey="date" stroke="#666" fontSize={11} />
                   <YAxis stroke="#666" fontSize={11} />
                   <Tooltip formatter={(v) => [formatPrice(v), 'Panier moyen TTC']} labelFormatter={(label, payload) => payload[0]?.payload?.fullDate || label} />
-                  <Line type="monotone" dataKey="avgGross" stroke="#007bff" strokeWidth={2} dot={{ fill: '#007bff', r: 2 }} />
+                  <Line type="monotone" dataKey="avgGross" stroke="#135E84" strokeWidth={2} dot={{ fill: '#135E84', r: 2 }} />
                 </LineChart>
               </ResponsiveContainer>
             </div>
 
             <div style={{ backgroundColor: '#fff', borderRadius: '8px', padding: '20px', border: '1px solid #e9ecef' }}>
-              <h3 style={{ margin: '0 0 15px', color: '#333', fontSize: '16px' }}>Articles moyens par commande</h3>
+              <h3 style={{ margin: '0 0 15px', color: '#2a2e38', fontSize: '16px' }}>Articles moyens par commande</h3>
               <ResponsiveContainer width="100%" height={200}>
                 <LineChart data={avgOrderChartData}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#e9ecef" />
@@ -1105,9 +1105,9 @@ const ReportsTab = () => {
           </div>
 
           {/* Dépenses par jour de semaine et par heure */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '30px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 280px), 1fr))', gap: '20px', marginBottom: '30px' }}>
             <div style={{ backgroundColor: '#fff', borderRadius: '8px', padding: '20px', border: '1px solid #e9ecef' }}>
-              <h3 style={{ margin: '0 0 15px', color: '#333', fontSize: '16px' }}>Ventes par jour de la semaine</h3>
+              <h3 style={{ margin: '0 0 15px', color: '#2a2e38', fontSize: '16px' }}>Ventes par jour de la semaine</h3>
               <ResponsiveContainer width="100%" height={200}>
                 <BarChart data={ordersData.spendByDayOfWeek}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#e9ecef" />
@@ -1120,7 +1120,7 @@ const ReportsTab = () => {
             </div>
 
             <div style={{ backgroundColor: '#fff', borderRadius: '8px', padding: '20px', border: '1px solid #e9ecef' }}>
-              <h3 style={{ margin: '0 0 15px', color: '#333', fontSize: '16px' }}>Ventes par heure</h3>
+              <h3 style={{ margin: '0 0 15px', color: '#2a2e38', fontSize: '16px' }}>Ventes par heure</h3>
               <ResponsiveContainer width="100%" height={200}>
                 <BarChart data={ordersData.spendByHour}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#e9ecef" />
@@ -1135,7 +1135,7 @@ const ReportsTab = () => {
 
           {/* Délai de traitement */}
           <div style={{ backgroundColor: '#fff', borderRadius: '8px', padding: '20px', border: '1px solid #e9ecef', marginBottom: '30px' }}>
-            <h3 style={{ margin: '0 0 15px', color: '#333', fontSize: '16px' }}>Délai entre création et complétion</h3>
+            <h3 style={{ margin: '0 0 15px', color: '#2a2e38', fontSize: '16px' }}>Délai entre création et complétion</h3>
             <ResponsiveContainer width="100%" height={200}>
               <BarChart data={ordersData.fulfillmentTime.filter(f => f.range !== 'Non terminé')}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#e9ecef" />
@@ -1157,7 +1157,7 @@ const ReportsTab = () => {
       {/* Header avec titre et période */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
         <div>
-          <h2 style={{ margin: 0, color: '#333', fontSize: '24px' }}>Remboursements</h2>
+          <h2 style={{ margin: 0, color: '#2a2e38', fontSize: '24px' }}>Remboursements</h2>
           <p style={{ margin: '5px 0 0', color: '#666', fontSize: '13px' }}>
             Du {formatFullDate(dateFrom)} au {formatFullDate(dateTo)}
           </p>
@@ -1173,18 +1173,18 @@ const ReportsTab = () => {
       ) : refundsData ? (
         <>
           {/* KPIs */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: '15px', marginBottom: '30px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 150px), 1fr))', gap: '15px', marginBottom: '30px' }}>
             <div style={{ backgroundColor: '#fff', borderRadius: '8px', padding: '20px', border: '1px solid #e9ecef' }}>
               <div style={{ color: '#666', fontSize: '12px', marginBottom: '8px' }}>Montant remboursé</div>
-              <div style={{ color: '#dc3545', fontSize: '24px', fontWeight: '700' }}>{formatPrice(refundsData.kpis.total_refunded)}</div>
+              <div style={{ color: '#DE2020', fontSize: '24px', fontWeight: '700' }}>{formatPrice(refundsData.kpis.total_refunded)}</div>
             </div>
             <div style={{ backgroundColor: '#fff', borderRadius: '8px', padding: '20px', border: '1px solid #e9ecef' }}>
               <div style={{ color: '#666', fontSize: '12px', marginBottom: '8px' }}>Remboursements</div>
-              <div style={{ color: '#dc3545', fontSize: '24px', fontWeight: '700' }}>{refundsData.kpis.refunds_count}</div>
+              <div style={{ color: '#DE2020', fontSize: '24px', fontWeight: '700' }}>{refundsData.kpis.refunds_count}</div>
             </div>
             <div style={{ backgroundColor: '#fff', borderRadius: '8px', padding: '20px', border: '1px solid #e9ecef' }}>
               <div style={{ color: '#666', fontSize: '12px', marginBottom: '8px' }}>Remboursement moyen</div>
-              <div style={{ color: '#333', fontSize: '24px', fontWeight: '700' }}>{formatPrice(refundsData.kpis.avg_refund)}</div>
+              <div style={{ color: '#2a2e38', fontSize: '24px', fontWeight: '700' }}>{formatPrice(refundsData.kpis.avg_refund)}</div>
             </div>
             <div style={{ backgroundColor: '#fff', borderRadius: '8px', padding: '20px', border: '1px solid #e9ecef' }}>
               <div style={{ color: '#666', fontSize: '12px', marginBottom: '8px' }}>Taux de remboursement</div>
@@ -1202,7 +1202,7 @@ const ReportsTab = () => {
 
           {/* Graphique par jour */}
           <div style={{ backgroundColor: '#fff', borderRadius: '8px', padding: '20px', border: '1px solid #e9ecef', marginBottom: '30px' }}>
-            <h3 style={{ margin: '0 0 15px', color: '#333', fontSize: '16px' }}>Remboursements par jour</h3>
+            <h3 style={{ margin: '0 0 15px', color: '#2a2e38', fontSize: '16px' }}>Remboursements par jour</h3>
             <ResponsiveContainer width="100%" height={300}>
               <ComposedChart data={refundsData.breakdown.map(d => ({
                 date: new Date(d.date).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' }),
@@ -1212,7 +1212,7 @@ const ReportsTab = () => {
               }))}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#e9ecef" />
                 <XAxis dataKey="date" stroke="#666" fontSize={11} />
-                <YAxis yAxisId="left" stroke="#dc3545" fontSize={11} />
+                <YAxis yAxisId="left" stroke="#DE2020" fontSize={11} />
                 <YAxis yAxisId="right" orientation="right" stroke="#fd7e14" fontSize={11} tickFormatter={(v) => `${v}€`} />
                 <Tooltip
                   contentStyle={{ backgroundColor: '#fff', border: '1px solid #ddd', borderRadius: '8px' }}
@@ -1222,7 +1222,7 @@ const ReportsTab = () => {
                   }}
                   labelFormatter={(label, payload) => payload[0]?.payload?.fullDate || label}
                 />
-                <Bar yAxisId="left" dataKey="refunds" fill="#dc3545" radius={[4, 4, 0, 0]} />
+                <Bar yAxisId="left" dataKey="refunds" fill="#DE2020" radius={[4, 4, 0, 0]} />
                 <Line yAxisId="right" type="monotone" dataKey="amount" stroke="#fd7e14" strokeWidth={2} dot={{ fill: '#fd7e14', r: 3 }} />
               </ComposedChart>
             </ResponsiveContainer>
@@ -1230,7 +1230,7 @@ const ReportsTab = () => {
 
           {/* Délai commande → remboursement */}
           <div style={{ backgroundColor: '#fff', borderRadius: '8px', padding: '20px', border: '1px solid #e9ecef', marginBottom: '30px' }}>
-            <h3 style={{ margin: '0 0 15px', color: '#333', fontSize: '16px' }}>Délai entre commande et remboursement</h3>
+            <h3 style={{ margin: '0 0 15px', color: '#2a2e38', fontSize: '16px' }}>Délai entre commande et remboursement</h3>
             <ResponsiveContainer width="100%" height={200}>
               <BarChart data={refundsData.delayDistribution}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#e9ecef" />
@@ -1245,11 +1245,11 @@ const ReportsTab = () => {
           {/* Par Raison */}
           <div style={{ backgroundColor: '#fff', borderRadius: '8px', overflow: 'hidden', border: '1px solid #e9ecef', marginBottom: '30px' }}>
             <div style={{ padding: '15px 20px', borderBottom: '1px solid #e9ecef' }}>
-              <h3 style={{ margin: 0, color: '#333', fontSize: '16px' }}>Par raison</h3>
+              <h3 style={{ margin: 0, color: '#2a2e38', fontSize: '16px' }}>Par raison</h3>
             </div>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
-                <tr style={{ backgroundColor: '#f8f9fa' }}>
+                <tr style={{ backgroundColor: '#F2F6F8' }}>
                   <th style={{ padding: '12px 15px', textAlign: 'left', color: '#666', fontSize: '11px', fontWeight: '600', textTransform: 'uppercase' }}>Raison</th>
                   <th style={{ padding: '12px 15px', textAlign: 'right', color: '#666', fontSize: '11px', fontWeight: '600', textTransform: 'uppercase' }}>Remboursements</th>
                   <th style={{ padding: '12px 15px', textAlign: 'right', color: '#666', fontSize: '11px', fontWeight: '600', textTransform: 'uppercase' }}>Montant</th>
@@ -1259,9 +1259,9 @@ const ReportsTab = () => {
               <tbody>
                 {refundsData.byReason.map((row, idx) => (
                   <tr key={idx} style={{ borderBottom: '1px solid #e9ecef' }}>
-                    <td style={{ padding: '12px 15px', color: '#333', fontSize: '13px', fontWeight: '600' }}>{row.reason}</td>
-                    <td style={{ padding: '12px 15px', textAlign: 'right', color: '#dc3545', fontSize: '13px', fontWeight: '600' }}>{row.refunds_count}</td>
-                    <td style={{ padding: '12px 15px', textAlign: 'right', color: '#dc3545', fontSize: '13px' }}>{formatPrice(row.refunded_amount)}</td>
+                    <td style={{ padding: '12px 15px', color: '#2a2e38', fontSize: '13px', fontWeight: '600' }}>{row.reason}</td>
+                    <td style={{ padding: '12px 15px', textAlign: 'right', color: '#DE2020', fontSize: '13px', fontWeight: '600' }}>{row.refunds_count}</td>
+                    <td style={{ padding: '12px 15px', textAlign: 'right', color: '#DE2020', fontSize: '13px' }}>{formatPrice(row.refunded_amount)}</td>
                     <td style={{ padding: '12px 15px', textAlign: 'right', color: '#666', fontSize: '13px' }}>{formatPrice(row.avg_refund)}</td>
                   </tr>
                 ))}
@@ -1272,11 +1272,11 @@ const ReportsTab = () => {
           {/* Par Pays de facturation */}
           <div style={{ backgroundColor: '#fff', borderRadius: '8px', overflow: 'hidden', border: '1px solid #e9ecef', marginBottom: '30px' }}>
             <div style={{ padding: '15px 20px', borderBottom: '1px solid #e9ecef' }}>
-              <h3 style={{ margin: 0, color: '#333', fontSize: '16px' }}>Par pays de facturation</h3>
+              <h3 style={{ margin: 0, color: '#2a2e38', fontSize: '16px' }}>Par pays de facturation</h3>
             </div>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
-                <tr style={{ backgroundColor: '#f8f9fa' }}>
+                <tr style={{ backgroundColor: '#F2F6F8' }}>
                   <th style={{ padding: '12px 15px', textAlign: 'left', color: '#666', fontSize: '11px', fontWeight: '600', textTransform: 'uppercase' }}>Pays</th>
                   <th style={{ padding: '12px 15px', textAlign: 'right', color: '#666', fontSize: '11px', fontWeight: '600', textTransform: 'uppercase' }}>Remboursements</th>
                   <th style={{ padding: '12px 15px', textAlign: 'right', color: '#666', fontSize: '11px', fontWeight: '600', textTransform: 'uppercase' }}>Montant</th>
@@ -1286,9 +1286,9 @@ const ReportsTab = () => {
               <tbody>
                 {refundsData.byBillingCountry.map((row, idx) => (
                   <tr key={idx} style={{ borderBottom: '1px solid #e9ecef' }}>
-                    <td style={{ padding: '12px 15px', color: '#333', fontSize: '13px', fontWeight: '600' }}>{row.country}</td>
-                    <td style={{ padding: '12px 15px', textAlign: 'right', color: '#dc3545', fontSize: '13px', fontWeight: '600' }}>{row.refunds_count}</td>
-                    <td style={{ padding: '12px 15px', textAlign: 'right', color: '#dc3545', fontSize: '13px' }}>{formatPrice(row.refunded_amount)}</td>
+                    <td style={{ padding: '12px 15px', color: '#2a2e38', fontSize: '13px', fontWeight: '600' }}>{row.country}</td>
+                    <td style={{ padding: '12px 15px', textAlign: 'right', color: '#DE2020', fontSize: '13px', fontWeight: '600' }}>{row.refunds_count}</td>
+                    <td style={{ padding: '12px 15px', textAlign: 'right', color: '#DE2020', fontSize: '13px' }}>{formatPrice(row.refunded_amount)}</td>
                     <td style={{ padding: '12px 15px', textAlign: 'right', color: '#666', fontSize: '13px' }}>{formatPrice(row.avg_refund)}</td>
                   </tr>
                 ))}
@@ -1299,11 +1299,11 @@ const ReportsTab = () => {
           {/* Par Pays de livraison */}
           <div style={{ backgroundColor: '#fff', borderRadius: '8px', overflow: 'hidden', border: '1px solid #e9ecef', marginBottom: '30px' }}>
             <div style={{ padding: '15px 20px', borderBottom: '1px solid #e9ecef' }}>
-              <h3 style={{ margin: 0, color: '#333', fontSize: '16px' }}>Par pays de livraison</h3>
+              <h3 style={{ margin: 0, color: '#2a2e38', fontSize: '16px' }}>Par pays de livraison</h3>
             </div>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
-                <tr style={{ backgroundColor: '#f8f9fa' }}>
+                <tr style={{ backgroundColor: '#F2F6F8' }}>
                   <th style={{ padding: '12px 15px', textAlign: 'left', color: '#666', fontSize: '11px', fontWeight: '600', textTransform: 'uppercase' }}>Pays</th>
                   <th style={{ padding: '12px 15px', textAlign: 'right', color: '#666', fontSize: '11px', fontWeight: '600', textTransform: 'uppercase' }}>Remboursements</th>
                   <th style={{ padding: '12px 15px', textAlign: 'right', color: '#666', fontSize: '11px', fontWeight: '600', textTransform: 'uppercase' }}>Montant</th>
@@ -1313,9 +1313,9 @@ const ReportsTab = () => {
               <tbody>
                 {refundsData.byShippingCountry.map((row, idx) => (
                   <tr key={idx} style={{ borderBottom: '1px solid #e9ecef' }}>
-                    <td style={{ padding: '12px 15px', color: '#333', fontSize: '13px', fontWeight: '600' }}>{row.country}</td>
-                    <td style={{ padding: '12px 15px', textAlign: 'right', color: '#dc3545', fontSize: '13px', fontWeight: '600' }}>{row.refunds_count}</td>
-                    <td style={{ padding: '12px 15px', textAlign: 'right', color: '#dc3545', fontSize: '13px' }}>{formatPrice(row.refunded_amount)}</td>
+                    <td style={{ padding: '12px 15px', color: '#2a2e38', fontSize: '13px', fontWeight: '600' }}>{row.country}</td>
+                    <td style={{ padding: '12px 15px', textAlign: 'right', color: '#DE2020', fontSize: '13px', fontWeight: '600' }}>{row.refunds_count}</td>
+                    <td style={{ padding: '12px 15px', textAlign: 'right', color: '#DE2020', fontSize: '13px' }}>{formatPrice(row.refunded_amount)}</td>
                     <td style={{ padding: '12px 15px', textAlign: 'right', color: '#666', fontSize: '13px' }}>{formatPrice(row.avg_refund)}</td>
                   </tr>
                 ))}
@@ -1333,7 +1333,7 @@ const ReportsTab = () => {
       {/* Header avec titre et période */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
         <div>
-          <h2 style={{ margin: 0, color: '#333', fontSize: '24px' }}>Rapport par Pays</h2>
+          <h2 style={{ margin: 0, color: '#2a2e38', fontSize: '24px' }}>Rapport par Pays</h2>
           <p style={{ margin: '5px 0 0', color: '#666', fontSize: '13px' }}>
             Du {formatFullDate(dateFrom)} au {formatFullDate(dateTo)}
           </p>
@@ -1351,11 +1351,11 @@ const ReportsTab = () => {
           {/* KPIs par pays */}
           <div style={{ backgroundColor: '#fff', borderRadius: '8px', overflow: 'hidden', border: '1px solid #e9ecef', marginBottom: '30px' }}>
             <div style={{ padding: '15px 20px', borderBottom: '1px solid #e9ecef' }}>
-              <h3 style={{ margin: 0, color: '#333', fontSize: '16px' }}>Performance par pays</h3>
+              <h3 style={{ margin: 0, color: '#2a2e38', fontSize: '16px' }}>Performance par pays</h3>
             </div>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
-                <tr style={{ backgroundColor: '#f8f9fa' }}>
+                <tr style={{ backgroundColor: '#F2F6F8' }}>
                   <th style={{ padding: '12px 15px', textAlign: 'left', color: '#666', fontSize: '11px', fontWeight: '600', textTransform: 'uppercase' }}>Pays</th>
                   <th style={{ padding: '12px 15px', textAlign: 'right', color: '#666', fontSize: '11px', fontWeight: '600', textTransform: 'uppercase' }}>Commandes</th>
                   <th style={{ padding: '12px 15px', textAlign: 'right', color: '#666', fontSize: '11px', fontWeight: '600', textTransform: 'uppercase' }}>CA TTC</th>
@@ -1370,21 +1370,21 @@ const ReportsTab = () => {
               <tbody>
                 {byCountryData.kpisByCountry.map((row, idx) => (
                   <tr key={idx} style={{ borderBottom: '1px solid #e9ecef', backgroundColor: selectedCountry === row.country ? '#e3f2fd' : 'transparent' }}>
-                    <td style={{ padding: '12px 15px', color: '#333', fontSize: '13px', fontWeight: '600' }}>{row.country}</td>
-                    <td style={{ padding: '12px 15px', textAlign: 'right', color: '#007bff', fontSize: '13px', fontWeight: '600' }}>{row.orders_count.toLocaleString('fr-FR')}</td>
-                    <td style={{ padding: '12px 15px', textAlign: 'right', color: '#333', fontSize: '13px' }}>{formatPrice(row.gross_sales)}</td>
-                    <td style={{ padding: '12px 15px', textAlign: 'right', color: '#28a745', fontSize: '13px' }}>{formatPrice(row.net_sales)}</td>
+                    <td style={{ padding: '12px 15px', color: '#2a2e38', fontSize: '13px', fontWeight: '600' }}>{row.country}</td>
+                    <td style={{ padding: '12px 15px', textAlign: 'right', color: '#135E84', fontSize: '13px', fontWeight: '600' }}>{row.orders_count.toLocaleString('fr-FR')}</td>
+                    <td style={{ padding: '12px 15px', textAlign: 'right', color: '#2a2e38', fontSize: '13px' }}>{formatPrice(row.gross_sales)}</td>
+                    <td style={{ padding: '12px 15px', textAlign: 'right', color: '#4AB866', fontSize: '13px' }}>{formatPrice(row.net_sales)}</td>
                     <td style={{ padding: '12px 15px', textAlign: 'right', color: '#666', fontSize: '13px' }}>{formatPrice(row.avg_order)}</td>
                     <td style={{ padding: '12px 15px', textAlign: 'right', color: '#666', fontSize: '13px' }}>{row.customers_count.toLocaleString('fr-FR')}</td>
-                    <td style={{ padding: '12px 15px', textAlign: 'right', color: '#dc3545', fontSize: '13px' }}>{row.refunds_count}</td>
-                    <td style={{ padding: '12px 15px', textAlign: 'right', color: '#dc3545', fontSize: '13px' }}>{formatPrice(row.refunds_amount)}</td>
+                    <td style={{ padding: '12px 15px', textAlign: 'right', color: '#DE2020', fontSize: '13px' }}>{row.refunds_count}</td>
+                    <td style={{ padding: '12px 15px', textAlign: 'right', color: '#DE2020', fontSize: '13px' }}>{formatPrice(row.refunds_amount)}</td>
                     <td style={{ padding: '12px 15px', textAlign: 'center' }}>
                       <button
                         onClick={() => handleCountrySelect(row.country)}
                         style={{
                           padding: '5px 12px',
-                          backgroundColor: selectedCountry === row.country ? '#007bff' : '#f8f9fa',
-                          color: selectedCountry === row.country ? '#fff' : '#333',
+                          backgroundColor: selectedCountry === row.country ? '#135E84' : '#F2F6F8',
+                          color: selectedCountry === row.country ? '#fff' : '#2a2e38',
                           border: '1px solid #ddd',
                           borderRadius: '4px',
                           cursor: 'pointer',
@@ -1403,15 +1403,15 @@ const ReportsTab = () => {
           {/* Détails du pays sélectionné */}
           {byCountryData.countryDetails && (
             <>
-              <h3 style={{ color: '#333', fontSize: '18px', marginBottom: '20px' }}>
-                Détails pour : <span style={{ color: '#007bff' }}>{byCountryData.countryDetails.country}</span>
+              <h3 style={{ color: '#2a2e38', fontSize: '18px', marginBottom: '20px' }}>
+                Détails pour : <span style={{ color: '#135E84' }}>{byCountryData.countryDetails.country}</span>
               </h3>
 
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '20px', marginBottom: '30px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 280px), 1fr))', gap: '20px', marginBottom: '30px' }}>
                 {/* Top 5 Produits */}
                 <div style={{ backgroundColor: '#fff', borderRadius: '8px', overflow: 'hidden', border: '1px solid #e9ecef' }}>
-                  <div style={{ padding: '15px 20px', borderBottom: '1px solid #e9ecef', backgroundColor: '#f8f9fa' }}>
-                    <h4 style={{ margin: 0, color: '#333', fontSize: '14px' }}>🏆 Top 5 Produits</h4>
+                  <div style={{ padding: '15px 20px', borderBottom: '1px solid #e9ecef', backgroundColor: '#F2F6F8' }}>
+                    <h4 style={{ margin: 0, color: '#2a2e38', fontSize: '14px' }}>🏆 Top 5 Produits</h4>
                   </div>
                   <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                     <thead>
@@ -1424,9 +1424,9 @@ const ReportsTab = () => {
                     <tbody>
                       {byCountryData.countryDetails.topProducts.map((item, idx) => (
                         <tr key={idx} style={{ borderBottom: '1px solid #f0f0f0' }}>
-                          <td style={{ padding: '10px 15px', color: '#333', fontSize: '12px' }}>{item.product_name}</td>
-                          <td style={{ padding: '10px 15px', textAlign: 'right', color: '#007bff', fontSize: '12px', fontWeight: '600' }}>{item.quantity_sold}</td>
-                          <td style={{ padding: '10px 15px', textAlign: 'right', color: '#28a745', fontSize: '12px' }}>{formatPrice(item.total_sales)}</td>
+                          <td style={{ padding: '10px 15px', color: '#2a2e38', fontSize: '12px' }}>{item.product_name}</td>
+                          <td style={{ padding: '10px 15px', textAlign: 'right', color: '#135E84', fontSize: '12px', fontWeight: '600' }}>{item.quantity_sold}</td>
+                          <td style={{ padding: '10px 15px', textAlign: 'right', color: '#4AB866', fontSize: '12px' }}>{formatPrice(item.total_sales)}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -1435,8 +1435,8 @@ const ReportsTab = () => {
 
                 {/* Top 3 Catégories */}
                 <div style={{ backgroundColor: '#fff', borderRadius: '8px', overflow: 'hidden', border: '1px solid #e9ecef' }}>
-                  <div style={{ padding: '15px 20px', borderBottom: '1px solid #e9ecef', backgroundColor: '#f8f9fa' }}>
-                    <h4 style={{ margin: 0, color: '#333', fontSize: '14px' }}>📂 Top 3 Catégories</h4>
+                  <div style={{ padding: '15px 20px', borderBottom: '1px solid #e9ecef', backgroundColor: '#F2F6F8' }}>
+                    <h4 style={{ margin: 0, color: '#2a2e38', fontSize: '14px' }}>📂 Top 3 Catégories</h4>
                   </div>
                   <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                     <thead>
@@ -1449,9 +1449,9 @@ const ReportsTab = () => {
                     <tbody>
                       {byCountryData.countryDetails.topCategories.map((item, idx) => (
                         <tr key={idx} style={{ borderBottom: '1px solid #f0f0f0' }}>
-                          <td style={{ padding: '10px 15px', color: '#333', fontSize: '12px' }}>{item.category}</td>
-                          <td style={{ padding: '10px 15px', textAlign: 'right', color: '#007bff', fontSize: '12px', fontWeight: '600' }}>{item.quantity_sold}</td>
-                          <td style={{ padding: '10px 15px', textAlign: 'right', color: '#28a745', fontSize: '12px' }}>{formatPrice(item.total_sales)}</td>
+                          <td style={{ padding: '10px 15px', color: '#2a2e38', fontSize: '12px' }}>{item.category}</td>
+                          <td style={{ padding: '10px 15px', textAlign: 'right', color: '#135E84', fontSize: '12px', fontWeight: '600' }}>{item.quantity_sold}</td>
+                          <td style={{ padding: '10px 15px', textAlign: 'right', color: '#4AB866', fontSize: '12px' }}>{formatPrice(item.total_sales)}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -1460,8 +1460,8 @@ const ReportsTab = () => {
 
                 {/* Top 3 Transporteurs */}
                 <div style={{ backgroundColor: '#fff', borderRadius: '8px', overflow: 'hidden', border: '1px solid #e9ecef' }}>
-                  <div style={{ padding: '15px 20px', borderBottom: '1px solid #e9ecef', backgroundColor: '#f8f9fa' }}>
-                    <h4 style={{ margin: 0, color: '#333', fontSize: '14px' }}>🚚 Top 3 Transporteurs</h4>
+                  <div style={{ padding: '15px 20px', borderBottom: '1px solid #e9ecef', backgroundColor: '#F2F6F8' }}>
+                    <h4 style={{ margin: 0, color: '#2a2e38', fontSize: '14px' }}>🚚 Top 3 Transporteurs</h4>
                   </div>
                   <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                     <thead>
@@ -1474,8 +1474,8 @@ const ReportsTab = () => {
                     <tbody>
                       {byCountryData.countryDetails.topShipping.map((item, idx) => (
                         <tr key={idx} style={{ borderBottom: '1px solid #f0f0f0' }}>
-                          <td style={{ padding: '10px 15px', color: '#333', fontSize: '12px' }}>{item.shipping_method}</td>
-                          <td style={{ padding: '10px 15px', textAlign: 'right', color: '#007bff', fontSize: '12px', fontWeight: '600' }}>{(item.orders_count || 0).toLocaleString('fr-FR')}</td>
+                          <td style={{ padding: '10px 15px', color: '#2a2e38', fontSize: '12px' }}>{item.shipping_method}</td>
+                          <td style={{ padding: '10px 15px', textAlign: 'right', color: '#135E84', fontSize: '12px', fontWeight: '600' }}>{(item.orders_count || 0).toLocaleString('fr-FR')}</td>
                           <td style={{ padding: '10px 15px', textAlign: 'right', color: '#6f42c1', fontSize: '12px' }}>{item.percentage}%</td>
                         </tr>
                       ))}
@@ -1485,8 +1485,8 @@ const ReportsTab = () => {
 
                 {/* Top 3 Paiements */}
                 <div style={{ backgroundColor: '#fff', borderRadius: '8px', overflow: 'hidden', border: '1px solid #e9ecef' }}>
-                  <div style={{ padding: '15px 20px', borderBottom: '1px solid #e9ecef', backgroundColor: '#f8f9fa' }}>
-                    <h4 style={{ margin: 0, color: '#333', fontSize: '14px' }}>💳 Top 3 Paiements</h4>
+                  <div style={{ padding: '15px 20px', borderBottom: '1px solid #e9ecef', backgroundColor: '#F2F6F8' }}>
+                    <h4 style={{ margin: 0, color: '#2a2e38', fontSize: '14px' }}>💳 Top 3 Paiements</h4>
                   </div>
                   <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                     <thead>
@@ -1499,8 +1499,8 @@ const ReportsTab = () => {
                     <tbody>
                       {byCountryData.countryDetails.topPayment.map((item, idx) => (
                         <tr key={idx} style={{ borderBottom: '1px solid #f0f0f0' }}>
-                          <td style={{ padding: '10px 15px', color: '#333', fontSize: '12px' }}>{item.payment_method}</td>
-                          <td style={{ padding: '10px 15px', textAlign: 'right', color: '#007bff', fontSize: '12px', fontWeight: '600' }}>{(item.orders_count || 0).toLocaleString('fr-FR')}</td>
+                          <td style={{ padding: '10px 15px', color: '#2a2e38', fontSize: '12px' }}>{item.payment_method}</td>
+                          <td style={{ padding: '10px 15px', textAlign: 'right', color: '#135E84', fontSize: '12px', fontWeight: '600' }}>{(item.orders_count || 0).toLocaleString('fr-FR')}</td>
                           <td style={{ padding: '10px 15px', textAlign: 'right', color: '#6f42c1', fontSize: '12px' }}>{item.percentage}%</td>
                         </tr>
                       ))}
@@ -1512,7 +1512,7 @@ const ReportsTab = () => {
           )}
 
           {!byCountryData.countryDetails && (
-            <div style={{ textAlign: 'center', padding: '40px', backgroundColor: '#f8f9fa', borderRadius: '8px', color: '#666' }}>
+            <div style={{ textAlign: 'center', padding: '40px', backgroundColor: '#F2F6F8', borderRadius: '8px', color: '#666' }}>
               <p style={{ fontSize: '16px', marginBottom: '10px' }}>👆 Cliquez sur "Voir" pour afficher les détails d'un pays</p>
             </div>
           )}
@@ -1537,7 +1537,7 @@ const ReportsTab = () => {
       <div>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '20px' }}>
           <div>
-            <h2 style={{ margin: 0, color: '#333', fontSize: '24px' }}>Valeur de stock (achat HT)</h2>
+            <h2 style={{ margin: 0, color: '#2a2e38', fontSize: '24px' }}>Valeur de stock (achat HT)</h2>
             <p style={{ margin: '5px 0 0', color: '#666', fontSize: '13px', maxWidth: '620px' }}>
               La valeur du jour est <strong>identique à celle du catalogue</strong> (même périmètre, même coût d'achat).
               Les dates passées sont valorisées aux <strong>coûts d'achat de l'époque</strong> (PMP FIFO borné à la date) :
@@ -1552,15 +1552,15 @@ const ReportsTab = () => {
         ) : stockValueData ? (
           <>
             {/* KPIs actuels */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '15px', marginBottom: '20px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 200px), 1fr))', gap: '15px', marginBottom: '20px' }}>
               <div style={{ backgroundColor: '#fff', borderRadius: '8px', padding: '18px', border: '1px solid #e9ecef' }}>
                 <div style={{ color: '#666', fontSize: '12px', marginBottom: '6px' }}>Valeur de stock actuelle</div>
-                <div style={{ color: '#28a745', fontSize: '22px', fontWeight: '700' }}>{formatPrice(current?.total_value_ht || 0)}</div>
+                <div style={{ color: '#4AB866', fontSize: '22px', fontWeight: '700' }}>{formatPrice(current?.total_value_ht || 0)}</div>
                 <div style={{ color: '#999', fontSize: '11px', marginTop: '2px' }}>= valeur affichée dans le catalogue</div>
               </div>
               <div style={{ backgroundColor: '#fff', borderRadius: '8px', padding: '18px', border: '1px solid #e9ecef' }}>
                 <div style={{ color: '#666', fontSize: '12px', marginBottom: '6px' }}>Dont historique d'achat</div>
-                <div style={{ color: '#007bff', fontSize: '20px', fontWeight: '700' }}>{formatPrice(current?.value_with_po_history || 0)}</div>
+                <div style={{ color: '#135E84', fontSize: '20px', fontWeight: '700' }}>{formatPrice(current?.value_with_po_history || 0)}</div>
               </div>
               <div style={{ backgroundColor: '#fff', borderRadius: '8px', padding: '18px', border: '1px solid #e9ecef' }}>
                 <div style={{ color: '#666', fontSize: '12px', marginBottom: '6px' }}>Dont coût actuel (sans historique)</div>
@@ -1568,7 +1568,7 @@ const ReportsTab = () => {
               </div>
               <div style={{ backgroundColor: '#fff', borderRadius: '8px', padding: '18px', border: '1px solid #e9ecef' }}>
                 <div style={{ color: '#666', fontSize: '12px', marginBottom: '6px' }}>Références en stock</div>
-                <div style={{ color: '#333', fontSize: '20px', fontWeight: '700' }}>{(current?.products_count || 0).toLocaleString('fr-FR')}</div>
+                <div style={{ color: '#2a2e38', fontSize: '20px', fontWeight: '700' }}>{(current?.products_count || 0).toLocaleString('fr-FR')}</div>
                 <div style={{ color: '#999', fontSize: '11px', marginTop: '2px' }}>{(current?.total_units || 0).toLocaleString('fr-FR')} unités</div>
               </div>
             </div>
@@ -1576,7 +1576,7 @@ const ReportsTab = () => {
             {/* Sélecteur "valeur à une date" (pour le comptable) */}
             <div style={{ backgroundColor: '#fff', borderRadius: '8px', padding: '18px 20px', border: '1px solid #e9ecef', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '15px', flexWrap: 'wrap' }}>
               <div>
-                <div style={{ color: '#333', fontSize: '15px', fontWeight: '600' }}>Valeur de stock à une date précise</div>
+                <div style={{ color: '#2a2e38', fontSize: '15px', fontWeight: '600' }}>Valeur de stock à une date précise</div>
                 <div style={{ color: '#666', fontSize: '12px' }}>Pour votre comptable : sélectionnez une date, obtenez la valeur d'inventaire de ce jour-là.</div>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginLeft: 'auto' }}>
@@ -1590,7 +1590,7 @@ const ReportsTab = () => {
                 <button
                   onClick={() => fetchStockAtDate(stockPickDate)}
                   disabled={stockAtLoading}
-                  style={{ padding: '8px 18px', border: 'none', borderRadius: '6px', backgroundColor: '#007bff', color: '#fff', fontSize: '14px', cursor: 'pointer', fontWeight: '600' }}
+                  style={{ padding: '8px 18px', border: 'none', borderRadius: '6px', backgroundColor: '#135E84', color: '#fff', fontSize: '14px', cursor: 'pointer', fontWeight: '600' }}
                 >
                   {stockAtLoading ? '...' : 'Calculer'}
                 </button>
@@ -1599,7 +1599,7 @@ const ReportsTab = () => {
                 <div style={{ width: '100%', borderTop: '1px solid #e9ecef', paddingTop: '12px', display: 'flex', gap: '30px', flexWrap: 'wrap' }}>
                   <div>
                     <span style={{ color: '#666', fontSize: '13px' }}>Valeur au {formatFullDate(stockAtDate.date)} : </span>
-                    <span style={{ color: '#28a745', fontSize: '20px', fontWeight: '700' }}>{formatPrice(stockAtDate.total_value_ht)}</span>
+                    <span style={{ color: '#4AB866', fontSize: '20px', fontWeight: '700' }}>{formatPrice(stockAtDate.total_value_ht)}</span>
                   </div>
                   <div style={{ color: '#999', fontSize: '12px', alignSelf: 'center' }}>
                     {stockAtDate.total_units.toLocaleString('fr-FR')} unités · {stockAtDate.products_count.toLocaleString('fr-FR')} références
@@ -1611,13 +1611,13 @@ const ReportsTab = () => {
 
             {/* Graphique d'évolution */}
             <div style={{ backgroundColor: '#fff', borderRadius: '8px', padding: '20px', border: '1px solid #e9ecef', marginBottom: '20px' }}>
-              <h3 style={{ margin: '0 0 15px', color: '#333', fontSize: '14px' }}>Évolution mensuelle</h3>
+              <h3 style={{ margin: '0 0 15px', color: '#2a2e38', fontSize: '14px' }}>Évolution mensuelle</h3>
               <ResponsiveContainer width="100%" height={320}>
                 <AreaChart data={stockChartData}>
                   <defs>
                     <linearGradient id="colorStock" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#28a745" stopOpacity={0.8}/>
-                      <stop offset="95%" stopColor="#28a745" stopOpacity={0.1}/>
+                      <stop offset="5%" stopColor="#4AB866" stopOpacity={0.8}/>
+                      <stop offset="95%" stopColor="#4AB866" stopOpacity={0.1}/>
                     </linearGradient>
                   </defs>
                   <CartesianGrid strokeDasharray="3 3" stroke="#e9ecef" />
@@ -1628,7 +1628,7 @@ const ReportsTab = () => {
                     formatter={(value) => [formatPrice(value), 'Valeur stock HT']}
                     labelFormatter={(label, payload) => payload[0]?.payload?.fullDate || label}
                   />
-                  <Area type="monotone" dataKey="value" stroke="#28a745" strokeWidth={2} fillOpacity={1} fill="url(#colorStock)" />
+                  <Area type="monotone" dataKey="value" stroke="#4AB866" strokeWidth={2} fillOpacity={1} fill="url(#colorStock)" />
                 </AreaChart>
               </ResponsiveContainer>
             </div>
@@ -1636,11 +1636,11 @@ const ReportsTab = () => {
             {/* Tableau */}
             <div style={{ backgroundColor: '#fff', borderRadius: '8px', overflow: 'hidden', border: '1px solid #e9ecef' }}>
               <div style={{ padding: '15px 20px', borderBottom: '1px solid #e9ecef' }}>
-                <h3 style={{ margin: 0, color: '#333', fontSize: '16px' }}>Détail par mois</h3>
+                <h3 style={{ margin: 0, color: '#2a2e38', fontSize: '16px' }}>Détail par mois</h3>
               </div>
               <div style={{ overflowX: 'auto', maxHeight: '400px', overflowY: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                  <thead style={{ position: 'sticky', top: 0, backgroundColor: '#f8f9fa', zIndex: 1 }}>
+                  <thead style={{ position: 'sticky', top: 0, backgroundColor: '#F2F6F8', zIndex: 1 }}>
                     <tr>
                       <th style={{ padding: '12px 15px', textAlign: 'left', color: '#666', fontSize: '11px', fontWeight: '600', textTransform: 'uppercase' }}>Date</th>
                       <th style={{ padding: '12px 15px', textAlign: 'right', color: '#666', fontSize: '11px', fontWeight: '600', textTransform: 'uppercase' }}>Valeur stock HT</th>
@@ -1653,9 +1653,9 @@ const ReportsTab = () => {
                   <tbody>
                     {stockValueData.series.map((row, idx) => (
                       <tr key={idx} style={{ borderBottom: '1px solid #e9ecef' }}>
-                        <td style={{ padding: '12px 15px', color: '#333', fontSize: '13px' }}>{formatFullDate(row.date)}</td>
-                        <td style={{ padding: '12px 15px', textAlign: 'right', color: '#28a745', fontSize: '13px', fontWeight: '600' }}>{formatPrice(row.total_value_ht)}</td>
-                        <td style={{ padding: '12px 15px', textAlign: 'right', color: '#007bff', fontSize: '13px' }}>{formatPrice(row.value_with_po_history)}</td>
+                        <td style={{ padding: '12px 15px', color: '#2a2e38', fontSize: '13px' }}>{formatFullDate(row.date)}</td>
+                        <td style={{ padding: '12px 15px', textAlign: 'right', color: '#4AB866', fontSize: '13px', fontWeight: '600' }}>{formatPrice(row.total_value_ht)}</td>
+                        <td style={{ padding: '12px 15px', textAlign: 'right', color: '#135E84', fontSize: '13px' }}>{formatPrice(row.value_with_po_history)}</td>
                         <td style={{ padding: '12px 15px', textAlign: 'right', color: '#f0ad4e', fontSize: '13px' }}>{formatPrice(row.value_without_po_history)}</td>
                         <td style={{ padding: '12px 15px', textAlign: 'right', color: '#666', fontSize: '13px' }}>{Number(row.total_units).toLocaleString('fr-FR')}</td>
                         <td style={{ padding: '12px 15px', textAlign: 'center', fontSize: '11px' }}>
@@ -1676,11 +1676,11 @@ const ReportsTab = () => {
   };
 
   return (
-    <div style={{ display: 'flex', gap: '20px', minHeight: '700px' }}>
+    <div className="yv-reports-layout" style={{ display: 'flex', gap: '20px', minHeight: '700px' }}>
       {/* Sidebar gauche */}
-      <div style={{
+      <div className="yv-reports-nav" style={{
         width: '220px',
-        backgroundColor: '#f8f9fa',
+        backgroundColor: '#F2F6F8',
         borderRadius: '8px',
         padding: '15px 0',
         flexShrink: 0,
@@ -1700,8 +1700,8 @@ const ReportsTab = () => {
               gap: '10px',
               cursor: section.disabled ? 'not-allowed' : 'pointer',
               backgroundColor: activeSection === section.id ? '#e3f2fd' : 'transparent',
-              borderLeft: activeSection === section.id ? '3px solid #007bff' : '3px solid transparent',
-              color: section.disabled ? '#aaa' : (activeSection === section.id ? '#007bff' : '#333'),
+              borderLeft: activeSection === section.id ? '3px solid #135E84' : '3px solid transparent',
+              color: section.disabled ? '#aaa' : (activeSection === section.id ? '#135E84' : '#2a2e38'),
               fontSize: '14px',
               transition: 'all 0.2s'
             }}
