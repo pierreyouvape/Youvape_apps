@@ -5,6 +5,7 @@ import axios from 'axios';
 import CopyButton from '../components/CopyButton';
 import { LinkBox } from '../utils/navHelpers';
 import AppShell from '../components/AppShell';
+import { useDetailFilters } from '../components/stats/DetailFilters';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
 
@@ -13,15 +14,17 @@ const SubBrandDetail = () => {
   const navigate = useNavigate();
   const [subBrand, setSubBrand] = useState(null);
   const [loading, setLoading] = useState(true);
+  const { params, bar, filterKey } = useDetailFilters('category');
 
   useEffect(() => {
     fetchSubBrandData();
-  }, [subBrandName]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [subBrandName, filterKey]);
 
   const fetchSubBrandData = async () => {
     setLoading(true);
     try {
-      const response = await axios.get(`${API_URL}/brands/sub-brands/${encodeURIComponent(subBrandName)}`);
+      const response = await axios.get(`${API_URL}/brands/sub-brands/${encodeURIComponent(subBrandName)}`, { params });
       if (response.data.success) {
         setSubBrand(response.data.data);
       }
@@ -51,7 +54,7 @@ const SubBrandDetail = () => {
     }).format((value || 0) / 100);
   };
 
-  if (loading) {
+  if (loading && !subBrand) {
     return (
       <AppShell currentPath="/catalog">
       <main className="main-scroll" style={{ flex: 1, minWidth: 0, overflowY: 'auto', height: '100vh', display: 'flex', flexDirection: 'column', backgroundColor: '#f5f5f5' }}>
@@ -123,6 +126,7 @@ const SubBrandDetail = () => {
             {subBrand.brand && <span style={{ color: '#999' }}>/</span>}
             <h1 style={{ margin: 0, color: '#135E84', fontSize: '28px' }}>{subBrand.sub_brand}</h1>
           </div>
+          {bar}
 
           {/* Stats Cards */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '15px' }}>

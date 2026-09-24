@@ -5,6 +5,7 @@ import axios from 'axios';
 import CopyButton from '../components/CopyButton';
 import { LinkBox } from '../utils/navHelpers';
 import AppShell from '../components/AppShell';
+import { useDetailFilters } from '../components/stats/DetailFilters';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
 
@@ -15,15 +16,20 @@ const BrandDetail = () => {
   const [loading, setLoading] = useState(true);
   const [expandedSubBrands, setExpandedSubBrands] = useState({});
   const [subBrandProducts, setSubBrandProducts] = useState({});
+  const { params, bar, filterKey } = useDetailFilters('category');
 
   useEffect(() => {
+    // Les produits déjà chargés l'ont été pour l'ancienne période / l'ancien rayon
+    setSubBrandProducts({});
+    setExpandedSubBrands({});
     fetchBrandData();
-  }, [brandName]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [brandName, filterKey]);
 
   const fetchBrandData = async () => {
     setLoading(true);
     try {
-      const response = await axios.get(`${API_URL}/brands/${encodeURIComponent(brandName)}`);
+      const response = await axios.get(`${API_URL}/brands/${encodeURIComponent(brandName)}`, { params });
       if (response.data.success) {
         setBrand(response.data.data);
       }
@@ -38,7 +44,7 @@ const BrandDetail = () => {
     if (subBrandProducts[subBrandName]) return;
 
     try {
-      const response = await axios.get(`${API_URL}/brands/sub-brands/${encodeURIComponent(subBrandName)}`);
+      const response = await axios.get(`${API_URL}/brands/sub-brands/${encodeURIComponent(subBrandName)}`, { params });
       if (response.data.success) {
         setSubBrandProducts(prev => ({
           ...prev,
@@ -81,7 +87,7 @@ const BrandDetail = () => {
     }).format((value || 0) / 100);
   };
 
-  if (loading) {
+  if (loading && !brand) {
     return (
       <AppShell currentPath="/catalog">
       <main className="main-scroll" style={{ flex: 1, minWidth: 0, overflowY: 'auto', height: '100vh', display: 'flex', flexDirection: 'column', backgroundColor: '#f5f5f5' }}>
@@ -140,7 +146,8 @@ const BrandDetail = () => {
       <div style={{ flex: 1, maxWidth: '1600px', margin: '30px auto', padding: '0 20px', width: '100%' }}>
         {/* Brand Header */}
         <div style={{ backgroundColor: '#fff', padding: '30px', borderRadius: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)', marginBottom: '30px' }}>
-          <h1 style={{ margin: '0 0 20px 0', color: '#135E84', fontSize: '28px' }}>{brand.brand}</h1>
+          <h1 style={{ margin: '0 0 8px 0', color: '#135E84', fontSize: '28px' }}>{brand.brand}</h1>
+          {bar}
 
           {/* Stats Cards */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '15px' }}>

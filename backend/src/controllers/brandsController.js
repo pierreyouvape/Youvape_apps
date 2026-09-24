@@ -425,6 +425,7 @@ exports.getByName = async (req, res) => {
 exports.getSubBrandByName = async (req, res) => {
   try {
     const { dateFrom, dateTo } = parseDateRange(req);
+    const { category, subCategory } = parseScope(req);
     const subBrandName = decodeURIComponent(req.params.subBrandName);
 
     // Récupérer les infos de base et la marque parente
@@ -456,6 +457,7 @@ exports.getSubBrandByName = async (req, res) => {
         WHERE p.sub_brand = $1
           AND p.product_type IN ('simple', 'variable', 'woosb')
           AND p.post_status = 'publish'
+          ${scopeSql('p', 5, 6)}
       ),
       product_family AS (
         SELECT
@@ -516,7 +518,7 @@ exports.getSubBrandByName = async (req, res) => {
       ORDER BY ca_ttc DESC NULLS LAST
     `;
 
-    const productsResult = await pool.query(productsQuery, [subBrandName, VALID_ORDER_STATUSES, dateFrom, dateTo]);
+    const productsResult = await pool.query(productsQuery, [subBrandName, VALID_ORDER_STATUSES, dateFrom, dateTo, category, subCategory]);
 
     // Calculer les stats globales
     const globalStatsQuery = `
@@ -528,6 +530,7 @@ exports.getSubBrandByName = async (req, res) => {
         WHERE p.sub_brand = $1
           AND p.product_type IN ('simple', 'variable', 'woosb')
           AND p.post_status = 'publish'
+          ${scopeSql('p', 5, 6)}
       ),
       product_family AS (
         SELECT
@@ -554,7 +557,7 @@ exports.getSubBrandByName = async (req, res) => {
       LEFT JOIN products p_cost ON p_cost.wp_product_id = COALESCE(NULLIF(oi.variation_id, 0), oi.product_id)
     `;
 
-    const globalStatsResult = await pool.query(globalStatsQuery, [subBrandName, VALID_ORDER_STATUSES, dateFrom, dateTo]);
+    const globalStatsResult = await pool.query(globalStatsQuery, [subBrandName, VALID_ORDER_STATUSES, dateFrom, dateTo, category, subCategory]);
     const globalStats = globalStatsResult.rows[0];
 
     res.json({

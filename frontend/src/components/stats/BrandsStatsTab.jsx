@@ -7,38 +7,13 @@ import { useColumnPreferences } from '../../hooks/useColumnPreferences';
 import ColumnPanel from '../ColumnPanel';
 import { LinkBox } from '../../utils/navHelpers';
 import PeriodFilter, { computeDateRange, dateParams } from './PeriodFilter';
+import { CategoryScopeSelect, useCatalogOptions, scopeToParams, scopeLabel } from './ScopeFilter';
 import MonthlyPivotTable from './MonthlyPivotTable';
 
 const API_BASE_URL = '/api';
 
 // Sans aucune vente sur la période : ligne masquée (n'apporte rien)
 const hasSales = (row) => parseFloat(row.ca_ttc || 0) !== 0 || (parseInt(row.qty_sold) || 0) !== 0;
-
-// Libellé lisible : les noms de catégories WooCommerce arrivent encodés (« Box &amp; Mods »)
-const decodeEntities = (s) => (s || '').replace(/&amp;/g, '&').replace(/&#0?39;/g, "'").replace(/&quot;/g, '"');
-
-// Périmètre : '' = tout le catalogue, 'cat:<nom>' = une catégorie, 'sub:<nom>' = une
-// sous-catégorie (c'est ce qui permet « les marques qui vendent le plus en 10ml »).
-const scopeToParams = (scope) => {
-  if (scope.startsWith('cat:')) return { category: scope.slice(4) };
-  if (scope.startsWith('sub:')) return { subCategory: scope.slice(4) };
-  return {};
-};
-const scopeLabel = (scope) => (scope ? decodeEntities(scope.slice(4)) : '');
-
-// Deux graphies du même rayon (« E-Liquides pour… » / « E Liquides pour… ») ne font
-// qu'une entrée : le backend compare lui aussi sans casse ni ponctuation.
-const normKey = (v) => decodeEntities(v).toLowerCase().normalize('NFD')
-  .replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '');
-const dedupe = (list) => {
-  const seen = new Set();
-  return (list || []).filter((v) => {
-    const k = normKey(v);
-    if (!k || seen.has(k)) return false;
-    seen.add(k);
-    return true;
-  });
-};
 
 // Répartition France / autres pays (pays de livraison), en TTC
 const withCountrySplit = (row) => {
@@ -79,19 +54,11 @@ const BrandsStatsTab = () => {
   const [monthlyRows, setMonthlyRows] = useState([]);
   const [monthlyLoading, setMonthlyLoading] = useState(false);
   const [scope, setScope] = useState('');
-  const [scopeOptions, setScopeOptions] = useState({ categories: [], sub_categories: [], category_tree: [] });
+  const scopeOptions = useCatalogOptions();
 
   const dateRange = useMemo(() => computeDateRange(period, customStart, customEnd), [period, customStart, customEnd]);
   // Mêmes params pour la liste, la vue par mois et le dépliage des sous-marques
   const queryParams = useMemo(() => ({ ...dateParams(dateRange), ...scopeToParams(scope) }), [dateRange, scope]);
-
-  // Catégories et sous-catégories du catalogue (mêmes listes que le constructeur
-  // de segments de l'onglet Produits)
-  useEffect(() => {
-    axios.get(`${API_BASE_URL}/products/stats-filter-options`)
-      .then((r) => { if (r.data?.success) setScopeOptions(r.data.data || {}); })
-      .catch(() => {});
-  }, []);
 
   useEffect(() => {
     // Les sous-marques déjà chargées l'ont été pour l'ancien périmètre
@@ -296,41 +263,7 @@ const BrandsStatsTab = () => {
             customEnd={customEnd}
             setCustomEnd={setCustomEnd}
           />
-          <select
-            value={scope}
-            onChange={(e) => setScope(e.target.value)}
-            title="Classer les marques sur une seule catégorie (ex. Eliquides 10ml)"
-            style={{
-              padding: '9px 12px', border: '1px solid #ddd', borderRadius: '6px',
-              fontSize: '14px', background: '#fff', color: '#374151', maxWidth: '100%',
-              fontWeight: scope ? 700 : 400,
-            }}
-          >
-            <option value="">Tout le catalogue</option>
-            {(scopeOptions.category_tree || []).length > 0 ? (
-              scopeOptions.category_tree.map((g) => (
-                <optgroup key={g.category} label={decodeEntities(g.category)}>
-                  <option value={`cat:${g.category}`}>Tout le rayon ({g.count})</option>
-                  {g.sub_categories.map((sc) => (
-                    <option key={`sub:${sc.name}`} value={`sub:${sc.name}`}>
-                      {'\u2003'}{decodeEntities(sc.name)} ({sc.count})
-                    </option>
-                  ))}
-                </optgroup>
-              ))
-            ) : (<>
-              <optgroup label="Catégorie">
-                {dedupe(scopeOptions.categories).map((c) => (
-                  <option key={`cat:${c}`} value={`cat:${c}`}>{decodeEntities(c)}</option>
-                ))}
-              </optgroup>
-              <optgroup label="Sous-catégorie">
-                {dedupe(scopeOptions.sub_categories).map((c) => (
-                  <option key={`sub:${c}`} value={`sub:${c}`}>{decodeEntities(c)}</option>
-                ))}
-              </optgroup>
-            </>)}
-          </select>
+          <CategoryScopeSelect scope={scope} setScope={setScope} options={scopeOptions} />
         </div>
         <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
           <div style={{ display: 'flex', border: '1px solid #d1d5db', borderRadius: '6px', overflow: 'hidden' }}>

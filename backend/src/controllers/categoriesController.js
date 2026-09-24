@@ -13,6 +13,18 @@ const parseDateRange = (req) => {
 // Commande livrée en France (pays de livraison, à défaut de facturation — même règle que l'onglet Produits)
 const IS_FR = `COALESCE(NULLIF(o.shipping_country, ''), o.billing_country) = 'FR'`;
 
+// Périmètre optionnel ?brand=… / ?subBrand=… : la page d'une catégorie se restreint
+// alors aux produits d'une marque (symétrique du filtre catégorie côté Marques).
+const parseScope = (req) => {
+  const clean = (v) => (typeof v === 'string' && v.trim() !== '' ? v.trim() : null);
+  return { brand: clean(req.query.brand), subBrand: clean(req.query.subBrand) };
+};
+
+// Clause à coller dans un WHERE portant sur products (alias `a`). $i = marque,
+// $j = sous-marque ; NULL des deux côtés = aucune restriction.
+const scopeSql = (a, i, j) =>
+  `AND ($${i}::text IS NULL OR ${a}.brand = $${i}) AND ($${j}::text IS NULL OR ${a}.sub_brand = $${j})`;
+
 /**
  * Récupère toutes les catégories avec stats agrégées
  * GET /api/categories
@@ -182,6 +194,7 @@ exports.getAllSubCategories = async (req, res) => {
 exports.getByName = async (req, res) => {
   try {
     const { dateFrom, dateTo } = parseDateRange(req);
+    const { brand, subBrand } = parseScope(req);
     const categoryName = decodeURIComponent(req.params.categoryName);
 
     // Récupérer les sous-catégories de cette catégorie avec leurs stats
@@ -196,6 +209,7 @@ exports.getByName = async (req, res) => {
           AND p.sub_category IS NOT NULL
           AND p.product_type IN ('simple', 'variable', 'woosb')
           AND p.post_status = 'publish'
+          ${scopeSql('p', 5, 6)}
       ),
       product_family AS (
         SELECT
@@ -239,14 +253,14 @@ exports.getByName = async (req, res) => {
           THEN ((COALESCE(scs.ca_ht, 0) - COALESCE(scs.cost_ht, 0)) / COALESCE(scs.ca_ht, 0) * 100)
           ELSE 0
         END as margin_percent
-      FROM (SELECT DISTINCT sub_category FROM products WHERE category = $1 AND sub_category IS NOT NULL) sc
+      FROM (SELECT DISTINCT p.sub_category FROM products p WHERE p.category = $1 AND p.sub_category IS NOT NULL ${scopeSql('p', 5, 6)}) sc
       LEFT JOIN sub_category_products scp ON scp.sub_category = sc.sub_category
       LEFT JOIN sub_category_stats scs ON scs.sub_category = sc.sub_category
       GROUP BY sc.sub_category, scs.qty_sold, scs.ca_ttc, scs.ca_ht, scs.cost_ht, scs.ca_ttc_fr, scs.ca_ht_fr
       ORDER BY ca_ttc DESC NULLS LAST
     `;
 
-    const subCategoriesResult = await pool.query(subCategoriesQuery, [categoryName, VALID_ORDER_STATUSES, dateFrom, dateTo]);
+    const subCategoriesResult = await pool.query(subCategoriesQuery, [categoryName, VALID_ORDER_STATUSES, dateFrom, dateTo, brand, subBrand]);
 
     // Récupérer les produits de cette catégorie SANS sous-catégorie (produits "directs")
     const productsWithoutSubCategoryQuery = `
@@ -263,6 +277,7 @@ exports.getByName = async (req, res) => {
           AND p.sub_category IS NULL
           AND p.product_type IN ('simple', 'variable', 'woosb')
           AND p.post_status = 'publish'
+          ${scopeSql('p', 5, 6)}
       ),
       product_family AS (
         SELECT
@@ -323,7 +338,7 @@ exports.getByName = async (req, res) => {
       ORDER BY ca_ttc DESC NULLS LAST
     `;
 
-    const productsResult = await pool.query(productsWithoutSubCategoryQuery, [categoryName, VALID_ORDER_STATUSES, dateFrom, dateTo]);
+    const productsResult = await pool.query(productsWithoutSubCategoryQuery, [categoryName, VALID_ORDER_STATUSES, dateFrom, dateTo, brand, subBrand]);
 
     // Récupérer les stats globales de la catégorie
     const globalStatsQuery = `
@@ -335,6 +350,7 @@ exports.getByName = async (req, res) => {
         WHERE p.category = $1
           AND p.product_type IN ('simple', 'variable', 'woosb')
           AND p.post_status = 'publish'
+          ${scopeSql('p', 5, 6)}
       ),
       product_family AS (
         SELECT
@@ -346,7 +362,7 @@ exports.getByName = async (req, res) => {
       -- WooCommerce: line_total = HT, line_tax = TVA, donc TTC = line_total + line_tax
       SELECT
         COUNT(DISTINCT cp.wp_product_id)::int as product_count,
-        (SELECT COUNT(DISTINCT sub_category) FROM products WHERE category = $1 AND sub_category IS NOT NULL)::int as sub_category_count,
+        (SELECT COUNT(DISTINCT p2.sub_category) FROM products p2 WHERE p2.category = $1 AND p2.sub_category IS NOT NULL ${scopeSql('p2', 5, 6)})::int as sub_category_count,
         COALESCE(SUM(oi.qty), 0)::int as qty_sold,
         COALESCE(SUM(oi.line_total), 0) + COALESCE(SUM(oi.line_tax), 0) as ca_ttc,
         COALESCE(SUM(oi.line_total), 0) as ca_ht,
@@ -362,7 +378,7 @@ exports.getByName = async (req, res) => {
       LEFT JOIN products p_cost ON p_cost.wp_product_id = COALESCE(NULLIF(oi.variation_id, 0), oi.product_id)
     `;
 
-    const globalStatsResult = await pool.query(globalStatsQuery, [categoryName, VALID_ORDER_STATUSES, dateFrom, dateTo]);
+    const globalStatsResult = await pool.query(globalStatsQuery, [categoryName, VALID_ORDER_STATUSES, dateFrom, dateTo, brand, subBrand]);
     const globalStats = globalStatsResult.rows[0];
 
     res.json({
@@ -398,6 +414,7 @@ exports.getByName = async (req, res) => {
 exports.getSubCategoryByName = async (req, res) => {
   try {
     const { dateFrom, dateTo } = parseDateRange(req);
+    const { brand, subBrand } = parseScope(req);
     const subCategoryName = decodeURIComponent(req.params.subCategoryName);
 
     // Récupérer les infos de base et la catégorie parente
@@ -429,6 +446,7 @@ exports.getSubCategoryByName = async (req, res) => {
         WHERE p.sub_category = $1
           AND p.product_type IN ('simple', 'variable', 'woosb')
           AND p.post_status = 'publish'
+          ${scopeSql('p', 5, 6)}
       ),
       product_family AS (
         SELECT
@@ -489,7 +507,7 @@ exports.getSubCategoryByName = async (req, res) => {
       ORDER BY ca_ttc DESC NULLS LAST
     `;
 
-    const productsResult = await pool.query(productsQuery, [subCategoryName, VALID_ORDER_STATUSES, dateFrom, dateTo]);
+    const productsResult = await pool.query(productsQuery, [subCategoryName, VALID_ORDER_STATUSES, dateFrom, dateTo, brand, subBrand]);
 
     // Calculer les stats globales
     const globalStatsQuery = `
@@ -501,6 +519,7 @@ exports.getSubCategoryByName = async (req, res) => {
         WHERE p.sub_category = $1
           AND p.product_type IN ('simple', 'variable', 'woosb')
           AND p.post_status = 'publish'
+          ${scopeSql('p', 5, 6)}
       ),
       product_family AS (
         SELECT
@@ -527,7 +546,7 @@ exports.getSubCategoryByName = async (req, res) => {
       LEFT JOIN products p_cost ON p_cost.wp_product_id = COALESCE(NULLIF(oi.variation_id, 0), oi.product_id)
     `;
 
-    const globalStatsResult = await pool.query(globalStatsQuery, [subCategoryName, VALID_ORDER_STATUSES, dateFrom, dateTo]);
+    const globalStatsResult = await pool.query(globalStatsQuery, [subCategoryName, VALID_ORDER_STATUSES, dateFrom, dateTo, brand, subBrand]);
     const globalStats = globalStatsResult.rows[0];
 
     res.json({
