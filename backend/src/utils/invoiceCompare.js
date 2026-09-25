@@ -335,8 +335,52 @@ function compareInvoiceToOrder({ invoice, order, options = {} }) {
   };
 }
 
+/**
+ * Toutes les différences entre la facture et la commande, sans exception.
+ *
+ * Règle posée par Pierre le 25/09/2026 : « toutes différences entre la commande
+ * et la facture doivent m'être signalées ». Le seuil et la matérialité ne
+ * filtrent donc JAMAIS ce tableau — ils ne servent qu'à décider ce qui part en
+ * réclamation et ce qui pèse dans les décomptes. Un manquant, un arrondi de
+ * onze centimes, une PLV offerte, un changement de conditionnement : tout
+ * remonte, chacun sous son étiquette et avec ce qu'il y a à faire.
+ *
+ * Ordonné par ce qui coûte de l'argent d'abord, puis par montant décroissant.
+ */
+const DIFFERENCE_KINDS = {
+  qty_price:          { rank: 1,  label: 'Quantité et tarif',     action: 'Ajuster la commande et réclamer le tarif' },
+  missing_in_invoice: { rank: 2,  label: 'Commandé, non facturé', action: 'Reliquat ou manquant : vérifier la livraison' },
+  qty:                { rank: 3,  label: 'Quantité',              action: 'Ajuster la quantité de la commande' },
+  price:              { rank: 4,  label: 'Tarif',                 action: 'Réclamer un avoir, ou aligner le tarif si le prix a changé' },
+  not_ordered:        { rank: 5,  label: 'Facturé, non commandé', action: 'Article ajouté : accepter ou contester' },
+  shipping:           { rank: 6,  label: 'Frais de port',         action: 'Non prévus à la commande' },
+  discount:           { rank: 7,  label: 'Remise de pied',        action: 'Répartie sur le coût réel de chaque ligne' },
+  free:               { rank: 8,  label: 'Offert',                action: 'Geste commercial, rien à faire' },
+  packaging:          { rank: 9,  label: 'Conditionnement',       action: 'Unités contre packs : même marchandise, même montant' },
+  rounding:           { rank: 10, label: 'Arrondi de remise',     action: 'Calcul non arrondi du fournisseur, pas une erreur de tarif' },
+  other:              { rank: 11, label: 'Ligne hors produit',    action: 'À qualifier' },
+};
+
+function listDifferences(comparison) {
+  const lines = (comparison && comparison.lines) || [];
+  return lines
+    .filter((l) => l.verdict !== 'ok')
+    .map((l) => ({
+      ...l,
+      kindLabel: (DIFFERENCE_KINDS[l.verdict] || {}).label || l.verdict,
+      action: (DIFFERENCE_KINDS[l.verdict] || {}).action || null,
+    }))
+    .sort((a, b) => {
+      const ra = (DIFFERENCE_KINDS[a.verdict] || {}).rank || 99;
+      const rb = (DIFFERENCE_KINDS[b.verdict] || {}).rank || 99;
+      return ra !== rb ? ra - rb : Math.abs(b.gap) - Math.abs(a.gap);
+    });
+}
+
 module.exports = {
   compareInvoiceToOrder,
+  listDifferences,
+  DIFFERENCE_KINDS,
   normalizeRef,
   DEFAULT_LINE_THRESHOLD,
 };

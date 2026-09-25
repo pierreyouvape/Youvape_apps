@@ -19,7 +19,7 @@
  */
 
 const assert = require('assert');
-const { compareInvoiceToOrder } = require('../src/utils/invoiceCompare');
+const { compareInvoiceToOrder, listDifferences } = require('../src/utils/invoiceCompare');
 const { buildClaimMessage } = require('../src/utils/invoiceClaimMessage');
 
 let failures = 0;
@@ -369,6 +369,37 @@ test('une facture sans hausse de tarif ne produit aucun message', () => {
   const m = buildClaimMessage({ comparison: cosmer, invoice: { number: '#FA018801' } });
   assert.strictEqual(m.claimable, 0);
   assert.strictEqual(m.body, '');
+});
+
+/* ─── Rien ne doit être tu ────────────────────────────────────────────────── */
+
+console.log('\nToutes les différences remontent');
+
+test('le tableau reprend chaque ligne non conforme, sans filtre de seuil', () => {
+  const d = listDifferences(lca);
+  assert.strictEqual(d.length, lca.lines.length - lca.summary.counts.ok);
+  const refs = d.map((l) => l.ref);
+  // Les trois écarts de tarif, mais AUSSI les trois arrondis et la PLV offerte,
+  // qui ne partent pourtant dans aucune réclamation.
+  assert.ok(refs.includes('#REF16155-52579'));
+  assert.ok(refs.includes('#REF18588-62291'));
+  assert.ok(refs.includes('#REF25850-25849'));
+});
+
+test('un manquant et un conditionnement sont signalés comme le reste', () => {
+  const manquant = listDifferences(josh).find((l) => l.ref === 'josh00045196');
+  assert.strictEqual(manquant.kindLabel, 'Quantité');
+  assert.ok(manquant.action.includes('Ajuster'));
+
+  const cond = listDifferences(pulp).find((l) => l.ref === '3666528044512');
+  assert.strictEqual(cond.kindLabel, 'Conditionnement');
+  assert.strictEqual(cond.packRatio, 2);
+});
+
+test('ce qui coûte de l\'argent arrive en tête', () => {
+  const d = listDifferences(lca);
+  assert.strictEqual(d[0].ref, '#REF16155-52579');   // +33,00 €
+  assert.strictEqual(d[d.length - 1].verdict, 'rounding');
 });
 
 /* ─── Cas de bord ─────────────────────────────────────────────────────────── */
