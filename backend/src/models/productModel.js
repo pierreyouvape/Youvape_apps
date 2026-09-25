@@ -842,14 +842,22 @@ class ProductModel {
 
     // Attributs WooCommerce (taux de nicotine, goût, couleur…). Ils ne vivent que
     // sur les déclinaisons, et pas sur les colonnes filtrées par `ctx` : la liste
-    // est donc celle de tout le catalogue, quel que soit le contexte.
+    // est donc celle de tout le catalogue, quel que soit le contexte. On ne compte
+    // que les déclinaisons de produits PUBLIÉS : les stats ignorent les brouillons,
+    // un compteur qui les inclurait promettrait des lignes introuvables (« 0 mg »
+    // annonçait 278 déclinaisons dont 174 sur des fiches non publiées).
     const attrR = await pool.query(
-      `SELECT k AS attribute, p.product_attributes->>k AS value, COUNT(*)::int AS n
-         FROM products p, LATERAL jsonb_object_keys(p.product_attributes) k
-        WHERE p.product_attributes IS NOT NULL
-          AND jsonb_typeof(p.product_attributes) = 'object'
+      `SELECT k AS attribute, v.product_attributes->>k AS value, COUNT(*)::int AS n
+         FROM products v
+         JOIN products parent ON parent.wp_product_id = v.wp_parent_id
+          AND parent.post_status = 'publish'
+          AND parent.product_type IN ('simple', 'variable', 'woosb'),
+         LATERAL jsonb_object_keys(v.product_attributes) k
+        WHERE v.product_type = 'variation'
+          AND v.product_attributes IS NOT NULL
+          AND jsonb_typeof(v.product_attributes) = 'object'
           AND k LIKE 'attribute\\_pa\\_%'
-          AND COALESCE(p.product_attributes->>k, '') <> ''
+          AND COALESCE(v.product_attributes->>k, '') <> ''
         GROUP BY 1, 2`
     );
     const attrMap = new Map();

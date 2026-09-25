@@ -262,6 +262,7 @@ const CategoriesStatsTab = () => {
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             placeholder="Rechercher une categorie..."
+            list="yv-categories-list"
             style={{
               padding: '10px 15px',
               border: '1px solid #ddd',
@@ -272,6 +273,11 @@ const CategoriesStatsTab = () => {
               maxWidth: '400px'
             }}
           />
+          <datalist id="yv-categories-list">
+            {[...new Set(categories.map((r) => r.category).filter(Boolean))].sort().map((v) => (
+              <option key={v} value={v} />
+            ))}
+          </datalist>
           <PeriodFilter
             period={period}
             setPeriod={setPeriod}

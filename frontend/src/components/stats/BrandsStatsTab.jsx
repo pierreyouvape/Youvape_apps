@@ -245,6 +245,7 @@ const BrandsStatsTab = () => {
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             placeholder="Rechercher une marque..."
+            list="yv-brands-list"
             style={{
               padding: '10px 15px',
               border: '1px solid #ddd',
@@ -255,6 +256,11 @@ const BrandsStatsTab = () => {
               maxWidth: '400px'
             }}
           />
+          <datalist id="yv-brands-list">
+            {[...new Set(brands.map((r) => r.brand).filter(Boolean))].sort().map((v) => (
+              <option key={v} value={v} />
+            ))}
+          </datalist>
           <PeriodFilter
             period={period}
             setPeriod={setPeriod}
