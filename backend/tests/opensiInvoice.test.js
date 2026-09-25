@@ -10,12 +10,32 @@
  * pied chez GFC, et pied de page bourré de nombres (IBAN, SIREN, taux de TVA)
  * qu'il ne faut surtout pas lire comme des articles.
  *
- * LVP et GFC sont repris intégralement : leur total imprimé doit retomber sur la
- * somme des lignes lues, ce qui prouve qu'aucune ligne n'a été perdue.
+ * LVP et GFC tournent sur le texte pdf-parse des VRAIS PDF (fixtures
+ * lvp-F2511243065.txt et gfc-F2511358971.txt), repris intégralement : leur total
+ * imprimé doit retomber sur la somme des lignes lues, ce qui prouve qu'aucune
+ * ligne n'a été perdue.
+ *
+ * LCA reste un extrait saisi à la main — le PDF n'a pas été fourni. À remplacer
+ * par une fixture dès qu'on l'a, comme les deux autres.
  */
 
 const assert = require('assert');
+const fs = require('fs');
+const path = require('path');
 const { parseInvoice } = require('../src/parsers/invoices/opensiInvoice');
+
+// Copie de cleanPdfText (pdfImportModel), comme dans parsers.test.js : les
+// parseurs tournent sur le texte NETTOYÉ, jamais sur le brut.
+function cleanPdfText(text) {
+  return text
+    .replace(/[\u00a0\u2007\u202f\u2009\u200a\u2002\u2003\ufeff]/g, ' ')
+    .replace(/[\u2010\u2011\u2012\u2013\u2014\u2015]/g, '-')
+    .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '')
+    .replace(/([A-Za-z0-9])-\n([A-Za-z0-9])/g, '$1-$2')
+    .replace(/[^\S\n]+/g, ' ');
+}
+const fixture = (name) =>
+  cleanPdfText(fs.readFileSync(path.join(__dirname, 'fixtures', name), 'utf-8'));
 
 let failures = 0;
 function test(name, fn) {
@@ -143,78 +163,9 @@ test('un extrait ne retombant pas sur le total imprimé est signalé', () => {
 
 /* ─── LVP — F2511243065, facture entière ─────────────────────────────────── */
 
-const LVP = `LVP DISTRIBUTION
-9 rue du noyer à la malice
-95380 LOUVRES
-Facture N° F2511243065 Date : 04/11/2025
-Client N° 1-003030 - YouVape
-Interlocuteur : M. COGLITORE Maxime
-Page 1 / 2
-YouVape
-580 avenue de l'aube rouge
-34170 Castelnau le Lez
-FRANCE
-F A C T U R E
-Réf. Affaire : AC25110380
-N° Commande : CC25110380
-Réf. Commande : 244904
-Référence Désignation Quantité PU HT Montant HT
-ADDSWEETY10 Additif Sweety 10ml - Swoke (Nicotine : 0mg) 20 1.33 26.60
-NV cartouche feelin 2 3ml Cartouches vides Feelin 2 (2pcs) - Nevoks (Contenance : 3ml)
-3ml
-5 2.00 10.00
-FR10-SUBZ-PG06-01 PG Subzero 10ml - Halo (Nicotine : 6mg)
-6mg 10ml Menthe France
-24 1.95 46.80
-FR10-TRIB-PG12-01 PG Tribeca 10ml - Halo (Nicotine : 12mg)
-12mg 10ml Classique France
-12 1.95 23.40
-FR10-TRIB-PG18-01 PG Tribeca 10ml - Halo (Nicotine : 18mg)
-18mg 10ml Classique France
-12 1.95 23.40
-FR10-TRIB-EX00-01 Concentré Tribeca 10ml - Halo (Nicotine : 0mg)
-10ml Classique
-24 2.49 59.76
-FR50-TRIB-SV00-01 Tribeca 50ml - Halo (Nicotine : 0mg)
-0mg 50ml Classique France
-5 7.70 38.50
-S30467-TJCSFSDENSWE100FRRB
-Sakura Dream 100ml - TJuice New collection (Nicotine : 0mg) 6 4.90 29.40
-S30466-TJCSFSSENSWE100FRRB
-Sunset Sorbet 100ml - TJuice New collection (Nicotine : 0mg) 6 4.90 29.40
-S30465-TJCSFPPENSWE100FRRB
-Pinky Pop 100ml - TJuice New collection (Nicotine : 0mg) 6 4.90 29.40
-AV-KATE-50 Katelyn 50ml - Arcvape (Nicotine : 0mg) 6 1.49 8.94
-AV-VAI-50 Vaï 50ml - Arcvape (Nicotine : 0mg) 6 1.49 8.94
-AGS02921001761 Kit Soul 1500mAh - GeekVape (Couleur : Black)
-Black
-3 7.45 22.35
-AGS02920101765 Kit Soul 1500mAh - GeekVape (Couleur : Gunmetal)
-Gunmetal
-3 7.45 22.35
-AGS02920101762 Kit Soul 1500mAh - GeekVape (Couleur : Pink)
-Pink
-3 7.45 22.35
-AGS02920101761 Kit Soul 1500mAh - GeekVape (Couleur : White)
-White
-3 7.45 22.35
-AGS02920101763 Kit Soul 1500mAh - GeekVape (Couleur : Violet)
-Violet
-3 7.45 22.35
-Sous-total HT : 446.29
-INCOTERM DAP
-Base HT Taux TVA Montant TVA
-446.29 20.00 % 89.26
-Date d'échéance : 04/11/2025
-Mode de règlement : Paiement par carte bancai
-N° TVA Client : fr87789508439
-Total HT : 446.29 €
-Total TVA : 89.26 €
-Total TTC : 535.55 €`;
+const lvp = parseInvoice(fixture('lvp-F2511243065.txt'));
 
-const lvp = parseInvoice(LVP);
-
-console.log('\nLVP — facture F2511243065 (entière)');
+console.log('\nLVP — facture F2511243065 (PDF réel, entière)');
 
 test('les 17 lignes sont lues et retombent sur le total imprimé', () => {
   assert.strictEqual(lvp.lines.length, 17);
@@ -244,68 +195,9 @@ test('le mode de règlement est repris tel qu\'imprimé, même tronqué', () => 
 
 /* ─── GFC — F2511358971, facture entière avec code-barres et remise ──────── */
 
-const GFC = `GFC Provap
-2 route de l'Ouest
-94380 Bonneuil Sur Marne
-Facture N° F2511358971 Date : 01/11/2025
-Client N° 1-008518 - YOUVAPE SITE
-Interlocuteur : M. COGLITORE Maxime
-Page 1 / 1
-YOUVAPE SITE
-580 avenue de l'aube rouge
-34170 castelnau le lez
-FRANCE
-F A C T U R E
-Réf. Affaire : AC25107231
-N° Commande : CC25107229
-Réf. Commande : 530456
-Réf. BL : BL25110009
-Référence Désignation Code barre Quantité PU HT Montant HT
-GFC29577 Batterie E-cigare 500mAh (1pc) - XO Havana 3010000877974 10 4.43 44.30
-GFC31669-58345 Cartouche Pré-remplie 20mg (1pc) - XO Havana - Saveur :
-Andres
-3010000877899 10 3.40 34.00
-GFC31669-58347 Cartouche Pré-remplie 20mg (1pc) - XO Havana - Saveur :
-Cubana
-3010000877905 30 3.40 102.00
-GFC31669-58348 Cartouche Pré-remplie 20mg (1pc) - XO Havana - Saveur :
-Venecia
-3010000877912 20 3.40 68.00
-GFC32255-59160 Résistances PnP X V2 0.15/0.2/0.3/0.45/0.6? (5pcs) -
-Voopoo - valeur : 0.45 ohm
-6941291573344 10 6.00 60.00
-GFC32255-59157 Résistances PnP X V2 0.15/0.2/0.3/0.45/0.6? (5pcs) -
-Voopoo - valeur : 0.15 ohm
-6941291575928 10 6.00 60.00
-GFC25003-51936 L'intense 10ml - Roykin - Nicotine : 6mg 3700809000221 20 1.10 22.00
-GFC25003-51937 L'intense 10ml - Roykin - Nicotine : 11mg 3700809000238 20 1.10 22.00
-GFC25003-51938 L'intense 10ml - Roykin - Nicotine : 16mg 3700809000245 20 1.10 22.00
-GFC21786 Triple Fused Clapton DL Ni80 0.30? New Version (10pcs) -
-Fumytech
-642613944434 10 1.75 17.50
-GFC317-6397 T2 V1 1.8? 2.4ml 15mm - Kangertech - Couleur : Black 3176397 5 1.75 8.75
-GFC19330-45651 Pyrex Dead Rabbit V3 RTA 3.5ml/5.5ml - Hellvape - Taille :
-Bubble 5.5ml
-6973727423978 5 1.23 6.15
-GFC32953-60198 Drip Tip 510 Whistle Long - DotMod - Couleur : Clear 857918006347 3 2.76 8.28
-GFC31197-57761 Dead Rabbit 3 RTA J Edition - Hellvape - Couleur : Shiny
-Gun Purple
-6976849462689 3 21.07 63.21
-Code(s) promo : Carte fidélité ()
-Base HT Taux TVA Montant TVA
-496.19 20.00 % 99.24
-Date d'échéance : 01/11/2025
-Mode de règlement : Paiement 100% Sécurisé pa
-Montant HT : 538.19 €
-Remise : 42.00 €
-Total HT : 496.19 €
-Total TVA : 99.24 €
-Total TTC : 595.43 €
-Facture acquittée`;
+const gfc = parseInvoice(fixture('gfc-F2511358971.txt'));
 
-const gfc = parseInvoice(GFC);
-
-console.log('\nGFC — facture F2511358971 (entière)');
+console.log('\nGFC — facture F2511358971 (PDF réel, entière)');
 
 test('le code-barres n\'est jamais pris pour une quantité', () => {
   const l = byRef(gfc, 'GFC29577');
