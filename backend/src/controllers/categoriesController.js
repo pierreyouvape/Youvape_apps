@@ -1,4 +1,5 @@
 const pool = require('../config/database');
+const { buildStatsFilterClause, buildAttributeClauses } = require('../utils/productFilters');
 
 // Statuts de commande considérés comme "ventes valides"
 const VALID_ORDER_STATUSES = ['wc-completed', 'wc-delivered', 'wc-processing', 'wc-awaiting-delivery', 'wc-shipped', 'wc-being-delivered'];
@@ -25,6 +26,49 @@ const parseScope = (req) => {
 const scopeSql = (a, i, j) =>
   `AND ($${i}::text IS NULL OR ${a}.brand = $${i}) AND ($${j}::text IS NULL OR ${a}.sub_brand = $${j})`;
 
+// Filtres libres de l'onglet Catégories : le sous-ensemble des champs du
+// constructeur de segments qui existe sur `products`. Les indicateurs de vente
+// (CA, quantité, vitesse…) sont calculés produit par produit ailleurs : les
+// proposer ici donnerait des filtres sans effet.
+const CATEGORY_FILTER_FIELDS = [
+  'post_title', 'brand', 'sub_brand', 'category', 'sub_category',
+  'product_type', 'stock_status', 'weight', 'price',
+];
+
+const parseFilters = (req) => {
+  let filters = [];
+  if (req.query.filters) {
+    try { const parsed = JSON.parse(req.query.filters); if (Array.isArray(parsed)) filters = parsed; } catch { /* ignore */ }
+  }
+  return { filters, matchType: req.query.matchType === 'any' ? 'any' : 'all' };
+};
+
+/**
+ * Prépare les fragments SQL d'une requête catégories : périmètre marque, filtres
+ * produits et attributs de déclinaison. `params` commence toujours par
+ * [statuts, dateFrom, dateTo, brand, subBrand] — d'où les $4/$5 du périmètre.
+ * Les variantes `*2` visent l'alias p2 des sous-requêtes de comptage (le texte ne
+ * contient que des références de colonnes, les valeurs sont paramétrées).
+ */
+const prepareScope = (req, dateFrom, dateTo) => {
+  const { brand, subBrand } = parseScope(req);
+  const { filters, matchType } = parseFilters(req);
+  const params = [VALID_ORDER_STATUSES, dateFrom, dateTo, brand, subBrand];
+  const P = (v) => { params.push(v); return '$' + params.length; };
+
+  const clause = buildStatsFilterClause(filters, matchType, P, { alias: 'p', allow: CATEGORY_FILTER_FIELDS });
+  const attr = buildAttributeClauses(filters, P, {
+    productAlias: 'p',
+    soldPidExpr: 'COALESCE(NULLIF(oi.variation_id, 0), oi.product_id)',
+  });
+  const productWhere = (clause ? ` AND ${clause}` : '') + attr.selection;
+  const salesWhere = attr.sales.length ? ' AND ' + attr.sales.join(' AND ') : '';
+  return {
+    params, productWhere, salesWhere,
+    productWhere2: productWhere.replace(/\bp\./g, 'p2.'),
+  };
+};
+
 /**
  * Récupère toutes les catégories avec stats agrégées
  * GET /api/categories
@@ -32,6 +76,7 @@ const scopeSql = (a, i, j) =>
 exports.getAll = async (req, res) => {
   try {
     const { dateFrom, dateTo } = parseDateRange(req);
+    const { params, productWhere, productWhere2, salesWhere } = prepareScope(req, dateFrom, dateTo);
     const query = `
       WITH category_products AS (
         SELECT DISTINCT
@@ -42,6 +87,7 @@ exports.getAll = async (req, res) => {
         WHERE p.category IS NOT NULL
           AND p.product_type IN ('simple', 'variable', 'woosb')
           AND p.post_status = 'publish'
+          ${scopeSql('p', 4, 5)}${productWhere}
       ),
       product_family AS (
         SELECT
@@ -67,14 +113,14 @@ exports.getAll = async (req, res) => {
             AND o.post_status = ANY($1)
             AND ($2::date IS NULL OR o.post_date >= $2::date)
             AND ($3::date IS NULL OR o.post_date < $3::date + 1))
-          ON (oi.product_id = pf.product_id OR oi.variation_id = pf.product_id)
+          ON ((oi.product_id = pf.product_id OR oi.variation_id = pf.product_id)${salesWhere})
         LEFT JOIN products p_cost ON p_cost.wp_product_id = COALESCE(NULLIF(oi.variation_id, 0), oi.product_id)
         GROUP BY pf.category
       )
       SELECT
         c.category,
         COUNT(DISTINCT cp.wp_product_id)::int as product_count,
-        (SELECT COUNT(DISTINCT p2.sub_category) FROM products p2 WHERE p2.category = c.category AND p2.sub_category IS NOT NULL)::int as sub_category_count,
+        (SELECT COUNT(DISTINCT p2.sub_category) FROM products p2 WHERE p2.category = c.category AND p2.sub_category IS NOT NULL ${scopeSql('p2', 4, 5)}${productWhere2})::int as sub_category_count,
         COALESCE(cs.qty_sold, 0) as qty_sold,
         COALESCE(cs.ca_ttc, 0) as ca_ttc,
         COALESCE(cs.ca_ht, 0) as ca_ht,
@@ -86,14 +132,14 @@ exports.getAll = async (req, res) => {
           THEN ((COALESCE(cs.ca_ht, 0) - COALESCE(cs.cost_ht, 0)) / COALESCE(cs.ca_ht, 0) * 100)
           ELSE 0
         END as margin_percent
-      FROM (SELECT DISTINCT category FROM products WHERE category IS NOT NULL) c
+      FROM (SELECT DISTINCT p.category FROM products p WHERE p.category IS NOT NULL ${scopeSql('p', 4, 5)}${productWhere}) c
       LEFT JOIN category_products cp ON cp.category = c.category
       LEFT JOIN category_stats cs ON cs.category = c.category
       GROUP BY c.category, cs.qty_sold, cs.ca_ttc, cs.ca_ht, cs.cost_ht, cs.ca_ttc_fr, cs.ca_ht_fr
       ORDER BY ca_ttc DESC NULLS LAST
     `;
 
-    const result = await pool.query(query, [VALID_ORDER_STATUSES, dateFrom, dateTo]);
+    const result = await pool.query(query, params);
 
     res.json({
       success: true,
@@ -581,6 +627,7 @@ exports.getSubCategoryByName = async (req, res) => {
 exports.getMonthly = async (req, res) => {
   try {
     const { dateFrom, dateTo } = parseDateRange(req);
+    const { params, productWhere, salesWhere } = prepareScope(req, dateFrom, dateTo);
     const query = `
       WITH group_products AS (
         SELECT DISTINCT p.category, p.wp_product_id
@@ -588,6 +635,7 @@ exports.getMonthly = async (req, res) => {
         WHERE p.category IS NOT NULL
           AND p.product_type IN ('simple', 'variable', 'woosb')
           AND p.post_status = 'publish'
+          ${scopeSql('p', 4, 5)}${productWhere}
       ),
       product_family AS (
         SELECT gp.category, COALESCE(v.wp_product_id, gp.wp_product_id) as product_id
@@ -606,7 +654,7 @@ exports.getMonthly = async (req, res) => {
         COALESCE(SUM(oi.line_total + COALESCE(oi.line_tax, 0)) FILTER (WHERE ${IS_FR}), 0) as ca_ttc_fr,
         COALESCE(SUM(oi.line_total) FILTER (WHERE ${IS_FR}), 0) as ca_ht_fr
       FROM product_family pf
-      JOIN order_items oi ON (oi.product_id = pf.product_id OR oi.variation_id = pf.product_id)
+      JOIN order_items oi ON ((oi.product_id = pf.product_id OR oi.variation_id = pf.product_id)${salesWhere})
       JOIN orders o ON o.wp_order_id = oi.wp_order_id
         AND o.post_status = ANY($1)
         AND ($2::date IS NULL OR o.post_date >= $2::date)
@@ -615,7 +663,7 @@ exports.getMonthly = async (req, res) => {
       ORDER BY pf.category, month
     `;
 
-    const result = await pool.query(query, [VALID_ORDER_STATUSES, dateFrom, dateTo]);
+    const result = await pool.query(query, params);
 
     res.json({
       success: true,

@@ -6,7 +6,7 @@ import { FILTER_FIELDS, OPERATORS, fieldByKey, fieldType, opNeedsNoValue, defaul
 const API_BASE_URL = '/api';
 
 // Groupes de champs pour le <select> (optgroup)
-const FIELD_GROUPS = FILTER_FIELDS.reduce((acc, f) => {
+const groupFields = (fields) => fields.reduce((acc, f) => {
   (acc[f.group] = acc[f.group] || []).push(f);
   return acc;
 }, {});
@@ -26,7 +26,12 @@ const btn = (bg, fg = '#fff') => ({ padding: '8px 14px', backgroundColor: bg, co
  */
 export default function ProductSegmentBuilder({
   filters, matchType, onFiltersChange, onMatchTypeChange, onApply, onClear, onLoadSegment,
+  fields = FILTER_FIELDS, showSegments = true, emptyHint,
 }) {
+  // Les segments enregistrés portent des champs de l'onglet Produits : ailleurs
+  // (onglet Catégories), on n'offre que les champs utilisables et pas la
+  // bibliothèque de segments, qui donnerait des filtres sans effet.
+  const FIELD_GROUPS = useMemo(() => groupFields(fields), [fields]);
   const { token } = useContext(AuthContext);
   const [segments, setSegments] = useState([]);
   const [activeSegmentId, setActiveSegmentId] = useState('');
@@ -66,7 +71,7 @@ export default function ProductSegmentBuilder({
   const patchFilter = (i, patch) => onFiltersChange(filters.map((f, idx) => (idx === i ? { ...f, ...patch } : f)));
   const changeField = (i, newField) => onFiltersChange(filters.map((f, idx) => (idx === i ? defaultFilterFor(newField) : f)));
   const changeOp = (i, op) => onFiltersChange(filters.map((f, idx) => (idx === i ? { ...f, op, ...(op === 'between' ? {} : { value2: '' }) } : f)));
-  const addFilter = () => onFiltersChange([...(filters || []), defaultFilterFor('stock')]);
+  const addFilter = () => onFiltersChange([...(filters || []), defaultFilterFor(fields[0]?.key || 'stock')]);
   const removeFilter = (i) => onFiltersChange(filters.filter((_, idx) => idx !== i));
 
   // ─── Segments enregistrés ─────────────────────────────────────────────
@@ -226,6 +231,7 @@ export default function ProductSegmentBuilder({
           </select>
           <span style={{ fontWeight: 600 }}>de ces conditions</span>
         </div>
+        {showSegments && (
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
           <select value={activeSegmentId} onChange={(e) => handleSelectSegment(e.target.value)} style={{ ...inputStyle, minWidth: '190px' }}>
             <option value="">📂 Charger un segment…</option>
@@ -242,12 +248,13 @@ export default function ProductSegmentBuilder({
             <button onClick={saveNew} style={btn('#1D6F42')}>💾 Enregistrer le segment</button>
           )}
         </div>
+        )}
       </div>
 
       {/* Lignes de filtres */}
       {(!filters || filters.length === 0) && (
         <div style={{ fontSize: '13px', color: '#8a99a4', padding: '6px 0 12px' }}>
-          Aucun filtre — le tableau affiche tous les produits. Ajoute une condition ci-dessous.
+          {emptyHint || 'Aucun filtre — le tableau affiche tous les produits. Ajoute une condition ci-dessous.'}
         </div>
       )}
       {filters.map((f, i) => {

@@ -36,6 +36,15 @@ export const FILTER_FIELDS = [
     options: [{ v: 'simple', l: 'Simple' }, { v: 'variable', l: 'Variable' }, { v: 'woosb', l: 'Pack (woosb)' }] },
 ];
 
+
+// Onglet Catégories : seuls les champs portés par la fiche produit ont un sens
+// (les indicateurs de vente sont agrégés par catégorie, pas par produit).
+export const CATEGORY_FIELD_KEYS = [
+  'post_title', 'attribute', 'brand', 'sub_brand', 'category', 'sub_category',
+  'product_type', 'stock_status', 'weight', 'price',
+];
+export const CATEGORY_FILTER_FIELDS = FILTER_FIELDS.filter((f) => CATEGORY_FIELD_KEYS.includes(f.key));
+
 export const OPERATORS = {
   number: [
     { v: 'gte', l: '≥' }, { v: 'lte', l: '≤' }, { v: 'gt', l: '>' }, { v: 'lt', l: '<' },

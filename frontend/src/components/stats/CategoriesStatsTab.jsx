@@ -7,6 +7,9 @@ import { useColumnPreferences } from '../../hooks/useColumnPreferences';
 import ColumnPanel from '../ColumnPanel';
 import { LinkBox } from '../../utils/navHelpers';
 import PeriodFilter, { computeDateRange, dateParams } from './PeriodFilter';
+import { BrandScopeSelect, useCatalogOptions, scopeToParams } from './ScopeFilter';
+import ProductSegmentBuilder from './ProductSegmentBuilder';
+import { CATEGORY_FILTER_FIELDS } from './segmentFields';
 import MonthlyPivotTable from './MonthlyPivotTable';
 
 const API_BASE_URL = '/api';
@@ -52,22 +55,43 @@ const CategoriesStatsTab = () => {
   const [customEnd, setCustomEnd] = useState('');
   const [monthlyRows, setMonthlyRows] = useState([]);
   const [monthlyLoading, setMonthlyLoading] = useState(false);
+  const [scope, setScope] = useState('');          // marque / sous-marque
+  const scopeOptions = useCatalogOptions();
+  // Filtres produits : brouillon (édité) vs appliqué (utilisé pour le fetch)
+  const [showBuilder, setShowBuilder] = useState(false);
+  const [filters, setFilters] = useState([]);
+  const [matchType, setMatchType] = useState('all');
+  const [appliedFilters, setAppliedFilters] = useState([]);
+  const [appliedMatchType, setAppliedMatchType] = useState('all');
 
   const dateRange = useMemo(() => computeDateRange(period, customStart, customEnd), [period, customStart, customEnd]);
 
+  // Mêmes paramètres pour la liste, la vue par mois et le dépliage
+  const queryParams = useMemo(() => {
+    const p = { ...dateParams(dateRange), ...scopeToParams(scope) };
+    if (appliedFilters.length > 0) {
+      p.filters = JSON.stringify(appliedFilters);
+      p.matchType = appliedMatchType;
+    }
+    return p;
+  }, [dateRange, scope, appliedFilters, appliedMatchType]);
+
+  const filterKey = JSON.stringify(queryParams);
+  const hasActiveFilters = appliedFilters.length > 0;
+
   useEffect(() => {
-    // Les sous-catégories déjà chargées l'ont été pour l'ancienne période
+    // Les sous-catégories déjà chargées l'ont été pour l'ancien périmètre
     setSubCategories({});
     setExpandedCategoryName(null);
     if (view === 'monthly') fetchMonthly();
     else fetchCategories();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [view, dateRange.dateFrom, dateRange.dateTo]);
+  }, [view, filterKey]);
 
   const fetchMonthly = async () => {
     setMonthlyLoading(true);
     try {
-      const response = await axios.get(`${API_BASE_URL}/categories/monthly`, { params: dateParams(dateRange) });
+      const response = await axios.get(`${API_BASE_URL}/categories/monthly`, { params: queryParams });
       if (response.data.success) {
         setMonthlyRows(response.data.data);
       }
@@ -81,7 +105,7 @@ const CategoriesStatsTab = () => {
   const fetchCategories = async () => {
     setLoading(true);
     try {
-      const response = await axios.get(`${API_BASE_URL}/categories`, { params: dateParams(dateRange) });
+      const response = await axios.get(`${API_BASE_URL}/categories`, { params: queryParams });
       if (response.data.success) {
         setCategories(response.data.data.map(withCountrySplit));
       }
@@ -96,7 +120,7 @@ const CategoriesStatsTab = () => {
     if (subCategories[categoryName]) return;
 
     try {
-      const response = await axios.get(`${API_BASE_URL}/categories/${encodeURIComponent(categoryName)}`, { params: dateParams(dateRange) });
+      const response = await axios.get(`${API_BASE_URL}/categories/${encodeURIComponent(categoryName)}`, { params: queryParams });
       if (response.data.success) {
         setSubCategories(prev => ({
           ...prev,
@@ -256,8 +280,19 @@ const CategoriesStatsTab = () => {
             customEnd={customEnd}
             setCustomEnd={setCustomEnd}
           />
+          <BrandScopeSelect scope={scope} setScope={setScope} options={scopeOptions} />
         </div>
         <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+          <button
+            onClick={() => setShowBuilder(v => !v)}
+            style={{
+              padding: '8px 14px', backgroundColor: (showBuilder || hasActiveFilters) ? '#135E84' : '#fff',
+              color: (showBuilder || hasActiveFilters) ? '#fff' : '#374151', border: '1px solid #d1d5db',
+              borderRadius: '6px', fontSize: '13px', cursor: 'pointer', fontWeight: 600
+            }}
+          >
+            🎯 Filtres{hasActiveFilters ? ` (${appliedFilters.length})` : ''}
+          </button>
           <div style={{ display: 'flex', border: '1px solid #d1d5db', borderRadius: '6px', overflow: 'hidden' }}>
             {[{ id: 'totals', label: 'Totaux' }, { id: 'monthly', label: 'Par mois' }].map(v => (
               <button
@@ -300,6 +335,22 @@ const CategoriesStatsTab = () => {
           </>)}
         </div>
       </div>
+
+      {/* Filtres produits : restreignent les produits qui alimentent chaque catégorie */}
+      {showBuilder && (
+        <ProductSegmentBuilder
+          filters={filters}
+          matchType={matchType}
+          onFiltersChange={setFilters}
+          onMatchTypeChange={setMatchType}
+          onApply={() => { setAppliedFilters(filters); setAppliedMatchType(matchType); }}
+          onClear={() => { setFilters([]); setMatchType('all'); setAppliedFilters([]); setAppliedMatchType('all'); }}
+          onLoadSegment={() => {}}
+          fields={CATEGORY_FILTER_FIELDS}
+          showSegments={false}
+          emptyHint="Aucun filtre — chaque catégorie compte tous ses produits. Ajoute une condition (nom, attribut de déclinaison, marque…) ci-dessous."
+        />
+      )}
 
       {view === 'monthly' ? (
         monthlyLoading ? (
