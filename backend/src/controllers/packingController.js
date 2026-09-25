@@ -2,6 +2,7 @@ const pool = require('../config/database');
 const { computeOrderWeight, getPackagingWeight } = require('../services/orderWeightService');
 const shippingMethodMapModel = require('../models/shippingMethodMapModel');
 const { expectedNetwork, relayNetworks } = require('../services/carriers/relayPoints');
+const { getAdapter } = require('../services/carriers');
 
 // Rechercher une commande par numéro WC pour le packing
 const searchOrder = async (req, res) => {
@@ -139,11 +140,23 @@ const searchOrder = async (req, res) => {
       console.error('Erreur options point relais packing:', relayError.message);
     }
 
+    // Livraison le samedi : c'est le transporteur qui sait quels modes s'y
+    // prêtent (Chronopost : Chrono 13 et Chrono Relais). Le packing n'affiche
+    // l'interrupteur que pour ces commandes.
+    let saturdayEligible = false;
+    if (carrier?.status === 'mapped') {
+      try {
+        const adapter = getAdapter(carrier.carrierCode);
+        saturdayEligible = typeof adapter.supportsSaturdayDelivery === 'function'
+          && adapter.supportsSaturdayDelivery(carrier.deliveryMode);
+      } catch (e) { /* transporteur inconnu du registre : pas de samedi */ }
+    }
+
     res.json({
       hidden_packs: hiddenPacks,
       // status : 'mapped' (on sait étiqueter), 'no_label' (rien à imprimer,
       // volontairement) ou 'unknown' (personne ne l'a mappé : on bloque).
-      carrier,
+      carrier: carrier ? { ...carrier, saturdayEligible } : carrier,
       weight: {
         // Grammes, tare comprise. Le détail permet au préparateur de comprendre
         // l'écart avec la somme des poids produits affichés ligne à ligne.

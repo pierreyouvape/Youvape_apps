@@ -722,6 +722,8 @@ module.exports = assertAdapter({
   bmsShipmentTitle: PRODUITS['86'].bms,
   deliveryModes: Object.entries(MODES).map(([code, m]) => ({ code, label: m.label })),
   requiresRelayPoint,
+  // Modes livrables le samedi : le packing n'affiche l'interrupteur que pour eux.
+  supportsSaturdayDelivery: (deliveryMode) => deliveryMode === 'relais' || deliveryMode === 'domicile',
   relayNetworkLabel: 'Chronopost / 2Shop',
   // Chronopost n'émet aucun bordereau par API (le plugin officiel fabrique le
   // sien en PDF local) : l'app produit son récapitulatif, un par contrat.

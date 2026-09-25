@@ -95,6 +95,10 @@
  *           de mappage propose une liste au lieu d'un champ libre, et le serveur
  *           comme le préflight refusent tout autre valeur : une faute de frappe
  *           enverrait le colis sur le mauvais service sans que personne le voie.
+ * @property {(deliveryMode: ?string) => boolean} [supportsSaturdayDelivery]
+ *           Le mode se livre-t-il le samedi ? Le packing n'affiche l'interrupteur
+ *           « Livraison samedi » que pour une commande dont c'est le cas, et
+ *           transmet son état en `options.saturdayDelivery`. Absent = jamais.
  * @property {boolean} [producesCustomsDocuments=false] - l'adaptateur peut rendre
  *           une CN23 : l'enregistrement exige alors la colonne cn23_data, vérifiée
  *           AVANT d'acheter l'étiquette.

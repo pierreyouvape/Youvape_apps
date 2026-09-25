@@ -1644,6 +1644,17 @@ test('Chronopost : relais et 2Shop exigent un point, domicile et Express non', (
   assert.deepStrictEqual(chrono.deliveryModes.map(m => m.code), ['relais', 'domicile', '2shop', 'express']);
 });
 
+test('interrupteur samedi : proposé pour Chrono 13 et Chrono Relais seulement', () => {
+  assert.strictEqual(chrono.supportsSaturdayDelivery('relais'), true);
+  assert.strictEqual(chrono.supportsSaturdayDelivery('domicile'), true);
+  assert.strictEqual(chrono.supportsSaturdayDelivery('2shop'), false);
+  assert.strictEqual(chrono.supportsSaturdayDelivery('express'), false);
+  // Les autres transporteurs ne le déclarent pas : jamais d'interrupteur.
+  for (const code of ['laposte', 'mondial_relay', 'colissimo', 'interne']) {
+    assert.strictEqual(typeof getAdapter(code).supportsSaturdayDelivery, 'undefined', code);
+  }
+});
+
 test('Chronopost : nom de fichier, bordereau local, annulable', () => {
   assert.strictEqual(chrono.labelFileName('1262992'), 'chronopost_1262992.pdf');
   assert.strictEqual(chrono.depositSlip.kind, 'local');

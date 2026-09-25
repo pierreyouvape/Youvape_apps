@@ -123,11 +123,12 @@ const PackingApp = () => {
   const [manualInfo, setManualInfo] = useState(null);
   const [manualResult, setManualResult] = useState(null); // { trackingId, orderNumber, pdfBase64 }
   // Livraison le samedi (Chrono 13 et Chrono Relais) : l'interrupteur n'existe
-  // que le jeudi et le vendredi, coché d'office le vendredi. Le jeudi soir, on
-  // le coche à la main si les colis Chronopost partent le lendemain.
+  // que le jeudi et le vendredi, coché d'office le vendredi, et seulement sur
+  // une commande scannée qui s'y prête (le backend le dit : saturdayEligible).
+  // Le jeudi soir, on le coche à la main si les colis partent le lendemain.
   const [jourCourant, setJourCourant] = useState(jourParis);
   const [samedi, setSamedi] = useState(() => jourParis() === 5);
-  const samediVisible = jourCourant === 4 || jourCourant === 5;
+  const samediVisible = (jourCourant === 4 || jourCourant === 5) && Boolean(carrier?.saturdayEligible);
 
   // Refs pour accéder aux valeurs courantes dans le listener clavier
   const orderRef = useRef(null);
@@ -904,31 +905,6 @@ const PackingApp = () => {
           {user?.name || user?.email || ''}
         </span>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', zIndex: 1 }}>
-          {samediVisible && (
-            <label
-              title="Chronopost : Chrono 13 domicile et Chrono Relais livrés le samedi"
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-                background: samedi ? '#FFCC00' : 'rgba(255,255,255,0.2)',
-                color: samedi ? '#1f2937' : 'white',
-                padding: '8px 14px',
-                borderRadius: '6px',
-                cursor: 'pointer',
-                fontSize: '14px',
-                fontWeight: samedi ? '700' : '400'
-              }}
-            >
-              <input
-                type="checkbox"
-                checked={samedi}
-                onChange={(e) => setSamedi(e.target.checked)}
-                style={{ width: '16px', height: '16px', cursor: 'pointer' }}
-              />
-              Livraison samedi (Chrono)
-            </label>
-          )}
           {order && !showLabels && (
             <button
               onClick={handleReset}
@@ -1317,6 +1293,27 @@ const PackingApp = () => {
                     fontSize: '16px', fontWeight: 800, letterSpacing: '0.6px', whiteSpace: 'nowrap'
                   }}>{v.court}</span>
                   <span style={{ color: '#333', fontSize: '15px' }}>{carrier.denomination}</span>
+                  {samediVisible && (
+                    <label
+                      title="Chrono 13 domicile et Chrono Relais livrés le samedi"
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: '8px', marginLeft: 'auto',
+                        background: samedi ? '#FFCC00' : 'white',
+                        color: '#1f2937',
+                        border: `2px solid ${samedi ? '#FFCC00' : '#ccc'}`,
+                        padding: '8px 14px', borderRadius: '6px', cursor: 'pointer',
+                        fontSize: '15px', fontWeight: samedi ? 700 : 400
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={samedi}
+                        onChange={(e) => setSamedi(e.target.checked)}
+                        style={{ width: '18px', height: '18px', cursor: 'pointer' }}
+                      />
+                      Livraison samedi
+                    </label>
+                  )}
                 </div>
               );
             })()}
