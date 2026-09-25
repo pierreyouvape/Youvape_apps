@@ -113,6 +113,22 @@ const CASES = [
     // reconciliation avec « Montant hors taxes ».
     noUniqueRow: true,
   },
+  {
+    label: 'Pulp FA165024 (3 pages, tarif barre + ecotaxe, derniere ligne coupee en deux)',
+    parser: require('../src/parsers/pulpParser'),
+    text: fixture('pulp-FA165024.txt'),
+    orderNumber: '168213',
+    expectedItems: 33,
+    expectedTotal: 2618.90,
+    mustContain: '2020101005009', // article a cheval sur les pages 2 et 3
+    // Sur une ligne remisee, le gabarit Pulp intercale le tarif BARRE entre le prix
+    // net et le couple Qte/Total (« 1,03 € / -30% 1,47 € / 80 82,40 € ») : la
+    // signature arithmetique du garde-fou universel ne s'y retrouve pas (80 × 1,47
+    // ≠ 82,40). Ces lignes sont couvertes par la reconciliation avec « Total
+    // produits HT », testee plus bas ; seules les lignes SANS remise sont visibles
+    // par findUnparsedRows (verifie aussi plus bas).
+    noUniqueRow: true,
+  },
 ];
 
 console.log('Parseurs — lignes qui disparaissaient en silence');
@@ -286,6 +302,82 @@ console.log('e.tasty — confirmation de commande');
     );
     assert.strictEqual(p.invoiceProductTotalHT, 34.30);
     assert.deepStrictEqual(p.warnings, []);
+  });
+}
+
+// ── Pulp — gabarit a colonne prix multi-lignes ──────────────────────────────
+console.log('Pulp — tarif barre, ecotaxe et saut de page');
+{
+  const pulp = require('../src/parsers/pulpParser');
+  const text = fixture('pulp-FA165024.txt');
+  const parsed = pulp.parse(text);
+  const item = (sku) => parsed.items.find((i) => i.supplier_sku === sku);
+
+  test('FA165024 : chaque ligne verifie QTE × PRIX NET = TOTAL imprime', () => {
+    // Le prix retenu doit etre le prix NET (celui qui est facture), jamais le
+    // tarif barre : c'est ce produit en croix qui le prouve, ligne par ligne.
+    const wrong = parsed.items.filter(
+      (i) => Math.abs(i.qty_ordered * i.unit_price_net - i.total_ht) > 0.005
+    );
+    assert.deepStrictEqual(wrong.map((i) => i.supplier_sku), []);
+  });
+
+  test('FA165024 : ligne remisee — prix net et tarif barre distingues', () => {
+    assert.deepStrictEqual(
+      [item('2020101005245').unit_price_net, item('2020101005245').unit_price_base],
+      [1.03, 1.47]
+    );
+  });
+
+  test('FA165024 : ligne sans remise — pas de tarif barre invente', () => {
+    assert.deepStrictEqual(
+      [item('3666528043164').unit_price_net, item('3666528043164').unit_price_base],
+      [1.55, null]
+    );
+  });
+
+  test('FA165024 : ecotaxe hors prix et hors total de ligne', () => {
+    // « 0 % 7,70 € / ecotaxe : 0,08 € / 20 154,00 € » : 20 × 7,70 = 154,00 pile.
+    assert.deepStrictEqual(
+      [item('3666528048053').unit_price_net, item('3666528048053').total_ht],
+      [7.70, 154.00]
+    );
+  });
+
+  test('FA165024 : ecotaxe ET remise sur la meme ligne', () => {
+    assert.deepStrictEqual(
+      [item('3666528048084').unit_price_net, item('3666528048084').unit_price_base, item('3666528048084').qty_ordered],
+      [6.24, 7.70, 25]
+    );
+  });
+
+  test('FA165024 : article coupe entre 2 pages — designation et tarif barre recolles', () => {
+    const it = item('2020101005009');
+    assert.strictEqual(
+      it.designation,
+      'PACK 60 ml - Mozambique - 06 mg / 60 ml - FR/GB/ALL/NL/IT/ESP - PULP - Nicotine : 06 mg (2404120010)'
+    );
+    assert.strictEqual(it.unit_price_base, 6.60);
+  });
+
+  test('FA165024 : facture a l\'unite (invertPackQty)', () => {
+    // La colonne Qte compte des pieces et le prix est celui d'UNE piece : la
+    // conversion unites <-> packs revient a pdfImportModel, pas au parseur.
+    assert.strictEqual(parsed.invertPackQty, true);
+  });
+
+  test('FA165024 : une ligne SANS remise perdue est vue par le garde-fou', () => {
+    const victim = item('3666528043164'); // 20 × 1,55 = 31,00, tout sur une ligne
+    const orphans = findUnparsedRows(text, parsed.items.filter((i) => i !== victim));
+    assert.deepStrictEqual(
+      orphans.map((o) => [o.qty, o.unit_price, o.total]),
+      [[20, 1.55, 31.00]]
+    );
+  });
+
+  test('FA165024 : une ligne REMISEE perdue est vue par la reconciliation de total', () => {
+    const amputated = parsed.items.filter((i) => i.supplier_sku !== '2020101005245');
+    assert.ok(Math.abs(parsed.invoiceProductTotalHT - sumLines(amputated)) > 0.02);
   });
 }
 

@@ -11,6 +11,7 @@ const lipsParser = require('./lipsParser');
 const highbuyParser = require('./highbuyParser');
 const cloudvaporParser = require('./cloudvaporParser');
 const mgvapeParser = require('./mgvapeParser');
+const pulpParser = require('./pulpParser');
 
 // Map supplier.code -> parser module
 const parsers = {
@@ -27,6 +28,7 @@ const parsers = {
   'Highbuy': highbuyParser,
   'Cloud Vapor': cloudvaporParser,
   'MG Vape': mgvapeParser,
+  'Pulp': pulpParser,
 };
 
 module.exports = {

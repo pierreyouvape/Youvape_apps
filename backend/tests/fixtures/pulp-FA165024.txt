@@ -1,0 +1,236 @@
+FACTURE
+25/09/2026
+#FA165024
+Adresse de livraison
+elena coglitore
+YOUVAPE SITE
+580 avenue de l'aube rouge
+34170 Castelnau le Lez
+France
+0695975267
+0695975267
+FR87789508439
+Adresse de facturation
+elena coglitore
+YOUVAPE SITE
+580 avenue de l'aube rouge
+34170 Castelnau le Lez
+France
+0695975267
+0695975267
+FR87789508439
+Numéro de facture Date de facturation Réf. de commande Date de commande Numéro de TVA
+#FA165024 25/09/2026 168213 25/09/2026 FR87789508439
+Référence Produit Taux de
+taxe
+Prix unitaire
+(HT)
+Qté Total
+(HT)
+2020101005245 Fruit du Dragon - 10 ml - FR - PULP - Nicotine :
+03 mg (2404120010)
+0 % 1,03 €
+-30% 1,47 €
+80 82,40 €
+3666528035428 Le Pod Flip - Cartouche - Barbe à Papa - 2 ml -
+Nicotine : 00 mg (2404199000)
+0 % 1,50 €
+-20% 1,88 €
+10 15,00 €
+3666528061212 Le Pod Liquide - Rhubarbe framboise- 10 ml -
+FR - Nicotine : 10 mg (2404120010)
+0 % 1,05 €
+-30% 1,50 €
+10 10,50 €
+3666528033622 Le Pod Liquide Barbe à Papa - 10 ml - FR -
+Nicotine : 10 mg (2404120010)
+0 % 1,05 €
+-30% 1,50 €
+80 84,00 €
+3666528033509 Le Pod Liquide Fruit du Dragon - 10 ml - FR -
+Nicotine : 20 mg (2404120010)
+0 % 1,05 €
+-30% 1,50 €
+50 52,50 €
+3666528026457 Le Pod Liquide Thé pêche - 10ml - FR - Nicotine
+: 10 mg (2404120010)
+0 % 1,05 €
+-30% 1,50 €
+80 84,00 €
+3666528044512 Le Pod Switch - Cartouche - Barbe à papa - 2ml
+- Nicotine : 10 mg (2404120010)
+0 % 1,24 €
+-20% 1,55 €
+20 24,80 €
+3666528044451 Le Pod Switch - Cartouche - Cassis givré - 2ml -
+Nicotine : 00 mg (2404199000)
+0 % 1,24 €
+-20% 1,55 €
+20 24,80 €
+3666528044420 Le Pod Switch - Cartouche - Cassis givré - 2ml -
+Nicotine : 10 mg (2404120010)
+0 % 1,24 €
+-20% 1,55 €
+20 24,80 €
+3666528044369 Le Pod Switch - Cartouche - Cerise glacée - 2ml
+- Nicotine : 00 mg (2404199000)
+0 % 1,24 €
+-20% 1,55 €
+40 49,60 €
+3666528044154 Le Pod Switch - Cartouche - Fruit du dragon -
+2ml - Nicotine : 10 mg (2404120010)
+0 % 1,24 €
+-20% 1,55 €
+20 24,80 €
+3666528044093 Le Pod Switch - Cartouche - Fruits rouges
+glacés - 2ml - Nicotine : 00 mg (2404199000)
+0 % 1,24 €
+-20% 1,55 €
+20 24,80 €
+3666528044000 Le Pod Switch - Cartouche - Licorne Recette
+Originale - 2ml - Nicotine : 00 mg (2404199000)
+0 % 1,24 €
+-20% 1,55 €
+20 24,80 €
+3666528043973 Le Pod Switch - Cartouche - Licorne Recette
+Originale - 2ml - Nicotine : 10 mg (2404120010)
+0 % 1,24 €
+-20% 1,55 €
+20 24,80 €
+Sunny Smoker - 91 Avenue Jean Baptiste Clément - 92100 Boulogne Billancourt - France - SAS au capital de 6385 euros - SIRET 534 068 648 00052 - TVA BE 0556790193 -
+Banque CIC - IBAN : FR76 3006 6106 3800 0201 6630 157 - Code BIC : CMCIFRPP
+1 / 3
+
+-- 1 of 3 --
+
+FACTURE
+25/09/2026
+#FA165024
+3666528043164 Le Pod Switch - Cartouche - Mangue glacée -
+2ml - Nicotine : 10 mg (2404120010)
+0 % 1,55 € 20 31,00 €
+3666528043911 Le Pod Switch - Cartouche - Menthe Polaire -
+2ml - Nicotine : 00 mg (2404199000)
+0 % 1,24 €
+-20% 1,55 €
+20 24,80 €
+3666528043881 Le Pod Switch - Cartouche - Menthe Polaire -
+2ml - Nicotine : 10 mg (2404120010)
+0 % 1,24 €
+-20% 1,55 €
+20 24,80 €
+3666528043645 Le Pod Switch - Cartouche - Pastèque citron
+glacés - 2ml - Nicotine : 00 mg (2404199000)
+0 % 1,24 €
+-20% 1,55 €
+20 24,80 €
+3666528043553 Le Pod Switch - Cartouche - Pastèque melon
+givrés - 2ml - Nicotine : 00 mg (2404199000)
+0 % 1,24 €
+-20% 1,55 €
+20 24,80 €
+3666528043522 Le Pod Switch - Cartouche - Pastèque melon
+givrés - 2ml - Nicotine : 10 mg (2404120010)
+0 % 1,24 €
+-20% 1,55 €
+20 24,80 €
+3666528048053 Le Pod Switch - Starter Kit - Gris - Nicotine : 00
+mg (8543909000)
+0 % 7,70 €
+écotaxe : 0,08 €
+20 154,00 €
+3666528048084 Le Pod Switch - Starter Kit - Rose - Nicotine : 00
+mg (8543909000)
+0 % 6,24 €
+écotaxe : 0,08 €
+-20% 7,70 €
+25 156,00 €
+3666528048091 Le Pod Switch - Starter Kit - Vert - Nicotine : 00
+mg (8543909000)
+0 % 6,24 €
+écotaxe : 0,08 €
+-20% 7,70 €
+50 312,00 €
+2091001000128 Mozambique - 10 ml - FR - PULP NIC SALT -
+Nicotine : 10 mg (2404120010)
+0 % 1,10 €
+-30% 1,57 €
+10 11,00 €
+2091001000029 Mozambique - 10 ml - FR - PULP NIC SALT -
+Nicotine : 20 mg (2404120010)
+0 % 1,10 €
+-30% 1,57 €
+20 22,00 €
+3666528041771 PACK 60 - Barbe à Papa - 06 mg - 60 ml - L3 -
+Le Pod liquide by Pulp - Nicotine : 06 mg
+(2404120010)
+0 % 6,60 € 5 33,00 €
+3666528041559 PACK 60 - Fruit du Dragon - 06 mg - 60 ml - L3 -
+Le Pod liquide by Pulp - Nicotine : 06 mg
+(2404120010)
+0 % 4,62 €
+-30% 6,60 €
+20 92,40 €
+3666528041702 PACK 60 - Fruits Rouges Glacés - 03 mg - 60
+ml - L3 - Le Pod liquide by Pulp - Nicotine : 03
+mg (2404120010)
+0 % 4,62 €
+-30% 6,60 €
+10 46,20 €
+3666528041696 PACK 60 - Fruits Rouges Glacés - 06 mg - 60
+ml - L3 - Le Pod liquide by Pulp - Nicotine : 06
+mg (2404120010)
+0 % 4,62 €
+-30% 6,60 €
+10 46,20 €
+2020101005047 PACK 60 ml - Alabama - 06 mg / 60 ml -
+FR/GB/ALL/NL/IT/ESP - PULP - Nicotine : 06
+mg (2404120010)
+0 % 4,62 €
+-30% 6,60 €
+5 23,10 €
+2020101005092 PACK 60 ml - La Menthe Frappée - 03 mg / 60
+ml - FR/GB/ALL/NL/IT/ESP - PULP - Nicotine :
+03 mg (2404120010)
+0 % 4,62 €
+-30% 6,60 €
+20 92,40 €
+2020101004996 PACK 60 ml - Mozambique - 03 mg / 60 ml -
+FR/GB/ALL/NL/IT/ESP - PULP - Nicotine : 03
+mg (2404120010)
+0 % 4,62 €
+-30% 6,60 €
+100 462,00 €
+2020101005009 PACK 60 ml - Mozambique - 06 mg / 60 ml - 0 % 4,62 € 100 462,00 €
+2 / 3
+
+-- 2 of 3 --
+
+FACTURE
+25/09/2026
+#FA165024
+FR/GB/ALL/NL/IT/ESP - PULP - Nicotine : 06
+mg (2404120010)
+-30% 6,60 €
+Détail des
+taxes
+Taux de taxe Prix de base Total Taxes
+Pas de taxes
+Total produits HT 2 618,90 €
+Total livraison HT Transporteur
+gratuit
+Total HT 2 618,90 €
+Total TTC 2 618,90 €
+Reste à régler 0,00 €
+Mode de paiement Carte 2 618,90 €
+Transporteur Franco port à partir de 200€HT
+Incoterm ICT 2020 - DAP Castelnau le Lez
+France
+Vente intracommunautaire, Article 39 bis du code de TVA belge
+Powered by TCPDF (www.tcpdf.org)
+Sunny Smoker - 91 Avenue Jean Baptiste Clément - 92100 Boulogne Billancourt - France - SAS au capital de 6385 euros - SIRET 534 068 648 00052 - TVA BE 0556790193 -
+Banque CIC - IBAN : FR76 3006 6106 3800 0201 6630 157 - Code BIC : CMCIFRPP
+3 / 3
+
+-- 3 of 3 --
+
