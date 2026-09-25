@@ -32,7 +32,7 @@
 
 const axios = require('axios');
 const { restrictToCharset } = require('./addressFields');
-const { shiftContentDown } = require('./labelPdf');
+const { shiftContentDown, fitToLabelPage } = require('./labelPdf');
 const { assertAdapter } = require('./contract');
 const { assertAccountComplete } = require('./accounts');
 
@@ -553,6 +553,10 @@ const resolveWeight = async ({ pool, orderNumber }) => {
   return Math.round(grams);
 };
 
+// Marge latérale de l'étiquette 10 × 15, en mm : réglée le 25/09/2026 après un
+// premier tirage sur l'Intermec, qui perdait environ 1 mm de chaque côté.
+const MARGE_LATERALE_DEFAUT = 2;
+
 // Modes de sortie PDF de l'API : A4 avec preuve de dépôt, A4 sans, thermique
 // 10x15. Le tamponnage du numéro de commande exige un PDF : un ZPL serait payé
 // puis impossible à enregistrer.
@@ -621,8 +625,14 @@ const createLabel = async ({ orderNumber, receiver, account, weightGrams, option
     throw err;
   }
 
-  const decalage = Number(account.settings.label_top_offset_mm || 0);
-  const pdfBase64 = await shiftContentDown(pdf.replace(/\s+/g, ''), decalage);
+  // Le mode thermique rend une page A4 : on la ramène sur un vrai 10 × 15 avec
+  // une marge latérale, sinon l'Intermec rogne les bords (cf. fitToLabelPage).
+  let pdfBase64 = pdf.replace(/\s+/g, '');
+  if (format === 'THE') {
+    const marge = account.settings.label_side_margin_mm;
+    pdfBase64 = await fitToLabelPage(pdfBase64, marge === undefined || marge === '' ? MARGE_LATERALE_DEFAUT : Number(marge));
+  }
+  pdfBase64 = await shiftContentDown(pdfBase64, Number(account.settings.label_top_offset_mm || 0));
 
   return {
     carrierOrderId: reservation,
@@ -711,6 +721,7 @@ const ACCOUNT_FIELDS = {
 
     // Avancés : valeurs par défaut de l'adaptateur si le champ reste vide.
     { key: 'output_format',       label: "Format d'étiquette (THE = PDF thermique 10x15, PDF, SPD)", advanced: true, placeholder: 'THE' },
+    { key: 'label_side_margin_mm', label: "Marge gauche/droite de l'étiquette 10x15 (mm)", advanced: true, placeholder: '2' },
     { key: 'label_top_offset_mm', label: "Décalage de l'étiquette vers le bas (mm)", advanced: true, placeholder: '0' },
     { key: 'sub_account',         label: 'Sous-compte',        advanced: true, placeholder: '0' },
     { key: 'shipping_url',        label: "URL du service d'expédition", advanced: true, perContract: true, placeholder: URL_SHIPPING_DEFAUT },

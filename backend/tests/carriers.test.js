@@ -1281,6 +1281,15 @@ testEnSerie('décalage réglé à 0 dans le contrat : étiquette rendue telle qu
   assert.ok(Buffer.from(r.pdfBase64, 'base64').equals(VRAI_PDF));
 });
 
+testEnSerie('étiquette A4 de Chronopost : ramenée sur 10 × 15, 2 mm de marge sur les côtés', async () => {
+  const { fitToLabelPage } = require('../src/services/carriers/labelPdf');
+  const a4 = await PDFDocument.create();
+  a4.addPage([595, 842]).drawText('ETIQUETTE', { x: 10, y: 800, size: 20 });
+  const out = await PDFDocument.load(Buffer.from(await fitToLabelPage(Buffer.from(await a4.save()).toString('base64'), 2), 'base64'));
+  const { width, height } = out.getPage(0).getSize();
+  assert.ok(Math.abs(width / 72 * 25.4 - 100) < 0.05 && Math.abs(height / 72 * 25.4 - 150) < 0.05);
+});
+
 // ── Bordereau de dépôt ───────────────────────────────────────────────────────
 // Le papier que le chauffeur signe. Il n'est rendu qu'une fois par Colissimo :
 // une erreur ici coûte un dépôt, pas un simple message d'erreur.
@@ -1695,7 +1704,9 @@ testEnSerie('Chronopost : réservation puis PDF, numéro de colis, samedi enregi
   assert.strictEqual(r.carrierOrderId, 'R123');
   assert.strictEqual(r.methodCode, '86-SAMEDI');
   assert.strictEqual(r.bmsShipmentTitle, 'Chrono Relais FR - Livraison en point relais en France');
-  assert.ok(Buffer.from(r.pdfBase64, 'base64').equals(VRAI_PDF));
+  // Mode thermique : ramené sur un vrai 10 × 15.
+  const page = (await PDFDocument.load(Buffer.from(r.pdfBase64, 'base64'))).getPage(0);
+  assert.ok(Math.abs(page.getWidth() - 283.46) < 0.1 && Math.abs(page.getHeight() - 425.2) < 0.1, 'pas un 10 x 15');
 });
 
 testEnSerie('Chronopost : 2Shop France, libellé 2Shop Direct, pas de samedi', async () => {

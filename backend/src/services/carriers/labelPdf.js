@@ -68,4 +68,42 @@ const shiftContentDown = async (pdfBase64, mm) => {
   return Buffer.from(await out.save()).toString('base64');
 };
 
-module.exports = { stampOrderNumber, shiftContentDown };
+/**
+ * Ramène une étiquette sur une vraie page 10 × 15 cm, avec une marge latérale.
+ *
+ * Chronopost rend son étiquette « thermique » (mode THE) sur une page A4. Le
+ * pilote de l'Intermec la réduit pour la faire tenir sur le 10 × 15 ; l'A4
+ * étant moins allongé, l'étiquette réduite remplit toute la largeur, et les
+ * bords tombent hors de la zone imprimable — constaté le 25/09/2026, environ
+ * 1 mm perdu de chaque côté.
+ *
+ * Le contenu est réduit en vectoriel (codes-barres intacts, proportions
+ * gardées) pour laisser `margeMm` à gauche et à droite, calé en haut : la place
+ * libre reste en bas, où le numéro de commande est tamponné.
+ *
+ * @param {string} pdfBase64
+ * @param {number} margeMm - marge minimale sur chaque bord
+ * @returns {Promise<string>} le PDF 10 × 15, en base64
+ */
+const fitToLabelPage = async (pdfBase64, margeMm = 2) => {
+  const pt = (mm) => mm / 25.4 * 72;
+  const largeur = pt(100);
+  const hauteur = pt(150);
+  const marge = pt(Math.max(0, Number(margeMm) || 0));
+
+  const source = await PDFDocument.load(Buffer.from(pdfBase64, 'base64'));
+  const out = await PDFDocument.create();
+  const pages = await out.embedPdf(source, source.getPageIndices());
+
+  for (const p of pages) {
+    const echelle = Math.min((largeur - 2 * marge) / p.width, (hauteur - 2 * marge) / p.height);
+    const w = p.width * echelle;
+    const h = p.height * echelle;
+    const page = out.addPage([largeur, hauteur]);
+    page.drawPage(p, { x: (largeur - w) / 2, y: hauteur - marge - h, width: w, height: h });
+  }
+
+  return Buffer.from(await out.save()).toString('base64');
+};
+
+module.exports = { stampOrderNumber, shiftContentDown, fitToLabelPage };
