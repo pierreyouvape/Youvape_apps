@@ -4,6 +4,7 @@ import axios from 'axios';
 import { formatDate } from '../../utils/dateUtils';
 import { formatPrice, formatInt } from '../../utils/formatNumber';
 import { LinkBox } from '../../utils/navHelpers';
+import { brandLabel } from '../../utils/productBrand';
 
 const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:3000/api/auth').replace('/auth', '');
 
@@ -910,7 +911,10 @@ const OrdersTab = ({ token }) => {
                                         onMouseEnter={e => e.currentTarget.style.background = '#f5f5f5'}
                                         onMouseLeave={e => e.currentTarget.style.background = 'white'}
                                       >
-                                        <div style={{ fontWeight: 500 }}>{product.post_title}</div>
+                                        <div style={{ fontWeight: 500 }}>
+                                          {product.post_title}
+                                          {brandLabel(product) && <span style={{ fontWeight: 400, color: '#888' }}> — {brandLabel(product)}</span>}
+                                        </div>
                                         <div style={{ color: '#888', fontSize: '12px' }}>SKU: {product.sku || '-'} | Stock: {product.stock ?? '-'}</div>
                                       </div>
                                     ))}
@@ -1025,6 +1029,7 @@ const OrdersTab = ({ token }) => {
                             onMouseLeave={e => e.currentTarget.style.background = 'white'}
                           >
                             <strong>{p.post_title}</strong>
+                            {brandLabel(p) && <span style={{ color: '#888', marginLeft: '8px' }}>— {brandLabel(p)}</span>}
                             {p.sku && <span style={{ color: '#666', marginLeft: '8px' }}>{p.sku}</span>}
                             {p.stock != null && <span style={{ color: '#999', marginLeft: '8px' }}>Stock : {p.stock}</span>}
                           </div>

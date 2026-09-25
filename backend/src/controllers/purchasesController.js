@@ -69,7 +69,12 @@ const purchasesController = {
           p.product_type,
           p.wp_parent_id,
           p.image_url,
-          parent.post_title as parent_title
+          parent.post_title as parent_title,
+          -- Marque et sous-marque, pour departager les homonymes dans les listes de
+          -- choix (« Fruit du Dragon - 3mg » existe chez Pulp ET chez Liquideo).
+          -- Une declinaison ne les porte pas : elles vivent sur le parent variable.
+          COALESCE(NULLIF(p.brand, ''), parent.brand) as brand,
+          COALESCE(NULLIF(p.sub_brand, ''), parent.sub_brand) as sub_brand
         FROM products p
         LEFT JOIN products parent ON parent.wp_product_id = p.wp_parent_id
         WHERE

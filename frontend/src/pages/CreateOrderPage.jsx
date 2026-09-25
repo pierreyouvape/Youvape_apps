@@ -4,6 +4,7 @@ import axios from 'axios';
 import { AuthContext } from '../context/AuthContext';
 import { LinkBox } from '../utils/navHelpers';
 import AppShell from '../components/AppShell';
+import { brandLabel } from '../utils/productBrand';
 
 const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:3000/api/auth').replace('/auth', '');
 
@@ -273,7 +274,10 @@ const CreateOrderPage = () => {
                     onMouseLeave={e => e.currentTarget.style.background = 'white'}
                   >
                     <div style={{ flex: 1 }}>
-                      <div style={{ fontWeight: 500, marginBottom: '4px' }}>{product.post_title}</div>
+                      <div style={{ fontWeight: 500, marginBottom: '4px' }}>
+                        {product.post_title}
+                        {brandLabel(product) && <span style={{ fontWeight: 400, color: '#888' }}> — {brandLabel(product)}</span>}
+                      </div>
                       <div style={{ fontSize: '13px', color: '#666', display: 'flex', gap: '15px' }}>
                         <span>SKU: <code>{product.sku || '-'}</code></span>
                         <span>Stock: <strong style={{ color: product.stock <= 0 ? '#ef4444' : 'inherit' }}>{product.stock ?? 'N/A'}</strong></span>

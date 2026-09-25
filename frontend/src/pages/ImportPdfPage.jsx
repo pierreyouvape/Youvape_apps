@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { AuthContext } from '../context/AuthContext';
 import AppShell from '../components/AppShell';
+import { brandLabel } from '../utils/productBrand';
 
 const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:3000/api/auth').replace('/auth', '');
 
@@ -1020,7 +1021,14 @@ const ImportPdfPage = () => {
                                             onMouseEnter={e => e.currentTarget.style.background = C.grisTL}
                                             onMouseLeave={e => e.currentTarget.style.background = C.blanc}
                                           >
-                                            <div style={{ fontWeight: 600 }}>{product.post_title}</div>
+                                            <div style={{ fontWeight: 600 }}>
+                                              {product.post_title}
+                                              {/* Marque : « Fruit du Dragon - 3mg » existe chez Pulp
+                                                  comme chez Liquideo, le titre seul ne tranche pas. */}
+                                              {brandLabel(product) && (
+                                                <span style={{ fontWeight: 500, color: C.grisM }}> — {brandLabel(product)}</span>
+                                              )}
+                                            </div>
                                             <div style={{ color: C.grisM, fontSize: 12 }}>
                                               SKU: {product.sku || '—'} | Stock: {product.stock ?? '—'}
                                               {usedProductIds.has(product.id) && <span style={{ color: C.orangeDark, fontWeight: 600 }}> · déjà sur une autre ligne</span>}
