@@ -1,7 +1,7 @@
 import { useState, useEffect, useContext, useMemo, useCallback } from 'react';
 import axios from 'axios';
 import { AuthContext } from '../../context/AuthContext';
-import { FILTER_FIELDS, OPERATORS, fieldByKey, fieldType, opNeedsNoValue, defaultFilterFor } from './segmentFields';
+import { FILTER_FIELDS, OPERATORS, fieldByKey, fieldType, opNeedsNoValue, defaultFilterFor, attrLabel, attrValueLabel } from './segmentFields';
 
 const API_BASE_URL = '/api';
 
@@ -166,6 +166,36 @@ export default function ProductSegmentBuilder({
         );
       }
       return <input type="date" value={f.value} onChange={(e) => patchFilter(i, { value: e.target.value })} style={{ ...inputStyle }} />;
+    }
+
+    if (type === 'attribute') {
+      const attrs = dynOptions.attributes || [];
+      const current = attrs.find((a) => a.key === f.value);
+      return (
+        <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
+          <select
+            value={f.value}
+            onChange={(e) => patchFilter(i, { value: e.target.value, value2: '' })}
+            style={{ ...inputStyle, minWidth: '170px' }}
+          >
+            <option value="">— attribut —</option>
+            {attrs.map((a) => (
+              <option key={a.key} value={a.key}>{attrLabel(a.key)} ({a.count})</option>
+            ))}
+          </select>
+          <select
+            value={f.value2}
+            onChange={(e) => patchFilter(i, { value2: e.target.value })}
+            disabled={!current}
+            style={{ ...inputStyle, minWidth: '150px' }}
+          >
+            <option value="">— valeur —</option>
+            {(current?.values || []).map((v) => (
+              <option key={v.value} value={v.value}>{attrValueLabel(v.value)} ({v.count})</option>
+            ))}
+          </select>
+        </div>
+      );
     }
 
     if (type === 'enum') {

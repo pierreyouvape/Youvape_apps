@@ -109,7 +109,8 @@ function statsCtes({ periodWhere, lifeWhere, searchClause, stockExpr, periodDays
       item_base AS (
         -- Chaque ligne de commande rattachée à son produit PARENT (via variation_id sinon product_id).
         -- Le coût reste joint sur product_id pour conserver les marges historiques.
-        SELECT oi.id AS order_item_id, pp.parent_id, oi.qty,
+        SELECT oi.id AS order_item_id, pp.parent_id,
+               COALESCE(NULLIF(oi.variation_id, 0), oi.product_id) AS sold_pid, oi.qty,
                oi.line_total, oi.line_tax,
                oi.qty * COALESCE(pcost.computed_cost, pcost.wc_cog_cost, 0) AS cost_line,
                o.post_date,
@@ -184,6 +185,33 @@ function statsCtes({ periodWhere, lifeWhere, searchClause, stockExpr, periodDays
         FROM enriched
       )
   `;
+}
+
+// Un attribut WooCommerce est porté par la DÉCLINAISON, pas par le produit : le
+// filtre restreint donc à la fois les produits retenus ET les lignes de vente
+// comptées — on veut le CA des 0 mg, pas celui de tout l'e-liquide. D'où deux
+// clauses jumelles, construites sur les mêmes paramètres.
+const ATTR_KEY = /^attribute_pa_[a-z0-9_-]+$/i;
+function buildAttributeClauses(filters, P) {
+  const selection = [];
+  const sales = [];
+  for (const f of Array.isArray(filters) ? filters : []) {
+    if (!f || f.field !== 'attribute') continue;
+    const key = String(f.value || '');
+    const val = String(f.value2 || '');
+    if (!ATTR_KEY.test(key) || !val) continue;
+    const kP = P(key);
+    const vP = P(val);
+    const not = f.op === 'neq' ? 'NOT ' : '';
+    selection.push(`${not}EXISTS (SELECT 1 FROM products av
+      WHERE av.wp_parent_id = p.wp_product_id AND av.product_attributes->>${kP} = ${vP})`);
+    sales.push(`${not}EXISTS (SELECT 1 FROM products av
+      WHERE av.wp_product_id = ib.sold_pid AND av.product_attributes->>${kP} = ${vP})`);
+  }
+  return {
+    selection: selection.length ? ' AND ' + selection.join(' AND ') : '',
+    sales,
+  };
 }
 
 /**
@@ -663,14 +691,21 @@ class ProductModel {
     }
 
     // Filtre période (+ pays) appliqué aux ventes de la période
+    // Filtres « Attribut » : ils cadrent les produits ET les ventes (cf. helper)
+    const attr = buildAttributeClauses(filters, P);
+
     const periodConds = [];
     if (dateFrom) periodConds.push(`ib.post_date >= ${P(dateFrom)}`);
     if (dateTo) periodConds.push(`ib.post_date < ${P(dateTo)}`);
     if (country) periodConds.push(`ib.country = ${P(country)}`);
+    periodConds.push(...attr.sales);
     const periodWhere = periodConds.length ? 'WHERE ' + periodConds.join(' AND ') : '';
 
     // Filtre pays appliqué au calcul 1ère/dernière vente (tout l'historique)
-    const lifeWhere = country ? `WHERE ib.country = ${P(country)}` : '';
+    const lifeConds = [];
+    if (country) lifeConds.push(`ib.country = ${P(country)}`);
+    lifeConds.push(...attr.sales);
+    const lifeWhere = lifeConds.length ? 'WHERE ' + lifeConds.join(' AND ') : '';
 
     // Recherche nom / SKU
     let searchClause = '';
@@ -679,6 +714,7 @@ class ProductModel {
       searchClause = ` AND ${clause}`;
       params.push(...searchParams);
     }
+    searchClause += attr.selection;
 
     // Filtres du segment (constructeur générique : field/op/value, match all|any)
     const filterClause = buildStatsFilterClause(filters, matchType, P);
@@ -735,13 +771,20 @@ class ProductModel {
       periodDays = d > 0 ? d : 1;
     }
 
+    // Filtres « Attribut » : ils cadrent les produits ET les ventes (cf. helper)
+    const attr = buildAttributeClauses(filters, P);
+
     const periodConds = [];
     if (dateFrom) periodConds.push(`ib.post_date >= ${P(dateFrom)}`);
     if (dateTo) periodConds.push(`ib.post_date < ${P(dateTo)}`);
     if (country) periodConds.push(`ib.country = ${P(country)}`);
+    periodConds.push(...attr.sales);
     const periodWhere = periodConds.length ? 'WHERE ' + periodConds.join(' AND ') : '';
 
-    const lifeWhere = country ? `WHERE ib.country = ${P(country)}` : '';
+    const lifeConds = [];
+    if (country) lifeConds.push(`ib.country = ${P(country)}`);
+    lifeConds.push(...attr.sales);
+    const lifeWhere = lifeConds.length ? 'WHERE ' + lifeConds.join(' AND ') : '';
 
     let searchClause = '';
     if (searchTerm) {
@@ -749,6 +792,7 @@ class ProductModel {
       searchClause = ` AND ${clause}`;
       params.push(...searchParams);
     }
+    searchClause += attr.selection;
 
     const filterClause = buildStatsFilterClause(filters, matchType, P);
     const metricWhere = filterClause ? 'WHERE ' + filterClause : '';
@@ -882,7 +926,33 @@ class ProductModel {
           .map(([name, n]) => ({ name, count: n })),
       }));
 
+    // Attributs WooCommerce (taux de nicotine, goût, couleur…). Ils ne vivent que
+    // sur les déclinaisons, et pas sur les colonnes filtrées par `ctx` : la liste
+    // est donc celle de tout le catalogue, quel que soit le contexte.
+    const attrR = await pool.query(
+      `SELECT k AS attribute, p.product_attributes->>k AS value, COUNT(*)::int AS n
+         FROM products p, LATERAL jsonb_object_keys(p.product_attributes) k
+        WHERE p.product_attributes IS NOT NULL
+          AND jsonb_typeof(p.product_attributes) = 'object'
+          AND k LIKE 'attribute\\_pa\\_%'
+          AND COALESCE(p.product_attributes->>k, '') <> ''
+        GROUP BY 1, 2`
+    );
+    const attrMap = new Map();
+    for (const { attribute, value, n } of attrR.rows) {
+      if (!attrMap.has(attribute)) attrMap.set(attribute, []);
+      attrMap.get(attribute).push({ value, count: n });
+    }
+    const attributes = [...attrMap.entries()]
+      .map(([key, values]) => ({
+        key,
+        count: values.reduce((a, v) => a + v.count, 0),
+        values: values.sort((a, b) => b.count - a.count).slice(0, 100),
+      }))
+      .sort((a, b) => b.count - a.count);
+
     return {
+      attributes,
       brands: await distinct('brand'),
       sub_brands: await distinct('sub_brand'),
       categories: await distinct('category'),

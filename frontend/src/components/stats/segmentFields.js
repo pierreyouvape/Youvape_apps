@@ -23,6 +23,9 @@ export const FILTER_FIELDS = [
   { key: 'created_date',   label: 'Création produit',   type: 'date',   group: 'Dates' },
   // Attributs
   { key: 'post_title',     label: 'Nom du produit',     type: 'text',   group: 'Attributs' },
+  // Attribut WooCommerce : porté par la déclinaison, donc il cadre aussi les VENTES
+  // comptées (le CA des 0 mg d'un e-liquide, pas celui de tout le produit).
+  { key: 'attribute',      label: 'Attribut (déclinaison)', type: 'attribute', group: 'Attributs' },
   { key: 'brand',          label: 'Marque',             type: 'enum',   group: 'Attributs', optionsSource: 'brands' },
   { key: 'sub_brand',      label: 'Sous-marque',        type: 'enum',   group: 'Attributs', optionsSource: 'sub_brands' },
   { key: 'category',       label: 'Catégorie',          type: 'enum',   group: 'Attributs', optionsSource: 'categories' },
@@ -49,7 +52,15 @@ export const OPERATORS = {
   ],
   text: [ { v: 'contains', l: 'contient' }, { v: 'eq', l: 'est' }, { v: 'neq', l: "n'est pas" } ],
   enum: [ { v: 'eq', l: 'est' }, { v: 'neq', l: "n'est pas" } ],
+  attribute: [ { v: 'eq', l: 'est' }, { v: 'neq', l: "n'est pas" } ],
 };
+
+// 'attribute_pa_taux-de-nicotine' → 'Taux de nicotine' ; '0-mg' → '0 mg'
+export const attrLabel = (key) => {
+  const s = (key || '').replace(/^attribute_pa_/, '').replace(/[-_]+/g, ' ').trim();
+  return s.charAt(0).toUpperCase() + s.slice(1);
+};
+export const attrValueLabel = (v) => (v || '').replace(/-/g, ' ');
 
 export const fieldByKey = (key) => FILTER_FIELDS.find((f) => f.key === key);
 export const fieldType = (key) => (fieldByKey(key)?.type || 'number');
@@ -70,6 +81,7 @@ export function describeFilter(f) {
   const type = fld.type;
   const opLabel = (OPERATORS[type].find((o) => o.v === f.op) || {}).l || f.op;
   if (opNeedsNoValue(f.op)) return `${fld.label} : ${opLabel}`;
+  if (type === 'attribute') return `${attrLabel(f.value)} ${opLabel} ${attrValueLabel(f.value2)}`;
   if (f.op === 'between') return `${fld.label} ${opLabel} ${f.value} et ${f.value2}`;
   if (type === 'enum') {
     const opt = (fld.options || []).find((o) => o.v === f.value);
