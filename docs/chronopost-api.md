@@ -28,8 +28,10 @@ Champs obligatoires au schéma : `headerValue.accountNumber`, `headerValue.subAc
 (0), `*PreAlert` (0), `skybillValue.shipHour`, dimensions `height/length/width` (1 × 1 × 1
 comme les plugins).
 
-Annulation : `errorCode` 1 = erreur Chronopost, 2 = colis inconnu du contrat ou pas encore
-enregistré, 3 = déjà pris en charge.
+Annulation : **refusée en réel le 25/09/2026** — code 2 juste après la création (colis pas
+encore enregistré), puis code 3 « the parcel isn't candidate to cancel » trois minutes plus tard,
+sans aucun événement de suivi (colis XS486930837FR et XR703160663TS, restés actifs). Cause
+inconnue : l'app déclare Chronopost non annulable ; annulation dans l'espace Chronopost Pro.
 
 Refus d'identifiants à la création : **code 3 supposé**, pas encore observé — à confirmer
 au premier vrai refus. Même règle qu'au lot 2 : on ne réessaie jamais.

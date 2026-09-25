@@ -1655,11 +1655,12 @@ test('interrupteur samedi : proposé pour Chrono 13 et Chrono Relais seulement',
   }
 });
 
-test('Chronopost : nom de fichier, bordereau local, annulable', () => {
+test('Chronopost : nom de fichier, bordereau local, non annulable avec la raison', () => {
   assert.strictEqual(chrono.labelFileName('1262992'), 'chronopost_1262992.pdf');
   assert.strictEqual(chrono.depositSlip.kind, 'local');
   assert.strictEqual(supportsDepositSlip(chrono), true);
-  assert.strictEqual(chrono.cancelWindow({}).cancellable, true);
+  assert.strictEqual(chrono.cancelWindow({}).cancellable, false);
+  assert.ok(/espace Chronopost Pro/.test(chrono.cancelWindow({}).reason));
 });
 
 // Échanges SOAP simulés, en série derrière ceux de Colissimo.
@@ -1751,7 +1752,7 @@ testEnSerie('Chronopost : colis créé mais PDF perdu — le message donne le nu
   });
 });
 
-testEnSerie('Chronopost : annulation, et refus « déjà pris en charge » en clair', async () => {
+testEnSerie('Chronopost : annulation, et refus rendu avec le message de Chronopost', async () => {
   const label = { tracking_number: 'XS1FR' };
   simulerChrono([200, soap('<errorCode>0</errorCode><statusCode>0</statusCode>', 'cancelSkybillResponse')]);
   const r = await chrono.cancelLabel({ label, account: CHRONO_ACCOUNT });
@@ -1759,8 +1760,9 @@ testEnSerie('Chronopost : annulation, et refus « déjà pris en charge » en cl
   assert.ok(chronoAppels[0].url.includes('TrackingServiceWS'));
   assert.ok(chronoAppels[0].body.includes('<skybillNumber>XS1FR</skybillNumber>'));
 
-  simulerChrono([200, soap('<errorCode>3</errorCode>', 'cancelSkybillResponse')]);
-  await assert.rejects(chrono.cancelLabel({ label, account: CHRONO_ACCOUNT }), /déjà pris ce colis en charge/);
+  // Réponse réelle du 25/09/2026, sur un colis jamais déposé.
+  simulerChrono([200, soap("<errorCode>3</errorCode><errorMessage>the parcel isn't candidate to cancel</errorMessage>", 'cancelSkybillResponse')]);
+  await assert.rejects(chrono.cancelLabel({ label, account: CHRONO_ACCOUNT }), /code 3 : the parcel isn't candidate to cancel/);
 });
 
 testEnSerie('Chronopost : format non PDF refusé avant tout appel', async () => {

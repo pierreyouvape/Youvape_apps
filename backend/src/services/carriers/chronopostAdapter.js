@@ -26,8 +26,8 @@
  *   - **Livraison le samedi** : un interrupteur du packing, coché d'office le
  *     vendredi, décide du code service (`6`). Il ne vaut que pour Chrono 13 et
  *     Chrono Relais.
- *   - **Annulation possible** (`cancelSkybill`) tant que Chronopost n'a pas pris
- *     le colis en charge.
+ *   - **Pas d'annulation depuis l'app** : `cancelSkybill` a refusé les colis de
+ *     l'essai réel du 25/09/2026 (voir cancelWindow).
  */
 
 const axios = require('axios');
@@ -636,16 +636,22 @@ const createLabel = async ({ orderNumber, receiver, account, weightGrams, option
 };
 
 /**
- * Chronopost annule tant qu'il n'a pas pris le colis en charge. Cette limite
- * n'est connue que de lui : on laisse tenter, et son refus est rendu tel quel.
+ * Pas d'annulation depuis l'app, tant qu'on ne sait pas pourquoi Chronopost la
+ * refuse.
+ *
+ * Essai réel du 25/09/2026 sur les deux contrats (colis XS486930837FR et
+ * XR703160663TS) : `cancelSkybill` répond code 2 juste après la création (« pas
+ * encore enregistré »), puis code 3 trois minutes plus tard — « the parcel isn't
+ * candidate to cancel » — alors que le suivi n'affichait aucun événement. Les
+ * deux colis sont restés actifs. Un bouton qui échouerait à chaque fois ne ferait
+ * que tromper : l'annulation se fait dans l'espace Chronopost Pro.
+ * `cancelLabel` reste en place pour le jour où la cause sera connue.
  */
-const cancelWindow = () => ({ cancellable: true, reason: null });
-
-const REFUS_ANNULATION = {
-  1: "Chronopost n'a pas pu annuler l'étiquette (erreur de leur côté). Réessayez plus tard.",
-  2: "Ce colis n'appartient pas à ce contrat, ou Chronopost ne l'a pas encore enregistré. Réessayez dans quelques minutes.",
-  3: 'Chronopost a déjà pris ce colis en charge : il ne peut plus être annulé.'
-};
+const cancelWindow = () => ({
+  cancellable: false,
+  reason: "Chronopost refuse l'annulation par API (« the parcel isn't candidate to cancel ») — "
+    + "annulez l'étiquette dans l'espace Chronopost Pro. Une étiquette jamais déposée n'est pas flashée."
+});
 
 /**
  * Annule l'étiquette côté Chronopost (`cancelSkybill`).
@@ -667,8 +673,10 @@ const cancelLabel = async ({ label, account }) => {
   console.log(`[${LOG_TAG}] Annulation du colis`, label.tracking_number, '— code', code);
 
   if (code !== '0') {
-    const message = REFUS_ANNULATION[code] || `Chronopost refuse l'annulation (code ${code} : ${balise(reponse, 'errorMessage') || 'sans message'})`;
-    const err = new Error(message);
+    // Le message de Chronopost, tel quel : le sens de ses codes n'est pas
+    // documenté, et le code 3 ne veut PAS dire « déjà pris en charge » (cf.
+    // cancelWindow).
+    const err = new Error(`Chronopost refuse l'annulation (code ${code} : ${balise(reponse, 'errorMessage') || 'sans message'})`);
     err.statusCode = 400;
     throw err;
   }
