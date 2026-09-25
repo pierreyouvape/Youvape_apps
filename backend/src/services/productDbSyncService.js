@@ -15,6 +15,7 @@
 
 const axios = require('axios');
 const pool = require('../config/database');
+const { refreshFromProducts } = require('./productAttributeService');
 
 const PER_PAGE = 100;
 const REQUEST_DELAY_MS = 300;
@@ -287,8 +288,18 @@ const runProductDbSync = async () => {
     client.release();
   }
 
+  // Les attributs de niveau produit (Taux de Nicotine, Port de Recharge…) ne
+  // transitent par aucun webhook : on les réécrit depuis la même charge WC, sans
+  // appel supplémentaire. Un échec ici ne doit pas invalider la resynchro stock.
+  let attributes = null;
+  try {
+    attributes = await refreshFromProducts(products);
+  } catch (err) {
+    errors.push({ wp_product_id: null, error: `Attributs produits: ${err.message}` });
+  }
+
   const elapsed = Date.now() - startTime;
-  return { ...result, totalRows: liveRows.length, errors, elapsed };
+  return { ...result, totalRows: liveRows.length, attributes, errors, elapsed };
 };
 
 module.exports = { runProductDbSync };

@@ -69,27 +69,61 @@ function buildStatsFilterClause(filters, matchType, P, opts = {}) {
   return '(' + conds.join(matchType === 'any' ? ' OR ' : ' AND ') + ')';
 }
 
-// Un attribut WooCommerce est porté par la DÉCLINAISON, pas par le produit : le
-// filtre restreint donc à la fois les produits retenus ET les lignes de vente
-// comptées — on veut le CA des 0 mg, pas celui de tout l'e-liquide. D'où deux
-// clauses jumelles, construites sur les mêmes paramètres.
-const ATTR_KEY = /^attribute_pa_[a-z0-9_-]+$/i;
+// Un attribut WooCommerce vit à deux niveaux : sur la DÉCLINAISON quand il sert
+// aux variations (« Saveur »), sur le PRODUIT sinon (« Taux de Nicotine : 0mg »
+// d'une puff sans nicotine). Le filtre couvre les deux :
+//   • produit  → toutes les ventes du produit comptent, il est 0 mg en entier ;
+//   • déclinaison → seules les lignes de cette déclinaison comptent (le CA des
+//     0 mg d'un e-liquide, pas celui de tout le produit).
+// Les valeurs se comparent normalisées : WooCommerce stocke le libellé côté
+// produit (« 0mg ») et le slug côté déclinaison (« 0-mg »).
+const ATTR_KEY = /^(attribute_)?pa_[a-z0-9_-]+$/i;
+
+// Même résultat que le SQL ci-dessous : minuscules, tout ce qui n'est ni lettre
+// ni chiffre retiré, accents CONSERVÉS (lower() + [:alnum:] les gardent aussi).
+const normalizeAttrValue = (v) => String(v == null ? '' : v)
+  .toLowerCase()
+  .replace(/[^\p{L}\p{N}]+/gu, '');
+
+const normSql = (expr) => `lower(regexp_replace(COALESCE(${expr}, ''), '[^[:alnum:]]+', '', 'g'))`;
+
 function buildAttributeClauses(filters, P, opts = {}) {
-  const { productAlias = 'p', soldPidExpr = 'ib.sold_pid' } = opts;
+  const {
+    productAlias = 'p',
+    soldPidExpr = 'ib.sold_pid',
+    parentIdExpr = 'ib.parent_id',
+  } = opts;
   const selection = [];
   const sales = [];
   for (const f of Array.isArray(filters) ? filters : []) {
     if (!f || f.field !== 'attribute') continue;
-    const key = String(f.value || '');
-    const val = String(f.value2 || '');
-    if (!ATTR_KEY.test(key) || !val) continue;
-    const kP = P(key);
-    const vP = P(val);
+    const raw = String(f.value || '').trim();
+    if (!ATTR_KEY.test(raw)) continue;
+    const slug = raw.replace(/^attribute_/i, '');       // pa_taux-de-nicotine
+    const value = normalizeAttrValue(f.value2);
+    if (!value) continue;
+
+    const slugP = P(slug);
+    const metaP = P(`attribute_${slug}`);
+    const valP = P(value);
     const not = f.op === 'neq' ? 'NOT ' : '';
-    selection.push(`${not}EXISTS (SELECT 1 FROM products av
-      WHERE av.wp_parent_id = ${productAlias}.wp_product_id AND av.product_attributes->>${kP} = ${vP})`);
-    sales.push(`${not}EXISTS (SELECT 1 FROM products av
-      WHERE av.wp_product_id = ${soldPidExpr} AND av.product_attributes->>${kP} = ${vP})`);
+
+    selection.push(`${not}(
+      EXISTS (SELECT 1 FROM wp_product_attributes wa
+               WHERE wa.wp_product_id = ${productAlias}.wp_product_id
+                 AND wa.attribute = ${slugP} AND wa.value_norm = ${valP})
+      OR EXISTS (SELECT 1 FROM products av
+                  WHERE av.wp_parent_id = ${productAlias}.wp_product_id
+                    AND ${normSql(`av.product_attributes->>${metaP}`)} = ${valP})
+    )`);
+    sales.push(`${not}(
+      EXISTS (SELECT 1 FROM wp_product_attributes wa
+               WHERE wa.wp_product_id = ${parentIdExpr}
+                 AND wa.attribute = ${slugP} AND wa.value_norm = ${valP})
+      OR EXISTS (SELECT 1 FROM products av
+                  WHERE av.wp_product_id = ${soldPidExpr}
+                    AND ${normSql(`av.product_attributes->>${metaP}`)} = ${valP})
+    )`);
   }
   return {
     selection: selection.length ? ' AND ' + selection.join(' AND ') : '',
@@ -97,5 +131,4 @@ function buildAttributeClauses(filters, P, opts = {}) {
   };
 }
 
-
-module.exports = { STATS_FILTER_FIELDS, buildStatsFilterClause, buildAttributeClauses, isYmd };
+module.exports = { STATS_FILTER_FIELDS, buildStatsFilterClause, buildAttributeClauses, normalizeAttrValue, isYmd };

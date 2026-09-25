@@ -66,7 +66,8 @@ export const OPERATORS = {
 
 // 'attribute_pa_taux-de-nicotine' → 'Taux de nicotine' ; '0-mg' → '0 mg'
 export const attrLabel = (key) => {
-  const s = (key || '').replace(/^attribute_pa_/, '').replace(/[-_]+/g, ' ').trim();
+  // 'pa_taux-de-nicotine' ou l'ancien 'attribute_pa_taux-de-nicotine'
+  const s = (key || '').replace(/^(attribute_)?pa_/, '').replace(/[-_]+/g, ' ').trim();
   return s.charAt(0).toUpperCase() + s.slice(1);
 };
 export const attrValueLabel = (v) => (v || '').replace(/-/g, ' ');

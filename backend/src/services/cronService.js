@@ -709,6 +709,7 @@ const setupCompetitorMonitorCron = () => {
 // on reconstruit la correspondance depuis WordPress et on realigne products.
 
 const { refreshBrandMap, ensureTable: ensureBrandMapTables } = require("./brandMapService");
+const { ensureTable: ensureProductAttributeTable } = require("./productAttributeService");
 
 let brandMapCronJob = null;
 
@@ -739,6 +740,11 @@ const setupBrandMapCron = () => {
   ensureBrandMapTables()
     .then(runBrandMapJob)
     .catch((error) => console.error("Erreur init sous-marques:", error.message));
+
+  // Les filtres par attribut lisent wp_product_attributes : la table doit exister
+  // des le demarrage, meme si elle n'est remplie qu'a la resynchro produits de 3h.
+  ensureProductAttributeTable()
+    .catch((error) => console.error("Erreur init attributs produits:", error.message));
 };
 
 

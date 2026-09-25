@@ -60,6 +60,7 @@ const prepareScope = (req, dateFrom, dateTo) => {
   const attr = buildAttributeClauses(filters, P, {
     productAlias: 'p',
     soldPidExpr: 'COALESCE(NULLIF(oi.variation_id, 0), oi.product_id)',
+    parentIdExpr: 'pf.parent_id',
   });
   const productWhere = (clause ? ` AND ${clause}` : '') + attr.selection;
   const salesWhere = attr.sales.length ? ' AND ' + attr.sales.join(' AND ') : '';
@@ -638,7 +639,8 @@ exports.getMonthly = async (req, res) => {
           ${scopeSql('p', 4, 5)}${productWhere}
       ),
       product_family AS (
-        SELECT gp.category, COALESCE(v.wp_product_id, gp.wp_product_id) as product_id
+        SELECT gp.category, gp.wp_product_id as parent_id,
+               COALESCE(v.wp_product_id, gp.wp_product_id) as product_id
         FROM group_products gp
         LEFT JOIN products v ON v.wp_parent_id = gp.wp_product_id AND v.product_type = 'variation'
       )

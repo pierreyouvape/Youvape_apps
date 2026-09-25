@@ -840,25 +840,41 @@ class ProductModel {
           .map(([name, n]) => ({ name, count: n })),
       }));
 
-    // Attributs WooCommerce (taux de nicotine, goût, couleur…). Ils ne vivent que
-    // sur les déclinaisons, et pas sur les colonnes filtrées par `ctx` : la liste
-    // est donc celle de tout le catalogue, quel que soit le contexte. On ne compte
-    // que les déclinaisons de produits PUBLIÉS : les stats ignorent les brouillons,
-    // un compteur qui les inclurait promettrait des lignes introuvables (« 0 mg »
-    // annonçait 278 déclinaisons dont 174 sur des fiches non publiées).
+    // Attributs WooCommerce (taux de nicotine, goût, couleur…). Ils vivent à deux
+    // niveaux — sur le produit quand ils ne servent pas aux variations, sur la
+    // déclinaison sinon — et les deux sources se comparent normalisées (« 0mg »
+    // côté produit, « 0-mg » côté déclinaison). On ne compte que les produits
+    // PUBLIÉS, seuls visibles dans les stats, et on affiche le libellé WooCommerce
+    // plutôt que le slug (src = 1 d'abord).
     const attrR = await pool.query(
-      `SELECT k AS attribute, v.product_attributes->>k AS value, COUNT(*)::int AS n
-         FROM products v
-         JOIN products parent ON parent.wp_product_id = v.wp_parent_id
-          AND parent.post_status = 'publish'
-          AND parent.product_type IN ('simple', 'variable', 'woosb'),
-         LATERAL jsonb_object_keys(v.product_attributes) k
-        WHERE v.product_type = 'variation'
-          AND v.product_attributes IS NOT NULL
-          AND jsonb_typeof(v.product_attributes) = 'object'
-          AND k LIKE 'attribute\\_pa\\_%'
-          AND COALESCE(v.product_attributes->>k, '') <> ''
-        GROUP BY 1, 2`
+      `WITH source AS (
+         SELECT wa.attribute, wa.value, wa.value_norm, wa.wp_product_id AS product, 1 AS src
+           FROM wp_product_attributes wa
+           JOIN products p ON p.wp_product_id = wa.wp_product_id
+            AND p.post_status = 'publish'
+            AND p.product_type IN ('simple', 'variable', 'woosb')
+         UNION ALL
+         SELECT replace(k, 'attribute_', '') AS attribute,
+                v.product_attributes->>k AS value,
+                lower(regexp_replace(COALESCE(v.product_attributes->>k, ''), '[^[:alnum:]]+', '', 'g')) AS value_norm,
+                parent.wp_product_id AS product, 2 AS src
+           FROM products v
+           JOIN products parent ON parent.wp_product_id = v.wp_parent_id
+            AND parent.post_status = 'publish'
+            AND parent.product_type IN ('simple', 'variable', 'woosb'),
+           LATERAL jsonb_object_keys(v.product_attributes) k
+          WHERE v.product_type = 'variation'
+            AND v.product_attributes IS NOT NULL
+            AND jsonb_typeof(v.product_attributes) = 'object'
+            AND k LIKE 'attribute\\_pa\\_%'
+            AND COALESCE(v.product_attributes->>k, '') <> ''
+       )
+       SELECT attribute,
+              (array_agg(value ORDER BY src, value))[1] AS value,
+              COUNT(DISTINCT product)::int AS n
+         FROM source
+        WHERE value_norm <> ''
+        GROUP BY attribute, value_norm`
     );
     const attrMap = new Map();
     for (const { attribute, value, n } of attrR.rows) {
