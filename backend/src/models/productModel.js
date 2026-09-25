@@ -11,6 +11,7 @@ const STATS_FILTER_FIELDS = {
   unit_cost: 'number', stock_value: 'number', price: 'number', weight: 'number',
   last_sold: 'date', first_sold: 'date', created_date: 'date',
   brand: 'text', sub_brand: 'text', category: 'text', sub_category: 'text',
+  post_title: 'text',
   supplier: 'text', stock_status: 'text', product_type: 'enum',
 };
 // Un produit peut porter plusieurs marques dans WordPress alors que
@@ -68,6 +69,121 @@ function buildStatsFilterClause(filters, matchType, P) {
   }
   if (conds.length === 0) return '';
   return '(' + conds.join(matchType === 'any' ? ' OR ' : ' AND ') + ')';
+}
+
+/**
+ * CTE communes aux deux lectures de l'onglet Produits : la liste (getAllForStats)
+ * et la vue par mois (getMonthlyForStats). Même périmètre, même définition du CA
+ * (composants de packs woosb à 0 €), mêmes filtres — les deux vues ne peuvent pas
+ * diverger. Les fragments passés sont construits côté serveur, jamais saisis.
+ */
+function statsCtes({ periodWhere, lifeWhere, searchClause, stockExpr, periodDays }) {
+  return `
+      WITH prod_parent AS (
+        -- Résout chaque produit vers son parent (la variation pointe vers son parent)
+        SELECT wp_product_id AS pid,
+               CASE WHEN product_type = 'variation' THEN wp_parent_id ELSE wp_product_id END AS parent_id
+        FROM products
+      ),
+      var_stock AS (
+        -- value : même formule que la valeur de stock du catalogue (countForCatalog),
+        -- déclinaisons publiées, stock négatif ramené à 0.
+        SELECT wp_parent_id, SUM(stock::int) AS s,
+          SUM(GREATEST(COALESCE(stock, 0), 0) * COALESCE(computed_cost, wc_cog_cost, 0))
+            FILTER (WHERE post_status = 'publish') AS value,
+          SUM(GREATEST(COALESCE(stock, 0), 0)) FILTER (WHERE post_status = 'publish') AS pos_stock,
+          AVG(NULLIF(COALESCE(computed_cost, wc_cog_cost, 0), 0))
+            FILTER (WHERE post_status = 'publish') AS avg_cost
+        FROM products WHERE product_type = 'variation' GROUP BY wp_parent_id
+      ),
+      bundle_sub_items AS (
+        -- Sous-produits de bundles woosb vendus à 0€ (à exclure du CA, garder la qté)
+        SELECT DISTINCT oi.id AS order_item_id
+        FROM order_items oi
+        INNER JOIN order_items oi_bundle ON oi.wp_order_id = oi_bundle.wp_order_id
+        INNER JOIN products p_bundle ON p_bundle.wp_product_id = oi_bundle.product_id
+        WHERE p_bundle.product_type = 'woosb' AND p_bundle.woosb_ids IS NOT NULL AND oi.line_total = 0
+          AND oi.product_id::text = ANY(
+            SELECT jsonb_array_elements_text(jsonb_path_query_array(p_bundle.woosb_ids, '$[*].id')))
+      ),
+      item_base AS (
+        -- Chaque ligne de commande rattachée à son produit PARENT (via variation_id sinon product_id).
+        -- Le coût reste joint sur product_id pour conserver les marges historiques.
+        SELECT oi.id AS order_item_id, pp.parent_id, oi.qty,
+               oi.line_total, oi.line_tax,
+               oi.qty * COALESCE(pcost.computed_cost, pcost.wc_cog_cost, 0) AS cost_line,
+               o.post_date,
+               COALESCE(NULLIF(o.shipping_country, ''), o.billing_country) AS country,
+               (oi.id IN (SELECT order_item_id FROM bundle_sub_items)) AS is_bundle_sub
+        FROM order_items oi
+        JOIN prod_parent pp ON pp.pid = COALESCE(NULLIF(oi.variation_id, 0), oi.product_id)
+        JOIN orders o ON o.wp_order_id = oi.wp_order_id AND o.post_status IN ('wc-completed', 'wc-delivered', 'wc-processing', 'wc-awaiting-delivery', 'wc-shipped', 'wc-being-delivered')
+        LEFT JOIN products pcost ON pcost.wp_product_id = oi.product_id
+      ),
+      period_stats AS (
+        SELECT ib.parent_id,
+          SUM(ib.qty)::int AS qty_sold,
+          SUM(CASE WHEN ib.is_bundle_sub THEN 0 ELSE COALESCE(ib.line_total, 0) + COALESCE(ib.line_tax, 0) END) AS ca_ttc,
+          SUM(CASE WHEN ib.is_bundle_sub THEN 0 ELSE COALESCE(ib.line_total, 0) END) AS ca_ht,
+          SUM(CASE WHEN ib.is_bundle_sub THEN 0 ELSE ib.cost_line END) AS cost_ht
+        FROM item_base ib
+        ${periodWhere}
+        GROUP BY ib.parent_id
+      ),
+      lifetime_stats AS (
+        SELECT ib.parent_id, MIN(ib.post_date) AS first_sold, MAX(ib.post_date) AS last_sold
+        FROM item_base ib
+        ${lifeWhere}
+        GROUP BY ib.parent_id
+      ),
+      enriched AS (
+        SELECT
+          p.wp_product_id, p.post_title, p.sku, p.product_type, p.image_url, p.stock_status,
+          p.brand, p.sub_brand, p.category, p.sub_category,
+          -- Variable : le coût est sur les déclinaisons (moyenne pondérée par leur stock,
+          -- sinon moyenne simple). Pack woosb : pas de valeur de stock propre (portée par
+          -- ses composants, comme au catalogue).
+          CASE WHEN p.product_type = 'variable'
+            THEN COALESCE(vs.value / NULLIF(vs.pos_stock, 0), vs.avg_cost, 0)
+            ELSE COALESCE(p.computed_cost, p.wc_cog_cost, 0) END AS unit_cost,
+          CASE WHEN p.product_type = 'woosb' THEN NULL
+            WHEN p.product_type = 'variable' THEN COALESCE(vs.value, 0)
+            ELSE GREATEST(COALESCE(p.stock, 0), 0) * COALESCE(p.computed_cost, p.wc_cog_cost, 0)
+          END AS stock_value,
+          p.price, p.weight, p.post_date AS created_date,
+          sup.name AS supplier,
+          ${stockExpr} AS stock,
+          COALESCE(ps.qty_sold, 0) AS qty_sold,
+          COALESCE(ps.ca_ttc, 0) AS ca_ttc,
+          COALESCE(ps.ca_ht, 0) AS ca_ht,
+          COALESCE(ps.cost_ht, 0) AS cost_ht,
+          COALESCE(ps.ca_ht, 0) - COALESCE(ps.cost_ht, 0) AS margin_ht,
+          CASE WHEN COALESCE(ps.ca_ht, 0) > 0
+            THEN ((COALESCE(ps.ca_ht, 0) - COALESCE(ps.cost_ht, 0)) / COALESCE(ps.ca_ht, 0) * 100)
+            ELSE 0 END AS margin_percent,
+          ls.first_sold, ls.last_sold,
+          (SELECT COUNT(*) FROM products WHERE wp_parent_id = p.wp_product_id) AS variations_count
+        FROM products p
+        LEFT JOIN period_stats ps ON ps.parent_id = p.wp_product_id
+        LEFT JOIN lifetime_stats ls ON ls.parent_id = p.wp_product_id
+        LEFT JOIN var_stock vs ON vs.wp_parent_id = p.wp_product_id
+        LEFT JOIN LATERAL (
+          -- Fournisseur principal (product_suppliers.product_id = products.id interne)
+          SELECT s.name
+          FROM product_suppliers psup JOIN suppliers s ON s.id = psup.supplier_id
+          WHERE psup.product_id = p.id
+          ORDER BY psup.is_primary DESC NULLS LAST, psup.id ASC
+          LIMIT 1
+        ) sup ON true
+        WHERE p.product_type IN ('simple', 'variable', 'woosb') AND p.post_status = 'publish'${searchClause}
+      ),
+      final AS (
+        SELECT *,
+          ROUND(qty_sold::numeric / ${periodDays}, 2) AS velocity,
+          CASE WHEN qty_sold > 0 THEN ROUND(stock::numeric * ${periodDays} / qty_sold, 0) ELSE NULL END AS coverage_days
+        FROM enriched
+      )
+  `;
 }
 
 /**
@@ -586,115 +702,89 @@ class ProductModel {
     const stockExpr = `CASE WHEN p.product_type = 'variable' THEN COALESCE(vs.s, 0) ELSE COALESCE(p.stock::int, 0) END`;
 
     const query = `
-      WITH prod_parent AS (
-        -- Résout chaque produit vers son parent (la variation pointe vers son parent)
-        SELECT wp_product_id AS pid,
-               CASE WHEN product_type = 'variation' THEN wp_parent_id ELSE wp_product_id END AS parent_id
-        FROM products
-      ),
-      var_stock AS (
-        -- value : même formule que la valeur de stock du catalogue (countForCatalog),
-        -- déclinaisons publiées, stock négatif ramené à 0.
-        SELECT wp_parent_id, SUM(stock::int) AS s,
-          SUM(GREATEST(COALESCE(stock, 0), 0) * COALESCE(computed_cost, wc_cog_cost, 0))
-            FILTER (WHERE post_status = 'publish') AS value,
-          SUM(GREATEST(COALESCE(stock, 0), 0)) FILTER (WHERE post_status = 'publish') AS pos_stock,
-          AVG(NULLIF(COALESCE(computed_cost, wc_cog_cost, 0), 0))
-            FILTER (WHERE post_status = 'publish') AS avg_cost
-        FROM products WHERE product_type = 'variation' GROUP BY wp_parent_id
-      ),
-      bundle_sub_items AS (
-        -- Sous-produits de bundles woosb vendus à 0€ (à exclure du CA, garder la qté)
-        SELECT DISTINCT oi.id AS order_item_id
-        FROM order_items oi
-        INNER JOIN order_items oi_bundle ON oi.wp_order_id = oi_bundle.wp_order_id
-        INNER JOIN products p_bundle ON p_bundle.wp_product_id = oi_bundle.product_id
-        WHERE p_bundle.product_type = 'woosb' AND p_bundle.woosb_ids IS NOT NULL AND oi.line_total = 0
-          AND oi.product_id::text = ANY(
-            SELECT jsonb_array_elements_text(jsonb_path_query_array(p_bundle.woosb_ids, '$[*].id')))
-      ),
-      item_base AS (
-        -- Chaque ligne de commande rattachée à son produit PARENT (via variation_id sinon product_id).
-        -- Le coût reste joint sur product_id pour conserver les marges historiques.
-        SELECT oi.id AS order_item_id, pp.parent_id, oi.qty,
-               oi.line_total, oi.line_tax,
-               oi.qty * COALESCE(pcost.computed_cost, pcost.wc_cog_cost, 0) AS cost_line,
-               o.post_date,
-               COALESCE(NULLIF(o.shipping_country, ''), o.billing_country) AS country,
-               (oi.id IN (SELECT order_item_id FROM bundle_sub_items)) AS is_bundle_sub
-        FROM order_items oi
-        JOIN prod_parent pp ON pp.pid = COALESCE(NULLIF(oi.variation_id, 0), oi.product_id)
-        JOIN orders o ON o.wp_order_id = oi.wp_order_id AND o.post_status IN ('wc-completed', 'wc-delivered', 'wc-processing', 'wc-awaiting-delivery', 'wc-shipped', 'wc-being-delivered')
-        LEFT JOIN products pcost ON pcost.wp_product_id = oi.product_id
-      ),
-      period_stats AS (
-        SELECT ib.parent_id,
-          SUM(ib.qty)::int AS qty_sold,
-          SUM(CASE WHEN ib.is_bundle_sub THEN 0 ELSE COALESCE(ib.line_total, 0) + COALESCE(ib.line_tax, 0) END) AS ca_ttc,
-          SUM(CASE WHEN ib.is_bundle_sub THEN 0 ELSE COALESCE(ib.line_total, 0) END) AS ca_ht,
-          SUM(CASE WHEN ib.is_bundle_sub THEN 0 ELSE ib.cost_line END) AS cost_ht
-        FROM item_base ib
-        ${periodWhere}
-        GROUP BY ib.parent_id
-      ),
-      lifetime_stats AS (
-        SELECT ib.parent_id, MIN(ib.post_date) AS first_sold, MAX(ib.post_date) AS last_sold
-        FROM item_base ib
-        ${lifeWhere}
-        GROUP BY ib.parent_id
-      ),
-      enriched AS (
-        SELECT
-          p.wp_product_id, p.post_title, p.sku, p.product_type, p.image_url, p.stock_status,
-          p.brand, p.sub_brand, p.category, p.sub_category,
-          -- Variable : le coût est sur les déclinaisons (moyenne pondérée par leur stock,
-          -- sinon moyenne simple). Pack woosb : pas de valeur de stock propre (portée par
-          -- ses composants, comme au catalogue).
-          CASE WHEN p.product_type = 'variable'
-            THEN COALESCE(vs.value / NULLIF(vs.pos_stock, 0), vs.avg_cost, 0)
-            ELSE COALESCE(p.computed_cost, p.wc_cog_cost, 0) END AS unit_cost,
-          CASE WHEN p.product_type = 'woosb' THEN NULL
-            WHEN p.product_type = 'variable' THEN COALESCE(vs.value, 0)
-            ELSE GREATEST(COALESCE(p.stock, 0), 0) * COALESCE(p.computed_cost, p.wc_cog_cost, 0)
-          END AS stock_value,
-          p.price, p.weight, p.post_date AS created_date,
-          sup.name AS supplier,
-          ${stockExpr} AS stock,
-          COALESCE(ps.qty_sold, 0) AS qty_sold,
-          COALESCE(ps.ca_ttc, 0) AS ca_ttc,
-          COALESCE(ps.ca_ht, 0) AS ca_ht,
-          COALESCE(ps.cost_ht, 0) AS cost_ht,
-          COALESCE(ps.ca_ht, 0) - COALESCE(ps.cost_ht, 0) AS margin_ht,
-          CASE WHEN COALESCE(ps.ca_ht, 0) > 0
-            THEN ((COALESCE(ps.ca_ht, 0) - COALESCE(ps.cost_ht, 0)) / COALESCE(ps.ca_ht, 0) * 100)
-            ELSE 0 END AS margin_percent,
-          ls.first_sold, ls.last_sold,
-          (SELECT COUNT(*) FROM products WHERE wp_parent_id = p.wp_product_id) AS variations_count
-        FROM products p
-        LEFT JOIN period_stats ps ON ps.parent_id = p.wp_product_id
-        LEFT JOIN lifetime_stats ls ON ls.parent_id = p.wp_product_id
-        LEFT JOIN var_stock vs ON vs.wp_parent_id = p.wp_product_id
-        LEFT JOIN LATERAL (
-          -- Fournisseur principal (product_suppliers.product_id = products.id interne)
-          SELECT s.name
-          FROM product_suppliers psup JOIN suppliers s ON s.id = psup.supplier_id
-          WHERE psup.product_id = p.id
-          ORDER BY psup.is_primary DESC NULLS LAST, psup.id ASC
-          LIMIT 1
-        ) sup ON true
-        WHERE p.product_type IN ('simple', 'variable', 'woosb') AND p.post_status = 'publish'${searchClause}
-      ),
-      final AS (
-        SELECT *,
-          ROUND(qty_sold::numeric / ${periodDays}, 2) AS velocity,
-          CASE WHEN qty_sold > 0 THEN ROUND(stock::numeric * ${periodDays} / qty_sold, 0) ELSE NULL END AS coverage_days
-        FROM enriched
-      )
+      ${statsCtes({ periodWhere, lifeWhere, searchClause, stockExpr, periodDays })}
       SELECT *, COUNT(*) OVER() AS total_count
       FROM final
       ${metricWhere}
       ORDER BY ${orderColumn} ${order} NULLS LAST
       LIMIT ${limitP} OFFSET ${offsetP}
+    `;
+
+    const result = await pool.query(query, params);
+    return result.rows;
+  }
+
+  /**
+   * Vue « Par mois » de l'onglet Produits : même sélection que la liste
+   * (recherche + segment + pays), déclinée mois par mois. On ne renvoie que les
+   * `limit` premiers produits de la sélection, triés par quantité vendue sur la
+   * période — au-delà le tableau croisé devient illisible.
+   */
+  async getMonthlyForStats(opts = {}) {
+    const {
+      searchTerm = '', dateFrom = null, dateTo = null, country = null,
+      filters = [], matchType = 'all', limit = 100,
+    } = opts;
+
+    const params = [];
+    const P = (v) => { params.push(v); return '$' + params.length; };
+
+    let periodDays = 30;
+    if (dateFrom && dateTo) {
+      const d = Math.round((new Date(dateTo) - new Date(dateFrom)) / 86400000);
+      periodDays = d > 0 ? d : 1;
+    }
+
+    const periodConds = [];
+    if (dateFrom) periodConds.push(`ib.post_date >= ${P(dateFrom)}`);
+    if (dateTo) periodConds.push(`ib.post_date < ${P(dateTo)}`);
+    if (country) periodConds.push(`ib.country = ${P(country)}`);
+    const periodWhere = periodConds.length ? 'WHERE ' + periodConds.join(' AND ') : '';
+
+    const lifeWhere = country ? `WHERE ib.country = ${P(country)}` : '';
+
+    let searchClause = '';
+    if (searchTerm) {
+      const { clause, params: searchParams } = buildSearchCondition(searchTerm, ['p.post_title', 'p.sku'], params.length + 1);
+      searchClause = ` AND ${clause}`;
+      params.push(...searchParams);
+    }
+
+    const filterClause = buildStatsFilterClause(filters, matchType, P);
+    const metricWhere = filterClause ? 'WHERE ' + filterClause : '';
+    const limitP = P(Math.min(Number(limit) || 100, 500));
+
+    const stockExpr = `CASE WHEN p.product_type = 'variable' THEN COALESCE(vs.s, 0) ELSE COALESCE(p.stock::int, 0) END`;
+
+    // Composants de packs (is_bundle_sub) : quantité comptée, CA laissé au pack,
+    // exactement comme dans la liste.
+    const caTtc = `CASE WHEN ib.is_bundle_sub THEN 0 ELSE COALESCE(ib.line_total, 0) + COALESCE(ib.line_tax, 0) END`;
+    const caHt = `CASE WHEN ib.is_bundle_sub THEN 0 ELSE COALESCE(ib.line_total, 0) END`;
+
+    const query = `
+      ${statsCtes({ periodWhere, lifeWhere, searchClause, stockExpr, periodDays })}
+      , selected AS (
+        SELECT wp_product_id, post_title
+        FROM final
+        ${metricWhere}
+        ORDER BY qty_sold DESC NULLS LAST
+        LIMIT ${limitP}
+      )
+      SELECT
+        s.post_title AS product,
+        s.wp_product_id AS product_id,
+        to_char(date_trunc('month', ib.post_date), 'YYYY-MM') AS month,
+        SUM(ib.qty)::int AS qty_sold,
+        SUM(${caTtc}) AS ca_ttc,
+        SUM(${caHt}) AS ca_ht,
+        COALESCE(SUM(ib.qty) FILTER (WHERE ib.country = 'FR'), 0)::int AS qty_sold_fr,
+        COALESCE(SUM(${caTtc}) FILTER (WHERE ib.country = 'FR'), 0) AS ca_ttc_fr,
+        COALESCE(SUM(${caHt}) FILTER (WHERE ib.country = 'FR'), 0) AS ca_ht_fr
+      FROM selected s
+      JOIN item_base ib ON ib.parent_id = s.wp_product_id
+      ${periodWhere}
+      GROUP BY 1, 2, 3
+      ORDER BY 1, 3
     `;
 
     const result = await pool.query(query, params);

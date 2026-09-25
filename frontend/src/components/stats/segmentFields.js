@@ -22,6 +22,7 @@ export const FILTER_FIELDS = [
   { key: 'first_sold',     label: 'Première vente',     type: 'date',   group: 'Dates' },
   { key: 'created_date',   label: 'Création produit',   type: 'date',   group: 'Dates' },
   // Attributs
+  { key: 'post_title',     label: 'Nom du produit',     type: 'text',   group: 'Attributs' },
   { key: 'brand',          label: 'Marque',             type: 'enum',   group: 'Attributs', optionsSource: 'brands' },
   { key: 'sub_brand',      label: 'Sous-marque',        type: 'enum',   group: 'Attributs', optionsSource: 'sub_brands' },
   { key: 'category',       label: 'Catégorie',          type: 'enum',   group: 'Attributs', optionsSource: 'categories' },

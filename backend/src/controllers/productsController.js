@@ -290,6 +290,21 @@ function buildStatsOpts(query) {
   };
 }
 
+/**
+ * Vue « Par mois » de l'onglet Stats : même sélection que la liste, déclinée par mois
+ * GET /api/products/stats-monthly?search=&filters=&dateFrom=&dateTo=&country=&limit=
+ */
+exports.getStatsMonthly = async (req, res) => {
+  try {
+    const limit = parseInt(req.query.limit) || 100;
+    const rows = await productModel.getMonthlyForStats({ ...buildStatsOpts(req.query), limit });
+    res.json({ success: true, data: rows });
+  } catch (error) {
+    console.error('Error getting products stats monthly:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
 exports.getStatsListing = async (req, res) => {
   try {
     const limit = parseInt(req.query.limit) || 50;

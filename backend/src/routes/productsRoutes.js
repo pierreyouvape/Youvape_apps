@@ -11,6 +11,7 @@ router.get('/categories/list', productsController.getCategories);
 router.get('/stock-summary', productsController.getStockSummary);
 router.get('/category/:category', productsController.getByCategory);
 router.get('/stats-list', productsController.getStatsListing);
+router.get('/stats-monthly', productsController.getStatsMonthly);
 router.get('/stats-list/export', productsController.getStatsExport);
 router.get('/stats-countries', productsController.getStatsCountries);
 router.get('/stats-filter-options', productsController.getStatsFilterOptions);

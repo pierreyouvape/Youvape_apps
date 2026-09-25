@@ -47,7 +47,9 @@ const evolution = (cur, prev) => {
 
 const normalize = (s) => (s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
 
-const MonthlyPivotTable = ({ rows, groupKey, groupLabel, linkPrefix, dateRange, searchTerm, exportName }) => {
+// linkKey : champ portant l'identifiant du lien quand il diffère du libellé
+// (produits : on affiche le nom, on navigue vers /products/<id>).
+const MonthlyPivotTable = ({ rows, groupKey, groupLabel, linkPrefix, linkKey, dateRange, searchTerm, exportName }) => {
   const [metric, setMetric] = useState('ca_ttc');
   const [sortCol, setSortCol] = useState('total');
   const [sortOrder, setSortOrder] = useState('DESC');
@@ -57,12 +59,14 @@ const MonthlyPivotTable = ({ rows, groupKey, groupLabel, linkPrefix, dateRange, 
 
   const { months, groups } = useMemo(() => {
     const byGroup = {};
+    const linkIds = {};
     let minMonth = null;
     let maxMonth = null;
     for (const r of rows) {
       const g = r[groupKey];
       if (!byGroup[g]) byGroup[g] = {};
       byGroup[g][r.month] = r;
+      if (linkKey && r[linkKey] != null) linkIds[g] = r[linkKey];
       if (!minMonth || r.month < minMonth) minMonth = r.month;
       if (!maxMonth || r.month > maxMonth) maxMonth = r.month;
     }
@@ -70,9 +74,9 @@ const MonthlyPivotTable = ({ rows, groupKey, groupLabel, linkPrefix, dateRange, 
     const to = dateRange.dateTo ? dateRange.dateTo.slice(0, 7) : (maxMonth || localFmt(new Date()).slice(0, 7));
     return {
       months: from && to ? monthRange(from, to) : [],
-      groups: Object.entries(byGroup).map(([name, byMonth]) => ({ name, byMonth }))
+      groups: Object.entries(byGroup).map(([name, byMonth]) => ({ name, byMonth, linkId: linkIds[name] ?? name }))
     };
-  }, [rows, groupKey, dateRange.dateFrom, dateRange.dateTo]);
+  }, [rows, groupKey, linkKey, dateRange.dateFrom, dateRange.dateTo]);
 
   // Mois incomplets : premier mois démarré en cours de route, mois en cours / dernier mois tronqué
   const today = localFmt(new Date());
@@ -260,7 +264,7 @@ const MonthlyPivotTable = ({ rows, groupKey, groupLabel, linkPrefix, dateRange, 
               {tableRows.map(g => (
                 <tr key={g.name} style={{ borderTop: '1px solid #E2E2E2' }}>
                   <td style={{ ...stickyCell, padding: '10px 14px', fontSize: '14px', backgroundColor: 'white', verticalAlign: 'top' }}>
-                    <LinkBox to={`${linkPrefix}${encodeURIComponent(g.name)}`} display="inline" style={{ fontWeight: 'bold', color: '#135E84' }}>
+                    <LinkBox to={`${linkPrefix}${encodeURIComponent(g.linkId)}`} display="inline" style={{ fontWeight: 'bold', color: '#135E84' }}>
                       {g.name}
                     </LinkBox>
                   </td>

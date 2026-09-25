@@ -8,6 +8,7 @@ import { useColumnPreferences } from '../../hooks/useColumnPreferences';
 import ColumnPanel from '../ColumnPanel';
 import { LinkBox } from '../../utils/navHelpers';
 import ProductSegmentBuilder from './ProductSegmentBuilder';
+import MonthlyPivotTable from './MonthlyPivotTable';
 
 const API_BASE_URL = '/api';
 
@@ -119,6 +120,11 @@ const ProductsStatsTab = () => {
   const [country, setCountry] = useState('');
   const [countries, setCountries] = useState([]);
 
+  // Vue : liste des produits, ou même sélection déclinée mois par mois
+  const [view, setView] = useState('totals'); // 'totals' | 'monthly'
+  const [monthlyRows, setMonthlyRows] = useState([]);
+  const [monthlyLoading, setMonthlyLoading] = useState(false);
+
   // Constructeur de segments : brouillon (édité) vs appliqué (utilisé pour le fetch/export)
   const [showBuilder, setShowBuilder] = useState(false);
   const [filters, setFilters] = useState([]);            // brouillon
@@ -191,9 +197,25 @@ const ProductsStatsTab = () => {
     }
   }, [pagination.pageIndex, pagination.pageSize, buildParams]);
 
+  // Top 100 de la sélection : au-delà, le tableau croisé n'est plus lisible
+  const fetchMonthly = useCallback(async () => {
+    setMonthlyLoading(true);
+    try {
+      const response = await axios.get(`${API_BASE_URL}/products/stats-monthly`, {
+        params: buildParams({ limit: 100 }),
+      });
+      if (response.data.success) setMonthlyRows(response.data.data);
+    } catch (error) {
+      console.error('Error fetching monthly products:', error);
+    } finally {
+      setMonthlyLoading(false);
+    }
+  }, [buildParams]);
+
   useEffect(() => {
-    fetchProducts();
-  }, [fetchProducts]);
+    if (view === 'monthly') fetchMonthly();
+    else fetchProducts();
+  }, [view, fetchProducts, fetchMonthly]);
 
   // Reset variations cache quand la période / le pays change
   useEffect(() => {
@@ -401,6 +423,21 @@ const ProductsStatsTab = () => {
           )}
         </div>
         <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+          <div style={{ display: 'flex', border: '1px solid #d1d5db', borderRadius: '6px', overflow: 'hidden' }}>
+            {[{ id: 'totals', label: 'Totaux' }, { id: 'monthly', label: 'Par mois' }].map(v => (
+              <button
+                key={v.id}
+                onClick={() => setView(v.id)}
+                style={{
+                  padding: '8px 14px', border: 'none', fontSize: '13px', cursor: 'pointer', fontWeight: 600,
+                  backgroundColor: view === v.id ? '#135E84' : '#fff',
+                  color: view === v.id ? '#fff' : '#374151'
+                }}
+              >
+                {v.label}
+              </button>
+            ))}
+          </div>
           <button
             onClick={() => setShowBuilder(v => !v)}
             style={{
@@ -448,6 +485,22 @@ const ProductsStatsTab = () => {
         />
       )}
 
+      {view === 'monthly' ? (
+        monthlyLoading ? (
+          <div style={{ textAlign: 'center', padding: '50px', backgroundColor: 'white', borderRadius: '8px' }}>Chargement...</div>
+        ) : (
+          <MonthlyPivotTable
+            rows={monthlyRows}
+            groupKey="product"
+            groupLabel="Produit"
+            linkPrefix="/products/"
+            linkKey="product_id"
+            dateRange={dateRange}
+            searchTerm=""
+            exportName="produits"
+          />
+        )
+      ) : (<>
       {/* Card de statistique */}
       <div style={{ marginBottom: '30px' }}>
         <div style={{ backgroundColor: 'white', padding: '20px', borderRadius: '8px', boxShadow: '0 1px 3px rgba(0,0,0,0.07), 0 0 0 1px rgba(0,0,0,0.05)', display: 'inline-block' }}>
@@ -705,6 +758,7 @@ const ProductsStatsTab = () => {
           </div>
         </div>
       )}
+      </>)}
     </div>
   );
 };
