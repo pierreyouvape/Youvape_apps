@@ -20,6 +20,7 @@
 
 const assert = require('assert');
 const { compareInvoiceToOrder } = require('../src/utils/invoiceCompare');
+const { buildClaimMessage } = require('../src/utils/invoiceClaimMessage');
 
 let failures = 0;
 function test(name, fn) {
@@ -243,6 +244,131 @@ test('la ventilation des écarts redonne exactement l\'écart global', () => {
   const l = lca.summary;
   const totalLca = l.claimable + l.inOurFavour + l.minorGap + l.roundingGap + l.qtyGap + l.extrasGap;
   assert.ok(close(totalLca, lca.totals.gap));
+});
+
+/* ─────────────────────────────────────────────────────────────────────────────
+ * Pulp — facture #FA165024 du 25/09/2026, commande BMS 168213
+ * Le fournisseur facture en UNITÉS ce que la commande compte en PACKS.
+ * ───────────────────────────────────────────────────────────────────────────── */
+
+const pulp = compareInvoiceToOrder({
+  invoice: {
+    number: '#FA165024',
+    lines: [
+      // 20 cartouches à 1,24 € — la commande dit 10 paires à 2,48 €
+      { ref: '3666528044512', qty: 20, lineTotalHt: 24.80 },
+      { ref: '3666528044369', qty: 40, lineTotalHt: 49.60 },
+      // conforme, même unité des deux côtés
+      { ref: '2020101004996', qty: 100, lineTotalHt: 462.00 },
+      // facturée sans avoir été commandée (cas réel de cette facture)
+      { ref: '3666528035428', qty: 10, lineTotalHt: 15.00 },
+    ],
+  },
+  order: {
+    reference: '168213',
+    lines: [
+      { ref: '3666528044512', qty: 10, price: 2.48 },
+      { ref: '3666528044369', qty: 20, price: 2.48 },
+      { ref: '2020101004996', qty: 100, price: 4.62 },
+    ],
+  },
+});
+
+console.log('\nPulp — conditionnement unités/packs');
+
+test('20 unités facturées contre 10 paires commandées : aucun écart', () => {
+  const l = byRef(pulp, '3666528044512');
+  assert.strictEqual(l.verdict, 'packaging');
+  assert.strictEqual(l.packRatio, 2);
+  assert.strictEqual(l.gap, 0);
+  assert.strictEqual(l.gapQty, 0);        // décomposer n'aurait aucun sens
+});
+
+test('ces lignes ne comptent ni en quantité manquante ni en réclamation', () => {
+  assert.strictEqual(pulp.summary.qtyGap, 0);
+  assert.strictEqual(pulp.summary.claimable, 0);
+  assert.strictEqual(pulp.summary.counts.packaging, 2);
+});
+
+test('la seule vraie anomalie de la facture ressort : 15 € non commandés', () => {
+  const l = byRef(pulp, '3666528035428');
+  assert.strictEqual(l.verdict, 'not_ordered');
+  assert.strictEqual(l.gap, 15);
+  assert.strictEqual(pulp.totals.gap, 15);
+});
+
+/* ─────────────────────────────────────────────────────────────────────────────
+ * Cosmer — facture #FA018801, remise de pied « Remise youvape −300,90 € »
+ * Les 11 lignes sont au prix commandé ; la remise (15 %) est au pied.
+ * ───────────────────────────────────────────────────────────────────────────── */
+
+const COSMER = [
+  ['REF0661', 5, 6.80], ['REF0678', 30, 6.80], ['REF0654', 80, 6.80], ['REF0388', 10, 1.80],
+  ['REF1361', 20, 1.00], ['REF2429', 10, 5.30], ['REF1088', 10, 5.30], ['REF2665', 20, 12.00],
+  ['REF2641', 10, 12.00], ['REF2672', 20, 18.00], ['REF2658', 20, 18.00],
+];
+
+const cosmer = compareInvoiceToOrder({
+  invoice: {
+    number: '#FA018801',
+    totalHt: 1705.10,
+    lines: [
+      ...COSMER.map(([ref, qty, pu]) => ({ ref, qty, lineTotalHt: Math.round(qty * pu * 100) / 100 })),
+      { ref: null, label: 'Remise youvape', qty: 1, lineTotalHt: -300.90, kind: 'discount' },
+    ],
+  },
+  order: { reference: 'YECQOOSHL', lines: COSMER.map(([ref, qty, price]) => ({ ref, qty, price })) },
+});
+
+console.log('\nCosmer — remise de pied');
+
+test('toutes les lignes sont conformes : la remise est au pied, pas au tarif', () => {
+  assert.strictEqual(cosmer.summary.counts.ok, 11);
+  assert.strictEqual(cosmer.summary.claimable, 0);
+});
+
+test('l\'écart global est exactement la remise', () => {
+  assert.strictEqual(cosmer.totals.order, 2006);
+  assert.strictEqual(cosmer.totals.gap, -300.90);
+  assert.strictEqual(cosmer.totals.footerDiscount, -300.90);
+  assert.strictEqual(cosmer.totals.discountRate, 0.15);
+});
+
+test('le coût réel d\'une ligne est son prix remisé, pas le prix facturé', () => {
+  // 6,80 € facturés, mais 15 % de remise au pied → 5,78 € réellement payés.
+  const l = byRef(cosmer, 'REF0654');
+  assert.ok(close(l.invoicedUnitPrice, 6.80));
+  assert.ok(close(l.effectiveUnitCost, 5.78));
+});
+
+/* ─── Message de réclamation ──────────────────────────────────────────────── */
+
+console.log('\nMessage de réclamation (copier-coller)');
+
+test('le message ne reprend que les hausses de tarif matérielles', () => {
+  const m = buildClaimMessage({
+    comparison: lca,
+    invoice: { number: 'F2609412942', date: '25/09/2026' },
+    order: { reference: '356948' },
+    supplier: { name: 'LCA', contactName: 'Romain' },
+    senderName: 'Maxime',
+  });
+  assert.strictEqual(m.claimable, 40.60);
+  assert.strictEqual(m.lines.length, 3);
+  assert.ok(m.subject.includes('40,60 €'));
+  assert.ok(m.body.includes('Bonjour Romain'));
+  assert.ok(m.body.includes('commande 356948'));
+  assert.ok(m.body.includes('#REF16155-52579'));
+  // Les arrondis de remise n'y figurent pas : on n'écrit pas pour 11 centimes.
+  assert.ok(!m.body.includes('#REF18588-62291'));
+  // Ni la PLV offerte.
+  assert.ok(!m.body.includes('#REF25850-25849'));
+});
+
+test('une facture sans hausse de tarif ne produit aucun message', () => {
+  const m = buildClaimMessage({ comparison: cosmer, invoice: { number: '#FA018801' } });
+  assert.strictEqual(m.claimable, 0);
+  assert.strictEqual(m.body, '');
 });
 
 /* ─── Cas de bord ─────────────────────────────────────────────────────────── */

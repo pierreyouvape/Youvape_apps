@@ -22,6 +22,19 @@
  *    décompose : l'effet quantité (manquant, reliquat → ajuster la commande) n'est
  *    pas réclamable au commercial, l'effet prix l'est. Une ligne peut porter les deux.
  *
+ * 5. FACTURER EN UNITÉS CE QUI A ÉTÉ COMMANDÉ EN PACKS N'EST PAS UN ÉCART. Pulp
+ *    facture 20 cartouches à 1,24 € là où la commande dit 10 paires à 2,48 € : même
+ *    montant, même marchandise. Sans cette règle, chaque facture Pulp sortirait avec
+ *    une vingtaine de fausses alertes de quantité (vérifié sur #FA165024 : 20 lignes
+ *    sur 33). Le juge, c'est le MONTANT de la ligne ; la quantité seule ne prouve rien.
+ *
+ * 6. UNE REMISE DE PIED N'EST PAS UNE BAISSE DE TARIF LIGNE À LIGNE. Cosmer facture
+ *    ses lignes au prix commandé puis retire « Remise youvape −300,90 € » (15 % de
+ *    2 006,00 €) ; GFC et Cloud Vapor font pareil. Les lignes sont donc conformes et
+ *    l'écart est au pied du document. Mais le COÛT RÉEL, lui, est bien 15 % plus bas :
+ *    `effectiveUnitCost` répartit la remise au prorata, et c'est LUI qui doit servir
+ *    à aligner un tarif ou à valoriser un stock — jamais le prix de ligne brut.
+ *
  * 4. UN ARRONDI N'EST PAS UNE ERREUR DE TARIF, et ça se tranche sur le prix UNITAIRE,
  *    pas sur le montant : quand le fournisseur applique sa remise sans arrondir,
  *    l'écart au centime près par unité devient visible en euros sur une ligne de 30.
@@ -140,6 +153,15 @@ function compareInvoiceToOrder({ invoice, order, options = {} }) {
     const gap = round2(invoicedTotal - expectedTotal);
 
     const qtyDiffers = inv.qty !== qtyOrdered;
+
+    // Conditionnement (cf. règle 5) : la quantité change mais le montant retombe —
+    // le fournisseur compte en unités ce que la commande compte en packs. Rien à
+    // réclamer, rien à corriger ; on expose le rapport pour que ça se voie.
+    const packRatio = qtyDiffers && qtyOrdered > 0 && inv.qty > 0
+      ? inv.qty / qtyOrdered
+      : null;
+    const isPackaging = qtyDiffers && Math.abs(gap) < threshold;
+
     // Tarif réellement différent, ou simple arrondi du fournisseur ? Ça se lit sur
     // l'unité (cf. règle 4), jamais sur le montant de la ligne.
     const unitGap = invoicedUnitPrice === null ? 0 : invoicedUnitPrice - expectedUnitPrice;
@@ -147,7 +169,8 @@ function compareInvoiceToOrder({ invoice, order, options = {} }) {
     const priceDiffers = !isRounding && Math.abs(gapPrice) >= 0.005;
 
     let verdict;
-    if (qtyDiffers && priceDiffers) verdict = 'qty_price';
+    if (isPackaging) verdict = 'packaging';
+    else if (qtyDiffers && priceDiffers) verdict = 'qty_price';
     else if (qtyDiffers) verdict = 'qty';
     else if (priceDiffers) verdict = 'price';
     else if (Math.abs(gapPrice) >= 0.005) verdict = 'rounding';
@@ -162,12 +185,16 @@ function compareInvoiceToOrder({ invoice, order, options = {} }) {
       material: Math.abs(gap) >= threshold,
       qtyOrdered,
       qtyInvoiced: inv.qty,
+      // Rapport de conditionnement quand les deux ne comptent pas dans la même unité
+      packRatio,
       expectedUnitPrice,
       invoicedUnitPrice,
       expectedTotal,
       invoicedTotal,
-      gapQty,
-      gapPrice,
+      // Sur une ligne de conditionnement, décomposer en effet quantité / effet prix
+      // n'a pas de sens : les deux se compensent par construction.
+      gapQty: isPackaging ? 0 : gapQty,
+      gapPrice: isPackaging ? gap : gapPrice,
       gap,
     });
   }
@@ -215,6 +242,30 @@ function compareInvoiceToOrder({ invoice, order, options = {} }) {
     });
   }
 
+  // ─── Remise de pied : le coût réel de chaque ligne (cf. règle 6) ──────────
+  // Cosmer, GFC et Cloud Vapor facturent au prix commandé puis retranchent une
+  // remise globale. Les lignes sont conformes, mais le prix payé ne l'est pas :
+  // on répartit la remise au prorata du montant de chaque ligne produit pour
+  // obtenir le coût unitaire réel — celui qui doit alimenter un tarif ou un PMP.
+  const footerDiscount = round2(
+    results
+      .filter((r) => r.verdict === 'discount')
+      .reduce((acc, r) => acc + r.invoicedTotal, 0),
+  );
+  const productTotal = round2(
+    results
+      .filter((r) => !['discount', 'shipping', 'other'].includes(r.verdict))
+      .reduce((acc, r) => acc + r.invoicedTotal, 0),
+  );
+  const discountRate = footerDiscount < 0 && productTotal > 0
+    ? Math.abs(footerDiscount) / productTotal
+    : 0;
+  for (const r of results) {
+    r.effectiveUnitCost = r.invoicedUnitPrice === null
+      ? null
+      : r.invoicedUnitPrice * (1 - discountRate);
+  }
+
   // ─── Totaux ───────────────────────────────────────────────────────────────
   const invoiceParsed = round2(invoiceLines.reduce((s, l) => s + (Number(l.lineTotalHt) || 0), 0));
   const orderTotal = round2(orderLines.reduce((s, l) => s + (Number(l.qty) || 0) * (Number(l.price) || 0), 0));
@@ -228,12 +279,16 @@ function compareInvoiceToOrder({ invoice, order, options = {} }) {
 
   // Ventilation additive : la somme des six familles vaut exactement l'écart global,
   // pour qu'aucun euro ne se perde entre le tableau et le total affiché.
-  let claimable = 0, inOurFavour = 0, minorGap = 0, roundingGap = 0, qtyGap = 0, extrasGap = 0;
+  let claimable = 0, inOurFavour = 0, minorGap = 0, roundingGap = 0, qtyGap = 0, extrasGap = 0, packagingGap = 0;
   const EXTRA_VERDICTS = ['not_ordered', 'free', 'shipping', 'discount', 'other'];
 
   for (const r of results) {
     if (EXTRA_VERDICTS.includes(r.verdict)) {
       extrasGap += r.gap;
+      continue;
+    }
+    if (r.verdict === 'packaging') {
+      packagingGap += r.gap;   // résidu d'arrondi d'un simple changement d'unité
       continue;
     }
     qtyGap += r.gapQty;
@@ -257,6 +312,9 @@ function compareInvoiceToOrder({ invoice, order, options = {} }) {
       reconciles,
       order: orderTotal,
       gap: round2(invoiceParsed - orderTotal),
+      // Remise globale du pied de facture (négative) et le taux qu'elle représente.
+      footerDiscount,
+      discountRate: Math.round(discountRate * 10000) / 10000,
     },
     summary: {
       // Ce qu'on réclame : le surcoût de tarif, hors effets de quantité et d'arrondi.
@@ -268,6 +326,7 @@ function compareInvoiceToOrder({ invoice, order, options = {} }) {
       roundingGap: round2(roundingGap),
       qtyGap: round2(qtyGap),
       extrasGap: round2(extrasGap),
+      packagingGap: round2(packagingGap),
       counts: results.reduce((acc, r) => {
         acc[r.verdict] = (acc[r.verdict] || 0) + 1;
         return acc;
