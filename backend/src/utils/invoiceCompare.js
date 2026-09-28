@@ -499,10 +499,22 @@ const DIFFERENCE_KINDS = {
   other:              { rank: 11, label: 'Ligne hors produit',    action: 'À qualifier' },
 };
 
+/**
+ * Les écarts à porter à l'écran.
+ *
+ * La REMISE DE PIED n'en fait pas partie (décision du 28/09/2026). Ce n'est pas
+ * une anomalie : le fournisseur facture au tarif brut convenu puis déduit la
+ * remise négociée. Sur la facture Cosmer #FA018728, les douze lignes tombaient
+ * au centime près sur la commande et la seule « différence » affichée était la
+ * remise de 343,64 € — un gain, présenté comme un problème.
+ *
+ * Le montant reste disponible dans `totals.footerDiscount`, et il est réparti au
+ * prorata sur chaque ligne pour que le réclamable soit calculé sur le coût réel.
+ */
 function listDifferences(comparison) {
   const lines = (comparison && comparison.lines) || [];
   return lines
-    .filter((l) => l.verdict !== 'ok')
+    .filter((l) => l.verdict !== 'ok' && l.verdict !== 'discount')
     .map((l) => ({
       ...l,
       kindLabel: (DIFFERENCE_KINDS[l.verdict] || {}).label || l.verdict,
