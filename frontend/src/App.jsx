@@ -335,7 +335,7 @@ function App() {
               </PrivateRoute>
             }
           />
-          {/* Picking au PDA : page plein écran, installable (pda.webmanifest). */}
+          {/* Picking au PDA : page plein écran, installable (pda-manifest.json). */}
           <Route
             path="/pda"
             element={

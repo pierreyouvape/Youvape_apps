@@ -5,7 +5,7 @@ import { API_URL, authHeaders, C, CarrierLogo } from '../components/picking/pick
 
 /**
  * Picking au PDA (lot 3) — /pda, installable depuis Chrome (« Ajouter à
- * l'écran d'accueil ») grâce à /pda.webmanifest.
+ * l'écran d'accueil ») grâce à /pda-manifest.json.
  *
  * Tranché avec Pierre le 28/09/2026 :
  *   - la liste des vagues à préparer ; on en ouvre une en la touchant ou en
@@ -80,7 +80,7 @@ const useManifest = () => {
   useEffect(() => {
     const link = document.createElement('link');
     link.rel = 'manifest';
-    link.href = '/pda.webmanifest';
+    link.href = '/pda-manifest.json';
     const meta = document.createElement('meta');
     meta.name = 'theme-color';
     meta.content = C.violet;
