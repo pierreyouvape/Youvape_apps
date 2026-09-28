@@ -36,4 +36,17 @@ router.get('/waves/:id', canRead, pickingController.getWave);
 router.get('/waves/:id/pdf', canRead, pickingController.printWave);
 router.post('/waves/:id/cancel', canWrite, pickingController.cancelWave);
 
+router.post('/waves/:id/release', canWrite, pickingController.releaseWave);
+
+// PDA : le droit de lecture suffit — c'est le travail du préparateur.
+router.get('/pda/waves', canRead, pickingController.pdaListWaves);
+router.get('/pda/waves/find', canRead, pickingController.pdaFindWave);
+router.get('/pda/waves/:id', canRead, pickingController.pdaGetWave);
+router.post('/pda/waves/:id/assign', canRead, pickingController.pdaAssign);
+router.post('/pda/waves/:id/scan', canRead, pickingController.pdaScan);
+router.post('/pda/waves/:id/lines/:lineId/validate', canRead, pickingController.pdaValidate);
+router.post('/pda/waves/:id/lines/:lineId/missing', canRead, pickingController.pdaMissing);
+router.post('/pda/waves/:id/lines/:lineId/undo', canRead, pickingController.pdaUndo);
+router.post('/pda/waves/:id/finish', canRead, pickingController.pdaFinish);
+
 module.exports = router;

@@ -334,7 +334,7 @@ function OrdersView({ token, canWrite, onWavesCreated, setMessage }) {
           </thead>
           <tbody>
             {shown.length === 0 && (
-              <tr><td colSpan={9} style={{ ...td, textAlign: 'center', color: C.greyT, padding: 28 }}>Aucune commande dans cet onglet.</td></tr>
+              <tr><td colSpan={10} style={{ ...td, textAlign: 'center', color: C.greyT, padding: 28 }}>Aucune commande dans cet onglet.</td></tr>
             )}
             {shown.map((o, i) => {
               const checked = selected.has(o.orderNumber);
@@ -626,6 +626,17 @@ function WavesView({ token, canWrite, reloadKey, setMessage }) {
     return next;
   });
 
+  const release = async (w) => {
+    if (!window.confirm(`Libérer la vague ${w.waveNumber} ? ${w.assignedTo || 'Le préparateur'} n'y aura plus la main ; ce qui a déjà été pris est conservé.`)) return;
+    try {
+      await axios.post(`${API_URL}/picking/waves/${w.id}/release`, {}, authHeaders(token));
+      setMessage({ kind: 'ok', text: `Vague ${w.waveNumber} libérée.` });
+      load();
+    } catch (err) {
+      setMessage({ kind: 'error', text: err.response?.data?.error || err.message });
+    }
+  };
+
   const cancel = async (w) => {
     if (!window.confirm(`Annuler la vague ${w.waveNumber} ? Ses ${w.orders} commande(s) redeviennent libres.`)) return;
     try {
@@ -671,13 +682,14 @@ function WavesView({ token, canWrite, reloadKey, setMessage }) {
               <th style={th}>Commandes</th>
               <th style={th}>Transporteurs</th>
               <th style={th}>Impression</th>
+              <th style={th}>Picking</th>
               <th style={th} />
             </tr>
           </thead>
           <tbody>
-            {!data && <tr><td colSpan={9} style={{ ...td, color: C.greyT }}>Chargement…</td></tr>}
+            {!data && <tr><td colSpan={10} style={{ ...td, color: C.greyT }}>Chargement…</td></tr>}
             {data && data.waves.length === 0 && (
-              <tr><td colSpan={9} style={{ ...td, textAlign: 'center', color: C.greyT, padding: 28 }}>Aucune vague.</td></tr>
+              <tr><td colSpan={10} style={{ ...td, textAlign: 'center', color: C.greyT, padding: 28 }}>Aucune vague.</td></tr>
             )}
             {data?.waves.map((w, i) => (
               <Fragment key={w.id}>
@@ -705,7 +717,17 @@ function WavesView({ token, canWrite, reloadKey, setMessage }) {
                       )
                       : <Chip color={C.amber} bg={C.amberL}>Pas imprimée</Chip>}
                   </td>
+                  <td style={{ ...td, fontSize: 12.5, whiteSpace: 'nowrap' }}>
+                    {w.pickedBy
+                      ? <span style={{ color: C.greyT }}>Par {w.pickedBy}<br />{formatDateUTC(w.pickedAt)}</span>
+                      : w.assignedTo
+                        ? <Chip color={C.violet} bg={C.violetL}>En cours par {w.assignedTo}</Chip>
+                        : <span style={{ color: C.greyM }}>—</span>}
+                  </td>
                   <td style={{ ...td, textAlign: 'right', whiteSpace: 'nowrap' }}>
+                    {canWrite && w.status === 'picking' && (
+                      <button onClick={() => release(w)} style={{ ...btn(), padding: '4px 10px', fontSize: 12, marginRight: 6 }}>Libérer</button>
+                    )}
                     <button onClick={() => print(w)} disabled={printing !== null} style={{ ...btn('primary'), padding: '4px 12px', fontSize: 12, marginRight: 6 }}>
                       {printing === w.id ? 'PDF…' : 'Imprimer'}
                     </button>
@@ -719,7 +741,7 @@ function WavesView({ token, canWrite, reloadKey, setMessage }) {
                 </tr>
                 {open === w.id && (
                   <tr>
-                    <td colSpan={9} style={{ ...td, background: C.grey, padding: '8px 16px 14px' }}>
+                    <td colSpan={10} style={{ ...td, background: C.grey, padding: '8px 16px 14px' }}>
                       {!detail ? 'Chargement…' : (
                         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                           <tbody>

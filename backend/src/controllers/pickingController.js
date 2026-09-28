@@ -1,5 +1,6 @@
 const pool = require('../config/database');
 const pickingModel = require('../models/pickingModel');
+const pickingPdaModel = require('../models/pickingPdaModel');
 const pickingSyncService = require('../services/pickingSyncService');
 const { buildWavePdf, buildWavesPdf } = require('../services/pickingPdf');
 const shippingMethodMapModel = require('../models/shippingMethodMapModel');
@@ -180,7 +181,56 @@ const printWaves = handle(async (req, res) => {
   res.send(Buffer.from(pdf));
 });
 
+// ── PDA (lot 3) ─────────────────────────────────────────────────────────────
+// Chaque réponse d'action renvoie la ligne à jour : le PDA n'a rien à
+// recalculer, et l'avancement ne vit que sur le serveur.
+
+const pdaListWaves = handle(async (req, res) => {
+  res.json(await pickingPdaModel.listWaves(req.user.id));
+});
+
+const pdaFindWave = handle(async (req, res) => {
+  res.json({ id: await pickingPdaModel.findByNumber(req.query.number) });
+});
+
+const pdaGetWave = handle(async (req, res) => {
+  res.json(await pickingPdaModel.getWave(Number(req.params.id), req.user.id));
+});
+
+const pdaAssign = handle(async (req, res) => {
+  await pickingPdaModel.assign(Number(req.params.id), req.user.id);
+  res.json(await pickingPdaModel.getWave(Number(req.params.id), req.user.id));
+});
+
+const pdaScan = handle(async (req, res) => {
+  res.json(await pickingPdaModel.scan(Number(req.params.id), req.user.id, req.body?.code));
+});
+
+const pdaLineAction = (action) => handle(async (req, res) => {
+  res.json(await pickingPdaModel[action](Number(req.params.id), req.user.id, Number(req.params.lineId)));
+});
+
+const pdaFinish = handle(async (req, res) => {
+  await pickingPdaModel.finish(Number(req.params.id), req.user.id);
+  res.json({ success: true });
+});
+
+const releaseWave = handle(async (req, res) => {
+  await pickingPdaModel.release(Number(req.params.id));
+  res.json({ success: true });
+});
+
 module.exports = {
+  pdaListWaves,
+  pdaFindWave,
+  pdaGetWave,
+  pdaAssign,
+  pdaScan,
+  pdaValidate: pdaLineAction('validate'),
+  pdaMissing: pdaLineAction('markMissing'),
+  pdaUndo: pdaLineAction('undo'),
+  pdaFinish,
+  releaseWave,
   listOrders,
   refresh,
   block,

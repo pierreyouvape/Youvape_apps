@@ -385,18 +385,21 @@ const listWaves = async (tab) => {
   const { rows } = await pool.query(
     `SELECT w.id, w.wave_number, w.status, w.created_at, u.name AS created_by, r.name AS rule_name,
             w.printed_at, w.print_count, pu.name AS printed_by,
+            au.name AS assigned_to, w.picked_at, ku.name AS picked_by,
             count(wo.order_number)::int AS orders,
             COALESCE(array_agg(DISTINCT m.carrier_code || ':' || m.account_code)
                      FILTER (WHERE m.carrier_code IS NOT NULL), '{}') AS carriers
        FROM picking_waves w
        LEFT JOIN users u ON u.id = w.created_by
        LEFT JOIN users pu ON pu.id = w.printed_by
+       LEFT JOIN users au ON au.id = w.assigned_to
+       LEFT JOIN users ku ON ku.id = w.picked_by
        LEFT JOIN picking_wave_rules r ON r.id = w.rule_id
        LEFT JOIN picking_wave_orders wo ON wo.wave_id = w.id
        LEFT JOIN orders o ON o.wp_order_id::text = wo.order_number
        LEFT JOIN shipping_method_carrier_map m ON lower(btrim(m.denomination)) = lower(btrim(o.shipping_method))
       WHERE w.status = ANY($1)
-      GROUP BY w.id, u.name, r.name, pu.name
+      GROUP BY w.id, u.name, r.name, pu.name, au.name, ku.name
       ORDER BY w.created_at DESC
       LIMIT 200`,
     [statuses]
@@ -411,6 +414,9 @@ const listWaves = async (tab) => {
     printedAt: r.printed_at,
     printCount: r.print_count,
     printedBy: r.printed_by,
+    assignedTo: r.assigned_to,
+    pickedAt: r.picked_at,
+    pickedBy: r.picked_by,
     orders: r.orders,
     carriers: r.carriers.map(c => {
       const [carrierCode, accountCode] = c.split(':');
@@ -529,7 +535,7 @@ const getWavePrintData = async (id) => {
             m.carrier_code, m.account_code,
             (SELECT json_agg(json_build_object(
                 'name', oi.order_item_name, 'qty', oi.qty, 'line_total', oi.line_total,
-                'product_id', oi.product_id, 'sku', p.sku, 'type', p.product_type,
+                'product_id', oi.product_id, 'pid', p.id, 'sku', p.sku, 'type', p.product_type,
                 'brand', COALESCE(p.brand, pp.brand), 'sub_brand', COALESCE(p.sub_brand, pp.sub_brand),
                 'location', p.shelf_location, 'woosb_ids', p.woosb_ids,
                 'barcodes', (SELECT json_agg(pb.barcode ORDER BY pb.id) FROM product_barcodes pb
