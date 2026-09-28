@@ -1,6 +1,7 @@
 const pool = require('../config/database');
 const pickingModel = require('../models/pickingModel');
 const pickingSyncService = require('../services/pickingSyncService');
+const { buildWavePdf } = require('../services/pickingPdf');
 const shippingMethodMapModel = require('../models/shippingMethodMapModel');
 const { expectedNetwork, relayNetworks } = require('../services/carriers/relayPoints');
 
@@ -142,6 +143,20 @@ const cancelWave = handle(async (req, res) => {
   res.json({ success: true });
 });
 
+/**
+ * PDF de la vague : page de garde + un bon par commande. Le nom de fichier
+ * `vague_<numéro>.pdf` permet une règle AutoPrint sur les postes.
+ */
+const printWave = handle(async (req, res) => {
+  const id = Number(req.params.id);
+  const data = await pickingModel.getWavePrintData(id);
+  const pdf = await buildWavePdf(data);
+  await pickingModel.markPrinted(id, req.user?.id);
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `attachment; filename="vague_${data.waveNumber}.pdf"`);
+  res.send(Buffer.from(pdf));
+});
+
 module.exports = {
   listOrders,
   refresh,
@@ -157,5 +172,6 @@ module.exports = {
   createManualWave,
   listWaves,
   getWave,
-  cancelWave
+  cancelWave,
+  printWave
 };

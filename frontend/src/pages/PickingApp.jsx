@@ -579,6 +579,30 @@ function WavesView({ token, canWrite, reloadKey, setMessage }) {
     }
   };
 
+  // Le PDF part en téléchargement sous `vague_<numéro>.pdf` (règle AutoPrint possible).
+  const [printing, setPrinting] = useState(null);
+  const print = async (w) => {
+    setPrinting(w.id);
+    try {
+      const res = await axios.get(`${API_URL}/picking/waves/${w.id}/pdf`, { ...authHeaders(token), responseType: 'blob' });
+      const url = URL.createObjectURL(res.data);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `vague_${w.waveNumber}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 10000);
+      load();
+    } catch (err) {
+      let text = err.message;
+      try { text = JSON.parse(await err.response.data.text()).error || text; } catch { /* pas du JSON */ }
+      setMessage({ kind: 'error', text });
+    } finally {
+      setPrinting(null);
+    }
+  };
+
   const cancel = async (w) => {
     if (!window.confirm(`Annuler la vague ${w.waveNumber} ? Ses ${w.orders} commande(s) redeviennent libres.`)) return;
     try {
@@ -603,13 +627,14 @@ function WavesView({ token, canWrite, reloadKey, setMessage }) {
               <th style={th}>Origine</th>
               <th style={th}>Commandes</th>
               <th style={th}>Transporteurs</th>
+              <th style={th}>Impression</th>
               <th style={th} />
             </tr>
           </thead>
           <tbody>
-            {!data && <tr><td colSpan={7} style={{ ...td, color: C.greyT }}>Chargement…</td></tr>}
+            {!data && <tr><td colSpan={8} style={{ ...td, color: C.greyT }}>Chargement…</td></tr>}
             {data && data.waves.length === 0 && (
-              <tr><td colSpan={7} style={{ ...td, textAlign: 'center', color: C.greyT, padding: 28 }}>Aucune vague.</td></tr>
+              <tr><td colSpan={8} style={{ ...td, textAlign: 'center', color: C.greyT, padding: 28 }}>Aucune vague.</td></tr>
             )}
             {data?.waves.map((w, i) => (
               <Fragment key={w.id}>
@@ -624,7 +649,20 @@ function WavesView({ token, canWrite, reloadKey, setMessage }) {
                       {w.carriers.map(c => <CarrierLogo key={`${c.carrierCode}:${c.accountCode}`} carrier={c} height={18} />)}
                     </div>
                   </td>
+                  <td style={td}>
+                    {w.printedAt
+                      ? (
+                        <span title={w.printedBy ? `Par ${w.printedBy}` : ''} style={{ fontSize: 12.5, color: C.greyT, whiteSpace: 'nowrap' }}>
+                          {formatDateUTC(w.printedAt)}
+                          {w.printCount > 1 && <strong style={{ color: C.amber }}> ×{w.printCount}</strong>}
+                        </span>
+                      )
+                      : <Chip color={C.amber} bg={C.amberL}>Pas imprimée</Chip>}
+                  </td>
                   <td style={{ ...td, textAlign: 'right', whiteSpace: 'nowrap' }}>
+                    <button onClick={() => print(w)} disabled={printing === w.id} style={{ ...btn('primary'), padding: '4px 12px', fontSize: 12, marginRight: 6 }}>
+                      {printing === w.id ? 'PDF…' : 'Imprimer'}
+                    </button>
                     <button onClick={() => toggleDetail(w)} style={{ ...btn(), padding: '4px 10px', fontSize: 12 }}>
                       {open === w.id ? 'Masquer' : 'Détail'}
                     </button>
@@ -635,7 +673,7 @@ function WavesView({ token, canWrite, reloadKey, setMessage }) {
                 </tr>
                 {open === w.id && (
                   <tr>
-                    <td colSpan={7} style={{ ...td, background: C.grey, padding: '8px 16px 14px' }}>
+                    <td colSpan={8} style={{ ...td, background: C.grey, padding: '8px 16px 14px' }}>
                       {!detail ? 'Chargement…' : (
                         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                           <tbody>
