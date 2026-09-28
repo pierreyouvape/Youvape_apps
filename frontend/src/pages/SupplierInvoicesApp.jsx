@@ -558,7 +558,7 @@ async function downloadFile(id, label) {
  * isolée, ou six factures et un avoir soldés par un seul relevé Amex.
  * ═══════════════════════════════════════════════════════════ */
 function FilingTab({ suppliers, mobile, reloadKey, onSaved }) {
-  const [filters, setFilters] = useState({ supplier_id: '', status: '', payment_status: '', doc_type: '', from: '', to: '' });
+  const [filters, setFilters] = useState({ supplier_id: '', status: '', payment_status: '', doc_type: '', from: '', to: '', q: '' });
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
   const [openId, setOpenId] = useState(null);
@@ -678,6 +678,10 @@ function FilingTab({ suppliers, mobile, reloadKey, onSaved }) {
         </Field>
         <Field label="Au" width={140}>
           <input type="date" value={filters.to} onChange={(e) => setFilters({ ...filters, to: e.target.value })} style={inputStyle} />
+        </Field>
+        <Field label="Rechercher" width={230}>
+          <input value={filters.q} onChange={(e) => setFilters({ ...filters, q: e.target.value })}
+            placeholder="numéro, fournisseur, commande…" style={inputStyle} />
         </Field>
       </div>
 
@@ -961,7 +965,7 @@ const methodLabel = (m) => (METHODS.find((x) => x[0] === m) || [])[1] || m;
 function PaymentsTab({ suppliers, mobile, reloadKey }) {
   const [payments, setPayments] = useState([]);
   const [unpaid, setUnpaid] = useState([]);
-  const [filters, setFilters] = useState({ supplier: '', method: '', statut: '' });
+  const [filters, setFilters] = useState({ supplier: '', method: '', statut: '', q: '' });
   const [detail, setDetail] = useState(null);
 
   const load = useCallback(async () => {
@@ -982,7 +986,13 @@ function PaymentsTab({ suppliers, mobile, reloadKey }) {
     // `documents` porte toujours les numéros de facture concernés, `reference`
     // toujours la référence du règlement — vide tant qu'il n'y en a pas.
     const faits = payments.map((p) => ({
-      cle: `p${p.id}`, statut: 'fait', date: p.paid_at, fournisseur: p.supplier_name,
+      cle: `p${p.id}`,
+      // Un règlement qui ne solde que des avoirs n'est pas un paiement : c'est
+      // un avoir consommé. L'afficher « Réglé » laisserait croire à une sortie
+      // d'argent qui n'a pas eu lieu.
+      statut: Number(p.credit_note_count) > 0 && Number(p.credit_note_count) === Number(p.document_count)
+        ? 'avoirUtilise' : 'fait',
+      date: p.paid_at, fournisseur: p.supplier_name,
       moyen: p.method, reference: p.reference, montant: Number(p.amount),
       documents: p.document_numbers, nonImpute: Number(p.unallocated_amount),
     }));
@@ -1002,7 +1012,9 @@ function PaymentsTab({ suppliers, mobile, reloadKey }) {
     return [...faits, ...attente]
       .filter((x) => (!filters.supplier || x.fournisseur === filters.supplier)
         && (!filters.method || x.moyen === filters.method)
-        && (!filters.statut || x.statut === filters.statut))
+        && (!filters.statut || x.statut === filters.statut)
+        && (!filters.q || `${x.fournisseur} ${x.documents || ''} ${x.reference || ''}`
+              .toLowerCase().includes(filters.q.trim().toLowerCase())))
       .sort((a, b) => String(b.date).localeCompare(String(a.date)));
   }, [payments, unpaid, filters]);
 
@@ -1019,6 +1031,7 @@ function PaymentsTab({ suppliers, mobile, reloadKey }) {
   // Un avoir non utilisé est de l'argent à faire valoir, pas une dette :
   // le fondre dans « en attente » masquait les deux à la fois.
   const totalAvoirs = items.filter((x) => x.statut === 'avoir').reduce((s, x) => s + x.montant, 0);
+  const totalAvoirsUtilises = items.filter((x) => x.statut === 'avoirUtilise').reduce((s, x) => s + x.montant, 0);
   const fournisseurs = [...new Set([...payments.map((p) => p.supplier_name), ...unpaid.map((d) => d.supplier_name)])].sort();
 
   return (
@@ -1036,13 +1049,18 @@ function PaymentsTab({ suppliers, mobile, reloadKey }) {
             {METHODS.map(([k, v]) => <option key={k} value={k}>{v}</option>)}
           </select>
         </Field>
-        <Field label="Statut" width={150}>
+        <Field label="Statut" width={170}>
           <select value={filters.statut} onChange={(e) => setFilters({ ...filters, statut: e.target.value })} style={inputStyle}>
             <option value="">Tous</option>
             <option value="fait">Réglés</option>
             <option value="attente">En attente</option>
             <option value="avoir">Avoirs non utilisés</option>
+            <option value="avoirUtilise">Avoirs utilisés</option>
           </select>
+        </Field>
+        <Field label="Rechercher" width={230}>
+          <input value={filters.q} onChange={(e) => setFilters({ ...filters, q: e.target.value })}
+            placeholder="numéro, fournisseur, référence…" style={inputStyle} />
         </Field>
       </div>
 
@@ -1051,6 +1069,9 @@ function PaymentsTab({ suppliers, mobile, reloadKey }) {
         <Kpi label="En attente" value={eur(totalDu)} tone={totalDu > 0 ? 'orange' : 'green'} />
         {totalAvoirs !== 0 && (
           <Kpi label="Avoirs non utilisés" value={eur(Math.abs(totalAvoirs))} tone="blue" />
+        )}
+        {totalAvoirsUtilises !== 0 && (
+          <Kpi label="Avoirs utilisés" value={eur(Math.abs(totalAvoirsUtilises))} tone="blue" />
         )}
       </div>
 
@@ -1077,6 +1098,7 @@ function PaymentsTab({ suppliers, mobile, reloadKey }) {
                   style={{ cursor: x.documentId ? 'pointer' : 'default' }}>
                 <td style={td}>
                   {x.statut === 'fait' && <Badge tone="green">Réglé</Badge>}
+                  {x.statut === 'avoirUtilise' && <Badge tone="blue">Avoir utilisé</Badge>}
                   {x.statut === 'avoir' && <Badge tone="blue">Avoir non utilisé</Badge>}
                   {x.statut === 'attente' && (
                     <Badge tone={x.retard > 0 ? 'red' : 'orange'}>
@@ -1093,7 +1115,8 @@ function PaymentsTab({ suppliers, mobile, reloadKey }) {
                   ...td, textAlign: 'right', fontWeight: 700,
                   // Un avoir est de l'argent à faire valoir : le peindre en
                   // rouge le ferait passer pour une dette.
-                  color: x.statut === 'avoir' ? C.blue : (x.statut === 'fait' ? C.dark : C.orange),
+                  color: x.statut === 'avoir' || x.statut === 'avoirUtilise'
+                    ? C.blue : (x.statut === 'fait' ? C.dark : C.orange),
                 }}>
                   {eur(x.montant)}
                   {x.nonImpute != null && Math.abs(x.nonImpute) > 0.009 && (

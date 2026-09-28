@@ -138,7 +138,7 @@ async function createDocument({ supplier, invoice, order, comparison, filePath, 
 }
 
 /** Liste filtrable : fournisseur, état du contrôle, état du paiement, période. */
-async function listDocuments({ supplierId, status, paymentStatus, from, to, docType, limit = 100, offset = 0 } = {}, db = pool) {
+async function listDocuments({ supplierId, status, paymentStatus, from, to, docType, search, limit = 100, offset = 0 } = {}, db = pool) {
   const where = [];
   const params = [];
   const add = (sql, value) => { params.push(value); where.push(sql.replace('?', `$${params.length}`)); };
@@ -149,6 +149,13 @@ async function listDocuments({ supplierId, status, paymentStatus, from, to, docT
   if (from) add('d.doc_date >= ?', from);
   if (to) add('d.doc_date <= ?', to);
   if (paymentStatus) add('b.payment_status = ?', paymentStatus);
+  // Recherche libre : le numéro de document ou le nom du fournisseur, c'est
+  // par l'un ou l'autre qu'on cherche une facture qu'on a en main.
+  if (search) {
+    params.push(`%${String(search).trim()}%`);
+    where.push(`(d.number ILIKE $${params.length} OR s.name ILIKE $${params.length}
+                 OR d.order_ref_on_doc ILIKE $${params.length})`);
+  }
 
   params.push(limit, offset);
   const { rows } = await db.query(
@@ -275,7 +282,10 @@ async function listPayments({ supplierId, method, from, to, limit = 100 } = {}, 
             -- Les numéros eux-mêmes, pas seulement leur nombre : « 1 document »
             -- ne dit pas lequel, et c'est justement ce qu'on cherche en relisant
             -- un relevé Amex qui solde six factures.
-            string_agg(d.number, ', ' ORDER BY d.doc_date) AS document_numbers
+            string_agg(d.number, ', ' ORDER BY d.doc_date) AS document_numbers,
+            -- Un règlement qui ne solde que des avoirs n'est pas un paiement :
+            -- c'est un avoir qu'on consomme. L'écran doit pouvoir le dire.
+            count(*) FILTER (WHERE d.doc_type = 'credit_note') AS credit_note_count
        FROM supplier_payments p
        JOIN suppliers s ON s.id = p.supplier_id
        LEFT JOIN supplier_payment_allocations a ON a.payment_id = p.id

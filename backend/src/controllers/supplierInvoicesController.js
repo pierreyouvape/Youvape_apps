@@ -135,6 +135,7 @@ async function listDocuments(req, res) {
       docType: req.query.doc_type || null,
       from: req.query.from || null,
       to: req.query.to || null,
+      search: req.query.q || null,
       limit: Math.min(parseInt(req.query.limit, 10) || 100, 500),
       offset: parseInt(req.query.offset, 10) || 0,
     });
