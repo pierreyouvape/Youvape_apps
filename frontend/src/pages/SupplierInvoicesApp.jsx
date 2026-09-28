@@ -439,7 +439,7 @@ async function downloadFile(id, label) {
 }
 
 /* ═══════════════════════════════════════════════════════════
- * ONGLET 2 — Classeur
+ * ONGLET 2 — Factures (les documents rangés)
  * ═══════════════════════════════════════════════════════════ */
 function FilingTab({ suppliers, mobile, reloadKey }) {
   const [filters, setFilters] = useState({ supplier_id: '', status: '', payment_status: '', doc_type: '', from: '', to: '' });
@@ -802,7 +802,7 @@ function PaymentsTab({ suppliers, mobile, reloadKey, onSaved }) {
 /* ═══════════════════════════════════════════════════════════ */
 const TABS = [
   ['control', 'Contrôle'],
-  ['filing', 'Classeur'],
+  ['filing', 'Factures'],
   ['payments', 'Règlements'],
 ];
 
