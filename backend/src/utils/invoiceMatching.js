@@ -24,14 +24,36 @@ const norm = (s) => String(s || '').toLowerCase().replace(/\s+/g, ' ').trim();
  * @param {Map}   skuProducts   SKU interne normalisé → id produit
  */
 function attachMatchKeys({ invoiceLines = [], orderLines = [], refProducts = new Map(), skuProducts = new Map() }) {
-  const keyed = (line, productId) =>
-    productId ? { ...line, productId, matchKey: `#produit-${productId}` } : { ...line };
+  // La référence du document prime TOUJOURS. C'est le lien le plus direct entre
+  // les deux papiers, et le produit n'est qu'un secours quand elle ne suffit pas.
+  //
+  // L'inverse a été essayé et s'est retourné contre nous : sur la facture LCA
+  // F2609412956, « #REF18941-24306 » figure des deux côtés, mais la ligne de
+  // commande résolvait vers un produit par son SKU interne quand la facture n'y
+  // arrivait pas — deux clés différentes pour une même référence, et trente
+  // lignes déclarées à la fois commandées non facturées et facturées non
+  // commandées.
+  const invoice = invoiceLines.map((l) => ({ ...l, productId: refProducts.get(norm(l.ref)) || null }));
+  const order = orderLines.map((l) => ({
+    ...l,
+    productId: refProducts.get(norm(l.ref)) || skuProducts.get(norm(l.sku || l.ref)) || null,
+  }));
 
-  const invoice = invoiceLines.map((l) => keyed(l, refProducts.get(norm(l.ref))));
-  // Côté commande, la référence peut être celle du fournisseur OU, faute de
-  // mieux, le SKU interne : on tente les deux pistes vers le produit.
-  const order = orderLines.map((l) =>
-    keyed(l, refProducts.get(norm(l.ref)) || skuProducts.get(norm(l.sku || l.ref))));
+  // 1. Référence à référence.
+  const refsCommande = new Set(order.map((l) => norm(l.ref)));
+  const refsFacture = new Set(invoice.map((l) => norm(l.ref)));
+
+  // 2. À défaut, par le produit — le cas des 611 lignes de commande (3 %) qui
+  //    portent le SKU interne faute de référence fournisseur dans BMS.
+  const orphelinsCommande = order.filter((l) => !refsFacture.has(norm(l.ref)) && l.productId);
+  for (const inv of invoice) {
+    if (refsCommande.has(norm(inv.ref)) || !inv.productId) continue;
+    const cible = orphelinsCommande.find((o) => o.productId === inv.productId && !o.matchKey);
+    if (!cible) continue;
+    const cle = `#produit-${inv.productId}`;
+    inv.matchKey = cle;
+    cible.matchKey = cle;
+  }
 
   pairLeftoversByAmount(invoice, order);
   return { invoiceLines: invoice, orderLines: order };

@@ -429,6 +429,23 @@ test('une ligne de commande sans référence fournisseur retrouve sa facture', (
   assert.strictEqual(r.summary.qtyGap, 0);
 });
 
+test('une référence identique des deux côtés se rapproche toujours', () => {
+  // Facture LCA F2609412956 : « #REF18941-24306 » figure des deux côtés, mais
+  // seule la ligne de commande résolvait vers un produit (par son SKU interne).
+  // L'appariement par produit prenait le pas sur la référence et fabriquait
+  // deux clés différentes — trente lignes à la fois commandées non facturées et
+  // facturées non commandées. La référence du document prime désormais.
+  const keyed = attachMatchKeys({
+    invoiceLines: [{ ref: '#REF18941-24306', qty: 15, lineTotalHt: 112.50 }],
+    orderLines: [{ ref: '#REF18941-24306', sku: '1262640-1262705', qty: 15, price: 7.50 }],
+    refProducts: new Map(),
+    skuProducts: new Map([['1262640-1262705', 1405380]]),
+  });
+  const r = compareInvoiceToOrder({ invoice: { lines: keyed.invoiceLines }, order: { lines: keyed.orderLines } });
+  assert.strictEqual(r.lines.length, 1);
+  assert.strictEqual(r.lines[0].verdict, 'ok');
+});
+
 test('sans cet appariement, deux fausses anomalies se compensent', () => {
   // La même paire, rapprochée bêtement sur la référence.
   const r = compareInvoiceToOrder({
