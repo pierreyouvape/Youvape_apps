@@ -172,6 +172,11 @@ function DifferencesTable({ lines, mobile }) {
               <td style={{ ...td, textAlign: 'right' }}>{l.invoicedUnitPrice == null ? '—' : eur(l.invoicedUnitPrice)}</td>
               <td style={{ ...td, textAlign: 'right', fontWeight: 700, color: l.gap > 0 ? C.red : (l.gap < 0 ? C.green : C.greyT) }}>
                 {signedEur(l.gap)}
+                {l.explainedByDiscount > 0 && (
+                  <div style={{ fontSize: 10.5, fontWeight: 600, color: C.greyM, whiteSpace: 'nowrap' }}>
+                    dont {eur(l.explainedByDiscount)} de remise
+                  </div>
+                )}
               </td>
               <td style={{ ...td, fontSize: 11.5, color: C.greyT }}>{l.meta.action || ''}</td>
             </tr>
@@ -326,6 +331,14 @@ function ControlTab({ suppliers, mobile, onSaved }) {
             <div style={{ padding: 14, background: C.redL, color: C.red, borderRadius: 10, fontSize: 13, fontWeight: 600 }}>
               Les lignes lues totalisent {eur(totals.invoiceParsed)} alors que le document annonce {eur(totals.invoicePrinted)}.
               Une ligne est probablement mal lue : ne rien réclamer sur cette base.
+            </div>
+          )}
+
+          {summary?.hasFooterDiscount && summary.explainedByDiscount > 0 && (
+            <div style={{ padding: 13, background: C.blueL, color: C.blue, borderRadius: 10, fontSize: 13 }}>
+              Ce document porte une remise de pied de <strong>{eur(Math.abs(totals.footerDiscount))}</strong>.
+              Les lignes sont facturées au prix brut : <strong>{eur(summary.explainedByDiscount)}</strong> des
+              écarts de tarif ci-dessous s'expliquent par cette remise et ne sont pas réclamables.
             </div>
           )}
 

@@ -4,6 +4,11 @@ const parserRegistry = require('../parsers');
 const { findUnparsedRows } = require('./parseAudit');
 const supplierRefModel = require('./supplierRefModel');
 const { convertLine } = require('../utils/importLineConversion');
+// Reconstitution des références tronquées : partagée avec le contrôle de
+// facture, qui lit exactement les mêmes documents (utils/refResolution.js).
+// En garder deux copies, c'est garantir qu'une seule sera corrigée le jour où
+// ça casse — c'est arrivé sur LVP le 28/09/2026.
+const { resolveCompleteRefs } = require('../utils/refResolution');
 
 /**
  * Nettoie le texte brut extrait d'un PDF avant parsing :
@@ -42,53 +47,6 @@ function cleanPdfText(text) {
 /** Normalise un texte pour comparaison : minuscules, espaces collapsés, trim. */
 function normalizeSku(s) {
   return (s || '').toLowerCase().replace(/\s+/g, ' ').trim();
-}
-
-function escapeRegExp(s) {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-/**
- * Réaffecte à chaque ligne sa référence fournisseur COMPLÈTE.
- *
- * Les PDF aplatissent les colonnes "Référence" et "Désignation" : une référence
- * contenant un espace ou un tiret (ex: "MJ AMNESIA 300MG", "VP RES GTX 0.2 V2")
- * se retrouve collée à la désignation, et aucun parseur ne peut deviner de façon
- * fiable où elle s'arrête. On lève l'ambiguïté en cherchant, parmi les SKU connus
- * en BDD pour ce fournisseur, le plus long qui préfixe le texte "réf + désignation"
- * à la frontière d'un mot. Ce traitement est commun à TOUS les fournisseurs.
- *
- * Modifie `items` en place. Ne change une ligne que si un SKU connu plus complet
- * est trouvé : aucune régression pour les références déjà correctes ou absentes
- * du catalogue.
- */
-function resolveCompleteSkus(items, dbSkus) {
-  if (!items || items.length === 0 || !dbSkus || dbSkus.length === 0) return;
-
-  // Plus long SKU d'abord → on retient la référence la plus complète.
-  const entries = dbSkus
-    .map((original) => ({ original, normalized: normalizeSku(original) }))
-    .filter((e) => e.normalized.length > 0)
-    .sort((a, b) => b.normalized.length - a.normalized.length);
-
-  for (const item of items) {
-    if (!item.supplier_sku) continue;
-
-    const combined = `${item.supplier_sku} ${item.designation || ''}`.trim();
-    const nc = normalizeSku(combined);
-
-    // Cherche le plus long SKU connu qui préfixe le texte combiné.
-    const match = entries.find(
-      (e) => nc === e.normalized || nc.startsWith(e.normalized + ' ')
-    );
-    if (!match || match.normalized === normalizeSku(item.supplier_sku)) continue;
-
-    // Retire les mots de la référence en tête → reste = nouvelle désignation.
-    const skuPattern = match.original.trim().split(/\s+/).map(escapeRegExp).join('\\s+');
-    const re = new RegExp('^' + skuPattern + '\\s*', 'i');
-    item.designation = combined.replace(re, '').trim();
-    item.supplier_sku = match.original;
-  }
 }
 
 const pdfImportModel = {
@@ -293,7 +251,8 @@ const pdfImportModel = {
       'SELECT supplier_sku FROM supplier_refs WHERE supplier_id = $1',
       [supplierId]
     );
-    resolveCompleteSkus(parsed.items, knownSkusResult.rows.map(r => r.supplier_sku));
+    resolveCompleteRefs(parsed.items, knownSkusResult.rows.map(r => r.supplier_sku),
+      { refKey: 'supplier_sku', labelKey: 'designation' });
 
     // 5. Matcher les réfs dans supplier_refs. Une réf ne désigne qu'un produit
     //    (index unique sur la réf normalisée) : plus d'arbitrage entre candidats.

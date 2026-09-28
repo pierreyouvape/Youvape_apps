@@ -22,6 +22,7 @@ const assert = require('assert');
 const { compareInvoiceToOrder, listDifferences } = require('../src/utils/invoiceCompare');
 const { buildClaimMessage } = require('../src/utils/invoiceClaimMessage');
 const { attachMatchKeys } = require('../src/utils/invoiceMatching');
+const { resolveCompleteRefs } = require('../src/utils/refResolution');
 
 let failures = 0;
 function test(name, fn) {
@@ -529,6 +530,93 @@ test('un arrondi reste un arrondi même quand il pèse plusieurs euros', () => {
   assert.strictEqual(r.lines[0].material, true);
   assert.strictEqual(r.summary.claimable, 0);
   assert.strictEqual(r.summary.roundingGap, 10);
+});
+
+/* ─── Références tronquées (LVP F2609287196, 28/09/2026) ─────────────────── */
+
+console.log('\nRéférences contenant des espaces');
+
+test('deux références commençant pareil ne fusionnent plus', () => {
+  // Le PDF aplatit réf et désignation. Le parseur ne garde que le premier mot :
+  // « VP RES GTI 0.15 » et « VP Box Arm S Cyber Gold » devenaient tous deux
+  // « VP », se regroupaient en une ligne de 11 pièces à 92,70 €, et laissaient
+  // deux fausses anomalies « commandé non facturé » en face.
+  const lignes = [
+    { ref: 'VP', label: 'RES GTI 0.15 Résistances GTI (5pcs) - Vaporesso', qty: 10, lineTotalHt: 67.40 },
+    { ref: 'VP', label: 'Box Arm S Cyber Gold Box Armour S 100W - Vaporesso', qty: 1, lineTotalHt: 25.30 },
+  ];
+  resolveCompleteRefs(lignes, ['VP RES GTI 0.15', 'VP Box Arm S Cyber Gold', 'VP-RGTXDUA-03']);
+  assert.strictEqual(lignes[0].ref, 'VP RES GTI 0.15');
+  assert.strictEqual(lignes[1].ref, 'VP Box Arm S Cyber Gold');
+  assert.ok(lignes[0].label.startsWith('Résistances GTI'));
+
+  const r = compareInvoiceToOrder({
+    invoice: { lines: lignes },
+    order: { lines: [
+      { ref: 'VP RES GTI 0.15', qty: 10, price: 6.74 },
+      { ref: 'VP Box Arm S Cyber Gold', qty: 1, price: 25.30 },
+    ] },
+  });
+  assert.strictEqual(r.lines.length, 2);
+  assert.ok(r.lines.every((l) => l.verdict === 'ok'));
+});
+
+test('une référence déjà complète n\'est pas touchée', () => {
+  const lignes = [{ ref: 'VP-RGTXDUA-03', label: 'Résistances GTX Dual Mesh', qty: 20, lineTotalHt: 112.40 }];
+  resolveCompleteRefs(lignes, ['VP RES GTI 0.15', 'VP-RGTXDUA-03']);
+  assert.strictEqual(lignes[0].ref, 'VP-RGTXDUA-03');
+  assert.strictEqual(lignes[0].label, 'Résistances GTX Dual Mesh');
+});
+
+/* ─── Remise de pied face à une commande au NET ──────────────────────────── */
+
+console.log('\nRemise de pied : ne pas réclamer ce qui est déjà remisé');
+
+const lvp = compareInvoiceToOrder({
+  invoice: {
+    totalHt: 888.53,
+    lines: [
+      // Facturées au BRUT, la remise « RSPV20 » n'apparaissant qu'au pied.
+      { ref: 'A', qty: 20, lineTotalHt: 112.40 },   // commande : 20 × 4,50 = 90,00
+      { ref: 'B', qty: 10, lineTotalHt: 67.30 },    // commande : 10 × 5,38 = 53,80
+      { ref: 'C', qty: 30, lineTotalHt: 87.00 },    // commande : 30 × 2,88 = 86,40
+      { ref: null, label: 'Remise', qty: 1, lineTotalHt: -37.50, kind: 'discount' },
+    ],
+  },
+  order: { lines: [
+    { ref: 'A', qty: 20, price: 4.50 },
+    { ref: 'B', qty: 10, price: 5.38 },
+    { ref: 'C', qty: 30, price: 2.88 },
+  ] },
+});
+
+test('les écarts couverts par la remise ne sont pas réclamés', () => {
+  // 22,40 + 13,50 + 0,60 = 36,50 € d'écarts bruts, pour 37,50 € de remise :
+  // tout est couvert, il n'y a rien à demander.
+  assert.strictEqual(lvp.summary.hasFooterDiscount, true);
+  assert.strictEqual(lvp.summary.explainedByDiscount, 36.50);
+  assert.strictEqual(lvp.summary.claimable, 0);
+});
+
+test('la remise ne peut pas expliquer plus que les écarts constatés', () => {
+  // Plafonnée à l'écart : sans ce garde-fou, une grosse remise fabriquerait des
+  // avoirs imaginaires sur des lignes parfaitement conformes.
+  const total = lvp.lines.reduce((s, l) => s + (l.explainedByDiscount || 0), 0);
+  assert.ok(total <= 37.50 + 0.001, `${total} > 37,50`);
+  assert.ok(lvp.lines.every((l) => (l.explainedByDiscount || 0) <= l.gapPrice + 0.001));
+});
+
+test('un vrai surcoût ressort malgré la remise', () => {
+  const r = compareInvoiceToOrder({
+    invoice: { lines: [
+      { ref: 'A', qty: 10, lineTotalHt: 100 },      // commande : 10 × 5 = 50
+      { ref: null, label: 'Remise', qty: 1, lineTotalHt: -10, kind: 'discount' },
+    ] },
+    order: { lines: [{ ref: 'A', qty: 10, price: 5 }] },
+  });
+  // 50 € d'écart pour 10 € de remise : 40 € restent dus.
+  assert.strictEqual(r.summary.explainedByDiscount, 10);
+  assert.strictEqual(r.summary.claimable, 40);
 });
 
 if (failures > 0) {

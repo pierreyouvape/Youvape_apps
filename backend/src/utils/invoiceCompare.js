@@ -284,6 +284,45 @@ function compareInvoiceToOrder({ invoice, order, options = {} }) {
       : r.invoicedUnitPrice * (1 - discountRate);
   }
 
+  // ─── Ce que la remise de pied explique déjà ───────────────────────────────
+  // Cas LVP F2609287196 (28/09/2026), le plus retors rencontré : la commande
+  // porte le prix NET (4,50 €) et la facture le prix BRUT (5,62 €), la remise
+  // « RSPV20 » n'apparaissant qu'au pied pour 93,55 €. Ligne à ligne, tout
+  // paraît surfacturé — l'écran annonçait 75,42 € réclamables alors que le vrai
+  // écart est de 0,43 €. Réclamer là-dessus, c'est écrire au commercial pour
+  // une remise qu'il a déjà accordée.
+  //
+  // On impute donc la remise aux lignes dont le prix dépasse celui commandé, au
+  // prorata de leur dépassement et PLAFONNÉE à ce dépassement. Ce qui reste
+  // après imputation est le seul écart réellement dû. Le plafond compte : sans
+  // lui, une remise plus grosse que les écarts créerait des avoirs imaginaires.
+  const overpriced = results.filter((r) => r.gapPrice > 0
+    && (r.verdict === 'price' || r.verdict === 'qty_price'));
+  const overpricedTotal = round2(overpriced.reduce((s, r) => s + r.gapPrice, 0));
+  let discountApplied = 0;
+  if (footerDiscount < 0 && overpricedTotal > 0) {
+    const pool = Math.min(Math.abs(footerDiscount), overpricedTotal);
+    let left = pool;
+    overpriced.forEach((r, i) => {
+      // La dernière ligne reçoit le solde : arrondir chaque part séparément
+      // ferait « expliquer » 93,57 € par une remise de 93,55 €, et rien n'est
+      // plus douteux qu'un total qui dépasse ce qu'il répartit.
+      const part = i === overpriced.length - 1
+        ? round2(left)
+        : Math.min(round2(pool * (r.gapPrice / overpricedTotal)), round2(left));
+      r.explainedByDiscount = part;
+      r.residualGapPrice = round2(r.gapPrice - part);
+      left = round2(left - part);
+      discountApplied += part;
+    });
+  }
+  for (const r of results) {
+    if (r.explainedByDiscount === undefined) {
+      r.explainedByDiscount = 0;
+      r.residualGapPrice = r.gapPrice;
+    }
+  }
+
   // ─── Totaux ───────────────────────────────────────────────────────────────
   const invoiceParsed = round2(invoiceLines.reduce((s, l) => s + (Number(l.lineTotalHt) || 0), 0));
   const orderTotal = round2(orderLines.reduce((s, l) => s + (Number(l.qty) || 0) * (Number(l.price) || 0), 0));
@@ -311,9 +350,11 @@ function compareInvoiceToOrder({ invoice, order, options = {} }) {
     }
     qtyGap += r.gapQty;
     const isPrice = r.verdict === 'price' || r.verdict === 'qty_price';
-    if (isPrice && r.material) {
-      if (r.gapPrice > 0) claimable += r.gapPrice;
-      else inOurFavour += r.gapPrice;
+    // On ne réclame que le RÉSIDU : ce qu'une remise de pied explique déjà a
+    // été accordé, le réclamer serait demander deux fois la même chose.
+    if (isPrice && r.material && Math.abs(r.residualGapPrice) >= threshold) {
+      if (r.residualGapPrice > 0) claimable += r.residualGapPrice;
+      else inOurFavour += r.residualGapPrice;
     } else if (isPrice) {
       minorGap += r.gapPrice;        // tarif vraiment différent, mais pour des cacahuètes
     } else {
@@ -345,6 +386,9 @@ function compareInvoiceToOrder({ invoice, order, options = {} }) {
       qtyGap: round2(qtyGap),
       extrasGap: round2(extrasGap),
       packagingGap: round2(packagingGap),
+      // Part des écarts de tarif déjà couverte par la remise de pied.
+      explainedByDiscount: round2(discountApplied),
+      hasFooterDiscount: footerDiscount < 0,
       counts: results.reduce((acc, r) => {
         acc[r.verdict] = (acc[r.verdict] || 0) + 1;
         return acc;

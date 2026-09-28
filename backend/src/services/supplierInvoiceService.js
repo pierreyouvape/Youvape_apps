@@ -32,6 +32,7 @@ const supplierRefModel = require('../models/supplierRefModel');
 const bmsApiModel = require('../models/bmsApiModel');
 const { compareInvoiceToOrder, listDifferences } = require('../utils/invoiceCompare');
 const { attachMatchKeys } = require('../utils/invoiceMatching');
+const { resolveCompleteRefs } = require('../utils/refResolution');
 
 /** Extrait le texte d'un PDF (ou lit un fichier texte), puis le nettoie. */
 async function extractText(buffer) {
@@ -141,6 +142,17 @@ async function analyseInvoice({ buffer, supplierId, orderId = null, db = pool })
   if (!invoice.lines || invoice.lines.length === 0) {
     throw new Error('Aucune ligne lue dans ce document');
   }
+
+  // Les colonnes « Référence » et « Désignation » sont aplaties dans le PDF :
+  // une référence contenant un espace est tronquée par le parseur, qui ne peut
+  // pas deviner où elle s'arrête. On la reconstitue depuis les références
+  // connues de CE fournisseur. Sans cette étape, « VP RES GTI 0.15 » et
+  // « VP Box Arm S Cyber Gold » se réduisent tous deux à « VP » et fusionnent.
+  const { rows: knownRefs } = await db.query(
+    'SELECT supplier_sku FROM supplier_refs WHERE supplier_id = $1',
+    [supplierId],
+  );
+  resolveCompleteRefs(invoice.lines, knownRefs.map((r) => r.supplier_sku));
 
   // La commande : celle imposée, sinon celle que désigne la référence imprimée.
   let order = null;
