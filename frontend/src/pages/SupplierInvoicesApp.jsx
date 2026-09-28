@@ -265,6 +265,25 @@ function ReadLinesTable({ lines, mobile }) {
   );
 }
 
+/**
+ * Règle un document isolé : un règlement, une imputation.
+ *
+ * Le montant est celui qui RESTE dû — négatif pour un avoir, qui vient alors en
+ * déduction. C'est la même mécanique que la sélection multiple de l'onglet
+ * Factures, réduite à une ligne.
+ */
+async function settleOne(document, { method, paid_at, reference }) {
+  const reste = Number(document.remaining_amount) || 0;
+  await axios.post(`${BASE}/payments`, {
+    supplier_id: document.supplier_id,
+    method,
+    paid_at,
+    amount: Math.round(reste * 100) / 100,
+    reference,
+    allocations: [{ document_id: document.id, amount: reste }],
+  });
+}
+
 /** Lignes gelées en base → forme attendue par le tableau. */
 const fromStoredLines = (lines) => (lines || []).map((l) => ({
   ref: l.supplier_sku,
@@ -757,7 +776,10 @@ function FilingTab({ suppliers, mobile, reloadKey, onSaved }) {
                         ? <Badge tone="green">Avoir</Badge>
                         : (r.doc_type === 'proforma' ? <Badge tone="orange">Pro forma</Badge> : <Badge tone="grey">Facture</Badge>)}
                     </td>
-                    <td style={{ ...td, textAlign: 'right', fontWeight: 700 }} onClick={() => openDetail(r.id)}>{eur(r.total_ttc)}</td>
+                    <td style={{
+                      ...td, textAlign: 'right', fontWeight: 700,
+                      color: r.doc_type === 'credit_note' ? C.blue : C.dark,
+                    }} onClick={() => openDetail(r.id)}>{eur(r.total_ttc)}</td>
                     <td style={{ ...td, textAlign: 'center' }} onClick={() => openDetail(r.id)}>
                       {Number(r.difference_count) > 0
                         ? <Badge tone="red">{r.difference_count}</Badge>
@@ -803,6 +825,7 @@ function FilingTab({ suppliers, mobile, reloadKey, onSaved }) {
           onClose={closeDetail}
           onStatus={(s) => setStatus(detail.id, s)}
           onDelete={() => remove(detail)}
+          onSettle={async (r) => { await settleOne(detail, r); openDetail(detail.id); }}
         />
       )}
     </div>
@@ -816,8 +839,16 @@ function FilingTab({ suppliers, mobile, reloadKey, onSaved }) {
  * lire le tableau des écarts — inutilisable. Une facture a une dizaine de
  * colonnes : elle a besoin de toute la largeur.
  */
-function DocumentPanel({ detail, mobile, onClose, onStatus, onDelete }) {
+function DocumentPanel({ detail, mobile, onClose, onStatus, onDelete, onSettle }) {
   const ecarts = detail.lines.filter((l) => l.verdict && l.verdict !== 'ok').length;
+  const avoir = detail.doc_type === 'credit_note';
+  const reste = Number(detail.remaining_amount) || 0;
+  const [reglement, setReglement] = useState({
+    method: avoir ? 'avoir' : 'amex',
+    paid_at: new Date().toISOString().slice(0, 10),
+    reference: '',
+  });
+  const [busy, setBusy] = useState(false);
   return (
     <div
       onClick={onClose}
@@ -870,6 +901,38 @@ function DocumentPanel({ detail, mobile, onClose, onStatus, onDelete }) {
         </div>
         <DifferencesTable lines={fromStoredLines(detail.lines)} mobile={mobile} />
 
+        {Math.abs(reste) > 0.009 && onSettle && (
+          <div style={{
+            display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end', marginTop: 16,
+            background: avoir ? C.blueL : C.mainL, border: `1px solid ${avoir ? C.blue : C.main}`,
+            borderRadius: 12, padding: 14,
+          }}>
+            <div style={{ minWidth: 180, fontSize: 13, fontWeight: 700, color: avoir ? C.blue : C.mainD }}>
+              {avoir ? "Marquer l'avoir comme utilisé" : 'Régler ce document'}
+              <div style={{ fontSize: 11.5, fontWeight: 500, color: C.greyT, marginTop: 2 }}>
+                {eur(Math.abs(reste))}
+              </div>
+            </div>
+            <Field label="Moyen" width={150}>
+              <select value={reglement.method} onChange={(e) => setReglement({ ...reglement, method: e.target.value })} style={inputStyle}>
+                {METHODS.map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+              </select>
+            </Field>
+            <Field label="Date" width={150}>
+              <input type="date" value={reglement.paid_at}
+                onChange={(e) => setReglement({ ...reglement, paid_at: e.target.value })} style={inputStyle} />
+            </Field>
+            <Field label="Référence" width={180}>
+              <input value={reglement.reference} placeholder="relevé Amex, n° de virement…"
+                onChange={(e) => setReglement({ ...reglement, reference: e.target.value })} style={inputStyle} />
+            </Field>
+            <Btn disabled={busy} onClick={async () => {
+              setBusy(true);
+              try { await onSettle(reglement); } finally { setBusy(false); }
+            }}>{busy ? 'Enregistrement…' : 'Enregistrer'}</Btn>
+          </div>
+        )}
+
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 16, alignItems: 'center' }}>
           <Field label="État du contrôle" width={170}>
             <select value={detail.status} onChange={(e) => onStatus(e.target.value)} style={inputStyle}>
@@ -899,6 +962,7 @@ function PaymentsTab({ suppliers, mobile, reloadKey }) {
   const [payments, setPayments] = useState([]);
   const [unpaid, setUnpaid] = useState([]);
   const [filters, setFilters] = useState({ supplier: '', method: '', statut: '' });
+  const [detail, setDetail] = useState(null);
 
   const load = useCallback(async () => {
     const [p, u] = await Promise.all([
@@ -927,6 +991,7 @@ function PaymentsTab({ suppliers, mobile, reloadKey }) {
     // règlement. D'où un statut à lui.
     const attente = unpaid.map((d) => ({
       cle: `d${d.document_id}`,
+      documentId: d.document_id,
       statut: d.doc_type === 'credit_note' ? 'avoir' : 'attente',
       date: d.doc_type === 'credit_note' ? d.doc_date : d.effective_due_date,
       fournisseur: d.supplier_name, moyen: null, reference: null,
@@ -940,6 +1005,14 @@ function PaymentsTab({ suppliers, mobile, reloadKey }) {
         && (!filters.statut || x.statut === filters.statut))
       .sort((a, b) => String(b.date).localeCompare(String(a.date)));
   }, [payments, unpaid, filters]);
+
+  // On ouvre le document depuis ici : revenir à l'onglet Factures pour changer
+  // un état ou enregistrer un règlement n'avait pas de sens.
+  const openDoc = async (documentId) => {
+    const { data } = await axios.get(`${BASE}/${documentId}`);
+    setDetail(data);
+  };
+  const refreshDoc = async () => { await load(); if (detail) openDoc(detail.id); };
 
   const totalFait = items.filter((x) => x.statut === 'fait').reduce((s, x) => s + x.montant, 0);
   const totalDu = items.filter((x) => x.statut === 'attente').reduce((s, x) => s + x.montant, 0);
@@ -999,7 +1072,9 @@ function PaymentsTab({ suppliers, mobile, reloadKey }) {
               </td></tr>
             )}
             {items.map((x) => (
-              <tr key={x.cle}>
+              <tr key={x.cle}
+                  onClick={() => x.documentId && openDoc(x.documentId)}
+                  style={{ cursor: x.documentId ? 'pointer' : 'default' }}>
                 <td style={td}>
                   {x.statut === 'fait' && <Badge tone="green">Réglé</Badge>}
                   {x.statut === 'avoir' && <Badge tone="blue">Avoir non utilisé</Badge>}
@@ -1014,7 +1089,12 @@ function PaymentsTab({ suppliers, mobile, reloadKey }) {
                 <td style={td}>{x.moyen ? <Badge tone="blue">{methodLabel(x.moyen)}</Badge> : <span style={{ color: C.greyM }}>—</span>}</td>
                 <td style={{ ...td, fontWeight: 600 }}>{x.documents || '—'}</td>
                 <td style={td}>{x.reference || <span style={{ color: C.greyM }}>—</span>}</td>
-                <td style={{ ...td, textAlign: 'right', fontWeight: 700, color: x.statut === 'fait' ? C.dark : C.orange }}>
+                <td style={{
+                  ...td, textAlign: 'right', fontWeight: 700,
+                  // Un avoir est de l'argent à faire valoir : le peindre en
+                  // rouge le ferait passer pour une dette.
+                  color: x.statut === 'avoir' ? C.blue : (x.statut === 'fait' ? C.dark : C.orange),
+                }}>
                   {eur(x.montant)}
                   {x.nonImpute != null && Math.abs(x.nonImpute) > 0.009 && (
                     <div style={{ fontSize: 10.5, color: C.red, fontWeight: 600 }}>
@@ -1027,6 +1107,22 @@ function PaymentsTab({ suppliers, mobile, reloadKey }) {
           </tbody>
         </table>
       </div>
+
+      {detail && (
+        <DocumentPanel
+          detail={detail}
+          mobile={mobile}
+          onClose={() => setDetail(null)}
+          onStatus={async (st) => { await axios.put(`${BASE}/${detail.id}/status`, { status: st }); refreshDoc(); }}
+          onDelete={async () => {
+            if (!window.confirm(`Supprimer ${detail.number} et son fichier ? Cette action est définitive.`)) return;
+            await axios.delete(`${BASE}/${detail.id}`);
+            setDetail(null);
+            load();
+          }}
+          onSettle={async (r) => { await settleOne(detail, r); refreshDoc(); }}
+        />
+      )}
     </div>
   );
 }
