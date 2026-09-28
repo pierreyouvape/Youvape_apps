@@ -155,7 +155,15 @@ async function listDocuments({ supplierId, status, paymentStatus, from, to, docT
     `SELECT d.*, s.name AS supplier_name,
             b.paid_amount, b.remaining_amount, b.payment_status, b.effective_due_date,
             (SELECT count(*) FROM supplier_document_lines l
-              WHERE l.document_id = d.id AND l.verdict IS NOT NULL AND l.verdict <> 'ok') AS difference_count
+              WHERE l.document_id = d.id AND l.verdict IS NOT NULL AND l.verdict <> 'ok') AS difference_count,
+            -- Les trois dates que l'acheteur suit : quand il a commandé, quand
+            -- le fournisseur a facturé, quand l'argent est parti.
+            (SELECT min(po.order_date) FROM supplier_document_orders o
+               JOIN purchase_orders po ON po.id = o.purchase_order_id
+              WHERE o.document_id = d.id) AS order_date,
+            (SELECT max(p.paid_at) FROM supplier_payment_allocations a
+               JOIN supplier_payments p ON p.id = a.payment_id
+              WHERE a.document_id = d.id) AS paid_at
        FROM supplier_documents d
        JOIN suppliers s ON s.id = d.supplier_id
        LEFT JOIN supplier_document_balances b ON b.document_id = d.id

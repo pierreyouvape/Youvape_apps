@@ -717,7 +717,8 @@ function FilingTab({ suppliers, mobile, reloadKey, onSaved }) {
             <thead>
               <tr>
                 <th style={{ ...th, width: 34 }}></th>
-                <th style={th}>Date</th>
+                <th style={th}>Commande</th>
+                <th style={th}>Facture</th>
                 <th style={th}>Numéro</th>
                 <th style={th}>Fournisseur</th>
                 <th style={th}>Type</th>
@@ -725,13 +726,14 @@ function FilingTab({ suppliers, mobile, reloadKey, onSaved }) {
                 <th style={{ ...th, textAlign: 'center' }}>Écarts</th>
                 <th style={th}>Contrôle</th>
                 <th style={th}>Échéance</th>
+                <th style={th}>Payée le</th>
                 <th style={th}>Paiement</th>
                 <th style={th}></th>
               </tr>
             </thead>
             <tbody>
               {rows.length === 0 && (
-                <tr><td style={{ ...td, textAlign: 'center', color: C.greyM, padding: 26 }} colSpan={11}>
+                <tr><td style={{ ...td, textAlign: 'center', color: C.greyM, padding: 26 }} colSpan={13}>
                   Aucun document. Dépose une facture depuis l'onglet Contrôle.
                 </td></tr>
               )}
@@ -743,6 +745,9 @@ function FilingTab({ suppliers, mobile, reloadKey, onSaved }) {
                       <input type="checkbox" disabled={!reste} checked={!!selected[r.id]}
                         title={reste ? 'Inclure dans un règlement' : 'Déjà réglée'}
                         onChange={(e) => setSelected({ ...selected, [r.id]: e.target.checked })} />
+                    </td>
+                    <td style={{ ...td, color: r.order_date ? C.dark : C.greyM }} onClick={() => openDetail(r.id)}>
+                      {date(r.order_date)}
                     </td>
                     <td style={td} onClick={() => openDetail(r.id)}>{date(r.doc_date)}</td>
                     <td style={{ ...td, fontWeight: 600 }} onClick={() => openDetail(r.id)}>{r.number}</td>
@@ -766,10 +771,17 @@ function FilingTab({ suppliers, mobile, reloadKey, onSaved }) {
                       </select>
                     </td>
                     <td style={td} onClick={() => openDetail(r.id)}>{date(r.effective_due_date)}</td>
+                    <td style={{ ...td, color: r.paid_at ? C.dark : C.greyM }} onClick={() => openDetail(r.id)}>
+                      {date(r.paid_at)}
+                    </td>
                     <td style={td} onClick={() => openDetail(r.id)}>
-                      <Badge tone={r.payment_status === 'paid' ? 'green' : (r.payment_status === 'partial' ? 'orange' : 'red')}>
-                        {PAYMENT_LABELS[r.payment_status] || '—'}
-                      </Badge>
+                      {r.doc_type === 'credit_note'
+                        ? <Badge tone={r.payment_status === 'paid' ? 'green' : 'orange'}>
+                            {r.payment_status === 'paid' ? 'Utilisé' : 'Non utilisé'}
+                          </Badge>
+                        : <Badge tone={r.payment_status === 'paid' ? 'green' : (r.payment_status === 'partial' ? 'orange' : 'red')}>
+                            {PAYMENT_LABELS[r.payment_status] || '—'}
+                          </Badge>}
                     </td>
                     <td style={{ ...td, whiteSpace: 'nowrap' }} onClick={(e) => e.stopPropagation()}>
                       <Btn small variant="ghost" onClick={() => downloadFile(r.id, r.number)}>PDF</Btn>
@@ -910,11 +922,17 @@ function PaymentsTab({ suppliers, mobile, reloadKey }) {
       moyen: p.method, reference: p.reference, montant: Number(p.amount),
       documents: p.document_numbers, nonImpute: Number(p.unallocated_amount),
     }));
+    // Un avoir ne se paie pas : il s'utilise. Lui coller une échéance et un
+    // retard n'a aucun sens — il attend simplement d'être imputé sur un
+    // règlement. D'où un statut à lui.
     const attente = unpaid.map((d) => ({
-      cle: `d${d.document_id}`, statut: 'attente', date: d.effective_due_date,
+      cle: `d${d.document_id}`,
+      statut: d.doc_type === 'credit_note' ? 'avoir' : 'attente',
+      date: d.doc_type === 'credit_note' ? d.doc_date : d.effective_due_date,
       fournisseur: d.supplier_name, moyen: null, reference: null,
       documents: d.number,
-      montant: Number(d.remaining_amount), retard: Number(d.days_overdue),
+      montant: Number(d.remaining_amount),
+      retard: d.doc_type === 'credit_note' ? 0 : Number(d.days_overdue),
     }));
     return [...faits, ...attente]
       .filter((x) => (!filters.supplier || x.fournisseur === filters.supplier)
@@ -925,6 +943,9 @@ function PaymentsTab({ suppliers, mobile, reloadKey }) {
 
   const totalFait = items.filter((x) => x.statut === 'fait').reduce((s, x) => s + x.montant, 0);
   const totalDu = items.filter((x) => x.statut === 'attente').reduce((s, x) => s + x.montant, 0);
+  // Un avoir non utilisé est de l'argent à faire valoir, pas une dette :
+  // le fondre dans « en attente » masquait les deux à la fois.
+  const totalAvoirs = items.filter((x) => x.statut === 'avoir').reduce((s, x) => s + x.montant, 0);
   const fournisseurs = [...new Set([...payments.map((p) => p.supplier_name), ...unpaid.map((d) => d.supplier_name)])].sort();
 
   return (
@@ -947,6 +968,7 @@ function PaymentsTab({ suppliers, mobile, reloadKey }) {
             <option value="">Tous</option>
             <option value="fait">Réglés</option>
             <option value="attente">En attente</option>
+            <option value="avoir">Avoirs non utilisés</option>
           </select>
         </Field>
       </div>
@@ -954,6 +976,9 @@ function PaymentsTab({ suppliers, mobile, reloadKey }) {
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
         <Kpi label="Réglé" value={eur(totalFait)} tone="green" />
         <Kpi label="En attente" value={eur(totalDu)} tone={totalDu > 0 ? 'orange' : 'green'} />
+        {totalAvoirs !== 0 && (
+          <Kpi label="Avoirs non utilisés" value={eur(Math.abs(totalAvoirs))} tone="blue" />
+        )}
       </div>
 
       <div style={{ overflowX: 'auto', border: `1px solid ${C.greyB}`, borderRadius: 10, background: C.white }}>
@@ -976,9 +1001,13 @@ function PaymentsTab({ suppliers, mobile, reloadKey }) {
             {items.map((x) => (
               <tr key={x.cle}>
                 <td style={td}>
-                  {x.statut === 'fait'
-                    ? <Badge tone="green">Réglé</Badge>
-                    : <Badge tone={x.retard > 0 ? 'red' : 'orange'}>{x.retard > 0 ? `En retard (${x.retard} j)` : 'En attente'}</Badge>}
+                  {x.statut === 'fait' && <Badge tone="green">Réglé</Badge>}
+                  {x.statut === 'avoir' && <Badge tone="blue">Avoir non utilisé</Badge>}
+                  {x.statut === 'attente' && (
+                    <Badge tone={x.retard > 0 ? 'red' : 'orange'}>
+                      {x.retard > 0 ? `En retard (${x.retard} j)` : 'En attente'}
+                    </Badge>
+                  )}
                 </td>
                 <td style={td}>{date(x.date)}</td>
                 <td style={td}>{x.fournisseur}</td>
