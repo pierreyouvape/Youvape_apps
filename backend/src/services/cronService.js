@@ -840,6 +840,60 @@ const setupNextoreCrons = () => {
 };
 
 
+// ==================== LIAISONS PRODUIT <-> FOURNISSEUR (BMS) ====================
+// La table product_suppliers n'etait alimentee que par les imports de factures et la
+// saisie de refs : les liaisons creees dans BMS n'arrivaient jamais, et le filtre
+// fournisseur de /purchases (onglet Besoins) ignorait donc des produits a commander
+// (1406 liaisons manquantes au 28/09/2026). Rattrapage quotidien, en INSERT SEUL :
+// aucune liaison existante n'est modifiee (pack_qty, prix, is_primary preserves).
+
+const supplierModel = require('../models/supplierModel');
+
+let productSuppliersLinkCronJob = null;
+
+const runProductSuppliersLink = async () => {
+  try {
+    const r = await supplierModel.syncProductSuppliersFromBMS();
+    const bySupplier = r.details.reduce((acc, d) => {
+      acc[d.supplier] = (acc[d.supplier] || 0) + 1;
+      return acc;
+    }, {});
+    const resume = Object.entries(bySupplier).map(([n, c]) => `${n} +${c}`).join(', ') || 'aucune nouvelle liaison';
+    console.log(`Liaisons produit-fournisseur BMS: ${r.linked} creee(s) sur ${r.suppliersProcessed} fournisseur(s) — ${resume} (${r.skuNotFound} sku BMS sans produit publie en local)`);
+
+    if (r.failedSuppliers.length > 0) {
+      sendAlert(
+        `Cron liaisons produit-fournisseur: ${r.failedSuppliers.length} fournisseur(s) non lu(s)`,
+        `L'API BMS n'a pas repondu pour ces fournisseurs : leurs nouvelles liaisons ` +
+        `n'ont pas ete importees et les produits concernes resteront absents du filtre ` +
+        `fournisseur de /purchases jusqu'au prochain passage.\n\n` +
+        r.failedSuppliers.map(f => `- ${f.supplier}: ${f.error}`).join('\n')
+      );
+    }
+  } catch (error) {
+    console.error('Erreur cron liaisons produit-fournisseur:', error.message);
+    sendAlert(
+      'Cron liaisons produit-fournisseur: echec',
+      `L'import quotidien des liaisons produit-fournisseur depuis BMS a echoue.\n\nErreur: ${error.message}`
+    );
+  }
+};
+
+const setupProductSuppliersLinkCron = () => {
+  if (productSuppliersLinkCronJob) {
+    productSuppliersLinkCronJob.stop();
+    productSuppliersLinkCronJob = null;
+  }
+  // Tous les jours a 5h10 : apres la resynchro produits (3h, qui fixe les statuts
+  // publish sur lesquels le matching par SKU s'appuie) et apres les emplacements
+  // BMS (4h20, ~17 min), pour ne pas cumuler les quotas de l'API BMS.
+  productSuppliersLinkCronJob = cron.schedule('10 5 * * *', runProductSuppliersLink, {
+    timezone: 'Europe/Paris'
+  });
+  console.log('Cron liaisons produit-fournisseur BMS configure: tous les jours a 5h10 (Europe/Paris)');
+};
+
+
 module.exports = {
   setupCron,
   restartCron,
@@ -859,7 +913,9 @@ module.exports = {
   setupCompetitorMonitorCron,
   setupBrandMapCron,
   setupNextoreCrons,
+  setupProductSuppliersLinkCron,
   runProductDbSyncJob,
+  runProductSuppliersLink,
   runBrandMapJob,
   runNextoreCatalog,
   runNextoreStock,

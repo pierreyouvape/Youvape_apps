@@ -1,6 +1,7 @@
 const pool = require('../config/database');
 const bmsApiModel = require('./bmsApiModel');
 const supplierRefModel = require('./supplierRefModel');
+const parsers = require('../parsers');
 
 /**
  * Résout un productId (id interne OU wp_product_id) vers l'id interne.
@@ -580,13 +581,18 @@ const supplierModel = {
   /**
    * Synchroniser les associations produits-fournisseurs depuis BMS.
    * Pour chaque fournisseur local avec un bms_id, récupère ses produits BMS
-   * et upsert dans product_suppliers (matching par SKU).
-   * Ne supprime pas les associations manuelles existantes.
+   * et INSÈRE les liaisons manquantes dans product_suppliers (matching par SKU).
+   *
+   * INSERT SEUL, jamais d'UPDATE : une liaison déjà en base est le fruit d'un
+   * import de facture ou d'une saisie humaine, et son pack_qty pilote les prix
+   * (÷/× pack_qty) et l'arrivage. Un upsert depuis BMS écraserait ces valeurs —
+   * 32 liaisons divergeaient de BMS au 28/09/2026, dont des fournisseurs
+   * skipPackQty où pack_qty doit rester à 1 (bug prix ×10).
    */
   syncProductSuppliersFromBMS: async () => {
     // 1. Fournisseurs locaux avec bms_id
     const suppliersResult = await pool.query(
-      'SELECT id, name, bms_id FROM suppliers WHERE bms_id IS NOT NULL AND is_active = true'
+      'SELECT id, name, code, bms_id FROM suppliers WHERE bms_id IS NOT NULL AND is_active = true ORDER BY name'
     );
     const localSuppliers = suppliersResult.rows;
 
@@ -597,10 +603,21 @@ const supplierModel = {
     `);
     const productBySku = new Map(productsResult.rows.map(p => [p.sku, p.id]));
 
+    // 3. Liaisons déjà en base : on ne les retouche pas (cf. commentaire ci-dessus)
+    const existingResult = await pool.query(
+      `SELECT supplier_id, product_id FROM product_suppliers`
+    );
+    const existingLinks = new Set(existingResult.rows.map(r => `${r.supplier_id}:${r.product_id}`));
+    const primaryResult = await pool.query(
+      `SELECT DISTINCT product_id FROM product_suppliers WHERE is_primary = true`
+    );
+    const productsWithPrimary = new Set(primaryResult.rows.map(r => r.product_id));
+
     let linked = 0;
     let skipped = 0;
     let skuNotFound = 0;
     const details = [];
+    const failedSuppliers = [];
 
     for (const supplier of localSuppliers) {
       let bmsProducts;
@@ -609,8 +626,12 @@ const supplierModel = {
       } catch (err) {
         console.warn(`Impossible de récupérer les produits BMS pour ${supplier.name} (bms_id=${supplier.bms_id}): ${err.message}`);
         skipped++;
+        failedSuppliers.push({ supplier: supplier.name, error: err.message });
         continue;
       }
+
+      // Fournisseur « à l'unité » : pack_qty neutralisé sur tout le cycle BMS
+      const forcePackQtyOne = parsers.skipsPackQty(supplier.code);
 
       for (const item of bmsProducts) {
         const productId = productBySku.get(item.sku);
@@ -618,27 +639,28 @@ const supplierModel = {
           skuNotFound++;
           continue;
         }
+        if (existingLinks.has(`${supplier.id}:${productId}`)) continue;
 
         const price = item.price ? parseFloat(item.price) : null;
-        const packQty = parseInt(item.pack_qty) || 1;
-        const isPrimary = item.primary === 1 || item.primary === true;
+        const packQty = forcePackQtyOne ? 1 : (parseInt(item.pack_qty) || 1);
+        // Jamais un second fournisseur principal sur un produit qui en a déjà un
+        const isPrimary = (item.primary === 1 || item.primary === true) && !productsWithPrimary.has(productId);
 
-        await pool.query(`
+        const inserted = await pool.query(`
           INSERT INTO product_suppliers (supplier_id, product_id, supplier_price, pack_qty, is_primary)
           VALUES ($1, $2, $3, $4, $5)
-          ON CONFLICT (product_id, supplier_id) DO UPDATE SET
-            supplier_price = COALESCE(EXCLUDED.supplier_price, product_suppliers.supplier_price),
-            pack_qty = EXCLUDED.pack_qty,
-            is_primary = CASE WHEN EXCLUDED.is_primary THEN true ELSE product_suppliers.is_primary END,
-            updated_at = CURRENT_TIMESTAMP
+          ON CONFLICT (product_id, supplier_id) DO NOTHING
         `, [supplier.id, productId, price, packQty, isPrimary]);
+        if (inserted.rowCount === 0) continue;
 
+        existingLinks.add(`${supplier.id}:${productId}`);
+        if (isPrimary) productsWithPrimary.add(productId);
         linked++;
         details.push({ supplier: supplier.name, sku: item.sku, productId });
       }
     }
 
-    return { linked, skipped, skuNotFound, suppliersProcessed: localSuppliers.length };
+    return { linked, skipped, skuNotFound, suppliersProcessed: localSuppliers.length, failedSuppliers, details };
   }
 };
 

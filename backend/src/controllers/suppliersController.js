@@ -277,11 +277,11 @@ const suppliersController = {
     try {
       console.log('Début sync associations produits-fournisseurs BMS...');
       const result = await supplierModel.syncProductSuppliersFromBMS();
-      console.log(`Sync produits-fournisseurs terminée: ${result.linked} associations créées/mises à jour`);
+      console.log(`Sync produits-fournisseurs terminée: ${result.linked} associations créées`);
 
       res.json({
         success: true,
-        message: `Synchronisation terminée : ${result.linked} association(s) créées/mises à jour, ${result.skuNotFound} SKU non trouvés`,
+        message: `Synchronisation terminée : ${result.linked} association(s) créée(s), ${result.skuNotFound} SKU non trouvés`,
         data: result
       });
     } catch (error) {
