@@ -11,9 +11,6 @@ const checkPackingRead = checkPermission('packing', 'read');
 // Générer une étiquette Lettre Suivie pour une commande
 router.post('/label/:orderNumber', checkPackingRead, laposteController.generateLabel);
 
-// Générer une étiquette à partir de champs saisis à la main (expédition manuelle)
-router.post('/label-manual', checkPackingRead, laposteController.generateManualLabel);
-
 // Lister les étiquettes
 router.get('/labels', checkPackingRead, laposteController.listLabels);
 

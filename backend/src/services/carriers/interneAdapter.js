@@ -123,6 +123,7 @@ module.exports = assertAdapter({
   // aucun numéro de suivi.
   bmsShipmentTitle: 'Retrait magasin',
   requiresAccount: false,
+  fixedWeight: true,
   resolveWeight,
   createLabel,
   cancelLabel,

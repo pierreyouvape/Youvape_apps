@@ -69,8 +69,39 @@ const jourParis = () =>
   JOURS[new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Paris', weekday: 'short' }).format(new Date())];
 
 const EMPTY_MANUAL_FORM = {
+  serviceKey: '',
   orderNumber: '', first_name: '', last_name: '', company: '',
-  address: '', address_2: '', postcode: '', city: '', phone: '', email: ''
+  address: '', address_2: '', postcode: '', city: '', country: 'FR', phone: '', email: '',
+  weight: '',
+  // Point relais : `loadedRelay` est celui de la commande chargée, gardé à part
+  // pour être repris si l'on revient à son réseau après avoir changé de
+  // service ; `relayDetails` (nom, adresse) n'accompagne que ce point-là.
+  relayId: '', relayCountry: 'FR', relayDetails: null, loadedRelay: null,
+  saturday: false
+};
+
+/** Libellé d'un service d'expédition manuelle (transporteur + mode). */
+const manualServiceLabel = (sv) => {
+  if (sv.modeLabel) return `${sv.carrierLabel} — ${sv.modeLabel}`;
+  if (sv.denominations.length === 1) return `${sv.carrierLabel} — ${sv.denominations[0]}`;
+  return sv.carrierLabel;
+};
+
+/**
+ * Applique un service au formulaire. Le point de la commande chargée n'est
+ * repris que s'il appartient au réseau du service : un point Mondial Relay
+ * envoyé chez Colissimo ferait livrer le colis on ne sait où.
+ */
+const withManualService = (form, services, key) => {
+  const sv = services.find(x => x.key === key);
+  const pt = form.loadedRelay && sv && form.loadedRelay.network === sv.carrierCode ? form.loadedRelay : null;
+  return {
+    ...form,
+    serviceKey: key,
+    relayId: pt?.id || '',
+    relayCountry: pt?.country || form.country || 'FR',
+    relayDetails: pt
+  };
 };
 
 const PackingApp = () => {
@@ -127,7 +158,9 @@ const PackingApp = () => {
   const [manualSaving, setManualSaving] = useState(false);
   const [manualError, setManualError] = useState(null);
   const [manualInfo, setManualInfo] = useState(null);
-  const [manualResult, setManualResult] = useState(null); // { trackingId, orderNumber, pdfBase64 }
+  const [manualResult, setManualResult] = useState(null); // réponse de /shipments/label-manual
+  // Services proposés (transporteur × mode), tirés de la correspondance des dénominations
+  const [manualServices, setManualServices] = useState([]);
   // Livraison le samedi (Chrono 13 et Chrono Relais) : l'interrupteur n'existe
   // que le jeudi et le vendredi, coché d'office le vendredi, et seulement sur
   // une commande scannée qui s'y prête (le backend le dit : saturdayEligible).
@@ -171,8 +204,7 @@ const PackingApp = () => {
    * choisir l'imprimante. Il est décidé par le backend, qui seul connaît le
    * transporteur — « LS-1259134.pdf » pour la lettre suivie,
    * « mondialrelay_1259134.pdf » pour Mondial Relay. Le repli sur « LS- » ne
-   * sert qu'aux appels qui ne passent pas par la route routée (expédition
-   * manuelle, réimpression), tous en lettre suivie.
+   * sert plus qu'à une réimpression dont le transporteur a quitté le registre.
    */
   const downloadPdf = useCallback((base64, orderNumber, fileName) => {
     const byteCharacters = atob(base64);
@@ -648,13 +680,25 @@ const PackingApp = () => {
 
   // --- Expédition manuelle (regénération d'étiquette / envoi hors commande) ---
 
-  const openManualShipment = useCallback(() => {
-    setManualForm({ ...EMPTY_MANUAL_FORM });
+  const openManualShipment = useCallback(async () => {
+    setManualForm({ ...EMPTY_MANUAL_FORM, saturday: jourParis() === 5 });
     setManualError(null);
     setManualInfo(null);
     setManualResult(null);
     setShowManual(true);
-  }, []);
+    try {
+      const res = await axios.get(`${API_URL}/shipments/manual-services`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const services = res.data.services || [];
+      setManualServices(services);
+      // La lettre suivie reste le choix par défaut : c'était le seul possible.
+      const defaut = services.find(sv => sv.carrierCode === 'laposte') || services[0];
+      if (defaut) setManualForm(f => (f && !f.serviceKey ? withManualService(f, services, defaut.key) : f));
+    } catch (err) {
+      setManualError('Impossible de charger la liste des transporteurs');
+    }
+  }, [token]);
 
   const closeManualShipment = useCallback(() => {
     setShowManual(false);
@@ -680,24 +724,41 @@ const PackingApp = () => {
       });
       const loaded = res.data.order;
       const s = loaded.shipping || {};
-      setManualForm(f => ({
-        ...f,
-        orderNumber: String(loaded.wp_order_id),
-        first_name: s.first_name || '',
-        last_name: s.last_name || '',
-        company: s.company || '',
-        address: s.address || '',
-        address_2: s.address_2 || '',
-        postcode: s.postcode || '',
-        city: s.city || '',
-        phone: s.phone || '',
-        email: loaded.email || ''
-      }));
+      const carrier = res.data.carrier;
+      // Le service de la commande est présélectionné, et avec lui son point
+      // relais (celui saisi dans la fiche commande prime sur WooCommerce).
+      const serviceCommande = carrier?.status === 'mapped'
+        ? manualServices.find(sv => sv.carrierCode === carrier.carrierCode
+          && (sv.accountCode || '') === (carrier.accountCode || '')
+          && (sv.deliveryMode || '') === (carrier.deliveryMode || ''))
+        : null;
+      const poids = res.data.weight?.total_g;
+      const point = loaded.relay_point?.id ? loaded.relay_point : null;
+      setManualForm(f => {
+        const next = {
+          ...f,
+          orderNumber: String(loaded.wp_order_id),
+          first_name: s.first_name || '',
+          last_name: s.last_name || '',
+          company: s.company || '',
+          address: s.address || '',
+          address_2: s.address_2 || '',
+          postcode: s.postcode || '',
+          city: s.city || '',
+          country: s.country || 'FR',
+          phone: s.phone || '',
+          email: loaded.email || '',
+          weight: poids > 0 ? String(Math.round(poids)) : '',
+          loadedRelay: point
+        };
+        return withManualService(next, manualServices, serviceCommande ? serviceCommande.key : f.serviceKey);
+      });
       setManualInfo(
         `Adresse chargée depuis la commande #${loaded.wp_order_id}`
-        + (loaded.shipping_method && loaded.shipping_method !== 'Lettre Suivie'
-          ? ` — attention, méthode d'expédition : ${loaded.shipping_method}`
-          : '')
+        + (serviceCommande
+          ? ` — ${manualServiceLabel(serviceCommande)}`
+          : ` — mode de livraison « ${loaded.shipping_method || 'vide'} » sans transporteur : choisissez-en un`)
+        + (point ? ` — point relais ${point.id}${point.name ? ` (${point.name})` : ''}` : '')
       );
       playSound('ok');
     } catch (err) {
@@ -710,7 +771,7 @@ const PackingApp = () => {
     } finally {
       setManualLookupLoading(false);
     }
-  }, [manualForm, token]);
+  }, [manualForm, manualServices, token]);
 
   const submitManualLabel = useCallback(async () => {
     if (!manualForm) return;
@@ -726,15 +787,43 @@ const PackingApp = () => {
       setManualError('Nom ou société du destinataire obligatoire');
       return;
     }
+    const sv = manualServices.find(x => x.key === manualForm.serviceKey);
+    if (!sv) {
+      setManualError('Choisissez un transporteur');
+      return;
+    }
+    if (!sv.fixedWeight && !(Number(manualForm.weight) > 0)) {
+      setManualError(`Poids obligatoire pour ${sv.carrierLabel} (en grammes)`);
+      return;
+    }
+    if (sv.requiresRelayPoint && !manualForm.relayId.trim()) {
+      setManualError(`Numéro de point relais obligatoire pour ${manualServiceLabel(sv)}`);
+      return;
+    }
     setManualSaving(true);
     setManualError(null);
     try {
-      const res = await axios.post(`${API_URL}/laposte/label-manual`, manualForm, {
+      const f = manualForm;
+      const res = await axios.post(`${API_URL}/shipments/label-manual`, {
+        service: { carrierCode: sv.carrierCode, accountCode: sv.accountCode, deliveryMode: sv.deliveryMode },
+        orderNumber: f.orderNumber,
+        first_name: f.first_name, last_name: f.last_name, company: f.company,
+        address: f.address, address_2: f.address_2, postcode: f.postcode, city: f.city,
+        country: f.country, phone: f.phone, email: f.email,
+        weightGrams: sv.fixedWeight ? null : Number(f.weight),
+        relayPoint: sv.requiresRelayPoint
+          ? { ...(f.relayDetails || {}), network: sv.carrierCode, id: f.relayId.trim(), country: f.relayCountry }
+          : null,
+        // Même règle que le packing : l'interrupteur n'existe que jeudi et vendredi.
+        saturdayDelivery: sv.saturdayEligible && (jourCourant === 4 || jourCourant === 5) ? f.saturday : undefined
+      }, {
         headers: { Authorization: `Bearer ${token}` }
       });
       const data = res.data;
-      setManualResult({ trackingId: data.trackingId, orderNumber: data.orderNumber, pdfBase64: data.pdfBase64 });
-      downloadPdf(data.pdfBase64, data.orderNumber);
+      setManualResult(data);
+      downloadPdf(data.pdfBase64, data.orderNumber, data.fileName);
+      // Déclaration douanière : second fichier, pour la Brother A4.
+      if (data.cn23Base64) downloadPdf(data.cn23Base64, data.orderNumber, data.cn23FileName);
       playSound('complete');
     } catch (err) {
       const data = err.response?.data || {};
@@ -744,7 +833,7 @@ const PackingApp = () => {
     } finally {
       setManualSaving(false);
     }
-  }, [manualForm, token, downloadPdf]);
+  }, [manualForm, manualServices, jourCourant, token, downloadPdf]);
 
   // Réinitialiser
   const handleReset = useCallback(() => {
@@ -2125,7 +2214,7 @@ const PackingApp = () => {
               </button>
             </div>
             <p style={{ margin: '0 0 18px', color: '#666', fontSize: '13px' }}>
-              Genere une etiquette Lettre Suivie sans scan. L'expedition n'est <strong>pas</strong> confirmee
+              Genere une etiquette sans scan, chez le transporteur choisi. L'expedition n'est <strong>pas</strong> confirmee
               dans BMS — a faire manuellement si necessaire.
             </p>
 
@@ -2137,14 +2226,22 @@ const PackingApp = () => {
                 textAlign: 'center'
               }}>
                 <h3 style={{ margin: '0 0 10px', color: '#155724' }}>
-                  Etiquette generee pour #{manualResult.orderNumber}
+                  Etiquette {manualResult.carrierLabel} generee pour #{manualResult.orderNumber}
                 </h3>
                 <p style={{ color: '#155724', margin: '0 0 18px', fontSize: '15px' }}>
-                  N° suivi : <strong>{manualResult.trackingId}</strong>
+                  {manualResult.trackingId
+                    ? <>N° suivi : <strong>{manualResult.trackingId}</strong></>
+                    : 'Sans numero de suivi'}
+                  {manualResult.cn23Base64 && ' — declaration douaniere (CN23) jointe'}
                 </p>
                 <div style={{ display: 'flex', gap: '10px', justifyContent: 'center', flexWrap: 'wrap' }}>
                   <button
-                    onClick={() => downloadPdf(manualResult.pdfBase64, manualResult.orderNumber)}
+                    onClick={() => {
+                      downloadPdf(manualResult.pdfBase64, manualResult.orderNumber, manualResult.fileName);
+                      if (manualResult.cn23Base64) {
+                        downloadPdf(manualResult.cn23Base64, manualResult.orderNumber, manualResult.cn23FileName);
+                      }
+                    }}
                     style={{
                       padding: '10px 24px',
                       backgroundColor: '#28a745',
@@ -2202,11 +2299,35 @@ const PackingApp = () => {
                   boxSizing: 'border-box'
                 };
                 const set = (field) => (e) => setManualForm(f => ({ ...f, [field]: e.target.value }));
+                const sv = manualServices.find(x => x.key === manualForm.serviceKey) || null;
+                const labelStyle = { fontSize: '12px', color: '#666', fontWeight: 600 };
                 return (
                   <form
                     onSubmit={(e) => { e.preventDefault(); submitManualLabel(); }}
                     style={{ display: 'grid', gap: '10px' }}
                   >
+                    <label style={{ display: 'grid', gap: '4px' }}>
+                      <span style={labelStyle}>Transporteur</span>
+                      <select
+                        style={{ ...inputStyle, backgroundColor: 'white' }}
+                        value={manualForm.serviceKey}
+                        onChange={(e) => {
+                          const key = e.target.value;
+                          setManualForm(f => withManualService(f, manualServices, key));
+                        }}
+                      >
+                        {!manualForm.serviceKey && <option value="">Chargement…</option>}
+                        {manualServices.map(x => (
+                          <option key={x.key} value={x.key}>{manualServiceLabel(x)}</option>
+                        ))}
+                      </select>
+                      {sv && sv.denominations.length > 1 && (
+                        <span style={{ fontSize: '11px', color: '#999' }}>
+                          Modes WooCommerce : {sv.denominations.join(', ')}
+                        </span>
+                      )}
+                    </label>
+
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '10px' }}>
                       <input
                         style={inputStyle}
@@ -2255,14 +2376,94 @@ const PackingApp = () => {
                     <input style={inputStyle} placeholder="Société (optionnel)" value={manualForm.company} onChange={set('company')} />
                     <input style={inputStyle} placeholder="Adresse" value={manualForm.address} onChange={set('address')} />
                     <input style={inputStyle} placeholder="Complément d'adresse (optionnel)" value={manualForm.address_2} onChange={set('address_2')} />
-                    <div style={{ display: 'grid', gridTemplateColumns: '160px 1fr', gap: '10px' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '130px 1fr 80px', gap: '10px' }}>
                       <input style={inputStyle} placeholder="Code postal" value={manualForm.postcode} onChange={set('postcode')} />
                       <input style={inputStyle} placeholder="Ville" value={manualForm.city} onChange={set('city')} />
+                      <input
+                        style={inputStyle}
+                        placeholder="Pays"
+                        title="Code pays à deux lettres (FR, BE, CH…)"
+                        maxLength={2}
+                        value={manualForm.country}
+                        onChange={(e) => setManualForm(f => ({ ...f, country: e.target.value.toUpperCase() }))}
+                      />
                     </div>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
                       <input style={inputStyle} placeholder="Téléphone (optionnel)" value={manualForm.phone} onChange={set('phone')} />
                       <input style={inputStyle} placeholder="Email (optionnel)" value={manualForm.email} onChange={set('email')} />
                     </div>
+
+                    {sv && !sv.fixedWeight && (
+                      <label style={{ display: 'grid', gap: '4px' }}>
+                        <span style={labelStyle}>Poids du colis (g, emballage compris)</span>
+                        <input
+                          style={inputStyle}
+                          type="number"
+                          min="1"
+                          step="1"
+                          placeholder="ex. 350"
+                          value={manualForm.weight}
+                          onChange={set('weight')}
+                        />
+                      </label>
+                    )}
+
+                    {sv && sv.requiresRelayPoint && (
+                      <div style={{ display: 'grid', gap: '4px' }}>
+                        <span style={labelStyle}>Point relais {sv.relayNetworkLabel}</span>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 80px', gap: '10px' }}>
+                          <input
+                            style={inputStyle}
+                            placeholder="N° du point relais"
+                            value={manualForm.relayId}
+                            // Un numéro retapé n'est plus le point chargé : son nom et son
+                            // adresse ne l'accompagnent plus.
+                            onChange={(e) => {
+                              const id = e.target.value;
+                              setManualForm(f => ({ ...f, relayId: id, relayDetails: null }));
+                            }}
+                          />
+                          <input
+                            style={inputStyle}
+                            placeholder="Pays"
+                            maxLength={2}
+                            value={manualForm.relayCountry}
+                            onChange={(e) => {
+                              const pays = e.target.value.toUpperCase();
+                              setManualForm(f => ({ ...f, relayCountry: pays, relayDetails: null }));
+                            }}
+                          />
+                        </div>
+                        {manualForm.relayDetails?.name && (
+                          <span style={{ fontSize: '12px', color: '#555' }}>
+                            {manualForm.relayDetails.name}
+                            {manualForm.relayDetails.address ? ` — ${manualForm.relayDetails.address}` : ''}
+                            {manualForm.relayDetails.postcode ? `, ${manualForm.relayDetails.postcode}` : ''}
+                            {manualForm.relayDetails.city ? ` ${manualForm.relayDetails.city}` : ''}
+                          </span>
+                        )}
+                        {manualForm.loadedRelay && manualForm.loadedRelay.network !== sv.carrierCode && (
+                          <span style={{ fontSize: '12px', color: '#b45309' }}>
+                            Le point de la commande ({manualForm.loadedRelay.id}) n'est pas un point {sv.relayNetworkLabel} :
+                            saisissez-en un.
+                          </span>
+                        )}
+                      </div>
+                    )}
+
+                    {sv && sv.saturdayEligible && (jourCourant === 4 || jourCourant === 5) && (
+                      <label style={{ display: 'flex', gap: '8px', alignItems: 'center', fontSize: '14px', color: '#333' }}>
+                        <input
+                          type="checkbox"
+                          checked={manualForm.saturday}
+                          onChange={(e) => {
+                            const checked = e.target.checked;
+                            setManualForm(f => ({ ...f, saturday: checked }));
+                          }}
+                        />
+                        Livraison le samedi
+                      </label>
+                    )}
 
                     {manualError && (
                       <div style={{

@@ -87,6 +87,10 @@
  *           accepte un chemin pointé (`sender.city`). `secret: true` signifie
  *           que la valeur ne redescend JAMAIS vers le navigateur : le champ
  *           s'affiche vide et n'est écrit que si on saisit quelque chose.
+ * @property {boolean} [fixedWeight=false] - le poids déclaré ne dépend pas du
+ *           colis (forfait de la lettre suivie, retrait magasin sans poids).
+ *           L'expédition manuelle ne demande alors pas de poids : ailleurs, elle
+ *           l'exige, la référence saisie n'étant pas forcément une commande.
  * @property {boolean} [requiresAccount=true] - à false, l'adaptateur n'a pas de
  *           contrat dans carrier_accounts : ni identifiants ni réglages à charger.
  *           C'est le cas du retrait magasin, qui n'appelle aucune API.

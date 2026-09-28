@@ -29,6 +29,14 @@ router.use(authMiddleware);
 router.post('/label/:orderNumber',
   checkPermission('packing', 'read'), shipmentController.generateForOrder);
 
+// Expédition manuelle (réexpédition, envoi hors commande) : le transporteur est
+// choisi à l'écran, parmi les services de la correspondance.
+router.get('/manual-services',
+  checkPermission('packing', 'read'), shipmentController.getManualServices);
+
+router.post('/label-manual',
+  checkPermission('packing', 'read'), shipmentController.generateManual);
+
 // ── Réglages de la correspondance ───────────────────────────────────────────
 router.get('/method-map',
   checkPermission('transporteurs', 'read'), mapController.getMap);

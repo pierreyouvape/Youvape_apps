@@ -301,6 +301,8 @@ module.exports = assertAdapter({
   labelFileName,
   accountFields: ACCOUNT_FIELDS,
   bmsShipmentTitle: 'La poste - Courrier suivi (port payé)',
+  // Forfait de 20 g : l'expédition manuelle n'a pas à demander de poids.
+  fixedWeight: true,
   resolveWeight,
   createLabel,
   cancelLabel,

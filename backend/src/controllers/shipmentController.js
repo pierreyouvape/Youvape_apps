@@ -38,6 +38,8 @@ const { customsDocumentFileName } = require('../services/carriers/contract');
  * @param {string|number} input.orderNumber
  * @param {import('../services/carriers/contract').Receiver} input.receiver
  * @param {?number} input.packedBy
+ * @param {?number} [input.weightGrams] - poids imposé, en grammes ; à défaut,
+ *        celui de l'adaptateur (resolveWeight)
  * @param {function({adapter: object, trackingNumber: ?string}): boolean} [input.expectsBmsConfirmation]
  *        Dit si l'appelant confirmera l'expédition dans BMS juste après. C'est
  *        ce qui décide si l'étiquette part en 'pending' — donc si la reprise
@@ -48,6 +50,7 @@ const { customsDocumentFileName } = require('../services/carriers/contract');
  */
 const createShipmentLabel = async ({
   adapter, orderNumber, receiver, packedBy, accountCode, options = {},
+  weightGrams: declaredWeight = null,
   expectsBmsConfirmation = () => false
 }) => {
   // Avant de dépenser une étiquette : s'assurer qu'on saura l'enregistrer — CN23
@@ -60,7 +63,12 @@ const createShipmentLabel = async ({
     ? { carrierCode: adapter.code, accountCode: resolvedAccountCode, credentials: {}, settings: {} }
     : await getAccount(adapter.code, resolvedAccountCode);
 
-  const weightGrams = await adapter.resolveWeight({ pool, orderNumber, account, options });
+  // Un poids saisi (expédition manuelle) prime : la référence n'est pas
+  // forcément une commande, et même quand elle l'est, le colis renvoyé n'a pas
+  // toujours le contenu d'origine.
+  const weightGrams = declaredWeight != null
+    ? declaredWeight
+    : await adapter.resolveWeight({ pool, orderNumber, account, options });
 
   const {
     carrierOrderId, trackingNumber, pdfBase64: rawPdf,
@@ -301,15 +309,231 @@ const generateForOrder = async (req, res) => {
   }
 };
 
+// ── Expédition manuelle ─────────────────────────────────────────────────────
+
+/** Clé d'un service : transporteur, contrat et mode, comme dans la correspondance. */
+const manualServiceKey = (carrierCode, accountCode, deliveryMode) =>
+  [carrierCode, accountCode || '', deliveryMode || ''].join('|');
+
 /**
- * Fabrique les cinq handlers HTTP d'un transporteur.
+ * Services proposés à l'expédition manuelle : les triplets transporteur ×
+ * contrat × mode de la correspondance active, dédoublonnés.
+ *
+ * On ne propose que ce que la correspondance désigne déjà : c'est elle qui dit
+ * quel contrat et quel mode sont en service. Un choix libre de transporteur et
+ * de contrat permettrait d'émettre sur un contrat de test ou un mode que
+ * personne n'a validé.
+ *
+ * @returns {Promise<object[]>}
+ */
+const listManualServices = async () => {
+  const rows = await shippingMethodMapModel.listActive();
+  const services = new Map();
+
+  for (const row of rows) {
+    if (!row.carrier_code) continue;
+    let adapter;
+    try { adapter = getAdapter(row.carrier_code); } catch (e) { continue; }
+
+    const key = manualServiceKey(row.carrier_code, row.account_code, row.delivery_mode);
+    if (!services.has(key)) {
+      const mode = (adapter.deliveryModes || []).find(m => m.code === row.delivery_mode);
+      services.set(key, {
+        key,
+        carrierCode: adapter.code,
+        carrierLabel: adapter.label,
+        accountCode: row.account_code,
+        deliveryMode: row.delivery_mode || null,
+        modeLabel: mode ? mode.label : null,
+        requiresRelayPoint: typeof adapter.requiresRelayPoint === 'function'
+          && adapter.requiresRelayPoint(row.delivery_mode),
+        relayNetworkLabel: adapter.relayNetworkLabel || adapter.label,
+        fixedWeight: adapter.fixedWeight === true,
+        saturdayEligible: typeof adapter.supportsSaturdayDelivery === 'function'
+          && adapter.supportsSaturdayDelivery(row.delivery_mode),
+        denominations: []
+      });
+    }
+    services.get(key).denominations.push(row.denomination);
+  }
+
+  return [...services.values()].sort((a, b) =>
+    a.carrierLabel.localeCompare(b.carrierLabel, 'fr')
+    || String(a.modeLabel || a.denominations[0]).localeCompare(String(b.modeLabel || b.denominations[0]), 'fr'));
+};
+
+/** GET /manual-services — services proposés à l'expédition manuelle. */
+const getManualServices = async (req, res) => {
+  try {
+    res.json({ services: await listManualServices() });
+  } catch (error) {
+    console.error('[Expedition] Erreur getManualServices:', error.message);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+};
+
+/**
+ * POST /label-manual — étiquette à partir de champs saisis à la main
+ * (réimpression après perte / annulation, envoi hors commande), chez n'importe
+ * quel transporteur de la correspondance.
+ *
+ * Trois différences volontaires avec generateForOrder :
+ *
+ *  - AUCUN contrôle de doublon, et ce n'est pas un oubli : cet écran sert
+ *    précisément à renvoyer une commande déjà expédiée une première fois
+ *    (colis perdu, retour, geste commercial). Une commande peut donc porter
+ *    plusieurs étiquettes actives, avec des numéros de suivi distincts, toutes
+ *    listées et réimprimables. Ajouter ici le contrôle de doublon casserait le
+ *    seul moyen de réexpédier.
+ *
+ *  - aucune confirmation d'expédition dans BMS : la commande y est en général
+ *    déjà expédiée, un second /ship ferait sortir le stock une deuxième fois.
+ *
+ *  - le poids est SAISI (sauf transporteur au forfait) : la référence n'est
+ *    pas forcément une commande, et le colis renvoyé n'a pas toujours le
+ *    contenu d'origine. Le point relais aussi : l'écran le préremplit depuis la
+ *    commande, mais c'est ce qui est envoyé qui compte.
+ */
+const generateManual = async (req, res) => {
+  let adapter = null;
+
+  try {
+    const {
+      service, orderNumber, first_name, last_name, company,
+      address, address_2, postcode, city, country, phone, email,
+      weightGrams, relayPoint, saturdayDelivery
+    } = req.body || {};
+
+    const ref = String(orderNumber || '').trim();
+    const name = `${(first_name || '').trim()} ${(last_name || '').trim()}`.trim();
+    const companyName = (company || '').trim();
+    const pays = String(country || 'FR').trim().toUpperCase();
+
+    if (!ref) {
+      return res.status(400).json({ error: 'Numéro de commande obligatoire' });
+    }
+    if (ref.length > shipmentLabelModel.ORDER_NUMBER_MAX_LENGTH) {
+      return res.status(400).json({
+        error: `Numéro de commande limité à ${shipmentLabelModel.ORDER_NUMBER_MAX_LENGTH} caractères`
+      });
+    }
+    if (!name && !companyName) {
+      return res.status(400).json({ error: 'Nom ou société du destinataire obligatoire' });
+    }
+    if (!(address || '').trim() || !(postcode || '').trim() || !(city || '').trim()) {
+      return res.status(400).json({ error: 'Adresse, code postal et ville sont obligatoires' });
+    }
+    if (!/^[A-Z]{2}$/.test(pays)) {
+      return res.status(400).json({ error: `Pays « ${country || ''} » invalide : un code à deux lettres est attendu (FR, BE…)` });
+    }
+
+    // Le service doit exister dans la correspondance active : pas de contrat ni
+    // de mode arbitraire venu du navigateur.
+    const services = await listManualServices();
+    const choisi = services.find(sv => sv.key === manualServiceKey(
+      service?.carrierCode, service?.accountCode, service?.deliveryMode));
+    if (!choisi) {
+      return res.status(400).json({ error: 'Transporteur ou mode de livraison inconnu : rechargez la page' });
+    }
+    adapter = getAdapter(choisi.carrierCode);
+
+    let poids = null;
+    if (!choisi.fixedWeight) {
+      poids = Math.round(Number(weightGrams));
+      if (!Number.isFinite(poids) || poids <= 0) {
+        return res.status(400).json({ error: `Poids obligatoire pour ${adapter.label} (en grammes)` });
+      }
+    }
+
+    // Le point relais n'est transmis que si le mode en exige un : un point
+    // resté dans le formulaire après changement de transporteur ne doit pas
+    // partir chez un autre réseau.
+    let point = null;
+    if (choisi.requiresRelayPoint) {
+      const id = String(relayPoint?.id ?? '').trim();
+      point = id ? {
+        ...relayPoint,
+        id,
+        network: relayPoint.network || adapter.code,
+        country: String(relayPoint.country || pays).trim().toUpperCase()
+      } : null;
+    }
+
+    const { carrierOrderId, trackingNumber, pdfBase64, cn23Base64, weightGrams: poidsDeclare } = await createShipmentLabel({
+      adapter,
+      orderNumber: ref,
+      accountCode: choisi.accountCode,
+      receiver: {
+        name: name || companyName,
+        first_name: (first_name || '').trim() || null,
+        last_name: (last_name || '').trim() || null,
+        // si aucun nom saisi, la société sert de nom : ne pas la répéter
+        company: name ? (companyName || null) : null,
+        address: address.trim(),
+        address_2: (address_2 || '').trim() || null,
+        postcode: postcode.trim(),
+        city: city.trim(),
+        country: pays,
+        phone: (phone || '').trim(),
+        // Colissimo cherche le mobile ici en point de retrait (cf. receiverFromOrder).
+        billing_phone: (phone || '').trim(),
+        email: (email || '').trim()
+      },
+      packedBy: req.user?.id || null,
+      weightGrams: poids,
+      options: {
+        deliveryMode: choisi.deliveryMode,
+        relayPoint: point,
+        shippingMethod: choisi.denominations[0],
+        saturdayDelivery: choisi.saturdayEligible && typeof saturdayDelivery === 'boolean'
+          ? saturdayDelivery : undefined
+      }
+    });
+
+    console.log(`[${adapter.logTag}] Étiquette MANUELLE pour`, ref, '— tracking:', trackingNumber, '— pas de confirmation BMS');
+
+    res.json({
+      success: true,
+      manual: true,
+      carrier: adapter.code,
+      carrierLabel: adapter.label,
+      orderId: carrierOrderId,
+      trackingId: trackingNumber,
+      weightGrams: poidsDeclare,
+      pdfBase64,
+      // Nom de fichier du transporteur : c'est lui qui choisit l'imprimante AutoPrint.
+      fileName: adapter.labelFileName(ref),
+      cn23Base64: cn23Base64 || null,
+      cn23FileName: cn23Base64 ? customsDocumentFileName(ref) : null,
+      orderNumber: ref
+    });
+
+  } catch (error) {
+    const tag = adapter ? adapter.logTag : 'Expedition';
+    console.error(`[${tag}] Erreur generateManual:`, error.message);
+
+    if (error.statusCode === 401 && adapter && typeof adapter.onAuthFailure === 'function') {
+      adapter.onAuthFailure();
+    }
+
+    res.status(error.statusCode || 500).json({
+      error: adapter ? `Erreur génération étiquette ${adapter.label}` : 'Erreur génération étiquette',
+      userMessage: error.userMessage
+        || (adapter ? buildUserMessage(error, adapter.label) : null),
+      details: error.body || error.message
+    });
+  }
+};
+
+/**
+ * Fabrique les handlers HTTP d'un transporteur.
  *
  * @param {string} carrierCode - code dans le registre (services/carriers)
  */
 const makeCarrierHandlers = (carrierCode) => {
   const adapter = getAdapter(carrierCode);
 
-  /** Réponse d'erreur commune aux deux modes de génération. */
+  /** Réponse d'erreur de la génération. */
   const respondLabelError = (res, error, context) => {
     console.error(`[${adapter.logTag}] Erreur ${context}:`, error.message);
 
@@ -392,81 +616,6 @@ const makeCarrierHandlers = (carrierCode) => {
 
     } catch (error) {
       respondLabelError(res, error, 'generateLabel');
-    }
-  };
-
-  /**
-   * POST /label-manual — étiquette à partir de champs saisis à la main
-   * (réimpression après perte / annulation, envoi hors commande).
-   *
-   * Deux différences volontaires avec generateLabel :
-   *
-   *  - AUCUN contrôle de doublon, et ce n'est pas un oubli : cet écran sert
-   *    précisément à renvoyer une commande déjà expédiée une première fois
-   *    (colis perdu, retour, geste commercial). Une commande peut donc porter
-   *    plusieurs étiquettes actives, avec des numéros de suivi distincts, toutes
-   *    listées et réimprimables. Ajouter ici le contrôle de doublon de
-   *    generateLabel casserait le seul moyen de réexpédier.
-   *
-   *  - aucune confirmation d'expédition dans BMS : la commande y est en général
-   *    déjà expédiée, un second /ship échouerait et déclencherait une alerte mail.
-   */
-  const generateManualLabel = async (req, res) => {
-    try {
-      const {
-        orderNumber, first_name, last_name, company,
-        address, address_2, postcode, city, phone, email
-      } = req.body || {};
-
-      const ref = String(orderNumber || '').trim();
-      const name = `${(first_name || '').trim()} ${(last_name || '').trim()}`.trim();
-      const companyName = (company || '').trim();
-
-      if (!ref) {
-        return res.status(400).json({ error: 'Numéro de commande obligatoire' });
-      }
-      if (ref.length > shipmentLabelModel.ORDER_NUMBER_MAX_LENGTH) {
-        return res.status(400).json({
-          error: `Numéro de commande limité à ${shipmentLabelModel.ORDER_NUMBER_MAX_LENGTH} caractères`
-        });
-      }
-      if (!name && !companyName) {
-        return res.status(400).json({ error: 'Nom ou société du destinataire obligatoire' });
-      }
-      if (!(address || '').trim() || !(postcode || '').trim() || !(city || '').trim()) {
-        return res.status(400).json({ error: 'Adresse, code postal et ville sont obligatoires' });
-      }
-
-      const { carrierOrderId, trackingNumber, pdfBase64 } = await createShipmentLabel({
-        adapter,
-        orderNumber: ref,
-        receiver: {
-          name: name || companyName,
-          // si aucun nom saisi, la société sert de name1 : ne pas la répéter en add2
-          company: name ? (companyName || null) : null,
-          address: address.trim(),
-          address_2: (address_2 || '').trim() || null,
-          postcode: postcode.trim(),
-          city: city.trim(),
-          phone: (phone || '').trim(),
-          email: (email || '').trim()
-        },
-        packedBy: req.user?.id || null
-      });
-
-      console.log(`[${adapter.logTag}] Étiquette MANUELLE pour`, ref, '— tracking:', trackingNumber, '— pas de confirmation BMS');
-
-      res.json({
-        success: true,
-        manual: true,
-        orderId: carrierOrderId,
-        trackingId: trackingNumber,
-        pdfBase64,
-        orderNumber: ref
-      });
-
-    } catch (error) {
-      respondLabelError(res, error, 'generateManualLabel');
     }
   };
 
@@ -607,10 +756,13 @@ const makeCarrierHandlers = (carrierCode) => {
     }
   };
 
-  return { generateLabel, generateManualLabel, listLabels, cancelLabel, getLabelPdf, confirmBmsShipment };
+  return { generateLabel, listLabels, cancelLabel, getLabelPdf, confirmBmsShipment };
 };
 
 // loadOrderForLabel et receiverFromOrder sont exportés pour la répétition
 // Colissimo (scripts/checkColissimoLabels.js) : elle doit lire les commandes
 // EXACTEMENT comme le packing, sinon elle valide autre chose que ce qui partira.
-module.exports = { makeCarrierHandlers, createShipmentLabel, generateForOrder, loadOrderForLabel, receiverFromOrder };
+module.exports = {
+  makeCarrierHandlers, createShipmentLabel, generateForOrder, getManualServices, generateManual,
+  loadOrderForLabel, receiverFromOrder
+};
