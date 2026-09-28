@@ -1280,18 +1280,35 @@ const PackingApp = () => {
                 enchaîne les commandes : la couleur le renseigne avant même
                 qu'il ait lu le libellé. */}
             {carrier && carrier.status === 'mapped' && (() => {
-              const v = visuelTransporteur(carrier.carrierCode);
+              const v = visuelTransporteur(carrier.carrierCode, carrier.accountCode);
               return (
                 <div style={{
                   display: 'flex', alignItems: 'center', gap: '14px', flexWrap: 'wrap',
                   backgroundColor: v.fond, borderLeft: `10px solid ${v.couleur}`,
                   borderRadius: '12px', padding: '16px 20px', marginTop: '15px'
                 }}>
-                  <span style={{
-                    padding: '8px 16px', borderRadius: '6px',
-                    backgroundColor: v.couleur, color: v.encre,
-                    fontSize: '16px', fontWeight: 800, letterSpacing: '0.6px', whiteSpace: 'nowrap'
-                  }}>{v.court}</span>
+                  {v.logo ? (
+                    <span style={{
+                      display: 'flex', alignItems: 'center', gap: '10px',
+                      backgroundColor: 'white', borderRadius: '8px', padding: '6px 12px',
+                      boxShadow: '0 1px 3px rgba(0,0,0,0.12)'
+                    }}>
+                      <img src={v.logo} alt={v.label} style={{ height: '40px', width: 'auto', display: 'block' }} />
+                      {v.mention && (
+                        <span style={{
+                          padding: '6px 12px', borderRadius: '6px',
+                          backgroundColor: v.couleur, color: v.encre,
+                          fontSize: '16px', fontWeight: 800, whiteSpace: 'nowrap'
+                        }}>{v.mention}</span>
+                      )}
+                    </span>
+                  ) : (
+                    <span style={{
+                      padding: '8px 16px', borderRadius: '6px',
+                      backgroundColor: v.couleur, color: v.encre,
+                      fontSize: '16px', fontWeight: 800, letterSpacing: '0.6px', whiteSpace: 'nowrap'
+                    }}>{v.court}</span>
+                  )}
                   <span style={{ color: '#333', fontSize: '15px' }}>{carrier.denomination}</span>
                   {samediVisible && (
                     <label
