@@ -29,6 +29,8 @@
  * ensuite à partir des réfs connues du fournisseur. Ne pas dupliquer ici.
  */
 
+const { numberReadings } = require('../../utils/invoiceNumbers');
+
 const EPSILON = 0.02;
 
 /** Un nombre du tableau : entier, ou décimal avec séparateur de milliers espace. */
@@ -53,6 +55,8 @@ const NOISE = [
   /^Sous-total/i,
   /^Référence\s+Désignation/i,
   /^Base HT/i,
+  // La ligne de VALEURS du pied de TVA : « 5 042.51 20.00 % 1 008.50 ».
+  /^[\d  .,]+\s+[\d.,]+\s*%\s+[\d  .,]+$/,
   /^Total\s+(HT|TVA|TTC)/i,
   /^Montant HT/i,
   /^Remise\s*:/i,
@@ -126,13 +130,9 @@ function readNumbers(nums) {
     const r = check(nums[0], nums[1]);
     if (r) return r;
   }
-  if (n === 2) {
-    // Quantité et montant seuls (prix unitaire absent du gabarit)
-    const qty = nums[0];
-    if (Number.isInteger(qty) && qty > 0) {
-      return { qty, unitPriceNet: round2(last / qty), total: round2(last), discountPercent: 0 };
-    }
-  }
+  // Pas de lecture à deux nombres : « quantité + montant » est une signature
+  // trop faible, qui transformait le pied de page « … 20.00 % 1 008.50 » en
+  // article de 1 × 8,50 €. Aucun des trois gabarits OpenSi n'en a besoin.
   return null;
 }
 
@@ -206,8 +206,15 @@ function parseInvoice(text) {
       continue;
     }
 
-    const nums = tail[1].trim().split(/\s+/).map(toNumber).filter(Number.isFinite);
-    const read = readNumbers(nums);
+    // Deux lectures possibles quand un nombre porte un séparateur de milliers
+    // (« 1 008.50 ») : on retient celle dont l'arithmétique tombe juste.
+    const lectures = numberReadings(tail[1].trim().split(/\s+/));
+    let nums = lectures[0];
+    let read = null;
+    for (const candidate of lectures) {
+      const r = readNumbers(candidate);
+      if (r) { nums = candidate; read = r; break; }
+    }
     const before = line.slice(0, tail.index);
     const block = (buffer + ' ' + before).trim();
 

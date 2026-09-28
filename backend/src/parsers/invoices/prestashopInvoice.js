@@ -32,6 +32,8 @@
  *    (« MPV-ACC-21 » + « 700-5000 »).
  */
 
+const { numberReadings } = require('../../utils/invoiceNumbers');
+
 const NUM = String.raw`-?\d{1,3}(?:[  ]\d{3})*(?:[.,]\d+)?|-?\d+(?:[.,]\d+)?`;
 const NUM_ONLY = new RegExp(`^(?:${NUM})$`);
 
@@ -71,17 +73,20 @@ const isNoise = (line) => NOISE.some((re) => re.test(line.trim()));
 /** Nombres lus de droite à gauche, en traversant le décor. */
 function trailingNumbers(block) {
   const tokens = block.trim().split(/\s+/);
-  const nums = [];
+  const retenus = [];
   for (let i = tokens.length - 1; i >= 0; i -= 1) {
     const t = tokens[i];
     if (DECOR.test(t)) continue;
     if (NUM_ONLY.test(t)) {
-      nums.unshift(toNumber(t));
+      retenus.unshift(t);
       continue;
     }
     break;
   }
-  return nums;
+  // Le séparateur de milliers est un espace, comme celui des colonnes :
+  // « 1 008,50 » et « 20 100,00 » s'écrivent pareil. On renvoie les deux
+  // lectures, c'est l'arithmétique qui tranchera (cf. utils/invoiceNumbers).
+  return numberReadings(retenus);
 }
 
 /**
@@ -237,7 +242,11 @@ function parseInvoice(rawText) {
     }
 
     const block = (buffer ? `${buffer} ${line}` : line).trim();
-    const read = readColumns(trailingNumbers(block));
+    let read = null;
+    for (const candidate of trailingNumbers(block)) {
+      read = readColumns(candidate);
+      if (read) break;
+    }
 
     if (!read) {
       // Rien de lisible pour l'instant : on GARDE le bloc. Une cellule Pulp

@@ -37,6 +37,8 @@
  */
 
 /** Nombre : décimale à la virgule ou au point, milliers espacés, signe possible. */
+const { numberReadings } = require('../../utils/invoiceNumbers');
+
 const NUM = String.raw`-?\d{1,3}(?:[  ]\d{3})*(?:[.,]\d+)?|-?\d+(?:[.,]\d+)?`;
 const NUM_ONLY = new RegExp(`^(?:${NUM})$`);
 
@@ -98,17 +100,20 @@ const isNoise = (line) => NOISE.some((re) => re.test(line.trim()));
  */
 function trailingNumbers(block) {
   const tokens = block.trim().split(/\s+/);
-  const nums = [];
+  const retenus = [];
   for (let i = tokens.length - 1; i >= 0; i -= 1) {
     const t = tokens[i];
     if (DECOR.test(t)) continue;
     if (NUM_ONLY.test(t)) {
-      nums.unshift(toNumber(t));
+      retenus.unshift(t);
       continue;
     }
     break;
   }
-  return nums;
+  // Le séparateur de milliers est un espace, comme celui des colonnes :
+  // « 1 008,50 » et « 20 100,00 » s'écrivent pareil. On renvoie les deux
+  // lectures, c'est l'arithmétique qui tranchera (cf. utils/invoiceNumbers).
+  return numberReadings(retenus);
 }
 
 /**
@@ -255,8 +260,13 @@ function parseInvoice(text) {
     }
 
     const block = (buffer ? `${buffer} ${line}` : line).replace(/€\s*$/, '').trim();
-    const nums = trailingNumbers(block);
-    const read = readColumns(nums);
+    const lectures = trailingNumbers(block);
+    let nums = lectures[0];
+    let read = null;
+    for (const candidate of lectures) {
+      const r = readColumns(candidate);
+      if (r) { nums = candidate; read = r; break; }
+    }
 
     if (!read) {
       if (nums.length >= 2) {

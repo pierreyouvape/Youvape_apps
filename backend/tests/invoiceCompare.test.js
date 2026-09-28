@@ -740,6 +740,47 @@ test('un orphelin unique de même quantité et montant est apparié', () => {
   assert.strictEqual(r.lines[0].verdict, 'ok');
 });
 
+/* ─── Séparateur de milliers (LCA F2511349312, 28/09/2026) ───────────────── */
+
+console.log('\nUn montant à quatre chiffres');
+
+test('le pied de TVA ne devient pas un article', () => {
+  const { parseInvoice } = require('../src/parsers/invoices/opensiInvoice');
+  // « 5 042.51 20.00 % 1 008.50 » : le découpage sur les espaces coupait
+  // « 1 008.50 » en « 1 » et « 008.50 », lus comme un article de 1 × 8,50 €.
+  // Un fantôme de 8,50 €, et un total qui ne retombait plus.
+  const r = parseInvoice([
+    'Référence Désignation Quantité PU HT Rist. % PU Net HT Montant HT',
+    '#REF18068-59845 Tank Z Fli 2 - Geekvape 2 12.98 12.98 25.96',
+    'Base HT Taux TVA Montant TVA',
+    '5 042.51 20.00 % 1 008.50',
+    'Total HT : 5 042.51 €',
+  ].join('\n'));
+  assert.strictEqual(r.lines.length, 1);
+  assert.strictEqual(r.lines[0].ref, '#REF18068-59845');
+});
+
+test('une vraie ligne à plus de mille euros reste lue', () => {
+  const { parseInvoice } = require('../src/parsers/invoices/opensiInvoice');
+  const r = parseInvoice([
+    'Référence Désignation Quantité PU HT Montant HT',
+    '#REF99999-11111 Gros lot 10 1 008.50 10 085.00',
+  ].join('\n'));
+  assert.strictEqual(r.lines.length, 1);
+  assert.strictEqual(r.lines[0].qty, 10);
+  assert.ok(close(r.lines[0].unitPriceNet, 1008.50));
+  assert.ok(close(r.lines[0].lineTotalHt, 10085));
+});
+
+test('les deux lectures possibles sont produites, et une seule quand il n\'y a pas d\'ambiguïté', () => {
+  const { numberReadings } = require('../src/utils/invoiceNumbers');
+  assert.strictEqual(numberReadings(['2', '12.98', '25.96']).length, 1);
+  const deux = numberReadings(['1', '008.50']);
+  assert.strictEqual(deux.length, 2);
+  assert.deepStrictEqual(deux[0], [1, 8.5]);
+  assert.deepStrictEqual(deux[1], [1008.5]);
+});
+
 if (failures > 0) {
   console.log(`\n${failures} test(s) en échec.`);
   process.exit(1);
