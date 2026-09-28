@@ -21,12 +21,20 @@
  */
 
 const opensiInvoice = require('./opensiInvoice');
+const odooInvoice = require('./odooInvoice');
 
 // Trois fournisseurs, un seul gabarit : LCA, LVP et GFC éditent tous depuis OpenSi.
 const parsers = {
   'LCA': opensiInvoice,
   'LVP Distribution': opensiInvoice,
   'GFC FrancoChine': opensiInvoice,
+
+  // Quatre fournisseurs sur Odoo : prix unitaire TTC chez JoshNoa, HT chez les
+  // autres, colonne TAXES intercalée partout.
+  'Joshnoa': odooInvoice,
+  'Levest - Roykin': odooInvoice,
+  'LIPS - French Liquide': odooInvoice,
+  'Cloud Vapor': odooInvoice,
 };
 
 module.exports = {
