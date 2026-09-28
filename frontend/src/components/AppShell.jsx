@@ -11,6 +11,7 @@ import { useIsMobile } from '../hooks/useIsMobile';
 const APP_SETTINGS_PATHS = {
   tickets: '/tickets/settings',
   packing: '/packing/settings',
+  picking: '/picking/settings',
 };
 
 // Pages de réglages réservées : la clé est l'app, la valeur le droit exigé en
@@ -20,6 +21,7 @@ const APP_SETTINGS_PATHS = {
 // et mènerait à une page qui répond 403.
 const APP_SETTINGS_PERMISSION = {
   packing: 'transporteurs',
+  picking: 'picking',
 };
 
 const C = {

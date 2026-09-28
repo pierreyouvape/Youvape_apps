@@ -27,6 +27,7 @@ const packingRoutes = require('./routes/packingRoutes');
 const laposteRoutes = require('./routes/laposteRoutes');
 const shipmentRoutes = require('./routes/shipmentRoutes');
 const bordereauRoutes = require('./routes/bordereauRoutes');
+const pickingRoutes = require('./routes/pickingRoutes');
 const preferencesRoutes = require('./routes/preferencesRoutes');
 const financierRoutes = require('./routes/financierRoutes');
 const savRoutes = require('./routes/savRoutes');
@@ -46,7 +47,7 @@ const processRoutes = require('./routes/processRoutes');
 const atbRoutes = require('./routes/atbRoutes');
 const employeesRoutes = require('./routes/employeesRoutes');
 const authMiddleware = require('./middleware/authMiddleware');
-const { setupCron, setupBmsCron, setupComputedCostCron, setupBmsBarcodeCron, setupBmsShelfLocationCron, setupStockResyncCron, setupSavAutomationsCron, setupProductDbSyncCron, setupBmsTagRetryCron, setupBmsShipmentConfirmCron, setupReportEmailCron, setupStockValuationSnapshotCron, setupDraftStockReportCron, setupCompetitorMonitorCron, setupBrandMapCron, setupNextoreCrons, setupProductSuppliersLinkCron } = require('./services/cronService');
+const { setupCron, setupBmsCron, setupComputedCostCron, setupBmsBarcodeCron, setupBmsShelfLocationCron, setupStockResyncCron, setupSavAutomationsCron, setupProductDbSyncCron, setupBmsTagRetryCron, setupBmsShipmentConfirmCron, setupReportEmailCron, setupStockValuationSnapshotCron, setupDraftStockReportCron, setupCompetitorMonitorCron, setupBrandMapCron, setupNextoreCrons, setupProductSuppliersLinkCron, setupPickingSyncCron } = require('./services/cronService');
 const rewardService = require('./services/rewardService');
 const emailService = require('./services/emailService');
 const wcSyncService = require('./services/wcSyncService');
@@ -91,6 +92,7 @@ app.use('/api/packing', packingRoutes); // Packing / preparation colis
 app.use('/api/laposte', laposteRoutes); // La Poste - étiquettes Lettre Suivie
 app.use('/api/shipments', shipmentRoutes); // Étiquetage multi-transporteurs (auth + permissions dans le routeur)
 app.use('/api/bordereaux', bordereauRoutes); // Bordereaux de dépôt (droit packing, dans le routeur)
+app.use('/api/picking', pickingRoutes); // Picking : commandes à préparer et vagues (auth + droit picking dans le routeur)
 app.use('/api/preferences', preferencesRoutes); // User column preferences
 app.use('/api/financier', financierRoutes);    // Dashboard financier
 app.use('/api/sav', savRoutes);               // Module SAV Zendesk
@@ -152,6 +154,9 @@ app.listen(PORT, async () => {
   // Initialiser la reprise des confirmations d'expedition BMS (etiquette emise,
   // colis parti, mais BMS jamais prevenu) + la synthese du soir
   setupBmsShipmentConfirmCron();
+
+  // Photo des commandes à préparer pour le Picking (toutes les 5 min, 9h-19h, lun-ven)
+  setupPickingSyncCron();
 
   // Initialiser le cron d'envoi automatique des rapports par email (journalier/hebdo/mensuel)
   setupReportEmailCron();
