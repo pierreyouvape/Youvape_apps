@@ -262,15 +262,26 @@ const candidatesForRules = (view) => view.filter(o => o.selectable && o.bucket =
  * Pour la fenêtre « Générer les vagues » : ce que chaque règle active
  * produirait si on la lançait maintenant. Les règles se lancent une à la fois,
  * chacune est donc calculée seule.
+ *
+ * `skipped` dit pourquoi des commandes « En cours » de la règle n'y sont pas :
+ * sans ça, « Aucune commande » à côté d'une commande visible dans la liste
+ * ressemble à une panne.
  */
 const previewRules = async () => {
   const [view, rules] = await Promise.all([getOrdersView(), listRules()]);
   const candidates = candidatesForRules(view);
+  const norm = (d) => String(d ?? '').trim().toLowerCase();
   return rules.filter(r => r.active).map((rule) => {
     const waves = planWaves([rule], candidates)[0]?.waves || [];
+    const wanted = new Set(rule.denominations.map(norm));
+    const left = view.filter(o => o.bucket === BUCKETS.READY && !o.selectable && wanted.has(norm(o.shippingMethod)));
     return {
       id: rule.id, name: rule.name, prefix: rule.prefix, maxOrders: rule.maxOrders,
-      orders: waves.flat().length, waveSizes: waves.map(w => w.length)
+      orders: waves.flat().length, waveSizes: waves.map(w => w.length),
+      skipped: {
+        bmsWave: left.filter(o => o.bmsWaveId).length,
+        toFix: left.filter(o => !o.bmsWaveId && o.tags.length > 0).length
+      }
     };
   });
 };

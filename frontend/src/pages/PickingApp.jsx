@@ -439,7 +439,7 @@ function OrdersView({ token, canWrite, onWavesCreated, setMessage }) {
                       display: 'flex', alignItems: 'center', gap: 12, textAlign: 'left', width: '100%',
                       padding: '12px 14px', borderRadius: 10, border: `1px solid ${C.greyB}`,
                       background: r.orders ? C.white : C.grey, cursor: r.orders ? 'pointer' : 'default',
-                      opacity: r.orders ? 1 : 0.6,
+                      color: C.dark, fontFamily: 'inherit',
                     }}
                   >
                     <span style={{ flex: 1 }}>
@@ -449,10 +449,20 @@ function OrdersView({ token, canWrite, onWavesCreated, setMessage }) {
                         {r.maxOrders} commandes max par vague
                       </span>
                     </span>
-                    <span style={{ fontSize: 13.5, fontWeight: 600, color: r.orders ? C.dark : C.greyT, whiteSpace: 'nowrap' }}>
-                      {r.orders
-                        ? `${r.orders} cmd → ${r.waveSizes.length} vague(s)`
-                        : 'Aucune commande'}
+                    <span style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+                      <span style={{ display: 'block', fontSize: 13.5, fontWeight: 600, color: r.orders ? C.dark : C.greyT }}>
+                        {r.orders
+                          ? `${r.orders} cmd → ${r.waveSizes.length} vague(s)`
+                          : 'Aucune commande libre'}
+                      </span>
+                      {(r.skipped.bmsWave > 0 || r.skipped.toFix > 0) && (
+                        <span style={{ display: 'block', fontSize: 12, color: C.greyT, marginTop: 2 }}>
+                          {[
+                            r.skipped.bmsWave > 0 && `${r.skipped.bmsWave} déjà dans une vague BMS`,
+                            r.skipped.toFix > 0 && `${r.skipped.toFix} à corriger`,
+                          ].filter(Boolean).join(' · ')}
+                        </span>
+                      )}
                     </span>
                   </button>
                 ))}
