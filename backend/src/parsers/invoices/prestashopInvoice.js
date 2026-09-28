@@ -58,7 +58,12 @@ const NOISE = [
   /^Incoterm/i,
   /^Réductions?$/i,
   /^Powered by TCPDF/i,
-  /^(RIB|IBAN|BIC)\b/i,
+  // Non ancré : chez Pulp la ligne est « Banque CIC - IBAN : FR76 3006 … », et
+  // faute de la reconnaître elle restait dans le tampon pour se coller à
+  // l'article de la page suivante. « FR76 » + « 3006 » devenaient la référence
+  // « FR763006 », volant la sienne à un vrai article.
+  /\b(RIB|IBAN|BIC)\b/i,
+  /^Banque\b/i,
   /^Conditions générales/i,
   /^(Escompte|Loi LME|Indemnité|Intérêt de retard|RÉSERVÉ|RESERVE)/i,
   /^Pour toute assistance/i,
@@ -138,6 +143,11 @@ function splitRef(block) {
 
 function parseHeader(text) {
   const flat = text.replace(/\s*\n\s*/g, ' ');
+  // Ce gabarit ne savait pas reconnaître un avoir : les sept fournisseurs
+  // PrestaShop auraient vu le leur rangé comme une facture, avec des montants
+  // POSITIFS — donc une dette au lieu d'un crédit. Repéré à l'audit du
+  // 28/09/2026, faute d'avoir un exemplaire sous la main.
+  const isCreditNote = /^\s*AVOIR\b/im.test(text) || /\bAvoir\s+n°/i.test(flat);
   const amount = (re, source = text) => {
     const m = source.match(re);
     return m ? toNumber(m[1]) : null;
@@ -168,6 +178,8 @@ function parseHeader(text) {
   const dueMatch = flat.match(/Date (?:d')?échéance[^:]*:?\s*(\d{2})\/(\d{2})\/(\d{4})/i);
 
   return {
+    isCreditNote,
+    docType: isCreditNote ? 'credit_note' : 'invoice',
     number,
     date,
     orderRefOnDoc,
@@ -251,7 +263,11 @@ function parseInvoice(rawText) {
     if (!read) {
       // Rien de lisible pour l'instant : on GARDE le bloc. Une cellule Pulp
       // s'étale sur trois lignes, dont deux se terminent déjà par un montant.
-      buffer = block;
+      //
+      // Mais un tampon qui enfle n'est plus une désignation : c'est du pied de
+      // page qu'aucun filtre n'a reconnu, et il ira polluer l'article suivant.
+      // Au-delà de 400 caractères, on repart de la dernière ligne seule.
+      buffer = block.length > 400 ? line : block;
       continue;
     }
 
@@ -276,6 +292,15 @@ function parseInvoice(rawText) {
       lineTotalHt: header.footerDiscount,
       kind: 'discount',
     });
+  }
+
+  // Un avoir vient en déduction : on le range en négatif, comme les deux autres
+  // gabarits (cf. add_supplier_invoices.sql).
+  if (header.isCreditNote) {
+    for (const l of lines) l.lineTotalHt = -l.lineTotalHt;
+    for (const k of ['totalHt', 'totalTva', 'totalTtc']) {
+      if (header[k] != null) header[k] = -header[k];
+    }
   }
 
   const sum = round2(lines.reduce((s, l) => s + l.lineTotalHt, 0));

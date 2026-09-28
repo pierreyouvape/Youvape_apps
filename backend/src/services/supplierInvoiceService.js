@@ -103,6 +103,21 @@ async function fetchOrderLines(bmsPoId) {
   return {
     reference: po.reference,
     verified: po.verified == null ? null : !!Number(po.verified),
+    // BMS compte en PACKS (`qty` = nombre de packs, `price` = prix du pack), les
+    // factures parfois en pièces, parfois en packs — et pas les mêmes selon le
+    // fournisseur : LCA et Highbuy facturent le pack comme BMS, Levest et Cloud
+    // Vapor la pièce. On ne convertit donc RIEN ici.
+    //
+    // Convertir la commande en pièces a été essayé le 28/09/2026 : ça rend
+    // lisible l'écran Levest, mais ça fait exploser le réclamable LCA de 40,60 €
+    // à 94,33 € — la ligne #REF11324-36716, commandée ET facturée par packs de
+    // 200, se retrouvait comparée « 200 × 0,27 € » contre « 1 × 60,00 € », et son
+    // écart de tarif passait de 6,00 € à 59,73 €.
+    //
+    // Ce qui tranche vraiment, c'est l'ARGENT : qty × price est le même des deux
+    // côtés du conditionnement, et le verdict « conditionnement » reconnaît
+    // l'écart de quantité à montant égal. `packQty` est transmis pour que l'écran
+    // puisse expliquer la quantité affichée.
     lines: (po.items || []).map((i) => ({
       ref: i.supplier_sku || i.sku || null,
       sku: i.sku || null,
@@ -201,6 +216,9 @@ async function analyseInvoice({ buffer, supplierId, orderId = null, db = pool })
   const comparison = compareInvoiceToOrder({
     invoice: { ...invoice, lines: keyed.invoiceLines },
     order: { reference: bmsOrder.reference, lines: keyed.orderLines },
+    // Un avoir ne reprend que ce qu'il corrige : le reste de la commande n'est
+    // pas « non facturé ».
+    options: { expectFullOrder: invoice.docType !== 'credit_note' },
   });
 
   return {

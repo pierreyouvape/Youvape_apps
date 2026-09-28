@@ -781,6 +781,50 @@ test('les deux lectures possibles sont produites, et une seule quand il n\'y a p
   assert.deepStrictEqual(deux[1], [1008.5]);
 });
 
+test('commande et facture au pack : on ne convertit pas en pièces (cas LCA #REF11324-36716)', () => {
+  // BMS et la facture LCA comptent tous deux par packs de 200. Une « normalisation »
+  // de la commande en pièces — essayée le 28/09/2026 puis retirée — comparait
+  // « 200 × 0,27 € » à « 1 × 60,00 € » et gonflait le réclamable de 6,00 € à 59,73 €.
+  const r = compareInvoiceToOrder({
+    invoice: { lines: [{ ref: '#REF11324-36716', qty: 1, lineTotalHt: 60 }] },
+    order: { lines: [{ ref: '#REF11324-36716', qty: 1, price: 54, packQty: 200 }] },
+  });
+  assert.strictEqual(r.lines[0].verdict, 'price');
+  assert.ok(close(r.summary.claimable, 6));
+});
+
+test('conditionnements différents mais même argent : aucune réclamation (cas Curieux)', () => {
+  // Commande au carton de 10, facture à la pièce. Le montant est identique : c'est
+  // une question de présentation, pas un écart de tarif.
+  const r = compareInvoiceToOrder({
+    invoice: { lines: [{ ref: 'AST-LICO-10-10SDN', qty: 10, lineTotalHt: 15.3 }] },
+    order: { lines: [{ ref: 'AST-LICO-10-10SDN', qty: 1, price: 15.3, packQty: 10 }] },
+  });
+  assert.strictEqual(r.lines[0].verdict, 'packaging');
+  assert.strictEqual(r.summary.claimable, 0);
+});
+
+test('un avoir ne réclame pas le reste de la commande (cas JoshNoa RV3/2026/02731)', () => {
+  // L'avoir de 13,80 € confronté aux 1 658,14 € de la commande S309145 affichait
+  // « écart −1 671,94 € » et 25 lignes « commandé, non facturé » imaginaires.
+  const commande = {
+    lines: [
+      { ref: 'josh00004324', qty: 1, price: 13.8 },
+      { ref: 'josh00009999', qty: 10, price: 100 },
+    ],
+  };
+  const avoir = { lines: [{ ref: 'josh00004324', qty: 1, lineTotalHt: -13.8 }] };
+
+  const sansGarde = compareInvoiceToOrder({ invoice: avoir, order: commande });
+  assert.ok(sansGarde.lines.some((l) => l.verdict === 'missing_in_invoice'));
+
+  const avecGarde = compareInvoiceToOrder({
+    invoice: avoir, order: commande, options: { expectFullOrder: false },
+  });
+  assert.ok(!avecGarde.lines.some((l) => l.verdict === 'missing_in_invoice'));
+  assert.ok(close(avecGarde.totals.order, 13.8));
+});
+
 if (failures > 0) {
   console.log(`\n${failures} test(s) en échec.`);
   process.exit(1);

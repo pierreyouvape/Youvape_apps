@@ -124,6 +124,9 @@ function compareInvoiceToOrder({ invoice, order, options = {} }) {
   const threshold = Number.isFinite(options.lineThreshold)
     ? options.lineThreshold
     : DEFAULT_LINE_THRESHOLD;
+  // Le document est-il censé reprendre toute la commande ? Une facture, oui ;
+  // un avoir, non.
+  const expectFullOrder = options.expectFullOrder !== false;
 
   const invoiceLines = invoice?.lines || [];
   const orderLines = order?.lines || [];
@@ -246,7 +249,13 @@ function compareInvoiceToOrder({ invoice, order, options = {} }) {
 
   // 2. Commandé et absent de la facture : reliquat, rupture, ou facture partielle.
   //    Jamais une erreur de tarif — on ne réclame pas, on ajuste la commande.
-  for (const ord of orderLines) {
+  //
+  //    Sauf quand le document ne PRÉTEND PAS couvrir la commande. Un avoir
+  //    corrige une facture, il ne la remplace pas : confronté aux 25 lignes de
+  //    la commande, l'avoir JoshNoa RV3/2026/02731 en produisait 25 fausses
+  //    « commandé non facturé » et un écart de −1 671,94 € pour un document de
+  //    13,80 €.
+  for (const ord of expectFullOrder ? orderLines : []) {
     if (invoiceByRef.has(matchKeyOf(ord))) continue;
     const expectedTotal = round2((Number(ord.qty) || 0) * (Number(ord.price) || 0));
     results.push({
@@ -352,7 +361,14 @@ function compareInvoiceToOrder({ invoice, order, options = {} }) {
 
   // ─── Totaux ───────────────────────────────────────────────────────────────
   const invoiceParsed = round2(invoiceLines.reduce((s, l) => s + (Number(l.lineTotalHt) || 0), 0));
-  const orderTotal = round2(orderLines.reduce((s, l) => s + (Number(l.qty) || 0) * (Number(l.price) || 0), 0));
+  // Quand le document ne couvre pas toute la commande (un avoir), la confronter
+  // au total de la commande n'a aucun sens : l'avoir JoshNoa de 13,80 € affichait
+  // « écart −1 671,94 € » en face des 1 658,14 € de la commande S309145. On ne
+  // retient alors que les lignes de commande que le document reprend.
+  const comptees = expectFullOrder
+    ? orderLines
+    : orderLines.filter((l) => invoiceByRef.has(matchKeyOf(l)));
+  const orderTotal = round2(comptees.reduce((s, l) => s + (Number(l.qty) || 0) * (Number(l.price) || 0), 0));
   const printed = Number.isFinite(Number(invoice?.totalHt)) ? round2(invoice.totalHt) : null;
 
   // Garde-fou de lecture : si le total imprimé ne retombe pas sur la somme des
