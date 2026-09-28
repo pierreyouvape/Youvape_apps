@@ -388,6 +388,9 @@ function ControlTab({ suppliers, mobile, onSaved }) {
           {totals && (
             <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
               <Kpi label="Facture HT" value={eur(totals.invoiceParsed)} />
+              {/* Le TTC est ce qui sortira de la banque : c'est lui qu'on
+                  rapproche du règlement, pas le HT du contrôle de tarif. */}
+              <Kpi label="Facture TTC" value={eur(result.invoice.totalTtc)} />
               <Kpi label="Commande HT" value={eur(totals.order)} />
               <Kpi label="Écart" value={signedEur(totals.gap)} tone={totals.gap > 0 ? 'red' : (totals.gap < 0 ? 'green' : 'grey')} />
               <Kpi label="Réclamable" value={eur(summary.claimable)} tone={summary.claimable > 0 ? 'red' : 'grey'} />
