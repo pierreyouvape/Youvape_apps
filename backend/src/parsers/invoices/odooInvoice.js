@@ -59,6 +59,8 @@ const NOISE = [
   /^Total\b/i,
   /^Payé le/i,
   /^Facture\b/i,
+  /^Avoir\b/i,
+  /^Extourne de/i,
   /^PRO FORMA/i,
   /^Date de\b/i,
   /^Date d'échéance/i,
@@ -137,9 +139,14 @@ function readColumns(nums) {
       return null;
     }
     if (k === 4) {
-      const [, pu, discount] = c;
-      const net = pu * (1 - discount / 100);
-      if (fits(net)) return { qty, unitPriceNet: round2(net), total: round2(total), discountPercent: discount };
+      const [, pu, third] = c;
+      // Gabarit « qté, PU, remise %, montant » (LIPS).
+      const net = pu * (1 - third / 100);
+      if (fits(net)) return { qty, unitPriceNet: round2(net), total: round2(total), discountPercent: third };
+      // Gabarit « qté, PU TTC, PU net HT, montant » : les avoirs JoshNoa n'ont
+      // PAS la colonne remise de leurs factures. Une colonne de moins, et la
+      // ligne devenait illisible.
+      if (fits(third)) return { qty, unitPriceNet: third, total: round2(total), discountPercent: 0 };
       if (fits(pu)) return { qty, unitPriceNet: pu, total: round2(total), discountPercent: 0 };
       return null;
     }
@@ -173,6 +180,9 @@ function classify(ref, label) {
 }
 
 function parseHeader(text) {
+  // « Avoir RV3/2026/02731 » chez JoshNoa, « Avoir RFAC/2026/07/0016 » chez
+  // Levest : montants imprimés en positif, signe inversé à la sortie.
+  const isCreditNote = /^\s*Avoir\s+[A-Z0-9]/im.test(text);
   // Chez Cloud Vapor, l'étiquette elle-même est coupée (« Date de » / « facturation »).
   // Les recherches d'en-tête tournent donc sur une copie à plat, où les sauts de
   // ligne deviennent des espaces. Les totaux, eux, restent ancrés en début de
@@ -201,9 +211,14 @@ function parseHeader(text) {
   }
 
   return {
-    number: grab(/Facture\s+([A-Z0-9][A-Z0-9/\-.]*)/i),
+    isCreditNote,
+    docType: isCreditNote ? 'credit_note' : 'invoice',
+    number: grab(/(?:Facture|Avoir)\s+([A-Z0-9][A-Z0-9/\-.]*)/i),
+    // « Extourne de : V3/2026/33473 » : la facture que cet avoir corrige.
+    correctsInvoice: grab(/Extourne de\s*:?\s*([A-Z0-9][A-Z0-9/\-.]*)/i),
     isProforma: /PRO\s*FORMA/i.test(text),
-    date: date(/Date\s+de\s+(?:la\s+)?factur\w*\s*:?\s*(\d{2})\/(\d{2})\/(\d{4})/i),
+    // « Date de la facture », « Date de facturation », « Date de l'avoir ».
+    date: date(/Date\s+de\s+(?:la\s+|l')?(?:factur\w*|avoir)\s*:?\s*(\d{2})\/(\d{2})\/(\d{4})/i),
     dueDate: date(/Date\s+d'échéance\s*:?\s*(\d{2})\/(\d{2})\/(\d{4})/i),
     // « Origine » chez JoshNoa et Levest, « Source » chez LIPS et Cloud Vapor.
     orderRefOnDoc: grab(/(?:Origine|Source)\s*:?\s+(\S+)/i),
@@ -264,6 +279,17 @@ function parseInvoice(text) {
       kind: classify(ref, label),
     });
     buffer = '';
+  }
+
+  // Un avoir imprime ses montants en positif mais vient en déduction : on le
+  // stocke en négatif (cf. add_supplier_invoices.sql), pour que les imputations
+  // sur un règlement groupé restent de simples additions.
+  if (header.isCreditNote) {
+    for (const l of lines) l.lineTotalHt = -l.lineTotalHt;
+    for (const k of ['totalHt', 'totalTva', 'totalTtc']) {
+      if (header[k] != null) header[k] = -header[k];
+    }
+    for (const p of header.payments || []) p.amount = -p.amount;
   }
 
   // Réconciliation : la somme des lignes doit retomber sur le total imprimé.

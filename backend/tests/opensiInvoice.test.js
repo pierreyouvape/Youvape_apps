@@ -188,6 +188,46 @@ test('la référence de commande imprimée est remontée même si elle ne matche
   assert.strictEqual(gfc.orderRefOnDoc, '530456');
 });
 
+/* ─── Avoirs OpenSi — LCA A2609409187 et GFC A2607412564 ─────────────────── */
+
+const lcaAvoir = parseInvoice(fixture('lca-avoir-A2609409187.txt'));
+const gfcAvoir = parseInvoice(fixture('gfc-avoir-A2607412564.txt'));
+
+console.log('\nAvoirs OpenSi (PDF réels)');
+
+test('un avoir est reconnu comme tel', () => {
+  assert.strictEqual(lcaAvoir.docType, 'credit_note');
+  assert.strictEqual(lcaAvoir.number, 'A2609409187');
+  assert.strictEqual(gfcAvoir.docType, 'credit_note');
+});
+
+test('les montants d\'un avoir sont stockés en négatif', () => {
+  // Le document imprime « Total HT : 278,88 € », bien positif. Un avoir vient
+  // en déduction : on le range en négatif pour que son imputation sur un
+  // règlement groupé reste une simple addition.
+  assert.ok(close(lcaAvoir.totalHt, -278.88));
+  assert.ok(close(lcaAvoir.totalTtc, -334.66));
+  assert.strictEqual(lcaAvoir.lines.length, 1);
+  assert.ok(close(lcaAvoir.lines[0].lineTotalHt, -278.88));
+});
+
+test('un avoir peut n\'être rattaché à aucune commande', () => {
+  // L'avoir LCA ne porte aucune « Réf. Commande » : c'est une régularisation.
+  assert.strictEqual(lcaAvoir.orderRefOnDoc, null);
+  assert.strictEqual(lcaAvoir.lines[0].ref, 'regul');
+});
+
+test('une désignation finissant par un chiffre collé ne mange pas sa ligne', () => {
+  // « … Melo EC2 0,30 3 0.03 0.09 » : le « 2 » de EC2 passait pour une colonne.
+  // Trois lignes, et le total qui retombe — c'est tout le contrôle.
+  assert.strictEqual(gfcAvoir.lines.length, 3);
+  assert.ok(close(gfcAvoir.lines.reduce((a, l) => a + l.lineTotalHt, 0), -23.19, 0.02));
+  assert.strictEqual(gfcAvoir.warnings.length, 0);
+  const melo = gfcAvoir.lines[2];
+  assert.strictEqual(melo.qty, 3);
+  assert.ok(close(melo.lineTotalHt, -0.09));
+});
+
 if (failures > 0) {
   console.log(`\n${failures} test(s) en échec.`);
   process.exit(1);

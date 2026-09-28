@@ -199,6 +199,47 @@ test('la ligne Livraison sans référence est classée en port', () => {
   assert.strictEqual(port.lineTotalHt, 0);
 });
 
+/* ─── Avoirs Odoo — JoshNoa RV3/2026/02731 et Levest RFAC/2026/07/0016 ───── */
+
+const joshAvoir = parseInvoice(fixture('joshnoa-avoir-RV3202602731.txt'));
+const levestAvoir = parseInvoice(fixture('levest-avoir-RFAC2026070016.txt'));
+
+console.log('\nAvoirs Odoo (PDF réels)');
+
+test('un avoir est reconnu et rangé en négatif', () => {
+  assert.strictEqual(joshAvoir.docType, 'credit_note');
+  assert.strictEqual(joshAvoir.number, 'RV3/2026/02731');
+  assert.ok(close(joshAvoir.totalHt, -13.80));
+  assert.strictEqual(levestAvoir.docType, 'credit_note');
+  assert.ok(close(levestAvoir.totalHt, -665.10));
+});
+
+test('l\'avoir dit quelle facture il corrige, et sur quelle commande', () => {
+  // « Extourne de : V3/2026/33473, ERREUR FACTURATION » et « Origine S309145 ».
+  assert.strictEqual(joshAvoir.correctsInvoice, 'V3/2026/33473');
+  assert.strictEqual(joshAvoir.orderRefOnDoc, 'S309145');
+  assert.strictEqual(joshAvoir.date, '2026-09-21');
+});
+
+test('un avoir a une colonne de moins que la facture du même fournisseur', () => {
+  // Les factures JoshNoa impriment « QTÉ | P.U TTC | REM. % | P.U REMISÉ HT |
+  // TAXES | MONTANT ». Les avoirs n'ont pas la remise : quatre nombres au lieu
+  // de cinq, et la ligne devenait illisible.
+  assert.strictEqual(joshAvoir.lines.length, 1);
+  const l = joshAvoir.lines[0];
+  assert.strictEqual(l.qty, 1);
+  assert.ok(close(l.unitPriceNet, 13.80));
+  assert.ok(close(l.lineTotalHt, -13.80));
+});
+
+test('les trois lignes de l\'avoir Levest retombent sur son total', () => {
+  assert.strictEqual(levestAvoir.lines.length, 3);
+  const s = levestAvoir.lines.reduce((a, l) => a + l.lineTotalHt, 0);
+  assert.ok(close(s, -665.10, 0.02), `somme ${s}`);
+  assert.strictEqual(levestAvoir.warnings.length, 0);
+  assert.ok(close(byRef(levestAvoir, 'PNGP050N00').lineTotalHt, -400.50));
+});
+
 if (failures > 0) {
   console.log(`\n${failures} test(s) en échec.`);
   process.exit(1);

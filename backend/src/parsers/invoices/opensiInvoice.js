@@ -33,7 +33,12 @@ const EPSILON = 0.02;
 
 /** Un nombre du tableau : entier, ou décimal avec séparateur de milliers espace. */
 const NUM = String.raw`\d{1,3}(?:[  ]\d{3})*(?:[.,]\d+)?|\d+(?:[.,]\d+)?`;
-const TRAILING_NUMBERS = new RegExp(String.raw`((?:${NUM})(?:\s+(?:${NUM}))*)\s*$`);
+// Le `(?:^|\s)` n'est pas décoratif : sans lui, l'expression peut commencer AU
+// MILIEU d'un mot. Sur l'avoir GFC, la désignation « … Melo EC2 0,30 3 0.03
+// 0.09 » livrait le « 2 » de « EC2 » comme première colonne — cinq nombres au
+// lieu de quatre, plus aucune lecture ne tombait juste, et la ligne disparaissait
+// sans un mot. Seule la réconciliation du total l'a trahie (0,09 € manquants).
+const TRAILING_NUMBERS = new RegExp(String.raw`(?:^|\s)((?:${NUM})(?:\s+(?:${NUM}))*)\s*$`);
 
 const toNumber = (s) => parseFloat(String(s).replace(/[  ]/g, '').replace(',', '.'));
 const round2 = (n) => Math.round(n * 100) / 100;
@@ -42,6 +47,9 @@ const near = (a, b, eps = EPSILON) => Math.abs(a - b) <= eps;
 /** Lignes de gabarit à ne jamais confondre avec un article. */
 const NOISE = [
   /^Page\s+\d+\s*\/\s*\d+/i,
+  /^Avoir N°/i,
+  /^A\s+V\s+O\s+I\s+R\b/i,
+  /^Avoir constitué/i,
   /^Sous-total/i,
   /^Référence\s+Désignation/i,
   /^Base HT/i,
@@ -138,6 +146,9 @@ function splitRef(buffer) {
 }
 
 function parseHeader(text) {
+  // Un avoir s'annonce « Avoir N° … » et imprime ses montants en POSITIF. On le
+  // reconnaît ici ; le signe est inversé à la sortie (cf. parseInvoice).
+  const isCreditNote = /^\s*Avoir\s+N°/im.test(text) || /^A\s+V\s+O\s+I\s+R\s*$/im.test(text);
   const grab = (re, i = 1) => {
     const m = text.match(re);
     return m ? m[i].trim() : null;
@@ -152,8 +163,10 @@ function parseHeader(text) {
   };
 
   return {
-    number: grab(/Facture\s+N°\s*:?\s*(\S+)/i),
-    date: date(/Facture\s+N°[^\n]*?Date\s*:\s*(\d{2})\/(\d{2})\/(\d{4})/i)
+    isCreditNote,
+    docType: isCreditNote ? 'credit_note' : 'invoice',
+    number: grab(/(?:Facture|Avoir)\s+N°\s*:?\s*(\S+)/i),
+    date: date(/(?:Facture|Avoir)\s+N°[^\n]*?Date\s*:\s*(\d{2})\/(\d{2})\/(\d{4})/i)
        || date(/\bDate\s*:\s*(\d{2})\/(\d{2})\/(\d{4})/i),
     dueDate: date(/Date d'échéance\s*:\s*(\d{2})\/(\d{2})\/(\d{4})/i),
     // « Réf. Commande » est notre référence chez LCA et LVP ; chez GFC c'est le
@@ -195,7 +208,7 @@ function parseInvoice(text) {
 
     const nums = tail[1].trim().split(/\s+/).map(toNumber).filter(Number.isFinite);
     const read = readNumbers(nums);
-    const before = line.slice(0, line.length - tail[0].length);
+    const before = line.slice(0, tail.index);
     const block = (buffer + ' ' + before).trim();
 
     if (!read) {
@@ -242,6 +255,18 @@ function parseInvoice(text) {
       lineTotalHt: header.footerDiscount,
       kind: 'discount',
     });
+  }
+
+  // UN AVOIR EST UNE FACTURE AU SIGNE INVERSÉ. Le document imprime des montants
+  // positifs (« Total HT : 278,88 € » sur un avoir LCA), mais un avoir vient en
+  // déduction : il est stocké en négatif, pour que les sommes et les imputations
+  // sur un règlement groupé restent de simples additions (cf. la migration
+  // add_supplier_invoices.sql). On inverse ici, une fois, au plus près du document.
+  if (header.isCreditNote) {
+    for (const l of lines) l.lineTotalHt = -l.lineTotalHt;
+    for (const k of ['totalHt', 'totalTva', 'totalTtc']) {
+      if (header[k] != null) header[k] = -header[k];
+    }
   }
 
   // Réconciliation : la somme des lignes doit retomber sur le total imprimé.
