@@ -1071,7 +1071,7 @@ function PaymentsTab({ suppliers, mobile, reloadKey }) {
           <Kpi label="Avoirs non utilisés" value={eur(Math.abs(totalAvoirs))} tone="blue" />
         )}
         {totalAvoirsUtilises !== 0 && (
-          <Kpi label="Avoirs utilisés" value={eur(Math.abs(totalAvoirsUtilises))} tone="blue" />
+          <Kpi label="Avoirs utilisés" value={eur(Math.abs(totalAvoirsUtilises))} tone="green" />
         )}
       </div>
 
@@ -1084,7 +1084,7 @@ function PaymentsTab({ suppliers, mobile, reloadKey }) {
             <th style={th}>Moyen</th>
             <th style={th}>Factures concernées</th>
             <th style={th}>Référence du règlement</th>
-            <th style={{ ...th, textAlign: 'right' }}>Montant</th>
+            <th style={{ ...th, textAlign: 'right' }}>Montant TTC</th>
           </tr></thead>
           <tbody>
             {items.length === 0 && (
@@ -1098,7 +1098,7 @@ function PaymentsTab({ suppliers, mobile, reloadKey }) {
                   style={{ cursor: x.documentId ? 'pointer' : 'default' }}>
                 <td style={td}>
                   {x.statut === 'fait' && <Badge tone="green">Réglé</Badge>}
-                  {x.statut === 'avoirUtilise' && <Badge tone="blue">Avoir utilisé</Badge>}
+                  {x.statut === 'avoirUtilise' && <Badge tone="green">Avoir utilisé</Badge>}
                   {x.statut === 'avoir' && <Badge tone="blue">Avoir non utilisé</Badge>}
                   {x.statut === 'attente' && (
                     <Badge tone={x.retard > 0 ? 'red' : 'orange'}>
