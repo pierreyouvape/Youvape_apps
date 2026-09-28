@@ -222,6 +222,49 @@ function DifferencesTable({ lines, mobile }) {
   );
 }
 
+/**
+ * Les lignes telles qu'elles ont été LUES, quand il n'y a aucune commande à
+ * confronter. Un avoir de régularisation n'en a pas.
+ *
+ * Ce tableau remplace le bandeau vert « aucune différence » qui s'affichait
+ * alors : annoncer que tout correspond quand rien n'a été comparé est la pire
+ * chose qu'un contrôle puisse faire.
+ */
+function ReadLinesTable({ lines, mobile }) {
+  const produits = (lines || []).filter((l) => (l.kind || 'product') === 'product');
+  if (produits.length === 0) {
+    return <div style={{ padding: 18, background: C.orangeL, color: C.orange, borderRadius: 10, fontSize: 13 }}>
+      Aucune ligne lue dans ce document.
+    </div>;
+  }
+  return (
+    <div style={{ overflowX: 'auto', border: `1px solid ${C.greyB}`, borderRadius: 10, background: C.white }}>
+      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+        <thead><tr>
+          <th style={th}>Référence</th>
+          <th style={th}>Produit</th>
+          <th style={{ ...th, textAlign: 'right' }}>Qté</th>
+          <th style={{ ...th, textAlign: 'right' }}>Prix unitaire</th>
+          <th style={{ ...th, textAlign: 'right' }}>Montant HT</th>
+        </tr></thead>
+        <tbody>
+          {(lines || []).map((l, i) => (
+            <tr key={i}>
+              <td style={{ ...td, fontWeight: 600, whiteSpace: 'nowrap' }}>{l.ref || '—'}</td>
+              <td style={{ ...td, maxWidth: mobile ? 160 : 520, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {l.label || ''}
+              </td>
+              <td style={{ ...td, textAlign: 'right' }}>{num(l.qty)}</td>
+              <td style={{ ...td, textAlign: 'right' }}>{l.unitPriceNet == null ? '—' : eur(l.unitPriceNet)}</td>
+              <td style={{ ...td, textAlign: 'right', fontWeight: 700 }}>{eur(l.lineTotalHt)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 /** Lignes gelées en base → forme attendue par le tableau. */
 const fromStoredLines = (lines) => (lines || []).map((l) => ({
   ref: l.supplier_sku,
@@ -379,9 +422,27 @@ function ControlTab({ suppliers, mobile, onSaved }) {
 
           {result.needsManualOrder && (
             <div style={{ padding: 14, background: C.orangeL, color: C.orange, borderRadius: 10, fontSize: 13 }}>
-              La référence <strong>{result.invoice.orderRefOnDoc || '—'}</strong> imprimée sur ce document ne correspond
-              à aucune commande. Chez GFC et MG Vape, c'est le numéro interne du fournisseur : il faut désigner la
-              commande à la main. Le document est enregistré, le contrôle reste à faire.
+              {result.invoice.orderRefOnDoc ? (
+                <>
+                  La référence <strong>{result.invoice.orderRefOnDoc}</strong> imprimée sur ce document ne correspond à
+                  aucune commande. Chez GFC et MG&nbsp;Vape, c'est le numéro interne du fournisseur, jamais le nôtre.
+                  Les lignes lues sont affichées ci-dessous ; le rapprochement reste à faire.
+                </>
+              ) : (
+                <>
+                  Ce document ne porte <strong>aucune référence de commande</strong> — le cas courant d'un avoir de
+                  régularisation. Il n'y a donc rien à rapprocher : les lignes lues sont affichées ci-dessous, et le
+                  document peut être enregistré tel quel.
+                </>
+              )}
+            </div>
+          )}
+
+          {!totals && (
+            <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+              <Kpi label={result.invoice.docType === 'credit_note' ? 'Avoir HT' : 'Facture HT'} value={eur(result.invoice.totalHt)} />
+              <Kpi label={result.invoice.docType === 'credit_note' ? 'Avoir TTC' : 'Facture TTC'} value={eur(result.invoice.totalTtc)} />
+              <Kpi label="Lignes lues" value={result.invoice.lines.length} />
             </div>
           )}
 
@@ -422,13 +483,15 @@ function ControlTab({ suppliers, mobile, onSaved }) {
             </div>
           )}
 
-          <DifferencesTable lines={result.differences} mobile={mobile} />
+          {result.comparison
+            ? <DifferencesTable lines={result.differences} mobile={mobile} />
+            : <ReadLinesTable lines={result.invoice.lines} mobile={mobile} />}
 
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
             {!saved ? (
               <>
                 <Btn onClick={save} disabled={busy || !!result.duplicate}>
-                  {busy ? 'Enregistrement…' : 'Enregistrer la facture'}
+                  {busy ? 'Enregistrement…' : `Enregistrer ${result.invoice.docType === 'credit_note' ? "l'avoir" : 'la facture'}`}
                 </Btn>
                 <Btn variant="ghost" onClick={() => { reset(); setFile(null); }}>Abandonner</Btn>
                 <span style={{ fontSize: 12, color: C.greyM }}>
