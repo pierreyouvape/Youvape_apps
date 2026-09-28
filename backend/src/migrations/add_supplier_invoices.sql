@@ -187,8 +187,15 @@ SELECT
   d.doc_type,
   d.number,
   d.doc_date,
-  COALESCE(d.due_date, d.doc_date + (COALESCE(s.payment_terms_days, 0) || ' days')::interval)::date
-                      AS effective_due_date,
+  -- Le délai NÉGOCIÉ prime sur l'échéance imprimée, et pas l'inverse : LCA et
+  -- LVP datent la leur au jour de la facture, et JoshNoa met 0 sur une facture
+  -- et 30 jours sur la suivante. La date imprimée ne sert donc que de repli,
+  -- quand aucun délai n'est renseigné pour le fournisseur.
+  COALESCE(
+    d.doc_date + (NULLIF(s.payment_terms_days, 0) || ' days')::interval,
+    d.due_date::timestamp,
+    d.doc_date::timestamp
+  )::date              AS effective_due_date,
   d.total_ttc,
   COALESCE(SUM(a.amount), 0)                       AS paid_amount,
   COALESCE(d.total_ttc, 0) - COALESCE(SUM(a.amount), 0) AS remaining_amount,
