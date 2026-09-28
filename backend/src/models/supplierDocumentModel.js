@@ -21,6 +21,17 @@ const pool = require('../config/database');
 const VALID_STATUSES = ['to_check', 'checked', 'disputed', 'archived'];
 const VALID_METHODS = ['cb', 'amex', 'virement', 'prelevement', 'avoir', 'especes', 'cheque', 'autre'];
 
+/** Ce document est-il déjà enregistré pour ce fournisseur ? */
+async function findExisting(supplierId, number, db = pool) {
+  if (!supplierId || !number) return null;
+  const { rows } = await db.query(
+    `SELECT id, number, doc_type, doc_date, total_ttc, status, created_at
+       FROM supplier_documents WHERE supplier_id = $1 AND number = $2`,
+    [supplierId, number],
+  );
+  return rows[0] || null;
+}
+
 /**
  * Enregistre un document et son analyse, en une transaction.
  * Renvoie `{ duplicate: true, existing }` si ce numéro est déjà arrivé de ce
@@ -173,7 +184,7 @@ async function getDocument(id, db = pool) {
   const [lines, orders, payments] = await Promise.all([
     db.query('SELECT * FROM supplier_document_lines WHERE document_id = $1 ORDER BY line_no', [id]),
     db.query(
-      `SELECT po.id, po.bms_reference, po.order_number, po.order_date, po.total_amount, o.matched_by
+      `SELECT po.id, po.bms_po_id, po.bms_reference, po.order_number, po.order_date, po.total_amount, o.matched_by
          FROM supplier_document_orders o
          JOIN purchase_orders po ON po.id = o.purchase_order_id
         WHERE o.document_id = $1`,
@@ -292,6 +303,7 @@ async function deleteDocument(id, db = pool) {
 }
 
 module.exports = {
+  findExisting,
   createDocument,
   listDocuments,
   getDocument,

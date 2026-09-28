@@ -1,11 +1,16 @@
 /**
  * API du contrôle des factures fournisseur.
  *
- * Le dépôt ANALYSE ET ENREGISTRE d'un coup. C'est volontaire : le document est
- * la pièce comptable, on le garde même si le contrôle est mauvais — et surtout
- * le numéro de facture est unique par fournisseur, donc l'enregistrer tout de
- * suite fait du deuxième dépôt un 409 explicite plutôt qu'un doublon silencieux.
- * Un doublon en base, c'est un double paiement en puissance.
+ * LIRE ET ENREGISTRER SONT DEUX GESTES SÉPARÉS (Pierre, 28/09/2026). `/analyse`
+ * lit le document et rend le tableau d'écarts sans rien écrire ni conserver ;
+ * seul `POST /` enregistre, quand l'acheteur a vu le résultat et l'a validé.
+ * Essayer une facture ne doit pas polluer le classeur.
+ *
+ * Le doublon est signalé DEUX FOIS : à la lecture, pour prévenir avant même de
+ * regarder le tableau, et au moment d'enregistrer, où il bloque vraiment. Le
+ * second contrôle est le seul qui protège — entre les deux, quelqu'un d'autre a
+ * pu déposer la même facture. Un doublon en base, c'est un double paiement en
+ * puissance.
  */
 
 const supplierInvoiceService = require('../services/supplierInvoiceService');
@@ -14,7 +19,44 @@ const docStore = require('../utils/supplierDocStore');
 const { buildClaimMessage } = require('../utils/invoiceClaimMessage');
 const invoiceParsers = require('../parsers/invoices');
 
-/** POST /api/supplier-invoices — dépôt d'une facture ou d'un avoir. */
+/**
+ * POST /api/supplier-invoices/analyse — lire un document SANS rien enregistrer.
+ * Rien n'est écrit en base, aucun fichier n'est conservé.
+ */
+async function analyseDocument(req, res) {
+  try {
+    if (!req.file || !req.file.buffer) {
+      return res.status(400).json({ error: 'Aucun fichier reçu' });
+    }
+    const supplierId = parseInt(req.body.supplier_id, 10);
+    if (!Number.isFinite(supplierId)) {
+      return res.status(400).json({ error: 'Fournisseur manquant' });
+    }
+    const orderId = req.body.order_id ? parseInt(req.body.order_id, 10) : null;
+
+    const analysis = await supplierInvoiceService.analyseInvoice({
+      buffer: req.file.buffer,
+      supplierId,
+      orderId: Number.isFinite(orderId) ? orderId : null,
+    });
+
+    if (!analysis.invoice.number) {
+      return res.status(422).json({
+        error: "Numéro de document illisible : ce fichier n'est probablement pas une facture de ce fournisseur",
+      });
+    }
+
+    // Prévenir avant que l'acheteur lise tout le tableau pour rien.
+    const duplicate = await supplierDocumentModel.findExisting(supplierId, analysis.invoice.number);
+
+    return res.json({ ...analysis, duplicate });
+  } catch (error) {
+    console.error('[supplier-invoices] lecture :', error.message);
+    return res.status(500).json({ error: error.message || 'Erreur serveur' });
+  }
+}
+
+/** POST /api/supplier-invoices — enregistrer une facture ou un avoir. */
 async function uploadDocument(req, res) {
   let stored = null;
   try {
@@ -264,6 +306,7 @@ async function getParsers(req, res) {
 }
 
 module.exports = {
+  analyseDocument,
   uploadDocument,
   listDocuments,
   getDocument,

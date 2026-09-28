@@ -7,6 +7,23 @@ import { useIsMobile } from '../hooks/useIsMobile';
 const API = (import.meta.env.VITE_API_URL || 'http://localhost:3000/api/auth').replace('/auth', '');
 const BASE = `${API}/supplier-invoices`;
 
+/**
+ * Lien vers la commande dans BMS. L'API vit sur /api ; l'interface suit le même
+ * chemin sans ce préfixe. À corriger d'un mot si BMS range ses commandes
+ * ailleurs — le lien est construit ici et nulle part ailleurs.
+ */
+const BMS_ORDER_URL = (bmsPoId) =>
+  `https://fr3.myfulfillment.boostmyshop.com/supplier/purchase-orders/${bmsPoId}`;
+
+const OrderLink = ({ order, children }) => (
+  order?.bms_po_id
+    ? <a href={BMS_ORDER_URL(order.bms_po_id)} target="_blank" rel="noopener noreferrer"
+         style={{ color: C.main, fontWeight: 700, textDecoration: 'none', borderBottom: `1px dotted ${C.main}` }}>
+        {children} ↗
+      </a>
+    : <>{children}</>
+);
+
 const C = {
   main: '#0F766E', mainD: '#115E59', mainL: '#ECFDF5',
   red: '#DC2626', redL: '#FEF2F2', green: '#16A34A', greenL: '#F0FDF4',
@@ -207,33 +224,57 @@ function ControlTab({ suppliers, mobile, onSaved }) {
   const [file, setFile] = useState(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
-  const [result, setResult] = useState(null);
+  const [result, setResult] = useState(null);   // lu, PAS enregistré
+  const [saved, setSaved] = useState(null);     // document en base, une fois validé
   const [copied, setCopied] = useState(false);
   const [dragging, setDragging] = useState(false);
   const fileInput = useRef(null);
 
-  const submit = async () => {
+  const reset = () => { setResult(null); setSaved(null); setError(null); setCopied(false); };
+
+  // Lecture seule : rien n'est écrit tant que l'acheteur n'a pas validé.
+  const analyse = async () => {
     if (!supplierId || !file) return;
-    setBusy(true); setError(null); setResult(null); setCopied(false);
+    setBusy(true); reset();
+    try {
+      const form = new FormData();
+      form.append('file', file);
+      form.append('supplier_id', supplierId);
+      const { data } = await axios.post(`${BASE}/analyse`, form);
+      setResult(data);
+    } catch (e) {
+      setError(e.response?.data?.error || e.message);
+    } finally { setBusy(false); }
+  };
+
+  // Le fichier repart tel quel : le document enregistré est exactement celui
+  // qui a été lu, et l'analyse rangée correspond à ce qui est affiché.
+  const save = async () => {
+    setBusy(true); setError(null);
     try {
       const form = new FormData();
       form.append('file', file);
       form.append('supplier_id', supplierId);
       const { data } = await axios.post(BASE, form);
-      setResult(data);
+      setSaved(data.document);
+      setResult((r) => ({ ...r, document: data.document }));
       onSaved();
     } catch (e) {
       const d = e.response?.data;
-      setError(d?.existing
-        ? `${d.error} (déposée le ${date(d.existing.doc_date)})`
-        : (d?.error || e.message));
-    } finally {
-      setBusy(false);
-    }
+      setError(d?.existing ? `${d.error} (enregistrée le ${date(d.existing.doc_date)})` : (d?.error || e.message));
+    } finally { setBusy(false); }
+  };
+
+  const remove = async () => {
+    if (!saved || !window.confirm('Supprimer ce document et son fichier ? Cette action est définitive.')) return;
+    await axios.delete(`${BASE}/${saved.id}`);
+    reset();
+    setFile(null);
+    onSaved();
   };
 
   const copyClaim = async () => {
-    const { data } = await axios.get(`${BASE}/${result.document.id}/claim`);
+    const { data } = await axios.get(`${BASE}/${saved.id}/claim`);
     if (!data.body) return;
     await navigator.clipboard.writeText(`${data.subject}\n\n${data.body}`);
     setCopied(true);
@@ -241,8 +282,8 @@ function ControlTab({ suppliers, mobile, onSaved }) {
   };
 
   const setStatus = async (status) => {
-    const { data } = await axios.put(`${BASE}/${result.document.id}/status`, { status });
-    setResult((r) => ({ ...r, document: data }));
+    const { data } = await axios.put(`${BASE}/${saved.id}/status`, { status });
+    setSaved(data);
     onSaved();
   };
 
@@ -258,7 +299,7 @@ function ControlTab({ suppliers, mobile, onSaved }) {
             {suppliers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
           </select>
         </Field>
-        <Btn onClick={submit} disabled={!supplierId || !file || busy}>
+        <Btn onClick={analyse} disabled={!supplierId || !file || busy}>
           {busy ? 'Lecture en cours…' : 'Contrôler la facture'}
         </Btn>
       </div>
@@ -279,7 +320,7 @@ function ControlTab({ suppliers, mobile, onSaved }) {
           {file ? file.name : 'Déposer la facture ou l’avoir ici, ou cliquer pour choisir'}
         </div>
         <div style={{ fontSize: 12, color: C.greyM, marginTop: 5 }}>
-          Le document est conservé tel quel et restera téléchargeable.
+          La lecture n'enregistre rien : le document n'est rangé que si tu l'enregistres ensuite.
         </div>
       </div>
 
@@ -299,15 +340,24 @@ function ControlTab({ suppliers, mobile, onSaved }) {
               </div>
               <div style={{ fontSize: 12.5, color: C.greyT, marginTop: 3 }}>
                 {result.supplier.name} · {date(result.invoice.date)}
-                {result.order
-                  ? ` · commande ${result.order.bms_reference} (${result.matchedBy === 'manual' ? 'désignée' : 'retrouvée par sa référence'})`
-                  : ' · aucune commande retrouvée'}
+                {result.order ? (
+                  <> · commande <OrderLink order={result.order}>{result.order.bms_reference}</OrderLink>
+                    {' '}({result.matchedBy === 'manual' ? 'désignée' : 'retrouvée par sa référence'})</>
+                ) : ' · aucune commande retrouvée'}
               </div>
             </div>
-            <Badge tone={result.document.status === 'disputed' ? 'red' : (result.document.status === 'checked' ? 'green' : 'orange')}>
-              {STATUS_LABELS[result.document.status]}
+            <Badge tone={saved ? (saved.status === 'disputed' ? 'red' : (saved.status === 'checked' ? 'green' : 'orange')) : 'grey'}>
+              {saved ? STATUS_LABELS[saved.status] : 'Non enregistrée'}
             </Badge>
           </div>
+
+          {result.duplicate && !saved && (
+            <div style={{ padding: 13, background: C.redL, color: C.red, borderRadius: 10, fontSize: 13, fontWeight: 600 }}>
+              Ce document est <strong>déjà enregistré</strong> ({result.duplicate.number}, déposé le{' '}
+              {date(result.duplicate.created_at)}, état « {STATUS_LABELS[result.duplicate.status]} »).
+              L'enregistrer une seconde fois est refusé — c'est ce qui évite de le payer deux fois.
+            </div>
+          )}
 
           {result.needsManualOrder && (
             <div style={{ padding: 14, background: C.orangeL, color: C.orange, borderRadius: 10, fontSize: 13 }}>
@@ -344,15 +394,30 @@ function ControlTab({ suppliers, mobile, onSaved }) {
 
           <DifferencesTable lines={result.differences} mobile={mobile} />
 
-          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-            <Btn onClick={copyClaim} disabled={!summary || summary.claimable <= 0}>
-              {copied ? 'Message copié ✓' : 'Copier le message de réclamation'}
-            </Btn>
-            <Btn variant="ghost" onClick={() => downloadFile(result.document.id, result.invoice.number)}>
-              Télécharger le document
-            </Btn>
-            <Btn variant="ghost" onClick={() => setStatus('checked')}>Marquer contrôlée</Btn>
-            <Btn variant="danger" onClick={() => setStatus('disputed')}>Mettre en litige</Btn>
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+            {!saved ? (
+              <>
+                <Btn onClick={save} disabled={busy || !!result.duplicate}>
+                  {busy ? 'Enregistrement…' : 'Enregistrer la facture'}
+                </Btn>
+                <Btn variant="ghost" onClick={() => { reset(); setFile(null); }}>Abandonner</Btn>
+                <span style={{ fontSize: 12, color: C.greyM }}>
+                  Rien n'est conservé tant que tu n'as pas enregistré.
+                </span>
+              </>
+            ) : (
+              <>
+                <Btn onClick={copyClaim} disabled={!summary || summary.claimable <= 0}>
+                  {copied ? 'Message copié ✓' : 'Copier le message de réclamation'}
+                </Btn>
+                <Btn variant="ghost" onClick={() => downloadFile(saved.id, result.invoice.number)}>
+                  Télécharger le document
+                </Btn>
+                <Btn variant="ghost" onClick={() => setStatus('checked')}>Marquer contrôlée</Btn>
+                <Btn variant="ghost" onClick={() => setStatus('disputed')}>Mettre en litige</Btn>
+                <Btn variant="danger" onClick={remove}>Supprimer</Btn>
+              </>
+            )}
           </div>
         </>
       )}
@@ -398,6 +463,13 @@ function FilingTab({ suppliers, mobile, reloadKey }) {
     if (!openId) { setDetail(null); return; }
     axios.get(`${BASE}/${openId}`).then(({ data }) => setDetail(data));
   }, [openId]);
+
+  const remove = async (row) => {
+    if (!window.confirm(`Supprimer ${row.number} (${row.supplier_name}) et son fichier ? Cette action est définitive.`)) return;
+    await axios.delete(`${BASE}/${row.id}`);
+    setOpenId(null);
+    load();
+  };
 
   const totalDu = rows.reduce((s, r) => s + (Number(r.remaining_amount) || 0), 0);
   const totalEcarts = rows.reduce((s, r) => s + (Number(r.difference_count) || 0), 0);
@@ -493,8 +565,10 @@ function FilingTab({ suppliers, mobile, reloadKey }) {
                       {PAYMENT_LABELS[r.payment_status] || '—'}
                     </Badge>
                   </td>
-                  <td style={td}>
+                  <td style={{ ...td, whiteSpace: 'nowrap' }}>
                     <Btn small variant="ghost" onClick={(e) => { e.stopPropagation(); downloadFile(r.id, r.number); }}>PDF</Btn>
+                    {' '}
+                    <Btn small variant="danger" onClick={(e) => { e.stopPropagation(); remove(r); }}>Suppr.</Btn>
                   </td>
                 </tr>
               ))}
@@ -516,7 +590,9 @@ function FilingTab({ suppliers, mobile, reloadKey }) {
                 </div>
                 <div style={{ fontSize: 12.5, color: C.greyT, marginTop: 3 }}>
                   {detail.supplier_name} · {date(detail.doc_date)} · échéance {date(detail.effective_due_date)}
-                  {detail.orders?.[0] && ` · commande ${detail.orders[0].bms_reference}`}
+                  {detail.orders?.[0] && (
+                    <> · commande <OrderLink order={detail.orders[0]}>{detail.orders[0].bms_reference}</OrderLink></>
+                  )}
                 </div>
               </div>
               <Btn variant="ghost" small onClick={() => setOpenId(null)}>Fermer</Btn>
@@ -548,6 +624,7 @@ function FilingTab({ suppliers, mobile, reloadKey }) {
 
             <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 16 }}>
               <Btn variant="ghost" onClick={() => downloadFile(detail.id, detail.number)}>Télécharger le document</Btn>
+              <Btn variant="danger" onClick={() => remove(detail)}>Supprimer</Btn>
             </div>
           </div>
         </div>

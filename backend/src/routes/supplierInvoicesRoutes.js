@@ -28,6 +28,10 @@ router.get('/unpaid', canRead, controller.listUnpaid);
 router.get('/payments', canRead, controller.listPayments);
 router.post('/payments', canWrite, controller.createPayment);
 
+// Lecture seule : analyse sans rien écrire. Déclarée avant '/' pour rester
+// lisible à côté de son jumeau qui, lui, enregistre.
+router.post('/analyse', canWrite, upload.single('file'), controller.analyseDocument);
+
 router.get('/', canRead, controller.listDocuments);
 router.post('/', canWrite, upload.single('file'), controller.uploadDocument);
 
