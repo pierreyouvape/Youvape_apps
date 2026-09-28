@@ -3,20 +3,17 @@
  *
  * Sans dépendance ni base : `node tests/opensiInvoice.test.js` (ou `npm test`).
  *
- * Les textes ci-dessous reprennent la couche texte des PDF reçus le 25/09/2026
- * (LCA F2609412942, LVP F2511243065, GFC F2511358971), y compris ce qui casse
+ * Trois factures réelles (LCA F2609412942, LVP F2511243065, GFC F2511358971),
+ * avec tout ce qui casse
  * les parseurs : désignation qui passe à la ligne, chiffres seuls sur la leur,
  * colonne « Rist. % » qui n'existe que chez LCA, code-barres chez GFC, remise de
  * pied chez GFC, et pied de page bourré de nombres (IBAN, SIREN, taux de TVA)
  * qu'il ne faut surtout pas lire comme des articles.
  *
- * LVP et GFC tournent sur le texte pdf-parse des VRAIS PDF (fixtures
- * lvp-F2511243065.txt et gfc-F2511358971.txt), repris intégralement : leur total
- * imprimé doit retomber sur la somme des lignes lues, ce qui prouve qu'aucune
- * ligne n'a été perdue.
+ * Leur total imprimé doit retomber sur la somme des lignes lues : c'est le seul
+ * contrôle qui prouve qu'aucune ligne n'a été perdue.
  *
- * LCA reste un extrait saisi à la main — le PDF n'a pas été fourni. À remplacer
- * par une fixture dès qu'on l'a, comme les deux autres.
+ * Les trois tournent sur le texte pdf-parse des vrais PDF, repris intégralement.
  */
 
 const assert = require('assert');
@@ -50,61 +47,11 @@ function test(name, fn) {
 const close = (a, b, eps = 0.005) => Math.abs(a - b) < eps;
 const byRef = (res, ref) => res.lines.find((l) => l.ref === ref);
 
-/* ─── LCA — extrait de F2609412942 ───────────────────────────────────────── */
+/* ─── LCA — F2609412942, facture entière (PDF réel) ──────────────────────── */
 
-const LCA = `IJkH OpenSi v10.0.0 | 25/09/2026 - 14:38:31
-LCA DISTRIBUTION
-205 avenue du Chateau de Jouques
-13420 GEMENOS
-Tél : 0491754009
-E-Mail : contact@lca-distribution.com
-Facture N° F2609412942 Date : 25/09/2026
-Client N° 1-002445 - SAS EMC
-Interlocuteur : YOUVAPE Site WEB
-Page 1 / 3
-SAS EMC
-580 avenue de l'Aube Rouge
-YOUVAPE
-34170 CASTELNAU LE LEZ
-FRANCE
-F A C T U R E
-Réf. Affaire : AC26094060
-N° Commande : CC26094080
-Réf. Commande : 356948
-Réf. BL : BL26094426
-Référence Désignation Quantité PU HT Rist. % PU Net HT Montant HT
-#REF8398-27584 Gold Digger 10ML à l'unité - Ben Northon (Dosage
-Nicotine : 11mg)
-5 1.50 1.50 7.50
-#REF15320-49707 Cartouches pour Nexi par 3 - 20mg - Aspire (Saveur :
-Classic Blond)
-240 2.89 2.89 693.60
-#REF11324-36716 Sac de 200 boosters - Salt Freaks (Contenance : 10ml) 1 60.00 60.00 60.00
-#REF18588-62291 Résistances Z Series / Z series XM Boost par 5 -
-GeekVape (Valeur : 0.4?)
-30 6.46 16.00 5.43 162.79
-#REF25850-25849 OFFERT - PLV Elfbar-A4 Display Sheet 1 0.00 0.00 0.00
-Sous-total HT : 3 222.58
-Lca Distribution - SARL au capital de 20 000 Euros - immatriculée au RCS MARSEILLE 791 016 181 - N° TVA : FR09791016181 - Code NAF : 6190Z
-Aucun escompte ne sera accordé pour paiement
-anticipé.
-IBAN (International Bank Account Number) FR76 4097
-8000 2315 1095 9000 180
-BIC (Bank Identifier Code) BSPFFRPPXXX
-Base HT Taux TVA Montant TVA
-4 189.92 20.00 % 837.98
-Option pour le paiement de la taxe d'après les débits
-Date d'échéance : 25/09/2026
-Mode de règlement : Virement bancaire
-N° SIREN Client : 789 508 439
-N° TVA Client : FR87789508439
-Total HT : 4 189.92 €
-Total TVA : 837.98 €
-Total TTC : 5 027.90 €`;
+const lca = parseInvoice(fixture('lca-F2609412942.txt'));
 
-const lca = parseInvoice(LCA);
-
-console.log('\nLCA — facture F2609412942');
+console.log('\nLCA — facture F2609412942 (PDF réel, entière)');
 
 test('en-tête : numéro, date, référence de commande, échéance, règlement', () => {
   assert.strictEqual(lca.number, 'F2609412942');
@@ -149,16 +96,23 @@ test('la PLV offerte est lue, à zéro euro', () => {
 });
 
 test('ni l\'IBAN, ni le SIREN, ni le taux de TVA ne deviennent des articles', () => {
-  assert.strictEqual(lca.lines.length, 5);
+  assert.strictEqual(lca.lines.length, 51);
   const refs = lca.lines.map((l) => l.ref);
-  assert.ok(refs.every((r) => r.startsWith('#REF')));
+  assert.ok(refs.every((r) => r.startsWith('#REF')), `réf inattendue : ${refs.find((r) => !r.startsWith('#REF'))}`);
 });
 
-test('un extrait ne retombant pas sur le total imprimé est signalé', () => {
-  // 5 lignes sur 51 : le garde-fou DOIT crier. C'est exactement son rôle.
-  const w = lca.warnings.find((x) => x.type === 'total_mismatch');
-  assert.ok(w, 'aucun avertissement de réconciliation');
-  assert.ok(w.message.includes('4189.92'));
+test('les 51 lignes retombent au centime sur le total imprimé', () => {
+  const somme = lca.lines.reduce((s, l) => s + l.lineTotalHt, 0);
+  assert.ok(close(somme, 4189.92, 0.02), `somme ${somme}`);
+  assert.strictEqual(lca.warnings.length, 0);
+});
+
+test('la hausse de tarif à 33 € est bien lue telle que facturée', () => {
+  // La ligne qui a motivé toute l'app : 2,89 € commandés, 3,99 € facturés.
+  const l = byRef(lca, '#REF16155-52579');
+  assert.strictEqual(l.qty, 30);
+  assert.ok(close(l.unitPriceNet, 3.99));
+  assert.ok(close(l.lineTotalHt, 119.70));
 });
 
 /* ─── LVP — F2511243065, facture entière ─────────────────────────────────── */
