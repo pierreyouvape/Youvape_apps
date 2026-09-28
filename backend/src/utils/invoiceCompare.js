@@ -67,6 +67,24 @@ function normalizeRef(ref) {
 }
 
 /**
+ * Sur quoi deux lignes se reconnaissent. Par défaut la référence, mais l'appelant
+ * peut fournir un `matchKey` — en pratique l'identifiant du produit, quand la
+ * référence de la facture et celle de la commande désignent le même article sans
+ * se ressembler.
+ *
+ * Ça arrive pour de bon : 611 lignes de commande (3 % du total) portent le SKU
+ * interne au lieu d'une référence fournisseur, parce que BMS n'en avait pas. Les
+ * rapprocher sur la chaîne de caractères fabriquerait une fausse paire
+ * « commandé non facturé » + « facturé non commandé » qui se compensent.
+ *
+ * La référence affichée, elle, reste celle du document : `matchKey` ne sert qu'à
+ * apparier.
+ */
+function matchKeyOf(line) {
+  return normalizeRef(line && line.matchKey ? line.matchKey : line && line.ref);
+}
+
+/**
  * Regroupe les lignes par réf. normalisée : un même article peut apparaître sur
  * plusieurs lignes (deux lots, deux prix), et c'est le cumul qui se compare à la
  * commande. Les lignes hors produit (port, remise de pied) ne sont jamais groupées.
@@ -74,7 +92,7 @@ function normalizeRef(ref) {
 function groupByRef(lines) {
   const map = new Map();
   for (const line of lines) {
-    const key = normalizeRef(line.ref);
+    const key = matchKeyOf(line);
     if (!map.has(key)) {
       map.set(key, { ref: line.ref, label: line.label || null, qty: 0, total: 0, parts: 0 });
     }
@@ -110,7 +128,7 @@ function compareInvoiceToOrder({ invoice, order, options = {} }) {
   const otherLines = invoiceLines.filter((l) => (l.kind || 'product') !== 'product');
 
   const invoiceByRef = groupByRef(productLines);
-  const orderByRef = new Map(orderLines.map((l) => [normalizeRef(l.ref), l]));
+  const orderByRef = new Map(orderLines.map((l) => [matchKeyOf(l), l]));
 
   const results = [];
 
@@ -202,7 +220,7 @@ function compareInvoiceToOrder({ invoice, order, options = {} }) {
   // 2. Commandé et absent de la facture : reliquat, rupture, ou facture partielle.
   //    Jamais une erreur de tarif — on ne réclame pas, on ajuste la commande.
   for (const ord of orderLines) {
-    if (invoiceByRef.has(normalizeRef(ord.ref))) continue;
+    if (invoiceByRef.has(matchKeyOf(ord))) continue;
     const expectedTotal = round2((Number(ord.qty) || 0) * (Number(ord.price) || 0));
     results.push({
       ref: ord.ref,
@@ -379,6 +397,7 @@ function listDifferences(comparison) {
 
 module.exports = {
   compareInvoiceToOrder,
+  matchKeyOf,
   listDifferences,
   DIFFERENCE_KINDS,
   normalizeRef,

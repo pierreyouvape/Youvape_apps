@@ -21,6 +21,7 @@
 const assert = require('assert');
 const { compareInvoiceToOrder, listDifferences } = require('../src/utils/invoiceCompare');
 const { buildClaimMessage } = require('../src/utils/invoiceClaimMessage');
+const { attachMatchKeys } = require('../src/utils/invoiceMatching');
 
 let failures = 0;
 function test(name, fn) {
@@ -400,6 +401,64 @@ test('ce qui coûte de l\'argent arrive en tête', () => {
   const d = listDifferences(lca);
   assert.strictEqual(d[0].ref, '#REF16155-52579');   // +33,00 €
   assert.strictEqual(d[d.length - 1].verdict, 'rounding');
+});
+
+/* ─── Appariement par produit ─────────────────────────────────────────────── */
+
+console.log('\nRapprochement quand les références ne se ressemblent pas');
+
+test('une ligne de commande sans référence fournisseur retrouve sa facture', () => {
+  // Cas réel : 611 lignes de commande portent le SKU interne faute de réf
+  // fournisseur dans BMS. Sur la chaîne de caractères, « 1261822 » et
+  // « josh00011822 » n'ont rien à voir — les deux désignent le même produit.
+  const refProducts = new Map([['josh00011822', 1380790]]);
+  const skuProducts = new Map([['1261822', 1380790]]);
+  const keyed = attachMatchKeys({
+    invoiceLines: [{ ref: 'josh00011822', qty: 15, lineTotalHt: 58.50 }],
+    orderLines: [{ ref: '1261822', sku: '1261822', qty: 15, price: 3.90 }],
+    refProducts,
+    skuProducts,
+  });
+  const r = compareInvoiceToOrder({
+    invoice: { lines: keyed.invoiceLines },
+    order: { lines: keyed.orderLines },
+  });
+  assert.strictEqual(r.lines.length, 1);
+  assert.strictEqual(r.lines[0].verdict, 'ok');
+  assert.strictEqual(r.summary.qtyGap, 0);
+});
+
+test('sans cet appariement, deux fausses anomalies se compensent', () => {
+  // La même paire, rapprochée bêtement sur la référence.
+  const r = compareInvoiceToOrder({
+    invoice: { lines: [{ ref: 'josh00011822', qty: 15, lineTotalHt: 58.50 }] },
+    order: { lines: [{ ref: '1261822', qty: 15, price: 3.90 }] },
+  });
+  assert.strictEqual(r.lines.length, 2);
+  assert.deepStrictEqual(r.lines.map((l) => l.verdict).sort(),
+    ['missing_in_invoice', 'not_ordered']);
+});
+
+test('la référence affichée reste celle du document', () => {
+  const keyed = attachMatchKeys({
+    invoiceLines: [{ ref: 'josh00011822', qty: 1, lineTotalHt: 3.90 }],
+    orderLines: [{ ref: '1261822', sku: '1261822', qty: 1, price: 3.90 }],
+    refProducts: new Map([['josh00011822', 42]]),
+    skuProducts: new Map([['1261822', 42]]),
+  });
+  assert.strictEqual(keyed.invoiceLines[0].ref, 'josh00011822');
+  assert.strictEqual(keyed.orderLines[0].ref, '1261822');
+  assert.strictEqual(keyed.invoiceLines[0].matchKey, keyed.orderLines[0].matchKey);
+});
+
+test('une référence qu\'on ne sait pas résoudre garde la sienne', () => {
+  const keyed = attachMatchKeys({
+    invoiceLines: [{ ref: 'INCONNUE-1', qty: 1, lineTotalHt: 10 }],
+    orderLines: [{ ref: 'INCONNUE-1', qty: 1, price: 10 }],
+  });
+  assert.strictEqual(keyed.invoiceLines[0].matchKey, undefined);
+  const r = compareInvoiceToOrder({ invoice: { lines: keyed.invoiceLines }, order: { lines: keyed.orderLines } });
+  assert.strictEqual(r.lines[0].verdict, 'ok');
 });
 
 /* ─── Cas de bord ─────────────────────────────────────────────────────────── */
