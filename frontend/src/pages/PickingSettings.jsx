@@ -118,6 +118,11 @@ export default function PickingSettings() {
     <AppShell currentPath="/picking/settings">
       <main className="main-scroll" style={{ flex: 1, minWidth: 0, overflowY: 'auto', height: '100vh', background: C.grey }}>
         <div style={{ maxWidth: 960, margin: '0 auto', padding: '28px 24px 60px' }}>
+          <Link to="/picking" style={{
+            display: 'inline-block', marginBottom: 14, padding: '6px 12px', borderRadius: 8,
+            border: `1px solid ${C.greyB}`, background: C.white, color: C.dark, fontSize: 13.5,
+            fontWeight: 600, textDecoration: 'none',
+          }}>← Retour au Picking</Link>
           <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 6 }}>
             <span style={{ width: 40, height: 40, borderRadius: 11, background: C.violet, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <PickingIcon size={24} color="#fff" />
@@ -129,8 +134,7 @@ export default function PickingSettings() {
           <p style={{ margin: '0 0 20px', color: C.greyT, fontSize: 13.5, lineHeight: 1.5 }}>
             Les règles passent <strong>dans l'ordre de la liste</strong> : une commande prise par une règle ne l'est plus
             par les suivantes. Elles ne prennent que les commandes « En cours » libres, les plus anciennement payées d'abord.
-            Exemple : Mondial Relay par 10, avec 58 commandes → 5 vagues de 10 et 1 de 8.{' '}
-            <Link to="/picking" style={{ color: C.violet }}>← Retour au Picking</Link>
+            Exemple : Mondial Relay par 10, avec 58 commandes → 5 vagues de 10 et 1 de 8.
           </p>
 
           {message && (

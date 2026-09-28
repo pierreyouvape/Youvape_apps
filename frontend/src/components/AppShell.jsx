@@ -234,27 +234,31 @@ function Sidebar({ user, items, draggingKey, overKey, onPointerDown, onPointerEn
                 {activeApp.label}
               </span>
             </div>
-            {/* Bouton paramètres de l'app */}
-            {settingsPath && (
-              <LinkBox
-                to={settingsPath}
-                display="flex"
-                style={{
-                  width: '100%', alignItems: 'center', gap: 8,
-                  padding: '7px 10px', borderRadius: 7,
-                  background: currentPath === settingsPath ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.06)',
-                  border: '1px solid rgba(255,255,255,0.10)',
-                  color: 'rgba(255,255,255,0.82)', fontSize: 12.5, fontWeight: 600,
-                  fontFamily: 'inherit', boxSizing: 'border-box',
-                  transition: 'background 0.15s',
-                }}
-                onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.14)'}
-                onMouseLeave={e => e.currentTarget.style.background = currentPath === settingsPath ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.06)'}
-              >
-                <SettingsIcon size={13} color="rgba(255,255,255,0.75)" />
-                Paramètres de l'app
-              </LinkBox>
-            )}
+            {/* Bouton paramètres de l'app — devient « Retour » une fois dans les réglages */}
+            {settingsPath && (() => {
+              const inSettings = currentPath === settingsPath;
+              return (
+                <LinkBox
+                  to={inSettings ? activeApp.path : settingsPath}
+                  display="flex"
+                  style={{
+                    width: '100%', alignItems: 'center', gap: 8,
+                    padding: '7px 10px', borderRadius: 7,
+                    background: 'rgba(255,255,255,0.06)',
+                    border: '1px solid rgba(255,255,255,0.10)',
+                    color: 'rgba(255,255,255,0.82)', fontSize: 12.5, fontWeight: 600,
+                    fontFamily: 'inherit', boxSizing: 'border-box',
+                    transition: 'background 0.15s',
+                  }}
+                  onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.14)'}
+                  onMouseLeave={e => e.currentTarget.style.background = 'rgba(255,255,255,0.06)'}
+                >
+                  {inSettings
+                    ? <>← Retour à {activeApp.label}</>
+                    : <><SettingsIcon size={13} color="rgba(255,255,255,0.75)" />Paramètres de l'app</>}
+                </LinkBox>
+              );
+            })()}
           </div>
         );
       })()}

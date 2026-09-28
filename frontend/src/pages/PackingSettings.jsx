@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import AppShell from '../components/AppShell';
+import { Link } from 'react-router-dom';
 import MethodMappingTab from '../components/shipping/MethodMappingTab';
 import CarrierAccountsTab from '../components/shipping/CarrierAccountsTab';
 
@@ -27,6 +28,11 @@ function PackingSettings() {
   return (
     <AppShell currentPath="/packing/settings">
       <div style={{ padding: '25px 30px' }}>
+        <Link to="/packing" style={{
+          display: 'inline-block', marginBottom: '12px', padding: '6px 12px', borderRadius: '8px',
+          border: '1px solid #ddd', background: 'white', color: '#333', fontSize: '13.5px',
+          fontWeight: 600, textDecoration: 'none'
+        }}>← Retour au packing</Link>
         <h1 style={{ margin: '0 0 6px', fontSize: '24px', color: '#333' }}>
           Paramètres du packing
         </h1>
