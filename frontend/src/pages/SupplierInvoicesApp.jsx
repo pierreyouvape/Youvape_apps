@@ -839,14 +839,18 @@ function PaymentsTab({ suppliers, mobile, reloadKey }) {
   // choses différentes ; la même liste les montre côte à côte, parce que c'est
   // ainsi qu'on se demande « qu'est-ce que je dois encore ? ».
   const items = useMemo(() => {
+    // Les deux colonnes doivent dire la MÊME chose sur les deux types de ligne :
+    // `documents` porte toujours les numéros de facture concernés, `reference`
+    // toujours la référence du règlement — vide tant qu'il n'y en a pas.
     const faits = payments.map((p) => ({
       cle: `p${p.id}`, statut: 'fait', date: p.paid_at, fournisseur: p.supplier_name,
       moyen: p.method, reference: p.reference, montant: Number(p.amount),
-      documents: Number(p.document_count), nonImpute: Number(p.unallocated_amount),
+      documents: p.document_numbers, nonImpute: Number(p.unallocated_amount),
     }));
     const attente = unpaid.map((d) => ({
       cle: `d${d.document_id}`, statut: 'attente', date: d.effective_due_date,
-      fournisseur: d.supplier_name, moyen: null, reference: d.number,
+      fournisseur: d.supplier_name, moyen: null, reference: null,
+      documents: d.number,
       montant: Number(d.remaining_amount), retard: Number(d.days_overdue),
     }));
     return [...faits, ...attente]
@@ -896,8 +900,8 @@ function PaymentsTab({ suppliers, mobile, reloadKey }) {
             <th style={th}>Date</th>
             <th style={th}>Fournisseur</th>
             <th style={th}>Moyen</th>
-            <th style={th}>Référence</th>
-            <th style={{ ...th, textAlign: 'center' }}>Documents</th>
+            <th style={th}>Factures concernées</th>
+            <th style={th}>Référence du règlement</th>
             <th style={{ ...th, textAlign: 'right' }}>Montant</th>
           </tr></thead>
           <tbody>
@@ -916,8 +920,8 @@ function PaymentsTab({ suppliers, mobile, reloadKey }) {
                 <td style={td}>{date(x.date)}</td>
                 <td style={td}>{x.fournisseur}</td>
                 <td style={td}>{x.moyen ? <Badge tone="blue">{methodLabel(x.moyen)}</Badge> : <span style={{ color: C.greyM }}>—</span>}</td>
-                <td style={td}>{x.reference || '—'}</td>
-                <td style={{ ...td, textAlign: 'center' }}>{x.documents ?? '—'}</td>
+                <td style={{ ...td, fontWeight: 600 }}>{x.documents || '—'}</td>
+                <td style={td}>{x.reference || <span style={{ color: C.greyM }}>—</span>}</td>
                 <td style={{ ...td, textAlign: 'right', fontWeight: 700, color: x.statut === 'fait' ? C.dark : C.orange }}>
                   {eur(x.montant)}
                   {x.nonImpute != null && Math.abs(x.nonImpute) > 0.009 && (

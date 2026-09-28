@@ -263,10 +263,15 @@ async function listPayments({ supplierId, method, from, to, limit = 100 } = {}, 
     `SELECT p.*, s.name AS supplier_name,
             COALESCE(SUM(a.amount), 0) AS allocated_amount,
             p.amount - COALESCE(SUM(a.amount), 0) AS unallocated_amount,
-            count(a.document_id) AS document_count
+            count(a.document_id) AS document_count,
+            -- Les numéros eux-mêmes, pas seulement leur nombre : « 1 document »
+            -- ne dit pas lequel, et c'est justement ce qu'on cherche en relisant
+            -- un relevé Amex qui solde six factures.
+            string_agg(d.number, ', ' ORDER BY d.doc_date) AS document_numbers
        FROM supplier_payments p
        JOIN suppliers s ON s.id = p.supplier_id
        LEFT JOIN supplier_payment_allocations a ON a.payment_id = p.id
+       LEFT JOIN supplier_documents d ON d.id = a.document_id
       ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
       GROUP BY p.id, s.name
       ORDER BY p.paid_at DESC, p.id DESC
