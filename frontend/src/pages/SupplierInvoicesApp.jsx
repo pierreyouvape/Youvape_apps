@@ -467,16 +467,24 @@ async function downloadFile(id, label) {
   a.remove();
   URL.revokeObjectURL(url);
 }
-
 /* ═══════════════════════════════════════════════════════════
  * ONGLET 2 — Factures (les documents rangés)
+ *
+ * C'est ici qu'on règle. Pierre l'a demandé le 28/09/2026 et il a raison :
+ * on décide de payer en regardant ses factures, pas dans un écran séparé.
+ * La sélection multiple sert les deux cas d'un même geste — une facture
+ * isolée, ou six factures et un avoir soldés par un seul relevé Amex.
  * ═══════════════════════════════════════════════════════════ */
-function FilingTab({ suppliers, mobile, reloadKey }) {
+function FilingTab({ suppliers, mobile, reloadKey, onSaved }) {
   const [filters, setFilters] = useState({ supplier_id: '', status: '', payment_status: '', doc_type: '', from: '', to: '' });
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
   const [openId, setOpenId] = useState(null);
   const [detail, setDetail] = useState(null);
+  const [selected, setSelected] = useState({});
+  const [pay, setPay] = useState({ method: 'amex', paid_at: new Date().toISOString().slice(0, 10), reference: '' });
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -489,16 +497,64 @@ function FilingTab({ suppliers, mobile, reloadKey }) {
 
   useEffect(() => { load(); }, [load, reloadKey]);
 
-  useEffect(() => {
-    if (!openId) { setDetail(null); return; }
-    axios.get(`${BASE}/${openId}`).then(({ data }) => setDetail(data));
-  }, [openId]);
+  const openDetail = useCallback(async (id) => {
+    setOpenId(id);
+    const { data } = await axios.get(`${BASE}/${id}`);
+    setDetail(data);
+  }, []);
+
+  const closeDetail = () => { setOpenId(null); setDetail(null); };
 
   const remove = async (row) => {
-    if (!window.confirm(`Supprimer ${row.number} (${row.supplier_name}) et son fichier ? Cette action est définitive.`)) return;
+    if (!window.confirm(`Supprimer ${row.number} (${row.supplier_name || ''}) et son fichier ? Cette action est définitive.`)) return;
     await axios.delete(`${BASE}/${row.id}`);
-    setOpenId(null);
+    closeDetail();
     load();
+    onSaved();
+  };
+
+  const setStatus = async (id, status) => {
+    await axios.put(`${BASE}/${id}/status`, { status });
+    if (openId === id) openDetail(id);
+    load();
+  };
+
+  /* ─── Règlement d'une sélection ────────────────────────────
+   * Un règlement porte sur UN fournisseur : c'est ce qui permet de solder
+   * plusieurs de ses factures et ses avoirs d'un seul mouvement, et ce qui
+   * interdit de mélanger deux fournisseurs dans le même paiement.
+   * ──────────────────────────────────────────────────────── */
+  const chosen = useMemo(
+    () => rows.filter((r) => selected[r.id] && Math.abs(Number(r.remaining_amount) || 0) > 0.009),
+    [rows, selected],
+  );
+  const suppliersOfChosen = useMemo(
+    () => [...new Set(chosen.map((r) => r.supplier_name))],
+    [chosen],
+  );
+  const chosenTotal = chosen.reduce((s, r) => s + Number(r.remaining_amount), 0);
+
+  const settle = async () => {
+    setBusy(true); setError(null);
+    try {
+      if (suppliersOfChosen.length > 1) {
+        throw new Error('Un règlement ne peut couvrir qu’un seul fournisseur à la fois');
+      }
+      await axios.post(`${BASE}/payments`, {
+        supplier_id: chosen[0].supplier_id,
+        method: pay.method,
+        paid_at: pay.paid_at,
+        amount: Math.round(chosenTotal * 100) / 100,
+        reference: pay.reference,
+        allocations: chosen.map((r) => ({ document_id: r.id, amount: Number(r.remaining_amount) })),
+      });
+      setSelected({});
+      setPay({ ...pay, reference: '' });
+      await load();
+      onSaved();
+    } catch (e) {
+      setError(e.response?.data?.error || e.message);
+    } finally { setBusy(false); }
   };
 
   const totalDu = rows.reduce((s, r) => s + (Number(r.remaining_amount) || 0), 0);
@@ -549,11 +605,55 @@ function FilingTab({ suppliers, mobile, reloadKey }) {
         <Kpi label="Différences relevées" value={totalEcarts} tone={totalEcarts > 0 ? 'red' : 'green'} />
       </div>
 
+      {chosen.length > 0 && (
+        <div style={{
+          display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end',
+          background: C.mainL, border: `1px solid ${C.main}`, borderRadius: 12, padding: 14,
+        }}>
+          <div style={{ minWidth: 190 }}>
+            <div style={{ fontSize: 12.5, fontWeight: 700, color: C.mainD }}>
+              {chosen.length} document{chosen.length > 1 ? 's' : ''} à régler
+            </div>
+            <div style={{ fontSize: 11.5, color: C.greyT, marginTop: 2 }}>
+              {suppliersOfChosen.join(', ')}
+            </div>
+          </div>
+          <Field label="Moyen" width={150}>
+            <select value={pay.method} onChange={(e) => setPay({ ...pay, method: e.target.value })} style={inputStyle}>
+              {METHODS.map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+            </select>
+          </Field>
+          <Field label="Date du règlement" width={150}>
+            <input type="date" value={pay.paid_at} onChange={(e) => setPay({ ...pay, paid_at: e.target.value })} style={inputStyle} />
+          </Field>
+          <Field label="Référence" width={180}>
+            <input value={pay.reference} onChange={(e) => setPay({ ...pay, reference: e.target.value })}
+              placeholder="relevé Amex, n° de virement…" style={inputStyle} />
+          </Field>
+          <div style={{ flex: 1 }} />
+          <div style={{ textAlign: 'right' }}>
+            <div style={{ fontSize: 11, color: C.greyT }}>Montant</div>
+            <div style={{ fontSize: 19, fontWeight: 800, color: C.main }}>{eur(chosenTotal)}</div>
+          </div>
+          <Btn onClick={settle} disabled={busy || suppliersOfChosen.length > 1}>
+            {busy ? 'Enregistrement…' : 'Enregistrer le règlement'}
+          </Btn>
+          <Btn variant="ghost" onClick={() => setSelected({})}>Annuler</Btn>
+        </div>
+      )}
+
+      {(error || suppliersOfChosen.length > 1) && (
+        <div style={{ padding: 12, background: C.redL, color: C.red, borderRadius: 8, fontSize: 13, fontWeight: 600 }}>
+          {error || 'Un règlement ne peut couvrir qu’un seul fournisseur à la fois : décoche les autres.'}
+        </div>
+      )}
+
       {loading ? <div style={{ color: C.greyT, fontSize: 13 }}>Chargement…</div> : (
         <div style={{ overflowX: 'auto', border: `1px solid ${C.greyB}`, borderRadius: 10, background: C.white }}>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr>
+                <th style={{ ...th, width: 34 }}></th>
                 <th style={th}>Date</th>
                 <th style={th}>Numéro</th>
                 <th style={th}>Fournisseur</th>
@@ -568,111 +668,162 @@ function FilingTab({ suppliers, mobile, reloadKey }) {
             </thead>
             <tbody>
               {rows.length === 0 && (
-                <tr><td style={{ ...td, textAlign: 'center', color: C.greyM, padding: 26 }} colSpan={10}>
+                <tr><td style={{ ...td, textAlign: 'center', color: C.greyM, padding: 26 }} colSpan={11}>
                   Aucun document. Dépose une facture depuis l'onglet Contrôle.
                 </td></tr>
               )}
-              {rows.map((r) => (
-                <tr key={r.id} style={{ cursor: 'pointer' }} onClick={() => setOpenId(r.id)}>
-                  <td style={td}>{date(r.doc_date)}</td>
-                  <td style={{ ...td, fontWeight: 600 }}>{r.number}</td>
-                  <td style={td}>{r.supplier_name}</td>
-                  <td style={td}>
-                    {r.doc_type === 'credit_note'
-                      ? <Badge tone="green">Avoir</Badge>
-                      : (r.doc_type === 'proforma' ? <Badge tone="orange">Pro forma</Badge> : <Badge tone="grey">Facture</Badge>)}
-                  </td>
-                  <td style={{ ...td, textAlign: 'right', fontWeight: 700 }}>{eur(r.total_ttc)}</td>
-                  <td style={{ ...td, textAlign: 'center' }}>
-                    {Number(r.difference_count) > 0
-                      ? <Badge tone="red">{r.difference_count}</Badge>
-                      : <span style={{ color: C.green }}>✓</span>}
-                  </td>
-                  <td style={td}><Badge tone={r.status === 'disputed' ? 'red' : (r.status === 'checked' ? 'green' : 'orange')}>{STATUS_LABELS[r.status]}</Badge></td>
-                  <td style={td}>{date(r.effective_due_date)}</td>
-                  <td style={td}>
-                    <Badge tone={r.payment_status === 'paid' ? 'green' : (r.payment_status === 'partial' ? 'orange' : 'red')}>
-                      {PAYMENT_LABELS[r.payment_status] || '—'}
-                    </Badge>
-                  </td>
-                  <td style={{ ...td, whiteSpace: 'nowrap' }}>
-                    <Btn small variant="ghost" onClick={(e) => { e.stopPropagation(); downloadFile(r.id, r.number); }}>PDF</Btn>
-                    {' '}
-                    <Btn small variant="danger" onClick={(e) => { e.stopPropagation(); remove(r); }}>Suppr.</Btn>
-                  </td>
-                </tr>
-              ))}
+              {rows.map((r) => {
+                const reste = Math.abs(Number(r.remaining_amount) || 0) > 0.009;
+                return (
+                  <tr key={r.id} style={{ cursor: 'pointer', background: selected[r.id] ? C.mainL : undefined }}>
+                    <td style={td} onClick={(e) => e.stopPropagation()}>
+                      <input type="checkbox" disabled={!reste} checked={!!selected[r.id]}
+                        title={reste ? 'Inclure dans un règlement' : 'Déjà réglée'}
+                        onChange={(e) => setSelected({ ...selected, [r.id]: e.target.checked })} />
+                    </td>
+                    <td style={td} onClick={() => openDetail(r.id)}>{date(r.doc_date)}</td>
+                    <td style={{ ...td, fontWeight: 600 }} onClick={() => openDetail(r.id)}>{r.number}</td>
+                    <td style={td} onClick={() => openDetail(r.id)}>{r.supplier_name}</td>
+                    <td style={td} onClick={() => openDetail(r.id)}>
+                      {r.doc_type === 'credit_note'
+                        ? <Badge tone="green">Avoir</Badge>
+                        : (r.doc_type === 'proforma' ? <Badge tone="orange">Pro forma</Badge> : <Badge tone="grey">Facture</Badge>)}
+                    </td>
+                    <td style={{ ...td, textAlign: 'right', fontWeight: 700 }} onClick={() => openDetail(r.id)}>{eur(r.total_ttc)}</td>
+                    <td style={{ ...td, textAlign: 'center' }} onClick={() => openDetail(r.id)}>
+                      {Number(r.difference_count) > 0
+                        ? <Badge tone="red">{r.difference_count}</Badge>
+                        : <span style={{ color: C.green }}>✓</span>}
+                    </td>
+                    <td style={td}>
+                      <select value={r.status} onChange={(e) => setStatus(r.id, e.target.value)}
+                        onClick={(e) => e.stopPropagation()}
+                        style={{ ...inputStyle, padding: '4px 6px', fontSize: 12 }}>
+                        {Object.entries(STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                      </select>
+                    </td>
+                    <td style={td} onClick={() => openDetail(r.id)}>{date(r.effective_due_date)}</td>
+                    <td style={td} onClick={() => openDetail(r.id)}>
+                      <Badge tone={r.payment_status === 'paid' ? 'green' : (r.payment_status === 'partial' ? 'orange' : 'red')}>
+                        {PAYMENT_LABELS[r.payment_status] || '—'}
+                      </Badge>
+                    </td>
+                    <td style={{ ...td, whiteSpace: 'nowrap' }} onClick={(e) => e.stopPropagation()}>
+                      <Btn small variant="ghost" onClick={() => downloadFile(r.id, r.number)}>PDF</Btn>
+                      {' '}
+                      <Btn small variant="danger" onClick={() => remove(r)}>Suppr.</Btn>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
       )}
 
       {detail && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.35)', zIndex: 60, display: 'flex', justifyContent: 'flex-end' }}
-             onClick={() => setOpenId(null)}>
-          <div onClick={(e) => e.stopPropagation()} style={{
-            width: mobile ? '100%' : 'min(920px, 92vw)', background: C.grey, height: '100%', overflowY: 'auto', padding: mobile ? 16 : 26,
-          }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, marginBottom: 16 }}>
-              <div>
-                <div style={{ fontSize: 18, fontWeight: 800 }}>
-                  {detail.doc_type === 'credit_note' ? 'Avoir' : 'Facture'} {detail.number}
-                </div>
-                <div style={{ fontSize: 12.5, color: C.greyT, marginTop: 3 }}>
-                  {detail.supplier_name} · {date(detail.doc_date)} · échéance {date(detail.effective_due_date)}
-                  {detail.orders?.[0] && (
-                    <> · commande <OrderLink order={detail.orders[0]}>{detail.orders[0].bms_reference}</OrderLink></>
-                  )}
-                </div>
-              </div>
-              <Btn variant="ghost" small onClick={() => setOpenId(null)}>Fermer</Btn>
-            </div>
-
-            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 16 }}>
-              <Kpi label="Total HT" value={eur(detail.total_ht)} />
-              <Kpi label="Total TTC" value={eur(detail.total_ttc)} />
-              <Kpi label="Réglé" value={eur(detail.paid_amount)} />
-              <Kpi label="Reste dû" value={eur(detail.remaining_amount)} tone={Number(detail.remaining_amount) > 0 ? 'orange' : 'green'} />
-            </div>
-
-            {detail.payments?.length > 0 && (
-              <div style={{ background: C.white, border: `1px solid ${C.greyB}`, borderRadius: 10, padding: 12, marginBottom: 16 }}>
-                <div style={{ fontSize: 12, fontWeight: 700, color: C.greyT, marginBottom: 8 }}>RÈGLEMENTS IMPUTÉS</div>
-                {detail.payments.map((p) => (
-                  <div key={p.id} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, padding: '4px 0' }}>
-                    <span>{date(p.paid_at)} · {(METHODS.find((m) => m[0] === p.method) || [])[1] || p.method}{p.reference ? ` · ${p.reference}` : ''}</span>
-                    <strong>{eur(p.allocated)}</strong>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            <div style={{ fontSize: 12, fontWeight: 700, color: C.greyT, marginBottom: 8 }}>
-              DIFFÉRENCES CONSTATÉES AU CONTRÔLE ({detail.lines.filter((l) => l.verdict && l.verdict !== 'ok').length} sur {detail.lines.length} lignes)
-            </div>
-            <DifferencesTable lines={fromStoredLines(detail.lines)} mobile={mobile} />
-
-            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 16 }}>
-              <Btn variant="ghost" onClick={() => downloadFile(detail.id, detail.number)}>Télécharger le document</Btn>
-              <Btn variant="danger" onClick={() => remove(detail)}>Supprimer</Btn>
-            </div>
-          </div>
-        </div>
+        <DocumentPanel
+          detail={detail}
+          mobile={mobile}
+          onClose={closeDetail}
+          onStatus={(s) => setStatus(detail.id, s)}
+          onDelete={() => remove(detail)}
+        />
       )}
     </div>
   );
 }
 
+/**
+ * Le détail d'un document, en plein écran.
+ *
+ * C'était un tiroir de 920 px qu'il fallait faire défiler latéralement pour
+ * lire le tableau des écarts — inutilisable. Une facture a une dizaine de
+ * colonnes : elle a besoin de toute la largeur.
+ */
+function DocumentPanel({ detail, mobile, onClose, onStatus, onDelete }) {
+  const ecarts = detail.lines.filter((l) => l.verdict && l.verdict !== 'ok').length;
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: 'fixed', inset: 0, background: 'rgba(17,24,39,0.45)', zIndex: 60,
+        display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: mobile ? 0 : '3vh 2vw',
+        overflowY: 'auto',
+      }}
+    >
+      <div onClick={(e) => e.stopPropagation()} style={{
+        width: '100%', maxWidth: 1500, background: C.grey, borderRadius: mobile ? 0 : 14,
+        minHeight: mobile ? '100%' : undefined, padding: mobile ? 16 : 26,
+      }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, marginBottom: 16 }}>
+          <div>
+            <div style={{ fontSize: 18, fontWeight: 800 }}>
+              {detail.doc_type === 'credit_note' ? 'Avoir' : 'Facture'} {detail.number}
+            </div>
+            <div style={{ fontSize: 12.5, color: C.greyT, marginTop: 3 }}>
+              {detail.supplier_name} · {date(detail.doc_date)} · échéance {date(detail.effective_due_date)}
+              {detail.orders?.[0] && (
+                <> · commande <OrderLink order={detail.orders[0]}>{detail.orders[0].bms_reference}</OrderLink></>
+              )}
+            </div>
+          </div>
+          <Btn variant="ghost" small onClick={onClose}>Fermer</Btn>
+        </div>
+
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 16 }}>
+          <Kpi label="Total HT" value={eur(detail.total_ht)} />
+          <Kpi label="Total TTC" value={eur(detail.total_ttc)} />
+          <Kpi label="Réglé" value={eur(detail.paid_amount)} />
+          <Kpi label="Reste dû" value={eur(detail.remaining_amount)} tone={Number(detail.remaining_amount) > 0 ? 'orange' : 'green'} />
+        </div>
+
+        {detail.payments?.length > 0 && (
+          <div style={{ background: C.white, border: `1px solid ${C.greyB}`, borderRadius: 10, padding: 12, marginBottom: 16 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: C.greyT, marginBottom: 8 }}>RÈGLEMENTS IMPUTÉS</div>
+            {detail.payments.map((p) => (
+              <div key={p.id} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, padding: '4px 0' }}>
+                <span>{date(p.paid_at)} · {methodLabel(p.method)}{p.reference ? ` · ${p.reference}` : ''}</span>
+                <strong>{eur(p.allocated)}</strong>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div style={{ fontSize: 12, fontWeight: 700, color: C.greyT, marginBottom: 8 }}>
+          DIFFÉRENCES CONSTATÉES AU CONTRÔLE ({ecarts} sur {detail.lines.length} lignes)
+        </div>
+        <DifferencesTable lines={fromStoredLines(detail.lines)} mobile={mobile} />
+
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 16, alignItems: 'center' }}>
+          <Field label="État du contrôle" width={170}>
+            <select value={detail.status} onChange={(e) => onStatus(e.target.value)} style={inputStyle}>
+              {Object.entries(STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+            </select>
+          </Field>
+          <div style={{ alignSelf: 'flex-end', display: 'flex', gap: 10 }}>
+            <Btn variant="ghost" onClick={() => downloadFile(detail.id, detail.number)}>Télécharger le document</Btn>
+            <Btn variant="danger" onClick={onDelete}>Supprimer</Btn>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const methodLabel = (m) => (METHODS.find((x) => x[0] === m) || [])[1] || m;
+
 /* ═══════════════════════════════════════════════════════════
  * ONGLET 3 — Règlements
+ *
+ * Vue seule, depuis le 28/09/2026 : on règle depuis l'onglet Factures, là où
+ * on décide. Ici on regarde ce qui est parti et ce qui reste dû, par
+ * fournisseur et par moyen.
  * ═══════════════════════════════════════════════════════════ */
-function PaymentsTab({ suppliers, mobile, reloadKey, onSaved }) {
+function PaymentsTab({ suppliers, mobile, reloadKey }) {
   const [payments, setPayments] = useState([]);
   const [unpaid, setUnpaid] = useState([]);
-  const [form, setForm] = useState({ supplier_id: '', method: 'amex', paid_at: new Date().toISOString().slice(0, 10), reference: '' });
-  const [selected, setSelected] = useState({});
-  const [error, setError] = useState(null);
-  const [busy, setBusy] = useState(false);
+  const [filters, setFilters] = useState({ supplier: '', method: '', statut: '' });
 
   const load = useCallback(async () => {
     const [p, u] = await Promise.all([
@@ -684,146 +835,101 @@ function PaymentsTab({ suppliers, mobile, reloadKey, onSaved }) {
   }, []);
   useEffect(() => { load(); }, [load, reloadKey]);
 
-  // Un règlement porte sur UN fournisseur : c'est ce qui permet de solder
-  // plusieurs de ses factures et ses avoirs d'un seul mouvement.
-  const candidates = useMemo(
-    () => unpaid.filter((d) => !form.supplier_id || String(d.supplier_id) === String(form.supplier_id)),
-    [unpaid, form.supplier_id],
-  );
-  const total = useMemo(
-    () => candidates.reduce((s, d) => s + (selected[d.document_id] ? Number(d.remaining_amount) : 0), 0),
-    [candidates, selected],
-  );
+  // Un règlement effectué et une facture qui attend son règlement sont deux
+  // choses différentes ; la même liste les montre côte à côte, parce que c'est
+  // ainsi qu'on se demande « qu'est-ce que je dois encore ? ».
+  const items = useMemo(() => {
+    const faits = payments.map((p) => ({
+      cle: `p${p.id}`, statut: 'fait', date: p.paid_at, fournisseur: p.supplier_name,
+      moyen: p.method, reference: p.reference, montant: Number(p.amount),
+      documents: Number(p.document_count), nonImpute: Number(p.unallocated_amount),
+    }));
+    const attente = unpaid.map((d) => ({
+      cle: `d${d.document_id}`, statut: 'attente', date: d.effective_due_date,
+      fournisseur: d.supplier_name, moyen: null, reference: d.number,
+      montant: Number(d.remaining_amount), retard: Number(d.days_overdue),
+    }));
+    return [...faits, ...attente]
+      .filter((x) => (!filters.supplier || x.fournisseur === filters.supplier)
+        && (!filters.method || x.moyen === filters.method)
+        && (!filters.statut || x.statut === filters.statut))
+      .sort((a, b) => String(b.date).localeCompare(String(a.date)));
+  }, [payments, unpaid, filters]);
 
-  const submit = async () => {
-    setBusy(true); setError(null);
-    try {
-      const allocations = candidates
-        .filter((d) => selected[d.document_id])
-        .map((d) => ({ document_id: d.document_id, amount: Number(d.remaining_amount) }));
-      if (allocations.length === 0) throw new Error('Sélectionner au moins un document à solder');
-      await axios.post(`${BASE}/payments`, {
-        supplier_id: form.supplier_id,
-        method: form.method,
-        paid_at: form.paid_at,
-        amount: Math.round(total * 100) / 100,
-        reference: form.reference,
-        allocations,
-      });
-      setSelected({});
-      setForm({ ...form, reference: '' });
-      await load();
-      onSaved();
-    } catch (e) {
-      setError(e.response?.data?.error || e.message);
-    } finally { setBusy(false); }
-  };
+  const totalFait = items.filter((x) => x.statut === 'fait').reduce((s, x) => s + x.montant, 0);
+  const totalDu = items.filter((x) => x.statut === 'attente').reduce((s, x) => s + x.montant, 0);
+  const fournisseurs = [...new Set([...payments.map((p) => p.supplier_name), ...unpaid.map((d) => d.supplier_name)])].sort();
 
   return (
-    <div style={{ padding: mobile ? '16px' : '22px 40px', display: 'flex', flexDirection: 'column', gap: 18 }}>
-      <div style={{ background: C.white, border: `1px solid ${C.greyB}`, borderRadius: 12, padding: 16 }}>
-        <div style={{ fontSize: 15, fontWeight: 800, marginBottom: 4 }}>Enregistrer un règlement</div>
-        <div style={{ fontSize: 12.5, color: C.greyT, marginBottom: 14 }}>
-          Un seul règlement peut solder plusieurs factures et venir en déduction d'un avoir — un relevé Amex,
-          par exemple. Le moyen de paiement imprimé sur la facture n'engage à rien.
-        </div>
-
-        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end', marginBottom: 14 }}>
-          <Field label="Fournisseur" width={200}>
-            <select value={form.supplier_id} onChange={(e) => { setForm({ ...form, supplier_id: e.target.value }); setSelected({}); }} style={inputStyle}>
-              <option value="">Choisir…</option>
-              {suppliers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-            </select>
-          </Field>
-          <Field label="Moyen" width={160}>
-            <select value={form.method} onChange={(e) => setForm({ ...form, method: e.target.value })} style={inputStyle}>
-              {METHODS.map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-            </select>
-          </Field>
-          <Field label="Date" width={150}>
-            <input type="date" value={form.paid_at} onChange={(e) => setForm({ ...form, paid_at: e.target.value })} style={inputStyle} />
-          </Field>
-          <Field label="Référence" width={190}>
-            <input value={form.reference} onChange={(e) => setForm({ ...form, reference: e.target.value })}
-              placeholder="relevé Amex, n° de virement…" style={inputStyle} />
-          </Field>
-          <div style={{ flex: 1 }} />
-          <div style={{ textAlign: 'right' }}>
-            <div style={{ fontSize: 11, color: C.greyT }}>Montant du règlement</div>
-            <div style={{ fontSize: 20, fontWeight: 800, color: C.main }}>{eur(total)}</div>
-          </div>
-          <Btn onClick={submit} disabled={busy || !form.supplier_id || total === 0}>Enregistrer</Btn>
-        </div>
-
-        {error && <div style={{ padding: 12, background: C.redL, color: C.red, borderRadius: 8, fontSize: 13, marginBottom: 12 }}>{error}</div>}
-
-        <div style={{ maxHeight: 280, overflowY: 'auto', border: `1px solid ${C.greyB}`, borderRadius: 8 }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead><tr>
-              <th style={th}></th><th style={th}>Date</th><th style={th}>Document</th><th style={th}>Fournisseur</th>
-              <th style={th}>Échéance</th><th style={{ ...th, textAlign: 'right' }}>Reste dû</th>
-            </tr></thead>
-            <tbody>
-              {candidates.length === 0 && (
-                <tr><td style={{ ...td, textAlign: 'center', color: C.greyM, padding: 20 }} colSpan={6}>
-                  {form.supplier_id ? 'Rien à régler pour ce fournisseur.' : 'Choisir un fournisseur.'}
-                </td></tr>
-              )}
-              {candidates.map((d) => {
-                const retard = d.days_overdue > 0;
-                return (
-                  <tr key={d.document_id}>
-                    <td style={td}>
-                      <input type="checkbox" checked={!!selected[d.document_id]}
-                        onChange={(e) => setSelected({ ...selected, [d.document_id]: e.target.checked })} />
-                    </td>
-                    <td style={td}>{date(d.doc_date)}</td>
-                    <td style={{ ...td, fontWeight: 600 }}>
-                      {d.number} {d.doc_type === 'credit_note' && <Badge tone="green">avoir</Badge>}
-                    </td>
-                    <td style={td}>{d.supplier_name}</td>
-                    <td style={{ ...td, color: retard ? C.red : C.dark, fontWeight: retard ? 700 : 400 }}>
-                      {date(d.effective_due_date)}{retard ? ` (+${d.days_overdue} j)` : ''}
-                    </td>
-                    <td style={{ ...td, textAlign: 'right', fontWeight: 700 }}>{eur(d.remaining_amount)}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+    <div style={{ padding: mobile ? '16px' : '22px 40px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+        <Field label="Fournisseur" width={200}>
+          <select value={filters.supplier} onChange={(e) => setFilters({ ...filters, supplier: e.target.value })} style={inputStyle}>
+            <option value="">Tous</option>
+            {fournisseurs.map((n) => <option key={n} value={n}>{n}</option>)}
+          </select>
+        </Field>
+        <Field label="Moyen" width={160}>
+          <select value={filters.method} onChange={(e) => setFilters({ ...filters, method: e.target.value })} style={inputStyle}>
+            <option value="">Tous</option>
+            {METHODS.map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+          </select>
+        </Field>
+        <Field label="Statut" width={150}>
+          <select value={filters.statut} onChange={(e) => setFilters({ ...filters, statut: e.target.value })} style={inputStyle}>
+            <option value="">Tous</option>
+            <option value="fait">Réglés</option>
+            <option value="attente">En attente</option>
+          </select>
+        </Field>
       </div>
 
-      <div>
-        <div style={{ fontSize: 12, fontWeight: 700, color: C.greyT, marginBottom: 8 }}>RÈGLEMENTS ENREGISTRÉS</div>
-        <div style={{ overflowX: 'auto', border: `1px solid ${C.greyB}`, borderRadius: 10, background: C.white }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead><tr>
-              <th style={th}>Date</th><th style={th}>Fournisseur</th><th style={th}>Moyen</th><th style={th}>Référence</th>
-              <th style={{ ...th, textAlign: 'center' }}>Documents</th>
-              <th style={{ ...th, textAlign: 'right' }}>Montant</th>
-              <th style={{ ...th, textAlign: 'right' }}>Non imputé</th>
-            </tr></thead>
-            <tbody>
-              {payments.length === 0 && (
-                <tr><td style={{ ...td, textAlign: 'center', color: C.greyM, padding: 24 }} colSpan={7}>Aucun règlement enregistré.</td></tr>
-              )}
-              {payments.map((p) => (
-                <tr key={p.id}>
-                  <td style={td}>{date(p.paid_at)}</td>
-                  <td style={td}>{p.supplier_name}</td>
-                  <td style={td}><Badge tone="blue">{(METHODS.find((m) => m[0] === p.method) || [])[1] || p.method}</Badge></td>
-                  <td style={td}>{p.reference || '—'}</td>
-                  <td style={{ ...td, textAlign: 'center' }}>{p.document_count}</td>
-                  <td style={{ ...td, textAlign: 'right', fontWeight: 700 }}>{eur(p.amount)}</td>
-                  <td style={{ ...td, textAlign: 'right', color: Math.abs(Number(p.unallocated_amount)) > 0.009 ? C.red : C.greyM }}>
-                    {eur(p.unallocated_amount)}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+        <Kpi label="Réglé" value={eur(totalFait)} tone="green" />
+        <Kpi label="En attente" value={eur(totalDu)} tone={totalDu > 0 ? 'orange' : 'green'} />
+      </div>
+
+      <div style={{ overflowX: 'auto', border: `1px solid ${C.greyB}`, borderRadius: 10, background: C.white }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <thead><tr>
+            <th style={th}>Statut</th>
+            <th style={th}>Date</th>
+            <th style={th}>Fournisseur</th>
+            <th style={th}>Moyen</th>
+            <th style={th}>Référence</th>
+            <th style={{ ...th, textAlign: 'center' }}>Documents</th>
+            <th style={{ ...th, textAlign: 'right' }}>Montant</th>
+          </tr></thead>
+          <tbody>
+            {items.length === 0 && (
+              <tr><td style={{ ...td, textAlign: 'center', color: C.greyM, padding: 24 }} colSpan={7}>
+                Rien à afficher. Les règlements s'enregistrent depuis l'onglet Factures.
+              </td></tr>
+            )}
+            {items.map((x) => (
+              <tr key={x.cle}>
+                <td style={td}>
+                  {x.statut === 'fait'
+                    ? <Badge tone="green">Réglé</Badge>
+                    : <Badge tone={x.retard > 0 ? 'red' : 'orange'}>{x.retard > 0 ? `En retard (${x.retard} j)` : 'En attente'}</Badge>}
+                </td>
+                <td style={td}>{date(x.date)}</td>
+                <td style={td}>{x.fournisseur}</td>
+                <td style={td}>{x.moyen ? <Badge tone="blue">{methodLabel(x.moyen)}</Badge> : <span style={{ color: C.greyM }}>—</span>}</td>
+                <td style={td}>{x.reference || '—'}</td>
+                <td style={{ ...td, textAlign: 'center' }}>{x.documents ?? '—'}</td>
+                <td style={{ ...td, textAlign: 'right', fontWeight: 700, color: x.statut === 'fait' ? C.dark : C.orange }}>
+                  {eur(x.montant)}
+                  {x.nonImpute != null && Math.abs(x.nonImpute) > 0.009 && (
+                    <div style={{ fontSize: 10.5, color: C.red, fontWeight: 600 }}>
+                      {eur(x.nonImpute)} non imputé
+                    </div>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
     </div>
   );
@@ -905,8 +1011,8 @@ export default function SupplierInvoicesApp() {
         )}
 
         {tab === 'control' && <ControlTab suppliers={suppliers} mobile={mobile} onSaved={bump} />}
-        {tab === 'filing' && <FilingTab suppliers={suppliers} mobile={mobile} reloadKey={reloadKey} />}
-        {tab === 'payments' && <PaymentsTab suppliers={suppliers} mobile={mobile} reloadKey={reloadKey} onSaved={bump} />}
+        {tab === 'filing' && <FilingTab suppliers={suppliers} mobile={mobile} reloadKey={reloadKey} onSaved={bump} />}
+        {tab === 'payments' && <PaymentsTab suppliers={suppliers} mobile={mobile} reloadKey={reloadKey} />}
       </main>
     </AppShell>
   );
