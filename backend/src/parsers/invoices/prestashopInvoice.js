@@ -188,8 +188,42 @@ function parseHeader(text) {
   };
 }
 
-function parseInvoice(text) {
-  const header = parseHeader(text);
+/**
+ * Retire le mobilier de saut de page, puis recolle ce qu'il séparait.
+ *
+ * Sur une facture Curieux de deux pages, la référence « SPE-MACA-50-00MG » est
+ * coupée en « SPE- » en bas de page 1 et « MACA-50-00MG » en haut de page 2,
+ * avec entre les deux : « 1 / 2 », « -- 1 of 2 -- », « FACTURE », la date et le
+ * numéro de facture. Le recollage des mots coupés par un tiret (cleanPdfText)
+ * ne peut rien faire tant que ces lignes s'intercalent.
+ *
+ * On ne retire que ce qui est certain : numérotation de page, mention « x of
+ * y », et les lignes qui ne contiennent QUE la date ou le numéro déjà lus dans
+ * l'en-tête. Retirer une ligne au jugé ferait disparaître un article.
+ */
+function stripPageFurniture(text, header) {
+  const numero = header.number ? header.number.replace(/^#/, '') : null;
+  const patterns = [
+    /^\d{1,2}\s*\/\s*\d{1,2}$/,
+    /^--\s*\d+\s+of\s+\d+\s*--$/i,
+    /^(FACTURE|AVOIR)$/i,
+    /^\d{2}\/\d{2}\/\d{4}$/,
+  ];
+  const lignes = text.split('\n').filter((raw) => {
+    const l = raw.trim();
+    if (!l) return true;
+    if (numero && (l === numero || l === `#${numero}`)) return false;
+    return !patterns.some((re) => re.test(l));
+  });
+
+  // Le mobilier retiré, les deux morceaux redeviennent voisins : on rejoue le
+  // recollage sur tirets, exactement comme cleanPdfText le fait à l'ingestion.
+  return lignes.join('\n').replace(/([A-Za-z0-9])-\n+\s*([A-Za-z0-9])/g, '$1-$2');
+}
+
+function parseInvoice(rawText) {
+  const header = parseHeader(rawText);
+  const text = stripPageFurniture(rawText, header);
   const lines = [];
   const warnings = [];
 

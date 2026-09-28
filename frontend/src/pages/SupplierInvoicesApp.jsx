@@ -8,27 +8,33 @@ const API = (import.meta.env.VITE_API_URL || 'http://localhost:3000/api/auth').r
 const BASE = `${API}/supplier-invoices`;
 
 /**
- * Lien vers la commande dans BMS.
+ * La référence de commande, copiable d'un clic.
  *
- * L'interface n'est PAS sur le domaine de l'API : celle-ci répond sur
- * fr3.myfulfillment.boostmyshop.com, l'ERP s'ouvre sur fr3.erp.boostmyshop.com
- * (vérifié le 28/09/2026 — ma première version tombait sur du JSON d'erreur).
- *
- * BMS ajoute à ses URL une clé de sécurité liée à la session de l'utilisateur.
- * Impossible de la produire ici : le lien part sans, et c'est BMS qui décide
- * s'il l'accepte ou renvoie sur son tableau de bord.
+ * Un lien direct a été tenté puis retiré : BMS protège ses URL par une clé liée
+ * à la session, impossible à produire ici, et le lien tombait sur une page
+ * d'erreur. Mieux vaut donner la référence à coller dans la recherche BMS qu'un
+ * lien qui n'arrive pas.
  */
-const BMS_ORDER_URL = (bmsPoId) =>
-  `https://fr3.erp.boostmyshop.com/admin/supplier/order/edit/po_id/${bmsPoId}`;
-
-const OrderLink = ({ order, children }) => (
-  order?.bms_po_id
-    ? <a href={BMS_ORDER_URL(order.bms_po_id)} target="_blank" rel="noopener noreferrer"
-         style={{ color: C.main, fontWeight: 700, textDecoration: 'none', borderBottom: `1px dotted ${C.main}` }}>
-        {children} ↗
-      </a>
-    : <>{children}</>
-);
+const OrderLink = ({ order, children }) => {
+  const [copie, setCopie] = useState(false);
+  if (!order) return <>{children}</>;
+  return (
+    <button
+      type="button"
+      title="Copier la référence pour la chercher dans BMS"
+      onClick={() => {
+        navigator.clipboard.writeText(String(order.bms_reference || children));
+        setCopie(true);
+        setTimeout(() => setCopie(false), 2000);
+      }}
+      style={{
+        background: 'none', border: 'none', padding: 0, cursor: 'pointer',
+        color: C.main, fontWeight: 700, fontSize: 'inherit',
+        borderBottom: `1px dotted ${C.main}`,
+      }}
+    >{copie ? 'référence copiée ✓' : <>{children} ⧉</>}</button>
+  );
+};
 
 const C = {
   main: '#0F766E', mainD: '#115E59', mainL: '#ECFDF5',
@@ -393,6 +399,15 @@ function ControlTab({ suppliers, mobile, onSaved }) {
             <div style={{ padding: 14, background: C.redL, color: C.red, borderRadius: 10, fontSize: 13, fontWeight: 600 }}>
               Les lignes lues totalisent {eur(totals.invoiceParsed)} alors que le document annonce {eur(totals.invoicePrinted)}.
               Une ligne est probablement mal lue : ne rien réclamer sur cette base.
+            </div>
+          )}
+
+          {summary?.orphansLikelySame && (
+            <div style={{ padding: 13, background: C.orangeL, color: C.orange, borderRadius: 10, fontSize: 13 }}>
+              {summary.orphanCount} lignes n'ont pas pu être rapprochées, de part et d'autre, pour le
+              même montant de <strong>{eur(summary.orphanAmount)}</strong>. Ce sont très probablement les
+              mêmes articles, avec une référence que le PDF a rendue illisible — ni manquant, ni article
+              ajouté. À vérifier sur le document avant toute réclamation.
             </div>
           )}
 

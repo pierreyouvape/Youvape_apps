@@ -413,6 +413,10 @@ function compareInvoiceToOrder({ invoice, order, options = {} }) {
       qtyGap: round2(qtyGap),
       extrasGap: round2(extrasGap),
       packagingGap: round2(packagingGap),
+      // Orphelins de part et d'autre dont les montants se répondent : très
+      // probablement les mêmes articles, avec une référence que le PDF a rendue
+      // illisible. Affirmer « facturé non commandé » serait faux.
+      ...orphanBalance(results, threshold),
       // Part des écarts de tarif déjà couverte par la remise de pied.
       explainedByDiscount: round2(discountApplied),
       hasFooterDiscount: footerDiscount < 0,
@@ -421,6 +425,35 @@ function compareInvoiceToOrder({ invoice, order, options = {} }) {
         return acc;
       }, {}),
     },
+  };
+}
+
+/**
+ * Les orphelins des deux côtés se répondent-ils ?
+ *
+ * Quand une référence est illisible — le saut de page d'une facture Curieux
+ * coupe « SPE-MACA-50-00MG » en deux et place la seconde moitié après la
+ * désignation — la ligne ne retrouve pas sa commande. Elle ressort alors en
+ * « facturé non commandé », face à son jumeau « commandé non facturé » : deux
+ * fausses anomalies pour un article conforme.
+ *
+ * On ne peut pas toujours les rapprocher (deux articles de même quantité et de
+ * même montant sont indiscernables). Mais si les deux groupes s'équilibrent au
+ * centime, on peut le DIRE, au lieu d'annoncer un manquant et un article ajouté
+ * qui n'existent ni l'un ni l'autre.
+ */
+function orphanBalance(results, threshold) {
+  const factures = results.filter((r) => r.verdict === 'not_ordered');
+  const commandes = results.filter((r) => r.verdict === 'missing_in_invoice');
+  if (factures.length === 0 || commandes.length === 0) return { orphansLikelySame: false };
+
+  const plus = factures.reduce((s, r) => s + r.gap, 0);
+  const moins = commandes.reduce((s, r) => s + r.gap, 0);
+  const ecart = round2(plus + moins);
+  return {
+    orphansLikelySame: Math.abs(ecart) <= Math.max(threshold, Math.abs(plus) * 0.01),
+    orphanCount: factures.length + commandes.length,
+    orphanAmount: round2(plus),
   };
 }
 

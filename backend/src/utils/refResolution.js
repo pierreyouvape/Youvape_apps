@@ -54,14 +54,44 @@ function resolveCompleteRefs(items, knownRefs, keys = {}) {
     const combined = `${item[refKey]} ${item[labelKey] || ''}`.trim();
     const nc = normalizeSku(combined);
 
+    // 1. Correspondance mot à mot : la référence contient des espaces
+    //    (« VP RES GTI 0.15 » chez LVP), le parseur n'en a gardé que le début.
     const match = entries.find((e) => nc === e.normalized || nc.startsWith(e.normalized + ' '));
-    if (!match || match.normalized === normalizeSku(item[refKey])) continue;
+    if (match && match.normalized !== normalizeSku(item[refKey])) {
+      const pattern = match.original.trim().split(/\s+/).map(escapeRegExp).join('\\s+');
+      item[labelKey] = combined.replace(new RegExp('^' + pattern + '\\s*', 'i'), '').trim();
+      item[refKey] = match.original;
+      continue;
+    }
 
-    // Retire les mots de la référence en tête → le reste devient le libellé.
-    const pattern = match.original.trim().split(/\s+/).map(escapeRegExp).join('\\s+');
-    const re = new RegExp('^' + pattern + '\\s*', 'i');
-    item[labelKey] = combined.replace(re, '').trim();
-    item[refKey] = match.original;
+    // 2. Correspondance SANS LES ESPACES. Un PDF peut couper une référence
+    //    n'importe où, pas seulement sur un tiret : Curieux rend
+    //    « 190-FRAI-50-0M » puis, à la ligne, « G Fraise Grenade - 50ml ». Le
+    //    « G » de la référence part dans la désignation, la ligne ne retrouve
+    //    plus sa commande, et l'écran annonce à la fois un article commandé non
+    //    facturé et le même facturé non commandé.
+    //
+    //    On compare donc les textes débarrassés de leurs espaces, puis on
+    //    recoupe le texte d'origine au bon endroit. Réservé aux références d'au
+    //    moins quatre caractères : plus court, le risque d'attraper n'importe
+    //    quel début de désignation l'emporte.
+    const compactCombined = nc.replace(/\s+/g, '');
+    const loose = entries.find((e) => {
+      const c = e.normalized.replace(/\s+/g, '');
+      return c.length >= 4 && compactCombined.startsWith(c);
+    });
+    if (!loose) continue;
+
+    const wanted = loose.normalized.replace(/\s+/g, '').length;
+    let consumed = 0;
+    let cut = 0;
+    for (const ch of combined) {
+      cut += 1;
+      if (!/\s/.test(ch)) consumed += 1;
+      if (consumed === wanted) break;
+    }
+    item[labelKey] = combined.slice(cut).trim();
+    item[refKey] = loose.original;
   }
 
   return items;

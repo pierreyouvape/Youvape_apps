@@ -660,6 +660,69 @@ test('un rapport entier ne suffit pas si le montant ne retombe pas', () => {
   assert.notStrictEqual(r.lines[0].verdict, 'packaging');
 });
 
+/* ─── Références rendues illisibles par le PDF ───────────────────────────── */
+
+console.log('\nQuand la référence est illisible');
+
+test('une référence coupée n\'importe où est reconstituée', () => {
+  // Curieux rend « 190-FRAI-50-0M » puis, à la ligne, « G Fraise Grenade ». Le
+  // « G » de la référence part dans la désignation — la coupure n'est pas sur
+  // un tiret, le recollage habituel ne peut rien.
+  const lignes = [{ ref: '190-FRAI-50-0M', label: 'G Fraise Grenade - 50ml (00mg)' }];
+  resolveCompleteRefs(lignes, ['190-FRAI-50-0MG', 'NAT-NOIS-50-0MG']);
+  assert.strictEqual(lignes[0].ref, '190-FRAI-50-0MG');
+  assert.strictEqual(lignes[0].label, 'Fraise Grenade - 50ml (00mg)');
+});
+
+test('une référence trop courte ne sert pas à découper au hasard', () => {
+  const lignes = [{ ref: 'XY', label: 'un produit quelconque' }];
+  resolveCompleteRefs(lignes, ['XYZ']);   // 3 caractères : sous le seuil
+  assert.strictEqual(lignes[0].ref, 'XY');
+});
+
+test('deux orphelins qui s\'équilibrent sont signalés comme tels', () => {
+  // Le saut de page coupe la référence APRÈS la désignation : aucune
+  // reconstitution possible, et deux candidats de même quantité et de même
+  // montant sont indiscernables. On ne devine pas — mais on ne prétend pas
+  // qu'il manque 74,52 € de marchandise.
+  const keyed = attachMatchKeys({
+    invoiceLines: [
+      { ref: '50ml', qty: 6, lineTotalHt: 37.26 },
+      { ref: 'MACA-50-00MG', qty: 6, lineTotalHt: 37.26 },
+    ],
+    orderLines: [
+      { ref: 'SPE-MACA-50-00MG', qty: 6, price: 6.21 },
+      { ref: 'SPE-SOUL-50-00MG', qty: 6, price: 6.21 },
+    ],
+  });
+  const r = compareInvoiceToOrder({ invoice: { lines: keyed.invoiceLines }, order: { lines: keyed.orderLines } });
+  assert.strictEqual(r.summary.orphansLikelySame, true);
+  assert.strictEqual(r.summary.orphanCount, 4);
+  assert.strictEqual(r.summary.orphanAmount, 74.52);
+  assert.strictEqual(r.summary.claimable, 0);
+});
+
+test('un orphelin isolé reste une vraie anomalie', () => {
+  const keyed = attachMatchKeys({
+    invoiceLines: [{ ref: 'INCONNU', qty: 3, lineTotalHt: 58.80 }],
+    orderLines: [],
+  });
+  const r = compareInvoiceToOrder({ invoice: { lines: keyed.invoiceLines }, order: { lines: keyed.orderLines } });
+  assert.strictEqual(r.summary.orphansLikelySame, false);
+  assert.strictEqual(r.lines[0].verdict, 'not_ordered');
+});
+
+test('un orphelin unique de même quantité et montant est apparié', () => {
+  // Un seul candidat : là, on peut conclure.
+  const keyed = attachMatchKeys({
+    invoiceLines: [{ ref: 'ILLISIBLE', qty: 6, lineTotalHt: 37.26 }],
+    orderLines: [{ ref: 'SPE-MACA-50-00MG', qty: 6, price: 6.21 }],
+  });
+  const r = compareInvoiceToOrder({ invoice: { lines: keyed.invoiceLines }, order: { lines: keyed.orderLines } });
+  assert.strictEqual(r.lines.length, 1);
+  assert.strictEqual(r.lines[0].verdict, 'ok');
+});
+
 if (failures > 0) {
   console.log(`\n${failures} test(s) en échec.`);
   process.exit(1);
