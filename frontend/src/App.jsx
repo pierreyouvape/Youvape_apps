@@ -31,7 +31,8 @@ import PackingSettings from './pages/PackingSettings';
 import BordereauApp from './pages/BordereauApp';
 import PickingApp from './pages/PickingApp';
 import PickingSettings from './pages/PickingSettings';
-import PdaApp from './pages/PdaApp';
+import PdaHome from './pages/PdaHome';
+import PdaPicking from './pages/PdaPicking';
 import ReceptionApp from './pages/ReceptionApp';
 import FinancierApp from './pages/FinancierApp';
 import OrdersSearchApp from './pages/OrdersSearchApp';
@@ -72,7 +73,8 @@ const PAGE_TITLES = {
   '/bordereau': 'Bordereau de dépôt',
   '/picking': 'Picking',
   '/picking/settings': 'Picking — Règles des vagues',
-  '/pda': 'Picking PDA',
+  '/pda': 'Youvape PDA',
+  '/pda/picking': 'Picking PDA',
   '/reception': 'Réception',
   '/financier': 'Financier',
   '/commandes': 'Commandes',
@@ -335,12 +337,20 @@ function App() {
               </PrivateRoute>
             }
           />
-          {/* Picking au PDA : page plein écran, installable (pda-manifest.json). */}
+          {/* PDA : accueil plein écran, installable (pda-manifest.json), et ses apps. */}
           <Route
             path="/pda"
             element={
               <PrivateRoute>
-                <PdaApp />
+                <PdaHome />
+              </PrivateRoute>
+            }
+          />
+          <Route
+            path="/pda/picking"
+            element={
+              <PrivateRoute>
+                <PdaPicking />
               </PrivateRoute>
             }
           />

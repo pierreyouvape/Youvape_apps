@@ -34,7 +34,9 @@ const Login = () => {
 
     setLoading(true);
     try {
-      await login(email, password, rememberMe);
+      // Venu d'une page PDA : connexion PDA, fermée ce soir 19h30.
+      const from = location.state?.from || '';
+      await login(email, password, rememberMe, from.startsWith('/pda') ? 'pda' : null);
       navigate(location.state?.from || '/home');
     } catch (err) {
       setError(err.response?.data?.error || 'Erreur lors de la connexion');

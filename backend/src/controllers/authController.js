@@ -1,5 +1,6 @@
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
+const { secondsUntilPdaCutoff } = require('../utils/pdaSession');
 const pool = require('../config/database');
 
 const authController = {
@@ -75,12 +76,16 @@ const authController = {
         return res.status(403).json({ error: 'Ce compte est désactivé' });
       }
 
-      // Générer le token JWT
-      const { rememberMe } = req.body;
+      // Générer le token JWT. Depuis un PDA, la session se ferme ce soir 19h30
+      // (les PDA changent de mains) ; ailleurs, durée habituelle.
+      const { rememberMe, device } = req.body;
+      const expiresIn = device === 'pda'
+        ? secondsUntilPdaCutoff()
+        : (rememberMe ? '30d' : '24h');
       const token = jwt.sign(
         { id: user.id, email: user.email, name: user.name },
         process.env.JWT_SECRET,
-        { expiresIn: rememberMe ? '30d' : '24h' }
+        { expiresIn }
       );
 
       res.json({
