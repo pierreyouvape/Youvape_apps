@@ -746,7 +746,9 @@ const PackingApp = () => {
           postcode: s.postcode || '',
           city: s.city || '',
           country: s.country || 'FR',
-          phone: s.phone || '',
+          // Téléphone de livraison vide sur toutes les commandes Bpost : repli
+          // sur celui de facturation, que Colissimo exige en point de retrait.
+          phone: s.phone || loaded.billing_phone || '',
           email: loaded.email || '',
           weight: poids > 0 ? String(Math.round(poids)) : '',
           loadedRelay: point

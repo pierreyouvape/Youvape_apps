@@ -25,6 +25,7 @@ const searchOrder = async (req, res) => {
         o.shipping_postcode,
         o.shipping_country,
         o.shipping_phone,
+        o.billing_phone,
         o.billing_email,
         o.order_total,
         o.relay_point,
@@ -184,6 +185,9 @@ const searchOrder = async (req, res) => {
           country: order.shipping_country,
           phone: order.shipping_phone
         },
+        // Le téléphone de livraison est souvent vide (toutes les commandes
+        // Bpost) : celui de facturation sert de repli, comme à l'étiquetage.
+        billing_phone: order.billing_phone,
         email: order.billing_email,
         total: order.order_total
       },
