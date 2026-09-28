@@ -723,6 +723,8 @@ export default function SupplierInvoicesApp() {
   const [reloadKey, setReloadKey] = useState(0);
   const bump = useCallback(() => setReloadKey((k) => k + 1), []);
 
+  const [loadError, setLoadError] = useState(null);
+
   useEffect(() => {
     // Seuls les fournisseurs dont on sait lire les factures sont proposés :
     // en choisir un autre ne donnerait qu'une erreur de parseur.
@@ -730,9 +732,20 @@ export default function SupplierInvoicesApp() {
       axios.get(`${API}/purchases/suppliers`),
       axios.get(`${BASE}/parsers`),
     ]).then(([s, p]) => {
-      const known = new Set(p.data.suppliers);
-      setSuppliers((s.data || []).filter((x) => known.has(x.code)).sort((a, b) => a.name.localeCompare(b.name)));
-    }).catch(() => setSuppliers([]));
+      // `/purchases/suppliers` répond `{ success, data }`, pas un tableau nu —
+      // contrairement à la plupart des routeurs de l'app. On accepte les deux
+      // formes plutôt que de parier sur l'une d'elles.
+      const list = Array.isArray(s.data) ? s.data : (s.data?.data || s.data?.suppliers || []);
+      const known = new Set(p.data.suppliers || []);
+      const usable = list.filter((x) => known.has(x.code)).sort((a, b) => a.name.localeCompare(b.name));
+      setSuppliers(usable);
+      // Une liste vide n'est pas un état normal : sans message, l'écran donne
+      // un menu déroulant muet et rien n'explique pourquoi.
+      setLoadError(usable.length === 0 ? 'Aucun fournisseur exploitable n’a pu être chargé.' : null);
+    }).catch((e) => {
+      setSuppliers([]);
+      setLoadError(e.response?.data?.error || e.message || 'Chargement des fournisseurs impossible');
+    });
   }, []);
 
   return (
@@ -763,6 +776,13 @@ export default function SupplierInvoicesApp() {
             ))}
           </div>
         </section>
+
+        {loadError && (
+          <div style={{
+            margin: mobile ? '16px' : '18px 40px 0', padding: 13, background: C.redL, color: C.red,
+            borderRadius: 10, fontSize: 13, fontWeight: 600,
+          }}>{loadError}</div>
+        )}
 
         {tab === 'control' && <ControlTab suppliers={suppliers} mobile={mobile} onSaved={bump} />}
         {tab === 'filing' && <FilingTab suppliers={suppliers} mobile={mobile} reloadKey={reloadKey} />}
