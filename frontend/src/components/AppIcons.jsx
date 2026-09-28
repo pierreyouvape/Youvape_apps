@@ -326,6 +326,16 @@ export const Bordereau = (props) => (
   </Base>
 );
 
+export const SupplierInvoices = (props) => (
+  <Base {...props}>
+    <path d="M6 2.5 H15 L19 6.5 V21.5 H6 Z" />
+    <path d="M14.5 2.5 V7 H19" />
+    <path d="M9 11 H16" />
+    <path d="M9 14.5 H16" />
+    <path d="M9 18 H13" />
+  </Base>
+);
+
 export const APPS = [
   { key: 'customers', path: '/customers', label: 'Clients',                   Icon: Customers, color: '#0EA5A5' },
   { key: 'reviews',   path: '/reviews',   label: 'Avis Garantis',            Icon: Reviews,   color: '#0071EB' },
@@ -359,6 +369,12 @@ export const APPS = [
   { key: 'process', path: '/process', label: 'Process', Icon: Process, color: '#9333EA' },
   { key: 'atb', path: '/atb', label: 'ATB — Anthony Tool Box', Icon: Toolbox, color: '#BE123C' },
   { key: 'employes', path: '/employes', label: 'Gestion employé', Icon: Employees, color: '#4338CA' },
+  // S'ouvre avec le droit `purchases`, comme le routeur backend l'exige :
+  // contrôler une facture, c'est du travail d'achat, et les personnes
+  // concernées ont déjà ce droit. Pas de clé propre, donc rien à ajouter dans
+  // backend/src/config/apps.js — c'est le même montage que le Bordereau.
+  { key: 'factures-fournisseurs', path: '/factures-fournisseurs', label: 'Factures Fournisseurs',
+    Icon: SupplierInvoices, color: '#0F766E', permissionKey: 'purchases' },
 ];
 
 /* ─── PILES D'APPS (dossiers du launcher) ──────────────────

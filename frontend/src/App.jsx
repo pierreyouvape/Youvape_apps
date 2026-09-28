@@ -43,6 +43,7 @@ import TransporteursApp from './pages/TransporteursApp';
 import VeilleApp from './pages/VeilleApp';
 import InscritsApp from './pages/InscritsApp';
 import PromosApp from './pages/PromosApp';
+import SupplierInvoicesApp from './pages/SupplierInvoicesApp';
 import BoutiqueApp from './pages/BoutiqueApp';
 import PromoDetail from './pages/PromoDetail';
 import ProcessApp from './pages/ProcessApp';
@@ -78,6 +79,7 @@ const PAGE_TITLES = {
   '/veille': 'Veille concurrentielle',
   '/inscrits': 'Inscrits sans commande',
   '/promos': 'Actions Promos',
+  '/factures-fournisseurs': 'Factures Fournisseurs',
   '/process': 'Process',
   '/boutique': 'Boutique',
   '/atb': 'ATB',
@@ -306,6 +308,16 @@ function App() {
             element={
               <PrivateRoute>
                 <PackingSettings />
+              </PrivateRoute>
+            }
+          />
+          {/* Contrôle des factures fournisseur. S'ouvre avec le droit `purchases`
+              (AppIcons : permissionKey) ; le routeur backend exige le même. */}
+          <Route
+            path="/factures-fournisseurs"
+            element={
+              <PrivateRoute>
+                <SupplierInvoicesApp />
               </PrivateRoute>
             }
           />
