@@ -129,4 +129,36 @@ const planWaves = (rules, candidates) => {
 /** Numéro affiché d'une vague : préfixe + compteur sur 6 chiffres. */
 const waveNumber = (prefix, seq) => `${String(prefix).trim().toUpperCase()}-${String(seq).padStart(6, '0')}`;
 
-module.exports = { BUCKETS, allocateStock, physicalFromBms, planWaves, chunk, waveNumber };
+/**
+ * Lignes de picking d'une vague (lot 3, picking global) : les produits de
+ * toutes ses commandes cumulés, triés par emplacement — l'ordre du chemin en
+ * rayon, les produits sans emplacement à la fin.
+ *
+ * @param {{orderNumber: string, lines: {productId, sku, name, brand, location, qty}[]}[]} orders
+ *        lignes des bons de préparation (pickingPdf.buildPrintLines)
+ * @returns {{lineKey, productId, sku, name, brand, location, qtyNeeded, ordersCount}[]}
+ */
+const aggregateWaveLines = (orders) => {
+  const byKey = new Map();
+  for (const order of orders) {
+    for (const l of order.lines) {
+      const lineKey = l.sku || `id:${l.productId}`;
+      const cur = byKey.get(lineKey) || {
+        lineKey, productId: l.productId || null, sku: l.sku || null, name: l.name,
+        brand: l.brand || null, location: l.location || null, qtyNeeded: 0, orders: new Set()
+      };
+      cur.qtyNeeded += l.qty;
+      cur.orders.add(order.orderNumber);
+      byKey.set(lineKey, cur);
+    }
+  }
+  return [...byKey.values()]
+    .map(({ orders: set, ...l }) => ({ ...l, ordersCount: set.size }))
+    .sort((a, b) => {
+      if (!a.location !== !b.location) return a.location ? -1 : 1;
+      return String(a.location || '').localeCompare(String(b.location || ''), 'fr', { numeric: true })
+        || a.name.localeCompare(b.name, 'fr');
+    });
+};
+
+module.exports = { BUCKETS, allocateStock, physicalFromBms, planWaves, chunk, waveNumber, aggregateWaveLines };

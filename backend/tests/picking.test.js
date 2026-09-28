@@ -12,11 +12,12 @@
  *   - le découpage « Mondial Relay par 10 » : 58 commandes → 5×10 + 8 ;
  *   - l'ordre de passage des règles : une commande prise ne l'est pas deux fois ;
  *   - le bon de préparation (lot 2) : packs éclatés en composants, reste à
- *     expédier, choix du code-barres, et un vrai PDF produit (« Ω » compris).
+ *     expédier, choix du code-barres, et un vrai PDF produit (« Ω » compris) ;
+ *   - le PDA (lot 3) : produits cumulés sur toute la vague, triés par emplacement.
  */
 
 const assert = require('assert');
-const { BUCKETS, allocateStock, physicalFromBms, planWaves, chunk, waveNumber } = require('../src/services/pickingPlanner');
+const { BUCKETS, allocateStock, physicalFromBms, planWaves, chunk, waveNumber, aggregateWaveLines } = require('../src/services/pickingPlanner');
 const { buildWavePdf, buildWavesPdf, buildPrintLines } = require('../src/services/pickingPdf');
 const { PDFDocument } = require('pdf-lib');
 
@@ -153,6 +154,30 @@ test('waveNumber : préfixe en majuscules + compteur sur 6 chiffres', () => {
   assert.strictEqual(waveNumber('mr', 123), 'MR-000123');
 });
 
+
+console.log('PDA');
+
+test('aggregateWaveLines : un produit présent dans 2 commandes = 1 ligne, quantités cumulées', () => {
+  const lines = aggregateWaveLines([
+    { orderNumber: '1', lines: [{ sku: 'A', productId: 1, name: 'Booster', location: 'E 1-1', qty: 10 }] },
+    { orderNumber: '2', lines: [{ sku: 'A', productId: 1, name: 'Booster', location: 'E 1-1', qty: 4 }, { sku: 'B', productId: 2, name: 'Pod', location: 'D 3-3', qty: 1 }] }
+  ]);
+  assert.deepStrictEqual(lines.map(l => [l.sku, l.qtyNeeded, l.ordersCount]), [['B', 1, 1], ['A', 14, 2]]);
+});
+
+test('aggregateWaveLines : tri naturel des emplacements, sans emplacement à la fin', () => {
+  const lines = aggregateWaveLines([{ orderNumber: '1', lines: [
+    { sku: 'X', name: 'x', location: null, qty: 1 },
+    { sku: 'B', name: 'b', location: 'E 10-1', qty: 1 },
+    { sku: 'A', name: 'a', location: 'E 2-1', qty: 1 }
+  ] }]);
+  assert.deepStrictEqual(lines.map(l => l.sku), ['A', 'B', 'X']);
+});
+
+test('aggregateWaveLines : un produit sans SKU garde sa ligne (clé id:<produit>)', () => {
+  const lines = aggregateWaveLines([{ orderNumber: '1', lines: [{ sku: null, productId: 42, name: 'Sans SKU', location: 'A 1-1', qty: 2 }] }]);
+  assert.strictEqual(lines[0].lineKey, 'id:42');
+});
 
 console.log('Bon de préparation');
 

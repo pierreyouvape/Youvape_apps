@@ -31,6 +31,7 @@ import PackingSettings from './pages/PackingSettings';
 import BordereauApp from './pages/BordereauApp';
 import PickingApp from './pages/PickingApp';
 import PickingSettings from './pages/PickingSettings';
+import PdaApp from './pages/PdaApp';
 import ReceptionApp from './pages/ReceptionApp';
 import FinancierApp from './pages/FinancierApp';
 import OrdersSearchApp from './pages/OrdersSearchApp';
@@ -71,6 +72,7 @@ const PAGE_TITLES = {
   '/bordereau': 'Bordereau de dépôt',
   '/picking': 'Picking',
   '/picking/settings': 'Picking — Règles des vagues',
+  '/pda': 'Picking PDA',
   '/reception': 'Réception',
   '/financier': 'Financier',
   '/commandes': 'Commandes',
@@ -330,6 +332,15 @@ function App() {
             element={
               <PrivateRoute>
                 <PickingApp />
+              </PrivateRoute>
+            }
+          />
+          {/* Picking au PDA : page plein écran, installable (pda.webmanifest). */}
+          <Route
+            path="/pda"
+            element={
+              <PrivateRoute>
+                <PdaApp />
               </PrivateRoute>
             }
           />

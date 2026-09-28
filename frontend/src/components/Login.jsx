@@ -1,7 +1,7 @@
 import CloudLogo from './CloudLogo';
 import { useState, useContext } from 'react';
 import { AuthContext } from '../context/AuthContext';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, useLocation, Link } from 'react-router-dom';
 
 const Login = () => {
   const [email, setEmail] = useState('');
@@ -12,6 +12,7 @@ const Login = () => {
   
   const { login } = useContext(AuthContext);
   const navigate = useNavigate();
+  const location = useLocation();
 
   const validateEmail = (email) => {
     return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
@@ -34,7 +35,7 @@ const Login = () => {
     setLoading(true);
     try {
       await login(email, password, rememberMe);
-      navigate('/home');
+      navigate(location.state?.from || '/home');
     } catch (err) {
       setError(err.response?.data?.error || 'Erreur lors de la connexion');
     } finally {

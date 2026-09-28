@@ -410,7 +410,7 @@ const footer = (page, f, left, right) => {
  *
  * @param {object[]} items - lignes `order_items` jointes au produit
  * @param {?Map<string, number>} remainingBySku
- * @returns {{location, qty, name, brand, sku, barcode, packName, shipped}[]}
+ * @returns {{productId, location, qty, name, brand, sku, barcode, packName, shipped}[]}
  */
 const buildPrintLines = (items, remainingBySku = null) => {
   const packs = items.filter(i => i.type === 'woosb');
@@ -435,6 +435,7 @@ const buildPrintLines = (items, remainingBySku = null) => {
     if (qty <= 0) continue;
     const barcodes = i.barcodes || [];
     lines.push({
+      productId: i.pid || null,
       location: i.location || null,
       qty,
       name: String(i.name || '').replace(/\s+dans le pack\s*:.*$/i, '').trim(),
