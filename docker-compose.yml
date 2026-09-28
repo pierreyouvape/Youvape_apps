@@ -30,6 +30,9 @@ services:
       - backend_logs:/usr/src/app/logs
       - sav_attachments:/usr/src/app/uploads/sav
       - process_uploads:/usr/src/app/uploads/process
+      # Factures et avoirs fournisseur : pièces comptables, à conserver et
+      # retéléchargeables. Volume nommé, donc survit aux rebuilds d'image.
+      - supplier_docs:/usr/src/app/uploads/supplier_docs
     depends_on:
       - postgres
     networks:
@@ -60,6 +63,7 @@ volumes:
   backend_logs:
   sav_attachments:
   process_uploads:
+  supplier_docs:
 
 networks:
   youvape_network:

@@ -22,6 +22,7 @@ const shippingRoutes = require('./routes/shippingRoutes');
 const paymentRoutes = require('./routes/paymentRoutes');
 const tariffRoutes = require('./routes/tariffRoutes');
 const purchasesRoutes = require('./routes/purchasesRoutes');
+const supplierInvoicesRoutes = require('./routes/supplierInvoicesRoutes');
 const packingRoutes = require('./routes/packingRoutes');
 const laposteRoutes = require('./routes/laposteRoutes');
 const shipmentRoutes = require('./routes/shipmentRoutes');
@@ -84,6 +85,8 @@ app.use('/api/shipping', authMiddleware, shippingRoutes); // Shipping costs mana
 app.use('/api/payment', authMiddleware, paymentRoutes); // Payment methods configuration
 app.use('/api/tariffs', authMiddleware, tariffRoutes); // Tariff zones and rates
 app.use('/api/purchases', purchasesRoutes); // Purchase management
+// Contrôle des factures fournisseur : authMiddleware ici, droit `purchases` dans le routeur.
+app.use('/api/supplier-invoices', authMiddleware, supplierInvoicesRoutes);
 app.use('/api/packing', packingRoutes); // Packing / preparation colis
 app.use('/api/laposte', laposteRoutes); // La Poste - étiquettes Lettre Suivie
 app.use('/api/shipments', shipmentRoutes); // Étiquetage multi-transporteurs (auth + permissions dans le routeur)
