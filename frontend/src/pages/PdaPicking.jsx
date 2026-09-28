@@ -1,11 +1,12 @@
 import { useCallback, useContext, useEffect, useRef, useState } from 'react';
 import axios from 'axios';
+import { useNavigate } from 'react-router-dom';
 import { AuthContext } from '../context/AuthContext';
 import { API_URL, authHeaders, C, CarrierLogo } from '../components/picking/pickingUi';
+import PdaLayout, { pdaBtn as bigBtn } from '../components/pda/PdaLayout';
 
 /**
- * Picking au PDA (lot 3) — /pda, installable depuis Chrome (« Ajouter à
- * l'écran d'accueil ») grâce à /pda-manifest.json.
+ * Picking au PDA (lot 3) — /pda/picking, ouvert depuis l'accueil PDA (/pda).
  *
  * Tranché avec Pierre le 28/09/2026 :
  *   - la liste des vagues à préparer ; on en ouvre une en la touchant ou en
@@ -21,9 +22,17 @@ import { API_URL, authHeaders, C, CarrierLogo } from '../components/picking/pick
  * clavier virtuel d'Android à chaque scan.
  */
 
+// Session fermée (19h30, ou déconnexion ailleurs) : le serveur répond 401,
+// on repasse par le login au lieu d'afficher une erreur incompréhensible.
+let onUnauthorized = null;
+const unauthorized = (err) => {
+  if (err.response?.status === 401) onUnauthorized?.();
+  throw err;
+};
+
 const api = (token) => ({
-  get: (url) => axios.get(`${API_URL}/picking/pda${url}`, authHeaders(token)).then(r => r.data),
-  post: (url, body = {}) => axios.post(`${API_URL}/picking/pda${url}`, body, authHeaders(token)).then(r => r.data),
+  get: (url) => axios.get(`${API_URL}/picking/pda${url}`, authHeaders(token)).then(r => r.data, unauthorized),
+  post: (url, body = {}) => axios.post(`${API_URL}/picking/pda${url}`, body, authHeaders(token)).then(r => r.data, unauthorized),
 });
 
 const errorText = (err) => err.response?.data?.error || (err.response?.status === 403
@@ -74,25 +83,6 @@ const useScanner = (onScan, enabled) => {
     return () => document.removeEventListener('keydown', onKey);
   }, [enabled]);
 };
-
-/** Le manifeste et la couleur de barre ne valent que pour /pda. */
-const useManifest = () => {
-  useEffect(() => {
-    const link = document.createElement('link');
-    link.rel = 'manifest';
-    link.href = '/pda-manifest.json';
-    const meta = document.createElement('meta');
-    meta.name = 'theme-color';
-    meta.content = C.violet;
-    document.head.append(link, meta);
-    return () => { link.remove(); meta.remove(); };
-  }, []);
-};
-
-const bigBtn = (bg, color = C.white) => ({
-  border: 'none', borderRadius: 12, background: bg, color, fontWeight: 800, fontSize: 17,
-  padding: '14px 18px', cursor: 'pointer', fontFamily: 'inherit',
-});
 
 // ── Écran 1 : les vagues à préparer ─────────────────────────────────────────
 
@@ -429,12 +419,13 @@ const Notice = ({ notice, onClose }) => (
 
 // ── Page ────────────────────────────────────────────────────────────────────
 
-export default function PdaApp() {
-  const { token, user, logout } = useContext(AuthContext);
+export default function PdaPicking() {
+  const { token, logout } = useContext(AuthContext);
+  const navigate = useNavigate();
+  onUnauthorized = logout;
   const [waveId, setWaveId] = useState(null);
   const [notice, setNotice] = useState(null);
   const resumed = useRef(false);
-  useManifest();
 
   // À l'ouverture : si une vague m'est assignée et pas terminée, j'y retourne
   // directement — l'avancement est sur le serveur, pas dans ce PDA.
@@ -447,28 +438,14 @@ export default function PdaApp() {
   const back = useCallback(() => setWaveId(null), []);
 
   return (
-    <div style={{ minHeight: '100vh', background: C.grey, fontFamily: "'Inter', system-ui, sans-serif", color: C.dark }}>
-      <div style={{
-        position: 'sticky', top: 0, zIndex: 20, height: 56, display: 'flex', alignItems: 'center', gap: 10,
-        padding: '0 12px', background: C.violet, color: C.white,
-      }}>
-        {waveId
-          ? <button onClick={back} style={{ ...bigBtn('rgba(255,255,255,0.18)'), fontSize: 15, padding: '8px 12px' }}>← Vagues</button>
-          : <span style={{ fontWeight: 900, fontSize: 20 }}>Picking</span>}
-        <span style={{ flex: 1 }} />
-        <span style={{ fontSize: 13, opacity: 0.9, maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {user?.name || user?.email}
-        </span>
-        {!waveId && (
-          <button onClick={() => { if (window.confirm('Se déconnecter du PDA ?')) logout(); }} style={{ ...bigBtn('rgba(255,255,255,0.18)'), fontSize: 13, padding: '7px 10px' }}>
-            Quitter
-          </button>
-        )}
-      </div>
-
+    <PdaLayout
+      title="Picking"
+      onBack={waveId ? back : () => navigate('/pda')}
+      backLabel={waveId ? 'Vagues' : 'Accueil'}
+    >
       {waveId
         ? <WaveScreen key={waveId} token={token} waveId={waveId} onBack={back} notice={notice} setNotice={setNotice} />
         : <WaveList token={token} onOpen={setWaveId} notice={notice} setNotice={setNotice} />}
-    </div>
+    </PdaLayout>
   );
 }

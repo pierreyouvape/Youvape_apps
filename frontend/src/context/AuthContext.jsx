@@ -87,8 +87,9 @@ export const AuthProvider = ({ children }) => {
     return response.data;
   };
 
-  const login = async (email, password, rememberMe = false) => {
-    const response = await axios.post(`${API_URL}/login`, { email, password, rememberMe });
+  // device = 'pda' : session fermée par le serveur ce soir 19h30 (PDA partagés).
+  const login = async (email, password, rememberMe = false, device = null) => {
+    const response = await axios.post(`${API_URL}/login`, { email, password, rememberMe, device });
     const { token, user } = response.data;
 
     localStorage.setItem('token', token);

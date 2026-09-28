@@ -20,6 +20,7 @@ const assert = require('assert');
 const { BUCKETS, allocateStock, physicalFromBms, planWaves, chunk, waveNumber, aggregateWaveLines } = require('../src/services/pickingPlanner');
 const { buildWavePdf, buildWavesPdf, buildPrintLines } = require('../src/services/pickingPdf');
 const { PDFDocument } = require('pdf-lib');
+const { secondsUntilPdaCutoff } = require('../src/utils/pdaSession');
 
 let failures = 0;
 function test(name, fn) {
@@ -177,6 +178,16 @@ test('aggregateWaveLines : tri naturel des emplacements, sans emplacement à la 
 test('aggregateWaveLines : un produit sans SKU garde sa ligne (clé id:<produit>)', () => {
   const lines = aggregateWaveLines([{ orderNumber: '1', lines: [{ sku: null, productId: 42, name: 'Sans SKU', location: 'A 1-1', qty: 2 }] }]);
   assert.strictEqual(lines[0].lineKey, 'id:42');
+});
+
+test('session PDA : fermée à 19h30 heure de Paris, été comme hiver', () => {
+  assert.strictEqual(secondsUntilPdaCutoff(new Date('2026-09-28T08:00:00Z')), 9.5 * 3600);   // 10h00 (été)
+  assert.strictEqual(secondsUntilPdaCutoff(new Date('2026-12-01T17:00:00Z')), 1.5 * 3600);   // 18h00 (hiver)
+  assert.strictEqual(secondsUntilPdaCutoff(new Date('2026-09-28T17:29:00Z')), 60);           // 19h29
+});
+
+test('session PDA : connexion après 19h30 → fermée le lendemain 19h30', () => {
+  assert.strictEqual(secondsUntilPdaCutoff(new Date('2026-09-28T17:31:00Z')), 24 * 3600 - 60); // 19h31
 });
 
 console.log('Bon de préparation');
