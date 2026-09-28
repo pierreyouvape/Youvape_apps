@@ -10,11 +10,15 @@
  *     + commandé : un manque disparaîtrait) ;
  *   - le cas réel du Booster 11152 (28/09/2026) ;
  *   - le découpage « Mondial Relay par 10 » : 58 commandes → 5×10 + 8 ;
- *   - l'ordre de passage des règles : une commande prise ne l'est pas deux fois.
+ *   - l'ordre de passage des règles : une commande prise ne l'est pas deux fois ;
+ *   - le bon de préparation (lot 2) : packs éclatés en composants, reste à
+ *     expédier, choix du code-barres, et un vrai PDF produit (« Ω » compris).
  */
 
 const assert = require('assert');
 const { BUCKETS, allocateStock, physicalFromBms, planWaves, chunk, waveNumber } = require('../src/services/pickingPlanner');
+const { buildWavePdf, buildPrintLines } = require('../src/services/pickingPdf');
+const { PDFDocument } = require('pdf-lib');
 
 let failures = 0;
 function test(name, fn) {
@@ -149,5 +153,65 @@ test('waveNumber : préfixe en majuscules + compteur sur 6 chiffres', () => {
   assert.strictEqual(waveNumber('mr', 123), 'MR-000123');
 });
 
-console.log(failures === 0 ? '\nTous les tests passent.' : `\n${failures} test(s) en échec.`);
-process.exit(failures === 0 ? 0 : 1);
+
+console.log('Bon de préparation');
+
+// Cas réel 1264192 (28/09/2026) : un Lot 10 Boosters, ses 10 boosters à 0 €.
+const PACK_ITEMS = [
+  { type: 'simple', name: 'Numbers 5 - 100ml', qty: 1, line_total: 13.25, product_id: 5, sku: '867595', brand: 'E.Tasty', sub_brand: 'Numbers', location: 'A 4-3', barcodes: ['3701418821665'] },
+  { type: 'woosb', name: 'Lot 10 Boosters YouBoost 50/50', qty: 1, line_total: 6.58, product_id: 14742, sku: '14742', woosb_ids: [{ id: 11152 }] },
+  { type: 'simple', name: 'Booster YouBoost 50/50 dans le pack : Lot 10 Boosters YouBoost 50/50', qty: 10, line_total: 0, product_id: 11152, sku: '11152', brand: 'YouVape', location: 'E 1-1', barcodes: ['PB-11152', '3701418826240'] },
+  { type: 'variation', name: 'Pack 5 Résistances GTX Dual Mesh - 0.20 Ω', qty: 1, line_total: 8.93, product_id: 7, sku: '1138995-1139001', location: 'C 1-1', barcodes: null }
+];
+
+test('buildPrintLines : le pack disparaît, ses composants portent son nom', () => {
+  const lines = buildPrintLines(PACK_ITEMS);
+  assert.deepStrictEqual(lines.map(l => l.sku), ['867595', '11152', '1138995-1139001']);
+  const booster = lines.find(l => l.sku === '11152');
+  assert.strictEqual(booster.name, 'Booster YouBoost 50/50');
+  assert.strictEqual(booster.packName, 'Lot 10 Boosters YouBoost 50/50');
+  assert.strictEqual(booster.qty, 10);
+});
+
+test('buildPrintLines : le code-barres imprimé est le premier EAN-13', () => {
+  const booster = buildPrintLines(PACK_ITEMS).find(l => l.sku === '11152');
+  assert.strictEqual(booster.barcode, '3701418826240');
+  assert.strictEqual(buildPrintLines(PACK_ITEMS).find(l => l.sku === '1138995-1139001').barcode, null);
+});
+
+test('buildPrintLines : seul le reste à expédier est à préparer, le reste est « déjà expédié »', () => {
+  const lines = buildPrintLines(PACK_ITEMS, new Map([['11152', 4], ['867595', 1]]));
+  assert.deepStrictEqual(lines.map(l => [l.sku, l.qty, l.shipped]), [['867595', 1, 0], ['11152', 4, 6]]);
+});
+
+test('buildPrintLines : sans relevé BMS, tout ce qui a été commandé', () => {
+  assert.strictEqual(buildPrintLines(PACK_ITEMS, null).reduce((s, l) => s + l.qty, 0), 12);
+});
+
+const pdfTest = (async () => {
+  const wave = {
+    waveNumber: 'MAN-000001', createdAt: new Date('2026-09-28T11:00:00Z'), ruleName: null,
+    orders: [1, 2].map(n => ({
+      orderNumber: `12640${n}`, orderDate: new Date('2026-09-28T12:32:00Z'), shippingMethod: '2Shop',
+      carrier: { carrierCode: 'chronopost', accountCode: '2shop' },
+      shipping: { name: 'Client Test', country: 'FR' },
+      relayPoint: { id: '3416U', name: 'STATION AVIA', address: '80 Rue de Vesoul', postcode: '25000', city: 'BESANCON', country: 'FR' },
+      lines: buildPrintLines(PACK_ITEMS)
+    }))
+  };
+  // Une commande à 40 lignes doit continuer sur une seconde page.
+  wave.orders[1].lines = Array.from({ length: 40 }, (_, i) => ({ ...wave.orders[1].lines[0], sku: `S${i}`, location: `A ${i}` }));
+  const bytes = await buildWavePdf(wave);
+  const doc = await PDFDocument.load(bytes);
+  // Garde + commande 1 (1 page) + commande 2 (40 lignes : 2 pages ou plus).
+  assert.ok(doc.getPageCount() >= 4, `pages : ${doc.getPageCount()}`);
+  assert.strictEqual(doc.getTitle(), 'Vague MAN-000001');
+})().then(
+  () => console.log('  ok   buildWavePdf : garde + bons, « Ω » et 2Shop compris, bon long sur plusieurs pages'),
+  (err) => { failures++; console.error(`  FAIL buildWavePdf\n       ${err.message}`); }
+);
+
+pdfTest.then(() => {
+  console.log(failures === 0 ? '\nTous les tests passent.' : `\n${failures} test(s) en échec.`);
+  process.exit(failures === 0 ? 0 : 1);
+});

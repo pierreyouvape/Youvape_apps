@@ -10,6 +10,7 @@ const pool = require('../config/database');
 const shippingMethodMapModel = require('./shippingMethodMapModel');
 const { expectedNetwork } = require('../services/carriers/relayPoints');
 const { BUCKETS, allocateStock, physicalFromBms, planWaves, waveNumber } = require('../services/pickingPlanner');
+const { buildPrintLines } = require('../services/pickingPdf');
 
 const BLOCKED = 'bloquee';
 const MANUAL_PREFIX_KEY = 'picking_manual_prefix';
@@ -383,17 +384,19 @@ const listWaves = async (tab) => {
   const statuses = WAVE_TABS[tab] || WAVE_TABS.new;
   const { rows } = await pool.query(
     `SELECT w.id, w.wave_number, w.status, w.created_at, u.name AS created_by, r.name AS rule_name,
+            w.printed_at, w.print_count, pu.name AS printed_by,
             count(wo.order_number)::int AS orders,
             COALESCE(array_agg(DISTINCT m.carrier_code || ':' || m.account_code)
                      FILTER (WHERE m.carrier_code IS NOT NULL), '{}') AS carriers
        FROM picking_waves w
        LEFT JOIN users u ON u.id = w.created_by
+       LEFT JOIN users pu ON pu.id = w.printed_by
        LEFT JOIN picking_wave_rules r ON r.id = w.rule_id
        LEFT JOIN picking_wave_orders wo ON wo.wave_id = w.id
        LEFT JOIN orders o ON o.wp_order_id::text = wo.order_number
        LEFT JOIN shipping_method_carrier_map m ON lower(btrim(m.denomination)) = lower(btrim(o.shipping_method))
       WHERE w.status = ANY($1)
-      GROUP BY w.id, u.name, r.name
+      GROUP BY w.id, u.name, r.name, pu.name
       ORDER BY w.created_at DESC
       LIMIT 200`,
     [statuses]
@@ -405,6 +408,9 @@ const listWaves = async (tab) => {
     createdAt: r.created_at,
     createdBy: r.created_by,
     ruleName: r.rule_name,
+    printedAt: r.printed_at,
+    printCount: r.print_count,
+    printedBy: r.printed_by,
     orders: r.orders,
     carriers: r.carriers.map(c => {
       const [carrierCode, accountCode] = c.split(':');
@@ -496,6 +502,92 @@ const cancelWave = async (id, userId) => {
   }
 };
 
+// ── Impression ─────────────────────────────────────────────────────────────
+
+/**
+ * Tout ce qu'il faut pour le PDF d'une vague (pickingPdf.buildWavePdf) :
+ * commandes dans l'ordre de la vague, adresse ou point relais, transporteur,
+ * lignes à préparer (reste à expédier d'après le dernier relevé BMS).
+ */
+const getWavePrintData = async (id) => {
+  const { rows: [wave] } = await pool.query(
+    `SELECT w.id, w.wave_number, w.status, w.created_at, r.name AS rule_name
+       FROM picking_waves w LEFT JOIN picking_wave_rules r ON r.id = w.rule_id
+      WHERE w.id = $1`,
+    [id]
+  );
+  if (!wave) throw httpError(404, 'Vague introuvable.');
+  if (wave.status === 'cancelled') throw httpError(400, 'Cette vague est annulée.');
+
+  const { rows: orders } = await pool.query(
+    `SELECT wo.order_number, o.post_date, o.shipping_method,
+            o.shipping_first_name, o.shipping_last_name, o.billing_first_name, o.billing_last_name,
+            o.shipping_company, o.shipping_address_1, o.shipping_address_2, o.shipping_postcode,
+            o.shipping_city, COALESCE(o.shipping_country, o.billing_country) AS country,
+            COALESCE(NULLIF(o.shipping_phone, ''), o.billing_phone) AS phone,
+            COALESCE(o.relay_point_manual, o.relay_point) AS relay_point,
+            m.carrier_code, m.account_code,
+            (SELECT json_agg(json_build_object(
+                'name', oi.order_item_name, 'qty', oi.qty, 'line_total', oi.line_total,
+                'product_id', oi.product_id, 'sku', p.sku, 'type', p.product_type,
+                'brand', COALESCE(p.brand, pp.brand), 'sub_brand', COALESCE(p.sub_brand, pp.sub_brand),
+                'location', p.shelf_location, 'woosb_ids', p.woosb_ids,
+                'barcodes', (SELECT json_agg(pb.barcode ORDER BY pb.id) FROM product_barcodes pb
+                              WHERE pb.product_id = p.id AND pb.type = 'unit')
+              ) ORDER BY oi.id)
+               FROM order_items oi
+               LEFT JOIN products p ON p.wp_product_id = COALESCE(NULLIF(oi.variation_id, 0), oi.product_id)
+               LEFT JOIN products pp ON pp.wp_product_id = p.wp_parent_id
+              WHERE oi.wp_order_id = o.wp_order_id AND oi.order_item_type = 'line_item') AS items,
+            (SELECT json_object_agg(l.sku, l.qty_to_ship) FROM picking_bms_lines l
+              WHERE l.order_number = wo.order_number) AS remaining
+       FROM picking_wave_orders wo
+       LEFT JOIN orders o ON o.wp_order_id::text = wo.order_number
+       LEFT JOIN shipping_method_carrier_map m ON lower(btrim(m.denomination)) = lower(btrim(o.shipping_method))
+      WHERE wo.wave_id = $1
+      ORDER BY wo.position`,
+    [id]
+  );
+
+  return {
+    id: wave.id,
+    waveNumber: wave.wave_number,
+    createdAt: wave.created_at,
+    ruleName: wave.rule_name,
+    orders: orders.map(o => ({
+      orderNumber: o.order_number,
+      orderDate: o.post_date,
+      shippingMethod: o.shipping_method,
+      carrier: { carrierCode: o.carrier_code, accountCode: o.account_code },
+      shipping: {
+        name: [o.shipping_first_name || o.billing_first_name, o.shipping_last_name || o.billing_last_name]
+          .filter(Boolean).join(' '),
+        company: o.shipping_company,
+        address1: o.shipping_address_1,
+        address2: o.shipping_address_2,
+        postcode: o.shipping_postcode,
+        city: o.shipping_city,
+        country: o.country,
+        phone: o.phone
+      },
+      relayPoint: o.relay_point?.id ? o.relay_point : null,
+      // Pas de relevé BMS pour la commande (déjà expédiée, ou relevé vide) :
+      // on imprime tout ce qui a été commandé.
+      lines: buildPrintLines(o.items || [], o.remaining ? new Map(Object.entries(o.remaining)) : null)
+    }))
+  };
+};
+
+const markPrinted = async (id, userId) => {
+  await pool.query(
+    `UPDATE picking_waves
+        SET first_printed_at = COALESCE(first_printed_at, NOW()), printed_at = NOW(),
+            printed_by = $2, print_count = print_count + 1
+      WHERE id = $1`,
+    [id, userId || null]
+  );
+};
+
 module.exports = {
   TAGS,
   BLOCKED,
@@ -517,5 +609,7 @@ module.exports = {
   listWaves,
   countWaves,
   getWave,
-  cancelWave
+  cancelWave,
+  getWavePrintData,
+  markPrinted
 };

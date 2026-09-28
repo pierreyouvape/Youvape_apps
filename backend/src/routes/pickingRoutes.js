@@ -31,6 +31,8 @@ router.get('/waves/preview', canWrite, pickingController.previewGeneration);
 router.post('/waves/generate', canWrite, pickingController.generate);
 router.post('/waves/manual', canWrite, pickingController.createManualWave);
 router.get('/waves/:id', canRead, pickingController.getWave);
+// Imprimer fait partie de la préparation : le droit de lecture suffit.
+router.get('/waves/:id/pdf', canRead, pickingController.printWave);
 router.post('/waves/:id/cancel', canWrite, pickingController.cancelWave);
 
 module.exports = router;
