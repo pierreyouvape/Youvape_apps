@@ -100,6 +100,12 @@ const PackingApp = () => {
   const [hoveredImage, setHoveredImage] = useState(null); // { url, x, y }
   // Transporteur résolu au scan : sert au bandeau coloré ET au blocage.
   const [carrier, setCarrier] = useState(null);
+  // Picking (lot 4) : vague, manquants et tickets de la commande scannée.
+  const [pickingInfo, setPickingInfo] = useState(null);
+  const [pickingBusy, setPickingBusy] = useState(false);
+  // « Envoyer incomplète » : l'étiquette est partie sans les manquants, la
+  // génération automatique « tout est scanné » ne doit plus se déclencher.
+  const [forcedDone, setForcedDone] = useState(false);
   // Lots (`woosb`) retirés de la liste : leurs articles y sont déjà, à l'unité.
   const [hiddenPacks, setHiddenPacks] = useState([]);
   const [wrongShippingOrder, setWrongShippingOrder] = useState(null); // { orderNumber, denomination } si mode inconnu
@@ -220,6 +226,7 @@ const PackingApp = () => {
       setMessage(data.trackingId
         ? `Etiquette ${data.carrierLabel || ''} generee${cn23} — suivi : ${data.trackingId}`
         : `Etiquette ${data.carrierLabel || ''} generee${cn23}`);
+      return true;
     } catch (err) {
       if (err.response?.status === 422 && err.response.data?.reason === 'unknown_shipping_method') {
         setLabelData(null);
@@ -246,6 +253,7 @@ const PackingApp = () => {
 
   // Vérifier si tout est scanné → appel auto étiquette
   useEffect(() => {
+    if (forcedDone) return;
     if (items.length > 0 && items.every(item => item.scanned >= item.qty)) {
       if (!isComplete) {
         setIsComplete(true);
@@ -259,7 +267,7 @@ const PackingApp = () => {
     } else {
       setIsComplete(false);
     }
-  }, [items, isComplete, generateLabel]);
+  }, [items, isComplete, generateLabel, forcedDone]);
 
   // Charger une commande
   const loadOrder = useCallback(async (number) => {
@@ -270,6 +278,8 @@ const PackingApp = () => {
     setIsComplete(false);
     setEditingAddress(false);
     setAddressError(null);
+    setPickingInfo(null);
+    setForcedDone(false);
 
     try {
       const res = await axios.get(`${API_URL}/packing/orders/${number}`, {
@@ -295,6 +305,9 @@ const PackingApp = () => {
       setOrder(loadedOrder);
       setWeight(res.data.weight || null);
       setHiddenPacks(res.data.hidden_packs || []);
+      axios.get(`${API_URL}/packing/orders/${loadedOrder.wp_order_id}/picking`, {
+        headers: { Authorization: `Bearer ${token}` }
+      }).then(r => setPickingInfo(r.data)).catch(() => { /* sans picking, le packing marche comme avant */ });
       setItems(res.data.items.map(item => ({
         ...item,
         scanned: 0
@@ -314,6 +327,68 @@ const PackingApp = () => {
       setLoading(false);
     }
   }, [token]);
+
+  // ── Picking (lot 4) : commande à laquelle il manque des articles ─────────
+  // Deux sorties : l'envoyer sans eux, ou la mettre de côté. Dans les deux cas
+  // le serveur envoie un mail à contact@youvape.fr et ouvre un ticket SAV.
+  const missingText = (pickingInfo?.missing || []).map(m => `${m.qty} × ${m.name}`).join(', ');
+
+  const refreshPickingInfo = useCallback(async (orderNumber) => {
+    try {
+      const r = await axios.get(`${API_URL}/packing/orders/${orderNumber}/picking`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setPickingInfo(r.data);
+    } catch { /* affichage seulement */ }
+  }, [token]);
+
+  const pickingIncident = async (action) => {
+    const r = await axios.post(`${API_URL}/packing/orders/${order.wp_order_id}/${action}`, {}, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    const d = r.data;
+    const suite = d.already
+      ? 'déjà signalée'
+      : `ticket SAV${d.ticketId ? ` #${d.ticketId}` : ' NON créé'}, ${d.mailSent ? 'mail envoyé à contact@youvape.fr' : `mail NON envoyé (${d.mailError})`}`;
+    await refreshPickingInfo(order.wp_order_id);
+    return suite;
+  };
+
+  const sendIncomplete = async () => {
+    if (!order || pickingBusy) return;
+    if (!window.confirm(`Envoyer la commande ${order.wp_order_id} SANS :\n${missingText} ?\n\nL'étiquette va être générée.`)) return;
+    setPickingBusy(true);
+    try {
+      const ok = await generateLabel(order.wp_order_id);
+      if (!ok) return;
+      setForcedDone(true);
+      setIsComplete(true);
+      const suite = await pickingIncident('incomplete');
+      setMessage(`Commande envoyée incomplète — ${suite}`);
+      playSound('complete');
+    } catch (err) {
+      setError(err.response?.data?.error || 'Erreur lors du signalement de la commande incomplète');
+      playSound('error');
+    } finally {
+      setPickingBusy(false);
+    }
+  };
+
+  const setAside = async () => {
+    if (!order || pickingBusy) return;
+    if (!window.confirm(`Mettre de côté la commande ${order.wp_order_id} ?\nIl manque : ${missingText}`)) return;
+    setPickingBusy(true);
+    try {
+      const suite = await pickingIncident('set-aside');
+      setMessage(`Commande mise de côté (bloquée dans le Picking) — ${suite}`);
+      playSound('ok');
+    } catch (err) {
+      setError(err.response?.data?.error || 'Erreur lors de la mise de côté');
+      playSound('error');
+    } finally {
+      setPickingBusy(false);
+    }
+  };
 
   // Ouvrir le formulaire d'édition de l'adresse
   const startEditAddress = useCallback(() => {
@@ -1343,6 +1418,59 @@ const PackingApp = () => {
               </div>
             )}
 
+            {/* Picking : vague, ticket SAV, manquants */}
+            {pickingInfo?.wave && (
+              <div style={{ marginTop: '10px', fontSize: '14px', color: '#6b7280' }}>
+                Vague <strong style={{ fontFamily: 'monospace', color: '#7C3AED' }}>{pickingInfo.wave.waveNumber}</strong>
+              </div>
+            )}
+            {pickingInfo?.tickets?.length > 0 && (
+              <div style={{
+                backgroundColor: '#DBEAFE', borderLeft: '10px solid #1D4ED8', borderRadius: '12px',
+                padding: '14px 20px', marginTop: '15px', color: '#1e3a8a', fontSize: '16px'
+              }}>
+                <strong>Ticket SAV</strong> sur cette commande — une modification a peut-être été demandée :{' '}
+                {pickingInfo.tickets.map(t => (
+                  <a key={t.id} href={`/tickets/${t.id}`} target="_blank" rel="noreferrer" style={{ color: '#1D4ED8', fontWeight: 700, marginRight: '12px' }}>
+                    #{t.id} ({t.status})
+                  </a>
+                ))}
+              </div>
+            )}
+            {pickingInfo?.missing?.length > 0 && (() => {
+              const done = pickingInfo.incidents || [];
+              const sent = done.find(i => i.action === 'incomplete');
+              const aside = done.find(i => i.action === 'set_aside');
+              return (
+                <div style={{
+                  backgroundColor: '#FEE2E2', borderLeft: '10px solid #DC2626', borderRadius: '12px',
+                  padding: '16px 20px', marginTop: '15px', color: '#7f1d1d'
+                }}>
+                  <div style={{ fontSize: '18px', fontWeight: 800 }}>Articles manquants au picking</div>
+                  <div style={{ fontSize: '16px', marginTop: '6px' }}>
+                    Cette commande : {pickingInfo.missing.map(m => `${m.qty} × ${m.name}`).join(', ')}. Ne les cherchez pas.
+                  </div>
+                  {sent || aside ? (
+                    <div style={{ marginTop: '10px', fontWeight: 700 }}>
+                      {sent ? 'Envoyée incomplète' : 'Mise de côté'}
+                      {(sent || aside).ticketId ? ` — ticket SAV #${(sent || aside).ticketId}` : ''}
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', gap: '12px', marginTop: '12px', flexWrap: 'wrap' }}>
+                      <button onClick={sendIncomplete} disabled={pickingBusy || labelLoading} style={{
+                        padding: '10px 18px', borderRadius: '8px', border: 'none', backgroundColor: '#DC2626',
+                        color: 'white', fontSize: '16px', fontWeight: 700, cursor: 'pointer'
+                      }}>Envoyer incomplète</button>
+                      <button onClick={setAside} disabled={pickingBusy || labelLoading} style={{
+                        padding: '10px 18px', borderRadius: '8px', border: '2px solid #DC2626', backgroundColor: 'white',
+                        color: '#DC2626', fontSize: '16px', fontWeight: 700, cursor: 'pointer'
+                      }}>Mettre de côté</button>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+
             {/* Info commande */}
             <div style={{
               backgroundColor: 'white',
@@ -1712,6 +1840,15 @@ const PackingApp = () => {
                       </td>
                       <td style={{ padding: '18px 20px', fontSize: '19px', fontWeight: '500' }}>
                         {item.name}
+                        {(() => {
+                          const m = (pickingInfo?.missing || []).find(x => x.sku && x.sku === item.sku);
+                          return m ? (
+                            <span style={{
+                              marginLeft: '10px', padding: '3px 10px', borderRadius: '999px', backgroundColor: '#DC2626',
+                              color: 'white', fontSize: '14px', fontWeight: 700, whiteSpace: 'nowrap'
+                            }}>Manquant : {m.qty}</span>
+                          ) : null;
+                        })()}
                       </td>
                       <td style={{ padding: '18px 20px', textAlign: 'center', fontSize: '16px', color: '#666' }}>
                         {item.sku || '-'}

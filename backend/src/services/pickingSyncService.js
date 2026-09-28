@@ -137,7 +137,13 @@ const doRefresh = async () => {
 
   const snapshots = orders.map(o => toSnapshot(o, bmsWaves)).filter(Boolean);
   await writeSnapshot(snapshots);
-  return { orders: snapshots.length, syncedAt: new Date() };
+
+  // Le relevé dit ce qui reste à expédier : les vagues entièrement parties se
+  // clôturent (lot 4). Chargé ici pour éviter une dépendance circulaire.
+  const closed = await require('../models/pickingModel').closeShippedWaves();
+  if (closed.length) console.log(`[Picking] Vague(s) clôturée(s) : ${closed.join(', ')}`);
+
+  return { orders: snapshots.length, closedWaves: closed, syncedAt: new Date() };
 };
 
 let running = null;

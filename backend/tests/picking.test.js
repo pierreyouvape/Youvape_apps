@@ -17,7 +17,7 @@
  */
 
 const assert = require('assert');
-const { BUCKETS, allocateStock, physicalFromBms, planWaves, chunk, waveNumber, aggregateWaveLines } = require('../src/services/pickingPlanner');
+const { BUCKETS, allocateStock, physicalFromBms, planWaves, chunk, waveNumber, aggregateWaveLines, allocateMissing } = require('../src/services/pickingPlanner');
 const { buildWavePdf, buildWavesPdf, buildPrintLines } = require('../src/services/pickingPdf');
 const { PDFDocument } = require('pdf-lib');
 const { secondsUntilPdaCutoff } = require('../src/utils/pdaSession');
@@ -188,6 +188,25 @@ test('session PDA : fermée à 19h30 heure de Paris, été comme hiver', () => {
 
 test('session PDA : connexion après 19h30 → fermée le lendemain 19h30', () => {
   assert.strictEqual(secondsUntilPdaCutoff(new Date('2026-09-28T17:31:00Z')), 24 * 3600 - 60); // 19h31
+});
+
+console.log('Packing (lot 4)');
+
+test('allocateMissing : le manque tombe sur les commandes payées en dernier', () => {
+  const orders = [
+    { orderNumber: '1', lines: [{ sku: 'B', name: 'Booster', qty: 10 }] },
+    { orderNumber: '2', lines: [{ sku: 'B', name: 'Booster', qty: 3 }, { sku: 'P', name: 'Pod', qty: 1 }] },
+    { orderNumber: '3', lines: [{ sku: 'B', name: 'Booster', qty: 1 }] }
+  ];
+  const res = allocateMissing(orders, new Map([['B', 3], ['P', 0]]));
+  assert.deepStrictEqual(res.get('3'), [{ key: 'B', sku: 'B', name: 'Booster', qty: 1 }]);
+  assert.deepStrictEqual(res.get('2'), [{ key: 'B', sku: 'B', name: 'Booster', qty: 2 }]);
+  assert.strictEqual(res.has('1'), false);
+});
+
+test('allocateMissing : un produit sans SKU se retrouve par sa clé id:<produit>', () => {
+  const res = allocateMissing([{ orderNumber: '1', lines: [{ sku: null, productId: 42, name: 'X', qty: 2 }] }], new Map([['id:42', 1]]));
+  assert.strictEqual(res.get('1')[0].qty, 1);
 });
 
 console.log('Bon de préparation');
