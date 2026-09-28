@@ -619,6 +619,47 @@ test('un vrai surcoût ressort malgré la remise', () => {
   assert.strictEqual(r.summary.claimable, 40);
 });
 
+/* ─── Conditionnement déduit (GFC F2609424691, 28/09/2026) ───────────────── */
+
+console.log('\nConditionnement que personne ne connaît');
+
+test('20 boîtes de 2 facturées contre 40 unités commandées : rien à réclamer', () => {
+  // Ni BMS (qty_pack = 1) ni la fiche de référence (pack_qty = 1) ne savent que
+  // GFC vend ces accus par deux. Le rapport entier et le montant qui retombe le
+  // prouvent : 40 × 4,13 = 165,20 € contre 20 × 8,25 = 165,00 €.
+  const r = compareInvoiceToOrder({
+    invoice: { lines: [{ ref: 'GFC24676', label: 'Accus 18650 (2pcs)', qty: 20, lineTotalHt: 165.00 }] },
+    order: { lines: [{ ref: 'GFC24676', qty: 40, price: 4.13 }] },
+  });
+  const l = r.lines[0];
+  assert.strictEqual(l.verdict, 'packaging');
+  assert.strictEqual(l.packFactor, 2);
+  assert.strictEqual(r.summary.claimable, 0);
+  assert.strictEqual(r.summary.qtyGap, 0);
+  // Avant correction : 82,40 € réclamables et 82,60 € de manquants, deux
+  // chiffres nés de la comparaison de deux unités différentes.
+});
+
+test('un rapport non entier reste une vraie anomalie', () => {
+  // 8 commandés, 7 facturés : ce n'est pas un conditionnement, c'est un manquant.
+  const r = compareInvoiceToOrder({
+    invoice: { lines: [{ ref: 'A', qty: 7, lineTotalHt: 43.40 }] },
+    order: { lines: [{ ref: 'A', qty: 8, price: 6.20 }] },
+  });
+  assert.strictEqual(r.lines[0].verdict, 'qty');
+  assert.strictEqual(r.summary.qtyGap, -6.20);
+});
+
+test('un rapport entier ne suffit pas si le montant ne retombe pas', () => {
+  // 20 boîtes de 2, mais facturées 12,00 € au lieu de 8,25 € : le rapport est
+  // bien de 2, le montant non — c'est une erreur de tarif, pas un pack.
+  const r = compareInvoiceToOrder({
+    invoice: { lines: [{ ref: 'A', qty: 20, lineTotalHt: 240 }] },
+    order: { lines: [{ ref: 'A', qty: 40, price: 4.13 }] },
+  });
+  assert.notStrictEqual(r.lines[0].verdict, 'packaging');
+});
+
 if (failures > 0) {
   console.log(`\n${failures} test(s) en échec.`);
   process.exit(1);

@@ -27,6 +27,10 @@
  *    montant, même marchandise. Sans cette règle, chaque facture Pulp sortirait avec
  *    une vingtaine de fausses alertes de quantité (vérifié sur #FA165024 : 20 lignes
  *    sur 33). Le juge, c'est le MONTANT de la ligne ; la quantité seule ne prouve rien.
+ *    Deux signes conjoints le prouvent : un rapport de quantités ENTIER (une boîte
+ *    contient 2, 5 ou 10 pièces) et un montant qui retombe à 1 % près. GFC facture
+ *    20 boîtes de 2 accus à 8,25 € ce qui a été commandé 40 à l'unité à 4,13 € : ni
+ *    BMS ni la fiche de référence ne connaissent ce conditionnement, il se déduit.
  *
  * 6. UNE REMISE DE PIED N'EST PAS UNE BAISSE DE TARIF LIGNE À LIGNE. Cosmer facture
  *    ses lignes au prix commandé puis retire « Remise youvape −300,90 € » (15 % de
@@ -178,7 +182,28 @@ function compareInvoiceToOrder({ invoice, order, options = {} }) {
     const packRatio = qtyDiffers && qtyOrdered > 0 && inv.qty > 0
       ? inv.qty / qtyOrdered
       : null;
-    const isPackaging = qtyDiffers && Math.abs(gap) < threshold;
+    // Un conditionnement se reconnaît à DEUX signes conjoints : un rapport de
+    // quantités entier (une boîte contient 2, 5 ou 10 pièces, jamais 1,37), et
+    // un montant de ligne qui retombe. Exiger que l'écart tienne sous 0,10 €
+    // était trop rigide : chez GFC, 40 accus commandés à 4,13 € contre 20
+    // boîtes de 2 facturées 8,25 € laissent 0,20 € d'arrondi sur 165 € — et la
+    // ligne ressortait en « quantité ET tarif », avec 82,40 € annoncés
+    // réclamables et 82,60 € de manquants. Deux chiffres inventés par la
+    // comparaison de deux unités différentes.
+    //
+    // La tolérance devient donc relative au montant (1 %), avec le seuil absolu
+    // comme plancher. Le rapport entier reste indispensable : sans lui, une
+    // vraie erreur de quantité dont le prix compenserait par hasard passerait
+    // pour un conditionnement.
+    const packFactor = (() => {
+      if (!packRatio || !Number.isFinite(packRatio) || packRatio <= 0) return null;
+      const f = packRatio > 1 ? packRatio : 1 / packRatio;
+      const rounded = Math.round(f);
+      return rounded >= 2 && Math.abs(f - rounded) < 0.01 ? rounded : null;
+    })();
+    const packTolerance = Math.max(threshold, Math.abs(expectedTotal) * 0.01);
+    const isPackaging = qtyDiffers
+      && (Math.abs(gap) < threshold || (packFactor !== null && Math.abs(gap) <= packTolerance));
 
     // Tarif réellement différent, ou simple arrondi du fournisseur ? Ça se lit sur
     // l'unité (cf. règle 4), jamais sur le montant de la ligne.
@@ -203,8 +228,10 @@ function compareInvoiceToOrder({ invoice, order, options = {} }) {
       material: Math.abs(gap) >= threshold,
       qtyOrdered,
       qtyInvoiced: inv.qty,
-      // Rapport de conditionnement quand les deux ne comptent pas dans la même unité
+      // Rapport de conditionnement quand les deux ne comptent pas dans la même
+      // unité, et le facteur entier qui s'en déduit (« boîte de 2 »).
       packRatio,
+      packFactor,
       expectedUnitPrice,
       invoicedUnitPrice,
       expectedTotal,

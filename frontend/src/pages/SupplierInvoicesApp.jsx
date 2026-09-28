@@ -8,12 +8,18 @@ const API = (import.meta.env.VITE_API_URL || 'http://localhost:3000/api/auth').r
 const BASE = `${API}/supplier-invoices`;
 
 /**
- * Lien vers la commande dans BMS. L'API vit sur /api ; l'interface suit le même
- * chemin sans ce préfixe. À corriger d'un mot si BMS range ses commandes
- * ailleurs — le lien est construit ici et nulle part ailleurs.
+ * Lien vers la commande dans BMS.
+ *
+ * L'interface n'est PAS sur le domaine de l'API : celle-ci répond sur
+ * fr3.myfulfillment.boostmyshop.com, l'ERP s'ouvre sur fr3.erp.boostmyshop.com
+ * (vérifié le 28/09/2026 — ma première version tombait sur du JSON d'erreur).
+ *
+ * BMS ajoute à ses URL une clé de sécurité liée à la session de l'utilisateur.
+ * Impossible de la produire ici : le lien part sans, et c'est BMS qui décide
+ * s'il l'accepte ou renvoie sur son tableau de bord.
  */
 const BMS_ORDER_URL = (bmsPoId) =>
-  `https://fr3.myfulfillment.boostmyshop.com/supplier/purchase-orders/${bmsPoId}`;
+  `https://fr3.erp.boostmyshop.com/admin/supplier/order/edit/po_id/${bmsPoId}`;
 
 const OrderLink = ({ order, children }) => (
   order?.bms_po_id
@@ -60,6 +66,8 @@ const VERDICTS = {
   discount: { rank: 7, label: 'Remise de pied', tone: 'green', action: 'Répartie sur le coût réel de chaque ligne' },
   free: { rank: 8, label: 'Offert', tone: 'green', action: 'Geste commercial, rien à faire' },
   packaging: { rank: 9, label: 'Conditionnement', tone: 'grey', action: 'Unités contre packs : même marchandise, même montant' },
+  // Complété à l'affichage par le facteur déduit (« vendu par 2 »), quand on l'a.
+
   rounding: { rank: 10, label: 'Arrondi de remise', tone: 'grey', action: 'Calcul du fournisseur, pas une erreur de tarif' },
   other: { rank: 11, label: 'Ligne hors produit', tone: 'grey', action: 'À qualifier' },
   ok: { rank: 99, label: 'Conforme', tone: 'green', action: null },
@@ -195,7 +203,11 @@ function DifferencesTable({ lines, mobile }) {
                   </div>
                 )}
               </td>
-              <td style={{ ...td, fontSize: 11.5, color: C.greyT }}>{l.meta.action || ''}</td>
+              <td style={{ ...td, fontSize: 11.5, color: C.greyT }}>
+                {l.verdict === 'packaging' && l.packFactor
+                  ? `Vendu par ${l.packFactor} chez ce fournisseur : ${num(l.qtyInvoiced)} × ${l.packFactor} = ${num(l.qtyOrdered)} unités`
+                  : (l.meta.action || '')}
+              </td>
             </tr>
           ))}
         </tbody>
