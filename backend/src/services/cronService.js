@@ -894,6 +894,33 @@ const setupProductSuppliersLinkCron = () => {
 };
 
 
+// ==================== PICKING ====================
+
+const pickingSyncService = require('./pickingSyncService');
+
+let pickingSyncCronJob = null;
+
+const runPickingSync = async () => {
+  try {
+    await pickingSyncService.refresh();
+  } catch (error) {
+    console.error('Erreur cron picking (photo BMS):', error.message);
+  }
+};
+
+const setupPickingSyncCron = () => {
+  if (pickingSyncCronJob) {
+    pickingSyncCronJob.stop();
+    pickingSyncCronJob = null;
+  }
+  // Toutes les 5 min, 9h-19h, lun-ven ; hors de ces heures, la page actualise à l'ouverture
+  pickingSyncCronJob = cron.schedule('*/5 9-19 * * 1-5', runPickingSync, {
+    timezone: 'Europe/Paris'
+  });
+  console.log('Cron picking configure: photo BMS toutes les 5 min, 9h-19h, lun-ven');
+};
+
+
 module.exports = {
   setupCron,
   restartCron,
@@ -914,6 +941,7 @@ module.exports = {
   setupBrandMapCron,
   setupNextoreCrons,
   setupProductSuppliersLinkCron,
+  setupPickingSyncCron,
   runProductDbSyncJob,
   runProductSuppliersLink,
   runBrandMapJob,

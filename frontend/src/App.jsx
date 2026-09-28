@@ -29,6 +29,8 @@ import CatalogApp from './pages/CatalogApp';
 import PackingApp from './pages/PackingApp';
 import PackingSettings from './pages/PackingSettings';
 import BordereauApp from './pages/BordereauApp';
+import PickingApp from './pages/PickingApp';
+import PickingSettings from './pages/PickingSettings';
 import ReceptionApp from './pages/ReceptionApp';
 import FinancierApp from './pages/FinancierApp';
 import OrdersSearchApp from './pages/OrdersSearchApp';
@@ -67,6 +69,8 @@ const PAGE_TITLES = {
   '/orders': 'Commandes',
   '/packing': 'Packing',
   '/bordereau': 'Bordereau de dépôt',
+  '/picking': 'Picking',
+  '/picking/settings': 'Picking — Règles des vagues',
   '/reception': 'Réception',
   '/financier': 'Financier',
   '/commandes': 'Commandes',
@@ -318,6 +322,22 @@ function App() {
             element={
               <PrivateRoute>
                 <SupplierInvoicesApp />
+              </PrivateRoute>
+            }
+          />
+          <Route
+            path="/picking"
+            element={
+              <PrivateRoute>
+                <PickingApp />
+              </PrivateRoute>
+            }
+          />
+          <Route
+            path="/picking/settings"
+            element={
+              <PrivateRoute>
+                <PickingSettings />
               </PrivateRoute>
             }
           />

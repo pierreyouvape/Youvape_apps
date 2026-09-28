@@ -326,6 +326,16 @@ export const Bordereau = (props) => (
   </Base>
 );
 
+export const Picking = (props) => (
+  <Base {...props}>
+    {/* Le panier de préparation */}
+    <path d="M4 10 h16 l-1.6 9.2 a1 1 0 0 1 -1 0.8 H6.6 a1 1 0 0 1 -1 -0.8 Z" />
+    <path d="M9 10 V7.5 a3 3 0 0 1 6 0 V10" />
+    {/* Les produits prélevés, rangée par rangée */}
+    <path d="M8.5 13.5 v3.5 M12 13.5 v3.5 M15.5 13.5 v3.5" />
+  </Base>
+);
+
 export const SupplierInvoices = (props) => (
   <Base {...props}>
     <path d="M6 2.5 H15 L19 6.5 V21.5 H6 Z" />
@@ -352,6 +362,9 @@ export const APPS = [
   // n'apparaît pas dans la grille des droits. Le backend dit la même chose :
   // routes/bordereauRoutes.js exige `packing`.
   { key: 'bordereau', path: '/bordereau', label: 'Bordereau de dépôt', Icon: Bordereau, color: '#0E7490', permissionKey: 'packing' },
+  // Droit propre (backend/src/config/apps.js) : le PDA pourra être confié à des
+  // préparateurs sans leur ouvrir le packing.
+  { key: 'picking',   path: '/picking',   label: 'Picking',                  Icon: Picking,   color: '#7C3AED' },
   { key: 'catalog',   path: '/catalog',   label: 'Produits',                 Icon: Catalog,   color: '#059669' },
   { key: 'financier',  path: '/financier',  label: 'Rapport',                  Icon: Stats,         color: '#135E84' },
   { key: 'commandes',  path: '/commandes',  label: 'Commandes',                Icon: OrdersSearch, color: '#5B21B6' },
@@ -393,11 +406,11 @@ export const APP_GROUPS = [
   {
     // Le groupe, et pas une app conteneur : une app conteneur déplacerait le
     // packing de /packing vers /prepa/packing, or cette adresse est en favori
-    // sur les postes de préparation. Picking rejoindra ce groupe.
+    // sur les postes de préparation.
     key: 'grp-prepa-commande',
     label: 'Prépa de commande',
     color: '#4F46E5',
-    members: ['packing', 'bordereau'],
+    members: ['picking', 'packing', 'bordereau'],
   },
   {
     key: 'grp-factures-transporteurs',

@@ -18,6 +18,7 @@ const APP_KEYS = [
   'purchases-v2',
   'reception',
   'packing',
+  'picking',
   'catalog',
   'financier',
   'commandes',
