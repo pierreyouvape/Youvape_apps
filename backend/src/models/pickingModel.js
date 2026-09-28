@@ -256,15 +256,47 @@ const setManualPrefix = async (prefix) => {
 
 // ── Vagues ─────────────────────────────────────────────────────────────────
 
-/** Ce que les règles produiraient maintenant : « X commandes concernées, Y vagues ». */
-const previewGeneration = async () => {
+const candidatesForRules = (view) => view.filter(o => o.selectable && o.bucket === BUCKETS.READY);
+
+/**
+ * Pour la fenêtre « Générer les vagues » : ce que chaque règle active
+ * produirait si on la lançait maintenant. Les règles se lancent une à la fois,
+ * chacune est donc calculée seule.
+ */
+const previewRules = async () => {
   const [view, rules] = await Promise.all([getOrdersView(), listRules()]);
-  const candidates = view.filter(o => o.selectable && o.bucket === BUCKETS.READY);
-  const plan = planWaves(rules, candidates);
+  const candidates = candidatesForRules(view);
+  return rules.filter(r => r.active).map((rule) => {
+    const waves = planWaves([rule], candidates)[0]?.waves || [];
+    return {
+      id: rule.id, name: rule.name, prefix: rule.prefix, maxOrders: rule.maxOrders,
+      orders: waves.flat().length, waveSizes: waves.map(w => w.length)
+    };
+  });
+};
+
+const activeRule = async (ruleId) => {
+  const rule = (await listRules()).find(r => r.id === Number(ruleId));
+  if (!rule) throw httpError(404, 'Règle introuvable.');
+  if (!rule.active) throw httpError(400, 'Cette règle est désactivée.');
+  return rule;
+};
+
+/** Récapitulatif d'UNE règle : ses vagues et les commandes de chacune. */
+const previewRule = async (ruleId) => {
+  const rule = await activeRule(ruleId);
+  const view = await getOrdersView();
+  const byNumber = new Map(view.map(o => [o.orderNumber, o]));
+  const waves = planWaves([rule], candidatesForRules(view))[0]?.waves || [];
   return {
-    plan,
-    orders: plan.reduce((s, p) => s + p.waves.flat().length, 0),
-    waves: plan.reduce((s, p) => s + p.waves.length, 0)
+    rule: { id: rule.id, name: rule.name, prefix: rule.prefix, maxOrders: rule.maxOrders },
+    waves: waves.map(numbers => numbers.map((n) => {
+      const o = byNumber.get(n);
+      return {
+        orderNumber: n, name: o.name, country: o.country, carrier: o.carrier,
+        shippingMethod: o.shippingMethod, paidAt: o.paidAt, items: o.items
+      };
+    }))
   };
 };
 
@@ -302,14 +334,16 @@ const insertWaves = async (waves, userId) => {
   }
 };
 
-/** Génère les vagues des règles. Le plan est recalculé ici, jamais repris du client. */
-const generateFromRules = async (userId) => {
-  const { plan } = await previewGeneration();
-  const waves = plan.flatMap(p => p.waves.map(orderNumbers => ({
-    prefix: p.rule.prefix, ruleId: p.rule.id, orderNumbers
-  })));
-  if (waves.length === 0) throw httpError(400, 'Aucune commande ne correspond aux règles actives.');
-  return insertWaves(waves, userId);
+/**
+ * Génère les vagues d'UNE règle. Le plan est recalculé ici, jamais repris du
+ * client : entre le récapitulatif et le clic, la liste a pu bouger.
+ */
+const generateFromRule = async (ruleId, userId) => {
+  const rule = await activeRule(ruleId);
+  const view = await getOrdersView();
+  const waves = planWaves([rule], candidatesForRules(view))[0]?.waves || [];
+  if (waves.length === 0) throw httpError(400, `Aucune commande « En cours » libre pour la règle « ${rule.name} ».`);
+  return insertWaves(waves.map(orderNumbers => ({ prefix: rule.prefix, ruleId: rule.id, orderNumbers })), userId);
 };
 
 /** Vague manuelle : commandes « En cours » ou « Partielle », sélectionnables. */
@@ -465,8 +499,9 @@ module.exports = {
   listDenominations,
   getManualPrefix,
   setManualPrefix,
-  previewGeneration,
-  generateFromRules,
+  previewRules,
+  previewRule,
+  generateFromRule,
   createManualWave,
   listWaves,
   countWaves,

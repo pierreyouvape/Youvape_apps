@@ -24,7 +24,9 @@ import {
  *   - Bloquée = toujours manuel. Un problème d'adresse ou de point relais est un
  *     tag avec « Corriger » : la ligne reste dans son onglet, sans case à cocher ;
  *   - les partielles ne partent en vague qu'à la main ;
- *   - le tag « Ticket » est informatif, il ne bloque rien.
+ *   - le tag « Ticket » est informatif, il ne bloque rien ;
+ *   - « Générer les vagues » lance UNE règle à la fois, choisie dans une
+ *     fenêtre, avec le récapitulatif vague par vague avant de créer.
  */
 
 const ORDER_TABS = [
@@ -78,13 +80,13 @@ const Tabs = ({ tabs, active, counts, onChange, big }) => (
   </div>
 );
 
-const Modal = ({ children, onClose }) => (
+const Modal = ({ children, onClose, wide }) => (
   <div onClick={onClose} style={{
     position: 'fixed', inset: 0, background: 'rgba(17,24,39,0.45)', zIndex: 1000,
     display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16,
   }}>
     <div onClick={e => e.stopPropagation()} style={{
-      background: C.white, borderRadius: 14, width: '100%', maxWidth: 480, padding: 22,
+      background: C.white, borderRadius: 14, width: '100%', maxWidth: wide ? 760 : 480, padding: 22,
       boxShadow: '0 20px 50px rgba(0,0,0,0.25)',
     }}>{children}</div>
   </div>
@@ -187,11 +189,13 @@ function OrdersView({ token, canWrite, onWavesCreated, setMessage }) {
   const allChecked = selectable.length > 0 && selectable.every(o => selected.has(o.orderNumber));
   const toggleAll = () => setSelected(allChecked ? new Set() : new Set(selectable.map(o => o.orderNumber)));
 
+  // Fenêtre en deux temps : la liste des règles (une se lance à la fois),
+  // puis le récapitulatif vague par vague de celle choisie.
   const openPreview = async () => {
     setBusy(true);
     try {
       const { data: p } = await axios.get(`${API_URL}/picking/waves/preview`, authHeaders(token));
-      setPreview(p);
+      setPreview({ rules: p.rules, detail: null });
     } catch (err) {
       setMessage({ kind: 'error', text: err.response?.data?.error || err.message });
     } finally {
@@ -207,10 +211,22 @@ function OrdersView({ token, canWrite, onWavesCreated, setMessage }) {
     onWavesCreated();
   };
 
+  const pickRule = async (ruleId) => {
+    setBusy(true);
+    try {
+      const { data: d } = await axios.get(`${API_URL}/picking/waves/preview?rule=${ruleId}`, authHeaders(token));
+      setPreview(p => ({ ...p, detail: d }));
+    } catch (err) {
+      setMessage({ kind: 'error', text: err.response?.data?.error || err.message });
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const generate = async () => {
     setBusy(true);
     try {
-      const { data: r } = await axios.post(`${API_URL}/picking/waves/generate`, {}, authHeaders(token));
+      const { data: r } = await axios.post(`${API_URL}/picking/waves/generate`, { ruleId: preview.detail.rule.id }, authHeaders(token));
       setPreview(null);
       created(r.created);
     } catch (err) {
@@ -403,32 +419,96 @@ function OrdersView({ token, canWrite, onWavesCreated, setMessage }) {
       )}
 
       {preview && (
-        <Modal onClose={() => setPreview(null)}>
-          <h2 style={{ margin: '0 0 12px', fontSize: 18, color: C.primary }}>Générer les vagues</h2>
-          {preview.waves === 0 ? (
-            <p style={{ fontSize: 14 }}>Aucune commande « En cours » libre ne correspond aux règles actives.</p>
+        <Modal wide={!!preview.detail} onClose={() => setPreview(null)}>
+          {!preview.detail ? (
+            <>
+              <h2 style={{ margin: '0 0 6px', fontSize: 18, color: C.primary }}>Générer les vagues</h2>
+              <p style={{ margin: '0 0 14px', fontSize: 13.5, color: C.greyT }}>
+                Choisissez la règle à lancer. Elle ne prend que les commandes « En cours » libres, les plus anciennement payées d'abord.
+              </p>
+              {preview.rules.length === 0 && (
+                <p style={{ fontSize: 14 }}>
+                  Aucune règle active. <Link to="/picking/settings" style={{ color: C.violet }}>Créer une règle</Link>
+                </p>
+              )}
+              <div style={{ display: 'grid', gap: 8 }}>
+                {preview.rules.map(r => (
+                  <button
+                    key={r.id} disabled={r.orders === 0 || busy} onClick={() => pickRule(r.id)}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 12, textAlign: 'left', width: '100%',
+                      padding: '12px 14px', borderRadius: 10, border: `1px solid ${C.greyB}`,
+                      background: r.orders ? C.white : C.grey, cursor: r.orders ? 'pointer' : 'default',
+                      opacity: r.orders ? 1 : 0.6,
+                    }}
+                  >
+                    <span style={{ flex: 1 }}>
+                      <strong style={{ fontSize: 14.5 }}>{r.name}</strong>{' '}
+                      <span style={{ fontFamily: 'monospace', color: C.violet }}>{r.prefix}-</span>
+                      <span style={{ display: 'block', fontSize: 12.5, color: C.greyT, marginTop: 2 }}>
+                        {r.maxOrders} commandes max par vague
+                      </span>
+                    </span>
+                    <span style={{ fontSize: 13.5, fontWeight: 600, color: r.orders ? C.dark : C.greyT, whiteSpace: 'nowrap' }}>
+                      {r.orders
+                        ? `${r.orders} cmd → ${r.waveSizes.length} vague(s)`
+                        : 'Aucune commande'}
+                    </span>
+                  </button>
+                ))}
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 16 }}>
+                <button onClick={() => setPreview(null)} style={btn()}>Fermer</button>
+              </div>
+            </>
           ) : (
             <>
-              <p style={{ fontSize: 16, margin: '0 0 12px' }}>
-                <strong>{preview.orders}</strong> commande(s) concernée(s), <strong>{preview.waves}</strong> vague(s).
-              </p>
-              <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: 6 }}>
-                <tbody>
-                  {preview.rules.map(r => (
-                    <tr key={r.id}>
-                      <td style={{ ...td, fontWeight: 600 }}>{r.name} <span style={{ color: C.greyT, fontWeight: 400 }}>({r.prefix})</span></td>
-                      <td style={td}>{r.orders} cmd</td>
-                      <td style={{ ...td, color: C.greyT }}>{r.waveSizes.length} vague(s) : {r.waveSizes.join(' + ')}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              <h2 style={{ margin: '0 0 6px', fontSize: 18, color: C.primary }}>
+                {preview.detail.rule.name} <span style={{ fontFamily: 'monospace', color: C.violet, fontSize: 15 }}>{preview.detail.rule.prefix}-</span>
+              </h2>
+              {preview.detail.waves.length === 0 ? (
+                <p style={{ fontSize: 14 }}>Plus aucune commande libre pour cette règle : la liste a bougé entre-temps.</p>
+              ) : (
+                <>
+                  <p style={{ fontSize: 15, margin: '0 0 12px' }}>
+                    <strong>{preview.detail.waves.flat().length}</strong> commande(s) concernée(s), <strong>{preview.detail.waves.length}</strong> vague(s).
+                  </p>
+                  <div style={{ maxHeight: '55vh', overflowY: 'auto', display: 'grid', gap: 12 }}>
+                    {preview.detail.waves.map((w, i) => (
+                      <div key={i} style={{ border: `1px solid ${C.greyB}`, borderRadius: 10, overflow: 'hidden' }}>
+                        <div style={{ padding: '8px 12px', background: C.violetL, fontWeight: 700, fontSize: 13.5, color: C.violet }}>
+                          Vague {i + 1} — {w.length} commande(s)
+                        </div>
+                        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                          <tbody>
+                            {w.map(o => (
+                              <tr key={o.orderNumber}>
+                                <td style={{ ...td, fontWeight: 600, width: 90 }}>{o.orderNumber}</td>
+                                <td style={td}>{o.name}</td>
+                                <td style={{ ...td, width: 40 }}><CountryFlag code={o.country} /></td>
+                                <td style={td}><CarrierLogo carrier={o.carrier} height={18} /></td>
+                                <td style={{ ...td, color: C.greyT, whiteSpace: 'nowrap' }}>{formatDate(o.paidAt)}</td>
+                                <td style={{ ...td, color: C.greyT, whiteSpace: 'nowrap' }}>{o.items} art.</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, marginTop: 16 }}>
+                <button onClick={() => setPreview(p => ({ ...p, detail: null }))} style={btn()}>← Autres règles</button>
+                <span style={{ display: 'flex', gap: 10 }}>
+                  <button onClick={() => setPreview(null)} style={btn()}>Annuler</button>
+                  {preview.detail.waves.length > 0 && (
+                    <button onClick={generate} disabled={busy} style={btn('primary')}>Créer {preview.detail.waves.length} vague(s)</button>
+                  )}
+                </span>
+              </div>
             </>
           )}
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 16 }}>
-            <button onClick={() => setPreview(null)} style={btn()}>Annuler</button>
-            {preview.waves > 0 && <button onClick={generate} disabled={busy} style={btn('primary')}>Créer {preview.waves} vague(s)</button>}
-          </div>
         </Modal>
       )}
 

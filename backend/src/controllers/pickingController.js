@@ -109,23 +109,14 @@ const setManualPrefix = handle(async (req, res) => {
   res.json({ success: true });
 });
 
+/** Sans `rule` : ce que chaque règle produirait. Avec `rule` : le détail de ses vagues. */
 const previewGeneration = handle(async (req, res) => {
-  const { plan, orders, waves } = await pickingModel.previewGeneration();
-  res.json({
-    orders,
-    waves,
-    rules: plan.map(p => ({
-      id: p.rule.id,
-      name: p.rule.name,
-      prefix: p.rule.prefix,
-      orders: p.waves.flat().length,
-      waveSizes: p.waves.map(w => w.length)
-    }))
-  });
+  if (req.query.rule) return res.json(await pickingModel.previewRule(req.query.rule));
+  res.json({ rules: await pickingModel.previewRules() });
 });
 
 const generate = handle(async (req, res) => {
-  const created = await pickingModel.generateFromRules(req.user?.id);
+  const created = await pickingModel.generateFromRule(req.body?.ruleId, req.user?.id);
   res.json({ created });
 });
 

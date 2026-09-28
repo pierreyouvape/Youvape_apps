@@ -9,10 +9,10 @@ import { API_URL, authHeaders, C, CarrierLogo, carrierKey, carrierLabel } from '
 /**
  * Règles de génération des vagues.
  *
- * Une règle = des modes de livraison, une taille maximale et un préfixe. Les
- * règles passent dans l'ordre de la liste : une commande prise par une règle ne
- * l'est plus par les suivantes. Elles ne prennent que les commandes « En cours »
- * libres ; les partielles se mettent en vague à la main.
+ * Une règle = des modes de livraison, une taille maximale et un préfixe. Elle
+ * se lance une à la fois depuis « Générer les vagues », et ne prend que les
+ * commandes « En cours » libres ; les partielles se mettent en vague à la main.
+ * L'ordre de la liste n'est que l'ordre d'affichage dans la fenêtre.
  */
 
 const EMPTY = { name: '', denominations: [], maxOrders: 10, prefix: '', active: true };
@@ -132,8 +132,9 @@ export default function PickingSettings() {
             </h1>
           </div>
           <p style={{ margin: '0 0 20px', color: C.greyT, fontSize: 13.5, lineHeight: 1.5 }}>
-            Les règles passent <strong>dans l'ordre de la liste</strong> : une commande prise par une règle ne l'est plus
-            par les suivantes. Elles ne prennent que les commandes « En cours » libres, les plus anciennement payées d'abord.
+            Chaque règle se lance <strong>une à la fois</strong>, depuis « Générer les vagues » dans la liste des commandes,
+            avec un récapitulatif avant création. Elle ne prend que les commandes « En cours » libres, les plus anciennement
+            payées d'abord. L'ordre ci-dessous est l'ordre d'affichage dans la fenêtre.
             Exemple : Mondial Relay par 10, avec 58 commandes → 5 vagues de 10 et 1 de 8.
           </p>
 
