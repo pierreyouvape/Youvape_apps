@@ -1,0 +1,109 @@
+FACTURE
+07/11/2025
+#FA122879
+Adresse de livraison
+Maxime coglitore
+YOUVAPE Site-web
+0000
+580 avenue de l aube rouge
+34170 castelnau le lez
+France
+0695975267
+0695975267
+Adresse de facturation
+Maxime coglitore
+YOUVAPE Site-web
+0000
+580 avenue de l aube rouge
+34170 castelnau le lez
+France
+0695975267
+0695975267
+Numéro de facture Date de facturation Réf. de commande Date de commande Numéro de TVA
+#FA122879 07/11/2025 BSZZSPUMO 07/11/2025 0000
+Moyen de paiement Paiement par carte bancaire 725,22 €
+Référence Produit Poids
+Unitaire
+(KG)
+Taux de
+taxe
+Prix de base
+(HT)
+Prix unitaire
+(HT)
+Quantité Total
+(HT)
+007502 Diy Hard - Bouteilles
+Graduées 100ml x10
+0.13 20 % 5,90 € 5,31 € 10 53,10 €
+007500 Diy Hard - Bouteilles
+Graduées 30ml x10
+0.07 20 % 3,90 € 3,51 € 10 35,10 €
+008695 Diy Hard - Bouteilles
+Graduées 160ml x10
+0.12 20 % 9,90 € 8,91 € 3 26,73 €
+010730 E-Cig Power - Tool Kit Basic 0.2 20 % 6,90 € 4,62 € 6 27,72 €
+006161 Fruity Champions League -
+Watermelon Strawberry
+Concentré 30ML
+0.05 20 % 5,90 € 4,50 € 10 45,00 €
+006159 Fruity Champions League -
+Triple berries Concentré 30ML
+0.05 20 % 5,90 € 4,50 € 10 45,00 €
+012800 Ce'Good - Pack d'Échantillon
+El crema 10mL
+0 20 % 0,00 € 0,00 € 1 0,00 €
+010797 Pirates by Full Moon -
+Baleares Concentré 30ml
+0.04 20 % 5,90 € 4,50 € 5 22,50 €
+006498 Full Moon - Hypnose 30 ML 0.05 20 % 5,90 € 4,50 € 10 45,00 €
+007505 Full Moon - Enjoy 30 ML 0.04 20 % 5,90 € 4,50 € 5 22,50 €
+011499 Dotmod Juice - Strawberry
+Mango 50/50 50ml
+0.07 20 % 5,90 € 4,50 € 10 45,00 €
+011492 Dotmod Juice - Apricot Peach
+50/50 50ml
+0.07 20 % 5,90 € 4,50 € 6 27,00 €
+012424 Dotmod Juice - Pop Corn
+Caramel & Beurre Salé MPGV
+50/VG 50
+0.08 20 % 5,90 € 4,50 € 3 13,50 €
+cig access pro - SARL ALAV, 148 Rue de Lenche, - 13400 Aubagne - France
+Pour toute assistance, merci de nous contacter :
+Tél. : 04 42 98 11 08 Fax : 04 42 98 11 08
+SARL ALAV - TVA intracommunautaire : FR94792912818 - Siret: 792 912 818 00038 - RCS MARSEILLE - FRANCE
+Une version électronique est conservée sur votre compte. Pour y accéder, identifiez-vous sur le site CigAcess avec vos identifiants (Créés lors de votre première commande). BANQUE PALATINE
+MARS.PRO. IBAN : FR76 4097 8000 2321 3957 4221 407 BIC-ADRESSE SWIFT : BSPFFRPPXXX | BANQUE DELUBAC & CIE. IBAN : FR76 1287 9000 0111 2280 1700 126 BIC-ADRESSE SWIFT
+
+-- 1 of 2 --
+
+FACTURE
+07/11/2025
+#FA122879
+006350-0-Bla
+c
+Dovpo - Topside Dual 200W
+TC Squonk - Couleur : Black
+0.28 20 % 54,50 € 49,05 € 4 196,20 €
+Détail des taxes Taux de taxe Taxe totale
+Produits 20.000 % 120,87 €
+Total produits 604,35 €
+Frais de livraison Livraison gratuite
+Total (HT) 604,35 €
+Taxe totale 120,87 €
+Total 725,22 €
+Date de paiement : Immédiat
+Escompte pour paiement anticipé : néant
+Loi LME du 04-08-2008, les pénalités de retard seront
+calculées sur la base de 3 fois le taux d'intéret légal.
+Indemnité forfaitaire pour frais de recouvrement : 40 euros.
+Powered by TCPDF (www.tcpdf.org)
+cig access pro - SARL ALAV, 148 Rue de Lenche, - 13400 Aubagne - France
+Pour toute assistance, merci de nous contacter :
+Tél. : 04 42 98 11 08 Fax : 04 42 98 11 08
+SARL ALAV - TVA intracommunautaire : FR94792912818 - Siret: 792 912 818 00038 - RCS MARSEILLE - FRANCE
+Une version électronique est conservée sur votre compte. Pour y accéder, identifiez-vous sur le site CigAcess avec vos identifiants (Créés lors de votre première commande). BANQUE PALATINE
+MARS.PRO. IBAN : FR76 4097 8000 2321 3957 4221 407 BIC-ADRESSE SWIFT : BSPFFRPPXXX | BANQUE DELUBAC & CIE. IBAN : FR76 1287 9000 0111 2280 1700 126 BIC-ADRESSE SWIFT
+
+-- 2 of 2 --
+

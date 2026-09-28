@@ -1,0 +1,181 @@
+FACTURE
+10/11/2025
+MD035105
+17:26
+MG VAPE DISTRIBUTION
+87 RUE BORDE
+13008 Marseille
+France
+04 91 57 02 28
+Adresse de livraison
+maxime coglitorre
+YOUVAPE - SITE WEB
+580 AVENUE DE L'AUBE ROUGE
+34170 CASTELNAU-LE-LEZ
+France
+0635152216
+0695975267
+Adresse de facturation
+maxime coglitorre
+YOUVAPE - SITE WEB
+580 AVENUE DE L'AUBE ROUGE
+34170 CASTELNAU-LE-LEZ
+France
+0635152216
+0695975267
+ID client Numéro de facture Date de facturation Réf. de commande Date de commande
+5746 MD035105 10/11/2025 QXJQZUKPX 10/11/2025
+Référence Produit Taux
+de taxe
+Prix de base
+(HT)
+Prix unitaire
+(HT)
+Quantit
+é
+Total
+(HT)
+MPV
+MPV-ACC-21
+700-5000
+ACCUS MPV - 5000 MAH INR
+21700 - 30A
+20 % 4,90 € 3,92 € 100 392,00 €
+MPV-CHA-
+C4
+C4 - CHARGEUR MPV 20 % 4,50 € 3,39 € 5 16,95 €
+MPV-CHA-
+FC2
+FC2 - Chargeur Rapide 2 slots
+- MPV
+20 % 2,98 € 2,23 € 20 44,60 €
+Candy Shake
+CYSH-75ML-
+APPE
+APPEAR - 50ML - CANDY
+SHAKE
+20 % 5,90 € 1,39 € 24 33,36 €
+CYSH-75ML-
+CALA
+CALAMANGO - 50ML - CANDY
+SHAKE
+20 % 5,90 € 1,39 € 24 33,36 €
+CYSH-75ML-
+KEYT
+KEYTLLES - 50ML - CANDY
+SHAKE
+20 % 5,90 € 1,39 € 24 33,36 €
+CYSH-75ML-
+REST
+RED STAMPIDO - 50ML -
+CANDY SHAKE
+20 % 5,90 € 1,39 € 24 33,36 €
+CYSH-75ML-
+TIKT
+TIKTAKTOK - 50ML - CANDY
+SHAKE
+20 % 5,90 € 1,39 € 24 33,36 €
+Yummy
+YUM-50ML-
+BANC
+BANANA CRUMBLE - 50ML -
+YUMMY
+20 % 5,90 € 1,39 € 24 33,36 €
+YUM-50ML-
+FOLL
+FOLIE AU LAIT - 50ML -
+YUMMY
+20 % 5,90 € 1,39 € 24 33,36 €
+MG VAPE DISTRIBUTION - 87 RUE BORDE - 13008 Marseille - France
+Pour toute assistance, merci de nous contacter :
+Tél. : 04 91 57 02 28
+
+-- 1 of 2 --
+
+FACTURE
+10/11/2025
+MD035105
+17:26
+YUM-50ML-
+FONN
+FONDANT NOISETTE - 50ML -
+YUMMY
+20 % 5,90 € 1,39 € 24 33,36 €
+YUM-50ML-
+GATPP
+GATEAU POMME ET POIRE -
+50ML - YUMMY
+20 % 5,90 € 1,39 € 24 33,36 €
+Juicy Shake
+JUSH-75ML-
+BARI
+BARIOX - 50ML - JUICY SHAKE 20 % 5,90 € 1,39 € 24 33,36 €
+JUSH-75ML-
+GOGA
+GOPHER GANG - 50ML - JUICY
+SHAKE
+20 % 5,90 € 1,39 € 24 33,36 €
+JUSH-75ML-
+PIRU
+PIRUS - 50ML - JUICY SHAKE 20 % 5,90 € 1,39 € 24 33,36 €
+JUSH-75ML-
+SHAD
+SHADOWS - 50ML - JUICY
+SHAKE
+20 % 5,90 € 1,39 € 24 33,36 €
+JUSH-75ML-
+TRIN
+TRINITARIO - 50ML - JUICY
+SHAKE
+20 % 5,90 € 1,39 € 24 33,36 €
+JUSH-75ML-
+YAMA
+YAMAGUMI - 50ML - JUICY
+SHAKE
+20 % 5,90 € 1,39 € 24 33,36 €
+Bakery Shake
+BASH-75ML-
+CARA
+CARALLOW - 50ML - BAKERY
+SHAKE
+20 % 5,90 € 1,39 € 24 33,36 €
+BASH-75ML-
+KOKO
+KOKOKILL - 50ML - BAKERY
+SHAKE
+20 % 5,90 € 1,39 € 24 33,36 €
+BASH-75ML-
+OPPE
+OPPENHEIMER - 50ML -
+BAKERY SHAKE
+20 % 5,90 € 1,39 € 24 33,36 €
+BASH-75ML-
+SUBA
+SUGAR BAFF - 50ML - BAKERY
+SHAKE
+20 % 5,90 € 1,39 € 24 33,36 €
+BASH-75ML-
+WORI
+WONDER ORIENT - 50ML -
+BAKERY SHAKE
+20 % 5,90 € 1,39 € 24 33,36 €
+Détail des
+taxes
+Taux de taxe Prix de base Taxe totale
+Produits 20.000 % 1 120,75 € 224,11 €
+Total produits 1 120,75 €
+Frais d'expédition Transporteur gratuit
+Total (HT) 1 120,75 €
+Taxe totale 224,11 €
+Total 1 344,86 €
+Moyen de paiement Paiement AMEX 1 344,86 €
+Transporteur CHRONOPOST
+RIB MD DISTRIBUTION
+FR76 1131 5000 0108 0271 5386 148
+Powered by TCPDF (www.tcpdf.org)
+MG VAPE DISTRIBUTION - 87 RUE BORDE - 13008 Marseille - France
+Pour toute assistance, merci de nous contacter :
+Tél. : 04 91 57 02 28
+
+-- 2 of 2 --
+

@@ -1,0 +1,107 @@
+FACTURE
+17/11/2025
+#FA063171
+Adresse de livraison
+maxime coglitore
+SAS EMC
+FR87789508439
+580 avenue de l'aube rouge
+YOUVAPE SITE
+34170 CASTELNAU LE LEZ
+France
+0695975267
+Adresse de facturation
+maxime coglitore
+SAS EMC
+FR87789508439
+580 avenue de l'aube rouge
+YOUVAPE SITE
+34170 CASTELNAU LE LEZ
+France
+0695975267
+Numéro de facture Date de facturation Réf. de commande Date de commande Numéro de TVA
+#FA063171 17/11/2025 GIAOHSGSX 17/11/2025 FR87789508439
+Référence Produit Taux de
+taxe
+Prix unitaire
+(HT)
+Quantité Total
+(HT)
+AST-
+LICO-10-10SDN
+La Licorne - Sel de Nicotine (Taux de nicotine :
+10mg)
+20 % 1,53 € 10 15,30 €
+AST-
+LICO-10-12MG
+La Licorne - 10ml (Taux de nicotine : 12mg) 20 % 1,53 € 10 15,30 €
+AST-
+LICO-50-0MG
+La Licorne - 50ml (Taux de nicotine : 00mg) 20 % 6,21 € 12 74,52 €
+HEX-
+MARS-10-10SDN
+Marseille, Plus Belle - Sel De Nicotine (Taux de
+nicotine : 10mg)
+20 % 1,53 € 10 15,30 €
+HEX-
+PARI-50-00MG
+Un Matin à Paris - 50ml (Taux de nicotine : 00mg) 20 % 6,21 € 6 37,26 €
+NAT-
+AMAZ-50-0MG
+Amazonien - 50ml (Taux de nicotine : 00mg) 20 % 6,21 € 6 37,26 €
+NAT-
+BOOS-10-20MG
+Booster Natural - 10ml (Taux de nicotine : 20mg) 20 % 1,36 € 40 54,40 €
+NAT-
+DRUI-50-0MG
+Druide - 50ml (Taux de nicotine : 00mg) 20 % 6,21 € 6 37,26 €
+NAT-
+ELIX-50-0MG
+Elixir - 50ml (Taux de nicotine : 00mg) 20 % 6,21 € 6 37,26 €
+NAT-
+FRAI-50-0MG
+Fraise - 50ml (Taux de nicotine : 00mg) 20 % 6,21 € 6 37,26 €
+NAT-
+NOIS-50-0MG
+Noisette - 50ml (Taux de nicotine : 00mg) 20 % 6,21 € 6 37,26 €
+NAT-
+VERT-10-12MG
+Menthe Verte - 10ml (Taux de nicotine : 12mg) 20 % 1,53 € 10 15,30 €
+NAT-
+VERT-50-0MG
+Menthe Verte - 50ml (Taux de nicotine : 00mg) 20 % 6,21 € 6 37,26 €
+SPE- SPEAKEASY - Mac Allister 50ml (Taux de nicotine 20 % 6,21 € 6 37,26 €
+1 / 2
+
+-- 1 of 2 --
+
+FACTURE
+17/11/2025
+#FA063171
+MACA-50-00MG : 00mg)
+SPE-
+SOUL-50-00MG
+SPEAKEASY - Soul Diva 50ml (Taux de nicotine :
+00mg)
+20 % 6,21 € 6 37,26 €
+Détail des taxes Taux de taxe Taxe totale
+Produits 20.000 % 105,09 €
+Total produits 525,46 €
+Frais de livraison Livraison gratuite
+Total (HT) 525,46 €
+Taxe totale 105,09 €
+Total 630,55 €
+Moyen de paiement Paiement VISA 630,55 €
+Transporteur Chronopost - Express à domicile J+1 avant
+13h
+RIB HSBC, 3 rue des Mathurins, 75009, Paris
+IBAN : FR76 3005 6009 1509 1500 4920 968
+BIC / SWIFT : CCFRFRPP
+Powered by TCPDF (www.tcpdf.org)
+Curieux e-liquides PRO - 42 avenue du Général de Gaulle - 45200 MONTARGIS - France
+Pour toute assistance, merci de nous contacter :
+Tél. : +33 1 48 18 75 62
+Siret : 83841399500013 / Numero EORI FR83841399500013 / TVA FR84 838413995
+
+-- 2 of 2 --
+

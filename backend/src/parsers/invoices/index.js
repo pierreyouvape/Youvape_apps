@@ -22,6 +22,7 @@
 
 const opensiInvoice = require('./opensiInvoice');
 const odooInvoice = require('./odooInvoice');
+const prestashopInvoice = require('./prestashopInvoice');
 
 // Trois fournisseurs, un seul gabarit : LCA, LVP et GFC éditent tous depuis OpenSi.
 const parsers = {
@@ -35,6 +36,16 @@ const parsers = {
   'Levest - Roykin': odooInvoice,
   'LIPS - French Liquide': odooInvoice,
   'Cloud Vapor': odooInvoice,
+
+  // Sept fournisseurs sur PrestaShop : le prix y précède la quantité, à
+  // l'inverse des deux autres gabarits.
+  'Revolute - Cosmer': prestashopInvoice,
+  'Highbuy': prestashopInvoice,
+  'Curieux': prestashopInvoice,
+  'Cigaccess': prestashopInvoice,
+  'Etasty': prestashopInvoice,
+  'MG Vape': prestashopInvoice,
+  'Pulp': prestashopInvoice,
 };
 
 module.exports = {
