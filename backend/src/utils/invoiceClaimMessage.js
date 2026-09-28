@@ -13,6 +13,16 @@
  *   • les lignes en notre faveur — on ne les signale pas, on aligne le tarif ;
  *   • les manquants et les écarts de conditionnement — ce sont des sujets de
  *     livraison, à traiter séparément, pas des demandes d'avoir.
+ *
+ * Deux rendus du MÊME message : `body` en texte brut, `bodyHtml` avec un vrai
+ * tableau. Le tableau calé aux espaces ne tenait que dans une police à chasse
+ * fixe — dans Gmail ou Outlook, les colonnes se décalaient et la réclamation
+ * devenait illisible. L'écran copie les deux dans le presse-papiers : la
+ * messagerie prend le HTML, un champ de texte simple prend le brut.
+ *
+ * La DATE DE FACTURE ne figure pas dans le message : le numéro de facture suffit
+ * à l'identifier chez le fournisseur, et l'horodatage qui traînait derrière
+ * (« Fri Sep 25 2026 00:00:00 GMT+0000 ») ne faisait que salir le texte.
  */
 
 const fmtEur = (n) => `${Number(n).toFixed(2).replace('.', ',')} €`;
@@ -24,6 +34,31 @@ function renderTable(rows, headers) {
   const widths = headers.map((_, i) => Math.max(...all.map((r) => String(r[i]).length)));
   const line = (r) => r.map((c, i) => String(c).padEnd(widths[i])).join('  ').trimEnd();
   return [line(headers), widths.map((w) => '-'.repeat(w)).join('  '), ...rows.map(line)].join('\n');
+}
+
+/** Échappe ce qui part dans le HTML : un libellé produit peut contenir « & » ou « < ». */
+function esc(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+/** Tableau HTML autoportant : styles en ligne, les messageries jettent les <style>. */
+function renderTableHtml(rows, headers) {
+  const cell = 'padding:6px 10px;border:1px solid #d5d8dd;';
+  const num = `${cell}text-align:right;white-space:nowrap;`;
+  const th = `${cell}background:#f2f4f7;font-weight:600;`;
+
+  // Les trois dernières colonnes sont des nombres : alignées à droite, comme au
+  // bilan comptable — c'est ce qui rend les écarts comparables d'un coup d'œil.
+  const head = headers
+    .map((h, i) => `<th style="${th}text-align:${i >= 2 ? 'right' : 'left'};">${esc(h)}</th>`)
+    .join('');
+  const body = rows
+    .map((r) => `<tr>${r.map((c, i) => `<td style="${i >= 2 ? num : cell}">${esc(c)}</td>`).join('')}</tr>`)
+    .join('');
+
+  return `<table style="border-collapse:collapse;font-family:Arial,Helvetica,sans-serif;font-size:13px;">`
+    + `<thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`;
 }
 
 /**
@@ -47,39 +82,40 @@ function buildClaimMessage({ comparison, invoice = {}, order = {}, supplier = {}
   } (${fmtEur(total)} HT)`.replace(/\s+/g, ' ').trim();
 
   if (claimLines.length === 0) {
-    return { subject, body: '', claimable: 0, lines: [] };
+    return { subject, body: '', bodyHtml: '', claimable: 0, lines: [] };
   }
 
-  const table = renderTable(
-    claimLines.map((l) => [
-      l.ref || '',
-      (l.label || '').slice(0, 44),
-      fmtQty(l.qtyInvoiced),
-      fmtEur(l.expectedUnitPrice),
-      fmtEur(l.invoicedUnitPrice),
-      `+${fmtEur(l.gapPrice)}`,
-    ]),
-    ['Référence', 'Produit', 'Qté', 'Tarif commandé', 'Tarif facturé', 'Écart HT'],
-  );
+  const headers = ['Référence', 'Produit', 'Qté', 'Tarif commandé', 'Tarif facturé', 'Écart HT'];
+  const rows = claimLines.map((l) => [
+    l.ref || '',
+    (l.label || '').slice(0, 44),
+    fmtQty(l.qtyInvoiced),
+    fmtEur(l.expectedUnitPrice),
+    fmtEur(l.invoicedUnitPrice),
+    `+${fmtEur(l.gapPrice)}`,
+  ]);
+  const table = renderTable(rows, headers);
 
   const hello = supplier.contactName ? `Bonjour ${supplier.contactName},` : 'Bonjour,';
   const ref = order.reference ? ` (commande ${order.reference})` : '';
+  const pluriel = claimLines.length > 1 ? 's' : '';
+  const intro = `En contrôlant votre facture ${invoice.number || ''}${ref}, je relève `
+    + `${claimLines.length} ligne${pluriel} facturée${pluriel} au-dessus du tarif convenu `
+    + 'à la commande :';
+  const bilan = `Soit ${fmtEur(total)} HT de trop sur cette facture.`;
+  const demande = 'Pouvez-vous établir un avoir correspondant, ou me confirmer le nouveau tarif '
+    + 's’il s’agit d’une évolution de prix de votre côté ?';
 
   const body = [
     hello,
     '',
-    `En contrôlant votre facture ${invoice.number || ''}${
-      invoice.date ? ` du ${invoice.date}` : ''
-    }${ref}, je relève ${claimLines.length} ligne${claimLines.length > 1 ? 's' : ''} facturée${
-      claimLines.length > 1 ? 's' : ''
-    } au-dessus du tarif convenu à la commande :`,
+    intro,
     '',
     table,
     '',
-    `Soit ${fmtEur(total)} HT de trop sur cette facture.`,
+    bilan,
     '',
-    'Pouvez-vous établir un avoir correspondant, ou me confirmer le nouveau tarif',
-    's’il s’agit d’une évolution de prix de votre côté ?',
+    demande,
     '',
     'Merci d’avance,',
     senderName || '',
@@ -88,7 +124,20 @@ function buildClaimMessage({ comparison, invoice = {}, order = {}, supplier = {}
     .replace(/\n{3,}/g, '\n\n')
     .trim();
 
-  return { subject, body, claimable: total, lines: claimLines };
+  const p = (txt) => `<p style="margin:0 0 12px;">${esc(txt)}</p>`;
+  const bodyHtml = [
+    '<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#1b1f24;">',
+    p(hello),
+    p(intro),
+    renderTableHtml(rows, headers),
+    `<p style="margin:12px 0;"><strong>${esc(bilan)}</strong></p>`,
+    p(demande),
+    p('Merci d’avance,'),
+    senderName ? p(senderName) : '',
+    '</div>',
+  ].join('');
+
+  return { subject, body, bodyHtml, claimable: total, lines: claimLines };
 }
 
 module.exports = { buildClaimMessage };

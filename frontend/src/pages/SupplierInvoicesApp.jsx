@@ -356,7 +356,26 @@ function ControlTab({ suppliers, mobile, onSaved }) {
   const copyClaim = async () => {
     const { data } = await axios.get(`${BASE}/${saved.id}/claim`);
     if (!data.body) return;
-    await navigator.clipboard.writeText(`${data.subject}\n\n${data.body}`);
+
+    const texte = `${data.subject}\n\n${data.body}`;
+    // On met les DEUX formats dans le presse-papiers : la messagerie colle le
+    // tableau HTML, un champ de texte simple colle le brut. Sans ça, le tableau
+    // n'était calé qu'aux espaces et se décalait dès que la police n'était pas
+    // à chasse fixe — donc dans Gmail, donc toujours.
+    try {
+      if (data.bodyHtml && window.ClipboardItem) {
+        const html = `<p><strong>${data.subject}</strong></p>${data.bodyHtml}`;
+        await navigator.clipboard.write([new window.ClipboardItem({
+          'text/html': new Blob([html], { type: 'text/html' }),
+          'text/plain': new Blob([texte], { type: 'text/plain' }),
+        })]);
+      } else {
+        await navigator.clipboard.writeText(texte);
+      }
+    } catch {
+      await navigator.clipboard.writeText(texte);
+    }
+
     setCopied(true);
     setTimeout(() => setCopied(false), 2500);
   };
