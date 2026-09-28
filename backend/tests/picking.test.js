@@ -17,7 +17,7 @@
 
 const assert = require('assert');
 const { BUCKETS, allocateStock, physicalFromBms, planWaves, chunk, waveNumber } = require('../src/services/pickingPlanner');
-const { buildWavePdf, buildPrintLines } = require('../src/services/pickingPdf');
+const { buildWavePdf, buildWavesPdf, buildPrintLines } = require('../src/services/pickingPdf');
 const { PDFDocument } = require('pdf-lib');
 
 let failures = 0;
@@ -206,8 +206,16 @@ const pdfTest = (async () => {
   // Garde + commande 1 (1 page) + commande 2 (40 lignes : 2 pages ou plus).
   assert.ok(doc.getPageCount() >= 4, `pages : ${doc.getPageCount()}`);
   assert.strictEqual(doc.getTitle(), 'Vague MAN-000001');
+
+  // Plusieurs vagues dans un seul document : chacune avec sa page de garde,
+  // et le fichier ne grossit pas d'une police par vague.
+  const one = { ...wave, orders: [wave.orders[0]] };
+  const single = await buildWavePdf(one);
+  const many = await buildWavesPdf([one, { ...one, waveNumber: 'MR-000002' }, { ...one, waveNumber: 'MR-000003' }]);
+  assert.strictEqual((await PDFDocument.load(many)).getPageCount(), 3 * (await PDFDocument.load(single)).getPageCount());
+  assert.ok(many.length < single.length * 1.5, `3 vagues = ${many.length} o, 1 vague = ${single.length} o`);
 })().then(
-  () => console.log('  ok   buildWavePdf : garde + bons, « Ω » et 2Shop compris, bon long sur plusieurs pages'),
+  () => console.log('  ok   buildWavePdf : garde + bons, « Ω » et 2Shop compris, bon long sur plusieurs pages ; buildWavesPdf : 3 vagues, polices une seule fois'),
   (err) => { failures++; console.error(`  FAIL buildWavePdf\n       ${err.message}`); }
 );
 

@@ -28,6 +28,7 @@ router.put('/settings/manual-prefix', canWrite, pickingController.setManualPrefi
 
 router.get('/waves', canRead, pickingController.listWaves);
 router.get('/waves/preview', canWrite, pickingController.previewGeneration);
+router.post('/waves/pdf', canRead, pickingController.printWaves);
 router.post('/waves/generate', canWrite, pickingController.generate);
 router.post('/waves/manual', canWrite, pickingController.createManualWave);
 router.get('/waves/:id', canRead, pickingController.getWave);

@@ -579,16 +579,21 @@ function WavesView({ token, canWrite, reloadKey, setMessage }) {
     }
   };
 
-  // Le PDF part en téléchargement sous `vague_<numéro>.pdf` (règle AutoPrint possible).
+  // Le PDF part en téléchargement sous le nom donné par le serveur
+  // (`vague_<numéro>.pdf`, ou `vagues_<n>_<date>.pdf` pour plusieurs) :
+  // une règle AutoPrint sur « vague » prend les deux.
   const [printing, setPrinting] = useState(null);
-  const print = async (w) => {
-    setPrinting(w.id);
+  const [selected, setSelected] = useState(new Set());
+
+  const download = async (request, fallbackName, key) => {
+    setPrinting(key);
     try {
-      const res = await axios.get(`${API_URL}/picking/waves/${w.id}/pdf`, { ...authHeaders(token), responseType: 'blob' });
+      const res = await request();
+      const name = /filename="([^"]+)"/.exec(res.headers['content-disposition'] || '')?.[1] || fallbackName;
       const url = URL.createObjectURL(res.data);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `vague_${w.waveNumber}.pdf`;
+      a.download = name;
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -603,6 +608,24 @@ function WavesView({ token, canWrite, reloadKey, setMessage }) {
     }
   };
 
+  const print = (w) => download(
+    () => axios.get(`${API_URL}/picking/waves/${w.id}/pdf`, { ...authHeaders(token), responseType: 'blob' }),
+    `vague_${w.waveNumber}.pdf`, w.id
+  );
+
+  const printMany = (ids, key) => download(
+    () => axios.post(`${API_URL}/picking/waves/pdf`, { ids }, { ...authHeaders(token), responseType: 'blob' }),
+    'vagues.pdf', key
+  );
+
+  const waves = data?.waves || [];
+  const allChecked = waves.length > 0 && waves.every(w => selected.has(w.id));
+  const toggle = (id) => setSelected(prev => {
+    const next = new Set(prev);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    return next;
+  });
+
   const cancel = async (w) => {
     if (!window.confirm(`Annuler la vague ${w.waveNumber} ? Ses ${w.orders} commande(s) redeviennent libres.`)) return;
     try {
@@ -616,11 +639,31 @@ function WavesView({ token, canWrite, reloadKey, setMessage }) {
 
   return (
     <>
-      <Tabs tabs={WAVE_TABS} active={tab} counts={data?.counts} onChange={(k) => { setTab(k); setOpen(null); }} />
+      <Tabs tabs={WAVE_TABS} active={tab} counts={data?.counts} onChange={(k) => { setTab(k); setOpen(null); setSelected(new Set()); }} />
+      {waves.length > 0 && (
+        <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginBottom: 12, flexWrap: 'wrap' }}>
+          <button
+            onClick={() => printMany([...selected], 'selection')}
+            disabled={selected.size === 0 || printing !== null}
+            style={{ ...btn(), opacity: selected.size === 0 ? 0.5 : 1 }}
+          >{printing === 'selection' ? 'PDF…' : `Imprimer la sélection (${selected.size})`}</button>
+          <button
+            onClick={() => printMany(waves.map(w => w.id), 'all')}
+            disabled={printing !== null}
+            style={btn('primary')}
+          >{printing === 'all' ? 'PDF…' : `Imprimer toutes les vagues (${waves.length})`}</button>
+        </div>
+      )}
       <div style={{ background: C.white, border: `1px solid ${C.greyB}`, borderRadius: 12, overflowX: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead>
             <tr>
+              <th style={{ ...th, width: 36 }}>
+                <input
+                  type="checkbox" checked={allChecked} disabled={waves.length === 0}
+                  onChange={() => setSelected(allChecked ? new Set() : new Set(waves.map(w => w.id)))}
+                />
+              </th>
               <th style={th}>Vague</th>
               <th style={th}>Créée le</th>
               <th style={th}>Par</th>
@@ -632,13 +675,16 @@ function WavesView({ token, canWrite, reloadKey, setMessage }) {
             </tr>
           </thead>
           <tbody>
-            {!data && <tr><td colSpan={8} style={{ ...td, color: C.greyT }}>Chargement…</td></tr>}
+            {!data && <tr><td colSpan={9} style={{ ...td, color: C.greyT }}>Chargement…</td></tr>}
             {data && data.waves.length === 0 && (
-              <tr><td colSpan={8} style={{ ...td, textAlign: 'center', color: C.greyT, padding: 28 }}>Aucune vague.</td></tr>
+              <tr><td colSpan={9} style={{ ...td, textAlign: 'center', color: C.greyT, padding: 28 }}>Aucune vague.</td></tr>
             )}
             {data?.waves.map((w, i) => (
               <Fragment key={w.id}>
-                <tr style={{ background: open === w.id ? C.rowSel : i % 2 ? C.zebra : C.white }}>
+                <tr style={{ background: open === w.id || selected.has(w.id) ? C.rowSel : i % 2 ? C.zebra : C.white }}>
+                  <td style={td}>
+                    <input type="checkbox" checked={selected.has(w.id)} onChange={() => toggle(w.id)} />
+                  </td>
                   <td style={{ ...td, fontWeight: 700, fontFamily: 'monospace', fontSize: 14 }}>{w.waveNumber}</td>
                   <td style={{ ...td, whiteSpace: 'nowrap' }}>{formatDateUTC(w.createdAt)}</td>
                   <td style={td}>{w.createdBy || '—'}</td>
@@ -660,7 +706,7 @@ function WavesView({ token, canWrite, reloadKey, setMessage }) {
                       : <Chip color={C.amber} bg={C.amberL}>Pas imprimée</Chip>}
                   </td>
                   <td style={{ ...td, textAlign: 'right', whiteSpace: 'nowrap' }}>
-                    <button onClick={() => print(w)} disabled={printing === w.id} style={{ ...btn('primary'), padding: '4px 12px', fontSize: 12, marginRight: 6 }}>
+                    <button onClick={() => print(w)} disabled={printing !== null} style={{ ...btn('primary'), padding: '4px 12px', fontSize: 12, marginRight: 6 }}>
                       {printing === w.id ? 'PDF…' : 'Imprimer'}
                     </button>
                     <button onClick={() => toggleDetail(w)} style={{ ...btn(), padding: '4px 10px', fontSize: 12 }}>
@@ -673,7 +719,7 @@ function WavesView({ token, canWrite, reloadKey, setMessage }) {
                 </tr>
                 {open === w.id && (
                   <tr>
-                    <td colSpan={8} style={{ ...td, background: C.grey, padding: '8px 16px 14px' }}>
+                    <td colSpan={9} style={{ ...td, background: C.grey, padding: '8px 16px 14px' }}>
                       {!detail ? 'Chargement…' : (
                         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                           <tbody>

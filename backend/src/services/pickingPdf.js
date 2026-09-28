@@ -123,10 +123,21 @@ const fit = (text, font, size, width) => wrap(text, font, size, width, 1)[0] || 
  * @param {object[]} wave.orders          - dans l'ordre de la vague, cf. drawOrder
  * @returns {Promise<Uint8Array>}
  */
-const buildWavePdf = async (wave) => {
+const buildWavePdf = (wave) => buildWavesPdf([wave]);
+
+/**
+ * Plusieurs vagues dans UN document (« Imprimer la sélection / toutes ») :
+ * chacune avec sa page de garde, à la suite. Polices et logos sont embarqués
+ * une seule fois — une police entière pèse ~0,3 Mo, fusionner des PDF séparés
+ * la répéterait par vague.
+ *
+ * @param {object[]} waves - cf. buildWavePdf
+ * @returns {Promise<Uint8Array>}
+ */
+const buildWavesPdf = async (waves) => {
   const doc = await PDFDocument.create();
   doc.registerFontkit(fontkit);
-  doc.setTitle(`Vague ${wave.waveNumber}`);
+  doc.setTitle(waves.length === 1 ? `Vague ${waves[0].waveNumber}` : `${waves.length} vagues`);
   doc.setAuthor('Youvape Apps — Picking');
 
   const f = {
@@ -143,9 +154,11 @@ const buildWavePdf = async (wave) => {
     return carrierLogos[code];
   };
 
-  await drawCover(doc, f, logo, carrierLogo, wave);
-  for (let i = 0; i < wave.orders.length; i++) {
-    await drawOrder(doc, f, logo, carrierLogo, wave, wave.orders[i], i + 1);
+  for (const wave of waves) {
+    await drawCover(doc, f, logo, carrierLogo, wave);
+    for (let i = 0; i < wave.orders.length; i++) {
+      await drawOrder(doc, f, logo, carrierLogo, wave, wave.orders[i], i + 1);
+    }
   }
   return doc.save();
 };
@@ -435,4 +448,4 @@ const buildPrintLines = (items, remainingBySku = null) => {
   return lines;
 };
 
-module.exports = { buildWavePdf, buildPrintLines };
+module.exports = { buildWavePdf, buildWavesPdf, buildPrintLines };

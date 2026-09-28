@@ -1,7 +1,7 @@
 const pool = require('../config/database');
 const pickingModel = require('../models/pickingModel');
 const pickingSyncService = require('../services/pickingSyncService');
-const { buildWavePdf } = require('../services/pickingPdf');
+const { buildWavePdf, buildWavesPdf } = require('../services/pickingPdf');
 const shippingMethodMapModel = require('../models/shippingMethodMapModel');
 const { expectedNetwork, relayNetworks } = require('../services/carriers/relayPoints');
 
@@ -157,6 +157,29 @@ const printWave = handle(async (req, res) => {
   res.send(Buffer.from(pdf));
 });
 
+/**
+ * Plusieurs vagues dans un seul PDF (« Imprimer la sélection / toutes »),
+ * dans l'ordre de création. Le nom commence aussi par « vague » pour qu'une
+ * même règle AutoPrint prenne les deux formats.
+ */
+const printWaves = handle(async (req, res) => {
+  const ids = [...new Set((req.body?.ids || []).map(Number).filter(Number.isInteger))].sort((a, b) => a - b);
+  if (ids.length === 0) return res.status(400).json({ error: 'Aucune vague sélectionnée.' });
+  if (ids.length > 100) return res.status(400).json({ error: 'Pas plus de 100 vagues à la fois.' });
+
+  const waves = [];
+  for (const id of ids) waves.push(await pickingModel.getWavePrintData(id));
+  const pdf = await buildWavesPdf(waves);
+  for (const id of ids) await pickingModel.markPrinted(id, req.user?.id);
+
+  const stamp = new Intl.DateTimeFormat('fr-CA', {
+    timeZone: 'Europe/Paris', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false
+  }).format(new Date()).replace(/[^0-9]/g, '');
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `attachment; filename="vagues_${waves.length}_${stamp}.pdf"`);
+  res.send(Buffer.from(pdf));
+});
+
 module.exports = {
   listOrders,
   refresh,
@@ -173,5 +196,6 @@ module.exports = {
   listWaves,
   getWave,
   cancelWave,
-  printWave
+  printWave,
+  printWaves
 };
