@@ -701,7 +701,14 @@ function WavesView({ token, canWrite, reloadKey, setMessage }) {
                   <td style={{ ...td, whiteSpace: 'nowrap' }}>{formatDateUTC(w.createdAt)}</td>
                   <td style={td}>{w.createdBy || '—'}</td>
                   <td style={td}>{w.ruleName || 'Manuelle'}</td>
-                  <td style={td}>{w.orders}</td>
+                  <td style={td}>
+                    {w.orders}
+                    {(w.status === 'picked' || w.status === 'closed') && (
+                      <div style={{ fontSize: 12, color: w.shipped === w.orders ? C.green : C.greyT, whiteSpace: 'nowrap' }}>
+                        {w.status === 'closed' ? `Clôturée le ${formatDateUTC(w.closedAt)}` : `${w.shipped}/${w.orders} expédiées`}
+                      </div>
+                    )}
+                  </td>
                   <td style={td}>
                     <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
                       {w.carriers.map(c => <CarrierLogo key={`${c.carrierCode}:${c.accountCode}`} carrier={c} height={18} />)}

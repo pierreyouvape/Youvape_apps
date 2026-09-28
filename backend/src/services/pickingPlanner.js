@@ -161,4 +161,33 @@ const aggregateWaveLines = (orders) => {
     });
 };
 
-module.exports = { BUCKETS, allocateStock, physicalFromBms, planWaves, chunk, waveNumber, aggregateWaveLines };
+/**
+ * Manquants du picking attribués aux commandes (lot 4, décision du 28/09/2026) :
+ * le picking est global, on sait qu'il manque 2 boosters dans la vague, pas à
+ * qui. Même règle que la répartition du stock : les commandes payées en
+ * premier sont servies, le manque tombe sur les DERNIÈRES de la vague. Le
+ * packing peut ainsi dire à chaque commande exactement ce qui lui manque.
+ *
+ * @param {{orderNumber: string, lines: {sku, productId, name, qty}[]}[]} orders
+ *        dans l'ordre de la vague (date de paiement)
+ * @param {Map<string, number>} missingByKey - `picking_wave_lines.line_key` → qty_missing
+ * @returns {Map<string, {key, sku, name, qty}[]>} commande → ses manquants
+ */
+const allocateMissing = (orders, missingByKey) => {
+  const left = new Map([...missingByKey].filter(([, q]) => q > 0));
+  const result = new Map();
+  for (const order of [...orders].reverse()) {
+    for (const l of order.lines) {
+      const key = l.sku || `id:${l.productId}`;
+      const missing = left.get(key) || 0;
+      if (missing <= 0) continue;
+      const qty = Math.min(missing, l.qty);
+      left.set(key, missing - qty);
+      if (!result.has(order.orderNumber)) result.set(order.orderNumber, []);
+      result.get(order.orderNumber).push({ key, sku: l.sku || null, name: l.name, qty });
+    }
+  }
+  return result;
+};
+
+module.exports = { BUCKETS, allocateStock, physicalFromBms, planWaves, chunk, waveNumber, aggregateWaveLines, allocateMissing };

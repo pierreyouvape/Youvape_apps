@@ -1,6 +1,7 @@
 const pool = require('../config/database');
 const pickingModel = require('../models/pickingModel');
 const pickingPdaModel = require('../models/pickingPdaModel');
+const pickingPackingModel = require('../models/pickingPackingModel');
 const pickingSyncService = require('../services/pickingSyncService');
 const { buildWavePdf, buildWavesPdf } = require('../services/pickingPdf');
 const shippingMethodMapModel = require('../models/shippingMethodMapModel');
@@ -220,7 +221,20 @@ const releaseWave = handle(async (req, res) => {
   res.json({ success: true });
 });
 
+// ── Packing (lot 4) ─────────────────────────────────────────────────────────
+
+const packingInfo = handle(async (req, res) => {
+  res.json(await pickingPackingModel.getPackingInfo(req.params.orderNumber));
+});
+
+const packingIncident = (action) => handle(async (req, res) => {
+  res.json(await pickingPackingModel.recordIncident(req.params.orderNumber, action, req.user));
+});
+
 module.exports = {
+  packingInfo,
+  packingIncomplete: packingIncident('incomplete'),
+  packingSetAside: packingIncident('set_aside'),
   pdaListWaves,
   pdaFindWave,
   pdaGetWave,

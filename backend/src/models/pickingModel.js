@@ -24,6 +24,13 @@ const TAGS = Object.freeze({
   NOT_SYNCED: 'commande_absente'
 });
 
+// Une commande est expédiée quand notre packing l'a étiquetée, ou quand BMS ne
+// la compte plus à expédier (expédiée par BMS, ou annulée).
+const SHIPPED_SQL = `(
+  EXISTS (SELECT 1 FROM shipment_labels sl WHERE sl.order_number = wo.order_number AND sl.status = 'active')
+  OR NOT EXISTS (SELECT 1 FROM picking_bms_orders b WHERE b.order_number = wo.order_number)
+)`;
+
 const httpError = (status, message) => Object.assign(new Error(message), { statusCode: status });
 
 const blank = (v) => !String(v ?? '').trim();
@@ -387,6 +394,8 @@ const listWaves = async (tab) => {
             w.printed_at, w.print_count, pu.name AS printed_by,
             au.name AS assigned_to, w.picked_at, ku.name AS picked_by,
             count(wo.order_number)::int AS orders,
+            count(wo.order_number) FILTER (WHERE ${SHIPPED_SQL})::int AS shipped,
+            max(w.closed_at) AS closed_at,
             COALESCE(array_agg(DISTINCT m.carrier_code || ':' || m.account_code)
                      FILTER (WHERE m.carrier_code IS NOT NULL), '{}') AS carriers
        FROM picking_waves w
@@ -418,6 +427,8 @@ const listWaves = async (tab) => {
     pickedAt: r.picked_at,
     pickedBy: r.picked_by,
     orders: r.orders,
+    shipped: r.shipped,
+    closedAt: r.closed_at,
     carriers: r.carriers.map(c => {
       const [carrierCode, accountCode] = c.split(':');
       return { carrierCode, accountCode };
@@ -594,6 +605,37 @@ const markPrinted = async (id, userId) => {
   );
 };
 
+// ── Fin de vague (lot 4) ───────────────────────────────────────────────────
+
+/**
+ * Clôture les vagues dont toutes les commandes encore dedans sont expédiées,
+ * et libère leurs commandes. Appelée après chaque relevé BMS : c'est lui qui
+ * dit ce qui reste à expédier.
+ *
+ * @returns {Promise<string[]>} numéros des vagues clôturées
+ */
+const closeShippedWaves = async () => {
+  const { rows } = await pool.query(
+    `WITH done AS (
+       SELECT w.id
+         FROM picking_waves w
+        WHERE w.status IN ('new', 'picking', 'picked')
+          AND NOT EXISTS (SELECT 1 FROM picking_wave_orders wo
+                           WHERE wo.wave_id = w.id AND wo.active AND NOT ${SHIPPED_SQL})
+     ), closed AS (
+       UPDATE picking_waves w SET status = 'closed', closed_at = NOW()
+         FROM done WHERE w.id = done.id
+       RETURNING w.id, w.wave_number
+     ), freed AS (
+       UPDATE picking_wave_orders wo SET active = false
+         FROM closed WHERE wo.wave_id = closed.id AND wo.active
+       RETURNING wo.wave_id
+     )
+     SELECT wave_number FROM closed`
+  );
+  return rows.map(r => r.wave_number);
+};
+
 module.exports = {
   TAGS,
   BLOCKED,
@@ -617,5 +659,6 @@ module.exports = {
   getWave,
   cancelWave,
   getWavePrintData,
-  markPrinted
+  markPrinted,
+  closeShippedWaves
 };
