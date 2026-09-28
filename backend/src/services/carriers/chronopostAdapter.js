@@ -440,7 +440,7 @@ const buildLabelPayload = ({ orderNumber, receiver = {}, account, weightGrams, o
       ['length', 1],
       ['width', 1]
     ])}</skybillValue>`
-    + `<skybillParamsValue>${champs([['mode', s.output_format || 'THE']])}</skybillParamsValue>`
+    + `<skybillParamsValue>${champs([['mode', s.output_format || FORMAT_DEFAUT]])}</skybillParamsValue>`
     + champs([
       ['password', c.password],
       ['numberOfParcel', 1]
@@ -557,9 +557,16 @@ const resolveWeight = async ({ pool, orderNumber }) => {
 // premier tirage sur l'Intermec, qui perdait environ 1 mm de chaque côté.
 const MARGE_LATERALE_DEFAUT = 2;
 
-// Modes de sortie PDF de l'API : A4 avec preuve de dépôt, A4 sans, thermique
-// 10x15. Le tamponnage du numéro de commande exige un PDF : un ZPL serait payé
-// puis impossible à enregistrer.
+const FORMAT_DEFAUT = 'Z2D';
+
+// Modes de sortie de l'API que l'app sait tamponner et réimprimer :
+//   - ZPL (`Z2D` 203 dpi, `ZPL` 300 dpi) : l'étiquette native du rouleau 10 × 15,
+//     celle que BMS imprime depuis toujours. AutoPrint reconnaît le ZPL à son
+//     contenu (`^XA`) et l'envoie tel quel à l'imprimante ;
+//   - PDF (`THE` thermique, rendu en A4 ; `PDF` / `SPD` A4 laser).
+// Choix du 28/09/2026 : ZPL 203 dpi, la résolution des Intermec et de la Zebra
+// ZD230. Le PDF « thermique » sortait en A4 et devait être réduit.
+const FORMATS_ZPL = new Set(['Z2D', 'ZPL']);
 const FORMATS_PDF = new Set(['PDF', 'SPD', 'THE']);
 
 /**
@@ -570,11 +577,11 @@ const FORMATS_PDF = new Set(['PDF', 'SPD', 'THE']);
  */
 const createLabel = async ({ orderNumber, receiver, account, weightGrams, options = {} }) => {
   assertAccountComplete(account, { credentials: ['account_number', 'password'] });
-  const format = account.settings.output_format || 'THE';
-  if (!FORMATS_PDF.has(format)) {
+  const format = account.settings.output_format || FORMAT_DEFAUT;
+  if (!FORMATS_ZPL.has(format) && !FORMATS_PDF.has(format)) {
     refus(
-      `Contrat Chronopost : le format d'étiquette « ${format} » n'est pas un PDF. L'app ne sait `
-      + `tamponner et réimprimer que du PDF (THE, PDF ou SPD).`,
+      `Contrat Chronopost : format d'étiquette « ${format} » inconnu. L'app sait tamponner et `
+      + `réimprimer Z2D ou ZPL (ZPL), THE, PDF ou SPD (PDF).`,
       500
     );
   }
@@ -625,14 +632,18 @@ const createLabel = async ({ orderNumber, receiver, account, weightGrams, option
     throw err;
   }
 
-  // Le mode thermique rend une page A4 : on la ramène sur un vrai 10 × 15 avec
-  // une marge latérale, sinon l'Intermec rogne les bords (cf. fitToLabelPage).
+  // Le ZPL part tel quel : c'est déjà l'étiquette du rouleau. Le numéro de
+  // commande y est ajouté plus loin (labelPdf.stampOrderNumber sait le faire).
   let pdfBase64 = pdf.replace(/\s+/g, '');
-  if (format === 'THE') {
-    const marge = account.settings.label_side_margin_mm;
-    pdfBase64 = await fitToLabelPage(pdfBase64, marge === undefined || marge === '' ? MARGE_LATERALE_DEFAUT : Number(marge));
+  if (FORMATS_PDF.has(format)) {
+    // Le mode thermique rend une page A4 : on la ramène sur un vrai 10 × 15 avec
+    // une marge latérale, sinon l'Intermec rogne les bords (cf. fitToLabelPage).
+    if (format === 'THE') {
+      const marge = account.settings.label_side_margin_mm;
+      pdfBase64 = await fitToLabelPage(pdfBase64, marge === undefined || marge === '' ? MARGE_LATERALE_DEFAUT : Number(marge));
+    }
+    pdfBase64 = await shiftContentDown(pdfBase64, Number(account.settings.label_top_offset_mm || 0));
   }
-  pdfBase64 = await shiftContentDown(pdfBase64, Number(account.settings.label_top_offset_mm || 0));
 
   return {
     carrierOrderId: reservation,
@@ -720,7 +731,7 @@ const ACCOUNT_FIELDS = {
     { key: 'sender.phone',        label: 'Téléphone',           group: 'Expéditeur' },
 
     // Avancés : valeurs par défaut de l'adaptateur si le champ reste vide.
-    { key: 'output_format',       label: "Format d'étiquette (THE = PDF thermique 10x15, PDF, SPD)", advanced: true, placeholder: 'THE' },
+    { key: 'output_format',       label: "Format d'étiquette (Z2D = ZPL 203 dpi ; THE = PDF thermique ; PDF, SPD = A4)", advanced: true, placeholder: 'Z2D' },
     { key: 'label_side_margin_mm', label: "Marge gauche/droite de l'étiquette 10x15 (mm)", advanced: true, placeholder: '2' },
     { key: 'label_top_offset_mm', label: "Décalage de l'étiquette vers le bas (mm)", advanced: true, placeholder: '0' },
     { key: 'sub_account',         label: 'Sous-compte',        advanced: true, placeholder: '0' },

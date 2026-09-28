@@ -14,12 +14,54 @@
 const { PDFDocument, StandardFonts } = require('pdf-lib');
 
 /**
+ * L'étiquette est-elle du ZPL (programme d'imprimante) plutôt qu'un PDF ?
+ * Même règle qu'AutoPrint, qui choisit l'impression d'après le CONTENU : pas
+ * d'en-tête `%PDF` et une commande `^XA` en tête de fichier.
+ *
+ * @param {Buffer} bytes
+ * @returns {boolean}
+ */
+const estZpl = (bytes) => {
+  const debut = bytes.slice(0, 200).toString('latin1');
+  return !debut.startsWith('%PDF') && /\^XA/.test(debut);
+};
+
+// Position du numéro de commande sur une étiquette ZPL Chronopost 203 dpi : en
+// bas à gauche, sur la ligne des chiffres du code-barres, qui commencent à
+// x = 190 (relevé sur une étiquette Chronopost imprimée par BMS). « #1263675 »
+// en police 0 de 22 points tient dans les 160 points libres.
+const ZPL_TAMPON = { x: 30, y: 1162, taille: 22 };
+
+/**
+ * Ajoute le numéro de commande à une étiquette ZPL, juste avant sa fin (`^XZ`).
+ * Le reste du fichier est laissé octet pour octet : un ZPL peut contenir des
+ * images binaires (`^GFA`) qu'un transcodage casserait.
+ *
+ * @param {Buffer} bytes
+ * @param {string|number} orderNumber
+ * @returns {Buffer}
+ */
+const stampZpl = (bytes, orderNumber) => {
+  const ref = String(orderNumber).replace(/[^0-9A-Za-z-]/g, '');
+  const texte = bytes.toString('latin1');
+  const fin = texte.lastIndexOf('^XZ');
+  if (fin < 0) return bytes;
+  const { x, y, taille } = ZPL_TAMPON;
+  const champ = `^FO${x},${y}^A0N,${taille},${taille}^FD#${ref}^FS\n`;
+  return Buffer.concat([bytes.slice(0, fin), Buffer.from(champ, 'latin1'), bytes.slice(fin)]);
+};
+
+/**
+ * Tamponne le PDF — ou le ZPL, reconnu à son contenu.
+ *
  * @param {string} pdfBase64 - étiquette renvoyée par le transporteur
  * @param {string|number} orderNumber - référence à imprimer, préfixée d'un « # »
  * @returns {Promise<string>} le PDF tamponné, en base64
  */
 const stampOrderNumber = async (pdfBase64, orderNumber) => {
   const pdfBytes = Buffer.from(pdfBase64, 'base64');
+  if (estZpl(pdfBytes)) return stampZpl(pdfBytes, orderNumber).toString('base64');
+
   const pdfDoc = await PDFDocument.load(pdfBytes);
   const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
   const page = pdfDoc.getPages()[0];
@@ -106,4 +148,4 @@ const fitToLabelPage = async (pdfBase64, margeMm = 2) => {
   return Buffer.from(await out.save()).toString('base64');
 };
 
-module.exports = { stampOrderNumber, shiftContentDown, fitToLabelPage };
+module.exports = { stampOrderNumber, shiftContentDown, fitToLabelPage, estZpl };

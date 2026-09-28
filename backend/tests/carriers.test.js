@@ -1621,7 +1621,7 @@ test('requête : identifiants, poids en kg, ordre du schéma, XML échappé', ()
   assert.ok(xml.includes('<password>secret</password>'));
   assert.ok(xml.includes('<weight>0.480</weight><weightUnit>KGM</weightUnit>'));
   assert.ok(xml.includes('<numberOfParcel>1</numberOfParcel>'));
-  assert.ok(xml.includes('<mode>THE</mode>'));
+  assert.ok(xml.includes('<mode>Z2D</mode>'), 'ZPL 203 dpi par défaut');
   assert.ok(xml.includes('Durand et Fils'));
   // xs:sequence : l'en-tête avant l'expéditeur, le colis avant ses paramètres.
   const ordre = ['headerValue', 'shipperValue', 'customerValue', 'recipientValue', 'refValue', 'skybillValue', 'skybillParamsValue', '<password>', 'numberOfParcel']
@@ -1691,12 +1691,20 @@ const chronoEntree = (over = {}) => ({
   options: { deliveryMode: 'relais', relayPoint: POINT_854AF, saturdayDelivery: true }, ...over
 });
 
-testEnSerie('Chronopost : réservation puis PDF, numéro de colis, samedi enregistré, libellé BMS', async () => {
+// Début et fin d'une vraie étiquette ZPL Chronopost (imprimée par BMS, 03/2026).
+const ZPL_CHRONO = '^XA\n^FO10 ,48 ^GB780,655,3 ^FS\n'
+  + '^FO190,1160^ARN,20,20^FD0093 600X R583 9766 6061 3349 901F^FS\n'
+  + '^LRY^FO585,48^GB100,385,205,^FS^LRN\n^XZ\n';
+
+testEnSerie('Chronopost : réservation puis ZPL, numéro de colis, samedi enregistré, libellé BMS', async () => {
   simulerChrono(
     [200, soap('<errorCode>0</errorCode><reservationNumber>R123</reservationNumber><resultParcelValue><skybillNumber>XS486204123FR</skybillNumber></resultParcelValue>')],
-    [200, soap(`<errorCode>0</errorCode><skybill>${VRAI_PDF.toString('base64')}</skybill>`, 'getReservedSkybillWithTypeAndModeResponse')]
+    [200, soap(`<errorCode>0</errorCode><skybill>${Buffer.from(ZPL_CHRONO).toString('base64')}</skybill>`, 'getReservedSkybillWithTypeAndModeResponse')]
   );
   const r = await chrono.createLabel(chronoEntree());
+  assert.ok(chronoAppels[1].body.includes('<mode>Z2D</mode>'), 'le PDF est relu dans le mode de création');
+  // Le ZPL part tel quel : c'est déjà l'étiquette du rouleau.
+  assert.strictEqual(Buffer.from(r.pdfBase64, 'base64').toString(), ZPL_CHRONO);
   assert.strictEqual(chronoAppels.length, 2);
   assert.ok(chronoAppels[0].body.includes('shippingMultiParcelWithReservationV3'));
   assert.ok(chronoAppels[1].body.includes('<reservationNumber>R123</reservationNumber>'));
@@ -1704,9 +1712,26 @@ testEnSerie('Chronopost : réservation puis PDF, numéro de colis, samedi enregi
   assert.strictEqual(r.carrierOrderId, 'R123');
   assert.strictEqual(r.methodCode, '86-SAMEDI');
   assert.strictEqual(r.bmsShipmentTitle, 'Chrono Relais FR - Livraison en point relais en France');
-  // Mode thermique : ramené sur un vrai 10 × 15.
+});
+
+testEnSerie('Chronopost en PDF thermique (THE) : ramené sur un vrai 10 × 15', async () => {
+  simulerChrono(
+    [200, soap('<errorCode>0</errorCode><reservationNumber>R124</reservationNumber><resultParcelValue><skybillNumber>XS2FR</skybillNumber></resultParcelValue>')],
+    [200, soap(`<errorCode>0</errorCode><skybill>${VRAI_PDF.toString('base64')}</skybill>`, 'x')]
+  );
+  const r = await chrono.createLabel(chronoEntree({ account: { ...CHRONO_ACCOUNT, settings: { ...CHRONO_ACCOUNT.settings, output_format: 'THE' } } }));
   const page = (await PDFDocument.load(Buffer.from(r.pdfBase64, 'base64'))).getPage(0);
   assert.ok(Math.abs(page.getWidth() - 283.46) < 0.1 && Math.abs(page.getHeight() - 425.2) < 0.1, 'pas un 10 x 15');
+});
+
+testEnSerie('ZPL : le n° de commande est ajouté juste avant ^XZ, le reste intact', async () => {
+  const { stampOrderNumber, estZpl } = require('../src/services/carriers/labelPdf');
+  const sortie = Buffer.from(await stampOrderNumber(Buffer.from(ZPL_CHRONO).toString('base64'), '1263675'), 'base64').toString();
+  assert.ok(sortie.startsWith(ZPL_CHRONO.slice(0, ZPL_CHRONO.lastIndexOf('^XZ'))));
+  assert.ok(sortie.includes('^FO30,1162^A0N,22,22^FD#1263675^FS'));
+  assert.ok(sortie.trimEnd().endsWith('^XZ'));
+  assert.strictEqual(estZpl(Buffer.from(ZPL_CHRONO)), true);
+  assert.strictEqual(estZpl(VRAI_PDF), false);
 });
 
 testEnSerie('Chronopost : 2Shop France, libellé 2Shop Direct, pas de samedi', async () => {
@@ -1776,11 +1801,11 @@ testEnSerie('Chronopost : annulation, et refus rendu avec le message de Chronopo
   await assert.rejects(chrono.cancelLabel({ label, account: CHRONO_ACCOUNT }), /code 3 : the parcel isn't candidate to cancel/);
 });
 
-testEnSerie('Chronopost : format non PDF refusé avant tout appel', async () => {
+testEnSerie('Chronopost : format inconnu refusé avant tout appel', async () => {
   simulerChrono();
   await assert.rejects(
-    chrono.createLabel(chronoEntree({ account: { ...CHRONO_ACCOUNT, settings: { ...CHRONO_ACCOUNT.settings, output_format: 'Z2D' } } })),
-    /pas un PDF/
+    chrono.createLabel(chronoEntree({ account: { ...CHRONO_ACCOUNT, settings: { ...CHRONO_ACCOUNT.settings, output_format: 'XML' } } })),
+    /inconnu/
   );
   assert.strictEqual(chronoAppels.length, 0);
 });

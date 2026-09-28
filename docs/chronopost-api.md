@@ -69,8 +69,16 @@ commande.
 
 ## Format
 
-`mode` = `THE` (PDF thermique 10x15) par défaut ; `PDF` / `SPD` en A4. Pas de ZPL : le numéro
-de commande est tamponné sur le PDF. Fichier `chronopost_<n°>.pdf`.
+**ZPL 203 dpi (`Z2D`) par défaut depuis le 28/09/2026** — l'étiquette native du rouleau 10x15,
+celle que BMS imprime (780 points de large). AutoPrint reconnaît le ZPL à son contenu (`^XA`)
+et l'envoie tel quel à l'imprimante, quel que soit le nom du fichier (`chronopost_<n°>.pdf`).
+Le n° de commande est inséré avant `^XZ` (`^FO30,1162`, à gauche des chiffres du code-barres).
+Un ZPL ne s'ouvre pas dans un lecteur PDF.
+
+`THE` (PDF « thermique ») rend en réalité une page **A4** : l'app la ramène sur 10x15 avec 2 mm
+de marge (`label_side_margin_mm`). `PDF` / `SPD` : A4 laser. Le format est figé à la création
+du colis : `getReservedSkybillWithTypeAndMode` ne rend que le mode d'origine (code 29 sinon).
+Réglage : `output_format` du contrat, sans redéploiement.
 
 ## Bordereau
 
