@@ -103,8 +103,7 @@ function buildClaimMessage({ comparison, invoice = {}, order = {}, supplier = {}
     + `${claimLines.length} ligne${pluriel} facturée${pluriel} au-dessus du tarif convenu `
     + 'à la commande :';
   const bilan = `Soit ${fmtEur(total)} HT de trop sur cette facture.`;
-  const demande = 'Pouvez-vous établir un avoir correspondant, ou me confirmer le nouveau tarif '
-    + 's’il s’agit d’une évolution de prix de votre côté ?';
+  const demande = 'Pouvez-vous établir un avoir correspondant svp ?';
 
   const body = [
     hello,
