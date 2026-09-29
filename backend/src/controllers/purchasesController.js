@@ -41,9 +41,14 @@ const purchasesController = {
       // - Si un produit est 'simple' → le retourner
       // - Si un produit est 'variable' → NE PAS le retourner (on veut ses variants)
       // - Si un produit est 'variation' → le retourner
+      // La MARQUE et la SOUS-MARQUE sont cherchables : on commande souvent « tout
+      // le Liquideo » ou « les Wpuff », pas un nom de recette précis. Une
+      // déclinaison ne les porte pas — elles vivent sur le parent variable — d'où
+      // les quatre colonnes.
       const { clause, params: searchParams, nextIndex } = buildSearchCondition(
         searchTerm,
-        ['p.post_title', 'p.sku', 'parent.post_title'],
+        ['p.post_title', 'p.sku', 'parent.post_title',
+         'p.brand', 'p.sub_brand', 'parent.brand', 'parent.sub_brand'],
         1
       );
 

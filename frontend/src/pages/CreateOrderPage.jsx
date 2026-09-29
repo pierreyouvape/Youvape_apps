@@ -1,4 +1,4 @@
-import { useState, useEffect, useContext } from 'react';
+import { useState, useEffect, useContext, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { AuthContext } from '../context/AuthContext';
@@ -14,6 +14,11 @@ const CreateOrderPage = () => {
 
   const [suppliers, setSuppliers] = useState([]);
   const [supplierId, setSupplierId] = useState('');
+  // Le numéro du bon chez le fournisseur. Saisi ici, il part tel quel dans BMS
+  // comme référence : c'est lui qu'on lira sur la facture, et par lequel le
+  // contrôle de facture retombera sur la commande.
+  const [orderNumber, setOrderNumber] = useState('');
+  const searchBoxRef = useRef(null);
   const [productSearch, setProductSearch] = useState('');
   const [searchResults, setSearchResults] = useState([]);
   const [searchLoading, setSearchLoading] = useState(false);
@@ -70,6 +75,18 @@ const CreateOrderPage = () => {
       }
     }, 300));
   };
+
+  // Une liste de résultats qui ne se ferme pas recouvre le reste de l'écran.
+  // Un clic ailleurs la referme, comme partout.
+  useEffect(() => {
+    const dehors = (e) => {
+      if (searchBoxRef.current && !searchBoxRef.current.contains(e.target)) {
+        setSearchResults([]);
+      }
+    };
+    document.addEventListener('mousedown', dehors);
+    return () => document.removeEventListener('mousedown', dehors);
+  }, []);
 
   /**
    * Ajoute un produit, éventuellement sous une RÉFÉRENCE PRÉCISE du fournisseur.
@@ -157,6 +174,7 @@ const CreateOrderPage = () => {
       }));
 
       const response = await axios.post(`${API_URL}/purchases/orders`, {
+        order_number: orderNumber.trim() || undefined,
         supplier_id: parseInt(supplierId),
         items,
         send_to_bms: sendToBMS
@@ -208,7 +226,19 @@ const CreateOrderPage = () => {
     }
   };
 
+  // Ce qu'on commande en LOTS, et ce que ça fait en PIÈCES — les deux comptent,
+  // et « 10 » tout seul ne dit pas lequel des deux on lit.
   const totalQty = orderItems.reduce((sum, item) => sum + item.qty_ordered, 0);
+  const totalPieces = orderItems.reduce(
+    (sum, item) => sum + item.qty_ordered * (parseInt(item.units_per_qty, 10) || 1), 0,
+  );
+  // Le prix saisi est celui du LOT quand la ligne en porte un : le total de
+  // ligne est donc quantité × prix, sans reconversion.
+  const totalHT = orderItems.reduce(
+    (sum, item) => sum + (parseFloat(item.unit_price) || 0) * item.qty_ordered, 0,
+  );
+  const totalTTC = totalHT * 1.2;
+  const eur = (n) => `${n.toFixed(2).replace('.', ',')} €`;
 
   return (
     <AppShell currentPath="/purchases">
@@ -248,6 +278,21 @@ const CreateOrderPage = () => {
               <option key={s.id} value={s.id}>{s.name}</option>
             ))}
           </select>
+
+          {/* Le numéro du bon chez le fournisseur. Il part tel quel dans BMS
+              comme référence : c'est lui qu'on lira sur la facture, et par lui
+              que le contrôle de facture retombera sur cette commande. Laissé
+              vide, un numéro est engendré. */}
+          <label style={{ display: 'block', marginTop: '18px', marginBottom: '8px', fontWeight: 600, fontSize: '14px' }}>
+            Numéro de commande
+          </label>
+          <input
+            type="text"
+            value={orderNumber}
+            onChange={e => setOrderNumber(e.target.value)}
+            placeholder="Celui du fournisseur — laissez vide pour en engendrer un"
+            style={{ width: '100%', maxWidth: '400px', padding: '12px', borderRadius: '6px', border: '1px solid #ddd', fontSize: '15px' }}
+          />
         </div>
 
         {/* Product search */}
@@ -257,13 +302,14 @@ const CreateOrderPage = () => {
           </label>
           {!supplierId && (
             <div style={{ marginBottom: '10px', color: '#b45309', fontSize: '14px' }}>
-              Sélectionnez d'abord un fournisseur : seuls ses produits seront proposés.
+              Sélectionnez d'abord un fournisseur : son tarif et ses conditionnements
+              prérempliront les lignes.
             </div>
           )}
-          <div style={{ position: 'relative' }}>
+          <div style={{ position: 'relative' }} ref={searchBoxRef}>
             <input
               type="text"
-              placeholder={supplierId ? 'Rechercher un produit de ce fournisseur...' : 'Sélectionnez un fournisseur d\'abord'}
+              placeholder={supplierId ? 'Nom, SKU, marque ou sous-marque — tous fournisseurs' : 'Sélectionnez un fournisseur d\'abord'}
               value={productSearch}
               onChange={e => handleProductSearch(e.target.value)}
               disabled={!supplierId}
@@ -362,7 +408,8 @@ const CreateOrderPage = () => {
             </h3>
             {orderItems.length > 0 && (
               <span style={{ color: '#666' }}>
-                Total: <strong>{totalQty}</strong> unités
+                <strong>{totalQty}</strong> lot{totalQty > 1 ? 's' : ''} ·{' '}
+                <strong>{totalPieces}</strong> pièce{totalPieces > 1 ? 's' : ''}
               </span>
             )}
           </div>
@@ -473,6 +520,29 @@ const CreateOrderPage = () => {
             </table>
           )}
         </div>
+
+        {/* Les totaux. Le TTC parce que c'est ce qu'on paiera, le HT parce que
+            c'est ce que la facture comparera. */}
+        {orderItems.length > 0 && (
+          <div style={{ background: 'white', borderRadius: '8px', padding: '16px 20px',
+            marginBottom: '20px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
+            display: 'flex', justifyContent: 'flex-end', gap: '32px', flexWrap: 'wrap' }}>
+            <div style={{ textAlign: 'right' }}>
+              <div style={{ fontSize: '12px', color: '#666', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Pièces</div>
+              <div style={{ fontSize: '19px', fontWeight: 700 }}>{totalPieces}</div>
+            </div>
+            <div style={{ textAlign: 'right' }}>
+              <div style={{ fontSize: '12px', color: '#666', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Total HT</div>
+              <div style={{ fontSize: '19px', fontWeight: 700 }}>{eur(totalHT)}</div>
+            </div>
+            <div style={{ textAlign: 'right' }}>
+              <div style={{ fontSize: '12px', color: '#666', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                Total TTC <span style={{ textTransform: 'none' }}>(TVA 20 %)</span>
+              </div>
+              <div style={{ fontSize: '19px', fontWeight: 700, color: '#135E84' }}>{eur(totalTTC)}</div>
+            </div>
+          </div>
+        )}
 
         {/* Actions */}
         <div style={{ background: 'white', borderRadius: '8px', padding: '20px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
