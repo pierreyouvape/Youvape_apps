@@ -13,8 +13,21 @@ router.get('/suppliers', checkReceptionRead, receptionController.getSuppliersWit
 router.get('/orders', checkReceptionRead, receptionController.getPendingOrders);
 router.get('/orders/:id', checkReceptionRead, receptionController.getOrderDetail);
 
-// La validation d'une réception (écriture BMS) n'est pas encore exposée : la
-// sémantique de POST /v2/purchase-orders/{id}/receive sur les lignes en pack
-// n'est pas vérifiée en réel (cf. docs/bms/PROMPT-api-bms.md).
+const checkReceptionWrite = checkPermission('reception', 'write');
+
+// La réception : compter, puis envoyer.
+//
+// La sémantique de POST /v2/purchase-orders/{id}/receive a été vérifiée en réel
+// le 29/09/2026 sur la commande d'essai « Test Maxime » (BMS 121392). Deux
+// enseignements décisifs, portés par receptionSessionModel :
+//   • `items[].id` est l'identifiant de LA LIGNE chez BMS, ni le SKU ni le produit ;
+//   • `qty` est un nombre de PIÈCES, jamais de packs — envoyer 1 sur une ligne
+//     « 1 pack de 5 » met UNE pièce en stock tout en soldant la ligne et en
+//     passant le bon en « complete ».
+router.get('/orders/:id/session', checkReceptionRead, receptionController.getSession);
+router.post('/orders/:id/session', checkReceptionWrite, receptionController.openSession);
+router.put('/sessions/:sessionId/counts/:itemId', checkReceptionWrite, receptionController.setCount);
+router.post('/sessions/:sessionId/validate', checkReceptionWrite, receptionController.validateSession);
+router.post('/sessions/:sessionId/abandon', checkReceptionWrite, receptionController.abandonSession);
 
 module.exports = router;

@@ -1,5 +1,6 @@
 const pool = require('../config/database');
 const supplierRefModel = require('../models/supplierRefModel');
+const sessionModel = require('../models/receptionSessionModel');
 
 
 // Commandes considérées « en attente de réception » : envoyée au fournisseur,
@@ -206,3 +207,79 @@ exports.getOrderDetail = async (req, res) => {
   }
 };
 
+
+
+/* ─── La réception elle-même : compter, puis envoyer ──────────────────────── */
+
+/**
+ * GET /api/reception/orders/:id/session
+ * La session en cours, s'il y en a une. Sans effet de bord : ouvrir une session
+ * interroge BMS, on ne le fait pas juste parce qu'un écran s'affiche.
+ */
+exports.getSession = async (req, res) => {
+  try {
+    const session = await sessionModel.getOpenSession(parseInt(req.params.id, 10));
+    res.json({ session });
+  } catch (e) {
+    console.error('[reception] session :', e.message);
+    res.status(500).json({ error: e.message || 'Erreur serveur' });
+  }
+};
+
+/** POST /api/reception/orders/:id/session — ouvre, ou rend celle déjà ouverte. */
+exports.openSession = async (req, res) => {
+  try {
+    const session = await sessionModel.openSession(
+      parseInt(req.params.id, 10),
+      req.user && req.user.id,
+    );
+    res.status(201).json({ session });
+  } catch (e) {
+    console.error('[reception] ouverture :', e.message);
+    res.status(500).json({ error: e.message || 'Erreur serveur' });
+  }
+};
+
+/**
+ * PUT /api/reception/sessions/:sessionId/counts/:itemId  { units }
+ * Appelé à chaque scan : c'est ce qui rend le comptage reprenable.
+ */
+exports.setCount = async (req, res) => {
+  try {
+    const ligne = await sessionModel.setCount(
+      parseInt(req.params.sessionId, 10),
+      parseInt(req.params.itemId, 10),
+      req.body.units,
+    );
+    res.json(ligne);
+  } catch (e) {
+    res.status(400).json({ error: e.message || 'Erreur serveur' });
+  }
+};
+
+/**
+ * POST /api/reception/sessions/:sessionId/validate
+ * Envoie la réception à BMS. IRRÉVERSIBLE : aucune route BMS ne sait l'annuler.
+ */
+exports.validateSession = async (req, res) => {
+  try {
+    const resultat = await sessionModel.validateSession(
+      parseInt(req.params.sessionId, 10),
+      req.user && req.user.id,
+    );
+    res.json(resultat);
+  } catch (e) {
+    console.error('[reception] validation :', e.message);
+    res.status(400).json({ error: e.message || 'Erreur serveur' });
+  }
+};
+
+/** POST /api/reception/sessions/:sessionId/abandon */
+exports.abandonSession = async (req, res) => {
+  try {
+    const ok = await sessionModel.abandonSession(parseInt(req.params.sessionId, 10));
+    res.json({ abandoned: ok });
+  } catch (e) {
+    res.status(400).json({ error: e.message || 'Erreur serveur' });
+  }
+};
