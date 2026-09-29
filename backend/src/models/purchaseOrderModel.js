@@ -165,8 +165,11 @@ const purchaseOrderModel = {
   buildBmsItems: (items, skipPackQty) => (items || [])
     .filter((item) => item.sku)
     .map((item) => {
-      // Le conditionnement que BMS IMPOSERA, quoi qu'on envoie.
-      const packCatalogue = parseInt(item.pack_qty, 10) || 1;
+      // Le conditionnement que BMS IMPOSERA, quoi qu'on envoie. Surtout pas
+      // celui qu'on a choisi pour la ligne : BMS n'en veut pas, et l'utiliser
+      // ici exprimerait le prix du lot dans la mauvaise unité.
+      const packCatalogue = parseInt(item.catalogue_pack_qty, 10)
+        || parseInt(item.pack_qty, 10) || 1;
 
       // Le nôtre : celui choisi à la ligne, sinon la convention du fournisseur.
       const choisi = purchaseOrderModel.packChoisi(item.units_per_qty);
@@ -323,7 +326,12 @@ const purchaseOrderModel = {
             sku: sku,
             unit_price: unitPrice,
             discount_percent: discountPercent,
-            pack_qty: packQty
+            pack_qty: packQty,
+            // Le conditionnement du CATALOGUE, distinct de celui qu'on a choisi.
+            // BMS imposera le sien quoi qu'on envoie : c'est lui qui sert à
+            // exprimer le prix du lot. Les confondre remettait le prix à la
+            // pièce dans une case de prix de lot — 3,00 € au lieu de 15,00 €.
+            catalogue_pack_qty: parseInt(product.pack_qty) || 1
           });
 
           totalItems++;

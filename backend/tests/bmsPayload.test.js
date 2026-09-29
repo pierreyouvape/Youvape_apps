@@ -45,7 +45,8 @@ test('app, « par 1 » sur un produit conditionné par 5 : le prix suit le catal
   // Commande « Test Maxime 3 », FRM 0mg. Dix pièces à 1,50 € la pièce.
   // Envoyer 1,50 € tel quel donnait 2 lots à 1,50 € = 3,00 € au lieu de 15,00 €.
   const [l] = buildBmsItems(
-    [{ sku: '9736-9852', qty_ordered: 10, unit_price: 1.5, pack_qty: 5, units_per_qty: 1 }], true,
+    [{ sku: '9736-9852', qty_ordered: 10, unit_price: 1.5,
+       pack_qty: 1, catalogue_pack_qty: 5, units_per_qty: 1 }], true,
   );
   assert.strictEqual(l.qty, 10, 'dix pièces commandées, dix pièces envoyées');
   assert.strictEqual(l.price, 7.5, 'le lot de 5 vaut 7,50 € puisque la pièce vaut 1,50 €');
@@ -56,7 +57,8 @@ test('app, « par 1 » sur un produit conditionné par 5 : le prix suit le catal
 test('app, « par 5 » : 10 lots de 5 à 7,50 € → 50 pièces, 75,00 €', () => {
   // Même commande, FRM 12mg. Celle-là passait déjà.
   const [l] = buildBmsItems(
-    [{ sku: '9736-993233', qty_ordered: 10, unit_price: 7.5, pack_qty: 5, units_per_qty: 5 }], true,
+    [{ sku: '9736-993233', qty_ordered: 10, unit_price: 7.5,
+       pack_qty: 5, catalogue_pack_qty: 5, units_per_qty: 5 }], true,
   );
   assert.strictEqual(l.qty, 50);
   assert.strictEqual(l.price, 7.5);
@@ -67,10 +69,10 @@ test('l\'argent envoyé égale toujours l\'argent commandé', () => {
   // L'invariant qui aurait attrapé le bug tout seul : quoi qu'il arrive,
   // pièces × prix de la pièce doit retomber sur qty_ordered × unit_price.
   const lignes = [
-    { sku: 'A', qty_ordered: 10, unit_price: 1.5, pack_qty: 5, units_per_qty: 1 },
+    { sku: 'A', qty_ordered: 10, unit_price: 1.5, pack_qty: 1, catalogue_pack_qty: 5, units_per_qty: 1 },
     { sku: 'B', qty_ordered: 10, unit_price: 7.5, pack_qty: 5, units_per_qty: 5 },
     { sku: 'C', qty_ordered: 1, unit_price: 3.92, pack_qty: 1, units_per_qty: 1 },
-    { sku: 'D', qty_ordered: 2, unit_price: 12, pack_qty: 3, units_per_qty: 6 },
+    { sku: 'D', qty_ordered: 2, unit_price: 12, pack_qty: 6, catalogue_pack_qty: 3, units_per_qty: 6 },
   ];
   for (const ligne of lignes) {
     const [l] = buildBmsItems([ligne], false);
@@ -83,7 +85,7 @@ test('l\'argent envoyé égale toujours l\'argent commandé', () => {
 
 test('« par 1 » contredit le catalogue sur les PIÈCES, pas sur le prix du lot', () => {
   const [l] = buildBmsItems(
-    [{ sku: 'X', qty_ordered: 30, unit_price: 2, pack_qty: 6, units_per_qty: 1 }], false,
+    [{ sku: 'X', qty_ordered: 30, unit_price: 2, pack_qty: 1, catalogue_pack_qty: 6, units_per_qty: 1 }], false,
   );
   assert.strictEqual(l.qty, 30, 'trente pièces, pas trente lots');
   assert.strictEqual(l.price, 12, 'le lot catalogue de 6 vaut 12 € si la pièce vaut 2 €');

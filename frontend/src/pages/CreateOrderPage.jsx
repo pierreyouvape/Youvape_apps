@@ -99,7 +99,16 @@ const CreateOrderPage = () => {
    * existe : c'est ce qui a été réellement payé, pas un souvenir.
    */
   const addProductToOrder = (product, ref = null) => {
-    const packQty = ref ? ref.pack_qty : (product.supplier_pack_qty || 1);
+    // LE CONDITIONNEMENT VIENT DU CATALOGUE, et de nulle part ailleurs : BMS
+    // impose le sien quoi qu'on lui envoie (vérifié le 29/09/2026 — dix pièces
+    // envoyées « par 1 » sont ressorties en deux lots de 5). Laisser croire
+    // qu'on le choisit fabriquerait un écart entre l'écran et BMS.
+    const packQty = product.supplier_pack_qty || 1;
+    // Une référence peut être conditionnée autrement que le lien catalogue :
+    // on ramène alors son tarif au lot que BMS utilisera.
+    const prixRef = ref && ref.pack_price != null
+      ? (ref.pack_price / (ref.pack_qty || 1)) * packQty
+      : null;
     setOrderItems(prev => [...prev, {
       product_id: product.id,
       product_name: product.post_title,
@@ -108,8 +117,8 @@ const CreateOrderPage = () => {
       supplier_sku: ref ? ref.supplier_sku : null,
       qty_ordered: 1,
       units_per_qty: packQty,
-      unit_price: ref && ref.pack_price != null
-        ? ref.pack_price
+      unit_price: prixRef != null
+        ? Math.round(prixRef * 100) / 100
         : (product.supplier_price != null ? product.supplier_price : (product.cost_price || null)),
       priceRetained: Boolean(ref && ref.retained_at),
     }]);
@@ -120,32 +129,6 @@ const CreateOrderPage = () => {
   // Remove product from order
   const removeProductFromOrder = (productId) => {
     setOrderItems(prev => prev.filter(item => item.product_id !== productId));
-  };
-
-  // Conditionnement de la ligne : « 4 × 5 = 20 pièces ». Quatre tout seul ne
-  // dit pas si ce sont quatre flacons ou quatre cartons.
-  const updateItemPack = (productId, packQty) => {
-    setOrderItems(prev => prev.map(item =>
-      item.product_id === productId
-        ? { ...item, units_per_qty: Math.max(1, parseInt(packQty, 10) || 1) }
-        : item
-    ));
-  };
-
-  // Update quantity
-  const updateItemQty = (productId, qty) => {
-    setOrderItems(prev => prev.map(item =>
-      item.product_id === productId ? { ...item, qty_ordered: Math.max(1, qty) } : item
-    ));
-  };
-
-  // Update unit price
-  const updateItemPrice = (productId, price) => {
-    setOrderItems(prev => prev.map(item =>
-      item.product_id === productId
-        ? { ...item, unit_price: price === '' ? null : Math.max(0, price) }
-        : item
-    ));
   };
 
   // Create order
@@ -426,7 +409,8 @@ const CreateOrderPage = () => {
                   <th style={{ textAlign: 'left', padding: '10px', fontWeight: 600, width: '120px' }}>SKU</th>
                   <th style={{ textAlign: 'center', padding: '10px', fontWeight: 600, width: '80px' }}>Stock</th>
                   <th style={{ textAlign: 'center', padding: '10px', fontWeight: 600, width: '110px' }}>Quantité</th>
-                  <th style={{ textAlign: 'center', padding: '10px', fontWeight: 600, width: '90px' }}>Par</th>
+                  <th style={{ textAlign: 'center', padding: '10px', fontWeight: 600, width: '90px' }}
+                      title="Conditionnement du catalogue — BMS impose le sien">Par</th>
                   <th style={{ textAlign: 'left', padding: '10px', fontWeight: 600, width: '150px' }}>Soit</th>
                   <th style={{ textAlign: 'center', padding: '10px', fontWeight: 600, width: '130px' }}>Prix du lot (€)</th>
                   <th style={{ textAlign: 'right', padding: '10px', fontWeight: 600, width: '110px' }}>Total ligne</th>
@@ -452,15 +436,13 @@ const CreateOrderPage = () => {
                         style={{ width: '80px', padding: '8px', borderRadius: '4px', border: '1px solid #ddd', textAlign: 'center', fontSize: '14px' }}
                       />
                     </td>
-                    <td style={{ padding: '12px 10px', textAlign: 'center' }}>
-                      <input
-                        type="number"
-                        min="1"
-                        value={item.units_per_qty ?? 1}
-                        onChange={e => updateItemPack(item.product_id, e.target.value)}
-                        title="Nombre de pièces par lot commandé"
-                        style={{ width: '70px', padding: '8px', borderRadius: '4px', border: '1px solid #ddd', textAlign: 'center', fontSize: '14px' }}
-                      />
+                    {/* Non modifiable : BMS impose le conditionnement du
+                        catalogue quoi qu'on lui envoie. Un champ éditable ici
+                        promettrait un contrôle qu'on n'a pas, et ferait
+                        diverger l'écran de ce que BMS enregistre. */}
+                    <td style={{ padding: '12px 10px', textAlign: 'center', fontSize: '14px' }}>
+                      <strong>{item.units_per_qty || 1}</strong>
+                      <div style={{ fontSize: '11px', color: '#888', marginTop: '2px' }}>catalogue</div>
                     </td>
                     {/* « 4 » tout seul ne dit pas si ce sont quatre flacons ou
                         quatre cartons. Ce sont les pièces qui partent chez le
@@ -539,6 +521,18 @@ const CreateOrderPage = () => {
             </table>
           )}
         </div>
+
+        {/* BMS compte en lots, nous en pièces : l'écran le dit plutôt que de
+            laisser découvrir l'écart dans BMS. Les montants, eux, concordent. */}
+        {orderItems.some(i => (i.units_per_qty || 1) > 1) && (
+          <div style={{ background: '#FDF3E2', border: '1px solid #E28F00', borderRadius: '8px',
+            padding: '11px 15px', marginBottom: '20px', fontSize: '13px', color: '#7C4A00' }}>
+            BMS affichera ces lignes en <strong>lots</strong>, pas en pièces — 10 pièces d'un
+            produit conditionné par 5 y deviennent 2 lots de 5. Les quantités et les montants
+            sont identiques ; c'est la présentation qui diffère. Le conditionnement vient du
+            catalogue et n'est pas modifiable ici : BMS impose le sien.
+          </div>
+        )}
 
         {/* Les totaux. Le TTC parce que c'est ce qu'on paiera, le HT parce que
             c'est ce que la facture comparera. */}
