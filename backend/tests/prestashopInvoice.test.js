@@ -161,6 +161,21 @@ test('le mode de règlement imprimé est remonté, sans lui faire confiance', ()
   assert.strictEqual(parsed.etasty.statedPaymentMethod, 'Transfert bancaire');
 });
 
+test('référence coupée par le saut de page : les deux moitiés se retrouvent (Curieux #FA063171)', () => {
+  // Dans ce document, « SPE- » ferme la page 1 et « MACA-50-00MG » ouvre la
+  // page 2 ; le reste de la cellule (désignation ET montants) s'intercale entre
+  // les deux moitiés. Sans réparation, les deux lignes de 37,26 € sortaient sous
+  // « 50ml » et « MACA-50-00MG » — donc quatre fausses anomalies en face de la
+  // commande : deux articles facturés non commandés, deux commandés non facturés.
+  const r = parse('curieux-FA063171.txt');
+  const refs = r.lines.map((l) => l.ref);
+
+  assert.ok(refs.includes('SPE-MACA-50-00MG'), `SPE-MACA-50-00MG absent : ${refs.join(', ')}`);
+  assert.ok(refs.includes('SPE-SOUL-50-00MG'), `SPE-SOUL-50-00MG absent : ${refs.join(', ')}`);
+  assert.ok(!refs.includes('50ml'), 'un fragment de désignation sert encore de référence');
+  assert.ok(!refs.includes('MACA-50-00MG'), 'la moitié orpheline subsiste');
+});
+
 if (failures > 0) {
   console.log(`\n${failures} test(s) en échec.`);
   process.exit(1);

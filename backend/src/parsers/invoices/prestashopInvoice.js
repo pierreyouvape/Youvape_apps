@@ -126,7 +126,10 @@ function readColumns(nums) {
  */
 function splitRef(block) {
   const tokens = block.replace(/\s+/g, ' ').trim().split(' ').filter(Boolean);
-  const start = tokens.findIndex((t) => /\d/.test(t));
+  // Une référence ne porte jamais de parenthèse. Sans ce garde-fou, le résidu de
+  // désignation « : 00mg) » laissé par un saut de page devenait la référence de
+  // la ligne suivante chez Curieux.
+  const start = tokens.findIndex((t) => /\d/.test(t) && !/[()]/.test(t));
   if (start === -1) return { ref: null, label: tokens.join(' ') || null };
 
   let ref = tokens[start];
@@ -235,7 +238,56 @@ function stripPageFurniture(text, header) {
 
   // Le mobilier retiré, les deux morceaux redeviennent voisins : on rejoue le
   // recollage sur tirets, exactement comme cleanPdfText le fait à l'ingestion.
-  return lignes.join('\n').replace(/([A-Za-z0-9])-\n+\s*([A-Za-z0-9])/g, '$1-$2');
+  return rejoinRefSplitByPageBreak(
+    lignes.join('\n').replace(/([A-Za-z0-9])-\n+\s*([A-Za-z0-9])/g, '$1-$2'),
+  );
+}
+
+/**
+ * Référence coupée en deux PAR le saut de page, à l'horizontale.
+ *
+ * Sur la facture Curieux #FA063171, la dernière ligne de la page 1 est :
+ *
+ *     SPE- SPEAKEASY - Mac Allister 50ml (Taux de nicotine 20 % 6,21 € 6 37,26 €
+ *
+ * et la page 2 s'ouvre par « MACA-50-00MG : 00mg) ». La référence
+ * SPE-MACA-50-00MG est donc coupée, mais pas en fin de ligne : le reste de la
+ * cellule (désignation ET montants) s'intercale entre ses deux moitiés, donc le
+ * recollage sur tirets ci-dessus ne peut rien.
+ *
+ * Résultat sans réparation : deux lignes de 37,26 € portant les références
+ * « 50ml » et « MACA-50-00MG », et donc quatre fausses anomalies — deux articles
+ * facturés non commandés en face de deux commandés non facturés.
+ *
+ * On remonte donc la moitié orpheline, et on la retire de là où elle était.
+ */
+function rejoinRefSplitByPageBreak(text) {
+  const lignes = text.split('\n');
+
+  for (let i = 0; i < lignes.length; i += 1) {
+    // Une tête de référence : majuscules, finie par un tiret, sans chiffre, et
+    // suivie d'autre chose sur la même ligne (sinon ce n'est pas une coupure).
+    const tete = lignes[i].trim().match(/^([A-Z][A-Z-]*-)\s+\S/);
+    if (!tete) continue;
+
+    // La moitié manquante ouvre l'une des lignes suivantes. On ne cherche pas
+    // loin : au-delà, ce n'est plus la même cellule.
+    for (let j = i + 1; j < Math.min(i + 4, lignes.length); j += 1) {
+      const suite = lignes[j].trim().match(/^([A-Z0-9][A-Z0-9-]*)(\s|$)/);
+      if (!suite) continue;
+
+      const recollee = tete[1] + suite[1];
+      // Une référence complète porte un chiffre et a du corps : sans ces deux
+      // conditions on recollerait deux mots d'une désignation.
+      if (!/\d/.test(recollee) || recollee.length < 6) break;
+
+      lignes[i] = lignes[i].replace(tete[1], recollee);
+      lignes[j] = lignes[j].replace(suite[1], '').trim();
+      break;
+    }
+  }
+
+  return lignes.join('\n');
 }
 
 function parseInvoice(rawText) {
