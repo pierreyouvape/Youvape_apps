@@ -548,9 +548,7 @@ const getWavePrintData = async (id) => {
                 'name', oi.order_item_name, 'qty', oi.qty, 'line_total', oi.line_total,
                 'product_id', oi.product_id, 'pid', p.id, 'sku', p.sku, 'type', p.product_type,
                 'brand', COALESCE(p.brand, pp.brand), 'sub_brand', COALESCE(p.sub_brand, pp.sub_brand),
-                'location', p.shelf_location, 'woosb_ids', p.woosb_ids,
-                'barcodes', (SELECT json_agg(pb.barcode ORDER BY pb.id) FROM product_barcodes pb
-                              WHERE pb.product_id = p.id AND pb.type = 'unit')
+                'location', p.shelf_location, 'woosb_ids', p.woosb_ids
               ) ORDER BY oi.id)
                FROM order_items oi
                LEFT JOIN products p ON p.wp_product_id = COALESCE(NULLIF(oi.variation_id, 0), oi.product_id)

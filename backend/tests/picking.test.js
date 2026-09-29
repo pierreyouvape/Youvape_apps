@@ -12,7 +12,7 @@
  *   - le découpage « Mondial Relay par 10 » : 58 commandes → 5×10 + 8 ;
  *   - l'ordre de passage des règles : une commande prise ne l'est pas deux fois ;
  *   - le bon de préparation (lot 2) : packs éclatés en composants, reste à
- *     expédier, choix du code-barres, et un vrai PDF produit (« Ω » compris) ;
+ *     expédier, et un vrai PDF produit (« Ω » compris) ;
  *   - le PDA (lot 3) : produits cumulés sur toute la vague, triés par emplacement.
  */
 
@@ -226,12 +226,6 @@ test('buildPrintLines : le pack disparaît, ses composants portent son nom', () 
   assert.strictEqual(booster.name, 'Booster YouBoost 50/50');
   assert.strictEqual(booster.packName, 'Lot 10 Boosters YouBoost 50/50');
   assert.strictEqual(booster.qty, 10);
-});
-
-test('buildPrintLines : le code-barres imprimé est le premier EAN-13', () => {
-  const booster = buildPrintLines(PACK_ITEMS).find(l => l.sku === '11152');
-  assert.strictEqual(booster.barcode, '3701418826240');
-  assert.strictEqual(buildPrintLines(PACK_ITEMS).find(l => l.sku === '1138995-1139001').barcode, null);
 });
 
 test('buildPrintLines : seul le reste à expédier est à préparer, le reste est « déjà expédié »', () => {

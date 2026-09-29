@@ -8,8 +8,9 @@
  * Trois choix, pour que le document serve en rayon :
  *   - une vraie police embarquée (Inter) : la police standard du PDF ne sait
  *     pas écrire « Ω », présent dans 413 noms de produits (résistances) ;
- *   - de vrais codes-barres (bwip-js) : EAN-13 pour les produits quand le code
- *     en est un, Code 128 pour le reste et pour les n° de commande et de vague ;
+ *   - des codes-barres (bwip-js, Code 128) pour les SEULS n° de vague et de
+ *     commande. Plus aucun code-barres produit sur le bon (29/09/2026) : ils
+ *     provoquaient des scans involontaires ;
  *   - les articles triés par emplacement : l'ordre du chemin en rayon.
  */
 
@@ -81,16 +82,9 @@ const fmtDate = (d, parisWallTime = false) => {
   return new Intl.DateTimeFormat('fr-FR', opts).format(new Date(d)).replace(' ', ' à ');
 };
 
-/** Code-barres PNG : EAN-13 si le code en est un valide, Code 128 sinon. */
-const barcodePng = async (text, { ean = false, height = 10, scale = 3 } = {}) => {
-  const value = String(text);
-  if (ean && /^\d{13}$/.test(value)) {
-    try {
-      return await bwipjs.toBuffer({ bcid: 'ean13', text: value, scale, height, includetext: true, textsize: 9 });
-    } catch (e) { /* clé de contrôle fausse : repli en Code 128 */ }
-  }
-  return bwipjs.toBuffer({ bcid: 'code128', text: value, scale, height, includetext: ean, textsize: 9 });
-};
+/** Code-barres PNG (Code 128) d'un n° de vague ou de commande. */
+const barcodePng = (text, { height = 10, scale = 3 } = {}) =>
+  bwipjs.toBuffer({ bcid: 'code128', text: String(text), scale, height, includetext: false });
 
 /** Coupe un texte en lignes tenant dans `width`. */
 const wrap = (text, font, size, width, maxLines = 3) => {
@@ -234,8 +228,7 @@ const drawCover = async (doc, f, logo, carrierLogo, wave) => {
 const TABLE = {
   loc: { x: M, w: 58 },
   qty: { x: M + 58, w: 40 },
-  prod: { x: M + 98, w: 270 },
-  bc: { x: M + 368, w: W - 2 * M - 368 },
+  prod: { x: M + 98, w: W - 2 * M - 98 },
 };
 
 /**
@@ -246,7 +239,7 @@ const TABLE = {
  * @param {{carrierCode: ?string, accountCode: ?string}} order.carrier
  * @param {{name, company, address1, address2, postcode, city, country, phone}} order.shipping
  * @param {?{id, name, address, postcode, city, country}} order.relayPoint
- * @param {{location, qty, name, brand, sku, barcode, packName, shipped}[]} order.lines
+ * @param {{location, qty, name, brand, sku, packName, shipped}[]} order.lines
  */
 const drawOrder = async (doc, f, logo, carrierLogo, wave, order, index) => {
   let page = doc.addPage([W, H]);
@@ -315,7 +308,7 @@ const drawOrder = async (doc, f, logo, carrierLogo, wave, order, index) => {
   let y = top - boxH - 22;
   const header = (p, yy) => {
     p.drawRectangle({ x: M, y: yy - 6, width: W - 2 * M, height: 20, color: COL.violetL });
-    [['EMPL.', TABLE.loc], ['QTÉ', TABLE.qty], ['PRODUIT', TABLE.prod], ['CODE-BARRES', TABLE.bc]].forEach(([t, c]) => {
+    [['EMPL.', TABLE.loc], ['QTÉ', TABLE.qty], ['PRODUIT', TABLE.prod]].forEach(([t, c]) => {
       p.drawText(t, { x: c.x + 6, y: yy, size: 8, font: f.bold, color: COL.violet });
     });
     return yy - 12;
@@ -329,7 +322,7 @@ const drawOrder = async (doc, f, logo, carrierLogo, wave, order, index) => {
     const l = lines[i];
     const nameLines = wrap(l.name, f.semi, 10, TABLE.prod.w - 12, 2);
     const meta = [l.brand, l.sku && `SKU ${l.sku}`].filter(Boolean).join(' · ');
-    const rowH = Math.max(52, 14 + nameLines.length * 13 + 12 + (l.packName ? 12 : 0) + (l.shipped ? 11 : 0));
+    const rowH = Math.max(36, 14 + nameLines.length * 13 + 12 + (l.packName ? 12 : 0) + (l.shipped ? 11 : 0));
 
     if (y - rowH < M + 30) {
       page = doc.addPage([W, H]);
@@ -371,14 +364,6 @@ const drawOrder = async (doc, f, logo, carrierLogo, wave, order, index) => {
       page.drawText(`Déjà expédié : ${l.shipped}`, { x: TABLE.prod.x + 6, y: ty, size: 8.5, font: f.regular, color: COL.light });
     }
 
-    if (l.barcode) {
-      const png = await doc.embedPng(await barcodePng(l.barcode, { ean: true, height: 9, scale: 2 }));
-      const h = Math.min(rowH - 12, 38);
-      const w = Math.min(TABLE.bc.w - 12, h * png.width / png.height);
-      page.drawImage(png, { x: TABLE.bc.x + 6, y: mid - (w * png.height / png.width) / 2, width: w, height: w * png.height / png.width });
-    } else {
-      page.drawText('Pas de code-barres', { x: TABLE.bc.x + 6, y: mid - 3, size: 8.5, font: f.regular, color: COL.light });
-    }
     y -= rowH;
   }
 
@@ -406,11 +391,10 @@ const footer = (page, f, left, right) => {
  *   - Quantité = ce qui RESTE à expédier d'après BMS (`remainingBySku`), le
  *     reste est affiché « Déjà expédié ». Sans relevé BMS pour la commande
  *     (null), on imprime tout ce qui a été commandé.
- *   - Code-barres : le premier EAN-13 du produit, sinon son premier code.
  *
  * @param {object[]} items - lignes `order_items` jointes au produit
  * @param {?Map<string, number>} remainingBySku
- * @returns {{productId, location, qty, name, brand, sku, barcode, packName, shipped}[]}
+ * @returns {{productId, location, qty, name, brand, sku, packName, shipped}[]}
  */
 const buildPrintLines = (items, remainingBySku = null) => {
   const packs = items.filter(i => i.type === 'woosb');
@@ -433,7 +417,6 @@ const buildPrintLines = (items, remainingBySku = null) => {
       remaining.set(i.sku, left - qty);
     }
     if (qty <= 0) continue;
-    const barcodes = i.barcodes || [];
     lines.push({
       productId: i.pid || null,
       location: i.location || null,
@@ -441,7 +424,6 @@ const buildPrintLines = (items, remainingBySku = null) => {
       name: String(i.name || '').replace(/\s+dans le pack\s*:.*$/i, '').trim(),
       brand: [i.brand, i.sub_brand].filter(Boolean).join(' — '),
       sku: i.sku || null,
-      barcode: barcodes.find(b => /^\d{13}$/.test(b)) || barcodes[0] || null,
       packName: packOf(i),
       shipped: ordered - qty
     });
