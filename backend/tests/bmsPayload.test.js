@@ -59,12 +59,38 @@ test('le conditionnement de la ligne l\'emporte sur celui du catalogue', () => {
   assert.strictEqual(l.price, 20);
 });
 
-test('units_per_qty à 1 ne change rien : c\'est une ligne à l\'unité', () => {
+test('« par 1 » CONTREDIT le catalogue, il ne s\'y soumet pas', () => {
+  // Le catalogue conditionne par 6 ; la ligne dit « par 1 ». C'est la ligne qui
+  // gagne : 30 pièces à 2 €, et BMS reçoit un conditionnement de 1.
   const [l] = buildBmsItems(
     [{ sku: 'X', qty_ordered: 30, unit_price: 2, pack_qty: 6, units_per_qty: 1 }], false,
   );
   assert.strictEqual(l.qty, 30);
-  assert.strictEqual(l.price, 12);
+  assert.strictEqual(l.price, 2);
+  assert.strictEqual(l.pack_qty, 1);
+});
+
+test('« par 1 » tient même chez un fournisseur compté au pack (bug LCA du 29/09/2026)', () => {
+  // Commande « test Maxime 2 » : 5 FRM 3mg par 1 à 1,50 €. Le test « > 1 »
+  // écartait l'intention, la ligne retombait sur le pack catalogue de LCA et
+  // BMS recevait 25 pièces en packs de 5 — cinq fois la commande.
+  const [l] = buildBmsItems(
+    [{ sku: '9736-9850', qty_ordered: 5, unit_price: 1.5, pack_qty: 5, units_per_qty: 1 }], true,
+  );
+  assert.strictEqual(l.qty, 5, 'cinq pièces commandées, cinq pièces envoyées');
+  assert.strictEqual(l.pack_qty, 1);
+  assert.strictEqual(l.price, 1.5);
+});
+
+test('sans units_per_qty, le catalogue décide comme avant', () => {
+  // Chemin de l'import PDF : rien n'est imposé, la convention fournisseur joue.
+  const [aUnite] = buildBmsItems([{ sku: 'X', qty_ordered: 30, unit_price: 2, pack_qty: 6 }], false);
+  assert.strictEqual(aUnite.qty, 30);
+  assert.strictEqual(aUnite.price, 12);
+
+  const [auPack] = buildBmsItems([{ sku: 'X', qty_ordered: 1, unit_price: 54, pack_qty: 200 }], true);
+  assert.strictEqual(auPack.qty, 200);
+  assert.strictEqual(auPack.price, 54);
 });
 
 test('une ligne sans SKU ne part pas : BMS la refuserait en bloc', () => {

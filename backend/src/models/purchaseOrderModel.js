@@ -148,14 +148,33 @@ const purchaseOrderModel = {
    * 5 ») est une ligne au pack, quel que soit le fournisseur — c'est ce qui
    * permet de commander un conditionnement inhabituel sans mentir à BMS.
    */
+  /**
+   * Le conditionnement explicitement demandé pour une ligne, ou null s'il ne
+   * l'est pas.
+   *
+   * « Non fourni » et « fourni, et il vaut 1 » ne veulent pas dire la même
+   * chose : le premier laisse décider le catalogue, le second le contredit.
+   * Les confondre a fait partir 25 pièces là où 5 étaient commandées.
+   */
+  packChoisi: (valeur) => {
+    if (valeur === undefined || valeur === null || valeur === '') return null;
+    const n = parseInt(valeur, 10);
+    return Number.isFinite(n) && n >= 1 ? n : null;
+  },
+
   buildBmsItems: (items, skipPackQty) => (items || [])
     .filter((item) => item.sku)
     .map((item) => {
       // Le conditionnement CHOISI POUR CETTE LIGNE l'emporte sur celui du
       // catalogue : c'est lui qu'on a commandé.
-      const explicite = parseInt(item.units_per_qty, 10) || 0;
-      const packQty = explicite > 1 ? explicite : (parseInt(item.pack_qty, 10) || 1);
-      const auPack = explicite > 1 || skipPackQty;
+      //
+      // Y COMPRIS QUAND IL VAUT 1. Le test était « > 1 », si bien qu'une ligne
+      // dite « par 1 » retombait sur le conditionnement catalogue : chez LCA,
+      // commander 5 pièces de FRM 3mg en partait 25, en packs de 5. L'intention
+      // était écrasée par la valeur qu'elle voulait justement contredire.
+      const explicite = purchaseOrderModel.packChoisi(item.units_per_qty);
+      const packQty = explicite !== null ? explicite : (parseInt(item.pack_qty, 10) || 1);
+      const auPack = explicite !== null ? explicite > 1 : Boolean(skipPackQty);
       const qtyBase = parseInt(item.qty_ordered, 10) || 0;
 
       const bmsItem = {
@@ -260,12 +279,13 @@ const purchaseOrderModel = {
           }
           const internalProductId = product.id;
           const sku = product.sku || null;
-          // Conditionnement CHOISI pour cette ligne (« 4 packs de 5 »), sinon
-          // celui du catalogue. L'invariant qty_ordered × units_per_qty = pièces
-          // vaut dans les deux cas — c'est lui que lisent la réception, la
-          // valorisation de stock et le fil de vie.
-          const packChoisi = parseInt(item.units_per_qty, 10) || 0;
-          const packQty = packChoisi > 1 ? packChoisi : (parseInt(product.pack_qty) || 1);
+          // Conditionnement CHOISI pour cette ligne (« 4 packs de 5 », ou « par
+          // 1 »), sinon celui du catalogue. L'invariant
+          // qty_ordered × units_per_qty = pièces vaut dans les deux cas — c'est
+          // lui que lisent la réception, la valorisation de stock et le fil de
+          // vie.
+          const packChoisi = purchaseOrderModel.packChoisi(item.units_per_qty);
+          const packQty = packChoisi !== null ? packChoisi : (parseInt(product.pack_qty) || 1);
           // Si unit_price est fourni (meme 0), l'utiliser. Sinon fallback sur wc_cog_cost.
           // 'unit_price' in item permet de distinguer "non fourni" de "explicitement null" (import PDF sans prix)
           const unitPrice = ('unit_price' in item && item.unit_price !== undefined)
@@ -296,7 +316,7 @@ const purchaseOrderModel = {
             item.stock_before || null,
             item.theoretical_need || null,
             item.supposed_need || null,
-            (packChoisi > 1 || orderInPacks) ? packQty : 1
+            packChoisi !== null ? packChoisi : (orderInPacks ? packQty : 1)
           ]);
 
           itemsWithSku.push({
