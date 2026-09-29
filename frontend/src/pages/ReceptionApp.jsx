@@ -314,6 +314,68 @@ function CountingScreen({ token, order, items, onBack, onReload }) {
   const itemsRef = useRef(items);
   useEffect(() => { itemsRef.current = items; }, [items]);
 
+  // ─── La session de réception ────────────────────────────────────────────
+  // Le comptage vivait ici et nulle part ailleurs : une tablette qui se
+  // verrouille au milieu d'une commande de 1 159 articles faisait tout perdre.
+  // Il est désormais enregistré à chaque scan et repris à l'ouverture.
+  const [session, setSession] = useState(null);
+  const [sessionError, setSessionError] = useState(null);
+  const [sending, setSending] = useState(false);
+  const [sendResult, setSendResult] = useState(null);
+
+  // Unités de comptage → PIÈCES. C'est en pièces que BMS raisonne, et lui
+  // envoyer des cartons solderait la ligne avec une seule pièce en stock.
+  const toUnits = useCallback(
+    (item, n) => (n || 0) * (item && item.pack_size > 1 ? item.pack_size : 1),
+    [],
+  );
+
+  useEffect(() => {
+    let vivant = true;
+    (async () => {
+      try {
+        const { data } = await axios.post(
+          `${API_URL}/reception/orders/${order.id}/session`, {}, authHeaders(token),
+        );
+        if (!vivant || !data.session) return;
+        setSession(data.session);
+        // Reprise : la base garde des PIÈCES, l'écran compte en cartons.
+        const repris = {};
+        for (const c of data.session.counts || []) {
+          const it = itemsRef.current.find((i) => i.id === c.purchase_order_item_id);
+          const pack = it && it.pack_size > 1 ? it.pack_size : 1;
+          repris[c.purchase_order_item_id] = Math.round((c.units_counted || 0) / pack);
+        }
+        if (Object.values(repris).some((v) => v > 0)) {
+          setCounts((prev) => ({ ...prev, ...repris }));
+          flash('Comptage repris là où il s\'était arrêté');
+        }
+      } catch (e) {
+        if (vivant) setSessionError(e.response?.data?.error || e.message);
+      }
+    })();
+    return () => { vivant = false; };
+  }, [order.id, token]);
+
+  // Enregistrement différé : un scan doit rester instantané, la base suit.
+  // 600 ms, parce qu'un opérateur enchaîne les bips d'un même carton.
+  const enAttente = useRef({});
+  const persistCount = useCallback((itemId, countingUnits) => {
+    if (!session) return;
+    clearTimeout(enAttente.current[itemId]);
+    enAttente.current[itemId] = setTimeout(async () => {
+      const it = itemsRef.current.find((i) => i.id === itemId);
+      try {
+        await axios.put(
+          `${API_URL}/reception/sessions/${session.id}/counts/${itemId}`,
+          { units: toUnits(it, countingUnits) }, authHeaders(token),
+        );
+      } catch {
+        setSessionError('Le comptage de cette ligne n\'a pas pu être enregistré — ne fermez pas l\'écran.');
+      }
+    }, 600);
+  }, [session, token, toUnits]);
+
   const toggleAsk = () => {
     setAskType(prev => {
       const next = !prev;
@@ -328,12 +390,20 @@ function CountingScreen({ token, order, items, onBack, onReload }) {
   };
 
   const addCount = useCallback((itemId, delta) => {
-    setCounts(prev => ({ ...prev, [itemId]: Math.max(0, (prev[itemId] || 0) + delta) }));
-  }, []);
+    setCounts(prev => {
+      const next = Math.max(0, (prev[itemId] || 0) + delta);
+      persistCount(itemId, next);
+      return { ...prev, [itemId]: next };
+    });
+  }, [persistCount]);
 
   const setCount = useCallback((itemId, value) => {
-    setCounts(prev => ({ ...prev, [itemId]: Math.max(0, parseInt(value) || 0) }));
-  }, []);
+    setCounts(prev => {
+      const next = Math.max(0, parseInt(value) || 0);
+      persistCount(itemId, next);
+      return { ...prev, [itemId]: next };
+    });
+  }, [persistCount]);
 
   // Résolution d'un scan, côté client : les codes-barres sont embarqués dans la
   // commande, donc un bip n'entraîne aucun aller-retour réseau.
@@ -404,6 +474,26 @@ function CountingScreen({ token, order, items, onBack, onReload }) {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [handleScan, typeModal, packQtyModal, unknownModal, diffModal]);
+
+  /**
+   * Envoie la réception à BMS. IRRÉVERSIBLE : aucune route BMS ne sait annuler
+   * une réception, d'où la confirmation explicite et le message en cas d'échec
+   * partiel.
+   */
+  const envoyer = async () => {
+    if (!session) { flash('Aucune session de réception ouverte', true); return; }
+    setSending(true);
+    try {
+      const { data } = await axios.post(
+        `${API_URL}/reception/sessions/${session.id}/validate`, {}, authHeaders(token),
+      );
+      setSendResult(data);
+      setDiffModal(false);
+      onReload();
+    } catch (e) {
+      setSessionError(e.response?.data?.error || e.message);
+    } finally { setSending(false); }
+  };
 
   // Enregistre durablement le type d'un code-barre (requalification unité <-> pack)
   const persistBarcode = async (wpProductId, barcode, type, quantity) => {
@@ -485,6 +575,31 @@ function CountingScreen({ token, order, items, onBack, onReload }) {
           </Btn>
         </div>
       </div>
+
+      {/* Ce qui est PARTI dans BMS. Affiché jusqu'à ce qu'on quitte l'écran :
+          une réception ne se rejoue pas, la trace de l'envoi compte. */}
+      {sendResult && (
+        <div style={{ background: C.greenL, border: `1px solid ${C.green}`, borderRadius: 12,
+          padding: '14px 18px', marginBottom: 16, fontSize: 13.5, color: '#14532D' }}>
+          <strong>Réception enregistrée dans BMS.</strong>{' '}
+          {sendResult.sent.reduce((n, l) => n + l.units, 0)} pièces sur {sendResult.sent.length} ligne(s).
+          {sendResult.sent.some((l) => l.over) && (
+            <div style={{ marginTop: 8, color: '#7C2D12' }}>
+              Reçu plus que commandé sur :{' '}
+              {sendResult.sent.filter((l) => l.over)
+                .map((l) => `${l.ref || l.product} (${l.units} pour ${l.expected} attendues)`)
+                .join(', ')}. BMS l'a accepté — à vérifier avec le fournisseur.
+            </div>
+          )}
+        </div>
+      )}
+
+      {sessionError && (
+        <div style={{ background: C.redL, border: `1px solid ${C.red}`, borderRadius: 12,
+          padding: '14px 18px', marginBottom: 16, fontSize: 13.5, color: '#7F1D1D' }}>
+          {sessionError}
+        </div>
+      )}
 
       {/* Zone de scan */}
       <div style={{ background: C.primary, color: '#fff', borderRadius: 12, padding: '16px 20px',
@@ -673,16 +788,22 @@ function CountingScreen({ token, order, items, onBack, onReload }) {
             </>
           )}
 
-          <div style={{ background: C.accentL, border: `1px solid ${C.accent}`, borderRadius: 9,
-            padding: '11px 14px', fontSize: 12.5, color: '#7C4A00', marginBottom: 18 }}>
-            L'envoi vers BMS n'est pas encore activé : la conversion des lignes en carton
-            reste à valider sur une commande de test. Le comptage n'est donc pas enregistré.
+          <div style={{ background: C.redL, border: `1px solid ${C.red}`, borderRadius: 9,
+            padding: '11px 14px', fontSize: 12.5, color: '#7F1D1D', marginBottom: 18 }}>
+            <strong>{totalCounted} pièce{totalCounted > 1 ? 's' : ''}</strong> vont entrer en stock
+            dans BMS. Une réception <strong>ne s'annule pas</strong> : aucune route ne le permet,
+            il faudrait corriger le stock à la main.
           </div>
 
           <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
             <Btn variant="ghost" onClick={() => setDiffModal(false)}>Recompter</Btn>
-            <Btn variant="accent" disabled={!allMotifsSet} title={!allMotifsSet ? 'Renseignez un motif pour chaque manquant' : undefined}>
-              Valider
+            <Btn
+              variant="accent"
+              onClick={envoyer}
+              disabled={!allMotifsSet || sending || !session}
+              title={!allMotifsSet ? 'Renseignez un motif pour chaque manquant' : undefined}
+            >
+              {sending ? 'Envoi…' : `Envoyer ${totalCounted} pièce${totalCounted > 1 ? 's' : ''} à BMS`}
             </Btn>
           </div>
         </Modal>
