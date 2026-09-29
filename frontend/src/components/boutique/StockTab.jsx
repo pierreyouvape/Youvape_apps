@@ -13,7 +13,6 @@ const C = {
 };
 
 const authHeaders = (token) => ({ headers: { Authorization: `Bearer ${token}` } });
-const fmtEur = (n) => (n == null ? '—' : Number(n).toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' }));
 const fmtNum = (n) => (n == null ? '—' : Number(n).toLocaleString('fr-FR', { maximumFractionDigits: 2 }));
 const fmtDateTime = (s) => {
   if (!s) return 'jamais';
@@ -165,23 +164,6 @@ export default function StockTab({ shop, token }) {
   const s = data?.summary;
   const otherLabel = Number(shop.id) === 1 ? 'Castelnau' : 'Montpellier';
   // Cellule stock rapproché (autre boutique / WC) : "—" si non suivi, rouge si négatif
-  // Coût dérivé du site : « — » tant que le lien n'est pas validé dans l'onglet
-  // Rapprochement. L'écart affiché mesure la dérive du tarif caisse.
-  const alignedCell = (r) => {
-    if (r.aligned_cost == null) return <span style={{ color: C.greyM }}>—</span>;
-    const delta = r.cost ? (r.aligned_cost - r.cost) / r.cost : null;
-    return (
-      <span title={r.link_pack_qty > 1 ? `Prix du site ÷ ${r.link_pack_qty} (pack)` : 'Prix du site'}>
-        <span style={{ fontWeight: 600 }}>{fmtEur(r.aligned_cost)}</span>
-        {r.link_pack_qty > 1 && <span style={{ color: C.accent, fontSize: 11, fontWeight: 700 }}> ×{r.link_pack_qty}</span>}
-        {delta != null && Math.abs(delta) >= 0.05 && (
-          <div style={{ fontSize: 11, fontWeight: 700, color: delta > 0 ? C.green : C.red }}>
-            {delta > 0 ? '▲' : '▼'} {Math.abs(Math.round(delta * 100))}%
-          </div>
-        )}
-      </span>
-    );
-  };
   const crossCell = (v) => (v == null ? <span style={{ color: C.greyM }}>—</span>
     : <span style={{ color: v < 0 ? C.red : v === 0 ? C.orange : C.dark, fontWeight: v ? 600 : 400 }}>{fmtNum(v)}</span>);
 
@@ -194,10 +176,6 @@ export default function StockTab({ shop, token }) {
              active={!kpiFilter && !onlyInStock}
              onClick={() => { setKpiFilter(null); setOnlyInStock(false); }} />
         <Kpi label="Unités en stock" value={s ? fmtNum(s.total_units) : '—'} color={C.dark} />
-        <Kpi label="Valeur du stock" value={s ? fmtEur(s.total_value) : '—'} sub="aux prix d'achat caisse" color={C.primary} />
-        <Kpi label="Valeur alignée" value={s ? fmtEur(s.total_value_aligned) : '—'}
-             sub={s ? `${fmtNum(s.aligned_products)} réf. sur prix du site` : null}
-             color={s && s.total_value_aligned < s.total_value ? C.red : C.green} />
         <Kpi label="Ruptures" value={s ? fmtNum(s.out_of_stock) : '—'} sub="stock à 0" color={C.orange}
              active={kpiFilter === 'zero'}
              onClick={() => setKpiFilter((f) => (f === 'zero' ? null : 'zero'))} />
@@ -247,11 +225,6 @@ export default function StockTab({ shop, token }) {
                 <Th onClick={() => toggleSort('category_name')} active={sort.key === 'category_name'} dir={sort.dir}>Catégorie</Th>
                 <Th onClick={() => toggleSort('rack')} active={sort.key === 'rack'} dir={sort.dir}>Rack</Th>
                 <Th align="right" onClick={() => toggleSort('stock')} active={sort.key === 'stock'} dir={sort.dir}>Stock</Th>
-                <Th align="right" onClick={() => toggleSort('cost')} active={sort.key === 'cost'} dir={sort.dir}>Coût HT</Th>
-                <Th align="right" onClick={() => toggleSort('price')} active={sort.key === 'price'} dir={sort.dir}>Prix TTC</Th>
-                <Th align="right" onClick={() => toggleSort('aligned_cost')} active={sort.key === 'aligned_cost'} dir={sort.dir}>Coût aligné</Th>
-                <Th align="right" onClick={() => toggleSort('stock_value')} active={sort.key === 'stock_value'} dir={sort.dir}>Valeur</Th>
-                <Th align="right" onClick={() => toggleSort('aligned_value')} active={sort.key === 'aligned_value'} dir={sort.dir}>Valeur alignée</Th>
                 <Th align="right" onClick={() => toggleSort('other_stock')} active={sort.key === 'other_stock'} dir={sort.dir}>Stock {otherLabel}</Th>
                 <Th align="right" onClick={() => toggleSort('wc_stock')} active={sort.key === 'wc_stock'} dir={sort.dir}>Stock WC</Th>
               </tr>
@@ -260,7 +233,7 @@ export default function StockTab({ shop, token }) {
               {loading ? (
                 <tr><Td style={{ textAlign: 'center', padding: 32, color: C.greyT }} align="center">Chargement…</Td></tr>
               ) : rows.length === 0 ? (
-                <tr><td colSpan={11} style={{ textAlign: 'center', padding: 32, color: C.greyM }}>Aucun produit.</td></tr>
+                <tr><td colSpan={6} style={{ textAlign: 'center', padding: 32, color: C.greyM }}>Aucun produit.</td></tr>
               ) : (
                 rows.map((r, i) => (
                   <tr key={r.product_id} style={{ background: i % 2 ? C.zebra : C.white }}>
@@ -273,13 +246,6 @@ export default function StockTab({ shop, token }) {
                     <Td align="right" bold color={r.stock < 0 ? C.red : r.stock === 0 ? C.orange : C.dark}>
                       {fmtNum(r.stock)}
                       <Delta value={r.stock_delta} />
-                    </Td>
-                    <Td align="right" color={C.greyT}>{r.cost == null ? '—' : fmtEur(r.cost)}</Td>
-                    <Td align="right" color={C.greyT}>{r.price == null ? '—' : fmtEur(r.price)}</Td>
-                    <Td align="right">{alignedCell(r)}</Td>
-                    <Td align="right" bold>{fmtEur(r.stock_value)}</Td>
-                    <Td align="right" bold color={r.aligned_value == null ? C.greyM : C.primary}>
-                      {r.aligned_value == null ? '—' : fmtEur(r.aligned_value)}
                     </Td>
                     <Td align="right">{crossCell(r.other_stock)}</Td>
                     <Td align="right">{crossCell(r.wc_stock)}</Td>
