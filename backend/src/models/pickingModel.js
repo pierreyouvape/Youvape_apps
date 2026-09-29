@@ -620,6 +620,9 @@ const closeShippedWaves = async () => {
        SELECT w.id
          FROM picking_waves w
         WHERE w.status IN ('new', 'picking', 'picked')
+          -- Vagues d'essai (« TEST-… ») : montées sur des commandes déjà
+          -- parties pour tester le PDA, elles se fermeraient dans la minute.
+          AND w.wave_number NOT LIKE 'TEST-%'
           AND NOT EXISTS (SELECT 1 FROM picking_wave_orders wo
                            WHERE wo.wave_id = w.id AND wo.active AND NOT ${SHIPPED_SQL})
      ), closed AS (
