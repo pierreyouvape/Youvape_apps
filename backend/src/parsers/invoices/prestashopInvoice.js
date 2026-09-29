@@ -205,6 +205,25 @@ function parseHeader(text) {
       const m = flat.match(/Total Réductions\s*-?\s*([\d  .,]+)\s*€/i);
       return m ? -Math.abs(toNumber(m[1])) : null;
     })(),
+    // Le DÉTAIL des remises, quand le document le donne. e.tasty imprime un bloc
+    // « Réductions » avec une ligne par promotion :
+    //
+    //     PACK IMP 80 PRDS 50ML - HOUSE OF MAGIC 2026 - 288,00 €
+    //     PACK IMP 1€ 10ML - HOUSE OF MAGIC 2026 - 255,50 €
+    //
+    // Ce ne sont pas deux morceaux d'une remise globale : chacune ne vise qu'un
+    // conditionnement. Les fondre en une seule remise de 543,50 € étalée sur
+    // toutes les lignes fausse le coût réel des deux côtés (cf. invoiceCompare).
+    footerDiscountBreakdown: (() => {
+      const bloc = text.match(/^\s*Réductions?\s*$([\s\S]*?)(?=^\s*(?:Détail des taxes|Total produits)\b)/im);
+      if (!bloc) return [];
+      const out = [];
+      for (const brut of bloc[1].split('\n')) {
+        const m = brut.trim().match(/^(.+?)\s+-\s*([\d  .,]+)\s*€$/);
+        if (m) out.push({ label: m[1].trim(), amount: -Math.abs(toNumber(m[2])) });
+      }
+      return out;
+    })(),
   };
 }
 
@@ -337,13 +356,16 @@ function parseInvoice(rawText) {
   }
 
   if (header.footerDiscount) {
-    lines.push({
-      ref: null,
-      label: 'Remise',
-      qty: 1,
-      lineTotalHt: header.footerDiscount,
-      kind: 'discount',
-    });
+    // Le détail n'est retenu que s'il RETOMBE sur le total annoncé : une
+    // ventilation qui ne fait pas la somme est une ventilation mal lue, et mieux
+    // vaut une remise globale juste qu'un détail faux.
+    const detail = header.footerDiscountBreakdown || [];
+    const somme = round2(detail.reduce((acc, d) => acc + d.amount, 0));
+    const fiable = detail.length > 0 && Math.abs(somme - header.footerDiscount) < 0.01;
+
+    for (const d of (fiable ? detail : [{ label: 'Remise', amount: header.footerDiscount }])) {
+      lines.push({ ref: null, label: d.label, qty: 1, lineTotalHt: d.amount, kind: 'discount' });
+    }
   }
 
   // Un avoir vient en déduction : on le range en négatif, comme les deux autres

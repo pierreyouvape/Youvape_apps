@@ -605,11 +605,23 @@ function ControlTab({ suppliers, mobile, onSaved }) {
             </div>
           )}
 
-          {summary?.hasFooterDiscount && summary.explainedByDiscount > 0 && (
+          {summary?.hasFooterDiscount && (
             <div style={{ padding: 13, background: C.blueL, color: C.blue, borderRadius: 10, fontSize: 13 }}>
-              Ce document porte une remise de pied de <strong>{eur(Math.abs(totals.footerDiscount))}</strong>.
-              Les lignes sont facturées au prix brut : <strong>{eur(summary.explainedByDiscount)}</strong> des
-              écarts de tarif ci-dessous s'expliquent par cette remise et ne sont pas réclamables.
+              Les lignes sont facturées au prix brut, puis{' '}
+              <strong>{eur(Math.abs(totals.footerDiscount))}</strong> sont déduits en pied. Le prix payé n'est
+              donc pas celui des lignes :
+              <ul style={{ margin: '8px 0 0', paddingLeft: 18 }}>
+                {(result.comparison?.lines || []).filter((l) => l.verdict === 'discount').map((l, i) => (
+                  <li key={i} style={{ marginBottom: 3 }}>
+                    <strong>{l.label || 'Remise'}</strong> — {eur(Math.abs(l.invoicedTotal))}
+                    {l.scope?.targeted && l.scope.units > 0 && (
+                      <> sur {l.scope.units} pièces, soit <strong>−{eur(l.scope.perUnit)}</strong> la pièce
+                        {l.scope.unitCost != null && <> → prix réel <strong>{eur(l.scope.unitCost)}</strong></>}
+                      </>
+                    )}
+                  </li>
+                ))}
+              </ul>
             </div>
           )}
 

@@ -120,6 +120,25 @@ function groupByRef(lines) {
  * @param {Object}   [input.options]
  * @param {number}   [input.options.lineThreshold] seuil prix/arrondi (défaut 0,10 €)
  */
+/**
+ * Les lignes qu'une remise vise réellement, ou null si elle est générale.
+ *
+ * Une promotion nomme souvent son périmètre dans son libellé : « PACK IMP 1€
+ * 10ML » ne concerne que les 10 ml. On ne retient ce ciblage que s'il nomme un
+ * conditionnement ET qu'il trouve des lignes — sinon on retombe sur une remise
+ * générale, qui reste le cas le plus fréquent (Cosmer, GFC, Cloud Vapor, LVP).
+ */
+function linesTargetedBy(discountLine, productLines) {
+  const volumes = String(discountLine.label || '').match(/\d+\s*ML\b/gi);
+  if (!volumes) return null;
+
+  const motifs = [...new Set(volumes.map((v) => v.replace(/\s+/g, '').toUpperCase()))]
+    .map((v) => new RegExp(`\\b${v.replace('ML', '')}\\s*ML\\b`, 'i'));
+
+  const cibles = productLines.filter((r) => motifs.some((re) => re.test(r.label || '')));
+  return cibles.length > 0 ? cibles : null;
+}
+
 function compareInvoiceToOrder({ invoice, order, options = {} }) {
   const threshold = Number.isFinite(options.lineThreshold)
     ? options.lineThreshold
@@ -301,23 +320,60 @@ function compareInvoiceToOrder({ invoice, order, options = {} }) {
   // remise globale. Les lignes sont conformes, mais le prix payé ne l'est pas :
   // on répartit la remise au prorata du montant de chaque ligne produit pour
   // obtenir le coût unitaire réel — celui qui doit alimenter un tarif ou un PMP.
-  const footerDiscount = round2(
-    results
-      .filter((r) => r.verdict === 'discount')
-      .reduce((acc, r) => acc + r.invoicedTotal, 0),
-  );
-  const productTotal = round2(
-    results
-      .filter((r) => !['discount', 'shipping', 'other'].includes(r.verdict))
-      .reduce((acc, r) => acc + r.invoicedTotal, 0),
-  );
+  const remises = results.filter((r) => r.verdict === 'discount');
+  const produits = results.filter((r) => !['discount', 'shipping', 'other'].includes(r.verdict));
+
+  const footerDiscount = round2(remises.reduce((acc, r) => acc + r.invoicedTotal, 0));
+  const productTotal = round2(produits.reduce((acc, r) => acc + r.invoicedTotal, 0));
   const discountRate = footerDiscount < 0 && productTotal > 0
     ? Math.abs(footerDiscount) / productTotal
     : 0;
+
+  // Chaque remise a son ASSIETTE. Sur la facture e.tasty FA082519/2026, les deux
+  // promotions ne visent pas les mêmes articles :
+  //
+  //     PACK IMP 1€ 10ML       255,50 €  sur 730 pièces de 10 ml  → 0,35 €/pièce
+  //     PACK IMP 80 PRDS 50ML  288,00 €  sur 160 pièces de 50 ml  → 1,80 €/pièce
+  //
+  // Étalées ensemble au taux global de 29,9 %, elles donnaient 0,95 € pour un
+  // 10 ml facturé 1,00 € et 3,65 € pour un 50 ml facturé 3,40 € : deux coûts de
+  // revient faux, et des lignes présentées comme surfacturées alors qu'elles
+  // sont payées SOUS le prix commandé.
+  const remisePar = new Map();       // toutes remises confondues → coût réel
+  const remiseCibleePar = new Map(); // remises CIBLÉES seulement → plafond
+  for (const d of remises) {
+    const visees = linesTargetedBy(d, produits);
+    const cibles = visees || produits;
+    const assiette = round2(cibles.reduce((acc, r) => acc + r.invoicedTotal, 0));
+    if (assiette <= 0) continue;
+    for (const r of cibles) {
+      const part = Math.abs(d.invoicedTotal) * (r.invoicedTotal / assiette);
+      remisePar.set(r, (remisePar.get(r) || 0) + part);
+      if (visees) remiseCibleePar.set(r, (remiseCibleePar.get(r) || 0) + part);
+    }
+
+    // De quoi expliquer la promotion à l'écran : sur combien de pièces elle
+    // porte, et le prix réellement payé quand toutes ses cibles y arrivent au
+    // même. C'est la réponse à « d'où sort ce prix ».
+    const pieces = cibles.reduce((acc, r) => acc + (Number(r.qtyInvoiced) || 0), 0);
+    const couts = [...new Set(cibles
+      .filter((r) => r.invoicedUnitPrice !== null)
+      .map((r) => Math.round((r.invoicedUnitPrice - Math.abs(d.invoicedTotal) * (r.invoicedTotal / assiette) / (r.qtyInvoiced || 1)) * 100)))];
+    d.scope = {
+      targeted: Boolean(visees),
+      lines: cibles.length,
+      units: pieces,
+      perUnit: pieces > 0 ? round2(Math.abs(d.invoicedTotal) / pieces) : null,
+      unitCost: couts.length === 1 ? couts[0] / 100 : null,
+    };
+  }
+
   for (const r of results) {
+    const remise = remisePar.get(r) || 0;
+    r.discountShare = round2(remise);
     r.effectiveUnitCost = r.invoicedUnitPrice === null
       ? null
-      : r.invoicedUnitPrice * (1 - discountRate);
+      : r.invoicedUnitPrice - (r.qtyInvoiced ? remise / r.qtyInvoiced : 0);
   }
 
   // ─── Ce que la remise de pied explique déjà ───────────────────────────────
@@ -343,9 +399,16 @@ function compareInvoiceToOrder({ invoice, order, options = {} }) {
       // La dernière ligne reçoit le solde : arrondir chaque part séparément
       // ferait « expliquer » 93,57 € par une remise de 93,55 €, et rien n'est
       // plus douteux qu'un total qui dépasse ce qu'il répartit.
-      const part = i === overpriced.length - 1
+      //
+      // Une promotion CIBLÉE ne peut pas expliquer plus que ce qu'elle a donné à
+      // cette ligne : celle qui ne vise que les 10 ml n'explique rien sur un
+      // 50 ml. Une remise GÉNÉRALE, elle, reste volontairement concentrée sur
+      // les lignes en dépassement — c'est ce qui ramène LVP à 0 € réclamable.
+      const plafond = remiseCibleePar.has(r) ? round2(remiseCibleePar.get(r)) : Infinity;
+      const brut = i === overpriced.length - 1
         ? round2(left)
         : Math.min(round2(pool * (r.gapPrice / overpricedTotal)), round2(left));
+      const part = Math.min(brut, plafond, r.gapPrice);
       r.explainedByDiscount = part;
       r.residualGapPrice = round2(r.gapPrice - part);
       left = round2(left - part);
@@ -356,6 +419,26 @@ function compareInvoiceToOrder({ invoice, order, options = {} }) {
     if (r.explainedByDiscount === undefined) {
       r.explainedByDiscount = 0;
       r.residualGapPrice = r.gapPrice;
+    }
+  }
+
+  // ─── Une ligne payée SOUS le prix commandé n'est pas une anomalie ─────────
+  // Sur la facture e.tasty FA082519/2026, les 10 ml sont commandés à 1,29 €,
+  // facturés 1,35 € au brut, et ramenés à 1,00 € par la promotion « PACK IMP 1€
+  // 10ML ». L'écran les affichait en rouge, « Tarif +3,00 € », avec pour
+  // consigne « Réclamer un avoir » — sur des articles payés 29 centimes MOINS
+  // cher que commandé. Réclamer là-dessus, c'est se ridiculiser.
+  for (const r of results) {
+    if (r.verdict !== 'price') continue;
+    // Uniquement une ligne FACTURÉE PLUS CHER qu'une remise a ensuite ramenée
+    // sous le prix commandé. Une ligne simplement moins chère (JoshNoa
+    // josh00009356 : 6,95 € contre 7,00 €) reste un écart de tarif à voir.
+    if (!(r.gapPrice > 0) || !(r.discountShare > 0)) continue;
+    if (Math.abs(r.residualGapPrice) > threshold) continue;
+    if (r.effectiveUnitCost === null || r.expectedUnitPrice === null) continue;
+    if (r.effectiveUnitCost <= r.expectedUnitPrice + 0.005) {
+      r.verdict = 'ok';
+      r.material = false;
     }
   }
 
