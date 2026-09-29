@@ -37,11 +37,20 @@ const lineFromRow = (r) => ({
   qtyManual: r.qty_manual,
   qtyMissing: r.qty_missing,
   done: r.qty_scanned + r.qty_manual + r.qty_missing >= r.qty_needed,
-  hasBarcode: r.has_barcode
+  hasBarcode: r.has_barcode,
+  imageUrl: r.image_url || null
 });
 
+// Code-barres présent et photo du produit (celle de la déclinaison, sinon
+// celle du parent — comme au packing) : on reconnaît l'article avant de lire.
+const LINE_EXTRAS = `
+  EXISTS (SELECT 1 FROM product_barcodes pb WHERE pb.product_id = l.product_id AND pb.type = 'unit') AS has_barcode,
+  (SELECT COALESCE(p.image_url, pp.image_url) FROM products p
+     LEFT JOIN products pp ON pp.wp_product_id = p.wp_parent_id
+    WHERE p.id = l.product_id) AS image_url`;
+
 const LINES_SQL = `
-  SELECT l.*, EXISTS (SELECT 1 FROM product_barcodes pb WHERE pb.product_id = l.product_id AND pb.type = 'unit') AS has_barcode
+  SELECT l.*, ${LINE_EXTRAS}
     FROM picking_wave_lines l
    WHERE l.wave_id = $1
    ORDER BY l.id`;
@@ -120,13 +129,24 @@ const getWave = async (waveId, userId) => {
 
   const { rows } = await pool.query(LINES_SQL, [waveId]);
   const frozen = rows.length > 0;
-  const lines = frozen
-    ? rows.map(lineFromRow)
-    : (await computeLines(waveId)).map((l, i) => ({
+  let lines;
+  if (frozen) {
+    lines = rows.map(lineFromRow);
+  } else {
+    const preview = await computeLines(waveId);
+    const { rows: images } = await pool.query(
+      `SELECT p.id, COALESCE(p.image_url, pp.image_url) AS image_url
+         FROM products p LEFT JOIN products pp ON pp.wp_product_id = p.wp_parent_id
+        WHERE p.id = ANY($1::int[])`,
+      [preview.map(l => l.productId).filter(Boolean)]
+    );
+    const imageOf = new Map(images.map(r => [r.id, r.image_url]));
+    lines = preview.map((l, i) => ({
       id: `apercu-${i}`, sku: l.sku, productId: l.productId, name: l.name, brand: l.brand, location: l.location,
       ordersCount: l.ordersCount, qtyNeeded: l.qtyNeeded, qtyPicked: 0, qtyScanned: 0, qtyManual: 0,
-      qtyMissing: 0, done: false, hasBarcode: null
+      qtyMissing: 0, done: false, hasBarcode: null, imageUrl: imageOf.get(l.productId) || null
     }));
+  }
 
   return {
     id: w.id,
@@ -208,7 +228,7 @@ const assertMine = async (waveId, userId) => {
 
 const readLine = async (lineId) => {
   const { rows: [r] } = await pool.query(
-    `SELECT l.*, EXISTS (SELECT 1 FROM product_barcodes pb WHERE pb.product_id = l.product_id AND pb.type = 'unit') AS has_barcode
+    `SELECT l.*, ${LINE_EXTRAS}
        FROM picking_wave_lines l WHERE l.id = $1`,
     [lineId]
   );
