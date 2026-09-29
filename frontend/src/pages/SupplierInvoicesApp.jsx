@@ -1362,7 +1362,7 @@ const methodLabel = (m) => (METHODS.find((x) => x[0] === m) || [])[1] || m;
  * on décide. Ici on regarde ce qui est parti et ce qui reste dû, par
  * fournisseur et par moyen.
  * ═══════════════════════════════════════════════════════════ */
-function PaymentsTab({ suppliers, mobile, reloadKey }) {
+function PaymentsTab({ mobile, reloadKey }) {
   const [payments, setPayments] = useState([]);
   const [unpaid, setUnpaid] = useState([]);
   const [filters, setFilters] = useState({ supplier: '', method: '', statut: '', q: '' });
@@ -1627,7 +1627,7 @@ export default function SupplierInvoicesApp() {
 
         {tab === 'control' && <ControlTab suppliers={suppliers} mobile={mobile} onSaved={bump} />}
         {tab === 'filing' && <FilingTab suppliers={suppliers} mobile={mobile} reloadKey={reloadKey} onSaved={bump} />}
-        {tab === 'payments' && <PaymentsTab suppliers={suppliers} mobile={mobile} reloadKey={reloadKey} />}
+        {tab === 'payments' && <PaymentsTab mobile={mobile} reloadKey={reloadKey} />}
       </main>
     </AppShell>
   );

@@ -1,4 +1,4 @@
-import { useState, useEffect, useContext, useCallback, useMemo, useRef } from 'react';
+import { useState, useEffect, useContext, useCallback, useRef } from 'react';
 import { trierParAvancement } from '../utils/scanOrder';
 import axios from 'axios';
 import { AuthContext } from '../context/AuthContext';
@@ -550,7 +550,10 @@ function CountingScreen({ token, order, items, onBack, onReload }) {
 
     addCount(found.id, 1);
     flash(`${found.name} — +1`);
-  }, [addCount, askType]);
+    // `compterCarton` en dépendance : sans elle, le scan garderait une version
+    // figée de la fonction, donc une SESSION figée — et le comptage d'un carton
+    // cesserait d'être enregistré en base sans que rien ne le signale.
+  }, [addCount, askType, compterCarton]);
 
   // Capture clavier globale (douchette) — ignorée quand on saisit dans un champ
   // ou qu'une pop-up est ouverte.

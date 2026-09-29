@@ -131,6 +131,22 @@ const CreateOrderPage = () => {
     setOrderItems(prev => prev.filter(item => item.product_id !== productId));
   };
 
+  // Update quantity
+  const updateItemQty = (productId, qty) => {
+    setOrderItems(prev => prev.map(item =>
+      item.product_id === productId ? { ...item, qty_ordered: Math.max(1, qty) } : item
+    ));
+  };
+
+  // Update unit price
+  const updateItemPrice = (productId, price) => {
+    setOrderItems(prev => prev.map(item =>
+      item.product_id === productId
+        ? { ...item, unit_price: price === '' ? null : Math.max(0, price) }
+        : item
+    ));
+  };
+
   // Create order
   const handleCreateOrder = async (sendToBMS = false) => {
     if (!supplierId) {
@@ -151,9 +167,9 @@ const CreateOrderPage = () => {
         stock_before: item.stock || 0,
         supplier_sku: item.supplier_sku || null,
         unit_price: item.unit_price || null,
-        // Sans lui, « 4 packs de 5 » partirait chez BMS comme 4 pièces.
-        units_per_qty: parseInt(item.units_per_qty, 10) || 1,
-        supplier_sku: item.supplier_sku || null
+        // Le conditionnement de la ligne : il fixe le nombre de pièces et le
+        // prix à la pièce, dont BMS déduira son propre découpage en lots.
+        units_per_qty: parseInt(item.units_per_qty, 10) || 1
       }));
 
       const response = await axios.post(`${API_URL}/purchases/orders`, {
