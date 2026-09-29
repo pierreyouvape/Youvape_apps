@@ -678,11 +678,80 @@ const purchaseOrderModel = {
     }
     console.log('BMS response:', JSON.stringify(bmsResponse, null, 2));
 
+    // BMS a rangé les lignes à SA façon, en lots du catalogue. On les remet en
+    // PIÈCES : c'est la seule forme où son stock et ses compteurs s'accordent.
+    if (bmsResponse.id) {
+      await purchaseOrderModel.normalizeBmsLines(bmsResponse.id, bmsItems);
+    }
+
     return {
       bms_po_id: bmsResponse.id || null,
       bms_reference: bmsResponse.reference || null,
       skipped_items: skippedItems
     };
+  },
+
+  /**
+   * Remet les lignes d'un bon de commande BMS en PIÈCES, conditionnement 1.
+   *
+   * À la création, BMS impose le conditionnement du catalogue : dix pièces
+   * deviennent « 2 lots de 5 ». Ça n'aurait pas d'importance si sa réception
+   * était cohérente, mais elle ne l'est pas — elle ajoute au stock le nombre
+   * qu'on lui envoie, donc des pièces, tout en l'inscrivant dans un compteur
+   * comparé à une quantité en LOTS. Recevoir 5 pièces d'une ligne « 1 lot de 5 »
+   * affichait « 170 % reçu » et valorisait la réception cinq fois trop haut.
+   *
+   * Aucun envoi ne pouvait satisfaire les deux à la fois — jusqu'à découvrir que
+   * PUT /v2/purchase-orders/{id}/items/{itemId} accepte qty, qty_pack et price
+   * (vérifié le 29/09/2026). Avec qty_pack à 1, pièces et lots se confondent :
+   * le stock, le compteur de réception, le pourcentage et la valorisation
+   * tombent tous juste.
+   *
+   * Le prix est ramené à la pièce, sur QUATRE décimales — BMS les conserve, et
+   * arrondir au centime perdrait de l'argent sur un lot de 200.
+   *
+   * Un échec ici ne perd pas la commande : elle existe, simplement présentée en
+   * lots. On le signale sans faire échouer l'envoi.
+   */
+  normalizeBmsLines: async (bmsPoId, bmsItems) => {
+    const norm = (v) => String(v || '').toLowerCase().trim();
+    let data;
+    try {
+      const rep = await bmsApiModel.apiCall(`/v2/purchase-orders/${bmsPoId}/items`);
+      data = rep.data || rep || [];
+    } catch (e) {
+      console.warn(`[BMS] lignes de ${bmsPoId} illisibles, normalisation ignorée : ${e.message}`);
+      return { normalized: 0, failed: [] };
+    }
+
+    let normalized = 0;
+    const failed = [];
+    for (const voulu of bmsItems) {
+      const ligne = data.find((l) => norm(l.sku) === norm(voulu.sku));
+      if (!ligne) continue;
+
+      // `voulu.qty` est déjà un nombre de PIÈCES (cf. buildBmsItems) et
+      // `voulu.price` le prix d'un lot de `pack_qty` pièces.
+      const pieces = voulu.qty;
+      const prixPiece = (parseFloat(voulu.price) || 0) / (parseInt(voulu.pack_qty, 10) || 1);
+
+      if (Number(ligne.qty) === pieces && Number(ligne.qty_pack) === 1) continue;
+
+      try {
+        await bmsApiModel.apiCall(
+          `/v2/purchase-orders/${bmsPoId}/items/${ligne.id}`, 'PUT',
+          { qty: pieces, qty_pack: 1, price: Math.round(prixPiece * 10000) / 10000 },
+        );
+        normalized += 1;
+      } catch (e) {
+        failed.push({ sku: voulu.sku, error: e.message });
+      }
+    }
+    if (failed.length > 0) {
+      console.warn(`[BMS] ${failed.length} ligne(s) non normalisée(s) sur ${bmsPoId} :`,
+        failed.map((f) => f.sku).join(', '));
+    }
+    return { normalized, failed };
   },
 
   // Réécrit une erreur de validation BMS de la forme "items.<index>.<champ>" en
