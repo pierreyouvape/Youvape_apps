@@ -354,10 +354,14 @@ function Sidebar({ user, items, draggingKey, overKey, onPointerDown, onPointerEn
                       }}>
                         {group.label}
                       </span>
+                      {/* « 4 » seul ne disait pas ce qu'il comptait. Le mot
+                          tient dans la largeur et lève le doute : on sait qu'on
+                          ouvre un dossier, pas qu'on lit un badge de notification. */}
                       <span style={{
-                        fontSize: 10.5, fontWeight: 700, color: 'rgba(255,255,255,0.45)', flexShrink: 0,
+                        fontSize: 10.5, fontWeight: 700, color: 'rgba(255,255,255,0.45)',
+                        flexShrink: 0, whiteSpace: 'nowrap',
                       }}>
-                        {members.length}
+                        {members.length} apps
                       </span>
                       <ChevronIcon size={13} color="rgba(255,255,255,0.55)" open={isOpen} />
                     </>

@@ -446,7 +446,9 @@ export const APP_GROUPS = [
     // une tuile séparée. Le groupe, pas une app conteneur : /reception est
     // ouverte en favori sur la tablette du dépôt.
     key: 'grp-achats',
-    label: "Gestion d'achat",
+    // « Achats » et non « Gestion d'achat » : ce dernier est déjà le nom d'une
+    // app DE la pile, et voir le même libellé à deux niveaux ne dit plus rien.
+    label: 'Achats',
     color: '#F59E0B',
     members: ['purchases', 'reception', 'factures-fournisseurs', 'purchases-v2'],
   },
