@@ -131,30 +131,10 @@ const purchaseOrderModel = {
 
   // Créer une commande
   /**
-   * Le payload d'articles envoyé à BMS. Fonction PURE, pour être éprouvée.
-   *
-   * Deux conventions cohabitent, et les confondre a déjà coûté un bug de prix
-   * ×10 (cf. project_bms_skippackqty_price_x10) :
-   *
-   *   • Ligne à l'UNITÉ — qty_ordered compte des pièces, unit_price est le prix
-   *     d'une pièce. BMS veut des pièces et un prix de PACK : qty tel quel,
-   *     price × pack_qty.
-   *   • Ligne au PACK — qty_ordered compte des packs, unit_price est le prix du
-   *     pack. BMS veut des pièces : qty × pack_qty, et price tel quel — le
-   *     multiplier de nouveau est précisément le bug ×10.
-   *
-   * Ce qui décide n'est plus seulement le fournisseur. Une ligne qui porte son
-   * propre conditionnement (`units_per_qty` choisi à la commande : « 4 packs de
-   * 5 ») est une ligne au pack, quel que soit le fournisseur — c'est ce qui
-   * permet de commander un conditionnement inhabituel sans mentir à BMS.
-   */
-  /**
-   * Le conditionnement explicitement demandé pour une ligne, ou null s'il ne
-   * l'est pas.
+   * Le conditionnement explicitement demandé pour une ligne, ou null.
    *
    * « Non fourni » et « fourni, et il vaut 1 » ne veulent pas dire la même
    * chose : le premier laisse décider le catalogue, le second le contredit.
-   * Les confondre a fait partir 25 pièces là où 5 étaient commandées.
    */
   packChoisi: (valeur) => {
     if (valeur === undefined || valeur === null || valeur === '') return null;
@@ -162,26 +142,45 @@ const purchaseOrderModel = {
     return Number.isFinite(n) && n >= 1 ? n : null;
   },
 
+  /**
+   * Le payload d'articles envoyé à BMS. Fonction PURE, pour être éprouvée.
+   *
+   * BMS N'ACCEPTE PAS LE CONDITIONNEMENT QU'ON LUI ENVOIE. Vérifié le
+   * 29/09/2026 sur la commande « Test Maxime 3 » : dix pièces de FRM 0mg
+   * envoyées avec pack_qty 1 sont ressorties en 2 lots de 5 — le
+   * conditionnement du catalogue — tandis que notre prix de 1,50 € était gardé
+   * comme prix DU LOT. Les pièces étaient justes, l'argent faux de 12 €.
+   *
+   * BMS applique donc toujours le conditionnement catalogue du produit, et lit
+   * `qty` comme des PIÈCES qu'il divise par ce conditionnement. D'où une règle
+   * unique, qui vaut pour tous les fournisseurs et tous les chemins :
+   *
+   *     qty   = le nombre de PIÈCES
+   *     price = le prix d'un lot AU SENS DU CATALOGUE
+   *
+   * Le conditionnement choisi à la commande sert toujours — il dit combien de
+   * pièces on commande et à quel prix la pièce — mais il ne voyage pas jusqu'à
+   * BMS, qui n'en veut pas.
+   */
   buildBmsItems: (items, skipPackQty) => (items || [])
     .filter((item) => item.sku)
     .map((item) => {
-      // Le conditionnement CHOISI POUR CETTE LIGNE l'emporte sur celui du
-      // catalogue : c'est lui qu'on a commandé.
-      //
-      // Y COMPRIS QUAND IL VAUT 1. Le test était « > 1 », si bien qu'une ligne
-      // dite « par 1 » retombait sur le conditionnement catalogue : chez LCA,
-      // commander 5 pièces de FRM 3mg en partait 25, en packs de 5. L'intention
-      // était écrasée par la valeur qu'elle voulait justement contredire.
-      const explicite = purchaseOrderModel.packChoisi(item.units_per_qty);
-      const packQty = explicite !== null ? explicite : (parseInt(item.pack_qty, 10) || 1);
-      const auPack = explicite !== null ? explicite > 1 : Boolean(skipPackQty);
+      // Le conditionnement que BMS IMPOSERA, quoi qu'on envoie.
+      const packCatalogue = parseInt(item.pack_qty, 10) || 1;
+
+      // Le nôtre : celui choisi à la ligne, sinon la convention du fournisseur.
+      const choisi = purchaseOrderModel.packChoisi(item.units_per_qty);
+      const notrePack = choisi !== null ? choisi : (skipPackQty ? packCatalogue : 1);
+
       const qtyBase = parseInt(item.qty_ordered, 10) || 0;
+      const pieces = qtyBase * notrePack;
+      const prixPiece = (parseFloat(item.unit_price) || 0) / notrePack;
 
       const bmsItem = {
         sku: item.sku,
-        qty: auPack ? qtyBase * packQty : qtyBase,
-        price: Math.round((parseFloat(item.unit_price) || 0) * (auPack ? 1 : packQty) * 100) / 100,
-        pack_qty: packQty,
+        qty: pieces,
+        price: Math.round(prixPiece * packCatalogue * 100) / 100,
+        pack_qty: packCatalogue,
         name: item.product_name,
         supplier_sku: item.supplier_sku || null,
       };

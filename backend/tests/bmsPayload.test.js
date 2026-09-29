@@ -1,15 +1,16 @@
 /**
  * Le payload d'articles envoyé à BMS.
  *
- * Deux conventions cohabitent depuis toujours, et les confondre a déjà coûté un
- * bug de prix ×10 en production (project_bms_skippackqty_price_x10). Une
- * troisième arrive avec la commande construite dans l'app : une ligne peut
- * porter SON conditionnement, indépendamment du fournisseur.
+ * BMS N'ACCEPTE PAS le conditionnement qu'on lui envoie : il applique toujours
+ * celui du catalogue produit, et lit `qty` comme des PIÈCES qu'il divise par ce
+ * conditionnement. Vérifié en production le 29/09/2026 sur trois commandes.
  *
- * Ces tests figent les trois, parce qu'aucun n'est devinable à la lecture.
+ * D'où une règle unique — qty en PIÈCES, price au LOT CATALOGUE — et ces tests,
+ * qui rejouent les quatre cas réels observés. Chacun a coûté un aller-retour
+ * avec BMS ; aucun n'est devinable à la lecture du code.
  */
 const assert = require('assert');
-const { buildBmsItems } = require('../src/models/purchaseOrderModel');
+const { buildBmsItems, packChoisi } = require('../src/models/purchaseOrderModel');
 
 let failures = 0;
 function test(name, fn) {
@@ -17,80 +18,84 @@ function test(name, fn) {
   catch (e) { failures += 1; console.log(`  FAIL ${name}\n       ${e.message}`); }
 }
 
-console.log('\nPayload BMS — conventions de conditionnement');
+console.log('\nPayload BMS — qty en pièces, prix au lot catalogue');
 
-test('fournisseur à l\'unité : qty tel quel, prix ramené au pack', () => {
-  // JoshNoa : 100 pièces à 1,36 €, conditionnées par 10 au catalogue.
-  // BMS veut des pièces et un prix de PACK.
+test('import LCA : 1 lot de 200 à 54 € → 200 pièces, lot à 54 €', () => {
+  // Commande 356948, ligne #REF11324-36716. Remultiplier le prix ici, c'est le
+  // bug ×10 de mémoire.
   const [l] = buildBmsItems(
-    [{ sku: 'X', qty_ordered: 100, unit_price: 1.36, pack_qty: 10 }], false,
-  );
-  assert.strictEqual(l.qty, 100);
-  assert.strictEqual(l.price, 13.60);
-  assert.strictEqual(l.pack_qty, 10);
-});
-
-test('fournisseur au pack : qty converti en pièces, prix INCHANGÉ', () => {
-  // LCA : 1 pack de 200 à 54,00 €. Remultiplier le prix, c'est le bug ×10.
-  const [l] = buildBmsItems(
-    [{ sku: 'X', qty_ordered: 1, unit_price: 54, pack_qty: 200 }], true,
+    [{ sku: 'X', qty_ordered: 1, unit_price: 54, pack_qty: 200, units_per_qty: 200 }], true,
   );
   assert.strictEqual(l.qty, 200);
   assert.strictEqual(l.price, 54);
+  assert.strictEqual(l.pack_qty, 200);
 });
 
-test('conditionnement choisi à la ligne : traité comme un pack, même chez un fournisseur à l\'unité', () => {
-  // « 4 packs de 5 » chez un fournisseur normalement compté à l'unité.
-  // 20 pièces doivent partir, au prix du pack.
+test('import e.tasty : 40 pièces à 1 € → 40 pièces, lot de 10 à 10 €', () => {
+  // Commande UOPZIWQDN, ligne INOPA01003. BMS l'a rangée en 4 lots de 10 à
+  // 10,00 € : 40,00 € au total, comme chez nous.
   const [l] = buildBmsItems(
-    [{ sku: 'X', qty_ordered: 4, unit_price: 7.5, pack_qty: 1, units_per_qty: 5 }], false,
+    [{ sku: 'X', qty_ordered: 40, unit_price: 1, pack_qty: 10, units_per_qty: 1 }], false,
   );
-  assert.strictEqual(l.qty, 20);
-  assert.strictEqual(l.price, 7.5);
-  assert.strictEqual(l.pack_qty, 5);
+  assert.strictEqual(l.qty, 40);
+  assert.strictEqual(l.price, 10);
 });
 
-test('le conditionnement de la ligne l\'emporte sur celui du catalogue', () => {
+test('app, « par 1 » sur un produit conditionné par 5 : le prix suit le catalogue', () => {
+  // Commande « Test Maxime 3 », FRM 0mg. Dix pièces à 1,50 € la pièce.
+  // Envoyer 1,50 € tel quel donnait 2 lots à 1,50 € = 3,00 € au lieu de 15,00 €.
   const [l] = buildBmsItems(
-    [{ sku: 'X', qty_ordered: 2, unit_price: 20, pack_qty: 10, units_per_qty: 25 }], false,
+    [{ sku: '9736-9852', qty_ordered: 10, unit_price: 1.5, pack_qty: 5, units_per_qty: 1 }], true,
   );
-  assert.strictEqual(l.pack_qty, 25);
+  assert.strictEqual(l.qty, 10, 'dix pièces commandées, dix pièces envoyées');
+  assert.strictEqual(l.price, 7.5, 'le lot de 5 vaut 7,50 € puisque la pièce vaut 1,50 €');
+  // BMS en fera 2 lots de 5 à 7,50 € : 15,00 €, comme chez nous.
+  assert.strictEqual((l.qty / l.pack_qty) * l.price, 15);
+});
+
+test('app, « par 5 » : 10 lots de 5 à 7,50 € → 50 pièces, 75,00 €', () => {
+  // Même commande, FRM 12mg. Celle-là passait déjà.
+  const [l] = buildBmsItems(
+    [{ sku: '9736-993233', qty_ordered: 10, unit_price: 7.5, pack_qty: 5, units_per_qty: 5 }], true,
+  );
   assert.strictEqual(l.qty, 50);
-  assert.strictEqual(l.price, 20);
+  assert.strictEqual(l.price, 7.5);
+  assert.strictEqual((l.qty / l.pack_qty) * l.price, 75);
 });
 
-test('« par 1 » CONTREDIT le catalogue, il ne s\'y soumet pas', () => {
-  // Le catalogue conditionne par 6 ; la ligne dit « par 1 ». C'est la ligne qui
-  // gagne : 30 pièces à 2 €, et BMS reçoit un conditionnement de 1.
+test('l\'argent envoyé égale toujours l\'argent commandé', () => {
+  // L'invariant qui aurait attrapé le bug tout seul : quoi qu'il arrive,
+  // pièces × prix de la pièce doit retomber sur qty_ordered × unit_price.
+  const lignes = [
+    { sku: 'A', qty_ordered: 10, unit_price: 1.5, pack_qty: 5, units_per_qty: 1 },
+    { sku: 'B', qty_ordered: 10, unit_price: 7.5, pack_qty: 5, units_per_qty: 5 },
+    { sku: 'C', qty_ordered: 1, unit_price: 3.92, pack_qty: 1, units_per_qty: 1 },
+    { sku: 'D', qty_ordered: 2, unit_price: 12, pack_qty: 3, units_per_qty: 6 },
+  ];
+  for (const ligne of lignes) {
+    const [l] = buildBmsItems([ligne], false);
+    const chezNous = ligne.qty_ordered * ligne.unit_price;
+    const chezBms = (l.qty / l.pack_qty) * l.price;
+    assert.ok(Math.abs(chezNous - chezBms) < 0.01,
+      `${ligne.sku} : ${chezNous.toFixed(2)} € commandés, ${chezBms.toFixed(2)} € envoyés`);
+  }
+});
+
+test('« par 1 » contredit le catalogue sur les PIÈCES, pas sur le prix du lot', () => {
   const [l] = buildBmsItems(
     [{ sku: 'X', qty_ordered: 30, unit_price: 2, pack_qty: 6, units_per_qty: 1 }], false,
   );
-  assert.strictEqual(l.qty, 30);
-  assert.strictEqual(l.price, 2);
-  assert.strictEqual(l.pack_qty, 1);
+  assert.strictEqual(l.qty, 30, 'trente pièces, pas trente lots');
+  assert.strictEqual(l.price, 12, 'le lot catalogue de 6 vaut 12 € si la pièce vaut 2 €');
 });
 
-test('« par 1 » tient même chez un fournisseur compté au pack (bug LCA du 29/09/2026)', () => {
-  // Commande « test Maxime 2 » : 5 FRM 3mg par 1 à 1,50 €. Le test « > 1 »
-  // écartait l'intention, la ligne retombait sur le pack catalogue de LCA et
-  // BMS recevait 25 pièces en packs de 5 — cinq fois la commande.
-  const [l] = buildBmsItems(
-    [{ sku: '9736-9850', qty_ordered: 5, unit_price: 1.5, pack_qty: 5, units_per_qty: 1 }], true,
-  );
-  assert.strictEqual(l.qty, 5, 'cinq pièces commandées, cinq pièces envoyées');
-  assert.strictEqual(l.pack_qty, 1);
-  assert.strictEqual(l.price, 1.5);
-});
-
-test('sans units_per_qty, le catalogue décide comme avant', () => {
-  // Chemin de l'import PDF : rien n'est imposé, la convention fournisseur joue.
-  const [aUnite] = buildBmsItems([{ sku: 'X', qty_ordered: 30, unit_price: 2, pack_qty: 6 }], false);
-  assert.strictEqual(aUnite.qty, 30);
-  assert.strictEqual(aUnite.price, 12);
-
-  const [auPack] = buildBmsItems([{ sku: 'X', qty_ordered: 1, unit_price: 54, pack_qty: 200 }], true);
-  assert.strictEqual(auPack.qty, 200);
-  assert.strictEqual(auPack.price, 54);
+test('packChoisi distingue « non fourni » de « fourni à 1 »', () => {
+  assert.strictEqual(packChoisi(undefined), null);
+  assert.strictEqual(packChoisi(null), null);
+  assert.strictEqual(packChoisi(''), null);
+  assert.strictEqual(packChoisi(1), 1);
+  assert.strictEqual(packChoisi('5'), 5);
+  assert.strictEqual(packChoisi(0), null);
 });
 
 test('une ligne sans SKU ne part pas : BMS la refuserait en bloc', () => {
