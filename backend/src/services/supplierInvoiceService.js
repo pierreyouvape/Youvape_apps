@@ -30,7 +30,7 @@ const { cleanPdfText, isPdf } = require('../utils/pdfText');
 const invoiceParsers = require('../parsers/invoices');
 const supplierRefModel = require('../models/supplierRefModel');
 const bmsApiModel = require('../models/bmsApiModel');
-const { compareInvoiceToOrder, listDifferences, listTariffUpdates } = require('../utils/invoiceCompare');
+const { compareInvoiceToOrder, listDifferences, listTariffUpdates, listControlRows } = require('../utils/invoiceCompare');
 const { attachMatchKeys } = require('../utils/invoiceMatching');
 const { resolveCompleteRefs } = require('../utils/refResolution');
 
@@ -233,21 +233,11 @@ async function analyseInvoice({ buffer, supplierId, orderId = null, db = pool })
     order: { ...order, bmsReference: bmsOrder.reference, verified: bmsOrder.verified },
     matchedBy,
     comparison,
-    // Les écarts, MOINS ceux que le tableau des tarifs traite déjà.
-    //
-    // Une ligne dont le seul reproche est le tarif figurait deux fois de suite :
-    // en haut avec son bouton « Retenir », en bas avec « Réclamer un avoir ». Le
-    // tableau des tarifs dit la même chose et permet d'agir — l'autre n'ajoutait
-    // rien.
-    //
-    // Les lignes « quantité ET tarif » restent dans les deux : le tableau des
-    // écarts y montre la quantité commandée face à la quantité facturée, que
-    // celui des tarifs n'affiche pas.
-    differences: listDifferences(comparison).filter(
-      (d) => !(d.verdict === 'price' && tarifs.some((t) => t.ref === d.ref)),
-    ),
-    // Ce qu'il faut corriger dans BMS : l'API ne sait pas l'écrire (aucune route
-    // d'écriture sur /supplier/products), l'acheteur le reporte à la main.
+    // Le tableau unique de l'écran : écarts et tarifs réunis, chaque ligne
+    // portant son motif.
+    rows: listControlRows(comparison),
+    // Conservés pour l'enregistrement et les usages existants.
+    differences: listDifferences(comparison),
     tariffs: tarifs,
     needsManualOrder: false,
   };

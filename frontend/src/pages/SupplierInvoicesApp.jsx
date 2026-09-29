@@ -319,132 +319,171 @@ const fromStoredLines = (lines) => (lines || []).map((l) => ({
  * créer un bon de commande). Le report se fait donc à la main — le rôle de
  * l'app est de dire quoi saisir, et de le rendre copiable d'un geste.
  */
-function TariffTable({ tariffs, supplierId, mobile }) {
+/**
+ * Le tableau UNIQUE de l'écran de contrôle.
+ *
+ * Il y en avait deux, et une ligne dont le seul reproche était le tarif
+ * figurait dans les deux — en haut avec son bouton « Retenir », en bas avec
+ * « Réclamer un avoir ». Chaque ligne porte maintenant son MOTIF : le prix a
+ * bougé, la quantité ne correspond pas, ou les deux.
+ */
+function ControlTable({ rows, supplierId, mobile }) {
   const [aligning, setAligning] = useState(false);
-  const [aligned, setAligned] = useState(null);
-  // Par référence : 'busy' | 'done' | un motif de rejet. Retenir un tarif ligne
-  // à ligne permet de garder le prix promo tant que la promotion dure, puis de
-  // reprendre le prix normal — même plus élevé — quand elle se termine.
   const [perLine, setPerLine] = useState({});
-  if (!tariffs || tariffs.length === 0) return null;
 
-  const prix = (n) => `${Number(n).toFixed(4).replace(/0+$/, '').replace(/[.,]$/, '').replace('.', ',')} €`;
+  const aRetenir = (rows || []).filter((r) => r.tariff);
+
+  if (!rows || rows.length === 0) {
+    return (
+      <div style={{ padding: 22, textAlign: 'center', color: C.green, fontWeight: 600, background: C.greenL, borderRadius: 10 }}>
+        Aucune différence : la facture correspond à la commande, ligne à ligne.
+      </div>
+    );
+  }
+
+  const prix = (n) => (n == null ? '—'
+    : `${Number(n).toFixed(4).replace(/0+$/, '').replace(/[.,]$/, '').replace('.', ',')} €`);
+
+  const envoyer = async (liste) => {
+    const { data } = await axios.post(`${BASE}/align-tariffs`, {
+      supplier_id: supplierId,
+      tariffs: liste.map((t) => ({ ref: t.ref, realPrice: t.realPrice, packQty: t.packQty })),
+    });
+    setPerLine((p) => {
+      const n = { ...p };
+      for (const a of data.applied || []) n[a.ref] = 'done';
+      for (const k of data.skipped || []) n[k.ref] = k.reason;
+      return n;
+    });
+  };
 
   const retenirUne = async (t) => {
     setPerLine((p) => ({ ...p, [t.ref]: 'busy' }));
-    try {
-      const { data } = await axios.post(`${BASE}/align-tariffs`, {
-        supplier_id: supplierId,
-        tariffs: [{ ref: t.ref, realPrice: t.realPrice, packQty: t.packQty }],
-      });
-      const rejet = (data.skipped || [])[0];
-      setPerLine((p) => ({ ...p, [t.ref]: rejet ? rejet.reason : 'done' }));
-    } catch (e) {
-      setPerLine((p) => ({ ...p, [t.ref]: e.response?.data?.error || e.message }));
-    }
+    try { await envoyer([t]); }
+    catch (e) { setPerLine((p) => ({ ...p, [t.ref]: e.response?.data?.error || e.message })); }
   };
 
-  const aligner = async () => {
+  const toutRetenir = async () => {
     setAligning(true);
-    try {
-      const { data } = await axios.post(`${BASE}/align-tariffs`, {
-        supplier_id: supplierId,
-        tariffs: tariffs.map((t) => ({ ref: t.ref, realPrice: t.realPrice, packQty: t.packQty })),
-      });
-      setAligned(data);
-      setPerLine((p) => {
-        const n = { ...p };
-        for (const a of data.applied || []) n[a.ref] = 'done';
-        for (const k of data.skipped || []) n[k.ref] = k.reason;
-        return n;
-      });
-    } catch (e) {
-      setAligned({ applied: [], skipped: [{ ref: '—', reason: e.response?.data?.error || e.message }] });
-    } finally { setAligning(false); }
+    try { await envoyer(aRetenir.map((r) => r.tariff)); }
+    catch (e) { window.alert(e.response?.data?.error || e.message); }
+    finally { setAligning(false); }
   };
+
+  const bouton = (r) => {
+    if (!r.tariff) return null;
+    const etat = perLine[r.ref];
+    if (etat === 'done') return <span style={{ color: C.green, fontWeight: 600, fontSize: 12 }}>Retenu</span>;
+    if (etat && etat !== 'busy') return <span style={{ color: C.orange, fontSize: 11.5 }}>{etat}</span>;
+    return (
+      <Btn onClick={() => retenirUne(r.tariff)} variant="secondary" small disabled={etat === 'busy'}>
+        {etat === 'busy' ? '…' : 'Retenir'}
+      </Btn>
+    );
+  };
+
+  const entete = (
+    <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap', marginBottom: 10 }}>
+      <h3 style={{ margin: 0, fontSize: 14, fontWeight: 700, color: C.dark }}>
+        À examiner ({rows.length})
+      </h3>
+      {aRetenir.length > 0 && (
+        <Btn onClick={toutRetenir} disabled={aligning} small>
+          {aligning ? 'Enregistrement…' : `Tout retenir (${aRetenir.length})`}
+        </Btn>
+      )}
+      <span style={{ fontSize: 12, color: C.greyT }}>
+        Retenir un tarif écrit le <strong>prix réel payé</strong> chez nous : il fera autorité à
+        l'import de la prochaine commande, même s'il est plus élevé — le cas d'une promotion terminée.
+      </span>
+    </div>
+  );
+
+  if (mobile) {
+    return (
+      <div>
+        {entete}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {rows.map((r, i) => {
+            const meta = VERDICTS[r.verdict] || VERDICTS.other;
+            return (
+              <div key={i} style={{ background: C.white, border: `1px solid ${C.greyB}`, borderRadius: 10, padding: 12 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'flex-start' }}>
+                  <div style={{ fontWeight: 700, fontSize: 13 }}>{r.ref || '—'}</div>
+                  <Badge tone={meta.tone}>{r.kindLabel || meta.label}</Badge>
+                </div>
+                <div style={{ fontSize: 12, color: C.greyT, margin: '4px 0 8px' }}>{r.label || ''}</div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12.5 }}>
+                  <span>cmd {num(r.qtyOrdered)} → fact {num(r.qtyInvoiced)}</span>
+                  <strong style={{ color: r.gap > 0 ? C.red : C.green }}>{signedEur(r.gap)}</strong>
+                </div>
+                {r.tariff && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 }}>
+                    <span style={{ fontSize: 12.5 }}>
+                      {prix(r.tariff.currentPrice)} → <strong>{prix(r.tariff.realPrice)}</strong>
+                    </span>
+                    {bouton(r)}
+                  </div>
+                )}
+                {!r.tariff && meta.action && (
+                  <div style={{ fontSize: 11.5, color: C.greyM, marginTop: 6 }}>{r.action || meta.action}</div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-      <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
-        <h3 style={{ margin: 0, fontSize: 14, fontWeight: 700, color: C.dark }}>
-          Tarifs relevés sur cette facture ({tariffs.length})
-        </h3>
-        <Btn onClick={aligner} disabled={aligning} small>
-          {aligning ? 'Enregistrement…' : `Tout retenir (${tariffs.length})`}
-        </Btn>
-      </div>
-
-      {aligned && (
-        <div style={{
-          padding: 12, borderRadius: 10, fontSize: 13,
-          background: aligned.skipped.length ? C.orangeL : C.greenL,
-          color: aligned.skipped.length ? C.orange : C.green,
-        }}>
-          <strong>{aligned.applied.length}</strong> tarif(s) retenus pour les prochaines commandes.
-          {aligned.skipped.length > 0 && (
-            <ul style={{ margin: '6px 0 0', paddingLeft: 18 }}>
-              {aligned.skipped.map((k, i) => <li key={i}>{k.ref} — {k.reason}</li>)}
-            </ul>
-          )}
-        </div>
-      )}
-
-      <div style={{ fontSize: 12, color: C.greyT }}>
-        Retenir un tarif écrit le <strong>prix réel payé</strong> chez nous. Il fera autorité à
-        l'import de la prochaine commande, même s'il est plus élevé que le document — le cas d'une
-        promotion terminée. « Tout retenir » applique les {tariffs.length} lignes d'un coup, à
-        l'identique du bouton de chaque ligne. Le prix part ensuite dans BMS sur le bon de commande.
-      </div>
-
-      <div style={{ overflowX: 'auto', background: C.white, borderRadius: 10, border: `1px solid ${C.greyB}` }}>
+    <div>
+      {entete}
+      <div style={{ overflowX: 'auto', border: `1px solid ${C.greyB}`, borderRadius: 10, background: C.white }}>
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead>
             <tr>
               <th style={th}>Référence</th>
-              {!mobile && <th style={th}>Produit</th>}
-              <th style={{ ...th, textAlign: 'right' }}>Qté</th>
+              <th style={th}>Produit</th>
+              <th style={th}>Motif</th>
+              <th style={{ ...th, textAlign: 'right' }}>Qté cmd / fact</th>
               <th style={{ ...th, textAlign: 'right' }}>Tarif BMS</th>
               <th style={{ ...th, textAlign: 'right' }}>Tarif réel payé</th>
               <th style={{ ...th, textAlign: 'right' }}>Écart unitaire</th>
               <th style={{ ...th, textAlign: 'right' }}>Écart total</th>
+              <th style={th}>À faire</th>
               <th style={{ ...th, textAlign: 'right' }} />
             </tr>
           </thead>
           <tbody>
-            {tariffs.map((t, i) => (
-              <tr key={i}>
-                <td style={{ ...td, fontWeight: 600 }}>{t.ref}</td>
-                {!mobile && <td style={{ ...td, color: C.greyT }}>{(t.label || '').slice(0, 52)}</td>}
-                <td style={{ ...td, textAlign: 'right' }}>{t.qty}</td>
-                <td style={{ ...td, textAlign: 'right', color: C.greyT }}>{prix(t.currentPrice)}</td>
-                <td style={{ ...td, textAlign: 'right', fontWeight: 700 }}>{prix(t.realPrice)}</td>
-                <td style={{ ...td, textAlign: 'right', color: t.delta > 0 ? C.red : C.green }}>
-                  {t.delta > 0 ? '+' : ''}{prix(t.delta)}
-                </td>
-                <td style={{
-                  ...td, textAlign: 'right', fontWeight: 600,
-                  color: t.delta > 0 ? C.red : C.green,
-                }}>
-                  {t.delta > 0 ? '+' : ''}{prix(t.delta * t.qty)}
-                </td>
-                <td style={{ ...td, textAlign: 'right', whiteSpace: 'nowrap' }}>
-                  {perLine[t.ref] === 'done' ? (
-                    <span style={{ color: C.green, fontWeight: 600, fontSize: 12 }}>Retenu</span>
-                  ) : perLine[t.ref] && perLine[t.ref] !== 'busy' ? (
-                    <span style={{ color: C.orange, fontSize: 11.5 }}>{perLine[t.ref]}</span>
-                  ) : (
-                    <Btn
-                      onClick={() => retenirUne(t)}
-                      variant="secondary"
-                      small
-                      disabled={perLine[t.ref] === 'busy'}
-                    >
-                      {perLine[t.ref] === 'busy' ? '…' : 'Retenir'}
-                    </Btn>
-                  )}
-                </td>
-              </tr>
-            ))}
+            {rows.map((r, i) => {
+              const meta = VERDICTS[r.verdict] || VERDICTS.other;
+              const t = r.tariff;
+              return (
+                <tr key={i}>
+                  <td style={{ ...td, fontWeight: 600 }}>{r.ref || '—'}</td>
+                  <td style={{ ...td, color: C.greyT }}>{(r.label || '').slice(0, 52)}</td>
+                  <td style={td}><Badge tone={meta.tone}>{r.kindLabel || meta.label}</Badge></td>
+                  <td style={{ ...td, textAlign: 'right', whiteSpace: 'nowrap' }}>
+                    {num(r.qtyOrdered)} / {num(r.qtyInvoiced)}
+                  </td>
+                  <td style={{ ...td, textAlign: 'right', color: C.greyT }}>
+                    {prix(t ? t.currentPrice : r.expectedUnitPrice)}
+                  </td>
+                  <td style={{ ...td, textAlign: 'right', fontWeight: t ? 700 : 400 }}>
+                    {prix(t ? t.realPrice : r.effectiveUnitCost)}
+                  </td>
+                  <td style={{ ...td, textAlign: 'right', color: t && t.delta > 0 ? C.red : C.green }}>
+                    {t ? `${t.delta > 0 ? '+' : ''}${prix(t.delta)}` : '—'}
+                  </td>
+                  <td style={{ ...td, textAlign: 'right', fontWeight: 600, color: r.gap > 0 ? C.red : C.green }}>
+                    {signedEur(r.gap)}
+                  </td>
+                  <td style={{ ...td, fontSize: 11.5, color: C.greyM }}>{r.action || meta.action || ''}</td>
+                  <td style={{ ...td, textAlign: 'right', whiteSpace: 'nowrap' }}>{bouton(r)}</td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
@@ -766,12 +805,8 @@ function ControlTab({ suppliers, mobile, onSaved }) {
             </div>
           )}
 
-          {/* Les tarifs d'abord : c'est ce qui appelle une décision. Les écarts
-              en dessous sont souvent des lignes offertes, à lire, pas à traiter. */}
-          <TariffTable tariffs={result.tariffs} supplierId={supplierId} mobile={mobile} />
-
           {result.comparison
-            ? <DifferencesTable lines={result.differences} mobile={mobile} />
+            ? <ControlTable rows={result.rows} supplierId={supplierId} mobile={mobile} />
             : <ReadLinesTable lines={result.invoice.lines} mobile={mobile} />}
 
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>

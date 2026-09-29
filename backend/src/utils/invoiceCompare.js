@@ -684,7 +684,60 @@ function listTariffUpdates(comparison, options = {}) {
     .sort((a, b) => Math.abs(b.delta * b.qty) - Math.abs(a.delta * a.qty));
 }
 
+/**
+ * Le tableau UNIQUE de l'écran de contrôle : une ligne par sujet, avec son motif.
+ *
+ * Il y avait deux tableaux, et une ligne dont le seul reproche était le tarif
+ * figurait dans les deux — en haut avec son bouton « Retenir », en bas avec
+ * « Réclamer un avoir ». On réunit donc les écarts et les tarifs relevés, et
+ * chaque ligne porte ce qui l'amène là : un prix qui a bougé, une quantité qui
+ * ne correspond pas, ou les deux.
+ *
+ * Une ligne peut n'être QUE dans les tarifs : le prix payé diffère de celui de
+ * BMS sans que ce soit une anomalie — une promotion l'a fait baisser. Elle
+ * mérite le tableau, puisqu'il y a un tarif à retenir.
+ */
+function listControlRows(comparison) {
+  const ecarts = listDifferences(comparison);
+  const tarifs = listTariffUpdates(comparison);
+  const parRef = new Map(tarifs.map((t) => [t.ref, t]));
+
+  const rows = ecarts.map((d) => {
+    const t = d.ref ? parRef.get(d.ref) : null;
+    if (t) parRef.delete(d.ref);
+    return { ...d, tariff: t || null };
+  });
+
+  // Les tarifs qu'aucun écart ne portait : prix payé différent, mais conforme.
+  for (const t of parRef.values()) {
+    rows.push({
+      ref: t.ref,
+      label: t.label,
+      verdict: 'price',
+      kindLabel: DIFFERENCE_KINDS.price.label,
+      action: DIFFERENCE_KINDS.price.action,
+      material: false,
+      qtyOrdered: t.qty,
+      qtyInvoiced: t.qty,
+      expectedUnitPrice: t.currentPrice,
+      invoicedUnitPrice: t.realPrice,
+      effectiveUnitCost: t.realPrice,
+      gap: round2(t.delta * t.qty),
+      gapPrice: round2(t.delta * t.qty),
+      gapQty: 0,
+      tariff: t,
+    });
+  }
+
+  return rows.sort((a, b) => {
+    const ra = (DIFFERENCE_KINDS[a.verdict] || {}).rank || 99;
+    const rb = (DIFFERENCE_KINDS[b.verdict] || {}).rank || 99;
+    return ra !== rb ? ra - rb : Math.abs(b.gap) - Math.abs(a.gap);
+  });
+}
+
 module.exports = {
+  listControlRows,
   listTariffUpdates,
   compareInvoiceToOrder,
   matchKeyOf,
