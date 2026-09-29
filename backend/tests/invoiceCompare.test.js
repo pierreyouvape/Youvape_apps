@@ -825,6 +825,53 @@ test('un avoir ne réclame pas le reste de la commande (cas JoshNoa RV3/2026/027
   assert.ok(close(avecGarde.totals.order, 13.8));
 });
 
+test('remise ciblée par règle fournisseur : RSPV20 ne porte que sur les Vaporesso', () => {
+  // Facture LVP F2609287455 : 89,11 € de remise, mais seuls les Vaporesso sont
+  // remisés — Dojo et Armour G/GS exclus. Étalée sur tout, elle annonçait
+  // +0,64 € sur des résistances GTX et −0,24 € sur une fiole graduée, pour un
+  // écart réel de −0,71 €.
+  const r = compareInvoiceToOrder({
+    invoice: { lines: [
+      { ref: 'VP RES GTI 0.2', label: 'Résistances GTI (5pcs) - Vaporesso', qty: 10, lineTotalHt: 67.40 },
+      { ref: 'DO-CBLA', label: 'Cartouche Dojo Blast - Dojo by Vaporesso', qty: 5, lineTotalHt: 14.50 },
+      { ref: 'GP-50', label: 'Cherry Ice 50ml - Goo Puff', qty: 6, lineTotalHt: 23.40 },
+      { ref: null, label: 'Remise', qty: 1, lineTotalHt: -13.48, kind: 'discount' },
+    ] },
+    order: { lines: [
+      { ref: 'VP RES GTI 0.2', qty: 10, price: 5.39 },
+      { ref: 'DO-CBLA', qty: 5, price: 2.90 },
+      { ref: 'GP-50', qty: 6, price: 3.90 },
+    ] },
+    options: { supplierCode: 'LVP Distribution' },
+  });
+
+  const par = (ref) => r.lines.find((l) => l.ref === ref);
+  // Le Vaporesso retombe sur le prix commandé une fois ses 20 % imputés.
+  assert.ok(close(par('VP RES GTI 0.2').effectiveUnitCost, 5.39, 0.01));
+  // Le Dojo et le Goo Puff ne reçoivent rien : leur coût reste le prix facturé.
+  assert.ok(close(par('DO-CBLA').effectiveUnitCost, 2.90, 0.001));
+  assert.ok(close(par('GP-50').effectiveUnitCost, 3.90, 0.001));
+  assert.strictEqual(r.summary.claimable, 0);
+});
+
+test('une règle qui ne retombe pas sur la remise imprimée est ignorée', () => {
+  // Garde-fou : si la promotion change, la règle périmée ne doit pas s'appliquer
+  // avec aplomb. 20 % de 67,40 € font 13,48 €, pas 40,00 € — on repasse donc à
+  // une remise générale.
+  const r = compareInvoiceToOrder({
+    invoice: { lines: [
+      { ref: 'A', label: 'Résistances GTI - Vaporesso', qty: 10, lineTotalHt: 67.40 },
+      { ref: 'B', label: 'Cherry Ice 50ml - Goo Puff', qty: 6, lineTotalHt: 23.40 },
+      { ref: null, label: 'Remise', qty: 1, lineTotalHt: -40, kind: 'discount' },
+    ] },
+    order: { lines: [{ ref: 'A', qty: 10, price: 5.39 }, { ref: 'B', qty: 6, price: 3.90 }] },
+    options: { supplierCode: 'LVP Distribution' },
+  });
+  // Remise générale : le Goo Puff en reçoit sa part, ce qui ne serait pas le cas
+  // si la règle s'était appliquée.
+  assert.ok(r.lines.find((l) => l.ref === 'B').discountShare > 0);
+});
+
 if (failures > 0) {
   console.log(`\n${failures} test(s) en échec.`);
   process.exit(1);

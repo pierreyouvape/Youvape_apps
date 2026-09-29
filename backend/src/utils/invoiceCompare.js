@@ -63,6 +63,10 @@ const UNIT_ROUNDING_TOLERANCE = 0.005;
 /** Tolérance de réconciliation entre la somme des lignes lues et le total imprimé. */
 const TOTAL_TOLERANCE = 0.02;
 
+// Les assiettes de remise connues par fournisseur. Module de données pur : le
+// moteur reste sans base ni réseau.
+const { scopesFor } = require('./discountScopes');
+
 const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
 
 /** Réf. normalisée pour le rapprochement : casse, espaces, espaces multiples. */
@@ -128,7 +132,23 @@ function groupByRef(lines) {
  * conditionnement ET qu'il trouve des lignes — sinon on retombe sur une remise
  * générale, qui reste le cas le plus fréquent (Cosmer, GFC, Cloud Vapor, LVP).
  */
-function linesTargetedBy(discountLine, productLines) {
+function linesTargetedBy(discountLine, productLines, supplierCode) {
+  // 1. Une règle connue pour ce fournisseur, VÉRIFIÉE par la somme qu'elle
+  //    produit. Si elle ne retombe pas sur la remise imprimée, on ne s'en sert
+  //    pas : la promotion a changé, et une règle périmée vaut moins qu'une
+  //    répartition générale.
+  for (const regle of scopesFor(supplierCode)) {
+    const vises = productLines.filter((r) => regle.covers(r.label || ''));
+    if (vises.length === 0) continue;
+
+    const brut = vises.reduce((acc, r) => acc + r.invoicedTotal, 0);
+    const attendu = brut * regle.rate;
+    const imprime = Math.abs(discountLine.invoicedTotal);
+    const tolerance = Math.max(0.10, imprime * 0.01);
+    if (Math.abs(attendu - imprime) <= tolerance) return vises;
+  }
+
+  // 2. À défaut, le conditionnement nommé dans le libellé (« PACK IMP 1€ 10ML »).
   const volumes = String(discountLine.label || '').match(/\d+\s*ML\b/gi);
   if (!volumes) return null;
 
@@ -347,7 +367,7 @@ function compareInvoiceToOrder({ invoice, order, options = {} }) {
   const remisePar = new Map();       // toutes remises confondues → coût réel
   const remiseCibleePar = new Map(); // remises CIBLÉES seulement → plafond
   for (const d of remises) {
-    const visees = linesTargetedBy(d, produits);
+    const visees = linesTargetedBy(d, produits, options.supplierCode);
     const cibles = visees || produits;
     const assiette = round2(cibles.reduce((acc, r) => acc + r.invoicedTotal, 0));
     if (assiette <= 0) continue;

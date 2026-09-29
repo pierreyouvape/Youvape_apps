@@ -218,7 +218,11 @@ async function analyseInvoice({ buffer, supplierId, orderId = null, db = pool })
     order: { reference: bmsOrder.reference, lines: keyed.orderLines },
     // Un avoir ne reprend que ce qu'il corrige : le reste de la commande n'est
     // pas « non facturé ».
-    options: { expectFullOrder: invoice.docType !== 'credit_note' },
+    options: {
+      expectFullOrder: invoice.docType !== 'credit_note',
+      // Pour retrouver l'assiette d'une remise de pied ciblée (cf. discountScopes).
+      supplierCode: supplier.code,
+    },
   });
 
   return {
