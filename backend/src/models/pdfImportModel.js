@@ -67,6 +67,7 @@ const pdfImportModel = {
         r.supplier_sku,
         r.pack_qty AS ref_pack_qty,
         r.pack_price,
+        r.price_retained_at,
         COALESCE(ps.pack_qty, 1) AS bms_pack_qty,
         p.id AS internal_product_id,
         p.wp_product_id,
@@ -119,6 +120,7 @@ const pdfImportModel = {
     const refPrice = existing && existing.pack_price != null && existing.pack_qty === refPack
       ? parseFloat(existing.pack_price)
       : null;
+    const refPriceRetained = Boolean(existing && existing.price_retained_at && refPrice != null);
 
     const line = convertLine({
       docQty: parseInt(docQty, 10) || 1,
@@ -126,6 +128,7 @@ const pdfImportModel = {
       discountPercent: parseFloat(discountPercent) || 0,
       refPack,
       refPrice,
+      refPriceRetained,
       bmsPack,
       conversion: conversion || {},
     });
@@ -275,6 +278,7 @@ const pdfImportModel = {
         discountPercent,
         refPack: match ? parseInt(match.ref_pack_qty) : 1,
         refPrice: match && match.pack_price != null ? parseFloat(match.pack_price) : null,
+        refPriceRetained: Boolean(match && match.price_retained_at && match.pack_price != null),
         bmsPack: match ? parseInt(match.bms_pack_qty) : 1,
         conversion,
       });

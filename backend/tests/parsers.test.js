@@ -381,5 +381,32 @@ console.log('Pulp — tarif barre, ecotaxe et saut de page');
   });
 }
 
+test('un tarif retenu sur une facture fait autorité, dans les deux sens', () => {
+  const { convertLine } = require('../src/utils/importLineConversion');
+
+  // e.tasty est en invertPackQty : sans la règle, le prix du document gagnait
+  // toujours et « Retenir ce tarif » n'avait aucun effet.
+  const promo = convertLine({
+    docQty: 50, docPrice: 1.29, refPack: 1, refPrice: 1, refPriceRetained: true,
+    bmsPack: 1, conversion: { invertPackQty: true },
+  });
+  assert.strictEqual(promo.unitPrice, 1);
+
+  // Promotion terminée : le tarif retenu est PLUS CHER que le document, et il
+  // s'applique quand même — c'est l'acheteur qui a tranché.
+  const apres = convertLine({
+    docQty: 50, docPrice: 0.9, refPack: 1, refPrice: 1.29, refPriceRetained: true,
+    bmsPack: 1, conversion: { invertPackQty: true },
+  });
+  assert.strictEqual(apres.unitPrice, 1.29);
+
+  // Sans le drapeau, rien ne change : le document l'emporte comme avant.
+  const sansDrapeau = convertLine({
+    docQty: 50, docPrice: 1.29, refPack: 1, refPrice: 1,
+    bmsPack: 1, conversion: { invertPackQty: true },
+  });
+  assert.strictEqual(sansDrapeau.unitPrice, 1.29);
+});
+
 console.log(failures === 0 ? '\nTous les tests passent.' : `\n${failures} test(s) en échec.`);
 process.exit(failures === 0 ? 0 : 1);

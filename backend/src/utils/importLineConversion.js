@@ -14,7 +14,7 @@
  * Le montant de la ligne est conservé (qty × prix inchangé) ; seul le prix de la
  * réf en base (refPrice, prix DU PACK) est ramené à l'unité de ligne.
  */
-function convertLine({ docQty, docPrice, discountPercent = 0, refPack, refPrice, bmsPack, conversion = {} }) {
+function convertLine({ docQty, docPrice, discountPercent = 0, refPack, refPrice, refPriceRetained = false, bmsPack, conversion = {} }) {
   const r = refPack >= 1 ? refPack : 1;
   const b = bmsPack >= 1 ? bmsPack : 1;
   let k = conversion.skipPackQty ? r / b : r;
@@ -34,12 +34,21 @@ function convertLine({ docQty, docPrice, discountPercent = 0, refPack, refPrice,
   const qtyOrdered = conversion.invertPackQty ? docQty : docQty * k;
 
   // Prix retenu.
-  // invertPackQty / trustPdfPrice : on fait confiance au prix du document (= prix
-  //   réellement facturé), le prix en base étant parfois incohérent.
+  // refPriceRetained : le prix en base a été RELEVÉ SUR UNE FACTURE et retenu
+  //   explicitement par l'acheteur. Il fait autorité, dans les deux sens : plus
+  //   bas pendant une promotion, plus haut quand elle se termine. Sans cette
+  //   règle, le bouton « Retenir ce tarif » n'avait aucun effet chez e.tasty,
+  //   Curieux et Pulp, dont le mode invertPackQty fait toujours gagner le
+  //   document.
+  // invertPackQty / trustPdfPrice : à défaut, on fait confiance au prix du
+  //   document (= prix réellement facturé), le prix en base étant parfois
+  //   incohérent.
   // autres modes : document si meilleur (ou si pas de prix en base), sinon base.
-  const unitPrice = (conversion.invertPackQty || conversion.trustPdfPrice)
-    ? (pdfNet != null ? pdfNet : dbPrice)
-    : ((pdfNet != null && (dbPrice == null || pdfNet < dbPrice)) ? pdfNet : dbPrice);
+  const unitPrice = (refPriceRetained && dbPrice != null)
+    ? dbPrice
+    : (conversion.invertPackQty || conversion.trustPdfPrice)
+      ? (pdfNet != null ? pdfNet : dbPrice)
+      : ((pdfNet != null && (dbPrice == null || pdfNet < dbPrice)) ? pdfNet : dbPrice);
 
   return { packQty: k, qtyOrdered, pdfGross, pdfNet, dbPrice, unitPrice, packWarning };
 }

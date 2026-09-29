@@ -417,7 +417,9 @@ async function alignTariffs(supplierId, tariffs, db = pool) {
 
     const { rows } = await db.query(
       `UPDATE supplier_refs
-          SET pack_price = $3, updated_at = CURRENT_TIMESTAMP
+          SET pack_price = $3,
+              price_retained_at = CURRENT_TIMESTAMP,
+              updated_at = CURRENT_TIMESTAMP
         WHERE supplier_id = $1 AND id = $2
         RETURNING supplier_sku, pack_qty, pack_price`,
       [supplierId, ref.id, arrondi],
