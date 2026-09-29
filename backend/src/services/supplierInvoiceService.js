@@ -225,16 +225,30 @@ async function analyseInvoice({ buffer, supplierId, orderId = null, db = pool })
     },
   });
 
+  const tarifs = listTariffUpdates(comparison);
+
   return {
     supplier,
     invoice,
     order: { ...order, bmsReference: bmsOrder.reference, verified: bmsOrder.verified },
     matchedBy,
     comparison,
-    differences: listDifferences(comparison),
+    // Les écarts, MOINS ceux que le tableau des tarifs traite déjà.
+    //
+    // Une ligne dont le seul reproche est le tarif figurait deux fois de suite :
+    // en haut avec son bouton « Retenir », en bas avec « Réclamer un avoir ». Le
+    // tableau des tarifs dit la même chose et permet d'agir — l'autre n'ajoutait
+    // rien.
+    //
+    // Les lignes « quantité ET tarif » restent dans les deux : le tableau des
+    // écarts y montre la quantité commandée face à la quantité facturée, que
+    // celui des tarifs n'affiche pas.
+    differences: listDifferences(comparison).filter(
+      (d) => !(d.verdict === 'price' && tarifs.some((t) => t.ref === d.ref)),
+    ),
     // Ce qu'il faut corriger dans BMS : l'API ne sait pas l'écrire (aucune route
     // d'écriture sur /supplier/products), l'acheteur le reporte à la main.
-    tariffs: listTariffUpdates(comparison),
+    tariffs: tarifs,
     needsManualOrder: false,
   };
 }
