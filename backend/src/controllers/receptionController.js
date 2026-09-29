@@ -344,3 +344,21 @@ exports.refreshSession = async (req, res) => {
     res.status(400).json({ error: e.message || 'Erreur serveur' });
   }
 };
+
+/**
+ * POST /api/reception/sessions/:sessionId/lines  { product_id, qty, unit_price }
+ * Ajoute un article livré mais absent du bon — dans BMS puis chez nous.
+ */
+exports.addLine = async (req, res) => {
+  try {
+    const session = await sessionModel.addLine(parseInt(req.params.sessionId, 10), {
+      productId: parseInt(req.body.product_id, 10),
+      qty: req.body.qty,
+      unitPrice: req.body.unit_price,
+    });
+    res.status(201).json({ session });
+  } catch (e) {
+    console.error('[reception] ajout de ligne :', e.message);
+    res.status(400).json({ error: e.message || 'Erreur serveur' });
+  }
+};

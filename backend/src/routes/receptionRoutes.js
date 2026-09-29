@@ -28,6 +28,7 @@ router.get('/orders/:id/lifecycle', checkReceptionRead, receptionController.getL
 router.get('/orders/:id/session', checkReceptionRead, receptionController.getSession);
 router.post('/orders/:id/session', checkReceptionWrite, receptionController.openSession);
 router.put('/sessions/:sessionId/counts/:itemId', checkReceptionWrite, receptionController.setCount);
+router.post('/sessions/:sessionId/lines', checkReceptionWrite, receptionController.addLine);
 router.post('/sessions/:sessionId/refresh', checkReceptionWrite, receptionController.refreshSession);
 router.post('/sessions/:sessionId/validate', checkReceptionWrite, receptionController.validateSession);
 router.post('/sessions/:sessionId/abandon', checkReceptionWrite, receptionController.abandonSession);

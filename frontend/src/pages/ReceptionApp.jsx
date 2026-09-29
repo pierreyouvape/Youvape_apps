@@ -146,9 +146,11 @@ const STATUS_LABEL = {
  */
 function Conditionnement({ packs, packSize, pieces, large }) {
   if (!(packSize > 1)) {
+    // L'espace insécable colle le mot au nombre sans les souder : « 2 pièces »
+    // se lisait « 2pièces ».
     return (
       <span style={{ fontSize: large ? 14 : 12, color: C.greyT, fontWeight: 500 }}>
-        pièce{pieces > 1 ? 's' : ''}
+        {'\u00a0'}pièce{pieces > 1 ? 's' : ''}
       </span>
     );
   }
@@ -385,6 +387,7 @@ function CountingScreen({ token, order, items, onBack, onReload }) {
   const [sessionError, setSessionError] = useState(null);
   const [sending, setSending] = useState(false);
   const [sendResult, setSendResult] = useState(null);
+  const [addModal, setAddModal] = useState(false);
 
   // Unités de comptage → PIÈCES. C'est en pièces que BMS raisonne, et lui
   // envoyer des cartons solderait la ligne avec une seule pièce en stock.
@@ -574,6 +577,32 @@ function CountingScreen({ token, order, items, onBack, onReload }) {
   }, [handleScan, typeModal, packQtyModal, unknownModal, diffModal]);
 
   /**
+   * Ajoute un article livré mais absent du bon — dans BMS puis chez nous.
+   *
+   * On croyait ce chemin fermé et on renvoyait le magasinier ouvrir BMS avec un
+   * carton dans les bras. L'API v2 sait créer une ligne : elle est créée en
+   * pièces, conditionnement 1, comme toutes les autres.
+   */
+  const ajouterArticle = async (produit, qte) => {
+    if (!session) { flash('Aucune session de réception ouverte', true); return false; }
+    setSending(true); setSessionError(null);
+    try {
+      const { data } = await axios.post(
+        `${API_URL}/reception/sessions/${session.id}/lines`,
+        { product_id: produit.wp_product_id || produit.id, qty: qte },
+        authHeaders(token),
+      );
+      setSession(data.session || session);
+      onReload();
+      flash(`${produit.post_title || produit.name} ajouté à la commande`);
+      return true;
+    } catch (e) {
+      setSessionError(e.response?.data?.error || e.message);
+      return false;
+    } finally { setSending(false); }
+  };
+
+  /**
    * Recharge les lignes depuis BMS.
    *
    * L'API BMS ne sait pas ajouter une ligne à un bon de commande existant :
@@ -692,9 +721,13 @@ function CountingScreen({ token, order, items, onBack, onReload }) {
             <input type="checkbox" checked={askType} onChange={toggleAsk} />
             Demander le type au scan
           </label>
+          <Btn variant="ghost" onClick={() => setAddModal(true)} disabled={sending || !session}
+            title="Un article livré ne figure pas sur le bon ? Ajoutez-le ici, la ligne est créée dans BMS.">
+            + Ajouter un article
+          </Btn>
           <Btn variant="ghost" onClick={recharger} disabled={sending || !session}
-            title="Un article manque à la liste ? Ajoutez-le au bon de commande dans BMS, puis rechargez.">
-            {sending ? '…' : 'Recharger depuis BMS'}
+            title="Reprendre les lignes ajoutées dans BMS depuis l'ouverture du comptage.">
+            {sending ? '…' : 'Recharger'}
           </Btn>
           <Btn variant="accent" onClick={() => setDiffModal(true)} disabled={totalCounted === 0}>
             Valider
@@ -846,6 +879,20 @@ function CountingScreen({ token, order, items, onBack, onReload }) {
         />
       )}
 
+      {/* Pop-up : ajouter un article absent du bon */}
+      {addModal && (
+        <AddLineModal
+          token={token}
+          supplierId={order.supplier_id}
+          busy={sending}
+          onClose={() => setAddModal(false)}
+          onAdd={async (produit, qte) => {
+            const ok = await ajouterArticle(produit, qte);
+            if (ok) setAddModal(false);
+          }}
+        />
+      )}
+
       {/* Pop-up : écarts */}
       {diffModal && (
         <Modal title="Des différences ont été trouvées" onClose={() => setDiffModal(false)} width={680}>
@@ -941,6 +988,96 @@ function CountingScreen({ token, order, items, onBack, onReload }) {
   );
 }
 
+/* ─── POP-UP : ajouter un article absent du bon ───────────── */
+/**
+ * Le fournisseur a livré quelque chose qui n'est pas sur le bon.
+ *
+ * La ligne est créée dans BMS ET chez nous, rattachée à la commande — la
+ * marchandise garde donc son prix d'achat et son lien au fournisseur, là où un
+ * simple ajustement de stock l'en détacherait.
+ */
+function AddLineModal({ token, supplierId, busy, onClose, onAdd }) {
+  const [terme, setTerme] = useState('');
+  const [resultats, setResultats] = useState([]);
+  const [cherche, setCherche] = useState(false);
+  const [choisi, setChoisi] = useState(null);
+  const [qte, setQte] = useState(1);
+
+  useEffect(() => {
+    if (terme.trim().length < 2) { setResultats([]); return undefined; }
+    const t = setTimeout(async () => {
+      setCherche(true);
+      try {
+        const { data } = await axios.get(`${API_URL}/purchases/products/search`, {
+          ...authHeaders(token),
+          params: { q: terme.trim(), supplier_id: supplierId, all_suppliers: 1, limit: 12 },
+        });
+        setResultats(data.data || []);
+      } catch { setResultats([]); } finally { setCherche(false); }
+    }, 350);
+    return () => clearTimeout(t);
+  }, [terme, supplierId, token]);
+
+  return (
+    <Modal title="Ajouter un article à la commande" onClose={onClose} width={620}>
+      <p style={{ fontSize: 12.5, color: C.greyT, margin: '0 0 14px' }}>
+        La ligne sera créée dans BMS et ici, rattachée à cette commande. Les quantités sont
+        en <strong>pièces</strong>.
+      </p>
+
+      {!choisi ? (
+        <>
+          <input
+            value={terme}
+            onChange={(e) => setTerme(e.target.value)}
+            placeholder="Nom, SKU, marque…"
+            autoFocus
+            style={{ width: '100%', padding: '11px 13px', fontSize: 15, borderRadius: 9,
+              border: `1px solid ${C.greyB}`, marginBottom: 12 }}
+          />
+          <div style={{ maxHeight: 280, overflowY: 'auto', border: `1px solid ${C.greyB}`, borderRadius: 9 }}>
+            {cherche && <div style={{ padding: 16, color: C.greyT, fontSize: 13.5 }}>Recherche…</div>}
+            {!cherche && terme.trim().length >= 2 && resultats.length === 0 && (
+              <div style={{ padding: 16, color: C.greyT, fontSize: 13.5 }}>Aucun produit trouvé.</div>
+            )}
+            {resultats.map((p) => (
+              <button key={p.id} type="button" onClick={() => setChoisi(p)}
+                style={{ display: 'block', width: '100%', textAlign: 'left', padding: '11px 14px',
+                  border: 'none', borderBottom: `1px solid ${C.greyB}`, background: 'transparent',
+                  cursor: 'pointer', fontSize: 13.5 }}>
+                <strong>{p.post_title}</strong>
+                <div style={{ fontSize: 12, color: C.greyT }}>{p.sku} · stock {p.stock}</div>
+              </button>
+            ))}
+          </div>
+        </>
+      ) : (
+        <div>
+          <div style={{ background: C.grey, borderRadius: 9, padding: '12px 14px', marginBottom: 14 }}>
+            <strong style={{ fontSize: 14 }}>{choisi.post_title}</strong>
+            <div style={{ fontSize: 12.5, color: C.greyT }}>{choisi.sku}</div>
+          </div>
+          <label style={{ display: 'block', fontSize: 12.5, color: C.greyT, marginBottom: 6 }}>
+            Quantité reçue, en pièces
+          </label>
+          <input type="number" min="1" value={qte} autoFocus
+            onChange={(e) => setQte(Math.max(1, parseInt(e.target.value, 10) || 1))}
+            style={{ width: 140, padding: '11px 13px', fontSize: 17, fontWeight: 700,
+              textAlign: 'center', borderRadius: 9, border: `1px solid ${C.greyB}` }} />
+        </div>
+      )}
+
+      <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 18 }}>
+        {choisi && <Btn variant="ghost" onClick={() => setChoisi(null)} disabled={busy}>Changer</Btn>}
+        <Btn variant="ghost" onClick={onClose} disabled={busy}>Annuler</Btn>
+        <Btn variant="accent" onClick={() => onAdd(choisi, qte)} disabled={!choisi || busy}>
+          {busy ? 'Ajout…' : 'Ajouter à la commande'}
+        </Btn>
+      </div>
+    </Modal>
+  );
+}
+
 /* ─── POP-UP : unité ou pack ? ──────────────────────────── */
 function TypeModal({ data, onClose, onChoose }) {
   const [qty, setQty] = useState(data.packQty || 1);
@@ -1014,10 +1151,9 @@ function UnknownModal({ barcode, items, onClose, onAttach }) {
           seul chemin propre passe par BMS puis par le rechargement. */}
       <div style={{ background: C.accentL, border: `1px solid ${C.accent}`, borderRadius: 9,
         padding: '11px 14px', fontSize: 12.5, color: '#7C4A00', margin: '0 0 16px' }}>
-        <strong>L'article n'est pas sur le bon de commande ?</strong> Ajoutez-lui la ligne dans
-        BMS, puis fermez cette fenêtre et cliquez sur <strong>« Recharger depuis BMS »</strong>.
-        La marchandise restera rattachée à la commande, avec son prix d'achat. L'API de BMS ne
-        sait pas ajouter une ligne à distance, c'est le seul chemin.
+        <strong>L'article n'est pas sur le bon de commande ?</strong> Fermez cette fenêtre et
+        utilisez <strong>« Ajouter un article »</strong> : la ligne est créée dans BMS et ici,
+        rattachée à la commande avec son prix d'achat.
       </div>
 
       <div style={{ maxHeight: 260, overflowY: 'auto', border: `1px solid ${C.greyB}`,

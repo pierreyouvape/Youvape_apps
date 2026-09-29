@@ -538,18 +538,6 @@ const CreateOrderPage = () => {
           )}
         </div>
 
-        {/* BMS compte en lots, nous en pièces : l'écran le dit plutôt que de
-            laisser découvrir l'écart dans BMS. Les montants, eux, concordent. */}
-        {orderItems.some(i => (i.units_per_qty || 1) > 1) && (
-          <div style={{ background: '#FDF3E2', border: '1px solid #E28F00', borderRadius: '8px',
-            padding: '11px 15px', marginBottom: '20px', fontSize: '13px', color: '#7C4A00' }}>
-            BMS affichera ces lignes en <strong>lots</strong>, pas en pièces — 10 pièces d'un
-            produit conditionné par 5 y deviennent 2 lots de 5. Les quantités et les montants
-            sont identiques ; c'est la présentation qui diffère. Le conditionnement vient du
-            catalogue et n'est pas modifiable ici : BMS impose le sien.
-          </div>
-        )}
-
         {/* Les totaux. Le TTC parce que c'est ce qu'on paiera, le HT parce que
             c'est ce que la facture comparera. */}
         {orderItems.length > 0 && (

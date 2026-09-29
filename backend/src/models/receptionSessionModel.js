@@ -409,7 +409,91 @@ async function fetchBmsLinesFull(bmsPoId) {
   }));
 }
 
+/**
+ * Ajoute un article à la commande, dans BMS puis chez nous, et l'ouvre au
+ * comptage.
+ *
+ * On croyait ce chemin fermé : l'API v1 ne sait pas toucher aux lignes d'un bon
+ * de commande, et il fallait passer par l'interface de BMS. La v2 le sait
+ * (POST /v2/purchase-orders/{id}/items, vérifié le 29/09/2026), ce qui évite au
+ * magasinier d'aller ouvrir BMS avec un carton dans les bras.
+ *
+ * La ligne est créée en PIÈCES avec un conditionnement de 1, comme toutes les
+ * autres : c'est la seule forme où le stock de BMS et ses compteurs s'accordent.
+ */
+async function addLine(sessionId, { productId, qty, unitPrice }, db = pool) {
+  const { rows: sessions } = await db.query(
+    'SELECT * FROM reception_sessions WHERE id = $1', [sessionId],
+  );
+  const session = sessions[0];
+  if (!session) throw new Error('Réception introuvable');
+  if (session.status !== 'counting') throw new Error('Cette réception n\'est plus en cours');
+
+  const pieces = Math.max(1, parseInt(qty, 10) || 1);
+
+  const { rows: produits } = await db.query(
+    `SELECT p.id, p.sku, p.post_title, ps.supplier_price
+       FROM products p
+       LEFT JOIN product_suppliers ps ON ps.product_id = p.id AND ps.supplier_id = (
+         SELECT supplier_id FROM purchase_orders WHERE id = $2)
+      WHERE p.id = $1 OR p.wp_product_id = $1
+      ORDER BY CASE WHEN p.wp_product_id = $1 THEN 0 ELSE 1 END
+      LIMIT 1`,
+    [productId, session.purchase_order_id],
+  );
+  const produit = produits[0];
+  if (!produit) throw new Error('Produit introuvable');
+  if (!produit.sku) throw new Error('Ce produit n\'a pas de SKU : BMS ne peut pas le référencer');
+
+  const { rows: commandes } = await db.query(
+    'SELECT bms_po_id FROM purchase_orders WHERE id = $1', [session.purchase_order_id],
+  );
+  const bmsPoId = (commandes[0] || {}).bms_po_id;
+  if (!bmsPoId) throw new Error('Cette commande n\'existe pas dans BMS');
+
+  // Le prix : celui du lien fournisseur à défaut d'autre chose. Une ligne
+  // ajoutée à la réception n'a pas été négociée — le contrôle de facture
+  // corrigera.
+  const prix = unitPrice != null && unitPrice !== ''
+    ? parseFloat(unitPrice)
+    : (produit.supplier_price != null ? parseFloat(produit.supplier_price) : 0);
+
+  const creee = await bmsApiModel.apiCall(
+    `/v2/purchase-orders/${bmsPoId}/items`, 'POST',
+    { sku: produit.sku, qty: pieces, qty_pack: 1, price: Math.round(prix * 10000) / 10000 },
+  );
+  const ligneBms = creee.data || creee;
+
+  const client = await db.connect();
+  try {
+    await client.query('BEGIN');
+    const { rows: [ligne] } = await client.query(
+      `INSERT INTO purchase_order_items (
+         purchase_order_id, product_id, supplier_sku, product_name,
+         qty_ordered, unit_price, units_per_qty
+       ) VALUES ($1, $2, $3, $4, $5, $6, 1) RETURNING id`,
+      [session.purchase_order_id, produit.id, ligneBms.supplier_sku || null,
+       produit.post_title, pieces, prix],
+    );
+    await client.query(
+      `INSERT INTO reception_counts (session_id, purchase_order_item_id, bms_line_id, units_counted)
+       VALUES ($1, $2, $3, 0)`,
+      [sessionId, ligne.id, ligneBms.id || null],
+    );
+    await client.query('COMMIT');
+  } catch (e) {
+    await client.query('ROLLBACK');
+    throw new Error(
+      `La ligne est CRÉÉE dans BMS mais pas chez nous (${e.message}). `
+      + 'Utilisez « Recharger depuis BMS » pour la reprendre.',
+    );
+  }
+
+  return getOpenSession(session.purchase_order_id, db);
+}
+
 module.exports = {
+  addLine,
   refreshFromBms,
   fetchBmsLinesFull,
   validateSession,

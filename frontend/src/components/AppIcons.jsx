@@ -441,6 +441,16 @@ export const APP_GROUPS = [
     members: ['picking', 'packing', 'bordereau', 'expeditions', 'stats-expedition'],
   },
   {
+    // Réception vit sous Gestion d'achat : c'est le même cycle — on commande,
+    // on reçoit, on contrôle la facture — et le magasinier n'a pas à chercher
+    // une tuile séparée. Le groupe, pas une app conteneur : /reception est
+    // ouverte en favori sur la tablette du dépôt.
+    key: 'grp-achats',
+    label: "Gestion d'achat",
+    color: '#F59E0B',
+    members: ['purchases', 'reception', 'factures-fournisseurs', 'purchases-v2'],
+  },
+  {
     key: 'grp-factures-transporteurs',
     label: 'Factures Transporteurs',
     color: '#1F4B6E',
