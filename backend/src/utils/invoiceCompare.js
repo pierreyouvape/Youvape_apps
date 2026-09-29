@@ -133,6 +133,10 @@ function groupByRef(lines) {
  * générale, qui reste le cas le plus fréquent (Cosmer, GFC, Cloud Vapor, LVP).
  */
 function linesTargetedBy(discountLine, productLines, supplierCode) {
+  // Renseigné quand c'est une règle nommée qui a tranché : l'écran doit pouvoir
+  // dire « −20 % sur les Vaporesso » plutôt qu'une moyenne par pièce, qui n'a
+  // aucun sens quand les lignes visées n'ont pas le même prix.
+  linesTargetedBy.derniereRegle = null;
   // 1. Une règle connue pour ce fournisseur, VÉRIFIÉE par la somme qu'elle
   //    produit. Si elle ne retombe pas sur la remise imprimée, on ne s'en sert
   //    pas : la promotion a changé, et une règle périmée vaut moins qu'une
@@ -145,7 +149,10 @@ function linesTargetedBy(discountLine, productLines, supplierCode) {
     const attendu = brut * regle.rate;
     const imprime = Math.abs(discountLine.invoicedTotal);
     const tolerance = Math.max(0.10, imprime * 0.01);
-    if (Math.abs(attendu - imprime) <= tolerance) return vises;
+    if (Math.abs(attendu - imprime) <= tolerance) {
+      linesTargetedBy.derniereRegle = regle;
+      return vises;
+    }
   }
 
   // 2. À défaut, le conditionnement nommé dans le libellé (« PACK IMP 1€ 10ML »).
@@ -368,6 +375,7 @@ function compareInvoiceToOrder({ invoice, order, options = {} }) {
   const remiseCibleePar = new Map(); // remises CIBLÉES seulement → plafond
   for (const d of remises) {
     const visees = linesTargetedBy(d, produits, options.supplierCode);
+    const regle = linesTargetedBy.derniereRegle;
     const cibles = visees || produits;
     const assiette = round2(cibles.reduce((acc, r) => acc + r.invoicedTotal, 0));
     if (assiette <= 0) continue;
@@ -395,8 +403,17 @@ function compareInvoiceToOrder({ invoice, order, options = {} }) {
       targeted: Boolean(visees),
       lines: payantes.length,
       units: pieces,
-      perUnit: pieces > 0 ? round2(Math.abs(d.invoicedTotal) / pieces) : null,
+      // Une remise « à la pièce » ne veut dire quelque chose que si toutes les
+      // lignes visées reçoivent le MÊME montant par pièce. Chez LVP, RSPV20 est
+      // un pourcentage sur des articles de prix très différents : annoncer
+      // « −1,20 € la pièce » sur 74 pièces n'apprenait rien et induisait en
+      // erreur. On ne le donne donc que lorsque c'est vrai.
+      perUnit: couts.length === 1 && pieces > 0 ? round2(Math.abs(d.invoicedTotal) / pieces) : null,
       unitCost: couts.length === 1 ? couts[0] / 100 : null,
+      // La règle qui a tranché, quand c'en est une : de quoi l'écrire en clair.
+      ruleName: regle ? regle.name : null,
+      ruleNote: regle ? regle.note : null,
+      ruleRate: regle ? regle.rate : null,
     };
   }
 

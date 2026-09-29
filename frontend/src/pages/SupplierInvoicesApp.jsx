@@ -791,17 +791,36 @@ function ControlTab({ suppliers, mobile, onSaved }) {
               <strong>{eur(Math.abs(totals.footerDiscount))}</strong> sont déduits en pied. Le prix payé n'est
               donc pas celui des lignes :
               <ul style={{ margin: '8px 0 0', paddingLeft: 18 }}>
-                {(result.comparison?.lines || []).filter((l) => l.verdict === 'discount').map((l, i) => (
-                  <li key={i} style={{ marginBottom: 3 }}>
-                    <strong>{l.label || 'Remise'}</strong> — {eur(Math.abs(l.invoicedTotal))}
-                    {l.scope?.targeted && l.scope.units > 0 && (
-                      <> sur {l.scope.units} pièces, soit <strong>−{eur(l.scope.perUnit)}</strong> la pièce
-                        {l.scope.unitCost != null && <> → prix réel <strong>{eur(l.scope.unitCost)}</strong></>}
-                      </>
-                    )}
-                  </li>
-                ))}
+                {(result.comparison?.lines || []).filter((l) => l.verdict === 'discount').map((l, i) => {
+                  const sc = l.scope || {};
+                  return (
+                    <li key={i} style={{ marginBottom: 3 }}>
+                      <strong>{sc.ruleName || l.label || 'Remise'}</strong> — {eur(Math.abs(l.invoicedTotal))}
+                      {/* Une règle nommée se dit en clair. Une remise répartie à
+                          l'identique sur chaque pièce se dit à la pièce. Sinon on
+                          se tait : « −1,20 € la pièce » sur des articles de prix
+                          très différents n'apprend rien. */}
+                      {sc.ruleNote && <>, soit <strong>{sc.ruleNote}</strong> ({sc.lines} lignes)</>}
+                      {!sc.ruleNote && sc.targeted && sc.perUnit != null && (
+                        <> sur {sc.units} pièces, soit <strong>−{eur(sc.perUnit)}</strong> la pièce
+                          {sc.unitCost != null && <> → prix réel <strong>{eur(sc.unitCost)}</strong></>}
+                        </>
+                      )}
+                    </li>
+                  );
+                })}
               </ul>
+            </div>
+          )}
+
+          {/* Un écart qui ne correspond à aucune ligne à traiter n'est pas un
+              mystère : c'est la somme des arrondis au centime. Le taire laissait
+              l'écran annoncer « −0,23 € » sans rien en face. */}
+          {totals && (result.rows || []).length === 0 && Math.abs(totals.gap) > 0.005 && (
+            <div style={{ padding: 13, background: C.grey, color: C.greyM, borderRadius: 10, fontSize: 13 }}>
+              Il reste <strong>{eur(totals.gap)}</strong> d'écart, sans aucune ligne à traiter : c'est
+              l'accumulation des <strong>arrondis au centime</strong>. Chaque prix remisé est arrondi
+              séparément par le fournisseur, et la somme dérive de quelques centimes. Rien à réclamer.
             </div>
           )}
 
