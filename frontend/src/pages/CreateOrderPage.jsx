@@ -49,8 +49,13 @@ const CreateOrderPage = () => {
     setSearchTimeout(setTimeout(async () => {
       setSearchLoading(true);
       try {
-        // Restreint la recherche aux produits déjà associés au fournisseur sélectionné
-        const supplierParam = supplierId ? `&supplier_id=${supplierId}` : '';
+        // La recherche N'EST PAS restreinte aux produits du fournisseur choisi.
+        // Un produit qu'on vient de créer n'est encore rattaché à personne et
+        // serait introuvable ; et on doit pouvoir commander ailleurs un article
+        // vu moins cher. Le fournisseur sert ici à ENRICHIR les résultats — ses
+        // références, leurs conditionnements et le dernier tarif retenu — pas à
+        // les filtrer.
+        const supplierParam = supplierId ? `&supplier_id=${supplierId}&all_suppliers=1` : '';
         const response = await axios.get(`${API_URL}/purchases/products/search?q=${encodeURIComponent(value)}&limit=30${supplierParam}`, {
           headers: { Authorization: `Bearer ${token}` }
         });
@@ -66,15 +71,30 @@ const CreateOrderPage = () => {
     }, 300));
   };
 
-  // Add product to order
-  const addProductToOrder = (product) => {
+  /**
+   * Ajoute un produit, éventuellement sous une RÉFÉRENCE PRÉCISE du fournisseur.
+   *
+   * Un produit a souvent plusieurs références chez le même fournisseur — à
+   * l'unité, par 50, par 100 — et c'est celle qu'on retient qui fixe ce que la
+   * ligne veut dire. Elle apporte son conditionnement et son prix.
+   *
+   * Le prix part du dernier tarif RETENU sur une facture contrôlée quand il
+   * existe : c'est ce qui a été réellement payé, pas un souvenir.
+   */
+  const addProductToOrder = (product, ref = null) => {
+    const packQty = ref ? ref.pack_qty : (product.supplier_pack_qty || 1);
     setOrderItems(prev => [...prev, {
       product_id: product.id,
       product_name: product.post_title,
       sku: product.sku,
       stock: product.stock,
+      supplier_sku: ref ? ref.supplier_sku : null,
       qty_ordered: 1,
-      unit_price: product.cost_price || null
+      units_per_qty: packQty,
+      unit_price: ref && ref.pack_price != null
+        ? ref.pack_price
+        : (product.supplier_price != null ? product.supplier_price : (product.cost_price || null)),
+      priceRetained: Boolean(ref && ref.retained_at),
     }]);
     setProductSearch('');
     setSearchResults([]);
@@ -83,6 +103,16 @@ const CreateOrderPage = () => {
   // Remove product from order
   const removeProductFromOrder = (productId) => {
     setOrderItems(prev => prev.filter(item => item.product_id !== productId));
+  };
+
+  // Conditionnement de la ligne : « 4 × 5 = 20 pièces ». Quatre tout seul ne
+  // dit pas si ce sont quatre flacons ou quatre cartons.
+  const updateItemPack = (productId, packQty) => {
+    setOrderItems(prev => prev.map(item =>
+      item.product_id === productId
+        ? { ...item, units_per_qty: Math.max(1, parseInt(packQty, 10) || 1) }
+        : item
+    ));
   };
 
   // Update quantity
@@ -120,7 +150,10 @@ const CreateOrderPage = () => {
         qty_ordered: item.qty_ordered,
         stock_before: item.stock || 0,
         supplier_sku: item.supplier_sku || null,
-        unit_price: item.unit_price || null
+        unit_price: item.unit_price || null,
+        // Sans lui, « 4 packs de 5 » partirait chez BMS comme 4 pièces.
+        units_per_qty: parseInt(item.units_per_qty, 10) || 1,
+        supplier_sku: item.supplier_sku || null
       }));
 
       const response = await axios.post(`${API_URL}/purchases/orders`, {
@@ -282,10 +315,40 @@ const CreateOrderPage = () => {
                         <span>SKU: <code>{product.sku || '-'}</code></span>
                         <span>Stock: <strong style={{ color: product.stock <= 0 ? '#ef4444' : 'inherit' }}>{product.stock ?? 'N/A'}</strong></span>
                       </div>
+                      {/* Une référence par conditionnement : à l'unité, par 50,
+                          par 100. Celle qu'on choisit fixe le sens de la ligne et
+                          apporte son tarif. */}
+                      {(product.supplier_refs || []).length > 0 && (
+                        <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginTop: '7px' }}>
+                          {product.supplier_refs.map(ref => (
+                            <button
+                              key={ref.supplier_sku}
+                              type="button"
+                              onClick={(e) => { e.stopPropagation(); addProductToOrder(product, ref); }}
+                              style={{
+                                border: `1px solid ${ref.retained_at ? '#16A34A' : '#ddd'}`,
+                                background: ref.retained_at ? '#F0FDF4' : 'white',
+                                borderRadius: '7px', padding: '5px 9px', fontSize: '12px',
+                                cursor: 'pointer', textAlign: 'left',
+                              }}
+                            >
+                              <strong>{ref.supplier_sku}</strong>
+                              <span style={{ color: '#666' }}>
+                                {' '}· par {ref.pack_qty}
+                                {ref.pack_price != null && ` · ${Number(ref.pack_price).toFixed(2).replace('.', ',')} €`}
+                              </span>
+                              {ref.retained_at && (
+                                <span style={{ color: '#16A34A', fontWeight: 600 }}> · tarif retenu</span>
+                              )}
+                            </button>
+                          ))}
+                        </div>
+                      )}
                     </div>
                     <span style={{ color: '#10b981', fontSize: '24px', fontWeight: 'bold', marginLeft: '15px' }}>+</span>
                   </div>
                 ))}
+
               </div>
             )}
           </div>
@@ -315,8 +378,10 @@ const CreateOrderPage = () => {
                   <th style={{ textAlign: 'left', padding: '10px', fontWeight: 600 }}>Produit</th>
                   <th style={{ textAlign: 'left', padding: '10px', fontWeight: 600, width: '120px' }}>SKU</th>
                   <th style={{ textAlign: 'center', padding: '10px', fontWeight: 600, width: '80px' }}>Stock</th>
-                  <th style={{ textAlign: 'center', padding: '10px', fontWeight: 600, width: '120px' }}>Quantité</th>
-                  <th style={{ textAlign: 'center', padding: '10px', fontWeight: 600, width: '140px' }}>Prix unitaire (€)</th>
+                  <th style={{ textAlign: 'center', padding: '10px', fontWeight: 600, width: '110px' }}>Quantité</th>
+                  <th style={{ textAlign: 'center', padding: '10px', fontWeight: 600, width: '90px' }}>Par</th>
+                  <th style={{ textAlign: 'left', padding: '10px', fontWeight: 600, width: '150px' }}>Soit</th>
+                  <th style={{ textAlign: 'center', padding: '10px', fontWeight: 600, width: '140px' }}>Prix (€)</th>
                   <th style={{ width: '60px' }}></th>
                 </tr>
               </thead>
@@ -338,6 +403,41 @@ const CreateOrderPage = () => {
                         onChange={e => updateItemQty(item.product_id, parseInt(e.target.value) || 1)}
                         style={{ width: '80px', padding: '8px', borderRadius: '4px', border: '1px solid #ddd', textAlign: 'center', fontSize: '14px' }}
                       />
+                    </td>
+                    <td style={{ padding: '12px 10px', textAlign: 'center' }}>
+                      <input
+                        type="number"
+                        min="1"
+                        value={item.units_per_qty ?? 1}
+                        onChange={e => updateItemPack(item.product_id, e.target.value)}
+                        title="Nombre de pièces par lot commandé"
+                        style={{ width: '70px', padding: '8px', borderRadius: '4px', border: '1px solid #ddd', textAlign: 'center', fontSize: '14px' }}
+                      />
+                    </td>
+                    {/* « 4 » tout seul ne dit pas si ce sont quatre flacons ou
+                        quatre cartons. Ce sont les pièces qui partent chez le
+                        fournisseur et qui reviendront en stock. */}
+                    <td style={{ padding: '12px 10px', fontSize: '13px' }}>
+                      {(item.units_per_qty || 1) > 1 ? (
+                        <span style={{ color: '#E28F00', fontWeight: 600 }}>
+                          {item.qty_ordered} × {item.units_per_qty}
+                          <span style={{ color: '#666', fontWeight: 400 }}>
+                            {' '}= {item.qty_ordered * item.units_per_qty} pièces
+                          </span>
+                        </span>
+                      ) : (
+                        <span style={{ color: '#666' }}>
+                          {item.qty_ordered} pièce{item.qty_ordered > 1 ? 's' : ''}
+                        </span>
+                      )}
+                      {item.supplier_sku && (
+                        <div style={{ fontSize: '11.5px', color: '#888', marginTop: '2px' }}>
+                          réf. {item.supplier_sku}
+                          {item.priceRetained && (
+                            <span style={{ color: '#16A34A', fontWeight: 600 }}> · tarif retenu</span>
+                          )}
+                        </div>
+                      )}
                     </td>
                     <td style={{ padding: '12px 10px', textAlign: 'center' }}>
                       <input

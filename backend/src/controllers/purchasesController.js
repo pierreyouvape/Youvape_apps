@@ -20,10 +20,18 @@ const purchasesController = {
     try {
       const searchTerm = req.query.q || '';
       const limit = parseInt(req.query.limit) || 30;
-      // Optionnel : restreindre aux produits déjà associés à ce fournisseur.
-      // Utilisé sur les écrans de commande pour ne proposer que les produits
-      // réellement commandés chez ce fournisseur (évite les attributions à tort).
+      // `supplier_id` sert DEUX choses distinctes, et il fallait pouvoir les
+      // séparer : restreindre la recherche à ses produits, et enrichir les
+      // résultats de ses références et tarifs.
+      //
+      // Restreindre est le bon réflexe quand on complète une commande existante.
+      // C'en est un mauvais quand on en crée une : un produit qu'on vient de
+      // créer n'est encore rattaché à personne et serait introuvable, et on ne
+      // pourrait jamais commander ailleurs un article vu moins cher.
+      // `all_suppliers=1` lève la restriction sans rien perdre de
+      // l'enrichissement.
       const supplierId = req.query.supplier_id ? parseInt(req.query.supplier_id) : null;
+      const restreindre = supplierId && req.query.all_suppliers !== '1';
 
       if (searchTerm.length < 2) {
         return res.json({ success: true, data: [] });
@@ -45,7 +53,7 @@ const purchasesController = {
       // Filtre fournisseur : le produit lui-même (simple/variation) OU son parent
       // (les associations product_suppliers sont stockées au niveau parent pour les variables)
       let supplierClause = '';
-      if (supplierId) {
+      if (restreindre) {
         supplierClause = `AND EXISTS (
             SELECT 1 FROM product_suppliers ps
             WHERE ps.supplier_id = $${idx}
