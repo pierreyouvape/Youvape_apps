@@ -136,6 +136,30 @@ const STATUS_LABEL = {
 };
 
 /* ─── ÉCRAN 1 — LISTE ───────────────────────────────────── */
+/**
+ * Le conditionnement d'une ligne, écrit en toutes lettres.
+ *
+ * « 4 » tout seul ne dit pas si ce sont quatre flacons ou quatre cartons, et
+ * l'opérateur qui lit l'écran debout n'a pas à faire la multiplication de tête.
+ * On écrit donc les trois nombres : combien de boîtes, de quelle taille, et
+ * combien de pièces au total — puisque ce sont les pièces qui entrent en stock.
+ */
+function Conditionnement({ packs, packSize, pieces, large }) {
+  if (!(packSize > 1)) {
+    return (
+      <span style={{ fontSize: large ? 14 : 12, color: C.greyT, fontWeight: 500 }}>
+        pièce{pieces > 1 ? 's' : ''}
+      </span>
+    );
+  }
+  return (
+    <div style={{ fontSize: large ? 14 : 12, fontWeight: 600, color: C.accent, marginTop: 3 }}>
+      {packs} boîte{packs > 1 ? 's' : ''} de {packSize}
+      <span style={{ color: C.greyT, fontWeight: 500 }}> = {pieces} pièce{pieces > 1 ? 's' : ''}</span>
+    </div>
+  );
+}
+
 function OrdersList({ token, onOpen }) {
   const [orders, setOrders] = useState([]);
   const [suppliers, setSuppliers] = useState([]);
@@ -279,7 +303,14 @@ function OrderDetail({ order, items, onBack, onStart }) {
                   </Td>
                   <Td color={C.greyT}>{it.supplier_sku || it.sku || '—'}</Td>
                   <Td><Location value={it.shelf_location} /></Td>
-                  <Td align="right">{it.qty_expected_packs}</Td>
+                  <Td align="right">
+                    {it.qty_expected_packs}
+                    <Conditionnement
+                      packs={it.qty_expected_packs}
+                      packSize={it.pack_size}
+                      pieces={it.qty_expected}
+                    />
+                  </Td>
                   <Td align="right" color={it.pack_size > 1 ? C.accent : C.greyM}>
                     {it.pack_size > 1 ? `× ${it.pack_size}` : '—'}
                   </Td>
@@ -670,12 +701,12 @@ function CountingScreen({ token, order, items, onBack, onReload }) {
                     <Td large><Location value={it.shelf_location} large /></Td>
                     <Td align="right" bold large>
                       {targetOf(it)}
-                      {it.pack_size > 1 && (
-                        <div style={{ fontSize: 14, fontWeight: 600, color: C.accent, marginTop: 3 }}>
-                          boîte{targetOf(it) > 1 ? 's' : ''} de {it.pack_size}
-                          <span style={{ color: C.greyT, fontWeight: 500 }}> · {it.qty_remaining} u.</span>
-                        </div>
-                      )}
+                      <Conditionnement
+                        packs={targetOf(it)}
+                        packSize={it.pack_size}
+                        pieces={it.qty_remaining}
+                        large
+                      />
                     </Td>
                     <Td align="center" large>
                       <div style={{ display: 'flex', gap: 8, alignItems: 'center', justifyContent: 'center' }}>
