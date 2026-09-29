@@ -428,7 +428,8 @@ const CreateOrderPage = () => {
                   <th style={{ textAlign: 'center', padding: '10px', fontWeight: 600, width: '110px' }}>Quantité</th>
                   <th style={{ textAlign: 'center', padding: '10px', fontWeight: 600, width: '90px' }}>Par</th>
                   <th style={{ textAlign: 'left', padding: '10px', fontWeight: 600, width: '150px' }}>Soit</th>
-                  <th style={{ textAlign: 'center', padding: '10px', fontWeight: 600, width: '140px' }}>Prix (€)</th>
+                  <th style={{ textAlign: 'center', padding: '10px', fontWeight: 600, width: '130px' }}>Prix du lot (€)</th>
+                  <th style={{ textAlign: 'right', padding: '10px', fontWeight: 600, width: '110px' }}>Total ligne</th>
                   <th style={{ width: '60px' }}></th>
                 </tr>
               </thead>
@@ -504,6 +505,24 @@ const CreateOrderPage = () => {
                           fontSize: '14px'
                         }}
                       />
+                      {/* Le prix saisi porte sur ce qu'on commande : un lot quand
+                          la ligne en a un, une pièce sinon. Sans cette mention,
+                          « 7,50 » sur une ligne de 5 se lit aussi bien comme le
+                          prix du lot que comme celui de la pièce — et l'écart
+                          est de un à cinq. */}
+                      <div style={{ fontSize: '11px', color: '#888', marginTop: '3px' }}>
+                        {(item.units_per_qty || 1) > 1
+                          ? `le lot de ${item.units_per_qty}`
+                          : 'la pièce'}
+                      </div>
+                    </td>
+                    <td style={{ padding: '12px 10px', textAlign: 'right', fontWeight: 700, fontSize: '14px' }}>
+                      {eur((parseFloat(item.unit_price) || 0) * item.qty_ordered)}
+                      {(item.units_per_qty || 1) > 1 && item.unit_price > 0 && (
+                        <div style={{ fontSize: '11px', color: '#888', fontWeight: 400, marginTop: '3px' }}>
+                          {eur(parseFloat(item.unit_price) / item.units_per_qty)} la pièce
+                        </div>
+                      )}
                     </td>
                     <td style={{ padding: '12px 10px', textAlign: 'center' }}>
                       <button
