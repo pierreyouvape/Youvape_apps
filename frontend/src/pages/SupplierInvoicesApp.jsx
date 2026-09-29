@@ -570,10 +570,14 @@ function ControlTab({ suppliers, mobile, onSaved }) {
   const [copied, setCopied] = useState(false);
   const [dragging, setDragging] = useState(false);
   const [manualOrderId, setManualOrderId] = useState('');
+  // « La marchandise est-elle arrivée ? » — la question qu'on se pose avant de
+  // régler, et à laquelle il fallait changer d'application pour répondre.
+  const [lifecycle, setLifecycle] = useState(null);
   const fileInput = useRef(null);
 
   const reset = () => {
     setResult(null); setSaved(null); setError(null); setCopied(false); setManualOrderId('');
+    setLifecycle(null);
   };
 
   // Lecture seule : rien n'est écrit tant que l'acheteur n'a pas validé.
@@ -591,6 +595,11 @@ function ControlTab({ suppliers, mobile, onSaved }) {
       const { data } = await axios.post(`${BASE}/analyse`, form);
       setResult(data);
       setManualOrderId(orderId || '');
+      if (data.order && data.order.id) {
+        axios.get(`${BASE}/orders/${data.order.id}/lifecycle`)
+          .then((r) => setLifecycle(r.data))
+          .catch(() => setLifecycle(null));
+      }
     } catch (e) {
       setError(e.response?.data?.error || e.message);
     } finally { setBusy(false); }
@@ -782,6 +791,36 @@ function ControlTab({ suppliers, mobile, onSaved }) {
               même montant de <strong>{eur(summary.orphanAmount)}</strong>. Ce sont très probablement les
               mêmes articles, avec une référence que le PDF a rendue illisible — ni manquant, ni article
               ajouté. À vérifier sur le document avant toute réclamation.
+            </div>
+          )}
+
+          {/* Ce que la commande a réellement reçu. Payer une facture dont la
+              marchandise n'est pas arrivée, c'est le genre d'erreur qu'on ne
+              découvre qu'au moment de l'inventaire. */}
+          {lifecycle && (
+            <div style={{
+              padding: 13, borderRadius: 10, fontSize: 13,
+              background: lifecycle.summary.fullyReceived ? C.greenL : C.orangeL,
+              color: lifecycle.summary.fullyReceived ? C.green : C.orange,
+            }}>
+              {lifecycle.summary.fullyReceived ? (
+                <>Marchandise <strong>entièrement reçue</strong> : {lifecycle.order.units_received} pièces
+                  sur {lifecycle.order.units_ordered} commandées.</>
+              ) : lifecycle.summary.partiallyReceived ? (
+                <>Marchandise <strong>partiellement reçue</strong> : {lifecycle.order.units_received} pièces
+                  sur {lifecycle.order.units_ordered} commandées. Il en manque{' '}
+                  <strong>{lifecycle.order.units_ordered - lifecycle.order.units_received}</strong>.</>
+              ) : (
+                <>Cette commande n'a <strong>rien reçu</strong> à ce jour
+                  ({lifecycle.order.units_ordered} pièces attendues). Vérifier la livraison avant de régler.</>
+              )}
+              {lifecycle.documents.filter((d) => d.number !== result.invoice.number).length > 0 && (
+                <div style={{ marginTop: 6, color: C.greyM }}>
+                  Autre(s) document(s) déjà rangé(s) sur cette commande :{' '}
+                  {lifecycle.documents.filter((d) => d.number !== result.invoice.number)
+                    .map((d) => d.number).join(', ')}
+                </div>
+              )}
             </div>
           )}
 

@@ -1,6 +1,7 @@
 const pool = require('../config/database');
 const supplierRefModel = require('../models/supplierRefModel');
 const sessionModel = require('../models/receptionSessionModel');
+const lifecycleModel = require('../models/orderLifecycleModel');
 
 
 // Commandes considérées « en attente de réception » : envoyée au fournisseur,
@@ -281,5 +282,21 @@ exports.abandonSession = async (req, res) => {
     res.json({ abandoned: ok });
   } catch (e) {
     res.status(400).json({ error: e.message || 'Erreur serveur' });
+  }
+};
+
+/**
+ * GET /api/reception/orders/:id/lifecycle
+ * Ce qu'on a commandé, reçu, facturé, payé — de quoi répondre à « la facture
+ * est-elle arrivée ? » sans changer d'application.
+ */
+exports.getLifecycle = async (req, res) => {
+  try {
+    const fil = await lifecycleModel.getLifecycle(parseInt(req.params.id, 10));
+    if (!fil) return res.status(404).json({ error: 'Commande introuvable' });
+    res.json(fil);
+  } catch (e) {
+    console.error('[reception] fil de vie :', e.message);
+    res.status(500).json({ error: e.message || 'Erreur serveur' });
   }
 };

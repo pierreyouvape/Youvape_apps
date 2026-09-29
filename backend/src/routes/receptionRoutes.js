@@ -24,6 +24,7 @@ const checkReceptionWrite = checkPermission('reception', 'write');
 //   • `qty` est un nombre de PIÈCES, jamais de packs — envoyer 1 sur une ligne
 //     « 1 pack de 5 » met UNE pièce en stock tout en soldant la ligne et en
 //     passant le bon en « complete ».
+router.get('/orders/:id/lifecycle', checkReceptionRead, receptionController.getLifecycle);
 router.get('/orders/:id/session', checkReceptionRead, receptionController.getSession);
 router.post('/orders/:id/session', checkReceptionWrite, receptionController.openSession);
 router.put('/sessions/:sessionId/counts/:itemId', checkReceptionWrite, receptionController.setCount);

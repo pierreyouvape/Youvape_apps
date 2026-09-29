@@ -36,6 +36,7 @@ router.post('/analyse', canWrite, upload.single('file'), controller.analyseDocum
 router.post('/align-tariffs', canWrite, controller.alignTariffs);
 
 router.get('/orders', canRead, controller.listCandidateOrders);
+router.get('/orders/:orderId/lifecycle', canRead, controller.getOrderLifecycle);
 
 router.get('/', canRead, controller.listDocuments);
 router.post('/', canWrite, upload.single('file'), controller.uploadDocument);

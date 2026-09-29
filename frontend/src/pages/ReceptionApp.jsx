@@ -259,7 +259,18 @@ function OrdersList({ token, onOpen }) {
 }
 
 /* ─── ÉCRAN 2 — DÉTAIL ──────────────────────────────────── */
-function OrderDetail({ order, items, onBack, onStart }) {
+function OrderDetail({ token, order, items, onBack, onStart }) {
+  // Le lien inverse de celui des factures : ici on veut savoir si la facture est
+  // déjà arrivée, et si quelqu'un a commencé à compter avant nous.
+  const [fil, setFil] = useState(null);
+  useEffect(() => {
+    let vivant = true;
+    axios.get(`${API_URL}/reception/orders/${order.id}/lifecycle`, authHeaders(token))
+      .then((r) => { if (vivant) setFil(r.data); })
+      .catch(() => {});
+    return () => { vivant = false; };
+  }, [order.id, token]);
+
   return (
     <div style={{ padding: '24px 32px', maxWidth: 1400, margin: '0 auto' }}>
       <Btn variant="ghost" small onClick={onBack} style={{ marginBottom: 16 }}>← Retour</Btn>
@@ -279,7 +290,28 @@ function OrderDetail({ order, items, onBack, onStart }) {
       </div>
 
       <div style={{ background: C.white, borderRadius: 12, border: `1px solid ${C.greyB}`, overflow: 'hidden' }}>
-        <div style={{ overflowX: 'auto' }}>
+              {fil && (fil.summary.openSession || fil.documents.length > 0) && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 14 }}>
+          {fil.summary.openSession && (
+            <div style={{ background: C.accentL, border: `1px solid ${C.accent}`, borderRadius: 10,
+              padding: '12px 16px', fontSize: 13.5, color: '#7C4A00' }}>
+              Un comptage est <strong>déjà en cours</strong> sur cette commande
+              ({fil.summary.openSession.units_counted} pièces comptées). Le reprendre plutôt que
+              d'en ouvrir un second.
+            </div>
+          )}
+          {fil.documents.length > 0 && (
+            <div style={{ background: C.greenL, border: `1px solid ${C.green}`, borderRadius: 10,
+              padding: '12px 16px', fontSize: 13.5, color: '#14532D' }}>
+              Facture déjà rangée :{' '}
+              <strong>{fil.documents.map((d) => d.number).join(', ')}</strong>
+              {fil.summary.settled ? ' — réglée.' : ' — pas encore réglée.'}
+            </div>
+          )}
+        </div>
+      )}
+
+      <div style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr>
@@ -1038,6 +1070,7 @@ export default function ReceptionApp() {
 
       {view === 'detail' && !loading && detail && (
         <OrderDetail
+          token={token}
           order={detail.order}
           items={detail.items}
           onBack={() => { setView('list'); setDetail(null); }}

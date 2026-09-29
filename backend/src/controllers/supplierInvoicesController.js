@@ -17,6 +17,7 @@ const supplierInvoiceService = require('../services/supplierInvoiceService');
 const supplierDocumentModel = require('../models/supplierDocumentModel');
 const fs = require('fs');
 const docStore = require('../utils/supplierDocStore');
+const lifecycleModel = require('../models/orderLifecycleModel');
 const { buildClaimMessage } = require('../utils/invoiceClaimMessage');
 const invoiceParsers = require('../parsers/invoices');
 
@@ -315,6 +316,22 @@ async function recheckDocument(req, res) {
   }
 }
 
+/**
+ * GET /api/supplier-invoices/orders/:orderId/lifecycle
+ * « La marchandise est-elle arrivée ? » — la question qu'on se pose avant de
+ * régler une facture, et à laquelle il fallait jusqu'ici changer d'application.
+ */
+async function getOrderLifecycle(req, res) {
+  try {
+    const fil = await lifecycleModel.getLifecycle(parseInt(req.params.orderId, 10));
+    if (!fil) return res.status(404).json({ error: 'Commande introuvable' });
+    return res.json(fil);
+  } catch (error) {
+    console.error('[supplier-invoices] fil de vie :', error.message);
+    return res.status(500).json({ error: error.message || 'Erreur serveur' });
+  }
+}
+
 /** DELETE /api/supplier-invoices/:id — retirer un dépôt erroné. */
 async function deleteDocument(req, res) {
   try {
@@ -387,6 +404,7 @@ async function getParsers(req, res) {
 }
 
 module.exports = {
+  getOrderLifecycle,
   recheckDocument,
   alignTariffs,
   listCandidateOrders,
