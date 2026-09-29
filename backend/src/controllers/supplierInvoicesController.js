@@ -23,6 +23,34 @@ const invoiceParsers = require('../parsers/invoices');
  * POST /api/supplier-invoices/analyse — lire un document SANS rien enregistrer.
  * Rien n'est écrit en base, aucun fichier n'est conservé.
  */
+/**
+ * POST /api/supplier-invoices/align-tariffs — inscrire les tarifs relevés.
+ *
+ * Écrit dans NOTRE base : l'API BoostMyShop n'expose aucune route d'écriture sur
+ * les prix fournisseur (son Swagger n'en déclare que treize au total, dont une
+ * seule côté achats — créer un bon de commande). Le report dans BMS reste donc
+ * manuel ; ce que l'app inscrit ici sert au préremplissage des prochaines
+ * commandes.
+ */
+async function alignTariffs(req, res) {
+  try {
+    const supplierId = parseInt(req.body.supplier_id, 10);
+    if (!Number.isFinite(supplierId)) {
+      return res.status(400).json({ error: 'Fournisseur manquant' });
+    }
+    const tariffs = Array.isArray(req.body.tariffs) ? req.body.tariffs : [];
+    if (tariffs.length === 0) {
+      return res.status(400).json({ error: 'Aucun tarif à inscrire' });
+    }
+
+    const result = await supplierDocumentModel.alignTariffs(supplierId, tariffs);
+    return res.json(result);
+  } catch (error) {
+    console.error('[supplier-invoices] alignement des tarifs :', error.message);
+    return res.status(500).json({ error: error.message || 'Erreur serveur' });
+  }
+}
+
 /** GET /api/supplier-invoices/orders — commandes à proposer au rapprochement. */
 async function listCandidateOrders(req, res) {
   try {
@@ -322,6 +350,7 @@ async function getParsers(req, res) {
 }
 
 module.exports = {
+  alignTariffs,
   listCandidateOrders,
   analyseDocument,
   uploadDocument,

@@ -17,6 +17,7 @@
  */
 
 const pool = require('../config/database');
+const supplierRefModel = require('./supplierRefModel');
 
 const VALID_STATUSES = ['to_check', 'checked', 'disputed', 'archived'];
 const VALID_METHODS = ['cb', 'amex', 'virement', 'prelevement', 'avoir', 'especes', 'cheque', 'autre'];
@@ -369,7 +370,71 @@ async function listCandidateOrders(supplierId, q, limit = 40) {
   return rows;
 }
 
+/**
+ * Écrire les tarifs relevés sur une facture dans `supplier_refs.pack_price`.
+ *
+ * C'est la règle du meilleur prix payé : à l'import, `convertLine` retient le
+ * moins cher entre le prix du document et celui de la base. Inscrire ici le prix
+ * réellement payé — promotions comprises — fait que les commandes suivantes le
+ * reprendront, et une facture ultérieure révélera tout changement de tarif.
+ *
+ * DEUX PRIX DIFFÉRENTS PORTENT LE MÊME NOM. Le prix relevé sur la facture est
+ * celui d'un pack de `packQty` pièces au sens BMS ; `pack_price` est celui d'un
+ * pack de `supplier_refs.pack_qty` pièces. Quand les deux conditionnements
+ * diffèrent, on convertit — et si la conversion ne tombe pas juste, on N'ÉCRIT
+ * PAS : confondre prix de pack et prix unitaire a déjà coûté deux bugs (LCA
+ * Mozambique enregistré à 1,34 € au lieu de 13,40 €).
+ */
+async function alignTariffs(supplierId, tariffs, db = pool) {
+  const applied = [];
+  const skipped = [];
+
+  for (const t of tariffs || []) {
+    const ref = await supplierRefModel.findBySku(supplierId, t.ref, db);
+    if (!ref) {
+      skipped.push({ ref: t.ref, reason: 'référence inconnue de ce fournisseur' });
+      continue;
+    }
+
+    const bmsPack = Number(t.packQty) || 1;
+    const refPack = Number(ref.pack_qty) || 1;
+    const prixPack = (Number(t.realPrice) || 0) * (refPack / bmsPack);
+
+    if (!Number.isFinite(prixPack) || prixPack <= 0) {
+      skipped.push({ ref: t.ref, reason: 'prix inexploitable' });
+      continue;
+    }
+    // Deux décimales en base : au-delà, on inscrirait un prix qu'on ne saurait
+    // pas relire.
+    const arrondi = Math.round(prixPack * 100) / 100;
+    if (Math.abs(arrondi - prixPack) > 0.005) {
+      skipped.push({
+        ref: t.ref,
+        reason: `conditionnements incompatibles (facture par ${bmsPack}, réf. par ${refPack})`,
+      });
+      continue;
+    }
+
+    const { rows } = await db.query(
+      `UPDATE supplier_refs
+          SET pack_price = $3, updated_at = CURRENT_TIMESTAMP
+        WHERE supplier_id = $1 AND id = $2
+        RETURNING supplier_sku, pack_qty, pack_price`,
+      [supplierId, ref.id, arrondi],
+    );
+    applied.push({
+      ref: rows[0].supplier_sku,
+      packQty: rows[0].pack_qty,
+      packPrice: Number(rows[0].pack_price),
+      previous: ref.pack_price == null ? null : Number(ref.pack_price),
+    });
+  }
+
+  return { applied, skipped };
+}
+
 module.exports = {
+  alignTariffs,
   listCandidateOrders,
   findExisting,
   createDocument,

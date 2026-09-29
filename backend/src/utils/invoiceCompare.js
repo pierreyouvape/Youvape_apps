@@ -254,6 +254,11 @@ function compareInvoiceToOrder({ invoice, order, options = {} }) {
       // unité, et le facteur entier qui s'en déduit (« boîte de 2 »).
       packRatio,
       packFactor,
+      // Conditionnement BMS de la ligne de commande. Indispensable pour écrire un
+      // tarif : `supplier_refs.pack_price` est le prix d'un pack de `pack_qty`
+      // pièces, et confondre prix de pack et prix unitaire a déjà coûté deux
+      // bugs (Mozambique à 1,34 € au lieu de 13,40 €).
+      orderPackQty: Number(ord.packQty) || 1,
       expectedUnitPrice,
       invoicedUnitPrice,
       expectedTotal,
@@ -638,6 +643,10 @@ function listTariffUpdates(comparison, options = {}) {
       ref: l.ref,
       label: l.label,
       qty: l.qtyInvoiced,
+      // Le conditionnement auquel ce prix se rapporte : les quantités concordent
+      // (les lignes de conditionnement sont écartées), donc l'unité facturée est
+      // l'unité de la commande BMS, c'est-à-dire un pack de `orderPackQty`.
+      packQty: l.orderPackQty || 1,
       currentPrice: round2(l.expectedUnitPrice),
       // Deux décimales ne suffisent pas toujours : un prix fournisseur se
       // négocie au millième (cf. LCA 5,42633 €).

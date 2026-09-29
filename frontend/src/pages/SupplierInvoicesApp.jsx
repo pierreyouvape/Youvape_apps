@@ -319,8 +319,10 @@ const fromStoredLines = (lines) => (lines || []).map((l) => ({
  * créer un bon de commande). Le report se fait donc à la main — le rôle de
  * l'app est de dire quoi saisir, et de le rendre copiable d'un geste.
  */
-function TariffTable({ tariffs, invoiceNumber, mobile }) {
+function TariffTable({ tariffs, invoiceNumber, supplierId, mobile }) {
   const [copied, setCopied] = useState(false);
+  const [aligning, setAligning] = useState(false);
+  const [aligned, setAligned] = useState(null);
   if (!tariffs || tariffs.length === 0) return null;
 
   const prix = (n) => `${Number(n).toFixed(4).replace(/0+$/, '').replace(/[.,]$/, '').replace('.', ',')} €`;
@@ -351,18 +353,52 @@ function TariffTable({ tariffs, invoiceNumber, mobile }) {
     setTimeout(() => setCopied(false), 2500);
   };
 
+  const aligner = async () => {
+    setAligning(true);
+    try {
+      const { data } = await axios.post(`${BASE}/align-tariffs`, {
+        supplier_id: supplierId,
+        tariffs: tariffs.map((t) => ({ ref: t.ref, realPrice: t.realPrice, packQty: t.packQty })),
+      });
+      setAligned(data);
+    } catch (e) {
+      setAligned({ applied: [], skipped: [{ ref: '—', reason: e.response?.data?.error || e.message }] });
+    } finally { setAligning(false); }
+  };
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
       <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
         <h3 style={{ margin: 0, fontSize: 14, fontWeight: 700, color: C.dark }}>
-          Tarifs à corriger dans BMS ({tariffs.length})
+          Tarifs relevés sur cette facture ({tariffs.length})
         </h3>
-        <Btn onClick={copier} variant="secondary" small>
-          {copied ? 'Copié' : 'Copier la liste'}
+        <Btn onClick={aligner} disabled={aligning} small>
+          {aligning ? 'Enregistrement…' : 'Retenir ces tarifs'}
         </Btn>
-        <span style={{ fontSize: 12, color: C.greyT }}>
-          L'API BMS ne sait pas écrire les tarifs fournisseur : la saisie reste manuelle.
-        </span>
+        <Btn onClick={copier} variant="secondary" small>
+          {copied ? 'Copié' : 'Copier pour BMS'}
+        </Btn>
+      </div>
+
+      {aligned && (
+        <div style={{
+          padding: 12, borderRadius: 10, fontSize: 13,
+          background: aligned.skipped.length ? C.orangeL : C.greenL,
+          color: aligned.skipped.length ? C.orange : C.green,
+        }}>
+          <strong>{aligned.applied.length}</strong> tarif(s) retenus pour les prochaines commandes.
+          {aligned.skipped.length > 0 && (
+            <ul style={{ margin: '6px 0 0', paddingLeft: 18 }}>
+              {aligned.skipped.map((k, i) => <li key={i}>{k.ref} — {k.reason}</li>)}
+            </ul>
+          )}
+        </div>
+      )}
+
+      <div style={{ fontSize: 12, color: C.greyT }}>
+        « Retenir ces tarifs » écrit le prix payé chez nous : l'import d'une prochaine commande
+        reprendra le moins cher entre ce prix et celui du document. L'API BMS, elle, ne sait pas
+        écrire les tarifs fournisseur — le report dans BMS reste manuel, d'où le bouton de copie.
       </div>
 
       <div style={{ overflowX: 'auto', background: C.white, borderRadius: 10, border: `1px solid ${C.greyB}` }}>
@@ -715,7 +751,12 @@ function ControlTab({ suppliers, mobile, onSaved }) {
             ? <DifferencesTable lines={result.differences} mobile={mobile} />
             : <ReadLinesTable lines={result.invoice.lines} mobile={mobile} />}
 
-          <TariffTable tariffs={result.tariffs} invoiceNumber={result.invoice.number} mobile={mobile} />
+          <TariffTable
+            tariffs={result.tariffs}
+            invoiceNumber={result.invoice.number}
+            supplierId={supplierId}
+            mobile={mobile}
+          />
 
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
             {!saved ? (
