@@ -228,6 +228,47 @@ test('une désignation finissant par un chiffre collé ne mange pas sa ligne', (
   assert.ok(close(melo.lineTotalHt, -0.09));
 });
 
+test('une désignation qui déborde après ses montants ne vole pas la réf suivante', () => {
+  // Facture LVP F2609287455 : la désignation du Puff Zpluse continue APRÈS sa
+  // ligne de montants, et son dernier fragment « Fruit + Watermelon Mango
+  // Peach) » se collait en tête de l'article suivant, devenant sa référence.
+  // Résultat : « Fruit » au lieu de « VP Pod luxe xr DTL », un article qui ne
+  // retrouvait plus sa commande, et 26,60 € de Vaporesso hors de l'assiette de
+  // la remise RSPV20.
+  const r = parseInvoice([
+    'Référence Désignation Quantité PU HT Montant HT',
+    'JNR-42K0-MPWM Puff Zpluse 42K - 0mg - sans nicotine - Zpluse by JNR (Nicotine :',
+    '0mg - Saveurs : Mango Passion 5 7.70 38.50',
+    'Fruit + Watermelon Mango Peach)',
+    'VP Pod luxe xr DTL Cartouches Luxe X/ XR / XR Max 5ml (2pcs) - Vaporesso (Couleur :',
+    'Black - Version : DTL)',
+    'Black DTL',
+    '10 2.66 26.60',
+  ].join('\n'));
+
+  assert.strictEqual(r.lines.length, 2);
+
+  const puff = r.lines[0];
+  assert.strictEqual(puff.ref, 'JNR-42K0-MPWM');
+  assert.strictEqual(puff.qty, 5);
+  assert.ok(close(puff.lineTotalHt, 38.50));
+  // Le fragment débordé revient à SA désignation.
+  assert.ok(/Watermelon Mango Peach\)/.test(puff.label), puff.label);
+
+  // Le parseur rend « VP » : une référence LVP contient des espaces, et lui seul
+  // ne peut pas deviner où elle s'arrête — c'est resolveCompleteRefs qui la
+  // complète en « VP Pod luxe xr DTL » à partir des réfs connues du fournisseur.
+  // Ce qui se joue ici, c'est que la référence parte du BON article.
+  const pod = r.lines[1];
+  assert.strictEqual(pod.qty, 10);
+  assert.ok(close(pod.lineTotalHt, 26.60));
+  assert.notStrictEqual(pod.ref, 'Fruit');
+  assert.ok(
+    `${pod.ref} ${pod.label}`.startsWith('VP Pod luxe xr DTL Cartouches'),
+    `${pod.ref} | ${pod.label}`,
+  );
+});
+
 if (failures > 0) {
   console.log(`\n${failures} test(s) en échec.`);
   process.exit(1);

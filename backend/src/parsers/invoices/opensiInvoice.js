@@ -192,12 +192,45 @@ function parseInvoice(text) {
   const warnings = [];
 
   let buffer = '';
+  // Une désignation peut DÉBORDER APRÈS sa ligne de montants. Sur la facture LVP
+  // F2609287455 :
+  //
+  //     0mg - Saveurs : Mango Passion 5 7.70 38.50   ← l'article est émis ici
+  //     Fruit + Watermelon Mango Peach)              ← la fin de SA désignation
+  //     VP Pod luxe xr DTL Cartouches Luxe X/ XR…    ← le vrai article suivant
+  //
+  // Le fragment orphelin se collait en tête du bloc suivant, dont il devenait la
+  // référence : « Fruit » au lieu de « VP Pod luxe xr DTL ». L'article ne
+  // retrouvait plus sa commande, et 26,60 € de Vaporesso échappaient à l'assiette
+  // de la remise RSPV20.
+  //
+  // La parenthèse ouverte et non refermée le trahit : c'est un signe qui se
+  // vérifie, pas une devinette sur la casse ou la ponctuation.
+  let attenteFermeture = false;
   for (const raw of String(text).split('\n')) {
     const line = raw.trimEnd();
     if (!line.trim()) continue;
     if (isNoise(line)) {
       buffer = '';
+      attenteFermeture = false;
       continue;
+    }
+
+    if (attenteFermeture) {
+      attenteFermeture = false;
+      // Suite de la désignation précédente, et seulement si elle ne porte pas
+      // elle-même de montants — sinon c'est un article, pas une suite.
+      const ferme = line.indexOf(')');
+      if (ferme !== -1 && !TRAILING_NUMBERS.test(line)) {
+        const precedente = lines[lines.length - 1];
+        if (precedente) {
+          precedente.label = `${precedente.label || ''} ${line.slice(0, ferme + 1).trim()}`.trim();
+        }
+        const reste = line.slice(ferme + 1).trim();
+        if (!reste) continue;
+        buffer = reste;
+        continue;
+      }
     }
 
     const tail = line.match(TRAILING_NUMBERS);
@@ -252,6 +285,11 @@ function parseInvoice(text) {
       kind: 'product',
     });
     buffer = '';
+    // Parenthèse ouverte et jamais refermée : la désignation continue à la ligne
+    // suivante, au-delà des montants.
+    const ouvertes = (label || '').split('(').length - 1;
+    const fermees = (label || '').split(')').length - 1;
+    attenteFermeture = ouvertes > fermees;
   }
 
   if (header.footerDiscount) {
