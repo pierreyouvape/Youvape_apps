@@ -92,6 +92,54 @@ const purchasesController = {
 
       const result = await pool.query(query, params);
 
+      // Ce que ce fournisseur sait de ces produits : ses références, leurs
+      // conditionnements et LE DERNIER PRIX RETENU. C'est ici que la boucle se
+      // ferme — un tarif relevé sur une facture et retenu par l'acheteur
+      // préremplit la commande suivante, au lieu de se retaper de mémoire.
+      //
+      // Un produit peut avoir PLUSIEURS références chez le même fournisseur :
+      // à l'unité, par 50, par 100. On les renvoie toutes, c'est à l'écran de
+      // laisser choisir le conditionnement commandé.
+      if (supplierId && result.rows.length > 0) {
+        const ids = result.rows.map((r) => r.id);
+        const { rows: refs } = await pool.query(
+          `SELECT p.wp_product_id AS product_id, r.supplier_sku, r.label,
+                  r.pack_qty, r.pack_price, r.price_retained_at
+             FROM supplier_refs r
+             JOIN products p ON p.id = r.product_id
+            WHERE r.supplier_id = $1 AND p.wp_product_id = ANY($2)
+            ORDER BY r.pack_qty, r.supplier_sku`,
+          [supplierId, ids],
+        );
+        const { rows: liens } = await pool.query(
+          `SELECT p.wp_product_id AS product_id, ps.pack_qty, ps.supplier_price
+             FROM product_suppliers ps
+             JOIN products p ON p.id = ps.product_id
+            WHERE ps.supplier_id = $1 AND p.wp_product_id = ANY($2)`,
+          [supplierId, ids],
+        );
+        const parProduit = new Map();
+        for (const r of refs) {
+          if (!parProduit.has(r.product_id)) parProduit.set(r.product_id, []);
+          parProduit.get(r.product_id).push({
+            supplier_sku: r.supplier_sku,
+            label: r.label,
+            pack_qty: parseInt(r.pack_qty, 10) || 1,
+            pack_price: r.pack_price == null ? null : parseFloat(r.pack_price),
+            // Un prix RETENU sur une facture fait autorité : l'écran peut le dire.
+            retained_at: r.price_retained_at,
+          });
+        }
+        const lienParProduit = new Map(liens.map((l) => [l.product_id, l]));
+        for (const row of result.rows) {
+          row.supplier_refs = parProduit.get(row.id) || [];
+          const lien = lienParProduit.get(row.id);
+          row.supplier_pack_qty = lien ? (parseInt(lien.pack_qty, 10) || 1) : 1;
+          row.supplier_price = lien && lien.supplier_price != null
+            ? parseFloat(lien.supplier_price) : null;
+        }
+      }
+
       res.json({ success: true, data: result.rows });
     } catch (error) {
       console.error('Erreur searchProducts:', error);

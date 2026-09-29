@@ -6,6 +6,7 @@ import { Purchases as PurchasesIcon } from '../components/AppIcons';
 import NeedsTab from '../components/purchases/NeedsTab';
 import SuppliersTab from '../components/purchases/SuppliersTab';
 import OrdersTab from '../components/purchases/OrdersTab';
+import NewOrderTab from '../components/purchases/NewOrderTab';
 import SpendingTab from '../components/purchases/SpendingTab';
 import './PurchasesApp.css';
 
@@ -24,6 +25,7 @@ const C = {
 const SECTIONS = [
   { key: 'besoins',      label: 'Besoins',       icon: '📊' },
   { key: 'fournisseurs', label: 'Fournisseurs',   icon: '🏭' },
+  { key: 'nouvelle',     label: 'Nouvelle commande', icon: '➕' },
   { key: 'commandes',    label: 'Commandes',      icon: '📦' },
   { key: 'depenses',     label: 'Dépenses',       icon: '💶' },
 ];
@@ -131,6 +133,9 @@ const PurchasesApp = () => {
           )}
           {section === 'fournisseurs' && (
             <SuppliersTab token={token} />
+          )}
+          {section === 'nouvelle' && (
+            <NewOrderTab token={token} />
           )}
           {section === 'commandes' && (
             <OrdersTab token={token} />
