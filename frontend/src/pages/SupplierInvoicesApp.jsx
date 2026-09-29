@@ -299,6 +299,87 @@ const fromStoredLines = (lines) => (lines || []).map((l) => ({
 /* ═══════════════════════════════════════════════════════════
  * ONGLET 1 — Contrôle d'une facture
  * ═══════════════════════════════════════════════════════════ */
+/**
+ * Rapprochement manuel : désigner la commande quand la référence imprimée n'y
+ * mène pas.
+ *
+ * La facture GFC F2601377295 porte « 548638 », le numéro interne du fournisseur ;
+ * la commande correspondante est enregistrée chez nous sous « ZWMEFWKYY ». Aucun
+ * rapprochement automatique n'était possible, et l'écran s'arrêtait là.
+ *
+ * Le champ accepte la référence, le numéro de commande, l'identifiant BMS — et
+ * l'URL BMS collée telle quelle, parce que c'est ce que l'acheteur a sous les
+ * yeux quand il regarde la commande dans BMS.
+ */
+function OrderPicker({ supplierId, busy, onPick }) {
+  const [q, setQ] = useState('');
+  const [orders, setOrders] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [open, setOpen] = useState(false);
+
+  const chercher = async (terme) => {
+    setLoading(true);
+    try {
+      const { data } = await axios.get(`${BASE}/orders`, {
+        params: { supplier_id: supplierId, q: terme || undefined },
+      });
+      setOrders(Array.isArray(data) ? data : []);
+    } catch { setOrders([]); } finally { setLoading(false); }
+  };
+
+  const ouvrir = () => { setOpen(true); chercher(''); };
+
+  if (!open) {
+    return (
+      <div style={{ marginTop: 12 }}>
+        <Btn onClick={ouvrir} variant="secondary" small>Choisir la commande…</Btn>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        <input
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter') chercher(q); }}
+          placeholder="Référence, n° BMS, ou lien BMS collé"
+          style={{ ...inputStyle, minWidth: 320, flex: 1 }}
+        />
+        <Btn onClick={() => chercher(q)} variant="secondary" small disabled={loading}>Chercher</Btn>
+      </div>
+
+      {loading && <div style={{ fontSize: 12, color: C.greyT }}>Recherche…</div>}
+      {!loading && orders.length === 0 && (
+        <div style={{ fontSize: 12, color: C.greyT }}>Aucune commande pour ce fournisseur.</div>
+      )}
+
+      <div style={{ maxHeight: 240, overflowY: 'auto', background: C.white, borderRadius: 8, border: `1px solid ${C.greyB}` }}>
+        {orders.map((o) => (
+          <button
+            key={o.id}
+            type="button"
+            onClick={() => onPick(o.id)}
+            disabled={busy}
+            style={{
+              display: 'flex', width: '100%', gap: 12, alignItems: 'center', justifyContent: 'space-between',
+              padding: '9px 12px', border: 'none', borderBottom: `1px solid ${C.greyB}`,
+              background: 'transparent', cursor: busy ? 'default' : 'pointer', textAlign: 'left',
+              fontSize: 13, color: C.dark,
+            }}
+          >
+            <span style={{ fontWeight: 600 }}>{o.bms_reference || o.order_number}</span>
+            <span style={{ color: C.greyT, fontSize: 12 }}>BMS {o.bms_po_id}</span>
+            <span style={{ color: C.greyT, fontSize: 12 }}>{date(o.order_date)}</span>
+            <span style={{ fontWeight: 600 }}>{eur(o.total_amount)}</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function ControlTab({ suppliers, mobile, onSaved }) {
   const [supplierId, setSupplierId] = useState('');
   const [file, setFile] = useState(null);
@@ -308,20 +389,28 @@ function ControlTab({ suppliers, mobile, onSaved }) {
   const [saved, setSaved] = useState(null);     // document en base, une fois validé
   const [copied, setCopied] = useState(false);
   const [dragging, setDragging] = useState(false);
+  const [manualOrderId, setManualOrderId] = useState('');
   const fileInput = useRef(null);
 
-  const reset = () => { setResult(null); setSaved(null); setError(null); setCopied(false); };
+  const reset = () => {
+    setResult(null); setSaved(null); setError(null); setCopied(false); setManualOrderId('');
+  };
 
   // Lecture seule : rien n'est écrit tant que l'acheteur n'a pas validé.
-  const analyse = async () => {
+  // `orderId` sert au rapprochement manuel : la référence imprimée ne mène pas
+  // toujours à la commande (GFC et MG Vape impriment leur propre numéro).
+  const analyse = async (orderId = null) => {
     if (!supplierId || !file) return;
-    setBusy(true); reset();
+    setBusy(true);
+    if (!orderId) reset(); else { setError(null); setCopied(false); }
     try {
       const form = new FormData();
       form.append('file', file);
       form.append('supplier_id', supplierId);
+      if (orderId) form.append('order_id', orderId);
       const { data } = await axios.post(`${BASE}/analyse`, form);
       setResult(data);
+      setManualOrderId(orderId || '');
     } catch (e) {
       setError(e.response?.data?.error || e.message);
     } finally { setBusy(false); }
@@ -335,6 +424,9 @@ function ControlTab({ suppliers, mobile, onSaved }) {
       const form = new FormData();
       form.append('file', file);
       form.append('supplier_id', supplierId);
+      // Sans ça, le document serait rangé sans la commande qu'on vient de lui
+      // désigner : l'analyse gelée en base ne correspondrait plus à l'écran.
+      if (manualOrderId) form.append('order_id', manualOrderId);
       const { data } = await axios.post(BASE, form);
       setSaved(data.document);
       setResult((r) => ({ ...r, document: data.document }));
@@ -464,15 +556,15 @@ function ControlTab({ suppliers, mobile, onSaved }) {
                 <>
                   La référence <strong>{result.invoice.orderRefOnDoc}</strong> imprimée sur ce document ne correspond à
                   aucune commande. Chez GFC et MG&nbsp;Vape, c'est le numéro interne du fournisseur, jamais le nôtre.
-                  Les lignes lues sont affichées ci-dessous ; le rapprochement reste à faire.
+                  Les lignes lues sont affichées ci-dessous ; désigne la commande pour lancer la comparaison.
                 </>
               ) : (
                 <>
                   Ce document ne porte <strong>aucune référence de commande</strong> — le cas courant d'un avoir de
-                  régularisation. Il n'y a donc rien à rapprocher : les lignes lues sont affichées ci-dessous, et le
-                  document peut être enregistré tel quel.
+                  régularisation. Le document peut être enregistré tel quel, ou rapproché d'une commande ci-dessous.
                 </>
               )}
+              <OrderPicker supplierId={supplierId} busy={busy} onPick={(id) => analyse(id)} />
             </div>
           )}
 

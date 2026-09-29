@@ -325,7 +325,52 @@ async function deleteDocument(id, db = pool) {
   return rows[0] || null;
 }
 
+/**
+ * Commandes candidates au rapprochement manuel d'un fournisseur.
+ *
+ * Nécessaire parce que la référence imprimée ne mène pas toujours à la commande :
+ * la facture GFC F2601377295 porte « 548638 », le numéro interne du fournisseur,
+ * quand la commande BMS 107811 est enregistrée chez nous sous « ZWMEFWKYY ».
+ * Aucun rapprochement automatique n'est possible — il faut pouvoir la désigner.
+ *
+ * `q` accepte la référence, le numéro de commande, l'identifiant BMS, et jusqu'à
+ * l'URL BMS collée telle quelle : c'est ce que l'acheteur a sous la main quand il
+ * regarde la commande dans BMS.
+ */
+async function listCandidateOrders(supplierId, q, limit = 40) {
+  const params = [supplierId];
+  let filtre = '';
+
+  const terme = (q || '').trim();
+  if (terme) {
+    // « …/po_id/107811/key/… » ou « 107811 » : on retient le nombre du lien.
+    const lien = terme.match(/po_id\/(\d+)/);
+    const bmsId = lien ? Number(lien[1]) : (/^\d+$/.test(terme) ? Number(terme) : null);
+
+    params.push(`%${terme}%`);
+    filtre = ` AND (po.bms_reference ILIKE $${params.length} OR po.order_number ILIKE $${params.length}`;
+    if (bmsId) {
+      params.push(bmsId);
+      filtre += ` OR po.bms_po_id = $${params.length}`;
+    }
+    filtre += ')';
+  }
+
+  params.push(limit);
+  const { rows } = await pool.query(
+    `SELECT po.id, po.bms_po_id, po.bms_reference, po.order_number, po.order_date,
+            po.total_amount, po.status
+       FROM purchase_orders po
+      WHERE po.supplier_id = $1${filtre}
+      ORDER BY po.order_date DESC NULLS LAST
+      LIMIT $${params.length}`,
+    params,
+  );
+  return rows;
+}
+
 module.exports = {
+  listCandidateOrders,
   findExisting,
   createDocument,
   listDocuments,

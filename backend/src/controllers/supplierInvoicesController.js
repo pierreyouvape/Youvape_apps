@@ -23,6 +23,21 @@ const invoiceParsers = require('../parsers/invoices');
  * POST /api/supplier-invoices/analyse — lire un document SANS rien enregistrer.
  * Rien n'est écrit en base, aucun fichier n'est conservé.
  */
+/** GET /api/supplier-invoices/orders — commandes à proposer au rapprochement. */
+async function listCandidateOrders(req, res) {
+  try {
+    const supplierId = parseInt(req.query.supplier_id, 10);
+    if (!Number.isFinite(supplierId)) {
+      return res.status(400).json({ error: 'Fournisseur manquant' });
+    }
+    const orders = await supplierDocumentModel.listCandidateOrders(supplierId, req.query.q);
+    return res.json(orders);
+  } catch (error) {
+    console.error('[supplier-invoices] commandes candidates :', error.message);
+    return res.status(500).json({ error: error.message || 'Erreur serveur' });
+  }
+}
+
 async function analyseDocument(req, res) {
   try {
     if (!req.file || !req.file.buffer) {
@@ -307,6 +322,7 @@ async function getParsers(req, res) {
 }
 
 module.exports = {
+  listCandidateOrders,
   analyseDocument,
   uploadDocument,
   listDocuments,

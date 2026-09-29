@@ -32,6 +32,9 @@ router.post('/payments', canWrite, controller.createPayment);
 // lisible à côté de son jumeau qui, lui, enregistre.
 router.post('/analyse', canWrite, upload.single('file'), controller.analyseDocument);
 
+// Déclarée avant '/:id' : sans ça, « orders » serait pris pour un identifiant.
+router.get('/orders', canRead, controller.listCandidateOrders);
+
 router.get('/', canRead, controller.listDocuments);
 router.post('/', canWrite, upload.single('file'), controller.uploadDocument);
 
