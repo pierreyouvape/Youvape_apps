@@ -319,8 +319,7 @@ const fromStoredLines = (lines) => (lines || []).map((l) => ({
  * créer un bon de commande). Le report se fait donc à la main — le rôle de
  * l'app est de dire quoi saisir, et de le rendre copiable d'un geste.
  */
-function TariffTable({ tariffs, invoiceNumber, supplierId, mobile }) {
-  const [copied, setCopied] = useState(false);
+function TariffTable({ tariffs, supplierId, mobile }) {
   const [aligning, setAligning] = useState(false);
   const [aligned, setAligned] = useState(null);
   // Par référence : 'busy' | 'done' | un motif de rejet. Retenir un tarif ligne
@@ -330,32 +329,6 @@ function TariffTable({ tariffs, invoiceNumber, supplierId, mobile }) {
   if (!tariffs || tariffs.length === 0) return null;
 
   const prix = (n) => `${Number(n).toFixed(4).replace(/0+$/, '').replace(/[.,]$/, '').replace('.', ',')} €`;
-
-  const copier = async () => {
-    const lignes = tariffs.map((t) => `${t.ref}\t${prix(t.currentPrice)}\t${prix(t.realPrice)}`);
-    const texte = [`Tarifs relevés sur la facture ${invoiceNumber || ''}`, '',
-      'Référence\tTarif BMS actuel\tTarif réel payé', ...lignes].join('\n');
-    try {
-      const html = `<table style="border-collapse:collapse;font-family:Arial;font-size:13px;">`
-        + `<tr><th style="border:1px solid #d5d8dd;padding:6px 10px;">Référence</th>`
-        + `<th style="border:1px solid #d5d8dd;padding:6px 10px;">Tarif BMS actuel</th>`
-        + `<th style="border:1px solid #d5d8dd;padding:6px 10px;">Tarif réel payé</th></tr>`
-        + tariffs.map((t) => `<tr><td style="border:1px solid #d5d8dd;padding:6px 10px;">${t.ref}</td>`
-          + `<td style="border:1px solid #d5d8dd;padding:6px 10px;text-align:right;">${prix(t.currentPrice)}</td>`
-          + `<td style="border:1px solid #d5d8dd;padding:6px 10px;text-align:right;"><strong>${prix(t.realPrice)}</strong></td></tr>`).join('')
-        + '</table>';
-      if (window.ClipboardItem) {
-        await navigator.clipboard.write([new window.ClipboardItem({
-          'text/html': new Blob([html], { type: 'text/html' }),
-          'text/plain': new Blob([texte], { type: 'text/plain' }),
-        })]);
-      } else {
-        await navigator.clipboard.writeText(texte);
-      }
-    } catch { await navigator.clipboard.writeText(texte); }
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2500);
-  };
 
   const retenirUne = async (t) => {
     setPerLine((p) => ({ ...p, [t.ref]: 'busy' }));
@@ -397,10 +370,7 @@ function TariffTable({ tariffs, invoiceNumber, supplierId, mobile }) {
           Tarifs relevés sur cette facture ({tariffs.length})
         </h3>
         <Btn onClick={aligner} disabled={aligning} small>
-          {aligning ? 'Enregistrement…' : 'Retenir ces tarifs'}
-        </Btn>
-        <Btn onClick={copier} variant="secondary" small>
-          {copied ? 'Copié' : 'Copier pour BMS'}
+          {aligning ? 'Enregistrement…' : `Tout retenir (${tariffs.length})`}
         </Btn>
       </div>
 
@@ -420,9 +390,10 @@ function TariffTable({ tariffs, invoiceNumber, supplierId, mobile }) {
       )}
 
       <div style={{ fontSize: 12, color: C.greyT }}>
-        « Retenir ces tarifs » écrit le prix payé chez nous : l'import d'une prochaine commande
-        reprendra le moins cher entre ce prix et celui du document. L'API BMS, elle, ne sait pas
-        écrire les tarifs fournisseur — le report dans BMS reste manuel, d'où le bouton de copie.
+        Retenir un tarif écrit le <strong>prix réel payé</strong> chez nous. Il fera autorité à
+        l'import de la prochaine commande, même s'il est plus élevé que le document — le cas d'une
+        promotion terminée. « Tout retenir » applique les {tariffs.length} lignes d'un coup, à
+        l'identique du bouton de chaque ligne. Le prix part ensuite dans BMS sur le bon de commande.
       </div>
 
       <div style={{ overflowX: 'auto', background: C.white, borderRadius: 10, border: `1px solid ${C.greyB}` }}>
@@ -434,7 +405,8 @@ function TariffTable({ tariffs, invoiceNumber, supplierId, mobile }) {
               <th style={{ ...th, textAlign: 'right' }}>Qté</th>
               <th style={{ ...th, textAlign: 'right' }}>Tarif BMS</th>
               <th style={{ ...th, textAlign: 'right' }}>Tarif réel payé</th>
-              <th style={{ ...th, textAlign: 'right' }}>Écart</th>
+              <th style={{ ...th, textAlign: 'right' }}>Écart unitaire</th>
+              <th style={{ ...th, textAlign: 'right' }}>Écart total</th>
               <th style={{ ...th, textAlign: 'right' }} />
             </tr>
           </thead>
@@ -448,6 +420,12 @@ function TariffTable({ tariffs, invoiceNumber, supplierId, mobile }) {
                 <td style={{ ...td, textAlign: 'right', fontWeight: 700 }}>{prix(t.realPrice)}</td>
                 <td style={{ ...td, textAlign: 'right', color: t.delta > 0 ? C.red : C.green }}>
                   {t.delta > 0 ? '+' : ''}{prix(t.delta)}
+                </td>
+                <td style={{
+                  ...td, textAlign: 'right', fontWeight: 600,
+                  color: t.delta > 0 ? C.red : C.green,
+                }}>
+                  {t.delta > 0 ? '+' : ''}{prix(t.delta * t.qty)}
                 </td>
                 <td style={{ ...td, textAlign: 'right', whiteSpace: 'nowrap' }}>
                   {perLine[t.ref] === 'done' ? (
@@ -790,12 +768,7 @@ function ControlTab({ suppliers, mobile, onSaved }) {
 
           {/* Les tarifs d'abord : c'est ce qui appelle une décision. Les écarts
               en dessous sont souvent des lignes offertes, à lire, pas à traiter. */}
-          <TariffTable
-            tariffs={result.tariffs}
-            invoiceNumber={result.invoice.number}
-            supplierId={supplierId}
-            mobile={mobile}
-          />
+          <TariffTable tariffs={result.tariffs} supplierId={supplierId} mobile={mobile} />
 
           {result.comparison
             ? <DifferencesTable lines={result.differences} mobile={mobile} />
