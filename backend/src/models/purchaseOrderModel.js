@@ -130,6 +130,47 @@ const purchaseOrderModel = {
   },
 
   // Créer une commande
+  /**
+   * Le payload d'articles envoyé à BMS. Fonction PURE, pour être éprouvée.
+   *
+   * Deux conventions cohabitent, et les confondre a déjà coûté un bug de prix
+   * ×10 (cf. project_bms_skippackqty_price_x10) :
+   *
+   *   • Ligne à l'UNITÉ — qty_ordered compte des pièces, unit_price est le prix
+   *     d'une pièce. BMS veut des pièces et un prix de PACK : qty tel quel,
+   *     price × pack_qty.
+   *   • Ligne au PACK — qty_ordered compte des packs, unit_price est le prix du
+   *     pack. BMS veut des pièces : qty × pack_qty, et price tel quel — le
+   *     multiplier de nouveau est précisément le bug ×10.
+   *
+   * Ce qui décide n'est plus seulement le fournisseur. Une ligne qui porte son
+   * propre conditionnement (`units_per_qty` choisi à la commande : « 4 packs de
+   * 5 ») est une ligne au pack, quel que soit le fournisseur — c'est ce qui
+   * permet de commander un conditionnement inhabituel sans mentir à BMS.
+   */
+  buildBmsItems: (items, skipPackQty) => (items || [])
+    .filter((item) => item.sku)
+    .map((item) => {
+      // Le conditionnement CHOISI POUR CETTE LIGNE l'emporte sur celui du
+      // catalogue : c'est lui qu'on a commandé.
+      const explicite = parseInt(item.units_per_qty, 10) || 0;
+      const packQty = explicite > 1 ? explicite : (parseInt(item.pack_qty, 10) || 1);
+      const auPack = explicite > 1 || skipPackQty;
+      const qtyBase = parseInt(item.qty_ordered, 10) || 0;
+
+      const bmsItem = {
+        sku: item.sku,
+        qty: auPack ? qtyBase * packQty : qtyBase,
+        price: Math.round((parseFloat(item.unit_price) || 0) * (auPack ? 1 : packQty) * 100) / 100,
+        pack_qty: packQty,
+        name: item.product_name,
+        supplier_sku: item.supplier_sku || null,
+      };
+      const discountPercent = parseFloat(item.discount_percent) || 0;
+      if (discountPercent > 0) bmsItem.discount_percent = discountPercent;
+      return bmsItem;
+    }),
+
   create: async (data, userId) => {
     const client = await pool.connect();
     // Avertissement d'envoi BMS remonté au front sans annuler la création locale
@@ -219,7 +260,12 @@ const purchaseOrderModel = {
           }
           const internalProductId = product.id;
           const sku = product.sku || null;
-          const packQty = parseInt(product.pack_qty) || 1;
+          // Conditionnement CHOISI pour cette ligne (« 4 packs de 5 »), sinon
+          // celui du catalogue. L'invariant qty_ordered × units_per_qty = pièces
+          // vaut dans les deux cas — c'est lui que lisent la réception, la
+          // valorisation de stock et le fil de vie.
+          const packChoisi = parseInt(item.units_per_qty, 10) || 0;
+          const packQty = packChoisi > 1 ? packChoisi : (parseInt(product.pack_qty) || 1);
           // Si unit_price est fourni (meme 0), l'utiliser. Sinon fallback sur wc_cog_cost.
           // 'unit_price' in item permet de distinguer "non fourni" de "explicitement null" (import PDF sans prix)
           const unitPrice = ('unit_price' in item && item.unit_price !== undefined)
@@ -250,7 +296,7 @@ const purchaseOrderModel = {
             item.stock_before || null,
             item.theoretical_need || null,
             item.supposed_need || null,
-            orderInPacks ? packQty : 1
+            (packChoisi > 1 || orderInPacks) ? packQty : 1
           ]);
 
           itemsWithSku.push({
@@ -414,25 +460,7 @@ const purchaseOrderModel = {
     //       → qty = qty_ordered × pack_qty (packs → unités, car BMS re-divise) ;
     //         price = unit_price tel quel (déjà un prix pack ; ne PAS ×pack_qty = bug ×10).
     // pack_qty est toujours envoyé (conditionnement / réception).
-    const bmsItems = items
-      .filter(item => item.sku)
-      .map(item => {
-        const discountPercent = parseFloat(item.discount_percent) || 0;
-        const packQty = parseInt(item.pack_qty) || 1;
-        const qtyBase = parseInt(item.qty_ordered) || 0;
-        const bmsItem = {
-          sku: item.sku,
-          qty: skipPackQty ? qtyBase * packQty : qtyBase,
-          price: Math.round((parseFloat(item.unit_price) || 0) * (skipPackQty ? 1 : packQty) * 100) / 100,
-          pack_qty: packQty,
-          name: item.product_name,
-          supplier_sku: item.supplier_sku || null
-        };
-        if (discountPercent > 0) {
-          bmsItem.discount_percent = discountPercent;
-        }
-        return bmsItem;
-      });
+    const bmsItems = purchaseOrderModel.buildBmsItems(items, skipPackQty);
 
     if (bmsItems.length === 0) {
       throw new Error('Aucun produit avec SKU valide pour créer la commande BMS');
