@@ -323,6 +323,10 @@ function TariffTable({ tariffs, invoiceNumber, supplierId, mobile }) {
   const [copied, setCopied] = useState(false);
   const [aligning, setAligning] = useState(false);
   const [aligned, setAligned] = useState(null);
+  // Par référence : 'busy' | 'done' | un motif de rejet. Retenir un tarif ligne
+  // à ligne permet de garder le prix promo tant que la promotion dure, puis de
+  // reprendre le prix normal — même plus élevé — quand elle se termine.
+  const [perLine, setPerLine] = useState({});
   if (!tariffs || tariffs.length === 0) return null;
 
   const prix = (n) => `${Number(n).toFixed(4).replace(/0+$/, '').replace(/[.,]$/, '').replace('.', ',')} €`;
@@ -353,6 +357,20 @@ function TariffTable({ tariffs, invoiceNumber, supplierId, mobile }) {
     setTimeout(() => setCopied(false), 2500);
   };
 
+  const retenirUne = async (t) => {
+    setPerLine((p) => ({ ...p, [t.ref]: 'busy' }));
+    try {
+      const { data } = await axios.post(`${BASE}/align-tariffs`, {
+        supplier_id: supplierId,
+        tariffs: [{ ref: t.ref, realPrice: t.realPrice, packQty: t.packQty }],
+      });
+      const rejet = (data.skipped || [])[0];
+      setPerLine((p) => ({ ...p, [t.ref]: rejet ? rejet.reason : 'done' }));
+    } catch (e) {
+      setPerLine((p) => ({ ...p, [t.ref]: e.response?.data?.error || e.message }));
+    }
+  };
+
   const aligner = async () => {
     setAligning(true);
     try {
@@ -361,6 +379,12 @@ function TariffTable({ tariffs, invoiceNumber, supplierId, mobile }) {
         tariffs: tariffs.map((t) => ({ ref: t.ref, realPrice: t.realPrice, packQty: t.packQty })),
       });
       setAligned(data);
+      setPerLine((p) => {
+        const n = { ...p };
+        for (const a of data.applied || []) n[a.ref] = 'done';
+        for (const k of data.skipped || []) n[k.ref] = k.reason;
+        return n;
+      });
     } catch (e) {
       setAligned({ applied: [], skipped: [{ ref: '—', reason: e.response?.data?.error || e.message }] });
     } finally { setAligning(false); }
@@ -411,6 +435,7 @@ function TariffTable({ tariffs, invoiceNumber, supplierId, mobile }) {
               <th style={{ ...th, textAlign: 'right' }}>Tarif BMS</th>
               <th style={{ ...th, textAlign: 'right' }}>Tarif réel payé</th>
               <th style={{ ...th, textAlign: 'right' }}>Écart</th>
+              <th style={{ ...th, textAlign: 'right' }} />
             </tr>
           </thead>
           <tbody>
@@ -423,6 +448,22 @@ function TariffTable({ tariffs, invoiceNumber, supplierId, mobile }) {
                 <td style={{ ...td, textAlign: 'right', fontWeight: 700 }}>{prix(t.realPrice)}</td>
                 <td style={{ ...td, textAlign: 'right', color: t.delta > 0 ? C.red : C.green }}>
                   {t.delta > 0 ? '+' : ''}{prix(t.delta)}
+                </td>
+                <td style={{ ...td, textAlign: 'right', whiteSpace: 'nowrap' }}>
+                  {perLine[t.ref] === 'done' ? (
+                    <span style={{ color: C.green, fontWeight: 600, fontSize: 12 }}>Retenu</span>
+                  ) : perLine[t.ref] && perLine[t.ref] !== 'busy' ? (
+                    <span style={{ color: C.orange, fontSize: 11.5 }}>{perLine[t.ref]}</span>
+                  ) : (
+                    <Btn
+                      onClick={() => retenirUne(t)}
+                      variant="secondary"
+                      small
+                      disabled={perLine[t.ref] === 'busy'}
+                    >
+                      {perLine[t.ref] === 'busy' ? '…' : 'Retenir'}
+                    </Btn>
+                  )}
                 </td>
               </tr>
             ))}
@@ -747,16 +788,18 @@ function ControlTab({ suppliers, mobile, onSaved }) {
             </div>
           )}
 
-          {result.comparison
-            ? <DifferencesTable lines={result.differences} mobile={mobile} />
-            : <ReadLinesTable lines={result.invoice.lines} mobile={mobile} />}
-
+          {/* Les tarifs d'abord : c'est ce qui appelle une décision. Les écarts
+              en dessous sont souvent des lignes offertes, à lire, pas à traiter. */}
           <TariffTable
             tariffs={result.tariffs}
             invoiceNumber={result.invoice.number}
             supplierId={supplierId}
             mobile={mobile}
           />
+
+          {result.comparison
+            ? <DifferencesTable lines={result.differences} mobile={mobile} />
+            : <ReadLinesTable lines={result.invoice.lines} mobile={mobile} />}
 
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
             {!saved ? (

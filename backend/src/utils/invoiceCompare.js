@@ -360,13 +360,20 @@ function compareInvoiceToOrder({ invoice, order, options = {} }) {
     // De quoi expliquer la promotion à l'écran : sur combien de pièces elle
     // porte, et le prix réellement payé quand toutes ses cibles y arrivent au
     // même. C'est la réponse à « d'où sort ce prix ».
-    const pieces = cibles.reduce((acc, r) => acc + (Number(r.qtyInvoiced) || 0), 0);
-    const couts = [...new Set(cibles
+    //
+    // Les lignes à 0 € sont écartées du décompte : une remise au prorata du
+    // montant ne leur donne rien, mais les compter gonflait l'assiette affichée.
+    // Sur la facture e.tasty, les 800 pièces de 10 ml OFFERTES portaient la
+    // promotion « 1€ 10ML » à 1530 pièces et 0,17 € la pièce, au lieu de 730
+    // pièces et 0,35 €.
+    const payantes = cibles.filter((r) => r.invoicedTotal > 0);
+    const pieces = payantes.reduce((acc, r) => acc + (Number(r.qtyInvoiced) || 0), 0);
+    const couts = [...new Set(payantes
       .filter((r) => r.invoicedUnitPrice !== null)
       .map((r) => Math.round((r.invoicedUnitPrice - Math.abs(d.invoicedTotal) * (r.invoicedTotal / assiette) / (r.qtyInvoiced || 1)) * 100)))];
     d.scope = {
       targeted: Boolean(visees),
-      lines: cibles.length,
+      lines: payantes.length,
       units: pieces,
       perUnit: pieces > 0 ? round2(Math.abs(d.invoicedTotal) / pieces) : null,
       unitCost: couts.length === 1 ? couts[0] / 100 : null,
