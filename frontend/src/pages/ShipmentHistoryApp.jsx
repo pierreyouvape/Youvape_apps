@@ -268,6 +268,12 @@ function Parcours({ id, token, onClose, onChanged, reimprimer, reimpression }) {
                 <div style={{ fontWeight: 700, marginBottom: 8 }}>
                   Annuler l'étiquette de la commande #{l.order_number} ? C'est définitif.
                 </div>
+                {/* Annuler l'étiquette ne défait pas l'expédition déjà enregistrée dans BMS. */}
+                {l.bms_ship_status === 'confirmed' && (
+                  <div style={{ fontWeight: 700, color: C.red, marginBottom: 8 }}>
+                    L'expédition est confirmée dans BMS : il faut aussi l'annuler à la main dans BMS.
+                  </div>
+                )}
                 <div style={{ display: 'flex', gap: 8 }}>
                   <Btn variant="ghost" small onClick={() => setConfirmAnnul(false)}>Non</Btn>
                   <Btn variant="danger" small onClick={annuler} disabled={action === 'cancel'}>

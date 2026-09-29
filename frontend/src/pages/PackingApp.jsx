@@ -121,13 +121,6 @@ const PackingApp = () => {
   const [labelLoading, setLabelLoading] = useState(false);
   const [labelData, setLabelData] = useState(null); // { pdfBase64, trackingId, orderNumber }
   const [labelError, setLabelError] = useState(null);
-  const [showLabels, setShowLabels] = useState(false);
-  const [labelsList, setLabelsList] = useState([]);
-  const [labelsLoading, setLabelsLoading] = useState(false);
-  const [cancelConfirm, setCancelConfirm] = useState(null); // label id to confirm cancel
-  const [cancelLoading, setCancelLoading] = useState(false);
-  const [reprintLoading, setReprintLoading] = useState(null); // label id en cours
-  const [bmsConfirmLoading, setBmsConfirmLoading] = useState(null); // label id en cours
   const [hoveredImage, setHoveredImage] = useState(null); // { url, x, y }
   // Transporteur résolu au scan : sert au bandeau coloré ET au blocage.
   const [carrier, setCarrier] = useState(null);
@@ -607,77 +600,6 @@ const PackingApp = () => {
     }
   }, [token]);
 
-  // Charger la liste des étiquettes
-  const loadLabels = useCallback(async () => {
-    setLabelsLoading(true);
-    try {
-      const res = await axios.get(`${API_URL}/laposte/labels`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      setLabelsList(res.data);
-    } catch (err) {
-      console.error('Erreur chargement étiquettes:', err);
-    } finally {
-      setLabelsLoading(false);
-    }
-  }, [token]);
-
-  // Annuler une étiquette
-  const handleCancelLabel = useCallback(async (id) => {
-    setCancelLoading(true);
-    try {
-      await axios.post(`${API_URL}/laposte/labels/${id}/cancel`, {}, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      setCancelConfirm(null);
-      loadLabels();
-    } catch (err) {
-      const detail = err.response?.data?.error || 'Erreur annulation';
-      alert(detail);
-    } finally {
-      setCancelLoading(false);
-    }
-  }, [token, loadLabels]);
-
-  const reprintLabel = useCallback(async (label) => {
-    setReprintLoading(label.id);
-    try {
-      const res = await axios.get(`${API_URL}/laposte/labels/${label.id}/pdf`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      downloadPdf(res.data.pdfBase64, res.data.orderNumber, res.data.fileName);
-      // Un colis outre-mer ne part pas sans sa CN23 : elle se réimprime avec.
-      if (res.data.cn23Base64) downloadPdf(res.data.cn23Base64, res.data.orderNumber, res.data.cn23FileName);
-    } catch (err) {
-      alert(err.response?.data?.error || 'Erreur récupération PDF');
-    } finally {
-      setReprintLoading(null);
-    }
-  }, [token, downloadPdf]);
-
-  /**
-   * Rejoue la confirmation d'expédition dans BMS pour une étiquette restée
-   * « non confirmée ». Le backend relit la commande dans BMS avant d'écrire :
-   * cliquer deux fois ne crée pas deux expéditions.
-   */
-  const confirmBmsShipment = useCallback(async (label) => {
-    setBmsConfirmLoading(label.id);
-    try {
-      const res = await axios.post(`${API_URL}/laposte/labels/${label.id}/confirm-bms`, {}, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      alert(res.data?.message || 'Expédition confirmée dans BMS.');
-      loadLabels();
-    } catch (err) {
-      alert(err.response?.data?.error || 'BMS a refusé la confirmation.');
-      // La tentative a été enregistrée (compteur, dernière erreur) : on recharge
-      // pour que la ligne dise la vérité.
-      loadLabels();
-    } finally {
-      setBmsConfirmLoading(null);
-    }
-  }, [token, loadLabels]);
-
   // --- Expédition manuelle (regénération d'étiquette / envoi hors commande) ---
 
   const openManualShipment = useCallback(async () => {
@@ -1033,20 +955,6 @@ const PackingApp = () => {
           </LinkBox>
           <h1 style={{ margin: 0, fontSize: '22px' }}>Packing</h1>
           <button
-            onClick={() => { setShowLabels(true); loadLabels(); }}
-            style={{
-              background: 'rgba(255,255,255,0.2)',
-              border: 'none',
-              color: 'white',
-              padding: '8px 16px',
-              borderRadius: '6px',
-              cursor: 'pointer',
-              fontSize: '14px'
-            }}
-          >
-            Etiquettes
-          </button>
-          <button
             onClick={openManualShipment}
             style={{
               background: 'rgba(255,255,255,0.2)',
@@ -1071,7 +979,7 @@ const PackingApp = () => {
           {user?.name || user?.email || ''}
         </span>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', zIndex: 1 }}>
-          {order && !showLabels && (
+          {order && (
             <button
               onClick={handleReset}
               style={{
@@ -1107,248 +1015,6 @@ const PackingApp = () => {
       {/* Content */}
       <div style={{ flex: 1, maxWidth: '940px', margin: '0 auto', padding: '20px', width: '100%' }}>
 
-        {showLabels ? (
-          <>
-            {/* Vue liste étiquettes */}
-            <div style={{
-              backgroundColor: 'white',
-              borderRadius: '12px',
-              padding: '20px',
-              boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
-            }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
-                <h2 style={{ margin: 0, color: '#333' }}>Etiquettes generees</h2>
-                <button
-                  onClick={() => setShowLabels(false)}
-                  style={{
-                    padding: '8px 16px',
-                    backgroundColor: '#6366f1',
-                    color: 'white',
-                    border: 'none',
-                    borderRadius: '6px',
-                    cursor: 'pointer',
-                    fontSize: '14px'
-                  }}
-                >
-                  Retour packing
-                </button>
-              </div>
-
-              {labelsLoading ? (
-                <p style={{ textAlign: 'center', color: '#666' }}>Chargement...</p>
-              ) : labelsList.length === 0 ? (
-                <p style={{ textAlign: 'center', color: '#999' }}>Aucune etiquette</p>
-              ) : (
-                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                  <thead>
-                    <tr style={{ backgroundColor: '#f8f9fa' }}>
-                      <th style={{ padding: '10px 12px', textAlign: 'left', fontSize: '13px', color: '#666' }}>Commande</th>
-                      <th style={{ padding: '10px 12px', textAlign: 'left', fontSize: '13px', color: '#666' }}>N° suivi</th>
-                      <th style={{ padding: '10px 12px', textAlign: 'center', fontSize: '13px', color: '#666' }}>Date</th>
-                      <th style={{ padding: '10px 12px', textAlign: 'left', fontSize: '13px', color: '#666' }}>Packer</th>
-                      <th style={{ padding: '10px 12px', textAlign: 'center', fontSize: '13px', color: '#666' }}>BMS</th>
-                      <th style={{ padding: '10px 12px', textAlign: 'center', fontSize: '13px', color: '#666', width: '260px' }}>Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {labelsList.map(label => (
-                      <tr
-                        key={label.id}
-                        style={{
-                          // L'ambre signale un colis parti que BMS ignore : son
-                          // stock est faux tant que ce n'est pas régularisé.
-                          backgroundColor: label.status === 'cancelled'
-                            ? '#f8d7da'
-                            : label.bms_ship_status === 'pending' ? '#fff8e1' : 'white',
-                          borderBottom: '1px solid #eee'
-                        }}
-                      >
-                        <td style={{ padding: '10px 12px', fontSize: '14px', fontWeight: '500' }}>
-                          #{label.order_number}
-                        </td>
-                        <td style={{ padding: '10px 12px', fontSize: '13px', color: '#666' }}>
-                          {label.tracking_id}
-                          {String(label.method_code || '').endsWith('-SAMEDI') && (
-                            <span style={{
-                              marginLeft: '6px',
-                              padding: '2px 6px',
-                              borderRadius: '8px',
-                              backgroundColor: '#FFCC00',
-                              color: '#1f2937',
-                              fontSize: '11px',
-                              fontWeight: '700'
-                            }}>
-                              Samedi
-                            </span>
-                          )}
-                        </td>
-                        <td style={{ padding: '10px 12px', textAlign: 'center', fontSize: '13px', color: '#666' }}>
-                          {new Date(label.created_at).toLocaleDateString('fr-FR')}
-                        </td>
-                        <td style={{ padding: '10px 12px', fontSize: '13px', color: '#666' }}>
-                          {label.packer_name || '-'}
-                        </td>
-                        <td style={{ padding: '10px 12px', textAlign: 'center' }}>
-                          {label.status !== 'cancelled' && label.bms_ship_status === 'pending' ? (
-                            <span
-                              title={`${label.bms_attempts || 0} tentative(s). Derniere erreur : ${label.bms_last_error || 'aucune'}`}
-                              style={{
-                                display: 'inline-block',
-                                padding: '3px 8px',
-                                borderRadius: '10px',
-                                backgroundColor: '#fd7e14',
-                                color: 'white',
-                                fontSize: '11px',
-                                fontWeight: '700',
-                                whiteSpace: 'nowrap'
-                              }}
-                            >
-                              Non confirme
-                            </span>
-                          ) : label.bms_ship_status === 'confirmed' ? (
-                            <span title="Expedition enregistree dans BMS" style={{ color: '#198754', fontSize: '14px', fontWeight: '700' }}>OK</span>
-                          ) : label.bms_ship_status === 'manual' ? (
-                            <span title="Regularise hors application" style={{ color: '#6c757d', fontSize: '12px' }}>Regularise</span>
-                          ) : (
-                            <span title="Aucune confirmation BMS attendue pour cette etiquette" style={{ color: '#ced4da' }}>-</span>
-                          )}
-                        </td>
-                        <td style={{ padding: '10px 12px', textAlign: 'center' }}>
-                          {label.status === 'cancelled' ? (
-                            <span style={{ color: '#dc3545', fontSize: '13px', fontWeight: '600' }}>Annulee</span>
-                          ) : (
-                            <div style={{ display: 'flex', gap: '6px', justifyContent: 'center' }}>
-                              <button
-                                onClick={() => reprintLabel(label)}
-                                disabled={reprintLoading === label.id}
-                                style={{
-                                  padding: '5px 10px',
-                                  backgroundColor: '#0d6efd',
-                                  color: 'white',
-                                  border: 'none',
-                                  borderRadius: '5px',
-                                  cursor: reprintLoading === label.id ? 'default' : 'pointer',
-                                  fontSize: '12px',
-                                  fontWeight: '600',
-                                  opacity: reprintLoading === label.id ? 0.6 : 1
-                                }}
-                              >
-                                {reprintLoading === label.id ? '...' : 'Imprimer'}
-                              </button>
-                              {label.bms_ship_status === 'pending' && (
-                                <button
-                                  onClick={() => confirmBmsShipment(label)}
-                                  disabled={bmsConfirmLoading === label.id}
-                                  title="Rejouer la confirmation d'expedition dans BMS"
-                                  style={{
-                                    padding: '5px 10px',
-                                    backgroundColor: '#fd7e14',
-                                    color: 'white',
-                                    border: 'none',
-                                    borderRadius: '5px',
-                                    cursor: bmsConfirmLoading === label.id ? 'default' : 'pointer',
-                                    fontSize: '12px',
-                                    fontWeight: '600',
-                                    opacity: bmsConfirmLoading === label.id ? 0.6 : 1,
-                                    whiteSpace: 'nowrap'
-                                  }}
-                                >
-                                  {bmsConfirmLoading === label.id ? '...' : 'Confirmer BMS'}
-                                </button>
-                              )}
-                              <button
-                                onClick={() => setCancelConfirm(label)}
-                                disabled={!label.cancellable}
-                                style={{
-                                  padding: '5px 10px',
-                                  backgroundColor: label.cancellable ? '#dc3545' : '#e9ecef',
-                                  color: label.cancellable ? 'white' : '#adb5bd',
-                                  border: 'none',
-                                  borderRadius: '5px',
-                                  cursor: label.cancellable ? 'pointer' : 'default',
-                                  fontSize: '12px',
-                                  fontWeight: '600'
-                                }}
-                              >
-                                Annuler
-                              </button>
-                            </div>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-            </div>
-
-            {/* Popup confirmation annulation */}
-            {cancelConfirm && (
-              <div style={{
-                position: 'fixed',
-                top: 0, left: 0, right: 0, bottom: 0,
-                backgroundColor: 'rgba(0,0,0,0.5)',
-                display: 'flex',
-                justifyContent: 'center',
-                alignItems: 'center',
-                zIndex: 1000
-              }}>
-                <div style={{
-                  backgroundColor: 'white',
-                  borderRadius: '12px',
-                  padding: '30px',
-                  maxWidth: '450px',
-                  width: '90%',
-                  textAlign: 'center',
-                  boxShadow: '0 4px 20px rgba(0,0,0,0.3)'
-                }}>
-                  <h3 style={{ margin: '0 0 15px', color: '#333' }}>
-                    Annuler l'etiquette #{cancelConfirm.order_number} ?
-                  </h3>
-                  <p style={{ color: '#666', margin: '0 0 15px', fontSize: '14px' }}>
-                    Etes-vous sur de vouloir annuler cette etiquette ? Cette action est definitive.
-                  </p>
-                  <p style={{ color: '#dc3545', margin: '0 0 25px', fontSize: '13px', fontWeight: 'bold' }}>
-                    Attention : il faut aussi annuler l'expedition manuellement dans BMS.
-                  </p>
-                  <div style={{ display: 'flex', gap: '10px', justifyContent: 'center' }}>
-                    <button
-                      onClick={() => setCancelConfirm(null)}
-                      disabled={cancelLoading}
-                      style={{
-                        padding: '10px 20px',
-                        backgroundColor: '#6c757d',
-                        color: 'white',
-                        border: 'none',
-                        borderRadius: '6px',
-                        cursor: 'pointer',
-                        fontSize: '14px'
-                      }}
-                    >
-                      Non, revenir en arriere
-                    </button>
-                    <button
-                      onClick={() => handleCancelLabel(cancelConfirm.id)}
-                      disabled={cancelLoading}
-                      style={{
-                        padding: '10px 20px',
-                        backgroundColor: '#dc3545',
-                        color: 'white',
-                        border: 'none',
-                        borderRadius: '6px',
-                        cursor: cancelLoading ? 'default' : 'pointer',
-                        fontSize: '14px'
-                      }}
-                    >
-                      {cancelLoading ? 'Annulation...' : "Oui, annuler l'etiquette"}
-                    </button>
-                  </div>
-                </div>
-              </div>
-            )}
-          </>
-        ) : (
-        <>
         {/* Attente de scan — pas de commande */}
         {!order && !loading && (
           <div style={{
@@ -2124,8 +1790,6 @@ const PackingApp = () => {
               </div>
             )}
           </>
-        )}
-        </>
         )}
       </div>
 

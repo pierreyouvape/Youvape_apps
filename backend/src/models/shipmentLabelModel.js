@@ -190,31 +190,6 @@ const insert = async ({
 };
 
 /**
- * Les 100 étiquettes les plus récentes, avec le nom du préparateur.
- *
- * @returns {Promise<object[]>}
- */
-const listRecent = async (limit = 100) => {
-  const result = await pool.query(
-    `SELECT l.id, l.carrier_code, l.account_code, l.method_code, l.order_number,
-            l.tracking_number, l.carrier_order_id, l.status, l.weight_g,
-            l.created_at, l.cancelled_at,
-            u.name AS packer_name,
-            -- Via to_jsonb, comme cn23_data : la liste des étiquettes doit
-            -- s'afficher sur une base où la migration n'a pas encore tourné.
-            to_jsonb(l)->>'bms_ship_status' AS bms_ship_status,
-            to_jsonb(l)->>'bms_last_error'  AS bms_last_error,
-            (to_jsonb(l)->>'bms_attempts')::int AS bms_attempts
-     FROM shipment_labels l
-     LEFT JOIN users u ON u.id = l.packed_by
-     ORDER BY l.created_at DESC
-     LIMIT $1`,
-    [limit]
-  );
-  return result.rows;
-};
-
-/**
  * @param {number|string} id
  * @returns {Promise<void>}
  */
@@ -398,7 +373,6 @@ module.exports = {
   findById,
   findPdfById,
   insert,
-  listRecent,
   markCancelled,
   hasBmsColumns,
   markBmsConfirmed,

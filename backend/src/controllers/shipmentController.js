@@ -11,10 +11,8 @@
  * une ligne dans le registre, un fichier de routes. Rien à retoucher ici.
  *
  * Compatibilité : les réponses gardent les noms de champs de l'API La Poste
- * d'origine (`trackingId`, `tracking_id`, `laposte_order_id`) pour que le
- * packing ne change pas en même temps que le backend. Les noms neutres sont
- * ajoutés à côté ; le front basculera dessus quand la liste des étiquettes
- * deviendra multi-transporteurs.
+ * d'origine (`trackingId`) pour que le packing ne change pas en même temps que
+ * le backend.
  */
 
 const pool = require('../config/database');
@@ -619,47 +617,6 @@ const makeCarrierHandlers = (carrierCode) => {
     }
   };
 
-  /** GET /labels — les 100 dernières étiquettes. */
-  const listLabels = async (req, res) => {
-    try {
-      const rows = await shipmentLabelModel.listRecent(100);
-
-      const now = new Date();
-      const labels = rows.map(row => {
-        // La fenêtre d'annulation appartient au transporteur qui a émis
-        // l'étiquette, pas à celui de la route : une lettre suivie et un
-        // Colissimo listés côte à côte n'ont pas le même délai.
-        //
-        // Un transporteur retiré du registre ne doit pas emporter la liste
-        // entière : ses étiquettes restent affichées et réimprimables, simplement
-        // plus annulables depuis l'app.
-        let cancellable = false;
-        try {
-          const rowAdapter = row.carrier_code === adapter.code
-            ? adapter
-            : getAdapter(row.carrier_code);
-          cancellable = rowAdapter.cancelWindow(row, now).cancellable;
-        } catch (e) {
-          console.warn(`[${adapter.logTag}] Étiquette ${row.id} : transporteur « ${row.carrier_code} » inconnu, annulation indisponible`);
-        }
-
-        return {
-          ...row,
-          // Alias hérités de l'API La Poste, conservés le temps que le packing
-          // passe aux noms neutres.
-          tracking_id: row.tracking_number,
-          laposte_order_id: row.carrier_order_id,
-          cancellable: row.status === 'active' && cancellable
-        };
-      });
-
-      res.json(labels);
-    } catch (error) {
-      console.error(`[${adapter.logTag}] Erreur listLabels:`, error.message);
-      res.status(500).json({ error: 'Erreur serveur' });
-    }
-  };
-
   /**
    * POST /labels/:id/confirm-bms — rejoue la confirmation d'expédition.
    *
@@ -756,7 +713,7 @@ const makeCarrierHandlers = (carrierCode) => {
     }
   };
 
-  return { generateLabel, listLabels, cancelLabel, getLabelPdf, confirmBmsShipment };
+  return { generateLabel, cancelLabel, getLabelPdf, confirmBmsShipment };
 };
 
 // loadOrderForLabel et receiverFromOrder sont exportés pour la répétition

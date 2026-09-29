@@ -11,9 +11,6 @@ const checkPackingRead = checkPermission('packing', 'read');
 // Générer une étiquette Lettre Suivie pour une commande
 router.post('/label/:orderNumber', checkPackingRead, laposteController.generateLabel);
 
-// Lister les étiquettes
-router.get('/labels', checkPackingRead, laposteController.listLabels);
-
 // Annuler une étiquette
 router.post('/labels/:id/cancel', checkPackingRead, laposteController.cancelLabel);
 

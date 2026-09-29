@@ -8,7 +8,7 @@
  *
  * Le fabriquer ici plutôt qu'ailleurs a une raison : il remplit le même contrat
  * que La Poste et Mondial Relay. Il est donc enregistré dans `shipment_labels`,
- * apparaît dans la liste des étiquettes, se réimprime avec le même bouton. Un
+ * apparaît dans l'Historique d'expédition, se réimprime avec le même bouton. Un
  * bouton séparé dans le packing aurait été plus court à écrire et aurait produit
  * une étiquette que personne ne peut retrouver.
  *
