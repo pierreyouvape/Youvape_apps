@@ -610,7 +610,46 @@ function listDifferences(comparison) {
     });
 }
 
+/**
+ * Les tarifs à corriger, déduits de ce que la facture a RÉELLEMENT coûté.
+ *
+ * C'est la réponse à « quels prix dois-je mettre dans BMS ». Le tarif de
+ * référence d'une commande est ce qu'on croyait payer ; le coût réel est ce
+ * qu'on a payé, promotions de pied comprises. Sur la facture e.tasty
+ * FA082519/2026, BMS annonce 1,29 € le 10 ml et 5,20 € le 50 ml quand la
+ * facture, une fois ses deux promotions imputées, donne 1,00 € et 3,40 €.
+ *
+ * Les lignes de conditionnement sont écartées : leur prix unitaire n'est pas
+ * comparable (un carton de dix contre dix pièces), et l'aligner écrirait un
+ * prix de pack dans une case de prix unitaire.
+ */
+function listTariffUpdates(comparison, options = {}) {
+  const seuil = Number.isFinite(options.threshold) ? options.threshold : 0.005;
+  const hors = ['packaging', 'missing_in_invoice', 'free', 'not_ordered', 'shipping', 'discount', 'other'];
+
+  return (comparison?.lines || [])
+    .filter((l) => l.ref
+      && !hors.includes(l.verdict)
+      && l.qtyInvoiced > 0
+      && l.expectedUnitPrice !== null
+      && l.effectiveUnitCost !== null
+      && Math.abs(l.effectiveUnitCost - l.expectedUnitPrice) > seuil)
+    .map((l) => ({
+      ref: l.ref,
+      label: l.label,
+      qty: l.qtyInvoiced,
+      currentPrice: round2(l.expectedUnitPrice),
+      // Deux décimales ne suffisent pas toujours : un prix fournisseur se
+      // négocie au millième (cf. LCA 5,42633 €).
+      realPrice: Math.round(l.effectiveUnitCost * 10000) / 10000,
+      discountShare: l.discountShare || 0,
+      delta: Math.round((l.effectiveUnitCost - l.expectedUnitPrice) * 10000) / 10000,
+    }))
+    .sort((a, b) => Math.abs(b.delta * b.qty) - Math.abs(a.delta * a.qty));
+}
+
 module.exports = {
+  listTariffUpdates,
   compareInvoiceToOrder,
   matchKeyOf,
   listDifferences,

@@ -311,6 +311,92 @@ const fromStoredLines = (lines) => (lines || []).map((l) => ({
  * l'URL BMS collée telle quelle, parce que c'est ce que l'acheteur a sous les
  * yeux quand il regarde la commande dans BMS.
  */
+/**
+ * Les tarifs à reporter dans BMS.
+ *
+ * L'API BoostMyShop n'expose AUCUNE route d'écriture sur les prix fournisseur
+ * (son Swagger ne déclare que treize écritures, dont une seule côté achats :
+ * créer un bon de commande). Le report se fait donc à la main — le rôle de
+ * l'app est de dire quoi saisir, et de le rendre copiable d'un geste.
+ */
+function TariffTable({ tariffs, invoiceNumber, mobile }) {
+  const [copied, setCopied] = useState(false);
+  if (!tariffs || tariffs.length === 0) return null;
+
+  const prix = (n) => `${Number(n).toFixed(4).replace(/0+$/, '').replace(/[.,]$/, '').replace('.', ',')} €`;
+
+  const copier = async () => {
+    const lignes = tariffs.map((t) => `${t.ref}\t${prix(t.currentPrice)}\t${prix(t.realPrice)}`);
+    const texte = [`Tarifs relevés sur la facture ${invoiceNumber || ''}`, '',
+      'Référence\tTarif BMS actuel\tTarif réel payé', ...lignes].join('\n');
+    try {
+      const html = `<table style="border-collapse:collapse;font-family:Arial;font-size:13px;">`
+        + `<tr><th style="border:1px solid #d5d8dd;padding:6px 10px;">Référence</th>`
+        + `<th style="border:1px solid #d5d8dd;padding:6px 10px;">Tarif BMS actuel</th>`
+        + `<th style="border:1px solid #d5d8dd;padding:6px 10px;">Tarif réel payé</th></tr>`
+        + tariffs.map((t) => `<tr><td style="border:1px solid #d5d8dd;padding:6px 10px;">${t.ref}</td>`
+          + `<td style="border:1px solid #d5d8dd;padding:6px 10px;text-align:right;">${prix(t.currentPrice)}</td>`
+          + `<td style="border:1px solid #d5d8dd;padding:6px 10px;text-align:right;"><strong>${prix(t.realPrice)}</strong></td></tr>`).join('')
+        + '</table>';
+      if (window.ClipboardItem) {
+        await navigator.clipboard.write([new window.ClipboardItem({
+          'text/html': new Blob([html], { type: 'text/html' }),
+          'text/plain': new Blob([texte], { type: 'text/plain' }),
+        })]);
+      } else {
+        await navigator.clipboard.writeText(texte);
+      }
+    } catch { await navigator.clipboard.writeText(texte); }
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2500);
+  };
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+      <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+        <h3 style={{ margin: 0, fontSize: 14, fontWeight: 700, color: C.dark }}>
+          Tarifs à corriger dans BMS ({tariffs.length})
+        </h3>
+        <Btn onClick={copier} variant="secondary" small>
+          {copied ? 'Copié' : 'Copier la liste'}
+        </Btn>
+        <span style={{ fontSize: 12, color: C.greyT }}>
+          L'API BMS ne sait pas écrire les tarifs fournisseur : la saisie reste manuelle.
+        </span>
+      </div>
+
+      <div style={{ overflowX: 'auto', background: C.white, borderRadius: 10, border: `1px solid ${C.greyB}` }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <thead>
+            <tr>
+              <th style={th}>Référence</th>
+              {!mobile && <th style={th}>Produit</th>}
+              <th style={{ ...th, textAlign: 'right' }}>Qté</th>
+              <th style={{ ...th, textAlign: 'right' }}>Tarif BMS</th>
+              <th style={{ ...th, textAlign: 'right' }}>Tarif réel payé</th>
+              <th style={{ ...th, textAlign: 'right' }}>Écart</th>
+            </tr>
+          </thead>
+          <tbody>
+            {tariffs.map((t, i) => (
+              <tr key={i}>
+                <td style={{ ...td, fontWeight: 600 }}>{t.ref}</td>
+                {!mobile && <td style={{ ...td, color: C.greyT }}>{(t.label || '').slice(0, 52)}</td>}
+                <td style={{ ...td, textAlign: 'right' }}>{t.qty}</td>
+                <td style={{ ...td, textAlign: 'right', color: C.greyT }}>{prix(t.currentPrice)}</td>
+                <td style={{ ...td, textAlign: 'right', fontWeight: 700 }}>{prix(t.realPrice)}</td>
+                <td style={{ ...td, textAlign: 'right', color: t.delta > 0 ? C.red : C.green }}>
+                  {t.delta > 0 ? '+' : ''}{prix(t.delta)}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 function OrderPicker({ supplierId, busy, onPick }) {
   const [q, setQ] = useState('');
   const [orders, setOrders] = useState([]);
@@ -628,6 +714,8 @@ function ControlTab({ suppliers, mobile, onSaved }) {
           {result.comparison
             ? <DifferencesTable lines={result.differences} mobile={mobile} />
             : <ReadLinesTable lines={result.invoice.lines} mobile={mobile} />}
+
+          <TariffTable tariffs={result.tariffs} invoiceNumber={result.invoice.number} mobile={mobile} />
 
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
             {!saved ? (

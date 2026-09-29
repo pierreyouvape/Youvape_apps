@@ -30,7 +30,7 @@ const { cleanPdfText, isPdf } = require('../utils/pdfText');
 const invoiceParsers = require('../parsers/invoices');
 const supplierRefModel = require('../models/supplierRefModel');
 const bmsApiModel = require('../models/bmsApiModel');
-const { compareInvoiceToOrder, listDifferences } = require('../utils/invoiceCompare');
+const { compareInvoiceToOrder, listDifferences, listTariffUpdates } = require('../utils/invoiceCompare');
 const { attachMatchKeys } = require('../utils/invoiceMatching');
 const { resolveCompleteRefs } = require('../utils/refResolution');
 
@@ -228,6 +228,9 @@ async function analyseInvoice({ buffer, supplierId, orderId = null, db = pool })
     matchedBy,
     comparison,
     differences: listDifferences(comparison),
+    // Ce qu'il faut corriger dans BMS : l'API ne sait pas l'écrire (aucune route
+    // d'écriture sur /supplier/products), l'acheteur le reporte à la main.
+    tariffs: listTariffUpdates(comparison),
     needsManualOrder: false,
   };
 }
