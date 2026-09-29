@@ -17,6 +17,8 @@ router.use(authMiddleware);
 const checkPackingRead = checkPermission('packing', 'read');
 
 router.get('/', checkPackingRead, shipmentHistoryController.list);
+// Colis emballé dans BMS : même fiche, sans action.
+router.get('/bms/:id', checkPackingRead, shipmentHistoryController.detailBms);
 router.get('/:id', checkPackingRead, shipmentHistoryController.detail);
 
 module.exports = router;

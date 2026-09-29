@@ -14,6 +14,13 @@ const { checkPermission } = require('../middleware/permissionMiddleware');
 
 router.use(authMiddleware);
 
-router.get('/', checkPermission('stats-expedition', 'read'), shipmentStatsController.get);
+const checkRead = checkPermission('stats-expedition', 'read');
+
+router.get('/', checkRead, shipmentStatsController.get);
+
+// Correspondance nom BMS → compte de l'app. Lecture suffit pour la modifier :
+// l'app n'a qu'un droit d'accès, réservé aux responsables.
+router.get('/packers', checkRead, shipmentStatsController.listPackers);
+router.put('/packers', checkRead, shipmentStatsController.setPacker);
 
 module.exports = router;

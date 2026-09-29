@@ -49,7 +49,7 @@ const processRoutes = require('./routes/processRoutes');
 const atbRoutes = require('./routes/atbRoutes');
 const employeesRoutes = require('./routes/employeesRoutes');
 const authMiddleware = require('./middleware/authMiddleware');
-const { setupCron, setupBmsCron, setupComputedCostCron, setupBmsBarcodeCron, setupBmsShelfLocationCron, setupStockResyncCron, setupSavAutomationsCron, setupProductDbSyncCron, setupBmsTagRetryCron, setupBmsShipmentConfirmCron, setupReportEmailCron, setupStockValuationSnapshotCron, setupDraftStockReportCron, setupCompetitorMonitorCron, setupBrandMapCron, setupNextoreCrons, setupProductSuppliersLinkCron, setupPickingSyncCron } = require('./services/cronService');
+const { setupCron, setupBmsCron, setupComputedCostCron, setupBmsBarcodeCron, setupBmsShelfLocationCron, setupStockResyncCron, setupSavAutomationsCron, setupProductDbSyncCron, setupBmsTagRetryCron, setupBmsShipmentConfirmCron, setupReportEmailCron, setupStockValuationSnapshotCron, setupDraftStockReportCron, setupCompetitorMonitorCron, setupBrandMapCron, setupNextoreCrons, setupProductSuppliersLinkCron, setupPickingSyncCron, setupBmsShipmentSyncCron } = require('./services/cronService');
 const rewardService = require('./services/rewardService');
 const emailService = require('./services/emailService');
 const wcSyncService = require('./services/wcSyncService');
@@ -161,6 +161,7 @@ app.listen(PORT, async () => {
 
   // Photo des commandes à préparer pour le Picking (toutes les 5 min, 9h-19h, lun-ven)
   setupPickingSyncCron();
+  setupBmsShipmentSyncCron();
 
   // Initialiser le cron d'envoi automatique des rapports par email (journalier/hebdo/mensuel)
   setupReportEmailCron();

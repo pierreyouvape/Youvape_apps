@@ -25,7 +25,9 @@ const depositCarriers = () => listCarrierCodes().filter(code => {
 /** Même règle que la liste du packing : la fenêtre appartient au transporteur émetteur. */
 const withCancel = (row, now) => {
   let cancel = { cancellable: false, reason: 'Transporteur inconnu' };
-  if (row.status === 'active') {
+  if (row.source === 'bms') {
+    cancel = { cancellable: false, reason: "Colis emballé dans BMS : l'étiquette est chez BMS" };
+  } else if (row.status === 'active') {
     try { cancel = getAdapter(row.carrier_code).cancelWindow(row, now); } catch { /* transporteur retiré */ }
   } else {
     cancel = { cancellable: false, reason: 'Étiquette déjà annulée' };
@@ -67,7 +69,8 @@ const buildTimeline = ({ label, order, wave, incidents, bordereau }) => {
       [missing && `Manquant : ${missing}`, i.ticket_id && `Ticket SAV #${i.ticket_id}`].filter(Boolean).join(' — ') || null);
   }
 
-  push(label.created_at, 'label', 'Étiquette générée', label.packer_name,
+  push(label.created_at, 'label', label.source === 'bms' ? 'Emballé et expédié dans BMS' : 'Étiquette générée',
+    label.packer_name,
     [label.tracking_number, label.weight_g && `${label.weight_g} g`].filter(Boolean).join(' — ') || null);
 
   if (label.bms_ship_status === 'confirmed') {
@@ -95,13 +98,13 @@ const list = async (req, res) => {
   }
 };
 
-/** GET /:id — le colis et son parcours. */
-const detail = async (req, res) => {
+/** Le colis et son parcours : étiquette de l'app, ou expédition BMS. */
+const detailOf = (source) => async (req, res) => {
   try {
     const id = parseInt(req.params.id, 10);
     if (!id) return res.status(400).json({ error: 'Identifiant invalide' });
 
-    const data = await shipmentHistoryModel.getDetail(id);
+    const data = await shipmentHistoryModel.getDetail(id, source);
     if (!data) return res.status(404).json({ error: 'Colis introuvable' });
 
     res.json({
@@ -118,4 +121,9 @@ const detail = async (req, res) => {
   }
 };
 
-module.exports = { list, detail, buildTimeline };
+/** GET /:id — étiquette de l'app. */
+const detail = detailOf('app');
+/** GET /bms/:id — colis emballé dans BMS. */
+const detailBms = detailOf('bms');
+
+module.exports = { list, detail, detailBms, buildTimeline };

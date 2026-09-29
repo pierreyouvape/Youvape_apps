@@ -7,12 +7,15 @@
  *   - le parcours complet, dans l'ordre du temps, qui a fait quoi ;
  *   - une étape sans date n'apparaît pas (pas de date inventée) ;
  *   - la recherche porte sur tout l'historique, sans bornes de dates ;
- *   - « pas encore déposé » ne vise que les transporteurs à bordereau.
+ *   - « pas encore déposé » ne vise que les transporteurs à bordereau ;
+ *   - colis BMS : seules les expéditions signées sont gardées, et leur mode de
+ *     livraison donne le bon transporteur (codes relevés en prod le 29/09/2026).
  */
 
 const assert = require('assert');
 const { buildTimeline } = require('../src/controllers/shipmentHistoryController');
 const { buildWhere } = require('../src/models/shipmentHistoryModel');
+const { bmsCarrier, toRow } = require('../src/services/bmsShipmentSyncService');
 
 let failures = 0;
 function test(name, fn) {
@@ -103,6 +106,55 @@ test('« pas encore déposé » : transporteurs à bordereau seulement', () => {
 test('préparateur : au packing OU au picking, sauf pour les compteurs', () => {
   assert.ok(buildWhere({ user: '6' }, []).where.includes('packed_by = $1 OR picker_id = $1'));
   assert.strictEqual(buildWhere({ user: '6' }, [], { withUser: false }).where, '');
+});
+
+test('« pas encore déposé » ignore les colis BMS', () => {
+  assert.ok(buildWhere({ status: 'not_deposited' }, ['colissimo']).where.includes(`source = 'app'`));
+});
+
+console.log('Colis BMS');
+
+test('mode de livraison BMS → transporteur de l\'app', () => {
+  const cas = {
+    mondialrelay_pickup: ['mondial_relay', 'Prod'],
+    colissimo_homecl: ['colissimo', 'production'],
+    colissimo_pickup: ['colissimo', 'production'],
+    colissimo_international: ['colissimo', 'production'],
+    chronorelais_chronorelais: ['chronopost', 'principal'],
+    chronopost_chronopost: ['chronopost', 'principal'],
+    chronoexpress_chronoexpress: ['chronopost', 'principal'],
+    chronopost2shopdirect_chronopost2shopdirect: ['chronopost', '2shop'],
+    chronopostshop2shopfrance_chronopostshop2shopfrance: ['chronopost', '2shop'],
+    laposte_suiviportpaye: ['laposte', 'lettre_suivie'],
+    erpcloudstorepickup_erpcloudstorepickup270: ['interne', 'retrait_magasin'],
+    inconnu_xyz: [null, null],
+  };
+  for (const [code, [carrier, account]] of Object.entries(cas)) {
+    assert.deepStrictEqual(bmsCarrier(code), { carrierCode: carrier, accountCode: account }, code);
+  }
+});
+
+test('seules les expéditions signées sont gardées (les nôtres arrivent sans nom)', () => {
+  const s = {
+    id: 2318001, order_reference: '1264426', packer: 'Celine Pialat ', created_at: '2026-09-29T10:06:23.000000+02:00',
+    method_code: 'mondialrelay_pickup', trackings: [{ number: '00663702' }], items: [{ qty: 2 }, { qty: 3 }],
+  };
+  const row = toRow(s);
+  assert.strictEqual(row.packer, 'Celine Pialat');
+  assert.strictEqual(row.tracking, '00663702');
+  assert.strictEqual(row.itemsQty, 5);
+  assert.strictEqual(row.carrierCode, 'mondial_relay');
+  assert.strictEqual(toRow({ ...s, packer: null }), null);
+  assert.strictEqual(toRow({ ...s, packer: '  ' }), null);
+});
+
+test('parcours d\'un colis BMS', () => {
+  const ev = buildTimeline({
+    label: { source: 'bms', created_at: '2026-09-29T08:06:23.000Z', packer_name: 'Celyne', tracking_number: '00663702' },
+    order: { paid_at: '2026-09-28T20:00:00.000Z' }, wave: null, incidents: [], bordereau: null,
+  });
+  assert.deepStrictEqual(ev.map(e => e.title), ['Commande payée', 'Emballé et expédié dans BMS']);
+  assert.strictEqual(ev[1].by, 'Celyne');
 });
 
 console.log(failures === 0 ? '\nTous les tests passent.' : `\n${failures} test(s) en échec.`);

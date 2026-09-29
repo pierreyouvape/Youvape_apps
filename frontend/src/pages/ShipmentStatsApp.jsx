@@ -3,10 +3,13 @@ import axios from 'axios';
 import { AuthContext } from '../context/AuthContext';
 import AppShell from '../components/AppShell';
 import { ShipmentStats as ShipmentStatsIcon } from '../components/AppIcons';
-import { API_URL, authHeaders, C, CarrierLogo } from '../components/picking/pickingUi';
+import { API_URL, authHeaders, C, CarrierLogo, Chip } from '../components/picking/pickingUi';
 
 /**
  * Stats d'expédition — groupe « Prépa de commande », droit `stats-expedition`.
+ *
+ * Colis de l'app ET colis emballés dans BMS (tant que la préparation se fait en
+ * partie là-bas) ; « Correspondance BMS » rattache un nom BMS à un compte.
  *
  * Les règles de calcul (colis, articles, temps par colis) sont dans
  * backend/src/models/shipmentStatsModel.js. L'écran ne recalcule rien : il
@@ -202,6 +205,99 @@ function ColisParHeure({ hours }) {
   );
 }
 
+/* ─── CORRESPONDANCE BMS ────────────────────────────────── */
+/**
+ * BMS signe ses colis du nom complet (« Celine Pialat »), l'app a ses comptes
+ * (« Celyne ») : rien ne permet de les rapprocher tout seul. Un nom non
+ * rattaché s'affiche tel quel dans les stats.
+ */
+function CorrespondanceBms({ token, onClose, onChanged }) {
+  const [data, setData] = useState(null);
+  const [erreur, setErreur] = useState(null);
+  const [enCours, setEnCours] = useState(null);
+
+  const charger = useCallback(async () => {
+    try {
+      const res = await axios.get(`${API_URL}/shipment-stats/packers`, authHeaders(token));
+      setData(res.data);
+    } catch (err) {
+      setErreur(err.response?.data?.error || 'Erreur de chargement');
+    }
+  }, [token]);
+
+  useEffect(() => { charger(); }, [charger]);
+
+  const rattacher = async (packerName, userId) => {
+    setEnCours(packerName);
+    setErreur(null);
+    try {
+      await axios.put(`${API_URL}/shipment-stats/packers`, { packerName, userId: userId || null }, authHeaders(token));
+      await charger();
+      onChanged();
+    } catch (err) {
+      setErreur(err.response?.data?.error || 'Enregistrement impossible');
+    } finally {
+      setEnCours(null);
+    }
+  };
+
+  return (
+    <div onClick={onClose} style={{
+      position: 'fixed', inset: 0, zIndex: 1500, background: 'rgba(15,23,42,0.45)',
+      display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24,
+    }}>
+      <div onClick={e => e.stopPropagation()} style={{
+        background: C.white, borderRadius: 16, padding: '22px 24px', width: 'min(620px, 100%)',
+        maxHeight: '85vh', overflowY: 'auto', boxShadow: '0 24px 60px rgba(0,0,0,0.3)',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', marginBottom: 6 }}>
+          <h3 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: C.dark }}>Correspondance BMS</h3>
+          <button onClick={onClose} aria-label="Fermer" style={{
+            marginLeft: 'auto', border: 'none', background: 'none', fontSize: 22, cursor: 'pointer', color: C.greyT,
+          }}>×</button>
+        </div>
+        <p style={{ margin: '0 0 14px', fontSize: 13, color: C.greyT, lineHeight: 1.5 }}>
+          Le nom qui signe les colis emballés dans BMS, et le compte de l'app à qui les compter.
+        </p>
+        {erreur && <div style={{ color: C.red, fontSize: 13.5, marginBottom: 10 }}>{erreur}</div>}
+        {!data && !erreur && <div style={{ color: C.greyT, fontSize: 13.5 }}>Chargement…</div>}
+        {data && data.packers.length === 0 && (
+          <div style={{ color: C.greyT, fontSize: 13.5 }}>Aucun colis BMS récupéré pour l'instant.</div>
+        )}
+        {data && data.packers.length > 0 && (
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead>
+              <tr><Th>Nom dans BMS</Th><Th align="right">Colis</Th><Th>Compte de l'app</Th></tr>
+            </thead>
+            <tbody>
+              {data.packers.map(p => (
+                <tr key={p.packer_name}>
+                  <Td bold>
+                    {p.packer_name}
+                    {!p.user_id && <span style={{ marginLeft: 8 }}><Chip color={C.amber} bg={C.amberL}>Non rattaché</Chip></span>}
+                  </Td>
+                  <Td align="right">{nf.format(p.parcels)}</Td>
+                  <Td>
+                    <select
+                      value={p.user_id || ''}
+                      disabled={enCours === p.packer_name}
+                      onChange={e => rattacher(p.packer_name, e.target.value)}
+                      style={champ}
+                    >
+                      <option value="">— Aucun —</option>
+                      {data.users.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+                    </select>
+                  </Td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
+  );
+}
+
 /* ─── PAGE ──────────────────────────────────────────────── */
 const ShipmentStatsApp = () => {
   const { token } = useContext(AuthContext);
@@ -212,6 +308,7 @@ const ShipmentStatsApp = () => {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [erreur, setErreur] = useState(null);
+  const [reglage, setReglage] = useState(false);
 
   const charger = useCallback(async () => {
     setLoading(true);
@@ -272,6 +369,9 @@ const ShipmentStatsApp = () => {
               <span style={{ color: C.greyT, fontSize: 13 }}>au</span>
               <input type="date" value={to} min={from} max={jourParis()} style={champ}
                 onChange={e => { setTo(e.target.value); setPeriode(null); }} />
+              <button onClick={() => setReglage(true)} style={{ ...champ, cursor: 'pointer', fontWeight: 600 }}>
+                Correspondance BMS
+              </button>
             </div>
           </div>
 
@@ -288,7 +388,8 @@ const ShipmentStatsApp = () => {
             <div style={{ opacity: loading ? 0.6 : 1, transition: 'opacity 0.15s' }}>
               {/* Chiffres clés */}
               <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 16 }}>
-                <Tuile label="Colis expédiés" value={nf.format(t.parcels)} />
+                <Tuile label="Colis expédiés" value={nf.format(t.parcels)}
+                  sub={t.bms_parcels ? `dont ${nf.format(t.bms_parcels)} emballé${t.bms_parcels > 1 ? 's' : ''} dans BMS` : null} />
                 <Tuile label="Articles emballés" value={nf.format(t.articles)} />
                 <Tuile label="Articles par colis"
                   value={t.parcels ? (t.articles / t.parcels).toLocaleString('fr-FR', { maximumFractionDigits: 1 }) : '—'} />
@@ -309,6 +410,7 @@ const ShipmentStatsApp = () => {
                       <tr>
                         <Th>Personne</Th>
                         <Th align="right">Colis</Th>
+                        <Th align="right">Dont BMS</Th>
                         <Th>Part des colis</Th>
                         <Th align="right">Articles</Th>
                         <Th>Part des articles</Th>
@@ -321,16 +423,23 @@ const ShipmentStatsApp = () => {
                     </thead>
                     <tbody>
                       {data.people.length === 0 && (
-                        <tr><td colSpan={10} style={{ padding: '22px 16px', textAlign: 'center', color: C.greyT, fontSize: 13.5 }}>
+                        <tr><td colSpan={11} style={{ padding: '22px 16px', textAlign: 'center', color: C.greyT, fontSize: 13.5 }}>
                           Aucun colis sur la période.
                         </td></tr>
                       )}
                       {data.people.map((p, i) => {
                         const moy = moyenne(p.seconds, p.intervals);
                         return (
-                          <tr key={p.user_id ?? 'inconnu'} style={{ background: i % 2 ? C.zebra : C.white }}>
-                            <Td bold>{p.name}</Td>
+                          <tr key={p.who} style={{ background: i % 2 ? C.zebra : C.white }}>
+                            <Td bold>
+                              {p.name}
+                              {p.unmapped && (
+                                <div><Chip color={C.amber} bg={C.amberL}
+                                  title="Nom BMS rattaché à aucun compte : voir « Correspondance BMS »">Nom BMS non rattaché</Chip></div>
+                              )}
+                            </Td>
                             <Td align="right" bold>{nf.format(p.parcels)}</Td>
+                            <Td align="right" color={p.bms_parcels ? C.dark : C.greyM}>{p.bms_parcels ? nf.format(p.bms_parcels) : '—'}</Td>
                             <Td><Part value={p.parcels} total={t.parcels} /></Td>
                             <Td align="right">{nf.format(p.articles)}</Td>
                             <Td><Part value={p.articles} total={t.articles} /></Td>
@@ -373,7 +482,7 @@ const ShipmentStatsApp = () => {
                       )}
                       {data.carriers.map(c => (
                         <tr key={c.carrier_key}>
-                          <Td><CarrierLogo carrier={{ carrierCode: c.carrier_code, accountCode: c.account_code }} height={18} /></Td>
+                          <Td><CarrierLogo carrier={{ carrierCode: c.carrier_code, accountCode: c.account_code, status: 'unknown' }} height={18} /></Td>
                           <Td align="right" bold>{nf.format(c.parcels)}</Td>
                           <Td><Part value={c.parcels} total={t.parcels} /></Td>
                         </tr>
@@ -384,7 +493,7 @@ const ShipmentStatsApp = () => {
 
                 {/* Incidents */}
                 <section style={{ ...carte, marginBottom: 0 }}>
-                  <Titre sub="Déclarés au Packing sur la période">Incidents</Titre>
+                  <Titre sub="Déclarés au Packing de l'app sur la période : BMS ne les transmet pas">Incidents</Titre>
                   <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                     <tbody>
                       {[
@@ -405,6 +514,8 @@ const ShipmentStatsApp = () => {
           )}
         </div>
       </main>
+
+      {reglage && <CorrespondanceBms token={token} onClose={() => setReglage(false)} onChanged={charger} />}
     </AppShell>
   );
 };

@@ -921,6 +921,34 @@ const setupPickingSyncCron = () => {
 };
 
 
+// ==================== COLIS EMBALLÉS DANS BMS ====================
+
+const bmsShipmentSyncService = require('./bmsShipmentSyncService');
+
+let bmsShipmentSyncCronJob = null;
+
+const runBmsShipmentSync = async () => {
+  try {
+    await bmsShipmentSyncService.syncRecent();
+  } catch (error) {
+    console.error('Erreur cron colis BMS (stats expédition):', error.message);
+  }
+};
+
+const setupBmsShipmentSyncCron = () => {
+  if (bmsShipmentSyncCronJob) {
+    bmsShipmentSyncCronJob.stop();
+    bmsShipmentSyncCronJob = null;
+  }
+  // Décalé de 2 min sur la photo du picking. Le passage reprend là où le
+  // précédent s'est arrêté : un colis emballé hors de ces heures arrive au suivant.
+  bmsShipmentSyncCronJob = cron.schedule('2-57/5 9-19 * * 1-5', runBmsShipmentSync, {
+    timezone: 'Europe/Paris'
+  });
+  console.log('Cron colis BMS configure: toutes les 5 min, 9h-19h, lun-ven');
+};
+
+
 module.exports = {
   setupCron,
   restartCron,
@@ -942,6 +970,7 @@ module.exports = {
   setupNextoreCrons,
   setupProductSuppliersLinkCron,
   setupPickingSyncCron,
+  setupBmsShipmentSyncCron,
   runProductDbSyncJob,
   runProductSuppliersLink,
   runBrandMapJob,

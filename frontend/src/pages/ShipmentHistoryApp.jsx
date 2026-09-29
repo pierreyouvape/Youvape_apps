@@ -14,6 +14,9 @@ import { codesTransporteurs, visuelTransporteur } from '../utils/carrierVisuals'
  * qui s'est mal passé, et s'il est parti sur un bordereau. Le clic sur une
  * ligne ouvre son parcours complet.
  *
+ * Les colis emballés dans BMS (`source = 'bms'`) sont listés aussi, mention
+ * « BMS », sans aucune action : leur étiquette est chez BMS.
+ *
  * Les actions passent par les routes `/laposte/labels/:id/*`, communes à tous
  * les transporteurs, celles du packing : la réimpression télécharge le même
  * nom de fichier qu'au packing, donc AutoPrint l'envoie sur la bonne imprimante.
@@ -41,6 +44,7 @@ const STATUTS = [
   { value: 'bms_pending', label: 'BMS non confirmé' },
   { value: 'not_deposited', label: 'Pas encore déposé' },
   { value: 'cancelled', label: 'Annulées' },
+  { value: 'bms', label: 'Emballés dans BMS' },
 ];
 
 /** Les clés de l'API : 2Shop se distingue de Chronopost par son contrat. */
@@ -129,6 +133,9 @@ function Kpi({ label, value, color, onClick, active }) {
 /** Les pastilles d'état d'un colis. */
 function Etats({ row, vide = null }) {
   const chips = [];
+  if (row.source === 'bms') {
+    chips.push(<Chip key="bms" color={C.greyT} bg={C.greyB} title="Emballé et expédié dans BMS">BMS</Chip>);
+  }
   if (row.status === 'cancelled') chips.push(<Chip key="c" color={C.red} bg={C.redL}>Annulée</Chip>);
   if (row.status === 'active' && row.bms_ship_status === 'pending') {
     chips.push(<Chip key="b" color={C.amber} bg={C.amberL}
@@ -153,7 +160,7 @@ const COULEURS_ETAPE = {
 };
 
 /* ─── PANNEAU « PARCOURS » ──────────────────────────────── */
-function Parcours({ id, token, onClose, onChanged, reimprimer, reimpression }) {
+function Parcours({ id, source, token, onClose, onChanged, reimprimer, reimpression }) {
   const [data, setData] = useState(null);
   const [erreur, setErreur] = useState(null);
   const [action, setAction] = useState(null);
@@ -162,12 +169,13 @@ function Parcours({ id, token, onClose, onChanged, reimprimer, reimpression }) {
   const charger = useCallback(async () => {
     setErreur(null);
     try {
-      const res = await axios.get(`${API_URL}/shipment-history/${id}`, authHeaders(token));
+      const chemin = source === 'bms' ? `bms/${id}` : id;
+      const res = await axios.get(`${API_URL}/shipment-history/${chemin}`, authHeaders(token));
       setData(res.data);
     } catch (err) {
       setErreur(erreurApi(err, 'Erreur de chargement'));
     }
-  }, [id, token]);
+  }, [id, source, token]);
 
   useEffect(() => { setData(null); setConfirmAnnul(false); charger(); }, [charger]);
 
@@ -239,17 +247,26 @@ function Parcours({ id, token, onClose, onChanged, reimprimer, reimpression }) {
               <span><Etats row={l} vide="—" /></span>
             </div>
 
+            {l.source === 'bms' && (
+              <p style={{ margin: '0 0 12px', fontSize: 13, color: C.greyT, lineHeight: 1.5 }}>
+                Colis emballé et expédié dans BMS : l'étiquette, sa réimpression et son
+                annulation se gèrent dans BMS.
+              </p>
+            )}
+
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 20 }}>
+              {l.source !== 'bms' && (
               <Btn onClick={() => reimprimer(l)} disabled={l.status === 'cancelled' || reimpression === l.id}>
                 {reimpression === l.id ? 'Téléchargement…' : `Réimprimer${l.has_cn23 ? ' (+ CN23)' : ''}`}
               </Btn>
+              )}
               {l.status === 'active' && l.bms_ship_status === 'pending' && (
                 <Btn variant="accent" onClick={confirmerBms} disabled={action === 'bms'}
                   title="Rejouer la confirmation d'expédition dans BMS">
                   {action === 'bms' ? '…' : 'Confirmer BMS'}
                 </Btn>
               )}
-              {l.status === 'active' && (
+              {l.source !== 'bms' && l.status === 'active' && (
                 <Btn variant="ghost" onClick={() => setConfirmAnnul(true)} disabled={!l.cancellable}
                   title={l.cancellable ? "Annuler l'étiquette chez le transporteur" : l.cancel_reason}>
                   Annuler l'étiquette
@@ -306,7 +323,9 @@ function Parcours({ id, token, onClose, onChanged, reimprimer, reimpression }) {
             </ol>
             {!data.wave && (
               <p style={{ fontSize: 12.5, color: C.greyT, margin: '4px 0 0' }}>
-                Aucune vague de l'app pour ce colis : il a été préparé hors de l'app Picking.
+                {l.source === 'bms'
+                  ? 'Préparé dans BMS : la vague et le picking ne sont pas connus de l\'app.'
+                  : 'Aucune vague de l\'app pour ce colis : il a été préparé hors de l\'app Picking.'}
               </p>
             )}
 
@@ -316,13 +335,14 @@ function Parcours({ id, token, onClose, onChanged, reimprimer, reimpression }) {
                   Autres étiquettes de cette commande
                 </h3>
                 {data.otherLabels.map(o => (
-                  <div key={o.id} style={{
+                  <div key={`${o.source}-${o.id}`} style={{
                     display: 'flex', alignItems: 'center', gap: 10, fontSize: 12.5,
                     padding: '6px 0', borderBottom: `1px solid ${C.greyB}`,
                   }}>
                     <span style={{ color: C.greyT, width: 90 }}>{fmtDateHeure(o.created_at)}</span>
                     <CarrierLogo carrier={{ carrierCode: o.carrier_code, accountCode: o.account_code }} height={14} />
                     <span style={{ fontFamily: 'ui-monospace, monospace' }}>{o.tracking_number || '—'}</span>
+                    {o.source === 'bms' && <Chip color={C.greyT} bg={C.greyB}>BMS</Chip>}
                     {o.status === 'cancelled' && <Chip color={C.red} bg={C.redL}>Annulée</Chip>}
                   </div>
                 ))}
@@ -560,8 +580,8 @@ const ShipmentHistoryApp = () => {
                     </td></tr>
                   )}
                   {data?.rows.map((r, i) => (
-                    <tr key={r.id} onClick={() => setOuvert(r.id)} style={{
-                      cursor: 'pointer', background: ouvert === r.id ? C.rowSel : (i % 2 ? C.zebra : C.white),
+                    <tr key={r.uid} onClick={() => setOuvert(r)} style={{
+                      cursor: 'pointer', background: ouvert?.uid === r.uid ? C.rowSel : (i % 2 ? C.zebra : C.white),
                       opacity: r.status === 'cancelled' ? 0.6 : 1,
                     }}>
                       <Td color={C.greyT} style={{ whiteSpace: 'nowrap' }}>{fmtDateHeure(r.created_at)}</Td>
@@ -586,8 +606,9 @@ const ShipmentHistoryApp = () => {
                       <Td align="right">
                         <span onClick={e => e.stopPropagation()}>
                           <Btn small variant="ghost" onClick={() => reimprimer(r)}
-                            disabled={r.status === 'cancelled' || reimpression === r.id}
-                            title={r.has_cn23 ? "Retélécharger l'étiquette et la CN23" : "Retélécharger l'étiquette"}>
+                            disabled={r.source === 'bms' || r.status === 'cancelled' || reimpression === r.id}
+                            title={r.source === 'bms' ? "Étiquette BMS : à réimprimer dans BMS"
+                              : r.has_cn23 ? "Retélécharger l'étiquette et la CN23" : "Retélécharger l'étiquette"}>
                             {reimpression === r.id ? '…' : 'Réimprimer'}
                           </Btn>
                         </span>
@@ -614,7 +635,8 @@ const ShipmentHistoryApp = () => {
 
       {ouvert && (
         <Parcours
-          id={ouvert}
+          id={ouvert.id}
+          source={ouvert.source}
           token={token}
           onClose={() => setOuvert(null)}
           onChanged={charger}
