@@ -271,7 +271,147 @@ async function abandonSession(sessionId, db = pool) {
   return rows.length > 0;
 }
 
+/**
+ * Recharge les lignes depuis BMS, et complète la session.
+ *
+ * L'API BMS ne sait PAS ajouter une ligne à un bon de commande existant : son
+ * Swagger ne déclare que la création d'un bon, et PATCH/PUT n'en touchent que
+ * l'en-tête. Recevoir un article absent du bon passe donc forcément par BMS —
+ * on l'y ajoute, puis on recharge ici.
+ *
+ * Ce qui remonte : les lignes que BMS a et que nous n'avons pas (insérées
+ * localement), et les identifiants de ligne manquants (re-rapprochés). Rien
+ * n'est supprimé : une ligne retirée de BMS mais déjà comptée chez nous ne doit
+ * pas s'évaporer avec le comptage.
+ */
+async function refreshFromBms(sessionId, db = pool) {
+  const { rows: sessions } = await db.query(
+    'SELECT * FROM reception_sessions WHERE id = $1',
+    [sessionId],
+  );
+  const session = sessions[0];
+  if (!session) throw new Error('Réception introuvable');
+  if (session.status !== 'counting') throw new Error('Cette réception n\'est plus en cours');
+
+  const { rows: commandes } = await db.query(
+    'SELECT id, bms_po_id FROM purchase_orders WHERE id = $1',
+    [session.purchase_order_id],
+  );
+  const commande = commandes[0];
+  if (!commande || !commande.bms_po_id) throw new Error('Cette commande n\'existe pas dans BMS');
+
+  const lignesBms = await fetchBmsLinesFull(commande.bms_po_id);
+  const client = await db.connect();
+  let ajoutees = 0;
+  let rapprochees = 0;
+
+  try {
+    await client.query('BEGIN');
+
+    const { rows: locales } = await client.query(
+      `SELECT poi.id, poi.supplier_sku, poi.product_id, p.sku
+         FROM purchase_order_items poi
+         LEFT JOIN products p ON p.id = poi.product_id
+        WHERE poi.purchase_order_id = $1`,
+      [session.purchase_order_id],
+    );
+
+    for (const b of lignesBms) {
+      const deja = locales.find((l) => (
+        (l.supplier_sku && norm(l.supplier_sku) === norm(b.supplierSku))
+        || (l.sku && norm(l.sku) === norm(b.sku))
+      ));
+      if (deja) continue;
+
+      // Le produit chez nous, retrouvé par son SKU — c'est la clé que BMS et
+      // nous partageons.
+      const { rows: produits } = await client.query(
+        'SELECT id, post_title FROM products WHERE sku = $1 LIMIT 1',
+        [b.sku],
+      );
+      const produit = produits[0];
+      if (!produit) continue; // Produit inconnu de notre catalogue : on ne l'invente pas.
+
+      // qty × qty_pack = pièces, l'invariant de toute l'app.
+      const { rows: [ligne] } = await client.query(
+        `INSERT INTO purchase_order_items (
+           purchase_order_id, product_id, supplier_sku, product_name,
+           qty_ordered, unit_price, units_per_qty
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
+        [
+          session.purchase_order_id, produit.id, b.supplierSku || null,
+          b.name || produit.post_title, b.qty, b.price, b.packQty,
+        ],
+      );
+      await client.query(
+        `INSERT INTO reception_counts (session_id, purchase_order_item_id, bms_line_id, units_counted)
+         VALUES ($1, $2, $3, 0)
+         ON CONFLICT (session_id, purchase_order_item_id) DO NOTHING`,
+        [sessionId, ligne.id, b.id],
+      );
+      ajoutees += 1;
+    }
+
+    // Lignes déjà connues mais jamais rapprochées : on réessaie.
+    const { rows: orphelines } = await client.query(
+      `SELECT c.purchase_order_item_id, poi.supplier_sku, poi.product_id
+         FROM reception_counts c
+         JOIN purchase_order_items poi ON poi.id = c.purchase_order_item_id
+        WHERE c.session_id = $1 AND c.bms_line_id IS NULL`,
+      [sessionId],
+    );
+    for (const o of orphelines) {
+      const id = matchBmsLine(o, lignesBms);
+      if (!id) continue;
+      await client.query(
+        'UPDATE reception_counts SET bms_line_id = $3 WHERE session_id = $1 AND purchase_order_item_id = $2',
+        [sessionId, o.purchase_order_item_id, id],
+      );
+      rapprochees += 1;
+    }
+
+    // Une ligne de la commande jamais entrée dans la session — ajoutée à la main
+    // en base, ou insérée par une synchro depuis le dernier chargement.
+    const { rowCount: recuperees } = await client.query(
+      `INSERT INTO reception_counts (session_id, purchase_order_item_id, bms_line_id, units_counted)
+       SELECT $1, poi.id, NULL, 0
+         FROM purchase_order_items poi
+        WHERE poi.purchase_order_id = $2
+          AND NOT EXISTS (
+            SELECT 1 FROM reception_counts c
+             WHERE c.session_id = $1 AND c.purchase_order_item_id = poi.id)`,
+      [sessionId, session.purchase_order_id],
+    );
+
+    await client.query('COMMIT');
+    return { added: ajoutees, matched: rapprochees, recovered: recuperees };
+  } catch (e) {
+    await client.query('ROLLBACK');
+    throw e;
+  } finally {
+    client.release();
+  }
+}
+
+/** Les lignes BMS avec tout ce qu'il faut pour en créer une chez nous. */
+async function fetchBmsLinesFull(bmsPoId) {
+  const data = await bmsApiModel.apiCall(`/supplier/purchase-orders/${bmsPoId}`);
+  const po = data.data || data;
+  return (po.items || []).map((i) => ({
+    id: i.id,
+    sku: i.sku,
+    supplierSku: i.supplier_sku,
+    productId: i.product_id,
+    name: i.name,
+    qty: parseInt(i.qty, 10) || 0,
+    packQty: parseInt(i.qty_pack, 10) || 1,
+    price: i.price == null ? null : parseFloat(i.price),
+  }));
+}
+
 module.exports = {
+  refreshFromBms,
+  fetchBmsLinesFull,
   validateSession,
   abandonSession,
   getOpenSession,

@@ -512,7 +512,9 @@ function CountingScreen({ token, order, items, onBack, onReload }) {
     }
 
     if (!found) {
-      // Code inconnu de cette commande : l'opérateur choisit la ligne concernée.
+      // Code inconnu de cette commande : soit c'est un code-barres à rattacher à
+      // une ligne existante, soit l'article n'est pas au bon — et il faut alors
+      // l'ajouter dans BMS puis recharger, l'API ne sachant pas le faire.
       setUnknownModal({ barcode: value });
       return;
     }
@@ -567,6 +569,30 @@ function CountingScreen({ token, order, items, onBack, onReload }) {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [handleScan, typeModal, packQtyModal, unknownModal, diffModal]);
+
+  /**
+   * Recharge les lignes depuis BMS.
+   *
+   * L'API BMS ne sait pas ajouter une ligne à un bon de commande existant :
+   * recevoir un article absent du bon passe donc par BMS, puis par ce bouton.
+   * Le comptage déjà saisi n'est pas touché.
+   */
+  const recharger = async () => {
+    if (!session) return;
+    setSending(true); setSessionError(null);
+    try {
+      const { data } = await axios.post(
+        `${API_URL}/reception/sessions/${session.id}/refresh`, {}, authHeaders(token),
+      );
+      setSession(data.session || session);
+      onReload();
+      flash(data.added > 0
+        ? `${data.added} ligne(s) reprise(s) depuis BMS`
+        : 'Aucune ligne nouvelle dans BMS');
+    } catch (e) {
+      setSessionError(e.response?.data?.error || e.message);
+    } finally { setSending(false); }
+  };
 
   /**
    * Envoie la réception à BMS. IRRÉVERSIBLE : aucune route BMS ne sait annuler
@@ -663,6 +689,10 @@ function CountingScreen({ token, order, items, onBack, onReload }) {
             <input type="checkbox" checked={askType} onChange={toggleAsk} />
             Demander le type au scan
           </label>
+          <Btn variant="ghost" onClick={recharger} disabled={sending || !session}
+            title="Un article manque à la liste ? Ajoutez-le au bon de commande dans BMS, puis rechargez.">
+            {sending ? '…' : 'Recharger depuis BMS'}
+          </Btn>
           <Btn variant="accent" onClick={() => setDiffModal(true)} disabled={totalCounted === 0}>
             Valider
           </Btn>
@@ -970,11 +1000,22 @@ function UnknownModal({ barcode, items, onClose, onAttach }) {
 
   return (
     <Modal title="Code-barre inconnu" onClose={onClose} width={640}>
-      <p style={{ fontSize: 12.5, color: C.greyT, margin: '0 0 16px' }}>
+      <p style={{ fontSize: 12.5, color: C.greyT, margin: '0 0 12px' }}>
         Le code <strong style={{ color: C.dark }}>{barcode}</strong> n'est associé à aucun article
         de cette commande. Choisissez l'article concerné — le code sera enregistré pour les
         prochaines réceptions.
       </p>
+
+      {/* L'autre cas, et le plus fréquent après une livraison en plus : l'article
+          n'est pas SUR le bon. L'API BMS ne sachant pas y ajouter une ligne, le
+          seul chemin propre passe par BMS puis par le rechargement. */}
+      <div style={{ background: C.accentL, border: `1px solid ${C.accent}`, borderRadius: 9,
+        padding: '11px 14px', fontSize: 12.5, color: '#7C4A00', margin: '0 0 16px' }}>
+        <strong>L'article n'est pas sur le bon de commande ?</strong> Ajoutez-lui la ligne dans
+        BMS, puis fermez cette fenêtre et cliquez sur <strong>« Recharger depuis BMS »</strong>.
+        La marchandise restera rattachée à la commande, avec son prix d'achat. L'API de BMS ne
+        sait pas ajouter une ligne à distance, c'est le seul chemin.
+      </div>
 
       <div style={{ maxHeight: 260, overflowY: 'auto', border: `1px solid ${C.greyB}`,
         borderRadius: 9, marginBottom: 16 }}>

@@ -325,3 +325,22 @@ exports.getLifecycle = async (req, res) => {
     res.status(500).json({ error: e.message || 'Erreur serveur' });
   }
 };
+
+/**
+ * POST /api/reception/sessions/:sessionId/refresh
+ * Recharge les lignes depuis BMS — le chemin pour recevoir un article qu'on
+ * vient d'ajouter au bon de commande dans BMS.
+ */
+exports.refreshSession = async (req, res) => {
+  try {
+    const bilan = await sessionModel.refreshFromBms(parseInt(req.params.sessionId, 10));
+    const session = await sessionModel.getOpenSession(
+      (await pool.query('SELECT purchase_order_id FROM reception_sessions WHERE id = $1',
+        [parseInt(req.params.sessionId, 10)])).rows[0].purchase_order_id,
+    );
+    res.json({ ...bilan, session });
+  } catch (e) {
+    console.error('[reception] rechargement :', e.message);
+    res.status(400).json({ error: e.message || 'Erreur serveur' });
+  }
+};
