@@ -14,6 +14,7 @@
  */
 
 const pool = require('../config/database');
+const { BMS_SANS_DOUBLON } = require('../services/bmsShipmentSyncService');
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const PAGE_SIZE = 50;
@@ -89,7 +90,8 @@ const BASE_BMS = `
     LEFT JOIN bms_packer_map pm ON pm.packer_name = b.packer_name
     LEFT JOIN users pu ON pu.id = pm.user_id
     LEFT JOIN orders o
-      ON o.wp_order_id = CASE WHEN b.order_number ~ '^[0-9]{1,18}$' THEN b.order_number::bigint END`;
+      ON o.wp_order_id = CASE WHEN b.order_number ~ '^[0-9]{1,18}$' THEN b.order_number::bigint END
+   WHERE ${BMS_SANS_DOUBLON}`;
 
 const BASE = `${BASE_APP} UNION ALL ${BASE_BMS}`;
 
@@ -268,7 +270,7 @@ const getDetail = async (id, source = 'app') => {
            FROM shipment_labels l WHERE l.order_number = $1
          UNION ALL
          SELECT 'bms', b.bms_id, b.created_at, b.carrier_code, b.account_code, b.tracking_number, 'active'
-           FROM bms_shipments b WHERE b.order_number = $1
+           FROM bms_shipments b WHERE b.order_number = $1 AND ${BMS_SANS_DOUBLON}
        ) x
        WHERE NOT (source = $3 AND id = $2)
        ORDER BY created_at DESC`,

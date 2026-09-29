@@ -136,4 +136,17 @@ const syncRecent = () => {
   return running;
 };
 
-module.exports = { bmsCarrier, toRow, syncFrom, syncRecent };
+/**
+ * Condition SQL sur une ligne `b` de bms_shipments : ce colis n'est pas déjà
+ * une étiquette de l'app. Avant la confirmation automatique (22/09/2026),
+ * l'expédition d'une étiquette de l'app était ressaisie à la main dans BMS,
+ * qui la signait du nom de la personne qui cliquait : 24 colis comptés deux
+ * fois, dont 21 avec le même n° de suivi. L'app fait foi.
+ */
+const BMS_SANS_DOUBLON = `NOT EXISTS (
+  SELECT 1 FROM shipment_labels dl
+   WHERE dl.order_number = b.order_number AND dl.status = 'active'
+     AND (dl.tracking_number = b.tracking_number
+          OR ABS(EXTRACT(EPOCH FROM dl.created_at - b.created_at)) < 7200))`;
+
+module.exports = { bmsCarrier, toRow, syncFrom, syncRecent, BMS_SANS_DOUBLON };

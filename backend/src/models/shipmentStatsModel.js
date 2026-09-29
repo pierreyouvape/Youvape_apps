@@ -26,6 +26,7 @@
  */
 
 const pool = require('../config/database');
+const { BMS_SANS_DOUBLON } = require('../services/bmsShipmentSyncService');
 
 /** Au-delà, l'écart entre deux étiquettes est une pause (Pierre, 29/09/2026). */
 const PAUSE_S = 600;
@@ -56,7 +57,7 @@ const LAB = `
                b.packer_name, b.carrier_code, b.account_code, b.created_at
           FROM bms_shipments b
           LEFT JOIN bms_packer_map pm ON pm.packer_name = b.packer_name
-         WHERE ${PERIODE('b.created_at')}
+         WHERE ${PERIODE('b.created_at')} AND ${BMS_SANS_DOUBLON}
       ) src
   )`;
 
@@ -68,8 +69,8 @@ const COUNTED = `
         SELECT 'a' || id AS uid, order_number, created_at FROM shipment_labels
          WHERE status = 'active' AND order_number IN (SELECT order_number FROM lab)
         UNION ALL
-        SELECT 'b' || bms_id, order_number, created_at FROM bms_shipments
-         WHERE order_number IN (SELECT order_number FROM lab)
+        SELECT 'b' || b.bms_id, b.order_number, b.created_at FROM bms_shipments b
+         WHERE b.order_number IN (SELECT order_number FROM lab) AND ${BMS_SANS_DOUBLON}
       ) x
      ORDER BY order_number, created_at, uid
   ),
