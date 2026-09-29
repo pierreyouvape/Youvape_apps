@@ -326,6 +326,18 @@ export const Bordereau = (props) => (
   </Base>
 );
 
+export const ShipmentHistory = (props) => (
+  <Base {...props}>
+    {/* Le colis parti, entamé par l'horloge */}
+    <path d="M16 11.2 V7.5 L9.5 4.3 L3 7.5 V15.5 L9.5 18.7 L11.8 17.6" />
+    <path d="M3 7.5 L9.5 10.7 L16 7.5" />
+    <path d="M9.5 10.7 V18.7" />
+    {/* L'historique */}
+    <circle cx={17} cy={16.5} r={4.3} />
+    <path d="M17 14.3 V16.5 L18.6 17.6" />
+  </Base>
+);
+
 export const Picking = (props) => (
   <Base {...props}>
     {/* Le panier de préparation */}
@@ -362,6 +374,8 @@ export const APPS = [
   // n'apparaît pas dans la grille des droits. Le backend dit la même chose :
   // routes/bordereauRoutes.js exige `packing`.
   { key: 'bordereau', path: '/bordereau', label: 'Bordereau de dépôt', Icon: Bordereau, color: '#0E7490', permissionKey: 'packing' },
+  // Même droit que le bordereau, pour la même raison : routes/shipmentHistoryRoutes.js exige `packing`.
+  { key: 'expeditions', path: '/expeditions', label: "Historique d'expédition", Icon: ShipmentHistory, color: '#0F766E', permissionKey: 'packing' },
   // Droit propre (backend/src/config/apps.js) : le PDA pourra être confié à des
   // préparateurs sans leur ouvrir le packing.
   { key: 'picking',   path: '/picking',   label: 'Picking',                  Icon: Picking,   color: '#7C3AED' },
@@ -410,7 +424,7 @@ export const APP_GROUPS = [
     key: 'grp-prepa-commande',
     label: 'Prépa de commande',
     color: '#4F46E5',
-    members: ['picking', 'packing', 'bordereau'],
+    members: ['picking', 'packing', 'bordereau', 'expeditions'],
   },
   {
     key: 'grp-factures-transporteurs',

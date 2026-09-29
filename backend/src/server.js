@@ -27,6 +27,7 @@ const packingRoutes = require('./routes/packingRoutes');
 const laposteRoutes = require('./routes/laposteRoutes');
 const shipmentRoutes = require('./routes/shipmentRoutes');
 const bordereauRoutes = require('./routes/bordereauRoutes');
+const shipmentHistoryRoutes = require('./routes/shipmentHistoryRoutes');
 const pickingRoutes = require('./routes/pickingRoutes');
 const preferencesRoutes = require('./routes/preferencesRoutes');
 const financierRoutes = require('./routes/financierRoutes');
@@ -92,6 +93,7 @@ app.use('/api/packing', packingRoutes); // Packing / preparation colis
 app.use('/api/laposte', laposteRoutes); // La Poste - étiquettes Lettre Suivie
 app.use('/api/shipments', shipmentRoutes); // Étiquetage multi-transporteurs (auth + permissions dans le routeur)
 app.use('/api/bordereaux', bordereauRoutes); // Bordereaux de dépôt (droit packing, dans le routeur)
+app.use('/api/shipment-history', shipmentHistoryRoutes); // Historique d'expédition (droit packing, dans le routeur)
 app.use('/api/picking', pickingRoutes); // Picking : commandes à préparer et vagues (auth + droit picking dans le routeur)
 app.use('/api/preferences', preferencesRoutes); // User column preferences
 app.use('/api/financier', financierRoutes);    // Dashboard financier

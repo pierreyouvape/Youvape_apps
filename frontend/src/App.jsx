@@ -29,6 +29,7 @@ import CatalogApp from './pages/CatalogApp';
 import PackingApp from './pages/PackingApp';
 import PackingSettings from './pages/PackingSettings';
 import BordereauApp from './pages/BordereauApp';
+import ShipmentHistoryApp from './pages/ShipmentHistoryApp';
 import PickingApp from './pages/PickingApp';
 import PickingSettings from './pages/PickingSettings';
 import PdaHome from './pages/PdaHome';
@@ -71,6 +72,7 @@ const PAGE_TITLES = {
   '/orders': 'Commandes',
   '/packing': 'Packing',
   '/bordereau': 'Bordereau de dépôt',
+  '/expeditions': "Historique d'expédition",
   '/picking': 'Picking',
   '/picking/settings': 'Picking — Règles des vagues',
   '/pda': 'Youvape PDA',
@@ -369,6 +371,14 @@ function App() {
             element={
               <PrivateRoute>
                 <BordereauApp />
+              </PrivateRoute>
+            }
+          />
+          <Route
+            path="/expeditions"
+            element={
+              <PrivateRoute>
+                <ShipmentHistoryApp />
               </PrivateRoute>
             }
           />
