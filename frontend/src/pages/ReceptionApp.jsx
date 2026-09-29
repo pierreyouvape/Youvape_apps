@@ -405,6 +405,36 @@ function CountingScreen({ token, order, items, onBack, onReload }) {
     });
   }, [persistCount]);
 
+  /**
+   * Compte un carton dont on connaît le contenu.
+   *
+   * LE CARTON SCANNÉ FAIT AUTORITÉ sur le conditionnement de la ligne : c'est
+   * lui qu'on a dans les mains. Le fournisseur peut très bien expédier des
+   * cartons de 20 sur une ligne que le catalogue conditionne par 10, et c'est
+   * précisément pour ça que `product_barcodes.quantity` existe.
+   *
+   * Avant, le test « la ligne est conditionnée » passait AVANT la quantité du
+   * code-barres : un carton de 20 comptait 10, en silence.
+   *
+   * L'écran compte en BOÎTES de `pack_size` ; on convertit donc, et si la
+   * division ne tombe pas juste on le DIT plutôt que d'arrondir — un arrondi
+   * silencieux sur une réception, c'est du stock faux.
+   */
+  const compterCarton = useCallback((item, pieces) => {
+    const pack = item.pack_size > 1 ? item.pack_size : 1;
+    if (pieces % pack !== 0) {
+      flash(
+        `${item.name} — carton de ${pieces} pièces, mais la ligne se compte par ${pack} : `
+        + 'saisissez la quantité à la main', true,
+      );
+      return false;
+    }
+    addCount(item.id, pieces / pack);
+    flash(`${item.name} — carton de ${pieces} pièce${pieces > 1 ? 's' : ''}`);
+    return true;
+  }, [addCount]);
+
+
   // Résolution d'un scan, côté client : les codes-barres sont embarqués dans la
   // commande, donc un bip n'entraîne aucun aller-retour réseau.
   const handleScan = useCallback((code) => {
@@ -432,18 +462,18 @@ function CountingScreen({ token, order, items, onBack, onReload }) {
       return;
     }
 
+    // Un carton dont on connaît le contenu : sa quantité l'emporte sur le
+    // conditionnement de la ligne (cf. compterCarton).
+    if (matched.type === 'pack' && matched.quantity) {
+      compterCarton(found, parseInt(matched.quantity, 10));
+      return;
+    }
+
     // Un bip = une boîte sur une ligne conditionnée, quel que soit le code scanné :
     // le carton porte souvent le code du flacon qu'il contient.
     if (found.pack_size > 1) {
       addCount(found.id, 1);
       flash(`${found.name} — +1 boîte de ${found.pack_size}`);
-      return;
-    }
-
-    if (matched.type === 'pack') {
-      const step = parseInt(matched.quantity) || 1;
-      addCount(found.id, step);
-      flash(`${found.name} — pack de ${step}`);
       return;
     }
 
@@ -692,8 +722,11 @@ function CountingScreen({ token, order, items, onBack, onReload }) {
           data={packQtyModal}
           onClose={() => setPackQtyModal(null)}
           onConfirm={async (qty) => {
-            // Sur une ligne conditionnée on compte en boîtes : le bip vaut 1 boîte.
-            addCount(packQtyModal.item.id, packQtyModal.item.pack_size > 1 ? 1 : qty);
+            // La quantité que l'opérateur vient de saisir est celle du carton qu'il
+            // a en main : elle fait autorité, exactement comme au scan suivant une
+            // fois enregistrée. Compter « 1 boîte » ici ferait diverger le premier
+            // bip de tous les suivants.
+            compterCarton(packQtyModal.item, qty);
             await persistBarcode(packQtyModal.item.wp_product_id, packQtyModal.barcode, 'pack', qty);
             flash(`${packQtyModal.item.name} — carton de ${qty} enregistré`);
             setPackQtyModal(null);
