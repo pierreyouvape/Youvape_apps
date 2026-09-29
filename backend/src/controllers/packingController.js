@@ -43,6 +43,15 @@ const searchOrder = async (req, res) => {
 
     const order = orderResult.rows[0];
 
+    // Trace de l'ouverture au poste (`?scan=1`), pour les Stats d'expédition.
+    // L'expédition manuelle lit la même route sans ce drapeau : ce n'est pas un
+    // scan. Sans attendre et sans jamais bloquer le packing.
+    if (req.query.scan === '1') {
+      pool.query('INSERT INTO packing_scans (order_number, user_id) VALUES ($1, $2)',
+        [String(orderNumber), req.user?.id || null])
+        .catch(err => console.warn('[Packing] Trace du scan non enregistrée :', err.message));
+    }
+
     // Chercher les articles de la commande
     const itemsResult = await pool.query(`
       SELECT

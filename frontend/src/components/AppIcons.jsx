@@ -338,6 +338,17 @@ export const ShipmentHistory = (props) => (
   </Base>
 );
 
+export const ShipmentStats = (props) => (
+  <Base {...props}>
+    {/* Le colis, et les colonnes des chiffres */}
+    <path d="M3 8 L8.5 5.3 L14 8 V14 L8.5 16.7 L3 14 Z" />
+    <path d="M3 8 L8.5 10.7 L14 8" />
+    <path d="M8.5 10.7 V16.7" />
+    <path d="M3 20.5 H21" />
+    <path d="M16.5 20.5 V14 M19.5 20.5 V9.5" />
+  </Base>
+);
+
 export const Picking = (props) => (
   <Base {...props}>
     {/* Le panier de préparation */}
@@ -376,6 +387,9 @@ export const APPS = [
   { key: 'bordereau', path: '/bordereau', label: 'Bordereau de dépôt', Icon: Bordereau, color: '#0E7490', permissionKey: 'packing' },
   // Même droit que le bordereau, pour la même raison : routes/shipmentHistoryRoutes.js exige `packing`.
   { key: 'expeditions', path: '/expeditions', label: "Historique d'expédition", Icon: ShipmentHistory, color: '#0F766E', permissionKey: 'packing' },
+  // Droit propre (backend/src/config/apps.js) : l'app montre les performances de
+  // chacun, les préparateurs n'ont pas à voir celles de leurs collègues.
+  { key: 'stats-expedition', path: '/stats-expedition', label: "Stats d'expédition", Icon: ShipmentStats, color: '#115E59' },
   // Droit propre (backend/src/config/apps.js) : le PDA pourra être confié à des
   // préparateurs sans leur ouvrir le packing.
   { key: 'picking',   path: '/picking',   label: 'Picking',                  Icon: Picking,   color: '#7C3AED' },
@@ -424,7 +438,7 @@ export const APP_GROUPS = [
     key: 'grp-prepa-commande',
     label: 'Prépa de commande',
     color: '#4F46E5',
-    members: ['picking', 'packing', 'bordereau', 'expeditions'],
+    members: ['picking', 'packing', 'bordereau', 'expeditions', 'stats-expedition'],
   },
   {
     key: 'grp-factures-transporteurs',

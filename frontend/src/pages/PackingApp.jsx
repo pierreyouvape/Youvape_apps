@@ -307,8 +307,11 @@ const PackingApp = () => {
     setForcedDone(false);
 
     try {
+      // `scan` : seule l'ouverture au poste compte comme un scan (pas le
+      // préremplissage de l'expédition manuelle, qui lit la même route).
       const res = await axios.get(`${API_URL}/packing/orders/${number}`, {
-        headers: { Authorization: `Bearer ${token}` }
+        headers: { Authorization: `Bearer ${token}` },
+        params: { scan: 1 }
       });
 
       const loadedOrder = res.data.order;
