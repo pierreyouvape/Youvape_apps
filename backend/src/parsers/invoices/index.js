@@ -23,6 +23,7 @@
 const opensiInvoice = require('./opensiInvoice');
 const odooInvoice = require('./odooInvoice');
 const prestashopInvoice = require('./prestashopInvoice');
+const lipsInvoice = require('./lipsInvoice');
 
 // Trois fournisseurs, un seul gabarit : LCA, LVP et GFC éditent tous depuis OpenSi.
 const parsers = {
@@ -34,7 +35,8 @@ const parsers = {
   // autres, colonne TAXES intercalée partout.
   'Joshnoa': odooInvoice,
   'Levest - Roykin': odooInvoice,
-  'LIPS - French Liquide': odooInvoice,
+  // LIPS édite depuis deux logiciels : l'aiguillage reconnaît lequel.
+  'LIPS - French Liquide': lipsInvoice,
   'Cloud Vapor': odooInvoice,
 
   // Sept fournisseurs sur PrestaShop : le prix y précède la quantité, à

@@ -240,6 +240,53 @@ test('les trois lignes de l\'avoir Levest retombent sur son total', () => {
   assert.ok(close(byRef(levestAvoir, 'PNGP050N00').lineTotalHt, -400.50));
 });
 
+/* ─── LIPS, deuxième gabarit : incwo ─────────────────────────────────────── */
+
+test('LIPS incwo F2603-09576 : les 17 lignes, au centime et à la pièce', () => {
+  // LIPS édite depuis DEUX logiciels. Le parseur Odoo ne lisait aucune ligne de
+  // celui-ci : l'écran affichait « Aucune ligne lue dans ce document ».
+  const { parseInvoice } = require('../src/parsers/invoices');
+  const parser = require('../src/parsers/invoices').getInvoiceParser('LIPS - French Liquide');
+  const brut = fs.readFileSync(path.join(__dirname, 'fixtures', 'lips-incwo-F2603-09576.txt'), 'utf-8');
+  const r = parser.parseInvoice(cleanPdfText(brut));
+
+  assert.strictEqual(r.number, 'F2603-09576');
+  assert.strictEqual(r.orderRefOnDoc, 'H2026-0005-2299');
+  assert.strictEqual(r.lines.length, 17);
+  assert.deepStrictEqual(r.warnings, []);
+
+  // Les deux contrôles qui valent une relecture complète : le total imprimé et
+  // la quantité totale imprimée.
+  const somme = r.lines.reduce((s, l) => s + l.lineTotalHt, 0);
+  assert.ok(close(somme, 836.88), `${somme} ≠ 836,88`);
+  assert.strictEqual(r.lines.reduce((s, l) => s + l.qty, 0), 411);
+  assert.ok(close(r.totalHt, 836.88));
+  assert.ok(close(r.totalTtc, 1004.29));
+
+  // La référence est au MILIEU du libellé : « Marque - RÉFÉRENCE - Libellé ».
+  const refs = r.lines.map((l) => l.ref);
+  assert.ok(refs.includes('E2S-LACHOSE-5050-60-03'), refs.join(', '));
+  assert.ok(refs.includes('NEKTAR-MYRCACRAN-50-00'), refs.join(', '));
+  // La cellule de chiffres coupée sur trois lignes (« 1,39 72 / flacons / 100,08 »).
+  const moon = r.lines.find((l) => l.ref === 'MOON-SLT-AVANTPREMIERE-10-10');
+  assert.strictEqual(moon.qty, 72);
+  assert.ok(close(moon.lineTotalHt, 100.08));
+  // La PLV à 0 €, qui doit passer le contrôle « quantité × prix = total ».
+  const plv = r.lines.find((l) => l.ref === 'PLV-DISPLAY-CLK-X10');
+  assert.strictEqual(plv.qty, 3);
+  assert.strictEqual(plv.lineTotalHt, 0);
+});
+
+test('l\'aiguillage LIPS reconnaît le gabarit, pas le numéro', () => {
+  const { getInvoiceParser } = require('../src/parsers/invoices');
+  const parser = getInvoiceParser('LIPS - French Liquide');
+  const odoo = parser.parseInvoice(cleanPdfText(
+    fs.readFileSync(path.join(__dirname, 'fixtures', 'lips-FAC-2026-04162.txt'), 'utf-8'),
+  ));
+  assert.strictEqual(odoo.number, 'FAC/2026/04162');
+  assert.ok(odoo.lines.length > 0, 'le gabarit Odoo doit continuer de se lire');
+});
+
 if (failures > 0) {
   console.log(`\n${failures} test(s) en échec.`);
   process.exit(1);
