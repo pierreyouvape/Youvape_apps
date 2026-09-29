@@ -854,6 +854,32 @@ function FilingTab({ suppliers, mobile, reloadKey, onSaved }) {
   }, []);
 
   const closeDetail = () => { setOpenId(null); setDetail(null); };
+  const [rechecking, setRechecking] = useState(null);
+
+  /**
+   * Rejouer l'analyse contre l'état ACTUEL de BMS.
+   *
+   * Les constats sont gelés à l'enregistrement : la commande bouge dès qu'on la
+   * corrige, et une preuve qui s'efface au moment où on la corrige ne prouve
+   * rien. Une fois la correction faite dans BMS, ce bouton remplace les constats
+   * périmés — geste explicite, jamais automatique.
+   */
+  const recheck = async (row) => {
+    setRechecking(row.id);
+    try {
+      const { data } = await axios.post(`${BASE}/${row.id}/recheck`);
+      const reste = (data.document?.lines || []).filter(
+        (l) => l.verdict && !['ok', 'free', 'discount', 'rounding', 'packaging', 'shipping'].includes(l.verdict) && l.material,
+      ).length;
+      window.alert(reste === 0
+        ? `${row.number} : plus aucun écart à traiter.`
+        : `${row.number} : ${reste} écart(s) subsistent après re-contrôle.`);
+      if (openId === row.id) openDetail(row.id);
+      load();
+    } catch (e) {
+      window.alert(e.response?.data?.error || e.message);
+    } finally { setRechecking(null); }
+  };
 
   const remove = async (row) => {
     if (!window.confirm(`Supprimer ${row.number} (${row.supplier_name || ''}) et son fichier ? Cette action est définitive.`)) return;
@@ -1080,6 +1106,19 @@ function FilingTab({ suppliers, mobile, reloadKey, onSaved }) {
                     <td style={{ ...td, whiteSpace: 'nowrap' }} onClick={(e) => e.stopPropagation()}>
                       <Btn small variant="ghost" onClick={() => downloadFile(r.id, r.number)}>PDF</Btn>
                       {' '}
+                      {r.difference_count > 0 && (
+                        <>
+                          <Btn
+                            small
+                            variant="secondary"
+                            disabled={rechecking === r.id}
+                            onClick={() => recheck(r)}
+                          >
+                            {rechecking === r.id ? '…' : 'Re-contrôler'}
+                          </Btn>
+                          {' '}
+                        </>
+                      )}
                       <Btn small variant="danger" onClick={() => remove(r)}>Suppr.</Btn>
                     </td>
                   </tr>

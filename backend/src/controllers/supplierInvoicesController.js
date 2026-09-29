@@ -15,6 +15,7 @@
 
 const supplierInvoiceService = require('../services/supplierInvoiceService');
 const supplierDocumentModel = require('../models/supplierDocumentModel');
+const fs = require('fs');
 const docStore = require('../utils/supplierDocStore');
 const { buildClaimMessage } = require('../utils/invoiceClaimMessage');
 const invoiceParsers = require('../parsers/invoices');
@@ -278,6 +279,42 @@ async function getClaimMessage(req, res) {
   }
 }
 
+/**
+ * POST /api/supplier-invoices/:id/recheck — rejouer l'analyse contre BMS.
+ *
+ * Après correction d'une commande dans BMS, les constats gelés à
+ * l'enregistrement ne valent plus. On relit le PDF conservé et on rejoue la
+ * comparaison sur l'état actuel.
+ */
+async function recheckDocument(req, res) {
+  try {
+    const id = parseInt(req.params.id, 10);
+    const document = await supplierDocumentModel.getDocument(id);
+    if (!document) return res.status(404).json({ error: 'Document introuvable' });
+    if (!document.file_path) {
+      return res.status(422).json({ error: 'Le fichier d\'origine n\'est plus disponible' });
+    }
+
+    const chemin = docStore.resolveDocument(document.file_path);
+    if (!chemin || !fs.existsSync(chemin)) {
+      return res.status(422).json({ error: 'Le fichier d\'origine est introuvable sur le disque' });
+    }
+
+    const analysis = await supplierInvoiceService.analyseInvoice({
+      buffer: fs.readFileSync(chemin),
+      supplierId: document.supplier_id,
+      orderId: (document.orders[0] || {}).id || null,
+    });
+
+    await supplierDocumentModel.replaceLines(id, analysis.comparison);
+    const rafraichi = await supplierDocumentModel.getDocument(id);
+    return res.json({ document: rafraichi, differences: analysis.differences, tariffs: analysis.tariffs });
+  } catch (error) {
+    console.error('[supplier-invoices] re-contrôle :', error.message);
+    return res.status(500).json({ error: error.message || 'Erreur serveur' });
+  }
+}
+
 /** DELETE /api/supplier-invoices/:id — retirer un dépôt erroné. */
 async function deleteDocument(req, res) {
   try {
@@ -350,6 +387,7 @@ async function getParsers(req, res) {
 }
 
 module.exports = {
+  recheckDocument,
   alignTariffs,
   listCandidateOrders,
   analyseDocument,

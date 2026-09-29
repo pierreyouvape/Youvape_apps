@@ -39,6 +39,42 @@ async function findExisting(supplierId, number, db = pool) {
  * fournisseur : c'est le garde-fou contre le double dépôt, donc le double
  * paiement.
  */
+/**
+ * Gèle les lignes d'un document. Partagé par l'enregistrement et le re-contrôle,
+ * pour que les deux ne divergent jamais.
+ */
+async function insertLines(client, documentId, lines) {
+  let lineNo = 0;
+  for (const l of lines || []) {
+    lineNo += 1;
+    await client.query(
+      `INSERT INTO supplier_document_lines (
+         document_id, line_no, supplier_sku, label, kind, qty, line_total_ht,
+         product_id, expected_qty, expected_unit_price, verdict, material,
+         gap_qty, gap_price, gap, effective_unit_cost
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`,
+      [
+        documentId,
+        lineNo,
+        l.ref || null,
+        l.label || null,
+        ['product', 'shipping', 'discount', 'other'].includes(l.verdict) ? l.verdict : (l.kind || 'product'),
+        l.qtyInvoiced != null ? l.qtyInvoiced : l.qty,
+        l.invoicedTotal != null ? l.invoicedTotal : l.lineTotalHt,
+        l.productId || null,
+        l.qtyOrdered != null ? l.qtyOrdered : null,
+        l.expectedUnitPrice != null ? l.expectedUnitPrice : null,
+        l.verdict || null,
+        l.material || false,
+        l.gapQty || 0,
+        l.gapPrice || 0,
+        l.gap || 0,
+        l.effectiveUnitCost != null ? l.effectiveUnitCost : null,
+      ],
+    );
+  }
+}
+
 async function createDocument({ supplier, invoice, order, comparison, filePath, originalName, matchedBy, userId }, db = pool) {
   const client = await db.connect();
   try {
@@ -90,35 +126,7 @@ async function createDocument({ supplier, invoice, order, comparison, filePath, 
 
     // Les lignes, avec l'état de la commande FIGÉ à cet instant.
     const lines = comparison ? comparison.lines : (invoice.lines || []).map((l) => ({ ...l, verdict: null }));
-    let lineNo = 0;
-    for (const l of lines) {
-      lineNo += 1;
-      await client.query(
-        `INSERT INTO supplier_document_lines (
-           document_id, line_no, supplier_sku, label, kind, qty, line_total_ht,
-           product_id, expected_qty, expected_unit_price, verdict, material,
-           gap_qty, gap_price, gap, effective_unit_cost
-         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`,
-        [
-          document.id,
-          lineNo,
-          l.ref || null,
-          l.label || null,
-          ['product', 'shipping', 'discount', 'other'].includes(l.verdict) ? l.verdict : (l.kind || 'product'),
-          l.qtyInvoiced != null ? l.qtyInvoiced : l.qty,
-          l.invoicedTotal != null ? l.invoicedTotal : l.lineTotalHt,
-          l.productId || null,
-          l.qtyOrdered != null ? l.qtyOrdered : null,
-          l.expectedUnitPrice != null ? l.expectedUnitPrice : null,
-          l.verdict || null,
-          l.material || false,
-          l.gapQty || 0,
-          l.gapPrice || 0,
-          l.gap || 0,
-          l.effectiveUnitCost != null ? l.effectiveUnitCost : null,
-        ],
-      );
-    }
+    await insertLines(client, document.id, lines);
 
     if (order && order.id) {
       await client.query(
@@ -162,8 +170,22 @@ async function listDocuments({ supplierId, status, paymentStatus, from, to, docT
   const { rows } = await db.query(
     `SELECT d.*, s.name AS supplier_name,
             b.paid_amount, b.remaining_amount, b.payment_status, b.effective_due_date,
+            -- Ce qui APPELLE UN GESTE, pas tout ce qui n'est pas « ok ».
+            --
+            -- Comptés à tort jusqu'au 29/09/2026 : les lignes offertes (geste
+            -- commercial, rien à faire), les remises de pied (retirées du
+            -- tableau à la demande, elles n'auraient pas dû rester au décompte),
+            -- les conditionnements et les arrondis. La facture e.tasty
+            -- FA082519/2026, parfaitement conforme, annonçait « 18 différences » :
+            -- ses 16 lignes offertes et ses 2 promotions.
+            --
+            -- La colonne material écarte au passage tout écart sous le seuil
+            -- de 0,10 € : c'est le garde-fou d'arrondi, appliqué par le moteur.
             (SELECT count(*) FROM supplier_document_lines l
-              WHERE l.document_id = d.id AND l.verdict IS NOT NULL AND l.verdict <> 'ok') AS difference_count,
+              WHERE l.document_id = d.id
+                AND l.verdict IS NOT NULL
+                AND l.verdict NOT IN ('ok', 'free', 'discount', 'rounding', 'packaging', 'shipping')
+                AND l.material) AS difference_count,
             -- Les trois dates que l'acheteur suit : quand il a commandé, quand
             -- le fournisseur a facturé, quand l'argent est parti.
             (SELECT min(po.order_date) FROM supplier_document_orders o
@@ -435,7 +457,41 @@ async function alignTariffs(supplierId, tariffs, db = pool) {
   return { applied, skipped };
 }
 
+/**
+ * Rejouer l'analyse d'un document rangé, contre l'état ACTUEL de BMS.
+ *
+ * L'analyse est gelée à l'enregistrement, exprès : la commande BMS bouge dès
+ * qu'on la corrige, et une preuve qui s'efface au moment où on la corrige ne
+ * prouve rien. Mais une fois la correction faite, l'écart n'a plus lieu d'être
+ * affiché — d'où ce geste EXPLICITE, qui remplace les constats figés.
+ *
+ * Volontairement manuel, jamais un cron : réécrire chaque nuit les constats de
+ * toutes les factures effacerait en silence des écarts non encore traités, et
+ * rejouerait des appels BMS (quota ~350 req/min) pour une immense majorité de
+ * documents qui n'ont pas bougé.
+ */
+async function replaceLines(documentId, comparison, db = pool) {
+  const client = await db.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query('DELETE FROM supplier_document_lines WHERE document_id = $1', [documentId]);
+    await insertLines(client, documentId, comparison ? comparison.lines : []);
+    await client.query(
+      'UPDATE supplier_documents SET analysis = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $1',
+      [documentId, comparison ? JSON.stringify(comparison.summary || {}) : null],
+    );
+    await client.query('COMMIT');
+    return true;
+  } catch (e) {
+    await client.query('ROLLBACK');
+    throw e;
+  } finally {
+    client.release();
+  }
+}
+
 module.exports = {
+  replaceLines,
   alignTariffs,
   listCandidateOrders,
   findExisting,
