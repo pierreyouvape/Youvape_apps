@@ -1078,6 +1078,12 @@ export default function ReceptionApp() {
   const { token, permissions } = useContext(AuthContext);
   const [view, setView] = useState('list');       // list | detail | counting
   const [orderId, setOrderId] = useState(null);
+  // `?order=123` ouvre directement la commande : c'est par là qu'on arrive
+  // depuis l'écran des achats, sans avoir à la retrouver dans la liste.
+  const [ouvertureDemandee] = useState(() => {
+    const p = new URLSearchParams(window.location.search).get('order');
+    return p ? parseInt(p, 10) : null;
+  });
   const [detail, setDetail] = useState(null);
   const [loading, setLoading] = useState(false);
 
@@ -1092,7 +1098,15 @@ export default function ReceptionApp() {
   }, [token]);
 
 
-  const openOrder = (id) => { setOrderId(id); setView('detail'); loadDetail(id); };
+  const openOrder = useCallback((id) => { setOrderId(id); setView('detail'); loadDetail(id); }, [loadDetail]);
+
+  const dejaOuverte = useRef(false);
+  useEffect(() => {
+    if (ouvertureDemandee && !dejaOuverte.current) {
+      dejaOuverte.current = true;
+      openOrder(ouvertureDemandee);
+    }
+  }, [ouvertureDemandee, openOrder]);
 
   if (permissions && !canRead) {
     return (

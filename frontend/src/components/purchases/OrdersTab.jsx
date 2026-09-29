@@ -1058,6 +1058,19 @@ const OrdersTab = ({ token }) => {
                     ) : (
                       <span style={{ color: '#10b981', fontSize: '13px', padding: '8px' }}>BMS #{selectedOrder.bms_po_id}</span>
                     )}
+                    {/* Le pont vers la réception : on ne devrait pas avoir à
+                        retrouver la commande dans une autre liste pour compter
+                        ce qui arrive. Inutile sans identifiant BMS — la
+                        réception s'y appuie pour enregistrer le stock. */}
+                    {selectedOrder.bms_po_id && (
+                      <LinkBox
+                        to={`/reception?order=${selectedOrder.id}`}
+                        className="btn btn-secondary"
+                        display="inline-block"
+                      >
+                        📦 Réceptionner
+                      </LinkBox>
+                    )}
                     <button className="btn btn-secondary" onClick={enterEditMode}>
                       ✏️ Modifier
                     </button>
