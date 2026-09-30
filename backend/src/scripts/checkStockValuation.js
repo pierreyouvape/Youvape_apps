@@ -31,10 +31,10 @@ async function main() {
     SELECT COUNT(*)::int                                            AS lignes,
            COUNT(DISTINCT poi.product_id)::int                      AS produits,
            COALESCE(SUM(poi.qty_received), 0)::int                  AS qty_packs,
-           COALESCE(SUM(poi.qty_received * poi.units_per_qty), 0)::int AS qty_unites
+           COALESCE(SUM(poi.units_received), 0)::int AS qty_unites
     FROM purchase_order_items poi
     JOIN purchase_orders po ON po.id = poi.purchase_order_id
-    WHERE poi.qty_received > 0
+    WHERE poi.units_received > 0
       AND COALESCE(poi.units_per_qty, 1) > 1
       AND po.status NOT IN ('draft', 'cancelled')
   `);

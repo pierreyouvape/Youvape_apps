@@ -18,10 +18,12 @@ const pool = require('../config/database');
  *
  * TROIS INVARIANTS À NE PAS CASSER (chacun a déjà produit un écart avec le catalogue) :
  *  • `units_per_qty` : chez les fournisseurs facturés au PACK (LCA, Highbuy, Levest,
- *    MG Vape, lignes BMS laissées en packs), `qty_received` est un nombre de PACKS et
- *    `unit_price` le prix DU PACK. Tout calcul de stock ou de coût doit ramener les deux
- *    à l'unité, sinon le lot est units_per_qty fois trop petit ET units_per_qty fois trop
- *    cher (cf. migration add_units_per_qty_purchase_order_items.sql).
+ *    MG Vape, lignes BMS laissées en packs), `qty_ordered` est un nombre de PACKS et
+ *    `unit_price` le prix DU PACK. Le PRIX doit donc être ramené à l'unité, sinon le lot
+ *    est units_per_qty fois trop cher (cf. add_units_per_qty_purchase_order_items.sql).
+ *    La QUANTITÉ, elle, ne se reconstitue plus : `units_received` la porte déjà en
+ *    pièces. La multiplier par units_per_qty la compterait units_per_qty fois trop haut
+ *    (cf. add_units_received_purchase_order_items.sql).
  *  • Statuts de vente : liste BLANCHE des 6 statuts payés (règle CLAUDE.md). Jamais de
  *    liste noire : le shop a des statuts custom qui passeraient au travers et décaleraient
  *    le pointeur FIFO.
@@ -78,7 +80,7 @@ const STOCK_VALUE_SCOPE = `
 const CURRENT_COST = `COALESCE(p.computed_cost, p.wc_cog_cost, 0)`;
 
 // Lots d'achat ramenés à l'UNITÉ de stock (cf. invariant units_per_qty).
-const LOT_QTY = `poi.qty_received * COALESCE(poi.units_per_qty, 1)`;
+const LOT_QTY = `poi.units_received`;
 const LOT_UNIT_PRICE = `poi.unit_price / COALESCE(NULLIF(poi.units_per_qty, 0), 1)
                         * (1 - COALESCE(poi.discount_percent, 0) / 100.0)`;
 
@@ -107,7 +109,7 @@ async function loadBase() {
            to_char(COALESCE(po.received_date, po.order_date, po.created_at)::date, 'YYYY-MM-DD') AS lot_date
     FROM purchase_order_items poi
     JOIN purchase_orders po ON po.id = poi.purchase_order_id
-    WHERE poi.qty_received > 0
+    WHERE poi.units_received > 0
       AND po.status NOT IN (${PO_EXCLUDED_STATUSES.map((_, i) => `$${i + 1}`).join(', ')})
       AND poi.unit_price IS NOT NULL
       AND poi.unit_price > 0
@@ -238,7 +240,7 @@ async function computeAt(dateStr, base = null) {
     SELECT poi.product_id, COALESCE(SUM(${LOT_QTY}), 0)::bigint AS qty
     FROM purchase_order_items poi
     JOIN purchase_orders po ON po.id = poi.purchase_order_id
-    WHERE poi.qty_received > 0
+    WHERE poi.units_received > 0
       AND po.status NOT IN (${PO_EXCLUDED_STATUSES.map((_, i) => `$${i + 2}`).join(', ')})
       AND COALESCE(po.received_date, po.order_date, po.created_at)::date > $1
     GROUP BY poi.product_id
@@ -275,7 +277,7 @@ async function computeSeries(fromStr, toStr) {
            COALESCE(SUM(${LOT_QTY}), 0)::bigint AS qty
     FROM purchase_order_items poi
     JOIN purchase_orders po ON po.id = poi.purchase_order_id
-    WHERE poi.qty_received > 0
+    WHERE poi.units_received > 0
       AND po.status NOT IN (${PO_EXCLUDED_STATUSES.map((_, i) => `$${i + 1}`).join(', ')})
     GROUP BY poi.product_id, ym
   `, PO_EXCLUDED_STATUSES);

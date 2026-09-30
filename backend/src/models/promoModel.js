@@ -92,7 +92,7 @@ const SALES_CTE = `
  */
 const INCOMING_LATERAL = `
   LEFT JOIN LATERAL (
-    SELECT COALESCE(SUM((poi.qty_ordered - poi.qty_received) * COALESCE(poi.units_per_qty, 1)), 0)::int AS qty
+    SELECT COALESCE(SUM((poi.qty_ordered * COALESCE(poi.units_per_qty, 1) - poi.units_received)), 0)::int AS qty
     FROM purchase_order_items poi
     JOIN purchase_orders po ON po.id = poi.purchase_order_id
     WHERE poi.product_id = COALESCE(p.id, i.product_id)

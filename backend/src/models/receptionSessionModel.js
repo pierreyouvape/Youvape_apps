@@ -222,11 +222,26 @@ async function validateSession(sessionId, userId, db = pool) {
         'UPDATE reception_counts SET units_sent = units_counted WHERE session_id = $1 AND purchase_order_item_id = $2',
         [sessionId, l.purchase_order_item_id],
       );
-      // La copie locale suit, en UNITÉS DE LIGNE : qty_received se compare à
-      // qty_ordered, qui compte en packs chez les fournisseurs pack-based.
+      // LES PIÈCES S'AJOUTENT AUX PIÈCES. Sans détour, sans division.
+      //
+      // Cette requête convertissait les pièces comptées en unités de ligne —
+      // `pièces / units_per_qty` — et les deux colonnes étant des entiers,
+      // PostgreSQL tronquait : 23 pièces sur une ligne « par 5 » n'en
+      // enregistraient que 20, et les 3 autres disparaissaient du stock comme du
+      // coût de revient sans que rien ne le signale.
+      //
+      // `units_received` compte donc en pièces, l'unité dans laquelle on reçoit.
+      // `qty_received` reste tenue à jour dans l'unité de la ligne, parce que la
+      // synchro BMS l'écrit et la relit, et qu'elle sert à dire qu'une ligne est
+      // soldée — mais elle n'est plus ce sur quoi on compte, et c'est pour ça
+      // qu'on peut l'arrondir sans rien perdre.
       await client.query(
         `UPDATE purchase_order_items
-            SET qty_received = COALESCE(qty_received, 0) + ($2 / GREATEST(COALESCE(units_per_qty, 1), 1)),
+            SET units_received = COALESCE(units_received, 0) + $2,
+                qty_received = ROUND(
+                  (COALESCE(units_received, 0) + $2)::numeric
+                  / GREATEST(COALESCE(units_per_qty, 1), 1)
+                ),
                 updated_at = CURRENT_TIMESTAMP
           WHERE id = $1`,
         [l.purchase_order_item_id, l.units_counted],

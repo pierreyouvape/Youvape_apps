@@ -10,21 +10,22 @@ const computedCostModel = {
     // 1. Tous les lots reçus, triés par date d'arrivée
     // Une ligne n'est pas toujours comptée en unités individuelles : chez les
     // fournisseurs « à l'unité » (LCA, Highbuy, Levest, MG Vape) et sur les lignes BMS
-    // laissées en packs, qty_received est un nombre de PACKS et unit_price le prix DU
-    // PACK — cf. migration add_units_per_qty_purchase_order_items.sql.
-    // Le FIFO se consomme en unités vendues : il faut donc ramener les deux à l'unité,
+    // laissées en packs, qty_ordered est un nombre de PACKS et unit_price le prix DU
+    // PACK — cf. migration add_units_per_qty_purchase_order_items.sql. La quantité
+    // reçue, elle, est déjà en pièces dans `units_received` : on la lit telle quelle.
+    // Le FIFO se consomme en unités vendues : il faut donc ramener le prix à l'unité,
     // sans quoi le lot est pack_qty fois trop petit ET son coût pack_qty fois trop cher
     // (mesuré : Booster Nicotine 100VG à 22,50 € l'unité au lieu de 0,23 €).
     // L'invariant montant (qty × prix) est préservé par construction.
     const lotsResult = await pool.query(`
       SELECT poi.product_id,
-             poi.qty_received * COALESCE(poi.units_per_qty, 1) as qty_received,
+             poi.units_received as qty_received,
              poi.unit_price / COALESCE(NULLIF(poi.units_per_qty, 0), 1)
                * (1 - COALESCE(poi.discount_percent, 0) / 100.0) as unit_price,
              COALESCE(po.received_date, po.order_date, po.created_at) as lot_date
       FROM purchase_order_items poi
       JOIN purchase_orders po ON poi.purchase_order_id = po.id
-      WHERE poi.qty_received > 0
+      WHERE poi.units_received > 0
         AND po.status NOT IN ('draft', 'cancelled')
         AND poi.unit_price IS NOT NULL
         AND poi.unit_price > 0
@@ -41,7 +42,7 @@ const computedCostModel = {
       JOIN order_items oi ON (oi.product_id = p.wp_product_id OR oi.variation_id = p.wp_product_id)
       JOIN orders o ON o.wp_order_id = oi.wp_order_id
       WHERE o.post_status IN ('wc-completed','wc-delivered','wc-processing','wc-awaiting-delivery','wc-shipped','wc-being-delivered')
-        AND p.id IN (SELECT DISTINCT product_id FROM purchase_order_items WHERE qty_received > 0)
+        AND p.id IN (SELECT DISTINCT product_id FROM purchase_order_items WHERE units_received > 0)
       GROUP BY p.id
     `);
 

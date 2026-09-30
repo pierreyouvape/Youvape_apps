@@ -178,7 +178,7 @@ const CATALOG_SORT_EXPRESSIONS = {
     ELSE (SELECT AVG(v.weight) FROM products v WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation' AND v.post_status = 'publish') END)`,
   stock: `(CASE WHEN ${CATALOG_STANDALONE} THEN COALESCE(p.stock, 0)
     ELSE (SELECT COALESCE(SUM(v.stock), 0) FROM products v WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation' AND v.post_status = 'publish') END)`,
-  incoming_qty: `(SELECT COALESCE(SUM((poi.qty_ordered - poi.qty_received) * COALESCE(poi.units_per_qty, 1)), 0)
+  incoming_qty: `(SELECT COALESCE(SUM((poi.qty_ordered * COALESCE(poi.units_per_qty, 1) - poi.units_received)), 0)
     FROM purchase_order_items poi
     JOIN purchase_orders po ON poi.purchase_order_id = po.id
     WHERE po.status IN ('sent', 'confirmed', 'shipped', 'partial')
@@ -1384,7 +1384,7 @@ class ProductModel {
     let incomingMap = new Map();
     if (allIds.length > 0) {
       const incomingResult = await pool.query(`
-        SELECT poi.product_id, COALESCE(SUM((poi.qty_ordered - poi.qty_received) * COALESCE(poi.units_per_qty, 1)), 0)::int as incoming_qty
+        SELECT poi.product_id, COALESCE(SUM((poi.qty_ordered * COALESCE(poi.units_per_qty, 1) - poi.units_received)), 0)::int as incoming_qty
         FROM purchase_order_items poi
         JOIN purchase_orders po ON poi.purchase_order_id = po.id
         WHERE po.status IN ('sent', 'confirmed', 'shipped', 'partial')
@@ -1613,7 +1613,7 @@ class ProductModel {
 
     // Arrivages en cours
     const incomingResult = await pool.query(`
-      SELECT COALESCE(SUM((poi.qty_ordered - poi.qty_received) * COALESCE(poi.units_per_qty, 1)), 0) as incoming_qty
+      SELECT COALESCE(SUM((poi.qty_ordered * COALESCE(poi.units_per_qty, 1) - poi.units_received)), 0) as incoming_qty
       FROM purchase_order_items poi
       JOIN purchase_orders po ON poi.purchase_order_id = po.id
       WHERE poi.product_id = $1

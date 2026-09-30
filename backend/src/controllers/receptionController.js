@@ -31,7 +31,7 @@ const RECEPTION_INCOMPLETE = `
     SELECT 1 FROM purchase_order_items x
      WHERE x.purchase_order_id = po.id
        AND x.qty_ordered * COALESCE(x.units_per_qty, 1)
-           > COALESCE(x.qty_received, 0) * COALESCE(x.units_per_qty, 1)
+           > COALESCE(x.units_received, 0)
   )`;
 
 /**
@@ -43,7 +43,7 @@ const RECEPTION_INCOMPLETE = `
  * D'où la multiplication systématique ci-dessous.
  */
 const QTY_EXPECTED = 'poi.qty_ordered * COALESCE(poi.units_per_qty, 1)';
-const QTY_RECEIVED = 'poi.qty_received * COALESCE(poi.units_per_qty, 1)';
+const QTY_RECEIVED = 'poi.units_received';
 
 /**
  * GET /api/reception/orders

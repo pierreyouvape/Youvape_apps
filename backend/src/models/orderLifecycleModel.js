@@ -23,7 +23,7 @@ async function getLifecycle(purchaseOrderId, db = pool) {
             po.order_date, po.total_amount, s.id AS supplier_id, s.name AS supplier_name,
             COUNT(poi.id)::int                                   AS nb_lines,
             COALESCE(SUM(${UNITS}), 0)::int                      AS units_ordered,
-            COALESCE(SUM(poi.qty_received * COALESCE(poi.units_per_qty, 1)), 0)::int AS units_received
+            COALESCE(SUM(poi.units_received), 0)::int AS units_received
        FROM purchase_orders po
        JOIN suppliers s ON s.id = po.supplier_id
        LEFT JOIN purchase_order_items poi ON poi.purchase_order_id = po.id

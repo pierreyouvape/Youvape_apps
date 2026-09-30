@@ -940,8 +940,8 @@ const purchaseOrderModel = {
             await client.query(`
               INSERT INTO purchase_order_items (
                 purchase_order_id, product_id, supplier_sku, product_name,
-                qty_ordered, unit_price, qty_received, units_per_qty
-              ) VALUES ($1, $2, $3, $4, $5, $6, 0, $7)
+                qty_ordered, unit_price, qty_received, units_received, units_per_qty
+              ) VALUES ($1, $2, $3, $4, $5, $6, 0, 0, $7)
             `, [
               id,
               product.id,
@@ -1056,9 +1056,13 @@ const purchaseOrderModel = {
       await client.query('BEGIN');
 
       // Mettre à jour la ligne
+      // La saisie se fait dans l'unité de la LIGNE : `units_received` suit en
+      // pièces, pour rester la seule valeur que lisent le stock et les besoins.
       await client.query(`
         UPDATE purchase_order_items
-        SET qty_received = $3, updated_at = CURRENT_TIMESTAMP
+        SET qty_received = $3,
+            units_received = $3 * GREATEST(COALESCE(units_per_qty, 1), 1),
+            updated_at = CURRENT_TIMESTAMP
         WHERE purchase_order_id = $1 AND id = $2
       `, [orderId, itemId, qtyReceived]);
 
@@ -1121,7 +1125,7 @@ const purchaseOrderModel = {
     const query = `
       SELECT
         poi.qty_ordered * COALESCE(poi.units_per_qty, 1) AS qty_ordered,
-        poi.qty_received * COALESCE(poi.units_per_qty, 1) AS qty_received,
+        poi.units_received AS qty_received,
         po.order_number,
         po.status,
         po.expected_date
@@ -1137,7 +1141,7 @@ const purchaseOrderModel = {
   // Calculer le total en arrivage pour un produit
   getIncomingQty: async (productId) => {
     const query = `
-      SELECT COALESCE(SUM((poi.qty_ordered - poi.qty_received) * COALESCE(poi.units_per_qty, 1)), 0) as incoming_qty
+      SELECT COALESCE(SUM((poi.qty_ordered * COALESCE(poi.units_per_qty, 1) - poi.units_received)), 0) as incoming_qty
       FROM purchase_order_items poi
       JOIN purchase_orders po ON poi.purchase_order_id = po.id
       WHERE poi.product_id = $1
@@ -1439,9 +1443,10 @@ const purchaseOrderModel = {
           await client.query(`
             INSERT INTO purchase_order_items (
               purchase_order_id, product_id, supplier_sku,
-              product_name, qty_ordered, qty_received, unit_price, units_per_qty
+              product_name, qty_ordered, qty_received, unit_price, units_per_qty,
+              units_received
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
           `, [
             poId,
             productId,
@@ -1450,7 +1455,12 @@ const purchaseOrderModel = {
             qtyOrdered,
             qtyReceived,
             unitPrice,
-            Math.max(parseInt(unitsPerQty) || 1, 1)
+            Math.max(parseInt(unitsPerQty) || 1, 1),
+            // `units_received` en PIÈCES, calculé ici plutôt qu'en SQL : une
+            // expression sur deux paramètres laisserait PostgreSQL deviner leurs
+            // types, et une synchro qui échoue sur une inférence est un mauvais
+            // endroit pour l'apprendre.
+            (parseInt(qtyReceived) || 0) * Math.max(parseInt(unitsPerQty) || 1, 1)
           ]);
 
         }
@@ -1584,7 +1594,9 @@ const purchaseOrderModel = {
           // Additionner les quantités reçues (une commande peut avoir plusieurs réceptions partielles)
           await client.query(`
             UPDATE purchase_order_items
-            SET qty_received = LEAST(qty_ordered, qty_received + $1)
+            SET qty_received = LEAST(qty_ordered, qty_received + $1),
+                units_received = LEAST(qty_ordered, qty_received + $1)
+                                 * GREATEST(COALESCE(units_per_qty, 1), 1)
             WHERE purchase_order_id = $2 AND product_id = $3
           `, [parseInt(rItem.qty) || 0, orderId, productId]);
         }
