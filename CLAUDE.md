@@ -169,6 +169,35 @@ qui ajoute et rapproche sans jamais supprimer.
 cas réels et pose l'invariant qui les aurait tous attrapés — *l'argent envoyé doit toujours
 égaler l'argent commandé*. **À lancer après toute modif du payload BMS.**
 
+### Le catalogue d'un fournisseur se prouve (recherche produits des achats)
+
+`GET /api/purchases/products/search` répond « ce produit est-il à ce fournisseur ? » —
+et **la présence d'une ligne `product_suppliers` ne le prouve pas**.
+`supplierModel.syncProductSuppliersFromBMS` recopie les associations **déclarées par BMS**,
+souvent sans prix : ce que le fournisseur *pourrait* fournir, pas ce qu'on lui a acheté.
+534 produits sur 2688 étaient dans ce cas pour LCA seul.
+
+**Trois preuves, une seule suffit** — c'est la définition de `catalogueExpr` :
+1. une **référence** chez ce fournisseur (`supplier_refs`) ;
+2. une ligne de commande **déjà passée** chez lui (`purchase_order_items` → `purchase_orders`) ;
+3. un lien `product_suppliers` **tarifé** (`supplier_price IS NOT NULL`).
+
+Réfs et historique portent sur le **produit exact** (jamais un parent variable, on ne
+commande pas un parent) ; le lien tarifé garde le repli sur le parent, car c'est là que
+`product_suppliers` stocke les associations des variables.
+
+- **`all_suppliers=1`** ouvre la recherche à tout le catalogue, sans rien perdre de
+  l'enrichissement (réfs, conditionnements, dernier tarif retenu). Nécessaire : un produit
+  fraîchement créé n'est rattaché à personne, et on doit pouvoir commander ailleurs un
+  article vu moins cher. Dans `CreateOrderPage`, c'est la case « Chercher dans tout le
+  catalogue » — **fermée par défaut**.
+- **`in_supplier_catalogue`** est renvoyé sur chaque ligne dès qu'un `supplier_id` est
+  donné, et les produits du fournisseur sont **triés en premier**. Proposer un produit
+  jamais commandé là est légitime ; le proposer **sans le dire** ne l'est pas — l'écran le
+  marque « jamais commandé ici ».
+- **Ne jamais « réparer » ça en supprimant les liens vides** : la donnée BMS est juste,
+  c'est la prendre pour une preuve d'achat qui était faux.
+
 ### Bundles WooCommerce (woosb)
 
 Les produits de type `woosb` (packs) génèrent **deux lignes** dans `order_items` :

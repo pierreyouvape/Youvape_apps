@@ -55,18 +55,46 @@ const purchasesController = {
       const params = [...searchParams];
       let idx = nextIndex;
 
-      // Filtre fournisseur : le produit lui-même (simple/variation) OU son parent
-      // (les associations product_suppliers sont stockées au niveau parent pour les variables)
-      let supplierClause = '';
-      if (restreindre) {
-        supplierClause = `AND EXISTS (
-            SELECT 1 FROM product_suppliers ps
-            WHERE ps.supplier_id = $${idx}
-              AND (ps.product_id = p.id OR ps.product_id = parent.id)
-          )`;
+      // LE CATALOGUE D'UN FOURNISSEUR SE PROUVE, il ne se déduit pas d'un lien.
+      //
+      // La présence d'une ligne `product_suppliers` ne suffisait pas : elle est
+      // souvent créée à vide, sans prix ni référence, et proposait alors des
+      // produits jamais commandés chez ce fournisseur. Constaté chez LCA sur les
+      // SKU 721565, 779740 et 934586 — trois Biggy Bear qui n'ont jamais été
+      // achetés que chez Joshnoa (17, 13 et 28 lignes de commande), mais portaient
+      // un lien LCA vide. 534 produits sur 2688 étaient dans ce cas pour LCA seul.
+      //
+      // Ces liens vides viennent de `supplierModel.syncProductSuppliersFromBMS`,
+      // qui recopie les associations DÉCLARÉES par BMS — ce que le fournisseur
+      // pourrait fournir, pas ce qu'on lui a acheté. Rien à supprimer là : la
+      // donnée est juste, c'est la prendre pour une preuve d'achat qui était faux.
+      //
+      // Trois preuves, dont une seule suffit :
+      //   • une RÉFÉRENCE chez ce fournisseur (supplier_refs) ;
+      //   • une ligne de commande DÉJÀ PASSÉE chez lui ;
+      //   • un lien product_suppliers TARIFÉ (le prix est la preuve qu'il a servi).
+      //
+      // Les réfs et l'historique portent sur le produit exact — jamais sur un
+      // parent variable, on ne commande pas un parent. Le lien tarifé, lui, garde
+      // le repli sur le parent : c'est là que product_suppliers stocke les
+      // associations des variables.
+      let catalogueExpr = null;
+      if (supplierId) {
+        const sIdx = idx;
         params.push(supplierId);
         idx++;
+        catalogueExpr = `(
+            EXISTS (SELECT 1 FROM supplier_refs r
+                     WHERE r.supplier_id = $${sIdx} AND r.product_id = p.id)
+         OR EXISTS (SELECT 1 FROM purchase_order_items poi
+                     JOIN purchase_orders po ON po.id = poi.purchase_order_id
+                    WHERE po.supplier_id = $${sIdx} AND poi.product_id = p.id)
+         OR EXISTS (SELECT 1 FROM product_suppliers ps
+                    WHERE ps.supplier_id = $${sIdx} AND ps.supplier_price IS NOT NULL
+                      AND (ps.product_id = p.id OR ps.product_id = parent.id))
+          )`;
       }
+      const supplierClause = restreindre ? `AND ${catalogueExpr}` : '';
 
       const skuIdx = idx;
       const limitIdx = idx + 1;
@@ -88,6 +116,11 @@ const purchasesController = {
           -- Une declinaison ne les porte pas : elles vivent sur le parent variable.
           COALESCE(NULLIF(p.brand, ''), parent.brand) as brand,
           COALESCE(NULLIF(p.sub_brand, ''), parent.sub_brand) as sub_brand
+          -- Ce produit appartient-il au catalogue de CE fournisseur ? L'écran en a
+          -- besoin même quand la recherche est ouverte : proposer un produit qu'on
+          -- n'a jamais commandé là est légitime (un produit fraîchement créé n'est
+          -- rattaché à personne), le proposer SANS LE DIRE ne l'est pas.
+          ${catalogueExpr ? `, ${catalogueExpr} AS in_supplier_catalogue` : ''}
         FROM products p
         LEFT JOIN products parent ON parent.wp_product_id = p.wp_parent_id
         WHERE
@@ -99,6 +132,9 @@ const purchasesController = {
           CASE WHEN LOWER(p.sku) = $${skuIdx} THEN 0
                ELSE 1
           END,
+          -- Les produits du fournisseur d'abord : en recherche ouverte, ce sont
+          -- eux qu'on cherche neuf fois sur dix.
+          ${catalogueExpr ? `${catalogueExpr} DESC,` : ''}
           p.post_title
         LIMIT $${limitIdx}
       `;

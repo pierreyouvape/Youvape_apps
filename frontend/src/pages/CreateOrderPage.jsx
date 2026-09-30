@@ -25,6 +25,10 @@ const CreateOrderPage = () => {
   const [orderItems, setOrderItems] = useState([]);
   const [creatingOrder, setCreatingOrder] = useState(false);
   const [searchTimeout, setSearchTimeout] = useState(null);
+  // Par défaut on ne cherche que dans le catalogue du fournisseur choisi. La case
+  // ouvre à tout le catalogue, pour le produit fraîchement créé ou l'article vu
+  // moins cher ailleurs.
+  const [toutLeCatalogue, setToutLeCatalogue] = useState(false);
 
   // Load suppliers
   useEffect(() => {
@@ -41,6 +45,42 @@ const CreateOrderPage = () => {
     loadSuppliers();
   }, [token]);
 
+  /**
+   * La recherche porte SUR LE CATALOGUE DU FOURNISSEUR CHOISI.
+   *
+   * Elle avait été ouverte à tout le catalogue pour une bonne raison — un produit
+   * qu'on vient de créer n'est rattaché à personne et serait introuvable — mais le
+   * remède était pire : choisir LCA proposait toute la gamme Biggy Bear, qui n'a
+   * jamais été achetée que chez Joshnoa. Un écran qui propose n'importe quoi ne
+   * propose plus rien.
+   *
+   * La bonne raison garde donc sa porte, mais explicite : « chercher dans tout le
+   * catalogue » l'ouvre en un clic, et ce qui vient d'ailleurs est signalé.
+   */
+  const lancerRecherche = async (value, tout) => {
+    setSearchLoading(true);
+    try {
+      const params = new URLSearchParams({ q: value, limit: '30' });
+      if (supplierId) {
+        params.set('supplier_id', supplierId);
+        // Le fournisseur sert toujours à ENRICHIR les résultats (ses références,
+        // leurs conditionnements, le dernier tarif retenu), qu'il filtre ou non.
+        if (tout) params.set('all_suppliers', '1');
+      }
+      const response = await axios.get(`${API_URL}/purchases/products/search?${params}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      // Filter out products already in orderItems
+      const existingIds = orderItems.map(item => item.product_id);
+      const filtered = (response.data.data || []).filter(p => !existingIds.includes(p.id));
+      setSearchResults(filtered);
+    } catch (err) {
+      console.error('Erreur recherche produits:', err);
+    } finally {
+      setSearchLoading(false);
+    }
+  };
+
   // Search products
   const handleProductSearch = (value) => {
     setProductSearch(value);
@@ -51,29 +91,14 @@ const CreateOrderPage = () => {
       return;
     }
 
-    setSearchTimeout(setTimeout(async () => {
-      setSearchLoading(true);
-      try {
-        // La recherche N'EST PAS restreinte aux produits du fournisseur choisi.
-        // Un produit qu'on vient de créer n'est encore rattaché à personne et
-        // serait introuvable ; et on doit pouvoir commander ailleurs un article
-        // vu moins cher. Le fournisseur sert ici à ENRICHIR les résultats — ses
-        // références, leurs conditionnements et le dernier tarif retenu — pas à
-        // les filtrer.
-        const supplierParam = supplierId ? `&supplier_id=${supplierId}&all_suppliers=1` : '';
-        const response = await axios.get(`${API_URL}/purchases/products/search?q=${encodeURIComponent(value)}&limit=30${supplierParam}`, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-        // Filter out products already in orderItems
-        const existingIds = orderItems.map(item => item.product_id);
-        const filtered = (response.data.data || []).filter(p => !existingIds.includes(p.id));
-        setSearchResults(filtered);
-      } catch (err) {
-        console.error('Erreur recherche produits:', err);
-      } finally {
-        setSearchLoading(false);
-      }
-    }, 300));
+    setSearchTimeout(setTimeout(() => lancerRecherche(value, toutLeCatalogue), 300));
+  };
+
+  // Élargir ou resserrer le périmètre relance la recherche en cours : sans ça, la
+  // case cochée ne montre rien avant qu'on retape une lettre.
+  const basculerPerimetre = (tout) => {
+    setToutLeCatalogue(tout);
+    if (productSearch.trim().length >= 2) lancerRecherche(productSearch, tout);
   };
 
   // Une liste de résultats qui ne se ferme pas recouvre le reste de l'écran.
@@ -305,10 +330,31 @@ const CreateOrderPage = () => {
               prérempliront les lignes.
             </div>
           )}
+          {/* Le périmètre de la recherche, dit avant de chercher. Par défaut le
+              catalogue du fournisseur — ses références, ce qu'on lui a déjà
+              commandé, ses liens tarifés. La case l'ouvre au reste. */}
+          {supplierId && (
+            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px', fontSize: '13px', color: '#555', cursor: 'pointer' }}>
+              <input
+                type="checkbox"
+                checked={toutLeCatalogue}
+                onChange={e => basculerPerimetre(e.target.checked)}
+                style={{ cursor: 'pointer' }}
+              />
+              Chercher dans tout le catalogue
+              <span style={{ color: '#888' }}>
+                — pour un produit jamais commandé chez ce fournisseur
+              </span>
+            </label>
+          )}
           <div style={{ position: 'relative' }} ref={searchBoxRef}>
             <input
               type="text"
-              placeholder={supplierId ? 'Nom, SKU, marque ou sous-marque — tous fournisseurs' : 'Sélectionnez un fournisseur d\'abord'}
+              placeholder={supplierId
+                ? (toutLeCatalogue
+                    ? 'Nom, SKU, marque ou sous-marque — tout le catalogue'
+                    : 'Nom, SKU, marque ou sous-marque — catalogue du fournisseur')
+                : 'Sélectionnez un fournisseur d\'abord'}
               value={productSearch}
               onChange={e => handleProductSearch(e.target.value)}
               disabled={!supplierId}
@@ -355,6 +401,17 @@ const CreateOrderPage = () => {
                       <div style={{ fontWeight: 500, marginBottom: '4px' }}>
                         {product.post_title}
                         {brandLabel(product) && <span style={{ fontWeight: 400, color: '#888' }}> — {brandLabel(product)}</span>}
+                        {/* Proposer un produit jamais commandé chez ce fournisseur
+                            est légitime ; le proposer sans le dire ne l'est pas. */}
+                        {product.in_supplier_catalogue === false && (
+                          <span style={{
+                            marginLeft: '8px', fontSize: '11px', fontWeight: 600,
+                            color: '#B45309', background: '#FEF3C7',
+                            borderRadius: '5px', padding: '2px 6px', whiteSpace: 'nowrap',
+                          }}>
+                            jamais commandé ici
+                          </span>
+                        )}
                       </div>
                       <div style={{ fontSize: '13px', color: '#666', display: 'flex', gap: '15px' }}>
                         <span>SKU: <code>{product.sku || '-'}</code></span>
