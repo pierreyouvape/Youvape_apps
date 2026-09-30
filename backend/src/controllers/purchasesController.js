@@ -315,6 +315,44 @@ const purchasesController = {
   },
 
   // POST /api/purchases/orders
+  /**
+   * Verrou de bascule — ferme la création et l'envoi de commandes le temps de
+   * passer les conditionnements BMS à 1.
+   *
+   * Pendant cette bascule, code et données disent deux choses différentes : tant
+   * qu'une association vaut encore 10, BMS divise la quantité envoyée par 10 et
+   * lit notre prix comme celui d'un lot. Une commande créée dans cet intervalle
+   * sort donc avec un montant faux d'un facteur égal au conditionnement — c'est
+   * l'erreur mesurée en août, 174 € au lieu de 17,40 €.
+   *
+   * Il n'existe aucun ordre sûr entre le déploiement et la bascule : le seul
+   * remède est de ne rien créer entre les deux. Le drapeau vit dans `app_config`
+   * pour être posé et levé sans redéploiement.
+   */
+  bloquerPendantBascule: async (req, res, next) => {
+    try {
+      const { rows } = await pool.query(
+        "SELECT config_value FROM app_config WHERE config_key = 'bms_pack_migration'",
+      );
+      if ((rows[0] || {}).config_value === 'on') {
+        return res.status(423).json({
+          success: false,
+          code: 'BMS_MIGRATION_EN_COURS',
+          error: 'Bascule des conditionnements BMS en cours.\n\n'
+            + 'La création et l\'envoi de commandes sont momentanément bloqués, le temps '
+            + 'que BMS passe en pièces. Sans ce verrou, le montant d\'une commande créée '
+            + 'maintenant serait faux d\'un facteur égal au conditionnement du produit.\n\n'
+            + 'Votre saisie n\'est pas perdue : réessayez dans quelques minutes.',
+        });
+      }
+    } catch (e) {
+      // Drapeau illisible : on laisse passer plutôt que de bloquer les achats sur
+      // une panne de lecture. Le risque inverse ne dure que le temps de la bascule.
+      console.error('Verrou de bascule illisible, passage autorisé :', e.message);
+    }
+    return next();
+  },
+
   createOrder: async (req, res) => {
     try {
       const { supplier_id, items } = req.body;

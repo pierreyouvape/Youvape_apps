@@ -35,6 +35,28 @@ const RECEPTION_INCOMPLETE = `
   )`;
 
 /**
+ * Le symétrique du garde-fou ci-dessus, et il manquait.
+ *
+ * `RECEPTION_INCOMPLETE` ne fait qu'AJOUTER des commandes à la liste : il rattrape
+ * celles que BMS solde à tort. Le cas inverse existe aussi — BMS dit `expected`
+ * alors que nous avons tout compté — et rien ne le traitait. Constaté le
+ * 30/09/2026 sur IJSBUKTLI : 90 pièces commandées, 90 reçues, et la commande
+ * revenait indéfiniment à l'écran parce qu'une de ses lignes était restée en lots
+ * chez BMS (40 reçus comparés à 4 commandés, donc jamais soldée de leur point de vue).
+ *
+ * Dès qu'on a compté une commande, NOTRE décompte fait autorité dans les DEUX
+ * sens. Tant qu'on ne l'a jamais comptée, on suit le statut BMS.
+ */
+const RECEPTION_TERMINEE = `
+  EXISTS (SELECT 1 FROM reception_sessions rs WHERE rs.purchase_order_id = po.id)
+  AND NOT EXISTS (
+    SELECT 1 FROM purchase_order_items x
+     WHERE x.purchase_order_id = po.id
+       AND x.qty_ordered * COALESCE(x.units_per_qty, 1)
+           > COALESCE(x.units_received, 0)
+  )`;
+
+/**
  * Toutes les quantités exposées par cette app sont en UNITÉS DE STOCK — celles
  * que l'opérateur compte réellement en scannant. Une ligne de commande n'est pas
  * forcément comptée dans cette unité : chez les fournisseurs « à l'unité » (LCA,
@@ -54,7 +76,9 @@ exports.getPendingOrders = async (req, res) => {
   try {
     const { supplier_id, search } = req.query;
     const params = [PENDING_STATUSES];
-    const conds = [`(po.status = ANY($1) OR (${RECEPTION_INCOMPLETE}))`];
+    const conds = [
+      `((po.status = ANY($1) OR (${RECEPTION_INCOMPLETE})) AND NOT (${RECEPTION_TERMINEE}))`,
+    ];
 
     if (supplier_id) {
       params.push(parseInt(supplier_id));

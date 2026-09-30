@@ -118,7 +118,8 @@ router.get('/orders', checkPurchasesRead, purchasesController.getOrders);
 router.get('/orders/:id', checkPurchasesRead, purchasesController.getOrderById);
 
 // Créer une commande
-router.post('/orders', checkPurchasesWrite, purchasesController.createOrder);
+// Verrou de bascule : voir purchasesController.bloquerPendantBascule
+router.post('/orders', checkPurchasesWrite, purchasesController.bloquerPendantBascule, purchasesController.createOrder);
 
 // Modifier une commande (champs + lignes)
 router.put('/orders/:id', checkPurchasesWrite, purchasesController.updateOrder);
@@ -133,7 +134,7 @@ router.put('/orders/:id/items/:itemId/received', checkPurchasesWrite, purchasesC
 router.delete('/orders/:id', checkPurchasesWrite, purchasesController.deleteOrder);
 
 // Envoyer une commande à BMS
-router.post('/orders/:id/send-bms', checkPurchasesWrite, purchasesController.sendToBms);
+router.post('/orders/:id/send-bms', checkPurchasesWrite, purchasesController.bloquerPendantBascule, purchasesController.sendToBms);
 
 // Export CSV d'une commande
 router.get('/orders/:id/export', checkPurchasesRead, purchasesController.exportOrder);
