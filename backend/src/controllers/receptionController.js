@@ -320,11 +320,48 @@ exports.validateSession = async (req, res) => {
     const resultat = await sessionModel.validateSession(
       parseInt(req.params.sessionId, 10),
       req.user && req.user.id,
+      req.body && req.body.motifs,
     );
     res.json(resultat);
   } catch (e) {
     console.error('[reception] validation :', e.message);
     res.status(400).json({ error: e.message || 'Erreur serveur' });
+  }
+};
+
+/**
+ * GET /api/reception/settings
+ * Les réglages de l'app : pour l'instant, à qui partent les mails d'écart.
+ */
+exports.getSettings = async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      "SELECT config_value FROM app_config WHERE config_key = 'reception_email_to'",
+    );
+    res.json({ email_to: (rows[0] || {}).config_value || '' });
+  } catch (e) {
+    res.status(500).json({ error: e.message || 'Erreur serveur' });
+  }
+};
+
+/** PUT /api/reception/settings — destinataires séparés par des virgules. */
+exports.updateSettings = async (req, res) => {
+  try {
+    const brut = String((req.body && req.body.email_to) || '').trim();
+    const adresses = brut.split(/[,;\s]+/).map((a) => a.trim()).filter(Boolean);
+    const invalide = adresses.find((a) => !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(a));
+    if (invalide) return res.status(400).json({ error: `Adresse invalide : ${invalide}` });
+
+    await pool.query(
+      `INSERT INTO app_config (config_key, config_value, updated_at)
+       VALUES ('reception_email_to', $1, CURRENT_TIMESTAMP)
+       ON CONFLICT (config_key) DO UPDATE
+          SET config_value = EXCLUDED.config_value, updated_at = CURRENT_TIMESTAMP`,
+      [adresses.join(', ')],
+    );
+    res.json({ email_to: adresses.join(', ') });
+  } catch (e) {
+    res.status(500).json({ error: e.message || 'Erreur serveur' });
   }
 };
 

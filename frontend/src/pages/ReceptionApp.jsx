@@ -171,7 +171,68 @@ function Conditionnement({ packs, packSize, pieces, large }) {
   );
 }
 
+/**
+ * Réglages de l'app. Un seul aujourd'hui : à qui partent les mails d'écart
+ * (manquants et surplus). Laissé vide, aucun mail ne part — c'est dit à
+ * l'écran, parce qu'un envoi silencieusement désactivé est pire que pas d'envoi.
+ */
+function SettingsModal({ token, onClose }) {
+  const [emailTo, setEmailTo] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState(null);
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    axios.get(`${API_URL}/reception/settings`, authHeaders(token))
+      .then(r => setEmailTo(r.data.email_to || ''))
+      .catch(e => setErr(e.response?.data?.error || e.message))
+      .finally(() => setLoading(false));
+  }, [token]);
+
+  const enregistrer = async () => {
+    setSaving(true); setErr(null); setSaved(false);
+    try {
+      const { data } = await axios.put(`${API_URL}/reception/settings`,
+        { email_to: emailTo }, authHeaders(token));
+      setEmailTo(data.email_to || '');
+      setSaved(true);
+    } catch (e) {
+      setErr(e.response?.data?.error || e.message);
+    } finally { setSaving(false); }
+  };
+
+  return (
+    <Modal title="Réglages de la réception" onClose={onClose} width={560}>
+      <label style={{ display: 'block', fontSize: 13.5, fontWeight: 600, color: C.dark, marginBottom: 6 }}>
+        Destinataires des mails d'écart
+      </label>
+      <input value={emailTo} onChange={e => { setEmailTo(e.target.value); setSaved(false); }}
+        disabled={loading} placeholder="achats@youvape.fr, responsable@youvape.fr"
+        style={{ width: '100%', padding: '9px 12px', borderRadius: 8,
+          border: `1px solid ${err ? C.red : C.greyB}`, fontSize: 13.5, boxSizing: 'border-box' }} />
+      <p style={{ fontSize: 12.5, color: C.greyT, margin: '8px 0 0', lineHeight: 1.5 }}>
+        Séparés par des virgules. Reçoivent les articles manquants avec leur motif, et
+        l'alerte quand un surplus a été compté.
+        {!loading && emailTo.trim() === ''
+          && <strong style={{ color: C.red, display: 'block', marginTop: 6 }}>
+               Vide : aucun mail ne partira.
+             </strong>}
+      </p>
+      {err && <p style={{ color: C.red, fontSize: 13, marginTop: 10 }}>{err}</p>}
+      {saved && <p style={{ color: C.green, fontSize: 13, marginTop: 10 }}>Enregistré.</p>}
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 20 }}>
+        <Btn variant="ghost" onClick={onClose}>Fermer</Btn>
+        <Btn onClick={enregistrer} disabled={loading || saving}>
+          {saving ? 'Enregistrement…' : 'Enregistrer'}
+        </Btn>
+      </div>
+    </Modal>
+  );
+}
+
 function OrdersList({ token, onOpen }) {
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [orders, setOrders] = useState([]);
   const [suppliers, setSuppliers] = useState([]);
   const [supplierId, setSupplierId] = useState('');
@@ -199,12 +260,17 @@ function OrdersList({ token, onOpen }) {
 
   return (
     <div style={{ padding: '24px 32px', maxWidth: 1400, margin: '0 auto' }}>
-      <div style={{ marginBottom: 20 }}>
-        <h1 style={{ fontSize: 24, fontWeight: 800, color: C.primary, margin: 0 }}>Réception</h1>
-        <p style={{ color: C.greyT, margin: '4px 0 0', fontSize: 13.5 }}>
-          Commandes fournisseur en attente de réception.
-        </p>
+      <div style={{ marginBottom: 20, display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16 }}>
+        <div>
+          <h1 style={{ fontSize: 24, fontWeight: 800, color: C.primary, margin: 0 }}>Réception</h1>
+          <p style={{ color: C.greyT, margin: '4px 0 0', fontSize: 13.5 }}>
+            Commandes fournisseur en attente de réception.
+          </p>
+        </div>
+        <Btn variant="ghost" small onClick={() => setSettingsOpen(true)}>Réglages</Btn>
       </div>
+
+      {settingsOpen && <SettingsModal token={token} onClose={() => setSettingsOpen(false)} />}
 
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 18 }}>
         <select value={supplierId} onChange={e => setSupplierId(e.target.value)}
@@ -682,8 +748,12 @@ function CountingScreen({ token, order, items, onBack, onReload }) {
     if (!session) { flash('Aucune session de réception ouverte', true); return; }
     setSending(true);
     try {
+      // Les motifs partent AVEC la réception : ils expliquent un manquant, et
+      // n'ont de sens que rapportés à ce qui est parti. Le backend les réexige
+      // de son côté — l'écran n'est pas le seul gardien.
       const { data } = await axios.post(
-        `${API_URL}/reception/sessions/${session.id}/validate`, {}, authHeaders(token),
+        `${API_URL}/reception/sessions/${session.id}/validate`,
+        { motifs }, authHeaders(token),
       );
       setSendResult(data);
       setDiffModal(false);

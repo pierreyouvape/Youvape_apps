@@ -169,7 +169,27 @@ async function setCount(sessionId, itemId, unitsCounted, db = pool) {
  * La session passe donc en `validated` dans la même transaction, et la réponse
  * de BMS est conservée telle quelle — c'est la seule preuve de ce qui est parti.
  */
-async function validateSession(sessionId, userId, db = pool) {
+const MOTIFS = ['reliquat', 'solde', 'manquant'];
+
+/**
+ * Motifs reçus de l'écran : { [purchase_order_item_id]: 'reliquat'|'solde'|'manquant' }.
+ * Normalisés et refusés s'ils sont inconnus — une valeur libre passerait la
+ * contrainte de colonne en NULL et le manquant perdrait son explication.
+ */
+function normaliserMotifs(motifs) {
+  const propre = new Map();
+  for (const [itemId, valeur] of Object.entries(motifs || {})) {
+    const id = parseInt(itemId, 10);
+    const v = String(valeur || '').trim().toLowerCase();
+    if (!Number.isFinite(id) || v === '') continue;
+    if (!MOTIFS.includes(v)) throw new Error(`Motif inconnu : « ${valeur} »`);
+    propre.set(id, v);
+  }
+  return propre;
+}
+
+async function validateSession(sessionId, userId, motifs = {}, db = pool) {
+  const motifsParItem = normaliserMotifs(motifs);
   const { rows: sessions } = await db.query(
     'SELECT * FROM reception_sessions WHERE id = $1',
     [sessionId],
@@ -180,17 +200,34 @@ async function validateSession(sessionId, userId, db = pool) {
     throw new Error(`Cette réception est déjà ${session.status === 'validated' ? 'validée' : 'abandonnée'}`);
   }
 
-  const { rows: lignes } = await db.query(
+  // TOUTES les lignes, y compris celles comptées à zéro : un article entièrement
+  // manquant n'a rien à envoyer à BMS, mais il a un motif à donner et un mail à
+  // déclencher. Ne lire que `units_counted > 0` le rendait invisible.
+  const { rows: toutes } = await db.query(
     `SELECT c.purchase_order_item_id, c.bms_line_id, c.units_counted,
             poi.supplier_sku, poi.product_name, ${UNITS_EXPECTED} AS units_expected
        FROM reception_counts c
        JOIN purchase_order_items poi ON poi.id = c.purchase_order_item_id
-      WHERE c.session_id = $1 AND c.units_counted > 0
+      WHERE c.session_id = $1
       ORDER BY poi.id`,
     [sessionId],
   );
+  const lignes = toutes.filter((l) => l.units_counted > 0);
 
   if (lignes.length === 0) throw new Error('Aucune pièce comptée : il n\'y a rien à réceptionner');
+
+  const manquants = toutes.filter((l) => l.units_counted < Number(l.units_expected));
+  const surplus = toutes.filter((l) => l.units_counted > Number(l.units_expected));
+
+  // Le motif est exigé ICI et pas seulement à l'écran : l'API est la porte, et
+  // une réception envoyée par un autre chemin perdrait l'explication du manquant.
+  const sansMotif = manquants.filter((l) => !motifsParItem.has(l.purchase_order_item_id));
+  if (sansMotif.length > 0) {
+    throw new Error(
+      'Il manque un motif (reliquat, soldé ou manquant) pour : '
+      + sansMotif.map((l) => l.supplier_sku || l.product_name || `ligne ${l.purchase_order_item_id}`).join(', '),
+    );
+  }
 
   const sansLien = lignes.filter((l) => !l.bms_line_id);
   if (sansLien.length > 0) {
@@ -247,6 +284,14 @@ async function validateSession(sessionId, userId, db = pool) {
         [l.purchase_order_item_id, l.units_counted],
       );
     }
+    // Les motifs des manquants, dans la même transaction que le comptage qu'ils
+    // expliquent : ils ne valent que rapportés à ce qui est parti.
+    for (const [itemId, motif] of motifsParItem) {
+      await client.query(
+        'UPDATE reception_counts SET motif = $3 WHERE session_id = $1 AND purchase_order_item_id = $2',
+        [sessionId, itemId, motif],
+      );
+    }
     await client.query(
       `UPDATE reception_sessions
           SET status = 'validated', validated_by = $2, validated_at = CURRENT_TIMESTAMP,
@@ -264,16 +309,37 @@ async function validateSession(sessionId, userId, db = pool) {
     );
   }
 
-  return {
-    sent: lignes.map((l) => ({
-      ref: l.supplier_sku,
-      product: l.product_name,
-      units: l.units_counted,
-      expected: Number(l.units_expected),
-      over: l.units_counted > Number(l.units_expected),
-    })),
+  const decrire = (l) => ({
+    ref: l.supplier_sku,
+    product: l.product_name,
+    units: l.units_counted,
+    expected: Number(l.units_expected),
+    ecart: l.units_counted - Number(l.units_expected),
+    motif: motifsParItem.get(l.purchase_order_item_id) || null,
+  });
+
+  const resultat = {
+    sent: lignes.map((l) => ({ ...decrire(l), over: l.units_counted > Number(l.units_expected) })),
+    missing: manquants.map(decrire),
+    over: surplus.map(decrire),
     bmsResponse: reponse,
   };
+
+  // Les mails partent APRÈS le commit, et leur échec ne défait rien : la
+  // marchandise est en stock, la réception est faite. Prévenir est utile, pas
+  // critique — une panne SMTP ne doit pas faire croire à un échec de réception.
+  try {
+    const { previenirEcarts } = require('../services/receptionEmailService');
+    await previenirEcarts({
+      purchaseOrderId: session.purchase_order_id,
+      manquants: resultat.missing,
+      surplus: resultat.over,
+    });
+  } catch (e) {
+    console.error('[reception] mail d\'écart non envoyé :', e.message);
+  }
+
+  return resultat;
 }
 
 /** Abandonne une session : le comptage est perdu, la commande repart à neuf. */

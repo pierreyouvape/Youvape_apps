@@ -731,8 +731,9 @@ const purchaseOrderModel = {
     }
     console.log('BMS response:', JSON.stringify(bmsResponse, null, 2));
 
-    // BMS a rangé les lignes à SA façon, en lots du catalogue. On les remet en
-    // PIÈCES : c'est la seule forme où son stock et ses compteurs s'accordent.
+    // Filet : depuis la bascule, BMS enregistre déjà des pièces et ne trouve rien
+    // à remettre en ordre. Il ne redeviendrait utile que si une association
+    // reprenait un conditionnement. Voir normalizeBmsLines.
     if (bmsResponse.id) {
       await purchaseOrderModel.normalizeBmsLines(bmsResponse.id, bmsItems);
     }
@@ -774,21 +775,30 @@ const purchaseOrderModel = {
   /**
    * Remet les lignes d'un bon de commande BMS en PIÈCES, conditionnement 1.
    *
-   * À la création, BMS impose le conditionnement du catalogue : dix pièces
-   * deviennent « 2 lots de 5 ». Ça n'aurait pas d'importance si sa réception
+   * CE N'EST PLUS UNE ROUTINE, C'EST UN FILET — depuis le 30/09/2026.
+   *
+   * BMS imposait le conditionnement de son catalogue à la création : dix pièces
+   * devenaient « 2 lots de 5 ». Ça n'aurait pas eu d'importance si sa réception
    * était cohérente, mais elle ne l'est pas — elle ajoute au stock le nombre
    * qu'on lui envoie, donc des pièces, tout en l'inscrivant dans un compteur
    * comparé à une quantité en LOTS. Recevoir 5 pièces d'une ligne « 1 lot de 5 »
    * affichait « 170 % reçu » et valorisait la réception cinq fois trop haut.
    *
-   * Aucun envoi ne pouvait satisfaire les deux à la fois — jusqu'à découvrir que
-   * PUT /v2/purchase-orders/{id}/items/{itemId} accepte qty, qty_pack et price
-   * (vérifié le 29/09/2026). Avec qty_pack à 1, pièces et lots se confondent :
-   * le stock, le compteur de réception, le pourcentage et la valorisation
-   * tombent tous juste.
+   * Ses 804 associations étant passées à pack_qty = 1, il ne divise plus rien :
+   * la création enregistre déjà qty en pièces et qty_pack à 1 (vérifié en réel
+   * le 30/09/2026 — 40 pièces à 0,87 €, sous-total 34,80 €). Cette fonction ne
+   * trouve donc plus rien à corriger, et la garde ligne à ligne ci-dessous la
+   * fait sortir sans écrire : elle coûte UN appel de lecture par commande.
    *
-   * Le prix est ramené à la pièce, sur QUATRE décimales — BMS les conserve, et
-   * arrondir au centime perdrait de l'argent sur un lot de 200.
+   * On la garde pour ce seul cas, qui reste possible : une association créée
+   * depuis l'interface BMS peut naître avec un conditionnement, et la division
+   * reviendrait sans prévenir. Le filet la rattrape ; son absence se paierait
+   * en compteurs de réception faux.
+   *
+   * PUT /v2/purchase-orders/{id}/items/{itemId} accepte qty, qty_pack et price
+   * (absent du Swagger, vérifié le 29/09/2026). Le prix est ramené à la pièce
+   * sur QUATRE décimales — BMS les conserve, et arrondir au centime perdrait de
+   * l'argent sur un lot de 200.
    *
    * Un échec ici ne perd pas la commande : elle existe, simplement présentée en
    * lots. On le signale sans faire échouer l'envoi.

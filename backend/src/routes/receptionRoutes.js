@@ -33,4 +33,10 @@ router.post('/sessions/:sessionId/refresh', checkReceptionWrite, receptionContro
 router.post('/sessions/:sessionId/validate', checkReceptionWrite, receptionController.validateSession);
 router.post('/sessions/:sessionId/abandon', checkReceptionWrite, receptionController.abandonSession);
 
+// Réglages de l'app : à qui partent les mails d'écart. La lecture suit le droit
+// de lecture, l'écriture celui d'écriture — c'est un réglage d'équipe, pas un
+// secret, et le magasinier doit pouvoir vérifier que quelqu'un sera prévenu.
+router.get('/settings', checkReceptionRead, receptionController.getSettings);
+router.put('/settings', checkReceptionWrite, receptionController.updateSettings);
+
 module.exports = router;
