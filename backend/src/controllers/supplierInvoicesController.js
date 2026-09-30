@@ -53,6 +53,39 @@ async function alignTariffs(req, res) {
   }
 }
 
+/**
+ * POST /api/supplier-invoices/apply-tariffs — retenir le tarif ET corriger la
+ * commande qu'il vient de payer.
+ *
+ * `align-tariffs` ne prépare que la prochaine commande. Celle-ci reste valorisée
+ * au prix commandé, et c'est ce prix que lit le FIFO : la marchandise entre en
+ * stock plus cher qu'elle n'a coûté. D'où ce second geste, volontairement
+ * distinct — inscrire un tarif de référence et réécrire la compta d'un lot ne se
+ * décident pas ensemble.
+ */
+async function applyTariffs(req, res) {
+  try {
+    const supplierId = parseInt(req.body.supplier_id, 10);
+    const orderId = parseInt(req.body.order_id, 10);
+    if (!Number.isFinite(supplierId)) {
+      return res.status(400).json({ error: 'Fournisseur manquant' });
+    }
+    if (!Number.isFinite(orderId)) {
+      return res.status(400).json({ error: 'Commande manquante' });
+    }
+    const tariffs = Array.isArray(req.body.tariffs) ? req.body.tariffs : [];
+    if (tariffs.length === 0) {
+      return res.status(400).json({ error: 'Aucun tarif à appliquer' });
+    }
+
+    const result = await supplierDocumentModel.applyTariffs(supplierId, orderId, tariffs);
+    return res.json(result);
+  } catch (error) {
+    console.error('[supplier-invoices] application des tarifs :', error.message);
+    return res.status(error.status || 500).json({ error: error.message || 'Erreur serveur' });
+  }
+}
+
 /** GET /api/supplier-invoices/orders — commandes à proposer au rapprochement. */
 async function listCandidateOrders(req, res) {
   try {
@@ -407,6 +440,7 @@ module.exports = {
   getOrderLifecycle,
   recheckDocument,
   alignTariffs,
+  applyTariffs,
   listCandidateOrders,
   analyseDocument,
   uploadDocument,

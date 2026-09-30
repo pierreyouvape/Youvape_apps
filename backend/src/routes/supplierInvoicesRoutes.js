@@ -34,6 +34,7 @@ router.post('/analyse', canWrite, upload.single('file'), controller.analyseDocum
 
 // Déclarées avant '/:id' : sans ça, « orders » serait pris pour un identifiant.
 router.post('/align-tariffs', canWrite, controller.alignTariffs);
+router.post('/apply-tariffs', canWrite, controller.applyTariffs);
 
 router.get('/orders', canRead, controller.listCandidateOrders);
 router.get('/orders/:orderId/lifecycle', canRead, controller.getOrderLifecycle);

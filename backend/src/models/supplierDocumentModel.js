@@ -458,6 +458,125 @@ async function alignTariffs(supplierId, tariffs, db = pool) {
 }
 
 /**
+ * Retenir un tarif ET corriger la commande qu'il vient de payer.
+ *
+ * `alignTariffs` ne regarde que l'avenir : `supplier_refs.pack_price` sert au
+ * préremplissage de la PROCHAINE commande. Le lot qu'on vient de payer, lui,
+ * reste valorisé au prix commandé — et c'est celui-là que lit le FIFO
+ * (`computedCostModel` : `unit_price / units_per_qty`). Sur LIPS FAC/2026/04474,
+ * la commande entrait en stock à 223,52 € pour 217,84 € réellement payés :
+ * 2,6 % de coût de revient en trop sur 134 pièces, propagés au PMP, à la valeur
+ * de stock et à la marge de chaque vente de ces pièces.
+ *
+ * DEUX PIÈGES DANS L'ÉCRITURE DE `unit_price` :
+ *
+ * 1. C'est le prix de L'UNITÉ DE LIGNE, pas de la pièce. Chez un fournisseur
+ *    compté en packs (`units_per_qty` > 1 : 285 lignes en base au 30/09/2026),
+ *    le FIFO divise par `units_per_qty`. Le prix relevé porte, lui, sur un pack
+ *    de `packQty` au sens BMS. C'est la CONVERSION qui protège, pas un contrôle
+ *    d'arrondi : confondre prix de pack et prix unitaire a déjà coûté deux bugs
+ *    (LCA Mozambique enregistré à 1,34 € au lieu de 13,40 €).
+ *
+ *    `unit_price` est un NUMERIC(10,2) : le prix écrit est donc arrondi au
+ *    centime de l'unité de ligne, au plus un demi-centime de perte, comme pour
+ *    toutes les lignes de commande depuis toujours. Il n'y a rien à garder de
+ *    plus fin sans migrer la colonne, et ce serait un autre chantier — le FIFO
+ *    lit cette colonne pour l'historique entier.
+ *
+ * 2. `discount_percent` est appliqué PAR-DESSUS par le FIFO. Le prix réellement
+ *    payé contient déjà toutes les remises, celle de pied comprise : le laisser
+ *    en place la compterait deux fois. On le remet donc à zéro dans le même
+ *    UPDATE. Aucune ligne ne le porte aujourd'hui — raison de plus pour ne pas
+ *    laisser la bombe amorcée.
+ *
+ * Le nouveau coût n'apparaît qu'au recalcul suivant de `computed_cost` (cron
+ * quotidien + démarrage du serveur) : c'est lui qui rejoue le FIFO complet.
+ *
+ * Corriger une commande DÉJÀ REÇUE réécrit une valeur de stock historique. C'est
+ * assumé — le prix payé est le prix payé, même six mois après — mais l'écran
+ * prévient avant, et la réponse porte `alreadyReceived` pour qu'il le puisse.
+ */
+async function applyTariffs(supplierId, orderId, tariffs, db = pool) {
+  const { rows: commandes } = await db.query(
+    `SELECT po.id, po.bms_reference, po.order_number,
+            COALESCE(SUM(i.units_received), 0) AS units_received
+       FROM purchase_orders po
+       LEFT JOIN purchase_order_items i ON i.purchase_order_id = po.id
+      WHERE po.id = $1 AND po.supplier_id = $2
+      GROUP BY po.id`,
+    [orderId, supplierId],
+  );
+  const commande = commandes[0];
+  if (!commande) {
+    const e = new Error('Commande introuvable pour ce fournisseur');
+    e.status = 404;
+    throw e;
+  }
+
+  const { applied, skipped } = await alignTariffs(supplierId, tariffs, db);
+  // `alignTariffs` renvoie la référence TELLE QU'ELLE EST EN BASE, pas telle que
+  // la facture l'écrit. On rapproche donc comme `supplierRefModel` : minuscules,
+  // espaces réduits. Sans ça, une réf écrite « SVA ARASUP » sur le document et
+  // « SVA  ARASUP » en base repartait sans corriger la commande, en silence.
+  const cleDe = (v) => String(v || '').toLowerCase().replace(/\s+/g, ' ').trim();
+  const retenus = new Map(applied.map((a) => [cleDe(a.ref), a]));
+
+  for (const t of tariffs || []) {
+    const cle = cleDe(t.ref);
+    const retenu = retenus.get(cle);
+    // Un tarif que `alignTariffs` a refusé n'a rien à faire dans la commande :
+    // il a été refusé pour une raison de conditionnement, qui vaut ici aussi.
+    if (!retenu) continue;
+
+    const { rows: lignes } = await db.query(
+      `SELECT id, unit_price, units_per_qty, discount_percent
+         FROM purchase_order_items
+        WHERE purchase_order_id = $1
+          AND LOWER(TRIM(supplier_sku)) = LOWER(TRIM($2))`,
+      [orderId, t.ref],
+    );
+    if (lignes.length === 0) {
+      retenu.orderLine = { skipped: 'ligne absente de la commande' };
+      continue;
+    }
+
+    for (const ligne of lignes) {
+      const bmsPack = Number(t.packQty) || 1;
+      const lignePack = Number(ligne.units_per_qty) || 1;
+      const prixLigne = (Number(t.realPrice) || 0) * (lignePack / bmsPack);
+      const arrondi = Math.round(prixLigne * 100) / 100;
+
+      if (!Number.isFinite(arrondi) || arrondi <= 0) {
+        retenu.orderLine = { skipped: 'prix inexploitable' };
+        continue;
+      }
+
+      const { rows } = await db.query(
+        `UPDATE purchase_order_items
+            SET unit_price = $2, discount_percent = 0, updated_at = CURRENT_TIMESTAMP
+          WHERE id = $1
+        RETURNING unit_price`,
+        [ligne.id, arrondi],
+      );
+      retenu.orderLine = {
+        previous: ligne.unit_price == null ? null : Number(ligne.unit_price),
+        price: Number(rows[0].unit_price),
+      };
+    }
+  }
+
+  return {
+    applied,
+    skipped,
+    order: {
+      id: commande.id,
+      reference: commande.bms_reference || commande.order_number,
+      alreadyReceived: Number(commande.units_received) > 0,
+    },
+  };
+}
+
+/**
  * Rejouer l'analyse d'un document rangé, contre l'état ACTUEL de BMS.
  *
  * L'analyse est gelée à l'enregistrement, exprès : la commande BMS bouge dès
@@ -493,6 +612,7 @@ async function replaceLines(documentId, comparison, db = pool) {
 module.exports = {
   replaceLines,
   alignTariffs,
+  applyTariffs,
   listCandidateOrders,
   findExisting,
   createDocument,

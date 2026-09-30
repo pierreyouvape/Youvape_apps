@@ -327,8 +327,9 @@ const fromStoredLines = (lines) => (lines || []).map((l) => ({
  * « Réclamer un avoir ». Chaque ligne porte maintenant son MOTIF : le prix a
  * bougé, la quantité ne correspond pas, ou les deux.
  */
-function ControlTable({ rows, supplierId, mobile }) {
+function ControlTable({ rows, supplierId, orderId, orderReceived, mobile }) {
   const [aligning, setAligning] = useState(false);
+  const [applying, setApplying] = useState(false);
   const [perLine, setPerLine] = useState({});
 
   const aRetenir = (rows || []).filter((r) => r.tariff);
@@ -344,41 +345,79 @@ function ControlTable({ rows, supplierId, mobile }) {
   const prix = (n) => (n == null ? '—'
     : `${Number(n).toFixed(4).replace(/0+$/, '').replace(/[.,]$/, '').replace('.', ',')} €`);
 
-  const envoyer = async (liste) => {
-    const { data } = await axios.post(`${BASE}/align-tariffs`, {
+  /**
+   * `align-tariffs` n'inscrit que le tarif de référence ; `apply-tariffs` corrige
+   * EN PLUS la commande qui vient d'être payée, donc le FIFO. Deux routes, parce
+   * que ce sont deux décisions : noter un prix pour la prochaine fois, ou
+   * réécrire la valeur d'un lot déjà en stock.
+   */
+  const envoyer = async (liste, surLaCommande) => {
+    const { data } = await axios.post(`${BASE}/${surLaCommande ? 'apply' : 'align'}-tariffs`, {
       supplier_id: supplierId,
+      ...(surLaCommande ? { order_id: orderId } : {}),
       tariffs: liste.map((t) => ({ ref: t.ref, realPrice: t.realPrice, packQty: t.packQty })),
     });
     setPerLine((p) => {
       const n = { ...p };
-      for (const a of data.applied || []) n[a.ref] = 'done';
+      for (const a of data.applied || []) {
+        // Un tarif inscrit chez nous mais qu'aucune ligne de la commande ne
+        // porte n'est pas un succès complet : le dire, plutôt que d'afficher
+        // « Appliqué » sur un FIFO resté au prix commandé.
+        n[a.ref] = surLaCommande && a.orderLine?.skipped
+          ? `tarif retenu, commande inchangée : ${a.orderLine.skipped}`
+          : (surLaCommande ? 'applied' : 'done');
+      }
       for (const k of data.skipped || []) n[k.ref] = k.reason;
       return n;
     });
   };
 
-  const retenirUne = async (t) => {
+  // Réécrire le prix d'un lot DÉJÀ REÇU déplace une valeur de stock historique.
+  // On le fait — le prix payé est le prix payé, même six mois après — mais
+  // jamais sans l'avoir dit.
+  const confirmeSiRecue = () => !orderReceived || window.confirm(
+    'Cette commande a déjà été réceptionnée.\n\n'
+    + 'Corriger son prix modifiera la valeur du stock à partir de sa date de réception, '
+    + 'ainsi que le coût de revient des pièces déjà vendues.\n\nContinuer ?',
+  );
+
+  const retenirUne = async (t, surLaCommande) => {
+    if (surLaCommande && !confirmeSiRecue()) return;
     setPerLine((p) => ({ ...p, [t.ref]: 'busy' }));
-    try { await envoyer([t]); }
+    try { await envoyer([t], surLaCommande); }
     catch (e) { setPerLine((p) => ({ ...p, [t.ref]: e.response?.data?.error || e.message })); }
   };
 
-  const toutRetenir = async () => {
-    setAligning(true);
-    try { await envoyer(aRetenir.map((r) => r.tariff)); }
+  const tout = async (surLaCommande) => {
+    if (surLaCommande && !confirmeSiRecue()) return;
+    const setBusy = surLaCommande ? setApplying : setAligning;
+    setBusy(true);
+    try { await envoyer(aRetenir.map((r) => r.tariff), surLaCommande); }
     catch (e) { window.alert(e.response?.data?.error || e.message); }
-    finally { setAligning(false); }
+    finally { setBusy(false); }
   };
 
   const bouton = (r) => {
     if (!r.tariff) return null;
     const etat = perLine[r.ref];
     if (etat === 'done') return <span style={{ color: C.green, fontWeight: 600, fontSize: 12 }}>Retenu</span>;
+    if (etat === 'applied') return <span style={{ color: C.green, fontWeight: 600, fontSize: 12 }}>Appliqué</span>;
     if (etat && etat !== 'busy') return <span style={{ color: C.orange, fontSize: 11.5 }}>{etat}</span>;
     return (
-      <Btn onClick={() => retenirUne(r.tariff)} variant="secondary" small disabled={etat === 'busy'}>
-        {etat === 'busy' ? '…' : 'Retenir'}
-      </Btn>
+      // Le geste complet porte le bouton plein, le partiel le bouton blanc :
+      // deux actions voisines dont l'une réécrit une compta ne peuvent pas se
+      // ressembler. (« secondary » n'est pas un variant de Btn et retombait sur
+      // le bleu du CSS global ; on ne le propage pas ici.)
+      <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+        <Btn onClick={() => retenirUne(r.tariff, false)} variant="ghost" small disabled={etat === 'busy'}>
+          {etat === 'busy' ? '…' : 'Retenir'}
+        </Btn>
+        {orderId && (
+          <Btn onClick={() => retenirUne(r.tariff, true)} small disabled={etat === 'busy'}>
+            Appliquer
+          </Btn>
+        )}
+      </div>
     );
   };
 
@@ -388,13 +427,25 @@ function ControlTable({ rows, supplierId, mobile }) {
         À examiner ({rows.length})
       </h3>
       {aRetenir.length > 0 && (
-        <Btn onClick={toutRetenir} disabled={aligning} small>
+        <Btn onClick={() => tout(false)} variant="ghost" disabled={aligning || applying} small>
           {aligning ? 'Enregistrement…' : `Tout retenir (${aRetenir.length})`}
         </Btn>
       )}
-      <span style={{ fontSize: 12, color: C.greyT }}>
-        Retenir un tarif écrit le <strong>prix réel payé</strong> chez nous : il fera autorité à
-        l'import de la prochaine commande, même s'il est plus élevé — le cas d'une promotion terminée.
+      {aRetenir.length > 0 && orderId && (
+        <Btn onClick={() => tout(true)} disabled={aligning || applying} small>
+          {applying ? 'Application…' : `Tout appliquer (${aRetenir.length})`}
+        </Btn>
+      )}
+      {/* Deux gestes, deux portées. « Retenir » ne parle qu'à l'avenir ;
+          « Appliquer » corrige aussi ce que ce lot a coûté, et c'est la seule
+          façon que le FIFO voie le prix réellement payé — il lit le prix de la
+          commande, jamais celui de la facture. */}
+      <span style={{ fontSize: 12, color: C.greyT, flex: '1 1 320px', minWidth: 260 }}>
+        <strong>Retenir</strong> écrit le <strong>prix réel payé</strong> dans notre référentiel : il
+        fera autorité à l'import de la prochaine commande, même s'il est plus élevé — le cas d'une
+        promotion terminée.{orderId && <> <strong>Appliquer</strong> fait la même chose et corrige{' '}
+        <strong>en plus le prix de cette commande</strong>, pour que le coût de revient FIFO de ces
+        pièces soit celui qu'on a vraiment payé.</>}
       </span>
     </div>
   );
@@ -879,7 +930,13 @@ function ControlTab({ suppliers, mobile, onSaved }) {
           )}
 
           {result.comparison
-            ? <ControlTable rows={result.rows} supplierId={supplierId} mobile={mobile} />
+            ? <ControlTable
+                rows={result.rows}
+                supplierId={supplierId}
+                orderId={result.order?.id || null}
+                orderReceived={Number(lifecycle?.order?.units_received) > 0}
+                mobile={mobile}
+              />
             : <ReadLinesTable lines={result.invoice.lines} mobile={mobile} />}
 
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
