@@ -15,7 +15,10 @@
  */
 const ETATS = {
   draft:   { label: 'Brouillon WC', aide: "Ce produit est en BROUILLON sur WooCommerce : il n'est pas en ligne sur la boutique." },
-  private: { label: 'Privé WC',     aide: "Ce produit est en PRIVÉ sur WooCommerce : il n'est visible que des administrateurs." },
+  // « Désactivé » et non « Privé » : c'est le mot de la maison. WooCommerce
+  // appelle cet état `private`, l'infobulle le rappelle pour qui irait le
+  // chercher là-bas.
+  private: { label: 'Désactivé WC', aide: "Ce produit est DÉSACTIVÉ sur WooCommerce (statut « privé ») : il n'est pas visible des clients." },
   pending: { label: 'En attente WC', aide: "Ce produit est EN ATTENTE de relecture sur WooCommerce : il n'est pas en ligne." },
   trash:   { label: 'Corbeille WC', aide: 'Ce produit est à la CORBEILLE sur WooCommerce.' },
 };
