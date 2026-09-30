@@ -491,8 +491,12 @@ exports.getCatalogList = async (req, res) => {
     const trackStockOnly = !showHiddenParam;
     const onlyHidden = showHiddenParam === 'only';
 
-    const { parents, variations } = await productModel.getAllForCatalog(limit, offset, search, trackStockOnly, stockTab, sortBy, sortDir, brand, onlyHidden, subBrand, supplierId, category, subCategory);
-    const { total, totalWithVariations, totalStockValue } = await productModel.countForCatalog(search, trackStockOnly, stockTab, brand, onlyHidden, subBrand, supplierId, category, subCategory);
+    // Filtre « Statut WC » : voir les produits qui ne sont PAS en ligne, et
+    // notamment ceux qui gardent du stock. Vide = pas de filtre.
+    const wcStatus = req.query.wcStatus || '';
+
+    const { parents, variations } = await productModel.getAllForCatalog(limit, offset, search, trackStockOnly, stockTab, sortBy, sortDir, brand, onlyHidden, subBrand, supplierId, category, subCategory, wcStatus);
+    const { total, totalWithVariations, totalStockValue } = await productModel.countForCatalog(search, trackStockOnly, stockTab, brand, onlyHidden, subBrand, supplierId, category, subCategory, wcStatus);
 
     // Stock boutiques (Nextore) rapproché par EAN — MTP (1) et CAST (2)
     try {

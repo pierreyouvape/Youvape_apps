@@ -160,6 +160,25 @@ async function getReorderIdsSql(stockTab) {
 const CATALOG_STANDALONE = `p.product_type IN ('simple', 'woosb')`;
 
 /**
+ * Filtre « Statut WC » du catalogue : quels états WooCommerce retenir.
+ *
+ * Sert à répondre à une question précise — « ai-je du stock sur des produits qui
+ * ne sont pas en ligne ? » — qu'aucun écran ne savait poser. Les produits non
+ * publiés sont hors du périmètre normal du catalogue, donc choisir un de ces
+ * états lève À LA FOIS la contrainte de publication ET celle des produits
+ * masqués : demander à voir des brouillons, c'est demander à sortir du catalogue
+ * vivant, et un second réglage à trouver n'aurait servi qu'à rater des lignes.
+ */
+const WC_STATUTS = {
+  publish: ['publish'],
+  draft: ['draft'],
+  private: ['private'],
+  // Tout ce qui n'est pas en ligne, d'un seul coup : c'est la vraie question.
+  unpublished: ['draft', 'private', 'pending', 'trash'],
+};
+const statutsWc = (cle) => WC_STATUTS[cle] || null;
+
+/**
  * Expressions SQL de tri pour le catalogue : pour un produit variable,
  * on agrège (somme/moyenne) sur ses variations publiées.
  */
@@ -1150,7 +1169,7 @@ class ProductModel {
     return result.rows;
   }
 
-  async getAllForCatalog(limit = 50, offset = 0, search = '', trackStockOnly = true, stockTab = 'all', sortBy = null, sortDir = 'desc', brand = '', onlyHidden = false, subBrand = '', supplierId = '', category = '', subCategory = '') {
+  async getAllForCatalog(limit = 50, offset = 0, search = '', trackStockOnly = true, stockTab = 'all', sortBy = null, sortDir = 'desc', brand = '', onlyHidden = false, subBrand = '', supplierId = '', category = '', subCategory = '', wcStatus = '') {
     const reorderIdsSql = await getReorderIdsSql(stockTab);
     // LE STATUT DU PARENT NE DOIT PAS ENTERRER SES DÉCLINAISONS.
     //
@@ -1168,7 +1187,12 @@ class ProductModel {
     // parent. Les 34 coquilles sans aucune déclinaison publiée et les 629
     // brouillons simples restent dehors : ils ne sont pas masqués, ils n'existent
     // pas encore.
-    const perimetreParent = trackStockOnly
+    // Un filtre de statut définit lui-même le périmètre : le figer sur « publié »
+    // rendrait « Brouillon » vide par construction.
+    const statuts = statutsWc(wcStatus);
+    const perimetreParent = statuts
+      ? 'TRUE'
+      : trackStockOnly
       ? `p.post_status = 'publish'`
       : `(
           p.post_status = 'publish'
@@ -1178,11 +1202,16 @@ class ProductModel {
               AND v.product_type = 'variation' AND v.post_status = 'publish'
           ))
         )`;
+    // Même raison : un statut demandé prime sur le réglage « masqués ».
+    const filtreSuiviVar = statuts
+      ? ''
+      : trackStockOnly ? 'AND v.track_stock = true'
+      : onlyHidden ? 'AND v.track_stock = false' : '';
     let whereClause = `
       WHERE ${perimetreParent}
         AND p.product_type IN ('simple', 'variable', 'woosb')
     `;
-    if (trackStockOnly) {
+    if (trackStockOnly && !statuts) {
       whereClause += `
         AND (
           (${CATALOG_STANDALONE} AND p.track_stock = true)
@@ -1193,7 +1222,7 @@ class ProductModel {
         )
       `;
     }
-    if (onlyHidden) {
+    if (onlyHidden && !statuts) {
       whereClause += `
         AND (
           (${CATALOG_STANDALONE} AND p.track_stock = false)
@@ -1213,7 +1242,7 @@ class ProductModel {
           OR (p.product_type = 'variable' AND EXISTS (
             SELECT 1 FROM products v
             WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation'
-              ${trackStockOnly ? 'AND v.track_stock = true' : onlyHidden ? 'AND v.track_stock = false' : ''}
+              ${filtreSuiviVar}
               AND ${stockCondVar}
           ))
         )
@@ -1266,6 +1295,24 @@ class ProductModel {
     if (subCategory) {
       whereClause += ` AND p.sub_category = $${paramIndex}`;
       params.push(subCategory);
+      paramIndex++;
+    }
+
+    // Une famille est retenue si SA TÊTE porte le statut demandé, ou si l'une de
+    // ses déclinaisons le porte : un parent publié peut très bien cacher une
+    // déclinaison désactivée qui a du stock, et c'est justement ce qu'on cherche.
+    if (statuts) {
+      whereClause += `
+        AND (
+          p.post_status = ANY(${paramIndex}::text[])
+          OR (p.product_type = 'variable' AND EXISTS (
+            SELECT 1 FROM products v
+            WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation'
+              AND v.post_status = ANY(${paramIndex}::text[])
+          ))
+        )
+      `;
+      params.push(statuts);
       paramIndex++;
     }
 
@@ -1373,6 +1420,15 @@ class ProductModel {
         )`;
         varParams.push(supplierId);
       }
+      // Quand la TÊTE porte le statut demandé, on montre toute la famille : c'est
+      // elle qui est hors ligne, ses déclinaisons suivent. Sinon on ne montre que
+      // les déclinaisons concernées, sans quoi choisir « Désactivé » listerait des
+      // produits publiés sous un en-tête qui promet le contraire.
+      if (statuts) {
+        varFilter += ` AND (p_parent.post_status = ANY($${varParams.length + 1}::text[])
+                            OR v.post_status = ANY($${varParams.length + 1}::text[]))`;
+        varParams.push(statuts);
+      }
 
       const variationsQuery = `
         SELECT
@@ -1396,7 +1452,7 @@ class ProductModel {
         FROM products v
         LEFT JOIN products p_parent ON v.wp_parent_id = p_parent.wp_product_id
         WHERE v.wp_parent_id = ANY($1) AND v.product_type = 'variation'
-          ${trackStockOnly ? 'AND v.track_stock = true' : onlyHidden ? 'AND v.track_stock = false' : ''}
+          ${filtreSuiviVar}
           ${stockCondVar ? `AND ${stockCondVar}` : ''}
           ${varFilter}
         ORDER BY v.post_title ASC
@@ -1464,7 +1520,7 @@ class ProductModel {
   /**
    * Compte les produits pour le catalogue
    */
-  async countForCatalog(search = '', trackStockOnly = true, stockTab = 'all', brand = '', onlyHidden = false, subBrand = '', supplierId = '', category = '', subCategory = '') {
+  async countForCatalog(search = '', trackStockOnly = true, stockTab = 'all', brand = '', onlyHidden = false, subBrand = '', supplierId = '', category = '', subCategory = '', wcStatus = '') {
     const reorderIdsSql = await getReorderIdsSql(stockTab);
     // LE STATUT DU PARENT NE DOIT PAS ENTERRER SES DÉCLINAISONS.
     //
@@ -1482,7 +1538,12 @@ class ProductModel {
     // parent. Les 34 coquilles sans aucune déclinaison publiée et les 629
     // brouillons simples restent dehors : ils ne sont pas masqués, ils n'existent
     // pas encore.
-    const perimetreParent = trackStockOnly
+    // Un filtre de statut définit lui-même le périmètre : le figer sur « publié »
+    // rendrait « Brouillon » vide par construction.
+    const statuts = statutsWc(wcStatus);
+    const perimetreParent = statuts
+      ? 'TRUE'
+      : trackStockOnly
       ? `p.post_status = 'publish'`
       : `(
           p.post_status = 'publish'
@@ -1492,11 +1553,16 @@ class ProductModel {
               AND v.product_type = 'variation' AND v.post_status = 'publish'
           ))
         )`;
+    // Même raison : un statut demandé prime sur le réglage « masqués ».
+    const filtreSuiviVar = statuts
+      ? ''
+      : trackStockOnly ? 'AND v.track_stock = true'
+      : onlyHidden ? 'AND v.track_stock = false' : '';
     let whereClause = `
       WHERE ${perimetreParent}
         AND p.product_type IN ('simple', 'variable', 'woosb')
     `;
-    if (trackStockOnly) {
+    if (trackStockOnly && !statuts) {
       whereClause += `
         AND (
           (${CATALOG_STANDALONE} AND p.track_stock = true)
@@ -1507,7 +1573,7 @@ class ProductModel {
         )
       `;
     }
-    if (onlyHidden) {
+    if (onlyHidden && !statuts) {
       whereClause += `
         AND (
           (${CATALOG_STANDALONE} AND p.track_stock = false)
@@ -1527,7 +1593,7 @@ class ProductModel {
           OR (p.product_type = 'variable' AND EXISTS (
             SELECT 1 FROM products v
             WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation'
-              ${trackStockOnly ? 'AND v.track_stock = true' : onlyHidden ? 'AND v.track_stock = false' : ''}
+              ${filtreSuiviVar}
               AND ${stockCondVar}
           ))
         )
@@ -1575,6 +1641,23 @@ class ProductModel {
       params.push(subCategory);
     }
 
+    // Une famille est retenue si SA TÊTE porte le statut demandé, ou si l'une de
+    // ses déclinaisons le porte : un parent publié peut très bien cacher une
+    // déclinaison désactivée qui a du stock, et c'est justement ce qu'on cherche.
+    if (statuts) {
+      whereClause += `
+        AND (
+          p.post_status = ANY(${params.length + 1}::text[])
+          OR (p.product_type = 'variable' AND EXISTS (
+            SELECT 1 FROM products v
+            WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation'
+              AND v.post_status = ANY(${params.length + 1}::text[])
+          ))
+        )
+      `;
+      params.push(statuts);
+    }
+
     // Meme perimetre que getAllForCatalog : le parent compte si lui-meme ou une
     // de ses declinaisons est rattachee au fournisseur. `supplierVarCond` limite
     // ensuite le decompte des declinaisons et la valeur de stock a ce fournisseur.
@@ -1609,7 +1692,7 @@ class ProductModel {
             ELSE (
               SELECT COUNT(*) FROM products v
               WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation'
-                ${trackStockOnly ? 'AND v.track_stock = true' : onlyHidden ? 'AND v.track_stock = false' : ''}
+                ${filtreSuiviVar}
                 ${stockCondVar ? `AND ${stockCondVar}` : ''}
                 ${supplierVarCond}
             )

@@ -133,6 +133,10 @@ const CatalogApp = () => {
 
   // 0 = normaux seulement, 1 = tous (normaux + masqués), 2 = masqués seulement
   const [showHidden, setShowHidden] = useState(0);
+  // Statut WooCommerce : '' = tous, sinon 'publish' | 'draft' | 'private' |
+  // 'unpublished'. Répond à « ai-je du stock sur des produits qui ne sont pas en
+  // ligne ? » — à croiser avec l'onglet « En stock ».
+  const [wcStatus, setWcStatus] = useState('');
 
   // CSV import state
   const [csvModal, setCsvModal] = useState(false);
@@ -144,7 +148,7 @@ const CatalogApp = () => {
 
   const headers = { Authorization: `Bearer ${token}` };
 
-  const fetchProducts = async (offset = 0, search = searchTerm, tab = stockTab, sort = sortBy, dir = sortDir, brandVal = selectedBrand, hidden = showHidden, supplierVal = selectedSupplier, categoryVal = selectedCategory) => {
+  const fetchProducts = async (offset = 0, search = searchTerm, tab = stockTab, sort = sortBy, dir = sortDir, brandVal = selectedBrand, hidden = showHidden, supplierVal = selectedSupplier, categoryVal = selectedCategory, wcVal = wcStatus) => {
     setLoading(true);
     try {
       const brandParam = brandVal && brandVal.startsWith('brand:') ? brandVal.slice(6) : undefined;
@@ -161,7 +165,7 @@ const CatalogApp = () => {
         subCategoryParam = rest.slice(sep + 1);
       }
       const res = await axios.get(`${API_URL}/products/catalog`, {
-        params: { limit: 50, offset, search, stockTab: tab, sortBy: sort || undefined, sortDir: dir, brand: brandParam, subBrand: subBrandParam, supplierId: supplierVal || undefined, category: categoryParam, subCategory: subCategoryParam, showHidden: hidden === 1 ? 'true' : hidden === 2 ? 'only' : undefined },
+        params: { limit: 50, offset, search, stockTab: tab, sortBy: sort || undefined, sortDir: dir, brand: brandParam, subBrand: subBrandParam, supplierId: supplierVal || undefined, category: categoryParam, subCategory: subCategoryParam, showHidden: hidden === 1 ? 'true' : hidden === 2 ? 'only' : undefined, wcStatus: wcVal || undefined },
         headers
       });
       if (res.data.success) {
@@ -235,6 +239,11 @@ const CatalogApp = () => {
   const handleCategoryChange = (category) => {
     setSelectedCategory(category);
     fetchProducts(0, searchTerm, stockTab, sortBy, sortDir, selectedBrand, showHidden, selectedSupplier, category);
+  };
+
+  const handleWcStatusChange = (statut) => {
+    setWcStatus(statut);
+    fetchProducts(0, searchTerm, stockTab, sortBy, sortDir, selectedBrand, showHidden, selectedSupplier, selectedCategory, statut);
   };
 
   const handleShowHiddenToggle = () => {
@@ -687,6 +696,28 @@ const CatalogApp = () => {
             {suppliersList.map(sup => (
               <option key={sup.id} value={sup.id}>{sup.name} ({sup.product_count})</option>
             ))}
+          </select>
+
+          {/* Statut WooCommerce. Croisé avec l'onglet « En stock », il répond à la
+              question qu'aucun écran ne savait poser : ai-je de la marchandise
+              immobilisée sur des produits qui ne sont pas en ligne ? */}
+          <select
+            value={wcStatus}
+            onChange={e => handleWcStatusChange(e.target.value)}
+            title="Filtrer sur l'état du produit dans WooCommerce"
+            style={{
+              marginLeft: '12px', padding: '8px 12px', backgroundColor: '#fff',
+              color: wcStatus ? '#b45309' : '#374151',
+              border: wcStatus ? '1px solid #f59e0b' : '1px solid #d1d5db',
+              borderRadius: '6px', fontSize: '13px', fontWeight: wcStatus ? '600' : '500',
+              cursor: 'pointer', maxWidth: '220px'
+            }}
+          >
+            <option value="">Tous les statuts WC</option>
+            <option value="unpublished">⚠ Pas en ligne (brouillon + désactivé)</option>
+            <option value="draft">Brouillon WC</option>
+            <option value="private">Désactivé WC</option>
+            <option value="publish">Publié WC</option>
           </select>
 
           {/* Toggle produits masqués — 3 états */}
