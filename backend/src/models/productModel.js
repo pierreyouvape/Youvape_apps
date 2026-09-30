@@ -1709,6 +1709,19 @@ class ProductModel {
             FROM products v
             WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation' AND v.post_status = 'publish'
               ${supplierVarCond}
+              -- L'ONGLET FILTRE AUSSI LA VALEUR, pas seulement la sélection.
+              -- Une famille entre dans « Rupture de stock » dès qu'UNE de ses
+              -- déclinaisons y est ; sans cette condition, on valorisait alors
+              -- TOUTES ses déclinaisons, celles bien en stock comprises. L'onglet
+              -- annonçait 9 728,63 € de valeur en rupture le 30/09/2026 — dont
+              -- zéro euro venait d'un produit en rupture. « Puff JNR Stellarc
+              -- 50k » y pesait 1 880 € à lui seul, pour une seule déclinaison à
+              -- zéro, désactivée qui plus est.
+              --
+              -- Sans onglet (« Tout »), stockCondVar est nul : la valeur de
+              -- référence du catalogue ne bouge pas d'un centime, ni celle que
+              -- le cron de 23h55 compare au rapport.
+              ${stockCondVar ? `AND ${stockCondVar}` : ''}
           )
           END
         ), 0) as total_stock_value
