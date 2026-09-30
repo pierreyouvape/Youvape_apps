@@ -42,8 +42,16 @@ const { numberReadings } = require('../../utils/invoiceNumbers');
 const NUM = String.raw`-?\d{1,3}(?:[  ]\d{3})*(?:[.,]\d+)?|-?\d+(?:[.,]\d+)?`;
 const NUM_ONLY = new RegExp(`^(?:${NUM})$`);
 
-/** Jetons de décor traversés sans être lus : unité, marqueur de taxe, devise. */
-const DECOR = /^(?:TVA|Unité\(s\)|Unites?|€|%|\d+(?:[.,]\d+)?%)$/i;
+/**
+ * Jetons de décor traversés sans être lus : unité, marqueur de taxe, devise.
+ * `kg` n'est pas un caprice : chez LIPS, la remise globale est facturée au kilo
+ * (« Remise 20% sur produits spécifiques 1,000 kg -5,9160 0,00 TVA 20% -5,92 € »)
+ * là où les articles sont en Unité(s). Sans lui, la remontée par la droite
+ * s'arrêtait sur « kg », la quantité restait hors cadre et la ligne était
+ * perdue — la somme des lignes dépassait alors le total imprimé du montant de
+ * la remise.
+ */
+const DECOR = /^(?:TVA|Unité\(s\)|Unites?|kgs?|€|%|\d+(?:[.,]\d+)?%)$/i;
 
 const toNumber = (s) => parseFloat(String(s).replace(/[  ]/g, '').replace(',', '.'));
 const round2 = (n) => Math.round(n * 100) / 100;

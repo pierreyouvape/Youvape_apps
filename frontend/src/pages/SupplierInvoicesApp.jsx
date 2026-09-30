@@ -826,9 +826,14 @@ function ControlTab({ suppliers, mobile, onSaved }) {
 
           {summary?.hasFooterDiscount && (
             <div style={{ padding: 13, background: C.blueL, color: C.blue, borderRadius: 10, fontSize: 13 }}>
-              Les lignes sont facturées au prix brut, puis{' '}
-              <strong>{eur(Math.abs(totals.footerDiscount))}</strong> sont déduits en pied. Le prix payé n'est
-              donc pas celui des lignes :
+              {/* Une remise de pied n'existe JAMAIS dans la commande : BMS porte des
+                  prix à la ligne, pas de remise globale. Elle est donc toujours un
+                  supplément par rapport à ce qui était prévu — et c'est elle qui
+                  explique l'écart favorable affiché en haut, qu'aucune ligne ne
+                  justifie. Le taire laissait chercher l'erreur ailleurs. */}
+              <strong>{eur(Math.abs(totals.footerDiscount))} de remise supplémentaire</strong>, non prévue
+              à la commande : le fournisseur facture les lignes, puis déduit ce montant en pied. Le prix
+              payé n'est donc pas celui des lignes :
               <ul style={{ margin: '8px 0 0', paddingLeft: 18 }}>
                 {(result.comparison?.lines || []).filter((l) => l.verdict === 'discount').map((l, i) => {
                   const sc = l.scope || {};
@@ -844,6 +849,16 @@ function ControlTab({ suppliers, mobile, onSaved }) {
                         <> sur {sc.units} pièces, soit <strong>−{eur(sc.perUnit)}</strong> la pièce
                           {sc.unitCost != null && <> → prix réel <strong>{eur(sc.unitCost)}</strong></>}
                         </>
+                      )}
+                      {/* Une remise que le document ne rattache à aucune ligne ne
+                          PEUT pas être imputée à un produit : « Remise 20% sur
+                          produits spécifiques » chez LIPS ne dit pas lesquels. On
+                          l'écrit, au lieu de laisser croire qu'un article a été
+                          trouvé moins cher — ou de laisser chercher lequel. */}
+                      {!sc.ruleNote && !sc.targeted && sc.lines > 0 && (
+                        <> — <strong>non imputable à un produit</strong> : le document ne la rattache à
+                          aucune ligne. Elle est répartie au prorata sur les {sc.lines} lignes produit
+                          {sc.units > 0 ? ` (${sc.units} pièces)` : ''} pour établir le coût réel.</>
                       )}
                     </li>
                   );

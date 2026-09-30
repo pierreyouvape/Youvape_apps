@@ -112,6 +112,38 @@ test('« Source » vaut « Origine » : la commande est retrouvée pareil', () =
   assert.strictEqual(lips.orderRefOnDoc, 'S04517');
 });
 
+/* ─── LIPS — FAC/2026/04474, PDF réel ────────────────────────────────────── */
+
+const lips4474 = parseInvoice(fixture('lips-FAC-2026-04474.txt'));
+
+console.log('\nLIPS — FAC/2026/04474 (PDF réel)');
+
+test('la remise globale facturée au kilo n\'est pas perdue', () => {
+  // « Remise 20% sur produits spécifiques 1,000 kg -5,9160 0,00 TVA 20% -5,92 € » :
+  // seule ligne du document dont l'unité n'est pas « Unité(s) ». Tant que « kg »
+  // arrêtait la lecture des colonnes par la droite, la quantité restait hors
+  // cadre, la ligne partait en « unreadable_row », et les 12 lignes restantes
+  // totalisaient 223,76 € contre 217,84 € imprimés.
+  const remise = lips4474.lines.find((l) => l.kind === 'discount');
+  assert.ok(remise, 'ligne de remise absente');
+  assert.strictEqual(remise.qty, 1);
+  assert.ok(close(remise.lineTotalHt, -5.92));
+});
+
+test('les 13 lignes retombent sur le total imprimé', () => {
+  assert.strictEqual(lips4474.lines.length, 13);
+  const somme = lips4474.lines.reduce((s, l) => s + l.lineTotalHt, 0);
+  assert.ok(close(somme, 217.84, 0.02), `somme ${somme}`);
+  assert.strictEqual(lips4474.totalHt, 217.84);
+  assert.strictEqual(lips4474.warnings.length, 0);
+});
+
+test('l\'expédition gratuite est classée en port, à zéro euro', () => {
+  const port = lips4474.lines.find((l) => l.kind === 'shipping');
+  assert.ok(port, 'ligne de port absente');
+  assert.strictEqual(port.lineTotalHt, 0);
+});
+
 /* ─── Cloud Vapor — INV/2025/04126, PDF réel ─────────────────────────────── */
 
 const cv = parseInvoice(fixture('cloudvapor-INV-2025-04126.txt'));
