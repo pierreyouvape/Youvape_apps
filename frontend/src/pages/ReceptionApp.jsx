@@ -504,10 +504,6 @@ function CountingScreen({ token, order, items, onBack, onReload }) {
 
   // Unités de comptage → PIÈCES. C'est en pièces que BMS raisonne, et lui
   // envoyer des cartons solderait la ligne avec une seule pièce en stock.
-  const toUnits = useCallback(
-    (item, n) => (n || 0) * (item && item.pack_size > 1 ? item.pack_size : 1),
-    [],
-  );
 
   useEffect(() => {
     let vivant = true;
@@ -518,12 +514,10 @@ function CountingScreen({ token, order, items, onBack, onReload }) {
         );
         if (!vivant || !data.session) return;
         setSession(data.session);
-        // Reprise : la base garde des PIÈCES, l'écran compte en cartons.
+        // Reprise : base et écran comptent tous deux en PIÈCES, rien à convertir.
         const repris = {};
         for (const c of data.session.counts || []) {
-          const it = itemsRef.current.find((i) => i.id === c.purchase_order_item_id);
-          const pack = it && it.pack_size > 1 ? it.pack_size : 1;
-          repris[c.purchase_order_item_id] = Math.round((c.units_counted || 0) / pack);
+          repris[c.purchase_order_item_id] = c.units_counted || 0;
         }
         if (Object.values(repris).some((v) => v > 0)) {
           setCounts((prev) => ({ ...prev, ...repris }));
@@ -539,18 +533,17 @@ function CountingScreen({ token, order, items, onBack, onReload }) {
   // Enregistrement différé : un scan doit rester instantané, la base suit.
   // 600 ms, parce qu'un opérateur enchaîne les bips d'un même carton.
   const enAttente = useRef({});
-  const envoyerComptage = useCallback(async (itemId, countingUnits) => {
+  const envoyerComptage = useCallback(async (itemId, pieces) => {
     if (!session) return;
-    const it = itemsRef.current.find((i) => i.id === itemId);
     try {
       await axios.put(
         `${API_URL}/reception/sessions/${session.id}/counts/${itemId}`,
-        { units: toUnits(it, countingUnits) }, authHeaders(token),
+        { units: pieces }, authHeaders(token),
       );
     } catch {
       setSessionError('Le comptage de cette ligne n\'a pas pu être enregistré — ne fermez pas l\'écran.');
     }
-  }, [session, token, toUnits]);
+  }, [session, token]);
 
   // Le différé retient MAINTENANT la valeur en attente, et plus seulement son
   // minuteur : sans elle, impossible de forcer l'envoi avant un rechargement.
@@ -615,31 +608,22 @@ function CountingScreen({ token, order, items, onBack, onReload }) {
   }, [persistCount]);
 
   /**
-   * Compte un carton dont on connaît le contenu.
+   * Compte ce qu'un code-barre représente, EN PIÈCES.
    *
-   * LE CARTON SCANNÉ FAIT AUTORITÉ sur le conditionnement de la ligne : c'est
-   * lui qu'on a dans les mains. Le fournisseur peut très bien expédier des
-   * cartons de 20 sur une ligne que le catalogue conditionne par 10, et c'est
-   * précisément pour ça que `product_barcodes.quantity` existe.
+   * LE CODE SCANNÉ FAIT AUTORITÉ, point final. `product_barcodes.quantity` dit
+   * combien de pièces vaut ce code : c'est la même règle qu'au picking et au
+   * packing, où un bip vaut `quantity` articles et rien d'autre.
    *
-   * Avant, le test « la ligne est conditionnée » passait AVANT la quantité du
-   * code-barres : un carton de 20 comptait 10, en silence.
-   *
-   * L'écran compte en BOÎTES de `pack_size` ; on convertit donc, et si la
-   * division ne tombe pas juste on le DIT plutôt que d'arrondir — un arrondi
-   * silencieux sur une réception, c'est du stock faux.
+   * L'écran a compté en BOÎTES un temps, en exigeant que tout tombe sur un
+   * multiple du conditionnement de la ligne. C'était doublement faux : ça
+   * contredisait le commentaire juste au-dessus — le fournisseur expédie très
+   * bien des cartons de 20 sur une ligne conditionnée par 10 — et ça refusait
+   * de compter des marchandises pourtant bien reçues.
    */
-  const compterCarton = useCallback((item, pieces) => {
-    const pack = item.pack_size > 1 ? item.pack_size : 1;
-    if (pieces % pack !== 0) {
-      flash(
-        `${item.name} — carton de ${pieces} pièces, mais la ligne se compte par ${pack} : `
-        + 'saisissez la quantité à la main', true,
-      );
-      return false;
-    }
-    addCount(item.id, pieces / pack);
-    flash(`${item.name} — carton de ${pieces} pièce${pieces > 1 ? 's' : ''}`);
+  const compterPieces = useCallback((item, pieces) => {
+    const n = parseInt(pieces, 10) || 0;
+    if (n <= 0) return false;
+    addCount(item.id, n);
     return true;
   }, [addCount]);
 
@@ -674,17 +658,11 @@ function CountingScreen({ token, order, items, onBack, onReload }) {
     }
 
     // Un carton dont on connaît le contenu : sa quantité l'emporte sur le
-    // conditionnement de la ligne (cf. compterCarton).
+    // conditionnement de la ligne (cf. compterPieces).
     if (matched.type === 'pack' && matched.quantity) {
-      compterCarton(found, parseInt(matched.quantity, 10));
-      return;
-    }
-
-    // Un bip = une boîte sur une ligne conditionnée, quel que soit le code scanné :
-    // le carton porte souvent le code du flacon qu'il contient.
-    if (found.pack_size > 1) {
-      addCount(found.id, 1);
-      flash(`${found.name} — +1 boîte de ${found.pack_size}`);
+      const n = parseInt(matched.quantity, 10);
+      compterPieces(found, n);
+      flash(`${found.name} — +${n} pièce${n > 1 ? 's' : ''}`);
       return;
     }
 
@@ -696,10 +674,10 @@ function CountingScreen({ token, order, items, onBack, onReload }) {
 
     addCount(found.id, 1);
     flash(`${found.name} — +1`);
-    // `compterCarton` en dépendance : sans elle, le scan garderait une version
+    // `compterPieces` en dépendance : sans elle, le scan garderait une version
     // figée de la fonction, donc une SESSION figée — et le comptage d'un carton
     // cesserait d'être enregistré en base sans que rien ne le signale.
-  }, [addCount, askType, compterCarton]);
+  }, [addCount, askType, compterPieces]);
 
   // Capture clavier globale (douchette) — ignorée quand on saisit dans un champ
   // ou qu'une pop-up est ouverte.
@@ -812,9 +790,9 @@ function CountingScreen({ token, order, items, onBack, onReload }) {
   // concurrencer le signal orange/vert/rouge, qui est l'information utile ici.
   // Cible du comptage : en BOÎTES pour un produit conditionné (on reçoit un carton
   // scellé, pas des flacons à l'unité), en unités sinon.
-  const targetOf = (it) => it.pack_size > 1
-    ? Math.max(0, it.qty_expected_packs - it.qty_received_packs)
-    : it.qty_remaining;
+  // Ce qui reste à recevoir sur la ligne, EN PIÈCES — la seule unité tenue de
+  // bout en bout, du code-barre scanné jusqu'au stock BMS.
+  const targetOf = (it) => it.qty_remaining;
 
   const rowColors = (it, idx) => {
     const counted = counts[it.id] || 0;
@@ -828,7 +806,7 @@ function CountingScreen({ token, order, items, onBack, onReload }) {
   const missing = items.filter(i => (counts[i.id] || 0) < targetOf(i));
   const surplus = items.filter(i => (counts[i.id] || 0) > targetOf(i));
   // Les totaux d'en-tête restent en UNITÉS : c'est ce qui entre en stock.
-  const unitsOf = (i) => (counts[i.id] || 0) * (i.pack_size > 1 ? i.pack_size : 1);
+  const unitsOf = (i) => counts[i.id] || 0;
   const totalCounted = items.reduce((s, i) => s + unitsOf(i), 0);
   const totalExpected = items.reduce((s, i) => s + i.qty_remaining, 0);
   const allMotifsSet = missing.every(i => motifs[i.id]);
@@ -971,7 +949,7 @@ function CountingScreen({ token, order, items, onBack, onReload }) {
                     <Td align="right" bold large>
                       {targetOf(it)}
                       <Conditionnement
-                        packs={targetOf(it)}
+                        packs={it.pack_size > 1 ? it.qty_remaining / it.pack_size : it.qty_remaining}
                         packSize={it.pack_size}
                         pieces={it.qty_remaining}
                         large
@@ -1007,9 +985,9 @@ function CountingScreen({ token, order, items, onBack, onReload }) {
           data={typeModal}
           onClose={() => setTypeModal(null)}
           onChoose={async (type, qty) => {
-            // Même règle qu'au rattachement d'un code inconnu : on compte des
-            // pièces, converties en boîtes par compterCarton.
-            compterCarton(typeModal.item, type === 'pack' ? qty : 1);
+            // Même règle qu'au rattachement d'un code inconnu : la quantité du
+            // code-barre est un nombre de pièces, et c'est ce qu'on compte.
+            compterPieces(typeModal.item, type === 'pack' ? qty : 1);
             await persistBarcode(typeModal.item.wp_product_id, typeModal.barcode, type, qty);
             setTypeModal(null);
           }}
@@ -1024,9 +1002,8 @@ function CountingScreen({ token, order, items, onBack, onReload }) {
           onConfirm={async (qty) => {
             // La quantité que l'opérateur vient de saisir est celle du carton qu'il
             // a en main : elle fait autorité, exactement comme au scan suivant une
-            // fois enregistrée. Compter « 1 boîte » ici ferait diverger le premier
-            // bip de tous les suivants.
-            compterCarton(packQtyModal.item, qty);
+            // fois enregistrée.
+            compterPieces(packQtyModal.item, qty);
             await persistBarcode(packQtyModal.item.wp_product_id, packQtyModal.barcode, 'pack', qty);
             flash(`${packQtyModal.item.name} — carton de ${qty} enregistré`);
             setPackQtyModal(null);
@@ -1041,12 +1018,9 @@ function CountingScreen({ token, order, items, onBack, onReload }) {
           items={items.filter(i => (counts[i.id] || 0) < i.qty_remaining)}
           onClose={() => setUnknownModal(null)}
           onAttach={async (item, type, qty) => {
-            // `qty` est un nombre de PIÈCES, alors que le comptage se tient en
-            // BOÎTES sur une ligne conditionnée. `addCount(item.id, qty)`
-            // ajoutait donc qty BOÎTES — un carton de 10 en comptait 100.
-            // `compterCarton` fait la conversion et refuse ce qui ne tombe pas
-            // juste, avec le même message qu'ailleurs.
-            const compte = compterCarton(item, type === 'pack' ? qty : 1);
+            // La quantité saisie est le nombre de pièces que vaut ce code, et
+            // c'est exactement ce qui est compté — comme au picking et au packing.
+            const compte = compterPieces(item, type === 'pack' ? qty : 1);
             await persistBarcode(item.wp_product_id, unknownModal.barcode, type, qty);
             if (compte) flash(`${item.name} — code rattaché et compté`);
             setUnknownModal(null);
@@ -1102,9 +1076,9 @@ function CountingScreen({ token, order, items, onBack, onReload }) {
                       <div style={{ flex: 1, fontSize: 13.5 }}>
                         {it.name}
                         <span style={{ color: C.greyT }}>
-                          {' '}— {counts[it.id] || 0} / {targetOf(it)}
-                          {it.pack_size > 1 ? ` boîte(s) de ${it.pack_size}` : ''}
-                          {' '}(manque {targetOf(it) - (counts[it.id] || 0)})
+                          {' '}— {counts[it.id] || 0} / {targetOf(it)} pièce(s)
+                          {it.pack_size > 1 ? ` (boîtes de ${it.pack_size})` : ''}
+                          {' '}— manque {targetOf(it) - (counts[it.id] || 0)}
                         </span>
                       </div>
                       <select value={motifs[it.id] || ''}
@@ -1128,8 +1102,8 @@ function CountingScreen({ token, order, items, onBack, onReload }) {
                     <div key={it.id} style={{ padding: '9px 0', borderBottom: `1px solid ${C.greyB}`, fontSize: 13.5 }}>
                       {it.name}
                       <span style={{ color: C.greyT }}>
-                        {' '}— {counts[it.id]} reçus pour {targetOf(it)} attendus
-                        {it.pack_size > 1 ? ` boîte(s) de ${it.pack_size}` : ''}
+                        {' '}— {counts[it.id]} pièce(s) reçues pour {targetOf(it)} attendues
+                        {it.pack_size > 1 ? ` (boîtes de ${it.pack_size})` : ''}
                         {' '}(+{counts[it.id] - targetOf(it)})
                       </span>
                     </div>
