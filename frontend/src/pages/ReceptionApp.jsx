@@ -475,7 +475,103 @@ function OrderDetail({ token, order, items, onBack, onStart }) {
 }
 
 /* ─── ÉCRAN 3 — COMPTAGE ────────────────────────────────── */
-function CountingScreen({ token, order, items, onBack, onReload }) {
+/**
+ * L'écran de fin d'une réception.
+ *
+ * Une réception ne se rejoue pas : aucune route BMS ne sait l'annuler. Ce
+ * récapitulatif est donc la seule trace immédiate de ce qui est parti, et il
+ * doit survivre au rechargement de la commande — c'est pourquoi il vit ici, au
+ * niveau de l'app, et non dans l'écran de comptage qui, lui, se démonte.
+ */
+function RecapScreen({ order, result, onList, onOrder }) {
+  const pieces = (result.sent || []).reduce((n, l) => n + l.units, 0);
+  const bloc = (titre, couleur, fond, contenu) => (
+    <div style={{ marginTop: 14, padding: '12px 16px', borderRadius: 10,
+      background: fond, border: `1px solid ${couleur}` }}>
+      <div style={{ fontWeight: 700, color: couleur, marginBottom: 6, fontSize: 14 }}>{titre}</div>
+      {contenu}
+    </div>
+  );
+
+  return (
+    <div style={{ padding: '24px 32px', maxWidth: 900, margin: '0 auto' }}>
+      <h1 style={{ fontSize: 24, fontWeight: 800, color: C.primary, margin: 0 }}>
+        Réception terminée
+      </h1>
+      <p style={{ color: C.greyT, margin: '4px 0 18px', fontSize: 13.5 }}>
+        Commande {order.order_number}{order.supplier_name ? ` — ${order.supplier_name}` : ''}
+      </p>
+
+      <div style={{ background: C.greenL, border: `1px solid ${C.green}`, borderRadius: 12,
+        padding: '18px 22px', fontSize: 16, color: '#14532D' }}>
+        <strong>{pieces} pièce{pieces > 1 ? 's' : ''}</strong> enregistrée{pieces > 1 ? 's' : ''} en
+        stock, sur {(result.sent || []).length} ligne{(result.sent || []).length > 1 ? 's' : ''}.
+      </div>
+
+      {result.notSent?.length > 0 && bloc(
+        'BMS a refusé une partie du comptage', C.red, C.redL,
+        <>
+          <div style={{ fontSize: 13.5, color: '#7F1D1D' }}>
+            Ces pièces sont physiquement chez nous et <strong>ne sont pas en stock</strong>.
+            À trancher avec un responsable.
+          </div>
+          <ul style={{ margin: '8px 0 0', paddingLeft: 18, fontSize: 13.5 }}>
+            {result.notSent.map((n, i) => (
+              <li key={i}>
+                {n.ref || n.product} — {n.envoyees} sur {n.comptees} comptées,
+                <strong> {n.refusees} refusée{n.refusees > 1 ? 's' : ''}</strong>
+              </li>
+            ))}
+          </ul>
+        </>,
+      )}
+
+      {result.missing?.length > 0 && bloc(
+        `${result.missing.length} article(s) manquant(s)`, C.orange, '#FFFBEB',
+        <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13.5 }}>
+          {result.missing.map((m, i) => (
+            <li key={i}>
+              {m.ref || m.product} — {m.units} sur {m.expected} attendues
+              {m.motif ? ` · ${MOTIF_RECAP[m.motif] || m.motif}` : ''}
+            </li>
+          ))}
+        </ul>,
+      )}
+
+      {result.over?.length > 0 && bloc(
+        `${result.over.length} article(s) reçu(s) en trop`, C.red, C.redL,
+        <>
+          <ul style={{ margin: '0 0 8px', paddingLeft: 18, fontSize: 13.5 }}>
+            {result.over.map((o, i) => (
+              <li key={i}>{o.ref || o.product} — {o.units} pour {o.expected} attendues (+{o.ecart})</li>
+            ))}
+          </ul>
+          <div style={{ fontSize: 13.5, color: '#7F1D1D' }}>
+            <strong>Le surplus n'est pas en stock</strong> tant qu'un responsable n'a pas tranché.
+          </div>
+        </>,
+      )}
+
+      <p style={{ marginTop: 18, fontSize: 13, color: C.greyT }}>
+        Un mail récapitulatif est parti si un écart a été constaté. Le détail reste
+        consultable depuis Commandes fournisseurs.
+      </p>
+
+      <div style={{ display: 'flex', gap: 10, marginTop: 22 }}>
+        <Btn onClick={onList}>Retour aux réceptions</Btn>
+        <Btn variant="ghost" onClick={onOrder}>Revoir la commande</Btn>
+      </div>
+    </div>
+  );
+}
+
+const MOTIF_RECAP = {
+  reliquat: 'Reliquat',
+  solde: 'Soldé (remboursé)',
+  manquant: 'Manquant à réclamer',
+};
+
+function CountingScreen({ token, order, items, onBack, onReload, onFinished }) {
   // counts : { [itemId]: nombre d'unités comptées lors de CETTE réception }
   const [counts, setCounts] = useState(() =>
     Object.fromEntries(items.map(i => [i.id, 0])));
@@ -499,7 +595,6 @@ function CountingScreen({ token, order, items, onBack, onReload }) {
   const [session, setSession] = useState(null);
   const [sessionError, setSessionError] = useState(null);
   const [sending, setSending] = useState(false);
-  const [sendResult, setSendResult] = useState(null);
   const [addModal, setAddModal] = useState(false);
 
   // Unités de comptage → PIÈCES. C'est en pièces que BMS raisonne, et lui
@@ -763,9 +858,13 @@ function CountingScreen({ token, order, items, onBack, onReload }) {
         `${API_URL}/reception/sessions/${session.id}/validate`,
         { motifs }, authHeaders(token),
       );
-      setSendResult(data);
       setDiffModal(false);
-      onReload();
+      // SURTOUT PAS `onReload()` ICI. Il repasse `loading` à vrai, et cet écran
+      // n'est rendu que si `!loading` : il se démontait puis se remontait, son
+      // effet de montage rouvrait AUSSITÔT une session de comptage sur la même
+      // commande — d'où la session fantôme abandonnée du 30/09 — et le
+      // récapitulatif, qui vit dans son état local, partait avec.
+      onFinished(data);
     } catch (e) {
       setSessionError(e.response?.data?.error || e.message);
     } finally { setSending(false); }
@@ -862,45 +961,6 @@ function CountingScreen({ token, order, items, onBack, onReload }) {
           </Btn>
         </div>
       </div>
-
-      {/* Ce qui est PARTI dans BMS. Affiché jusqu'à ce qu'on quitte l'écran :
-          une réception ne se rejoue pas, la trace de l'envoi compte. */}
-      {sendResult && (
-        <div style={{ background: C.greenL, border: `1px solid ${C.green}`, borderRadius: 12,
-          padding: '14px 18px', marginBottom: 16, fontSize: 13.5, color: '#14532D' }}>
-          <strong>Réception enregistrée dans BMS.</strong>{' '}
-          {sendResult.sent.reduce((n, l) => n + l.units, 0)} pièces sur {sendResult.sent.length} ligne(s).
-          {sendResult.sent.some((l) => l.over) && (
-            <div style={{ marginTop: 8, color: '#7C2D12' }}>
-              Reçu plus que commandé sur :{' '}
-              {sendResult.sent.filter((l) => l.over)
-                .map((l) => `${l.ref || l.product} (${l.units} pour ${l.expected} attendues)`)
-                .join(', ')}. BMS l'a accepté — à vérifier avec le fournisseur.
-            </div>
-          )}
-          {/* BMS refuse un dépassement sur une ligne déjà réceptionnée, et refuse
-              le lot entier. On a replié sur ce qu'il pouvait prendre : ces pièces
-              sont physiquement là et absentes du stock, il faut le dire ici et
-              pas seulement dans un mail que le magasinier ne lira pas. */}
-          {sendResult.notSent && sendResult.notSent.length > 0 && (
-            <div style={{ marginTop: 10, padding: '11px 14px', borderRadius: 9,
-              background: C.redL, border: `1px solid ${C.red}`, color: '#7F1D1D' }}>
-              <strong>BMS a refusé une partie du comptage.</strong> Il n'accepte pas de
-              dépassement sur une ligne déjà réceptionnée. Ces pièces ne sont <strong>pas
-              en stock</strong> :
-              <ul style={{ margin: '6px 0 0', paddingLeft: 18 }}>
-                {sendResult.notSent.map((n, i) => (
-                  <li key={i}>
-                    {n.ref || n.product} — {n.envoyees} enregistrée(s) sur {n.comptees} comptée(s),
-                    <strong> {n.refusees} refusée(s)</strong>
-                  </li>
-                ))}
-              </ul>
-              <div style={{ marginTop: 6 }}>À trancher avec un responsable.</div>
-            </div>
-          )}
-        </div>
-      )}
 
       {sessionError && (
         <div style={{ background: C.redL, border: `1px solid ${C.red}`, borderRadius: 12,
@@ -1379,6 +1439,7 @@ export default function ReceptionApp() {
     return p ? parseInt(p, 10) : null;
   });
   const [detail, setDetail] = useState(null);
+  const [fin, setFin] = useState(null);   // récapitulatif d'une réception validée
   const [loading, setLoading] = useState(false);
 
   const canRead = permissions?.reception?.read === true;
@@ -1437,6 +1498,18 @@ export default function ReceptionApp() {
           items={detail.items}
           onBack={() => setView('detail')}
           onReload={() => loadDetail(orderId)}
+          onFinished={(resultat) => { setFin(resultat); setView('done'); }}
+        />
+      )}
+
+      {/* Le récapitulatif vit ICI, pas dans l'écran de comptage : il doit
+          survivre au rechargement de la commande, qui démonte celui-ci. */}
+      {view === 'done' && fin && detail && (
+        <RecapScreen
+          order={detail.order}
+          result={fin}
+          onList={() => { setFin(null); setDetail(null); setView('list'); }}
+          onOrder={() => { setFin(null); setView('detail'); loadDetail(orderId); }}
         />
       )}
     </AppShell>
