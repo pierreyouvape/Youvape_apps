@@ -214,6 +214,38 @@
   background-color: #f8f9fa;
 }
 
+/* Colonne Email figée : elle reste visible quand on scrolle horizontalement,
+   sinon impossible de savoir à quel utilisateur appartiennent les cases. */
+.users-table th:first-child,
+.users-table td:first-child {
+  position: sticky;
+  left: 0;
+  min-width: 240px;
+  background-color: white;
+  /* border-collapse masque les bordures des cellules collantes : on les redessine */
+  box-shadow: inset -1px 0 0 #dee2e6, inset 0 -1px 0 #dee2e6, 2px 0 4px rgba(0, 0, 0, 0.06);
+  z-index: 2;
+}
+
+.users-table thead th:first-child {
+  background-color: #f8f9fa;
+  box-shadow: inset -1px 0 0 #dee2e6, 2px 0 4px rgba(0, 0, 0, 0.06);
+  z-index: 3;
+}
+
+.users-table thead tr:last-child th:first-child {
+  box-shadow: inset -1px 0 0 #dee2e6, inset 0 -2px 0 #dee2e6, 2px 0 4px rgba(0, 0, 0, 0.06);
+}
+
+.users-table tbody tr:hover td:first-child {
+  background-color: #f8f9fa;
+}
+
+.super-admin-row td:first-child,
+.super-admin-row:hover td:first-child {
+  background-color: #fff3cd;
+}
+
 .super-admin-row {
   background-color: #fff3cd;
 }
