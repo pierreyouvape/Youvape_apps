@@ -420,6 +420,17 @@ const OrdersTab = ({ token }) => {
     ['received', 'partial', 'completed'].includes(order.status) &&
     parseInt(order.total_qty_received) < parseInt(order.total_qty_ordered);
 
+  // Tout est reçu ? En PIÈCES, la seule unité tenue de bout en bout : une ligne
+  // comptée en packs a `qty_ordered` en lots, et la comparer à `units_received`
+  // dirait qu'un pack de 10 reçu en entier manque encore de 9.
+  const toutEstRecu = (order) => {
+    const lignes = (order?.items || []).filter(it => it.item_type !== 'discount');
+    if (lignes.length === 0) return false;
+    return !lignes.some(it =>
+      (parseInt(it.qty_ordered, 10) || 0) * (parseInt(it.units_per_qty, 10) || 1)
+        > (parseInt(it.units_received, 10) || 0));
+  };
+
   const hasMissingProductsDetail = (order) => {
     if (!order?.items) return false;
     return order.items.some(item => (item.qty_received || 0) < (item.qty_ordered || 0));
@@ -1207,13 +1218,22 @@ const OrdersTab = ({ token }) => {
                         retrouver la commande dans une autre liste pour compter
                         ce qui arrive. Inutile sans identifiant BMS — la
                         réception s'y appuie pour enregistrer le stock. */}
+                    {/* « Réceptionner » RESTE proposé sur une commande soldée, et
+                        ce n'est pas un oubli : c'est le seul chemin pour enregistrer
+                        un article qu'on découvre après coup — BMS accepte une ligne
+                        neuve sur un bon terminé, et la liste des réceptions ne montre
+                        que les bons en attente. Mais il ne doit pas laisser croire
+                        qu'il reste de la marchandise à compter : le libellé le dit. */}
                     {selectedOrder.bms_po_id && (
                       <LinkBox
                         to={`/reception?order=${selectedOrder.id}`}
                         className="btn btn-secondary"
                         display="inline-block"
+                        title={toutEstRecu(selectedOrder)
+                          ? "Tout est déjà reçu. À n'ouvrir que pour enregistrer un article oublié."
+                          : undefined}
                       >
-                        📦 Réceptionner
+                        {toutEstRecu(selectedOrder) ? '📦 Réceptionner un oubli' : '📦 Réceptionner'}
                       </LinkBox>
                     )}
                     <button className="btn btn-secondary" onClick={enterEditMode}>
