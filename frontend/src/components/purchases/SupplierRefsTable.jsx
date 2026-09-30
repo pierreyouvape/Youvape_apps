@@ -126,7 +126,10 @@ const SupplierRefsTable = ({ supplier, headers, onChanged }) => {
             style={{ ...input, width: '64px' }} />
         </td>
         <td style={td}>
-          <input type="number" min="0" step="0.01" value={valueOf(key, ref, 'pack_price') ?? ''}
+          {/* Au dix-millième : un prix remisé ne tombe pas au centime (1,45 € à
+              −15 % = 1,2325 €), et l'arrondir relance un faux écart de tarif au
+              contrôle de la facture suivante. */}
+          <input type="number" min="0" step="0.0001" value={valueOf(key, ref, 'pack_price') ?? ''}
             onChange={(e) => setField(key, 'pack_price', e.target.value)}
             style={{ ...input, width: '84px' }} />
         </td>

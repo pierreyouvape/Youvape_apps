@@ -426,16 +426,16 @@ async function alignTariffs(supplierId, tariffs, db = pool) {
       skipped.push({ ref: t.ref, reason: 'prix inexploitable' });
       continue;
     }
-    // Deux décimales en base : au-delà, on inscrirait un prix qu'on ne saurait
-    // pas relire.
-    const arrondi = Math.round(prixPack * 100) / 100;
-    if (Math.abs(arrondi - prixPack) > 0.005) {
-      skipped.push({
-        ref: t.ref,
-        reason: `conditionnements incompatibles (facture par ${bmsPack}, réf. par ${refPack})`,
-      });
-      continue;
-    }
+    // QUATRE DÉCIMALES, et c'est tout l'enjeu (cf. widen_price_precision.sql).
+    // Un 10 ml facturé 1,4500 € remisé à 15 % coûte 1,2325 €. Arrondi à 1,23, il
+    // repartait à 1,23 sur la commande suivante, et le contrôle de la facture
+    // d'après retrouvait 0,0025 € d'écart : « Arrondi de remise », à vie, sur
+    // chaque ligne. Le message ne décrivait pas une erreur du fournisseur mais
+    // la précision de notre propre colonne.
+    //
+    // Il n'y a rien à garder de plus fin : BMS s'arrête lui aussi au
+    // dix-millième sur ses lignes de commande.
+    const arrondi = Math.round(prixPack * 10000) / 10000;
 
     const { rows } = await db.query(
       `UPDATE supplier_refs
@@ -477,11 +477,9 @@ async function alignTariffs(supplierId, tariffs, db = pool) {
  *    d'arrondi : confondre prix de pack et prix unitaire a déjà coûté deux bugs
  *    (LCA Mozambique enregistré à 1,34 € au lieu de 13,40 €).
  *
- *    `unit_price` est un NUMERIC(10,2) : le prix écrit est donc arrondi au
- *    centime de l'unité de ligne, au plus un demi-centime de perte, comme pour
- *    toutes les lignes de commande depuis toujours. Il n'y a rien à garder de
- *    plus fin sans migrer la colonne, et ce serait un autre chantier — le FIFO
- *    lit cette colonne pour l'historique entier.
+ *    `unit_price` porte quatre décimales depuis `widen_price_precision.sql` : un
+ *    prix remisé ne tombe pas au centime, et l'arrondir relançait un faux écart
+ *    de tarif à chaque facture suivante.
  *
  * 2. `discount_percent` est appliqué PAR-DESSUS par le FIFO. Le prix réellement
  *    payé contient déjà toutes les remises, celle de pied comprise : le laisser
@@ -544,7 +542,7 @@ async function applyTariffs(supplierId, orderId, tariffs, db = pool) {
       const bmsPack = Number(t.packQty) || 1;
       const lignePack = Number(ligne.units_per_qty) || 1;
       const prixLigne = (Number(t.realPrice) || 0) * (lignePack / bmsPack);
-      const arrondi = Math.round(prixLigne * 100) / 100;
+      const arrondi = Math.round(prixLigne * 10000) / 10000;
 
       if (!Number.isFinite(arrondi) || arrondi <= 0) {
         retenu.orderLine = { skipped: 'prix inexploitable' };

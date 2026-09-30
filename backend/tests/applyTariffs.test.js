@@ -12,8 +12,9 @@
  *     afficher « Appliqué » sur un FIFO resté au prix commandé serait pire que
  *     de ne rien faire.
  *
- * `unit_price` étant un NUMERIC(10,2), le prix écrit est arrondi au centime de
- * l'unité de ligne. C'est la précision de la colonne, pas un choix d'ici.
+ * `unit_price` porte QUATRE décimales (widen_price_precision.sql) : un prix
+ * remisé ne tombe pas au centime, et l'arrondir relançait un faux « arrondi de
+ * remise » sur chaque facture suivante.
  */
 
 const assert = require('assert');
@@ -81,11 +82,11 @@ console.log('\nAppliquer un tarif à la commande');
     );
 
     const ligne = db.ecrites.find((e) => e.table === 'purchase_order_items');
-    assert.strictEqual(ligne.unitPrice, 1.47, `unit_price ${ligne.unitPrice}`);
+    assert.strictEqual(ligne.unitPrice, 1.4652, `unit_price ${ligne.unitPrice}`);
     // Sans ça, le FIFO retirerait encore 15 % d'un prix qui les contient déjà.
     assert.ok(/discount_percent = 0/.test(ligne.sql), 'discount_percent non remis à zéro');
     assert.strictEqual(r.applied[0].orderLine.previous, 1.5);
-    assert.strictEqual(r.applied[0].orderLine.price, 1.47);
+    assert.strictEqual(r.applied[0].orderLine.price, 1.4652);
   });
 
   await test('une ligne comptée en packs reçoit le prix DU PACK, pas celui de la pièce', async () => {
@@ -102,18 +103,19 @@ console.log('\nAppliquer un tarif à la commande');
     assert.strictEqual(ligne.unitPrice, 20, `unit_price ${ligne.unitPrice}`);
   });
 
-  await test("le prix du pack est arrondi au centime, jamais au-delà d'un demi-centime", async () => {
+  await test('un prix remisé garde ses décimales : 1,2325 € ne devient pas 1,23 €', async () => {
+    // Le cas qui ramenait « Arrondi de remise » à chaque facture : 1,45 € remisé
+    // à 15 %. Écrit 1,23, la commande suivante repartait faux de 0,0025 €.
     const db = fakeDb({
       order: commande,
-      refs: [{ id: 3, supplier_sku: 'IMPAIR-3', pack_qty: 1, pack_price: 1 }],
-      // 1,004 € la pièce × 3 = 3,012 € le pack, que NUMERIC(10,2) ramène à 3,01.
-      items: [{ id: 501, supplier_sku: 'IMPAIR-3', unit_price: 3, units_per_qty: 3, discount_percent: 0 }],
+      refs: [{ id: 3, supplier_sku: 'SEV-WNDRTRT-PECHE-10-10', pack_qty: 1, pack_price: 1.23 }],
+      items: [{ id: 501, supplier_sku: 'SEV-WNDRTRT-PECHE-10-10', unit_price: 1.23, units_per_qty: 1, discount_percent: 0 }],
     });
     await supplierDocumentModel.applyTariffs(
-      7, 9342, [{ ref: 'IMPAIR-3', realPrice: 1.004, packQty: 1 }], db,
+      7, 9342, [{ ref: 'SEV-WNDRTRT-PECHE-10-10', realPrice: 1.2325, packQty: 1 }], db,
     );
-    const ligne = db.ecrites.find((e) => e.table === 'purchase_order_items');
-    assert.strictEqual(ligne.unitPrice, 3.01, `unit_price ${ligne.unitPrice}`);
+    assert.strictEqual(db.ecrites.find((e) => e.table === 'supplier_refs').packPrice, 1.2325);
+    assert.strictEqual(db.ecrites.find((e) => e.table === 'purchase_order_items').unitPrice, 1.2325);
   });
 
   await test("un tarif absent de la commande est retenu, mais la commande le dit", async () => {
