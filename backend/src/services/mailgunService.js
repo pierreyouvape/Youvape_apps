@@ -2,12 +2,24 @@ const FormData = require('form-data');
 const Mailgun = require('mailgun.js');
 const crypto = require('crypto');
 
-const mailgun = new Mailgun(FormData);
-const mg = mailgun.client({
-  username: 'api',
-  key: process.env.MAILGUN_API_KEY,
-  url: process.env.MAILGUN_BASE_URL || 'https://api.mailgun.net',
-});
+// Le client est construit À LA DEMANDE, jamais à l'import.
+//
+// `mailgun.client()` LÈVE quand la clé est absente. Construit au chargement du
+// module, il faisait donc échouer tout `require` de ce fichier — et depuis que
+// alertService s'en sert, c'est le backend entier qui refusait de démarrer sans
+// MAILGUN_API_KEY. Une dépendance de courrier ne doit jamais pouvoir empêcher
+// l'application de se lancer.
+let clientMemo = null;
+const getClient = () => {
+  if (clientMemo) return clientMemo;
+  if (!process.env.MAILGUN_API_KEY) throw new Error('MAILGUN_API_KEY absente');
+  clientMemo = new Mailgun(FormData).client({
+    username: 'api',
+    key: process.env.MAILGUN_API_KEY,
+    url: process.env.MAILGUN_BASE_URL || 'https://api.mailgun.net',
+  });
+  return clientMemo;
+};
 
 const DOMAIN = process.env.MAILGUN_DOMAIN;
 const FROM   = process.env.MAILGUN_FROM;
@@ -77,7 +89,7 @@ const mailgunService = {
         messageData.inline = inline;
       }
 
-      const result = await mg.messages.create(DOMAIN, messageData);
+      const result = await getClient().messages.create(DOMAIN, messageData);
       console.log(
         `📧 [Mailgun] Email envoyé au client ${to} pour ticket #${ticketId}`
         + (inline && inline.length ? ` (${inline.length} image(s) intégrée(s))` : '')
@@ -108,7 +120,7 @@ const mailgunService = {
       };
       if (bodyHtml) messageData.html = bodyHtml;
 
-      const result = await mg.messages.create(DOMAIN, messageData);
+      const result = await getClient().messages.create(DOMAIN, messageData);
       console.log(`📧 [Mailgun] Accusé de réception envoyé à ${to} pour ticket #${ticketId}`);
       return { success: true, id: result.id };
     } catch (error) {
@@ -134,13 +146,44 @@ const mailgunService = {
       };
       if (bodyHtml) messageData.html = bodyHtml;
 
-      const result = await mg.messages.create(DOMAIN, messageData);
+      const result = await getClient().messages.create(DOMAIN, messageData);
       console.log(`📧 [Mailgun] Notification interne envoyée à ${recipients.join(', ')} : ${subject}`);
       return { success: true, id: result.id };
 
     } catch (error) {
       console.error(`❌ [Mailgun] Erreur envoi notification : ${error.message}`);
       return { success: false, error: error.message };
+    }
+  },
+
+  // ─── Courrier INTERNE (alertes, rapports, réception) ─────────────────────
+  //
+  // Jamais sous l'identité du SAV : une réponse à une alerte VPS atterrirait
+  // dans le flux client. D'où un expéditeur dédié sur le même domaine vérifié —
+  // c'est le domaine qui porte SPF et DKIM, et c'est là tout l'intérêt par
+  // rapport à un compte Gmail nu, qu'OVH filtre sans prévenir.
+  //
+  // Renvoie l'id du message : c'est lui qui permet d'aller DEMANDER à Mailgun si
+  // le message a été délivré, ce qu'aucun envoi SMTP ne saura jamais dire.
+  sendInternal: async ({ to, subject, text, html }) => {
+    try {
+      const recipients = (Array.isArray(to) ? to : [to]).filter(Boolean);
+      if (recipients.length === 0) return { success: false, error: 'Aucun destinataire' };
+      if (!process.env.MAILGUN_API_KEY || !DOMAIN) {
+        return { success: false, error: 'Mailgun non configuré' };
+      }
+
+      const from = process.env.MAILGUN_ALERT_FROM || `Alertes YouVape <alertes@${DOMAIN}>`;
+      const messageData = { from, to: recipients, subject, text: text || htmlToPlainText(html) };
+      if (html) messageData.html = html;
+
+      const result = await getClient().messages.create(DOMAIN, messageData);
+      return { success: true, id: result.id, from };
+    } catch (error) {
+      // Le message d'erreur de mailgun.js est souvent laconique ; le corps de la
+      // réponse porte le vrai motif (quota, domaine, destinataire refusé).
+      const detail = error.details || (error.response && error.response.body) || '';
+      return { success: false, error: `${error.message}${detail ? ` — ${JSON.stringify(detail).slice(0, 200)}` : ''}` };
     }
   },
 
@@ -169,7 +212,7 @@ const mailgunService = {
   // ─── Test de connexion Mailgun ────────────────────────────────────────────
   testConnection: async () => {
     try {
-      await mg.domains.get(DOMAIN);
+      await getClient().domains.get(DOMAIN);
       return { success: true };
     } catch (error) {
       return { success: false, error: error.message };
