@@ -236,8 +236,9 @@ function OrdersList({ token, onOpen }) {
                 <Th align="right">Lignes</Th>
                 <Th align="right">Attendu</Th>
                 <Th align="right">Reçu</Th>
-                {/* Le montant donne l'ordre de grandeur de ce qui arrive. */}
-                <Th align="right">Montant</Th>
+                {/* Le montant donne l'ordre de grandeur de ce qui arrive. « TTC »
+                    est écrit : un montant sans son régime se lit de travers. */}
+                <Th align="right">Montant TTC</Th>
                 <Th>Livraison prévue</Th>
                 <Th />
               </tr>
@@ -265,7 +266,9 @@ function OrdersList({ token, onOpen }) {
                     <Td align="right">{o.nb_lines}</Td>
                     <Td align="right" bold>{o.qty_expected}</Td>
                     <Td align="right" color={o.qty_received > 0 ? C.orange : C.greyM}>{o.qty_received}</Td>
-                    <Td align="right">{fmtEur(o.total_amount)}</Td>
+                    <Td align="right">
+                      {fmtEur(o.total_amount)}{o.total_amount > 0 && !o.bms_po_id ? ' HT' : ''}
+                    </Td>
                     <Td>{fmtDate(o.expected_date || o.order_date)}</Td>
                     <Td align="right"><Btn small variant="ghost">Ouvrir</Btn></Td>
                   </tr>

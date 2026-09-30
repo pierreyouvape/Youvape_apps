@@ -571,7 +571,11 @@ const OrdersTab = ({ token }) => {
                 <SortTh col="supplier_name" label="Fournisseur" />
                 <SortTh col="total_items" label="Articles" className="text-center" />
                 <SortTh col="total_qty" label="Quantité" className="text-center" />
-                <SortTh col="total_amount" label="Montant" className="text-right" />
+                {/* « TTC » en toutes lettres : un montant sans son régime se lit
+                    de travers, et l'écart est de 20 %. C'est le montant de BMS,
+                    donc au taux réel du fournisseur — 0 % pour ceux qui n'en
+                    portent pas. */}
+                <SortTh col="total_amount" label="Montant TTC" className="text-right" />
                 <SortTh col="status" label="Statut" className="text-center" />
                 <SortTh col="order_date" label="Date commande" />
                 <SortTh col="received_date" label="Date réception" />
@@ -592,8 +596,13 @@ const OrdersTab = ({ token }) => {
                   <td>{order.supplier_name}</td>
                   <td className="text-center">{formatInt(order.total_items)}</td>
                   <td className="text-center">{formatInt(order.total_qty)}</td>
+                  {/* Tant que la commande n'est pas dans BMS, nous n'avons que
+                      notre total HT : on le dit plutôt que de le ranger sous un
+                      en-tête TTC. */}
                   <td className="text-right">
-                    {order.total_amount > 0 ? `${formatPrice(order.total_amount)} €` : '-'}
+                    {order.total_amount > 0
+                      ? `${formatPrice(order.total_amount)} €${order.bms_po_id ? '' : ' HT'}`
+                      : '-'}
                   </td>
                   <td className="text-center">
                     <span className={`status-badge status-${order.status}`}>

@@ -422,6 +422,16 @@ const purchaseOrderModel = {
               'UPDATE purchase_orders SET bms_po_id = $2, status = $3 WHERE id = $1',
               [order.id, bmsResult.bms_po_id, 'sent']
             );
+            // `total_amount` est un montant TTC, comme celui que pose la synchro.
+            // Le laisser au HT calculé plus haut ferait afficher un montant qui
+            // change tout seul de 20 % au premier passage du cron, sans que rien
+            // ne bouge à l'écran. On prend donc le TTC de BMS dès maintenant.
+            if (bmsResult.bms_totals && Number.isFinite(bmsResult.bms_totals.ttc)) {
+              await client.query(
+                'UPDATE purchase_orders SET total_amount = $2 WHERE id = $1',
+                [order.id, bmsResult.bms_totals.ttc]
+              );
+            }
           }
           bmsSkipped = bmsResult.skipped_items || [];
         } catch (bmsError) {
@@ -695,9 +705,36 @@ const purchaseOrderModel = {
       await purchaseOrderModel.normalizeBmsLines(bmsResponse.id, bmsItems);
     }
 
+    // LE MONTANT TTC VIENT DE BMS, il ne se recalcule pas ici.
+    //
+    // Notre total est un HT, et le passer en TTC demanderait un taux de TVA que
+    // nous ne stockons pas : Aliexpress et Pulp sont à 0 % (intracommunautaire et
+    // import), les autres à 20 %, et BMS applique le taux LIGNE PAR LIGNE.
+    // Multiplier par 1,2 ici inventerait de la TVA sur les fournisseurs qui n'en
+    // portent pas.
+    //
+    // On relit donc le bon une fois ses lignes normalisées — avant, le total
+    // reflèterait le découpage en lots que la normalisation vient de défaire.
+    // Un échec de relecture ne casse rien : la commande existe, et la synchro
+    // posera le montant à son prochain passage.
+    let bmsTotals = null;
+    if (bmsResponse.id) {
+      try {
+        const relu = await bmsApiModel.apiCall(`/supplier/purchase-orders/${bmsResponse.id}`);
+        const po = relu.data || relu;
+        bmsTotals = {
+          ttc: parseFloat(po.grandtotal),
+          ht: parseFloat(po.subtotal),
+        };
+      } catch (e) {
+        console.warn(`[BMS] totaux du bon ${bmsResponse.id} illisibles : ${e.message}`);
+      }
+    }
+
     return {
       bms_po_id: bmsResponse.id || null,
       bms_reference: bmsResponse.reference || null,
+      bms_totals: bmsTotals,
       skipped_items: skippedItems
     };
   },

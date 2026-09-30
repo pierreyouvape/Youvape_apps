@@ -603,7 +603,10 @@ const purchasesController = {
       '',
       `Total articles: ${order.total_items}`,
       `Total quantité: ${order.total_qty}`,
-      order.total_amount > 0 ? `Total montant: ${parseFloat(order.total_amount).toFixed(2)} €` : ''
+      // « TTC » écrit, comme à l'écran : le même nombre lu en HT vaut 20 % de moins.
+      order.total_amount > 0
+        ? `Total montant TTC: ${parseFloat(order.total_amount).toFixed(2)} €`
+        : ''
     ];
 
     return csv.join('\n');
@@ -732,6 +735,15 @@ const purchasesController = {
             'UPDATE purchase_orders SET bms_po_id = $2, status = $3 WHERE id = $1',
             [orderId, bmsResult.bms_po_id, 'sent']
           );
+          // Même règle qu'à la création : `total_amount` est TTC, et c'est celui
+          // de BMS — lui seul connaît le taux, qui vaut 0 % chez Aliexpress et
+          // Pulp et s'applique ligne par ligne.
+          if (bmsResult.bms_totals && Number.isFinite(bmsResult.bms_totals.ttc)) {
+            await client.query(
+              'UPDATE purchase_orders SET total_amount = $2 WHERE id = $1',
+              [orderId, bmsResult.bms_totals.ttc]
+            );
+          }
         }
 
         await client.query('COMMIT');
