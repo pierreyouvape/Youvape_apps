@@ -870,8 +870,13 @@ function ControlTab({ suppliers, mobile, onSaved }) {
                   explique l'écart favorable affiché en haut, qu'aucune ligne ne
                   justifie. Le taire laissait chercher l'erreur ailleurs. */}
               <strong>{eur(Math.abs(totals.footerDiscount))} de remise supplémentaire</strong>, non prévue
-              à la commande : le fournisseur facture les lignes, puis déduit ce montant en pied. Le prix
-              payé n'est donc pas celui des lignes :
+              à la commande : le fournisseur facture les lignes, puis déduit ce montant en pied.
+              {/* Quand la remise est répartie, les prix de ligne ne sont plus ceux
+                  payés. Quand elle ne l'est pas — faute de savoir qui elle vise —
+                  ils le restent, et l'écrire évite de faire douter d'un prix juste. */}
+              {(result.comparison?.lines || []).some((l) => l.verdict === 'discount' && !l.scope?.unallocated)
+                ? <> Le prix payé n'est donc pas celui des lignes :</>
+                : <> Les prix des lignes restent ceux payés :</>}
               <ul style={{ margin: '8px 0 0', paddingLeft: 18 }}>
                 {(result.comparison?.lines || []).filter((l) => l.verdict === 'discount').map((l, i) => {
                   const sc = l.scope || {};
@@ -897,6 +902,18 @@ function ControlTab({ suppliers, mobile, onSaved }) {
                         <> — <strong>non imputable à un produit</strong> : le document ne la rattache à
                           aucune ligne. Elle est répartie au prorata sur les {sc.lines} lignes produit
                           {sc.units > 0 ? ` (${sc.units} pièces)` : ''} pour établir le coût réel.</>
+                      )}
+                      {/* Le taux imprimé trahit l'assiette : à 20 %, une remise de
+                          5,92 € porte sur 29,60 € de marchandise, pas sur les
+                          223,76 € de la facture. On le dit, et on ne répartit
+                          rien — inventer une imputation fabriquait des prix que
+                          personne n'a payés, sur des lignes peut-être même pas
+                          visées par la promotion. */}
+                      {sc.unallocated && (
+                        <> — <strong>non répartie</strong> : à {Math.round(sc.rate * 100)} %, elle porte
+                          sur <strong>{eur(sc.impliedBase)}</strong> de marchandise, pas sur toute la
+                          facture. Le document ne dit pas sur quelles lignes, donc aucune ne la porte :
+                          les tarifs affichés restent ceux des lignes.</>
                       )}
                     </li>
                   );

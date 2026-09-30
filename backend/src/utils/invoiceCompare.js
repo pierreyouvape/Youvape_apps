@@ -166,6 +166,22 @@ function linesTargetedBy(discountLine, productLines, supplierCode) {
   return cibles.length > 0 ? cibles : null;
 }
 
+/**
+ * L'assiette qu'une remise ANNONCE, quand son libellé porte un taux.
+ *
+ * « Remise 20% sur produits spécifiques » imprimée à 5,92 € ne peut porter que
+ * sur 29,58 € de marchandise. Quand ce n'est pas le total des produits, le
+ * document PROUVE que la remise ne vise qu'une partie de la facture — et ne dit
+ * pas laquelle. C'est une information, pas une conjecture : on la lit.
+ */
+function impliedBaseOf(discountLine) {
+  const m = String(discountLine.label || '').match(/(\d{1,2}(?:[.,]\d+)?)\s*%/);
+  if (!m) return null;
+  const rate = parseFloat(m[1].replace(',', '.')) / 100;
+  if (!(rate > 0) || rate >= 1) return null;
+  return { rate, base: round2(Math.abs(discountLine.invoicedTotal) / rate) };
+}
+
 function compareInvoiceToOrder({ invoice, order, options = {} }) {
   const threshold = Number.isFinite(options.lineThreshold)
     ? options.lineThreshold
@@ -376,6 +392,39 @@ function compareInvoiceToOrder({ invoice, order, options = {} }) {
   for (const d of remises) {
     const visees = linesTargetedBy(d, produits, options.supplierCode);
     const regle = linesTargetedBy.derniereRegle;
+
+    // UNE REMISE QU'ON NE SAIT PAS IMPUTER N'EST IMPUTÉE À PERSONNE.
+    //
+    // Sur LIPS FAC/2026/04474, « Remise 20% sur produits spécifiques » vaut
+    // 5,92 € : à 20 %, elle porte sur 29,58 € de marchandise, pas sur les
+    // 223,76 € de la facture. L'étaler au prorata donnait 1,1999 € la pièce sur
+    // une ligne facturée 1,2325 € — un prix que personne n'a payé, sur une ligne
+    // que la promotion ne visait peut-être même pas. Deux sous-ensembles de la
+    // facture font exactement 29,58 € : le document ne tranche pas, nous non
+    // plus. Le montant reste au pied, visible et non réparti.
+    //
+    // La répartition au prorata reste la règle quand RIEN ne prouve le
+    // contraire — c'est le cas de Cosmer, GFC, Revolute et Cloud Vapor, dont les
+    // remises de pied n'annoncent aucun taux et sont bel et bien globales.
+    const annonce = impliedBaseOf(d);
+    if (!visees && annonce
+        && Math.abs(annonce.base - productTotal) > Math.max(0.10, productTotal * 0.01)) {
+      d.scope = {
+        targeted: false,
+        unallocated: true,
+        rate: annonce.rate,
+        impliedBase: annonce.base,
+        lines: 0,
+        units: 0,
+        perUnit: null,
+        unitCost: null,
+        ruleName: null,
+        ruleNote: null,
+        ruleRate: null,
+      };
+      continue;
+    }
+
     const cibles = visees || produits;
     const assiette = round2(cibles.reduce((acc, r) => acc + r.invoicedTotal, 0));
     if (assiette <= 0) continue;

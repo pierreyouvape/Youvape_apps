@@ -872,6 +872,72 @@ test('une règle qui ne retombe pas sur la remise imprimée est ignorée', () =>
   assert.ok(r.lines.find((l) => l.ref === 'B').discountShare > 0);
 });
 
+/* ─── Une remise dont le taux prouve qu'elle ne vise pas toute la facture ── */
+
+test("une remise à taux imprimé n'est pas étalée sur une assiette qu'elle ne couvre pas", () => {
+  // LIPS FAC/2026/04474 : « Remise 20% sur produits spécifiques » à 5,92 €. À
+  // 20 %, elle porte sur ~29,60 € — pas sur les 223,76 € de marchandise. Étalée
+  // au prorata, elle donnait 1,1999 € la pièce sur une ligne facturée 1,2325 €.
+  const r = compareInvoiceToOrder({
+    invoice: {
+      lines: [
+        { ref: 'PECHE', label: 'Pêche 10mL', qty: 24, lineTotalHt: 29.58 },
+        { ref: 'AUTRE', label: 'Autre 10mL', qty: 24, lineTotalHt: 40.60 },
+        { ref: null, label: 'Remise 20% sur produits spécifiques', qty: 1, lineTotalHt: -5.92, kind: 'discount' },
+      ],
+    },
+    order: {
+      lines: [
+        { ref: 'PECHE', productName: 'Pêche 10mL', qty: 24, price: 1.23 },
+        { ref: 'AUTRE', productName: 'Autre 10mL', qty: 24, price: 1.69 },
+      ],
+    },
+  });
+
+  const peche = r.lines.find((l) => l.ref === 'PECHE');
+  assert.strictEqual(peche.discountShare, 0, 'la remise a été imputée');
+  assert.ok(close(peche.effectiveUnitCost, 1.2325, 0.0001),
+    `coût réel ${peche.effectiveUnitCost} au lieu de 1,2325`);
+
+  const remise = r.lines.find((l) => l.verdict === 'discount');
+  assert.strictEqual(remise.scope.unallocated, true);
+  assert.ok(close(remise.scope.impliedBase, 29.60, 0.01), `assiette ${remise.scope.impliedBase}`);
+});
+
+test('une remise de pied sans taux imprimé reste répartie au prorata', () => {
+  // Cosmer, GFC, Revolute, Cloud Vapor : « Remise youvape », « Remise : ». Rien
+  // ne prouve qu'elles visent une partie de la facture — elles sont globales, et
+  // la répartition reste la seule façon d'avoir un coût de revient juste.
+  const r = compareInvoiceToOrder({
+    invoice: {
+      lines: [
+        { ref: 'A', label: 'A', qty: 10, lineTotalHt: 100 },
+        { ref: null, label: 'Remise youvape', qty: 1, lineTotalHt: -10, kind: 'discount' },
+      ],
+    },
+    order: { lines: [{ ref: 'A', productName: 'A', qty: 10, price: 10 }] },
+  });
+  const a = r.lines.find((l) => l.ref === 'A');
+  assert.ok(a.discountShare > 0, 'remise globale non répartie');
+  assert.ok(close(a.effectiveUnitCost, 9, 0.001), `coût réel ${a.effectiveUnitCost}`);
+});
+
+test('une remise à taux qui couvre bien toute la facture reste répartie', () => {
+  // 10 % de 100 € = 10 € : l'assiette annoncée EST le total des produits, la
+  // remise est donc bien globale malgré son taux imprimé.
+  const r = compareInvoiceToOrder({
+    invoice: {
+      lines: [
+        { ref: 'A', label: 'A', qty: 10, lineTotalHt: 100 },
+        { ref: null, label: 'Remise 10% commerciale', qty: 1, lineTotalHt: -10, kind: 'discount' },
+      ],
+    },
+    order: { lines: [{ ref: 'A', productName: 'A', qty: 10, price: 10 }] },
+  });
+  const a = r.lines.find((l) => l.ref === 'A');
+  assert.ok(a.discountShare > 0, 'remise globale non répartie');
+});
+
 if (failures > 0) {
   console.log(`\n${failures} test(s) en échec.`);
   process.exit(1);
