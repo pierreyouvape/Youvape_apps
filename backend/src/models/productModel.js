@@ -1304,11 +1304,11 @@ class ProductModel {
     if (statuts) {
       whereClause += `
         AND (
-          p.post_status = ANY(${paramIndex}::text[])
+          p.post_status = ANY($${paramIndex}::text[])
           OR (p.product_type = 'variable' AND EXISTS (
             SELECT 1 FROM products v
             WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation'
-              AND v.post_status = ANY(${paramIndex}::text[])
+              AND v.post_status = ANY($${paramIndex}::text[])
           ))
         )
       `;
@@ -1647,11 +1647,11 @@ class ProductModel {
     if (statuts) {
       whereClause += `
         AND (
-          p.post_status = ANY(${params.length + 1}::text[])
+          p.post_status = ANY($${params.length + 1}::text[])
           OR (p.product_type = 'variable' AND EXISTS (
             SELECT 1 FROM products v
             WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation'
-              AND v.post_status = ANY(${params.length + 1}::text[])
+              AND v.post_status = ANY($${params.length + 1}::text[])
           ))
         )
       `;
