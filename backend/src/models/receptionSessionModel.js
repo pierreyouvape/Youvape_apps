@@ -172,6 +172,37 @@ async function setCount(sessionId, itemId, unitsCounted, db = pool) {
 const MOTIFS = ['reliquat', 'solde', 'manquant'];
 
 /**
+ * Ce que BMS peut encore accepter, ligne par ligne. Fonction PURE, pour être
+ * éprouvée : elle décide ce qui entre en stock, et une erreur ici se paie en
+ * marchandise fantôme ou en pièces perdues.
+ *
+ * `restant` = attendu − déjà reçu, en PIÈCES de bout en bout. Une ligne soldée
+ * (restant ≤ 0) ne part pas du tout : l'envoyer à zéro n'apprendrait rien à BMS
+ * et ferait croire à une réception.
+ */
+function plafonnerEnvoi(lignes) {
+  const envoye = new Map();
+  const nonEnvoyes = [];
+  const items = [];
+  for (const l of lignes) {
+    const restant = Number(l.units_expected) - Number(l.units_received);
+    const qty = Math.max(0, Math.min(l.units_counted, restant));
+    if (qty < l.units_counted) {
+      nonEnvoyes.push({
+        ref: l.supplier_sku,
+        product: l.product_name,
+        comptees: l.units_counted,
+        envoyees: qty,
+        refusees: l.units_counted - qty,
+      });
+    }
+    envoye.set(l.purchase_order_item_id, qty);
+    if (qty > 0) items.push({ id: Number(l.bms_line_id), qty });
+  }
+  return { items, envoye, nonEnvoyes };
+}
+
+/**
  * Motifs reçus de l'écran : { [purchase_order_item_id]: 'reliquat'|'solde'|'manquant' }.
  * Normalisés et refusés s'ils sont inconnus — une valeur libre passerait la
  * contrainte de colonne en NULL et le manquant perdrait son explication.
@@ -205,7 +236,8 @@ async function validateSession(sessionId, userId, motifs = {}, db = pool) {
   // déclencher. Ne lire que `units_counted > 0` le rendait invisible.
   const { rows: toutes } = await db.query(
     `SELECT c.purchase_order_item_id, c.bms_line_id, c.units_counted,
-            poi.supplier_sku, poi.product_name, ${UNITS_EXPECTED} AS units_expected
+            poi.supplier_sku, poi.product_name, ${UNITS_EXPECTED} AS units_expected,
+            COALESCE(poi.units_received, 0) AS units_received
        FROM reception_counts c
        JOIN purchase_order_items poi ON poi.id = c.purchase_order_item_id
       WHERE c.session_id = $1
@@ -244,20 +276,67 @@ async function validateSession(sessionId, userId, motifs = {}, db = pool) {
   const bmsPoId = (commandes[0] || {}).bms_po_id;
   if (!bmsPoId) throw new Error('Cette commande n\'existe pas dans BMS');
 
-  // `qty` est un nombre de PIÈCES. Voir l'en-tête du fichier.
-  const reponse = await bmsApiModel.apiCall(
-    `/v2/purchase-orders/${bmsPoId}/receive`,
-    'POST',
-    { items: lignes.map((l) => ({ id: Number(l.bms_line_id), qty: l.units_counted })) },
-  );
+  // L'ENVOI EST ATOMIQUE, ET C'EST LÀ QUE TOUT SE JOUE.
+  //
+  // BMS accepte une sur-réception tant que la ligne n'a rien reçu : le bon de
+  // commande était faux, le magasinier a raison. Mais dès qu'une réception a
+  // déjà eu lieu, un dépassement lui fait rejeter TOUT LE LOT d'un coup
+  // (500, « Unique constraint violation found ») — quarante lignes justes
+  // perdues pour une seule en trop, et un comptage d'une heure avec.
+  //
+  // On ne prédit pas sa règle, on ne la devine pas : on tente ce qui a été
+  // compté, et s'il refuse, on replie sur ce qu'il peut encore prendre. Le
+  // premier appel n'ayant rien écrit, ce repli ne double aucune réception.
+  const envoiDemande = lignes.map((l) => ({ id: Number(l.bms_line_id), qty: l.units_counted }));
+  const envoye = new Map(lignes.map((l) => [l.purchase_order_item_id, l.units_counted]));
+  const nonEnvoyes = [];
+  let reponse;
+  try {
+    reponse = await bmsApiModel.apiCall(
+      `/v2/purchase-orders/${bmsPoId}/receive`, 'POST', { items: envoiDemande },
+    );
+  } catch (e) {
+    if (!/unique constraint/i.test(e.message)) throw e;
+
+    const repli = plafonnerEnvoi(lignes);
+    nonEnvoyes.push(...repli.nonEnvoyes);
+    for (const [itemId, qty] of repli.envoye) envoye.set(itemId, qty);
+
+    if (repli.items.length === 0) {
+      throw new Error(
+        'BMS a refusé la réception : ces lignes sont déjà soldées chez lui et ne peuvent plus '
+        + 'rien recevoir. Le comptage est conservé — vérifiez avec un responsable avant de recommencer.',
+      );
+    }
+
+    console.warn(`[reception] BMS a refusé le dépassement sur ${bmsPoId}, envoi plafonné : `
+      + nonEnvoyes.map((n) => `${n.ref} ${n.envoyees}/${n.comptees}`).join(', '));
+
+    try {
+      reponse = await bmsApiModel.apiCall(
+        `/v2/purchase-orders/${bmsPoId}/receive`, 'POST', { items: repli.items },
+      );
+    } catch (e2) {
+      // Le repli lui-même a échoué : rien n'est parti, rien n'est enregistré, et
+      // l'erreur brute de BMS n'apprendrait rien au magasinier.
+      throw new Error(
+        'BMS a refusé la réception, même ramenée à ce qu\'il restait à recevoir '
+        + `(${e2.message}). Rien n'a été enregistré et le comptage est conservé : `
+        + 'rechargez depuis BMS, ses quantités ont probablement changé de son côté.',
+      );
+    }
+  }
 
   const client = await db.connect();
   try {
     await client.query('BEGIN');
     for (const l of lignes) {
+      // Ce qui est PARTI, pas ce qui a été compté : quand BMS a plafonné, les
+      // deux diffèrent, et c'est le stock qui aurait menti.
+      const parti = envoye.get(l.purchase_order_item_id) || 0;
       await client.query(
-        'UPDATE reception_counts SET units_sent = units_counted WHERE session_id = $1 AND purchase_order_item_id = $2',
-        [sessionId, l.purchase_order_item_id],
+        'UPDATE reception_counts SET units_sent = $3 WHERE session_id = $1 AND purchase_order_item_id = $2',
+        [sessionId, l.purchase_order_item_id, parti],
       );
       // LES PIÈCES S'AJOUTENT AUX PIÈCES. Sans détour, sans division.
       //
@@ -281,7 +360,7 @@ async function validateSession(sessionId, userId, motifs = {}, db = pool) {
                 ),
                 updated_at = CURRENT_TIMESTAMP
           WHERE id = $1`,
-        [l.purchase_order_item_id, l.units_counted],
+        [l.purchase_order_item_id, parti],
       );
     }
     // Les motifs des manquants, dans la même transaction que le comptage qu'ils
@@ -319,9 +398,14 @@ async function validateSession(sessionId, userId, motifs = {}, db = pool) {
   });
 
   const resultat = {
-    sent: lignes.map((l) => ({ ...decrire(l), over: l.units_counted > Number(l.units_expected) })),
+    sent: lignes.map((l) => ({
+      ...decrire(l),
+      over: l.units_counted > Number(l.units_expected),
+      units_sent: envoye.get(l.purchase_order_item_id) || 0,
+    })),
     missing: manquants.map(decrire),
     over: surplus.map(decrire),
+    notSent: nonEnvoyes,
     bmsResponse: reponse,
   };
 
@@ -334,6 +418,7 @@ async function validateSession(sessionId, userId, motifs = {}, db = pool) {
       purchaseOrderId: session.purchase_order_id,
       manquants: resultat.missing,
       surplus: resultat.over,
+      nonEnvoyes,
     });
   } catch (e) {
     console.error('[reception] mail d\'écart non envoyé :', e.message);
@@ -632,6 +717,7 @@ async function addLine(sessionId, { productId, qty, unitPrice }, db = pool) {
 }
 
 module.exports = {
+  plafonnerEnvoi,
   addLine,
   refreshFromBms,
   fetchBmsLinesFull,

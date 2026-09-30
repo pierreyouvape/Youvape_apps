@@ -70,8 +70,10 @@ ${lignes.map((l) => `<tr>${cellules(l).map((c) => `<td style="border:1px solid #
  * Prévient des écarts d'une réception validée. Ne lève jamais : l'appelant a
  * déjà mis la marchandise en stock.
  */
-async function previenirEcarts({ purchaseOrderId, manquants = [], surplus = [] }) {
-  if (manquants.length === 0 && surplus.length === 0) return { sent: false, reason: 'aucun_ecart' };
+async function previenirEcarts({ purchaseOrderId, manquants = [], surplus = [], nonEnvoyes = [] }) {
+  if (manquants.length === 0 && surplus.length === 0 && nonEnvoyes.length === 0) {
+    return { sent: false, reason: 'aucun_ecart' };
+  }
 
   const to = await destinataires();
   if (to.length === 0) {
@@ -81,17 +83,30 @@ async function previenirEcarts({ purchaseOrderId, manquants = [], surplus = [] }
 
   const cmd = await entete(purchaseOrderId);
   const nom = cmd.order_number || `commande ${purchaseOrderId}`;
-  const sujet = surplus.length > 0 && manquants.length > 0
-    ? `Réception ${nom} : manquants et surplus`
-    : surplus.length > 0
-      ? `Réception ${nom} : SURPLUS reçu`
-      : `Réception ${nom} : articles manquants`;
+  // Le refus de BMS passe devant : c'est de la marchandise physiquement là et
+  // absente du stock, donc le seul écart qui demande une action tout de suite.
+  const sujet = nonEnvoyes.length > 0
+    ? `Réception ${nom} : BMS a REFUSÉ des pièces comptées`
+    : surplus.length > 0 && manquants.length > 0
+      ? `Réception ${nom} : manquants et surplus`
+      : surplus.length > 0
+        ? `Réception ${nom} : SURPLUS reçu`
+        : `Réception ${nom} : articles manquants`;
 
   const corps = [
     `<div style="font:14px/1.6 Arial,sans-serif;color:#1f2937">`,
     `<p>Réception de <strong>${echapper(nom)}</strong>`
       + (cmd.supplier ? ` chez <strong>${echapper(cmd.supplier)}</strong>` : '')
       + (cmd.bms_po_id ? ` (bon BMS ${cmd.bms_po_id})` : '') + '.</p>',
+    nonEnvoyes.length > 0
+      ? '<div style="margin-top:14px;padding:12px;border-left:4px solid #dc2626;background:#fef2f2">'
+        + '<strong>BMS a refusé une partie de ce qui a été compté.</strong> Il n\'accepte pas de '
+        + 'dépassement sur une ligne déjà réceptionnée. Ces pièces sont physiquement chez nous mais '
+        + '<strong>ne sont PAS en stock</strong> :<ul style="margin:8px 0 0">'
+        + nonEnvoyes.map((n) => `<li>${echapper(n.ref || n.product || '—')} : ${n.envoyees} pièce(s) enregistrée(s) sur ${n.comptees} comptée(s) — <strong>${n.refusees} refusée(s)</strong></li>`).join('')
+        + '</ul><p style="margin:8px 0 0">À trancher avec un responsable : soit le bon de commande '
+        + 'était faux, soit la marchandise appartient à une autre commande.</p></div>'
+      : '',
     manquants.length > 0 ? tableau(`${manquants.length} article(s) manquant(s)`, manquants, true) : '',
     surplus.length > 0 ? tableau(`${surplus.length} article(s) reçu(s) en trop`, surplus, false) : '',
     surplus.length > 0
@@ -105,13 +120,14 @@ async function previenirEcarts({ purchaseOrderId, manquants = [], surplus = [] }
 
   const texte = [
     `Réception ${nom}${cmd.supplier ? ` chez ${cmd.supplier}` : ''}.`,
+    nonEnvoyes.length > 0 ? `\nREFUSÉ PAR BMS (pas en stock) :\n${nonEnvoyes.map((n) => `- ${n.ref || n.product} : ${n.envoyees}/${n.comptees} enregistrées, ${n.refusees} refusées`).join('\n')}` : '',
     manquants.length > 0 ? `\nManquants :\n${manquants.map((l) => `- ${l.ref || l.product} : ${l.units}/${l.expected} (${LIBELLE_MOTIF[l.motif] || l.motif || 'sans motif'})`).join('\n')}` : '',
     surplus.length > 0 ? `\nSurplus :\n${surplus.map((l) => `- ${l.ref || l.product} : ${l.units}/${l.expected} (+${l.ecart})`).join('\n')}\nLe surplus n'est pas en stock : vérifier avec un responsable.` : '',
   ].filter(Boolean).join('\n');
 
   const r = await sendMail({ to, subject: sujet, html: corps, text: texte });
   if (!r.success) console.error('[reception] mail d\'écart non parti :', r.error);
-  return { sent: r.success, to, manquants: manquants.length, surplus: surplus.length };
+  return { sent: r.success, to, manquants: manquants.length, surplus: surplus.length, nonEnvoyes: nonEnvoyes.length };
 }
 
 module.exports = { previenirEcarts };

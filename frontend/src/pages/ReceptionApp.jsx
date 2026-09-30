@@ -867,6 +867,27 @@ function CountingScreen({ token, order, items, onBack, onReload }) {
                 .join(', ')}. BMS l'a accepté — à vérifier avec le fournisseur.
             </div>
           )}
+          {/* BMS refuse un dépassement sur une ligne déjà réceptionnée, et refuse
+              le lot entier. On a replié sur ce qu'il pouvait prendre : ces pièces
+              sont physiquement là et absentes du stock, il faut le dire ici et
+              pas seulement dans un mail que le magasinier ne lira pas. */}
+          {sendResult.notSent && sendResult.notSent.length > 0 && (
+            <div style={{ marginTop: 10, padding: '11px 14px', borderRadius: 9,
+              background: C.redL, border: `1px solid ${C.red}`, color: '#7F1D1D' }}>
+              <strong>BMS a refusé une partie du comptage.</strong> Il n'accepte pas de
+              dépassement sur une ligne déjà réceptionnée. Ces pièces ne sont <strong>pas
+              en stock</strong> :
+              <ul style={{ margin: '6px 0 0', paddingLeft: 18 }}>
+                {sendResult.notSent.map((n, i) => (
+                  <li key={i}>
+                    {n.ref || n.product} — {n.envoyees} enregistrée(s) sur {n.comptees} comptée(s),
+                    <strong> {n.refusees} refusée(s)</strong>
+                  </li>
+                ))}
+              </ul>
+              <div style={{ marginTop: 6 }}>À trancher avec un responsable.</div>
+            </div>
+          )}
         </div>
       )}
 
@@ -1076,6 +1097,15 @@ function CountingScreen({ token, order, items, onBack, onReload }) {
                       </span>
                     </div>
                   ))}
+                  <div style={{ marginTop: 10, padding: '11px 14px', borderRadius: 9,
+                    background: '#FFFBEB', border: `1px solid ${C.orange}`, fontSize: 12.5,
+                    color: '#7C2D12', lineHeight: 1.5 }}>
+                    <strong>Le surplus n'est pas en stock.</strong> Il sera compté et envoyé, mais
+                    rien ne dit qu'il nous est dû sur ce bon de commande — <strong>à vérifier avec
+                    un responsable</strong> avant de le considérer acquis. Si des pièces ont déjà
+                    été reçues sur ces lignes, BMS refusera le dépassement : ce qui ne passe pas
+                    vous sera dit, et n'entrera pas en stock.
+                  </div>
                 </div>
               )}
             </>
