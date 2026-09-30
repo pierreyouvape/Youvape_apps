@@ -427,6 +427,80 @@ async function validateSession(sessionId, userId, motifs = {}, db = pool) {
   return resultat;
 }
 
+/**
+ * L'HISTORIQUE DES RÉCEPTIONS D'UNE COMMANDE — pour Commandes fournisseur.
+ *
+ * Le motif d'un manquant était écrit et jamais relu : on imposait au magasinier
+ * de choisir « reliquat / soldé / manquant » pour l'archiver aussitôt. C'est ici
+ * qu'il se consulte, là où l'acheteur regarde déjà sa commande, et pas dans une
+ * boîte mail.
+ *
+ * Trois choses par ligne, qui répondent à trois questions différentes :
+ *   attendu / compté  → le magasinier a-t-il tout trouvé ?
+ *   compté / envoyé   → BMS a-t-il tout pris ? (il refuse un dépassement sur
+ *                        une ligne déjà réceptionnée : l'écart est de la
+ *                        marchandise présente et absente du stock)
+ *   motif             → pourquoi il manque, donc quoi faire.
+ */
+async function historiqueReceptions(purchaseOrderId, db = pool) {
+  const { rows: sessions } = await db.query(
+    `SELECT r.id, r.status, r.started_at, r.validated_at,
+            COALESCE(ud.name, ud.email) AS ouverte_par,
+            COALESCE(uv.name, uv.email) AS validee_par,
+            COALESCE(SUM(c.units_counted), 0)::int AS total_compte,
+            COALESCE(SUM(c.units_sent), 0)::int    AS total_envoye
+       FROM reception_sessions r
+       LEFT JOIN reception_counts c ON c.session_id = r.id
+       LEFT JOIN users ud ON ud.id = r.started_by
+       LEFT JOIN users uv ON uv.id = r.validated_by
+      WHERE r.purchase_order_id = $1
+      GROUP BY r.id, ud.name, ud.email, uv.name, uv.email
+      ORDER BY r.started_at DESC`,
+    [purchaseOrderId],
+  );
+  if (sessions.length === 0) return [];
+
+  const { rows: lignes } = await db.query(
+    `SELECT c.session_id, c.units_counted, c.units_sent, c.motif,
+            poi.supplier_sku, poi.product_name,
+            ${UNITS_EXPECTED} AS units_expected
+       FROM reception_counts c
+       JOIN purchase_order_items poi ON poi.id = c.purchase_order_item_id
+      WHERE c.session_id = ANY($1::int[])
+      ORDER BY poi.id`,
+    [sessions.map((s) => s.id)],
+  );
+
+  return sessions.map((s) => {
+    const deLaSession = lignes.filter((l) => l.session_id === s.id);
+    return {
+      ...s,
+      manquants: deLaSession
+        .filter((l) => l.units_counted < Number(l.units_expected))
+        .map((l) => ({
+          ref: l.supplier_sku, product: l.product_name,
+          expected: Number(l.units_expected), units: l.units_counted,
+          manque: Number(l.units_expected) - l.units_counted, motif: l.motif,
+        })),
+      surplus: deLaSession
+        .filter((l) => l.units_counted > Number(l.units_expected))
+        .map((l) => ({
+          ref: l.supplier_sku, product: l.product_name,
+          expected: Number(l.units_expected), units: l.units_counted,
+          enTrop: l.units_counted - Number(l.units_expected),
+        })),
+      // Compté mais refusé par BMS : présent en entrepôt, absent du stock.
+      refuses: deLaSession
+        .filter((l) => l.units_sent !== null && l.units_sent < l.units_counted)
+        .map((l) => ({
+          ref: l.supplier_sku, product: l.product_name,
+          comptees: l.units_counted, envoyees: l.units_sent,
+          refusees: l.units_counted - l.units_sent,
+        })),
+    };
+  });
+}
+
 /** Abandonne une session : le comptage est perdu, la commande repart à neuf. */
 async function abandonSession(sessionId, db = pool) {
   const { rows } = await db.query(
@@ -718,6 +792,7 @@ async function addLine(sessionId, { productId, qty, unitPrice }, db = pool) {
 
 module.exports = {
   plafonnerEnvoi,
+  historiqueReceptions,
   addLine,
   refreshFromBms,
   fetchBmsLinesFull,

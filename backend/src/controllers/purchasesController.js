@@ -1,4 +1,5 @@
 const purchaseOrderModel = require('../models/purchaseOrderModel');
+const receptionSessionModel = require('../models/receptionSessionModel');
 const needsCalculationModel = require('../models/needsCalculationModel');
 const productAlertModel = require('../models/productAlertModel');
 const pdfImportModel = require('../models/pdfImportModel');
@@ -306,6 +307,15 @@ const purchasesController = {
       const order = await purchaseOrderModel.getById(req.params.id);
       if (!order) {
         return res.status(404).json({ success: false, error: 'Commande non trouvée' });
+      }
+      // L'historique de réception vit ICI, dans Commandes fournisseur : c'est là
+      // que l'acheteur regarde sa commande, et c'est lui que le motif d'un
+      // manquant concerne. Un échec de lecture ne prive pas de la commande.
+      try {
+        order.receptions = await receptionSessionModel.historiqueReceptions(order.id);
+      } catch (e) {
+        console.warn(`[purchases] historique de réception illisible pour ${order.id} :`, e.message);
+        order.receptions = [];
       }
       res.json({ success: true, data: order });
     } catch (error) {

@@ -8,6 +8,15 @@ import { brandLabel } from '../../utils/productBrand';
 
 const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:3000/api/auth').replace('/auth', '');
 
+// Les trois motifs de manquant, tels que le magasinier les choisit à la
+// réception. Écrits en clair : « soldé » seul ne dit pas que le fournisseur
+// nous a déjà remboursés, et c'est toute la différence avec « manquant ».
+const MOTIF_LABEL = {
+  reliquat: 'Reliquat — à recevoir',
+  solde:    'Soldé — remboursé par le fournisseur',
+  manquant: 'Manquant — à réclamer',
+};
+
 const OrdersTab = ({ token }) => {
   const navigate = useNavigate();
   const [orders, setOrders] = useState([]);
@@ -726,6 +735,93 @@ const OrdersTab = ({ token }) => {
                       </button>
                     )}
                   </div>
+
+                  {/* Réceptions — qui a compté, quand, et ce qui manquait.
+                      Le motif d'un manquant était enregistré et lisible nulle
+                      part : c'est ici qu'il sert, là où l'acheteur regarde sa
+                      commande, et pas dans une boîte mail. */}
+                  {selectedOrder.receptions?.length > 0 && (
+                    <div style={{ marginBottom: '20px' }}>
+                      <h4 style={{ marginBottom: '10px' }}>
+                        Réceptions ({selectedOrder.receptions.length})
+                      </h4>
+                      {selectedOrder.receptions.map(r => (
+                        <div key={r.id} style={{ border: '1px solid #e5e7eb', borderRadius: '8px',
+                          padding: '12px 14px', marginBottom: '10px', background: '#fff' }}>
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '14px',
+                            alignItems: 'baseline', fontSize: '13.5px' }}>
+                            <strong>
+                              {r.status === 'validated' ? '✓ Validée' :
+                               r.status === 'counting'  ? '⏳ Comptage en cours' : '✗ Abandonnée'}
+                            </strong>
+                            <span style={{ color: '#6b7280' }}>
+                              {r.validated_at ? formatDate(r.validated_at) : formatDate(r.started_at)}
+                              {' — par '}{r.validee_par || r.ouverte_par || 'inconnu'}
+                            </span>
+                            <span style={{ marginLeft: 'auto', fontWeight: 600 }}>
+                              {r.total_envoye} pièce{r.total_envoye > 1 ? 's' : ''} en stock
+                              {r.total_compte !== r.total_envoye && (
+                                <span style={{ color: '#dc2626', fontWeight: 600 }}>
+                                  {' '}/ {r.total_compte} comptée{r.total_compte > 1 ? 's' : ''}
+                                </span>
+                              )}
+                            </span>
+                          </div>
+
+                          {r.refuses?.length > 0 && (
+                            <div style={{ marginTop: '10px', padding: '9px 12px', borderRadius: '6px',
+                              background: '#fef2f2', border: '1px solid #fecaca', fontSize: '13px' }}>
+                              <strong style={{ color: '#991b1b' }}>Refusé par BMS — pas en stock :</strong>
+                              <ul style={{ margin: '5px 0 0', paddingLeft: '18px' }}>
+                                {r.refuses.map((x, i) => (
+                                  <li key={i}>
+                                    {x.ref || x.product} — {x.envoyees} sur {x.comptees} comptées,
+                                    <strong> {x.refusees} refusée{x.refusees > 1 ? 's' : ''}</strong>
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+
+                          {r.manquants?.length > 0 && (
+                            <table className="purchases-table" style={{ marginTop: '10px' }}>
+                              <thead>
+                                <tr>
+                                  <th>Manquant</th>
+                                  <th>Réf.</th>
+                                  <th className="text-right">Attendu</th>
+                                  <th className="text-right">Reçu</th>
+                                  <th className="text-right">Manque</th>
+                                  <th>Motif</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {r.manquants.map((x, i) => (
+                                  <tr key={i}>
+                                    <td style={{ maxWidth: '280px' }}>{x.product}</td>
+                                    <td>{x.ref || '—'}</td>
+                                    <td className="text-right">{x.expected}</td>
+                                    <td className="text-right">{x.units}</td>
+                                    <td className="text-right" style={{ color: '#ea580c', fontWeight: 600 }}>
+                                      {x.manque}
+                                    </td>
+                                    <td>{MOTIF_LABEL[x.motif] || '—'}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          )}
+
+                          {r.surplus?.length > 0 && (
+                            <div style={{ marginTop: '8px', fontSize: '13px', color: '#7c2d12' }}>
+                              <strong>Reçu en trop :</strong>{' '}
+                              {r.surplus.map(x => `${x.ref || x.product} (+${x.enTrop})`).join(', ')}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
 
                   {/* Items */}
                   <h4 style={{ marginBottom: '10px' }}>Articles ({selectedOrder.items?.length || 0})</h4>
