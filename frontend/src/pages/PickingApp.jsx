@@ -162,7 +162,7 @@ function OrdersView({ token, canWrite, onWavesCreated, setMessage }) {
     const m = new Map();
     inTab.forEach(o => {
       const k = carrierKey(o.carrier);
-      const cur = m.get(k) || { label: carrierLabel(o.carrier), n: 0 };
+      const cur = m.get(k) || { label: carrierLabel(o.carrier), carrier: o.carrier, n: 0 };
       cur.n += 1;
       m.set(k, cur);
     });
@@ -298,6 +298,29 @@ function OrdersView({ token, canWrite, onWavesCreated, setMessage }) {
       {data.syncError && <Banner kind="error">{data.syncError}</Banner>}
 
       <Tabs tabs={ORDER_TABS} active={tab} counts={data.counts} onChange={changeTab} />
+
+      {/* Total par transporteur dans l'onglet : la charge du jour d'un coup d'œil.
+          Une pastille se clique pour ne garder que ce transporteur. */}
+      {carrierOptions.length > 0 && (
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
+          {carrierOptions.map(([k, v]) => {
+            const on = carrier === k;
+            return (
+              <button
+                key={k} onClick={() => setCarrier(on ? '' : k)}
+                title={on ? 'Afficher tous les transporteurs' : `N'afficher que ${v.label}`}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 10, padding: '7px 12px', borderRadius: 10, cursor: 'pointer',
+                  border: `2px solid ${on ? C.violet : C.greyB}`, background: on ? C.violetL : C.white, fontFamily: 'inherit',
+                }}
+              >
+                <CarrierLogo carrier={v.carrier} height={20} />
+                <strong style={{ fontSize: 17, color: C.dark }}>{v.n}</strong>
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 12, flexWrap: 'wrap' }}>
         <select value={country} onChange={e => setCountry(e.target.value)} style={{ padding: '8px 10px', borderRadius: 8, border: `1px solid ${C.greyB}`, fontSize: 13.5 }}>
