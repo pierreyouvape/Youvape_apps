@@ -161,8 +161,9 @@ const printWave = handle(async (req, res) => {
 
 /**
  * Plusieurs vagues dans un seul PDF (« Imprimer la sélection / toutes »),
- * dans l'ordre de création. Le nom commence aussi par « vague » pour qu'une
- * même règle AutoPrint prenne les deux formats.
+ * dans l'ordre de création. Le nom commence par « vague_ », comme celui d'une
+ * vague seule : la règle AutoPrint `vague_*` prend les deux. (Il s'appelait
+ * « vagues_… » jusqu'au 30/09/2026 et ne sortait pas à l'imprimante.)
  */
 const printWaves = handle(async (req, res) => {
   const ids = [...new Set((req.body?.ids || []).map(Number).filter(Number.isInteger))].sort((a, b) => a - b);
@@ -178,7 +179,7 @@ const printWaves = handle(async (req, res) => {
     timeZone: 'Europe/Paris', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false
   }).format(new Date()).replace(/[^0-9]/g, '');
   res.setHeader('Content-Type', 'application/pdf');
-  res.setHeader('Content-Disposition', `attachment; filename="vagues_${waves.length}_${stamp}.pdf"`);
+  res.setHeader('Content-Disposition', `attachment; filename="vague_lot_${waves.length}_${stamp}.pdf"`);
   res.send(Buffer.from(pdf));
 });
 

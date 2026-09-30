@@ -608,21 +608,21 @@ function WavesView({ token, canWrite, reloadKey, setMessage }) {
     }
   };
 
-  // Le PDF part en téléchargement sous le nom donné par le serveur
-  // (`vague_<numéro>.pdf`, ou `vagues_<n>_<date>.pdf` pour plusieurs) :
-  // une règle AutoPrint sur « vague » prend les deux.
+  // Le PDF part en téléchargement sous un nom qui commence TOUJOURS par
+  // « vague_ » : c'est lui que la règle AutoPrint `vague_*` reconnaît. Le nom
+  // est fixé ici, pas lu dans la réponse du serveur — un en-tête que le
+  // navigateur ne transmet pas donnait « vagues.pdf », jamais imprimé.
   const [printing, setPrinting] = useState(null);
   const [selected, setSelected] = useState(new Set());
 
-  const download = async (request, fallbackName, key) => {
+  const download = async (request, fileName, key) => {
     setPrinting(key);
     try {
       const res = await request();
-      const name = /filename="([^"]+)"/.exec(res.headers['content-disposition'] || '')?.[1] || fallbackName;
       const url = URL.createObjectURL(res.data);
       const a = document.createElement('a');
       a.href = url;
-      a.download = name;
+      a.download = fileName;
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -642,10 +642,15 @@ function WavesView({ token, canWrite, reloadKey, setMessage }) {
     `vague_${w.waveNumber}.pdf`, w.id
   );
 
-  const printMany = (ids, key) => download(
-    () => axios.post(`${API_URL}/picking/waves/pdf`, { ids }, { ...authHeaders(token), responseType: 'blob' }),
-    'vagues.pdf', key
-  );
+  const printMany = (ids, key) => {
+    const stamp = new Intl.DateTimeFormat('fr-CA', {
+      timeZone: 'Europe/Paris', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false,
+    }).format(new Date()).replace(/[^0-9]/g, '');
+    return download(
+      () => axios.post(`${API_URL}/picking/waves/pdf`, { ids }, { ...authHeaders(token), responseType: 'blob' }),
+      `vague_lot_${ids.length}_${stamp}.pdf`, key
+    );
+  };
 
   const waves = data?.waves || [];
   const allChecked = waves.length > 0 && waves.every(w => selected.has(w.id));
