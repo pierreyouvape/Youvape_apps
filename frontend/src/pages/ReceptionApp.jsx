@@ -539,21 +539,51 @@ function CountingScreen({ token, order, items, onBack, onReload }) {
   // Enregistrement différé : un scan doit rester instantané, la base suit.
   // 600 ms, parce qu'un opérateur enchaîne les bips d'un même carton.
   const enAttente = useRef({});
+  const envoyerComptage = useCallback(async (itemId, countingUnits) => {
+    if (!session) return;
+    const it = itemsRef.current.find((i) => i.id === itemId);
+    try {
+      await axios.put(
+        `${API_URL}/reception/sessions/${session.id}/counts/${itemId}`,
+        { units: toUnits(it, countingUnits) }, authHeaders(token),
+      );
+    } catch {
+      setSessionError('Le comptage de cette ligne n\'a pas pu être enregistré — ne fermez pas l\'écran.');
+    }
+  }, [session, token, toUnits]);
+
+  // Le différé retient MAINTENANT la valeur en attente, et plus seulement son
+  // minuteur : sans elle, impossible de forcer l'envoi avant un rechargement.
   const persistCount = useCallback((itemId, countingUnits) => {
     if (!session) return;
-    clearTimeout(enAttente.current[itemId]);
-    enAttente.current[itemId] = setTimeout(async () => {
-      const it = itemsRef.current.find((i) => i.id === itemId);
-      try {
-        await axios.put(
-          `${API_URL}/reception/sessions/${session.id}/counts/${itemId}`,
-          { units: toUnits(it, countingUnits) }, authHeaders(token),
-        );
-      } catch {
-        setSessionError('Le comptage de cette ligne n\'a pas pu être enregistré — ne fermez pas l\'écran.');
-      }
-    }, 600);
-  }, [session, token, toUnits]);
+    const enCours = enAttente.current[itemId];
+    if (enCours) clearTimeout(enCours.minuteur);
+    enAttente.current[itemId] = {
+      unites: countingUnits,
+      minuteur: setTimeout(() => {
+        delete enAttente.current[itemId];
+        envoyerComptage(itemId, countingUnits);
+      }, 600),
+    };
+  }, [session, envoyerComptage]);
+
+  /**
+   * Envoie SANS ATTENDRE tout comptage encore en différé.
+   *
+   * À appeler avant tout rechargement de la commande. Le comptage part 600 ms
+   * après le bip ; un `onReload()` lancé entre-temps relisait le serveur, où la
+   * ligne valait encore zéro, et ÉCRASAIT l'incrément local. Ce qui donnait :
+   * on rattache un code-barre inconnu, la pop-up se ferme, et l'article n'est
+   * pas compté — il fallait rescanner.
+   */
+  const viderComptagesEnAttente = useCallback(async () => {
+    const enAttenteMaintenant = Object.entries(enAttente.current);
+    enAttente.current = {};
+    await Promise.all(enAttenteMaintenant.map(([itemId, p]) => {
+      clearTimeout(p.minuteur);
+      return envoyerComptage(Number(itemId), p.unites);
+    }));
+  }, [envoyerComptage]);
 
   const toggleAsk = () => {
     setAskType(prev => {
@@ -768,6 +798,9 @@ function CountingScreen({ token, order, items, onBack, onReload }) {
     try {
       await axios.post(`${API_URL}/products/${wpProductId}/barcodes`,
         { barcode, type, ...(type === 'pack' ? { quantity } : {}) }, authHeaders(token));
+      // Le comptage qui vient d'être fait part d'abord : le rechargement relit
+      // le serveur et écraserait sinon un incrément encore en différé.
+      await viderComptagesEnAttente();
       onReload();
     } catch {
       flash('Le type du code-barre n\'a pas pu être enregistré', true);
@@ -974,10 +1007,10 @@ function CountingScreen({ token, order, items, onBack, onReload }) {
           data={typeModal}
           onClose={() => setTypeModal(null)}
           onChoose={async (type, qty) => {
-            const step = type === 'pack' ? qty : 1;
-            addCount(typeModal.item.id, step);
+            // Même règle qu'au rattachement d'un code inconnu : on compte des
+            // pièces, converties en boîtes par compterCarton.
+            compterCarton(typeModal.item, type === 'pack' ? qty : 1);
             await persistBarcode(typeModal.item.wp_product_id, typeModal.barcode, type, qty);
-            flash(`${typeModal.item.name} — ${type === 'pack' ? `pack de ${qty}` : '+1'}`);
             setTypeModal(null);
           }}
         />
@@ -1008,10 +1041,14 @@ function CountingScreen({ token, order, items, onBack, onReload }) {
           items={items.filter(i => (counts[i.id] || 0) < i.qty_remaining)}
           onClose={() => setUnknownModal(null)}
           onAttach={async (item, type, qty) => {
-            const step = type === 'pack' ? qty : 1;
-            addCount(item.id, step);
+            // `qty` est un nombre de PIÈCES, alors que le comptage se tient en
+            // BOÎTES sur une ligne conditionnée. `addCount(item.id, qty)`
+            // ajoutait donc qty BOÎTES — un carton de 10 en comptait 100.
+            // `compterCarton` fait la conversion et refuse ce qui ne tombe pas
+            // juste, avec le même message qu'ailleurs.
+            const compte = compterCarton(item, type === 'pack' ? qty : 1);
             await persistBarcode(item.wp_product_id, unknownModal.barcode, type, qty);
-            flash(`${item.name} — code rattaché`);
+            if (compte) flash(`${item.name} — code rattaché et compté`);
             setUnknownModal(null);
           }}
         />
