@@ -69,6 +69,10 @@ exports.getPendingOrders = async (req, res) => {
       SELECT
         po.id, po.order_number, po.bms_po_id, po.status,
         po.order_date, po.expected_date,
+        -- La réf libre de BMS (« Précommande JNr 50ml ») et le montant : sans
+        -- eux, l'écran n'aligne que des numéros, et rien ne dit si le camion
+        -- qu'on attend pèse 60 € ou 7 000 €.
+        po.bms_supplier_reference, po.total_amount,
         s.id AS supplier_id, s.name AS supplier_name,
         COUNT(poi.id)::int                                  AS nb_lines,
         COALESCE(SUM(${QTY_EXPECTED}), 0)::int              AS qty_expected,

@@ -44,6 +44,15 @@ const fmtDate = (s) => {
   return d && m && y ? `${d}/${m}/${y}` : '—';
 };
 
+// Le montant HT de la commande. Arrondi à l'euro : on le lit pour situer un
+// ordre de grandeur — 60 € ou 7 000 € de marchandise à recevoir — pas pour
+// compter, et les centimes ne feraient qu'allonger la colonne.
+const fmtEur = (v) => {
+  const n = parseFloat(v);
+  if (!Number.isFinite(n) || n === 0) return '—';
+  return `${Math.round(n).toLocaleString('fr-FR')} €`;
+};
+
 const PREF_KEY = 'yv.reception.askBarcodeType';
 
 /* ─── PETITS COMPOSANTS ─────────────────────────────────── */
@@ -218,11 +227,17 @@ function OrdersList({ token, onOpen }) {
             <thead>
               <tr>
                 <Th>N° de commande</Th>
+                {/* La réf libre de BMS, juste après le numéro comme là-bas :
+                    c'est elle qui dit « Précommande JNr 50ml » là où le numéro
+                    ne dit rien. */}
+                <Th>Réf fournisseur</Th>
                 <Th>Fournisseur</Th>
                 <Th>Statut</Th>
                 <Th align="right">Lignes</Th>
                 <Th align="right">Attendu</Th>
                 <Th align="right">Reçu</Th>
+                {/* Le montant donne l'ordre de grandeur de ce qui arrive. */}
+                <Th align="right">Montant</Th>
                 <Th>Livraison prévue</Th>
                 <Th />
               </tr>
@@ -232,7 +247,7 @@ function OrdersList({ token, onOpen }) {
                 <tr><Td align="center" style={{ padding: 40, color: C.greyT }}>Chargement…</Td></tr>
               )}
               {!loading && orders.length === 0 && (
-                <tr><td colSpan={8} style={{ padding: 40, textAlign: 'center', color: C.greyT, fontSize: 14 }}>
+                <tr><td colSpan={10} style={{ padding: 40, textAlign: 'center', color: C.greyT, fontSize: 14 }}>
                   Aucune commande en attente de réception.
                 </td></tr>
               )}
@@ -242,11 +257,15 @@ function OrdersList({ token, onOpen }) {
                   <tr key={o.id} onClick={() => onOpen(o.id)}
                     style={{ cursor: 'pointer', background: idx % 2 === 1 ? C.zebra : C.white }}>
                     <Td bold color={C.primary}>{o.order_number}</Td>
+                    <Td color={o.bms_supplier_reference ? C.dark : C.greyM}>
+                      {o.bms_supplier_reference || '—'}
+                    </Td>
                     <Td>{o.supplier_name}</Td>
                     <Td><Badge color={st.color} bg={st.bg}>{st.label}</Badge></Td>
                     <Td align="right">{o.nb_lines}</Td>
                     <Td align="right" bold>{o.qty_expected}</Td>
                     <Td align="right" color={o.qty_received > 0 ? C.orange : C.greyM}>{o.qty_received}</Td>
+                    <Td align="right">{fmtEur(o.total_amount)}</Td>
                     <Td>{fmtDate(o.expected_date || o.order_date)}</Td>
                     <Td align="right"><Btn small variant="ghost">Ouvrir</Btn></Td>
                   </tr>

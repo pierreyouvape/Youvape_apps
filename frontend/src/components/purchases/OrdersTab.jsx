@@ -562,6 +562,9 @@ const OrdersTab = ({ token }) => {
             <thead>
               <tr>
                 <SortTh col="bms_reference" label="N° Commande" />
+                {/* La réf libre de BMS, juste après le numéro comme là-bas : elle
+                    porte ce que le numéro ne dit pas (« Précommande JNr 50ml »). */}
+                <SortTh col="bms_supplier_reference" label="Réf fournisseur" />
                 <SortTh col="supplier_name" label="Fournisseur" />
                 <SortTh col="total_items" label="Articles" className="text-center" />
                 <SortTh col="total_qty" label="Quantité" className="text-center" />
@@ -579,6 +582,9 @@ const OrdersTab = ({ token }) => {
                     <strong style={{ color: '#f59e0b', cursor: 'pointer' }} onClick={() => openDetail(order.id)}>
                       {order.bms_reference || order.order_number}
                     </strong>
+                  </td>
+                  <td style={{ color: order.bms_supplier_reference ? undefined : '#9ca3af' }}>
+                    {order.bms_supplier_reference || '-'}
                   </td>
                   <td>{order.supplier_name}</td>
                   <td className="text-center">{formatInt(order.total_items)}</td>

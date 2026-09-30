@@ -1199,6 +1199,10 @@ const purchaseOrderModel = {
         }
 
         const bmsReference = String(bmsOrder.reference);
+        // La SECONDE référence de BMS, un champ libre où les acheteurs écrivent
+        // ce que le numéro ne dit pas : « Précommande JNr 50ml ». Vide chez BMS
+        // vaut absent chez nous — une chaîne vide n'apporte rien à l'écran.
+        const bmsSupplierReference = String(bmsOrder.supplier_reference || '').trim() || null;
         const items = bmsOrder.items || [];
 
         // Calculer les totaux réels (qty × qty_pack) pour déterminer le statut
@@ -1222,15 +1226,16 @@ const purchaseOrderModel = {
         const orderQuery = `
           INSERT INTO purchase_orders (
             order_number, supplier_id, status,
-            bms_po_id, bms_reference,
+            bms_po_id, bms_reference, bms_supplier_reference,
             order_date, expected_date, received_date,
             total_items, total_qty, total_amount,
             notes, verified
           )
-          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
           ON CONFLICT (bms_po_id) DO UPDATE SET
             status = EXCLUDED.status,
             bms_reference = EXCLUDED.bms_reference,
+            bms_supplier_reference = EXCLUDED.bms_supplier_reference,
             expected_date = EXCLUDED.expected_date,
             received_date = EXCLUDED.received_date,
             total_items = EXCLUDED.total_items,
@@ -1252,6 +1257,7 @@ const purchaseOrderModel = {
           status,                           // status
           bmsOrder.id,                      // bms_po_id
           bmsReference,                     // bms_reference
+          bmsSupplierReference,             // bms_supplier_reference
           bmsOrder.created_at || null,      // order_date (date de création de la commande)
           bmsOrder.eta || null,             // expected_date
           receivedDate,                     // received_date (updated_at BMS si complete)
