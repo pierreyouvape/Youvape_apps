@@ -12,6 +12,7 @@ import SalesByCountryPieChart from '../components/charts/SalesByCountryPieChart'
 import PeriodFilter from '../components/PeriodFilter';
 import CopyButton from '../components/CopyButton';
 import SupplierRefsTable from '../components/purchases/SupplierRefsTable';
+import WcStatus from '../components/WcStatus';
 import { formatPrice } from '../utils/formatNumber';
 import { LinkBox } from '../utils/navHelpers';
 
@@ -576,7 +577,12 @@ const ProductDetail = () => {
             )}
           </div>
           <div>
-            <h1 style={{ margin: '0 0 10px 0', color: '#135E84' }}>{product.post_title}</h1>
+            <h1 style={{ margin: '0 0 10px 0', color: '#135E84' }}>
+              {product.post_title}
+              {/* Un produit en brouillon n'est pas en ligne sur la boutique : sans
+                  ce badge, on cherche longtemps pourquoi il ne remonte nulle part. */}
+              <WcStatus statut={product.post_status} />
+            </h1>
             {(product.brand || product.sub_brand) && (
               <div style={{ fontSize: '14px', color: '#888', marginBottom: '8px' }}>
                 {product.brand && (
@@ -794,7 +800,10 @@ const ProductDetail = () => {
                                   style={{ width: '40px', height: '40px', objectFit: 'cover', borderRadius: '4px', border: '1px solid #e0e0e0', flexShrink: 0 }}
                                 />
                               )}
-                              <span>{variant.post_title}</span>
+                              <span>
+                                {variant.post_title}
+                                <WcStatus statut={variant.post_status} />
+                              </span>
                             </div>
                           </td>
                           <td style={{ padding: '12px' }}>

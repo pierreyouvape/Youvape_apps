@@ -7,6 +7,7 @@ import { formatPrice } from '../utils/formatNumber';
 import { LinkBox, LinkTr } from '../utils/navHelpers';
 import AppShell from '../components/AppShell';
 import CopyButton from '../components/CopyButton';
+import WcStatus from '../components/WcStatus';
 import { useIsMobile } from '../hooks/useIsMobile';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
@@ -324,7 +325,10 @@ const CatalogApp = () => {
           incoming_qty: totalIncoming,
           sales_30d: totalSales,
           boutique_mtp: totalMtp,
-          boutique_cast: totalCast
+          boutique_cast: totalCast,
+          // L'état WooCommerce de la tête de ligne : un parent en brouillon
+          // n'est pas en ligne sur la boutique, même si ses déclinaisons y sont.
+          post_status: p.post_status
         });
 
         // Variation rows
@@ -756,6 +760,7 @@ const CatalogApp = () => {
                                 {row.post_title}
                               </a>
                               <CopyButton text={row.post_title} size={12} />
+                              <WcStatus statut={row.post_status} sombre />
                             </span>
                           </td>
                           <td style={{ ...cellStyle, fontFamily: 'monospace', fontSize: '12px' }}>
@@ -811,6 +816,7 @@ const CatalogApp = () => {
                               {row._displayName}
                             </span>
                             <CopyButton text={row._fullName || row.post_title} size={12} />
+                            <WcStatus statut={row.post_status} />
                           </span>
                         </td>
                         <td style={{ ...cellStyle, color: '#6b7280', fontFamily: 'monospace', fontSize: '12px' }}>

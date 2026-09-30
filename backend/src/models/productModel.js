@@ -1316,7 +1316,12 @@ class ProductModel {
         p.product_type,
         p.post_date,
         p.track_stock,
-        p.shelf_location
+        p.shelf_location,
+        -- L'état WooCommerce de la tête de ligne. Un parent en brouillon ou en
+        -- privé reste vendable par ses déclinaisons publiées : l'écran doit
+        -- pouvoir le dire, sans quoi on cherche pourquoi un produit « n'est pas
+        -- au catalogue » sans jamais trouver.
+        p.post_status
       FROM products p
       ${whereClause}
       ${catalogOrderBy(sortBy, sortDir)}
@@ -1386,7 +1391,8 @@ class ProductModel {
           COALESCE(v.image_url, p_parent.image_url) as image_url,
           v.product_type,
           v.track_stock,
-          v.shelf_location
+          v.shelf_location,
+          v.post_status
         FROM products v
         LEFT JOIN products p_parent ON v.wp_parent_id = p_parent.wp_product_id
         WHERE v.wp_parent_id = ANY($1) AND v.product_type = 'variation'
