@@ -58,6 +58,7 @@ import ATBApp from './pages/ATBApp';
 import EmployeesApp from './pages/EmployeesApp';
 import PrivateRoute from './components/PrivateRoute';
 import { SECTION_KEYS } from './utils/purchaseSections';
+import VersionWatcher from './components/VersionWatcher';
 
 const PAGE_TITLES = {
   '/home': 'Accueil',
@@ -120,6 +121,10 @@ function App() {
     <AuthProvider>
       <BrowserRouter>
         <PageTitle />
+        {/* Prévient qu'un déploiement a eu lieu : un onglet ouvert exécute son
+            code de départ tant qu'on ne le recharge pas, et passer d'un écran à
+            l'autre ne recharge rien dans une SPA. */}
+        <VersionWatcher />
         <Routes>
           <Route path="/" element={<Navigate to="/home" />} />
           <Route path="/login" element={<Login />} />
