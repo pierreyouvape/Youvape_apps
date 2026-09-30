@@ -1164,6 +1164,33 @@ const purchaseOrderModel = {
         shipped: 'shipped'
       };
 
+      // UNE RÉCEPTION EN COURS DE COMPTAGE REND SES LIGNES INTOUCHABLES.
+      //
+      // Cette synchro remplace les lignes d'une commande — DELETE puis INSERT — et
+      // `reception_counts.purchase_order_item_id` est déclaré ON DELETE CASCADE. Le
+      // comptage part donc avec les lignes, en silence : le cron tourne toutes les
+      // heures à la demi entre 9h et 19h, donc un magasinier qui compte à 10h15
+      // retrouvait une session vide à 10h30, et « Aucune pièce comptée » à la
+      // validation sans que rien ne dise pourquoi. C'est exactement ce que la
+      // session en base devait empêcher (cf. add_reception_sessions.sql : mille
+      // articles LCA recomptés depuis zéro).
+      //
+      // L'en-tête, lui, reste synchronisé — seules les lignes sont préservées. La
+      // réception a son propre chemin pour reprendre ce que BMS a de neuf :
+      // « Recharger depuis BMS », qui ajoute et rapproche sans jamais supprimer.
+      //
+      // Relevé UNE FOIS avant la boucle, et c'est suffisant : une session ouverte
+      // pendant la synchro serait encore à zéro, donc sans rien à perdre, et son
+      // écran la reprend par « Recharger ». Toute session qui a accumulé un
+      // comptage existait forcément avant — on ne compte pas un carton en une
+      // seconde. Ne pas remplacer ceci par une relecture ligne à ligne : la course
+      // serait la même, pour un verrou de plus.
+      const { rows: enComptage } = await client.query(
+        "SELECT purchase_order_id FROM reception_sessions WHERE status = 'counting'"
+      );
+      const comptageEnCours = new Set(enComptage.map(r => r.purchase_order_id));
+      let preserved = 0;
+
       for (const bmsOrder of orders) {
         const supplierId = supplierByBmsId.get(bmsOrder.supplier_id);
         if (!supplierId) {
@@ -1240,6 +1267,23 @@ const purchaseOrderModel = {
 
         if (inserted) {
           created++;
+        } else if (comptageEnCours.has(poId)) {
+          // Réception en cours : l'en-tête vient d'être mis à jour, les lignes
+          // restent les nôtres et leur comptage avec (voir plus haut).
+          updated++;
+          preserved++;
+          console.log(
+            `[BMS sync] commande ${poId} (BMS ${bmsOrder.id}) en cours de réception : `
+            + 'ses lignes et leur comptage sont conservés.'
+          );
+          results.push({
+            id: poId,
+            bms_po_id: bmsOrder.id,
+            reference: bmsReference,
+            supplier: bmsOrder.supplier_name,
+            action: 'items-preserved'
+          });
+          continue;
         } else {
           updated++;
           // Supprimer les anciens items pour les remplacer
@@ -1344,6 +1388,9 @@ const purchaseOrderModel = {
         created,
         updated,
         skipped,
+        // Commandes dont les lignes n'ont pas été remplacées, une réception les
+        // comptant. Compté à part pour que ça se voie dans les journaux du cron.
+        preserved,
         reconciled,
         orders: results
       };

@@ -237,7 +237,11 @@ const syncBmsOrders = async () => {
   try {
     console.log('🔄 Sync automatique commandes BMS...');
     const result = await purchaseOrderModel.syncFromBMS();
-    console.log(`✅ BMS sync: ${result.created} créée(s), ${result.updated} mise(s) à jour, ${result.skipped} ignorée(s)`);
+    // `preserved` : commandes en cours de réception, dont les lignes n'ont pas été
+    // remplacées pour ne pas emporter le comptage. Dit seulement quand ça arrive.
+    const preservees = result.preserved > 0
+      ? `, ${result.preserved} en réception (lignes conservées)` : '';
+    console.log(`✅ BMS sync: ${result.created} créée(s), ${result.updated} mise(s) à jour, ${result.skipped} ignorée(s)${preservees}`);
   } catch (error) {
     console.error('❌ Erreur sync BMS auto:', error.message);
     sendAlert(

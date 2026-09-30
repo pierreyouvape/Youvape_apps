@@ -274,10 +274,15 @@ async function abandonSession(sessionId, db = pool) {
 /**
  * Recharge les lignes depuis BMS, et complète la session.
  *
- * L'API BMS ne sait PAS ajouter une ligne à un bon de commande existant : son
- * Swagger ne déclare que la création d'un bon, et PATCH/PUT n'en touchent que
- * l'en-tête. Recevoir un article absent du bon passe donc forcément par BMS —
- * on l'y ajoute, puis on recharge ici.
+ * Deux façons d'ajouter un article existent, et celle-ci est la seconde. Quand
+ * la ligne est créée depuis l'écran, `addLine` s'en charge de bout en bout. Ce
+ * chemin-ci reprend tout le reste : ce qui a été ajouté dans l'interface de BMS
+ * par quelqu'un d'autre, ou pendant que la session était ouverte.
+ *
+ * Il sert aussi de rattrapage quand la synchro BMS a laissé une commande en
+ * réception de côté : elle ne remplace pas les lignes d'une session qui compte
+ * (ça emporterait le comptage, cf. purchaseOrderModel.syncFromBMS), donc c'est
+ * ici qu'on va chercher ce que BMS a de neuf.
  *
  * Ce qui remonte : les lignes que BMS a et que nous n'avons pas (insérées
  * localement), et les identifiants de ligne manquants (re-rapprochés). Rien

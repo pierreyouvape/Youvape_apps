@@ -402,9 +402,18 @@ const purchasesController = {
       const result = await purchaseOrderModel.syncFromBMS();
       console.log(`Sync BMS terminée: ${result.created} créées, ${result.updated} mises à jour, ${result.skipped} ignorées`);
 
+      // Une commande en cours de réception garde SES lignes : les remplacer
+      // emporterait le comptage en cascade. Il faut le dire, sinon l'acheteur
+      // cherche pourquoi une ligne ajoutée dans BMS n'est pas remontée — la
+      // réponse est « Recharger depuis BMS », depuis l'écran de réception.
+      const preservees = result.preserved > 0
+        ? `. ${result.preserved} commande(s) en cours de réception ont gardé leurs lignes `
+          + `(comptage en cours) — utilisez « Recharger depuis BMS » dans la réception`
+        : '';
+
       res.json({
         success: true,
-        message: `Synchronisation terminée: ${result.created} créée(s), ${result.updated} mise(s) à jour, ${result.skipped} ignorée(s)`,
+        message: `Synchronisation terminée: ${result.created} créée(s), ${result.updated} mise(s) à jour, ${result.skipped} ignorée(s)${preservees}`,
         data: result
       });
     } catch (error) {

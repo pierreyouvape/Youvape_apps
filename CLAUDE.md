@@ -117,6 +117,58 @@ exports) doit donner **exactement le même chiffre à la date du jour**.
   commande jamais un parent.
 - Les besoins portent sur le **produit**, pas sur une réf.
 
+### Commandes d'achat : la sémantique BMS (vérifiée le 29/09/2026)
+
+Trois allers-retours en production ont établi ceci. Rien n'en est devinable à la lecture
+du code de BMS, et chaque écart a coûté de l'argent faux sur une commande réelle.
+
+**BMS N'ACCEPTE PAS le conditionnement qu'on lui envoie à la création.** Il applique
+toujours celui du catalogue produit, et lit le `qty` posté comme des **PIÈCES** qu'il
+divise par ce conditionnement. D'où la règle unique de `buildBmsItems`, valable pour
+**tous les fournisseurs et tous les chemins** (création manuelle, import PDF, besoins) :
+
+```
+qty   = le nombre de PIÈCES
+price = le prix d'un lot AU SENS DU CATALOGUE   (catalogue_pack_qty, jamais le pack choisi)
+```
+
+`catalogue_pack_qty` et le pack choisi sur la ligne sont **deux valeurs distinctes** — les
+confondre remet le prix à la pièce dans une case de prix de lot (3,00 € au lieu de 15,00 €).
+
+**Après création, les lignes sont remises en pièces.** `PUT /v2/purchase-orders/{id}/items/{itemId}`
+accepte `qty`, `qty_pack` et `price` (absent du Swagger, la v1 ne le sait pas) :
+`normalizeBmsLines` repasse chaque ligne en `qty_pack: 1`, prix ramené à la pièce sur
+**4 décimales** (arrondir au centime perd de l'argent sur un lot de 200). Avec ce
+conditionnement, pièces et lots se confondent — stock, compteur de réception, pourcentage
+reçu et valorisation tombent tous juste d'un coup. Un échec de normalisation ne fait pas
+échouer l'envoi : la commande existe, simplement présentée en lots.
+
+**La réception se compte et s'envoie en PIÈCES, jamais en packs.**
+`POST /v2/purchase-orders/{id}/receive` ajoute au stock le nombre envoyé, littéralement,
+mais le compare au `qty` de la ligne. `items[].id` est l'identifiant de **la ligne chez
+BMS**, ni le SKU ni le produit — relevé à l'ouverture de la session, sans lui rien ne part.
+**BMS n'a aucun garde-fou** (il accepte une réception de 5 sur une ligne commandée à 1) :
+les trois contrôles sont entièrement de notre côté, dans `receptionSessionModel`.
+
+**On ne se fie jamais au statut BMS pour dire qu'une commande est reçue.** Il solde une
+ligne dès que son `qty_received` atteint son `qty` — comparaison packs contre pièces. C'est
+NOTRE décompte, en pièces de bout en bout, qui décide (`RECEPTION_INCOMPLETE`).
+
+**`POST /v2/purchase-orders/{id}/items` sait ajouter une ligne** à un bon existant (v2
+seulement). Toujours en pièces avec `qty_pack: 1`. Préférer ce chemin à un ajustement de
+stock : la marchandise garde son prix d'achat et son lien au fournisseur.
+
+**Ne jamais remplacer les lignes d'une commande en cours de réception.**
+`reception_counts.purchase_order_item_id` est `ON DELETE CASCADE` : un `DELETE` sur
+`purchase_order_items` emporte le comptage **en silence**. `syncFromBMS` saute donc le
+remplacement des lignes quand une session est en `counting` (et le compte dans
+`preserved`) ; la réception reprend ce que BMS a de neuf par « Recharger depuis BMS »,
+qui ajoute et rapproche sans jamais supprimer.
+
+**Non-régression** : `cd backend && npm test` → `tests/bmsPayload.test.js` rejoue les quatre
+cas réels et pose l'invariant qui les aurait tous attrapés — *l'argent envoyé doit toujours
+égaler l'argent commandé*. **À lancer après toute modif du payload BMS.**
+
 ### Bundles WooCommerce (woosb)
 
 Les produits de type `woosb` (packs) génèrent **deux lignes** dans `order_items` :
@@ -185,6 +237,61 @@ nouvel appel de lecture est authentifié sans effort. Les appels `fetch()`
 (alors : secret dédié).
 
 ## Bugs corrigés — historique
+
+### 2026-09-29 — Commander et réceptionner sans ouvrir BMS (`eaba186` → `34cbef8`)
+**Fichiers** : `purchaseOrderModel.js`, `receptionSessionModel.js`, `receptionController.js`,
+`orderLifecycleModel.js`, `purchasesController.js`, `CreateOrderPage.jsx`, `ReceptionApp.jsx`,
+`OrdersTab.jsx`, `tests/bmsPayload.test.js`
+
+Le cycle complet — commander, recevoir, contrôler la facture — depuis l'app. Les règles
+établies sont dans « Commandes d'achat : la sémantique BMS » ci-dessus ; ici les pièges.
+
+- **Un troisième chemin vers une commande**. Il en existait deux (besoins calculés, import
+  PDF) et aucun ne convenait pour commander deux références précises. `NeedsTab` V1 ne
+  contenait d'ailleurs aucun `axios.post` : il ne savait pas créer de commande.
+- **La recherche produits n'est PAS restreinte au fournisseur choisi** (`all_suppliers=1`).
+  Restreindre est un bon réflexe pour compléter une commande, un mauvais pour en créer une :
+  un produit fraîchement créé n'est rattaché à personne et restait introuvable. Le
+  fournisseur **enrichit** les résultats (ses réfs, leurs packs, le dernier tarif retenu),
+  il ne filtre plus. Marque et sous-marque sont cherchables — elles vivent sur le **parent
+  variable**, d'où les quatre colonnes ajoutées.
+- **Le prix boucle la boucle** : il part du dernier tarif **retenu** sur une facture
+  contrôlée (`supplier_refs.price_retained_at`), signalé en vert. Ce qui a été réellement
+  payé, pas un souvenir.
+- **Le champ « Par » n'est pas modifiable** — et ne doit pas le redevenir. BMS impose le
+  conditionnement du catalogue ; un champ éditable promettrait un contrôle qu'on n'a pas et
+  ferait diverger l'écran de ce que BMS enregistre.
+- **Piège `packChoisi`** : un conditionnement n'était retenu que s'il valait **plus de 1**,
+  donc une ligne « par 1 » retombait sur le catalogue — 5 pièces commandées parties en 25.
+  `packChoisi` distingue désormais « non fourni » (`null`) de « fourni à 1 ».
+- **Réception partielle** : BMS passait la commande en `complete` après 4 pièces sur 40, elle
+  **disparaissait** de l'écran de réception et les 36 restantes n'avaient plus aucun moyen
+  d'y être enregistrées. Corrigé par `RECEPTION_INCOMPLETE` (notre décompte fait autorité).
+- **`esbuild` ne remplace pas ESLint** : il prend une fonction appelée mais non définie pour
+  une variable globale. ESLint, configuré dans le projet, a trouvé `supplier_sku` écrit deux
+  fois dans le payload (la seconde écrasant la première) et un `handleScan` sans sa
+  dépendance `compterCarton` — le scan aurait gardé une **session figée**, le comptage
+  cessant d'être enregistré sans que rien ne le signale. **Lancer `npx eslint` sur les
+  fichiers touchés**, pas seulement un build.
+
+### 2026-09-30 — La synchro BMS effaçait un comptage de réception en cours
+**Fichiers** : `purchaseOrderModel.js` (`syncFromBMS`), `cronService.js`, `purchasesController.js`
+
+- **Symptôme** (trouvé à la relecture, pas en production) : une session de réception
+  perdait toutes ses lignes, puis refusait de se valider sur « Aucune pièce comptée »,
+  sans rien dire de la cause.
+- **Cause** : `syncFromBMS` remplace les lignes d'une commande mise à jour
+  (`DELETE FROM purchase_order_items` puis `INSERT`), et
+  `reception_counts.purchase_order_item_id` est `ON DELETE CASCADE` → le comptage part avec
+  les lignes. Le cron tourne `30 9-19 * * 1-5` et une commande en réception est `expected`
+  chez BMS, donc toujours dans le périmètre : un comptage commencé à 10h15 était perdu à
+  10h30. Exactement ce que la session en base devait empêcher.
+- **Correctif** : le remplacement des lignes est sauté quand une `reception_sessions` est en
+  `counting`. L'en-tête reste synchronisé (statut, dates, totaux), compté dans `preserved`
+  et dit dans les journaux du cron comme dans la réponse de la synchro manuelle.
+- **Contrepartie assumée** : pendant un comptage, une ligne ajoutée dans BMS ne remonte plus
+  toute seule. C'est « Recharger depuis BMS » qui la reprend — il ajoute et rapproche sans
+  jamais supprimer, et le message de la synchro manuelle y renvoie.
 
 ### 2026-08-31 — Import fournisseur : des lignes disparaissaient sans un mot
 **Fichiers** : `parsers/revoluteParser.js`, `parsers/etastyParser.js`,
@@ -277,8 +384,9 @@ Voir `yousync/AVANT-DE-MODIFIER.md`.
   déjà en unités, deviennent des packs de 200). Utiliser
   `node backend/scripts/backfillUnitsPerQty.js [--all] [--apply]`, qui tranche ligne à
   ligne en comparant la quantité locale à la commande BMS d'origine.
-- **Sémantique BMS** (utile pour toute reprise) : `qty` est un nombre de packs,
-  `subtotal = qty × price`, unités physiques = `qty × qty_pack`.
+- **Sémantique BMS** : ce qui était écrit ici (« `qty` est un nombre de packs ») décrivait
+  ce que BMS **stocke**, pas ce qu'il **accepte** — et confondre les deux a coûté les bugs
+  du 29/09/2026. Voir la règle absolue « Commandes d'achat : la sémantique BMS » ci-dessus.
 
 ### 2026-07-29 — Sécurité : exposition de données sans authentification (`commit 1bbf603`)
 **Fichiers** : `server.js`, `permissionMiddleware.js`, `main.jsx`, `CustomerAutocomplete.jsx`
