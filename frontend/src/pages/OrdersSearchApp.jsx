@@ -254,7 +254,7 @@ const OrdersSearchApp = () => {
               <OrdersIcon size={18} color="#fff" />
             </div>
             <span style={{ fontSize: 16, fontWeight: 800, color: C.grisTF, fontFamily: "'Tilt Warp', cursive" }}>
-              Commandes
+              Commandes clients
             </span>
             {!loading && (
               <>

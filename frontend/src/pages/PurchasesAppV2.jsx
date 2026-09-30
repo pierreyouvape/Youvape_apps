@@ -1,35 +1,30 @@
 import { useState, useContext } from 'react';
 import { AuthContext } from '../context/AuthContext';
 import AppShell from '../components/AppShell';
-import { Purchases as PurchasesIcon } from '../components/AppIcons';
+import { APPS } from '../components/AppIcons';
 import NeedsTabV2 from '../components/purchases/NeedsTabV2';
-import SuppliersTab from '../components/purchases/SuppliersTab';
-import OrdersTab from '../components/purchases/OrdersTab';
-import SpendingTab from '../components/purchases/SpendingTab';
 import './PurchasesApp.css';
 
-// Gestion d'achat V2 — copie isolée de PurchasesApp pour tester le découplage
-// seuil d'alerte / couverture dans l'onglet Besoins, sans toucher l'app existante.
-// Les onglets Fournisseurs / Commandes / Dépenses sont réutilisés tels quels (V1).
-
+/**
+ * Besoins V2 — le calcul des besoins en cours d'essai, à côté du V1.
+ *
+ * Cette page était une COPIE COMPLÈTE de l'ancienne Gestion d'achat : elle
+ * portait les quatre onglets dans un menu interne, alors que trois d'entre eux
+ * (Fournisseurs, Commandes, Dépenses) rendaient exactement les mêmes composants
+ * que le V1. Depuis que ces trois-là sont des apps de la pile Achats, les
+ * rouvrir ici ramenait l'ancienne présentation sous un autre nom, et donnait
+ * deux chemins vers un écran identique.
+ *
+ * Ne reste donc que ce qui distingue vraiment le V2 : NeedsTabV2, qui découple
+ * le seuil d'alerte de la couverture. Le jour où il remplace le V1, c'est
+ * l'entrée `purchases` d'APPS qui pointera ici, et cette page disparaîtra.
+ */
 const C = {
-  orange: '#E28F00',
-  saphir: '#135E84',
-  saphirF: '#003A56',
   grisCL: '#E2E2E2',
   grisM: '#8A99A4',
-  grisF: '#626E85',
   grisTF: '#2a2e38',
   blanc: '#FFFFFF',
-  vert: '#4AB866',
 };
-
-const SECTIONS = [
-  { key: 'besoins',      label: 'Besoins',       icon: '📊' },
-  { key: 'fournisseurs', label: 'Fournisseurs',   icon: '🏭' },
-  { key: 'commandes',    label: 'Commandes',      icon: '📦' },
-  { key: 'depenses',     label: 'Dépenses',       icon: '💶' },
-];
 
 function shade(hex, amt) {
   const h = hex.replace('#', '');
@@ -43,54 +38,16 @@ function shade(hex, amt) {
 
 const PurchasesAppV2 = () => {
   const { token } = useContext(AuthContext);
-  const [section, setSection] = useState('besoins');
   const [needsCompact, setNeedsCompact] = useState(false);
 
-  /* Menu interne injecté dans la sidebar */
-  const appMenu = (
-    <div>
-      <div style={{
-        fontSize: 10, fontWeight: 800, letterSpacing: '0.12em',
-        color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase',
-        padding: '4px 10px 10px',
-      }}>
-        Gestion d'achat V2
-      </div>
-      <div style={{ padding: '0 4px', display: 'flex', flexDirection: 'column', gap: 2 }}>
-        {SECTIONS.map(s => {
-          const active = section === s.key;
-          return (
-            <button
-              key={s.key}
-              onClick={() => setSection(s.key)}
-              style={{
-                textAlign: 'left',
-                display: 'flex', alignItems: 'center', gap: 10,
-                background: active ? 'rgba(255,255,255,0.10)' : 'transparent',
-                color: active ? '#fff' : 'rgba(255,255,255,0.72)',
-                border: 'none',
-                borderLeft: active ? `3px solid ${C.orange}` : '3px solid transparent',
-                borderRadius: 8,
-                padding: active ? '8px 12px 8px 9px' : '8px 12px',
-                fontSize: 13, fontWeight: active ? 700 : 500,
-                cursor: 'pointer', fontFamily: 'inherit',
-                transition: 'background 0.15s, color 0.15s',
-                width: '100%',
-              }}
-              onMouseEnter={e => { if (!active) { e.currentTarget.style.background = 'rgba(255,255,255,0.06)'; e.currentTarget.style.color = 'rgba(255,255,255,0.92)'; } }}
-              onMouseLeave={e => { if (!active) { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'rgba(255,255,255,0.72)'; } }}
-            >
-              <span style={{ fontSize: 14 }}>{s.icon}</span>
-              <span>{s.label}</span>
-            </button>
-          );
-        })}
-      </div>
-    </div>
-  );
+  // Libellé, icône et couleur viennent d'APPS, comme pour les autres apps de la
+  // pile : les recopier ici, c'est les voir diverger.
+  const app = APPS.find(a => a.path === '/purchases-v2');
+  const AppIcon = app?.Icon;
+  const couleur = app?.color || '#D97706';
 
   return (
-    <AppShell appMenu={appMenu} currentPath="/purchases-v2">
+    <AppShell currentPath="/purchases-v2">
       <main
         className="main-scroll"
         style={{ flex: 1, minWidth: 0, overflowY: 'auto', height: '100vh', display: 'flex', flexDirection: 'column' }}
@@ -108,39 +65,26 @@ const PurchasesAppV2 = () => {
           <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
             <div style={{
               width: 30, height: 30, borderRadius: 8,
-              background: `linear-gradient(155deg, #F59E0B 0%, ${shade('#F59E0B', -0.2)} 100%)`,
+              background: `linear-gradient(155deg, ${couleur} 0%, ${shade(couleur, -0.2)} 100%)`,
               display: 'flex', alignItems: 'center', justifyContent: 'center',
-              boxShadow: '0 4px 12px rgba(245,158,11,0.35), 0 1px 0 rgba(255,255,255,0.35) inset',
+              boxShadow: '0 4px 12px rgba(217,119,6,0.35), 0 1px 0 rgba(255,255,255,0.35) inset',
             }}>
-              <PurchasesIcon size={18} color="#fff" />
+              {AppIcon && <AppIcon size={18} color="#fff" />}
             </div>
+            <div style={{ fontSize: 13, color: C.grisM, fontWeight: 600 }}>Achats</div>
+            <span style={{ color: C.grisCL }}>/</span>
             <div style={{
               fontSize: 16, fontWeight: 800, color: C.grisTF,
               fontFamily: "'Tilt Warp', cursive",
             }}>
-              Gestion d'achat V2
+              {app?.label}
             </div>
-            <span style={{ color: C.grisCL }}>/</span>
-            <span style={{ fontSize: 13, color: C.grisF, fontWeight: 600 }}>
-              {SECTIONS.find(s => s.key === section)?.label}
-            </span>
           </div>
         </header>
 
         {/* Contenu */}
-        <div style={{ flex: 1, padding: section === 'besoins' && needsCompact ? '20px' : '24px 28px' }}>
-          {section === 'besoins' && (
-            <NeedsTabV2 token={token} onCompactChange={setNeedsCompact} />
-          )}
-          {section === 'fournisseurs' && (
-            <SuppliersTab token={token} />
-          )}
-          {section === 'commandes' && (
-            <OrdersTab token={token} />
-          )}
-          {section === 'depenses' && (
-            <SpendingTab token={token} />
-          )}
+        <div style={{ flex: 1, padding: needsCompact ? '20px' : '24px 28px' }}>
+          <NeedsTabV2 token={token} onCompactChange={setNeedsCompact} />
         </div>
       </main>
     </AppShell>

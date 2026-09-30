@@ -410,14 +410,18 @@ export const APPS = [
   { key: 'purchases', path: '/purchases/besoins', label: 'Besoins',           Icon: Stats,     color: '#F59E0B' },
   { key: 'achats-fournisseurs', path: '/purchases/fournisseurs', label: 'Fournisseurs',
     Icon: Suppliers, color: '#B45309', permissionKey: 'purchases' },
-  // « Commandes » tout court, comme l'onglet qu'elle remplace. L'app `commandes`
-  // du premier niveau porte le même mot pour les commandes CLIENT : ici le
-  // libellé est lu sous la pile Achats, qui lève l'ambiguïté.
-  { key: 'achats-commandes', path: '/purchases/commandes', label: 'Commandes',
+  // « Commandes fournisseurs », en toutes lettres : l'app `commandes` du premier
+  // niveau montre les commandes CLIENT. Deux entrées nommées « Commandes » dans
+  // le même lanceur obligeaient à se souvenir de laquelle est laquelle.
+  { key: 'achats-commandes', path: '/purchases/commandes', label: 'Commandes fournisseurs',
     Icon: Purchases, color: '#EA580C', permissionKey: 'purchases' },
   { key: 'achats-depenses', path: '/purchases/depenses', label: 'Dépenses',
     Icon: Spending, color: '#CA8A04', permissionKey: 'purchases' },
-  { key: 'purchases-v2', path: '/purchases-v2', label: "Gestion d'achat V2",  Icon: Purchases, color: '#D97706' },
+  // « Besoins V2 » et non « Gestion d'achat V2 » : elle ne porte plus que le
+  // calcul des besoins à l'essai. Ses trois autres onglets rendaient les mêmes
+  // composants que le V1 et sont devenus des apps de cette pile — les rouvrir
+  // sous ce nom ramenait l'ancienne présentation par une porte dérobée.
+  { key: 'purchases-v2', path: '/purchases-v2', label: 'Besoins V2',          Icon: Stats,     color: '#D97706' },
   { key: 'reception', path: '/reception', label: 'Réception',                Icon: Reception, color: '#65A30D' },
   { key: 'packing',   path: '/packing',   label: 'Packing',                  Icon: Packing,   color: '#6366F1' },
   // `permissionKey` : cette app s'ouvre avec le droit d'une AUTRE. Le bordereau
@@ -436,7 +440,8 @@ export const APPS = [
   { key: 'picking',   path: '/picking',   label: 'Picking',                  Icon: Picking,   color: '#7C3AED' },
   { key: 'catalog',   path: '/catalog',   label: 'Produits',                 Icon: Catalog,   color: '#059669' },
   { key: 'financier',  path: '/financier',  label: 'Rapport',                  Icon: Stats,         color: '#135E84' },
-  { key: 'commandes',  path: '/commandes',  label: 'Commandes',                Icon: OrdersSearch, color: '#5B21B6' },
+  // « clients » pour la distinguer des commandes FOURNISSEUR de la pile Achats.
+  { key: 'commandes',  path: '/commandes',  label: 'Commandes clients',        Icon: OrdersSearch, color: '#5B21B6' },
   { key: 'tickets',    path: '/tickets',    label: 'SAV / Tickets',            Icon: Tickets,      color: '#0891B2' },
   { key: 'chronopost', path: '/chronopost', label: 'Factures Chronopost',      Icon: Chronopost,   color: '#0D7FA8' },
   { key: 'colissimo',  path: '/colissimo',  label: 'Factures Colissimo',       Icon: Colissimo,    color: '#D96000' },
