@@ -175,6 +175,11 @@ const mailgunService = {
 
       const from = process.env.MAILGUN_ALERT_FROM || `Alertes YouVape <alertes@${DOMAIN}>`;
       const messageData = { from, to: recipients, subject, text: text || htmlToPlainText(html) };
+      // Répondre à une alerte doit joindre l'ÉQUIPE, pas la boîte d'envoi : la
+      // route Mailgun du domaine est un attrape-tout qui pousse tout l'entrant
+      // vers le webhook SAV. Sans ce Reply-To, un « Répondre » ouvrirait un
+      // ticket client. Le webhook s'en garde aussi de son côté (savController).
+      messageData['h:Reply-To'] = recipients.join(', ');
       if (html) messageData.html = html;
 
       const result = await getClient().messages.create(DOMAIN, messageData);

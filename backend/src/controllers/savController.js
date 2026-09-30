@@ -274,12 +274,27 @@ const savController = {
       console.log('📨 [SAV Inbound] Payload reçu:', JSON.stringify(req.body, null, 2));
 
       const {
-        sender, subject, 'body-plain': bodyPlain,
+        sender, subject, recipient, 'body-plain': bodyPlain,
         'stripped-text': strippedText,
         'stripped-signature': strippedSignature,
         'Message-Id': messageId, 'message-url': messageUrl,
         timestamp, token, signature,
       } = req.body;
+
+      // LE COURRIER INTERNE N'EST PAS DU SAV.
+      //
+      // La route Mailgun est un attrape-tout sur le domaine
+      // (`.*@service-client.youvape.fr`), et depuis le 30/09/2026 les alertes
+      // internes partent de `alertes@` sur ce même domaine — le seul qui porte
+      // SPF et DKIM. Une réponse à une alerte VPS n'a pas de `[SAV #N]` dans son
+      // sujet : elle tomberait donc au « Cas 2 » et ouvrirait un ticket client
+      // au nom d'un collègue. On l'écarte ici plutôt que de compter sur une
+      // route Mailgun, parce que ce garde-fou-là est dans le dépôt et se relit.
+      const pourAlertes = /^alertes@/i.test(String(recipient || '').trim());
+      if (pourAlertes) {
+        console.log(`📨 [SAV Inbound] Message à ${recipient} ignoré : courrier interne, pas un ticket.`);
+        return res.status(200).send('OK');
+      }
 
       // Vérifier signature Mailgun (optionnel en sandbox)
       if (process.env.MAILGUN_WEBHOOK_SIGNING_KEY) {
