@@ -265,6 +265,74 @@
   font-weight: 600;
 }
 
+/* Ligne modifiée mais pas encore enregistrée : trait orange sur la colonne
+   Email, qui reste visible quel que soit le défilement horizontal. */
+.users-table tbody tr.row-dirty td:first-child {
+  box-shadow: inset 3px 0 0 #fd7e14, inset -1px 0 0 #dee2e6, inset 0 -1px 0 #dee2e6, 2px 0 4px rgba(0, 0, 0, 0.06);
+}
+
+.badge-dirty,
+.badge-saved {
+  display: inline-block;
+  margin-left: 0.5rem;
+  padding: 0.2rem 0.45rem;
+  border-radius: 4px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.badge-dirty {
+  background-color: #fd7e14;
+  color: #fff;
+}
+
+.badge-saved {
+  background-color: #d4edda;
+  color: #155724;
+}
+
+/* Barre d'enregistrement global : collée en bas de la zone scrollable pour
+   rester atteignable quelle que soit la ligne qu'on est en train de modifier. */
+.users-save-bar {
+  position: sticky;
+  bottom: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 1rem;
+  margin-top: 1rem;
+  padding: 0.75rem 1rem;
+  background: white;
+  border: 1px solid #dee2e6;
+  border-radius: 8px;
+  box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.users-save-status {
+  font-size: 0.9rem;
+}
+
+.users-save-status .status-dirty {
+  color: #fd7e14;
+  font-weight: 600;
+}
+
+.users-save-status .status-saved {
+  color: #155724;
+  font-weight: 600;
+}
+
+.users-save-status .status-idle {
+  color: #6c757d;
+}
+
+.btn-save-all {
+  padding: 0.6rem 1.5rem;
+  font-weight: 600;
+}
+
 .permissions-cell {
   text-align: center;
 }

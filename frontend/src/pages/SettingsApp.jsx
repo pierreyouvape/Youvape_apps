@@ -25,6 +25,12 @@ const SettingsApp = () => {
   // Onglet Gestion utilisateurs
   const [users, setUsers] = useState([]);
   const [loadingUsers, setLoadingUsers] = useState(false);
+  // Empreinte des droits tels qu'ils sont en base : sert à savoir quelles
+  // lignes ont été touchées depuis le dernier chargement / enregistrement.
+  const [savedSignatures, setSavedSignatures] = useState({});
+  const [savingAll, setSavingAll] = useState(false);
+  const [lastSavedAt, setLastSavedAt] = useState(null);
+  const [justSavedIds, setJustSavedIds] = useState([]);
 
   // Onglet WooCommerce
   const [wcSyncInterval, setWcSyncInterval] = useState('');
@@ -155,6 +161,8 @@ const SettingsApp = () => {
       });
 
       setUsers(usersWithPerms);
+      setSavedSignatures(Object.fromEntries(usersWithPerms.map(u => [u.id, userSignature(u)])));
+      setJustSavedIds([]);
       setError(null);
     } catch (err) {
       console.error('Erreur lors du chargement des utilisateurs:', err);
@@ -191,26 +199,80 @@ const SettingsApp = () => {
     }));
   };
 
-  const saveUserPermissions = async (userId) => {
-    try {
-      const user = users.find(u => u.id === userId);
+  // Empreinte stable d'une ligne (ordre des clés figé par APPS) : deux lignes
+  // identiques donnent la même chaîne, quel que soit l'ordre d'arrivée des droits.
+  const userSignature = (user) => JSON.stringify([
+    user.is_admin ? 1 : 0,
+    ...APPS.map(app => `${user.permissions[app.key]?.read ? 1 : 0}${user.permissions[app.key]?.write ? 1 : 0}`)
+  ]);
 
-      await axios.put(
-        `${API_URL}/users/${userId}/permissions`,
-        {
-          permissions: user.permissions,
-          is_admin: user.is_admin
-        },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
+  const dirtyUsers = users.filter(u => {
+    const ref = savedSignatures[u.id];
+    return ref !== undefined && ref !== userSignature(u) && !isSuperAdminUser(u.email);
+  });
+  const dirtyIds = dirtyUsers.map(u => u.id);
 
-      setSuccessMessage('Permissions mises à jour avec succès');
-      setTimeout(() => setSuccessMessage(null), 3000);
-    } catch (err) {
-      console.error('Erreur lors de la sauvegarde:', err);
-      setError(err.response?.data?.error || 'Erreur lors de la sauvegarde');
-      setTimeout(() => setError(null), 5000);
+  // Plus de sauvegarde ligne par ligne : on prévient avant de quitter la page
+  // avec des cases cochées mais non enregistrées.
+  useEffect(() => {
+    if (dirtyIds.length === 0) return;
+    const warn = (e) => { e.preventDefault(); e.returnValue = ''; };
+    window.addEventListener('beforeunload', warn);
+    return () => window.removeEventListener('beforeunload', warn);
+  }, [dirtyIds.length]);
+
+  const saveAllPermissions = async () => {
+    if (dirtyUsers.length === 0) return;
+    setSavingAll(true);
+    setError(null);
+    setSuccessMessage(null);
+
+    const results = await Promise.all(dirtyUsers.map(async (user) => {
+      try {
+        await axios.put(
+          `${API_URL}/users/${user.id}/permissions`,
+          { permissions: user.permissions, is_admin: user.is_admin },
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+        return { user, ok: true };
+      } catch (err) {
+        console.error(`Erreur lors de la sauvegarde de ${user.email}:`, err);
+        return { user, ok: false, err };
+      }
+    }));
+
+    const saved = results.filter(r => r.ok);
+    const failed = results.filter(r => !r.ok);
+
+    // On ne remet à jour l'empreinte que des lignes réellement enregistrées :
+    // celles qui ont échoué restent marquées comme modifiées.
+    if (saved.length > 0) {
+      setSavedSignatures(prev => {
+        const next = { ...prev };
+        saved.forEach(({ user }) => { next[user.id] = userSignature(user); });
+        return next;
+      });
+      setLastSavedAt(new Date());
+      setJustSavedIds(saved.map(({ user }) => user.id));
+      setTimeout(() => setJustSavedIds([]), 4000);
     }
+
+    if (failed.length === 0) {
+      setSuccessMessage(
+        saved.length > 1
+          ? `${saved.length} utilisateurs enregistrés avec succès`
+          : 'Utilisateur enregistré avec succès'
+      );
+      setTimeout(() => setSuccessMessage(null), 3000);
+    } else {
+      setError(
+        `Échec de l'enregistrement pour : ${failed.map(f => f.user.email).join(', ')}`
+        + (failed[0].err?.response?.data?.error ? ` (${failed[0].err.response.data.error})` : '')
+      );
+      setTimeout(() => setError(null), 8000);
+    }
+
+    setSavingAll(false);
   };
 
   const deleteUser = async (userId, email) => {
@@ -337,11 +399,18 @@ const SettingsApp = () => {
                     <tbody>
                       {users.map(user => {
                         const isSuperAdm = isSuperAdminUser(user.email);
+                        const isDirty = dirtyIds.includes(user.id);
+                        const isJustSaved = justSavedIds.includes(user.id);
                         return (
-                          <tr key={user.id} className={isSuperAdm ? 'super-admin-row' : ''}>
+                          <tr
+                            key={user.id}
+                            className={[isSuperAdm ? 'super-admin-row' : '', isDirty ? 'row-dirty' : ''].filter(Boolean).join(' ')}
+                          >
                             <td>
                               {user.email}
                               {isSuperAdm && <span className="badge-super-admin">Super Admin</span>}
+                              {isDirty && <span className="badge-dirty">Modifié</span>}
+                              {isJustSaved && <span className="badge-saved">Enregistré</span>}
                             </td>
                             <td>
                               <input
@@ -392,13 +461,6 @@ const SettingsApp = () => {
                               )
                             ))}
                             <td className="actions-cell">
-                              <button
-                                onClick={() => saveUserPermissions(user.id)}
-                                className="btn btn-save"
-                                disabled={isSuperAdm}
-                              >
-                                Sauvegarder
-                              </button>
                               {!isSuperAdm && (
                                 <button
                                   onClick={() => deleteUser(user.id, user.email)}
@@ -414,6 +476,30 @@ const SettingsApp = () => {
                     </tbody>
                   </table>
                 </div>
+
+                <div className="users-save-bar">
+                  <div className="users-save-status">
+                    {dirtyIds.length > 0 ? (
+                      <span className="status-dirty">
+                        {dirtyIds.length} ligne{dirtyIds.length > 1 ? 's' : ''} modifiée{dirtyIds.length > 1 ? 's' : ''} non enregistrée{dirtyIds.length > 1 ? 's' : ''}
+                      </span>
+                    ) : lastSavedAt ? (
+                      <span className="status-saved">
+                        ✓ Enregistré à {lastSavedAt.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                      </span>
+                    ) : (
+                      <span className="status-idle">Aucune modification en attente</span>
+                    )}
+                  </div>
+                  <button
+                    onClick={saveAllPermissions}
+                    className="btn btn-save btn-save-all"
+                    disabled={savingAll || dirtyIds.length === 0}
+                  >
+                    {savingAll ? 'Enregistrement...' : 'Tout enregistrer'}
+                  </button>
+                </div>
+
                 {users.length === 0 && (
                   <div className="no-users">Aucun utilisateur trouvé</div>
                 )}
