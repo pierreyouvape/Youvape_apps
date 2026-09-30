@@ -125,7 +125,7 @@ du code de BMS, et chaque écart a coûté de l'argent faux sur une commande ré
 **BMS ne connaît plus que des PIÈCES, depuis le 30/09/2026.** Il refusait le
 conditionnement qu'on lui envoyait à la création — il appliquait toujours celui du
 catalogue et divisait la `qty` postée par lui. On a supprimé la division à sa source :
-les **752 associations produit × fournisseur sont passées à `pack_qty = 1`**. Le
+les **804 associations produit × fournisseur sont passées à `pack_qty = 1`**. Le
 conditionnement vit désormais chez nous (`product_suppliers.pack_qty` pour le catalogue,
 `supplier_refs.pack_qty` par référence), et ne voyage plus jusqu'à BMS.
 
@@ -139,8 +139,10 @@ price = le prix d'UNE PIÈCE, sur QUATRE décimales
 
 Quatre décimales : arrondir au centime perd de l'argent sur un lot de 200.
 ⚠️ **Remettre `price` au prix du lot multiplierait chaque montant par le conditionnement**
-— 174 € au lieu de 17,40 €, mesuré en août. Les valeurs d'origine des 752 associations sont
-dans `product_suppliers_packqty_backup_20260930` si la bascule devait être défaite.
+— 174 € au lieu de 17,40 €, mesuré en août. Les valeurs d'origine (conditionnement ET prix) des 804 associations sont
+dans `bms_supplier_items_packqty_backup_20260930` (clé = l'id BMS de l'association) si la
+bascule devait être défaite. `product_suppliers_packqty_backup_20260930` ne couvre que les
+752 associations que nous mirrorons localement — 52 existent chez BMS seulement.
 
 **Après création, les lignes sont remises en pièces.** `PUT /v2/purchase-orders/{id}/items/{itemId}`
 accepte `qty`, `qty_pack` et `price` (absent du Swagger, la v1 ne le sait pas) :

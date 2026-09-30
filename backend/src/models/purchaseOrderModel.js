@@ -161,8 +161,9 @@ const purchaseOrderModel = {
    * ─── CE N'EST PLUS VRAI DEPUIS LE 30/09/2026 ────────────────────────────
    *
    * Ce détour n'existait que parce que BMS divisait. On a donc supprimé la
-   * division à sa source : les 752 associations produit × fournisseur sont
-   * passées à `pack_qty = 1`. BMS ne connaît plus que des pièces, le
+   * division à sa source : les 804 associations produit × fournisseur sont
+   * passées à `pack_qty = 1` (relues une à une : 6860/6860 à 1, prix intacts).
+   * BMS ne connaît plus que des pièces, le
    * conditionnement vit chez nous (`product_suppliers.pack_qty` pour le
    * catalogue, `supplier_refs.pack_qty` par référence).
    *
@@ -507,17 +508,16 @@ const purchaseOrderModel = {
     const skipPackQty = parserRegistry.skipsPackQty(supplier.code);
 
     // Préparer les items pour BMS (seuls les produits avec SKU)
-    // Sémantique BMS (vérifiée en prod) :
-    //   - Le champ `qty` POSTÉ est en UNITÉS ; BMS stocke qty_packs = qty_postée / pack_qty.
-    //   - `price` est le prix DU PACK ; total ligne = qty_packs × price.
-    // Deux conventions de stockage local selon le fournisseur :
-    //   - Normaux : qty_ordered = UNITÉS, unit_price = prix PAR UNITÉ
-    //       → qty = qty_ordered (déjà en unités) ; price = unit_price × pack_qty (prix pack).
+    // Depuis le 30/09/2026, BMS ne divise plus rien : toutes ses associations
+    // produit × fournisseur sont à pack_qty = 1. On lui envoie donc, toujours :
+    //       qty   = le nombre de PIÈCES
+    //       price = le prix d'UNE PIÈCE (4 décimales, cf. buildBmsItems)
+    // Les deux conventions de stockage LOCAL subsistent, elles :
+    //   - Normaux : qty_ordered = UNITÉS, unit_price = prix PAR UNITÉ.
     //   - « À l'unité » (skipPackQty : Highbuy, LCA…) : la facture est AU PACK,
-    //     qty_ordered = nb de PACKS et unit_price = prix DU PACK
-    //       → qty = qty_ordered × pack_qty (packs → unités, car BMS re-divise) ;
-    //         price = unit_price tel quel (déjà un prix pack ; ne PAS ×pack_qty = bug ×10).
-    // pack_qty est toujours envoyé (conditionnement / réception).
+    //     qty_ordered = nb de PACKS et unit_price = prix DU PACK.
+    // C'est buildBmsItems qui ramène les deux aux pièces ; rien d'autre ne doit
+    // s'en mêler, et surtout pas re-multiplier le prix par le conditionnement.
     const bmsItems = purchaseOrderModel.buildBmsItems(items, skipPackQty);
 
     if (bmsItems.length === 0) {
