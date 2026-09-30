@@ -158,9 +158,25 @@ const purchaseOrderModel = {
    *     qty   = le nombre de PIÈCES
    *     price = le prix d'un lot AU SENS DU CATALOGUE
    *
-   * Le conditionnement choisi à la commande sert toujours — il dit combien de
-   * pièces on commande et à quel prix la pièce — mais il ne voyage pas jusqu'à
-   * BMS, qui n'en veut pas.
+   * ─── CE N'EST PLUS VRAI DEPUIS LE 30/09/2026 ────────────────────────────
+   *
+   * Ce détour n'existait que parce que BMS divisait. On a donc supprimé la
+   * division à sa source : les 752 associations produit × fournisseur sont
+   * passées à `pack_qty = 1`. BMS ne connaît plus que des pièces, le
+   * conditionnement vit chez nous (`product_suppliers.pack_qty` pour le
+   * catalogue, `supplier_refs.pack_qty` par référence).
+   *
+   *     qty   = le nombre de PIÈCES
+   *     price = le prix d'UNE PIÈCE, sur QUATRE décimales
+   *
+   * Quatre décimales et non deux : arrondir au centime perd de l'argent sur un
+   * lot de 200 (54 € le lot font 0,27 € la pièce, mais 13,40 € le lot de 10 en
+   * font 1,34 et 7,90 € le lot de 3 en font 2,6333).
+   *
+   * ⚠️ Remettre `price` au prix du lot multiplierait chaque montant par le
+   * conditionnement — 174 € au lieu de 17,40 €, mesuré en août. Le conditionnement
+   * choisi à la commande sert toujours à dire combien de pièces on commande, mais
+   * il ne voyage plus jusqu'à BMS.
    */
   buildBmsItems: (items, skipPackQty) => (items || [])
     .filter((item) => item.sku)
@@ -182,8 +198,8 @@ const purchaseOrderModel = {
       const bmsItem = {
         sku: item.sku,
         qty: pieces,
-        price: Math.round(prixPiece * packCatalogue * 100) / 100,
-        pack_qty: packCatalogue,
+        price: Math.round(prixPiece * 10000) / 10000,
+        pack_qty: 1,
         name: item.product_name,
         supplier_sku: item.supplier_sku || null,
       };

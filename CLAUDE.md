@@ -122,18 +122,25 @@ exports) doit donner **exactement le même chiffre à la date du jour**.
 Trois allers-retours en production ont établi ceci. Rien n'en est devinable à la lecture
 du code de BMS, et chaque écart a coûté de l'argent faux sur une commande réelle.
 
-**BMS N'ACCEPTE PAS le conditionnement qu'on lui envoie à la création.** Il applique
-toujours celui du catalogue produit, et lit le `qty` posté comme des **PIÈCES** qu'il
-divise par ce conditionnement. D'où la règle unique de `buildBmsItems`, valable pour
-**tous les fournisseurs et tous les chemins** (création manuelle, import PDF, besoins) :
+**BMS ne connaît plus que des PIÈCES, depuis le 30/09/2026.** Il refusait le
+conditionnement qu'on lui envoyait à la création — il appliquait toujours celui du
+catalogue et divisait la `qty` postée par lui. On a supprimé la division à sa source :
+les **752 associations produit × fournisseur sont passées à `pack_qty = 1`**. Le
+conditionnement vit désormais chez nous (`product_suppliers.pack_qty` pour le catalogue,
+`supplier_refs.pack_qty` par référence), et ne voyage plus jusqu'à BMS.
+
+Règle unique de `buildBmsItems`, pour tous les fournisseurs et tous les chemins
+(création manuelle, import PDF, besoins) :
 
 ```
 qty   = le nombre de PIÈCES
-price = le prix d'un lot AU SENS DU CATALOGUE   (catalogue_pack_qty, jamais le pack choisi)
+price = le prix d'UNE PIÈCE, sur QUATRE décimales
 ```
 
-`catalogue_pack_qty` et le pack choisi sur la ligne sont **deux valeurs distinctes** — les
-confondre remet le prix à la pièce dans une case de prix de lot (3,00 € au lieu de 15,00 €).
+Quatre décimales : arrondir au centime perd de l'argent sur un lot de 200.
+⚠️ **Remettre `price` au prix du lot multiplierait chaque montant par le conditionnement**
+— 174 € au lieu de 17,40 €, mesuré en août. Les valeurs d'origine des 752 associations sont
+dans `product_suppliers_packqty_backup_20260930` si la bascule devait être défaite.
 
 **Après création, les lignes sont remises en pièces.** `PUT /v2/purchase-orders/{id}/items/{itemId}`
 accepte `qty`, `qty_pack` et `price` (absent du Swagger, la v1 ne le sait pas) :
