@@ -216,9 +216,10 @@ const purchaseOrderModel = {
       // Créer la commande localement
       const orderQuery = `
         INSERT INTO purchase_orders (
-          order_number, supplier_id, status, notes, created_by, order_date, invoice_total_ht
+          order_number, supplier_id, status, notes, created_by, order_date, invoice_total_ht,
+          bms_supplier_reference
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
         RETURNING *
       `;
       const orderResult = await client.query(orderQuery, [
@@ -229,6 +230,10 @@ const purchaseOrderModel = {
         userId,
         data.order_date || new Date().toISOString().split('T')[0],
         data.invoice_total_ht != null ? parseFloat(data.invoice_total_ht) : null,
+        // La note libre de l'acheteur (« Précommande JNR »). Elle part aussi dans
+        // BMS : sans quoi la synchro la remplacerait par le vide de BMS au
+        // passage suivant.
+        String(data.supplier_reference || '').trim() || null,
       ]);
       const order = orderResult.rows[0];
 
@@ -561,6 +566,12 @@ const purchaseOrderModel = {
       warehouse_id: BMS_WAREHOUSE_ID,
       items: bmsItems
     };
+    // La réf libre, si l'acheteur en a saisi une. Jamais de chaîne vide : BMS
+    // répond 500 sur un blanc (vérifié le 30/09/2026), alors qu'il accepte
+    // parfaitement l'absence du champ.
+    if (order.bms_supplier_reference) {
+      bmsOrderData.supplier_reference = order.bms_supplier_reference;
+    }
 
     console.log('Creating BMS order:', JSON.stringify(bmsOrderData, null, 2));
 
@@ -820,6 +831,13 @@ const purchaseOrderModel = {
         fields.push(`notes = $${paramIndex++}`);
         values.push(data.notes);
       }
+      // La réf libre de l'acheteur. Elle doit repartir dans BMS (voir plus bas) :
+      // la garder ici seulement, c'est la voir écrasée par le vide de BMS à la
+      // prochaine synchro, qui recopie ce champ sans condition.
+      if (data.supplier_reference !== undefined) {
+        fields.push(`bms_supplier_reference = $${paramIndex++}`);
+        values.push(String(data.supplier_reference || '').trim() || null);
+      }
       if (data.order_date !== undefined) {
         fields.push(`order_date = $${paramIndex++}`);
         values.push(data.order_date);
@@ -918,7 +936,36 @@ const purchaseOrderModel = {
       }
 
       await client.query('COMMIT');
-      return purchaseOrderModel.getById(id);
+
+      const misAJour = await purchaseOrderModel.getById(id);
+
+      // LA RÉF LIBRE REPART DANS BMS, sans quoi elle ne survivrait pas à la
+      // synchro : celle-ci recopie `supplier_reference` de BMS sur la nôtre à
+      // chaque passage, et l'effacerait dans l'heure.
+      //
+      // Après le COMMIT, et sans faire échouer la sauvegarde : la note est un
+      // confort, perdre la modification des lignes pour elle serait absurde. Un
+      // échec est dit dans les journaux, et la synchro suivante le rendra visible
+      // en remettant l'ancienne valeur.
+      //
+      // Jamais de chaîne vide : BMS répond 500 sur un blanc, alors qu'il accepte
+      // n'importe quelle valeur non vide (vérifié le 30/09/2026). Une réf effacée
+      // chez nous reste donc en place chez lui — c'est BMS qui ne sait pas la
+      // retirer, pas nous qui ne le demandons pas.
+      if (data.supplier_reference !== undefined && misAJour?.bms_po_id) {
+        const ref = String(data.supplier_reference || '').trim();
+        if (ref) {
+          try {
+            await bmsApiModel.apiCall(
+              `/v2/purchase-orders/${misAJour.bms_po_id}`, 'PUT', { supplier_reference: ref },
+            );
+          } catch (e) {
+            console.warn(`[BMS] réf fournisseur non transmise pour la commande ${id} : ${e.message}`);
+          }
+        }
+      }
+
+      return misAJour;
     } catch (error) {
       await client.query('ROLLBACK');
       throw error;

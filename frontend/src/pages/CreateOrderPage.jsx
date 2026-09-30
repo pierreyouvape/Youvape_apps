@@ -18,6 +18,10 @@ const CreateOrderPage = () => {
   // comme référence : c'est lui qu'on lira sur la facture, et par lequel le
   // contrôle de facture retombera sur la commande.
   const [orderNumber, setOrderNumber] = useState('');
+  // La réf libre de BMS : « Précommande JNR ». C'est elle qu'on lira dans la
+  // liste des réceptions pour reconnaître une commande au premier coup d'œil,
+  // là où un numéro ne dit rien.
+  const [supplierReference, setSupplierReference] = useState('');
   const searchBoxRef = useRef(null);
   const [productSearch, setProductSearch] = useState('');
   const [searchResults, setSearchResults] = useState([]);
@@ -199,6 +203,7 @@ const CreateOrderPage = () => {
 
       const response = await axios.post(`${API_URL}/purchases/orders`, {
         order_number: orderNumber.trim() || undefined,
+        supplier_reference: supplierReference.trim() || undefined,
         supplier_id: parseInt(supplierId),
         items,
         send_to_bms: sendToBMS
@@ -315,6 +320,19 @@ const CreateOrderPage = () => {
             value={orderNumber}
             onChange={e => setOrderNumber(e.target.value)}
             placeholder="Celui du fournisseur — laissez vide pour en engendrer un"
+            style={{ width: '100%', maxWidth: '400px', padding: '12px', borderRadius: '6px', border: '1px solid #ddd', fontSize: '15px' }}
+          />
+
+          {/* La réf libre. Elle part dans BMS avec la commande, et c'est par
+              elle qu'on reconnaîtra le bon dans la liste des réceptions. */}
+          <label style={{ display: 'block', marginTop: '18px', marginBottom: '8px', fontWeight: 600, fontSize: '14px' }}>
+            Réf fournisseur
+          </label>
+          <input
+            type="text"
+            value={supplierReference}
+            onChange={e => setSupplierReference(e.target.value)}
+            placeholder="Une note libre — « Précommande JNR », « Réassort Aegis »…"
             style={{ width: '100%', maxWidth: '400px', padding: '12px', borderRadius: '6px', border: '1px solid #ddd', fontSize: '15px' }}
           />
         </div>

@@ -258,7 +258,7 @@ const OrdersTab = ({ token }) => {
       supplier_id: selectedOrder.supplier_id,
       order_date: selectedOrder.order_date ? selectedOrder.order_date.slice(0, 10) : '',
       expected_date: selectedOrder.expected_date ? selectedOrder.expected_date.slice(0, 10) : '',
-      notes: selectedOrder.notes || '',
+      supplier_reference: selectedOrder.bms_supplier_reference || '',
       items: (selectedOrder.items || []).map((item, idx) => ({ ...item, _delete: false, _tmpId: item.id || `tmp-${idx}` }))
     });
     setEditMode(true);
@@ -280,7 +280,10 @@ const OrdersTab = ({ token }) => {
         supplier_id: parseInt(editData.supplier_id),
         order_date: editData.order_date || null,
         expected_date: editData.expected_date || null,
-        notes: editData.notes || null,
+        // `notes` n'est plus envoyé : le champ ne servait à personne et la
+        // colonne reste alimentée par la synchro BMS (private_comments). Ne pas
+        // l'envoyer, c'est ne pas l'écraser.
+        supplier_reference: editData.supplier_reference,
         items: editData.items.map(item => ({
           id: item.id || undefined,
           product_id: item.product_id,
@@ -819,6 +822,14 @@ const OrdersTab = ({ token }) => {
                     ) : null;
                   })()}
 
+                  {/* La réf libre, en lecture : on ne doit pas avoir à passer en
+                      édition pour voir ce qu'on pourra y modifier. */}
+                  {selectedOrder.bms_supplier_reference && (
+                    <div style={{ marginTop: '20px', padding: '10px', background: '#eff6ff', borderRadius: '6px' }}>
+                      <strong>Réf fournisseur :</strong> {selectedOrder.bms_supplier_reference}
+                    </div>
+                  )}
+
                   {/* Notes */}
                   {selectedOrder.notes && (
                     <div style={{ marginTop: '20px', padding: '10px', background: '#fef3c7', borderRadius: '6px' }}>
@@ -864,14 +875,23 @@ const OrdersTab = ({ token }) => {
                       />
                     </div>
                   </div>
+                  {/* La réf libre de BMS, à la place des Notes : celles-ci ne
+                      servaient à personne, alors que cette référence se lit dans
+                      la liste des réceptions et dans BMS. Elle y est renvoyée à
+                      la sauvegarde — sans quoi la synchro l'effacerait. */}
                   <div style={{ marginBottom: '20px' }}>
-                    <label style={{ display: 'block', fontWeight: 500, marginBottom: '4px' }}>Notes</label>
-                    <textarea
-                      value={editData.notes}
-                      onChange={e => setEditData(prev => ({ ...prev, notes: e.target.value }))}
-                      rows={2}
-                      style={{ width: '100%', padding: '7px 10px', border: '1px solid #ccc', borderRadius: '4px', resize: 'vertical' }}
+                    <label style={{ display: 'block', fontWeight: 500, marginBottom: '4px' }}>Réf fournisseur</label>
+                    <input
+                      type="text"
+                      value={editData.supplier_reference}
+                      onChange={e => setEditData(prev => ({ ...prev, supplier_reference: e.target.value }))}
+                      placeholder="Une note libre — « Précommande JNR », « Réassort Aegis »…"
+                      style={{ width: '100%', padding: '7px 10px', border: '1px solid #ccc', borderRadius: '4px' }}
                     />
+                    <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '4px' }}>
+                      Visible dans la liste des réceptions et renvoyée dans BMS.
+                      BMS refuse de la vider : une fois posée, elle se remplace mais ne s'efface pas.
+                    </div>
                   </div>
 
                   {/* Tableau des lignes éditable */}
