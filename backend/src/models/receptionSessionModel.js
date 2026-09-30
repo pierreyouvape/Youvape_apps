@@ -472,7 +472,15 @@ async function historiqueReceptions(purchaseOrderId, db = pool) {
   );
 
   return sessions.map((s) => {
-    const deLaSession = lignes.filter((l) => l.session_id === s.id);
+    // SEULE UNE SESSION VALIDÉE A DES MANQUANTS.
+    //
+    // Une session abandonnée n'a rien compté : présenter ses lignes comme
+    // « manquantes » accuserait le fournisseur d'un abandon de comptage. Vu sur
+    // la session 10 d'IJSBUKTLI, qui affichait 7 manquants sans motif alors
+    // qu'elle n'avait jamais servi.
+    const deLaSession = s.status === 'validated'
+      ? lignes.filter((l) => l.session_id === s.id)
+      : [];
     return {
       ...s,
       manquants: deLaSession
