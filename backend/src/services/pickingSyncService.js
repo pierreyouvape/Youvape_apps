@@ -9,7 +9,7 @@
  *
  * Lecture seule : rien n'est écrit dans BMS.
  *
- * La photo est écrasée à chaque actualisation (cron 5 min + bouton + ouverture
+ * La photo est écrasée à chaque actualisation (cron 2 min + bouton + ouverture
  * de la page si elle est trop vieille). Deux actualisations simultanées n'en
  * font qu'une.
  */
@@ -163,7 +163,7 @@ const lastSyncAt = async () => {
 };
 
 /** Actualise si la photo a plus de `maxAgeMs` (soirs et week-ends, hors cron). */
-const ensureFresh = async (maxAgeMs = 5 * 60 * 1000) => {
+const ensureFresh = async (maxAgeMs = 2 * 60 * 1000) => {
   const last = await lastSyncAt();
   if (!last || Date.now() - last.getTime() > maxAgeMs) await refresh();
 };

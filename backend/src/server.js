@@ -159,7 +159,7 @@ app.listen(PORT, async () => {
   // colis parti, mais BMS jamais prevenu) + la synthese du soir
   setupBmsShipmentConfirmCron();
 
-  // Photo des commandes à préparer pour le Picking (toutes les 5 min, 9h-19h, lun-ven)
+  // Photo des commandes à préparer pour le Picking (toutes les 2 min, 9h-19h, lun-ven)
   setupPickingSyncCron();
   setupBmsShipmentSyncCron();
 

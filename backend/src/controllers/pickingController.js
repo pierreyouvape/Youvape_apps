@@ -19,7 +19,7 @@ const handle = (fn) => async (req, res) => {
 
 /**
  * Liste des commandes, avec les compteurs d'onglets.
- * La photo BMS est actualisée d'abord si elle a plus de 5 minutes ; si BMS ne
+ * La photo BMS est actualisée d'abord si elle a plus de 2 minutes ; si BMS ne
  * répond pas, on sert la dernière photo avec l'erreur, plutôt qu'un écran vide.
  */
 const listOrders = handle(async (req, res) => {

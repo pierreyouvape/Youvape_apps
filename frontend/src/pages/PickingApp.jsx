@@ -7,6 +7,7 @@ import { Picking as PickingIcon } from '../components/AppIcons';
 import { formatDate, formatDateUTC } from '../utils/dateUtils';
 import { getCountryName } from '../utils/countries';
 import CorrectionModal from '../components/picking/CorrectionModal';
+import { useVisibleRefresh } from '../components/picking/useVisibleRefresh';
 import {
   API_URL, authHeaders, C, CORRECTION_TAGS, carrierKey, carrierLabel,
   CarrierLogo, CountryFlag, Chip, CountBadge,
@@ -43,6 +44,9 @@ const WAVE_TABS = [
 ];
 
 const MAIN_KEY = 'yv.picking.main';
+
+// La liste se recharge seule tant que la page est affichée, au rythme du relevé BMS.
+const REFRESH_MS = 2 * 60 * 1000;
 
 const readPref = (key, fallback) => {
   try { return localStorage.getItem(key) || fallback; } catch { return fallback; }
@@ -132,6 +136,7 @@ function OrdersView({ token, canWrite, onWavesCreated, setMessage }) {
   }, [token, setMessage]);
 
   useEffect(() => { load(); }, [load]);
+  useVisibleRefresh(load, REFRESH_MS);
 
   const refresh = async () => {
     setRefreshing(true);
@@ -284,7 +289,7 @@ function OrdersView({ token, canWrite, onWavesCreated, setMessage }) {
     <>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12, fontSize: 13, color: C.greyT, flexWrap: 'wrap' }}>
         <span>
-          Relevé BMS : {data.syncedAt ? formatDateUTC(data.syncedAt) : 'jamais'} · actualisé toutes les 5 min (9h-19h, lun-ven)
+          Relevé BMS : {data.syncedAt ? formatDateUTC(data.syncedAt) : 'jamais'} · la liste se recharge seule toutes les 2 min
         </span>
         <button onClick={refresh} disabled={refreshing} style={{ ...btn(), padding: '5px 12px', fontSize: 12.5 }}>
           {refreshing ? 'Actualisation…' : '↻ Actualiser'}
@@ -566,6 +571,7 @@ function WavesView({ token, canWrite, reloadKey, setMessage }) {
   }, [tab, token, setMessage]);
 
   useEffect(() => { load(); }, [load, reloadKey]);
+  useVisibleRefresh(load, REFRESH_MS);
 
   const toggleDetail = async (w) => {
     if (open === w.id) { setOpen(null); return; }

@@ -913,11 +913,13 @@ const setupPickingSyncCron = () => {
     pickingSyncCronJob.stop();
     pickingSyncCronJob = null;
   }
-  // Toutes les 5 min, 9h-19h, lun-ven ; hors de ces heures, la page actualise à l'ouverture
-  pickingSyncCronJob = cron.schedule('*/5 9-19 * * 1-5', runPickingSync, {
+  // Toutes les 2 min, 9h-19h, lun-ven ; hors de ces heures, la page ouverte actualise elle-même.
+  // 2 min et pas 5 (30/09/2026) : aux heures où les commandes tombent, l'écart avec
+  // l'écran de BMS se voyait (88 commandes ici, 90 là-bas).
+  pickingSyncCronJob = cron.schedule('*/2 9-19 * * 1-5', runPickingSync, {
     timezone: 'Europe/Paris'
   });
-  console.log('Cron picking configure: photo BMS toutes les 5 min, 9h-19h, lun-ven');
+  console.log('Cron picking configure: photo BMS toutes les 2 min, 9h-19h, lun-ven');
 };
 
 
