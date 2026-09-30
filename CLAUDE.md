@@ -155,6 +155,27 @@ le FIFO lit `purchase_order_items.unit_price`) : il ne compte que pour qui crée
 commande depuis l'interface BMS. Le jour où on voudra l'assainir, ce sera au cas par cas
 depuis `supplier_refs.pack_price`, jamais par une règle unique.
 
+⚠️ **Ne pas confondre avec le `price` des LIGNES DE COMMANDE BMS, qui lui compte.**
+Deux champs, deux rôles, et les confondre a coûté un aller-retour le 30/09/2026 :
+
+| Champ | Où | Rôle |
+|---|---|---|
+| `price` de l'**association** | `/supplier/products` | N'entre dans aucun de nos chiffres (ci-dessus) |
+| `price` de la **ligne de commande** | `/supplier/purchase-orders/{id}` | **Référence du contrôle de facture** |
+
+Le contrôle de facture ne lit PAS notre `purchase_order_items` pour ses colonnes
+« Tarif BMS » et « Commande HT » : il interroge `/supplier/purchase-orders/{id}`
+**à l'instant** (parti pris assumé, cf. `supplierInvoiceService.fetchOrderLines`).
+Un tarif corrigé chez nous sans être reporté là-bas ne change donc rien à l'écran,
+et l'écart réapparaît à la facture suivante. `supplierDocumentModel.applyTariffs`
+fait les trois écritures : `supplier_refs.pack_price`, `purchase_order_items.unit_price`
+et la ligne BMS.
+
+⚠️ **`/v2/purchase-orders/{id}/items` pagine à DIX sans le dire.** Seul `meta.total`
+trahit le reste. Toujours passer par `bmsApiModel.getPurchaseOrderItems`, qui pagine —
+un appel nu laissait la moitié d'une commande de vingt références en lots, donc autant
+de compteurs de réception faux, en silence.
+
 **Conséquence de la bascule** : BMS n'est plus une source de conditionnement. Une
 association *nouvellement* créée par `syncProductSuppliersFromBMS` hérite désormais de
 `pack_qty = 1` — le conditionnement réel doit venir de chez nous (`supplier_refs`, import
