@@ -26,42 +26,20 @@ const invoiceParsers = require('../parsers/invoices');
  * Rien n'est écrit en base, aucun fichier n'est conservé.
  */
 /**
- * POST /api/supplier-invoices/align-tariffs — inscrire les tarifs relevés.
+ * POST /api/supplier-invoices/apply-tariffs — inscrire le tarif relevé ET
+ * corriger la commande qu'il vient de payer.
  *
- * Écrit dans NOTRE base : l'API BoostMyShop n'expose aucune route d'écriture sur
- * les prix fournisseur (son Swagger n'en déclare que treize au total, dont une
- * seule côté achats — créer un bon de commande). Le report dans BMS reste donc
- * manuel ; ce que l'app inscrit ici sert au préremplissage des prochaines
- * commandes.
- */
-async function alignTariffs(req, res) {
-  try {
-    const supplierId = parseInt(req.body.supplier_id, 10);
-    if (!Number.isFinite(supplierId)) {
-      return res.status(400).json({ error: 'Fournisseur manquant' });
-    }
-    const tariffs = Array.isArray(req.body.tariffs) ? req.body.tariffs : [];
-    if (tariffs.length === 0) {
-      return res.status(400).json({ error: 'Aucun tarif à inscrire' });
-    }
-
-    const result = await supplierDocumentModel.alignTariffs(supplierId, tariffs);
-    return res.json(result);
-  } catch (error) {
-    console.error('[supplier-invoices] alignement des tarifs :', error.message);
-    return res.status(500).json({ error: error.message || 'Erreur serveur' });
-  }
-}
-
-/**
- * POST /api/supplier-invoices/apply-tariffs — retenir le tarif ET corriger la
- * commande qu'il vient de payer.
+ * Écrit dans NOTRE base, jamais chez BMS : l'API BoostMyShop n'expose aucune
+ * route d'écriture sur les prix fournisseur (son Swagger n'en déclare que treize
+ * au total, dont une seule côté achats — créer un bon de commande), et le `price`
+ * de ses associations n'entre dans aucun de nos chiffres (cf. CLAUDE.md).
  *
- * `align-tariffs` ne prépare que la prochaine commande. Celle-ci reste valorisée
- * au prix commandé, et c'est ce prix que lit le FIFO : la marchandise entre en
- * stock plus cher qu'elle n'a coûté. D'où ce second geste, volontairement
- * distinct — inscrire un tarif de référence et réécrire la compta d'un lot ne se
- * décident pas ensemble.
+ * Les deux écritures vont ensemble parce qu'elles répondent à la même question :
+ * ce que cette marchandise a coûté. `supplier_refs.pack_price` le dit à la
+ * prochaine commande, `purchase_order_items.unit_price` à celle qui vient d'être
+ * payée — donc au FIFO, qui lit le prix de la commande et jamais celui de la
+ * facture. Il y a eu un geste pour chacune pendant une journée : le plus faible
+ * n'avait aucun cas à lui, puisque ce tableau ne s'affiche que commande en main.
  */
 async function applyTariffs(req, res) {
   try {
@@ -439,7 +417,6 @@ async function getParsers(req, res) {
 module.exports = {
   getOrderLifecycle,
   recheckDocument,
-  alignTariffs,
   applyTariffs,
   listCandidateOrders,
   analyseDocument,

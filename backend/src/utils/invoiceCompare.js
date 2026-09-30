@@ -705,7 +705,7 @@ function listTariffUpdates(comparison, options = {}) {
  * Le tableau UNIQUE de l'écran de contrôle : une ligne par sujet, avec son motif.
  *
  * Il y avait deux tableaux, et une ligne dont le seul reproche était le tarif
- * figurait dans les deux — en haut avec son bouton « Retenir », en bas avec
+ * figurait dans les deux — en haut avec son bouton de tarif, en bas avec
  * « Réclamer un avoir ». On réunit donc les écarts et les tarifs relevés, et
  * chaque ligne porte ce qui l'amène là : un prix qui a bougé, une quantité qui
  * ne correspond pas, ou les deux.

@@ -611,7 +611,8 @@ async function replaceLines(documentId, comparison, db = pool) {
 
 module.exports = {
   replaceLines,
-  alignTariffs,
+  // `alignTariffs` n'est plus exportée : elle n'a plus qu'un appelant, juste
+  // en dessous. Le geste offert à l'écran est `applyTariffs`.
   applyTariffs,
   listCandidateOrders,
   findExisting,
