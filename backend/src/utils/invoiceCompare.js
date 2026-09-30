@@ -722,7 +722,15 @@ function listDifferences(comparison) {
  * prix de pack dans une case de prix unitaire.
  */
 function listTariffUpdates(comparison, options = {}) {
-  const seuil = Number.isFinite(options.threshold) ? options.threshold : 0.005;
+  // UN DEMI-DIX-MILLIÈME, depuis que la base tient quatre décimales
+  // (widen_price_precision.sql). Le seuil valait 0,005 € quand `pack_price`
+  // était un NUMERIC(10,2) : en dessous, il n'y avait rien à écrire, le prix
+  // retombait sur le même centime. Ces écarts-là sont pourtant exactement ceux
+  // qui reviennent à chaque facture — un 10 ml à 1,45 € remisé à 15 % coûte
+  // 1,2325 € contre 1,23 € commandé, soit 0,0025 € : invisible au seuil de
+  // 0,005, et « Arrondi de remise » sur la ligne à vie. Sept lignes de LIPS
+  // FAC/2026/04474 étaient dans ce cas, sans aucun bouton pour en sortir.
+  const seuil = Number.isFinite(options.threshold) ? options.threshold : 0.0005;
   const hors = ['packaging', 'missing_in_invoice', 'free', 'not_ordered', 'shipping', 'discount', 'other'];
 
   return (comparison?.lines || [])

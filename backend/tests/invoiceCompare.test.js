@@ -19,7 +19,7 @@
  */
 
 const assert = require('assert');
-const { compareInvoiceToOrder, listDifferences } = require('../src/utils/invoiceCompare');
+const { compareInvoiceToOrder, listDifferences, listTariffUpdates } = require('../src/utils/invoiceCompare');
 const { buildClaimMessage } = require('../src/utils/invoiceClaimMessage');
 const { attachMatchKeys } = require('../src/utils/invoiceMatching');
 const { resolveCompleteRefs } = require('../src/utils/refResolution');
@@ -936,6 +936,29 @@ test('une remise à taux qui couvre bien toute la facture reste répartie', () =
   });
   const a = r.lines.find((l) => l.ref === 'A');
   assert.ok(a.discountShare > 0, 'remise globale non répartie');
+});
+
+/* ─── Le seuil des tarifs, depuis que la base tient quatre décimales ────── */
+
+test('un écart de 0,0025 € par pièce donne un tarif à appliquer', () => {
+  // Le cas qui revenait à chaque facture LIPS : 1,45 € remisé à 15 % = 1,2325 €
+  // contre 1,23 € commandé. Sous l'ancien seuil de 0,005 €, la ligne affichait
+  // « Arrondi de remise » sans aucun bouton — donc pour toujours.
+  const r = compareInvoiceToOrder({
+    invoice: { lines: [{ ref: 'PECHE', label: 'Pêche 10mL', qty: 24, lineTotalHt: 29.58 }] },
+    order: { lines: [{ ref: 'PECHE', productName: 'Pêche 10mL', qty: 24, price: 1.23 }] },
+  });
+  const t = listTariffUpdates(r).find((x) => x.ref === 'PECHE');
+  assert.ok(t, 'aucun tarif proposé sur un écart de 0,0025 €');
+  assert.ok(close(t.realPrice, 1.2325, 0.0001), `tarif ${t.realPrice}`);
+
+  // Et une fois le tarif inscrit, la ligne ne revient plus : c'est tout l'objet.
+  const apres = compareInvoiceToOrder({
+    invoice: { lines: [{ ref: 'PECHE', label: 'Pêche 10mL', qty: 24, lineTotalHt: 29.58 }] },
+    order: { lines: [{ ref: 'PECHE', productName: 'Pêche 10mL', qty: 24, price: t.realPrice }] },
+  });
+  assert.strictEqual(listTariffUpdates(apres).length, 0);
+  assert.strictEqual(listDifferences(apres).length, 0);
 });
 
 if (failures > 0) {
