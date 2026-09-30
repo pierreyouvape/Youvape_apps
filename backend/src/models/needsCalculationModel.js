@@ -45,10 +45,22 @@ const needsCalculationModel = {
          FROM supplier_refs r
          WHERE r.product_id = p.id AND r.supplier_id = ps_primary.supplier_id) as supplier_sku,
         ps_primary.supplier_price,
-        COALESCE(
-          (SELECT array_agg(supplier_id) FROM product_suppliers WHERE product_id = p.id),
-          ARRAY[]::int[]
-        ) as supplier_ids,
+        -- LES FOURNISSEURS CHEZ QUI CE PRODUIT EST PROUVÉ, et eux seuls.
+        --
+        -- Ce tableau pilote le filtre fournisseur des Besoins : choisir LCA ne doit
+        -- proposer que des produits LCA. Agréger tous les product_suppliers
+        -- proposait n'importe quoi, parce que syncProductSuppliersFromBMS recopie
+        -- les associations DÉCLARÉES par BMS, souvent sans prix — ce que le
+        -- fournisseur pourrait fournir, pas ce qu'on lui a acheté. Constaté sur les
+        -- SKU 805173 et 805266 (Full Moon Bahamas), jamais achetés que chez
+        -- Cigaccess mais porteurs d'un lien LCA vide.
+        --
+        -- Même définition que catalogueExpr dans purchasesController.searchProducts
+        -- — les deux doivent rester d'accord. Trois preuves, une seule suffit :
+        -- une référence chez lui, une commande déjà passée chez lui, ou un lien tarifé.
+        -- Agrégé en une passe par le LEFT JOIN prouves plus bas : en sous-requêtes
+        -- corrélées, la même réponse coûtait 638 ms au lieu de 63.
+        COALESCE(prouves.ids, ARRAY[]::int[]) as supplier_ids,
         -- Map { supplier_id: [réfs] } pour afficher les réfs du fournisseur sélectionné
         COALESCE(
           (SELECT jsonb_object_agg(g.supplier_id::text, g.refs)
@@ -87,12 +99,36 @@ const needsCalculationModel = {
         ON ps_primary.product_id = p.id
         AND ps_primary.is_primary = true
       LEFT JOIN suppliers s_primary ON ps_primary.supplier_id = s_primary.id
+      -- Faute de fournisseur principal, on en prend un — mais UN LIEN TARIFÉ
+      -- D'ABORD. Sans cet ordre, le choix revenait au hasard du plus petit id, et
+      -- les Full Moon Bahamas (805173, 805266) s'affichaient « LCA » alors qu'ils
+      -- n'ont jamais été achetés que chez Cigaccess : leur lien LCA était vide, le
+      -- lien Cigaccess tarifé à 4,50 €. Le prix est la trace qu'il a servi.
       LEFT JOIN LATERAL (
         SELECT supplier_id FROM product_suppliers
         WHERE product_id = p.id
+        ORDER BY (supplier_price IS NOT NULL) DESC, supplier_id
         LIMIT 1
       ) ps_any ON ps_primary.id IS NULL
       LEFT JOIN suppliers s_any ON ps_any.supplier_id = s_any.id
+      -- Produit → fournisseurs chez qui il est PROUVÉ (cf. supplier_ids ci-dessus).
+      -- Agrégé une fois pour tous les produits, puis joint : dix fois moins cher
+      -- que trois EXISTS corrélés par ligne.
+      LEFT JOIN (
+        SELECT product_id, array_agg(DISTINCT supplier_id) AS ids
+          FROM (
+            SELECT r.product_id, r.supplier_id FROM supplier_refs r
+            UNION
+            SELECT poi.product_id, po.supplier_id
+              FROM purchase_order_items poi
+              JOIN purchase_orders po ON po.id = poi.purchase_order_id
+             WHERE poi.product_id IS NOT NULL
+            UNION
+            SELECT ps.product_id, ps.supplier_id FROM product_suppliers ps
+             WHERE ps.supplier_price IS NOT NULL
+          ) t
+         GROUP BY product_id
+      ) prouves ON prouves.product_id = p.id
       WHERE p.post_status = 'publish'
         AND COALESCE(p.exclude_from_reorder, false) = false
         AND (

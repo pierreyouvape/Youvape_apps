@@ -505,10 +505,17 @@ const NeedsTabV2 = ({ token, onCompactChange }) => {
     // Ainsi toutes les variations d'un même parent sont affichées si l'une d'elles correspond
     const isRealParentId = (id) => id && id !== '0' && id !== 0;
 
-    // Vérifie si un produit est associé au fournisseur sélectionné
-    // Utilise supplier_ids (tableau complet) si disponible, sinon supplier_id seul
+    // Vérifie si un produit est associé au fournisseur sélectionné.
+    //
+    // `supplier_ids` ne liste que les fournisseurs chez qui le produit est PROUVÉ
+    // (une référence, une commande passée, ou un lien tarifé — cf.
+    // needsCalculationModel). Un tableau VIDE veut donc dire « aucun fournisseur
+    // prouvé », et non « donnée manquante » : y retomber sur `supplier_id`
+    // réadmettrait justement les liens vides que le tableau vient d'écarter — un
+    // produit dont le seul lien est un lien BMS sans prix repasserait.
+    // Le repli ne sert donc plus qu'au cas où le champ est absent de la réponse.
     const productMatchesSupplier = (p, sid) => {
-      if (Array.isArray(p.supplier_ids) && p.supplier_ids.length > 0) {
+      if (Array.isArray(p.supplier_ids)) {
         return p.supplier_ids.map(String).includes(String(sid));
       }
       return String(p.supplier_id) === String(sid);
