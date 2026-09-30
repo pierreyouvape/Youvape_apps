@@ -262,7 +262,17 @@ function OrdersList({ token, onOpen }) {
                       {o.bms_supplier_reference || '—'}
                     </Td>
                     <Td>{o.supplier_name}</Td>
-                    <Td><Badge color={st.color} bg={st.bg}>{st.label}</Badge></Td>
+                    <Td>
+                      <Badge color={st.color} bg={st.bg}>{st.label}</Badge>
+                      {!o.bms_po_id && (
+                        <span style={{ marginLeft: 6 }}>
+                          <Badge color="#B45309" bg="#FEF3C7"
+                            title="Cette commande n'existe pas dans BMS : elle ne peut pas être réceptionnée.">
+                            ⚠ pas dans BMS
+                          </Badge>
+                        </span>
+                      )}
+                    </Td>
                     <Td align="right">{o.nb_lines}</Td>
                     <Td align="right" bold>{o.qty_expected}</Td>
                     <Td align="right" color={o.qty_received > 0 ? C.orange : C.greyM}>{o.qty_received}</Td>
@@ -310,8 +320,23 @@ function OrderDetail({ token, order, items, onBack, onStart }) {
             {' '}livraison prévue le {fmtDate(order.expected_date || order.order_date)}
           </p>
         </div>
-        <Btn variant="accent" onClick={onStart}>Réceptionner</Btn>
+        {/* SANS BON DANS BMS, RIEN NE PEUT PARTIR : la route de réception exige
+            l'identifiant de la ligne chez BMS. Mieux vaut le dire ici que laisser
+            compter deux cents pièces pour échouer à la validation. */}
+        <Btn variant="accent" onClick={onStart} disabled={!order.bms_po_id}
+          title={order.bms_po_id ? undefined : "Cette commande n'existe pas dans BMS"}>
+          Réceptionner
+        </Btn>
       </div>
+
+      {!order.bms_po_id && (
+        <div style={{ background: '#FEF3C7', border: '1px solid #F59E0B', borderRadius: 10,
+          padding: '12px 16px', fontSize: 13.5, color: '#7C4A00', marginBottom: 14 }}>
+          Cette commande <strong>n'a jamais été créée dans BMS</strong> : le fournisseur ne l'a
+          pas reçue, et aucune réception ne peut être enregistrée tant qu'elle n'y est pas.
+          Ouvrez-la dans <strong>Commandes fournisseurs</strong> et utilisez « Envoyer à BMS ».
+        </div>
+      )}
 
       <div style={{ background: C.white, borderRadius: 12, border: `1px solid ${C.greyB}`, overflow: 'hidden' }}>
               {fil && (fil.summary.openSession || fil.documents.length > 0) && (

@@ -468,6 +468,22 @@ const purchaseOrderModel = {
             // Rien à envoyer si AUCUN produit n'est commandable dans BMS
             can_send_anyway: bmsError.code !== 'BMS_MISSING_PRODUCTS' || bmsError.sendableCount > 0
           };
+
+          // UNE COMMANDE QUI N'EST PAS PARTIE N'EST PAS « ATTENDUE ».
+          //
+          // L'import PDF pose `status: 'confirmed'` sans regarder si l'envoi a
+          // abouti : une commande refusée par BMS — un produit pas encore créé
+          // là-bas, par exemple — s'affichait donc « Attendu », exactement comme
+          // celles que le fournisseur a vraiment reçues. Rien ne la distinguait,
+          // et elle allait jusqu'à apparaître dans l'écran de réception, où elle
+          // n'aurait pu qu'échouer à la validation faute d'identifiant BMS.
+          //
+          // Elle redevient un brouillon, ce qu'elle est : le travail est
+          // conservé, et « Envoyer à BMS » reste à un clic.
+          await client.query(
+            "UPDATE purchase_orders SET status = 'draft' WHERE id = $1 AND bms_po_id IS NULL",
+            [order.id],
+          );
         }
       }
 

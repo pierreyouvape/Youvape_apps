@@ -608,6 +608,20 @@ const OrdersTab = ({ token }) => {
                     <span className={`status-badge status-${order.status}`}>
                       {statusLabels[order.status]}
                     </span>
+                    {/* UNE COMMANDE QUI N'EST PAS DANS BMS NE VIT QUE CHEZ NOUS.
+                        Le fournisseur ne l'a pas reçue, et la réception ne pourra
+                        rien enregistrer : elle a besoin de l'identifiant du bon
+                        BMS. Rien ne la distinguait des autres — même statut, même
+                        couleur — alors qu'un envoi refusé (un produit pas encore
+                        créé dans BMS, par exemple) la laisse précisément là. */}
+                    {!order.bms_po_id && order.status !== 'draft' && order.status !== 'cancelled' && (
+                      <span
+                        className="badge-no-bms"
+                        title="Cette commande n'a jamais été créée dans BMS : le fournisseur ne l'a pas reçue, et elle ne peut pas être réceptionnée. Ouvrez-la et utilisez « Envoyer à BMS »."
+                      >
+                        ⚠ Pas dans BMS
+                      </span>
+                    )}
                     {hasMissingProducts(order) && (
                       <span
                         className="badge-missing"

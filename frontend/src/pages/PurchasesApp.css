@@ -509,6 +509,22 @@
 }
 
 /* Badge produit manquant */
+/* « Pas dans BMS » : ambre et non rouge. Ce n'est pas une anomalie de la
+   marchandise comme « Manquant », c'est une commande restée en chemin — elle se
+   rattrape d'un clic sur « Envoyer à BMS ». */
+.badge-no-bms {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 600;
+  background: #fef3c7;
+  color: #b45309;
+  margin-top: 4px;
+  margin-left: 4px;
+  cursor: help;
+}
+
 .badge-missing {
   display: inline-block;
   padding: 2px 8px;
