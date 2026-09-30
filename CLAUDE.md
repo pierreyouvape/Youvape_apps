@@ -144,6 +144,23 @@ dans `bms_supplier_items_packqty_backup_20260930` (clé = l'id BMS de l'associat
 bascule devait être défaite. `product_suppliers_packqty_backup_20260930` ne couvre que les
 752 associations que nous mirrorons localement — 52 existent chez BMS seulement.
 
+**Le `price` des associations BMS n'a PAS été divisé, et ne doit pas l'être en masse.**
+Le champ n'est pas homogène : au 30/09/2026, sur les 804, **663 portaient le prix DU LOT**,
+**43 le prix À LA PIÈCE** et 91 n'avaient aucun coût de référence chez nous. Deux
+associations LCA voisines le montrent — `9736-9850` à 7,50 € (le lot de 5) et `9736-9852`
+à 1,50 € (la pièce), pour le même coût unitaire de 1,50 €. Une division par `pack_qty`
+corromprait donc les 43 déjà justes et jouerait à pile ou face sur les 91 autres.
+Ce prix **n'entre dans aucun de nos chiffres** (nos commandes portent leur propre prix,
+le FIFO lit `purchase_order_items.unit_price`) : il ne compte que pour qui créerait une
+commande depuis l'interface BMS. Le jour où on voudra l'assainir, ce sera au cas par cas
+depuis `supplier_refs.pack_price`, jamais par une règle unique.
+
+**Conséquence de la bascule** : BMS n'est plus une source de conditionnement. Une
+association *nouvellement* créée par `syncProductSuppliersFromBMS` hérite désormais de
+`pack_qty = 1` — le conditionnement réel doit venir de chez nous (`supplier_refs`, import
+de facture ou saisie). Les associations existantes sont intactes : cette synchro est un
+INSERT seul (`ON CONFLICT DO NOTHING`), elle n'a jamais écrasé une liaison en place.
+
 **Après création, les lignes sont remises en pièces.** `PUT /v2/purchase-orders/{id}/items/{itemId}`
 accepte `qty`, `qty_pack` et `price` (absent du Swagger, la v1 ne le sait pas) :
 `normalizeBmsLines` repasse chaque ligne en `qty_pack: 1`, prix ramené à la pièce sur
