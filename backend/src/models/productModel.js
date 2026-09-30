@@ -1152,8 +1152,34 @@ class ProductModel {
 
   async getAllForCatalog(limit = 50, offset = 0, search = '', trackStockOnly = true, stockTab = 'all', sortBy = null, sortDir = 'desc', brand = '', onlyHidden = false, subBrand = '', supplierId = '', category = '', subCategory = '') {
     const reorderIdsSql = await getReorderIdsSql(stockTab);
+    // LE STATUT DU PARENT NE DOIT PAS ENTERRER SES DÉCLINAISONS.
+    //
+    // Le catalogue ne retenait que les têtes de ligne publiées. Or WooCommerce
+    // laisse couramment un parent variable en `draft` alors que ses déclinaisons,
+    // elles, sont publiées et vendues : 527 familles sont dans ce cas. Elles
+    // n'apparaissaient NULLE PART — pas même dans la vue « masqués », dont c'est
+    // pourtant tout l'objet. Constaté sur « Dead Rabbit 3 Rta Joker Edition »,
+    // dont le parent est passé en draft à une synchro : la famille entière a
+    // disparu de l'écran, déclinaisons publiées comprises.
+    //
+    // La vue normale garde donc son périmètre — le catalogue vivant, parents
+    // publiés — mais dès qu'on demande à voir les masqués, une famille dont au
+    // moins une déclinaison est publiée est retenue, quel que soit l'état de son
+    // parent. Les 34 coquilles sans aucune déclinaison publiée et les 629
+    // brouillons simples restent dehors : ils ne sont pas masqués, ils n'existent
+    // pas encore.
+    const perimetreParent = trackStockOnly
+      ? `p.post_status = 'publish'`
+      : `(
+          p.post_status = 'publish'
+          OR (p.product_type = 'variable' AND EXISTS (
+            SELECT 1 FROM products v
+            WHERE v.wp_parent_id = p.wp_product_id
+              AND v.product_type = 'variation' AND v.post_status = 'publish'
+          ))
+        )`;
     let whereClause = `
-      WHERE p.post_status = 'publish'
+      WHERE ${perimetreParent}
         AND p.product_type IN ('simple', 'variable', 'woosb')
     `;
     if (trackStockOnly) {
@@ -1434,8 +1460,34 @@ class ProductModel {
    */
   async countForCatalog(search = '', trackStockOnly = true, stockTab = 'all', brand = '', onlyHidden = false, subBrand = '', supplierId = '', category = '', subCategory = '') {
     const reorderIdsSql = await getReorderIdsSql(stockTab);
+    // LE STATUT DU PARENT NE DOIT PAS ENTERRER SES DÉCLINAISONS.
+    //
+    // Le catalogue ne retenait que les têtes de ligne publiées. Or WooCommerce
+    // laisse couramment un parent variable en `draft` alors que ses déclinaisons,
+    // elles, sont publiées et vendues : 527 familles sont dans ce cas. Elles
+    // n'apparaissaient NULLE PART — pas même dans la vue « masqués », dont c'est
+    // pourtant tout l'objet. Constaté sur « Dead Rabbit 3 Rta Joker Edition »,
+    // dont le parent est passé en draft à une synchro : la famille entière a
+    // disparu de l'écran, déclinaisons publiées comprises.
+    //
+    // La vue normale garde donc son périmètre — le catalogue vivant, parents
+    // publiés — mais dès qu'on demande à voir les masqués, une famille dont au
+    // moins une déclinaison est publiée est retenue, quel que soit l'état de son
+    // parent. Les 34 coquilles sans aucune déclinaison publiée et les 629
+    // brouillons simples restent dehors : ils ne sont pas masqués, ils n'existent
+    // pas encore.
+    const perimetreParent = trackStockOnly
+      ? `p.post_status = 'publish'`
+      : `(
+          p.post_status = 'publish'
+          OR (p.product_type = 'variable' AND EXISTS (
+            SELECT 1 FROM products v
+            WHERE v.wp_parent_id = p.wp_product_id
+              AND v.product_type = 'variation' AND v.post_status = 'publish'
+          ))
+        )`;
     let whereClause = `
-      WHERE p.post_status = 'publish'
+      WHERE ${perimetreParent}
         AND p.product_type IN ('simple', 'variable', 'woosb')
     `;
     if (trackStockOnly) {
