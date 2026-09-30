@@ -554,7 +554,7 @@ const ImportPdfPage = () => {
               (skipped.length ? `\n\n${skipped.length} produit(s) absent(s) de BMS non envoyé(s) : ` +
                                 skipped.map(p => p.sku).join(', ') : ''));
       }
-      navigate('/purchases?tab=orders');
+      navigate('/purchases/commandes');
     } catch (err) {
       console.error('Erreur création:', err);
       alert(err.response?.data?.error || 'Erreur lors de la création');
@@ -570,10 +570,10 @@ const ImportPdfPage = () => {
   const totalTtc = totalHt * 1.2;
   const fmt = n => new Intl.NumberFormat('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
 
-  const goBack = () => navigate('/purchases?tab=orders');
+  const goBack = () => navigate('/purchases/commandes');
 
   return (
-    <AppShell currentPath="/purchases">
+    <AppShell currentPath="/purchases/commandes">
       <main className="main-scroll" style={{
         flex: 1, minWidth: 0, overflowY: 'auto', height: '100vh',
         display: 'flex', flexDirection: 'column',

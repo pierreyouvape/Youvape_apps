@@ -369,13 +369,54 @@ export const SupplierInvoices = (props) => (
   </Base>
 );
 
+// Fournisseurs : une usine, deux cheminées. Distincte du chariot des achats —
+// trois apps de la pile Achats partageraient sinon la même icône.
+export const Suppliers = (props) => (
+  <Base {...props}>
+    <path d="M3 20.5 V11 L9 14 V11 L15 14 V8 L21 8 V20.5 Z" />
+    <path d="M6.5 11 V5.5 H9.5 V8" />
+    <path d="M7 17.5 H9" />
+    <path d="M13 17.5 H15" />
+  </Base>
+);
+
+// Dépenses : un billet. La pièce dessus évite de le confondre avec le document
+// des factures fournisseur, qui vit dans la même pile.
+export const Spending = (props) => (
+  <Base {...props}>
+    <rect x={2.5} y={6.5} width={19} height={11} rx={1.5} />
+    <circle cx={12} cy={12} r={2.6} />
+    <path d="M6 10 V14" />
+    <path d="M18 10 V14" />
+  </Base>
+);
+
 export const APPS = [
   { key: 'customers', path: '/customers', label: 'Clients',                   Icon: Customers, color: '#0EA5A5' },
   { key: 'reviews',   path: '/reviews',   label: 'Avis Garantis',            Icon: Reviews,   color: '#0071EB' },
   { key: 'rewards',   path: '/rewards',   label: 'Récompense Avis',          Icon: Rewards,   color: '#8B5CF6' },
   { key: 'emails',    path: '/emails',    label: "Envoi d'Emails",           Icon: Emails,    color: '#22A06B' },
   { key: 'stats',     path: '/stats',     label: 'Statistiques WooCommerce', Icon: Stats,     color: '#E85A5A' },
-  { key: 'purchases', path: '/purchases', label: "Gestion d'achat",          Icon: Purchases, color: '#F59E0B' },
+  // LES QUATRE SECTIONS DE GESTION D'ACHAT SONT DES APPS, plus des onglets.
+  // Elles vivaient dans un menu interne à /purchases, sous un titre qui répétait
+  // celui de la pile : deux niveaux pour dire la même chose. Chacune a maintenant
+  // son adresse, donc son favori, son historique et son lien partageable.
+  //
+  // `purchases` reste la clé de BESOINS, et pas une cinquième clé inventée : c'est
+  // le droit que le backend exige déjà (routes purchases), celui que SettingsApp
+  // affiche, et celui que prefs.appOrder connaît — la pile garde ainsi sa place.
+  // Les trois autres l'empruntent via `permissionKey`, comme le Bordereau emprunte
+  // celui du Packing : une seule case à cocher, qui les ouvre toutes.
+  { key: 'purchases', path: '/purchases/besoins', label: 'Besoins',           Icon: Stats,     color: '#F59E0B' },
+  { key: 'achats-fournisseurs', path: '/purchases/fournisseurs', label: 'Fournisseurs',
+    Icon: Suppliers, color: '#B45309', permissionKey: 'purchases' },
+  // « Commandes » tout court, comme l'onglet qu'elle remplace. L'app `commandes`
+  // du premier niveau porte le même mot pour les commandes CLIENT : ici le
+  // libellé est lu sous la pile Achats, qui lève l'ambiguïté.
+  { key: 'achats-commandes', path: '/purchases/commandes', label: 'Commandes',
+    Icon: Purchases, color: '#EA580C', permissionKey: 'purchases' },
+  { key: 'achats-depenses', path: '/purchases/depenses', label: 'Dépenses',
+    Icon: Spending, color: '#CA8A04', permissionKey: 'purchases' },
   { key: 'purchases-v2', path: '/purchases-v2', label: "Gestion d'achat V2",  Icon: Purchases, color: '#D97706' },
   { key: 'reception', path: '/reception', label: 'Réception',                Icon: Reception, color: '#65A30D' },
   { key: 'packing',   path: '/packing',   label: 'Packing',                  Icon: Packing,   color: '#6366F1' },
@@ -446,11 +487,21 @@ export const APP_GROUPS = [
     // une tuile séparée. Le groupe, pas une app conteneur : /reception est
     // ouverte en favori sur la tablette du dépôt.
     key: 'grp-achats',
-    // « Achats » et non « Gestion d'achat » : ce dernier est déjà le nom d'une
-    // app DE la pile, et voir le même libellé à deux niveaux ne dit plus rien.
+    // « Achats » : une seule pile pour tout le cycle. Les quatre sections de
+    // l'ancienne « Gestion d'achat » y sont entrées comme apps à part entière —
+    // elles étaient des onglets sous un menu interne, soit un second niveau de
+    // navigation pour ranger ce que cette pile range déjà.
     label: 'Achats',
     color: '#F59E0B',
-    members: ['purchases', 'reception', 'factures-fournisseurs', 'purchases-v2'],
+    members: [
+      'purchases',              // Besoins
+      'achats-fournisseurs',
+      'achats-commandes',
+      'achats-depenses',
+      'reception',
+      'factures-fournisseurs',
+      'purchases-v2',
+    ],
   },
   {
     key: 'grp-factures-transporteurs',

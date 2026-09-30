@@ -241,7 +241,7 @@ const CreateOrderPage = () => {
       } else {
         alert(`Commande ${orderNum} créée avec ${items.length} article(s)${sendToBMS ? ' et envoyée à BMS' : ''}`);
       }
-      navigate('/purchases?tab=orders');
+      navigate('/purchases/commandes');
     } catch (err) {
       console.error('Erreur création commande:', err);
       alert(err.response?.data?.error || 'Erreur lors de la création de la commande');
@@ -265,13 +265,13 @@ const CreateOrderPage = () => {
   const eur = (n) => `${n.toFixed(2).replace('.', ',')} €`;
 
   return (
-    <AppShell currentPath="/purchases">
+    <AppShell currentPath="/purchases/commandes">
     <main className="main-scroll" style={{ flex: 1, minWidth: 0, overflowY: 'auto', height: '100vh', backgroundColor: '#f5f5f5' }}>
       {/* Header */}
       <div style={{ backgroundColor: '#f59e0b', color: 'white', padding: '15px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
           <LinkBox
-            to="/purchases?tab=orders"
+            to="/purchases/commandes"
             display="inline-block"
             style={{ background: 'rgba(255,255,255,0.2)', color: 'white', padding: '8px 16px', borderRadius: '6px', fontSize: '14px' }}
           >
@@ -621,7 +621,7 @@ const CreateOrderPage = () => {
         {/* Actions */}
         <div style={{ background: 'white', borderRadius: '8px', padding: '20px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <LinkBox
-            to="/purchases?tab=orders"
+            to="/purchases/commandes"
             display="inline-block"
             style={{ background: '#f3f4f6', color: '#374151', borderRadius: '6px', padding: '12px 24px', fontSize: '15px', fontWeight: 500 }}
           >

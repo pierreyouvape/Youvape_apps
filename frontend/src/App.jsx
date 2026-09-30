@@ -57,6 +57,7 @@ import ProcessDetail from './pages/ProcessDetail';
 import ATBApp from './pages/ATBApp';
 import EmployeesApp from './pages/EmployeesApp';
 import PrivateRoute from './components/PrivateRoute';
+import { SECTION_KEYS } from './utils/purchaseSections';
 
 const PAGE_TITLES = {
   '/home': 'Accueil',
@@ -195,14 +196,22 @@ function App() {
               </PrivateRoute>
             }
           />
-          <Route
-            path="/purchases"
-            element={
-              <PrivateRoute>
-                <PurchasesApp />
-              </PrivateRoute>
-            }
-          />
+          {/* Les quatre sections de Gestion d'achat sont des apps de la pile
+              Achats : chacune a son adresse, donc son favori et son lien.
+              `/purchases` reste servie et renvoie sur Besoins — c'est l'adresse
+              qui traîne dans les favoris et dans les liens déjà échangés. */}
+          <Route path="/purchases" element={<Navigate to="/purchases/besoins" replace />} />
+          {SECTION_KEYS.map(k => (
+            <Route
+              key={k}
+              path={`/purchases/${k}`}
+              element={
+                <PrivateRoute>
+                  <PurchasesApp section={k} />
+                </PrivateRoute>
+              }
+            />
+          ))}
           <Route
             path="/purchases-v2"
             element={
