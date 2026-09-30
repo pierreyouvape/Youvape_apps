@@ -199,6 +199,10 @@ const SettingsApp = () => {
     }));
   };
 
+  const isSuperAdminUser = (email) => {
+    return email === 'youvape34@gmail.com';
+  };
+
   // Empreinte stable d'une ligne (ordre des clés figé par APPS) : deux lignes
   // identiques donnent la même chaîne, quel que soit l'ordre d'arrivée des droits.
   const userSignature = (user) => JSON.stringify([
@@ -293,10 +297,6 @@ const SettingsApp = () => {
       setError(err.response?.data?.error || 'Erreur lors de la suppression');
       setTimeout(() => setError(null), 5000);
     }
-  };
-
-  const isSuperAdminUser = (email) => {
-    return email === 'youvape34@gmail.com';
   };
 
   return (
