@@ -158,6 +158,31 @@ const bmsApiModel = {
   // ==================== BONS DE COMMANDE ====================
 
   /**
+   * Toutes les lignes d'un bon de commande BMS — TOUTES.
+   *
+   * `/v2/purchase-orders/{id}/items` pagine à DIX sans le dire : sur la commande
+   * S04795 (121469), l'appel nu renvoyait dix lignes sur onze, et seul
+   * `meta.total` trahissait la onzième. Une commande de vingt références en
+   * perdait la moitié — en silence, puisque la réponse est un tableau valide.
+   *
+   * Tout appel à cet endpoint passe désormais par ici.
+   */
+  getPurchaseOrderItems: async (bmsPoId) => {
+    const limit = 100;
+    const firstPage = await bmsApiModel.apiCall(`/v2/purchase-orders/${bmsPoId}/items?offset=0&limit=${limit}`);
+    const total = firstPage.meta?.total || 0;
+    let items = firstPage.data || [];
+
+    for (let offset = limit; offset < total; offset += limit) {
+      const page = await bmsApiModel.apiCall(`/v2/purchase-orders/${bmsPoId}/items?offset=${offset}&limit=${limit}`);
+      items = items.concat(page.data || []);
+    }
+
+    return items;
+  },
+
+
+  /**
    * Récupérer les bons de commande depuis BMS (toutes les pages)
    * La pagination BMS utilise offset+limit (pas page+limit).
    */

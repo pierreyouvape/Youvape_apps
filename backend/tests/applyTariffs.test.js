@@ -18,7 +18,24 @@
  */
 
 const assert = require('assert');
+// Remplacé AVANT le modèle qui s'en sert : il garde la référence de cet objet,
+// donc lui poser des méthodes ici suffit — aucun appel ne part vraiment.
+const bmsApiModel = require('../src/models/bmsApiModel');
 const supplierDocumentModel = require('../src/models/supplierDocumentModel');
+
+/** Faux BMS : mémorise les PUT, et rend les lignes qu'on lui donne. */
+function fakeBms(lignes, { enPanne = false } = {}) {
+  const puts = [];
+  bmsApiModel.getPurchaseOrderItems = async () => {
+    if (enPanne) throw new Error('503');
+    return lignes;
+  };
+  bmsApiModel.apiCall = async (endpoint, method, body) => {
+    puts.push({ endpoint, method, body });
+    return {};
+  };
+  return puts;
+}
 
 let failures = 0;
 function test(name, fn) {
@@ -150,6 +167,46 @@ console.log('\nAppliquer un tarif à la commande');
       () => supplierDocumentModel.applyTariffs(7, 9999, [{ ref: 'X', realPrice: 1, packQty: 1 }], db),
       /Commande introuvable/,
     );
+  });
+
+  await test('le prix est reporté sur la ligne de commande CHEZ BMS', async () => {
+    // Le pas qui manquait : l'écran lit « Tarif BMS » et « Commande HT » chez
+    // BMS, en direct. Sans ce report, on pouvait tout appliquer et voir l'écart
+    // inchangé — et la ligne revenait à la facture suivante.
+    const puts = fakeBms([
+      { id: 1384656, supplier_sku: 'SEV-WNDRTRT-PECHE-10-10', sku: '942570-942571', qty: 24, qty_pack: 1, price: '1.2300' },
+    ]);
+    const db = fakeDb({
+      order: { ...commande, bms_po_id: 121469 },
+      refs: [{ id: 9, supplier_sku: 'SEV-WNDRTRT-PECHE-10-10', pack_qty: 1, pack_price: 1.23 }],
+      items: [{ id: 700, supplier_sku: 'SEV-WNDRTRT-PECHE-10-10', unit_price: 1.23, units_per_qty: 1, discount_percent: 0 }],
+    });
+    const r = await supplierDocumentModel.applyTariffs(
+      7, 9342, [{ ref: 'SEV-WNDRTRT-PECHE-10-10', realPrice: 1.2325, packQty: 1 }], db,
+    );
+
+    assert.strictEqual(puts.length, 1, 'aucun PUT vers BMS');
+    assert.strictEqual(puts[0].endpoint, '/v2/purchase-orders/121469/items/1384656');
+    assert.strictEqual(puts[0].method, 'PUT');
+    assert.strictEqual(puts[0].body.price, 1.2325);
+    // La quantité est renvoyée telle quelle : ce geste ne touche qu'au prix.
+    assert.strictEqual(puts[0].body.qty, 24);
+    assert.strictEqual(puts[0].body.qty_pack, 1);
+    assert.strictEqual(r.applied[0].bmsLine.price, 1.2325);
+  });
+
+  await test('un BMS injoignable ne perd pas les écritures locales', async () => {
+    fakeBms([], { enPanne: true });
+    const db = fakeDb({
+      order: { ...commande, bms_po_id: 121469 },
+      refs: [{ id: 10, supplier_sku: 'SVA-ARASUP', pack_qty: 1, pack_price: 1.5 }],
+      items: [{ id: 701, supplier_sku: 'SVA-ARASUP', unit_price: 1.5, units_per_qty: 1, discount_percent: 0 }],
+    });
+    const r = await supplierDocumentModel.applyTariffs(
+      7, 9342, [{ ref: 'SVA-ARASUP', realPrice: 1.505, packQty: 1 }], db,
+    );
+    assert.strictEqual(db.ecrites.filter((e) => e.table === 'purchase_order_items').length, 1);
+    assert.ok(/illisibles/.test(r.applied[0].bmsLine.skipped), `message : ${r.applied[0].bmsLine.skipped}`);
   });
 
   console.log(failures === 0 ? '\nTous les tests passent.' : `\n${failures} test(s) en échec.`);

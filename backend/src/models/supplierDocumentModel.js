@@ -18,6 +18,7 @@
 
 const pool = require('../config/database');
 const supplierRefModel = require('./supplierRefModel');
+const bmsApiModel = require('./bmsApiModel');
 
 const VALID_STATUSES = ['to_check', 'checked', 'disputed', 'archived'];
 const VALID_METHODS = ['cb', 'amex', 'virement', 'prelevement', 'avoir', 'especes', 'cheque', 'autre'];
@@ -496,7 +497,7 @@ async function alignTariffs(supplierId, tariffs, db = pool) {
  */
 async function applyTariffs(supplierId, orderId, tariffs, db = pool) {
   const { rows: commandes } = await db.query(
-    `SELECT po.id, po.bms_reference, po.order_number,
+    `SELECT po.id, po.bms_po_id, po.bms_reference, po.order_number,
             COALESCE(SUM(i.units_received), 0) AS units_received
        FROM purchase_orders po
        LEFT JOIN purchase_order_items i ON i.purchase_order_id = po.id
@@ -563,6 +564,8 @@ async function applyTariffs(supplierId, orderId, tariffs, db = pool) {
     }
   }
 
+  await pushPricesToBms(commande.bms_po_id, applied);
+
   return {
     applied,
     skipped,
@@ -572,6 +575,61 @@ async function applyTariffs(supplierId, orderId, tariffs, db = pool) {
       alreadyReceived: Number(commande.units_received) > 0,
     },
   };
+}
+
+/**
+ * Reporter les prix retenus sur les lignes de la commande CHEZ BMS.
+ *
+ * Sans ce pas, le travail ne se voyait pas. L'écran de contrôle ne lit pas notre
+ * `purchase_order_items` pour la colonne « Tarif BMS » ni pour « Commande HT » :
+ * il interroge `/supplier/purchase-orders/{id}` À L'INSTANT (parti pris assumé,
+ * cf. supplierInvoiceService). Tant que BMS gardait 1,23 € là où la facture dit
+ * 1,2325 €, l'écart restait affiché et la ligne revenait à la facture suivante —
+ * quand bien même on venait d'« appliquer » partout.
+ *
+ * L'unité tombe juste sans conversion : `expectedUnitPrice` du comparateur EST le
+ * `price` de la ligne BMS, et `realPrice` lui est directement comparable. Quatre
+ * décimales, que BMS stocke déjà (« 1.2300 »).
+ *
+ * `qty` et `qty_pack` sont renvoyés inchangés : le PUT accepte les trois, et les
+ * omettre laisserait l'API décider à notre place d'une quantité.
+ *
+ * UN ÉCHEC ICI NE PERD RIEN. Les écritures locales sont faites ; on le signale
+ * ligne par ligne pour que l'écran dise « appliqué chez nous, pas chez BMS »
+ * plutôt qu'un succès qui n'en est pas un.
+ */
+async function pushPricesToBms(bmsPoId, applied) {
+  const aReporter = applied.filter((a) => a.orderLine && a.orderLine.price != null);
+  if (!bmsPoId || aReporter.length === 0) return;
+
+  const norm = (v) => String(v || '').toLowerCase().replace(/\s+/g, ' ').trim();
+
+  let lignes;
+  try {
+    lignes = await bmsApiModel.getPurchaseOrderItems(bmsPoId);
+  } catch (e) {
+    for (const a of aReporter) a.bmsLine = { skipped: `lignes BMS illisibles : ${e.message}` };
+    return;
+  }
+
+  for (const a of aReporter) {
+    const ligne = lignes.find((l) => norm(l.supplier_sku) === norm(a.ref) || norm(l.sku) === norm(a.ref));
+    if (!ligne) {
+      a.bmsLine = { skipped: 'ligne absente de la commande BMS' };
+      continue;
+    }
+
+    const prix = Math.round(a.orderLine.price * 10000) / 10000;
+    try {
+      await bmsApiModel.apiCall(
+        `/v2/purchase-orders/${bmsPoId}/items/${ligne.id}`, 'PUT',
+        { qty: Number(ligne.qty), qty_pack: Number(ligne.qty_pack) || 1, price: prix },
+      );
+      a.bmsLine = { previous: Number(ligne.price), price: prix };
+    } catch (e) {
+      a.bmsLine = { skipped: `BMS a refusé l'écriture : ${e.message}` };
+    }
+  }
 }
 
 /**

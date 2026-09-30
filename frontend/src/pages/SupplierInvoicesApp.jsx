@@ -371,9 +371,14 @@ function ControlTable({ rows, supplierId, orderId, orderReceived, mobile }) {
         // Un tarif inscrit chez nous mais qu'aucune ligne de la commande ne
         // porte n'est pas un succès complet : le dire, plutôt que d'afficher
         // « Appliqué » sur un FIFO resté au prix commandé.
-        n[a.ref] = a.orderLine?.skipped
-          ? `tarif retenu, commande inchangée : ${a.orderLine.skipped}`
-          : 'applied';
+        //
+        // Même chose pour BMS : c'est LUI que l'écran relit pour « Tarif BMS » et
+        // « Commande HT ». Un report refusé et tu reverras le même écart sans
+        // comprendre pourquoi — alors qu'il ne reste qu'à corriger la ligne à la
+        // main dans BMS.
+        if (a.orderLine?.skipped) n[a.ref] = `tarif retenu, commande inchangée : ${a.orderLine.skipped}`;
+        else if (a.bmsLine?.skipped) n[a.ref] = `appliqué chez nous, BMS inchangé : ${a.bmsLine.skipped}`;
+        else n[a.ref] = 'applied';
       }
       for (const k of data.skipped || []) n[k.ref] = k.reason;
       return n;

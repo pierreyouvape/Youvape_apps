@@ -807,8 +807,10 @@ const purchaseOrderModel = {
     const norm = (v) => String(v || '').toLowerCase().trim();
     let data;
     try {
-      const rep = await bmsApiModel.apiCall(`/v2/purchase-orders/${bmsPoId}/items`);
-      data = rep.data || rep || [];
+      // Par `getPurchaseOrderItems` et pas par un appel nu : l'endpoint pagine à
+      // dix sans le dire, et cette normalisation-ci en laissait onze sur vingt
+      // en lots, donc autant de compteurs de réception faux.
+      data = await bmsApiModel.getPurchaseOrderItems(bmsPoId);
     } catch (e) {
       console.warn(`[BMS] lignes de ${bmsPoId} illisibles, normalisation ignorée : ${e.message}`);
       return { normalized: 0, failed: [] };
