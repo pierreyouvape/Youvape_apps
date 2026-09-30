@@ -158,6 +158,20 @@ NOTRE décompte, en pièces de bout en bout, qui décide (`RECEPTION_INCOMPLETE`
 seulement). Toujours en pièces avec `qty_pack: 1`. Préférer ce chemin à un ajustement de
 stock : la marchandise garde son prix d'achat et son lien au fournisseur.
 
+- **BMS désigne un produit par `product_id`, JAMAIS par son SKU.** Envoyer `sku` est refusé
+  sans appel : `400 {"errors":{"sku":["The field 'sku' is read-only."]}}`. Le SKU d'une
+  ligne n'est que le reflet du produit. L'ordre des champs du payload n'y change rien
+  (vérifié le 30/09/2026 sur bon ouvert ET terminé).
+- **Nous ne stockons pas ce `product_id`** : le lire avec `/supplier/products?sku=…`, qui
+  renvoie les associations fournisseur × produit. N'importe laquelle donne le même
+  `product_id` — il désigne le produit, pas l'association.
+- **Le bon peut être TERMINÉ.** BMS accepte une ligne neuve sur un bon `complete`, sans le
+  rouvrir (vérifié le 30/09/2026 sur le bon 121413). C'est le cas qui compte : on s'aperçoit
+  d'un article oublié après avoir soldé la commande. On y accède par « Réceptionner » depuis
+  la commande — la liste des réceptions ne montre que les bons en attente.
+- **`DELETE /v2/purchase-orders/{id}/items/{itemId}`** existe et fonctionne (utile pour
+  défaire un essai).
+
 **Ne jamais remplacer les lignes d'une commande en cours de réception.**
 `reception_counts.purchase_order_item_id` est `ON DELETE CASCADE` : un `DELETE` sur
 `purchase_order_items` emporte le comptage **en silence**. `syncFromBMS` saute donc le

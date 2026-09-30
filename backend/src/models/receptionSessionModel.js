@@ -415,13 +415,46 @@ async function fetchBmsLinesFull(bmsPoId) {
 }
 
 /**
+ * L'identifiant BMS d'un produit, retrouvé par son SKU.
+ *
+ * `/supplier/products?sku=…` renvoie les associations fournisseur × produit, et
+ * c'est le seul endroit où lire le `product_id` de BMS : nous ne le stockons
+ * pas. Avec le fournisseur, c'est une ligne ; sans lui, toutes celles qui
+ * portent ce SKU — n'importe laquelle donne le même `product_id`, puisqu'il
+ * désigne le produit et non l'association.
+ */
+async function trouverProduitBms(sku, bmsSupplierId) {
+  const parFournisseur = bmsSupplierId
+    ? await bmsApiModel.getSupplierProducts(bmsSupplierId, sku)
+    : [];
+  const trouve = parFournisseur.length > 0
+    ? parFournisseur
+    : await bmsApiModel.getSupplierProducts(null, sku);
+
+  const productId = trouve[0]?.product_id;
+  if (!productId) {
+    throw new Error(
+      `BMS ne connaît aucun produit portant le SKU ${sku}. `
+      + 'Créez-le dans BMS avant de l\'ajouter à la commande.',
+    );
+  }
+  return productId;
+}
+
+/**
  * Ajoute un article à la commande, dans BMS puis chez nous, et l'ouvre au
  * comptage.
  *
  * On croyait ce chemin fermé : l'API v1 ne sait pas toucher aux lignes d'un bon
  * de commande, et il fallait passer par l'interface de BMS. La v2 le sait
- * (POST /v2/purchase-orders/{id}/items, vérifié le 29/09/2026), ce qui évite au
- * magasinier d'aller ouvrir BMS avec un carton dans les bras.
+ * (POST /v2/purchase-orders/{id}/items), ce qui évite au magasinier d'aller
+ * ouvrir BMS avec un carton dans les bras.
+ *
+ * ET LE BON PEUT ÊTRE TERMINÉ. Vérifié le 30/09/2026 : BMS accepte une ligne
+ * neuve sur un bon qu'il dit `complete`, sans le rouvrir. C'est le cas qui
+ * comptait — on s'aperçoit d'un article oublié APRÈS avoir soldé la commande,
+ * pas avant. L'écran de réception s'y rend par « Réceptionner » depuis la
+ * commande, la liste des réceptions ne montrant que les bons en attente.
  *
  * La ligne est créée en PIÈCES avec un conditionnement de 1, comme toutes les
  * autres : c'est la seule forme où le stock de BMS et ses compteurs s'accordent.
@@ -451,7 +484,11 @@ async function addLine(sessionId, { productId, qty, unitPrice }, db = pool) {
   if (!produit.sku) throw new Error('Ce produit n\'a pas de SKU : BMS ne peut pas le référencer');
 
   const { rows: commandes } = await db.query(
-    'SELECT bms_po_id FROM purchase_orders WHERE id = $1', [session.purchase_order_id],
+    `SELECT po.bms_po_id, s.bms_id AS bms_supplier_id
+       FROM purchase_orders po
+       JOIN suppliers s ON s.id = po.supplier_id
+      WHERE po.id = $1`,
+    [session.purchase_order_id],
   );
   const bmsPoId = (commandes[0] || {}).bms_po_id;
   if (!bmsPoId) throw new Error('Cette commande n\'existe pas dans BMS');
@@ -463,9 +500,25 @@ async function addLine(sessionId, { productId, qty, unitPrice }, db = pool) {
     ? parseFloat(unitPrice)
     : (produit.supplier_price != null ? parseFloat(produit.supplier_price) : 0);
 
+  // BMS DÉSIGNE UN PRODUIT PAR SON `product_id`, JAMAIS PAR SON SKU.
+  //
+  // Envoyer le SKU — ce que faisait cette fonction — est refusé sans appel :
+  // 400 « The field 'sku' is read-only ». Le SKU d'une ligne n'est que le reflet
+  // du produit, pas ce qui le désigne. Vérifié le 30/09/2026 sur une commande
+  // ouverte ET une commande terminée, et l'ordre des champs du payload n'y
+  // change rien : c'est bien `product_id` qui manquait.
+  //
+  // Il n'est stocké nulle part chez nous, d'où cette recherche. Par le
+  // fournisseur d'abord, qui est le cas normal ; à défaut sans lui, car un
+  // produit absent du catalogue BMS de CE fournisseur reste commandable — c'est
+  // même la situation où l'on ajoute une ligne oubliée.
+  const bmsProductId = await trouverProduitBms(
+    produit.sku, (commandes[0] || {}).bms_supplier_id,
+  );
+
   const creee = await bmsApiModel.apiCall(
     `/v2/purchase-orders/${bmsPoId}/items`, 'POST',
-    { sku: produit.sku, qty: pieces, qty_pack: 1, price: Math.round(prix * 10000) / 10000 },
+    { product_id: bmsProductId, qty: pieces, qty_pack: 1, price: Math.round(prix * 10000) / 10000 },
   );
   const ligneBms = creee.data || creee;
 
