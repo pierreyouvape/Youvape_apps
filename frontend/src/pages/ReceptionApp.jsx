@@ -686,6 +686,22 @@ function CountingScreen({ token, order, items, onBack, onReload, onFinished }) {
     else { setMessage(msg); setError(null); setTimeout(() => setMessage(null), 2000); }
   };
 
+  // Ligne scannée : la liste défile jusqu'à elle et la surligne 2 s. Défiler
+  // plutôt que la remonter en tête : des lignes qui changent de place sous les
+  // yeux font perdre ses repères au magasinier.
+  const [scanned, setScanned] = useState(null); // { id, n } — n relance l'effet sur un même article
+  const marquerScan = useCallback((itemId) => {
+    setScanned(prev => ({ id: itemId, n: (prev?.n || 0) + 1 }));
+  }, []);
+  useEffect(() => {
+    if (!scanned) return undefined;
+    const raf = requestAnimationFrame(() => {
+      document.getElementById(`rx-ligne-${scanned.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    });
+    const t = setTimeout(() => setScanned(cur => (cur?.n === scanned.n ? null : cur)), 2000);
+    return () => { cancelAnimationFrame(raf); clearTimeout(t); };
+  }, [scanned]);
+
   const addCount = useCallback((itemId, delta) => {
     setCounts(prev => {
       const next = Math.max(0, (prev[itemId] || 0) + delta);
@@ -757,22 +773,31 @@ function CountingScreen({ token, order, items, onBack, onReload, onFinished }) {
     if (matched.type === 'pack' && matched.quantity) {
       const n = parseInt(matched.quantity, 10);
       compterPieces(found, n);
+      marquerScan(found.id);
       flash(`${found.name} — +${n} pièce${n > 1 ? 's' : ''}`);
       return;
     }
 
-    // Code typé « unité » sur un produit acheté au carton : seul cas ambigu.
-    if (found.ambiguous && askType) {
+    // Code « unité » jamais confirmé par une personne, sur un produit acheté au
+    // carton OU qui a plusieurs codes : il peut être celui du carton, mal classé
+    // à l'import (BMS ne dit pas lequel est lequel). On demande, la réponse est
+    // enregistrée et confirmée, la question ne revient plus pour ce code.
+    // (Avant le 01/10/2026 : seulement si acheté au carton — presque jamais depuis
+    // la bascule en pièces du 30/09 — et la question revenait même après réponse.)
+    const multiCodes = (found.barcodes || []).length > 1;
+    if (askType && matched.type === 'unit' && !matched.confirmed && (found.ambiguous || multiCodes)) {
+      marquerScan(found.id);
       setTypeModal({ item: found, barcode: value, packQty: found.pack_qty });
       return;
     }
 
     addCount(found.id, 1);
+    marquerScan(found.id);
     flash(`${found.name} — +1`);
     // `compterPieces` en dépendance : sans elle, le scan garderait une version
     // figée de la fonction, donc une SESSION figée — et le comptage d'un carton
     // cesserait d'être enregistré en base sans que rien ne le signale.
-  }, [addCount, askType, compterPieces]);
+  }, [addCount, askType, compterPieces, marquerScan]);
 
   // Capture clavier globale (douchette) — ignorée quand on saisit dans un champ
   // ou qu'une pop-up est ouverte.
@@ -997,7 +1022,15 @@ function CountingScreen({ token, order, items, onBack, onReload, onFinished }) {
                 const counted = counts[it.id] || 0;
                 const ecart = counted - targetOf(it);
                 return (
-                  <tr key={it.id} style={rowColors(it, idx)}>
+                  <tr
+                    key={it.id}
+                    id={`rx-ligne-${it.id}`}
+                    style={{
+                      ...rowColors(it, idx),
+                      boxShadow: scanned?.id === it.id ? `inset 0 0 0 4px ${C.accent}` : 'none',
+                      transition: 'box-shadow 0.3s ease',
+                    }}
+                  >
                     <Td large><Thumb src={it.image_url} alt={it.name} /></Td>
                     <Td large>
                       {it.name}
@@ -1064,6 +1097,7 @@ function CountingScreen({ token, order, items, onBack, onReload, onFinished }) {
             // a en main : elle fait autorité, exactement comme au scan suivant une
             // fois enregistrée.
             compterPieces(packQtyModal.item, qty);
+            marquerScan(packQtyModal.item.id);
             await persistBarcode(packQtyModal.item.wp_product_id, packQtyModal.barcode, 'pack', qty);
             flash(`${packQtyModal.item.name} — carton de ${qty} enregistré`);
             setPackQtyModal(null);
@@ -1081,6 +1115,7 @@ function CountingScreen({ token, order, items, onBack, onReload, onFinished }) {
             // La quantité saisie est le nombre de pièces que vaut ce code, et
             // c'est exactement ce qui est compté — comme au picking et au packing.
             const compte = compterPieces(item, type === 'pack' ? qty : 1);
+            if (compte) marquerScan(item.id);
             await persistBarcode(item.wp_product_id, unknownModal.barcode, type, qty);
             if (compte) flash(`${item.name} — code rattaché et compté`);
             setUnknownModal(null);
@@ -1298,21 +1333,25 @@ function AddLineModal({ token, supplierId, busy, onClose, onAdd }) {
 
 /* ─── POP-UP : unité ou pack ? ──────────────────────────── */
 function TypeModal({ data, onClose, onChoose }) {
-  const [qty, setQty] = useState(data.packQty || 1);
+  const auCarton = data.packQty > 1;
+  const [qty, setQty] = useState(auCarton ? data.packQty : '');
+  const qtyPack = parseInt(qty, 10);
   return (
     <Modal title="Ce code-barre est celui de l'unité ou du carton ?" onClose={onClose}>
       <p style={{ fontSize: 14, color: C.dark, margin: '0 0 6px' }}>{data.item.name}</p>
       <p style={{ fontSize: 12.5, color: C.greyT, margin: '0 0 18px' }}>
-        Code <strong>{data.barcode}</strong> · ce produit est acheté par carton de {data.packQty}.
-        Votre réponse est enregistrée : la question ne sera plus posée.
+        Code <strong>{data.barcode}</strong> · {auCarton
+          ? `ce produit est acheté par carton de ${data.packQty}.`
+          : 'ce produit a plusieurs codes-barres : l\'un d\'eux peut être celui du carton.'}
+        {' '}Votre réponse est enregistrée : la question ne sera plus posée pour ce code.
       </p>
       <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
         <Btn variant="ghost" onClick={() => onChoose('unit', 1)}>Unité (+1)</Btn>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          <Btn variant="accent" onClick={() => onChoose('pack', Math.max(1, parseInt(qty) || 1))}>
-            Pack de
+          <Btn variant="accent" disabled={!(qtyPack >= 2)} onClick={() => onChoose('pack', qtyPack)}>
+            Carton de
           </Btn>
-          <input type="number" min="1" value={qty} onChange={e => setQty(e.target.value)}
+          <input type="number" min="2" value={qty} placeholder="qté" onChange={e => setQty(e.target.value)}
             style={{ width: 82, padding: '8px 10px', textAlign: 'center', fontSize: 14, fontWeight: 700,
               borderRadius: 7, border: `1px solid ${C.greyB}` }} />
         </div>

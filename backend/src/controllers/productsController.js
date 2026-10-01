@@ -847,7 +847,7 @@ exports.addProductBarcode = async (req, res) => {
     if (!product.rows[0]) return res.status(404).json({ success: false, error: 'Produit introuvable' });
 
     const qty = type === 'pack' && quantity ? parseInt(quantity) : null;
-    const result = await productModel.addBarcode(product.rows[0].id, barcode.trim(), type, qty);
+    const result = await productModel.addBarcode(product.rows[0].id, barcode.trim(), type, qty, req.user?.id || null);
     res.json({ success: true, data: result });
   } catch (error) {
     if (error.code === '23505') {

@@ -1799,14 +1799,17 @@ class ProductModel {
   // d'échouer : BMS ne stocke qu'un code par produit, donc les codes de carton y ont
   // été saisis comme codes unité et doivent pouvoir être rebasculés depuis l'app.
   // `requalified` (xmax <> 0) distingue une requalification d'une création.
-  async addBarcode(productId, barcode, type, quantity = null) {
+  // Une saisie humaine CONFIRME le code (confirmed_at) : la réception ne reposera
+  // plus « unité ou carton ? » pour lui. Les imports (BMS, CSV) ne passent pas ici.
+  async addBarcode(productId, barcode, type, quantity = null, userId = null) {
     const result = await pool.query(
-      `INSERT INTO product_barcodes (product_id, barcode, type, quantity)
-       VALUES ($1, $2, $3, $4)
+      `INSERT INTO product_barcodes (product_id, barcode, type, quantity, confirmed_at, confirmed_by)
+       VALUES ($1, $2, $3, $4, NOW(), $5)
        ON CONFLICT (product_id, barcode)
-       DO UPDATE SET type = EXCLUDED.type, quantity = EXCLUDED.quantity
+       DO UPDATE SET type = EXCLUDED.type, quantity = EXCLUDED.quantity,
+                     confirmed_at = NOW(), confirmed_by = EXCLUDED.confirmed_by
        RETURNING *, (xmax <> 0) AS requalified`,
-      [productId, barcode, type, quantity]
+      [productId, barcode, type, quantity, userId]
     );
     return result.rows[0];
   }

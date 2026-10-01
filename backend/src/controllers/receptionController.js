@@ -194,7 +194,7 @@ exports.getOrderDetail = async (req, res) => {
     const barcodesByProduct = new Map();
     if (productIds.length > 0) {
       const bc = await pool.query(
-        'SELECT product_id, barcode, type, quantity FROM product_barcodes WHERE product_id = ANY($1)',
+        'SELECT product_id, barcode, type, quantity, confirmed_at IS NOT NULL AS confirmed FROM product_barcodes WHERE product_id = ANY($1)',
         [productIds]
       );
       for (const row of bc.rows) {
@@ -203,6 +203,7 @@ exports.getOrderDetail = async (req, res) => {
           barcode: row.barcode,
           type: row.type,
           quantity: row.quantity,
+          confirmed: row.confirmed,
         });
       }
     }
