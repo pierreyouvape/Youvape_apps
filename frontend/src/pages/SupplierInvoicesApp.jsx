@@ -126,6 +126,43 @@ const Badge = ({ children, tone = 'grey' }) => (
   }}>{children}</span>
 );
 
+/**
+ * Le pourcentage de mise en stock d'une facture : 0 % tant que rien n'est
+ * arrivé, 100 % quand toute la commande rapprochée est rangée.
+ *
+ * null quand aucune commande n'est rapprochée : on ne sait pas, et dire « 0 % »
+ * ferait croire à une livraison manquante.
+ */
+const storagePct = (ordered, received) => {
+  const cmd = Number(ordered) || 0;
+  if (cmd <= 0) return null;
+  return Math.round(((Number(received) || 0) / cmd) * 100);
+};
+const StorageBadge = ({ ordered, received }) => {
+  const pct = storagePct(ordered, received);
+  if (pct === null) {
+    return <span style={{ color: C.greyM }} title="Aucune commande rapprochée : réception inconnue">—</span>;
+  }
+  return (
+    <span title={`${Number(received) || 0} pièce(s) en stock sur ${Number(ordered) || 0} commandée(s)`}>
+      <Badge tone={pct >= 100 ? 'green' : (pct > 0 ? 'orange' : 'red')}>{pct} %</Badge>
+    </span>
+  );
+};
+
+/**
+ * Le tarif facturé diffère-t-il de la commande ?
+ *
+ * Même lecture que le « réclamable » de l'écran de contrôle : seules les lignes
+ * dont l'écart de tarif SUBSISTE après la remise de pied, au-delà du garde-fou
+ * d'arrondi de 0,10 €. C'est une alerte, pas un blocage — on règle des factures
+ * au tarif différent tous les mois, il faut seulement le savoir avant.
+ */
+const SEUIL_TARIF = 0.10;
+const ecartTarifDe = (l) => Number(l.residual_gap_price != null ? l.residual_gap_price : l.gap_price) || 0;
+const lignesEcartTarif = (lines) => (lines || []).filter((l) => ['price', 'qty_price'].includes(l.verdict)
+  && l.material && Math.abs(ecartTarifDe(l)) >= SEUIL_TARIF);
+
 const Kpi = ({ label, value, tone }) => (
   <div style={{
     flex: 1, minWidth: 140, background: C.white, borderRadius: 12, border: `1px solid ${C.greyB}`,
@@ -1161,6 +1198,11 @@ function FilingTab({ suppliers, mobile, reloadKey, onSaved }) {
 
   const totalDu = rows.reduce((s, r) => s + (Number(r.remaining_amount) || 0), 0);
   const totalEcarts = rows.reduce((s, r) => s + (Number(r.difference_count) || 0), 0);
+  // Les factures dont le tarif n'est pas celui de la commande. Alerte, pas
+  // blocage : elles se contrôlent et se règlent comme les autres, mais l'écart
+  // est à réclamer au fournisseur ou à aligner dans BMS.
+  const tarifs = rows.filter((r) => Number(r.price_diff_count) > 0);
+  const totalTarif = tarifs.reduce((s, r) => s + (Number(r.price_gap) || 0), 0);
 
   return (
     <div style={{ padding: mobile ? '16px' : '22px 40px', display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -1249,6 +1291,21 @@ function FilingTab({ suppliers, mobile, reloadKey, onSaved }) {
         </div>
       )}
 
+      {tarifs.length > 0 && (
+        <div style={{
+          padding: 13, background: C.orangeL, color: C.orange, borderRadius: 10, fontSize: 13,
+          border: `1px solid ${C.orange}22`,
+        }}>
+          ⚠️ <strong>{tarifs.length} document{tarifs.length > 1 ? 's' : ''}</strong> facturé
+          {tarifs.length > 1 ? 's' : ''} à un tarif différent de la commande, pour{' '}
+          <strong>{signedEur(totalTarif)}</strong> d'écart au total : {tarifs.map((r) => r.number).join(', ')}.
+          <div style={{ marginTop: 4, color: C.greyT }}>
+            Rien n'est bloqué : ces factures se contrôlent et se règlent normalement. L'écart est à réclamer
+            au fournisseur, ou à aligner sur la commande s'il s'agit d'un nouveau tarif.
+          </div>
+        </div>
+      )}
+
       {(error || suppliersOfChosen.length > 1) && (
         <div style={{ padding: 12, background: C.redL, color: C.red, borderRadius: 8, fontSize: 13, fontWeight: 600 }}>
           {error || 'Un règlement ne peut couvrir qu’un seul fournisseur à la fois : décoche les autres.'}
@@ -1268,6 +1325,7 @@ function FilingTab({ suppliers, mobile, reloadKey, onSaved }) {
                 <th style={th}>Type</th>
                 <th style={{ ...th, textAlign: 'right' }}>Total TTC</th>
                 <th style={{ ...th, textAlign: 'center' }}>Écarts</th>
+                <th style={{ ...th, textAlign: 'center' }}>Stockage</th>
                 <th style={th}>Contrôle</th>
                 <th style={th}>Échéance</th>
                 <th style={th}>Payée le</th>
@@ -1277,7 +1335,7 @@ function FilingTab({ suppliers, mobile, reloadKey, onSaved }) {
             </thead>
             <tbody>
               {rows.length === 0 && (
-                <tr><td style={{ ...td, textAlign: 'center', color: C.greyM, padding: 26 }} colSpan={13}>
+                <tr><td style={{ ...td, textAlign: 'center', color: C.greyM, padding: 26 }} colSpan={14}>
                   Aucun document. Dépose une facture depuis l'onglet Contrôle.
                 </td></tr>
               )}
@@ -1309,6 +1367,17 @@ function FilingTab({ suppliers, mobile, reloadKey, onSaved }) {
                       {Number(r.difference_count) > 0
                         ? <Badge tone="red">{r.difference_count}</Badge>
                         : <span style={{ color: C.green }}>✓</span>}
+                      {Number(r.price_diff_count) > 0 && (
+                        <div
+                          title={`Le tarif facturé n'est pas celui de la commande sur ${r.price_diff_count} ligne(s). Alerte seulement : le document peut être contrôlé et réglé.`}
+                          style={{ fontSize: 10.5, color: C.red, fontWeight: 700, marginTop: 3, whiteSpace: 'nowrap' }}
+                        >
+                          ⚠ tarif {signedEur(r.price_gap)}
+                        </div>
+                      )}
+                    </td>
+                    <td style={{ ...td, textAlign: 'center' }} onClick={() => openDetail(r.id)}>
+                      <StorageBadge ordered={r.units_ordered} received={r.units_received} />
                     </td>
                     <td style={td}>
                       <select value={r.status} onChange={(e) => setStatus(r.id, e.target.value)}
@@ -1429,6 +1498,7 @@ function ReceptionState({ orders }) {
     const cmd = Number(f.order.units_ordered) || 0;
     const recu = Number(f.order.units_received) || 0;
     const manque = Math.max(cmd - recu, 0);
+    const pct = storagePct(cmd, recu);
     const etat = f.summary.fullyReceived
       ? { tone: 'green', label: 'Entièrement reçue' }
       : (f.summary.partiallyReceived
@@ -1437,7 +1507,7 @@ function ReceptionState({ orders }) {
     return (
       <div key={f.order.id} style={{ paddingTop: 2, paddingBottom: 6 }}>
         <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', fontSize: 13 }}>
-          <Badge tone={etat.tone}>{etat.label}</Badge>
+          <Badge tone={etat.tone}>{etat.label}{pct === null ? '' : ` · ${pct} %`}</Badge>
           <span>
             <strong>{recu}</strong> pièce{recu > 1 ? 's' : ''} reçue{recu > 1 ? 's' : ''} sur {cmd} commandée{cmd > 1 ? 's' : ''}
             {manque > 0 && <> · il en manque <strong>{manque}</strong></>}
@@ -1480,6 +1550,8 @@ function ReceptionState({ orders }) {
  */
 function DocumentPanel({ detail, mobile, onClose, onStatus, onDelete, onSettle }) {
   const ecarts = detail.lines.filter((l) => l.verdict && l.verdict !== 'ok').length;
+  const tarifs = lignesEcartTarif(detail.lines);
+  const ecartTarif = tarifs.reduce((t, l) => t + ecartTarifDe(l), 0);
   const avoir = detail.doc_type === 'credit_note';
   const reste = Number(detail.remaining_amount) || 0;
   const [reglement, setReglement] = useState({
@@ -1522,6 +1594,22 @@ function DocumentPanel({ detail, mobile, onClose, onStatus, onDelete, onSettle }
           <Kpi label="Réglé" value={eur(detail.paid_amount)} />
           <Kpi label="Reste dû" value={eur(detail.remaining_amount)} tone={Number(detail.remaining_amount) > 0 ? 'orange' : 'green'} />
         </div>
+
+        {tarifs.length > 0 && (
+          <div style={{
+            padding: 13, marginBottom: 16, borderRadius: 10, fontSize: 13,
+            background: C.orangeL, color: C.orange, border: `1px solid ${C.orange}33`,
+          }}>
+            ⚠️ Le tarif facturé <strong>ne correspond pas à la commande</strong> sur{' '}
+            <strong>{tarifs.length} ligne{tarifs.length > 1 ? 's' : ''}</strong>, pour{' '}
+            <strong>{signedEur(ecartTarif)}</strong>
+            {ecartTarif > 0 ? ' à notre charge' : ' en notre faveur'}.
+            <div style={{ marginTop: 4, color: C.greyT }}>
+              Alerte seulement, rien n'est bloqué : le document peut être contrôlé et réglé. Le détail ligne
+              à ligne est plus bas{ecartTarif > 0 ? ', avec le tarif à réclamer ou à aligner dans BMS' : ''}.
+            </div>
+          </div>
+        )}
 
         <ReceptionState orders={detail.orders} />
 

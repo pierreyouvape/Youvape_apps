@@ -194,6 +194,35 @@ async function listDocuments({ supplierId, status, paymentStatus, from, to, docT
                 AND l.verdict IS NOT NULL
                 AND l.verdict NOT IN ('ok', 'free', 'discount', 'rounding', 'packaging', 'shipping')
                 AND l.material) AS difference_count,
+            -- Où en est la mise en stock de la ou des commandes rapprochées :
+            -- 0 % tant que rien n'est arrivé, 100 % quand tout est rangé. Même
+            -- lecture que le fil de vie (orderLifecycleModel), au pack près :
+            -- une commande peut compter en packs, le stock compte en pièces.
+            (SELECT COALESCE(SUM(poi.qty_ordered * COALESCE(poi.units_per_qty, 1)), 0)::int
+               FROM supplier_document_orders o
+               JOIN purchase_order_items poi ON poi.purchase_order_id = o.purchase_order_id
+              WHERE o.document_id = d.id) AS units_ordered,
+            (SELECT COALESCE(SUM(poi.units_received), 0)::int
+               FROM supplier_document_orders o
+               JOIN purchase_order_items poi ON poi.purchase_order_id = o.purchase_order_id
+              WHERE o.document_id = d.id) AS units_received,
+            -- Le tarif facturé est-il celui de la commande ? Une alerte, jamais
+            -- un blocage : une facture au tarif différent se contrôle et se
+            -- règle, elle demande seulement qu'on le sache avant de payer.
+            --
+            -- On ne retient que le RÉSIDU, comme le « réclamable » de l'écran de
+            -- contrôle : ce qu'une remise de pied explique déjà a été accordé.
+            (SELECT count(*)::int FROM supplier_document_lines l
+              WHERE l.document_id = d.id
+                AND l.verdict IN ('price', 'qty_price')
+                AND l.material
+                AND abs(COALESCE(l.residual_gap_price, l.gap_price, 0)) >= 0.10) AS price_diff_count,
+            (SELECT COALESCE(SUM(COALESCE(l.residual_gap_price, l.gap_price, 0)), 0)
+               FROM supplier_document_lines l
+              WHERE l.document_id = d.id
+                AND l.verdict IN ('price', 'qty_price')
+                AND l.material
+                AND abs(COALESCE(l.residual_gap_price, l.gap_price, 0)) >= 0.10) AS price_gap,
             -- Les trois dates que l'acheteur suit : quand il a commandé, quand
             -- le fournisseur a facturé, quand l'argent est parti.
             (SELECT min(po.order_date) FROM supplier_document_orders o
