@@ -160,6 +160,21 @@ async function getReorderIdsSql(stockTab) {
 const CATALOG_STANDALONE = `p.product_type IN ('simple', 'woosb')`;
 
 /**
+ * Statut WooCommerce EFFECTIF d'une déclinaison.
+ *
+ * Une déclinaison n'est en ligne que si sa tête de ligne l'est aussi : un parent
+ * en brouillon ou désactivé sort toute sa famille de la boutique, quoi que
+ * disent ses déclinaisons. À l'inverse, sous un parent publié, chaque
+ * déclinaison porte son propre état — et une déclinaison désactivée n'a rien à
+ * faire dans une liste filtrée sur « Publié WC ».
+ *
+ * NULLIF/COALESCE dit exactement cela : on prend le statut du parent s'il n'est
+ * pas `publish`, sinon celui de la déclinaison.
+ */
+const statutEffectif = (parent, variation) =>
+  `COALESCE(NULLIF(${parent}.post_status, 'publish'), ${variation}.post_status)`;
+
+/**
  * Filtre « Statut WC » du catalogue : quels états WooCommerce retenir.
  *
  * Sert à répondre à une question précise — « ai-je du stock sur des produits qui
@@ -184,19 +199,19 @@ const statutsWc = (cle) => WC_STATUTS[cle] || null;
  */
 const CATALOG_SORT_EXPRESSIONS = {
   price: `(CASE WHEN ${CATALOG_STANDALONE} THEN p.price
-    ELSE (SELECT AVG(v.price) FROM products v WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation' AND v.post_status = 'publish') END)`,
+    ELSE (SELECT AVG(v.price) FROM products v WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation' AND v.wc_deleted_at IS NULL AND v.post_status = 'publish') END)`,
   discounted_price: `(CASE WHEN ${CATALOG_STANDALONE} THEN p.discounted_price
-    ELSE (SELECT AVG(v.discounted_price) FROM products v WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation' AND v.post_status = 'publish') END)`,
+    ELSE (SELECT AVG(v.discounted_price) FROM products v WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation' AND v.wc_deleted_at IS NULL AND v.post_status = 'publish') END)`,
   cost_price: `(CASE WHEN ${CATALOG_STANDALONE} THEN COALESCE(p.computed_cost, p.wc_cog_cost)
-    ELSE (SELECT AVG(COALESCE(v.computed_cost, v.wc_cog_cost)) FROM products v WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation' AND v.post_status = 'publish') END)`,
+    ELSE (SELECT AVG(COALESCE(v.computed_cost, v.wc_cog_cost)) FROM products v WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation' AND v.wc_deleted_at IS NULL AND v.post_status = 'publish') END)`,
   margin: `(CASE WHEN ${CATALOG_STANDALONE}
       THEN (COALESCE(p.discounted_price, p.price) - COALESCE(p.computed_cost, p.wc_cog_cost)) / NULLIF(COALESCE(p.discounted_price, p.price), 0)
     ELSE (SELECT AVG((COALESCE(v.discounted_price, v.price) - COALESCE(v.computed_cost, v.wc_cog_cost)) / NULLIF(COALESCE(v.discounted_price, v.price), 0))
-      FROM products v WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation' AND v.post_status = 'publish') END)`,
+      FROM products v WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation' AND v.wc_deleted_at IS NULL AND v.post_status = 'publish') END)`,
   weight: `(CASE WHEN ${CATALOG_STANDALONE} THEN p.weight
-    ELSE (SELECT AVG(v.weight) FROM products v WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation' AND v.post_status = 'publish') END)`,
+    ELSE (SELECT AVG(v.weight) FROM products v WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation' AND v.wc_deleted_at IS NULL AND v.post_status = 'publish') END)`,
   stock: `(CASE WHEN ${CATALOG_STANDALONE} THEN COALESCE(p.stock, 0)
-    ELSE (SELECT COALESCE(SUM(v.stock), 0) FROM products v WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation' AND v.post_status = 'publish') END)`,
+    ELSE (SELECT COALESCE(SUM(v.stock), 0) FROM products v WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation' AND v.wc_deleted_at IS NULL AND v.post_status = 'publish') END)`,
   incoming_qty: `(SELECT COALESCE(SUM((poi.qty_ordered * COALESCE(poi.units_per_qty, 1) - poi.units_received)), 0)
     FROM purchase_order_items poi
     JOIN purchase_orders po ON poi.purchase_order_id = po.id
@@ -209,7 +224,7 @@ const CATALOG_SORT_EXPRESSIONS = {
   // Emplacement de rangement (entrepot principal), synchronise chaque nuit depuis BMS.
   // Un parent variable n'a pas de stock propre : on prend le 1er emplacement de ses declinaisons.
   shelf_location: `(CASE WHEN ${CATALOG_STANDALONE} THEN NULLIF(p.shelf_location, '')
-    ELSE (SELECT MIN(NULLIF(v.shelf_location, '')) FROM products v WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation' AND v.post_status = 'publish') END)`,
+    ELSE (SELECT MIN(NULLIF(v.shelf_location, '')) FROM products v WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation' AND v.wc_deleted_at IS NULL AND v.post_status = 'publish') END)`,
   sales_30d: `(SELECT COALESCE(SUM(oi.qty), 0)
     FROM order_items oi
     JOIN orders o ON oi.wp_order_id = o.wp_order_id
@@ -1199,7 +1214,7 @@ class ProductModel {
           OR (p.product_type = 'variable' AND EXISTS (
             SELECT 1 FROM products v
             WHERE v.wp_parent_id = p.wp_product_id
-              AND v.product_type = 'variation' AND v.post_status = 'publish'
+              AND v.product_type = 'variation' AND v.wc_deleted_at IS NULL AND v.post_status = 'publish'
           ))
         )`;
     // Même raison : un statut demandé prime sur le réglage « masqués ».
@@ -1207,9 +1222,15 @@ class ProductModel {
       ? ''
       : trackStockOnly ? 'AND v.track_stock = true'
       : onlyHidden ? 'AND v.track_stock = false' : '';
+    // Un produit supprimé de WooCommerce n'est plus du catalogue. Sa ligne, elle,
+    // reste en base — commandes d'achat, réceptions et documents fournisseurs la
+    // référencent — d'où ce marqueur posé (et retiré) par la resynchro nocturne
+    // plutôt qu'un DELETE : des fiches supprimées depuis des mois traînaient
+    // encore à l'écran, en brouillon, avec leurs déclinaisons publiées.
     let whereClause = `
       WHERE ${perimetreParent}
         AND p.product_type IN ('simple', 'variable', 'woosb')
+        AND p.wc_deleted_at IS NULL
     `;
     if (trackStockOnly && !statuts) {
       whereClause += `
@@ -1217,7 +1238,7 @@ class ProductModel {
           (${CATALOG_STANDALONE} AND p.track_stock = true)
           OR (p.product_type = 'variable' AND EXISTS (
             SELECT 1 FROM products v
-            WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation' AND v.track_stock = true
+            WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation' AND v.wc_deleted_at IS NULL AND v.track_stock = true
           ))
         )
       `;
@@ -1228,7 +1249,7 @@ class ProductModel {
           (${CATALOG_STANDALONE} AND p.track_stock = false)
           OR (p.product_type = 'variable' AND EXISTS (
             SELECT 1 FROM products v
-            WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation' AND v.track_stock = false
+            WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation' AND v.wc_deleted_at IS NULL AND v.track_stock = false
           ))
         )
       `;
@@ -1241,7 +1262,7 @@ class ProductModel {
           (${CATALOG_STANDALONE} AND ${stockCond})
           OR (p.product_type = 'variable' AND EXISTS (
             SELECT 1 FROM products v
-            WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation'
+            WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation' AND v.wc_deleted_at IS NULL
               ${filtreSuiviVar}
               AND ${stockCondVar}
           ))
@@ -1264,7 +1285,7 @@ class ProductModel {
           ${pCond}
           OR EXISTS (
             SELECT 1 FROM products v
-            WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation'
+            WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation' AND v.wc_deleted_at IS NULL
               AND ${vCond}
           )
         )`;
@@ -1298,18 +1319,30 @@ class ProductModel {
       paramIndex++;
     }
 
-    // Une famille est retenue si SA TÊTE porte le statut demandé, ou si l'une de
-    // ses déclinaisons le porte : un parent publié peut très bien cacher une
-    // déclinaison désactivée qui a du stock, et c'est justement ce qu'on cherche.
+    // LE FILTRE DE STATUT VAUT POUR LA FAMILLE ENTIÈRE, DÉCLINAISONS COMPRISES.
+    //
+    // Une tête de ligne variable n'est qu'un en-tête : son stock, ses ventes et
+    // ses arrivages sont la somme des déclinaisons affichées sous elle. La
+    // retenir alors qu'aucune de ses déclinaisons ne porte le statut demandé
+    // affichait une famille vide aux totaux à zéro — « Publié WC » listait des
+    // produits dont toutes les déclinaisons sont désactivées, et annonçait un
+    // stock nul là où il y en a. On juge donc la famille sur ses déclinaisons
+    // (statut effectif), et la tête sur elle-même seulement quand elle n'en a
+    // aucune.
     if (statuts) {
       whereClause += `
         AND (
-          p.post_status = ANY($${paramIndex}::text[])
-          OR (p.product_type = 'variable' AND EXISTS (
-            SELECT 1 FROM products v
-            WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation'
-              AND v.post_status = ANY($${paramIndex}::text[])
-          ))
+          CASE WHEN p.product_type = 'variable' AND EXISTS (
+                 SELECT 1 FROM products v
+                 WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation' AND v.wc_deleted_at IS NULL
+               )
+            THEN EXISTS (
+                 SELECT 1 FROM products v
+                 WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation' AND v.wc_deleted_at IS NULL
+                   AND ${statutEffectif('p', 'v')} = ANY($${paramIndex}::text[])
+               )
+            ELSE p.post_status = ANY($${paramIndex}::text[])
+          END
         )
       `;
       params.push(statuts);
@@ -1328,7 +1361,7 @@ class ProductModel {
           OR EXISTS (
             SELECT 1 FROM products v_f
             JOIN product_suppliers ps_f ON ps_f.product_id = v_f.id AND ps_f.supplier_id = $${paramIndex}
-            WHERE v_f.wp_parent_id = p.wp_product_id AND v_f.product_type = 'variation'
+            WHERE v_f.wp_parent_id = p.wp_product_id AND v_f.product_type = 'variation' AND v_f.wc_deleted_at IS NULL
           )
         )
       `;
@@ -1353,10 +1386,10 @@ class ProductModel {
         -- dans le catalogue un produit dont une declinaison est ~10x moins chere que
         -- les autres (prix pack saisi comme prix unitaire, ou l'inverse).
         (SELECT MIN(COALESCE(v.computed_cost, v.wc_cog_cost)) FROM products v
-          WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation'
+          WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation' AND v.wc_deleted_at IS NULL
             AND v.post_status = 'publish' AND COALESCE(v.computed_cost, v.wc_cog_cost) > 0) as cost_min,
         (SELECT MAX(COALESCE(v.computed_cost, v.wc_cog_cost)) FROM products v
-          WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation'
+          WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation' AND v.wc_deleted_at IS NULL
             AND v.post_status = 'publish' AND COALESCE(v.computed_cost, v.wc_cog_cost) > 0) as cost_max,
         p.weight,
         p.image_url,
@@ -1420,13 +1453,12 @@ class ProductModel {
         )`;
         varParams.push(supplierId);
       }
-      // Quand la TÊTE porte le statut demandé, on montre toute la famille : c'est
-      // elle qui est hors ligne, ses déclinaisons suivent. Sinon on ne montre que
-      // les déclinaisons concernées, sans quoi choisir « Désactivé » listerait des
-      // produits publiés sous un en-tête qui promet le contraire.
+      // Chaque déclinaison est jugée sur son statut EFFECTIF : sous un parent hors
+      // ligne, toute la famille est hors ligne et suit le filtre « Brouillon » ou
+      // « Désactivé » ; sous un parent publié, chacune répond d'elle-même, si bien
+      // que « Publié WC » ne montre plus une déclinaison désactivée.
       if (statuts) {
-        varFilter += ` AND (p_parent.post_status = ANY($${varParams.length + 1}::text[])
-                            OR v.post_status = ANY($${varParams.length + 1}::text[]))`;
+        varFilter += ` AND ${statutEffectif('p_parent', 'v')} = ANY($${varParams.length + 1}::text[])`;
         varParams.push(statuts);
       }
 
@@ -1451,7 +1483,7 @@ class ProductModel {
           v.post_status
         FROM products v
         LEFT JOIN products p_parent ON v.wp_parent_id = p_parent.wp_product_id
-        WHERE v.wp_parent_id = ANY($1) AND v.product_type = 'variation'
+        WHERE v.wp_parent_id = ANY($1) AND v.product_type = 'variation' AND v.wc_deleted_at IS NULL
           ${filtreSuiviVar}
           ${stockCondVar ? `AND ${stockCondVar}` : ''}
           ${varFilter}
@@ -1550,7 +1582,7 @@ class ProductModel {
           OR (p.product_type = 'variable' AND EXISTS (
             SELECT 1 FROM products v
             WHERE v.wp_parent_id = p.wp_product_id
-              AND v.product_type = 'variation' AND v.post_status = 'publish'
+              AND v.product_type = 'variation' AND v.wc_deleted_at IS NULL AND v.post_status = 'publish'
           ))
         )`;
     // Même raison : un statut demandé prime sur le réglage « masqués ».
@@ -1558,9 +1590,15 @@ class ProductModel {
       ? ''
       : trackStockOnly ? 'AND v.track_stock = true'
       : onlyHidden ? 'AND v.track_stock = false' : '';
+    // Un produit supprimé de WooCommerce n'est plus du catalogue. Sa ligne, elle,
+    // reste en base — commandes d'achat, réceptions et documents fournisseurs la
+    // référencent — d'où ce marqueur posé (et retiré) par la resynchro nocturne
+    // plutôt qu'un DELETE : des fiches supprimées depuis des mois traînaient
+    // encore à l'écran, en brouillon, avec leurs déclinaisons publiées.
     let whereClause = `
       WHERE ${perimetreParent}
         AND p.product_type IN ('simple', 'variable', 'woosb')
+        AND p.wc_deleted_at IS NULL
     `;
     if (trackStockOnly && !statuts) {
       whereClause += `
@@ -1568,7 +1606,7 @@ class ProductModel {
           (${CATALOG_STANDALONE} AND p.track_stock = true)
           OR (p.product_type = 'variable' AND EXISTS (
             SELECT 1 FROM products v
-            WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation' AND v.track_stock = true
+            WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation' AND v.wc_deleted_at IS NULL AND v.track_stock = true
           ))
         )
       `;
@@ -1579,7 +1617,7 @@ class ProductModel {
           (${CATALOG_STANDALONE} AND p.track_stock = false)
           OR (p.product_type = 'variable' AND EXISTS (
             SELECT 1 FROM products v
-            WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation' AND v.track_stock = false
+            WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation' AND v.wc_deleted_at IS NULL AND v.track_stock = false
           ))
         )
       `;
@@ -1592,7 +1630,7 @@ class ProductModel {
           (${CATALOG_STANDALONE} AND ${stockCond})
           OR (p.product_type = 'variable' AND EXISTS (
             SELECT 1 FROM products v
-            WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation'
+            WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation' AND v.wc_deleted_at IS NULL
               ${filtreSuiviVar}
               AND ${stockCondVar}
           ))
@@ -1615,7 +1653,7 @@ class ProductModel {
           ${pCond}
           OR EXISTS (
             SELECT 1 FROM products v
-            WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation'
+            WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation' AND v.wc_deleted_at IS NULL
               AND ${vCond}
           )
         )`;
@@ -1641,18 +1679,30 @@ class ProductModel {
       params.push(subCategory);
     }
 
-    // Une famille est retenue si SA TÊTE porte le statut demandé, ou si l'une de
-    // ses déclinaisons le porte : un parent publié peut très bien cacher une
-    // déclinaison désactivée qui a du stock, et c'est justement ce qu'on cherche.
+    // LE FILTRE DE STATUT VAUT POUR LA FAMILLE ENTIÈRE, DÉCLINAISONS COMPRISES.
+    //
+    // Une tête de ligne variable n'est qu'un en-tête : son stock, ses ventes et
+    // ses arrivages sont la somme des déclinaisons affichées sous elle. La
+    // retenir alors qu'aucune de ses déclinaisons ne porte le statut demandé
+    // affichait une famille vide aux totaux à zéro — « Publié WC » listait des
+    // produits dont toutes les déclinaisons sont désactivées, et annonçait un
+    // stock nul là où il y en a. On juge donc la famille sur ses déclinaisons
+    // (statut effectif), et la tête sur elle-même seulement quand elle n'en a
+    // aucune.
     if (statuts) {
       whereClause += `
         AND (
-          p.post_status = ANY($${params.length + 1}::text[])
-          OR (p.product_type = 'variable' AND EXISTS (
-            SELECT 1 FROM products v
-            WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation'
-              AND v.post_status = ANY($${params.length + 1}::text[])
-          ))
+          CASE WHEN p.product_type = 'variable' AND EXISTS (
+                 SELECT 1 FROM products v
+                 WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation' AND v.wc_deleted_at IS NULL
+               )
+            THEN EXISTS (
+                 SELECT 1 FROM products v
+                 WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation' AND v.wc_deleted_at IS NULL
+                   AND ${statutEffectif('p', 'v')} = ANY($${params.length + 1}::text[])
+               )
+            ELSE p.post_status = ANY($${params.length + 1}::text[])
+          END
         )
       `;
       params.push(statuts);
@@ -1673,7 +1723,7 @@ class ProductModel {
           OR EXISTS (
             SELECT 1 FROM products v_f
             JOIN product_suppliers ps_f ON ps_f.product_id = v_f.id AND ps_f.supplier_id = $${supIdx}
-            WHERE v_f.wp_parent_id = p.wp_product_id AND v_f.product_type = 'variation'
+            WHERE v_f.wp_parent_id = p.wp_product_id AND v_f.product_type = 'variation' AND v_f.wc_deleted_at IS NULL
           )
         )
       `;
@@ -1684,6 +1734,16 @@ class ProductModel {
       )`;
     }
 
+    // Le décompte « x produits » et la valeur de stock portent sur ce qui est
+    // AFFICHÉ : si le filtre de statut écarte des déclinaisons de l'écran, il
+    // doit les écarter des totaux, sans quoi l'en-tête annonce une ligne de plus
+    // que la liste n'en montre.
+    let statutVarCond = '';
+    if (statuts) {
+      params.push(statuts);
+      statutVarCond = `AND ${statutEffectif('p', 'v')} = ANY($${params.length}::text[])`;
+    }
+
     const query = `
       SELECT
         COUNT(*)::int as total,
@@ -1691,10 +1751,11 @@ class ProductModel {
           CASE WHEN ${CATALOG_STANDALONE} THEN 1
             ELSE (
               SELECT COUNT(*) FROM products v
-              WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation'
+              WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation' AND v.wc_deleted_at IS NULL
                 ${filtreSuiviVar}
                 ${stockCondVar ? `AND ${stockCondVar}` : ''}
                 ${supplierVarCond}
+                ${statutVarCond}
             )
           END
         ), 0)::int as total_with_variations,
@@ -1707,7 +1768,12 @@ class ProductModel {
           ELSE (
             SELECT COALESCE(SUM(GREATEST(COALESCE(v.stock, 0), 0) * COALESCE(v.computed_cost, v.wc_cog_cost, 0)), 0)
             FROM products v
-            WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation' AND v.post_status = 'publish'
+            WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation' AND v.wc_deleted_at IS NULL
+              -- Hors filtre de statut, la valeur du catalogue est celle du stock
+              -- en ligne. Avec un filtre, elle suit le filtre : c'est tout
+              -- l'intérêt de croiser « Pas en ligne » et « En stock » — chiffrer
+              -- la marchandise immobilisée sur des produits qui ne se vendent pas.
+              ${statutVarCond || `AND v.post_status = 'publish'`}
               ${supplierVarCond}
               -- L'ONGLET FILTRE AUSSI LA VALEUR, pas seulement la sélection.
               -- Une famille entre dans « Rupture de stock » dès qu'UNE de ses

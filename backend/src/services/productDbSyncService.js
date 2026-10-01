@@ -94,6 +94,9 @@ const fetchVariations = async (creds, productId) => {
 
 const runProductDbSync = async () => {
   const startTime = Date.now();
+  // Instantane WC pris a partir de maintenant : une fiche creee apres ce point ne
+  // peut pas etre consideree comme supprimee, elle est seulement arrivee trop tard.
+  const runStartedAt = new Date(startTime);
   const creds = await getWcCredentials();
 
   const products = await fetchAllProducts(creds);
@@ -170,7 +173,7 @@ const runProductDbSync = async () => {
   }
 
   const client = await pool.connect();
-  let result = { statusUpdated: 0, variableUpdated: 0, ghosts: [] };
+  let result = { statusUpdated: 0, variableUpdated: 0, ghosts: [], deleted: 0, restored: 0 };
   try {
     await client.query('BEGIN');
     await client.query(`
@@ -241,16 +244,32 @@ const runProductDbSync = async () => {
              OR (l.live_wc_cog_cost IS NOT NULL AND p.wc_cog_cost IS DISTINCT FROM l.live_wc_cog_cost))
     `);
 
-    // 3) Fiches fantomes : lignes locales avec du stock alors que le produit n'existe
-    // plus dans WooCommerce (supprime avant l'arrivee du hook de suppression YouSync,
-    // ou event de suppression jamais arrive). On neutralise le stock sans supprimer la
-    // ligne : elle peut etre referencee par purchase_order_items (FK sans CASCADE).
-    // Deux garde-fous : si le catalogue live est anormalement petit (reponse WC
-    // tronquee) ou si des variations n'ont pas pu etre lues, on ne touche a rien.
+    // 3) Produits disparus de WooCommerce.
+    //
+    // UN PRODUIT SUPPRIME DANS WC DOIT SORTIR DU CATALOGUE. Le hook de suppression
+    // YouSync n'existe que depuis fin 2025, et un event peut toujours se perdre :
+    // des fiches supprimees depuis des mois trainaient encore a l'ecran (« La Chose
+    // + Booster 60ml (Copie) », supprimee dans WC, listee ici en brouillon avec ses
+    // declinaisons publiees). On ne peut pas effacer la ligne — commandes d'achat,
+    // receptions et documents fournisseurs la referencent par des FK sans CASCADE —
+    // alors on l'horodate : `wc_deleted_at`, que le catalogue exclut.
+    //
+    // Le marqueur est reversible : toute ligne de nouveau presente dans WC (sortie
+    // de corbeille, restauration) le perd des la synchro suivante.
+    //
+    // Les fiches qui portaient encore du stock sont en plus neutralisees et
+    // signalees par mail : ce stock fantome faussait la valeur du catalogue.
+    //
+    // Trois garde-fous : si le catalogue live est anormalement petit (reponse WC
+    // tronquee) ou si des variations n'ont pas pu etre lues, on ne touche a rien ;
+    // et une fiche creee pendant la lecture de WC (donc absente de l'instantane
+    // sans avoir jamais ete supprimee) est laissee tranquille.
     const dbCountRes = await client.query('SELECT COUNT(*)::int AS db_count FROM products');
     const dbCount = dbCountRes.rows[0].db_count;
 
     let ghosts = [];
+    let deleted = 0;
+    let restored = 0;
     if (liveRows.length >= dbCount * 0.8) {
       const r3 = await client.query(`
         WITH ghosts AS (
@@ -260,6 +279,7 @@ const runProductDbSync = async () => {
           WHERE p.stock > 0
             AND NOT EXISTS (SELECT 1 FROM live_wc_products l WHERE l.wp_product_id = p.wp_product_id)
             AND (p.wp_parent_id IS NULL OR NOT (p.wp_parent_id = ANY($1::bigint[])))
+            AND p.created_at < $2
         ), upd AS (
           UPDATE products p
           SET stock = 0, stock_status = 'outofstock', track_stock = false, updated_at = NOW()
@@ -269,8 +289,26 @@ const runProductDbSync = async () => {
         )
         SELECT wp_product_id, sku, post_title, product_type, post_status, old_stock
         FROM ghosts ORDER BY old_stock DESC
-      `, [failedParents]);
+      `, [failedParents, runStartedAt]);
       ghosts = r3.rows;
+
+      const rDel = await client.query(`
+        UPDATE products p
+        SET wc_deleted_at = NOW(), updated_at = NOW()
+        WHERE p.wc_deleted_at IS NULL
+          AND NOT EXISTS (SELECT 1 FROM live_wc_products l WHERE l.wp_product_id = p.wp_product_id)
+          AND (p.wp_parent_id IS NULL OR NOT (p.wp_parent_id = ANY($1::bigint[])))
+          AND p.created_at < $2
+      `, [failedParents, runStartedAt]);
+      deleted = rDel.rowCount;
+
+      const rRes = await client.query(`
+        UPDATE products p
+        SET wc_deleted_at = NULL, updated_at = NOW()
+        FROM live_wc_products l
+        WHERE l.wp_product_id = p.wp_product_id AND p.wc_deleted_at IS NOT NULL
+      `);
+      restored = rRes.rowCount;
     } else {
       errors.push({
         wp_product_id: null,
@@ -280,7 +318,7 @@ const runProductDbSync = async () => {
 
     await client.query('COMMIT');
 
-    result = { statusUpdated: r1.rowCount, variableUpdated: r2.rowCount, ghosts };
+    result = { statusUpdated: r1.rowCount, variableUpdated: r2.rowCount, ghosts, deleted, restored };
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});
     throw err;

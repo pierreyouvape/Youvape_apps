@@ -457,7 +457,7 @@ let productDbSyncCronJob = null;
 const runProductDbSyncJob = async () => {
   try {
     const result = await runProductDbSync();
-    console.log(`[ProductDbSync] ${result.totalRows} produits verifies, ${result.statusUpdated} statuts/stocks mis a jour, ${result.variableUpdated} parents variables, ${result.ghosts.length} fiches fantomes neutralisees, ${result.errors.length} erreurs, en ${result.elapsed}ms`);
+    console.log(`[ProductDbSync] ${result.totalRows} produits verifies, ${result.statusUpdated} statuts/stocks mis a jour, ${result.variableUpdated} parents variables, ${result.ghosts.length} fiches fantomes neutralisees, ${result.deleted} fiches sorties du catalogue (supprimees dans WC), ${result.restored} revenues, ${result.errors.length} erreurs, en ${result.elapsed}ms`);
     if (result.ghosts.length > 0) {
       const units = result.ghosts.reduce((s, g) => s + Number(g.old_stock || 0), 0);
       sendAlert(
