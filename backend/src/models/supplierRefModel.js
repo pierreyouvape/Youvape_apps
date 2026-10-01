@@ -1,4 +1,5 @@
 const pool = require('../config/database');
+const productSupplierLink = require('./productSupplierLinkModel');
 
 /**
  * Références fournisseur (table supplier_refs).
@@ -67,7 +68,8 @@ const supplierRefModel = {
    * Crée une réf, ou la met à jour si ce produit la porte déjà.
    * Si la réf est portée par un AUTRE produit : REF_TAKEN, sauf move = true,
    * auquel cas elle est déplacée sur ce produit (et retirée de l'autre).
-   * Le lien produit × fournisseur est créé au besoin.
+   * Le lien produit × fournisseur est créé au besoin, sur le produit ET ses
+   * déclinaisons sœurs, et toute exclusion manuelle est levée (geste explicite).
    */
   save: async ({ supplierId, productId, supplierSku, label, packQty, packPrice, move = false }, db = pool) => {
     supplierId = parseInt(supplierId, 10);
@@ -80,11 +82,13 @@ const supplierRefModel = {
       throw new RefTakenError(sku, existing);
     }
 
-    await db.query(`
-      INSERT INTO product_suppliers (supplier_id, product_id)
-      VALUES ($1, $2)
-      ON CONFLICT (product_id, supplier_id) DO NOTHING
-    `, [supplierId, productId]);
+    // Le lien produit × fournisseur est créé au besoin, et avec lui celui de TOUTES
+    // les déclinaisons sœurs : avoir une réf chez ce fournisseur pour un parfum, c'est
+    // s'y fournir pour le produit (sans ça le filtre fournisseur des Besoins n'en
+    // proposait qu'une partie : 18 Dojo Blast 15K 20mg sur 22 chez Joshnoa).
+    // La réf, elle, ne vaut que pour CE produit : la recopier sur chaque parfum a
+    // déjà produit les doublons Cigaccess 012460 / 012861 / 012884.
+    await productSupplierLink.link({ supplierId, productId, db });
 
     // Champs non fournis → on conserve les valeurs de la réf existante.
     const values = [

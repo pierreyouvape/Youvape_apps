@@ -849,7 +849,10 @@ const setupNextoreCrons = () => {
 // saisie de refs : les liaisons creees dans BMS n'arrivaient jamais, et le filtre
 // fournisseur de /purchases (onglet Besoins) ignorait donc des produits a commander
 // (1406 liaisons manquantes au 28/09/2026). Rattrapage quotidien, en INSERT SEUL :
-// aucune liaison existante n'est modifiee (pack_qty, prix, is_primary preserves).
+// aucune liaison existante n'est modifiee (pack_qty, prix, is_primary preserves),
+// et les paires retirees a la main (product_supplier_exclusions) ne sont jamais
+// recreees : BMS garde ses associations a vie, une suppression manuelle etait
+// donc annulee au passage suivant.
 
 const supplierModel = require('../models/supplierModel');
 
@@ -863,7 +866,7 @@ const runProductSuppliersLink = async () => {
       return acc;
     }, {});
     const resume = Object.entries(bySupplier).map(([n, c]) => `${n} +${c}`).join(', ') || 'aucune nouvelle liaison';
-    console.log(`Liaisons produit-fournisseur BMS: ${r.linked} creee(s) sur ${r.suppliersProcessed} fournisseur(s) — ${resume} (${r.skuNotFound} sku BMS sans produit publie en local)`);
+    console.log(`Liaisons produit-fournisseur BMS: ${r.linked} creee(s) sur ${r.suppliersProcessed} fournisseur(s) — ${resume} (${r.excluded} ignoree(s) car retiree(s) a la main, ${r.skuNotFound} sku BMS sans produit publie en local)`);
 
     if (r.failedSuppliers.length > 0) {
       sendAlert(

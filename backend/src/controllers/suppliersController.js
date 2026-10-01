@@ -136,9 +136,16 @@ const suppliersController = {
     try {
       const result = await supplierModel.removeProduct(req.params.id, req.params.productId);
       if (!result) {
-        return res.status(404).json({ success: false, error: 'Association non trouvée' });
+        return res.status(404).json({ success: false, error: 'Produit introuvable' });
       }
-      res.json({ success: true, message: 'Produit retiré du fournisseur' });
+      // removed = 0 est un succès : le lien n'existait pas (ou plus) sur ce produit,
+      // mais l'exclusion est désormais posée, donc la synchro BMS ne le recréera pas.
+      res.json({
+        success: true,
+        message: 'Produit retiré du fournisseur',
+        removed: result.removed,
+        excluded: result.excluded,
+      });
     } catch (error) {
       console.error('Erreur removeProductFromSupplier:', error);
       res.status(500).json({ success: false, error: 'Erreur serveur' });
@@ -281,7 +288,7 @@ const suppliersController = {
 
       res.json({
         success: true,
-        message: `Synchronisation terminée : ${result.linked} association(s) créée(s), ${result.skuNotFound} SKU non trouvés`,
+        message: `Synchronisation terminée : ${result.linked} association(s) créée(s), ${result.excluded} ignorée(s) (retirée(s) à la main), ${result.skuNotFound} SKU non trouvés`,
         data: result
       });
     } catch (error) {

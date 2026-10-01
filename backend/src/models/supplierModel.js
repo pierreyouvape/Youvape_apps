@@ -2,21 +2,14 @@ const pool = require('../config/database');
 const bmsApiModel = require('./bmsApiModel');
 const supplierRefModel = require('./supplierRefModel');
 const parsers = require('../parsers');
+const productSupplierLink = require('./productSupplierLinkModel');
 
 /**
  * Résout un productId (id interne OU wp_product_id) vers l'id interne.
  * Ne résout plus vers le parent — les fournisseurs sont gérés par variation/simple.
+ * Implémentation unique, partagée avec productSupplierLinkModel.
  */
-const resolveProductId = async (productId) => {
-  const result = await pool.query(`
-    SELECT p.id FROM products p
-    WHERE p.id = $1 OR p.wp_product_id = $1
-    ORDER BY CASE WHEN p.wp_product_id = $1 THEN 0 ELSE 1 END
-LIMIT 1
-  `, [productId]);
-  if (result.rows.length === 0) return productId;
-  return result.rows[0].id;
-};
+const resolveProductId = productSupplierLink.resolveProductId;
 
 const supplierModel = {
   // Récupérer tous les fournisseurs
@@ -162,57 +155,13 @@ const supplierModel = {
 
   // Associer un produit à un fournisseur (résout wp_product_id vers id interne).
   // Crée le LIEN seulement : les réfs fournisseur se gèrent via supplierRefModel.
+  //
+  // Le lien est posé sur TOUTE la famille — parent variable, déclinaison sœur ou
+  // produit simple — et lève l'exclusion d'une suppression manuelle précédente :
+  // un fournisseur se choisit pour un produit, pas pour un parfum. Toute la logique
+  // (et les pièges de pack_qty) est dans productSupplierLinkModel.
   addProduct: async (supplierId, productId, data = {}) => {
-    const resolvedId = await resolveProductId(productId);
-
-    // Produit variable (parent) : les fournisseurs sont gérés par variation.
-    // Une ligne posée sur le parent serait invisible (cf. getSuppliersByProduct),
-    // on associe donc le fournisseur à toutes les variations. Aucune réf n'est
-    // recopiée : une réf ne désigne qu'une déclinaison (recopier la réf du parent
-    // sur chaque couleur a produit les doublons Cigaccess 012460, 012861, 012884).
-    const typeResult = await pool.query(
-      `SELECT product_type, wp_product_id FROM products WHERE id = $1`,
-      [resolvedId]
-    );
-    const product = typeResult.rows[0];
-
-    if (product?.product_type === 'variable') {
-      const variations = await pool.query(
-        `SELECT id FROM products WHERE wp_parent_id = $1`,
-        [product.wp_product_id]
-      );
-      if (variations.rows.length === 0) return null;
-
-      const rows = [];
-      for (const variation of variations.rows) {
-        rows.push(await supplierModel.addProduct(supplierId, variation.id, data));
-      }
-      return rows[0];
-    }
-
-    const query = `
-      INSERT INTO product_suppliers (
-        supplier_id, product_id, is_primary, supplier_price, min_order_qty, pack_qty
-      )
-      VALUES ($1, $2, $3, $4, $5, $6)
-      ON CONFLICT (product_id, supplier_id) DO UPDATE SET
-        is_primary = EXCLUDED.is_primary,
-        supplier_price = EXCLUDED.supplier_price,
-        min_order_qty = EXCLUDED.min_order_qty,
-        pack_qty = EXCLUDED.pack_qty,
-        updated_at = CURRENT_TIMESTAMP
-      RETURNING *
-    `;
-    const values = [
-      supplierId,
-      resolvedId,
-      data.is_primary || false,
-      data.supplier_price || null,
-      data.min_order_qty || 1,
-      data.pack_qty || 1
-    ];
-    const result = await pool.query(query, values);
-    return result.rows[0];
+    return productSupplierLink.link({ supplierId, productId, data });
   },
 
   // Mettre à jour le LIEN produit × fournisseur (résout wp_product_id vers id interne).
@@ -242,6 +191,11 @@ const supplierModel = {
 
     if (fields.length === 0) return null;
 
+    // Édition explicite à l'écran : si ce fournisseur avait été retiré à la main
+    // de ce produit, l'upsert ci-dessous recrée le lien — on lève donc l'exclusion
+    // pour CE produit (pas pour ses sœurs : rien n'a été saisi pour elles).
+    await productSupplierLink.clearExclusion(supplierId, resolvedId);
+
     // Upsert : crée la ligne si elle n'existe pas encore (variation sans fournisseur assigné)
     const query = `
       INSERT INTO product_suppliers (
@@ -265,37 +219,12 @@ const supplierModel = {
     return result.rows[0];
   },
 
-  // Retirer un produit d'un fournisseur (résout wp_product_id vers id interne)
-  // Si le produit est un parent variable, supprime toutes les variations pour ce fournisseur
+  // Retirer un produit d'un fournisseur (résout wp_product_id vers id interne).
+  // Porte sur toutes les déclinaisons du produit, et le refus est MÉMORISÉ dans
+  // product_supplier_exclusions : sans ça le cron BMS de 5h10 recréait le lien le
+  // lendemain matin, BMS gardant ses associations à vie.
   removeProduct: async (supplierId, productId) => {
-    const resolvedId = await resolveProductId(productId);
-
-    // Vérifier si c'est un produit variable (parent)
-    const typeResult = await pool.query(
-      `SELECT product_type, wp_product_id FROM products WHERE id = $1`,
-      [resolvedId]
-    );
-    const product = typeResult.rows[0];
-    const isVariable = product?.product_type === 'variable';
-
-    if (isVariable) {
-      // wp_parent_id stocke le wp_product_id du parent (pas l'id interne)
-      const result = await pool.query(`
-        DELETE FROM product_suppliers
-        WHERE supplier_id = $1 AND product_id IN (
-          SELECT id FROM products WHERE wp_parent_id = $2
-        )
-        RETURNING *
-      `, [supplierId, product.wp_product_id]);
-      return result.rows[0];
-    }
-
-    const result = await pool.query(`
-      DELETE FROM product_suppliers
-      WHERE supplier_id = $1 AND product_id = $2
-      RETURNING *
-    `, [supplierId, resolvedId]);
-    return result.rows[0];
+    return productSupplierLink.unlink({ supplierId, productId });
   },
 
   // Définir le fournisseur principal d'un produit (résout wp_product_id vers id interne)
@@ -583,6 +512,10 @@ const supplierModel = {
    * Pour chaque fournisseur local avec un bms_id, récupère ses produits BMS
    * et INSÈRE les liaisons manquantes dans product_suppliers (matching par SKU).
    *
+   * Les paires retirées à la main (product_supplier_exclusions) sont ignorées :
+   * BMS garde ses associations à vie, sans ce filtre une suppression manuelle
+   * était défaite au passage suivant (5h10).
+   *
    * INSERT SEUL, jamais d'UPDATE : une liaison déjà en base est le fruit d'un
    * import de facture ou d'une saisie humaine, et son pack_qty pilote les prix
    * (÷/× pack_qty) et l'arrivage. Un upsert depuis BMS écraserait ces valeurs —
@@ -603,7 +536,11 @@ const supplierModel = {
     `);
     const productBySku = new Map(productsResult.rows.map(p => [p.sku, p.id]));
 
-    // 3. Liaisons déjà en base : on ne les retouche pas (cf. commentaire ci-dessus)
+    // 3. Liaisons retirées à la main : jamais recréées (BMS garde ses associations
+    //    à vie, le lien revenait sinon dès le lendemain matin).
+    const exclusions = await productSupplierLink.loadExclusions();
+
+    // 4. Liaisons déjà en base : on ne les retouche pas (cf. commentaire ci-dessus)
     const existingResult = await pool.query(
       `SELECT supplier_id, product_id FROM product_suppliers`
     );
@@ -616,6 +553,7 @@ const supplierModel = {
     let linked = 0;
     let skipped = 0;
     let skuNotFound = 0;
+    let excluded = 0;
     const details = [];
     const failedSuppliers = [];
 
@@ -640,6 +578,10 @@ const supplierModel = {
           continue;
         }
         if (existingLinks.has(`${supplier.id}:${productId}`)) continue;
+        if (exclusions.has(`${supplier.id}:${productId}`)) {
+          excluded++;
+          continue;
+        }
 
         const price = item.price ? parseFloat(item.price) : null;
         const packQty = forcePackQtyOne ? 1 : (parseInt(item.pack_qty) || 1);
@@ -660,7 +602,7 @@ const supplierModel = {
       }
     }
 
-    return { linked, skipped, skuNotFound, suppliersProcessed: localSuppliers.length, failedSuppliers, details };
+    return { linked, skipped, skuNotFound, excluded, suppliersProcessed: localSuppliers.length, failedSuppliers, details };
   }
 };
 

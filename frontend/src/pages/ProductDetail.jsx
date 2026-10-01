@@ -421,7 +421,7 @@ const ProductDetail = () => {
   };
 
   const handleRemoveSupplier = async (supplierId, supplierName) => {
-    if (!confirm(`Retirer ${supplierName} de ce produit ?`)) return;
+    if (!confirm(`Retirer ${supplierName} de ce produit ?\n\nLe fournisseur est retire de TOUTES les declinaisons, et la synchro BMS ne le recreera pas.`)) return;
     try {
       await axios.delete(`${API_URL}/purchases/suppliers/${supplierId}/products/${id}`, { headers });
       setSuppliers(prev => prev.filter(s => s.id !== supplierId));
