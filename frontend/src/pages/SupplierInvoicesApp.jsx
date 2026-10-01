@@ -1345,6 +1345,12 @@ function FilingTab({ suppliers, mobile, reloadKey, onSaved }) {
         </div>
       )}
 
+      {/* Un règlement change le document ET sa ligne dans le tableau derrière :
+          « À payer » → « Payée », le reste dû, les compteurs du haut. Ne
+          rafraîchir que le panneau obligeait à recharger la page pour voir le
+          règlement qu'on venait d'enregistrer — le re-contrôle, le changement de
+          statut et la suppression rechargent la liste depuis toujours, le
+          règlement était le seul à l'oublier. */}
       {detail && (
         <DocumentPanel
           detail={detail}
@@ -1352,7 +1358,11 @@ function FilingTab({ suppliers, mobile, reloadKey, onSaved }) {
           onClose={closeDetail}
           onStatus={(s) => setStatus(detail.id, s)}
           onDelete={() => remove(detail)}
-          onSettle={async (r) => { await settleOne(detail, r); openDetail(detail.id); }}
+          onSettle={async (r) => {
+            await settleOne(detail, r);
+            await Promise.all([openDetail(detail.id), load()]);
+            onSaved();
+          }}
         />
       )}
     </div>
