@@ -1,6 +1,7 @@
 import { useState, useEffect, useContext, useCallback, useRef } from 'react';
 import { trierParAvancement } from '../utils/scanOrder';
 import axios from 'axios';
+import { formatDateUTC } from '../utils/dateUtils';
 import { AuthContext } from '../context/AuthContext';
 import AppShell from '../components/AppShell';
 
@@ -389,9 +390,12 @@ function OrderDetail({ token, order, items, onBack, onStart }) {
         {/* SANS BON DANS BMS, RIEN NE PEUT PARTIR : la route de réception exige
             l'identifiant de la ligne chez BMS. Mieux vaut le dire ici que laisser
             compter deux cents pièces pour échouer à la validation. */}
+        {/* Un comptage déjà ouvert se REPREND par ce même bouton (l'ouverture rend
+            la session en cours, comptage compris) : il doit le dire, sinon on croit
+            en ouvrir un second. */}
         <Btn variant="accent" onClick={onStart} disabled={!order.bms_po_id}
           title={order.bms_po_id ? undefined : "Cette commande n'existe pas dans BMS"}>
-          Réceptionner
+          {fil?.summary.openSession ? 'Reprendre le comptage' : 'Réceptionner'}
         </Btn>
       </div>
 
@@ -409,10 +413,16 @@ function OrderDetail({ token, order, items, onBack, onStart }) {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 14 }}>
           {fil.summary.openSession && (
             <div style={{ background: C.accentL, border: `1px solid ${C.accent}`, borderRadius: 10,
-              padding: '12px 16px', fontSize: 13.5, color: '#7C4A00' }}>
-              Un comptage est <strong>déjà en cours</strong> sur cette commande
-              ({fil.summary.openSession.units_counted} pièces comptées). Le reprendre plutôt que
-              d'en ouvrir un second.
+              padding: '12px 16px', fontSize: 13.5, color: '#7C4A00',
+              display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
+              <span style={{ flex: 1, minWidth: 240 }}>
+                Un comptage est <strong>déjà en cours</strong> sur cette commande, commencé le
+                {' '}{formatDateUTC(fil.summary.openSession.started_at)} : on le reprend là où il en est,
+                rien n'est perdu.
+              </span>
+              <Btn variant="accent" onClick={onStart} disabled={!order.bms_po_id}>
+                Reprendre le comptage ({fil.summary.openSession.units_counted} pièce{fil.summary.openSession.units_counted > 1 ? 's' : ''} comptée{fil.summary.openSession.units_counted > 1 ? 's' : ''})
+              </Btn>
             </div>
           )}
           {fil.documents.length > 0 && (
