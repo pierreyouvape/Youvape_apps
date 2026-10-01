@@ -1232,42 +1232,35 @@ class ProductModel {
         AND p.product_type IN ('simple', 'variable', 'woosb')
         AND p.wc_deleted_at IS NULL
     `;
+    // UNE FAMILLE EST LISTÉE SI, ET SEULEMENT SI, UNE DE SES DÉCLINAISONS L'EST.
+    //
+    // Les critères qui portent sur une déclinaison — suivi de stock, onglet,
+    // statut WC, fournisseur — étaient testés par autant d'EXISTS indépendants :
+    // il suffisait qu'une déclinaison réponde à l'un et une autre au suivant pour
+    // garder la tête de ligne. « Rupture de stock » croisé avec « Publié WC »
+    // retenait ainsi 290 familles dont 251 n'affichaient pas une seule ligne en
+    // dessous, leur en-tête annonçant un stock à zéro qu'aucune déclinaison ne
+    // portait. On rassemble donc ces critères et on les exige d'UNE SEULE ET MÊME
+    // déclinaison — exactement celle qui s'affichera.
+    //
+    // Les conditions ci-dessous ne concernent plus que les produits autonomes
+    // (simples et packs), qui répondent d'eux-mêmes ; le sort des familles se
+    // joue dans `condsVar`, rassemblé plus bas.
+    const condsVar = [];
+    const siAutonome = (cond) => `((${CATALOG_STANDALONE} AND ${cond}) OR p.product_type = 'variable')`;
     if (trackStockOnly && !statuts) {
-      whereClause += `
-        AND (
-          (${CATALOG_STANDALONE} AND p.track_stock = true)
-          OR (p.product_type = 'variable' AND EXISTS (
-            SELECT 1 FROM products v
-            WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation' AND v.wc_deleted_at IS NULL AND v.track_stock = true
-          ))
-        )
-      `;
+      whereClause += ` AND ${siAutonome('p.track_stock = true')}`;
+      condsVar.push('v.track_stock = true');
     }
     if (onlyHidden && !statuts) {
-      whereClause += `
-        AND (
-          (${CATALOG_STANDALONE} AND p.track_stock = false)
-          OR (p.product_type = 'variable' AND EXISTS (
-            SELECT 1 FROM products v
-            WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation' AND v.wc_deleted_at IS NULL AND v.track_stock = false
-          ))
-        )
-      `;
+      whereClause += ` AND ${siAutonome('p.track_stock = false')}`;
+      condsVar.push('v.track_stock = false');
     }
     const stockCond = stockTabCondition('p', stockTab, reorderIdsSql);
     const stockCondVar = stockTabCondition('v', stockTab, reorderIdsSql);
     if (stockCond) {
-      whereClause += `
-        AND (
-          (${CATALOG_STANDALONE} AND ${stockCond})
-          OR (p.product_type = 'variable' AND EXISTS (
-            SELECT 1 FROM products v
-            WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation' AND v.wc_deleted_at IS NULL
-              ${filtreSuiviVar}
-              AND ${stockCondVar}
-          ))
-        )
-      `;
+      whereClause += ` AND ${siAutonome(stockCond)}`;
+      condsVar.push(stockCondVar);
     }
     const params = [];
     let paramIndex = 1;
@@ -1321,53 +1314,46 @@ class ProductModel {
 
     // LE FILTRE DE STATUT VAUT POUR LA FAMILLE ENTIÈRE, DÉCLINAISONS COMPRISES.
     //
-    // Une tête de ligne variable n'est qu'un en-tête : son stock, ses ventes et
-    // ses arrivages sont la somme des déclinaisons affichées sous elle. La
-    // retenir alors qu'aucune de ses déclinaisons ne porte le statut demandé
-    // affichait une famille vide aux totaux à zéro — « Publié WC » listait des
-    // produits dont toutes les déclinaisons sont désactivées, et annonçait un
-    // stock nul là où il y en a. On juge donc la famille sur ses déclinaisons
-    // (statut effectif), et la tête sur elle-même seulement quand elle n'en a
-    // aucune.
+    // Il ne portait que sur les têtes de ligne : sous « Publié WC », une tête
+    // publiée traînait ses déclinaisons désactivées. Chaque déclinaison répond
+    // désormais de son statut EFFECTIF, et une famille n'est retenue que si l'une
+    // d'elles le porte — son en-tête n'agrège que ce qui est affiché sous lui.
     if (statuts) {
-      whereClause += `
-        AND (
-          CASE WHEN p.product_type = 'variable' AND EXISTS (
-                 SELECT 1 FROM products v
-                 WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation' AND v.wc_deleted_at IS NULL
-               )
-            THEN EXISTS (
-                 SELECT 1 FROM products v
-                 WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation' AND v.wc_deleted_at IS NULL
-                   AND ${statutEffectif('p', 'v')} = ANY($${paramIndex}::text[])
-               )
-            ELSE p.post_status = ANY($${paramIndex}::text[])
-          END
-        )
-      `;
+      whereClause += ` AND ${siAutonome(`p.post_status = ANY($${paramIndex}::text[])`)}`;
+      condsVar.push(`${statutEffectif('p', 'v')} = ANY($${paramIndex}::text[])`);
       params.push(statuts);
       paramIndex++;
     }
 
-    // Un parent est retenu si lui-meme (simple) ou une de ses declinaisons est
-    // rattachee au fournisseur.
+    // Un produit autonome est retenu s'il est lui-même rattaché au fournisseur ;
+    // une famille, si l'une de ses déclinaisons l'est (les liens
+    // product_suppliers ne se posent jamais sur une tête de ligne variable).
     if (supplierId) {
-      whereClause += `
-        AND (
-          EXISTS (
-            SELECT 1 FROM product_suppliers ps_f
-            WHERE ps_f.product_id = p.id AND ps_f.supplier_id = $${paramIndex}
-          )
-          OR EXISTS (
-            SELECT 1 FROM products v_f
-            JOIN product_suppliers ps_f ON ps_f.product_id = v_f.id AND ps_f.supplier_id = $${paramIndex}
-            WHERE v_f.wp_parent_id = p.wp_product_id AND v_f.product_type = 'variation' AND v_f.wc_deleted_at IS NULL
-          )
-        )
-      `;
+      whereClause += ` AND ${siAutonome(`EXISTS (
+        SELECT 1 FROM product_suppliers ps_f
+        WHERE ps_f.product_id = p.id AND ps_f.supplier_id = $${paramIndex}
+      )`)}`;
+      condsVar.push(`EXISTS (
+        SELECT 1 FROM product_suppliers ps_v
+        WHERE ps_v.product_id = v.id AND ps_v.supplier_id = $${paramIndex}
+      )`);
       params.push(supplierId);
       paramIndex++;
     }
+
+    // La porte d'entrée des familles : au moins une déclinaison qui réponde à TOUS
+    // les critères à la fois. Elle remplace les EXISTS éparpillés ci-dessus, qui ne
+    // valaient plus que pour les produits autonomes.
+    whereClause += `
+      AND (
+        ${CATALOG_STANDALONE}
+        OR EXISTS (
+          SELECT 1 FROM products v
+          WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation' AND v.wc_deleted_at IS NULL
+            ${condsVar.map(c => `AND ${c}`).join('\n            ')}
+        )
+      )
+    `;
 
     params.push(limit, offset);
 
@@ -1585,11 +1571,6 @@ class ProductModel {
               AND v.product_type = 'variation' AND v.wc_deleted_at IS NULL AND v.post_status = 'publish'
           ))
         )`;
-    // Même raison : un statut demandé prime sur le réglage « masqués ».
-    const filtreSuiviVar = statuts
-      ? ''
-      : trackStockOnly ? 'AND v.track_stock = true'
-      : onlyHidden ? 'AND v.track_stock = false' : '';
     // Un produit supprimé de WooCommerce n'est plus du catalogue. Sa ligne, elle,
     // reste en base — commandes d'achat, réceptions et documents fournisseurs la
     // référencent — d'où ce marqueur posé (et retiré) par la resynchro nocturne
@@ -1600,42 +1581,35 @@ class ProductModel {
         AND p.product_type IN ('simple', 'variable', 'woosb')
         AND p.wc_deleted_at IS NULL
     `;
+    // UNE FAMILLE EST LISTÉE SI, ET SEULEMENT SI, UNE DE SES DÉCLINAISONS L'EST.
+    //
+    // Les critères qui portent sur une déclinaison — suivi de stock, onglet,
+    // statut WC, fournisseur — étaient testés par autant d'EXISTS indépendants :
+    // il suffisait qu'une déclinaison réponde à l'un et une autre au suivant pour
+    // garder la tête de ligne. « Rupture de stock » croisé avec « Publié WC »
+    // retenait ainsi 290 familles dont 251 n'affichaient pas une seule ligne en
+    // dessous, leur en-tête annonçant un stock à zéro qu'aucune déclinaison ne
+    // portait. On rassemble donc ces critères et on les exige d'UNE SEULE ET MÊME
+    // déclinaison — exactement celle qui s'affichera.
+    //
+    // Les conditions ci-dessous ne concernent plus que les produits autonomes
+    // (simples et packs), qui répondent d'eux-mêmes ; le sort des familles se
+    // joue dans `condsVar`, rassemblé plus bas.
+    const condsVar = [];
+    const siAutonome = (cond) => `((${CATALOG_STANDALONE} AND ${cond}) OR p.product_type = 'variable')`;
     if (trackStockOnly && !statuts) {
-      whereClause += `
-        AND (
-          (${CATALOG_STANDALONE} AND p.track_stock = true)
-          OR (p.product_type = 'variable' AND EXISTS (
-            SELECT 1 FROM products v
-            WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation' AND v.wc_deleted_at IS NULL AND v.track_stock = true
-          ))
-        )
-      `;
+      whereClause += ` AND ${siAutonome('p.track_stock = true')}`;
+      condsVar.push('v.track_stock = true');
     }
     if (onlyHidden && !statuts) {
-      whereClause += `
-        AND (
-          (${CATALOG_STANDALONE} AND p.track_stock = false)
-          OR (p.product_type = 'variable' AND EXISTS (
-            SELECT 1 FROM products v
-            WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation' AND v.wc_deleted_at IS NULL AND v.track_stock = false
-          ))
-        )
-      `;
+      whereClause += ` AND ${siAutonome('p.track_stock = false')}`;
+      condsVar.push('v.track_stock = false');
     }
     const stockCond = stockTabCondition('p', stockTab, reorderIdsSql);
     const stockCondVar = stockTabCondition('v', stockTab, reorderIdsSql);
     if (stockCond) {
-      whereClause += `
-        AND (
-          (${CATALOG_STANDALONE} AND ${stockCond})
-          OR (p.product_type = 'variable' AND EXISTS (
-            SELECT 1 FROM products v
-            WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation' AND v.wc_deleted_at IS NULL
-              ${filtreSuiviVar}
-              AND ${stockCondVar}
-          ))
-        )
-      `;
+      whereClause += ` AND ${siAutonome(stockCond)}`;
+      condsVar.push(stockCondVar);
     }
     const params = [];
 
@@ -1681,63 +1655,53 @@ class ProductModel {
 
     // LE FILTRE DE STATUT VAUT POUR LA FAMILLE ENTIÈRE, DÉCLINAISONS COMPRISES.
     //
-    // Une tête de ligne variable n'est qu'un en-tête : son stock, ses ventes et
-    // ses arrivages sont la somme des déclinaisons affichées sous elle. La
-    // retenir alors qu'aucune de ses déclinaisons ne porte le statut demandé
-    // affichait une famille vide aux totaux à zéro — « Publié WC » listait des
-    // produits dont toutes les déclinaisons sont désactivées, et annonçait un
-    // stock nul là où il y en a. On juge donc la famille sur ses déclinaisons
-    // (statut effectif), et la tête sur elle-même seulement quand elle n'en a
-    // aucune.
+    // Il ne portait que sur les têtes de ligne : sous « Publié WC », une tête
+    // publiée traînait ses déclinaisons désactivées. Chaque déclinaison répond
+    // désormais de son statut EFFECTIF, et une famille n'est retenue que si l'une
+    // d'elles le porte — son en-tête n'agrège que ce qui est affiché sous lui.
     if (statuts) {
-      whereClause += `
-        AND (
-          CASE WHEN p.product_type = 'variable' AND EXISTS (
-                 SELECT 1 FROM products v
-                 WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation' AND v.wc_deleted_at IS NULL
-               )
-            THEN EXISTS (
-                 SELECT 1 FROM products v
-                 WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation' AND v.wc_deleted_at IS NULL
-                   AND ${statutEffectif('p', 'v')} = ANY($${params.length + 1}::text[])
-               )
-            ELSE p.post_status = ANY($${params.length + 1}::text[])
-          END
-        )
-      `;
+      whereClause += ` AND ${siAutonome(`p.post_status = ANY($${params.length + 1}::text[])`)}`;
+      condsVar.push(`${statutEffectif('p', 'v')} = ANY($${params.length + 1}::text[])`);
       params.push(statuts);
     }
 
-    // Meme perimetre que getAllForCatalog : le parent compte si lui-meme ou une
-    // de ses declinaisons est rattachee au fournisseur. `supplierVarCond` limite
-    // ensuite le decompte des declinaisons et la valeur de stock a ce fournisseur.
+    // Même périmètre que getAllForCatalog : un produit autonome est retenu s'il est
+    // lui-même rattaché au fournisseur, une famille si l'une de ses déclinaisons
+    // l'est. `supplierVarCond` limite ensuite la valeur de stock à ce fournisseur.
     let supplierVarCond = '';
     if (supplierId) {
       const supIdx = params.length + 1;
-      whereClause += `
-        AND (
-          EXISTS (
-            SELECT 1 FROM product_suppliers ps_f
-            WHERE ps_f.product_id = p.id AND ps_f.supplier_id = $${supIdx}
-          )
-          OR EXISTS (
-            SELECT 1 FROM products v_f
-            JOIN product_suppliers ps_f ON ps_f.product_id = v_f.id AND ps_f.supplier_id = $${supIdx}
-            WHERE v_f.wp_parent_id = p.wp_product_id AND v_f.product_type = 'variation' AND v_f.wc_deleted_at IS NULL
-          )
-        )
-      `;
-      params.push(supplierId);
+      whereClause += ` AND ${siAutonome(`EXISTS (
+        SELECT 1 FROM product_suppliers ps_f
+        WHERE ps_f.product_id = p.id AND ps_f.supplier_id = $${supIdx}
+      )`)}`;
       supplierVarCond = `AND EXISTS (
         SELECT 1 FROM product_suppliers ps_v
         WHERE ps_v.product_id = v.id AND ps_v.supplier_id = $${supIdx}
       )`;
+      condsVar.push(supplierVarCond.replace(/^AND /, ''));
+      params.push(supplierId);
     }
 
-    // Le décompte « x produits » et la valeur de stock portent sur ce qui est
-    // AFFICHÉ : si le filtre de statut écarte des déclinaisons de l'écran, il
-    // doit les écarter des totaux, sans quoi l'en-tête annonce une ligne de plus
-    // que la liste n'en montre.
+    // Même porte d'entrée que getAllForCatalog : une famille ne compte que si une
+    // de ses déclinaisons répond à TOUS les critères à la fois — sans quoi l'écran
+    // montre une liste et l'en-tête en annonce une autre.
+    const condsVarSql = condsVar.map(c => `AND ${c}`).join('\n                ');
+    whereClause += `
+      AND (
+        ${CATALOG_STANDALONE}
+        OR EXISTS (
+          SELECT 1 FROM products v
+          WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation' AND v.wc_deleted_at IS NULL
+            ${condsVar.map(c => `AND ${c}`).join('\n            ')}
+        )
+      )
+    `;
+
+    // La valeur de stock, elle, reste celle du stock EN LIGNE hors filtre de
+    // statut ; avec un filtre, elle le suit — c'est tout l'intérêt de croiser
+    // « Pas en ligne » et « En stock » : chiffrer la marchandise immobilisée sur
+    // des produits qui ne se vendent pas.
     let statutVarCond = '';
     if (statuts) {
       params.push(statuts);
@@ -1752,10 +1716,7 @@ class ProductModel {
             ELSE (
               SELECT COUNT(*) FROM products v
               WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation' AND v.wc_deleted_at IS NULL
-                ${filtreSuiviVar}
-                ${stockCondVar ? `AND ${stockCondVar}` : ''}
-                ${supplierVarCond}
-                ${statutVarCond}
+                ${condsVarSql}
             )
           END
         ), 0)::int as total_with_variations,
@@ -1769,10 +1730,6 @@ class ProductModel {
             SELECT COALESCE(SUM(GREATEST(COALESCE(v.stock, 0), 0) * COALESCE(v.computed_cost, v.wc_cog_cost, 0)), 0)
             FROM products v
             WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation' AND v.wc_deleted_at IS NULL
-              -- Hors filtre de statut, la valeur du catalogue est celle du stock
-              -- en ligne. Avec un filtre, elle suit le filtre : c'est tout
-              -- l'intérêt de croiser « Pas en ligne » et « En stock » — chiffrer
-              -- la marchandise immobilisée sur des produits qui ne se vendent pas.
               ${statutVarCond || `AND v.post_status = 'publish'`}
               ${supplierVarCond}
               -- L'ONGLET FILTRE AUSSI LA VALEUR, pas seulement la sélection.
