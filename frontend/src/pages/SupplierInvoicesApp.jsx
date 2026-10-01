@@ -55,6 +55,22 @@ const signedEur = (v) => {
   return `${n > 0 ? '+' : ''}${eur(n)}`;
 };
 const date = (s) => (s ? new Date(s).toLocaleDateString('fr-FR') : '—');
+/**
+ * L'écart d'une ligne, c'est son écart RÉEL : ce qu'elle a coûté, remise de pied
+ * comprise, moins ce que la commande prévoyait.
+ *
+ * `gap` compare le montant BRUT de la facture au montant de la commande. Chez
+ * LVP, qui facture au brut et ne retire ses −20 % qu'au pied, la ligne XROS de
+ * la facture F2610287890 affichait « +12,30 € » juste à côté d'un écart
+ * unitaire de −0,0044 € : deux chiffres justes, contradictoires à l'œil, et
+ * aucun des deux ne tombait à zéro quand on appliquait le tarif.
+ *
+ * `netGap` est additif — la somme de la colonne vaut l'écart global de la
+ * facture — et il tombe à zéro dès que le tarif réel est inscrit sur la
+ * commande. Les documents enregistrés avant le 01/10/2026 ne l'ont pas : on
+ * retombe sur le brut, seule chose qu'on savait à l'époque.
+ */
+const ecartDe = (l) => Number(l.netGap != null ? l.netGap : l.gap) || 0;
 const num = (v) => (v == null ? '—' : String(Math.round(Number(v) * 1000) / 1000));
 
 /**
@@ -146,7 +162,7 @@ function DifferencesTable({ lines, mobile }) {
   const rows = useMemo(() => (lines || [])
     .filter((l) => l.verdict && l.verdict !== 'ok')
     .map((l) => ({ ...l, meta: VERDICTS[l.verdict] || VERDICTS.other }))
-    .sort((a, b) => (a.meta.rank - b.meta.rank) || (Math.abs(b.gap) - Math.abs(a.gap))), [lines]);
+    .sort((a, b) => (a.meta.rank - b.meta.rank) || (Math.abs(ecartDe(b)) - Math.abs(ecartDe(a)))), [lines]);
 
   if (rows.length === 0) {
     return (
@@ -168,8 +184,13 @@ function DifferencesTable({ lines, mobile }) {
             <div style={{ fontSize: 12, color: C.greyT, margin: '4px 0 8px' }}>{l.label || ''}</div>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12.5 }}>
               <span>cmd {num(l.qtyOrdered)} → fact {num(l.qtyInvoiced)}</span>
-              <strong style={{ color: l.gap > 0 ? C.red : C.green }}>{signedEur(l.gap)}</strong>
+              <strong style={{ color: ecartDe(l) > 0 ? C.red : C.green }}>{signedEur(ecartDe(l))}</strong>
             </div>
+            {l.discountShare > 0 && (
+              <div style={{ fontSize: 11, color: C.greyM, textAlign: 'right' }}>
+                facturé {signedEur(l.gap)}, remise de pied −{eur(l.discountShare)}
+              </div>
+            )}
             {l.meta.action && <div style={{ fontSize: 11.5, color: C.greyM, marginTop: 6 }}>{l.meta.action}</div>}
           </div>
         ))}
@@ -201,11 +222,11 @@ function DifferencesTable({ lines, mobile }) {
               <td style={{ ...td, textAlign: 'right', whiteSpace: 'nowrap' }}>{num(l.qtyOrdered)} / {num(l.qtyInvoiced)}</td>
               <td style={{ ...td, textAlign: 'right' }}>{l.expectedUnitPrice == null ? '—' : eur(l.expectedUnitPrice)}</td>
               <td style={{ ...td, textAlign: 'right' }}>{l.invoicedUnitPrice == null ? '—' : eur(l.invoicedUnitPrice)}</td>
-              <td style={{ ...td, textAlign: 'right', fontWeight: 700, color: l.gap > 0 ? C.red : (l.gap < 0 ? C.green : C.greyT) }}>
-                {signedEur(l.gap)}
-                {l.explainedByDiscount > 0 && (
+              <td style={{ ...td, textAlign: 'right', fontWeight: 700, color: ecartDe(l) > 0 ? C.red : (ecartDe(l) < 0 ? C.green : C.greyT) }}>
+                {signedEur(ecartDe(l))}
+                {l.discountShare > 0 && (
                   <div style={{ fontSize: 10.5, fontWeight: 600, color: C.greyM, whiteSpace: 'nowrap' }}>
-                    dont {eur(l.explainedByDiscount)} de remise
+                    facturé {signedEur(l.gap)} − {eur(l.discountShare)} de remise
                   </div>
                 )}
               </td>
@@ -294,6 +315,8 @@ const fromStoredLines = (lines) => (lines || []).map((l) => ({
   expectedUnitPrice: l.expected_unit_price,
   invoicedUnitPrice: l.qty && Number(l.qty) !== 0 ? Number(l.line_total_ht) / Number(l.qty) : null,
   gap: Number(l.gap) || 0,
+  netGap: l.net_gap == null ? null : Number(l.net_gap),
+  discountShare: Number(l.discount_share) || 0,
 }));
 
 /* ═══════════════════════════════════════════════════════════
@@ -327,7 +350,7 @@ const fromStoredLines = (lines) => (lines || []).map((l) => ({
  * « Réclamer un avoir ». Chaque ligne porte maintenant son MOTIF : le prix a
  * bougé, la quantité ne correspond pas, ou les deux.
  */
-function ControlTable({ rows, supplierId, orderId, orderReceived, mobile }) {
+function ControlTable({ rows, supplierId, orderId, orderReceived, mobile, onApplied }) {
   const [applying, setApplying] = useState(false);
   const [perLine, setPerLine] = useState({});
 
@@ -383,6 +406,12 @@ function ControlTable({ rows, supplierId, orderId, orderReceived, mobile }) {
       for (const k of data.skipped || []) n[k.ref] = k.reason;
       return n;
     });
+    // Le tarif est inscrit : l'écart de cette ligne n'existe plus. On rejoue donc
+    // l'analyse contre la commande telle qu'elle est MAINTENANT, pour que
+    // l'« Écart » du haut descende de ce qu'on vient de corriger. Sans ça, l'écran
+    // continuait d'afficher un écart déjà réglé, et plus rien ne disait si le
+    // report chez BMS avait pris.
+    if (onApplied) await onApplied();
   };
 
   // Réécrire le prix d'un lot DÉJÀ REÇU déplace une valeur de stock historique.
@@ -437,7 +466,9 @@ function ControlTable({ rows, supplierId, orderId, orderReceived, mobile }) {
         Appliquer écrit le <strong>prix réel payé</strong> dans notre référentiel — il fera autorité
         à l'import de la prochaine commande, même s'il est plus élevé, le cas d'une promotion
         terminée — et corrige <strong>le prix de cette commande</strong>, pour que le coût de revient
-        FIFO de ces pièces soit celui qu'on a vraiment payé.
+        FIFO de ces pièces soit celui qu'on a vraiment payé. Chaque ligne porte son écart
+        <strong> réel, remise de pied comprise</strong> : la colonne somme l'« Écart » affiché plus
+        haut, et l'appliquer le fait tomber à zéro.
       </span>
     </div>
   );
@@ -458,8 +489,13 @@ function ControlTable({ rows, supplierId, orderId, orderReceived, mobile }) {
                 <div style={{ fontSize: 12, color: C.greyT, margin: '4px 0 8px' }}>{r.label || ''}</div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12.5 }}>
                   <span>cmd {num(r.qtyOrdered)} → fact {num(r.qtyInvoiced)}</span>
-                  <strong style={{ color: r.gap > 0 ? C.red : C.green }}>{signedEur(r.gap)}</strong>
+                  <strong style={{ color: ecartDe(r) > 0 ? C.red : C.green }}>{signedEur(ecartDe(r))}</strong>
                 </div>
+                {r.discountShare > 0 && (
+                  <div style={{ fontSize: 11, color: C.greyM, textAlign: 'right' }}>
+                    facturé {signedEur(r.gap)}, remise de pied −{eur(r.discountShare)}
+                  </div>
+                )}
                 {r.tariff && (
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 }}>
                     <span style={{ fontSize: 12.5 }}>
@@ -519,8 +555,13 @@ function ControlTable({ rows, supplierId, orderId, orderReceived, mobile }) {
                   <td style={{ ...td, textAlign: 'right', color: t && t.delta > 0 ? C.red : C.green }}>
                     {t ? `${t.delta > 0 ? '+' : ''}${prix(t.delta)}` : '—'}
                   </td>
-                  <td style={{ ...td, textAlign: 'right', fontWeight: 600, color: r.gap > 0 ? C.red : C.green }}>
-                    {signedEur(r.gap)}
+                  <td style={{ ...td, textAlign: 'right', fontWeight: 600, color: ecartDe(r) > 0 ? C.red : C.green }}>
+                    {signedEur(ecartDe(r))}
+                    {r.discountShare > 0 && (
+                      <div style={{ fontSize: 10.5, fontWeight: 600, color: C.greyM, whiteSpace: 'nowrap' }}>
+                        facturé {signedEur(r.gap)} − {eur(r.discountShare)} de remise
+                      </div>
+                    )}
                   </td>
                   <td style={{ ...td, fontSize: 11.5, color: C.greyM }}>{r.action || meta.action || ''}</td>
                   <td style={{ ...td, textAlign: 'right', whiteSpace: 'nowrap' }}>{bouton(r)}</td>
@@ -945,6 +986,7 @@ function ControlTab({ suppliers, mobile, onSaved }) {
                 orderId={result.order?.id || null}
                 orderReceived={Number(lifecycle?.order?.units_received) > 0}
                 mobile={mobile}
+                onApplied={result.order?.id ? () => analyse(result.order.id) : null}
               />
             : <ReadLinesTable lines={result.invoice.lines} mobile={mobile} />}
 

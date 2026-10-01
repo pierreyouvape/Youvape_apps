@@ -6,8 +6,9 @@
  * recevoir le message depuis l'adresse habituelle de son interlocuteur, pas
  * depuis un robot.
  *
- * Ne reprend QUE les hausses de tarif matérielles (`price` / `qty_price` avec
- * `gapPrice > 0` et `material`). Sont donc volontairement absents :
+ * Ne reprend QUE les hausses de tarif matérielles (`price` / `qty_price` dont le
+ * résidu après remise de pied reste positif, et `material`). Sont donc
+ * volontairement absents :
  *   • les arrondis de remise — le tarif unitaire est le bon, il n'y a rien à
  *     demander, et une réclamation à 0,11 € décrédibilise les autres ;
  *   • les lignes en notre faveur — on ne les signale pas, on aligne le tarif ;
@@ -71,11 +72,16 @@ function renderTableHtml(rows, headers) {
  * @returns {{ subject: string, body: string, claimable: number, lines: Array }}
  */
 function buildClaimMessage({ comparison, invoice = {}, order = {}, supplier = {}, senderName } = {}) {
+  // Ce qu'on réclame est le RÉSIDU, pas le dépassement brut : une remise de pied
+  // en a déjà payé une partie, parfois la totalité. Réclamer le brut, c'est
+  // demander deux fois la même chose — et sur LVP F2610287890, c'était écrire au
+  // commercial pour trois lignes XROS payées exactement au prix commandé.
+  const du = (l) => (l.residualGapPrice == null ? l.gapPrice : l.residualGapPrice);
   const claimLines = (comparison?.lines || []).filter(
-    (l) => l.material && l.gapPrice > 0 && (l.verdict === 'price' || l.verdict === 'qty_price'),
+    (l) => l.material && du(l) > 0 && (l.verdict === 'price' || l.verdict === 'qty_price'),
   );
 
-  const total = Math.round(claimLines.reduce((s, l) => s + l.gapPrice, 0) * 100) / 100;
+  const total = Math.round(claimLines.reduce((s, l) => s + du(l), 0) * 100) / 100;
 
   const subject = `Facture ${invoice.number || ''} — écart de tarif sur ${claimLines.length} ligne${
     claimLines.length > 1 ? 's' : ''
@@ -92,7 +98,7 @@ function buildClaimMessage({ comparison, invoice = {}, order = {}, supplier = {}
     fmtQty(l.qtyInvoiced),
     fmtEur(l.expectedUnitPrice),
     fmtEur(l.invoicedUnitPrice),
-    `+${fmtEur(l.gapPrice)}`,
+    `+${fmtEur(du(l))}`,
   ]);
   const table = renderTable(rows, headers);
 

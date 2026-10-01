@@ -273,6 +273,10 @@ async function getClaimMessage(req, res) {
         gapPrice: Number(l.gap_price) || 0,
         gapQty: Number(l.gap_qty) || 0,
         gap: Number(l.gap) || 0,
+        // Ce qui reste dû après la remise de pied. Absent des documents
+        // enregistrés avant le 01/10/2026 : on retombe alors sur le brut, seule
+        // chose qu'on savait à l'époque.
+        residualGapPrice: l.residual_gap_price == null ? null : Number(l.residual_gap_price),
       })),
     };
 

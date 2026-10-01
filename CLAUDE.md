@@ -117,6 +117,32 @@ exports) doit donner **exactement le même chiffre à la date du jour**.
   commande jamais un parent.
 - Les besoins portent sur le **produit**, pas sur une réf.
 
+### Contrôle de facture : l'écart d'une ligne est son écart RÉEL (01/10/2026)
+
+Trois chiffres par ligne, et il ne faut jamais les confondre (`utils/invoiceCompare.js`) :
+
+| Champ | Ce qu'il compare | Où il sert |
+|---|---|---|
+| `gap` | montant **brut** de la facture − montant de la commande | explication secondaire |
+| `discountShare` | part de la **remise de pied** imputée à la ligne | `effectiveUnitCost`, donc le tarif |
+| `netGap` | `gap − discountShare` : ce que la ligne a **vraiment** coûté en trop | **la colonne « Écart total »** |
+
+- **`netGap` est additif** : la somme de la colonne vaut l'`Écart` affiché en haut de l'écran.
+  La remise est donc répartie **au centime** (le reliquat d'arrondi va à la plus grosse ligne),
+  et la remise qu'on n'a pas su imputer garde sa propre ligne dans le tableau.
+- **Appliquer un tarif fait tomber `netGap` à zéro** — l'écran rejoue l'analyse après chaque
+  application, sans quoi il affichait encore un écart déjà corrigé.
+- ⚠️ **Un fournisseur peut facturer au BRUT une commande portée au NET.** LVP facture le XROS
+  6,17 € et retire ses −20 % (`RSPV20`) au pied ; la commande, elle, porte 4,94 €. La ligne
+  affichait « Écart total +12,30 € » à côté d'un « Écart unitaire −0,0044 € » : deux chiffres
+  justes, illisibles ensemble (F2610287890).
+- **Une remise CIBLÉE n'explique QUE ses lignes**, à hauteur de ce qu'elle leur a versé. Seule
+  une remise **globale** (ou de périmètre illisible) se concentre au prorata sur les
+  dépassements — prudence assumée côté Cosmer / GFC. Mélanger les deux régimes prenait à Pierre
+  pour donner à Paul : 3,48 € de « résiduel » sur des XROS payés au prix commandé (qui partaient
+  tels quels au commercial) et 1,43 € « expliqués par la remise » sur un Dojo que RSPV20 exclut.
+- Le message de réclamation ne reprend que le **résidu** après imputation, jamais le brut.
+
 ### Commandes d'achat : la sémantique BMS (vérifiée le 29/09/2026)
 
 Trois allers-retours en production ont établi ceci. Rien n'en est devinable à la lecture

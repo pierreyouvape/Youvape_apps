@@ -19,7 +19,9 @@
  */
 
 const assert = require('assert');
-const { compareInvoiceToOrder, listDifferences, listTariffUpdates } = require('../src/utils/invoiceCompare');
+const {
+  compareInvoiceToOrder, listDifferences, listTariffUpdates, listControlRows,
+} = require('../src/utils/invoiceCompare');
 const { buildClaimMessage } = require('../src/utils/invoiceClaimMessage');
 const { attachMatchKeys } = require('../src/utils/invoiceMatching');
 const { resolveCompleteRefs } = require('../src/utils/refResolution');
@@ -623,6 +625,14 @@ test('la remise ne peut pas expliquer plus que les écarts constatés', () => {
   assert.ok(lvp.lines.every((l) => (l.explainedByDiscount || 0) <= l.gapPrice + 0.001));
 });
 
+test("la somme des écarts de ligne vaut l'écart global de la facture", () => {
+  // L'invariant de l'écran : la colonne « Écart total » doit faire le total
+  // affiché en haut. Avec `gap` (le montant BRUT contre la commande), elle ne le
+  // faisait pas dès qu'une remise de pied s'en mêlait.
+  const somme = lvp.lines.reduce((s, l) => s + (l.netGap || 0), 0);
+  assert.ok(close(somme, lvp.totals.gap), `${somme} au lieu de ${lvp.totals.gap}`);
+});
+
 test('un vrai surcoût ressort malgré la remise', () => {
   const r = compareInvoiceToOrder({
     invoice: { lines: [
@@ -634,6 +644,74 @@ test('un vrai surcoût ressort malgré la remise', () => {
   // 50 € d'écart pour 10 € de remise : 40 € restent dus.
   assert.strictEqual(r.summary.explainedByDiscount, 10);
   assert.strictEqual(r.summary.claimable, 40);
+});
+
+/* ─── Facture au BRUT contre commande au NET (LVP F2610287890, 01/10/2026) ── */
+
+console.log("\nL'écart d'une ligne est son écart RÉEL, remise comprise");
+
+// Extrait fidèle de la facture : deux Vaporesso remisés par RSPV20, un Dojo et
+// un Innokin que la promotion exclut. La remise de pied vaut exactement 20 % des
+// deux premiers (21,57 € sur 107,85 €), ce qui déclenche la règle fournisseur.
+const brut = compareInvoiceToOrder({
+  invoice: {
+    totalHt: 185.98,
+    lines: [
+      { ref: 'VP-CXROC3-306', label: 'Cartouches XROS Series 3ml (4pcs) - Vaporesso', qty: 10, lineTotalHt: 61.70 },
+      { ref: 'VP-KXR6M-BLAC', label: 'Kit Xros 6 Mini - Vaporesso (Couleur : Black)', qty: 5, lineTotalHt: 46.15 },
+      { ref: 'DO15C-10MG-L6', label: 'Cartouche Dojo Blast 10ml 10mg - Dojo by Vaporesso', qty: 20, lineTotalHt: 58.00 },
+      { ref: 'IN-CKLYV2-06', label: 'Cartouches Klypse V2 (3pcs) - Innokin', qty: 10, lineTotalHt: 41.70 },
+      { ref: null, label: 'Remise', qty: 1, lineTotalHt: -21.57, kind: 'discount' },
+    ],
+  },
+  order: { lines: [
+    // La commande porte le prix NET : 6,17 × 0,8 = 4,936, arrondi au centime.
+    { ref: 'VP-CXROC3-306', qty: 10, price: 4.94 },
+    { ref: 'VP-KXR6M-BLAC', qty: 5, price: 7.38 },
+    { ref: 'DO15C-10MG-L6', qty: 20, price: 2.80 },
+    { ref: 'IN-CKLYV2-06', qty: 10, price: 4.05 },
+  ] },
+  options: { supplierCode: 'LVP Distribution' },
+});
+
+test("une ligne facturée au brut mais remisée au pied n'a pas d'écart", () => {
+  // Le cas qui a lancé la correction : « Écart total +12,30 € » affiché à côté
+  // d'un « Écart unitaire −0,0044 € » sur 10 pièces. Les deux chiffres étaient
+  // justes — l'un brut, l'autre net — et aucun acheteur ne pouvait les lire.
+  const l = byRef(brut, 'VP-CXROC3-306');
+  assert.strictEqual(l.gap, 12.30);            // facturé 61,70 contre 49,40 commandés
+  assert.strictEqual(l.discountShare, 12.34);  // part de RSPV20 sur cette ligne
+  assert.strictEqual(l.netGap, -0.04);         // l'écart réel : rien à réclamer
+  assert.ok(close(l.effectiveUnitCost, 4.936, 0.0001));
+});
+
+test('les lignes hors promotion gardent la totalité de leur écart', () => {
+  // Le prorata sur les dépassements prenait à Pierre pour donner à Paul : il
+  // « expliquait par la remise » une partie du Dojo, que RSPV20 exclut, et
+  // laissait un résidu sur les Vaporesso payés au prix commandé.
+  assert.strictEqual(byRef(brut, 'DO15C-10MG-L6').discountShare, 0);
+  assert.strictEqual(byRef(brut, 'DO15C-10MG-L6').netGap, 2.00);
+  assert.strictEqual(byRef(brut, 'IN-CKLYV2-06').discountShare, 0);
+  assert.strictEqual(byRef(brut, 'IN-CKLYV2-06').netGap, 1.20);
+  assert.strictEqual(brut.summary.claimable, 3.20);
+});
+
+test("la somme de la colonne vaut l'écart affiché en haut de l'écran", () => {
+  // Au centime : les parts de remise arrondies séparément perdaient deux
+  // centimes sur la vraie facture, et la colonne ne faisait plus le total.
+  const somme = listControlRows(brut).reduce((s, r) => s + (r.netGap || 0), 0);
+  assert.ok(close(somme, brut.totals.gap), `${somme} au lieu de ${brut.totals.gap}`);
+  assert.strictEqual(brut.totals.gap, 3.18);
+});
+
+test('le message au commercial ne réclame que ce qui est dû', () => {
+  const m = buildClaimMessage({ comparison: brut, invoice: { number: 'F2610287890' } });
+  assert.strictEqual(m.claimable, 3.20);
+  assert.strictEqual(m.lines.length, 2);
+  // Les trois lignes XROS partaient en réclamation pour 3,48 € chacune, alors
+  // qu'elles sont payées au prix commandé.
+  assert.ok(!m.body.includes('VP-CXROC3-306'), 'une ligne conforme part en réclamation');
+  assert.ok(!m.body.includes('VP-KXR6M-BLAC'), 'une ligne conforme part en réclamation');
 });
 
 /* ─── Conditionnement déduit (GFC F2609424691, 28/09/2026) ───────────────── */

@@ -428,11 +428,27 @@ function compareInvoiceToOrder({ invoice, order, options = {} }) {
     const cibles = visees || produits;
     const assiette = round2(cibles.reduce((acc, r) => acc + r.invoicedTotal, 0));
     if (assiette <= 0) continue;
-    for (const r of cibles) {
-      const part = Math.abs(d.invoicedTotal) * (r.invoicedTotal / assiette);
-      remisePar.set(r, (remisePar.get(r) || 0) + part);
-      if (visees) remiseCibleePar.set(r, (remiseCibleePar.get(r) || 0) + part);
-    }
+
+    // RÉPARTITION AU CENTIME. Les parts arrondies séparément ne somment pas
+    // toujours la remise imprimée : sur LVP F2610287890, les six lignes
+    // Vaporesso reçoivent 56,54 € d'une remise de 56,56 €. Deux centimes, et
+    // l'écart de chaque ligne ne retombe plus sur l'écart global affiché en haut
+    // de l'écran — or c'est précisément ce qu'on promet à l'acheteur : la somme
+    // de la colonne vaut le total. Le reliquat va donc à la plus grosse ligne,
+    // celle où il pèse le moins.
+    const montant = Math.abs(d.invoicedTotal);
+    const ordre = [...cibles].sort((a, b) => a.invoicedTotal - b.invoicedTotal);
+    let reste = round2(montant);
+    ordre.forEach((r, i) => {
+      const part = i === ordre.length - 1
+        ? round2(reste)
+        : round2(montant * (r.invoicedTotal / assiette));
+      remisePar.set(r, round2((remisePar.get(r) || 0) + part));
+      if (visees) remiseCibleePar.set(r, round2((remiseCibleePar.get(r) || 0) + part));
+      reste = round2(reste - part);
+    });
+    // Ce qu'on a su imputer : le reste d'une remise reste au pied du document.
+    d.allocated = round2(montant);
 
     // De quoi expliquer la promotion à l'écran : sur combien de pièces elle
     // porte, et le prix réellement payé quand toutes ses cibles y arrivent au
@@ -472,6 +488,24 @@ function compareInvoiceToOrder({ invoice, order, options = {} }) {
     r.effectiveUnitCost = r.invoicedUnitPrice === null
       ? null
       : r.invoicedUnitPrice - (r.qtyInvoiced ? remise / r.qtyInvoiced : 0);
+    // L'ÉCART RÉEL DE LA LIGNE : ce qu'elle a coûté, remise de pied comprise,
+    // moins ce que la commande prévoyait. C'est le seul chiffre qu'un acheteur
+    // puisse lire ligne à ligne sans se tromper, et le seul qui s'additionne.
+    //
+    // `gap` compare le montant BRUT de la facture au montant de la commande.
+    // Chez LVP, qui facture au brut et ne retire ses −20 % qu'au pied, ça
+    // donnait « +12,30 € » sur une ligne dont l'écart unitaire valait
+    // −0,0044 € : deux chiffres justes, contradictoires à l'œil, et une
+    // question à chaque facture (F2610287890, 01/10/2026).
+    r.netGap = round2(r.gap - r.discountShare);
+  }
+
+  // Une remise entièrement imputée n'est plus un écart : elle vit désormais dans
+  // le `netGap` des lignes qu'elle a payées. Ce qui n'a pas pu être imputé
+  // (périmètre inconnu, cf. LIPS) reste porté par la ligne de remise elle-même,
+  // pour que la somme des écarts affichés vaille toujours l'écart global.
+  for (const d of remises) {
+    d.netGap = round2(d.gap + (d.allocated || 0));
   }
 
   // ─── Ce que la remise de pied explique déjà ───────────────────────────────
@@ -482,42 +516,63 @@ function compareInvoiceToOrder({ invoice, order, options = {} }) {
   // écart est de 0,43 €. Réclamer là-dessus, c'est écrire au commercial pour
   // une remise qu'il a déjà accordée.
   //
-  // On impute donc la remise aux lignes dont le prix dépasse celui commandé, au
-  // prorata de leur dépassement et PLAFONNÉE à ce dépassement. Ce qui reste
-  // après imputation est le seul écart réellement dû. Le plafond compte : sans
-  // lui, une remise plus grosse que les écarts créerait des avoirs imaginaires.
+  // On impute donc la remise aux lignes dont le prix dépasse celui commandé,
+  // PLAFONNÉE à ce dépassement. Ce qui reste après imputation est le seul écart
+  // réellement dû. Le plafond compte : sans lui, une remise plus grosse que les
+  // écarts créerait des avoirs imaginaires.
+  //
+  // DEUX RÉGIMES, ET NE JAMAIS LES MÉLANGER (corrigé le 01/10/2026) :
+  //
+  //   • Une remise CIBLÉE n'explique QUE ses propres lignes, à hauteur de ce
+  //     qu'elle leur a versé. Une ligne qu'elle ne vise pas n'est pas expliquée
+  //     du tout. L'étalement au prorata des dépassements prenait à Pierre et
+  //     donnait à Paul : sur LVP F2610287890, il annonçait 3,48 € de résiduel
+  //     sur chacune des trois lignes XROS payées AU PRIX COMMANDÉ (elles
+  //     partaient telles quelles dans le message au commercial) et « expliquait
+  //     par la remise » 1,43 € sur un Dojo, que RSPV20 exclut expressément.
+  //
+  //   • Une remise GÉNÉRALE, ou dont on n'a pas su lire le périmètre, reste
+  //     volontairement concentrée sur les dépassements : c'est ce qui ramène
+  //     Cosmer et GFC à 0 € réclamable, et la prudence même — on n'écrit pas au
+  //     commercial pour une remise qu'il a peut-être déjà accordée.
   const overpriced = results.filter((r) => r.gapPrice > 0
     && (r.verdict === 'price' || r.verdict === 'qty_price'));
-  const overpricedTotal = round2(overpriced.reduce((s, r) => s + r.gapPrice, 0));
   let discountApplied = 0;
-  if (footerDiscount < 0 && overpricedTotal > 0) {
-    const pool = Math.min(Math.abs(footerDiscount), overpricedTotal);
+  for (const r of results) {
+    r.explainedByDiscount = 0;
+    r.residualGapPrice = r.gapPrice;
+  }
+
+  for (const r of overpriced) {
+    const part = Math.min(round2(remiseCibleePar.get(r) || 0), r.gapPrice);
+    if (part <= 0) continue;
+    r.explainedByDiscount = round2(part);
+    r.residualGapPrice = round2(r.gapPrice - part);
+    discountApplied += part;
+  }
+
+  // Ce qui n'a pas de périmètre connu : les remises réparties au prorata du
+  // montant (régime général) et celles qu'on n'a pas imputées du tout.
+  const cibleeTotal = round2([...remiseCibleePar.values()].reduce((s, v) => s + v, 0));
+  const sansPerimetre = round2(Math.abs(footerDiscount) - cibleeTotal);
+  const residuels = overpriced.filter((r) => r.residualGapPrice > 0);
+  const residuelTotal = round2(residuels.reduce((s, r) => s + r.residualGapPrice, 0));
+  if (sansPerimetre > 0 && residuelTotal > 0) {
+    const pool = Math.min(sansPerimetre, residuelTotal);
     let left = pool;
-    overpriced.forEach((r, i) => {
+    residuels.forEach((r, i) => {
       // La dernière ligne reçoit le solde : arrondir chaque part séparément
       // ferait « expliquer » 93,57 € par une remise de 93,55 €, et rien n'est
       // plus douteux qu'un total qui dépasse ce qu'il répartit.
-      //
-      // Une promotion CIBLÉE ne peut pas expliquer plus que ce qu'elle a donné à
-      // cette ligne : celle qui ne vise que les 10 ml n'explique rien sur un
-      // 50 ml. Une remise GÉNÉRALE, elle, reste volontairement concentrée sur
-      // les lignes en dépassement — c'est ce qui ramène LVP à 0 € réclamable.
-      const plafond = remiseCibleePar.has(r) ? round2(remiseCibleePar.get(r)) : Infinity;
-      const brut = i === overpriced.length - 1
+      const brut = i === residuels.length - 1
         ? round2(left)
-        : Math.min(round2(pool * (r.gapPrice / overpricedTotal)), round2(left));
-      const part = Math.min(brut, plafond, r.gapPrice);
-      r.explainedByDiscount = part;
-      r.residualGapPrice = round2(r.gapPrice - part);
+        : Math.min(round2(pool * (r.residualGapPrice / residuelTotal)), round2(left));
+      const part = Math.min(brut, r.residualGapPrice);
+      r.explainedByDiscount = round2(r.explainedByDiscount + part);
+      r.residualGapPrice = round2(r.residualGapPrice - part);
       left = round2(left - part);
       discountApplied += part;
     });
-  }
-  for (const r of results) {
-    if (r.explainedByDiscount === undefined) {
-      r.explainedByDiscount = 0;
-      r.residualGapPrice = r.gapPrice;
-    }
   }
 
   // ─── Une ligne payée SOUS le prix commandé n'est pas une anomalie ─────────
@@ -691,20 +746,28 @@ const DIFFERENCE_KINDS = {
  *
  * Le montant reste disponible dans `totals.footerDiscount`, et il est réparti au
  * prorata sur chaque ligne pour que le réclamable soit calculé sur le coût réel.
+ *
+ * SAUF celle qu'on n'a pas su imputer. Une remise qui ne vit dans l'écart
+ * d'aucune ligne doit vivre dans la sienne, sinon la colonne « Écart total » ne
+ * somme plus l'écart global — et un tableau dont les lignes ne font pas le
+ * total ne sert plus à rien.
  */
 function listDifferences(comparison) {
   const lines = (comparison && comparison.lines) || [];
   return lines
-    .filter((l) => l.verdict !== 'ok' && l.verdict !== 'discount')
+    .filter((l) => l.verdict !== 'ok'
+      && (l.verdict !== 'discount' || Math.abs(l.netGap || 0) >= 0.005))
     .map((l) => ({
       ...l,
       kindLabel: (DIFFERENCE_KINDS[l.verdict] || {}).label || l.verdict,
-      action: (DIFFERENCE_KINDS[l.verdict] || {}).action || null,
+      action: l.verdict === 'discount' && l.scope && l.scope.unallocated
+        ? "Périmètre inconnu : non imputée au coût des lignes"
+        : ((DIFFERENCE_KINDS[l.verdict] || {}).action || null),
     }))
     .sort((a, b) => {
       const ra = (DIFFERENCE_KINDS[a.verdict] || {}).rank || 99;
       const rb = (DIFFERENCE_KINDS[b.verdict] || {}).rank || 99;
-      return ra !== rb ? ra - rb : Math.abs(b.gap) - Math.abs(a.gap);
+      return ra !== rb ? ra - rb : Math.abs(b.netGap) - Math.abs(a.netGap);
     });
 }
 
@@ -775,6 +838,8 @@ function listControlRows(comparison) {
   const ecarts = listDifferences(comparison);
   const tarifs = listTariffUpdates(comparison);
   const parRef = new Map(tarifs.map((t) => [t.ref, t]));
+  const ligneParRef = new Map(((comparison && comparison.lines) || [])
+    .filter((l) => l.ref).map((l) => [l.ref, l]));
 
   const rows = ecarts.map((d) => {
     const t = d.ref ? parRef.get(d.ref) : null;
@@ -784,19 +849,29 @@ function listControlRows(comparison) {
 
   // Les tarifs qu'aucun écart ne portait : prix payé différent, mais conforme.
   for (const t of parRef.values()) {
+    const l = ligneParRef.get(t.ref) || {};
+    // L'écart de la ligne vient de la ligne, jamais d'un recalcul : `delta × qty`
+    // ignore l'effet quantité et ne retomberait pas sur le total de l'écran.
+    const netGap = l.netGap != null ? l.netGap : round2(t.delta * t.qty);
     rows.push({
       ref: t.ref,
       label: t.label,
       verdict: 'price',
       kindLabel: DIFFERENCE_KINDS.price.label,
-      action: DIFFERENCE_KINDS.price.action,
+      action: netGap > 0
+        ? DIFFERENCE_KINDS.price.action
+        : 'Tarif à retenir : cette ligne a coûté moins que la commande',
       material: false,
       qtyOrdered: t.qty,
       qtyInvoiced: t.qty,
       expectedUnitPrice: t.currentPrice,
       invoicedUnitPrice: t.realPrice,
       effectiveUnitCost: t.realPrice,
-      gap: round2(t.delta * t.qty),
+      discountShare: l.discountShare || 0,
+      invoicedTotal: l.invoicedTotal != null ? l.invoicedTotal : null,
+      expectedTotal: l.expectedTotal != null ? l.expectedTotal : null,
+      gap: l.gap != null ? l.gap : netGap,
+      netGap,
       gapPrice: round2(t.delta * t.qty),
       gapQty: 0,
       tariff: t,
@@ -806,7 +881,7 @@ function listControlRows(comparison) {
   return rows.sort((a, b) => {
     const ra = (DIFFERENCE_KINDS[a.verdict] || {}).rank || 99;
     const rb = (DIFFERENCE_KINDS[b.verdict] || {}).rank || 99;
-    return ra !== rb ? ra - rb : Math.abs(b.gap) - Math.abs(a.gap);
+    return ra !== rb ? ra - rb : Math.abs(b.netGap) - Math.abs(a.netGap);
   });
 }
 

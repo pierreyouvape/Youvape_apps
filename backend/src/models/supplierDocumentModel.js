@@ -52,8 +52,9 @@ async function insertLines(client, documentId, lines) {
       `INSERT INTO supplier_document_lines (
          document_id, line_no, supplier_sku, label, kind, qty, line_total_ht,
          product_id, expected_qty, expected_unit_price, verdict, material,
-         gap_qty, gap_price, gap, effective_unit_cost
-       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`,
+         gap_qty, gap_price, gap, effective_unit_cost,
+         discount_share, net_gap, residual_gap_price
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)`,
       [
         documentId,
         lineNo,
@@ -71,6 +72,12 @@ async function insertLines(client, documentId, lines) {
         l.gapPrice || 0,
         l.gap || 0,
         l.effectiveUnitCost != null ? l.effectiveUnitCost : null,
+        // L'écart réel de la ligne, remise de pied comprise, et ce qui reste
+        // réclamable après imputation : sans eux, la facture archivée ne sait
+        // plus distinguer un dépassement d'une remise encaissée au pied.
+        l.discountShare || 0,
+        l.netGap != null ? l.netGap : (l.gap || 0),
+        l.residualGapPrice != null ? l.residualGapPrice : (l.gapPrice || 0),
       ],
     );
   }
