@@ -101,6 +101,16 @@ const TONES = {
 };
 
 const STATUS_LABELS = { to_check: 'À contrôler', checked: 'Contrôlée', disputed: 'En litige', archived: 'Archivée' };
+/**
+ * L'état du contrôle se lit à la couleur : rouge tant que la facture n'est pas
+ * contrôlée, vert quand elle l'est. Sur une liste de cent documents, le libellé
+ * seul obligeait à lire chaque ligne pour trouver ce qui restait à faire.
+ */
+const STATUS_TONES = { to_check: 'red', checked: 'green', disputed: 'orange', archived: 'grey' };
+const statusStyle = (status) => {
+  const t = TONES[STATUS_TONES[status]] || TONES.grey;
+  return { color: t.color, background: t.bg, borderColor: t.color, fontWeight: 700 };
+};
 const PAYMENT_LABELS = { paid: 'Payée', partial: 'Partielle', unpaid: 'À payer', unknown: 'Inconnu' };
 const METHODS = [
   ['amex', 'Amex'], ['cb', 'Carte bancaire'], ['virement', 'Virement'],
@@ -1170,7 +1180,8 @@ function FilingTab({ suppliers, mobile, reloadKey, onSaved }) {
           </select>
         </Field>
         <Field label="Contrôle" width={140}>
-          <select value={filters.status} onChange={(e) => setFilters({ ...filters, status: e.target.value })} style={inputStyle}>
+          <select value={filters.status} onChange={(e) => setFilters({ ...filters, status: e.target.value })}
+            style={{ ...inputStyle, ...(filters.status ? statusStyle(filters.status) : {}) }}>
             <option value="">Tous</option>
             {Object.entries(STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
           </select>
@@ -1302,7 +1313,7 @@ function FilingTab({ suppliers, mobile, reloadKey, onSaved }) {
                     <td style={td}>
                       <select value={r.status} onChange={(e) => setStatus(r.id, e.target.value)}
                         onClick={(e) => e.stopPropagation()}
-                        style={{ ...inputStyle, padding: '4px 6px', fontSize: 12 }}>
+                        style={{ ...inputStyle, padding: '4px 6px', fontSize: 12, ...statusStyle(r.status) }}>
                         {Object.entries(STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
                       </select>
                     </td>
@@ -1369,6 +1380,97 @@ function FilingTab({ suppliers, mobile, reloadKey, onSaved }) {
   );
 }
 
+/* ─── Où en est la marchandise ? ──────────────────────────────
+ * On ne règle pas une facture dont la livraison n'est pas arrivée. La réponse
+ * vivait dans l'app Réception : il fallait changer d'écran, retrouver la
+ * commande, et comparer de tête. Le fil de vie de la commande la donne ici,
+ * dans le document qu'on regarde.
+ *
+ * `units_received` de la commande fait foi pour le total — les réceptions
+ * faites directement dans BMS ne laissent aucune session dans l'app, et une
+ * commande peut donc être reçue sans qu'aucun comptage n'apparaisse en dessous.
+ * ──────────────────────────────────────────────────────────── */
+const SESSION_LABELS = { counting: 'comptage en cours', validated: 'comptage validé', abandoned: 'comptage abandonné' };
+
+function ReceptionState({ orders }) {
+  const ids = (orders || []).map((o) => o.id).join(',');
+  const [fils, setFils] = useState(null);
+
+  useEffect(() => {
+    if (!ids) { setFils([]); return undefined; }
+    let vivant = true;
+    setFils(null);
+    Promise.all(ids.split(',').map((id) => axios.get(`${BASE}/orders/${id}/lifecycle`)
+      .then((r) => r.data).catch(() => null)))
+      .then((r) => { if (vivant) setFils(r.filter(Boolean)); });
+    return () => { vivant = false; };
+  }, [ids]);
+
+  const cadre = (children) => (
+    <div style={{ background: C.white, border: `1px solid ${C.greyB}`, borderRadius: 10, padding: 12, marginBottom: 16 }}>
+      <div style={{ fontSize: 12, fontWeight: 700, color: C.greyT, marginBottom: 8 }}>ÉTAT DE RÉCEPTION</div>
+      {children}
+    </div>
+  );
+
+  if (!ids) {
+    return cadre(
+      <div style={{ fontSize: 13, color: C.orange }}>
+        Aucune commande rapprochée : impossible de dire si la marchandise est arrivée.
+      </div>,
+    );
+  }
+  if (fils === null) return cadre(<div style={{ fontSize: 13, color: C.greyT }}>Lecture…</div>);
+  if (fils.length === 0) {
+    return cadre(<div style={{ fontSize: 13, color: C.greyT }}>État de réception indisponible.</div>);
+  }
+
+  return cadre(fils.map((f) => {
+    const cmd = Number(f.order.units_ordered) || 0;
+    const recu = Number(f.order.units_received) || 0;
+    const manque = Math.max(cmd - recu, 0);
+    const etat = f.summary.fullyReceived
+      ? { tone: 'green', label: 'Entièrement reçue' }
+      : (f.summary.partiallyReceived
+        ? { tone: 'orange', label: 'Partiellement reçue' }
+        : { tone: 'red', label: 'Rien reçu' });
+    return (
+      <div key={f.order.id} style={{ paddingTop: 2, paddingBottom: 6 }}>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', fontSize: 13 }}>
+          <Badge tone={etat.tone}>{etat.label}</Badge>
+          <span>
+            <strong>{recu}</strong> pièce{recu > 1 ? 's' : ''} reçue{recu > 1 ? 's' : ''} sur {cmd} commandée{cmd > 1 ? 's' : ''}
+            {manque > 0 && <> · il en manque <strong>{manque}</strong></>}
+          </span>
+          {f.summary.openSession && <Badge tone="blue">comptage en cours</Badge>}
+          <span style={{ color: C.greyM, fontSize: 12.5 }}>
+            commande {f.order.bms_reference || f.order.order_number} du {date(f.order.order_date)}
+          </span>
+        </div>
+        {f.receptions.length > 0 ? f.receptions.map((r) => {
+          const comptees = Number(r.units_counted) || 0;
+          const envoyees = Number(r.units_sent) || 0;
+          return (
+            <div key={r.id} style={{ fontSize: 12.5, color: C.greyT, marginTop: 4 }}>
+              {date(r.validated_at || r.started_at)} · {SESSION_LABELS[r.status] || r.status}
+              {r.status === 'validated' && <>
+                {' '}· {comptees} pièce{comptees > 1 ? 's' : ''} comptée{comptees > 1 ? 's' : ''}
+                {envoyees < comptees && <> dont <strong>{comptees - envoyees}</strong> refusée{comptees - envoyees > 1 ? 's' : ''}</>}
+                {r.validated_by_name ? ` · ${r.validated_by_name}` : ''}
+              </>}
+            </div>
+          );
+        }) : (
+          <div style={{ fontSize: 12.5, color: C.greyM, marginTop: 4 }}>
+            Aucun comptage dans l'app Réception
+            {recu > 0 ? " : la marchandise a été reçue directement dans BMS." : '.'}
+          </div>
+        )}
+      </div>
+    );
+  }));
+}
+
 /**
  * Le détail d'un document, en plein écran.
  *
@@ -1421,6 +1523,8 @@ function DocumentPanel({ detail, mobile, onClose, onStatus, onDelete, onSettle }
           <Kpi label="Reste dû" value={eur(detail.remaining_amount)} tone={Number(detail.remaining_amount) > 0 ? 'orange' : 'green'} />
         </div>
 
+        <ReceptionState orders={detail.orders} />
+
         {detail.payments?.length > 0 && (
           <div style={{ background: C.white, border: `1px solid ${C.greyB}`, borderRadius: 10, padding: 12, marginBottom: 16 }}>
             <div style={{ fontSize: 12, fontWeight: 700, color: C.greyT, marginBottom: 8 }}>RÈGLEMENTS IMPUTÉS</div>
@@ -1472,7 +1576,8 @@ function DocumentPanel({ detail, mobile, onClose, onStatus, onDelete, onSettle }
 
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 16, alignItems: 'center' }}>
           <Field label="État du contrôle" width={170}>
-            <select value={detail.status} onChange={(e) => onStatus(e.target.value)} style={inputStyle}>
+            <select value={detail.status} onChange={(e) => onStatus(e.target.value)}
+              style={{ ...inputStyle, ...statusStyle(detail.status) }}>
               {Object.entries(STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
             </select>
           </Field>
