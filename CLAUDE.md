@@ -142,6 +142,16 @@ Trois chiffres par ligne, et il ne faut jamais les confondre (`utils/invoiceComp
   pour donner à Paul : 3,48 € de « résiduel » sur des XROS payés au prix commandé (qui partaient
   tels quels au commercial) et 1,43 € « expliqués par la remise » sur un Dojo que RSPV20 exclut.
 - Le message de réclamation ne reprend que le **résidu** après imputation, jamais le brut.
+- ⚠️ **Un fournisseur peut facturer AU CARTON ce que la commande compte en PIÈCES, avec une
+  hausse de tarif par-dessus.** Le rapport des quantités est entier (`packFactor`) mais le
+  montant ne retombe pas : ce n'est ni un manquant ni « Quantité et tarif ». Ces lignes
+  (`unitMismatch`) se lisent **à la pièce**, la seule unité commune — `gapQty = 0`, tout
+  l'écart en tarif. JoshNoa V3/2026/37644 : 1 × 25,96 € pour un carton de 5 contre 5 pièces
+  à 4,50 € donnait « 21,46 € réclamables + 18,00 € de manquants » pour **3,46 €** de trop.
+  Le message au commercial dit en clair ce qu'il a converti, et **aucun bouton de tarif** ne
+  s'affiche : on ne sait pas à quelle unité le `pack_qty` de la réf se rapporte.
+- Le message se copie depuis l'écran de contrôle **et** depuis la facture rouverte
+  (`DocumentPanel`) : une facture se contrôle un jour et s'écrit le lendemain.
 
 ### Commandes d'achat : la sémantique BMS (vérifiée le 29/09/2026)
 
