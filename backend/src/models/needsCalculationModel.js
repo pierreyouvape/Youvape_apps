@@ -114,6 +114,13 @@ const needsCalculationModel = {
       -- Produit → fournisseurs chez qui il est PROUVÉ (cf. supplier_ids ci-dessus).
       -- Agrégé une fois pour tous les produits, puis joint : dix fois moins cher
       -- que trois EXISTS corrélés par ligne.
+      --
+      -- Un retrait à la main (product_supplier_exclusions) est plus fort que
+      -- n'importe quelle preuve, y compris un achat réel : c'est l'acheteur qui
+      -- sait qu'il ne commande plus ça là. Sans ce NOT EXISTS, la paire revenait
+      -- par la commande d'achat — le pack Z Series 0.25 Ω Dual (produit 391)
+      -- restait proposé chez Joshnoa sur la foi d'une seule commande du
+      -- 24/11/2025, retirée le 02/10/2026 ; 24 paires Joshnoa dans ce cas.
       LEFT JOIN (
         SELECT product_id, array_agg(DISTINCT supplier_id) AS ids
           FROM (
@@ -127,6 +134,10 @@ const needsCalculationModel = {
             SELECT ps.product_id, ps.supplier_id FROM product_suppliers ps
              WHERE ps.supplier_price IS NOT NULL
           ) t
+         WHERE NOT EXISTS (
+           SELECT 1 FROM product_supplier_exclusions e
+            WHERE e.product_id = t.product_id AND e.supplier_id = t.supplier_id
+         )
          GROUP BY product_id
       ) prouves ON prouves.product_id = p.id
       WHERE p.post_status = 'publish'

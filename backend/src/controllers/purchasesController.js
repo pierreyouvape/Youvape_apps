@@ -79,12 +79,18 @@ const purchasesController = {
       // parent variable, on ne commande pas un parent. Le lien tarifé, lui, garde
       // le repli sur le parent : c'est là que product_suppliers stocke les
       // associations des variables.
+      //
+      // Et un retrait à la main (product_supplier_exclusions) écrase les trois :
+      // il est plus fort qu'un achat réel, parce que l'acheteur sait qu'il ne
+      // commande plus ça là. Même règle que le CTE `prouves` de
+      // needsCalculationModel — les deux doivent rester d'accord.
       let catalogueExpr = null;
       if (supplierId) {
         const sIdx = idx;
         params.push(supplierId);
         idx++;
         catalogueExpr = `(
+           (
             EXISTS (SELECT 1 FROM supplier_refs r
                      WHERE r.supplier_id = $${sIdx} AND r.product_id = p.id)
          OR EXISTS (SELECT 1 FROM purchase_order_items poi
@@ -93,6 +99,10 @@ const purchasesController = {
          OR EXISTS (SELECT 1 FROM product_suppliers ps
                     WHERE ps.supplier_id = $${sIdx} AND ps.supplier_price IS NOT NULL
                       AND (ps.product_id = p.id OR ps.product_id = parent.id))
+           )
+           AND NOT EXISTS (SELECT 1 FROM product_supplier_exclusions e
+                            WHERE e.supplier_id = $${sIdx}
+                              AND (e.product_id = p.id OR e.product_id = parent.id))
           )`;
       }
       const supplierClause = restreindre ? `AND ${catalogueExpr}` : '';
