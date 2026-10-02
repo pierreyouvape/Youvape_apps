@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import axios from 'axios';
+import { useSearchParams } from 'react-router-dom';
 import AppShell from '../components/AppShell';
 import { Purchases as InvoiceIcon } from '../components/AppIcons';
 import { useIsMobile } from '../hooks/useIsMobile';
@@ -1313,7 +1314,7 @@ async function downloadFile(id, label) {
  * La sélection multiple sert les deux cas d'un même geste — une facture
  * isolée, ou six factures et un avoir soldés par un seul relevé Amex.
  * ═══════════════════════════════════════════════════════════ */
-function FilingTab({ suppliers, mobile, reloadKey, onSaved }) {
+function FilingTab({ suppliers, mobile, reloadKey, onSaved, initialDocId }) {
   const [filters, setFilters] = useState({ supplier_id: '', status: '', payment_status: '', doc_type: '', from: '', to: '', q: '' });
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -1343,6 +1344,10 @@ function FilingTab({ suppliers, mobile, reloadKey, onSaved }) {
     const { data } = await axios.get(`${BASE}/${id}`);
     setDetail(data);
   }, []);
+
+  // Arrivée depuis la liste des commandes fournisseur (?doc=ID) : la facture
+  // s'ouvre directement.
+  useEffect(() => { if (initialDocId) openDetail(initialDocId); }, [initialDocId, openDetail]);
 
   const closeDetail = () => { setOpenId(null); setDetail(null); };
   const [rechecking, setRechecking] = useState(null);
@@ -2224,7 +2229,9 @@ const TABS = [
 
 export default function SupplierInvoicesApp() {
   const mobile = useIsMobile();
-  const [tab, setTab] = useState('control');
+  const [searchParams] = useSearchParams();
+  const initialDocId = Number(searchParams.get('doc')) || null;
+  const [tab, setTab] = useState(initialDocId ? 'filing' : 'control');
   const [suppliers, setSuppliers] = useState([]);
   const [reloadKey, setReloadKey] = useState(0);
   const bump = useCallback(() => setReloadKey((k) => k + 1), []);
@@ -2291,7 +2298,7 @@ export default function SupplierInvoicesApp() {
         )}
 
         {tab === 'control' && <ControlTab suppliers={suppliers} mobile={mobile} onSaved={bump} />}
-        {tab === 'filing' && <FilingTab suppliers={suppliers} mobile={mobile} reloadKey={reloadKey} onSaved={bump} />}
+        {tab === 'filing' && <FilingTab suppliers={suppliers} mobile={mobile} reloadKey={reloadKey} onSaved={bump} initialDocId={initialDocId} />}
         {tab === 'payments' && <PaymentsTab mobile={mobile} reloadKey={reloadKey} onSaved={bump} />}
       </main>
     </AppShell>

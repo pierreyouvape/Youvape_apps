@@ -163,6 +163,12 @@
   vertical-align: middle;
 }
 
+/* Une ligne sur deux teintée : la liste des commandes est large, l'œil s'y
+   perd d'une colonne à l'autre. Le survol (!important) garde la main. */
+.purchases-table--striped tbody tr:nth-child(even) {
+  background: #f3f4f6;
+}
+
 .purchases-table tr:hover {
   background: #fef9e7 !important;
 }

@@ -17,6 +17,42 @@ const MOTIF_LABEL = {
   manquant: 'Manquant — à réclamer',
 };
 
+// Un avoir ou une proforma rattachés à la commande ne sont pas « la facture » :
+// on le dit devant le numéro.
+const DOC_TYPE_PREFIX = { credit_note: 'Avoir ', proforma: 'Proforma ' };
+
+const PAYMENT_METHOD_LABEL = {
+  amex: 'Amex', cb: 'CB', virement: 'Virement', prelevement: 'Prélèvement',
+  cheque: 'Chèque', especes: 'Espèces', avoir: 'Avoir', autre: 'Autre',
+};
+
+// Où en est le règlement d'un document. Déduit des affectations côté backend
+// (vue supplier_document_balances) : le mode imprimé sur la facture n'y compte
+// pour rien.
+const PaymentCell = ({ doc }) => {
+  const methods = (doc.methods || []).map(m => PAYMENT_METHOD_LABEL[m] || m).join(', ');
+  if (doc.payment_status === 'paid') {
+    return (
+      <span style={{ color: '#16a34a', fontWeight: 600 }}>
+        Réglée {formatDate(doc.paid_at)}{methods ? ` · ${methods}` : ''}
+      </span>
+    );
+  }
+  if (doc.doc_type === 'proforma') return <span style={{ color: '#9ca3af' }}>-</span>;
+  if (doc.payment_status === 'unknown') return <span style={{ color: '#9ca3af' }}>Montant inconnu</span>;
+  const overdue = doc.effective_due_date && doc.effective_due_date.slice(0, 10) < new Date().toLocaleDateString('sv-SE');
+  return (
+    <span
+      style={{ color: overdue ? '#dc2626' : '#ea580c', fontWeight: 600 }}
+      title={doc.effective_due_date ? `Échéance : ${formatDate(doc.effective_due_date)}` : undefined}
+    >
+      {doc.payment_status === 'partial' ? 'Partielle' : 'À régler'}
+      {' · '}{formatPrice(doc.remaining_amount)} €
+      {doc.effective_due_date && ` · éch. ${formatDate(doc.effective_due_date)}`}
+    </span>
+  );
+};
+
 const OrdersTab = ({ token }) => {
   const navigate = useNavigate();
   const [orders, setOrders] = useState([]);
@@ -581,7 +617,7 @@ const OrdersTab = ({ token }) => {
             </LinkBox>
           </div>
         ) : (
-          <table className="purchases-table">
+          <table className="purchases-table purchases-table--striped">
             <thead>
               <tr>
                 <SortTh col="bms_reference" label="N° Commande" />
@@ -599,6 +635,8 @@ const OrdersTab = ({ token }) => {
                 <SortTh col="status" label="Statut" className="text-center" />
                 <SortTh col="order_date" label="Date commande" />
                 <SortTh col="received_date" label="Date réception" />
+                <th>Facture</th>
+                <th>Règlement</th>
                 <th>Actions</th>
               </tr>
             </thead>
@@ -653,6 +691,29 @@ const OrdersTab = ({ token }) => {
                   </td>
                   <td>{formatDate(order.order_date)}</td>
                   <td>{formatDate(order.received_date)}</td>
+                  {/* Une ligne par document, dans les deux colonnes : une commande
+                      facturée en deux fois a deux règlements à suivre. */}
+                  <td>
+                    {order.documents?.length > 0 ? order.documents.map(d => (
+                      <div key={d.id} style={{ whiteSpace: 'nowrap' }}>
+                        <LinkBox
+                          to={`/factures-fournisseurs?doc=${d.id}`}
+                          display="inline"
+                          style={{ color: '#f59e0b', fontWeight: 600 }}
+                          title="Ouvrir la facture"
+                        >
+                          {DOC_TYPE_PREFIX[d.doc_type] || ''}{d.number}
+                        </LinkBox>
+                      </div>
+                    )) : <span style={{ color: '#9ca3af' }}>-</span>}
+                  </td>
+                  <td>
+                    {order.documents?.length > 0 ? order.documents.map(d => (
+                      <div key={d.id} style={{ whiteSpace: 'nowrap' }}>
+                        <PaymentCell doc={d} />
+                      </div>
+                    )) : <span style={{ color: '#9ca3af' }}>-</span>}
+                  </td>
                   <td>
                     <div style={{ display: 'flex', gap: '5px' }}>
                       <button

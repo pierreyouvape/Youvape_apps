@@ -36,7 +36,30 @@ const purchaseOrderModel = {
         s.code as supplier_code,
         u.email as created_by_email,
         COALESCE(SUM(poi.qty_ordered), 0) as total_qty_ordered,
-        COALESCE(SUM(poi.qty_received), 0) as total_qty_received
+        COALESCE(SUM(poi.qty_received), 0) as total_qty_received,
+        -- Factures rattachées et où en est leur règlement (colonnes « Facture »
+        -- et « Règlement » de la liste). N↔N : une commande peut être facturée
+        -- en plusieurs fois, d'où un tableau. Le reste à payer se DÉDUIT des
+        -- affectations (vue supplier_document_balances), jamais stocké.
+        (SELECT COALESCE(json_agg(json_build_object(
+                  'id', d.id,
+                  'number', d.number,
+                  'doc_type', d.doc_type,
+                  'total_ttc', d.total_ttc,
+                  'payment_status', b.payment_status,
+                  'remaining_amount', b.remaining_amount,
+                  'effective_due_date', b.effective_due_date,
+                  'paid_at', (SELECT max(p.paid_at) FROM supplier_payment_allocations a
+                                JOIN supplier_payments p ON p.id = a.payment_id
+                               WHERE a.document_id = d.id),
+                  'methods', (SELECT array_agg(DISTINCT p.method) FROM supplier_payment_allocations a
+                                JOIN supplier_payments p ON p.id = a.payment_id
+                               WHERE a.document_id = d.id)
+                ) ORDER BY d.doc_date, d.id), '[]'::json)
+           FROM supplier_document_orders sdo
+           JOIN supplier_documents d ON d.id = sdo.document_id
+           JOIN supplier_document_balances b ON b.document_id = d.id
+          WHERE sdo.purchase_order_id = po.id) as documents
       FROM purchase_orders po
       JOIN suppliers s ON po.supplier_id = s.id
       LEFT JOIN users u ON po.created_by = u.id
