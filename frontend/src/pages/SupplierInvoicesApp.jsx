@@ -67,10 +67,68 @@ const date = (s) => (s ? new Date(s).toLocaleDateString('fr-FR') : '—');
  *
  * `netGap` est additif — la somme de la colonne vaut l'écart global de la
  * facture — et il tombe à zéro dès que le tarif réel est inscrit sur la
- * commande. Les documents enregistrés avant le 01/10/2026 ne l'ont pas : on
- * retombe sur le brut, seule chose qu'on savait à l'époque.
+ * commande.
+ *
+ * Les documents enregistrés avant le 01/10/2026 ne l'ont pas. On le
+ * RECONSTITUE alors depuis le COÛT RÉEL de la ligne, qu'eux ont : la facture
+ * e.tasty #FA082519/2026 affichait « +10,50 € » juste à côté du badge
+ * « Conforme ». Ses 10 ml sont facturés 1,35 € au brut et ramenés à 1,00 € —
+ * le tarif commandé — par la promotion « PACK IMP 1€ 10ML » ; ses deux
+ * promotions valent exactement les 543,50 € d'écart brut de la facture. Un
+ * écart déjà absorbé n'est plus un écart, et le laisser à l'écran fait
+ * réclamer ce qui a été accordé.
+ *
+ * Seulement quand la quantité facturée est celle commandée : sinon l'écart
+ * porte aussi sur des pièces manquantes, dont le coût unitaire ne dit rien.
  */
-const ecartDe = (l) => Number(l.netGap != null ? l.netGap : l.gap) || 0;
+const ecartDe = (l) => {
+  if (l.netGap != null) return Number(l.netGap) || 0;
+  const cout = l.effectiveUnitCost == null ? null : Number(l.effectiveUnitCost);
+  const prevu = l.expectedUnitPrice == null ? null : Number(l.expectedUnitPrice);
+  const facturee = l.qtyInvoiced == null ? null : Number(l.qtyInvoiced);
+  const commandee = l.qtyOrdered == null ? null : Number(l.qtyOrdered);
+  if (cout != null && prevu != null && facturee != null && commandee != null
+      && Math.abs(facturee - commandee) < 0.005) {
+    return Math.round((cout - prevu) * facturee * 100) / 100;
+  }
+  return Number(l.gap) || 0;
+};
+/** L'écart BRUT, celui que le document porte avant toute remise de pied. */
+const ecartBrutDe = (l) => Number(l.gap) || 0;
+
+/**
+ * Les lignes d'un document avec leur écart réel, la REMISE DE PIED COMPRISE.
+ *
+ * Reconstituer l'écart des lignes produit ne suffit pas : la remise, elle,
+ * garderait ses −543,50 € et la colonne ne sommerait plus l'écart global de la
+ * facture — qui vaut zéro sur #FA082519/2026 (1 274,00 € facturés, 1 274,00 €
+ * commandés). Un tableau dont les lignes ne font pas le total ne sert plus à
+ * rien.
+ *
+ * On impute donc à la remise ce que les lignes produit lui ont déjà pris, comme
+ * le moteur impute son `allocated` : la remise qui a servi vaut zéro d'écart,
+ * et seule celle qu'aucune ligne n'explique garde la sienne.
+ *
+ * Tout ceci ne concerne que les documents enregistrés avant le 01/10/2026. Les
+ * suivants portent leur `netGap` et passent ici sans être touchés.
+ */
+const avecEcartReel = (lines) => {
+  const prep = (lines || []).map((l) => ({
+    ...l, ecart: ecartDe(l), ecartBrut: ecartBrutDe(l), impute: 0,
+  }));
+  // Ce que la remise de pied a déjà absorbé sur les lignes produit.
+  let reste = prep.reduce(
+    (t, l) => t + (l.netGap == null ? l.ecartBrut - l.ecart : 0), 0,
+  );
+  for (const l of prep) {
+    if (l.netGap != null || l.verdict !== 'discount' || !(l.ecart < 0) || !(reste > 0.005)) continue;
+    const impute = Math.min(reste, -l.ecart);
+    l.impute = Math.round(impute * 100) / 100;
+    l.ecart = Math.round((l.ecart + impute) * 100) / 100;
+    reste = Math.round((reste - impute) * 100) / 100;
+  }
+  return prep;
+};
 const num = (v) => (v == null ? '—' : String(Math.round(Number(v) * 1000) / 1000));
 
 /**
@@ -240,10 +298,31 @@ const td = { padding: '11px 12px', fontSize: 13, color: C.dark, borderBottom: `1
  * était compté comme une différence alors qu'un port offert n'est pas un écart.
  * Un port FACTURÉ reste affiché : il n'était pas prévu à la commande.
  * ──────────────────────────────────────────────────────── */
+/**
+ * Ce qu'il faut dire sous un écart qu'on a corrigé : ne pas afficher un écart
+ * absorbé est juste, le faire disparaître sans un mot ne l'est pas.
+ */
+const NoteEcart = ({ l, align }) => {
+  const style = {
+    fontSize: 10.5, fontWeight: 600, color: C.greyM, whiteSpace: 'nowrap',
+    textAlign: align || undefined,
+  };
+  if (l.discountShare > 0) {
+    return <div style={style}>facturé {signedEur(l.ecartBrut)} − {eur(l.discountShare)} de remise</div>;
+  }
+  if (l.impute > 0) {
+    return <div style={style}>{eur(l.impute)} imputés au coût des lignes</div>;
+  }
+  if (Math.abs(l.ecartBrut - l.ecart) >= 0.005) {
+    return <div style={style}>facturé {signedEur(l.ecartBrut)}, absorbé par la remise</div>;
+  }
+  return null;
+};
+
 function DifferencesTable({ lines, mobile }) {
-  const rows = useMemo(() => lignesAffichables(lines)
+  const rows = useMemo(() => avecEcartReel(lignesAffichables(lines))
     .map((l) => ({ ...l, meta: VERDICTS[l.verdict] || VERDICTS.other }))
-    .sort((a, b) => (a.meta.rank - b.meta.rank) || (Math.abs(ecartDe(b)) - Math.abs(ecartDe(a)))), [lines]);
+    .sort((a, b) => (a.meta.rank - b.meta.rank) || (Math.abs(b.ecart) - Math.abs(a.ecart))), [lines]);
 
   const gestes = rows.filter(appelleUnGeste).length;
 
@@ -280,15 +359,11 @@ function DifferencesTable({ lines, mobile }) {
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12.5 }}>
               <span>cmd {num(l.qtyOrdered)} → fact {num(l.qtyInvoiced)}</span>
               <span style={{ color: C.greyT }}>{eur(l.lineTotalHt)} HT</span>
-              <strong style={{ color: ecartDe(l) > 0 ? C.red : (ecartDe(l) < 0 ? C.green : C.greyM) }}>
-                {signedEur(ecartDe(l))}
+              <strong style={{ color: l.ecart > 0 ? C.red : (l.ecart < 0 ? C.green : C.greyM) }}>
+                {signedEur(l.ecart)}
               </strong>
             </div>
-            {l.discountShare > 0 && (
-              <div style={{ fontSize: 11, color: C.greyM, textAlign: 'right' }}>
-                facturé {signedEur(l.gap)}, remise de pied −{eur(l.discountShare)}
-              </div>
-            )}
+            <NoteEcart l={l} align="right" />
             {l.meta.action && <div style={{ fontSize: 11.5, color: C.greyM, marginTop: 6 }}>{l.meta.action}</div>}
           </div>
         ))}
@@ -324,15 +399,23 @@ function DifferencesTable({ lines, mobile }) {
               <td style={td}><Badge tone={l.meta.tone}>{l.meta.label}</Badge></td>
               <td style={{ ...td, textAlign: 'right', whiteSpace: 'nowrap', color: 'inherit' }}>{num(l.qtyOrdered)} / {num(l.qtyInvoiced)}</td>
               <td style={{ ...td, textAlign: 'right', color: 'inherit' }}>{l.expectedUnitPrice == null ? '—' : eur(l.expectedUnitPrice)}</td>
-              <td style={{ ...td, textAlign: 'right', color: 'inherit' }}>{l.invoicedUnitPrice == null ? '—' : eur(l.invoicedUnitPrice)}</td>
-              <td style={{ ...td, textAlign: 'right', color: 'inherit' }}>{eur(l.lineTotalHt)}</td>
-              <td style={{ ...td, textAlign: 'right', fontWeight: 700, color: ecartDe(l) > 0 ? C.red : (ecartDe(l) < 0 ? C.green : C.greyM) }}>
-                {signedEur(ecartDe(l))}
-                {l.discountShare > 0 && (
-                  <div style={{ fontSize: 10.5, fontWeight: 600, color: C.greyM, whiteSpace: 'nowrap' }}>
-                    facturé {signedEur(l.gap)} − {eur(l.discountShare)} de remise
+              <td style={{ ...td, textAlign: 'right', color: 'inherit' }}>
+                {l.invoicedUnitPrice == null ? '—' : eur(l.invoicedUnitPrice)}
+                {/* Le tarif du document n'est pas toujours ce que la ligne a
+                    coûté : la remise de pied passe après. Sans ce rappel, un
+                    « 1,35 € facturé » en face d'un « 1,00 € commandé » et d'un
+                    écart nul reste incompréhensible. */}
+                {l.effectiveUnitCost != null && l.invoicedUnitPrice != null
+                  && Math.abs(l.effectiveUnitCost - l.invoicedUnitPrice) >= 0.005 && (
+                  <div style={{ fontSize: 10.5, color: C.greyM, whiteSpace: 'nowrap' }}>
+                    {eur(l.effectiveUnitCost)} réel
                   </div>
                 )}
+              </td>
+              <td style={{ ...td, textAlign: 'right', color: 'inherit' }}>{eur(l.lineTotalHt)}</td>
+              <td style={{ ...td, textAlign: 'right', fontWeight: 700, color: l.ecart > 0 ? C.red : (l.ecart < 0 ? C.green : C.greyM) }}>
+                {signedEur(l.ecart)}
+                <NoteEcart l={l} />
               </td>
               <td style={{ ...td, fontSize: 11.5, color: C.greyT }}>
                 {l.verdict === 'packaging' && l.packFactor
@@ -427,6 +510,9 @@ const fromStoredLines = (lines) => (lines || []).map((l) => ({
   kind: l.kind || 'product',
   lineTotalHt: Number(l.line_total_ht) || 0,
   material: !!l.material,
+  // Le coût réel de la ligne, remises de pied comprises : c'est lui qui dit
+  // qu'un écart brut a déjà été absorbé.
+  effectiveUnitCost: l.effective_unit_cost == null ? null : Number(l.effective_unit_cost),
 }));
 
 /* ═══════════════════════════════════════════════════════════
