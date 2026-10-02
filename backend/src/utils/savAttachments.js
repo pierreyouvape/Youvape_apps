@@ -278,6 +278,50 @@ function inlineAttachmentImages(html) {
   return { html: out, inline };
 }
 
+/**
+ * Sort du HTML les images écrites EN DUR (`<img src="data:image/…;base64,…">`)
+ * pour les enregistrer comme fichiers du ticket, au même format qu'une image
+ * collée dans un ticket existant (`POST /:id/inline-image`).
+ *
+ * Un éditeur sans branchement d'upload (création de ticket, macro) laisse
+ * l'image collée sous cette forme. Elle partait telle quelle dans l'email, où
+ * Gmail et la plupart des messageries bloquent les `data:` : le client recevait
+ * le message amputé de sa photo (#9901043, 02/10/2026). Réécrite en URL de
+ * notre API, elle est ensuite intégrée au mail par inlineAttachmentImages().
+ *
+ * À appeler AVANT inlineAttachmentImages() et avant de stocker le message.
+ *
+ * @param {number} ticketId
+ * @param {string} html corps HTML du message
+ * @returns {string} HTML dont les images `data:` pointent vers notre API
+ */
+function persistDataUriImages(ticketId, html) {
+  if (!html || typeof html !== 'string' || !html.includes('data:image/')) return html || '';
+
+  const appBaseUrl = process.env.APP_BASE_URL || 'https://apps.youvape.fr';
+  const dir = path.join(UPLOAD_ROOT, String(ticketId));
+  const EXT_BY_MIME = { png: 'png', jpeg: 'jpg', jpg: 'jpg', gif: 'gif', webp: 'webp', bmp: 'bmp' };
+
+  return html.replace(
+    /(<img\b[^>]*\bsrc\s*=\s*["'])data:image\/([a-z]+);base64,([A-Za-z0-9+/=\s]+)(["'])/gi,
+    (match, before, subtype, b64, quote) => {
+      const ext = EXT_BY_MIME[subtype.toLowerCase()];
+      if (!ext) return match; // SVG & co : pas d'image exécutable dans nos fichiers
+      try {
+        const buffer = Buffer.from(b64.replace(/\s/g, ''), 'base64');
+        if (buffer.length === 0) return match;
+        fs.mkdirSync(dir, { recursive: true });
+        const filename = `${crypto.randomUUID()}_image-collee.${ext}`;
+        fs.writeFileSync(path.join(dir, filename), buffer);
+        return `${before}${appBaseUrl}/api/sav/attachments/${ticketId}/${filename}${quote}`;
+      } catch (e) {
+        console.warn(`[savAttachments] Image collée non enregistrée (ticket ${ticketId}) :`, e.message);
+        return match;
+      }
+    }
+  );
+}
+
 function toMailgunAttachments(files) {
   if (!Array.isArray(files) || files.length === 0) return [];
   return files.map((file) => ({
@@ -294,5 +338,6 @@ module.exports = {
   saveAttachmentsFromPublicUrls,
   toMailgunAttachments,
   inlineAttachmentImages,
+  persistDataUriImages,
   safeBasename,
 };

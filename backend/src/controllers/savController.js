@@ -4,7 +4,7 @@ const savBlocklistModel = require('../models/savBlocklistModel');
 const mailgunService = require('../services/mailgunService');
 const emailTemplateService = require('../services/emailTemplateService');
 const pool = require('../config/database');
-const { saveAttachments, saveAttachmentsFromUrls, saveAttachmentsFromPublicUrls, toMailgunAttachments, inlineAttachmentImages } = require('../utils/savAttachments');
+const { saveAttachments, saveAttachmentsFromUrls, saveAttachmentsFromPublicUrls, toMailgunAttachments, inlineAttachmentImages, persistDataUriImages } = require('../utils/savAttachments');
 const { getTrackingStatus } = require('../services/trackingService');
 const { dispatchNotifications } = require('../services/notificationDispatcher');
 const { tagDuplicates } = require('../services/duplicateDetector');
@@ -678,9 +678,9 @@ const savController = {
   reply: async (req, res) => {
     try {
       const ticketId = parseInt(req.params.id);
-      const { body, agent_name, is_private } = req.body;
+      const { agent_name, is_private } = req.body;
 
-      if (!body) return res.status(400).json({ error: 'Le message est requis' });
+      if (!req.body.body) return res.status(400).json({ error: 'Le message est requis' });
 
       const ticket = await savModel.getById(ticketId);
       if (!ticket) return res.status(404).json({ error: 'Ticket introuvable' });
@@ -704,6 +704,8 @@ const savController = {
 
       const from = agent_name || 'SAV Youvape';
       const storedAttachments = saveAttachments(ticketId, req.files);
+      // Images collées restées en `data:` (macro…) → fichiers du ticket.
+      const body = persistDataUriImages(ticketId, req.body.body);
 
       // Note privée → pas d'envoi email, juste stockage
       if (is_private === 'true' || is_private === true) {
@@ -1011,8 +1013,9 @@ const savController = {
     try {
       const {
         order_id, order_tracking, customer_name, customer_email, customer_phone,
-        subject, body, is_private, sav_status, assigned_to_id, agent_name,
+        subject, is_private, sav_status, assigned_to_id, agent_name,
       } = req.body;
+      let { body } = req.body;
 
       if (!customer_email || !subject || !body || !body.trim()) {
         return res.status(400).json({ error: 'Email, sujet et message sont requis' });
@@ -1059,6 +1062,9 @@ const savController = {
 
       // Sauvegarde des éventuelles PJ
       const storedAttachments = saveAttachments(ticket.id, req.files);
+      // L'éditeur de création n'uploade pas les images collées (le ticket
+      // n'existe pas encore) : elles arrivent en `data:`, on les range ici.
+      body = persistDataUriImages(ticket.id, body);
 
       // Réponse publique → envoi mail au client (enrobé dans le template réponse).
       // En cas d'échec, on stocke quand même le message avec send_failed (comme reply).
