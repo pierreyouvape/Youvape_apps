@@ -41,6 +41,28 @@ async function findExisting(supplierId, number, db = pool) {
  * paiement.
  */
 /**
+ * L'ÉCART DE TARIF D'UNE LIGNE, EN SQL — la même règle que l'écran de contrôle,
+ * écrite une seule fois pour que la liste et le détail ne se contredisent plus.
+ *
+ * On retient le RÉSIDU après remise de pied, SAUF quand la facture ne compte pas
+ * dans la même unité que la commande : un rapport de quantités ENTIER (un carton
+ * de 5 contre 5 pièces) veut dire que le résidu compare un prix de carton à un
+ * prix de pièce. C'est alors l'écart RÉEL de la ligne qui fait foi.
+ *
+ * Sans ça, la liste annonçait « tarif +21,46 € » sur V3/2026/37644 pendant que
+ * la facture ouverte, elle, affichait +3,46 € — le vrai montant (02/10/2026).
+ */
+const ECART_TARIF_SQL = `
+  CASE WHEN l.net_gap IS NOT NULL
+        AND l.qty > 0 AND l.expected_qty > 0 AND l.qty <> l.expected_qty
+        AND round(GREATEST(l.qty, l.expected_qty) / LEAST(l.qty, l.expected_qty)) >= 2
+        AND abs(GREATEST(l.qty, l.expected_qty) / LEAST(l.qty, l.expected_qty)
+                - round(GREATEST(l.qty, l.expected_qty) / LEAST(l.qty, l.expected_qty))) < 0.01
+       THEN l.net_gap
+       ELSE COALESCE(l.residual_gap_price, l.gap_price, 0)
+  END`;
+
+/**
  * Gèle les lignes d'un document. Partagé par l'enregistrement et le re-contrôle,
  * pour que les deux ne divergent jamais.
  */
@@ -216,13 +238,13 @@ async function listDocuments({ supplierId, status, paymentStatus, from, to, docT
               WHERE l.document_id = d.id
                 AND l.verdict IN ('price', 'qty_price')
                 AND l.material
-                AND abs(COALESCE(l.residual_gap_price, l.gap_price, 0)) >= 0.10) AS price_diff_count,
-            (SELECT COALESCE(SUM(COALESCE(l.residual_gap_price, l.gap_price, 0)), 0)
+                AND abs(${ECART_TARIF_SQL}) >= 0.10) AS price_diff_count,
+            (SELECT COALESCE(SUM(${ECART_TARIF_SQL}), 0)
                FROM supplier_document_lines l
               WHERE l.document_id = d.id
                 AND l.verdict IN ('price', 'qty_price')
                 AND l.material
-                AND abs(COALESCE(l.residual_gap_price, l.gap_price, 0)) >= 0.10) AS price_gap,
+                AND abs(${ECART_TARIF_SQL}) >= 0.10) AS price_gap,
             -- Les trois dates que l'acheteur suit : quand il a commandé, quand
             -- le fournisseur a facturé, quand l'argent est parti.
             (SELECT min(po.order_date) FROM supplier_document_orders o
