@@ -30,32 +30,24 @@ const PeriodFilter = ({ onPeriodChange, onComparisonChange, defaultPeriod = '30d
         start = null;
         end = null;
         break;
-      case 'today':
-        start = today;
-        end = today;
-        break;
-      case 'yesterday':
-        start = new Date(today);
-        start.setDate(start.getDate() - 1);
-        end = new Date(start);
-        break;
-      case '7d':
-        start = new Date(today);
-        start.setDate(start.getDate() - 6);
-        end = today;
-        break;
       case '30d':
+      case '60d':
+      case '90d':
+      case '180d': {
+        // Fenetre glissante incluant aujourd'hui : 30 jours = J-29 -> J.
+        const days = parseInt(period, 10);
         start = new Date(today);
-        start.setDate(start.getDate() - 29);
+        start.setDate(start.getDate() - (days - 1));
+        end = today;
+        break;
+      }
+      case 'year_to_date':
+        start = new Date(now.getFullYear(), 0, 1);
         end = today;
         break;
       case 'current_month':
         start = new Date(now.getFullYear(), now.getMonth(), 1);
         end = today;
-        break;
-      case 'last_month':
-        start = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-        end = new Date(now.getFullYear(), now.getMonth(), 0);
         break;
       case 'custom':
         if (customStartDate && customEndDate) {
@@ -102,10 +94,7 @@ const PeriodFilter = ({ onPeriodChange, onComparisonChange, defaultPeriod = '30d
   const handlePeriodClick = (period) => {
     setSelectedPeriod(period);
     if (period !== 'custom') {
-      // Une seule journee : le groupement semaine/mois n'a pas de sens
-      const group = (period === 'today' || period === 'yesterday') ? 'day' : groupBy;
-      if (group !== groupBy) setGroupBy(group);
-      applyFilters(period, group);
+      applyFilters(period, groupBy);
     }
   };
 
@@ -164,12 +153,12 @@ const PeriodFilter = ({ onPeriodChange, onComparisonChange, defaultPeriod = '30d
         <span style={{ fontSize: '12px', fontWeight: '600', color: '#6b7280', whiteSpace: 'nowrap' }}>Periode :</span>
         {[
           { value: 'all', label: 'Tout' },
-          { value: 'today', label: "Aujourd'hui" },
-          { value: 'yesterday', label: 'Hier' },
-          { value: '7d', label: '7 derniers jours' },
           { value: '30d', label: '30 derniers jours' },
-          { value: 'current_month', label: 'Mois en cours' },
-          { value: 'last_month', label: 'Mois dernier' }
+          { value: '60d', label: '60 derniers jours' },
+          { value: '90d', label: '90 derniers jours' },
+          { value: '180d', label: '180 derniers jours' },
+          { value: 'year_to_date', label: "Depuis le début d'année" },
+          { value: 'current_month', label: 'Mois en cours' }
         ].map(period => (
           <button
             key={period.value}
@@ -201,7 +190,7 @@ const PeriodFilter = ({ onPeriodChange, onComparisonChange, defaultPeriod = '30d
             fontWeight: '500'
           }}
         >
-          {showAdvanced ? 'Fermer' : 'Personnalise...'}
+          {showAdvanced ? 'Fermer' : 'Personnaliser'}
         </button>
       </div>
 
