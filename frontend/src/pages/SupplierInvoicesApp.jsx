@@ -94,6 +94,31 @@ const VERDICTS = {
   other: { rank: 11, label: 'Ligne hors produit', tone: 'grey', action: 'À qualifier' },
   ok: { rank: 99, label: 'Conforme', tone: 'green', action: null },
 };
+/**
+ * Les verdicts qui n'appellent AUCUN geste. Même liste que le décompte
+ * « Écarts » de la liste des factures (supplierDocumentModel.listDocuments) :
+ * l'écran n'a pas le droit d'annoncer une différence que la liste ne compte
+ * pas, ni l'inverse. Un geste suppose en plus un écart matériel — au-delà du
+ * garde-fou d'arrondi.
+ */
+const VERDICTS_SANS_GESTE = ['ok', 'free', 'discount', 'rounding', 'packaging', 'shipping'];
+const appelleUnGeste = (l) => !!l.verdict && !VERDICTS_SANS_GESTE.includes(l.verdict) && !!l.material;
+
+/**
+ * Les lignes d'un document qu'on met à l'écran : tout ce qui est produit, et le
+ * hors produit qui porte un montant ou un écart. Un port OFFERT à 0,00 € n'est
+ * pas une ligne de contrôle — il figurait pourtant au décompte des différences
+ * de la facture FAC/2026/04474.
+ *
+ * Une seule définition, parce que l'intitulé (« tant de lignes ») et le tableau
+ * en dessous doivent compter la même chose.
+ */
+const lignesAffichables = (lines) => (lines || [])
+  .filter((l) => l.verdict)
+  .filter((l) => (l.kind || 'product') === 'product'
+    || Math.abs(Number(l.lineTotalHt) || 0) >= 0.005
+    || Math.abs(ecartDe(l)) >= 0.005);
+
 const TONES = {
   red: { color: C.red, bg: C.redL }, orange: { color: C.orange, bg: C.orangeL },
   green: { color: C.green, bg: C.greenL }, blue: { color: C.blue, bg: C.blueL },
@@ -201,27 +226,50 @@ const Field = ({ label, children, width }) => (
 const th = { padding: '10px 12px', textAlign: 'left', fontSize: 11.5, fontWeight: 700, color: C.greyT, borderBottom: `2px solid ${C.greyB}`, background: C.grey, whiteSpace: 'nowrap' };
 const td = { padding: '11px 12px', fontSize: 13, color: C.dark, borderBottom: `1px solid ${C.greyB}` };
 
-/* ─── Tableau des différences ─────────────────────────────
+/* ─── La facture, ligne à ligne ───────────────────────────
  * Règle posée le 25/09/2026 : TOUTES les différences sont affichées, sans
  * filtre de seuil. Le seuil ne décide que de ce qui part en réclamation.
+ *
+ * Depuis le 02/10/2026, les lignes CONFORMES y sont aussi. « 2 différences sur
+ * 13 lignes » laissait les onze autres invisibles — or contrôler une facture,
+ * c'est autant voir ce qui a bien été compté que ce qui cloche. Elles passent
+ * après les différences (rang 99) et portent leur badge vert.
+ *
+ * Une ligne HORS PRODUIT À ZÉRO, elle, n'a rien à y faire : le « Frais de
+ * transport EXTRANET Livraison standard » à 0,00 € de la facture FAC/2026/04474
+ * était compté comme une différence alors qu'un port offert n'est pas un écart.
+ * Un port FACTURÉ reste affiché : il n'était pas prévu à la commande.
  * ──────────────────────────────────────────────────────── */
 function DifferencesTable({ lines, mobile }) {
-  const rows = useMemo(() => (lines || [])
-    .filter((l) => l.verdict && l.verdict !== 'ok')
+  const rows = useMemo(() => lignesAffichables(lines)
     .map((l) => ({ ...l, meta: VERDICTS[l.verdict] || VERDICTS.other }))
     .sort((a, b) => (a.meta.rank - b.meta.rank) || (Math.abs(ecartDe(b)) - Math.abs(ecartDe(a)))), [lines]);
 
+  const gestes = rows.filter(appelleUnGeste).length;
+
   if (rows.length === 0) {
     return (
-      <div style={{ padding: 22, textAlign: 'center', color: C.green, fontWeight: 600, background: C.greenL, borderRadius: 10 }}>
-        Aucune différence : la facture correspond à la commande, ligne à ligne.
+      <div style={{ padding: 18, background: C.grey, color: C.greyM, borderRadius: 10, fontSize: 13, textAlign: 'center' }}>
+        Aucune ligne enregistrée pour ce document.
       </div>
     );
   }
 
+  // Le verdict d'ensemble, au-dessus du détail : il disait « aucune différence »
+  // À LA PLACE du tableau, et on perdait le détail de ce qui avait été compté.
+  const verdict = gestes === 0 && (
+    <div style={{
+      padding: 13, marginBottom: 10, color: C.green, fontWeight: 600, fontSize: 13,
+      background: C.greenL, borderRadius: 10,
+    }}>
+      Aucune différence à traiter : la facture correspond à la commande, ligne à ligne.
+    </div>
+  );
+
   if (mobile) {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        {verdict}
         {rows.map((l, i) => (
           <div key={i} style={{ background: C.white, border: `1px solid ${C.greyB}`, borderRadius: 10, padding: 12 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'flex-start' }}>
@@ -231,7 +279,10 @@ function DifferencesTable({ lines, mobile }) {
             <div style={{ fontSize: 12, color: C.greyT, margin: '4px 0 8px' }}>{l.label || ''}</div>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12.5 }}>
               <span>cmd {num(l.qtyOrdered)} → fact {num(l.qtyInvoiced)}</span>
-              <strong style={{ color: ecartDe(l) > 0 ? C.red : C.green }}>{signedEur(ecartDe(l))}</strong>
+              <span style={{ color: C.greyT }}>{eur(l.lineTotalHt)} HT</span>
+              <strong style={{ color: ecartDe(l) > 0 ? C.red : (ecartDe(l) < 0 ? C.green : C.greyM) }}>
+                {signedEur(ecartDe(l))}
+              </strong>
             </div>
             {l.discountShare > 0 && (
               <div style={{ fontSize: 11, color: C.greyM, textAlign: 'right' }}>
@@ -246,6 +297,8 @@ function DifferencesTable({ lines, mobile }) {
   }
 
   return (
+    <>
+    {verdict}
     <div style={{ overflowX: 'auto', border: `1px solid ${C.greyB}`, borderRadius: 10, background: C.white }}>
       <table style={{ width: '100%', borderCollapse: 'collapse' }}>
         <thead>
@@ -256,20 +309,24 @@ function DifferencesTable({ lines, mobile }) {
             <th style={{ ...th, textAlign: 'right' }}>Qté cmd / fact</th>
             <th style={{ ...th, textAlign: 'right' }}>Tarif commandé</th>
             <th style={{ ...th, textAlign: 'right' }}>Tarif facturé</th>
+            <th style={{ ...th, textAlign: 'right' }}>Montant HT</th>
             <th style={{ ...th, textAlign: 'right' }}>Écart HT</th>
             <th style={th}>À faire</th>
           </tr>
         </thead>
         <tbody>
           {rows.map((l, i) => (
-            <tr key={i}>
-              <td style={{ ...td, fontWeight: 600, whiteSpace: 'nowrap' }}>{l.ref || '—'}</td>
-              <td style={{ ...td, maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{l.label || ''}</td>
+            // Une ligne conforme se lit en gris : elle est là pour être vue, pas
+            // pour disputer l'attention à ce qui cloche.
+            <tr key={i} style={{ color: l.verdict === 'ok' ? C.greyT : C.dark }}>
+              <td style={{ ...td, fontWeight: 600, whiteSpace: 'nowrap', color: 'inherit' }}>{l.ref || '—'}</td>
+              <td style={{ ...td, maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'inherit' }}>{l.label || ''}</td>
               <td style={td}><Badge tone={l.meta.tone}>{l.meta.label}</Badge></td>
-              <td style={{ ...td, textAlign: 'right', whiteSpace: 'nowrap' }}>{num(l.qtyOrdered)} / {num(l.qtyInvoiced)}</td>
-              <td style={{ ...td, textAlign: 'right' }}>{l.expectedUnitPrice == null ? '—' : eur(l.expectedUnitPrice)}</td>
-              <td style={{ ...td, textAlign: 'right' }}>{l.invoicedUnitPrice == null ? '—' : eur(l.invoicedUnitPrice)}</td>
-              <td style={{ ...td, textAlign: 'right', fontWeight: 700, color: ecartDe(l) > 0 ? C.red : (ecartDe(l) < 0 ? C.green : C.greyT) }}>
+              <td style={{ ...td, textAlign: 'right', whiteSpace: 'nowrap', color: 'inherit' }}>{num(l.qtyOrdered)} / {num(l.qtyInvoiced)}</td>
+              <td style={{ ...td, textAlign: 'right', color: 'inherit' }}>{l.expectedUnitPrice == null ? '—' : eur(l.expectedUnitPrice)}</td>
+              <td style={{ ...td, textAlign: 'right', color: 'inherit' }}>{l.invoicedUnitPrice == null ? '—' : eur(l.invoicedUnitPrice)}</td>
+              <td style={{ ...td, textAlign: 'right', color: 'inherit' }}>{eur(l.lineTotalHt)}</td>
+              <td style={{ ...td, textAlign: 'right', fontWeight: 700, color: ecartDe(l) > 0 ? C.red : (ecartDe(l) < 0 ? C.green : C.greyM) }}>
                 {signedEur(ecartDe(l))}
                 {l.discountShare > 0 && (
                   <div style={{ fontSize: 10.5, fontWeight: 600, color: C.greyM, whiteSpace: 'nowrap' }}>
@@ -287,6 +344,7 @@ function DifferencesTable({ lines, mobile }) {
         </tbody>
       </table>
     </div>
+    </>
   );
 }
 
@@ -364,6 +422,11 @@ const fromStoredLines = (lines) => (lines || []).map((l) => ({
   gap: Number(l.gap) || 0,
   netGap: l.net_gap == null ? null : Number(l.net_gap),
   discountShare: Number(l.discount_share) || 0,
+  // Sans le genre ni le montant, impossible d'écarter une ligne hors produit à
+  // zéro ni d'afficher ce que la ligne a coûté.
+  kind: l.kind || 'product',
+  lineTotalHt: Number(l.line_total_ht) || 0,
+  material: !!l.material,
 }));
 
 /* ═══════════════════════════════════════════════════════════
@@ -1549,7 +1612,12 @@ function ReceptionState({ orders }) {
  * colonnes : elle a besoin de toute la largeur.
  */
 function DocumentPanel({ detail, mobile, onClose, onStatus, onDelete, onSettle }) {
-  const ecarts = detail.lines.filter((l) => l.verdict && l.verdict !== 'ok').length;
+  const lignes = lignesAffichables(fromStoredLines(detail.lines));
+  // Ce qui APPELLE UN GESTE, même lecture que la colonne « Écarts » de la liste.
+  // « 2 différences » comptait le port offert et la remise de pied de la facture
+  // FAC/2026/04474, qui ne demandent rien ni l'un ni l'autre.
+  const ecarts = lignes.filter(appelleUnGeste).length;
+  const conformes = lignes.filter((l) => l.verdict === 'ok').length;
   const tarifs = lignesEcartTarif(detail.lines);
   const ecartTarif = tarifs.reduce((t, l) => t + ecartTarifDe(l), 0);
   const avoir = detail.doc_type === 'credit_note';
@@ -1626,9 +1694,13 @@ function DocumentPanel({ detail, mobile, onClose, onStatus, onDelete, onSettle }
         )}
 
         <div style={{ fontSize: 12, fontWeight: 700, color: C.greyT, marginBottom: 8 }}>
-          DIFFÉRENCES CONSTATÉES AU CONTRÔLE ({ecarts} sur {detail.lines.length} lignes)
+          LA FACTURE LIGNE À LIGNE — {lignes.length} ligne{lignes.length > 1 ? 's' : ''}
+          {ecarts > 0
+            ? `, dont ${ecarts} différence${ecarts > 1 ? 's' : ''} à traiter`
+            : ', aucune différence à traiter'}
+          {conformes > 0 && ` · ${conformes} conforme${conformes > 1 ? 's' : ''} à la commande`}
         </div>
-        <DifferencesTable lines={fromStoredLines(detail.lines)} mobile={mobile} />
+        <DifferencesTable lines={lignes} mobile={mobile} />
 
         {Math.abs(reste) > 0.009 && onSettle && (
           <div style={{
