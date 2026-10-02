@@ -345,6 +345,44 @@ async function createPayment({ supplierId, method, paidAt, amount, reference, no
   }
 }
 
+/**
+ * Supprime un règlement, et avec lui ce qu'il soldait.
+ *
+ * Rien d'autre à défaire : les imputations partent en CASCADE, et le solde d'une
+ * facture n'est pas une colonne mais une vue (`supplier_document_balances`) —
+ * les factures que ce règlement couvrait redeviennent dues à la lecture
+ * suivante, sans écriture ni rattrapage.
+ *
+ * On rend la liste de ce qu'il couvrait AVANT de le supprimer, pour que l'écran
+ * puisse le dire. « Ce règlement soldait trois factures » n'est pas une
+ * information qu'on découvre après coup.
+ */
+async function deletePayment(id, db = pool) {
+  const client = await db.connect();
+  try {
+    await client.query('BEGIN');
+    const { rows: documents } = await client.query(
+      `SELECT d.id, d.number, d.doc_type, a.amount
+         FROM supplier_payment_allocations a
+         JOIN supplier_documents d ON d.id = a.document_id
+        WHERE a.payment_id = $1
+        ORDER BY d.doc_date, d.id`,
+      [id],
+    );
+    const { rows } = await client.query(
+      'DELETE FROM supplier_payments WHERE id = $1 RETURNING *',
+      [id],
+    );
+    await client.query('COMMIT');
+    return rows[0] ? { ...rows[0], documents } : null;
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 /** Règlements d'un fournisseur, avec ce que chacun solde. */
 async function listPayments({ supplierId, method, from, to, limit = 100 } = {}, db = pool) {
   const where = [];
@@ -735,6 +773,7 @@ module.exports = {
   getDocument,
   updateStatus,
   createPayment,
+  deletePayment,
   listPayments,
   listUnpaid,
   deleteDocument,

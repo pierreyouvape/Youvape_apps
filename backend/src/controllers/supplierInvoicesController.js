@@ -391,6 +391,25 @@ async function createPayment(req, res) {
   }
 }
 
+/**
+ * DELETE /api/supplier-invoices/payments/:id — supprimer un règlement.
+ *
+ * Il n'y avait aucun moyen d'en défaire un : un essai, une erreur de montant ou
+ * un relevé saisi deux fois restaient là pour toujours, et quatre règlements de
+ * test du 28/09/2026 traînaient dans la liste sans plus aucune facture en face.
+ * Les factures qu'il soldait redeviennent dues du même mouvement.
+ */
+async function deletePayment(req, res) {
+  try {
+    const payment = await supplierDocumentModel.deletePayment(parseInt(req.params.id, 10));
+    if (!payment) return res.status(404).json({ error: 'Règlement introuvable' });
+    return res.json({ deleted: true, payment });
+  } catch (error) {
+    console.error('[supplier-invoices] suppression de règlement :', error.message);
+    return res.status(500).json({ error: error.message || 'Erreur serveur' });
+  }
+}
+
 async function listPayments(req, res) {
   try {
     const rows = await supplierDocumentModel.listPayments({
@@ -437,6 +456,7 @@ module.exports = {
   getClaimMessage,
   deleteDocument,
   createPayment,
+  deletePayment,
   listPayments,
   listUnpaid,
   getParsers,

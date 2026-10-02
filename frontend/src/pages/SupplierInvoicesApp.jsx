@@ -241,6 +241,9 @@ const StorageBadge = ({ ordered, received }) => {
  * d'arrondi de 0,10 €. C'est une alerte, pas un blocage — on règle des factures
  * au tarif différent tous les mois, il faut seulement le savoir avant.
  */
+/** Le plafond du serveur (`supplierInvoicesController.listDocuments`). */
+const LIMITE_LISTE = 500;
+
 const SEUIL_TARIF = 0.10;
 const ecartTarifDe = (l) => {
   // Facturé AU CARTON, commandé EN PIÈCES : le résidu de tarif compare alors un
@@ -254,13 +257,17 @@ const ecartTarifDe = (l) => {
 const lignesEcartTarif = (lines) => (lines || []).filter((l) => ['price', 'qty_price'].includes(l.verdict)
   && l.material && Math.abs(ecartTarifDe(l)) >= SEUIL_TARIF);
 
-const Kpi = ({ label, value, tone }) => (
-  <div style={{
+const Kpi = ({ label, value, tone, hint, title }) => (
+  <div title={title} style={{
     flex: 1, minWidth: 140, background: C.white, borderRadius: 12, border: `1px solid ${C.greyB}`,
     padding: '13px 16px',
   }}>
     <div style={{ fontSize: 21, fontWeight: 800, color: tone ? TONES[tone].color : C.dark }}>{value}</div>
     <div style={{ fontSize: 12, color: C.greyT, marginTop: 2 }}>{label}</div>
+    {/* Ce que le chiffre ne dit pas tout seul : la période qu'il couvre, ou ce
+        qui manque pour qu'il soit complet. Un total de TVA sans son périmètre
+        est un chiffre qu'on recopie dans une déclaration sans le savoir. */}
+    {hint && <div style={{ fontSize: 10.5, color: C.greyM, marginTop: 3 }}>{hint}</div>}
   </div>
 );
 
@@ -1321,7 +1328,10 @@ function FilingTab({ suppliers, mobile, reloadKey, onSaved }) {
     setLoading(true);
     try {
       const params = Object.fromEntries(Object.entries(filters).filter(([, v]) => v));
-      const { data } = await axios.get(BASE, { params });
+      // Le maximum que le serveur accepte : un total de TVA mensuel doit porter
+      // sur TOUT le mois, et la valeur par défaut (100) l'aurait tronqué en
+      // silence dès qu'un mois dépasse cent factures.
+      const { data } = await axios.get(BASE, { params: { ...params, limit: LIMITE_LISTE } });
       setRows(data);
     } finally { setLoading(false); }
   }, [filters]);
@@ -1416,6 +1426,28 @@ function FilingTab({ suppliers, mobile, reloadKey, onSaved }) {
 
   const totalDu = rows.reduce((s, r) => s + (Number(r.remaining_amount) || 0), 0);
   const totalEcarts = rows.reduce((s, r) => s + (Number(r.difference_count) || 0), 0);
+  /* ─── TVA déductible ───────────────────────────────────────
+   * La TVA que les fournisseurs ont facturée, donc celle qu'on récupère. Elle
+   * est lue sur le document lui-même (`total_tva`), jamais recalculée depuis le
+   * HT : un document peut porter deux taux, et 20 % appliqués d'office
+   * inventeraient des centimes à chaque ligne.
+   *
+   * Un AVOIR est stocké en négatif (cf. parseurs) : il se déduit tout seul,
+   * comme il se déduit de la déclaration.
+   *
+   * Le périmètre est celui des filtres, donc un mois se lit en posant Du et Au
+   * — qui portent sur la DATE DU DOCUMENT, la bonne base pour la TVA sur les
+   * achats de biens. Deux réserves affichées sous le chiffre plutôt que tues :
+   * un document dont la TVA n'a pas été lue, et une liste tronquée par la
+   * limite du serveur.
+   * ──────────────────────────────────────────────────────── */
+  const totalTva = rows.reduce((s, r) => s + (Number(r.total_tva) || 0), 0);
+  const sansTva = rows.filter((r) => r.total_tva == null).length;
+  const tronquee = rows.length >= LIMITE_LISTE;
+  const reserves = [
+    sansTva > 0 ? `${sansTva} document${sansTva > 1 ? 's' : ''} sans TVA lue` : null,
+    tronquee ? `liste limitée à ${LIMITE_LISTE} documents` : null,
+  ].filter(Boolean).join(' · ');
   // Les factures dont le tarif n'est pas celui de la commande. Alerte, pas
   // blocage : elles se contrôlent et se règlent comme les autres, mais l'écart
   // est à réclamer au fournisseur ou à aligner dans BMS.
@@ -1468,6 +1500,16 @@ function FilingTab({ suppliers, mobile, reloadKey, onSaved }) {
 
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
         <Kpi label="Documents" value={rows.length} />
+        <Kpi
+          label="TVA déductible"
+          value={eur(totalTva)}
+          tone="blue"
+          hint={reserves || (filters.from || filters.to
+            ? 'sur la période filtrée, avoirs déduits'
+            : 'tous documents affichés — filtre Du / Au pour un mois')}
+          title={"TVA facturée par les fournisseurs sur les documents affichés, telle qu'elle est imprimée dessus."
+            + ' Les avoirs viennent en déduction. Les filtres Du / Au portent sur la date du document.'}
+        />
         <Kpi label="Reste à payer" value={eur(totalDu)} tone={totalDu > 0 ? 'orange' : 'green'} />
         <Kpi label="Différences relevées" value={totalEcarts} tone={totalEcarts > 0 ? 'red' : 'green'} />
       </div>
@@ -1542,6 +1584,7 @@ function FilingTab({ suppliers, mobile, reloadKey, onSaved }) {
                 <th style={th}>Fournisseur</th>
                 <th style={th}>Type</th>
                 <th style={{ ...th, textAlign: 'right' }}>Total TTC</th>
+                <th style={{ ...th, textAlign: 'right' }}>TVA</th>
                 <th style={{ ...th, textAlign: 'center' }}>Écarts</th>
                 <th style={{ ...th, textAlign: 'center' }}>Stockage</th>
                 <th style={th}>Contrôle</th>
@@ -1553,7 +1596,7 @@ function FilingTab({ suppliers, mobile, reloadKey, onSaved }) {
             </thead>
             <tbody>
               {rows.length === 0 && (
-                <tr><td style={{ ...td, textAlign: 'center', color: C.greyM, padding: 26 }} colSpan={14}>
+                <tr><td style={{ ...td, textAlign: 'center', color: C.greyM, padding: 26 }} colSpan={15}>
                   Aucun document. Dépose une facture depuis l'onglet Contrôle.
                 </td></tr>
               )}
@@ -1581,6 +1624,13 @@ function FilingTab({ suppliers, mobile, reloadKey, onSaved }) {
                       ...td, textAlign: 'right', fontWeight: 700,
                       color: r.doc_type === 'credit_note' ? C.blue : C.dark,
                     }} onClick={() => openDetail(r.id)}>{eur(r.total_ttc)}</td>
+                    {/* La TVA telle que le fournisseur l'a imprimée, jamais
+                        recalculée : un document peut porter deux taux. */}
+                    <td style={{ ...td, textAlign: 'right', color: C.greyT }} onClick={() => openDetail(r.id)}>
+                      {r.total_tva == null
+                        ? <span title="Le document ne porte pas de total de TVA lisible" style={{ color: C.orange }}>—</span>
+                        : eur(r.total_tva)}
+                    </td>
                     <td style={{ ...td, textAlign: 'center' }} onClick={() => openDetail(r.id)}>
                       {Number(r.difference_count) > 0
                         ? <Badge tone="red">{r.difference_count}</Badge>
@@ -1823,6 +1873,8 @@ function DocumentPanel({ detail, mobile, onClose, onStatus, onDelete, onSettle }
 
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 16 }}>
           <Kpi label="Total HT" value={eur(detail.total_ht)} />
+          {/* Entre le HT et le TTC, ce qui se récupère. */}
+          <Kpi label="TVA" value={detail.total_tva == null ? '—' : eur(detail.total_tva)} tone="blue" />
           <Kpi label="Total TTC" value={eur(detail.total_ttc)} />
           <Kpi label="Réglé" value={eur(detail.paid_amount)} />
           <Kpi label="Reste dû" value={eur(detail.remaining_amount)} tone={Number(detail.remaining_amount) > 0 ? 'orange' : 'green'} />
@@ -1930,7 +1982,7 @@ const methodLabel = (m) => (METHODS.find((x) => x[0] === m) || [])[1] || m;
  * on décide. Ici on regarde ce qui est parti et ce qui reste dû, par
  * fournisseur et par moyen.
  * ═══════════════════════════════════════════════════════════ */
-function PaymentsTab({ mobile, reloadKey }) {
+function PaymentsTab({ mobile, reloadKey, onSaved }) {
   const [payments, setPayments] = useState([]);
   const [unpaid, setUnpaid] = useState([]);
   const [filters, setFilters] = useState({ supplier: '', method: '', statut: '', q: '' });
@@ -1955,6 +2007,11 @@ function PaymentsTab({ mobile, reloadKey }) {
     // toujours la référence du règlement — vide tant qu'il n'y en a pas.
     const faits = payments.map((p) => ({
       cle: `p${p.id}`,
+      // L'identifiant du règlement lui-même : c'est ce qui se supprime. Une
+      // ligne « en attente » n'en a pas — elle n'est pas un règlement, c'est une
+      // facture qui en espère un.
+      paymentId: p.id,
+      documentCount: Number(p.document_count) || 0,
       // Un règlement qui ne solde que des avoirs n'est pas un paiement : c'est
       // un avoir consommé. L'afficher « Réglé » laisserait croire à une sortie
       // d'argent qui n'a pas eu lieu.
@@ -1993,6 +2050,34 @@ function PaymentsTab({ mobile, reloadKey }) {
     setDetail(data);
   };
   const refreshDoc = async () => { await load(); if (detail) openDoc(detail.id); };
+
+  /**
+   * Défaire un règlement.
+   *
+   * On annonce AVANT ce que ça entraîne : un règlement groupé solde plusieurs
+   * factures, et les remettre toutes « à payer » sans l'avoir dit serait une
+   * surprise désagréable un jour de rapprochement bancaire. Les règlements de
+   * test du 28/09/2026, eux, ne soldent plus rien — la liste le dit aussi.
+   */
+  const [suppression, setSuppression] = useState(null);
+  const supprimer = async (x) => {
+    const concernees = x.documents
+      ? `\n\nCes factures redeviendront « à payer » :\n${x.documents}`
+      : "\n\nIl n'est imputé sur aucune facture : rien d'autre ne bouge.";
+    if (!window.confirm(
+      `Supprimer le règlement de ${eur(x.montant)} du ${date(x.date)}`
+      + ` (${x.fournisseur}${x.moyen ? ` · ${methodLabel(x.moyen)}` : ''}) ?`
+      + `${concernees}\n\nCette action est définitive.`,
+    )) return;
+    setSuppression(x.cle);
+    try {
+      await axios.delete(`${BASE}/payments/${x.paymentId}`);
+      await load();
+      if (onSaved) onSaved();
+    } catch (e) {
+      window.alert(e.response?.data?.error || e.message);
+    } finally { setSuppression(null); }
+  };
 
   const totalFait = items.filter((x) => x.statut === 'fait').reduce((s, x) => s + x.montant, 0);
   const totalDu = items.filter((x) => x.statut === 'attente').reduce((s, x) => s + x.montant, 0);
@@ -2053,10 +2138,11 @@ function PaymentsTab({ mobile, reloadKey }) {
             <th style={th}>Factures concernées</th>
             <th style={th}>Référence du règlement</th>
             <th style={{ ...th, textAlign: 'right' }}>Montant TTC</th>
+            <th style={th}></th>
           </tr></thead>
           <tbody>
             {items.length === 0 && (
-              <tr><td style={{ ...td, textAlign: 'center', color: C.greyM, padding: 24 }} colSpan={7}>
+              <tr><td style={{ ...td, textAlign: 'center', color: C.greyM, padding: 24 }} colSpan={8}>
                 Rien à afficher. Les règlements s'enregistrent depuis l'onglet Factures.
               </td></tr>
             )}
@@ -2092,6 +2178,17 @@ function PaymentsTab({ mobile, reloadKey }) {
                       {eur(x.nonImpute)} non imputé
                     </div>
                   )}
+                </td>
+                <td style={{ ...td, whiteSpace: 'nowrap' }} onClick={(e) => e.stopPropagation()}>
+                  {x.paymentId && (
+                    <Btn small variant="danger" disabled={suppression === x.cle}
+                      onClick={() => supprimer(x)}>
+                      {suppression === x.cle ? '…' : 'Suppr.'}
+                    </Btn>
+                  )}
+                  {/* Une ligne « en attente » n'est pas un règlement : rien à
+                      supprimer ici, la facture se supprime depuis l'onglet
+                      Factures. */}
                 </td>
               </tr>
             ))}
@@ -2195,7 +2292,7 @@ export default function SupplierInvoicesApp() {
 
         {tab === 'control' && <ControlTab suppliers={suppliers} mobile={mobile} onSaved={bump} />}
         {tab === 'filing' && <FilingTab suppliers={suppliers} mobile={mobile} reloadKey={reloadKey} onSaved={bump} />}
-        {tab === 'payments' && <PaymentsTab mobile={mobile} reloadKey={reloadKey} />}
+        {tab === 'payments' && <PaymentsTab mobile={mobile} reloadKey={reloadKey} onSaved={bump} />}
       </main>
     </AppShell>
   );

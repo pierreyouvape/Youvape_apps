@@ -27,6 +27,9 @@ router.get('/parsers', canRead, controller.getParsers);
 router.get('/unpaid', canRead, controller.listUnpaid);
 router.get('/payments', canRead, controller.listPayments);
 router.post('/payments', canWrite, controller.createPayment);
+// Défaire un règlement : un essai, un doublon de relevé, un montant saisi de
+// travers. Les factures qu'il soldait redeviennent dues.
+router.delete('/payments/:id', canWrite, controller.deletePayment);
 
 // Lecture seule : analyse sans rien écrire. Déclarée avant '/' pour rester
 // lisible à côté de son jumeau qui, lui, enregistre.
