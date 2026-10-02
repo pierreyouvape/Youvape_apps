@@ -405,7 +405,19 @@ async function listPayments({ supplierId, method, from, to, limit = 100 } = {}, 
             string_agg(d.number, ', ' ORDER BY d.doc_date) AS document_numbers,
             -- Un règlement qui ne solde que des avoirs n'est pas un paiement :
             -- c'est un avoir qu'on consomme. L'écran doit pouvoir le dire.
-            count(*) FILTER (WHERE d.doc_type = 'credit_note') AS credit_note_count
+            count(*) FILTER (WHERE d.doc_type = 'credit_note') AS credit_note_count,
+            -- LA TVA QUE CE RÈGLEMENT A PAYÉE : celle des factures qu'il solde,
+            -- au PRORATA de ce qu'il en solde. Un acompte sur une facture ne
+            -- paie pas toute sa TVA, et un règlement groupé en paie plusieurs.
+            -- Les avoirs viennent en déduction d'eux-mêmes : montant imputé et
+            -- TVA sont négatifs tous les deux.
+            COALESCE(round(SUM(
+              CASE WHEN d.total_tva IS NULL OR d.total_ttc IS NULL OR d.total_ttc = 0 THEN 0
+                   ELSE a.amount / d.total_ttc * d.total_tva END
+            ), 2), 0) AS vat_amount,
+            -- Ce qu'on ne sait pas, dit à voix haute : une facture sans total de
+            -- TVA lisible ferait silencieusement baisser le total ci-dessus.
+            count(*) FILTER (WHERE a.document_id IS NOT NULL AND d.total_tva IS NULL) AS vat_unknown_count
        FROM supplier_payments p
        JOIN suppliers s ON s.id = p.supplier_id
        LEFT JOIN supplier_payment_allocations a ON a.payment_id = p.id
@@ -426,7 +438,14 @@ async function listUnpaid({ supplierId } = {}, db = pool) {
   if (supplierId) { params.push(supplierId); filter = ` AND d.supplier_id = $${params.length}`; }
   const { rows } = await db.query(
     `SELECT b.*, s.name AS supplier_name, d.doc_type, d.status,
-            (CURRENT_DATE - b.effective_due_date) AS days_overdue
+            (CURRENT_DATE - b.effective_due_date) AS days_overdue,
+            -- La TVA que porte ce qui RESTE dû. Sur une facture intacte c'est
+            -- toute sa TVA ; sur une facture réglée à moitié, la moitié. NULL
+            -- quand le document ne porte pas de total de TVA lisible : l'écran
+            -- doit pouvoir écrire « — » plutôt qu'un zéro qui ferait nombre.
+            CASE WHEN d.total_tva IS NULL OR d.total_ttc IS NULL OR d.total_ttc = 0 THEN NULL
+                 ELSE round(b.remaining_amount / d.total_ttc * d.total_tva, 2)
+            END AS vat_remaining
        FROM supplier_document_balances b
        JOIN supplier_documents d ON d.id = b.document_id
        JOIN suppliers s ON s.id = d.supplier_id

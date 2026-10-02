@@ -2025,6 +2025,11 @@ function PaymentsTab({ mobile, reloadKey, onSaved }) {
       date: p.paid_at, fournisseur: p.supplier_name,
       moyen: p.method, reference: p.reference, montant: Number(p.amount),
       documents: p.document_numbers, nonImpute: Number(p.unallocated_amount),
+      // La TVA des factures que ce règlement solde, au prorata de ce qu'il en
+      // solde — et ce qu'on n'a pas su lire, qui ferait baisser le total sans
+      // le dire.
+      tva: Number(p.vat_amount) || 0,
+      tvaInconnue: Number(p.vat_unknown_count) || 0,
     }));
     // Un avoir ne se paie pas : il s'utilise. Lui coller une échéance et un
     // retard n'a aucun sens — il attend simplement d'être imputé sur un
@@ -2038,6 +2043,11 @@ function PaymentsTab({ mobile, reloadKey, onSaved }) {
       documents: d.number,
       montant: Number(d.remaining_amount),
       retard: d.doc_type === 'credit_note' ? 0 : Number(d.days_overdue),
+      // Sur une ligne en attente, la TVA est celle que porte ce qui reste dû :
+      // la même colonne répond donc à la même question des deux côtés —
+      // combien de TVA dans ce montant.
+      tva: d.vat_remaining == null ? null : Number(d.vat_remaining),
+      tvaInconnue: 0,
     }));
     return [...faits, ...attente]
       .filter((x) => (!filters.supplier || x.fournisseur === filters.supplier)
@@ -2090,6 +2100,13 @@ function PaymentsTab({ mobile, reloadKey, onSaved }) {
   // le fondre dans « en attente » masquait les deux à la fois.
   const totalAvoirs = items.filter((x) => x.statut === 'avoir').reduce((s, x) => s + x.montant, 0);
   const totalAvoirsUtilises = items.filter((x) => x.statut === 'avoirUtilise').reduce((s, x) => s + x.montant, 0);
+  // La TVA que la colonne somme, par famille de ligne. Un règlement sans facture
+  // imputée n'y entre pas : sa TVA est inconnue, pas nulle.
+  const tvaDe = (statut) => items
+    .filter((x) => x.statut === statut && x.tva != null && !(x.paymentId && x.documentCount === 0))
+    .reduce((s, x) => s + x.tva, 0);
+  const tvaReglee = tvaDe('fait');
+  const tvaEnAttente = tvaDe('attente');
   const fournisseurs = [...new Set([...payments.map((p) => p.supplier_name), ...unpaid.map((d) => d.supplier_name)])].sort();
 
   return (
@@ -2123,8 +2140,10 @@ function PaymentsTab({ mobile, reloadKey, onSaved }) {
       </div>
 
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-        <Kpi label="Réglé" value={eur(totalFait)} tone="green" />
-        <Kpi label="En attente" value={eur(totalDu)} tone={totalDu > 0 ? 'orange' : 'green'} />
+        <Kpi label="Réglé" value={eur(totalFait)} tone="green"
+          hint={`dont ${eur(tvaReglee)} de TVA`} />
+        <Kpi label="En attente" value={eur(totalDu)} tone={totalDu > 0 ? 'orange' : 'green'}
+          hint={`dont ${eur(tvaEnAttente)} de TVA`} />
         {totalAvoirs !== 0 && (
           <Kpi label="Avoirs non utilisés" value={eur(Math.abs(totalAvoirs))} tone="blue" />
         )}
@@ -2143,11 +2162,12 @@ function PaymentsTab({ mobile, reloadKey, onSaved }) {
             <th style={th}>Factures concernées</th>
             <th style={th}>Référence du règlement</th>
             <th style={{ ...th, textAlign: 'right' }}>Montant TTC</th>
+            <th style={{ ...th, textAlign: 'right' }}>TVA</th>
             <th style={th}></th>
           </tr></thead>
           <tbody>
             {items.length === 0 && (
-              <tr><td style={{ ...td, textAlign: 'center', color: C.greyM, padding: 24 }} colSpan={8}>
+              <tr><td style={{ ...td, textAlign: 'center', color: C.greyM, padding: 24 }} colSpan={9}>
                 Rien à afficher. Les règlements s'enregistrent depuis l'onglet Factures.
               </td></tr>
             )}
@@ -2181,6 +2201,20 @@ function PaymentsTab({ mobile, reloadKey, onSaved }) {
                   {x.nonImpute != null && Math.abs(x.nonImpute) > 0.009 && (
                     <div style={{ fontSize: 10.5, color: C.red, fontWeight: 600 }}>
                       {eur(x.nonImpute)} non imputé
+                    </div>
+                  )}
+                </td>
+                {/* La TVA contenue dans le montant d'à côté. Inconnue quand le
+                    règlement n'est imputé sur aucune facture : sans facture, on
+                    ne sait pas ce qu'il a payé — et surtout pas sa TVA. */}
+                <td style={{ ...td, textAlign: 'right', color: C.greyT }}>
+                  {x.tva == null || (x.paymentId && x.documentCount === 0)
+                    ? <span title="Aucune facture imputée : la TVA de ce règlement est inconnue"
+                        style={{ color: C.greyM }}>—</span>
+                    : eur(x.tva)}
+                  {x.tvaInconnue > 0 && (
+                    <div style={{ fontSize: 10.5, color: C.orange, fontWeight: 600 }}>
+                      {x.tvaInconnue} facture{x.tvaInconnue > 1 ? 's' : ''} sans TVA lue
                     </div>
                   )}
                 </td>
