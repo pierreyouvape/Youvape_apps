@@ -302,6 +302,93 @@ test('la seule vraie anomalie de la facture ressort : 15 € non commandés', ()
 });
 
 /* ─────────────────────────────────────────────────────────────────────────────
+ * JoshNoa — facture V3/2026/37644 du 02/10/2026, commande BMS 1017
+ * Le fournisseur facture AU CARTON ce que la commande compte en PIÈCES, et il y
+ * a une hausse de tarif par-dessus : le cas que le conditionnement seul ne
+ * couvre pas. Lu pièce contre carton, l'écran annonçait 21,46 € réclamables et
+ * 18,00 € de manquants pour 3,46 € de trop, et le message au commercial aurait
+ * demandé un avoir six fois trop gros.
+ * ───────────────────────────────────────────────────────────────────────────── */
+
+const carton = compareInvoiceToOrder({
+  invoice: {
+    number: 'V3/2026/37644',
+    lines: [
+      // 1 carton de 5 à 25,96 € — la commande dit 5 pièces à 4,50 € (22,50 €)
+      { ref: 'josh00012308', label: 'Concentré Biscuit Roulé 30ml (5 pièces)', qty: 1, lineTotalHt: 25.96 },
+      // conditionnement pur : le montant retombe au centime
+      { ref: 'josh00022802', qty: 3, lineTotalHt: 36.00 },
+      // même unité des deux côtés, au prix commandé
+      { ref: 'josh00008029', qty: 24, lineTotalHt: 136.80 },
+    ],
+  },
+  order: {
+    reference: '1017',
+    lines: [
+      { ref: 'josh00012308', qty: 5, price: 4.50 },
+      { ref: 'josh00022802', qty: 30, price: 1.20 },
+      { ref: 'josh00008029', qty: 24, price: 5.70 },
+    ],
+  },
+});
+
+console.log('\nJoshNoa — un carton facturé plus cher que les pièces commandées');
+
+test('rien ne manque : la quantité est bonne, c\'est l\'unité qui diffère', () => {
+  const l = byRef(carton, 'josh00012308');
+  assert.strictEqual(l.verdict, 'price');   // et non « Quantité et tarif »
+  assert.strictEqual(l.packFactor, 5);
+  assert.strictEqual(l.unitMismatch, true);
+  assert.strictEqual(l.gapQty, 0);
+  assert.strictEqual(carton.summary.qtyGap, 0);
+});
+
+test('l\'écart réclamé est celui de la ligne : 3,46 €, pas 21,46 €', () => {
+  const l = byRef(carton, 'josh00012308');
+  assert.strictEqual(l.gap, 3.46);
+  assert.strictEqual(l.gapPrice, 3.46);
+  assert.strictEqual(carton.summary.claimable, 3.46);
+});
+
+test('les tarifs se lisent à la pièce, la seule unité commune', () => {
+  const l = byRef(carton, 'josh00012308');
+  assert.strictEqual(l.pieces, 5);
+  assert.ok(close(l.piecePriceExpected, 4.50));
+  assert.ok(close(l.piecePriceInvoiced, 5.192));
+});
+
+test('la ventilation redonne l\'écart global de la facture', () => {
+  const s = carton.summary;
+  const total = s.claimable + s.inOurFavour + s.minorGap + s.roundingGap
+    + s.qtyGap + s.extrasGap + s.packagingGap;
+  assert.ok(close(total, carton.totals.gap));
+  assert.ok(close(carton.totals.gap, 3.46));
+});
+
+test('aucun bouton de tarif : on n\'écrit pas un prix de carton dans une case de pièce', () => {
+  assert.strictEqual(listTariffUpdates(carton).some((t) => t.ref === 'josh00012308'), false);
+});
+
+test('le message réclame 3,46 € et dit à quelle unité il compte', () => {
+  const m = buildClaimMessage({
+    comparison: carton,
+    invoice: { number: 'V3/2026/37644' },
+    order: { reference: '1017' },
+    supplier: { name: 'JoshNoa' },
+    senderName: 'Maxime',
+  });
+  assert.strictEqual(m.claimable, 3.46);
+  assert.strictEqual(m.lines.length, 1);
+  assert.ok(m.subject.includes('3,46 €'));
+  // Le tableau compte 5 pièces à 5,192 € contre 4,50 € commandés…
+  assert.ok(m.body.includes('5,192 €'));
+  assert.ok(m.body.includes('4,50 €'));
+  assert.ok(!m.body.includes('21,46'));
+  // …et la ligne du fournisseur reste reconnaissable sur sa propre facture.
+  assert.ok(m.body.includes('facturée 1 × 25,96 € pour 5 pièces'));
+});
+
+/* ─────────────────────────────────────────────────────────────────────────────
  * Cosmer — facture #FA018801, remise de pied « Remise youvape −300,90 € »
  * Les 11 lignes sont au prix commandé ; la remise (15 %) est au pied.
  * ───────────────────────────────────────────────────────────────────────────── */

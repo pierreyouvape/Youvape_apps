@@ -270,9 +270,14 @@ async function getClaimMessage(req, res) {
         qtyInvoiced: l.qty == null ? null : Number(l.qty),
         expectedUnitPrice: l.expected_unit_price == null ? null : Number(l.expected_unit_price),
         invoicedUnitPrice: l.qty && Number(l.qty) !== 0 ? Number(l.line_total_ht) / Number(l.qty) : null,
+        invoicedTotal: Number(l.line_total_ht) || 0,
         gapPrice: Number(l.gap_price) || 0,
         gapQty: Number(l.gap_qty) || 0,
         gap: Number(l.gap) || 0,
+        // L'écart RÉEL de la ligne, remise de pied comprise : c'est lui qu'on
+        // réclame quand la facture ne compte pas dans la même unité que la
+        // commande (un carton de 5 contre 5 pièces).
+        netGap: l.net_gap == null ? null : Number(l.net_gap),
         // Ce qui reste dû après la remise de pied. Absent des documents
         // enregistrés avant le 01/10/2026 : on retombe alors sur le brut, seule
         // chose qu'on savait à l'époque.

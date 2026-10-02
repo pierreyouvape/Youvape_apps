@@ -242,7 +242,15 @@ const StorageBadge = ({ ordered, received }) => {
  * au tarif différent tous les mois, il faut seulement le savoir avant.
  */
 const SEUIL_TARIF = 0.10;
-const ecartTarifDe = (l) => Number(l.residual_gap_price != null ? l.residual_gap_price : l.gap_price) || 0;
+const ecartTarifDe = (l) => {
+  // Facturé AU CARTON, commandé EN PIÈCES : le résidu de tarif compare alors un
+  // prix de carton à un prix de pièce et annonce six fois l'écart réel (25,96 €
+  // contre 4,50 € : +21,46 € affichés pour 3,46 € de trop, V3/2026/37644). Dans
+  // ce cas, l'écart réel de la ligne est le seul chiffre lisible — et c'est aussi
+  // celui que le message au commercial réclame.
+  if (packFactorStored(l) && l.net_gap != null) return Number(l.net_gap) || 0;
+  return Number(l.residual_gap_price != null ? l.residual_gap_price : l.gap_price) || 0;
+};
 const lignesEcartTarif = (lines) => (lines || []).filter((l) => ['price', 'qty_price'].includes(l.verdict)
   && l.material && Math.abs(ecartTarifDe(l)) >= SEUIL_TARIF);
 
@@ -364,7 +372,9 @@ function DifferencesTable({ lines, mobile }) {
               </strong>
             </div>
             <NoteEcart l={l} align="right" />
-            {l.meta.action && <div style={{ fontSize: 11.5, color: C.greyM, marginTop: 6 }}>{l.meta.action}</div>}
+            {(notePiece(l) || l.meta.action) && (
+              <div style={{ fontSize: 11.5, color: C.greyM, marginTop: 6 }}>{notePiece(l) || l.meta.action}</div>
+            )}
           </div>
         ))}
       </div>
@@ -420,7 +430,7 @@ function DifferencesTable({ lines, mobile }) {
               <td style={{ ...td, fontSize: 11.5, color: C.greyT }}>
                 {l.verdict === 'packaging' && l.packFactor
                   ? `Vendu par ${l.packFactor} chez ce fournisseur : ${num(l.qtyInvoiced)} × ${l.packFactor} = ${num(l.qtyOrdered)} unités`
-                  : (l.meta.action || '')}
+                  : (notePiece(l) || l.meta.action || '')}
               </td>
             </tr>
           ))}
@@ -493,6 +503,84 @@ async function settleOne(document, { method, paid_at, reference }) {
   });
 }
 
+/**
+ * LE MESSAGE DE RÉCLAMATION DANS LE PRESSE-PAPIERS.
+ *
+ * Hors de tout écran, parce qu'il se copie depuis DEUX endroits : l'écran de
+ * contrôle, juste après l'enregistrement, et la facture rouverte depuis la liste.
+ * Il n'existait qu'au premier — une facture quittée puis rouverte affichait bien
+ * son écart de tarif, sans plus aucun moyen d'en écrire au commercial (relevé sur
+ * V3/2026/37644, le 02/10/2026).
+ *
+ * @returns {Promise<boolean>} faux quand il n'y a rien à réclamer.
+ */
+async function copierReclamation(id) {
+  const { data } = await axios.get(`${BASE}/${id}/claim`);
+  if (!data.body) return false;
+
+  const texte = `${data.subject}\n\n${data.body}`;
+  // On met les DEUX formats dans le presse-papiers : la messagerie colle le
+  // tableau HTML, un champ de texte simple colle le brut. Sans ça, le tableau
+  // n'était calé qu'aux espaces et se décalait dès que la police n'était pas
+  // à chasse fixe — donc dans Gmail, donc toujours.
+  try {
+    if (data.bodyHtml && window.ClipboardItem) {
+      const html = `<p><strong>${data.subject}</strong></p>${data.bodyHtml}`;
+      await navigator.clipboard.write([new window.ClipboardItem({
+        'text/html': new Blob([html], { type: 'text/html' }),
+        'text/plain': new Blob([texte], { type: 'text/plain' }),
+      })]);
+    } else {
+      await navigator.clipboard.writeText(texte);
+    }
+  } catch {
+    await navigator.clipboard.writeText(texte);
+  }
+  return true;
+}
+
+/**
+ * Le conditionnement reconstitué d'une ligne gelée : le rapport des quantités
+ * quand il est ENTIER. Le moteur le calcule (`packFactor`), la base ne le garde
+ * pas — et sans lui, un carton de 5 facturé 25,96 € s'affiche en face d'un tarif
+ * commandé de 4,50 € sans un mot d'explication.
+ */
+/** Un prix à la pièce, au millième quand le centime ne suffit pas (5,192 €). */
+const prixPiece = (v) => {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return '—';
+  const auMillieme = Math.abs(n * 100 - Math.round(n * 100)) >= 0.05;
+  return `${n.toLocaleString('fr-FR', {
+    minimumFractionDigits: 2, maximumFractionDigits: auMillieme ? 3 : 2,
+  })} €`;
+};
+
+/**
+ * Ce qu'il faut dire d'une ligne que le fournisseur facture AU CARTON quand la
+ * commande compte en pièces, et qui porte en plus un écart de tarif : à quelle
+ * unité cet écart se lit. Sans ça, « 4,50 € commandé » en face de
+ * « 25,96 € facturé » et d'un écart de 3,46 € ne s'explique pas (V3/2026/37644,
+ * ligne josh00012308 : un carton de 5).
+ */
+const notePiece = (l) => {
+  if (!l.packFactor || l.verdict === 'packaging') return null;
+  const pieces = Math.max(Number(l.qtyInvoiced), Number(l.qtyOrdered));
+  if (!(pieces > 0) || l.expectedUnitPrice == null) return null;
+  const facture = Number(l.lineTotalHt) / pieces;
+  const commande = (Number(l.qtyOrdered) * Number(l.expectedUnitPrice)) / pieces;
+  return `Vendu par ${l.packFactor} : ${prixPiece(facture)} la pièce facturée `
+    + `contre ${prixPiece(commande)} commandée`;
+};
+
+const packFactorStored = (l) => {
+  const inv = Number(l.qty);
+  const ord = Number(l.expected_qty);
+  if (!(inv > 0) || !(ord > 0) || inv === ord) return null;
+  const f = inv > ord ? inv / ord : ord / inv;
+  const arrondi = Math.round(f);
+  return arrondi >= 2 && Math.abs(f - arrondi) < 0.01 ? arrondi : null;
+};
+
 /** Lignes gelées en base → forme attendue par le tableau. */
 const fromStoredLines = (lines) => (lines || []).map((l) => ({
   ref: l.supplier_sku,
@@ -513,6 +601,7 @@ const fromStoredLines = (lines) => (lines || []).map((l) => ({
   // Le coût réel de la ligne, remises de pied comprises : c'est lui qui dit
   // qu'un écart brut a déjà été absorbé.
   effectiveUnitCost: l.effective_unit_cost == null ? null : Number(l.effective_unit_cost),
+  packFactor: packFactorStored(l),
 }));
 
 /* ═══════════════════════════════════════════════════════════
@@ -915,30 +1004,10 @@ function ControlTab({ suppliers, mobile, onSaved }) {
   };
 
   const copyClaim = async () => {
-    const { data } = await axios.get(`${BASE}/${saved.id}/claim`);
-    if (!data.body) return;
-
-    const texte = `${data.subject}\n\n${data.body}`;
-    // On met les DEUX formats dans le presse-papiers : la messagerie colle le
-    // tableau HTML, un champ de texte simple colle le brut. Sans ça, le tableau
-    // n'était calé qu'aux espaces et se décalait dès que la police n'était pas
-    // à chasse fixe — donc dans Gmail, donc toujours.
-    try {
-      if (data.bodyHtml && window.ClipboardItem) {
-        const html = `<p><strong>${data.subject}</strong></p>${data.bodyHtml}`;
-        await navigator.clipboard.write([new window.ClipboardItem({
-          'text/html': new Blob([html], { type: 'text/html' }),
-          'text/plain': new Blob([texte], { type: 'text/plain' }),
-        })]);
-      } else {
-        await navigator.clipboard.writeText(texte);
-      }
-    } catch {
-      await navigator.clipboard.writeText(texte);
+    if (await copierReclamation(saved.id)) {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2500);
     }
-
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2500);
   };
 
   const setStatus = async (status) => {
@@ -1714,6 +1783,16 @@ function DocumentPanel({ detail, mobile, onClose, onStatus, onDelete, onSettle }
     reference: '',
   });
   const [busy, setBusy] = useState(false);
+  // Le message au commercial se copie d'ICI aussi : une facture se contrôle un
+  // jour et s'écrit le lendemain, et le bouton n'existait que sur l'écran de
+  // contrôle, perdu dès qu'on le quittait.
+  const [copie, setCopie] = useState(false);
+  const copier = async () => {
+    if (await copierReclamation(detail.id)) {
+      setCopie(true);
+      setTimeout(() => setCopie(false), 2500);
+    }
+  };
   return (
     <div
       onClick={onClose}
@@ -1827,7 +1906,12 @@ function DocumentPanel({ detail, mobile, onClose, onStatus, onDelete, onSettle }
               {Object.entries(STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
             </select>
           </Field>
-          <div style={{ alignSelf: 'flex-end', display: 'flex', gap: 10 }}>
+          <div style={{ alignSelf: 'flex-end', display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+            {ecartTarif > 0 && (
+              <Btn onClick={copier}>
+                {copie ? 'Message copié ✓' : 'Copier le message de réclamation'}
+              </Btn>
+            )}
             <Btn variant="ghost" onClick={() => downloadFile(detail.id, detail.number)}>Télécharger le document</Btn>
             <Btn variant="danger" onClick={onDelete}>Supprimer</Btn>
           </div>

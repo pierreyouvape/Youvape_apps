@@ -270,14 +270,33 @@ function compareInvoiceToOrder({ invoice, order, options = {} }) {
     const isPackaging = qtyDiffers
       && (Math.abs(gap) < threshold || (packFactor !== null && Math.abs(gap) <= packTolerance));
 
+    // CONDITIONNEMENT AVEC UN ÉCART DE TARIF PAR-DESSUS. Le rapport des quantités
+    // est entier, mais le montant ne retombe pas : les deux côtés comptent LA MÊME
+    // MARCHANDISE dans des unités différentes, et il y a une hausse de prix en plus.
+    //
+    // Facture JoshNoa V3/2026/37644 (02/10/2026), ligne josh00012308 : 5 pièces
+    // commandées à 4,50 €, facturées « 1 × 25,96 € (5 pièces) ». L'écart réel vaut
+    // 3,46 €. Comparé pièce à pack, l'écran annonçait 21,46 € réclamables et 18,00 €
+    // de manquants — deux chiffres inventés par la comparaison de deux unités, et le
+    // message au commercial aurait demandé un avoir de 21,46 €.
+    //
+    // Il n'y a donc RIEN de manquant ici, et tout l'écart est un écart de tarif, qui
+    // ne se lit qu'À LA PIÈCE : c'est la seule unité que les deux côtés partagent.
+    const unitMismatch = !isPackaging && packFactor !== null;
+    const pieces = unitMismatch ? Math.max(inv.qty, qtyOrdered) : inv.qty;
+    const expectedPerPiece = unitMismatch && pieces > 0 ? expectedTotal / pieces : expectedUnitPrice;
+    const invoicedPerPiece = unitMismatch && pieces > 0 ? invoicedTotal / pieces : invoicedUnitPrice;
+
     // Tarif réellement différent, ou simple arrondi du fournisseur ? Ça se lit sur
     // l'unité (cf. règle 4), jamais sur le montant de la ligne.
-    const unitGap = invoicedUnitPrice === null ? 0 : invoicedUnitPrice - expectedUnitPrice;
+    const unitGap = invoicedPerPiece === null ? 0 : invoicedPerPiece - expectedPerPiece;
     const isRounding = Math.abs(unitGap) < UNIT_ROUNDING_TOLERANCE;
-    const priceDiffers = !isRounding && Math.abs(gapPrice) >= 0.005;
+    const priceDiffers = !isRounding && Math.abs(unitMismatch ? gap : gapPrice) >= 0.005;
 
     let verdict;
     if (isPackaging) verdict = 'packaging';
+    // Pas « Quantité et tarif » : la quantité est juste, c'est l'unité qui diffère.
+    else if (unitMismatch) verdict = priceDiffers ? 'price' : 'rounding';
     else if (qtyDiffers && priceDiffers) verdict = 'qty_price';
     else if (qtyDiffers) verdict = 'qty';
     else if (priceDiffers) verdict = 'price';
@@ -297,6 +316,13 @@ function compareInvoiceToOrder({ invoice, order, options = {} }) {
       // unité, et le facteur entier qui s'en déduit (« boîte de 2 »).
       packRatio,
       packFactor,
+      // Les deux côtés ne comptent pas dans la même unité, et il reste un écart de
+      // tarif par-dessus : tout ce qui se dit de cette ligne — l'écart, le message
+      // au commercial, le tableau — doit se dire À LA PIÈCE.
+      unitMismatch,
+      pieces: unitMismatch ? pieces : null,
+      piecePriceExpected: unitMismatch ? Math.round(expectedPerPiece * 10000) / 10000 : null,
+      piecePriceInvoiced: unitMismatch ? Math.round(invoicedPerPiece * 10000) / 10000 : null,
       // Conditionnement BMS de la ligne de commande. Indispensable pour écrire un
       // tarif : `supplier_refs.pack_price` est le prix d'un pack de `pack_qty`
       // pièces, et confondre prix de pack et prix unitaire a déjà coûté deux
@@ -307,9 +333,11 @@ function compareInvoiceToOrder({ invoice, order, options = {} }) {
       expectedTotal,
       invoicedTotal,
       // Sur une ligne de conditionnement, décomposer en effet quantité / effet prix
-      // n'a pas de sens : les deux se compensent par construction.
-      gapQty: isPackaging ? 0 : gapQty,
-      gapPrice: isPackaging ? gap : gapPrice,
+      // n'a pas de sens : les deux se compensent par construction. Quand il reste
+      // une hausse de tarif par-dessus, c'est elle qui porte tout l'écart — la
+      // quantité, elle, est la bonne, à l'unité de compte près.
+      gapQty: isPackaging || unitMismatch ? 0 : gapQty,
+      gapPrice: isPackaging || unitMismatch ? gap : gapPrice,
       gap,
     });
   }
@@ -589,7 +617,14 @@ function compareInvoiceToOrder({ invoice, order, options = {} }) {
     if (!(r.gapPrice > 0) || !(r.discountShare > 0)) continue;
     if (Math.abs(r.residualGapPrice) > threshold) continue;
     if (r.effectiveUnitCost === null || r.expectedUnitPrice === null) continue;
-    if (r.effectiveUnitCost <= r.expectedUnitPrice + 0.005) {
+    // À la pièce quand les deux côtés ne comptent pas pareil : comparer un prix de
+    // carton à un prix de pièce conclurait n'importe quoi, dans un sens comme dans
+    // l'autre.
+    const coutReel = r.unitMismatch
+      ? (r.invoicedTotal - r.discountShare) / r.pieces
+      : r.effectiveUnitCost;
+    const prevu = r.unitMismatch ? r.piecePriceExpected : r.expectedUnitPrice;
+    if (coutReel <= prevu + 0.005) {
       r.verdict = 'ok';
       r.material = false;
     }
@@ -752,6 +787,13 @@ const DIFFERENCE_KINDS = {
  * somme plus l'écart global — et un tableau dont les lignes ne font pas le
  * total ne sert plus à rien.
  */
+/** Un prix à la pièce, au millième quand le centime ne suffit pas (5,192 €). */
+function prixPiece(n) {
+  const v = Number(n);
+  const auMillieme = Math.abs(v * 100 - Math.round(v * 100)) >= 0.05;
+  return `${v.toFixed(auMillieme ? 3 : 2).replace('.', ',')} €`;
+}
+
 function listDifferences(comparison) {
   const lines = (comparison && comparison.lines) || [];
   return lines
@@ -762,7 +804,15 @@ function listDifferences(comparison) {
       kindLabel: (DIFFERENCE_KINDS[l.verdict] || {}).label || l.verdict,
       action: l.verdict === 'discount' && l.scope && l.scope.unallocated
         ? "Périmètre inconnu : non imputée au coût des lignes"
-        : ((DIFFERENCE_KINDS[l.verdict] || {}).action || null),
+        // Un carton contre des pièces, PLUS une hausse de tarif : dire à quelle
+        // unité l'écart se lit, sinon « 4,50 € commandé » en face de
+        // « 25,96 € facturé » reste illisible. Et pas « aligner le tarif » : le
+        // bouton n'y est pas (cf. `listTariffUpdates`), le carton se saisit à la
+        // main.
+        : (l.unitMismatch
+          ? `Vendu par ${l.packFactor} : ${prixPiece(l.piecePriceInvoiced)} la pièce facturée `
+            + `contre ${prixPiece(l.piecePriceExpected)} commandée — réclamer l'écart`
+          : ((DIFFERENCE_KINDS[l.verdict] || {}).action || null)),
     }))
     .sort((a, b) => {
       const ra = (DIFFERENCE_KINDS[a.verdict] || {}).rank || 99;
@@ -799,6 +849,12 @@ function listTariffUpdates(comparison, options = {}) {
   return (comparison?.lines || [])
     .filter((l) => l.ref
       && !hors.includes(l.verdict)
+      // Même raison que les lignes de conditionnement : quand la facture compte en
+      // packs ce que la commande compte en pièces, on ne sait pas à quelle unité le
+      // `pack_qty` de la réf se rapporte. Écrire 25,96 € dans une case qui attend le
+      // prix d'une pièce, c'est le bug Mozambique (1,34 € au lieu de 13,40 €) à
+      // l'envers. Ces tarifs-là s'alignent à la main, en connaissance du carton.
+      && !l.unitMismatch
       && l.qtyInvoiced > 0
       && l.expectedUnitPrice !== null
       && l.effectiveUnitCost !== null
