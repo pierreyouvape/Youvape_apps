@@ -690,7 +690,13 @@ const OrdersTab = ({ token }) => {
                     )}
                   </td>
                   <td>{formatDate(order.order_date)}</td>
-                  <td>{formatDate(order.received_date)}</td>
+                  {/* « Reçue » ne se dit qu'une fois reçue : la date est celle de
+                      la dernière réception BMS (cf. syncFromBMS). */}
+                  <td>
+                    {['received', 'completed'].includes(order.status) && order.received_date
+                      ? formatDate(order.received_date)
+                      : '-'}
+                  </td>
                   {/* Une ligne par document, dans les deux colonnes : une commande
                       facturée en deux fois a deux règlements à suivre. */}
                   <td>

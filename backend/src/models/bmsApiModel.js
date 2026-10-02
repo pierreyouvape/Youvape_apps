@@ -236,6 +236,47 @@ const bmsApiModel = {
   },
 
   /**
+   * Date RÉELLE de réception de chaque commande, lue dans le journal des
+   * réceptions BMS — et non `updated_at` du bon, qui bouge à chaque retouche
+   * (un tarif corrigé au contrôle de facture le repoussait de plusieurs heures).
+   *
+   * Une commande reçue en plusieurs fois est reçue à sa DERNIÈRE réception.
+   * Clés : `référence|fournisseur` et `référence`, en minuscules — quelques
+   * références existent chez deux fournisseurs. Valeur : heure de Paris sans
+   * fuseau (« 2026-10-02 12:34:53 »), la convention de nos colonnes timestamp.
+   *
+   * Le journal vient du plus récent au plus ancien : `since` arrête la lecture
+   * dès qu'une page entière lui est antérieure (une réception ne précède jamais
+   * la création de sa commande). Sans `since`, tout l'historique est lu.
+   */
+  getReceptionDatesByReference: async ({ since = null } = {}) => {
+    const limit = 100;
+    const sinceMs = since ? new Date(since).getTime() : null;
+    const dates = new Map();
+    const keep = (key, value) => {
+      if (!dates.has(key) || dates.get(key) < value) dates.set(key, value);
+    };
+
+    for (let offset = 0; ; offset += limit) {
+      const page = await bmsApiModel.apiCall(`/supplier/receptions?offset=${offset}&limit=${limit}`);
+      const rows = page.data || [];
+      for (const r of rows) {
+        if (!r.purchase_order || !r.created_at) continue;
+        // « 2026-10-02T12:34:53.000000+02:00 » : l'heure murale de Paris est
+        // déjà là, avant le décalage — on la garde telle quelle.
+        const local = String(r.created_at).slice(0, 19).replace('T', ' ');
+        const ref = String(r.purchase_order).trim().toLowerCase();
+        keep(`${ref}|${String(r.supplier || '').trim().toLowerCase()}`, local);
+        keep(ref, local);
+      }
+      const total = page.meta?.total || 0;
+      if (rows.length === 0 || offset + limit >= total) break;
+      if (sinceMs && rows.every(r => r.created_at && new Date(r.created_at).getTime() < sinceMs)) break;
+    }
+    return dates;
+  },
+
+  /**
    * Récupérer les produits attendus (en attente de réception)
    */
   getExpectedProducts: async () => {

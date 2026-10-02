@@ -1102,7 +1102,7 @@ const purchaseOrderModel = {
     }
 
     if (status === 'received') {
-      query += `, received_date = CURRENT_TIMESTAMP`;
+      query += `, received_date = (CURRENT_TIMESTAMP AT TIME ZONE 'Europe/Paris')`;
     }
 
     if (additionalData.notes) {
@@ -1157,7 +1157,7 @@ const purchaseOrderModel = {
         await client.query(`
           UPDATE purchase_orders
           SET status = $2, updated_at = CURRENT_TIMESTAMP
-          ${newStatus === 'received' ? ', received_date = CURRENT_TIMESTAMP' : ''}
+          ${newStatus === 'received' ? ", received_date = (CURRENT_TIMESTAMP AT TIME ZONE 'Europe/Paris')" : ''}
           WHERE id = $1
         `, [orderId, newStatus]);
       }
@@ -1274,9 +1274,10 @@ const purchaseOrderModel = {
 
     // 3. Charger le mapping bms_id → supplier local (en une seule requête)
     const suppliersResult = await pool.query(
-      'SELECT id, bms_id, code FROM suppliers WHERE bms_id IS NOT NULL'
+      'SELECT id, bms_id, code, name FROM suppliers WHERE bms_id IS NOT NULL'
     );
     const supplierByBmsId = new Map(suppliersResult.rows.map(s => [s.bms_id, s.id]));
+    const supplierNameById = new Map(suppliersResult.rows.map(s => [s.id, String(s.name || '').trim().toLowerCase()]));
     // Fournisseurs « à l'unité » (Highbuy, LCA…) : leur PO BMS a un prix DÉJÀ unitaire
     // et une qty DÉJÀ en unités. Ne PAS appliquer la désambiguïsation prix pack /
     // qty × pack_qty ci-dessous, qui diviserait le prix par pack_qty (bug ÷10 : le
@@ -1299,6 +1300,25 @@ const purchaseOrderModel = {
         .filter(p => p.wc_cog_cost != null && parseFloat(p.wc_cog_cost) > 0)
         .map(p => [p.sku, parseFloat(p.wc_cog_cost)])
     );
+
+    // 5. Date RÉELLE de réception des commandes terminées, lue dans le journal
+    //    des réceptions BMS (cf. getReceptionDatesByReference). Lu jusqu'à la
+    //    création de la plus ancienne commande terminée du lot, pas au-delà.
+    //    Un échec de lecture ne bloque pas la synchro : la date déjà connue est
+    //    gardée (COALESCE ci-dessous) plutôt que remplacée par une fausse.
+    let receptionDates = null;
+    const completeCreated = orders
+      .filter(o => o.status === 'complete' && o.created_at)
+      .map(o => new Date(o.created_at).getTime());
+    if (completeCreated.length > 0) {
+      try {
+        receptionDates = await bmsApiModel.getReceptionDatesByReference({
+          since: new Date(Math.min(...completeCreated)),
+        });
+      } catch (e) {
+        console.error('[syncFromBMS] journal des réceptions illisible :', e.message);
+      }
+    }
 
     const client = await pool.connect();
     try {
@@ -1392,7 +1412,12 @@ const purchaseOrderModel = {
             bms_reference = EXCLUDED.bms_reference,
             bms_supplier_reference = EXCLUDED.bms_supplier_reference,
             expected_date = EXCLUDED.expected_date,
-            received_date = EXCLUDED.received_date,
+            -- Une date de réception n'existe qu'une fois la commande reçue. Une
+            -- commande terminée sans date trouvée garde la sienne (journal BMS
+            -- illisible, ou lu trop court) plutôt que d'en perdre une juste.
+            received_date = CASE WHEN EXCLUDED.status = 'completed'
+                                 THEN COALESCE(EXCLUDED.received_date, purchase_orders.received_date)
+                                 ELSE NULL END,
             total_items = EXCLUDED.total_items,
             total_qty = EXCLUDED.total_qty,
             total_amount = EXCLUDED.total_amount,
@@ -1403,8 +1428,13 @@ const purchaseOrderModel = {
         const totalQty = items.reduce((s, i) => s + (parseInt(i.qty) || 0), 0);
         const totalAmount = parseFloat(bmsOrder.grandtotal) || 0;
 
-        // Pour les commandes complètes, updated_at BMS est la meilleure approximation de la date de réception
-        const receivedDate = (bmsOrder.status === 'complete' && bmsOrder.updated_at) ? bmsOrder.updated_at : null;
+        // Date de la DERNIÈRE réception BMS — jamais `updated_at` du bon, qui
+        // bouge à chaque retouche (tarif corrigé, ligne ajoutée après coup).
+        // Une commande soldée sans aucune réception n'a pas de date.
+        const refKey = bmsReference.trim().toLowerCase();
+        const receivedDate = (bmsOrder.status === 'complete' && receptionDates)
+          ? (receptionDates.get(`${refKey}|${supplierNameById.get(supplierId)}`) || receptionDates.get(refKey) || null)
+          : null;
 
         const orderResult = await client.query(orderQuery, [
           `BMS-${bmsOrder.id}`,             // order_number (basé sur l'id BMS, toujours unique)

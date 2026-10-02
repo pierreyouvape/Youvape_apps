@@ -169,6 +169,12 @@
   background: #eff6ff; /* le bleu clair des déclinaisons du catalogue */
 }
 
+/* L'en-tête collait à top: 0, donc SOUS la barre de l'app (sticky elle aussi,
+   58 px, z-index 20) : il disparaissait au défilement. Il se cale juste dessous. */
+.purchases-table--striped th {
+  top: 58px;
+}
+
 /* Séparateurs de colonnes en pointillé serré (1px dotted = points jointifs). */
 .purchases-table--striped th:not(:last-child),
 .purchases-table--striped td:not(:last-child) {
