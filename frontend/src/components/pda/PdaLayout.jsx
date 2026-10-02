@@ -1,10 +1,12 @@
 import { useContext, useEffect } from 'react';
 import { AuthContext } from '../../context/AuthContext';
 import { C } from '../picking/pickingUi';
+import { pdaBtn } from './pdaStyles';
 
 /**
- * Cadre commun des pages PDA (/pda et ses apps) : barre du haut, manifeste
- * « installable », fermeture de session à 19h30.
+ * Cadre commun des pages PDA (/pda et ses apps) : barre du haut, couleur de
+ * barre, fermeture de session à 19h30. (Le manifeste « installable » est dans
+ * index.html.)
  *
  * La session d'un PDA se ferme tous les soirs à 19h30 (les PDA changent de
  * mains) : le serveur émet le jeton avec cette échéance, et la page, si elle
@@ -23,23 +25,18 @@ const msUntilCutoff = () => {
   return (diff > 0 ? diff : diff + 24 * 3600) * 1000;
 };
 
-export const pdaBtn = (bg, color = C.white) => ({
-  border: 'none', borderRadius: 12, background: bg, color, fontWeight: 800, fontSize: 17,
-  padding: '14px 18px', cursor: 'pointer', fontFamily: 'inherit',
-});
 
 export default function PdaLayout({ title, onBack, backLabel, children }) {
   const { user, logout } = useContext(AuthContext);
 
+  // Le manifeste est dans index.html (Chrome doit le trouver sans exécuter la
+  // page) ; seule la couleur de barre est propre aux pages PDA.
   useEffect(() => {
-    const link = document.createElement('link');
-    link.rel = 'manifest';
-    link.href = '/pda-manifest.json';
     const meta = document.createElement('meta');
     meta.name = 'theme-color';
     meta.content = C.violet;
-    document.head.append(link, meta);
-    return () => { link.remove(); meta.remove(); };
+    document.head.append(meta);
+    return () => { meta.remove(); };
   }, []);
 
   useEffect(() => {

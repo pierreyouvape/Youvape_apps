@@ -3,7 +3,8 @@ import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 import { AuthContext } from '../context/AuthContext';
 import { API_URL, authHeaders, C, CarrierLogo } from '../components/picking/pickingUi';
-import PdaLayout, { pdaBtn as bigBtn } from '../components/pda/PdaLayout';
+import PdaLayout from '../components/pda/PdaLayout';
+import { pdaBtn as bigBtn } from '../components/pda/pdaStyles';
 
 /**
  * Picking au PDA (lot 3) — /pda/picking, ouvert depuis l'accueil PDA (/pda).

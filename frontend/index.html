@@ -4,6 +4,11 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/images/logo.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- Manifeste de l'app PDA (/pda), écrit ICI et pas ajouté par le JavaScript :
+         Chrome le relit pour vérifier l'appli installée sur les Zebra sans exécuter
+         la page — injecté après coup, il était introuvable et l'icône installée
+         plantait au lancement (02/10/2026). -->
+    <link rel="manifest" href="/pda-manifest.json" />
     <meta name="robots" content="noindex, nofollow, noarchive" />
     <meta name="googlebot" content="noindex, nofollow, noarchive" />
     <link rel="preconnect" href="https://fonts.googleapis.com">
