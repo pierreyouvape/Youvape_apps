@@ -400,6 +400,19 @@ Le cycle complet — commander, recevoir, contrôler la facture — depuis l'app
   cessant d'être enregistré sans que rien ne le signale. **Lancer `npx eslint` sur les
   fichiers touchés**, pas seulement un build.
 
+### 2026-10-02 — Date de réception = dernière modification BMS (`commit 2e59852`)
+**Fichiers** : `bmsApiModel.js` (`getReceptionDatesByReference`), `purchaseOrderModel.js` (`syncFromBMS`),
+`scripts/backfillReceivedDates.js`
+
+- **Symptôme** : `purchase_orders.received_date` recopiait `updated_at` du bon BMS terminé, qui
+  bouge à chaque retouche (S313016 reçue à 12h34, affichée 16h11 après un tarif corrigé ;
+  S300761 reçue le 09/07, datée du 26/08).
+- **Correctif** : date de la **dernière** réception du journal BMS `/supplier/receptions`
+  (clé = référence du PO, + nom du fournisseur pour les quelques références en double).
+  Aucune date tant que la commande n'est pas `completed`. Ne jamais revenir à `updated_at`.
+- **Rattrapage** appliqué le 02/10/2026 : 880 commandes corrigées. `received_date` date aussi
+  les lots FIFO (`computedCostModel`, `stockValuationModel`).
+
 ### 2026-09-30 — La synchro BMS effaçait un comptage de réception en cours
 **Fichiers** : `purchaseOrderModel.js` (`syncFromBMS`), `cronService.js`, `purchasesController.js`
 
