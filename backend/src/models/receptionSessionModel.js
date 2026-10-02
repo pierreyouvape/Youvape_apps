@@ -77,8 +77,10 @@ async function openSession(purchaseOrderId, userId, db = pool) {
     );
 
     const { rows: lignes } = await client.query(
-      `SELECT poi.id, poi.supplier_sku, poi.product_id, ${UNITS_EXPECTED} AS units_expected
+      `SELECT poi.id, poi.supplier_sku, poi.product_id, p.sku AS product_sku,
+              ${UNITS_EXPECTED} AS units_expected
          FROM purchase_order_items poi
+         LEFT JOIN products p ON p.id = poi.product_id
         WHERE poi.purchase_order_id = $1`,
       [purchaseOrderId],
     );
@@ -123,13 +125,50 @@ const norm = (s) => String(s || '').toLowerCase().replace(/\s+/g, ' ').trim();
  * retenu pour le contrôle de facture, et pour la même raison — la référence du
  * document fait foi avant toute déduction.
  */
+/**
+ * Rapproche une de nos lignes de la ligne correspondante chez BMS.
+ *
+ * SANS CET IDENTIFIANT, RIEN NE PART : la route de réception désigne les lignes
+ * par leur id chez BMS, et une ligne non rapprochée fait échouer toute la
+ * réception.
+ *
+ * Le rapprochement se faisait sur la référence fournisseur, puis sur le
+ * `product_id`. Les deux pouvaient échouer ENSEMBLE, et l'ont fait sur le bon
+ * 121232 (commande interne Castelnau, 01/10/2026) :
+ *   • BMS renvoie `supplier_sku: null` sur une commande sans référence
+ *     fournisseur — rien à comparer ;
+ *   • `b.productId` est l'identifiant du produit CHEZ BMS (3 972 906), comparé
+ *     à notre `product_id` INTERNE. Deux espaces d'identifiants distincts : ce
+ *     test ne pouvait jamais réussir, il n'a jamais rapproché une seule ligne.
+ *
+ * C'est le SKU qui identifie le produit de part et d'autre, et c'est donc lui
+ * qui fait foi. Trois tentatives, de la plus précise à la plus tolérante.
+ */
 function matchBmsLine(ligne, lignesBms) {
+  // 1. La référence fournisseur, quand les deux côtés en ont une.
   if (ligne.supplier_sku) {
-    const parRef = lignesBms.find((b) => norm(b.supplierSku) === norm(ligne.supplier_sku));
+    const parRef = lignesBms.find(
+      (b) => b.supplierSku && norm(b.supplierSku) === norm(ligne.supplier_sku),
+    );
     if (parRef) return parRef.id;
   }
-  const parProduit = lignesBms.find((b) => b.productId && b.productId === ligne.product_id);
-  return parProduit ? parProduit.id : null;
+
+  // 2. Le SKU du produit — la clé partagée, stable des deux côtés.
+  if (ligne.product_sku) {
+    const parSku = lignesBms.find((b) => b.sku && norm(b.sku) === norm(ligne.product_sku));
+    if (parSku) return parSku.id;
+  }
+
+  // 3. Notre colonne `supplier_sku` contre le SKU de BMS : la synchro y recopie
+  //    le SKU du produit quand la commande n'a pas de référence fournisseur.
+  if (ligne.supplier_sku) {
+    const parSkuRecopie = lignesBms.find(
+      (b) => b.sku && norm(b.sku) === norm(ligne.supplier_sku),
+    );
+    if (parSkuRecopie) return parSkuRecopie.id;
+  }
+
+  return null;
 }
 
 /**
@@ -263,9 +302,15 @@ async function validateSession(sessionId, userId, motifs = {}, db = pool) {
 
   const sansLien = lignes.filter((l) => !l.bms_line_id);
   if (sansLien.length > 0) {
+    // Le message disait « pas d'équivalent dans BMS » en listant des SKU, ce qui
+    // se lit « ces SKU n'existent pas » — et envoyait chercher du côté du
+    // catalogue alors que les produits sont bien là. Ce qui manque, c'est
+    // l'identifiant de LA LIGNE chez BMS, et « Recharger depuis BMS » le pose.
     throw new Error(
-      'Ces lignes n\'ont pas d\'équivalent dans BMS, la réception ne peut pas partir : '
-      + sansLien.map((l) => l.supplier_sku || l.product_name || `ligne ${l.purchase_order_item_id}`).join(', '),
+      'Ces lignes ne sont pas encore rattachées à leur ligne dans BMS, la réception ne peut pas '
+      + 'partir : ' + sansLien.map((l) => l.supplier_sku || l.product_name || `ligne ${l.purchase_order_item_id}`).join(', ')
+      + '.\n\nLes produits existent bien — c\'est le lien avec la commande BMS qui manque. '
+      + 'Cliquez sur « Recharger depuis BMS » : il rapproche les lignes sans toucher à votre comptage.',
     );
   }
 
@@ -607,9 +652,10 @@ async function refreshFromBms(sessionId, db = pool) {
 
     // Lignes déjà connues mais jamais rapprochées : on réessaie.
     const { rows: orphelines } = await client.query(
-      `SELECT c.purchase_order_item_id, poi.supplier_sku, poi.product_id
+      `SELECT c.purchase_order_item_id, poi.supplier_sku, poi.product_id, p.sku AS product_sku
          FROM reception_counts c
          JOIN purchase_order_items poi ON poi.id = c.purchase_order_item_id
+         LEFT JOIN products p ON p.id = poi.product_id
         WHERE c.session_id = $1 AND c.bms_line_id IS NULL`,
       [sessionId],
     );
