@@ -214,7 +214,7 @@ async function listDocuments({ supplierId, status, paymentStatus, from, to, docT
             (SELECT count(*) FROM supplier_document_lines l
               WHERE l.document_id = d.id
                 AND l.verdict IS NOT NULL
-                AND l.verdict NOT IN ('ok', 'free', 'discount', 'rounding', 'packaging', 'shipping')
+                AND l.verdict NOT IN ('ok', 'free', 'discount', 'rounding', 'packaging', 'shipping', 'credit')
                 AND l.material) AS difference_count,
             -- Où en est la mise en stock de la ou des commandes rapprochées :
             -- 0 % tant que rien n'est arrivé, 100 % quand tout est rangé. Même

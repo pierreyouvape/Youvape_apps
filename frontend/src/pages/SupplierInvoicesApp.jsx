@@ -146,6 +146,7 @@ const VERDICTS = {
   shipping: { rank: 6, label: 'Frais de port', tone: 'blue', action: 'Non prévus à la commande' },
   discount: { rank: 7, label: 'Remise de pied', tone: 'green', action: 'Répartie sur le coût réel de chaque ligne' },
   free: { rank: 8, label: 'Offert', tone: 'green', action: 'Geste commercial, rien à faire' },
+  credit: { rank: 8, label: 'Avoir', tone: 'green', action: 'Vient en déduction, rien à réclamer' },
   packaging: { rank: 9, label: 'Conditionnement', tone: 'grey', action: 'Unités contre packs : même marchandise, même montant' },
   // Complété à l'affichage par le facteur déduit (« vendu par 2 »), quand on l'a.
 
@@ -160,7 +161,7 @@ const VERDICTS = {
  * pas, ni l'inverse. Un geste suppose en plus un écart matériel — au-delà du
  * garde-fou d'arrondi.
  */
-const VERDICTS_SANS_GESTE = ['ok', 'free', 'discount', 'rounding', 'packaging', 'shipping'];
+const VERDICTS_SANS_GESTE = ['ok', 'free', 'discount', 'rounding', 'packaging', 'shipping', 'credit'];
 const appelleUnGeste = (l) => !!l.verdict && !VERDICTS_SANS_GESTE.includes(l.verdict) && !!l.material;
 
 /**
@@ -1365,7 +1366,7 @@ function FilingTab({ suppliers, mobile, reloadKey, onSaved, initialDocId }) {
     try {
       const { data } = await axios.post(`${BASE}/${row.id}/recheck`);
       const reste = (data.document?.lines || []).filter(
-        (l) => l.verdict && !['ok', 'free', 'discount', 'rounding', 'packaging', 'shipping'].includes(l.verdict) && l.material,
+        (l) => l.verdict && !['ok', 'free', 'discount', 'rounding', 'packaging', 'shipping', 'credit'].includes(l.verdict) && l.material,
       ).length;
       window.alert(reste === 0
         ? `${row.number} : plus aucun écart à traiter.`

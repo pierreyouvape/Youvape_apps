@@ -189,6 +189,12 @@ function compareInvoiceToOrder({ invoice, order, options = {} }) {
   // Le document est-il censé reprendre toute la commande ? Une facture, oui ;
   // un avoir, non.
   const expectFullOrder = options.expectFullOrder !== false;
+  // Un avoir ne refacture pas la marchandise : chaque ligne est une CORRECTION,
+  // en déduction. La confronter au montant commandé additionnait les deux —
+  // l'avoir JoshNoa RV3/2026/02877 (−3,46 €, extourne d'un écart de tarif sur
+  // 5 concentrés commandés à 4,50 €) affichait « écart −25,96 € », soit
+  // −3,46 € − 22,50 €. L'écart d'une ligne d'avoir est son montant, rien d'autre.
+  const creditNote = options.creditNote === true || invoice?.docType === 'credit_note';
 
   const invoiceLines = invoice?.lines || [];
   const orderLines = order?.lines || [];
@@ -206,6 +212,26 @@ function compareInvoiceToOrder({ invoice, order, options = {} }) {
     const ord = orderByRef.get(key);
     const invoicedTotal = round2(inv.total);
     const invoicedUnitPrice = inv.qty ? inv.total / inv.qty : null;
+
+    if (creditNote) {
+      results.push({
+        ref: (ord && ord.ref) || inv.ref,
+        label: inv.label || (ord && ord.productName) || null,
+        verdict: 'credit',
+        // Rien à faire : l'avoir est déjà le geste du fournisseur.
+        material: false,
+        qtyOrdered: ord ? Number(ord.qty) || 0 : null,
+        qtyInvoiced: inv.qty,
+        expectedUnitPrice: ord ? Number(ord.price) || 0 : null,
+        invoicedUnitPrice,
+        expectedTotal: 0,
+        invoicedTotal,
+        gapQty: 0,
+        gapPrice: 0,
+        gap: invoicedTotal,
+      });
+      continue;
+    }
 
     if (!ord) {
       // Facturé sans avoir été commandé. À 0 €, c'est un geste commercial (PLV,
@@ -651,7 +677,7 @@ function compareInvoiceToOrder({ invoice, order, options = {} }) {
   // Ventilation additive : la somme des six familles vaut exactement l'écart global,
   // pour qu'aucun euro ne se perde entre le tableau et le total affiché.
   let claimable = 0, inOurFavour = 0, minorGap = 0, roundingGap = 0, qtyGap = 0, extrasGap = 0, packagingGap = 0;
-  const EXTRA_VERDICTS = ['not_ordered', 'free', 'shipping', 'discount', 'other'];
+  const EXTRA_VERDICTS = ['not_ordered', 'free', 'shipping', 'discount', 'other', 'credit'];
 
   for (const r of results) {
     if (EXTRA_VERDICTS.includes(r.verdict)) {
@@ -684,7 +710,8 @@ function compareInvoiceToOrder({ invoice, order, options = {} }) {
       readGap,
       reconciles,
       order: orderTotal,
-      gap: round2(invoiceParsed - orderTotal),
+      // Un avoir EST l'écart : il ne se retranche pas d'un montant commandé.
+      gap: creditNote ? invoiceParsed : round2(invoiceParsed - orderTotal),
       // Remise globale du pied de facture (négative) et le taux qu'elle représente.
       footerDiscount,
       discountRate: Math.round(discountRate * 10000) / 10000,
@@ -765,6 +792,7 @@ const DIFFERENCE_KINDS = {
   shipping:           { rank: 6,  label: 'Frais de port',         action: 'Non prévus à la commande' },
   discount:           { rank: 7,  label: 'Remise de pied',        action: 'Répartie sur le coût réel de chaque ligne' },
   free:               { rank: 8,  label: 'Offert',                action: 'Geste commercial, rien à faire' },
+  credit:             { rank: 8,  label: 'Avoir',                 action: 'Vient en déduction, rien à réclamer' },
   packaging:          { rank: 9,  label: 'Conditionnement',       action: 'Unités contre packs : même marchandise, même montant' },
   rounding:           { rank: 10, label: 'Arrondi de remise',     action: 'Calcul non arrondi du fournisseur, pas une erreur de tarif' },
   other:              { rank: 11, label: 'Ligne hors produit',    action: 'À qualifier' },
@@ -844,7 +872,8 @@ function listTariffUpdates(comparison, options = {}) {
   // 0,005, et « Arrondi de remise » sur la ligne à vie. Sept lignes de LIPS
   // FAC/2026/04474 étaient dans ce cas, sans aucun bouton pour en sortir.
   const seuil = Number.isFinite(options.threshold) ? options.threshold : 0.0005;
-  const hors = ['packaging', 'missing_in_invoice', 'free', 'not_ordered', 'shipping', 'discount', 'other'];
+  // Un avoir n'est pas un prix d'achat : 3,46 € d'extourne n'est pas le tarif du produit.
+  const hors = ['packaging', 'missing_in_invoice', 'free', 'not_ordered', 'shipping', 'discount', 'other', 'credit'];
 
   return (comparison?.lines || [])
     .filter((l) => l.ref

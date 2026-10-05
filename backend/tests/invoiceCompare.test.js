@@ -990,6 +990,30 @@ test('un avoir ne réclame pas le reste de la commande (cas JoshNoa RV3/2026/027
   assert.ok(close(avecGarde.totals.order, 13.8));
 });
 
+test("l'écart d'un avoir est son montant, pas montant − commande (cas JoshNoa RV3/2026/02877)", () => {
+  // Extourne de 3,46 € sur 5 concentrés commandés à 4,50 € : l'écran annonçait
+  // « écart −25,96 € » (−3,46 − 22,50) et proposait 3,46 € comme nouveau tarif.
+  const r = compareInvoiceToOrder({
+    invoice: {
+      docType: 'credit_note',
+      totalHt: -3.46,
+      lines: [{ ref: 'josh00012308', qty: 1, lineTotalHt: -3.46 }],
+    },
+    order: { lines: [
+      { ref: 'josh00012308', qty: 5, price: 4.5 },
+      { ref: 'josh00009999', qty: 10, price: 100 },
+    ] },
+    options: { expectFullOrder: false },
+  });
+  assert.strictEqual(r.lines.length, 1);
+  assert.strictEqual(r.lines[0].verdict, 'credit');
+  assert.ok(close(r.lines[0].gap, -3.46));
+  assert.ok(close(r.lines[0].netGap, -3.46));
+  assert.ok(close(r.totals.gap, -3.46));
+  assert.strictEqual(r.summary.claimable, 0);
+  assert.strictEqual(listTariffUpdates(r).length, 0);
+});
+
 test('remise ciblée par règle fournisseur : RSPV20 ne porte que sur les Vaporesso', () => {
   // Facture LVP F2609287455 : 89,11 € de remise, mais seuls les Vaporesso sont
   // remisés — Dojo et Armour G/GS exclus. Étalée sur tout, elle annonçait
