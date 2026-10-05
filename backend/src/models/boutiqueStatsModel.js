@@ -15,11 +15,17 @@
 
 const pool = require('../config/database');
 
+// « Sans catégorie » / « Sans sous-catégorie » : valeur de filtre réservée.
+const NONE = '__none__';
+
 const DIMENSIONS = {
-  products:   { key: 's.product_id', label: 'COALESCE(MAX(p.name), MAX(s.product_name))' },
-  brands:     { key: "COALESCE(NULLIF(TRIM(p.brand), ''), 'Sans marque')", label: null },
-  categories: { key: "COALESCE(c.name, 'Sans catégorie')", label: null },
+  products:      { key: 's.product_id', label: 'COALESCE(MAX(p.name), MAX(s.product_name))' },
+  brands:        { key: "COALESCE(NULLIF(TRIM(p.brand), ''), 'Sans marque')", label: null },
+  categories:    { key: "COALESCE(c.name, 'Sans catégorie')", label: null },
+  subcategories: { key: "COALESCE(sc.name, 'Sans sous-catégorie')", label: null },
 };
+
+const CA_HT = 'SUM(s.quantity * s.unit_price / (1 + COALESCE(s.tax_rate, 20) / 100))::float';
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -28,36 +34,84 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
  * @param {string} from AAAA-MM-JJ (inclus)
  * @param {string} to   AAAA-MM-JJ (inclus) — sold_at est en heure de Paris
  * @param {boolean} withAmounts true pour un responsable
+ * @param {{ category?: string, subcategory?: string }} filters id Nextore ou NONE
+ *
+ * Les parts (`pct`) se calculent sur la SÉLECTION filtrée ; `selectionPct`
+ * donne le poids de cette sélection dans le CA de toute la boutique.
  */
-async function getRankings(warehouseId, from, to, withAmounts) {
+async function getRankings(warehouseId, from, to, withAmounts, filters = {}) {
   if (!DATE_RE.test(from || '') || !DATE_RE.test(to || '')) {
     const err = new Error('Période invalide (from/to attendus en AAAA-MM-JJ)');
     err.statusCode = 400;
     throw err;
   }
+  const category = filters.category || null;
+  // Une sous-catégorie n'a de sens que sous sa catégorie.
+  const subcategory = category ? (filters.subcategory || null) : null;
 
-  const rank = async ({ key, label }) => {
-    const { rows } = await pool.query(
-      `SELECT ${key} AS id,
-              ${label || key} AS name,
-              SUM(s.quantity)::float AS qty,
-              SUM(s.quantity * s.unit_price / (1 + COALESCE(s.tax_rate, 20) / 100))::float AS ca_ht
-       FROM nextore_sales s
+  const base = (useCategory, useSubcategory) => {
+    const params = [warehouseId, from, to];
+    const where = ['s.warehouse_id = $1', 's.sold_at >= $2::date', 's.sold_at < $3::date + 1'];
+    if (useCategory && category) {
+      if (category === NONE) where.push('c.id IS NULL');
+      else { params.push(category); where.push(`c.id = $${params.length}`); }
+    }
+    if (useSubcategory && subcategory) {
+      if (subcategory === NONE) where.push('sc.id IS NULL');
+      else { params.push(subcategory); where.push(`sc.id = $${params.length}`); }
+    }
+    return {
+      params,
+      sql: `FROM nextore_sales s
        LEFT JOIN nextore_products p ON p.product_id = s.product_id
        LEFT JOIN nextore_categories c ON c.id = p.category_id
-       WHERE s.warehouse_id = $1
-         AND s.sold_at >= $2::date
-         AND s.sold_at < $3::date + 1
+       LEFT JOIN nextore_subcategories sc ON sc.id = p.subcategory_id
+       WHERE ${where.join(' AND ')}`,
+    };
+  };
+
+  const rank = async ({ key, label }) => {
+    const { sql, params } = base(true, true);
+    const { rows } = await pool.query(
+      `SELECT ${key} AS id, ${label || key} AS name,
+              SUM(s.quantity)::float AS qty, ${CA_HT} AS ca_ht
+       ${sql}
        GROUP BY ${key}`,
-      [warehouseId, from, to]
+      params
     );
     return rows;
   };
 
-  const [products, brands, categories, sync] = await Promise.all([
+  // Options des listes : catégories vendues sur la période (sans filtre),
+  // sous-catégories vendues dans la catégorie choisie.
+  const options = async (idExpr, nameExpr, useCategory) => {
+    const { sql, params } = base(useCategory, false);
+    const { rows } = await pool.query(
+      `SELECT ${idExpr} AS id, ${nameExpr} AS name
+       ${sql}
+       GROUP BY 1, 2
+       ORDER BY (${idExpr} = '${NONE}'), 2`,
+      params
+    );
+    return rows;
+  };
+
+  const shopTotal = async () => {
+    const { sql, params } = base(false, false);
+    const { rows } = await pool.query(`SELECT ${CA_HT} AS ca_ht ${sql}`, params);
+    return rows[0].ca_ht || 0;
+  };
+
+  const [products, brands, categories, categoryOptions, subcategoryOptions, boutique, sync] = await Promise.all([
     rank(DIMENSIONS.products),
     rank(DIMENSIONS.brands),
-    rank(DIMENSIONS.categories),
+    // Une catégorie choisie : l'onglet détaille ses sous-catégories.
+    rank(category ? DIMENSIONS.subcategories : DIMENSIONS.categories),
+    options(`COALESCE(c.id, '${NONE}')`, "COALESCE(c.name, 'Sans catégorie')", false),
+    category
+      ? options(`COALESCE(sc.id, '${NONE}')`, "COALESCE(sc.name, 'Sans sous-catégorie')", true)
+      : Promise.resolve([]),
+    shopTotal(),
     // timestamptz → date ISO dans le JSON (le texte brut de app_config ne se lit pas partout)
     pool.query("SELECT config_value::timestamptz AS at FROM app_config WHERE config_key = 'nextore_last_sales_sync_at'"),
   ]);
@@ -77,14 +131,18 @@ async function getRankings(warehouseId, from, to, withAmounts) {
     from,
     to,
     lastSalesSyncAt: sync.rows[0]?.at || null,
+    filters: { category, subcategory },
+    options: { categories: categoryOptions, subcategories: subcategoryOptions },
     totals: {
       qty: products.reduce((sum, r) => sum + r.qty, 0),
+      selectionPct: boutique ? Math.round((total / boutique) * 1000) / 10 : 0,
       ...(withAmounts ? { ca_ht: Math.round(total * 100) / 100 } : {}),
     },
     products: shape(products),
     brands: shape(brands),
     categories: shape(categories),
+    categoriesAreSubcategories: Boolean(category),
   };
 }
 
-module.exports = { getRankings };
+module.exports = { getRankings, NONE };

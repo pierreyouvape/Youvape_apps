@@ -29,7 +29,7 @@ const fail = (res, error, where) => {
   return res.status(500).json({ error: 'Erreur serveur' });
 };
 
-/** GET /:shop?from&to — classements de la boutique sur la période. */
+/** GET /:shop?from&to[&category&subcategory] — classements de la boutique sur la période. */
 const getRankings = async (req, res) => {
   try {
     const { level, shops } = await access(req.user);
@@ -38,7 +38,11 @@ const getRankings = async (req, res) => {
     if (!wh || !shops.some((s) => s.id === wh.id)) {
       return res.status(403).json({ error: "Accès refusé : vous n'avez pas accès à cette boutique" });
     }
-    const data = await boutiqueStatsModel.getRankings(wh.id, req.query.from, req.query.to, level === 'responsable');
+    const filters = {
+      category: req.query.category ? String(req.query.category) : null,
+      subcategory: req.query.subcategory ? String(req.query.subcategory) : null,
+    };
+    const data = await boutiqueStatsModel.getRankings(wh.id, req.query.from, req.query.to, level === 'responsable', filters);
     res.json({ level, ...data });
   } catch (error) {
     fail(res, error, 'getRankings');

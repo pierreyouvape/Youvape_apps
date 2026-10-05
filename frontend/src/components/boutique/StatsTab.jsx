@@ -57,6 +57,18 @@ const carte = {
   background: C.white, border: `1px solid ${C.greyB}`, borderRadius: 12, marginBottom: 16,
 };
 
+/**
+ * Options d'une liste, triées « 10 ml, 50 ml, 100 ml » (ordre numérique), la
+ * valeur « Sans… » en dernier. La sélection courante reste proposée même si
+ * elle n'a plus de vente sur la nouvelle période.
+ */
+const avecSelection = (options = [], valeur) => {
+  const liste = [...options].sort((a, b) => (a.id === '__none__') - (b.id === '__none__')
+    || a.name.localeCompare(b.name, 'fr', { numeric: true }));
+  if (valeur && !liste.some((o) => o.id === valeur)) liste.unshift({ id: valeur, name: 'Aucune vente sur la période' });
+  return liste;
+};
+
 /* ─── PETITS COMPOSANTS ─────────────────────────────────── */
 function Pastille({ actif, onClick, children }) {
   return (
@@ -114,6 +126,8 @@ export default function StatsTab({ shop, token }) {
   const [onglet, setOnglet] = useState('products');
   const [tri, setTri] = useState('pct'); // 'pct' | 'qty'
   const [recherche, setRecherche] = useState('');
+  const [categorie, setCategorie] = useState('');
+  const [sousCategorie, setSousCategorie] = useState('');
   const [limite, setLimite] = useState(PAGE);
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -123,14 +137,17 @@ export default function StatsTab({ shop, token }) {
     let annule = false;
     setLoading(true);
     setErreur(null);
-    axios.get(`${API_URL}/boutique-stats/${shop.slug}`, { ...authHeaders(token), params: { from, to } })
+    axios.get(`${API_URL}/boutique-stats/${shop.slug}`, {
+      ...authHeaders(token),
+      params: { from, to, category: categorie || undefined, subcategory: sousCategorie || undefined },
+    })
       .then((res) => { if (!annule) setData(res.data); })
       .catch((err) => { if (!annule) setErreur(err.response?.data?.error || 'Erreur de chargement'); })
       .finally(() => { if (!annule) setLoading(false); });
     return () => { annule = true; };
-  }, [token, shop.slug, from, to]);
+  }, [token, shop.slug, from, to, categorie, sousCategorie]);
 
-  useEffect(() => { setLimite(PAGE); }, [onglet, tri, recherche, shop.slug, from, to]);
+  useEffect(() => { setLimite(PAGE); }, [onglet, tri, recherche, shop.slug, from, to, categorie, sousCategorie]);
 
   const choisirPeriode = (p) => {
     setPeriode(p.key);
@@ -148,6 +165,13 @@ export default function StatsTab({ shop, token }) {
     const q = recherche.trim().toLowerCase();
     return q ? classees.filter((r) => String(r.name || '').toLowerCase().includes(q)) : classees;
   }, [data, onglet, tri, recherche]);
+
+  // Une catégorie choisie : l'onglet Catégories détaille ses sous-catégories.
+  const libelleOnglet = (o) => (o.key === 'categories' && data?.categoriesAreSubcategories ? 'Sous-catégories' : o.label);
+
+  // Une sous-catégorie n'a de sens que si la catégorie en a de vraies.
+  const sousCategoriesUtiles = Boolean(categorie)
+    && (data?.options.subcategories || []).some((o) => o.id !== '__none__');
 
   const maxPct = Math.max(0, ...(data?.[onglet] || []).map((r) => r.pct));
 
@@ -170,6 +194,39 @@ export default function StatsTab({ shop, token }) {
         )}
       </div>
 
+      {/* Filtres catégorie / sous-catégorie : les parts se calculent sur la sélection */}
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 18 }}>
+        <span style={{ fontSize: 13, color: C.greyT, fontWeight: 600 }}>Catégorie</span>
+        <select
+          value={categorie}
+          onChange={(e) => { setCategorie(e.target.value); setSousCategorie(''); }}
+          style={{ ...champ, minWidth: 200 }}
+        >
+          <option value="">Toutes</option>
+          {avecSelection(data?.options.categories, categorie).map((o) => (
+            <option key={o.id} value={o.id}>{o.name}</option>
+          ))}
+        </select>
+        <span style={{ fontSize: 13, color: C.greyT, fontWeight: 600, marginLeft: 8 }}>Sous-catégorie</span>
+        <select
+          value={sousCategorie}
+          onChange={(e) => setSousCategorie(e.target.value)}
+          disabled={!sousCategoriesUtiles}
+          style={{ ...champ, minWidth: 180, opacity: sousCategoriesUtiles ? 1 : 0.5 }}
+        >
+          <option value="">Toutes</option>
+          {avecSelection(data?.options.subcategories, sousCategorie).map((o) => (
+            <option key={o.id} value={o.id}>{o.name}</option>
+          ))}
+        </select>
+        {categorie && (
+          <button
+            onClick={() => { setCategorie(''); setSousCategorie(''); }}
+            style={{ ...champ, cursor: 'pointer', fontWeight: 600, color: MAUVE, borderColor: 'transparent', background: 'none' }}
+          >Effacer</button>
+        )}
+      </div>
+
       {erreur && (
         <div style={{
           background: C.redL, borderLeft: `4px solid ${C.red}`, color: '#7F1D1D',
@@ -181,6 +238,7 @@ export default function StatsTab({ shop, token }) {
         <>
           <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 16 }}>
             {avecMontants && <Tuile label="CA HT" value={eur.format(data.totals.ca_ht)} />}
+            {categorie && <Tuile label="Part du CA de la boutique" value={pctFmt(data.totals.selectionPct)} sub="pour la sélection" />}
             <Tuile label="Unités vendues" value={nf.format(data.totals.qty)} sub="retours déduits" />
             <Tuile label="Références vendues" value={nf.format(data.products.length)} />
           </div>
@@ -192,7 +250,7 @@ export default function StatsTab({ shop, token }) {
             }}>
               {ONGLETS.map((o) => (
                 <Pastille key={o.key} actif={onglet === o.key} onClick={() => setOnglet(o.key)}>
-                  {o.label} <span style={{ opacity: 0.7, fontWeight: 500 }}>({nf.format(data[o.key].length)})</span>
+                  {libelleOnglet(o)} <span style={{ opacity: 0.7, fontWeight: 500 }}>({nf.format(data[o.key].length)})</span>
                 </Pastille>
               ))}
               <input
@@ -208,7 +266,7 @@ export default function StatsTab({ shop, token }) {
                 <thead>
                   <tr>
                     <Th align="right">#</Th>
-                    <Th>{ONGLETS.find((o) => o.key === onglet).label.replace(/s$/, '')}</Th>
+                    <Th>{libelleOnglet(ONGLETS.find((o) => o.key === onglet)).replace(/s$/, '')}</Th>
                     <Th align="right" onClick={() => setTri('qty')} active={tri === 'qty'}>Qté vendue</Th>
                     <Th onClick={() => setTri('pct')} active={tri === 'pct'}>Part du CA</Th>
                     {avecMontants && <Th align="right">CA HT</Th>}
