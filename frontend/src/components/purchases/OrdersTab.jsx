@@ -21,6 +21,60 @@ const MOTIF_LABEL = {
 // on le dit devant le numéro.
 const DOC_TYPE_PREFIX = { credit_note: 'Avoir ', proforma: 'Proforma ' };
 
+// Avancement de la réception, en PIÈCES : la seule unité commune à des lignes
+// commandées les unes à la pièce, les autres en packs. BMS, lui, additionne les
+// deux et annonçait 108 % pour 358775, reçue pile. Arrondi qui ne ment pas :
+// 99,6 % reste « 99 % » (il manque quelque chose), 100,2 % devient « 101 % ».
+function pctRecu(commandees, recues) {
+  if (!commandees) return null;
+  if (recues === commandees) return 100;
+  const pct = (100 * recues) / commandees;
+  return recues < commandees ? Math.min(99, Math.floor(pct)) : Math.max(101, Math.ceil(pct));
+}
+const pctClass = (pct) => pct < 100 ? 'reception-manque' : pct > 100 ? 'reception-trop' : 'reception-ok';
+
+// Totaux en pièces d'une commande ouverte, lignes de remise exclues.
+function totauxPieces(items) {
+  let commandees = 0, recues = 0;
+  for (const it of items || []) {
+    if (it.item_type === 'discount') continue;
+    commandees += (parseInt(it.qty_ordered, 10) || 0) * Math.max(parseInt(it.units_per_qty, 10) || 1, 1);
+    recues += parseInt(it.units_received, 10) || 0;
+  }
+  return { commandees, recues };
+}
+
+// Écart d'une ligne en pièces : reçu − attendu (négatif = manque).
+const ecartLigne = (it) =>
+  (parseInt(it.units_received, 10) || 0)
+  - (parseInt(it.qty_ordered, 10) || 0) * Math.max(parseInt(it.units_per_qty, 10) || 1, 1);
+
+// Badge de statut. « Partielle » ne disait rien — et mentait au-delà de 100 % :
+// une commande en cours de réception affiche ce qui est reçu, en pourcentage.
+// Une commande close (reçue/terminée) garde son statut, suivi du pourcentage
+// seulement s'il n'est pas de 100 %.
+function StatutCommande({ status, label, commandees, recues }) {
+  const pct = pctRecu(commandees, recues);
+  const titre = pct !== null ? `Reçu ${recues} / ${commandees} pièces` : undefined;
+  if (status === 'partial' && pct !== null) {
+    return (
+      <span className={`status-badge ${pctClass(pct)}`} title={titre}>
+        Reçue à {pct} %
+      </span>
+    );
+  }
+  return (
+    <>
+      <span className={`status-badge status-${status}`}>{label}</span>
+      {['received', 'completed'].includes(status) && pct !== null && pct !== 100 && (
+        <span className={`status-badge ${pctClass(pct)}`} style={{ marginLeft: '4px' }} title={titre}>
+          {pct} %
+        </span>
+      )}
+    </>
+  );
+}
+
 const PAYMENT_METHOD_LABEL = {
   amex: 'Amex', cb: 'CB', virement: 'Virement', prelevement: 'Prélèvement',
   cheque: 'Chèque', especes: 'Espèces', avoir: 'Avoir', autre: 'Autre',
@@ -79,6 +133,8 @@ const OrdersTab = ({ token }) => {
   // Filters
   const [filterSupplier, setFilterSupplier] = useState('');
   const [filterStatus, setFilterStatus] = useState('active');
+  // Détail : n'afficher que les lignes reçues en trop ou pas assez.
+  const [ecartsSeuls, setEcartsSeuls] = useState(false);
   const [searchInput, setSearchInput] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const searchTimeoutRef = useRef(null);
@@ -107,7 +163,7 @@ const OrdersTab = ({ token }) => {
     sent: 'Envoyée',
     confirmed: 'Attendu',
     shipped: 'Expédiée',
-    partial: 'Partielle',
+    partial: 'En réception',
     received: 'Reçue',
     completed: 'Terminée',
     cancelled: 'Annulée'
@@ -451,11 +507,6 @@ const OrdersTab = ({ token }) => {
     }
   };
 
-  // Badge produit manquant : uniquement pour received/partial
-  const hasMissingProducts = (order) =>
-    ['received', 'partial', 'completed'].includes(order.status) &&
-    parseInt(order.total_qty_received) < parseInt(order.total_qty_ordered);
-
   // Tout est reçu ? En PIÈCES, la seule unité tenue de bout en bout : une ligne
   // comptée en packs a `qty_ordered` en lots, et la comparer à `units_received`
   // dirait qu'un pack de 10 reçu en entier manque encore de 9.
@@ -465,11 +516,6 @@ const OrdersTab = ({ token }) => {
     return !lignes.some(it =>
       (parseInt(it.qty_ordered, 10) || 0) * (parseInt(it.units_per_qty, 10) || 1)
         > (parseInt(it.units_received, 10) || 0));
-  };
-
-  const hasMissingProductsDetail = (order) => {
-    if (!order?.items) return false;
-    return order.items.some(item => (item.qty_received || 0) < (item.qty_ordered || 0));
   };
 
   // Tri des colonnes
@@ -540,7 +586,7 @@ const OrdersTab = ({ token }) => {
               <option value="">Toutes</option>
               <option value="draft">Brouillon</option>
               <option value="confirmed">Attendu</option>
-              <option value="partial">Partielle</option>
+              <option value="partial">En réception</option>
               <option value="received">Reçue</option>
               <option value="completed">Terminée</option>
             </select>
@@ -663,9 +709,12 @@ const OrdersTab = ({ token }) => {
                       : '-'}
                   </td>
                   <td className="text-center">
-                    <span className={`status-badge status-${order.status}`}>
-                      {statusLabels[order.status]}
-                    </span>
+                    <StatutCommande
+                      status={order.status}
+                      label={statusLabels[order.status]}
+                      commandees={parseInt(order.total_units_ordered, 10) || 0}
+                      recues={parseInt(order.total_units_received, 10) || 0}
+                    />
                     {/* UNE COMMANDE QUI N'EST PAS DANS BMS NE VIT QUE CHEZ NOUS.
                         Le fournisseur ne l'a pas reçue, et la réception ne pourra
                         rien enregistrer : elle a besoin de l'identifiant du bon
@@ -678,14 +727,6 @@ const OrdersTab = ({ token }) => {
                         title="Cette commande n'a jamais été créée dans BMS : le fournisseur ne l'a pas reçue, et elle ne peut pas être réceptionnée. Ouvrez-la et utilisez « Envoyer à BMS »."
                       >
                         ⚠ Pas dans BMS
-                      </span>
-                    )}
-                    {hasMissingProducts(order) && (
-                      <span
-                        className="badge-missing"
-                        title={`Reçu : ${order.total_qty_received} / ${order.total_qty_ordered}`}
-                      >
-                        ⚠ Manquant
                       </span>
                     )}
                   </td>
@@ -770,12 +811,11 @@ const OrdersTab = ({ token }) => {
                     <div>
                       <strong>Statut</strong>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <span className={`status-badge status-${selectedOrder.status}`}>
-                          {statusLabels[selectedOrder.status]}
-                        </span>
-                        {hasMissingProductsDetail(selectedOrder) && (
-                          <span className="badge-missing">⚠ Produit(s) manquant(s)</span>
-                        )}
+                        <StatutCommande
+                          status={selectedOrder.status}
+                          label={statusLabels[selectedOrder.status]}
+                          {...totauxPieces(selectedOrder.items)}
+                        />
                       </div>
                     </div>
                     <div>
@@ -902,6 +942,50 @@ const OrdersTab = ({ token }) => {
                   )}
 
                   {/* Items */}
+                  {(() => {
+                    // Bilan de réception en PIÈCES, ligne par ligne : ce qui
+                    // manque, ce qui est arrivé en trop, d'un coup d'œil.
+                    const lignes = (selectedOrder.items || []).filter(i => i.item_type !== 'discount');
+                    const { commandees, recues } = totauxPieces(lignes);
+                    if (recues === 0) return null;
+                    const pct = pctRecu(commandees, recues);
+                    let nManque = 0, piecesManque = 0, nTrop = 0, piecesTrop = 0;
+                    for (const it of lignes) {
+                      const e = ecartLigne(it);
+                      if (e < 0) { nManque++; piecesManque -= e; }
+                      if (e > 0) { nTrop++; piecesTrop += e; }
+                    }
+                    return (
+                      <div className="reception-bilan">
+                        <span className={`status-badge ${pctClass(pct)}`} style={{ fontSize: '14px' }}>
+                          {pct} % reçu
+                        </span>
+                        <span>{formatInt(recues)} / {formatInt(commandees)} pièces</span>
+                        <span className="reception-bilan-ok">✓ {lignes.length - nManque - nTrop} ligne(s) conforme(s)</span>
+                        {nManque > 0 && (
+                          <span className="reception-bilan-manque">
+                            ▼ {nManque} ligne(s) en manque : −{formatInt(piecesManque)} pièce(s)
+                          </span>
+                        )}
+                        {nTrop > 0 && (
+                          <span className="reception-bilan-trop">
+                            ▲ {nTrop} ligne(s) en trop : +{formatInt(piecesTrop)} pièce(s)
+                          </span>
+                        )}
+                        {(nManque > 0 || nTrop > 0) && (
+                          <label style={{ marginLeft: 'auto', cursor: 'pointer' }}>
+                            <input
+                              type="checkbox"
+                              checked={ecartsSeuls}
+                              onChange={e => setEcartsSeuls(e.target.checked)}
+                              style={{ marginRight: '6px' }}
+                            />
+                            Écarts seulement
+                          </label>
+                        )}
+                      </div>
+                    );
+                  })()}
                   <h4 style={{ marginBottom: '10px' }}>Articles ({selectedOrder.items?.length || 0})</h4>
                   <table className="purchases-table">
                     <thead>
@@ -910,8 +994,9 @@ const OrdersTab = ({ token }) => {
                         <th>Réf.</th>
                         <th className="text-right">Commandé</th>
                         <th className="text-right">Par pack</th>
-                        <th className="text-right">Total unités</th>
-                        <th className="text-right">Reçu</th>
+                        <th className="text-right">Total pièces</th>
+                        <th className="text-right">Reçu (pièces)</th>
+                        <th className="text-right">Écart</th>
                         <th className="text-right">Prix unit.</th>
                         <th className="text-right">Total HT</th>
                         <th>Stock avant</th>
@@ -920,9 +1005,10 @@ const OrdersTab = ({ token }) => {
                     <tbody>
                       {selectedOrder.items?.map(item => {
                         if (item.item_type === 'discount') {
+                          if (ecartsSeuls) return null;
                           return (
                             <tr key={item.id} style={{ background: '#f3f4f6' }}>
-                              <td style={{ maxWidth: '300px', fontStyle: 'italic', color: '#6b7280' }} colSpan={6}>
+                              <td style={{ maxWidth: '300px', fontStyle: 'italic', color: '#6b7280' }} colSpan={7}>
                                 {item.product_name}
                               </td>
                               <td className="text-right">—</td>
@@ -933,16 +1019,14 @@ const OrdersTab = ({ token }) => {
                             </tr>
                           );
                         }
-                        const missing = (item.qty_received || 0) < (item.qty_ordered || 0);
+                        const ecart = ecartLigne(item);
+                        if (ecartsSeuls && ecart === 0) return null;
+                        const rienRecu = (parseInt(item.units_received, 10) || 0) === 0;
+                        const fond = ecart > 0 ? '#f5f3ff' : (ecart < 0 && !rienRecu) ? '#fff7ed' : undefined;
                         return (
-                          <tr key={item.id} style={missing ? { background: '#fff7ed' } : {}}>
+                          <tr key={item.id} style={fond ? { background: fond } : {}}>
                             <td style={{ maxWidth: '300px' }}>
                               {item.product_name}
-                              {missing && (
-                                <span className="badge-missing" style={{ marginLeft: '6px' }}>
-                                  ⚠ {item.qty_ordered - item.qty_received} manquant(s)
-                                </span>
-                              )}
                             </td>
                             <td><code>{item.supplier_sku || item.product_sku || '-'}</code></td>
                             <td className="text-right">{formatInt(item.qty_ordered)}</td>
@@ -966,7 +1050,20 @@ const OrdersTab = ({ token }) => {
                                   onChange={e => updateReceivedQty(selectedOrder.id, item.id, parseInt(e.target.value) || 0)}
                                 />
                               ) : (
-                                item.qty_received
+                                formatInt(parseInt(item.units_received, 10) || 0)
+                              )}
+                            </td>
+                            {/* Écart en pièces : vert si conforme, orange s'il en
+                                manque, violet s'il en est arrivé en trop. */}
+                            <td className="text-right" style={{ whiteSpace: 'nowrap' }}>
+                              {ecart === 0 ? (
+                                <span className="reception-bilan-ok">✓</span>
+                              ) : ecart > 0 ? (
+                                <span className="reception-bilan-trop">+{formatInt(ecart)} en trop</span>
+                              ) : rienRecu ? (
+                                <span style={{ color: '#9ca3af' }}>{formatInt(ecart)}</span>
+                              ) : (
+                                <span className="reception-bilan-manque">{formatInt(ecart)} manquant</span>
                               )}
                             </td>
                             <td className="text-right">

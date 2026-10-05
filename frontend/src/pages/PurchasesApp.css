@@ -651,3 +651,23 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* Avancement de la réception (onglet Commandes), en pièces */
+.reception-manque { background: #ffedd5; color: #c2410c; }
+.reception-ok     { background: #d1fae5; color: #059669; }
+.reception-trop   { background: #ede9fe; color: #6d28d9; }
+
+.reception-bilan {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 18px;
+  margin-bottom: 14px;
+  padding: 10px 14px;
+  background: #f8f9fa;
+  border-radius: 6px;
+  font-size: 13px;
+}
+.reception-bilan-ok     { color: #059669; font-weight: 600; }
+.reception-bilan-manque { color: #c2410c; font-weight: 600; }
+.reception-bilan-trop   { color: #6d28d9; font-weight: 600; }

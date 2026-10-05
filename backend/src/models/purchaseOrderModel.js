@@ -15,6 +15,15 @@ const BMS_DECIDABLE_ERRORS = {
   BMS_TOTAL_MISMATCH: { ignore_total_mismatch: true } // commande partielle vs document
 };
 
+// Pièces reçues sur une ligne BMS commandée en packs. Un reçu qui dépasse le
+// nombre de packs commandés a été saisi en PIÈCES (notre réception n'envoie que
+// des pièces) : le multiplier par le pack le compterait qty_pack fois.
+function piecesRecues(qtyPacks, qtyRecu, qtyPack) {
+  const pack = Math.max(qtyPack || 1, 1);
+  if (pack > 1 && qtyRecu > qtyPacks) return qtyRecu;
+  return qtyRecu * pack;
+}
+
 const purchaseOrderModel = {
   BMS_DECIDABLE_ERRORS,
 
@@ -37,6 +46,13 @@ const purchaseOrderModel = {
         u.email as created_by_email,
         COALESCE(SUM(poi.qty_ordered), 0) as total_qty_ordered,
         COALESCE(SUM(poi.qty_received), 0) as total_qty_received,
+        -- Avancement de la réception en PIÈCES, la seule unité commune à toutes
+        -- les lignes : additionner des packs et des pièces (ce que fait BMS)
+        -- affichait 108 % pour une commande reçue pile.
+        COALESCE(SUM(poi.qty_ordered * GREATEST(COALESCE(poi.units_per_qty, 1), 1))
+                 FILTER (WHERE poi.item_type IS DISTINCT FROM 'discount'), 0)::int as total_units_ordered,
+        COALESCE(SUM(poi.units_received)
+                 FILTER (WHERE poi.item_type IS DISTINCT FROM 'discount'), 0)::int as total_units_received,
         -- Factures rattachées et où en est leur règlement (colonnes « Facture »
         -- et « Règlement » de la liste). N↔N : une commande peut être facturée
         -- en plusieurs fois, d'où un tableau. Le reste à payer se DÉDUIT des
@@ -1382,7 +1398,8 @@ const purchaseOrderModel = {
 
         // Calculer les totaux réels (qty × qty_pack) pour déterminer le statut
         const totalOrdered = items.reduce((s, i) => s + (parseInt(i.qty) || 0) * (parseInt(i.qty_pack) || 1), 0);
-        const totalReceived = items.reduce((s, i) => s + (parseInt(i.qty_received) || 0) * (parseInt(i.qty_pack) || 1), 0);
+        const totalReceived = items.reduce((s, i) =>
+          s + piecesRecues(parseInt(i.qty) || 0, parseInt(i.qty_received) || 0, parseInt(i.qty_pack) || 1), 0);
 
         let status;
         if (bmsOrder.status === 'complete') {
@@ -1507,11 +1524,21 @@ const purchaseOrderModel = {
           // Quand on ne convertit pas qty_ordered (prix laissé au pack), la ligne
           // reste comptée en packs : units_per_qty porte alors le facteur, pour que
           // les calculs de stock (arrivages, besoins) retrouvent les unités.
+          //
+          // LE REÇU, LUI, PEUT ÊTRE EN PIÈCES SUR UNE LIGNE EN PACKS. Notre écran de
+          // réception n'envoie que des pièces à BMS (cf. receptionSessionModel), et
+          // BMS les range telles quelles à côté d'une quantité commandée en packs :
+          // 358775, « Blond Authentique » 5 packs de 10 → qty_received = 50. Lu en
+          // packs, cela faisait 500 pièces reçues pour 50 attendues, et BMS affiche
+          // 108 % pour une commande reçue pile. Un reçu supérieur au nombre de packs
+          // commandés se lit donc en pièces (une sur-livraison en packs, plus rare,
+          // serait sous-comptée : l'écart reste visible dans le détail).
+          const recuEnPieces = piecesRecues(bmsQty, bmsQtyRecv, qtyPack);
           let unitPrice, qtyOrdered, qtyReceived, unitsPerQty;
           if (priceRaw === null || qtyPack <= 1 || skipPackQtySupplierIds.has(supplierId)) {
             unitPrice = priceRaw;               // pas d'ambiguïté (ou fournisseur « à l'unité »)
             qtyOrdered = bmsQty;
-            qtyReceived = bmsQtyRecv;
+            qtyReceived = Math.round(recuEnPieces / qtyPack);
             unitsPerQty = qtyPack;
           } else {
             const unitAsIs  = priceRaw;             // interprétation « prix déjà unitaire »
@@ -1527,12 +1554,12 @@ const purchaseOrderModel = {
             if (usePack) {
               unitPrice = unitAsPack;
               qtyOrdered = bmsQty * qtyPack;
-              qtyReceived = bmsQtyRecv * qtyPack;
+              qtyReceived = recuEnPieces;
               unitsPerQty = 1;                  // qty_ordered déjà converti en unités
             } else {
               unitPrice = unitAsIs;
               qtyOrdered = bmsQty;
-              qtyReceived = bmsQtyRecv;
+              qtyReceived = Math.round(recuEnPieces / qtyPack);
               unitsPerQty = qtyPack;
             }
           }
@@ -1557,7 +1584,7 @@ const purchaseOrderModel = {
             // expression sur deux paramètres laisserait PostgreSQL deviner leurs
             // types, et une synchro qui échoue sur une inférence est un mauvais
             // endroit pour l'apprendre.
-            (parseInt(qtyReceived) || 0) * Math.max(parseInt(unitsPerQty) || 1, 1)
+            recuEnPieces
           ]);
 
         }
