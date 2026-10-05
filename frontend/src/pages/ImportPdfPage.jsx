@@ -394,6 +394,25 @@ const ImportPdfPage = () => {
     }));
   };
 
+  // Aligner une ligne en écart de facteur sur le montant du document : prix = montant
+  // facturé ÷ quantité, remise à 0. Cas typique : fournisseur « à l'unité » (Levest)
+  // dont le tarif validé pré-rempli est un prix PACK (6,50 €/5) alors que la ligne
+  // est en unités (30 × 1,30 €). priceEdited : le tarif validé ne la réécrit plus ;
+  // verifiedApplied : pas de plafond au prix BDD, le prix part tel quel dans BMS.
+  const alignOnInvoice = (item) => {
+    if (!lineMismatch(item) || !item.qty_ordered) return item;
+    const price = Math.round((item.invoice_line_total_ht / item.qty_ordered) * 10000) / 10000;
+    return { ...item, unit_price: price, discount: 0, priceEdited: true, verifiedApplied: true };
+  };
+
+  const alignLineOnInvoice = (idx) => {
+    setItems(prev => prev.map((item, i) => (i === idx ? alignOnInvoice(item) : item)));
+  };
+
+  const alignAllOnInvoice = () => {
+    setItems(prev => prev.map(alignOnInvoice));
+  };
+
   const handleRemoveItem = (idx) => {
     setItems(prev => prev.filter((_, i) => i !== idx));
   };
@@ -906,6 +925,17 @@ const ImportPdfPage = () => {
                       Vérifiez la <strong>quantité</strong> (pack offre, conditionnement).
                       Les écarts de prix, eux, sont normaux : le tarif définitif vient de BMS.
                     </span>
+                    <button
+                      onClick={alignAllOnInvoice}
+                      title="Prix de chaque ligne en écart = montant de la pro forma ÷ quantité"
+                      style={{
+                        marginLeft: 'auto', flexShrink: 0, background: C.blanc, color: '#8E2233',
+                        border: '1px solid #E8A3AD', borderRadius: 8, padding: '7px 12px',
+                        fontSize: 12.5, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
+                      }}
+                    >
+                      Aligner sur la facture
+                    </button>
                   </div>
                 )}
 
@@ -1109,6 +1139,20 @@ const ImportPdfPage = () => {
                                   >
                                     pro forma {fmt(mismatch.invoice)} € ({mismatch.facteur})
                                   </div>
+                                )}
+                                {mismatch && item.qty_ordered > 0 && (
+                                  <button
+                                    onClick={() => alignLineOnInvoice(idx)}
+                                    title={`Prix = ${fmt(mismatch.invoice)} € ÷ ${item.qty_ordered}`}
+                                    style={{
+                                      marginTop: 4, background: C.blanc, color: '#8E2233',
+                                      border: '1px solid #E8A3AD', borderRadius: 6, padding: '2px 8px',
+                                      fontSize: 11, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
+                                      whiteSpace: 'nowrap',
+                                    }}
+                                  >
+                                    Aligner
+                                  </button>
                                 )}
                               </td>
                               {/* Supprimer */}
