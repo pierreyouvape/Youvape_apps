@@ -31,6 +31,7 @@ import PackingSettings from './pages/PackingSettings';
 import BordereauApp from './pages/BordereauApp';
 import ShipmentHistoryApp from './pages/ShipmentHistoryApp';
 import ShipmentStatsApp from './pages/ShipmentStatsApp';
+import BoutiqueStatsApp from './pages/BoutiqueStatsApp';
 import PickingApp from './pages/PickingApp';
 import PickingSettings from './pages/PickingSettings';
 import PdaHome from './pages/PdaHome';
@@ -96,6 +97,7 @@ const PAGE_TITLES = {
   '/factures-fournisseurs': 'Factures Fournisseurs',
   '/process': 'Process',
   '/boutique': 'Boutique',
+  '/stats-boutiques': 'Stats boutiques',
   '/atb': 'ATB',
   '/employes': 'Gestion employé',
   '/brands': 'Marque',
@@ -403,6 +405,14 @@ function App() {
             element={
               <PrivateRoute>
                 <ShipmentStatsApp />
+              </PrivateRoute>
+            }
+          />
+          <Route
+            path="/stats-boutiques"
+            element={
+              <PrivateRoute>
+                <BoutiqueStatsApp />
               </PrivateRoute>
             }
           />

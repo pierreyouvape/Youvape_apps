@@ -34,6 +34,7 @@ const APP_KEYS = [
   'promos',
   'boutique-mtp',
   'boutique-cast',
+  'stats-boutiques',
   'process',
   'atb',
   'employes',

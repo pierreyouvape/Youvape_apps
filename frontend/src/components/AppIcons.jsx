@@ -294,6 +294,18 @@ export const Boutique = (props) => (
   </Base>
 );
 
+export const BoutiqueStats = (props) => (
+  <Base {...props}>
+    {/* La devanture, et le classement des ventes */}
+    <path d="M3 9.5 L4 5 H15 L16 9.5" />
+    <path d="M3 9.5 H16 V14" />
+    <path d="M3 9.5 V20 H11" />
+    <path d="M3 9.5 C4.1 11.2 5.5 11.2 6.3 9.5 C7.1 11.2 8.5 11.2 9.5 9.5 C10.5 11.2 11.9 11.2 12.7 9.5 C13.5 11.2 14.9 11.2 16 9.5" />
+    <path d="M13.5 20.5 H21" />
+    <path d="M15 20.5 V18 M17.5 20.5 V15.5 M20 20.5 V12.5" />
+  </Base>
+);
+
 export const Toolbox = (props) => (
   <Base {...props}>
     <path d="M9.5 7 V5.6 A1.6 1.6 0 0 1 11.1 4 H12.9 A1.6 1.6 0 0 1 14.5 5.6 V7" />
@@ -453,6 +465,10 @@ export const APPS = [
   { key: 'promos', path: '/promos', label: 'Actions Promos', Icon: Promos, color: '#DB2777' },
   { key: 'boutique-mtp',  path: '/boutique/montpellier', label: 'Boutique Montpellier', Icon: Boutique, color: '#0D9488' },
   { key: 'boutique-cast', path: '/boutique/castelnau',   label: 'Boutique Castelnau',   Icon: Boutique, color: '#C2410C' },
+  // Droit propre (backend/src/config/apps.js) à deux niveaux : Lecture =
+  // Conseiller (quantités et % du CA), Écriture = Responsable (+ CA HT). Les
+  // boutiques visibles sont celles dont l'utilisateur a aussi le droit boutique.
+  { key: 'stats-boutiques', path: '/stats-boutiques', label: 'Stats boutiques', Icon: BoutiqueStats, color: '#A21CAF' },
   { key: 'process', path: '/process', label: 'Process', Icon: Process, color: '#9333EA' },
   { key: 'atb', path: '/atb', label: 'ATB — Anthony Tool Box', Icon: Toolbox, color: '#BE123C' },
   { key: 'employes', path: '/employes', label: 'Gestion employé', Icon: Employees, color: '#4338CA' },

@@ -10,7 +10,12 @@ import { APPS as LAUNCHER_APPS } from '../components/AppIcons';
 // Apps qui distinguent Lecture / Écriture (les autres n'ont qu'un droit d'accès).
 // Réception : Lecture = consulter les PO attendus ; Écriture = valider une
 // réception (écrit dans BMS).
-const WRITE_ENABLED_KEYS = new Set(['reviews', 'rewards', 'emails', 'stats', 'purchases', 'catalog', 'reception']);
+const WRITE_ENABLED_KEYS = new Set(['reviews', 'rewards', 'emails', 'stats', 'purchases', 'catalog', 'reception', 'stats-boutiques']);
+
+// Apps dont les deux cases sont des NIVEAUX, pas Lecture / Écriture : la
+// seconde inclut la première (cocher Responsable coche Conseiller, décocher
+// Conseiller décoche Responsable).
+const LEVEL_LABELS = { 'stats-boutiques': ['Conseiller', 'Responsable'] };
 
 const SettingsApp = () => {
   const { token, isAdmin, isSuperAdmin } = useContext(AuthContext);
@@ -60,6 +65,7 @@ const SettingsApp = () => {
     key: a.key,
     label: a.label,
     accessOnly: !WRITE_ENABLED_KEYS.has(a.key),
+    levels: LEVEL_LABELS[a.key] || null,
     alsoOpens: sharedBy[a.key] || null,
   }));
 
@@ -181,7 +187,9 @@ const SettingsApp = () => {
             ...user.permissions,
             [appKey]: {
               ...user.permissions[appKey],
-              [permType]: value
+              [permType]: value,
+              ...(LEVEL_LABELS[appKey] && permType === 'write' && value ? { read: true } : {}),
+              ...(LEVEL_LABELS[appKey] && permType === 'read' && !value ? { write: false } : {}),
             }
           }
         };
@@ -388,8 +396,8 @@ const SettingsApp = () => {
                             <th key={`${app.key}-access`} className="sub-header" colSpan="2">Accès</th>
                           ) : (
                             <>
-                              <th key={`${app.key}-read`} className="sub-header">Lecture</th>
-                              <th key={`${app.key}-write`} className="sub-header">Écriture</th>
+                              <th key={`${app.key}-read`} className="sub-header">{app.levels ? app.levels[0] : 'Lecture'}</th>
+                              <th key={`${app.key}-write`} className="sub-header">{app.levels ? app.levels[1] : 'Écriture'}</th>
                             </>
                           )
                         ))}
