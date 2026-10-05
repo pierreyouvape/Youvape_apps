@@ -1585,6 +1585,7 @@ function FilingTab({ suppliers, mobile, reloadKey, onSaved, initialDocId }) {
               <tr>
                 <th style={{ ...th, width: 34 }}></th>
                 <th style={th}>Commande</th>
+                <th style={th}>N° commande</th>
                 <th style={th}>Facture</th>
                 <th style={th}>Numéro</th>
                 <th style={th}>Fournisseur</th>
@@ -1602,7 +1603,7 @@ function FilingTab({ suppliers, mobile, reloadKey, onSaved, initialDocId }) {
             </thead>
             <tbody>
               {rows.length === 0 && (
-                <tr><td style={{ ...td, textAlign: 'center', color: C.greyM, padding: 26 }} colSpan={15}>
+                <tr><td style={{ ...td, textAlign: 'center', color: C.greyM, padding: 26 }} colSpan={16}>
                   Aucun document. Dépose une facture depuis l'onglet Contrôle.
                 </td></tr>
               )}
@@ -1617,6 +1618,9 @@ function FilingTab({ suppliers, mobile, reloadKey, onSaved, initialDocId }) {
                     </td>
                     <td style={{ ...td, color: r.order_date ? C.dark : C.greyM }} onClick={() => openDetail(r.id)}>
                       {date(r.order_date)}
+                    </td>
+                    <td style={{ ...td, whiteSpace: 'nowrap', color: r.order_refs ? C.dark : C.greyM }} onClick={() => openDetail(r.id)}>
+                      {r.order_refs || '—'}
                     </td>
                     <td style={td} onClick={() => openDetail(r.id)}>{date(r.doc_date)}</td>
                     <td style={{ ...td, fontWeight: 600 }} onClick={() => openDetail(r.id)}>{r.number}</td>
@@ -2025,7 +2029,7 @@ function PaymentsTab({ mobile, reloadKey, onSaved }) {
         ? 'avoirUtilise' : 'fait',
       date: p.paid_at, fournisseur: p.supplier_name,
       moyen: p.method, reference: p.reference, montant: Number(p.amount),
-      documents: p.document_numbers, nonImpute: Number(p.unallocated_amount),
+      documents: p.document_numbers, commandes: p.order_refs, nonImpute: Number(p.unallocated_amount),
       // La TVA des factures que ce règlement solde, au prorata de ce qu'il en
       // solde — et ce qu'on n'a pas su lire, qui ferait baisser le total sans
       // le dire.
@@ -2041,7 +2045,7 @@ function PaymentsTab({ mobile, reloadKey, onSaved }) {
       statut: d.doc_type === 'credit_note' ? 'avoir' : 'attente',
       date: d.doc_type === 'credit_note' ? d.doc_date : d.effective_due_date,
       fournisseur: d.supplier_name, moyen: null, reference: null,
-      documents: d.number,
+      documents: d.number, commandes: d.order_refs,
       montant: Number(d.remaining_amount),
       retard: d.doc_type === 'credit_note' ? 0 : Number(d.days_overdue),
       // Sur une ligne en attente, la TVA est celle que porte ce qui reste dû :
@@ -2054,7 +2058,7 @@ function PaymentsTab({ mobile, reloadKey, onSaved }) {
       .filter((x) => (!filters.supplier || x.fournisseur === filters.supplier)
         && (!filters.method || x.moyen === filters.method)
         && (!filters.statut || x.statut === filters.statut)
-        && (!filters.q || `${x.fournisseur} ${x.documents || ''} ${x.reference || ''}`
+        && (!filters.q || `${x.fournisseur} ${x.documents || ''} ${x.commandes || ''} ${x.reference || ''}`
               .toLowerCase().includes(filters.q.trim().toLowerCase())))
       .sort((a, b) => String(b.date).localeCompare(String(a.date)));
   }, [payments, unpaid, filters]);
@@ -2161,6 +2165,7 @@ function PaymentsTab({ mobile, reloadKey, onSaved }) {
             <th style={th}>Fournisseur</th>
             <th style={th}>Moyen</th>
             <th style={th}>Factures concernées</th>
+            <th style={th}>N° commande</th>
             <th style={th}>Référence du règlement</th>
             <th style={{ ...th, textAlign: 'right' }}>Montant TTC</th>
             <th style={{ ...th, textAlign: 'right' }}>TVA</th>
@@ -2168,7 +2173,7 @@ function PaymentsTab({ mobile, reloadKey, onSaved }) {
           </tr></thead>
           <tbody>
             {items.length === 0 && (
-              <tr><td style={{ ...td, textAlign: 'center', color: C.greyM, padding: 24 }} colSpan={9}>
+              <tr><td style={{ ...td, textAlign: 'center', color: C.greyM, padding: 24 }} colSpan={10}>
                 Rien à afficher. Les règlements s'enregistrent depuis l'onglet Factures.
               </td></tr>
             )}
@@ -2190,6 +2195,7 @@ function PaymentsTab({ mobile, reloadKey, onSaved }) {
                 <td style={td}>{x.fournisseur}</td>
                 <td style={td}>{x.moyen ? <Badge tone="blue">{methodLabel(x.moyen)}</Badge> : <span style={{ color: C.greyM }}>—</span>}</td>
                 <td style={{ ...td, fontWeight: 600 }}>{x.documents || '—'}</td>
+                <td style={{ ...td, whiteSpace: 'nowrap' }}>{x.commandes || <span style={{ color: C.greyM }}>—</span>}</td>
                 <td style={td}>{x.reference || <span style={{ color: C.greyM }}>—</span>}</td>
                 <td style={{
                   ...td, textAlign: 'right', fontWeight: 700,

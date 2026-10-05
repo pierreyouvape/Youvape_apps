@@ -177,6 +177,17 @@ async function createDocument({ supplier, invoice, order, comparison, filePath, 
 }
 
 /** Liste filtrable : fournisseur, état du contrôle, état du paiement, période. */
+/**
+ * Le ou les numéros de commande d'un document (alias `d`) : la référence BMS
+ * des commandes rapprochées, sinon celle imprimée sur le document.
+ */
+const ORDER_REFS_SQL = `COALESCE(
+  (SELECT string_agg(DISTINCT COALESCE(po.bms_reference, po.order_number), ', ')
+     FROM supplier_document_orders o
+     JOIN purchase_orders po ON po.id = o.purchase_order_id
+    WHERE o.document_id = d.id),
+  d.order_ref_on_doc)`;
+
 async function listDocuments({ supplierId, status, paymentStatus, from, to, docType, search, limit = 100, offset = 0 } = {}, db = pool) {
   const where = [];
   const params = [];
@@ -250,6 +261,7 @@ async function listDocuments({ supplierId, status, paymentStatus, from, to, docT
             (SELECT min(po.order_date) FROM supplier_document_orders o
                JOIN purchase_orders po ON po.id = o.purchase_order_id
               WHERE o.document_id = d.id) AS order_date,
+            ${ORDER_REFS_SQL} AS order_refs,
             (SELECT max(p.paid_at) FROM supplier_payment_allocations a
                JOIN supplier_payments p ON p.id = a.payment_id
               WHERE a.document_id = d.id) AS paid_at
@@ -403,6 +415,13 @@ async function listPayments({ supplierId, method, from, to, limit = 100 } = {}, 
             -- ne dit pas lequel, et c'est justement ce qu'on cherche en relisant
             -- un relevé Amex qui solde six factures.
             string_agg(d.number, ', ' ORDER BY d.doc_date) AS document_numbers,
+            -- Et les commandes qu'elles concernent : c'est souvent par elles
+            -- qu'on remonte d'un relevé bancaire à un achat.
+            (SELECT string_agg(DISTINCT ref, ', ')
+               FROM supplier_payment_allocations a2
+               JOIN supplier_documents d ON d.id = a2.document_id
+               CROSS JOIN LATERAL (SELECT ${ORDER_REFS_SQL} AS ref) r
+              WHERE a2.payment_id = p.id) AS order_refs,
             -- Un règlement qui ne solde que des avoirs n'est pas un paiement :
             -- c'est un avoir qu'on consomme. L'écran doit pouvoir le dire.
             count(*) FILTER (WHERE d.doc_type = 'credit_note') AS credit_note_count,
@@ -438,6 +457,7 @@ async function listUnpaid({ supplierId } = {}, db = pool) {
   if (supplierId) { params.push(supplierId); filter = ` AND d.supplier_id = $${params.length}`; }
   const { rows } = await db.query(
     `SELECT b.*, s.name AS supplier_name, d.doc_type, d.status,
+            ${ORDER_REFS_SQL} AS order_refs,
             (CURRENT_DATE - b.effective_due_date) AS days_overdue,
             -- La TVA que porte ce qui RESTE dû. Sur une facture intacte c'est
             -- toute sa TVA ; sur une facture réglée à moitié, la moitié. NULL
