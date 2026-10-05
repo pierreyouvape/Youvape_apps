@@ -587,6 +587,20 @@ export default function MondialRelayApp() {
                   {stats.pu_grid_ok ? '✓' : '⚠'} Grille 2026 : {stats.pu_conform}/{stats.pu_checked} tarifs conformes
                 </div>
               )}
+              {deliveries.some(d => d.pu_ok === false) && (
+                <div style={{ flexBasis: '100%', background: C.orangeL, border: `1px solid ${C.orange}`, borderRadius: 8, padding: '10px 14px', fontSize: 12.5, color: C.dark }}>
+                  <div style={{ fontWeight: 700, color: C.orange, marginBottom: 6 }}>Tarifs hors grille 2026 ({result.pays})</div>
+                  {deliveries.filter(d => d.pu_ok === false).map((d, i) => {
+                    const ecart = (d.pu - d.grid_pu) * d.qty;
+                    return (
+                      <div key={i} style={{ padding: '2px 0' }}>
+                        • {d.type} — {d.bracket} : <b>{fmtEur(d.pu)}</b> facturé au lieu de <b>{fmtEur(d.grid_pu)}</b> × {d.qty} colis
+                        {' '}<span style={{ fontWeight: 700, color: ecart > 0 ? C.red : C.green }}>({ecart > 0 ? '+' : ''}{fmtEur(ecart)})</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
 
             <div style={{ display: 'flex', gap: 10, marginBottom: 22, flexWrap: 'wrap' }}>
