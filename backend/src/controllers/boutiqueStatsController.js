@@ -29,7 +29,7 @@ const fail = (res, error, where) => {
   return res.status(500).json({ error: 'Erreur serveur' });
 };
 
-/** GET /:shop?from&to[&category&subcategory] — classements de la boutique sur la période. */
+/** GET /:shop?from&to[&category&subcategory&search] — classements de la boutique sur la période. */
 const getRankings = async (req, res) => {
   try {
     const { level, shops } = await access(req.user);
@@ -41,6 +41,7 @@ const getRankings = async (req, res) => {
     const filters = {
       category: req.query.category ? String(req.query.category) : null,
       subcategory: req.query.subcategory ? String(req.query.subcategory) : null,
+      search: req.query.search ? String(req.query.search) : null,
     };
     const data = await boutiqueStatsModel.getRankings(wh.id, req.query.from, req.query.to, level === 'responsable', filters);
     res.json({ level, ...data });

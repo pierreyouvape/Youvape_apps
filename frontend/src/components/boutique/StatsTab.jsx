@@ -129,6 +129,7 @@ export default function StatsTab({ shop, token }) {
   const [onglet, setOnglet] = useState('products');
   const [tri, setTri] = useState('pct'); // 'pct' (part du CA) | 'qty' (unités)
   const [recherche, setRecherche] = useState('');
+  const [rechercheEnvoyee, setRechercheEnvoyee] = useState('');
   const [categorie, setCategorie] = useState('');
   const [sousCategorie, setSousCategorie] = useState('');
   const [limite, setLimite] = useState(PAGE);
@@ -142,15 +143,26 @@ export default function StatsTab({ shop, token }) {
     setErreur(null);
     axios.get(`${API_URL}/boutique-stats/${shop.slug}`, {
       ...authHeaders(token),
-      params: { from, to, category: categorie || undefined, subcategory: sousCategorie || undefined },
+      params: {
+        from, to,
+        category: categorie || undefined,
+        subcategory: sousCategorie || undefined,
+        search: rechercheEnvoyee || undefined,
+      },
     })
       .then((res) => { if (!annule) setData(res.data); })
       .catch((err) => { if (!annule) setErreur(err.response?.data?.error || 'Erreur de chargement'); })
       .finally(() => { if (!annule) setLoading(false); });
     return () => { annule = true; };
-  }, [token, shop.slug, from, to, categorie, sousCategorie]);
+  }, [token, shop.slug, from, to, categorie, sousCategorie, rechercheEnvoyee]);
 
-  useEffect(() => { setLimite(PAGE); }, [onglet, tri, recherche, shop.slug, from, to, categorie, sousCategorie]);
+  // La recherche part au serveur quand la frappe s'arrête.
+  useEffect(() => {
+    const t = setTimeout(() => setRechercheEnvoyee(recherche.trim()), 300);
+    return () => clearTimeout(t);
+  }, [recherche]);
+
+  useEffect(() => { setLimite(PAGE); }, [onglet, tri, shop.slug, from, to, categorie, sousCategorie, rechercheEnvoyee]);
 
   const choisirPeriode = (p) => {
     setPeriode(p.key);
@@ -159,15 +171,15 @@ export default function StatsTab({ shop, token }) {
 
   const avecMontants = data?.totals?.ca_ht !== undefined;
 
-  // Rang calculé sur la liste complète, AVANT la recherche : chercher une
-  // marque montre sa vraie place, pas « 1 ».
+  // Recherche et filtres sont appliqués par le serveur : le rang se lit dans
+  // la sélection (« Pulp » → le classement des produits Pulp).
   const lignes = useMemo(() => {
     const liste = [...(data?.[onglet] || [])];
     if (tri === 'qty') liste.sort((a, b) => b.qty - a.qty);
-    const classees = liste.map((r, i) => ({ ...r, rang: i + 1 }));
-    const q = recherche.trim().toLowerCase();
-    return q ? classees.filter((r) => String(r.name || '').toLowerCase().includes(q)) : classees;
-  }, [data, onglet, tri, recherche]);
+    return liste.map((r, i) => ({ ...r, rang: i + 1 }));
+  }, [data, onglet, tri]);
+
+  const filtre = Boolean(categorie || rechercheEnvoyee);
 
   // Une catégorie choisie : l'onglet Catégories détaille ses sous-catégories.
   const libelleOnglet = (o) => (o.key === 'categories' && data?.categoriesAreSubcategories ? 'Sous-catégories' : o.label);
@@ -184,7 +196,6 @@ export default function StatsTab({ shop, token }) {
   const voirProduits = (r) => {
     if (data.categoriesAreSubcategories) setSousCategorie(r.id);
     else { setCategorie(r.id); setSousCategorie(''); }
-    setRecherche('');
     setOnglet('products');
   };
 
@@ -212,9 +223,16 @@ export default function StatsTab({ shop, token }) {
         )}
       </div>
 
-      {/* Filtres catégorie / sous-catégorie : les parts se calculent sur la sélection */}
+      {/* Recherche + catégorie / sous-catégorie : les parts se calculent sur la sélection */}
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 18 }}>
-        <span style={{ fontSize: 13, color: C.greyT, fontWeight: 600 }}>Catégorie</span>
+        <input
+          type="search"
+          value={recherche}
+          onChange={(e) => setRecherche(e.target.value)}
+          placeholder="Produit, marque, catégorie, code-barres…"
+          style={{ ...champ, flex: '1 1 300px', maxWidth: 380, padding: '8px 12px' }}
+        />
+        <span style={{ fontSize: 13, color: C.greyT, fontWeight: 600, marginLeft: 8 }}>Catégorie</span>
         <select
           value={categorie}
           onChange={(e) => { setCategorie(e.target.value); setSousCategorie(''); }}
@@ -237,9 +255,9 @@ export default function StatsTab({ shop, token }) {
             <option key={o.id} value={o.id}>{o.name}</option>
           ))}
         </select>
-        {categorie && (
+        {(categorie || recherche) && (
           <button
-            onClick={() => { setCategorie(''); setSousCategorie(''); }}
+            onClick={() => { setCategorie(''); setSousCategorie(''); setRecherche(''); }}
             style={{ ...champ, cursor: 'pointer', fontWeight: 600, color: MAUVE, borderColor: 'transparent', background: 'none' }}
           >Effacer</button>
         )}
@@ -256,8 +274,8 @@ export default function StatsTab({ shop, token }) {
         <>
           <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 16 }}>
             {avecMontants && <Tuile label="CA HT" value={eur.format(data.totals.ca_ht)} />}
-            {categorie && <Tuile label="Part du CA de la boutique" value={pctFmt(data.totals.selectionPct)} sub="pour la sélection" />}
-            {categorie && <Tuile label="Part des unités de la boutique" value={pctFmt(data.totals.selectionQtyPct)} sub="pour la sélection" />}
+            {filtre && <Tuile label="Part du CA de la boutique" value={pctFmt(data.totals.selectionPct)} sub="pour la sélection" />}
+            {filtre && <Tuile label="Part des unités de la boutique" value={pctFmt(data.totals.selectionQtyPct)} sub="pour la sélection" />}
             <Tuile label="Unités vendues" value={nf.format(data.totals.qty)} sub="retours déduits" />
             <Tuile label="Références vendues" value={nf.format(data.products.length)} />
           </div>
@@ -272,12 +290,6 @@ export default function StatsTab({ shop, token }) {
                   {libelleOnglet(o)} <span style={{ opacity: 0.7, fontWeight: 500 }}>({nf.format(data[o.key].length)})</span>
                 </Pastille>
               ))}
-              <input
-                value={recherche}
-                onChange={(e) => setRecherche(e.target.value)}
-                placeholder="Rechercher…"
-                style={{ ...champ, marginLeft: 'auto', minWidth: 220 }}
-              />
             </div>
 
             <div style={{ overflowX: 'auto' }}>
@@ -295,7 +307,7 @@ export default function StatsTab({ shop, token }) {
                 <tbody>
                   {lignes.length === 0 ? (
                     <tr><td colSpan={avecMontants ? 6 : 5} style={{ padding: 28, textAlign: 'center', color: C.greyM }}>
-                      {loading ? 'Chargement…' : 'Aucune vente sur la période.'}
+                      {loading ? 'Chargement…' : filtre ? 'Aucune vente ne correspond sur la période.' : 'Aucune vente sur la période.'}
                     </td></tr>
                   ) : lignes.slice(0, limite).map((r, i) => (
                     <tr

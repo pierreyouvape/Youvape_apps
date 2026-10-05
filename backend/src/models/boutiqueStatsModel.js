@@ -35,7 +35,12 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
  * @param {string} from AAAA-MM-JJ (inclus)
  * @param {string} to   AAAA-MM-JJ (inclus) — sold_at est en heure de Paris
  * @param {boolean} withAmounts true pour un responsable
- * @param {{ category?: string, subcategory?: string }} filters id Nextore ou NONE
+ * @param {{ category?: string, subcategory?: string, search?: string }} filters
+ *   category / subcategory : id Nextore ou NONE ; search : mots libres, TOUS
+ *   présents dans le nom, la marque, la catégorie ou la sous-catégorie — ou
+ *   égaux au code ou à l'un des codes-barres du produit. Code et EAN en
+ *   valeur EXACTE : en « contient », « 10 » de « pulp 10 ml » prenait tous
+ *   les codes et EAN où figure « 10 ».
  *
  * Les parts — du CA (`pct`) et des unités (`qtyPct`) — se calculent sur la
  * SÉLECTION filtrée ; `selectionPct` / `selectionQtyPct` donnent le poids de
@@ -50,8 +55,10 @@ async function getRankings(warehouseId, from, to, withAmounts, filters = {}) {
   const category = filters.category || null;
   // Une sous-catégorie n'a de sens que sous sa catégorie.
   const subcategory = category ? (filters.subcategory || null) : null;
+  const search = String(filters.search || '').trim().slice(0, 100);
+  const words = search.split(/\s+/).filter(Boolean).slice(0, 8);
 
-  const base = (useCategory, useSubcategory) => {
+  const base = (useCategory, useSubcategory, useSearch = false) => {
     const params = [warehouseId, from, to];
     const where = ['s.warehouse_id = $1', 's.sold_at >= $2::date', 's.sold_at < $3::date + 1'];
     if (useCategory && category) {
@@ -61,6 +68,16 @@ async function getRankings(warehouseId, from, to, withAmounts, filters = {}) {
     if (useSubcategory && subcategory) {
       if (subcategory === NONE) where.push('sc.id IS NULL');
       else { params.push(subcategory); where.push(`sc.id = $${params.length}`); }
+    }
+    if (useSearch) {
+      for (const w of words) {
+        params.push(`%${w.replace(/[\\%_]/g, (m) => `\\${m}`)}%`, w);
+        const like = params.length - 1;
+        const exact = params.length;
+        where.push(`(concat_ws(' ', p.name, s.product_name, p.brand, c.name, sc.name) ILIKE $${like}
+          OR lower(p.code) = lower($${exact})
+          OR EXISTS (SELECT 1 FROM nextore_product_barcodes b WHERE b.product_id = s.product_id AND b.barcode = $${exact}))`);
+      }
     }
     return {
       params,
@@ -73,7 +90,7 @@ async function getRankings(warehouseId, from, to, withAmounts, filters = {}) {
   };
 
   const rank = async ({ key, label }) => {
-    const { sql, params } = base(true, true);
+    const { sql, params } = base(true, true, true);
     const { rows } = await pool.query(
       `SELECT ${key} AS id, ${label || key} AS name,
               SUM(s.quantity)::float AS qty, ${CA_HT} AS ca_ht
@@ -136,7 +153,7 @@ async function getRankings(warehouseId, from, to, withAmounts, filters = {}) {
     from,
     to,
     lastSalesSyncAt: sync.rows[0]?.at || null,
-    filters: { category, subcategory },
+    filters: { category, subcategory, search },
     options: { categories: categoryOptions, subcategories: subcategoryOptions },
     totals: {
       qty: totalQty,
