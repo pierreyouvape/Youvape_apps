@@ -31,6 +31,7 @@ const shipmentHistoryRoutes = require('./routes/shipmentHistoryRoutes');
 const shipmentStatsRoutes = require('./routes/shipmentStatsRoutes');
 const boutiqueStatsRoutes = require('./routes/boutiqueStatsRoutes');
 const pickingRoutes = require('./routes/pickingRoutes');
+const pdaProductRoutes = require('./routes/pdaProductRoutes');
 const preferencesRoutes = require('./routes/preferencesRoutes');
 const financierRoutes = require('./routes/financierRoutes');
 const savRoutes = require('./routes/savRoutes');
@@ -99,6 +100,7 @@ app.use('/api/shipment-history', shipmentHistoryRoutes); // Historique d'expédi
 app.use('/api/shipment-stats', shipmentStatsRoutes); // Stats d'expédition (droit stats-expedition, dans le routeur)
 app.use('/api/boutique-stats', authMiddleware, boutiqueStatsRoutes); // Stats boutiques (droit stats-boutiques + droit boutique, dans le contrôleur)
 app.use('/api/picking', pickingRoutes); // Picking : commandes à préparer et vagues (auth + droit picking dans le routeur)
+app.use('/api/pda-produit', pdaProductRoutes); // PDA Produit : fiche, emplacement, codes-barres, mouvements (auth + droit picking dans le routeur)
 app.use('/api/preferences', preferencesRoutes); // User column preferences
 app.use('/api/financier', financierRoutes);    // Dashboard financier
 app.use('/api/sav', savRoutes);               // Module SAV Zendesk

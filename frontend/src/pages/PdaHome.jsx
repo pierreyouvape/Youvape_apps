@@ -2,18 +2,20 @@ import { useContext, useEffect, useState } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 import { AuthContext } from '../context/AuthContext';
-import { Picking as PickingIcon } from '../components/AppIcons';
+import { Catalog as ProductIcon, Picking as PickingIcon } from '../components/AppIcons';
 import { API_URL, authHeaders, C } from '../components/picking/pickingUi';
 import PdaLayout from '../components/pda/PdaLayout';
 
 /**
  * Accueil PDA (/pda) : l'icône installée sur l'écran d'accueil des Zebra
- * ouvre ici. Une tuile par app PDA — Picking pour commencer, les suivantes
- * s'ajoutent dans PDA_APPS.
+ * ouvre ici. Une tuile par app PDA, déclarée dans PDA_APPS ; `perm` = le droit
+ * qui l'ouvre, s'il n'a pas le nom de l'app.
  */
 
 const PDA_APPS = [
   { key: 'picking', path: '/pda/picking', label: 'Picking', hint: 'Préparer une vague', Icon: PickingIcon, color: C.violet },
+  // Décision Pierre (05/10/2026) : qui a le PDA a tout — le droit Picking suffit.
+  { key: 'produit', perm: 'picking', path: '/pda/produit', label: 'Produit', hint: 'Stock, emplacement, codes-barres', Icon: ProductIcon, color: C.primary },
 ];
 
 export default function PdaHome() {
@@ -21,7 +23,7 @@ export default function PdaHome() {
   const navigate = useNavigate();
   const [currentWave, setCurrentWave] = useState(null);
 
-  const apps = PDA_APPS.filter(a => isSuperAdmin || permissions?.[a.key]?.read);
+  const apps = PDA_APPS.filter(a => isSuperAdmin || permissions?.[a.perm || a.key]?.read);
 
   // Une vague en cours ? On la signale sur la tuile : c'est là qu'il faut revenir.
   useEffect(() => {

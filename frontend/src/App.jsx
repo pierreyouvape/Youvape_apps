@@ -35,6 +35,7 @@ import PickingApp from './pages/PickingApp';
 import PickingSettings from './pages/PickingSettings';
 import PdaHome from './pages/PdaHome';
 import PdaPicking from './pages/PdaPicking';
+import PdaProduit from './pages/PdaProduit';
 import ReceptionApp from './pages/ReceptionApp';
 import FinancierApp from './pages/FinancierApp';
 import OrdersSearchApp from './pages/OrdersSearchApp';
@@ -81,6 +82,7 @@ const PAGE_TITLES = {
   '/picking/settings': 'Picking — Règles des vagues',
   '/pda': 'Youvape PDA',
   '/pda/picking': 'Picking PDA',
+  '/pda/produit': 'Produit PDA',
   '/reception': 'Réception',
   '/financier': 'Financier',
   '/commandes': 'Commandes clients',
@@ -369,6 +371,14 @@ function App() {
             element={
               <PrivateRoute>
                 <PdaPicking />
+              </PrivateRoute>
+            }
+          />
+          <Route
+            path="/pda/produit"
+            element={
+              <PrivateRoute>
+                <PdaProduit />
               </PrivateRoute>
             }
           />
