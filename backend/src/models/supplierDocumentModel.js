@@ -63,6 +63,40 @@ const ECART_TARIF_SQL = `
   END`;
 
 /**
+ * CE QU'UN AVOIR A DÉJÀ RENDU SUR UNE LIGNE DE FACTURE (alias `l` et `d`).
+ *
+ * La facture JoshNoa V3/2026/37644 surfacture de 3,46 € un concentré ; l'avoir
+ * RV3/2026/02877 (« Extourne de : V3/2026/37644 ») rend ces 3,46 €. Le
+ * re-contrôle ne confronte la facture qu'à la commande : l'écart revenait donc
+ * à chaque clic, alors qu'il n'y avait plus rien à réclamer (05/10/2026).
+ *
+ * Un avoir compte pour une facture quand il la désigne (« Extourne de »), ou, à
+ * défaut de désignation, quand il porte sur la même commande. Et seulement sur
+ * la MÊME référence : un avoir sur un article n'éteint pas l'écart d'un autre.
+ */
+const AVOIR_SQL = `
+  SELECT COALESCE(-SUM(cl.line_total_ht), 0) AS montant,
+         string_agg(DISTINCT c.number, ', ') AS numeros
+    FROM supplier_documents c
+    JOIN supplier_document_lines cl ON cl.document_id = c.id
+   WHERE c.doc_type = 'credit_note'
+     AND c.supplier_id = d.supplier_id
+     AND c.id <> d.id
+     AND cl.supplier_sku = l.supplier_sku
+     AND (c.analysis->>'correctsInvoice' = d.number
+          OR (COALESCE(c.analysis->>'correctsInvoice', '') = ''
+              AND EXISTS (SELECT 1 FROM supplier_document_orders co
+                            JOIN supplier_document_orders dor ON dor.purchase_order_id = co.purchase_order_id
+                           WHERE co.document_id = c.id AND dor.document_id = d.id)))`;
+
+/** La ligne n'appelle plus de geste : l'avoir couvre son écart, au garde-fou d'arrondi près. */
+const COMPENSEE_SQL = `(
+  l.supplier_sku IS NOT NULL
+  AND (SELECT montant FROM (${AVOIR_SQL}) av) > 0
+  AND (SELECT montant FROM (${AVOIR_SQL}) av) + 0.10 >=
+      CASE WHEN l.verdict IN ('price', 'qty_price') THEN ${ECART_TARIF_SQL} ELSE COALESCE(l.net_gap, l.gap, 0) END)`;
+
+/**
  * Gèle les lignes d'un document. Partagé par l'enregistrement et le re-contrôle,
  * pour que les deux ne divergent jamais.
  */
@@ -226,7 +260,8 @@ async function listDocuments({ supplierId, status, paymentStatus, from, to, docT
               WHERE l.document_id = d.id
                 AND l.verdict IS NOT NULL
                 AND l.verdict NOT IN ('ok', 'free', 'discount', 'rounding', 'packaging', 'shipping', 'credit')
-                AND l.material) AS difference_count,
+                AND l.material
+                AND NOT ${COMPENSEE_SQL}) AS difference_count,
             -- Où en est la mise en stock de la ou des commandes rapprochées :
             -- 0 % tant que rien n'est arrivé, 100 % quand tout est rangé. Même
             -- lecture que le fil de vie (orderLifecycleModel), au pack près :
@@ -249,13 +284,15 @@ async function listDocuments({ supplierId, status, paymentStatus, from, to, docT
               WHERE l.document_id = d.id
                 AND l.verdict IN ('price', 'qty_price')
                 AND l.material
-                AND abs(${ECART_TARIF_SQL}) >= 0.10) AS price_diff_count,
+                AND abs(${ECART_TARIF_SQL}) >= 0.10
+                AND NOT ${COMPENSEE_SQL}) AS price_diff_count,
             (SELECT COALESCE(SUM(${ECART_TARIF_SQL}), 0)
                FROM supplier_document_lines l
               WHERE l.document_id = d.id
                 AND l.verdict IN ('price', 'qty_price')
                 AND l.material
-                AND abs(${ECART_TARIF_SQL}) >= 0.10) AS price_gap,
+                AND abs(${ECART_TARIF_SQL}) >= 0.10
+                AND NOT ${COMPENSEE_SQL}) AS price_gap,
             -- Les trois dates que l'acheteur suit : quand il a commandé, quand
             -- le fournisseur a facturé, quand l'argent est parti.
             (SELECT min(po.order_date) FROM supplier_document_orders o
@@ -291,7 +328,18 @@ async function getDocument(id, db = pool) {
   if (!document) return null;
 
   const [lines, orders, payments] = await Promise.all([
-    db.query('SELECT * FROM supplier_document_lines WHERE document_id = $1 ORDER BY line_no', [id]),
+    db.query(
+      `SELECT l.*, av.montant AS credited_amount, av.numeros AS credited_by,
+              (l.verdict IS NOT NULL
+               AND l.verdict NOT IN ('ok', 'free', 'discount', 'rounding', 'packaging', 'shipping', 'credit')
+               AND ${COMPENSEE_SQL}) AS compensee
+         FROM supplier_document_lines l
+         JOIN supplier_documents d ON d.id = l.document_id
+         LEFT JOIN LATERAL (${AVOIR_SQL}) av ON true
+        WHERE l.document_id = $1
+        ORDER BY l.line_no`,
+      [id],
+    ),
     db.query(
       `SELECT po.id, po.bms_po_id, po.bms_reference, po.order_number, po.order_date, po.total_amount, o.matched_by
          FROM supplier_document_orders o
@@ -309,7 +357,13 @@ async function getDocument(id, db = pool) {
     ),
   ]);
 
-  return { ...document, lines: lines.rows, orders: orders.rows, payments: payments.rows };
+  // Une ligne compensée par un avoir garde son constat d'origine, mais ne
+  // demande plus rien : on la présente comme telle.
+  const lignes = lines.rows.map(({ compensee, ...l }) => (compensee
+    ? { ...l, original_verdict: l.verdict, verdict: 'credited', material: false }
+    : l));
+
+  return { ...document, lines: lignes, orders: orders.rows, payments: payments.rows };
 }
 
 async function updateStatus(id, status, db = pool) {
@@ -787,8 +841,14 @@ async function replaceLines(documentId, comparison, db = pool) {
     await client.query('DELETE FROM supplier_document_lines WHERE document_id = $1', [documentId]);
     await insertLines(client, documentId, comparison ? comparison.lines : []);
     await client.query(
-      'UPDATE supplier_documents SET analysis = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $1',
-      [documentId, comparison ? JSON.stringify(comparison.summary || {}) : null],
+      // Fusionner, pas remplacer : `analysis` porte aussi ce que le re-contrôle
+      // ne recalcule pas (« Extourne de », règlements imprimés, nom du fichier).
+      // L'écraser par le seul résumé faisait perdre à un avoir re-contrôlé la
+      // facture qu'il corrige.
+      `UPDATE supplier_documents
+          SET analysis = COALESCE(analysis, '{}'::jsonb) || $2::jsonb, updated_at = CURRENT_TIMESTAMP
+        WHERE id = $1`,
+      [documentId, JSON.stringify(comparison ? { totals: comparison.totals, summary: comparison.summary } : {})],
     );
     await client.query('COMMIT');
     return true;

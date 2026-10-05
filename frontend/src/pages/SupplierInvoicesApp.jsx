@@ -147,6 +147,7 @@ const VERDICTS = {
   discount: { rank: 7, label: 'Remise de pied', tone: 'green', action: 'Répartie sur le coût réel de chaque ligne' },
   free: { rank: 8, label: 'Offert', tone: 'green', action: 'Geste commercial, rien à faire' },
   credit: { rank: 8, label: 'Avoir', tone: 'green', action: 'Vient en déduction, rien à réclamer' },
+  credited: { rank: 8, label: 'Compensé par avoir', tone: 'green', action: 'Avoir reçu du fournisseur, rien à réclamer' },
   packaging: { rank: 9, label: 'Conditionnement', tone: 'grey', action: 'Unités contre packs : même marchandise, même montant' },
   // Complété à l'affichage par le facteur déduit (« vendu par 2 »), quand on l'a.
 
@@ -161,7 +162,7 @@ const VERDICTS = {
  * pas, ni l'inverse. Un geste suppose en plus un écart matériel — au-delà du
  * garde-fou d'arrondi.
  */
-const VERDICTS_SANS_GESTE = ['ok', 'free', 'discount', 'rounding', 'packaging', 'shipping', 'credit'];
+const VERDICTS_SANS_GESTE = ['ok', 'free', 'discount', 'rounding', 'packaging', 'shipping', 'credit', 'credited'];
 const appelleUnGeste = (l) => !!l.verdict && !VERDICTS_SANS_GESTE.includes(l.verdict) && !!l.material;
 
 /**
@@ -439,7 +440,9 @@ function DifferencesTable({ lines, mobile }) {
               <td style={{ ...td, fontSize: 11.5, color: C.greyT }}>
                 {l.verdict === 'packaging' && l.packFactor
                   ? `Vendu par ${l.packFactor} chez ce fournisseur : ${num(l.qtyInvoiced)} × ${l.packFactor} = ${num(l.qtyOrdered)} unités`
-                  : (notePiece(l) || l.meta.action || '')}
+                  : (l.verdict === 'credited' && l.creditedBy
+                    ? `Compensé par l'avoir ${l.creditedBy}`
+                    : (notePiece(l) || l.meta.action || ''))}
               </td>
             </tr>
           ))}
@@ -611,6 +614,8 @@ const fromStoredLines = (lines) => (lines || []).map((l) => ({
   // qu'un écart brut a déjà été absorbé.
   effectiveUnitCost: l.effective_unit_cost == null ? null : Number(l.effective_unit_cost),
   packFactor: packFactorStored(l),
+  // Le ou les avoirs qui ont rendu l'écart de cette ligne.
+  creditedBy: l.credited_by || null,
 }));
 
 /* ═══════════════════════════════════════════════════════════
@@ -1365,9 +1370,7 @@ function FilingTab({ suppliers, mobile, reloadKey, onSaved, initialDocId }) {
     setRechecking(row.id);
     try {
       const { data } = await axios.post(`${BASE}/${row.id}/recheck`);
-      const reste = (data.document?.lines || []).filter(
-        (l) => l.verdict && !['ok', 'free', 'discount', 'rounding', 'packaging', 'shipping', 'credit'].includes(l.verdict) && l.material,
-      ).length;
+      const reste = (data.document?.lines || []).filter(appelleUnGeste).length;
       window.alert(reste === 0
         ? `${row.number} : plus aucun écart à traiter.`
         : `${row.number} : ${reste} écart(s) subsistent après re-contrôle.`);
