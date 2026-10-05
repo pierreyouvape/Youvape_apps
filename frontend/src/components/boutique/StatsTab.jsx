@@ -13,6 +13,9 @@ import { API_URL, authHeaders, C } from '../picking/pickingUi';
 
 const MAUVE = '#A21CAF';
 const MAUVE_TRACK = '#FAE8FF';
+// Part des unités : une autre teinte, pour ne pas la lire comme la part du CA.
+const CYAN = '#0E7490';
+const CYAN_TRACK = '#CFFAFE';
 
 const jourParis = (d = new Date()) => new Intl.DateTimeFormat('fr-CA', { timeZone: 'Europe/Paris' }).format(d);
 
@@ -90,13 +93,13 @@ function Tuile({ label, value, sub }) {
   );
 }
 
-/** Part du CA : barre fine à l'échelle de la première ligne, valeur à droite. */
-function Part({ value, max }) {
+/** Une part : barre fine à l'échelle de la plus grande ligne, valeur à droite. */
+function Part({ value, max, color = MAUVE, track = MAUVE_TRACK }) {
   const w = max > 0 ? Math.max(0, Math.min(100, (value / max) * 100)) : 0;
   return (
     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, minWidth: 170 }}>
-      <span style={{ flex: 1, height: 8, borderRadius: 4, background: MAUVE_TRACK, overflow: 'hidden' }}>
-        <span style={{ display: 'block', width: `${w}%`, height: '100%', background: MAUVE, borderRadius: 4 }} />
+      <span style={{ flex: 1, height: 8, borderRadius: 4, background: track, overflow: 'hidden' }}>
+        <span style={{ display: 'block', width: `${w}%`, height: '100%', background: color, borderRadius: 4 }} />
       </span>
       <span style={{ width: 58, textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: C.dark }}>{pctFmt(value)}</span>
     </span>
@@ -124,7 +127,7 @@ export default function StatsTab({ shop, token }) {
   const [periode, setPeriode] = useState('30d');
   const [[from, to], setRange] = useState(() => PERIODES[1].range());
   const [onglet, setOnglet] = useState('products');
-  const [tri, setTri] = useState('pct'); // 'pct' | 'qty'
+  const [tri, setTri] = useState('pct'); // 'pct' (part du CA) | 'qty' (unités)
   const [recherche, setRecherche] = useState('');
   const [categorie, setCategorie] = useState('');
   const [sousCategorie, setSousCategorie] = useState('');
@@ -174,9 +177,24 @@ export default function StatsTab({ shop, token }) {
     && (data?.options.subcategories || []).some((o) => o.id !== '__none__');
 
   const maxPct = Math.max(0, ...(data?.[onglet] || []).map((r) => r.pct));
+  const maxQtyPct = Math.max(0, ...(data?.[onglet] || []).map((r) => r.qtyPct));
+
+  // Onglet Catégories : un clic filtre sur la ligne et montre ses produits.
+  const cliquable = onglet === 'categories';
+  const voirProduits = (r) => {
+    if (data.categoriesAreSubcategories) setSousCategorie(r.id);
+    else { setCategorie(r.id); setSousCategorie(''); }
+    setRecherche('');
+    setOnglet('products');
+  };
 
   return (
     <div>
+      <style>{`
+        .stats-ligne-cliquable:hover td { background: #FDF4FF; }
+        .stats-voir { visibility: hidden; }
+        .stats-ligne-cliquable:hover .stats-voir { visibility: visible; }
+      `}</style>
       {/* Période */}
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 18 }}>
         {PERIODES.map((p) => (
@@ -239,6 +257,7 @@ export default function StatsTab({ shop, token }) {
           <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 16 }}>
             {avecMontants && <Tuile label="CA HT" value={eur.format(data.totals.ca_ht)} />}
             {categorie && <Tuile label="Part du CA de la boutique" value={pctFmt(data.totals.selectionPct)} sub="pour la sélection" />}
+            {categorie && <Tuile label="Part des unités de la boutique" value={pctFmt(data.totals.selectionQtyPct)} sub="pour la sélection" />}
             <Tuile label="Unités vendues" value={nf.format(data.totals.qty)} sub="retours déduits" />
             <Tuile label="Références vendues" value={nf.format(data.products.length)} />
           </div>
@@ -268,20 +287,31 @@ export default function StatsTab({ shop, token }) {
                     <Th align="right">#</Th>
                     <Th>{libelleOnglet(ONGLETS.find((o) => o.key === onglet)).replace(/s$/, '')}</Th>
                     <Th align="right" onClick={() => setTri('qty')} active={tri === 'qty'}>Qté vendue</Th>
+                    <Th onClick={() => setTri('qty')} active={tri === 'qty'}>Part des unités</Th>
                     <Th onClick={() => setTri('pct')} active={tri === 'pct'}>Part du CA</Th>
                     {avecMontants && <Th align="right">CA HT</Th>}
                   </tr>
                 </thead>
                 <tbody>
                   {lignes.length === 0 ? (
-                    <tr><td colSpan={avecMontants ? 5 : 4} style={{ padding: 28, textAlign: 'center', color: C.greyM }}>
+                    <tr><td colSpan={avecMontants ? 6 : 5} style={{ padding: 28, textAlign: 'center', color: C.greyM }}>
                       {loading ? 'Chargement…' : 'Aucune vente sur la période.'}
                     </td></tr>
                   ) : lignes.slice(0, limite).map((r, i) => (
-                    <tr key={r.id} style={{ background: i % 2 ? C.zebra : C.white }}>
+                    <tr
+                      key={r.id}
+                      className={cliquable ? 'stats-ligne-cliquable' : undefined}
+                      onClick={cliquable ? () => voirProduits(r) : undefined}
+                      title={cliquable ? 'Voir les produits' : undefined}
+                      style={{ background: i % 2 ? C.zebra : C.white, cursor: cliquable ? 'pointer' : 'default' }}
+                    >
                       <Td align="right" color={C.greyT}>{r.rang}</Td>
-                      <Td bold>{r.name || '—'}</Td>
+                      <Td bold>
+                        {r.name || '—'}
+                        {cliquable && <span className="stats-voir" style={{ color: MAUVE, fontWeight: 600, fontSize: 12, marginLeft: 8 }}>Voir les produits ›</span>}
+                      </Td>
                       <Td align="right" color={r.qty < 0 ? C.red : C.dark}>{nf.format(r.qty)}</Td>
+                      <Td><Part value={r.qtyPct} max={maxQtyPct} color={CYAN} track={CYAN_TRACK} /></Td>
                       <Td><Part value={r.pct} max={maxPct} /></Td>
                       {avecMontants && <Td align="right" bold>{eur.format(r.ca_ht)}</Td>}
                     </tr>

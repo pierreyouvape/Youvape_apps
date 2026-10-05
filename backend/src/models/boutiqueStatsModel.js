@@ -21,8 +21,9 @@ const NONE = '__none__';
 const DIMENSIONS = {
   products:      { key: 's.product_id', label: 'COALESCE(MAX(p.name), MAX(s.product_name))' },
   brands:        { key: "COALESCE(NULLIF(TRIM(p.brand), ''), 'Sans marque')", label: null },
-  categories:    { key: "COALESCE(c.name, 'Sans catégorie')", label: null },
-  subcategories: { key: "COALESCE(sc.name, 'Sans sous-catégorie')", label: null },
+  // Clé = l'id Nextore (ou NONE) : un clic sur la ligne la reprend telle quelle comme filtre.
+  categories:    { key: `COALESCE(c.id, '${NONE}')`, label: "COALESCE(MAX(c.name), 'Sans catégorie')" },
+  subcategories: { key: `COALESCE(sc.id, '${NONE}')`, label: "COALESCE(MAX(sc.name), 'Sans sous-catégorie')" },
 };
 
 const CA_HT = 'SUM(s.quantity * s.unit_price / (1 + COALESCE(s.tax_rate, 20) / 100))::float';
@@ -36,8 +37,9 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
  * @param {boolean} withAmounts true pour un responsable
  * @param {{ category?: string, subcategory?: string }} filters id Nextore ou NONE
  *
- * Les parts (`pct`) se calculent sur la SÉLECTION filtrée ; `selectionPct`
- * donne le poids de cette sélection dans le CA de toute la boutique.
+ * Les parts — du CA (`pct`) et des unités (`qtyPct`) — se calculent sur la
+ * SÉLECTION filtrée ; `selectionPct` / `selectionQtyPct` donnent le poids de
+ * cette sélection dans toute la boutique.
  */
 async function getRankings(warehouseId, from, to, withAmounts, filters = {}) {
   if (!DATE_RE.test(from || '') || !DATE_RE.test(to || '')) {
@@ -98,8 +100,8 @@ async function getRankings(warehouseId, from, to, withAmounts, filters = {}) {
 
   const shopTotal = async () => {
     const { sql, params } = base(false, false);
-    const { rows } = await pool.query(`SELECT ${CA_HT} AS ca_ht ${sql}`, params);
-    return rows[0].ca_ht || 0;
+    const { rows } = await pool.query(`SELECT ${CA_HT} AS ca_ht, SUM(s.quantity)::float AS qty ${sql}`, params);
+    return { ca_ht: rows[0].ca_ht || 0, qty: rows[0].qty || 0 };
   };
 
   const [products, brands, categories, categoryOptions, subcategoryOptions, boutique, sync] = await Promise.all([
@@ -117,13 +119,16 @@ async function getRankings(warehouseId, from, to, withAmounts, filters = {}) {
   ]);
 
   const total = products.reduce((sum, r) => sum + r.ca_ht, 0);
+  const totalQty = products.reduce((sum, r) => sum + r.qty, 0);
+  const part = (value, of, decimals) => (of ? Math.round((value / of) * 10 ** (decimals + 2)) / 10 ** decimals : 0);
   const shape = (rows) => [...rows]
     .sort((a, b) => b.ca_ht - a.ca_ht)
     .map((r) => ({
       id: String(r.id),
       name: r.name,
       qty: r.qty,
-      pct: total ? Math.round((r.ca_ht / total) * 10000) / 100 : 0,
+      pct: part(r.ca_ht, total, 2),
+      qtyPct: part(r.qty, totalQty, 2),
       ...(withAmounts ? { ca_ht: Math.round(r.ca_ht * 100) / 100 } : {}),
     }));
 
@@ -134,8 +139,9 @@ async function getRankings(warehouseId, from, to, withAmounts, filters = {}) {
     filters: { category, subcategory },
     options: { categories: categoryOptions, subcategories: subcategoryOptions },
     totals: {
-      qty: products.reduce((sum, r) => sum + r.qty, 0),
-      selectionPct: boutique ? Math.round((total / boutique) * 1000) / 10 : 0,
+      qty: totalQty,
+      selectionPct: part(total, boutique.ca_ht, 1),
+      selectionQtyPct: part(totalQty, boutique.qty, 1),
       ...(withAmounts ? { ca_ht: Math.round(total * 100) / 100 } : {}),
     },
     products: shape(products),
