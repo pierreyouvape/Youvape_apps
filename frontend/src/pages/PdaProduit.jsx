@@ -6,6 +6,7 @@ import { API_URL, authHeaders, C } from '../components/picking/pickingUi';
 import PdaLayout from '../components/pda/PdaLayout';
 import { pdaBtn as bigBtn } from '../components/pda/pdaStyles';
 import { beep, useScanner } from '../components/pda/pdaScan';
+import CameraScanner from '../components/boutique/CameraScanner';
 
 /**
  * Produit au PDA — /pda/produit, ouvert depuis l'accueil PDA (/pda).
@@ -19,6 +20,9 @@ import { beep, useScanner } from '../components/pda/pdaScan';
  * Un seul lecteur de scan pour toute la page : la fenêtre ouverte (emplacement,
  * code-barres) prend le code pour elle, sinon il ouvre un produit — ou, sur une
  * fiche, la fenêtre d'emplacement si c'est l'étiquette d'un rayon.
+ *
+ * Sans douchette (smartphone), le bouton caméra lit un code et le traite
+ * exactement comme un scan.
  */
 
 let onUnauthorized = null;
@@ -73,6 +77,18 @@ const card = { background: C.white, borderRadius: 14, border: `1px solid ${C.gre
 const label = { fontSize: 12, fontWeight: 800, color: C.greyT, textTransform: 'uppercase', letterSpacing: 0.4 };
 const smallBtn = { ...bigBtn(C.white, C.dark), border: `1px solid ${C.greyB}`, fontSize: 14, padding: '9px 12px' };
 
+/** Scanner avec l'appareil photo (smartphone sans douchette). */
+const CameraButton = ({ onClick, style }) => (
+  <button type="button" onClick={onClick} title="Scanner avec l'appareil photo" style={{
+    ...smallBtn, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 12px', ...style,
+  }}>
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M4 8h3l2-3h6l2 3h3v11H4z" />
+      <circle cx="12" cy="13" r="3.5" />
+    </svg>
+  </button>
+);
+
 const Photo = ({ url, size }) => (url
   ? <img src={url} alt="" loading="lazy" style={{
     width: size, height: size, objectFit: 'contain', borderRadius: 10, background: C.white, flexShrink: 0,
@@ -111,7 +127,7 @@ const Sheet = ({ title, onClose, children }) => (
 
 // ── Écran 1 : recherche ─────────────────────────────────────────────────────
 
-function SearchScreen({ query, setQuery, results, searching, onSearch, onOpen }) {
+function SearchScreen({ query, setQuery, results, searching, onSearch, onOpen, onCamera }) {
   return (
     <div style={{ padding: 14 }}>
       <p style={{ margin: '4px 2px 12px', color: C.greyT, fontSize: 14 }}>
@@ -123,6 +139,7 @@ function SearchScreen({ query, setQuery, results, searching, onSearch, onOpen })
           enterKeyHint="search" style={{ ...input, flex: 1 }}
         />
         <button type="submit" disabled={searching} style={bigBtn(C.violet)}>{searching ? '…' : 'Chercher'}</button>
+        <CameraButton onClick={onCamera} />
       </form>
 
       {results && (
@@ -160,7 +177,7 @@ function SearchScreen({ query, setQuery, results, searching, onSearch, onOpen })
 
 // ── Écran 2 : fiche produit ─────────────────────────────────────────────────
 
-function LocationSheet({ current, initial, locations, scanTarget, busy, onSave, onClose }) {
+function LocationSheet({ current, initial, locations, scanTarget, busy, onSave, onClose, onCamera }) {
   const [value, setValue] = useState(initial || '');
   useScanTarget(scanTarget, (code) => {
     setValue(code);
@@ -177,10 +194,13 @@ function LocationSheet({ current, initial, locations, scanTarget, busy, onSave, 
       <div style={{ fontSize: 15, marginBottom: 10 }}>
         Actuel : <strong>{current || 'aucun'}</strong>
       </div>
-      <input
-        value={value} onChange={e => setValue(e.target.value)} placeholder="Scannez l'étiquette ou tapez (ex. E 5-3)"
-        autoCapitalize="characters" style={input}
-      />
+      <div style={{ display: 'flex', gap: 8 }}>
+        <input
+          value={value} onChange={e => setValue(e.target.value)} placeholder="Scannez l'étiquette ou tapez (ex. E 5-3)"
+          autoCapitalize="characters" style={{ ...input, flex: 1 }}
+        />
+        <CameraButton onClick={onCamera} />
+      </div>
       {value.trim() && (
         <div style={{ marginTop: 8, fontSize: 15, fontWeight: 700, color: resolved ? C.green : C.amber }}>
           {resolved
@@ -205,7 +225,7 @@ function LocationSheet({ current, initial, locations, scanTarget, busy, onSave, 
   );
 }
 
-function BarcodeSheet({ code, scanTarget, busy, onSave, onDelete, onClose }) {
+function BarcodeSheet({ code, scanTarget, busy, onSave, onDelete, onClose, onCamera }) {
   const editing = !!code;
   const [barcode, setBarcode] = useState(code?.barcode || '');
   const [type, setType] = useState(code?.type || 'unit');
@@ -223,10 +243,13 @@ function BarcodeSheet({ code, scanTarget, busy, onSave, onDelete, onClose }) {
     <Sheet title={editing ? 'Modifier le code-barres' : 'Ajouter un code-barres'} onClose={onClose}>
       {editing
         ? <div style={{ fontFamily: 'monospace', fontSize: 20, fontWeight: 800, marginBottom: 12 }}>{code.barcode}</div>
-        : <input
-          value={barcode} onChange={e => setBarcode(e.target.value)} placeholder="Scannez le code ou tapez-le"
-          inputMode="numeric" style={{ ...input, marginBottom: 12 }}
-        />}
+        : <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+          <input
+            value={barcode} onChange={e => setBarcode(e.target.value)} placeholder="Scannez le code ou tapez-le"
+            inputMode="numeric" style={{ ...input, flex: 1 }}
+          />
+          <CameraButton onClick={onCamera} />
+        </div>}
       <Toggle options={[{ value: 'unit', label: 'Unité' }, { value: 'pack', label: 'Pack' }]} value={type} onChange={setType} />
       {type === 'pack' && (
         <div style={{ marginTop: 12 }}>
@@ -332,7 +355,7 @@ function MovementSheet({ product, reasons, scanTarget, busy, onSave, onClose }) 
   );
 }
 
-function ProductScreen({ token, productId, locations, reasons, scanTarget, onScanSearch, showFlash }) {
+function ProductScreen({ token, productId, locations, reasons, scanTarget, onScanSearch, showFlash, onCamera }) {
   const [p, setP] = useState(null);
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -464,9 +487,10 @@ function ProductScreen({ token, productId, locations, reasons, scanTarget, onSca
 
       <div style={{
         position: 'fixed', left: 0, right: 0, bottom: 0, padding: 12, background: C.white,
-        borderTop: `1px solid ${C.greyB}`, zIndex: 10,
+        borderTop: `1px solid ${C.greyB}`, zIndex: 10, display: 'flex', gap: 10,
       }}>
-        <button disabled={!p.sku} onClick={() => setModal({ kind: 'movement' })} style={{ ...bigBtn(C.violet), width: '100%', fontSize: 19 }}>
+        <CameraButton onClick={onCamera} />
+        <button disabled={!p.sku} onClick={() => setModal({ kind: 'movement' })} style={{ ...bigBtn(C.violet), flex: 1, fontSize: 19 }}>
           Mouvement de stock
         </button>
       </div>
@@ -474,13 +498,13 @@ function ProductScreen({ token, productId, locations, reasons, scanTarget, onSca
       {modal?.kind === 'location' && (
         <LocationSheet
           current={location} initial={modal.initial} locations={locations}
-          scanTarget={scanTarget} busy={busy} onClose={() => setModal(null)}
+          scanTarget={scanTarget} busy={busy} onClose={() => setModal(null)} onCamera={onCamera}
           onSave={(location) => act(() => call.put(`/products/${p.id}/location`, { location }), `Emplacement : ${location}`)}
         />
       )}
       {modal?.kind === 'code' && (
         <BarcodeSheet
-          code={modal.code} scanTarget={scanTarget} busy={busy} onClose={() => setModal(null)}
+          code={modal.code} scanTarget={scanTarget} busy={busy} onClose={() => setModal(null)} onCamera={onCamera}
           onSave={(body) => act(
             () => (modal.code
               ? call.put(`/products/${p.id}/barcodes/${modal.code.id}`, body)
@@ -516,6 +540,7 @@ export default function PdaProduit() {
   const [locations, setLocations] = useState([]);
   const [reasons, setReasons] = useState([]);
   const [flash, setFlash] = useState(null);
+  const [camera, setCamera] = useState(false);
   const scanTarget = useRef(null);
 
   useEffect(() => {
@@ -556,10 +581,21 @@ export default function PdaProduit() {
     }
   }, [token, showFlash]);
 
-  useScanner((code) => {
+  const dispatchScan = (code) => {
     if (scanTarget.current) scanTarget.current(code);
     else search(code, true);
-  }, true);
+  };
+  useScanner(dispatchScan, !camera);
+
+  // Un code lu à la caméra = un scan : on referme et on le traite pareil.
+  // (Rappel stable : CameraScanner relance la caméra si on le change.)
+  const dispatchRef = useRef(dispatchScan);
+  dispatchRef.current = dispatchScan;
+  const onCameraCode = useCallback((code) => {
+    setCamera(false);
+    dispatchRef.current(code);
+  }, []);
+  const openCamera = useCallback(() => setCamera(true), []);
 
   // Un bouton touché garde le focus : l'Entrée du scan suivant le
   // « cliquerait » à nouveau. On le lâche aussitôt.
@@ -578,12 +614,15 @@ export default function PdaProduit() {
           ? <ProductScreen
             key={productId} token={token} productId={productId} locations={locations} reasons={reasons}
             scanTarget={scanTarget} onScanSearch={(code) => search(code, true)} showFlash={showFlash}
+            onCamera={openCamera}
           />
           : <SearchScreen
             query={query} setQuery={setQuery} results={results} searching={searching}
-            onSearch={(q) => search(q)} onOpen={setProductId}
+            onSearch={(q) => search(q)} onOpen={setProductId} onCamera={openCamera}
           />}
       </div>
+
+      {camera && <CameraScanner onDetect={onCameraCode} onClose={() => setCamera(false)} />}
 
       {flash && (
         <div style={{
