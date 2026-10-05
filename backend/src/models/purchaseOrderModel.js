@@ -615,7 +615,24 @@ const purchaseOrderModel = {
       const payloadTotal = bmsItems.reduce(
         (sum, i) => sum + (i.qty / (i.pack_qty || 1)) * i.price, 0
       );
-      const diff = Math.abs(payloadTotal - invoiceTotal);
+      // Le total du document est BRUT (avant remise de pied, ex. RSPV20 chez LVP),
+      // alors que les prix des lignes peuvent être déjà remisés (prefill « dernier
+      // tarif validé BMS »). On accepte donc indifféremment le brut ou le net :
+      // c'est le plus proche des deux qui est comparé. Cas réel : LVP 288786,
+      // 2 060,85 € brut − 259,14 € de remise = 1 801,71 €, lignes à 1 804,37 €.
+      const discountRes = order.id
+        ? await client.query(
+            `SELECT COALESCE(SUM(ABS(qty_ordered * unit_price)), 0) AS total
+               FROM purchase_order_items
+              WHERE purchase_order_id = $1 AND item_type = 'discount'`,
+            [order.id]
+          )
+        : null;
+      const discountTotal = parseFloat(discountRes?.rows[0]?.total) || 0;
+      const diff = Math.min(
+        Math.abs(payloadTotal - invoiceTotal),
+        discountTotal > 0 ? Math.abs(payloadTotal - (invoiceTotal - discountTotal)) : Infinity
+      );
       const tolerance = Math.max(invoiceTotal * 0.10, 0.50); // 10 % ou 0,50 €
       // L'écart n'est PAS forcément une anomalie : commander une partie seulement du
       // document (lignes retirées, quantités ajustées) le produit légitimement. On ne
