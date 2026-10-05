@@ -1022,7 +1022,13 @@ const OrdersTab = ({ token }) => {
                         const ecart = ecartLigne(item);
                         if (ecartsSeuls && ecart === 0) return null;
                         const rienRecu = (parseInt(item.units_received, 10) || 0) === 0;
-                        const fond = ecart > 0 ? '#f5f3ff' : (ecart < 0 && !rienRecu) ? '#fff7ed' : undefined;
+                        // Une ligne à zéro n'est « manquante » que si la commande
+                        // a commencé d'arriver (355131 : 3 parfums sur 13 jamais
+                        // livrés). Avant toute réception, tout est simplement attendu.
+                        const entamee = totauxPieces(selectedOrder.items).recues > 0
+                          || ['received', 'completed'].includes(selectedOrder.status);
+                        const manque = ecart < 0 && (entamee || !rienRecu);
+                        const fond = ecart > 0 ? '#f5f3ff' : manque ? '#fff7ed' : undefined;
                         return (
                           <tr key={item.id} style={fond ? { background: fond } : {}}>
                             <td style={{ maxWidth: '300px' }}>
@@ -1060,10 +1066,12 @@ const OrdersTab = ({ token }) => {
                                 <span className="reception-bilan-ok">✓</span>
                               ) : ecart > 0 ? (
                                 <span className="reception-bilan-trop">+{formatInt(ecart)} en trop</span>
-                              ) : rienRecu ? (
+                              ) : !manque ? (
                                 <span style={{ color: '#9ca3af' }}>{formatInt(ecart)}</span>
                               ) : (
-                                <span className="reception-bilan-manque">{formatInt(ecart)} manquant</span>
+                                <span className="reception-bilan-manque">
+                                  {formatInt(ecart)} manquant{rienRecu ? ' (rien reçu)' : ''}
+                                </span>
                               )}
                             </td>
                             <td className="text-right">
