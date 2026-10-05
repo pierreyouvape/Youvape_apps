@@ -133,6 +133,9 @@ const OrdersTab = ({ token }) => {
   // Filters
   const [filterSupplier, setFilterSupplier] = useState('');
   const [filterStatus, setFilterStatus] = useState('active');
+  const [filterMonth, setFilterMonth] = useState(''); // « 2026-09 »
+  const [filterMonthField, setFilterMonthField] = useState('order'); // order | received
+  const [filterInvoice, setFilterInvoice] = useState(''); // '' | yes | no
   // Détail : n'afficher que les lignes reçues en trop ou pas assez.
   const [ecartsSeuls, setEcartsSeuls] = useState(false);
   const [searchInput, setSearchInput] = useState('');
@@ -196,6 +199,11 @@ const OrdersTab = ({ token }) => {
         params.append('status', filterStatus);
       }
       if (searchQuery) params.append('search', searchQuery);
+      if (filterMonth) {
+        params.append('month', filterMonth);
+        params.append('month_field', filterMonthField);
+      }
+      if (filterInvoice) params.append('invoice', filterInvoice);
 
       const response = await axios.get(`${API_URL}/purchases/orders?${params}`, {
         headers: { Authorization: `Bearer ${token}` }
@@ -210,7 +218,14 @@ const OrdersTab = ({ token }) => {
 
   useEffect(() => {
     loadOrders();
-  }, [token, filterSupplier, filterStatus, searchQuery]);
+  }, [token, filterSupplier, filterStatus, searchQuery, filterMonth, filterMonthField, filterInvoice]);
+
+  // Un mois se lit en entier : « Actives (hors reçues) » viderait un mois de
+  // réception et amputerait un mois de commande.
+  const handleMonthChange = (value) => {
+    setFilterMonth(value);
+    if (value && filterStatus === 'active') setFilterStatus('');
+  };
 
   // Open detail modal
   const openDetail = async (orderId) => {
@@ -589,6 +604,44 @@ const OrdersTab = ({ token }) => {
               <option value="partial">En réception</option>
               <option value="received">Reçue</option>
               <option value="completed">Terminée</option>
+            </select>
+          </div>
+
+          <div className="filter-group">
+            <label>Mois</label>
+            <div style={{ display: 'flex', gap: '6px' }}>
+              <select
+                value={filterMonthField}
+                onChange={e => setFilterMonthField(e.target.value)}
+              >
+                <option value="order">de commande</option>
+                <option value="received">de réception</option>
+              </select>
+              <input
+                type="month"
+                value={filterMonth}
+                onChange={e => handleMonthChange(e.target.value)}
+                style={{ padding: '6px 8px', border: '1px solid #ddd', borderRadius: '6px', fontSize: '13px' }}
+              />
+              {filterMonth && (
+                <button
+                  className="btn btn-secondary btn-sm"
+                  onClick={() => setFilterMonth('')}
+                  title="Tous les mois"
+                >✕</button>
+              )}
+            </div>
+          </div>
+
+          <div className="filter-group">
+            <label>Facture</label>
+            <select
+              value={filterInvoice}
+              onChange={e => setFilterInvoice(e.target.value)}
+            >
+              <option value="">Toutes</option>
+              <option value="yes">Avec facture</option>
+              <option value="no">Sans facture</option>
             </select>
           </div>
 

@@ -300,8 +300,14 @@ const purchasesController = {
         search: req.query.search?.trim() || null,
         from_date: req.query.from_date || null,
         to_date: req.query.to_date || null,
+        month: /^\d{4}-\d{2}$/.test(req.query.month || '') ? req.query.month : null,
+        month_field: req.query.month_field === 'received' ? 'received' : 'order',
+        invoice: ['yes', 'no'].includes(req.query.invoice) ? req.query.invoice : null,
         limit: req.query.limit ? parseInt(req.query.limit) : 50
       };
+      // Un mois ou un filtre facture se lisent en entier : tronquer à 50 les
+      // ferait mentir (« sans facture » ne montrerait que les plus récentes).
+      if ((filters.month || filters.invoice) && !req.query.limit) filters.limit = null;
 
       const orders = await purchaseOrderModel.getAll(filters);
       res.json({ success: true, data: orders });

@@ -111,6 +111,28 @@ const purchaseOrderModel = {
       values.push(filters.to_date);
     }
 
+    // Mois de commande ou de réception (« 2026-09 »). Une commande n'est reçue
+    // qu'au statut reçu/terminé : même règle que la colonne « Date réception ».
+    if (filters.month) {
+      const col = filters.month_field === 'received' ? 'po.received_date' : 'po.order_date';
+      query += ` AND ${col} >= to_date($${paramIndex}, 'YYYY-MM')
+                 AND ${col} < to_date($${paramIndex}, 'YYYY-MM') + interval '1 month'`;
+      values.push(filters.month);
+      paramIndex++;
+      if (filters.month_field === 'received') {
+        query += ` AND po.status IN ('received', 'completed')`;
+      }
+    }
+
+    // Facture présente : une vraie facture rattachée. Un avoir ou une proforma
+    // ne font pas une commande facturée (cf. orderLifecycleModel).
+    if (filters.invoice === 'yes' || filters.invoice === 'no') {
+      query += ` AND ${filters.invoice === 'no' ? 'NOT ' : ''}EXISTS (
+        SELECT 1 FROM supplier_document_orders sdo
+          JOIN supplier_documents d ON d.id = sdo.document_id
+         WHERE sdo.purchase_order_id = po.id AND d.doc_type = 'invoice')`;
+    }
+
     if (filters.search) {
       query += ` AND (po.order_number ILIKE $${paramIndex} OR po.bms_reference ILIKE $${paramIndex})`;
       values.push(`%${filters.search}%`);
