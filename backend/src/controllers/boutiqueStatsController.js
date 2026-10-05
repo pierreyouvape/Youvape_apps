@@ -1,5 +1,5 @@
 /**
- * Stats boutiques — voir models/boutiqueStatsModel pour les règles de calcul.
+ * Boutique › Statistiques — voir models/boutiqueStatsModel pour les règles de calcul.
  *
  * Droit `stats-boutiques` : Lecture = Conseiller, Écriture = Responsable.
  * Une boutique n'est visible que si l'utilisateur a aussi son droit boutique
@@ -29,17 +29,6 @@ const fail = (res, error, where) => {
   return res.status(500).json({ error: 'Erreur serveur' });
 };
 
-/** GET /access — niveau + boutiques accessibles (pour le sélecteur). */
-const getAccess = async (req, res) => {
-  try {
-    const { level, shops } = await access(req.user);
-    if (!level) return res.status(403).json({ error: 'Accès refusé : droit « Stats boutiques » requis' });
-    res.json({ level, shops: shops.map(({ slug, name }) => ({ slug, name })) });
-  } catch (error) {
-    fail(res, error, 'getAccess');
-  }
-};
-
 /** GET /:shop?from&to — classements de la boutique sur la période. */
 const getRankings = async (req, res) => {
   try {
@@ -56,4 +45,4 @@ const getRankings = async (req, res) => {
   }
 };
 
-module.exports = { getAccess, getRankings };
+module.exports = { getRankings };

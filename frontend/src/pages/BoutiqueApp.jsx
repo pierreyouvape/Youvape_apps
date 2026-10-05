@@ -6,6 +6,7 @@ import StockTab from '../components/boutique/StockTab';
 import BesoinsTab from '../components/boutique/BesoinsTab';
 import RapprochementTab from '../components/boutique/RapprochementTab';
 import ComptageTab from '../components/boutique/ComptageTab';
+import StatsTab from '../components/boutique/StatsTab';
 
 /* ─── PALETTE (alignée Rapport / SAV / Réception) ───────── */
 const C = {
@@ -30,6 +31,7 @@ const IcStock = () => <Ic><rect x={4} y={7} width={16} height={13} rx={1.5} /><p
 const IcNeeds = () => <Ic><path d="M4 20 H20" /><path d="M5 15 L10 10 L13 13 L19 6" /><path d="M15 6 H19 V10" /></Ic>;
 const IcLink  = () => <Ic><path d="M9.5 14.5 L14.5 9.5" /><path d="M11 7.5 L12.8 5.7 A3.8 3.8 0 0 1 18.3 11.2 L16.5 13" /><path d="M13 16.5 L11.2 18.3 A3.8 3.8 0 0 1 5.7 12.8 L7.5 11" /></Ic>;
 const IcCount = () => <Ic><rect x={5} y={4} width={14} height={17} rx={2} /><path d="M9 4 V2.6 H15 V4" /><path d="M8.5 12 L11 14.5 L15.5 9.5" /></Ic>;
+const IcStats = () => <Ic><path d="M4 20 H20" /><path d="M7 20 V13" /><path d="M12 20 V8" /><path d="M17 20 V4" /></Ic>;
 const IcSafe  = () => <Ic><rect x={3.5} y={5} width={17} height={14} rx={2} /><circle cx={11} cy={12} r={3.2} /><path d="M11 12 H13.6" /><path d="M17 9.5 V14.5" /></Ic>;
 
 /* Sections de la boutique. `ready:false` → tuile « Bientôt » (non cliquable). */
@@ -38,6 +40,8 @@ const SECTIONS = [
   { key: 'besoin',   label: 'Besoins',  color: '#E28F00', Icon: IcNeeds, ready: true },
   { key: 'rapprochement', label: 'Rapprochement', color: '#2563EB', Icon: IcLink, ready: true },
   { key: 'comptage', label: 'Comptage', color: '#7C3AED', Icon: IcCount, ready: true },
+  // Droit à part `stats-boutiques` (Conseiller / Responsable), en plus du droit boutique.
+  { key: 'stats',    label: 'Statistiques', color: '#A21CAF', Icon: IcStats, ready: true, permKey: 'stats-boutiques' },
   { key: 'coffre',   label: 'Coffre',   color: '#334155', Icon: IcSafe,  ready: false },
 ];
 
@@ -141,8 +145,12 @@ export default function BoutiqueApp() {
     );
   }
 
-  const sectionDef = section ? SECTIONS.find((s) => s.key === section) : null;
-  // Section inconnue → retour à l'accueil boutique
+  // Une section à droit propre n'existe pas pour qui ne l'a pas.
+  const sections = SECTIONS.filter((s) => !s.permKey || isSuperAdmin || permissions?.[s.permKey]?.read === true);
+  const statsLevel = isSuperAdmin || permissions?.['stats-boutiques']?.write ? 'Responsable' : 'Conseiller';
+
+  const sectionDef = section ? sections.find((s) => s.key === section) : null;
+  // Section inconnue (ou non autorisée) → retour à l'accueil boutique
   if (section && !sectionDef) return <Navigate to={`/boutique/${shop.slug}`} replace />;
 
   return (
@@ -161,7 +169,7 @@ export default function BoutiqueApp() {
               display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))',
               gap: 26, justifyItems: 'center', maxWidth: 640,
             }}>
-              {SECTIONS.map((s) => (
+              {sections.map((s) => (
                 <ModuleTile
                   key={s.key}
                   label={s.label}
@@ -204,6 +212,14 @@ export default function BoutiqueApp() {
           <>
             <ShopHeader shop={shop} subtitle="Comptage — inventaire (écrit dans Nextore)" onBack={goHome} />
             <ComptageTab shop={shop} token={token} />
+          </>
+        )}
+
+        {/* ── Section Statistiques (ventes caisse) ── */}
+        {section === 'stats' && (
+          <>
+            <ShopHeader shop={shop} subtitle={`Statistiques — produits, marques et catégories les plus vendus · vue ${statsLevel}`} onBack={goHome} />
+            <StatsTab shop={shop} token={token} />
           </>
         )}
 

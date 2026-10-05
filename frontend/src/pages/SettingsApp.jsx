@@ -17,6 +17,11 @@ const WRITE_ENABLED_KEYS = new Set(['reviews', 'rewards', 'emails', 'stats', 'pu
 // Conseiller décoche Responsable).
 const LEVEL_LABELS = { 'stats-boutiques': ['Conseiller', 'Responsable'] };
 
+// Droits qui ne sont PAS une app du lanceur : ils ouvrent une section à
+// l'intérieur d'une autre app. « Stats boutiques » = la tuile Statistiques des
+// apps Boutique (backend/src/config/apps.js la connaît aussi).
+const EXTRA_PERMISSIONS = [{ key: 'stats-boutiques', label: 'Stats boutiques' }];
+
 const SettingsApp = () => {
   const { token, isAdmin, isSuperAdmin } = useContext(AuthContext);
   const navigate = useNavigate();
@@ -61,7 +66,7 @@ const SettingsApp = () => {
     return m;
   }, {});
 
-  const APPS = LAUNCHER_APPS.filter(a => !a.permissionKey).map(a => ({
+  const APPS = [...LAUNCHER_APPS.filter(a => !a.permissionKey), ...EXTRA_PERMISSIONS].map(a => ({
     key: a.key,
     label: a.label,
     accessOnly: !WRITE_ENABLED_KEYS.has(a.key),
