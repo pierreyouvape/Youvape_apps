@@ -93,6 +93,8 @@ const HISTORY_SORTERS = {
   total_ttc:      i => parseFloat(i.total_ttc || 0),
   remise_rate:    i => parseFloat(i.remise_rate || 0),
   autres_frais:   i => parseFloat(i.autres_frais || 0),
+  has_csv:        i => (i.has_csv ? 1 : 0),
+  ecart_reclamable: i => parseFloat(i.ecart_reclamable || 0),
   created_at:     i => new Date(i.created_at).getTime() || 0,
 };
 
@@ -110,6 +112,8 @@ function HistoryTable({ history, loadFromHistory, onDelete, onDownload }) {
             <Th label="Colis" align="right" sortKey="total_parcels" sort={sort} onSort={toggle} />
             <Th label="Remise" align="right" sortKey="remise_rate" sort={sort} onSort={toggle} />
             <Th label="Autres frais" align="right" sortKey="autres_frais" sort={sort} onSort={toggle} />
+            <Th label="Détail colis" align="center" sortKey="has_csv" sort={sort} onSort={toggle} />
+            <Th label="Réclamable" align="right" sortKey="ecart_reclamable" sort={sort} onSort={toggle} />
             <Th label="Total HT" align="right" sortKey="total_ht" sort={sort} onSort={toggle} />
             <Th label="Total TTC" align="right" sortKey="total_ttc" sort={sort} onSort={toggle} />
             <Th label="Enregistrée le" sortKey="created_at" sort={sort} onSort={toggle} /><Th label="" />
@@ -128,6 +132,11 @@ function HistoryTable({ history, loadFromHistory, onDelete, onDownload }) {
               <Td align="right">{inv.total_parcels ?? '—'}</Td>
               <Td align="right" color={inv.remise_rate != null && parseFloat(inv.remise_rate) !== EXPECTED_REMISE ? C.orange : C.greyT}>{inv.remise_rate != null ? `${parseFloat(inv.remise_rate)} %` : '—'}</Td>
               <Td align="right" color={parseFloat(inv.autres_frais) > 0 ? C.orange : C.greyT}>{inv.autres_frais != null ? fmtEur(inv.autres_frais) : '—'}</Td>
+              <Td align="center" color={inv.has_csv ? (inv.csv_reconcile_ok === false ? C.red : C.green) : C.greyT}>
+                {inv.has_csv ? (inv.csv_reconcile_ok === false ? '⚠' : '✓') : '—'}
+                {inv.tariffs_applied_at && <span title={`Coûts appliqués le ${new Date(inv.tariffs_applied_at).toLocaleDateString('fr-FR')}`} style={{ marginLeft: 4 }}>🔄</span>}
+              </Td>
+              <Td align="right" bold={parseFloat(inv.ecart_reclamable) > 0} color={parseFloat(inv.ecart_reclamable) > 0 ? C.red : C.greyT}>{parseFloat(inv.ecart_reclamable) > 0 ? fmtEur(inv.ecart_reclamable) : '—'}</Td>
               <Td align="right" bold>{fmtEur(inv.total_ht)}</Td>
               <Td align="right" bold color={C.blue}>{fmtEur(inv.total_ttc)}</Td>
               <Td color={C.greyT}>{new Date(inv.created_at).toLocaleDateString('fr-FR')}</Td>
@@ -145,6 +154,8 @@ function HistoryTable({ history, loadFromHistory, onDelete, onDownload }) {
             <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: 700 }}>{history.reduce((s, i) => s + (Number(i.total_parcels) || 0), 0)}</td>
             <td />
             <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: 700, color: C.orange }}>{fmtEur(history.reduce((s, i) => s + parseFloat(i.autres_frais || 0), 0))}</td>
+            <td />
+            <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: 700, color: C.red }}>{fmtEur(history.reduce((s, i) => s + parseFloat(i.ecart_reclamable || 0), 0))}</td>
             <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: 800, color: C.accent }}>{fmtEur(history.reduce((s, i) => s + parseFloat(i.total_ht || 0), 0))}</td>
             <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: 800, color: C.blue }}>{fmtEur(history.reduce((s, i) => s + parseFloat(i.total_ttc || 0), 0))}</td>
             <td colSpan={2} />
@@ -372,6 +383,249 @@ function TotalsView({ totals, totalsLoading, loadTotals }) {
   );
 }
 
+/* ─── Détail au colis (annexe CSV Primobox) ─────────────────── */
+
+const fmtG = g => (g ? `${Math.round(g).toLocaleString('en-US').replace(/,/g, ' ')} g` : '—');
+const fmtDims = d => (d && d.every(v => v > 0) ? d.map(v => (v / 10).toLocaleString('fr-FR')).join(' × ') + ' cm' : '—');
+
+// Motifs d'écart, du plus au moins solide. Seule la pesée aberrante est
+// cochée d'office : les deux autres sont le plus souvent justes (cf. parseur).
+const ECART_KINDS = {
+  aberrant: {
+    label: 'Pesée impossible', color: C.red, bg: C.redL,
+    help: "Le poids mesuré par Mondial Relay dépasse 1 kg par litre de carton, d'après leurs propres dimensions : physiquement impossible pour nos colis (le plus dense d'un mois normal pèse 0,64 kg/L). Réclamable.",
+  },
+  volumetrique: {
+    label: 'Poids volumétrique', color: C.orange, bg: C.orangeL,
+    help: "Facturé au poids volumétrique (L × l × H ÷ 5 000) plutôt qu'au poids pesé. Les CGV le permettent : à contester seulement si le carton relevé ne correspond pas au nôtre.",
+  },
+  pesee: {
+    label: 'Pesée plus lourde', color: C.greyT, bg: C.grey,
+    help: "Pesée plus lourde que notre poids déclaré, sans être impossible. C'est presque toujours l'emballage : Mondial Relay a raison. À ne réclamer qu'après vérification.",
+  },
+};
+
+function motifText(p) {
+  if (p.kind === 'aberrant') return `Pesée impossible : ${p.density.toLocaleString('fr-FR')} kg/L`;
+  if (p.kind === 'volumetrique') return 'Facturé au poids volumétrique';
+  return 'Pesée supérieure au poids déclaré';
+}
+
+function buildClaimEmail(result, rows) {
+  const total = rows.reduce((s, p) => s + p.ecart, 0);
+  const eur = v => `${v.toFixed(2).replace('.', ',')} €`;
+  const kg = g => (g ? `${(g / 1000).toLocaleString('fr-FR', { maximumFractionDigits: 3 })} kg` : '—');
+  const th = (t, r) => `<th style="padding:8px 12px;text-align:${r ? 'right' : 'left'};background:#7A1F4E;color:#fff;white-space:nowrap">${t}</th>`;
+  const td = (t, r, b) => `<td style="padding:7px 12px;border-bottom:1px solid #E5E7EB;text-align:${r ? 'right' : 'left'};${b ? 'font-weight:700;' : ''}">${t}</td>`;
+  const intro = rows.every(p => p.kind === 'aberrant')
+    ? "les colis ci-dessous ont été facturés sur une pesée incompatible avec les dimensions relevées par vos équipes : le poids mesuré dépasserait 1 kg par litre de carton, ce qui est impossible pour leur contenu."
+    : 'les colis ci-dessous ont été facturés sur un poids supérieur à celui du colis expédié.';
+
+  let html = '<html><body style="font-family:Arial,sans-serif;font-size:13px;color:#111827;line-height:1.6">';
+  html += '<p>Bonjour Stéphanie,</p>';
+  html += `<p>Sur la facture <strong>${result.invoiceNumber}</strong> du ${result.invoiceDate} (${result.pays}), ${intro}</p>`;
+  html += '<table style="border-collapse:collapse;font-size:13px;margin-bottom:16px"><thead><tr>'
+    + th('N° commande') + th('N° expédition') + th('Date') + th('Poids déclaré', 1) + th('Poids mesuré', 1)
+    + th('Dimensions') + th('Motif') + th('Tarif facturé', 1) + th('Tarif dû', 1) + th('Écart HT', 1)
+    + '</tr></thead><tbody>'
+    + rows.map(p => '<tr>' + td(p.ref, 0, 1) + td(p.tracking || '—') + td(p.date || '—') + td(kg(p.declared_g), 1)
+      + td(kg(p.measured_g), 1) + td(fmtDims(p.dims_mm)) + td(motifText(p)) + td(eur(p.transport), 1) + td(eur(p.due), 1)
+      + td(eur(p.ecart), 1, 1) + '</tr>').join('')
+    + `<tr style="background:#F9FAFB">${td('TOTAL', 0, 1)}<td colspan="8"></td>${td(eur(total), 1, 1)}</tr>`
+    + '</tbody></table>';
+  html += `<p>Les tarifs sont ceux de votre grille avant remise. L'écart HT tient compte de notre remise de ${result.csv.remiseRate} % et de l'indexation gasoil. Pourriez-vous vérifier ces pesées et émettre un avoir de <strong>${eur(total)} HT</strong> ?</p>`;
+  html += '<p>Merci d’avance pour votre retour.</p>';
+  html += '<p>Bien cordialement,<br><br><strong>Maxime Coglitore</strong><br>Dirigeant<br>04 99 78 24 53<br>direction@youvape.fr<br>www.youvape.fr</p>';
+  html += '</body></html>';
+
+  const text = [
+    'Bonjour Stéphanie,', '',
+    `Sur la facture ${result.invoiceNumber} du ${result.invoiceDate} (${result.pays}), ${intro}`, '',
+    ...rows.map(p => `- Commande ${p.ref} (expédition ${p.tracking || '—'}, ${p.date || '—'}) : déclaré ${kg(p.declared_g)}, mesuré ${kg(p.measured_g)}, carton ${fmtDims(p.dims_mm)} — ${motifText(p)}. Facturé ${eur(p.transport)} au lieu de ${eur(p.due)}, écart ${eur(p.ecart)} HT.`),
+    '', `Total : ${eur(total)} HT (remise de ${result.csv.remiseRate} % et indexation gasoil comprises).`,
+    'Pourriez-vous vérifier ces pesées et émettre un avoir de ce montant ?', '',
+    'Merci d’avance pour votre retour.', '', 'Bien cordialement,', '',
+    'Maxime Coglitore', 'Dirigeant', '04 99 78 24 53', 'direction@youvape.fr',
+  ].join('\n');
+  return { html, text, total };
+}
+
+const PARCEL_SORTERS = {
+  ref: p => p.ref || '', date: p => dateKey(p.date), declared: p => p.declared_g || 0, bdd: p => p.bdd_g || 0,
+  measured: p => p.measured_g || 0, billed: p => p.billed_g || 0, transport: p => p.transport || 0,
+  total: p => p.total || 0, net: p => p.net || 0, ecart: p => p.ecart || 0,
+};
+
+function ParcelsTab({ csv }) {
+  const [q, setQ] = useState('');
+  const [onlyUnmatched, setOnlyUnmatched] = useState(false);
+  const rows = useMemo(() => (csv.parcels || []).filter(p =>
+    (!onlyUnmatched || p.order_id == null)
+    && (!q || String(p.ref).includes(q) || String(p.tracking || '').includes(q) || String(p.order_id || '').includes(q))
+  ), [csv, q, onlyUnmatched]);
+  const { sorted, sort, toggle } = useSorted(rows, PARCEL_SORTERS);
+  return (
+    <div style={{ padding: 18 }}>
+      <div style={{ display: 'flex', gap: 12, marginBottom: 14, flexWrap: 'wrap', alignItems: 'center' }}>
+        <input placeholder="N° de commande ou d'expédition…" value={q} onChange={e => setQ(e.target.value.trim())}
+          style={{ padding: '7px 11px', border: `1px solid ${C.greyB}`, borderRadius: 8, fontSize: 13, flex: 1, minWidth: 200 }} />
+        {csv.unmatchedCount > 0 && (
+          <label style={{ fontSize: 12.5, color: C.greyT, display: 'flex', gap: 6, alignItems: 'center', cursor: 'pointer' }}>
+            <input type="checkbox" checked={onlyUnmatched} onChange={e => setOnlyUnmatched(e.target.checked)} />
+            Sans commande seulement ({csv.unmatchedCount})
+          </label>
+        )}
+      </div>
+      <div style={{ overflowX: 'auto' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+          <thead><tr>
+            <Th label="Commande" sortKey="ref" sort={sort} onSort={toggle} />
+            <Th label="N° expédition" />
+            <Th label="Date" sortKey="date" sort={sort} onSort={toggle} />
+            <Th label="Mode" />
+            <Th label="Déclaré" align="right" sortKey="declared" sort={sort} onSort={toggle} />
+            <Th label="Calculé" align="right" sortKey="bdd" sort={sort} onSort={toggle} />
+            <Th label="Pesé MR" align="right" sortKey="measured" sort={sort} onSort={toggle} />
+            <Th label="Facturé" align="right" sortKey="billed" sort={sort} onSort={toggle} />
+            <Th label="Carton" />
+            <Th label="Transport" align="right" sortKey="transport" sort={sort} onSort={toggle} />
+            <Th label="Total brut" align="right" sortKey="total" sort={sort} onSort={toggle} />
+            <Th label="Coût net HT" align="right" sortKey="net" sort={sort} onSort={toggle} />
+            <Th label="Écart" align="right" sortKey="ecart" sort={sort} onSort={toggle} />
+          </tr></thead>
+          <tbody>
+            {sorted.length === 0 && <tr><td colSpan={13} style={{ textAlign: 'center', padding: 32, color: C.greyT }}>Aucun colis</td></tr>}
+            {sorted.slice(0, 1000).map((p, i) => (
+              <tr key={`${p.ref}-${p.tracking}-${i}`} style={{ background: i % 2 === 0 ? C.white : C.grey }}>
+                <Td bold>
+                  {p.order_id
+                    ? <a href={`/orders/${p.order_id}`} target="_blank" rel="noreferrer" style={{ color: C.accent, textDecoration: 'none' }}>{p.order_id}</a>
+                    : <span style={{ color: C.red }} title="Aucune commande trouvée">{p.ref} ?</span>}
+                  {p.is_return && <span style={{ marginLeft: 6, background: C.orangeL, color: C.orange, borderRadius: 10, padding: '1px 7px', fontSize: 11 }}>retour</span>}
+                </Td>
+                <Td color={C.greyT}>{p.tracking || '—'}</Td>
+                <Td color={C.greyT}>{p.date || '—'}</Td>
+                <Td color={C.greyT}>{p.mode}{p.pays ? ` · ${p.pays}` : ''}</Td>
+                <Td align="right">{fmtG(p.declared_g)}</Td>
+                <Td align="right" color={C.greyT}>{fmtG(p.bdd_g)}</Td>
+                <Td align="right">{fmtG(p.measured_g)}</Td>
+                <Td align="right" bold>{fmtG(p.billed_g)}</Td>
+                <Td color={C.greyT}>{fmtDims(p.dims_mm)}</Td>
+                <Td align="right">{fmtEur(p.transport)}</Td>
+                <Td align="right" color={C.greyT}>{fmtEur(p.total)}</Td>
+                <Td align="right" bold>{fmtEur(p.net)}</Td>
+                <Td align="right" bg={p.kind ? ECART_KINDS[p.kind].bg : undefined} color={p.kind ? ECART_KINDS[p.kind].color : C.greyT}>
+                  {p.ecart ? `+${fmtEur(p.ecart)}` : '—'}
+                </Td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {sorted.length > 1000 && <div style={{ marginTop: 10, color: C.greyT, fontSize: 12 }}>1 000 premiers colis affichés sur {sorted.length} : affine la recherche.</div>}
+      <p style={{ margin: '12px 0 0', color: C.greyT, fontSize: 12 }}>
+        Coût net = total brut (transport, indexation gasoil, participations et suppléments) moins la remise de {csv.remiseRate} % sur le transport.
+        « Calculé » = poids des produits en base plus la tare de {csv.tareG ?? '—'} g.
+      </p>
+    </div>
+  );
+}
+
+function EcartsTab({ result }) {
+  const csv = result.csv;
+  const all = useMemo(() => (csv.parcels || []).filter(p => p.kind).sort((a, b) => b.ecart - a.ecart), [csv]);
+  const [selected, setSelected] = useState(() => new Set(all.filter(p => p.kind === 'aberrant').map(p => `${p.ref}|${p.tracking}`)));
+  const [copied, setCopied] = useState(false);
+  const key = p => `${p.ref}|${p.tracking}`;
+  const chosen = all.filter(p => selected.has(key(p)));
+  const toggle = p => setSelected(s => { const n = new Set(s); n.has(key(p)) ? n.delete(key(p)) : n.add(key(p)); return n; });
+  const byKind = Object.keys(ECART_KINDS).map(k => ({ k, rows: all.filter(p => p.kind === k) }));
+
+  async function copy() {
+    const { html, text } = buildClaimEmail(result, chosen);
+    try {
+      await navigator.clipboard.write([new ClipboardItem({
+        'text/html': new Blob([html], { type: 'text/html' }),
+        'text/plain': new Blob([text], { type: 'text/plain' }),
+      })]);
+    } catch { await navigator.clipboard.writeText(text); }
+    setCopied(true); setTimeout(() => setCopied(false), 2500);
+  }
+
+  const gap = csv.medianWeighGap;
+  return (
+    <div style={{ padding: 18 }}>
+      {gap != null && gap > 50 && (
+        <div style={{ background: C.blueL, border: `1px solid ${C.blue}`, borderRadius: 8, padding: '10px 14px', fontSize: 12.5, color: C.dark, marginBottom: 16 }}>
+          <b style={{ color: C.blue }}>Nos poids déclarés sont trop bas.</b> Sur {csv.weighedCount} colis pesés, la pesée Mondial Relay dépasse
+          notre poids déclaré de <b>{Math.round(gap)} g</b> en médiane, alors que la tare réglée est de {csv.tareG ?? '—'} g. Ce n'est pas
+          une erreur de Mondial Relay : c'est le poids des cartons. Relever la tare dans les réglages Livraison rendrait nos coûts
+          estimés et nos étiquettes justes.
+        </div>
+      )}
+
+      <div style={{ display: 'flex', gap: 10, marginBottom: 16, flexWrap: 'wrap' }}>
+        {byKind.map(({ k, rows }) => (
+          <div key={k} title={ECART_KINDS[k].help} style={{ flex: 1, minWidth: 200, background: ECART_KINDS[k].bg, border: `1px solid ${C.greyB}`, borderRadius: 10, padding: '10px 14px' }}>
+            <div style={{ fontWeight: 700, color: ECART_KINDS[k].color, fontSize: 13 }}>{ECART_KINDS[k].label}</div>
+            <div style={{ fontSize: 12, color: C.greyT, marginTop: 2 }}>{rows.length} colis · {fmtEur(rows.reduce((s, p) => s + p.ecart, 0))} HT</div>
+            <div style={{ fontSize: 11.5, color: C.greyT, marginTop: 6, lineHeight: 1.45 }}>{ECART_KINDS[k].help}</div>
+          </div>
+        ))}
+      </div>
+
+      {all.length === 0 ? (
+        <div style={{ textAlign: 'center', padding: 30, color: C.greyT }}>Aucun colis facturé au-dessus du tarif de son poids sur cette facture.</div>
+      ) : (
+        <>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 12 }}>
+            <div style={{ fontSize: 13, color: C.dark }}>
+              <b>{chosen.length}</b> colis sélectionné(s) · réclamation de <b style={{ color: C.red }}>{fmtEur(chosen.reduce((s, p) => s + p.ecart, 0))} HT</b>
+            </div>
+            <button onClick={copy} disabled={!chosen.length}
+              style={{ background: copied ? C.green : C.accent, color: C.white, border: 'none', borderRadius: 8, padding: '9px 18px', fontWeight: 700, fontSize: 13, cursor: chosen.length ? 'pointer' : 'not-allowed', opacity: chosen.length ? 1 : .5 }}>
+              {copied ? '✓ E-mail copié' : '✉ Copier l\'e-mail de réclamation'}
+            </button>
+          </div>
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+              <thead><tr>
+                <Th label="" /><Th label="Commande" /><Th label="Motif" /><Th label="Déclaré" align="right" /><Th label="Calculé" align="right" />
+                <Th label="Pesé MR" align="right" /><Th label="Volumétrique" align="right" /><Th label="Carton" /><Th label="Densité" align="right" />
+                <Th label="Facturé" align="right" /><Th label="Dû" align="right" /><Th label="Écart HT" align="right" />
+              </tr></thead>
+              <tbody>
+                {all.map((p, i) => (
+                  <tr key={key(p)} onClick={() => toggle(p)} style={{ background: selected.has(key(p)) ? C.accentL : (i % 2 === 0 ? C.white : C.grey), cursor: 'pointer' }}>
+                    <Td><input type="checkbox" readOnly checked={selected.has(key(p))} /></Td>
+                    <Td bold>{p.order_id
+                      ? <a href={`/orders/${p.order_id}`} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()} style={{ color: C.accent, textDecoration: 'none' }}>{p.order_id}</a>
+                      : p.ref}</Td>
+                    <Td><span style={{ background: ECART_KINDS[p.kind].bg, color: ECART_KINDS[p.kind].color, border: `1px solid ${ECART_KINDS[p.kind].color}`, borderRadius: 10, padding: '1px 8px', fontSize: 11.5, fontWeight: 600, whiteSpace: 'nowrap' }}>{ECART_KINDS[p.kind].label}</span></Td>
+                    <Td align="right">{fmtG(p.declared_g)}</Td>
+                    <Td align="right" color={C.greyT}>{fmtG(p.bdd_g)}</Td>
+                    <Td align="right" bold>{fmtG(p.measured_g)}</Td>
+                    <Td align="right" color={C.greyT}>{fmtG(p.volumetric_g)}</Td>
+                    <Td color={C.greyT}>{fmtDims(p.dims_mm)}</Td>
+                    <Td align="right" color={p.density > 1 ? C.red : C.greyT}>{p.density != null ? `${p.density.toLocaleString('fr-FR')} kg/L` : '—'}</Td>
+                    <Td align="right">{fmtEur(p.transport)}</Td>
+                    <Td align="right" color={C.green}>{fmtEur(p.due)}</Td>
+                    <Td align="right" bold color={ECART_KINDS[p.kind].color}>+{fmtEur(p.ecart)}</Td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p style={{ margin: '12px 0 0', color: C.greyT, fontSize: 12 }}>
+            Tarif dû = tarif de la tranche de notre poids (le plus élevé du poids déclaré et du poids calculé), relevé sur la même facture.
+            Écart HT = transport en trop, moins la remise de {csv.remiseRate} %, plus l'indexation gasoil : ce qui a vraiment été payé en trop.
+          </p>
+        </>
+      )}
+    </div>
+  );
+}
+
 const DELIV_SORTERS = {
   type: d => d.type || '', bracket: d => d.gridIndex ?? 99,
   poids: d => d.poids || 0, qty: d => d.qty || 0, pu: d => d.pu || 0, montant: d => d.montant || 0,
@@ -398,6 +652,8 @@ export default function MondialRelayApp() {
   const [totals, setTotals] = useState(null);
   const [totalsLoading, setTotalsLoading] = useState(false);
   const [homeTab, setHomeTab] = useState('historique');
+  const [applying, setApplying] = useState(false);
+  const [applyResult, setApplyResult] = useState(null);
 
   async function loadHistory() {
     setHistoryLoading(true);
@@ -412,7 +668,9 @@ export default function MondialRelayApp() {
   useEffect(() => { loadHistory(); loadTotals(); }, []);
 
   async function handleFile(file) {
-    if (!file || file.type !== 'application/pdf') { setError('Fichier PDF requis.'); return; }
+    if (file && /\.csv$/i.test(file.name)) { handleCsv(file); return; }
+    if (file && /\.zip$/i.test(file.name)) { handleZip(file); return; }
+    if (!file || file.type !== 'application/pdf') { setError('Fichier PDF, CSV ou ZIP requis.'); return; }
     setCurrentFile(file); setError(null); setResult(null); setSaveState(null); setLoading(true);
     try {
       const fd = new FormData(); fd.append('pdf', file);
@@ -423,16 +681,44 @@ export default function MondialRelayApp() {
     } catch (e) { setError(e.response?.data?.error || e.message); } finally { setLoading(false); }
   }
 
-  async function handleLoadFromHistory(inv) {
-    setLoading(true); setError(null); setCurrentFile(null);
+  async function handleLoadFromHistory(inv, startTab = 'livraisons') {
+    setLoading(true); setError(null); setCurrentFile(null); setApplyResult(null);
     try {
       const { data } = await axios.get(`${API_URL}/mondial-relay/history/${inv.id}`, { headers: { Authorization: `Bearer ${token}` } });
       if (!data.success) throw new Error(data.error);
-      setResult({ ...data.parsed, _fromHistory: true }); setSaveState('already'); setTab('livraisons');
+      setResult({ ...data.parsed, _fromHistory: true, _id: data.invoice.id, _tariffsAppliedAt: data.invoice.tariffs_applied_at });
+      setSaveState('already'); setTab(startTab);
     } catch (e) { setError(e.message); } finally { setLoading(false); }
   }
 
-  function handleBackToHome() { setResult(null); setCurrentFile(null); setError(null); setSaveState(null); setSearch(''); setTab('livraisons'); }
+  // Annexe CSV Primobox : rattachée à sa facture déjà enregistrée, puis ouverte.
+  async function handleCsv(file) {
+    setLoading(true); setError(null); setImportResult(null);
+    try {
+      const fd = new FormData(); fd.append('csv', file);
+      const { data } = await axios.post(`${API_URL}/mondial-relay/import-csv`, fd, { headers: { Authorization: `Bearer ${token}` }, timeout: 300000 });
+      if (!data.success) throw new Error(data.error);
+      loadHistory(); loadTotals();
+      await handleLoadFromHistory({ id: data.invoiceId }, 'ecarts');
+    } catch (e) { setError(e.response?.data?.error || e.message); setLoading(false); }
+  }
+
+  async function handleApplyTariffs() {
+    const csv = result?.csv;
+    if (!result?._id || !csv) return;
+    const n = new Set((csv.parcels || []).filter(p => p.order_id).map(p => p.order_id)).size;
+    if (!window.confirm(`Mettre à jour le coût de livraison HT de ${n} commande(s) ?\n\nLe coût actuel est remplacé par ce que Mondial Relay a réellement facturé pour la commande (aller et retours, net de remise).`)) return;
+    setApplying(true); setApplyResult(null);
+    try {
+      const { data } = await axios.post(`${API_URL}/mondial-relay/history/${result._id}/apply-tariffs`, {}, { headers: { Authorization: `Bearer ${token}` }, timeout: 120000 });
+      if (!data.success) throw new Error(data.error);
+      setApplyResult(data);
+      setResult(r => ({ ...r, _tariffsAppliedAt: data.tariffsAppliedAt }));
+      loadHistory();
+    } catch (e) { setError(e.response?.data?.error || e.message); } finally { setApplying(false); }
+  }
+
+  function handleBackToHome() { setApplyResult(null); setResult(null); setCurrentFile(null); setError(null); setSaveState(null); setSearch(''); setTab('livraisons'); }
 
   async function handleZip(file) {
     if (!file) return;
@@ -521,10 +807,10 @@ export default function MondialRelayApp() {
           onDrop={e => { e.preventDefault(); setDragging(false); handleFile(e.dataTransfer.files[0]); }}
           onClick={() => fileRef.current?.click()}
           style={{ border: `2px dashed ${dragging ? C.accent : C.greyB}`, borderRadius: 14, background: dragging ? C.accentL : C.grey, padding: '36px 24px', textAlign: 'center', cursor: 'pointer', marginBottom: 22 }}>
-          <input ref={fileRef} type="file" accept=".pdf" style={{ display: 'none' }} onChange={e => handleFile(e.target.files[0])} />
+          <input ref={fileRef} type="file" accept=".pdf,.csv,.zip" style={{ display: 'none' }} onChange={e => handleFile(e.target.files[0])} />
           <div style={{ fontSize: 36, marginBottom: 10 }}>📍</div>
-          <div style={{ fontWeight: 700, fontSize: 14.5, color: C.dark }}>{loading ? 'Analyse en cours…' : 'Déposer la facture PDF ici'}</div>
-          <div style={{ color: C.greyT, fontSize: 12.5, marginTop: 5 }}>ou cliquer pour sélectionner</div>
+          <div style={{ fontWeight: 700, fontSize: 14.5, color: C.dark }}>{loading ? 'Analyse en cours…' : 'Déposer la facture PDF, son annexe CSV ou le ZIP Primobox ici'}</div>
+          <div style={{ color: C.greyT, fontSize: 12.5, marginTop: 5 }}>ou cliquer pour sélectionner — l'annexe CSV donne le coût de chaque commande et les écarts de pesée</div>
           {currentFile && !loading && <div style={{ marginTop: 8, color: C.accent, fontSize: 12.5, fontWeight: 600 }}>📎 {currentFile.name}</div>}
           {loading && <div style={{ marginTop: 12 }}><div style={{ display: 'inline-block', width: 26, height: 26, border: `3px solid ${C.accentL}`, borderTop: `3px solid ${C.accent}`, borderRadius: '50%', animation: 'spin .8s linear infinite' }} /><style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style></div>}
         </div>
@@ -536,13 +822,14 @@ export default function MondialRelayApp() {
             style={{ background: C.white, color: C.accent, border: `1px solid ${C.accent}`, borderRadius: 8, padding: '9px 16px', fontWeight: 700, fontSize: 13, cursor: importingZip ? 'wait' : 'pointer', opacity: importingZip ? .7 : 1 }}>
             {importingZip ? '⏳ Import en cours…' : '📦 Importer un ZIP de factures'}
           </button>
-          <span style={{ color: C.greyT, fontSize: 12.5 }}>Toutes les factures PDF du ZIP sont analysées et enregistrées d'un coup (les doublons sont ignorés).</span>
+          <span style={{ color: C.greyT, fontSize: 12.5 }}>Factures PDF et annexes CSV du ZIP (archive Primobox) enregistrées d'un coup : les PDF déjà présents sont ignorés, les annexes remplacent le détail colis.</span>
         </div>
 
         {importResult && (
           <div style={{ background: C.greenL, border: `1px solid ${C.green}`, borderRadius: 10, padding: '11px 15px', color: C.dark, fontSize: 13, marginBottom: 18 }}>
             ✓ Import terminé : <strong>{importResult.imported}</strong> facture(s) ajoutée(s)
             {importResult.already > 0 && <>, {importResult.already} déjà présente(s)</>}
+            {importResult.csvImported > 0 && <>, <strong>{importResult.csvImported}</strong> annexe(s) CSV rattachée(s)</>}
             {importResult.failed?.length > 0 && <>, <span style={{ color: C.red }}>{importResult.failed.length} en échec</span></>}
             {' '}sur {importResult.total}.
             {importResult.failed?.length > 0 && (
@@ -568,6 +855,9 @@ export default function MondialRelayApp() {
                 {saveState === 'saved' && <span style={{ color: C.green, fontWeight: 700, fontSize: 13 }}>✓ Enregistrée</span>}
                 {saveState === 'already' && <span style={{ background: '#FEF3C7', color: '#92400E', border: '1px solid #F59E0B', borderRadius: 8, padding: '6px 14px', fontSize: 13, fontWeight: 600 }}>⚠ Déjà enregistrée</span>}
                 {saveState === null && <button onClick={handleSave} disabled={saving} style={{ background: C.green, color: C.white, border: 'none', borderRadius: 8, padding: '9px 18px', fontWeight: 700, fontSize: 13, cursor: saving ? 'wait' : 'pointer', opacity: saving ? .7 : 1 }}>{saving ? '⏳ Enregistrement…' : '💾 Enregistrer'}</button>}
+                {result.csv && result._id && (result._tariffsAppliedAt
+                  ? <span title="Relancer remplace à nouveau les coûts" onClick={handleApplyTariffs} style={{ background: C.greenL, color: C.green, border: `1px solid ${C.green}`, borderRadius: 8, padding: '6px 14px', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>✓ Coûts appliqués le {new Date(result._tariffsAppliedAt).toLocaleDateString('fr-FR')}</span>
+                  : <button onClick={handleApplyTariffs} disabled={applying} style={{ background: C.blue, color: C.white, border: 'none', borderRadius: 8, padding: '9px 16px', fontWeight: 700, fontSize: 13, cursor: applying ? 'wait' : 'pointer', opacity: applying ? .7 : 1 }}>{applying ? '⏳ Mise à jour…' : '🔄 Mettre à jour les coûts de livraison'}</button>)}
                 {currentFile && <button onClick={handleExport} disabled={exporting} style={{ background: C.accent, color: C.white, border: 'none', borderRadius: 8, padding: '8px 16px', fontWeight: 700, fontSize: 13, cursor: exporting ? 'wait' : 'pointer', opacity: exporting ? .7 : 1 }}>{exporting ? '⏳ Export…' : '⬇️ Excel'}</button>}
               </div>
             </div>
@@ -603,6 +893,32 @@ export default function MondialRelayApp() {
               )}
             </div>
 
+            {applyResult && (
+              <div style={{ background: C.greenL, border: `1px solid ${C.green}`, borderRadius: 10, padding: '11px 15px', color: C.dark, fontSize: 13, marginBottom: 16 }}>
+                ✓ Coût de livraison mis à jour sur <strong>{applyResult.updated}</strong> commande(s).
+              </div>
+            )}
+            {result._id && !result.csv && (
+              <div style={{ background: C.blueL, border: `1px solid ${C.blue}`, borderRadius: 10, padding: '11px 15px', color: C.dark, fontSize: 13, marginBottom: 16 }}>
+                Pour le coût de chaque commande et les écarts de pesée, dépose l'annexe CSV de cette facture (Primobox, « Annexe_{result.invoiceNumber}_….csv »).
+              </div>
+            )}
+            {result.csv && (
+              <div style={{ display: 'flex', gap: 10, marginBottom: 16, flexWrap: 'wrap' }}>
+                <div style={{ background: result.csv.reconcileOk ? C.greenL : C.redL, color: result.csv.reconcileOk ? C.green : C.red, border: `1px solid ${result.csv.reconcileOk ? C.green : C.red}`, borderRadius: 8, padding: '7px 14px', fontSize: 12.5, fontWeight: 700 }}>
+                  {result.csv.reconcileOk ? `✓ Annexe CSV = facture (${fmtEur(result.csv.sumTotal)})` : `⚠ Annexe CSV ${fmtEur(result.csv.sumTotal)} ≠ facture ${fmtEur(result.csv.pdfTotalHT)}`}
+                </div>
+                <div style={{ background: result.csv.unmatchedCount ? C.orangeL : C.greenL, color: result.csv.unmatchedCount ? C.orange : C.green, border: `1px solid ${result.csv.unmatchedCount ? C.orange : C.green}`, borderRadius: 8, padding: '7px 14px', fontSize: 12.5, fontWeight: 700 }}>
+                  {result.csv.matchedCount}/{result.csv.billedCount} colis rattachés à une commande{result.csv.returnCount ? ` (dont ${result.csv.returnCount} retours)` : ''}
+                </div>
+                {result.csv.unallocated > 0.005 && (
+                  <div title="Forfait collecte net de remise, colis sans commande, arrondis" style={{ background: C.grey, color: C.greyT, border: `1px solid ${C.greyB}`, borderRadius: 8, padding: '7px 14px', fontSize: 12.5, fontWeight: 600 }}>
+                    {fmtEur(result.csv.unallocated)} non affectés à une commande
+                  </div>
+                )}
+              </div>
+            )}
+
             <div style={{ display: 'flex', gap: 10, marginBottom: 22, flexWrap: 'wrap' }}>
               <StatCard value={fmtEur(result.totalHT)} label="Total HT" />
               <StatCard value={fmtEur(result.totalTVA)} label={`TVA${result.tvaRate ? ` (${result.tvaRate}%)` : ''}`} color={result.totalTVA > 0 ? C.orange : C.greyT} />
@@ -615,6 +931,8 @@ export default function MondialRelayApp() {
             <div style={{ background: C.white, borderRadius: 12, border: `1px solid ${C.greyB}`, boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
               <div style={{ display: 'flex', borderBottom: `1px solid ${C.greyB}`, padding: '0 14px', flexWrap: 'wrap' }}>
                 <TabBtn label="Livraisons" active={tab === 'livraisons'} onClick={() => setTab('livraisons')} badge={deliveries.length} />
+                {result.csv && <TabBtn label="Colis" active={tab === 'colis'} onClick={() => setTab('colis')} badge={result.csv.billedCount} />}
+                {result.csv && <TabBtn label="Écarts de tarif" active={tab === 'ecarts'} onClick={() => setTab('ecarts')} badge={(result.csv.parcels || []).filter(p => p.kind).length} />}
                 <TabBtn label="Frais & remise" active={tab === 'frais'} onClick={() => setTab('frais')} badge={fees.length} />
                 <TabBtn label="Résumé" active={tab === 'resume'} onClick={() => setTab('resume')} />
                 <TabBtn label="Historique" active={tab === 'historique'} onClick={() => setTab('historique')} badge={history.length} />
@@ -659,6 +977,9 @@ export default function MondialRelayApp() {
                   </div>
                 </div>
               )}
+
+              {tab === 'colis' && result.csv && <ParcelsTab csv={result.csv} />}
+              {tab === 'ecarts' && result.csv && <EcartsTab key={result.invoiceNumber} result={result} />}
 
               {tab === 'frais' && (
                 <div style={{ padding: 18 }}>

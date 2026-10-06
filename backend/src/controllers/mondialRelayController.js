@@ -4,6 +4,8 @@ const ExcelJS = require('exceljs');
 const JSZip = require('jszip');
 const pool = require('../config/database');
 const { parseMondialRelayPdf, computeAutresFrais } = require('../parsers/mondialRelayParser');
+const { parseMondialRelayCsv, analyzeMondialRelayCsv } = require('../parsers/mondialRelayCsvParser');
+const { orderWeightSql, getPackagingWeight } = require('../services/orderWeightService');
 
 const CARRIER = 'mondial_relay';
 
@@ -51,11 +53,128 @@ const uploadZip = multer({
   },
 });
 
+const uploadCsv = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 30 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    if (/\.csv$/i.test(file.originalname) || /csv|excel|text\/plain|octet-stream/i.test(file.mimetype)) cb(null, true);
+    else cb(new Error('Un fichier CSV est attendu'));
+  },
+});
+
 async function parsePdfBuffer(buffer) {
   const parser = new PDFParse(new Uint8Array(buffer));
   await parser.load();
   const data = await parser.getText();
   return parseMondialRelayPdf(data.text);
+}
+
+/* ─── ANNEXE CSV : détail au colis ───────────────────────────── */
+
+// Commandes connues, suivi → commande, et poids calculé en base (g, tare comprise).
+async function resolveCsvContext(csv) {
+  const refs = [...new Set(csv.parcels.map(r => parseInt(r.ref, 10)).filter(Number.isInteger))];
+  const trackings = [...new Set(csv.parcels.flatMap(r => [r.tracking, r.linked]).filter(Boolean))];
+
+  const known = await pool.query(
+    'SELECT wp_order_id::int AS id FROM orders WHERE wp_order_id::int = ANY($1::int[])', [refs]
+  );
+  const byTracking = await pool.query(
+    'SELECT wp_order_id::int AS id, tracking_number FROM orders WHERE tracking_number = ANY($1::text[])', [trackings]
+  );
+  const orderByTracking = {};
+  for (const r of byTracking.rows) orderByTracking[r.tracking_number] = r.id;
+  const knownOrderIds = new Set(known.rows.map(r => r.id));
+
+  const ids = [...new Set([...knownOrderIds, ...Object.values(orderByTracking)])];
+  const tare = await getPackagingWeight(pool, 11);
+  const weights = await pool.query(`
+    SELECT o.wp_order_id::int AS id, ${orderWeightSql('$1', 'g')} AS grams
+    FROM orders o
+    LEFT JOIN order_items oi ON o.wp_order_id = oi.wp_order_id AND oi.order_item_type = 'line_item'
+    LEFT JOIN products p ON p.wp_product_id = COALESCE(NULLIF(oi.variation_id::int, 0), oi.product_id::int)
+    LEFT JOIN products parent ON p.wp_parent_id = parent.wp_product_id
+    WHERE o.wp_order_id::int = ANY($2::int[])
+    GROUP BY o.wp_order_id
+  `, [tare, ids]);
+  const bddWeights = {};
+  for (const r of weights.rows) bddWeights[r.id] = parseFloat(r.grams);
+
+  return { knownOrderIds, orderByTracking, bddWeights, tare };
+}
+
+/**
+ * Rattache une annexe CSV à sa facture PDF déjà enregistrée et remplace ses
+ * colis. Les coûts par commande alimentent aussitôt /financier (coût réel =
+ * Σ carrier_invoice_parcels.amount_ht) ; orders.shipping_cost_calculated n'est
+ * touché que par « Mettre à jour les coûts » (applyTariffs).
+ */
+async function importCsvBuffer(buffer, fileName) {
+  const csv = parseMondialRelayCsv(buffer);
+  if (!csv.invoiceNumber) throw Object.assign(new Error('Numéro de facture introuvable dans le CSV'), { status: 400 });
+
+  const inv = await pool.query(
+    'SELECT id, total_ht, total_parcels, parcels_detail FROM carrier_invoices WHERE carrier = $1 AND invoice_number = $2',
+    [CARRIER, csv.invoiceNumber]
+  );
+  if (!inv.rows.length) {
+    throw Object.assign(
+      new Error(`La facture ${csv.invoiceNumber} n'est pas enregistrée : importe d'abord son PDF (ou le ZIP Primobox qui contient les deux).`),
+      { status: 404, code: 'INVOICE_MISSING' }
+    );
+  }
+  const invoice = inv.rows[0];
+  const pdf = invoice.parcels_detail || {};
+
+  const ctx = await resolveCsvContext(csv);
+  const analysis = analyzeMondialRelayCsv(csv, {
+    ...ctx,
+    remiseRate: pdf.remiseRate ?? null,
+    pdfTotalHT: invoice.total_ht != null ? parseFloat(invoice.total_ht) : null,
+    pdfNbColis: invoice.total_parcels ?? null,
+  });
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query('DELETE FROM carrier_invoice_parcels WHERE invoice_id = $1', [invoice.id]);
+    const rows = analysis.parcels;
+    for (let i = 0; i < rows.length; i += 500) {
+      const chunk = rows.slice(i, i + 500);
+      const vals = chunk.map((_, j) => { const b = j * 9; return `($${b+1},$${b+2},$${b+3},$${b+4},$${b+5},$${b+6},$${b+7},$${b+8},$${b+9})`; }).join(',');
+      const params = chunk.flatMap(p => {
+        const bddKg = p.bdd_g != null ? p.bdd_g / 1000 : null;
+        return [
+          invoice.id, p.tracking || p.ref, p.order_id, p.date,
+          p.billed_g ? p.billed_g / 1000 : null, bddKg,
+          p.bdd_g != null && p.billed_g ? Math.round(p.billed_g - p.bdd_g) : null,
+          p.net, p.is_return,
+        ];
+      });
+      await client.query(
+        `INSERT INTO carrier_invoice_parcels (invoice_id,tracking,order_id,date,weight_carrier,weight_bdd,diff_g,amount_ht,is_return) VALUES ${vals}`,
+        params
+      );
+    }
+    const { parcels, ...summary } = analysis;
+    const csvDetail = { ...summary, fileName: fileName || null, importedAt: new Date().toISOString(), tareG: ctx.tare, parcels };
+    await client.query(
+      `UPDATE carrier_invoices
+         SET parcels_detail = jsonb_set(COALESCE(parcels_detail, '{}'::jsonb), '{csv}', $2::jsonb),
+             tariffs_applied_at = NULL
+       WHERE id = $1`,
+      [invoice.id, JSON.stringify(csvDetail)]
+    );
+    await client.query('COMMIT');
+  } catch (e) {
+    await client.query('ROLLBACK');
+    throw e;
+  } finally {
+    client.release();
+  }
+
+  const { parcels, ...summary } = analysis;
+  return { invoiceId: invoice.id, invoiceNumber: csv.invoiceNumber, summary };
 }
 
 /* ─── EXCEL ──────────────────────────────────────────────────── */
@@ -197,6 +316,11 @@ exports.getHistory = async (req, res) => {
         (parcels_detail->>'totalTTC')::numeric  AS total_ttc,
         (parcels_detail->>'remiseRate')::numeric AS remise_rate,
         (parcels_detail->'stats'->>'reconcile_ok')::boolean AS reconcile_ok,
+        tariffs_applied_at,
+        (parcels_detail ? 'csv') AS has_csv,
+        (parcels_detail->'csv'->>'reconcileOk')::boolean AS csv_reconcile_ok,
+        (SELECT COALESCE(SUM((p->>'ecart')::numeric), 0) FROM jsonb_array_elements(COALESCE(parcels_detail->'csv'->'parcels', '[]'::jsonb)) p
+          WHERE p->>'kind' = 'aberrant') AS ecart_reclamable,
         parcels_detail->'collecte'       AS collecte,
         parcels_detail->'retourPCI'      AS "retourPCI",
         parcels_detail->'complements'    AS complements,
@@ -225,7 +349,8 @@ exports.getInvoiceDetail = async (req, res) => {
     const { id } = req.params;
     const inv = await pool.query('SELECT * FROM carrier_invoices WHERE id=$1 AND carrier=$2', [id, CARRIER]);
     if (!inv.rows.length) return res.status(404).json({ success: false, error: 'Facture non trouvée' });
-    res.json({ success: true, invoice: inv.rows[0], parsed: inv.rows[0].parcels_detail });
+    const { pdf_data, ...invoice } = inv.rows[0];
+    res.json({ success: true, invoice, parsed: invoice.parcels_detail });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
@@ -293,10 +418,14 @@ exports.importZip = [
     try {
       if (!req.file) return res.status(400).json({ success: false, error: 'Fichier ZIP requis' });
       const zip = await JSZip.loadAsync(req.file.buffer);
-      const pdfEntries = Object.values(zip.files).filter(f => !f.dir && /\.pdf$/i.test(f.name) && !/__MACOSX/.test(f.name));
-      if (!pdfEntries.length) return res.status(400).json({ success: false, error: 'Aucun PDF trouvé dans le ZIP' });
+      const entries = Object.values(zip.files).filter(f => !f.dir && !/__MACOSX/.test(f.name));
+      const pdfEntries = entries.filter(f => /\.pdf$/i.test(f.name));
+      // Les annexes CSV passent APRÈS les PDF : le ZIP Primobox contient les deux,
+      // et une annexe ne se rattache qu'à une facture déjà enregistrée.
+      const csvEntries = entries.filter(f => /\.csv$/i.test(f.name));
+      if (!pdfEntries.length && !csvEntries.length) return res.status(400).json({ success: false, error: 'Aucun PDF ni CSV trouvé dans le ZIP' });
 
-      let imported = 0, already = 0;
+      let imported = 0, already = 0, csvImported = 0;
       const failed = [];
       for (const entry of pdfEntries) {
         const name = entry.name.split('/').pop();
@@ -310,13 +439,73 @@ exports.importZip = [
           failed.push({ name, error: e.message });
         }
       }
-      res.json({ success: true, total: pdfEntries.length, imported, already, failed });
+      for (const entry of csvEntries) {
+        const name = entry.name.split('/').pop();
+        try {
+          await importCsvBuffer(await entry.async('nodebuffer'), name);
+          csvImported++;
+        } catch (e) {
+          failed.push({ name, error: e.message });
+        }
+      }
+      res.json({ success: true, total: pdfEntries.length + csvEntries.length, imported, already, csvImported, failed });
     } catch (err) {
       console.error('[MondialRelay] importZip error:', err);
       res.status(500).json({ success: false, error: err.message });
     }
   },
 ];
+
+// POST /api/mondial-relay/import-csv — annexe CSV Primobox d'une facture enregistrée
+exports.importCsv = [
+  uploadCsv.single('csv'),
+  async (req, res) => {
+    try {
+      if (!req.file) return res.status(400).json({ success: false, error: 'Fichier CSV requis' });
+      const r = await importCsvBuffer(req.file.buffer, req.file.originalname);
+      res.json({ success: true, ...r });
+    } catch (err) {
+      if (!err.status) console.error('[MondialRelay] importCsv error:', err);
+      res.status(err.status || 500).json({ success: false, error: err.message, code: err.code || null });
+    }
+  },
+];
+
+// POST /api/mondial-relay/history/:id/apply-tariffs
+// Coût de livraison des commandes de la facture = somme de TOUS leurs colis
+// facturés (aller + retours, toutes factures confondues), net de remise —
+// la même somme que le coût réel de /financier.
+exports.applyTariffs = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const inv = await pool.query('SELECT id FROM carrier_invoices WHERE id = $1 AND carrier = $2', [id, CARRIER]);
+    if (!inv.rows.length) return res.status(404).json({ success: false, error: 'Facture non trouvée' });
+
+    const result = await pool.query(`
+      WITH cmd AS (
+        SELECT DISTINCT order_id FROM carrier_invoice_parcels
+        WHERE invoice_id = $1 AND order_id IS NOT NULL
+      ), cout AS (
+        SELECT cip.order_id, SUM(cip.amount_ht) AS tarif
+        FROM carrier_invoice_parcels cip
+        JOIN cmd ON cmd.order_id = cip.order_id
+        WHERE cip.amount_ht IS NOT NULL
+        GROUP BY cip.order_id
+      )
+      UPDATE orders o
+      SET shipping_cost_calculated = cout.tarif
+      FROM cout
+      WHERE o.wp_order_id::int = cout.order_id
+    `, [id]);
+    const upd = await pool.query(
+      'UPDATE carrier_invoices SET tariffs_applied_at = NOW() WHERE id = $1 RETURNING tariffs_applied_at', [id]
+    );
+    res.json({ success: true, updated: result.rowCount, tariffsAppliedAt: upd.rows[0].tariffs_applied_at });
+  } catch (err) {
+    console.error('[MondialRelay] applyTariffs error:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+};
 
 exports.debugText = [
   upload.single('pdf'),
