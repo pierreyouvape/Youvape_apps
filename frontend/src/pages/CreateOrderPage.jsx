@@ -33,6 +33,11 @@ const CreateOrderPage = () => {
   // ouvre à tout le catalogue, pour le produit fraîchement créé ou l'article vu
   // moins cher ailleurs.
   const [toutLeCatalogue, setToutLeCatalogue] = useState(false);
+  // Les lignes cochées, et ce qu'on veut leur appliquer d'un coup : une même
+  // quantité, un même lot, un même tarif — dix goûts d'une même gamme se
+  // commandent presque toujours pareil. Un champ laissé vide ne touche à rien.
+  const [selection, setSelection] = useState(() => new Set());
+  const [lot, setLot] = useState({ qty: '', pack: '', price: '', priceUnit: 'lot' });
 
   // Load suppliers
   useEffect(() => {
@@ -142,6 +147,7 @@ const CreateOrderPage = () => {
       product_id: product.id,
       product_name: product.post_title,
       sku: product.sku,
+      brand: brandLabel(product) || null,
       stock: product.stock,
       supplier_sku: ref ? ref.supplier_sku : null,
       qty_ordered: 1,
@@ -158,6 +164,64 @@ const CreateOrderPage = () => {
   // Remove product from order
   const removeProductFromOrder = (productId) => {
     setOrderItems(prev => prev.filter(item => item.product_id !== productId));
+    setSelection(prev => { const n = new Set(prev); n.delete(productId); return n; });
+  };
+
+  /**
+   * Change le lot d'une ligne EN GARDANT LE PRIX DE LA PIÈCE.
+   *
+   * Le prix saisi est celui du lot : passer de « par 1 à 1,34 € » à « par 10 »
+   * sans le recalculer ferait des lots de dix à 1,34 €. On ramène donc le prix
+   * à la pièce, puis on le remultiplie par le nouveau lot (4 décimales, comme
+   * côté BMS : arrondir au centime perd de l'argent sur un lot de 200).
+   */
+  const avecLot = (item, pack) => {
+    const nouveau = Math.max(1, parseInt(pack, 10) || 1);
+    const ancien = parseInt(item.units_per_qty, 10) || 1;
+    const prix = item.unit_price == null || item.unit_price === ''
+      ? item.unit_price
+      : Math.round((parseFloat(item.unit_price) / ancien) * nouveau * 10000) / 10000;
+    return { ...item, units_per_qty: nouveau, unit_price: prix };
+  };
+
+  const updateItemPack = (productId, pack) => {
+    setOrderItems(prev => prev.map(item =>
+      item.product_id === productId ? avecLot(item, pack) : item
+    ));
+  };
+
+  const basculerLigne = (productId) => {
+    setSelection(prev => {
+      const n = new Set(prev);
+      if (n.has(productId)) n.delete(productId); else n.add(productId);
+      return n;
+    });
+  };
+
+  const selectionnerMarque = (marque) => {
+    setSelection(new Set(orderItems.filter(i => i.brand === marque).map(i => i.product_id)));
+  };
+
+  // Applique quantité / lot / prix aux lignes cochées. Le lot passe d'abord
+  // (il recalcule le prix du lot à prix pièce constant), le prix saisi ensuite
+  // l'emporte s'il est donné.
+  const appliquerALaSelection = () => {
+    const qty = parseInt(lot.qty, 10);
+    const pack = parseInt(lot.pack, 10);
+    const prix = lot.price === '' ? NaN : parseFloat(String(lot.price).replace(',', '.'));
+    setOrderItems(prev => prev.map(item => {
+      if (!selection.has(item.product_id)) return item;
+      let next = item;
+      if (Number.isFinite(qty) && qty >= 1) next = { ...next, qty_ordered: qty };
+      if (Number.isFinite(pack) && pack >= 1) next = avecLot(next, pack);
+      if (Number.isFinite(prix) && prix >= 0) {
+        const p = lot.priceUnit === 'piece'
+          ? Math.round(prix * (parseInt(next.units_per_qty, 10) || 1) * 10000) / 10000
+          : prix;
+        next = { ...next, unit_price: p };
+      }
+      return next;
+    }));
   };
 
   // Update quantity
@@ -488,6 +552,69 @@ const CreateOrderPage = () => {
             )}
           </div>
 
+          {orderItems.length > 0 && (() => {
+            const marques = [...new Set(orderItems.map(i => i.brand).filter(Boolean))].sort();
+            const champ = { padding: '7px 8px', borderRadius: '4px', border: '1px solid #ddd', fontSize: '14px' };
+            const rien = lot.qty === '' && lot.pack === '' && lot.price === '';
+            return (
+              <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: '6px',
+                padding: '12px 14px', marginBottom: '14px', display: 'flex', flexWrap: 'wrap',
+                alignItems: 'center', gap: '10px', fontSize: '14px' }}>
+                <strong style={{ marginRight: '4px' }}>
+                  {selection.size} ligne{selection.size > 1 ? 's' : ''} cochée{selection.size > 1 ? 's' : ''}
+                </strong>
+                <button type="button" onClick={() => setSelection(new Set(orderItems.map(i => i.product_id)))}
+                  style={{ ...champ, background: 'white', cursor: 'pointer' }}>Tout</button>
+                <button type="button" onClick={() => setSelection(new Set())}
+                  style={{ ...champ, background: 'white', cursor: 'pointer' }}>Aucune</button>
+                {marques.length > 0 && (
+                  <select value="" onChange={e => e.target.value && selectionnerMarque(e.target.value)}
+                    style={{ ...champ, background: 'white' }}>
+                    <option value="">Cocher une marque…</option>
+                    {marques.map(m => <option key={m} value={m}>{m}</option>)}
+                  </select>
+                )}
+                <span style={{ color: '#999' }}>→</span>
+                <label>Quantité{' '}
+                  <input type="number" min="1" value={lot.qty} placeholder="—"
+                    onChange={e => setLot(l => ({ ...l, qty: e.target.value }))}
+                    style={{ ...champ, width: '70px', textAlign: 'center' }} />
+                </label>
+                <label>Par{' '}
+                  <input type="number" min="1" list="lots-courants" value={lot.pack} placeholder="—"
+                    onChange={e => setLot(l => ({ ...l, pack: e.target.value }))}
+                    style={{ ...champ, width: '70px', textAlign: 'center' }} />
+                </label>
+                <label>Prix{' '}
+                  <input type="number" min="0" step="0.01" value={lot.price} placeholder="—"
+                    onChange={e => setLot(l => ({ ...l, price: e.target.value }))}
+                    style={{ ...champ, width: '85px', textAlign: 'center' }} />
+                </label>
+                <select value={lot.priceUnit} onChange={e => setLot(l => ({ ...l, priceUnit: e.target.value }))}
+                  style={{ ...champ, background: 'white' }}>
+                  <option value="lot">€ le lot</option>
+                  <option value="piece">€ la pièce</option>
+                </select>
+                <button type="button" onClick={appliquerALaSelection}
+                  disabled={selection.size === 0 || rien}
+                  style={{ background: '#f59e0b', color: 'white', border: 'none', borderRadius: '6px',
+                    padding: '8px 16px', fontWeight: 600, fontSize: '14px',
+                    cursor: selection.size === 0 || rien ? 'not-allowed' : 'pointer',
+                    opacity: selection.size === 0 || rien ? 0.5 : 1 }}>
+                  Appliquer
+                </button>
+                <span style={{ color: '#92400e', fontSize: '12px', flexBasis: '100%' }}>
+                  Un champ vide ne change rien. Changer le lot garde le prix de la pièce.
+                </span>
+              </div>
+            );
+          })()}
+
+          {/* Les lots usuels, proposés sous chaque champ « Par ». */}
+          <datalist id="lots-courants">
+            {[1, 5, 10, 20, 50, 100, 200].map(n => <option key={n} value={n} />)}
+          </datalist>
+
           {orderItems.length === 0 ? (
             <div style={{ padding: '40px', textAlign: 'center', background: '#f9fafb', borderRadius: '6px', color: '#666' }}>
               Aucun produit ajouté. Utilisez la recherche ci-dessus pour ajouter des produits.
@@ -496,12 +623,18 @@ const CreateOrderPage = () => {
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
                 <tr style={{ borderBottom: '2px solid #e5e7eb' }}>
+                  <th style={{ width: '32px', padding: '10px 4px' }}>
+                    <input type="checkbox"
+                      checked={selection.size > 0 && selection.size === orderItems.length}
+                      onChange={e => setSelection(e.target.checked ? new Set(orderItems.map(i => i.product_id)) : new Set())}
+                      title="Tout cocher" style={{ cursor: 'pointer' }} />
+                  </th>
                   <th style={{ textAlign: 'left', padding: '10px', fontWeight: 600 }}>Produit</th>
                   <th style={{ textAlign: 'left', padding: '10px', fontWeight: 600, width: '120px' }}>SKU</th>
                   <th style={{ textAlign: 'center', padding: '10px', fontWeight: 600, width: '80px' }}>Stock</th>
                   <th style={{ textAlign: 'center', padding: '10px', fontWeight: 600, width: '110px' }}>Quantité</th>
                   <th style={{ textAlign: 'center', padding: '10px', fontWeight: 600, width: '90px' }}
-                      title="Conditionnement du catalogue — BMS impose le sien">Par</th>
+                      title="Pièces par lot : 1 pour commander à la pièce">Par</th>
                   <th style={{ textAlign: 'left', padding: '10px', fontWeight: 600, width: '150px' }}>Soit</th>
                   <th style={{ textAlign: 'center', padding: '10px', fontWeight: 600, width: '130px' }}>Prix du lot (€)</th>
                   <th style={{ textAlign: 'right', padding: '10px', fontWeight: 600, width: '110px' }}>Total ligne</th>
@@ -510,8 +643,16 @@ const CreateOrderPage = () => {
               </thead>
               <tbody>
                 {orderItems.map(item => (
-                  <tr key={item.product_id} style={{ borderBottom: '1px solid #e5e7eb' }}>
-                    <td style={{ padding: '12px 10px' }}>{item.product_name}</td>
+                  <tr key={item.product_id} style={{ borderBottom: '1px solid #e5e7eb',
+                    background: selection.has(item.product_id) ? '#fffbeb' : 'transparent' }}>
+                    <td style={{ padding: '12px 4px', textAlign: 'center' }}>
+                      <input type="checkbox" checked={selection.has(item.product_id)}
+                        onChange={() => basculerLigne(item.product_id)} style={{ cursor: 'pointer' }} />
+                    </td>
+                    <td style={{ padding: '12px 10px' }}>
+                      {item.product_name}
+                      {item.brand && <div style={{ fontSize: '11.5px', color: '#888' }}>{item.brand}</div>}
+                    </td>
                     <td style={{ padding: '12px 10px' }}><code style={{ fontSize: '13px' }}>{item.sku || '-'}</code></td>
                     <td style={{ padding: '12px 10px', textAlign: 'center' }}>
                       <span style={{ color: item.stock <= 0 ? '#ef4444' : 'inherit', fontWeight: 500 }}>
@@ -527,13 +668,19 @@ const CreateOrderPage = () => {
                         style={{ width: '80px', padding: '8px', borderRadius: '4px', border: '1px solid #ddd', textAlign: 'center', fontSize: '14px' }}
                       />
                     </td>
-                    {/* Non modifiable : BMS impose le conditionnement du
-                        catalogue quoi qu'on lui envoie. Un champ éditable ici
-                        promettrait un contrôle qu'on n'a pas, et ferait
-                        diverger l'écran de ce que BMS enregistre. */}
+                    {/* Modifiable depuis le 30/09/2026 : BMS ne connaît plus que
+                        des pièces (associations à pack_qty = 1) et buildBmsItems
+                        envoie quantité × lot pièces au prix du lot ÷ lot. Le lot
+                        ne sert plus qu'à dire combien de pièces on commande. */}
                     <td style={{ padding: '12px 10px', textAlign: 'center', fontSize: '14px' }}>
-                      <strong>{item.units_per_qty || 1}</strong>
-                      <div style={{ fontSize: '11px', color: '#888', marginTop: '2px' }}>catalogue</div>
+                      <input
+                        type="number"
+                        min="1"
+                        list="lots-courants"
+                        value={item.units_per_qty || 1}
+                        onChange={e => updateItemPack(item.product_id, e.target.value)}
+                        style={{ width: '70px', padding: '8px', borderRadius: '4px', border: '1px solid #ddd', textAlign: 'center', fontSize: '14px' }}
+                      />
                     </td>
                     {/* « 4 » tout seul ne dit pas si ce sont quatre flacons ou
                         quatre cartons. Ce sont les pièces qui partent chez le
