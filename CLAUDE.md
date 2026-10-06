@@ -384,9 +384,12 @@ Le cycle complet — commander, recevoir, contrôler la facture — depuis l'app
 - **Le prix boucle la boucle** : il part du dernier tarif **retenu** sur une facture
   contrôlée (`supplier_refs.price_retained_at`), signalé en vert. Ce qui a été réellement
   payé, pas un souvenir.
-- **Le champ « Par » n'est pas modifiable** — et ne doit pas le redevenir. BMS impose le
-  conditionnement du catalogue ; un champ éditable promettrait un contrôle qu'on n'a pas et
-  ferait diverger l'écran de ce que BMS enregistre.
+- **Le champ « Par » est redevenu modifiable le 06/10/2026** (`75f6c2e`). Il était verrouillé
+  tant que BMS imposait le conditionnement du catalogue ; depuis la bascule du 30/09/2026
+  (associations à `pack_qty = 1`), `buildBmsItems` envoie `quantité × lot` pièces au prix du
+  lot ÷ lot, donc le lot choisi ne diverge plus de BMS. Changer le lot garde le **prix de la
+  pièce** (le prix saisi est celui du lot). Application groupée quantité/lot/prix aux lignes
+  cochées (tout, aucune, par marque).
 - **Piège `packChoisi`** : un conditionnement n'était retenu que s'il valait **plus de 1**,
   donc une ligne « par 1 » retombait sur le catalogue — 5 pièces commandées parties en 25.
   `packChoisi` distingue désormais « non fourni » (`null`) de « fourni à 1 ».
