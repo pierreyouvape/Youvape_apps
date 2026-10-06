@@ -74,6 +74,8 @@ const needsCalculationModel = {
         ) as supplier_skus,
         p.image_url,
         p.weight,
+        p.price,
+        p.discounted_price,
         p.wp_parent_id,
         p.product_type,
         p_parent.post_title as parent_title,
@@ -337,7 +339,10 @@ const needsCalculationModel = {
       brand: p.brand || null,
       sub_brand: p.sub_brand || null,
       sub_category: p.sub_category || null,
-      weight: p.weight ? parseFloat(p.weight) : null
+      weight: p.weight ? parseFloat(p.weight) : null,
+      price: p.price != null ? parseFloat(p.price) : null,
+      // Tarif remisé Woo Discount Rules (TTC), NULL = aucune remise active
+      discounted_price: p.discounted_price != null ? parseFloat(p.discounted_price) : null
     }));
   },
 

@@ -247,6 +247,7 @@ const TriStateCheckbox = ({ value, onChange, label }) => {
 
 const NEEDS_COLUMNS = [
   { key: 'verified_price',      label: 'Tarif achat' },
+  { key: 'discounted_price',    label: 'Tarif Remisé' },
   { key: 'weight',              label: 'Poids' },
   { key: 'stock',               label: 'Stock' },
   { key: 'arrivage',            label: 'Arrivage' },
@@ -1111,6 +1112,7 @@ const NeedsTab = ({ token, onCompactChange }) => {
                   <th>Réf. fournisseur</th>
                   <th style={{ width: '30px' }}></th>
                   {isVisible('verified_price') && <th className="text-right">Tarif achat</th>}
+                  {isVisible('discounted_price') && <th className="text-right">Tarif Remisé</th>}
                   <th>SKU</th>
                   {isVisible('weight') && <th className="text-right">Poids</th>}
                   {isVisible('stock') && <SortableHeader column="stock" label="Stock" className="text-right" />}
@@ -1173,6 +1175,7 @@ const NeedsTab = ({ token, onCompactChange }) => {
                       )}
                     </td>
                     {isVisible('verified_price') && <td></td>}
+                    {isVisible('discounted_price') && <td></td>}
                     <td></td>
                     {isVisible('weight') && <td></td>}
                     {isVisible('stock') && <td className="text-right">{fmtInt(row.totalStock)}</td>}
@@ -1261,6 +1264,11 @@ const NeedsTab = ({ token, onCompactChange }) => {
                       )}
                     </td>
                     {isVisible('verified_price') && <td className="text-right">{renderVerifiedPrice(row)}</td>}
+                    {isVisible('discounted_price') && (
+                      row.discounted_price != null
+                        ? <td className="text-right" style={{ color: '#059669', fontWeight: 600, whiteSpace: 'nowrap' }} title={row.price != null ? `Prix de vente ${row.price.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} € TTC` : undefined}>{row.discounted_price.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €</td>
+                        : <td className="text-right" style={{ color: '#9ca3af' }}>—</td>
+                    )}
                     <td><code style={{ fontSize: '12px' }}>{row.sku || '-'}</code></td>
                     {isVisible('weight') && <td className="text-right" style={{ color: '#6b7280' }}>{row.weight ? parseFloat(row.weight).toLocaleString('fr-FR', { minimumFractionDigits: 0, maximumFractionDigits: 3 }) : '-'}</td>}
                     {isVisible('stock') && <td className="text-right">{fmtInt(row.stock)}</td>}
