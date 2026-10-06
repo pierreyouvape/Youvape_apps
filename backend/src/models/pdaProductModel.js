@@ -310,6 +310,26 @@ const findBmsProductId = async (sku) => {
   return match.id;
 };
 
+/**
+ * Numéro du mouvement que l'on vient de créer. La réponse du POST ne le porte
+ * pas (constaté au 1er mouvement réel, 06/10/2026) : on relit le dernier
+ * mouvement du produit portant notre commentaire. Le mouvement est déjà fait,
+ * un échec ici ne doit pas le faire passer pour raté.
+ */
+const findMovementId = async (created, bmsProductId, comments, qty) => {
+  const direct = (created?.data || created)?.id;
+  if (direct) return direct;
+  try {
+    const res = await bmsApiModel.apiCall(
+      `/v2/stock-movements?limit=10&sorts[id]=desc&filters[product_id]=${bmsProductId}`
+    );
+    return (res.data || []).find(m => m.comments === comments && Number(m.qty) === qty)?.id ?? null;
+  } catch (error) {
+    console.error('[PDA Produit] Numéro du mouvement BMS introuvable :', error.message);
+    return null;
+  }
+};
+
 const createMovement = async (productId, { reason, direction, qty, comment }, user) => {
   const r = await loadProduct(productId);
   if (!r.sku) throw httpError(400, 'Produit sans SKU : inconnu de BMS.');
@@ -338,7 +358,7 @@ const createMovement = async (productId, { reason, direction, qty, comment }, us
   await log({
     productId, sku: r.sku, userId: user.id, action: 'movement', reason,
     qty: direction === 'in' ? n : -n, comment: note || null,
-    bmsMovementId: (created.data || created)?.id ?? null,
+    bmsMovementId: await findMovementId(created, bmsProductId, comments, n),
   });
   return getProduct(productId);
 };
