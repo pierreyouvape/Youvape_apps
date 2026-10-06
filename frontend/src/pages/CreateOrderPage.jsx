@@ -564,12 +564,12 @@ const CreateOrderPage = () => {
                   {selection.size} ligne{selection.size > 1 ? 's' : ''} cochée{selection.size > 1 ? 's' : ''}
                 </strong>
                 <button type="button" onClick={() => setSelection(new Set(orderItems.map(i => i.product_id)))}
-                  style={{ ...champ, background: 'white', cursor: 'pointer' }}>Tout</button>
+                  style={{ ...champ, background: 'white', color: '#374151', fontWeight: 500, cursor: 'pointer' }}>Tout</button>
                 <button type="button" onClick={() => setSelection(new Set())}
-                  style={{ ...champ, background: 'white', cursor: 'pointer' }}>Aucune</button>
+                  style={{ ...champ, background: 'white', color: '#374151', fontWeight: 500, cursor: 'pointer' }}>Aucune</button>
                 {marques.length > 0 && (
                   <select value="" onChange={e => e.target.value && selectionnerMarque(e.target.value)}
-                    style={{ ...champ, background: 'white' }}>
+                    style={{ ...champ, background: 'white', color: '#374151' }}>
                     <option value="">Cocher une marque…</option>
                     {marques.map(m => <option key={m} value={m}>{m}</option>)}
                   </select>
@@ -585,15 +585,15 @@ const CreateOrderPage = () => {
                     onChange={e => setLot(l => ({ ...l, pack: e.target.value }))}
                     style={{ ...champ, width: '70px', textAlign: 'center' }} />
                 </label>
-                <label>Prix{' '}
+                <label>Prix HT{' '}
                   <input type="number" min="0" step="0.01" value={lot.price} placeholder="—"
                     onChange={e => setLot(l => ({ ...l, price: e.target.value }))}
                     style={{ ...champ, width: '85px', textAlign: 'center' }} />
                 </label>
                 <select value={lot.priceUnit} onChange={e => setLot(l => ({ ...l, priceUnit: e.target.value }))}
-                  style={{ ...champ, background: 'white' }}>
-                  <option value="lot">€ le lot</option>
-                  <option value="piece">€ la pièce</option>
+                  style={{ ...champ, background: 'white', color: '#374151' }}>
+                  <option value="lot">€ HT le lot</option>
+                  <option value="piece">€ HT la pièce</option>
                 </select>
                 <button type="button" onClick={appliquerALaSelection}
                   disabled={selection.size === 0 || rien}
@@ -636,8 +636,8 @@ const CreateOrderPage = () => {
                   <th style={{ textAlign: 'center', padding: '10px', fontWeight: 600, width: '90px' }}
                       title="Pièces par lot : 1 pour commander à la pièce">Par</th>
                   <th style={{ textAlign: 'left', padding: '10px', fontWeight: 600, width: '150px' }}>Soit</th>
-                  <th style={{ textAlign: 'center', padding: '10px', fontWeight: 600, width: '130px' }}>Prix du lot (€)</th>
-                  <th style={{ textAlign: 'right', padding: '10px', fontWeight: 600, width: '110px' }}>Total ligne</th>
+                  <th style={{ textAlign: 'center', padding: '10px', fontWeight: 600, width: '130px' }}>Prix du lot HT (€)</th>
+                  <th style={{ textAlign: 'right', padding: '10px', fontWeight: 600, width: '110px' }}>Total ligne HT</th>
                   <th style={{ width: '60px' }}></th>
                 </tr>
               </thead>
@@ -740,7 +740,7 @@ const CreateOrderPage = () => {
                       {eur((parseFloat(item.unit_price) || 0) * item.qty_ordered)}
                       {(item.units_per_qty || 1) > 1 && item.unit_price > 0 && (
                         <div style={{ fontSize: '11px', color: '#888', fontWeight: 400, marginTop: '3px' }}>
-                          {eur(parseFloat(item.unit_price) / item.units_per_qty)} la pièce
+                          {eur(parseFloat(item.unit_price) / item.units_per_qty)} HT la pièce
                         </div>
                       )}
                     </td>
