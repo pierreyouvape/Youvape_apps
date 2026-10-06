@@ -204,8 +204,22 @@ const pdaAssign = handle(async (req, res) => {
   res.json(await pickingPdaModel.getWave(Number(req.params.id), req.user.id));
 });
 
-const pdaScan = handle(async (req, res) => {
-  res.json(await pickingPdaModel.scan(Number(req.params.id), req.user.id, req.body?.code));
+const pdaScan = async (req, res) => {
+  try {
+    res.json(await pickingPdaModel.scan(Number(req.params.id), req.user.id, req.body?.code));
+  } catch (error) {
+    // Carton au contenu inconnu : le PDA doit pouvoir demander la quantité.
+    if (error.code === 'PACK_QTY_UNKNOWN') {
+      return res.status(409).json({ error: error.message, code: error.code, lineId: error.lineId, barcode: error.barcode });
+    }
+    if (error.statusCode) return res.status(error.statusCode).json({ error: error.message });
+    console.error('[Picking]', error.message);
+    res.status(500).json({ error: error.message || 'Erreur serveur' });
+  }
+};
+
+const pdaPackQuantity = handle(async (req, res) => {
+  res.json(await pickingPdaModel.setPackQuantity(Number(req.params.id), req.user.id, req.body?.code, req.body?.quantity));
 });
 
 const pdaLineAction = (action) => handle(async (req, res) => {
@@ -241,6 +255,7 @@ module.exports = {
   pdaGetWave,
   pdaAssign,
   pdaScan,
+  pdaPackQuantity,
   pdaValidate: pdaLineAction('validate'),
   pdaMissing: pdaLineAction('markMissing'),
   pdaUndo: pdaLineAction('undo'),

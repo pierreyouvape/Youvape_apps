@@ -196,6 +196,9 @@ function WaveScreen({ token, waveId, onBack, setNotice, notice }) {
   const [busy, setBusy] = useState(false);
   const [flash, setFlash] = useState(null);
   const [typing, setTyping] = useState(false);
+  // Carton au contenu inconnu : { code, message } — on demande la quantité une fois.
+  const [packAsk, setPackAsk] = useState(null);
+  const [packQty, setPackQty] = useState('');
   const [typed, setTyped] = useState('');
   const currentRef = useRef(null);
 
@@ -245,10 +248,30 @@ function WaveScreen({ token, waveId, onBack, setNotice, notice }) {
       showFlash('ok', `${line.name} — ${line.qtyPicked}/${line.qtyNeeded}`);
     } catch (err) {
       beep(false);
+      if (err.response?.data?.code === 'PACK_QTY_UNKNOWN') {
+        setPackQty('');
+        setPackAsk({ code: err.response.data.barcode, message: err.response.data.error });
+        return;
+      }
       showFlash('error', errorText(err));
     }
   };
-  useScanner(scan, !!wave && !typing);
+
+  // Contenu du carton saisi : enregistré pour la suite, puis le carton est compté.
+  const confirmPackQty = async () => {
+    const ask = packAsk;
+    setPackAsk(null);
+    try {
+      const line = await api(token).post(`/waves/${waveId}/pack-quantity`, { code: ask.code, quantity: packQty });
+      replaceLine(line);
+      beep(true);
+      showFlash('ok', `${line.name} — ${line.qtyPicked}/${line.qtyNeeded}`);
+    } catch (err) {
+      beep(false);
+      showFlash('error', errorText(err));
+    }
+  };
+  useScanner(scan, !!wave && !typing && !packAsk);
 
   const current = wave?.lines.find(l => !l.done);
   useEffect(() => {
@@ -367,6 +390,28 @@ function WaveScreen({ token, waveId, onBack, setNotice, notice }) {
           background: flash.kind === 'ok' ? C.green : C.red, color: C.white, fontWeight: 800, fontSize: 16,
           boxShadow: '0 8px 24px rgba(0,0,0,0.25)',
         }}>{flash.text}</div>
+      )}
+
+      {packAsk && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 30, display: 'flex', alignItems: 'flex-start', padding: 16, paddingTop: 80 }}>
+          <form
+            onSubmit={(e) => { e.preventDefault(); if (parseInt(packQty, 10) >= 2) confirmPackQty(); }}
+            style={{ background: C.white, borderRadius: 14, padding: 16, width: '100%' }}
+          >
+            <div style={{ fontWeight: 800, fontSize: 16 }}>{packAsk.message}</div>
+            <div style={{ fontSize: 13, color: C.greyT, marginTop: 6 }}>
+              Code {packAsk.code} — la réponse est enregistrée, la question ne reviendra plus.
+            </div>
+            <input
+              autoFocus value={packQty} onChange={e => setPackQty(e.target.value)} inputMode="numeric" placeholder="ex. 10"
+              style={{ width: '100%', boxSizing: 'border-box', marginTop: 12, padding: 12, fontSize: 22, fontWeight: 800, textAlign: 'center', borderRadius: 10, border: `1px solid ${C.greyB}` }}
+            />
+            <div style={{ display: 'flex', gap: 10, marginTop: 12 }}>
+              <button type="button" onClick={() => setPackAsk(null)} style={{ ...bigBtn(C.white, C.dark), border: `1px solid ${C.greyB}`, flex: 1 }}>Annuler</button>
+              <button type="submit" disabled={!(parseInt(packQty, 10) >= 2)} style={{ ...bigBtn(C.violet), flex: 1, opacity: parseInt(packQty, 10) >= 2 ? 1 : 0.5 }}>Compter</button>
+            </div>
+          </form>
+        </div>
       )}
 
       {typing && (

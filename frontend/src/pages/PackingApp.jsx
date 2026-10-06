@@ -575,6 +575,16 @@ const PackingApp = () => {
         return;
       }
 
+      // Carton plus gros que ce qui reste à mettre : refusé. Le compter jusqu'au
+      // reste affichait « complet » pendant que le carton entier partait dans le
+      // colis (06/10/2026).
+      const reste = currentItems[matchIndex].qty - currentItems[matchIndex].scanned;
+      if (incrementQty > reste) {
+        setError(`Carton de ${incrementQty} : il ne reste que ${reste} « ${currentItems[matchIndex].name} » à mettre — scannez à l'unité`);
+        playSound('error');
+        return;
+      }
+
       setItems(prev => {
         const updated = [...prev];
         const item = { ...updated[matchIndex] };

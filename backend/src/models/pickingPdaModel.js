@@ -17,6 +17,7 @@
 
 const pool = require('../config/database');
 const pickingModel = require('./pickingModel');
+const productModel = require('./productModel');
 const { aggregateWaveLines } = require('../services/pickingPlanner');
 
 const httpError = (status, message) => Object.assign(new Error(message), { statusCode: status });
@@ -242,9 +243,38 @@ const DONE_SET = `
   updated_at = NOW()`;
 
 /**
- * Scan d'un code-barres produit : +1 sur la ligne du produit. Tous les codes
- * « unité » du produit sont acceptés ; un code de carton est refusé (quantité
- * par carton inconnue en base). La ligne se valide seule à la quantité.
+ * Ajoute `qty` pièces scannées à une ligne, sans jamais dépasser ce qui reste.
+ * Un carton plus gros que le reste est REFUSÉ, pas tronqué : le préparateur
+ * mettrait le carton entier dans le bac (cf. packing, même règle).
+ */
+const addScanned = async (lineId, userId, qty, cartonLabel) => {
+  const { rows: [updated] } = await pool.query(
+    `UPDATE picking_wave_lines
+        SET qty_scanned = qty_scanned + $3,
+            done_by = CASE WHEN qty_scanned + $3 + qty_manual + qty_missing >= qty_needed THEN $2::int ELSE NULL END,
+            done_at = CASE WHEN qty_scanned + $3 + qty_manual + qty_missing >= qty_needed THEN NOW() ELSE NULL END,
+            updated_at = NOW()
+      WHERE id = $1 AND qty_scanned + qty_manual + qty_missing + $3 <= qty_needed
+      RETURNING id`,
+    [lineId, userId, qty]
+  );
+  if (!updated) {
+    const { rows: [l] } = await pool.query(
+      'SELECT qty_needed - qty_scanned - qty_manual - qty_missing AS reste FROM picking_wave_lines WHERE id = $1',
+      [lineId]
+    );
+    if (!l || l.reste <= 0) throw httpError(409, 'Quantité déjà complète pour ce produit.');
+    throw httpError(409, `${cartonLabel} : il n'en reste que ${l.reste} à prendre, prenez-les à l'unité.`);
+  }
+  return readLine(lineId);
+};
+
+/**
+ * Scan d'un code-barres produit. Un code « unité » (ou le SKU) compte 1 ; un
+ * code de CARTON compte son contenu — même règle qu'au packing (06/10/2026 ;
+ * avant, les cartons étaient refusés). Carton dont on ne connaît pas encore le
+ * contenu : réponse PACK_QTY_UNKNOWN, le PDA demande la quantité puis rappelle
+ * `setPackQuantity`. La ligne se valide seule à la quantité.
  */
 const scan = async (waveId, userId, code) => {
   await assertMine(waveId, userId);
@@ -252,30 +282,48 @@ const scan = async (waveId, userId, code) => {
   if (!value) throw httpError(400, 'Code vide.');
 
   const { rows: matches } = await pool.query(
-    `SELECT l.id AS line_id, pb.type
+    `SELECT l.id AS line_id, l.name, pb.type, pb.quantity
        FROM picking_wave_lines l
        JOIN product_barcodes pb ON pb.product_id = l.product_id
       WHERE l.wave_id = $1 AND pb.barcode = $2
      UNION
-     SELECT l.id, 'sku' FROM picking_wave_lines l WHERE l.wave_id = $1 AND l.sku = $2`,
+     SELECT l.id, l.name, 'sku', NULL FROM picking_wave_lines l WHERE l.wave_id = $1 AND l.sku = $2`,
     [waveId, value]
   );
   if (matches.length === 0) throw httpError(404, `Ce produit n'est pas dans la vague (${value}).`);
-  const unit = matches.find(m => m.type !== 'pack');
-  if (!unit) throw httpError(400, 'Code d\'un carton : scannez l\'unité.');
 
-  const { rows: [updated] } = await pool.query(
-    `UPDATE picking_wave_lines
-        SET qty_scanned = qty_scanned + 1,
-            done_by = CASE WHEN qty_scanned + 1 + qty_manual + qty_missing >= qty_needed THEN $2::int ELSE NULL END,
-            done_at = CASE WHEN qty_scanned + 1 + qty_manual + qty_missing >= qty_needed THEN NOW() ELSE NULL END,
-            updated_at = NOW()
-      WHERE id = $1 AND qty_scanned + qty_manual + qty_missing < qty_needed
-      RETURNING id`,
-    [unit.line_id, userId]
+  const unit = matches.find(m => m.type !== 'pack');
+  if (unit) return addScanned(unit.line_id, userId, 1);
+
+  const carton = matches[0];
+  if (!carton.quantity) {
+    throw Object.assign(httpError(409, `Combien d'unités dans ce carton de « ${carton.name} » ?`), {
+      code: 'PACK_QTY_UNKNOWN', lineId: carton.line_id, barcode: value
+    });
+  }
+  return addScanned(carton.line_id, userId, carton.quantity, `Carton de ${carton.quantity}`);
+};
+
+/**
+ * Contenu d'un carton inconnu, saisi au PDA : enregistré une fois pour toutes
+ * (productModel.addBarcode, donc « confirmé »), puis le carton est compté.
+ */
+const setPackQuantity = async (waveId, userId, code, quantity) => {
+  await assertMine(waveId, userId);
+  const qty = parseInt(quantity, 10);
+  if (!(qty >= 2)) throw httpError(400, 'Un carton contient au moins 2 unités.');
+  const value = String(code || '').trim();
+  const { rows: [m] } = await pool.query(
+    `SELECT l.id AS line_id, l.product_id
+       FROM picking_wave_lines l
+       JOIN product_barcodes pb ON pb.product_id = l.product_id
+      WHERE l.wave_id = $1 AND pb.barcode = $2 AND pb.type = 'pack'
+      LIMIT 1`,
+    [waveId, value]
   );
-  if (!updated) throw httpError(409, 'Quantité déjà complète pour ce produit.');
-  return readLine(unit.line_id);
+  if (!m) throw httpError(404, 'Ce carton n\'est pas dans la vague.');
+  await productModel.addBarcode(m.product_id, value, 'pack', qty, userId);
+  return addScanned(m.line_id, userId, qty, `Carton de ${qty}`);
 };
 
 /** « Valider » : le reste à prendre est pris, sans scan. */
@@ -355,6 +403,7 @@ module.exports = {
   getWave,
   assign,
   scan,
+  setPackQuantity,
   validate,
   markMissing,
   undo,

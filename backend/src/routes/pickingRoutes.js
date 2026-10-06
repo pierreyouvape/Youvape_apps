@@ -44,6 +44,7 @@ router.get('/pda/waves/find', canRead, pickingController.pdaFindWave);
 router.get('/pda/waves/:id', canRead, pickingController.pdaGetWave);
 router.post('/pda/waves/:id/assign', canRead, pickingController.pdaAssign);
 router.post('/pda/waves/:id/scan', canRead, pickingController.pdaScan);
+router.post('/pda/waves/:id/pack-quantity', canRead, pickingController.pdaPackQuantity);
 router.post('/pda/waves/:id/lines/:lineId/validate', canRead, pickingController.pdaValidate);
 router.post('/pda/waves/:id/lines/:lineId/missing', canRead, pickingController.pdaMissing);
 router.post('/pda/waves/:id/lines/:lineId/undo', canRead, pickingController.pdaUndo);
