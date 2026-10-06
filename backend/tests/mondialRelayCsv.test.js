@@ -23,9 +23,9 @@ function test(name, fn) {
 const HEAD = 'Nr de facture;Référence client;Référence expédition;Nom;Raison sociale;Marque du client;Code client chargeur;Nr expédition;Date;Mode de prise en charge;Mode de livraison;Type;Agence de livraison;Pays fact;Pays de livraison;Relais de livraison;Nom du relais;Code postal;Nbr colis;Poids en gr;Point de remise;Montant de CRT cent;Valeur vente;Indexation gasoil;Semi;Arrondi;Montant du transport;Poids annoncé;Poids mesuré;Mnt.Trans. Poids Mes;Complément;Total htva;Service;Avisage;Montant Kg supplémentaire;Autres;Expedition liée;Non facturé;Longueur;Largeur;Hauteur;Colis hors norme/hors contrat;Volumetric weight;Geo ID;billed size;declared size;actual size';
 
 // Champs dans l'ordre de HEAD ; seuls ceux utilisés sont renseignés.
-function row({ ref = '', tracking = '0', date = '20260915', mode = '', type = '', pays = 'BE', billed = '', index = '', transport = '0',
+function row({ ref = '', tracking = '0', date = '20260915', pickup = '', mode = '', type = '', pays = 'BE', billed = '', index = '', transport = '0',
   declared = '0', measured = '0', complement = '0', total = '0', linked = '', dims = ['', '', ''], vol = '' }) {
-  return ['LGYOUVAP2600000087', '?', ref, 'X', 'EMC', 'LG', 'YOUVAP', tracking, date, '', mode, type, '', 'FR', pays, '', '', '', '1',
+  return ['LGYOUVAP2600000087', '?', ref, 'X', 'EMC', 'LG', 'YOUVAP', tracking, date, pickup, mode, type, '', 'FR', pays, '', '', '', '1',
     billed, '', '0', '0', index, '', '', transport, declared, measured, transport, complement, total, '', '', '', '', linked, '',
     dims[0], dims[1], dims[2], '', vol, '', '', '', ''].join(';');
 }
@@ -136,6 +136,35 @@ test('sans dimensions (annexes 2025), aucune pesée n\'est déclarée aberrante'
   const p = analyzeMondialRelayCsv(one, { remiseRate: 14, knownOrderIds: new Set([1]) }).parcels[0];
   assert.strictEqual(p.density, null);
   assert.strictEqual(p.kind, 'pesee');
+});
+
+test('référence « ? » (étiquette saisie à la main) : livraison retrouvée par le suivi, pas un retour', () => {
+  // LGYOUVAP2600000086 : ref « ? », suivi 72159319.
+  const one = parseMondialRelayCsv(Buffer.from([HEAD,
+    row({ ref: '?', tracking: '72159319', mode: '24R', pays: 'ES', billed: '2300', transport: '9.79', declared: '2300', total: '10.49' }),
+  ].join('\n'), 'latin1'));
+  const p = analyzeMondialRelayCsv(one, { remiseRate: 14, orderByTracking: { 72159319: 1264000 } }).parcels[0];
+  assert.strictEqual(p.is_return, false);
+  assert.strictEqual(p.order_id, 1264000);
+});
+
+test('retour 2026 (PCI) et retour client (REL) : rattachés, jamais dans les écarts', () => {
+  const one = parseMondialRelayCsv(Buffer.from([HEAD,
+    // Colis non retiré renvoyé : 3 € + 1,50 € de ré-étiquetage (LGYOUVAP2600000085)
+    row({ ref: 'LG618470', tracking: '98036266', pickup: 'PCI', mode: 'LCC', type: 'Retour', pays: 'FR', billed: '200',
+      transport: '3', declared: '160', measured: '200', complement: '1.5', total: '4.5', linked: '00618470' }),
+    // Retour client déposé en relais, livré chez EMC
+    row({ ref: '1261699', tracking: '72132740', pickup: 'REL', mode: 'LCC', type: 'Livraison ', pays: 'FR', billed: '400',
+      index: '0.208507', transport: '3.59', declared: '100', measured: '400', complement: '0.13', total: '3.928507' }),
+  ].join('\n'), 'latin1'));
+  const [pci, rel] = analyzeMondialRelayCsv(one, {
+    remiseRate: 14, knownOrderIds: new Set([1261699]), orderByTracking: { '00618470': 1255000 }, bddWeights: { 1261699: 100 },
+  }).parcels;
+  assert.strictEqual(pci.return_kind, 'non_retire');
+  assert.strictEqual(pci.order_id, 1255000);
+  assert.strictEqual(rel.return_kind, 'client');
+  assert.strictEqual(rel.order_id, 1261699);
+  assert.strictEqual(rel.kind, null);
 });
 
 test('tranches de poids', () => {

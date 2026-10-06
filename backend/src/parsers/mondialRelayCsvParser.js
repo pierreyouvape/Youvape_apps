@@ -97,7 +97,8 @@ function parseMondialRelayCsv(input) {
   };
   const C = {
     invoice: col('Nr de facture'), ref: col('Référence expédition'), tracking: col('Nr expédition'),
-    date: col('Date'), mode: col('Mode de livraison'), type: col('Type'), pays: col('Pays de livraison'),
+    date: col('Date'), pickup: col('Mode de prise en charge'),
+    mode: col('Mode de livraison'), type: col('Type'), pays: col('Pays de livraison'),
     billed: col('Poids en gr'), index: col('Indexation gasoil'), transport: col('Montant du transport'),
     declared: col('Poids annoncé'), measured: col('Poids mesuré'), complement: col('Complément'),
     total: col('Total htva'), linked: col('Expedition liée'),
@@ -113,7 +114,7 @@ function parseMondialRelayCsv(input) {
     const ref = get(C.ref);
     const row = {
       ref, tracking: get(C.tracking).replace(/^0+$/, '') || null, linked: get(C.linked) || null,
-      date: frDate(get(C.date)), type: get(C.type), mode: get(C.mode), pays: get(C.pays),
+      date: frDate(get(C.date)), pickup: get(C.pickup), type: get(C.type), mode: get(C.mode), pays: get(C.pays),
       billed_g: num(get(C.billed)), declared_g: num(get(C.declared)), measured_g: num(get(C.measured)),
       volumetric_g: num(get(C.volumetric)),
       dims_mm: [num(get(C.length)), num(get(C.width)), num(get(C.height))],
@@ -192,12 +193,19 @@ function analyzeMondialRelayCsv(csv, ctx = {}) {
   const billed = csv.parcels.filter(r => r.total !== 0);
   const unbilled = csv.parcels.length - billed.length;
 
+  // Deux sortes de retours, tous deux à la charge de la commande d'origine :
+  //   - colis non retiré renvoyé par MR : Type « Retour », prise en charge PCI,
+  //     référence « LG… », « Expedition liée » = suivi du colis aller ;
+  //   - retour client : prise en charge REL, livré chez EMC, référence = commande.
+  // Une référence non numérique (« ? » pour une étiquette saisie à la main)
+  // n'est PAS un retour : la commande se retrouve par son suivi.
   const rows = billed.map(r => {
-    const isReturn = /^retour/i.test(r.type) || !/^\d+$/.test(r.ref);
+    const isReturn = /^retour/i.test(r.type) || /^(PCI|REL)$/i.test(r.pickup || '');
+    const ref = /^\d+$/.test(r.ref) ? parseInt(r.ref, 10) : null;
     let orderId = null;
-    if (!isReturn && knownOrderIds.has(parseInt(r.ref, 10))) orderId = parseInt(r.ref, 10);
+    if (ref != null && knownOrderIds.has(ref)) orderId = ref;
     else orderId = orderByTracking[r.linked] || orderByTracking[r.tracking] || null;
-    return { ...r, is_return: isReturn, order_id: orderId };
+    return { ...r, is_return: isReturn, return_kind: isReturn ? (/^REL$/i.test(r.pickup || '') ? 'client' : 'non_retire') : null, order_id: orderId };
   });
   const priceFor = buildPriceTable(rows);
 
@@ -206,7 +214,7 @@ function analyzeMondialRelayCsv(csv, ctx = {}) {
     const bdd = r.order_id != null && bddWeights[r.order_id] != null ? Math.round(bddWeights[r.order_id]) : null;
     const out = {
       order_id: r.order_id, ref: r.ref, tracking: r.tracking, linked: r.linked, date: r.date,
-      type: r.type, mode: r.mode, pays: r.pays, is_return: r.is_return,
+      type: r.type, mode: r.mode, pays: r.pays, is_return: r.is_return, return_kind: r.return_kind,
       declared_g: r.declared_g, bdd_g: bdd, measured_g: r.measured_g,
       volumetric_g: r.volumetric_g, billed_g: r.billed_g, dims_mm: r.dims_mm,
       transport: r.transport, indexation: r.indexation, complement: r.complement,
