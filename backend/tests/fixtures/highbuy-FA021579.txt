@@ -1,0 +1,101 @@
+FACTURE
+06/10/2026
+#FA021579
+Adresse de livraison
+Maxime COGLITORE
+YOUVAPE SITE
+580 avenue de l'aube rouge
+34170 Castelnau le Lez
+France
+0695975267
+Adresse de facturation
+Maxime COGLITORE
+YOUVAPE SITE
+580 avenue de l'aube rouge
+34170 Castelnau le Lez
+France
+0695975267
+Numéro de facture Date de facturation Réf. de commande Date de commande
+#FA021579 06/10/2026 VMIBNHMXI 06/10/2026
+Référence Produit Taux de
+taxe
+Prix unitaire
+(HT)
+Quantit
+é
+Total
+(HT)
+HB0682 WHITE RABBIT - BOOSTER VMAC STRONG -
+10ml
+20 % 12,00 € 10 120,00 €
+HB0765 WHITE RABBIT - E-Liquide CBD 10mL 2000 MG -
+Saveur : Amnesia
+20 % 4,00 € 20 80,00 €
+HB0766 WHITE RABBIT - E-Liquide CBD 10mL 2000 MG -
+Saveur : Bubble Gum
+20 % 4,00 € 20 80,00 €
+HB0767 WHITE RABBIT - E-Liquide CBD 10mL 2000 MG -
+Saveur : Cassis Mangue
+20 % 4,00 € 20 80,00 €
+HB0768 WHITE RABBIT - E-Liquide CBD 10mL 2000 MG -
+Saveur : Fraise
+20 % 4,00 € 20 80,00 €
+HB0769 WHITE RABBIT - E-Liquide CBD 10mL 2000 MG -
+Saveur : Jack Herer
+20 % 4,00 € 20 80,00 €
+HB0770 WHITE RABBIT - E-Liquide CBD 10mL 2000 MG -
+Saveur : Lemon Haze
+20 % 4,00 € 20 80,00 €
+HB0775 WHITE RABBIT - E-Liquide CBD 10mL 2000 MG -
+Saveur : Menthe Fraîche
+20 % 4,00 € 20 80,00 €
+HB0771 WHITE RABBIT - E-Liquide CBD 10mL 2000 MG -
+Saveur : Pastèque
+20 % 4,00 € 20 80,00 €
+HB0772 WHITE RABBIT - E-Liquide CBD 10mL 2000 MG -
+Saveur : Purple Power
+20 % 4,00 € 20 80,00 €
+HB0773 WHITE RABBIT - E-Liquide CBD 10mL 2000 MG -
+Saveur : Raisin Glacé
+20 % 4,00 € 20 80,00 €
+HB0774 WHITE RABBIT - E-Liquide CBD 10mL 2000 MG -
+Saveur : Tropical
+20 % 4,00 € 20 80,00 €
+HB1481 WHITE RABBIT - E-Liquide VMAC HYPER
+STRONG 10ML - Saveur : Jack Herer
+20 % 14,90 € 10 149,00 €
+Détail des taxes Taux de taxe Taxe totale Total produits 1 149,00 €
+Frais de livraison Livraison gratuite
+Highbuy - 116 boulevard de la Pomme - master park lot 25 - 13011 Marseille - France
+Pour toute assistance, merci de nous contacter :
+Tél. : 0611789827
+88401742700011
+VAT/ FR28884017427
+
+-- 1 of 2 --
+
+FACTURE
+06/10/2026
+#FA021579
+Produits 20.000 % 229,80 € Total (HT) 1 149,00 €
+Taxe totale 229,80 €
+Total 1 378,80 €
+Moyen de paiement Transfert bancaire 1 378,80 €
+Transporteur Chronopost - Livraison express. Commande
+avant 13h.
+RÉSERVÉ DE PROPRIÉTÉ : loi du 12/05/1980 N°80335 - le matériel livré
+reste l'entière propriété de HIGHBUY SAS jusqu'au paiement l'intégral du prix
+fixé ci-dessus.
+Intérêt de retard : A défaut et conformément à la loi 2008-776 du 4 Août 2008,
+un intérêt de retard égal à 5 fois le taux légal sera appliqué, ainsi qu'une
+indemnité forfaitaire pour frais de recouvrement de 40 euros ( Décret
+2012-1115 du 02/10/20212).
+Powered by TCPDF (www.tcpdf.org)
+Highbuy - 116 boulevard de la Pomme - master park lot 25 - 13011 Marseille - France
+Pour toute assistance, merci de nous contacter :
+Tél. : 0611789827
+88401742700011
+VAT/ FR28884017427
+
+-- 2 of 2 --
+

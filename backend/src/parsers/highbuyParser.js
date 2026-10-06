@@ -1,7 +1,8 @@
 /**
  * Parseur PDF pour Highbuy.fr
  * Format : facture TCPDF
- * Colonnes : Référence | Produit | Taux de taxe | Prix de base (HT) | Prix unitaire (HT) | Quantité | Total (HT)
+ * Colonnes : Référence | Produit | Taux de taxe | [Prix de base (HT)] | Prix unitaire (HT) | Quantité | Total (HT)
+ *   (la colonne "Prix de base" a disparu des factures depuis oct. 2026)
  * Référence format : HBxxxx
  * Numéro de facture : "#FAxxxxxx"
  * Réductions/avoirs listés après le tableau dans la section "Réductions"
@@ -91,8 +92,10 @@ module.exports = {
         qty = parseInt(withBase[3]);
       } else {
         // Cas 2 : sans prix de base → "20 % -- 10,35 € 10 103,50 €"
+        // Cas 3 : colonne "Prix de base" supprimée (factures depuis oct. 2026)
+        //         → "20 % 12,00 € 10 120,00 €"
         const noDash = afterTax.match(
-          /20\s*%\s*-{1,2}\s*([\d,]+)\s*€\s+(\d+)\s+([\d,]+)\s*€/
+          /20\s*%\s*(?:-{1,2}\s*)?([\d,]+)\s*€\s+(\d+)\s+([\d,]+)\s*€/
         );
         if (noDash) {
           unitPrice = parseFloat(noDash[1].replace(',', '.'));

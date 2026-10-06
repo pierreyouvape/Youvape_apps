@@ -381,6 +381,33 @@ console.log('Pulp — tarif barre, ecotaxe et saut de page');
   });
 }
 
+console.log('Highbuy — colonne « Prix de base » supprimée');
+{
+  const highbuy = require('../src/parsers/highbuyParser');
+  // FA021579 (06/10/2026) : « 20 % 12,00 € 10 120,00 € », plus de prix de base ni de
+  // "--" → l'import renvoyait « Aucune ligne produit trouvée dans le PDF ».
+  const parsed = highbuy.parse(fixture('highbuy-FA021579.txt'));
+  const sum = Math.round(parsed.items.reduce((s, i) => s + i.qty_ordered * i.unit_price_net, 0) * 100) / 100;
+
+  test('Highbuy FA021579 : 13 lignes', () => {
+    assert.strictEqual(parsed.items.length, 13);
+  });
+  test('Highbuy FA021579 : somme des lignes = total produits imprimé (1149,00 €)', () => {
+    assert.strictEqual(sum, 1149);
+    assert.strictEqual(parsed.invoiceProductTotalHT, 1149);
+  });
+  test('Highbuy FA021579 : première ligne lue (HB0682, 10 × 12,00 €)', () => {
+    const l = parsed.items.find(i => i.supplier_sku === 'HB0682');
+    assert.ok(l);
+    assert.strictEqual(l.qty_ordered, 10);
+    assert.strictEqual(l.unit_price_net, 12);
+  });
+  test('Highbuy FA021579 : n° et date de commande', () => {
+    assert.strictEqual(parsed.orderNumber, 'VMIBNHMXI');
+    assert.strictEqual(parsed.orderDate, '2026-10-06');
+  });
+}
+
 test('un tarif retenu sur une facture fait autorité, dans les deux sens', () => {
   const { convertLine } = require('../src/utils/importLineConversion');
 
