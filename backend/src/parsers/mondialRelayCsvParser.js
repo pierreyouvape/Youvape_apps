@@ -207,8 +207,6 @@ function analyzeMondialRelayCsv(csv, ctx = {}) {
     else orderId = orderByTracking[r.linked] || orderByTracking[r.tracking] || null;
     return { ...r, is_return: isReturn, return_kind: isReturn ? (/^REL$/i.test(r.pickup || '') ? 'client' : 'non_retire') : null, order_id: orderId };
   });
-  const priceFor = buildPriceTable(rows);
-
   const parcels = rows.map(r => {
     const net = round4(r.total - r.transport * remiseRate / 100);
     const bdd = r.order_id != null && bddWeights[r.order_id] != null ? Math.round(bddWeights[r.order_id]) : null;
@@ -223,26 +221,10 @@ function analyzeMondialRelayCsv(csv, ctx = {}) {
     };
     const volCm3 = r.dims_mm.every(v => v > 0) ? (r.dims_mm[0] * r.dims_mm[1] * r.dims_mm[2]) / 1000 : 0;
     if (volCm3 > 0 && r.measured_g > 0) out.density = Math.round((r.measured_g / volCm3) * 1000) / 1000;
-    if (r.is_return || !(r.transport > 0)) return out;
-
-    // Notre poids = le plus élevé de l'étiquette et du calcul en base : on ne
-    // réclame jamais sur un poids plus bas que celui qu'on a nous-mêmes déclaré.
-    const ourG = Math.max(r.declared_g || 0, bdd || 0);
-    if (!(ourG > 0)) return out;
-    const due = priceFor(r.pays, r.mode, ourG);
-    if (due == null || r.transport - due < 0.005) return out;
-
-    // L'écart coûte le transport en trop, moins la remise, plus l'indexation
-    // gasoil calculée dessus — ce qui a été réellement payé en trop.
-    const idxRate = r.indexation / r.transport;
-    out.due = due;
-    out.ecart = round2((r.transport - due) * (1 - remiseRate / 100 + idxRate));
-    const volBilled = r.volumetric_g > 0 && Math.abs(r.billed_g - r.volumetric_g) < 1 && r.volumetric_g > r.measured_g;
-    if (out.density != null && out.density > ABERRANT_DENSITY && r.measured_g - ourG >= ABERRANT_MIN_G && !volBilled) out.kind = 'aberrant';
-    else if (volBilled) out.kind = 'volumetrique';
-    else out.kind = 'pesee';
     return out;
   });
+  const cgv = ctx.cgv || cgvForInvoice(ctx);
+  classifyParcels(parcels, { remiseRate, cgv });
 
   const matched = parcels.filter(p => p.order_id != null);
   const netAllocated = round2(matched.reduce((s, p) => s + p.net, 0));
@@ -252,7 +234,7 @@ function analyzeMondialRelayCsv(csv, ctx = {}) {
 
   return {
     invoiceNumber: csv.invoiceNumber,
-    remiseRate, remiseSource, remiseCsv,
+    cgv, remiseRate, remiseSource, remiseCsv,
     sumTotal,
     pdfTotalHT: ctx.pdfTotalHT ?? null,
     reconcileOk: ctx.pdfTotalHT != null ? Math.abs(sumTotal - Number(ctx.pdfTotalHT)) < 0.05 : null,
@@ -271,7 +253,66 @@ function analyzeMondialRelayCsv(csv, ctx = {}) {
   };
 }
 
+/**
+ * Quelles CGV s'appliquent à une facture : celles du 01/10/2025, notifiées le
+ * 27/11/2025 « au 1er janvier 2026 », ou celles annexées au contrat n° 31257.
+ * On lit le début de la période facturée (la facture du 31/12/2025 couvre
+ * décembre 2025 : anciennes CGV). Faute de date, les CGV en vigueur.
+ */
+function cgvForInvoice({ periodStart, invoiceDate } = {}) {
+  const m = String(periodStart || invoiceDate || '').match(/(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (!m) return '2026';
+  return parseInt(m[3], 10) >= 2026 ? '2026' : '2025';
+}
+
+/**
+ * Tarif dû, écart et motif de chaque colis, selon les CGV de la facture.
+ * Ne lit que des champs enregistrés : rejouable sur une analyse déjà en base.
+ *
+ * Poids facturable (art. 4.2) :
+ *   - CGV 2026 : le plus élevé du volumétrique, du déclaré et du mesuré. Le
+ *     volumétrique est contractuel ; il entre donc dans le tarif dû (la 1231593,
+ *     536 g volumétriques, est due à 4,69 € et non 3,59 €).
+ *   - CGV 2025 : le déclaré, sauf pesée plus lourde ; le volumétrique seulement
+ *     « si nécessaire, notamment en transport aérien ». Un colis facturé au
+ *     volumétrique est donc réclamable (motif volumetrique_hors_cgv).
+ *
+ * Motifs : aberrant (pesée impossible, réclamable), volumetrique_hors_cgv
+ * (réclamable, CGV 2025), volumetrique (CGV 2026 : surcoût carton, info),
+ * pesee (pesée plus lourde, presque toujours l'emballage, info).
+ */
+function classifyParcels(parcels, { remiseRate = 0, cgv = '2026' } = {}) {
+  const priceFor = buildPriceTable(parcels);
+  for (const p of parcels) {
+    p.due = null; p.ecart = null; p.kind = null;
+    if (p.is_return || !(p.transport > 0)) continue;
+    const ourG = Math.max(p.declared_g || 0, p.bdd_g || 0);
+    if (!(ourG > 0)) continue;
+
+    const volBilled = p.volumetric_g > 0 && Math.abs(p.billed_g - p.volumetric_g) < 1 && p.volumetric_g > (p.measured_g || 0);
+    // Facturé au volumétrique : on compare au tarif du poids réel (pesé ou déclaré).
+    // Sinon : au tarif du poids que le contrat autorise sans contestation possible.
+    const floorG = volBilled
+      ? Math.max(ourG, p.measured_g || 0)
+      : Math.max(ourG, cgv === '2026' ? (p.volumetric_g || 0) : 0);
+    const due = priceFor(p.pays, p.mode, floorG);
+    if (due == null || p.transport - due < 0.005) continue;
+
+    // L'écart coûte le transport en trop, moins la remise, plus l'indexation
+    // gasoil calculée dessus — ce qui a été réellement payé en trop.
+    const idxRate = (p.indexation || 0) / p.transport;
+    p.due = due;
+    p.ecart = round2((p.transport - due) * (1 - remiseRate / 100 + idxRate));
+    if (volBilled) p.kind = cgv === '2025' ? 'volumetrique_hors_cgv' : 'volumetrique';
+    else if (p.density != null && p.density > ABERRANT_DENSITY && (p.measured_g || 0) - floorG >= ABERRANT_MIN_G) p.kind = 'aberrant';
+    else p.kind = 'pesee';
+  }
+  return parcels;
+}
+
+const CLAIMABLE_KINDS = ['aberrant', 'volumetrique_hors_cgv'];
+
 module.exports = {
-  parseMondialRelayCsv, analyzeMondialRelayCsv, bracketIndex,
+  parseMondialRelayCsv, analyzeMondialRelayCsv, classifyParcels, cgvForInvoice, CLAIMABLE_KINDS, bracketIndex,
   ABERRANT_DENSITY, ABERRANT_MIN_G,
 };

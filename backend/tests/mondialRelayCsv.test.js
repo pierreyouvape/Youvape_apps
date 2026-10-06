@@ -12,7 +12,7 @@
  */
 
 const assert = require('assert');
-const { parseMondialRelayCsv, analyzeMondialRelayCsv, bracketIndex } = require('../src/parsers/mondialRelayCsvParser');
+const { parseMondialRelayCsv, analyzeMondialRelayCsv, classifyParcels, cgvForInvoice, bracketIndex } = require('../src/parsers/mondialRelayCsvParser');
 
 let failed = 0;
 function test(name, fn) {
@@ -126,7 +126,48 @@ test('1258648 : produit mal pesé en base, pesée cohérente avec le carton → 
   ].join('\n'), 'latin1'));
   const p = analyzeMondialRelayCsv(one, { remiseRate: 14, knownOrderIds: new Set([1258648]), bddWeights: { 1258648: 51 } }).parcels[0];
   assert.strictEqual(p.density, 0.038);
-  assert.strictEqual(p.kind, 'pesee');
+  // CGV 2026 : ses 4 984 g volumétriques justifieraient même 12,80 €. Rien à réclamer.
+  assert.strictEqual(p.kind, null);
+});
+
+test('1231593 (CGV 2026) : le volumétrique entre dans le tarif dû → 7,46 € et non 8,48 €', () => {
+  // LGYOUVAP2600000065 : déclaré 420 g, calculé 431 g, volumétrique 536 g, pesé 4 600 g.
+  const one = parseMondialRelayCsv(Buffer.from([HEAD,
+    row({ ref: '1231593', mode: '24RC', billed: '4600', index: '0.772864', transport: '12.80', declared: '420', measured: '4600',
+      complement: '0.13', total: '13.702864', dims: ['165', '130', '125'], vol: '536' }),
+    row({ ref: '2', mode: '24RC', billed: '700', transport: '4.69', declared: '700', measured: '700', total: '4.69' }),
+  ].join('\n'), 'latin1'));
+  const p = analyzeMondialRelayCsv(one, {
+    remiseRate: 14, periodStart: '01/05/2026', knownOrderIds: new Set([1231593, 2]), bddWeights: { 1231593: 431 },
+  }).parcels[0];
+  assert.strictEqual(p.due, 4.69);
+  assert.strictEqual(p.ecart, 7.46);
+  assert.strictEqual(p.kind, 'aberrant');
+});
+
+test('CGV 2025 : un colis facturé au volumétrique est réclamable', () => {
+  const parcels = [
+    { pays: 'BE', mode: '24R', transport: 6.49, billed_g: 1758, declared_g: 1280, bdd_g: 1280, measured_g: 1500, volumetric_g: 1758 },
+    { pays: 'BE', mode: '24R', transport: 6.49, billed_g: 1500, declared_g: 1500, measured_g: 1500, volumetric_g: 0 },
+    { pays: 'BE', mode: '24R', transport: 4.69, billed_g: 900, declared_g: 900, measured_g: 900, volumetric_g: 0 },
+    { pays: 'BE', mode: '24R', transport: 12.80, billed_g: 6003, declared_g: 810, bdd_g: 816, measured_g: 2050, volumetric_g: 6003 },
+    { pays: 'BE', mode: '24R', transport: 6.99, billed_g: 2050, declared_g: 2050, measured_g: 2050, volumetric_g: 0 },
+  ];
+  classifyParcels(parcels, { remiseRate: 13, cgv: '2025' });
+  // Même tranche 1-2 kg : facturé au volumétrique sans surcoût, rien à réclamer.
+  assert.strictEqual(parcels[0].kind, null);
+  // 6 kg volumétriques contre 2,05 kg pesés : dû au tarif 2-3 kg.
+  assert.strictEqual(parcels[3].kind, 'volumetrique_hors_cgv');
+  assert.strictEqual(parcels[3].due, 6.99);
+  // Le même colis sous les CGV 2026 : surcoût carton, non réclamable.
+  classifyParcels(parcels, { remiseRate: 14, cgv: '2026' });
+  assert.strictEqual(parcels[3].kind, 'volumetrique');
+});
+
+test('CGV applicables selon la période facturée', () => {
+  assert.strictEqual(cgvForInvoice({ periodStart: '01/12/2025', invoiceDate: '31/12/2025' }), '2025');
+  assert.strictEqual(cgvForInvoice({ periodStart: '01/01/2026' }), '2026');
+  assert.strictEqual(cgvForInvoice({}), '2026');
 });
 
 test('sans dimensions (annexes 2025), aucune pesée n\'est déclarée aberrante', () => {

@@ -4,7 +4,7 @@ const ExcelJS = require('exceljs');
 const JSZip = require('jszip');
 const pool = require('../config/database');
 const { parseMondialRelayPdf, computeAutresFrais, applyGridCheck } = require('../parsers/mondialRelayParser');
-const { parseMondialRelayCsv, analyzeMondialRelayCsv } = require('../parsers/mondialRelayCsvParser');
+const { parseMondialRelayCsv, analyzeMondialRelayCsv, classifyParcels, cgvForInvoice, CLAIMABLE_KINDS } = require('../parsers/mondialRelayCsvParser');
 const { orderWeightSql, getPackagingWeight } = require('../services/orderWeightService');
 
 const CARRIER = 'mondial_relay';
@@ -130,6 +130,7 @@ async function importCsvBuffer(buffer, fileName) {
   const analysis = analyzeMondialRelayCsv(csv, {
     ...ctx,
     remiseRate: pdf.remiseRate ?? null,
+    periodStart: pdf.periodStart || null, invoiceDate: pdf.invoiceDate || null,
     pdfTotalHT: invoice.total_ht != null ? parseFloat(invoice.total_ht) : null,
     pdfNbColis: invoice.total_parcels ?? null,
   });
@@ -320,7 +321,7 @@ exports.getHistory = async (req, res) => {
         (parcels_detail ? 'csv') AS has_csv,
         (parcels_detail->'csv'->>'reconcileOk')::boolean AS csv_reconcile_ok,
         (SELECT COALESCE(SUM((p->>'ecart')::numeric), 0) FROM jsonb_array_elements(COALESCE(parcels_detail->'csv'->'parcels', '[]'::jsonb)) p
-          WHERE p->>'kind' = 'aberrant') AS ecart_reclamable,
+          WHERE p->>'kind' = ANY($2::text[])) AS ecart_reclamable,
         parcels_detail->'collecte'       AS collecte,
         parcels_detail->'retourPCI'      AS "retourPCI",
         parcels_detail->'complements'    AS complements,
@@ -330,7 +331,7 @@ exports.getHistory = async (req, res) => {
       WHERE carrier = $1
       ORDER BY created_at DESC
       LIMIT 200
-    `, [CARRIER]);
+    `, [CARRIER, CLAIMABLE_KINDS]);
     // « Autres frais » = frais & remises hors gasoil / participations MR standard / remise
     const invoices = result.rows.map(r => {
       const { total } = computeAutresFrais(r);
@@ -350,7 +351,14 @@ exports.getInvoiceDetail = async (req, res) => {
     const inv = await pool.query('SELECT * FROM carrier_invoices WHERE id=$1 AND carrier=$2', [id, CARRIER]);
     if (!inv.rows.length) return res.status(404).json({ success: false, error: 'Facture non trouvée' });
     const { pdf_data, ...invoice } = inv.rows[0];
-    res.json({ success: true, invoice, parsed: applyGridCheck(invoice.parcels_detail) });
+    const parsed = applyGridCheck(invoice.parcels_detail);
+    // Écarts recalculés à la lecture selon les CGV de la période : une analyse
+    // enregistrée avant une correction de règle s'affiche juste sans réimport.
+    if (parsed?.csv?.parcels) {
+      parsed.csv.cgv = cgvForInvoice(parsed);
+      classifyParcels(parsed.csv.parcels, { remiseRate: parsed.csv.remiseRate, cgv: parsed.csv.cgv });
+    }
+    res.json({ success: true, invoice, parsed });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }

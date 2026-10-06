@@ -388,16 +388,21 @@ function TotalsView({ totals, totalsLoading, loadTotals }) {
 const fmtG = g => (g ? `${Math.round(g).toLocaleString('en-US').replace(/,/g, ' ')} g` : '—');
 const fmtDims = d => (d && d.every(v => v > 0) ? d.map(v => (v / 10).toLocaleString('fr-FR')).join(' × ') + ' cm' : '—');
 
-// Motifs d'écart, du plus au moins solide. Seule la pesée aberrante est
-// cochée d'office : les deux autres sont le plus souvent justes (cf. parseur).
+// Motifs d'écart, du plus au moins solide. Seuls les motifs réclamables sont
+// cochés d'office (même liste que CLAIMABLE_KINDS côté serveur).
+const CLAIMABLE = ['aberrant', 'volumetrique_hors_cgv'];
 const ECART_KINDS = {
   aberrant: {
     label: 'Pesée impossible', color: C.red, bg: C.redL,
     help: "Le poids mesuré par Mondial Relay dépasse 1 kg par litre de carton, d'après leurs propres dimensions : physiquement impossible pour nos colis (le plus dense d'un mois normal pèse 0,64 kg/L). Réclamable.",
   },
+  volumetrique_hors_cgv: {
+    label: 'Volumétrique hors CGV', color: C.red, bg: C.redL,
+    help: "Facturé au poids volumétrique alors que les CGV de 2025 facturent le poids déclaré, ou le poids pesé s'il est plus lourd, le volumétrique n'étant prévu qu'en cas de transport aérien (art. 4.2). Réclamable.",
+  },
   volumetrique: {
     label: 'Poids volumétrique', color: C.orange, bg: C.orangeL,
-    help: "Facturé au poids volumétrique (L × l × H ÷ 5 000) plutôt qu'au poids pesé. Les CGV le permettent : à contester seulement si le carton relevé ne correspond pas au nôtre.",
+    help: "Facturé au poids volumétrique (L × l × H ÷ 5 000), prévu par les CGV 2026 (art. 4.2) : non réclamable. L'écart affiché est le surcoût dû à la taille du carton, qu'un carton plus petit aurait évité.",
   },
   pesee: {
     label: 'Pesée plus lourde', color: C.greyT, bg: C.grey,
@@ -407,6 +412,7 @@ const ECART_KINDS = {
 
 function motifText(p) {
   if (p.kind === 'aberrant') return `Pesée impossible : ${p.density.toLocaleString('fr-FR')} kg/L`;
+  if (p.kind === 'volumetrique_hors_cgv') return `Facturé au volumétrique (${Math.round(p.volumetric_g)} g), non prévu par les CGV de 2025`;
   if (p.kind === 'volumetrique') return 'Facturé au poids volumétrique';
   return 'Pesée supérieure au poids déclaré';
 }
@@ -534,12 +540,12 @@ function ParcelsTab({ csv }) {
 function EcartsTab({ result }) {
   const csv = result.csv;
   const all = useMemo(() => (csv.parcels || []).filter(p => p.kind).sort((a, b) => b.ecart - a.ecart), [csv]);
-  const [selected, setSelected] = useState(() => new Set(all.filter(p => p.kind === 'aberrant').map(p => `${p.ref}|${p.tracking}`)));
+  const [selected, setSelected] = useState(() => new Set(all.filter(p => CLAIMABLE.includes(p.kind)).map(p => `${p.ref}|${p.tracking}`)));
   const [copied, setCopied] = useState(false);
   const key = p => `${p.ref}|${p.tracking}`;
   const chosen = all.filter(p => selected.has(key(p)));
   const toggle = p => setSelected(s => { const n = new Set(s); n.has(key(p)) ? n.delete(key(p)) : n.add(key(p)); return n; });
-  const byKind = Object.keys(ECART_KINDS).map(k => ({ k, rows: all.filter(p => p.kind === k) }));
+  const byKind = Object.keys(ECART_KINDS).filter(k => k !== 'volumetrique_hors_cgv' || csv.cgv === '2025').map(k => ({ k, rows: all.filter(p => p.kind === k) }));
 
   async function copy() {
     const { html, text } = buildClaimEmail(result, chosen);
@@ -555,6 +561,9 @@ function EcartsTab({ result }) {
   const gap = csv.medianWeighGap;
   return (
     <div style={{ padding: 18 }}>
+      <div style={{ fontSize: 12.5, color: C.greyT, marginBottom: 12 }}>
+        Contrôlé selon les CGV Mondial Relay {csv.cgv === '2025' ? 'annexées au contrat n° 31257 (2025)' : 'du 01/10/2025, en vigueur depuis le 1er janvier 2026'}.
+      </div>
       {gap != null && gap > 50 && (
         <div style={{ background: C.blueL, border: `1px solid ${C.blue}`, borderRadius: 8, padding: '10px 14px', fontSize: 12.5, color: C.dark, marginBottom: 16 }}>
           <b style={{ color: C.blue }}>Nos poids déclarés sont trop bas.</b> Sur {csv.weighedCount} colis pesés, la pesée Mondial Relay dépasse
