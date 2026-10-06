@@ -206,20 +206,6 @@ function parseMondialRelayPdf(text) {
     }
   }
 
-  /* ─── Contrôle tarifaire vs grille 2026 (Hors Domicile) ───── */
-  const grid = GRID_2026_HD[pays] || null;
-  let puChecked = 0, puConform = 0;
-  for (const d of deliveries) {
-    d.grid_pu = (grid && d.gridIndex >= 0) ? grid[d.gridIndex] : null;
-    if (d.grid_pu != null && d.pu != null) {
-      puChecked++;
-      d.pu_ok = Math.abs(d.pu - d.grid_pu) < 0.005;
-      if (d.pu_ok) puConform++;
-    } else {
-      d.pu_ok = null;
-    }
-  }
-
   /* ─── Réconciliation : somme des postes = HT ──────────────── */
   const sum = arr => arr.reduce((s, x) => s + (x.montant || 0), 0);
   const deliveriesTotal = sum(deliveries);
@@ -233,7 +219,7 @@ function parseMondialRelayPdf(text) {
 
   const nbColisFinal = nbColis != null ? nbColis : deliverySummary.reduce((s, d) => s + d.qty, 0);
 
-  return {
+  const parsed = {
     invoiceNumber, invoiceDate, periodStart, periodEnd, pays, paysRaw,
     totalHT, totalTVA, totalTTC, tvaRate,
     nbColis: nbColisFinal,
@@ -247,11 +233,54 @@ function parseMondialRelayPdf(text) {
       deliveries_total: round2(deliveriesTotal),
       lines_total: linesTotal,
       reconcile_ok: reconcileOK,
-      pu_checked: puChecked,
-      pu_conform: puConform,
-      pu_grid_ok: puChecked > 0 && puConform === puChecked,
     },
   };
+  return applyGridCheck(parsed);
+}
+
+/* ─── Contrôle tarifaire vs grille 2026 (Hors Domicile) ─────────
+ * Appliqué à l'analyse ET à la réouverture d'une facture enregistrée : le JSON
+ * en base garde le résultat du jour de l'import, on le recalcule à la lecture.
+ *
+ *   - Seulement les factures 2026 : la grille 2026 n'a pas cours avant
+ *     (les 47 factures 2024-2025 affichaient « 0 tarif conforme »).
+ *   - « Retour identifié <Pays>/ collecte Point Relais® » = retour déposé dans
+ *     ce pays : tarif du pays d'origine, pas du pays de la facture (un retour
+ *     belge sur la facture France est à 3,59 €, pas 3,29 €).
+ *   - « Pays Bas » s'écrit avec ou sans trait d'union selon les factures.     */
+function gridForDelivery(type, pays) {
+  const ret = String(type || '').match(/Retour identifi[ée]e?\s+([^/]+?)\s*\//i);
+  const label = ret ? ret[1].trim() : pays;
+  return GRID_2026_HD[label] || GRID_2026_HD[String(label || '').replace(/^Pays Bas$/i, 'Pays-Bas')] || null;
+}
+
+function invoiceYear(parsed) {
+  const m = String(parsed.invoiceDate || parsed.periodEnd || '').match(/(\d{4})$/);
+  return m ? parseInt(m[1], 10) : null;
+}
+
+function applyGridCheck(parsed) {
+  if (!parsed || !Array.isArray(parsed.deliveries)) return parsed;
+  const in2026 = invoiceYear(parsed) === 2026;
+  let puChecked = 0, puConform = 0;
+  for (const d of parsed.deliveries) {
+    const grid = in2026 ? gridForDelivery(d.type, parsed.pays) : null;
+    d.grid_pu = (grid && d.gridIndex >= 0) ? grid[d.gridIndex] : null;
+    if (d.grid_pu != null && d.pu != null) {
+      puChecked++;
+      d.pu_ok = Math.abs(d.pu - d.grid_pu) < 0.005;
+      if (d.pu_ok) puConform++;
+    } else {
+      d.pu_ok = null;
+    }
+  }
+  parsed.stats = {
+    ...(parsed.stats || {}),
+    pu_checked: puChecked,
+    pu_conform: puConform,
+    pu_grid_ok: puChecked > 0 && puConform === puChecked,
+  };
+  return parsed;
 }
 
 /* ─── « Autres frais » ─────────────────────────────────────────
@@ -294,6 +323,6 @@ function computeAutresFrais(parsed) {
 }
 
 module.exports = {
-  parseMondialRelayPdf, parseFrNum, bracketToGridIndex, GRID_2026_HD,
+  parseMondialRelayPdf, applyGridCheck, parseFrNum, bracketToGridIndex, GRID_2026_HD,
   computeAutresFrais, isExcludedParticipation, normLabel,
 };

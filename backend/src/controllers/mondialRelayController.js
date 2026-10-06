@@ -3,7 +3,7 @@ const { PDFParse } = require('pdf-parse');
 const ExcelJS = require('exceljs');
 const JSZip = require('jszip');
 const pool = require('../config/database');
-const { parseMondialRelayPdf, computeAutresFrais } = require('../parsers/mondialRelayParser');
+const { parseMondialRelayPdf, computeAutresFrais, applyGridCheck } = require('../parsers/mondialRelayParser');
 const { parseMondialRelayCsv, analyzeMondialRelayCsv } = require('../parsers/mondialRelayCsvParser');
 const { orderWeightSql, getPackagingWeight } = require('../services/orderWeightService');
 
@@ -350,7 +350,7 @@ exports.getInvoiceDetail = async (req, res) => {
     const inv = await pool.query('SELECT * FROM carrier_invoices WHERE id=$1 AND carrier=$2', [id, CARRIER]);
     if (!inv.rows.length) return res.status(404).json({ success: false, error: 'Facture non trouvée' });
     const { pdf_data, ...invoice } = inv.rows[0];
-    res.json({ success: true, invoice, parsed: invoice.parcels_detail });
+    res.json({ success: true, invoice, parsed: applyGridCheck(invoice.parcels_detail) });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
