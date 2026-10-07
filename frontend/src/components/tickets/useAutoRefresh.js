@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { openSavStream } from './savStream';
 
 const STORAGE_KEY = 'sav_autorefresh_enabled';
 
@@ -71,11 +72,11 @@ export function useAutoRefresh(onTick, { intervalMs = 300000, paused = false } =
 
   // Temps réel : flux SSE poussé par le serveur à chaque changement de ticket.
   // À réception d'un event `change`, on rafraîchit immédiatement (sauf si en
-  // pause ou onglet caché — mêmes gardes que le polling). EventSource gère seul
-  // la reconnexion automatique en cas de coupure réseau.
+  // pause ou onglet caché — mêmes gardes que le polling). La reconnexion après
+  // coupure est gérée par openSavStream (jeton de flux renouvelé).
   useEffect(() => {
     if (!enabled) return;
-    const es = new EventSource('/api/sav/stream');
+    const es = openSavStream('/api/sav/stream');
     const onChange = () => {
       if (document.visibilityState === 'hidden') return;
       if (pausedRef.current) return;

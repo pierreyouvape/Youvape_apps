@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { openSavStream } from './savStream';
 
 /**
  * Présence des agents sur un ticket : qui le regarde, et qui est en train d'y
@@ -85,7 +86,7 @@ export function useTicketPresence(ticketId, user) {
   // Changements poussés par les autres navigateurs.
   useEffect(() => {
     if (!ticketId) return;
-    const es = new EventSource('/api/sav/stream');
+    const es = openSavStream('/api/sav/stream');
     es.addEventListener('presence', (e) => {
       try {
         const data = JSON.parse(e.data);

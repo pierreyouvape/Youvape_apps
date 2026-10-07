@@ -18,6 +18,7 @@ import { markdownTextToHtml, isHtml, sanitizeHtml, escapeHtml, decodeHtml } from
 import { useIsMobile } from '../../hooks/useIsMobile';
 import Drawer from '../Drawer';
 import useTicketsAccess from './useTicketsAccess';
+import { openSavStream } from './savStream';
 
 const C = {
   orange: '#E28F00', rouge: '#DE2020',
@@ -3126,7 +3127,7 @@ export default function TicketDetail({ ticketId }) {
   // pendant qu'il le lisait, son fil restait figé, d'où les réponses croisées.
   useEffect(() => {
     if (!ticketId) return;
-    const es = new EventSource('/api/sav/stream');
+    const es = openSavStream('/api/sav/stream');
     es.addEventListener('change', (e) => {
       try {
         const data = JSON.parse(e.data);

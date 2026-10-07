@@ -8,6 +8,7 @@ import { useOpenTickets } from '../../context/OpenTicketsContext';
 import { useTicketStatuses } from './useTicketStatuses';
 import { AuthContext } from '../../context/AuthContext';
 import useTicketsAccess from './useTicketsAccess';
+import { openSavStream } from './savStream';
 
 const C = {
   grisTL: '#F2F6F8', grisCL: '#E2E2E2', grisM: '#8A99A4',
@@ -748,7 +749,7 @@ export default function TicketsList({ activeView, views = [], onRefresh, refresh
       .then(r => r.json())
       .then(d => { if (alive && d.success) setPresence(d.presence || {}); })
       .catch(() => {});
-    const es = new EventSource('/api/sav/stream');
+    const es = openSavStream('/api/sav/stream');
     es.addEventListener('presence', (e) => {
       try {
         const d = JSON.parse(e.data);

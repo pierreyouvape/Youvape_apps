@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { TICKETS_COLOR } from './ticketConstants';
 import { invalidateStatusCache } from './useTicketStatuses';
+import { openSavStream } from './savStream';
 
 const C = {
   grisTL: '#F2F6F8', grisCL: '#E2E2E2', grisM: '#8A99A4',
@@ -267,7 +268,8 @@ export default function ZendeskImportSettings() {
   // ── Lancer l'import (SSE) ──
   const startImport = useCallback(() => {
     setImporting(true); setProgress(null); setImportDone(null); setImportError('');
-    const es = new EventSource(`${API}/import`);
+    // Pas de reconnexion : rouvrir ce flux relancerait l'import.
+    const es = openSavStream(`${API}/import`, { reconnect: false });
     es.addEventListener('progress', (e) => setProgress(JSON.parse(e.data)));
     es.addEventListener('done', (e) => {
       setImportDone(JSON.parse(e.data));

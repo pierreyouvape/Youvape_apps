@@ -558,7 +558,26 @@ function MacroForm({ initial, statuses, onSubmit, onCancel, submitLabel = 'Enreg
           {!file && existingAttachment && (
             <>
               <span style={{ fontSize: 12, color: C.grisF, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                📎 <a href={existingAttachment.url} target="_blank" rel="noopener noreferrer" style={{ color: TICKETS_COLOR, textDecoration: 'none', fontWeight: 700 }}>
+                {/* Pas de lien direct : la route demande la session, qu'un simple
+                    lien ne transmet pas. On ouvre l'onglet tout de suite (sinon
+                    bloqué comme pop-up), puis on y charge le fichier téléchargé. */}
+                📎 <a
+                  href={existingAttachment.url}
+                  onClick={async (e) => {
+                    e.preventDefault();
+                    const w = window.open('', '_blank');
+                    try {
+                      const res = await fetch(existingAttachment.url);
+                      if (!res.ok) throw new Error();
+                      const blobUrl = URL.createObjectURL(await res.blob());
+                      if (w) w.location.href = blobUrl; else window.location.href = blobUrl;
+                    } catch {
+                      w?.close();
+                      alert('Impossible d\'ouvrir la pièce jointe');
+                    }
+                  }}
+                  style={{ color: TICKETS_COLOR, textDecoration: 'none', fontWeight: 700 }}
+                >
                   {existingAttachment.name}
                 </a>
                 <span style={{ color: C.grisM }}>({((existingAttachment.size || 0) / 1024).toFixed(0)} Ko)</span>

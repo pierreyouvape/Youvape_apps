@@ -362,6 +362,15 @@ nouvel appel de lecture est authentifié sans effort. Les appels `fetch()`
 - routeurs déjà auto-authentifiés (`reviews, rewards, emails, users, settings,
   purchases, packing, laposte, preferences, financier, sav`)
 
+**SAV (`/api/sav`)** : n'était PAS protégé avant le 07/10/2026 (3 107 tickets lisibles
+sans connexion). Désormais toute route exige le droit `tickets` (lecture ou écriture,
+cf. `savRoutes.js`), sauf les webhooks (secrets dédiés) et `/attachments/…` — voulu :
+nom en UUID indevinable, lu sans session par des `<img>`, l'espace client WP et les
+emails. Les flux SSE (`EventSource`, sans en-tête possible) passent par un jeton de
+flux de 2 min (`POST /api/sav/stream-token`, `scope: 'sav-stream'`) ouvert par
+`openSavStream` ; `authMiddleware` refuse tout jeton portant un `scope`. Les `fetch`
+vers `/api/` reçoivent le jeton par l'intercepteur de `main.jsx`.
+
 **Règle** : tout nouveau routeur exposant des données doit être monté avec
 `authMiddleware` dans `server.js`, sauf s'il est appelé par un système externe
 (alors : secret dédié).

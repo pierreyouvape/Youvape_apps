@@ -52,6 +52,12 @@ const authMiddleware = async (req, res, next) => {
     // Vérifier le token
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
+    // Un jeton à portée limitée (ex. `sav-stream`, flux temps réel du SAV) ne
+    // vaut PAS session : il ne sert qu'à la route qui l'a demandé.
+    if (decoded.scope) {
+      return res.status(401).json({ error: 'Jeton non valable pour cette route' });
+    }
+
     // Compte supprimé ou désactivé depuis l'émission du token → plus d'accès.
     if (activeUserIds === null || Date.now() - loadedAt > CACHE_TTL_MS) {
       await refreshActiveUsers();

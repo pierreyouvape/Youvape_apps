@@ -1,4 +1,5 @@
 const express = require('express');
+const jwt = require('jsonwebtoken');
 const router = express.Router();
 const multer = require('multer');
 const path = require('path');
@@ -48,8 +49,12 @@ const inboundUpload = multer({
 //              un n° de commande. Rien ne part au client.
 // - Écriture : plein accès — répondre au client, créer un ticket, changer
 //              statut / assignation / champs, fusionner, spam, réglages.
-// Les lectures (GET) restent ouvertes comme avant : elles sont appelées aussi
-// par des EventSource, qui ne savent pas poser d'en-tête Authorization.
+// Les lectures demandent le droit lecture. Deux exceptions, voulues :
+//   - les pièces jointes (`/attachments/…`) : leur nom porte un UUID aléatoire,
+//     impossible à deviner, et l'adresse est lue sans session par des <img>,
+//     par l'espace client WordPress et depuis les emails ;
+//   - les flux SSE : EventSource ne sait pas poser d'en-tête, ils passent par
+//     un jeton de flux court dans l'URL (voir `streamAuth`).
 const canRead  = [authMiddleware, checkPermission('tickets', 'read')];
 const canWrite = [authMiddleware, checkPermission('tickets', 'write')];
 
@@ -213,25 +218,52 @@ router.get('/attachments/:ticketId/:filename', async (req, res) => {
   res.sendFile(resolved);
 });
 
+// ─── Jeton de flux (SSE) ──────────────────────────────────────────────────────
+// EventSource ne pose pas d'en-tête Authorization : le navigateur demande ici,
+// avec sa session, un jeton valable 2 minutes et limité aux flux, qu'il met dans
+// l'URL (`?st=`). Court parce qu'une URL finit dans les journaux ; il ne sert
+// qu'à OUVRIR le flux, qui reste ensuite ouvert. À la reconnexion, le front en
+// redemande un (frontend/src/components/tickets/savStream.js).
+const STREAM_SCOPE = 'sav-stream';
+router.post('/stream-token', canRead, (req, res) => {
+  const token = jwt.sign(
+    { id: req.user.id, email: req.user.email, scope: STREAM_SCOPE },
+    process.env.JWT_SECRET,
+    { expiresIn: '2m' }
+  );
+  res.json({ success: true, token });
+});
+
+const streamAuth = (req, res, next) => {
+  try {
+    const decoded = jwt.verify(String(req.query.st || ''), process.env.JWT_SECRET);
+    if (decoded.scope !== STREAM_SCOPE) throw new Error('portée invalide');
+    req.user = decoded;
+    next();
+  } catch {
+    res.status(401).json({ error: 'Jeton de flux manquant ou expiré' });
+  }
+};
+
 // ─── Flux temps réel des changements de tickets (SSE) ────────────────────────
-router.get('/stream', savController.stream);
+router.get('/stream', streamAuth, savController.stream);
 
 // ─── Présence des agents sur les tickets ─────────────────────────────────────
-router.get('/presence', savController.presenceAll);
-router.post('/presence', express.json(), savController.presenceHeartbeat);
-router.post('/presence/leave', express.json(), savController.presenceLeave);
+router.get('/presence', canRead, savController.presenceAll);
+router.post('/presence', canRead, express.json(), savController.presenceHeartbeat);
+router.post('/presence/leave', canRead, express.json(), savController.presenceLeave);
 
 // ─── Tracking transporteur ────────────────────────────────────────────────────
-router.get('/tracking/:number', savController.getTracking);
+router.get('/tracking/:number', canRead, savController.getTracking);
 
 // ─── Historique commandes d'un client (pour NewTicketPage) ───────────────────
-router.get('/customer-orders/:wp_user_id', savController.getCustomerOrders);
+router.get('/customer-orders/:wp_user_id', canRead, savController.getCustomerOrders);
 
 // ─── Recherche d'une commande par n° (lie le client, pour NewTicketPage) ─────
-router.get('/order-lookup/:order_id', savController.getOrderByRef);
+router.get('/order-lookup/:order_id', canRead, savController.getOrderByRef);
 
 // ─── Routes vues ──────────────────────────────────────────────────────────────
-router.get('/views',              savController.getViews);
+router.get('/views',              canRead, savController.getViews);
 router.post('/views',             canWrite, savController.createView);
 router.put('/views/reorder',      canWrite, savController.reorderViews);
 router.put('/views/:id',          canWrite, savController.updateView);
@@ -253,7 +285,7 @@ router.post('/blocklist',        canWrite, savController.createBlockRule);
 router.patch('/blocklist/:id',   canWrite, savController.updateBlockRule);
 router.delete('/blocklist/:id',  canWrite, savController.deleteBlockRule);
 
-router.get('/statuses',          savController.getStatuses);
+router.get('/statuses',          canRead, savController.getStatuses);
 router.post('/statuses',         canWrite, savController.createStatus);
 router.put('/statuses/:id',      canWrite, savController.updateStatus_s);
 router.delete('/statuses/:id',   canWrite, savController.deleteStatus);
@@ -272,7 +304,7 @@ router.delete('/automations/:id',       canWrite, savAutomationController.delete
 router.post('/automations/:id/run',     canWrite, savAutomationController.runNow);
 
 // ─── Routes import Zendesk ─────────────────────────────────────────────────────
-// `/zendesk/import` reste ouvert : c'est un EventSource (pas d'en-tête possible).
+// `/zendesk/import` est un EventSource : jeton de flux, puis droit écriture.
 router.get('/zendesk/config',           canWrite, zendeskController.getConfig);
 router.put('/zendesk/config',           canWrite, zendeskController.saveConfig);
 router.post('/zendesk/test',            canWrite, zendeskController.testConnection);
@@ -282,22 +314,22 @@ router.put('/zendesk/status-map',       canWrite, zendeskController.saveStatusMa
 router.get('/zendesk/preview-fields',   canWrite, zendeskController.previewFields);
 router.get('/zendesk/field-map',        canWrite, zendeskController.getFieldMap);
 router.put('/zendesk/field-map',        canWrite, zendeskController.saveFieldMap);
-router.get('/zendesk/import',           zendeskController.importStream);
+router.get('/zendesk/import',           streamAuth, checkPermission('tickets', 'write'), zendeskController.importStream);
 
 // ─── Routes macros ────────────────────────────────────────────────────────────
-router.get('/macros/placeholders',      savMacroController.getPlaceholders);
-router.get('/macros',                   savMacroController.getAll);
-router.get('/macros/:id/attachment',    savMacroController.getAttachment);
+router.get('/macros/placeholders',      canRead, savMacroController.getPlaceholders);
+router.get('/macros',                   canRead, savMacroController.getAll);
+router.get('/macros/:id/attachment',    canRead, savMacroController.getAttachment);
 router.post('/macros',                  canWrite, memoryUpload.array('attachment', 1), savMacroController.create);
 router.put('/macros/:id',               canWrite, memoryUpload.array('attachment', 1), savMacroController.update);
 router.delete('/macros/:id',            canWrite, savMacroController.delete);
 
 // ─── Routes internes app ──────────────────────────────────────────────────────
-router.get('/',                        savController.getAll);
+router.get('/',                        canRead, savController.getAll);
 router.post('/',                       authMiddleware, memoryUpload.array('attachments', MAX_FILES), createGuard, savController.createManual);
-router.get('/order/:order_id',         savController.getByOrderId);
-router.get('/customer/:customer_id',   savController.getByCustomerId);
-router.get('/:id',                     savController.getById);
+router.get('/order/:order_id',         canRead, savController.getByOrderId);
+router.get('/customer/:customer_id',   canRead, savController.getByCustomerId);
+router.get('/:id',                     canRead, savController.getById);
 router.patch('/:id',                   authMiddleware, patchGuard, savController.patchTicket);
 router.put('/:id/status',              canWrite, savController.updateStatus);
 router.post('/:id/reply', authMiddleware, memoryUpload.array('attachments', MAX_FILES), replyGuard, savController.reply);
