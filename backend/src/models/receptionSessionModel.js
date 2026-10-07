@@ -725,7 +725,35 @@ async function trouverProduitBms(sku, bmsSupplierId) {
     ? parFournisseur
     : await bmsApiModel.getSupplierProducts(null, sku);
 
-  const productId = trouve[0]?.product_id;
+  let productId = trouve[0]?.product_id;
+
+  // `/supplier/products` ne connaît que les produits RATTACHÉS à un
+  // fournisseur : une fiche tout juste créée dans BMS n'y figure pas, alors
+  // qu'elle est commandable (cas réel : Le Dragon d'Enfer 50ml, LCA 360161,
+  // 07/10/2026). Et `/v2/products` ignore un filtre sur le SKU. Il filtre en
+  // revanche sur `external_id`, que l'intégration WooCommerce construit ainsi :
+  //   simple    : <id produit sur 8>_00000000
+  //   variation : <id parent sur 8>_<id variation sur 8>
+  if (!productId) {
+    const { rows } = await pool.query(
+      `SELECT wp_product_id, wp_parent_id FROM products
+        WHERE sku = $1 AND wp_product_id IS NOT NULL`,
+      [sku],
+    );
+    const pad = (v) => String(v).padStart(8, '0');
+    for (const p of rows) {
+      const externalId = p.wp_parent_id
+        ? `${pad(p.wp_parent_id)}_${pad(p.wp_product_id)}`
+        : `${pad(p.wp_product_id)}_00000000`;
+      const res = await bmsApiModel.apiCall(
+        `/v2/products?filters[external_id]=${encodeURIComponent(externalId)}`,
+      );
+      // Le SKU doit correspondre : on ne se fie pas au seul calcul d'identifiant.
+      const produit = (res.data || []).find((x) => String(x.sku) === String(sku));
+      if (produit) { productId = produit.id; break; }
+    }
+  }
+
   if (!productId) {
     throw new Error(
       `BMS ne connaît aucun produit portant le SKU ${sku}. `

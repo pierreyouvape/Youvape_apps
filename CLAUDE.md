@@ -248,6 +248,10 @@ stock : la marchandise garde son prix d'achat et son lien au fournisseur.
 - **Nous ne stockons pas ce `product_id`** : le lire avec `/supplier/products?sku=…`, qui
   renvoie les associations fournisseur × produit. N'importe laquelle donne le même
   `product_id` — il désigne le produit, pas l'association.
+  ⚠️ **Un produit rattaché à AUCUN fournisseur n'y figure pas** (fiche tout juste créée
+  dans BMS : LCA 360161, 07/10/2026). `/v2/products` ignore `sku` mais filtre sur
+  `filters[external_id]=` : `<id sur 8>_00000000` (simple) ou
+  `<parent sur 8>_<variation sur 8>` — repli dans `trouverProduitBms`, SKU revérifié.
 - **Le bon peut être TERMINÉ.** BMS accepte une ligne neuve sur un bon `complete`, sans le
   rouvrir (vérifié le 30/09/2026 sur le bon 121413). C'est le cas qui compte : on s'aperçoit
   d'un article oublié après avoir soldé la commande. On y accède par « Réceptionner » depuis
