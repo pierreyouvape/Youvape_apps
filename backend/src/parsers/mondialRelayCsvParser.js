@@ -312,7 +312,51 @@ function classifyParcels(parcels, { remiseRate = 0, cgv = '2026' } = {}) {
 
 const CLAIMABLE_KINDS = ['aberrant', 'volumetrique_hors_cgv'];
 
+/**
+ * Rattache aux colis les frais exceptionnels de LEUR facture (PDF) :
+ * p.fees = [{ label, amount }].
+ *
+ * Vérifié sur décembre 2025 → septembre 2026 (« Autres frais » de l'écran) :
+ *   - colis non retiré renvoyé (« … renvoyé à l'Expéditeur », « Prestation de
+ *     retour suite colis non réclamé ») : la ligne Retour PCI, dont le transport
+ *     vaut le prix unitaire (2 €, 3 €, 5 €, 6 €) ;
+ *   - autre frais (colis trop petit 2,50 €, ré-étiquetage 1,50 €, Corse 3 €…) :
+ *     le complément du colis, participations sûreté + éco (0,13 €) déduites —
+ *     les lignes de retour n'en portent pas, d'où le second essai sans déduction.
+ * Le libellé vient de la facture, jamais d'un montant deviné : 3 € peut être un
+ * supplément Corse comme un dépassement Locker selon les CGV.
+ */
+const RETURN_FEE_RE = /renvoy|non r[ée]clam/i;
+const STD_PARTICIPATION_RE = /[ée]co.?responsable|s[uû]ret[ée]/i;
+
+function annotateParcelFees(parsed) {
+  const parcels = parsed?.csv?.parcels;
+  if (!Array.isArray(parcels)) return parsed;
+  const lines = ['surcharges', 'complements', 'retourPCI', 'participations']
+    .flatMap(g => (Array.isArray(parsed[g]) ? parsed[g] : []))
+    .filter(l => Number(l.pu) > 0 && !STD_PARTICIPATION_RE.test(l.label || ''));
+  const partic = (Array.isArray(parsed.participations) ? parsed.participations : [])
+    .filter(l => STD_PARTICIPATION_RE.test(l.label || ''))
+    .reduce((s, l) => s + (Number(l.pu) || 0), 0);
+  const near = (a, b) => Math.abs(a - b) < 0.005;
+  for (const p of parcels) {
+    const fees = [];
+    if (p.return_kind === 'non_retire') {
+      const l = lines.find(x => RETURN_FEE_RE.test(x.label) && near(Number(x.pu), p.transport));
+      if (l) fees.push({ label: l.label, amount: Number(l.pu) });
+    }
+    const compl = Number(p.complement) || 0;
+    for (const extra of [round2(compl - partic), round2(compl)]) {
+      if (!(extra > 0.005)) continue;
+      const l = lines.find(x => !RETURN_FEE_RE.test(x.label) && near(Number(x.pu), extra));
+      if (l) { fees.push({ label: l.label, amount: Number(l.pu) }); break; }
+    }
+    p.fees = fees;
+  }
+  return parsed;
+}
+
 module.exports = {
-  parseMondialRelayCsv, analyzeMondialRelayCsv, classifyParcels, cgvForInvoice, CLAIMABLE_KINDS, bracketIndex,
+  parseMondialRelayCsv, analyzeMondialRelayCsv, classifyParcels, annotateParcelFees, cgvForInvoice, CLAIMABLE_KINDS, bracketIndex,
   ABERRANT_DENSITY, ABERRANT_MIN_G,
 };

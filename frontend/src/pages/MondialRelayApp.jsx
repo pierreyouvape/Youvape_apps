@@ -166,7 +166,64 @@ function HistoryTable({ history, loadFromHistory, onDelete, onDownload }) {
   );
 }
 
-function TotalsView({ totals, totalsLoading, loadTotals }) {
+// Détail d'un « autre frais » : ses factures et, quand l'annexe CSV est
+// importée, les colis qui le portent. Cliquer une facture l'ouvre sur l'onglet
+// Colis, filtré sur ce frais.
+function FeeDetail({ year, label, onOpenInvoice }) {
+  const [data, setData] = useState(null);
+  const [err, setErr] = useState(null);
+  useEffect(() => {
+    let alive = true;
+    axios.get(`${API_URL}/mondial-relay/fees-detail`, { params: { year, label } })
+      .then(({ data }) => { if (alive) data.success ? setData(data) : setErr(data.error); })
+      .catch(e => { if (alive) setErr(e.response?.data?.error || e.message); });
+    return () => { alive = false; };
+  }, [year, label]);
+  if (err) return <div style={{ padding: 12, color: C.red, fontSize: 12.5 }}>⚠️ {err}</div>;
+  if (!data) return <div style={{ padding: 12, color: C.greyT, fontSize: 12.5 }}>Chargement…</div>;
+  const noCsv = data.invoices.filter(i => !i.has_csv).length;
+  return (
+    <div style={{ padding: '10px 14px 14px 34px', background: C.grey }}>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
+        {data.invoices.map(i => (
+          <button key={i.id} onClick={() => onOpenInvoice(i, label)} title="Ouvrir la facture"
+            style={{ background: C.white, border: `1px solid ${C.greyB}`, borderRadius: 8, padding: '5px 10px', fontSize: 12, cursor: 'pointer', color: C.dark }}>
+            🔍 <b style={{ color: C.accent }}>{i.invoice_number}</b> · {i.invoice_date} · {i.pays} · qté {i.qty} · <b>{fmtEur(i.montant)}</b>
+          </button>
+        ))}
+      </div>
+      {data.parcels.length > 0 ? (
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5, background: C.white }}>
+          <thead><tr><Th label="Commande" /><Th label="N° expédition" /><Th label="Date" /><Th label="Pays" /><Th label="Déclaré" align="right" /><Th label="Pesé MR" align="right" /><Th label="Carton" /><Th label="Facture" /><Th label="Montant" align="right" /></tr></thead>
+          <tbody>{data.parcels.map((p, k) => (
+            <tr key={k} style={{ background: k % 2 === 0 ? C.white : C.grey }}>
+              <Td bold>{p.order_id
+                ? <a href={`/orders/${p.order_id}`} target="_blank" rel="noreferrer" style={{ color: C.accent, textDecoration: 'none' }}>{p.order_id}</a>
+                : <span style={{ color: C.greyT }}>{p.ref}</span>}
+                {p.is_return && <span style={{ marginLeft: 6, background: C.orangeL, color: C.orange, borderRadius: 10, padding: '1px 7px', fontSize: 11 }}>retour</span>}</Td>
+              <Td color={C.greyT}>{p.tracking || '—'}</Td>
+              <Td color={C.greyT}>{p.date || '—'}</Td>
+              <Td color={C.greyT}>{p.pays || '—'}</Td>
+              <Td align="right">{fmtG(p.declared_g)}</Td>
+              <Td align="right">{fmtG(p.measured_g)}</Td>
+              <Td color={C.greyT}>{fmtDims(p.dims_mm)}</Td>
+              <Td><span onClick={() => onOpenInvoice({ id: p.invoice_id }, label)} style={{ color: C.accent, cursor: 'pointer' }}>{p.invoice_number}</span></Td>
+              <Td align="right" bold color={C.orange}>{fmtEur(p.amount)}</Td>
+            </tr>
+          ))}</tbody>
+        </table>
+      ) : (
+        <div style={{ fontSize: 12.5, color: C.greyT }}>Frais facturé au niveau de la facture, sans colis rattaché (forfait collecte…).</div>
+      )}
+      {noCsv > 0 && data.parcels.length > 0 && (
+        <div style={{ marginTop: 8, fontSize: 12, color: C.greyT }}>{noCsv} facture(s) sans annexe CSV importée : leurs colis n'apparaissent pas.</div>
+      )}
+    </div>
+  );
+}
+
+function TotalsView({ totals, totalsLoading, loadTotals, onOpenInvoice }) {
+  const [openFee, setOpenFee] = useState(null); // « année|libellé »
   const { months, years, byPays, yearCols, byPaysYear, monthCols, byPaysMonth, autresByYear, autresGrand } = useMemo(() => {
     const monthMap = {}, yearMap = {}, paysMap = {}, paysYearMap = {}, paysMonthMap = {}, yearsSet = new Set();
     const autresMap = {}; // année -> { total, labels: { label -> { montant, count } } }
@@ -267,7 +324,7 @@ function TotalsView({ totals, totalsLoading, loadTotals }) {
                 Autres frais par année <span style={{ color: C.greyT, fontWeight: 400, fontSize: 12 }}>(hors indexation gasoil, participations MR & remise)</span>
               </h3>
               <p style={{ margin: '0 0 10px', color: C.greyT, fontSize: 12 }}>
-                Frais exceptionnels &amp; forfaits (colis trop petits, non réclamés, ré-étiquetage, retour PCI, suppléments Corse, forfait collecte…), détaillés ligne par ligne, année par année.
+                Frais exceptionnels &amp; forfaits (colis trop petits, non réclamés, ré-étiquetage, retour PCI, suppléments Corse, forfait collecte…), détaillés ligne par ligne, année par année. Cliquer une ligne pour voir ses factures et ses colis.
               </p>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                 <thead><tr><Th label="Année / Libellé" /><Th label="Qté" align="right" /><Th label="Total HT" align="right" /></tr></thead>
@@ -279,13 +336,21 @@ function TotalsView({ totals, totalsLoading, loadTotals }) {
                         <td style={{ borderBottom: `1px solid ${C.greyB}` }} />
                         <td style={{ padding: '9px 12px', textAlign: 'right', fontWeight: 800, color: C.accent, borderBottom: `1px solid ${C.greyB}` }}>{fmtEur(y.total)}</td>
                       </tr>
-                      {y.lines.map((l, i) => (
-                        <tr key={i} style={{ background: C.white }}>
-                          <Td color={C.dark}><span style={{ color: C.greyT, marginRight: 6 }}>↳</span>{l.label} <span style={{ color: C.greyT, fontSize: 11 }}>· {l.count} fact.</span></Td>
-                          <Td align="right" color={C.greyT}>{l.qty || '—'}</Td>
-                          <Td align="right" bold color={C.orange}>{fmtEur(l.montant)}</Td>
-                        </tr>
-                      ))}
+                      {y.lines.map((l, i) => {
+                        const key = `${y.year}|${l.label}`;
+                        const open = openFee === key;
+                        return (
+                          <Fragment key={i}>
+                            <tr onClick={() => setOpenFee(open ? null : key)} title="Voir les factures et les colis concernés"
+                              style={{ background: open ? C.accentL : C.white, cursor: 'pointer' }}>
+                              <Td color={C.dark}><span style={{ color: C.accent, marginRight: 6, display: 'inline-block', width: 10 }}>{open ? '▾' : '▸'}</span>{l.label} <span style={{ color: C.greyT, fontSize: 11 }}>· {l.count} fact.</span></Td>
+                              <Td align="right" color={C.greyT}>{l.qty || '—'}</Td>
+                              <Td align="right" bold color={C.orange}>{fmtEur(l.montant)}</Td>
+                            </tr>
+                            {open && <tr><td colSpan={3} style={{ padding: 0, borderBottom: `1px solid ${C.greyB}` }}><FeeDetail year={y.year} label={l.label} onOpenInvoice={onOpenInvoice} /></td></tr>}
+                          </Fragment>
+                        );
+                      })}
                     </Fragment>
                   ))}
                 </tbody>
@@ -462,19 +527,35 @@ const PARCEL_SORTERS = {
   total: p => p.total || 0, net: p => p.net || 0, ecart: p => p.ecart || 0,
 };
 
-function ParcelsTab({ csv }) {
+function ParcelsTab({ csv, initialFee = null }) {
   const [q, setQ] = useState('');
   const [onlyUnmatched, setOnlyUnmatched] = useState(false);
+  const [fee, setFee] = useState(initialFee || '');
+  // Suppléments présents sur la facture, avec leur nombre de colis
+  const feeCounts = useMemo(() => {
+    const m = {};
+    for (const p of csv.parcels || []) for (const f of p.fees || []) m[f.label] = (m[f.label] || 0) + 1;
+    return Object.entries(m).sort((a, b) => b[1] - a[1]);
+  }, [csv]);
   const rows = useMemo(() => (csv.parcels || []).filter(p =>
     (!onlyUnmatched || p.order_id == null)
+    && (!fee || (fee === '*' ? (p.fees || []).length > 0 : (p.fees || []).some(f => f.label === fee)))
     && (!q || String(p.ref).includes(q) || String(p.tracking || '').includes(q) || String(p.order_id || '').includes(q))
-  ), [csv, q, onlyUnmatched]);
+  ), [csv, q, onlyUnmatched, fee]);
   const { sorted, sort, toggle } = useSorted(rows, PARCEL_SORTERS);
   return (
     <div style={{ padding: 18 }}>
       <div style={{ display: 'flex', gap: 12, marginBottom: 14, flexWrap: 'wrap', alignItems: 'center' }}>
         <input placeholder="N° de commande ou d'expédition…" value={q} onChange={e => setQ(e.target.value.trim())}
           style={{ padding: '7px 11px', border: `1px solid ${C.greyB}`, borderRadius: 8, fontSize: 13, flex: 1, minWidth: 200 }} />
+        {feeCounts.length > 0 && (
+          <select value={fee} onChange={e => setFee(e.target.value)}
+            style={{ padding: '7px 10px', border: `1px solid ${fee ? C.orange : C.greyB}`, borderRadius: 8, fontSize: 13, color: fee ? C.orange : C.dark, background: C.white }}>
+            <option value="">Tous les colis</option>
+            <option value="*">Avec un supplément ({feeCounts.reduce((s, [, n]) => s + n, 0)})</option>
+            {feeCounts.map(([l, n]) => <option key={l} value={l}>{l} ({n})</option>)}
+          </select>
+        )}
         {csv.unmatchedCount > 0 && (
           <label style={{ fontSize: 12.5, color: C.greyT, display: 'flex', gap: 6, alignItems: 'center', cursor: 'pointer' }}>
             <input type="checkbox" checked={onlyUnmatched} onChange={e => setOnlyUnmatched(e.target.checked)} />
@@ -496,11 +577,12 @@ function ParcelsTab({ csv }) {
             <Th label="Carton" />
             <Th label="Transport" align="right" sortKey="transport" sort={sort} onSort={toggle} />
             <Th label="Total brut" align="right" sortKey="total" sort={sort} onSort={toggle} />
+            <Th label="Supplément" />
             <Th label="Coût net HT" align="right" sortKey="net" sort={sort} onSort={toggle} />
             <Th label="Écart" align="right" sortKey="ecart" sort={sort} onSort={toggle} />
           </tr></thead>
           <tbody>
-            {sorted.length === 0 && <tr><td colSpan={13} style={{ textAlign: 'center', padding: 32, color: C.greyT }}>Aucun colis</td></tr>}
+            {sorted.length === 0 && <tr><td colSpan={14} style={{ textAlign: 'center', padding: 32, color: C.greyT }}>Aucun colis</td></tr>}
             {sorted.slice(0, 1000).map((p, i) => (
               <tr key={`${p.ref}-${p.tracking}-${i}`} style={{ background: i % 2 === 0 ? C.white : C.grey }}>
                 <Td bold>
@@ -519,6 +601,11 @@ function ParcelsTab({ csv }) {
                 <Td color={C.greyT}>{fmtDims(p.dims_mm)}</Td>
                 <Td align="right">{fmtEur(p.transport)}</Td>
                 <Td align="right" color={C.greyT}>{fmtEur(p.total)}</Td>
+                <Td>{(p.fees || []).map(f => (
+                  <span key={f.label} title={f.label} style={{ display: 'inline-block', margin: '1px 4px 1px 0', background: C.orangeL, color: C.orange, border: `1px solid ${C.orange}`, borderRadius: 10, padding: '1px 7px', fontSize: 11, fontWeight: 600, whiteSpace: 'nowrap' }}>
+                    {f.label.length > 28 ? `${f.label.slice(0, 26)}…` : f.label} +{fmtEur(f.amount)}
+                  </span>
+                ))}</Td>
                 <Td align="right" bold>{fmtEur(p.net)}</Td>
                 <Td align="right" bg={p.kind ? ECART_KINDS[p.kind].bg : undefined} color={p.kind ? ECART_KINDS[p.kind].color : C.greyT}>
                   {p.ecart ? `+${fmtEur(p.ecart)}` : '—'}
@@ -662,6 +749,7 @@ export default function MondialRelayApp() {
   const [totalsLoading, setTotalsLoading] = useState(false);
   const [homeTab, setHomeTab] = useState('historique');
   const [applying, setApplying] = useState(false);
+  const [colisFee, setColisFee] = useState(null); // filtre « supplément » de l'onglet Colis
   const [applyResult, setApplyResult] = useState(null);
 
   async function loadHistory() {
@@ -690,7 +778,8 @@ export default function MondialRelayApp() {
     } catch (e) { setError(e.response?.data?.error || e.message); } finally { setLoading(false); }
   }
 
-  async function handleLoadFromHistory(inv, startTab = 'livraisons') {
+  async function handleLoadFromHistory(inv, startTab = 'livraisons', feeFilter = null) {
+    setColisFee(feeFilter);
     setLoading(true); setError(null); setCurrentFile(null); setApplyResult(null);
     try {
       const { data } = await axios.get(`${API_URL}/mondial-relay/history/${inv.id}`, { headers: { Authorization: `Bearer ${token}` } });
@@ -987,7 +1076,7 @@ export default function MondialRelayApp() {
                 </div>
               )}
 
-              {tab === 'colis' && result.csv && <ParcelsTab csv={result.csv} />}
+              {tab === 'colis' && result.csv && <ParcelsTab key={`${result.invoiceNumber}|${colisFee || ''}`} csv={result.csv} initialFee={colisFee} />}
               {tab === 'ecarts' && result.csv && <EcartsTab key={result.invoiceNumber} result={result} />}
 
               {tab === 'frais' && (
@@ -1065,7 +1154,7 @@ export default function MondialRelayApp() {
               <TabBtn label="Totaux" active={homeTab === 'totaux'} onClick={() => setHomeTab('totaux')} />
             </div>
             {homeTab === 'totaux'
-              ? <TotalsView totals={totals} totalsLoading={totalsLoading} loadTotals={loadTotals} />
+              ? <TotalsView totals={totals} totalsLoading={totalsLoading} loadTotals={loadTotals} onOpenInvoice={(inv, fee) => handleLoadFromHistory(inv, 'colis', fee)} />
               : <div style={{ padding: 20 }}>
                   {historyLoading ? <div style={{ textAlign: 'center', padding: 20, color: C.greyT }}>Chargement…</div>
                     : history.length === 0 ? <div style={{ textAlign: 'center', padding: 30, color: C.greyT }}>Aucune facture enregistrée pour l'instant.</div>

@@ -13,6 +13,7 @@ router.get('/history/:id',     c.getInvoiceDetail);
 router.get('/history/:id/pdf', c.downloadPdf);
 router.delete('/history/:id',  c.deleteInvoice);
 router.get('/totals',          c.getTotals);
+router.get('/fees-detail',     c.getFeesDetail);
 router.post('/debug-text',     ...c.debugText);
 
 module.exports = router;

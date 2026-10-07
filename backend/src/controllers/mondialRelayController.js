@@ -5,7 +5,7 @@ const JSZip = require('jszip');
 const pool = require('../config/database');
 const { newestInvoicesFirst, HISTORY_LIMIT } = require('../utils/carrierInvoiceOrder');
 const { parseMondialRelayPdf, computeAutresFrais, applyGridCheck } = require('../parsers/mondialRelayParser');
-const { parseMondialRelayCsv, analyzeMondialRelayCsv, classifyParcels, cgvForInvoice, CLAIMABLE_KINDS } = require('../parsers/mondialRelayCsvParser');
+const { parseMondialRelayCsv, analyzeMondialRelayCsv, classifyParcels, annotateParcelFees, cgvForInvoice, CLAIMABLE_KINDS } = require('../parsers/mondialRelayCsvParser');
 const { orderWeightSql, getPackagingWeight } = require('../services/orderWeightService');
 
 const CARRIER = 'mondial_relay';
@@ -358,6 +358,7 @@ exports.getInvoiceDetail = async (req, res) => {
     if (parsed?.csv?.parcels) {
       parsed.csv.cgv = cgvForInvoice(parsed);
       classifyParcels(parsed.csv.parcels, { remiseRate: parsed.csv.remiseRate, cgv: parsed.csv.cgv });
+      annotateParcelFees(parsed);
     }
     res.json({ success: true, invoice, parsed });
   } catch (err) {
@@ -416,6 +417,57 @@ exports.getTotals = async (req, res) => {
     res.json({ success: true, invoices: rows });
   } catch (err) {
     console.error('[MondialRelay] getTotals error:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+};
+
+// GET /api/mondial-relay/fees-detail?year=2026&label=Colis trop petits
+// Factures et colis d'un « autre frais » de l'onglet Totaux. L'année est celle
+// du début de période, comme les Totaux. Ne lit que les factures qui portent le
+// libellé : on ne déroule pas les colis de toute l'année.
+exports.getFeesDetail = async (req, res) => {
+  try {
+    const year = String(req.query.year || '');
+    const label = String(req.query.label || '');
+    if (!/^\d{4}$/.test(year) || !label) return res.status(400).json({ success: false, error: 'year et label requis' });
+    const { rows } = await pool.query(`
+      SELECT id, invoice_number, invoice_date, period_start, account_number AS pays, parcels_detail
+      FROM carrier_invoices
+      WHERE carrier = $1 AND right(period_start, 4) = $2
+        AND EXISTS (
+          SELECT 1 FROM jsonb_array_elements(
+            COALESCE(parcels_detail->'collecte','[]') || COALESCE(parcels_detail->'retourPCI','[]')
+            || COALESCE(parcels_detail->'complements','[]') || COALESCE(parcels_detail->'surcharges','[]')
+            || COALESCE(parcels_detail->'participations','[]')) x
+          WHERE x->>'label' = $3)
+      ORDER BY ${newestInvoicesFirst()}
+    `, [CARRIER, year, label]);
+
+    const invoices = [], parcels = [];
+    for (const r of rows) {
+      const d = r.parcels_detail || {};
+      const lines = ['collecte', 'retourPCI', 'complements', 'surcharges', 'participations']
+        .flatMap(g => (Array.isArray(d[g]) ? d[g] : [])).filter(l => l.label === label);
+      invoices.push({
+        id: r.id, invoice_number: r.invoice_number, invoice_date: r.invoice_date, pays: r.pays, has_csv: !!d.csv,
+        qty: lines.reduce((s, l) => s + (Number(l.qty) || 0), 0),
+        montant: Math.round(lines.reduce((s, l) => s + (Number(l.montant) || 0), 0) * 100) / 100,
+      });
+      if (!d.csv) continue;
+      annotateParcelFees(d);
+      for (const p of d.csv.parcels) {
+        const fee = (p.fees || []).find(f => f.label === label);
+        if (!fee) continue;
+        parcels.push({
+          invoice_id: r.id, invoice_number: r.invoice_number, order_id: p.order_id, ref: p.ref, tracking: p.tracking,
+          linked: p.linked, date: p.date, pays: p.pays, amount: fee.amount, is_return: p.is_return,
+          declared_g: p.declared_g, measured_g: p.measured_g, dims_mm: p.dims_mm,
+        });
+      }
+    }
+    res.json({ success: true, invoices, parcels });
+  } catch (err) {
+    console.error('[MondialRelay] getFeesDetail error:', err);
     res.status(500).json({ success: false, error: err.message });
   }
 };
