@@ -287,8 +287,15 @@ async function validateSession(sessionId, userId, motifs = {}, db = pool) {
 
   if (lignes.length === 0) throw new Error('Aucune pièce comptée : il n\'y a rien à réceptionner');
 
-  const manquants = toutes.filter((l) => l.units_counted < Number(l.units_expected));
-  const surplus = toutes.filter((l) => l.units_counted > Number(l.units_expected));
+  // Manquant et surplus se jugent sur ce qui RESTE à recevoir, comme à l'écran,
+  // pas sur le total commandé : à la 2e réception d'une commande (lignes
+  // ajoutées après coup, reliquat), les lignes déjà soldées sont comptées à
+  // zéro et ne manquent pas. Le total les déclarait manquantes, l'écran ne
+  // proposait aucun motif pour elles, et la validation était impossible
+  // (XKVGXPIDD, 07/10/2026).
+  const restantDe = (l) => Math.max(0, Number(l.units_expected) - Number(l.units_received));
+  const manquants = toutes.filter((l) => l.units_counted < restantDe(l));
+  const surplus = toutes.filter((l) => l.units_counted > restantDe(l));
 
   // Le motif est exigé ICI et pas seulement à l'écran : l'API est la porte, et
   // une réception envoyée par un autre chemin perdrait l'explication du manquant.
@@ -437,15 +444,15 @@ async function validateSession(sessionId, userId, motifs = {}, db = pool) {
     ref: l.supplier_sku,
     product: l.product_name,
     units: l.units_counted,
-    expected: Number(l.units_expected),
-    ecart: l.units_counted - Number(l.units_expected),
+    expected: restantDe(l),
+    ecart: l.units_counted - restantDe(l),
     motif: motifsParItem.get(l.purchase_order_item_id) || null,
   });
 
   const resultat = {
     sent: lignes.map((l) => ({
       ...decrire(l),
-      over: l.units_counted > Number(l.units_expected),
+      over: l.units_counted > restantDe(l),
       units_sent: envoye.get(l.purchase_order_item_id) || 0,
     })),
     missing: manquants.map(decrire),
