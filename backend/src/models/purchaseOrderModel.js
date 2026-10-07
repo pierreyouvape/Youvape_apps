@@ -604,6 +604,19 @@ const purchaseOrderModel = {
       );
       const orderInPacks = parserRegistry.skipsPackQty(supplierCodeResult.rows[0]?.code);
 
+      // Le numéro est unique dans toute la table, annulées comprises. Une
+      // commande supprimée dans BMS passe « annulée » à la synchro mais garde son
+      // numéro : réimporter le document (ex. LCA 354290, 07/10/2026) butait sur
+      // la contrainte. L'annulée libère donc son numéro ; elle reste en base
+      // (lignes, réceptions) et la synchro la retrouve par bms_po_id, jamais par
+      // numéro.
+      await client.query(
+        `UPDATE purchase_orders
+         SET order_number = LEFT(order_number, 30) || '-annulee-' || id, updated_at = CURRENT_TIMESTAMP
+         WHERE order_number = $1 AND status = 'cancelled'`,
+        [orderNumber]
+      );
+
       // Créer la commande localement
       const orderQuery = `
         INSERT INTO purchase_orders (

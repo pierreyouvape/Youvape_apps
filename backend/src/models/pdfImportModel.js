@@ -325,7 +325,7 @@ const pdfImportModel = {
     let duplicateWarning = null;
     if (parsed.orderNumber) {
       const dupCheck = await pool.query(
-        'SELECT id, order_number FROM purchase_orders WHERE order_number = $1',
+        "SELECT id, order_number FROM purchase_orders WHERE order_number = $1 AND status <> 'cancelled'",
         [parsed.orderNumber]
       );
       if (dupCheck.rows.length > 0) {
