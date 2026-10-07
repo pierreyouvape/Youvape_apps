@@ -1127,6 +1127,77 @@ test('une remise à taux qui couvre bien toute la facture reste répartie', () =
   assert.ok(a.discountShare > 0, 'remise globale non répartie');
 });
 
+/* ─── Une remise sans libellé exploitable, désignée par l'arithmétique ──── */
+
+// e.tasty #FA083648/2026 (29/09/2026), commande IJSBUKTLI / BMS 121404.
+const ETASTY_083648 = {
+  invoice: {
+    totalHt: 226.17,
+    lines: [
+      { ref: 'GCDZE10000', label: 'DZEUS - 100ML', qty: 5, lineTotalHt: 29.50 },
+      { ref: 'FRLIM03000', label: 'Limonata - 30ml', qty: 5, lineTotalHt: 22.00 },
+      { ref: 'NUMQU10000', label: 'Numbers 04 - 100ml', qty: 5, lineTotalHt: 29.50 },
+      { ref: 'NUMCI10000', label: 'Numbers 05 - 100ml', qty: 10, lineTotalHt: 59.00 },
+      { ref: 'INOPA01003', label: 'OPALI 10ml - Taux de nicotine : 3', qty: 40, lineTotalHt: 54.00 },
+      { ref: 'HOSER01012', label: 'Serpentron 10ml - Taux de nicotine : 12', qty: 20, lineTotalHt: 27.00 },
+      { ref: 'GASOP05000', label: 'Sophie la casse-cou 50ml', qty: 5, lineTotalHt: 26.00 },
+      { ref: null, label: 'chevallier', qty: 1, lineTotalHt: -20.83, kind: 'discount' },
+    ],
+  },
+  order: { lines: [
+    { ref: 'GCDZE10000', qty: 5, price: 5.20 },
+    { ref: 'FRLIM03000', qty: 5, price: 4.40 },
+    { ref: 'NUMQU10000', qty: 5, price: 5.90 },
+    { ref: 'NUMCI10000', qty: 10, price: 5.90 },
+    { ref: 'INOPA01003', qty: 40, price: 1.00 },
+    { ref: 'HOSER01012', qty: 20, price: 1.00 },
+    { ref: 'GASOP05000', qty: 5, price: 5.20 },
+  ] },
+  options: { supplierCode: 'Etasty' },
+};
+
+test('remise « chevallier » : les 10 ml retombent à 1,00 €, pas 1,236 €', () => {
+  const r = compareInvoiceToOrder(ETASTY_083648);
+  for (const ref of ['INOPA01003', 'HOSER01012']) {
+    const l = byRef(r, ref);
+    assert.ok(close(l.effectiveUnitCost, 1.00, 0.00001), `${ref} : coût réel ${l.effectiveUnitCost}`);
+    assert.strictEqual(l.residualGapPrice, 0);
+  }
+  // Les lignes au bon prix ne reçoivent rien : leur coût est le prix facturé.
+  for (const ref of ['FRLIM03000', 'NUMQU10000', 'NUMCI10000', 'GASOP05000', 'GCDZE10000']) {
+    assert.strictEqual(byRef(r, ref).discountShare, 0, `${ref} a reçu une part de remise`);
+  }
+  const remise = r.lines.find((l) => l.verdict === 'discount');
+  assert.strictEqual(remise.scope.deduced, true);
+  assert.ok(close(remise.netGap, 0.17), `reliquat au pied ${remise.netGap}`);
+});
+
+test('remise « chevallier » : seul le DZEUS reste réclamable, et aucun tarif 10 ml', () => {
+  const r = compareInvoiceToOrder(ETASTY_083648);
+  assert.ok(close(r.summary.claimable, 3.50), `réclamable ${r.summary.claimable}`);
+  const refs = listTariffUpdates(r).map((t) => t.ref);
+  assert.ok(!refs.includes('INOPA01003') && !refs.includes('HOSER01012'), `tarifs proposés : ${refs}`);
+  assert.ok(!refs.includes('FRLIM03000'), 'tarif proposé sur une ligne au bon prix');
+  // La colonne « Écart total » vaut toujours l'écart global.
+  const somme = r.lines.reduce((s, l) => s + (l.netGap || 0), 0);
+  assert.ok(close(somme, r.totals.gap), `colonne ${somme} contre écart ${r.totals.gap}`);
+});
+
+test('deux sous-ensembles qui retombent sur la remise : elle reste générale', () => {
+  const r = compareInvoiceToOrder({
+    invoice: { lines: [
+      { ref: 'A', label: 'A', qty: 10, lineTotalHt: 15 },
+      { ref: 'B', label: 'B', qty: 10, lineTotalHt: 15 },
+      { ref: 'C', label: 'C', qty: 10, lineTotalHt: 100 },
+      { ref: null, label: 'Remise', qty: 1, lineTotalHt: -5, kind: 'discount' },
+    ] },
+    order: { lines: [
+      { ref: 'A', qty: 10, price: 1 }, { ref: 'B', qty: 10, price: 1 }, { ref: 'C', qty: 10, price: 10 },
+    ] },
+  });
+  assert.ok(byRef(r, 'C').discountShare > 0, 'remise ambiguë imputée à un sous-ensemble');
+});
+
 /* ─── Le seuil des tarifs, depuis que la base tient quatre décimales ────── */
 
 test('un écart de 0,0025 € par pièce donne un tarif à appliquer', () => {

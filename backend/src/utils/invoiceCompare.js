@@ -137,6 +137,9 @@ function linesTargetedBy(discountLine, productLines, supplierCode) {
   // dire « −20 % sur les Vaporesso » plutôt qu'une moyenne par pièce, qui n'a
   // aucun sens quand les lignes visées n'ont pas le même prix.
   linesTargetedBy.derniereRegle = null;
+  // Renseigné quand c'est la déduction arithmétique qui a tranché : chaque
+  // ligne reçoit alors son propre surcoût, pas une part au prorata.
+  linesTargetedBy.parEcart = false;
   // 1. Une règle connue pour ce fournisseur, VÉRIFIÉE par la somme qu'elle
   //    produit. Si elle ne retombe pas sur la remise imprimée, on ne s'en sert
   //    pas : la promotion a changé, et une règle périmée vaut moins qu'une
@@ -157,13 +160,66 @@ function linesTargetedBy(discountLine, productLines, supplierCode) {
 
   // 2. À défaut, le conditionnement nommé dans le libellé (« PACK IMP 1€ 10ML »).
   const volumes = String(discountLine.label || '').match(/\d+\s*ML\b/gi);
-  if (!volumes) return null;
+  if (volumes) {
+    const motifs = [...new Set(volumes.map((v) => v.replace(/\s+/g, '').toUpperCase()))]
+      .map((v) => new RegExp(`\\b${v.replace('ML', '')}\\s*ML\\b`, 'i'));
 
-  const motifs = [...new Set(volumes.map((v) => v.replace(/\s+/g, '').toUpperCase()))]
-    .map((v) => new RegExp(`\\b${v.replace('ML', '')}\\s*ML\\b`, 'i'));
+    const cibles = productLines.filter((r) => motifs.some((re) => re.test(r.label || '')));
+    if (cibles.length > 0) return cibles;
+  }
 
-  const cibles = productLines.filter((r) => motifs.some((re) => re.test(r.label || '')));
-  return cibles.length > 0 ? cibles : null;
+  // 3. Enfin, la déduction arithmétique : les lignes dont la remise rembourse
+  //    exactement la hausse de tarif.
+  const compensees = linesCompensatedBy(discountLine, productLines);
+  if (compensees) {
+    linesTargetedBy.parEcart = true;
+    return compensees;
+  }
+  return null;
+}
+
+/**
+ * Les lignes surfacturées dont la remise compense, à elle seule, le surcoût.
+ *
+ * e.tasty FA083648/2026 : Opali et Serpentron (10 ml, 60 pièces) commandés
+ * 1,00 €, facturés 1,35 € — 21,00 € de trop — et une remise « chevallier » de
+ * 20,83 € (25 € TTC) au pied, sans taux ni conditionnement dans son libellé.
+ * Étalée au prorata des sept lignes, elle donnait 1,236 € la pièce sur les
+ * 10 ml et faisait passer sous leur prix des 100 ml facturés au tarif exact :
+ * deux coûts de revient faux, et un tarif de 1,236 € proposé à l'application.
+ *
+ * Le document ne nomme pas l'assiette, mais l'arithmétique la désigne : UN SEUL
+ * sous-ensemble des lignes surfacturées a un surcoût qui retombe sur la remise.
+ * Si plusieurs y retombent, le document ne tranche pas et nous non plus — la
+ * remise reste générale. Même chose quand aucune ligne n'est surfacturée
+ * (Cosmer, GFC : lignes au prix commandé, remise vraiment globale).
+ */
+const MAX_COMPENSATION_CANDIDATES = 14;
+
+function linesCompensatedBy(discountLine, productLines) {
+  const montant = Math.abs(Number(discountLine.invoicedTotal) || 0);
+  if (!(montant > 0)) return null;
+
+  const candidats = productLines.filter((r) => r.gapPrice > UNIT_ROUNDING_TOLERANCE
+    && (r.verdict === 'price' || r.verdict === 'qty_price'));
+  if (candidats.length === 0 || candidats.length > MAX_COMPENSATION_CANDIDATES) return null;
+
+  // Même tolérance que la vérification d'une règle nommée : une remise TTC
+  // ramenée au HT ne tombe pas au centime (25 € TTC = 20,83 € HT).
+  const tolerance = Math.max(0.10, montant * 0.01);
+  const trouves = [];
+  for (let masque = 1; masque < (1 << candidats.length); masque++) {
+    let somme = 0;
+    for (let i = 0; i < candidats.length; i++) {
+      if (masque & (1 << i)) somme += candidats[i].gapPrice;
+    }
+    if (Math.abs(somme - montant) <= tolerance) {
+      trouves.push(masque);
+      if (trouves.length > 1) return null;
+    }
+  }
+  if (trouves.length !== 1) return null;
+  return candidats.filter((_, i) => trouves[0] & (1 << i));
 }
 
 /**
@@ -446,6 +502,7 @@ function compareInvoiceToOrder({ invoice, order, options = {} }) {
   for (const d of remises) {
     const visees = linesTargetedBy(d, produits, options.supplierCode);
     const regle = linesTargetedBy.derniereRegle;
+    const parEcart = linesTargetedBy.parEcart;
 
     // UNE REMISE QU'ON NE SAIT PAS IMPUTER N'EST IMPUTÉE À PERSONNE.
     //
@@ -491,6 +548,36 @@ function compareInvoiceToOrder({ invoice, order, options = {} }) {
     // de la colonne vaut le total. Le reliquat va donc à la plus grosse ligne,
     // celle où il pèse le moins.
     const montant = Math.abs(d.invoicedTotal);
+
+    // Remise déduite de l'arithmétique : chaque ligne reçoit EXACTEMENT son
+    // surcoût et retombe sur le prix commandé (1,00 € pour les 10 ml de
+    // FA083648, pas 1,0028 €). La poussière entre la remise et la somme des
+    // surcoûts (0,17 € : 25 € TTC contre 21,00 € HT) reste au pied, sur la ligne
+    // de remise, au lieu de fabriquer un tarif à quatre décimales qui
+    // reviendrait à chaque facture.
+    if (parEcart) {
+      let impute = 0;
+      for (const r of cibles) {
+        remisePar.set(r, round2((remisePar.get(r) || 0) + r.gapPrice));
+        remiseCibleePar.set(r, round2((remiseCibleePar.get(r) || 0) + r.gapPrice));
+        impute += r.gapPrice;
+      }
+      d.allocated = round2(impute);
+      const pieces = cibles.reduce((acc, r) => acc + (Number(r.qtyInvoiced) || 0), 0);
+      d.scope = {
+        targeted: true,
+        deduced: true,
+        lines: cibles.length,
+        units: pieces,
+        perUnit: null,
+        unitCost: null,
+        ruleName: null,
+        ruleNote: `le surcoût de ${cibles.map((r) => r.ref || r.label).join(', ')}, ramenés au prix commandé`,
+        ruleRate: null,
+      };
+      continue;
+    }
+
     const ordre = [...cibles].sort((a, b) => a.invoicedTotal - b.invoicedTotal);
     let reste = round2(montant);
     ordre.forEach((r, i) => {
