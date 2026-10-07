@@ -12,6 +12,7 @@ const savAutomationController = require('../controllers/savAutomationController'
 const zendeskController = require('../controllers/zendeskController');
 const authMiddleware = require('../middleware/authMiddleware');
 const { checkPermission } = require('../middleware/permissionMiddleware');
+const userPermissionsModel = require('../models/userPermissionsModel');
 const { recordInboundFailure } = require('../utils/savInboundFailure');
 
 const UPLOAD_ROOT = path.join('/usr/src/app/uploads/sav');
@@ -42,8 +43,9 @@ const inboundUpload = multer({
 
 // ─── Deux niveaux de droit sur l'app (droit `tickets`) ───────────────────────
 // - Lecture  : consulter les tickets et écrire des NOTES INTERNES (note privée
-//              dans le fil, note du ticket, note de la fiche client). Rien ne
-//              part au client, rien d'autre ne change sur le ticket.
+//              dans le fil, note du ticket, note de la fiche client), créer un
+//              ticket dont le 1er message est une note interne, et lier / délier
+//              un n° de commande. Rien ne part au client.
 // - Écriture : plein accès — répondre au client, créer un ticket, changer
 //              statut / assignation / champs, fusionner, spam, réglages.
 // Les lectures (GET) restent ouvertes comme avant : elles sont appelées aussi
@@ -56,6 +58,34 @@ const canWrite = [authMiddleware, checkPermission('tickets', 'write')];
 const replyGuard = (req, res, next) => {
   const isPrivate = req.body?.is_private === 'true' || req.body?.is_private === true;
   return checkPermission('tickets', isPrivate ? 'read' : 'write')(req, res, next);
+};
+
+const hasTicketsWrite = async (req) =>
+  userPermissionsModel.isSuperAdmin(req.user.email)
+  || userPermissionsModel.hasPermission(req.user.id, 'tickets', 'write');
+
+// Création : mêmes règles que la réponse (note interne → lecture suffit). En
+// lecture seule, statut et assignation demandés sont ignorés : le ticket naît
+// avec le statut par défaut, sans assigné.
+const createGuard = (req, res, next) => replyGuard(req, res, async () => {
+  try {
+    if (!(await hasTicketsWrite(req))) {
+      delete req.body.sav_status;
+      delete req.body.assigned_to_id;
+    }
+    next();
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Modification d'un ticket : lier / délier une commande est permis en lecture
+// seule, à condition que la requête ne touche RIEN d'autre.
+const READ_LEVEL_PATCH_FIELDS = new Set(['order_id']);
+const patchGuard = (req, res, next) => {
+  const keys = Object.keys(req.body || {});
+  const orderOnly = keys.length > 0 && keys.every((k) => READ_LEVEL_PATCH_FIELDS.has(k));
+  return checkPermission('tickets', orderOnly ? 'read' : 'write')(req, res, next);
 };
 
 // ─── Webhook Gravity Forms (auth par secret header) ───────────────────────────
@@ -264,11 +294,11 @@ router.delete('/macros/:id',            canWrite, savMacroController.delete);
 
 // ─── Routes internes app ──────────────────────────────────────────────────────
 router.get('/',                        savController.getAll);
-router.post('/',                       canWrite, memoryUpload.array('attachments', MAX_FILES), savController.createManual);
+router.post('/',                       authMiddleware, memoryUpload.array('attachments', MAX_FILES), createGuard, savController.createManual);
 router.get('/order/:order_id',         savController.getByOrderId);
 router.get('/customer/:customer_id',   savController.getByCustomerId);
 router.get('/:id',                     savController.getById);
-router.patch('/:id',                   canWrite, savController.patchTicket);
+router.patch('/:id',                   authMiddleware, patchGuard, savController.patchTicket);
 router.put('/:id/status',              canWrite, savController.updateStatus);
 router.post('/:id/reply', authMiddleware, memoryUpload.array('attachments', MAX_FILES), replyGuard, savController.reply);
 // Images collées dans l'éditeur : servent aussi aux notes privées → droit lecture.

@@ -10,7 +10,8 @@ import { APPS as LAUNCHER_APPS } from '../components/AppIcons';
 // Apps qui distinguent Lecture / Écriture (les autres n'ont qu'un droit d'accès).
 // Réception : Lecture = consulter les PO attendus ; Écriture = valider une
 // réception (écrit dans BMS).
-// SAV / Tickets : Lecture = consulter + notes internes ; Écriture = plein accès
+// SAV / Tickets : Lecture = consulter + notes internes (y compris nouveau ticket
+// en note interne et liaison d'une commande) ; Écriture = plein accès
 // (répondre au client, créer, statut, fusion, réglages).
 const WRITE_ENABLED_KEYS = new Set(['reviews', 'rewards', 'emails', 'stats', 'purchases', 'catalog', 'reception', 'stats-boutiques', 'tickets']);
 

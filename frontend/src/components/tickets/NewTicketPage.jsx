@@ -8,6 +8,7 @@ import OrderCard from './OrderCard';
 import { buildPlaceholderContext, applyPlaceholders, parseInputTags, applyInputTags, findUnresolvedTags } from './macroPlaceholders';
 import MacroInputsModal from './MacroInputsModal';
 import RichEditor from './RichEditor';
+import useTicketsAccess from './useTicketsAccess';
 import { markdownTextToHtml, isHtml, escapeHtml } from './richText';
 
 const C = {
@@ -156,6 +157,11 @@ export default function NewTicketPage() {
   };
 
   const [form, setForm] = useState(initial);
+  // Droit « Lecture + notes » : le ticket se crée avec une NOTE INTERNE seulement
+  // (rien ne part au client), sans statut ni assignation choisis. Le n° de
+  // commande, lui, reste saisissable. Le serveur applique la même règle.
+  const { canWrite } = useTicketsAccess();
+  const isPrivate = !canWrite || form.is_private;
   const [users, setUsers] = useState([]);
   const [selectedCustomer, setSelectedCustomer] = useState(null);
   const [customerOrders, setCustomerOrders] = useState([]);
@@ -450,9 +456,11 @@ export default function NewTicketPage() {
       if (form.order_tracking) fd.append('order_tracking', form.order_tracking);
       fd.append('subject', form.subject.trim());
       fd.append('body', form.body);
-      fd.append('is_private', form.is_private ? 'true' : 'false');
-      fd.append('sav_status', form.sav_status);
-      if (form.assigned_to_id) fd.append('assigned_to_id', String(form.assigned_to_id));
+      fd.append('is_private', isPrivate ? 'true' : 'false');
+      if (canWrite) {
+        fd.append('sav_status', form.sav_status);
+        if (form.assigned_to_id) fd.append('assigned_to_id', String(form.assigned_to_id));
+      }
       fd.append('agent_name', user?.name || 'SAV Youvape');
       files.forEach(f => fd.append('attachments', f));
 
@@ -485,10 +493,10 @@ export default function NewTicketPage() {
 
   // Couleurs composer
   const borderColor = form.body.length > 0
-    ? (form.is_private ? '#F6C613' : TICKETS_COLOR)
+    ? (isPrivate ? '#F6C613' : TICKETS_COLOR)
     : C.grisCL;
-  const bgColor = form.is_private ? '#FFFDE7' : '#FCFEFF';
-  const headerBg = form.is_private ? '#FFF8E1' : C.blanc;
+  const bgColor = isPrivate ? '#FFFDE7' : '#FCFEFF';
+  const headerBg = isPrivate ? '#FFF8E1' : C.blanc;
 
   const currentStatusLabel = statusMap[form.sav_status]?.label || form.sav_status || '—';
 
@@ -540,7 +548,8 @@ export default function NewTicketPage() {
             </div>
           </Field>
 
-          {/* Assigné */}
+          {/* Assigné (plein accès seulement) */}
+          {canWrite && (
           <Field label="Assigné">
             <div style={{ position: 'relative' }} ref={assignRef}>
               <div
@@ -601,6 +610,7 @@ export default function NewTicketPage() {
               )}
             </div>
           </Field>
+          )}
 
           <FieldDivider />
 
@@ -712,21 +722,29 @@ export default function NewTicketPage() {
             }}>
               {/* Header composer : choix mode */}
               <div style={{
-                padding: '10px 14px', borderBottom: `1px solid ${form.is_private ? '#F6C61340' : C.grisCL}`,
+                padding: '10px 14px', borderBottom: `1px solid ${isPrivate ? '#F6C61340' : C.grisCL}`,
                 display: 'flex', alignItems: 'center', gap: 12, fontSize: 13,
                 background: headerBg, borderRadius: '12px 12px 0 0',
               }}>
+                {!canWrite ? (
+                  <span
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 700, color: '#92650A' }}
+                    title="Votre accès au SAV permet les notes internes, pas les messages au client"
+                  >
+                    🔒 Note privée
+                  </span>
+                ) : (
                 <div style={{ position: 'relative' }} ref={modeRef}>
                   <button
                     onClick={() => setModeOpen(o => !o)}
                     style={{
                       display: 'inline-flex', alignItems: 'center', gap: 6,
-                      fontWeight: 700, color: form.is_private ? '#92650A' : C.grisTF,
+                      fontWeight: 700, color: isPrivate ? '#92650A' : C.grisTF,
                       background: 'none', border: 'none', cursor: 'pointer',
                       fontFamily: 'Lato, sans-serif', fontSize: 13, padding: 0,
                     }}
                   >
-                    {form.is_private ? '🔒 Note privée' : '✉️ Réponse publique'}
+                    {isPrivate ? '🔒 Note privée' : '✉️ Réponse publique'}
                     <Ic.Chev color={C.grisM} />
                   </button>
                   {modeOpen && (
@@ -740,25 +758,26 @@ export default function NewTicketPage() {
                         onClick={() => { set('is_private', false); setModeOpen(false); }}
                         style={{
                           width: '100%', textAlign: 'left', padding: '10px 14px',
-                          background: !form.is_private ? `${TICKETS_COLOR}12` : 'transparent',
+                          background: !isPrivate ? `${TICKETS_COLOR}12` : 'transparent',
                           border: 'none', cursor: 'pointer', fontFamily: 'Lato, sans-serif',
-                          fontSize: 13, color: C.grisTF, fontWeight: !form.is_private ? 700 : 400,
+                          fontSize: 13, color: C.grisTF, fontWeight: !isPrivate ? 700 : 400,
                         }}
                       >✉️ Réponse publique</button>
                       <button
                         onClick={() => { set('is_private', true); setModeOpen(false); }}
                         style={{
                           width: '100%', textAlign: 'left', padding: '10px 14px',
-                          background: form.is_private ? '#FFF8E1' : 'transparent',
+                          background: isPrivate ? '#FFF8E1' : 'transparent',
                           border: 'none', cursor: 'pointer', fontFamily: 'Lato, sans-serif',
-                          fontSize: 13, color: C.grisTF, fontWeight: form.is_private ? 700 : 400,
+                          fontSize: 13, color: C.grisTF, fontWeight: isPrivate ? 700 : 400,
                           borderTop: `1px solid ${C.grisCL}`,
                         }}
                       >🔒 Note privée</button>
                     </div>
                   )}
                 </div>
-                {!form.is_private && form.customer_email && (
+                )}
+                {!isPrivate && form.customer_email && (
                   <>
                     <span style={{ color: C.grisF }}>À</span>
                     <span style={{
@@ -777,7 +796,7 @@ export default function NewTicketPage() {
                   value={form.body}
                   onChange={(html) => set('body', html)}
                   onStateChange={setFmt}
-                  placeholder={form.is_private ? 'Note interne au sujet de ce client…' : 'Premier message envoyé au client…'}
+                  placeholder={isPrivate ? 'Note interne au sujet de ce client…' : 'Premier message envoyé au client…'}
                 />
               </div>
 
@@ -926,7 +945,9 @@ export default function NewTicketPage() {
                 }}
               >Annuler</button>
 
-              {/* Bouton Appliquer une macro */}
+              {/* Bouton Appliquer une macro (une macro peut fixer le statut :
+                  plein accès seulement) */}
+              {canWrite && (
               <div style={{ position: 'relative' }} ref={macroRef}>
                 <button
                   onClick={() => setMacroOpen(o => !o)}
@@ -988,6 +1009,7 @@ export default function NewTicketPage() {
                   </div>
                 )}
               </div>
+              )}
 
               <div style={{ flex: 1 }} />
 
@@ -999,17 +1021,18 @@ export default function NewTicketPage() {
                   style={{
                     display: 'inline-flex', alignItems: 'center', gap: 7,
                     background: sending ? C.grisM : `linear-gradient(155deg, ${TICKETS_COLOR}, ${shade(TICKETS_COLOR, -0.2)})`,
-                    color: '#fff', border: 'none', borderRadius: '8px 0 0 8px', padding: '8px 16px',
+                    color: '#fff', border: 'none', borderRadius: canWrite ? '8px 0 0 8px' : 8, padding: '8px 16px',
                     fontSize: 13, fontWeight: 700, cursor: sending ? 'not-allowed' : 'pointer',
                     fontFamily: 'Lato, sans-serif',
                     boxShadow: sending ? 'none' : `0 4px 12px ${TICKETS_COLOR}40, 0 1px 0 rgba(255,255,255,0.4) inset`,
                     borderRight: '1px solid rgba(255,255,255,0.25)',
                   }}
                 >
-                  <Ic.Send /> {sending ? 'Création…' : (
+                  <Ic.Send /> {sending ? 'Création…' : !canWrite ? 'Créer avec cette note' : (
                     <span>Envoyer comme <strong style={{ fontWeight: 800 }}>{currentStatusLabel}</strong></span>
                   )}
                 </button>
+                {canWrite && (
                 <button
                   onClick={() => setStatusOpen(o => !o)}
                   disabled={sending}
@@ -1026,6 +1049,7 @@ export default function NewTicketPage() {
                     <Ic.Chev color="#fff" size={12} />
                   </span>
                 </button>
+                )}
                 {statusOpen && (
                   <div style={{
                     position: 'absolute', bottom: '100%', right: 0, marginBottom: 6, zIndex: 200,

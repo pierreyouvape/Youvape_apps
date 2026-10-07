@@ -1809,7 +1809,8 @@ function FieldDivider() {
 function TicketFieldsPanel({ ticket, onFieldChange, users, mobile = false }) {
   const navigate = useNavigate();
   const { canWrite } = useTicketsAccess();
-  const set = (k, v) => { if (canWrite) onFieldChange(k, v); };
+  // Lecture seule : seul le n° de commande se modifie (lier / délier).
+  const set = (k, v) => { if (canWrite || k === 'order_id') onFieldChange(k, v); };
 
   const customerName = ticket.customer_name || '';
   const parts = customerName.trim().split(' ');
@@ -1981,7 +1982,9 @@ function TicketFieldsPanel({ ticket, onFieldChange, users, mobile = false }) {
         </Field>
       )}
 
-      {/* N° commande */}
+      </fieldset>
+
+      {/* N° commande — hors du fieldset : lier une commande est permis en lecture seule */}
       <Field
         label="N° de commande"
         hint={ticket.order_id ? 'voir' : null}
@@ -1997,6 +2000,7 @@ function TicketFieldsPanel({ ticket, onFieldChange, users, mobile = false }) {
         />
       </Field>
 
+      <fieldset disabled={!canWrite} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
       {/* N° suivi */}
       <Field
         label="N° de suivi"
@@ -3440,8 +3444,8 @@ export default function TicketDetail({ ticketId }) {
         {!isMobile && (
           <CustomerPanel
             ticket={ticket}
-            onAssignOrder={canWrite ? handleAssignOrder : undefined}
-            onUnassignOrder={canWrite ? handleUnassignOrder : undefined}
+            onAssignOrder={handleAssignOrder}
+            onUnassignOrder={handleUnassignOrder}
             onMerge={canWrite ? () => setMergeOpen(true) : undefined}
           />
         )}
@@ -3458,8 +3462,8 @@ export default function TicketDetail({ ticketId }) {
             <DrawerHeader title="Fiche client" onClose={() => setCustomerOpen(false)} />
             <CustomerPanel
               ticket={ticket}
-              onAssignOrder={canWrite ? handleAssignOrder : undefined}
-              onUnassignOrder={canWrite ? handleUnassignOrder : undefined}
+              onAssignOrder={handleAssignOrder}
+              onUnassignOrder={handleUnassignOrder}
               onMerge={canWrite ? () => setMergeOpen(true) : undefined}
               mobile
             />

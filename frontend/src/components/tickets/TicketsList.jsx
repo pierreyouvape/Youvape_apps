@@ -711,8 +711,9 @@ function BulkSpamModal({ tickets, token, onClose, onDone }) {
 export default function TicketsList({ activeView, views = [], onRefresh, refreshTick, autoRefresh, onBusyChange, isMobile = false, onOpenViews }) {
   const navigate = useNavigate();
   const { openTicket, startPlay, openNewDraft } = useOpenTickets();
-  // Lecture seule : ni création de ticket, ni sélection pour actions groupées
-  // (assignation, statut, fusion, spam relèvent toutes du plein accès).
+  // Lecture seule : pas de sélection pour actions groupées (assignation,
+  // statut, fusion, spam relèvent toutes du plein accès). La création reste
+  // ouverte : NewTicketPage la limite à une note interne.
   const { canWrite } = useTicketsAccess();
   const [tickets, setTickets] = useState([]);
   const [total, setTotal] = useState(0);
@@ -954,7 +955,6 @@ export default function TicketsList({ activeView, views = [], onRefresh, refresh
           </div>
         )}
         {/* Bouton Nouveau ticket (icône seule sur mobile pour gagner de la place) */}
-        {canWrite && (
         <button
           onClick={() => openNewDraft()}
           style={{
@@ -972,7 +972,6 @@ export default function TicketsList({ activeView, views = [], onRefresh, refresh
         >
           <IconPlus />{!isMobile && ' Nouveau ticket'}
         </button>
-        )}
       </header>
 
       {/* ── Vue header ──────────────────────────────────────────── */}
