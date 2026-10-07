@@ -846,6 +846,7 @@ async function addLine(sessionId, { productId, qty, unitPrice }, db = pool) {
 
 module.exports = {
   plafonnerEnvoi,
+  trouverProduitBms,
   historiqueReceptions,
   addLine,
   refreshFromBms,

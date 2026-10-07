@@ -3,6 +3,7 @@ const bmsApiModel = require('./bmsApiModel');
 const parserRegistry = require('../parsers');
 const supplierRefModel = require('./supplierRefModel');
 const { normalizeVerifiedPrice } = require('../utils/verifiedPrice');
+const receptionSessionModel = require('./receptionSessionModel');
 
 // Warehouse ID principal BMS (Entrepot)
 const BMS_WAREHOUSE_ID = 270;
@@ -190,6 +191,318 @@ const purchaseOrderModel = {
     };
   },
 
+  /**
+   * Insère UNE ligne produit dans une commande et renvoie ce qu'il faut à
+   * buildBmsItems (sku, conditionnements). Partagé par la création et par le
+   * complément d'une commande existante (addItems) : les deux doivent écrire
+   * exactement la même ligne, sans quoi un produit ajouté après coup serait
+   * compté autrement que ses voisins.
+   */
+  insertProductLine: async (client, orderId, supplierId, item, orderInPacks) => {
+    // Récupérer le produit interne (product_id peut être wp_product_id ou id interne).
+    // L'import PDF envoie un wp_product_id : on le prioritise, sinon un wp_product_id
+    // qui coïncide avec l'id interne d'un AUTRE produit (collision) matche le mauvais
+    // produit et fait insérer un SKU erroné → 500 opaque côté BMS.
+    const productResult = await client.query(
+      `SELECT p.id, p.sku, p.wc_cog_cost, ps.pack_qty
+       FROM products p
+       LEFT JOIN product_suppliers ps ON ps.product_id = p.id AND ps.supplier_id = $2
+       WHERE p.wp_product_id = $1 OR p.id = $1
+       ORDER BY CASE WHEN p.wp_product_id = $1 THEN 0 ELSE 1 END
+       LIMIT 1`,
+      [item.product_id, supplierId]
+    );
+    const product = productResult.rows[0];
+    if (!product) {
+      throw new Error(`Produit introuvable pour product_id=${item.product_id}`);
+    }
+    const sku = product.sku || null;
+    // Conditionnement CHOISI pour cette ligne (« 4 packs de 5 », ou « par
+    // 1 »), sinon celui du catalogue. L'invariant
+    // qty_ordered × units_per_qty = pièces vaut dans les deux cas — c'est
+    // lui que lisent la réception, la valorisation de stock et le fil de
+    // vie.
+    const packChoisi = purchaseOrderModel.packChoisi(item.units_per_qty);
+    const packQty = packChoisi !== null ? packChoisi : (parseInt(product.pack_qty) || 1);
+    // Si unit_price est fourni (meme 0), l'utiliser. Sinon fallback sur wc_cog_cost.
+    // 'unit_price' in item permet de distinguer "non fourni" de "explicitement null" (import PDF sans prix)
+    const unitPrice = ('unit_price' in item && item.unit_price !== undefined)
+      ? item.unit_price
+      : (product?.wc_cog_cost || 0);
+
+    const discountPercent = ('discount_percent' in item && item.discount_percent !== undefined)
+      ? parseFloat(item.discount_percent) || 0
+      : 0;
+
+    const insertedItem = await client.query(`
+      INSERT INTO purchase_order_items (
+        purchase_order_id, product_id, supplier_sku, product_name,
+        qty_ordered, unit_price, discount_percent, stock_before, theoretical_need, supposed_need,
+        units_per_qty
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+      RETURNING *
+    `, [
+      orderId,
+      product.id,
+      item.supplier_sku || sku || null,
+      item.product_name,
+      item.qty_ordered,
+      unitPrice || null,
+      discountPercent,
+      item.stock_before || null,
+      item.theoretical_need || null,
+      item.supposed_need || null,
+      packChoisi !== null ? packChoisi : (orderInPacks ? packQty : 1)
+    ]);
+
+    return {
+      ...insertedItem.rows[0],
+      sku: sku,
+      unit_price: unitPrice,
+      discount_percent: discountPercent,
+      pack_qty: packQty,
+      // Le conditionnement du CATALOGUE, distinct de celui qu'on a choisi.
+      // BMS imposera le sien quoi qu'on envoie : c'est lui qui sert à
+      // exprimer le prix du lot. Les confondre remettait le prix à la
+      // pièce dans une case de prix de lot — 3,00 € au lieu de 15,00 €.
+      catalogue_pack_qty: parseInt(product.pack_qty) || 1
+    };
+  },
+
+  // Enregistrer les réfs mappées à la main dans l'import PDF, avec le conditionnement
+  // saisi. Stockées sur le produit exact (variation ou simple), pas le parent.
+  // Une réf portée par un autre produit n'est déplacée que si l'écran l'a
+  // confirmé (move) ; sinon elle reste où elle est, la commande passe quand même.
+  saveNewSupplierSkus: async (client, supplierId, entries) => {
+    for (const entry of entries || []) {
+      if (!entry.supplier_sku || !String(entry.supplier_sku).trim()) continue;
+      // wp_product_id prioritaire : un wp_product_id égal à l'id interne d'un AUTRE
+      // produit rattachait la réf au mauvais produit (cas des résistances Nautilus).
+      const resolveResult = await client.query(`
+        SELECT id FROM products WHERE wp_product_id = $1 OR id = $1
+        ORDER BY CASE WHEN wp_product_id = $1 THEN 0 ELSE 1 END
+        LIMIT 1
+      `, [entry.product_id]);
+      const productId = resolveResult.rows[0]?.id;
+      if (!productId) continue;
+
+      try {
+        await client.query('SAVEPOINT save_ref');
+        await supplierRefModel.save({
+          supplierId,
+          productId,
+          supplierSku: entry.supplier_sku,
+          packQty: entry.pack_qty,
+          move: !!entry.move,
+        }, client);
+        await client.query('RELEASE SAVEPOINT save_ref');
+      } catch (err) {
+        await client.query('ROLLBACK TO SAVEPOINT save_ref');
+        if (err.code !== 'REF_TAKEN') throw err;
+        console.warn(`[import] réf ${entry.supplier_sku} non enregistrée : ${err.message}`);
+      }
+    }
+  },
+
+  /**
+   * La commande déjà créée pour ce numéro de document chez ce fournisseur, ou
+   * null. Sert à l'import : redéposer le même document propose de COMPLÉTER
+   * la commande au lieu d'en créer une seconde.
+   */
+  findExistingForImport: async (supplierId, orderNumber) => {
+    if (!supplierId || !orderNumber) return null;
+    const { rows } = await pool.query(`
+      SELECT po.id, po.order_number, po.status, po.bms_po_id, po.bms_reference
+      FROM purchase_orders po
+      WHERE po.supplier_id = $1 AND po.order_number = $2 AND po.status <> 'cancelled'
+      ORDER BY po.id DESC
+      LIMIT 1
+    `, [supplierId, String(orderNumber)]);
+    const order = rows[0];
+    if (!order) return null;
+    const items = await pool.query(`
+      SELECT poi.product_id, p.wp_product_id
+      FROM purchase_order_items poi
+      JOIN products p ON p.id = poi.product_id
+      WHERE poi.purchase_order_id = $1 AND poi.item_type IS DISTINCT FROM 'discount'
+    `, [order.id]);
+    return {
+      ...order,
+      total_items: items.rows.length,
+      product_ids: items.rows.map(r => r.product_id),
+      wp_product_ids: items.rows.map(r => r.wp_product_id).filter(Boolean),
+    };
+  },
+
+  /**
+   * Complète une commande existante avec les produits qui n'y sont pas encore.
+   *
+   * Cas d'usage : à l'import, une partie des lignes n'a pas pu être liée parce
+   * que le produit n'existait pas encore. Une fois les fiches créées, on
+   * redépose le même document : les produits déjà présents sont ignorés, les
+   * autres sont ajoutés.
+   *
+   * Si la commande est dans BMS, chaque ligne y est AJOUTÉE AU BON EXISTANT
+   * (POST /v2/purchase-orders/{id}/items, en pièces et conditionnement 1 comme
+   * toutes les autres) AVANT d'être écrite chez nous : la synchro remplace nos
+   * lignes par celles de BMS, une ligne absente de BMS disparaîtrait au
+   * passage suivant. Une ligne que BMS refuse (produit pas encore créé
+   * là-bas) n'est donc pas écrite non plus : redéposer le document plus tard
+   * la reprendra.
+   */
+  addItems: async (orderId, data) => {
+    const { rows: [order] } = await pool.query(`
+      SELECT po.*, s.code AS supplier_code, s.bms_id AS bms_supplier_id
+      FROM purchase_orders po
+      JOIN suppliers s ON s.id = po.supplier_id
+      WHERE po.id = $1
+    `, [orderId]);
+    if (!order) {
+      const err = new Error('Commande non trouvée');
+      err.status = 404;
+      throw err;
+    }
+    if (order.status === 'cancelled') {
+      throw new Error('Cette commande est annulée : impossible de la compléter.');
+    }
+    if (data.supplier_id && parseInt(data.supplier_id) !== order.supplier_id) {
+      throw new Error('Le document ne vient pas du fournisseur de cette commande.');
+    }
+
+    const orderInPacks = parserRegistry.skipsPackQty(order.supplier_code);
+    const skipPackQty = orderInPacks;
+
+    // Produits déjà présents : on ne les reprend pas (ni leurs quantités, ni
+    // leurs prix, qui ont pu être corrigés depuis dans BMS).
+    const { rows: present } = await pool.query(`
+      SELECT poi.product_id, p.wp_product_id
+      FROM purchase_order_items poi
+      JOIN products p ON p.id = poi.product_id
+      WHERE poi.purchase_order_id = $1
+    `, [orderId]);
+    const presentIds = new Set(present.map(r => r.product_id));
+
+    const added = [];
+    const alreadyPresent = [];
+    const failed = [];
+
+    for (const item of (data.items || [])) {
+      if (item.item_type === 'discount') continue;
+      const label = item.product_name || `produit ${item.product_id}`;
+
+      const { rows: [product] } = await pool.query(`
+        SELECT id, sku, product_type FROM products
+        WHERE wp_product_id = $1 OR id = $1
+        ORDER BY CASE WHEN wp_product_id = $1 THEN 0 ELSE 1 END
+        LIMIT 1
+      `, [item.product_id]);
+      if (!product) {
+        failed.push({ name: label, error: 'produit introuvable' });
+        continue;
+      }
+      if (presentIds.has(product.id)) {
+        alreadyPresent.push({ name: label });
+        continue;
+      }
+
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        const line = await purchaseOrderModel.insertProductLine(
+          client, orderId, order.supplier_id, item, orderInPacks
+        );
+
+        if (order.bms_po_id) {
+          if (!line.sku) throw new Error('produit sans SKU, BMS ne peut pas le référencer');
+          const [bmsItem] = purchaseOrderModel.buildBmsItems([line], skipPackQty);
+          if (!bmsItem.price) throw new Error('prix manquant');
+          // La remise de la ligne est portée dans le prix : la route d'ajout de
+          // ligne n'est éprouvée que sur qty / qty_pack / price.
+          const remise = parseFloat(bmsItem.discount_percent) || 0;
+          const prixNet = bmsItem.price * (1 - remise / 100);
+          const bmsProductId = await receptionSessionModel.trouverProduitBms(
+            line.sku, order.bms_supplier_id
+          );
+          // Écrit dans BMS EN DERNIER : si cet appel échoue, la transaction
+          // locale est annulée et rien n'est à moitié fait.
+          await bmsApiModel.apiCall(
+            `/v2/purchase-orders/${order.bms_po_id}/items`, 'POST',
+            { product_id: bmsProductId, qty: bmsItem.qty, qty_pack: 1, price: Math.round(prixNet * 10000) / 10000 },
+          );
+        }
+
+        await client.query('COMMIT');
+        presentIds.add(product.id);
+        added.push({ name: label, sku: line.sku, qty: line.qty_ordered });
+      } catch (e) {
+        await client.query('ROLLBACK');
+        failed.push({ name: label, sku: product.sku, error: e.message });
+      } finally {
+        client.release();
+      }
+    }
+
+    // Les réfs fournisseur mappées à la main valent aussi pour les lignes
+    // déjà présentes : elles servent aux prochains imports.
+    if (data.new_supplier_skus && data.new_supplier_skus.length > 0) {
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        await purchaseOrderModel.saveNewSupplierSkus(client, order.supplier_id, data.new_supplier_skus);
+        await client.query('COMMIT');
+      } catch (e) {
+        await client.query('ROLLBACK');
+        console.warn(`[import] réfs non enregistrées sur la commande ${orderId} : ${e.message}`);
+      } finally {
+        client.release();
+      }
+    }
+
+    if (added.length > 0) {
+      // Totaux : nombre de lignes et quantités recomptés chez nous ; le montant
+      // TTC vient de BMS quand la commande y est (lui seul connaît le taux de
+      // TVA ligne à ligne), sinon c'est le HT des lignes, comme à la création.
+      const { rows: [tot] } = await pool.query(`
+        SELECT
+          COUNT(*) FILTER (WHERE item_type IS DISTINCT FROM 'discount') AS nb,
+          COALESCE(SUM(qty_ordered) FILTER (WHERE item_type IS DISTINCT FROM 'discount'), 0) AS qty,
+          COALESCE(SUM(
+            CASE WHEN item_type = 'discount' THEN unit_price
+                 ELSE qty_ordered * COALESCE(unit_price, 0) * (1 - COALESCE(discount_percent, 0) / 100)
+            END
+          ), 0) AS ht
+        FROM purchase_order_items WHERE purchase_order_id = $1
+      `, [orderId]);
+      let totalAmount = parseFloat(tot.ht);
+      if (order.bms_po_id) {
+        try {
+          const relu = await bmsApiModel.apiCall(`/supplier/purchase-orders/${order.bms_po_id}`);
+          const po = relu.data || relu;
+          const ttc = parseFloat(po.grandtotal);
+          totalAmount = Number.isFinite(ttc) ? ttc : null;
+        } catch (e) {
+          console.warn(`[BMS] totaux du bon ${order.bms_po_id} illisibles : ${e.message}`);
+          totalAmount = null;
+        }
+      }
+      await pool.query(`
+        UPDATE purchase_orders
+        SET total_items = $2, total_qty = $3,
+            total_amount = COALESCE($4, total_amount),
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = $1
+      `, [orderId, parseInt(tot.nb), parseInt(tot.qty), totalAmount]);
+    }
+
+    return {
+      order: await purchaseOrderModel.getById(orderId),
+      added,
+      already_present: alreadyPresent,
+      failed,
+    };
+  },
+
   // Créer une commande
   /**
    * Le conditionnement explicitement demandé pour une ligne, ou null.
@@ -345,77 +658,12 @@ const purchaseOrderModel = {
             continue;
           }
 
-          // Récupérer le produit interne (product_id peut être wp_product_id ou id interne).
-          // L'import PDF envoie un wp_product_id : on le prioritise, sinon un wp_product_id
-          // qui coïncide avec l'id interne d'un AUTRE produit (collision) matche le mauvais
-          // produit et fait insérer un SKU erroné → 500 opaque côté BMS.
-          const productResult = await client.query(
-            `SELECT p.id, p.sku, p.wc_cog_cost, ps.pack_qty
-             FROM products p
-             LEFT JOIN product_suppliers ps ON ps.product_id = p.id AND ps.supplier_id = $2
-             WHERE p.wp_product_id = $1 OR p.id = $1
-             ORDER BY CASE WHEN p.wp_product_id = $1 THEN 0 ELSE 1 END
-             LIMIT 1`,
-            [item.product_id, data.supplier_id]
+          const line = await purchaseOrderModel.insertProductLine(
+            client, order.id, data.supplier_id, item, orderInPacks
           );
-          const product = productResult.rows[0];
-          if (!product) {
-            throw new Error(`Produit introuvable pour product_id=${item.product_id}`);
-          }
-          const internalProductId = product.id;
-          const sku = product.sku || null;
-          // Conditionnement CHOISI pour cette ligne (« 4 packs de 5 », ou « par
-          // 1 »), sinon celui du catalogue. L'invariant
-          // qty_ordered × units_per_qty = pièces vaut dans les deux cas — c'est
-          // lui que lisent la réception, la valorisation de stock et le fil de
-          // vie.
-          const packChoisi = purchaseOrderModel.packChoisi(item.units_per_qty);
-          const packQty = packChoisi !== null ? packChoisi : (parseInt(product.pack_qty) || 1);
-          // Si unit_price est fourni (meme 0), l'utiliser. Sinon fallback sur wc_cog_cost.
-          // 'unit_price' in item permet de distinguer "non fourni" de "explicitement null" (import PDF sans prix)
-          const unitPrice = ('unit_price' in item && item.unit_price !== undefined)
-            ? item.unit_price
-            : (product?.wc_cog_cost || 0);
-
-          const discountPercent = ('discount_percent' in item && item.discount_percent !== undefined)
-            ? parseFloat(item.discount_percent) || 0
-            : 0;
-
-          const itemQuery = `
-            INSERT INTO purchase_order_items (
-              purchase_order_id, product_id, supplier_sku, product_name,
-              qty_ordered, unit_price, discount_percent, stock_before, theoretical_need, supposed_need,
-              units_per_qty
-            )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-            RETURNING *
-          `;
-          const insertedItem = await client.query(itemQuery, [
-            order.id,
-            internalProductId,
-            item.supplier_sku || sku || null,
-            item.product_name,
-            item.qty_ordered,
-            unitPrice || null,
-            discountPercent,
-            item.stock_before || null,
-            item.theoretical_need || null,
-            item.supposed_need || null,
-            packChoisi !== null ? packChoisi : (orderInPacks ? packQty : 1)
-          ]);
-
-          itemsWithSku.push({
-            ...insertedItem.rows[0],
-            sku: sku,
-            unit_price: unitPrice,
-            discount_percent: discountPercent,
-            pack_qty: packQty,
-            // Le conditionnement du CATALOGUE, distinct de celui qu'on a choisi.
-            // BMS imposera le sien quoi qu'on envoie : c'est lui qui sert à
-            // exprimer le prix du lot. Les confondre remettait le prix à la
-            // pièce dans une case de prix de lot — 3,00 € au lieu de 15,00 €.
-            catalogue_pack_qty: parseInt(product.pack_qty) || 1
-          });
+          itemsWithSku.push(line);
+          const unitPrice = line.unit_price;
+          const discountPercent = line.discount_percent;
 
           totalItems++;
           totalQty += item.qty_ordered;
@@ -433,40 +681,8 @@ const purchaseOrderModel = {
         `, [order.id, totalItems, totalQty, totalAmount]);
       }
 
-      // Enregistrer les réfs mappées à la main dans l'import PDF, avec le conditionnement
-      // saisi. Stockées sur le produit exact (variation ou simple), pas le parent.
-      // Une réf portée par un autre produit n'est déplacée que si l'écran l'a
-      // confirmé (move) ; sinon elle reste où elle est, la commande passe quand même.
-      if (data.new_supplier_skus && data.new_supplier_skus.length > 0) {
-        for (const entry of data.new_supplier_skus) {
-          if (!entry.supplier_sku || !String(entry.supplier_sku).trim()) continue;
-          // wp_product_id prioritaire : un wp_product_id égal à l'id interne d'un AUTRE
-          // produit rattachait la réf au mauvais produit (cas des résistances Nautilus).
-          const resolveResult = await client.query(`
-            SELECT id FROM products WHERE wp_product_id = $1 OR id = $1
-            ORDER BY CASE WHEN wp_product_id = $1 THEN 0 ELSE 1 END
-            LIMIT 1
-          `, [entry.product_id]);
-          const productId = resolveResult.rows[0]?.id;
-          if (!productId) continue;
-
-          try {
-            await client.query('SAVEPOINT save_ref');
-            await supplierRefModel.save({
-              supplierId: data.supplier_id,
-              productId,
-              supplierSku: entry.supplier_sku,
-              packQty: entry.pack_qty,
-              move: !!entry.move,
-            }, client);
-            await client.query('RELEASE SAVEPOINT save_ref');
-          } catch (err) {
-            await client.query('ROLLBACK TO SAVEPOINT save_ref');
-            if (err.code !== 'REF_TAKEN') throw err;
-            console.warn(`[import] réf ${entry.supplier_sku} non enregistrée : ${err.message}`);
-          }
-        }
-      }
+      // Réfs mappées à la main dans l'import PDF (cf. saveNewSupplierSkus)
+      await purchaseOrderModel.saveNewSupplierSkus(client, data.supplier_id, data.new_supplier_skus);
 
       // Si send_to_bms est true, créer la commande dans BMS
       if (data.send_to_bms) {

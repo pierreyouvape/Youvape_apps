@@ -406,6 +406,23 @@ const purchasesController = {
     }
   },
 
+  // POST /api/purchases/orders/:id/add-items
+  // Complète une commande existante avec les produits qui n'y sont pas encore
+  // (redépôt du même document à l'import, une fois les fiches manquantes créées).
+  addOrderItems: async (req, res) => {
+    try {
+      const { items } = req.body;
+      if (!items || !Array.isArray(items) || items.length === 0) {
+        return res.status(400).json({ success: false, error: 'items requis (liste non vide)' });
+      }
+      const result = await purchaseOrderModel.addItems(parseInt(req.params.id), req.body);
+      res.json({ success: true, data: result });
+    } catch (error) {
+      console.error('Erreur addOrderItems:', error);
+      res.status(error.status || 500).json({ success: false, error: error.message || 'Erreur serveur' });
+    }
+  },
+
   // PUT /api/purchases/orders/:id
   updateOrder: async (req, res) => {
     try {
@@ -704,6 +721,9 @@ const purchasesController = {
       }
 
       const result = await pdfImportModel.parsePdf(req.file.buffer, supplierId);
+      // Document déjà importé pour ce fournisseur : l'écran propose de compléter
+      // la commande existante plutôt que d'en créer une seconde.
+      result.existing_order = await purchaseOrderModel.findExistingForImport(supplierId, result.order_number);
       res.json({ success: true, data: result });
     } catch (error) {
       console.error('Erreur parsePdf:', error);

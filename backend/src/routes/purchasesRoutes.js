@@ -121,6 +121,9 @@ router.get('/orders/:id', checkPurchasesRead, purchasesController.getOrderById);
 // Verrou de bascule : voir purchasesController.bloquerPendantBascule
 router.post('/orders', checkPurchasesWrite, purchasesController.bloquerPendantBascule, purchasesController.createOrder);
 
+// Compléter une commande existante (redépôt du même document à l'import)
+router.post('/orders/:id/add-items', checkPurchasesWrite, purchasesController.bloquerPendantBascule, purchasesController.addOrderItems);
+
 // Modifier une commande (champs + lignes)
 router.put('/orders/:id', checkPurchasesWrite, purchasesController.updateOrder);
 

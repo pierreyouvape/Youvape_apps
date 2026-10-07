@@ -480,6 +480,14 @@ const ImportPdfPage = () => {
   // Produits déjà associés à une ligne : signalés dans les suggestions de recherche
   const usedProductIds = new Set(matchedItems.map(i => i.product_id));
 
+  // Document déjà importé chez ce fournisseur : on COMPLÈTE la commande existante.
+  // Les produits qu'elle contient déjà sont grisés et ne repartent pas ; seules
+  // les lignes liées depuis (produits créés entre-temps) y sont ajoutées.
+  const existingOrder = parsedData?.existing_order || null;
+  const wpInOrder = new Set(existingOrder?.wp_product_ids || []);
+  const inExistingOrder = (item) => !!existingOrder && item.matched && wpInOrder.has(item.product_id);
+  const itemsToAdd = matchedItems.filter(i => !inExistingOrder(i));
+
   // Refus BMS « décidable » : on affiche la raison et on laisse l'utilisateur choisir
   // d'envoyer la commande en l'état. Chaque acceptation renvoie les drapeaux fournis par
   // l'API (skip_missing, ignore_total_mismatch) ; un nouveau refus relance le dialogue.
@@ -582,9 +590,55 @@ const ImportPdfPage = () => {
     }
   };
 
-  const totalQty = matchedItems.reduce((sum, i) => sum + i.qty_ordered, 0);
-  const totalHtProduits = matchedItems.reduce((sum, i) => { const p = effectivePrice(i); return sum + (p ? i.qty_ordered * p : 0); }, 0);
-  const totalRemises = discountItems.reduce((sum, i) => sum + (i.unit_price || 0), 0);
+  const handleCompleteOrder = async () => {
+    if (!existingOrder || itemsToAdd.length === 0) return;
+    const num = existingOrder.order_number;
+    if (!confirm(
+      `Ajouter ${itemsToAdd.length} produit${itemsToAdd.length > 1 ? 's' : ''} à la commande ${num}` +
+      `${existingOrder.bms_po_id ? ' (et à son bon BMS)' : ''} ?\n\n` +
+      itemsToAdd.map(i => `  • ${i.product_name} × ${i.qty_ordered}`).join('\n')
+    )) return;
+    setCreating(true);
+    try {
+      const response = await axios.post(`${API_URL}/purchases/orders/${existingOrder.id}/add-items`, {
+        supplier_id: parseInt(supplierId),
+        items: itemsToAdd.map(item => ({
+          product_id: item.product_id,
+          product_name: item.product_name,
+          supplier_sku: item.supplier_sku,
+          qty_ordered: item.qty_ordered,
+          unit_price: effectivePrice(item),
+          discount_percent: item.discount || 0,
+          stock_before: item.current_stock,
+        })),
+        new_supplier_skus: newSupplierSkus,
+      }, { headers: { Authorization: `Bearer ${token}` } });
+      const { added = [], failed = [], already_present = [] } = response.data.data || {};
+      let msg = added.length
+        ? `${added.length} produit${added.length > 1 ? 's' : ''} ajouté${added.length > 1 ? 's' : ''} à la commande ${num}` +
+          `${existingOrder.bms_po_id ? ' et à son bon BMS' : ''}.`
+        : `Aucun produit ajouté à la commande ${num}.`;
+      if (already_present.length) msg += `\n\n${already_present.length} déjà présent(s), ignoré(s).`;
+      if (failed.length) {
+        msg += `\n\n${failed.length} produit(s) NON ajouté(s) — redéposez le document une fois corrigé :\n` +
+          failed.map(f => `  • ${f.name}${f.sku ? ` (${f.sku})` : ''} : ${f.error}`).join('\n');
+      }
+      alert(msg);
+      if (failed.length === 0) navigate('/purchases/commandes');
+    } catch (err) {
+      console.error('Erreur complément:', err);
+      alert(err.response?.data?.error || 'Erreur lors du complément de la commande');
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  // En mode complément, les totaux portent sur les seules lignes ajoutées
+  // (les remises du document sont déjà dans la commande).
+  const totalLines = existingOrder ? itemsToAdd : matchedItems;
+  const totalQty = totalLines.reduce((sum, i) => sum + i.qty_ordered, 0);
+  const totalHtProduits = totalLines.reduce((sum, i) => { const p = effectivePrice(i); return sum + (p ? i.qty_ordered * p : 0); }, 0);
+  const totalRemises = existingOrder ? 0 : discountItems.reduce((sum, i) => sum + (i.unit_price || 0), 0);
   const totalHt = totalHtProduits + totalRemises;
   const totalTtc = totalHt * 1.2;
   const fmt = n => new Intl.NumberFormat('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
@@ -867,7 +921,19 @@ const ImportPdfPage = () => {
                     </div>
                   ))}
 
-                  {parsedData.duplicate_warning && (
+                  {existingOrder && (
+                    <div style={{ marginTop: 14, padding: '12px 14px', background: '#EEF2FF', borderRadius: 8, border: '1px solid #C7D2FE', fontSize: 13, color: '#3730A3', lineHeight: 1.5 }}>
+                      <strong>Complément de la commande {existingOrder.order_number}</strong>
+                      {' '}({existingOrder.total_items} produit{existingOrder.total_items > 1 ? 's' : ''} déjà dedans
+                      {existingOrder.bms_po_id ? `, bon BMS n° ${existingOrder.bms_po_id}` : ', pas encore dans BMS'}).
+                      <br />
+                      Les lignes grisées y sont déjà et ne seront pas renvoyées. Seules les lignes liées
+                      à un produit absent de la commande y seront ajoutées
+                      {existingOrder.bms_po_id ? ', dans notre commande comme dans le bon BMS' : ''}.
+                    </div>
+                  )}
+
+                  {parsedData.duplicate_warning && !existingOrder && (
                     <div style={{ marginTop: 14, padding: '10px 14px', background: '#FFF4E0', borderRadius: 8, border: '1px solid #F5D78E', fontSize: 13, color: '#92400e', display: 'flex', gap: 10 }}>
                       ⚠️ {parsedData.duplicate_warning}
                     </div>
@@ -992,9 +1058,13 @@ const ImportPdfPage = () => {
 
                           const lineTotal = lineTotalOf(item);
                           const mismatch = lineMismatch(item);
+                          const dejaDedans = inExistingOrder(item);
 
                           return (
-                            <tr key={idx} style={{ background: mismatch ? '#FDECEE' : (item.matched ? C.blanc : '#FFFBEB') }}>
+                            <tr key={idx} style={{
+                              background: dejaDedans ? C.grisTL : (mismatch ? '#FDECEE' : (item.matched ? C.blanc : '#FFFBEB')),
+                              opacity: dejaDedans ? 0.55 : 1,
+                            }}>
                               <td style={{ ...cell, textAlign: 'center' }}>
                                 <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: item.matched ? '#2A8049' : C.orange }} />
                               </td>
@@ -1019,6 +1089,11 @@ const ImportPdfPage = () => {
                                   <div>
                                     <div style={{ fontWeight: 600, color: C.grisTF, lineHeight: 1.3, marginBottom: 2 }}>{item.product_name}</div>
                                     {item.product_sku && <div style={{ fontSize: 11.5, color: C.grisM, fontFamily: 'monospace' }}>SKU: {item.product_sku}</div>}
+                                    {dejaDedans && (
+                                      <div style={{ marginTop: 3, display: 'inline-block', fontSize: 11, fontWeight: 700, color: '#3730A3', background: '#EEF2FF', border: '1px solid #C7D2FE', borderRadius: 5, padding: '1px 6px' }}>
+                                        déjà dans la commande
+                                      </div>
+                                    )}
                                     {item.pack_warning && (
                                       <div
                                         title={item.pack_warning}
@@ -1197,7 +1272,7 @@ const ImportPdfPage = () => {
                 <Card>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
                     <div style={{ fontSize: 13, color: C.grisF }}>
-                      <strong style={{ color: C.grisTF }}>{matchedItems.length}</strong> article{matchedItems.length > 1 ? 's' : ''} prêt{matchedItems.length > 1 ? 's' : ''}
+                      <strong style={{ color: C.grisTF }}>{totalLines.length}</strong> article{totalLines.length > 1 ? 's' : ''} {existingOrder ? 'à ajouter' : `prêt${totalLines.length > 1 ? 's' : ''}`}
                       <span style={{ color: C.grisCL, margin: '0 8px' }}>—</span>
                       <strong style={{ color: C.grisTF }}>{totalQty}</strong> unité{totalQty > 1 ? 's' : ''}
                       {productItems.filter(i => !i.matched).length > 0 && (
@@ -1206,6 +1281,28 @@ const ImportPdfPage = () => {
                         </span>
                       )}
                     </div>
+                    {existingOrder ? (
+                    <div style={{ display: 'flex', gap: 10 }}>
+                      <button
+                        onClick={handleCompleteOrder}
+                        disabled={creating || itemsToAdd.length === 0}
+                        style={{
+                          display: 'inline-flex', alignItems: 'center', gap: 7,
+                          background: creating || itemsToAdd.length === 0 ? C.grisCL : 'linear-gradient(155deg, #7C68F0, #5D49D6)',
+                          color: '#fff', border: 'none', borderRadius: 8,
+                          padding: '10px 18px', fontSize: 13.5, fontWeight: 800,
+                          cursor: creating || itemsToAdd.length === 0 ? 'not-allowed' : 'pointer',
+                          fontFamily: 'inherit',
+                          boxShadow: creating || itemsToAdd.length === 0 ? 'none' : '0 4px 12px rgba(110,90,230,0.4)',
+                          opacity: creating || itemsToAdd.length === 0 ? 0.7 : 1,
+                        }}
+                      >
+                        {creating ? 'Ajout…' : itemsToAdd.length === 0
+                          ? 'Rien à ajouter'
+                          : `Ajouter ${itemsToAdd.length} produit${itemsToAdd.length > 1 ? 's' : ''} à la commande ${existingOrder.order_number}`}
+                      </button>
+                    </div>
+                    ) : (
                     <div style={{ display: 'flex', gap: 10 }}>
                       <button
                         onClick={() => handleCreateOrder(false)}
@@ -1240,6 +1337,7 @@ const ImportPdfPage = () => {
                         {creating ? 'Création…' : 'Créer + Envoyer BMS'}
                       </button>
                     </div>
+                    )}
                   </div>
                 </Card>
               </>
