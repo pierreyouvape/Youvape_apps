@@ -7,6 +7,7 @@ import { formatDateUTC } from '../../utils/dateUtils';
 import { useOpenTickets } from '../../context/OpenTicketsContext';
 import { useTicketStatuses } from './useTicketStatuses';
 import { AuthContext } from '../../context/AuthContext';
+import useTicketsAccess from './useTicketsAccess';
 
 const C = {
   grisTL: '#F2F6F8', grisCL: '#E2E2E2', grisM: '#8A99A4',
@@ -710,6 +711,9 @@ function BulkSpamModal({ tickets, token, onClose, onDone }) {
 export default function TicketsList({ activeView, views = [], onRefresh, refreshTick, autoRefresh, onBusyChange, isMobile = false, onOpenViews }) {
   const navigate = useNavigate();
   const { openTicket, startPlay, openNewDraft } = useOpenTickets();
+  // Lecture seule : ni création de ticket, ni sélection pour actions groupées
+  // (assignation, statut, fusion, spam relèvent toutes du plein accès).
+  const { canWrite } = useTicketsAccess();
   const [tickets, setTickets] = useState([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -832,8 +836,8 @@ export default function TicketsList({ activeView, views = [], onRefresh, refresh
   });
 
   const onSort = (key) => setSort(prev => ({ key, dir: prev.key === key && prev.dir === 'desc' ? 'asc' : 'desc' }));
-  const onToggle = (id) => setSelected(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
-  const onToggleAll = () => setSelected(prev => prev.size === tickets.length ? new Set() : new Set(tickets.map(t => t.id)));
+  const onToggle = (id) => { if (canWrite) setSelected(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; }); };
+  const onToggleAll = () => { if (canWrite) setSelected(prev => prev.size === tickets.length ? new Set() : new Set(tickets.map(t => t.id))); };
 
   // Action groupée : applique une requête à chaque ticket sélectionné (séquentiel).
   const runBulk = useCallback(async (makeRequest) => {
@@ -950,6 +954,7 @@ export default function TicketsList({ activeView, views = [], onRefresh, refresh
           </div>
         )}
         {/* Bouton Nouveau ticket (icône seule sur mobile pour gagner de la place) */}
+        {canWrite && (
         <button
           onClick={() => openNewDraft()}
           style={{
@@ -967,6 +972,7 @@ export default function TicketsList({ activeView, views = [], onRefresh, refresh
         >
           <IconPlus />{!isMobile && ' Nouveau ticket'}
         </button>
+        )}
       </header>
 
       {/* ── Vue header ──────────────────────────────────────────── */}
@@ -1112,11 +1118,13 @@ export default function TicketsList({ activeView, views = [], onRefresh, refresh
                   <tr>
                     {/* Checkbox all */}
                     <th style={{ ...thStyle(null), padding: '14px 12px 14px 16px', width: 40 }}>
-                      <Checkbox
-                        checked={selected.size === tickets.length && tickets.length > 0}
-                        indeterminate={selected.size > 0 && selected.size < tickets.length}
-                        onChange={onToggleAll}
-                      />
+                      {canWrite && (
+                        <Checkbox
+                          checked={selected.size === tickets.length && tickets.length > 0}
+                          indeterminate={selected.size > 0 && selected.size < tickets.length}
+                          onChange={onToggleAll}
+                        />
+                      )}
                     </th>
                     {[
                       { label: 'Statut du ticket', key: 'sav_status' },
@@ -1171,7 +1179,7 @@ export default function TicketsList({ activeView, views = [], onRefresh, refresh
                         {/* Checkbox */}
                         <td style={{ ...cell, padding: '14px 12px 14px 16px', width: 40 }}
                           onClick={e => { e.stopPropagation(); onToggle(t.id); }}>
-                          <Checkbox checked={isSel} onChange={() => onToggle(t.id)} />
+                          {canWrite && <Checkbox checked={isSel} onChange={() => onToggle(t.id)} />}
                         </td>
                         {/* Statut */}
                         <td style={cell}><StatusBadge status={t.sav_status} /></td>

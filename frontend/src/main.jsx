@@ -17,6 +17,20 @@ axios.interceptors.request.use((config) => {
   return config
 })
 
+// Même chose pour `fetch` : l'app SAV l'utilise partout et ses routes
+// d'écriture exigent le jeton (droit `tickets` lecture / écriture). Seulement
+// vers NOTRE API (`/api/…`), et sans écraser un Authorization déjà posé.
+const nativeFetch = window.fetch.bind(window)
+window.fetch = (input, init = {}) => {
+  const url = typeof input === 'string' ? input : (input instanceof URL ? input.href : null)
+  const token = localStorage.getItem('token')
+  const isOurApi = url && (url.startsWith('/api/') || url.startsWith(`${window.location.origin}/api/`))
+  if (!token || !isOurApi) return nativeFetch(input, init)
+  const headers = new Headers(init.headers || {})
+  if (!headers.has('Authorization')) headers.set('Authorization', `Bearer ${token}`)
+  return nativeFetch(input, { ...init, headers })
+}
+
 createRoot(document.getElementById('root')).render(
   <StrictMode>
     <App />

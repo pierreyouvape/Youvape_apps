@@ -17,6 +17,7 @@ import RichEditor from './RichEditor';
 import { markdownTextToHtml, isHtml, sanitizeHtml, escapeHtml, decodeHtml } from './richText';
 import { useIsMobile } from '../../hooks/useIsMobile';
 import Drawer from '../Drawer';
+import useTicketsAccess from './useTicketsAccess';
 
 const C = {
   orange: '#E28F00', rouge: '#DE2020',
@@ -601,7 +602,10 @@ function ReplyComposer({
   const [conflictOverride, setConflictOverride] = useState(false);
   const locked = !!lockedBy && !lockOverridden;
   const [fmt, setFmt] = useState({ bold: false, italic: false, underline: false, bulletList: false });
-  const [isPrivate, setIsPrivate] = useState(false);
+  // Droit lecture seule : la note privée est le SEUL mode, rien ne part au client.
+  const { canWrite } = useTicketsAccess();
+  const [isPrivateChoice, setIsPrivate] = useState(false);
+  const isPrivate = !canWrite || isPrivateChoice;
   const [modeOpen, setModeOpen] = useState(false);
   const [files, setFiles] = useState([]);
   const [sending, setSending] = useState(false);
@@ -1006,7 +1010,15 @@ function ReplyComposer({
           display: 'flex', alignItems: 'center', gap: 12, fontSize: 13, color: C.grisF, flexWrap: 'wrap',
           background: headerBg, borderRadius: '12px 12px 0 0', transition: 'background 0.2s',
         }}>
-          {/* Dropdown mode */}
+          {/* Dropdown mode (absent en lecture seule : note privée imposée) */}
+          {!canWrite ? (
+            <span
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 700, color: '#92650A' }}
+              title="Votre accès au SAV permet les notes internes, pas les réponses au client"
+            >
+              🔒 Note privée
+            </span>
+          ) : (
           <div style={{ position: 'relative' }} ref={modeRef}>
             <button
               onClick={() => setModeOpen(o => !o)}
@@ -1068,6 +1080,7 @@ function ReplyComposer({
               </div>
             )}
           </div>
+          )}
 
           {!isPrivate && (
             <>
@@ -1331,7 +1344,9 @@ function ReplyComposer({
 
       {/* Footer */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 12, flexWrap: 'wrap', flexShrink: 0 }}>
-        {/* Bouton Macros + dropdown */}
+        {/* Bouton Macros + dropdown (une macro peut changer statut et sujet :
+            réservé au plein accès) */}
+        {canWrite && (
         <div style={{ position: 'relative' }} ref={macroRef}>
           <button
             onClick={() => setMacroOpen(o => !o)}
@@ -1393,6 +1408,7 @@ function ReplyComposer({
             </div>
           )}
         </div>
+        )}
         <div style={{ flex: 1 }} />
 
         {/* Dropdown "Prochain ticket / Rester sur le ticket" — visible uniquement en mode Play */}
@@ -1568,21 +1584,22 @@ function ReplyComposer({
             style={{
               display: 'inline-flex', alignItems: 'center', gap: 7,
               background: (sending || !canSend) ? C.grisM : `linear-gradient(155deg, ${TICKETS_COLOR}, ${shade(TICKETS_COLOR, -0.2)})`,
-              color: '#fff', border: 'none', borderRadius: '8px 0 0 8px', padding: '8px 16px',
+              color: '#fff', border: 'none', borderRadius: canWrite ? '8px 0 0 8px' : 8, padding: '8px 16px',
               fontSize: 13, fontWeight: 700, cursor: (sending || !canSend) ? 'not-allowed' : 'pointer',
               fontFamily: 'Lato, sans-serif',
               boxShadow: (sending || !canSend) ? 'none' : `0 4px 12px ${TICKETS_COLOR}40, 0 1px 0 rgba(255,255,255,0.4) inset`,
               borderRight: '1px solid rgba(255,255,255,0.25)',
             }}
           >
-            <Ic.Send /> {sending ? 'Envoi…' : (
+            <Ic.Send /> {sending ? 'Envoi…' : !canWrite ? 'Ajouter la note' : (
               <span>
                 {hasContent ? 'Envoyer comme ' : 'Marquer '}
                 <strong style={{ fontWeight: 800 }}>{currentStatusLabel}</strong>
               </span>
             )}
           </button>
-          {/* Partie droite : flèche dropdown */}
+          {/* Partie droite : flèche dropdown (le statut est réservé au plein accès) */}
+          {canWrite && (
           <button
             onClick={() => {
               setStatusOpen(o => {
@@ -1614,6 +1631,7 @@ function ReplyComposer({
               <Ic.Chev color="#fff" size={12} />
             </span>
           </button>
+          )}
 
           {/* Dropdown statuts (ouvre vers le HAUT) — rendu en portal pour ne pas
               être rogné par les conteneurs overflow:hidden du composer. */}
@@ -1790,7 +1808,8 @@ function FieldDivider() {
 // ─── Panneau GAUCHE ───────────────────────────────────────────────────────────
 function TicketFieldsPanel({ ticket, onFieldChange, users, mobile = false }) {
   const navigate = useNavigate();
-  const set = (k, v) => onFieldChange(k, v);
+  const { canWrite } = useTicketsAccess();
+  const set = (k, v) => { if (canWrite) onFieldChange(k, v); };
 
   const customerName = ticket.customer_name || '';
   const parts = customerName.trim().split(' ');
@@ -1839,6 +1858,9 @@ function TicketFieldsPanel({ ticket, onFieldChange, users, mobile = false }) {
       background: C.blanc, borderRight: `1px solid ${C.grisCL}`,
       height: '100%', overflowY: 'auto', padding: '20px 20px',
     }}>
+      {/* Lecture seule : un fieldset désactivé verrouille d'un coup tous les
+          champs et boutons (assignation…), sans toucher à la note en dessous. */}
+      <fieldset disabled={!canWrite} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
       {/* Demandeur */}
       <Field label="Demandeur">
         <div style={{ ...fieldInputBase, display: 'flex', alignItems: 'center', gap: 9, cursor: 'default' }}>
@@ -1990,6 +2012,8 @@ function TicketFieldsPanel({ ticket, onFieldChange, users, mobile = false }) {
             : null}
         />
       </Field>
+
+      </fieldset>
 
       {/* Note du ticket — conclusions, décisions, contexte de traitement.
           Jamais visible par le client : elle ne part dans aucun email et
@@ -2955,7 +2979,7 @@ function CustomerPanel({ ticket, onAssignOrder, onUnassignOrder, onMerge, mobile
               </button>
             ))}
           </div>
-          {!ticket.merged_into_id && (
+          {!ticket.merged_into_id && onMerge && (
             <button
               onClick={onMerge}
               style={{
@@ -3027,6 +3051,7 @@ function CustomerPanel({ ticket, onAssignOrder, onUnassignOrder, onMerge, mobile
 
 // ─── Composant principal ──────────────────────────────────────────────────────
 export default function TicketDetail({ ticketId }) {
+  const { canWrite } = useTicketsAccess();
   const navigate = useNavigate();
   const { user, token } = useContext(AuthContext);
   const tabsCtx = useOpenTickets(); // peut être null si rendu hors provider
@@ -3309,7 +3334,7 @@ export default function TicketDetail({ ticketId }) {
                 }}
                 title="Fiche client"
               >Client</button>
-              {!ticket.is_spam && (
+              {!ticket.is_spam && canWrite && (
                 <button
                   onClick={() => setSpamOpen(true)}
                   style={{
@@ -3324,7 +3349,7 @@ export default function TicketDetail({ ticketId }) {
             </>
           ) : (
             <>
-              {!ticket.merged_into_id && (
+              {!ticket.merged_into_id && canWrite && (
                 <button
                   onClick={() => setMergeOpen(true)}
                   style={{
@@ -3336,7 +3361,7 @@ export default function TicketDetail({ ticketId }) {
                   title="Fusionner ce ticket dans un autre"
                 >🔀 Fusionner</button>
               )}
-              {!ticket.is_spam && (
+              {!ticket.is_spam && canWrite && (
                 <button
                   onClick={() => setSpamOpen(true)}
                   style={{
@@ -3365,6 +3390,7 @@ export default function TicketDetail({ ticketId }) {
           <span style={{ flex: 1, fontSize: 12.5, color: '#B71D1D', fontWeight: 600, minWidth: 0 }}>
             Ticket classé en spam — hors des vues, aucun accusé de réception n'a été envoyé.
           </span>
+          {canWrite && (
           <button
             onClick={handleUnspam}
             style={{
@@ -3373,6 +3399,7 @@ export default function TicketDetail({ ticketId }) {
               cursor: 'pointer', fontFamily: 'Lato, sans-serif', flexShrink: 0,
             }}
           >↩ Ce n'est pas du spam</button>
+          )}
         </div>
       )}
 
@@ -3413,9 +3440,9 @@ export default function TicketDetail({ ticketId }) {
         {!isMobile && (
           <CustomerPanel
             ticket={ticket}
-            onAssignOrder={handleAssignOrder}
-            onUnassignOrder={handleUnassignOrder}
-            onMerge={() => setMergeOpen(true)}
+            onAssignOrder={canWrite ? handleAssignOrder : undefined}
+            onUnassignOrder={canWrite ? handleUnassignOrder : undefined}
+            onMerge={canWrite ? () => setMergeOpen(true) : undefined}
           />
         )}
       </div>
@@ -3431,9 +3458,9 @@ export default function TicketDetail({ ticketId }) {
             <DrawerHeader title="Fiche client" onClose={() => setCustomerOpen(false)} />
             <CustomerPanel
               ticket={ticket}
-              onAssignOrder={handleAssignOrder}
-              onUnassignOrder={handleUnassignOrder}
-              onMerge={() => setMergeOpen(true)}
+              onAssignOrder={canWrite ? handleAssignOrder : undefined}
+              onUnassignOrder={canWrite ? handleUnassignOrder : undefined}
+              onMerge={canWrite ? () => setMergeOpen(true) : undefined}
               mobile
             />
           </Drawer>

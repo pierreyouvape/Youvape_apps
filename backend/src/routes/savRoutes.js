@@ -11,6 +11,7 @@ const savNotificationController = require('../controllers/savNotificationControl
 const savAutomationController = require('../controllers/savAutomationController');
 const zendeskController = require('../controllers/zendeskController');
 const authMiddleware = require('../middleware/authMiddleware');
+const { checkPermission } = require('../middleware/permissionMiddleware');
 const { recordInboundFailure } = require('../utils/savInboundFailure');
 
 const UPLOAD_ROOT = path.join('/usr/src/app/uploads/sav');
@@ -38,6 +39,24 @@ const inboundUpload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: INBOUND_MAX_FILE_SIZE, files: INBOUND_MAX_FILES },
 });
+
+// ─── Deux niveaux de droit sur l'app (droit `tickets`) ───────────────────────
+// - Lecture  : consulter les tickets et écrire des NOTES INTERNES (note privée
+//              dans le fil, note du ticket, note de la fiche client). Rien ne
+//              part au client, rien d'autre ne change sur le ticket.
+// - Écriture : plein accès — répondre au client, créer un ticket, changer
+//              statut / assignation / champs, fusionner, spam, réglages.
+// Les lectures (GET) restent ouvertes comme avant : elles sont appelées aussi
+// par des EventSource, qui ne savent pas poser d'en-tête Authorization.
+const canRead  = [authMiddleware, checkPermission('tickets', 'read')];
+const canWrite = [authMiddleware, checkPermission('tickets', 'write')];
+
+// Une note privée se contente du droit lecture ; tout ce qui part au client
+// exige l'écriture. Placé APRÈS multer : `is_private` arrive dans le multipart.
+const replyGuard = (req, res, next) => {
+  const isPrivate = req.body?.is_private === 'true' || req.body?.is_private === true;
+  return checkPermission('tickets', isPrivate ? 'read' : 'write')(req, res, next);
+};
 
 // ─── Webhook Gravity Forms (auth par secret header) ───────────────────────────
 router.post('/webhook', savController.webhookGravityForms);
@@ -183,31 +202,31 @@ router.get('/order-lookup/:order_id', savController.getOrderByRef);
 
 // ─── Routes vues ──────────────────────────────────────────────────────────────
 router.get('/views',              savController.getViews);
-router.post('/views',             savController.createView);
-router.put('/views/reorder',      savController.reorderViews);
-router.put('/views/:id',          savController.updateView);
-router.delete('/views/:id',       savController.deleteView);
+router.post('/views',             canWrite, savController.createView);
+router.put('/views/reorder',      canWrite, savController.reorderViews);
+router.put('/views/:id',          canWrite, savController.updateView);
+router.delete('/views/:id',       canWrite, savController.deleteView);
 
 // ─── Espace client SAV — secret partagé (onglet DANGER) ──────────────────────
 // Configuré depuis l'app, stocké en base (app_config), pas de .env à toucher.
-router.get('/client-sav-secret',          clientSavController.getSecret);
-router.put('/client-sav-secret',          clientSavController.setSecret);
-router.post('/client-sav-secret/generate', clientSavController.generateSecret);
+router.get('/client-sav-secret',          canWrite, clientSavController.getSecret);
+router.put('/client-sav-secret',          canWrite, clientSavController.setSecret);
+router.post('/client-sav-secret/generate', canWrite, clientSavController.generateSecret);
 
 // ─── Routes statuts ───────────────────────────────────────────────────────────
 // ─── Liste de blocage du formulaire public ───────────────────────────────────
 // Doit rester AVANT les routes génériques '/:id' de la fin de fichier, sinon
 // '/blocklist' serait capté par '/:id'. Authentifié : ces motifs conditionnent
 // ce qui entre dans le SAV, et on trace qui les ajoute.
-router.get('/blocklist',         authMiddleware, savController.getBlocklist);
-router.post('/blocklist',        authMiddleware, savController.createBlockRule);
-router.patch('/blocklist/:id',   authMiddleware, savController.updateBlockRule);
-router.delete('/blocklist/:id',  authMiddleware, savController.deleteBlockRule);
+router.get('/blocklist',         canWrite, savController.getBlocklist);
+router.post('/blocklist',        canWrite, savController.createBlockRule);
+router.patch('/blocklist/:id',   canWrite, savController.updateBlockRule);
+router.delete('/blocklist/:id',  canWrite, savController.deleteBlockRule);
 
 router.get('/statuses',          savController.getStatuses);
-router.post('/statuses',         savController.createStatus);
-router.put('/statuses/:id',      savController.updateStatus_s);
-router.delete('/statuses/:id',   savController.deleteStatus);
+router.post('/statuses',         canWrite, savController.createStatus);
+router.put('/statuses/:id',      canWrite, savController.updateStatus_s);
+router.delete('/statuses/:id',   canWrite, savController.deleteStatus);
 
 // ─── Routes notifications (par utilisateur — protégées) ──────────────────────
 router.get('/notifications',            authMiddleware, savNotificationController.getMine);
@@ -216,49 +235,51 @@ router.patch('/notifications/:id',      authMiddleware, savNotificationControlle
 router.delete('/notifications/:id',     authMiddleware, savNotificationController.delete);
 
 // ─── Routes automatismes (globales équipe — protégées) ──────────────────────
-router.get('/automations',              authMiddleware, savAutomationController.getAll);
-router.post('/automations',             authMiddleware, savAutomationController.create);
-router.patch('/automations/:id',        authMiddleware, savAutomationController.update);
-router.delete('/automations/:id',       authMiddleware, savAutomationController.delete);
-router.post('/automations/:id/run',     authMiddleware, savAutomationController.runNow);
+router.get('/automations',              canWrite, savAutomationController.getAll);
+router.post('/automations',             canWrite, savAutomationController.create);
+router.patch('/automations/:id',        canWrite, savAutomationController.update);
+router.delete('/automations/:id',       canWrite, savAutomationController.delete);
+router.post('/automations/:id/run',     canWrite, savAutomationController.runNow);
 
 // ─── Routes import Zendesk ─────────────────────────────────────────────────────
-router.get('/zendesk/config',           zendeskController.getConfig);
-router.put('/zendesk/config',           zendeskController.saveConfig);
-router.post('/zendesk/test',            zendeskController.testConnection);
-router.get('/zendesk/preview-statuses', zendeskController.previewStatuses);
-router.get('/zendesk/status-map',       zendeskController.getStatusMap);
-router.put('/zendesk/status-map',       zendeskController.saveStatusMap);
-router.get('/zendesk/preview-fields',   zendeskController.previewFields);
-router.get('/zendesk/field-map',        zendeskController.getFieldMap);
-router.put('/zendesk/field-map',        zendeskController.saveFieldMap);
+// `/zendesk/import` reste ouvert : c'est un EventSource (pas d'en-tête possible).
+router.get('/zendesk/config',           canWrite, zendeskController.getConfig);
+router.put('/zendesk/config',           canWrite, zendeskController.saveConfig);
+router.post('/zendesk/test',            canWrite, zendeskController.testConnection);
+router.get('/zendesk/preview-statuses', canWrite, zendeskController.previewStatuses);
+router.get('/zendesk/status-map',       canWrite, zendeskController.getStatusMap);
+router.put('/zendesk/status-map',       canWrite, zendeskController.saveStatusMap);
+router.get('/zendesk/preview-fields',   canWrite, zendeskController.previewFields);
+router.get('/zendesk/field-map',        canWrite, zendeskController.getFieldMap);
+router.put('/zendesk/field-map',        canWrite, zendeskController.saveFieldMap);
 router.get('/zendesk/import',           zendeskController.importStream);
 
 // ─── Routes macros ────────────────────────────────────────────────────────────
 router.get('/macros/placeholders',      savMacroController.getPlaceholders);
 router.get('/macros',                   savMacroController.getAll);
 router.get('/macros/:id/attachment',    savMacroController.getAttachment);
-router.post('/macros',                  memoryUpload.array('attachment', 1), savMacroController.create);
-router.put('/macros/:id',               memoryUpload.array('attachment', 1), savMacroController.update);
-router.delete('/macros/:id',            savMacroController.delete);
+router.post('/macros',                  canWrite, memoryUpload.array('attachment', 1), savMacroController.create);
+router.put('/macros/:id',               canWrite, memoryUpload.array('attachment', 1), savMacroController.update);
+router.delete('/macros/:id',            canWrite, savMacroController.delete);
 
 // ─── Routes internes app ──────────────────────────────────────────────────────
 router.get('/',                        savController.getAll);
-router.post('/',                       memoryUpload.array('attachments', MAX_FILES), savController.createManual);
+router.post('/',                       canWrite, memoryUpload.array('attachments', MAX_FILES), savController.createManual);
 router.get('/order/:order_id',         savController.getByOrderId);
 router.get('/customer/:customer_id',   savController.getByCustomerId);
 router.get('/:id',                     savController.getById);
-router.patch('/:id',                   savController.patchTicket);
-router.put('/:id/status',              savController.updateStatus);
-router.post('/:id/reply', memoryUpload.array('attachments', MAX_FILES), savController.reply);
-router.post('/:id/inline-image', memoryUpload.single('image'), savController.uploadInlineImage);
-router.post('/:id/merge',              savController.mergeTicket);
+router.patch('/:id',                   canWrite, savController.patchTicket);
+router.put('/:id/status',              canWrite, savController.updateStatus);
+router.post('/:id/reply', authMiddleware, memoryUpload.array('attachments', MAX_FILES), replyGuard, savController.reply);
+// Images collées dans l'éditeur : servent aussi aux notes privées → droit lecture.
+router.post('/:id/inline-image', canRead, memoryUpload.single('image'), savController.uploadInlineImage);
+router.post('/:id/merge',              canWrite, savController.mergeTicket);
 // Classement spam : authentifié, pour tracer l'agent qui classe (spam_marked_by).
-router.post('/:id/spam',               authMiddleware, savController.markSpam);
-router.delete('/:id/spam',             authMiddleware, savController.unmarkSpam);
-router.put('/:id/notes',               savController.updateNotes);
+router.post('/:id/spam',               canWrite, savController.markSpam);
+router.delete('/:id/spam',             canWrite, savController.unmarkSpam);
+router.put('/:id/notes',               canRead, savController.updateNotes);
 // Note portée par la fiche client (≠ note du ticket ci-dessus). Trois segments,
 // donc aucun recouvrement avec '/:id/notes'.
-router.put('/customers/:customerId/note', savController.updateCustomerNote);
+router.put('/customers/:customerId/note', canRead, savController.updateCustomerNote);
 
 module.exports = router;

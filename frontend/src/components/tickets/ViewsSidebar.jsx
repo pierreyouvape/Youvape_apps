@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { TICKETS_COLOR } from './ticketConstants';
 import { loadViewsOrder, saveViewsOrder, applyViewsOrder } from './viewsOrder';
 import { LinkBox } from '../../utils/navHelpers';
+import useTicketsAccess from './useTicketsAccess';
 
 const C = {
   grisTL: '#F2F6F8', grisCL: '#E2E2E2', grisM: '#8A99A4',
@@ -35,6 +36,8 @@ function IconGrip() {
 }
 
 export default function ViewsSidebar({ views = [], activeView, onViewChange, counts = {}, onRefresh, mobile = false, onClose }) {
+  // Lecture seule : les réglages se limitent aux notifications personnelles.
+  const { canWrite } = useTicketsAccess();
   const navigate = useNavigate();
 
   // Ordre local (localStorage, partagé avec TicketsApp)
@@ -251,7 +254,7 @@ export default function ViewsSidebar({ views = [], activeView, onViewChange, cou
             padding: 0,
           }}
         >
-          Gérer les vues
+          {canWrite ? 'Gérer les vues' : 'Mes notifications'}
           <IconSettings />
         </LinkBox>
       </div>

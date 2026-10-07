@@ -10,6 +10,7 @@ import BlocklistSettings from '../components/tickets/BlocklistSettings';
 import ZendeskImportSettings from '../components/tickets/ZendeskImportSettings';
 import DangerSettings from '../components/tickets/DangerSettings';
 import { LinkBox } from '../utils/navHelpers';
+import useTicketsAccess from '../components/tickets/useTicketsAccess';
 
 const TICKETS_COLOR = '#0891B2';
 
@@ -536,7 +537,9 @@ function CreateViewForm({ statuses, onCreate }) {
 // ─── Page principale ──────────────────────────────────────────────────────────
 export default function TicketsSettingsApp() {
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState('statuses');
+  // Lecture seule : seules les notifications (réglage personnel) restent ouvertes.
+  const { canWrite } = useTicketsAccess();
+  const [activeTab, setActiveTab] = useState(canWrite ? 'statuses' : 'notifications');
 
   // ── Statuts ──
   const [statuses, setStatuses] = useState([]);
@@ -610,7 +613,7 @@ export default function TicketsSettingsApp() {
     return null;
   };
 
-  const tabs = [
+  const allTabs = [
     { key: 'statuses',      label: 'Statuts des tickets' },
     { key: 'views',         label: 'Vues' },
     { key: 'macros',        label: 'Macros' },
@@ -620,6 +623,9 @@ export default function TicketsSettingsApp() {
     { key: 'zendesk',       label: 'Importation Zendesk' },
     { key: 'danger',        label: 'DANGER' },
   ];
+  const tabs = canWrite ? allTabs : allTabs.filter(t => t.key === 'notifications');
+  // Les droits peuvent arriver après le premier rendu : l'onglet affiché suit.
+  const shownTab = canWrite ? activeTab : 'notifications';
 
   return (
     <AppShell currentPath="/tickets/settings">
@@ -655,8 +661,8 @@ export default function TicketsSettingsApp() {
                   <button key={t.key} onClick={() => setActiveTab(t.key)} style={{
                     padding: '8px 20px 10px', fontSize: 13.5, fontWeight: isDanger ? 800 : 700, cursor: 'pointer',
                     background: 'none', border: 'none', outline: 'none',
-                    color: activeTab === t.key ? accent : (isDanger ? '#DC262699' : C.grisM),
-                    borderBottom: `2px solid ${activeTab === t.key ? accent : 'transparent'}`,
+                    color: shownTab === t.key ? accent : (isDanger ? '#DC262699' : C.grisM),
+                    borderBottom: `2px solid ${shownTab === t.key ? accent : 'transparent'}`,
                     marginBottom: -2, transition: 'color 0.12s, border-color 0.12s',
                     letterSpacing: isDanger ? 0.5 : 0,
                   }}>
@@ -667,7 +673,7 @@ export default function TicketsSettingsApp() {
             </div>
 
             {/* ─── Onglet Statuts ─── */}
-            {activeTab === 'statuses' && (
+            {shownTab === 'statuses' && (
               <>
                 <div style={{ background: `linear-gradient(135deg, ${TICKETS_COLOR}10 0%, ${TICKETS_COLOR}04 100%)`, border: `1px solid ${TICKETS_COLOR}30`, borderRadius: 10, padding: '14px 18px', marginBottom: 24, fontSize: 13, color: C.grisF, lineHeight: 1.6 }}>
                   <strong style={{ color: C.grisTF }}>Statuts des tickets SAV</strong> — Définissez les états possibles pour vos tickets de support. Chaque statut possède un label affiché, une couleur de fond et une couleur de texte.
@@ -696,25 +702,25 @@ export default function TicketsSettingsApp() {
             )}
 
             {/* ─── Onglet Macros ─── */}
-            {activeTab === 'macros' && <MacrosSettings />}
+            {shownTab === 'macros' && <MacrosSettings />}
 
             {/* ─── Onglet Notifications ─── */}
-            {activeTab === 'notifications' && <NotificationsSettings />}
+            {shownTab === 'notifications' && <NotificationsSettings />}
 
             {/* ─── Onglet Automatismes ─── */}
-            {activeTab === 'automations' && <AutomationsSettings />}
+            {shownTab === 'automations' && <AutomationsSettings />}
 
             {/* ─── Onglet Blocklist ─── */}
-            {activeTab === 'blocklist' && <BlocklistSettings />}
+            {shownTab === 'blocklist' && <BlocklistSettings />}
 
             {/* ─── Onglet Importation Zendesk ─── */}
-            {activeTab === 'zendesk' && <ZendeskImportSettings />}
+            {shownTab === 'zendesk' && <ZendeskImportSettings />}
 
             {/* ─── Onglet DANGER ─── */}
-            {activeTab === 'danger' && <DangerSettings />}
+            {shownTab === 'danger' && <DangerSettings />}
 
             {/* ─── Onglet Vues ─── */}
-            {activeTab === 'views' && (
+            {shownTab === 'views' && (
               <>
                 <div style={{ background: `linear-gradient(135deg, ${TICKETS_COLOR}10 0%, ${TICKETS_COLOR}04 100%)`, border: `1px solid ${TICKETS_COLOR}30`, borderRadius: 10, padding: '14px 18px', marginBottom: 24, fontSize: 13, color: C.grisF, lineHeight: 1.6 }}>
                   <strong style={{ color: C.grisTF }}>Vues de la sidebar</strong> — Chaque vue est un filtre affiché dans la colonne de gauche des tickets. Vous pouvez choisir quels statuts de tickets apparaissent dans chaque vue. Une vue sans statut affiche tous les tickets.

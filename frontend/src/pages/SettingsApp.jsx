@@ -10,12 +10,17 @@ import { APPS as LAUNCHER_APPS } from '../components/AppIcons';
 // Apps qui distinguent Lecture / Écriture (les autres n'ont qu'un droit d'accès).
 // Réception : Lecture = consulter les PO attendus ; Écriture = valider une
 // réception (écrit dans BMS).
-const WRITE_ENABLED_KEYS = new Set(['reviews', 'rewards', 'emails', 'stats', 'purchases', 'catalog', 'reception', 'stats-boutiques']);
+// SAV / Tickets : Lecture = consulter + notes internes ; Écriture = plein accès
+// (répondre au client, créer, statut, fusion, réglages).
+const WRITE_ENABLED_KEYS = new Set(['reviews', 'rewards', 'emails', 'stats', 'purchases', 'catalog', 'reception', 'stats-boutiques', 'tickets']);
 
 // Apps dont les deux cases sont des NIVEAUX, pas Lecture / Écriture : la
 // seconde inclut la première (cocher Responsable coche Conseiller, décocher
 // Conseiller décoche Responsable).
-const LEVEL_LABELS = { 'stats-boutiques': ['Conseiller', 'Responsable'] };
+const LEVEL_LABELS = {
+  'stats-boutiques': ['Conseiller', 'Responsable'],
+  tickets: ['Lecture + notes', 'Plein accès'],
+};
 
 // Droits qui ne sont PAS une app du lanceur : ils ouvrent une section à
 // l'intérieur d'une autre app. « Stats boutiques » = la tuile Statistiques des
