@@ -164,94 +164,122 @@
   color: #666;
 }
 
+/* Table transposée : un utilisateur par colonne, un droit par ligne.
+   Le conteneur défile dans les deux sens et a une hauteur bornée, sans quoi
+   la ligne d'en-tête (les emails) ne pourrait pas rester collée en haut :
+   c'est le conteneur qui défile, pas la page. */
 .users-table-container {
-  overflow-x: auto;
+  overflow: auto;
+  max-height: calc(100vh - 330px);
+  min-height: 300px;
   background: white;
   border-radius: 8px;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
+/* separate (et non collapse) : les bordures des cellules collantes restent
+   dessinées pendant le défilement. */
 .users-table {
-  width: 100%;
-  border-collapse: collapse;
+  border-collapse: separate;
+  border-spacing: 0;
 }
 
-.users-table thead {
+.users-table td {
+  padding: 0.45rem 0.75rem;
+  border-bottom: 1px solid #f1f3f5;
+  background-color: white;
+}
+
+.users-table tbody tr.perm-group-end td {
+  border-bottom: 1px solid #dee2e6;
+}
+
+.users-table tbody tr:hover td {
   background-color: #f8f9fa;
 }
 
-.users-table th {
-  padding: 1rem;
-  text-align: left;
-  font-weight: 600;
-  color: #495057;
+/* Ligne d'en-tête figée : les emails restent visibles en descendant. */
+.users-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  padding: 0.75rem 0.5rem;
+  min-width: 120px;
+  max-width: 170px;
+  background-color: #f8f9fa;
   border-bottom: 2px solid #dee2e6;
+  color: #495057;
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-align: center;
+  vertical-align: bottom;
 }
 
-/* Apps qui s'ouvrent avec le droit de la colonne (AppIcons : permissionKey).
+.user-col-email {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.users-table thead .badge-super-admin,
+.users-table thead .badge-dirty,
+.users-table thead .badge-saved {
+  margin: 0.3rem 0 0;
+}
+
+/* Colonne des droits figée à gauche : sinon impossible de savoir à quel droit
+   correspond une case en défilant vers la droite. */
+.users-table .perm-label {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  min-width: 240px;
+  text-align: left;
+  white-space: nowrap;
+  box-shadow: inset -1px 0 0 #dee2e6, 2px 0 4px rgba(0, 0, 0, 0.06);
+}
+
+.users-table thead th.perm-label {
+  z-index: 3;
+  vertical-align: bottom;
+}
+
+.perm-label-inner {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.perm-app {
+  font-weight: 600;
+  color: #343a40;
+}
+
+/* Seconde ligne d'une même app (Écriture) : le nom est rappelé en retrait. */
+.perm-app-repeat {
+  font-weight: 400;
+  color: #adb5bd;
+}
+
+.perm-sub {
+  font-size: 0.8rem;
+  color: #6c757d;
+}
+
+/* Apps qui s'ouvrent avec le même droit (AppIcons : permissionKey).
    Discret : c'est un rappel, pas un second titre. */
-.users-table th .perm-shared {
+.users-table .perm-shared {
   display: block;
   font-size: 0.72rem;
   font-weight: 500;
   color: #6c757d;
+  white-space: normal;
 }
 
-.users-table th.sub-header {
-  font-size: 0.85rem;
-  font-weight: 500;
-  color: #6c757d;
-  padding: 0.5rem;
-  text-align: center;
-}
-
-.users-table td {
-  padding: 1rem;
-  border-bottom: 1px solid #dee2e6;
-}
-
-.users-table tbody tr:hover {
-  background-color: #f8f9fa;
-}
-
-/* Colonne Email figée : elle reste visible quand on scrolle horizontalement,
-   sinon impossible de savoir à quel utilisateur appartiennent les cases. */
-.users-table th:first-child,
-.users-table td:first-child {
-  position: sticky;
-  left: 0;
-  min-width: 240px;
-  background-color: white;
-  /* border-collapse masque les bordures des cellules collantes : on les redessine */
-  box-shadow: inset -1px 0 0 #dee2e6, inset 0 -1px 0 #dee2e6, 2px 0 4px rgba(0, 0, 0, 0.06);
-  z-index: 2;
-}
-
-.users-table thead th:first-child {
-  background-color: #f8f9fa;
-  box-shadow: inset -1px 0 0 #dee2e6, 2px 0 4px rgba(0, 0, 0, 0.06);
-  z-index: 3;
-}
-
-.users-table thead tr:last-child th:first-child {
-  box-shadow: inset -1px 0 0 #dee2e6, inset 0 -2px 0 #dee2e6, 2px 0 4px rgba(0, 0, 0, 0.06);
-}
-
-.users-table tbody tr:hover td:first-child {
-  background-color: #f8f9fa;
-}
-
-.super-admin-row td:first-child,
-.super-admin-row:hover td:first-child {
+/* Colonne du super admin (non modifiable). */
+.users-table tbody tr td.super-admin-col,
+.users-table thead th.super-admin-col {
   background-color: #fff3cd;
-}
-
-.super-admin-row {
-  background-color: #fff3cd;
-}
-
-.super-admin-row:hover {
-  background-color: #fff3cd !important;
 }
 
 .badge-super-admin {
@@ -265,10 +293,14 @@
   font-weight: 600;
 }
 
-/* Ligne modifiée mais pas encore enregistrée : trait orange sur la colonne
-   Email, qui reste visible quel que soit le défilement horizontal. */
-.users-table tbody tr.row-dirty td:first-child {
-  box-shadow: inset 3px 0 0 #fd7e14, inset -1px 0 0 #dee2e6, inset 0 -1px 0 #dee2e6, 2px 0 4px rgba(0, 0, 0, 0.06);
+/* Colonne modifiée mais pas encore enregistrée : trait orange sous l'email,
+   toujours visible grâce à l'en-tête figé, et teinte légère sur la colonne. */
+.users-table thead th.col-dirty {
+  box-shadow: inset 0 -3px 0 #fd7e14;
+}
+
+.users-table tbody tr td.col-dirty {
+  background-color: #fff8f1;
 }
 
 .badge-dirty,
@@ -338,7 +370,7 @@
 }
 
 .permissions-cell input[type="checkbox"] {
-  margin: 0 1rem;
+  margin: 0;
   cursor: pointer;
   transform: scale(1.2);
 }
@@ -349,8 +381,12 @@
 }
 
 .actions-cell {
-  display: flex;
-  gap: 0.5rem;
+  text-align: center;
+}
+
+.actions-cell .btn {
+  padding: 0.3rem 0.6rem;
+  font-size: 0.8rem;
 }
 
 .btn {
@@ -397,8 +433,7 @@
     font-size: 0.9rem;
   }
 
-  .users-table th,
   .users-table td {
-    padding: 0.5rem;
+    padding: 0.4rem 0.5rem;
   }
 }

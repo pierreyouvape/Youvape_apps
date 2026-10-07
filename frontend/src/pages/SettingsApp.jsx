@@ -203,6 +203,14 @@ const SettingsApp = () => {
     }));
   };
 
+  // Apps à droit unique : la case « Accès » pose lecture ET écriture.
+  const handleAccessChange = (userId, appKey, value) => {
+    setUsers(prev => prev.map(u => u.id === userId ? {
+      ...u,
+      permissions: { ...u.permissions, [appKey]: { read: value, write: value } }
+    } : u));
+  };
+
   const handleAdminChange = (userId, value) => {
     setUsers(users.map(user => {
       if (user.id === userId) {
@@ -215,6 +223,14 @@ const SettingsApp = () => {
   const isSuperAdminUser = (email) => {
     return email === 'youvape34@gmail.com';
   };
+
+  // Un utilisateur = une colonne : le super admin et les colonnes modifiées
+  // non enregistrées se repèrent sur toute leur hauteur.
+  const userColClass = (user, isDirty, base = '') => [
+    base,
+    isSuperAdminUser(user.email) ? 'super-admin-col' : '',
+    isDirty ? 'col-dirty' : '',
+  ].filter(Boolean).join(' ');
 
   // Empreinte stable d'une ligne (ordre des clés figé par APPS) : deux lignes
   // identiques donnent la même chaîne, quel que soit l'ordre d'arrivée des droits.
@@ -379,113 +395,86 @@ const SettingsApp = () => {
                   <table className="users-table">
                     <thead>
                       <tr>
-                        <th>Email</th>
-                        <th>Admin</th>
-                        {APPS.map(app => (
-                          <th
-                            key={app.key}
-                            colSpan="2"
-                            title={app.alsoOpens ? `Donne aussi accès à : ${app.alsoOpens.join(', ')}` : undefined}
-                          >
-                            {app.label}
-                            {app.alsoOpens && <span className="perm-shared"> + {app.alsoOpens.join(', ')}</span>}
-                          </th>
-                        ))}
-                        <th>Actions</th>
-                      </tr>
-                      <tr>
-                        <th></th>
-                        <th></th>
-                        {APPS.map(app => (
-                          app.accessOnly ? (
-                            <th key={`${app.key}-access`} className="sub-header" colSpan="2">Accès</th>
-                          ) : (
-                            <>
-                              <th key={`${app.key}-read`} className="sub-header">{app.levels ? app.levels[0] : 'Lecture'}</th>
-                              <th key={`${app.key}-write`} className="sub-header">{app.levels ? app.levels[1] : 'Écriture'}</th>
-                            </>
-                          )
-                        ))}
-                        <th></th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {users.map(user => {
-                        const isSuperAdm = isSuperAdminUser(user.email);
-                        const isDirty = dirtyIds.includes(user.id);
-                        const isJustSaved = justSavedIds.includes(user.id);
-                        return (
-                          <tr
-                            key={user.id}
-                            className={[isSuperAdm ? 'super-admin-row' : '', isDirty ? 'row-dirty' : ''].filter(Boolean).join(' ')}
-                          >
-                            <td>
-                              {user.email}
+                        <th className="perm-label">Droit</th>
+                        {users.map(user => {
+                          const isSuperAdm = isSuperAdminUser(user.email);
+                          const isDirty = dirtyIds.includes(user.id);
+                          const isJustSaved = justSavedIds.includes(user.id);
+                          return (
+                            <th key={user.id} className={userColClass(user, isDirty)}>
+                              <span className="user-col-email">{user.email}</span>
                               {isSuperAdm && <span className="badge-super-admin">Super Admin</span>}
                               {isDirty && <span className="badge-dirty">Modifié</span>}
                               {isJustSaved && <span className="badge-saved">Enregistré</span>}
+                            </th>
+                          );
+                        })}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr className="perm-group-end">
+                        <td className="perm-label"><div className="perm-label-inner"><span className="perm-app">Admin</span></div></td>
+                        {users.map(user => (
+                          <td key={user.id} className={userColClass(user, dirtyIds.includes(user.id), 'permissions-cell')}>
+                            <input
+                              type="checkbox"
+                              checked={user.is_admin}
+                              onChange={(e) => handleAdminChange(user.id, e.target.checked)}
+                              disabled={isSuperAdminUser(user.email)}
+                            />
+                          </td>
+                        ))}
+                      </tr>
+                      {APPS.flatMap(app => {
+                        // Une ligne « Accès » pour les apps sans distinction, sinon
+                        // deux lignes Lecture / Écriture (ou les deux niveaux).
+                        const rows = app.accessOnly
+                          ? [['access', 'Accès']]
+                          : [['read', app.levels ? app.levels[0] : 'Lecture'], ['write', app.levels ? app.levels[1] : 'Écriture']];
+                        return rows.map(([permType, subLabel], i) => (
+                          <tr key={`${app.key}-${permType}`} className={i === rows.length - 1 ? 'perm-group-end' : undefined}>
+                            <td
+                              className="perm-label"
+                              title={app.alsoOpens ? `Donne aussi accès à : ${app.alsoOpens.join(', ')}` : undefined}
+                            >
+                              <div className="perm-label-inner">
+                                <span className={i === 0 ? 'perm-app' : 'perm-app perm-app-repeat'}>
+                                  {app.label}
+                                  {i === 0 && app.alsoOpens && <span className="perm-shared">+ {app.alsoOpens.join(', ')}</span>}
+                                </span>
+                                <span className="perm-sub">{subLabel}</span>
+                              </div>
                             </td>
-                            <td>
-                              <input
-                                type="checkbox"
-                                checked={user.is_admin}
-                                onChange={(e) => handleAdminChange(user.id, e.target.checked)}
-                                disabled={isSuperAdm}
-                              />
-                            </td>
-                            {APPS.map(app => (
-                              app.accessOnly ? (
-                                <td key={`${app.key}-access`} className="permissions-cell" colSpan="2" style={{ textAlign: 'center' }}>
-                                  <input
-                                    type="checkbox"
-                                    checked={user.permissions[app.key]?.read || false}
-                                    onChange={(e) => {
-                                      const val = e.target.checked;
-                                      setUsers(prev => prev.map(u => u.id === user.id ? {
-                                        ...u,
-                                        permissions: {
-                                          ...u.permissions,
-                                          [app.key]: { read: val, write: val }
-                                        }
-                                      } : u));
-                                    }}
-                                    disabled={isSuperAdm}
-                                  />
-                                </td>
-                              ) : (
-                                <>
-                                  <td key={`${app.key}-read`} className="permissions-cell">
-                                    <input
-                                      type="checkbox"
-                                      checked={user.permissions[app.key]?.read || false}
-                                      onChange={(e) => handlePermissionChange(user.id, app.key, 'read', e.target.checked)}
-                                      disabled={isSuperAdm}
-                                    />
-                                  </td>
-                                  <td key={`${app.key}-write`} className="permissions-cell">
-                                    <input
-                                      type="checkbox"
-                                      checked={user.permissions[app.key]?.write || false}
-                                      onChange={(e) => handlePermissionChange(user.id, app.key, 'write', e.target.checked)}
-                                      disabled={isSuperAdm}
-                                    />
-                                  </td>
-                                </>
-                              )
+                            {users.map(user => (
+                              <td key={user.id} className={userColClass(user, dirtyIds.includes(user.id), 'permissions-cell')}>
+                                <input
+                                  type="checkbox"
+                                  checked={user.permissions[app.key]?.[permType === 'access' ? 'read' : permType] || false}
+                                  onChange={(e) => permType === 'access'
+                                    ? handleAccessChange(user.id, app.key, e.target.checked)
+                                    : handlePermissionChange(user.id, app.key, permType, e.target.checked)}
+                                  disabled={isSuperAdminUser(user.email)}
+                                />
+                              </td>
                             ))}
-                            <td className="actions-cell">
-                              {!isSuperAdm && (
-                                <button
-                                  onClick={() => deleteUser(user.id, user.email)}
-                                  className="btn btn-delete"
-                                >
-                                  Supprimer
-                                </button>
-                              )}
-                            </td>
                           </tr>
-                        );
+                        ));
                       })}
+                      <tr className="perm-group-end">
+                        <td className="perm-label"><div className="perm-label-inner"><span className="perm-app">Actions</span></div></td>
+                        {users.map(user => (
+                          <td key={user.id} className={userColClass(user, dirtyIds.includes(user.id), 'actions-cell')}>
+                            {!isSuperAdminUser(user.email) && (
+                              <button
+                                onClick={() => deleteUser(user.id, user.email)}
+                                className="btn btn-delete"
+                              >
+                                Supprimer
+                              </button>
+                            )}
+                          </td>
+                        ))}
+                      </tr>
                     </tbody>
                   </table>
                 </div>
@@ -494,7 +483,7 @@ const SettingsApp = () => {
                   <div className="users-save-status">
                     {dirtyIds.length > 0 ? (
                       <span className="status-dirty">
-                        {dirtyIds.length} ligne{dirtyIds.length > 1 ? 's' : ''} modifiée{dirtyIds.length > 1 ? 's' : ''} non enregistrée{dirtyIds.length > 1 ? 's' : ''}
+                        {dirtyIds.length} utilisateur{dirtyIds.length > 1 ? 's' : ''} modifié{dirtyIds.length > 1 ? 's' : ''} non enregistré{dirtyIds.length > 1 ? 's' : ''}
                       </span>
                     ) : lastSavedAt ? (
                       <span className="status-saved">
