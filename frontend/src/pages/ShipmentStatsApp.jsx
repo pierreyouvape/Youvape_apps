@@ -333,7 +333,7 @@ const ShipmentStatsApp = () => {
 
   const t = data?.totals;
   const unJour = from === to;
-  const pauseMin = data ? Math.round(data.pauseSeconds / 60) : 10;
+  const pauseMin = data ? Math.round(data.pauseSeconds / 60) : 4;
   const moyenne = (seconds, intervals) => (intervals ? seconds / intervals : null);
 
   return (
@@ -401,7 +401,7 @@ const ShipmentStatsApp = () => {
 
               {/* Par personne */}
               <section style={carte}>
-                <Titre sub={`Temps moyen = somme des écarts entre deux étiquettes successives ÷ nombre d'écarts (10 colis → 9 écarts). Un écart de plus de ${pauseMin} min est une pause, écartée.`}>
+                <Titre sub={`Temps moyen = somme des écarts entre deux colis successifs d'une même vague ÷ nombre d'écarts (10 colis → 9 écarts). Le changement de vague n'est pas compté ; un écart de plus de ${pauseMin} min est une pause, écartée.`}>
                   Par personne
                 </Titre>
                 <div style={{ overflowX: 'auto' }}>

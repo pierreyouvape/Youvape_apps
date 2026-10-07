@@ -15,11 +15,19 @@
  *     fois par commande, sur sa première étiquette : une réexpédition est un
  *     colis de plus, pas des articles de plus.
  *   - **Temps par colis** = intervalle entre deux colis successifs d'une même
- *     personne, le même jour, qu'ils sortent de l'app ou de BMS. Un intervalle couvre un cycle complet (fin
- *     d'emballage du précédent, scan, emballage du suivant) : 10 colis donnent
- *     9 intervalles, et c'est par 9 qu'on divise. Au-delà de PAUSE_S, c'est une
- *     pause : l'intervalle est écarté. Le total se calcule sur tous les
- *     intervalles, jamais en moyennant les moyennes de chacun.
+ *     personne, le même jour, DANS LA MÊME VAGUE, qu'ils sortent de l'app ou de
+ *     BMS. Un intervalle couvre un cycle complet (fin d'emballage du précédent,
+ *     scan, emballage du suivant) : 10 colis donnent 9 intervalles, et c'est
+ *     par 9 qu'on divise. Au-delà de PAUSE_S, c'est une pause : l'intervalle
+ *     est écarté. Le total se calcule sur tous les intervalles, jamais en
+ *     moyennant les moyennes de chacun.
+ *   - **Changement de vague** (07/10/2026) : la série est coupée, l'écart n'est
+ *     ni compté ni pris pour une pause. Médiane 5 min 21 contre 1 min 07 dans
+ *     une vague : c'est une autre activité (aller chercher le bac, se
+ *     réinstaller), et le seuil de pause la triait au hasard. Les colis sans
+ *     vague de l'app (BMS, étiquettes d'avant le 29/09, expédition manuelle)
+ *     forment ensemble un groupe « sans vague » : chacun isolé, tout
+ *     l'historique d'avant la bascule perdait ses écarts.
  *
  * Heures : les étiquettes sont en UTC (NOW() sur un serveur UTC),
  * `orders.paid_date` en heure de Paris (WooCommerce) — ramené en UTC ici.
@@ -28,8 +36,8 @@
 const pool = require('../config/database');
 const { BMS_SANS_DOUBLON } = require('../services/bmsShipmentSyncService');
 
-/** Au-delà, l'écart entre deux étiquettes est une pause (Pierre, 29/09/2026). */
-const PAUSE_S = 600;
+/** Au-delà, l'écart entre deux colis est une pause (Pierre : 10 min le 29/09, 4 min le 07/10/2026). */
+const PAUSE_S = 240;
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -104,16 +112,37 @@ const COUNTED = `
       LEFT JOIN missing mi ON mi.order_number = c.order_number
   )`;
 
-/** Intervalles entre deux colis successifs d'une même personne, le même jour, toutes sources. */
+/**
+ * Intervalles entre deux colis successifs d'une même personne, le même jour,
+ * dans la même vague. La vague d'une étiquette est la dernière vague non
+ * annulée créée avant elle (même règle que l'Historique).
+ */
 const INTERVALS = `
+  order_waves AS (
+    SELECT wo.order_number, w.id AS wave_id, w.created_at
+      FROM picking_wave_orders wo
+      JOIN picking_waves w ON w.id = wo.wave_id AND w.status <> 'cancelled'
+     WHERE wo.order_number IN (SELECT order_number FROM lab WHERE source = 'app')
+  ),
+  waved AS (
+    SELECT DISTINCT ON (l.uid) l.who, l.uid, l.created_at, l.local_at,
+           COALESCE('w' || ow.wave_id, 'sans') AS wave_key
+      FROM lab l
+      LEFT JOIN order_waves ow
+        ON l.source = 'app' AND ow.order_number = l.order_number AND ow.created_at <= l.created_at
+     WHERE l.who <> '?'
+     ORDER BY l.uid, ow.created_at DESC NULLS LAST
+  ),
   seq AS (
-    SELECT who, created_at,
-           LAG(created_at) OVER (PARTITION BY who, local_at::date ORDER BY created_at, uid) AS prev
-      FROM lab WHERE who <> '?'
+    SELECT who, created_at, wave_key,
+           LAG(created_at) OVER w AS prev,
+           LAG(wave_key) OVER w AS prev_wave_key
+      FROM waved
+    WINDOW w AS (PARTITION BY who, local_at::date ORDER BY created_at, uid)
   ),
   intervals AS (
     SELECT who, EXTRACT(EPOCH FROM created_at - prev) AS s
-      FROM seq WHERE prev IS NOT NULL
+      FROM seq WHERE prev IS NOT NULL AND wave_key = prev_wave_key
   )`;
 
 const get = async ({ from, to }) => {
