@@ -16,6 +16,7 @@ const assert = require('assert');
 const { buildTimeline } = require('../src/controllers/shipmentHistoryController');
 const { buildWhere } = require('../src/models/shipmentHistoryModel');
 const { bmsCarrier, toRow } = require('../src/services/bmsShipmentSyncService');
+const { mergePicking } = require('../src/models/shipmentStatsModel');
 
 let failures = 0;
 function test(name, fn) {
@@ -155,6 +156,23 @@ test('parcours d\'un colis BMS', () => {
   });
   assert.deepStrictEqual(ev.map(e => e.title), ['Commande payée', 'Emballé et expédié dans BMS']);
   assert.strictEqual(ev[1].by, 'Celyne');
+});
+
+console.log('Stats : picking');
+
+test('le picking rejoint la ligne de la personne ; qui a seulement pické a la sienne', () => {
+  const people = [{ who: 'u6', user_id: 6, name: 'Franck', parcels: 12 }];
+  const rows = mergePicking(people, [
+    { who: 'u6', user_id: 6, name: 'Franck', waves: 3, articles: 120, seconds: 756, pauses: 1 },
+    { who: 'u12', user_id: 12, name: 'morgane', waves: 2, articles: 80, seconds: 1150, pauses: 4 },
+  ]);
+  assert.strictEqual(rows.length, 2);
+  assert.deepStrictEqual(rows[0].picking, { waves: 3, articles: 120, seconds: 756, pauses: 1 });
+  assert.strictEqual(rows[0].parcels, 12);
+  assert.strictEqual(rows[1].name, 'morgane');
+  assert.strictEqual(rows[1].parcels, 0);
+  assert.strictEqual(rows[1].picking.articles, 80);
+  assert.strictEqual(mergePicking(people, [])[0].picking, null);
 });
 
 console.log(failures === 0 ? '\nTous les tests passent.' : `\n${failures} test(s) en échec.`);

@@ -236,10 +236,18 @@ const readLine = async (lineId) => {
   return lineFromRow(r);
 };
 
-// Marque la ligne « traitée par » dès qu'elle est complète.
-const DONE_SET = `
-  done_by = CASE WHEN qty_scanned + qty_manual + qty_missing >= qty_needed THEN $2::int ELSE NULL END,
-  done_at = CASE WHEN qty_scanned + qty_manual + qty_missing >= qty_needed THEN NOW() ELSE NULL END,
+/**
+ * Marque la ligne « traitée par » dès qu'elle est complète.
+ *
+ * `newTotal` = le total traité APRÈS l'action. Dans un UPDATE, PostgreSQL lit
+ * les ANCIENNES valeurs de la ligne dans toutes les expressions du SET :
+ * tester `qty_scanned + qty_manual + qty_missing` jugeait la ligne avant le
+ * « Valider » ou le « Manquant », et 1 182 lignes traitées sont restées sans
+ * heure ni auteur (relevé du 07/10/2026).
+ */
+const doneSet = (newTotal) => `
+  done_by = CASE WHEN ${newTotal} >= qty_needed THEN $2::int ELSE NULL END,
+  done_at = CASE WHEN ${newTotal} >= qty_needed THEN NOW() ELSE NULL END,
   updated_at = NOW()`;
 
 /**
@@ -331,7 +339,7 @@ const validate = async (waveId, userId, lineId) => {
   await assertMine(waveId, userId);
   const { rows: [r] } = await pool.query(
     `UPDATE picking_wave_lines
-        SET qty_manual = qty_manual + (qty_needed - qty_scanned - qty_manual - qty_missing), ${DONE_SET}
+        SET qty_manual = qty_manual + (qty_needed - qty_scanned - qty_manual - qty_missing), ${doneSet('qty_needed')}
       WHERE id = $1 AND wave_id = $3
       RETURNING id`,
     [lineId, userId, waveId]
@@ -345,7 +353,7 @@ const markMissing = async (waveId, userId, lineId) => {
   await assertMine(waveId, userId);
   const { rows: [r] } = await pool.query(
     `UPDATE picking_wave_lines
-        SET qty_missing = qty_missing + (qty_needed - qty_scanned - qty_manual - qty_missing), ${DONE_SET}
+        SET qty_missing = qty_missing + (qty_needed - qty_scanned - qty_manual - qty_missing), ${doneSet('qty_needed')}
       WHERE id = $1 AND wave_id = $3
       RETURNING id`,
     [lineId, userId, waveId]
@@ -363,7 +371,7 @@ const undo = async (waveId, userId, lineId) => {
   await assertMine(waveId, userId);
   const { rows: [r] } = await pool.query(
     `UPDATE picking_wave_lines
-        SET qty_manual = 0, qty_missing = 0, ${DONE_SET}
+        SET qty_manual = 0, qty_missing = 0, ${doneSet('qty_scanned')}
       WHERE id = $1 AND wave_id = $3
       RETURNING id`,
     [lineId, userId, waveId]

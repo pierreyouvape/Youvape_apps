@@ -401,7 +401,7 @@ const ShipmentStatsApp = () => {
 
               {/* Par personne */}
               <section style={carte}>
-                <Titre sub={`Temps moyen = somme des écarts entre deux colis successifs d'une même vague ÷ nombre d'écarts (10 colis → 9 écarts). Le changement de vague n'est pas compté ; un écart de plus de ${pauseMin} min est une pause, écartée.`}>
+                <Titre sub={`Temps moyen = somme des écarts entre deux colis successifs d'une même vague ÷ nombre d'écarts (10 colis → 9 écarts). Le changement de vague n'est pas compté ; un écart de plus de ${pauseMin} min est une pause, écartée. Picking = temps actif des vagues terminées ÷ articles pickés (sans les manquants), même règle de pause.`}>
                   Par personne
                 </Titre>
                 <div style={{ overflowX: 'auto' }}>
@@ -417,13 +417,14 @@ const ShipmentStatsApp = () => {
                         <Th align="right">Art./colis</Th>
                         <Th align="right">Temps moyen / colis</Th>
                         <Th align="right">Colis / heure</Th>
+                        <Th align="right">Picking / article</Th>
                         {unJour && <Th align="right">1ʳᵉ étiquette</Th>}
                         {unJour && <Th align="right">Dernière</Th>}
                       </tr>
                     </thead>
                     <tbody>
                       {data.people.length === 0 && (
-                        <tr><td colSpan={11} style={{ padding: '22px 16px', textAlign: 'center', color: C.greyT, fontSize: 13.5 }}>
+                        <tr><td colSpan={12} style={{ padding: '22px 16px', textAlign: 'center', color: C.greyT, fontSize: 13.5 }}>
                           Aucun colis sur la période.
                         </td></tr>
                       )}
@@ -453,6 +454,16 @@ const ShipmentStatsApp = () => {
                               </div>
                             </Td>
                             <Td align="right">{moy ? Math.round(3600 / moy) : '—'}</Td>
+                            <Td align="right" color={p.picking?.articles ? C.dark : C.greyM}>
+                              {p.picking?.articles ? (
+                                <span title={`${p.picking.pauses} pause(s) écartée(s)`}>
+                                  {(p.picking.seconds / p.picking.articles).toLocaleString('fr-FR', { maximumFractionDigits: 1 })} s
+                                  <div style={{ fontSize: 11.5, color: C.greyT }}>
+                                    {nf.format(p.picking.articles)} art. · {p.picking.waves} vague{p.picking.waves > 1 ? 's' : ''}
+                                  </div>
+                                </span>
+                              ) : '—'}
+                            </Td>
                             {unJour && <Td align="right" color={C.greyT}>{p.first_at || '—'}</Td>}
                             {unJour && <Td align="right" color={C.greyT}>{p.last_at || '—'}</Td>}
                           </tr>

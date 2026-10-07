@@ -29,6 +29,13 @@
  *     forment ensemble un groupe « sans vague » : chacun isolé, tout
  *     l'historique d'avant la bascule perdait ses écarts.
  *
+ *   - **Picking / article** (07/10/2026) = temps actif des vagues terminées
+ *     ÷ articles pickés (scannés + validés, PAS les manquants) : la moyenne par
+ *     vague pondérée au nombre d'articles. Temps actif = somme des écarts entre
+ *     actions successives de la vague (prise au PDA, dernière action de chaque
+ *     ligne, « Terminer »), un écart de plus de PAUSE_S étant une pause. La
+ *     vague revient à qui l'a terminée, le jour où elle l'a été.
+ *
  * Heures : les étiquettes sont en UTC (NOW() sur un serveur UTC),
  * `orders.paid_date` en heure de Paris (WooCommerce) — ramené en UTC ici.
  */
@@ -145,6 +152,67 @@ const INTERVALS = `
       FROM seq WHERE prev IS NOT NULL AND wave_key = prev_wave_key
   )`;
 
+/** Picking par personne : vagues terminées dans la période ($1, $2), pause $3. */
+const PICKING_SQL = `
+  WITH pick_waves AS (
+    SELECT w.id, w.picked_by, w.assigned_at, w.picked_at
+      FROM picking_waves w
+     WHERE w.status IN ('picked', 'closed') AND w.picked_by IS NOT NULL
+       AND w.assigned_at IS NOT NULL AND ${PERIODE('w.picked_at')}
+  ),
+  pick_events AS (
+    SELECT id AS wave_id, assigned_at AS t FROM pick_waves
+    UNION ALL
+    SELECT l.wave_id, COALESCE(l.done_at, l.updated_at)
+      FROM picking_wave_lines l JOIN pick_waves w ON w.id = l.wave_id
+    UNION ALL
+    SELECT id, picked_at FROM pick_waves
+  ),
+  pick_gaps AS (
+    SELECT wave_id, EXTRACT(EPOCH FROM t - LAG(t) OVER (PARTITION BY wave_id ORDER BY t)) AS s
+      FROM pick_events
+  ),
+  per_wave AS (
+    SELECT w.id, w.picked_by,
+           COALESCE(SUM(g.s) FILTER (WHERE g.s <= $3), 0) AS seconds,
+           COUNT(*) FILTER (WHERE g.s > $3) AS pauses
+      FROM pick_waves w JOIN pick_gaps g ON g.wave_id = w.id
+     GROUP BY w.id, w.picked_by
+  ),
+  arts AS (
+    SELECT l.wave_id, SUM(l.qty_scanned + l.qty_manual) AS articles
+      FROM picking_wave_lines l JOIN pick_waves w ON w.id = l.wave_id
+     GROUP BY 1
+  )
+  SELECT 'u' || pw.picked_by AS who, pw.picked_by AS user_id, u.name,
+         COUNT(*)::int AS waves, COALESCE(SUM(a.articles), 0)::int AS articles,
+         SUM(pw.seconds)::float AS seconds, SUM(pw.pauses)::int AS pauses
+    FROM per_wave pw
+    LEFT JOIN arts a ON a.wave_id = pw.id
+    LEFT JOIN users u ON u.id = pw.picked_by
+   GROUP BY pw.picked_by, u.name`;
+
+/**
+ * Ajoute le picking aux lignes par personne. Qui a pické sans packer sur la
+ * période a sa ligne aussi, à zéro colis.
+ */
+const mergePicking = (people, picking) => {
+  const byWho = new Map(people.map(p => [p.who, { ...p, picking: null }]));
+  for (const k of picking) {
+    const pick = { waves: k.waves, articles: k.articles, seconds: k.seconds, pauses: k.pauses };
+    const row = byWho.get(k.who);
+    if (row) row.picking = pick;
+    else {
+      byWho.set(k.who, {
+        who: k.who, user_id: k.user_id, name: k.name || 'Inconnu', unmapped: false,
+        parcels: 0, bms_parcels: 0, articles: 0, intervals: 0, pauses: 0, seconds: 0,
+        first_at: null, last_at: null, picking: pick,
+      });
+    }
+  }
+  return [...byWho.values()];
+};
+
 const get = async ({ from, to }) => {
   if (!DATE_RE.test(from || '') || !DATE_RE.test(to || '')) {
     const err = new Error('Période invalide');
@@ -153,7 +221,7 @@ const get = async ({ from, to }) => {
   }
   const params = [from, to, PAUSE_S];
 
-  const [people, carriers, hours, totals, incidents] = await Promise.all([
+  const [people, carriers, hours, totals, incidents, picking] = await Promise.all([
     pool.query(
       `WITH ${LAB}, ${COUNTED}, ${INTERVALS},
        colis AS (
@@ -231,6 +299,7 @@ const get = async ({ from, to }) => {
         GROUP BY action`,
       params.slice(0, 2)
     ),
+    pool.query(PICKING_SQL, params),
   ]);
 
   const byKind = Object.fromEntries(incidents.rows.map(r => [r.kind, r.n]));
@@ -238,7 +307,7 @@ const get = async ({ from, to }) => {
   return {
     from, to, pauseSeconds: PAUSE_S,
     totals: totals.rows[0],
-    people: people.rows,
+    people: mergePicking(people.rows, picking.rows),
     carriers: carriers.rows,
     hours: hours.rows,
     incidents: {
@@ -249,7 +318,7 @@ const get = async ({ from, to }) => {
   };
 };
 
-module.exports = { get, PAUSE_S };
+module.exports = { get, PAUSE_S, mergePicking };
 
 /**
  * Noms de préparateur vus dans BMS, et le compte de l'app auquel chacun est
