@@ -435,5 +435,47 @@ test('un tarif retenu sur une facture fait autorité, dans les deux sens', () =>
   assert.strictEqual(sansDrapeau.unitPrice, 1.29);
 });
 
+console.log('LCA — facture OpenSi (Rist. % / PU Net HT)');
+{
+  const lca = require('../src/parsers/lcaParser');
+  // F2610415472 (07/10/2026) : colonnes Rist. % + PU Net HT → l'ancienne regex
+  // « qté PU montant » ne lisait rien (« Aucune ligne produit trouvée »).
+  const parsed = lca.parse(fixture('lca-F2610415472.txt'));
+  const sum = sumLines(parsed.items);
+
+  test('LCA F2610415472 : 12 lignes, somme = Total HT imprimé (2563,06 €)', () => {
+    assert.strictEqual(parsed.items.length, 12);
+    assert.strictEqual(sum, 2563.06);
+    assert.deepStrictEqual(parsed.warnings, []);
+  });
+  test('LCA F2610415472 : prix net exact (22,54 − 7 %), pas le PU net arrondi', () => {
+    const l = parsed.items.find(i => i.supplier_sku === '#REF26598-26600');
+    assert.ok(l);
+    assert.strictEqual(l.qty_ordered, 10);
+    assert.strictEqual(l.unit_price_net, 20.962);
+    assert.strictEqual(l.total_ht, 209.62);
+    assert.strictEqual(l.designation, 'Box Aegis Solo 5 - Geekvape (Couleur : Black)');
+  });
+  test('LCA F2610415472 : n° = Réf. Commande (n° LCA de nos commandes), date facture', () => {
+    assert.strictEqual(parsed.orderNumber, '354290');
+    assert.strictEqual(parsed.orderDate, '2026-10-07');
+    assert.strictEqual(parsed.skipPackQty, true);
+  });
+  test('LCA F2610415472 : aucune ligne du document laissée de côté', () => {
+    assert.deepStrictEqual(findUnparsedRows(fixture('lca-F2610415472.txt'), parsed.items), []);
+  });
+
+  // F2609412942 : désignations sur deux lignes, 3 pages.
+  const multi = lca.parse(fixture('lca-F2609412942.txt'));
+  test('LCA F2609412942 : désignations sur deux lignes lues, réf. et quantité justes', () => {
+    assert.ok(multi.items.length > 10, `${multi.items.length} lignes`);
+    const l = multi.items.find(i => i.supplier_sku === '#REF15320-49707');
+    assert.ok(l);
+    assert.strictEqual(l.qty_ordered, 240);
+    assert.strictEqual(l.unit_price_net, 2.89);
+    assert.strictEqual(multi.orderNumber, '356948');
+  });
+}
+
 console.log(failures === 0 ? '\nTous les tests passent.' : `\n${failures} test(s) en échec.`);
 process.exit(failures === 0 ? 0 : 1);

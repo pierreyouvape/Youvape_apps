@@ -243,37 +243,53 @@ function parseSiteWeb(text) {
 
 /**
  * Format "Facture OpenSi" LCA Distribution
- * Colonnes : Référence | Désignation | Quantité | PU HT | Montant HT
- * Ref format : #REFxxxxx-xxxxx
- * Ex : #REF18934-65382 Cyber G Slim DTE - Aspire - Metallic Purple Red 10 5.96 59.60
+ * Colonnes : Référence | Désignation | Quantité | PU HT | Rist. % | PU Net HT | Montant HT
+ *
+ * Délègue au lecteur des factures OpenSi (parsers/invoices/opensiInvoice), déjà
+ * utilisé pour le contrôle des factures : l'ancienne regex exigeait
+ * « qté PU montant » sur une seule ligne et ne lisait AUCUN article des factures
+ * réelles (colonnes Rist. % / PU Net HT, désignations sur deux lignes) —
+ * F2610415472 renvoyait « Aucune ligne produit trouvée ».
  */
 function parseFacture(text) {
-  // Numéro de facture : "Facture N° F2606391933"
-  const invoiceMatch = text.match(/Facture N°\s+(\S+)/);
-  const orderNumber = invoiceMatch ? invoiceMatch[1] : null;
+  const { parseInvoice } = require('./invoices/opensiInvoice');
+  const invoice = parseInvoice(text);
 
-  // Date : "Date : 15/06/2026" → "2026-06-15"
-  const dateMatch = text.match(/Date\s*:\s*(\d{2})\/(\d{2})\/(\d{4})/);
-  const orderDate = dateMatch ? `${dateMatch[3]}-${dateMatch[2]}-${dateMatch[1]}` : null;
+  // « Réf. Commande » = n° de commande du site LCA, celui que portent les
+  // commandes LCA chez nous (et les formats Confirmation / SiteWeb). Redéposer la
+  // facture d'une commande déjà créée retombe ainsi sur elle au lieu d'en créer
+  // une seconde. Repli sur le n° de facture.
+  const orderNumber = invoice.orderRefOnDoc || invoice.number;
 
-  // Chaque ligne article : #REFdigits-digits <designation> <qty> <pu_ht> <montant_ht>
-  // Le montant HT est le dernier champ, le PU HT l'avant-dernier, la qté l'avant-avant-dernier
-  const items = [];
-  const lineRegex = /^#REF(\d+-\d+)\s+(.+?)\s+(\d+)\s+([\d.]+)\s+([\d.]+)\s*$/gm;
-  let match;
-  while ((match = lineRegex.exec(text)) !== null) {
-    items.push({
-      supplier_sku: `#REF${match[1]}`,
-      designation: match[2].trim(),
-      qty_ordered: parseInt(match[3]),
-      unit_price_net: parseFloat(match[4]),
-    });
-  }
+  const items = invoice.lines
+    .filter((l) => l.kind === 'product')
+    .map((l) => ({
+      supplier_sku: l.ref,
+      designation: l.label || '',
+      qty_ordered: l.qty,
+      // Prix NET exact, tiré du montant : LCA imprime le PU net arrondi (20,96)
+      // mais facture le net exact (22,54 − 7 % = 20,9622 → 10 × = 209,62).
+      unit_price_net: Math.round((l.lineTotalHt / l.qty) * 10000) / 10000,
+      total_ht: l.lineTotalHt,
+    }));
+
+  const warnings = invoice.warnings.map((w) => ({
+    type: w.type,
+    message: w.message || `Ligne de facture illisible : ${w.text}`,
+  }));
 
   // "Quantité" et "PU HT" de la facture OpenSi sont deja en unites reelles
-  // (verifie : Quantite x PU HT = Montant HT sur chaque ligne) -> pas de
+  // (verifie : Quantite x PU Net HT = Montant HT sur chaque ligne) -> pas de
   // conversion pack a appliquer, meme pour les produits vendus en pack chez LCA.
-  return { orderNumber, orderDate, items, hasPrice: true, pdfIsPackBased: false, skipPackQty: true };
+  return {
+    orderNumber,
+    orderDate: invoice.date,
+    items,
+    warnings,
+    hasPrice: true,
+    pdfIsPackBased: false,
+    skipPackQty: true,
+  };
 }
 
 /**
