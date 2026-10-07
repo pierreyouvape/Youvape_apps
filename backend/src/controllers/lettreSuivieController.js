@@ -3,6 +3,7 @@ const { PDFParse } = require('pdf-parse');
 const ExcelJS = require('exceljs');
 const JSZip = require('jszip');
 const pool = require('../config/database');
+const { newestInvoicesFirst, HISTORY_LIMIT } = require('../utils/carrierInvoiceOrder');
 const { parseLettreSuiviePdf } = require('../parsers/lettreSuivieParser');
 
 const CARRIER = 'lettre_suivie';
@@ -214,8 +215,8 @@ exports.getHistory = async (req, res) => {
         parcels_detail->>'format'               AS format
       FROM carrier_invoices
       WHERE carrier = $1
-      ORDER BY created_at DESC
-      LIMIT 100
+      ORDER BY ${newestInvoicesFirst()}
+      LIMIT ${HISTORY_LIMIT}
     `, [CARRIER]);
     res.json({ success: true, invoices: result.rows });
   } catch (err) {

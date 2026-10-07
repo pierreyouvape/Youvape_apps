@@ -3,6 +3,7 @@ const { PDFParse } = require('pdf-parse');
 const ExcelJS = require('exceljs');
 const JSZip = require('jszip');
 const pool = require('../config/database');
+const { newestInvoicesFirst, HISTORY_LIMIT } = require('../utils/carrierInvoiceOrder');
 const { orderWeightSql, getPackagingWeight } = require('../services/orderWeightService');
 
 const PACKAGING_KG = 0.011; // 11g
@@ -806,8 +807,8 @@ exports.getHistory = async (req, res) => {
       LEFT JOIN carrier_invoice_parcels cip ON cip.invoice_id = ci.id
       WHERE ci.carrier = 'chronopost'
       GROUP BY ci.id
-      ORDER BY ci.created_at DESC
-      LIMIT 50
+      ORDER BY ${newestInvoicesFirst('ci')}
+      LIMIT ${HISTORY_LIMIT}
     `);
     res.json({ success: true, invoices: result.rows });
   } catch (err) {
@@ -954,8 +955,9 @@ exports.getCreditsHistory = async (req, res) => {
       LEFT JOIN carrier_invoice_credits c ON c.carrier = d.carrier AND c.credit_number = d.credit_number
       WHERE d.carrier = 'chronopost'
       GROUP BY d.credit_number, d.credit_date, d.related_invoice_number, d.created_at
-      ORDER BY d.created_at DESC
-      LIMIT 50
+      ORDER BY COALESCE(CASE WHEN d.credit_date ~ '^\\d{2}/\\d{2}/\\d{4}$' THEN to_date(d.credit_date, 'DD/MM/YYYY') END,
+                        d.created_at::date) DESC, d.credit_number DESC
+      LIMIT ${HISTORY_LIMIT}
     `);
     res.json({ success: true, credits: result.rows });
   } catch (err) {

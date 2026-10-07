@@ -3,6 +3,7 @@ const { PDFParse } = require('pdf-parse');
 const ExcelJS = require('exceljs');
 const JSZip = require('jszip');
 const pool = require('../config/database');
+const { newestInvoicesFirst, HISTORY_LIMIT } = require('../utils/carrierInvoiceOrder');
 const { parseMondialRelayPdf, computeAutresFrais, applyGridCheck } = require('../parsers/mondialRelayParser');
 const { parseMondialRelayCsv, analyzeMondialRelayCsv, classifyParcels, cgvForInvoice, CLAIMABLE_KINDS } = require('../parsers/mondialRelayCsvParser');
 const { orderWeightSql, getPackagingWeight } = require('../services/orderWeightService');
@@ -329,8 +330,8 @@ exports.getHistory = async (req, res) => {
         parcels_detail->'participations' AS participations
       FROM carrier_invoices
       WHERE carrier = $1
-      ORDER BY created_at DESC
-      LIMIT 200
+      ORDER BY ${newestInvoicesFirst()}
+      LIMIT ${HISTORY_LIMIT}
     `, [CARRIER, CLAIMABLE_KINDS]);
     // « Autres frais » = frais & remises hors gasoil / participations MR standard / remise
     const invoices = result.rows.map(r => {

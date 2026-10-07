@@ -3,6 +3,7 @@ const { PDFParse } = require('pdf-parse');
 const ExcelJS = require('exceljs');
 const JSZip = require('jszip');
 const pool = require('../config/database');
+const { newestInvoicesFirst, HISTORY_LIMIT } = require('../utils/carrierInvoiceOrder');
 const { orderWeightSql, getPackagingWeight } = require('../services/orderWeightService');
 
 // Agrège les colis par pays de destination : { FR: { colis, ht }, BE: {...}, ... }
@@ -1000,8 +1001,8 @@ exports.getHistory = async (req, res) => {
       LEFT JOIN carrier_invoice_parcels cip ON cip.invoice_id = ci.id
       WHERE ci.carrier = 'colissimo'
       GROUP BY ci.id
-      ORDER BY ci.created_at DESC
-      LIMIT 50
+      ORDER BY ${newestInvoicesFirst('ci')}
+      LIMIT ${HISTORY_LIMIT}
     `);
     res.json({ success: true, invoices: result.rows });
   } catch (err) {
