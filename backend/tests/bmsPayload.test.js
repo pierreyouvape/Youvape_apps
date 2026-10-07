@@ -119,5 +119,19 @@ test('la remise n\'est portée que si elle existe', () => {
   assert.ok(!('discount_percent' in sans));
 });
 
+test('Levest (facture en unités) : 6 Grenade Pilée à 4,45 € partent en 6 pièces, pas 36', () => {
+  // Commande 202612036 / BMS 121716, 07/10/2026 : Levest était déclaré « au lot »,
+  // la ligne partait en 6 × 6 = 36 pièces à 0,7417 €. Le montant tombait juste,
+  // la quantité non — invisible jusqu'à la réception.
+  const parserRegistry = require('../src/parsers');
+  const skip = parserRegistry.skipsPackQty('Levest - Roykin');
+  const [item] = buildBmsItems([{
+    sku: '11713', product_name: 'Grenade Pilée 50ml', qty_ordered: 6, unit_price: 4.45,
+    units_per_qty: skip ? null : 1, pack_qty: 6, catalogue_pack_qty: 6,
+  }], skip);
+  assert.strictEqual(item.qty, 6);
+  assert.strictEqual(item.price, 4.45);
+});
+
 if (failures > 0) { console.log(`\n${failures} test(s) en échec.`); process.exit(1); }
 console.log('\nTous les tests passent.');

@@ -4,12 +4,13 @@
  *
  * k = nombre d'unités de ligne dans un pack de la réf :
  *  - cas général : la ligne compte en UNITÉS → k = refPack ;
- *  - skipPackQty (LCA, Highbuy, Levest, MG Vape) : la ligne compte en packs de
+ *  - skipPackQty (LCA, Highbuy, MG Vape) : la ligne compte en packs de
  *    l'association BMS (units_per_qty = pack BMS, cf. purchaseOrderModel.create)
  *    → k = refPack / bmsPack. Les réfs reprises ont refPack = bmsPack → k = 1,
  *    comme avant ; une réf « pack de 50 » chez un fournisseur que BMS compte par
  *    10 donne 5 packs BMS par pack de la réf.
- * invertPackQty : le document est déjà en unités → quantité et prix tels quels.
+ * invertPackQty (e.tasty, Curieux, Pulp, Levest) : le document est déjà en
+ *   unités → quantité et prix tels quels.
  *
  * Le montant de la ligne est conservé (qty × prix inchangé) ; seul le prix de la
  * réf en base (refPrice, prix DU PACK) est ramené à l'unité de ligne.

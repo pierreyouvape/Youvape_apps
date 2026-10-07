@@ -795,7 +795,7 @@ const purchaseOrderModel = {
       throw new Error(`Le fournisseur n'a pas d'ID BMS associé. Synchronisez les fournisseurs depuis BMS d'abord.`);
     }
 
-    // Fournisseur « à l'unité » (Highbuy, LCA, MG Vape, Levest) : la facture est déjà
+    // Fournisseur « à l'unité » (Highbuy, LCA, MG Vape) : la facture est déjà
     // en prix unitaire / quantités unitaires. Neutraliser pack_qty (=1) pour NE PAS
     // re-multiplier le prix par le conditionnement catalogue (bug ×10 : 7,90 → 79,00).
     const skipPackQty = parserRegistry.skipsPackQty(supplier.code);
@@ -2095,6 +2095,7 @@ const purchaseOrderModel = {
       SELECT DISTINCT ON (p.wp_product_id)
         p.wp_product_id AS input_id,
         poi.unit_price,
+        poi.units_per_qty,
         ps.pack_qty,
         ps.supplier_price,
         po.order_date,
@@ -2124,6 +2125,7 @@ const purchaseOrderModel = {
         unitPrice: row.unit_price,
         packQty: row.pack_qty,
         supplierPrice: row.supplier_price,
+        unitsPerQty: row.units_per_qty,
       });
       if (price == null) continue;
       map[row.input_id] = {

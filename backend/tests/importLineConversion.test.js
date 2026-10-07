@@ -12,6 +12,8 @@
 const assert = require('assert');
 const { convertLine } = require('../src/utils/importLineConversion');
 const cigaccessParser = require('../src/parsers/cigaccessParser');
+const levestParser = require('../src/parsers/levestParser');
+const parserRegistry = require('../src/parsers');
 
 let failures = 0;
 function test(name, fn) {
@@ -105,6 +107,24 @@ test('la réf. d\'une déclinaison est lue en entier, pas ramenée à la réf. p
   const parsed = cigaccessParser.parse(text);
   assert.deepStrictEqual(parsed.items.map(i => i.supplier_sku), ['012861-1-Ro', '009898']);
   assert.deepStrictEqual(parsed.items.map(i => i.qty_ordered), [2, 5]);
+});
+
+test('Levest facture en unités : la Menthe vendue par 5 reste 30 pièces à 1,30 € (202612036)', () => {
+  // FAC/2026/10/0225 : « [NMENTHE10N03] … 30,00 1,30 TVA 20% 39,00 € ». La réf.
+  // est en pack de 5 à 6,50 €. Compté « en lots », cela partait en 150 pièces.
+  const parsed = levestParser.parse('Référence :\n202612036\n[NMENTHE10N03] ROYKIN - MENTHE 3MG\t30,00 \t1,30 TVA 20% \t39,00 €\n');
+  assert.strictEqual(parsed.skipPackQty, undefined);
+  assert.strictEqual(parsed.invertPackQty, true);
+  assert.strictEqual(parserRegistry.skipsPackQty('Levest - Roykin'), false);
+  const item = parsed.items[0];
+  const l = convertLine({
+    docQty: item.qty_ordered, docPrice: item.unit_price_net, refPack: 5, refPrice: 6.5, bmsPack: 5,
+    conversion: { invertPackQty: parsed.invertPackQty, trustPdfPrice: parsed.trustPdfPrice },
+  });
+  assert.strictEqual(l.qtyOrdered, 30);
+  assert.ok(close(l.unitPrice, 1.3));
+  assert.ok(close(l.dbPrice, 1.3));
+  assert.ok(close(l.qtyOrdered * l.unitPrice, 39));
 });
 
 if (failures > 0) {

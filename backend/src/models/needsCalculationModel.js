@@ -243,6 +243,7 @@ const needsCalculationModel = {
         poi.product_id,
         po.supplier_id,
         poi.unit_price,
+        poi.units_per_qty,
         po.order_date,
         po.bms_reference,
         s.code AS supplier_code,
@@ -292,6 +293,7 @@ const needsCalculationModel = {
         unitPrice: row.unit_price,
         packQty: row.pack_qty,
         supplierPrice: row.supplier_price,
+        unitsPerQty: row.units_per_qty,
       });
       if (price == null) continue;
       const pid = parseInt(row.product_id);

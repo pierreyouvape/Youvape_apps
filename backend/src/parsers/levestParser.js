@@ -9,8 +9,10 @@
  */
 
 module.exports = {
-  // Fournisseur « à l'unité » — voir highbuyParser / parsers/index.js skipsPackQty().
-  skipPackQty: true,
+  // PAS skipPackQty : ce drapeau dit « la ligne compte en lots » (LCA, Highbuy),
+  // et depuis le 30/09/2026 buildBmsItems remultiplie alors par le lot du
+  // catalogue. Levest facture en unités : 6 Grenade Pilée à 4,45 € partaient
+  // en 36 pièces à 0,7417 € (commande 202612036, BMS 121716, 07/10/2026).
   parse: (text) => {
     // Ref commande : "Référence :\n202602866"
     const refMatch = text.match(/Référence\s*:\s*\n\s*(\S+)/);
@@ -51,14 +53,12 @@ module.exports = {
       });
     }
 
-    // Import « tout à l'unité » : la facture Levest est toujours au niveau unité
-    // (prix unitaire + quantité en unités). On importe chaque ligne telle quelle
-    // (pack_qty = 1, qty = unités, prix = prix unitaire du PDF) au lieu de reconvertir
-    // en packs via product_suppliers.pack_qty. Ce pack_qty est synchronisé depuis BMS
-    // et varie légitimement (le fabricant propose tantôt en pack de 10, tantôt à l'unité)
-    // → s'en servir provoquait des mélanges pack/unité (cf. FAC 1737 / PO 118192).
-    // skipPackQty : force pack_qty = 1 (aucune conversion ÷/× pack_qty).
+    // La facture Levest est toujours au niveau unité (FAC/2025/11/0470 :
+    // 24 × 4,90 € ; FAC/2026/10/0225 : 30 × 1,30 € pour la Menthe vendue par 5).
+    // invertPackQty : quantité et prix du document repris tels quels, le prix de
+    // la réf (prix du lot) ramené à l'unité ; la ligne compte en pièces
+    // (units_per_qty = 1).
     // trustPdfPrice : conserve le prix unitaire réellement facturé (source de vérité).
-    return { orderNumber, orderDate, items, hasPrice: true, skipPackQty: true, trustPdfPrice: true };
+    return { orderNumber, orderDate, items, hasPrice: true, invertPackQty: true, trustPdfPrice: true };
   }
 };
