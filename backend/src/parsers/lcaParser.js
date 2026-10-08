@@ -74,6 +74,8 @@ function parseConfirmation(text) {
     refs.push({ ref: match[1], index: match.index, endIndex: match.index + match[0].length });
   }
 
+  // Fin de la dernière ligne "QTE PRIX €" déjà attribuée à un article
+  let consumedUntil = 0;
   for (let i = 0; i < refs.length; i++) {
     const ref = refs[i];
     // Le texte entre la fin de cette ref et le debut de la prochaine ref (ou la designation suivante, ou fin)
@@ -91,18 +93,28 @@ function parseConfirmation(text) {
     const beforeLines = beforeRef.split('\n').map(l => l.trim()).filter(l =>
       l && !l.match(/^(Articles|Sous-total|Frais|Taxe|Montant|Qté|Prix)/) && !l.match(/^\d+[\s,.].*€/)
     );
-    const designation = beforeLines.length > 0 ? beforeLines[beforeLines.length - 1] : '';
+    // Saut de page : la qté et le prix restent collés au nom ("Lemon Tart 10ML - Dinner Lady 2 3,24 €")
+    const designation = (beforeLines.length > 0 ? beforeLines[beforeLines.length - 1] : '')
+      .replace(/\s+\d+ [\d ,]+,\d{2} €$/, '');
 
     // Quantite : chercher "QTE PRIX€" avec prix obligatoirement décimal (ex: "5 44,50 €")
     // Le prix doit contenir une virgule ou un point pour éviter de capturer des chiffres dans les noms de saveurs
     // Quantité et prix doivent être sur la même ligne : "5 44,50 €"
     let qtyMatch = afterRef.match(/^(\d+) [\d ,]+,\d{2} €$/m);
-    // Fallback : qty avant la ref (cas saut de page — qty+prix sur page N, Référence: sur page N+1)
-    if (!qtyMatch) {
-      const beforeTotals = beforeRef.replace(/\n(Sous-total|Frais|Taxe|Montant|Articles)[^\n]*/g, '\n');
-      const allQtyMatches = [...beforeTotals.matchAll(/^(\d+) [\d ,]+,\d{2} €$/gm)];
+    if (qtyMatch) {
+      consumedUntil = ref.endIndex + qtyMatch.index + qtyMatch[0].length;
+    } else {
+      // Fallback : qty avant la ref (cas saut de page — qty+prix sur page N, Référence: sur page N+1).
+      // Sur la page N, la ligne sans référence porte le nom, la qté et le prix sur une seule ligne :
+      // "Lemon Tart 10ML - Dinner Lady 2 3,24 €". Le nom doit finir par un non-chiffre, sinon
+      // "12 1 234,56 €" se lirait qté 1. On ne cherche qu'APRÈS la qté déjà prise par l'article
+      // précédent : avant, on retombait sur elle (commande 360161 : 5 au lieu de 2).
+      const zone = cleanedText.substring(Math.max(consumedUntil, i > 0 ? refs[i - 1].endIndex : 0), ref.index);
+      const beforeTotals = zone.replace(/(^|\n)(Sous-total|Frais|Taxe|Montant|Articles)[^\n]*/g, '\n');
+      const allQtyMatches = [...beforeTotals.matchAll(/^(?:.*[^\d\s,] )?(\d+) [\d ,]+,\d{2} €$/gm)];
       if (allQtyMatches.length > 0) {
         qtyMatch = allQtyMatches[allQtyMatches.length - 1];
+        consumedUntil = ref.index;
       }
     }
     const qty = qtyMatch ? parseInt(qtyMatch[1]) : null;

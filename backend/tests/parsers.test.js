@@ -485,6 +485,23 @@ console.log('LCA — facture OpenSi (Rist. % / PU Net HT)');
     assert.strictEqual(l.unit_price_net, 2.89);
     assert.strictEqual(multi.orderNumber, '356948');
   });
+
+  // Confirmation 360161 : la ligne Lemon Tart 6mg est coupée par le saut de page — nom, qté
+  // et prix restent sur la page 2 ("Lemon Tart 10ML - Dinner Lady 2 3,24 €"), la référence
+  // passe page 3. Le repli reprenait la qté de l'article précédent (Shisha Pro, 5).
+  const conf = lca.parse(fixture('lca-confirmation-360161.txt'));
+  test('LCA confirmation 360161 : ligne coupée par le saut de page, qté de sa propre ligne', () => {
+    const qty = Object.fromEntries(conf.items.map(i => [i.supplier_sku, i.qty_ordered]));
+    assert.strictEqual(conf.items.length, 31);
+    assert.strictEqual(qty['#REF5075-13037'], 2);
+    assert.strictEqual(qty['#REF5075-13038'], 5);
+    assert.strictEqual(qty['#REF25309-25304'], 5);
+    assert.strictEqual(qty['#REF16353-53439'], 10);
+    assert.strictEqual(qty['#REF25309-25294'], 5);
+    assert.strictEqual(conf.items.reduce((a, i) => a + i.qty_ordered, 0), 212);
+    const lemon = conf.items.find(i => i.supplier_sku === '#REF5075-13037');
+    assert.strictEqual(lemon.designation, 'Lemon Tart 10ML - Dinner Lady');
+  });
 }
 
 console.log(failures === 0 ? '\nTous les tests passent.' : `\n${failures} test(s) en échec.`);
