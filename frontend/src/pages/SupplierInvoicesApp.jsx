@@ -133,6 +133,18 @@ const avecEcartReel = (lines) => {
 const num = (v) => (v == null ? '—' : String(Math.round(Number(v) * 1000) / 1000));
 
 /**
+ * « Qté cmd / fact » quand les deux côtés ne comptent pas dans la même unité.
+ * « 30 / 6 » laissait croire à 24 pièces manquantes, alors que la facture compte
+ * 6 cartons de 5 (JoshNoa V3/2026/38291) : on écrit « 30 / 6 × 5 ».
+ */
+const qteCmdFact = (ord, inv, packFactor) => {
+  if (!packFactor || ord == null || inv == null) return `${num(ord)} / ${num(inv)}`;
+  return Number(inv) < Number(ord)
+    ? `${num(ord)} / ${num(inv)} × ${packFactor}`
+    : `${num(ord)} × ${packFactor} / ${num(inv)}`;
+};
+
+/**
  * Les familles d'écart, dans l'ordre où elles comptent. Doit rester alignée sur
  * DIFFERENCE_KINDS (backend/src/utils/invoiceCompare.js) : l'écran n'a pas le
  * droit de taire une différence que le moteur a vue.
@@ -375,7 +387,7 @@ function DifferencesTable({ lines, mobile }) {
             </div>
             <div style={{ fontSize: 12, color: C.greyT, margin: '4px 0 8px' }}>{l.label || ''}</div>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12.5 }}>
-              <span>cmd {num(l.qtyOrdered)} → fact {num(l.qtyInvoiced)}</span>
+              <span>cmd / fact {qteCmdFact(l.qtyOrdered, l.qtyInvoiced, l.packFactor)}</span>
               <span style={{ color: C.greyT }}>{eur(l.lineTotalHt)} HT</span>
               <strong style={{ color: l.ecart > 0 ? C.red : (l.ecart < 0 ? C.green : C.greyM) }}>
                 {signedEur(l.ecart)}
@@ -417,7 +429,7 @@ function DifferencesTable({ lines, mobile }) {
               <td style={{ ...td, fontWeight: 600, whiteSpace: 'nowrap', color: 'inherit' }}>{l.ref || '—'}</td>
               <td style={{ ...td, maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'inherit' }}>{l.label || ''}</td>
               <td style={td}><Badge tone={l.meta.tone}>{l.meta.label}</Badge></td>
-              <td style={{ ...td, textAlign: 'right', whiteSpace: 'nowrap', color: 'inherit' }}>{num(l.qtyOrdered)} / {num(l.qtyInvoiced)}</td>
+              <td style={{ ...td, textAlign: 'right', whiteSpace: 'nowrap', color: 'inherit' }}>{qteCmdFact(l.qtyOrdered, l.qtyInvoiced, l.packFactor)}</td>
               <td style={{ ...td, textAlign: 'right', color: 'inherit' }}>{l.expectedUnitPrice == null ? '—' : eur(l.expectedUnitPrice)}</td>
               <td style={{ ...td, textAlign: 'right', color: 'inherit' }}>
                 {l.invoicedUnitPrice == null ? '—' : eur(l.invoicedUnitPrice)}
@@ -787,7 +799,7 @@ function ControlTable({ rows, supplierId, orderId, orderReceived, mobile, onAppl
                 </div>
                 <div style={{ fontSize: 12, color: C.greyT, margin: '4px 0 8px' }}>{r.label || ''}</div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12.5 }}>
-                  <span>cmd {num(r.qtyOrdered)} → fact {num(r.qtyInvoiced)}</span>
+                  <span>cmd / fact {qteCmdFact(r.qtyOrdered, r.qtyInvoiced, r.packFactor)}</span>
                   <strong style={{ color: ecartDe(r) > 0 ? C.red : C.green }}>{signedEur(ecartDe(r))}</strong>
                 </div>
                 {r.discountShare > 0 && (
@@ -843,7 +855,7 @@ function ControlTable({ rows, supplierId, orderId, orderReceived, mobile, onAppl
                   <td style={{ ...td, color: C.greyT }}>{(r.label || '').slice(0, 52)}</td>
                   <td style={td}><Badge tone={meta.tone}>{r.kindLabel || meta.label}</Badge></td>
                   <td style={{ ...td, textAlign: 'right', whiteSpace: 'nowrap' }}>
-                    {num(r.qtyOrdered)} / {num(r.qtyInvoiced)}
+                    {qteCmdFact(r.qtyOrdered, r.qtyInvoiced, r.packFactor)}
                   </td>
                   <td style={{ ...td, textAlign: 'right', color: C.greyT }}>
                     {prix(t ? t.currentPrice : r.expectedUnitPrice)}

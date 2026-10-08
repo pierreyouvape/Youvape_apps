@@ -365,8 +365,13 @@ test('la ventilation redonne l\'écart global de la facture', () => {
   assert.ok(close(carton.totals.gap, 3.46));
 });
 
-test('aucun bouton de tarif : on n\'écrit pas un prix de carton dans une case de pièce', () => {
-  assert.strictEqual(listTariffUpdates(carton).some((t) => t.ref === 'josh00012308'), false);
+test('le bouton de tarif écrit le prix de la PIÈCE, jamais celui du carton', () => {
+  const t = listTariffUpdates(carton).find((x) => x.ref === 'josh00012308');
+  assert.ok(t, 'un changement de tarif sur une ligne au carton doit pouvoir se retenir');
+  assert.ok(close(t.realPrice, 5.192));   // 25,96 € ÷ 5 pièces, pas 25,96 €
+  assert.strictEqual(t.currentPrice, 4.50);
+  assert.strictEqual(t.qty, 5);
+  assert.ok(close(t.delta * t.qty, 3.46));
 });
 
 test('le message réclame 3,46 € et dit à quelle unité il compte', () => {

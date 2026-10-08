@@ -921,12 +921,11 @@ function listDifferences(comparison) {
         ? "Périmètre inconnu : non imputée au coût des lignes"
         // Un carton contre des pièces, PLUS une hausse de tarif : dire à quelle
         // unité l'écart se lit, sinon « 4,50 € commandé » en face de
-        // « 25,96 € facturé » reste illisible. Et pas « aligner le tarif » : le
-        // bouton n'y est pas (cf. `listTariffUpdates`), le carton se saisit à la
-        // main.
+        // « 25,96 € facturé » reste illisible. Le bouton de tarif, lui, écrit le
+        // prix de l'unité de commande (cf. `listTariffUpdates`).
         : (l.unitMismatch
           ? `Vendu par ${l.packFactor} : ${prixPiece(l.piecePriceInvoiced)} la pièce facturée `
-            + `contre ${prixPiece(l.piecePriceExpected)} commandée — réclamer l'écart`
+            + `contre ${prixPiece(l.piecePriceExpected)} commandée — réclamer l'écart, ou aligner le tarif s'il a changé`
           : ((DIFFERENCE_KINDS[l.verdict] || {}).action || null)),
     }))
     .sort((a, b) => {
@@ -962,34 +961,50 @@ function listTariffUpdates(comparison, options = {}) {
   // Un avoir n'est pas un prix d'achat : 3,46 € d'extourne n'est pas le tarif du produit.
   const hors = ['packaging', 'missing_in_invoice', 'free', 'not_ordered', 'shipping', 'discount', 'other', 'credit'];
 
+  // Le coût réel EXPRIMÉ DANS L'UNITÉ DE LA COMMANDE BMS — c'est la seule que
+  // `packQty`, `alignTariffs` et `applyTariffs` savent convertir.
+  //
+  // Quand la facture compte en cartons ce que la commande compte en pièces (ou
+  // l'inverse), le prix unitaire FACTURÉ n'est pas dans cette unité : écrire
+  // 24,50 € (un carton de 5) dans une case qui attend le prix d'une pièce, c'est
+  // le bug Mozambique (1,34 € au lieu de 13,40 €) à l'envers. Le montant de la
+  // ligne, lui, est le même des deux côtés : divisé par la quantité COMMANDÉE, il
+  // donne le prix de l'unité de commande. JoshNoa V3/2026/38291, josh00045236 :
+  // 6 cartons à 24,4967 € pour 30 pièces commandées à 3,92 € → 4,8993 € la pièce.
+  // La ligne n'avait aucun bouton, alors que la hausse était un vrai changement
+  // de tarif (fin d'une promotion), à retenir et non à réclamer.
+  const coutCommande = (l) => (l.unitMismatch
+    ? (l.qtyOrdered > 0 && l.invoicedTotal != null
+      ? (l.invoicedTotal - (l.discountShare || 0)) / l.qtyOrdered
+      : null)
+    : l.effectiveUnitCost);
+
   return (comparison?.lines || [])
     .filter((l) => l.ref
       && !hors.includes(l.verdict)
-      // Même raison que les lignes de conditionnement : quand la facture compte en
-      // packs ce que la commande compte en pièces, on ne sait pas à quelle unité le
-      // `pack_qty` de la réf se rapporte. Écrire 25,96 € dans une case qui attend le
-      // prix d'une pièce, c'est le bug Mozambique (1,34 € au lieu de 13,40 €) à
-      // l'envers. Ces tarifs-là s'alignent à la main, en connaissance du carton.
-      && !l.unitMismatch
       && l.qtyInvoiced > 0
       && l.expectedUnitPrice !== null
-      && l.effectiveUnitCost !== null
-      && Math.abs(l.effectiveUnitCost - l.expectedUnitPrice) > seuil)
-    .map((l) => ({
-      ref: l.ref,
-      label: l.label,
-      qty: l.qtyInvoiced,
-      // Le conditionnement auquel ce prix se rapporte : les quantités concordent
-      // (les lignes de conditionnement sont écartées), donc l'unité facturée est
-      // l'unité de la commande BMS, c'est-à-dire un pack de `orderPackQty`.
-      packQty: l.orderPackQty || 1,
-      currentPrice: round2(l.expectedUnitPrice),
-      // Deux décimales ne suffisent pas toujours : un prix fournisseur se
-      // négocie au millième (cf. LCA 5,42633 €).
-      realPrice: Math.round(l.effectiveUnitCost * 10000) / 10000,
-      discountShare: l.discountShare || 0,
-      delta: Math.round((l.effectiveUnitCost - l.expectedUnitPrice) * 10000) / 10000,
-    }))
+      && coutCommande(l) !== null
+      && Math.abs(coutCommande(l) - l.expectedUnitPrice) > seuil)
+    .map((l) => {
+      const cout = coutCommande(l);
+      return {
+        ref: l.ref,
+        label: l.label,
+        // Une quantité dans l'unité du prix : celle de la commande quand les
+        // deux côtés ne comptent pas pareil.
+        qty: l.unitMismatch ? l.qtyOrdered : l.qtyInvoiced,
+        // Le conditionnement auquel ce prix se rapporte : l'unité de la commande
+        // BMS, c'est-à-dire un pack de `orderPackQty`.
+        packQty: l.orderPackQty || 1,
+        currentPrice: round2(l.expectedUnitPrice),
+        // Deux décimales ne suffisent pas toujours : un prix fournisseur se
+        // négocie au millième (cf. LCA 5,42633 €).
+        realPrice: Math.round(cout * 10000) / 10000,
+        discountShare: l.discountShare || 0,
+        delta: Math.round((cout - l.expectedUnitPrice) * 10000) / 10000,
+      };
+    })
     .sort((a, b) => Math.abs(b.delta * b.qty) - Math.abs(a.delta * a.qty));
 }
 
