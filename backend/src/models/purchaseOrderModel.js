@@ -1243,6 +1243,10 @@ const purchaseOrderModel = {
         );
       }
 
+      // Les lignes dont le PRODUIT change : à répercuter chez BMS après le
+      // COMMIT, en remplaçant la ligne (son produit ne se modifie pas sur place).
+      const reappariements = [];
+
       // Mettre à jour les lignes existantes
       if (data.items) {
         // Fournisseur de la commande (après une éventuelle réaffectation ci-dessus) :
@@ -1284,9 +1288,10 @@ const purchaseOrderModel = {
             // entre les deux — sans l'ORDER BY, on réapparie sur le MAUVAIS
             // produit, ce qui est pire que de ne rien faire.
             let nouveauProduitId = null;
+            let nouveauSku = null;
             if (item.product_id) {
               const r = await client.query(
-                `SELECT p.id
+                `SELECT p.id, p.sku
                    FROM products p
                   WHERE p.wp_product_id = $1 OR p.id = $1
                   ORDER BY CASE WHEN p.wp_product_id = $1 THEN 0 ELSE 1 END
@@ -1294,6 +1299,33 @@ const purchaseOrderModel = {
                 [item.product_id],
               );
               nouveauProduitId = r.rows[0] ? r.rows[0].id : null;
+              nouveauSku = r.rows[0] ? r.rows[0].sku : null;
+            }
+
+            // L'état AVANT, pour savoir si le produit change vraiment — et avec
+            // quel SKU retrouver la ligne correspondante chez BMS, puisqu'elle
+            // porte encore l'ancien produit.
+            const { rows: avant } = await client.query(
+              `SELECT poi.product_id, poi.supplier_sku, COALESCE(poi.units_per_qty, 1) AS units_per_qty,
+                      p.sku AS product_sku
+                 FROM purchase_order_items poi
+                 LEFT JOIN products p ON p.id = poi.product_id
+                WHERE poi.id = $1 AND poi.purchase_order_id = $2`,
+              [item.id, id],
+            );
+            const etatAvant = avant[0];
+            if (etatAvant && nouveauProduitId && etatAvant.product_id !== nouveauProduitId) {
+              const lot = parseInt(etatAvant.units_per_qty, 10) || 1;
+              const prixLigne = item.unit_price != null && item.unit_price !== ''
+                ? parseFloat(item.unit_price) : 0;
+              reappariements.push({
+                purchaseOrderItemId: item.id,
+                ancienSku: etatAvant.product_sku,
+                ancienneRef: etatAvant.supplier_sku,
+                nouveauSku,
+                pieces: (parseInt(item.qty_ordered, 10) || 0) * lot,
+                prixPiece: lot > 1 ? prixLigne / lot : prixLigne,
+              });
             }
 
             await client.query(`
@@ -1392,6 +1424,23 @@ const purchaseOrderModel = {
           } catch (e) {
             console.warn(`[BMS] réf fournisseur non transmise pour la commande ${id} : ${e.message}`);
           }
+        }
+      }
+
+      // Le ré-appariement d'un produit est reporté sur la commande BMS, sans
+      // quoi la réception créditerait le stock de l'ANCIEN article : elle envoie
+      // à BMS l'identifiant de SA ligne, et c'est lui qui décide du produit.
+      // Après le COMMIT, et sans jamais faire échouer l'enregistrement local.
+      if (reappariements.length > 0) {
+        try {
+          const avertissements = await purchaseOrderModel.corrigerLignesDansBms(misAJour, reappariements);
+          if (avertissements.length > 0) {
+            misAJour.bms_warnings = avertissements;
+            console.warn(`[BMS] commande ${id} : ${avertissements.join(' | ')}`);
+          }
+        } catch (e) {
+          misAJour.bms_warnings = [`La commande BMS n'a pas pu être corrigée (${e.message}).`];
+          console.warn(`[BMS] correction des lignes impossible pour la commande ${id} : ${e.message}`);
         }
       }
 
@@ -1497,6 +1546,115 @@ const purchaseOrderModel = {
     } finally {
       client.release();
     }
+  },
+
+  /**
+   * Répercute un ré-appariement de produit sur la commande BMS.
+   *
+   * La ligne d'un bon BMS est liée à SON produit : il ne se modifie pas sur
+   * place. Corriger revient donc à ajouter la bonne ligne puis retirer la
+   * mauvaise — `POST /v2/purchase-orders/{id}/items` et
+   * `DELETE /v2/purchase-orders/{id}/items/{itemId}`, tous deux vérifiés en réel.
+   *
+   * ON AJOUTE AVANT DE SUPPRIMER. Si l'ajout échoue, la commande garde sa ligne
+   * d'origine et rien n'est perdu ; l'ordre inverse laisserait un bon amputé sur
+   * la moindre erreur réseau. La contrepartie — un ajout réussi suivi d'une
+   * suppression ratée — laisse un doublon, qui est dit en clair plutôt que tu.
+   *
+   * REFUSÉ SUR UNE LIGNE DÉJÀ REÇUE : supprimer une ligne portant un
+   * `qty_received` effacerait une réception réellement faite. On le signale et
+   * on laisse BMS tranquille.
+   *
+   * Renvoie la liste des avertissements : cette correction est un confort, elle
+   * ne doit jamais faire échouer l'enregistrement local déjà validé.
+   */
+  corrigerLignesDansBms: async (order, reappariements) => {
+    const avertissements = [];
+    if (!order || !order.bms_po_id || reappariements.length === 0) return avertissements;
+
+    const { rows: fournisseurs } = await pool.query(
+      'SELECT s.bms_id FROM purchase_orders po JOIN suppliers s ON s.id = po.supplier_id WHERE po.id = $1',
+      [order.id],
+    );
+    const bmsSupplierId = (fournisseurs[0] || {}).bms_id || null;
+
+    let lignesBms;
+    try {
+      const d = await bmsApiModel.apiCall(`/supplier/purchase-orders/${order.bms_po_id}`);
+      lignesBms = ((d.data || d).items) || [];
+    } catch (e) {
+      avertissements.push(`Les lignes de la commande BMS n'ont pas pu être lues (${e.message}) : la correction n'y a pas été reportée.`);
+      return avertissements;
+    }
+
+    const norm = (v) => String(v || '').trim().toLowerCase();
+
+    for (const r of reappariements) {
+      const ancienne = lignesBms.find((l) => (
+        (r.ancienSku && norm(l.sku) === norm(r.ancienSku))
+        || (r.ancienneRef && l.supplier_sku && norm(l.supplier_sku) === norm(r.ancienneRef))
+      ));
+
+      if (!ancienne) {
+        avertissements.push(`La ligne ${r.ancienSku || r.ancienneRef} est introuvable dans BMS : rien n'y a été changé.`);
+        continue;
+      }
+      if (Number(ancienne.qty_received) > 0) {
+        avertissements.push(
+          `${r.ancienSku} a déjà été réceptionné dans BMS (${ancienne.qty_received} pièce(s)) : `
+          + 'sa ligne n\'a pas été remplacée, pour ne pas effacer cette réception. À corriger à la main dans BMS.',
+        );
+        continue;
+      }
+      if (!r.nouveauSku) {
+        avertissements.push('Le nouveau produit n\'a pas de SKU : BMS ne peut pas le référencer, sa ligne est inchangée.');
+        continue;
+      }
+
+      try {
+        const bmsProductId = await receptionSessionModel.trouverProduitBms(r.nouveauSku, bmsSupplierId);
+        const creee = await bmsApiModel.apiCall(
+          `/v2/purchase-orders/${order.bms_po_id}/items`, 'POST',
+          {
+            product_id: bmsProductId,
+            qty: r.pieces,
+            qty_pack: 1,
+            price: Math.round(r.prixPiece * 10000) / 10000,
+          },
+        );
+        const nouvelleLigneId = (creee.data || creee).id;
+
+        try {
+          await bmsApiModel.apiCall(
+            `/v2/purchase-orders/${order.bms_po_id}/items/${ancienne.id}`, 'DELETE',
+          );
+        } catch (e) {
+          avertissements.push(
+            `${r.nouveauSku} a bien été ajouté dans BMS, mais l'ancienne ligne ${r.ancienSku} n'a pas pu être `
+            + `supprimée (${e.message}). La commande BMS porte les DEUX : à corriger là-bas.`,
+          );
+        }
+
+        // Une réception en cours désigne les lignes par leur identifiant BMS :
+        // sans ce report, elle pointerait sur une ligne qui n'existe plus.
+        if (nouvelleLigneId) {
+          await pool.query(
+            `UPDATE reception_counts c
+                SET bms_line_id = $3
+               FROM reception_sessions rs
+              WHERE rs.id = c.session_id
+                AND rs.status = 'counting'
+                AND c.purchase_order_item_id = $1
+                AND c.bms_line_id = $2`,
+            [r.purchaseOrderItemId, ancienne.id, nouvelleLigneId],
+          );
+        }
+      } catch (e) {
+        avertissements.push(`${r.nouveauSku} n'a pas pu être ajouté dans BMS (${e.message}) : sa ligne y porte encore ${r.ancienSku}.`);
+      }
+    }
+
+    return avertissements;
   },
 
   // Supprimer une commande (seulement si draft)

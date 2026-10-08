@@ -417,6 +417,14 @@ const OrdersTab = ({ token }) => {
       setSelectedOrder(response.data.data);
       setEditMode(false);
       setEditData(null);
+      // Le report du ré-appariement dans BMS peut n'être que partiel (ligne déjà
+      // réceptionnée là-bas, produit absent de leur catalogue). L'enregistrement
+      // local a réussi, mais le taire laisserait croire que BMS suit.
+      const avertissements = response.data.data?.bms_warnings;
+      if (Array.isArray(avertissements) && avertissements.length > 0) {
+        alert('Commande enregistrée, mais BMS n\'a pas pu suivre entièrement :\n\n'
+          + avertissements.map(a => `• ${a}`).join('\n'));
+      }
       loadOrders();
     } catch (err) {
       console.error('Erreur sauvegarde:', err);
