@@ -1287,9 +1287,44 @@ const purchaseOrderModel = {
             // wp_product_id OU un id interne, et 254 produits ont une collision
             // entre les deux — sans l'ORDER BY, on réapparie sur le MAUVAIS
             // produit, ce qui est pire que de ne rien faire.
+            // L'état AVANT : il dit si le produit change VRAIMENT, et avec quel
+            // SKU retrouver la ligne correspondante chez BMS.
+            const { rows: avant } = await client.query(
+              `SELECT poi.product_id, poi.supplier_sku, COALESCE(poi.units_per_qty, 1) AS units_per_qty,
+                      p.sku AS product_sku, p.wp_product_id
+                 FROM purchase_order_items poi
+                 LEFT JOIN products p ON p.id = poi.product_id
+                WHERE poi.id = $1 AND poi.purchase_order_id = $2`,
+              [item.id, id],
+            );
+            const etatAvant = avant[0];
+
+            // ⚠️ `product_id` NE DÉSIGNE PAS LA MÊME CHOSE SELON D'OÙ IL VIENT.
+            //
+            // Le détail d'une commande renvoie l'id INTERNE ; la recherche
+            // produits, elle, renvoie `wp_product_id as id`. Une ligne non
+            // touchée repart donc avec son id interne, une ligne ré-appariée
+            // avec un id WordPress — et 254 produits ont une collision entre les
+            // deux espaces.
+            //
+            // Résoudre systématiquement en privilégiant `wp_product_id` a changé
+            // une ligne à laquelle personne n'avait touché : l'id interne 7108
+            // (Cartouche XO Havana) a été lu comme le wp_product_id 7108 (Pack 5
+            // Résistances T2), et la mauvaise ligne est partie dans BMS
+            // (commande 596971, 08/10/2026).
+            //
+            // D'où la règle : si la valeur reçue correspond à l'un OU l'autre des
+            // identifiants du produit déjà en place, la ligne n'a pas changé et
+            // on n'y touche pas. On ne résout que ce qui diffère des deux.
             let nouveauProduitId = null;
             let nouveauSku = null;
-            if (item.product_id) {
+            const memeProduit = etatAvant && item.product_id != null && (
+              Number(item.product_id) === Number(etatAvant.product_id)
+              || (etatAvant.wp_product_id != null
+                  && Number(item.product_id) === Number(etatAvant.wp_product_id))
+            );
+
+            if (item.product_id && !memeProduit) {
               const r = await client.query(
                 `SELECT p.id, p.sku, p.product_type, p.post_title
                    FROM products p
@@ -1303,9 +1338,8 @@ const purchaseOrderModel = {
               //
               // Il n'a pas de stock propre — celui-ci vit sur les déclinaisons —
               // et BMS ne sait pas quoi en faire : interrogé sur le SKU d'un
-              // parent, il rend une déclinaison au hasard. Rattacher une ligne à
-              // « Pack 5 Résistances T2 » l'a fait atterrir sur la 1.80 Ω
-              // (commande 596971). Mieux vaut refuser que deviner.
+              // parent, il rend une déclinaison au hasard. Mieux vaut refuser
+              // que deviner.
               if (r.rows[0] && r.rows[0].product_type === 'variable') {
                 throw new Error(
                   `« ${r.rows[0].post_title} » est un produit variable : choisissez la déclinaison `
@@ -1318,18 +1352,6 @@ const purchaseOrderModel = {
               nouveauSku = r.rows[0] ? r.rows[0].sku : null;
             }
 
-            // L'état AVANT, pour savoir si le produit change vraiment — et avec
-            // quel SKU retrouver la ligne correspondante chez BMS, puisqu'elle
-            // porte encore l'ancien produit.
-            const { rows: avant } = await client.query(
-              `SELECT poi.product_id, poi.supplier_sku, COALESCE(poi.units_per_qty, 1) AS units_per_qty,
-                      p.sku AS product_sku
-                 FROM purchase_order_items poi
-                 LEFT JOIN products p ON p.id = poi.product_id
-                WHERE poi.id = $1 AND poi.purchase_order_id = $2`,
-              [item.id, id],
-            );
-            const etatAvant = avant[0];
             if (etatAvant && nouveauProduitId && etatAvant.product_id !== nouveauProduitId) {
               const lot = parseInt(etatAvant.units_per_qty, 10) || 1;
               const prixLigne = item.unit_price != null && item.unit_price !== ''
