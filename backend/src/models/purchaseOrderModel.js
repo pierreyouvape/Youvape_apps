@@ -1291,13 +1291,29 @@ const purchaseOrderModel = {
             let nouveauSku = null;
             if (item.product_id) {
               const r = await client.query(
-                `SELECT p.id, p.sku
+                `SELECT p.id, p.sku, p.product_type, p.post_title
                    FROM products p
                   WHERE p.wp_product_id = $1 OR p.id = $1
                   ORDER BY CASE WHEN p.wp_product_id = $1 THEN 0 ELSE 1 END
                   LIMIT 1`,
                 [item.product_id],
               );
+
+              // ON NE COMMANDE JAMAIS UN PARENT VARIABLE.
+              //
+              // Il n'a pas de stock propre — celui-ci vit sur les déclinaisons —
+              // et BMS ne sait pas quoi en faire : interrogé sur le SKU d'un
+              // parent, il rend une déclinaison au hasard. Rattacher une ligne à
+              // « Pack 5 Résistances T2 » l'a fait atterrir sur la 1.80 Ω
+              // (commande 596971). Mieux vaut refuser que deviner.
+              if (r.rows[0] && r.rows[0].product_type === 'variable') {
+                throw new Error(
+                  `« ${r.rows[0].post_title} » est un produit variable : choisissez la déclinaison `
+                  + 'précise (la couleur, le dosage, la valeur), pas le produit parent. '
+                  + 'Un parent n\'a pas de stock propre et BMS ne saurait pas lequel recevoir.',
+                );
+              }
+
               nouveauProduitId = r.rows[0] ? r.rows[0].id : null;
               nouveauSku = r.rows[0] ? r.rows[0].sku : null;
             }

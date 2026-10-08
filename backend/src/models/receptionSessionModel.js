@@ -736,7 +736,16 @@ async function trouverProduitBms(sku, bmsSupplierId) {
     ? parFournisseur
     : await bmsApiModel.getSupplierProducts(null, sku);
 
-  let productId = trouve[0]?.product_id;
+  // LE SKU RENDU DOIT ÊTRE CELUI DEMANDÉ.
+  //
+  // `/supplier/products?sku=…` fait une correspondance PARTIELLE : interrogé sur
+  // `7108` (un parent variable), il a renvoyé `7108-7259`, l'une de ses
+  // déclinaisons, choisie par personne. La ligne de commande BMS s'est retrouvée
+  // sur « Pack 5 Résistances T2 - 1.80 Ω » au lieu du produit voulu — en silence
+  // (commande 596971, 08/10/2026). Le repli `/v2/products` vérifiait déjà le
+  // SKU ; ce chemin-ci ne le faisait pas.
+  const exact = trouve.filter((x) => String(x.sku || '').trim() === String(sku).trim());
+  let productId = exact[0]?.product_id;
 
   // `/supplier/products` ne connaît que les produits RATTACHÉS à un
   // fournisseur : une fiche tout juste créée dans BMS n'y figure pas, alors
