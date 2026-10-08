@@ -141,6 +141,16 @@ function splitRef(block) {
     ref += tokens[next];
     next += 1;
   }
+  // CigAccess : le suffixe d'une déclinaison est tronqué à 4 caractères, et la
+  // colonne le coupe encore (« 012825-1-G » + « unm », « 013101-1-9 » + « ML »).
+  // Le fragment ne recompose jamais plus de 4 caractères : au-delà, c'est le
+  // premier mot de la désignation (« 012825-6-S.S Hellvape »).
+  const cig = ref.match(/^\d{6}-\d+-([\w.]*)$/);
+  if (cig && tokens[next] && /^[\w.]{1,3}$/.test(tokens[next])
+      && cig[1].length + tokens[next].length <= 4) {
+    ref += tokens[next];
+    next += 1;
+  }
   return { ref, label: tokens.slice(next).join(' ') || null };
 }
 
@@ -342,7 +352,18 @@ function parseInvoice(rawText) {
       continue;
     }
 
-    const { ref, label } = splitRef(stripColumns(block));
+    let libelle = stripColumns(block);
+    // CigAccess : « 013167-3-Blu » en bas de page, son « e » en tête de la
+    // suivante, donc devant la réf. de l'article d'après. On le rend au
+    // précédent, faute de quoi sa réf. reste tronquée et ne matche rien.
+    const orphelin = libelle.match(/^([A-Za-z0-9.]{1,3})\s+(\d{6}-.*)$/);
+    const precedent = lines[lines.length - 1];
+    if (orphelin && precedent && /^\d{6}-\d+-[\w.]{1,3}$/.test(precedent.ref || '')) {
+      precedent.ref += orphelin[1];
+      libelle = orphelin[2];
+    }
+
+    const { ref, label } = splitRef(libelle);
     lines.push({
       ref,
       label,

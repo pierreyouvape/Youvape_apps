@@ -66,6 +66,16 @@ const CASES = [
     mustContain: '012959', // la réf. que l'article perdu s'appropriait
   },
   {
+    label: 'CigAccess FA129179/2026 (sans colonne Poids, n° suffixé /2026, réf. coupée par le saut de page)',
+    parser: require('../src/parsers/cigaccessParser'),
+    text: fixture('cigaccess-FA129179.txt'),
+    orderNumber: 'XKVGXPIDD',
+    expectedItems: 33,
+    expectedTotal: 2023.54,
+    // « 013167-3-Blu » en bas de page 2, son « e » en tête de page 3.
+    mustContain: '013167-3-Blue',
+  },
+  {
     label: 'Curieux FA072952 (colonne « Prix de base » ajoutée, réfs coupées hors tiret)',
     parser: require('../src/parsers/curieuxParser'),
     text: fixture('curieux-FA072952.txt'),

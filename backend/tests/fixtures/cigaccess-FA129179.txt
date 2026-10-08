@@ -1,0 +1,220 @@
+FACTURE
+06/10/2026
+#FA129179/2026
+Adresse de livraison
+Maxime coglitore
+YOUVAPE Site-web
+0000
+580 avenue de l aube rouge
+34170 castelnau le lez
+France
+0695975267
+0695975267
+Adresse de facturation
+Maxime coglitore
+YOUVAPE Site-web
+0000
+580 avenue de l aube rouge
+34170 castelnau le lez
+France
+0695975267
+0695975267
+Numéro de facture Date de facturation Réf. de commande Date de commande Numéro de TVA
+#FA129179/2026 06/10/2026 XKVGXPIDD 06/10/2026 0000
+Référence Produit Taux de
+taxe
+Prix de
+base
+(HT)
+Prix
+unitaire
+(HT)
+Quantité Total
+(HT)
+006880 Ripe Vapes - VCT Concentré 30ML 20 % 6,90 € 5,45 € 50 272,50 €
+007226 PGVG Labs - Don Cristo Custard 50ML 20 % 7,90 € 5,80 € 5 29,00 €
+011265 Abyss by Full Moon - Nautica Concentré
+30 ML
+20 % 5,90 € 4,50 € 5 22,50 €
+012825-1-G
+unm
+Hellvape - Dead Rabbit 4 RTA - Couleur
+: Gunmetal
+20 % 19,90 € 17,91 € 3 53,73 €
+012825-2-Mat
+t
+Hellvape - Dead Rabbit 4 RTA - Couleur
+: Matte Black
+20 % 19,90 € 17,91 € 3 53,73 €
+012825-4-Gol
+d
+Hellvape - Dead Rabbit 4 RTA - Couleur
+: Gold
+20 % 19,90 € 17,91 € 2 35,82 €
+012825-5-Bla
+c
+Hellvape - Dead Rabbit 4 RTA - Couleur
+: Black Gold
+20 % 19,90 € 17,91 € 3 53,73 €
+012825-6-S.S
+Hellvape - Dead Rabbit 4 RTA - Couleur
+: S.S
+20 % 19,90 € 17,91 € 2 35,82 €
+012861-2-G
+unm
+Dotmod - DotAIO V3 - Couleur :
+Gunmetal
+20 % 87,90 € 74,90 € 2 149,80 €
+012865-0-S.S
+Hellvape - Dead Rabbit 4 RTA PRO -
+Couleur : S.S
+20 % 24,99 € 22,49 € 3 67,47 €
+012865-1-Bla
+c
+Hellvape - Dead Rabbit 4 RTA PRO -
+Couleur : Black Gold
+20 % 24,99 € 22,49 € 3 67,47 €
+012865-2-Mat
+t
+Hellvape - Dead Rabbit 4 RTA PRO -
+Couleur : Matte Black
+20 % 24,99 € 22,49 € 3 67,47 €
+1 / 3
+
+-- 1 of 3 --
+
+FACTURE
+06/10/2026
+#FA129179/2026
+012865-3-G
+unm
+Hellvape - Dead Rabbit 4 RTA PRO -
+Couleur : Gunmetal
+20 % 24,99 € 22,49 € 3 67,47 €
+012882 CEDRIC GROSCAKE - La Grosse
+Vanille 50ML
+20 % 5,90 € 4,90 € 4 19,60 €
+012956 CEDRIC GROSCAKE - La Grosse
+Vanille - Concentré 30ML
+20 % 5,90 € 5,31 € 10 53,10 €
+013021-0-Bla
+c
+Hellvape - Dead Rabbit 4 RDA (New
+Color) - Couleur : Black Purple
+20 % 17,90 € 16,11 € 2 32,22 €
+013021-2-Bla
+c
+Hellvape - Dead Rabbit 4 RDA (New
+Color) - Couleur : Black Red
+20 % 17,90 € 16,11 € 3 48,33 €
+013098-0-Bla
+c
+Steam Crave - Aromamizer Supreme V4
+RDTA 7.5/9mL - Couleur : Black
+20 % 31,90 € 28,71 € 3 86,13 €
+013098-2-G
+unm
+Steam Crave - Aromamizer Supreme V4
+RDTA 7.5/9mL - Couleur : Gunmetal
+20 % 31,90 € 28,71 € 3 86,13 €
+013098-3-Mat
+t
+Steam Crave - Aromamizer Supreme V4
+RDTA 7.5/9mL - Couleur : Matte
+Gunmetal
+20 % 31,90 € 28,71 € 3 86,13 €
+013098-4-Mat
+t
+Steam Crave - Aromamizer Supreme V4
+RDTA 7.5/9mL - Couleur : Matte Black
+20 % 31,90 € 28,71 € 3 86,13 €
+013101-0-7.
+5M
+Steam Crave - Pyrex Aromamizer
+Supreme V4 RDTA x 2 - Taille : 7.5ML
+20 % 1,99 € 1,79 € 10 17,91 €
+013101-1-9
+ML
+Steam Crave - Pyrex Aromamizer
+Supreme V4 RDTA x 2 - Taille : 9 ML
+20 % 3,99 € 3,59 € 10 35,91 €
+013128-0-Blu
+e
+Hellvape - Dead Rabbit 4 RTA PRO New
+Color - Couleur : Blue
+20 % 24,99 € 22,49 € 2 44,98 €
+013128-1-Rai
+n
+Hellvape - Dead Rabbit 4 RTA PRO New
+Color - Couleur : Rainbow
+20 % 24,99 € 22,49 € 3 67,47 €
+013128-2-G
+unm
+Hellvape - Dead Rabbit 4 RTA PRO New
+Color - Couleur : Gunmetal Blue
+20 % 24,99 € 22,49 € 2 44,98 €
+013128-3-S.S
+Hellvape - Dead Rabbit 4 RTA PRO New
+Color - Couleur : S.S Purple
+20 % 24,99 € 22,49 € 3 67,47 €
+013147 Diam's by Full Moon - Émeraude
+Concentré 30ml
+20 % 5,90 € 4,50 € 10 45,00 €
+013167-1-Mat
+t
+Hellvape - Dead Rabbit Mini RTA -
+Couleur : Matte Black
+20 % 17,90 € 16,11 € 3 48,33 €
+013167-2-G
+unm
+Hellvape - Dead Rabbit Mini RTA -
+Couleur : Gunmetal
+20 % 17,90 € 16,11 € 3 48,33 €
+013167-3-Blu
+Hellvape - Dead Rabbit Mini RTA -
+Couleur : Blue
+20 % 17,90 € 16,11 € 2 32,22 €
+2 / 3
+
+-- 2 of 3 --
+
+FACTURE
+06/10/2026
+#FA129179/2026
+e
+013167-4-Rai
+n
+Hellvape - Dead Rabbit Mini RTA -
+Couleur : Rainbow
+20 % 17,90 € 16,11 € 3 48,33 €
+013167-6-Mat
+t
+Hellvape - Dead Rabbit Mini RTA -
+Couleur : Matte Silver
+20 % 17,90 € 16,11 € 3 48,33 €
+Détail des
+taxes
+Taux de taxe Prix de base Taxe totale
+Produits 20.000 % 2 023,54 € 404,78 €
+Total produits 2 023,54 €
+Frais de livraison Livraison gratuite
+Total (HT) 2 023,54 €
+Taxe totale 404,78 €
+Total 2 428,32 €
+Moyen de paiement Paiement VISA 2 428,32 €
+Date de paiement : Immédiat
+Escompte pour paiement anticipé : néant
+Loi LME du 04-08-2008, les pénalités de retard seront calculées sur la base de
+3 fois le taux d'intéret légal.
+Indemnité forfaitaire pour frais de recouvrement : 40 euros.
+Powered by TCPDF (www.tcpdf.org)
+Cig access pro - SARL ALAV, 148 Rue de Lenche - 13400 Aubagne - France
+Pour toute assistance, merci de nous contacter :
+Tél. : 04 42 98 11 08
+SARL ALAV - TVA intracommunautaire : FR94792912818 - Siret: 792 912 818 00038 - RCS MARSEILLE - FRANCE
+Une version électronique est conservée sur votre compte. Pour y accéder, identifiez-vous sur le site CigAcess avec vos identifiants (Créés lors de votre première commande). BANQUE PALATINE
+MARS.PRO. IBAN : FR76 4097 8000 2321 3957 4221 407 BIC-ADRESSE SWIFT : BSPFFRPPXXX | BANQUE DELUBAC & CIE. IBAN : FR76 1287 9000 0111 2280 1700 126 BIC-ADRESSE SWIFT
+:DELUFR22XXX
+
+-- 3 of 3 --
+

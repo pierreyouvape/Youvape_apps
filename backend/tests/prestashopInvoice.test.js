@@ -54,6 +54,7 @@ const DOCS = [
   ['highbuy-FA018841.txt', 903.10, 19, '#FA018841', 'NSDRGZXNK'],
   ['curieux-FA063171.txt', 525.46, 15, '#FA063171', 'GIAOHSGSX'],
   ['cigaccess-FA122879.txt', 604.35, 14, '#FA122879', 'BSZZSPUMO'],
+  ['cigaccess-FA129179.txt', 2023.54, 33, '#FA129179/2026', 'XKVGXPIDD'],
   ['etasty-FA060440.txt', 739.20, 1, '#FA060440/2025', 'PEVEZEXDK'],
   ['mgvape-MD035105.txt', 1120.75, 23, 'MD035105', 'QXJQZUKPX'],
   ['pulp-FA165024.txt', 2618.90, 33, '#FA165024', '168213'],
@@ -61,7 +62,7 @@ const DOCS = [
 
 const parsed = {};
 for (const [file, total, count, number, orderRef] of DOCS) {
-  const key = file.split('-')[0];
+  const key = file.startsWith('cigaccess-FA129179') ? 'cigaccess2026' : file.split('-')[0];
   parsed[key] = parse(file);
   test(`${key.padEnd(10)} ${count} lignes, ${total.toFixed(2)} € HT`, () => {
     const r = parsed[key];
@@ -128,6 +129,14 @@ test('CigAccess : l\'échantillon offert est lu, à zéro euro', () => {
   const l = byRef(parsed.cigaccess, '012800');
   assert.strictEqual(l.qty, 1);
   assert.strictEqual(l.lineTotalHt, 0);
+});
+
+test('CigAccess : la réf. de déclinaison coupée par la colonne ou le saut de page est recollée', () => {
+  const refs = parsed.cigaccess2026.lines.map((l) => l.ref);
+  for (const r of ['012825-1-Gunm', '013101-0-7.5M', '013101-1-9ML', '012865-0-S.S', '013167-3-Blue', '013167-4-Rain']) {
+    assert.ok(refs.includes(r), `${r} absente`);
+  }
+  assert.ok(refs.every((r) => /^\d{6}(-\d+-[\w.]{3,4})?$/.test(r)), `réf. tronquée : ${refs.join(', ')}`);
 });
 
 test('Highbuy : le prix de base ne remplace pas le prix remisé', () => {

@@ -8,6 +8,8 @@
  *   Fin zone : "Détail des taxes"
  *   Ref commande : ligne "#FA125169 03/03/2026 DNOGOEJPX 03/03/2026"
  *   Prix : POIDS TAUX% PRIX_BASE€ PRIX_UNIT€ QTE TOTAL€
+ *   Depuis octobre 2026 (#FA129179/2026) : numero suffixe de l'annee et plus de
+ *   colonne Poids → Prix : TAUX% PRIX_BASE€ PRIX_UNIT€ QTE TOTAL€
  *
  * Format 2 — PROFORMA
  *   Colonnes : Reference | Produit | Taux de taxe | Prix unitaire (HT) | Quantite | Total (HT)
@@ -104,7 +106,8 @@ function parseConfirmation(text) {
  */
 function parseFacture(text) {
   // Ref de commande : ligne "#FA125169 03/03/2026 DNOGOEJPX 03/03/2026 0000"
-  const orderMatch = text.match(/#FA\d+\s+\d{2}\/\d{2}\/\d{4}\s+(\S+)\s+(\d{2})\/(\d{2})\/(\d{4})/);
+  // (ou "#FA129179/2026 06/10/2026 XKVGXPIDD ..." depuis octobre 2026)
+  const orderMatch = text.match(/#FA\d+(?:\/\d{4})?\s+\d{2}\/\d{2}\/\d{4}\s+(\S+)\s+(\d{2})\/(\d{2})\/(\d{4})/);
   const orderNumber = orderMatch ? orderMatch[1] : null;
   const orderDate = orderMatch ? `${orderMatch[4]}-${orderMatch[3]}-${orderMatch[2]}` : null;
 
@@ -113,16 +116,21 @@ function parseFacture(text) {
   // Zone produits : apres "Quantité Total\n(HT)", avant "Détail des taxes"
   const startMatch = text.match(/Quantité\s+Total\s*\n\s*\(HT\)/);
   const startIdx = startMatch ? startMatch.index + startMatch[0].length : -1;
-  const endIdx = text.indexOf('Détail des taxes');
+  // "Détail des\ntaxes" sur deux lignes depuis octobre 2026.
+  const endIdx = text.search(/Détail des\s+taxes/);
 
   if (startIdx < 0 || endIdx < 0) return { orderNumber, orderDate, items, hasPrice: true };
 
   const productZone = text.substring(startIdx, endIdx);
+  // La colonne « Poids unitaire » a disparu en octobre 2026 (#FA129179/2026).
+  const hasWeight = /Poids/.test(text.substring(0, startIdx));
+  const weight = hasWeight ? '[\\d.]+\\s+' : '';
 
   const cleaned = productZone
     .replace(/cig access pro[\s\S]*?(?=\n\d{6}|\nDétail|$)/g, '\n')
     .replace(/--\s*\d+\s*of\s*\d+\s*--/g, '\n')
-    .replace(/FACTURE\n\d{2}\/\d{2}\/\d{4}\n#FA\d+/g, '\n')
+    .replace(/FACTURE\n\d{2}\/\d{2}\/\d{4}\n#FA\d+(?:\/\d{4})?/g, '\n')
+    .replace(/^\s*\d+\s*\/\s*\d+\s*$/gm, '\n') // pagination "1 / 3"
     .replace(/SARL ALAV[^\n]*/g, '\n');
 
   const lines = cleaned.split('\n').map(l => l.trim()).filter(l => l.length > 0);
@@ -133,7 +141,7 @@ function parseFacture(text) {
   // la ligne n'etait plus reconnue comme ligne de prix, l'article disparaissait ET
   // sa reference etait recuperee par l'article suivant (facture GJONURSRU :
   // Dovpo Flipside Solo, 4 x 40,08 € = 160,32 € perdus, ref. collee sur le 012959).
-  const priceLineRegex = /[\d.]+\s+\d+\s*%\s+(?:--|[\d,]+\s*€)\s+[\d,]+\s*€\s+\d+\s+[\d,]+\s*€\s*$/;
+  const priceLineRegex = new RegExp(`${weight}\\d+\\s*%\\s+(?:--|[\\d,]+\\s*€)\\s+[\\d,]+\\s*€\\s+\\d+\\s+[\\d,]+\\s*€\\s*$`);
 
   const priceLineIndices = [];
   for (let i = 0; i < lines.length; i++) {
@@ -146,6 +154,16 @@ function parseFacture(text) {
   for (const priceIdx of priceLineIndices) {
     const blockLines = lines.slice(blockStart, priceIdx + 1);
     blockStart = priceIdx + 1;
+
+    // Reference coupee PAR le saut de page : "013167-3-Blu" en bas de page 2,
+    // son "e" en tete de page 3, donc au debut du bloc de l'article suivant.
+    // On le rend a l'article precedent, sinon il masque la ref de celui-ci.
+    if (blockLines.length > 1 && /^[A-Za-z0-9.]{1,3}$/.test(blockLines[0])
+        && /^\d{6}/.test(blockLines[1]) && items.length > 0) {
+      const prev = items[items.length - 1];
+      if (/^\d{6}-\d+-[\w.]{1,3}$/.test(prev.supplier_sku)) prev.supplier_sku += blockLines[0];
+      blockLines.shift();
+    }
 
     let blockText = '';
     for (let i = 0; i < blockLines.length; i++) {
@@ -167,18 +185,18 @@ function parseFacture(text) {
     }
     blockText = blockText.replace(/\s+/g, ' ').trim();
 
-    const numbersMatch = blockText.match(
-      /([\d.]+)\s+(\d+)\s*%\s+(--|[\d,]+\s*€)\s+([\d,]+)\s*€\s+(\d+)\s+([\d,]+)\s*€\s*$/
-    );
+    const numbersMatch = blockText.match(new RegExp(
+      `${weight}(\\d+)\\s*%\\s+(--|[\\d,]+\\s*€)\\s+([\\d,]+)\\s*€\\s+(\\d+)\\s+([\\d,]+)\\s*€\\s*$`
+    ));
     if (!numbersMatch) continue;
 
     const parseDecimal = (str) => parseFloat(str.replace(',', '.'));
 
     // "--" = pas de tarif barre sur cet article.
-    const prixBase = numbersMatch[3] === '--' ? null : parseDecimal(numbersMatch[3]);
-    const prixUnit = parseDecimal(numbersMatch[4]);
-    const qty = parseInt(numbersMatch[5]);
-    const totalHt = parseDecimal(numbersMatch[6]);
+    const prixBase = numbersMatch[2] === '--' ? null : parseDecimal(numbersMatch[2]);
+    const prixUnit = parseDecimal(numbersMatch[3]);
+    const qty = parseInt(numbersMatch[4]);
+    const totalHt = parseDecimal(numbersMatch[5]);
 
     const textBefore = blockText.substring(0, blockText.indexOf(numbersMatch[0])).trim();
     if (!textBefore) continue;
