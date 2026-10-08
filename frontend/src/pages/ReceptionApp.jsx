@@ -579,6 +579,7 @@ const MOTIF_RECAP = {
   reliquat: 'Reliquat',
   solde: 'Soldé (remboursé)',
   manquant: 'Manquant à réclamer',
+  erreur_saisie: 'Erreur de saisie (nous)',
 };
 
 function CountingScreen({ token, order, items, onBack, onReload, onFinished }) {
@@ -593,7 +594,7 @@ function CountingScreen({ token, order, items, onBack, onReload, onFinished }) {
   const [packQtyModal, setPackQtyModal] = useState(null); // { item, barcode, suggestion }
   const [unknownModal, setUnknownModal] = useState(null); // { barcode }
   const [diffModal, setDiffModal] = useState(false);
-  const [motifs, setMotifs] = useState({});            // { [itemId]: 'reliquat'|'solde'|'manquant' }
+  const [motifs, setMotifs] = useState({});            // { [itemId]: un des quatre motifs }
 
   const itemsRef = useRef(items);
   useEffect(() => { itemsRef.current = items; }, [items]);
@@ -1194,6 +1195,7 @@ function CountingScreen({ token, order, items, onBack, onReload, onFinished }) {
                         <option value="reliquat">Reliquat</option>
                         <option value="solde">Soldé</option>
                         <option value="manquant">Manquant</option>
+                        <option value="erreur_saisie">Erreur de saisie de commande</option>
                       </select>
                     </div>
                   ))}

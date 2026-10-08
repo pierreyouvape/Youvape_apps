@@ -15,6 +15,7 @@ const MOTIF_LABEL = {
   reliquat: 'Reliquat — à recevoir',
   solde:    'Soldé — remboursé par le fournisseur',
   manquant: 'Manquant — à réclamer',
+  erreur_saisie: 'Erreur de saisie — de notre côté',
 };
 
 // Un avoir ou une proforma rattachés à la commande ne sont pas « la facture » :

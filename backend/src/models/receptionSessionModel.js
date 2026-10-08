@@ -208,7 +208,10 @@ async function setCount(sessionId, itemId, unitsCounted, db = pool) {
  * La session passe donc en `validated` dans la même transaction, et la réponse
  * de BMS est conservée telle quelle — c'est la seule preuve de ce qui est parti.
  */
-const MOTIFS = ['reliquat', 'solde', 'manquant'];
+// Les quatre motifs d'un manquant. Les trois premiers désignent le fournisseur ;
+// `erreur_saisie` désigne NOUS — une ligne commandée par erreur, une quantité mal
+// saisie. Rien à réclamer, et surtout pas de relance à lui envoyer.
+const MOTIFS = ['reliquat', 'solde', 'manquant', 'erreur_saisie'];
 
 /**
  * Ce que BMS peut encore accepter, ligne par ligne. Fonction PURE, pour être
@@ -242,7 +245,8 @@ function plafonnerEnvoi(lignes) {
 }
 
 /**
- * Motifs reçus de l'écran : { [purchase_order_item_id]: 'reliquat'|'solde'|'manquant' }.
+ * Motifs reçus de l'écran :
+ * { [purchase_order_item_id]: 'reliquat'|'solde'|'manquant'|'erreur_saisie' }.
  * Normalisés et refusés s'ils sont inconnus — une valeur libre passerait la
  * contrainte de colonne en NULL et le manquant perdrait son explication.
  */
@@ -302,7 +306,7 @@ async function validateSession(sessionId, userId, motifs = {}, db = pool) {
   const sansMotif = manquants.filter((l) => !motifsParItem.has(l.purchase_order_item_id));
   if (sansMotif.length > 0) {
     throw new Error(
-      'Il manque un motif (reliquat, soldé ou manquant) pour : '
+      'Il manque un motif (reliquat, soldé, manquant ou erreur de saisie) pour : '
       + sansMotif.map((l) => l.supplier_sku || l.product_name || `ligne ${l.purchase_order_item_id}`).join(', '),
     );
   }
@@ -483,7 +487,7 @@ async function validateSession(sessionId, userId, motifs = {}, db = pool) {
  * L'HISTORIQUE DES RÉCEPTIONS D'UNE COMMANDE — pour Commandes fournisseur.
  *
  * Le motif d'un manquant était écrit et jamais relu : on imposait au magasinier
- * de choisir « reliquat / soldé / manquant » pour l'archiver aussitôt. C'est ici
+ * de choisir un motif pour l'archiver aussitôt. C'est ici
  * qu'il se consulte, là où l'acheteur regarde déjà sa commande, et pas dans une
  * boîte mail.
  *

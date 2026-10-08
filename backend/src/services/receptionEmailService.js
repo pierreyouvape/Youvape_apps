@@ -22,6 +22,7 @@ const LIBELLE_MOTIF = {
   reliquat: 'Reliquat — le fournisseur doit encore l\'envoyer',
   solde: 'Soldé — il ne l\'enverra pas, et nous a déjà remboursés',
   manquant: 'Manquant — erreur à réclamer',
+  erreur_saisie: 'Erreur de saisie de notre côté — rien à réclamer',
 };
 
 async function destinataires() {
