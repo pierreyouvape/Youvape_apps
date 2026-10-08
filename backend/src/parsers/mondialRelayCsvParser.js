@@ -51,6 +51,15 @@ const BRACKETS_G = [250, 500, 1000, 2000, 3000, 4000, 5000, 7000, 10000, 15000, 
 const ABERRANT_DENSITY = 1.0; // g/cm³
 const ABERRANT_MIN_G = 500;
 
+// Pesée sans rapport avec le CONTENU (motif « incoherent ») : au moins 3 fois
+// notre poids et 500 g de plus. Pas besoin de dimensions : MR vérifie sur la
+// photo de la pesée (avoir AVC26_006067 du 07/10/2026 : « un autre colis a été
+// pesé en partie avec votre colis »). Preuve plus faible que la densité — la
+// 1237799, 2 puffs pesées 2,92 kg, a été refusée — d'où un motif à part, jamais
+// coché d'office. Le contrôleur le rétrograde en « pesee » si un produit de la
+// commande n'a pas de poids en base (notre poids serait alors sous-estimé).
+const INCOHERENT_RATIO = 3;
+
 function bracketIndex(grams) {
   if (!(grams > 0)) return 0;
   const i = BRACKETS_G.findIndex(b => grams <= b);
@@ -277,7 +286,8 @@ function cgvForInvoice({ periodStart, invoiceDate } = {}) {
  *     « si nécessaire, notamment en transport aérien ». Un colis facturé au
  *     volumétrique est donc réclamable (motif volumetrique_hors_cgv).
  *
- * Motifs : aberrant (pesée impossible, réclamable), volumetrique_hors_cgv
+ * Motifs : aberrant (pesée impossible, réclamable), incoherent (pesée sans
+ * rapport avec le contenu, réclamable au cas par cas), volumetrique_hors_cgv
  * (réclamable, CGV 2025), volumetrique (CGV 2026 : surcoût carton, info),
  * pesee (pesée plus lourde, presque toujours l'emballage, info).
  */
@@ -305,6 +315,7 @@ function classifyParcels(parcels, { remiseRate = 0, cgv = '2026' } = {}) {
     p.ecart = round2((p.transport - due) * (1 - remiseRate / 100 + idxRate));
     if (volBilled) p.kind = cgv === '2025' ? 'volumetrique_hors_cgv' : 'volumetrique';
     else if (p.density != null && p.density > ABERRANT_DENSITY && (p.measured_g || 0) - floorG >= ABERRANT_MIN_G) p.kind = 'aberrant';
+    else if ((p.measured_g || 0) >= ourG * INCOHERENT_RATIO && (p.measured_g || 0) - ourG >= ABERRANT_MIN_G) p.kind = 'incoherent';
     else p.kind = 'pesee';
   }
   return parcels;
@@ -358,5 +369,5 @@ function annotateParcelFees(parsed) {
 
 module.exports = {
   parseMondialRelayCsv, analyzeMondialRelayCsv, classifyParcels, annotateParcelFees, cgvForInvoice, CLAIMABLE_KINDS, bracketIndex,
-  ABERRANT_DENSITY, ABERRANT_MIN_G,
+  ABERRANT_DENSITY, ABERRANT_MIN_G, INCOHERENT_RATIO,
 };

@@ -176,7 +176,25 @@ test('sans dimensions (annexes 2025), aucune pesée n\'est déclarée aberrante'
   ].join('\n'), 'latin1'));
   const p = analyzeMondialRelayCsv(one, { remiseRate: 14, knownOrderIds: new Set([1]) }).parcels[0];
   assert.strictEqual(p.density, null);
-  assert.strictEqual(p.kind, 'pesee');
+  // Sans dimensions : pas « aberrant », mais 4,4 kg pour 120 g = sans rapport avec le contenu.
+  assert.strictEqual(p.kind, 'incoherent');
+});
+
+test('pesée sans rapport avec le contenu : 3 fois le poids ET 500 g de plus', () => {
+  const parcels = [
+    // 1259840 : un atomiseur de 81 g pesé 1,44 kg (FR, 3,29 € → 5,14 €)
+    { pays: 'FR', mode: '24R', transport: 5.14, billed_g: 1440, declared_g: 81, bdd_g: 81, measured_g: 1440, volumetric_g: 495, density: 0.582 },
+    // 650 g pesés pour 200 g : 3,25 fois mais seulement 450 g de plus → simple pesée
+    { pays: 'FR', mode: '24R', transport: 3.63, billed_g: 650, declared_g: 200, bdd_g: 200, measured_g: 650, volumetric_g: 0 },
+    // 1,10 kg pour 800 g : emballage, pas une erreur
+    { pays: 'FR', mode: '24R', transport: 5.14, billed_g: 1100, declared_g: 800, bdd_g: 800, measured_g: 1100, volumetric_g: 0 },
+    { pays: 'FR', mode: '24R', transport: 3.29, billed_g: 200, declared_g: 200, measured_g: 200, volumetric_g: 0 },
+    { pays: 'FR', mode: '24R', transport: 3.63, billed_g: 700, declared_g: 700, measured_g: 700, volumetric_g: 0 },
+  ];
+  classifyParcels(parcels, { remiseRate: 14, cgv: '2026' });
+  assert.strictEqual(parcels[0].kind, 'incoherent');
+  assert.strictEqual(parcels[1].kind, 'pesee');
+  assert.strictEqual(parcels[2].kind, 'pesee');
 });
 
 test('référence « ? » (étiquette saisie à la main) : livraison retrouvée par le suivi, pas un retour', () => {

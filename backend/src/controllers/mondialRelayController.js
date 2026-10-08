@@ -72,6 +72,34 @@ async function parsePdfBuffer(buffer) {
 
 /* ─── ANNEXE CSV : détail au colis ───────────────────────────── */
 
+/**
+ * Contenu des commandes dont la pesée est sans rapport avec le contenu : la
+ * preuve qui part dans l'e-mail (« 2 × Puff JNR 42k, 140 g »). Un produit sans
+ * poids en base rend notre poids douteux : le colis redevient « pesee ».
+ */
+async function attachOrderContents(parcels) {
+  const ids = [...new Set(parcels.filter(p => p.kind === 'incoherent' && p.order_id).map(p => p.order_id))];
+  if (!ids.length) return;
+  const { rows } = await pool.query(`
+    SELECT oi.wp_order_id::int AS id,
+           string_agg(oi.qty || ' × ' || oi.order_item_name || ' (' || round(COALESCE(p.weight, parent.weight, 0) * 1000) || ' g)', ' + ' ORDER BY oi.order_item_id)
+             FILTER (WHERE p.product_type IS DISTINCT FROM 'woosb') AS contenu,
+           bool_or(COALESCE(p.weight, parent.weight, 0) = 0 AND p.product_type IS DISTINCT FROM 'woosb') AS sans_poids
+    FROM order_items oi
+    LEFT JOIN products p ON p.wp_product_id = COALESCE(NULLIF(oi.variation_id::int, 0), oi.product_id::int)
+    LEFT JOIN products parent ON parent.wp_product_id = p.wp_parent_id
+    WHERE oi.order_item_type = 'line_item' AND oi.wp_order_id::int = ANY($1::int[])
+    GROUP BY oi.wp_order_id
+  `, [ids]);
+  const byId = Object.fromEntries(rows.map(r => [r.id, r]));
+  for (const p of parcels) {
+    if (p.kind !== 'incoherent') continue;
+    const c = byId[p.order_id];
+    if (!c || c.sans_poids) { p.kind = 'pesee'; continue; }
+    p.contents = c.contenu;
+  }
+}
+
 // Commandes connues, suivi → commande, et poids calculé en base (g, tare comprise).
 async function resolveCsvContext(csv) {
   const refs = [...new Set(csv.parcels.map(r => parseInt(r.ref, 10)).filter(Number.isInteger))];
@@ -359,6 +387,7 @@ exports.getInvoiceDetail = async (req, res) => {
       parsed.csv.cgv = cgvForInvoice(parsed);
       classifyParcels(parsed.csv.parcels, { remiseRate: parsed.csv.remiseRate, cgv: parsed.csv.cgv });
       annotateParcelFees(parsed);
+      await attachOrderContents(parsed.csv.parcels);
     }
     res.json({ success: true, invoice, parsed });
   } catch (err) {

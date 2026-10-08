@@ -461,6 +461,10 @@ const ECART_KINDS = {
     label: 'Pesée impossible', color: C.red, bg: C.redL,
     help: "Le poids mesuré par Mondial Relay dépasse 1 kg par litre de carton, d'après leurs propres dimensions : physiquement impossible pour nos colis (le plus dense d'un mois normal pèse 0,64 kg/L). Réclamable.",
   },
+  incoherent: {
+    label: 'Pesée sans rapport avec le contenu', color: '#7C3AED', bg: '#F3E8FF',
+    help: "Pesé au moins 3 fois plus lourd que le contenu de la commande (tous ses produits ont un poids), avec 500 g d'écart ou plus. Mondial Relay vérifie sur la photo de la pesée : en octobre 2026, deux cas venaient d'un autre colis posé sur la balance, un troisième a été refusé. À réclamer au cas par cas, contenu à l'appui.",
+  },
   volumetrique_hors_cgv: {
     label: 'Volumétrique hors CGV', color: C.red, bg: C.redL,
     help: "Facturé au poids volumétrique alors que les CGV de 2025 facturent le poids déclaré, ou le poids pesé s'il est plus lourd, le volumétrique n'étant prévu qu'en cas de transport aérien (art. 4.2). Réclamable.",
@@ -477,6 +481,7 @@ const ECART_KINDS = {
 
 function motifText(p) {
   if (p.kind === 'aberrant') return `Pesée impossible : ${p.density.toLocaleString('fr-FR')} kg/L`;
+  if (p.kind === 'incoherent') return `Pesé ${(p.measured_g / 1000).toLocaleString('fr-FR')} kg pour un contenu de ${Math.round(Math.max(p.declared_g || 0, p.bdd_g || 0))} g`;
   if (p.kind === 'volumetrique_hors_cgv') return `Facturé au volumétrique (${Math.round(p.volumetric_g)} g), non prévu par les CGV de 2025`;
   if (p.kind === 'volumetrique') return 'Facturé au poids volumétrique';
   return 'Pesée supérieure au poids déclaré';
@@ -490,19 +495,22 @@ function buildClaimEmail(result, rows) {
   const td = (t, r, b) => `<td style="padding:7px 12px;border-bottom:1px solid #E5E7EB;text-align:${r ? 'right' : 'left'};${b ? 'font-weight:700;' : ''}">${t}</td>`;
   const intro = rows.every(p => p.kind === 'aberrant')
     ? "les colis ci-dessous ont été facturés sur une pesée incompatible avec les dimensions relevées par vos équipes : le poids mesuré dépasserait 1 kg par litre de carton, ce qui est impossible pour leur contenu."
-    : 'les colis ci-dessous ont été facturés sur un poids supérieur à celui du colis expédié.';
+    : rows.every(p => p.kind === 'incoherent')
+      ? "les colis ci-dessous ont été facturés sur une pesée sans rapport avec leur contenu, détaillé pour chacun. Comme pour les colis 00657030 et 00581673, un autre colis a sans doute été pesé en même temps : pourriez-vous vérifier les photos de pesée ?"
+      : 'les colis ci-dessous ont été facturés sur un poids supérieur à celui du colis expédié.';
+  const withContents = rows.some(p => p.contents);
 
   let html = '<html><body style="font-family:Arial,sans-serif;font-size:13px;color:#111827;line-height:1.6">';
   html += '<p>Bonjour Stéphanie,</p>';
   html += `<p>Sur la facture <strong>${result.invoiceNumber}</strong> du ${result.invoiceDate} (${result.pays}), ${intro}</p>`;
   html += '<table style="border-collapse:collapse;font-size:13px;margin-bottom:16px"><thead><tr>'
     + th('N° commande') + th('N° expédition') + th('Date') + th('Poids déclaré', 1) + th('Poids mesuré', 1)
-    + th('Dimensions') + th('Motif') + th('Tarif facturé', 1) + th('Tarif dû', 1) + th('Écart HT', 1)
+    + th('Dimensions') + (withContents ? th('Contenu de la commande') : '') + th('Motif') + th('Tarif facturé', 1) + th('Tarif dû', 1) + th('Écart HT', 1)
     + '</tr></thead><tbody>'
     + rows.map(p => '<tr>' + td(p.ref, 0, 1) + td(p.tracking || '—') + td(p.date || '—') + td(kg(p.declared_g), 1)
-      + td(kg(p.measured_g), 1) + td(fmtDims(p.dims_mm)) + td(motifText(p)) + td(eur(p.transport), 1) + td(eur(p.due), 1)
+      + td(kg(p.measured_g), 1) + td(fmtDims(p.dims_mm)) + (withContents ? td(p.contents || '—') : '') + td(motifText(p)) + td(eur(p.transport), 1) + td(eur(p.due), 1)
       + td(eur(p.ecart), 1, 1) + '</tr>').join('')
-    + `<tr style="background:#F9FAFB">${td('TOTAL', 0, 1)}<td colspan="8"></td>${td(eur(total), 1, 1)}</tr>`
+    + `<tr style="background:#F9FAFB">${td('TOTAL', 0, 1)}<td colspan="${withContents ? 9 : 8}"></td>${td(eur(total), 1, 1)}</tr>`
     + '</tbody></table>';
   html += `<p>Les tarifs sont ceux de votre grille avant remise. L'écart HT tient compte de notre remise de ${result.csv.remiseRate} % et de l'indexation gasoil. Pourriez-vous vérifier ces pesées et émettre un avoir de <strong>${eur(total)} HT</strong> ?</p>`;
   html += '<p>Merci d’avance pour votre retour.</p>';
@@ -512,7 +520,7 @@ function buildClaimEmail(result, rows) {
   const text = [
     'Bonjour Stéphanie,', '',
     `Sur la facture ${result.invoiceNumber} du ${result.invoiceDate} (${result.pays}), ${intro}`, '',
-    ...rows.map(p => `- Commande ${p.ref} (expédition ${p.tracking || '—'}, ${p.date || '—'}) : déclaré ${kg(p.declared_g)}, mesuré ${kg(p.measured_g)}, carton ${fmtDims(p.dims_mm)} — ${motifText(p)}. Facturé ${eur(p.transport)} au lieu de ${eur(p.due)}, écart ${eur(p.ecart)} HT.`),
+    ...rows.map(p => `- Commande ${p.ref} (expédition ${p.tracking || '—'}, ${p.date || '—'}) : déclaré ${kg(p.declared_g)}, mesuré ${kg(p.measured_g)}, carton ${fmtDims(p.dims_mm)}${p.contents ? `, contenu : ${p.contents}` : ''} — ${motifText(p)}. Facturé ${eur(p.transport)} au lieu de ${eur(p.due)}, écart ${eur(p.ecart)} HT.`),
     '', `Total : ${eur(total)} HT (remise de ${result.csv.remiseRate} % et indexation gasoil comprises).`,
     'Pourriez-vous vérifier ces pesées et émettre un avoir de ce montant ?', '',
     'Merci d’avance pour votre retour.', '', 'Bien cordialement,', '',
@@ -697,7 +705,8 @@ function EcartsTab({ result }) {
                     <Td bold>{p.order_id
                       ? <a href={`/orders/${p.order_id}`} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()} style={{ color: C.accent, textDecoration: 'none' }}>{p.order_id}</a>
                       : p.ref}</Td>
-                    <Td><span style={{ background: ECART_KINDS[p.kind].bg, color: ECART_KINDS[p.kind].color, border: `1px solid ${ECART_KINDS[p.kind].color}`, borderRadius: 10, padding: '1px 8px', fontSize: 11.5, fontWeight: 600, whiteSpace: 'nowrap' }}>{ECART_KINDS[p.kind].label}</span></Td>
+                    <Td><span style={{ background: ECART_KINDS[p.kind].bg, color: ECART_KINDS[p.kind].color, border: `1px solid ${ECART_KINDS[p.kind].color}`, borderRadius: 10, padding: '1px 8px', fontSize: 11.5, fontWeight: 600, whiteSpace: 'nowrap' }}>{ECART_KINDS[p.kind].label}</span>
+                      {p.contents && <div style={{ fontSize: 11.5, color: C.greyT, marginTop: 3, maxWidth: 360 }}>{p.contents}</div>}</Td>
                     <Td align="right">{fmtG(p.declared_g)}</Td>
                     <Td align="right" color={C.greyT}>{fmtG(p.bdd_g)}</Td>
                     <Td align="right" bold>{fmtG(p.measured_g)}</Td>
