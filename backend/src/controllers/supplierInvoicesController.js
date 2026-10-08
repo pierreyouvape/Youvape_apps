@@ -301,6 +301,30 @@ async function getClaimMessage(req, res) {
 }
 
 /**
+ * Rejouer l'analyse d'un document enregistré contre l'état ACTUEL de BMS, à
+ * partir du PDF conservé. Partagé par le re-contrôle et l'application des
+ * tarifs, pour que les deux lisent la facture de la même façon.
+ */
+async function reanalyse(document) {
+  if (!document.file_path) {
+    const e = new Error('Le fichier d\'origine n\'est plus disponible');
+    e.status = 422;
+    throw e;
+  }
+  const chemin = docStore.resolveDocument(document.file_path);
+  if (!chemin || !fs.existsSync(chemin)) {
+    const e = new Error('Le fichier d\'origine est introuvable sur le disque');
+    e.status = 422;
+    throw e;
+  }
+  return supplierInvoiceService.analyseInvoice({
+    buffer: fs.readFileSync(chemin),
+    supplierId: document.supplier_id,
+    orderId: (document.orders[0] || {}).id || null,
+  });
+}
+
+/**
  * POST /api/supplier-invoices/:id/recheck — rejouer l'analyse contre BMS.
  *
  * Après correction d'une commande dans BMS, les constats gelés à
@@ -312,27 +336,61 @@ async function recheckDocument(req, res) {
     const id = parseInt(req.params.id, 10);
     const document = await supplierDocumentModel.getDocument(id);
     if (!document) return res.status(404).json({ error: 'Document introuvable' });
-    if (!document.file_path) {
-      return res.status(422).json({ error: 'Le fichier d\'origine n\'est plus disponible' });
-    }
 
-    const chemin = docStore.resolveDocument(document.file_path);
-    if (!chemin || !fs.existsSync(chemin)) {
-      return res.status(422).json({ error: 'Le fichier d\'origine est introuvable sur le disque' });
-    }
-
-    const analysis = await supplierInvoiceService.analyseInvoice({
-      buffer: fs.readFileSync(chemin),
-      supplierId: document.supplier_id,
-      orderId: (document.orders[0] || {}).id || null,
-    });
-
+    const analysis = await reanalyse(document);
     await supplierDocumentModel.replaceLines(id, analysis.comparison);
     const rafraichi = await supplierDocumentModel.getDocument(id);
     return res.json({ document: rafraichi, differences: analysis.differences, tariffs: analysis.tariffs });
   } catch (error) {
     console.error('[supplier-invoices] re-contrôle :', error.message);
-    return res.status(500).json({ error: error.message || 'Erreur serveur' });
+    return res.status(error.status || 500).json({ error: error.message || 'Erreur serveur' });
+  }
+}
+
+/**
+ * POST /api/supplier-invoices/:id/apply-tariffs — accepter le tarif facturé
+ * sur les lignes en écart de tarif d'un document DÉJÀ enregistré.
+ *
+ * Le bouton « Appliquer » n'existait que sur l'écran d'import : une facture
+ * enregistrée sans l'avoir fait gardait son écart à vie, et « Re-contrôler »
+ * le retrouvait à chaque fois puisque BMS restait au prix commandé
+ * (JoshNoa V3/2026/38291, Mix&Go 3,12 → 3,49 € et 4,10 → 4,35 €). Même geste
+ * qu'à l'import — prix réel chez nous, report sur la commande et chez BMS —
+ * puis re-contrôle pour que l'écart disparaisse de l'écran.
+ */
+async function applyDocumentTariffs(req, res) {
+  try {
+    const id = parseInt(req.params.id, 10);
+    const document = await supplierDocumentModel.getDocument(id);
+    if (!document) return res.status(404).json({ error: 'Document introuvable' });
+    const orderId = (document.orders[0] || {}).id;
+    if (!orderId) return res.status(422).json({ error: 'Aucune commande rattachée à ce document' });
+
+    const analysis = await reanalyse(document);
+    // Seulement les lignes que l'écran annonce en écart de tarif : un arrondi
+    // ou un conditionnement ne se « corrige » pas d'ici.
+    const cle = (v) => String(v || '').toLowerCase().replace(/\s+/g, ' ').trim();
+    const enEcart = new Set((analysis.comparison?.lines || [])
+      .filter((l) => ['price', 'qty_price'].includes(l.verdict))
+      .map((l) => cle(l.ref)));
+    const tarifs = (analysis.tariffs || []).filter((t) => enEcart.has(cle(t.ref)));
+    if (tarifs.length === 0) {
+      return res.status(422).json({ error: 'Aucun tarif à appliquer : BMS est peut-être déjà à jour, essaie « Re-contrôler »' });
+    }
+
+    const result = await supplierDocumentModel.applyTariffs(
+      document.supplier_id,
+      orderId,
+      tarifs.map((t) => ({ ref: t.ref, realPrice: t.realPrice, packQty: t.packQty })),
+    );
+
+    const apres = await reanalyse(document);
+    await supplierDocumentModel.replaceLines(id, apres.comparison);
+    const rafraichi = await supplierDocumentModel.getDocument(id);
+    return res.json({ ...result, document: rafraichi });
+  } catch (error) {
+    console.error('[supplier-invoices] tarifs du document :', error.message);
+    return res.status(error.status || 500).json({ error: error.message || 'Erreur serveur' });
   }
 }
 
@@ -445,6 +503,7 @@ async function getParsers(req, res) {
 module.exports = {
   getOrderLifecycle,
   recheckDocument,
+  applyDocumentTariffs,
   applyTariffs,
   listCandidateOrders,
   analyseDocument,

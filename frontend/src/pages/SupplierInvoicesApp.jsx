@@ -1736,6 +1736,7 @@ function FilingTab({ suppliers, mobile, reloadKey, onSaved, initialDocId }) {
             await Promise.all([openDetail(detail.id), load()]);
             onSaved();
           }}
+          onChanged={async () => { await Promise.all([openDetail(detail.id), load()]); }}
         />
       )}
     </div>
@@ -1841,7 +1842,7 @@ function ReceptionState({ orders }) {
  * lire le tableau des écarts — inutilisable. Une facture a une dizaine de
  * colonnes : elle a besoin de toute la largeur.
  */
-function DocumentPanel({ detail, mobile, onClose, onStatus, onDelete, onSettle }) {
+function DocumentPanel({ detail, mobile, onClose, onStatus, onDelete, onSettle, onChanged }) {
   const lignes = lignesAffichables(fromStoredLines(detail.lines));
   // Ce qui APPELLE UN GESTE, même lecture que la colonne « Écarts » de la liste.
   // « 2 différences » comptait le port offert et la remise de pied de la facture
@@ -1858,6 +1859,35 @@ function DocumentPanel({ detail, mobile, onClose, onStatus, onDelete, onSettle }
     reference: '',
   });
   const [busy, setBusy] = useState(false);
+  /**
+   * Accepter le tarif facturé, une fois la facture enregistrée.
+   *
+   * « Appliquer » n'existait que sur l'écran d'import : une facture enregistrée
+   * sans l'avoir fait gardait son bandeau à vie, et « Re-contrôler » retrouvait
+   * le même écart puisque BMS restait au prix commandé (JoshNoa V3/2026/38291).
+   */
+  const [applying, setApplying] = useState(false);
+  const appliquerTarifs = async () => {
+    if (!window.confirm(
+      `Inscrire le tarif facturé sur ${tarifs.length} ligne${tarifs.length > 1 ? 's' : ''} `
+      + '(chez nous, sur la commande et dans BMS) ?\n\n'
+      + 'Si la commande est déjà réceptionnée, la valeur du stock et le coût de revient '
+      + 'des pièces déjà vendues seront corrigés à partir de la réception.',
+    )) return;
+    setApplying(true);
+    try {
+      const { data } = await axios.post(`${BASE}/${detail.id}/apply-tariffs`);
+      const refus = [
+        ...(data.skipped || []).map((k) => `${k.ref} : ${k.reason}`),
+        ...(data.applied || []).filter((x) => x.orderLine?.skipped || x.bmsLine?.skipped)
+          .map((x) => `${x.ref} : ${x.orderLine?.skipped || `BMS inchangé (${x.bmsLine.skipped})`}`),
+      ];
+      if (refus.length) window.alert(`Pas entièrement appliqué :\n${refus.join('\n')}`);
+      if (onChanged) await onChanged();
+    } catch (e) {
+      window.alert(e.response?.data?.error || e.message);
+    } finally { setApplying(false); }
+  };
   // Le message au commercial se copie d'ICI aussi : une facture se contrôle un
   // jour et s'écrit le lendemain, et le bouton n'existait que sur l'écran de
   // contrôle, perdu dès qu'on le quittait.
@@ -1918,6 +1948,16 @@ function DocumentPanel({ detail, mobile, onClose, onStatus, onDelete, onSettle }
               Alerte seulement, rien n'est bloqué : le document peut être contrôlé et réglé. Le détail ligne
               à ligne est plus bas{ecartTarif > 0 ? ', avec le tarif à réclamer ou à aligner dans BMS' : ''}.
             </div>
+            {onChanged && (
+              <div style={{ marginTop: 8 }}>
+                <Btn small onClick={appliquerTarifs} disabled={applying}>
+                  {applying ? 'Application…' : 'Appliquer le tarif facturé'}
+                </Btn>
+                <span style={{ marginLeft: 8, fontSize: 11.5, color: C.greyT }}>
+                  si la hausse est un vrai changement de tarif, et non une erreur à réclamer
+                </span>
+              </div>
+            )}
           </div>
         )}
 
@@ -2270,6 +2310,7 @@ function PaymentsTab({ mobile, reloadKey, onSaved }) {
             load();
           }}
           onSettle={async (r) => { await settleOne(detail, r); refreshDoc(); }}
+          onChanged={refreshDoc}
         />
       )}
     </div>

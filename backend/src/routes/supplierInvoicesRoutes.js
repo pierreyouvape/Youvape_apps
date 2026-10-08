@@ -49,6 +49,7 @@ router.get('/:id/file', canRead, controller.downloadDocument);
 router.get('/:id/claim', canRead, controller.getClaimMessage);
 router.put('/:id/status', canWrite, controller.updateStatus);
 router.post('/:id/recheck', canWrite, controller.recheckDocument);
+router.post('/:id/apply-tariffs', canWrite, controller.applyDocumentTariffs);
 router.delete('/:id', canWrite, controller.deleteDocument);
 
 module.exports = router;
