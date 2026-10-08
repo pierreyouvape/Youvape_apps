@@ -8,6 +8,9 @@ import { brandLabel } from '../utils/productBrand';
 const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:3000/api/auth').replace('/auth', '');
 
 /* ─── DESIGN TOKENS ─────────────────────────────────────── */
+// Statuts WooCommerce d'un produit rattaché à une réf. hors vente
+const STATUT_LIBELLE = { private: 'privé', draft: 'brouillon', pending: 'en attente', trash: 'corbeille', future: 'programmé' };
+
 const C = {
   orange: '#E28F00', orangeGrad: '#F59E0B', orangeDark: '#C97F09',
   saphir: '#135E84', saphirF: '#003A56',
@@ -334,6 +337,8 @@ const ImportPdfPage = () => {
         product_sku: product.sku,
         current_stock: product.stock,
         image_url: product.image_url || null,
+        // Choix manuel de l'opérateur : plus d'alerte « produit non publié »
+        product_status: null,
         ref_pack_qty: packQty,
         bms_pack_qty: line.bmsPack,
         pack_warning: line.packWarning,
@@ -1092,6 +1097,14 @@ const ImportPdfPage = () => {
                                     {dejaDedans && (
                                       <div style={{ marginTop: 3, display: 'inline-block', fontSize: 11, fontWeight: 700, color: '#3730A3', background: '#EEF2FF', border: '1px solid #C7D2FE', borderRadius: 5, padding: '1px 6px' }}>
                                         déjà dans la commande
+                                      </div>
+                                    )}
+                                    {item.product_status && item.product_status !== 'publish' && (
+                                      <div
+                                        title={`Cette réf. est rattachée à un produit ${STATUT_LIBELLE[item.product_status] || item.product_status}. Le fournisseur a peut-être réattribué ce numéro à un autre article : comparez avec la désignation du document, et cliquez sur « modifier » si ce n'est pas le bon.`}
+                                        style={{ marginTop: 3, display: 'inline-block', fontSize: 11, fontWeight: 700, color: '#991B1B', background: '#FEE2E2', border: '1px solid #FCA5A5', borderRadius: 5, padding: '1px 6px', cursor: 'help' }}
+                                      >
+                                        produit non publié ({STATUT_LIBELLE[item.product_status] || item.product_status}) : réf. à vérifier
                                       </div>
                                     )}
                                     {item.pack_warning && (

@@ -75,10 +75,14 @@ const pdfImportModel = {
         p.sku AS product_sku,
         p.stock,
         p.product_type,
-        p.image_url
+        p.image_url,
+        -- Statut effectif : une déclinaison publiée d'un parent privé n'est pas en vente.
+        CASE WHEN pp.post_status IS NOT NULL AND pp.post_status <> 'publish'
+             THEN pp.post_status ELSE p.post_status END AS product_status
       FROM supplier_refs r
       JOIN product_suppliers ps ON ps.product_id = r.product_id AND ps.supplier_id = r.supplier_id
       JOIN products p ON p.id = r.product_id
+      LEFT JOIN products pp ON p.product_type = 'variation' AND pp.wp_product_id = p.wp_parent_id
       WHERE r.supplier_id = $1
         AND ${supplierRefModel.normalizedSql('r.supplier_sku')} = ANY($2)
     `, [supplierId, normalized]);
@@ -295,6 +299,10 @@ const pdfImportModel = {
         product_sku: match ? match.product_sku : null,
         current_stock: match ? parseInt(match.stock) : null,
         image_url: match ? match.image_url : null,
+        // Réf. rattachée à un produit hors vente : souvent un n° de déclinaison que le
+        // fournisseur a réattribué à un autre article (GFC31917-59061 : Lion Leather
+        // Orange arrêté, devenu Eagle Leather Black). L'écran le signale.
+        product_status: match ? match.product_status : null,
         // Conditionnement de la réf (ce que le fournisseur facture) et de
         // l'association BMS (ce que BMS impose) : repris par le mapping manuel.
         ref_pack_qty: match ? parseInt(match.ref_pack_qty) || 1 : null,
