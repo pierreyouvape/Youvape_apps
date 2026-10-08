@@ -1263,12 +1263,54 @@ const purchaseOrderModel = {
               [item.id, id]
             );
           } else if (item.id) {
-            // Mise à jour d'une ligne existante
+            // Mise à jour d'une ligne existante.
+            //
+            // L'ÉCRAN PROPOSE QUATRE CHAMPS, ON N'EN ENREGISTRAIT QUE DEUX.
+            // Produit, réf. fournisseur, quantité et prix sont modifiables, mais
+            // seules la quantité et le prix étaient écrits : ré-apparier une
+            // ligne sur le bon produit (le cas d'un parent variable à remplacer
+            // par sa déclinaison) ou corriger une référence ne laissait aucune
+            // trace, sans le moindre message. Signalé sur la commande 596971.
+            //
+            // ⚠️ CE RÉ-APPARIEMENT EST LOCAL. La ligne chez BMS garde son produit :
+            // c'est voulu pour le cas qui motive la fonction — BMS a le bon
+            // article, c'est NOTRE rattachement qui visait le parent variable au
+            // lieu de sa déclinaison. Mais échanger une ligne contre un produit
+            // réellement différent ferait diverger les deux : la réception
+            // crédite le stock BMS sur SON produit, et le nôtre sur le nouveau.
+            //
+            // `product_id` se résout comme à la création : il peut être un
+            // wp_product_id OU un id interne, et 254 produits ont une collision
+            // entre les deux — sans l'ORDER BY, on réapparie sur le MAUVAIS
+            // produit, ce qui est pire que de ne rien faire.
+            let nouveauProduitId = null;
+            if (item.product_id) {
+              const r = await client.query(
+                `SELECT p.id
+                   FROM products p
+                  WHERE p.wp_product_id = $1 OR p.id = $1
+                  ORDER BY CASE WHEN p.wp_product_id = $1 THEN 0 ELSE 1 END
+                  LIMIT 1`,
+                [item.product_id],
+              );
+              nouveauProduitId = r.rows[0] ? r.rows[0].id : null;
+            }
+
             await client.query(`
               UPDATE purchase_order_items
-              SET qty_ordered = $1, unit_price = $2, updated_at = CURRENT_TIMESTAMP
+              SET qty_ordered  = $1,
+                  unit_price   = $2,
+                  product_id   = COALESCE($5, product_id),
+                  product_name = COALESCE($6, product_name),
+                  supplier_sku = $7,
+                  updated_at   = CURRENT_TIMESTAMP
               WHERE id = $3 AND purchase_order_id = $4
-            `, [item.qty_ordered, item.unit_price ?? null, item.id, id]);
+            `, [
+              item.qty_ordered, item.unit_price ?? null, item.id, id,
+              nouveauProduitId,
+              item.product_name || null,
+              item.supplier_sku ?? null,
+            ]);
           } else {
             // Nouvelle ligne — units_per_qty selon le fournisseur de la commande
             // (« à l'unité » ⇒ qty_ordered en packs, cf. create/syncFromBMS)
