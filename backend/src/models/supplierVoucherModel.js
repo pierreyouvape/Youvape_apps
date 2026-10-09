@@ -122,6 +122,22 @@ async function updateVoucher(id, { amountHt, code, coveredRefs, note }, db = poo
   return rowCount ? getVoucher(id, db) : null;
 }
 
+/**
+ * Étendre un bon aux références dont on vient de corriger le tarif. Un bon
+ * « tous les écarts » le reste : il les couvre déjà par construction.
+ */
+async function addCoveredRefs(id, refs, db = pool) {
+  const ajout = cleanRefs(refs);
+  if (ajout.length === 0) return;
+  await db.query(
+    `UPDATE supplier_vouchers
+        SET covered_refs = ARRAY(SELECT DISTINCT unnest(covered_refs || $2::text[])),
+            updated_at = CURRENT_TIMESTAMP
+      WHERE id = $1 AND cardinality(covered_refs) > 0`,
+    [id, ajout],
+  );
+}
+
 async function deleteVoucher(id, db = pool) {
   const { rows } = await db.query('DELETE FROM supplier_vouchers WHERE id = $1 RETURNING id', [id]);
   return rows[0] || null;
@@ -178,6 +194,7 @@ module.exports = {
   createVoucher,
   updateVoucher,
   deleteVoucher,
+  addCoveredRefs,
   candidatesFor,
   markConsumed,
 };

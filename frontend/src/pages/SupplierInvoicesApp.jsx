@@ -2102,6 +2102,53 @@ function VoucherSection({ detail, onChanged }) {
   const [form, setForm] = useState(null);
   const [busy, setBusy] = useState(false);
   const [codes, setCodes] = useState({});
+  // Correction des tarifs de la commande au BON prix : { voucher, rows: { ref: { on, price } } }.
+  const [prix, setPrix] = useState(null);
+  const lignesProduit = (detail.lines || []).filter((l) => (l.kind || 'product') === 'product'
+    && l.supplier_sku && l.expected_unit_price != null && Number(l.qty) > 0);
+  const factureUnit = (l) => Number(l.line_total_ht) / Number(l.qty);
+  const ouvrirPrix = (v) => {
+    const vise = (l) => (v.covered_refs?.length
+      ? v.covered_refs.includes(l.supplier_sku)
+      : ['price', 'qty_price', 'voucher_credited'].includes(l.verdict));
+    const rows = {};
+    for (const l of lignesProduit) {
+      // Pré-coché sur ce que le bon rembourse, au tarif commandé quand le
+      // facturé le dépasse : à ajuster quand le fournisseur reconnaît un autre
+      // prix (2,90 € pour des cartouches commandées 2,88 €).
+      const on = vise(l);
+      const prevu = Number(l.expected_unit_price);
+      rows[l.supplier_sku] = { on, price: on && factureUnit(l) > prevu ? String(prevu) : '' };
+    }
+    setPrix({ voucher: v, rows });
+  };
+  const inscrirePrix = async () => {
+    const choix = Object.entries(prix.rows).filter(([, r]) => r.on);
+    const prices = choix.map(([ref, r]) => ({ ref, price: Number(String(r.price).replace(',', '.')) }));
+    if (prices.some((p) => !(p.price > 0))) {
+      window.alert('Saisis un tarif pour chaque ligne cochée.');
+      return;
+    }
+    if (!window.confirm(
+      `Inscrire le bon tarif sur ${prices.length} ligne${prices.length > 1 ? 's' : ''} `
+      + '(référence fournisseur, commande chez nous et dans BMS) ?\n\n'
+      + prices.map((p) => `${p.ref} → ${eur(p.price)}`).join('\n')
+      + '\n\nSi la commande est déjà réceptionnée, la valeur du stock et le coût de revient '
+      + 'des pièces déjà vendues seront corrigés à partir de la réception.',
+    )) return;
+    setBusy(true);
+    try {
+      const { data } = await axios.post(`${BASE}/vouchers/${prix.voucher.id}/apply-prices`, { prices });
+      const refus = [
+        ...(data.skipped || []).map((k) => `${k.ref} : ${k.reason}`),
+        ...(data.applied || []).filter((x) => x.orderLine?.skipped || x.bmsLine?.skipped)
+          .map((x) => `${x.ref} : ${x.orderLine?.skipped || `BMS inchangé (${x.bmsLine.skipped})`}`),
+      ];
+      if (refus.length) window.alert(`Pas entièrement appliqué :\n${refus.join('\n')}`);
+      setPrix(null);
+      if (onChanged) await onChanged();
+    } catch (e) { voucherErr(e); } finally { setBusy(false); }
+  };
 
   const ouvrir = () => {
     const refs = candidates.map((l) => l.supplier_sku);
@@ -2183,9 +2230,67 @@ function VoucherSection({ detail, onChanged }) {
               </span>
             ))}
           {v.note && <span style={{ color: C.greyM, fontSize: 12 }}>{v.note}</span>}
+          {onChanged && detail.orders?.[0] && lignesProduit.length > 0 && (
+            <Btn small variant="ghost" disabled={busy} onClick={() => ouvrirPrix(v)}>Inscrire le bon tarif</Btn>
+          )}
           {onChanged && <Btn small variant="danger" disabled={busy} onClick={() => supprimer(v)}>Supprimer</Btn>}
         </div>
       ))}
+
+      {prix && (
+        <div style={{ marginTop: 10, padding: 12, background: C.grey, borderRadius: 8, display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <div style={{ fontSize: 12.5, color: C.greyT }}>
+            Le tarif que le fournisseur reconnaît, tel qu'il aurait dû être facturé. Il remplace le prix de la commande
+            {' '}<strong>{detail.orders[0].bms_reference}</strong> chez nous et dans BMS, et sert aux prochaines commandes.
+            Le bon s'étend aux lignes corrigées.
+          </div>
+          <div style={{ overflowX: 'auto', border: `1px solid ${C.greyB}`, borderRadius: 8, background: C.white }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead>
+                <tr>
+                  <th style={th} />
+                  <th style={th}>Référence</th>
+                  <th style={th}>Produit</th>
+                  <th style={{ ...th, textAlign: 'right' }}>Qté</th>
+                  <th style={{ ...th, textAlign: 'right' }}>Tarif commandé</th>
+                  <th style={{ ...th, textAlign: 'right' }}>Facturé</th>
+                  <th style={{ ...th, textAlign: 'right' }}>Bon tarif</th>
+                </tr>
+              </thead>
+              <tbody>
+                {lignesProduit.map((l) => {
+                  const r = prix.rows[l.supplier_sku] || { on: false, price: '' };
+                  const maj = (patch) => setPrix({ ...prix, rows: { ...prix.rows, [l.supplier_sku]: { ...r, ...patch } } });
+                  return (
+                    <tr key={l.id} style={{ color: r.on ? C.dark : C.greyT }}>
+                      <td style={td}>
+                        <input type="checkbox" checked={r.on}
+                          onChange={() => maj({ on: !r.on, price: r.price || String(Number(l.expected_unit_price)) })} />
+                      </td>
+                      <td style={{ ...td, fontWeight: 600, whiteSpace: 'nowrap', color: 'inherit' }}>{l.supplier_sku}</td>
+                      <td style={{ ...td, maxWidth: 280, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'inherit' }}>{l.label}</td>
+                      <td style={{ ...td, textAlign: 'right', color: 'inherit' }}>{num(l.qty)}</td>
+                      <td style={{ ...td, textAlign: 'right', color: 'inherit' }}>{eur(l.expected_unit_price)}</td>
+                      <td style={{ ...td, textAlign: 'right', color: 'inherit' }}>{eur(factureUnit(l))}</td>
+                      <td style={{ ...td, textAlign: 'right' }}>
+                        <input value={r.price} inputMode="decimal" disabled={!r.on}
+                          onChange={(e) => maj({ price: e.target.value })}
+                          style={{ ...inputStyle, padding: '5px 8px', width: 90, textAlign: 'right' }} />
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          <div style={{ display: 'flex', gap: 10 }}>
+            <Btn disabled={busy || !Object.values(prix.rows).some((r) => r.on)} onClick={inscrirePrix}>
+              {busy ? 'Inscription…' : 'Inscrire ces tarifs'}
+            </Btn>
+            <Btn variant="ghost" onClick={() => setPrix(null)}>Annuler</Btn>
+          </div>
+        </div>
+      )}
 
       {nonCouverts.length > 0 && (
         <div style={{ fontSize: 12, color: C.orange, marginTop: 6 }}>

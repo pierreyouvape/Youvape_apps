@@ -43,6 +43,7 @@ router.get('/orders', canRead, controller.listCandidateOrders);
 router.get('/vouchers', canRead, controller.listVouchers);
 router.put('/vouchers/:voucherId', canWrite, controller.updateVoucher);
 router.delete('/vouchers/:voucherId', canWrite, controller.deleteVoucher);
+router.post('/vouchers/:voucherId/apply-prices', canWrite, controller.applyVoucherPrices);
 router.get('/orders/:orderId/lifecycle', canRead, controller.getOrderLifecycle);
 
 router.get('/', canRead, controller.listDocuments);

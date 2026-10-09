@@ -479,6 +479,87 @@ async function updateVoucher(req, res) {
   }
 }
 
+/**
+ * POST /api/supplier-invoices/vouchers/:voucherId/apply-prices
+ * body : { prices: [{ ref, price }] } — `price` dans l'unité de la ligne de
+ * commande BMS (celle de la colonne « Tarif commandé »).
+ *
+ * Le pendant d'« Appliquer le tarif facturé », pour le cas inverse : le tarif
+ * facturé était FAUX, le fournisseur l'a reconnu par un bon, et c'est le BON
+ * tarif qu'il faut inscrire. Sur LVP F2610289037, les cartouches Dojo 10 mg
+ * étaient commandées à 3,05 € dans BMS — le prix erroné — et 2,88 € pour les
+ * 20 mg, quand le fournisseur reconnaît 2,90 € pour toutes. Laissés tels quels,
+ * ces prix valorisaient le stock au mauvais coût et pré-remplissaient la
+ * commande suivante à 3,05 €.
+ *
+ * Mêmes trois écritures que l'autre bouton (réf. fournisseur, ligne de commande,
+ * ligne BMS), puis le bon est étendu aux références corrigées : une fois BMS au
+ * bon tarif, l'écart facturé réapparaît sur ces lignes, et c'est le bon qui le
+ * rend.
+ */
+async function applyVoucherPrices(req, res) {
+  try {
+    const voucher = await supplierVoucherModel.getVoucher(parseInt(req.params.voucherId, 10));
+    if (!voucher) return res.status(404).json({ error: 'Bon introuvable' });
+    const document = await supplierDocumentModel.getDocument(voucher.source_document_id);
+    if (!document) return res.status(404).json({ error: 'Facture du bon introuvable' });
+    const orderId = (document.orders[0] || {}).id;
+    if (!orderId) return res.status(422).json({ error: 'Aucune commande rattachée à cette facture' });
+
+    const demandes = (Array.isArray(req.body.prices) ? req.body.prices : [])
+      .map((p) => ({ ref: String(p.ref || '').trim(), price: Number(String(p.price).replace(',', '.')) }))
+      .filter((p) => p.ref);
+    if (demandes.length === 0) return res.status(400).json({ error: 'Aucun tarif à inscrire' });
+    const invalides = demandes.filter((p) => !(p.price > 0));
+    if (invalides.length) {
+      return res.status(400).json({ error: `Tarif invalide pour ${invalides.map((p) => p.ref).join(', ')}` });
+    }
+
+    // Le conditionnement de chaque ligne, lu sur la commande BMS d'aujourd'hui :
+    // c'est lui qui dit à quelle unité le prix saisi se rapporte.
+    const analysis = await reanalyse(document);
+    const cle = (v) => String(v || '').toLowerCase().replace(/\s+/g, ' ').trim();
+    const lignes = new Map((analysis.comparison?.lines || []).filter((l) => l.ref).map((l) => [cle(l.ref), l]));
+
+    const tarifs = [];
+    const refuses = [];
+    for (const d of demandes) {
+      const l = lignes.get(cle(d.ref));
+      if (!l || l.expectedUnitPrice == null) {
+        refuses.push({ ref: d.ref, reason: 'ligne absente de la commande' });
+      } else if (l.unitMismatch) {
+        // Facture au carton, commande à la pièce : on ne sait pas à quelle unité
+        // le prix saisi se rapporte. Mieux vaut ne rien écrire.
+        refuses.push({ ref: d.ref, reason: 'facturé dans une autre unité que la commande : à corriger dans BMS' });
+      } else {
+        tarifs.push({ ref: l.ref, realPrice: Math.round(d.price * 10000) / 10000, packQty: l.orderPackQty || 1 });
+      }
+    }
+
+    const result = tarifs.length
+      ? await supplierDocumentModel.applyTariffs(document.supplier_id, orderId, tarifs)
+      : { applied: [], skipped: [] };
+
+    // Seules les références vraiment corrigées rejoignent le bon — écrites comme
+    // sur la facture, puisque c'est à ses lignes que le bon se compare (la base
+    // peut écrire la même réf. avec une autre casse ou d'autres espaces).
+    const corrigees = new Set((result.applied || []).filter((a) => a.orderLine && a.orderLine.price != null)
+      .map((a) => cle(a.ref)));
+    await supplierVoucherModel.addCoveredRefs(
+      voucher.id,
+      tarifs.filter((t) => corrigees.has(cle(t.ref))).map((t) => t.ref),
+    );
+
+    const apres = await reanalyse(document);
+    await supplierDocumentModel.replaceLines(document.id, apres.comparison, undefined, apres.vouchersUsed);
+    const rafraichi = await supplierDocumentModel.getDocument(document.id);
+    return res.json({ ...result, skipped: [...refuses, ...(result.skipped || [])], document: rafraichi });
+  } catch (error) {
+    console.error('[supplier-invoices] tarifs du bon :', error.message);
+    return res.status(error.status || 500).json({ error: error.message || 'Erreur serveur' });
+  }
+}
+
 /** DELETE /api/supplier-invoices/vouchers/:voucherId */
 async function deleteVoucher(req, res) {
   try {
@@ -591,4 +672,5 @@ module.exports = {
   createVoucher,
   updateVoucher,
   deleteVoucher,
+  applyVoucherPrices,
 };
