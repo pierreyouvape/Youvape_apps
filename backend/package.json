@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
-    "test": "node tests/parsers.test.js && node tests/importLineConversion.test.js && node tests/bmsPayload.test.js && node tests/receptionPlafond.test.js && node tests/invoiceCompare.test.js && node tests/invoiceVouchers.test.js && node tests/opensiInvoice.test.js && node tests/odooInvoice.test.js && node tests/applyTariffs.test.js && node tests/prestashopInvoice.test.js && node tests/carriers.test.js && node tests/bmsShipmentConfirm.test.js && node tests/picking.test.js && node tests/shipmentHistory.test.js && node tests/productSupplierLink.test.js && node tests/mondialRelayCsv.test.js && node tests/wcOrderImport.test.js"
+    "test": "node tests/parsers.test.js && node tests/importLineConversion.test.js && node tests/bmsPayload.test.js && node tests/receptionPlafond.test.js && node tests/invoiceCompare.test.js && node tests/invoiceVouchers.test.js && node tests/opensiInvoice.test.js && node tests/odooInvoice.test.js && node tests/applyTariffs.test.js && node tests/prestashopInvoice.test.js && node tests/carriers.test.js && node tests/bmsShipmentConfirm.test.js && node tests/picking.test.js && node tests/shipmentHistory.test.js && node tests/productSupplierLink.test.js && node tests/mondialRelayCsv.test.js && node tests/wcOrderImport.test.js && node tests/verifiedPrice.test.js"
   },
   "keywords": [],
   "author": "",
