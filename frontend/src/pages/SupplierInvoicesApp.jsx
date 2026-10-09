@@ -666,8 +666,13 @@ const fromStoredLines = (lines) => (lines || []).map((l) => ({
 function ControlTable({ rows, supplierId, orderId, orderReceived, mobile, onApplied }) {
   const [applying, setApplying] = useState(false);
   const [perLine, setPerLine] = useState({});
+  // Tarif NÉGOCIÉ saisi à la main, par réf. : le prix de la commande BMS était
+  // faux (Dojo LCA convenues à 3,00 €, portées à 2,50 € / 2,80 € dans BMS,
+  // facturées 3,436 €). Inscrit à la place du tarif BMS, il laisse à réclamer
+  // facturé − négocié, et c'est cet écart que porte le message au commercial.
+  const [negocie, setNegocie] = useState({});
 
-  const aAppliquer = (rows || []).filter((r) => r.tariff);
+  const aAppliquer = (rows || []).filter((r) => r.tariff && perLine[r.ref] !== 'negotiated');
 
   if (!rows || rows.length === 0) {
     return (
@@ -695,7 +700,7 @@ function ControlTable({ rows, supplierId, orderId, orderReceived, mobile, onAppl
    * Fixer un tarif de référence SANS toucher à un lot reste possible, là où ça a
    * un sens : l'écran des références fournisseur (Achats → Fournisseurs).
    */
-  const envoyer = async (liste) => {
+  const envoyer = async (liste, etatSucces = 'applied') => {
     const { data } = await axios.post(`${BASE}/apply-tariffs`, {
       supplier_id: supplierId,
       order_id: orderId,
@@ -714,7 +719,7 @@ function ControlTable({ rows, supplierId, orderId, orderReceived, mobile, onAppl
         // main dans BMS.
         if (a.orderLine?.skipped) n[a.ref] = `tarif retenu, commande inchangée : ${a.orderLine.skipped}`;
         else if (a.bmsLine?.skipped) n[a.ref] = `appliqué chez nous, BMS inchangé : ${a.bmsLine.skipped}`;
-        else n[a.ref] = 'applied';
+        else n[a.ref] = etatSucces;
       }
       for (const k of data.skipped || []) n[k.ref] = k.reason;
       return n;
@@ -743,6 +748,22 @@ function ControlTable({ rows, supplierId, orderId, orderReceived, mobile, onAppl
     catch (e) { setPerLine((p) => ({ ...p, [t.ref]: e.response?.data?.error || e.message })); }
   };
 
+  const inscrireNegocie = async (t) => {
+    const saisi = Number(String(negocie[t.ref] || '').replace(',', '.'));
+    if (!(saisi > 0)) { window.alert('Saisis le tarif négocié.'); return; }
+    if (!window.confirm(
+      `Inscrire ${prix(saisi)} comme tarif négocié pour ${t.ref} `
+      + '(référence fournisseur, commande chez nous et dans BMS) ?\n\n'
+      + `L'écart restant (facturé ${prix(t.realPrice)} − négocié ${prix(saisi)}) sera à réclamer.`,
+    )) return;
+    if (!confirmeSiRecue()) return;
+    setPerLine((p) => ({ ...p, [t.ref]: 'busy' }));
+    try {
+      await envoyer([{ ...t, realPrice: Math.round(saisi * 10000) / 10000 }], 'negotiated');
+      setNegocie((n) => { const c = { ...n }; delete c[t.ref]; return c; });
+    } catch (e) { setPerLine((p) => ({ ...p, [t.ref]: e.response?.data?.error || e.message })); }
+  };
+
   const toutAppliquer = async () => {
     if (!confirmeSiRecue()) return;
     setApplying(true);
@@ -755,11 +776,32 @@ function ControlTable({ rows, supplierId, orderId, orderReceived, mobile, onAppl
     if (!r.tariff) return null;
     const etat = perLine[r.ref];
     if (etat === 'applied') return <span style={{ color: C.green, fontWeight: 600, fontSize: 12 }}>Appliqué</span>;
+    if (etat === 'negotiated') {
+      return <span style={{ color: C.green, fontWeight: 600, fontSize: 12 }}>Tarif négocié inscrit — reste à réclamer</span>;
+    }
     if (etat && etat !== 'busy') return <span style={{ color: C.orange, fontSize: 11.5 }}>{etat}</span>;
+    if (negocie[r.ref] !== undefined) {
+      return (
+        <span style={{ display: 'inline-flex', gap: 6 }}>
+          <Btn onClick={() => inscrireNegocie(r.tariff)} small disabled={etat === 'busy'}>
+            {etat === 'busy' ? '…' : 'Inscrire'}
+          </Btn>
+          <Btn variant="ghost" small onClick={() => setNegocie((n) => { const c = { ...n }; delete c[r.ref]; return c; })}>
+            Annuler
+          </Btn>
+        </span>
+      );
+    }
     return (
-      <Btn onClick={() => appliquerUne(r.tariff)} small disabled={etat === 'busy'}>
-        {etat === 'busy' ? '…' : 'Appliquer'}
-      </Btn>
+      <span style={{ display: 'inline-flex', gap: 6 }}>
+        <Btn onClick={() => appliquerUne(r.tariff)} small disabled={etat === 'busy'}>
+          {etat === 'busy' ? '…' : 'Appliquer'}
+        </Btn>
+        <Btn variant="ghost" small disabled={etat === 'busy'}
+          onClick={() => setNegocie((n) => ({ ...n, [r.ref]: String(r.tariff.currentPrice ?? '') }))}>
+          Tarif négocié
+        </Btn>
+      </span>
     );
   };
 
@@ -776,6 +818,8 @@ function ControlTable({ rows, supplierId, orderId, orderReceived, mobile, onAppl
       {/* Le FIFO lit le prix de la COMMANDE, jamais celui de la facture : sans
           ce geste, la marchandise entre en stock au prix qu'on croyait payer. */}
       <span style={{ fontSize: 12, color: C.greyT, flex: '1 1 320px', minWidth: 260 }}>
+        <strong>Tarif négocié</strong> : quand c'est le tarif BMS qui est faux, saisis le prix convenu ;
+        il est inscrit à sa place et seul l'écart facturé − négocié reste à réclamer.{' '}
         Appliquer écrit le <strong>prix réel payé</strong> dans notre référentiel — il fera autorité
         à l'import de la prochaine commande, même s'il est plus élevé, le cas d'une promotion
         terminée — et corrige <strong>le prix de cette commande</strong>, pour que le coût de revient
@@ -812,7 +856,11 @@ function ControlTable({ rows, supplierId, orderId, orderReceived, mobile, onAppl
                 {r.tariff && (
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 }}>
                     <span style={{ fontSize: 12.5 }}>
-                      {prix(r.tariff.currentPrice)} → <strong>{prix(r.tariff.realPrice)}</strong>
+                      {negocie[r.ref] !== undefined ? (
+                        <input value={negocie[r.ref]} inputMode="decimal" aria-label={`Tarif négocié ${r.ref}`}
+                          onChange={(e) => setNegocie((n) => ({ ...n, [r.ref]: e.target.value }))}
+                          style={{ ...inputStyle, padding: '4px 6px', width: 70, textAlign: 'right' }} />
+                      ) : prix(r.tariff.currentPrice)} → <strong>{prix(r.tariff.realPrice)}</strong>
                     </span>
                     {bouton(r)}
                   </div>
@@ -860,7 +908,13 @@ function ControlTable({ rows, supplierId, orderId, orderReceived, mobile, onAppl
                     {qteCmdFact(r.qtyOrdered, r.qtyInvoiced, r.packFactor)}
                   </td>
                   <td style={{ ...td, textAlign: 'right', color: C.greyT }}>
-                    {prix(t ? t.currentPrice : r.expectedUnitPrice)}
+                    {t && negocie[r.ref] !== undefined ? (
+                      <input value={negocie[r.ref]} inputMode="decimal" autoFocus
+                        aria-label={`Tarif négocié ${r.ref}`}
+                        onChange={(e) => setNegocie((n) => ({ ...n, [r.ref]: e.target.value }))}
+                        onKeyDown={(e) => { if (e.key === 'Enter') inscrireNegocie(t); }}
+                        style={{ ...inputStyle, padding: '4px 6px', width: 80, textAlign: 'right' }} />
+                    ) : prix(t ? t.currentPrice : r.expectedUnitPrice)}
                   </td>
                   <td style={{ ...td, textAlign: 'right', fontWeight: t ? 700 : 400 }}>
                     {prix(t ? t.realPrice : r.effectiveUnitCost)}
