@@ -162,6 +162,45 @@ const supplierRefModel = {
     return result.rows[0];
   },
 
+  /**
+   * Complète le « Prix HT du pack » des réfs qui n'en ont pas, depuis le dernier
+   * achat (hors annulé) chez ce fournisseur : prix de la pièce
+   * (unit_price ÷ units_per_qty, comme le FIFO) × conditionnement de la réf.
+   * Une réf qui a déjà un prix n'est jamais touchée. Sans ça, l'import et la synchro
+   * BMS créaient des réfs sans prix (775 sur 4 472 au 09/10/2026, dont les 18 de la
+   * Dojo Blast 15K 20mg) alors que l'historique de commandes les avait.
+   */
+  fillMissingPackPrices: async (db = pool) => {
+    const result = await db.query(`
+      WITH last AS (
+        SELECT DISTINCT ON (poi.product_id, po.supplier_id)
+          poi.product_id, po.supplier_id,
+          poi.unit_price / GREATEST(COALESCE(poi.units_per_qty, 1), 1) AS piece_price
+        FROM purchase_order_items poi
+        JOIN purchase_orders po ON po.id = poi.purchase_order_id
+        WHERE po.status <> 'cancelled' AND poi.unit_price > 0
+        ORDER BY poi.product_id, po.supplier_id, po.order_date DESC, po.id DESC
+      )
+      UPDATE supplier_refs r SET
+        pack_price = round(last.piece_price * r.pack_qty, 4),
+        updated_at = CURRENT_TIMESTAMP
+      FROM last
+      WHERE r.pack_price IS NULL
+        AND last.product_id = r.product_id AND last.supplier_id = r.supplier_id
+    `);
+    return result.rowCount;
+  },
+
+  /** Idem, sans jamais faire échouer l'opération qui l'appelle. */
+  fillMissingPackPricesQuietly: async (context) => {
+    try {
+      const n = await supplierRefModel.fillMissingPackPrices();
+      if (n > 0) console.log(`[réfs] ${n} prix de pack complétés depuis le dernier achat (${context})`);
+    } catch (e) {
+      console.warn(`[réfs] prix de pack non complétés (${context}) : ${e.message}`);
+    }
+  },
+
   remove: async (refId, db = pool) => {
     const result = await db.query('DELETE FROM supplier_refs WHERE id = $1 RETURNING *', [refId]);
     return result.rows[0] || null;

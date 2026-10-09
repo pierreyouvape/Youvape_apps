@@ -458,6 +458,7 @@ const purchaseOrderModel = {
         client.release();
       }
     }
+    await supplierRefModel.fillMissingPackPricesQuietly(`ajout à la commande ${orderId}`);
 
     if (added.length > 0) {
       // Totaux : nombre de lignes et quantités recomptés chez nous ; le montant
@@ -778,6 +779,7 @@ const purchaseOrderModel = {
       }
 
       await client.query('COMMIT');
+      await supplierRefModel.fillMissingPackPricesQuietly(`commande ${order.id}`);
 
       const created = await purchaseOrderModel.getById(order.id);
       if (bmsWarning) created.bms_error = bmsWarning;
@@ -2116,6 +2118,7 @@ const purchaseOrderModel = {
       `, [new Date().toISOString()]);
 
       await client.query('COMMIT');
+      await supplierRefModel.fillMissingPackPricesQuietly('synchro BMS');
 
       return {
         total: orders.length,

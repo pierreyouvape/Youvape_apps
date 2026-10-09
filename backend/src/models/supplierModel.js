@@ -11,26 +11,6 @@ const productSupplierLink = require('./productSupplierLinkModel');
  */
 const resolveProductId = productSupplierLink.resolveProductId;
 
-// Dernier prix d'achat (hors commandes annulées) par produit × fournisseur.
-// La réf n'a souvent pas de prix (l'import n'en enregistre pas) alors que
-// l'historique, lui, l'a : c'est ce qu'on affiche en repli sur la fiche produit.
-const lastPurchasesByProducts = async (productIds) => {
-  if (productIds.length === 0) return new Map();
-  const result = await pool.query(`
-    SELECT DISTINCT ON (poi.product_id, po.supplier_id)
-      poi.product_id, po.supplier_id, poi.unit_price, po.order_date
-    FROM purchase_order_items poi
-    JOIN purchase_orders po ON po.id = poi.purchase_order_id
-    WHERE poi.product_id = ANY($1::int[])
-      AND po.status <> 'cancelled'
-      AND poi.unit_price IS NOT NULL AND poi.unit_price > 0
-    ORDER BY poi.product_id, po.supplier_id, po.order_date DESC, po.id DESC
-  `, [productIds]);
-  return new Map(result.rows.map(r => [`${r.supplier_id}_${r.product_id}`, {
-    unit_price: r.unit_price, order_date: r.order_date,
-  }]));
-};
-
 const supplierModel = {
   // Récupérer tous les fournisseurs
   getAll: async (includeInactive = false) => {
@@ -320,7 +300,6 @@ const supplierModel = {
       `;
       const result = await pool.query(query, [product.wp_product_id]);
       const refs = await supplierRefModel.listByProducts([...new Set(result.rows.map(r => r.variation_id))]);
-      const lastPurchases = await lastPurchasesByProducts([...new Set(result.rows.map(r => r.variation_id))]);
       const refsOf = (supplierId, variationId) =>
         refs.filter(r => r.supplier_id === supplierId && r.product_id === variationId);
 
@@ -348,8 +327,7 @@ const supplierModel = {
           supplier_price: row.supplier_price,
           min_order_qty: row.min_order_qty,
           pack_qty: row.pack_qty,
-          refs: refsOf(row.supplier_id, row.variation_id),
-          last_purchase: lastPurchases.get(`${row.supplier_id}_${row.variation_id}`) || null
+          refs: refsOf(row.supplier_id, row.variation_id)
         });
       }
 
@@ -371,12 +349,10 @@ const supplierModel = {
     `;
     const result = await pool.query(query, [resolvedId]);
     const refs = await supplierRefModel.listByProducts([resolvedId]);
-    const lastPurchases = await lastPurchasesByProducts([resolvedId]);
     return result.rows.map(row => ({
       ...row,
       product_id: resolvedId,
       refs: refs.filter(r => r.supplier_id === row.id),
-      last_purchase: lastPurchases.get(`${row.id}_${resolvedId}`) || null,
     }));
   },
 
