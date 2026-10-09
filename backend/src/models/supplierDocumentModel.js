@@ -52,15 +52,16 @@ async function findExisting(supplierId, number, db = pool) {
  * Sans ça, la liste annonçait « tarif +21,46 € » sur V3/2026/37644 pendant que
  * la facture ouverte, elle, affichait +3,46 € — le vrai montant (02/10/2026).
  */
-const ECART_TARIF_SQL = `
-  CASE WHEN l.net_gap IS NOT NULL
-        AND l.qty > 0 AND l.expected_qty > 0 AND l.qty <> l.expected_qty
-        AND round(GREATEST(l.qty, l.expected_qty) / LEAST(l.qty, l.expected_qty)) >= 2
-        AND abs(GREATEST(l.qty, l.expected_qty) / LEAST(l.qty, l.expected_qty)
-                - round(GREATEST(l.qty, l.expected_qty) / LEAST(l.qty, l.expected_qty))) < 0.01
-       THEN l.net_gap
-       ELSE COALESCE(l.residual_gap_price, l.gap_price, 0)
+const ecartTarifSql = (a) => `
+  CASE WHEN ${a}.net_gap IS NOT NULL
+        AND ${a}.qty > 0 AND ${a}.expected_qty > 0 AND ${a}.qty <> ${a}.expected_qty
+        AND round(GREATEST(${a}.qty, ${a}.expected_qty) / LEAST(${a}.qty, ${a}.expected_qty)) >= 2
+        AND abs(GREATEST(${a}.qty, ${a}.expected_qty) / LEAST(${a}.qty, ${a}.expected_qty)
+                - round(GREATEST(${a}.qty, ${a}.expected_qty) / LEAST(${a}.qty, ${a}.expected_qty))) < 0.01
+       THEN ${a}.net_gap
+       ELSE COALESCE(${a}.residual_gap_price, ${a}.gap_price, 0)
   END`;
+const ECART_TARIF_SQL = ecartTarifSql('l');
 
 /**
  * CE QU'UN AVOIR A DÉJÀ RENDU SUR UNE LIGNE DE FACTURE (alias `l` et `d`).
@@ -74,27 +75,63 @@ const ECART_TARIF_SQL = `
  * défaut de désignation, quand il porte sur la même commande. Et seulement sur
  * la MÊME référence : un avoir sur un article n'éteint pas l'écart d'un autre.
  */
+const AVOIR_DESIGNE_SQL = `
+  c.doc_type = 'credit_note'
+  AND c.supplier_id = d.supplier_id
+  AND c.id <> d.id
+  AND (c.analysis->>'correctsInvoice' = d.number
+       OR (COALESCE(c.analysis->>'correctsInvoice', '') = ''
+           AND EXISTS (SELECT 1 FROM supplier_document_orders co
+                         JOIN supplier_document_orders dor ON dor.purchase_order_id = co.purchase_order_id
+                        WHERE co.document_id = c.id AND dor.document_id = d.id)))`;
+
 const AVOIR_SQL = `
   SELECT COALESCE(-SUM(cl.line_total_ht), 0) AS montant,
          string_agg(DISTINCT c.number, ', ') AS numeros
     FROM supplier_documents c
     JOIN supplier_document_lines cl ON cl.document_id = c.id
-   WHERE c.doc_type = 'credit_note'
-     AND c.supplier_id = d.supplier_id
-     AND c.id <> d.id
-     AND cl.supplier_sku = l.supplier_sku
-     AND (c.analysis->>'correctsInvoice' = d.number
-          OR (COALESCE(c.analysis->>'correctsInvoice', '') = ''
-              AND EXISTS (SELECT 1 FROM supplier_document_orders co
-                            JOIN supplier_document_orders dor ON dor.purchase_order_id = co.purchase_order_id
-                           WHERE co.document_id = c.id AND dor.document_id = d.id)))`;
+   WHERE ${AVOIR_DESIGNE_SQL}
+     AND cl.supplier_sku = l.supplier_sku`;
+
+/**
+ * L'AVOIR SANS RÉFÉRENCE ARTICLE (alias `d`).
+ *
+ * JoshNoa rend parfois l'écart d'un bloc : l'avoir RV3/2026/02918 n'a qu'une
+ * ligne « ERREUR DE FACTURATION » de 4,95 €, sans référence, pour les deux
+ * bases Mix&Go surfacturées de V3/2026/38291 (3,70 + 1,25 €). Rien à rapprocher
+ * article par article : l'écart restait affiché alors qu'il était rendu
+ * (09/10/2026). Un tel avoir ne s'impute à aucune ligne en particulier — il
+ * éteint les écarts de la facture seulement s'il les couvre TOUS.
+ */
+const AVOIR_GLOBAL_SQL = `
+  SELECT COALESCE(-SUM(cl.line_total_ht), 0) AS montant,
+         string_agg(DISTINCT c.number, ', ') AS numeros
+    FROM supplier_documents c
+    JOIN supplier_document_lines cl ON cl.document_id = c.id
+   WHERE ${AVOIR_DESIGNE_SQL}
+     AND cl.supplier_sku IS NULL
+     AND COALESCE(cl.kind, '') <> 'shipping'`;
+
+/** Tout ce que la facture `d` a encore à réclamer, ligne par ligne. */
+const ECART_RECLAMABLE_SQL = `
+  SELECT COALESCE(SUM(GREATEST(
+           CASE WHEN l2.verdict IN ('price', 'qty_price') THEN ${ecartTarifSql('l2')}
+                ELSE COALESCE(l2.net_gap, l2.gap, 0) END, 0)), 0)
+    FROM supplier_document_lines l2
+   WHERE l2.document_id = d.id
+     AND l2.verdict IS NOT NULL
+     AND l2.verdict NOT IN ('ok', 'free', 'discount', 'rounding', 'packaging', 'shipping', 'credit')
+     AND l2.material`;
 
 /** La ligne n'appelle plus de geste : l'avoir couvre son écart, au garde-fou d'arrondi près. */
-const COMPENSEE_SQL = `(
+const COMPENSEE_SQL = `((
   l.supplier_sku IS NOT NULL
   AND (SELECT montant FROM (${AVOIR_SQL}) av) > 0
   AND (SELECT montant FROM (${AVOIR_SQL}) av) + 0.10 >=
-      CASE WHEN l.verdict IN ('price', 'qty_price') THEN ${ECART_TARIF_SQL} ELSE COALESCE(l.net_gap, l.gap, 0) END)`;
+      CASE WHEN l.verdict IN ('price', 'qty_price') THEN ${ECART_TARIF_SQL} ELSE COALESCE(l.net_gap, l.gap, 0) END)
+  OR (
+  (SELECT montant FROM (${AVOIR_GLOBAL_SQL}) ag) > 0
+  AND (SELECT montant FROM (${AVOIR_GLOBAL_SQL}) ag) + 0.10 >= (${ECART_RECLAMABLE_SQL})))`;
 
 /**
  * Gèle les lignes d'un document. Partagé par l'enregistrement et le re-contrôle,
@@ -329,13 +366,15 @@ async function getDocument(id, db = pool) {
 
   const [lines, orders, payments] = await Promise.all([
     db.query(
-      `SELECT l.*, av.montant AS credited_amount, av.numeros AS credited_by,
+      `SELECT l.*, av.montant AS credited_amount,
+              COALESCE(av.numeros, ag.numeros) AS credited_by,
               (l.verdict IS NOT NULL
                AND l.verdict NOT IN ('ok', 'free', 'discount', 'rounding', 'packaging', 'shipping', 'credit')
                AND ${COMPENSEE_SQL}) AS compensee
          FROM supplier_document_lines l
          JOIN supplier_documents d ON d.id = l.document_id
          LEFT JOIN LATERAL (${AVOIR_SQL}) av ON true
+         LEFT JOIN LATERAL (${AVOIR_GLOBAL_SQL}) ag ON true
         WHERE l.document_id = $1
         ORDER BY l.line_no`,
       [id],
