@@ -368,6 +368,15 @@ export const Inventory = (props) => (
   </Base>
 );
 
+export const Returns = (props) => (
+  <Base {...props}>
+    {/* Le colis, et la flèche qui le ramène */}
+    <path d="M4 8.5 L12 4.5 L20 8.5 V15.5 L12 19.5 L4 15.5 Z" />
+    <path d="M4 8.5 L12 12.5 L20 8.5 M12 12.5 V19.5" />
+    <path d="M17.5 21.5 H21 a2 2 0 0 0 0 -4 h-1 M19 15.5 l-2 2 l2 2" />
+  </Base>
+);
+
 export const SupplierInvoices = (props) => (
   <Base {...props}>
     <path d="M6 2.5 H15 L19 6.5 V21.5 H6 Z" />
@@ -455,6 +464,9 @@ export const APPS = [
   // « clients » pour la distinguer des commandes FOURNISSEUR de la pile Achats.
   { key: 'commandes',  path: '/commandes',  label: 'Commandes clients',        Icon: OrdersSearch, color: '#5B21B6' },
   { key: 'tickets',    path: '/tickets',    label: 'SAV / Tickets',            Icon: Tickets,      color: '#0891B2' },
+  // Même droit que les tickets (décision Pierre du 09/10/2026) : un retour naît
+  // d'un échange SAV, et routes/customerReturnRoutes.js exige `tickets`.
+  { key: 'retours',    path: '/retours',    label: 'Retours',                  Icon: Returns,      color: '#A21CAF', permissionKey: 'tickets' },
   { key: 'chronopost', path: '/chronopost', label: 'Factures Chronopost',      Icon: Chronopost,   color: '#0D7FA8' },
   { key: 'colissimo',  path: '/colissimo',  label: 'Factures Colissimo',       Icon: Colissimo,    color: '#D96000' },
   { key: 'lettre-suivie', path: '/lettre-suivie', label: 'Factures Lettre Suivie', Icon: LettreSuivie, color: '#FFB000' },

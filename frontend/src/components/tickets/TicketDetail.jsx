@@ -11,6 +11,7 @@ import { getCountryLabel } from '../../utils/countries';
 import { AuthContext } from '../../context/AuthContext';
 import { useOpenTickets } from '../../context/OpenTicketsContext';
 import OrderCard from './OrderCard';
+import OrderReturnsBox from '../returns/OrderReturnsBox';
 import { buildPlaceholderContext, applyPlaceholders, parseInputTags, applyInputTags, findUnresolvedTags } from './macroPlaceholders';
 import MacroInputsModal from './MacroInputsModal';
 import RichEditor from './RichEditor';
@@ -3032,6 +3033,12 @@ function CustomerPanel({ ticket, onAssignOrder, onUnassignOrder, onMerge, mobile
             highlighted
             onUnassign={onUnassignOrder}
             concernedProducts={ticket.concerned_products}
+          />
+          <OrderReturnsBox
+            wpOrderId={ticket.order_id}
+            ticketId={ticket.id}
+            concernedProducts={ticket.concerned_products}
+            style={{ marginTop: 8 }}
           />
         </div>
       )}

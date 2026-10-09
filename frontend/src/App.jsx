@@ -38,6 +38,7 @@ import PdaPicking from './pages/PdaPicking';
 import PdaProduit from './pages/PdaProduit';
 import PdaInventaire from './pages/PdaInventaire';
 import InventoryApp from './pages/InventoryApp';
+import ReturnsApp from './pages/ReturnsApp';
 import ReceptionApp from './pages/ReceptionApp';
 import FinancierApp from './pages/FinancierApp';
 import OrdersSearchApp from './pages/OrdersSearchApp';
@@ -87,6 +88,7 @@ const PAGE_TITLES = {
   '/pda/produit': 'Produit PDA',
   '/pda/inventaire': 'Inventaire PDA',
   '/inventaire': 'Inventaire',
+  '/retours': 'Retours',
   '/reception': 'Réception',
   '/financier': 'Financier',
   '/commandes': 'Commandes clients',
@@ -402,6 +404,19 @@ function App() {
               </PrivateRoute>
             }
           />
+          {/* Retours client : droit tickets (AppIcons : permissionKey). Une seule
+              page, qui lit l'adresse : liste, fiche, SAV fournisseurs. */}
+          {['/retours', '/retours/fournisseurs', '/retours/fournisseurs/:supplierId', '/retours/:id'].map(path => (
+            <Route
+              key={path}
+              path={path}
+              element={
+                <PrivateRoute>
+                  <ReturnsApp />
+                </PrivateRoute>
+              }
+            />
+          ))}
           <Route
             path="/picking/settings"
             element={

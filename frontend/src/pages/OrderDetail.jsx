@@ -10,6 +10,7 @@ import { LinkBox } from '../utils/navHelpers';
 import { getTrackingUrl } from '../utils/trackingUtils';
 import { visuelTransporteur } from '../utils/carrierVisuals';
 import { SavTicketChips, SavConcernedTag, TICKETS_COLOR } from '../components/SavBadge';
+import OrderReturnsBox from '../components/returns/OrderReturnsBox';
 
 const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:3000/api/auth').replace('/auth', '');
 
@@ -649,6 +650,7 @@ const OrderDetail = () => {
                 <StatusBadge status={order.post_status} />
                 {/* Demandes SAV rattachées à la commande */}
                 <SavTicketChips tickets={order.sav_tickets} style={{ justifyContent: 'flex-end' }} />
+                <OrderReturnsBox wpOrderId={order.wp_order_id} style={{ alignItems: 'flex-end' }} />
               </div>
             </div>
 

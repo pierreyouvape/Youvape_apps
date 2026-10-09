@@ -374,4 +374,8 @@ module.exports = {
   editBarcode,
   deleteBarcode,
   createMovement,
+  // Repris par les Retours client (remise en stock).
+  BMS_WAREHOUSE_ID,
+  findBmsProductId,
+  findMovementId,
 };

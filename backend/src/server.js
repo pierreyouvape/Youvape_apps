@@ -33,6 +33,7 @@ const boutiqueStatsRoutes = require('./routes/boutiqueStatsRoutes');
 const pickingRoutes = require('./routes/pickingRoutes');
 const pdaProductRoutes = require('./routes/pdaProductRoutes');
 const inventoryRoutes = require('./routes/inventoryRoutes');
+const customerReturnRoutes = require('./routes/customerReturnRoutes');
 const preferencesRoutes = require('./routes/preferencesRoutes');
 const financierRoutes = require('./routes/financierRoutes');
 const savRoutes = require('./routes/savRoutes');
@@ -102,6 +103,7 @@ app.use('/api/shipment-stats', shipmentStatsRoutes); // Stats d'expédition (dro
 app.use('/api/boutique-stats', authMiddleware, boutiqueStatsRoutes); // Stats boutiques (droit stats-boutiques + droit boutique, dans le contrôleur)
 app.use('/api/picking', pickingRoutes); // Picking : commandes à préparer et vagues (auth + droit picking dans le routeur)
 app.use('/api/inventaire', inventoryRoutes); // Inventaire : PC (droit inventaire) + PDA (droit picking), auth dans le routeur
+app.use('/api/retours', customerReturnRoutes); // Retours client (droit tickets, auth dans le routeur)
 app.use('/api/pda-produit', pdaProductRoutes); // PDA Produit : fiche, emplacement, codes-barres, mouvements (auth + droit picking dans le routeur)
 app.use('/api/preferences', preferencesRoutes); // User column preferences
 app.use('/api/financier', financierRoutes);    // Dashboard financier
