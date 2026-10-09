@@ -469,6 +469,9 @@ const wcSyncService = {
         shipping_method = COALESCE(EXCLUDED.shipping_method, orders.shipping_method),
         shipping_carrier = COALESCE(EXCLUDED.shipping_carrier, orders.shipping_carrier),
         tracking_number = COALESCE(EXCLUDED.tracking_number, orders.tracking_number),
+        -- Rempli seulement s'il manque : une commande créée en back-office arrive
+        -- parfois avant que WooCommerce ait posé sa date (reimportIncompleteOrders).
+        post_date = COALESCE(orders.post_date, EXCLUDED.post_date),
         post_modified = EXCLUDED.post_modified,
         attribution_source_type = COALESCE(EXCLUDED.attribution_source_type, orders.attribution_source_type),
         attribution_referrer = COALESCE(EXCLUDED.attribution_referrer, orders.attribution_referrer),
