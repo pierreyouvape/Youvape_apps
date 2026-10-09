@@ -100,17 +100,19 @@ const filtersText = (inv) => {
     f.categories?.length && `Catégories : ${f.categories.map(decode).join(', ')}`,
     f.subCategories?.length && `Sous-catégories : ${f.subCategories.map(decode).join(', ')}`,
     f.brands?.length && `Marques : ${f.brands.map(decode).join(', ')}`,
+    f.subBrands?.length && `Sous-marques : ${f.subBrands.map(decode).join(', ')}`,
   ].filter(Boolean).join(' · ');
 };
 
 // ── Création ────────────────────────────────────────────────────────────────
 
-function CheckList({ title, items, selected, onToggle, search, onSearch }) {
+/** Liste de cases ; chaque item porte son état (`checked`) et son geste (`onToggle`). */
+function CheckList({ title, items, selectedCount, search, onSearch }) {
   return (
     <div style={{ ...panel, padding: 12, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
         <strong style={{ flex: 1, fontSize: 14 }}>{title}</strong>
-        {selected.size > 0 && <Chip color={BLUE} bg={BLUE_L}>{selected.size}</Chip>}
+        {selectedCount > 0 && <Chip color={BLUE} bg={BLUE_L}>{selectedCount}</Chip>}
       </div>
       {onSearch && (
         <input value={search} onChange={(e) => onSearch(e.target.value)} placeholder="Rechercher…" style={{ ...field, marginBottom: 8 }} />
@@ -121,7 +123,7 @@ function CheckList({ title, items, selected, onToggle, search, onSearch }) {
             display: 'flex', alignItems: 'center', gap: 8, padding: '4px 2px', fontSize: 13.5, cursor: 'pointer',
             paddingLeft: it.indent ? 22 : 2, fontWeight: it.indent ? 400 : 600,
           }}>
-            <input type="checkbox" checked={selected.has(it.value)} onChange={() => onToggle(it.value)} />
+            <input type="checkbox" checked={it.checked} onChange={it.onToggle} />
             <span style={{ flex: 1 }}>{decode(it.value)}</span>
             <span style={{ color: C.greyT, fontSize: 12 }}>{nf.format(it.count)}</span>
           </label>
@@ -139,6 +141,7 @@ function CreateView({ token, onCreated, onCancel }) {
   const [cats, setCats] = useState(new Set());
   const [subs, setSubs] = useState(new Set());
   const [brands, setBrands] = useState(new Set());
+  const [subBrands, setSubBrands] = useState(new Set());
   const [brandSearch, setBrandSearch] = useState('');
   const [preview, setPreview] = useState(null);
   const [error, setError] = useState(null);
@@ -150,8 +153,11 @@ function CreateView({ token, onCreated, onCancel }) {
       .catch(err => setError(err.response?.data?.error || err.message));
   }, [token]);
 
-  const filters = useMemo(() => ({ categories: [...cats], subCategories: [...subs], brands: [...brands] }), [cats, subs, brands]);
-  const empty = kind === 'partial' && !cats.size && !subs.size && !brands.size;
+  const filters = useMemo(() => ({
+    categories: [...cats], subCategories: [...subs], brands: [...brands], subBrands: [...subBrands],
+  }), [cats, subs, brands, subBrands]);
+  const picked = [...cats, ...subs, ...brands, ...subBrands];
+  const empty = kind === 'partial' && picked.length === 0;
 
   useEffect(() => {
     if (empty) { setPreview(null); return undefined; }
@@ -171,7 +177,7 @@ function CreateView({ token, onCreated, onCancel }) {
 
   const autoName = kind === 'global'
     ? `Inventaire global du ${today}`
-    : `Inventaire ${[...cats, ...subs, ...brands].map(decode).slice(0, 3).join(', ')}${cats.size + subs.size + brands.size > 3 ? '…' : ''} du ${today}`;
+    : `Inventaire ${picked.map(decode).slice(0, 3).join(', ')}${picked.length > 3 ? '…' : ''} du ${today}`;
 
   const create = async () => {
     setSaving(true);
@@ -186,23 +192,36 @@ function CreateView({ token, onCreated, onCancel }) {
     }
   };
 
-  const catItems = (options?.categories || []).flatMap(c => [
-    { key: `c:${c.name}`, value: c.name, count: c.count },
-  ]);
+  const catItems = (options?.categories || []).map(c => ({
+    key: `c:${c.name}`, value: c.name, count: c.count, checked: cats.has(c.name), onToggle: () => toggle(setCats)(c.name),
+  }));
   const subItems = (options?.categories || []).flatMap(c => [
     { key: `h:${c.name}`, header: true, value: c.name },
     ...c.subCategories.map(s => ({ key: `s:${c.name}:${s.name}`, value: s.name, count: s.count, indent: true })),
   ]);
-  const brandItems = (options?.brands || [])
-    .filter(b => !brandSearch || decode(b.name).toLowerCase().includes(brandSearch.toLowerCase()))
-    .map(b => ({ key: `b:${b.name}`, value: b.name, count: b.count }));
+  // Une marque et ses sous-marques en dessous. La recherche garde la marque
+  // quand elle porte sur une de ses sous-marques.
+  const q = brandSearch.trim().toLowerCase();
+  const brandItems = (options?.brands || []).flatMap(b => {
+    const brandMatch = !q || decode(b.name).toLowerCase().includes(q);
+    const subMatches = b.subBrands.filter(sb => brandMatch || decode(sb.name).toLowerCase().includes(q));
+    if (!brandMatch && subMatches.length === 0) return [];
+    return [
+      { key: `b:${b.name}`, value: b.name, count: b.count, checked: brands.has(b.name), onToggle: () => toggle(setBrands)(b.name) },
+      ...subMatches.map(sb => ({
+        key: `sb:${b.name}:${sb.name}`, value: sb.name, count: sb.count, indent: true,
+        checked: brands.has(b.name) || subBrands.has(sb.name),
+        onToggle: () => !brands.has(b.name) && toggle(setSubBrands)(sb.name),
+      })),
+    ];
+  });
 
   return (
     <div style={{ display: 'grid', gap: 16 }}>
       {error && <Banner kind="error" onClose={() => setError(null)}>{error}</Banner>}
       <div style={{ ...panel, display: 'grid', gap: 14 }}>
         <div style={{ display: 'flex', gap: 10 }}>
-          {[['partial', 'Partiel', 'Catégories, sous-catégories ou marques'], ['global', 'Global', 'Tout le catalogue en stock']].map(([k, label, hint]) => (
+          {[['partial', 'Partiel', 'Catégories, marques, sous-marques'], ['global', 'Global', 'Tout le catalogue en stock']].map(([k, label, hint]) => (
             <button key={k} onClick={() => setKind(k)} style={{
               flex: 1, textAlign: 'left', padding: 14, borderRadius: 12, cursor: 'pointer', fontFamily: 'inherit',
               border: `2px solid ${kind === k ? BLUE : C.greyB}`, background: kind === k ? BLUE_L : C.white,
@@ -221,13 +240,13 @@ function CreateView({ token, onCreated, onCancel }) {
       {kind === 'partial' && (
         <>
           <p style={{ margin: 0, fontSize: 13, color: C.greyT }}>
-            Plusieurs cases dans une même liste s'additionnent ; deux listes se croisent
-            (ex. telle marque <em>dans</em> telle sous-catégorie).
+            Les catégories et sous-catégories cochées s'additionnent, de même que les marques et
+            sous-marques ; les deux se croisent (ex. telle marque <em>dans</em> telle sous-catégorie).
           </p>
           {!options && <p style={{ color: C.greyT }}>Chargement…</p>}
           {options && (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 12 }}>
-              <CheckList title="Catégories" items={catItems} selected={cats} onToggle={toggle(setCats)} />
+              <CheckList title="Catégories" items={catItems} selectedCount={cats.size} />
               <div style={{ ...panel, padding: 12 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
                   <strong style={{ flex: 1, fontSize: 14 }}>Sous-catégories</strong>
@@ -245,7 +264,7 @@ function CreateView({ token, onCreated, onCancel }) {
                     )))}
                 </div>
               </div>
-              <CheckList title="Marques" items={brandItems} selected={brands} onToggle={toggle(setBrands)}
+              <CheckList title="Marques et sous-marques" items={brandItems} selectedCount={brands.size + subBrands.size}
                 search={brandSearch} onSearch={setBrandSearch} />
             </div>
           )}

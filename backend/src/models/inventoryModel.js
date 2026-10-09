@@ -25,6 +25,7 @@ const DIM = {
   category: `COALESCE(NULLIF(p.category, ''), par.category)`,
   subCategory: `COALESCE(NULLIF(p.sub_category, ''), par.sub_category)`,
   brand: `COALESCE(NULLIF(p.brand, ''), par.brand)`,
+  subBrand: `COALESCE(NULLIF(p.sub_brand, ''), par.sub_brand)`,
 };
 
 const SCOPE_FROM = `
@@ -32,25 +33,35 @@ const SCOPE_FROM = `
   LEFT JOIN products par ON p.product_type = 'variation' AND par.wp_product_id = p.wp_parent_id
  WHERE ${STOCK_VALUE_SCOPE}`;
 
-const LIST_KEYS = { categories: 'category', subCategories: 'subCategory', brands: 'brand' };
+const LIST_KEYS = { categories: 'category', subCategories: 'subCategory', brands: 'brand', subBrands: 'subBrand' };
+
+// Deux familles : une sous-catégorie est un morceau de sa catégorie, une
+// sous-marque un morceau de sa marque.
+const FAMILIES = [['categories', 'subCategories'], ['brands', 'subBrands']];
 
 const cleanFilters = (filters = {}) => Object.fromEntries(Object.keys(LIST_KEYS).map(k => [
   k, [...new Set((Array.isArray(filters[k]) ? filters[k] : []).map(v => String(v)).filter(Boolean))],
 ]));
 
 /**
- * Filtre SQL d'un inventaire partiel : OU à l'intérieur d'une liste (deux
- * marques), ET entre les listes (telle marque dans telle sous-catégorie).
+ * Filtre SQL d'un inventaire partiel. Dans une famille, les cases
+ * s'additionnent (une catégorie OU une sous-catégorie d'une autre, une marque
+ * OU la sous-marque d'une autre) ; les deux familles se croisent (telle
+ * marque DANS telle sous-catégorie).
  */
 const filterSql = (kind, filters, params) => {
   if (kind === 'global') return '';
   const parts = [];
-  for (const [key, dim] of Object.entries(LIST_KEYS)) {
-    if (!filters[key].length) continue;
-    params.push(filters[key]);
-    parts.push(`${DIM[dim]} = ANY($${params.length}::text[])`);
+  for (const family of FAMILIES) {
+    const ors = [];
+    for (const key of family) {
+      if (!filters[key].length) continue;
+      params.push(filters[key]);
+      ors.push(`${DIM[LIST_KEYS[key]]} = ANY($${params.length}::text[])`);
+    }
+    if (ors.length) parts.push(`(${ors.join(' OR ')})`);
   }
-  if (!parts.length) throw httpError(400, 'Choisissez au moins une catégorie, sous-catégorie ou marque.');
+  if (!parts.length) throw httpError(400, 'Choisissez au moins une catégorie, sous-catégorie, marque ou sous-marque.');
   return ` AND ${parts.join(' AND ')}`;
 };
 
@@ -58,7 +69,7 @@ const checkKind = (kind) => {
   if (!['global', 'partial'].includes(kind)) throw httpError(400, 'Type d\'inventaire inconnu.');
 };
 
-/** Catégories (avec leurs sous-catégories) et marques du périmètre, avec leur nombre de références. */
+/** Catégories et marques du périmètre (avec leurs sous-catégories, sous-marques), et leur nombre de références. */
 const options = async () => {
   const { rows: cats } = await pool.query(
     `SELECT ${DIM.category} AS category, ${DIM.subCategory} AS sub_category, count(*)::int AS n
@@ -66,7 +77,7 @@ const options = async () => {
       GROUP BY 1, 2`
   );
   const { rows: brands } = await pool.query(
-    `SELECT ${DIM.brand} AS brand, count(*)::int AS n ${SCOPE_FROM} GROUP BY 1 ORDER BY 1`
+    `SELECT ${DIM.brand} AS brand, ${DIM.subBrand} AS sub_brand, count(*)::int AS n ${SCOPE_FROM} GROUP BY 1, 2`
   );
   const byCat = new Map();
   for (const r of cats) {
@@ -76,10 +87,18 @@ const options = async () => {
     if (r.sub_category) c.subCategories.push({ name: r.sub_category, count: r.n });
     byCat.set(r.category, c);
   }
+  const byBrand = new Map();
+  for (const r of brands) {
+    if (!r.brand) continue;
+    const b = byBrand.get(r.brand) || { name: r.brand, count: 0, subBrands: [] };
+    b.count += r.n;
+    if (r.sub_brand) b.subBrands.push({ name: r.sub_brand, count: r.n });
+    byBrand.set(r.brand, b);
+  }
   const sortFr = (a, b) => a.name.localeCompare(b.name, 'fr');
   return {
     categories: [...byCat.values()].sort(sortFr).map(c => ({ ...c, subCategories: c.subCategories.sort(sortFr) })),
-    brands: brands.filter(b => b.brand).map(b => ({ name: b.brand, count: b.n })),
+    brands: [...byBrand.values()].sort(sortFr).map(b => ({ ...b, subBrands: b.subBrands.sort(sortFr) })),
   };
 };
 
