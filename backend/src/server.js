@@ -32,6 +32,7 @@ const shipmentStatsRoutes = require('./routes/shipmentStatsRoutes');
 const boutiqueStatsRoutes = require('./routes/boutiqueStatsRoutes');
 const pickingRoutes = require('./routes/pickingRoutes');
 const pdaProductRoutes = require('./routes/pdaProductRoutes');
+const inventoryRoutes = require('./routes/inventoryRoutes');
 const preferencesRoutes = require('./routes/preferencesRoutes');
 const financierRoutes = require('./routes/financierRoutes');
 const savRoutes = require('./routes/savRoutes');
@@ -51,7 +52,7 @@ const processRoutes = require('./routes/processRoutes');
 const atbRoutes = require('./routes/atbRoutes');
 const employeesRoutes = require('./routes/employeesRoutes');
 const authMiddleware = require('./middleware/authMiddleware');
-const { setupCron, setupBmsCron, setupComputedCostCron, setupBmsBarcodeCron, setupBmsShelfLocationCron, setupStockResyncCron, setupSavAutomationsCron, setupProductDbSyncCron, setupBmsTagRetryCron, setupBmsShipmentConfirmCron, setupReportEmailCron, setupStockValuationSnapshotCron, setupDraftStockReportCron, setupCompetitorMonitorCron, setupBrandMapCron, setupNextoreCrons, setupProductSuppliersLinkCron, setupPickingSyncCron, setupBmsShipmentSyncCron } = require('./services/cronService');
+const { setupCron, setupBmsCron, setupComputedCostCron, setupBmsBarcodeCron, setupBmsShelfLocationCron, setupStockResyncCron, setupSavAutomationsCron, setupProductDbSyncCron, setupBmsTagRetryCron, setupBmsShipmentConfirmCron, setupReportEmailCron, setupStockValuationSnapshotCron, setupDraftStockReportCron, setupCompetitorMonitorCron, setupBrandMapCron, setupNextoreCrons, setupProductSuppliersLinkCron, setupPickingSyncCron, setupBmsShipmentSyncCron, setupInventoryRefCron } = require('./services/cronService');
 const rewardService = require('./services/rewardService');
 const emailService = require('./services/emailService');
 const wcSyncService = require('./services/wcSyncService');
@@ -100,6 +101,7 @@ app.use('/api/shipment-history', shipmentHistoryRoutes); // Historique d'expédi
 app.use('/api/shipment-stats', shipmentStatsRoutes); // Stats d'expédition (droit stats-expedition, dans le routeur)
 app.use('/api/boutique-stats', authMiddleware, boutiqueStatsRoutes); // Stats boutiques (droit stats-boutiques + droit boutique, dans le contrôleur)
 app.use('/api/picking', pickingRoutes); // Picking : commandes à préparer et vagues (auth + droit picking dans le routeur)
+app.use('/api/inventaire', inventoryRoutes); // Inventaire : PC (droit inventaire) + PDA (droit picking), auth dans le routeur
 app.use('/api/pda-produit', pdaProductRoutes); // PDA Produit : fiche, emplacement, codes-barres, mouvements (auth + droit picking dans le routeur)
 app.use('/api/preferences', preferencesRoutes); // User column preferences
 app.use('/api/financier', financierRoutes);    // Dashboard financier
@@ -166,6 +168,9 @@ app.listen(PORT, async () => {
   // Photo des commandes à préparer pour le Picking (toutes les 2 min, 9h-19h, lun-ven)
   setupPickingSyncCron();
   setupBmsShipmentSyncCron();
+
+  // Inventaire : file des relevés du stock théorique BMS (chaque minute)
+  setupInventoryRefCron();
 
   // Initialiser le cron d'envoi automatique des rapports par email (journalier/hebdo/mensuel)
   setupReportEmailCron();

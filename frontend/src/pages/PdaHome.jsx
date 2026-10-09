@@ -2,7 +2,7 @@ import { useContext, useEffect, useState } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 import { AuthContext } from '../context/AuthContext';
-import { Catalog as ProductIcon, Picking as PickingIcon } from '../components/AppIcons';
+import { Catalog as ProductIcon, Inventory as InventoryIcon, Picking as PickingIcon } from '../components/AppIcons';
 import { API_URL, authHeaders, C } from '../components/picking/pickingUi';
 import PdaLayout from '../components/pda/PdaLayout';
 
@@ -16,6 +16,8 @@ const PDA_APPS = [
   { key: 'picking', path: '/pda/picking', label: 'Picking', hint: 'Préparer une vague', Icon: PickingIcon, color: C.violet },
   // Décision Pierre (05/10/2026) : qui a le PDA a tout — le droit Picking suffit.
   { key: 'produit', perm: 'picking', path: '/pda/produit', label: 'Produit', hint: 'Stock, emplacement, codes-barres', Icon: ProductIcon, color: C.primary },
+  // Même droit (06/10/2026) : l'inventaire se crée au bureau (droit `inventaire`), se compte ici.
+  { key: 'inventaire', perm: 'picking', path: '/pda/inventaire', label: 'Inventaire', hint: 'Compter un emplacement', Icon: InventoryIcon, color: '#0369A1' },
 ];
 
 export default function PdaHome() {

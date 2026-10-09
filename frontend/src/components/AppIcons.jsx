@@ -359,6 +359,15 @@ export const Picking = (props) => (
   </Base>
 );
 
+export const Inventory = (props) => (
+  <Base {...props}>
+    {/* La planchette de comptage, et ses lignes cochées */}
+    <rect x="5" y="4.5" width="14" height="16" rx="1.5" />
+    <path d="M9 3 h6 v3 h-6 Z" />
+    <path d="M8 10.5 l1.2 1.2 l2 -2.2 M13.5 10.5 H16.5 M8 15.5 l1.2 1.2 l2 -2.2 M13.5 15.5 H16.5" />
+  </Base>
+);
+
 export const SupplierInvoices = (props) => (
   <Base {...props}>
     <path d="M6 2.5 H15 L19 6.5 V21.5 H6 Z" />
@@ -438,6 +447,9 @@ export const APPS = [
   // Droit propre (backend/src/config/apps.js) : le PDA pourra être confié à des
   // préparateurs sans leur ouvrir le packing.
   { key: 'picking',   path: '/picking',   label: 'Picking',                  Icon: Picking,   color: '#7C3AED' },
+  // Droit propre (backend/src/config/apps.js) : créer un inventaire et le suivre.
+  // Le comptage se fait au PDA (/pda/inventaire), avec le droit Picking.
+  { key: 'inventaire', path: '/inventaire', label: 'Inventaire',             Icon: Inventory, color: '#0369A1' },
   { key: 'catalog',   path: '/catalog',   label: 'Produits',                 Icon: Catalog,   color: '#059669' },
   { key: 'financier',  path: '/financier',  label: 'Rapport',                  Icon: Stats,         color: '#135E84' },
   // « clients » pour la distinguer des commandes FOURNISSEUR de la pile Achats.

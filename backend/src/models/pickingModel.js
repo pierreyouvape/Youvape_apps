@@ -661,5 +661,6 @@ module.exports = {
   cancelWave,
   getWavePrintData,
   markPrinted,
-  closeShippedWaves
+  closeShippedWaves,
+  SHIPPED_SQL
 };

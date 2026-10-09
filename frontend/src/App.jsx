@@ -36,6 +36,8 @@ import PickingSettings from './pages/PickingSettings';
 import PdaHome from './pages/PdaHome';
 import PdaPicking from './pages/PdaPicking';
 import PdaProduit from './pages/PdaProduit';
+import PdaInventaire from './pages/PdaInventaire';
+import InventoryApp from './pages/InventoryApp';
 import ReceptionApp from './pages/ReceptionApp';
 import FinancierApp from './pages/FinancierApp';
 import OrdersSearchApp from './pages/OrdersSearchApp';
@@ -83,6 +85,8 @@ const PAGE_TITLES = {
   '/pda': 'Youvape PDA',
   '/pda/picking': 'Picking PDA',
   '/pda/produit': 'Produit PDA',
+  '/pda/inventaire': 'Inventaire PDA',
+  '/inventaire': 'Inventaire',
   '/reception': 'Réception',
   '/financier': 'Financier',
   '/commandes': 'Commandes clients',
@@ -379,6 +383,22 @@ function App() {
             element={
               <PrivateRoute>
                 <PdaProduit />
+              </PrivateRoute>
+            }
+          />
+          <Route
+            path="/pda/inventaire"
+            element={
+              <PrivateRoute>
+                <PdaInventaire />
+              </PrivateRoute>
+            }
+          />
+          <Route
+            path="/inventaire"
+            element={
+              <PrivateRoute>
+                <InventoryApp />
               </PrivateRoute>
             }
           />

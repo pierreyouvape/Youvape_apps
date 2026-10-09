@@ -19,6 +19,7 @@ const APP_KEYS = [
   'reception',
   'packing',
   'picking',
+  'inventaire',
   'stats-expedition',
   'catalog',
   'financier',

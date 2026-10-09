@@ -958,6 +958,26 @@ const setupBmsShipmentSyncCron = () => {
 };
 
 
+// ==================== INVENTAIRE ====================
+
+const inventoryRefService = require('./inventoryRefService');
+
+let inventoryRefCronJob = null;
+
+const setupInventoryRefCron = () => {
+  if (inventoryRefCronJob) {
+    inventoryRefCronJob.stop();
+    inventoryRefCronJob = null;
+  }
+  // Chaque minute, 7h-21h, tous les jours (un inventaire peut se faire un samedi) :
+  // reprend les relevés que le quota BMS a repoussés. Rien à faire hors inventaire.
+  inventoryRefCronJob = cron.schedule('* 7-21 * * *', () => {
+    inventoryRefService.processPending().catch(error => console.error('Erreur cron inventaire (relevés BMS):', error.message));
+  }, { timezone: 'Europe/Paris' });
+  console.log('Cron inventaire configure: relevés BMS chaque minute, 7h-21h');
+};
+
+
 module.exports = {
   setupCron,
   restartCron,
@@ -980,6 +1000,7 @@ module.exports = {
   setupProductSuppliersLinkCron,
   setupPickingSyncCron,
   setupBmsShipmentSyncCron,
+  setupInventoryRefCron,
   runProductDbSyncJob,
   runProductSuppliersLink,
   runBrandMapJob,

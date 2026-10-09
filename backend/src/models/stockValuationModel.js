@@ -398,4 +398,4 @@ async function checkAlignmentWithCatalog(base = null) {
   return { report: point.total_value_ht, catalog, delta, aligned: Math.abs(delta) <= 0.01 };
 }
 
-module.exports = { loadBase, computeAt, computeSeries, snapshotToday, checkAlignmentWithCatalog, PAID_STATUSES };
+module.exports = { loadBase, computeAt, computeSeries, snapshotToday, checkAlignmentWithCatalog, PAID_STATUSES, STOCK_VALUE_SCOPE };
