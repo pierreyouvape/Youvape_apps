@@ -15,6 +15,7 @@
 
 const supplierInvoiceService = require('../services/supplierInvoiceService');
 const supplierDocumentModel = require('../models/supplierDocumentModel');
+const supplierVoucherModel = require('../models/supplierVoucherModel');
 const fs = require('fs');
 const docStore = require('../utils/supplierDocStore');
 const lifecycleModel = require('../models/orderLifecycleModel');
@@ -152,6 +153,7 @@ async function uploadDocument(req, res) {
       originalName: stored.originalName,
       matchedBy: analysis.matchedBy,
       userId: req.user && req.user.id,
+      vouchersUsed: analysis.vouchersUsed || [],
     });
 
     if (saved.duplicate) {
@@ -321,6 +323,7 @@ async function reanalyse(document) {
     buffer: fs.readFileSync(chemin),
     supplierId: document.supplier_id,
     orderId: (document.orders[0] || {}).id || null,
+    documentId: document.id,
   });
 }
 
@@ -338,7 +341,7 @@ async function recheckDocument(req, res) {
     if (!document) return res.status(404).json({ error: 'Document introuvable' });
 
     const analysis = await reanalyse(document);
-    await supplierDocumentModel.replaceLines(id, analysis.comparison);
+    await supplierDocumentModel.replaceLines(id, analysis.comparison, undefined, analysis.vouchersUsed);
     const rafraichi = await supplierDocumentModel.getDocument(id);
     return res.json({ document: rafraichi, differences: analysis.differences, tariffs: analysis.tariffs });
   } catch (error) {
@@ -385,7 +388,7 @@ async function applyDocumentTariffs(req, res) {
     );
 
     const apres = await reanalyse(document);
-    await supplierDocumentModel.replaceLines(id, apres.comparison);
+    await supplierDocumentModel.replaceLines(id, apres.comparison, undefined, apres.vouchersUsed);
     const rafraichi = await supplierDocumentModel.getDocument(id);
     return res.json({ ...result, document: rafraichi });
   } catch (error) {
@@ -419,6 +422,71 @@ async function deleteDocument(req, res) {
     return res.json({ deleted: true });
   } catch (error) {
     console.error('[supplier-invoices] suppression :', error.message);
+    return res.status(500).json({ error: error.message || 'Erreur serveur' });
+  }
+}
+
+/* ─── Bons de réduction à valoir ──────────────────────────────────────────── */
+
+/**
+ * GET /api/supplier-invoices/vouchers?supplier_id=&status=open|consumed
+ * Ce qu'on nous doit encore en bons, et ce qui a déjà été déduit.
+ */
+async function listVouchers(req, res) {
+  try {
+    const rows = await supplierVoucherModel.listVouchers({
+      supplierId: req.query.supplier_id ? parseInt(req.query.supplier_id, 10) : null,
+      status: req.query.status || null,
+    });
+    return res.json(rows);
+  } catch (error) {
+    console.error('[supplier-invoices] bons :', error.message);
+    return res.status(500).json({ error: error.message || 'Erreur serveur' });
+  }
+}
+
+/** POST /api/supplier-invoices/:id/vouchers — le fournisseur promet un bon pour cette facture. */
+async function createVoucher(req, res) {
+  try {
+    const voucher = await supplierVoucherModel.createVoucher(parseInt(req.params.id, 10), {
+      amountHt: req.body.amount_ht,
+      code: req.body.code,
+      coveredRefs: req.body.covered_refs,
+      note: req.body.note,
+      userId: req.user && req.user.id,
+    });
+    return res.status(201).json(voucher);
+  } catch (error) {
+    console.error('[supplier-invoices] création de bon :', error.message);
+    return res.status(error.status || 500).json({ error: error.message || 'Erreur serveur' });
+  }
+}
+
+/** PUT /api/supplier-invoices/vouchers/:voucherId — typiquement, saisir le code reçu. */
+async function updateVoucher(req, res) {
+  try {
+    const voucher = await supplierVoucherModel.updateVoucher(parseInt(req.params.voucherId, 10), {
+      amountHt: req.body.amount_ht,
+      code: req.body.code,
+      coveredRefs: req.body.covered_refs,
+      note: req.body.note,
+    });
+    if (!voucher) return res.status(404).json({ error: 'Bon introuvable' });
+    return res.json(voucher);
+  } catch (error) {
+    console.error('[supplier-invoices] modification de bon :', error.message);
+    return res.status(error.status || 500).json({ error: error.message || 'Erreur serveur' });
+  }
+}
+
+/** DELETE /api/supplier-invoices/vouchers/:voucherId */
+async function deleteVoucher(req, res) {
+  try {
+    const removed = await supplierVoucherModel.deleteVoucher(parseInt(req.params.voucherId, 10));
+    if (!removed) return res.status(404).json({ error: 'Bon introuvable' });
+    return res.json({ deleted: true });
+  } catch (error) {
+    console.error('[supplier-invoices] suppression de bon :', error.message);
     return res.status(500).json({ error: error.message || 'Erreur serveur' });
   }
 }
@@ -519,4 +587,8 @@ module.exports = {
   listPayments,
   listUnpaid,
   getParsers,
+  listVouchers,
+  createVoucher,
+  updateVoucher,
+  deleteVoucher,
 };

@@ -39,6 +39,10 @@ router.post('/analyse', canWrite, upload.single('file'), controller.analyseDocum
 router.post('/apply-tariffs', canWrite, controller.applyTariffs);
 
 router.get('/orders', canRead, controller.listCandidateOrders);
+// Bons de réduction à valoir sur une prochaine commande.
+router.get('/vouchers', canRead, controller.listVouchers);
+router.put('/vouchers/:voucherId', canWrite, controller.updateVoucher);
+router.delete('/vouchers/:voucherId', canWrite, controller.deleteVoucher);
 router.get('/orders/:orderId/lifecycle', canRead, controller.getOrderLifecycle);
 
 router.get('/', canRead, controller.listDocuments);
@@ -49,6 +53,7 @@ router.get('/:id/file', canRead, controller.downloadDocument);
 router.get('/:id/claim', canRead, controller.getClaimMessage);
 router.put('/:id/status', canWrite, controller.updateStatus);
 router.post('/:id/recheck', canWrite, controller.recheckDocument);
+router.post('/:id/vouchers', canWrite, controller.createVoucher);
 router.post('/:id/apply-tariffs', canWrite, controller.applyDocumentTariffs);
 router.delete('/:id', canWrite, controller.deleteDocument);
 

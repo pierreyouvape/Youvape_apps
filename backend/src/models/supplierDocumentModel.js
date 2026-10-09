@@ -19,6 +19,7 @@
 const pool = require('../config/database');
 const supplierRefModel = require('./supplierRefModel');
 const bmsApiModel = require('./bmsApiModel');
+const supplierVoucherModel = require('./supplierVoucherModel');
 
 const VALID_STATUSES = ['to_check', 'checked', 'disputed', 'archived'];
 const VALID_METHODS = ['cb', 'amex', 'virement', 'prelevement', 'avoir', 'especes', 'cheque', 'autre'];
@@ -112,16 +113,45 @@ const AVOIR_GLOBAL_SQL = `
      AND cl.supplier_sku IS NULL
      AND COALESCE(cl.kind, '') <> 'shipping'`;
 
-/** Tout ce que la facture `d` a encore à réclamer, ligne par ligne. */
-const ECART_RECLAMABLE_SQL = `
+/**
+ * Tout ce que la facture `d` a encore à réclamer, ligne par ligne — ou
+ * seulement sur les lignes que `filtre` retient (alias `l2`).
+ */
+const ecartReclamableSql = (filtre = '') => `
   SELECT COALESCE(SUM(GREATEST(
            CASE WHEN l2.verdict IN ('price', 'qty_price') THEN ${ecartTarifSql('l2')}
                 ELSE COALESCE(l2.net_gap, l2.gap, 0) END, 0)), 0)
     FROM supplier_document_lines l2
    WHERE l2.document_id = d.id
      AND l2.verdict IS NOT NULL
-     AND l2.verdict NOT IN ('ok', 'free', 'discount', 'rounding', 'packaging', 'shipping', 'credit')
-     AND l2.material`;
+     AND l2.verdict NOT IN ('ok', 'free', 'discount', 'voucher', 'rounding', 'packaging', 'shipping', 'credit')
+     AND l2.material ${filtre}`;
+const ECART_RECLAMABLE_SQL = ecartReclamableSql();
+
+/**
+ * LE BON DE RÉDUCTION PROMIS (alias `l` et `d`).
+ *
+ * GFC, LVP et CigAccess rendent parfois un écart de tarif sous forme de bon à
+ * valoir sur la commande suivante, sans avoir : LVP F2610289037, 6,25 € HT pour
+ * des Dojo facturés 4,95 € et 3,05 € au lieu de 4,60 € et 2,90 €. Le bon est
+ * saisi sur la facture fautive ; il éteint les écarts qu'il vise dès qu'il les
+ * couvre, comme un avoir — qu'il ait déjà été déduit d'une commande ou non.
+ *
+ * Un bon qui nomme ses références n'éteint que leurs écarts ; un bon sans
+ * référence, seulement s'il couvre TOUT le réclamable de la facture (même règle
+ * que l'avoir global).
+ */
+const BON_SQL = `(
+  ((SELECT COALESCE(SUM(v.amount_ht), 0) FROM supplier_vouchers v
+     WHERE v.source_document_id = d.id AND cardinality(v.covered_refs) = 0) > 0
+   AND (SELECT COALESCE(SUM(v.amount_ht), 0) FROM supplier_vouchers v
+         WHERE v.source_document_id = d.id AND cardinality(v.covered_refs) = 0) + 0.10
+       >= (${ECART_RECLAMABLE_SQL}))
+  OR EXISTS (SELECT 1 FROM supplier_vouchers v
+              WHERE v.source_document_id = d.id
+                AND cardinality(v.covered_refs) > 0
+                AND l.supplier_sku = ANY (v.covered_refs)
+                AND v.amount_ht + 0.10 >= (${ecartReclamableSql('AND l2.supplier_sku = ANY (v.covered_refs)')})))`;
 
 /** La ligne n'appelle plus de geste : l'avoir couvre son écart, au garde-fou d'arrondi près. */
 const COMPENSEE_SQL = `((
@@ -131,7 +161,8 @@ const COMPENSEE_SQL = `((
       CASE WHEN l.verdict IN ('price', 'qty_price') THEN ${ECART_TARIF_SQL} ELSE COALESCE(l.net_gap, l.gap, 0) END)
   OR (
   (SELECT montant FROM (${AVOIR_GLOBAL_SQL}) ag) > 0
-  AND (SELECT montant FROM (${AVOIR_GLOBAL_SQL}) ag) + 0.10 >= (${ECART_RECLAMABLE_SQL})))`;
+  AND (SELECT montant FROM (${AVOIR_GLOBAL_SQL}) ag) + 0.10 >= (${ECART_RECLAMABLE_SQL}))
+  OR ${BON_SQL})`;
 
 /**
  * Gèle les lignes d'un document. Partagé par l'enregistrement et le re-contrôle,
@@ -153,7 +184,7 @@ async function insertLines(client, documentId, lines) {
         lineNo,
         l.ref || null,
         l.label || null,
-        ['product', 'shipping', 'discount', 'other'].includes(l.verdict) ? l.verdict : (l.kind || 'product'),
+        ['product', 'shipping', 'discount', 'voucher', 'other'].includes(l.verdict) ? l.verdict : (l.kind || 'product'),
         l.qtyInvoiced != null ? l.qtyInvoiced : l.qty,
         l.invoicedTotal != null ? l.invoicedTotal : l.lineTotalHt,
         l.productId || null,
@@ -176,7 +207,7 @@ async function insertLines(client, documentId, lines) {
   }
 }
 
-async function createDocument({ supplier, invoice, order, comparison, filePath, originalName, matchedBy, userId }, db = pool) {
+async function createDocument({ supplier, invoice, order, comparison, filePath, originalName, matchedBy, userId, vouchersUsed = [] }, db = pool) {
   const client = await db.connect();
   try {
     await client.query('BEGIN');
@@ -235,6 +266,11 @@ async function createDocument({ supplier, invoice, order, comparison, filePath, 
          VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
         [document.id, order.id, matchedBy || 'reference'],
       );
+    }
+
+    // Les bons à valoir déduits de cette facture : ils ne le sont plus.
+    if (vouchersUsed.length > 0) {
+      await supplierVoucherModel.markConsumed(document.id, vouchersUsed.map((v) => v.id), client);
     }
 
     await client.query('COMMIT');
@@ -296,7 +332,7 @@ async function listDocuments({ supplierId, status, paymentStatus, from, to, docT
             (SELECT count(*) FROM supplier_document_lines l
               WHERE l.document_id = d.id
                 AND l.verdict IS NOT NULL
-                AND l.verdict NOT IN ('ok', 'free', 'discount', 'rounding', 'packaging', 'shipping', 'credit')
+                AND l.verdict NOT IN ('ok', 'free', 'discount', 'voucher', 'rounding', 'packaging', 'shipping', 'credit')
                 AND l.material
                 AND NOT ${COMPENSEE_SQL}) AS difference_count,
             -- Où en est la mise en stock de la ou des commandes rapprochées :
@@ -364,13 +400,15 @@ async function getDocument(id, db = pool) {
   const document = rows[0];
   if (!document) return null;
 
-  const [lines, orders, payments] = await Promise.all([
+  const [lines, orders, payments, vouchers] = await Promise.all([
     db.query(
       `SELECT l.*, av.montant AS credited_amount,
               COALESCE(av.numeros, ag.numeros) AS credited_by,
               (l.verdict IS NOT NULL
-               AND l.verdict NOT IN ('ok', 'free', 'discount', 'rounding', 'packaging', 'shipping', 'credit')
-               AND ${COMPENSEE_SQL}) AS compensee
+               AND l.verdict NOT IN ('ok', 'free', 'discount', 'voucher', 'rounding', 'packaging', 'shipping', 'credit')
+               AND ${COMPENSEE_SQL}) AS compensee,
+              -- Rendu par un bon promis plutôt que par un avoir : l'écran le dit.
+              (av.numeros IS NULL AND ag.numeros IS NULL AND ${BON_SQL}) AS par_bon
          FROM supplier_document_lines l
          JOIN supplier_documents d ON d.id = l.document_id
          LEFT JOIN LATERAL (${AVOIR_SQL}) av ON true
@@ -394,15 +432,17 @@ async function getDocument(id, db = pool) {
         ORDER BY p.paid_at`,
       [id],
     ),
+    // Les bons nés de cette facture, et ceux qu'elle a consommés.
+    supplierVoucherModel.listForDocument(id, db),
   ]);
 
-  // Une ligne compensée par un avoir garde son constat d'origine, mais ne
-  // demande plus rien : on la présente comme telle.
-  const lignes = lines.rows.map(({ compensee, ...l }) => (compensee
-    ? { ...l, original_verdict: l.verdict, verdict: 'credited', material: false }
+  // Une ligne compensée par un avoir — ou par un bon promis — garde son constat
+  // d'origine, mais ne demande plus rien : on la présente comme telle.
+  const lignes = lines.rows.map(({ compensee, par_bon: parBon, ...l }) => (compensee
+    ? { ...l, original_verdict: l.verdict, verdict: parBon ? 'voucher_credited' : 'credited', material: false }
     : l));
 
-  return { ...document, lines: lignes, orders: orders.rows, payments: payments.rows };
+  return { ...document, lines: lignes, orders: orders.rows, payments: payments.rows, vouchers };
 }
 
 async function updateStatus(id, status, db = pool) {
@@ -873,12 +913,17 @@ async function pushPricesToBms(bmsPoId, applied) {
  * rejouerait des appels BMS (quota ~350 req/min) pour une immense majorité de
  * documents qui n'ont pas bougé.
  */
-async function replaceLines(documentId, comparison, db = pool) {
+async function replaceLines(documentId, comparison, db = pool, vouchersUsed = null) {
   const client = await db.connect();
   try {
     await client.query('BEGIN');
     await client.query('DELETE FROM supplier_document_lines WHERE document_id = $1', [documentId]);
     await insertLines(client, documentId, comparison ? comparison.lines : []);
+    // Un code saisi depuis le dépôt peut faire reconnaître un bon, ou en défaire
+    // un rapproché au montant : ce que le document consomme suit la relecture.
+    if (vouchersUsed) {
+      await supplierVoucherModel.markConsumed(documentId, vouchersUsed.map((v) => v.id), client);
+    }
     await client.query(
       // Fusionner, pas remplacer : `analysis` porte aussi ce que le re-contrôle
       // ne recalcule pas (« Extourne de », règlements imprimés, nom du fichier).

@@ -33,6 +33,8 @@ const bmsApiModel = require('../models/bmsApiModel');
 const { compareInvoiceToOrder, listDifferences, listTariffUpdates, listControlRows } = require('../utils/invoiceCompare');
 const { attachMatchKeys } = require('../utils/invoiceMatching');
 const { resolveCompleteRefs } = require('../utils/refResolution');
+const { detachVouchers } = require('../utils/invoiceVouchers');
+const supplierVoucherModel = require('../models/supplierVoucherModel');
 
 /** Extrait le texte d'un PDF (ou lit un fichier texte), puis le nettoie. */
 async function extractText(buffer) {
@@ -135,8 +137,10 @@ async function fetchOrderLines(bmsPoId) {
  * @param {Buffer} buffer      le fichier tel que déposé
  * @param {number} supplierId  fournisseur choisi à l'écran
  * @param {number} [orderId]   commande imposée à la main (rapprochement manuel)
+ * @param {number} [documentId] document déjà enregistré qu'on re-contrôle : ses
+ *                             bons déjà consommés restent les siens
  */
-async function analyseInvoice({ buffer, supplierId, orderId = null, db = pool }) {
+async function analyseInvoice({ buffer, supplierId, orderId = null, documentId = null, db = pool }) {
   const { rows: supRows } = await db.query(
     'SELECT id, name, code FROM suppliers WHERE id = $1',
     [supplierId],
@@ -169,6 +173,29 @@ async function analyseInvoice({ buffer, supplierId, orderId = null, db = pool })
   );
   resolveCompleteRefs(invoice.lines, knownRefs.map((r) => r.supplier_sku));
 
+  // Un bon émis sur une facture précédente et déduit ici n'est pas une remise
+  // de cette commande : on le sort de la remise de pied avant toute analyse,
+  // sans quoi il serait réparti sur le coût des lignes (cf. invoiceVouchers).
+  let vouchersUsed = [];
+  // Les bons encore à valoir que ce document n'a PAS consommés : si la facture
+  // porte une remise, l'écran demande si c'en est un (code pas encore saisi).
+  let vouchersOpen = [];
+  if (invoice.docType !== 'credit_note') {
+    const candidats = await supplierVoucherModel.candidatesFor(
+      { supplierId, documentId, invoiceNumber: invoice.number || null },
+      db,
+    );
+    const detache = detachVouchers({ lines: invoice.lines, text, vouchers: candidats });
+    invoice.lines = detache.lines;
+    vouchersUsed = detache.used.map((u) => {
+      const v = candidats.find((c) => c.id === u.id) || {};
+      return { ...u, code: v.code || null, sourceNumber: v.source_number || null, voucherAmount: Number(v.amount_ht) };
+    });
+    vouchersOpen = candidats
+      .filter((c) => !detache.used.some((u) => u.id === c.id))
+      .map((c) => ({ id: c.id, code: c.code || null, amount: Number(c.amount_ht), sourceNumber: c.source_number }));
+  }
+
   // La commande : celle imposée, sinon celle que désigne la référence imprimée.
   let order = null;
   let matchedBy = null;
@@ -193,6 +220,8 @@ async function analyseInvoice({ buffer, supplierId, orderId = null, db = pool })
       matchedBy: null,
       comparison: null,
       differences: [],
+      vouchersUsed,
+      vouchersOpen,
       needsManualOrder: true,
     };
   }
@@ -239,6 +268,9 @@ async function analyseInvoice({ buffer, supplierId, orderId = null, db = pool })
     // Conservés pour l'enregistrement et les usages existants.
     differences: listDifferences(comparison),
     tariffs: tarifs,
+    // Les bons à valoir que ce document consomme : à inscrire à l'enregistrement.
+    vouchersUsed,
+    vouchersOpen,
     needsManualOrder: false,
   };
 }

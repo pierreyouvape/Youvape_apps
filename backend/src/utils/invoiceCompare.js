@@ -479,7 +479,10 @@ function compareInvoiceToOrder({ invoice, order, options = {} }) {
   // on répartit la remise au prorata du montant de chaque ligne produit pour
   // obtenir le coût unitaire réel — celui qui doit alimenter un tarif ou un PMP.
   const remises = results.filter((r) => r.verdict === 'discount');
-  const produits = results.filter((r) => !['discount', 'shipping', 'other'].includes(r.verdict));
+  // Un bon à valoir n'est ni un produit ni une remise de CETTE commande : il
+  // rembourse une facture précédente (cf. invoiceVouchers). Il ne se répartit
+  // donc sur rien, et n'explique aucun écart.
+  const produits = results.filter((r) => !['discount', 'voucher', 'shipping', 'other'].includes(r.verdict));
 
   const footerDiscount = round2(remises.reduce((acc, r) => acc + r.invoicedTotal, 0));
   const productTotal = round2(produits.reduce((acc, r) => acc + r.invoicedTotal, 0));
@@ -764,7 +767,7 @@ function compareInvoiceToOrder({ invoice, order, options = {} }) {
   // Ventilation additive : la somme des six familles vaut exactement l'écart global,
   // pour qu'aucun euro ne se perde entre le tableau et le total affiché.
   let claimable = 0, inOurFavour = 0, minorGap = 0, roundingGap = 0, qtyGap = 0, extrasGap = 0, packagingGap = 0;
-  const EXTRA_VERDICTS = ['not_ordered', 'free', 'shipping', 'discount', 'other', 'credit'];
+  const EXTRA_VERDICTS = ['not_ordered', 'free', 'shipping', 'discount', 'voucher', 'other', 'credit'];
 
   for (const r of results) {
     if (EXTRA_VERDICTS.includes(r.verdict)) {
@@ -878,6 +881,7 @@ const DIFFERENCE_KINDS = {
   not_ordered:        { rank: 5,  label: 'Facturé, non commandé', action: 'Article ajouté : accepter ou contester' },
   shipping:           { rank: 6,  label: 'Frais de port',         action: 'Non prévus à la commande' },
   discount:           { rank: 7,  label: 'Remise de pied',        action: 'Répartie sur le coût réel de chaque ligne' },
+  voucher:            { rank: 7,  label: 'Bon à valoir',          action: "Bon d'une facture précédente : ne baisse pas le coût de cette commande" },
   free:               { rank: 8,  label: 'Offert',                action: 'Geste commercial, rien à faire' },
   credit:             { rank: 8,  label: 'Avoir',                 action: 'Vient en déduction, rien à réclamer' },
   packaging:          { rank: 9,  label: 'Conditionnement',       action: 'Unités contre packs : même marchandise, même montant' },
@@ -959,7 +963,7 @@ function listTariffUpdates(comparison, options = {}) {
   // FAC/2026/04474 étaient dans ce cas, sans aucun bouton pour en sortir.
   const seuil = Number.isFinite(options.threshold) ? options.threshold : 0.0005;
   // Un avoir n'est pas un prix d'achat : 3,46 € d'extourne n'est pas le tarif du produit.
-  const hors = ['packaging', 'missing_in_invoice', 'free', 'not_ordered', 'shipping', 'discount', 'other', 'credit'];
+  const hors = ['packaging', 'missing_in_invoice', 'free', 'not_ordered', 'shipping', 'discount', 'voucher', 'other', 'credit'];
 
   // Le coût réel EXPRIMÉ DANS L'UNITÉ DE LA COMMANDE BMS — c'est la seule que
   // `packQty`, `alignTariffs` et `applyTariffs` savent convertir.

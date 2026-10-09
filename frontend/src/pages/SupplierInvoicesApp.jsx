@@ -157,9 +157,11 @@ const VERDICTS = {
   not_ordered: { rank: 5, label: 'Facturé, non commandé', tone: 'red', action: 'Article ajouté : accepter ou contester' },
   shipping: { rank: 6, label: 'Frais de port', tone: 'blue', action: 'Non prévus à la commande' },
   discount: { rank: 7, label: 'Remise de pied', tone: 'green', action: 'Répartie sur le coût réel de chaque ligne' },
+  voucher: { rank: 7, label: 'Bon à valoir', tone: 'blue', action: "Bon d'une facture précédente : ne baisse pas le coût de cette commande" },
   free: { rank: 8, label: 'Offert', tone: 'green', action: 'Geste commercial, rien à faire' },
   credit: { rank: 8, label: 'Avoir', tone: 'green', action: 'Vient en déduction, rien à réclamer' },
   credited: { rank: 8, label: 'Compensé par avoir', tone: 'green', action: 'Avoir reçu du fournisseur, rien à réclamer' },
+  voucher_credited: { rank: 8, label: 'Compensé par bon', tone: 'green', action: 'Bon de réduction promis par le fournisseur, rien à réclamer' },
   packaging: { rank: 9, label: 'Conditionnement', tone: 'grey', action: 'Unités contre packs : même marchandise, même montant' },
   // Complété à l'affichage par le facteur déduit (« vendu par 2 »), quand on l'a.
 
@@ -174,7 +176,7 @@ const VERDICTS = {
  * pas, ni l'inverse. Un geste suppose en plus un écart matériel — au-delà du
  * garde-fou d'arrondi.
  */
-const VERDICTS_SANS_GESTE = ['ok', 'free', 'discount', 'rounding', 'packaging', 'shipping', 'credit', 'credited'];
+const VERDICTS_SANS_GESTE = ['ok', 'free', 'discount', 'voucher', 'rounding', 'packaging', 'shipping', 'credit', 'credited', 'voucher_credited'];
 const appelleUnGeste = (l) => !!l.verdict && !VERDICTS_SANS_GESTE.includes(l.verdict) && !!l.material;
 
 /**
@@ -1199,6 +1201,8 @@ function ControlTab({ suppliers, mobile, onSaved }) {
             </div>
           )}
 
+          <VouchersNotice result={result} />
+
           {summary?.hasFooterDiscount && (
             <div style={{ padding: 13, background: C.blueL, color: C.blue, borderRadius: 10, fontSize: 13 }}>
               {/* Une remise de pied n'existe JAMAIS dans la commande : BMS porte des
@@ -1518,6 +1522,8 @@ function FilingTab({ suppliers, mobile, reloadKey, onSaved, initialDocId }) {
             placeholder="numéro, fournisseur, commande…" style={inputStyle} />
         </Field>
       </div>
+
+      <OpenVouchers reloadKey={rows} onOpen={openDetail} />
 
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
         <Kpi label="Documents" value={rows.length} />
@@ -1963,6 +1969,10 @@ function DocumentPanel({ detail, mobile, onClose, onStatus, onDelete, onSettle, 
 
         <ReceptionState orders={detail.orders} />
 
+        {(detail.doc_type === 'invoice' || detail.vouchers?.length > 0) && (
+          <VoucherSection detail={detail} onChanged={onChanged} />
+        )}
+
         {detail.payments?.length > 0 && (
           <div style={{ background: C.white, border: `1px solid ${C.greyB}`, borderRadius: 10, padding: 12, marginBottom: 16 }}>
             <div style={{ fontSize: 12, fontWeight: 700, color: C.greyT, marginBottom: 8 }}>RÈGLEMENTS IMPUTÉS</div>
@@ -2039,6 +2049,239 @@ function DocumentPanel({ detail, mobile, onClose, onStatus, onDelete, onSettle, 
 }
 
 const methodLabel = (m) => (METHODS.find((x) => x[0] === m) || [])[1] || m;
+
+/* ─── Bons de réduction à valoir ──────────────────────────────
+ * GFC, LVP et CigAccess rendent parfois un écart de tarif sous forme de BON,
+ * déduit de la commande suivante, plutôt que par un avoir. Le bon se saisit sur
+ * la facture fautive (ses écarts cessent d'être à réclamer) ; la facture qui
+ * imprime son code le consomme sans que le montant baisse le coût de ses
+ * propres lignes (cf. backend/src/utils/invoiceVouchers.js).
+ * ──────────────────────────────────────────────────────── */
+const voucherErr = (e) => window.alert(e.response?.data?.error || e.message);
+
+/** À l'import : ce que la lecture a fait des bons du fournisseur. */
+function VouchersNotice({ result }) {
+  const used = result?.vouchersUsed || [];
+  const open = result?.vouchersOpen || [];
+  const remise = (result?.comparison?.lines || result?.invoice?.lines || [])
+    .some((l) => l.verdict === 'discount' || l.kind === 'discount');
+  if (used.length === 0 && !(remise && open.length > 0)) return null;
+  return (
+    <div style={{ padding: 13, background: C.mainL, color: C.mainD, borderRadius: 10, fontSize: 13 }}>
+      {used.map((v) => (
+        <div key={v.id} style={{ marginBottom: 3 }}>
+          <strong>Bon à valoir de {eur(v.amount)}</strong>
+          {v.sourceNumber ? ` (facture ${v.sourceNumber})` : ''} reconnu
+          {v.matchedBy === 'code' ? <> par son code <strong>{v.code}</strong></> : ' par son montant (aucun code saisi)'} :
+          sorti de la remise, il ne baisse pas le coût des lignes de cette commande.
+          {v.partial && ` Utilisé en partie seulement : le bon valait ${eur(v.voucherAmount)}.`}
+        </div>
+      ))}
+      {used.length > 0 && (
+        <div style={{ color: C.greyT, fontSize: 12 }}>Il passera à « utilisé » à l'enregistrement de la facture.</div>
+      )}
+      {remise && open.length > 0 && (
+        <div style={{ marginTop: used.length ? 8 : 0, color: C.orange }}>
+          Cette facture porte une remise et {open.length === 1 ? 'un bon reste' : `${open.length} bons restent`} à
+          valoir chez ce fournisseur ({open.map((v) => `${eur(v.amount)}${v.code ? ` · ${v.code}` : ''} · facture ${v.sourceNumber}`).join(' ; ')}).
+          Si la remise en est un, saisis son code sur la facture d'origine puis relis ce document.
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Dans la fiche d'une facture : les bons qu'elle a fait naître et ceux qu'elle a consommés. */
+function VoucherSection({ detail, onChanged }) {
+  const nes = (detail.vouchers || []).filter((v) => v.source_document_id === detail.id);
+  const consommes = (detail.vouchers || []).filter((v) => v.consumed_document_id === detail.id);
+  // Les lignes dont l'écart de tarif reste à réclamer : celles qu'un bon peut rendre.
+  const candidates = (detail.lines || []).filter((l) => ['price', 'qty_price'].includes(l.verdict)
+    && l.material && l.supplier_sku && ecartTarifDe(l) > 0);
+
+  const [form, setForm] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [codes, setCodes] = useState({});
+
+  const ouvrir = () => {
+    const refs = candidates.map((l) => l.supplier_sku);
+    const total = candidates.reduce((t, l) => t + ecartTarifDe(l), 0);
+    setForm({ refs, amount: total > 0 ? total.toFixed(2) : '', touched: false, code: '', note: '' });
+  };
+  const basculer = (ref) => {
+    const refs = form.refs.includes(ref) ? form.refs.filter((r) => r !== ref) : [...form.refs, ref];
+    const total = candidates.filter((l) => refs.includes(l.supplier_sku)).reduce((t, l) => t + ecartTarifDe(l), 0);
+    setForm({ ...form, refs, amount: form.touched ? form.amount : (total > 0 ? total.toFixed(2) : '') });
+  };
+  const enregistrer = async () => {
+    setBusy(true);
+    try {
+      await axios.post(`${BASE}/${detail.id}/vouchers`, {
+        amount_ht: Number(String(form.amount).replace(',', '.')),
+        code: form.code,
+        covered_refs: form.refs,
+        note: form.note,
+      });
+      setForm(null);
+      if (onChanged) await onChanged();
+    } catch (e) { voucherErr(e); } finally { setBusy(false); }
+  };
+  const saisirCode = async (v) => {
+    setBusy(true);
+    try {
+      await axios.put(`${BASE}/vouchers/${v.id}`, { code: codes[v.id] || '' });
+      if (onChanged) await onChanged();
+    } catch (e) { voucherErr(e); } finally { setBusy(false); }
+  };
+  const supprimer = async (v) => {
+    if (!window.confirm(`Supprimer le bon de ${eur(v.amount_ht)} ? Les écarts qu'il compensait redeviendront à réclamer.`)) return;
+    setBusy(true);
+    try {
+      await axios.delete(`${BASE}/vouchers/${v.id}`);
+      if (onChanged) await onChanged();
+    } catch (e) { voucherErr(e); } finally { setBusy(false); }
+  };
+
+  // Un bon trop petit pour ses lignes ne compense rien : il faut le dire, sinon
+  // on croit l'écart rendu alors qu'il reste à réclamer.
+  const nonCouverts = candidates.filter((l) => nes.some((v) => !v.covered_refs?.length
+    || v.covered_refs.includes(l.supplier_sku)));
+
+  return (
+    <div style={{ background: C.white, border: `1px solid ${C.greyB}`, borderRadius: 10, padding: 12, marginBottom: 16 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+        <div style={{ fontSize: 12, fontWeight: 700, color: C.greyT }}>BON DE RÉDUCTION À VALOIR</div>
+        {detail.doc_type === 'invoice' && !form && onChanged && (
+          <Btn small variant="ghost" onClick={ouvrir}>+ Bon de réduction promis</Btn>
+        )}
+      </div>
+
+      {nes.length === 0 && consommes.length === 0 && !form && (
+        <div style={{ fontSize: 12, color: C.greyM, marginTop: 6 }}>
+          Le fournisseur rend l'écart sous forme de bon sur la prochaine commande, plutôt que par un avoir ?
+          Enregistre-le ici : les écarts qu'il couvre cesseront d'être à réclamer.
+        </div>
+      )}
+
+      {nes.map((v) => (
+        <div key={v.id} style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', fontSize: 13, padding: '8px 0', borderTop: `1px solid ${C.greyB}`, marginTop: 8 }}>
+          <strong>{eur(v.amount_ht)} HT</strong>
+          <span style={{ color: C.greyT }}>
+            {v.covered_refs?.length ? v.covered_refs.join(', ') : 'tous les écarts de la facture'}
+          </span>
+          {v.consumed_document_id
+            ? <Badge tone="green">déduit sur la facture {v.consumed_number} du {date(v.consumed_date)}</Badge>
+            : <Badge tone="orange">à valoir</Badge>}
+          {v.code
+            ? <span>code <strong>{v.code}</strong></span>
+            : (!v.consumed_document_id && onChanged && (
+              <span style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                <input value={codes[v.id] || ''} placeholder="code du bon"
+                  onChange={(e) => setCodes({ ...codes, [v.id]: e.target.value })}
+                  style={{ ...inputStyle, padding: '5px 8px', width: 190 }} />
+                <Btn small disabled={busy || !(codes[v.id] || '').trim()} onClick={() => saisirCode(v)}>Enregistrer le code</Btn>
+              </span>
+            ))}
+          {v.note && <span style={{ color: C.greyM, fontSize: 12 }}>{v.note}</span>}
+          {onChanged && <Btn small variant="danger" disabled={busy} onClick={() => supprimer(v)}>Supprimer</Btn>}
+        </div>
+      ))}
+
+      {nonCouverts.length > 0 && (
+        <div style={{ fontSize: 12, color: C.orange, marginTop: 6 }}>
+          {nonCouverts.length} écart{nonCouverts.length > 1 ? 's' : ''} de tarif visé{nonCouverts.length > 1 ? 's' : ''} par
+          le bon reste{nonCouverts.length > 1 ? 'nt' : ''} à réclamer : le montant du bon ne{' '}
+          {nonCouverts.length > 1 ? 'les' : 'le'} couvre pas en entier.
+        </div>
+      )}
+
+      {consommes.map((v) => (
+        <div key={v.id} style={{ fontSize: 13, padding: '8px 0', borderTop: `1px solid ${C.greyB}`, marginTop: 8 }}>
+          Bon de <strong>{eur(v.amount_ht)}</strong> de la facture <strong>{v.source_number}</strong>
+          {v.code ? <> (code {v.code})</> : ''} déduit sur cette facture : il ne compte pas dans le coût de ses lignes.
+        </div>
+      ))}
+
+      {form && (
+        <div style={{ marginTop: 10, padding: 12, background: C.grey, borderRadius: 8, display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {candidates.length > 0 ? (
+            <div style={{ fontSize: 12.5 }}>
+              <div style={{ fontWeight: 600, color: C.greyT, marginBottom: 4 }}>Écarts que le bon rembourse</div>
+              {candidates.map((l) => (
+                <label key={l.id} style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '2px 0', cursor: 'pointer' }}>
+                  <input type="checkbox" checked={form.refs.includes(l.supplier_sku)} onChange={() => basculer(l.supplier_sku)} />
+                  <span style={{ fontWeight: 600 }}>{l.supplier_sku}</span>
+                  <span style={{ color: C.greyT, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 360 }}>{l.label}</span>
+                  <span style={{ marginLeft: 'auto', color: C.red, fontWeight: 600 }}>{signedEur(ecartTarifDe(l))}</span>
+                </label>
+              ))}
+            </div>
+          ) : (
+            <div style={{ fontSize: 12, color: C.greyT }}>
+              Aucun écart de tarif à réclamer sur cette facture : le bon couvrira tous ses écarts s'il les égale.
+            </div>
+          )}
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+            <Field label="Montant HT du bon" width={140}>
+              <input value={form.amount} inputMode="decimal"
+                onChange={(e) => setForm({ ...form, amount: e.target.value, touched: true })} style={inputStyle} />
+            </Field>
+            <Field label="Code (si déjà reçu)" width={220}>
+              <input value={form.code} placeholder="ex. V687392C8282O278763"
+                onChange={(e) => setForm({ ...form, code: e.target.value })} style={inputStyle} />
+            </Field>
+            <Field label="Note" width={220}>
+              <input value={form.note} placeholder="facultatif"
+                onChange={(e) => setForm({ ...form, note: e.target.value })} style={inputStyle} />
+            </Field>
+            <Btn disabled={busy || !(Number(String(form.amount).replace(',', '.')) > 0)} onClick={enregistrer}>
+              {busy ? 'Enregistrement…' : 'Enregistrer le bon'}
+            </Btn>
+            <Btn variant="ghost" onClick={() => setForm(null)}>Annuler</Btn>
+          </div>
+          <div style={{ fontSize: 11.5, color: C.greyM }}>
+            Le code permet de reconnaître le bon sur la facture qui le déduira. Sans code, il n'est reconnu que si la
+            remise de cette facture tombe pile sur son montant.
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Onglet Factures : ce qu'on nous doit encore en bons. */
+function OpenVouchers({ reloadKey, onOpen }) {
+  const [rows, setRows] = useState([]);
+  useEffect(() => {
+    let vivant = true;
+    axios.get(`${BASE}/vouchers`, { params: { status: 'open' } })
+      .then(({ data }) => { if (vivant) setRows(data); })
+      .catch(() => { if (vivant) setRows([]); });
+    return () => { vivant = false; };
+  }, [reloadKey]);
+  if (rows.length === 0) return null;
+  const total = rows.reduce((t, v) => t + Number(v.amount_ht), 0);
+  return (
+    <div style={{ background: C.white, border: `1px solid ${C.main}55`, borderRadius: 10, padding: 12 }}>
+      <div style={{ fontSize: 12, fontWeight: 700, color: C.mainD, marginBottom: 6 }}>
+        BONS DE RÉDUCTION À VALOIR — {eur(total)} HT
+      </div>
+      {rows.map((v) => (
+        <div key={v.id} style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center', fontSize: 13, padding: '4px 0' }}>
+          <strong style={{ minWidth: 130 }}>{v.supplier_name}</strong>
+          <span style={{ minWidth: 80 }}>{eur(v.amount_ht)}</span>
+          {v.code
+            ? <span style={{ color: C.greyT }}>code {v.code}</span>
+            : <Badge tone="orange">code à saisir</Badge>}
+          <button type="button" onClick={() => onOpen(v.source_document_id)} style={{
+            background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: C.main, fontWeight: 600, fontSize: 13,
+          }}>facture {v.source_number}</button>
+          <span style={{ color: C.greyM, fontSize: 12 }}>depuis {v.age_days} j</span>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 /* ═══════════════════════════════════════════════════════════
  * ONGLET 3 — Règlements
