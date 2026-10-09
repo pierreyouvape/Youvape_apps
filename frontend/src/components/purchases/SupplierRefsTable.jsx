@@ -29,6 +29,18 @@ const unitPriceOf = (packPrice, packQty) => {
   return p / q;
 };
 
+// Dernier prix d'achat chez ce fournisseur : repli quand la réf n'a pas de prix
+// (l'import enregistre la réf sans son prix, l'historique de commandes l'a).
+const LastPurchase = ({ lastPurchase }) => {
+  if (!lastPurchase) return '—';
+  const date = new Date(lastPurchase.order_date).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: '2-digit' });
+  return (
+    <span style={{ fontStyle: 'italic', color: '#9ca3af' }} title="Prix unitaire de la dernière commande chez ce fournisseur (la réf. n'a pas de prix enregistré)">
+      {formatPrice(lastPurchase.unit_price)} € <span style={{ fontSize: '11px' }}>(achat du {date})</span>
+    </span>
+  );
+};
+
 const SupplierRefsTable = ({ supplier, headers, onChanged }) => {
   const [drafts, setDrafts] = useState({});   // clé → champs modifiés
   const [adding, setAdding] = useState({});   // productId → ligne d'ajout ouverte
@@ -37,8 +49,10 @@ const SupplierRefsTable = ({ supplier, headers, onChanged }) => {
   const rows = supplier.is_variable_parent
     ? (supplier.variations || []).map(v => ({
         productId: v.variation_id, label: v.variation_label, refs: v.refs || [], bmsPack: v.pack_qty,
+        lastPurchase: v.last_purchase,
       }))
-    : [{ productId: supplier.product_id, label: null, refs: supplier.refs || [], bmsPack: supplier.pack_qty }];
+    : [{ productId: supplier.product_id, label: null, refs: supplier.refs || [], bmsPack: supplier.pack_qty,
+        lastPurchase: supplier.last_purchase }];
 
   const valueOf = (key, ref, field) => {
     const d = drafts[key];
@@ -106,7 +120,7 @@ const SupplierRefsTable = ({ supplier, headers, onChanged }) => {
     }
   };
 
-  const renderFields = (key, ref) => {
+  const renderFields = (key, ref, lastPurchase) => {
     const unit = unitPriceOf(valueOf(key, ref, 'pack_price'), valueOf(key, ref, 'pack_qty'));
     return (
       <>
@@ -134,7 +148,7 @@ const SupplierRefsTable = ({ supplier, headers, onChanged }) => {
             style={{ ...input, width: '84px' }} />
         </td>
         <td style={{ ...td, paddingTop: '8px', color: '#6b7280', whiteSpace: 'nowrap' }}>
-          {unit != null ? `${formatPrice(unit)} €` : '—'}
+          {unit != null ? `${formatPrice(unit)} €` : <LastPurchase lastPurchase={lastPurchase} />}
         </td>
       </>
     );
@@ -183,6 +197,7 @@ const SupplierRefsTable = ({ supplier, headers, onChanged }) => {
                   {supplier.is_variable_parent ? labelCell(1) : null}
                   <td style={{ ...td, paddingTop: '8px', color: '#9ca3af' }} colSpan={5}>
                     Aucune réf.
+                    {row.lastPurchase && <span style={{ marginLeft: '12px' }}>· dernier achat <LastPurchase lastPurchase={row.lastPurchase} /></span>}
                     {!supplier.is_variable_parent && (
                       <button type="button" style={{ ...linkBtn, marginLeft: '8px' }}
                         onClick={() => setAdding(prev => ({ ...prev, [row.productId]: true }))}>
@@ -202,7 +217,7 @@ const SupplierRefsTable = ({ supplier, headers, onChanged }) => {
               return (
                 <tr key={key} style={{ borderBottom: last ? '1px solid #f3f4f6' : 'none' }}>
                   {i === 0 && supplier.is_variable_parent && labelCell(lines.length)}
-                  {renderFields(key, ref)}
+                  {renderFields(key, ref, row.lastPurchase)}
                   <td style={{ ...td, whiteSpace: 'nowrap' }}>
                     {ref ? (
                       <>
