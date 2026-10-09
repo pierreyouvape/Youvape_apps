@@ -56,6 +56,7 @@ router.put('/:id/status', canWrite, controller.updateStatus);
 router.post('/:id/recheck', canWrite, controller.recheckDocument);
 router.post('/:id/vouchers', canWrite, controller.createVoucher);
 router.post('/:id/apply-tariffs', canWrite, controller.applyDocumentTariffs);
+router.post('/:id/agreed-prices', canWrite, controller.applyAgreedPrices);
 router.delete('/:id', canWrite, controller.deleteDocument);
 
 module.exports = router;

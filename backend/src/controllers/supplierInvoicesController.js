@@ -480,6 +480,79 @@ async function updateVoucher(req, res) {
 }
 
 /**
+ * Inscrire des tarifs SAISIS À LA MAIN sur la commande d'un document : réf.
+ * fournisseur, ligne de commande chez nous, ligne BMS (`applyTariffs`).
+ *
+ * `prices` : [{ ref, price }], `price` dans l'unité de la ligne de commande BMS
+ * (celle de la colonne « Tarif commandé »). Le conditionnement est relu sur la
+ * commande BMS d'aujourd'hui : c'est lui qui dit à quelle unité le prix se
+ * rapporte. Une ligne facturée au carton quand la commande compte en pièces est
+ * refusée — on ne saurait pas à quelle unité le prix saisi se rapporte.
+ */
+async function inscrireTarifsSaisis(document, orderId, prices) {
+  const demandes = (Array.isArray(prices) ? prices : [])
+    .map((p) => ({ ref: String(p.ref || '').trim(), price: Number(String(p.price).replace(',', '.')) }))
+    .filter((p) => p.ref);
+  if (demandes.length === 0) return { erreur: 'Aucun tarif à inscrire' };
+  const invalides = demandes.filter((p) => !(p.price > 0));
+  if (invalides.length) return { erreur: `Tarif invalide pour ${invalides.map((p) => p.ref).join(', ')}` };
+
+  const analysis = await reanalyse(document);
+  const cle = (v) => String(v || '').toLowerCase().replace(/\s+/g, ' ').trim();
+  const lignes = new Map((analysis.comparison?.lines || []).filter((l) => l.ref).map((l) => [cle(l.ref), l]));
+
+  const tarifs = [];
+  const refuses = [];
+  for (const d of demandes) {
+    const l = lignes.get(cle(d.ref));
+    if (!l || l.expectedUnitPrice == null) {
+      refuses.push({ ref: d.ref, reason: 'ligne absente de la commande' });
+    } else if (l.unitMismatch) {
+      refuses.push({ ref: d.ref, reason: 'facturé dans une autre unité que la commande : à corriger dans BMS' });
+    } else {
+      tarifs.push({ ref: l.ref, realPrice: Math.round(d.price * 10000) / 10000, packQty: l.orderPackQty || 1 });
+    }
+  }
+
+  const result = tarifs.length
+    ? await supplierDocumentModel.applyTariffs(document.supplier_id, orderId, tarifs)
+    : { applied: [], skipped: [] };
+  return { tarifs, refuses, result };
+}
+
+/**
+ * POST /api/supplier-invoices/:id/agreed-prices
+ * body : { prices: [{ ref, price }] }
+ *
+ * Le tarif de la commande BMS était FAUX, et c'est lui qui sert de référence au
+ * contrôle. LCA F2610415977 : les cartouches Dojo sont négociées à 3,00 € la
+ * pièce, BMS les portait à 2,50 € ou 2,80 € selon les commandes, et LCA facture
+ * 3,436 €. Contre 2,80 €, l'écart réclamé était faux ; contre 3,00 €, c'est le
+ * bon. On inscrit donc le tarif convenu (réf. fournisseur, commande chez nous et
+ * dans BMS), puis le contrôle est rejoué : l'écart qui reste, facturé − convenu,
+ * est celui que porte le message au commercial.
+ */
+async function applyAgreedPrices(req, res) {
+  try {
+    const document = await supplierDocumentModel.getDocument(parseInt(req.params.id, 10));
+    if (!document) return res.status(404).json({ error: 'Document introuvable' });
+    const orderId = (document.orders[0] || {}).id;
+    if (!orderId) return res.status(422).json({ error: 'Aucune commande rattachée à ce document' });
+
+    const { refuses, result, erreur } = await inscrireTarifsSaisis(document, orderId, req.body.prices);
+    if (erreur) return res.status(400).json({ error: erreur });
+
+    const apres = await reanalyse(document);
+    await supplierDocumentModel.replaceLines(document.id, apres.comparison, undefined, apres.vouchersUsed);
+    const rafraichi = await supplierDocumentModel.getDocument(document.id);
+    return res.json({ ...result, skipped: [...refuses, ...(result.skipped || [])], document: rafraichi });
+  } catch (error) {
+    console.error('[supplier-invoices] tarifs convenus :', error.message);
+    return res.status(error.status || 500).json({ error: error.message || 'Erreur serveur' });
+  }
+}
+
+/**
  * POST /api/supplier-invoices/vouchers/:voucherId/apply-prices
  * body : { prices: [{ ref, price }] } — `price` dans l'unité de la ligne de
  * commande BMS (celle de la colonne « Tarif commandé »).
@@ -506,43 +579,13 @@ async function applyVoucherPrices(req, res) {
     const orderId = (document.orders[0] || {}).id;
     if (!orderId) return res.status(422).json({ error: 'Aucune commande rattachée à cette facture' });
 
-    const demandes = (Array.isArray(req.body.prices) ? req.body.prices : [])
-      .map((p) => ({ ref: String(p.ref || '').trim(), price: Number(String(p.price).replace(',', '.')) }))
-      .filter((p) => p.ref);
-    if (demandes.length === 0) return res.status(400).json({ error: 'Aucun tarif à inscrire' });
-    const invalides = demandes.filter((p) => !(p.price > 0));
-    if (invalides.length) {
-      return res.status(400).json({ error: `Tarif invalide pour ${invalides.map((p) => p.ref).join(', ')}` });
-    }
-
-    // Le conditionnement de chaque ligne, lu sur la commande BMS d'aujourd'hui :
-    // c'est lui qui dit à quelle unité le prix saisi se rapporte.
-    const analysis = await reanalyse(document);
-    const cle = (v) => String(v || '').toLowerCase().replace(/\s+/g, ' ').trim();
-    const lignes = new Map((analysis.comparison?.lines || []).filter((l) => l.ref).map((l) => [cle(l.ref), l]));
-
-    const tarifs = [];
-    const refuses = [];
-    for (const d of demandes) {
-      const l = lignes.get(cle(d.ref));
-      if (!l || l.expectedUnitPrice == null) {
-        refuses.push({ ref: d.ref, reason: 'ligne absente de la commande' });
-      } else if (l.unitMismatch) {
-        // Facture au carton, commande à la pièce : on ne sait pas à quelle unité
-        // le prix saisi se rapporte. Mieux vaut ne rien écrire.
-        refuses.push({ ref: d.ref, reason: 'facturé dans une autre unité que la commande : à corriger dans BMS' });
-      } else {
-        tarifs.push({ ref: l.ref, realPrice: Math.round(d.price * 10000) / 10000, packQty: l.orderPackQty || 1 });
-      }
-    }
-
-    const result = tarifs.length
-      ? await supplierDocumentModel.applyTariffs(document.supplier_id, orderId, tarifs)
-      : { applied: [], skipped: [] };
+    const { tarifs, refuses, result, erreur } = await inscrireTarifsSaisis(document, orderId, req.body.prices);
+    if (erreur) return res.status(400).json({ error: erreur });
 
     // Seules les références vraiment corrigées rejoignent le bon — écrites comme
     // sur la facture, puisque c'est à ses lignes que le bon se compare (la base
     // peut écrire la même réf. avec une autre casse ou d'autres espaces).
+    const cle = (v) => String(v || '').toLowerCase().replace(/\s+/g, ' ').trim();
     const corrigees = new Set((result.applied || []).filter((a) => a.orderLine && a.orderLine.price != null)
       .map((a) => cle(a.ref)));
     await supplierVoucherModel.addCoveredRefs(
@@ -673,4 +716,5 @@ module.exports = {
   updateVoucher,
   deleteVoucher,
   applyVoucherPrices,
+  applyAgreedPrices,
 };

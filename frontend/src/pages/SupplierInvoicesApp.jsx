@@ -1973,6 +1973,8 @@ function DocumentPanel({ detail, mobile, onClose, onStatus, onDelete, onSettle, 
           <VoucherSection detail={detail} onChanged={onChanged} />
         )}
 
+        {detail.doc_type === 'invoice' && <CorrectionTarifsBms detail={detail} onChanged={onChanged} />}
+
         {detail.payments?.length > 0 && (
           <div style={{ background: C.white, border: `1px solid ${C.greyB}`, borderRadius: 10, padding: 12, marginBottom: 16 }}>
             <div style={{ fontSize: 12, fontWeight: 700, color: C.greyT, marginBottom: 8 }}>RÈGLEMENTS IMPUTÉS</div>
@@ -2091,6 +2093,146 @@ function VouchersNotice({ result }) {
   );
 }
 
+/**
+ * Saisie d'un tarif par ligne de facture, dans l'unité de la ligne de commande
+ * BMS (« Tarif commandé »). Partagée par « Inscrire le bon tarif » (bon de
+ * réduction) et « Corriger le tarif BMS ».
+ */
+function GrilleTarifs({ lignes, rows, onChange, titrePrix }) {
+  const factureUnit = (l) => Number(l.line_total_ht) / Number(l.qty);
+  return (
+    <div style={{ overflowX: 'auto', border: `1px solid ${C.greyB}`, borderRadius: 8, background: C.white }}>
+      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+        <thead>
+          <tr>
+            <th style={th} />
+            <th style={th}>Référence</th>
+            <th style={th}>Produit</th>
+            <th style={{ ...th, textAlign: 'right' }}>Qté</th>
+            <th style={{ ...th, textAlign: 'right' }}>Tarif commandé</th>
+            <th style={{ ...th, textAlign: 'right' }}>Facturé</th>
+            <th style={{ ...th, textAlign: 'right' }}>{titrePrix}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {lignes.map((l) => {
+            const r = rows[l.supplier_sku] || { on: false, price: '' };
+            const maj = (patch) => onChange({ ...rows, [l.supplier_sku]: { ...r, ...patch } });
+            return (
+              <tr key={l.id} style={{ color: r.on ? C.dark : C.greyT }}>
+                <td style={td}>
+                  <input type="checkbox" checked={r.on}
+                    onChange={() => maj({ on: !r.on, price: r.price || String(Number(l.expected_unit_price)) })} />
+                </td>
+                <td style={{ ...td, fontWeight: 600, whiteSpace: 'nowrap', color: 'inherit' }}>{l.supplier_sku}</td>
+                <td style={{ ...td, maxWidth: 280, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'inherit' }}>{l.label}</td>
+                <td style={{ ...td, textAlign: 'right', color: 'inherit' }}>{num(l.qty)}</td>
+                <td style={{ ...td, textAlign: 'right', color: 'inherit' }}>{eur(l.expected_unit_price)}</td>
+                <td style={{ ...td, textAlign: 'right', color: 'inherit' }}>{eur(factureUnit(l))}</td>
+                <td style={{ ...td, textAlign: 'right' }}>
+                  <input value={r.price} inputMode="decimal" disabled={!r.on}
+                    onChange={(e) => maj({ price: e.target.value })}
+                    style={{ ...inputStyle, padding: '5px 8px', width: 90, textAlign: 'right' }} />
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+/** Les lignes de produit d'une facture dont on peut corriger le tarif de commande. */
+const lignesTarifables = (detail) => (detail.lines || []).filter((l) => (l.kind || 'product') === 'product'
+  && l.supplier_sku && l.expected_unit_price != null && Number(l.qty) > 0);
+
+/** Ce que l'API a refusé ou n'a fait qu'à moitié, à dire à l'écran. */
+const refusDe = (data) => [
+  ...(data.skipped || []).map((k) => `${k.ref} : ${k.reason}`),
+  ...(data.applied || []).filter((x) => x.orderLine?.skipped || x.bmsLine?.skipped)
+    .map((x) => `${x.ref} : ${x.orderLine?.skipped || `BMS inchangé (${x.bmsLine.skipped})`}`),
+];
+
+/**
+ * Corriger le tarif de la commande BMS quand c'est LUI qui est faux.
+ *
+ * L'écart se calcule contre le prix de la ligne BMS. Quand ce prix n'est pas le
+ * tarif négocié (cartouches Dojo LCA convenues à 3,00 €, portées à 2,50 € ou
+ * 2,80 € dans BMS, facturées 3,436 €), l'écart affiché est faux et la
+ * réclamation aussi. On saisit le tarif convenu : il est inscrit chez nous et
+ * dans BMS, le contrôle est rejoué, et ne reste à réclamer que facturé − convenu.
+ */
+function CorrectionTarifsBms({ detail, onChanged }) {
+  const lignes = lignesTarifables(detail);
+  const [rows, setRows] = useState(null);
+  const [busy, setBusy] = useState(false);
+  if (!onChanged || !detail.orders?.[0] || lignes.length === 0) return null;
+
+  const ouvrir = () => {
+    const init = {};
+    for (const l of lignes) init[l.supplier_sku] = { on: false, price: '' };
+    setRows(init);
+  };
+  const inscrire = async () => {
+    const prices = Object.entries(rows).filter(([, r]) => r.on)
+      .map(([ref, r]) => ({ ref, price: Number(String(r.price).replace(',', '.')) }));
+    if (prices.some((p) => !(p.price > 0))) {
+      window.alert('Saisis un tarif pour chaque ligne cochée.');
+      return;
+    }
+    if (!window.confirm(
+      `Inscrire le tarif convenu sur ${prices.length} ligne${prices.length > 1 ? 's' : ''} `
+      + '(référence fournisseur, commande chez nous et dans BMS) ?\n\n'
+      + prices.map((p) => `${p.ref} → ${eur(p.price)}`).join('\n')
+      + "\n\nL'écart restant (facturé − convenu) deviendra la somme à réclamer. "
+      + 'Si la commande est déjà réceptionnée, la valeur du stock et le coût de revient '
+      + 'des pièces déjà vendues seront corrigés à partir de la réception.',
+    )) return;
+    setBusy(true);
+    try {
+      const { data } = await axios.post(`${BASE}/${detail.id}/agreed-prices`, { prices });
+      const refus = refusDe(data);
+      if (refus.length) window.alert(`Pas entièrement appliqué :\n${refus.join('\n')}`);
+      setRows(null);
+      await onChanged();
+    } catch (e) {
+      window.alert(e.response?.data?.error || e.message);
+    } finally { setBusy(false); }
+  };
+
+  return (
+    <div style={{ background: C.white, border: `1px solid ${C.greyB}`, borderRadius: 10, padding: 12, marginBottom: 16 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+        <div style={{ fontSize: 12, fontWeight: 700, color: C.greyT }}>TARIF BMS ERRONÉ</div>
+        {!rows && <Btn small variant="ghost" onClick={ouvrir}>Corriger le tarif BMS</Btn>}
+      </div>
+      {!rows && (
+        <div style={{ fontSize: 12, color: C.greyM, marginTop: 6 }}>
+          Le prix de la commande BMS n'est pas le tarif négocié ? Saisis le bon : l'écart sera recalculé
+          contre lui, et c'est lui qui sera réclamé.
+        </div>
+      )}
+      {rows && (
+        <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <div style={{ fontSize: 12.5, color: C.greyT }}>
+            Le tarif convenu avec le fournisseur, à la pièce comme la colonne « Tarif commandé ». Il remplace le prix
+            de la commande <strong>{detail.orders[0].bms_reference}</strong> chez nous et dans BMS, et sert aux
+            prochaines commandes.
+          </div>
+          <GrilleTarifs lignes={lignes} rows={rows} onChange={setRows} titrePrix="Tarif convenu" />
+          <div style={{ display: 'flex', gap: 10 }}>
+            <Btn disabled={busy || !Object.values(rows).some((r) => r.on)} onClick={inscrire}>
+              {busy ? 'Inscription…' : 'Inscrire ces tarifs'}
+            </Btn>
+            <Btn variant="ghost" onClick={() => setRows(null)}>Annuler</Btn>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /** Dans la fiche d'une facture : les bons qu'elle a fait naître et ceux qu'elle a consommés. */
 function VoucherSection({ detail, onChanged }) {
   const nes = (detail.vouchers || []).filter((v) => v.source_document_id === detail.id);
@@ -2104,8 +2246,7 @@ function VoucherSection({ detail, onChanged }) {
   const [codes, setCodes] = useState({});
   // Correction des tarifs de la commande au BON prix : { voucher, rows: { ref: { on, price } } }.
   const [prix, setPrix] = useState(null);
-  const lignesProduit = (detail.lines || []).filter((l) => (l.kind || 'product') === 'product'
-    && l.supplier_sku && l.expected_unit_price != null && Number(l.qty) > 0);
+  const lignesProduit = lignesTarifables(detail);
   const factureUnit = (l) => Number(l.line_total_ht) / Number(l.qty);
   const ouvrirPrix = (v) => {
     const vise = (l) => (v.covered_refs?.length
@@ -2139,11 +2280,7 @@ function VoucherSection({ detail, onChanged }) {
     setBusy(true);
     try {
       const { data } = await axios.post(`${BASE}/vouchers/${prix.voucher.id}/apply-prices`, { prices });
-      const refus = [
-        ...(data.skipped || []).map((k) => `${k.ref} : ${k.reason}`),
-        ...(data.applied || []).filter((x) => x.orderLine?.skipped || x.bmsLine?.skipped)
-          .map((x) => `${x.ref} : ${x.orderLine?.skipped || `BMS inchangé (${x.bmsLine.skipped})`}`),
-      ];
+      const refus = refusDe(data);
       if (refus.length) window.alert(`Pas entièrement appliqué :\n${refus.join('\n')}`);
       setPrix(null);
       if (onChanged) await onChanged();
@@ -2244,45 +2381,8 @@ function VoucherSection({ detail, onChanged }) {
             {' '}<strong>{detail.orders[0].bms_reference}</strong> chez nous et dans BMS, et sert aux prochaines commandes.
             Le bon s'étend aux lignes corrigées.
           </div>
-          <div style={{ overflowX: 'auto', border: `1px solid ${C.greyB}`, borderRadius: 8, background: C.white }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <thead>
-                <tr>
-                  <th style={th} />
-                  <th style={th}>Référence</th>
-                  <th style={th}>Produit</th>
-                  <th style={{ ...th, textAlign: 'right' }}>Qté</th>
-                  <th style={{ ...th, textAlign: 'right' }}>Tarif commandé</th>
-                  <th style={{ ...th, textAlign: 'right' }}>Facturé</th>
-                  <th style={{ ...th, textAlign: 'right' }}>Bon tarif</th>
-                </tr>
-              </thead>
-              <tbody>
-                {lignesProduit.map((l) => {
-                  const r = prix.rows[l.supplier_sku] || { on: false, price: '' };
-                  const maj = (patch) => setPrix({ ...prix, rows: { ...prix.rows, [l.supplier_sku]: { ...r, ...patch } } });
-                  return (
-                    <tr key={l.id} style={{ color: r.on ? C.dark : C.greyT }}>
-                      <td style={td}>
-                        <input type="checkbox" checked={r.on}
-                          onChange={() => maj({ on: !r.on, price: r.price || String(Number(l.expected_unit_price)) })} />
-                      </td>
-                      <td style={{ ...td, fontWeight: 600, whiteSpace: 'nowrap', color: 'inherit' }}>{l.supplier_sku}</td>
-                      <td style={{ ...td, maxWidth: 280, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'inherit' }}>{l.label}</td>
-                      <td style={{ ...td, textAlign: 'right', color: 'inherit' }}>{num(l.qty)}</td>
-                      <td style={{ ...td, textAlign: 'right', color: 'inherit' }}>{eur(l.expected_unit_price)}</td>
-                      <td style={{ ...td, textAlign: 'right', color: 'inherit' }}>{eur(factureUnit(l))}</td>
-                      <td style={{ ...td, textAlign: 'right' }}>
-                        <input value={r.price} inputMode="decimal" disabled={!r.on}
-                          onChange={(e) => maj({ price: e.target.value })}
-                          style={{ ...inputStyle, padding: '5px 8px', width: 90, textAlign: 'right' }} />
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+          <GrilleTarifs lignes={lignesProduit} rows={prix.rows} titrePrix="Bon tarif"
+            onChange={(rows) => setPrix({ ...prix, rows })} />
           <div style={{ display: 'flex', gap: 10 }}>
             <Btn disabled={busy || !Object.values(prix.rows).some((r) => r.on)} onClick={inscrirePrix}>
               {busy ? 'Inscription…' : 'Inscrire ces tarifs'}
