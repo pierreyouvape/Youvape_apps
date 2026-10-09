@@ -632,19 +632,17 @@ class CustomerModel {
     `;
     const orderResult = await pool.query(orderQuery, [wpOrderId]);
 
-    // Méthode d'expédition (depuis order_items type shipping)
-    const shippingQuery = `
-      SELECT order_item_name
-      FROM order_items
-      WHERE wp_order_id = $1 AND order_item_type = 'shipping'
-      LIMIT 1
-    `;
-    const shippingResult = await pool.query(shippingQuery, [wpOrderId]);
+    // Méthode d'expédition — `orders.shipping_method` : yousync n'écrit plus de
+    // lignes `order_items` de type `shipping` depuis juillet 2026.
+    const shippingResult = await pool.query(
+      'SELECT shipping_method FROM orders WHERE wp_order_id = $1',
+      [wpOrderId]
+    );
 
     return {
       items: itemsResult.rows,
       order: orderResult.rows[0],
-      shipping_method: shippingResult.rows[0]?.order_item_name || null
+      shipping_method: shippingResult.rows[0]?.shipping_method || null
     };
   }
 

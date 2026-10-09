@@ -391,14 +391,10 @@ exports.filterOrders = async (req, res) => {
       }
     }
 
-    // Filtre par transporteur
+    // Filtre par transporteur — `orders.shipping_method` : yousync n'écrit plus
+    // de lignes `order_items` de type `shipping` depuis juillet 2026.
     if (req.query.shippingMethod) {
-      conditions.push(`EXISTS (
-        SELECT 1 FROM order_items oi_ship
-        WHERE oi_ship.wp_order_id = o.wp_order_id
-        AND oi_ship.order_item_type = 'shipping'
-        AND oi_ship.order_item_name = $${paramIndex}
-      )`);
+      conditions.push(`o.shipping_method = $${paramIndex}`);
       params.push(req.query.shippingMethod);
       paramIndex++;
     }

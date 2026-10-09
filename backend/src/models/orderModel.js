@@ -229,14 +229,16 @@ class OrderModel {
   }
 
   /**
-   * Récupère tous les transporteurs existants
+   * Récupère tous les transporteurs existants.
+   * Lu sur `orders.shipping_method` : yousync n'écrit plus de lignes
+   * `order_items` de type `shipping` depuis juillet 2026.
    */
   async getShippingMethods() {
     const query = `
-      SELECT DISTINCT order_item_name as shipping_method, COUNT(*) as count
-      FROM order_items
-      WHERE order_item_type = 'shipping' AND order_item_name IS NOT NULL
-      GROUP BY order_item_name
+      SELECT shipping_method, COUNT(*) as count
+      FROM orders
+      WHERE shipping_method IS NOT NULL AND shipping_method <> ''
+      GROUP BY shipping_method
       ORDER BY count DESC
     `;
     const result = await pool.query(query);
@@ -315,12 +317,7 @@ class OrderModel {
 
     // Filtre par transporteur
     if (filters.shippingMethod) {
-      conditions.push(`EXISTS (
-        SELECT 1 FROM order_items oi_ship
-        WHERE oi_ship.wp_order_id = o.wp_order_id
-        AND oi_ship.order_item_type = 'shipping'
-        AND oi_ship.order_item_name = $${paramIndex}
-      )`);
+      conditions.push(`o.shipping_method = $${paramIndex}`);
       params.push(filters.shippingMethod);
       paramIndex++;
     }
@@ -387,7 +384,7 @@ class OrderModel {
         o.order_total,
         o.order_shipping,
         o.payment_method_title,
-        (SELECT oi_s.order_item_name FROM order_items oi_s WHERE oi_s.wp_order_id = o.wp_order_id AND oi_s.order_item_type = 'shipping' LIMIT 1) as shipping_method,
+        o.shipping_method,
         (SELECT COUNT(*) FROM order_items oi_c WHERE oi_c.wp_order_id = o.wp_order_id AND oi_c.order_item_type = 'line_item') as items_count,
         (SELECT STRING_AGG(oi_cp.order_item_name, ', ') FROM order_items oi_cp WHERE oi_cp.wp_order_id = o.wp_order_id AND oi_cp.order_item_type = 'coupon') as coupons
       FROM orders o

@@ -54,12 +54,13 @@ exports.getFilters = async (req, res) => {
         ORDER BY count DESC
       `),
 
-      // Méthodes de livraison
+      // Méthodes de livraison — `orders.shipping_method` : yousync n'écrit plus
+      // de lignes `order_items` de type `shipping` depuis juillet 2026.
       pool.query(`
-        SELECT DISTINCT order_item_name as value, order_item_name as label, COUNT(*)::int as count
-        FROM order_items
-        WHERE order_item_type = 'shipping' AND order_item_name IS NOT NULL AND order_item_name != ''
-        GROUP BY order_item_name
+        SELECT shipping_method as value, shipping_method as label, COUNT(*)::int as count
+        FROM orders
+        WHERE shipping_method IS NOT NULL AND shipping_method != ''
+        GROUP BY shipping_method
         ORDER BY count DESC
       `),
 
@@ -211,12 +212,7 @@ function buildFilteredOrdersCTE(filters) {
 
   // Méthodes de livraison
   if (shippingMethods && shippingMethods.length > 0) {
-    conditions.push(`EXISTS (
-      SELECT 1 FROM order_items oi_ship
-      WHERE oi_ship.wp_order_id = o.wp_order_id
-        AND oi_ship.order_item_type = 'shipping'
-        AND oi_ship.order_item_name = ANY($${paramIndex})
-    )`);
+    conditions.push(`o.shipping_method = ANY($${paramIndex})`);
     params.push(shippingMethods);
     paramIndex++;
   }

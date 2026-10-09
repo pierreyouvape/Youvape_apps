@@ -1476,16 +1476,16 @@ exports.getByCountryReport = async (req, res) => {
         total_sales: parseFloat(row.total_sales).toFixed(2)
       }));
 
-      // Top 3 Transporteurs (depuis order_items type shipping)
+      // Top 3 Transporteurs — `orders.shipping_method` : yousync n'écrit plus
+      // de lignes `order_items` de type `shipping` depuis juillet 2026.
       const topShippingQuery = `
         SELECT
-          oi.order_item_name as shipping_method,
+          o.shipping_method,
           COUNT(DISTINCT o.wp_order_id)::int as orders_count,
           ROUND(COUNT(DISTINCT o.wp_order_id)::numeric * 100.0 / NULLIF(SUM(COUNT(DISTINCT o.wp_order_id)) OVER(), 0), 1) as percentage
-        FROM order_items oi
-        JOIN orders o ON oi.wp_order_id = o.wp_order_id
-        ${countryWhereClause} AND oi.order_item_type = 'shipping'
-        GROUP BY oi.order_item_name
+        FROM orders o
+        ${countryWhereClause} AND o.shipping_method IS NOT NULL AND o.shipping_method <> ''
+        GROUP BY o.shipping_method
         ORDER BY orders_count DESC
         LIMIT 3
       `;
