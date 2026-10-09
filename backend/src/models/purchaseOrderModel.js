@@ -2074,9 +2074,9 @@ const purchaseOrderModel = {
             INSERT INTO purchase_order_items (
               purchase_order_id, product_id, supplier_sku,
               product_name, qty_ordered, qty_received, unit_price, units_per_qty,
-              units_received
+              units_received, discount_percent
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
           `, [
             poId,
             productId,
@@ -2090,7 +2090,11 @@ const purchaseOrderModel = {
             // expression sur deux paramètres laisserait PostgreSQL deviner leurs
             // types, et une synchro qui échoue sur une inférence est un mauvais
             // endroit pour l'apprendre.
-            recuEnPieces
+            recuEnPieces,
+            // La remise de la ligne BMS : `price` y reste le tarif brut. Sans elle,
+            // la commande Cosmer 103455 (-15 % fid sur chaque ligne) entrait au
+            // FIFO 15 % trop cher, et le PMP avec.
+            parseFloat(item.discount_percent) || 0,
           ]);
 
         }
