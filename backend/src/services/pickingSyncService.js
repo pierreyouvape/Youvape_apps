@@ -16,6 +16,7 @@
 
 const pool = require('../config/database');
 const bmsApiModel = require('../models/bmsApiModel');
+const { importMissingBmsOrders } = require('./wcOrderImportService');
 
 const PAGE = 100;
 const SYNC_KEY = 'picking_last_sync_at';
@@ -138,12 +139,19 @@ const doRefresh = async () => {
   const snapshots = orders.map(o => toSnapshot(o, bmsWaves)).filter(Boolean);
   await writeSnapshot(snapshots);
 
+  // Une commande que BMS donne à expédier mais que yousync a perdue resterait
+  // « Pas encore synchronisée » pour toujours : on la relit dans WooCommerce.
+  const recovered = await importMissingBmsOrders().catch(err => {
+    console.error('[Picking] Rattrapage des commandes absentes échoué :', err.message);
+    return [];
+  });
+
   // Le relevé dit ce qui reste à expédier : les vagues entièrement parties se
   // clôturent (lot 4). Chargé ici pour éviter une dépendance circulaire.
   const closed = await require('../models/pickingModel').closeShippedWaves();
   if (closed.length) console.log(`[Picking] Vague(s) clôturée(s) : ${closed.join(', ')}`);
 
-  return { orders: snapshots.length, closedWaves: closed, syncedAt: new Date() };
+  return { orders: snapshots.length, closedWaves: closed, recoveredOrders: recovered, syncedAt: new Date() };
 };
 
 let running = null;
