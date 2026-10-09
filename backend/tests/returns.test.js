@@ -13,6 +13,7 @@
 const assert = require('assert');
 const {
   unitPaid, bundleParents, expandSelection, checkDestination, returnStatus, suggestSupplier,
+  suggestPoints, replacementShipping, pickRefund,
 } = require('../src/services/returnRules');
 
 const throws = (fn, re) => assert.throws(fn, (e) => re.test(e.message) && e.statusCode === 400);
@@ -96,5 +97,32 @@ assert.strictEqual(suggestSupplier(lots, '2026-09-01'), 2, 'dernier lot reçu av
 assert.strictEqual(suggestSupplier(lots, '2026-10-01'), 3);
 assert.strictEqual(suggestSupplier(lots, '2026-01-01'), 3, 'aucun lot avant : le plus récent');
 assert.strictEqual(suggestSupplier([], '2026-01-01'), null);
+
+// ── Points ──────────────────────────────────────────────────────────────────
+// Pack (15,12 €) et ses deux composants à 0 €, e-liquide à 19,92 € : 3 504 points.
+const retLines = [
+  { qty: 1, unit_paid: 15.12 }, { qty: 1, unit_paid: 0 }, { qty: 1, unit_paid: 0 }, { qty: 1, unit_paid: 19.92 },
+];
+assert.strictEqual(suggestPoints(retLines), 3504);
+assert.strictEqual(suggestPoints(retLines, { shippingPaid: 4.9, withShipping: true }), 3994, '+ frais de port');
+assert.strictEqual(suggestPoints(retLines, { shippingPaid: 4.9 }), 3504, 'port non coché');
+assert.strictEqual(suggestPoints([{ qty: 3, unit_paid: 4.33 }]), 1299, 'arrondi au point');
+
+// ── Méthode du renvoi ───────────────────────────────────────────────────────
+assert.deepStrictEqual(replacementShipping('Chronopost Relais 24h'), { method: '2Shop', keepRelay: false, needsRelay: true });
+assert.deepStrictEqual(replacementShipping('Chronopost Domicile 24h'), { method: 'Colissimo Domicile', keepRelay: false, needsRelay: false });
+assert.deepStrictEqual(replacementShipping('Chronopost Express'), { method: 'Colissimo Domicile', keepRelay: false, needsRelay: false });
+assert.deepStrictEqual(replacementShipping('Mondial Relay - Lockers'), { method: 'Mondial Relay - Lockers', keepRelay: true, needsRelay: false });
+assert.deepStrictEqual(replacementShipping('2Shop'), { method: '2Shop', keepRelay: true, needsRelay: true }, '2Shop reste 2Shop, point repris');
+
+// ── Remboursement à rattacher ───────────────────────────────────────────────
+const refunds = [
+  { wp_refund_id: 10, refund_date: '2026-10-01 10:00:00' },
+  { wp_refund_id: 11, refund_date: '2026-10-12 15:00:00' },
+  { wp_refund_id: 12, refund_date: '2026-10-11 09:00:00' },
+];
+assert.strictEqual(pickRefund(refunds, new Set(), '2026-10-09T08:00:00Z').wp_refund_id, 12, 'le premier après le retour');
+assert.strictEqual(pickRefund(refunds, new Set([12]), '2026-10-09T08:00:00Z').wp_refund_id, 11, 'déjà pris par un autre retour');
+assert.strictEqual(pickRefund(refunds, new Set([11, 12]), '2026-10-09T08:00:00Z'), null, 'celui d\'avant le retour ne compte pas');
 
 console.log('✓ returns.test.js');

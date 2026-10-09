@@ -977,6 +977,28 @@ const setupInventoryRefCron = () => {
   console.log('Cron inventaire configure: relevés BMS chaque minute, 7h-21h');
 };
 
+// ==================== RETOURS CLIENT ====================
+
+let returnsRefundCronJob = null;
+
+const setupReturnsRefundCron = () => {
+  if (returnsRefundCronJob) {
+    returnsRefundCronJob.stop();
+    returnsRefundCronJob = null;
+  }
+  // Toutes les 30 min : un retour « remboursement » prend le remboursement
+  // WooCommerce fait après lui (remboursement manuel dans WC, décision Pierre).
+  returnsRefundCronJob = cron.schedule('*/30 * * * *', async () => {
+    try {
+      const n = await require('../models/customerReturnModel').matchRefunds();
+      if (n) console.log(`[Retours] ${n} remboursement(s) rapproché(s)`);
+    } catch (error) {
+      console.error('Erreur cron retours (remboursements):', error.message);
+    }
+  }, { timezone: 'Europe/Paris' });
+  console.log('Cron retours configure: rapprochement des remboursements toutes les 30 min');
+};
+
 
 module.exports = {
   setupCron,
@@ -1001,6 +1023,7 @@ module.exports = {
   setupPickingSyncCron,
   setupBmsShipmentSyncCron,
   setupInventoryRefCron,
+  setupReturnsRefundCron,
   runProductDbSyncJob,
   runProductSuppliersLink,
   runBrandMapJob,

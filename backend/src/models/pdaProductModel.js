@@ -378,4 +378,5 @@ module.exports = {
   BMS_WAREHOUSE_ID,
   findBmsProductId,
   findMovementId,
+  readBmsStock,
 };

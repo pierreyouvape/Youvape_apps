@@ -232,6 +232,112 @@ const buildLabelPayload = ({ orderNumber, receiver, account, weightGrams, option
 };
 
 /**
+ * Corps XML d'une étiquette RETOUR (Retours client, lot 3 — 09/10/2026).
+ *
+ * D'après la spécification « Web Service Dual Carrier » v2.7.1 : c'est le
+ * couple collecte / livraison qui fait d'une expédition un retour. Collecte
+ * `REL` sans point imposé (« Auto ») : le client dépose dans le point relais de
+ * son choix ; livraison `LCC`, chez nous. L'expéditeur est le CLIENT, le
+ * destinataire notre adresse d'expéditeur du contrat.
+ *
+ * @param {object} input
+ * @param {string} input.reference - n° du retour, imprimé (OrderNo)
+ * @param {object} input.customer - {first_name, last_name, address, postcode, city, country, phone, email}
+ * @param {'PdfUrl'|'QRCode'} input.outputType
+ */
+const buildReturnPayload = ({ reference, customer, account, weightGrams, outputType = 'PdfUrl' }) => {
+  const c = account.credentials;
+  const s = account.settings;
+  const merchant = s.sender || {};
+  const orderNo = String(reference).toUpperCase().replace(/[^0-9A-Z_-]/g, '').substring(0, 15);
+
+  return `<?xml version="1.0" encoding="utf-8"?>
+<ShipmentCreationRequest xmlns="http://www.example.org/Request">
+<Context><Login>${esc(c.login)}</Login><Password>${esc(c.password)}</Password>` +
+    `<CustomerId>${esc(c.customer_id)}</CustomerId>` +
+    `<Culture>${esc(s.culture || 'fr-FR')}</Culture>` +
+    `<VersionAPI>${esc(s.version_api || '1.0')}</VersionAPI></Context>
+<OutputOptions><OutputFormat>${esc(s.output_format || '10x15')}</OutputFormat>` +
+    `<OutputType>${esc(outputType)}</OutputType></OutputOptions>
+<ShipmentsList><Shipment>` +
+    `<OrderNo>${esc(orderNo)}</OrderNo>` +
+    `<ParcelCount>1</ParcelCount>` +
+    `<CollectionMode Mode="REL"/>` +
+    `<DeliveryMode Mode="LCC"/>` +
+    `<Parcels><Parcel><Content>${esc((s.parcel_content || 'Cigarette electronique').substring(0, 40))}</Content>` +
+    `<Weight Value="${Number(weightGrams)}" Unit="gr"/></Parcel></Parcels>` +
+    `<Sender><Address>${addressXml({
+      firstname: customer.first_name || '',
+      lastname: customer.last_name || '',
+      addressLine: customer.address || '',
+      countryCode: customer.country,
+      postcode: customer.postcode,
+      city: customer.city,
+      phone: customer.phone,
+      mobile: customer.phone,
+      email: customer.email
+    }, { obligatoire: true, orderNumber: reference })}</Address></Sender>` +
+    `<Recipient><Address>${addressXml({ ...merchant, addressLine: merchant.address_line || `${merchant.house_no || ''} ${merchant.streetname || ''}`.trim(), countryCode: merchant.country_code, postcode: merchant.postcode })}</Address></Recipient>` +
+    `</Shipment></ShipmentsList></ShipmentCreationRequest>`;
+};
+
+/**
+ * Demande une étiquette retour. Le PDF arrive en URL (comme à l'aller) ; la
+ * forme du QR code n'est pas décrite par la spécification : une URL est
+ * téléchargée, tout autre contenu est gardé tel quel (base64 ou texte).
+ *
+ * @returns {Promise<{trackingNumber: string, mime: string, dataBase64: string}>}
+ */
+const createReturnLabel = async ({ reference, customer, account, weightGrams, format = 'pdf' }) => {
+  assertAccountComplete(account, {
+    credentials: ['login', 'password', 'customer_id'],
+    settings: ['api_url']
+  });
+  const outputType = format === 'qr' ? 'QRCode' : 'PdfUrl';
+  const xml = buildReturnPayload({ reference, customer, account, weightGrams, outputType });
+
+  console.log(`[${LOG_TAG}] Étiquette RETOUR`, reference, '— sortie:', outputType, '| poids:', weightGrams, 'g');
+  const res = await axios.post(account.settings.api_url, xml, {
+    headers: { 'Content-Type': 'application/xml' },
+    timeout: 30000,
+    validateStatus: () => true
+  });
+
+  const error = findError(res.data);
+  if (error) {
+    console.error(`[${LOG_TAG}] Refus retour ${error.codeField}:`, error.messageField);
+    const err = new Error(`Mondial Relay ${error.codeField} : ${error.messageField}`);
+    err.statusCode = 400;
+    throw err;
+  }
+
+  const shipment = res.data?.shipmentsListField?.[0];
+  const trackingNumber = shipment?.shipmentNumberField || null;
+  const output = shipment?.labelListField?.labelField?.outputField || null;
+  if (!trackingNumber || !output) {
+    console.error(`[${LOG_TAG}] Réponse retour inattendue:`, JSON.stringify(redact(res.data)).substring(0, 1500));
+    const err = new Error('Réponse Mondial Relay sans numéro d\'expédition ou sans étiquette');
+    err.statusCode = 502;
+    throw err;
+  }
+
+  if (/^https?:\/\//i.test(output)) {
+    const file = await axios.get(output, { responseType: 'arraybuffer', timeout: 30000 });
+    const mime = String(file.headers['content-type'] || (format === 'qr' ? 'image/png' : 'application/pdf')).split(';')[0];
+    return { trackingNumber, mime, dataBase64: Buffer.from(file.data).toString('base64') };
+  }
+  // Sortie en ligne (QR code) : on la garde telle quelle et on la journalise
+  // une fois, la spécification n'en donnant pas la forme.
+  console.log(`[${LOG_TAG}] QR code retour reçu en ligne (${String(output).length} car.) :`, String(output).substring(0, 80));
+  const isBase64Png = /^iVBORw0KGgo/.test(output);
+  return {
+    trackingNumber,
+    mime: isBase64Png ? 'image/png' : 'text/plain',
+    dataBase64: isBase64Png ? output : Buffer.from(String(output)).toString('base64'),
+  };
+};
+
+/**
  * Retire tout secret d'une réponse avant de la journaliser.
  * L'API renvoie `contextField.passwordField` **en clair**.
  */
@@ -449,6 +555,8 @@ module.exports = assertAdapter({
   cancelLabel,
   cancelWindow,
   buildLabelPayload,
+  buildReturnPayload,
+  createReturnLabel,
   assertRelayPoint,
   redact
 });

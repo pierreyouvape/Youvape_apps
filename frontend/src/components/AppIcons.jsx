@@ -463,7 +463,8 @@ export const APPS = [
   { key: 'financier',  path: '/financier',  label: 'Rapport',                  Icon: Stats,         color: '#135E84' },
   // « clients » pour la distinguer des commandes FOURNISSEUR de la pile Achats.
   { key: 'commandes',  path: '/commandes',  label: 'Commandes clients',        Icon: OrdersSearch, color: '#5B21B6' },
-  { key: 'tickets',    path: '/tickets',    label: 'SAV / Tickets',            Icon: Tickets,      color: '#0891B2' },
+  // « Tickets » : la pile SAV le dit déjà (APP_GROUPS, grp-sav).
+  { key: 'tickets',    path: '/tickets',    label: 'Tickets',                  Icon: Tickets,      color: '#0891B2' },
   // Même droit que les tickets (décision Pierre du 09/10/2026) : un retour naît
   // d'un échange SAV, et routes/customerReturnRoutes.js exige `tickets`.
   { key: 'retours',    path: '/retours',    label: 'Retours',                  Icon: Returns,      color: '#A21CAF', permissionKey: 'tickets' },
@@ -531,6 +532,15 @@ export const APP_GROUPS = [
       'factures-fournisseurs',
       'purchases-v2',
     ],
+  },
+  {
+    // Un retour naît d'un échange SAV : les deux apps vivent ensemble
+    // (décision Pierre du 09/10/2026). Le groupe, pas une app conteneur :
+    // /tickets et /retours gardent leurs adresses.
+    key: 'grp-sav',
+    label: 'SAV',
+    color: '#0891B2',
+    members: ['tickets', 'retours'],
   },
   {
     key: 'grp-factures-transporteurs',

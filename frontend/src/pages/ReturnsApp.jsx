@@ -5,6 +5,7 @@ import AppShell from '../components/AppShell';
 import { Returns as ReturnsIcon } from '../components/AppIcons';
 import { C, Chip } from '../components/picking/pickingUi';
 import useTicketsAccess from '../components/tickets/useTicketsAccess';
+import ReturnLabelActions from '../components/returns/ReturnLabelActions';
 import { formatDate, formatDateUTC } from '../utils/dateUtils';
 import {
   RETURNS_API, RETURNS_COLOR, RETURNS_COLOR_L, REASONS, OUTCOMES, OUTCOME_REF_HINT, STATUS,
@@ -347,17 +348,118 @@ function ReceivedLines({ ret, canWrite, onDone, setMessage }) {
   );
 }
 
+function ReplacementModal({ ret, onClose, onDone, setMessage }) {
+  const [data, setData] = useState(null);
+  const [qty, setQty] = useState({});
+  const [error, setError] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    axios.get(`${RETURNS_API}/${ret.id}/replacement`)
+      .then(({ data: d }) => { setData(d); setQty(Object.fromEntries(d.items.map(i => [i.lineId, i.qty]))); })
+      .catch(e => setError(errorText(e)));
+  }, [ret.id]);
+
+  const short = (data?.items || []).filter(i => (qty[i.lineId] || 0) > 0 && (i.available == null || i.available < qty[i.lineId]));
+  const chosen = (data?.items || []).filter(i => (qty[i.lineId] || 0) > 0);
+  const canSubmit = data && chosen.length && !short.length && !saving;
+
+  const submit = async () => {
+    setSaving(true);
+    setError('');
+    try {
+      const { data: r } = await axios.post(`${RETURNS_API}/${ret.id}/replacement`, {
+        items: chosen.map(i => ({ lineId: i.lineId, qty: qty[i.lineId] })),
+      });
+      setMessage({
+        kind: r.warnings?.length ? 'error' : 'ok',
+        text: `Commande de renvoi ${r.outcome_ref} créée.${r.warnings?.length ? ` ${r.warnings.join(' ')}` : ''}`,
+      });
+      onDone(r);
+      onClose();
+    } catch (e) {
+      setError(errorText(e));
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div
+      onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
+      style={{ position: 'fixed', inset: 0, background: 'rgba(17,24,39,0.45)', zIndex: 3000, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '8vh 16px' }}
+    >
+      <div style={{ background: C.white, borderRadius: 14, width: 'min(680px, 100%)', boxShadow: '0 20px 50px rgba(0,0,0,0.25)' }}>
+        <div style={{ padding: '16px 20px', borderBottom: `1px solid ${C.greyB}`, fontSize: 17, fontWeight: 800 }}>
+          Commande de renvoi — retour n°{ret.id}
+        </div>
+        <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 14 }}>
+          {!data && !error && <span style={{ color: C.greyT }}>Lecture du stock BMS…</span>}
+          {data && (
+            <>
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr><th style={th}>Article</th><th style={{ ...th, textAlign: 'right' }}>Dispo BMS</th><th style={{ ...th, textAlign: 'right' }}>À renvoyer</th></tr>
+                </thead>
+                <tbody>
+                  {data.items.map(i => {
+                    const q = qty[i.lineId] || 0;
+                    const ko = q > 0 && (i.available == null || i.available < q);
+                    return (
+                      <tr key={i.lineId}>
+                        <td style={td}>{i.name}<div style={{ fontSize: 12, color: C.greyT }}>{i.sku}</div></td>
+                        <td style={{ ...td, textAlign: 'right', color: ko ? C.red : C.dark, fontWeight: 700 }}>
+                          {i.available ?? <span title={i.stockError}>?</span>}
+                        </td>
+                        <td style={{ ...td, textAlign: 'right' }}>
+                          <input
+                            type="number" min={0} value={q}
+                            onChange={e => setQty(s => ({ ...s, [i.lineId]: Math.max(0, Number.parseInt(e.target.value, 10) || 0) }))}
+                            style={{ ...field, width: 64, textAlign: 'right' }}
+                          />
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+              <div style={{ fontSize: 13.5 }}>
+                Expédition : <strong>{data.plan?.method || '—'}</strong>
+                {data.plan && data.plan.method !== data.shippingMethod && <span style={{ color: C.greyT }}> (au lieu de {data.shippingMethod})</span>}
+                {data.plan?.keepRelay && data.relayPoint?.id && <div style={{ fontSize: 12.5, color: C.greyT }}>Point relais repris : {data.relayPoint.name || data.relayPoint.id}</div>}
+                {data.plan?.needsRelay && !data.plan.keepRelay && <div style={{ fontSize: 12.5, color: C.amber, fontWeight: 600 }}>Le point 2Shop sera à saisir dans la nouvelle commande.</div>}
+              </div>
+              <div style={{ fontSize: 12.5, color: C.greyT }}>
+                Commande à 0 €, statut « En cours », note « SAV commande N°{ret.wp_order_id} ». WooCommerce enverra son email habituel au client.
+              </div>
+            </>
+          )}
+          {error && <div style={{ color: C.red, fontWeight: 600, fontSize: 13.5 }}>{error}</div>}
+        </div>
+        <div style={{ padding: '14px 20px', borderTop: `1px solid ${C.greyB}`, display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+          <button type="button" onClick={onClose} style={btn('ghost')}>Annuler</button>
+          <button type="button" onClick={submit} disabled={!canSubmit} style={btn('primary', !canSubmit)}>
+            {saving ? 'Création…' : 'Créer la commande'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function OutcomePanel({ ret, canWrite, onDone, setMessage }) {
   const [editing, setEditing] = useState(!ret.treated_at);
   const [outcome, setOutcome] = useState(ret.outcome || '');
   const [ref, setRef] = useState(ret.outcome_ref || '');
+  const [withShipping, setWithShipping] = useState(false);
+  const [points, setPoints] = useState(ret.suggested_points?.lines || 0);
+  const [replacementOpen, setReplacementOpen] = useState(false);
   const [saving, setSaving] = useState(false);
 
-  const save = async () => {
+  const post = async (path, body, okText) => {
     setSaving(true);
     try {
-      const { data } = await axios.post(`${RETURNS_API}/${ret.id}/treat`, { outcome, outcomeRef: ref });
-      setMessage({ kind: 'ok', text: 'Issue enregistrée.' });
+      const { data } = await axios.post(`${RETURNS_API}/${ret.id}/${path}`, body);
+      setMessage({ kind: 'ok', text: okText });
       setEditing(false);
       onDone(data);
     } catch (e) {
@@ -366,43 +468,122 @@ function OutcomePanel({ ret, canWrite, onDone, setMessage }) {
     setSaving(false);
   };
 
+  const toggleShipping = (v) => {
+    setWithShipping(v);
+    setPoints(v ? ret.suggested_points.withShipping : ret.suggested_points.lines);
+  };
+
+  const creditPoints = () => {
+    if (!window.confirm(`Créditer ${points} points (${euro(points / 100)}) à ${ret.billing_email} ?`)) return;
+    post('points', { points }, `${points} points crédités.`);
+  };
+
+  const done = ret.treated_at && !editing;
+
   return (
     <div style={panel}>
       <div style={{ fontSize: 16, fontWeight: 800, color: C.dark, marginBottom: 10 }}>Issue client</div>
-      {ret.treated_at && !editing ? (
+
+      {done ? (
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
           <Chip color={C.green} bg={C.greenL}>{OUTCOMES[ret.outcome]} ✓</Chip>
-          {ret.outcome_ref && <strong>{ret.outcome_ref}</strong>}
+          {ret.replacement_order_id
+            ? <a href={`/orders/${ret.replacement_order_id}`} target="_blank" rel="noopener noreferrer" style={link}>{ret.outcome_ref}</a>
+            : ret.outcome_ref && <strong>{ret.outcome_ref}</strong>}
           <span style={{ fontSize: 12.5, color: C.greyT }}>
-            {ret.treated_by_name} · {formatDateUTC(ret.treated_at)}
+            {ret.treated_by_name || 'rapproché automatiquement'} · {formatDateUTC(ret.treated_at)}
           </span>
-          {canWrite && <button type="button" onClick={() => setEditing(true)} style={{ ...btn('ghost'), padding: '5px 10px', fontSize: 12.5 }}>Modifier</button>}
+          {canWrite && !ret.replacement_order_id && !ret.loyalty_credited_at && !ret.refund_wp_id && (
+            <button type="button" onClick={() => setEditing(true)} style={{ ...btn('ghost'), padding: '5px 10px', fontSize: 12.5 }}>Modifier</button>
+          )}
         </div>
-      ) : canWrite ? (
-        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end' }}>
-          <div>
-            <div style={label}>Issue</div>
-            <select value={outcome} onChange={e => setOutcome(e.target.value)} style={{ ...field, minWidth: 180 }}>
-              <option value="">—</option>
-              {Object.entries(OUTCOMES).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-            </select>
-          </div>
-          <div style={{ flex: 1, minWidth: 220 }}>
-            <div style={label}>{OUTCOME_REF_HINT[outcome] || 'Référence'}</div>
-            <input value={ref} onChange={e => setRef(e.target.value)} style={{ ...field, width: '100%' }} />
-          </div>
-          <button type="button" onClick={save} disabled={!outcome || saving} style={btn('primary', !outcome || saving)}>
-            {saving ? '…' : 'Marquer comme fait'}
-          </button>
-          {ret.treated_at && <button type="button" onClick={() => setEditing(false)} style={btn('ghost')}>Annuler</button>}
-        </div>
-      ) : (
+      ) : !canWrite ? (
         <span style={{ color: C.greyT }}>Prévue : {OUTCOMES[ret.outcome] || '—'}</span>
-      )}
-      {!ret.treated_at && (
-        <div style={{ fontSize: 12.5, color: C.greyT, marginTop: 8 }}>
-          Renvoi : commande créée à la main avec la note « SAV commande N°{ret.wp_order_id} ». Remboursement : dans WooCommerce.
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {Object.entries(OUTCOMES).map(([k, v]) => (
+              <button
+                key={k} type="button" onClick={() => setOutcome(k)}
+                style={{
+                  ...btn('ghost'), padding: '6px 12px', fontSize: 13,
+                  borderColor: outcome === k ? RETURNS_COLOR : C.greyB,
+                  background: outcome === k ? RETURNS_COLOR_L : C.white,
+                  color: outcome === k ? RETURNS_COLOR : C.dark,
+                }}
+              >{v}</button>
+            ))}
+          </div>
+
+          {outcome === 'renvoi' && (
+            <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+              <button type="button" onClick={() => setReplacementOpen(true)} style={btn('primary')}>Créer la commande de renvoi</button>
+              <span style={{ fontSize: 12.5, color: C.greyT }}>Commande WooCommerce à 0 €, stock BMS vérifié.</span>
+            </div>
+          )}
+
+          {outcome === 'points' && (
+            <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+              <input
+                type="number" min={1} value={points}
+                onChange={e => setPoints(Math.max(0, Number.parseInt(e.target.value, 10) || 0))}
+                style={{ ...field, width: 110, textAlign: 'right' }}
+              />
+              <span style={{ fontSize: 13.5 }}>points = {euro(points / 100)}</span>
+              {ret.shipping_paid > 0 && (
+                <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13.5, cursor: 'pointer' }}>
+                  <input type="checkbox" checked={withShipping} onChange={e => toggleShipping(e.target.checked)} />
+                  + frais de port ({euro(ret.shipping_paid)})
+                </label>
+              )}
+              <button type="button" onClick={creditPoints} disabled={!points || saving} style={btn('primary', !points || saving)}>
+                Créditer les points
+              </button>
+            </div>
+          )}
+
+          {outcome === 'remboursement' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <div style={{ fontSize: 13, color: C.greyT }}>
+                Rembourser dans WooCommerce : le remboursement est rattaché tout seul (toutes les 30 min), ou ici.
+              </div>
+              {ret.refunds.length === 0 && <span style={{ fontSize: 13.5 }}>Aucun remboursement sur la commande pour l’instant.</span>}
+              {ret.refunds.map(f => (
+                <div key={f.wp_refund_id} style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13.5 }}>
+                  <strong>{euro(f.refund_amount)}</strong>
+                  <span style={{ color: C.greyT }}>{formatDate(f.refund_date)}{f.refund_reason ? ` · ${f.refund_reason}` : ''}</span>
+                  {f.linked_return_id
+                    ? <span style={{ color: C.greyT }}>rattaché au retour n°{f.linked_return_id}</span>
+                    : (
+                      <button
+                        type="button" disabled={saving}
+                        onClick={() => post('refund', { wpRefundId: f.wp_refund_id }, 'Remboursement rattaché.')}
+                        style={{ ...btn('ghost'), padding: '4px 10px', fontSize: 12.5 }}
+                      >Rattacher</button>
+                    )}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {outcome === 'aucune' && (
+            <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+              <div style={{ flex: 1, minWidth: 220 }}>
+                <div style={label}>{OUTCOME_REF_HINT.aucune}</div>
+                <input value={ref} onChange={e => setRef(e.target.value)} style={{ ...field, width: '100%' }} />
+              </div>
+              <button type="button" onClick={() => post('treat', { outcome, outcomeRef: ref }, 'Issue enregistrée.')} disabled={saving} style={btn('primary', saving)}>
+                Marquer comme fait
+              </button>
+            </div>
+          )}
+
+          {ret.treated_at && <button type="button" onClick={() => setEditing(false)} style={{ ...btn('ghost'), alignSelf: 'flex-start' }}>Annuler</button>}
         </div>
+      )}
+
+      {replacementOpen && (
+        <ReplacementModal ret={ret} onClose={() => setReplacementOpen(false)} onDone={onDone} setMessage={setMessage} />
       )}
     </div>
   );
@@ -475,6 +656,17 @@ function DetailView({ id, navigate, canWrite }) {
           {cancelled && <Meta k="Annulé">{ret.cancelled_by_name}<div style={{ fontSize: 12, color: C.greyT }}>{formatDateUTC(ret.cancelled_at)}</div></Meta>}
         </div>
         {ret.note && <div style={{ marginTop: 14, padding: '8px 12px', background: C.grey, borderRadius: 8, fontSize: 13.5 }}>{ret.note}</div>}
+        {canWrite && ret.return_required && !cancelled && (
+          <div style={{ marginTop: 16, paddingTop: 14, borderTop: `1px solid ${C.greyB}` }}>
+            <ReturnLabelActions ret={ret} ticketId={null} onChange={setRet} />
+            {ret.has_label && (
+              <div style={{ fontSize: 12, color: C.greyT, marginTop: 6 }}>
+                Créée par {ret.label_created_by_name || '—'} · {formatDateUTC(ret.label_created_at)}.
+                Pour l’envoyer au client, ouvrir le ticket : « Joindre à la réponse » sous la commande.
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {canWrite && !cancelled && !ret.received_at
@@ -573,6 +765,25 @@ function SupplierView({ supplierId, navigate, canWrite }) {
     setSaving(false);
   };
 
+  const linkCredit = async (batchId, documentId) => {
+    try {
+      const { data: d } = await axios.post(`${RETURNS_API}/batches/${batchId}/credits`, { documentId });
+      setData(d);
+      setMessage({ kind: 'ok', text: `Avoir lié : le renvoi n°${batchId} est soldé.` });
+    } catch (e) {
+      setMessage({ kind: 'error', text: errorText(e) });
+    }
+  };
+  const unlinkCredit = async (batchId, documentId) => {
+    if (!window.confirm('Délier cet avoir du renvoi ?')) return;
+    try {
+      const { data: d } = await axios.delete(`${RETURNS_API}/batches/${batchId}/credits/${documentId}`);
+      setData(d);
+    } catch (e) {
+      setMessage({ kind: 'error', text: errorText(e) });
+    }
+  };
+
   if (error) return <Banner kind="error">{error}</Banner>;
   if (!data) return <p style={{ color: C.greyT }}>Chargement…</p>;
 
@@ -637,7 +848,7 @@ function SupplierView({ supplierId, navigate, canWrite }) {
               <tr>
                 <th style={th}>N°</th><th style={th}>Date</th><th style={th}>Par</th>
                 <th style={{ ...th, textAlign: 'right' }}>Lignes</th><th style={{ ...th, textAlign: 'right' }}>Pièces</th>
-                <th style={{ ...th, textAlign: 'right' }}>Valeur HT</th><th style={th}>Statut</th><th style={th} />
+                <th style={{ ...th, textAlign: 'right' }}>Valeur HT</th><th style={th}>Statut</th><th style={th}>Avoir</th><th style={th} />
               </tr>
             </thead>
             <tbody>
@@ -650,6 +861,33 @@ function SupplierView({ supplierId, navigate, canWrite }) {
                   <td style={{ ...td, textAlign: 'right' }}>{b.pieces}</td>
                   <td style={{ ...td, textAlign: 'right' }}>{euro(b.value)}</td>
                   <td style={td}>{b.status === 'solde' ? <Chip color={C.green} bg={C.greenL}>Soldé</Chip> : <Chip color={C.blue} bg={C.blueL}>Envoyé</Chip>}</td>
+                  <td style={td}>
+                    {b.credits.map(c => (
+                      <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5 }}>
+                        Avoir <strong>{c.number}</strong> · {euro(Math.abs(c.total_ht))} HT
+                        {canWrite && (
+                          <button type="button" title="Délier" onClick={() => unlinkCredit(b.id, c.id)}
+                            style={{ border: 'none', background: 'none', cursor: 'pointer', color: C.greyT }}>✕</button>
+                        )}
+                      </div>
+                    ))}
+                    {b.credits.length > 0 && (
+                      <div style={{ fontSize: 12, color: b.credited < Number(b.value) ? C.red : C.green, fontWeight: 700 }}>
+                        {b.credited < Number(b.value) ? `Perte : ${euro(Number(b.value) - b.credited)}` : 'Couvert'}
+                      </div>
+                    )}
+                    {canWrite && data.availableCredits.length > 0 && (
+                      <select value="" onChange={e => e.target.value && linkCredit(b.id, Number(e.target.value))} style={{ ...field, fontSize: 12.5, padding: '4px 6px', marginTop: 4 }}>
+                        <option value="">{b.credits.length ? '+ autre avoir…' : 'Lier un avoir…'}</option>
+                        {data.availableCredits.map(c => (
+                          <option key={c.id} value={c.id}>{c.number} — {formatDate(c.doc_date, { time: false })} — {euro(Math.abs(c.total_ht))} HT</option>
+                        ))}
+                      </select>
+                    )}
+                    {canWrite && !data.availableCredits.length && !b.credits.length && (
+                      <span style={{ fontSize: 12, color: C.greyT }}>Aucun avoir saisi (app Factures)</span>
+                    )}
+                  </td>
                   <td style={td}>
                     <button
                       type="button"

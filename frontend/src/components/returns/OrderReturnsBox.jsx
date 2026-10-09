@@ -4,6 +4,7 @@ import { C } from '../picking/pickingUi';
 import useTicketsAccess from '../tickets/useTicketsAccess';
 import { formatDateUTC } from '../../utils/dateUtils';
 import CreateReturnModal from './CreateReturnModal';
+import ReturnLabelActions from './ReturnLabelActions';
 import { RETURNS_API, RETURNS_COLOR, REASONS, StatusChip, btn } from './returnsUi';
 
 /**
@@ -31,18 +32,23 @@ export default function OrderReturnsBox({ wpOrderId, ticketId, concernedProducts
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 6, ...style }}>
       {returns.map(r => (
-        <a
-          key={r.id} href={`/retours/${r.id}`} target="_blank" rel="noopener noreferrer"
-          style={{
-            display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', padding: '7px 10px', borderRadius: 8,
-            border: `1px solid ${C.greyB}`, background: C.white, textDecoration: 'none', color: C.dark, fontSize: 12.5,
-          }}
-        >
-          <strong style={{ color: RETURNS_COLOR }}>Retour n°{r.id}</strong>
-          <span>{REASONS[r.reason]}</span>
-          <StatusChip status={r.status} />
-          <span style={{ marginLeft: 'auto', color: C.greyT }}>{formatDateUTC(r.created_at, { time: false })}</span>
-        </a>
+        <div key={r.id} style={{ padding: '7px 10px', borderRadius: 8, border: `1px solid ${C.greyB}`, background: C.white, fontSize: 12.5 }}>
+          <a
+            href={`/retours/${r.id}`} target="_blank" rel="noopener noreferrer"
+            style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', textDecoration: 'none', color: C.dark }}
+          >
+            <strong style={{ color: RETURNS_COLOR }}>Retour n°{r.id}</strong>
+            <span>{REASONS[r.reason]}</span>
+            <StatusChip status={r.status} />
+            <span style={{ marginLeft: 'auto', color: C.greyT }}>{formatDateUTC(r.created_at, { time: false })}</span>
+          </a>
+          {/* Dans un ticket : l'étiquette retour se crée et se joint à la réponse d'ici. */}
+          {ticketId && canWrite && (
+            <div style={{ marginTop: 6 }}>
+              <ReturnLabelActions ret={r} ticketId={ticketId} onChange={load} small />
+            </div>
+          )}
+        </div>
       ))}
       {canWrite && (
         <button type="button" onClick={() => setOpen(true)} style={{ ...btn('ghost'), color: RETURNS_COLOR, borderColor: RETURNS_COLOR, alignSelf: 'flex-start', padding: '6px 12px', fontSize: 12.5 }}>

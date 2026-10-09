@@ -161,7 +161,60 @@ const suggestSupplier = (receipts, paidAt) => {
   return (before || sorted[0]).supplier_id;
 };
 
+// ── Lot 2 : issue client ────────────────────────────────────────────────────
+
+/** 100 points = 1 € (décision Pierre du 09/10/2026). */
+const POINTS_PER_EURO = 100;
+
+/**
+ * Points proposés : le prix payé des pièces retournées, frais de port en option.
+ * Un pack porte son prix, ses composants sont à 0 : sommer toutes les lignes
+ * ne compte donc rien deux fois.
+ */
+const suggestPoints = (lines, { shippingPaid = 0, withShipping = false } = {}) => {
+  const paid = lines.reduce((n, l) => n + (Number(l.qty) || 0) * (Number(l.unit_paid) || 0), 0);
+  const euros = paid + (withShipping ? Number(shippingPaid) || 0 : 0);
+  return Math.round(euros * POINTS_PER_EURO);
+};
+
+/**
+ * Méthode d'expédition de la commande de renvoi. On reprend celle d'origine,
+ * sauf Chronopost : le relais part en 2Shop, le domicile en Colissimo
+ * (décision Pierre du 09/10/2026). Le point relais n'est repris que si le
+ * réseau ne change pas — un point Chronopost n'est pas un point 2Shop.
+ *
+ * @returns {{method: string, keepRelay: boolean, needsRelay: boolean}}
+ */
+const REPLACEMENT_METHOD = {
+  'Chronopost Relais 24h': '2Shop',
+  'Chronopost Domicile 24h': 'Colissimo Domicile',
+  'Chronopost Express': 'Colissimo Domicile',
+};
+const replacementShipping = (denomination) => {
+  const method = REPLACEMENT_METHOD[denomination] || denomination;
+  const changed = method !== denomination;
+  return { method, keepRelay: !changed, needsRelay: method === '2Shop' };
+};
+
+/**
+ * Remboursement WooCommerce à rattacher à un retour : le premier de la
+ * commande, fait après la création du retour, que personne n'a encore pris.
+ * WooCommerce date en heure de Paris : `createdAt` doit donc être l'heure de
+ * Paris de la création du retour (l'appelant la convertit), pas l'UTC.
+ */
+const pickRefund = (refunds, takenIds, createdAt) => {
+  const t = new Date(createdAt).getTime();
+  return [...(refunds || [])]
+    .filter(r => !takenIds.has(Number(r.wp_refund_id)))
+    .filter(r => r.refund_date && new Date(r.refund_date).getTime() >= t)
+    .sort((a, b) => new Date(a.refund_date) - new Date(b.refund_date))[0] || null;
+};
+
 module.exports = {
+  POINTS_PER_EURO,
+  suggestPoints,
+  replacementShipping,
+  pickRefund,
   REASONS,
   OUTCOMES,
   unitPaid,

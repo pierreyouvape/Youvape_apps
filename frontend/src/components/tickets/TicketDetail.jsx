@@ -851,6 +851,16 @@ function ReplyComposer({
 
   const removeFile = (i) => setFiles(prev => prev.filter((_, idx) => idx !== i));
 
+  // Étiquette retour jointe depuis le bloc Retours de la commande (OrderReturnsBox).
+  useEffect(() => {
+    const onAttach = (e) => {
+      if (String(e.detail?.ticketId) !== String(ticketId) || !e.detail?.file) return;
+      setFiles(prev => [...prev, e.detail.file]);
+    };
+    window.addEventListener('sav:attach-file', onAttach);
+    return () => window.removeEventListener('sav:attach-file', onAttach);
+  }, [ticketId]);
+
   // Vrai si l'éditeur contient du texte réel (Tiptap garde un <p></p> vide qui
   // ne doit pas compter comme du contenu). Fallback sur body si l'éditeur n'est
   // pas encore monté.

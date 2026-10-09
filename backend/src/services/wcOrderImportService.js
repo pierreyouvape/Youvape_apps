@@ -239,8 +239,11 @@ const toSyncPayload = (o) => {
   };
 };
 
-/** Lit une commande dans l'API REST WooCommerce (identifiants de `rewards_config`). */
-const fetchWcOrder = async (wpOrderId) => {
+/**
+ * Appel à l'API REST WooCommerce (identifiants de `rewards_config`).
+ * Partagé avec les Retours, qui créent les commandes de renvoi.
+ */
+const wcRequest = async (method, path, body = null) => {
   const { rows } = await pool.query(
     'SELECT woocommerce_url, consumer_key, consumer_secret, htaccess_user, htaccess_password FROM rewards_config LIMIT 1'
   );
@@ -251,14 +254,20 @@ const fetchWcOrder = async (wpOrderId) => {
   if (cfg.htaccess_user && cfg.htaccess_password) {
     headers.Authorization = `Basic ${Buffer.from(`${cfg.htaccess_user}:${cfg.htaccess_password}`).toString('base64')}`;
   }
-  const { data } = await axios.get(`${cfg.woocommerce_url.replace(/\/$/, '')}/wp-json/wc/v3/orders/${wpOrderId}`, {
+  const { data } = await axios({
+    method,
+    url: `${cfg.woocommerce_url.replace(/\/$/, '')}/wp-json/wc/v3${path}`,
     params: { consumer_key: cfg.consumer_key, consumer_secret: cfg.consumer_secret },
+    data: body || undefined,
     headers,
     httpsAgent,
-    timeout: 15000
+    timeout: 30000
   });
   return data;
 };
+
+/** Lit une commande dans l'API REST WooCommerce. */
+const fetchWcOrder = (wpOrderId) => wcRequest('get', `/orders/${wpOrderId}`);
 
 /**
  * Importe (ou met à jour) une commande depuis WooCommerce, par le chemin de la synchro.
@@ -333,4 +342,4 @@ const importMissingBmsOrders = async () => {
   return imported;
 };
 
-module.exports = { toSyncPayload, fetchWcOrder, importOrder, importMissingBmsOrders };
+module.exports = { toSyncPayload, wcRequest, fetchWcOrder, importOrder, importMissingBmsOrders };
