@@ -827,6 +827,21 @@ test('20 boîtes de 2 facturées contre 40 unités commandées : rien à réclam
   // chiffres nés de la comparaison de deux unités différentes.
 });
 
+test('1 pièce facturée pour 2 commandées : un manquant, pas un carton de 2', () => {
+  // LCA F2610415970, #REF18596-62331 : 2 commandés à 2,90 €, 1 facturé 3,44 €.
+  // Lue « carton de 2 », la ligne affichait 1,72 € la pièce.
+  const r = compareInvoiceToOrder({
+    invoice: { lines: [{ ref: '#REF18596-62331', qty: 1, lineTotalHt: 3.44 }] },
+    order: { lines: [{ ref: '#REF18596-62331', qty: 2, price: 2.90 }] },
+  });
+  const l = r.lines[0];
+  assert.strictEqual(l.unitMismatch, false);
+  assert.strictEqual(l.verdict, 'qty_price');
+  assert.ok(close(l.invoicedUnitPrice, 3.44), `${l.invoicedUnitPrice} au lieu de 3,44`);
+  assert.strictEqual(l.gapQty, -2.90);
+  assert.strictEqual(l.gapPrice, 0.54);
+});
+
 test('un rapport non entier reste une vraie anomalie', () => {
   // 8 commandés, 7 facturés : ce n'est pas un conditionnement, c'est un manquant.
   const r = compareInvoiceToOrder({

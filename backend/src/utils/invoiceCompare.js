@@ -364,7 +364,24 @@ function compareInvoiceToOrder({ invoice, order, options = {} }) {
     //
     // Il n'y a donc RIEN de manquant ici, et tout l'écart est un écart de tarif, qui
     // ne se lit qu'À LA PIÈCE : c'est la seule unité que les deux côtés partagent.
-    const unitMismatch = !isPackaging && packFactor !== null;
+    //
+    // Mais un rapport entier ne prouve pas un carton : 1 pièce facturée pour 2
+    // commandées est aussi un rapport de 2. Facture LCA F2610415970, ligne
+    // #REF18596-62331 : 2 Dojo commandés à 2,90 €, 1 facturé 3,44 €. Lue « carton
+    // de 2 », la ligne affichait 1,72 € la pièce — un tarif que LCA n'a jamais
+    // pratiqué. Ce qui tranche, c'est le prix : la lecture retenue est celle dont
+    // le prix unitaire s'écarte le moins du prix commandé. 25,96 € pour 5 pièces
+    // commandées à 4,50 € ne se lit qu'au carton (5,19 €/pièce) ; 3,44 € pour une
+    // pièce commandée 2,90 € ne se lit qu'à la pièce.
+    const cartonExplainsPrice = (() => {
+      if (packFactor === null || !(expectedUnitPrice > 0) || !(invoicedTotal > 0)) return false;
+      const asPieces = invoicedUnitPrice / expectedUnitPrice;
+      // Au carton, les deux côtés comptent les mêmes pièces : le rapport des prix
+      // à la pièce est celui des montants.
+      const asCarton = invoicedTotal / expectedTotal;
+      return Math.abs(Math.log(asCarton)) < Math.abs(Math.log(asPieces));
+    })();
+    const unitMismatch = !isPackaging && packFactor !== null && cartonExplainsPrice;
     const pieces = unitMismatch ? Math.max(inv.qty, qtyOrdered) : inv.qty;
     const expectedPerPiece = unitMismatch && pieces > 0 ? expectedTotal / pieces : expectedUnitPrice;
     const invoicedPerPiece = unitMismatch && pieces > 0 ? invoicedTotal / pieces : invoicedUnitPrice;
