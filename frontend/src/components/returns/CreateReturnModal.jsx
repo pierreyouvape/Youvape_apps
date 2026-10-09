@@ -34,7 +34,7 @@ export default function CreateReturnModal({ wpOrderId, ticketId, concernedProduc
         // Produits signalés dans le ticket : pré-cochés.
         const pre = {};
         for (const cp of Array.isArray(initialConcerned) ? initialConcerned : []) {
-          const line = data.lines.find(l => l.sku && l.sku === cp.sku && !l.bundleOf);
+          const line = data.lines.find(l => l.sku && l.sku === cp.sku);
           if (line && line.returnable) pre[line.orderItemId] = Math.min(line.returnable, Number(cp.qty) || 1);
         }
         setQty(pre);
@@ -154,15 +154,18 @@ export default function CreateReturnModal({ wpOrderId, ticketId, concernedProduc
                               {l.returnable < l.qty && ` · ${l.qty - l.returnable} déjà retourné(s)`}
                             </div>
                           </td>
-                          <td style={{ padding: '7px 6px', width: 110, textAlign: 'right' }}>
+                          <td style={{ padding: '7px 6px', width: 130, textAlign: 'right', whiteSpace: 'nowrap' }}>
                             {l.bundleOf && parentQty ? (
                               <span style={{ fontSize: 12, color: C.greyT }}>avec le pack</span>
                             ) : l.returnable ? (
-                              <input
-                                type="number" min={0} max={l.returnable} value={qty[l.orderItemId] || 0}
-                                onChange={e => setLineQty(l, e.target.value)}
-                                style={{ ...field, width: 70, textAlign: 'right' }}
-                              />
+                              <>
+                                <input
+                                  type="number" min={0} max={l.returnable} value={qty[l.orderItemId] || 0}
+                                  onChange={e => setLineQty(l, e.target.value)}
+                                  style={{ ...field, width: 70, textAlign: 'right' }}
+                                />
+                                <span style={{ marginLeft: 8, fontSize: 13.5, color: C.greyT, fontWeight: 600 }}>/ {l.returnable}</span>
+                              </>
                             ) : (
                               <span style={{ fontSize: 12, color: C.greyT }}>déjà retourné</span>
                             )}
