@@ -58,11 +58,38 @@ async function applyTariffs(req, res) {
     }
 
     const result = await supplierDocumentModel.applyTariffs(supplierId, orderId, tariffs);
-    return res.json(result);
+    const recontroles = await recontrolerFacturesDe(orderId);
+    return res.json({ ...result, recontroles });
   } catch (error) {
     console.error('[supplier-invoices] application des tarifs :', error.message);
     return res.status(error.status || 500).json({ error: error.message || 'Erreur serveur' });
   }
+}
+
+/**
+ * Recontrôler les factures DÉJÀ ENREGISTRÉES d'une commande dont on vient de
+ * changer un tarif.
+ *
+ * Leurs lignes sont figées à l'enregistrement, et le message au commercial se
+ * construit à partir d'elles. F2610415970 : enregistrée à 12h16m17, les Dojo
+ * passées au tarif négocié de 3,00 € trente secondes plus tard depuis l'écran
+ * de contrôle — le message réclamait encore contre 2,90 € et 2,83 €. Un échec
+ * ici (PDF introuvable…) ne fait pas échouer le tarif, déjà inscrit.
+ */
+async function recontrolerFacturesDe(orderId) {
+  const faits = [];
+  for (const id of await supplierDocumentModel.listDocumentIdsForOrder(orderId)) {
+    try {
+      const document = await supplierDocumentModel.getDocument(id);
+      if (!document || (document.orders[0] || {}).id !== orderId) continue;
+      const analysis = await reanalyse(document);
+      await supplierDocumentModel.replaceLines(id, analysis.comparison, undefined, analysis.vouchersUsed);
+      faits.push({ id, number: document.number });
+    } catch (e) {
+      console.error(`[supplier-invoices] recontrôle du document ${id} :`, e.message);
+    }
+  }
+  return faits;
 }
 
 /** GET /api/supplier-invoices/orders — commandes à proposer au rapprochement. */

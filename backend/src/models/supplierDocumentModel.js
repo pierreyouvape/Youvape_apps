@@ -944,8 +944,18 @@ async function replaceLines(documentId, comparison, db = pool, vouchersUsed = nu
   }
 }
 
+/** Les documents enregistrés rattachés à une commande (pour les recontrôler). */
+async function listDocumentIdsForOrder(orderId, db = pool) {
+  const { rows } = await db.query(
+    'SELECT DISTINCT document_id FROM supplier_document_orders WHERE purchase_order_id = $1',
+    [orderId],
+  );
+  return rows.map((r) => r.document_id);
+}
+
 module.exports = {
   replaceLines,
+  listDocumentIdsForOrder,
   // `alignTariffs` n'est plus exportée : elle n'a plus qu'un appelant, juste
   // en dessous. Le geste offert à l'écran est `applyTariffs`.
   applyTariffs,
