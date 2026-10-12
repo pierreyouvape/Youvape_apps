@@ -125,8 +125,24 @@ export const useScanner = (onScan, enabled) => {
     sink.addEventListener('input', onSinkInput);
     sink.addEventListener('keydown', onSinkKey);
 
+    // Variantes EA530 contre le clavier virtuel (?scansink=ro|late) :
+    //   ro   : focalisé en lecture seule (pas de clavier), rendu modifiable après ;
+    //   late : focalisé normalement, passé en inputmode="none" juste après.
+    let swap = null;
     const grab = () => {
-      if (!isField(document.activeElement)) sink.focus({ preventScroll: true });
+      if (isField(document.activeElement)) return;
+      clearTimeout(swap);
+      if (sinkMode === 'ro') {
+        sink.readOnly = true;
+        sink.focus({ preventScroll: true });
+        swap = setTimeout(() => { sink.readOnly = false; }, 100);
+      } else if (sinkMode === 'late') {
+        sink.removeAttribute('inputmode');
+        sink.focus({ preventScroll: true });
+        swap = setTimeout(() => sink.setAttribute('inputmode', 'none'), 100);
+      } else {
+        sink.focus({ preventScroll: true });
+      }
     };
     // Un bouton touché vole le focus : on le reprend dès qu'il est libre.
     const onFocusOut = () => setTimeout(grab, 0);
@@ -149,6 +165,7 @@ export const useScanner = (onScan, enabled) => {
     document.addEventListener('keydown', onKey);
     return () => {
       clearTimeout(stale);
+      clearTimeout(swap);
       document.removeEventListener('keydown', onKey);
       document.removeEventListener('focusout', onFocusOut);
       sink.remove();
