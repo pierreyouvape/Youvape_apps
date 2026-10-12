@@ -17,6 +17,7 @@ const { WAREHOUSES } = require('../config/nextore');
 // NeedsTabV2), sans délai de réappro (inutile pour les boutiques).
 const { calculateTrendCoefficient } = require('../services/needsCalculator');
 const { splitNextoreBarcodes } = require('../utils/nextoreBarcodes');
+const boutiqueOrderModel = require('./boutiqueOrderModel');
 
 // --- Nettoyage des valeurs Nextore (tout est string, vide = 'None' ou '') ---
 function s(v) {
@@ -329,8 +330,10 @@ function purchaseRow(r) {
 }
 
 /**
- * Importe les achats REÇUS d'une fenêtre [startDate, endDate] (inclusive).
- * Idempotent : purge la fenêtre puis réinsère.
+ * Importe les lignes d'achat d'une fenêtre [startDate, endDate] (inclusive).
+ * ⚠️ `status=received` renvoie en fait TOUS les achats, en attente compris
+ * (quantity_received = 0) : la preuve d'une réception est quantity_received > 0,
+ * jamais le statut. Idempotent : purge la fenêtre puis réinsère.
  */
 async function syncPurchasesRange(startDate, endDate) {
   const items = await api.getReceivedPurchaseItems(startDate, endDate);
@@ -393,12 +396,12 @@ async function syncPendingPurchases() {
 }
 
 /**
- * Crée un achat EN ATTENTE dans Nextore pour un fournisseur. Le coût unitaire
- * est calculé ici, jamais reçu de l'écran (les vendeurs ne voient pas les prix) :
- * dernier coût payé chez ce fournisseur, sinon son prix sur la fiche, sinon le
- * coût de la fiche.
+ * Crée une commande fournisseur (chez nous, cf. boutiqueOrderModel : elle sera
+ * mise en stock dans Nextore à la réception). Le coût unitaire est calculé ici,
+ * jamais reçu de l'écran : dernier coût payé chez ce fournisseur, sinon son
+ * prix sur la fiche, sinon le coût de la fiche.
  */
-async function createPurchase(warehouse, supplierId, lines) {
+async function createPurchase(warehouse, supplierId, lines, userEmail) {
   const ids = lines.map((l) => String(l.product_id));
   const { rows: sup } = await pool.query('SELECT id FROM nextore_suppliers WHERE id = $1', [String(supplierId)]);
   if (!sup.length) throw Object.assign(new Error(`Fournisseur Nextore inconnu : ${supplierId}`), { status: 400 });
@@ -408,7 +411,7 @@ async function createPurchase(warehouse, supplierId, lines) {
             COALESCE(
               (SELECT pi.unit_cost FROM nextore_purchase_items pi
                WHERE pi.product_id = p.product_id AND pi.supplier_id = $2
-                 AND pi.status = 'received' AND pi.quantity_received > 0
+                 AND pi.quantity_received > 0
                ORDER BY pi.purchased_at DESC, pi.id DESC LIMIT 1),
               NULLIF(p.supplier_refs -> $2 ->> 'price', '')::numeric,
               p.cost, 0)::float AS unit_cost
@@ -422,28 +425,11 @@ async function createPurchase(warehouse, supplierId, lines) {
 
   // Référence lisible, heure de Paris, unique par fournisseur
   const stamp = new Date().toLocaleString('sv-SE', { timeZone: 'Europe/Paris' }).slice(0, 16);
-  const referenceNo = `APP-${warehouse.code}-${stamp.slice(0, 10)}_${stamp.slice(11, 13)}h${stamp.slice(14, 16)}-${supplierId}`;
-  return sendPurchase(warehouse, supplierId, referenceNo,
-    lines.map((l) => ({ product_id: l.product_id, quantity: l.quantity, unit_cost: costById.get(String(l.product_id)) })));
-}
-
-/**
- * Envoie un achat EN ATTENTE à Nextore. lines = [{ product_id, quantity, unit_cost }]
- * en PIÈCES, coût HT d'une pièce. Partagé par les Besoins et l'import de commande.
- */
-async function sendPurchase(warehouse, supplierId, referenceNo, lines) {
-  const items = lines.map((l) => ({
-    product_id: String(l.product_id),
-    net_unit_cost: Number(l.unit_cost).toFixed(4),
-    quantity: String(l.quantity),
-  }));
-  // Nextore répond l'id de l'achat créé (ex. 1680)
-  const purchaseId = await api.createPurchase({
-    referenceNo, status: 'pending', supplierId: String(supplierId), warehouseId: warehouse.id, items,
+  const reference = `APP-${warehouse.code}-${stamp.slice(0, 10)}_${stamp.slice(11, 13)}h${stamp.slice(14, 16)}-${supplierId}`;
+  return boutiqueOrderModel.createOrder({
+    warehouse, supplierId, reference, source: 'besoins', userEmail,
+    lines: lines.map((l) => ({ product_id: l.product_id, quantity: l.quantity, unit_cost: costById.get(String(l.product_id)) })),
   });
-  // La commande compte aussitôt dans « En commande » ; un échec ici n'annule rien
-  await syncPendingPurchases().catch((err) => console.error('Nextore achats en attente:', err.message));
-  return { purchaseId, referenceNo, lines: items.length };
 }
 
 // --- Relevé de stock d'une boutique ----------------------------------------
@@ -676,10 +662,19 @@ async function getNeedsData(warehouseId) {
        WHERE status = 'received' AND quantity_received > 0
        GROUP BY product_id
      ),
+     -- En commande : nos commandes ouvertes + les achats en attente saisis dans Nextore
      on_order AS (
-       SELECT product_id, SUM(GREATEST(quantity_ordered - COALESCE(quantity_received, 0), 0))::float AS qty
-       FROM nextore_purchase_items
-       WHERE status = 'pending' AND warehouse_id = $1
+       SELECT product_id, SUM(qty)::float AS qty FROM (
+         SELECT product_id, GREATEST(quantity_ordered - COALESCE(quantity_received, 0), 0) AS qty
+         FROM nextore_purchase_items
+         WHERE status = 'pending' AND warehouse_id = $1
+         UNION ALL
+         SELECT i.product_id, CASE WHEN i.closed_reason IS NOT NULL THEN 0
+                                   ELSE GREATEST(i.qty_ordered - i.qty_received, 0) END
+         FROM boutique_order_items i
+         JOIN boutique_orders o ON o.id = i.order_id
+         WHERE o.warehouse_id = $1 AND o.status = 'open'
+       ) t
        GROUP BY product_id
      )
      SELECT p.product_id, p.name, p.code AS sku, st.stock::float AS stock,
@@ -907,7 +902,6 @@ module.exports = {
   syncRecentPurchases,
   syncPendingPurchases,
   createPurchase,
-  sendPurchase,
   getStockDashboard,
   getStockSummary,
   getNeeds,

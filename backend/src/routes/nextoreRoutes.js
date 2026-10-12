@@ -52,6 +52,17 @@ router.post('/:shop/import/map-line', boutiquePerm('write'), nextoreController.p
 router.post('/:shop/import/refs', boutiquePerm('write'), nextoreController.postImportRef);
 router.post('/:shop/import/purchase', boutiquePerm('write'), nextoreController.postImportPurchase);
 
+// Réception des commandes boutique → achat REÇU dans Nextore à la validation
+router.get('/:shop/reception/orders', boutiquePerm('read'), nextoreController.getReceptionOrders);
+router.get('/:shop/reception/orders/:id', boutiquePerm('read'), nextoreController.getReceptionOrder);
+router.post('/:shop/reception/orders/:id/cancel', boutiquePerm('write'), nextoreController.postReceptionCancel);
+router.post('/:shop/reception/orders/:id/session', boutiquePerm('write'), nextoreController.postReceptionSession);
+router.put('/:shop/reception/sessions/:sessionId/counts/:itemId', boutiquePerm('write'), nextoreController.putReceptionCount);
+router.post('/:shop/reception/sessions/:sessionId/lines', boutiquePerm('write'), nextoreController.postReceptionLine);
+router.post('/:shop/reception/sessions/:sessionId/abandon', boutiquePerm('write'), nextoreController.postReceptionAbandon);
+router.post('/:shop/reception/sessions/:sessionId/validate', boutiquePerm('write'), nextoreController.postReceptionValidate);
+router.post('/:shop/reception/barcodes', boutiquePerm('write'), nextoreController.postReceptionBarcode);
+
 // Historique (évolution) du stock d'un produit dans une boutique
 router.get('/:shop/stock/:productId/history', boutiquePerm('read'), nextoreController.getStockHistory);
 

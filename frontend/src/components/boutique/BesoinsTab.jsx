@@ -287,7 +287,7 @@ export default function BesoinsTab({ shop, token }) {
   const setQty = (id, qty) => setSelected((prev) => { const n = { ...prev }; if (qty > 0) n[id] = qty; else delete n[id]; return n; });
   const fillProps = (key) => setSelected((prev) => { const n = { ...prev }; filtered.forEach((p) => { if (p[key] > 0) n[p.id] = p[key]; }); return n; });
   const productById = useMemo(() => new Map(computed.map((p) => [p.id, p])), [computed]);
-  // Une commande Nextore par fournisseur : celui du filtre, sinon celui de la ligne
+  // Une commande par fournisseur : celui du filtre, sinon celui de la ligne
   const orderGroups = useMemo(() => {
     const groups = new Map();
     for (const [id, qty] of Object.entries(selected)) {
@@ -313,7 +313,7 @@ export default function BesoinsTab({ shop, token }) {
           supplier_id: g.supplierId,
           items: g.lines.map((l) => ({ product_id: l.product_id, quantity: l.quantity })),
         }, auth);
-        results.push({ name: g.name, ok: true, ref: res.data.referenceNo, count: g.lines.length });
+        results.push({ name: g.name, ok: true, ref: res.data.reference, count: g.lines.length });
         sent.push(...g.lines.map((l) => l.product_id));
       } catch (e) {
         results.push({ name: g.name, ok: false, error: e.response?.data?.error || e.message });
@@ -516,13 +516,13 @@ export default function BesoinsTab({ shop, token }) {
               {orderResults ? (
                 orderResults.map((r) => (
                   <div key={r.name} style={{ padding: '8px 0', color: r.ok ? '#16a34a' : '#dc2626' }}>
-                    <strong>{r.name}</strong> — {r.ok ? `achat ${r.ref} créé dans Nextore (${r.count} produit(s)), en attente de réception` : `échec : ${r.error}`}
+                    <strong>{r.name}</strong> — {r.ok ? `commande ${r.ref} créée (${r.count} produit(s)), à réceptionner dans la section Réception` : `échec : ${r.error}`}
                   </div>
                 ))
               ) : (
                 <>
                   <p style={{ marginTop: 0, color: '#555', fontSize: 14 }}>
-                    Un achat <strong>en attente</strong> sera créé dans Nextore par fournisseur. La réception se fait dans Nextore à l'arrivée de la marchandise.
+                    Une commande sera créée par fournisseur. À l'arrivée, elle se réceptionne dans la section <strong>Réception</strong>, qui met le stock Nextore à jour.
                   </p>
                   {orderGroups.map((g) => (
                     <div key={g.supplierId || 'none'} style={{ marginBottom: 14 }}>
@@ -553,7 +553,7 @@ export default function BesoinsTab({ shop, token }) {
                 <>
                   <button className="btn btn-secondary" onClick={closeOrder} disabled={sending}>Annuler</button>
                   <button className="btn btn-primary" onClick={sendOrders} disabled={sending || !orderGroups.some((g) => g.supplierId)}>
-                    {sending ? 'Envoi…' : `Envoyer ${orderGroups.filter((g) => g.supplierId).length} commande(s) à Nextore`}
+                    {sending ? 'Création…' : `Créer ${orderGroups.filter((g) => g.supplierId).length} commande(s)`}
                   </button>
                 </>
               )}

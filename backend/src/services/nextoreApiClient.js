@@ -76,8 +76,9 @@ module.exports = {
     nextoreGet('/sale_items', { start_date: startDate, end_date: endDate }),
 
   /**
-   * Lignes d'achat REÇUES sur une plage (endpoint non documenté). ⚠️ Sans
-   * `status=received`, Nextore ne renvoie que les achats en attente.
+   * Lignes d'achat sur une plage (endpoint non documenté). ⚠️ Sans `status`,
+   * Nextore ne renvoie que les achats en attente ; avec `status=received`, il
+   * renvoie TOUS les achats (reçu = quantity_received > 0).
    */
   getReceivedPurchaseItems: (startDate, endDate) =>
     nextoreGet('/purchase_items', { status: 'received', start_date: startDate, end_date: endDate }),
@@ -89,6 +90,8 @@ module.exports = {
   /**
    * Crée un achat. `purchase_items` = JSON [{ product_id, net_unit_cost, quantity }]
    * passé tel quel dans un champ du formulaire (seule exception à l'urlencoded).
+   * `status=received` met en stock aussitôt. ⚠️ Aucun moyen de réceptionner
+   * plus tard un achat `pending` par l'API, ni de supprimer un achat reçu.
    */
   createPurchase: ({ referenceNo, status, supplierId, warehouseId, items }) =>
     nextoreWrite('POST', '/purchases', {

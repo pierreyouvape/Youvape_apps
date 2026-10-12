@@ -5,6 +5,7 @@
 
 const nextoreModel = require('../models/nextoreModel');
 const nextoreImportModel = require('../models/nextoreImportModel');
+const boutiqueOrderModel = require('../models/boutiqueOrderModel');
 const linksModel = require('../models/nextoreLinksModel');
 const matchService = require('../services/nextoreMatchService');
 const comptageModel = require('../models/nextoreComptageModel');
@@ -101,7 +102,7 @@ async function getNeedsData(req, res) {
   }
 }
 
-// POST /api/nextore/:shop/purchases — crée un achat EN ATTENTE dans Nextore
+// POST /api/nextore/:shop/purchases — crée une commande (réceptionnée ensuite dans l'app)
 // Body : { supplier_id, items: [{ product_id, quantity }] } (pas de prix : calculé serveur)
 async function postPurchase(req, res) {
   const wh = getShopOr400(req, res);
@@ -114,12 +115,12 @@ async function postPurchase(req, res) {
     return res.status(400).json({ error: 'Fournisseur et lignes (quantités entières > 0) requis' });
   }
   try {
-    const result = await nextoreModel.createPurchase(wh, supplierId, lines);
-    console.log(`Nextore achat ${result.referenceNo} créé par ${req.user?.email} (${result.lines} lignes)`);
+    const result = await nextoreModel.createPurchase(wh, supplierId, lines, req.user?.email);
+    console.log(`Boutique commande ${result.reference} créée par ${req.user?.email} (${result.lines} lignes)`);
     res.json(result);
   } catch (err) {
     console.error('Nextore postPurchase:', err);
-    res.status(err.status || 500).json({ error: err.message || 'Erreur création achat Nextore' });
+    res.status(err.status || 500).json({ error: err.message || 'Erreur création commande' });
   }
 }
 
@@ -172,7 +173,7 @@ async function postImportRef(req, res) {
   } catch (err) { sendImportError(res, 'ref', err); }
 }
 
-// POST /api/nextore/:shop/import/purchase — crée l'achat en attente dans Nextore
+// POST /api/nextore/:shop/import/purchase — crée la commande (réceptionnée ensuite dans l'app)
 async function postImportPurchase(req, res) {
   const wh = getShopOr400(req, res);
   if (!wh) return;
@@ -182,10 +183,51 @@ async function postImportPurchase(req, res) {
       nxSupplierId: b.supplier_id, warehouse: wh, referenceNo: b.reference_no, lines: b.lines,
       userEmail: req.user?.email,
     });
-    console.log(`Nextore achat importé ${result.referenceNo} (#${result.purchaseId}) par ${req.user?.email} (${result.lines} lignes)`);
+    console.log(`Boutique commande importée ${result.reference} (#${result.orderId}) par ${req.user?.email} (${result.lines} lignes)`);
     res.json(result);
   } catch (err) { sendImportError(res, 'purchase', err); }
 }
+
+// --- Réception des commandes boutique (boutiqueOrderModel) ------------------
+// Chaque appel est borné à la boutique de l'URL : une commande d'une autre
+// boutique répond 404, même avec un id valide.
+const receptionHandler = (label, fn) => async (req, res) => {
+  const wh = getShopOr400(req, res);
+  if (!wh) return;
+  try {
+    res.json(await fn(wh, req));
+  } catch (err) {
+    if (!err.status || err.status >= 500) console.error(`Boutique réception ${label}:`, err);
+    res.status(err.status || 500).json({ error: err.message || 'Erreur réception' });
+  }
+};
+
+const getReceptionOrders = receptionHandler('orders', async (wh) => ({ orders: await boutiqueOrderModel.listOrders(wh.id) }));
+const getReceptionOrder = receptionHandler('order', (wh, req) => boutiqueOrderModel.getOrder(req.params.id, wh.id));
+const postReceptionCancel = receptionHandler('cancel', async (wh, req) => {
+  await boutiqueOrderModel.cancelOrder(req.params.id, wh.id);
+  return { ok: true };
+});
+const postReceptionSession = receptionHandler('session', (wh, req) =>
+  boutiqueOrderModel.openSession(req.params.id, wh.id, req.user?.email));
+const putReceptionCount = receptionHandler('count', (wh, req) =>
+  boutiqueOrderModel.setCount(req.params.sessionId, wh.id, req.params.itemId, req.body?.units_counted));
+const postReceptionLine = receptionHandler('line', (wh, req) =>
+  boutiqueOrderModel.addLine(req.params.sessionId, wh.id, req.body?.product_id));
+const postReceptionAbandon = receptionHandler('abandon', async (wh, req) => {
+  await boutiqueOrderModel.abandonSession(req.params.sessionId, wh.id);
+  return { ok: true };
+});
+const postReceptionBarcode = receptionHandler('barcode', (wh, req) => boutiqueOrderModel.saveBarcode({
+  barcode: req.body?.barcode, productId: req.body?.product_id, kind: req.body?.kind,
+  packQty: req.body?.pack_qty, userEmail: req.user?.email,
+}));
+const postReceptionValidate = receptionHandler('validate', async (wh, req) => {
+  const result = await boutiqueOrderModel.validateSession(req.params.sessionId, wh, req.body?.motifs, req.user?.email);
+  console.log(`Boutique réception ${wh.code} session ${req.params.sessionId} validée par ${req.user?.email} : `
+    + `${result.pieces} pièces, achat Nextore ${result.nextore_purchase_id || '(aucun envoi)'} ${result.nextore_reference || ''}`);
+  return result;
+});
 
 // GET /api/nextore/:shop/stock/:productId/history — évolution du stock d'un produit
 async function getStockHistory(req, res) {
@@ -445,6 +487,15 @@ module.exports = {
   postImportMapLine,
   postImportRef,
   postImportPurchase,
+  getReceptionOrders,
+  getReceptionOrder,
+  postReceptionCancel,
+  postReceptionSession,
+  putReceptionCount,
+  postReceptionLine,
+  postReceptionAbandon,
+  postReceptionBarcode,
+  postReceptionValidate,
   getSuppliers,
   getStockHistory,
   // Rapprochement caisse <-> site

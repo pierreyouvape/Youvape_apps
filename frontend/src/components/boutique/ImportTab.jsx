@@ -149,7 +149,7 @@ export default function ImportTab({ shop, token }) {
   const discountFactor = linesTotal > 0 && discountTotal < 0 ? Math.max(0, (linesTotal + discountTotal) / linesTotal) : 1;
 
   const send = async () => {
-    if (!window.confirm(`Créer dans Nextore l'achat en attente « ${reference} » (${sendable.length} lignes, ${fmtEur(round2(linesTotal * discountFactor))} HT) ?`)) return;
+    if (!window.confirm(`Créer la commande « ${reference} » (${sendable.length} lignes, ${fmtEur(round2(linesTotal * discountFactor))} HT) ?`)) return;
     setSending(true); setError('');
     try {
       const res = await axios.post(`${API_URL}/nextore/${shop.slug}/import/purchase`, {
@@ -167,7 +167,7 @@ export default function ImportTab({ shop, token }) {
       setResult(res.data);
       reset();
     } catch (e) {
-      setError(e.response?.data?.error || e.message || 'Erreur lors de la création de l\'achat');
+      setError(e.response?.data?.error || e.message || 'Erreur lors de la création de la commande');
     } finally { setSending(false); }
   };
 
@@ -194,7 +194,7 @@ export default function ImportTab({ shop, token }) {
         {error && <div style={{ marginTop: 12, color: '#dc2626', fontWeight: 600 }}>{error}</div>}
         {result && (
           <div style={{ marginTop: 12, color: '#16a34a', fontWeight: 600 }}>
-            Achat « {result.referenceNo} » créé dans Nextore (n° {result.purchaseId}, {result.lines} lignes), en attente de réception.
+            Commande « {result.reference} » créée ({result.lines} lignes) : elle se réceptionne dans la section Réception, qui met le stock Nextore à jour.
           </div>
         )}
       </div>
@@ -207,7 +207,7 @@ export default function ImportTab({ shop, token }) {
 
           <div className="filters-bar" style={{ marginBottom: 12 }}>
             <div className="filter-group">
-              <label>Référence de l'achat Nextore</label>
+              <label>Référence de la commande</label>
               <input type="text" value={reference} onChange={(e) => setReference(e.target.value)} style={{ padding: '6px 10px', border: '1px solid #ddd', borderRadius: 6, width: 220 }} />
             </div>
             {data.order_date && <div className="filter-group"><label>Date du document</label><div style={{ padding: '6px 0' }}>{data.order_date}</div></div>}
@@ -302,7 +302,7 @@ export default function ImportTab({ shop, token }) {
 
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 14, gap: 12, flexWrap: 'wrap' }}>
             <div style={{ fontSize: 13, color: '#555' }}>
-              {unmapped > 0 && <div style={{ color: '#dc2626' }}>{unmapped} ligne(s) sans produit Nextore ne seront pas envoyées.</div>}
+              {unmapped > 0 && <div style={{ color: '#dc2626' }}>{unmapped} ligne(s) sans produit Nextore ne seront pas reprises.</div>}
               {missingPrice > 0 && <div style={{ color: '#dc2626' }}>{missingPrice} ligne(s) sans prix : à saisir avant l'envoi.</div>}
               {data.invoice_total_ht != null && <div>Total produits du document : {fmtEur(data.invoice_total_ht)} HT</div>}
             </div>
@@ -310,7 +310,7 @@ export default function ImportTab({ shop, token }) {
               <strong>{fmtEur(round2(linesTotal * discountFactor))} HT</strong>
               <button className="btn btn-secondary" onClick={reset} disabled={sending}>Annuler</button>
               <button className="btn btn-primary" onClick={send} disabled={sending || !sendable.length || missingPrice > 0 || !reference.trim()}>
-                {sending ? 'Envoi…' : `Créer l'achat dans Nextore (${sendable.length} lignes)`}
+                {sending ? 'Création…' : `Créer la commande (${sendable.length} lignes)`}
               </button>
             </div>
           </div>

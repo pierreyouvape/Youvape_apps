@@ -9,6 +9,8 @@
  *      Nextore, avec le pack de la réf du site — seulement si elle désigne UN
  *      seul produit Nextore ;
  *   3. sinon mapping à la main (mapLine + saveRef), au fil des imports.
+ * Le résultat est une commande gardée chez nous (boutiqueOrderModel), mise en
+ * stock dans Nextore à la réception.
  * Tout est compté en PIÈCES, comme Nextore : la conversion est celle du site
  * (convertLine) avec un pack BMS de 1.
  */
@@ -18,7 +20,7 @@ const parserRegistry = require('../parsers');
 const pdfImportModel = require('./pdfImportModel');
 const { normalizeRef, normalizedSql } = require('./supplierRefModel');
 const { convertLine } = require('../utils/importLineConversion');
-const nextoreModel = require('./nextoreModel');
+const boutiqueOrderModel = require('./boutiqueOrderModel');
 
 const httpError = (status, message, extra = {}) => Object.assign(new Error(message), { status, ...extra });
 
@@ -201,10 +203,17 @@ async function parseDocument(fileBuffer, nxSupplierId, warehouse) {
   let duplicateWarning = null;
   if (parsed.orderNumber) {
     const { rows } = await pool.query(
-      'SELECT 1 FROM nextore_purchase_items WHERE purchase_reference = $1 LIMIT 1',
+      `SELECT 'app' AS src FROM boutique_orders WHERE reference = $1 AND status <> 'cancelled'
+       UNION ALL
+       SELECT 'nextore' FROM nextore_purchase_items WHERE purchase_reference = $1
+       LIMIT 1`,
       [parsed.orderNumber]
     );
-    if (rows.length) duplicateWarning = `Un achat ${parsed.orderNumber} existe déjà dans Nextore`;
+    if (rows.length) {
+      duplicateWarning = rows[0].src === 'app'
+        ? `Une commande ${parsed.orderNumber} existe déjà dans l'app`
+        : `Un achat ${parsed.orderNumber} existe déjà dans Nextore`;
+    }
   }
 
   return {
@@ -296,10 +305,10 @@ async function saveRef({ nxSupplierId, supplierSku, productId, packQty, move = f
 }
 
 /**
- * Crée l'achat EN ATTENTE dans Nextore. lines = [{ product_id, quantity, unit_cost,
- * supplier_sku, pack, match_source }] en pièces, coût HT d'une pièce, remises
- * déjà réparties. Une fois l'achat parti, les propositions du site retenues
- * deviennent des réfs boutique.
+ * Crée la commande (chez nous ; mise en stock Nextore à la réception).
+ * lines = [{ product_id, quantity, unit_cost, supplier_sku, pack, match_source }]
+ * en pièces, coût HT d'une pièce, remises déjà réparties. Une fois la commande
+ * créée, les propositions du site retenues deviennent des réfs boutique.
  */
 async function createPurchase({ nxSupplierId, warehouse, referenceNo, lines, userEmail }) {
   const sup = await getSupplier(nxSupplierId);
@@ -318,7 +327,9 @@ async function createPurchase({ nxSupplierId, warehouse, referenceNo, lines, use
   const unknown = ids.filter((id) => !known.has(id));
   if (unknown.length) throw httpError(400, `Produits Nextore inconnus : ${unknown.join(', ')}`);
 
-  const result = await nextoreModel.sendPurchase(warehouse, sup.id, ref, lines);
+  const result = await boutiqueOrderModel.createOrder({
+    warehouse, supplierId: sup.id, reference: ref, source: 'import', lines, userEmail,
+  });
 
   for (const l of lines.filter((x) => x.match_source === 'site' && x.supplier_sku)) {
     await saveRef({
