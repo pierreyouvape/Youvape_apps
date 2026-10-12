@@ -16,6 +16,7 @@
 
 const pool = require('../config/database');
 const api = require('../services/nextoreApiClient');
+const { normalizedSql } = require('./supplierRefModel');
 
 const MOTIFS = ['reliquat', 'solde', 'manquant', 'erreur_saisie'];
 // Motifs qui soldent le reste d'une ligne ; un reliquat la laisse ouverte
@@ -118,13 +119,29 @@ async function getOrder(orderId, warehouseId) {
             COALESCE((SELECT array_agg(DISTINCT b.barcode) FROM nextore_product_barcodes b
                       WHERE b.product_id = i.product_id), '{}') AS barcodes,
             COALESCE((SELECT json_agg(json_build_object('barcode', r.barcode, 'kind', r.kind, 'pack_qty', r.pack_qty))
-                      FROM nextore_reception_barcodes r WHERE r.product_id = i.product_id), '[]') AS reception_barcodes
+                      FROM nextore_reception_barcodes r WHERE r.product_id = i.product_id), '[]') AS reception_barcodes,
+            -- Photo : produit du site qui porte la réf fournisseur (celle de la ligne, sinon
+            -- la réf boutique du produit chez ce fournisseur), à défaut même code-barres
+            COALESCE(
+              (SELECT wp.image_url FROM supplier_refs sr JOIN products wp ON wp.id = sr.product_id
+               WHERE sr.supplier_id = ns.site_supplier_id AND wp.image_url IS NOT NULL
+                 AND ${normalizedSql('sr.supplier_sku')} = ${normalizedSql(`COALESCE(i.supplier_sku,
+                       (SELECT nr.supplier_sku FROM nextore_supplier_refs nr
+                        WHERE nr.supplier_id = $3 AND nr.product_id = i.product_id ORDER BY nr.id LIMIT 1))`)}
+               LIMIT 1),
+              (SELECT wp.image_url FROM nextore_product_barcodes nb
+               JOIN product_barcodes pb ON pb.barcode = nb.barcode
+               JOIN products wp ON wp.id = pb.product_id
+               WHERE nb.product_id = i.product_id AND wp.image_url IS NOT NULL
+               ORDER BY wp.id LIMIT 1)
+            ) AS image_url
      FROM boutique_order_items i
      JOIN nextore_products p ON p.product_id = i.product_id
      LEFT JOIN nextore_stock st ON st.product_id = i.product_id AND st.warehouse_id = $2
+     LEFT JOIN nextore_suppliers ns ON ns.id = $3
      WHERE i.order_id = $1
      ORDER BY i.added_at_reception, i.id`,
-    [order.id, warehouseId]
+    [order.id, warehouseId, order.supplier_id]
   );
 
   const { rows: sessions } = await pool.query(

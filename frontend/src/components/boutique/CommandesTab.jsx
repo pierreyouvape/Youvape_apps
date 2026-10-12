@@ -18,6 +18,14 @@ const MOTIFS = [
 const MOTIF_LABEL = { reliquat: 'reliquat', solde: 'soldé', manquant: 'manquant', erreur_saisie: 'erreur de saisie' };
 const STATUS = { open: { label: 'À recevoir', color: '#d97706' }, received: { label: 'Reçue', color: '#16a34a' }, cancelled: { label: 'Annulée', color: '#6b7280' } };
 
+// Photo du produit du site (même présentation que l'import) ; case vide sans photo
+function Thumb({ src, alt }) {
+  const box = { width: 44, height: 44, borderRadius: 6, border: '1px solid #E2E2E2', background: '#F2F6F8' };
+  return src
+    ? <img src={src} alt={alt} style={{ ...box, objectFit: 'contain' }} onError={(e) => { e.currentTarget.style.visibility = 'hidden'; }} />
+    : <div style={box} />;
+}
+
 function Modal({ title, children, footer, onClose, width = 560 }) {
   return (
     <div className="modal-overlay" onClick={onClose}>
@@ -350,7 +358,7 @@ function OrderScreen({ shop, auth, orderId, onBack }) {
         <table className="purchases-table">
           <thead>
             <tr>
-              <th>Produit</th><th>Réf.</th><th className="text-right">Commandé</th><th className="text-right">Déjà reçu</th>
+              <th style={{ width: 60 }}>Image</th><th>Produit</th><th>Réf.</th><th className="text-right">Commandé</th><th className="text-right">Déjà reçu</th>
               <th className="text-right">Attendu</th>
               {counting && <><th className="text-right">Compté</th><th className="text-right">Écart</th></>}
             </tr>
@@ -360,6 +368,7 @@ function OrderScreen({ shop, auth, orderId, onBack }) {
               const gap = x.counted - x.remaining;
               return (
                 <tr key={x.id} id={`rx-${x.id}`} style={{ background: highlight === x.id ? '#dbeafe' : i % 2 ? '#f8fafc' : '#fff', transition: 'background .3s' }}>
+                  <td><Thumb src={x.image_url} alt={x.name} /></td>
                   <td>
                     <div style={{ fontWeight: 500 }}>{x.name}</div>
                     <small style={{ color: '#666' }}>
