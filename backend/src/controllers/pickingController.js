@@ -226,6 +226,11 @@ const pdaLineAction = (action) => handle(async (req, res) => {
   res.json(await pickingPdaModel[action](Number(req.params.id), req.user.id, Number(req.params.lineId)));
 });
 
+// « Manquant » avec, en option, combien on en a trouvé (le reste manque).
+const pdaMissing = handle(async (req, res) => {
+  res.json(await pickingPdaModel.markMissing(Number(req.params.id), req.user.id, Number(req.params.lineId), req.body?.found));
+});
+
 const pdaFinish = handle(async (req, res) => {
   await pickingPdaModel.finish(Number(req.params.id), req.user.id);
   res.json({ success: true });
@@ -257,7 +262,7 @@ module.exports = {
   pdaScan,
   pdaPackQuantity,
   pdaValidate: pdaLineAction('validate'),
-  pdaMissing: pdaLineAction('markMissing'),
+  pdaMissing,
   pdaUndo: pdaLineAction('undo'),
   pdaFinish,
   releaseWave,

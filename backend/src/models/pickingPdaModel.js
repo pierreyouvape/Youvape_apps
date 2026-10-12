@@ -348,17 +348,35 @@ const validate = async (waveId, userId, lineId) => {
   return readLine(lineId);
 };
 
-/** « Manquant » : ce qui reste à prendre est déclaré manquant. */
-const markMissing = async (waveId, userId, lineId) => {
+/**
+ * « Manquant » : on dit combien on en a TROUVÉ, le reste est manquant.
+ *
+ * Sans `found`, tout ce qui reste à prendre est manquant (comportement
+ * d'origine). Avec `found` (12/10/2026) : « 2 à prendre, j'en ai trouvé 1 »
+ * se dit d'un geste, même sans code-barres. Les pièces déjà scannées sont
+ * dans le bac : on ne peut pas en déclarer moins.
+ */
+const markMissing = async (waveId, userId, lineId, found = null) => {
   await assertMine(waveId, userId);
-  const { rows: [r] } = await pool.query(
-    `UPDATE picking_wave_lines
-        SET qty_missing = qty_missing + (qty_needed - qty_scanned - qty_manual - qty_missing), ${doneSet('qty_needed')}
-      WHERE id = $1 AND wave_id = $3
-      RETURNING id`,
-    [lineId, userId, waveId]
+  const { rows: [l] } = await pool.query(
+    'SELECT qty_needed, qty_scanned, qty_manual FROM picking_wave_lines WHERE id = $1 AND wave_id = $2',
+    [lineId, waveId]
   );
-  if (!r) throw httpError(404, 'Ligne introuvable.');
+  if (!l) throw httpError(404, 'Ligne introuvable.');
+
+  const trouve = found === null || found === undefined || found === ''
+    ? l.qty_scanned + l.qty_manual
+    : Number(found);
+  if (!Number.isInteger(trouve) || trouve < l.qty_scanned || trouve > l.qty_needed) {
+    throw httpError(400, `Quantité trouvée entre ${l.qty_scanned} et ${l.qty_needed}.`);
+  }
+
+  await pool.query(
+    `UPDATE picking_wave_lines
+        SET qty_manual = $4 - qty_scanned, qty_missing = qty_needed - $4, ${doneSet('qty_needed')}
+      WHERE id = $1 AND wave_id = $3`,
+    [lineId, userId, waveId, trouve]
+  );
   return readLine(lineId);
 };
 

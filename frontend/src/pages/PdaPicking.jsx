@@ -199,6 +199,8 @@ function WaveScreen({ token, waveId, onBack, setNotice, notice }) {
   // Carton au contenu inconnu : { code, message } — on demande la quantité une fois.
   const [packAsk, setPackAsk] = useState(null);
   const [packQty, setPackQty] = useState('');
+  // « Manquant » : { line, found } — combien on en a trouvé, le reste manque.
+  const [missingAsk, setMissingAsk] = useState(null);
   const [typed, setTyped] = useState('');
   const currentRef = useRef(null);
 
@@ -271,7 +273,7 @@ function WaveScreen({ token, waveId, onBack, setNotice, notice }) {
       showFlash('error', errorText(err));
     }
   };
-  useScanner(scan, !!wave && !typing && !packAsk);
+  useScanner(scan, !!wave && !typing && !packAsk && !missingAsk);
 
   const current = wave?.lines.find(l => !l.done);
   useEffect(() => {
@@ -351,12 +353,7 @@ function WaveScreen({ token, waveId, onBack, setNotice, notice }) {
             current={mine && current?.id === l.id}
             refProp={current?.id === l.id ? currentRef : null}
             onValidate={(line) => act(() => api(token).post(`/waves/${waveId}/lines/${line.id}/validate`))}
-            onMissing={(line) => {
-              const reste = line.qtyNeeded - line.qtyPicked - line.qtyMissing;
-              if (window.confirm(`${line.name}\n\nDéclarer ${reste} manquant(s) ?`)) {
-                act(() => api(token).post(`/waves/${waveId}/lines/${line.id}/missing`));
-              }
-            }}
+            onMissing={(line) => setMissingAsk({ line, found: line.qtyPicked })}
             onUndo={(line) => act(() => api(token).post(`/waves/${waveId}/lines/${line.id}/undo`))}
           />
         ))}
@@ -391,6 +388,40 @@ function WaveScreen({ token, waveId, onBack, setNotice, notice }) {
           boxShadow: '0 8px 24px rgba(0,0,0,0.25)',
         }}>{flash.text}</div>
       )}
+
+      {missingAsk && (() => {
+        const { line, found } = missingAsk;
+        const min = line.qtyScanned;
+        const manque = line.qtyNeeded - found;
+        const set = (n) => setMissingAsk({ line, found: Math.max(min, Math.min(line.qtyNeeded, n)) });
+        const stepBtn = { ...bigBtn(C.white, C.dark), border: `2px solid ${C.greyB}`, width: 64, fontSize: 28, padding: '6px 0' };
+        return (
+          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 30, display: 'flex', alignItems: 'flex-start', padding: 16, paddingTop: 70 }}>
+            <div style={{ background: C.white, borderRadius: 14, padding: 16, width: '100%' }}>
+              <div style={{ fontWeight: 800, fontSize: 16 }}>{line.name}</div>
+              <div style={{ fontSize: 13.5, color: C.greyT, marginTop: 4 }}>
+                {line.qtyNeeded} à prendre{min > 0 ? ` · ${min} déjà scanné${min > 1 ? 's' : ''}` : ''}
+              </div>
+              <div style={{ fontWeight: 700, fontSize: 15, marginTop: 14, textAlign: 'center' }}>Combien en avez-vous trouvé ?</div>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 14, marginTop: 10 }}>
+                <button type="button" onClick={() => set(found - 1)} disabled={found <= min} style={{ ...stepBtn, opacity: found <= min ? 0.4 : 1 }}>−</button>
+                <span style={{ fontSize: 40, fontWeight: 900, minWidth: 70, textAlign: 'center' }}>{found}</span>
+                <button type="button" onClick={() => set(found + 1)} disabled={found >= line.qtyNeeded} style={{ ...stepBtn, opacity: found >= line.qtyNeeded ? 0.4 : 1 }}>+</button>
+              </div>
+              <div style={{ textAlign: 'center', marginTop: 10, fontSize: 16, fontWeight: 800, color: manque > 0 ? C.red : C.green }}>
+                {manque > 0 ? `${manque} manquant${manque > 1 ? 's' : ''}` : 'Rien ne manque'}
+              </div>
+              <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
+                <button type="button" onClick={() => setMissingAsk(null)} style={{ ...bigBtn(C.white, C.dark), border: `1px solid ${C.greyB}`, flex: 1 }}>Annuler</button>
+                <button type="button" onClick={() => {
+                  setMissingAsk(null);
+                  act(() => api(token).post(`/waves/${waveId}/lines/${line.id}/missing`, { found }));
+                }} style={{ ...bigBtn(manque > 0 ? C.red : C.green), flex: 1 }}>Confirmer</button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {packAsk && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 30, display: 'flex', alignItems: 'flex-start', padding: 16, paddingTop: 80 }}>
