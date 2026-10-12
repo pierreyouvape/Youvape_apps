@@ -33,13 +33,14 @@ const scanDebug = (() => {
   } catch { return false; }
 })();
 
-// Test EA530 : ?scansink=text retire inputmode="none" du champ invisible.
+// Champ des scans : SANS inputmode="none" par défaut — avec, l'Unitech EA530
+// n'y écrit rien (vérifié le 12/10/2026). ?scansink=none pour le remettre.
 const sinkMode = (() => {
   try {
     const q = new URLSearchParams(window.location.search).get('scansink');
     if (q !== null) localStorage.setItem('pdaScanSink', q);
-    return localStorage.getItem('pdaScanSink') || 'none';
-  } catch { return 'none'; }
+    return localStorage.getItem('pdaScanSink') || 'text';
+  } catch { return 'text'; }
 })();
 
 let scanLog = () => {};
@@ -79,7 +80,8 @@ if (scanDebug && typeof document !== 'undefined') {
  *   - Zebra (DataWedge) envoie de vraies touches → écoute au niveau de la page ;
  *   - Unitech (USS « Scan to Key ») INSÈRE le texte dans le champ actif, sans
  *     touches : sans champ, rien n'arrive. On garde donc un champ invisible
- *     focalisé, en inputmode="none" pour ne pas ouvrir le clavier virtuel.
+ *     focalisé. Pas d'inputmode="none" : l'EA530 n'y écrirait rien. Le focus
+ *     est donné hors geste, ce qui n'ouvre pas le clavier virtuel.
  */
 export const useScanner = (onScan, enabled) => {
   const buffer = useRef('');
@@ -128,13 +130,7 @@ export const useScanner = (onScan, enabled) => {
     };
     // Un bouton touché vole le focus : on le reprend dès qu'il est libre.
     const onFocusOut = () => setTimeout(grab, 0);
-    // Chrome Android ne branche le clavier (donc le texte du Unitech) que sur
-    // un champ focalisé PENDANT un geste : on le reprend dans le toucher même.
-    const onTap = (e) => {
-      if (!isField(e.target)) sink.focus({ preventScroll: true });
-    };
     document.addEventListener('focusout', onFocusOut);
-    document.addEventListener('click', onTap, true);
     grab();
 
     const onKey = (e) => {
@@ -155,7 +151,6 @@ export const useScanner = (onScan, enabled) => {
       clearTimeout(stale);
       document.removeEventListener('keydown', onKey);
       document.removeEventListener('focusout', onFocusOut);
-      document.removeEventListener('click', onTap, true);
       sink.remove();
     };
   }, [enabled]);
