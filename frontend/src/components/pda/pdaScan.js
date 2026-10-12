@@ -33,6 +33,15 @@ const scanDebug = (() => {
   } catch { return false; }
 })();
 
+// Test EA530 : ?scansink=text retire inputmode="none" du champ invisible.
+const sinkMode = (() => {
+  try {
+    const q = new URLSearchParams(window.location.search).get('scansink');
+    if (q !== null) localStorage.setItem('pdaScanSink', q);
+    return localStorage.getItem('pdaScanSink') || 'none';
+  } catch { return 'none'; }
+})();
+
 let scanLog = () => {};
 if (scanDebug && typeof document !== 'undefined') {
   const box = document.createElement('pre');
@@ -50,10 +59,12 @@ if (scanDebug && typeof document !== 'undefined') {
     box.scrollTop = box.scrollHeight;
   };
   scanLog = log;
-  const attach = () => { document.body.appendChild(box); log('diagnostic scan actif'); };
+  const attach = () => { document.body.appendChild(box); log(`diagnostic scan actif, champ=${sinkMode}`); };
   if (document.body) attach(); else document.addEventListener('DOMContentLoaded', attach);
   ['keydown', 'keyup', 'keypress'].forEach(t => window.addEventListener(t, (e) =>
-    log(`${t} key=${JSON.stringify(e.key)} code=${e.code} kc=${e.keyCode} on=${desc(e.target)}`), true));
+    log(`${t} key=${JSON.stringify(e.key)} kc=${e.keyCode} on=${desc(e.target)} val=${JSON.stringify(e.target?.value ?? '')}`), true));
+  window.addEventListener('keyup', (e) => setTimeout(() =>
+    log(`  après ${e.key} : val=${JSON.stringify(document.activeElement?.value ?? '')}`), 50), true);
   ['beforeinput', 'input'].forEach(t => window.addEventListener(t, (e) =>
     log(`${t} type=${e.inputType} data=${JSON.stringify(e.data)} on=${desc(e.target)}`), true));
   ['compositionstart', 'compositionend', 'paste', 'textInput', 'focusin', 'focusout'].forEach(t =>
@@ -80,7 +91,7 @@ export const useScanner = (onScan, enabled) => {
     if (!enabled) return undefined;
 
     const sink = document.createElement('input');
-    sink.setAttribute('inputmode', 'none');
+    if (sinkMode === 'none') sink.setAttribute('inputmode', 'none');
     sink.setAttribute('autocomplete', 'off');
     sink.setAttribute('aria-hidden', 'true');
     sink.tabIndex = -1;
