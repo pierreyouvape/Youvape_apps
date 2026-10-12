@@ -155,22 +155,10 @@ async function postImportMapLine(req, res) {
   try {
     res.json(await nextoreImportModel.mapLine({
       nxSupplierId: b.supplier_id, warehouse: wh, productId: b.product_id, supplierSku: b.supplier_sku,
-      packQty: b.pack_qty, docQty: b.doc_qty, docPrice: b.doc_price, discountPercent: b.discount_percent,
+      packQty: b.pack_qty, docQty: b.qty_from_pdf, docPrice: b.pdf_price_raw, discountPercent: b.discount_percent,
       conversion: b.conversion,
     }));
   } catch (err) { sendImportError(res, 'map-line', err); }
-}
-
-// POST /api/nextore/:shop/import/refs — enregistre une réf boutique (move = déplacer)
-async function postImportRef(req, res) {
-  const b = req.body || {};
-  try {
-    await nextoreImportModel.saveRef({
-      nxSupplierId: b.supplier_id, supplierSku: b.supplier_sku, productId: b.product_id,
-      packQty: b.pack_qty, move: b.move === true, userEmail: req.user?.email,
-    });
-    res.json({ ok: true });
-  } catch (err) { sendImportError(res, 'ref', err); }
 }
 
 // POST /api/nextore/:shop/import/purchase — crée la commande (réceptionnée ensuite dans l'app)
@@ -181,9 +169,10 @@ async function postImportPurchase(req, res) {
   try {
     const result = await nextoreImportModel.createPurchase({
       nxSupplierId: b.supplier_id, warehouse: wh, referenceNo: b.reference_no, lines: b.lines,
-      userEmail: req.user?.email,
+      newSupplierSkus: b.new_supplier_skus, existingOrderId: b.existing_order_id, userEmail: req.user?.email,
     });
-    console.log(`Boutique commande importée ${result.reference} (#${result.orderId}) par ${req.user?.email} (${result.lines} lignes)`);
+    console.log(`Boutique commande importée ${result.reference} (#${result.orderId}) par ${req.user?.email} `
+      + `(${result.added ? `${result.added.length} lignes ajoutées` : `${result.lines} lignes`})`);
     res.json(result);
   } catch (err) { sendImportError(res, 'purchase', err); }
 }
@@ -488,7 +477,6 @@ module.exports = {
   getImportSuppliers,
   postImportParse,
   postImportMapLine,
-  postImportRef,
   postImportPurchase,
   getReceptionOrders,
   getReceptionOrder,

@@ -423,11 +423,8 @@ async function createPurchase(warehouse, supplierId, lines, userEmail) {
   const unknown = ids.filter((id) => !costById.has(id));
   if (unknown.length) throw Object.assign(new Error(`Produits Nextore inconnus : ${unknown.join(', ')}`), { status: 400 });
 
-  // Référence lisible, heure de Paris, unique par fournisseur
-  const stamp = new Date().toLocaleString('sv-SE', { timeZone: 'Europe/Paris' }).slice(0, 16);
-  const reference = `APP-${warehouse.code}-${stamp.slice(0, 10)}_${stamp.slice(11, 13)}h${stamp.slice(14, 16)}-${supplierId}`;
   return boutiqueOrderModel.createOrder({
-    warehouse, supplierId, reference, source: 'besoins', userEmail,
+    warehouse, supplierId, reference: boutiqueOrderModel.makeReference(warehouse, supplierId), source: 'besoins', userEmail,
     lines: lines.map((l) => ({ product_id: l.product_id, quantity: l.quantity, unit_cost: costById.get(String(l.product_id)) })),
   });
 }

@@ -29,6 +29,12 @@ const REMAINING_SQL = `CASE WHEN i.closed_reason IS NOT NULL THEN 0
 
 // --- Commandes ------------------------------------------------------------
 
+/** Référence lisible quand le document n'en donne pas : heure de Paris + fournisseur. */
+function makeReference(warehouse, supplierId) {
+  const stamp = new Date().toLocaleString('sv-SE', { timeZone: 'Europe/Paris' }).slice(0, 16);
+  return `APP-${warehouse.code}-${stamp.slice(0, 10)}_${stamp.slice(11, 13)}h${stamp.slice(14, 16)}-${supplierId}`;
+}
+
 /**
  * Crée une commande. lines = [{ product_id, quantity, unit_cost, supplier_sku?, pack? }]
  * en pièces, coût HT d'une pièce.
@@ -141,6 +147,41 @@ async function getOrder(orderId, warehouseId) {
     session: sessions.find((s) => s.status === 'counting' || s.status === 'sending') || null,
     history: sessions.filter((s) => s.status === 'validated'),
   };
+}
+
+/**
+ * Complète une commande ouverte (même document réimporté, comme le complément
+ * du site) : seuls les produits absents de la commande y sont ajoutés.
+ */
+async function addItems(orderId, warehouseId, lines) {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const order = await getOrderRow(orderId, warehouseId, client, true);
+    if (order.status !== 'open') throw httpError(400, 'Cette commande est close');
+    const { rows } = await client.query('SELECT product_id FROM boutique_order_items WHERE order_id = $1', [order.id]);
+    const present = new Set(rows.map((r) => r.product_id));
+    const added = [];
+    const alreadyPresent = [];
+    for (const l of lines) {
+      const pid = String(l.product_id);
+      if (present.has(pid)) { alreadyPresent.push(pid); continue; }
+      await client.query(
+        `INSERT INTO boutique_order_items (order_id, product_id, supplier_sku, pack_qty, qty_ordered, unit_cost)
+         VALUES ($1, $2, $3, $4, $5, $6)`,
+        [order.id, pid, l.supplier_sku || null, Math.max(parseInt(l.pack, 10) || 1, 1), parseInt(l.quantity, 10), Number(l.unit_cost) || 0]
+      );
+      present.add(pid);
+      added.push(pid);
+    }
+    await client.query('COMMIT');
+    return { orderId: order.id, reference: order.reference, added, already_present: alreadyPresent };
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
 }
 
 /** Supprime une commande sur laquelle rien n'a été reçu (ses pièces seraient déjà en stock Nextore). */
@@ -590,7 +631,9 @@ async function validateSession(sessionId, warehouse, motifs, userEmail) {
 
 module.exports = {
   MOTIFS,
+  makeReference,
   createOrder,
+  addItems,
   listOrders,
   getOrder,
   deleteOrder,

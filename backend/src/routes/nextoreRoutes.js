@@ -49,7 +49,6 @@ router.post('/:shop/purchases', boutiquePerm('write'), nextoreController.postPur
 router.get('/:shop/import/suppliers', boutiquePerm('read'), nextoreController.getImportSuppliers);
 router.post('/:shop/import/parse', boutiquePerm('write'), upload.single('pdf'), nextoreController.postImportParse);
 router.post('/:shop/import/map-line', boutiquePerm('write'), nextoreController.postImportMapLine);
-router.post('/:shop/import/refs', boutiquePerm('write'), nextoreController.postImportRef);
 router.post('/:shop/import/purchase', boutiquePerm('write'), nextoreController.postImportPurchase);
 
 // Réception des commandes boutique → achat REÇU dans Nextore à la validation
