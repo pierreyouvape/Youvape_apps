@@ -721,9 +721,10 @@ async function getNeedsData(warehouseId) {
   for (const p of prods) {
     const daily = salesByProduct.get(p.product_id) || [];
     if (p.stock === 0 && daily.length === 0) continue;
-    const supplierId = p.bought_supplier_id || p.fiche_supplier_id;
+    const ficheId = p.fiche_supplier_id === '0' ? null : p.fiche_supplier_id; // '0' = aucun chez Nextore
+    const supplierId = p.bought_supplier_id || ficheId;
     // Filtre fournisseur : seulement ceux chez qui on a réellement acheté
-    const supplierIds = p.bought_supplier_ids || (p.fiche_supplier_id ? [p.fiche_supplier_id] : []);
+    const supplierIds = p.bought_supplier_ids || (ficheId ? [ficheId] : []);
     for (const id of supplierIds) supCount.set(id, (supCount.get(id) || 0) + 1);
     products.push({
       id: p.product_id,
