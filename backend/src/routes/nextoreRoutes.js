@@ -4,6 +4,7 @@
  */
 
 const express = require('express');
+const multer = require('multer');
 const router = express.Router();
 const nextoreController = require('../controllers/nextoreController');
 const authMiddleware = require('../middleware/authMiddleware');
@@ -11,6 +12,8 @@ const { checkPermission } = require('../middleware/permissionMiddleware');
 const { resolveWarehouse } = require('../config/nextore');
 
 router.use(authMiddleware);
+
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
 
 /**
  * Permission dynamique selon la boutique (:shop). Résout le warehouse depuis
@@ -41,6 +44,13 @@ router.get('/:shop/suppliers', boutiquePerm('read'), nextoreController.getSuppli
 router.get('/:shop/needs-data', boutiquePerm('read'), nextoreController.getNeedsData);
 // Création d'un achat (en attente) dans Nextore depuis les Besoins
 router.post('/:shop/purchases', boutiquePerm('write'), nextoreController.postPurchase);
+
+// Import d'une commande fournisseur (PDF/CSV, parseurs du site) → achat en attente
+router.get('/:shop/import/suppliers', boutiquePerm('read'), nextoreController.getImportSuppliers);
+router.post('/:shop/import/parse', boutiquePerm('write'), upload.single('pdf'), nextoreController.postImportParse);
+router.post('/:shop/import/map-line', boutiquePerm('write'), nextoreController.postImportMapLine);
+router.post('/:shop/import/refs', boutiquePerm('write'), nextoreController.postImportRef);
+router.post('/:shop/import/purchase', boutiquePerm('write'), nextoreController.postImportPurchase);
 
 // Historique (évolution) du stock d'un produit dans une boutique
 router.get('/:shop/stock/:productId/history', boutiquePerm('read'), nextoreController.getStockHistory);

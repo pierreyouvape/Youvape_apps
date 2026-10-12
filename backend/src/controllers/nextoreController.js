@@ -4,6 +4,7 @@
  */
 
 const nextoreModel = require('../models/nextoreModel');
+const nextoreImportModel = require('../models/nextoreImportModel');
 const linksModel = require('../models/nextoreLinksModel');
 const matchService = require('../services/nextoreMatchService');
 const comptageModel = require('../models/nextoreComptageModel');
@@ -120,6 +121,70 @@ async function postPurchase(req, res) {
     console.error('Nextore postPurchase:', err);
     res.status(err.status || 500).json({ error: err.message || 'Erreur création achat Nextore' });
   }
+}
+
+// --- Import de commande fournisseur (parseurs du site) ----------------------
+const sendImportError = (res, label, err) => {
+  if (!err.status || err.status >= 500) console.error(`Nextore import ${label}:`, err);
+  res.status(err.status || 500).json({ error: err.message || 'Erreur import commande', code: err.code });
+};
+
+// GET /api/nextore/:shop/import/suppliers — fournisseurs qui ont un parseur
+async function getImportSuppliers(req, res) {
+  try {
+    res.json({ suppliers: await nextoreImportModel.listSuppliers() });
+  } catch (err) { sendImportError(res, 'suppliers', err); }
+}
+
+// POST /api/nextore/:shop/import/parse — multipart : pdf + supplier_id
+async function postImportParse(req, res) {
+  const wh = getShopOr400(req, res);
+  if (!wh) return;
+  if (!req.file) return res.status(400).json({ error: 'Aucun fichier reçu' });
+  try {
+    res.json(await nextoreImportModel.parseDocument(req.file.buffer, req.body.supplier_id, wh));
+  } catch (err) { sendImportError(res, 'parse', err); }
+}
+
+// POST /api/nextore/:shop/import/map-line — conditionnement proposé + ligne convertie
+async function postImportMapLine(req, res) {
+  const wh = getShopOr400(req, res);
+  if (!wh) return;
+  const b = req.body || {};
+  try {
+    res.json(await nextoreImportModel.mapLine({
+      nxSupplierId: b.supplier_id, warehouse: wh, productId: b.product_id, supplierSku: b.supplier_sku,
+      packQty: b.pack_qty, docQty: b.doc_qty, docPrice: b.doc_price, discountPercent: b.discount_percent,
+      conversion: b.conversion,
+    }));
+  } catch (err) { sendImportError(res, 'map-line', err); }
+}
+
+// POST /api/nextore/:shop/import/refs — enregistre une réf boutique (move = déplacer)
+async function postImportRef(req, res) {
+  const b = req.body || {};
+  try {
+    await nextoreImportModel.saveRef({
+      nxSupplierId: b.supplier_id, supplierSku: b.supplier_sku, productId: b.product_id,
+      packQty: b.pack_qty, move: b.move === true, userEmail: req.user?.email,
+    });
+    res.json({ ok: true });
+  } catch (err) { sendImportError(res, 'ref', err); }
+}
+
+// POST /api/nextore/:shop/import/purchase — crée l'achat en attente dans Nextore
+async function postImportPurchase(req, res) {
+  const wh = getShopOr400(req, res);
+  if (!wh) return;
+  const b = req.body || {};
+  try {
+    const result = await nextoreImportModel.createPurchase({
+      nxSupplierId: b.supplier_id, warehouse: wh, referenceNo: b.reference_no, lines: b.lines,
+      userEmail: req.user?.email,
+    });
+    console.log(`Nextore achat importé ${result.referenceNo} (#${result.purchaseId}) par ${req.user?.email} (${result.lines} lignes)`);
+    res.json(result);
+  } catch (err) { sendImportError(res, 'purchase', err); }
 }
 
 // GET /api/nextore/:shop/stock/:productId/history — évolution du stock d'un produit
@@ -375,6 +440,11 @@ module.exports = {
   getNeeds,
   getNeedsData,
   postPurchase,
+  getImportSuppliers,
+  postImportParse,
+  postImportMapLine,
+  postImportRef,
+  postImportPurchase,
   getSuppliers,
   getStockHistory,
   // Rapprochement caisse <-> site

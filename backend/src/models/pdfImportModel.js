@@ -49,8 +49,137 @@ function normalizeSku(s) {
   return (s || '').toLowerCase().replace(/\s+/g, ' ').trim();
 }
 
+/**
+ * Lit un document fournisseur (PDF ou CSV) avec le parseur du fournisseur, et
+ * pose les garde-fous : lignes perdues, anomalies du gabarit, références
+ * tronquées reconstituées depuis `knownSkus`, total imprimé ≠ somme des lignes.
+ * Partagé entre l'import du site (parsePdf) et celui des boutiques Nextore —
+ * une seule copie, pour qu'un correctif profite aux deux.
+ * `supplier` = { name, code } (journaux et messages).
+ */
+async function readDocument(fileBuffer, parser, supplier, knownSkus) {
+  // 3. Extraire le texte du fichier (PDF ou CSV)
+  const isPdf = fileBuffer.length >= 4 && fileBuffer.toString('ascii', 0, 4) === '%PDF';
+
+  let rawText, text;
+  if (isPdf) {
+    const uint8 = new Uint8Array(fileBuffer);
+    const pdfParser = new PDFParse(uint8);
+    await pdfParser.load();
+    const pdfData = await pdfParser.getText();
+    rawText = pdfData.text;
+    text = cleanPdfText(rawText);
+  } else {
+    // CSV (ou autre fichier texte) : lecture directe, suppression du BOM eventuel
+    // Fallback latin1 si le fichier n'est pas de l'UTF-8 valide (export Excel/Windows)
+    let decoded = fileBuffer.toString('utf-8');
+    if (decoded.includes('�')) {
+      decoded = fileBuffer.toString('latin1');
+    }
+    rawText = decoded.replace(/^﻿/, '');
+    text = rawText;
+  }
+
+  // 4. Parser avec le parseur du fournisseur (fallback sur rawText si aucun item trouvé)
+  let parsed = parser.parse(text);
+  let parseMode = 'clean';
+  if (!parsed.items || parsed.items.length === 0) {
+    console.warn(`[pdfImport] cleanPdfText a donné 0 items pour ${supplier.name}, fallback sur rawText`);
+    parsed = parser.parse(rawText);
+    parseMode = 'legacy';
+  } else {
+    console.log(`[pdfImport] ${supplier.name} : ${parsed.items.length} items trouvés (texte nettoyé)`);
+  }
+
+  if (!parsed.items || parsed.items.length === 0) {
+    throw new Error('Aucune ligne produit trouvée dans le PDF');
+  }
+
+  // 4a. Garde-fou anti-ligne perdue (voir findUnparsedRows). On relit le texte
+  //     réellement parsé — celui qui a produit les items, nettoyé ou brut.
+  const parseWarnings = [];
+  const parsedText = parseMode === 'clean' ? text : rawText;
+  const orphanRows = findUnparsedRows(parsedText, parsed.items, parsed.discountItems);
+  if (orphanRows.length > 0) {
+    const detail = orphanRows
+      .map((o) => `${o.context ? o.context + ' — ' : ''}${o.qty} × ${o.unit_price.toFixed(2)} € = ${o.total.toFixed(2)} € HT`)
+      .join(' | ');
+    console.warn(`[pdfImport] ${supplier.name} : ${orphanRows.length} ligne(s) du document non parsée(s) → ${detail}`);
+    parseWarnings.push({
+      type: 'unparsed_rows',
+      message:
+        `${orphanRows.length} ligne${orphanRows.length > 1 ? 's' : ''} du document ${orphanRows.length > 1 ? 'ne sont pas reprises' : "n'est pas reprise"} ` +
+        `ci-dessous (total ${orphanRows.reduce((a, o) => a + o.total, 0).toFixed(2)} € HT). ` +
+        `Ajoutez-${orphanRows.length > 1 ? 'les' : 'la'} à la main, puis signalez le parseur ${supplier.code || supplier.name}.`,
+      rows: orphanRows,
+    });
+  }
+
+  // 4a bis. Anomalies propres au gabarit, que seul le parseur sait voir
+  //     (référence reconstituée douteuse, remises qui ne collent pas…).
+  for (const w of parsed.warnings || []) {
+    console.warn(`[pdfImport] ${supplier.name} : ${w.message}`);
+    parseWarnings.push(w);
+  }
+
+  // 4b. Reconstituer la référence complète à partir des SKU connus du fournisseur.
+  //     Les PDF collent la colonne Référence à la Désignation : une référence avec
+  //     espace/tiret (ex: "MJ AMNESIA 300MG") serait sinon tronquée par le parseur.
+  resolveCompleteRefs(parsed.items, knownSkus, { refKey: 'supplier_sku', labelKey: 'designation' });
+
+  // Total HT produits de la facture, pour le garde-fou de réconciliation à l'envoi
+  // BMS (cf. createInBMS, contrôle B). Deux sources, par priorité :
+  //  1. total explicite extrait par le parseur (parsed.invoiceProductTotalHT) ;
+  //  2. sinon somme des montants de ligne (item.total_ht = colonne « montant HT »
+  //     du PDF, lue indépendamment du prix unitaire retenu → reste un contrôle
+  //     pertinent même si le prefill modifie le prix). Universel : couvre tout
+  //     parseur qui expose total_ht par ligne, sans code spécifique par fournisseur.
+  // On n'utilise la somme QUE si TOUTES les lignes produit ont un total_ht valide
+  // (sinon somme partielle → faux total → on préfère désactiver le contrôle B).
+  let invoiceTotalHt = parsed.invoiceProductTotalHT ?? null;
+  const lineTotals = (parsed.items || []).map(i => Number(i.total_ht));
+  const lineTotalsSum = lineTotals.every(t => Number.isFinite(t) && t > 0) && lineTotals.length > 0
+    ? Math.round(lineTotals.reduce((a, b) => a + b, 0) * 100) / 100
+    : null;
+  if (invoiceTotalHt == null) invoiceTotalHt = lineTotalsSum;
+
+  // Réconciliation : quand le parseur sait lire le total produits IMPRIMÉ sur le
+  // document, il devient une source indépendante des lignes parsées. Un écart =
+  // une ligne perdue ou dénaturée, signalé ici plutôt qu'à l'envoi BMS (trop tard,
+  // et confondu avec un envoi partiel légitime).
+  //
+  // Réservé aux parseurs qui déclarent invoiceProductTotalIsGross, c.-à-d. dont le
+  // total lu est bien le BRUT produits (libellé « Total produits »), donc
+  // comparable ligne à ligne. Ailleurs le libellé est ambigu (« Montant HT » peut
+  // inclure port et remises) : comparer déclencherait une alerte à chaque import,
+  // et une alerte qui crie au loup ne protège plus de rien. Ces documents restent
+  // couverts par le garde-fou universel findUnparsedRows ci-dessus.
+  if (parsed.invoiceProductTotalIsGross && parsed.invoiceProductTotalHT != null && lineTotalsSum != null) {
+    const gap = Math.round((parsed.invoiceProductTotalHT - lineTotalsSum) * 100) / 100;
+    if (Math.abs(gap) > 0.02) {
+      console.warn(`[pdfImport] ${supplier.name} : total imprimé ${parsed.invoiceProductTotalHT} € ≠ somme des lignes ${lineTotalsSum} € (écart ${gap} €)`);
+      parseWarnings.push({
+        type: 'total_mismatch',
+        message:
+          `Le document totalise ${parsed.invoiceProductTotalHT.toFixed(2)} € HT de produits, ` +
+          `mais les ${parsed.items.length} lignes lues totalisent ${lineTotalsSum.toFixed(2)} € HT ` +
+          `(écart ${gap.toFixed(2)} €). Une ligne est probablement manquante ou mal lue.`,
+      });
+    }
+  }
+
+  const conversion = {
+    invertPackQty: !!parsed.invertPackQty,
+    skipPackQty: !!parsed.skipPackQty,
+    trustPdfPrice: !!parsed.trustPdfPrice,
+  };
+  return { parsed, parseMode, parseWarnings, invoiceTotalHt, conversion };
+}
+
 const pdfImportModel = {
   convertLine,
+  readDocument,
+  normalizeSku,
 
   /**
    * Réfs connues d'un fournisseur parmi une liste, indexées par réf normalisée,
@@ -187,89 +316,19 @@ const pdfImportModel = {
       );
     }
 
-    // 3. Extraire le texte du fichier (PDF ou CSV)
-    const isPdf = fileBuffer.length >= 4 && fileBuffer.toString('ascii', 0, 4) === '%PDF';
-
-    let rawText, text;
-    if (isPdf) {
-      const uint8 = new Uint8Array(fileBuffer);
-      const pdfParser = new PDFParse(uint8);
-      await pdfParser.load();
-      const pdfData = await pdfParser.getText();
-      rawText = pdfData.text;
-      text = cleanPdfText(rawText);
-    } else {
-      // CSV (ou autre fichier texte) : lecture directe, suppression du BOM eventuel
-      // Fallback latin1 si le fichier n'est pas de l'UTF-8 valide (export Excel/Windows)
-      let decoded = fileBuffer.toString('utf-8');
-      if (decoded.includes('�')) {
-        decoded = fileBuffer.toString('latin1');
-      }
-      rawText = decoded.replace(/^﻿/, '');
-      text = rawText;
-    }
-
-    // 4. Parser avec le parseur du fournisseur (fallback sur rawText si aucun item trouvé)
-    let parsed = parser.parse(text);
-    let parseMode = 'clean';
-    if (!parsed.items || parsed.items.length === 0) {
-      console.warn(`[pdfImport] cleanPdfText a donné 0 items pour ${supplier.name}, fallback sur rawText`);
-      parsed = parser.parse(rawText);
-      parseMode = 'legacy';
-    } else {
-      console.log(`[pdfImport] ${supplier.name} : ${parsed.items.length} items trouvés (texte nettoyé)`);
-    }
-
-    if (!parsed.items || parsed.items.length === 0) {
-      throw new Error('Aucune ligne produit trouvée dans le PDF');
-    }
-
-    // 4a. Garde-fou anti-ligne perdue (voir findUnparsedRows). On relit le texte
-    //     réellement parsé — celui qui a produit les items, nettoyé ou brut.
-    const parseWarnings = [];
-    const parsedText = parseMode === 'clean' ? text : rawText;
-    const orphanRows = findUnparsedRows(parsedText, parsed.items, parsed.discountItems);
-    if (orphanRows.length > 0) {
-      const detail = orphanRows
-        .map((o) => `${o.context ? o.context + ' — ' : ''}${o.qty} × ${o.unit_price.toFixed(2)} € = ${o.total.toFixed(2)} € HT`)
-        .join(' | ');
-      console.warn(`[pdfImport] ${supplier.name} : ${orphanRows.length} ligne(s) du document non parsée(s) → ${detail}`);
-      parseWarnings.push({
-        type: 'unparsed_rows',
-        message:
-          `${orphanRows.length} ligne${orphanRows.length > 1 ? 's' : ''} du document ${orphanRows.length > 1 ? 'ne sont pas reprises' : "n'est pas reprise"} ` +
-          `ci-dessous (total ${orphanRows.reduce((a, o) => a + o.total, 0).toFixed(2)} € HT). ` +
-          `Ajoutez-${orphanRows.length > 1 ? 'les' : 'la'} à la main, puis signalez le parseur ${supplier.code || supplier.name}.`,
-        rows: orphanRows,
-      });
-    }
-
-    // 4a bis. Anomalies propres au gabarit, que seul le parseur sait voir
-    //     (référence reconstituée douteuse, remises qui ne collent pas…).
-    for (const w of parsed.warnings || []) {
-      console.warn(`[pdfImport] ${supplier.name} : ${w.message}`);
-      parseWarnings.push(w);
-    }
-
-    // 4b. Reconstituer la référence complète à partir des SKU connus du fournisseur.
-    //     Les PDF collent la colonne Référence à la Désignation : une référence avec
-    //     espace/tiret (ex: "MJ AMNESIA 300MG") serait sinon tronquée par le parseur.
+    // 3-4. Lecture du document (texte, parseur, garde-fous) : partagée avec
+    //      l'import des boutiques (nextoreImportModel).
     const knownSkusResult = await pool.query(
       'SELECT supplier_sku FROM supplier_refs WHERE supplier_id = $1',
       [supplierId]
     );
-    resolveCompleteRefs(parsed.items, knownSkusResult.rows.map(r => r.supplier_sku),
-      { refKey: 'supplier_sku', labelKey: 'designation' });
+    const { parsed, parseMode, parseWarnings, invoiceTotalHt, conversion } = await readDocument(
+      fileBuffer, parser, supplier, knownSkusResult.rows.map(r => r.supplier_sku)
+    );
 
     // 5. Matcher les réfs dans supplier_refs. Une réf ne désigne qu'un produit
     //    (index unique sur la réf normalisée) : plus d'arbitrage entre candidats.
     const matchMap = await pdfImportModel.findRefs(supplierId, parsed.items.map(i => i.supplier_sku));
-
-    const conversion = {
-      invertPackQty: !!parsed.invertPackQty,
-      skipPackQty: !!parsed.skipPackQty,
-      trustPdfPrice: !!parsed.trustPdfPrice,
-    };
 
     // 6. Enrichir chaque ligne avec les infos de matching
     const enrichedItems = parsed.items.map(item => {
@@ -356,47 +415,6 @@ const pdfImportModel = {
     }));
 
     const allItems = [...enrichedItems, ...discountLines];
-
-    // Total HT produits de la facture, pour le garde-fou de réconciliation à l'envoi
-    // BMS (cf. createInBMS, contrôle B). Deux sources, par priorité :
-    //  1. total explicite extrait par le parseur (parsed.invoiceProductTotalHT) ;
-    //  2. sinon somme des montants de ligne (item.total_ht = colonne « montant HT »
-    //     du PDF, lue indépendamment du prix unitaire retenu → reste un contrôle
-    //     pertinent même si le prefill modifie le prix). Universel : couvre tout
-    //     parseur qui expose total_ht par ligne, sans code spécifique par fournisseur.
-    // On n'utilise la somme QUE si TOUTES les lignes produit ont un total_ht valide
-    // (sinon somme partielle → faux total → on préfère désactiver le contrôle B).
-    let invoiceTotalHt = parsed.invoiceProductTotalHT ?? null;
-    const lineTotals = (parsed.items || []).map(i => Number(i.total_ht));
-    const lineTotalsSum = lineTotals.every(t => Number.isFinite(t) && t > 0) && lineTotals.length > 0
-      ? Math.round(lineTotals.reduce((a, b) => a + b, 0) * 100) / 100
-      : null;
-    if (invoiceTotalHt == null) invoiceTotalHt = lineTotalsSum;
-
-    // Réconciliation : quand le parseur sait lire le total produits IMPRIMÉ sur le
-    // document, il devient une source indépendante des lignes parsées. Un écart =
-    // une ligne perdue ou dénaturée, signalé ici plutôt qu'à l'envoi BMS (trop tard,
-    // et confondu avec un envoi partiel légitime).
-    //
-    // Réservé aux parseurs qui déclarent invoiceProductTotalIsGross, c.-à-d. dont le
-    // total lu est bien le BRUT produits (libellé « Total produits »), donc
-    // comparable ligne à ligne. Ailleurs le libellé est ambigu (« Montant HT » peut
-    // inclure port et remises) : comparer déclencherait une alerte à chaque import,
-    // et une alerte qui crie au loup ne protège plus de rien. Ces documents restent
-    // couverts par le garde-fou universel findUnparsedRows ci-dessus.
-    if (parsed.invoiceProductTotalIsGross && parsed.invoiceProductTotalHT != null && lineTotalsSum != null) {
-      const gap = Math.round((parsed.invoiceProductTotalHT - lineTotalsSum) * 100) / 100;
-      if (Math.abs(gap) > 0.02) {
-        console.warn(`[pdfImport] ${supplier.name} : total imprimé ${parsed.invoiceProductTotalHT} € ≠ somme des lignes ${lineTotalsSum} € (écart ${gap} €)`);
-        parseWarnings.push({
-          type: 'total_mismatch',
-          message:
-            `Le document totalise ${parsed.invoiceProductTotalHT.toFixed(2)} € HT de produits, ` +
-            `mais les ${parsed.items.length} lignes lues totalisent ${lineTotalsSum.toFixed(2)} € HT ` +
-            `(écart ${gap.toFixed(2)} €). Une ligne est probablement manquante ou mal lue.`,
-        });
-      }
-    }
 
     return {
       supplier_id: supplierId,

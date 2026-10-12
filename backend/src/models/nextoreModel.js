@@ -423,12 +423,20 @@ async function createPurchase(warehouse, supplierId, lines) {
   // Référence lisible, heure de Paris, unique par fournisseur
   const stamp = new Date().toLocaleString('sv-SE', { timeZone: 'Europe/Paris' }).slice(0, 16);
   const referenceNo = `APP-${warehouse.code}-${stamp.slice(0, 10)}_${stamp.slice(11, 13)}h${stamp.slice(14, 16)}-${supplierId}`;
+  return sendPurchase(warehouse, supplierId, referenceNo,
+    lines.map((l) => ({ product_id: l.product_id, quantity: l.quantity, unit_cost: costById.get(String(l.product_id)) })));
+}
+
+/**
+ * Envoie un achat EN ATTENTE à Nextore. lines = [{ product_id, quantity, unit_cost }]
+ * en PIÈCES, coût HT d'une pièce. Partagé par les Besoins et l'import de commande.
+ */
+async function sendPurchase(warehouse, supplierId, referenceNo, lines) {
   const items = lines.map((l) => ({
     product_id: String(l.product_id),
-    net_unit_cost: costById.get(String(l.product_id)).toFixed(4),
+    net_unit_cost: Number(l.unit_cost).toFixed(4),
     quantity: String(l.quantity),
   }));
-
   // Nextore répond l'id de l'achat créé (ex. 1680)
   const purchaseId = await api.createPurchase({
     referenceNo, status: 'pending', supplierId: String(supplierId), warehouseId: warehouse.id, items,
@@ -899,6 +907,7 @@ module.exports = {
   syncRecentPurchases,
   syncPendingPurchases,
   createPurchase,
+  sendPurchase,
   getStockDashboard,
   getStockSummary,
   getNeeds,
