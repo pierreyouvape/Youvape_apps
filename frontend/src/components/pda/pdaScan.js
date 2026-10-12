@@ -143,7 +143,13 @@ export const useScanner = (onScan, enabled) => {
     };
     // Un bouton touché vole le focus : on le reprend dès qu'il est libre.
     const onFocusOut = () => setTimeout(grab, 0);
+    // Mieux : on ne le lâche pas. Le reprendre pendant un toucher ouvre le
+    // clavier un instant (clignotement à chaque bouton). Le clic part quand même.
+    const keepFocus = (e) => {
+      if (document.activeElement === sink && !isField(e.target)) e.preventDefault();
+    };
     document.addEventListener('focusout', onFocusOut);
+    document.addEventListener('mousedown', keepFocus, true);
     grab();
 
     const onKey = (e) => {
@@ -165,6 +171,7 @@ export const useScanner = (onScan, enabled) => {
       clearTimeout(swap);
       document.removeEventListener('keydown', onKey);
       document.removeEventListener('focusout', onFocusOut);
+      document.removeEventListener('mousedown', keepFocus, true);
       sink.remove();
     };
   }, [enabled]);
