@@ -194,7 +194,7 @@ export default function ImportTab({ shop, token }) {
         {error && <div style={{ marginTop: 12, color: '#dc2626', fontWeight: 600 }}>{error}</div>}
         {result && (
           <div style={{ marginTop: 12, color: '#16a34a', fontWeight: 600 }}>
-            Commande « {result.reference} » créée ({result.lines} lignes) : elle se réceptionne dans la section Réception, qui met le stock Nextore à jour.
+            Commande « {result.reference} » créée ({result.lines} lignes) : elle se réceptionne dans Achat › Commandes, qui met le stock Nextore à jour.
           </div>
         )}
       </div>

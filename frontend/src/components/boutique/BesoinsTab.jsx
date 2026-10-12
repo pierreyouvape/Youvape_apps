@@ -516,13 +516,13 @@ export default function BesoinsTab({ shop, token }) {
               {orderResults ? (
                 orderResults.map((r) => (
                   <div key={r.name} style={{ padding: '8px 0', color: r.ok ? '#16a34a' : '#dc2626' }}>
-                    <strong>{r.name}</strong> — {r.ok ? `commande ${r.ref} créée (${r.count} produit(s)), à réceptionner dans la section Réception` : `échec : ${r.error}`}
+                    <strong>{r.name}</strong> — {r.ok ? `commande ${r.ref} créée (${r.count} produit(s)), à réceptionner dans Achat › Commandes` : `échec : ${r.error}`}
                   </div>
                 ))
               ) : (
                 <>
                   <p style={{ marginTop: 0, color: '#555', fontSize: 14 }}>
-                    Une commande sera créée par fournisseur. À l'arrivée, elle se réceptionne dans la section <strong>Réception</strong>, qui met le stock Nextore à jour.
+                    Une commande sera créée par fournisseur. À l'arrivée, elle se réceptionne dans <strong>Achat › Commandes</strong>, qui met le stock Nextore à jour.
                   </p>
                   {orderGroups.map((g) => (
                     <div key={g.supplierId || 'none'} style={{ marginBottom: 14 }}>

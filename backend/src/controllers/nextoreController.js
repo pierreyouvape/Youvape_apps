@@ -204,10 +204,13 @@ const receptionHandler = (label, fn) => async (req, res) => {
 
 const getReceptionOrders = receptionHandler('orders', async (wh) => ({ orders: await boutiqueOrderModel.listOrders(wh.id) }));
 const getReceptionOrder = receptionHandler('order', (wh, req) => boutiqueOrderModel.getOrder(req.params.id, wh.id));
-const postReceptionCancel = receptionHandler('cancel', async (wh, req) => {
-  await boutiqueOrderModel.cancelOrder(req.params.id, wh.id);
+const deleteReceptionOrder = receptionHandler('delete', async (wh, req) => {
+  await boutiqueOrderModel.deleteOrder(req.params.id, wh.id);
+  console.log(`Boutique commande ${req.params.id} (${wh.code}) supprimée par ${req.user?.email}`);
   return { ok: true };
 });
+const putReceptionOrder = receptionHandler('update', (wh, req) =>
+  boutiqueOrderModel.updateOrder(req.params.id, wh.id, { reference: req.body?.reference, lines: req.body?.lines }));
 const postReceptionSession = receptionHandler('session', (wh, req) =>
   boutiqueOrderModel.openSession(req.params.id, wh.id, req.user?.email));
 const putReceptionCount = receptionHandler('count', (wh, req) =>
@@ -489,7 +492,8 @@ module.exports = {
   postImportPurchase,
   getReceptionOrders,
   getReceptionOrder,
-  postReceptionCancel,
+  deleteReceptionOrder,
+  putReceptionOrder,
   postReceptionSession,
   putReceptionCount,
   postReceptionLine,

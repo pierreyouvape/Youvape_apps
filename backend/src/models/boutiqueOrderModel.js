@@ -62,9 +62,9 @@ async function createOrder({ warehouse, supplierId, reference, source, lines, us
 }
 
 /** Une commande de CETTE boutique, sinon 404 (le droit est vérifié par boutique). */
-async function getOrderRow(orderId, warehouseId, db = pool) {
+async function getOrderRow(orderId, warehouseId, db = pool, lock = false) {
   const { rows } = await db.query(
-    'SELECT * FROM boutique_orders WHERE id = $1 AND warehouse_id = $2',
+    `SELECT * FROM boutique_orders WHERE id = $1 AND warehouse_id = $2${lock ? ' FOR UPDATE' : ''}`,
     [parseInt(orderId, 10), warehouseId]
   );
   if (!rows[0]) throw httpError(404, 'Commande introuvable dans cette boutique');
@@ -107,7 +107,7 @@ async function getOrder(orderId, warehouseId) {
 
   const { rows: items } = await pool.query(
     `SELECT i.id, i.product_id, i.supplier_sku, i.pack_qty, i.qty_ordered, i.qty_received,
-            i.closed_reason, i.added_at_reception, ${REMAINING_SQL}::int AS remaining,
+            i.closed_reason, i.added_at_reception, ${REMAINING_SQL}::int AS remaining, i.unit_cost::float AS unit_cost,
             p.name, p.code, st.stock::float AS stock,
             COALESCE((SELECT array_agg(DISTINCT b.barcode) FROM nextore_product_barcodes b
                       WHERE b.product_id = i.product_id), '{}') AS barcodes,
@@ -143,18 +143,127 @@ async function getOrder(orderId, warehouseId) {
   };
 }
 
-/** Annule une commande sur laquelle rien n'a encore été reçu. */
-async function cancelOrder(orderId, warehouseId) {
+/** Supprime une commande sur laquelle rien n'a été reçu (ses pièces seraient déjà en stock Nextore). */
+async function deleteOrder(orderId, warehouseId) {
   const order = await getOrderRow(orderId, warehouseId);
-  if (order.status !== 'open') throw httpError(400, 'Cette commande est déjà close');
   const { rows } = await pool.query(
     `SELECT EXISTS (SELECT 1 FROM boutique_order_items WHERE order_id = $1 AND qty_received > 0) AS received,
+            EXISTS (SELECT 1 FROM boutique_reception_sessions WHERE order_id = $1 AND status = 'validated') AS validated,
             EXISTS (SELECT 1 FROM boutique_reception_sessions WHERE order_id = $1 AND status IN ('counting', 'sending')) AS open`,
     [order.id]
   );
-  if (rows[0].received) throw httpError(400, 'Des pièces ont déjà été reçues : soldez les lignes restantes à la réception');
+  if (rows[0].received || rows[0].validated) {
+    throw httpError(400, 'Cette commande a déjà été réceptionnée : soldez ses lignes restantes à la réception');
+  }
   if (rows[0].open) throw httpError(400, 'Une réception est en cours : abandonnez-la d\'abord');
-  await pool.query("UPDATE boutique_orders SET status = 'cancelled', closed_at = NOW() WHERE id = $1", [order.id]);
+  await pool.query('DELETE FROM boutique_orders WHERE id = $1', [order.id]);
+}
+
+/**
+ * Modifie une commande ouverte : référence, et lignes = liste complète
+ * [{ id?, product_id, qty_ordered, unit_cost }] (sans id = ajout, absente = retrait).
+ * Pas pendant une réception : le comptage porte sur les lignes. Une quantité ne
+ * descend pas sous le reçu ; une ligne reçue ou présente dans l'historique ne se
+ * retire pas (on la solde à la réception). unit_cost vide sur un ajout = dernier
+ * coût payé chez ce fournisseur, sinon coût de la fiche.
+ */
+async function updateOrder(orderId, warehouseId, { reference, lines }) {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    // Verrou sur la commande : une réception ne s'ouvre pas pendant la modification
+    const order = await getOrderRow(orderId, warehouseId, client, true);
+    if (order.status !== 'open') throw httpError(400, 'Cette commande est close');
+    const { rows: open } = await client.query(
+      "SELECT 1 FROM boutique_reception_sessions WHERE order_id = $1 AND status IN ('counting', 'sending')",
+      [order.id]
+    );
+    if (open.length) throw httpError(400, 'Une réception est en cours : terminez-la ou abandonnez-la avant de modifier la commande');
+    const ref = String(reference || '').trim();
+    if (!ref) throw httpError(400, 'Référence requise');
+    if (!Array.isArray(lines) || !lines.length) throw httpError(400, 'Une commande garde au moins une ligne');
+
+    const { rows: current } = await client.query(
+      `SELECT i.*, EXISTS (SELECT 1 FROM boutique_reception_counts c
+                           JOIN boutique_reception_sessions s ON s.id = c.session_id
+                           WHERE c.order_item_id = i.id AND s.status = 'validated') AS has_history,
+              p.name
+       FROM boutique_order_items i JOIN nextore_products p ON p.product_id = i.product_id
+       WHERE i.order_id = $1`,
+      [order.id]
+    );
+    const byId = new Map(current.map((i) => [i.id, i]));
+    const kept = new Set();
+    const productIds = new Set();
+
+    for (const l of lines) {
+      const qty = Number(l.qty_ordered);
+      if (!Number.isInteger(qty) || qty < 0) throw httpError(400, 'Quantité invalide : un nombre entier de pièces est attendu');
+      const cost = l.unit_cost === null || l.unit_cost === undefined || l.unit_cost === '' ? null : Number(l.unit_cost);
+      if (cost !== null && (!Number.isFinite(cost) || cost < 0)) throw httpError(400, 'Coût invalide');
+      if (l.id) {
+        const cur = byId.get(parseInt(l.id, 10));
+        if (!cur) throw httpError(400, `Ligne ${l.id} absente de cette commande`);
+        if (qty < cur.qty_received) throw httpError(400, `${cur.name} : déjà ${cur.qty_received} pièce(s) reçue(s), la quantité ne peut pas descendre en dessous`);
+        kept.add(cur.id);
+        productIds.add(cur.product_id);
+        // Quantité changée : la ligne redevient attendue, même si un motif l'avait soldée
+        await client.query(
+          `UPDATE boutique_order_items
+           SET qty_ordered = $2, unit_cost = COALESCE($3, unit_cost),
+               closed_reason = CASE WHEN qty_ordered = $2 THEN closed_reason ELSE NULL END
+           WHERE id = $1`,
+          [cur.id, qty, cost]
+        );
+      } else {
+        const pid = String(l.product_id || '');
+        if (productIds.has(pid) || current.some((c) => c.product_id === pid)) {
+          throw httpError(400, 'Ce produit est déjà sur la commande : modifiez sa ligne');
+        }
+        if (qty <= 0) throw httpError(400, 'Une ligne ajoutée doit compter au moins une pièce');
+        const { rows } = await client.query(
+          `INSERT INTO boutique_order_items (order_id, product_id, qty_ordered, unit_cost)
+           SELECT $1, p.product_id, $3,
+                  COALESCE($4::numeric,
+                    (SELECT pi.unit_cost FROM nextore_purchase_items pi
+                     WHERE pi.product_id = p.product_id AND pi.supplier_id = $5
+                       AND pi.quantity_received > 0 AND pi.unit_cost > 0
+                     ORDER BY pi.purchased_at DESC, pi.id DESC LIMIT 1),
+                    p.cost, 0)
+           FROM nextore_products p WHERE p.product_id = $2
+           RETURNING id`,
+          [order.id, pid, qty, cost, order.supplier_id]
+        );
+        if (!rows[0]) throw httpError(404, `Produit Nextore introuvable (${pid})`);
+        productIds.add(pid);
+      }
+    }
+
+    for (const cur of current.filter((c) => !kept.has(c.id))) {
+      if (cur.qty_received > 0 || cur.has_history) {
+        throw httpError(400, `${cur.name} a déjà été réceptionné : soldez la ligne à la réception au lieu de la retirer`);
+      }
+      await client.query('DELETE FROM boutique_order_items WHERE id = $1', [cur.id]);
+    }
+
+    await client.query('UPDATE boutique_orders SET reference = $2 WHERE id = $1', [order.id, ref]);
+    // Plus rien d'attendu (lignes restantes retirées) : la commande est close
+    const { rows: left } = await client.query(
+      `SELECT COALESCE(SUM(${REMAINING_SQL}), 0)::int AS remaining, BOOL_OR(i.qty_received > 0) AS received
+       FROM boutique_order_items i WHERE i.order_id = $1`,
+      [order.id]
+    );
+    if (left[0].remaining === 0 && left[0].received) {
+      await client.query("UPDATE boutique_orders SET status = 'received', closed_at = NOW() WHERE id = $1", [order.id]);
+    }
+    await client.query('COMMIT');
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+  return getOrder(orderId, warehouseId);
 }
 
 // --- Réception --------------------------------------------------------------
@@ -189,10 +298,23 @@ async function openSession(orderId, warehouseId, userEmail) {
     if (open[0].status === 'sending') await reconcileSending(open[0], warehouseId);
     return getOrder(order.id, warehouseId);
   }
-  await pool.query(
-    'INSERT INTO boutique_reception_sessions (order_id, started_by) VALUES ($1, $2)',
-    [order.id, userEmail || null]
-  );
+  // Même verrou que updateOrder : on n'ouvre pas une réception sur une commande en cours de modification
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const locked = await getOrderRow(order.id, warehouseId, client, true);
+    if (locked.status !== 'open') throw httpError(400, 'Cette commande est close');
+    await client.query(
+      'INSERT INTO boutique_reception_sessions (order_id, started_by) VALUES ($1, $2)',
+      [order.id, userEmail || null]
+    );
+    await client.query('COMMIT');
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
   return getOrder(order.id, warehouseId);
 }
 
@@ -471,7 +593,8 @@ module.exports = {
   createOrder,
   listOrders,
   getOrder,
-  cancelOrder,
+  deleteOrder,
+  updateOrder,
   openSession,
   setCount,
   addLine,

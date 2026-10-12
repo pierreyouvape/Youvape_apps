@@ -31,38 +31,48 @@ function Modal({ title, children, footer, onClose, width = 560 }) {
 }
 
 /* ─── ÉCRAN 1 — LISTE ─────────────────────────────────────── */
-function OrdersList({ shop, auth, onOpen }) {
+function OrdersList({ shop, auth, onOpen, onEdit }) {
   const [orders, setOrders] = useState([]);
   const [showClosed, setShowClosed] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
+  const load = useCallback(() => {
     axios.get(`${API_URL}/nextore/${shop.slug}/reception/orders`, auth)
       .then((res) => setOrders(res.data.orders || []))
       .catch((e) => setError(e.response?.data?.error || e.message))
       .finally(() => setLoading(false));
   }, [shop.slug]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { load(); }, [load]);
+
+  const remove = async (o) => {
+    if (!window.confirm(`Supprimer la commande « ${o.reference} » (${o.supplier_name || 'fournisseur ?'}) ? Elle disparaît définitivement.`)) return;
+    setError('');
+    try {
+      await axios.delete(`${API_URL}/nextore/${shop.slug}/reception/orders/${o.id}`, auth);
+      load();
+    } catch (e) { setError(e.response?.data?.error || e.message); }
+  };
 
   const shown = orders.filter((o) => showClosed || o.status === 'open');
   return (
     <div className="purchases-card">
       <div className="filters-bar" style={{ marginBottom: 12 }}>
-        <strong>{orders.filter((o) => o.status === 'open').length} commande(s) à recevoir</strong>
+        <strong>{orders.filter((o) => o.status === 'open').length} commande(s) en cours</strong>
         <label style={{ marginLeft: 'auto', fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }}>
           <input type="checkbox" checked={showClosed} onChange={(e) => setShowClosed(e.target.checked)} /> Afficher les commandes closes
         </label>
       </div>
       {error && <div style={{ color: '#dc2626' }}>{error}</div>}
       {loading ? <div style={{ padding: 30, textAlign: 'center', color: '#6b7280' }}>Chargement…</div> : shown.length === 0 ? (
-        <div style={{ padding: 30, textAlign: 'center', color: '#8a99a4' }}>Aucune commande à recevoir. Elles se créent depuis Besoins ou Import commande.</div>
+        <div style={{ padding: 30, textAlign: 'center', color: '#8a99a4' }}>Aucune commande en cours. Elles se créent depuis Besoins ou Import commande.</div>
       ) : (
         <table className="purchases-table">
           <thead>
             <tr>
               <th>Commande</th><th>Fournisseur</th><th>Créée le</th><th>Statut</th>
               <th className="text-right">Lignes</th><th className="text-right">Pièces commandées</th>
-              <th className="text-right">Reçues</th><th className="text-right">Restantes</th>
+              <th className="text-right">Reçues</th><th className="text-right">Restantes</th><th />
             </tr>
           </thead>
           <tbody>
@@ -79,6 +89,19 @@ function OrdersList({ shop, auth, onOpen }) {
                 <td className="text-right">{fmtInt(o.pieces_ordered)}</td>
                 <td className="text-right">{fmtInt(o.pieces_received)}</td>
                 <td className="text-right">{fmtInt(o.pieces_remaining)}</td>
+                <td className="text-right" style={{ whiteSpace: 'nowrap' }} onClick={(e) => e.stopPropagation()}>
+                  {o.status === 'open' ? (
+                    <>
+                      <button className="btn btn-primary btn-sm" onClick={() => onOpen(o.id)}>Réceptionner</button>{' '}
+                      <button className="btn btn-secondary btn-sm" onClick={() => onEdit(o.id)} disabled={o.reception_open}
+                        title={o.reception_open ? 'Réception en cours : terminez-la ou abandonnez-la d\'abord' : ''}>Modifier</button>{' '}
+                      <button className="btn btn-danger btn-sm" onClick={() => remove(o)} disabled={o.pieces_received > 0 || o.reception_open}
+                        title={o.pieces_received > 0 ? 'Déjà réceptionnée : soldez les lignes restantes à la réception' : o.reception_open ? 'Réception en cours' : ''}>Supprimer</button>
+                    </>
+                  ) : (
+                    <button className="btn btn-secondary btn-sm" onClick={() => onOpen(o.id)}>Voir</button>
+                  )}
+                </td>
               </tr>
             ))}
           </tbody>
@@ -135,8 +158,6 @@ function OrderScreen({ shop, auth, orderId, onBack }) {
   };
 
   const startSession = () => run(async () => apply((await axios.post(`${base}/orders/${orderId}/session`, {}, auth)).data));
-  const cancelOrder = () => window.confirm('Annuler cette commande ? Elle ne sera plus attendue.') &&
-    run(async () => { await axios.post(`${base}/orders/${orderId}/cancel`, {}, auth); onBack(); });
   const abandon = () => window.confirm('Abandonner cette réception ? Le comptage sera perdu, rien ne part dans Nextore.') &&
     run(async () => { await flushWrites(); await axios.post(`${base}/sessions/${session.id}/abandon`, {}, auth); await load(); });
 
@@ -298,10 +319,7 @@ function OrderScreen({ shop, auth, orderId, onBack }) {
           </div>
           <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
             {order.status === 'open' && !session && (
-              <>
-                <button className="btn btn-primary" onClick={startSession} disabled={busy}>Commencer la réception</button>
-                {data.history.length === 0 && <button className="btn btn-secondary" onClick={cancelOrder} disabled={busy}>Annuler la commande</button>}
-              </>
+              <button className="btn btn-primary" onClick={startSession} disabled={busy}>Commencer la réception</button>
             )}
             {counting && (
               <>
@@ -458,6 +476,112 @@ function OrderScreen({ shop, auth, orderId, onBack }) {
   );
 }
 
+/* ─── ÉCRAN 3 — MODIFIER UNE COMMANDE ─────────────────────── */
+function EditOrderScreen({ shop, auth, orderId, onBack }) {
+  const [data, setData] = useState(null);
+  const [reference, setReference] = useState('');
+  const [lines, setLines] = useState([]);
+  const [adding, setAdding] = useState(false);
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+  const url = `${API_URL}/nextore/${shop.slug}/reception/orders/${orderId}`;
+
+  useEffect(() => {
+    axios.get(url, auth).then((res) => {
+      const d = res.data;
+      // Une ligne reçue, ou présente dans l'historique, ne se retire pas
+      const inHistory = new Set(d.history.flatMap((h) => h.counts.map((c) => c.order_item_id)));
+      setData(d);
+      setReference(d.order.reference);
+      setLines(d.items.map((x) => ({
+        id: x.id, product_id: x.product_id, name: x.name, code: x.code, supplier_sku: x.supplier_sku,
+        qty_ordered: x.qty_ordered, qty_received: x.qty_received, unit_cost: x.unit_cost,
+        removable: x.qty_received === 0 && !inHistory.has(x.id),
+      })));
+    }).catch((e) => setError(e.response?.data?.error || e.message));
+  }, [url]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const setLine = (i, key, value) => setLines((ls) => ls.map((l, j) => (j !== i ? l : { ...l, [key]: value })));
+  const addProduct = (p) => {
+    setAdding(false);
+    if (lines.some((l) => l.product_id === p.product_id)) { setError(`${p.name} est déjà sur la commande`); return; }
+    setLines((ls) => [...ls, { product_id: p.product_id, name: p.name, code: p.sku, qty_ordered: 1, qty_received: 0, unit_cost: null, removable: true }]);
+  };
+
+  const save = async () => {
+    setBusy(true); setError('');
+    try {
+      await axios.put(url, {
+        reference,
+        lines: lines.map((l) => ({ id: l.id, product_id: l.product_id, qty_ordered: parseInt(l.qty_ordered, 10) || 0, unit_cost: l.unit_cost })),
+      }, auth);
+      onBack();
+    } catch (e) { setError(e.response?.data?.error || e.message); } finally { setBusy(false); }
+  };
+
+  if (!data) return <div className="purchases-card">{error ? <span style={{ color: '#dc2626' }}>{error}</span> : 'Chargement…'}</div>;
+  if (data.session) {
+    return (
+      <div className="purchases-card">
+        <p>Une réception est en cours sur cette commande : terminez-la ou abandonnez-la avant de la modifier.</p>
+        <button className="btn btn-secondary" onClick={onBack}>‹ Commandes</button>
+      </div>
+    );
+  }
+  const total = lines.reduce((a, l) => a + (parseInt(l.qty_ordered, 10) || 0) * (parseFloat(l.unit_cost) || 0), 0);
+
+  return (
+    <div className="purchases-card">
+      <div className="filters-bar" style={{ alignItems: 'flex-end' }}>
+        <button className="btn btn-secondary btn-sm" onClick={onBack}>‹ Commandes</button>
+        <div className="filter-group">
+          <label>Référence</label>
+          <input value={reference} onChange={(e) => setReference(e.target.value)} style={{ padding: '6px 10px', border: '1px solid #ddd', borderRadius: 6, width: 260 }} />
+        </div>
+        <div style={{ fontSize: 13, color: '#6b7280', alignSelf: 'center' }}>{data.order.supplier_name}</div>
+        <button className="btn btn-secondary" style={{ marginLeft: 'auto' }} onClick={() => setAdding(true)}>+ Ajouter un produit</button>
+      </div>
+      {error && <div style={{ margin: '10px 0', color: '#dc2626', fontWeight: 600 }}>{error}</div>}
+      <table className="purchases-table" style={{ marginTop: 12 }}>
+        <thead>
+          <tr>
+            <th>Produit</th><th>Réf.</th><th className="text-right">Déjà reçu</th>
+            <th className="text-right">Pièces commandées</th><th className="text-right">Prix pièce HT</th><th className="text-right">Total HT</th><th />
+          </tr>
+        </thead>
+        <tbody>
+          {lines.map((l, i) => (
+            <tr key={l.id || `new-${l.product_id}`} style={{ background: l.id ? (i % 2 ? '#f8fafc' : '#fff') : '#f0fdf4' }}>
+              <td><div style={{ fontWeight: 500 }}>{l.name}</div><small style={{ color: '#666' }}>{l.code || ''}{!l.id ? ' · ajouté' : ''}</small></td>
+              <td><code style={{ fontSize: 12 }}>{l.supplier_sku || '-'}</code></td>
+              <td className="text-right">{fmtInt(l.qty_received)}</td>
+              <td className="text-right">
+                <input type="number" className="qty-input" min={l.qty_received} value={l.qty_ordered} onChange={(e) => setLine(i, 'qty_ordered', e.target.value)} />
+              </td>
+              <td className="text-right">
+                <input type="number" className="qty-input" min="0" step="0.0001" style={{ width: 90 }} value={l.unit_cost ?? ''}
+                  placeholder={l.id ? '' : 'auto'} title={l.id ? '' : 'Vide : dernier coût payé chez ce fournisseur'}
+                  onChange={(e) => setLine(i, 'unit_cost', e.target.value === '' ? null : parseFloat(e.target.value))} />
+              </td>
+              <td className="text-right">{l.unit_cost != null ? `${((parseInt(l.qty_ordered, 10) || 0) * l.unit_cost).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).replace(NBSP, ' ')} €` : '-'}</td>
+              <td className="text-right">
+                <button className="btn btn-secondary btn-sm" disabled={!l.removable} onClick={() => setLines((ls) => ls.filter((_, j) => j !== i))}
+                  title={l.removable ? 'Retirer la ligne' : 'Déjà réceptionnée : soldez-la à la réception'}>Retirer</button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 12, marginTop: 14 }}>
+        <strong>{total.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).replace(NBSP, ' ')} € HT</strong>
+        <button className="btn btn-secondary" onClick={onBack} disabled={busy}>Annuler</button>
+        <button className="btn btn-primary" onClick={save} disabled={busy || !lines.length || !reference.trim()}>{busy ? 'Enregistrement…' : 'Enregistrer'}</button>
+      </div>
+      {adding && <AddArticleModal shop={shop} auth={auth} onClose={() => setAdding(false)} onPick={addProduct} />}
+    </div>
+  );
+}
+
 /* ─── POP-UP : unité ou carton ? ──────────────────────────── */
 function TypeModal({ data, onClose, onChoose }) {
   const [carton, setCarton] = useState(data.packQty > 1 ? String(data.packQty) : '');
@@ -494,7 +618,7 @@ function AddArticleModal({ shop, auth, onClose, onPick }) {
     }, 300);
   };
   return (
-    <Modal title="Ajouter un article absent du bon" onClose={onClose}>
+    <Modal title="Ajouter un produit" onClose={onClose}>
       <input autoFocus value={q} onChange={(e) => search(e.target.value)} placeholder="Nom, code ou EAN…"
         style={{ width: '100%', padding: '8px 10px', border: '1px solid #d1d5db', borderRadius: 6, marginBottom: 8 }} />
       <div style={{ maxHeight: 320, overflowY: 'auto' }}>
@@ -510,10 +634,11 @@ function AddArticleModal({ shop, auth, onClose, onPick }) {
 }
 
 /* ─── COMPOSANT ─────────────────────────────────────────── */
-export default function ReceptionTab({ shop, token }) {
+export default function CommandesTab({ shop, token }) {
   const auth = { headers: { Authorization: `Bearer ${token}` } };
-  const [orderId, setOrderId] = useState(null);
-  return orderId
-    ? <OrderScreen key={orderId} shop={shop} auth={auth} orderId={orderId} onBack={() => setOrderId(null)} />
-    : <OrdersList shop={shop} auth={auth} onOpen={setOrderId} />;
+  const [view, setView] = useState({ mode: 'list' }); // list | order | edit
+  const back = () => setView({ mode: 'list' });
+  if (view.mode === 'order') return <OrderScreen key={view.id} shop={shop} auth={auth} orderId={view.id} onBack={back} />;
+  if (view.mode === 'edit') return <EditOrderScreen key={view.id} shop={shop} auth={auth} orderId={view.id} onBack={back} />;
+  return <OrdersList shop={shop} auth={auth} onOpen={(id) => setView({ mode: 'order', id })} onEdit={(id) => setView({ mode: 'edit', id })} />;
 }

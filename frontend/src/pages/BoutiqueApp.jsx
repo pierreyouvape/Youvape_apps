@@ -5,7 +5,7 @@ import AppShell from '../components/AppShell';
 import StockTab from '../components/boutique/StockTab';
 import BesoinsTab from '../components/boutique/BesoinsTab';
 import ImportTab from '../components/boutique/ImportTab';
-import ReceptionTab from '../components/boutique/ReceptionTab';
+import CommandesTab from '../components/boutique/CommandesTab';
 import RapprochementTab from '../components/boutique/RapprochementTab';
 import ComptageTab from '../components/boutique/ComptageTab';
 import StatsTab from '../components/boutique/StatsTab';
@@ -33,22 +33,29 @@ const IcStock = () => <Ic><rect x={4} y={7} width={16} height={13} rx={1.5} /><p
 const IcNeeds = () => <Ic><path d="M4 20 H20" /><path d="M5 15 L10 10 L13 13 L19 6" /><path d="M15 6 H19 V10" /></Ic>;
 const IcDoc   = () => <Ic><path d="M14 3 H7 A1.5 1.5 0 0 0 5.5 4.5 V19.5 A1.5 1.5 0 0 0 7 21 H17 A1.5 1.5 0 0 0 18.5 19.5 V7.5 Z" /><path d="M14 3 V7.5 H18.5" /><path d="M12 10.5 V16.5" /><path d="M9.5 14 L12 16.5 L14.5 14" /></Ic>;
 const IcBox   = () => <Ic><path d="M3.5 8 L12 4 L20.5 8 V16 L12 20 L3.5 16 Z" /><path d="M3.5 8 L12 12 L20.5 8" /><path d="M12 12 V20" /><path d="M8 10 L8 6" /></Ic>;
+const IcCart  = () => <Ic><path d="M3 4 H5.5 L7.6 15 H18 L20 7.5 H6.4" /><circle cx={9} cy={19} r={1.4} /><circle cx={16.5} cy={19} r={1.4} /></Ic>;
 const IcLink  = () => <Ic><path d="M9.5 14.5 L14.5 9.5" /><path d="M11 7.5 L12.8 5.7 A3.8 3.8 0 0 1 18.3 11.2 L16.5 13" /><path d="M13 16.5 L11.2 18.3 A3.8 3.8 0 0 1 5.7 12.8 L7.5 11" /></Ic>;
 const IcCount = () => <Ic><rect x={5} y={4} width={14} height={17} rx={2} /><path d="M9 4 V2.6 H15 V4" /><path d="M8.5 12 L11 14.5 L15.5 9.5" /></Ic>;
 const IcStats = () => <Ic><path d="M4 20 H20" /><path d="M7 20 V13" /><path d="M12 20 V8" /><path d="M17 20 V4" /></Ic>;
 const IcSafe  = () => <Ic><rect x={3.5} y={5} width={17} height={14} rx={2} /><circle cx={11} cy={12} r={3.2} /><path d="M11 12 H13.6" /><path d="M17 9.5 V14.5" /></Ic>;
 
-/* Sections de la boutique. `ready:false` → tuile « Bientôt » (non cliquable). */
+/* Sections de la boutique. `ready:false` → tuile « Bientôt » (non cliquable).
+ * `group` → la section vit sous la tuile de ce groupe (GROUPS), pas sur l'accueil. */
 const SECTIONS = [
   { key: 'stock',    label: 'Stock',    color: '#0D9488', Icon: IcStock, ready: true },
-  { key: 'besoin',   label: 'Besoins',  color: '#E28F00', Icon: IcNeeds, ready: true },
-  { key: 'import',   label: 'Import commande', color: '#16A34A', Icon: IcDoc, ready: true },
-  { key: 'reception', label: 'Réception', color: '#0891B2', Icon: IcBox, ready: true },
+  { key: 'besoin',   label: 'Besoins',  color: '#E28F00', Icon: IcNeeds, ready: true, group: 'achat' },
+  { key: 'import',   label: 'Import commande', color: '#16A34A', Icon: IcDoc, ready: true, group: 'achat' },
+  { key: 'commandes', label: 'Commandes', color: '#0891B2', Icon: IcBox, ready: true, group: 'achat' },
   { key: 'rapprochement', label: 'Rapprochement', color: '#2563EB', Icon: IcLink, ready: true },
   { key: 'comptage', label: 'Comptage', color: '#7C3AED', Icon: IcCount, ready: true },
   // Droit à part `stats-boutiques` (Conseiller / Responsable), en plus du droit boutique.
   { key: 'stats',    label: 'Statistiques', color: '#A21CAF', Icon: IcStats, ready: true, permKey: 'stats-boutiques' },
   { key: 'coffre',   label: 'Coffre',   color: '#334155', Icon: IcSafe,  ready: false },
+];
+
+/* Groupes de sections : une tuile sur l'accueil, qui ouvre ses propres tuiles. */
+const GROUPS = [
+  { key: 'achat', label: 'Achat', color: '#F59E0B', Icon: IcCart, subtitle: 'Achat — besoins, import de commande et commandes' },
 ];
 
 function shade(hex, amt) {
@@ -156,8 +163,35 @@ export default function BoutiqueApp() {
   const statsLevel = isSuperAdmin || permissions?.['stats-boutiques']?.write ? 'Responsable' : 'Conseiller';
 
   const sectionDef = section ? sections.find((s) => s.key === section) : null;
+  const groupDef = section ? GROUPS.find((g) => g.key === section && sections.some((s) => s.group === g.key)) : null;
   // Section inconnue (ou non autorisée) → retour à l'accueil boutique
-  if (section && !sectionDef) return <Navigate to={`/boutique/${shop.slug}`} replace />;
+  if (section && !sectionDef && !groupDef) return <Navigate to={`/boutique/${shop.slug}`} replace />;
+  // Depuis une section d'un groupe, le retour ramène au groupe
+  const goUp = sectionDef?.group ? () => navigate(`/boutique/${shop.slug}/${sectionDef.group}`) : goHome;
+
+  // Accueil : les sections hors groupe, et chaque groupe à la place de son premier membre
+  const homeTiles = [];
+  for (const s of sections) {
+    if (!s.group) homeTiles.push(s);
+    else if (!homeTiles.some((x) => x.key === s.group)) homeTiles.push({ ...GROUPS.find((g) => g.key === s.group), ready: true });
+  }
+  const renderTiles = (list) => (
+    <div style={{
+      display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))',
+      gap: 26, justifyItems: 'center', maxWidth: 640,
+    }}>
+      {list.map((s) => (
+        <ModuleTile
+          key={s.key}
+          label={s.label}
+          color={s.color}
+          Icon={s.Icon}
+          disabled={!s.ready}
+          onClick={() => navigate(`/boutique/${shop.slug}/${s.key}`)}
+        />
+      ))}
+    </div>
+  );
 
   return (
     <AppShell currentPath={currentPath}>
@@ -171,21 +205,15 @@ export default function BoutiqueApp() {
         {!section && (
           <>
             <ShopHeader shop={shop} subtitle="Gestion de la boutique — données caisse Nextore" />
-            <div style={{
-              display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))',
-              gap: 26, justifyItems: 'center', maxWidth: 640,
-            }}>
-              {sections.map((s) => (
-                <ModuleTile
-                  key={s.key}
-                  label={s.label}
-                  color={s.color}
-                  Icon={s.Icon}
-                  disabled={!s.ready}
-                  onClick={() => navigate(`/boutique/${shop.slug}/${s.key}`)}
-                />
-              ))}
-            </div>
+            {renderTiles(homeTiles)}
+          </>
+        )}
+
+        {/* ── Groupe (ex. Achat) : ses sections en tuiles ── */}
+        {groupDef && (
+          <>
+            <ShopHeader shop={shop} subtitle={groupDef.subtitle} onBack={goHome} />
+            {renderTiles(sections.filter((s) => s.group === groupDef.key))}
           </>
         )}
 
@@ -200,7 +228,7 @@ export default function BoutiqueApp() {
         {/* ── Section Besoins (prévision d'achat) ── */}
         {section === 'besoin' && (
           <>
-            <ShopHeader shop={shop} subtitle="Besoins — prévision d'achat (vélocité des ventes)" onBack={goHome} />
+            <ShopHeader shop={shop} subtitle="Besoins — prévision d'achat (vélocité des ventes)" onBack={goUp} />
             <BesoinsTab shop={shop} token={token} />
           </>
         )}
@@ -208,16 +236,16 @@ export default function BoutiqueApp() {
         {/* ── Section Import commande (parseurs fournisseur du site) ── */}
         {section === 'import' && (
           <>
-            <ShopHeader shop={shop} subtitle="Import commande — document fournisseur → commande à réceptionner" onBack={goHome} />
+            <ShopHeader shop={shop} subtitle="Import commande — document fournisseur → commande à réceptionner" onBack={goUp} />
             <ImportTab shop={shop} token={token} />
           </>
         )}
 
-        {/* ── Section Réception (commandes → achat reçu dans Nextore) ── */}
-        {section === 'reception' && (
+        {/* ── Section Commandes (réception → achat reçu dans Nextore) ── */}
+        {section === 'commandes' && (
           <>
-            <ShopHeader shop={shop} subtitle="Réception — comptage des commandes, mise en stock dans Nextore" onBack={goHome} />
-            <ReceptionTab shop={shop} token={token} />
+            <ShopHeader shop={shop} subtitle="Commandes — réception, modification, suppression ; la réception met le stock Nextore à jour" onBack={goUp} />
+            <CommandesTab shop={shop} token={token} />
           </>
         )}
 
