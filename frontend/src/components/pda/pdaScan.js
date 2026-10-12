@@ -33,14 +33,18 @@ const scanDebug = (() => {
   } catch { return false; }
 })();
 
-// Champ des scans : SANS inputmode="none" par défaut — avec, l'Unitech EA530
-// n'y écrit rien (vérifié le 12/10/2026). ?scansink=none pour le remettre.
+// Champ des scans, réglage testé sur l'Unitech EA530 le 12/10/2026 :
+//   late (défaut) : focalisé normalement PUIS passé en inputmode="none" — le
+//                   scan arrive et le clavier virtuel reste fermé ;
+//   text          : jamais d'inputmode — le scan arrive, le clavier s'ouvre ;
+//   none          : inputmode="none" dès le focus — l'EA530 n'écrit RIEN.
+// ?scansink=… pour changer sur un appareil (mémorisé).
 const sinkMode = (() => {
   try {
     const q = new URLSearchParams(window.location.search).get('scansink');
     if (q !== null) localStorage.setItem('pdaScanSink', q);
-    return localStorage.getItem('pdaScanSink') || 'text';
-  } catch { return 'text'; }
+    return localStorage.getItem('pdaScanSink') || 'late';
+  } catch { return 'late'; }
 })();
 
 let scanLog = () => {};
@@ -80,8 +84,8 @@ if (scanDebug && typeof document !== 'undefined') {
  *   - Zebra (DataWedge) envoie de vraies touches → écoute au niveau de la page ;
  *   - Unitech (USS « Scan to Key ») INSÈRE le texte dans le champ actif, sans
  *     touches : sans champ, rien n'arrive. On garde donc un champ invisible
- *     focalisé. Pas d'inputmode="none" : l'EA530 n'y écrirait rien. Le focus
- *     est donné hors geste, ce qui n'ouvre pas le clavier virtuel.
+ *     focalisé, passé en inputmode="none" juste APRÈS le focus (avant, l'EA530
+ *     n'y écrit rien ; jamais, le clavier virtuel s'ouvre).
  */
 export const useScanner = (onScan, enabled) => {
   const buffer = useRef('');
@@ -125,18 +129,11 @@ export const useScanner = (onScan, enabled) => {
     sink.addEventListener('input', onSinkInput);
     sink.addEventListener('keydown', onSinkKey);
 
-    // Variantes EA530 contre le clavier virtuel (?scansink=ro|late) :
-    //   ro   : focalisé en lecture seule (pas de clavier), rendu modifiable après ;
-    //   late : focalisé normalement, passé en inputmode="none" juste après.
     let swap = null;
     const grab = () => {
       if (isField(document.activeElement)) return;
       clearTimeout(swap);
-      if (sinkMode === 'ro') {
-        sink.readOnly = true;
-        sink.focus({ preventScroll: true });
-        swap = setTimeout(() => { sink.readOnly = false; }, 100);
-      } else if (sinkMode === 'late') {
+      if (sinkMode === 'late') {
         sink.removeAttribute('inputmode');
         sink.focus({ preventScroll: true });
         swap = setTimeout(() => sink.setAttribute('inputmode', 'none'), 100);
