@@ -22,6 +22,42 @@ const isField = (el) => {
   return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || !!el?.isContentEditable;
 };
 
+// ── Diagnostic : ?scandebug=1 (mémorisé), ?scandebug=0 pour l'éteindre ─────
+// Affiche en bas d'écran tout ce que le lecteur envoie au navigateur, pour
+// savoir comment un nouveau PDA transmet ses scans.
+const scanDebug = (() => {
+  try {
+    const q = new URLSearchParams(window.location.search).get('scandebug');
+    if (q !== null) localStorage.setItem('pdaScanDebug', q);
+    return localStorage.getItem('pdaScanDebug') === '1';
+  } catch { return false; }
+})();
+
+if (scanDebug && typeof document !== 'undefined') {
+  const box = document.createElement('pre');
+  Object.assign(box.style, {
+    position: 'fixed', left: '0', right: '0', bottom: '0', zIndex: '99999', margin: '0',
+    maxHeight: '40vh', overflow: 'auto', background: 'rgba(0,0,0,0.85)', color: '#0f0',
+    font: '11px/1.3 monospace', padding: '4px', pointerEvents: 'none', whiteSpace: 'pre-wrap',
+  });
+  const lines = [];
+  const desc = (el) => (el ? `${el.tagName}${el.getAttribute?.('inputmode') ? `[im=${el.getAttribute('inputmode')}]` : ''}` : '-');
+  const log = (txt) => {
+    lines.push(`${new Date().toISOString().slice(17, 23)} ${txt}`);
+    if (lines.length > 25) lines.shift();
+    box.textContent = `focus=${desc(document.activeElement)}\n${lines.join('\n')}`;
+  };
+  const attach = () => { document.body.appendChild(box); log('diagnostic scan actif'); };
+  if (document.body) attach(); else document.addEventListener('DOMContentLoaded', attach);
+  ['keydown', 'keyup', 'keypress'].forEach(t => window.addEventListener(t, (e) =>
+    log(`${t} key=${JSON.stringify(e.key)} code=${e.code} kc=${e.keyCode} on=${desc(e.target)}`), true));
+  ['beforeinput', 'input'].forEach(t => window.addEventListener(t, (e) =>
+    log(`${t} type=${e.inputType} data=${JSON.stringify(e.data)} on=${desc(e.target)}`), true));
+  ['compositionstart', 'compositionend', 'paste', 'textInput', 'focusin', 'focusout'].forEach(t =>
+    window.addEventListener(t, (e) => log(`${t} data=${JSON.stringify(e.data ?? e.clipboardData?.getData('text') ?? '')} on=${desc(e.target)}`), true));
+  setInterval(() => { box.textContent = box.textContent.replace(/^focus=.*$/m, `focus=${desc(document.activeElement)}`); }, 1000);
+}
+
 /**
  * Lecteur de codes-barres « clavier » : caractères rapides puis Entrée.
  *
