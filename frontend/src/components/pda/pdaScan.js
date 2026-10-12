@@ -33,6 +33,7 @@ const scanDebug = (() => {
   } catch { return false; }
 })();
 
+let scanLog = () => {};
 if (scanDebug && typeof document !== 'undefined') {
   const box = document.createElement('pre');
   Object.assign(box.style, {
@@ -41,12 +42,14 @@ if (scanDebug && typeof document !== 'undefined') {
     font: '11px/1.3 monospace', padding: '4px', pointerEvents: 'none', whiteSpace: 'pre-wrap',
   });
   const lines = [];
-  const desc = (el) => (el ? `${el.tagName}${el.getAttribute?.('inputmode') ? `[im=${el.getAttribute('inputmode')}]` : ''}` : '-');
+  const desc = (el) => (el ? `${el.tagName}${el.getAttribute?.('inputmode') ? `[${el.getAttribute('inputmode')}]` : ''}` : '-');
   const log = (txt) => {
     lines.push(`${new Date().toISOString().slice(17, 23)} ${txt}`);
     if (lines.length > 25) lines.shift();
     box.textContent = `focus=${desc(document.activeElement)}\n${lines.join('\n')}`;
+    box.scrollTop = box.scrollHeight;
   };
+  scanLog = log;
   const attach = () => { document.body.appendChild(box); log('diagnostic scan actif'); };
   if (document.body) attach(); else document.addEventListener('DOMContentLoaded', attach);
   ['keydown', 'keyup', 'keypress'].forEach(t => window.addEventListener(t, (e) =>
@@ -90,6 +93,7 @@ export const useScanner = (onScan, enabled) => {
     let stale = null;
     const flushSink = () => {
       clearTimeout(stale);
+      scanLog(`ENTRÉE → champ invisible = ${JSON.stringify(sink.value)}`);
       const code = sink.value.trim();
       sink.value = '';
       if (code.length >= 3) handler.current(code);
@@ -113,7 +117,13 @@ export const useScanner = (onScan, enabled) => {
     };
     // Un bouton touché vole le focus : on le reprend dès qu'il est libre.
     const onFocusOut = () => setTimeout(grab, 0);
+    // Chrome Android ne branche le clavier (donc le texte du Unitech) que sur
+    // un champ focalisé PENDANT un geste : on le reprend dans le toucher même.
+    const onTap = (e) => {
+      if (!isField(e.target)) sink.focus({ preventScroll: true });
+    };
     document.addEventListener('focusout', onFocusOut);
+    document.addEventListener('click', onTap, true);
     grab();
 
     const onKey = (e) => {
@@ -134,6 +144,7 @@ export const useScanner = (onScan, enabled) => {
       clearTimeout(stale);
       document.removeEventListener('keydown', onKey);
       document.removeEventListener('focusout', onFocusOut);
+      document.removeEventListener('click', onTap, true);
       sink.remove();
     };
   }, [enabled]);
