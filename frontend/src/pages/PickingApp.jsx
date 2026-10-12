@@ -40,6 +40,7 @@ const ORDER_TABS = [
 const WAVE_TABS = [
   { key: 'new', label: 'Nouvelles vagues' },
   { key: 'picking', label: 'En cours de picking' },
+  { key: 'packing', label: 'En cours de packing' },
   { key: 'done', label: 'Terminées' },
 ];
 

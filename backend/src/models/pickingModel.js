@@ -381,10 +381,14 @@ const createManualWave = async (orderNumbers, userId) => {
   return insertWaves([{ prefix: await getManualPrefix(), ruleId: null, orderNumbers: ordered }], userId);
 };
 
+// « En cours de packing » : pickée, mais au moins une commande pas encore
+// expédiée. Sans cet onglet, une commande pickée jamais emballée se perdait
+// au milieu des vagues terminées (3 le 12/10/2026, dont une du 07/10).
 const WAVE_TABS = {
   new: ['new'],
   picking: ['picking'],
-  done: ['picked', 'closed']
+  packing: ['picked'],
+  done: ['closed']
 };
 
 const listWaves = async (tab) => {
@@ -442,7 +446,8 @@ const countWaves = async () => {
   return {
     new: n.new || 0,
     picking: n.picking || 0,
-    done: (n.picked || 0) + (n.closed || 0)
+    packing: n.picked || 0,
+    done: n.closed || 0
   };
 };
 
