@@ -783,6 +783,17 @@ test('un mobile d\'outre-mer est reconnu, un fixe reste un fixe', () => {
   assert.strictEqual(fixe.mobileNumber, undefined);
 });
 
+test('un fixe belge à domicile ne part pas en mobile : Colissimo le refuse (30221)', () => {
+  // Commande 1268110 : +3215518864 envoyé en mobile → refus, bloquée au packing.
+  const fixe = coliPayload({ receiver: { country: 'BE', postcode: '3190', billing_phone: '+3215518864' } })
+    .letter.addressee.address;
+  assert.strictEqual(fixe.phoneNumber, '+3215518864');
+  assert.strictEqual(fixe.mobileNumber, undefined);
+  const mobile = coliPayload({ receiver: { country: 'BE', postcode: '3190', billing_phone: '0470 12 34 56' } })
+    .letter.addressee.address;
+  assert.strictEqual(mobile.mobileNumber, '+32470123456');
+});
+
 test('le décalage garde le format de page, et 0 mm ne touche à rien', async () => {
   const { shiftContentDown } = require('../src/services/carriers/labelPdf');
   const d = await PDFDocument.create();

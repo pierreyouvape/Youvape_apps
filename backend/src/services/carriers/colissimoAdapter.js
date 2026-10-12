@@ -465,13 +465,14 @@ const buildLabelPayload = ({ orderNumber, receiver = {}, account, weightGrams, o
     email: String(receiver.email || '')
   };
   // En point de retrait le téléphone est un mobile, obligatoire. Ailleurs il part
-  // comme fixe, et AUSSI comme mobile quand c'en est un (voir MOBILES). En
-  // Belgique, le plugin le double en mobile quoi qu'il arrive.
+  // comme fixe, et AUSSI comme mobile quand c'en est un (voir MOBILES). Jamais
+  // un fixe en mobile, même en Belgique comme le fait le plugin : Colissimo le
+  // refuse (30221, commande 1268110 au +3215518864, bloquée au packing).
   if (telephone) {
     if (relais) addressee.mobileNumber = telephone;
     else {
       addressee.phoneNumber = telephone;
-      if (pays === 'BE' || estMobile(telephone, pays)) addressee.mobileNumber = telephone;
+      if (estMobile(telephone, pays)) addressee.mobileNumber = telephone;
     }
   }
 
