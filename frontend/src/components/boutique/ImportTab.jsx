@@ -982,7 +982,8 @@ export default function ImportTab({ shop, token }) {
                                       // Un produit peut revenir sur plusieurs lignes (réf. à l'unité + réf. pack) :
                                       // on le signale au lieu de le masquer.
                                       return searchingIdx === idx && searchResults.length > 0 && (
-                                      <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 1000, background: C.blanc, border: `1px solid ${C.grisCL}`, borderRadius: '0 0 8px 8px', maxHeight: 240, overflowY: 'auto', boxShadow: '0 4px 12px rgba(0,0,0,0.12)' }}>
+                                      // Plus large que la colonne : les noms Nextore sont longs (demande de Pierre, 12/10/2026)
+                                      <div style={{ position: 'absolute', top: '100%', left: 0, width: 480, zIndex: 1000, background: C.blanc, border: `1px solid ${C.grisCL}`, borderRadius: '0 0 8px 8px', maxHeight: 420, overflowY: 'auto', boxShadow: '0 4px 12px rgba(0,0,0,0.12)' }}>
                                         {searchResults.map(product => (
                                           <div key={product.id} onClick={() => handleMatchProduct(idx, product)} style={{ padding: '8px 12px', cursor: 'pointer', borderBottom: `1px solid ${C.grisTL}`, fontSize: 13 }}
                                             onMouseEnter={e => e.currentTarget.style.background = C.grisTL}
@@ -1017,7 +1018,7 @@ export default function ImportTab({ shop, token }) {
                                       </div>
                                     )}
                                     {searchingIdx === idx && searchLoading && (
-                                      <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, background: C.blanc, padding: '8px 12px', fontSize: 13, color: C.grisM, border: `1px solid ${C.grisCL}` }}>Recherche…</div>
+                                      <div style={{ position: 'absolute', top: '100%', left: 0, width: 480, background: C.blanc, padding: '8px 12px', fontSize: 13, color: C.grisM, border: `1px solid ${C.grisCL}` }}>Recherche…</div>
                                     )}
                                   </div>
                                 )}
