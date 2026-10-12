@@ -88,9 +88,8 @@ async function getNeedsData(req, res) {
   const wh = getShopOr400(req, res);
   if (!wh) return;
   try {
-    const [products, suppliers, categories, lastSyncAt] = await Promise.all([
+    const [{ products, suppliers }, categories, lastSyncAt] = await Promise.all([
       nextoreModel.getNeedsData(wh.id),
-      nextoreModel.getSuppliersForShop(wh.id),
       nextoreModel.getCategoriesForShop(wh.id),
       nextoreModel.getLastSyncAt(),
     ]);
@@ -98,6 +97,28 @@ async function getNeedsData(req, res) {
   } catch (err) {
     console.error('Nextore getNeedsData:', err);
     res.status(500).json({ error: err.message || 'Erreur récupération données besoins' });
+  }
+}
+
+// POST /api/nextore/:shop/purchases — crée un achat EN ATTENTE dans Nextore
+// Body : { supplier_id, items: [{ product_id, quantity }] } (pas de prix : calculé serveur)
+async function postPurchase(req, res) {
+  const wh = getShopOr400(req, res);
+  if (!wh) return;
+  const { supplier_id: supplierId, items } = req.body || {};
+  const lines = Array.isArray(items)
+    ? items.filter((l) => l && l.product_id && Number.isInteger(Number(l.quantity)) && Number(l.quantity) > 0)
+    : [];
+  if (!supplierId || !lines.length || lines.length !== items.length) {
+    return res.status(400).json({ error: 'Fournisseur et lignes (quantités entières > 0) requis' });
+  }
+  try {
+    const result = await nextoreModel.createPurchase(wh, supplierId, lines);
+    console.log(`Nextore achat ${result.referenceNo} créé par ${req.user?.email} (${result.lines} lignes)`);
+    res.json(result);
+  } catch (err) {
+    console.error('Nextore postPurchase:', err);
+    res.status(err.status || 500).json({ error: err.message || 'Erreur création achat Nextore' });
   }
 }
 
@@ -353,6 +374,7 @@ module.exports = {
   getStock,
   getNeeds,
   getNeedsData,
+  postPurchase,
   getSuppliers,
   getStockHistory,
   // Rapprochement caisse <-> site

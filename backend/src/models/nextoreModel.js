@@ -313,6 +313,131 @@ async function syncRecentSales(days = 3) {
   return syncSalesRange(fmt(from), fmt(now));
 }
 
+// --- Historique d'ACHATS (association produit → fournisseur) ---------------
+const PURCHASE_COLS = [
+  'purchase_id', 'purchase_reference', 'warehouse_id', 'supplier_id', 'supplier_name',
+  'product_id', 'product_name', 'unit_cost', 'quantity_ordered', 'quantity_received',
+  'purchased_at',
+];
+
+function purchaseRow(r) {
+  return [
+    s(r.purchase_id), s(r.purchase_reference), num(r.warehouse_id), s(r.supplier_id),
+    s(r.supplier_name), s(r.product_id), s(r.product_name), num(r.unit_cost),
+    num(r.quantity_ordered), num(r.quantity_received), ts(r.date),
+  ];
+}
+
+/**
+ * Importe les achats REÇUS d'une fenêtre [startDate, endDate] (inclusive).
+ * Idempotent : purge la fenêtre puis réinsère.
+ */
+async function syncPurchasesRange(startDate, endDate) {
+  const items = await api.getReceivedPurchaseItems(startDate, endDate);
+  const list = Array.isArray(items) ? items : [];
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query(
+      `DELETE FROM nextore_purchase_items
+       WHERE status = 'received' AND purchased_at::date >= $1::date AND purchased_at::date <= $2::date`,
+      [startDate, endDate]
+    );
+    const inserted = await bulkInsert(client, 'nextore_purchase_items', PURCHASE_COLS, list.map(purchaseRow));
+    await setConfig(client, 'nextore_last_purchases_sync_at');
+    await client.query('COMMIT');
+    return { range: [startDate, endDate], fetched: list.length, inserted };
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * Réimporte les N derniers jours. Fenêtre large exprès : un achat est daté de
+ * sa création et n'apparaît qu'une fois reçu, parfois des semaines plus tard.
+ */
+async function syncRecentPurchases(days = 90) {
+  const now = new Date();
+  const from = new Date(now.getTime() - days * 86400000);
+  const fmt = (d) => d.toISOString().slice(0, 10);
+  return syncPurchasesRange(fmt(from), fmt(now));
+}
+
+// Au-delà, un achat jamais reçu est tenu pour abandonné (il en traîne depuis 2024)
+const PENDING_MAX_DAYS = 30;
+
+/** Remplace en bloc les achats EN ATTENTE des 30 derniers jours (« En commande »). */
+async function syncPendingPurchases() {
+  const now = new Date();
+  const from = new Date(now.getTime() - PENDING_MAX_DAYS * 86400000);
+  const fmt = (d) => d.toISOString().slice(0, 10);
+  const items = await api.getPendingPurchaseItems(fmt(from), fmt(now));
+  const list = Array.isArray(items) ? items : [];
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query(`DELETE FROM nextore_purchase_items WHERE status = 'pending'`);
+    const inserted = await bulkInsert(client, 'nextore_purchase_items', [...PURCHASE_COLS, 'status'],
+      list.map((r) => [...purchaseRow(r), 'pending']));
+    await client.query('COMMIT');
+    return { inserted };
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * Crée un achat EN ATTENTE dans Nextore pour un fournisseur. Le coût unitaire
+ * est calculé ici, jamais reçu de l'écran (les vendeurs ne voient pas les prix) :
+ * dernier coût payé chez ce fournisseur, sinon son prix sur la fiche, sinon le
+ * coût de la fiche.
+ */
+async function createPurchase(warehouse, supplierId, lines) {
+  const ids = lines.map((l) => String(l.product_id));
+  const { rows: sup } = await pool.query('SELECT id FROM nextore_suppliers WHERE id = $1', [String(supplierId)]);
+  if (!sup.length) throw Object.assign(new Error(`Fournisseur Nextore inconnu : ${supplierId}`), { status: 400 });
+
+  const { rows } = await pool.query(
+    `SELECT p.product_id,
+            COALESCE(
+              (SELECT pi.unit_cost FROM nextore_purchase_items pi
+               WHERE pi.product_id = p.product_id AND pi.supplier_id = $2
+                 AND pi.status = 'received' AND pi.quantity_received > 0
+               ORDER BY pi.purchased_at DESC, pi.id DESC LIMIT 1),
+              NULLIF(p.supplier_refs -> $2 ->> 'price', '')::numeric,
+              p.cost, 0)::float AS unit_cost
+     FROM nextore_products p
+     WHERE p.product_id = ANY($1::text[])`,
+    [ids, String(supplierId)]
+  );
+  const costById = new Map(rows.map((r) => [r.product_id, r.unit_cost]));
+  const unknown = ids.filter((id) => !costById.has(id));
+  if (unknown.length) throw Object.assign(new Error(`Produits Nextore inconnus : ${unknown.join(', ')}`), { status: 400 });
+
+  // Référence lisible, heure de Paris, unique par fournisseur
+  const stamp = new Date().toLocaleString('sv-SE', { timeZone: 'Europe/Paris' }).slice(0, 16);
+  const referenceNo = `APP-${warehouse.code}-${stamp.slice(0, 10)}_${stamp.slice(11, 13)}h${stamp.slice(14, 16)}-${supplierId}`;
+  const items = lines.map((l) => ({
+    product_id: String(l.product_id),
+    net_unit_cost: costById.get(String(l.product_id)).toFixed(4),
+    quantity: String(l.quantity),
+  }));
+
+  // Nextore répond l'id de l'achat créé (ex. 1680)
+  const purchaseId = await api.createPurchase({
+    referenceNo, status: 'pending', supplierId: String(supplierId), warehouseId: warehouse.id, items,
+  });
+  // La commande compte aussitôt dans « En commande » ; un échec ici n'annule rien
+  await syncPendingPurchases().catch((err) => console.error('Nextore achats en attente:', err.message));
+  return { purchaseId, referenceNo, lines: items.length };
+}
+
 // --- Relevé de stock d'une boutique ----------------------------------------
 // Consulté par les vendeurs : ne renvoie ni coût, ni prix, ni valeur de stock.
 async function getStockDashboard(warehouseId, opts = {}) {
@@ -522,22 +647,58 @@ async function getNeeds(warehouseId, opts = {}) {
 
 /**
  * Données BRUTES pour l'écran Besoins style V2 (calcul côté client) :
- * par produit → stock, fournisseur(s), réf(s), + ventes journalières (90 j).
+ * par produit → stock, fournisseur(s), réf(s), + ventes journalières (90 j),
+ * et la liste des fournisseurs du filtre (comptée sur ces mêmes produits).
  * On ne garde que les produits en stock (<>0) OU ayant vendu récemment.
  */
 async function getNeedsData(warehouseId) {
+  // Fournisseur = celui du dernier achat REÇU, dans cette boutique d'abord,
+  // sinon dans l'autre ; à défaut, le principal de la fiche Nextore (mal tenu).
   const { rows: prods } = await pool.query(
-    `SELECT p.product_id, p.name, p.code AS sku, st.stock::float AS stock,
+    `WITH received AS (
+       SELECT product_id, warehouse_id, supplier_id, purchased_at,
+              ROW_NUMBER() OVER (PARTITION BY product_id
+                                 ORDER BY (warehouse_id = $1) DESC, purchased_at DESC, id DESC) AS rn
+       FROM nextore_purchase_items
+       WHERE status = 'received' AND quantity_received > 0
+     ),
+     bought AS (
+       SELECT product_id, array_agg(DISTINCT supplier_id) AS supplier_ids
+       FROM nextore_purchase_items
+       WHERE status = 'received' AND quantity_received > 0
+       GROUP BY product_id
+     ),
+     on_order AS (
+       SELECT product_id, SUM(GREATEST(quantity_ordered - COALESCE(quantity_received, 0), 0))::float AS qty
+       FROM nextore_purchase_items
+       WHERE status = 'pending' AND warehouse_id = $1
+       GROUP BY product_id
+     )
+     SELECT p.product_id, p.name, p.code AS sku, st.stock::float AS stock,
             p.category_id, c.name AS category_name, p.cost::float AS cost,
-            p.supplier_id, p.supplier_ids, p.supplier_refs, sup.company AS supplier_name
+            p.supplier_id AS fiche_supplier_id, p.supplier_refs,
+            lb.supplier_id AS bought_supplier_id, (lb.warehouse_id = $1) AS bought_here,
+            lb.purchased_at::date::text AS last_purchase_at, b.supplier_ids AS bought_supplier_ids,
+            COALESCE(oo.qty, 0) AS on_order
      FROM nextore_stock st
      JOIN nextore_products p ON p.product_id = st.product_id
      LEFT JOIN nextore_categories c ON c.id = p.category_id
-     LEFT JOIN nextore_suppliers sup ON sup.id = p.supplier_id
+     LEFT JOIN received lb ON lb.product_id = p.product_id AND lb.rn = 1
+     LEFT JOIN bought b ON b.product_id = p.product_id
+     LEFT JOIN on_order oo ON oo.product_id = p.product_id
      WHERE st.warehouse_id = $1
        AND (p.name IS NULL OR p.name NOT ILIKE 'produit non cr%')`,
     [warehouseId]
   );
+
+  // Noms : fiche fournisseurs Nextore, repli sur le nom porté par l'achat
+  const { rows: supRows } = await pool.query(
+    `SELECT id, company FROM nextore_suppliers
+     UNION ALL
+     SELECT DISTINCT supplier_id, supplier_name FROM nextore_purchase_items
+     WHERE supplier_id NOT IN (SELECT id FROM nextore_suppliers)`
+  );
+  const supName = new Map(supRows.map((r) => [r.id, r.company]));
 
   // Ventes journalières sur 90 j (fenêtre max des périodes d'analyse)
   const { rows: sales } = await pool.query(
@@ -556,9 +717,14 @@ async function getNeedsData(warehouseId) {
 
   // On ne renvoie que les produits pertinents : en stock OU avec ventes récentes
   const products = [];
+  const supCount = new Map();
   for (const p of prods) {
     const daily = salesByProduct.get(p.product_id) || [];
     if (p.stock === 0 && daily.length === 0) continue;
+    const supplierId = p.bought_supplier_id || p.fiche_supplier_id;
+    // Filtre fournisseur : seulement ceux chez qui on a réellement acheté
+    const supplierIds = p.bought_supplier_ids || (p.fiche_supplier_id ? [p.fiche_supplier_id] : []);
+    for (const id of supplierIds) supCount.set(id, (supCount.get(id) || 0) + 1);
     products.push({
       id: p.product_id,
       name: p.name,
@@ -567,14 +733,21 @@ async function getNeedsData(warehouseId) {
       category_id: p.category_id,
       category_name: p.category_name,
       cost: p.cost,
-      supplier_id: p.supplier_id,
-      supplier_name: p.supplier_name,
-      supplier_ids: p.supplier_ids || [],
+      supplier_id: supplierId,
+      supplier_name: supplierId ? (supName.get(supplierId) || null) : null,
+      // 'boutique' | 'autre' (acheté par l'autre boutique) | 'fiche' (jamais acheté)
+      supplier_source: p.bought_supplier_id ? (p.bought_here ? 'boutique' : 'autre') : 'fiche',
+      last_purchase_at: p.last_purchase_at,
+      on_order: p.on_order,
+      supplier_ids: supplierIds,
       supplier_refs: p.supplier_refs || {},
       daily_sales: daily,
     });
   }
-  return products;
+  const suppliers = [...supCount.entries()]
+    .map(([id, product_count]) => ({ id, company: supName.get(id) || null, product_count }))
+    .sort((a, b) => (a.company || '').localeCompare(b.company || '', 'fr'));
+  return { products, suppliers };
 }
 
 /**
@@ -721,6 +894,10 @@ module.exports = {
   syncSalesRange,
   backfillSales,
   syncRecentSales,
+  syncPurchasesRange,
+  syncRecentPurchases,
+  syncPendingPurchases,
+  createPurchase,
   getStockDashboard,
   getStockSummary,
   getNeeds,

@@ -39,6 +39,8 @@ router.get('/:shop/suppliers', boutiquePerm('read'), nextoreController.getSuppli
 
 // Données brutes pour l'écran Besoins style V2 (calcul côté client)
 router.get('/:shop/needs-data', boutiquePerm('read'), nextoreController.getNeedsData);
+// Création d'un achat (en attente) dans Nextore depuis les Besoins
+router.post('/:shop/purchases', boutiquePerm('write'), nextoreController.postPurchase);
 
 // Historique (évolution) du stock d'un produit dans une boutique
 router.get('/:shop/stock/:productId/history', boutiquePerm('read'), nextoreController.getStockHistory);

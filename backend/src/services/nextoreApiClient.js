@@ -75,6 +75,30 @@ module.exports = {
   getSaleItems: (startDate, endDate) =>
     nextoreGet('/sale_items', { start_date: startDate, end_date: endDate }),
 
+  /**
+   * Lignes d'achat REÇUES sur une plage (endpoint non documenté). ⚠️ Sans
+   * `status=received`, Nextore ne renvoie que les achats en attente.
+   */
+  getReceivedPurchaseItems: (startDate, endDate) =>
+    nextoreGet('/purchase_items', { status: 'received', start_date: startDate, end_date: endDate }),
+
+  /** Lignes d'achat EN ATTENTE (non reçues) sur une plage. */
+  getPendingPurchaseItems: (startDate, endDate) =>
+    nextoreGet('/purchase_items', { status: 'pending', start_date: startDate, end_date: endDate }),
+
+  /**
+   * Crée un achat. `purchase_items` = JSON [{ product_id, net_unit_cost, quantity }]
+   * passé tel quel dans un champ du formulaire (seule exception à l'urlencoded).
+   */
+  createPurchase: ({ referenceNo, status, supplierId, warehouseId, items }) =>
+    nextoreWrite('POST', '/purchases', {
+      reference_no: referenceNo,
+      status,
+      supplier_id: supplierId,
+      warehouse_id: warehouseId,
+      purchase_items: JSON.stringify(items),
+    }),
+
   /** Écritures comptables (VENTE / TVA / ENCAISSEMENT) sur une plage. */
   getAccounting: (startDate, endDate) =>
     nextoreGet('/accounting', { start_date: startDate, end_date: endDate }),

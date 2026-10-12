@@ -765,6 +765,8 @@ const nextoreMatchService = require('./nextoreMatchService');
 let nextoreCatalogJob = null;
 let nextoreStockJobs = [];
 let nextoreSalesJob = null;
+let nextorePurchasesJob = null;
+let nextorePendingJob = null;
 let nextoreNightlyJob = null;
 
 const runNextoreCatalog = async () => {
@@ -798,6 +800,28 @@ const runNextoreSales = async () => {
   }
 };
 
+const runNextorePurchases = async () => {
+  try {
+    const r = await nextoreModel.syncRecentPurchases(90);
+    const p = await nextoreModel.syncPendingPurchases();
+    console.log(`Nextore achats: ${r.inserted} lignes recues reimportees (${r.range[0]} -> ${r.range[1]}), ${p.inserted} en attente`);
+  } catch (error) {
+    console.error('Erreur cron Nextore achats:', error.message);
+    sendAlert('Cron boutiques Nextore (achats): echec',
+      `La synchro quotidienne des achats des boutiques a echoue.\n\nErreur: ${error.message}`);
+  }
+};
+
+// Achats en attente (« En commande » des Besoins) : suit les commandes passees
+// et receptionnees dans Nextore au fil de la journee
+const runNextorePending = async () => {
+  try {
+    await nextoreModel.syncPendingPurchases();
+  } catch (error) {
+    console.error('Erreur cron Nextore achats en attente:', error.message);
+  }
+};
+
 const runNextoreNightly = async () => {
   try {
     const r = await nextoreModel.syncAll();
@@ -824,6 +848,8 @@ const setupNextoreCrons = () => {
   nextoreCatalogJob?.stop();
   nextoreStockJobs.forEach((j) => j.stop());
   nextoreSalesJob?.stop();
+  nextorePurchasesJob?.stop();
+  nextorePendingJob?.stop();
   nextoreNightlyJob?.stop();
 
   const tz = { timezone: 'Europe/Paris' };
@@ -837,10 +863,13 @@ const setupNextoreCrons = () => {
   ];
   // Ventes : chaque soir a 23h40, reimporte les 3 derniers jours (retours/edits)
   nextoreSalesJob = cron.schedule('40 23 * * *', runNextoreSales, tz);
+  // Achats reçus (90 j) : fournisseur d'un produit = celui de son dernier achat
+  nextorePurchasesJob = cron.schedule('45 23 * * *', runNextorePurchases, tz);
+  nextorePendingJob = cron.schedule('15,45 8-20 * * *', runNextorePending, tz);
   // Passage complet de securite chaque nuit
   nextoreNightlyJob = cron.schedule('50 23 * * *', runNextoreNightly, tz);
 
-  console.log('Crons boutiques Nextore configures: catalogue */30 8-20h, stock */10 9h30-19h, ventes 23h40, complet + rapprochement 23h50 (Europe/Paris)');
+  console.log('Crons boutiques Nextore configures: catalogue */30 8-20h, stock */10 9h30-19h, ventes 23h40, achats 23h45 (en attente */30 8-20h), complet + rapprochement 23h50 (Europe/Paris)');
 };
 
 
@@ -1030,5 +1059,6 @@ module.exports = {
   runNextoreCatalog,
   runNextoreStock,
   runNextoreSales,
+  runNextorePurchases,
   runNextoreNightly,
 };

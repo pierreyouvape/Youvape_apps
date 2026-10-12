@@ -26,6 +26,7 @@ const ALERT_OPTIONS = [
 
 const NEEDS_COLUMNS = [
   { key: 'stock', label: 'Stock' },
+  { key: 'on_order', label: 'En commande' },
   { key: 'sales_in_period', label: 'Ventes période' },
   { key: 'avg_monthly_sales', label: 'Ventes/mois' },
   { key: 'tendance', label: 'Tendance' },
@@ -34,6 +35,7 @@ const NEEDS_COLUMNS = [
   { key: 'supposed_need', label: 'Besoin supp.' },
   { key: 'theoretical_proposal', label: 'Prop. théo.' },
   { key: 'supposed_proposal', label: 'Prop. supp.' },
+  { key: 'last_purchase_at', label: 'Dernier achat' },
 ];
 
 /* ─── localStorage par boutique ────────────────────────── */
@@ -75,7 +77,7 @@ const trendCoef = (weekly) => {
 
 // Besoin d'un produit : mêmes formules que NeedsTabV2, sans délai (boutique)
 function computeProductNeeds(product, periodDays, coverageMonths, isCustom, startDate, endDate, unit, alertMonths) {
-  const { daily_sales = [], stock = 0 } = product;
+  const { daily_sales = [], stock = 0, on_order = 0 } = product;
   const safeAlert = alertMonths != null ? alertMonths : coverageMonths;
   const effCoverage = Math.max(coverageMonths, safeAlert);
 
@@ -113,15 +115,16 @@ function computeProductNeeds(product, periodDays, coverageMonths, isCustom, star
   const leadTimeDays = 0; // boutiques : pas de délai
   const dailyRate = actualDays > 0 ? salesInPeriod / actualDays : 0;
   const avgMonthly = dailyRate * 30;
-  const stockWillLast = dailyRate > 0 ? stock / dailyRate : Infinity;
+  const effectiveStock = stock + on_order; // comme la V2 : le stock en commande compte
+  const stockWillLast = dailyRate > 0 ? effectiveStock / dailyRate : Infinity;
   const alertDays = leadTimeDays + safeAlert * 30;
   const targetDays = leadTimeDays + effCoverage * 30;
   const shouldReorder = dailyRate > 0 && stockWillLast < alertDays;
   const theoNeed = dailyRate > 0 ? dailyRate * targetDays : 0;
-  const theoProp = shouldReorder ? Math.max(0, Math.ceil(theoNeed) - stock) : 0;
+  const theoProp = shouldReorder ? Math.max(0, Math.ceil(theoNeed) - effectiveStock) : 0;
   const projRate = dailyRate * coef;
   const suppNeed = projRate > 0 ? projRate * targetDays : 0;
-  const suppProp = shouldReorder ? Math.max(0, Math.ceil(suppNeed) - stock) : 0;
+  const suppProp = shouldReorder ? Math.max(0, Math.ceil(suppNeed) - effectiveStock) : 0;
 
   return {
     sales_in_period: salesInPeriod,
@@ -141,6 +144,10 @@ function computeProductNeeds(product, periodDays, coverageMonths, isCustom, star
 const NBSP = /[  ]/g;
 const fmtInt = (v) => (parseInt(v, 10) || 0).toLocaleString('fr-FR').replace(NBSP, ' ');
 const fmtNum = (v) => (parseFloat(v) || 0).toLocaleString('fr-FR', { maximumFractionDigits: 2 }).replace(NBSP, ' ');
+// '2026-10-08' → '08/10/2026' (sans passer par Date : pas de décalage de fuseau)
+const fmtDay = (d) => (d ? d.split('-').reverse().join('/') : '-');
+// Provenance du fournisseur affiché (cf. getNeedsData) : rien si acheté par cette boutique
+const SOURCE_NOTE = { autre: "acheté par l'autre boutique", fiche: 'jamais acheté, fiche Nextore' };
 const normalize = (str) => (str || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[-_.,;:!?()[\]]/g, ' ').replace(/\s+/g, ' ').trim();
 
 const cycleTri = (v) => (v === null ? true : v === true ? false : null);
@@ -188,6 +195,9 @@ export default function BesoinsTab({ shop, token }) {
   const [selected, setSelected] = useState({});
   const [hiddenCols, setHiddenCols] = useState(() => loadJSON(CKEY(shop.slug), ['theoretical_need', 'supposed_need']));
   const [showColPanel, setShowColPanel] = useState(false);
+  const [showOrder, setShowOrder] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [orderResults, setOrderResults] = useState(null);
   const searchTimeout = useRef(null);
 
   useEffect(() => {
@@ -244,9 +254,7 @@ export default function BesoinsTab({ shop, token }) {
       if (withSalesOnly === false && p.avg_monthly_sales > 0) return false;
       if (zeroStockState === true && p.stock > 0) return false;
       if (zeroStockState === false && p.stock <= 0) return false;
-      const outOfStock = p.stock <= 0;
-      if (!outOfStock && p.theoretical_proposal <= 0 && p.supposed_proposal <= 0) return false;
-      return true;
+      return p.theoretical_proposal > 0 || p.supposed_proposal > 0;
     });
   }, [computed, search, supplierId, categoryId, withSalesOnly, zeroStockState]);
 
@@ -277,7 +285,47 @@ export default function BesoinsTab({ shop, token }) {
   );
 
   const setQty = (id, qty) => setSelected((prev) => { const n = { ...prev }; if (qty > 0) n[id] = qty; else delete n[id]; return n; });
-  const fillProps = (key) => setSelected((prev) => { const n = { ...prev }; computed.forEach((p) => { if (p[key] > 0) n[p.id] = p[key]; }); return n; });
+  const fillProps = (key) => setSelected((prev) => { const n = { ...prev }; filtered.forEach((p) => { if (p[key] > 0) n[p.id] = p[key]; }); return n; });
+  const productById = useMemo(() => new Map(computed.map((p) => [p.id, p])), [computed]);
+  // Une commande Nextore par fournisseur : celui du filtre, sinon celui de la ligne
+  const orderGroups = useMemo(() => {
+    const groups = new Map();
+    for (const [id, qty] of Object.entries(selected)) {
+      const p = productById.get(id);
+      if (!p) continue;
+      const sid = supplierId || p.supplier_id || '';
+      if (!groups.has(sid)) {
+        const name = sid ? (suppliers.find((s) => s.id === sid)?.company || p.supplier_name || `#${sid}`) : 'Sans fournisseur';
+        groups.set(sid, { supplierId: sid, name, lines: [] });
+      }
+      groups.get(sid).lines.push({ product_id: id, name: p.name, sku: p.sku, quantity: qty });
+    }
+    return [...groups.values()].sort((a, b) => (!a.supplierId) - (!b.supplierId) || a.name.localeCompare(b.name, 'fr'));
+  }, [selected, productById, supplierId, suppliers]);
+
+  const sendOrders = async () => {
+    setSending(true);
+    const results = [];
+    const sent = [];
+    for (const g of orderGroups.filter((x) => x.supplierId)) {
+      try {
+        const res = await axios.post(`${API_URL}/nextore/${shop.slug}/purchases`, {
+          supplier_id: g.supplierId,
+          items: g.lines.map((l) => ({ product_id: l.product_id, quantity: l.quantity })),
+        }, auth);
+        results.push({ name: g.name, ok: true, ref: res.data.referenceNo, count: g.lines.length });
+        sent.push(...g.lines.map((l) => l.product_id));
+      } catch (e) {
+        results.push({ name: g.name, ok: false, error: e.response?.data?.error || e.message });
+      }
+    }
+    setSelected((prev) => { const n = { ...prev }; sent.forEach((id) => delete n[id]); return n; });
+    setOrderResults(results);
+    setSending(false);
+    if (sent.length) loadData();
+  };
+  const closeOrder = () => { setShowOrder(false); setOrderResults(null); };
+
   const selCount = Object.keys(selected).length;
   const selTotal = Object.values(selected).reduce((a, b) => a + b, 0);
 
@@ -378,7 +426,7 @@ export default function BesoinsTab({ shop, token }) {
         {selCount > 0 && (
           <div style={{ background: '#fef3c7', padding: '10px 15px', borderRadius: 6, marginTop: 15, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <span><strong>{fmtInt(selCount)}</strong> produit(s) — <strong>{fmtInt(selTotal)}</strong> unités au total</span>
-            <button className="btn btn-primary" disabled title="Création de commande Nextore — à venir">📦 Créer la commande (à venir)</button>
+            <button className="btn btn-primary" onClick={() => setShowOrder(true)}>📦 Créer la commande</button>
           </div>
         )}
       </div>
@@ -391,7 +439,7 @@ export default function BesoinsTab({ shop, token }) {
         ) : error ? (
           <div style={{ padding: 40, textAlign: 'center', color: '#ef4444' }}>{error}</div>
         ) : filtered.length === 0 ? (
-          <div style={{ padding: 40, textAlign: 'center', color: '#8a99a4' }}>Aucun produit avec une proposition sur cette période.</div>
+          <div style={{ padding: 40, textAlign: 'center', color: '#8a99a4' }}>Aucun produit à commander avec ces réglages.</div>
         ) : (
           <>
             <table className="purchases-table">
@@ -401,6 +449,7 @@ export default function BesoinsTab({ shop, token }) {
                   <th>Réf. fournisseur</th>
                   <th>SKU</th>
                   {isVisible('stock') && <SortTh column="stock" label="Stock" />}
+                  {isVisible('on_order') && <SortTh column="on_order" label="En commande" />}
                   {isVisible('sales_in_period') && <SortTh column="sales_in_period" label="Ventes période" />}
                   {isVisible('avg_monthly_sales') && <SortTh column="avg_monthly_sales" label="Ventes/mois" />}
                   {isVisible('tendance') && <th className="text-center">Tendance</th>}
@@ -409,6 +458,7 @@ export default function BesoinsTab({ shop, token }) {
                   {isVisible('supposed_need') && <SortTh column="supposed_need" label="Besoin supp." />}
                   {isVisible('theoretical_proposal') && <SortTh column="theoretical_proposal" label="Prop. théo." />}
                   {isVisible('supposed_proposal') && <SortTh column="supposed_proposal" label="Prop. supp." />}
+                  {isVisible('last_purchase_at') && <SortTh column="last_purchase_at" label="Dernier achat" />}
                   <th className="text-right">À commander</th>
                 </tr>
               </thead>
@@ -417,11 +467,16 @@ export default function BesoinsTab({ shop, token }) {
                   <tr key={row.id} style={{ background: i % 2 ? '#f8fafc' : '#fff' }}>
                     <td>
                       <div style={{ fontWeight: 500 }}>{row.name || '—'}</div>
-                      <small style={{ color: '#666' }}>{supplierName(row) || 'Sans fournisseur'}{row.category_name ? ` · ${row.category_name}` : ''}</small>
+                      <small style={{ color: '#666' }}>
+                        {supplierName(row) || 'Sans fournisseur'}
+                        {!supplierId && SOURCE_NOTE[row.supplier_source] && <span style={{ color: '#d97706' }}> ({SOURCE_NOTE[row.supplier_source]})</span>}
+                        {row.category_name ? ` · ${row.category_name}` : ''}
+                      </small>
                     </td>
                     <td><code style={{ fontSize: 12 }}>{getSupplierRef(row) || '-'}</code></td>
                     <td><code style={{ fontSize: 12 }}>{row.sku || '-'}</code></td>
                     {isVisible('stock') && <td className="text-right"><span className={row.stock < 0 ? 'stock-critical' : row.stock === 0 ? 'stock-low' : ''}>{fmtInt(row.stock)}</span></td>}
+                    {isVisible('on_order') && <td className="text-right">{row.on_order > 0 ? fmtInt(row.on_order) : '-'}</td>}
                     {isVisible('sales_in_period') && <td className="text-right">{fmtInt(row.sales_in_period)}</td>}
                     {isVisible('avg_monthly_sales') && <td className="text-right">{fmtNum(row.avg_monthly_sales)}</td>}
                     {isVisible('tendance') && <td className="text-center">{renderTrend(row.trend_direction, row.trend_coefficient)}</td>}
@@ -430,6 +485,7 @@ export default function BesoinsTab({ shop, token }) {
                     {isVisible('supposed_need') && <td className="text-right">{fmtInt(row.supposed_need)}</td>}
                     {isVisible('theoretical_proposal') && <td className="text-right">{row.theoretical_proposal > 0 ? fmtInt(row.theoretical_proposal) : '-'}</td>}
                     {isVisible('supposed_proposal') && <td className="text-right">{row.supposed_proposal > 0 ? fmtInt(row.supposed_proposal) : '-'}</td>}
+                    {isVisible('last_purchase_at') && <td className="text-right">{fmtDay(row.last_purchase_at)}</td>}
                     <td className="text-right">
                       <input type="number" className="qty-input" min="0" placeholder="0"
                         value={selected[row.id] || ''} onChange={(e) => setQty(row.id, parseInt(e.target.value, 10) || 0)} />
@@ -448,6 +504,63 @@ export default function BesoinsTab({ shop, token }) {
           </>
         )}
       </div>
+
+      {showOrder && (
+        <div className="modal-overlay" onClick={() => !sending && closeOrder()}>
+          <div className="modal-content" style={{ maxWidth: 720 }} onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>Créer la commande — {shop.label}</h3>
+              <button className="modal-close" onClick={closeOrder} disabled={sending}>×</button>
+            </div>
+            <div className="modal-body">
+              {orderResults ? (
+                orderResults.map((r) => (
+                  <div key={r.name} style={{ padding: '8px 0', color: r.ok ? '#16a34a' : '#dc2626' }}>
+                    <strong>{r.name}</strong> — {r.ok ? `achat ${r.ref} créé dans Nextore (${r.count} produit(s)), en attente de réception` : `échec : ${r.error}`}
+                  </div>
+                ))
+              ) : (
+                <>
+                  <p style={{ marginTop: 0, color: '#555', fontSize: 14 }}>
+                    Un achat <strong>en attente</strong> sera créé dans Nextore par fournisseur. La réception se fait dans Nextore à l'arrivée de la marchandise.
+                  </p>
+                  {orderGroups.map((g) => (
+                    <div key={g.supplierId || 'none'} style={{ marginBottom: 14 }}>
+                      <div style={{ fontWeight: 600, color: g.supplierId ? '#111' : '#dc2626' }}>
+                        {g.name} — {g.lines.length} produit(s), {fmtInt(g.lines.reduce((a, l) => a + l.quantity, 0))} unités
+                        {!g.supplierId && ' : non envoyés (choisir un fournisseur dans le filtre)'}
+                      </div>
+                      <table className="purchases-table" style={{ marginTop: 6 }}>
+                        <tbody>
+                          {g.lines.map((l) => (
+                            <tr key={l.product_id}>
+                              <td>{l.name}</td>
+                              <td><code style={{ fontSize: 12 }}>{l.sku || '-'}</code></td>
+                              <td className="text-right">{fmtInt(l.quantity)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ))}
+                </>
+              )}
+            </div>
+            <div className="modal-footer">
+              {orderResults ? (
+                <button className="btn btn-primary" onClick={closeOrder}>Fermer</button>
+              ) : (
+                <>
+                  <button className="btn btn-secondary" onClick={closeOrder} disabled={sending}>Annuler</button>
+                  <button className="btn btn-primary" onClick={sendOrders} disabled={sending || !orderGroups.some((g) => g.supplierId)}>
+                    {sending ? 'Envoi…' : `Envoyer ${orderGroups.filter((g) => g.supplierId).length} commande(s) à Nextore`}
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
