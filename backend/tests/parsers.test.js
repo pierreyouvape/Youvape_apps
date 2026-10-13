@@ -204,6 +204,40 @@ for (const c of CASES) {
   });
 }
 
+// ── GFC, facture avec bons utilisés (« Code(s) promo ») ─────────────────────
+// Les bons imprimés entre la dernière ligne et « Base HT » se collaient au
+// dernier article, qui disparaissait : Tank DotAIO V4 absent de la commande
+// 597953, puis « Facturé, non commandé » au contrôle de F2610427525.
+console.log('GFC — facture F2610427525 (bons utilisés)');
+{
+  const gfc = require('../src/parsers/gfcParser');
+  const parsed = gfc.parse(fixture('gfc-F2610427525.txt'));
+
+  test('GFC F2610427525 : 11 lignes, dont la dernière (Tank DotAIO V4)', () => {
+    assert.strictEqual(parsed.items.length, 11);
+    const dotaio = parsed.items.find((i) => i.supplier_sku === 'GFC32486-59778');
+    assert.ok(dotaio, 'GFC32486-59778 absente');
+    assert.strictEqual(dotaio.qty_ordered, 2);
+    assert.strictEqual(dotaio.unit_price_net, 6.00);
+  });
+
+  test('GFC F2610427525 : somme des lignes = 332,30 € (257,80 € + 74,50 € de bons)', () => {
+    assert.strictEqual(sumLines(parsed.items), 332.30);
+  });
+
+  test('GFC F2610427525 : aucun avertissement sur un parsing complet', () => {
+    assert.deepStrictEqual(parsed.warnings, []);
+  });
+
+  test('GFC : une ligne illisible est signalée, plus jamais jetée en silence', () => {
+    const text = fixture('gfc-F2610427525.txt').replace('810167664003 2 6.00 12.00', 'illisible');
+    const p = gfc.parse(text);
+    assert.strictEqual(p.items.length, 10);
+    assert.strictEqual(p.warnings.length, 1);
+    assert.ok(p.warnings[0].message.includes('GFC32486-59778'));
+  });
+}
+
 // ── e.tasty, confirmation de commande (email Gmail) ──────────────────────────
 console.log('e.tasty — confirmation de commande');
 {

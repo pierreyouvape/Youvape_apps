@@ -131,8 +131,12 @@ function parseFacture(text) {
   // "GFC Provap" = footer de page (ne commence pas par "GFC" + chiffre)
   // "Base HT" = debut des totaux
   // "Sous-total HT" = sous-total de page (multi-pages)
-  const blockRegex = /GFC\d[\s\S]*?(?=GFC\d|\bBase HT\b|\bSous-total HT\b)/g;
+  // "Code(s) promo" = bons/avoirs utilisés, imprimés entre la dernière ligne et
+  //   "Base HT" : sans cet arrêt, ils se collaient au dernier article, qui ne
+  //   matchait plus et disparaissait sans un mot (F2610427525, Tank DotAIO V4).
+  const blockRegex = /GFC\d[\s\S]*?(?=GFC\d|\bBase HT\b|\bSous-total HT\b|Code\(s\) promo)/g;
   const blocks = text.match(blockRegex) || [];
+  const warnings = [];
 
   for (const block of blocks) {
     // Nettoyer : joindre les lignes
@@ -157,9 +161,17 @@ function parseFacture(text) {
         unit_price_net: parseFloat(itemMatch[5]),
         total_ht: parseFloat(itemMatch[6]),
       });
+    } else {
+      // Une ligne GFC non reconnue ne doit plus jamais passer en silence : le
+      // garde-fou universel (findUnparsedRows) cherche des « € » que ce gabarit
+      // n'imprime pas.
+      warnings.push({
+        type: 'unparsed_rows',
+        message: `Ligne du document non reprise ci-dessous : « ${cleaned.slice(0, 120)} ». Ajoutez-la à la main, puis signalez le parseur GFC.`,
+      });
     }
   }
 
   // pdfIsPackBased : quantité en packs et prix du pack, stockés tels quels (sans conversion).
-  return { orderNumber, orderDate, items, hasPrice: true, pdfIsPackBased: true };
+  return { orderNumber, orderDate, items, warnings, hasPrice: true, pdfIsPackBased: true };
 }
