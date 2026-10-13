@@ -154,6 +154,9 @@ function Line({ line, current, mine, busy, onValidate, onMissing, onUndo, refPro
           <span style={{ fontSize: big ? 13 : 11.5, color: C.greyT }}>pour {line.ordersCount} cmd</span>
         </div>
         <div style={{ fontWeight: 700, fontSize: big ? 18 : 14, lineHeight: 1.25, marginTop: 3 }}>{line.name}</div>
+        {line.variant && (
+          <div style={{ fontWeight: 900, fontSize: big ? 20 : 15, lineHeight: 1.2, marginTop: 2, color: C.dark }}>{line.variant}</div>
+        )}
         <div style={{ fontSize: big ? 13 : 11.5, color: C.greyT, marginTop: 2 }}>
           {[line.brand, line.sku && `SKU ${line.sku}`].filter(Boolean).join(' · ')}
           {line.hasBarcode === false && <strong style={{ color: C.amber }}> · pas de code-barres</strong>}
@@ -247,7 +250,7 @@ function WaveScreen({ token, waveId, onBack, setNotice, notice }) {
       const line = await api(token).post(`/waves/${waveId}/scan`, { code });
       replaceLine(line);
       beep(true);
-      showFlash('ok', `${line.name} — ${line.qtyPicked}/${line.qtyNeeded}`);
+      showFlash('ok', `${line.name}${line.variant ? ` (${line.variant})` : ''} — ${line.qtyPicked}/${line.qtyNeeded}`);
     } catch (err) {
       beep(false);
       if (err.response?.data?.code === 'PACK_QTY_UNKNOWN') {
@@ -267,7 +270,7 @@ function WaveScreen({ token, waveId, onBack, setNotice, notice }) {
       const line = await api(token).post(`/waves/${waveId}/pack-quantity`, { code: ask.code, quantity: packQty });
       replaceLine(line);
       beep(true);
-      showFlash('ok', `${line.name} — ${line.qtyPicked}/${line.qtyNeeded}`);
+      showFlash('ok', `${line.name}${line.variant ? ` (${line.variant})` : ''} — ${line.qtyPicked}/${line.qtyNeeded}`);
     } catch (err) {
       beep(false);
       showFlash('error', errorText(err));
@@ -399,6 +402,7 @@ function WaveScreen({ token, waveId, onBack, setNotice, notice }) {
           <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 30, display: 'flex', alignItems: 'flex-start', padding: 16, paddingTop: 70 }}>
             <div style={{ background: C.white, borderRadius: 14, padding: 16, width: '100%' }}>
               <div style={{ fontWeight: 800, fontSize: 16 }}>{line.name}</div>
+              {line.variant && <div style={{ fontWeight: 900, fontSize: 16 }}>{line.variant}</div>}
               <div style={{ fontSize: 13.5, color: C.greyT, marginTop: 4 }}>
                 {line.qtyNeeded} à prendre{min > 0 ? ` · ${min} déjà scanné${min > 1 ? 's' : ''}` : ''}
               </div>

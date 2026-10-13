@@ -18,6 +18,7 @@ const fs = require('fs');
 const path = require('path');
 const { PDFDocument, rgb } = require('pdf-lib');
 const fontkit = require('@pdf-lib/fontkit');
+const { variantText } = require('../utils/variationLabel');
 const bwipjs = require('bwip-js');
 
 const ASSETS = path.join(__dirname, '..', 'assets', 'picking');
@@ -322,7 +323,7 @@ const drawOrder = async (doc, f, logo, carrierLogo, wave, order, index) => {
     const l = lines[i];
     const nameLines = wrap(l.name, f.semi, 10, TABLE.prod.w - 12, 2);
     const meta = [l.brand, l.sku && `SKU ${l.sku}`].filter(Boolean).join(' · ');
-    const rowH = Math.max(36, 14 + nameLines.length * 13 + 12 + (l.packName ? 12 : 0) + (l.shipped ? 11 : 0));
+    const rowH = Math.max(36, 14 + nameLines.length * 13 + (l.variant ? 14 : 0) + 12 + (l.packName ? 12 : 0) + (l.shipped ? 11 : 0));
 
     if (y - rowH < M + 30) {
       page = doc.addPage([W, H]);
@@ -351,6 +352,12 @@ const drawOrder = async (doc, f, logo, carrierLogo, wave, order, index) => {
     for (const nl of nameLines) {
       page.drawText(nl, { x: TABLE.prod.x + 6, y: ty, size: 10, font: f.semi, color: COL.ink });
       ty -= 13;
+    }
+    // La déclinaison en gras : le nom est souvent celui du parent, et deux
+    // déclinaisons partagent parfois l'emplacement.
+    if (l.variant) {
+      page.drawText(fit(l.variant, f.bold, 11, TABLE.prod.w - 12), { x: TABLE.prod.x + 6, y: ty - 1, size: 11, font: f.bold, color: COL.ink });
+      ty -= 14;
     }
     if (meta) {
       page.drawText(fit(meta, f.regular, 8.5, TABLE.prod.w - 12), { x: TABLE.prod.x + 6, y: ty, size: 8.5, font: f.regular, color: COL.grey });
@@ -422,6 +429,7 @@ const buildPrintLines = (items, remainingBySku = null) => {
       location: i.location || null,
       qty,
       name: String(i.name || '').replace(/\s+dans le pack\s*:.*$/i, '').trim(),
+      variant: i.type === 'variation' ? variantText(i.attrs) : null,
       brand: [i.brand, i.sub_brand].filter(Boolean).join(' — '),
       sku: i.sku || null,
       packName: packOf(i),

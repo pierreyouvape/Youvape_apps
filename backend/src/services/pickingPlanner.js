@@ -136,7 +136,7 @@ const waveNumber = (prefix, seq) => `${String(prefix).trim().toUpperCase()}-${St
  *
  * @param {{orderNumber: string, lines: {productId, sku, name, brand, location, qty}[]}[]} orders
  *        lignes des bons de préparation (pickingPdf.buildPrintLines)
- * @returns {{lineKey, productId, sku, name, brand, location, qtyNeeded, ordersCount}[]}
+ * @returns {{lineKey, productId, sku, name, variant, brand, location, qtyNeeded, ordersCount}[]}
  */
 const aggregateWaveLines = (orders) => {
   const byKey = new Map();
@@ -145,7 +145,7 @@ const aggregateWaveLines = (orders) => {
       const lineKey = l.sku || `id:${l.productId}`;
       const cur = byKey.get(lineKey) || {
         lineKey, productId: l.productId || null, sku: l.sku || null, name: l.name,
-        brand: l.brand || null, location: l.location || null, qtyNeeded: 0, orders: new Set()
+        variant: l.variant || null, brand: l.brand || null, location: l.location || null, qtyNeeded: 0, orders: new Set()
       };
       cur.qtyNeeded += l.qty;
       cur.orders.add(order.orderNumber);

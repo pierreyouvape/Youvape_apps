@@ -3,6 +3,7 @@ const { computeOrderWeight, getPackagingWeight } = require('../services/orderWei
 const shippingMethodMapModel = require('../models/shippingMethodMapModel');
 const { expectedNetwork, relayNetworks } = require('../services/carriers/relayPoints');
 const { getAdapter } = require('../services/carriers');
+const { variantText } = require('../utils/variationLabel');
 
 // Rechercher une commande par numéro WC pour le packing
 const searchOrder = async (req, res) => {
@@ -65,6 +66,7 @@ const searchOrder = async (req, res) => {
         COALESCE(p.image_url, p_parent.image_url) as image_url,
         p.weight,
         p.product_type,
+        p.product_attributes,
         oi.line_total
       FROM order_items oi
       LEFT JOIN products p ON p.wp_product_id = COALESCE(NULLIF(oi.variation_id, 0), oi.product_id)
@@ -111,6 +113,7 @@ const searchOrder = async (req, res) => {
       items.push({
         id: item.id,
         name: item.order_item_name || item.post_title,
+        variant: item.product_type === 'variation' ? variantText(item.product_attributes) : null,
         sku: item.sku,
         qty: item.qty,
         weight: item.weight ? parseFloat(item.weight) : null,

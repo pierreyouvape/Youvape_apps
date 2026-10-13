@@ -19,6 +19,7 @@ const pool = require('../config/database');
 const pickingModel = require('./pickingModel');
 const productModel = require('./productModel');
 const { aggregateWaveLines } = require('../services/pickingPlanner');
+const { variantText } = require('../utils/variationLabel');
 
 const httpError = (status, message) => Object.assign(new Error(message), { statusCode: status });
 
@@ -29,6 +30,7 @@ const lineFromRow = (r) => ({
   sku: r.sku,
   productId: r.product_id,
   name: r.name,
+  variant: variantText(r.variant_attrs),
   brand: r.brand,
   location: r.location,
   ordersCount: r.orders_count,
@@ -44,11 +46,15 @@ const lineFromRow = (r) => ({
 
 // Code-barres présent et photo du produit (celle de la déclinaison, sinon
 // celle du parent — comme au packing) : on reconnaît l'article avant de lire.
+// Les attributs de la déclinaison sont relus ici, pas figés dans la ligne :
+// les vagues déjà assignées en profitent.
 const LINE_EXTRAS = `
   EXISTS (SELECT 1 FROM product_barcodes pb WHERE pb.product_id = l.product_id AND pb.type = 'unit') AS has_barcode,
   (SELECT COALESCE(p.image_url, pp.image_url) FROM products p
      LEFT JOIN products pp ON pp.wp_product_id = p.wp_parent_id
-    WHERE p.id = l.product_id) AS image_url`;
+    WHERE p.id = l.product_id) AS image_url,
+  (SELECT p.product_attributes FROM products p
+    WHERE p.id = l.product_id AND p.product_type = 'variation') AS variant_attrs`;
 
 const LINES_SQL = `
   SELECT l.*, ${LINE_EXTRAS}
@@ -143,7 +149,7 @@ const getWave = async (waveId, userId) => {
     );
     const imageOf = new Map(images.map(r => [r.id, r.image_url]));
     lines = preview.map((l, i) => ({
-      id: `apercu-${i}`, sku: l.sku, productId: l.productId, name: l.name, brand: l.brand, location: l.location,
+      id: `apercu-${i}`, sku: l.sku, productId: l.productId, name: l.name, variant: l.variant, brand: l.brand, location: l.location,
       ordersCount: l.ordersCount, qtyNeeded: l.qtyNeeded, qtyPicked: 0, qtyScanned: 0, qtyManual: 0,
       qtyMissing: 0, done: false, hasBarcode: null, imageUrl: imageOf.get(l.productId) || null
     }));

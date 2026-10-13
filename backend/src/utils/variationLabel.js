@@ -9,28 +9,31 @@
  * @param {object|string|null} productAttributes - colonne product_attributes (jsonb) de la variation
  * @returns {string}
  */
-function buildVariationLabel(postTitle, parentTitle, productAttributes) {
-  if (!postTitle || !parentTitle || postTitle.trim() !== parentTitle.trim()) {
-    return postTitle;
-  }
-
+function attributeValues(productAttributes) {
   let attrs = productAttributes;
   if (typeof attrs === 'string') {
     try {
       attrs = JSON.parse(attrs);
     } catch {
-      return postTitle;
+      return [];
     }
   }
   if (!attrs || typeof attrs !== 'object') {
-    return postTitle;
+    return [];
   }
 
-  const values = Object.entries(attrs)
+  return Object.entries(attrs)
     .filter(([key]) => key.startsWith('attribute_'))
     .map(([, value]) => String(value).replace(/-/g, ' ').trim())
     .filter(Boolean);
+}
 
+function buildVariationLabel(postTitle, parentTitle, productAttributes) {
+  if (!postTitle || !parentTitle || postTitle.trim() !== parentTitle.trim()) {
+    return postTitle;
+  }
+
+  const values = attributeValues(productAttributes);
   if (values.length === 0) {
     return postTitle;
   }
@@ -38,4 +41,19 @@ function buildVariationLabel(postTitle, parentTitle, productAttributes) {
   return `${postTitle} - ${values.join(', ')}`;
 }
 
-module.exports = { buildVariationLabel };
+/**
+ * Declinaison seule, pour la preparation (PDA, bon de vague, packing) : le nom
+ * d'une ligne de commande est souvent celui du parent (« Cartouches CLK One »),
+ * et deux declinaisons rangees au meme emplacement ne se distinguaient plus
+ * (commande 1267607 : 10 mg pris pour 20 mg). Ex. "Ice tea peche · 20mg".
+ *
+ * @param {object|string|null} productAttributes - product_attributes de la variation
+ * @returns {string|null}
+ */
+function variantText(productAttributes) {
+  const values = attributeValues(productAttributes)
+    .map(v => v.charAt(0).toUpperCase() + v.slice(1));
+  return values.length ? values.join(' · ') : null;
+}
+
+module.exports = { buildVariationLabel, variantText };

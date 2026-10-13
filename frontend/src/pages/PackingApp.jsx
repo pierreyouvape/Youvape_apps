@@ -1610,6 +1610,9 @@ const PackingApp = () => {
                       </td>
                       <td style={{ padding: '18px 20px', fontSize: '19px', fontWeight: '500' }}>
                         {item.name}
+                        {item.variant && (
+                          <div style={{ fontSize: '20px', fontWeight: 800, marginTop: '2px' }}>{item.variant}</div>
+                        )}
                         {(() => {
                           const m = (pickingInfo?.missing || []).find(x => x.sku && x.sku === item.sku);
                           return m ? (
