@@ -49,7 +49,12 @@ const fail = (res, err, status = 500) => {
 const list = async (req, res) => {
   try {
     const [widgets, publication] = await Promise.all([widgetModel.list(), widgetModel.publicationState()]);
-    res.json({ data: widgets.map(withUrls), publication });
+    res.json({
+      data: widgets.map(withUrls),
+      publication,
+      // Page d'aperçu (lit la dernière publication) : ?widget=<slug> n'affiche que ce widget.
+      preview_url: r2.missingConfig().length ? null : r2.publicUrl('stories/preview/index.html'),
+    });
   } catch (err) {
     fail(res, err);
   }

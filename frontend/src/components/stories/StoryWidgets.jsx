@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import axios from 'axios';
+import SaveStatus from './SaveStatus';
 
 const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:3000/api/auth').replace('/auth', '');
 
@@ -41,6 +42,24 @@ const Thumb = ({ url, size = 36 }) => (url ? (
   <div style={{ width: size, height: size, borderRadius: '50%', background: C.grisTL, border: `2px dashed ${C.grisCL}`, flexShrink: 0 }} />
 ));
 
+/**
+ * Ouvre la page d'aperçu sur ce seul widget. Elle lit la DERNIÈRE PUBLICATION :
+ * un widget en brouillon, ou modifié depuis, n'y apparaît qu'après « Publier ».
+ */
+const PreviewLink = ({ url, widget, pending }) => {
+  if (!url) return null;
+  const notYet = widget.status !== 'published';
+  return (
+    <a href={`${url}?widget=${encodeURIComponent(widget.slug)}`} target="_blank" rel="noreferrer"
+      title={notYet ? 'Widget en brouillon : passez-le en « Publié » puis « Publier sur le site » pour le voir dans l’aperçu'
+        : pending ? 'L’aperçu montre la dernière publication : cliquez sur « Publier sur le site » pour y voir vos dernières modifications'
+          : 'Ouvrir la page d’aperçu sur ce widget'}
+      style={{ ...btn(), textDecoration: 'none', color: '#0071EB', borderColor: '#0071EB', display: 'inline-flex', alignItems: 'center', opacity: notYet ? 0.6 : 1 }}>
+      Voir l’aperçu ↗
+    </a>
+  );
+};
+
 /** Onglet « Widgets » : composer les bulles / carrousels et les publier sur le site. */
 const StoryWidgets = ({ stories }) => {
   const [widgets, setWidgets] = useState([]);
@@ -50,12 +69,14 @@ const StoryWidgets = ({ stories }) => {
   const [selectedId, setSelectedId] = useState(null);
   const [publishing, setPublishing] = useState(false);
   const [lastResult, setLastResult] = useState(null);
+  const [previewUrl, setPreviewUrl] = useState(null);
 
   const fetchList = useCallback(async () => {
     try {
       const res = await axios.get(`${API_URL}/stories/widgets`);
       setWidgets(res.data.data || []);
       setPublication(res.data.publication || null);
+      setPreviewUrl(res.data.preview_url || null);
       setError(null);
     } catch (err) {
       setError(errMsg(err));
@@ -169,9 +190,12 @@ const StoryWidgets = ({ stories }) => {
               <div style={{ fontSize: 12, color: C.grisTF }}>
                 {w.stories_count} vidéo(s) · {w.placements_count} emplacement(s)
               </div>
-              <button onClick={() => setSelectedId(selectedId === w.id ? null : w.id)} style={{ ...btn(), alignSelf: 'flex-start' }}>
-                {selectedId === w.id ? 'Fermer' : 'Modifier'}
-              </button>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <button onClick={() => setSelectedId(selectedId === w.id ? null : w.id)} style={btn()}>
+                  {selectedId === w.id ? 'Fermer' : 'Modifier'}
+                </button>
+                <PreviewLink url={previewUrl} widget={w} pending={publication?.pending} />
+              </div>
             </div>
           ))}
         </div>
@@ -182,6 +206,7 @@ const StoryWidgets = ({ stories }) => {
           key={selectedId}
           id={selectedId}
           stories={stories}
+          previewUrl={previewUrl}
           onChanged={fetchList}
           onDeleted={() => { setSelectedId(null); fetchList(); }}
         />
@@ -191,7 +216,8 @@ const StoryWidgets = ({ stories }) => {
 };
 
 /** Édition d'un widget : réglages, vidéos dans l'ordre, emplacements. */
-const WidgetEditor = ({ id, stories, onChanged, onDeleted }) => {
+const WidgetEditor = ({ id, stories, previewUrl, onChanged, onDeleted }) => {
+  const [saveState, setSaveState] = useState(null);
   const [w, setW] = useState(null);
   const [draft, setDraft] = useState(null);
   const [error, setError] = useState(null);
@@ -216,8 +242,16 @@ const WidgetEditor = ({ id, stories, onChanged, onDeleted }) => {
 
   const apply = (res) => { setW(res.data.data); onChanged(); };
 
+  // Chaque action (réglages, ordre, vidéos, emplacements) s'enregistre aussitôt :
+  // on l'affiche, avec l'heure, pour qu'aucun doute ne subsiste.
   const run = async (fn) => {
-    try { apply(await fn()); } catch (err) { alert(errMsg(err)); }
+    setSaveState({ kind: 'saving' });
+    try {
+      apply(await fn());
+      setSaveState({ kind: 'saved', at: new Date() });
+    } catch (err) {
+      setSaveState({ kind: 'error', message: errMsg(err) });
+    }
   };
 
   const saveSettings = (extra = {}) => run(() => axios.put(`${API_URL}/stories/widgets/${id}`, { ...draft, ...extra }));
@@ -274,22 +308,26 @@ const WidgetEditor = ({ id, stories, onChanged, onDeleted }) => {
       <div style={{ display: 'flex', gap: 14, alignItems: 'flex-end', flexWrap: 'wrap' }}>
         <label style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: 1, minWidth: 220 }}>
           <span style={labelStyle}>Nom</span>
-          <input value={draft.title} onChange={(e) => setDraft({ ...draft, title: e.target.value })} style={inputStyle} />
+          <input value={draft.title} onChange={(e) => { setDraft({ ...draft, title: e.target.value }); setSaveState({ kind: 'dirty' }); }} style={inputStyle} />
         </label>
         <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
           <span style={labelStyle}>Format</span>
-          <select value={draft.layout} onChange={(e) => setDraft({ ...draft, layout: e.target.value })} style={inputStyle}>
+          <select value={draft.layout} onChange={(e) => { setDraft({ ...draft, layout: e.target.value }); setSaveState({ kind: 'dirty' }); }} style={inputStyle}>
             {Object.entries(LAYOUTS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
           </select>
         </label>
-        <button onClick={() => saveSettings()} style={{ ...btn('primary'), padding: '9px 16px' }}>Enregistrer</button>
+        <button onClick={() => saveSettings()} disabled={saveState?.kind === 'saving'} style={{ ...btn('primary'), padding: '9px 16px', opacity: saveState?.kind === 'saving' ? 0.6 : 1 }}>
+          {saveState?.kind === 'saving' ? 'Enregistrement…' : 'Enregistrer'}
+        </button>
         {w.status === 'published' ? (
           <button onClick={() => saveSettings({ status: 'draft' })} style={btn()}>Repasser en brouillon</button>
         ) : (
           <button onClick={() => saveSettings({ status: 'published' })} style={{ ...btn(), color: C.vert, borderColor: C.vert }}>Marquer « Publié »</button>
         )}
+        <PreviewLink url={previewUrl} widget={w} />
         <button onClick={remove} style={btn('danger')}>Supprimer</button>
       </div>
+      <div style={{ minHeight: 18 }}><SaveStatus state={saveState} /></div>
       <div style={{ fontSize: 12, color: C.grisM }}>
         Code à insérer dans une page WordPress : <code style={{ background: C.grisTL, padding: '2px 6px', borderRadius: 4 }}>[yv_stories widget="{w.slug}"]</code>
         {' '}· Un widget « Brouillon » n’est jamais envoyé sur le site.

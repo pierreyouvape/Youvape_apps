@@ -3,6 +3,8 @@ import axios from 'axios';
 import AppShell from '../components/AppShell';
 import { Stories as StoriesIcon } from '../components/AppIcons';
 import StoryWidgets from '../components/stories/StoryWidgets';
+import ProductPicker from '../components/stories/ProductPicker';
+import SaveStatus from '../components/stories/SaveStatus';
 
 const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:3000/api/auth').replace('/auth', '');
 
@@ -71,6 +73,8 @@ const StoriesApp = () => {
   const [uploads, setUploads] = useState({}); // id → pourcentage envoyé
   const [busy, setBusy] = useState(false);
   const [selected, setSelected] = useState(null);
+  // État de l'enregistrement de la fenêtre « Voir » : dirty | saving | saved | error
+  const [saveState, setSaveState] = useState(null);
   const [showArchived, setShowArchived] = useState(false);
   const [tab, setTab] = useState('videos');
   const fileInput = useRef(null);
@@ -105,7 +109,7 @@ const StoriesApp = () => {
   useEffect(() => {
     if (!selected) return;
     const fresh = stories.find((s) => s.id === selected.id);
-    if (fresh && fresh.updated_at !== selected.updated_at) setSelected((cur) => ({ ...fresh, ...pickEdits(cur) }));
+    if (fresh && fresh.updated_at !== selected.updated_at) setSelected((cur) => ({ ...fresh, ...pickEdits(cur), product_title: cur.product_title }));
   }, [stories, selected]);
 
   /** Envoie le fichier vers l'URL signée puis signale la fin au backend. */
@@ -179,14 +183,21 @@ const StoriesApp = () => {
     }
   };
 
+  const openStory = (s) => { setSelected(s); setSaveState(null); };
+
+  /** Modifie un champ de la fenêtre « Voir » et signale qu'il reste à enregistrer. */
+  const edit = (patch) => { setSelected((cur) => ({ ...cur, ...patch })); setSaveState({ kind: 'dirty' }); };
+
   const saveDetails = async () => {
     if (!selected) return;
+    setSaveState({ kind: 'saving' });
     try {
       const res = await axios.put(`${API_URL}/stories/${selected.id}`, pickEdits(selected));
-      setSelected(res.data.data);
+      setSelected((cur) => ({ ...cur, ...res.data.data }));
+      setSaveState({ kind: 'saved', at: new Date() });
       fetchData({ quiet: true });
     } catch (err) {
-      alert(err.response?.data?.error || err.message);
+      setSaveState({ kind: 'error', message: err.response?.data?.error || err.message });
     }
   };
 
@@ -361,7 +372,7 @@ const StoriesApp = () => {
                           {g !== null && <div style={{ fontSize: 11, color: C.vert, fontWeight: 700 }}>−{g} %</div>}
                         </td>
                         <td style={{ ...td, textAlign: 'right', whiteSpace: 'nowrap' }}>
-                          {s.video_url && <button style={smallBtn(C.story)} onClick={() => setSelected(s)}>Voir</button>}
+                          {s.video_url && <button style={smallBtn(C.story)} onClick={() => openStory(s)}>Voir</button>}
                           {s.gif_url && <button style={smallBtn()} onClick={() => copy(s.gif_url)} title="URL du GIF animé, à coller dans Probance">GIF Probance</button>}
                           {sending === undefined && s.status !== 'processing' && s.status !== 'archived' && (
                             <button style={smallBtn()} onClick={() => askReplace(s)}>
@@ -402,17 +413,28 @@ const StoriesApp = () => {
                   <strong style={{ fontSize: 16, color: C.grisTF }}>{selected.slug}</strong>
                   <button onClick={() => setSelected(null)} style={{ ...smallBtn(), marginLeft: 0 }}>Fermer</button>
                 </div>
-                <Field label="Titre" value={selected.title} onChange={(v) => setSelected({ ...selected, title: v })} style={inputStyle} labelStyle={label} />
-                <Field label="Description" value={selected.description} multiline onChange={(v) => setSelected({ ...selected, description: v })} style={inputStyle} labelStyle={label} />
-                <div style={{ display: 'flex', gap: 10 }}>
-                  <Field label="Texte du bouton" value={selected.cta_label} placeholder="DÉCOUVRIR" onChange={(v) => setSelected({ ...selected, cta_label: v })} style={inputStyle} labelStyle={label} />
-                  <Field label="ID produit WooCommerce" value={selected.wp_product_id} placeholder="ex : 1174152" onChange={(v) => setSelected({ ...selected, wp_product_id: v })} style={inputStyle} labelStyle={label} />
+                <Field label="Titre" value={selected.title} onChange={(v) => edit({ title: v })} style={inputStyle} labelStyle={label} />
+                <Field label="Description" value={selected.description} multiline onChange={(v) => edit({ description: v })} style={inputStyle} labelStyle={label} />
+                <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+                  <div style={{ width: 200 }}>
+                    <Field label="Texte du bouton" value={selected.cta_label} placeholder="DÉCOUVRIR" onChange={(v) => edit({ cta_label: v })} style={inputStyle} labelStyle={label} />
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: 1 }}>
+                    <span style={label}>Produit lié au bouton</span>
+                    <ProductPicker
+                      value={selected.wp_product_id ? { id: selected.wp_product_id, title: selected.product_title } : null}
+                      onChange={(p) => edit({ wp_product_id: p ? p.id : '', product_title: p ? p.title : null })}
+                    />
+                  </div>
                 </div>
-                <Field label="Lien du bouton" value={selected.cta_url} placeholder="https://www.youvape.fr/produit/…" onChange={(v) => setSelected({ ...selected, cta_url: v })} style={inputStyle} labelStyle={label} />
-                <button onClick={saveDetails}
-                  style={{ alignSelf: 'flex-start', padding: '9px 18px', borderRadius: 8, border: 'none', background: C.story, color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
-                  Enregistrer
-                </button>
+                <Field label="Lien du bouton (facultatif : sinon, la fiche du produit lié)" value={selected.cta_url} placeholder="https://www.youvape.fr/produit/…" onChange={(v) => edit({ cta_url: v })} style={inputStyle} labelStyle={label} />
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                  <button onClick={saveDetails} disabled={saveState?.kind === 'saving'}
+                    style={{ padding: '9px 18px', borderRadius: 8, border: 'none', background: C.story, color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer', opacity: saveState?.kind === 'saving' ? 0.6 : 1 }}>
+                    {saveState?.kind === 'saving' ? 'Enregistrement…' : 'Enregistrer'}
+                  </button>
+                  <SaveStatus state={saveState} />
+                </div>
                 <div style={{ borderTop: `1px solid ${C.grisCL}`, paddingTop: 12, fontSize: 12, color: C.grisM, display: 'flex', flexDirection: 'column', gap: 6 }}>
                   <strong style={{ color: C.grisTF }}>Fichiers publiés (version {selected.version})</strong>
                   <LinkRow label={`Vidéo MP4 — ${mo(selected.video_size)}`} url={selected.video_url} />

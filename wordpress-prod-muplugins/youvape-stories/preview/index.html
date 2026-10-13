@@ -44,6 +44,9 @@
 (function () {
   var SITE = 'https://www.youvape.fr';
   var app = document.getElementById('app');
+  // ?widget=<slug> (bouton « Voir l'aperçu » de l'app) : n'afficher que ce widget.
+  var only = new URLSearchParams(location.search).get('widget');
+  var keep = function (slugs) { return !only || slugs.indexOf(only) >= 0; };
 
   function box(title, meta) {
     var b = document.createElement('section');
@@ -64,9 +67,16 @@
         'Générée le ' + new Date(index.generated_at).toLocaleString('fr-FR') + ' · '
         + Object.keys(index.widgets).length + ' widget(s) · ' + Object.keys(index.stories).length + ' vidéo(s) prête(s)');
       app.appendChild(info);
+      if (only) {
+        var w0 = index.widgets[only];
+        var f = box(w0 ? 'Aperçu du widget « ' + w0.title + ' »' : 'Widget « ' + only + ' » absent de la publication',
+          (w0 ? 'Seuls ses emplacements sont affichés. ' : '<span class="err">Il n’a pas encore été publié, ou il est en brouillon ou vide : dans l’app, passez-le en « Publié » puis cliquez sur « Publier sur le site ».</span> ')
+          + '<a href="' + location.pathname + '">Voir tous les emplacements</a>');
+        app.appendChild(f);
+      }
 
       // Fiches produit : bulles au-dessus de la galerie, comme sur le site aujourd'hui.
-      Object.keys(index.products).forEach(function (pid) {
+      Object.keys(index.products).filter(function (pid) { return keep(index.products[pid]); }).forEach(function (pid) {
         var infoP = (index.product_info || {})[pid] || {};
         var b = box(infoP.title ? 'Fiche produit : ' + infoP.title : 'Fiche produit #' + pid,
           'Widget(s) : ' + index.products[pid].join(', ') + ' · <a target="_blank" rel="noopener" href="' + SITE + '/?post_type=product&p=' + pid + '">ouvrir la vraie fiche</a>');
@@ -93,7 +103,7 @@
       });
 
       // Pages éditoriales (ex. /youvape-awards) : carrousel.
-      Object.keys(index.pages).forEach(function (path) {
+      Object.keys(index.pages).filter(function (path) { return keep(index.pages[path]); }).forEach(function (path) {
         var b = box('Page ' + path,
           'Widget(s) : ' + index.pages[path].join(', ') + ' · <a target="_blank" rel="noopener" href="' + SITE + path + '">ouvrir la vraie page</a>');
         index.pages[path].forEach(function (slug) {
@@ -104,14 +114,22 @@
         app.appendChild(b);
       });
 
-      if (!Object.keys(index.products).length && !Object.keys(index.pages).length) {
+      if (only && index.widgets[only]
+          && !Object.keys(index.products).some(function (k) { return index.products[k].indexOf(only) >= 0; })
+          && !Object.keys(index.pages).some(function (k) { return index.pages[k].indexOf(only) >= 0; })) {
+        var wb = box('Widget sans emplacement', 'Il est publié mais rattaché à aucune fiche ni page : voici son rendu seul.');
+        var wh = widgetHost(); wb.appendChild(wh); app.appendChild(wb);
+        var wx = YVStories.expand(index, only); YVStories.mount(wh, wx, { siteUrl: SITE }); expanded.push(wx);
+      }
+
+      if (!only && !Object.keys(index.products).length && !Object.keys(index.pages).length) {
         var e = box('Aucun emplacement publié', 'Ajoutez une fiche produit ou une page à un widget « Publié », puis « Publier sur le site ».');
         app.appendChild(e);
       }
 
       // Toutes les vidéos prêtes, en carrousel : préfigure la médiathèque /videos.
       var all = { slug: '_toutes', title: 'Toutes les vidéos', layout: 'cards', stories: Object.keys(index.stories).map(function (s) { return index.stories[s]; }) };
-      if (all.stories.length) {
+      if (all.stories.length && !only) {
         var b = box('Toutes les vidéos prêtes', 'Préfigure la future médiathèque /videos.');
         var host = widgetHost(); b.appendChild(host); app.appendChild(b);
         YVStories.mount(host, all, { siteUrl: SITE }); expanded.push(all);

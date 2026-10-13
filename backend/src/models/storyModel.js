@@ -8,9 +8,11 @@ const EDITABLE = ['title', 'description', 'cta_label', 'cta_url', 'wp_product_id
 
 const list = async ({ includeArchived = false } = {}) => {
   const { rows } = await pool.query(
-    `SELECT s.*, u.email AS created_by_email
+    `SELECT s.*, u.email AS created_by_email, pr.post_title AS product_title
        FROM stories s
        LEFT JOIN users u ON u.id = s.created_by
+       -- Nom du produit lié au bouton d'action, affiché à côté de son numéro.
+       LEFT JOIN products pr ON pr.wp_product_id = s.wp_product_id
       WHERE $1 OR s.status <> 'archived'
       ORDER BY s.created_at DESC`,
     [includeArchived],
@@ -19,7 +21,13 @@ const list = async ({ includeArchived = false } = {}) => {
 };
 
 const getById = async (id) => {
-  const { rows } = await pool.query('SELECT * FROM stories WHERE id = $1', [id]);
+  const { rows } = await pool.query(
+    `SELECT s.*, pr.post_title AS product_title
+       FROM stories s
+       LEFT JOIN products pr ON pr.wp_product_id = s.wp_product_id
+      WHERE s.id = $1`,
+    [id],
+  );
   return rows[0] || null;
 };
 
@@ -44,11 +52,12 @@ const update = async (id, fields) => {
   if (!keys.length) return getById(id);
   const sets = keys.map((k, i) => `${k} = $${i + 2}`);
   const values = keys.map((k) => (fields[k] === '' ? null : fields[k]));
-  const { rows } = await pool.query(
-    `UPDATE stories SET ${sets.join(', ')}, updated_at = NOW() WHERE id = $1 RETURNING *`,
+  const { rowCount } = await pool.query(
+    `UPDATE stories SET ${sets.join(', ')}, updated_at = NOW() WHERE id = $1`,
     [id, ...values],
   );
-  return rows[0] || null;
+  // Relu avec le nom du produit lié : l'écran l'affiche à la confirmation.
+  return rowCount ? getById(id) : null;
 };
 
 /** Source annoncée par le navigateur avant l'envoi (clé R2 + nom d'origine). */
