@@ -328,8 +328,26 @@ const wcSyncService = {
    */
   processProduct: async (action, wpId, data) => {
     if (action === 'delete') {
-      await pool.query('DELETE FROM products WHERE wp_product_id = $1', [wpId]);
-      console.log(`🔄 WC Sync: Product #${wpId} supprimé`);
+      // JAMAIS de DELETE : commandes d'achat, réceptions et documents fournisseur
+      // référencent la fiche par des FK sans CASCADE, et l'historique (ce qui a
+      // été acheté, vendu) doit rester lisible. Un DELETE échouait donc en boucle
+      // (« violates foreign key constraint purchase_order_items_product_id_fkey »,
+      // CLK One 20mg scindées en un nouveau produit le 13/10/2026).
+      // On fait comme le cron de 3h (productDbSyncService) : la fiche est marquée
+      // supprimée de WC (`wc_deleted_at`, exclue du catalogue) et son stock est
+      // neutralisé, sinon il serait compté en double avec celui de la fiche qui
+      // la remplace. Réversible : une fiche restaurée dans WC perd le marqueur au
+      // passage suivant du cron de 3h, et retrouve son stock au premier event.
+      const del = await pool.query(
+        `UPDATE products
+            SET wc_deleted_at = COALESCE(wc_deleted_at, NOW()),
+                stock = 0, stock_status = 'outofstock', track_stock = false,
+                updated_at = NOW()
+          WHERE wp_product_id = $1
+          RETURNING id`,
+        [wpId],
+      );
+      console.log(`🔄 WC Sync: Product #${wpId} ${del.rowCount ? 'marqué supprimé de WC (stock neutralisé, historique conservé)' : 'absent de la base, rien à faire'}`);
       return;
     }
 
