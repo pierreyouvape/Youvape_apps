@@ -19,7 +19,7 @@
 
   var PROGRESS_MARKS = [25, 50, 75, 100];
   var LONG_PRESS_MS = 220;
-  var SEEK_STEP_S = 5;
+  var SEEK_STEP_S = 10; // comme les boutons « 10 s » de YouTube
 
   function el(tag, attrs, children) {
     var node = document.createElement(tag);
@@ -150,7 +150,18 @@
       class: 'yvs-player__seek', role: 'slider', tabindex: '0',
       'aria-label': 'Position dans la vidéo', 'aria-valuemin': '0', 'aria-valuemax': '100', 'aria-valuenow': '0',
     }, [time, seekTrack]);
-    var frame = el('div', { class: 'yvs-player__frame' }, [video, prevZone, nextZone, bars, title, close, mute, paused, seek, cta, preload]);
+    // Boutons visibles « reculer 10 s / lecture-pause / avancer 10 s », comme sur YouTube :
+    // seuls utilisables au doigt (pas de clavier sur téléphone).
+    var ARROW = '<path d="M12 5V2L7 6l5 4V7a6 6 0 1 1-6 6H4a8 8 0 1 0 8-8z" fill="#fff"/>';
+    var back = el('button', { class: 'yvs-player__ctl yvs-player__ctl--back', type: 'button', 'aria-label': 'Reculer de 10 secondes' });
+    back.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true">' + ARROW + '<text x="12" y="16.2" text-anchor="middle" font-size="7" font-weight="700" fill="#fff" font-family="system-ui,sans-serif">10</text></svg>';
+    var fwd = el('button', { class: 'yvs-player__ctl yvs-player__ctl--fwd', type: 'button', 'aria-label': 'Avancer de 10 secondes' });
+    fwd.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><g transform="matrix(-1 0 0 1 24 0)">' + ARROW + '</g><text x="12" y="16.2" text-anchor="middle" font-size="7" font-weight="700" fill="#fff" font-family="system-ui,sans-serif">10</text></svg>';
+    var toggle = el('button', { class: 'yvs-player__ctl yvs-player__ctl--toggle', type: 'button', 'aria-label': 'Pause' });
+    toggle.innerHTML = '<svg class="yvs-ico-pause" viewBox="0 0 24 24" aria-hidden="true"><rect x="6.5" y="5" width="3.6" height="14" rx="1" fill="#fff"/><rect x="13.9" y="5" width="3.6" height="14" rx="1" fill="#fff"/></svg>'
+      + '<svg class="yvs-ico-play" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l11-6.5z" fill="#fff"/></svg>';
+    var controls = el('div', { class: 'yvs-player__controls' }, [back, toggle, fwd]);
+    var frame = el('div', { class: 'yvs-player__frame' }, [video, prevZone, nextZone, bars, title, close, mute, paused, controls, seek, cta, preload]);
     dialog.appendChild(frame);
     document.body.appendChild(dialog);
 
@@ -162,6 +173,14 @@
     };
 
     close.addEventListener('click', function () { closePlayer('button'); });
+    back.addEventListener('click', function (e) { e.stopPropagation(); seekBy(-SEEK_STEP_S); });
+    fwd.addEventListener('click', function (e) { e.stopPropagation(); seekBy(SEEK_STEP_S); });
+    toggle.addEventListener('click', function (e) {
+      e.stopPropagation();
+      if (video.paused) video.play().catch(function () {}); else video.pause();
+    });
+    video.addEventListener('pause', function () { frame.classList.add('is-stopped'); toggle.setAttribute('aria-label', 'Lecture'); });
+    video.addEventListener('play', function () { frame.classList.remove('is-stopped'); toggle.setAttribute('aria-label', 'Pause'); });
     mute.addEventListener('click', function () {
       video.muted = !video.muted;
       frame.classList.toggle('is-muted', video.muted);
@@ -232,7 +251,7 @@
     });
     dialog.addEventListener('cancel', function (e) { e.preventDefault(); closePlayer('escape'); });
     dialog.addEventListener('keydown', function (e) {
-      // ← → : reculer / avancer de 5 s ; ↑ ↓ : vidéo précédente / suivante.
+      // ← → : reculer / avancer de 10 s ; ↑ ↓ : vidéo précédente / suivante.
       if (e.key === 'ArrowRight') { e.preventDefault(); seekBy(SEEK_STEP_S); }
       else if (e.key === 'ArrowLeft') { e.preventDefault(); seekBy(-SEEK_STEP_S); }
       else if (e.key === 'ArrowDown' || e.key === 'PageDown') { e.preventDefault(); go(1); }

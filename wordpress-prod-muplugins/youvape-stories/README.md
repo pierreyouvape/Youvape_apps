@@ -48,8 +48,9 @@ ne jamais réécrire une URL publiée, des e-mails Probance déjà envoyés y po
   (`impression`, `open`, `view`, `progress` 25/50/75/100, `seek`, `cta_click`, `close`).
   Un saut en avant n'émet PAS les paliers `progress` sautés (le taux de lecture
   complète ne doit compter que ce qui a été regardé).
-- Navigation : tap gauche / droite = vidéo précédente / suivante ; barre de
-  lecture en bas (glisser ou toucher) ; clavier ← → = ±5 s, ↑ ↓ = vidéo
+- Navigation : tap gauche / droite = vidéo précédente / suivante ; boutons
+  visibles « −10 s / lecture-pause / +10 s » ; barre de lecture en bas (glisser
+  ou toucher) ; clavier ← → = ±10 s, ↑ ↓ = vidéo
   précédente / suivante, Espace = pause, Échap = fermer.
 
 ## Points d'intégration WordPress

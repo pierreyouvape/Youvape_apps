@@ -178,8 +178,28 @@ html.yvs-lock, html.yvs-lock body { overflow: hidden; }
 }
 .yvs-player__seek:focus-visible { outline: 2px solid #fff; outline-offset: 2px; border-radius: 6px; }
 
+/* Rangée « −10 s / lecture-pause / +10 s », juste au-dessus de la barre de lecture. */
+.yvs-player__controls {
+  position: absolute; left: 0; right: 0; bottom: 40px; z-index: 5;
+  display: flex; justify-content: center; align-items: center; gap: 28px; pointer-events: none;
+}
+.yvs-player__ctl {
+  all: unset; box-sizing: border-box; cursor: pointer; pointer-events: auto; position: relative;
+  width: 46px; height: 46px; border-radius: 50%; background: rgba(0, 0, 0, .38);
+  display: flex; align-items: center; justify-content: center; -webkit-tap-highlight-color: transparent;
+  transition: transform .1s ease, background .1s ease;
+}
+.yvs-player__ctl svg { width: 28px; height: 28px; display: block; }
+.yvs-player__ctl--toggle { width: 54px; height: 54px; }
+.yvs-player__ctl--toggle svg { width: 30px; height: 30px; }
+.yvs-player__ctl:active { transform: scale(.92); background: rgba(0, 0, 0, .55); }
+.yvs-player__ctl:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+.yvs-ico-play { display: none !important; }
+.yvs-player__frame.is-stopped .yvs-ico-play { display: block !important; }
+.yvs-player__frame.is-stopped .yvs-ico-pause { display: none; }
+
 .yvs-player__cta {
-  position: absolute; left: 50%; bottom: 58px; z-index: 4; transform: translateX(-50%);
+  position: absolute; left: 50%; bottom: 104px; z-index: 4; transform: translateX(-50%);
   padding: 13px 30px; border-radius: 10px; background: var(--yvs-accent); color: var(--yvs-accent-text) !important;
   font-weight: 800; font-size: 17px; letter-spacing: .02em; text-decoration: none !important; white-space: nowrap;
   box-shadow: 0 6px 18px rgba(0, 0, 0, .35);
