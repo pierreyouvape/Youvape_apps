@@ -37,6 +37,7 @@ import PdaHome from './pages/PdaHome';
 import PdaPicking from './pages/PdaPicking';
 import PdaProduit from './pages/PdaProduit';
 import PdaInventaire from './pages/PdaInventaire';
+import PdaDebug from './pages/PdaDebug';
 import InventoryApp from './pages/InventoryApp';
 import ReturnsApp from './pages/ReturnsApp';
 import ReceptionApp from './pages/ReceptionApp';
@@ -87,6 +88,7 @@ const PAGE_TITLES = {
   '/pda/picking': 'Picking PDA',
   '/pda/produit': 'Produit PDA',
   '/pda/inventaire': 'Inventaire PDA',
+  '/pda/debug': 'Diagnostic scan PDA',
   '/inventaire': 'Inventaire',
   '/retours': 'Retours',
   '/reception': 'Réception',
@@ -393,6 +395,14 @@ function App() {
             element={
               <PrivateRoute>
                 <PdaInventaire />
+              </PrivateRoute>
+            }
+          />
+          <Route
+            path="/pda/debug"
+            element={
+              <PrivateRoute>
+                <PdaDebug />
               </PrivateRoute>
             }
           />

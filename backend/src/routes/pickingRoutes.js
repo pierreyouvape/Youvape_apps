@@ -49,5 +49,7 @@ router.post('/pda/waves/:id/lines/:lineId/validate', canRead, pickingController.
 router.post('/pda/waves/:id/lines/:lineId/missing', canRead, pickingController.pdaMissing);
 router.post('/pda/waves/:id/lines/:lineId/undo', canRead, pickingController.pdaUndo);
 router.post('/pda/waves/:id/finish', canRead, pickingController.pdaFinish);
+// Diagnostic des scans (/pda/debug) : le journal du PDA part dans les logs du backend.
+router.post('/pda/debug-log', canRead, pickingController.pdaDebugLog);
 
 module.exports = router;

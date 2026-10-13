@@ -236,6 +236,16 @@ const pdaFinish = handle(async (req, res) => {
   res.json({ success: true });
 });
 
+/** Journal de /pda/debug : écrit tel quel dans les logs du backend (`[PDA debug]`). */
+const pdaDebugLog = handle(async (req, res) => {
+  const { userAgent, screen, standalone, recognized, logs } = req.body || {};
+  const who = req.user?.email || req.user?.id;
+  console.log(`[PDA debug] ${who} · ${userAgent} · ${screen} · standalone=${standalone}`);
+  console.log(`[PDA debug] reconnus : ${JSON.stringify(recognized || [])}`);
+  for (const l of (Array.isArray(logs) ? logs : []).slice(-400)) console.log(`[PDA debug] ${JSON.stringify(l)}`);
+  res.json({ success: true });
+});
+
 const releaseWave = handle(async (req, res) => {
   await pickingPdaModel.release(Number(req.params.id));
   res.json({ success: true });
@@ -265,6 +275,7 @@ module.exports = {
   pdaMissing,
   pdaUndo: pdaLineAction('undo'),
   pdaFinish,
+  pdaDebugLog,
   releaseWave,
   listOrders,
   refresh,
