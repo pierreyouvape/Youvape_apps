@@ -67,10 +67,36 @@ const prepareSource = async (story, { filename, content_type: contentType, size 
   return { story: withUrls(updated), upload_url: uploadUrl, content_type: contentType };
 };
 
+const statsOptions = (q) => ({
+  days: Math.min(365, Math.max(1, parseInt(q.days, 10) || 30)),
+  includeTests: q.tests === '1',
+});
+
 const list = async (req, res) => {
   try {
-    const stories = await storyModel.list({ includeArchived: req.query.archived === '1' });
-    res.json({ data: stories.map(withUrls), r2_missing: r2.missingConfig() });
+    const opts = statsOptions(req.query);
+    const [stories, placements, stats] = await Promise.all([
+      storyModel.list({ includeArchived: req.query.archived === '1' }),
+      storyModel.placementsByStory(),
+      storyModel.statsByStory(opts),
+    ]);
+    const statsBySlug = new Map(stats.map((r) => [r.story_slug, r]));
+    const data = stories.map((s) => ({
+      ...withUrls(s),
+      placements: placements.filter((p) => p.story_id === s.id),
+      stats: statsBySlug.get(s.slug) || null,
+    }));
+    res.json({ data, r2_missing: r2.missingConfig(), stats_days: opts.days, stats_tests: opts.includeTests });
+  } catch (err) {
+    fail(res, err);
+  }
+};
+
+const stats = async (req, res) => {
+  try {
+    const story = await storyModel.getById(req.params.id);
+    if (!story) return res.status(404).json({ error: 'Story introuvable' });
+    res.json({ data: await storyModel.statsForStory(story.slug, statsOptions(req.query)) });
   } catch (err) {
     fail(res, err);
   }
@@ -184,4 +210,4 @@ const archive = async (req, res) => {
   }
 };
 
-module.exports = { list, get, create, replaceSource, uploaded, update, reprocess, archive };
+module.exports = { list, get, stats, create, replaceSource, uploaded, update, reprocess, archive };

@@ -53,6 +53,7 @@ const processRoutes = require('./routes/processRoutes');
 const atbRoutes = require('./routes/atbRoutes');
 const employeesRoutes = require('./routes/employeesRoutes');
 const storyRoutes = require('./routes/storyRoutes');
+const storyCollectRoutes = require('./routes/storyCollectRoutes');
 const storyProcessingService = require('./services/storyProcessingService');
 const authMiddleware = require('./middleware/authMiddleware');
 const { setupCron, setupBmsCron, setupComputedCostCron, setupBmsBarcodeCron, setupBmsShelfLocationCron, setupStockResyncCron, setupSavAutomationsCron, setupProductDbSyncCron, setupBmsTagRetryCron, setupBmsShipmentConfirmCron, setupReportEmailCron, setupStockValuationSnapshotCron, setupDraftStockReportCron, setupCompetitorMonitorCron, setupBrandMapCron, setupNextoreCrons, setupProductSuppliersLinkCron, setupPickingSyncCron, setupBmsShipmentSyncCron, setupInventoryRefCron, setupReturnsRefundCron, setupRefundLinesCron } = require('./services/cronService');
@@ -128,6 +129,9 @@ app.use('/api/nextore', nextoreRoutes); // Boutiques physiques Nextore (auth + p
 app.use('/api/process', processRoutes); // Process — procédures internes (auth + permission dans le routeur)
 app.use('/api/atb', authMiddleware, atbRoutes); // ATB — Anthony Tool Box (droit `atb` vérifié dans le routeur)
 app.use('/api/employees', authMiddleware, employeesRoutes); // Gestion employé (droit `employes` vérifié dans le routeur)
+// Statistiques des stories envoyées par le lecteur du site : PUBLIC (sendBeacon,
+// sans session), écriture seule, contrôles dans le routeur.
+app.use('/api/stories-collect', storyCollectRoutes);
 app.use('/api/stories', authMiddleware, storyRoutes); // Stories : vidéos sur R2, remplace Join Stories (droit `stories` dans le routeur)
 
 // Start server

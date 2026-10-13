@@ -43,6 +43,9 @@
 <script>
 (function () {
   var SITE = 'https://www.youvape.fr';
+  // Les essais faits ici comptent dans les statistiques, mais marqués « test » :
+  // l'app les exclut des chiffres sauf si on coche « Inclure les tests ».
+  YVStories.configure({ collectUrl: 'https://apps.youvape.fr/api/stories-collect', source: 'preview' });
   var app = document.getElementById('app');
   // ?widget=<slug> (bouton « Voir l'aperçu » de l'app) : n'afficher que ce widget.
   var only = new URLSearchParams(location.search).get('widget');

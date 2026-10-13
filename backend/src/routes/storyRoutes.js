@@ -28,6 +28,7 @@ router.post('/publish', write, widgetController.publish);
 router.get('/', read, storyController.list);
 router.post('/', write, storyController.create);
 router.get('/:id', read, storyController.get);
+router.get('/:id/stats', read, storyController.stats);
 router.put('/:id', write, storyController.update);
 router.post('/:id/source', write, storyController.replaceSource);
 router.post('/:id/uploaded', write, storyController.uploaded);

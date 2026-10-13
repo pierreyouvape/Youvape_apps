@@ -34,7 +34,53 @@
     return node;
   }
 
+  /* ───────────────────────── Statistiques ─────────────────────────
+   * Si une adresse de collecte est configurée (YVStories.configure), les
+   * événements partent par lots vers Youvape_apps avec navigator.sendBeacon :
+   * l'envoi ne retarde jamais la page et part même à la fermeture de l'onglet.
+   * Aucune donnée personnelle : un identifiant tiré au hasard pour la durée de
+   * l'onglet (sessionStorage), la page et le type d'événement. */
+  var config = { collectUrl: null, source: /[?&]utm_medium=email/.test(location.search) ? 'email' : 'site' };
+  var queue = [];
+  var flushTimer = 0;
+
+  function sessionId() {
+    try {
+      var id = sessionStorage.getItem('yvs_session');
+      if (!id) {
+        id = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : String(Math.random()).slice(2) + Date.now();
+        sessionStorage.setItem('yvs_session', id);
+      }
+      return id;
+    } catch (e) { return null; } // navigation privée stricte : statistiques sans session
+  }
+
+  function flush() {
+    clearTimeout(flushTimer);
+    flushTimer = 0;
+    if (!config.collectUrl || !queue.length) return;
+    var batch = queue.splice(0, 40);
+    var body = JSON.stringify({ source: config.source, page: location.pathname, session: sessionId(), events: batch });
+    var sent = false;
+    try { sent = navigator.sendBeacon && navigator.sendBeacon(config.collectUrl, body); } catch (e) { sent = false; }
+    if (!sent) {
+      try { fetch(config.collectUrl, { method: 'POST', body: body, keepalive: true, mode: 'no-cors' }); } catch (e) { /* tant pis */ }
+    }
+    if (queue.length) flush();
+  }
+
+  function track(type, d) {
+    if (!config.collectUrl) return;
+    queue.push({ type: type, story: d.story || null, widget: d.widget || null, percent: d.percent, seconds: d.seconds });
+    if (type === 'close' || type === 'cta_click') flush(); // départ probable de la page : on n'attend pas
+    else if (!flushTimer) flushTimer = setTimeout(flush, 4000);
+  }
+
+  document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'hidden') flush(); });
+  window.addEventListener('pagehide', flush);
+
   function emit(type, detail) {
+    track(type, detail || {});
     try {
       window.dispatchEvent(new CustomEvent('yvstories:event', { detail: Object.assign({ type: type, at: Date.now() }, detail) }));
     } catch (e) { /* navigateurs très anciens : pas de statistiques, rien de grave */ }
@@ -424,5 +470,11 @@
     };
   }
 
-  window.YVStories = { mount: mount, bind: bind, open: open, close: closePlayer, openFromHash: openFromHash, expand: expand };
+  /** Réglages : { collectUrl, source } (source = 'site' | 'preview' | 'email'). */
+  function configure(opts) {
+    if (opts && opts.collectUrl) config.collectUrl = opts.collectUrl;
+    if (opts && opts.source) config.source = opts.source;
+  }
+
+  window.YVStories = { configure: configure, mount: mount, bind: bind, open: open, close: closePlayer, openFromHash: openFromHash, expand: expand };
 }());

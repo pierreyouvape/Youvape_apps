@@ -5,6 +5,8 @@ import { Stories as StoriesIcon } from '../components/AppIcons';
 import StoryWidgets from '../components/stories/StoryWidgets';
 import ProductPicker from '../components/stories/ProductPicker';
 import SaveStatus from '../components/stories/SaveStatus';
+import { PlacementsDetail, StoryStatsPanel } from '../components/stories/StoryInsights';
+import { placementsLabel, summarizePlacements } from '../utils/storyPlacements';
 
 const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:3000/api/auth').replace('/auth', '');
 
@@ -77,6 +79,8 @@ const StoriesApp = () => {
   const [saveState, setSaveState] = useState(null);
   const [showArchived, setShowArchived] = useState(false);
   const [tab, setTab] = useState('videos');
+  const [statsDays, setStatsDays] = useState(30);
+  const [includeTests, setIncludeTests] = useState(false);
   const fileInput = useRef(null);
   const replaceInput = useRef(null);
   const replaceTarget = useRef(null);
@@ -84,7 +88,9 @@ const StoriesApp = () => {
   const fetchData = useCallback(async ({ quiet = false } = {}) => {
     if (!quiet) setLoading(true);
     try {
-      const res = await axios.get(`${API_URL}/stories`, { params: showArchived ? { archived: 1 } : {} });
+      const res = await axios.get(`${API_URL}/stories`, {
+        params: { ...(showArchived ? { archived: 1 } : {}), days: statsDays, tests: includeTests ? 1 : 0 },
+      });
       setStories(res.data.data || []);
       setR2Missing(res.data.r2_missing || []);
       setError(null);
@@ -93,7 +99,7 @@ const StoriesApp = () => {
     } finally {
       if (!quiet) setLoading(false);
     }
-  }, [showArchived]);
+  }, [showArchived, statsDays, includeTests]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -314,6 +320,17 @@ const StoriesApp = () => {
               Aucune vidéo pour le moment. Cliquez sur « + Nouvelle vidéo » pour envoyer la première.
             </div>
           ) : (
+            <>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 10, fontSize: 12, color: C.grisM }}>
+              <span>Statistiques sur</span>
+              <select value={statsDays} onChange={(e) => setStatsDays(Number(e.target.value))} style={{ ...inputStyle, padding: '4px 8px', fontSize: 12 }}>
+                {[7, 30, 90, 365].map((d) => <option key={d} value={d}>{d === 365 ? '12 mois' : `${d} jours`}</option>)}
+              </select>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+                <input type="checkbox" checked={includeTests} onChange={(e) => setIncludeTests(e.target.checked)} />
+                Inclure les tests (page d’aperçu)
+              </label>
+            </div>
             <div style={{ background: C.blanc, borderRadius: 14, border: `1px solid ${C.grisCL}`, overflow: 'hidden' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead>
@@ -321,6 +338,10 @@ const StoriesApp = () => {
                     <th style={{ ...th, width: 64 }} />
                     <th style={th}>Vidéo</th>
                     <th style={th}>Statut</th>
+                    <th style={th}>Affichée sur</th>
+                    <th style={{ ...th, textAlign: 'right' }}>Vues</th>
+                    <th style={{ ...th, textAlign: 'right' }}>Vue entière</th>
+                    <th style={{ ...th, textAlign: 'right' }}>Clics</th>
                     <th style={{ ...th, textAlign: 'right' }}>Durée</th>
                     <th style={{ ...th, textAlign: 'right' }}>Source → diffusée</th>
                     <th style={{ ...th, textAlign: 'right' }}>Actions</th>
@@ -366,6 +387,14 @@ const StoriesApp = () => {
                             </>
                           )}
                         </td>
+                        <td style={{ ...td, fontSize: 12 }} title={placementsTitle(s.placements)}>
+                          <span style={{ color: s.placements?.length ? C.grisTF : C.grisM }}>{placementsLabel(s.placements)}</span>
+                        </td>
+                        <td style={{ ...td, textAlign: 'right', fontFamily: 'monospace' }}>{s.stats ? Number(s.stats.views) : '—'}</td>
+                        <td style={{ ...td, textAlign: 'right', fontFamily: 'monospace' }}>
+                          {s.stats && Number(s.stats.views) ? `${Math.round((Number(s.stats.completions) / Number(s.stats.views)) * 100)} %` : '—'}
+                        </td>
+                        <td style={{ ...td, textAlign: 'right', fontFamily: 'monospace' }}>{s.stats ? Number(s.stats.clicks) : '—'}</td>
                         <td style={{ ...td, textAlign: 'right', fontFamily: 'monospace' }}>{duree(s.duration_s)}</td>
                         <td style={{ ...td, textAlign: 'right', fontFamily: 'monospace', whiteSpace: 'nowrap' }}>
                           {mo(s.source_size)} → {mo(s.video_size)}
@@ -396,6 +425,7 @@ const StoriesApp = () => {
                 </tbody>
               </table>
             </div>
+            </>
           )}
         </section>
 
@@ -435,6 +465,16 @@ const StoriesApp = () => {
                   </button>
                   <SaveStatus state={saveState} />
                 </div>
+                <div style={{ borderTop: `1px solid ${C.grisCL}`, paddingTop: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <strong style={{ fontSize: 12, color: C.grisTF }}>Où elle est affichée</strong>
+                  <PlacementsDetail placements={selected.placements} />
+                </div>
+                <div style={{ borderTop: `1px solid ${C.grisCL}`, paddingTop: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <strong style={{ fontSize: 12, color: C.grisTF }}>
+                    Statistiques — {statsDays === 365 ? '12 derniers mois' : `${statsDays} derniers jours`}{includeTests ? ', tests compris' : ''}
+                  </strong>
+                  <StoryStatsPanel storyId={selected.id} days={statsDays} includeTests={includeTests} />
+                </div>
                 <div style={{ borderTop: `1px solid ${C.grisCL}`, paddingTop: 12, fontSize: 12, color: C.grisM, display: 'flex', flexDirection: 'column', gap: 6 }}>
                   <strong style={{ color: C.grisTF }}>Fichiers publiés (version {selected.version})</strong>
                   <LinkRow label={`Vidéo MP4 — ${mo(selected.video_size)}`} url={selected.video_url} />
@@ -450,6 +490,12 @@ const StoriesApp = () => {
       </main>
     </AppShell>
   );
+};
+
+/** Info-bulle de la colonne « Affichée sur » : la liste des fiches et des pages. */
+const placementsTitle = (placements) => {
+  const { products, pages } = summarizePlacements(placements);
+  return [...products.values(), ...pages].join('\n');
 };
 
 /** Champs modifiables envoyés au backend (le reste de la story est en lecture seule). */

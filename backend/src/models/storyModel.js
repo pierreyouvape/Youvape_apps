@@ -161,7 +161,69 @@ const setArchived = async (id, archived) => {
   return rows[0] || null;
 };
 
+/**
+ * Où chaque story est affichée : ses widgets (publiés ou non) et leurs
+ * emplacements. Une même vidéo peut être dans plusieurs widgets, chacun sur
+ * plusieurs fiches ou pages.
+ */
+const placementsByStory = async () => {
+  const { rows } = await pool.query(
+    `SELECT i.story_id, w.id AS widget_id, w.slug AS widget_slug, w.title AS widget_title,
+            w.status AS widget_status, w.layout,
+            p.target_type, p.target_ref, pr.post_title AS product_title
+       FROM story_widget_items i
+       JOIN story_widgets w ON w.id = i.widget_id
+       LEFT JOIN story_placements p ON p.widget_id = w.id
+       LEFT JOIN products pr
+              ON pr.wp_product_id = CASE WHEN p.target_type = 'product' THEN p.target_ref::bigint END
+      ORDER BY i.story_id, w.title, p.target_type, pr.post_title, p.target_ref`,
+  );
+  return rows;
+};
+
+/**
+ * Statistiques par story sur `days` jours. Les événements de la page d'aperçu
+ * (source = preview) sont exclus sauf demande : ce sont nos propres tests.
+ * Lecture complète = palier 100 % atteint SANS saut (le lecteur ne compte pas
+ * les paliers sautés).
+ */
+const STATS_COLUMNS = `
+  count(*) FILTER (WHERE type = 'view')                                   AS views,
+  count(DISTINCT session_id) FILTER (WHERE type = 'view')                 AS viewers,
+  count(*) FILTER (WHERE type = 'progress' AND percent = 100)             AS completions,
+  count(*) FILTER (WHERE type = 'progress' AND percent = 50)              AS halfway,
+  count(*) FILTER (WHERE type = 'cta_click')                              AS clicks`;
+
+const statsByStory = async ({ days = 30, includeTests = false } = {}) => {
+  const { rows } = await pool.query(
+    `SELECT story_slug, ${STATS_COLUMNS}
+       FROM story_events
+      WHERE at >= NOW() - make_interval(days => $1)
+        AND story_slug IS NOT NULL
+        AND ($2 OR source <> 'preview')
+      GROUP BY story_slug`,
+    [days, includeTests],
+  );
+  return rows;
+};
+
+/** Détail d'une story : par page, par appareil et par provenance (site, e-mail, test). */
+const statsForStory = async (slug, { days = 30, includeTests = false } = {}) => {
+  const where = `story_slug = $1 AND at >= NOW() - make_interval(days => $2) AND ($3 OR source <> 'preview')`;
+  const params = [slug, days, includeTests];
+  const [total, byPage, byDevice, bySource] = await Promise.all([
+    pool.query(`SELECT ${STATS_COLUMNS} FROM story_events WHERE ${where}`, params),
+    pool.query(`SELECT page, ${STATS_COLUMNS} FROM story_events WHERE ${where} GROUP BY page ORDER BY views DESC NULLS LAST`, params),
+    pool.query(`SELECT device, count(*) FILTER (WHERE type = 'view') AS views FROM story_events WHERE ${where} GROUP BY device`, params),
+    pool.query(`SELECT source, count(*) FILTER (WHERE type = 'view') AS views FROM story_events WHERE ${where} GROUP BY source`, params),
+  ]);
+  return { total: total.rows[0], by_page: byPage.rows, by_device: byDevice.rows, by_source: bySource.rows };
+};
+
 module.exports = {
+  placementsByStory,
+  statsByStory,
+  statsForStory,
   list,
   getById,
   slugExists,

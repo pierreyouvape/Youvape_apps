@@ -44,7 +44,11 @@ ne jamais réécrire une URL publiée, des e-mails Probance déjà envoyés y po
 - Rendu serveur : générer le même HTML que `renderBubbles` / `renderCards`
   (attribut `data-yvs-index` sur chaque élément), puis `YVStories.bind(conteneur, widget)`.
 - `#story=<slug>` dans l'adresse ouvre directement une story (`YVStories.openFromHash`).
-- Statistiques : le lecteur émet `yvstories:event` sur `window`
+- Statistiques : `YVStories.configure({ collectUrl: 'https://apps.youvape.fr/api/stories-collect' })`
+  envoie les événements par lots (sendBeacon) à Youvape_apps, qui les affiche dans
+  /stories. Aucune donnée personnelle (identifiant d'onglet aléatoire, pas d'IP
+  conservée). `source` vaut `email` tout seul quand l'adresse porte `utm_medium=email`.
+- Le lecteur émet aussi `yvstories:event` sur `window`
   (`impression`, `open`, `view`, `progress` 25/50/75/100, `seek`, `cta_click`, `close`).
   Un saut en avant n'émet PAS les paliers `progress` sautés (le taux de lecture
   complète ne doit compter que ce qui a été regardé).
