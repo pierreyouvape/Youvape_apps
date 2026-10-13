@@ -6,7 +6,6 @@ import StockTab from '../components/boutique/StockTab';
 import BesoinsTab from '../components/boutique/BesoinsTab';
 import ImportTab from '../components/boutique/ImportTab';
 import CommandesTab from '../components/boutique/CommandesTab';
-import RapprochementTab from '../components/boutique/RapprochementTab';
 import ComptageTab from '../components/boutique/ComptageTab';
 import StatsTab from '../components/boutique/StatsTab';
 
@@ -34,7 +33,6 @@ const IcNeeds = () => <Ic><path d="M4 20 H20" /><path d="M5 15 L10 10 L13 13 L19
 const IcDoc   = () => <Ic><path d="M14 3 H7 A1.5 1.5 0 0 0 5.5 4.5 V19.5 A1.5 1.5 0 0 0 7 21 H17 A1.5 1.5 0 0 0 18.5 19.5 V7.5 Z" /><path d="M14 3 V7.5 H18.5" /><path d="M12 10.5 V16.5" /><path d="M9.5 14 L12 16.5 L14.5 14" /></Ic>;
 const IcBox   = () => <Ic><path d="M3.5 8 L12 4 L20.5 8 V16 L12 20 L3.5 16 Z" /><path d="M3.5 8 L12 12 L20.5 8" /><path d="M12 12 V20" /><path d="M8 10 L8 6" /></Ic>;
 const IcCart  = () => <Ic><path d="M3 4 H5.5 L7.6 15 H18 L20 7.5 H6.4" /><circle cx={9} cy={19} r={1.4} /><circle cx={16.5} cy={19} r={1.4} /></Ic>;
-const IcLink  = () => <Ic><path d="M9.5 14.5 L14.5 9.5" /><path d="M11 7.5 L12.8 5.7 A3.8 3.8 0 0 1 18.3 11.2 L16.5 13" /><path d="M13 16.5 L11.2 18.3 A3.8 3.8 0 0 1 5.7 12.8 L7.5 11" /></Ic>;
 const IcCount = () => <Ic><rect x={5} y={4} width={14} height={17} rx={2} /><path d="M9 4 V2.6 H15 V4" /><path d="M8.5 12 L11 14.5 L15.5 9.5" /></Ic>;
 const IcStats = () => <Ic><path d="M4 20 H20" /><path d="M7 20 V13" /><path d="M12 20 V8" /><path d="M17 20 V4" /></Ic>;
 const IcSafe  = () => <Ic><rect x={3.5} y={5} width={17} height={14} rx={2} /><circle cx={11} cy={12} r={3.2} /><path d="M11 12 H13.6" /><path d="M17 9.5 V14.5" /></Ic>;
@@ -46,7 +44,6 @@ const SECTIONS = [
   { key: 'besoin',   label: 'Besoins',  color: '#E28F00', Icon: IcNeeds, ready: true, group: 'achat' },
   { key: 'import',   label: 'Import commande', color: '#16A34A', Icon: IcDoc, ready: true, group: 'achat' },
   { key: 'commandes', label: 'Commandes', color: '#0891B2', Icon: IcBox, ready: true, group: 'achat' },
-  { key: 'rapprochement', label: 'Rapprochement', color: '#2563EB', Icon: IcLink, ready: true },
   { key: 'comptage', label: 'Comptage', color: '#7C3AED', Icon: IcCount, ready: true },
   // Droit à part `stats-boutiques` (Conseiller / Responsable), en plus du droit boutique.
   { key: 'stats',    label: 'Statistiques', color: '#A21CAF', Icon: IcStats, ready: true, permKey: 'stats-boutiques' },
@@ -246,14 +243,6 @@ export default function BoutiqueApp() {
           <>
             <ShopHeader shop={shop} subtitle="Commandes — réception, modification, suppression ; la réception met le stock Nextore à jour" onBack={goUp} />
             <CommandesTab shop={shop} token={token} />
-          </>
-        )}
-
-        {/* ── Section Rapprochement (liens caisse <-> site) ── */}
-        {section === 'rapprochement' && (
-          <>
-            <ShopHeader shop={shop} subtitle="Rapprochement caisse ↔ site — validation des liens et alignement des prix d'achat" onBack={goHome} />
-            <RapprochementTab shop={shop} token={token} />
           </>
         )}
 
