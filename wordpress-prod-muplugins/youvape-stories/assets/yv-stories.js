@@ -19,6 +19,7 @@
 
   var PROGRESS_MARKS = [25, 50, 75, 100];
   var LONG_PRESS_MS = 220;
+  var SEEK_STEP_S = 5;
 
   function el(tag, attrs, children) {
     var node = document.createElement(tag);
@@ -140,13 +141,23 @@
     // Lecteur caché qui télécharge la vidéo suivante (un <link rel=preload as=video>
     // est ignoré par la plupart des navigateurs).
     var preload = el('video', { class: 'yvs-player__preload', preload: 'auto', muted: '', playsinline: '', 'aria-hidden': 'true' });
-    var frame = el('div', { class: 'yvs-player__frame' }, [video, prevZone, nextZone, bars, title, close, mute, paused, cta, preload]);
+    // Barre de lecture en bas : glisser ou toucher pour avancer / reculer.
+    var seekFill = el('span', { class: 'yvs-player__seek-fill' });
+    var seekKnob = el('span', { class: 'yvs-player__seek-knob' });
+    var seekTrack = el('span', { class: 'yvs-player__seek-track' }, [seekFill, seekKnob]);
+    var time = el('span', { class: 'yvs-player__time', 'aria-hidden': 'true' });
+    var seek = el('div', {
+      class: 'yvs-player__seek', role: 'slider', tabindex: '0',
+      'aria-label': 'Position dans la vidéo', 'aria-valuemin': '0', 'aria-valuemax': '100', 'aria-valuenow': '0',
+    }, [time, seekTrack]);
+    var frame = el('div', { class: 'yvs-player__frame' }, [video, prevZone, nextZone, bars, title, close, mute, paused, seek, cta, preload]);
     dialog.appendChild(frame);
     document.body.appendChild(dialog);
 
     var p = {
       dialog: dialog, frame: frame, video: video, bars: bars, title: title, cta: cta,
       mute: mute, paused: paused, preload: preload,
+      seek: seek, seekTrack: seekTrack, seekFill: seekFill, seekKnob: seekKnob, time: time, seeking: false,
       widget: null, index: 0, options: {}, marks: {}, raf: 0, pressTimer: 0, longPress: false, touchY: null,
     };
 
@@ -182,15 +193,50 @@
     video.addEventListener('waiting', function () { frame.classList.add('is-loading'); });
     video.addEventListener('playing', function () { frame.classList.remove('is-loading'); });
     // Glisser vers le bas = fermer.
-    frame.addEventListener('touchstart', function (e) { p.touchY = e.touches[0].clientY; }, { passive: true });
+    var seekAt = function (clientX) {
+      var r = seekTrack.getBoundingClientRect();
+      seekToRatio(Math.max(0, Math.min(1, (clientX - r.left) / r.width)));
+    };
+    seek.addEventListener('pointerdown', function (e) {
+      e.preventDefault();
+      e.stopPropagation();
+      p.seeking = true;
+      p.seekFrom = video.currentTime;
+      frame.classList.add('is-seeking');
+      try { seek.setPointerCapture(e.pointerId); } catch (err) { /* ancien navigateur */ }
+      seekAt(e.clientX);
+    });
+    seek.addEventListener('pointermove', function (e) { if (p.seeking) seekAt(e.clientX); });
+    var endSeek = function () {
+      if (!p.seeking) return;
+      p.seeking = false;
+      frame.classList.remove('is-seeking');
+      emit('seek', { widget: p.widget.slug, story: current().slug, from: Math.round(p.seekFrom), to: Math.round(video.currentTime) });
+    };
+    seek.addEventListener('pointerup', endSeek);
+    seek.addEventListener('pointercancel', endSeek);
+    seek.addEventListener('keydown', function (e) {
+      if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+        e.preventDefault();
+        e.stopPropagation();
+        seekBy(e.key === 'ArrowRight' ? SEEK_STEP_S : -SEEK_STEP_S);
+      }
+    });
+    frame.addEventListener('touchstart', function (e) {
+      // Un glissement commencé sur la barre de lecture n'est jamais un « glisser pour fermer ».
+      p.touchY = seek.contains(e.target) ? null : e.touches[0].clientY;
+    }, { passive: true });
     frame.addEventListener('touchend', function (e) {
       if (p.touchY !== null && e.changedTouches[0].clientY - p.touchY > 90) closePlayer('swipe');
       p.touchY = null;
     });
     dialog.addEventListener('cancel', function (e) { e.preventDefault(); closePlayer('escape'); });
     dialog.addEventListener('keydown', function (e) {
-      if (e.key === 'ArrowRight') go(1);
-      else if (e.key === 'ArrowLeft') go(-1);
+      // ← → : reculer / avancer de 5 s ; ↑ ↓ : vidéo précédente / suivante.
+      if (e.key === 'ArrowRight') { e.preventDefault(); seekBy(SEEK_STEP_S); }
+      else if (e.key === 'ArrowLeft') { e.preventDefault(); seekBy(-SEEK_STEP_S); }
+      else if (e.key === 'ArrowDown' || e.key === 'PageDown') { e.preventDefault(); go(1); }
+      else if (e.key === 'ArrowUp' || e.key === 'PageUp') { e.preventDefault(); go(-1); }
       else if (e.key === ' ') { e.preventDefault(); if (video.paused) video.play(); else video.pause(); }
     });
     return p;
@@ -207,12 +253,49 @@
     });
   }
 
-  function tick() {
+  function clock(sec) {
+    var n = Math.max(0, Math.floor(sec || 0));
+    return Math.floor(n / 60) + ':' + String(n % 60).padStart(2, '0');
+  }
+
+  /** Met à jour la barre du haut et la barre de lecture du bas. */
+  function paintProgress(ratio) {
     var v = player.video;
     var fill = player.bars.children[player.index] && player.bars.children[player.index].firstChild;
-    if (fill && v.duration) {
+    if (fill) fill.style.transform = 'scaleX(' + ratio + ')';
+    player.seekFill.style.transform = 'scaleX(' + ratio + ')';
+    player.seekKnob.style.left = (ratio * 100) + '%';
+    player.time.textContent = clock(v.currentTime) + ' / ' + clock(v.duration);
+    player.seek.setAttribute('aria-valuenow', String(Math.round(ratio * 100)));
+    player.seek.setAttribute('aria-valuetext', clock(v.currentTime) + ' sur ' + clock(v.duration));
+  }
+
+  /**
+   * Avancer dans la vidéo ne compte pas comme l'avoir regardée : les paliers
+   * de progression sautés sont marqués atteints SANS être envoyés aux
+   * statistiques, sinon un saut à la fin gonflerait le taux de lecture complète.
+   */
+  function seekToRatio(ratio) {
+    var v = player.video;
+    if (!v.duration) return;
+    v.currentTime = ratio * v.duration;
+    PROGRESS_MARKS.forEach(function (m) { if (ratio * 100 >= m - 0.5) player.marks[m] = true; });
+    paintProgress(ratio);
+  }
+
+  function seekBy(seconds) {
+    var v = player.video;
+    if (!v.duration) return;
+    var from = v.currentTime;
+    seekToRatio(Math.max(0, Math.min(1, (v.currentTime + seconds) / v.duration)));
+    emit('seek', { widget: player.widget.slug, story: current().slug, from: Math.round(from), to: Math.round(v.currentTime) });
+  }
+
+  function tick() {
+    var v = player.video;
+    if (v.duration && !player.seeking) {
       var ratio = Math.min(1, v.currentTime / v.duration);
-      fill.style.transform = 'scaleX(' + ratio + ')';
+      paintProgress(ratio);
       var pct = ratio * 100;
       PROGRESS_MARKS.forEach(function (m) {
         if (pct >= m - 0.5 && !player.marks[m]) {
@@ -230,6 +313,9 @@
     p.index = index;
     p.marks = {};
     renderBars();
+    p.seekFill.style.transform = 'scaleX(0)';
+    p.seekKnob.style.left = '0%';
+    p.time.textContent = '';
     p.frame.classList.toggle('is-landscape', s.format === 'landscape');
     p.title.textContent = s.title;
     p.video.poster = s.poster || '';

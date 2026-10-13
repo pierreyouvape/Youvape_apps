@@ -45,7 +45,12 @@ ne jamais réécrire une URL publiée, des e-mails Probance déjà envoyés y po
   (attribut `data-yvs-index` sur chaque élément), puis `YVStories.bind(conteneur, widget)`.
 - `#story=<slug>` dans l'adresse ouvre directement une story (`YVStories.openFromHash`).
 - Statistiques : le lecteur émet `yvstories:event` sur `window`
-  (`impression`, `open`, `view`, `progress` 25/50/75/100, `cta_click`, `close`).
+  (`impression`, `open`, `view`, `progress` 25/50/75/100, `seek`, `cta_click`, `close`).
+  Un saut en avant n'émet PAS les paliers `progress` sautés (le taux de lecture
+  complète ne doit compter que ce qui a été regardé).
+- Navigation : tap gauche / droite = vidéo précédente / suivante ; barre de
+  lecture en bas (glisser ou toucher) ; clavier ← → = ±5 s, ↑ ↓ = vidéo
+  précédente / suivante, Espace = pause, Échap = fermer.
 
 ## Points d'intégration WordPress
 

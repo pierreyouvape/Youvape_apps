@@ -145,8 +145,41 @@ html.yvs-lock, html.yvs-lock body { overflow: hidden; }
 }
 @keyframes yvs-spin { to { transform: rotate(360deg); } }
 
+/* Barre de lecture : zone tactile de 32 px de haut pour une piste visible de 4 px. */
+.yvs-player__seek {
+  position: absolute; left: 12px; right: 12px; bottom: 6px; height: 32px; z-index: 5;
+  display: flex; align-items: center; cursor: pointer; touch-action: none; outline: none;
+}
+.yvs-player__seek-track {
+  position: relative; flex: 1; height: 4px; border-radius: 2px; background: rgba(255, 255, 255, .3);
+  transition: height .12s ease;
+}
+.yvs-player__seek-fill {
+  position: absolute; inset: 0; border-radius: 2px; background: #fff; transform-origin: left; transform: scaleX(0);
+}
+.yvs-player__seek-knob {
+  position: absolute; top: 50%; left: 0; width: 14px; height: 14px; margin: -7px 0 0 -7px; border-radius: 50%;
+  background: #fff; box-shadow: 0 1px 4px rgba(0, 0, 0, .4); opacity: 0; transition: opacity .12s ease;
+}
+.yvs-player__time {
+  position: absolute; right: 0; bottom: 26px; color: #fff; font-size: 12px; font-variant-numeric: tabular-nums;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, .7); opacity: 0; transition: opacity .12s ease; pointer-events: none;
+}
+.yvs-player__seek:hover .yvs-player__seek-track, .yvs-player__seek:focus-visible .yvs-player__seek-track,
+.yvs-player__frame.is-seeking .yvs-player__seek-track { height: 6px; }
+.yvs-player__seek:hover .yvs-player__seek-knob, .yvs-player__seek:focus-visible .yvs-player__seek-knob,
+.yvs-player__frame.is-seeking .yvs-player__seek-knob,
+.yvs-player__seek:hover .yvs-player__time, .yvs-player__seek:focus-visible .yvs-player__time,
+.yvs-player__frame.is-seeking .yvs-player__time, .yvs-player__frame.is-paused .yvs-player__time { opacity: 1; }
+/* Sur mobile, pas de survol : le curseur et le temps restent visibles. */
+@media (hover: none) {
+  .yvs-player__seek-knob { opacity: 1; width: 12px; height: 12px; margin: -6px 0 0 -6px; }
+  .yvs-player__time { opacity: .85; }
+}
+.yvs-player__seek:focus-visible { outline: 2px solid #fff; outline-offset: 2px; border-radius: 6px; }
+
 .yvs-player__cta {
-  position: absolute; left: 50%; bottom: 26px; z-index: 4; transform: translateX(-50%);
+  position: absolute; left: 50%; bottom: 58px; z-index: 4; transform: translateX(-50%);
   padding: 13px 30px; border-radius: 10px; background: var(--yvs-accent); color: var(--yvs-accent-text) !important;
   font-weight: 800; font-size: 17px; letter-spacing: .02em; text-decoration: none !important; white-space: nowrap;
   box-shadow: 0 6px 18px rgba(0, 0, 0, .35);
