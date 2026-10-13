@@ -263,6 +263,15 @@ export const Promos = (props) => (
 );
 
 
+// Stories : une vidéo verticale (format story) avec son bouton lecture
+export const Stories = (props) => (
+  <svg viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
+    <rect x="6" y="2" width="12" height="20" rx="2.5" />
+    <path d="M10.5 9.2v5.6l4.4-2.8z" />
+  </svg>
+);
+
+
 // Process : une procédure = des étapes numérotées, cochées au fur et à mesure
 export const Process = (props) => (
   <Base {...props}>
@@ -481,6 +490,7 @@ export const APPS = [
   { key: 'process', path: '/process', label: 'Process', Icon: Process, color: '#9333EA' },
   { key: 'atb', path: '/atb', label: 'ATB — Anthony Tool Box', Icon: Toolbox, color: '#BE123C' },
   { key: 'employes', path: '/employes', label: 'Gestion employé', Icon: Employees, color: '#4338CA' },
+  { key: 'stories', path: '/stories', label: 'Stories & Vidéos', Icon: Stories, color: '#E11D48' },
   // S'ouvre avec le droit `purchases`, comme le routeur backend l'exige :
   // contrôler une facture, c'est du travail d'achat, et les personnes
   // concernées ont déjà ce droit. Pas de clé propre, donc rien à ajouter dans

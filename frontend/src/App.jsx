@@ -57,6 +57,7 @@ import PromosApp from './pages/PromosApp';
 import SupplierInvoicesApp from './pages/SupplierInvoicesApp';
 import BoutiqueApp from './pages/BoutiqueApp';
 import PromoDetail from './pages/PromoDetail';
+import StoriesApp from './pages/StoriesApp';
 import ProcessApp from './pages/ProcessApp';
 import ProcessDetail from './pages/ProcessDetail';
 import ATBApp from './pages/ATBApp';
@@ -103,6 +104,7 @@ const PAGE_TITLES = {
   '/veille': 'Veille concurrentielle',
   '/inscrits': 'Inscrits sans commande',
   '/promos': 'Actions Promos',
+  '/stories': 'Stories & Vidéos',
   '/factures-fournisseurs': 'Factures Fournisseurs',
   '/process': 'Process',
   '/boutique': 'Boutique',
@@ -586,6 +588,14 @@ function App() {
             element={
               <PrivateRoute>
                 <PromoDetail />
+              </PrivateRoute>
+            }
+          />
+          <Route
+            path="/stories"
+            element={
+              <PrivateRoute>
+                <StoriesApp />
               </PrivateRoute>
             }
           />

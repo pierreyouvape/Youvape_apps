@@ -52,6 +52,8 @@ const nextoreRoutes = require('./routes/nextoreRoutes');
 const processRoutes = require('./routes/processRoutes');
 const atbRoutes = require('./routes/atbRoutes');
 const employeesRoutes = require('./routes/employeesRoutes');
+const storyRoutes = require('./routes/storyRoutes');
+const storyProcessingService = require('./services/storyProcessingService');
 const authMiddleware = require('./middleware/authMiddleware');
 const { setupCron, setupBmsCron, setupComputedCostCron, setupBmsBarcodeCron, setupBmsShelfLocationCron, setupStockResyncCron, setupSavAutomationsCron, setupProductDbSyncCron, setupBmsTagRetryCron, setupBmsShipmentConfirmCron, setupReportEmailCron, setupStockValuationSnapshotCron, setupDraftStockReportCron, setupCompetitorMonitorCron, setupBrandMapCron, setupNextoreCrons, setupProductSuppliersLinkCron, setupPickingSyncCron, setupBmsShipmentSyncCron, setupInventoryRefCron, setupReturnsRefundCron } = require('./services/cronService');
 const rewardService = require('./services/rewardService');
@@ -126,6 +128,7 @@ app.use('/api/nextore', nextoreRoutes); // Boutiques physiques Nextore (auth + p
 app.use('/api/process', processRoutes); // Process — procédures internes (auth + permission dans le routeur)
 app.use('/api/atb', authMiddleware, atbRoutes); // ATB — Anthony Tool Box (droit `atb` vérifié dans le routeur)
 app.use('/api/employees', authMiddleware, employeesRoutes); // Gestion employé (droit `employes` vérifié dans le routeur)
+app.use('/api/stories', authMiddleware, storyRoutes); // Stories : vidéos sur R2, remplace Join Stories (droit `stories` dans le routeur)
 
 // Start server
 app.listen(PORT, async () => {
@@ -188,6 +191,9 @@ app.listen(PORT, async () => {
 
   // Initialiser les crons boutiques Nextore (catalogue */30 8-20h, stock */10 9h30-19h, complet 23h50)
   setupNextoreCrons();
+
+  // Stories : reprend les compressions vidéo interrompues par un redémarrage
+  storyProcessingService.start();
 
   // Recalcul initial PMP FIFO au demarrage (apres 60s)
   setTimeout(async () => {
