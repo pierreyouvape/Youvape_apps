@@ -231,6 +231,32 @@ const buildLabelPayload = ({ orderNumber, receiver, account, weightGrams, option
     `</Shipment></ShipmentsList></ShipmentCreationRequest>`;
 };
 
+// Indicatifs des pays où nos clients vivent (livraison + Europe proche).
+const INDICATIFS = { FR: '33', BE: '32', LU: '352', CH: '41', NL: '31', DE: '49', ES: '34', IT: '39', PT: '351', AT: '43', MC: '377' };
+
+/**
+ * Téléphone au format international qu'exige Mondial Relay (erreur 10051).
+ *
+ * WooCommerce rend souvent « +330675012023 » : l'indicatif, PLUS le 0 national
+ * (3 759 commandes sur un an). On retire ce 0, on convertit « 00 » et le
+ * format national. Un numéro qu'on ne sait pas lire part VIDE plutôt que de
+ * faire échouer l'étiquette — à l'aller, le téléphone part déjà vide.
+ *
+ * @returns {string} « +33675012023 » ou ''
+ */
+const telephoneInternational = (brut, pays = 'FR') => {
+  let s = String(brut || '').replace(/[^0-9+]/g, '').replace(/^00/, '+');
+  const indicatif = INDICATIFS[String(pays).toUpperCase()];
+  if (!s.startsWith('+')) {
+    if (!indicatif || !/^0\d{8,10}$/.test(s)) return '';
+    s = `+${indicatif}${s.slice(1)}`;
+  }
+  // « +33 0 6… » : le 0 national derrière l'indicatif. Pas l'Italie (+39), où
+  // le 0 fait partie du numéro (Rome : +39 06…).
+  s = s.replace(/^\+(33|32|352|41|31|49|43|377)0(\d)/, '+$1$2');
+  return /^\+\d{8,15}$/.test(s) ? s : '';
+};
+
 /**
  * Corps XML d'une étiquette RETOUR (Retours client, lot 3 — 09/10/2026).
  *
@@ -273,8 +299,8 @@ const buildReturnPayload = ({ reference, customer, account, weightGrams, outputT
       countryCode: customer.country,
       postcode: customer.postcode,
       city: customer.city,
-      phone: customer.phone,
-      mobile: customer.phone,
+      phone: telephoneInternational(customer.phone, customer.country),
+      mobile: telephoneInternational(customer.phone, customer.country),
       email: customer.email
     }, { obligatoire: true, orderNumber: reference })}</Address></Sender>` +
     `<Recipient><Address>${addressXml({ ...merchant, addressLine: merchant.address_line || `${merchant.house_no || ''} ${merchant.streetname || ''}`.trim(), countryCode: merchant.country_code, postcode: merchant.postcode })}</Address></Recipient>` +
@@ -557,6 +583,7 @@ module.exports = assertAdapter({
   buildLabelPayload,
   buildReturnPayload,
   createReturnLabel,
+  telephoneInternational,
   assertRelayPoint,
   redact
 });

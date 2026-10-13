@@ -125,4 +125,17 @@ assert.strictEqual(pickRefund(refunds, new Set(), '2026-10-09T08:00:00Z').wp_ref
 assert.strictEqual(pickRefund(refunds, new Set([12]), '2026-10-09T08:00:00Z').wp_refund_id, 11, 'déjà pris par un autre retour');
 assert.strictEqual(pickRefund(refunds, new Set([11, 12]), '2026-10-09T08:00:00Z'), null, 'celui d\'avant le retour ne compte pas');
 
+// ── Téléphone de l'étiquette retour Mondial Relay (erreur 10051) ────────────
+const { telephoneInternational } = require('../src/services/carriers/mondialRelayAdapter');
+assert.strictEqual(telephoneInternational('+330675012023', 'FR'), '+33675012023', 'commande 1212967 : 0 après +33');
+assert.strictEqual(telephoneInternational('06 75 01 20 23', 'FR'), '+33675012023', 'format national');
+assert.strictEqual(telephoneInternational('0033675012023', 'FR'), '+33675012023', '00 → +');
+assert.strictEqual(telephoneInternational('+33675012023', 'FR'), '+33675012023', 'déjà bon');
+assert.strictEqual(telephoneInternational('0470123456', 'BE'), '+32470123456', 'mobile belge');
+assert.strictEqual(telephoneInternational('+320470123456', 'BE'), '+32470123456');
+assert.strictEqual(telephoneInternational('+352621123456', 'LU'), '+352621123456', 'Luxembourg intact');
+assert.strictEqual(telephoneInternational('+390612345678', 'IT'), '+390612345678', 'Italie : le 0 reste');
+assert.strictEqual(telephoneInternational('', 'FR'), '');
+assert.strictEqual(telephoneInternational('123', 'FR'), '', 'illisible : vide');
+
 console.log('✓ returns.test.js');
