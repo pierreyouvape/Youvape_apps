@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const storyController = require('../controllers/storyController');
+const widgetController = require('../controllers/storyWidgetController');
 const { checkPermission } = require('../middleware/permissionMiddleware');
 
 /*
@@ -10,6 +11,20 @@ const { checkPermission } = require('../middleware/permissionMiddleware');
 const read = checkPermission('stories', 'read');
 const write = checkPermission('stories', 'write');
 
+// Widgets, recherche produits et publication : AVANT /:id, sinon « widgets »
+// serait pris pour l'identifiant d'une story.
+router.get('/widgets', read, widgetController.list);
+router.post('/widgets', write, widgetController.create);
+router.get('/widgets/:id', read, widgetController.get);
+router.put('/widgets/:id', write, widgetController.update);
+router.delete('/widgets/:id', write, widgetController.remove);
+router.put('/widgets/:id/stories', write, widgetController.setStories);
+router.post('/widgets/:id/placements', write, widgetController.addPlacement);
+router.delete('/widgets/:id/placements/:placementId', write, widgetController.removePlacement);
+router.get('/products/search', read, widgetController.searchProducts);
+router.post('/publish', write, widgetController.publish);
+
+// Stories (vidéos)
 router.get('/', read, storyController.list);
 router.post('/', write, storyController.create);
 router.get('/:id', read, storyController.get);

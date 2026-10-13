@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import axios from 'axios';
 import AppShell from '../components/AppShell';
 import { Stories as StoriesIcon } from '../components/AppIcons';
+import StoryWidgets from '../components/stories/StoryWidgets';
 
 const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:3000/api/auth').replace('/auth', '');
 
@@ -71,6 +72,7 @@ const StoriesApp = () => {
   const [busy, setBusy] = useState(false);
   const [selected, setSelected] = useState(null);
   const [showArchived, setShowArchived] = useState(false);
+  const [tab, setTab] = useState('videos');
   const fileInput = useRef(null);
   const replaceInput = useRef(null);
   const replaceTarget = useRef(null);
@@ -217,6 +219,7 @@ const StoriesApp = () => {
                 avec son image d'aperçu et son GIF pour les e-mails Probance.
               </p>
             </div>
+            {tab === 'videos' && (<>
             <label style={{ fontSize: 12, color: C.grisM, display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
               <input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} />
               Archivées
@@ -228,9 +231,23 @@ const StoriesApp = () => {
             >
               {showForm ? 'Annuler' : '+ Nouvelle vidéo'}
             </button>
+            </>)}
+          </div>
+          <div style={{ display: 'flex', gap: 4, marginTop: 18, marginBottom: -20 }}>
+            {[['videos', 'Vidéos'], ['widgets', 'Widgets & publication']].map(([k, l]) => (
+              <button key={k} onClick={() => setTab(k)}
+                style={{ padding: '9px 16px', border: 'none', borderBottom: `3px solid ${tab === k ? C.story : 'transparent'}`, background: 'transparent', color: tab === k ? C.story : C.grisM, fontWeight: 700, fontSize: 13, cursor: 'pointer', borderRadius: 0 }}>
+                {l}
+              </button>
+            ))}
           </div>
         </section>
 
+        {tab === 'widgets' ? (
+          <section style={{ padding: '24px 40px 60px' }}>
+            <StoryWidgets stories={stories} />
+          </section>
+        ) : (<>
         {showForm && (
           <section style={{ padding: '18px 40px', background: C.blanc, borderBottom: `1px solid ${C.grisCL}` }}>
             <form onSubmit={createStory} style={{ display: 'flex', flexWrap: 'wrap', gap: 14, alignItems: 'flex-end' }}>
@@ -371,6 +388,8 @@ const StoriesApp = () => {
           )}
         </section>
 
+        </>)}
+
         {selected && (
           <div onClick={() => setSelected(null)}
             style={{ position: 'fixed', inset: 0, background: 'rgba(20,24,32,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 20 }}>
@@ -435,7 +454,7 @@ const LinkRow = ({ label, url }) => (url ? (
   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
     <span style={{ flex: 1 }}>{label}</span>
     <a href={url} target="_blank" rel="noreferrer" style={{ color: '#0071EB' }}>Ouvrir</a>
-    <button onClick={() => copy(url)} style={{ padding: '3px 8px', borderRadius: 6, border: '1px solid #E2E2E2', background: '#fff', cursor: 'pointer', fontSize: 11 }}>
+    <button onClick={() => copy(url)} style={{ padding: '3px 8px', borderRadius: 6, border: '1px solid #E2E2E2', background: '#fff', color: '#2a2e38', cursor: 'pointer', fontSize: 11 }}>
       Copier
     </button>
   </div>

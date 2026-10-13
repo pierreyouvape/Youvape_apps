@@ -104,6 +104,20 @@ const uploadPublic = async (key, filePath, contentType) => {
   return size;
 };
 
+/**
+ * Écrit un contenu (JSON de publication) dans le bucket public. Ces fichiers
+ * sont RÉÉCRITS à chaque publication, donc cache court, jamais immuable.
+ */
+const putPublicObject = async (key, body, contentType, cacheControl = 'public, max-age=60') => {
+  await getClient().send(new PutObjectCommand({
+    Bucket: buckets().public,
+    Key: key,
+    Body: body,
+    ContentType: contentType,
+    CacheControl: cacheControl,
+  }));
+};
+
 module.exports = {
   missingConfig,
   publicUrl,
@@ -111,4 +125,5 @@ module.exports = {
   headSource,
   downloadSource,
   uploadPublic,
+  putPublicObject,
 };
