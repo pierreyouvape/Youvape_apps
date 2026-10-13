@@ -43,7 +43,7 @@ const getById = async (id) => {
       `SELECT p.id, p.target_type, p.target_ref, pr.post_title, pr.post_status, pr.image_url
          FROM story_placements p
          LEFT JOIN products pr
-                ON p.target_type = 'product' AND pr.wp_product_id::text = p.target_ref
+                ON pr.wp_product_id = CASE WHEN p.target_type = 'product' THEN p.target_ref::bigint END
         WHERE p.widget_id = $1
         ORDER BY p.target_type, pr.post_title, p.target_ref`,
       [id],
@@ -149,7 +149,7 @@ const searchProducts = async (q) => {
 
 /** Contenu publiable : widgets publiés, leurs stories prêtes, leurs emplacements. */
 const dataForPublish = async () => {
-  const [widgets, items, placements, stories] = await Promise.all([
+  const [widgets, items, placements, stories, products] = await Promise.all([
     pool.query(`SELECT * FROM story_widgets WHERE status = 'published' ORDER BY id`),
     pool.query(
       `SELECT i.widget_id, s.slug
@@ -166,9 +166,21 @@ const dataForPublish = async () => {
     ),
     // Toutes les vidéos prêtes, même hors widget : la future médiathèque /videos les liste toutes.
     pool.query(`SELECT * FROM stories WHERE status = 'ready' ORDER BY created_at DESC`),
+    // Nom, photo et prix des fiches produit visées : pour la page d'aperçu (le
+    // site, lui, a déjà ces informations sur la fiche).
+    pool.query(
+      `SELECT DISTINCT pr.wp_product_id, pr.post_title, pr.image_url, pr.price
+         FROM story_placements p
+         JOIN story_widgets w ON w.id = p.widget_id AND w.status = 'published'
+         -- Jointure sur l'index unique de wp_product_id (et non sur un ::text, qui
+         -- parcourait toute la table) ; le CASE ne convertit que les lignes produit.
+         JOIN products pr
+           ON pr.wp_product_id = CASE WHEN p.target_type = 'product' THEN p.target_ref::bigint END`,
+    ),
   ]);
   return {
     widgets: widgets.rows, items: items.rows, placements: placements.rows, stories: stories.rows,
+    products: products.rows,
   };
 };
 

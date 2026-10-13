@@ -7,6 +7,7 @@
  *     widgets   slug → { title, layout, stories: [slugs dans l'ordre] }
  *     products  wp_product_id → [slugs de widgets]   (fiches produit)
  *     pages     chemin de page → [slugs de widgets]   (ex. /youvape-awards)
+ *     product_info  wp_product_id → { title, image, price } (page d'aperçu)
  *   stories/widgets/<slug>.json   un widget déplié (stories complètes), pour
  *                                 un usage côté navigateur ou un contrôle à l'œil.
  *
@@ -81,6 +82,12 @@ const publish = async ({ userId } = {}) => {
     widgets: Object.fromEntries([...live].map((slug) => [slug, widgets[slug]])),
     products,
     pages,
+    // Informatif (page d'aperçu) : nom, photo et prix TTC des fiches visées.
+    product_info: Object.fromEntries(data.products
+      .filter((pr) => products[String(pr.wp_product_id)])
+      .map((pr) => [String(pr.wp_product_id), {
+        title: pr.post_title, image: pr.image_url || null, price: num(pr.price),
+      }])),
   };
 
   // Les widgets dépliés d'abord, l'index en dernier : le site ne voit la

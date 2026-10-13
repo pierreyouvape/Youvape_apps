@@ -22,6 +22,9 @@
   .mock__gallery { aspect-ratio: 1; border-radius: 10px; background: repeating-linear-gradient(45deg, #eef2f5, #eef2f5 10px, #e4e9ed 10px, #e4e9ed 20px);
     display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 13px; }
   .mock__info { display: flex; flex-direction: column; gap: 10px; }
+  .mock__photo { width: 100%; height: 100%; object-fit: contain; background: #fff; border-radius: 10px; }
+  .mock__title { font-size: 22px; font-weight: 800; }
+  .mock__price { font-size: 20px; font-weight: 700; color: #ef3e56; margin-bottom: 6px; }
   .mock__line { height: 12px; border-radius: 6px; background: #eef2f5; }
   @media (max-width: 640px) { .mock { grid-template-columns: 1fr; } }
   .empty { color: var(--muted); font-size: 14px; text-align: center; padding: 30px; }
@@ -64,7 +67,8 @@
 
       // Fiches produit : bulles au-dessus de la galerie, comme sur le site aujourd'hui.
       Object.keys(index.products).forEach(function (pid) {
-        var b = box('Fiche produit #' + pid,
+        var infoP = (index.product_info || {})[pid] || {};
+        var b = box(infoP.title ? 'Fiche produit : ' + infoP.title : 'Fiche produit #' + pid,
           'Widget(s) : ' + index.products[pid].join(', ') + ' · <a target="_blank" rel="noopener" href="' + SITE + '/?post_type=product&p=' + pid + '">ouvrir la vraie fiche</a>');
         var mock = document.createElement('div'); mock.className = 'mock';
         var left = document.createElement('div');
@@ -73,10 +77,18 @@
           var host = widgetHost(); left.appendChild(host);
           YVStories.mount(host, w, { siteUrl: SITE }); expanded.push(w);
         });
-        var gal = document.createElement('div'); gal.className = 'mock__gallery'; gal.textContent = 'Galerie produit';
+        var gal = document.createElement('div'); gal.className = 'mock__gallery';
+        if (infoP.image) {
+          var img = document.createElement('img'); img.src = infoP.image; img.alt = infoP.title || '';
+          img.className = 'mock__photo'; gal.appendChild(img);
+        } else {
+          gal.textContent = 'Galerie produit';
+        }
         left.appendChild(gal);
         var right = document.createElement('div'); right.className = 'mock__info';
-        [90, 60, 75, 40, 85].forEach(function (pct) { var l = document.createElement('div'); l.className = 'mock__line'; l.style.width = pct + '%'; right.appendChild(l); });
+        if (infoP.title) { var t = document.createElement('div'); t.className = 'mock__title'; t.textContent = infoP.title; right.appendChild(t); }
+        if (infoP.price) { var pr = document.createElement('div'); pr.className = 'mock__price'; pr.textContent = infoP.price.toFixed(2).replace('.', ',') + ' €'; right.appendChild(pr); }
+        [90, 60, 75, 40].forEach(function (pct) { var l = document.createElement('div'); l.className = 'mock__line'; l.style.width = pct + '%'; right.appendChild(l); });
         mock.appendChild(left); mock.appendChild(right); b.appendChild(mock); app.appendChild(b);
       });
 
