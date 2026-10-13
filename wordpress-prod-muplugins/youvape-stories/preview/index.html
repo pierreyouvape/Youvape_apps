@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Aperçu Stories YouVape</title>
+<link rel="stylesheet" href="yv-stories.css">
+<style>
+  :root { --bg: #f2f6f8; --card: #fff; --ink: #2a2e38; --muted: #8a99a4; --line: #e2e2e2; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: Lato, system-ui, -apple-system, "Segoe UI", sans-serif; background: var(--bg); color: var(--ink); }
+  header { background: #0f3550; color: #fff; padding: 18px 16px; }
+  header h1 { margin: 0; font-size: 20px; }
+  header p { margin: 4px 0 0; font-size: 13px; opacity: .8; }
+  main { max-width: 980px; margin: 0 auto; padding: 18px 16px 60px; display: flex; flex-direction: column; gap: 18px; }
+  .box { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 18px; }
+  .box h2 { margin: 0 0 4px; font-size: 16px; }
+  .meta { font-size: 12px; color: var(--muted); margin: 0 0 14px; }
+  .meta a { color: #0071eb; }
+  .mock { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 18px; }
+  .mock__gallery { aspect-ratio: 1; border-radius: 10px; background: repeating-linear-gradient(45deg, #eef2f5, #eef2f5 10px, #e4e9ed 10px, #e4e9ed 20px);
+    display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 13px; }
+  .mock__info { display: flex; flex-direction: column; gap: 10px; }
+  .mock__line { height: 12px; border-radius: 6px; background: #eef2f5; }
+  @media (max-width: 640px) { .mock { grid-template-columns: 1fr; } }
+  .empty { color: var(--muted); font-size: 14px; text-align: center; padding: 30px; }
+  .err { color: #de2020; }
+  #log { font: 12px/1.5 ui-monospace, Menlo, monospace; max-height: 180px; overflow: auto; background: #111; color: #9fe39f; border-radius: 8px; padding: 10px; margin: 0; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Aperçu des Stories YouVape</h1>
+  <p>Lit le fichier publié par l'app /stories, exactement comme le fera le site. Après une nouvelle publication, rechargez la page (jusqu'à 1 minute de délai).</p>
+</header>
+<main id="app"><div class="box empty">Chargement…</div></main>
+
+<script src="yv-stories.js"></script>
+<script>
+(function () {
+  var SITE = 'https://www.youvape.fr';
+  var app = document.getElementById('app');
+
+  function box(title, meta) {
+    var b = document.createElement('section');
+    b.className = 'box';
+    var h = document.createElement('h2'); h.textContent = title; b.appendChild(h);
+    var m = document.createElement('p'); m.className = 'meta'; m.innerHTML = meta || ''; b.appendChild(m);
+    return b;
+  }
+
+  function widgetHost() { return document.createElement('div'); }
+
+  fetch('../index.json?t=' + Date.now(), { cache: 'no-store' })
+    .then(function (r) { if (!r.ok) throw new Error('index.json introuvable (HTTP ' + r.status + ') : rien n’a encore été publié ?'); return r.json(); })
+    .then(function (index) {
+      app.innerHTML = '';
+      var expanded = [];
+      var info = box('Publication',
+        'Générée le ' + new Date(index.generated_at).toLocaleString('fr-FR') + ' · '
+        + Object.keys(index.widgets).length + ' widget(s) · ' + Object.keys(index.stories).length + ' vidéo(s) prête(s)');
+      app.appendChild(info);
+
+      // Fiches produit : bulles au-dessus de la galerie, comme sur le site aujourd'hui.
+      Object.keys(index.products).forEach(function (pid) {
+        var b = box('Fiche produit #' + pid,
+          'Widget(s) : ' + index.products[pid].join(', ') + ' · <a target="_blank" rel="noopener" href="' + SITE + '/?post_type=product&p=' + pid + '">ouvrir la vraie fiche</a>');
+        var mock = document.createElement('div'); mock.className = 'mock';
+        var left = document.createElement('div');
+        index.products[pid].forEach(function (slug) {
+          var w = YVStories.expand(index, slug); if (!w) return;
+          var host = widgetHost(); left.appendChild(host);
+          YVStories.mount(host, w, { siteUrl: SITE }); expanded.push(w);
+        });
+        var gal = document.createElement('div'); gal.className = 'mock__gallery'; gal.textContent = 'Galerie produit';
+        left.appendChild(gal);
+        var right = document.createElement('div'); right.className = 'mock__info';
+        [90, 60, 75, 40, 85].forEach(function (pct) { var l = document.createElement('div'); l.className = 'mock__line'; l.style.width = pct + '%'; right.appendChild(l); });
+        mock.appendChild(left); mock.appendChild(right); b.appendChild(mock); app.appendChild(b);
+      });
+
+      // Pages éditoriales (ex. /youvape-awards) : carrousel.
+      Object.keys(index.pages).forEach(function (path) {
+        var b = box('Page ' + path,
+          'Widget(s) : ' + index.pages[path].join(', ') + ' · <a target="_blank" rel="noopener" href="' + SITE + path + '">ouvrir la vraie page</a>');
+        index.pages[path].forEach(function (slug) {
+          var w = YVStories.expand(index, slug); if (!w) return;
+          var host = widgetHost(); b.appendChild(host);
+          YVStories.mount(host, w, { siteUrl: SITE }); expanded.push(w);
+        });
+        app.appendChild(b);
+      });
+
+      if (!Object.keys(index.products).length && !Object.keys(index.pages).length) {
+        var e = box('Aucun emplacement publié', 'Ajoutez une fiche produit ou une page à un widget « Publié », puis « Publier sur le site ».');
+        app.appendChild(e);
+      }
+
+      // Toutes les vidéos prêtes, en carrousel : préfigure la médiathèque /videos.
+      var all = { slug: '_toutes', title: 'Toutes les vidéos', layout: 'cards', stories: Object.keys(index.stories).map(function (s) { return index.stories[s]; }) };
+      if (all.stories.length) {
+        var b = box('Toutes les vidéos prêtes', 'Préfigure la future médiathèque /videos.');
+        var host = widgetHost(); b.appendChild(host); app.appendChild(b);
+        YVStories.mount(host, all, { siteUrl: SITE }); expanded.push(all);
+      }
+
+      // Journal des événements que le lecteur émet (futures statistiques).
+      var lb = box('Événements émis par le lecteur', 'Ce que le site enverra aux statistiques : impression, ouverture, lecture, progression, clic, fermeture.');
+      var log = document.createElement('pre'); log.id = 'log'; log.textContent = '';
+      lb.appendChild(log); app.appendChild(lb);
+      window.addEventListener('yvstories:event', function (e) {
+        var d = e.detail; var copy = {}; Object.keys(d).forEach(function (k) { if (k !== 'at') copy[k] = d[k]; });
+        log.textContent = new Date(d.at).toLocaleTimeString('fr-FR') + '  ' + JSON.stringify(copy) + '\n' + log.textContent;
+      });
+
+      YVStories.openFromHash(expanded, { siteUrl: SITE });
+    })
+    .catch(function (err) {
+      app.innerHTML = '';
+      var b = box('Impossible de charger la publication', '<span class="err">' + err.message + '</span>');
+      app.appendChild(b);
+    });
+}());
+</script>
+</body>
+</html>
