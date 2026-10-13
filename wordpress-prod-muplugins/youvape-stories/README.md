@@ -55,6 +55,15 @@ ne jamais réécrire une URL publiée, des e-mails Probance déjà envoyés y po
 
 ## Points d'intégration WordPress
 
+- ⚠️ **Cache des .js / .css** : la zone Cloudflare youvape.fr impose aux
+  navigateurs un cache de **6 mois** sur les `.js` et `.css`
+  (`max-age=16070400`, quel que soit l'en-tête envoyé — constaté le 13/10/2026).
+  Toujours charger le lecteur avec un numéro de version qui change à chaque
+  modification, sinon les visiteurs gardent l'ancien lecteur :
+  `wp_enqueue_script('yv-stories', $url, [], filemtime($path), true)` (même chose
+  pour la feuille de style). L'aperçu publie des noms à empreinte
+  (`tools/upload-preview.js`).
+
 - **WP Rocket** : exclure `yv-stories.js` du « Retarder l'exécution JavaScript »,
   sinon le premier tap sur une bulle ne fait rien.
 - Retirer le `preconnect` / `preload` vers `youvape.my.join-stories.com` (le
