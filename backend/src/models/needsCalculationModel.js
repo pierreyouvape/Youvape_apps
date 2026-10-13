@@ -128,9 +128,10 @@ const needsCalculationModel = {
           FROM (
             SELECT r.product_id, r.supplier_id FROM supplier_refs r
             UNION
-            SELECT poi.product_id, po.supplier_id
+            SELECT COALESCE(sx.new_product_id, poi.product_id), po.supplier_id
               FROM purchase_order_items poi
               JOIN purchase_orders po ON po.id = poi.purchase_order_id
+              LEFT JOIN product_successors sx ON sx.old_product_id = poi.product_id
              WHERE poi.product_id IS NOT NULL
             UNION
             SELECT ps.product_id, ps.supplier_id FROM product_suppliers ps
@@ -143,6 +144,10 @@ const needsCalculationModel = {
          GROUP BY product_id
       ) prouves ON prouves.product_id = p.id
       WHERE p.post_status = 'publish'
+        -- Supprimé dans WooCommerce (neutralisé, jamais effacé) : on ne le
+        -- recommande plus. Sans ce filtre, les 13 anciennes CLK One 20mg (stock 0,
+        -- ventes réelles) revenaient au réassort alors qu'elles n'existent plus.
+        AND p.wc_deleted_at IS NULL
         AND COALESCE(p.exclude_from_reorder, false) = false
         AND (
           p.product_type = 'simple'
@@ -167,22 +172,28 @@ const needsCalculationModel = {
         SELECT p.id AS p_id, o.post_date, oi.qty
         FROM order_items oi
         JOIN orders o ON oi.wp_order_id = o.wp_order_id
-        JOIN products p ON oi.variation_id = p.wp_product_id
+        JOIN products p0 ON oi.variation_id = p0.wp_product_id
+        -- Fiche remplacée (product_successors) : ses ventes comptent pour la nouvelle.
+        LEFT JOIN product_successors sx ON sx.old_product_id = p0.id
+        JOIN products p ON p.id = COALESCE(sx.new_product_id, p0.id)
         WHERE oi.variation_id IS NOT NULL AND oi.variation_id != 0
           AND o.post_status IN ('wc-completed', 'wc-processing', 'wc-delivered', 'wc-awaiting-delivery', 'wc-shipped', 'wc-being-delivered')
           AND p.post_status = 'publish'
-          AND p.product_type = 'variation'
-          AND EXISTS (SELECT 1 FROM products pp WHERE pp.wp_product_id = p.wp_parent_id AND pp.post_status = 'publish')
+          AND (p.product_type = 'simple' OR (p.product_type = 'variation'
+            AND EXISTS (SELECT 1 FROM products pp WHERE pp.wp_product_id = p.wp_parent_id AND pp.post_status = 'publish')))
         UNION ALL
         -- Simples (et variables sans variation_id) : on joint sur product_id
         SELECT p.id AS p_id, o.post_date, oi.qty
         FROM order_items oi
         JOIN orders o ON oi.wp_order_id = o.wp_order_id
-        JOIN products p ON oi.product_id = p.wp_product_id
+        JOIN products p0 ON oi.product_id = p0.wp_product_id
+        LEFT JOIN product_successors sx ON sx.old_product_id = p0.id
+        JOIN products p ON p.id = COALESCE(sx.new_product_id, p0.id)
         WHERE (oi.variation_id IS NULL OR oi.variation_id = 0)
           AND o.post_status IN ('wc-completed', 'wc-processing', 'wc-delivered', 'wc-awaiting-delivery', 'wc-shipped', 'wc-being-delivered')
           AND p.post_status = 'publish'
-          AND p.product_type = 'simple'
+          AND (p.product_type = 'simple' OR (p.product_type = 'variation'
+            AND EXISTS (SELECT 1 FROM products pp WHERE pp.wp_product_id = p.wp_parent_id AND pp.post_status = 'publish')))
       ) sub
       GROUP BY p_id, post_date::date
       ORDER BY p_id, sale_date
@@ -198,22 +209,28 @@ const needsCalculationModel = {
         SELECT p.id AS p_id, oi.qty
         FROM order_items oi
         JOIN orders o ON oi.wp_order_id = o.wp_order_id
-        JOIN products p ON oi.variation_id = p.wp_product_id
+        JOIN products p0 ON oi.variation_id = p0.wp_product_id
+        -- Fiche remplacée (product_successors) : ses ventes comptent pour la nouvelle.
+        LEFT JOIN product_successors sx ON sx.old_product_id = p0.id
+        JOIN products p ON p.id = COALESCE(sx.new_product_id, p0.id)
         WHERE oi.variation_id IS NOT NULL AND oi.variation_id != 0
           AND o.post_status IN ('wc-completed', 'wc-processing', 'wc-delivered', 'wc-awaiting-delivery', 'wc-shipped', 'wc-being-delivered')
           AND p.post_status = 'publish'
-          AND p.product_type = 'variation'
-          AND EXISTS (SELECT 1 FROM products pp WHERE pp.wp_product_id = p.wp_parent_id AND pp.post_status = 'publish')
+          AND (p.product_type = 'simple' OR (p.product_type = 'variation'
+            AND EXISTS (SELECT 1 FROM products pp WHERE pp.wp_product_id = p.wp_parent_id AND pp.post_status = 'publish')))
         UNION ALL
         -- Simples
         SELECT p.id AS p_id, oi.qty
         FROM order_items oi
         JOIN orders o ON oi.wp_order_id = o.wp_order_id
-        JOIN products p ON oi.product_id = p.wp_product_id
+        JOIN products p0 ON oi.product_id = p0.wp_product_id
+        LEFT JOIN product_successors sx ON sx.old_product_id = p0.id
+        JOIN products p ON p.id = COALESCE(sx.new_product_id, p0.id)
         WHERE (oi.variation_id IS NULL OR oi.variation_id = 0)
           AND o.post_status IN ('wc-completed', 'wc-processing', 'wc-delivered', 'wc-awaiting-delivery', 'wc-shipped', 'wc-being-delivered')
           AND p.post_status = 'publish'
-          AND p.product_type = 'simple'
+          AND (p.product_type = 'simple' OR (p.product_type = 'variation'
+            AND EXISTS (SELECT 1 FROM products pp WHERE pp.wp_product_id = p.wp_parent_id AND pp.post_status = 'publish')))
       ) sub
       GROUP BY p_id
     `);
@@ -239,8 +256,9 @@ const needsCalculationModel = {
     // Toutes les liaisons sont remontées (pas seulement le fournisseur principal) pour
     // que la colonne suive le fournisseur sélectionné dans le filtre.
     const verifiedPricesResult = await pool.query(`
-      SELECT DISTINCT ON (poi.product_id, po.supplier_id)
-        poi.product_id,
+      SELECT DISTINCT ON (COALESCE(sx.new_product_id, poi.product_id), po.supplier_id)
+        -- Achats d'une fiche remplacée : le dernier tarif validé vaut pour la nouvelle.
+        COALESCE(sx.new_product_id, poi.product_id) AS product_id,
         po.supplier_id,
         poi.unit_price,
         poi.units_per_qty,
@@ -252,13 +270,14 @@ const needsCalculationModel = {
       FROM purchase_order_items poi
       JOIN purchase_orders po ON po.id = poi.purchase_order_id
       JOIN suppliers s ON s.id = po.supplier_id
+      LEFT JOIN product_successors sx ON sx.old_product_id = poi.product_id
       LEFT JOIN product_suppliers ps
-        ON ps.product_id = poi.product_id AND ps.supplier_id = po.supplier_id
+        ON ps.product_id = COALESCE(sx.new_product_id, poi.product_id) AND ps.supplier_id = po.supplier_id
       WHERE po.verified = true
         AND poi.product_id IS NOT NULL
         AND poi.unit_price IS NOT NULL
         AND poi.unit_price > 0
-      ORDER BY poi.product_id, po.supplier_id, po.order_date DESC NULLS LAST, po.id DESC
+      ORDER BY COALESCE(sx.new_product_id, poi.product_id), po.supplier_id, po.order_date DESC NULLS LAST, po.id DESC
     `);
 
     // Indexer par product_id (parseInt pour éviter le mismatch string/int entre les queries)
