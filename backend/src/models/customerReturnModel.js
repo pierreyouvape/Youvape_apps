@@ -16,6 +16,7 @@ const ExcelJS = require('exceljs');
 const pool = require('../config/database');
 const bmsApiModel = require('./bmsApiModel');
 const savModel = require('./savModel');
+const { saveAttachments } = require('../utils/savAttachments');
 const orderModel = require('./orderModel');
 const { BMS_WAREHOUSE_ID, findBmsProductId, findMovementId, readBmsStock } = require('./pdaProductModel');
 const { wcRequest, fetchWcOrder, importOrder } = require('../services/wcOrderImportService');
@@ -32,7 +33,7 @@ const httpError = (status, message) => Object.assign(new Error(message), { statu
 const escapeHtml = (s) => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
 /** Note interne dans le ticket du retour : l'agent voit où en est le retour sans quitter le ticket. */
-const noteTicket = async (ticketId, user, lines) => {
+const noteTicket = async (ticketId, user, lines, files = []) => {
   if (!ticketId) return;
   try {
     await savModel.addMessage(ticketId, {
@@ -40,6 +41,8 @@ const noteTicket = async (ticketId, user, lines) => {
       body: lines.map(l => `<p>${l}</p>`).join(''),
       is_agent: true,
       is_private: true,
+      // Même rangement que les pièces jointes d'un message (utils/savAttachments).
+      attachments: saveAttachments(ticketId, files),
     });
   } catch (error) {
     console.error(`[Retours] Note du ticket #${ticketId} non écrite :`, error.message);
@@ -741,9 +744,16 @@ const createLabel = async (id, { format, force }, user) => {
       WHERE id = $1`,
     [id, label.trackingNumber, format, label.mime, label.dataBase64, user.id]
   );
+  const buffer = Buffer.from(label.dataBase64, 'base64');
   await noteTicket(r.ticket_id, user, [
     `<strong>Retour n°${id} — étiquette retour Mondial Relay n°${escapeHtml(label.trackingNumber)}</strong> (${format === 'qr' ? 'QR code' : 'PDF'})`,
-  ]);
+  ], [{
+    fieldname: 'file',
+    originalname: `retour_${id}_mondialrelay_${label.trackingNumber}.${LABEL_EXT[label.mime] || 'bin'}`,
+    mimetype: label.mime,
+    size: buffer.length,
+    buffer,
+  }]);
   return get(id);
 };
 
