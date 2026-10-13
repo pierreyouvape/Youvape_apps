@@ -1,7 +1,8 @@
 const { PDFParse } = require('pdf-parse');
 const pool = require('../config/database');
 const parserRegistry = require('../parsers');
-const { findUnparsedRows } = require('./parseAudit');
+const { findUnparsedRows, findLinesMissedByImport } = require('./parseAudit');
+const invoiceParsers = require('../parsers/invoices');
 const supplierRefModel = require('./supplierRefModel');
 const { convertLine } = require('../utils/importLineConversion');
 // Reconstitution des références tronquées : partagée avec le contrôle de
@@ -113,6 +114,37 @@ async function readDocument(fileBuffer, parser, supplier, knownSkus) {
         `Ajoutez-${orphanRows.length > 1 ? 'les' : 'la'} à la main, puis signalez le parseur ${supplier.code || supplier.name}.`,
       rows: orphanRows,
     });
+  }
+
+  // 4a ter. Contrôle croisé avec le parseur de FACTURE du fournisseur (voir
+  //     findLinesMissedByImport) : seul garde-fou qui couvre les gabarits sans
+  //     « € », où findUnparsedRows ne voit rien. Muet si le document n'est pas
+  //     une facture (confirmation de commande : 0 ligne lue) ; une panne de ce
+  //     contrôle ne doit jamais bloquer l'import.
+  const invoiceParser = isPdf ? invoiceParsers.getInvoiceParser(supplier.code) : null;
+  if (invoiceParser) {
+    try {
+      const invoice = invoiceParser.parseInvoice(text);
+      const invoiceLines = invoice.lines || [];
+      resolveCompleteRefs(invoiceLines, knownSkus);
+      const alreadyReported = new Set(orphanRows.map((o) => o.total.toFixed(2)));
+      const missed = findLinesMissedByImport(invoiceLines, parsed.items)
+        .filter((m) => !alreadyReported.has(m.total.toFixed(2)));
+      if (missed.length > 0) {
+        const detail = missed.map((m) => `${m.context} — ${m.qty} × ${m.total.toFixed(2)} €`).join(' | ');
+        console.warn(`[pdfImport] ${supplier.name} : ${missed.length} ligne(s) lue(s) par le contrôle de facture mais pas par l'import → ${detail}`);
+        parseWarnings.push({
+          type: 'unparsed_rows',
+          message:
+            `${missed.length} ligne${missed.length > 1 ? 's' : ''} de la facture ${missed.length > 1 ? 'ne sont pas reprises' : "n'est pas reprise"} ` +
+            `ci-dessous (total ${missed.reduce((a, m) => a + m.total, 0).toFixed(2)} € HT). ` +
+            `Ajoutez-${missed.length > 1 ? 'les' : 'la'} à la main, puis signalez le parseur ${supplier.code || supplier.name}.`,
+          rows: missed,
+        });
+      }
+    } catch (err) {
+      console.warn(`[pdfImport] ${supplier.name} : contrôle croisé facture impossible (${err.message})`);
+    }
   }
 
   // 4a bis. Anomalies propres au gabarit, que seul le parseur sait voir

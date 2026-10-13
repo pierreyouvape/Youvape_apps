@@ -28,13 +28,15 @@ module.exports = {
     const dateMatch = text.match(/Date de la commande\s+(\d{2})\/(\d{2})\/(\d{4})/i);
     const orderDate = dateMatch ? `${dateMatch[3]}-${dateMatch[2]}-${dateMatch[1]}` : null;
 
-    // Zone tableau : du premier "[" (1ère référence) jusqu'aux totaux / pied de page.
+    // Zone tableau : du premier "[" (1ère référence) jusqu'à la fin du texte.
+    // Pas de borne de fin : sur un document de 2 pages, pdf-parse sort le bloc
+    // « Montant hors taxes » AVANT les dernières lignes de la page 2. Couper au
+    // premier total perdait en silence ces lignes et la remise de pied
+    // (INV/2025/04126 : PRISM, LE CHAMAN, SCOUT + remise de -927,81 €). Les
+    // totaux et pieds de page ne passent pas le motif de ligne (« Unité(s) »,
+    // « TVA NN % », qté × prix = montant).
     const tableStart = text.indexOf('[');
-    const tableEndIdx = text.search(/Montant hors taxes|Fabricant Nantais|Conditions de paiement/i);
-    const tableText = text.substring(
-      tableStart >= 0 ? tableStart : 0,
-      tableEndIdx > tableStart ? tableEndIdx : text.length
-    );
+    const tableText = text.substring(tableStart >= 0 ? tableStart : 0);
 
     const items = [];
     const discountItems = [];
@@ -54,6 +56,9 @@ module.exports = {
       if (Number.isNaN(qty) || Number.isNaN(unitPrice) || Math.abs(qty * unitPrice - montant) > 0.05) {
         continue;
       }
+
+      // Ligne à 0 € (livraison « [Delivery_007] … Chronopost ») : rien à commander.
+      if (montant === 0) continue;
 
       const skuMatch = description.match(/\[([^\]]+)\]/);
       if (skuMatch) {

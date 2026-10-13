@@ -16,7 +16,7 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 
-const { findUnparsedRows } = require('../src/models/parseAudit');
+const { findUnparsedRows, findLinesMissedByImport } = require('../src/models/parseAudit');
 
 // Copie de cleanPdfText (pdfImportModel) : le parseur tourne sur le texte nettoyé.
 function cleanPdfText(text) {
@@ -235,6 +235,88 @@ console.log('GFC — facture F2610427525 (bons utilisés)');
     assert.strictEqual(p.items.length, 10);
     assert.strictEqual(p.warnings.length, 1);
     assert.ok(p.warnings[0].message.includes('GFC32486-59778'));
+  });
+}
+
+// ── Cloud Vapor : la page 2 disparaissait ─────────────────────────────────────
+// pdf-parse sort « Montant hors taxes » (page 1) AVANT les dernières lignes de
+// la page 2 : le parseur coupait au premier total et perdait PRISM, LE CHAMAN,
+// SCOUT et la remise de pied de -927,81 €.
+console.log('Cloud Vapor — INV/2025/04126 (2 pages)');
+{
+  const cv = require('../src/parsers/cloudvaporParser').parse(fixture('cloudvapor-INV-2025-04126.txt'));
+
+  test('Cloud Vapor INV/2025/04126 : 16 lignes, page 2 comprise, sans la livraison à 0 €', () => {
+    assert.strictEqual(cv.items.length, 16);
+    for (const ref of ['PRISM-50ML-00MG', 'LE CHAMAN-50ML-00MG', 'SCOUT-100ML-00MG']) {
+      assert.ok(cv.items.some((i) => i.supplier_sku === ref), `${ref} absente`);
+    }
+    assert.ok(!cv.items.some((i) => i.supplier_sku === 'Delivery_007'));
+  });
+
+  test('Cloud Vapor INV/2025/04126 : lignes - remise = « Montant hors taxes » (2 164,89 €)', () => {
+    assert.strictEqual(sumLines(cv.items), 3092.70);
+    assert.strictEqual(cv.discountItems.length, 1);
+    assert.strictEqual(Math.round((3092.70 + cv.discountItems[0].unit_price) * 100) / 100, 2164.89);
+  });
+}
+
+// ── Contrôle croisé import ↔ parseur de facture ──────────────────────────────
+// Le garde-fou qui couvre les gabarits sans « € ». Sur chaque vraie facture :
+// aucune alerte quand l'import est complet, et toute ligne retirée est signalée.
+console.log('Contrôle croisé import ↔ facture');
+{
+  const CROSS = [
+    ['cigaccess-FA122879.txt', 'cigaccessParser', 'prestashopInvoice'],
+    ['cigaccess-FA128317.txt', 'cigaccessParser', 'prestashopInvoice'],
+    ['cigaccess-FA129179.txt', 'cigaccessParser', 'prestashopInvoice'],
+    ['cloudvapor-INV-2025-04126.txt', 'cloudvaporParser', 'odooInvoice'],
+    ['curieux-FA063171.txt', 'curieuxParser', 'prestashopInvoice'],
+    ['curieux-FA072952.txt', 'curieuxParser', 'prestashopInvoice'],
+    ['etasty-FA060440.txt', 'etastyParser', 'prestashopInvoice'],
+    ['etasty-FA072725.txt', 'etastyParser', 'prestashopInvoice'],
+    ['gfc-F2511358971.txt', 'gfcParser', 'opensiInvoice'],
+    ['gfc-F2610427525.txt', 'gfcParser', 'opensiInvoice'],
+    ['highbuy-FA018841.txt', 'highbuyParser', 'prestashopInvoice'],
+    ['highbuy-FA021579.txt', 'highbuyParser', 'prestashopInvoice'],
+    ['joshnoa-V3202636311.txt', 'joshnoaParser', 'odooInvoice'],
+    ['lca-F2609412942.txt', 'lcaParser', 'opensiInvoice'],
+    ['lca-F2610415472.txt', 'lcaParser', 'opensiInvoice'],
+    ['levest-FAC-2025-11-0470.txt', 'levestParser', 'odooInvoice'],
+    ['lips-FAC-2026-04162.txt', 'lipsParser', 'lipsInvoice'],
+    ['lips-FAC-2026-04474.txt', 'lipsParser', 'lipsInvoice'],
+    ['lvp-F2511243065.txt', 'lvpParser', 'opensiInvoice'],
+    ['mgvape-MD035105.txt', 'mgvapeParser', 'prestashopInvoice'],
+    ['pulp-FA165024.txt', 'pulpParser', 'prestashopInvoice'],
+    ['revolute-FA020464.txt', 'revoluteParser', 'prestashopInvoice'],
+  ];
+  for (const [file, importParser, invoiceParser] of CROSS) {
+    const text = fixture(file);
+    const items = require(`../src/parsers/${importParser}`).parse(text).items;
+    const lines = require(`../src/parsers/invoices/${invoiceParser}`).parseInvoice(text).lines;
+
+    test(`${file} : aucune alerte sur un import complet`, () => {
+      const missed = findLinesMissedByImport(lines, items);
+      assert.deepStrictEqual(missed, [], `alertes inattendues : ${JSON.stringify(missed)}`);
+    });
+
+    // curieux-FA072952 : l'import éclate des lignes que la facture regroupe, un
+    // retrait y est parfois couvert par la ligne sœur — d'où « au moins une ».
+    test(`${file} : une ligne retirée à l'import est signalée`, () => {
+      const detected = items.filter((v) => findLinesMissedByImport(lines, items.filter((i) => i !== v)).length > 0);
+      if (file === 'curieux-FA072952.txt') assert.ok(detected.length > 0);
+      else assert.strictEqual(detected.length, items.length, `${items.length - detected.length} retrait(s) passé(s) inaperçu(s)`);
+    });
+  }
+
+  test('GFC F2610427525 : avec l\'ancien découpage, le Tank DotAIO V4 aurait été signalé', () => {
+    const text = fixture('gfc-F2610427525.txt');
+    const items = require('../src/parsers/gfcParser').parse(text).items.filter((i) => i.supplier_sku !== 'GFC32486-59778');
+    const lines = require('../src/parsers/invoices/opensiInvoice').parseInvoice(text).lines;
+    const missed = findLinesMissedByImport(lines, items);
+    assert.strictEqual(missed.length, 1);
+    assert.strictEqual(missed[0].total, 12.00);
+    assert.strictEqual(missed[0].qty, 2);
   });
 }
 

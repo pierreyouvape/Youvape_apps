@@ -78,4 +78,57 @@ function findUnparsedRows(text, parsedItems, discountItems) {
   return orphans;
 }
 
-module.exports = { findUnparsedRows };
+/**
+ * Contrôle croisé : les lignes produit que le parseur de FACTURE lit dans le même
+ * document, mais que le parseur d'IMPORT n'a pas reprises.
+ *
+ * findUnparsedRows ne voit que les gabarits qui impriment « PRIX € QTÉ TOTAL € » :
+ * il était aveugle chez GFC, LCA, LVP, LIPS, JoshNoa, Levest et Cloud Vapor. Or
+ * chaque fournisseur a DEUX parseurs écrits indépendamment (import et contrôle
+ * de facture) : qu'ils se contredisent sur un même document, c'est qu'un des
+ * deux a perdu une ligne. Cas réels : GFC F2610427525 (Tank DotAIO V4, perdu à
+ * l'import, retrouvé « Facturé, non commandé » au contrôle) et Cloud Vapor
+ * INV/2025/04126 (page 2 entière perdue).
+ *
+ * Une ligne de facture est couverte par un article importé de même référence
+ * (exacte, ou l'une préfixe de l'autre : les parseurs ne tronquent pas tous au
+ * même endroit), à défaut de même montant de ligne. Chaque article ne couvre
+ * qu'une ligne.
+ *
+ * @param {Array<{ref,label,qty,lineTotalHt,kind}>} invoiceLines lignes du parseur de facture
+ * @param {Array} parsedItems articles du parseur d'import
+ * @returns {Array<{unit_price:number, qty:number, total:number, context:string}>}
+ */
+function findLinesMissedByImport(invoiceLines, parsedItems) {
+  const norm = (s) => String(s || '').toLowerCase().replace(/[\s#[\]]/g, '');
+  const pool = (parsedItems || []).map((i) => {
+    const qty = Number(i.qty_ordered);
+    const price = Number(i.unit_price_net != null ? i.unit_price_net : i.unit_price);
+    const total = Number.isFinite(Number(i.total_ht)) && i.total_ht != null ? Number(i.total_ht) : qty * price;
+    return { ref: norm(i.supplier_sku), total, used: false };
+  });
+
+  const missed = [];
+  for (const line of invoiceLines || []) {
+    if ((line.kind || 'product') !== 'product') continue;
+    const ref = norm(line.ref);
+    const total = Number(line.lineTotalHt);
+    const free = pool.filter((p) => !p.used);
+    const hit =
+      (ref && free.find((p) => p.ref === ref)) ||
+      (ref.length >= 4 && free.find((p) => p.ref.length >= 4 && (p.ref.startsWith(ref) || ref.startsWith(p.ref)))) ||
+      (Number.isFinite(total) && free.find((p) => Math.abs(p.total - total) <= 0.05));
+    if (hit) { hit.used = true; continue; }
+
+    const qty = Number(line.qty) || 1;
+    missed.push({
+      unit_price: Math.round((total / qty) * 10000) / 10000,
+      qty,
+      total: Math.round(total * 100) / 100,
+      context: [line.ref, line.label].filter(Boolean).join(' ').replace(/\s+/g, ' ').trim().slice(0, 90),
+    });
+  }
+  return missed;
+}
+
+module.exports = { findUnparsedRows, findLinesMissedByImport };
