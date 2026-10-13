@@ -132,6 +132,8 @@ const PackingApp = () => {
   const [forcedDone, setForcedDone] = useState(false);
   // Lots (`woosb`) retirés de la liste : leurs articles y sont déjà, à l'unité.
   const [hiddenPacks, setHiddenPacks] = useState([]);
+  // Articles remboursés dans WooCommerce avant l'expédition : retirés de la liste.
+  const [refundedItems, setRefundedItems] = useState([]);
   const [wrongShippingOrder, setWrongShippingOrder] = useState(null); // { orderNumber, denomination } si mode inconnu
   const [editingAddress, setEditingAddress] = useState(false); // édition adresse de livraison
   // Point relais : corrigeable sans quitter le packing. Un client appelle
@@ -333,6 +335,7 @@ const PackingApp = () => {
       setOrder(loadedOrder);
       setWeight(res.data.weight || null);
       setHiddenPacks(res.data.hidden_packs || []);
+      setRefundedItems(res.data.refunded_items || []);
       axios.get(`${API_URL}/packing/orders/${loadedOrder.wp_order_id}/picking`, {
         headers: { Authorization: `Bearer ${token}` }
       }).then(r => setPickingInfo(r.data)).catch(() => { /* sans picking, le packing marche comme avant */ });
@@ -787,6 +790,7 @@ const PackingApp = () => {
     setWrongShippingOrder(null);
     setCarrier(null);
     setHiddenPacks([]);
+    setRefundedItems([]);
     setEditingRelay(false);
     setRelayForm(null);
     setRelayError(null);
@@ -1563,6 +1567,18 @@ const PackingApp = () => {
                 <strong>Rien à emballer pour :</strong>{' '}
                 {hiddenPacks.map(p => `${p.name}${p.qty > 1 ? ` ×${p.qty}` : ''}`).join(', ')}
                 {' '}— lot{hiddenPacks.length > 1 ? 's' : ''} virtuel{hiddenPacks.length > 1 ? 's' : ''}, ses articles sont listés ci-dessous à l'unité.
+              </div>
+            )}
+
+            {/* Un article remboursé figure sur la commande mais ne part pas :
+                sans cette mention, le préparateur le chercherait dans la liste. */}
+            {refundedItems.length > 0 && (
+              <div style={{
+                marginTop: '15px', padding: '12px 18px', borderRadius: '10px',
+                backgroundColor: '#fef2f2', color: '#991b1b', fontSize: '15px'
+              }}>
+                <strong>Remboursé, à ne pas mettre dans le colis :</strong>{' '}
+                {refundedItems.map(r => `${r.name} ×${r.qty}`).join(', ')}
               </div>
             )}
 

@@ -1017,6 +1017,30 @@ const setupReturnsRefundCron = () => {
 };
 
 
+// ==================== LIGNES DES REMBOURSEMENTS ====================
+
+let refundLinesCronJob = null;
+
+const setupRefundLinesCron = () => {
+  if (refundLinesCronJob) {
+    refundLinesCronJob.stop();
+    refundLinesCronJob = null;
+  }
+  // Toutes les 10 min : reprend les remboursements dont les articles n'ont pas
+  // pu être lus chez WC à leur arrivée (sans eux, picking et packing préparent
+  // un article remboursé). Rien à faire la plupart du temps.
+  refundLinesCronJob = cron.schedule('*/10 * * * *', async () => {
+    try {
+      const n = await require('./refundLinesService').syncPending();
+      if (n) console.log(`[Remboursements] Lignes reprises pour ${n} commande(s)`);
+    } catch (error) {
+      console.error('Erreur cron remboursements (lignes WC):', error.message);
+    }
+  }, { timezone: 'Europe/Paris' });
+  console.log('Cron remboursements configure: reprise des lignes WC toutes les 10 min');
+};
+
+
 module.exports = {
   setupCron,
   restartCron,
@@ -1041,6 +1065,7 @@ module.exports = {
   setupBmsShipmentSyncCron,
   setupInventoryRefCron,
   setupReturnsRefundCron,
+  setupRefundLinesCron,
   runProductDbSyncJob,
   runProductSuppliersLink,
   runBrandMapJob,

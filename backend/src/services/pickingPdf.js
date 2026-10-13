@@ -389,34 +389,78 @@ const footer = (page, f, left, right) => {
   if (right) page.drawText(right, { x: W - M - f.regular.widthOfTextAtSize(right, 8), y: M - 13, size: 8, font: f.regular, color: COL.light });
 };
 
+// « Booster … dans le pack : Lot 10 Boosters … » → nom du pack écrit dans la ligne.
+const packNameInLine = (i) => (/\sdans le pack\s*:\s*(.+)$/i.exec(i.name || '') || [])[1] || null;
+
+/**
+ * Pack (ligne woosb de la commande) dont une ligne est un composant, ou null.
+ * Un composant est une ligne à 0 € dont le produit figure dans `woosb_ids` du
+ * pack ; à défaut, celle qui nomme le pack (« … dans le pack : <pack> »).
+ */
+const findPack = (i, packs) => {
+  if (Number(i.line_total) !== 0) return null;
+  const byId = packs.find(pk => (pk.woosb_ids || []).some(w => String(w.id) === String(i.product_id)));
+  if (byId) return byId;
+  const named = packNameInLine(i);
+  return named ? packs.find(pk => String(pk.name).trim() === named.trim()) || null : null;
+};
+
+/**
+ * Reporte le remboursement d'un pack sur ses composants. WooCommerce ne
+ * rembourse QUE la ligne du pack, jamais ses composants à 0 € — vérifié sur
+ * les 19 commandes à pack remboursées entre juin et octobre 2026 (ex. 1239530 :
+ * « Pack Nexi Two » remboursé 4/4, kit et cartouches non). Or ce sont les
+ * composants qu'on prélève et qu'on emballe.
+ *
+ * @param {{type, product_id, name, qty, line_total, refunded, woosb_ids}[]} items
+ * @returns les mêmes lignes, `refunded` des composants complété au prorata
+ */
+const withPackRefunds = (items) => {
+  const packs = items.filter(i => i.type === 'woosb');
+  if (!packs.some(pk => Number(pk.refunded) > 0)) return items;
+  return items.map((i) => {
+    if (i.type === 'woosb') return i;
+    const pack = findPack(i, packs);
+    const packQty = Number(pack?.qty) || 0;
+    const packRefunded = Math.min(Number(pack?.refunded) || 0, packQty);
+    if (packRefunded <= 0) return i;
+    const share = Math.round((Number(i.qty) || 0) * packRefunded / packQty);
+    return { ...i, refunded: Math.max(Number(i.refunded) || 0, share) };
+  });
+};
+
 /**
  * Lignes d'un bon de préparation, à partir des lignes WooCommerce de la commande.
  *
  *   - Les packs woosb ne se prélèvent pas : on liste leurs composants (ligne à
  *     0 € dont le produit figure dans `woosb_ids` d'un pack de la commande),
  *     chacun marqué « Dans le pack : … ».
+ *   - Un article remboursé dans WooCommerce (`refunded`, cf. refund_items) ne
+ *     se prépare pas : il sort de la quantité commandée, que BMS l'ait annulé
+ *     ou non. Un pack remboursé emporte ses composants (withPackRefunds).
  *   - Quantité = ce qui RESTE à expédier d'après BMS (`remainingBySku`), le
  *     reste est affiché « Déjà expédié ». Sans relevé BMS pour la commande
- *     (null), on imprime tout ce qui a été commandé.
+ *     (null), on imprime tout ce qui a été commandé (moins le remboursé).
  *
  * @param {object[]} items - lignes `order_items` jointes au produit
  * @param {?Map<string, number>} remainingBySku
  * @returns {{productId, location, qty, name, brand, sku, packName, shipped}[]}
  */
-const buildPrintLines = (items, remainingBySku = null) => {
+const buildPrintLines = (rawItems, remainingBySku = null) => {
+  const items = withPackRefunds(rawItems);
   const packs = items.filter(i => i.type === 'woosb');
   const packOf = (i) => {
     if (Number(i.line_total) !== 0) return null;
-    const pack = packs.find(pk => (pk.woosb_ids || []).some(w => String(w.id) === String(i.product_id)));
+    const pack = findPack(i, packs);
     if (pack) return String(pack.name).trim();
-    return (/\sdans le pack\s*:\s*(.+)$/i.exec(i.name || '') || [])[1] || null;
+    return packNameInLine(i);
   };
   const remaining = remainingBySku ? new Map(remainingBySku) : null;
 
   const lines = [];
   for (const i of items) {
     if (i.type === 'woosb') continue;
-    const ordered = Number(i.qty) || 0;
+    const ordered = Math.max(0, (Number(i.qty) || 0) - (Number(i.refunded) || 0));
     let qty = ordered;
     if (remaining && i.sku) {
       const left = remaining.get(i.sku) || 0;
@@ -439,4 +483,4 @@ const buildPrintLines = (items, remainingBySku = null) => {
   return lines;
 };
 
-module.exports = { buildWavePdf, buildWavesPdf, buildPrintLines };
+module.exports = { buildWavePdf, buildWavesPdf, buildPrintLines, withPackRefunds };

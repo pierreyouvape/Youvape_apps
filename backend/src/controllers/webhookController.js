@@ -4,6 +4,7 @@
  */
 
 const pool = require('../config/database');
+const refundLinesService = require('../services/refundLinesService');
 
 // Token d'authentification (à configurer dans .env)
 const YOUSYNC_TOKEN = process.env.YOUSYNC_TOKEN || '';
@@ -542,9 +543,13 @@ async function processRefundEvent(action, wp_id, data, results) {
   }
 
   if (action === 'delete') {
-    await pool.query('DELETE FROM refunds WHERE wp_refund_id = $1', [wp_id]);
+    const { rows: [gone] } = await pool.query(
+      'DELETE FROM refunds WHERE wp_refund_id = $1 RETURNING wp_order_id', [wp_id]
+    );
     results.details.refunds.deleted++;
     console.log(`  ✓ Refund #${wp_id} deleted`);
+    // Ses lignes (refund_items) partent avec la relecture de la commande.
+    refundLinesService.syncOrderInBackground(gone?.wp_order_id || data?.order_id || data?.wp_order_id);
     return;
   }
 
@@ -584,6 +589,9 @@ async function processRefundEvent(action, wp_id, data, results) {
   ];
 
   const result = await pool.query(query, values);
+
+  // Articles remboursés : lus chez WC pour le picking, le packing et la fiche.
+  refundLinesService.syncOrderInBackground(values[1]);
 
   if (result.rows[0].inserted) {
     results.details.refunds.created++;

@@ -7,6 +7,7 @@ const axios = require('axios');
 const https = require('https');
 const appConfigModel = require('../models/appConfigModel');
 const pool = require('../config/database');
+const refundLinesService = require('./refundLinesService');
 const { sendAlert } = require('./alertService');
 
 // Agent HTTPS qui ignore les certificats auto-signés (pour communication interne Docker)
@@ -619,8 +620,12 @@ const wcSyncService = {
    */
   processRefund: async (action, wpId, data) => {
     if (action === 'delete') {
-      await pool.query('DELETE FROM refunds WHERE wp_refund_id = $1', [wpId]);
+      const { rows: [gone] } = await pool.query(
+        'DELETE FROM refunds WHERE wp_refund_id = $1 RETURNING wp_order_id', [wpId]
+      );
       console.log(`🔄 WC Sync: Refund #${wpId} supprimé`);
+      // Ses lignes (refund_items) partent avec la relecture de la commande.
+      refundLinesService.syncOrderInBackground(gone?.wp_order_id || data?.order_id || data?.wp_order_id);
       return;
     }
 
@@ -636,6 +641,9 @@ const wcSyncService = {
       data.wp_refund_id, data.wp_order_id, data.refund_amount,
       data.refund_reason, data.refund_date
     ]);
+
+    // Articles remboursés : lus chez WC pour le picking, le packing et la fiche.
+    refundLinesService.syncOrderInBackground(data.wp_order_id);
 
     console.log(`🔄 WC Sync: Refund #${wpId} ${action === 'create' ? 'créé' : 'mis à jour'}`);
   },

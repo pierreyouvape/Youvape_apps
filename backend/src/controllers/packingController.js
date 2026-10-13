@@ -4,6 +4,8 @@ const shippingMethodMapModel = require('../models/shippingMethodMapModel');
 const { expectedNetwork, relayNetworks } = require('../services/carriers/relayPoints');
 const { getAdapter } = require('../services/carriers');
 const { variantText } = require('../utils/variationLabel');
+const { REFUNDED_QTY_SQL } = require('../services/refundLinesService');
+const { withPackRefunds } = require('../services/pickingPdf');
 
 // Rechercher une commande par numéro WC pour le packing
 const searchOrder = async (req, res) => {
@@ -67,7 +69,9 @@ const searchOrder = async (req, res) => {
         p.weight,
         p.product_type,
         p.product_attributes,
-        oi.line_total
+        oi.line_total,
+        p.woosb_ids,
+        ${REFUNDED_QTY_SQL} AS refunded
       FROM order_items oi
       LEFT JOIN products p ON p.wp_product_id = COALESCE(NULLIF(oi.variation_id, 0), oi.product_id)
       LEFT JOIN products p_parent ON p.wp_parent_id = p_parent.wp_product_id
@@ -92,15 +96,32 @@ const searchOrder = async (req, res) => {
       r.product_type !== 'woosb' && Number(r.line_total) === 0);
     const estLotMasque = (r) => r.product_type === 'woosb' && aDesComposants;
 
+    // Articles remboursés dans WooCommerce avant l'expédition (refund_items) :
+    // ils ne partent pas, que BMS les ait annulés ou non. La quantité à scanner
+    // est diminuée d'autant ; une ligne remboursée en entier sort de la liste et
+    // est rendue à part, pour que le préparateur sache pourquoi elle manque.
+    // WC ne rembourse que la ligne d'un pack : ses composants suivent
+    // (même règle que le picking).
+    const rows = withPackRefunds(itemsResult.rows.map(r => ({
+      ...r, type: r.product_type, name: r.order_item_name
+    })));
+    const refundedItems = rows
+      .filter(r => r.refunded > 0 && !estLotMasque(r))
+      .map(r => ({ name: r.order_item_name || r.post_title, qty: Math.min(r.refunded, r.qty) }));
+
     // Rendus à part : le lot figure sur la commande, le préparateur doit savoir
-    // pourquoi il ne le retrouve pas dans la liste.
-    const hiddenPacks = itemsResult.rows
+    // pourquoi il ne le retrouve pas dans la liste. Un lot remboursé n'y est
+    // plus : ses articles sont dans les remboursés.
+    const hiddenPacks = rows
       .filter(estLotMasque)
-      .map(r => ({ name: r.order_item_name || r.post_title, qty: r.qty }));
+      .map(r => ({ name: r.order_item_name || r.post_title, qty: (r.qty || 0) - Math.min(r.refunded || 0, r.qty || 0) }))
+      .filter(p => p.qty > 0);
 
     // Pour chaque article, chercher les barcodes associés
     const items = [];
-    for (const item of itemsResult.rows.filter(r => !estLotMasque(r))) {
+    for (const row of rows.filter(r => !estLotMasque(r))) {
+      const item = row.refunded > 0 ? { ...row, qty: Math.max(0, (row.qty || 0) - row.refunded) } : row;
+      if (row.refunded > 0 && item.qty === 0) continue;
       const productWpId = item.variation_id && item.variation_id !== 0 ? item.variation_id : item.product_id;
 
       const barcodesResult = await pool.query(`
@@ -167,6 +188,7 @@ const searchOrder = async (req, res) => {
 
     res.json({
       hidden_packs: hiddenPacks,
+      refunded_items: refundedItems,
       // status : 'mapped' (on sait étiqueter), 'no_label' (rien à imprimer,
       // volontairement) ou 'unknown' (personne ne l'a mappé : on bloque).
       carrier: carrier ? { ...carrier, saturdayEligible } : carrier,

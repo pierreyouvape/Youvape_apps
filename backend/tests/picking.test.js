@@ -18,7 +18,7 @@
 
 const assert = require('assert');
 const { BUCKETS, allocateStock, physicalFromBms, planWaves, chunk, waveNumber, aggregateWaveLines, allocateMissing } = require('../src/services/pickingPlanner');
-const { buildWavePdf, buildWavesPdf, buildPrintLines } = require('../src/services/pickingPdf');
+const { buildWavePdf, buildWavesPdf, buildPrintLines, withPackRefunds } = require('../src/services/pickingPdf');
 const { PDFDocument } = require('pdf-lib');
 const { secondsUntilPdaCutoff } = require('../src/utils/pdaSession');
 
@@ -235,6 +235,35 @@ test('buildPrintLines : seul le reste à expédier est à préparer, le reste es
 
 test('buildPrintLines : sans relevé BMS, tout ce qui a été commandé', () => {
   assert.strictEqual(buildPrintLines(PACK_ITEMS, null).reduce((s, l) => s + l.qty, 0), 12);
+});
+
+// Cas réel 1268681 (13/10/2026) : le Z Max remboursé dans WC avant l'expédition,
+// toujours « à expédier » chez BMS.
+test('buildPrintLines : un article remboursé dans WC ne se prépare pas, même si BMS le garde', () => {
+  const items = [
+    { type: 'variation', name: 'Z Max Subohm Tank - Rainbow', qty: 1, refunded: 1, line_total: 16.86, product_id: 445099, sku: '445099-445105' },
+    { type: 'simple', name: 'Accu 18650 3000mAh 30A', qty: 2, refunded: 1, line_total: 9.73, product_id: 720228, sku: '720228' }
+  ];
+  const bms = new Map([['445099-445105', 1], ['720228', 2]]);
+  assert.deepStrictEqual(buildPrintLines(items, bms).map(l => [l.sku, l.qty, l.shipped]), [['720228', 1, 0]]);
+  assert.deepStrictEqual(buildPrintLines(items, null).map(l => [l.sku, l.qty]), [['720228', 1]]);
+  // BMS déjà corrigé à la main : on ne déduit pas deux fois.
+  assert.deepStrictEqual(buildPrintLines(items, new Map([['720228', 1]])).map(l => [l.sku, l.qty]), [['720228', 1]]);
+});
+
+// Cas réel 1239530 : WC ne rembourse que la ligne du pack, jamais ses composants à 0 €.
+test('withPackRefunds : un pack remboursé emporte ses composants, au prorata', () => {
+  const items = [
+    { type: 'woosb', name: 'Pack Nexi Two + 3 Recharges', qty: 4, refunded: 4, line_total: 56.33, product_id: 900, woosb_ids: [{ id: 901 }] },
+    { type: 'variation', name: 'Kit Nexi Two - Black', qty: 4, refunded: 0, line_total: 0, product_id: 901, sku: '901-1' },
+    { type: 'variation', name: 'Pack 3x Cartouches Nexi dans le pack : Pack Nexi Two + 3 Recharges', qty: 4, refunded: 0, line_total: 0, product_id: 902, sku: '902-1' },
+    { type: 'simple', name: 'Accu', qty: 1, refunded: 0, line_total: 9.73, product_id: 903, sku: '903' }
+  ];
+  assert.deepStrictEqual(withPackRefunds(items).map(i => i.refunded), [4, 4, 4, 0]);
+  assert.deepStrictEqual(buildPrintLines(items).map(l => l.sku), ['903']);
+  // 1 pack sur 2 remboursé : la moitié des composants reste à préparer.
+  const half = [{ ...PACK_ITEMS[1], qty: 2, refunded: 1 }, { ...PACK_ITEMS[2], qty: 20 }];
+  assert.deepStrictEqual(buildPrintLines(half).map(l => [l.sku, l.qty]), [['11152', 10]]);
 });
 
 const pdfTest = (async () => {

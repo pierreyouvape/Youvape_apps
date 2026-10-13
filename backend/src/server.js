@@ -55,7 +55,7 @@ const employeesRoutes = require('./routes/employeesRoutes');
 const storyRoutes = require('./routes/storyRoutes');
 const storyProcessingService = require('./services/storyProcessingService');
 const authMiddleware = require('./middleware/authMiddleware');
-const { setupCron, setupBmsCron, setupComputedCostCron, setupBmsBarcodeCron, setupBmsShelfLocationCron, setupStockResyncCron, setupSavAutomationsCron, setupProductDbSyncCron, setupBmsTagRetryCron, setupBmsShipmentConfirmCron, setupReportEmailCron, setupStockValuationSnapshotCron, setupDraftStockReportCron, setupCompetitorMonitorCron, setupBrandMapCron, setupNextoreCrons, setupProductSuppliersLinkCron, setupPickingSyncCron, setupBmsShipmentSyncCron, setupInventoryRefCron, setupReturnsRefundCron } = require('./services/cronService');
+const { setupCron, setupBmsCron, setupComputedCostCron, setupBmsBarcodeCron, setupBmsShelfLocationCron, setupStockResyncCron, setupSavAutomationsCron, setupProductDbSyncCron, setupBmsTagRetryCron, setupBmsShipmentConfirmCron, setupReportEmailCron, setupStockValuationSnapshotCron, setupDraftStockReportCron, setupCompetitorMonitorCron, setupBrandMapCron, setupNextoreCrons, setupProductSuppliersLinkCron, setupPickingSyncCron, setupBmsShipmentSyncCron, setupInventoryRefCron, setupReturnsRefundCron, setupRefundLinesCron } = require('./services/cronService');
 const rewardService = require('./services/rewardService');
 const emailService = require('./services/emailService');
 const wcSyncService = require('./services/wcSyncService');
@@ -177,6 +177,7 @@ app.listen(PORT, async () => {
   // Inventaire : file des relevés du stock théorique BMS (chaque minute)
   setupInventoryRefCron();
   setupReturnsRefundCron();
+  setupRefundLinesCron();
 
   // Initialiser le cron d'envoi automatique des rapports par email (journalier/hebdo/mensuel)
   setupReportEmailCron();

@@ -10,7 +10,8 @@ const pool = require('../config/database');
 const shippingMethodMapModel = require('./shippingMethodMapModel');
 const { expectedNetwork } = require('../services/carriers/relayPoints');
 const { BUCKETS, allocateStock, physicalFromBms, planWaves, waveNumber } = require('../services/pickingPlanner');
-const { buildPrintLines } = require('../services/pickingPdf');
+const { buildPrintLines, withPackRefunds } = require('../services/pickingPdf');
+const { REFUNDED_QTY_SQL } = require('../services/refundLinesService');
 
 const BLOCKED = 'bloquee';
 const MANUAL_PREFIX_KEY = 'picking_manual_prefix';
@@ -66,12 +67,51 @@ const availableBySku = async (skus) => {
 };
 
 /**
+ * Ce qu'il reste à expédier d'après WooCommerce, par commande et par SKU, pour
+ * les commandes de la photo qui ont un article remboursé : commandé − remboursé
+ * (un pack remboursé emporte ses composants, cf. pickingPdf.withPackRefunds).
+ * BMS ignore les remboursements WC (un article remboursé y reste « à
+ * expédier ») ; c'est WC qui fait foi, la photo BMS ne fait que le plafonner.
+ *
+ * @returns {Promise<Map<string, Map<string, number>>>} commande → SKU → reste
+ */
+const refundedLeftBySku = async () => {
+  const { rows } = await pool.query(`
+    SELECT oi.wp_order_id::text AS order_number, oi.order_item_name AS name, oi.qty, oi.line_total,
+           oi.product_id, p.sku, p.product_type AS type, p.woosb_ids,
+           ${REFUNDED_QTY_SQL} AS refunded
+      FROM order_items oi
+      LEFT JOIN products p ON p.wp_product_id = COALESCE(NULLIF(oi.variation_id, 0), oi.product_id)
+     WHERE oi.order_item_type = 'line_item'
+       AND oi.wp_order_id IN (SELECT ri.wp_order_id FROM refund_items ri
+                               WHERE ri.item_type = 'line_item'
+                                 AND ri.wp_order_id::text IN (SELECT order_number FROM picking_bms_orders))
+     ORDER BY oi.id
+  `);
+  const itemsByOrder = new Map();
+  for (const r of rows) {
+    if (!itemsByOrder.has(r.order_number)) itemsByOrder.set(r.order_number, []);
+    itemsByOrder.get(r.order_number).push(r);
+  }
+  const byOrder = new Map();
+  for (const [orderNumber, items] of itemsByOrder) {
+    const left = new Map();
+    for (const i of withPackRefunds(items)) {
+      if (i.type === 'woosb' || !i.sku) continue;
+      left.set(i.sku, (left.get(i.sku) || 0) + Math.max(0, (Number(i.qty) || 0) - (Number(i.refunded) || 0)));
+    }
+    byOrder.set(orderNumber, left);
+  }
+  return byOrder;
+};
+
+/**
  * Toutes les commandes de la photo, classées et annotées.
  * Les commandes déjà dans une vague de l'app ne sont pas rendues : elles sont
  * dans l'onglet Vagues.
  */
 const getOrdersView = async () => {
-  const [{ rows: orders }, { rows: lines }] = await Promise.all([
+  const [{ rows: orders }, { rows: bmsLines }, refundedLeft] = await Promise.all([
     pool.query(`
       SELECT b.order_number, b.bms_status, b.bms_wave_id, b.bms_created_at,
              b.shipping_method AS bms_shipping_method, b.ship_name, b.ship_country,
@@ -93,8 +133,17 @@ const getOrdersView = async () => {
       LEFT JOIN picking_blocks pb ON pb.order_number = b.order_number
       LEFT JOIN users u ON u.id = pb.blocked_by
     `),
-    pool.query('SELECT order_number, sku, product_name, qty_to_ship, qty_reserved FROM picking_bms_lines')
+    pool.query('SELECT order_number, sku, product_name, qty_to_ship, qty_reserved FROM picking_bms_lines'),
+    refundedLeftBySku()
   ]);
+
+  // Article remboursé dans WC : sa quantité ne compte plus, même si BMS le
+  // garde à expédier. Sa réservation BMS (qty_reserved) reste comptée dans le
+  // stock physique ci-dessous : la pièce est toujours en rayon.
+  const lines = bmsLines.map((l) => {
+    const left = refundedLeft.get(l.order_number)?.get(l.sku);
+    return left === undefined ? l : { ...l, qty_to_ship: Math.min(l.qty_to_ship, left) };
+  });
 
   const linesByOrder = new Map();
   for (const l of lines) {
@@ -111,7 +160,9 @@ const getOrdersView = async () => {
     orders.map(o => ({
       orderNumber: o.order_number,
       paidAt: o.paid_date || o.post_date || o.bms_created_at,
-      lines: (linesByOrder.get(o.order_number) || []).map(l => ({ sku: l.sku, qty: l.qty_to_ship }))
+      lines: (linesByOrder.get(o.order_number) || [])
+        .filter(l => l.qty_to_ship > 0)
+        .map(l => ({ sku: l.sku, qty: l.qty_to_ship }))
     })),
     physical
   );
@@ -119,6 +170,8 @@ const getOrdersView = async () => {
   const view = [];
   for (const o of orders) {
     if (o.bms_status !== 'processing' || o.in_app_wave) continue;
+    // Tout ce que BMS gardait à expédier a été remboursé : rien à préparer.
+    if (allocation.get(o.order_number).lines.length === 0) continue;
 
     const shippingMethod = o.shipping_method || o.bms_shipping_method;
     const carrier = await shippingMethodMapModel.resolve(shippingMethod);
@@ -554,7 +607,7 @@ const getWavePrintData = async (id) => {
                 'product_id', oi.product_id, 'pid', p.id, 'sku', p.sku, 'type', p.product_type,
                 'brand', COALESCE(p.brand, pp.brand), 'sub_brand', COALESCE(p.sub_brand, pp.sub_brand),
                 'location', p.shelf_location, 'woosb_ids', p.woosb_ids,
-                'attrs', p.product_attributes
+                'attrs', p.product_attributes, 'refunded', ${REFUNDED_QTY_SQL}
               ) ORDER BY oi.id)
                FROM order_items oi
                LEFT JOIN products p ON p.wp_product_id = COALESCE(NULLIF(oi.variation_id, 0), oi.product_id)
