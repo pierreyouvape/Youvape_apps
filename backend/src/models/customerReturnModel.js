@@ -595,6 +595,13 @@ const createReplacement = async (id, items, user) => {
   // Dans notre base tout de suite (sans attendre yousync), puis le point relais
   // d'origine (Chronopost Relais → 2Shop : même réseau de points).
   const warnings = [];
+  // Note INTERNE de la commande (privée), en plus de la note de commande :
+  // c'est elle que l'équipe lit dans WooCommerce (retour n°10, 14/10/2026).
+  try {
+    await wcRequest('post', `/orders/${newId}/notes`, { note: `SAV commande N°${r.wp_order_id}`, customer_note: false });
+  } catch (error) {
+    warnings.push(`Note interne WooCommerce non ajoutée (${error.message}) : à mettre à la main.`);
+  }
   try {
     await importOrder(newId);
     if (r.relay_point) await orderModel.setManualRelayPoint(newId, r.relay_point);
