@@ -342,4 +342,4 @@ const importMissingBmsOrders = async () => {
   return imported;
 };
 
-module.exports = { toSyncPayload, wcRequest, fetchWcOrder, importOrder, importMissingBmsOrders };
+module.exports = { toSyncPayload, wcRequest, fetchWcOrder, importOrder, importMissingBmsOrders, metaOf, relayPointOf };

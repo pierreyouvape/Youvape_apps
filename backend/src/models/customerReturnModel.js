@@ -19,7 +19,7 @@ const savModel = require('./savModel');
 const { saveAttachments } = require('../utils/savAttachments');
 const orderModel = require('./orderModel');
 const { BMS_WAREHOUSE_ID, findBmsProductId, findMovementId, readBmsStock } = require('./pdaProductModel');
-const { wcRequest, fetchWcOrder, importOrder } = require('../services/wcOrderImportService');
+const { wcRequest, fetchWcOrder, importOrder, metaOf, relayPointOf } = require('../services/wcOrderImportService');
 const loyaltyService = require('../services/loyaltyService');
 const shipmentController = require('../controllers/shipmentController');
 const shippingMethodMapModel = require('./shippingMethodMapModel');
@@ -506,6 +506,26 @@ const replacementPreview = async (id) => {
   };
 };
 
+// Métas WooCommerce du point relais (plugins WMS Mondial Relay / Chronopost,
+// plugin Colissimo). C'est là que BMS lit le point à l'import de la commande
+// (`shipping.pickup_point`), et notre synchro aussi (relayPointOf).
+const PICKUP_META_KEYS = [
+  '_wms_mondial_relay_pickup_info', '_wms_chronopost_pickup_info',
+  '_lpc_meta_pickUpLocationId', '_lpc_meta_pickUpLocationLabel',
+  '_lpc_meta_pickUpProductCode', '_lpc_meta_pickUpLocationData',
+];
+
+/**
+ * Point relais d'une commande WC, recopiable sur une autre. `shipping_method`
+ * des métas WMS suit la méthode de la nouvelle commande (Chronopost Relais →
+ * 2Shop : même point, autre service).
+ */
+const pickupMetaFor = (wcOrder, methodId) => (wcOrder.meta_data || [])
+  .filter(m => PICKUP_META_KEYS.includes(m.key))
+  .map(m => (m.key.startsWith('_wms_') && m.value && typeof m.value === 'object'
+    ? { key: m.key, value: { ...m.value, shipping_method: methodId } }
+    : { key: m.key, value: m.value }));
+
 /** Ligne d'expédition WooCommerce d'une méthode, reprise d'une commande récente qui la porte. */
 const shippingLineFor = async (denomination) => {
   const { rows: [o] } = await pool.query(
@@ -557,8 +577,9 @@ const createReplacement = async (id, items, user) => {
   if (!rowCount) throw httpError(409, 'Commande de renvoi déjà en cours de création.');
 
   let created;
+  let origin;
   try {
-    const origin = await fetchWcOrder(r.wp_order_id);
+    origin = await fetchWcOrder(r.wp_order_id);
     const shippingLine = plan.method === r.shipping_method
       ? origin.shipping_lines?.[0]
       : await shippingLineFor(plan.method);
@@ -579,6 +600,8 @@ const createReplacement = async (id, items, user) => {
         method_title: plan.method,
         total: '0.00',
       }],
+      // Sans elles, BMS n'a pas de point relais (commande 1269103, 14/10/2026).
+      meta_data: pickupMetaFor(origin, shippingLine.method_id),
     });
   } catch (error) {
     await pool.query('UPDATE customer_returns SET replacement_order_id = NULL WHERE id = $1', [id]);
@@ -603,7 +626,9 @@ const createReplacement = async (id, items, user) => {
   }
   try {
     await importOrder(newId);
-    if (r.relay_point) await orderModel.setManualRelayPoint(newId, r.relay_point);
+    // Notre base n'a le point que depuis le 07/09/2026 : sinon, celui de WooCommerce.
+    const relay = r.relay_point || relayPointOf(metaOf(origin.meta_data));
+    if (relay) await orderModel.setManualRelayPoint(newId, relay);
   } catch (error) {
     warnings.push(`Commande créée, mais pas encore dans notre base (${error.message}) : le point relais sera à saisir.`);
   }
@@ -629,6 +654,14 @@ const reship = async (id, user) => {
 
   const order = await shipmentController.loadOrderForLabel(r.wp_order_id);
   if (!order) throw httpError(404, `Commande ${r.wp_order_id} introuvable.`);
+  // Commande d'avant le 07/09/2026 : point relais absent de notre base, lu dans WooCommerce.
+  if (!order.relay_point) {
+    try {
+      order.relay_point = relayPointOf(metaOf((await fetchWcOrder(r.wp_order_id)).meta_data));
+    } catch (error) {
+      console.error(`[Retours] Point relais WooCommerce illisible (commande ${r.wp_order_id}) :`, error.message);
+    }
+  }
   const { method } = replacementShipping(order.shipping_method);
   const mapping = await shippingMethodMapModel.resolve(method);
   if (mapping.status !== 'mapped') throw httpError(400, `« ${method || '(vide)'} » ne génère pas d’étiquette.`);
