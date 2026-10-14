@@ -1,0 +1,115 @@
+FACTURE
+14/10/2026
+#FA021649
+Adresse de livraison
+Maxime COGLITORE
+YOUVAPE SITE
+580 avenue de l'aube rouge
+34170 Castelnau le Lez
+France
+0695975267
+Adresse de facturation
+Maxime COGLITORE
+YOUVAPE SITE
+580 avenue de l'aube rouge
+34170 Castelnau le Lez
+France
+0695975267
+Numéro de facture Date de facturation Réf. de commande Date de commande
+#FA021649 14/10/2026 RLSXHGVAD 14/10/2026
+Référence Produit Taux de
+taxe
+Prix de base
+(HT)
+Prix unitaire
+(HT)
+Quantit
+é
+Total
+(HT)
+HB1412 VAPE PEN VMAC HYPER STRONG -
+DARK CHERRY 0.5ml
+20 % 14,90 € 13,90 € 10 139,00 €
+HB1251 WHITE RABBIT - CARTOUCHE VMAC
+HYPER STRONG - AMNESIA HAZE
+20 % 12,90 € 11,00 € 25 275,00 €
+HB1638 WHITE RABBIT - CARTOUCHE VMAC
+HYPER STRONG - STRAWBERRY
+KUSH
+20 % 12,90 € 11,50 € 10 115,00 €
+HB0983 WHITE RABBIT - E-Liquide 0% 50ML -
+Saveur : Dragon Bubble Gum Ice
+20 % -- 5,90 € 5 29,50 €
+HB0942 WHITE RABBIT - E-liquide 10ml - 2%
+nicotine (display de 10) - Saveur : Apple
+Peach Bonbon
+20 % 13,90 € 7,90 € 4 31,60 €
+HB0945 WHITE RABBIT - E-liquide 10ml - 2%
+nicotine (display de 10) - Saveur : Blue
+Mint
+20 % 13,90 € 7,90 € 3 23,70 €
+HB0938 WHITE RABBIT - E-liquide 10ml - 2%
+nicotine (display de 10) - Saveur : Cola
+Cherry
+20 % 13,90 € 7,90 € 3 23,70 €
+HB0941 WHITE RABBIT - E-liquide 10ml - 2%
+nicotine (display de 10) - Saveur : Isabella
+Grape
+20 % 13,90 € 7,90 € 5 39,50 €
+HB1230 WHITE RABBIT - E-liquide 10ml Tornado
+X - 2% nicotine (display de 10) - Saveur :
+Triple Bubble Gum
+20 % 13,90 € 7,90 € 3 23,70 €
+HB1481 WHITE RABBIT - E-Liquide VMAC
+HYPER STRONG 10ML - Saveur : Jack
+Herer
+20 % -- 14,90 € 10 149,00 €
+HB1288 WHITE RABBIT - E-Liquide VMAC
+HYPER STRONG 10ML - Saveur : Lemon
+Kush
+20 % -- 14,90 € 10 149,00 €
+Highbuy - 116 boulevard de la Pomme - master park lot 25 - 13011 Marseille - France
+Pour toute assistance, merci de nous contacter :
+Tél. : 0611789827
+88401742700011
+VAT/ FR28884017427
+
+-- 1 of 2 --
+
+FACTURE
+14/10/2026
+#FA021649
+HB1026 WHITE RABBIT x TORNADO - Puff
+15000 CBD - 1000 MG (Boite de 10) -
+Saveur : Amnesia
+20 % 89,50 € 79,50 € 3 238,50 €
+HB1028 WHITE RABBIT x TORNADO - Puff
+15000 CBD - 1000 MG (Boite de 10) -
+Saveur : Strawberry Kush
+20 % 89,50 € 79,50 € 1 79,50 €
+Détail des taxes Taux de taxe Taxe totale
+Produits 20.000 % 263,34 €
+Total produits 1 316,70 €
+Frais de livraison Livraison gratuite
+Total (HT) 1 316,70 €
+Taxe totale 263,34 €
+Total 1 580,04 €
+Moyen de paiement
+Transporteur Chronopost - Livraison express. Commande
+avant 13h.
+RÉSERVÉ DE PROPRIÉTÉ : loi du 12/05/1980 N°80335 - le matériel livré
+reste l'entière propriété de HIGHBUY SAS jusqu'au paiement l'intégral du prix
+fixé ci-dessus.
+Intérêt de retard : A défaut et conformément à la loi 2008-776 du 4 Août 2008,
+un intérêt de retard égal à 5 fois le taux légal sera appliqué, ainsi qu'une
+indemnité forfaitaire pour frais de recouvrement de 40 euros ( Décret
+2012-1115 du 02/10/20212).
+Powered by TCPDF (www.tcpdf.org)
+Highbuy - 116 boulevard de la Pomme - master park lot 25 - 13011 Marseille - France
+Pour toute assistance, merci de nous contacter :
+Tél. : 0611789827
+88401742700011
+VAT/ FR28884017427
+
+-- 2 of 2 --
+

@@ -185,6 +185,21 @@ test('référence coupée par le saut de page : les deux moitiés se retrouvent 
   assert.ok(!refs.includes('MACA-50-00MG'), 'la moitié orpheline subsiste');
 });
 
+test('pied de page Highbuy : il ne se colle pas à l\'article qui ouvre la page 2 (#FA021649)', () => {
+  // La page 2 s'ouvre directement sur HB1026, sans en-tête de tableau pour vider
+  // le tampon. Téléphone, SIRET nu et « VAT/ » s'y collaient : la ligne sortait
+  // sous la référence « 061178982788401742700011 », soit 238,50 € en « facturé
+  // non commandé » face à un HB1026 « commandé non facturé ».
+  const r = parse('highbuy-FA021649.txt');
+  assert.strictEqual(r.lines.length, 13);
+  assert.ok(close(somme(r), 1316.70, 0.02), `somme ${somme(r).toFixed(2)} ≠ 1316.70`);
+  const l = byRef(r, 'HB1026');
+  assert.ok(l, `HB1026 absent : ${r.lines.map((x) => x.ref).join(', ')}`);
+  assert.strictEqual(l.qty, 3);
+  assert.ok(close(l.lineTotalHt, 238.50));
+  assert.ok(/^WHITE RABBIT x TORNADO/.test(l.label), `libellé pollué : ${l.label}`);
+});
+
 if (failures > 0) {
   console.log(`\n${failures} test(s) en échec.`);
   process.exit(1);

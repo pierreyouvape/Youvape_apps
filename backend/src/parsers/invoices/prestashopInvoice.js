@@ -67,6 +67,15 @@ const NOISE = [
   /^Conditions générales/i,
   /^(Escompte|Loi LME|Indemnité|Intérêt de retard|RÉSERVÉ|RESERVE)/i,
   /^Pour toute assistance/i,
+  // Pied de page Highbuy, qui SUIT « Pour toute assistance » : « Tél. : … »,
+  // le SIRET nu (14 chiffres, sans étiquette) et « VAT/ FR… ». Tant que la page
+  // suivante s'ouvrait sur l'en-tête du tableau, ce dernier vidait le tampon.
+  // Sur #FA021649 elle s'ouvre directement sur HB1026 : le tout s'y collait, la
+  // référence devenait « 061178982788401742700011 » et ses 238,50 € sortaient
+  // en « facturé non commandé ».
+  /^T[ée]l\.?\s*:/i,
+  /^\d{14}$/,
+  /^VAT\b/i,
   /^Une version électronique/i,
   /^Vente intracommunautaire/i,
   /^Reste à régler/i,
