@@ -23,6 +23,7 @@ const { wcRequest, fetchWcOrder, importOrder } = require('../services/wcOrderImp
 const loyaltyService = require('../services/loyaltyService');
 const shipmentController = require('../controllers/shipmentController');
 const shippingMethodMapModel = require('./shippingMethodMapModel');
+const shipmentLabelModel = require('./shipmentLabelModel');
 const { getAdapter } = require('../services/carriers');
 const { getAccount } = require('../services/carriers/accounts');
 const mondialRelayAdapter = require('../services/carriers/mondialRelayAdapter');
@@ -663,6 +664,62 @@ const reship = async (id, user) => {
   return get(id);
 };
 
+// ── Annuler l'issue (14/10/2026) ────────────────────────────────────────────
+
+/**
+ * Vide l'issue client pour en choisir une autre. Ce que l'app a fait elle-même
+ * est défait quand elle le peut : l'étiquette de réexpédition est annulée chez
+ * le transporteur si son API le permet, sinon marquée annulée dans
+ * l'historique (Mondial Relay ne facture pas une étiquette non utilisée). Ce
+ * qui vit ailleurs — commande de renvoi WooCommerce, points WPLoyalty — n'est
+ * pas touché : on le dit, à faire à la main.
+ */
+const cancelOutcome = async (id, user) => {
+  const r = await loadForAction(id);
+  if (!r.treated_at && !r.outcome) throw httpError(400, 'Aucune issue à annuler.');
+  if (Number(r.replacement_order_id) === 0 && r.replacement_order_id != null) throw httpError(409, 'Commande de renvoi en cours de création.');
+  if (r.reship_label_id === 0) throw httpError(409, 'Étiquette de réexpédition en cours de création.');
+
+  const done = [];
+  const todo = [];
+  if (r.reship_label_id > 0) {
+    const label = await shipmentLabelModel.findById(r.reship_label_id);
+    if (label && label.status === 'active') {
+      const adapter = getAdapter(label.carrier_code);
+      if (adapter.cancelWindow(label).cancellable) {
+        try {
+          await adapter.cancelLabel({ label, account: await getAccount(adapter.code, label.account_code) });
+        } catch (error) {
+          throw httpError(502, `${adapter.label} refuse d'annuler l'étiquette n°${label.tracking_number} : ${error.message}`);
+        }
+        done.push(`étiquette ${adapter.label} n°${label.tracking_number} annulée chez le transporteur`);
+      } else {
+        done.push(`étiquette ${adapter.label} n°${label.tracking_number} marquée annulée dans l'historique (non annulable chez le transporteur)`);
+      }
+      await shipmentLabelModel.markCancelled(label.id);
+    }
+  }
+  if (Number(r.replacement_order_id) > 0) todo.push(`annuler la commande de renvoi #${r.replacement_order_id} dans WooCommerce`);
+  if (r.loyalty_credited_at) todo.push(`retirer les ${r.loyalty_points} points dans WPLoyalty`);
+  if (r.refund_wp_id) done.push(`remboursement WooCommerce n°${r.refund_wp_id} détaché`);
+
+  await pool.query(
+    `UPDATE customer_returns
+        SET outcome = NULL, outcome_ref = NULL, treated_at = NULL, treated_by = NULL,
+            replacement_order_id = NULL, loyalty_points = NULL, loyalty_credited_at = NULL,
+            refund_wp_id = NULL, refund_amount = NULL, reship_label_id = NULL,
+            status = CASE WHEN received_at IS NOT NULL THEN 'recu' ELSE 'attente' END
+      WHERE id = $1`,
+    [id]
+  );
+  await noteTicket(r.ticket_id, user, [
+    `<strong>Retour n°${id} — issue « ${escapeHtml(OUTCOMES[r.outcome] || r.outcome || '—')} » annulée</strong>`,
+    ...done.map(escapeHtml),
+    ...todo.map(t => `À faire : ${escapeHtml(t)}`),
+  ]);
+  return { ...(await get(id)), done, todo };
+};
+
 // ── Lot 2 : points fidélité ─────────────────────────────────────────────────
 
 const creditPoints = async (id, points, user) => {
@@ -1050,6 +1107,7 @@ module.exports = {
   replacementPreview,
   createReplacement,
   reship,
+  cancelOutcome,
   creditPoints,
   linkRefund,
   matchRefunds,

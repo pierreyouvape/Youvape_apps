@@ -27,6 +27,7 @@ module.exports = {
   createReplacement: handle(async (req, res) => {
     res.json(await customerReturnModel.createReplacement(id(req), req.body?.items, req.user));
   }),
+  cancelOutcome: handle(async (req, res) => res.json(await customerReturnModel.cancelOutcome(id(req), req.user))),
   reship: handle(async (req, res) => res.json(await customerReturnModel.reship(id(req), req.user))),
   creditPoints: handle(async (req, res) => res.json(await customerReturnModel.creditPoints(id(req), req.body?.points, req.user))),
   linkRefund: handle(async (req, res) => {

@@ -481,6 +481,31 @@ function OutcomePanel({ ret, canWrite, onDone, setMessage }) {
 
   const done = ret.treated_at && !editing;
 
+  const cancelOutcome = async () => {
+    const lines = [`Annuler l’issue « ${OUTCOMES[ret.outcome] || '—'} » du retour n°${ret.id} ?`];
+    if (ret.reship_label_id > 0) lines.push('', `L’étiquette ${ret.outcome_ref} sera annulée (chez le transporteur quand c’est possible, sinon marquée annulée dans l’historique).`);
+    if (Number(ret.replacement_order_id) > 0) lines.push('', `⚠ La commande de renvoi #${ret.replacement_order_id} reste dans WooCommerce : à annuler à la main.`);
+    if (ret.loyalty_credited_at) lines.push('', `⚠ Les ${ret.loyalty_points} points restent crédités : à retirer à la main dans WPLoyalty.`);
+    if (ret.refund_wp_id) lines.push('', 'Le remboursement WooCommerce sera détaché du retour.');
+    if (!window.confirm(lines.join('\n'))) return;
+    setSaving(true);
+    try {
+      const { data } = await axios.post(`${RETURNS_API}/${ret.id}/cancel-outcome`);
+      setMessage({
+        kind: data.todo?.length ? 'error' : 'ok',
+        text: ['Issue annulée.', ...(data.done || []).map(d => `${d[0].toUpperCase()}${d.slice(1)}.`),
+          ...(data.todo || []).map(t => `À faire : ${t}.`)].join(' '),
+      });
+      setOutcome('');
+      setRef('');
+      setEditing(true);
+      onDone(data);
+    } catch (e) {
+      setMessage({ kind: 'error', text: errorText(e) });
+    }
+    setSaving(false);
+  };
+
   return (
     <div style={panel}>
       <div style={{ fontSize: 16, fontWeight: 800, color: C.dark, marginBottom: 10 }}>Issue client</div>
@@ -499,6 +524,12 @@ function OutcomePanel({ ret, canWrite, onDone, setMessage }) {
           </span>
           {canWrite && !ret.replacement_order_id && !ret.loyalty_credited_at && !ret.refund_wp_id && ret.reship_label_id == null && (
             <button type="button" onClick={() => setEditing(true)} style={{ ...btn('ghost'), padding: '5px 10px', fontSize: 12.5 }}>Modifier</button>
+          )}
+          {canWrite && (
+            <button type="button" onClick={cancelOutcome} disabled={saving}
+              style={{ ...btn('ghost', saving), padding: '5px 10px', fontSize: 12.5, color: C.red, borderColor: C.red }}>
+              Annuler l’issue
+            </button>
           )}
         </div>
       ) : !canWrite ? (
