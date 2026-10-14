@@ -520,7 +520,7 @@ const shippingLineFor = async (denomination) => {
 
 /**
  * Crée la commande de renvoi dans WooCommerce : même client, mêmes adresses,
- * articles à 0 €, « SAV commande N°… » en note de commande, statut En cours
+ * articles à 0 €, « SAV commande N°… » en note interne, statut En cours
  * pour qu'elle suive le parcours habituel (BMS, picking, packing).
  */
 const createReplacement = async (id, items, user) => {
@@ -569,7 +569,6 @@ const createReplacement = async (id, items, user) => {
       customer_id: origin.customer_id || 0,
       billing: origin.billing,
       shipping: origin.shipping,
-      customer_note: `SAV commande N°${r.wp_order_id}`,
       line_items: lines.map(l => (l.product_type === 'variation'
         ? { product_id: Number(l.wp_parent_id), variation_id: Number(l.wp_product_id) }
         : { product_id: Number(l.wp_product_id) })
@@ -595,8 +594,8 @@ const createReplacement = async (id, items, user) => {
   // Dans notre base tout de suite (sans attendre yousync), puis le point relais
   // d'origine (Chronopost Relais → 2Shop : même réseau de points).
   const warnings = [];
-  // Note INTERNE de la commande (privée), en plus de la note de commande :
-  // c'est elle que l'équipe lit dans WooCommerce (retour n°10, 14/10/2026).
+  // « SAV commande N°… » en note INTERNE seulement : le client ne doit pas la
+  // voir (pas de note de commande) — Pierre, 14/10/2026.
   try {
     await wcRequest('post', `/orders/${newId}/notes`, { note: `SAV commande N°${r.wp_order_id}`, customer_note: false });
   } catch (error) {

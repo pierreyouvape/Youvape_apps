@@ -490,7 +490,7 @@ function ReplacementModal({ ret, onClose, onDone, setMessage }) {
                 {data.relayPoint?.id && <div style={{ fontSize: 12.5, color: C.greyT }}>Point relais repris : {data.relayPoint.name || data.relayPoint.id}</div>}
               </div>
               <div style={{ fontSize: 12.5, color: C.greyT }}>
-                Commande à 0 €, statut « En cours », note « SAV commande N°{ret.wp_order_id} ». WooCommerce enverra son email habituel au client.
+                Commande à 0 €, statut « En cours », note interne « SAV commande N°{ret.wp_order_id} ». WooCommerce enverra son email habituel au client.
               </div>
             </>
           )}
