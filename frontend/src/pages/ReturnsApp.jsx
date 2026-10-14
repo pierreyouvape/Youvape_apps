@@ -415,6 +415,27 @@ function ReplacementModal({ ret, onClose, onDone, setMessage }) {
   const [qty, setQty] = useState({});
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
+  // lineId → { productId, name, sku, available } : autre déclinaison choisie à la place.
+  const [swap, setSwap] = useState({});
+  const [openAlt, setOpenAlt] = useState({});
+
+  // Ce qui part réellement pour une ligne : la déclinaison choisie, sinon l'article retourné.
+  const effective = (i) => swap[i.lineId] || i;
+
+  const chooseAlt = async (i, productId) => {
+    if (!productId) {
+      setSwap(s => { const n = { ...s }; delete n[i.lineId]; return n; });
+      return;
+    }
+    const alt = i.alternatives.find(a => a.id === productId);
+    setSwap(s => ({ ...s, [i.lineId]: { productId, name: alt.name, sku: alt.sku, available: null, loading: true } }));
+    try {
+      const { data: st } = await axios.get(`${RETURNS_API}/stock/${productId}`);
+      setSwap(s => (s[i.lineId]?.productId === productId ? { ...s, [i.lineId]: { ...s[i.lineId], available: st.available, loading: false } } : s));
+    } catch (e) {
+      setSwap(s => (s[i.lineId]?.productId === productId ? { ...s, [i.lineId]: { ...s[i.lineId], loading: false, stockError: errorText(e) } } : s));
+    }
+  };
 
   useEffect(() => {
     axios.get(`${RETURNS_API}/${ret.id}/replacement`)
@@ -422,7 +443,8 @@ function ReplacementModal({ ret, onClose, onDone, setMessage }) {
       .catch(e => setError(errorText(e)));
   }, [ret.id]);
 
-  const short = (data?.items || []).filter(i => (qty[i.lineId] || 0) > 0 && (i.available == null || i.available < qty[i.lineId]));
+  const short = (data?.items || []).filter(i => (qty[i.lineId] || 0) > 0
+    && (effective(i).available == null || effective(i).available < qty[i.lineId]));
   const chosen = (data?.items || []).filter(i => (qty[i.lineId] || 0) > 0);
   const canSubmit = data && chosen.length && !short.length && !saving;
 
@@ -431,7 +453,7 @@ function ReplacementModal({ ret, onClose, onDone, setMessage }) {
     setError('');
     try {
       const { data: r } = await axios.post(`${RETURNS_API}/${ret.id}/replacement`, {
-        items: chosen.map(i => ({ lineId: i.lineId, qty: qty[i.lineId] })),
+        items: chosen.map(i => ({ lineId: i.lineId, qty: qty[i.lineId], productId: swap[i.lineId]?.productId || null })),
       });
       setMessage({
         kind: r.warnings?.length ? 'error' : 'ok',
@@ -465,12 +487,38 @@ function ReplacementModal({ ret, onClose, onDone, setMessage }) {
                 <tbody>
                   {data.items.map(i => {
                     const q = qty[i.lineId] || 0;
-                    const ko = q > 0 && (i.available == null || i.available < q);
+                    const e = effective(i);
+                    const ko = q > 0 && (e.available == null || e.available < q);
+                    const outOfStock = i.available == null || i.available < i.qty;
+                    const showAlt = i.alternatives.length > 0 && (outOfStock || openAlt[i.lineId] || swap[i.lineId]);
                     return (
                       <tr key={i.lineId}>
-                        <td style={td}>{i.name}<div style={{ fontSize: 12, color: C.greyT }}>{i.sku}</div></td>
+                        <td style={td}>
+                          <span style={swap[i.lineId] ? { textDecoration: 'line-through', color: C.greyT } : null}>{i.name}</span>
+                          <div style={{ fontSize: 12, color: C.greyT }}>{i.sku}</div>
+                          {showAlt ? (
+                            <select
+                              value={swap[i.lineId]?.productId || ''}
+                              onChange={ev => chooseAlt(i, Number(ev.target.value) || null)}
+                              style={{ ...field, marginTop: 6, fontSize: 13, padding: '5px 8px', maxWidth: 360, borderColor: outOfStock && !swap[i.lineId] ? C.red : C.greyB }}
+                            >
+                              <option value="">{outOfStock ? 'Renvoyer à la place…' : '— même article —'}</option>
+                              {i.alternatives.map(a => (
+                                <option key={a.id} value={a.id} disabled={a.stock != null && a.stock <= 0}>
+                                  {a.name} ({a.stock ?? '?'})
+                                </option>
+                              ))}
+                            </select>
+                          ) : i.alternatives.length > 0 && (
+                            <button type="button" onClick={() => setOpenAlt(o => ({ ...o, [i.lineId]: true }))}
+                              style={{ display: 'block', marginTop: 4, border: 'none', background: 'none', padding: 0, color: C.greyT, fontSize: 12, textDecoration: 'underline', cursor: 'pointer' }}>
+                              autre déclinaison
+                            </button>
+                          )}
+                          {swap[i.lineId] && <div style={{ fontSize: 13, fontWeight: 700, color: RETURNS_COLOR, marginTop: 4 }}>→ {swap[i.lineId].name}</div>}
+                        </td>
                         <td style={{ ...td, textAlign: 'right', color: ko ? C.red : C.dark, fontWeight: 700 }}>
-                          {i.available ?? <span title={i.stockError}>?</span>}
+                          {e.loading ? '…' : (e.available ?? <span title={e.stockError}>?</span>)}
                         </td>
                         <td style={{ ...td, textAlign: 'right' }}>
                           <input

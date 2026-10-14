@@ -23,6 +23,7 @@ module.exports = {
   restock: handle(async (req, res) => res.json(await customerReturnModel.retryRestock(id(req), req.user))),
   treat: handle(async (req, res) => res.json(await customerReturnModel.treat(id(req), req.body || {}, req.user))),
   cancel: handle(async (req, res) => res.json(await customerReturnModel.cancel(id(req), req.user))),
+  productStock: handle(async (req, res) => res.json(await customerReturnModel.productStock(Number(req.params.productId)))),
   replacementPreview: handle(async (req, res) => res.json(await customerReturnModel.replacementPreview(id(req)))),
   createReplacement: handle(async (req, res) => {
     res.json(await customerReturnModel.createReplacement(id(req), req.body?.items, req.user));

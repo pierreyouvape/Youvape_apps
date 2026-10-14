@@ -477,13 +477,23 @@ const markTreated = (id, userId, outcome, outcomeRef, extraSql = '', extraParams
     [id, outcome, outcomeRef, userId, ...extraParams]
   );
 
+// Autres déclinaisons publiées du même produit : une rupture se remplace par
+// une autre couleur (Pierre, 14/10/2026). Stock de notre base, rafraîchi par la
+// synchro ; le stock BMS de la déclinaison choisie est relu avant de commander.
+const SIBLINGS_SQL = `
+  SELECT s.id, s.sku, s.post_title AS name, s.stock
+    FROM products s
+   WHERE s.wp_parent_id = $1 AND s.id <> $2 AND s.product_type = 'variation'
+     AND s.post_status = 'publish' AND s.wc_deleted_at IS NULL AND COALESCE(s.sku, '') <> ''
+   ORDER BY s.post_title`;
+
 /** Articles proposés au renvoi : les pièces retournées (pas les packs), stock BMS lu à l'instant. */
 const replacementPreview = async (id) => {
   const r = await loadForAction(id);
   const { rows: lines } = await pool.query(
-    `SELECT l.id, l.name, l.sku, l.qty, l.product_id
-       FROM customer_return_lines l
-      WHERE l.return_id = $1 AND NOT l.is_bundle AND l.product_id IS NOT NULL
+    `SELECT l.id, l.name, l.sku, l.qty, l.product_id, p.product_type, p.wp_parent_id
+       FROM customer_return_lines l JOIN products p ON p.id = l.product_id
+      WHERE l.return_id = $1 AND NOT l.is_bundle
       ORDER BY l.id`,
     [id]
   );
@@ -496,7 +506,10 @@ const replacementPreview = async (id) => {
     } catch (error) {
       stockError = error.message;
     }
-    items.push({ lineId: l.id, name: l.name, sku: l.sku, qty: l.qty, available, stockError });
+    const alternatives = l.product_type === 'variation'
+      ? (await pool.query(SIBLINGS_SQL, [l.wp_parent_id, l.product_id])).rows
+      : [];
+    items.push({ lineId: l.id, productId: l.product_id, name: l.name, sku: l.sku, qty: l.qty, available, stockError, alternatives });
   }
   return {
     items,
@@ -504,6 +517,13 @@ const replacementPreview = async (id) => {
     plan: r.shipping_method ? replacementShipping(r.shipping_method) : null,
     relayPoint: r.relay_point,
   };
+};
+
+/** Stock BMS d'une déclinaison choisie à la place, lu à l'instant. */
+const productStock = async (productId) => {
+  const { rows: [p] } = await pool.query('SELECT sku FROM products WHERE id = $1', [productId]);
+  if (!p?.sku) throw httpError(404, 'Produit introuvable.');
+  return { available: (await readBmsStock(p.sku)).available };
 };
 
 // Métas WooCommerce du point relais (plugins WMS Mondial Relay / Chronopost,
@@ -548,16 +568,36 @@ const createReplacement = async (id, items, user) => {
   if (r.replacement_order_id) throw httpError(400, `Commande de renvoi déjà créée (#${r.replacement_order_id || '…'}).`);
   if (!r.shipping_method) throw httpError(400, 'Méthode d’expédition de la commande inconnue.');
 
-  const wanted = new Map((items || []).filter(i => Number(i.qty) > 0).map(i => [Number(i.lineId), Number(i.qty)]));
+  const chosen = (items || []).filter(i => Number(i.qty) > 0);
+  const wanted = new Map(chosen.map(i => [Number(i.lineId), Number(i.qty)]));
+  const swaps = new Map(chosen.filter(i => i.productId).map(i => [Number(i.lineId), Number(i.productId)]));
   if (!wanted.size) throw httpError(400, 'Aucun article à renvoyer.');
-  const { rows: lines } = await pool.query(
-    `SELECT l.id, l.name, l.sku, p.wp_product_id, p.wp_parent_id, p.product_type
+  const { rows: returned } = await pool.query(
+    `SELECT l.id, l.name, l.sku, l.product_id, p.wp_product_id, p.wp_parent_id, p.product_type
        FROM customer_return_lines l JOIN products p ON p.id = l.product_id
       WHERE l.return_id = $1 AND NOT l.is_bundle AND l.id = ANY($2::int[])`,
     [id, [...wanted.keys()]]
   );
-  if (lines.length !== wanted.size) throw httpError(400, 'Article inconnu dans ce retour.');
+  if (returned.length !== wanted.size) throw httpError(400, 'Article inconnu dans ce retour.');
   for (const [, q] of wanted) if (!Number.isInteger(q) || q < 1) throw httpError(400, 'Quantité invalide.');
+
+  // Ce qui part réellement : l'article retourné, ou une autre déclinaison du MÊME produit.
+  const lines = [];
+  for (const l of returned) {
+    const swapId = swaps.get(l.id);
+    if (!swapId || swapId === l.product_id) {
+      lines.push({ ...l, returnedName: null });
+      continue;
+    }
+    const { rows: [alt] } = await pool.query(
+      `SELECT id, sku, post_title AS name, wp_product_id, wp_parent_id, product_type
+         FROM products WHERE id = $1 AND product_type = 'variation' AND post_status = 'publish'
+          AND wc_deleted_at IS NULL AND wp_parent_id = $2`,
+      [swapId, l.wp_parent_id]
+    );
+    if (l.product_type !== 'variation' || !alt) throw httpError(400, `« ${l.name} » : on ne peut renvoyer qu’une autre déclinaison du même produit.`);
+    lines.push({ ...alt, id: l.id, returnedName: l.name });
+  }
 
   const short = [];
   for (const l of lines) {
@@ -635,6 +675,7 @@ const createReplacement = async (id, items, user) => {
 
   await noteTicket(r.ticket_id, user, [
     `<strong>Retour n°${id} — commande de renvoi #${created.number || newId}</strong> (${escapeHtml(plan.method)})`,
+    ...lines.filter(l => l.returnedName).map(l => `${escapeHtml(l.returnedName)} remplacé par ${escapeHtml(l.name)}`),
   ]);
   return { ...(await get(id)), warnings };
 };
@@ -1170,6 +1211,7 @@ module.exports = {
   createBatch,
   exportBatch,
   replacementPreview,
+  productStock,
   createReplacement,
   reship,
   cancelOutcome,

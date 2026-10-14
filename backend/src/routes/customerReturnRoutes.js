@@ -17,6 +17,7 @@ router.post('/batches/:batchId/credits', write, c.linkCredit);
 router.delete('/batches/:batchId/credits/:documentId', write, c.unlinkCredit);
 
 router.get('/order/:wpOrderId', read, c.orderContext);
+router.get('/stock/:productId', read, c.productStock);
 router.get('/', read, c.list);
 router.post('/', write, c.create);
 router.get('/:id', read, c.get);
