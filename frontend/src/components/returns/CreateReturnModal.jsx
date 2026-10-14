@@ -11,26 +11,39 @@ import {
  * Pop-up « Créer un retour » — depuis un ticket (ticketId, produits concernés
  * pré-cochés) ou depuis le détail d'une commande.
  *
+ * Avec `existing` (le retour tel que GET /retours/:id le rend), elle sert à le
+ * MODIFIER tant qu'il n'est pas validé : pré-remplie, enregistrée en PUT.
+ *
  * Cocher un pack emporte ses composants : c'est sur eux que se fera la remise
  * en stock (le serveur fait la même règle, returnRules.expandSelection).
  */
-export default function CreateReturnModal({ wpOrderId, ticketId, concernedProducts, onClose, onCreated }) {
+export default function CreateReturnModal({ wpOrderId, ticketId, concernedProducts, existing = null, onClose, onCreated }) {
   const [ctx, setCtx] = useState(null);
   const [loadError, setLoadError] = useState('');
-  const [reason, setReason] = useState('');
-  const [returnRequired, setReturnRequired] = useState(true);
-  const [outcome, setOutcome] = useState('');
-  const [note, setNote] = useState('');
+  const [reason, setReason] = useState(existing?.reason || '');
+  const [returnRequired, setReturnRequired] = useState(existing ? existing.return_required : true);
+  const [outcome, setOutcome] = useState(existing?.outcome || '');
+  const [note, setNote] = useState(existing?.note || '');
   const [qty, setQty] = useState({});
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   // Figés à l'ouverture : le ticket se rafraîchit en direct, la saisie ne doit pas sauter.
   const [initialConcerned] = useState(concernedProducts);
+  const [initialExisting] = useState(existing);
 
   useEffect(() => {
-    axios.get(`${RETURNS_API}/order/${wpOrderId}`)
+    // En modification, le retour ne compte pas contre lui-même dans le « retournable ».
+    const exclude = initialExisting ? `?exclude=${initialExisting.id}` : '';
+    axios.get(`${RETURNS_API}/order/${wpOrderId}${exclude}`)
       .then(({ data }) => {
         setCtx(data);
+        if (initialExisting) {
+          // Les composants d'un pack coché suivent le pack : seules les autres lignes portent une quantité.
+          setQty(Object.fromEntries(initialExisting.lines
+            .filter(l => !l.bundle_line_id)
+            .map(l => [Number(l.order_item_id), l.qty])));
+          return;
+        }
         // Produits signalés dans le ticket : pré-cochés.
         const pre = {};
         for (const cp of Array.isArray(initialConcerned) ? initialConcerned : []) {
@@ -40,7 +53,7 @@ export default function CreateReturnModal({ wpOrderId, ticketId, concernedProduc
         setQty(pre);
       })
       .catch(e => setLoadError(errorText(e)));
-  }, [wpOrderId, initialConcerned]);
+  }, [wpOrderId, initialConcerned, initialExisting]);
 
   useEffect(() => {
     const onKey = (e) => { if (e.key === 'Escape') onClose(); };
@@ -52,7 +65,8 @@ export default function CreateReturnModal({ wpOrderId, ticketId, concernedProduc
 
   const chooseReason = (r) => {
     setReason(r);
-    setOutcome(DEFAULT_OUTCOME[r]);
+    // Une issue déjà faite ne bouge pas (le serveur l'ignore aussi).
+    if (!existing?.treated_at) setOutcome(DEFAULT_OUTCOME[r]);
     // Commande non récupérée : c'est toute la commande qui revient.
     if (r === 'non_recupere') {
       setReturnRequired(true);
@@ -72,9 +86,10 @@ export default function CreateReturnModal({ wpOrderId, ticketId, concernedProduc
     setSaving(true);
     setError('');
     try {
-      const { data } = await axios.post(RETURNS_API, {
-        wpOrderId, ticketId: ticketId || null, reason, returnRequired, outcome, note, selection,
-      });
+      const body = { wpOrderId, ticketId: ticketId || null, reason, returnRequired, outcome, note, selection };
+      const { data } = existing
+        ? await axios.put(`${RETURNS_API}/${existing.id}`, body)
+        : await axios.post(RETURNS_API, body);
       onCreated?.(data);
     } catch (e) {
       setError(errorText(e));
@@ -96,7 +111,7 @@ export default function CreateReturnModal({ wpOrderId, ticketId, concernedProduc
       <div style={{ background: C.white, borderRadius: 14, width: 'min(760px, 100%)', boxShadow: '0 20px 50px rgba(0,0,0,0.25)' }}>
         <div style={{ padding: '16px 20px', borderBottom: `1px solid ${C.greyB}`, display: 'flex', alignItems: 'center', gap: 10 }}>
           <div style={{ fontSize: 17, fontWeight: 800, color: C.dark, flex: 1 }}>
-            Créer un retour — commande #{wpOrderId}
+            {existing ? `Modifier le retour n°${existing.id}` : 'Créer un retour'} — commande #{wpOrderId}
             {ticketId && <span style={{ fontSize: 13, color: C.greyT, fontWeight: 600 }}> · ticket #{ticketId}</span>}
           </div>
           <button type="button" onClick={onClose} style={{ ...btn('ghost'), padding: '4px 10px' }}>✕</button>
@@ -108,10 +123,16 @@ export default function CreateReturnModal({ wpOrderId, ticketId, concernedProduc
 
           {ctx && (
             <>
-              {ctx.returns.some(r => r.status !== 'annule') && (
+              {ctx.returns.some(r => r.status !== 'annule' && r.id !== existing?.id) && (
                 <div style={{ padding: '8px 12px', borderRadius: 8, background: C.amberL, color: C.amber, fontSize: 13, fontWeight: 600 }}>
-                  Cette commande a déjà {ctx.returns.filter(r => r.status !== 'annule').length} retour(s) :
+                  Cette commande a déjà {ctx.returns.filter(r => r.status !== 'annule' && r.id !== existing?.id).length} autre(s) retour(s) :
                   les quantités proposées en tiennent compte.
+                </div>
+              )}
+              {existing?.treated_at && (
+                <div style={{ padding: '8px 12px', borderRadius: 8, background: C.amberL, color: C.amber, fontSize: 13, fontWeight: 600 }}>
+                  L’issue « {OUTCOMES[existing.outcome]} » est déjà faite ({existing.outcome_ref || '—'}) : la modification ne la change pas.
+                  À revoir avec « Annuler l’issue » si besoin.
                 </div>
               )}
 
@@ -205,7 +226,7 @@ export default function CreateReturnModal({ wpOrderId, ticketId, concernedProduc
         <div style={{ padding: '14px 20px', borderTop: `1px solid ${C.greyB}`, display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
           <button type="button" onClick={onClose} style={btn('ghost')}>Annuler</button>
           <button type="button" onClick={submit} disabled={!canSubmit} style={btn('primary', !canSubmit)}>
-            {saving ? 'Création…' : 'Créer le retour'}
+            {saving ? 'Enregistrement…' : existing ? 'Enregistrer' : 'Créer le retour'}
           </button>
         </div>
       </div>

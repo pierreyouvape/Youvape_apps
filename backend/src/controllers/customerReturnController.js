@@ -14,7 +14,10 @@ const id = (req) => Number(req.params.id);
 
 module.exports = {
   list: handle(async (req, res) => res.json(await customerReturnModel.list(req.query))),
-  orderContext: handle(async (req, res) => res.json(await customerReturnModel.orderContext(Number(req.params.wpOrderId)))),
+  orderContext: handle(async (req, res) => {
+    res.json(await customerReturnModel.orderContext(Number(req.params.wpOrderId), Number(req.query.exclude) || null));
+  }),
+  update: handle(async (req, res) => res.json(await customerReturnModel.update(id(req), req.body || {}, req.user))),
   create: handle(async (req, res) => res.json(await customerReturnModel.create(req.body || {}, req.user))),
   get: handle(async (req, res) => res.json(await customerReturnModel.get(id(req)))),
   validate: handle(async (req, res) => {

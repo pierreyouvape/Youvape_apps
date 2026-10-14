@@ -60,8 +60,11 @@ const ORDER_SQL = `
          o.billing_first_name, o.billing_last_name, o.billing_email
     FROM orders o WHERE o.wp_order_id = $1`;
 
-/** Lignes de la commande, avec ce qui reste retournable (retours annulés exclus). */
-const orderLines = async (wpOrderId) => {
+/**
+ * Lignes de la commande, avec ce qui reste retournable (retours annulés exclus).
+ * `excludeReturnId` : le retour qu'on modifie ne compte pas contre lui-même.
+ */
+const orderLines = async (wpOrderId, excludeReturnId = null) => {
   const { rows } = await pool.query(
     `SELECT oi.order_item_id, oi.order_item_name AS name, oi.product_id, oi.variation_id, oi.qty,
             oi.line_total, oi.line_tax,
@@ -76,11 +79,12 @@ const orderLines = async (wpOrderId) => {
            FROM customer_return_lines l
            JOIN customer_returns r ON r.id = l.return_id
           WHERE r.wp_order_id = $1 AND r.cancelled_at IS NULL
+            AND ($2::int IS NULL OR r.id <> $2::int)
           GROUP BY l.order_item_id
        ) ret ON ret.order_item_id = oi.order_item_id
       WHERE oi.wp_order_id = $1 AND oi.order_item_type = 'line_item'
       ORDER BY oi.order_item_id`,
-    [wpOrderId]
+    [wpOrderId, excludeReturnId]
   );
   return rows.map(r => ({
     ...r,
@@ -104,10 +108,10 @@ const LIST_SQL = `
     LEFT JOIN users uc ON uc.id = r.created_by`;
 
 /** De quoi ouvrir la pop-up de création : la commande, ses lignes, ses retours. */
-const orderContext = async (wpOrderId) => {
+const orderContext = async (wpOrderId, excludeReturnId = null) => {
   const { rows: [order] } = await pool.query(ORDER_SQL, [wpOrderId]);
   if (!order) throw httpError(404, `Commande ${wpOrderId} absente de notre base.`);
-  const lines = await orderLines(wpOrderId);
+  const lines = await orderLines(wpOrderId, excludeReturnId);
   const { rows: returns } = await pool.query(`${LIST_SQL} WHERE r.wp_order_id = $1 ORDER BY r.created_at DESC`, [wpOrderId]);
   const parents = bundleParents(lines);
   return {
@@ -128,6 +132,27 @@ const orderContext = async (wpOrderId) => {
 };
 
 // ── Création ────────────────────────────────────────────────────────────────
+
+/**
+ * Lignes d'un retour. Le pack passe avant ses composants (expandSelection les
+ * range ainsi). `partials` : consignes de retour partiel à garder, par
+ * order_item_id (modification d'un retour).
+ */
+const insertLines = async (client, returnId, picks, partials = new Map()) => {
+  const lineIds = new Map();
+  for (const { line, qty, bundleOf } of picks) {
+    const partial = partials.get(String(line.order_item_id));
+    const { rows: [l] } = await client.query(
+      `INSERT INTO customer_return_lines
+         (return_id, order_item_id, product_id, sku, name, qty, unit_paid, is_bundle, bundle_line_id, partial, partial_note)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING id`,
+      [returnId, line.order_item_id, line.catalog_id, line.sku, line.name, qty, line.unit_paid,
+        line.product_type === 'woosb', bundleOf ? lineIds.get(bundleOf) : null,
+        !!partial, partial || null]
+    );
+    lineIds.set(line.order_item_id, l.id);
+  }
+};
 
 const create = async ({ wpOrderId, ticketId, reason, returnRequired, outcome, note, selection }, user) => {
   if (!REASONS[reason]) throw httpError(400, 'Motif inconnu.');
@@ -151,18 +176,7 @@ const create = async ({ wpOrderId, ticketId, reason, returnRequired, outcome, no
       [wpOrderId, ticketId || null, reason, returnRequired !== false, outcome || null, String(note || '').trim() || null, user.id]
     );
     returnId = r.id;
-    // Le pack passe avant ses composants (expandSelection les range ainsi).
-    const lineIds = new Map();
-    for (const { line, qty, bundleOf } of picks) {
-      const { rows: [l] } = await client.query(
-        `INSERT INTO customer_return_lines
-           (return_id, order_item_id, product_id, sku, name, qty, unit_paid, is_bundle, bundle_line_id)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
-        [returnId, line.order_item_id, line.catalog_id, line.sku, line.name, qty, line.unit_paid,
-          line.product_type === 'woosb', bundleOf ? lineIds.get(bundleOf) : null]
-      );
-      lineIds.set(line.order_item_id, l.id);
-    }
+    await insertLines(client, returnId, picks);
     await client.query('COMMIT');
   } catch (error) {
     await client.query('ROLLBACK');
@@ -176,6 +190,54 @@ const create = async ({ wpOrderId, ticketId, reason, returnRequired, outcome, no
     ...picks.filter(p => !p.bundleOf).map(p => `${p.qty} × ${escapeHtml(p.line.name)}`),
   ]);
   return get(returnId);
+};
+
+// ── Modification (avant validation) ─────────────────────────────────────────
+
+/**
+ * Corrige un retour pas encore validé : motif, articles, retour exigé, issue
+ * prévue, note. Une fois validé, la remise en stock et le SAV fournisseur sont
+ * faits : il ne se modifie plus. Une issue déjà faite n'est pas touchée.
+ */
+const update = async (id, { reason, returnRequired, outcome, note, selection }, user) => {
+  const { rows: [r] } = await pool.query('SELECT * FROM customer_returns WHERE id = $1', [id]);
+  if (!r) throw httpError(404, 'Retour introuvable.');
+  if (r.cancelled_at) throw httpError(400, 'Retour annulé.');
+  if (r.received_at) throw httpError(400, 'Retour déjà validé : il ne se modifie plus.');
+  if (!REASONS[reason]) throw httpError(400, 'Motif inconnu.');
+  if (outcome && !OUTCOMES[outcome]) throw httpError(400, 'Issue inconnue.');
+
+  const picks = expandSelection(await orderLines(r.wp_order_id, id), selection);
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const { rows: kept } = await client.query(
+      'SELECT order_item_id, partial_note FROM customer_return_lines WHERE return_id = $1 AND partial',
+      [id]
+    );
+    await client.query('DELETE FROM customer_return_lines WHERE return_id = $1', [id]);
+    await insertLines(client, id, picks, new Map(kept.map(k => [String(k.order_item_id), k.partial_note])));
+    await client.query(
+      `UPDATE customer_returns
+          SET reason = $2, return_required = $3, note = $4,
+              outcome = CASE WHEN treated_at IS NULL THEN $5 ELSE outcome END
+        WHERE id = $1`,
+      [id, reason, returnRequired !== false, String(note || '').trim() || null, outcome || null]
+    );
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+
+  await noteTicket(r.ticket_id, user, [
+    `<strong>Retour n°${id} modifié</strong> — ${escapeHtml(REASONS[reason])}${returnRequired === false ? ' (sans retour du produit)' : ''}`,
+    ...picks.filter(p => !p.bundleOf).map(p => `${p.qty} × ${escapeHtml(p.line.name)}`),
+  ]);
+  return get(id);
 };
 
 // ── Lecture ─────────────────────────────────────────────────────────────────
@@ -1200,6 +1262,7 @@ const exportBatch = async (batchId) => {
 module.exports = {
   orderContext,
   create,
+  update,
   list,
   get,
   validate,

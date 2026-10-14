@@ -6,6 +6,7 @@ import { Returns as ReturnsIcon } from '../components/AppIcons';
 import { C, Chip } from '../components/picking/pickingUi';
 import useTicketsAccess from '../components/tickets/useTicketsAccess';
 import ReturnLabelActions from '../components/returns/ReturnLabelActions';
+import CreateReturnModal from '../components/returns/CreateReturnModal';
 import { formatDate, formatDateUTC } from '../utils/dateUtils';
 import {
   RETURNS_API, RETURNS_COLOR, RETURNS_COLOR_L, REASONS, OUTCOMES, OUTCOME_REF_HINT, STATUS,
@@ -751,6 +752,7 @@ function DetailView({ id, navigate, canWrite }) {
   const [ret, setRet] = useState(null);
   const [error, setError] = useState('');
   const [message, setMessage] = useState(null);
+  const [editing, setEditing] = useState(false);
 
   const load = useCallback(() => {
     axios.get(`${RETURNS_API}/${id}`).then(({ data }) => setRet(data)).catch(e => setError(errorText(e)));
@@ -794,6 +796,9 @@ function DetailView({ id, navigate, canWrite }) {
           {!ret.return_required && <Chip color={C.greyT} bg={C.grey}>sans retour du produit</Chip>}
           <span style={{ flex: 1 }} />
           {canWrite && !cancelled && !ret.received_at && (
+            <button type="button" onClick={() => setEditing(true)} style={{ ...btn('ghost'), color: RETURNS_COLOR, borderColor: RETURNS_COLOR, padding: '6px 12px', fontSize: 13 }}>Modifier le retour</button>
+          )}
+          {canWrite && !cancelled && !ret.received_at && (
             <button type="button" onClick={cancel} style={{ ...btn('ghost'), color: C.red, borderColor: C.red, padding: '6px 12px', fontSize: 13 }}>Annuler le retour</button>
           )}
         </div>
@@ -830,6 +835,16 @@ function DetailView({ id, navigate, canWrite }) {
       {canWrite && !cancelled && !ret.received_at
         ? <ValidationForm ret={ret} onDone={setRet} setMessage={setMessage} />
         : <ReceivedLines ret={ret} canWrite={canWrite} onDone={setRet} setMessage={setMessage} />}
+
+      {editing && (
+        <CreateReturnModal
+          wpOrderId={ret.wp_order_id}
+          ticketId={ret.ticket_id}
+          existing={ret}
+          onClose={() => setEditing(false)}
+          onCreated={(data) => { setEditing(false); setRet(data); setMessage({ kind: 'ok', text: 'Retour modifié.' }); }}
+        />
+      )}
 
       {!cancelled && <OutcomePanel key={ret.treated_at || 'open'} ret={ret} canWrite={canWrite} onDone={setRet} setMessage={setMessage} />}
     </div>

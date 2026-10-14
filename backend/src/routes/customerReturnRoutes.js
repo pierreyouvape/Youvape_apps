@@ -21,6 +21,7 @@ router.get('/stock/:productId', read, c.productStock);
 router.get('/', read, c.list);
 router.post('/', write, c.create);
 router.get('/:id', read, c.get);
+router.put('/:id', write, c.update);
 router.post('/:id/validate', write, c.validate);
 router.post('/:id/restock', write, c.restock);
 router.post('/:id/treat', write, c.treat);
