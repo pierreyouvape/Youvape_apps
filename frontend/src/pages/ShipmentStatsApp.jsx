@@ -333,6 +333,8 @@ const ShipmentStatsApp = () => {
 
   const t = data?.totals;
   const unJour = from === to;
+  // Chaque vague terminée n'a qu'un picker : la somme par personne est le total de la période.
+  const totalVagues = (data?.people || []).reduce((n, p) => n + (p.picking?.waves || 0), 0);
   const pauseMin = data ? Math.round(data.pauseSeconds / 60) : 4;
   const moyenne = (seconds, intervals) => (intervals ? seconds / intervals : null);
 
@@ -417,6 +419,8 @@ const ShipmentStatsApp = () => {
                         <Th align="right">Art./colis</Th>
                         <Th align="right">Temps moyen / colis</Th>
                         <Th align="right">Colis / heure</Th>
+                        <Th align="right">Vagues pickées</Th>
+                        <Th>Part des vagues</Th>
                         <Th align="right">Picking / article</Th>
                         {unJour && <Th align="right">1ʳᵉ étiquette</Th>}
                         {unJour && <Th align="right">Dernière</Th>}
@@ -424,7 +428,7 @@ const ShipmentStatsApp = () => {
                     </thead>
                     <tbody>
                       {data.people.length === 0 && (
-                        <tr><td colSpan={12} style={{ padding: '22px 16px', textAlign: 'center', color: C.greyT, fontSize: 13.5 }}>
+                        <tr><td colSpan={14} style={{ padding: '22px 16px', textAlign: 'center', color: C.greyT, fontSize: 13.5 }}>
                           Aucun colis sur la période.
                         </td></tr>
                       )}
@@ -454,12 +458,14 @@ const ShipmentStatsApp = () => {
                               </div>
                             </Td>
                             <Td align="right">{moy ? Math.round(3600 / moy) : '—'}</Td>
+                            <Td align="right" color={p.picking?.waves ? C.dark : C.greyM}>{p.picking?.waves ? nf.format(p.picking.waves) : '—'}</Td>
+                            <Td>{p.picking?.waves ? <Part value={p.picking.waves} total={totalVagues} /> : null}</Td>
                             <Td align="right" color={p.picking?.articles ? C.dark : C.greyM}>
                               {p.picking?.articles ? (
                                 <span title={`${p.picking.pauses} pause(s) écartée(s)`}>
                                   {(p.picking.seconds / p.picking.articles).toLocaleString('fr-FR', { maximumFractionDigits: 1 })} s
                                   <div style={{ fontSize: 11.5, color: C.greyT }}>
-                                    {nf.format(p.picking.articles)} art. · {p.picking.waves} vague{p.picking.waves > 1 ? 's' : ''}
+                                    {nf.format(p.picking.articles)} art.
                                   </div>
                                 </span>
                               ) : '—'}
