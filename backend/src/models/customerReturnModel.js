@@ -21,6 +21,9 @@ const orderModel = require('./orderModel');
 const { BMS_WAREHOUSE_ID, findBmsProductId, findMovementId, readBmsStock } = require('./pdaProductModel');
 const { wcRequest, fetchWcOrder, importOrder } = require('../services/wcOrderImportService');
 const loyaltyService = require('../services/loyaltyService');
+const shipmentController = require('../controllers/shipmentController');
+const shippingMethodMapModel = require('./shippingMethodMapModel');
+const { getAdapter } = require('../services/carriers');
 const { getAccount } = require('../services/carriers/accounts');
 const mondialRelayAdapter = require('../services/carriers/mondialRelayAdapter');
 const {
@@ -589,20 +592,75 @@ const createReplacement = async (id, items, user) => {
   await markTreated(id, user.id, 'renvoi', `#${created.number || newId}`);
 
   // Dans notre base tout de suite (sans attendre yousync), puis le point relais
-  // d'origine quand le réseau ne change pas.
+  // d'origine (Chronopost Relais → 2Shop : même réseau de points).
   const warnings = [];
   try {
     await importOrder(newId);
-    if (plan.keepRelay && r.relay_point) await orderModel.setManualRelayPoint(newId, r.relay_point);
+    if (r.relay_point) await orderModel.setManualRelayPoint(newId, r.relay_point);
   } catch (error) {
     warnings.push(`Commande créée, mais pas encore dans notre base (${error.message}) : le point relais sera à saisir.`);
   }
-  if (plan.needsRelay && !plan.keepRelay) warnings.push(`Point 2Shop à saisir dans la commande #${newId}.`);
 
   await noteTicket(r.ticket_id, user, [
     `<strong>Retour n°${id} — commande de renvoi #${created.number || newId}</strong> (${escapeHtml(plan.method)})`,
   ]);
   return { ...(await get(id)), warnings };
+};
+
+// ── Réparé / même produit renvoyé (14/10/2026) ──────────────────────────────
+
+/**
+ * Étiquette d'expédition au n° de la commande d'origine, pour renvoyer au
+ * client le produit réparé (ou le même). Même chemin que l'expédition manuelle
+ * du Packing : AUCUNE confirmation BMS (rien ne sort du stock), plusieurs
+ * étiquettes admises sur une commande. Elle s'imprime depuis l'historique
+ * d'expédition. Transporteur : règle du renvoi (Chronopost → 2Shop / Colissimo).
+ */
+const reship = async (id, user) => {
+  const r = await loadForAction(id);
+  if (r.reship_label_id != null) throw httpError(409, 'L’étiquette de réexpédition existe déjà (historique d’expédition).');
+
+  const order = await shipmentController.loadOrderForLabel(r.wp_order_id);
+  if (!order) throw httpError(404, `Commande ${r.wp_order_id} introuvable.`);
+  const { method } = replacementShipping(order.shipping_method);
+  const mapping = await shippingMethodMapModel.resolve(method);
+  if (mapping.status !== 'mapped') throw httpError(400, `« ${method || '(vide)'} » ne génère pas d’étiquette.`);
+  const adapter = getAdapter(mapping.carrierCode);
+
+  const { rowCount } = await pool.query(
+    `UPDATE customer_returns SET reship_label_id = 0
+      WHERE id = $1 AND reship_label_id IS NULL AND cancelled_at IS NULL`,
+    [id]
+  );
+  if (!rowCount) throw httpError(409, 'Étiquette de réexpédition déjà en cours de création.');
+
+  let label;
+  try {
+    label = await shipmentController.createShipmentLabel({
+      adapter,
+      orderNumber: String(r.wp_order_id),
+      accountCode: mapping.accountCode,
+      receiver: shipmentController.receiverFromOrder(order),
+      packedBy: user.id,
+      weightGrams: adapter.fixedWeight === true ? null : await returnedWeightGrams(id),
+      options: {
+        deliveryMode: mapping.deliveryMode,
+        relayPoint: order.relay_point || null,
+        shippingMethod: method,
+      },
+    });
+  } catch (error) {
+    await pool.query('UPDATE customer_returns SET reship_label_id = NULL WHERE id = $1', [id]);
+    throw httpError(error.statusCode && error.statusCode < 500 ? error.statusCode : 502,
+      error.userMessage || `${adapter.label} : ${error.message}`);
+  }
+
+  await pool.query('UPDATE customer_returns SET reship_label_id = $2 WHERE id = $1', [id, label.labelId]);
+  await markTreated(id, user.id, 'reexpedition', `${adapter.label} n°${label.trackingNumber}`);
+  await noteTicket(r.ticket_id, user, [
+    `<strong>Retour n°${id} — produit réexpédié</strong> : étiquette ${escapeHtml(adapter.label)} n°${escapeHtml(label.trackingNumber)} (${escapeHtml(method)}), à imprimer depuis l'historique d'expédition`,
+  ]);
+  return get(id);
 };
 
 // ── Lot 2 : points fidélité ─────────────────────────────────────────────────
@@ -697,6 +755,18 @@ const matchRefunds = async () => {
 
 // ── Lot 3 : étiquette retour Mondial Relay ──────────────────────────────────
 
+/** Poids des pièces retournées (products.weight en kg) : 100 g au moins, 500 g faute de poids. */
+const returnedWeightGrams = async (id) => {
+  const { rows: [w] } = await pool.query(
+    `SELECT COALESCE(SUM(l.qty * COALESCE(p.weight, 0)), 0) AS kg
+       FROM customer_return_lines l LEFT JOIN products p ON p.id = l.product_id
+      WHERE l.return_id = $1 AND NOT l.is_bundle`,
+    [id]
+  );
+  const grams = Math.round(Number(w.kg) * 1000);
+  return grams > 0 ? Math.max(100, grams) : 500;
+};
+
 const createLabel = async (id, { format, force }, user) => {
   if (!['pdf', 'qr'].includes(format)) throw httpError(400, 'Format inconnu.');
   const r = await loadForAction(id);
@@ -710,15 +780,7 @@ const createLabel = async (id, { format, force }, user) => {
   if (!map) throw httpError(400, 'Aucun contrat Mondial Relay en service.');
   const account = await getAccount('mondial_relay', map.account_code);
 
-  // Poids des pièces retournées (products.weight en kg), 100 g au moins, 500 g faute de poids.
-  const { rows: [w] } = await pool.query(
-    `SELECT COALESCE(SUM(l.qty * COALESCE(p.weight, 0)), 0) AS kg
-       FROM customer_return_lines l LEFT JOIN products p ON p.id = l.product_id
-      WHERE l.return_id = $1 AND NOT l.is_bundle`,
-    [id]
-  );
-  const grams = Math.round(Number(w.kg) * 1000);
-  const weightGrams = grams > 0 ? Math.max(100, grams) : 500;
+  const weightGrams = await returnedWeightGrams(id);
 
   const label = await mondialRelayAdapter.createReturnLabel({
     reference: `R${id}-${r.wp_order_id}`,
@@ -987,6 +1049,7 @@ module.exports = {
   exportBatch,
   replacementPreview,
   createReplacement,
+  reship,
   creditPoints,
   linkRefund,
   matchRefunds,

@@ -15,6 +15,7 @@ export const REASONS = {
 
 export const OUTCOMES = {
   renvoi: 'Renvoi',
+  reexpedition: 'Réparé / même produit renvoyé',
   points: 'Points fidélité',
   remboursement: 'Remboursement',
   aucune: 'Aucune',
@@ -31,6 +32,7 @@ export const DEFAULT_OUTCOME = {
 /** Ce que la référence de l'issue doit contenir. */
 export const OUTCOME_REF_HINT = {
   renvoi: 'N° de la commande de renvoi',
+  reexpedition: 'N° de suivi',
   points: 'Nombre de points crédités',
   remboursement: 'Montant remboursé',
   aucune: 'Précision (facultatif)',

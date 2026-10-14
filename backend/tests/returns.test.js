@@ -109,11 +109,11 @@ assert.strictEqual(suggestPoints(retLines, { shippingPaid: 4.9 }), 3504, 'port n
 assert.strictEqual(suggestPoints([{ qty: 3, unit_paid: 4.33 }]), 1299, 'arrondi au point');
 
 // ── Méthode du renvoi ───────────────────────────────────────────────────────
-assert.deepStrictEqual(replacementShipping('Chronopost Relais 24h'), { method: '2Shop', keepRelay: false, needsRelay: true });
-assert.deepStrictEqual(replacementShipping('Chronopost Domicile 24h'), { method: 'Colissimo Domicile', keepRelay: false, needsRelay: false });
-assert.deepStrictEqual(replacementShipping('Chronopost Express'), { method: 'Colissimo Domicile', keepRelay: false, needsRelay: false });
-assert.deepStrictEqual(replacementShipping('Mondial Relay - Lockers'), { method: 'Mondial Relay - Lockers', keepRelay: true, needsRelay: false });
-assert.deepStrictEqual(replacementShipping('2Shop'), { method: '2Shop', keepRelay: true, needsRelay: true }, '2Shop reste 2Shop, point repris');
+assert.deepStrictEqual(replacementShipping('Chronopost Relais 24h'), { method: '2Shop' }, 'même point relais : même réseau');
+assert.deepStrictEqual(replacementShipping('Chronopost Domicile 24h'), { method: 'Colissimo Domicile' });
+assert.deepStrictEqual(replacementShipping('Chronopost Express'), { method: 'Colissimo Domicile' });
+assert.deepStrictEqual(replacementShipping('Mondial Relay - Lockers'), { method: 'Mondial Relay - Lockers' });
+assert.deepStrictEqual(replacementShipping('2Shop'), { method: '2Shop' });
 
 // ── Remboursement à rattacher ───────────────────────────────────────────────
 const refunds = [

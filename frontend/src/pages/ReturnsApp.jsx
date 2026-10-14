@@ -149,6 +149,8 @@ function ListView({ navigate }) {
 /** Destination proposée : un défaut part chez le fournisseur, le reste revient en stock. */
 const defaultDestination = (r, line) => {
   const base = { restock: 0, supplier: 0, noRestock: 0, supplierId: line.supplierCandidates?.suggested || '', problem: '' };
+  // Réparé / même produit renvoyé : la pièce repart chez le client.
+  if (r.outcome === 'reexpedition') return { ...base, noRestock: line.qty };
   if (r.reason === 'defaut' && line.product_id) return { ...base, supplier: line.qty };
   if (r.return_required && line.sku) return { ...base, restock: line.qty };
   return { ...base, noRestock: line.qty };
@@ -425,8 +427,7 @@ function ReplacementModal({ ret, onClose, onDone, setMessage }) {
               <div style={{ fontSize: 13.5 }}>
                 Expédition : <strong>{data.plan?.method || '—'}</strong>
                 {data.plan && data.plan.method !== data.shippingMethod && <span style={{ color: C.greyT }}> (au lieu de {data.shippingMethod})</span>}
-                {data.plan?.keepRelay && data.relayPoint?.id && <div style={{ fontSize: 12.5, color: C.greyT }}>Point relais repris : {data.relayPoint.name || data.relayPoint.id}</div>}
-                {data.plan?.needsRelay && !data.plan.keepRelay && <div style={{ fontSize: 12.5, color: C.amber, fontWeight: 600 }}>Le point 2Shop sera à saisir dans la nouvelle commande.</div>}
+                {data.relayPoint?.id && <div style={{ fontSize: 12.5, color: C.greyT }}>Point relais repris : {data.relayPoint.name || data.relayPoint.id}</div>}
               </div>
               <div style={{ fontSize: 12.5, color: C.greyT }}>
                 Commande à 0 €, statut « En cours », note « SAV commande N°{ret.wp_order_id} ». WooCommerce enverra son email habituel au client.
@@ -490,10 +491,13 @@ function OutcomePanel({ ret, canWrite, onDone, setMessage }) {
           {ret.replacement_order_id
             ? <a href={`/orders/${ret.replacement_order_id}`} target="_blank" rel="noopener noreferrer" style={link}>{ret.outcome_ref}</a>
             : ret.outcome_ref && <strong>{ret.outcome_ref}</strong>}
+          {ret.outcome === 'reexpedition' && ret.reship_label_id > 0 && (
+            <a href="/expeditions" target="_blank" rel="noopener noreferrer" style={link}>Imprimer (historique d’expédition)</a>
+          )}
           <span style={{ fontSize: 12.5, color: C.greyT }}>
             {ret.treated_by_name || 'rapproché automatiquement'} · {formatDateUTC(ret.treated_at)}
           </span>
-          {canWrite && !ret.replacement_order_id && !ret.loyalty_credited_at && !ret.refund_wp_id && (
+          {canWrite && !ret.replacement_order_id && !ret.loyalty_credited_at && !ret.refund_wp_id && ret.reship_label_id == null && (
             <button type="button" onClick={() => setEditing(true)} style={{ ...btn('ghost'), padding: '5px 10px', fontSize: 12.5 }}>Modifier</button>
           )}
         </div>
@@ -519,6 +523,21 @@ function OutcomePanel({ ret, canWrite, onDone, setMessage }) {
             <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
               <button type="button" onClick={() => setReplacementOpen(true)} style={btn('primary')}>Créer la commande de renvoi</button>
               <span style={{ fontSize: 12.5, color: C.greyT }}>Commande WooCommerce à 0 €, stock BMS vérifié.</span>
+            </div>
+          )}
+
+          {outcome === 'reexpedition' && (
+            <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+              <button
+                type="button" disabled={saving}
+                onClick={() => window.confirm(`Créer l’étiquette d’expédition au n° de commande ${ret.wp_order_id} ?`)
+                  && post('reship', {}, 'Étiquette créée : à imprimer depuis l’historique d’expédition.')}
+                style={btn('primary', saving)}
+              >Créer l’étiquette d’expédition</button>
+              <span style={{ fontSize: 12.5, color: C.greyT }}>
+                Commande #{ret.wp_order_id}, adresse et point relais de la commande, sans sortie de stock BMS.
+                Chronopost Relais part en 2Shop, Chronopost Domicile en Colissimo.
+              </span>
             </div>
           )}
 

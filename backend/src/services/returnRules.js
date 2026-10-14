@@ -15,6 +15,7 @@ const REASONS = {
 
 const OUTCOMES = {
   renvoi: 'Renvoi',
+  reexpedition: 'Réparé / même produit renvoyé',
   points: 'Points fidélité',
   remboursement: 'Remboursement',
   aucune: 'Aucune',
@@ -178,23 +179,22 @@ const suggestPoints = (lines, { shippingPaid = 0, withShipping = false } = {}) =
 };
 
 /**
- * Méthode d'expédition de la commande de renvoi. On reprend celle d'origine,
- * sauf Chronopost : le relais part en 2Shop, le domicile en Colissimo
- * (décision Pierre du 09/10/2026). Le point relais n'est repris que si le
- * réseau ne change pas — un point Chronopost n'est pas un point 2Shop.
+ * Méthode d'expédition d'un renvoi au client (commande de renvoi ou produit
+ * réparé). On reprend celle d'origine, sauf Chronopost : le relais part en
+ * 2Shop, le domicile en Colissimo (décision Pierre du 09/10/2026).
  *
- * @returns {{method: string, keepRelay: boolean, needsRelay: boolean}}
+ * Le point relais d'origine est toujours repris : Chronopost Relais et 2Shop
+ * sont le MÊME réseau de points (`relay_point.network` = 'chronopost' pour les
+ * deux, confirmé par Pierre le 14/10/2026), et un envoi à domicile n'en a pas.
+ *
+ * @returns {{method: string}}
  */
 const REPLACEMENT_METHOD = {
   'Chronopost Relais 24h': '2Shop',
   'Chronopost Domicile 24h': 'Colissimo Domicile',
   'Chronopost Express': 'Colissimo Domicile',
 };
-const replacementShipping = (denomination) => {
-  const method = REPLACEMENT_METHOD[denomination] || denomination;
-  const changed = method !== denomination;
-  return { method, keepRelay: !changed, needsRelay: method === '2Shop' };
-};
+const replacementShipping = (denomination) => ({ method: REPLACEMENT_METHOD[denomination] || denomination });
 
 /**
  * Remboursement WooCommerce à rattacher à un retour : le premier de la
