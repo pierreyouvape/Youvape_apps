@@ -12,6 +12,7 @@ const { expectedNetwork } = require('../services/carriers/relayPoints');
 const { BUCKETS, allocateStock, physicalFromBms, planWaves, waveNumber } = require('../services/pickingPlanner');
 const { buildPrintLines, withPackRefunds } = require('../services/pickingPdf');
 const { REFUNDED_QTY_SQL } = require('../services/refundLinesService');
+const { partialReplacementOrders } = require('../services/returnPartialService');
 
 const BLOCKED = 'bloquee';
 const MANUAL_PREFIX_KEY = 'picking_manual_prefix';
@@ -167,6 +168,15 @@ const getOrdersView = async () => {
     physical
   );
 
+  // Commandes de renvoi SAV avec un article en retour partiel : jamais prises
+  // par une règle, vague manuelle seulement (décision Pierre du 14/10/2026).
+  let savPartial = new Set();
+  try {
+    savPartial = await partialReplacementOrders();
+  } catch (error) {
+    console.error('[Picking] Retours partiels illisibles :', error.message);
+  }
+
   const view = [];
   for (const o of orders) {
     if (o.bms_status !== 'processing' || o.in_app_wave) continue;
@@ -200,6 +210,7 @@ const getOrdersView = async () => {
       tags,
       tickets: o.tickets,
       bmsWaveId: o.bms_wave_id,
+      savPartial: savPartial.has(String(o.order_number)),
       items: alloc.lines.reduce((s, l) => s + l.qty, 0),
       missing: alloc.lines.reduce((s, l) => s + (l.qty - l.allocated), 0),
       selectable: !o.block_reason && tags.length === 0 && !o.bms_wave_id
@@ -317,7 +328,8 @@ const setManualPrefix = async (prefix) => {
 
 // ── Vagues ─────────────────────────────────────────────────────────────────
 
-const candidatesForRules = (view) => view.filter(o => o.selectable && o.bucket === BUCKETS.READY);
+// Une commande de renvoi en retour partiel ne part qu'en vague manuelle.
+const candidatesForRules = (view) => view.filter(o => o.selectable && o.bucket === BUCKETS.READY && !o.savPartial);
 
 /**
  * Pour la fenêtre « Générer les vagues » : ce que chaque règle active

@@ -664,6 +664,30 @@ const reship = async (id, user) => {
   return get(id);
 };
 
+// ── Retour partiel (14/10/2026) ─────────────────────────────────────────────
+
+/**
+ * Une ligne n'est revenue qu'en partie (la batterie seule d'une cigarette…).
+ * La consigne suit la commande de renvoi jusqu'au Packing ; le Picking ne la
+ * met jamais dans une vague générée par règle (services/returnPartialService).
+ */
+const setPartial = async (id, lineId, { partial, note }, user) => {
+  const r = await loadForAction(id);
+  const text = String(note || '').trim();
+  if (partial && !text) throw httpError(400, 'Préciser la partie reçue et ce qu’il faut renvoyer.');
+  const { rows: [line] } = await pool.query(
+    `UPDATE customer_return_lines SET partial = $3, partial_note = $4
+      WHERE id = $2 AND return_id = $1 AND NOT is_bundle
+      RETURNING name`,
+    [id, lineId, !!partial, partial ? text : null]
+  );
+  if (!line) throw httpError(404, 'Article introuvable dans ce retour.');
+  await noteTicket(r.ticket_id, user, [partial
+    ? `<strong>Retour n°${id} — retour partiel</strong> : ${escapeHtml(line.name)} — ${escapeHtml(text)}`
+    : `<strong>Retour n°${id}</strong> : ${escapeHtml(line.name)} n'est plus en retour partiel`]);
+  return get(id);
+};
+
 // ── Annuler l'issue (14/10/2026) ────────────────────────────────────────────
 
 /**
@@ -910,7 +934,7 @@ const supplierSummary = async () => {
 const ITEMS_SQL = `
   SELECT i.id, i.supplier_id, i.product_id, i.qty, i.reason, i.problem, i.unit_cost, i.status, i.batch_id, i.created_at,
          p.sku, COALESCE(NULLIF(p.post_title, ''), l.name) AS name, ref.supplier_sku,
-         l.return_id, r.wp_order_id, r.ticket_id
+         l.return_id, l.partial, l.partial_note, r.wp_order_id, r.ticket_id
     FROM supplier_return_items i
     JOIN products p ON p.id = i.product_id
     JOIN customer_return_lines l ON l.id = i.return_line_id
@@ -1062,6 +1086,7 @@ const exportBatch = async (batchId) => {
     { header: 'Quantité', key: 'qty', width: 10 },
     { header: 'Motif', key: 'reason', width: 22 },
     { header: 'Problème', key: 'problem', width: 50 },
+    { header: 'Retour partiel', key: 'partial', width: 40 },
     { header: 'Commande client', key: 'order', width: 16 },
     { header: 'Date', key: 'date', width: 12 },
     { header: 'Coût unitaire HT', key: 'cost', width: 16 },
@@ -1077,6 +1102,7 @@ const exportBatch = async (batchId) => {
       qty: i.qty,
       reason: REASONS[i.reason] || i.reason,
       problem: i.problem || '',
+      partial: i.partial ? i.partial_note || 'oui' : '',
       order: Number(i.wp_order_id),
       date: new Date(i.created_at),
       cost,
@@ -1108,6 +1134,7 @@ module.exports = {
   createReplacement,
   reship,
   cancelOutcome,
+  setPartial,
   creditPoints,
   linkRefund,
   matchRefunds,

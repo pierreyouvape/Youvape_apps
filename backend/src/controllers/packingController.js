@@ -6,6 +6,7 @@ const { getAdapter } = require('../services/carriers');
 const { variantText } = require('../utils/variationLabel');
 const { REFUNDED_QTY_SQL } = require('../services/refundLinesService');
 const { withPackRefunds } = require('../services/pickingPdf');
+const { partialAlertsForOrder } = require('../services/returnPartialService');
 
 // Rechercher une commande par numéro WC pour le packing
 const searchOrder = async (req, res) => {
@@ -145,6 +146,20 @@ const searchOrder = async (req, res) => {
       });
     }
 
+    // Commande de renvoi SAV dont un article n'est revenu qu'en PARTIE : la
+    // consigne s'affiche sur la ligne, et l'étiquette attend une confirmation.
+    // Une panne de cette lecture ne doit pas bloquer le packing.
+    let savPartial = [];
+    try {
+      savPartial = await partialAlertsForOrder(orderNumber);
+      for (const item of items) {
+        const alert = savPartial.find(a => a.sku && a.sku === item.sku);
+        if (alert) item.sav_partial = alert;
+      }
+    } catch (partialError) {
+      console.error('Erreur retours partiels packing:', partialError.message);
+    }
+
     // Poids expédié : c'est ce chiffre qui sera déclaré au transporteur pour tous
     // les colis. La lettre suivie garde son poids forfaitaire de 20 g (cf.
     // laposteController), elle n'est pas concernée.
@@ -187,6 +202,7 @@ const searchOrder = async (req, res) => {
     }
 
     res.json({
+      sav_partial: savPartial,
       hidden_packs: hiddenPacks,
       refunded_items: refundedItems,
       // status : 'mapped' (on sait étiqueter), 'no_label' (rien à imprimer,

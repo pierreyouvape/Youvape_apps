@@ -60,6 +60,60 @@ const ProductCell = ({ name, sku, imageUrl, indent, pack }) => (
   </div>
 );
 
+/**
+ * Retour partiel d'une ligne (la batterie seule d'une cigarette…) : la consigne
+ * part au Packing de la commande de renvoi, qui la fait confirmer avant l'étiquette.
+ */
+function PartialEditor({ ret, line, canWrite, onDone, setMessage }) {
+  const [editing, setEditing] = useState(false);
+  const [note, setNote] = useState(line.partial_note || '');
+  const [saving, setSaving] = useState(false);
+
+  const save = async (partial) => {
+    setSaving(true);
+    try {
+      const { data } = await axios.put(`${RETURNS_API}/${ret.id}/lines/${line.id}/partial`, { partial, note });
+      setEditing(false);
+      onDone(data);
+    } catch (e) {
+      setMessage({ kind: 'error', text: errorText(e) });
+    }
+    setSaving(false);
+  };
+
+  if (editing) {
+    return (
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', marginTop: 6 }}>
+        <input
+          autoFocus value={note} onChange={e => setNote(e.target.value)}
+          placeholder="Reçu : … / à renvoyer : …"
+          style={{ ...field, flex: 1, minWidth: 220, fontSize: 12.5, padding: '5px 8px' }}
+        />
+        <button type="button" disabled={saving || !note.trim()} onClick={() => save(true)} style={{ ...btn('primary', saving || !note.trim()), padding: '5px 10px', fontSize: 12 }}>Enregistrer</button>
+        {line.partial && <button type="button" disabled={saving} onClick={() => save(false)} style={{ ...btn('ghost'), padding: '5px 10px', fontSize: 12, color: C.red }}>Retirer</button>}
+        <button type="button" onClick={() => setEditing(false)} style={{ ...btn('ghost'), padding: '5px 10px', fontSize: 12 }}>Annuler</button>
+      </div>
+    );
+  }
+  if (line.partial) {
+    return (
+      <div style={{ marginTop: 6, display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+        <Chip color={C.white} bg={C.red}>PARTIEL</Chip>
+        <span style={{ fontSize: 12.5, color: C.red, fontWeight: 600 }}>{line.partial_note}</span>
+        {canWrite && !ret.cancelled_at && (
+          <button type="button" onClick={() => setEditing(true)} style={{ border: 'none', background: 'none', color: C.greyT, cursor: 'pointer', fontSize: 12, textDecoration: 'underline' }}>modifier</button>
+        )}
+      </div>
+    );
+  }
+  if (!canWrite || ret.cancelled_at) return null;
+  return (
+    <button type="button" onClick={() => setEditing(true)} style={{ marginTop: 4, border: 'none', background: 'none', color: C.greyT, cursor: 'pointer', fontSize: 12, padding: 0, textDecoration: 'underline' }}>
+      Retour partiel ?
+    </button>
+  );
+}
+
 // ── Liste ───────────────────────────────────────────────────────────────────
 
 function ListView({ navigate }) {
@@ -241,7 +295,10 @@ function ValidationForm({ ret, onDone, setMessage }) {
               const sum = d.restock + d.supplier + d.noRestock;
               return [
                 <tr key={l.id}>
-                  <td style={td}><ProductCell name={l.name} sku={l.sku} imageUrl={l.image_url} /></td>
+                  <td style={td}>
+                    <ProductCell name={l.name} sku={l.sku} imageUrl={l.image_url} />
+                    <PartialEditor ret={ret} line={l} canWrite onDone={onDone} setMessage={setMessage} />
+                  </td>
                   <td style={{ ...td, textAlign: 'right', fontWeight: 700, color: sum === l.qty ? C.dark : C.red }}>
                     {l.qty}{sum !== l.qty && <div style={{ fontSize: 11.5 }}>{sum} répartie(s)</div>}
                   </td>
@@ -308,7 +365,10 @@ function ReceivedLines({ ret, canWrite, onDone, setMessage }) {
         <tbody>
           {ret.lines.map(l => (
             <tr key={l.id}>
-              <td style={td}><ProductCell name={l.name} sku={l.sku} imageUrl={l.image_url} indent={!!l.bundle_line_id} pack={l.is_bundle} /></td>
+              <td style={td}>
+                <ProductCell name={l.name} sku={l.sku} imageUrl={l.image_url} indent={!!l.bundle_line_id} pack={l.is_bundle} />
+                {!l.is_bundle && <PartialEditor ret={ret} line={l} canWrite={canWrite} onDone={onDone} setMessage={setMessage} />}
+              </td>
               <td style={{ ...td, textAlign: 'right', fontWeight: 700 }}>{l.qty}</td>
               <td style={td}>{l.bundle_line_id ? <span style={{ color: C.greyT }}>dans le pack</span> : euro(l.unit_paid)}</td>
               {ret.received_at && (

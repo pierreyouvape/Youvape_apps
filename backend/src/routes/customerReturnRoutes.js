@@ -28,6 +28,7 @@ router.get('/:id/replacement', read, c.replacementPreview);
 router.post('/:id/replacement', write, c.createReplacement);
 router.post('/:id/reship', write, c.reship);
 router.post('/:id/cancel-outcome', write, c.cancelOutcome);
+router.put('/:id/lines/:lineId/partial', write, c.setPartial);
 router.post('/:id/points', write, c.creditPoints);
 router.post('/:id/refund', write, c.linkRefund);
 router.post('/:id/label', write, c.createLabel);

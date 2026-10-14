@@ -166,6 +166,10 @@ const PackingApp = () => {
 
   // Refs pour accéder aux valeurs courantes dans le listener clavier
   const orderRef = useRef(null);
+  // Commande de renvoi SAV avec un article revenu en partie : l'étiquette
+  // attend la confirmation que seule la partie concernée est emballée.
+  const partialRef = useRef([]);
+  const [partialPrompt, setPartialPrompt] = useState(null); // { resolve }
   const itemsRef = useRef([]);
   const loadingRef = useRef(false);
   const scanBufferRef = useRef('');
@@ -278,6 +282,14 @@ const PackingApp = () => {
     }
   }, [token, downloadPdf]);
 
+  const labelWithPartialCheck = useCallback(async (orderNumber) => {
+    if (partialRef.current.length) {
+      await new Promise(resolve => setPartialPrompt({ resolve }));
+      setPartialPrompt(null);
+    }
+    return generateLabel(orderNumber);
+  }, [generateLabel]);
+
   // Vérifier si tout est scanné → appel auto étiquette
   useEffect(() => {
     if (forcedDone) return;
@@ -288,13 +300,13 @@ const PackingApp = () => {
         setMessage('Commande complete ! Generation etiquette...');
         // Appel auto La Poste
         if (orderRef.current) {
-          generateLabel(orderRef.current.wp_order_id);
+          labelWithPartialCheck(orderRef.current.wp_order_id);
         }
       }
     } else {
       setIsComplete(false);
     }
-  }, [items, isComplete, generateLabel, forcedDone]);
+  }, [items, isComplete, labelWithPartialCheck, forcedDone]);
 
   // Charger une commande
   const loadOrder = useCallback(async (number) => {
@@ -336,6 +348,7 @@ const PackingApp = () => {
       setWeight(res.data.weight || null);
       setHiddenPacks(res.data.hidden_packs || []);
       setRefundedItems(res.data.refunded_items || []);
+      partialRef.current = res.data.sav_partial || [];
       axios.get(`${API_URL}/packing/orders/${loadedOrder.wp_order_id}/picking`, {
         headers: { Authorization: `Bearer ${token}` }
       }).then(r => setPickingInfo(r.data)).catch(() => { /* sans picking, le packing marche comme avant */ });
@@ -390,7 +403,7 @@ const PackingApp = () => {
     if (!window.confirm(`Envoyer la commande ${order.wp_order_id} SANS :\n${missingText} ?\n\nL'étiquette va être générée.`)) return;
     setPickingBusy(true);
     try {
-      const ok = await generateLabel(order.wp_order_id);
+      const ok = await labelWithPartialCheck(order.wp_order_id);
       if (!ok) return;
       setForcedDone(true);
       setIsComplete(true);
@@ -945,6 +958,32 @@ const PackingApp = () => {
 
   return (
     <AppShell currentPath="/packing">
+      {partialPrompt && (
+        <div style={{
+          position: 'fixed', inset: 0, zIndex: 5000, backgroundColor: 'rgba(17,24,39,0.6)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px',
+        }}>
+          <div style={{ backgroundColor: 'white', borderRadius: '14px', padding: '28px', maxWidth: '620px', width: '100%', border: '4px solid #DC2626' }}>
+            <div style={{ fontSize: '24px', fontWeight: 900, color: '#DC2626', marginBottom: '14px' }}>
+              ⚠ Retour SAV partiel
+            </div>
+            <div style={{ fontSize: '20px', fontWeight: 700, marginBottom: '12px' }}>
+              Confirmer avoir bien emballé uniquement la partie concernée
+            </div>
+            {partialRef.current.map((p, i) => (
+              <div key={i} style={{ fontSize: '17px', marginBottom: '6px' }}>• {p.note}</div>
+            ))}
+            <button
+              type="button" autoFocus
+              onClick={() => partialPrompt.resolve(true)}
+              style={{
+                marginTop: '18px', width: '100%', padding: '16px', border: 'none', borderRadius: '10px',
+                backgroundColor: '#DC2626', color: 'white', fontSize: '20px', fontWeight: 800, cursor: 'pointer',
+              }}
+            >Confirmer et sortir l'étiquette</button>
+          </div>
+        </div>
+      )}
     <main className="main-scroll" style={{ flex: 1, minWidth: 0, overflowY: 'auto', height: '100vh', display: 'flex', flexDirection: 'column', backgroundColor: '#f5f5f5' }}>
       {/* Header */}
       <div style={{
@@ -1628,6 +1667,18 @@ const PackingApp = () => {
                         {item.name}
                         {item.variant && (
                           <div style={{ fontSize: '20px', fontWeight: 800, marginTop: '2px' }}>{item.variant}</div>
+                        )}
+                        {item.sav_partial && (
+                          <div style={{
+                            marginTop: '10px', padding: '12px 14px', borderRadius: '8px',
+                            backgroundColor: '#DC2626', color: 'white', fontSize: '18px', fontWeight: 800,
+                            boxShadow: '0 0 0 3px #FCA5A5',
+                          }}>
+                            ⚠ NE RENVOYER QU'UNE PARTIE — voir avec un responsable SAV
+                            <div style={{ fontSize: '17px', fontWeight: 600, marginTop: '4px' }}>
+                              {item.sav_partial.note} (retour SAV n°{item.sav_partial.returnId}, commande {item.sav_partial.originOrder})
+                            </div>
+                          </div>
                         )}
                         {(() => {
                           const m = (pickingInfo?.missing || []).find(x => x.sku && x.sku === item.sku);

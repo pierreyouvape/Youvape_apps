@@ -397,6 +397,11 @@ function OrdersView({ token, canWrite, onWavesCreated, setMessage }) {
                   </td>
                   <td style={td}>
                     <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                      {o.savPartial && (
+                        <Chip color={C.white} bg={C.red} title="Commande de renvoi SAV : un article ne repart qu'en partie. Les règles l'ignorent.">
+                          Retour partiel SAV — vague manuelle
+                        </Chip>
+                      )}
                       {o.tags.map(t => (
                         <Chip key={t} color={C.amber} bg={C.amberL}>
                           {CORRECTION_TAGS[t]}
