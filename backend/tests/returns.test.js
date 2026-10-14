@@ -13,7 +13,7 @@
 const assert = require('assert');
 const {
   unitPaid, bundleParents, expandSelection, checkDestination, returnStatus, suggestSupplier,
-  suggestPoints, replacementShipping, pickRefund,
+  suggestPoints, replacementShipping, pickRefund, pointsBreakdown, breakdownText,
 } = require('../src/services/returnRules');
 
 const throws = (fn, re) => assert.throws(fn, (e) => re.test(e.message) && e.statusCode === 400);
@@ -107,6 +107,15 @@ assert.strictEqual(suggestPoints(retLines), 3504);
 assert.strictEqual(suggestPoints(retLines, { shippingPaid: 4.9, withShipping: true }), 3994, '+ frais de port');
 assert.strictEqual(suggestPoints(retLines, { shippingPaid: 4.9 }), 3504, 'port non coché');
 assert.strictEqual(suggestPoints([{ qty: 3, unit_paid: 4.33 }]), 1299, 'arrondi au point');
+
+// Déduction des frais de retour (étiquette fournie) : 17,91 € − 4,90 € = 1 301 points.
+let b = pointsBreakdown([{ qty: 1, unit_paid: 17.91 }], { deductEuros: 4.9 });
+assert.deepStrictEqual(b, { paid: 17.91, shipping: 0, deduct: 4.9, euros: 13.01, points: 1301 });
+assert.strictEqual(breakdownText(b), '17,91 € − 4,90 € déduits');
+b = pointsBreakdown([{ qty: 2, unit_paid: 10 }], { shippingPaid: 4.9, withShipping: true, deductEuros: 4.9 });
+assert.strictEqual(b.points, 2000, 'port remboursé, étiquette déduite');
+assert.strictEqual(breakdownText(b), '20,00 € + 4,90 € de port − 4,90 € déduits');
+assert.strictEqual(pointsBreakdown([{ qty: 1, unit_paid: 3 }], { deductEuros: 4.9 }).points, -190, 'négatif : refusé par le serveur');
 
 // ── Méthode du renvoi ───────────────────────────────────────────────────────
 assert.deepStrictEqual(replacementShipping('Chronopost Relais 24h'), { method: '2Shop' }, 'même point relais : même réseau');

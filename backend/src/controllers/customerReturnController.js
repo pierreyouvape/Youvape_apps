@@ -36,7 +36,7 @@ module.exports = {
   }),
   cancelOutcome: handle(async (req, res) => res.json(await customerReturnModel.cancelOutcome(id(req), req.user))),
   reship: handle(async (req, res) => res.json(await customerReturnModel.reship(id(req), req.user))),
-  creditPoints: handle(async (req, res) => res.json(await customerReturnModel.creditPoints(id(req), req.body?.points, req.user))),
+  creditPoints: handle(async (req, res) => res.json(await customerReturnModel.creditPoints(id(req), req.body || {}, req.user))),
   linkRefund: handle(async (req, res) => {
     res.json(await customerReturnModel.linkRefund(id(req), Number(req.body?.wpRefundId), req.user));
   }),

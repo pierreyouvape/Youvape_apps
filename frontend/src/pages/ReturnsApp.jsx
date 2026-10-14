@@ -561,7 +561,7 @@ function OutcomePanel({ ret, canWrite, onDone, setMessage }) {
   const [outcome, setOutcome] = useState(ret.outcome || '');
   const [ref, setRef] = useState(ret.outcome_ref || '');
   const [withShipping, setWithShipping] = useState(false);
-  const [points, setPoints] = useState(ret.suggested_points?.lines || 0);
+  const [deduct, setDeduct] = useState('');
   const [replacementOpen, setReplacementOpen] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -578,14 +578,16 @@ function OutcomePanel({ ret, canWrite, onDone, setMessage }) {
     setSaving(false);
   };
 
-  const toggleShipping = (v) => {
-    setWithShipping(v);
-    setPoints(v ? ret.suggested_points.withShipping : ret.suggested_points.lines);
-  };
+  // Aperçu seulement : le serveur refait le calcul (prix payé + port − déduction).
+  const paid = (ret.suggested_points?.lines || 0) / 100;
+  const shipping = withShipping ? Number(ret.shipping_paid || 0) : 0;
+  const deductNum = Number(String(deduct).replace(',', '.')) || 0;
+  const totalEuros = Math.round((paid + shipping - deductNum) * 100) / 100;
+  const points = Math.round(totalEuros * 100);
 
   const creditPoints = () => {
-    if (!window.confirm(`Créditer ${points} points (${euro(points / 100)}) à ${ret.billing_email} ?`)) return;
-    post('points', { points }, `${points} points crédités.`);
+    if (!window.confirm(`Créditer ${points} points (${euro(totalEuros)}) à ${ret.billing_email} ?\nMotif : Avoir commande N°${ret.wp_order_id}`)) return;
+    post('points', { withShipping, deductEuros: deductNum }, `${points} points crédités.`);
   };
 
   const done = ret.treated_at && !editing;
@@ -594,7 +596,7 @@ function OutcomePanel({ ret, canWrite, onDone, setMessage }) {
     const lines = [`Annuler l’issue « ${OUTCOMES[ret.outcome] || '—'} » du retour n°${ret.id} ?`];
     if (ret.reship_label_id > 0) lines.push('', `L’étiquette ${ret.outcome_ref} sera annulée (chez le transporteur quand c’est possible, sinon marquée annulée dans l’historique).`);
     if (Number(ret.replacement_order_id) > 0) lines.push('', `⚠ La commande de renvoi #${ret.replacement_order_id} reste dans WooCommerce : à annuler à la main.`);
-    if (ret.loyalty_credited_at) lines.push('', `⚠ Les ${ret.loyalty_points} points restent crédités : à retirer à la main dans WPLoyalty.`);
+    if (ret.loyalty_credited_at) lines.push('', `Les ${ret.loyalty_points} points seront retirés dans WPLoyalty.`);
     if (ret.refund_wp_id) lines.push('', 'Le remboursement WooCommerce sera détaché du retour.');
     if (!window.confirm(lines.join('\n'))) return;
     setSaving(true);
@@ -682,22 +684,33 @@ function OutcomePanel({ ret, canWrite, onDone, setMessage }) {
           )}
 
           {outcome === 'points' && (
-            <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
-              <input
-                type="number" min={1} value={points}
-                onChange={e => setPoints(Math.max(0, Number.parseInt(e.target.value, 10) || 0))}
-                style={{ ...field, width: 110, textAlign: 'right' }}
-              />
-              <span style={{ fontSize: 13.5 }}>points = {euro(points / 100)}</span>
-              {ret.shipping_paid > 0 && (
-                <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13.5, cursor: 'pointer' }}>
-                  <input type="checkbox" checked={withShipping} onChange={e => toggleShipping(e.target.checked)} />
-                  + frais de port ({euro(ret.shipping_paid)})
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <div style={{ display: 'flex', gap: 14, alignItems: 'center', flexWrap: 'wrap' }}>
+                {ret.shipping_paid > 0 && (
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13.5, cursor: 'pointer' }}>
+                    <input type="checkbox" checked={withShipping} onChange={e => setWithShipping(e.target.checked)} />
+                    + frais de port ({euro(ret.shipping_paid)})
+                  </label>
+                )}
+                <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13.5 }}>
+                  À déduire
+                  <input
+                    value={deduct} onChange={e => setDeduct(e.target.value.replace(/[^0-9.,]/g, ''))}
+                    placeholder="0,00" inputMode="decimal"
+                    style={{ ...field, width: 80, textAlign: 'right' }}
+                  /> €
                 </label>
-              )}
-              <button type="button" onClick={creditPoints} disabled={!points || saving} style={btn('primary', !points || saving)}>
-                Créditer les points
-              </button>
+              </div>
+              <div style={{ fontSize: 13.5 }}>
+                {euro(paid)}{shipping > 0 && ` + ${euro(shipping)} de port`}{deductNum > 0 && ` − ${euro(deductNum)}`}
+                {' = '}<strong>{euro(totalEuros)}</strong> → <strong style={{ color: points > 0 ? RETURNS_COLOR : C.red }}>{points} points</strong>
+                <span style={{ color: C.greyT }}> · motif « Avoir commande N°{ret.wp_order_id} »</span>
+              </div>
+              <div>
+                <button type="button" onClick={creditPoints} disabled={points < 1 || saving} style={btn('primary', points < 1 || saving)}>
+                  Créditer les points
+                </button>
+              </div>
             </div>
           )}
 

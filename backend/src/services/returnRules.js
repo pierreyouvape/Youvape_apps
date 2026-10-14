@@ -173,11 +173,26 @@ const POINTS_PER_EURO = 100;
  * Un pack porte son prix, ses composants sont à 0 : sommer toutes les lignes
  * ne compte donc rien deux fois.
  */
-const suggestPoints = (lines, { shippingPaid = 0, withShipping = false } = {}) => {
-  const paid = lines.reduce((n, l) => n + (Number(l.qty) || 0) * (Number(l.unit_paid) || 0), 0);
-  const euros = paid + (withShipping ? Number(shippingPaid) || 0 : 0);
-  return Math.round(euros * POINTS_PER_EURO);
+const suggestPoints = (lines, { shippingPaid = 0, withShipping = false } = {}) =>
+  pointsBreakdown(lines, { shippingPaid, withShipping }).points;
+
+/**
+ * Détail de l'avoir en points : prix payé des pièces retournées, + port en
+ * option, − un montant à déduire (frais de l'étiquette retour fournie…).
+ * C'est le serveur qui fait ce calcul (Pierre, 14/10/2026).
+ */
+const pointsBreakdown = (lines, { shippingPaid = 0, withShipping = false, deductEuros = 0 } = {}) => {
+  const paid = round2(lines.reduce((n, l) => n + (Number(l.qty) || 0) * (Number(l.unit_paid) || 0), 0));
+  const shipping = withShipping ? round2(Number(shippingPaid) || 0) : 0;
+  const deduct = round2(Number(deductEuros) || 0);
+  const euros = round2(paid + shipping - deduct);
+  return { paid, shipping, deduct, euros, points: Math.round(euros * POINTS_PER_EURO) };
 };
+
+/** « 17,91 € + 4,90 € de port − 4,90 € déduits » */
+const fr = (n) => `${n.toFixed(2).replace('.', ',')} €`;
+const breakdownText = (b) => [fr(b.paid), b.shipping ? `+ ${fr(b.shipping)} de port` : null, b.deduct ? `− ${fr(b.deduct)} déduits` : null]
+  .filter(Boolean).join(' ');
 
 /**
  * Méthode d'expédition d'un renvoi au client (commande de renvoi ou produit
@@ -214,6 +229,8 @@ const pickRefund = (refunds, takenIds, createdAt) => {
 module.exports = {
   POINTS_PER_EURO,
   suggestPoints,
+  pointsBreakdown,
+  breakdownText,
   replacementShipping,
   pickRefund,
   REASONS,

@@ -29,7 +29,7 @@ const { getAccount } = require('../services/carriers/accounts');
 const mondialRelayAdapter = require('../services/carriers/mondialRelayAdapter');
 const {
   REASONS, OUTCOMES, unitPaid, bundleParents, expandSelection, checkDestination, returnStatus, suggestSupplier,
-  suggestPoints, replacementShipping, pickRefund,
+  suggestPoints, replacementShipping, pickRefund, pointsBreakdown, breakdownText,
 } = require('../services/returnRules');
 
 const httpError = (status, message) => Object.assign(new Error(message), { statusCode: status });
@@ -866,7 +866,15 @@ const cancelOutcome = async (id, user) => {
     }
   }
   if (Number(r.replacement_order_id) > 0) todo.push(`annuler la commande de renvoi #${r.replacement_order_id} dans WooCommerce`);
-  if (r.loyalty_credited_at) todo.push(`retirer les ${r.loyalty_points} points dans WPLoyalty`);
+  if (r.loyalty_credited_at) {
+    // WPLoyalty sait retirer des points : on défait le crédit nous-mêmes.
+    try {
+      await loyaltyService.reducePoints(r.billing_email, r.loyalty_points, `Annulation avoir commande N°${r.wp_order_id}`);
+      done.push(`${r.loyalty_points} points retirés dans WPLoyalty (${r.billing_email})`);
+    } catch (error) {
+      todo.push(`retirer les ${r.loyalty_points} points dans WPLoyalty (refus : ${error.response?.data?.message || error.message})`);
+    }
+  }
   if (r.refund_wp_id) done.push(`remboursement WooCommerce n°${r.refund_wp_id} détaché`);
 
   await pool.query(
@@ -888,28 +896,47 @@ const cancelOutcome = async (id, user) => {
 
 // ── Lot 2 : points fidélité ─────────────────────────────────────────────────
 
-const creditPoints = async (id, points, user) => {
-  const n = Number(points);
-  if (!Number.isInteger(n) || n < 1 || n > 1000000) throw httpError(400, 'Nombre de points invalide.');
+/**
+ * Avoir en points WPLoyalty. Le SERVEUR calcule : prix payé des pièces
+ * retournées, + port en option, − un montant à déduire (étiquette retour
+ * fournie…), × 100 (Pierre, 14/10/2026).
+ */
+const creditPoints = async (id, { withShipping, deductEuros }, user) => {
   const r = await loadForAction(id);
   if (!r.billing_email) throw httpError(400, 'Commande sans email client.');
+  const deduct = Number(String(deductEuros ?? 0).replace(',', '.'));
+  if (!Number.isFinite(deduct) || deduct < 0 || deduct > 10000) throw httpError(400, 'Montant à déduire invalide.');
+
+  const { rows: lines } = await pool.query('SELECT qty, unit_paid FROM customer_return_lines WHERE return_id = $1', [id]);
+  const { rows: [o] } = await pool.query(
+    'SELECT order_shipping, order_shipping_tax FROM orders WHERE wp_order_id = $1', [r.wp_order_id]
+  );
+  const b = pointsBreakdown(lines, {
+    shippingPaid: Number(o?.order_shipping || 0) + Number(o?.order_shipping_tax || 0),
+    withShipping: !!withShipping,
+    deductEuros: deduct,
+  });
+  if (b.points < 1) throw httpError(400, `Rien à créditer : ${breakdownText(b)} = ${b.euros.toFixed(2).replace('.', ',')} €.`);
 
   // Verrou avant l'appel : un double clic ne crédite pas deux fois.
   const { rowCount } = await pool.query(
     `UPDATE customer_returns SET loyalty_points = $2, loyalty_credited_at = NOW()
       WHERE id = $1 AND loyalty_credited_at IS NULL AND cancelled_at IS NULL`,
-    [id, n]
+    [id, b.points]
   );
   if (!rowCount) throw httpError(409, 'Points déjà crédités pour ce retour.');
   try {
-    await loyaltyService.addPoints(r.billing_email, n);
+    await loyaltyService.addPoints(r.billing_email, b.points, `Avoir commande N°${r.wp_order_id}`);
   } catch (error) {
     await pool.query('UPDATE customer_returns SET loyalty_points = NULL, loyalty_credited_at = NULL WHERE id = $1', [id]);
     const detail = error.response?.data?.message || error.message;
     throw httpError(502, `WPLoyalty a refusé le crédit : ${detail}`);
   }
-  await markTreated(id, user.id, 'points', `${n} points`);
-  await noteTicket(r.ticket_id, user, [`<strong>Retour n°${id} — ${n} points fidélité crédités</strong> (${escapeHtml(r.billing_email)})`]);
+  const detail = `${b.points} points (${breakdownText(b)})`;
+  await markTreated(id, user.id, 'points', detail.slice(0, 255));
+  await noteTicket(r.ticket_id, user, [
+    `<strong>Retour n°${id} — avoir commande N°${r.wp_order_id} : ${escapeHtml(detail)}</strong> crédités à ${escapeHtml(r.billing_email)}`,
+  ]);
   return get(id);
 };
 
