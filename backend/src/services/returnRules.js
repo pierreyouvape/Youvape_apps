@@ -11,6 +11,7 @@ const REASONS = {
   erreur_expedition: "Erreur d'expédition",
   retractation: 'Rétractation',
   non_recupere: 'Commande non récupérée',
+  erreur_adressage: "Erreur d'adressage",
 };
 
 const OUTCOMES = {

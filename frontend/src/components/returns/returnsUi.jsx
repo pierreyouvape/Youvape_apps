@@ -11,6 +11,7 @@ export const REASONS = {
   erreur_expedition: "Erreur d'expédition",
   retractation: 'Rétractation',
   non_recupere: 'Commande non récupérée',
+  erreur_adressage: "Erreur d'adressage",
 };
 
 export const OUTCOMES = {
@@ -27,6 +28,7 @@ export const DEFAULT_OUTCOME = {
   erreur_expedition: 'renvoi',
   retractation: 'remboursement',
   non_recupere: 'points',
+  erreur_adressage: 'points',
 };
 
 /** Ce que la référence de l'issue doit contenir. */
