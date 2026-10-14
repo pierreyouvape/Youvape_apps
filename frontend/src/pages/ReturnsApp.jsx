@@ -833,7 +833,9 @@ function DetailView({ id, navigate, canWrite }) {
       </div>
 
       {canWrite && !cancelled && !ret.received_at
-        ? <ValidationForm ret={ret} onDone={setRet} setMessage={setMessage} />
+        // Clé = lignes et quantités : une modification du retour recrée les lignes
+        // (nouveaux id) et la répartition repart de zéro, sinon l'écran plante.
+        ? <ValidationForm key={ret.lines.map(l => `${l.id}:${l.qty}`).join(',')} ret={ret} onDone={setRet} setMessage={setMessage} />
         : <ReceivedLines ret={ret} canWrite={canWrite} onDone={setRet} setMessage={setMessage} />}
 
       {editing && (
