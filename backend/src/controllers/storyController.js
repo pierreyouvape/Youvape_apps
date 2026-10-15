@@ -199,6 +199,38 @@ const reprocess = async (req, res) => {
   }
 };
 
+/**
+ * Miniature : POST /:id/cover avec un fichier `image` (multipart), ou un corps
+ * JSON { kind: 'frame', at } (instant de la vidéo) / { kind: 'video' } (auto).
+ */
+const cover = async (req, res) => {
+  try {
+    const story = await storyModel.getById(req.params.id);
+    if (!story) return res.status(404).json({ error: 'Story introuvable' });
+    if (story.status === 'processing') {
+      return res.status(409).json({ error: 'Compression en cours, réessayez quand elle sera terminée' });
+    }
+    let opts;
+    if (req.file) {
+      const ok = /^image\//i.test(req.file.mimetype || '') || /\.hei[cf]$/i.test(req.file.originalname || '');
+      if (!ok) return res.status(400).json({ error: 'Le fichier doit être une image (JPEG, PNG, WebP, HEIC)' });
+      opts = { kind: 'upload', buffer: req.file.buffer, mime: req.file.mimetype, name: req.file.originalname };
+    } else if (req.body?.kind === 'frame') {
+      const at = Number(req.body.at);
+      if (!Number.isFinite(at) || at < 0) return res.status(400).json({ error: 'Instant invalide' });
+      opts = { kind: 'frame', at };
+    } else if (req.body?.kind === 'video') {
+      opts = { kind: 'video' };
+    } else {
+      return res.status(400).json({ error: 'Aucune image envoyée' });
+    }
+    const updated = await processing.changeCover(story, opts);
+    res.json({ data: withUrls(updated) });
+  } catch (err) {
+    fail(res, err, err.status || 500);
+  }
+};
+
 const archive = async (req, res) => {
   try {
     const story = await storyModel.setArchived(req.params.id, req.body.archived !== false);
@@ -210,4 +242,4 @@ const archive = async (req, res) => {
   }
 };
 
-module.exports = { list, get, stats, create, replaceSource, uploaded, update, reprocess, archive };
+module.exports = { list, get, stats, create, replaceSource, uploaded, update, reprocess, cover, archive };

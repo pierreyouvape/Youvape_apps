@@ -83,6 +83,10 @@ const StoriesApp = () => {
   const [includeTests, setIncludeTests] = useState(false);
   const fileInput = useRef(null);
   const replaceInput = useRef(null);
+  const coverInput = useRef(null);
+  const playerRef = useRef(null);
+  const [playerTime, setPlayerTime] = useState(0);
+  const [coverState, setCoverState] = useState(null); // saving | saved | error
   const replaceTarget = useRef(null);
 
   const fetchData = useCallback(async ({ quiet = false } = {}) => {
@@ -189,7 +193,34 @@ const StoriesApp = () => {
     }
   };
 
-  const openStory = (s) => { setSelected(s); setSaveState(null); };
+  const openStory = (s) => { setSelected(s); setSaveState(null); setCoverState(null); setPlayerTime(0); };
+
+  /**
+   * Miniature : image envoyée (FormData), image affichée dans la vidéo à
+   * l'instant du lecteur, ou retour à l'image automatique.
+   */
+  const changeCover = async (payload) => {
+    if (!selected) return;
+    setCoverState({ kind: 'saving' });
+    try {
+      // axios envoie un FormData en multipart, un objet en JSON.
+      const res = await axios.post(`${API_URL}/stories/${selected.id}/cover`, payload);
+      setSelected((cur) => ({ ...cur, ...res.data.data }));
+      setCoverState({ kind: 'saved', at: new Date() });
+      fetchData({ quiet: true });
+    } catch (err) {
+      setCoverState({ kind: 'error', message: err.response?.data?.error || err.message });
+    }
+  };
+
+  const uploadCover = (e) => {
+    const f = e.target.files?.[0];
+    e.target.value = '';
+    if (!f) return;
+    const fd = new FormData();
+    fd.append('image', f);
+    changeCover(fd);
+  };
 
   /** Modifie un champ de la fenêtre « Voir » et signale qu'il reste à enregistrer. */
   const edit = (patch) => { setSelected((cur) => ({ ...cur, ...patch })); setSaveState({ kind: 'dirty' }); };
@@ -436,7 +467,8 @@ const StoriesApp = () => {
             style={{ position: 'fixed', inset: 0, background: 'rgba(20,24,32,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 20 }}>
             <div onClick={(e) => e.stopPropagation()}
               style={{ background: C.blanc, borderRadius: 16, maxWidth: 960, width: '100%', maxHeight: '92vh', overflowY: 'auto', display: 'flex', gap: 24, padding: 24, flexWrap: 'wrap' }}>
-              <video key={selected.video_url} src={selected.video_url} poster={selected.poster_url || undefined} controls playsInline
+              <video key={selected.video_url} ref={playerRef} src={selected.video_url} poster={selected.poster_url || undefined} controls playsInline
+                onTimeUpdate={(e) => setPlayerTime(e.currentTarget.currentTime)} onSeeked={(e) => setPlayerTime(e.currentTarget.currentTime)}
                 style={{ width: selected.format === 'landscape' ? 480 : 300, maxWidth: '100%', borderRadius: 12, background: '#000', alignSelf: 'flex-start' }} />
               <div style={{ flex: 1, minWidth: 280, display: 'flex', flexDirection: 'column', gap: 12 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -465,6 +497,42 @@ const StoriesApp = () => {
                   </button>
                   <SaveStatus state={saveState} />
                 </div>
+                <div style={{ borderTop: `1px solid ${C.grisCL}`, paddingTop: 12, display: 'flex', gap: 14, alignItems: 'flex-start' }}>
+                  {selected.poster_url && (
+                    <img src={selected.poster_url} alt="Miniature"
+                      style={{ width: selected.format === 'landscape' ? 160 : 90, borderRadius: 8, border: `1px solid ${C.grisCL}`, flexShrink: 0 }} />
+                  )}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6, flex: 1 }}>
+                    <strong style={{ fontSize: 12, color: C.grisTF }}>Miniature</strong>
+                    <span style={{ fontSize: 12, color: C.grisM }}>
+                      {selected.cover_source === 'upload' ? 'Image envoyée'
+                        : selected.cover_source === 'frame' ? `Image de la vidéo à ${clock(selected.cover_frame_at)}`
+                          : 'Image automatique (extraite de la vidéo)'}
+                      {' '}— affichée avant la lecture et dans les bulles.
+                    </span>
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                      <button type="button" style={{ ...smallBtn(C.story), marginLeft: 0 }} disabled={coverState?.kind === 'saving'}
+                        onClick={() => coverInput.current?.click()}>
+                        Télécharger une image…
+                      </button>
+                      <button type="button" style={{ ...smallBtn(), marginLeft: 0 }} disabled={coverState?.kind === 'saving'}
+                        onClick={() => changeCover({ kind: 'frame', at: playerRef.current?.currentTime || 0 })}>
+                        Utiliser l’image affichée à {clock(playerTime)}
+                      </button>
+                      {selected.cover_source !== 'video' && (
+                        <button type="button" style={{ ...smallBtn(), marginLeft: 0 }} disabled={coverState?.kind === 'saving'}
+                          onClick={() => changeCover({ kind: 'video' })}>
+                          Revenir à l’image automatique
+                        </button>
+                      )}
+                    </div>
+                    <input ref={coverInput} type="file" accept="image/*,.heic,.heif" style={{ display: 'none' }} onChange={uploadCover} />
+                    <span style={{ fontSize: 11, color: C.grisM }}>
+                      Format conseillé : {selected.format === 'landscape' ? 'horizontal 1920 × 1080' : 'vertical 1080 × 1920'} (recadrée au centre sinon). JPEG, PNG, WebP ou HEIC, 15 Mo max.
+                    </span>
+                    {coverState?.kind === 'saving' ? <span style={{ fontSize: 12, color: C.grisM }}>Mise à jour de la miniature…</span> : <SaveStatus state={coverState} />}
+                  </div>
+                </div>
                 <div style={{ borderTop: `1px solid ${C.grisCL}`, paddingTop: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
                   <strong style={{ fontSize: 12, color: C.grisTF }}>Où elle est affichée</strong>
                   <PlacementsDetail placements={selected.placements} />
@@ -490,6 +558,12 @@ const StoriesApp = () => {
       </main>
     </AppShell>
   );
+};
+
+/** 12.4 → « 0:12 » */
+const clock = (sec) => {
+  const n = Math.max(0, Math.floor(Number(sec) || 0));
+  return `${Math.floor(n / 60)}:${String(n % 60).padStart(2, '0')}`;
 };
 
 /** Info-bulle de la colonne « Affichée sur » : la liste des fiches et des pages. */

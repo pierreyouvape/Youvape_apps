@@ -30,12 +30,14 @@ const PROFILES = {
   // Story verticale 9:16, recadrée au centre si la source n'est pas au format.
   portrait: {
     videoFilter: 'scale=720:1280:force_original_aspect_ratio=increase,crop=720:1280',
+    poster: [720, 1280],
     crf: 30, maxrate: '1800k', bufsize: '3600k',
     gifWidth: 270,
   },
   // Vidéo produit 16:9 (anciennes vidéos YouTube) : jamais recadrée, réduite à 720p.
   landscape: {
     videoFilter: 'scale=1280:720:force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2',
+    poster: [1280, 720],
     crf: 28, maxrate: '2500k', bufsize: '5000k',
     gifWidth: 400,
   },
@@ -71,6 +73,25 @@ const probe = async (file) => {
   };
 };
 
+/**
+ * Miniature : image affichée avant la lecture (au format de la vidéo, recadrée
+ * au centre) + vignette carrée 320×320 des bulles. `input` = une vidéo (avec
+ * l'instant `at`) ou une image envoyée.
+ */
+const renderCover = async (input, at, profile, posterOut, thumbOut) => {
+  const [w, h] = profile.poster;
+  const seek = at === null || at === undefined ? [] : ['-ss', String(at)];
+  await run('ffmpeg', ['-v', 'error', '-y', ...seek, '-i', input, '-frames:v', '1',
+    '-vf', `scale=${w}:${h}:force_original_aspect_ratio=increase,crop=${w}:${h}`,
+    '-c:v', 'libwebp', '-quality', '85', posterOut]);
+  await run('ffmpeg', ['-v', 'error', '-y', ...seek, '-i', input, '-frames:v', '1',
+    '-vf', 'scale=320:320:force_original_aspect_ratio=increase,crop=320:320',
+    '-c:v', 'libwebp', '-quality', '82', thumbOut]);
+};
+
+/** Instant par défaut : 1 s (ou plus tôt sur un clip court), la 1re image étant souvent un fondu au noir. */
+const defaultCoverAt = (duration) => Math.min(1, Math.max(0, duration * 0.1));
+
 /** Compresse une story déjà réclamée (status = processing) et publie ses fichiers. */
 const processStory = async (story) => {
   const profile = PROFILES[story.format] || PROFILES.portrait;
@@ -102,14 +123,16 @@ const processStory = async (story) => {
       '-print_format', 'json', file('story.mp4'),
     ])).streams[0];
 
-    // Image d'aperçu prise à 1 s (ou plus tôt sur un clip très court) : la toute
-    // première image est souvent un fondu au noir.
-    const at = String(Math.min(1, Math.max(0, out.duration * 0.1)).toFixed(2));
-    await run('ffmpeg', ['-v', 'error', '-y', '-ss', at, '-i', file('story.mp4'), '-frames:v', '1',
-      '-c:v', 'libwebp', '-quality', '80', file('poster.webp')]);
-    await run('ffmpeg', ['-v', 'error', '-y', '-ss', at, '-i', file('story.mp4'), '-frames:v', '1',
-      '-vf', 'scale=320:320:force_original_aspect_ratio=increase,crop=320:320',
-      '-c:v', 'libwebp', '-quality', '80', file('thumb.webp')]);
+    const at = String(defaultCoverAt(out.duration).toFixed(2));
+    // Miniature : une image ENVOYÉE est gardée telle quelle ; une image choisie à
+    // un instant est refaite sur la nouvelle vidéo, au même instant ; sinon, image auto.
+    const keepCover = story.cover_source === 'upload' && story.poster_key && story.thumb_key;
+    if (!keepCover) {
+      const coverAt = story.cover_source === 'frame' && story.cover_frame_at !== null
+        ? Math.min(Number(story.cover_frame_at), Math.max(0, out.duration - 0.1))
+        : Number(at);
+      await renderCover(file('story.mp4'), coverAt, profile, file('poster.webp'), file('thumb.webp'));
+    }
 
     // GIF e-mail : 3 s, 10 i/s, palette réduite → environ 0,75 Mo pour une story.
     // Outlook (Windows) n'affiche que la première image : elle doit se suffire.
@@ -122,14 +145,16 @@ const processStory = async (story) => {
     const base = `stories/${story.slug}`;
     const keys = {
       videoKey: `${base}/story.v${version}.mp4`,
-      posterKey: `${base}/poster.v${version}.webp`,
-      thumbKey: `${base}/thumb.v${version}.webp`,
+      posterKey: keepCover ? story.poster_key : `${base}/poster.v${version}.webp`,
+      thumbKey: keepCover ? story.thumb_key : `${base}/thumb.v${version}.webp`,
       gifKey: `${base}/email.v${version}.gif`,
     };
     // Les images d'abord, la vidéo ensuite : la base ne pointe vers la nouvelle
     // version qu'une fois TOUT publié (markReady), donc jamais de lien mort.
-    await r2.uploadPublic(keys.posterKey, file('poster.webp'), 'image/webp');
-    await r2.uploadPublic(keys.thumbKey, file('thumb.webp'), 'image/webp');
+    if (!keepCover) {
+      await r2.uploadPublic(keys.posterKey, file('poster.webp'), 'image/webp');
+      await r2.uploadPublic(keys.thumbKey, file('thumb.webp'), 'image/webp');
+    }
     const gifSize = await r2.uploadPublic(keys.gifKey, file('email.gif'), 'image/gif');
     const videoSize = await r2.uploadPublic(keys.videoKey, file('story.mp4'), 'video/mp4');
 
@@ -138,6 +163,64 @@ const processStory = async (story) => {
       duration: Math.round(out.duration * 100) / 100,
       width: dims?.width || null,
       height: dims?.height || null,
+    });
+  } finally {
+    await fs.promises.rm(dir, { recursive: true, force: true });
+  }
+};
+
+/**
+ * Change la miniature d'une story prête, sans toucher à la vidéo.
+ *   { kind: 'upload', buffer, mime, name } : image envoyée (JPEG, PNG, WebP, HEIC)
+ *   { kind: 'frame', at }                  : image de la vidéo à l'instant `at` (s)
+ *   { kind: 'video' }                      : retour à l'image automatique
+ * Fichiers versionnés à part (poster.cN.webp) : jamais d'URL réécrite.
+ */
+const changeCover = async (story, opts) => {
+  if (!story.video_key) throw new Error("La vidéo n'est pas encore prête");
+  const profile = PROFILES[story.format] || PROFILES.portrait;
+  const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), `cover-${story.id}-`));
+  const file = (name) => path.join(dir, name);
+  try {
+    let input;
+    let at = null;
+    if (opts.kind === 'upload') {
+      let buffer = opts.buffer;
+      const isHeic = /image\/hei[cf]/i.test(opts.mime || '') || /\.hei[cf]$/i.test(opts.name || '');
+      if (isHeic) {
+        // Photos d'iPhone : ffmpeg ne lit pas le HEIC, heic-convert (WASM) si.
+        const convert = require('heic-convert');
+        buffer = Buffer.from(await convert({ buffer, format: 'JPEG', quality: 0.92 }));
+      }
+      input = file('upload');
+      await fs.promises.writeFile(input, buffer);
+    } else {
+      // La vidéo diffusée (quelques Mo) plutôt que la source de 200 Mo.
+      const res = await fetch(r2.publicUrl(story.video_key));
+      if (!res.ok) throw new Error(`Vidéo introuvable sur R2 (HTTP ${res.status})`);
+      input = file('video.mp4');
+      await fs.promises.writeFile(input, Buffer.from(await res.arrayBuffer()));
+      const duration = Number(story.duration_s) || 0;
+      at = opts.kind === 'frame'
+        ? Math.max(0, Math.min(Number(opts.at) || 0, Math.max(0, duration - 0.1)))
+        : defaultCoverAt(duration);
+    }
+    try {
+      await renderCover(input, at, profile, file('poster.webp'), file('thumb.webp'));
+    } catch (err) {
+      const e = new Error(opts.kind === 'upload' ? "Image illisible : utilisez un JPEG, PNG, WebP ou HEIC" : err.message);
+      e.status = opts.kind === 'upload' ? 400 : 500;
+      throw e;
+    }
+    const cv = (story.cover_version || 0) + 1;
+    const base = `stories/${story.slug}`;
+    const posterKey = `${base}/poster.c${cv}.webp`;
+    const thumbKey = `${base}/thumb.c${cv}.webp`;
+    await r2.uploadPublic(posterKey, file('poster.webp'), 'image/webp');
+    await r2.uploadPublic(thumbKey, file('thumb.webp'), 'image/webp');
+    return storyModel.setCover(story.id, {
+      posterKey, thumbKey, source: opts.kind, version: cv,
+      frameAt: opts.kind === 'frame' ? Math.round(at * 100) / 100 : null,
     });
   } finally {
     await fs.promises.rm(dir, { recursive: true, force: true });
@@ -189,4 +272,4 @@ const start = async () => {
   setInterval(kick, 60 * 1000).unref();
 };
 
-module.exports = { kick, start, processStory };
+module.exports = { kick, start, processStory, changeCover };

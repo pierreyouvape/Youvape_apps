@@ -128,6 +128,18 @@ const markReady = async (id, r) => {
   return rows[0] || null;
 };
 
+/** Nouvelle miniature publiée (image avant lecture + vignette des bulles). */
+const setCover = async (id, { posterKey, thumbKey, source, version, frameAt }) => {
+  const { rowCount } = await pool.query(
+    `UPDATE stories
+        SET poster_key = $2, thumb_key = $3, cover_source = $4, cover_version = $5,
+            cover_frame_at = $6, updated_at = NOW()
+      WHERE id = $1`,
+    [id, posterKey, thumbKey, source, version, frameAt ?? null],
+  );
+  return rowCount ? getById(id) : null;
+};
+
 const markError = async (id, message) => {
   await pool.query(
     `UPDATE stories SET status = 'error', error = $2, updated_at = NOW() WHERE id = $1`,
@@ -234,6 +246,7 @@ module.exports = {
   claimNext,
   requeueInterrupted,
   markReady,
+  setCover,
   markError,
   requeue,
   setArchived,
