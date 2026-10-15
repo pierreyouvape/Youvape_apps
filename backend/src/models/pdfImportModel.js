@@ -45,6 +45,12 @@ function cleanPdfText(text) {
   }
 }
 
+/** « Commande #362022.pdf » → « 362022 » ; null si le nom ne porte pas de n° explicite. */
+function orderNumberFromFileName(fileName) {
+  const m = String(fileName || '').match(/(?:commande\s*n?°?\s*#?|#)\s*(\d{4,})/i);
+  return m ? m[1] : null;
+}
+
 /** Normalise un texte pour comparaison : minuscules, espaces collapsés, trim. */
 function normalizeSku(s) {
   return (s || '').toLowerCase().replace(/\s+/g, ' ').trim();
@@ -328,9 +334,10 @@ const pdfImportModel = {
    * Parse un fichier fournisseur (PDF ou CSV) et matche les lignes avec les produits en BDD
    * @param {Buffer} fileBuffer - Le buffer du fichier (PDF ou CSV)
    * @param {number} supplierId - L'ID du fournisseur local
+   * @param {string} [fileName] - Nom du fichier déposé (repli pour le n° de commande)
    * @returns {Object} Donnees parsees et enrichies
    */
-  parsePdf: async (fileBuffer, supplierId) => {
+  parsePdf: async (fileBuffer, supplierId, fileName) => {
     // 1. Recuperer le fournisseur
     const supplierResult = await pool.query(
       'SELECT id, name, code FROM suppliers WHERE id = $1',
@@ -357,6 +364,9 @@ const pdfImportModel = {
     const { parsed, parseMode, parseWarnings, invoiceTotalHt, conversion } = await readDocument(
       fileBuffer, parser, supplier, knownSkusResult.rows.map(r => r.supplier_sku)
     );
+    // Document sans n° de commande imprimé (page commande LCA en vue étroite) :
+    // le navigateur l'a enregistré sous « Commande #362022.pdf ».
+    if (!parsed.orderNumber) parsed.orderNumber = orderNumberFromFileName(fileName);
 
     // 5. Matcher les réfs dans supplier_refs. Une réf ne désigne qu'un produit
     //    (index unique sur la réf normalisée) : plus d'arbitrage entre candidats.

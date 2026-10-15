@@ -720,7 +720,7 @@ const purchasesController = {
         return res.status(400).json({ success: false, error: 'supplier_id requis' });
       }
 
-      const result = await pdfImportModel.parsePdf(req.file.buffer, supplierId);
+      const result = await pdfImportModel.parsePdf(req.file.buffer, supplierId, req.file.originalname);
       // Document déjà importé pour ce fournisseur : l'écran propose de compléter
       // la commande existante plutôt que d'en créer une seconde.
       result.existing_order = await purchaseOrderModel.findExistingForImport(supplierId, result.order_number);

@@ -618,6 +618,38 @@ console.log('LCA — facture OpenSi (Rist. % / PU Net HT)');
     const lemon = conf.items.find(i => i.supplier_sku === '#REF5075-13037');
     assert.strictEqual(lemon.designation, 'Lemon Tart 10ML - Dinner Lady');
   });
+
+  // Page commande du site LCA imprimée en vue étroite (362022, 28 pages) :
+  // une carte par article, noms et références coupés sur plusieurs lignes.
+  const cartes = lca.parse(fixture('lca-siteweb-cartes-362022.txt'));
+  test('LCA site vue étroite 362022 : 38 articles, quantités justes, date', () => {
+    const qty = Object.fromEntries(cartes.items.map(i => [i.supplier_sku, i.qty_ordered]));
+    assert.strictEqual(cartes.items.length, 38);
+    assert.deepStrictEqual(cartes.warnings, []);
+    assert.strictEqual(cartes.orderDate, '2026-10-15');
+    assert.strictEqual(cartes.orderNumber, null); // repris du nom du fichier à l'import
+    assert.strictEqual(cartes.skipPackQty, true);
+    assert.strictEqual(qty['#REF8430-27739'], 4);    // 1er article, avant le 1er pied de page
+    assert.strictEqual(qty['#REF16728-54861'], 40);
+    assert.strictEqual(qty['#REF15058-48878'], 10);  // dernier article
+    assert.strictEqual(cartes.items.reduce((a, i) => a + i.qty_ordered, 0), 512); // = somme des « CommandéN »
+  });
+  test('LCA site vue étroite 362022 : noms recollés (mot coupé, tiret, séparateur)', () => {
+    const name = (sku) => cartes.items.find(i => i.supplier_sku === sku).designation;
+    assert.strictEqual(name('#REF18024-59604'), 'Kit GTX One Pro 40W - Vaporesso');
+    assert.strictEqual(name('#REF18102-60035'), 'Cartouches Vinci E par 2 - Voopoo');
+    assert.strictEqual(name('#REF4248-10552'), 'Liquideo Tentation-Lolibus 10ML');
+    assert.strictEqual(name('#REF4219-10408'), 'Liquideo Evolution-Jolie Blonde 10ML');
+    assert.strictEqual(name('#REF25919-25922'), 'Cartouches Q series 3ml par 3 - Geekvape');
+    assert.strictEqual(name('#REF16649-54508'), 'Cartouches pré-remplies Fliq par 2 - 20mg - AVM by Vampire Vape');
+  });
+  // Fragment d'une page : le dernier article est coupé avant sa quantité.
+  const fragment = lca.parse(fixture('lca-siteweb-cartes-fragment.txt'));
+  test('LCA site vue étroite, fragment : article sans quantité signalé, pas perdu en silence', () => {
+    assert.deepStrictEqual(fragment.items.map(i => [i.supplier_sku, i.qty_ordered]), [['#REF9810-31184', 1]]);
+    assert.strictEqual(fragment.warnings.length, 1);
+    assert.ok(fragment.warnings[0].message.includes('#REF18024-59604'));
+  });
 }
 
 console.log(failures === 0 ? '\nTous les tests passent.' : `\n${failures} test(s) en échec.`);

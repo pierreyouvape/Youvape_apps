@@ -5,6 +5,8 @@
  * - "Confirmation" : mail "Confirmation de votre commande" (refs apres "Référence:", 1 qte + prix total)
  * - "Preparation" : mail "Votre commande est en cours de preparation" (refs en debut de ligne, 3 colonnes qte)
  * - "SiteWeb" : page commande site LCA (tableau Nom|Référence|Prix|Qté avec Commandé/Expédié)
+ * - "SiteWebCartes" : la même page imprimée en vue étroite (une carte par article,
+ *   sans en-tête de tableau ni n° de commande — le n° est dans le nom du fichier)
  */
 
 module.exports = {
@@ -18,6 +20,11 @@ module.exports = {
     // Detecter le format SiteWeb : header de tableau "Nom du produit" + "Référence" + "Qté"
     if (text.includes('Nom du produit') && text.includes('Commandé')) {
       return parseSiteWeb(text);
+    }
+    // Vue étroite de la même page : « Commandé4 » sous chaque article, mais ni
+    // en-tête de tableau ni « Référence: » (propre au mail de confirmation)
+    if (/Commandé\d+/.test(text) && !/Référence\s*:\s*#REF/.test(text)) {
+      return parseSiteWebCartes(text);
     }
     // Detecter le format Confirmation (mail Gmail)
     const isConfirmation = text.includes('Référence: #REF') || text.includes('Référence : #REF');
@@ -251,6 +258,106 @@ function parseSiteWeb(text) {
   // LCA vend les produits "par 10" comme une unite atomique (le SKU = le pack) :
   // qty et prix catalogue ne doivent jamais etre multiplies/divises par pack_qty.
   return { orderNumber, orderDate, items, hasPrice: false, pdfIsPackBased: false, skipPackQty: true };
+}
+
+/**
+ * Format "Site Web LCA" en vue étroite (commande 362022 du 15/10/2026).
+ * Une carte par article, le texte de chaque case retourne à la ligne :
+ *   Cartouch / es Vinci E / par 2 - / Voopoo     ← nom, coupé tous les ~9 caractères
+ *   Valeur / 0.8Ω                                ← attributs (libellé / valeur)
+ *   [Pièces / jointes / FDS / …]                 ← fiches de sécurité, à ignorer
+ *   #REF18102- / 60035                           ← référence, elle aussi coupée
+ *   3,41 € / Commandé10 / 34,10 €                ← prix, quantité, sous-total
+ * Les totaux de la commande sont répétés en bas de chaque page.
+ * Aucun n° de commande dans le texte : pdfImportModel le reprend du nom du
+ * fichier (« Commande #362022.pdf »).
+ */
+function parseSiteWebCartes(text) {
+  const moisMap = {
+    'janvier': '01', 'février': '02', 'mars': '03', 'avril': '04',
+    'mai': '05', 'juin': '06', 'juillet': '07', 'août': '08',
+    'septembre': '09', 'octobre': '10', 'novembre': '11', 'décembre': '12'
+  };
+  const dateMatch = text.match(/Date de commande\s*:\s*(\d{1,2})\s+(\S+)\s+(\d{4})/i);
+  let orderDate = null;
+  if (dateMatch && moisMap[dateMatch[2].toLowerCase()]) {
+    orderDate = `${dateMatch[3]}-${moisMap[dateMatch[2].toLowerCase()]}-${dateMatch[1].padStart(2, '0')}`;
+  }
+  const orderMatch = text.match(/Commande\s+#(\d+)/);
+  const orderNumber = orderMatch ? orderMatch[1] : null;
+
+  const cleaned = text
+    .replace(/#REF(\d+)-\s*\n\s*(\d+)/g, '#REF$1-$2')   // « #REF18102-\n60035 »
+    .replace(/Sous-total[\s\S]*?Montant global[^\n]*\n?/g, '')
+    .replace(/--\s*\d+\s+of\s+\d+\s*--/g, '')
+    .replace(/\d{2}\/\d{2}\/\d{4}\s+\d{2}:\d{2}[^\n]*\n/g, '')
+    .replace(/https?:\/\/[^\n]*/g, '');
+
+  const lines = cleaned.split('\n').map(l => l.trim()).filter(Boolean);
+  // Le premier article commence après le dernier « Articles commandés » (titre
+  // imprimé deux fois) ; un fragment de page n'en a pas.
+  let start = 0;
+  lines.forEach((l, i) => { if (/^Articles commandés$/i.test(l)) start = i + 1; });
+
+  const items = [];
+  const warnings = [];
+  let block = [];
+  for (let i = start; i < lines.length; i++) {
+    const refMatch = lines[i].match(/^#(REF\d+-\d+)$/);
+    if (!refMatch) { block.push(lines[i]); continue; }
+
+    const designation = cardDesignation(block);
+    block = [];
+    // Prix unitaire puis « CommandéN » puis sous-total
+    const qtyMatch = (lines[i + 2] || '').match(/^Commandé(\d+)$/);
+    if (!qtyMatch) {
+      // Page coupée avant la quantité : on le dit plutôt que de perdre l'article en silence
+      warnings.push({
+        type: 'unparsed_rows',
+        message: `Quantité illisible pour #${refMatch[1]}${designation ? ` (${designation})` : ''} : document tronqué ? Ajoutez la ligne à la main.`,
+      });
+      continue;
+    }
+    items.push({
+      supplier_sku: `#${refMatch[1]}`,
+      designation,
+      qty_ordered: parseInt(qtyMatch[1], 10),
+    });
+    i += /€$/.test(lines[i + 3] || '') ? 3 : 2; // sauter prix, quantité, sous-total
+  }
+
+  // LCA vend les produits "par 10" comme une unite atomique (le SKU = le pack) :
+  // qty et prix catalogue ne doivent jamais etre multiplies/divises par pack_qty.
+  return { orderNumber, orderDate, items, warnings, hasPrice: false, pdfIsPackBased: false, skipPackQty: true };
+}
+
+// Libellés d'attribut des cartes LCA : le nom du produit s'arrête au premier.
+const CARD_ATTRIBUTE_LABELS = /^(Couleur|Valeur|Dosage|Nicotine|PG\/VG|Contenance|Label|Saveur|TYPE|Taille|Modèle|Résistance|Pièces)$/i;
+
+/**
+ * Recolle le nom d'un article coupé par la largeur de la carte :
+ * « Cartouch / es Vinci E » → « Cartouches Vinci E », « Tentation- / Lolibus »
+ * → « Tentation-Lolibus », mais « par 3 / - / Geekvape » → « par 3 - Geekvape ».
+ */
+function cardDesignation(block) {
+  const nameLines = [];
+  for (const l of block) {
+    if (CARD_ATTRIBUTE_LABELS.test(l)) break;
+    nameLines.push(l);
+  }
+  let name = '';
+  let prev = '';
+  for (const l of nameLines) {
+    // Mot coupé : seul un mot plus large que la carte est coupé, la ligne n'est
+    // alors faite que de lui (« Cartouch », « Vaporess ») et la suite est en
+    // minuscule. « es Vinci E / par 2 » ou « 2ml/20mg / par 2 » restent séparés.
+    const wordCut = /^\p{L}{7,}$/u.test(prev) && /^\p{Ll}/u.test(l);
+    // Tiret collé au mot (« Tentation- » / « -Jolie »), pas un séparateur « - »
+    const hyphenJoin = /\S-$/.test(prev) || /^-\S/.test(l);
+    name += (!prev || wordCut || hyphenJoin ? '' : ' ') + l;
+    prev = l;
+  }
+  return name;
 }
 
 /**
