@@ -400,7 +400,7 @@ function DetailView({ token, id, canWrite, onBack, setMessage }) {
             {aisles.map(a => (
               <button key={a.key || '-'} onClick={() => setAisle(aisle === a.key ? '' : a.key)} style={{
                 ...panel, padding: 10, textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit',
-                border: `2px solid ${aisle === a.key ? BLUE : C.greyB}`,
+                border: `2px solid ${aisle === a.key ? BLUE : C.greyB}`, color: C.dark,
               }}>
                 <div style={{ fontWeight: 900, fontSize: 15 }}>{a.key ? `Allée ${a.key}` : 'Sans empl.'}</div>
                 <div style={{ fontSize: 12, color: C.greyT, margin: '2px 0 6px' }}>
