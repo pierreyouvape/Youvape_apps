@@ -949,8 +949,12 @@ const cancelOutcome = async (id, user) => {
   if (r.loyalty_credited_at) {
     // WPLoyalty sait retirer des points : on défait le crédit nous-mêmes.
     try {
-      await loyaltyService.reducePoints(r.billing_email, r.loyalty_points, `Annulation avoir commande N°${r.wp_order_id}`);
-      done.push(`${r.loyalty_points} points retirés dans WPLoyalty (${r.billing_email})`);
+      const removed = await loyaltyService.reducePoints(r.billing_email, r.loyalty_points, {
+        type: 'avoir', note: `Annulation avoir commande N°${r.wp_order_id}`, orderId: r.wp_order_id,
+      });
+      done.push(removed.points < r.loyalty_points
+        ? `${removed.points} points retirés sur ${r.loyalty_points} dans WPLoyalty (${r.billing_email}) : le client a déjà dépensé le reste`
+        : `${r.loyalty_points} points retirés dans WPLoyalty (${r.billing_email})`);
     } catch (error) {
       todo.push(`retirer les ${r.loyalty_points} points dans WPLoyalty (refus : ${error.response?.data?.message || error.message})`);
     }
@@ -1006,7 +1010,9 @@ const creditPoints = async (id, { withShipping, deductEuros }, user) => {
   );
   if (!rowCount) throw httpError(409, 'Points déjà crédités pour ce retour.');
   try {
-    await loyaltyService.addPoints(r.billing_email, b.points, `Avoir commande N°${r.wp_order_id}`);
+    await loyaltyService.addPoints(r.billing_email, b.points, {
+      type: 'avoir', note: `Avoir commande N°${r.wp_order_id}`, orderId: r.wp_order_id,
+    });
   } catch (error) {
     await pool.query('UPDATE customer_returns SET loyalty_points = NULL, loyalty_credited_at = NULL WHERE id = $1', [id]);
     const detail = error.response?.data?.message || error.message;
