@@ -144,7 +144,7 @@ const create = async ({ name, kind, filters }, userId) => {
     const shifted = where.replace(/\$(\d+)/g, (_, n) => `$${Number(n) + 1}`);
     const { rowCount } = await client.query(
       `INSERT INTO inventory_items (inventory_id, product_id, sku, name, expected_location)
-       SELECT $1, p.id, p.sku, p.post_title, COALESCE(btrim(p.shelf_location), '')
+       SELECT $1::int, p.id, p.sku, p.post_title, COALESCE(btrim(p.shelf_location), '')
          ${SCOPE_FROM}${shifted}`,
       [inventoryId, ...params]
     );
@@ -152,7 +152,7 @@ const create = async ({ name, kind, filters }, userId) => {
 
     await client.query(
       `INSERT INTO inventory_locations (inventory_id, location)
-       SELECT DISTINCT $1, expected_location FROM inventory_items WHERE inventory_id = $1`,
+       SELECT DISTINCT $1::int, expected_location FROM inventory_items WHERE inventory_id = $1::int`,
       [inventoryId]
     );
     await client.query(
