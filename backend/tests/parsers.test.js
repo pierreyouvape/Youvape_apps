@@ -619,6 +619,24 @@ console.log('LCA — facture OpenSi (Rist. % / PU Net HT)');
     assert.strictEqual(lemon.designation, 'Lemon Tart 10ML - Dinner Lady');
   });
 
+  // Mail de confirmation 362022 : deux articles ont nom + qté + prix en bas de
+  // page et « Référence: » en haut de la suivante (JNR, Gatsby). Lu aussi sur le
+  // texte BRUT (repli de l'import), où la qté est précédée d'une tabulation.
+  const conf362022 = fs.readFileSync(path.join(__dirname, 'fixtures', 'lca-confirmation-362022.txt'), 'utf-8');
+  for (const [mode, texte] of [['nettoyé', fixture('lca-confirmation-362022.txt')], ['brut', conf362022]]) {
+    test(`LCA confirmation 362022 (${mode}) : 38 articles, mêmes quantités que la page du site`, () => {
+      const c = lca.parse(texte);
+      const site = lca.parse(fixture('lca-siteweb-cartes-362022.txt'));
+      const qty = (items) => Object.fromEntries(items.map(i => [i.supplier_sku, i.qty_ordered]));
+      assert.strictEqual(c.orderNumber, '362022');
+      assert.strictEqual(c.orderDate, '2026-10-15');
+      assert.strictEqual(c.items.length, 38);
+      assert.deepStrictEqual(qty(c.items), qty(site.items));
+      assert.strictEqual(c.items.find(i => i.supplier_sku === '#REF18196-60361').designation, 'Liquides Nic salts - 10ml - 20mg - JNR');
+      assert.strictEqual(c.items.find(i => i.supplier_sku === '#REF4879-12077').designation, 'Absolute 30ML Concentré - Gatsby');
+    });
+  }
+
   // Page commande du site LCA imprimée en vue étroite (362022, 28 pages) :
   // une carte par article, noms et références coupés sur plusieurs lignes.
   const cartes = lca.parse(fixture('lca-siteweb-cartes-362022.txt'));

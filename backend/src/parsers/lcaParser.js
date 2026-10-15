@@ -69,8 +69,10 @@ function parseConfirmation(text) {
     orderDate = `${dateMatch[3]}-${month}-${day}`;
   }
 
-  // Nettoyer footers Gmail
-  const cleanedText = cleanGmailFooters(text);
+  // Nettoyer footers Gmail. Tabulations → espace : le texte brut (repli de
+  // l'import) sépare « JNR \t20 31,60 € » par une tabulation, que les regex
+  // « QTE PRIX € » ne lisaient pas (2 articles perdus sur 362022 en brut).
+  const cleanedText = cleanGmailFooters(text).replace(/[^\S\n]+/g, ' ');
 
   // Extraire toutes les refs avec leur position dans le texte
   const items = [];
