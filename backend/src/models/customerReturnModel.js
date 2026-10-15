@@ -27,8 +27,10 @@ const shipmentLabelModel = require('./shipmentLabelModel');
 const { getAdapter } = require('../services/carriers');
 const { getAccount } = require('../services/carriers/accounts');
 const mondialRelayAdapter = require('../services/carriers/mondialRelayAdapter');
+const { WAREHOUSE_BY_ID } = require('../config/nextore');
 const {
   REASONS, OUTCOMES, unitPaid, bundleParents, expandSelection, checkDestination, returnStatus, suggestSupplier,
+  lotRemaining, checkLot, suggestLot,
   suggestPoints, replacementShipping, pickRefund, pointsBreakdown, breakdownText,
 } = require('../services/returnRules');
 
@@ -264,31 +266,92 @@ const list = async ({ status, q } = {}) => {
   return { returns: rows, counts: Object.fromEntries(counts.map(c => [c.status, c.n])) };
 };
 
-/** Fournisseurs chez qui la pièce a été achetée, le plus probable en tête. */
-const supplierCandidates = async (productIds, paidAt) => {
-  if (!productIds.length) return new Map();
-  const { rows } = await pool.query(
-    `SELECT DISTINCT poi.product_id, po.supplier_id, s.name,
-            COALESCE(po.received_date, po.order_date) AS last_received
-       FROM purchase_order_items poi
-       JOIN purchase_orders po ON po.id = poi.purchase_order_id
-       JOIN suppliers s ON s.id = po.supplier_id
-      WHERE poi.product_id = ANY($1::int[])
-        AND (poi.qty_received > 0 OR poi.units_received > 0)`,
-    [productIds]
-  );
-  const byProduct = new Map();
-  for (const id of productIds) {
-    const lots = rows.filter(r => r.product_id === id);
-    const suppliers = [];
-    for (const lot of [...lots].sort((a, b) => new Date(b.last_received) - new Date(a.last_received))) {
-      if (!suppliers.some(s => s.id === lot.supplier_id)) {
-        suppliers.push({ id: lot.supplier_id, name: lot.name, lastReceived: lot.last_received });
-      }
-    }
-    byProduct.set(id, { suppliers, suggested: suggestSupplier(lots, paidAt) });
+// ── Commandes fournisseur d'une pièce SAV (Pierre, 15/10/2026) ─────────────
+
+/**
+ * Commandes fournisseur qui ont apporté ces produits : une ligne par commande
+ * et par produit, avec les pièces REÇUES, celles déjà en SAV sur elle (tous
+ * statuts, site et boutique) et le prix payé d'une pièce (même formule que le
+ * FIFO, computedCostModel).
+ *
+ * @param {number[]} productIds
+ * @param {{exclude?: number[], db?}} opts  `exclude` : pièces SAV à ne pas
+ *   décompter (celle dont on change la commande).
+ */
+const LOTS_SQL = `
+  SELECT poi.product_id, po.id AS purchase_order_id, po.order_number, po.supplier_id, s.name AS supplier_name,
+         COALESCE(po.received_date, po.order_date) AS received_at,
+         SUM(poi.units_received)::int AS received,
+         ROUND(SUM(poi.units_received * poi.unit_price / COALESCE(NULLIF(poi.units_per_qty, 0), 1)
+                   * (1 - COALESCE(poi.discount_percent, 0) / 100.0))
+               / NULLIF(SUM(poi.units_received) FILTER (WHERE poi.unit_price IS NOT NULL), 0), 4) AS unit_cost,
+         COALESCE((SELECT SUM(i.qty) FROM supplier_return_items i
+                    WHERE i.purchase_order_id = po.id AND i.product_id = poi.product_id
+                      AND NOT (i.id = ANY($2::int[]))), 0)::int AS returned
+    FROM purchase_order_items poi
+    JOIN purchase_orders po ON po.id = poi.purchase_order_id
+    JOIN suppliers s ON s.id = po.supplier_id
+   WHERE poi.product_id = ANY($1::int[]) AND poi.units_received > 0
+     AND po.status NOT IN ('draft', 'cancelled')
+   GROUP BY poi.product_id, po.id, s.name
+   ORDER BY received_at DESC NULLS LAST, po.id DESC`;
+
+const purchaseLots = async (productIds, { exclude = [], db = pool } = {}) => {
+  if (!productIds.length) return [];
+  const { rows } = await db.query(LOTS_SQL, [productIds, exclude]);
+  return rows.map(l => ({ ...l, unit_cost: l.unit_cost == null ? null : Number(l.unit_cost), remaining: lotRemaining(l) }));
+};
+
+/**
+ * Contrôle, sous verrou des commandes, que chaque commande couvre les pièces
+ * qu'on lui impute (plusieurs pièces sur la même commande s'additionnent).
+ * À appeler DANS la transaction qui écrit les pièces.
+ *
+ * @param {Array<{purchaseOrderId, productId, supplierId, qty, name, excludeItemId?}>} picks
+ * @returns {Array} la commande de chaque pick, dans l'ordre
+ */
+const reserveLots = async (client, picks) => {
+  if (!picks.length) return [];
+  for (const p of picks) {
+    if (!Number(p.purchaseOrderId)) throw httpError(400, `« ${p.name} » : choisir la commande fournisseur.`);
   }
-  return byProduct;
+  const poIds = [...new Set(picks.map(p => Number(p.purchaseOrderId)))];
+  // Deux saisies simultanées sur la même commande passent l'une après l'autre.
+  await client.query('SELECT id FROM purchase_orders WHERE id = ANY($1::int[]) ORDER BY id FOR UPDATE', [poIds]);
+  const lots = await purchaseLots([...new Set(picks.map(p => Number(p.productId)))], {
+    exclude: picks.map(p => Number(p.excludeItemId)).filter(Boolean),
+    db: client,
+  });
+  const taken = new Map();
+  return picks.map(p => {
+    const key = `${p.purchaseOrderId}:${p.productId}`;
+    const lot = lots.find(l => l.purchase_order_id === Number(p.purchaseOrderId) && l.product_id === Number(p.productId));
+    if (lot && lot.supplier_id !== Number(p.supplierId)) {
+      throw httpError(400, `« ${p.name} » : la commande ${lot.order_number} est chez ${lot.supplier_name}.`);
+    }
+    const already = taken.get(key) || 0;
+    checkLot(lot && { ...lot, returned: lot.returned + already }, p.qty, p.name);
+    taken.set(key, already + Number(p.qty));
+    return lot;
+  });
+};
+
+/**
+ * Fournisseurs et commandes d'une ligne de retour : les fournisseurs chez qui
+ * la pièce a été achetée (le plus probable en tête) et, pour chacun, la
+ * commande proposée pour toute la ligne.
+ */
+const lineCandidates = (lots, line, paidAt) => {
+  const mine = lots.filter(l => l.product_id === line.product_id);
+  const suppliers = [];
+  for (const lot of mine) {
+    if (!suppliers.some(s => s.id === lot.supplier_id)) {
+      suppliers.push({ id: lot.supplier_id, name: lot.supplier_name, lastReceived: lot.received_at });
+    }
+  }
+  const suggested = suggestSupplier(mine.map(l => ({ supplier_id: l.supplier_id, last_received: l.received_at })), paidAt);
+  const suggestedLots = Object.fromEntries(suppliers.map(s => [s.id, suggestLot(mine, s.id, line.qty, paidAt)]));
+  return { suppliers, suggested, suggestedLots, lots: mine };
 };
 
 const get = async (id) => {
@@ -314,18 +377,20 @@ const get = async (id) => {
 
   const { rows: lines } = await pool.query(
     `SELECT l.*, s.name AS supplier_name, COALESCE(p.image_url, pp.image_url) AS image_url,
-            i.status AS supplier_status
+            i.status AS supplier_status, spo.order_number AS supplier_order_number
        FROM customer_return_lines l
        LEFT JOIN suppliers s ON s.id = l.supplier_id
        LEFT JOIN products p ON p.id = l.product_id
        LEFT JOIN products pp ON p.product_type = 'variation' AND pp.wp_product_id = p.wp_parent_id
        LEFT JOIN supplier_return_items i ON i.return_line_id = l.id
+       LEFT JOIN purchase_orders spo ON spo.id = i.purchase_order_id
       WHERE l.return_id = $1
       ORDER BY l.id`,
     [id]
   );
   const productIds = [...new Set(lines.filter(l => !l.is_bundle && l.product_id).map(l => l.product_id))];
-  const candidates = await supplierCandidates(productIds, r.paid_date || r.post_date);
+  const lots = await purchaseLots(productIds);
+  const paidAt = r.paid_date || r.post_date;
   const { rows: suppliers } = await pool.query('SELECT id, name FROM suppliers WHERE is_active ORDER BY name');
   const { rows: refunds } = await pool.query(
     `SELECT f.wp_refund_id, f.refund_amount, f.refund_date, f.refund_reason, cr.id AS linked_return_id
@@ -342,7 +407,7 @@ const get = async (id) => {
   return {
     ...ret,
     has_label: !!labelData,
-    lines: lines.map(l => ({ ...l, supplierCandidates: candidates.get(l.product_id) || { suppliers: [], suggested: null } })),
+    lines: lines.map(l => ({ ...l, supplierCandidates: lineCandidates(lots, l, paidAt) })),
     suppliers,
     refunds,
     shipping_paid: shippingPaid,
@@ -432,6 +497,11 @@ const validate = async (id, destinations, user) => {
       [id, user.id]
     );
     if (!rowCount) throw httpError(409, 'Retour validé ou annulé entre-temps.');
+    const toSupplier = plan.filter(p => p.supplier);
+    const lotsTaken = await reserveLots(client, toSupplier.map(p => ({
+      purchaseOrderId: p.d.purchaseOrderId, productId: p.line.product_id, supplierId: p.d.supplierId,
+      qty: p.supplier, name: p.line.name || p.line.sku,
+    })));
     for (const p of plan) {
       await client.query(
         `UPDATE customer_return_lines
@@ -442,13 +512,14 @@ const validate = async (id, destinations, user) => {
           p.supplier ? Number(p.d.supplierId) : null, String(p.d.problem || '').trim() || null]
       );
       if (p.supplier) {
+        const lot = lotsTaken[toSupplier.indexOf(p)];
         await client.query(
           `INSERT INTO supplier_return_items
-             (supplier_id, product_id, return_line_id, qty, reason, problem, unit_cost, created_by)
-           SELECT $1, $2, $3, $4, $5, $6, COALESCE(p.computed_cost, p.wc_cog_cost), $7
+             (supplier_id, product_id, return_line_id, qty, reason, problem, unit_cost, created_by, purchase_order_id)
+           SELECT $1, $2, $3, $4, $5, $6, COALESCE($8::numeric, p.computed_cost, p.wc_cog_cost), $7, $9
              FROM products p WHERE p.id = $2`,
           [Number(p.d.supplierId), p.line.product_id, p.line.id, p.supplier, r.reason,
-            String(p.d.problem).trim(), user.id]
+            String(p.d.problem).trim(), user.id, lot.unit_cost, lot.purchase_order_id]
         );
       }
     }
@@ -1102,24 +1173,38 @@ const supplierSummary = async () => {
 
 const ITEMS_SQL = `
   SELECT i.id, i.supplier_id, i.product_id, i.qty, i.reason, i.problem, i.unit_cost, i.status, i.batch_id, i.created_at,
+         i.source, i.shop, i.note, i.purchase_order_id, po.order_number AS supplier_order_number,
          p.sku, COALESCE(NULLIF(p.post_title, ''), l.name) AS name, ref.supplier_sku,
-         l.return_id, l.partial, l.partial_note, r.wp_order_id, r.ticket_id
+         l.return_id, l.partial, l.partial_note, r.wp_order_id, r.ticket_id, uc.name AS created_by_name
     FROM supplier_return_items i
     JOIN products p ON p.id = i.product_id
-    JOIN customer_return_lines l ON l.id = i.return_line_id
-    JOIN customer_returns r ON r.id = l.return_id
+    -- Un SAV boutique n'a pas de retour client.
+    LEFT JOIN customer_return_lines l ON l.id = i.return_line_id
+    LEFT JOIN customer_returns r ON r.id = l.return_id
+    LEFT JOIN purchase_orders po ON po.id = i.purchase_order_id
+    LEFT JOIN users uc ON uc.id = i.created_by
     LEFT JOIN LATERAL (
       SELECT sr.supplier_sku FROM supplier_refs sr
        WHERE sr.supplier_id = i.supplier_id AND sr.product_id = i.product_id
        ORDER BY sr.pack_qty, sr.id LIMIT 1
     ) ref ON true`;
 
+const shopName = (shop) => WAREHOUSE_BY_ID[shop]?.name || (shop ? `Boutique ${shop}` : null);
+const withShop = (i) => ({ ...i, shop_name: shopName(i.shop) });
+
+/** « #1267852 » ou « Boutique Montpellier » */
+const itemOrigin = (i) => (i.source === 'boutique' ? `Boutique ${shopName(i.shop)}` : `#${i.wp_order_id}`);
+
 const supplierItems = async (supplierId) => {
   const { rows: [supplier] } = await pool.query('SELECT id, name FROM suppliers WHERE id = $1', [supplierId]);
   if (!supplier) throw httpError(404, 'Fournisseur introuvable.');
-  const { rows: items } = await pool.query(
+  const { rows: rawItems } = await pool.query(
     `${ITEMS_SQL} WHERE i.supplier_id = $1 AND i.status = 'a_retourner' ORDER BY i.created_at`, [supplierId]
   );
+  const items = rawItems.map(withShop);
+  // Commandes de ce fournisseur pour changer celle d'une pièce encore à retourner.
+  const lots = (await purchaseLots([...new Set(items.map(i => i.product_id))]))
+    .filter(l => l.supplier_id === Number(supplierId));
   const { rows: batches } = await pool.query(
     `SELECT b.id, b.status, b.created_at, u.name AS created_by_name,
             COUNT(i.id)::int AS lines, COALESCE(SUM(i.qty), 0)::int AS pieces,
@@ -1153,6 +1238,7 @@ const supplierItems = async (supplierId) => {
   return {
     supplier,
     items,
+    lots,
     batches: batches.map(b => {
       const linked = credits.filter(c => c.batch_id === b.id);
       // L'app Factures enregistre un avoir en négatif (RV3/2026/02918 : −4,95 € HT).
@@ -1250,13 +1336,14 @@ const exportBatch = async (batchId) => {
   const ws = wb.addWorksheet('Retour fournisseur');
   ws.columns = [
     { header: 'Réf. fournisseur', key: 'ref', width: 18 },
+    { header: 'Commande fournisseur', key: 'po', width: 20 },
     { header: 'SKU', key: 'sku', width: 16 },
     { header: 'Produit', key: 'name', width: 50 },
     { header: 'Quantité', key: 'qty', width: 10 },
     { header: 'Motif', key: 'reason', width: 22 },
     { header: 'Problème', key: 'problem', width: 50 },
     { header: 'Retour partiel', key: 'partial', width: 40 },
-    { header: 'Commande client', key: 'order', width: 16 },
+    { header: 'Origine', key: 'origin', width: 22 },
     { header: 'Date', key: 'date', width: 12 },
     { header: 'Coût unitaire HT', key: 'cost', width: 16 },
     { header: 'Total HT', key: 'total', width: 12 },
@@ -1266,13 +1353,14 @@ const exportBatch = async (batchId) => {
     const cost = i.unit_cost == null ? null : Number(i.unit_cost);
     ws.addRow({
       ref: i.supplier_sku || '',
+      po: i.supplier_order_number || '',
       sku: i.sku || '',
       name: i.name,
       qty: i.qty,
       reason: REASONS[i.reason] || i.reason,
-      problem: i.problem || '',
+      problem: [i.problem, i.note].filter(Boolean).join(' — '),
       partial: i.partial ? i.partial_note || 'oui' : '',
-      order: Number(i.wp_order_id),
+      origin: itemOrigin(i),
       date: new Date(i.created_at),
       cost,
       total: cost == null ? null : Math.round(cost * i.qty * 100) / 100,
@@ -1286,7 +1374,120 @@ const exportBatch = async (batchId) => {
   return { buffer: await wb.xlsx.writeBuffer(), filename: `retour_${safe}_n${b.id}.xlsx` };
 };
 
+// ── SAV boutique (Pierre, 15/10/2026) ──────────────────────────────────────
+// L'échange est fait en caisse ; la pièce défectueuse part au fournisseur avec
+// celles du site. Le stock Nextore n'est pas touché.
+
+/** Produits du catalogue du site : nom, SKU ou code-barres exact. Les produits achetés d'abord. */
+const searchProducts = async (q) => {
+  const text = String(q || '').trim();
+  if (text.length < 2) return [];
+  const terms = text.split(/\s+/).slice(0, 6);
+  const params = [text];
+  const where = terms.map(t => {
+    params.push(`%${t}%`);
+    return `(p.sku ILIKE $${params.length} OR p.post_title ILIKE $${params.length})`;
+  });
+  const { rows } = await pool.query(
+    `SELECT p.id, p.sku, p.post_title AS name, p.post_status, COALESCE(p.image_url, pp.image_url) AS image_url,
+            EXISTS (SELECT 1 FROM purchase_order_items poi WHERE poi.product_id = p.id AND poi.units_received > 0) AS bought
+       FROM products p
+       LEFT JOIN products pp ON p.product_type = 'variation' AND pp.wp_product_id = p.wp_parent_id
+      WHERE p.product_type IN ('simple', 'variation')
+        AND ((${where.join(' AND ')})
+             OR EXISTS (SELECT 1 FROM product_barcodes b WHERE b.product_id = p.id AND b.barcode = $1))
+      ORDER BY bought DESC, (p.post_status = 'publish') DESC, p.post_title
+      LIMIT 30`,
+    params
+  );
+  return rows;
+};
+
+const productLots = async (productId) => purchaseLots([Number(productId)]);
+
+const createBoutiqueItem = async ({ shop, productId, supplierId, purchaseOrderId, qty, problem, note }, user) => {
+  if (!WAREHOUSE_BY_ID[Number(shop)]) throw httpError(400, 'Choisir la boutique.');
+  const { rows: [product] } = await pool.query(
+    `SELECT id, sku, post_title FROM products WHERE id = $1 AND product_type IN ('simple', 'variation')`, [Number(productId)]
+  );
+  if (!product) throw httpError(400, 'Produit introuvable.');
+  if (!Number(supplierId)) throw httpError(400, 'Choisir le fournisseur.');
+  if (!String(problem || '').trim()) throw httpError(400, 'Décrire le problème.');
+  const name = product.post_title || product.sku;
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const [lot] = await reserveLots(client, [{ purchaseOrderId, productId: product.id, supplierId, qty, name }]);
+    await client.query(
+      `INSERT INTO supplier_return_items
+         (supplier_id, product_id, return_line_id, qty, reason, problem, unit_cost, created_by,
+          purchase_order_id, source, shop, note)
+       SELECT $1, $2, NULL, $3, 'defaut', $4, COALESCE($5::numeric, p.computed_cost, p.wc_cog_cost), $6,
+              $7, 'boutique', $8, $9
+         FROM products p WHERE p.id = $2`,
+      [Number(supplierId), product.id, Number(qty), String(problem).trim(), lot.unit_cost, user.id,
+        lot.purchase_order_id, Number(shop), String(note || '').trim() || null]
+    );
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+  return { supplierId: Number(supplierId) };
+};
+
+/** Change la commande fournisseur d'une pièce encore à retourner. */
+const setItemLot = async (itemId, purchaseOrderId) => {
+  const client = await pool.connect();
+  let supplierId;
+  try {
+    await client.query('BEGIN');
+    const { rows: [i] } = await client.query(
+      `SELECT i.*, p.post_title FROM supplier_return_items i JOIN products p ON p.id = i.product_id
+        WHERE i.id = $1 FOR UPDATE OF i`,
+      [itemId]
+    );
+    if (!i) throw httpError(404, 'Pièce introuvable.');
+    if (i.status !== 'a_retourner') throw httpError(400, 'Pièce déjà envoyée au fournisseur.');
+    supplierId = i.supplier_id;
+    const [lot] = await reserveLots(client, [{
+      purchaseOrderId, productId: i.product_id, supplierId: i.supplier_id, qty: i.qty,
+      name: i.post_title, excludeItemId: i.id,
+    }]);
+    await client.query(
+      'UPDATE supplier_return_items SET purchase_order_id = $2, unit_cost = COALESCE($3::numeric, unit_cost) WHERE id = $1',
+      [itemId, lot.purchase_order_id, lot.unit_cost]
+    );
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+  return supplierItems(supplierId);
+};
+
+/** Une pièce boutique saisie par erreur (celles du site suivent leur retour). */
+const deleteBoutiqueItem = async (itemId) => {
+  const { rows: [i] } = await pool.query(
+    `DELETE FROM supplier_return_items WHERE id = $1 AND source = 'boutique' AND status = 'a_retourner'
+     RETURNING supplier_id`,
+    [itemId]
+  );
+  if (!i) throw httpError(400, 'Seule une pièce boutique encore à retourner se supprime.');
+  return supplierItems(i.supplier_id);
+};
+
 module.exports = {
+  searchProducts,
+  productLots,
+  createBoutiqueItem,
+  setItemLot,
+  deleteBoutiqueItem,
   orderContext,
   create,
   update,

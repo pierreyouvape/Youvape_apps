@@ -14,6 +14,7 @@ const assert = require('assert');
 const {
   unitPaid, bundleParents, expandSelection, checkDestination, returnStatus, suggestSupplier,
   suggestPoints, replacementShipping, pickRefund, pointsBreakdown, breakdownText,
+  lotRemaining, checkLot, suggestLot,
 } = require('../src/services/returnRules');
 
 const throws = (fn, re) => assert.throws(fn, (e) => re.test(e.message) && e.statusCode === 400);
@@ -70,11 +71,11 @@ throws(() => expandSelection([{ ...order[3], returnable: 0 }], [{ orderItemId: 1
 
 // ── Répartition ─────────────────────────────────────────────────────────────
 const line = { name: 'Pod', sku: 'P1', product_id: 7, qty: 3 };
-assert.deepStrictEqual(checkDestination(line, { restock: 2, supplier: 1, supplierId: 4, problem: 'Ne charge pas' }, true),
+assert.deepStrictEqual(checkDestination(line, { restock: 2, supplier: 1, supplierId: 4, purchaseOrderId: 9, problem: 'Ne charge pas' }, true),
   { restock: 2, supplier: 1, noRestock: 0 });
 throws(() => checkDestination(line, { restock: 2 }, true), /3 pièce\(s\) à répartir, 2/);
 throws(() => checkDestination(line, { supplier: 3, problem: 'x' }, true), /choisir le fournisseur/);
-throws(() => checkDestination(line, { supplier: 3, supplierId: 4, problem: '  ' }, true), /décrire le problème/);
+throws(() => checkDestination(line, { supplier: 3, supplierId: 4, purchaseOrderId: 9, problem: '  ' }, true), /décrire le problème/);
 throws(() => checkDestination(line, { restock: 3 }, false), /pas de retour exigé/);
 throws(() => checkDestination({ ...line, sku: null }, { restock: 3 }, true), /sans SKU/);
 assert.deepStrictEqual(checkDestination(line, { noRestock: 3 }, false), { restock: 0, supplier: 0, noRestock: 3 },
@@ -133,6 +134,27 @@ const refunds = [
 assert.strictEqual(pickRefund(refunds, new Set(), '2026-10-09T08:00:00Z').wp_refund_id, 12, 'le premier après le retour');
 assert.strictEqual(pickRefund(refunds, new Set([12]), '2026-10-09T08:00:00Z').wp_refund_id, 11, 'déjà pris par un autre retour');
 assert.strictEqual(pickRefund(refunds, new Set([11, 12]), '2026-10-09T08:00:00Z'), null, 'celui d\'avant le retour ne compte pas');
+
+// ── Commande fournisseur d'une pièce SAV ────────────────────────────────────
+const poLots = [
+  { purchase_order_id: 1, order_number: 'S1', supplier_id: 7, received_at: '2026-08-01', received: 3, returned: 0 },
+  { purchase_order_id: 2, order_number: 'S2', supplier_id: 7, received_at: '2026-09-15', received: 10, returned: 9 },
+  { purchase_order_id: 3, order_number: 'S3', supplier_id: 7, received_at: '2026-10-10', received: 20, returned: 0 },
+  { purchase_order_id: 4, order_number: 'S4', supplier_id: 8, received_at: '2026-09-01', received: 5, returned: 0 },
+];
+assert.strictEqual(lotRemaining(poLots[1]), 1);
+assert.strictEqual(lotRemaining({ received: 2, returned: 5 }), 0, 'jamais négatif');
+checkLot(poLots[0], 3, 'X');
+throws(() => checkLot(poLots[0], 5, 'X'), /S1 en a apporté 3, 0 déjà en SAV — 3 retournable/);
+throws(() => checkLot(poLots[1], 2, 'X'), /1 retournable/);
+throws(() => checkLot(null, 1, 'X'), /jamais été reçu/);
+throws(() => checkLot(poLots[0], 0, 'X'), /quantité invalide/);
+assert.strictEqual(suggestLot(poLots, 7, 1, '2026-09-20'), 2, 'dernière reçue avant le paiement');
+assert.strictEqual(suggestLot(poLots, 7, 2, '2026-09-20'), 1, 'S2 ne couvre plus 2 pièces');
+assert.strictEqual(suggestLot(poLots, 7, 4, '2026-09-20'), 3, 'aucune avant : la plus récente qui couvre');
+assert.strictEqual(suggestLot(poLots, 7, 30, '2026-09-20'), null, 'aucune ne couvre');
+assert.strictEqual(suggestLot(poLots, 8, 1, null), 4, 'filtrée par fournisseur');
+throws(() => checkDestination({ qty: 1, name: 'X', product_id: 1, sku: 'X' }, { supplier: 1, supplierId: 7, problem: 'p' }, true), /commande fournisseur/);
 
 // ── Téléphone de l'étiquette retour Mondial Relay (erreur 10051) ────────────
 const { telephoneInternational } = require('../src/services/carriers/mondialRelayAdapter');

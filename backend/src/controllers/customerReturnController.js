@@ -48,6 +48,14 @@ module.exports = {
     res.send(buffer);
   }),
 
+  searchProducts: handle(async (req, res) => res.json({ products: await customerReturnModel.searchProducts(req.query.q) })),
+  productLots: handle(async (req, res) => res.json({ lots: await customerReturnModel.productLots(Number(req.query.productId)) })),
+  createBoutiqueItem: handle(async (req, res) => res.json(await customerReturnModel.createBoutiqueItem(req.body || {}, req.user))),
+  setItemLot: handle(async (req, res) => {
+    res.json(await customerReturnModel.setItemLot(Number(req.params.itemId), Number(req.body?.purchaseOrderId)));
+  }),
+  deleteBoutiqueItem: handle(async (req, res) => res.json(await customerReturnModel.deleteBoutiqueItem(Number(req.params.itemId)))),
+
   supplierSummary: handle(async (req, res) => res.json({ suppliers: await customerReturnModel.supplierSummary() })),
   supplierItems: handle(async (req, res) => res.json(await customerReturnModel.supplierItems(Number(req.params.supplierId)))),
   createBatch: handle(async (req, res) => {

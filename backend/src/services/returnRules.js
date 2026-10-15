@@ -130,6 +130,7 @@ const checkDestination = (line, d, returnRequired) => {
   if (restock && !returnRequired) throw httpError(400, `« ${name} » : pas de retour exigé, rien à remettre en stock.`);
   if (restock && !line.sku) throw httpError(400, `« ${name} » : produit sans SKU, BMS ne le connaît pas.`);
   if (supplier && !d.supplierId) throw httpError(400, `« ${name} » : choisir le fournisseur.`);
+  if (supplier && !d.purchaseOrderId) throw httpError(400, `« ${name} » : choisir la commande fournisseur.`);
   if (supplier && !String(d.problem || '').trim()) throw httpError(400, `« ${name} » : décrire le problème.`);
   if (supplier && !line.product_id) throw httpError(400, `« ${name} » : produit inconnu du catalogue.`);
   return { restock, supplier, noRestock };
@@ -161,6 +162,47 @@ const suggestSupplier = (receipts, paidAt) => {
   const sorted = [...receipts].sort((a, b) => t(b.last_received) - t(a.last_received));
   const before = paidAt ? sorted.find(r => t(r.last_received) <= t(paidAt)) : null;
   return (before || sorted[0]).supplier_id;
+};
+
+// ── Commande fournisseur d'une pièce SAV (Pierre, 15/10/2026) ──────────────
+
+/**
+ * Pièces encore retournables sur une commande fournisseur : les pièces de ce
+ * produit REÇUES sur la commande, moins celles déjà en SAV sur elle (tous
+ * statuts, site et boutique). On ne retourne pas 5 pièces sous le numéro
+ * d'une commande qui n'en a apporté que 3.
+ *
+ * @param {{received, returned}} lot
+ */
+const lotRemaining = (lot) => Math.max(0, (Number(lot.received) || 0) - (Number(lot.returned) || 0));
+
+/** Refuse une quantité que la commande ne couvre pas. */
+const checkLot = (lot, qty, name) => {
+  const n = Number(qty);
+  if (!Number.isInteger(n) || n <= 0) throw httpError(400, `« ${name} » : quantité invalide.`);
+  if (!lot) throw httpError(400, `« ${name} » : ce produit n'a jamais été reçu sur cette commande fournisseur.`);
+  const left = lotRemaining(lot);
+  if (n > left) {
+    throw httpError(400, `« ${name} » : la commande ${lot.order_number} en a apporté ${Number(lot.received)}, `
+      + `${Number(lot.returned)} déjà en SAV — ${left} retournable(s) au plus.`);
+  }
+};
+
+/**
+ * Commande fournisseur proposée pour `qty` pièces chez un fournisseur : la
+ * dernière reçue AVANT le paiement du client qui peut encore les couvrir,
+ * sinon la plus récente qui le peut.
+ *
+ * @param {Array<{purchase_order_id, supplier_id, received_at, received, returned}>} lots
+ */
+const suggestLot = (lots, supplierId, qty, paidAt) => {
+  const t = (d) => (d ? new Date(d).getTime() : 0);
+  const fits = (lots || [])
+    .filter(l => Number(l.supplier_id) === Number(supplierId) && lotRemaining(l) >= qty)
+    .sort((a, b) => t(b.received_at) - t(a.received_at));
+  if (!fits.length) return null;
+  const before = paidAt ? fits.find(l => t(l.received_at) <= t(paidAt)) : null;
+  return (before || fits[0]).purchase_order_id;
 };
 
 // ── Lot 2 : issue client ────────────────────────────────────────────────────
@@ -241,4 +283,7 @@ module.exports = {
   checkDestination,
   returnStatus,
   suggestSupplier,
+  lotRemaining,
+  checkLot,
+  suggestLot,
 };

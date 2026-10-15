@@ -12,6 +12,12 @@ const write = checkPermission('tickets', 'write');
 router.get('/suppliers', read, c.supplierSummary);
 router.get('/suppliers/:supplierId', read, c.supplierItems);
 router.post('/suppliers/:supplierId/batches', write, c.createBatch);
+// SAV boutique et commande fournisseur d'une pièce (15/10/2026).
+router.get('/products/search', read, c.searchProducts);
+router.get('/purchase-lots', read, c.productLots);
+router.post('/supplier-items', write, c.createBoutiqueItem);
+router.put('/supplier-items/:itemId/lot', write, c.setItemLot);
+router.delete('/supplier-items/:itemId', write, c.deleteBoutiqueItem);
 router.get('/batches/:batchId/export', read, c.exportBatch);
 router.post('/batches/:batchId/credits', write, c.linkCredit);
 router.delete('/batches/:batchId/credits/:documentId', write, c.unlinkCredit);

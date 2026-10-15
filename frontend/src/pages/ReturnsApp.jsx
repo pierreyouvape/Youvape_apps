@@ -7,10 +7,11 @@ import { C, Chip } from '../components/picking/pickingUi';
 import useTicketsAccess from '../components/tickets/useTicketsAccess';
 import ReturnLabelActions from '../components/returns/ReturnLabelActions';
 import CreateReturnModal from '../components/returns/CreateReturnModal';
+import BoutiqueSavModal from '../components/returns/BoutiqueSavModal';
 import { formatDate, formatDateUTC } from '../utils/dateUtils';
 import {
   RETURNS_API, RETURNS_COLOR, RETURNS_COLOR_L, REASONS, OUTCOMES, OUTCOME_REF_HINT, STATUS,
-  StatusChip, btn, field, errorText, customerName, euro,
+  StatusChip, btn, field, errorText, customerName, euro, LotSelect,
 } from '../components/returns/returnsUi';
 
 /**
@@ -20,6 +21,10 @@ import {
  *   /retours/:id                      fiche : validation, remise en stock, issue client
  *   /retours/fournisseurs             stock SAV par fournisseur
  *   /retours/fournisseurs/:supplierId lignes à retourner, renvoi + export
+ *
+ * Chaque pièce en SAV fournisseur porte sa commande fournisseur, et on n'en
+ * retourne pas plus qu'elle n'en a apporté. Les SAV de la boutique (échangés en
+ * caisse) s'y ajoutent à la main (« Ajouter un SAV boutique », 15/10/2026).
  *
  * Les retours se créent depuis un ticket ou une commande (OrderReturnsBox).
  */
@@ -203,7 +208,9 @@ function ListView({ navigate }) {
 
 /** Destination proposée : un défaut part chez le fournisseur, le reste revient en stock. */
 const defaultDestination = (r, line) => {
-  const base = { restock: 0, supplier: 0, noRestock: 0, supplierId: line.supplierCandidates?.suggested || '', problem: '' };
+  const supplierId = line.supplierCandidates?.suggested || '';
+  const purchaseOrderId = (supplierId && line.supplierCandidates?.suggestedLots?.[supplierId]) || '';
+  const base = { restock: 0, supplier: 0, noRestock: 0, supplierId, purchaseOrderId, problem: '' };
   // Réparé / même produit renvoyé : la pièce repart chez le client.
   if (r.outcome === 'reexpedition') return { ...base, noRestock: line.qty };
   if (r.reason === 'defaut' && line.product_id) return { ...base, supplier: line.qty };
@@ -241,6 +248,11 @@ function ValidationForm({ ret, onDone, setMessage }) {
 
   const set = (id, k, v) => setDest(d => ({ ...d, [id]: { ...d[id], [k]: v } }));
   const num = (v) => Math.max(0, Number.parseInt(v, 10) || 0);
+  // Un autre fournisseur, une autre commande : celle qu'il propose pour la ligne.
+  const chooseSupplier = (l, v) => setDest(d => ({
+    ...d,
+    [l.id]: { ...d[l.id], supplierId: v, purchaseOrderId: (v && l.supplierCandidates?.suggestedLots?.[v]) || '' },
+  }));
 
   const submit = async () => {
     const restock = lines.reduce((n, l) => n + dest[l.id].restock, 0);
@@ -311,7 +323,11 @@ function ValidationForm({ ret, onDone, setMessage }) {
                   <tr key={`${l.id}-sav`}>
                     <td colSpan={5} style={{ ...td, background: C.grey }}>
                       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
-                        <SupplierSelect line={l} suppliers={ret.suppliers} value={d.supplierId} onChange={v => set(l.id, 'supplierId', v)} />
+                        <SupplierSelect line={l} suppliers={ret.suppliers} value={d.supplierId} onChange={v => chooseSupplier(l, v)} />
+                        <LotSelect
+                          lots={l.supplierCandidates?.lots} supplierId={d.supplierId} qty={d.supplier}
+                          value={d.purchaseOrderId} onChange={v => set(l.id, 'purchaseOrderId', v)}
+                        />
                         <input
                           value={d.problem} onChange={e => set(l.id, 'problem', e.target.value)}
                           placeholder="Problème constaté (repris dans l'export fournisseur)"
@@ -386,7 +402,8 @@ function ReceivedLines({ ret, canWrite, onDone, setMessage }) {
                       )}
                       {l.qty_supplier > 0 && (
                         <span>
-                          {l.qty_supplier} SAV {l.supplier_name}{' '}
+                          {l.qty_supplier} SAV {l.supplier_name}
+                          {l.supplier_order_number && <span style={{ color: C.greyT }}> · cde {l.supplier_order_number}</span>}{' '}
                           {l.supplier_status && <Chip color={SUPPLIER_STATUS[l.supplier_status].color} bg={SUPPLIER_STATUS[l.supplier_status].bg}>{SUPPLIER_STATUS[l.supplier_status].label}</Chip>}
                           {l.problem && <div style={{ fontSize: 12, color: C.greyT }}>{l.problem}</div>}
                         </span>
@@ -878,9 +895,10 @@ const downloadBatch = async (batchId, supplierName) => {
   URL.revokeObjectURL(url);
 };
 
-function SuppliersView({ navigate }) {
+function SuppliersView({ navigate, canWrite }) {
   const [rows, setRows] = useState(null);
   const [error, setError] = useState('');
+  const [adding, setAdding] = useState(false);
   useEffect(() => {
     axios.get(`${RETURNS_API}/suppliers`).then(({ data }) => setRows(data.suppliers)).catch(e => setError(errorText(e)));
   }, []);
@@ -888,28 +906,41 @@ function SuppliersView({ navigate }) {
   if (error) return <Banner kind="error">{error}</Banner>;
   if (!rows) return <p style={{ color: C.greyT }}>Chargement…</p>;
   return (
-    <div style={{ ...panel, padding: 0, overflowX: 'auto' }}>
-      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-        <thead>
-          <tr>
-            <th style={th}>Fournisseur</th><th style={{ ...th, textAlign: 'right' }}>Lignes à retourner</th>
-            <th style={{ ...th, textAlign: 'right' }}>Pièces</th><th style={{ ...th, textAlign: 'right' }}>Valeur HT</th>
-            <th style={{ ...th, textAlign: 'right' }}>Envoyées, en attente d'avoir</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.length === 0 && <tr><td colSpan={5} style={{ ...td, color: C.greyT, textAlign: 'center', padding: 30 }}>Aucun produit en SAV fournisseur.</td></tr>}
-          {rows.map(s => (
-            <tr key={s.id} onClick={() => navigate(`/retours/fournisseurs/${s.id}`)} style={{ cursor: 'pointer' }}>
-              <td style={{ ...td, fontWeight: 700 }}>{s.name}</td>
-              <td style={{ ...td, textAlign: 'right' }}>{s.lines}</td>
-              <td style={{ ...td, textAlign: 'right' }}>{s.pieces}</td>
-              <td style={{ ...td, textAlign: 'right' }}>{euro(s.value)}</td>
-              <td style={{ ...td, textAlign: 'right', color: C.greyT }}>{s.sent_lines}</td>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      {canWrite && (
+        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+          <button type="button" onClick={() => setAdding(true)} style={btn('primary')}>+ Ajouter un SAV boutique</button>
+        </div>
+      )}
+      {adding && (
+        <BoutiqueSavModal
+          onClose={() => setAdding(false)}
+          onCreated={({ supplierId }) => navigate(`/retours/fournisseurs/${supplierId}`)}
+        />
+      )}
+      <div style={{ ...panel, padding: 0, overflowX: 'auto' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <thead>
+            <tr>
+              <th style={th}>Fournisseur</th><th style={{ ...th, textAlign: 'right' }}>Lignes à retourner</th>
+              <th style={{ ...th, textAlign: 'right' }}>Pièces</th><th style={{ ...th, textAlign: 'right' }}>Valeur HT</th>
+              <th style={{ ...th, textAlign: 'right' }}>Envoyées, en attente d'avoir</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {rows.length === 0 && <tr><td colSpan={5} style={{ ...td, color: C.greyT, textAlign: 'center', padding: 30 }}>Aucun produit en SAV fournisseur.</td></tr>}
+            {rows.map(s => (
+              <tr key={s.id} onClick={() => navigate(`/retours/fournisseurs/${s.id}`)} style={{ cursor: 'pointer' }}>
+                <td style={{ ...td, fontWeight: 700 }}>{s.name}</td>
+                <td style={{ ...td, textAlign: 'right' }}>{s.lines}</td>
+                <td style={{ ...td, textAlign: 'right' }}>{s.pieces}</td>
+                <td style={{ ...td, textAlign: 'right' }}>{euro(s.value)}</td>
+                <td style={{ ...td, textAlign: 'right', color: C.greyT }}>{s.sent_lines}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
@@ -920,6 +951,7 @@ function SupplierView({ supplierId, navigate, canWrite }) {
   const [error, setError] = useState('');
   const [message, setMessage] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [adding, setAdding] = useState(false);
 
   const load = useCallback(() => {
     axios.get(`${RETURNS_API}/suppliers/${supplierId}`)
@@ -940,7 +972,9 @@ function SupplierView({ supplierId, navigate, canWrite }) {
   );
 
   const send = async () => {
-    if (!window.confirm(`Créer le renvoi de ${checked.size} ligne(s) à ${data.supplier.name} ? Elles passeront en « Envoyé ».`)) return;
+    const noPo = data.items.filter(i => checked.has(i.id) && !i.purchase_order_id).length;
+    const warn = noPo ? `\n\n⚠️ ${noPo} ligne(s) sans commande fournisseur : l'export ne la citera pas.` : '';
+    if (!window.confirm(`Créer le renvoi de ${checked.size} ligne(s) à ${data.supplier.name} ? Elles passeront en « Envoyé ».${warn}`)) return;
     setSaving(true);
     try {
       const { data: b } = await axios.post(`${RETURNS_API}/suppliers/${supplierId}/batches`, { itemIds: [...checked] });
@@ -962,6 +996,26 @@ function SupplierView({ supplierId, navigate, canWrite }) {
       setMessage({ kind: 'error', text: errorText(e) });
     }
   };
+  const setLot = async (item, purchaseOrderId) => {
+    if (!purchaseOrderId) return;
+    try {
+      const { data: d } = await axios.put(`${RETURNS_API}/supplier-items/${item.id}/lot`, { purchaseOrderId });
+      setData(d);
+    } catch (e) {
+      setMessage({ kind: 'error', text: errorText(e) });
+    }
+  };
+  const removeItem = async (item) => {
+    if (!window.confirm(`Supprimer « ${item.name} » (SAV boutique ${item.shop_name}) ?`)) return;
+    try {
+      const { data: d } = await axios.delete(`${RETURNS_API}/supplier-items/${item.id}`);
+      setData(d);
+      setChecked(s => { const n = new Set(s); n.delete(item.id); return n; });
+    } catch (e) {
+      setMessage({ kind: 'error', text: errorText(e) });
+    }
+  };
+
   const unlinkCredit = async (batchId, documentId) => {
     if (!window.confirm('Délier cet avoir du renvoi ?')) return;
     try {
@@ -979,8 +1033,16 @@ function SupplierView({ supplierId, navigate, canWrite }) {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
         <button type="button" onClick={() => navigate('/retours/fournisseurs')} style={{ ...btn('ghost'), padding: '6px 12px', fontSize: 13 }}>← Fournisseurs</button>
-        <h2 style={{ margin: 0, fontSize: 20, fontWeight: 900, color: C.dark }}>{data.supplier.name}</h2>
+        <h2 style={{ margin: 0, fontSize: 20, fontWeight: 900, color: C.dark, flex: 1 }}>{data.supplier.name}</h2>
+        {canWrite && <button type="button" onClick={() => setAdding(true)} style={btn('primary')}>+ Ajouter un SAV boutique</button>}
       </div>
+      {adding && (
+        <BoutiqueSavModal
+          supplierId={supplierId}
+          onClose={() => setAdding(false)}
+          onCreated={() => { setAdding(false); setMessage({ kind: 'ok', text: 'SAV boutique ajouté.' }); load(); }}
+        />
+      )}
       {message && <Banner kind={message.kind} onClose={() => setMessage(null)}>{message.text}</Banner>}
 
       <div style={{ ...panel, padding: 0, overflowX: 'auto' }}>
@@ -994,23 +1056,52 @@ function SupplierView({ supplierId, navigate, canWrite }) {
                 />
               </th>
               <th style={th}>Réf. fournisseur</th><th style={th}>Produit</th><th style={{ ...th, textAlign: 'right' }}>Qté</th>
-              <th style={th}>Motif</th><th style={th}>Problème</th><th style={th}>Commande</th><th style={th}>Date</th>
+              <th style={th}>Commande fournisseur</th>
+              <th style={th}>Motif</th><th style={th}>Problème</th><th style={th}>Origine</th><th style={th}>Date</th>
               <th style={{ ...th, textAlign: 'right' }}>Coût HT</th>
             </tr>
           </thead>
           <tbody>
-            {data.items.length === 0 && <tr><td colSpan={9} style={{ ...td, color: C.greyT, textAlign: 'center', padding: 30 }}>Rien à retourner.</td></tr>}
+            {data.items.length === 0 && <tr><td colSpan={10} style={{ ...td, color: C.greyT, textAlign: 'center', padding: 30 }}>Rien à retourner.</td></tr>}
             {data.items.map(i => (
               <tr key={i.id}>
                 <td style={td}><input type="checkbox" checked={checked.has(i.id)} onChange={() => toggle(i.id)} /></td>
                 <td style={td}>{i.supplier_sku || <span style={{ color: C.greyT }}>—</span>}</td>
                 <td style={td}>{i.name}<div style={{ fontSize: 12, color: C.greyT }}>{i.sku}</div></td>
                 <td style={{ ...td, textAlign: 'right', fontWeight: 700 }}>{i.qty}</td>
-                <td style={td}>{REASONS[i.reason]}</td>
-                <td style={{ ...td, maxWidth: 280 }}>{i.problem}</td>
                 <td style={td}>
-                  <a href={`/retours/${i.return_id}`} style={link}>Retour n°{i.return_id}</a>
-                  <div style={{ fontSize: 12, color: C.greyT }}>#{i.wp_order_id}</div>
+                  {canWrite ? (
+                    <LotSelect
+                      lots={data.lots.filter(l => l.product_id === i.product_id)} qty={i.qty}
+                      credit={i.purchase_order_id ? { [i.purchase_order_id]: i.qty } : {}}
+                      value={i.purchase_order_id} onChange={v => setLot(i, v)}
+                      style={{ minWidth: 0, maxWidth: 230, fontSize: 12.5, padding: '4px 6px', borderColor: i.purchase_order_id ? C.greyB : C.red }}
+                    />
+                  ) : (i.supplier_order_number || <span style={{ color: C.red }}>—</span>)}
+                </td>
+                <td style={td}>{i.source === 'boutique' ? 'SAV boutique' : REASONS[i.reason]}</td>
+                <td style={{ ...td, maxWidth: 280 }}>
+                  {i.problem}
+                  {i.note && <div style={{ fontSize: 12, color: C.greyT }}>{i.note}</div>}
+                </td>
+                <td style={td}>
+                  {i.source === 'boutique' ? (
+                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6 }}>
+                      <div>
+                        <strong>Boutique {i.shop_name}</strong>
+                        {i.created_by_name && <div style={{ fontSize: 12, color: C.greyT }}>{i.created_by_name}</div>}
+                      </div>
+                      {canWrite && (
+                        <button type="button" title="Supprimer" onClick={() => removeItem(i)}
+                          style={{ border: 'none', background: 'none', cursor: 'pointer', color: C.greyT }}>✕</button>
+                      )}
+                    </div>
+                  ) : (
+                    <>
+                      <a href={`/retours/${i.return_id}`} style={link}>Retour n°{i.return_id}</a>
+                      <div style={{ fontSize: 12, color: C.greyT }}>#{i.wp_order_id}</div>
+                    </>
+                  )}
                 </td>
                 <td style={td}>{formatDateUTC(i.created_at, { time: false })}</td>
                 <td style={{ ...td, textAlign: 'right' }}>{euro(i.unit_cost == null ? null : i.qty * Number(i.unit_cost))}</td>
@@ -1137,7 +1228,7 @@ export default function ReturnsApp() {
 
           {!section && <ListView navigate={navigate} />}
           {section && !suppliersTab && <DetailView key={section} id={Number(section)} navigate={navigate} canWrite={canWrite} />}
-          {suppliersTab && !sub && <SuppliersView navigate={navigate} />}
+          {suppliersTab && !sub && <SuppliersView navigate={navigate} canWrite={canWrite} />}
           {suppliersTab && sub && <SupplierView key={sub} supplierId={Number(sub)} navigate={navigate} canWrite={canWrite} />}
         </div>
       </main>

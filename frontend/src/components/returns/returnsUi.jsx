@@ -1,4 +1,5 @@
 import { API_URL, C, Chip } from '../picking/pickingUi';
+import { formatDate } from '../../utils/dateUtils';
 
 /** Retours client — libellés et petits éléments partagés (app, ticket, commande). */
 
@@ -71,3 +72,35 @@ export const customerName = (r) =>
   [r.billing_first_name, r.billing_last_name].filter(Boolean).join(' ') || r.billing_email || '—';
 
 export const euro = (n) => (n == null ? '—' : `${Number(n).toFixed(2).replace('.', ',')} €`);
+
+/** Boutiques (warehouse_id Nextore, cf. backend config/nextore.js). */
+export const SHOPS = [
+  { id: 1, name: 'Montpellier' },
+  { id: 2, name: 'Castelnau' },
+];
+
+/**
+ * Choix de la commande fournisseur d'une pièce SAV (15/10/2026). On ne
+ * retourne pas plus de pièces que la commande n'en a apporté : une commande
+ * qui ne couvre plus `qty` est grisée (le serveur fait la même règle).
+ *
+ * @param {Array} lots     commandes du produit (GET /retours/purchase-lots)
+ * @param {object} credit  { purchase_order_id: pièces à rendre au compteur }
+ *   — la pièce dont on CHANGE la commande ne compte pas contre elle-même.
+ */
+export function LotSelect({ lots, supplierId, value, qty, credit = {}, onChange, style }) {
+  const mine = (lots || []).filter(l => !supplierId || l.supplier_id === Number(supplierId));
+  return (
+    <select value={value || ''} onChange={e => onChange(Number(e.target.value) || '')} style={{ ...field, minWidth: 260, ...style }}>
+      <option value="">{mine.length ? 'Commande fournisseur…' : 'Aucune commande reçue de ce produit'}</option>
+      {mine.map(l => {
+        const left = l.remaining + (credit[l.purchase_order_id] || 0);
+        return (
+          <option key={l.purchase_order_id} value={l.purchase_order_id} disabled={left < qty}>
+            {l.order_number} — reçue {formatDate(l.received_at, { time: false })} — {l.received} reçue(s), {left} retournable(s)
+          </option>
+        );
+      })}
+    </select>
+  );
+}
