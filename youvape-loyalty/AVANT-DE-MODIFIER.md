@@ -49,8 +49,7 @@ ssh youvape "ssh youvape@web1.youvape.drakkar.pro \
   'grep -m1 Version: /var/www/vhosts/youvape.fr/current/wp-content/plugins/youvape-loyalty/youvape-loyalty.php'"
 ```
 
-Ou par l'API (clés WooCommerce de `rewards_config`) — c'est aussi ce que fait le bouton
-« Tester la connexion » de l'app Récompense Avis :
+Ou par l'API (clés WooCommerce de `rewards_config`) :
 
 ```
 GET https://www.youvape.fr/wp-json/wc-youvape-loyalty/v1/status?consumer_key=…&consumer_secret=…
@@ -71,9 +70,12 @@ GET https://www.youvape.fr/wp-json/wc-youvape-loyalty/v1/status?consumer_key=…
 
 ## 5. Côté app
 
-`backend/src/services/loyaltyService.js` appelle ces routes. Tant que le plugin n'est pas
-installé (404 `rest_no_route`), il retombe sur l'API WPLoyalty d'origine : l'app peut être
-déployée avant le plugin.
+`backend/src/services/loyaltyService.js` appelle ces routes pour les **Retours**. Tant que le
+plugin n'est pas installé (404 `rest_no_route`), il retombe sur l'API WPLoyalty d'origine :
+l'app peut être déployée avant le plugin.
+
+Les **récompenses d'avis** (`rewardService`) appellent encore l'API WPLoyalty en direct :
+elles ne basculeront sur le plugin (`type: 'avis'`) qu'une fois celui-ci testé et en prod.
 
 ⚠️ L'API WPLoyalty d'origine répond **HTTP 200 avec `success: false`** quand elle échoue
 (client inconnu, solde insuffisant…) : le repli lit `success`, jamais le seul statut HTTP.

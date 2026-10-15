@@ -301,8 +301,7 @@ commande pas un parent) ; le lien tarifé garde le repli sur le parent, car c'es
 
 ### Points WPLoyalty : plugin `youvape-loyalty` (15/10/2026)
 
-Tout crédit ou retrait de points (avoirs des Retours, récompenses d'avis) passe par
-`services/loyaltyService.js` → plugin **`youvape-loyalty/`** (racine du dépôt), routes
+Les avoirs des Retours (crédit et annulation) passent par `services/loyaltyService.js` → plugin **`youvape-loyalty/`** (racine du dépôt), routes
 `/wp-json/wc-youvape-loyalty/v1/points/add|reduce`. Il enregistre le crédit sous NOTRE type
 (« Avoir retour SAV », « Avis partagé ») avec le motif et le n° de commande (colonne ORDER NO).
 L'API WPLoyalty d'origine range tout sous « REST API » et ignore tout motif.
@@ -310,6 +309,9 @@ L'API WPLoyalty d'origine range tout sous « REST API » et ignore tout motif.
 - **Lire `youvape-loyalty/AVANT-DE-MODIFIER.md`** : déployé par l'agence comme yousync.
 - Garder le préfixe **`wc-`** du namespace : WooCommerce n'authentifie ses clés que sur `wc/…` et `wc-…`.
 - Plugin absent (404 `rest_no_route`) → repli automatique sur l'API WPLoyalty, sans motif.
+- ⚠️ **Les récompenses d'avis (`rewardService`) appellent ENCORE l'API WPLoyalty en direct,
+  exprès** : elles tournent en prod, on n'y touche qu'une fois le plugin testé et déployé.
+  Elles passeront alors par `loyaltyService` avec `type: 'avis'` (+ `review.order_id`).
 - ⚠️ **L'API WPLoyalty répond HTTP 200 avec `success: false` quand elle échoue.** Ne jamais
   juger un appel sur son seul statut HTTP (avant le 15/10, un retrait refusé passait pour fait).
 - Un retrait est plafonné au solde : la réponse donne `points` réellement retirés.
