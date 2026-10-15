@@ -354,10 +354,19 @@ const lineCandidates = (lots, line, paidAt) => {
   return { suppliers, suggested, suggestedLots, lots: mine };
 };
 
+/**
+ * Port payé TTC. `order_shipping_tax` est toujours NULL en base : la TVA du
+ * port est sur la ligne `tax` de la commande (CLAUDE.md, formule Metorik).
+ * Commande 1264475 : 3,25 € HT + 0,65 € = 3,90 €, et non 3,25 €.
+ */
+const SHIPPING_PAID_SQL = `COALESCE(o.order_shipping, 0) + COALESCE((
+    SELECT SUM(t.line_tax) FROM order_items t WHERE t.wp_order_id = o.wp_order_id AND t.order_item_type = 'tax'
+  ), 0)`;
+
 const get = async (id) => {
   const { rows: [r] } = await pool.query(
     `SELECT r.*, o.post_date, o.paid_date, o.post_status, o.order_total, o.shipping_method,
-            o.order_shipping, o.order_shipping_tax,
+            ${SHIPPING_PAID_SQL} AS shipping_paid,
             o.billing_first_name, o.billing_last_name, o.billing_email,
             COALESCE(o.relay_point_manual, o.relay_point) AS relay_point,
             uc.name AS created_by_name, ur.name AS received_by_name, ut.name AS treated_by_name,
@@ -403,7 +412,7 @@ const get = async (id) => {
 
   // L'étiquette ne voyage qu'à la demande (GET /:id/label).
   const { label_data: labelData, ...ret } = r;
-  const shippingPaid = Number(r.order_shipping || 0) + Number(r.order_shipping_tax || 0);
+  const shippingPaid = Number(r.shipping_paid || 0);
   return {
     ...ret,
     has_label: !!labelData,
@@ -980,10 +989,10 @@ const creditPoints = async (id, { withShipping, deductEuros }, user) => {
 
   const { rows: lines } = await pool.query('SELECT qty, unit_paid FROM customer_return_lines WHERE return_id = $1', [id]);
   const { rows: [o] } = await pool.query(
-    'SELECT order_shipping, order_shipping_tax FROM orders WHERE wp_order_id = $1', [r.wp_order_id]
+    `SELECT ${SHIPPING_PAID_SQL} AS shipping_paid FROM orders o WHERE o.wp_order_id = $1`, [r.wp_order_id]
   );
   const b = pointsBreakdown(lines, {
-    shippingPaid: Number(o?.order_shipping || 0) + Number(o?.order_shipping_tax || 0),
+    shippingPaid: Number(o?.shipping_paid || 0),
     withShipping: !!withShipping,
     deductEuros: deduct,
   });
