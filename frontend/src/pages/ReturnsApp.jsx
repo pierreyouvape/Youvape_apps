@@ -3,14 +3,14 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import AppShell from '../components/AppShell';
 import { Returns as ReturnsIcon } from '../components/AppIcons';
-import { C, Chip } from '../components/picking/pickingUi';
+import { C, Chip, carrierLabel } from '../components/picking/pickingUi';
 import useTicketsAccess from '../components/tickets/useTicketsAccess';
 import ReturnLabelActions from '../components/returns/ReturnLabelActions';
 import CreateReturnModal from '../components/returns/CreateReturnModal';
 import BoutiqueSavModal from '../components/returns/BoutiqueSavModal';
 import { formatDate, formatDateUTC } from '../utils/dateUtils';
 import {
-  RETURNS_API, RETURNS_COLOR, RETURNS_COLOR_L, REASONS, OUTCOMES, OUTCOME_REF_HINT, STATUS,
+  RETURNS_API, RETURNS_COLOR, RETURNS_COLOR_L, REASONS, LOST_REASON, OUTCOMES, OUTCOME_REF_HINT, STATUS,
   StatusChip, btn, field, errorText, customerName, euro, LotSelect,
 } from '../components/returns/returnsUi';
 
@@ -124,18 +124,20 @@ function PartialEditor({ ret, line, canWrite, onDone, setMessage }) {
 
 function ListView({ navigate }) {
   const [status, setStatus] = useState('attente');
+  // Colis perdus : tous statuts confondus.
+  const [lostOnly, setLostOnly] = useState(false);
   const [q, setQ] = useState('');
   const [data, setData] = useState(null);
   const [error, setError] = useState('');
 
   useEffect(() => {
     const t = setTimeout(() => {
-      axios.get(RETURNS_API, { params: { status: status || undefined, q: q || undefined } })
+      axios.get(RETURNS_API, { params: { status: status || undefined, reason: lostOnly ? LOST_REASON : undefined, q: q || undefined } })
         .then(({ data: d }) => { setData(d); setError(''); })
         .catch(e => setError(errorText(e)));
     }, q ? 250 : 0);
     return () => clearTimeout(t);
-  }, [status, q]);
+  }, [status, lostOnly, q]);
 
   const counts = data?.counts || {};
   const total = Object.values(counts).reduce((a, b) => a + b, 0);
@@ -155,6 +157,15 @@ function ListView({ navigate }) {
             }}
           >{l} <span style={{ color: C.greyT, fontWeight: 600 }}>{n}</span></button>
         ))}
+        <button
+          type="button" onClick={() => { setLostOnly(v => !v); setStatus(''); }}
+          style={{
+            ...btn('ghost'), padding: '6px 12px', fontSize: 13,
+            borderColor: lostOnly ? C.red : C.greyB,
+            background: lostOnly ? C.redL : C.white,
+            color: lostOnly ? C.red : C.dark,
+          }}
+        >Colis perdus <span style={{ color: C.greyT, fontWeight: 600 }}>{data?.lost || 0}</span></button>
         <span style={{ flex: 1 }} />
         <input
           value={q} onChange={e => setQ(e.target.value)} placeholder="N° de retour, de commande, client…"
@@ -192,7 +203,7 @@ function ListView({ navigate }) {
                     <td style={td}>{REASONS[r.reason]}{!r.return_required && <div style={{ fontSize: 12, color: C.greyT }}>sans retour produit</div>}</td>
                     <td style={{ ...td, textAlign: 'right' }}>{r.pieces}</td>
                     <td style={td}>{r.outcome ? OUTCOMES[r.outcome] : '—'}{r.treated_at && <span style={{ color: C.green }}> ✓</span>}</td>
-                    <td style={td}><StatusChip status={r.status} /></td>
+                    <td style={td}><StatusChip status={r.status} reason={r.reason} /></td>
                   </tr>
                 );
               })}
@@ -384,7 +395,7 @@ function ReceivedLines({ ret, canWrite, onDone, setMessage }) {
             <tr key={l.id}>
               <td style={td}>
                 <ProductCell name={l.name} sku={l.sku} imageUrl={l.image_url} indent={!!l.bundle_line_id} pack={l.is_bundle} />
-                {!l.is_bundle && <PartialEditor ret={ret} line={l} canWrite={canWrite} onDone={onDone} setMessage={setMessage} />}
+                {!l.is_bundle && ret.reason !== LOST_REASON && <PartialEditor ret={ret} line={l} canWrite={canWrite} onDone={onDone} setMessage={setMessage} />}
               </td>
               <td style={{ ...td, textAlign: 'right', fontWeight: 700 }}>{l.qty}</td>
               <td style={td}>{l.bundle_line_id ? <span style={{ color: C.greyT }}>dans le pack</span> : euro(l.unit_paid)}</td>
@@ -408,7 +419,7 @@ function ReceivedLines({ ret, canWrite, onDone, setMessage }) {
                           {l.problem && <div style={{ fontSize: 12, color: C.greyT }}>{l.problem}</div>}
                         </span>
                       )}
-                      {l.qty_no_restock > 0 && <span>{l.qty_no_restock} non remis en stock</span>}
+                      {l.qty_no_restock > 0 && <span>{l.qty_no_restock} {ret.reason === LOST_REASON ? 'perdu(s) par le transporteur' : 'non remis en stock'}</span>}
                     </div>
                   )}
                 </td>
@@ -436,6 +447,8 @@ function ReplacementModal({ ret, onClose, onDone, setMessage }) {
   // lineId → { productId, name, sku, available } : autre déclinaison choisie à la place.
   const [swap, setSwap] = useState({});
   const [openAlt, setOpenAlt] = useState({});
+  // Colis perdu : disponibilité confirmée à la main, ligne par ligne (Pierre, 16/10/2026).
+  const [confirmed, setConfirmed] = useState({});
 
   // Ce qui part réellement pour une ligne : la déclinaison choisie, sinon l'article retourné.
   const effective = (i) => swap[i.lineId] || i;
@@ -464,14 +477,17 @@ function ReplacementModal({ ret, onClose, onDone, setMessage }) {
   const short = (data?.items || []).filter(i => (qty[i.lineId] || 0) > 0
     && (effective(i).available == null || effective(i).available < qty[i.lineId]));
   const chosen = (data?.items || []).filter(i => (qty[i.lineId] || 0) > 0);
-  const canSubmit = data && chosen.length && !short.length && !saving;
+  const unconfirmed = data?.lost ? chosen.filter(i => !confirmed[i.lineId]) : [];
+  const canSubmit = data && chosen.length && !short.length && !unconfirmed.length && !saving;
 
   const submit = async () => {
     setSaving(true);
     setError('');
     try {
       const { data: r } = await axios.post(`${RETURNS_API}/${ret.id}/replacement`, {
-        items: chosen.map(i => ({ lineId: i.lineId, qty: qty[i.lineId], productId: swap[i.lineId]?.productId || null })),
+        items: chosen.map(i => ({
+          lineId: i.lineId, qty: qty[i.lineId], productId: swap[i.lineId]?.productId || null, confirmed: !!confirmed[i.lineId],
+        })),
       });
       setMessage({
         kind: r.warnings?.length ? 'error' : 'ok',
@@ -492,7 +508,7 @@ function ReplacementModal({ ret, onClose, onDone, setMessage }) {
     >
       <div style={{ background: C.white, borderRadius: 14, width: 'min(680px, 100%)', boxShadow: '0 20px 50px rgba(0,0,0,0.25)' }}>
         <div style={{ padding: '16px 20px', borderBottom: `1px solid ${C.greyB}`, fontSize: 17, fontWeight: 800 }}>
-          Commande de renvoi — retour n°{ret.id}
+          {data?.lost ? 'Renvoi du colis perdu' : 'Commande de renvoi'} — retour n°{ret.id}
         </div>
         <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 14 }}>
           {!data && !error && <span style={{ color: C.greyT }}>Lecture du stock BMS…</span>}
@@ -500,7 +516,10 @@ function ReplacementModal({ ret, onClose, onDone, setMessage }) {
             <>
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead>
-                  <tr><th style={th}>Article</th><th style={{ ...th, textAlign: 'right' }}>Dispo BMS</th><th style={{ ...th, textAlign: 'right' }}>À renvoyer</th></tr>
+                  <tr>
+                    <th style={th}>Article</th><th style={{ ...th, textAlign: 'right' }}>Dispo BMS</th><th style={{ ...th, textAlign: 'right' }}>À renvoyer</th>
+                    {data.lost && <th style={{ ...th, textAlign: 'center' }}>Dispo confirmée</th>}
+                  </tr>
                 </thead>
                 <tbody>
                   {data.items.map(i => {
@@ -534,6 +553,9 @@ function ReplacementModal({ ret, onClose, onDone, setMessage }) {
                             </button>
                           )}
                           {swap[i.lineId] && <div style={{ fontSize: 13, fontWeight: 700, color: RETURNS_COLOR, marginTop: 4 }}>→ {swap[i.lineId].name}</div>}
+                          {data.lost && ko && !e.loading && (
+                            <div style={{ fontSize: 12.5, fontWeight: 700, color: C.red, marginTop: 4 }}>Stock BMS insuffisant : renvoi impossible</div>
+                          )}
                         </td>
                         <td style={{ ...td, textAlign: 'right', color: ko ? C.red : C.dark, fontWeight: 700 }}>
                           {e.loading ? '…' : (e.available ?? <span title={e.stockError}>?</span>)}
@@ -545,6 +567,15 @@ function ReplacementModal({ ret, onClose, onDone, setMessage }) {
                             style={{ ...field, width: 64, textAlign: 'right' }}
                           />
                         </td>
+                        {data.lost && (
+                          <td style={{ ...td, textAlign: 'center' }}>
+                            <input
+                              type="checkbox" disabled={q === 0} checked={!!confirmed[i.lineId]}
+                              onChange={ev => setConfirmed(c => ({ ...c, [i.lineId]: ev.target.checked }))}
+                              style={{ width: 18, height: 18, cursor: 'pointer' }}
+                            />
+                          </td>
+                        )}
                       </tr>
                     );
                   })}
@@ -556,7 +587,8 @@ function ReplacementModal({ ret, onClose, onDone, setMessage }) {
                 {data.relayPoint?.id && <div style={{ fontSize: 12.5, color: C.greyT }}>Point relais repris : {data.relayPoint.name || data.relayPoint.id}</div>}
               </div>
               <div style={{ fontSize: 12.5, color: C.greyT }}>
-                Commande à 0 €, statut « En cours », note interne « SAV commande N°{ret.wp_order_id} ». WooCommerce enverra son email habituel au client.
+                Commande à 0 €, statut « En cours », note interne « {data.lost ? 'SAV colis perdu commande' : 'SAV commande'} N°{ret.wp_order_id} ». WooCommerce enverra son email habituel au client.
+                {data.lost && ' Cocher chaque article une fois sa présence vérifiée en stock.'}
               </div>
             </>
           )}
@@ -665,7 +697,7 @@ function OutcomePanel({ ret, canWrite, onDone, setMessage }) {
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            {Object.entries(OUTCOMES).map(([k, v]) => (
+            {Object.entries(OUTCOMES).filter(([k]) => !(ret.reason === LOST_REASON && k === 'reexpedition')).map(([k, v]) => (
               <button
                 key={k} type="button" onClick={() => setOutcome(k)}
                 style={{
@@ -681,7 +713,10 @@ function OutcomePanel({ ret, canWrite, onDone, setMessage }) {
           {outcome === 'renvoi' && (
             <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
               <button type="button" onClick={() => setReplacementOpen(true)} style={btn('primary')}>Créer la commande de renvoi</button>
-              <span style={{ fontSize: 12.5, color: C.greyT }}>Commande WooCommerce à 0 €, stock BMS vérifié.</span>
+              <span style={{ fontSize: 12.5, color: C.greyT }}>
+                Commande WooCommerce à 0 €, stock BMS vérifié.
+                {ret.reason === LOST_REASON && ' Colis perdu : même méthode d’expédition que la commande, disponibilité à confirmer.'}
+              </span>
             </div>
           )}
 
@@ -788,13 +823,14 @@ function DetailView({ id, navigate, canWrite }) {
     axios.get(`${RETURNS_API}/${id}`).then(({ data }) => setRet(data)).catch(e => setError(errorText(e)));
   }, [id]);
   useEffect(() => { load(); }, [load]);
+  const lost = ret?.reason === LOST_REASON;
 
   const cancel = async () => {
-    if (!window.confirm(`Annuler le retour n°${id} ?`)) return;
+    if (!window.confirm(lost ? `Annuler la déclaration de colis perdu (retour n°${id}) ? À faire si le colis est retrouvé.` : `Annuler le retour n°${id} ?`)) return;
     try {
       const { data } = await axios.post(`${RETURNS_API}/${id}/cancel`);
       setRet(data);
-      setMessage({ kind: 'ok', text: 'Retour annulé.' });
+      setMessage({ kind: 'ok', text: lost ? 'Déclaration de colis perdu annulée.' : 'Retour annulé.' });
     } catch (e) {
       setMessage({ kind: 'error', text: errorText(e) });
     }
@@ -804,6 +840,9 @@ function DetailView({ id, navigate, canWrite }) {
   if (!ret) return <p style={{ color: C.greyT }}>Chargement…</p>;
 
   const cancelled = !!ret.cancelled_at;
+  // Colis perdu sans issue faite : annulable (colis retrouvé), comme cancel() côté serveur.
+  const lostCancellable = lost && !ret.treated_at && ret.replacement_order_id == null
+    && !ret.loyalty_credited_at && !ret.refund_wp_id && ret.reship_label_id == null;
   const Meta = ({ k, children }) => (
     <div>
       <div style={label}>{k}</div>
@@ -821,15 +860,19 @@ function DetailView({ id, navigate, canWrite }) {
       <div style={panel}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 16 }}>
           <h2 style={{ margin: 0, fontSize: 22, fontWeight: 900, color: C.dark }}>Retour n°{ret.id}</h2>
-          <StatusChip status={ret.status} />
-          <Chip color={RETURNS_COLOR} bg={RETURNS_COLOR_L}>{REASONS[ret.reason]}</Chip>
-          {!ret.return_required && <Chip color={C.greyT} bg={C.grey}>sans retour du produit</Chip>}
+          <StatusChip status={ret.status} reason={ret.reason} />
+          {lost
+            ? <Chip color={C.white} bg={C.red}>COLIS PERDU</Chip>
+            : <Chip color={RETURNS_COLOR} bg={RETURNS_COLOR_L}>{REASONS[ret.reason]}</Chip>}
+          {!ret.return_required && !lost && <Chip color={C.greyT} bg={C.grey}>sans retour du produit</Chip>}
           <span style={{ flex: 1 }} />
           {canWrite && !cancelled && !ret.received_at && (
             <button type="button" onClick={() => setEditing(true)} style={{ ...btn('ghost'), color: RETURNS_COLOR, borderColor: RETURNS_COLOR, padding: '6px 12px', fontSize: 13 }}>Modifier le retour</button>
           )}
-          {canWrite && !cancelled && !ret.received_at && (
-            <button type="button" onClick={cancel} style={{ ...btn('ghost'), color: C.red, borderColor: C.red, padding: '6px 12px', fontSize: 13 }}>Annuler le retour</button>
+          {canWrite && !cancelled && (!ret.received_at || lostCancellable) && (
+            <button type="button" onClick={cancel} style={{ ...btn('ghost'), color: C.red, borderColor: C.red, padding: '6px 12px', fontSize: 13 }}>
+              {lost ? 'Annuler la déclaration (colis retrouvé)' : 'Annuler le retour'}
+            </button>
           )}
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 18 }}>
@@ -845,7 +888,17 @@ function DetailView({ id, navigate, canWrite }) {
             {ret.ticket_subject && <div style={{ fontSize: 12, color: C.greyT }}>{ret.ticket_subject}</div>}
           </Meta>
           <Meta k="Créé">{ret.created_by_name || '—'}<div style={{ fontSize: 12, color: C.greyT }}>{formatDateUTC(ret.created_at)}</div></Meta>
-          {ret.received_at && <Meta k={ret.return_required ? 'Reçu' : 'Validé'}>{ret.received_by_name}<div style={{ fontSize: 12, color: C.greyT }}>{formatDateUTC(ret.received_at)}</div></Meta>}
+          {lost && (
+            <Meta k="Colis">
+              {ret.shipments.length === 0 ? '—' : ret.shipments.map((s, i) => (
+                <div key={i}>
+                  {carrierLabel({ carrierCode: s.carrier_code, accountCode: s.account_code })}
+                  {s.tracking_number && <div style={{ fontSize: 12, color: C.greyT }}>n°{s.tracking_number}</div>}
+                </div>
+              ))}
+            </Meta>
+          )}
+          {ret.received_at && <Meta k={lost ? 'Déclaré perdu' : ret.return_required ? 'Reçu' : 'Validé'}>{ret.received_by_name}<div style={{ fontSize: 12, color: C.greyT }}>{formatDateUTC(ret.received_at)}</div></Meta>}
           {cancelled && <Meta k="Annulé">{ret.cancelled_by_name}<div style={{ fontSize: 12, color: C.greyT }}>{formatDateUTC(ret.cancelled_at)}</div></Meta>}
         </div>
         {ret.note && <div style={{ marginTop: 14, padding: '8px 12px', background: C.grey, borderRadius: 8, fontSize: 13.5 }}>{ret.note}</div>}

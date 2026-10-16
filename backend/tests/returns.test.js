@@ -124,6 +124,9 @@ assert.deepStrictEqual(replacementShipping('Chronopost Domicile 24h'), { method:
 assert.deepStrictEqual(replacementShipping('Chronopost Express'), { method: 'Colissimo Domicile' });
 assert.deepStrictEqual(replacementShipping('Mondial Relay - Lockers'), { method: 'Mondial Relay - Lockers' });
 assert.deepStrictEqual(replacementShipping('2Shop'), { method: '2Shop' });
+assert.deepStrictEqual(replacementShipping('Chronopost Relais 24h', 'colis_perdu'), { method: 'Chronopost Relais 24h' }, 'colis perdu : méthode d’origine');
+assert.deepStrictEqual(replacementShipping('Chronopost Domicile 24h', 'colis_perdu'), { method: 'Chronopost Domicile 24h' });
+assert.deepStrictEqual(replacementShipping('Chronopost Relais 24h', 'defaut'), { method: '2Shop' });
 
 // ── Remboursement à rattacher ───────────────────────────────────────────────
 const refunds = [

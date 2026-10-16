@@ -137,6 +137,12 @@ function Etats({ row, vide = null }) {
     chips.push(<Chip key="bms" color={C.greyT} bg={C.greyB} title="Emballé et expédié dans BMS">BMS</Chip>);
   }
   if (row.status === 'cancelled') chips.push(<Chip key="c" color={C.red} bg={C.redL}>Annulée</Chip>);
+  if (row.lost_return_id && row.status === 'active') {
+    chips.push(<Chip key="p" color={C.white} bg={C.red} title={`Retour n°${row.lost_return_id}`}>Colis perdu</Chip>);
+  }
+  if (row.lost_origin_order) {
+    chips.push(<Chip key="r" color={C.violet} bg={C.violetL} title="Commande de renvoi d'un colis perdu">Renvoi perdu #{row.lost_origin_order}</Chip>);
+  }
   if (row.status === 'active' && row.bms_ship_status === 'pending') {
     chips.push(<Chip key="b" color={C.amber} bg={C.amberL}
       title={`${row.bms_attempts || 0} tentative(s). Dernière erreur : ${row.bms_last_error || 'aucune'}`}>BMS non confirmé</Chip>);

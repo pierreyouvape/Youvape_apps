@@ -28,8 +28,9 @@ const { getAdapter } = require('../services/carriers');
 const { getAccount } = require('../services/carriers/accounts');
 const mondialRelayAdapter = require('../services/carriers/mondialRelayAdapter');
 const { WAREHOUSE_BY_ID } = require('../config/nextore');
+const { BMS_SANS_DOUBLON } = require('../services/bmsShipmentSyncService');
 const {
-  REASONS, OUTCOMES, unitPaid, bundleParents, expandSelection, checkDestination, returnStatus, suggestSupplier,
+  REASONS, LOST_REASON, OUTCOMES, unitPaid, bundleParents, expandSelection, checkDestination, returnStatus, suggestSupplier,
   lotRemaining, checkLot, suggestLot,
   suggestPoints, replacementShipping, pickRefund, pointsBreakdown, breakdownText,
 } = require('../services/returnRules');
@@ -115,9 +116,17 @@ const orderContext = async (wpOrderId, excludeReturnId = null) => {
   if (!order) throw httpError(404, `Commande ${wpOrderId} absente de notre base.`);
   const lines = await orderLines(wpOrderId, excludeReturnId);
   const { rows: returns } = await pool.query(`${LIST_SQL} WHERE r.wp_order_id = $1 ORDER BY r.created_at DESC`, [wpOrderId]);
+  // Cette commande est-elle le renvoi d'un retour (colis perdu…) ?
+  const { rows: replacementFor } = await pool.query(
+    `SELECT id, wp_order_id, reason FROM customer_returns
+      WHERE replacement_order_id = $1 AND cancelled_at IS NULL ORDER BY id`,
+    [wpOrderId]
+  );
   const parents = bundleParents(lines);
   return {
     order,
+    replacementFor,
+    shipments: await orderShipments(wpOrderId),
     lines: lines.map(l => ({
       orderItemId: l.order_item_id,
       name: l.name,
@@ -158,6 +167,7 @@ const insertLines = async (client, returnId, picks, partials = new Map()) => {
 
 const create = async ({ wpOrderId, ticketId, reason, returnRequired, outcome, note, selection }, user) => {
   if (!REASONS[reason]) throw httpError(400, 'Motif inconnu.');
+  if (reason === LOST_REASON) throw httpError(400, 'Un colis perdu se déclare par « Déclarer colis perdu ».');
   if (outcome && !OUTCOMES[outcome]) throw httpError(400, 'Issue inconnue.');
   const { rows: [order] } = await pool.query(ORDER_SQL, [wpOrderId]);
   if (!order) throw httpError(404, `Commande ${wpOrderId} absente de notre base.`);
@@ -194,6 +204,74 @@ const create = async ({ wpOrderId, ticketId, reason, returnRequired, outcome, no
   return get(returnId);
 };
 
+// ── Colis perdu (16/10/2026) ────────────────────────────────────────────────
+
+/** Colis d'une commande : étiquettes de l'app encore actives et colis emballés dans BMS. */
+const orderShipments = async (wpOrderId) => {
+  const { rows } = await pool.query(
+    `SELECT * FROM (
+       SELECT l.carrier_code, l.account_code, l.tracking_number, l.created_at
+         FROM shipment_labels l WHERE l.order_number = $1 AND l.status = 'active'
+       UNION ALL
+       SELECT b.carrier_code, b.account_code, b.tracking_number, b.created_at
+         FROM bms_shipments b WHERE b.order_number = $1 AND ${BMS_SANS_DOUBLON}
+     ) s ORDER BY created_at DESC`,
+    [String(wpOrderId)]
+  );
+  return rows;
+};
+
+const shipmentText = (s) => [s.carrier_code === 'chronopost' && s.account_code === '2shop' ? '2Shop' : s.carrier_code, s.tracking_number && `n°${s.tracking_number}`]
+  .filter(Boolean).join(' ');
+
+/**
+ * Déclare perdu par le transporteur tout ou partie d'une commande. Rien ne
+ * revient : le constat est validé d'office, toutes les pièces « non remises en
+ * stock ». L'issue prévue est le renvoi (méthode d'origine, dispo confirmée à
+ * la main et stock BMS vérifié). Colis retrouvé : on annule la déclaration.
+ */
+const declareLost = async ({ wpOrderId, ticketId, note, selection }, user) => {
+  const { rows: [order] } = await pool.query(ORDER_SQL, [wpOrderId]);
+  if (!order) throw httpError(404, `Commande ${wpOrderId} absente de notre base.`);
+  if (ticketId) {
+    const { rowCount } = await pool.query('SELECT 1 FROM sav_tickets WHERE id = $1', [ticketId]);
+    if (!rowCount) throw httpError(404, `Ticket #${ticketId} introuvable.`);
+  }
+
+  const picks = expandSelection(await orderLines(wpOrderId), selection);
+
+  const client = await pool.connect();
+  let returnId;
+  try {
+    await client.query('BEGIN');
+    const { rows: [r] } = await client.query(
+      `INSERT INTO customer_returns
+         (wp_order_id, ticket_id, reason, return_required, outcome, note, created_by, received_at, received_by, status)
+       VALUES ($1, $2, $3, false, 'renvoi', $4, $5, NOW(), $5, 'recu') RETURNING id`,
+      [wpOrderId, ticketId || null, LOST_REASON, String(note || '').trim() || null, user.id]
+    );
+    returnId = r.id;
+    await insertLines(client, returnId, picks);
+    await client.query(
+      'UPDATE customer_return_lines SET qty_no_restock = qty WHERE return_id = $1 AND NOT is_bundle',
+      [returnId]
+    );
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+
+  const shipments = await orderShipments(wpOrderId);
+  await noteTicket(ticketId, user, [
+    `<strong>Colis perdu déclaré — retour n°${returnId}</strong>${shipments.length ? ` (${escapeHtml(shipments.map(shipmentText).join(', '))})` : ''}`,
+    ...picks.filter(p => !p.bundleOf).map(p => `${p.qty} × ${escapeHtml(p.line.name)}`),
+  ]);
+  return get(returnId);
+};
+
 // ── Modification (avant validation) ─────────────────────────────────────────
 
 /**
@@ -207,6 +285,7 @@ const update = async (id, { reason, returnRequired, outcome, note, selection }, 
   if (r.cancelled_at) throw httpError(400, 'Retour annulé.');
   if (r.received_at) throw httpError(400, 'Retour déjà validé : il ne se modifie plus.');
   if (!REASONS[reason]) throw httpError(400, 'Motif inconnu.');
+  if (reason === LOST_REASON) throw httpError(400, 'Un colis perdu se déclare par « Déclarer colis perdu ».');
   if (outcome && !OUTCOMES[outcome]) throw httpError(400, 'Issue inconnue.');
 
   const picks = expandSelection(await orderLines(r.wp_order_id, id), selection);
@@ -244,12 +323,16 @@ const update = async (id, { reason, returnRequired, outcome, note, selection }, 
 
 // ── Lecture ─────────────────────────────────────────────────────────────────
 
-const list = async ({ status, q } = {}) => {
+const list = async ({ status, reason, q } = {}) => {
   const where = [];
   const params = [];
   if (status) {
     params.push(status);
     where.push(`r.status = $${params.length}`);
+  }
+  if (reason) {
+    params.push(reason);
+    where.push(`r.reason = $${params.length}`);
   }
   const term = String(q || '').trim();
   if (term) {
@@ -263,7 +346,10 @@ const list = async ({ status, q } = {}) => {
     params
   );
   const { rows: counts } = await pool.query('SELECT status, COUNT(*)::int AS n FROM customer_returns GROUP BY status');
-  return { returns: rows, counts: Object.fromEntries(counts.map(c => [c.status, c.n])) };
+  const { rows: [lost] } = await pool.query(
+    'SELECT COUNT(*)::int AS n FROM customer_returns WHERE reason = $1 AND cancelled_at IS NULL', [LOST_REASON]
+  );
+  return { returns: rows, counts: Object.fromEntries(counts.map(c => [c.status, c.n])), lost: lost.n };
 };
 
 // ── Commandes fournisseur d'une pièce SAV (Pierre, 15/10/2026) ─────────────
@@ -424,7 +510,8 @@ const get = async (id) => {
       lines: suggestPoints(lines),
       withShipping: suggestPoints(lines, { shippingPaid, withShipping: true }),
     },
-    replacement_plan: r.shipping_method ? replacementShipping(r.shipping_method) : null,
+    replacement_plan: r.shipping_method ? replacementShipping(r.shipping_method, r.reason) : null,
+    shipments: r.reason === LOST_REASON ? await orderShipments(r.wp_order_id) : [],
   };
 };
 
@@ -580,14 +667,24 @@ const treat = async (id, { outcome, outcomeRef }, user) => {
   return get(id);
 };
 
+/**
+ * Un colis perdu, validé d'office, s'annule tant qu'aucune issue n'est faite
+ * (colis retrouvé) : rien n'est entré en stock ni parti en SAV fournisseur.
+ */
 const cancel = async (id, user) => {
   const { rows: [r] } = await pool.query(
     `UPDATE customer_returns SET cancelled_at = NOW(), cancelled_by = $2, status = 'annule'
-      WHERE id = $1 AND received_at IS NULL AND cancelled_at IS NULL RETURNING ticket_id`,
-    [id, user.id]
+      WHERE id = $1 AND cancelled_at IS NULL
+        AND (received_at IS NULL
+             OR (reason = $3 AND treated_at IS NULL AND replacement_order_id IS NULL
+                 AND loyalty_credited_at IS NULL AND refund_wp_id IS NULL AND reship_label_id IS NULL))
+      RETURNING ticket_id, reason`,
+    [id, user.id, LOST_REASON]
   );
-  if (!r) throw httpError(400, 'Seul un retour pas encore validé peut être annulé.');
-  await noteTicket(r.ticket_id, user, [`<strong>Retour n°${id} annulé</strong>`]);
+  if (!r) throw httpError(400, 'Seul un retour pas encore validé (ou un colis perdu sans issue faite) peut être annulé.');
+  await noteTicket(r.ticket_id, user, [r.reason === LOST_REASON
+    ? `<strong>Déclaration de colis perdu annulée</strong> (retour n°${id})`
+    : `<strong>Retour n°${id} annulé</strong>`]);
   return get(id);
 };
 
@@ -655,8 +752,9 @@ const replacementPreview = async (id) => {
   }
   return {
     items,
+    lost: r.reason === LOST_REASON,
     shippingMethod: r.shipping_method,
-    plan: r.shipping_method ? replacementShipping(r.shipping_method) : null,
+    plan: r.shipping_method ? replacementShipping(r.shipping_method, r.reason) : null,
     relayPoint: r.relay_point,
   };
 };
@@ -710,6 +808,7 @@ const createReplacement = async (id, items, user) => {
   if (r.replacement_order_id) throw httpError(400, `Commande de renvoi déjà créée (#${r.replacement_order_id || '…'}).`);
   if (!r.shipping_method) throw httpError(400, 'Méthode d’expédition de la commande inconnue.');
 
+  const lost = r.reason === LOST_REASON;
   const chosen = (items || []).filter(i => Number(i.qty) > 0);
   const wanted = new Map(chosen.map(i => [Number(i.lineId), Number(i.qty)]));
   const swaps = new Map(chosen.filter(i => i.productId).map(i => [Number(i.lineId), Number(i.productId)]));
@@ -741,14 +840,25 @@ const createReplacement = async (id, items, user) => {
     lines.push({ ...alt, id: l.id, returnedName: l.name });
   }
 
+  // Colis perdu : l'opérateur confirme lui-même que chaque article est là (Pierre, 16/10/2026).
+  if (lost) {
+    const confirmed = new Set(chosen.filter(i => i.confirmed === true).map(i => Number(i.lineId)));
+    const missing = lines.filter(l => !confirmed.has(l.id));
+    if (missing.length) throw httpError(400, `Confirmer la disponibilité : ${missing.map(l => l.name).join(' ; ')}.`);
+  }
+
   const short = [];
   for (const l of lines) {
     const { available } = await readBmsStock(l.sku);
     if (available < wanted.get(l.id)) short.push(`${l.name} : ${available} dispo`);
   }
-  if (short.length) throw httpError(400, `Stock insuffisant — ${short.join(' ; ')}.`);
+  if (short.length) {
+    throw httpError(400, lost
+      ? `Stock BMS insuffisant, on ne peut pas renvoyer — ${short.join(' ; ')}.`
+      : `Stock insuffisant — ${short.join(' ; ')}.`);
+  }
 
-  const plan = replacementShipping(r.shipping_method);
+  const plan = replacementShipping(r.shipping_method, r.reason);
 
   // Verrou contre le double clic : 0 = création en cours.
   const { rowCount } = await pool.query(
@@ -802,7 +912,8 @@ const createReplacement = async (id, items, user) => {
   // « SAV commande N°… » en note INTERNE seulement : le client ne doit pas la
   // voir (pas de note de commande) — Pierre, 14/10/2026.
   try {
-    await wcRequest('post', `/orders/${newId}/notes`, { note: `SAV commande N°${r.wp_order_id}`, customer_note: false });
+    const note = lost ? `SAV colis perdu commande N°${r.wp_order_id}` : `SAV commande N°${r.wp_order_id}`;
+    await wcRequest('post', `/orders/${newId}/notes`, { note, customer_note: false });
   } catch (error) {
     warnings.push(`Note interne WooCommerce non ajoutée (${error.message}) : à mettre à la main.`);
   }
@@ -816,7 +927,7 @@ const createReplacement = async (id, items, user) => {
   }
 
   await noteTicket(r.ticket_id, user, [
-    `<strong>Retour n°${id} — commande de renvoi #${created.number || newId}</strong> (${escapeHtml(plan.method)})`,
+    `<strong>Retour n°${id} — ${lost ? 'renvoi du colis perdu' : 'commande de renvoi'} #${created.number || newId}</strong> (${escapeHtml(plan.method)})`,
     ...lines.filter(l => l.returnedName).map(l => `${escapeHtml(l.returnedName)} remplacé par ${escapeHtml(l.name)}`),
   ]);
   return { ...(await get(id)), warnings };
@@ -833,6 +944,7 @@ const createReplacement = async (id, items, user) => {
  */
 const reship = async (id, user) => {
   const r = await loadForAction(id);
+  if (r.reason === LOST_REASON) throw httpError(400, 'Colis perdu : rien à réexpédier, créer la commande de renvoi.');
   if (r.reship_label_id != null) throw httpError(409, 'L’étiquette de réexpédition existe déjà (historique d’expédition).');
 
   const order = await shipmentController.loadOrderForLabel(r.wp_order_id);
@@ -1505,6 +1617,7 @@ module.exports = {
   deleteBoutiqueItem,
   orderContext,
   create,
+  declareLost,
   update,
   list,
   get,

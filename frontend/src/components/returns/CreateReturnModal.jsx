@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import axios from 'axios';
 import { C } from '../picking/pickingUi';
 import {
-  RETURNS_API, RETURNS_COLOR, RETURNS_COLOR_L, REASONS, OUTCOMES, DEFAULT_OUTCOME,
+  RETURNS_API, RETURNS_COLOR, RETURNS_COLOR_L, REASONS, LOST_REASON, OUTCOMES, DEFAULT_OUTCOME,
   btn, field, errorText, euro,
 } from './returnsUi';
 
@@ -139,7 +139,7 @@ export default function CreateReturnModal({ wpOrderId, ticketId, concernedProduc
               <div>
                 <div style={label}>Motif</div>
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                  {Object.entries(REASONS).map(([k, v]) => (
+                  {Object.entries(REASONS).filter(([k]) => k !== LOST_REASON).map(([k, v]) => (
                     <button
                       key={k} type="button" onClick={() => chooseReason(k)}
                       style={{

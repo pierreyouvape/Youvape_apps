@@ -41,7 +41,11 @@ const BASE_APP = `
          o.shipping_method,
          l.bordereau_id, b.bordereau_number, b.created_at AS bordereau_at,
          w.id AS wave_id, w.wave_number, w.picker_id, w.picker_name,
-         inc.actions AS incidents
+         inc.actions AS incidents,
+         (SELECT MAX(cr.id) FROM customer_returns cr
+           WHERE cr.wp_order_id = o.wp_order_id AND cr.reason = 'colis_perdu' AND cr.cancelled_at IS NULL) AS lost_return_id,
+         (SELECT MAX(cr.wp_order_id) FROM customer_returns cr
+           WHERE cr.replacement_order_id = o.wp_order_id AND cr.reason = 'colis_perdu' AND cr.cancelled_at IS NULL) AS lost_origin_order
     FROM shipment_labels l
     LEFT JOIN users pu ON pu.id = l.packed_by
     LEFT JOIN orders o
@@ -85,7 +89,11 @@ const BASE_BMS = `
          COALESCE(o.shipping_method, b.method_description) AS shipping_method,
          NULL::int AS bordereau_id, NULL::varchar AS bordereau_number, NULL::timestamp AS bordereau_at,
          NULL::int AS wave_id, NULL::varchar AS wave_number, NULL::int AS picker_id, NULL::varchar AS picker_name,
-         NULL::varchar[] AS incidents
+         NULL::varchar[] AS incidents,
+         (SELECT MAX(cr.id) FROM customer_returns cr
+           WHERE cr.wp_order_id = o.wp_order_id AND cr.reason = 'colis_perdu' AND cr.cancelled_at IS NULL) AS lost_return_id,
+         (SELECT MAX(cr.wp_order_id) FROM customer_returns cr
+           WHERE cr.replacement_order_id = o.wp_order_id AND cr.reason = 'colis_perdu' AND cr.cancelled_at IS NULL) AS lost_origin_order
     FROM bms_shipments b
     LEFT JOIN bms_packer_map pm ON pm.packer_name = b.packer_name
     LEFT JOIN users pu ON pu.id = pm.user_id

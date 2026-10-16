@@ -12,7 +12,11 @@ const REASONS = {
   retractation: 'Rétractation',
   non_recupere: 'Commande non récupérée',
   erreur_adressage: "Erreur d'adressage",
+  // Déclaré par son propre bouton (declareLost), jamais par « Créer un retour ».
+  colis_perdu: 'Colis perdu',
 };
+
+const LOST_REASON = 'colis_perdu';
 
 const OUTCOMES = {
   renvoi: 'Renvoi',
@@ -245,6 +249,9 @@ const breakdownText = (b) => [fr(b.paid), b.shipping ? `+ ${fr(b.shipping)} de p
  * sont le MÊME réseau de points (`relay_point.network` = 'chronopost' pour les
  * deux, confirmé par Pierre le 14/10/2026), et un envoi à domicile n'en a pas.
  *
+ * Colis perdu : la commande repart telle qu'elle était, Chronopost compris
+ * (Pierre, 16/10/2026).
+ *
  * @returns {{method: string}}
  */
 const REPLACEMENT_METHOD = {
@@ -252,7 +259,9 @@ const REPLACEMENT_METHOD = {
   'Chronopost Domicile 24h': 'Colissimo Domicile',
   'Chronopost Express': 'Colissimo Domicile',
 };
-const replacementShipping = (denomination) => ({ method: REPLACEMENT_METHOD[denomination] || denomination });
+const replacementShipping = (denomination, reason = null) => ({
+  method: reason === LOST_REASON ? denomination : (REPLACEMENT_METHOD[denomination] || denomination),
+});
 
 /**
  * Remboursement WooCommerce à rattacher à un retour : le premier de la
@@ -276,6 +285,7 @@ module.exports = {
   replacementShipping,
   pickRefund,
   REASONS,
+  LOST_REASON,
   OUTCOMES,
   unitPaid,
   bundleParents,

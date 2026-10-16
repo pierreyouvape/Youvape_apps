@@ -13,7 +13,11 @@ export const REASONS = {
   retractation: 'Rétractation',
   non_recupere: 'Commande non récupérée',
   erreur_adressage: "Erreur d'adressage",
+  colis_perdu: 'Colis perdu',
 };
+
+/** Déclaré par son propre bouton (DeclareLostModal), pas par « Créer un retour ». */
+export const LOST_REASON = 'colis_perdu';
 
 export const OUTCOMES = {
   renvoi: 'Renvoi',
@@ -30,6 +34,7 @@ export const DEFAULT_OUTCOME = {
   retractation: 'remboursement',
   non_recupere: 'points',
   erreur_adressage: 'points',
+  colis_perdu: 'renvoi',
 };
 
 /** Ce que la référence de l'issue doit contenir. */
@@ -48,8 +53,11 @@ export const STATUS = {
   annule: { label: 'Annulé', color: C.greyT, bg: '#F3F4F6' },
 };
 
-export const StatusChip = ({ status }) => {
-  const s = STATUS[status] || STATUS.attente;
+/** Un colis perdu est « reçu » dès sa déclaration (constat validé d'office). */
+export const StatusChip = ({ status, reason }) => {
+  const s = reason === LOST_REASON && status === 'recu'
+    ? { ...STATUS.recu, label: 'Perdu déclaré' }
+    : STATUS[status] || STATUS.attente;
   return <Chip color={s.color} bg={s.bg}>{s.label}</Chip>;
 };
 
