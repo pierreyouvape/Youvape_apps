@@ -518,6 +518,12 @@ function EcartsView({ items }) {
 }
 
 function EcartRow({ item, ecart }) {
+  const col = (label, value, color = C.dark) => (
+    <div style={{ textAlign: 'center', minWidth: 58 }}>
+      <div style={{ fontSize: 11, color: C.greyM, textTransform: 'uppercase' }}>{label}</div>
+      <div style={{ fontSize: 16, fontWeight: 700, color }}>{value}</div>
+    </div>
+  );
   return (
     <div style={{
       display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', background: '#fff',
@@ -526,16 +532,14 @@ function EcartRow({ item, ecart }) {
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontWeight: 600, fontSize: 14, lineHeight: 1.3, overflowWrap: 'anywhere' }}>{item.name || item.product_id}</div>
         <div style={{ fontSize: 12, color: C.greyM }}>
-          {item.sku ? `#${item.sku} · ` : ''}Nextore {fmt(item.s_ref)} → compté {fmt(item.counted_qty)}
+          {item.sku ? `#${item.sku}` : ''}
+          {ecart ? <span> · {eur(ecart * (item.cost || 0))}</span> : null}
           {item.moved && <span style={{ color: C.orange }}> · a bougé pendant le comptage</span>}
         </div>
       </div>
-      <div style={{ textAlign: 'right', minWidth: 64 }}>
-        <div style={{ fontSize: 16, fontWeight: 700, color: ecart == null ? C.greyM : ecartColor(ecart) }}>
-          {ecart == null ? '—' : ecart === 0 ? '=' : signed(ecart)}
-        </div>
-        {ecart ? <div style={{ fontSize: 12, color: C.greyM }}>{eur(ecart * (item.cost || 0))}</div> : null}
-      </div>
+      {col('Initial', fmt(item.s_ref))}
+      {col('Compté', fmt(item.counted_qty))}
+      {col('Écart', ecart == null ? '—' : ecart === 0 ? '0' : signed(ecart), ecart == null ? C.greyM : ecartColor(ecart))}
     </div>
   );
 }
