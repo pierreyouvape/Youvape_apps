@@ -17,6 +17,8 @@
 const pool = require('../config/database');
 const api = require('../services/nextoreApiClient');
 const { normalizedSql } = require('./supplierRefModel');
+const { boutiquePack } = require('../utils/boutiquePack');
+const productModel = require('./productModel');
 
 const MOTIFS = ['reliquat', 'solde', 'manquant', 'erreur_saisie'];
 // Motifs qui soldent le reste d'une ligne ; un reliquat la laisse ouverte
@@ -144,6 +146,9 @@ async function getOrder(orderId, warehouseId) {
     [order.id, warehouseId, order.supplier_id]
   );
 
+  const siteCodes = await siteBarcodesByItem(order.id);
+  for (const it of items) it.site_barcodes = siteCodes.get(it.id) || [];
+
   const { rows: sessions } = await pool.query(
     `SELECT s.id, s.status, s.started_at, s.validated_at, s.nextore_reference, s.nextore_purchase_id, s.last_error,
             (SELECT name FROM users u WHERE u.email = s.started_by LIMIT 1) AS started_by_name,
@@ -164,6 +169,138 @@ async function getOrder(orderId, warehouseId) {
     session: sessions.find((s) => s.status === 'counting' || s.status === 'sending') || null,
     history: sessions.filter((s) => s.status === 'validated'),
   };
+}
+
+/**
+ * Codes-barres du SITE (`product_barcodes`, cartons compris) des lignes d'une
+ * commande, chacun traduit en pièces boutique → Map(item_id → [{ barcode, pieces,
+ * type, confirmed, via, site_title }]).
+ *
+ * Le produit du site se trouve d'abord par RÉFÉRENCE FOURNISSEUR (réf de la ligne,
+ * ou réfs boutique du produit, chacune chez le fournisseur du site rattaché) : la
+ * réf dit combien de pièces boutique vaut un article du site — les résistances,
+ * vendues en « Pack 5 » sur le site, se comptent à l'unité en boutique. À défaut,
+ * par un code UNITÉ commun aux deux catalogues : même article, une pièce — sauf
+ * une résistance que le site vend en « Pack N » (`boutiquePack`, même règle qu'à l'import).
+ *
+ * Un code de carton du site sans quantité, ou qui ne tombe pas sur un nombre
+ * entier de pièces, est laissé de côté : mieux vaut poser la question que compter faux.
+ */
+async function siteBarcodesByItem(orderId) {
+  const links = await siteLinks('i.order_id = $1', orderId);
+  if (!links.length) return new Map();
+  const { rows: codes } = await pool.query(
+    `SELECT product_id, barcode, type, quantity, confirmed_at IS NOT NULL AS confirmed
+     FROM product_barcodes WHERE product_id = ANY($1::int[])`,
+    [[...new Set(links.map((l) => l.wp_id))]]
+  );
+
+  const byItem = new Map();
+  for (const l of links) {
+    for (const r of codes.filter((c) => c.product_id === l.wp_id)) {
+      const perSite = r.type === 'pack' ? parseInt(r.quantity, 10) : 1;
+      if (!(perSite >= 1)) continue;
+      const exact = perSite * l.bpack / l.spack;
+      if (!Number.isInteger(exact) || exact < 1) continue;
+      const list = byItem.get(l.item_id) || [];
+      // La réf passe avant le code commun (tri de siteLinks) : elle seule connaît la conversion
+      if (list.some((c) => c.barcode === r.barcode)) continue;
+      list.push({ barcode: String(r.barcode).trim(), pieces: exact, type: r.type, confirmed: r.confirmed, via: l.via, site_title: l.site_title });
+      byItem.set(l.item_id, list);
+    }
+  }
+  return byItem;
+}
+
+/**
+ * Lignes de commande → produits du site : par réf fournisseur, sinon par code unité
+ * commun. `bpack` / `spack` = pièces boutique / articles du site par article de la
+ * réf : un article du site vaut `bpack / spack` pièces boutique. Réfs d'abord.
+ * `where` filtre `boutique_order_items i`.
+ */
+async function siteLinks(where, param) {
+  const { rows } = await pool.query(
+    `WITH it AS (
+       SELECT i.id, i.product_id, i.supplier_sku, i.pack_qty, o.supplier_id
+       FROM boutique_order_items i JOIN boutique_orders o ON o.id = i.order_id
+       WHERE ${where}
+     ),
+     refs AS (
+       SELECT it.id AS item_id, it.supplier_sku AS sku, it.pack_qty AS bpack, ns.site_supplier_id
+       FROM it JOIN nextore_suppliers ns ON ns.id = it.supplier_id
+       WHERE it.supplier_sku IS NOT NULL
+       UNION
+       SELECT it.id, nr.supplier_sku, nr.pack_qty, ns.site_supplier_id
+       FROM it
+       JOIN nextore_supplier_refs nr ON nr.product_id = it.product_id
+       JOIN nextore_suppliers ns ON ns.id = nr.supplier_id
+     ),
+     links AS (
+       SELECT r.item_id, sr.product_id AS wp_id, r.bpack, sr.pack_qty AS spack, 'ref' AS via
+       FROM refs r
+       JOIN supplier_refs sr ON sr.supplier_id = r.site_supplier_id
+        AND ${normalizedSql('sr.supplier_sku')} = ${normalizedSql('r.sku')}
+       UNION
+       SELECT it.id, pb.product_id, NULL, 1, 'code'
+       FROM it
+       JOIN nextore_product_barcodes nb ON nb.product_id = it.product_id
+       JOIN product_barcodes pb ON pb.barcode = nb.barcode AND pb.type = 'unit'
+     )
+     SELECT l.item_id, l.wp_id, l.via, l.bpack, l.spack, wp.post_title AS site_title, c.name AS category_name
+     FROM links l
+     JOIN products wp ON wp.id = l.wp_id
+     JOIN boutique_order_items i ON i.id = l.item_id
+     JOIN nextore_products np ON np.product_id = i.product_id
+     LEFT JOIN nextore_categories c ON c.id = np.category_id
+     ORDER BY l.item_id, (l.via = 'ref') DESC, l.wp_id`,
+    [param]
+  );
+  return rows.map((r) => ({ ...r, bpack: r.via === 'ref' ? r.bpack : boutiquePack(1, r.site_title, r).pack }));
+}
+
+/**
+ * Remonte au site un carton confirmé en boutique (`product_barcodes`, type pack,
+ * confirmé comme une saisie humaine au site), converti en articles du site.
+ *
+ * Ne s'écrit que sur UN produit du site sans ambiguïté (réfs d'abord, sinon code
+ * commun), sur un nombre entier d'au moins 2 articles. Ne déplace jamais un code
+ * déjà connu au site sur un autre produit, ni ne contredit un code qu'une personne
+ * y a confirmé : la boutique complète le site, elle ne le corrige pas.
+ */
+async function pushCartonToSite({ orderItemId, productId, barcode, pieces, userId }) {
+  const itemId = parseInt(orderItemId, 10) || 0;
+  const { rows: own } = await pool.query('SELECT product_id FROM boutique_order_items WHERE id = $1', [itemId]);
+  if (!own[0] || own[0].product_id !== String(productId)) return { written: false, reason: 'ligne de commande introuvable' };
+
+  const links = await siteLinks('i.id = $1', itemId);
+  const byRef = links.filter((l) => l.via === 'ref');
+  const candidates = [...new Map((byRef.length ? byRef : links).map((l) => [l.wp_id, l])).values()];
+  if (!candidates.length) return { written: false, reason: 'aucun produit du site rattaché' };
+  if (candidates.length > 1) {
+    return { written: false, reason: `plusieurs produits du site possibles (${candidates.map((c) => c.site_title).join(', ')})` };
+  }
+  const link = candidates[0];
+  const quantity = pieces * link.spack / link.bpack;
+  if (!Number.isInteger(quantity) || quantity < 2) {
+    return { written: false, reason: `un carton de ${pieces} pièces ne fait pas un nombre entier d'articles « ${link.site_title} »` };
+  }
+
+  const { rows: known } = await pool.query(
+    `SELECT pb.product_id, pb.type, pb.quantity, pb.confirmed_at IS NOT NULL AS confirmed, p.post_title
+     FROM product_barcodes pb JOIN products p ON p.id = pb.product_id WHERE pb.barcode = $1`,
+    [barcode]
+  );
+  const elsewhere = known.find((k) => k.product_id !== link.wp_id);
+  if (elsewhere) return { written: false, reason: `code déjà sur « ${elsewhere.post_title} » au site` };
+  const same = known[0];
+  if (same && same.type === 'pack' && parseInt(same.quantity, 10) === quantity) {
+    return { written: false, already: true, site_title: link.site_title, quantity };
+  }
+  if (same && same.confirmed) {
+    return { written: false, reason: `code confirmé au site comme ${same.type === 'pack' ? `carton de ${same.quantity}` : 'unité'}` };
+  }
+  await productModel.addBarcode(link.wp_id, barcode, 'pack', quantity, userId || null);
+  return { written: true, site_title: link.site_title, quantity };
 }
 
 /**
@@ -435,8 +572,9 @@ async function abandonSession(sessionId, warehouseId) {
 
 /**
  * Rattache (code inconnu) ou confirme (unité / carton) un code-barres, chez nous.
+ * Un carton confirmé remonte aussi au site (`pushCartonToSite`).
  */
-async function saveBarcode({ barcode, productId, kind, packQty, userEmail }) {
+async function saveBarcode({ barcode, productId, kind, packQty, orderItemId, userEmail, userId }) {
   const code = String(barcode || '').trim();
   if (!code) throw httpError(400, 'Code-barres vide');
   if (!['unit', 'carton'].includes(kind)) throw httpError(400, 'Type de code invalide');
@@ -447,7 +585,17 @@ async function saveBarcode({ barcode, productId, kind, packQty, userEmail }) {
      ON CONFLICT (barcode, product_id) DO UPDATE SET kind = EXCLUDED.kind, pack_qty = EXCLUDED.pack_qty`,
     [code, String(productId), kind, pack, userEmail || null]
   );
-  return { barcode: code, kind, pack_qty: pack };
+  // Un carton est aussi remonté au site ; un échec n'empêche pas la réception
+  let site = null;
+  if (kind === 'carton' && orderItemId) {
+    try {
+      site = await pushCartonToSite({ orderItemId, productId, barcode: code, pieces: pack, userId });
+    } catch (err) {
+      console.error('Boutique réception : carton non remonté au site', err);
+      site = { written: false, reason: err.message };
+    }
+  }
+  return { barcode: code, kind, pack_qty: pack, site };
 }
 
 /** Lignes de la session, avec le reste attendu et le compté. */

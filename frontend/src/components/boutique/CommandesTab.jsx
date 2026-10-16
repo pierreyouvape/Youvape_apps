@@ -194,8 +194,8 @@ function OrderScreen({ shop, auth, orderId, onBack }) {
     document.getElementById(`rx-${item.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
   };
 
-  const saveBarcode = (barcode, productId, kind, packQty) =>
-    axios.post(`${base}/barcodes`, { barcode, product_id: productId, kind, pack_qty: packQty }, auth);
+  const saveBarcode = (barcode, productId, kind, packQty, orderItemId) =>
+    axios.post(`${base}/barcodes`, { barcode, product_id: productId, kind, pack_qty: packQty, order_item_id: orderItemId }, auth);
 
   // Douchette (code + Entrée) ou saisie manuelle dans le champ de scan
   const handleScan = (raw) => {
@@ -211,7 +211,26 @@ function OrderScreen({ shop, auth, orderId, onBack }) {
         return;
       }
     }
-    // 2. Code Nextore
+    // 2. Code du site (cartons compris), rapproché par réf fournisseur ou code
+    //    commun et déjà traduit en pièces boutique. Il passe avant Nextore, qui
+    //    range parfois un code de carton parmi ceux du produit (il vaudrait 1).
+    const site = items.flatMap((it) => (it.site_barcodes || []).filter((b) => b.barcode === code).map((b) => ({ it, b })));
+    if (new Set(site.map((s) => s.it.id)).size === 1) {
+      const { it, b } = site[0];
+      // Carton dont le site connaît le contenu, ou code confirmé par une personne au site
+      if (b.type === 'pack' || b.confirmed) {
+        addPieces(it, b.pieces, `${it.name} — +${b.pieces}${b.type === 'pack' ? ' (carton, code du site)' : ''}`);
+        return;
+      }
+      // Code jamais confirmé (importé de BMS) : même prudence qu'un code Nextore
+      if (b.pieces > 1 || it.pack_qty > 1 || (it.barcodes || []).length > 1) {
+        setTypeModal({ item: it, barcode: code, packQty: b.pieces > 1 ? b.pieces : it.pack_qty });
+        return;
+      }
+      addPieces(it, 1);
+      return;
+    }
+    // 3. Code Nextore
     const found = items.find((it) => (it.barcodes || []).includes(code));
     if (!found) { setUnknownModal({ barcode: code }); return; }
     // Code jamais confirmé, sur une ligne commandée par pack ou un produit à
@@ -227,23 +246,19 @@ function OrderScreen({ shop, auth, orderId, onBack }) {
     const { item, barcode } = typeModal;
     setTypeModal(null);
     try {
-      await saveBarcode(barcode, item.product_id, kind, packQty);
+      const res = await saveBarcode(barcode, item.product_id, kind, packQty, item.id);
       const n = kind === 'carton' ? packQty : 1;
       setData((d) => ({ ...d, items: d.items.map((x) => (x.id !== item.id ? x : { ...x, reception_barcodes: [...(x.reception_barcodes || []), { barcode, kind, pack_qty: n }] })) }));
-      addPieces(item, n, `${item.name} — +${n}${kind === 'carton' ? ' (carton)' : ''}`);
+      addPieces(item, n, `${item.name} — +${n}${kind === 'carton' ? ' (carton)' : ''}${siteNote(res.data.site)}`);
     } catch (e) { setError(e.response?.data?.error || e.message); }
     scanInput.current?.focus();
   };
 
-  const attachUnknown = async (item) => {
+  // Code inconnu rattaché à une ligne : unité ou carton, la même question
+  const attachUnknown = (item) => {
     const { barcode } = unknownModal;
     setUnknownModal(null);
-    try {
-      await saveBarcode(barcode, item.product_id, 'unit', 1);
-      setData((d) => ({ ...d, items: d.items.map((x) => (x.id !== item.id ? x : { ...x, reception_barcodes: [...(x.reception_barcodes || []), { barcode, kind: 'unit', pack_qty: 1 }] })) }));
-      addPieces(item, 1);
-    } catch (e) { setError(e.response?.data?.error || e.message); }
-    scanInput.current?.focus();
+    setTypeModal({ item, barcode, packQty: item.pack_qty });
   };
 
   // Article absent de la commande : ajouté à 0 commandé, le code éventuel rattaché
@@ -373,6 +388,7 @@ function OrderScreen({ shop, auth, orderId, onBack }) {
                     <div style={{ fontWeight: 500 }}>{x.name}</div>
                     <small style={{ color: '#666' }}>
                       {x.code || ''}{x.pack_qty > 1 ? ` · pack de ${x.pack_qty}` : ''}{x.added_at_reception ? ' · ajouté à la réception' : ''}
+                      {siteCartons(x)}
                       {x.closed_reason ? ` · soldé (${MOTIF_LABEL[x.closed_reason]})` : ''}
                     </small>
                   </td>
@@ -589,6 +605,20 @@ function EditOrderScreen({ shop, auth, orderId, onBack }) {
       {adding && <AddArticleModal shop={shop} auth={auth} onClose={() => setAdding(false)} onPick={addProduct} />}
     </div>
   );
+}
+
+/** Suite du message de scan : ce que le carton confirmé est devenu au site. */
+function siteNote(site) {
+  if (!site) return '';
+  if (site.written) return ` · remonté au site (« ${site.site_title} », carton de ${site.quantity})`;
+  if (site.already) return ' · déjà connu au site';
+  return ` · non remonté au site : ${site.reason}`;
+}
+
+/** « · carton de 10 (site) » : cartons du site que le scan reconnaîtra sur cette ligne. */
+function siteCartons(item) {
+  const n = [...new Set((item.site_barcodes || []).filter((b) => b.type === 'pack').map((b) => b.pieces))].sort((a, b) => a - b);
+  return n.length ? ` · carton de ${n.join(' / ')} (site)` : '';
 }
 
 /* ─── POP-UP : unité ou carton ? ──────────────────────────── */

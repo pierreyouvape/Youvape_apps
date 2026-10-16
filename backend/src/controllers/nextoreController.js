@@ -210,7 +210,7 @@ const postReceptionAbandon = receptionHandler('abandon', async (wh, req) => {
 });
 const postReceptionBarcode = receptionHandler('barcode', (wh, req) => boutiqueOrderModel.saveBarcode({
   barcode: req.body?.barcode, productId: req.body?.product_id, kind: req.body?.kind,
-  packQty: req.body?.pack_qty, userEmail: req.user?.email,
+  packQty: req.body?.pack_qty, orderItemId: req.body?.order_item_id, userEmail: req.user?.email, userId: req.user?.id,
 }));
 const postReceptionValidate = receptionHandler('validate', async (wh, req) => {
   const result = await boutiqueOrderModel.validateSession(req.params.sessionId, wh, req.body?.motifs, req.user?.email);
