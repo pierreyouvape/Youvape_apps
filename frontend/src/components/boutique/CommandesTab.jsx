@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import axios from 'axios';
 import '../../pages/PurchasesApp.css'; // charte Gestion d'achat V2
+import { trierParAvancement } from '../../utils/scanOrder';
 
 const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:3000/api/auth').replace('/auth', '');
 
@@ -15,6 +16,12 @@ const MOTIFS = [
   { value: 'manquant', label: 'Manquant (erreur du fournisseur)' },
   { value: 'erreur_saisie', label: 'Erreur de saisie (commandé par erreur)' },
 ];
+// Fond d'une ligne en cours de comptage : mêmes couleurs que la réception du site
+const COMPTAGE = {
+  juste:   '#83EBA2',  // compte exact
+  partiel: '#EBD483',  // il en manque
+  surplus: '#EB8E83',  // compté plus que prévu
+};
 const MOTIF_LABEL = { reliquat: 'reliquat', solde: 'soldé', manquant: 'manquant', erreur_saisie: 'erreur de saisie' };
 const STATUS = { open: { label: 'À recevoir', color: '#d97706' }, received: { label: 'Reçue', color: '#16a34a' }, cancelled: { label: 'Annulée', color: '#6b7280' } };
 
@@ -127,7 +134,16 @@ function OrderScreen({ shop, auth, orderId, onBack }) {
   const [busy, setBusy] = useState(false);
   const [scan, setScan] = useState('');
   const [flash, setFlash] = useState(null);
-  const [highlight, setHighlight] = useState(null);
+  // Ligne scannée : la liste défile jusqu'à elle (après le tri) et la surligne 2 s
+  const [scanned, setScanned] = useState(null); // { id, n } — n relance l'effet sur un même article
+  useEffect(() => {
+    if (!scanned) return undefined;
+    const raf = requestAnimationFrame(() => {
+      document.getElementById(`rx-${scanned.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    });
+    const t = setTimeout(() => setScanned((cur) => (cur?.n === scanned.n ? null : cur)), 2000);
+    return () => { cancelAnimationFrame(raf); clearTimeout(t); };
+  }, [scanned]);
   const [typeModal, setTypeModal] = useState(null);    // { item, barcode }
   const [unknownModal, setUnknownModal] = useState(null); // { barcode }
   const [addModal, setAddModal] = useState(null);      // { barcode? }
@@ -188,10 +204,8 @@ function OrderScreen({ shop, auth, orderId, onBack }) {
   const flushWrites = () => Promise.all(Object.values(writes.current));
   const addPieces = (item, n, msg) => {
     setCount(item.id, (countsRef.current[item.id] || 0) + n);
-    setHighlight(item.id);
+    setScanned((prev) => ({ id: item.id, n: (prev?.n || 0) + 1 }));
     setFlash(msg || `${item.name} — +${n}`);
-    setTimeout(() => setHighlight((h) => (h === item.id ? null : h)), 2000);
-    document.getElementById(`rx-${item.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
   };
 
   const saveBarcode = (barcode, productId, kind, packQty, orderItemId) =>
@@ -284,6 +298,18 @@ function OrderScreen({ shop, auth, orderId, onBack }) {
   const missing = lines.filter((x) => x.counted < x.remaining);
   const surplus = lines.filter((x) => x.counted > x.remaining);
   const totalCounted = lines.reduce((a, x) => a + x.counted, 0);
+
+  // Pendant le comptage, comme au site : ce qui reste à compter en haut, le surplus
+  // juste après (anomalie à corriger, pas à cacher), le compte juste en bas.
+  const rang = (x) => (x.counted < x.remaining ? 0 : x.counted > x.remaining ? 1 : 2);
+  const shown = counting ? trierParAvancement(lines, rang) : lines;
+  // Le fond porte l'état du comptage ; le zébrage ne reste qu'aux lignes vierges
+  const rowBackground = (x, i) => {
+    if (!counting || x.counted === 0) return i % 2 ? '#f8fafc' : '#fff';
+    if (x.counted > x.remaining) return COMPTAGE.surplus;
+    if (x.counted === x.remaining) return COMPTAGE.juste;
+    return COMPTAGE.partiel;
+  };
 
   const validate = () => run(async () => {
     await flushWrites();
@@ -379,10 +405,10 @@ function OrderScreen({ shop, auth, orderId, onBack }) {
             </tr>
           </thead>
           <tbody>
-            {lines.map((x, i) => {
+            {shown.map((x, i) => {
               const gap = x.counted - x.remaining;
               return (
-                <tr key={x.id} id={`rx-${x.id}`} style={{ background: highlight === x.id ? '#dbeafe' : i % 2 ? '#f8fafc' : '#fff', transition: 'background .3s' }}>
+                <tr key={x.id} id={`rx-${x.id}`} style={{ background: rowBackground(x, i), boxShadow: scanned?.id === x.id ? 'inset 0 0 0 4px #2563eb' : 'none', transition: 'box-shadow 0.3s ease' }}>
                   <td><Thumb src={x.image_url} alt={x.name} /></td>
                   <td>
                     <div style={{ fontWeight: 500 }}>{x.name}</div>
@@ -404,7 +430,7 @@ function OrderScreen({ shop, auth, orderId, onBack }) {
                           onChange={(e) => setCount(x.id, e.target.value)} />
                         <button className="btn btn-secondary btn-sm" onClick={() => addPieces(x, 1)}>+</button>
                       </td>
-                      <td className="text-right" style={{ color: gap < 0 ? '#dc2626' : gap > 0 ? '#d97706' : '#16a34a', fontWeight: 600 }}>
+                      <td className="text-right" style={{ color: gap < 0 ? '#b45309' : gap > 0 ? '#b91c1c' : '#15803d', fontWeight: 600 }}>
                         {gap === 0 ? '✓' : gap > 0 ? `+${fmtInt(gap)}` : `−${fmtInt(-gap)}`}
                       </td>
                     </>
