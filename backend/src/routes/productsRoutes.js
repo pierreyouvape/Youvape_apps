@@ -34,6 +34,7 @@ router.get('/:id/catalog', productsController.getCatalogDetail);
 router.get('/:id/catalog-variations', productsController.getCatalogVariations);
 router.get('/:id/sales-history', productsController.getSalesHistory);
 router.get('/:id/bms-locations', productsController.getBmsLocations);
+router.get('/:id/receptions', productsController.getReceptions);
 router.get('/:id/customers', productsController.getCustomers);
 router.get('/:id/related', productsController.getRelatedProducts);
 

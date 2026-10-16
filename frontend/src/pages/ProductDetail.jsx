@@ -98,6 +98,11 @@ const ProductDetail = () => {
   const [addingSupplier, setAddingSupplier] = useState(false);
   const [newSupplierId, setNewSupplierId] = useState('');
 
+  // Stockages (réceptions fournisseur lues dans les mouvements BMS)
+  const [receptions, setReceptions] = useState([]);
+  const [receptionsLoaded, setReceptionsLoaded] = useState(false);
+  const [receptionsError, setReceptionsError] = useState(null);
+
   // ==================== FETCH FUNCTIONS ====================
 
   useEffect(() => {
@@ -269,6 +274,21 @@ const ProductDetail = () => {
       if (res.data.success) setSuppliers(res.data.data);
     } catch (e) {}
     setSuppliersLoaded(true);
+  };
+
+  // Lazy fetch for Receptions tab
+  const fetchReceptions = async () => {
+    if (receptionsLoaded) return;
+    try {
+      const res = await axios.get(`${API_URL}/products/${id}/receptions`, { params: { limit: 30 } });
+      if (res.data.success) {
+        setReceptions(res.data.data);
+        setReceptionsError(res.data.incomplete ? 'BMS n\'a pas répondu pour certaines déclinaisons : la liste peut être incomplète.' : null);
+      }
+    } catch (e) {
+      setReceptionsError(e.response?.data?.error || 'Impossible de lire les mouvements BMS.');
+    }
+    setReceptionsLoaded(true);
   };
 
   const fetchAllSuppliers = async () => {
@@ -461,6 +481,7 @@ const ProductDetail = () => {
     setActiveTab(tab);
     if (tab === 'needs') fetchNeeds();
     if (tab === 'barcodes') fetchBarcodes();
+    if (tab === 'receptions') fetchReceptions();
     if (tab === 'suppliers') { fetchSuppliers(); if (allSuppliers.length === 0) fetchAllSuppliers(); }
   };
 
@@ -731,6 +752,7 @@ const ProductDetail = () => {
           <button style={tabStyle('needs')} onClick={() => handleTabChange('needs')}>Besoins</button>
           <button style={tabStyle('barcodes')} onClick={() => handleTabChange('barcodes')}>Codes-barres</button>
           <button style={tabStyle('suppliers')} onClick={() => handleTabChange('suppliers')}>Fournisseurs</button>
+          <button style={tabStyle('receptions')} onClick={() => handleTabChange('receptions')}>Stockages</button>
         </div>
 
         {/* ==================== TAB: STATS ==================== */}
@@ -1366,6 +1388,58 @@ const ProductDetail = () => {
             ))}
           </div>
         )}
+
+        {activeTab === 'receptions' && (() => {
+          const multi = new Set(receptions.map(r => r.wp_product_id)).size > 1;
+          const th = { padding: '8px 10px', textAlign: 'left', color: '#6b7280', fontWeight: '600' };
+          const td = { padding: '8px 10px' };
+          return (
+            <div style={cardStyle}>
+              <h2 style={{ marginTop: 0, color: '#333', fontSize: '18px' }}>Derniers stockages</h2>
+              <p style={{ marginTop: 0, color: '#6b7280', fontSize: '12px' }}>Réceptions fournisseur enregistrées dans BMS, les plus récentes en haut.</p>
+              {receptionsError && <p style={{ color: '#b45309', fontSize: '13px' }}>{receptionsError}</p>}
+              {!receptionsLoaded ? (
+                <p style={{ color: '#6b7280', fontSize: '13px' }}>Chargement depuis BMS...</p>
+              ) : receptions.length === 0 ? (
+                !receptionsError && <p style={{ color: '#6b7280', fontSize: '13px' }}>Aucune réception enregistrée dans BMS.</p>
+              ) : (
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+                  <thead>
+                    <tr style={{ borderBottom: '1px solid #e5e7eb' }}>
+                      <th style={th}>Date</th>
+                      {multi && <th style={th}>Déclinaison</th>}
+                      <th style={th}>Commande</th>
+                      <th style={th}>Fournisseur</th>
+                      <th style={{ ...th, textAlign: 'right' }}>Qté</th>
+                      <th style={{ ...th, textAlign: 'right' }}>Stock après</th>
+                      <th style={{ ...th, textAlign: 'right' }}>Coût unit.</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {receptions.map(r => (
+                      <tr key={r.id} style={{ borderBottom: '1px solid #f3f4f6' }}>
+                        <td style={td}>{formatDateUtil(r.date)}</td>
+                        {multi && <td style={td}>{r.post_title}</td>}
+                        <td style={{ ...td, fontFamily: 'monospace' }}>
+                          {r.purchase_order_id ? (
+                            <LinkBox to={`/purchases/commandes?order=${r.purchase_order_id}`} display="inline" style={{ color: '#135E84', textDecoration: 'underline' }}>
+                              {r.order_number}
+                            </LinkBox>
+                          ) : (r.order_number || r.comment || '-')}
+                          {r.supplier_reference && <span style={{ marginLeft: '6px', color: '#6b7280', fontFamily: 'inherit' }}>({r.supplier_reference})</span>}
+                        </td>
+                        <td style={td}>{r.supplier_name || '-'}</td>
+                        <td style={{ ...td, textAlign: 'right', fontWeight: '600', color: '#166534' }}>+{r.qty}</td>
+                        <td style={{ ...td, textAlign: 'right' }}>{r.stock_after ?? '-'}</td>
+                        <td style={{ ...td, textAlign: 'right' }}>{r.unit_cost != null ? `${formatPrice(r.unit_cost)} €` : '-'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          );
+        })()}
       </div>
 
       {/* Footer */}

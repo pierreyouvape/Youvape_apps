@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import axios from 'axios';
 import { formatDate } from '../../utils/dateUtils';
 import { formatPrice, formatInt } from '../../utils/formatNumber';
@@ -240,6 +240,16 @@ const OrdersTab = ({ token }) => {
       console.error('Erreur chargement détail:', err);
     }
   };
+
+  // Lien direct depuis une fiche produit (onglet Stockages) : ?order=<id>
+  const [searchParams, setSearchParams] = useSearchParams();
+  useEffect(() => {
+    const orderId = searchParams.get('order');
+    if (!orderId) return;
+    openDetail(orderId);
+    searchParams.delete('order');
+    setSearchParams(searchParams, { replace: true });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Update order status
   const updateStatus = async (orderId, newStatus) => {
