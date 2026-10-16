@@ -12,9 +12,23 @@ import { useIsMobile } from '../hooks/useIsMobile';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
 
+const HTML_ENTITIES = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ', ndash: '–', mdash: '—', hellip: '…', rsquo: '’', lsquo: '‘', rdquo: '”', ldquo: '“', laquo: '«', raquo: '»', euro: '€', deg: '°', times: '×', reg: '®', trade: '™', copy: '©', omega: 'Ω' };
+
+// Titres WooCommerce : entités HTML (&nbsp;, &#8211;, &amp;…) et espaces insécables
+// rendus en texte lisible ; &amp;nbsp; (double encodage) est aussi couvert.
 const decodeHtml = (str) => {
   if (!str || typeof str !== 'string') return str || '';
-  return str.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#039;/g, "'");
+  let out = str;
+  for (let i = 0; i < 2; i++) {
+    out = out.replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (m, e) => {
+      if (e[0] === '#') {
+        const code = e[1] === 'x' || e[1] === 'X' ? parseInt(e.slice(2), 16) : parseInt(e.slice(1), 10);
+        return code > 0 && code <= 0x10ffff ? String.fromCodePoint(code) : m;
+      }
+      return HTML_ENTITIES[e.toLowerCase()] ?? m;
+    });
+  }
+  return out.replace(/[\u00a0\u202f]/g, ' ');
 };
 
 const fmtPrice = (v) => {
@@ -657,7 +671,7 @@ const CatalogApp = () => {
             <option value="">Toutes les marques</option>
             {brandsList.map(item => (
               item.type === 'brand'
-                ? <option key={`brand:${item.value}`} value={`brand:${item.value}`}>{item.value}</option>
+                ? <option key={`brand:${item.value}`} value={`brand:${item.value}`}>{decodeHtml(item.value)}</option>
                 : <option key={`subBrand:${item.value}`} value={`subBrand:${item.value}`}>&nbsp;&nbsp;↳ {item.value}</option>
             ))}
           </select>
