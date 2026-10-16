@@ -29,6 +29,7 @@ const { getAccount } = require('../services/carriers/accounts');
 const mondialRelayAdapter = require('../services/carriers/mondialRelayAdapter');
 const { WAREHOUSE_BY_ID } = require('../config/nextore');
 const { BMS_SANS_DOUBLON } = require('../services/bmsShipmentSyncService');
+const { createTicket } = require('./pickingPackingModel');
 const {
   REASONS, LOST_REASON, OUTCOMES, unitPaid, bundleParents, expandSelection, checkDestination, returnStatus, suggestSupplier,
   lotRemaining, checkLot, suggestLot,
@@ -60,7 +61,7 @@ const noteTicket = async (ticketId, user, lines, files = []) => {
 
 const ORDER_SQL = `
   SELECT o.wp_order_id, o.post_date, o.paid_date, o.post_status, o.order_total, o.shipping_method,
-         o.billing_first_name, o.billing_last_name, o.billing_email
+         o.billing_first_name, o.billing_last_name, o.billing_email, o.billing_phone
     FROM orders o WHERE o.wp_order_id = $1`;
 
 /**
@@ -270,6 +271,60 @@ const declareLost = async ({ wpOrderId, ticketId, note, selection }, user) => {
     ...picks.filter(p => !p.bundleOf).map(p => `${p.qty} × ${escapeHtml(p.line.name)}`),
   ]);
   return get(returnId);
+};
+
+// ── Colis non réclamé revenu (16/10/2026) ───────────────────────────────────
+
+/**
+ * Le colis revient seul, sans ticket ni retour : c'est la réception qui
+ * déclenche. Crée le retour « Commande non récupérée » sur tout ce qui n'est
+ * pas déjà dans un retour (réception à valider à la main), et le dit dans le
+ * ticket de la commande — repassé « Ouvert » quel que soit son statut — ou dans
+ * un ticket « Nouveau » créé pour l'occasion, note interne seulement (Pierre).
+ */
+const declareUnclaimed = async (wpOrderId, user) => {
+  const { rows: [order] } = await pool.query(ORDER_SQL, [wpOrderId]);
+  if (!order) throw httpError(404, `Commande ${wpOrderId} absente de notre base.`);
+  const lines = await orderLines(wpOrderId);
+  const parents = bundleParents(lines);
+  const selection = lines
+    .filter(l => !parents.has(l.order_item_id) && l.returnable > 0)
+    .map(l => ({ orderItemId: l.order_item_id, qty: l.returnable }));
+  if (!selection.length) throw httpError(400, 'Tous les articles de la commande sont déjà dans un retour.');
+
+  // Le retour d'abord, sans ticket : la note doit en donner le numéro.
+  const ret = await create({
+    wpOrderId, ticketId: null, reason: 'non_recupere', returnRequired: true, outcome: 'points', selection,
+  }, user);
+
+  const { rows: [existing] } = await pool.query(
+    `SELECT id FROM sav_tickets
+      WHERE order_id = $1 AND merged_into_id IS NULL AND NOT is_spam
+      ORDER BY (sav_status <> 'terminé') DESC, created_at DESC
+      LIMIT 1`,
+    [String(wpOrderId)]
+  );
+  const note = [
+    '<strong>Colis revenu chez nous, non réclamé par le client.</strong>',
+    `Retour n°${ret.id} créé, réception à valider.`,
+    ...ret.lines.filter(l => !l.bundle_line_id).map(l => `${l.qty} × ${escapeHtml(l.name)}`),
+  ];
+  const warnings = [];
+  let ticketId = existing?.id || null;
+  try {
+    if (ticketId) {
+      await noteTicket(ticketId, user, note);
+      await savModel.updateStatus(ticketId, 'ouvert');
+    } else {
+      ticketId = (await createTicket(order, `Colis non réclamé revenu — commande #${wpOrderId}`,
+        note.map(l => `<p>${l}</p>`).join(''), user.name || user.email)).id;
+    }
+    await pool.query('UPDATE customer_returns SET ticket_id = $2 WHERE id = $1', [ret.id, ticketId]);
+  } catch (error) {
+    console.error(`[Retours] Ticket du colis non réclamé (commande ${wpOrderId}) :`, error.message);
+    warnings.push(`Retour créé, mais le ticket n’a pas pu être ${ticketId ? 'mis à jour' : 'créé'} (${error.message}).`);
+  }
+  return { ...(await get(ret.id)), ticketCreated: !existing, warnings };
 };
 
 // ── Modification (avant validation) ─────────────────────────────────────────
@@ -1611,6 +1666,7 @@ module.exports = {
   orderContext,
   create,
   declareLost,
+  declareUnclaimed,
   update,
   list,
   get,

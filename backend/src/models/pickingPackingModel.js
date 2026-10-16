@@ -220,4 +220,4 @@ const recordIncident = async (orderNumber, action, user) => {
   return { already: false, ticketId, mailSent: mail.success, mailError: mail.success ? null : mail.error };
 };
 
-module.exports = { getPackingInfo, recordIncident, CONTACT_EMAIL };
+module.exports = { getPackingInfo, recordIncident, createTicket, CONTACT_EMAIL };

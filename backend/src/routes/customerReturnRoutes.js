@@ -27,6 +27,7 @@ router.get('/stock/:productId', read, c.productStock);
 router.get('/', read, c.list);
 router.post('/', write, c.create);
 router.post('/lost', write, c.declareLost);
+router.post('/unclaimed', write, c.declareUnclaimed);
 router.get('/:id', read, c.get);
 router.put('/:id', write, c.update);
 router.post('/:id/validate', write, c.validate);

@@ -20,6 +20,9 @@ module.exports = {
   update: handle(async (req, res) => res.json(await customerReturnModel.update(id(req), req.body || {}, req.user))),
   create: handle(async (req, res) => res.json(await customerReturnModel.create(req.body || {}, req.user))),
   declareLost: handle(async (req, res) => res.json(await customerReturnModel.declareLost(req.body || {}, req.user))),
+  declareUnclaimed: handle(async (req, res) => {
+    res.json(await customerReturnModel.declareUnclaimed(Number(req.body?.wpOrderId), req.user));
+  }),
   get: handle(async (req, res) => res.json(await customerReturnModel.get(id(req)))),
   validate: handle(async (req, res) => {
     res.json(await customerReturnModel.validate(id(req), req.body?.destinations, req.user));

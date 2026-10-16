@@ -6,19 +6,23 @@ import { formatDateUTC } from '../../utils/dateUtils';
 import CreateReturnModal from './CreateReturnModal';
 import DeclareLostModal from './DeclareLostModal';
 import ReturnLabelActions from './ReturnLabelActions';
-import { RETURNS_API, RETURNS_COLOR, RETURNS_COLOR_L, REASONS, LOST_REASON, StatusChip, btn } from './returnsUi';
+import { RETURNS_API, RETURNS_COLOR, RETURNS_COLOR_L, REASONS, LOST_REASON, StatusChip, btn, errorText } from './returnsUi';
 
 /**
  * Retours d'une commande + boutons « Créer un retour » et « Déclarer colis
  * perdu ». Affiché sous la commande concernée d'un ticket, et dans le détail
  * de commande. Sans le droit tickets (403), le bloc ne s'affiche pas.
+ *
+ * `withUnclaimed` (détail de commande) : bouton « Retour car non réclamé »,
+ * pour le colis revenu seul — retour + note dans le ticket (créé au besoin).
  */
-export default function OrderReturnsBox({ wpOrderId, ticketId, concernedProducts, style }) {
+export default function OrderReturnsBox({ wpOrderId, ticketId, concernedProducts, withUnclaimed = false, style }) {
   const { canWrite } = useTicketsAccess();
   const [returns, setReturns] = useState(null);
   const [replacementFor, setReplacementFor] = useState([]);
   const [open, setOpen] = useState(false);
   const [lostOpen, setLostOpen] = useState(false);
+  const [unclaiming, setUnclaiming] = useState(false);
   const valid = /^\d+$/.test(String(wpOrderId || ''));
 
   const load = useCallback(() => {
@@ -33,6 +37,23 @@ export default function OrderReturnsBox({ wpOrderId, ticketId, concernedProducts
   if (!valid || returns === false || returns === null) return null;
 
   const lost = returns.filter(r => r.reason === LOST_REASON && r.status !== 'annule');
+
+  const declareUnclaimed = async () => {
+    if (!window.confirm(`Colis de la commande #${wpOrderId} revenu non réclamé ?\n\nCrée le retour « Commande non récupérée » (réception à valider) et le note dans le ticket de la commande, créé s'il n'existe pas.`)) return;
+    // Ouvert tout de suite : un onglet ouvert après l'appel serait bloqué par le navigateur.
+    const tab = window.open('', '_blank');
+    setUnclaiming(true);
+    try {
+      const { data } = await axios.post(`${RETURNS_API}/unclaimed`, { wpOrderId });
+      if (tab) tab.location.href = `/retours/${data.id}`;
+      if (data.warnings?.length) window.alert(data.warnings.join('\n'));
+      load();
+    } catch (e) {
+      tab?.close();
+      window.alert(errorText(e));
+    }
+    setUnclaiming(false);
+  };
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 6, ...style }}>
@@ -75,6 +96,11 @@ export default function OrderReturnsBox({ wpOrderId, ticketId, concernedProducts
           <button type="button" onClick={() => setLostOpen(true)} style={{ ...btn('ghost'), color: C.red, borderColor: C.red, padding: '6px 12px', fontSize: 12.5 }}>
             Déclarer colis perdu
           </button>
+          {withUnclaimed && (
+            <button type="button" onClick={declareUnclaimed} disabled={unclaiming} style={{ ...btn('ghost', unclaiming), color: C.amber, borderColor: C.amber, padding: '6px 12px', fontSize: 12.5 }}>
+              {unclaiming ? 'Création…' : 'Retour car non réclamé'}
+            </button>
+          )}
         </div>
       )}
       {open && (

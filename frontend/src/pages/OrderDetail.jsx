@@ -650,7 +650,7 @@ const OrderDetail = () => {
                 <StatusBadge status={order.post_status} />
                 {/* Demandes SAV rattachées à la commande */}
                 <SavTicketChips tickets={order.sav_tickets} style={{ justifyContent: 'flex-end' }} />
-                <OrderReturnsBox wpOrderId={order.wp_order_id} style={{ alignItems: 'flex-end' }} />
+                <OrderReturnsBox wpOrderId={order.wp_order_id} withUnclaimed style={{ alignItems: 'flex-end' }} />
               </div>
             </div>
 
