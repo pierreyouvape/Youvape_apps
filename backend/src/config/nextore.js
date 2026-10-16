@@ -19,6 +19,14 @@ const WAREHOUSES = [
   { id: 2, slug: 'castelnau',   code: 'CAST', name: 'Castelnau',   permKey: 'boutique-cast' },
 ];
 
+/**
+ * Sessions de caisse (/registers) → boutique. Une session ne porte pas sa
+ * boutique : on la déduit du compte Nextore qui ouvre la caisse (vérifié sur
+ * les 59 clôtures du 11/09 au 15/10/2026 contre /accounting). Un compte absent
+ * d'ici est signalé à l'écran du coffre, jamais deviné.
+ */
+const REGISTER_USER_WAREHOUSE = { 3: 1, 5: 2 };
+
 const WAREHOUSE_BY_ID = Object.fromEntries(WAREHOUSES.map((w) => [w.id, w]));
 const WAREHOUSE_BY_SLUG = Object.fromEntries(WAREHOUSES.map((w) => [w.slug, w]));
 
@@ -34,6 +42,7 @@ module.exports = {
   NEXTORE_API_URL,
   NEXTORE_API_KEY,
   WAREHOUSES,
+  REGISTER_USER_WAREHOUSE,
   WAREHOUSE_BY_ID,
   WAREHOUSE_BY_SLUG,
   resolveWarehouse,

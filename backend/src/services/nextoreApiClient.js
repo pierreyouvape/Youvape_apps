@@ -106,6 +106,19 @@ module.exports = {
   getAccounting: (startDate, endDate) =>
     nextoreGet('/accounting', { start_date: startDate, end_date: endDate }),
 
+  /** Ids de TOUTES les sessions de caisse (endpoint non documenté), en strings. */
+  getRegisterIds: () => nextoreGet('/registers'),
+
+  /**
+   * Une session de caisse : ouverture, fond (`cash_in_hand`), clôture, et deux
+   * JSON en string — `total_payments_real` (encaissé) et
+   * `total_payments_declare` (compté à la clôture, fond compris).
+   */
+  getRegister: async (registerId) => {
+    const rows = await nextoreGet('/registers/', { register_id: registerId });
+    return Array.isArray(rows) ? rows[0] || null : null;
+  },
+
   getWarehouses: () => nextoreGet('/warehouses'),
   getTaxRates: () => nextoreGet('/tax_rates'),
   getSuppliers: () => nextoreGet('/suppliers'),

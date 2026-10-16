@@ -36,6 +36,7 @@ const APP_KEYS = [
   'boutique-mtp',
   'boutique-cast',
   'stats-boutiques',
+  'coffre-boutiques',
   'process',
   'atb',
   'employes',

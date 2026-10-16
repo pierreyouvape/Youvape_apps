@@ -30,6 +30,7 @@ const bordereauRoutes = require('./routes/bordereauRoutes');
 const shipmentHistoryRoutes = require('./routes/shipmentHistoryRoutes');
 const shipmentStatsRoutes = require('./routes/shipmentStatsRoutes');
 const boutiqueStatsRoutes = require('./routes/boutiqueStatsRoutes');
+const coffreRoutes = require('./routes/coffreRoutes');
 const pickingRoutes = require('./routes/pickingRoutes');
 const pdaProductRoutes = require('./routes/pdaProductRoutes');
 const inventoryRoutes = require('./routes/inventoryRoutes');
@@ -104,6 +105,7 @@ app.use('/api/bordereaux', bordereauRoutes); // Bordereaux de dépôt (droit pac
 app.use('/api/shipment-history', shipmentHistoryRoutes); // Historique d'expédition (droit packing, dans le routeur)
 app.use('/api/shipment-stats', shipmentStatsRoutes); // Stats d'expédition (droit stats-expedition, dans le routeur)
 app.use('/api/boutique-stats', authMiddleware, boutiqueStatsRoutes); // Stats boutiques (droit stats-boutiques + droit boutique, dans le contrôleur)
+app.use('/api/coffre', authMiddleware, coffreRoutes); // Coffre boutiques (droit coffre-boutiques + droit boutique, dans le contrôleur)
 app.use('/api/picking', pickingRoutes); // Picking : commandes à préparer et vagues (auth + droit picking dans le routeur)
 app.use('/api/inventaire', inventoryRoutes); // Inventaire : PC (droit inventaire) + PDA (droit picking), auth dans le routeur
 app.use('/api/retours', customerReturnRoutes); // Retours client (droit tickets, auth dans le routeur)

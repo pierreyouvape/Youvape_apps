@@ -8,6 +8,7 @@ import ImportTab from '../components/boutique/ImportTab';
 import CommandesTab from '../components/boutique/CommandesTab';
 import ComptageTab from '../components/boutique/ComptageTab';
 import StatsTab from '../components/boutique/StatsTab';
+import CoffreTab from '../components/boutique/CoffreTab';
 
 /* ─── PALETTE (alignée Rapport / SAV / Réception) ───────── */
 const C = {
@@ -47,7 +48,8 @@ const SECTIONS = [
   { key: 'comptage', label: 'Comptage', color: '#7C3AED', Icon: IcCount, ready: true },
   // Droit à part `stats-boutiques` (Conseiller / Responsable), en plus du droit boutique.
   { key: 'stats',    label: 'Statistiques', color: '#A21CAF', Icon: IcStats, ready: true, permKey: 'stats-boutiques' },
-  { key: 'coffre',   label: 'Coffre',   color: '#334155', Icon: IcSafe,  ready: false },
+  // Droit à part `coffre-boutiques`, en plus du droit boutique.
+  { key: 'coffre',   label: 'Coffre',   color: '#334155', Icon: IcSafe,  ready: true, permKey: 'coffre-boutiques' },
 ];
 
 /* Groupes de sections : une tuile sur l'accueil, qui ouvre ses propres tuiles. */
@@ -259,6 +261,14 @@ export default function BoutiqueApp() {
           <>
             <ShopHeader shop={shop} subtitle={`Statistiques — produits, marques et catégories les plus vendus · vue ${statsLevel}`} onBack={goHome} />
             <StatsTab shop={shop} token={token} />
+          </>
+        )}
+
+        {/* ── Section Coffre (solde théorique, comptage, remises en banque) ── */}
+        {section === 'coffre' && (
+          <>
+            <ShopHeader shop={shop} subtitle="Coffre — solde théorique, comptage et remises en banque" onBack={goHome} />
+            <CoffreTab shop={shop} token={token} />
           </>
         )}
 

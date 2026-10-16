@@ -25,8 +25,12 @@ const LEVEL_LABELS = {
 
 // Droits qui ne sont PAS une app du lanceur : ils ouvrent une section à
 // l'intérieur d'une autre app. « Stats boutiques » = la tuile Statistiques des
-// apps Boutique (backend/src/config/apps.js la connaît aussi).
-const EXTRA_PERMISSIONS = [{ key: 'stats-boutiques', label: 'Stats boutiques' }];
+// apps Boutique, « Coffre boutiques » leur tuile Coffre
+// (backend/src/config/apps.js les connaît aussi).
+const EXTRA_PERMISSIONS = [
+  { key: 'stats-boutiques', label: 'Stats boutiques' },
+  { key: 'coffre-boutiques', label: 'Coffre boutiques' },
+];
 
 const SettingsApp = () => {
   const { token, isAdmin, isSuperAdmin } = useContext(AuthContext);
