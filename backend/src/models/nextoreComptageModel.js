@@ -90,7 +90,7 @@ async function getRollingProposal(warehouseId, limit = 10) {
 async function productInfo(productIds) {
   if (!productIds.length) return new Map();
   const { rows } = await pool.query(
-    `SELECT p.product_id, p.name, p.code AS sku, p.barcode, c.name AS category_name
+    `SELECT p.product_id, p.name, p.code AS sku, p.barcode, p.cost::float AS cost, c.name AS category_name
      FROM nextore_products p LEFT JOIN nextore_categories c ON c.id = p.category_id
      WHERE p.product_id = ANY($1::text[])`,
     [productIds],
@@ -158,6 +158,7 @@ async function getComptage(comptageId) {
     ...i,
     counted_qty: i.counted_qty == null ? null : Number(i.counted_qty),
     s_ref: i.s_ref == null ? null : Number(i.s_ref),
+    delta_pushed: i.delta_pushed == null ? null : Number(i.delta_pushed),
     ...(info.get(i.product_id) || {}),
   }));
   return { ...comptage, items: enriched };
@@ -292,8 +293,19 @@ async function listComptages(warehouseId) {
             (SELECT name FROM users u WHERE u.email = c.created_by LIMIT 1) AS created_by_name,
             (SELECT name FROM users u WHERE u.email = c.validated_by LIMIT 1) AS validated_by_name,
             (SELECT COUNT(*) FROM nextore_comptage_items ci WHERE ci.comptage_id = c.id AND ci.counted_qty IS NOT NULL)::int AS counted_count,
-            (SELECT COUNT(*) FROM nextore_comptage_items ci WHERE ci.comptage_id = c.id)::int AS items_count
+            (SELECT COUNT(*) FROM nextore_comptage_items ci WHERE ci.comptage_id = c.id)::int AS items_count,
+            e.ecart_count, e.ecart_plus, e.ecart_minus, e.ecart_value
      FROM nextore_comptages c
+     -- Écarts = correction réellement poussée (compté − stock Nextore au comptage)
+     LEFT JOIN LATERAL (
+       SELECT COUNT(*) FILTER (WHERE ci.delta_pushed <> 0)::int AS ecart_count,
+              COALESCE(SUM(ci.delta_pushed) FILTER (WHERE ci.delta_pushed > 0), 0)::float AS ecart_plus,
+              COALESCE(SUM(ci.delta_pushed) FILTER (WHERE ci.delta_pushed < 0), 0)::float AS ecart_minus,
+              COALESCE(SUM(ci.delta_pushed * COALESCE(p.cost, 0)), 0)::float AS ecart_value
+       FROM nextore_comptage_items ci
+       LEFT JOIN nextore_products p ON p.product_id = ci.product_id
+       WHERE ci.comptage_id = c.id AND ci.pushed
+     ) e ON TRUE
      WHERE c.warehouse_id = $1
      ORDER BY c.created_at DESC LIMIT 100`,
     [warehouseId],

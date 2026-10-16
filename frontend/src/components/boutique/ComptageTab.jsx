@@ -11,6 +11,9 @@ const C = {
 };
 const auth = (token) => ({ headers: { Authorization: `Bearer ${token}` } });
 const fmt = (n) => (n == null ? '—' : Number(n).toLocaleString('fr-FR', { maximumFractionDigits: 2 }));
+const signed = (n) => (n > 0 ? `+${fmt(n)}` : fmt(n));
+const eur = (n) => `${n > 0 ? '+' : ''}${Number(n).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €`;
+const ecartColor = (n) => (n > 0 ? C.green : n < 0 ? C.red : C.greyM);
 
 const REASON = {
   negatif: { label: 'Stock négatif', color: C.red },
@@ -242,6 +245,18 @@ export default function ComptageTab({ shop, token }) {
                 return agent ? <> · 👤 {agent}</> : null;
               })()}
             </div>
+            {c.status === 'valide' && (
+              <div style={{ fontSize: 13, marginTop: 4, color: C.greyT }}>
+                {c.ecart_count > 0 ? (
+                  <>
+                    <strong style={{ color: C.dark }}>{c.ecart_count} écart{c.ecart_count > 1 ? 's' : ''}</strong>
+                    {c.ecart_plus > 0 && <span style={{ color: C.green }}> · {signed(c.ecart_plus)}</span>}
+                    {c.ecart_minus < 0 && <span style={{ color: C.red }}> · {signed(c.ecart_minus)}</span>}
+                    <span style={{ color: ecartColor(c.ecart_value), fontWeight: 600 }}> · {eur(c.ecart_value)}</span>
+                  </>
+                ) : <span style={{ color: C.green }}>Aucun écart</span>}
+              </div>
+            )}
           </div>
         ))}
       </div>
@@ -406,8 +421,11 @@ export default function ComptageTab({ shop, token }) {
         </div>
       )}
 
+      {/* Comptage validé : écarts poussés dans Nextore */}
+      {validated && <EcartsView items={counted} />}
+
       {/* Réfs comptées */}
-      {counted.length > 0 && (
+      {counted.length > 0 && !validated && (
         <div style={{ marginBottom: 14 }}>
           <div style={{ fontSize: 12, fontWeight: 700, color: C.greyT, textTransform: 'uppercase', margin: '6px 0' }}>Compté ({counted.length})</div>
           {counted.map((i) => (
@@ -456,6 +474,68 @@ export default function ComptageTab({ shop, token }) {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+/* Historique : écart de chaque réf = correction poussée (compté − stock Nextore au comptage) */
+function EcartsView({ items }) {
+  const ecartOf = (i) => (i.pushed ? i.delta_pushed : null);
+  const withGap = items.filter((i) => ecartOf(i)).sort((a, b) => Math.abs(ecartOf(b)) - Math.abs(ecartOf(a)));
+  const noGap = items.filter((i) => ecartOf(i) === 0);
+  const notPushed = items.filter((i) => !i.pushed);
+  const plus = withGap.reduce((t, i) => t + Math.max(ecartOf(i), 0), 0);
+  const minus = withGap.reduce((t, i) => t + Math.min(ecartOf(i), 0), 0);
+  const value = withGap.reduce((t, i) => t + ecartOf(i) * (i.cost || 0), 0);
+
+  const section = (title, list) => list.length > 0 && (
+    <div style={{ marginBottom: 14 }}>
+      <div style={{ fontSize: 12, fontWeight: 700, color: C.greyT, textTransform: 'uppercase', margin: '6px 0' }}>{title} ({list.length})</div>
+      {list.map((i) => <EcartRow key={i.product_id} item={i} ecart={ecartOf(i)} />)}
+    </div>
+  );
+
+  return (
+    <>
+      <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
+        {[
+          ['Écarts', withGap.length, C.dark],
+          ['En plus', signed(plus), C.green],
+          ['En moins', signed(minus), C.red],
+          ['Valeur (prix d\'achat)', eur(value), ecartColor(value)],
+        ].map(([label, v, color]) => (
+          <div key={label} style={{ flex: '1 1 120px', background: C.white, border: `1px solid ${C.greyB}`, borderRadius: 10, padding: '10px 12px' }}>
+            <div style={{ fontSize: 12, color: C.greyM }}>{label}</div>
+            <div style={{ fontSize: 18, fontWeight: 700, color }}>{v}</div>
+          </div>
+        ))}
+      </div>
+      {section('Écarts', withGap)}
+      {section('Sans écart', noGap)}
+      {section('Non poussé', notPushed)}
+    </>
+  );
+}
+
+function EcartRow({ item, ecart }) {
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', background: '#fff',
+      border: `1px solid ${C.greyB}`, borderRadius: 10, marginBottom: 6,
+    }}>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontWeight: 600, fontSize: 14, lineHeight: 1.3, overflowWrap: 'anywhere' }}>{item.name || item.product_id}</div>
+        <div style={{ fontSize: 12, color: C.greyM }}>
+          {item.sku ? `#${item.sku} · ` : ''}Nextore {fmt(item.s_ref)} → compté {fmt(item.counted_qty)}
+          {item.moved && <span style={{ color: C.orange }}> · a bougé pendant le comptage</span>}
+        </div>
+      </div>
+      <div style={{ textAlign: 'right', minWidth: 64 }}>
+        <div style={{ fontSize: 16, fontWeight: 700, color: ecart == null ? C.greyM : ecartColor(ecart) }}>
+          {ecart == null ? '—' : ecart === 0 ? '=' : signed(ecart)}
+        </div>
+        {ecart ? <div style={{ fontSize: 12, color: C.greyM }}>{eur(ecart * (item.cost || 0))}</div> : null}
+      </div>
     </div>
   );
 }
