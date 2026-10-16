@@ -1,0 +1,143 @@
+FACTURE
+16/10/2026
+#FA074570
+Adresse de livraison
+maxime coglitore
+SAS EMC
+FR87789508439
+580 avenue de l'aube rouge
+YOUVAPE SITE
+34170 CASTELNAU LE LEZ
+France
+0695975267
+Adresse de facturation
+maxime coglitore
+SAS EMC
+FR87789508439
+580 avenue de l'aube rouge
+YOUVAPE SITE
+34170 CASTELNAU LE LEZ
+France
+0695975267
+Numéro de facture Date de facturation Réf. de commande Date de commande Numéro de TVA
+#FA074570 16/10/2026 NZAHNQXFZ 16/10/2026 FR87789508439
+Référence Produit Taux de
+taxe
+Prix unitaire
+(HT)
+Quantité Total
+(HT)
+190-FRAM-10-3
+MG
+Framboise Cassis - 10ml (Taux de nicotine : 3mg) 20 % 1,36 € 10 13,60 €
+190-FRAM-10-6
+MG
+Framboise Cassis - 10ml (Taux de nicotine : 6mg) 20 % 1,36 € 20 27,20 €
+AST-
+LICO-10-10SDN
+La Licorne - Sel de Nicotine (Taux de nicotine :
+10mg)
+20 % 1,36 € 20 27,20 €
+AST-LICO-
+VEG-50-0MG
+Licorne VERSION VEGETOL - 50ml (Taux de
+nicotine : 00mg)
+20 % 5,52 € 12 66,24 €
+BOO-PACK500
+SELDENICO-20M
+G
+500 boosters SEL DE NICOTINE 20mg - 50/50 -
+100% VÉGÉTAL - 10ml (Taux de nicotine : 20mg)
+20 % 150,00 € 2 300,00 €
+COT-
+SAIN-50-0MG
+Saint Malo - 50ml (Taux de nicotine : 00mg) 20 % 5,52 € 12 66,24 €
+HEX-
+LILL-50-00MG
+Lille Etait Une Fois - 50ml (Taux de nicotine :
+00mg)
+20 % 5,52 € 54 298,08 €
+HEX-
+MARS-50-00MG
+Marseille, Plus Belle La Ville - 50ml (Taux de
+nicotine : 00mg)
+20 % 5,52 € 6 33,12 €
+HEX-
+NANT-50-00MG
+Nantes est à l'Ouest - 50ml (Taux de nicotine :
+00mg)
+20 % 5,52 € 6 33,12 €
+HEX-
+NICE-50-00MG
+Nice to Meet You - 50ml (Taux de nicotine : 00mg) 20 % 5,52 € 12 66,24 €
+HEX-PARI-
+CONC
+Un Matin à Paris - Concentré 30ML (Contenance :
+30ML)
+20 % 4,72 € 10 47,20 €
+HEX-
+STRA-50-00MG
+Strasbourg et Paillettes - 50ml (Taux de nicotine :
+00mg)
+20 % 5,52 € 6 33,12 €
+NAT-
+AMAZ-50-0MG
+Amazonien - 50ml (Taux de nicotine : 00mg) 20 % 5,52 € 12 66,24 €
+1 / 2
+
+-- 1 of 2 --
+
+FACTURE
+16/10/2026
+#FA074570
+NAT-
+BOOS-10-20MG
+Booster Natural - 10ml (Taux de nicotine : 20mg) 20 % 1,36 € 30 40,80 €
+NAT-
+DRUI-50-0MG
+Druide - 50ml (Taux de nicotine : 00mg) 20 % 5,52 € 12 66,24 €
+NAT-
+ELIX-10-6MG
+Elixir - 10ml (Taux de nicotine : 6mg) 20 % 1,36 € 50 68,00 €
+NAT-
+NOIS-50-0MG
+Noisette - 50ml (Taux de nicotine : 00mg) 20 % 5,52 € 12 66,24 €
+NAT-
+VERT-10-6MG
+Menthe Verte - 10ml (Taux de nicotine : 6mg) 20 % 1,36 € 10 13,60 €
+NAT-
+VERT-50-0MG
+Menthe Verte - 50ml (Taux de nicotine : 00mg) 20 % 5,52 € 6 33,12 €
+PRE-
+PREC-10-6MG
+Le Precieux - 10ml (Taux de nicotine : 6mg) 20 % 1,36 € 10 13,60 €
+PRE-
+PREC-10-12MG
+Le Precieux - 10ml (Taux de nicotine : 12mg) 20 % 1,36 € 60 81,60 €
+PRE-
+PREC-10-18MG
+Le Precieux - 10ml (Taux de nicotine : 18mg) 20 % 1,36 € 20 27,20 €
+PRE-
+PREC-50-0MG
+Le Precieux en 50ml (Taux de nicotine : 00mg) 20 % 5,52 € 36 198,72 €
+Détail des taxes Taux de taxe Taxe totale
+Produits 20.000 % 337,34 €
+Total produits 1 686,72 €
+Frais de livraison Livraison gratuite
+Total (HT) 1 686,72 €
+Taxe totale 337,34 €
+Total 2 024,06 €
+Moyen de paiement Paiement VISA 2 024,06 €
+Transporteur Chronopost - Express à domicile J+1 avant
+13h
+RIB HSBC, 3 rue des Mathurins, 75009, Paris
+IBAN : FR76 3005 6009 1509 1500 4920 968
+BIC / SWIFT : CCFRFRPP
+Powered by TCPDF (www.tcpdf.org)
+Curieux e-liquides PRO - 42 avenue du Général de Gaulle - 45200 MONTARGIS - France
+Pour toute assistance, merci de nous contacter :
+Tél. : +33 1 48 18 75 62
+Siret : 83841399500047 / Numero EORI FR83841399500013 / TVA FR84838413995
+
+-- 2 of 2 --
+

@@ -138,7 +138,15 @@ function splitRef(block) {
   // Une référence ne porte jamais de parenthèse. Sans ce garde-fou, le résidu de
   // désignation « : 00mg) » laissé par un saut de page devenait la référence de
   // la ligne suivante chez Curieux.
-  const start = tokens.findIndex((t) => /\d/.test(t) && !/[()]/.test(t));
+  // Exception : une référence Curieux peut n'avoir AUCUN chiffre
+  // (« HEX-PARI-CONC », #FA074570). Le premier mot porteur d'un chiffre était
+  // alors le « 30ML » de la désignation : 47,20 € « facturés non commandés » en
+  // face d'un concentré « commandé non facturé ». Un mot de tête tout en
+  // majuscules et à deux tirets au moins est une référence — un titre de rayon
+  // MG Vape (« MPV ») n'en a aucun.
+  const start = /^[A-Z]+(?:-[A-Z0-9]+){2,}$/.test(tokens[0] || '')
+    ? 0
+    : tokens.findIndex((t) => /\d/.test(t) && !/[()]/.test(t));
   if (start === -1) return { ref: null, label: tokens.join(' ') || null };
 
   let ref = tokens[start];

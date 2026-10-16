@@ -185,6 +185,22 @@ test('référence coupée par le saut de page : les deux moitiés se retrouvent 
   assert.ok(!refs.includes('MACA-50-00MG'), 'la moitié orpheline subsiste');
 });
 
+test('Curieux : une référence sans aucun chiffre n\'est pas remplacée par un mot de la désignation (#FA074570)', () => {
+  // « HEX-PARI-CONC Un Matin à Paris - Concentré 30ML (Contenance : 30ML) » : le
+  // premier mot porteur d'un chiffre était « 30ML ». Le concentré sortait donc
+  // en « facturé non commandé » (+47,20 €) face au même article « commandé non
+  // facturé » (−53,10 €).
+  const r = parse('curieux-FA074570.txt');
+  assert.strictEqual(r.lines.length, 23);
+  assert.ok(close(somme(r), 1686.72, 0.02), `somme ${somme(r).toFixed(2)} ≠ 1686.72`);
+  const l = byRef(r, 'HEX-PARI-CONC');
+  assert.ok(l, `HEX-PARI-CONC absent : ${r.lines.map((x) => x.ref).join(', ')}`);
+  assert.strictEqual(l.qty, 10);
+  assert.ok(close(l.lineTotalHt, 47.20));
+  assert.ok(/^Un Matin à Paris/.test(l.label), `libellé tronqué : ${l.label}`);
+  assert.ok(!r.lines.some((x) => x.ref === '30ML'), 'la contenance sert encore de référence');
+});
+
 test('pied de page Highbuy : il ne se colle pas à l\'article qui ouvre la page 2 (#FA021649)', () => {
   // La page 2 s'ouvre directement sur HB1026, sans en-tête de tableau pour vider
   // le tampon. Téléphone, SIRET nu et « VAT/ » s'y collaient : la ligne sortait
