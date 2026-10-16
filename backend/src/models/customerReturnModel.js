@@ -227,8 +227,8 @@ const shipmentText = (s) => [s.carrier_code === 'chronopost' && s.account_code =
 /**
  * Déclare perdu par le transporteur tout ou partie d'une commande. Rien ne
  * revient : le constat est validé d'office, toutes les pièces « non remises en
- * stock ». L'issue prévue est le renvoi (méthode d'origine, dispo confirmée à
- * la main et stock BMS vérifié). Colis retrouvé : on annule la déclaration.
+ * stock ». L'issue prévue est le renvoi (méthode d'origine, bloqué si le
+ * stock BMS manque). Colis retrouvé : on annule la déclaration.
  */
 const declareLost = async ({ wpOrderId, ticketId, note, selection }, user) => {
   const { rows: [order] } = await pool.query(ORDER_SQL, [wpOrderId]);
@@ -838,13 +838,6 @@ const createReplacement = async (id, items, user) => {
     );
     if (l.product_type !== 'variation' || !alt) throw httpError(400, `« ${l.name} » : on ne peut renvoyer qu’une autre déclinaison du même produit.`);
     lines.push({ ...alt, id: l.id, returnedName: l.name });
-  }
-
-  // Colis perdu : l'opérateur confirme lui-même que chaque article est là (Pierre, 16/10/2026).
-  if (lost) {
-    const confirmed = new Set(chosen.filter(i => i.confirmed === true).map(i => Number(i.lineId)));
-    const missing = lines.filter(l => !confirmed.has(l.id));
-    if (missing.length) throw httpError(400, `Confirmer la disponibilité : ${missing.map(l => l.name).join(' ; ')}.`);
   }
 
   const short = [];

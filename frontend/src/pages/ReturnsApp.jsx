@@ -447,8 +447,6 @@ function ReplacementModal({ ret, onClose, onDone, setMessage }) {
   // lineId → { productId, name, sku, available } : autre déclinaison choisie à la place.
   const [swap, setSwap] = useState({});
   const [openAlt, setOpenAlt] = useState({});
-  // Colis perdu : disponibilité confirmée à la main, ligne par ligne (Pierre, 16/10/2026).
-  const [confirmed, setConfirmed] = useState({});
 
   // Ce qui part réellement pour une ligne : la déclinaison choisie, sinon l'article retourné.
   const effective = (i) => swap[i.lineId] || i;
@@ -477,17 +475,14 @@ function ReplacementModal({ ret, onClose, onDone, setMessage }) {
   const short = (data?.items || []).filter(i => (qty[i.lineId] || 0) > 0
     && (effective(i).available == null || effective(i).available < qty[i.lineId]));
   const chosen = (data?.items || []).filter(i => (qty[i.lineId] || 0) > 0);
-  const unconfirmed = data?.lost ? chosen.filter(i => !confirmed[i.lineId]) : [];
-  const canSubmit = data && chosen.length && !short.length && !unconfirmed.length && !saving;
+  const canSubmit = data && chosen.length && !short.length && !saving;
 
   const submit = async () => {
     setSaving(true);
     setError('');
     try {
       const { data: r } = await axios.post(`${RETURNS_API}/${ret.id}/replacement`, {
-        items: chosen.map(i => ({
-          lineId: i.lineId, qty: qty[i.lineId], productId: swap[i.lineId]?.productId || null, confirmed: !!confirmed[i.lineId],
-        })),
+        items: chosen.map(i => ({ lineId: i.lineId, qty: qty[i.lineId], productId: swap[i.lineId]?.productId || null })),
       });
       setMessage({
         kind: r.warnings?.length ? 'error' : 'ok',
@@ -516,10 +511,7 @@ function ReplacementModal({ ret, onClose, onDone, setMessage }) {
             <>
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead>
-                  <tr>
-                    <th style={th}>Article</th><th style={{ ...th, textAlign: 'right' }}>Dispo BMS</th><th style={{ ...th, textAlign: 'right' }}>À renvoyer</th>
-                    {data.lost && <th style={{ ...th, textAlign: 'center' }}>Dispo confirmée</th>}
-                  </tr>
+                  <tr><th style={th}>Article</th><th style={{ ...th, textAlign: 'right' }}>Dispo BMS</th><th style={{ ...th, textAlign: 'right' }}>À renvoyer</th></tr>
                 </thead>
                 <tbody>
                   {data.items.map(i => {
@@ -567,15 +559,6 @@ function ReplacementModal({ ret, onClose, onDone, setMessage }) {
                             style={{ ...field, width: 64, textAlign: 'right' }}
                           />
                         </td>
-                        {data.lost && (
-                          <td style={{ ...td, textAlign: 'center' }}>
-                            <input
-                              type="checkbox" disabled={q === 0} checked={!!confirmed[i.lineId]}
-                              onChange={ev => setConfirmed(c => ({ ...c, [i.lineId]: ev.target.checked }))}
-                              style={{ width: 18, height: 18, cursor: 'pointer' }}
-                            />
-                          </td>
-                        )}
                       </tr>
                     );
                   })}
@@ -588,7 +571,6 @@ function ReplacementModal({ ret, onClose, onDone, setMessage }) {
               </div>
               <div style={{ fontSize: 12.5, color: C.greyT }}>
                 Commande à 0 €, statut « En cours », note interne « {data.lost ? 'SAV colis perdu commande' : 'SAV commande'} N°{ret.wp_order_id} ». WooCommerce enverra son email habituel au client.
-                {data.lost && ' Cocher chaque article une fois sa présence vérifiée en stock.'}
               </div>
             </>
           )}
@@ -715,7 +697,7 @@ function OutcomePanel({ ret, canWrite, onDone, setMessage }) {
               <button type="button" onClick={() => setReplacementOpen(true)} style={btn('primary')}>Créer la commande de renvoi</button>
               <span style={{ fontSize: 12.5, color: C.greyT }}>
                 Commande WooCommerce à 0 €, stock BMS vérifié.
-                {ret.reason === LOST_REASON && ' Colis perdu : même méthode d’expédition que la commande, disponibilité à confirmer.'}
+                {ret.reason === LOST_REASON && ' Colis perdu : même méthode d’expédition que la commande.'}
               </span>
             </div>
           )}
