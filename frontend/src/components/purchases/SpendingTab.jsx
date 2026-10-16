@@ -47,12 +47,12 @@ export default function SpendingTab({ token }) {
     if (refresh) setRefreshing(true); else setLoading(true);
     setError('');
     try {
-      const res = await axios.get(`${API_URL}/purchases/bms-spending${refresh ? '?refresh=1' : ''}`, {
+      const res = await axios.get(`${API_URL}/purchases/bms-spending`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (res.data.success) setOrders(res.data.data);
     } catch (e) {
-      setError(e.response?.data?.error || 'Erreur de chargement des achats BMS');
+      setError(e.response?.data?.error || 'Erreur de chargement des dépenses fournisseur');
     } finally {
       setLoading(false); setRefreshing(false);
     }
@@ -145,7 +145,7 @@ export default function SpendingTab({ token }) {
       .sort((a, b) => (a.order_date < b.order_date ? 1 : -1));
   }, [sel, filtered]);
 
-  if (loading) return <div style={{ padding: 40, textAlign: 'center', color: C.grisM }}>Chargement des achats BMS…</div>;
+  if (loading) return <div style={{ padding: 40, textAlign: 'center', color: C.grisM }}>Chargement des dépenses…</div>;
   if (error) return <div style={{ padding: 20, color: '#b91c1c', background: '#fef2f2', borderRadius: 10 }}>{error}</div>;
 
   const th = { padding: '10px 12px', fontSize: 11, fontWeight: 800, color: C.grisM, textTransform: 'uppercase', letterSpacing: '0.03em', position: 'sticky', top: 0, background: C.grisTL, whiteSpace: 'nowrap' };
@@ -158,7 +158,8 @@ export default function SpendingTab({ token }) {
         <div>
           <div style={{ fontSize: 15, fontWeight: 800, color: C.grisTF }}>Dépenses par fournisseur</div>
           <div style={{ fontSize: 12, color: C.grisM, marginTop: 2 }}>
-            Bons de commande BMS « complète » + « vérifiée », regroupés par mois (date de commande)
+            Regroupées par mois de commande — jusqu'à sept. 2026 : bons BMS « complète » + « vérifiée », figés ;
+            depuis oct. 2026 : factures et avoirs saisis dans Factures fournisseurs
           </div>
         </div>
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -178,7 +179,7 @@ export default function SpendingTab({ token }) {
       <div style={{ display: 'flex', gap: 14, marginBottom: 16, flexWrap: 'wrap' }}>
         <StatCard label="Total HT" value={eur(grand.ht)} color={C.saphir} />
         <StatCard label="Total TTC" value={eur(grand.ttc)} color={C.orange} />
-        <StatCard label="Commandes" value={grand.count} color={C.vert} />
+        <StatCard label="Documents" value={grand.count} color={C.vert} />
         <StatCard label="Fournisseurs" value={suppliers.length} color={C.grisF} />
       </div>
 
@@ -264,14 +265,14 @@ export default function SpendingTab({ token }) {
             })}
           </div>
           <div style={{ fontSize: 11, color: C.grisM, marginTop: 10 }}>
-            Montants HT — cliquez un point pour voir le détail des commandes du mois
+            Montants HT — cliquez un point pour voir le détail du mois
           </div>
         </div>
       )}
 
       {suppliers.length === 0 ? (
         <div style={{ padding: 40, textAlign: 'center', color: C.grisM, background: C.blanc, borderRadius: 12, border: `1px solid ${C.grisCL}` }}>
-          Aucune commande complète et vérifiée sur cette période.
+          Aucune dépense sur cette période.
         </div>
       ) : (
         <div style={{ background: C.blanc, borderRadius: 12, border: `1px solid ${C.grisCL}`, overflow: 'hidden' }}>
@@ -337,14 +338,16 @@ export default function SpendingTab({ token }) {
             <div style={{ fontSize: 14, fontWeight: 800, color: C.grisTF }}>
               {sel.supplier} — {monthLabel(sel.month)}
             </div>
-            <span style={{ fontSize: 12, color: C.grisM }}>{selOrders.length} commande{selOrders.length > 1 ? 's' : ''}</span>
+            <span style={{ fontSize: 12, color: C.grisM }}>{selOrders.length} document{selOrders.length > 1 ? 's' : ''}</span>
             <button onClick={() => setSel(null)} style={{ marginLeft: 'auto', border: 'none', background: 'transparent', color: C.grisM, cursor: 'pointer', fontSize: 18 }}>×</button>
           </div>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr>
-                <th style={{ ...th, textAlign: 'left' }}>Référence BMS</th>
-                <th style={{ ...th, textAlign: 'left' }}>Date</th>
+                <th style={{ ...th, textAlign: 'left' }}>Référence</th>
+                <th style={{ ...th, textAlign: 'left' }}>Source</th>
+                <th style={{ ...th, textAlign: 'left' }}>Commande du</th>
+                <th style={{ ...th, textAlign: 'left' }}>Facture du</th>
                 <th style={{ ...th, textAlign: 'right' }}>HT</th>
                 <th style={{ ...th, textAlign: 'right' }}>TTC</th>
               </tr>
@@ -353,7 +356,13 @@ export default function SpendingTab({ token }) {
               {selOrders.map(o => (
                 <tr key={o.id}>
                   <td style={{ ...cellStyle, fontWeight: 700 }}>
-                    {o.bms_url ? (
+                    {o.source === 'app' ? (
+                      <a href={`/factures-fournisseurs?doc=${o.document_id}`} target="_blank" rel="noopener noreferrer"
+                        style={{ color: C.saphir, textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 5 }}
+                        title="Ouvrir le document dans Factures fournisseurs">
+                        {o.reference}<span style={{ fontSize: 11 }}>↗</span>
+                      </a>
+                    ) : o.bms_url ? (
                       <a href={o.bms_url} target="_blank" rel="noopener noreferrer"
                         style={{ color: C.saphir, textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 5 }}
                         title="Ouvrir la commande (et sa facture) dans BMS">
@@ -363,7 +372,11 @@ export default function SpendingTab({ token }) {
                       <span style={{ color: C.saphir }}>{o.reference || `#${o.id}`}</span>
                     )}
                   </td>
+                  <td style={{ ...cellStyle, color: C.grisF }}>
+                    {o.source === 'app' ? (o.doc_type === 'credit_note' ? 'Avoir' : 'Facture') : 'BMS (figé)'}
+                  </td>
                   <td style={cellStyle}>{fmtDate(o.order_date)}</td>
+                  <td style={cellStyle}>{fmtDate(o.doc_date)}</td>
                   <td style={{ ...cellStyle, textAlign: 'right', fontWeight: 700 }}>{eur(o.ht)}</td>
                   <td style={{ ...cellStyle, textAlign: 'right', color: C.grisF }}>{eur(o.ttc)}</td>
                 </tr>
@@ -390,7 +403,7 @@ function RankTooltip({ active, payload, total }) {
       <div style={{ fontWeight: 800, color: C.grisTF, marginBottom: 6 }}>{d.name}</div>
       <TipRow label="HT" value={eur(d.ht)} strong />
       <TipRow label="TTC" value={eur(d.ttc)} />
-      <TipRow label="Commandes" value={d.count} />
+      <TipRow label="Documents" value={d.count} />
       <TipRow label="Part des achats" value={`${part.toFixed(1)} %`} />
     </div>
   );
@@ -406,7 +419,7 @@ function PanelTooltip({ active, payload, supplier }) {
         <>
           <TipRow label="HT" value={eur(d.ht)} strong />
           <TipRow label="TTC" value={eur(d.ttc)} />
-          <TipRow label="Commandes" value={d.count} />
+          <TipRow label="Documents" value={d.count} />
         </>
       ) : (
         <div style={{ color: C.grisM }}>Aucune commande ce mois-ci</div>

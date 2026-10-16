@@ -3,13 +3,8 @@ const receptionSessionModel = require('../models/receptionSessionModel');
 const needsCalculationModel = require('../models/needsCalculationModel');
 const productAlertModel = require('../models/productAlertModel');
 const pdfImportModel = require('../models/pdfImportModel');
-const bmsApiModel = require('../models/bmsApiModel');
 const pool = require('../config/database');
 const { buildSearchCondition } = require('../utils/searchUtils');
-
-// Cache des bons de commande BMS (évite de refetcher ~7 pages d'API à chaque chargement)
-let _bmsPoCache = { data: null, at: 0 };
-const BMS_PO_TTL_MS = 15 * 60 * 1000; // 15 min
 
 const purchasesController = {
   // ==================== RECHERCHE PRODUITS (POUR COMMANDES) ====================
@@ -871,15 +866,48 @@ const purchasesController = {
   },
 
   // GET /api/purchases/bms-spending
-  // Achats fournisseurs depuis BMS : bons de commande "complète" + "vérifiée=oui".
-  // Renvoie les lignes au niveau commande (le front agrège par fournisseur × mois).
+  // Dépenses fournisseur, au niveau document (le front agrège par fournisseur × mois).
+  //
+  // Deux sources, sans appel à BMS :
+  //   - avant le 1er octobre 2026 : les bons BMS « complète » + « vérifiée »
+  //     figés dans supplier_spending_bms_history (scripts/freezeBmsSpending.js) ;
+  //   - ensuite : les factures et avoirs saisis dans /factures-fournisseurs.
+  // Une facture dont la commande figure déjà dans l'historique figé est écartée,
+  // sans quoi une commande de septembre facturée en octobre compterait deux fois.
+  // Une commande de septembre jamais vérifiée dans BMS n'est pas dans l'historique :
+  // sa facture la fait apparaître (LCA 357921, 8 183 € HT).
+  //
+  // Le mois reste celui de la DATE DE COMMANDE ; à défaut de commande rattachée,
+  // celui de la facture. Les pro forma n'entrent pas : ce ne sont pas des factures.
   getSupplierSpending: async (req, res) => {
     try {
-      const force = req.query.refresh === '1';
-      if (force || !_bmsPoCache.data || (Date.now() - _bmsPoCache.at) > BMS_PO_TTL_MS) {
-        const all = await bmsApiModel.getPurchaseOrders();
-        _bmsPoCache = { data: all, at: Date.now() };
-      }
+      const { rows } = await pool.query(`
+        SELECT 'bms-' || h.bms_po_id AS id, 'bms' AS source, h.bms_po_id,
+               NULL::int AS document_id, h.reference,
+               COALESCE(s.name, h.supplier_name) AS supplier_name,
+               to_char(h.order_date, 'YYYY-MM-DD') AS order_date,
+               NULL AS doc_date, NULL AS doc_type,
+               h.ht::float AS ht, h.ttc::float AS ttc
+          FROM supplier_spending_bms_history h
+          LEFT JOIN suppliers s ON s.bms_id = h.bms_supplier_id
+        UNION ALL
+        SELECT 'doc-' || d.id, 'app', NULL, d.id, d.number, s.name,
+               to_char(COALESCE(l.order_date, d.doc_date), 'YYYY-MM-DD'),
+               to_char(d.doc_date, 'YYYY-MM-DD'), d.doc_type,
+               COALESCE(d.total_ht, 0)::float, COALESCE(d.total_ttc, 0)::float
+          FROM supplier_documents d
+          JOIN suppliers s ON s.id = d.supplier_id
+          LEFT JOIN LATERAL (
+            SELECT min(po.order_date) AS order_date,
+                   bool_or(h.bms_po_id IS NOT NULL) AS in_history
+              FROM supplier_document_orders o
+              JOIN purchase_orders po ON po.id = o.purchase_order_id
+              LEFT JOIN supplier_spending_bms_history h ON h.bms_po_id = po.bms_po_id
+             WHERE o.document_id = d.id
+          ) l ON true
+         WHERE d.doc_type IN ('invoice', 'credit_note')
+           AND NOT COALESCE(l.in_history, false)
+      `);
 
       // Modèle d'URL ERP BMS (clé de session Magento) — configurable en BDD.
       // L'id myFulfillment = le po_id de l'ERP ; on remplace {po_id} dans le template.
@@ -888,24 +916,15 @@ const purchasesController = {
       );
       const urlTpl = tplRow.rows[0]?.config_value || null;
 
-      const orders = (_bmsPoCache.data || [])
-        .filter(o => o.status === 'complete' && Number(o.verified) === 1)
-        .map(o => ({
-          id: o.id,
-          reference: o.reference,
-          supplier_id: o.supplier_id,
-          supplier_name: o.supplier_name || 'Inconnu',
-          order_date: o.created_at,   // date de commande (invoice_date non fournie par l'API)
-          eta: o.eta,
-          ht: parseFloat(o.subtotal) || 0,
-          ttc: parseFloat(o.grandtotal) || 0,
-          bms_url: urlTpl ? urlTpl.replace('{po_id}', o.id) : null,
-        }));
+      const orders = rows.map(o => ({
+        ...o,
+        bms_url: o.source === 'bms' && urlTpl ? urlTpl.replace('{po_id}', o.bms_po_id) : null,
+      }));
 
-      res.json({ success: true, data: orders, cached_at: new Date(_bmsPoCache.at).toISOString() });
+      res.json({ success: true, data: orders });
     } catch (error) {
       console.error('Erreur getSupplierSpending:', error);
-      res.status(500).json({ success: false, error: error.message || 'Erreur récupération des achats BMS' });
+      res.status(500).json({ success: false, error: error.message || 'Erreur récupération des dépenses fournisseur' });
     }
   }
 };
