@@ -388,13 +388,16 @@ const StoriesApp = () => {
                         <td style={td}>
                           {s.thumb_url ? (
                             <img src={s.thumb_url} alt="" width={48} height={48}
-                              style={{ borderRadius: '50%', objectFit: 'cover', display: 'block', border: `2px solid ${C.story}` }} />
+                              onClick={s.video_url ? () => openStory(s) : undefined}
+                              style={{ borderRadius: '50%', objectFit: 'cover', display: 'block', border: `2px solid ${C.story}`, cursor: s.video_url ? 'pointer' : 'default' }} />
                           ) : (
                             <div style={{ width: 48, height: 48, borderRadius: '50%', background: C.grisTL, border: `2px dashed ${C.grisCL}` }} />
                           )}
                         </td>
                         <td style={td}>
-                          <div style={{ fontWeight: 700 }}>{s.title}</div>
+                          <div style={{ fontWeight: 700, cursor: s.video_url ? 'pointer' : 'default' }}
+                            onClick={s.video_url ? () => openStory(s) : undefined}
+                            title={s.video_url ? 'Voir la story' : undefined}>{s.title}</div>
                           <div style={{ fontSize: 12, color: C.grisM, marginTop: 2 }}>
                             {s.slug} · {FORMATS[s.format] || s.format}{s.version > 1 ? ` · v${s.version}` : ''}
                           </div>
