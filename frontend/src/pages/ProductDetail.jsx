@@ -281,12 +281,9 @@ const ProductDetail = () => {
     if (receptionsLoaded) return;
     try {
       const res = await axios.get(`${API_URL}/products/${id}/receptions`, { params: { limit: 30 } });
-      if (res.data.success) {
-        setReceptions(res.data.data);
-        setReceptionsError(res.data.incomplete ? 'BMS n\'a pas répondu pour certaines déclinaisons : la liste peut être incomplète.' : null);
-      }
+      if (res.data.success) setReceptions(res.data.data);
     } catch (e) {
-      setReceptionsError(e.response?.data?.error || 'Impossible de lire les mouvements BMS.');
+      setReceptionsError(e.response?.data?.error || 'Impossible de charger les réceptions.');
     }
     setReceptionsLoaded(true);
   };
@@ -1396,12 +1393,12 @@ const ProductDetail = () => {
           return (
             <div style={cardStyle}>
               <h2 style={{ marginTop: 0, color: '#333', fontSize: '18px' }}>Derniers stockages</h2>
-              <p style={{ marginTop: 0, color: '#6b7280', fontSize: '12px' }}>Réceptions fournisseur enregistrées dans BMS, les plus récentes en haut.</p>
+              <p style={{ marginTop: 0, color: '#6b7280', fontSize: '12px' }}>Réceptions fournisseur, les plus récentes en haut. Une commande reçue en plusieurs fois montre le cumul reçu.</p>
               {receptionsError && <p style={{ color: '#b45309', fontSize: '13px' }}>{receptionsError}</p>}
               {!receptionsLoaded ? (
-                <p style={{ color: '#6b7280', fontSize: '13px' }}>Chargement depuis BMS...</p>
+                <p style={{ color: '#6b7280', fontSize: '13px' }}>Chargement...</p>
               ) : receptions.length === 0 ? (
-                !receptionsError && <p style={{ color: '#6b7280', fontSize: '13px' }}>Aucune réception enregistrée dans BMS.</p>
+                !receptionsError && <p style={{ color: '#6b7280', fontSize: '13px' }}>Aucune réception enregistrée.</p>
               ) : (
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
                   <thead>
@@ -1411,26 +1408,27 @@ const ProductDetail = () => {
                       <th style={th}>Commande</th>
                       <th style={th}>Fournisseur</th>
                       <th style={{ ...th, textAlign: 'right' }}>Qté</th>
-                      <th style={{ ...th, textAlign: 'right' }}>Stock après</th>
                       <th style={{ ...th, textAlign: 'right' }}>Coût unit.</th>
                     </tr>
                   </thead>
                   <tbody>
                     {receptions.map(r => (
                       <tr key={r.id} style={{ borderBottom: '1px solid #f3f4f6' }}>
-                        <td style={td}>{formatDateUtil(r.date)}</td>
+                        <td style={td}>
+                          {r.date ? formatDateUtil(r.date) : '-'}
+                          {r.status === 'partial' && <span style={{ marginLeft: '6px', padding: '2px 6px', borderRadius: '4px', fontSize: '11px', backgroundColor: '#fef3c7', color: '#92400e' }}>En réception</span>}
+                        </td>
                         {multi && <td style={td}>{r.post_title}</td>}
                         <td style={{ ...td, fontFamily: 'monospace' }}>
                           {r.purchase_order_id ? (
                             <LinkBox to={`/purchases/commandes?order=${r.purchase_order_id}`} display="inline" style={{ color: '#135E84', textDecoration: 'underline' }}>
                               {r.order_number}
                             </LinkBox>
-                          ) : (r.order_number || r.comment || '-')}
+                          ) : (r.order_number || '-')}
                           {r.supplier_reference && <span style={{ marginLeft: '6px', color: '#6b7280', fontFamily: 'inherit' }}>({r.supplier_reference})</span>}
                         </td>
                         <td style={td}>{r.supplier_name || '-'}</td>
                         <td style={{ ...td, textAlign: 'right', fontWeight: '600', color: '#166534' }}>+{r.qty}</td>
-                        <td style={{ ...td, textAlign: 'right' }}>{r.stock_after ?? '-'}</td>
                         <td style={{ ...td, textAlign: 'right' }}>{r.unit_cost != null ? `${formatPrice(r.unit_cost)} €` : '-'}</td>
                       </tr>
                     ))}

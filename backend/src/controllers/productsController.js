@@ -1147,115 +1147,53 @@ exports.getBmsLocations = async (req, res) => {
 };
 
 /**
- * Derniers stockages (réceptions fournisseur) d'un produit et de ses variations,
- * lus dans les mouvements de stock BMS.
+ * Derniers stockages (réceptions fournisseur) d'un produit et de ses variations.
  * GET /api/products/:id/receptions?limit=20
  *
- * `/v2/stock-movements` est absent du Swagger mais existe (même route que la
- * PDA). Il ne filtre ni par SKU ni par recherche — ces paramètres sont ignorés
- * et renvoient tout le flux — seulement par `filters[product_id]` (id BMS, d'où
- * le passage par `/v2/products/search/{sku}`) et `filters[category]` : 2 =
- * Réception (vérifié le 16/10/2026). Le mouvement porte l'id du bon BMS dans
- * `ui` (« po_122150_4126387_… ») et « PO#361181 (supplier LCA) » en
- * commentaire : on rapproche du bon chez nous par bms_po_id, le commentaire ne
- * sert que de repli pour un bon jamais synchronisé.
+ * Lu dans notre base, sans appel BMS : une ligne par ligne de commande ayant
+ * reçu des pièces. Date = `received_date` (heure Paris, date de la dernière
+ * réception du journal BMS) ; une commande encore en réception partielle n'en a
+ * pas, d'où le repli sur la dernière session de réception validée chez nous
+ * (`validated_at`, écrit en UTC par CURRENT_TIMESTAMP : converti). Une commande
+ * reçue en plusieurs fois n'apparaît qu'une fois, avec le cumul reçu.
  */
-const RECEPTION_CATEGORY = 2;
-const bmsProductIdCache = new Map(); // sku -> id BMS (stable)
-
-const getBmsProductId = async (sku) => {
-  if (bmsProductIdCache.has(sku)) return bmsProductIdCache.get(sku);
-  const res = await bmsApiModel.apiCall(`/v2/products/search/${encodeURIComponent(sku)}`);
-  const match = (res.data || []).find(p => p.sku === sku);
-  const id = match ? match.id : null;
-  if (id) bmsProductIdCache.set(sku, id);
-  return id;
-};
-
 exports.getReceptions = async (req, res) => {
   try {
     const productId = parseInt(req.params.id);
     const limit = Math.min(parseInt(req.query.limit) || 20, 100);
     const { rows } = await pool.query(
-      `SELECT id, wp_product_id, wp_parent_id, sku, post_title
-       FROM products
-       WHERE (wp_product_id = $1 OR wp_parent_id = $1) AND sku IS NOT NULL AND sku != ''
-       ORDER BY wp_parent_id NULLS FIRST, wp_product_id`,
-      [productId]
-    );
-    if (rows.length === 0) {
-      return res.status(404).json({ success: false, error: 'Produit ou SKU introuvable' });
-    }
-
-    // Un produit variable n'a pas de stock propre dans BMS : on interroge les variations
-    const targets = rows.some(r => r.wp_parent_id) ? rows.filter(r => r.wp_parent_id) : rows;
-
-    const movements = [];
-    const errors = [];
-    const CONCURRENCY = 5;
-    for (let i = 0; i < targets.length; i += CONCURRENCY) {
-      const chunk = targets.slice(i, i + CONCURRENCY);
-      await Promise.all(chunk.map(async (row) => {
-        try {
-          const bmsId = await getBmsProductId(row.sku);
-          if (!bmsId) return;
-          const r = await bmsApiModel.apiCall(
-            `/v2/stock-movements?limit=${limit}&sorts[id]=desc` +
-            `&filters[product_id]=${bmsId}&filters[category]=${RECEPTION_CATEGORY}`
-          );
-          for (const m of r.data || []) movements.push({ ...m, _product: row });
-        } catch (error) {
-          console.error(`[Réceptions BMS] ${row.sku}:`, error.message);
-          errors.push(row.sku);
-        }
-      }));
-    }
-
-    movements.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-    const latest = movements.slice(0, limit);
-
-    const bmsPoIds = [...new Set(latest
-      .map(m => (String(m.ui || '').match(/^po_(\d+)_/) || [])[1])
-      .filter(Boolean)
-      .map(Number))];
-    const productIds = [...new Set(latest.map(m => m._product.id))];
-    const { rows: lines } = bmsPoIds.length ? await pool.query(
-      `SELECT po.id, po.bms_po_id, po.order_number, po.bms_supplier_reference, po.status,
-              s.name AS supplier_name, poi.product_id,
+      `SELECT poi.id, po.id AS purchase_order_id, po.order_number, po.status,
+              po.bms_supplier_reference AS supplier_reference, s.name AS supplier_name,
+              p.wp_product_id, p.sku, p.post_title,
+              COALESCE(po.received_date, rs.validated_at) AS date,
+              COALESCE(NULLIF(poi.units_received, 0),
+                       poi.qty_received * GREATEST(COALESCE(poi.units_per_qty, 1), 1)) AS qty,
               poi.unit_price / GREATEST(COALESCE(poi.units_per_qty, 1), 1) AS unit_cost
-       FROM purchase_orders po
-       JOIN suppliers s ON s.id = po.supplier_id
-       LEFT JOIN purchase_order_items poi
-         ON poi.purchase_order_id = po.id AND poi.product_id = ANY($2::int[])
-       WHERE po.bms_po_id = ANY($1::int[])`,
-      [bmsPoIds, productIds]
-    ) : { rows: [] };
+       FROM purchase_order_items poi
+       JOIN purchase_orders po ON po.id = poi.purchase_order_id
+       JOIN products p ON p.id = poi.product_id
+       LEFT JOIN suppliers s ON s.id = po.supplier_id
+       LEFT JOIN LATERAL (
+         SELECT MAX(validated_at) AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris' AS validated_at
+         FROM reception_sessions
+         WHERE purchase_order_id = po.id AND status = 'validated'
+       ) rs ON true
+       WHERE (p.wp_product_id = $1 OR p.wp_parent_id = $1)
+         AND COALESCE(poi.qty_received, 0) > 0
+         AND po.status <> 'cancelled'
+       ORDER BY COALESCE(po.received_date, rs.validated_at, po.updated_at) DESC, p.wp_product_id
+       LIMIT $2`,
+      [productId, limit]
+    );
 
-    const data = latest.map(m => {
-      const bmsPoId = Number((String(m.ui || '').match(/^po_(\d+)_/) || [])[1]) || null;
-      const forPo = lines.filter(l => l.bms_po_id === bmsPoId);
-      const line = forPo.find(l => l.product_id === m._product.id) || forPo[0] || null;
-      const fromComment = String(m.comments || '').match(/PO#(\S+)\s*\(supplier\s+(.+)\)/i) || [];
-      return {
-        id: m.id,
-        date: m.created_at,
-        qty: Number(m.qty),
-        stock_after: m.new_qty != null ? Number(m.new_qty) : null,
-        warehouse: m.to_warehouse_name,
-        comment: m.comments,
-        wp_product_id: m._product.wp_product_id,
-        sku: m._product.sku,
-        post_title: m._product.post_title,
-        purchase_order_id: line ? line.id : null,
-        order_number: line ? line.order_number : (fromComment[1] || null),
-        supplier_reference: line ? line.bms_supplier_reference : null,
-        supplier_name: line ? line.supplier_name : (fromComment[2] || null),
-        unit_cost: line && line.product_id === m._product.id && line.unit_cost != null
-          ? Number(line.unit_cost) : null,
-      };
+    res.json({
+      success: true,
+      data: rows.map(r => ({
+        ...r,
+        qty: Number(r.qty),
+        unit_cost: r.unit_cost != null ? Number(r.unit_cost) : null,
+      })),
     });
-
-    res.json({ success: true, data, incomplete: errors.length > 0 });
   } catch (error) {
     console.error('Error fetching receptions:', error);
     res.status(500).json({ success: false, error: error.message });
