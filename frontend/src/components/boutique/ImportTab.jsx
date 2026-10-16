@@ -1010,9 +1010,11 @@ export default function ImportTab({ shop, token }) {
                                       <div style={{ marginTop: 6, fontSize: 12, color: C.grisF }}>
                                         Le site propose :
                                         {item.candidates.map(c => (
+                                          // Couleur posée : index.css écrit les boutons en blanc (texte invisible sur ce fond)
                                           <button key={c.id} onClick={() => handleMatchProduct(idx, { id: c.id, post_title: c.name, sku: c.code, stock: c.stock })}
-                                            style={{ display: 'block', marginTop: 4, width: '100%', textAlign: 'left', background: C.blanc, border: `1px solid ${C.grisCL}`, borderRadius: 6, padding: '4px 8px', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}>
-                                            {c.name}
+                                            style={{ display: 'block', marginTop: 4, width: '100%', textAlign: 'left', background: C.blanc, color: C.grisTF, border: `1px solid ${C.grisCL}`, borderRadius: 6, padding: '4px 8px', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}>
+                                            <div style={{ fontWeight: 600 }}>{c.name}</div>
+                                            <div style={{ color: C.grisM, fontSize: 11.5 }}>SKU: {c.code || '—'} | Stock: {c.stock ?? '—'}</div>
                                           </button>
                                         ))}
                                       </div>

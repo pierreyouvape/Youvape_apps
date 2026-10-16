@@ -27,6 +27,27 @@ const boutiqueOrderModel = require('./boutiqueOrderModel');
 
 const httpError = (status, message, extra = {}) => Object.assign(new Error(message), { status, ...extra });
 
+/**
+ * En boutique, les RÉSISTANCES se vendent à l'unité (décision Pierre, 16/10/2026),
+ * quand le site les vend en « Pack N » : sa réf compte un article = le pack. Pour
+ * une résistance Nextore, le conditionnement proposé devient donc N pièces par
+ * article, signalé « à vérifier ». Les cartouches restent à la boîte : seule la
+ * catégorie Nextore tranche, pas le nom du site (« Cartouches … résistance intégrée »).
+ */
+const UNIT_CATEGORY = 'RESISTANCES';
+function boutiquePack(sitePack, siteTitle, product) {
+  const n = parseInt((/^pack\s+(\d+)/i.exec(siteTitle || '') || [])[1], 10);
+  const pack = parseInt(sitePack, 10) || 1;
+  if (n > 1 && product && String(product.category_name || '').toUpperCase() === UNIT_CATEGORY) {
+    return {
+      pack: pack * n,
+      warning: `Le site vend « ${siteTitle} » ; la boutique compte les résistances à l'unité : `
+        + `${pack * n} pièces par article de la réf. À vérifier.`,
+    };
+  }
+  return { pack, warning: null };
+}
+
 /** Fournisseurs Nextore importables : rattachés à un fournisseur du site qui a un parseur. */
 async function listSuppliers() {
   const { rows } = await pool.query(
@@ -74,14 +95,14 @@ async function findBoutiqueRefs(nxSupplierId, norms) {
 async function findSiteRefs(siteSupplierId, norms) {
   if (!siteSupplierId || !norms.length) return new Map();
   const { rows } = await pool.query(
-    `SELECT ${normalizedSql('r.supplier_sku')} AS norm, r.pack_qty, p.image_url,
+    `SELECT ${normalizedSql('r.supplier_sku')} AS norm, r.pack_qty, p.image_url, p.post_title,
             array_remove(array_agg(DISTINCT nb.product_id), NULL) AS nx_ids
      FROM supplier_refs r
      JOIN products p ON p.id = r.product_id
      LEFT JOIN product_barcodes pb ON pb.product_id = r.product_id
      LEFT JOIN nextore_product_barcodes nb ON nb.barcode = pb.barcode
      WHERE r.supplier_id = $1 AND ${normalizedSql('r.supplier_sku')} = ANY($2)
-     GROUP BY r.id, r.pack_qty, p.image_url`,
+     GROUP BY r.id, r.pack_qty, p.image_url, p.post_title`,
     [siteSupplierId, norms]
   );
   return new Map(rows.map((r) => [r.norm, r]));
@@ -95,10 +116,11 @@ async function findSiteRefs(siteSupplierId, norms) {
 async function findProducts(ids, warehouseId, nxSupplierId) {
   if (!ids.length) return new Map();
   const { rows } = await pool.query(
-    `SELECT p.product_id AS id, p.name, p.code, p.brand, st.stock::float AS stock,
+    `SELECT p.product_id AS id, p.name, p.code, p.brand, st.stock::float AS stock, c.name AS category_name,
             COALESCE(NULLIF(p.supplier_refs -> $3 ->> 'price', '')::numeric, p.cost)::float AS fiche_price
      FROM nextore_products p
      LEFT JOIN nextore_stock st ON st.product_id = p.product_id AND st.warehouse_id = $2
+     LEFT JOIN nextore_categories c ON c.id = p.category_id
      WHERE p.product_id = ANY($1::text[])`,
     [ids, warehouseId, String(nxSupplierId)]
   );
@@ -189,7 +211,10 @@ async function parseDocument(fileBuffer, nxSupplierId, warehouse) {
     const s = siteRefs.get(norm);
     let match = null;
     if (b) match = { productId: b.product_id, pack: b.pack_qty, source: 'boutique' };
-    else if (s && s.nx_ids.length === 1) match = { productId: s.nx_ids[0], pack: s.pack_qty || 1, source: 'site' };
+    else if (s && s.nx_ids.length === 1) {
+      const bp = boutiquePack(s.pack_qty, s.post_title, products.get(s.nx_ids[0]));
+      match = { productId: s.nx_ids[0], pack: bp.pack, source: 'site', warning: bp.warning };
+    }
     const product = match ? products.get(match.productId) : null;
     // Image : produit du site qui porte la réf, sinon celui du même code-barres
     const imageUrl = (s && s.image_url) || (product ? barcodeImages.get(product.id) : null) || null;
@@ -214,7 +239,7 @@ async function parseDocument(fileBuffer, nxSupplierId, warehouse) {
       current_stock: product ? product.stock : null,
       image_url: imageUrl,
       ref_pack_qty: product ? refPack : null,
-      pack_warning: line.packWarning,
+      pack_warning: (product && match.warning) || line.packWarning,
       pdf_price_raw: rawPdfGross,
       pdf_price: line.pdfGross,
       pdf_price_net: line.pdfNet,
@@ -314,9 +339,11 @@ async function mapLine({ nxSupplierId, warehouse, productId, supplierSku, packQt
   ]);
   const existing = boutiqueRefs.get(norm);
   const s = siteRefs.get(norm);
-  const refPack = parseInt(packQty, 10) >= 1
-    ? parseInt(packQty, 10)
-    : (existing ? existing.pack_qty : (s ? s.pack_qty || 1 : 1));
+  // Proposition : réf boutique, sinon réf du site (résistances ramenées à l'unité), sinon 1
+  const sitePack = s ? boutiquePack(s.pack_qty, s.post_title, product) : { pack: 1, warning: null };
+  const proposed = existing ? existing.pack_qty : sitePack.pack;
+  const refPack = parseInt(packQty, 10) >= 1 ? parseInt(packQty, 10) : proposed;
+  const packWarning = !existing && sitePack.warning && refPack === sitePack.pack ? sitePack.warning : null;
 
   let conflict = null;
   if (existing && existing.product_id !== product.id) {
@@ -327,7 +354,7 @@ async function mapLine({ nxSupplierId, warehouse, productId, supplierSku, packQt
   const line = convertDoc({ docQty, docPrice, discountPercent, refPack, fichePrice: product.fiche_price, conversion: conversion || {} });
   return {
     product: productView(product, (s && s.image_url) || barcodeImages.get(product.id)),
-    line: { ...line, refPack },
+    line: { ...line, refPack, packWarning: packWarning || line.packWarning },
     last_paid: lastPaid.get(product.id) || null,
     conflict,
   };
