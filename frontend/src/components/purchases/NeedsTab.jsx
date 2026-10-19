@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import axios from 'axios';
+import { decodeHtml } from '../../utils/htmlEntities';
 
 const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:3000/api/auth').replace('/auth', '');
 
@@ -463,7 +464,11 @@ const NeedsTab = ({ token, onCompactChange }) => {
       const response = await axios.get(`${API_URL}/purchases/needs/raw`, {
         headers: { Authorization: `Bearer ${token}` }
       });
-      setAllProducts(response.data.data || []);
+      setAllProducts((response.data.data || []).map(p => ({
+        ...p,
+        post_title: decodeHtml(p.post_title),
+        parent_title: p.parent_title ? decodeHtml(p.parent_title) : p.parent_title,
+      })));
     } catch (err) {
       console.error('Erreur chargement données brutes:', err);
       setError('Erreur lors du chargement des données');
