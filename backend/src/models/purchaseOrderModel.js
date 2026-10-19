@@ -1520,6 +1520,16 @@ const purchaseOrderModel = {
       query += `, received_date = (CURRENT_TIMESTAMP AT TIME ZONE 'Europe/Paris')`;
     }
 
+    // Terminée à la main = plus rien d'attendu (le reste est soldé). La clôture
+    // est marquée comme NÔTRE pour que la synchro BMS ne la rouvre pas ; tout
+    // autre statut choisi à la main la lève.
+    if (status === 'completed') {
+      query += `, received_date = COALESCE(received_date, (CURRENT_TIMESTAMP AT TIME ZONE 'Europe/Paris'))`
+        + `, closed_locally_at = COALESCE(closed_locally_at, CURRENT_TIMESTAMP)`;
+    } else {
+      query += ', closed_locally_at = NULL';
+    }
+
     if (additionalData.notes) {
       query += `, notes = $${paramIndex++}`;
       values.push(additionalData.notes);
@@ -1933,7 +1943,12 @@ const purchaseOrderModel = {
           )
           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
           ON CONFLICT (bms_po_id) DO UPDATE SET
-            status = EXCLUDED.status,
+            -- Close chez nous (reste soldé, cf. closed_locally_at) : BMS la laisse
+            -- souvent « expected », elle ne doit pas revenir dans les actives.
+            -- Seule une annulation BMS l'emporte.
+            status = CASE WHEN purchase_orders.closed_locally_at IS NOT NULL
+                           AND EXCLUDED.status <> 'cancelled'
+                          THEN 'completed' ELSE EXCLUDED.status END,
             bms_reference = EXCLUDED.bms_reference,
             bms_supplier_reference = EXCLUDED.bms_supplier_reference,
             expected_date = EXCLUDED.expected_date,
@@ -1942,6 +1957,8 @@ const purchaseOrderModel = {
             -- illisible, ou lu trop court) plutôt que d'en perdre une juste.
             received_date = CASE WHEN EXCLUDED.status = 'completed'
                                  THEN COALESCE(EXCLUDED.received_date, purchase_orders.received_date)
+                                 WHEN purchase_orders.closed_locally_at IS NOT NULL
+                                 THEN purchase_orders.received_date
                                  ELSE NULL END,
             total_items = EXCLUDED.total_items,
             total_qty = EXCLUDED.total_qty,
@@ -2262,7 +2279,7 @@ const purchaseOrderModel = {
           await client.query(`
             UPDATE purchase_orders
             SET
-              status = $1,
+              status = CASE WHEN closed_locally_at IS NOT NULL THEN status ELSE $1 END,
               received_date = COALESCE(received_date, $2),
               updated_at = CURRENT_TIMESTAMP
             WHERE id = $3

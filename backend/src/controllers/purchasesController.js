@@ -441,7 +441,7 @@ const purchasesController = {
         return res.status(400).json({ success: false, error: 'status requis' });
       }
 
-      const validStatuses = ['draft', 'sent', 'confirmed', 'shipped', 'partial', 'received', 'cancelled'];
+      const validStatuses = ['draft', 'sent', 'confirmed', 'shipped', 'partial', 'received', 'completed', 'cancelled'];
       if (!validStatuses.includes(status)) {
         return res.status(400).json({
           success: false,

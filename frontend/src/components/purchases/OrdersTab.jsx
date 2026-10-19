@@ -924,6 +924,22 @@ const OrdersTab = ({ token }) => {
                         ✓ Tout reçu
                       </button>
                     )}
+                    {/* Le reste ne viendra pas (soldé) : la commande sort des actives,
+                        et la synchro BMS ne la rouvre pas même si BMS la garde ouverte. */}
+                    {['confirmed', 'shipped', 'partial'].includes(selectedOrder.status) && (
+                      <button
+                        className="btn btn-sm btn-secondary"
+                        style={{ marginLeft: '10px' }}
+                        title="Plus rien à recevoir : le reste est soldé. La commande sort des actives."
+                        onClick={() => {
+                          if (confirm('Passer la commande en Terminée ?\n\nCe qui n\'est pas reçu est considéré comme soldé : la commande ne sera plus attendue ni comptée en arrivage.')) {
+                            updateStatus(selectedOrder.id, 'completed');
+                          }
+                        }}
+                      >
+                        ■ Terminée (reste soldé)
+                      </button>
+                    )}
                   </div>
 
                   {/* Réceptions — qui a compté, quand, et ce qui manquait.

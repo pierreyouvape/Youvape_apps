@@ -516,6 +516,11 @@ function RecapScreen({ order, result, onList, onOrder }) {
         padding: '18px 22px', fontSize: 16, color: '#14532D' }}>
         <strong>{pieces} pièce{pieces > 1 ? 's' : ''}</strong> enregistrée{pieces > 1 ? 's' : ''} en
         stock, sur {(result.sent || []).length} ligne{(result.sent || []).length > 1 ? 's' : ''}.
+        {result.orderCompleted && (
+          <div style={{ marginTop: 6, fontSize: 14 }}>
+            Plus rien n'est attendu sur cette commande : elle passe en <strong>Terminée</strong>.
+          </div>
+        )}
       </div>
 
       {result.notSent?.length > 0 && bloc(

@@ -383,6 +383,7 @@ async function validateSession(sessionId, userId, motifs = {}, db = pool) {
     }
   }
 
+  let terminee = false;
   const client = await db.connect();
   try {
     await client.query('BEGIN');
@@ -427,6 +428,35 @@ async function validateSession(sessionId, userId, motifs = {}, db = pool) {
         [sessionId, itemId, motif],
       );
     }
+    // PLUS RIEN D'ATTENDU ⇒ COMMANDE TERMINÉE. Une ligne encore incomplète n'est
+    // attendue que si elle est en reliquat — ou sans motif (pas comptée ici).
+    // Soldé, manquant, erreur de saisie : on n'attend plus rien. Sans ça, la
+    // commande restait « partielle » dans les actives (BMS la garde ouverte)
+    // alors qu'il n'y a plus rien à recevoir. Jugé sur TOUTES les lignes, dans
+    // la transaction, après l'ajout de ce qui vient de partir.
+    const { rows: incompletes } = await client.query(
+      `SELECT poi.id FROM purchase_order_items poi
+        WHERE poi.purchase_order_id = $1
+          AND COALESCE(poi.item_type, 'product') <> 'discount'
+          AND ${UNITS_EXPECTED} > COALESCE(poi.units_received, 0)`,
+      [session.purchase_order_id],
+    );
+    const encoreAttendues = incompletes.filter((r) => {
+      const motif = motifsParItem.get(r.id);
+      return !motif || motif === 'reliquat';
+    });
+    terminee = encoreAttendues.length === 0;
+    if (terminee) {
+      await client.query(
+        `UPDATE purchase_orders
+            SET status = 'completed',
+                closed_locally_at = COALESCE(closed_locally_at, CURRENT_TIMESTAMP),
+                received_date = COALESCE(received_date, (CURRENT_TIMESTAMP AT TIME ZONE 'Europe/Paris')),
+                updated_at = CURRENT_TIMESTAMP
+          WHERE id = $1 AND status <> 'cancelled'`,
+        [session.purchase_order_id],
+      );
+    }
     await client.query(
       `UPDATE reception_sessions
           SET status = 'validated', validated_by = $2, validated_at = CURRENT_TIMESTAMP,
@@ -462,6 +492,7 @@ async function validateSession(sessionId, userId, motifs = {}, db = pool) {
     missing: manquants.map(decrire),
     over: surplus.map(decrire),
     notSent: nonEnvoyes,
+    orderCompleted: terminee,
     bmsResponse: reponse,
   };
 
