@@ -1276,6 +1276,21 @@ test('LCA F2610418125 : la ligne soldée à la réception ne compte pas, les bun
   assert.strictEqual(byRef(facturee, 'X').verdict, 'ok');
 });
 
+test('un tarif garde la réf. de la facture et le produit quand la commande porte notre SKU', () => {
+  // F2610418125 : ligne ajoutée après coup dans BMS, réf. = notre SKU. Sans la
+  // réf. facture ni le produit, « Appliquer le tarif facturé » n'écrivait rien.
+  // Appariées par le produit (matchKey posé des deux côtés par attachMatchKeys).
+  const t = listTariffUpdates(compareInvoiceToOrder({
+    invoice: { lines: [{ ref: '#REF17851-58992', qty: 5, lineTotalHt: 38.63, productId: 1572615, matchKey: '#produit-1572615' }] },
+    order: { lines: [{ ref: '1268574-1268582', qty: 10, price: 4.11, matchKey: '#produit-1572615', productId: 1572615 }] },
+  }))[0];
+  assert.ok(t, 'aucun tarif proposé');
+  assert.strictEqual(t.ref, '1268574-1268582');
+  assert.strictEqual(t.invoiceRef, '#REF17851-58992');
+  assert.strictEqual(t.productId, 1572615);
+  assert.ok(close(t.realPrice, 3.863, 0.0001), `prix ${t.realPrice}`);
+});
+
 if (failures > 0) {
   console.log(`\n${failures} test(s) en échec.`);
   process.exit(1);

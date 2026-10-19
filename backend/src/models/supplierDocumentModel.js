@@ -689,7 +689,25 @@ async function alignTariffs(supplierId, tariffs, db = pool) {
   const skipped = [];
 
   for (const t of tariffs || []) {
-    const ref = await supplierRefModel.findBySku(supplierId, t.ref, db);
+    // La réf. de la commande, à défaut celle imprimée sur la facture, à défaut
+    // l'UNIQUE réf. de ce produit chez ce fournisseur. Une ligne ajoutée après
+    // coup dans BMS porte notre SKU en guise de réf. (F2610418125 :
+    // « 1268574-1268582 » pour « #REF17851-58992 ») : chercher le SKU seul
+    // parmi les réfs LCA écartait le tarif, et rien n'était écrit.
+    const productId = Number.isInteger(Number(t.productId)) && Number(t.productId) > 0 ? Number(t.productId) : null;
+    let ref = await supplierRefModel.findBySku(supplierId, t.ref, db);
+    if (!ref && t.invoiceRef) ref = await supplierRefModel.findBySku(supplierId, t.invoiceRef, db);
+    if (!ref && productId) {
+      const { rows: duProduit } = await db.query(
+        'SELECT * FROM supplier_refs WHERE supplier_id = $1 AND product_id = $2',
+        [supplierId, productId],
+      );
+      if (duProduit.length === 1) [ref] = duProduit;
+      else if (duProduit.length > 1) {
+        skipped.push({ ref: t.ref, reason: 'plusieurs réfs pour ce produit chez ce fournisseur : laquelle ?' });
+        continue;
+      }
+    }
     if (!ref) {
       skipped.push({ ref: t.ref, reason: 'référence inconnue de ce fournisseur' });
       continue;
@@ -725,6 +743,9 @@ async function alignTariffs(supplierId, tariffs, db = pool) {
     );
     applied.push({
       ref: rows[0].supplier_sku,
+      // Le tarif tel que demandé : c'est par lui que `applyTariffs` retrouve
+      // la ligne de commande quand la réf. en base n'est pas celle de la ligne.
+      requested: t,
       packQty: rows[0].pack_qty,
       packPrice: Number(rows[0].pack_price),
       previous: ref.pack_price == null ? null : Number(ref.pack_price),
@@ -795,6 +816,7 @@ async function applyTariffs(supplierId, orderId, tariffs, db = pool) {
   // « SVA  ARASUP » en base repartait sans corriger la commande, en silence.
   const cleDe = (v) => String(v || '').toLowerCase().replace(/\s+/g, ' ').trim();
   const retenus = new Map(applied.map((a) => [cleDe(a.ref), a]));
+  for (const a of applied) if (a.requested) retenus.set(cleDe(a.requested.ref), a);
 
   for (const t of tariffs || []) {
     const cle = cleDe(t.ref);
@@ -807,8 +829,10 @@ async function applyTariffs(supplierId, orderId, tariffs, db = pool) {
       `SELECT id, unit_price, units_per_qty, discount_percent
          FROM purchase_order_items
         WHERE purchase_order_id = $1
-          AND LOWER(TRIM(supplier_sku)) = LOWER(TRIM($2))`,
-      [orderId, t.ref],
+          AND (LOWER(TRIM(supplier_sku)) = LOWER(TRIM($2))
+               OR ($3::int IS NOT NULL AND product_id = $3::int))`,
+      [orderId, t.ref,
+        Number.isInteger(Number(t.productId)) && Number(t.productId) > 0 ? Number(t.productId) : null],
     );
     if (lignes.length === 0) {
       retenu.orderLine = { skipped: 'ligne absente de la commande' };
@@ -889,7 +913,9 @@ async function pushPricesToBms(bmsPoId, applied) {
   }
 
   for (const a of aReporter) {
-    const ligne = lignes.find((l) => norm(l.supplier_sku) === norm(a.ref) || norm(l.sku) === norm(a.ref));
+    const cles = [a.ref, a.requested && a.requested.ref, a.requested && a.requested.invoiceRef]
+      .filter(Boolean).map(norm);
+    const ligne = lignes.find((l) => cles.includes(norm(l.supplier_sku)) || cles.includes(norm(l.sku)));
     if (!ligne) {
       a.bmsLine = { skipped: 'ligne absente de la commande BMS' };
       continue;

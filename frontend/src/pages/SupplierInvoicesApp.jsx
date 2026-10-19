@@ -710,7 +710,9 @@ function ControlTable({ rows, supplierId, orderId, orderReceived, mobile, onAppl
     const { data } = await axios.post(`${BASE}/apply-tariffs`, {
       supplier_id: supplierId,
       order_id: orderId,
-      tariffs: liste.map((t) => ({ ref: t.ref, realPrice: t.realPrice, packQty: t.packQty })),
+      tariffs: liste.map((t) => ({
+        ref: t.ref, invoiceRef: t.invoiceRef, productId: t.productId, realPrice: t.realPrice, packQty: t.packQty,
+      })),
     });
     setPerLine((p) => {
       const n = { ...p };

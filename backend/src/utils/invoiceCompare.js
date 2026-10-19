@@ -102,7 +102,7 @@ function groupByRef(lines) {
   for (const line of lines) {
     const key = matchKeyOf(line);
     if (!map.has(key)) {
-      map.set(key, { ref: line.ref, label: line.label || null, qty: 0, total: 0, parts: 0 });
+      map.set(key, { ref: line.ref, label: line.label || null, productId: line.productId || null, qty: 0, total: 0, parts: 0 });
     }
     const g = map.get(key);
     g.qty += Number(line.qty) || 0;
@@ -404,6 +404,13 @@ function compareInvoiceToOrder({ invoice, order, options = {} }) {
 
     results.push({
       ref: ord.ref || inv.ref,
+      // Ce qui désigne VRAIMENT l'article quand la réf. de la commande n'est
+      // pas celle du fournisseur : une ligne ajoutée après coup dans BMS porte
+      // notre SKU (« 1268574-1268582 »), la facture « #REF17851-58992 ». Sans
+      // eux, « Appliquer le tarif facturé » cherchait le SKU parmi les réfs LCA,
+      // ne trouvait rien, et n'écrivait rien (F2610418125, 19/10/2026).
+      invoiceRef: inv.ref || null,
+      productId: ord.productId || inv.productId || null,
       label: inv.label || ord.productName || null,
       verdict,
       // Au-dessus du seuil : ça vaut un geste (réclamation, alignement, ajustement).
@@ -1036,6 +1043,8 @@ function listTariffUpdates(comparison, options = {}) {
       const cout = coutCommande(l);
       return {
         ref: l.ref,
+        invoiceRef: l.invoiceRef || null,
+        productId: l.productId || null,
         label: l.label,
         // Une quantité dans l'unité du prix : celle de la commande quand les
         // deux côtés ne comptent pas pareil.

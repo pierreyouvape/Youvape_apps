@@ -411,7 +411,9 @@ async function applyDocumentTariffs(req, res) {
     const result = await supplierDocumentModel.applyTariffs(
       document.supplier_id,
       orderId,
-      tarifs.map((t) => ({ ref: t.ref, realPrice: t.realPrice, packQty: t.packQty })),
+      tarifs.map((t) => ({
+        ref: t.ref, invoiceRef: t.invoiceRef, productId: t.productId, realPrice: t.realPrice, packQty: t.packQty,
+      })),
     );
 
     const apres = await reanalyse(document);
