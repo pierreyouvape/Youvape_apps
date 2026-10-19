@@ -241,7 +241,7 @@ const PromoDetail = () => {
 
   /** Valeur triable d'une colonne : nombre, ou texte normalisé. */
   const sortValue = (it, key) => {
-    const numeric = ['stock', 'incoming_qty', 'sales_30d', 'cost_price', 'price', 'discounted_price',
+    const numeric = ['stock', 'incoming_qty', 'sales_30d', 'cost_price', 'price', 'discounted_price', 'current_price_ttc',
       'current_margin_pct', 'discount_percent', 'live_discount_percent', 'promo_price_ttc', 'total_discount_percent',
       'promo_margin_pct', 'margin_delta_eur', 'promo_margin_eur', 'current_margin_eur'];
     if (numeric.includes(key)) {
@@ -315,6 +315,7 @@ const PromoDetail = () => {
       cost_price: range(g.items, 'cost_price'),
       price: range(g.items, 'price'),
       discounted_price: range(g.items, 'discounted_price'),
+      current_price_ttc: range(g.items, 'current_price_ttc'),
       current_margin_pct: range(g.items, 'current_margin_pct'),
       discount_percent: range(g.items, 'discount_percent'),
       live_discount_percent: range(g.items, 'live_discount_percent'),
@@ -404,7 +405,9 @@ const PromoDetail = () => {
                             // La base réellement utilisée pour la remise est soulignée.
                             fontWeight: operation.base_price_mode === 'discounted' && it.discounted_price ? 700 : 400,
                           }}>
-                            {it.discounted_price ? eur(it.discounted_price) : '—'}
+                            {it.promo_live
+                              ? eur(it.current_price_ttc)
+                              : (it.discounted_price ? eur(it.discounted_price) : '—')}
                           </td>
                           <td style={{ ...tdR, color: marginColor(it.current_margin_pct) }}>
                             {eur(it.current_margin_eur)}<br />
@@ -706,7 +709,12 @@ const PromoDetail = () => {
                       <SortTh column="sales_30d" label="Ventes 30 j" title="Unités vendues sur les 30 derniers jours" />
                       <SortTh column="cost_price" label="Prix achat HT" title="Prix d'achat HT (PMP FIFO, sinon coût WooCommerce)" />
                       <SortTh column="price" label="Prix vente TTC" />
-                      <SortTh column="discounted_price" label="Tarif remisé" title="Tarif remisé actuellement actif (Woo Discount Rules)" />
+                      {live ? (
+                        <SortTh column="current_price_ttc" label="Tarif remisé AVANT opé"
+                          title="Tarif remisé (sinon prix de vente) relevé à l'ajout du produit, avant le début de l'opération" />
+                      ) : (
+                        <SortTh column="discounted_price" label="Tarif remisé actuel" title="Tarif remisé actuellement actif (Woo Discount Rules)" />
+                      )}
                       <SortTh column="current_margin_pct" label={live ? 'Marge avant opé' : 'Marge actuelle'}
                         title={live
                           ? "Marge au tarif d'avant l'opération (photo prise à l'ajout du produit), tri sur le %"
@@ -718,10 +726,13 @@ const PromoDetail = () => {
                           ? 'Pourcentage appliqué au tarif remisé (ou au prix de vente si aucune remise en cours)'
                           : 'Pourcentage appliqué au prix de vente public, en ignorant la remise en cours'}>
                         <div style={{ fontSize: 10, fontWeight: 600, color: C.promoF, textTransform: 'none' }}>
-                          sur {operation.base_price_mode === 'discounted' ? 'tarif remisé' : 'prix public'}
+                          sur {live ? 'tarif avant opé' : operation.base_price_mode === 'discounted' ? 'tarif remisé' : 'prix public'}
                         </div>
                       </SortTh>
-                      <SortTh column="promo_price_ttc" label="Prix promo TTC" promo />
+                      <SortTh column="promo_price_ttc" label={live ? 'Tarif remisé PENDANT opé' : 'Prix promo TTC'} promo
+                        title={live
+                          ? 'Tarif réellement en ligne depuis le début de l\'opération (remise de l\'opé incluse)'
+                          : 'Prix promo simulé : base × (1 − remise %), ou prix saisi à la main'} />
                       <SortTh column="total_discount_percent" label="Remise totale" promo
                         title="Écart total entre le prix sans remise (prix barré s'il existe, sinon prix de vente) et le prix promo TTC" />
                       <SortTh column="promo_margin_pct" label="Marge promo" promo title="Marge au tarif promo (tri sur le %)" />
@@ -772,7 +783,7 @@ const PromoDetail = () => {
                                 <td style={{ ...tdR, fontWeight: 700 }}>{int(g.sales_30d)}</td>
                                 <td style={tdR}>{rangeText(g.cost_price, eur)}</td>
                                 <td style={tdR}>{rangeText(g.price, eur)}</td>
-                                <td style={{ ...tdR, color: C.orange }}>{rangeText(g.discounted_price, eur)}</td>
+                                <td style={{ ...tdR, color: C.orange }}>{rangeText(live ? g.current_price_ttc : g.discounted_price, eur)}</td>
                                 <td style={tdR}>
                                   {rangeText(g.current_margin_eur, eur)}<br />
                                   <span style={{ fontSize: 11 }}>{rangeText(g.current_margin_pct, (v) => pct(v))}</span>
