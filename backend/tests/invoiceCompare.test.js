@@ -1256,7 +1256,7 @@ test('LCA F2610418125 : la ligne soldée à la réception ne compte pas, les bun
     order: {
       lines: [
         ...couleurs.map((c) => ({ ref: `ARGUS-${c}`, productName: 'Pod Argus G2 Mini Plus', qty: 10, price: 4.11 })),
-        { ref: 'ARGUS-85', productName: 'Pod Argus G2 Mini Plus - Spring Green', qty: 10, price: 4.11, closed: true },
+        { ref: 'ARGUS-85', productName: 'Pod Argus G2 Mini Plus - Spring Green', qty: 10, price: 4.11, closedQty: 10 },
       ],
     },
   });
@@ -1267,13 +1267,42 @@ test('LCA F2610418125 : la ligne soldée à la réception ne compte pas, les bun
   const bundle = byRef(r, 'ARGUS-82');
   assert.strictEqual(bundle.verdict, 'price');
   assert.ok(close(bundle.gap, -2.47), `ligne ${bundle.gap}`);
-  // Une ligne soldée MAIS facturée reste contrôlée comme les autres.
+  // Une ligne soldée MAIS facturée quand même : le fournisseur facture ce qu'il
+  // n'a pas livré, c'est un écart à réclamer.
   const facturee = compareInvoiceToOrder({
     invoice: { lines: [{ ref: 'X', qty: 2, lineTotalHt: 20 }] },
-    order: { lines: [{ ref: 'X', qty: 2, price: 10, closed: true }] },
+    order: { lines: [{ ref: 'X', qty: 2, price: 10, closedQty: 2 }] },
   });
-  assert.strictEqual(facturee.totals.order, 20);
-  assert.strictEqual(byRef(facturee, 'X').verdict, 'ok');
+  assert.strictEqual(facturee.totals.order, 0);
+  assert.strictEqual(byRef(facturee, 'X').verdict, 'qty');
+  assert.ok(/réclamer un avoir/.test(listDifferences(facturee)[0].action), listDifferences(facturee)[0].action);
+  assert.ok(close(facturee.totals.gap, 20), `écart ${facturee.totals.gap}`);
+});
+
+test('F2610418131 : soldé en partie à la réception, facturé pour le reçu = soldé, pas une erreur', () => {
+  // Tiramisu 100 ml : 17 commandés à 2,13 €, 16 reçus, le 17e soldé, 16 facturés.
+  // TPP DM2 : 10 commandés, 0 reçu, soldés, non facturés.
+  const r = compareInvoiceToOrder({
+    invoice: { lines: [{ ref: 'TIRAMISU', qty: 16, lineTotalHt: 34.08 }] },
+    order: { lines: [
+      { ref: 'TIRAMISU', qty: 17, price: 2.13, closedQty: 1 },
+      { ref: 'TPP', qty: 10, price: 6.05, closedQty: 10 },
+    ] },
+  });
+  assert.strictEqual(byRef(r, 'TIRAMISU').verdict, 'closed');
+  assert.strictEqual(byRef(r, 'TIRAMISU').gap, 0);
+  assert.strictEqual(byRef(r, 'TIRAMISU').qtyClosed, 1);
+  assert.strictEqual(byRef(r, 'TPP').verdict, 'closed');
+  assert.ok(close(r.totals.gap, 0), `écart ${r.totals.gap}`);
+  assert.strictEqual(r.summary.qtyGap, 0);
+  assert.strictEqual(listDifferences(r).filter((d) => d.material).length, 0);
+  // Un manque NON soldé reste une erreur de quantité.
+  const manque = compareInvoiceToOrder({
+    invoice: { lines: [{ ref: 'TIRAMISU', qty: 15, lineTotalHt: 31.95 }] },
+    order: { lines: [{ ref: 'TIRAMISU', qty: 17, price: 2.13, closedQty: 1 }] },
+  });
+  assert.strictEqual(byRef(manque, 'TIRAMISU').verdict, 'qty');
+  assert.ok(close(byRef(manque, 'TIRAMISU').gap, -2.13), `manque ${byRef(manque, 'TIRAMISU').gap}`);
 });
 
 test('un tarif garde la réf. de la facture et le produit quand la commande porte notre SKU', () => {

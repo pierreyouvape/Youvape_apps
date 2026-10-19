@@ -36,6 +36,7 @@ const { attachMatchKeys } = require('../utils/invoiceMatching');
 const { resolveCompleteRefs } = require('../utils/refResolution');
 const { detachVouchers } = require('../utils/invoiceVouchers');
 const supplierVoucherModel = require('../models/supplierVoucherModel');
+const { piecesSoldeesSql } = require('../models/orderLifecycleModel');
 
 /** Extrait le texte d'un PDF (ou lit un fichier texte), puis le nettoie. */
 async function extractText(buffer) {
@@ -110,8 +111,11 @@ async function findOrderByRef(supplierId, orderRef, db = pool) {
 async function loadOrderLines(order, db = pool) {
   const { rows } = await db.query(
     `SELECT poi.supplier_sku, p.sku, poi.product_name, poi.qty_ordered, poi.unit_price,
-            COALESCE(poi.units_per_qty, 1) AS units_per_qty
+            COALESCE(poi.units_per_qty, 1) AS units_per_qty,
+            (${piecesSoldeesSql('poi', 'po')})::numeric
+              / GREATEST(COALESCE(poi.units_per_qty, 1), 1) AS closed_qty
        FROM purchase_order_items poi
+       JOIN purchase_orders po ON po.id = poi.purchase_order_id
        LEFT JOIN products p ON p.id = poi.product_id
       WHERE poi.purchase_order_id = $1
         AND poi.item_type IS DISTINCT FROM 'discount'
@@ -128,41 +132,13 @@ async function loadOrderLines(order, db = pool) {
       qty: Number(r.qty_ordered) || 0,
       price: Number(r.unit_price) || 0,
       packQty: Number(r.units_per_qty) || 1,
+      // Ce que la réception a SOLDÉ sur cette ligne (non livré, plus attendu),
+      // dans l'unité de la ligne. Même règle que l'état de réception
+      // (orderLifecycleModel.piecesSoldeesSql) : motif de clôture, ou commande
+      // Terminée. Déduit de ce que la facture doit porter (cf. invoiceCompare).
+      closedQty: Number(r.closed_qty) || 0,
     })),
   };
-}
-
-/**
- * Les SKU des lignes que la réception a SOLDÉES sans rien recevoir : plus rien
- * n'en est attendu, le fournisseur ne les facturera pas.
- *
- * Commande LCA 361181 (facture F2610418125, 19/10/2026) : le Pod Argus Spring
- * Green, absent du carton et noté « soldé » au bon de livraison, ressortait en
- * « commandé, non facturé » pour −82,20 € — un écart qui n'en est pas un.
- *
- * Deux preuves valent : un motif de clôture sur la ligne (soldé, manquant,
- * erreur de saisie), ou la commande passée « Terminée » chez nous. La seconde
- * est indispensable : la synchro BMS effaçait les motifs en remplaçant les
- * lignes (corrigé par 65538d3), et c'est précisément ce qui est arrivé ici.
- * Une ligne en partie reçue n'est pas concernée : ce qui est arrivé se paie.
- */
-async function findClosedSkus(orderId, db = pool) {
-  const { rows } = await db.query(
-    `SELECT DISTINCT LOWER(TRIM(p.sku)) AS sku
-       FROM purchase_order_items poi
-       JOIN purchase_orders po ON po.id = poi.purchase_order_id
-       JOIN products p ON p.id = poi.product_id
-      WHERE poi.purchase_order_id = $1
-        AND p.sku IS NOT NULL
-        AND COALESCE(poi.units_received, 0) = 0
-        AND COALESCE(poi.qty_received, 0) = 0
-        AND (po.closed_locally_at IS NOT NULL
-             OR EXISTS (SELECT 1 FROM reception_counts rc
-                         WHERE rc.purchase_order_item_id = poi.id
-                           AND rc.motif IN ('solde', 'manquant', 'erreur_saisie')))`,
-    [orderId],
-  );
-  return new Set(rows.map((r) => r.sku));
 }
 
 /**
@@ -281,7 +257,9 @@ async function analyseInvoice({ buffer, supplierId, orderId = null, documentId =
           AND ($2::int IS NULL OR d.id <> $2::int)
           AND ($3::text IS NULL OR d.number <> $3::text)
           AND l.kind = 'product'
-          AND COALESCE(l.verdict, '') NOT IN ('missing_in_invoice', 'closed', 'other_invoice')
+          -- Une ligne « soldée » peut porter un montant (16 facturés sur 17,
+          -- le 17e soldé) : c'est le montant nul ci-dessous qui l'écarte.
+          AND COALESCE(l.verdict, '') NOT IN ('missing_in_invoice', 'other_invoice')
           AND (COALESCE(l.qty, 0) <> 0 OR COALESCE(l.line_total_ht, 0) <> 0)
         ORDER BY d.id, l.line_no`,
       [order.id, documentId || null, invoice.number || null],
@@ -296,8 +274,6 @@ async function analyseInvoice({ buffer, supplierId, orderId = null, documentId =
       }));
     invoice.otherDocuments = [...new Set(autres.map((a) => a.number))];
   }
-  const soldees = await findClosedSkus(order.id, db);
-  for (const l of bmsOrder.lines) l.closed = !!l.sku && soldees.has(String(l.sku).trim().toLowerCase());
 
   const refProducts = await findRefProducts(
     supplierId,

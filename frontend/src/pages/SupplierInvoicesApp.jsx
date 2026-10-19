@@ -463,7 +463,12 @@ function DifferencesTable({ lines, mobile }) {
                   ? `Vendu par ${l.packFactor} chez ce fournisseur : ${num(l.qtyInvoiced)} × ${l.packFactor} = ${num(l.qtyOrdered)} unités`
                   : (l.verdict === 'credited' && l.creditedBy
                     ? `Compensé par l'avoir ${l.creditedBy}`
-                    : (notePiece(l) || l.meta.action || ''))}
+                    // Facturé plus que ce qui reste attendu (le soldé à la
+                    // réception est déjà déduit) : on paie ce qui n'est pas
+                    // arrivé. À dire en clair à qui règle (GFC F2610426675).
+                    : (l.verdict === 'qty' && !l.packFactor && Number(l.qtyInvoiced) > Number(l.qtyOrdered)
+                      ? `Facturé ${num(l.qtyInvoiced)}, attendu ${num(l.qtyOrdered)} : réclamer un avoir pour ${num(Number(l.qtyInvoiced) - Number(l.qtyOrdered))}`
+                      : (notePiece(l) || l.meta.action || '')))}
               </td>
             </tr>
           ))}

@@ -326,7 +326,14 @@ function compareInvoiceToOrder({ invoice, order, options = {} }) {
     }
 
     const expectedUnitPrice = Number(ord.price) || 0;
-    const qtyOrdered = Number(ord.qty) || 0;
+    // CE QUI A ÉTÉ SOLDÉ À LA RÉCEPTION N'EST PLUS ATTENDU SUR LA FACTURE.
+    // F2610418131 : Tiramisu 100 ml, 17 commandés, 16 reçus, le 17e soldé au bon
+    // de livraison, 16 facturés. L'écran le montrait en « Quantité -2,13 € » —
+    // une erreur — à côté d'une autre ligne soldée en entier, elle sans erreur.
+    // La quantité attendue est donc « commandé − soldé », pour toutes les lignes.
+    const qtyCommandee = Number(ord.qty) || 0;
+    const qtySoldee = Math.min(Math.max(Number(ord.closedQty) || 0, 0), qtyCommandee);
+    const qtyOrdered = qtyCommandee - qtySoldee;
     const expectedTotal = round2(qtyOrdered * expectedUnitPrice);
 
     // Décomposition : ce que coûte l'écart de quantité au prix commandé, et ce que
@@ -416,6 +423,9 @@ function compareInvoiceToOrder({ invoice, order, options = {} }) {
     else if (priceDiffers) verdict = 'price';
     else if (Math.abs(gapPrice) >= 0.005) verdict = 'rounding';
     else verdict = 'ok';
+    // Conforme une fois le solde déduit : on le dit, comme pour une ligne soldée
+    // en entier, plutôt que de taire les pièces qui manquent au bon.
+    if (verdict === 'ok' && qtySoldee > 0) verdict = 'closed';
 
     results.push({
       ref: ord.ref || inv.ref,
@@ -432,6 +442,8 @@ function compareInvoiceToOrder({ invoice, order, options = {} }) {
       // En dessous : visible dans le détail, absent des décomptes et de l'email.
       material: Math.abs(gap) >= threshold,
       qtyOrdered,
+      // Pièces (unités de ligne) soldées à la réception, déjà retirées de qtyOrdered.
+      qtyClosed: qtySoldee > 0 ? qtySoldee : undefined,
       qtyInvoiced: inv.qty,
       // Rapport de conditionnement quand les deux ne comptent pas dans la même
       // unité, et le facteur entier qui s'en déduit (« boîte de 2 »).
@@ -486,16 +498,20 @@ function compareInvoiceToOrder({ invoice, order, options = {} }) {
   //    13,80 €.
   for (const ord of expectFullOrder ? orderLines : []) {
     if (invoiceByRef.has(matchKeyOf(ord))) continue;
-    const expectedTotal = round2((Number(ord.qty) || 0) * (Number(ord.price) || 0));
-    // Soldée à la réception sans rien recevoir (cf. findClosedSkus) : ni livrée
-    // ni facturée, il n'y a rien à vérifier ni à payer. Montrée, jamais comptée.
-    if (ord.closed) {
+    const qtyCmd = Number(ord.qty) || 0;
+    const qtySol = Math.min(Math.max(Number(ord.closedQty) || 0, 0), qtyCmd);
+    // Ce qui reste attendu une fois le solde déduit (cf. ligne facturée plus haut).
+    const expectedTotal = round2((qtyCmd - qtySol) * (Number(ord.price) || 0));
+    // Soldée en entier à la réception (cf. findClosedQty) : ni livrée ni
+    // facturée, il n'y a rien à vérifier ni à payer. Montrée, jamais comptée.
+    if (qtyCmd > 0 && qtySol >= qtyCmd) {
       results.push({
         ref: ord.ref,
         label: ord.productName || null,
         verdict: 'closed',
         material: false,
-        qtyOrdered: Number(ord.qty) || 0,
+        qtyOrdered: 0,
+        qtyClosed: qtySol,
         qtyInvoiced: 0,
         expectedUnitPrice: Number(ord.price) || 0,
         invoicedUnitPrice: null,
@@ -512,7 +528,8 @@ function compareInvoiceToOrder({ invoice, order, options = {} }) {
       label: ord.productName || null,
       verdict: 'missing_in_invoice',
       material: expectedTotal >= threshold,
-      qtyOrdered: Number(ord.qty) || 0,
+      qtyOrdered: qtyCmd - qtySol,
+      qtyClosed: qtySol > 0 ? qtySol : undefined,
       qtyInvoiced: 0,
       expectedUnitPrice: Number(ord.price) || 0,
       invoicedUnitPrice: null,
@@ -832,11 +849,15 @@ function compareInvoiceToOrder({ invoice, order, options = {} }) {
   // retient alors que les lignes de commande que le document reprend.
   // Une ligne soldée à la réception et non facturée sort aussi de la commande :
   // elle ne sera jamais due.
-  const comptees = (expectFullOrder
+  // Le soldé à la réception sort aussi du montant commandé : il ne sera jamais dû.
+  const comptees = expectFullOrder
     ? orderLines
-    : orderLines.filter((l) => invoiceByRef.has(matchKeyOf(l))))
-    .filter((l) => !(l.closed && !invoiceByRef.has(matchKeyOf(l))));
-  const orderTotal = round2(comptees.reduce((s, l) => s + (Number(l.qty) || 0) * (Number(l.price) || 0), 0));
+    : orderLines.filter((l) => invoiceByRef.has(matchKeyOf(l)));
+  const orderTotal = round2(comptees.reduce((s, l) => {
+    const q = Number(l.qty) || 0;
+    const sol = Math.min(Math.max(Number(l.closedQty) || 0, 0), q);
+    return s + (q - sol) * (Number(l.price) || 0);
+  }, 0));
   const printed = Number.isFinite(Number(invoice?.totalHt)) ? round2(invoice.totalHt) : null;
 
   // Garde-fou de lecture : si le total imprimé ne retombe pas sur la somme des
@@ -965,7 +986,7 @@ function orphanBalance(results, threshold) {
 const DIFFERENCE_KINDS = {
   qty_price:          { rank: 1,  label: 'Quantité et tarif',     action: 'Ajuster la commande et réclamer le tarif' },
   missing_in_invoice: { rank: 2,  label: 'Commandé, non facturé', action: 'Reliquat ou manquant : vérifier la livraison' },
-  closed:             { rank: 9,  label: 'Soldé à la réception',  action: 'Non livré, non facturé : rien à payer' },
+  closed:             { rank: 9,  label: 'Soldé à la réception',  action: 'Le soldé n\'est ni livré ni facturé : rien à payer en plus' },
   other_invoice:      { rank: 9,  label: 'Sur une autre facture', action: "Facturé sur une autre facture de la commande : rien à payer ici" },
   qty:                { rank: 3,  label: 'Quantité',              action: 'Ajuster la quantité de la commande' },
   price:              { rank: 4,  label: 'Tarif',                 action: 'Réclamer un avoir, ou aligner le tarif si le prix a changé' },
@@ -1020,10 +1041,15 @@ function listDifferences(comparison) {
         // unité l'écart se lit, sinon « 4,50 € commandé » en face de
         // « 25,96 € facturé » reste illisible. Le bouton de tarif, lui, écrit le
         // prix de l'unité de commande (cf. `listTariffUpdates`).
-        : (l.unitMismatch
+        // Facturé au-delà de ce qui est arrivé, le reste ayant été soldé à la
+        // réception : on paie une pièce jamais livrée. GFC F2610426675, An RTA :
+        // 3 facturés, 2 reçus, le 3e soldé — 33,85 € réglés pour rien.
+        : (l.verdict === 'qty' && l.qtyClosed > 0 && l.qtyInvoiced > l.qtyOrdered
+          ? `Facturé ${l.qtyInvoiced}, reçu ${l.qtyOrdered} : ${l.qtyInvoiced - l.qtyOrdered} soldé${l.qtyInvoiced - l.qtyOrdered > 1 ? 's' : ''} à la réception (non livré) — réclamer un avoir`
+          : (l.unitMismatch
           ? `Vendu par ${l.packFactor} : ${prixPiece(l.piecePriceInvoiced)} la pièce facturée `
             + `contre ${prixPiece(l.piecePriceExpected)} commandée — réclamer l'écart, ou aligner le tarif s'il a changé`
-          : ((DIFFERENCE_KINDS[l.verdict] || {}).action || null)),
+          : ((DIFFERENCE_KINDS[l.verdict] || {}).action || null))),
     }))
     .sort((a, b) => {
       const ra = (DIFFERENCE_KINDS[a.verdict] || {}).rank || 99;
