@@ -1997,6 +1997,9 @@ const purchaseOrderModel = {
         ]);
 
         const { id: poId, inserted } = orderResult.rows[0];
+        let comptagesArchives = [];
+        const nouvelleLigneParBms = new Map();
+        const nouvellesLignesParRef = new Map();
 
         if (inserted) {
           created++;
@@ -2019,6 +2022,24 @@ const purchaseOrderModel = {
           continue;
         } else {
           updated++;
+          // LES RÉCEPTIONS PASSÉES SURVIVENT AU REMPLACEMENT DES LIGNES.
+          //
+          // `reception_counts` part en cascade avec les lignes : chaque réception
+          // faisait bouger le bon chez BMS, la synchro suivante remplaçait ses
+          // lignes, et le comptage comme les motifs (reliquat, soldé…) des
+          // réceptions validées disparaissaient — au 19/10/2026, plus un seul
+          // motif en base. On les met de côté, et on les rattache plus bas aux
+          // nouvelles lignes par leur ligne BMS (à défaut, par la réf.).
+          const { rows: aRattacher } = await client.query(
+            `SELECT c.session_id, c.bms_line_id, c.units_counted, c.units_sent, c.motif,
+                    c.updated_at, poi.supplier_sku
+               FROM reception_counts c
+               JOIN reception_sessions s ON s.id = c.session_id
+               JOIN purchase_order_items poi ON poi.id = c.purchase_order_item_id
+              WHERE s.purchase_order_id = $1`,
+            [poId]
+          );
+          comptagesArchives = aRattacher;
           // Supprimer les anciens items pour les remplacer
           await client.query('DELETE FROM purchase_order_items WHERE purchase_order_id = $1', [poId]);
         }
@@ -2089,13 +2110,14 @@ const purchaseOrderModel = {
             }
           }
 
-          await client.query(`
+          const { rows: [nouvelle] } = await client.query(`
             INSERT INTO purchase_order_items (
               purchase_order_id, product_id, supplier_sku,
               product_name, qty_ordered, qty_received, unit_price, units_per_qty,
               units_received, discount_percent
             )
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+            RETURNING id, supplier_sku
           `, [
             poId,
             productId,
@@ -2115,7 +2137,36 @@ const purchaseOrderModel = {
             // FIFO 15 % trop cher, et le PMP avec.
             parseFloat(item.discount_percent) || 0,
           ]);
+          if (item.id != null) nouvelleLigneParBms.set(String(item.id), nouvelle.id);
+          if (nouvelle.supplier_sku) {
+            const memeRef = nouvellesLignesParRef.get(nouvelle.supplier_sku) || [];
+            memeRef.push(nouvelle.id);
+            nouvellesLignesParRef.set(nouvelle.supplier_sku, memeRef);
+          }
+        }
 
+        // Rattacher les comptages mis de côté (voir le DELETE plus haut). La
+        // réf. ne sert que si elle désigne UNE seule ligne : deviner entre deux
+        // déclinaisons attribuerait un motif au mauvais article.
+        let perdus = 0;
+        for (const c of comptagesArchives) {
+          let cible = c.bms_line_id != null ? nouvelleLigneParBms.get(String(c.bms_line_id)) : undefined;
+          if (!cible && c.supplier_sku) {
+            const memeRef = nouvellesLignesParRef.get(c.supplier_sku) || [];
+            if (memeRef.length === 1) cible = memeRef[0];
+          }
+          if (!cible) { perdus++; continue; }
+          await client.query(
+            `INSERT INTO reception_counts
+               (session_id, purchase_order_item_id, bms_line_id, units_counted, units_sent, motif, updated_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7)
+             ON CONFLICT (session_id, purchase_order_item_id) DO NOTHING`,
+            [c.session_id, cible, c.bms_line_id, c.units_counted, c.units_sent, c.motif, c.updated_at]
+          );
+        }
+        if (perdus > 0) {
+          console.warn(`[BMS sync] commande ${poId} (BMS ${bmsOrder.id}) : ${perdus} comptage(s) de `
+            + 'réception sans ligne correspondante après remplacement, non rattaché(s).');
         }
 
         results.push({
