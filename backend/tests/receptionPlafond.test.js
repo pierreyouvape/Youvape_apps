@@ -11,7 +11,7 @@
  * marchandise, trop basse la fait disparaître.
  */
 const assert = require('node:assert');
-const { plafonnerEnvoi } = require('../src/models/receptionSessionModel');
+const { plafonnerEnvoi, matchBmsLine } = require('../src/models/receptionSessionModel');
 
 let echecs = 0;
 function test(nom, fn) {
@@ -100,6 +100,26 @@ test('INVARIANT : ce qui est déclaré envoyé est exactement ce qui part', () =
     assert.strictEqual(envoye + refuse, l.units_counted,
       `${l.supplier_sku} : ${envoye} + ${refuse} ≠ ${l.units_counted}`);
   }
+});
+
+console.log('\nRéception — même produit sur deux lignes du bon');
+
+// LCA 361704 : 100 filtres reçus, puis 80 de surplus ajoutés en seconde ligne
+// (import « ajouter en supplément »). Chaque ligne locale doit viser SA ligne
+// BMS, sinon le surplus se réceptionne sur la ligne déjà soldée.
+test('deux lignes du même produit visent deux lignes BMS distinctes', () => {
+  const bms = [
+    { id: 501, supplierSku: '#REF9337-62437', sku: 'FILTRE-W' },
+    { id: 502, supplierSku: '#REF9337-62437', sku: 'FILTRE-W' },
+  ];
+  const prises = new Set();
+  const ids = [1, 2].map(() => {
+    const id = matchBmsLine({ supplier_sku: '#REF9337-62437', product_sku: 'FILTRE-W' }, bms, prises);
+    prises.add(id);
+    return id;
+  });
+  assert.deepStrictEqual(ids, [501, 502]);
+  assert.strictEqual(matchBmsLine({ supplier_sku: '#REF9337-62437' }, bms, prises), null);
 });
 
 if (echecs > 0) { console.error(`\n${echecs} test(s) en échec.`); process.exit(1); }

@@ -81,15 +81,19 @@ async function openSession(purchaseOrderId, userId, db = pool) {
               ${UNITS_EXPECTED} AS units_expected
          FROM purchase_order_items poi
          LEFT JOIN products p ON p.id = poi.product_id
-        WHERE poi.purchase_order_id = $1`,
+        WHERE poi.purchase_order_id = $1
+        ORDER BY poi.id`,
       [purchaseOrderId],
     );
 
+    const prises = new Set();
     for (const l of lignes) {
+      const bmsLineId = matchBmsLine(l, lignesBms, prises);
+      if (bmsLineId) prises.add(bmsLineId);
       await client.query(
         `INSERT INTO reception_counts (session_id, purchase_order_item_id, bms_line_id, units_counted)
          VALUES ($1, $2, $3, 0)`,
-        [session.id, l.id, matchBmsLine(l, lignesBms)],
+        [session.id, l.id, bmsLineId],
       );
     }
 
@@ -144,7 +148,12 @@ const norm = (s) => String(s || '').toLowerCase().replace(/\s+/g, ' ').trim();
  * C'est le SKU qui identifie le produit de part et d'autre, et c'est donc lui
  * qui fait foi. Trois tentatives, de la plus précise à la plus tolérante.
  */
-function matchBmsLine(ligne, lignesBms) {
+function matchBmsLine(ligne, lignesBms, prises = new Set()) {
+  // Un même produit peut figurer DEUX fois sur un bon (surplus ajouté en
+  // seconde ligne, cf. purchaseOrderModel.addItems) : sans écarter les lignes
+  // BMS déjà rapprochées, les deux visaient la première, et la réception du
+  // surplus partait sur la ligne déjà soldée.
+  lignesBms = lignesBms.filter((b) => !prises.has(b.id));
   // 1. La référence fournisseur, quand les deux côtés en ont une.
   if (ligne.supplier_sku) {
     const parRef = lignesBms.find(
@@ -699,12 +708,19 @@ async function refreshFromBms(sessionId, db = pool) {
          FROM reception_counts c
          JOIN purchase_order_items poi ON poi.id = c.purchase_order_item_id
          LEFT JOIN products p ON p.id = poi.product_id
-        WHERE c.session_id = $1 AND c.bms_line_id IS NULL`,
+        WHERE c.session_id = $1 AND c.bms_line_id IS NULL
+        ORDER BY c.purchase_order_item_id`,
       [sessionId],
     );
+    const { rows: dejaPrises } = await client.query(
+      'SELECT bms_line_id FROM reception_counts WHERE session_id = $1 AND bms_line_id IS NOT NULL',
+      [sessionId],
+    );
+    const prises = new Set(dejaPrises.map((r) => r.bms_line_id));
     for (const o of orphelines) {
-      const id = matchBmsLine(o, lignesBms);
+      const id = matchBmsLine(o, lignesBms, prises);
       if (!id) continue;
+      prises.add(id);
       await client.query(
         'UPDATE reception_counts SET bms_line_id = $3 WHERE session_id = $1 AND purchase_order_item_id = $2',
         [sessionId, o.purchase_order_item_id, id],

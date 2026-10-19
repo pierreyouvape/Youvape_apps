@@ -401,7 +401,9 @@ const purchaseOrderModel = {
         failed.push({ name: label, error: 'produit introuvable' });
         continue;
       }
-      if (presentIds.has(product.id)) {
+      // `extra` : lot supplémentaire d'un produit déjà présent (surplus livré
+      // puis facturé à part). Il part en SECONDE ligne, à réceptionner.
+      if (presentIds.has(product.id) && !item.extra) {
         alreadyPresent.push({ name: label });
         continue;
       }

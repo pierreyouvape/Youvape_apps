@@ -491,7 +491,13 @@ const ImportPdfPage = () => {
   const existingOrder = parsedData?.existing_order || null;
   const wpInOrder = new Set(existingOrder?.wp_product_ids || []);
   const inExistingOrder = (item) => !!existingOrder && item.matched && wpInOrder.has(item.product_id);
-  const itemsToAdd = matchedItems.filter(i => !inExistingOrder(i));
+  // Ligne déjà présente que l'on ajoute quand même, en lot supplémentaire :
+  // surplus livré puis facturé à part (LCA F2610418141 : 80 filtres de plus
+  // sur la 361704). Elle part en seconde ligne, pour être réceptionnée.
+  const itemsToAdd = matchedItems.filter(i => !inExistingOrder(i) || i.extra);
+  const toggleExtra = (idx) => {
+    setItems(prev => prev.map((item, i) => (i === idx ? { ...item, extra: !item.extra } : item)));
+  };
 
   // Refus BMS « décidable » : on affiche la raison et on laisse l'utilisateur choisir
   // d'envoyer la commande en l'état. Chaque acceptation renvoie les drapeaux fournis par
@@ -615,6 +621,7 @@ const ImportPdfPage = () => {
           unit_price: effectivePrice(item),
           discount_percent: item.discount || 0,
           stock_before: item.current_stock,
+          extra: inExistingOrder(item) && !!item.extra,
         })),
         new_supplier_skus: newSupplierSkus,
       }, { headers: { Authorization: `Bearer ${token}` } });
@@ -935,6 +942,9 @@ const ImportPdfPage = () => {
                       Les lignes grisées y sont déjà et ne seront pas renvoyées. Seules les lignes liées
                       à un produit absent de la commande y seront ajoutées
                       {existingOrder.bms_po_id ? ', dans notre commande comme dans le bon BMS' : ''}.
+                      <br />
+                      Surplus livré puis facturé à part ? Cochez « ajouter en supplément » : la quantité
+                      du document part en seconde ligne, à réceptionner ensuite.
                     </div>
                   )}
 
@@ -1063,7 +1073,7 @@ const ImportPdfPage = () => {
 
                           const lineTotal = lineTotalOf(item);
                           const mismatch = lineMismatch(item);
-                          const dejaDedans = inExistingOrder(item);
+                          const dejaDedans = inExistingOrder(item) && !item.extra;
 
                           return (
                             <tr key={idx} style={{
@@ -1094,9 +1104,18 @@ const ImportPdfPage = () => {
                                   <div>
                                     <div style={{ fontWeight: 600, color: C.grisTF, lineHeight: 1.3, marginBottom: 2 }}>{item.product_name}</div>
                                     {item.product_sku && <div style={{ fontSize: 11.5, color: C.grisM, fontFamily: 'monospace' }}>SKU: {item.product_sku}</div>}
-                                    {dejaDedans && (
-                                      <div style={{ marginTop: 3, display: 'inline-block', fontSize: 11, fontWeight: 700, color: '#3730A3', background: '#EEF2FF', border: '1px solid #C7D2FE', borderRadius: 5, padding: '1px 6px' }}>
-                                        déjà dans la commande
+                                    {inExistingOrder(item) && (
+                                      <div style={{ marginTop: 3, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', opacity: 1 }}>
+                                        <span style={{ fontSize: 11, fontWeight: 700, color: '#3730A3', background: '#EEF2FF', border: '1px solid #C7D2FE', borderRadius: 5, padding: '1px 6px' }}>
+                                          déjà dans la commande
+                                        </span>
+                                        <label
+                                          title="Surplus livré et facturé à part : la quantité de ce document est ajoutée en seconde ligne, à réceptionner ensuite."
+                                          style={{ fontSize: 11.5, fontWeight: 600, color: item.extra ? '#5D49D6' : C.grisF, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                                        >
+                                          <input type="checkbox" checked={!!item.extra} onChange={() => toggleExtra(idx)} />
+                                          ajouter en supplément
+                                        </label>
                                       </div>
                                     )}
                                     {item.product_status && item.product_status !== 'publish' && (
