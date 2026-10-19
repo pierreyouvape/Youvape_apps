@@ -804,7 +804,7 @@ const PromoDetail = () => {
                                 <td style={{ ...tdR, background: '#FDF2F8', color: C.promoF, fontWeight: 700 }}>
                                   {rangeText(g.total_discount_percent, (v) => `−${pct(v)}`)}
                                 </td>
-                                <td style={{ ...tdR, background: '#FDF2F8', fontWeight: 700 }}>
+                                <td style={{ ...tdR, background: '#FDF2F8', fontWeight: 700 }} title="Marge promo HT par unité (fourchette des déclinaisons)">
                                   {rangeText(g.promo_margin_eur, eur)}<br />
                                   <span style={{ fontSize: 11 }}>{rangeText(g.promo_margin_pct, (v) => pct(v))}</span>
                                 </td>
