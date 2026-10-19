@@ -321,7 +321,8 @@ const PromoDetail = () => {
       promo_price_ttc: range(g.items, 'promo_price_ttc'),
       total_discount_percent: range(g.items, 'total_discount_percent'),
       promo_margin_pct: range(g.items, 'promo_margin_pct'),
-      margin_delta_total: sum(g.items, 'margin_delta_eur'),
+      current_margin_eur: range(g.items, 'current_margin_eur'),
+      promo_margin_eur: range(g.items, 'promo_margin_eur'),
       below_cost: g.items.filter((x) => x.below_cost).length,
     }));
   }, [visibleItems]);
@@ -470,9 +471,6 @@ const PromoDetail = () => {
                           <td style={{ ...tdR, background: '#FDF2F8', color: marginColor(it.promo_margin_pct), fontWeight: 700 }}>
                             {eur(it.promo_margin_eur)}<br />
                             <span style={{ fontSize: 11 }}>{pct(it.promo_margin_pct)}</span>
-                          </td>
-                          <td style={{ ...tdR, color: it.margin_delta_eur < 0 ? C.rouge : C.vert }}>
-                            {it.margin_delta_eur === null ? '—' : `${it.margin_delta_eur > 0 ? '+' : ''}${eur(it.margin_delta_eur)}`}
                           </td>
                           <td style={td}>
                             <button onClick={() => removeItem(it.id)} title="Retirer de l'opération"
@@ -727,7 +725,6 @@ const PromoDetail = () => {
                       <SortTh column="total_discount_percent" label="Remise totale" promo
                         title="Écart total entre le prix sans remise (prix barré s'il existe, sinon prix de vente) et le prix promo TTC" />
                       <SortTh column="promo_margin_pct" label="Marge promo" promo title="Marge au tarif promo (tri sur le %)" />
-                      <SortTh column="margin_delta_eur" label="Δ marge / u." />
                       <th style={th}></th>
                     </tr>
                   </thead>
@@ -776,7 +773,10 @@ const PromoDetail = () => {
                                 <td style={tdR}>{rangeText(g.cost_price, eur)}</td>
                                 <td style={tdR}>{rangeText(g.price, eur)}</td>
                                 <td style={{ ...tdR, color: C.orange }}>{rangeText(g.discounted_price, eur)}</td>
-                                <td style={tdR}>{rangeText(g.current_margin_pct, (v) => pct(v))}</td>
+                                <td style={tdR}>
+                                  {rangeText(g.current_margin_eur, eur)}<br />
+                                  <span style={{ fontSize: 11 }}>{rangeText(g.current_margin_pct, (v) => pct(v))}</span>
+                                </td>
                                 {live ? (
                                   <td style={{ ...tdR, background: '#FDF2F8' }}>
                                     {rangeText(g.live_discount_percent, (v) => `−${pct(v)}`)}
@@ -804,9 +804,9 @@ const PromoDetail = () => {
                                 <td style={{ ...tdR, background: '#FDF2F8', color: C.promoF, fontWeight: 700 }}>
                                   {rangeText(g.total_discount_percent, (v) => `−${pct(v)}`)}
                                 </td>
-                                <td style={{ ...tdR, background: '#FDF2F8', fontWeight: 700 }}>{rangeText(g.promo_margin_pct, (v) => pct(v))}</td>
-                                <td style={{ ...tdR, color: g.margin_delta_total < 0 ? C.rouge : C.vert }}>
-                                  {eur(g.margin_delta_total)}
+                                <td style={{ ...tdR, background: '#FDF2F8', fontWeight: 700 }}>
+                                  {rangeText(g.promo_margin_eur, eur)}<br />
+                                  <span style={{ fontSize: 11 }}>{rangeText(g.promo_margin_pct, (v) => pct(v))}</span>
                                 </td>
                                 <td style={td} />
                               </tr>
