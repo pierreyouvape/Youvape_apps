@@ -18,6 +18,28 @@ const MOTIF_LABEL = {
   erreur_saisie: 'Erreur de saisie — de notre côté',
 };
 
+// Le même motif, en court, dans la colonne « Écart » des articles : ce qui a
+// été noté à la réception, pas un « manquant » générique (359173 : une ligne
+// notée en reliquat s'affichait « manquant »).
+const MOTIF_ECART = {
+  reliquat: { label: 'reliquat (à recevoir)', className: 'reception-bilan-manque' },
+  solde:    { label: 'soldé (remboursé)',     className: 'reception-motif-clos' },
+  manquant: { label: 'manquant (à réclamer)', className: 'reception-bilan-manque' },
+  erreur_saisie: { label: 'erreur de saisie',  className: 'reception-motif-clos' },
+};
+
+// Motif de chaque ligne, tiré de la réception validée la plus récente qui en
+// donne un (les réceptions arrivent de la plus récente à la plus ancienne).
+function motifsParLigne(receptions) {
+  const parLigne = new Map();
+  for (const r of receptions || []) {
+    for (const x of r.manquants || []) {
+      if (x.itemId != null && x.motif && !parLigne.has(x.itemId)) parLigne.set(x.itemId, x.motif);
+    }
+  }
+  return parLigne;
+}
+
 // Un avoir ou une proforma rattachés à la commande ne sont pas « la facture » :
 // on le dit devant le numéro.
 const DOC_TYPE_PREFIX = { credit_note: 'Avoir ', proforma: 'Proforma ' };
@@ -1091,7 +1113,7 @@ const OrdersTab = ({ token }) => {
                       </tr>
                     </thead>
                     <tbody>
-                      {selectedOrder.items?.map(item => {
+                      {(() => { const motifs = motifsParLigne(selectedOrder.receptions); return selectedOrder.items?.map(item => {
                         if (item.item_type === 'discount') {
                           if (ecartsSeuls) return null;
                           return (
@@ -1116,6 +1138,7 @@ const OrdersTab = ({ token }) => {
                         const entamee = totauxPieces(selectedOrder.items).recues > 0
                           || ['received', 'completed'].includes(selectedOrder.status);
                         const manque = ecart < 0 && (entamee || !rienRecu);
+                        const motif = manque ? MOTIF_ECART[motifs.get(item.id)] : null;
                         const fond = ecart > 0 ? '#f5f3ff' : manque ? '#fff7ed' : undefined;
                         return (
                           <tr key={item.id} style={fond ? { background: fond } : {}}>
@@ -1156,9 +1179,13 @@ const OrdersTab = ({ token }) => {
                                 <span className="reception-bilan-trop">+{formatInt(ecart)} en trop</span>
                               ) : !manque ? (
                                 <span style={{ color: '#9ca3af' }}>{formatInt(ecart)}</span>
+                              ) : motif ? (
+                                <span className={motif.className}>
+                                  {formatInt(ecart)} {motif.label}
+                                </span>
                               ) : (
-                                <span className="reception-bilan-manque">
-                                  {formatInt(ecart)} manquant{rienRecu ? ' (rien reçu)' : ''}
+                                <span className="reception-bilan-manque" title="Aucun motif noté à la réception">
+                                  {formatInt(ecart)} non reçu{rienRecu ? ' (rien reçu)' : ''}
                                 </span>
                               )}
                             </td>
@@ -1173,7 +1200,7 @@ const OrdersTab = ({ token }) => {
                             <td>{item.stock_before ?? '-'}</td>
                           </tr>
                         );
-                      })}
+                      }); })()}
                     </tbody>
                   </table>
 

@@ -548,7 +548,7 @@ async function historiqueReceptions(purchaseOrderId, db = pool) {
   if (sessions.length === 0) return [];
 
   const { rows: lignes } = await db.query(
-    `SELECT c.session_id, c.units_counted, c.units_sent, c.motif,
+    `SELECT c.session_id, c.purchase_order_item_id, c.units_counted, c.units_sent, c.motif,
             poi.supplier_sku, poi.product_name,
             ${UNITS_EXPECTED} AS units_expected
        FROM reception_counts c
@@ -573,6 +573,7 @@ async function historiqueReceptions(purchaseOrderId, db = pool) {
       manquants: deLaSession
         .filter((l) => l.units_counted < Number(l.units_expected))
         .map((l) => ({
+          itemId: l.purchase_order_item_id,
           ref: l.supplier_sku, product: l.product_name,
           expected: Number(l.units_expected), units: l.units_counted,
           manque: Number(l.units_expected) - l.units_counted, motif: l.motif,
