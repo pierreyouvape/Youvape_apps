@@ -1760,7 +1760,15 @@ const purchaseOrderModel = {
    * - Déduplication par bms_po_id (ON CONFLICT)
    * - Met à jour product_suppliers (prix achat + fournisseur) depuis les items
    */
-  syncFromBMS: async () => {
+  /**
+   * @param {Object}   [opts]
+   * @param {number[]} [opts.onlyBmsIds] resynchroniser CES bons seulement, quelle
+   *   que soit leur date de modification — pour réparer des lignes après coup sans
+   *   relancer toute la synchro. Ni réconciliation des suppressions, ni avancée de
+   *   la date de dernière synchro dans ce mode.
+   */
+  syncFromBMS: async ({ onlyBmsIds = null } = {}) => {
+    const cible = Array.isArray(onlyBmsIds) ? new Set(onlyBmsIds.map(Number)) : null;
     // 1. Lire la date du dernier import
     const configResult = await pool.query(
       "SELECT config_value FROM app_config WHERE config_key = 'bms_last_po_sync_at'"
@@ -1778,6 +1786,7 @@ const purchaseOrderModel = {
     // Filtrer : commandes créées OU mises à jour >= dernière sync
     const lastSyncDate = new Date(lastSyncAt);
     const orders = allOrders.filter(o => {
+      if (cible) return cible.has(parseInt(o.id));
       const created = o.created_at ? new Date(o.created_at) : null;
       const updated = o.updated_at ? new Date(o.updated_at) : null;
       return (created && created >= lastSyncDate) || (updated && updated >= lastSyncDate);
@@ -1788,7 +1797,7 @@ const purchaseOrderModel = {
     // marquée 'cancelled' pour ne plus être comptée « en attente / en arrivage ».
     // Garde-fou : ne rien faire si la liste BMS est vide (échec/API partielle).
     let reconciled = 0;
-    if (existingBmsIds.size > 0) {
+    if (!cible && existingBmsIds.size > 0) {
       const reconcileResult = await pool.query(`
         UPDATE purchase_orders
         SET status = 'cancelled',
@@ -1823,17 +1832,25 @@ const purchaseOrderModel = {
     // 4. Charger le mapping sku → product.id local (en une seule requête)
     //    wc_cog_cost sert d'ancre pour désambiguïser la convention de prix BMS
     //    (prix par unité vs prix par pack), cf. insertion des items ci-dessous.
+    //
+    //    TOUS LES STATUTS, pas seulement « publié ». Un produit passé en privé ou
+    //    en brouillon reste un produit qu'on a acheté et reçu : sa ligne perdait
+    //    son produit à chaque synchro (34 lignes au 19/10/2026, dont le Pod Argus
+    //    Spring Green de la commande 361181), donc son lot sortait du PMP et son
+    //    prix VPS n'était plus retrouvé. À SKU égal, le publié l'emporte.
     const productsResult = await pool.query(`
       SELECT p.id, p.sku, p.product_type, p.wc_cog_cost
       FROM products p
-      WHERE p.sku IS NOT NULL AND p.sku != '' AND p.post_status = 'publish'
+      WHERE p.sku IS NOT NULL AND p.sku != ''
+      ORDER BY (p.post_status = 'publish') DESC, (p.wc_deleted_at IS NULL) DESC, p.id DESC
     `);
-    const productBySku = new Map(productsResult.rows.map(p => [p.sku, p.id]));
-    const wcogBySku = new Map(
-      productsResult.rows
-        .filter(p => p.wc_cog_cost != null && parseFloat(p.wc_cog_cost) > 0)
-        .map(p => [p.sku, parseFloat(p.wc_cog_cost)])
-    );
+    const productBySku = new Map();
+    const wcogBySku = new Map();
+    for (const p of productsResult.rows) {
+      if (productBySku.has(p.sku)) continue;
+      productBySku.set(p.sku, p.id);
+      if (p.wc_cog_cost != null && parseFloat(p.wc_cog_cost) > 0) wcogBySku.set(p.sku, parseFloat(p.wc_cog_cost));
+    }
 
     // 5. Date RÉELLE de réception des commandes terminées, lue dans le journal
     //    des réceptions BMS (cf. getReceptionDatesByReference). Lu jusqu'à la
@@ -2222,8 +2239,9 @@ const purchaseOrderModel = {
         });
       }
 
-      // 5. Mettre à jour la date du dernier import (maintenant)
-      await client.query(`
+      // 5. Mettre à jour la date du dernier import (maintenant) — pas pour une
+      //    resynchro ciblée, qui ne dit rien des autres bons.
+      if (!cible) await client.query(`
         INSERT INTO app_config (config_key, config_value)
         VALUES ('bms_last_po_sync_at', $1)
         ON CONFLICT (config_key) DO UPDATE SET config_value = $1, updated_at = CURRENT_TIMESTAMP
