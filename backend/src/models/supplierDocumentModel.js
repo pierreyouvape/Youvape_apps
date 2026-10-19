@@ -139,15 +139,40 @@ const ECART_RECLAMABLE_SQL = ecartReclamableSql();
  * couvre, comme un avoir — qu'il ait déjà été déduit d'une commande ou non.
  *
  * Un bon qui nomme ses références n'éteint que leurs écarts ; un bon sans
- * référence, seulement s'il couvre TOUT le réclamable de la facture (même règle
- * que l'avoir global).
+ * référence, seulement s'il couvre tout ce que les bons nominatifs laissent à
+ * réclamer (cf. RESTE_APRES_BONS_NOMINATIFS_SQL).
  */
+/**
+ * Ce qui reste à réclamer une fois retirées les lignes qu'un bon NOMINATIF
+ * couvre déjà. C'est à ce reste — et non au réclamable entier — qu'un bon sans
+ * référence doit suffire. GFC F2610426675 : un bon de 40,65 € pour six écarts de
+ * tarif (34,14 €), un second de 40,62 € sans référence pour l'An RTA facturé
+ * sans être livré (33,85 €). Comparé aux 67,99 € de toute la facture, le second
+ * n'éteignait rien, et la pièce restait « à réclamer » alors qu'elle l'était.
+ */
+const RESTE_APRES_BONS_NOMINATIFS_SQL = ecartReclamableSql(`
+     AND NOT EXISTS (
+       SELECT 1 FROM supplier_vouchers v2
+        WHERE v2.source_document_id = d.id
+          AND cardinality(v2.covered_refs) > 0
+          AND l2.supplier_sku = ANY (v2.covered_refs)
+          AND v2.amount_ht + 0.10 >= (
+            SELECT COALESCE(SUM(GREATEST(
+                     CASE WHEN l3.verdict IN ('price', 'qty_price') THEN ${ecartTarifSql('l3')}
+                          ELSE COALESCE(l3.net_gap, l3.gap, 0) END, 0)), 0)
+              FROM supplier_document_lines l3
+             WHERE l3.document_id = d.id
+               AND l3.material
+               AND l3.verdict IS NOT NULL
+               AND l3.verdict NOT IN ('ok', 'free', 'discount', 'voucher', 'rounding', 'packaging', 'closed', 'other_invoice', 'shipping', 'credit')
+               AND l3.supplier_sku = ANY (v2.covered_refs)))`);
+
 const BON_SQL = `(
   ((SELECT COALESCE(SUM(v.amount_ht), 0) FROM supplier_vouchers v
      WHERE v.source_document_id = d.id AND cardinality(v.covered_refs) = 0) > 0
    AND (SELECT COALESCE(SUM(v.amount_ht), 0) FROM supplier_vouchers v
          WHERE v.source_document_id = d.id AND cardinality(v.covered_refs) = 0) + 0.10
-       >= (${ECART_RECLAMABLE_SQL}))
+       >= (${RESTE_APRES_BONS_NOMINATIFS_SQL}))
   OR EXISTS (SELECT 1 FROM supplier_vouchers v
               WHERE v.source_document_id = d.id
                 AND cardinality(v.covered_refs) > 0
