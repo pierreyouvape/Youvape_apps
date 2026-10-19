@@ -282,6 +282,7 @@ console.log('Contrôle croisé import ↔ facture');
     ['joshnoa-V3202636311.txt', 'joshnoaParser', 'odooInvoice'],
     ['lca-F2609412942.txt', 'lcaParser', 'opensiInvoice'],
     ['lca-F2610415472.txt', 'lcaParser', 'opensiInvoice'],
+    ['lca-F2610418141.txt', 'lcaParser', 'opensiInvoice'],
     ['levest-FAC-2025-11-0470.txt', 'levestParser', 'odooInvoice'],
     ['lips-FAC-2026-04162.txt', 'lipsParser', 'lipsInvoice'],
     ['lips-FAC-2026-04474.txt', 'lipsParser', 'lipsInvoice'],
@@ -589,6 +590,25 @@ console.log('LCA — facture OpenSi (Rist. % / PU Net HT)');
   });
   test('LCA F2610415472 : aucune ligne du document laissée de côté', () => {
     assert.deepStrictEqual(findUnparsedRows(fixture('lca-F2610415472.txt'), parsed.items), []);
+  });
+
+  // F2610418141 (19/10/2026, OpenSi v10.1.0) : en-tête « Lca Distribution » en
+  // minuscules et colonnes Quantité | PU HT | Montant HT (sans Rist. % / PU Net).
+  // Le test de détection en majuscules l'envoyait vers le format Préparation.
+  const minuscules = lca.parse(fixture('lca-F2610418141.txt'));
+  test('LCA F2610418141 : en-tête « Lca Distribution » lu comme facture, 3 colonnes', () => {
+    assert.strictEqual(minuscules.hasPrice, true);
+    assert.deepStrictEqual(minuscules.items, [{
+      supplier_sku: '#REF9337-62437',
+      designation: 'Filtres Coton pour Kiwi par 20 - Kiwi Vapor (Couleur : White)',
+      qty_ordered: 80,
+      unit_price_net: 1.5,
+      total_ht: 120,
+    }]);
+    assert.deepStrictEqual(minuscules.warnings, []);
+    assert.strictEqual(minuscules.orderNumber, '361704');
+    assert.strictEqual(minuscules.orderDate, '2026-10-19');
+    assert.deepStrictEqual(findUnparsedRows(fixture('lca-F2610418141.txt'), minuscules.items), []);
   });
 
   // F2609412942 : désignations sur deux lignes, 3 pages.

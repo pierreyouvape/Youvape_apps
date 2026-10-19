@@ -13,8 +13,10 @@ module.exports = {
   // Fournisseur « à l'unité » — voir highbuyParser / parsers/index.js skipsPackQty().
   skipPackQty: true,
   parse: (text) => {
-    // Facture OpenSi LCA (ex: F2606391933)
-    if (text.includes('LCA DISTRIBUTION') && text.includes('Facture N°')) {
+    // Facture OpenSi LCA (ex: F2606391933). Casse ignorée : depuis OpenSi
+    // v10.1.0 l'en-tête imprime « Lca Distribution » (F2610418141, 19/10/2026),
+    // que l'ancien test en majuscules envoyait vers le format Préparation (0 ligne).
+    if (/LCA DISTRIBUTION/i.test(text) && text.includes('Facture N°')) {
       return parseFacture(text);
     }
     // Detecter le format SiteWeb : header de tableau "Nom du produit" + "Référence" + "Qté"
