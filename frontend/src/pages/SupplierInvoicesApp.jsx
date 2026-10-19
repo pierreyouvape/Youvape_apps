@@ -234,18 +234,23 @@ const Badge = ({ children, tone = 'grey' }) => (
  * null quand aucune commande n'est rapprochée : on ne sait pas, et dire « 0 % »
  * ferait croire à une livraison manquante.
  */
-const storagePct = (ordered, received) => {
+const storagePct = (ordered, received, closed = 0) => {
   const cmd = Number(ordered) || 0;
   if (cmd <= 0) return null;
-  return Math.round(((Number(received) || 0) / cmd) * 100);
+  // Les pièces SOLDÉES à la réception (ni livrées, ni facturées) ne sont plus
+  // attendues : les compter comme un manque fait douter la personne qui règle
+  // entre payer et réclamer (LCA F2610418125, « 97 % » pour une commande soldée).
+  return Math.min(100, Math.round((((Number(received) || 0) + (Number(closed) || 0)) / cmd) * 100));
 };
-const StorageBadge = ({ ordered, received }) => {
-  const pct = storagePct(ordered, received);
+const StorageBadge = ({ ordered, received, closed = 0 }) => {
+  const pct = storagePct(ordered, received, closed);
   if (pct === null) {
     return <span style={{ color: C.greyM }} title="Aucune commande rapprochée : réception inconnue">—</span>;
   }
+  const soldees = Number(closed) || 0;
   return (
-    <span title={`${Number(received) || 0} pièce(s) en stock sur ${Number(ordered) || 0} commandée(s)`}>
+    <span title={`${Number(received) || 0} pièce(s) en stock sur ${Number(ordered) || 0} commandée(s)`
+      + (soldees > 0 ? ` · ${soldees} soldée(s) à la réception, non livrée(s), rien d'attendu` : '')}>
       <Badge tone={pct >= 100 ? 'green' : (pct > 0 ? 'orange' : 'red')}>{pct} %</Badge>
     </span>
   );
@@ -1235,13 +1240,19 @@ function ControlTab({ suppliers, mobile, onSaved }) {
               background: lifecycle.summary.fullyReceived ? C.greenL : C.orangeL,
               color: lifecycle.summary.fullyReceived ? C.green : C.orange,
             }}>
-              {lifecycle.summary.fullyReceived ? (
+              {lifecycle.summary.fullyReceived && Number(lifecycle.order.units_closed) > 0 ? (
+                <>Marchandise <strong>reçue, reste soldé</strong> : {lifecycle.order.units_received} pièces
+                  reçues sur {lifecycle.order.units_ordered} commandées,{' '}
+                  <strong>{lifecycle.order.units_closed}</strong> soldée{Number(lifecycle.order.units_closed) > 1 ? 's' : ''} à
+                  la réception (non livrées, rien d'attendu). Rien ne manque : elles ne doivent pas être facturées.</>
+              ) : lifecycle.summary.fullyReceived ? (
                 <>Marchandise <strong>entièrement reçue</strong> : {lifecycle.order.units_received} pièces
                   sur {lifecycle.order.units_ordered} commandées.</>
               ) : lifecycle.summary.partiallyReceived ? (
                 <>Marchandise <strong>partiellement reçue</strong> : {lifecycle.order.units_received} pièces
                   sur {lifecycle.order.units_ordered} commandées. Il en manque{' '}
-                  <strong>{lifecycle.order.units_ordered - lifecycle.order.units_received}</strong>.</>
+                  <strong>{lifecycle.order.units_ordered - lifecycle.order.units_received - (Number(lifecycle.order.units_closed) || 0)}</strong>
+                  {Number(lifecycle.order.units_closed) > 0 && <> ({lifecycle.order.units_closed} autres soldées, rien d'attendu)</>}.</>
               ) : (
                 <>Cette commande n'a <strong>rien reçu</strong> à ce jour
                   ({lifecycle.order.units_ordered} pièces attendues). Vérifier la livraison avant de régler.</>
@@ -1731,7 +1742,7 @@ function FilingTab({ suppliers, mobile, reloadKey, onSaved, initialDocId }) {
                       )}
                     </td>
                     <td style={{ ...td, textAlign: 'center' }} onClick={() => openDetail(r.id)}>
-                      <StorageBadge ordered={r.units_ordered} received={r.units_received} />
+                      <StorageBadge ordered={r.units_ordered} received={r.units_received} closed={r.units_closed} />
                     </td>
                     <td style={td}>
                       <select value={r.status} onChange={(e) => setStatus(r.id, e.target.value)}
@@ -1852,10 +1863,11 @@ function ReceptionState({ orders }) {
   return cadre(fils.map((f) => {
     const cmd = Number(f.order.units_ordered) || 0;
     const recu = Number(f.order.units_received) || 0;
-    const manque = Math.max(cmd - recu, 0);
-    const pct = storagePct(cmd, recu);
+    const soldees = Number(f.order.units_closed) || 0;
+    const manque = Math.max(cmd - recu - soldees, 0);
+    const pct = storagePct(cmd, recu, soldees);
     const etat = f.summary.fullyReceived
-      ? { tone: 'green', label: 'Entièrement reçue' }
+      ? { tone: 'green', label: soldees > 0 ? 'Reçue, reste soldé' : 'Entièrement reçue' }
       : (f.summary.partiallyReceived
         ? { tone: 'orange', label: 'Partiellement reçue' }
         : { tone: 'red', label: 'Rien reçu' });
@@ -1865,6 +1877,7 @@ function ReceptionState({ orders }) {
           <Badge tone={etat.tone}>{etat.label}{pct === null ? '' : ` · ${pct} %`}</Badge>
           <span>
             <strong>{recu}</strong> pièce{recu > 1 ? 's' : ''} reçue{recu > 1 ? 's' : ''} sur {cmd} commandée{cmd > 1 ? 's' : ''}
+            {soldees > 0 && <> · <strong>{soldees}</strong> soldée{soldees > 1 ? 's' : ''} à la réception (non livrée{soldees > 1 ? 's' : ''}, rien d'attendu)</>}
             {manque > 0 && <> · il en manque <strong>{manque}</strong></>}
           </span>
           {f.summary.openSession && <Badge tone="blue">comptage en cours</Badge>}

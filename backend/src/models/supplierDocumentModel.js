@@ -20,6 +20,7 @@ const pool = require('../config/database');
 const supplierRefModel = require('./supplierRefModel');
 const bmsApiModel = require('./bmsApiModel');
 const supplierVoucherModel = require('./supplierVoucherModel');
+const { piecesSoldeesSql } = require('./orderLifecycleModel');
 
 const VALID_STATUSES = ['to_check', 'checked', 'disputed', 'archived'];
 const VALID_METHODS = ['cb', 'amex', 'virement', 'prelevement', 'avoir', 'especes', 'cheque', 'autre'];
@@ -347,6 +348,13 @@ async function listDocuments({ supplierId, status, paymentStatus, from, to, docT
                FROM supplier_document_orders o
                JOIN purchase_order_items poi ON poi.purchase_order_id = o.purchase_order_id
               WHERE o.document_id = d.id) AS units_received,
+            -- Pièces soldées à la réception (cf. orderLifecycleModel) : plus
+            -- attendues, elles ne doivent pas faire croire à un manque.
+            (SELECT COALESCE(SUM(${piecesSoldeesSql('poi', 'po')}), 0)::int
+               FROM supplier_document_orders o
+               JOIN purchase_orders po ON po.id = o.purchase_order_id
+               JOIN purchase_order_items poi ON poi.purchase_order_id = o.purchase_order_id
+              WHERE o.document_id = d.id) AS units_closed,
             -- Le tarif facturé est-il celui de la commande ? Une alerte, jamais
             -- un blocage : une facture au tarif différent se contrôle et se
             -- règle, elle demande seulement qu'on le sache avant de payer.
