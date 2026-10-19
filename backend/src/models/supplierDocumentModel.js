@@ -124,7 +124,7 @@ const ecartReclamableSql = (filtre = '') => `
     FROM supplier_document_lines l2
    WHERE l2.document_id = d.id
      AND l2.verdict IS NOT NULL
-     AND l2.verdict NOT IN ('ok', 'free', 'discount', 'voucher', 'rounding', 'packaging', 'shipping', 'credit')
+     AND l2.verdict NOT IN ('ok', 'free', 'discount', 'voucher', 'rounding', 'packaging', 'closed', 'shipping', 'credit')
      AND l2.material ${filtre}`;
 const ECART_RECLAMABLE_SQL = ecartReclamableSql();
 
@@ -332,7 +332,7 @@ async function listDocuments({ supplierId, status, paymentStatus, from, to, docT
             (SELECT count(*) FROM supplier_document_lines l
               WHERE l.document_id = d.id
                 AND l.verdict IS NOT NULL
-                AND l.verdict NOT IN ('ok', 'free', 'discount', 'voucher', 'rounding', 'packaging', 'shipping', 'credit')
+                AND l.verdict NOT IN ('ok', 'free', 'discount', 'voucher', 'rounding', 'packaging', 'closed', 'shipping', 'credit')
                 AND l.material
                 AND NOT ${COMPENSEE_SQL}) AS difference_count,
             -- Où en est la mise en stock de la ou des commandes rapprochées :
@@ -405,7 +405,7 @@ async function getDocument(id, db = pool) {
       `SELECT l.*, av.montant AS credited_amount,
               COALESCE(av.numeros, ag.numeros) AS credited_by,
               (l.verdict IS NOT NULL
-               AND l.verdict NOT IN ('ok', 'free', 'discount', 'voucher', 'rounding', 'packaging', 'shipping', 'credit')
+               AND l.verdict NOT IN ('ok', 'free', 'discount', 'voucher', 'rounding', 'packaging', 'closed', 'shipping', 'credit')
                AND ${COMPENSEE_SQL}) AS compensee,
               -- Rendu par un bon promis plutôt que par un avoir : l'écran le dit.
               (av.numeros IS NULL AND ag.numeros IS NULL AND ${BON_SQL}) AS par_bon

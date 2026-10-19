@@ -452,6 +452,26 @@ function compareInvoiceToOrder({ invoice, order, options = {} }) {
   for (const ord of expectFullOrder ? orderLines : []) {
     if (invoiceByRef.has(matchKeyOf(ord))) continue;
     const expectedTotal = round2((Number(ord.qty) || 0) * (Number(ord.price) || 0));
+    // Soldée à la réception sans rien recevoir (cf. findClosedSkus) : ni livrée
+    // ni facturée, il n'y a rien à vérifier ni à payer. Montrée, jamais comptée.
+    if (ord.closed) {
+      results.push({
+        ref: ord.ref,
+        label: ord.productName || null,
+        verdict: 'closed',
+        material: false,
+        qtyOrdered: Number(ord.qty) || 0,
+        qtyInvoiced: 0,
+        expectedUnitPrice: Number(ord.price) || 0,
+        invoicedUnitPrice: null,
+        expectedTotal,
+        invoicedTotal: 0,
+        gapQty: 0,
+        gapPrice: 0,
+        gap: 0,
+      });
+      continue;
+    }
     results.push({
       ref: ord.ref,
       label: ord.productName || null,
@@ -769,9 +789,12 @@ function compareInvoiceToOrder({ invoice, order, options = {} }) {
   // au total de la commande n'a aucun sens : l'avoir JoshNoa de 13,80 € affichait
   // « écart −1 671,94 € » en face des 1 658,14 € de la commande S309145. On ne
   // retient alors que les lignes de commande que le document reprend.
-  const comptees = expectFullOrder
+  // Une ligne soldée à la réception et non facturée sort aussi de la commande :
+  // elle ne sera jamais due.
+  const comptees = (expectFullOrder
     ? orderLines
-    : orderLines.filter((l) => invoiceByRef.has(matchKeyOf(l)));
+    : orderLines.filter((l) => invoiceByRef.has(matchKeyOf(l))))
+    .filter((l) => !(l.closed && !invoiceByRef.has(matchKeyOf(l))));
   const orderTotal = round2(comptees.reduce((s, l) => s + (Number(l.qty) || 0) * (Number(l.price) || 0), 0));
   const printed = Number.isFinite(Number(invoice?.totalHt)) ? round2(invoice.totalHt) : null;
 
@@ -791,6 +814,7 @@ function compareInvoiceToOrder({ invoice, order, options = {} }) {
       extrasGap += r.gap;
       continue;
     }
+    if (r.verdict === 'closed') continue;
     if (r.verdict === 'packaging') {
       packagingGap += r.gap;   // résidu d'arrondi d'un simple changement d'unité
       continue;
@@ -893,6 +917,7 @@ function orphanBalance(results, threshold) {
 const DIFFERENCE_KINDS = {
   qty_price:          { rank: 1,  label: 'Quantité et tarif',     action: 'Ajuster la commande et réclamer le tarif' },
   missing_in_invoice: { rank: 2,  label: 'Commandé, non facturé', action: 'Reliquat ou manquant : vérifier la livraison' },
+  closed:             { rank: 9,  label: 'Soldé à la réception',  action: 'Non livré, non facturé : rien à payer' },
   qty:                { rank: 3,  label: 'Quantité',              action: 'Ajuster la quantité de la commande' },
   price:              { rank: 4,  label: 'Tarif',                 action: 'Réclamer un avoir, ou aligner le tarif si le prix a changé' },
   not_ordered:        { rank: 5,  label: 'Facturé, non commandé', action: 'Article ajouté : accepter ou contester' },
@@ -980,7 +1005,7 @@ function listTariffUpdates(comparison, options = {}) {
   // FAC/2026/04474 étaient dans ce cas, sans aucun bouton pour en sortir.
   const seuil = Number.isFinite(options.threshold) ? options.threshold : 0.0005;
   // Un avoir n'est pas un prix d'achat : 3,46 € d'extourne n'est pas le tarif du produit.
-  const hors = ['packaging', 'missing_in_invoice', 'free', 'not_ordered', 'shipping', 'discount', 'voucher', 'other', 'credit'];
+  const hors = ['packaging', 'missing_in_invoice', 'closed', 'free', 'not_ordered', 'shipping', 'discount', 'voucher', 'other', 'credit'];
 
   // Le coût réel EXPRIMÉ DANS L'UNITÉ DE LA COMMANDE BMS — c'est la seule que
   // `packQty`, `alignTariffs` et `applyTariffs` savent convertir.

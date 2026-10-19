@@ -162,6 +162,7 @@ const VERDICTS = {
   credit: { rank: 8, label: 'Avoir', tone: 'green', action: 'Vient en déduction, rien à réclamer' },
   credited: { rank: 8, label: 'Compensé par avoir', tone: 'green', action: 'Avoir reçu du fournisseur, rien à réclamer' },
   voucher_credited: { rank: 8, label: 'Compensé par bon', tone: 'green', action: 'Bon de réduction promis par le fournisseur, rien à réclamer' },
+  closed: { rank: 9, label: 'Soldé à la réception', tone: 'grey', action: 'Non livré, non facturé : rien à payer' },
   packaging: { rank: 9, label: 'Conditionnement', tone: 'grey', action: 'Unités contre packs : même marchandise, même montant' },
   // Complété à l'affichage par le facteur déduit (« vendu par 2 »), quand on l'a.
 
@@ -176,7 +177,7 @@ const VERDICTS = {
  * pas, ni l'inverse. Un geste suppose en plus un écart matériel — au-delà du
  * garde-fou d'arrondi.
  */
-const VERDICTS_SANS_GESTE = ['ok', 'free', 'discount', 'voucher', 'rounding', 'packaging', 'shipping', 'credit', 'credited', 'voucher_credited'];
+const VERDICTS_SANS_GESTE = ['ok', 'free', 'discount', 'voucher', 'rounding', 'packaging', 'closed', 'shipping', 'credit', 'credited', 'voucher_credited'];
 const appelleUnGeste = (l) => !!l.verdict && !VERDICTS_SANS_GESTE.includes(l.verdict) && !!l.material;
 
 /**

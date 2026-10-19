@@ -132,6 +132,39 @@ async function fetchOrderLines(bmsPoId) {
 }
 
 /**
+ * Les SKU des lignes que la réception a SOLDÉES sans rien recevoir : plus rien
+ * n'en est attendu, le fournisseur ne les facturera pas.
+ *
+ * Commande LCA 361181 (facture F2610418125, 19/10/2026) : le Pod Argus Spring
+ * Green, absent du carton et noté « soldé » au bon de livraison, ressortait en
+ * « commandé, non facturé » pour −82,20 € — un écart qui n'en est pas un.
+ *
+ * Deux preuves valent : un motif de clôture sur la ligne (soldé, manquant,
+ * erreur de saisie), ou la commande passée « Terminée » chez nous. La seconde
+ * est indispensable : la synchro BMS effaçait les motifs en remplaçant les
+ * lignes (corrigé par 65538d3), et c'est précisément ce qui est arrivé ici.
+ * Une ligne en partie reçue n'est pas concernée : ce qui est arrivé se paie.
+ */
+async function findClosedSkus(orderId, db = pool) {
+  const { rows } = await db.query(
+    `SELECT DISTINCT LOWER(TRIM(p.sku)) AS sku
+       FROM purchase_order_items poi
+       JOIN purchase_orders po ON po.id = poi.purchase_order_id
+       JOIN products p ON p.id = poi.product_id
+      WHERE poi.purchase_order_id = $1
+        AND p.sku IS NOT NULL
+        AND COALESCE(poi.units_received, 0) = 0
+        AND COALESCE(poi.qty_received, 0) = 0
+        AND (po.closed_locally_at IS NOT NULL
+             OR EXISTS (SELECT 1 FROM reception_counts rc
+                         WHERE rc.purchase_order_item_id = poi.id
+                           AND rc.motif IN ('solde', 'manquant', 'erreur_saisie')))`,
+    [orderId],
+  );
+  return new Set(rows.map((r) => r.sku));
+}
+
+/**
  * Analyse complète d'une facture déposée.
  *
  * @param {Buffer} buffer      le fichier tel que déposé
@@ -227,6 +260,8 @@ async function analyseInvoice({ buffer, supplierId, orderId = null, documentId =
   }
 
   const bmsOrder = await fetchOrderLines(order.bms_po_id);
+  const soldees = await findClosedSkus(order.id, db);
+  for (const l of bmsOrder.lines) l.closed = !!l.sku && soldees.has(String(l.sku).trim().toLowerCase());
 
   const refProducts = await findRefProducts(
     supplierId,

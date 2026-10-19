@@ -1241,6 +1241,41 @@ test('un écart de 0,0025 € par pièce donne un tarif à appliquer', () => {
   assert.strictEqual(listDifferences(apres).length, 0);
 });
 
+/* ─── Ligne soldée à la réception ─────────────────────────────────────── */
+
+test('LCA F2610418125 : la ligne soldée à la réception ne compte pas, les bundles 1+1 se lisent à la pièce', () => {
+  // Commande 361181 : 10 pods par couleur à 4,11 € (bundle 1+1 à 8,22 €), LCA
+  // facture 5 bundles à 8,22 € −6 % = 38,63 €. Le Spring Green n'est pas arrivé
+  // et a été soldé au bon de livraison. Écart réel : 7 × −2,47 € = −17,29 €.
+  const couleurs = ['82', '83', '84', '86', '87', '88', '89'];
+  const r = compareInvoiceToOrder({
+    invoice: {
+      totalHt: 270.41,
+      lines: couleurs.map((c) => ({ ref: `ARGUS-${c}`, label: 'Bundle 1+1 Argus G2 mini+', qty: 5, lineTotalHt: 38.63 })),
+    },
+    order: {
+      lines: [
+        ...couleurs.map((c) => ({ ref: `ARGUS-${c}`, productName: 'Pod Argus G2 Mini Plus', qty: 10, price: 4.11 })),
+        { ref: 'ARGUS-85', productName: 'Pod Argus G2 Mini Plus - Spring Green', qty: 10, price: 4.11, closed: true },
+      ],
+    },
+  });
+  assert.ok(close(r.totals.gap, -17.29), `écart ${r.totals.gap}`);
+  assert.strictEqual(byRef(r, 'ARGUS-85').verdict, 'closed');
+  assert.strictEqual(byRef(r, 'ARGUS-85').gap, 0);
+  assert.strictEqual(r.summary.qtyGap, 0);
+  const bundle = byRef(r, 'ARGUS-82');
+  assert.strictEqual(bundle.verdict, 'price');
+  assert.ok(close(bundle.gap, -2.47), `ligne ${bundle.gap}`);
+  // Une ligne soldée MAIS facturée reste contrôlée comme les autres.
+  const facturee = compareInvoiceToOrder({
+    invoice: { lines: [{ ref: 'X', qty: 2, lineTotalHt: 20 }] },
+    order: { lines: [{ ref: 'X', qty: 2, price: 10, closed: true }] },
+  });
+  assert.strictEqual(facturee.totals.order, 20);
+  assert.strictEqual(byRef(facturee, 'X').verdict, 'ok');
+});
+
 if (failures > 0) {
   console.log(`\n${failures} test(s) en échec.`);
   process.exit(1);
